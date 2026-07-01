@@ -245,6 +245,100 @@ verify caught the `format_buf` surfacing; the same risk class applies per leaf).
 Likely **decreases** `unsafe fn` (delete `MainControlAbort::fire` + any
 now-unused `fire_*` whose sole caller was main_control). Corpus at the end.
 
+## 5.6 The Stage-I residue census (session 246 — the non-`main_control` scatter)
+
+After the `main_control` fold, the remaining Rust `_tt_abort` spine was the
+**non-`main_control` scatter**: ~15 global wrappers + a handful of inline
+longjmps, each varying in reachability (unlike `main_control`, which was one call
+from `tt_run_engine`). This session **converted the whole directly-propagatable
+`(A)` set (8 sites, verified 8/8 EQUIVALENT by a 7-agent adversarial workflow +
+transitive coverage of the 8th)** and **censused the rest**. Reachability is now
+pure Rust caller analysis: the C core is fully ported (`xetex-xetex0.c` is a
+10-line empty stub; the ~10 remaining `xetex/*.c` files are 10–101-line helper
+stubs that never call *back* into these Rust wrappers), and every wrapper is
+plain `pub unsafe fn` (Rust-ABI — C cannot call it), so a fire-site blocks the
+setjmp **only if a live Rust path reaches it**.
+
+**Converted this session — `(A)`, reachable on a Result-threadable path to
+`tt_run_engine` (each verified EQUIVALENT to its old `fire()`/dispatcher):**
+
+| wrapper / arm | leaf `into_engine_abort` | caught at |
+|---|---|---|
+| `start_input` | `SccAbort` | `tt_run_engine` direct (`into_history`) |
+| `maketexstring` | `MakeTexStringAbort` | `tt_run_engine` INITEX init (direct, `into_history`) |
+| `get_strings_started` node_recycle arm | `NodeRecycleAbort` | `tt_run_engine` direct |
+| `store_fmt_file` node_recycle arm | `NodeRecycleAbort` | `final_cleanup` `?` |
+| `pack_job_name` | `MakeTexStringAbort` | `store_fmt_file` `?` → `final_cleanup` |
+| `make_name_string` | `NameAbort` | `store_fmt_file` `?` → `final_cleanup` |
+| `init_trie` | `TrieAbort` | `store_fmt_file` trie-dump `?` → `final_cleanup` |
+| `end_token_list` | `InputAbort` | `final_cleanup` `?` |
+
+(Deleted the now-dead `trie_abort` dispatcher. `unsafe fn` 263, warnings 37.)
+
+**DEAD — no live caller (Rust or C); do NOT block setjmp deletion (deletable now
+or at the flip):** `input_line`, `open_or_close`, `more_name`, `end_name`,
+`scan_and_pack_name`, `scan_file_name`, `scan_file_name_braced` (`io.rs`),
+`make_src_special` (`texmfmp.rs`), `set_input_file_encoding` (`io.rs`, sole caller
+`u_open_in` is itself dead). Each was superseded by its threaded `_in` core
+(`input_line_in`, `u_open_in_in`, …); the `xetex-xetexd.h` C prototypes are
+vestigial (declare C-ABI symbols no live C references). *Verified: 0 call-sites.*
+
+**`(A)` but non-trivial — convertible, NOT a wrapper-flip, deferred:** `error()`
+(`errors.rs`). The audit **corrected the recon**: `error()` has **no genuinely
+un-threadable caller** — its 4 firing sites are `store_fmt_file` ×2 (already
+`Result`), `post_error_message` (inside `into_history`'s terminal machinery — the
+`Halt`/`Hundred` outcome is absorbable, cleanup already commits to
+`HISTORY_FATAL_ERROR`), and `m_log`'s `x ≤ 0` branch (a **dead** branch —
+`norm_rand`/`\normaldeviate` always feeds `x ≥ 1`; and it runs under
+`conv_toks_in`'s held borrow with a `Result` path, so it would double-borrow-panic,
+not longjmp). So `error()` does **not** fundamentally block the flip — but
+converting it is a multi-site `ErrorOutcome`-threading change touching the
+recoverable-error machinery, so it is a separate follow-up (needs its own verify).
+
+**`(B)` flip-gated — deferred-fire wrapper with an un-threadable
+terminal-machinery caller (the genuine deferred blockers):**
+
+| wrapper | threadable caller | blocking caller (un-threadable) |
+|---|---|---|
+| `open_log_file` (`io.rs`) | `final_cleanup` | `pre_error_message` inside `into_history`'s terminal print path (returns `i32`, IS the catch point) |
+| `finalize_dvi_file` (`shipout.rs`) | `tt_run_engine` normal exit | `close_files_and_terminate`, reached from 3 terminal abort-cleanup sites inside `into_history` (`post_error_message`, the `Fatal` arm, `store_fmt_file` `\dump`-in-group) |
+
+Converting either forces its shared cleanup helper (`pre_error_message` /
+`close_files_and_terminate`) to return `Result`, gated on how the terminal
+`into_history` handlers absorb a *second* error during cleanup — a §6-flip concern.
+
+**Inline longjmps — direct `_tt_abort`/`fatal_error`, not deferred-fire; block the
+setjmp until restructured:**
+- `main_control.rs:706` (`get_preamble_token_in`): direct
+  `fatal_error("(interwoven alignment preambles are not allowed)")` **under the
+  `&mut EngineState` borrow** — a still-live longjmp reachable from
+  `main_control`'s alignment path, distinct from the folded deferred
+  `MainControlAbort` spine. Needs threading as a `MainControlAbort`/align variant.
+- `ext.rs` native-font helpers (**13** sites): direct `_tt_abort` — 11×
+  `"bad native font flag in <fn>"` (`measure_native_node`, `measure_native_glyph`,
+  `get_native_char_height_depth`, `get_native_char_side_bearings`,
+  `get_glyph_bounds`, `getnativecharwd`, `map_char_to_glyph`, `map_glyph_to_index`,
+  `get_font_char_range`, `make_font_def`, `print_glyph_name`), `"could not read
+  mapping file"` (`load_mapping_file_in`), `"failed to create linebreak iterator"`
+  (`linebreak_start_in`). All return `()`/`i32` (no `Err` channel) and are called
+  **deep** from packaging/linebreak/math/scan/expand measurement — internal-
+  consistency + resource aborts. These thread only when the native-font measurement
+  layer grows an error channel.
+
+**Blocker summary (what still gates setjmp deletion, post-session):** the Rust
+longjmps are now a **small, enumerable set** — the two `(B)` wrappers
+(`open_log_file`, `finalize_dvi_file`) + `error()` (`(A)`-nontrivial) + the two
+inline classes (`main_control` interwoven-align, `ext.rs` native-font ×13), plus
+the dispatcher machinery reachable *only through* those live wrappers
+(`OpenLogAbort::fire` under `open_log_file`; `fire_shipout_abort`/`SccAbort::fire`
+under `finalize_dvi_file`). Everything else reachable-and-threadable is now
+`Result`; the DEAD set never fires. The `(A)`/`(B)` split came out **`(A)`-heavier
+than expected** (8 converted + `error()` convertible) and **`(B)`-light** (only 2
+true deferred blockers), with the structural remainder being the two inline
+classes. This is the precondition proof for **Stage II** (§2): neutralize the
+C-side `bridge_core` I/O longjmps (`ttstub_input_seek`/`close`) + `xmalloc`; then
+the flip (§6) is gated only on `error()` + the two inline classes threading.
+
 ## 6. Final flip (all-or-nothing, later session)
 
 Once **no Rust path longjmps** (steps 1–5 done) *and* Stage II (§2) neutralizes

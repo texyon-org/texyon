@@ -8,6 +8,98 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 246 — 2026-07-01 — Execution + census: the Stage-I residue (convert the (A) scatter, census the rest)
+
+**Type:** execution + census (continuation of the session-245 EngineAbort lever).
+Autonomous: four commits + a 14-agent adversarial workflow (7 verify, 7 census).
+
+**The job (`01d` §5.6).** After the `main_control` fold, the remaining Rust
+`_tt_abort` spine was the **non-`main_control` scatter** (~15 global wrappers +
+inline longjmps, varying in reachability). This session **converted the whole
+directly-propagatable `(A)` set** and **produced the census** (the deliverable).
+
+**Enabling finding — the C core is gone.** `xetex-xetex0.c` is a 10-line empty
+stub (all translated to Rust); the ~10 remaining `xetex/*.c` files are 10–101-line
+helper stubs that never call *back* into the Rust wrappers, and every wrapper is
+plain `pub unsafe fn` (Rust-ABI, so C can't call it). **So reachability = pure
+Rust caller analysis**, and a fire-site blocks the setjmp only if a live Rust path
+reaches it. This reframed the census: most "bridge-down wrappers for legacy
+callers" are now **DEAD** (their legacy C callers are gone).
+
+**Converted (8 sites, 4 commits; dashboard 29/2/7/4 each, `unsafe fn` 263,
+warnings 37):**
+1. **`start_input` → `Result<(), EngineAbort>`** (`21409112`) — its sole caller
+   `tt_run_engine` catches with `if let Err(a) = start_input(..) { return
+   a.into_history(); }` before `set_history`/`main_control`. The exact
+   `main_control`-fold idiom; a direct −1 longjmp.
+2. **The two `node_recycle` catch-all arms** (`037b5dd8`) — `get_strings_started`
+   (engine.rs) + `store_fmt_file` (format_io.rs) `Err(e) => node_recycle_abort(e)`
+   → `Err(e.into_engine_abort())`; both enclosing fns already return `Result`.
+   `store_fmt_file`'s special-cased string-count `Overflow` arm ("number of
+   strings") left untouched.
+3. **Four single-caller wrapper-flips** (`5137505c`) — `pack_job_name`,
+   `make_name_string`, `init_trie` (all sole-caller `store_fmt_file`),
+   `end_token_list` (sole-caller `final_cleanup`) → `Result`, callers use `?`.
+   Deleted the now-dead `trie_abort` dispatcher.
+4. **`maketexstring` → `Result`** (`e24dd55b`) — the census audit **corrected the
+   recon**: its two callers are `tt_run_engine`-direct (INITEX `format_ident` +
+   `nullfont_name`), NOT `initialize_primitives` (which uses `maketexstring_in`),
+   so it is a trivial `into_history` catch like `start_input`, no
+   `PrimitiveInitAbort` plumbing.
+
+**Adversarial verification (Workflow, 14 agents, ultracode).** 7 verify agents
+(one per conversion, each re-deriving the terminal/message/side-effects/control-
+flow vs the original `fire()`/dispatcher at `19a7eaeb`): **7/7 EQUIVALENT, 0
+divergent** (the 8th, `maketexstring`, is transitively covered — its leaf
+`MakeTexStringAbort::into_engine_abort` was verified via `pack_job_name`, its
+catch is the verified `start_input` idiom). 7 census agents classified every
+remaining fire-site; two returned **evidence corrections** that improved the
+census (see below).
+
+**The census (`01d` §5.6 — the deliverable).**
+- **DEAD (9), do NOT block the setjmp:** `input_line`, `open_or_close`,
+  `more_name`, `end_name`, `scan_and_pack_name`, `scan_file_name`,
+  `scan_file_name_braced`, `make_src_special`, `set_input_file_encoding` (sole
+  caller `u_open_in` itself dead). Superseded by their `_in` cores; 0 call-sites
+  (verified). Deletable now or at the flip.
+- **`(A)` non-trivial (1): `error()`.** Audit **corrected** the recon: it has NO
+  genuinely un-threadable caller — its `m_log` "blocker" is a **dead** `\normaldeviate`
+  RNG branch (`x ≤ 0` unreachable) that additionally runs under a held borrow with a
+  `Result` path (would double-borrow-panic, not longjmp); the other sites are
+  `store_fmt_file` (Result) + `post_error_message` (absorbable terminal). Convertible,
+  but multi-site `ErrorOutcome` threading — a separate follow-up.
+- **`(B)` flip-gated (2): `open_log_file`, `finalize_dvi_file`.** Each has a
+  threadable caller AND an un-threadable one *inside `into_history`'s terminal
+  machinery* (`pre_error_message` / `close_files_and_terminate`), so converting
+  forces the shared cleanup helper to return `Result` — a §6-flip concern.
+- **Inline longjmps (2 classes):** `main_control get_preamble_token_in` (direct
+  `fatal_error("interwoven alignment preambles") under the borrow, distinct from
+  the folded deferred spine) + `ext.rs` native-font helpers (**13** direct
+  `_tt_abort`, called deep from measurement/shipout/math/scan — no `Err` channel).
+
+**Outcome (honest):** `(A)` came out **larger** than expected (8 converted +
+`error()` convertible) and the true deferred `(B)` set is just **two** wrappers;
+the structural remainder is the two inline classes. So the Rust longjmps still
+gating the setjmp are a **small enumerable set** — `{open_log_file,
+finalize_dvi_file}` + `error()` + `{main_control` align, `ext.rs` native-font ×13`}`
++ the dispatcher machinery reachable only through those live wrappers. This is the
+precondition proof for Stage II.
+
+**Metrics:** `unsafe fn` **263** (−0; deleted `trie_abort` is a `pub(crate) fn`,
+not `unsafe fn`); `with_state` unchanged; warnings **37**. Validation: dashboard
+**29/2/7/4** per commit; release rebuild; full corpus **637 passed / 2 diverged**
+(known FP pair). Reverted a `cargo fmt` line-wrap churn in `format_io.rs` (as last
+session). Commits `21409112`, `037b5dd8`, `5137505c`, `e24dd55b`.
+
+**Next (`01d` §2/§6).** **Stage II (in-crate):** replace the ~19
+`ttstub_input_seek`/`close` call sites with `ttbc_*`/`CoreBridgeState` + `Result`
+threading, and fold the `xmalloc`/`xcalloc`/`xrealloc` `_tt_abort` jumps. Then the
+remaining Rust blockers thread: `error()` (multi-site `ErrorOutcome`),
+`open_log_file` + `finalize_dvi_file` (gated on the cleanup helpers), and the two
+inline classes (`main_control` align variant, `ext.rs` native-font error channel).
+Only once **no Rust path longjmps** AND Stage II neutralizes the bridge_core I/O
+longjmps does the setjmp + owned-`EngineState` flip (§6) become possible.
+
 ## Idiom session 245 — 2026-07-01 — Execution: the main_control → EngineAbort fold (kill the main-control Rust longjmp spine)
 
 **Type:** execution (continuation of the session-242 / 243–244 EngineAbort

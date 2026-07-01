@@ -4,6 +4,41 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-07-01 (last session = session 246, **execution + census —
+the Stage-I residue: convert the whole directly-propagatable `(A)` set + census
+the rest (`01d` §5.6)**. Four commits (dashboard **29/2/7/4** each; `unsafe fn`
+**263**; warnings **37**). **Converted 8 `(A)` sites, verified 8/8 EQUIVALENT**
+by a 7-agent adversarial workflow (+ transitive coverage of the 8th):
+`start_input` and `maketexstring` (both `tt_run_engine`-direct, caught via
+`into_history` — the exact `main_control` idiom); the `get_strings_started` +
+`store_fmt_file` `node_recycle` catch-all arms; and the four single-caller
+wrapper-flips `pack_job_name`/`make_name_string`/`init_trie`/`end_token_list`
+(caught via `?` through `store_fmt_file`/`final_cleanup`). Each leaf's
+`into_engine_abort` was already session-245-verified, so these are the proven
+idiom; deleted the now-dead `trie_abort` dispatcher. **The census (`01d` §5.6,
+the deliverable) classifies every remaining Rust longjmp fire-site.** Key
+findings: the C core is fully ported (`xetex-xetex0.c` = 10-line stub), so
+reachability is pure Rust caller analysis. **9 wrappers are DEAD** (`input_line`,
+`open_or_close`, `more_name`, `end_name`, `scan_and_pack_name`, `scan_file_name`,
+`scan_file_name_braced`, `make_src_special`, `set_input_file_encoding` via dead
+`u_open_in`) — superseded by their `_in` cores, 0 call-sites, do **not** block
+the setjmp. The `(A)`/`(B)` split came out **`(A)`-heavier, `(B)`-light**: only
+**two** genuine deferred `(B)` blockers remain (`open_log_file`,
+`finalize_dvi_file` — each has an un-threadable caller inside `into_history`'s
+terminal machinery); `error()` is `(A)`-but-nontrivial (**audit corrected the
+recon** — its `m_log` "blocker" is a dead `\normaldeviate` RNG branch with a
+`Result` path, not a deep longjmp; convertible via multi-site `ErrorOutcome`
+threading, deferred); and the structural remainder is **two inline-longjmp
+classes** — `main_control get_preamble_token_in` (interwoven-alignment
+`fatal_error` under the borrow) + `ext.rs` native-font helpers (**13** direct
+`_tt_abort`). So the Rust longjmps now gating the setjmp are a small enumerable
+set: `{open_log_file, finalize_dvi_file}` + `error()` + the two inline classes.
+Validation: full corpus **637 passed / 2 diverged** (known FP). **Next:** Stage
+II (`01d` §2, in-crate): the ~19 `ttstub_input_seek`/`close` → `ttbc_*`/`Result`
+sweep + `xmalloc` `_tt_abort` fold; then `error()` + the two inline classes
+thread; then the setjmp + owned-`EngineState` flip (§6). See SESSION_LOG session
+246.)
+
 Last updated: 2026-07-01 (last session = session 245, **execution — the
 `main_control` → EngineAbort fold (`01d` §5.5); the main-control Rust longjmp
 spine is dead**. One all-or-nothing commit + a 31-agent adversarial verify.
