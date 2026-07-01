@@ -155,8 +155,11 @@ pub unsafe fn get_strings_started() -> Result<(), crate::errors::EngineAbort> {
     });
     let loaded = match loaded {
         Ok(value) => value,
-        // Main-memory recycle abort stays setjmp-backstopped (different terminal).
-        Err(e) => crate::scan::node_recycle_abort(e),
+        // Main-memory recycle abort → EngineAbort, propagated to tt_run_engine
+        // (01d §5.6) instead of the old setjmp-backstopped longjmp. Equivalent
+        // per arm: OverflowRunaway runs runaway() then the "main memory size"
+        // Overflow via main_memory_overflow_abort; Confusion(msg) → Confusion(msg).
+        Err(e) => return Err(e.into_engine_abort()),
     };
     if loaded == 0 {
         return Err(crate::errors::EngineAbort::TtAbort(

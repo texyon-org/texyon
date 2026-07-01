@@ -291,9 +291,13 @@ pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
                 n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
             })
         }
-        // Other recycle aborts (main-memory) stay backstopped by the C setjmp
-        // until the scan-layer aborts fold into EngineAbort.
-        Err(e) => crate::scan::node_recycle_abort(e),
+        // Other recycle aborts (main-memory) → EngineAbort, propagated via `?`
+        // through final_cleanup to tt_run_engine (01d §5.6) instead of the old
+        // setjmp-backstopped longjmp. Equivalent per arm: OverflowRunaway runs
+        // runaway() then the "main memory size" Overflow (main_memory_overflow_abort),
+        // Confusion(msg) → Confusion(msg). (The string-count Overflow above keeps
+        // its distinct "number of strings" message and is unchanged.)
+        Err(e) => return Err(e.into_engine_abort()),
     };
     set_format_ident(new_format_ident);
     crate::io::pack_job_name(c".fmt".as_ptr());
