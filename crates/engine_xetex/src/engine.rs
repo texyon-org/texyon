@@ -12,14 +12,13 @@ use crate::consts::{
 use crate::format_io::{load_fmt_file, store_fmt_file};
 use crate::globals::{
     buf_size, cur_chr, cur_input, cur_val, eqtb_b32s1, first, font_area_entry, font_mapping_ptr,
-    font_max, font_mem_size, history, in_initex_mode, interaction, job_name, mem_b32s1, pool_size,
-    selector, set_buffer_entry, set_cancel_boundary, set_cur_list_aux_b32s1,
-    set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line,
-    set_cur_list_prev_graf, set_cur_list_tail, set_cur_val, set_eqtb_b32s1, set_error_line,
-    set_file_line_error_style_p, set_first, set_font_max, set_font_mem_size, set_half_error_line,
-    set_ins_disc, set_lft_hit, set_ligature_present, set_max_print_line, set_max_reg_help_line,
-    set_max_reg_num, set_open_parens, set_pool_ptr, set_rt_hit, set_selector, set_str_ptr,
-    set_temp_ptr, temp_ptr, trie_not_ready,
+    font_max, font_mem_size, history, in_initex_mode, interaction, job_name, mem_b32s1, selector,
+    set_buffer_entry, set_cancel_boundary, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux,
+    set_cur_list_head, set_cur_list_mode, set_cur_list_mode_line, set_cur_list_prev_graf,
+    set_cur_list_tail, set_cur_val, set_eqtb_b32s1, set_error_line, set_file_line_error_style_p,
+    set_first, set_font_max, set_font_mem_size, set_half_error_line, set_ins_disc, set_lft_hit,
+    set_ligature_present, set_max_print_line, set_max_reg_help_line, set_max_reg_num,
+    set_open_parens, set_rt_hit, set_selector, set_temp_ptr, temp_ptr, trie_not_ready,
 };
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
@@ -143,17 +142,21 @@ pub(crate) fn intpar(n: i32) -> i32 {
 // ---- moved verbatim from ini.rs (workstream 02) ----
 
 // translated from xetex-ini.c:3452 (get_strings_started)
-pub unsafe fn get_strings_started() -> Result<(), crate::errors::EngineAbort> {
-    set_pool_ptr(0);
-    set_str_ptr(0);
-    crate::state::with_state_mut(|s| s.strings.str_start[0] = 0);
-    set_str_ptr(TOO_BIG_CHAR);
+//
+// Threaded `_in` core (`01d` §6 drain): holds the one `&mut EngineState` its caller
+// (`tt_run_engine`'s INITEX init) opens, touching `st.strings` directly instead of
+// re-entering the thread_local through the `set_pool_ptr`/`set_str_ptr`/`pool_size`
+// wrappers + inline `with_state`. Now safe to hold the borrow: no path longjmps.
+pub(crate) unsafe fn get_strings_started_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), crate::errors::EngineAbort> {
+    st.strings.pool_ptr = 0;
+    st.strings.str_ptr = 0;
+    st.strings.str_start[0] = 0;
+    st.strings.str_ptr = TOO_BIG_CHAR;
 
-    let spare_size = pool_size() - crate::state::with_state(|s| s.strings.string_vacancies);
-    let loaded = crate::state::with_state_mut(|st| {
-        crate::string_pool::load_pool_strings(&mut st.strings, spare_size)
-    });
-    let loaded = match loaded {
+    let spare_size = st.strings.pool_size - st.strings.string_vacancies;
+    let loaded = match crate::string_pool::load_pool_strings(&mut st.strings, spare_size) {
         Ok(value) => value,
         // Main-memory recycle abort → EngineAbort, propagated to tt_run_engine
         // (01d §5.6) instead of the old setjmp-backstopped longjmp. Equivalent
@@ -1229,7 +1232,7 @@ pub unsafe extern "C" fn tt_run_engine(
 
     crate::state::with_state_mut(initialize_more_variables_in);
     if in_initex_mode() {
-        if let Err(a) = get_strings_started() {
+        if let Err(a) = crate::state::with_state_mut(|st| get_strings_started_in(st)) {
             return a.into_history();
         }
         let format_ident = match crate::texmfmp::maketexstring(c" (INITEX)".as_ptr()) {
