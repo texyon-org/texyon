@@ -68,7 +68,6 @@ extern "C" {
     fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
-    fn ttstub_input_close(handle: usize) -> c_int;
     fn xetex_ucnv_open(name: *const c_char, out_err: *mut c_int) -> *mut c_void;
     fn xetex_ucnv_close(cnv: *mut c_void);
     fn TECkit_CreateConverter(
@@ -588,7 +587,7 @@ unsafe fn load_mapping_file_in(
     s: *const c_char,
     e: *const c_char,
     byte_mapping: c_char,
-) -> *mut c_void {
+) -> Result<*mut c_void, NativeFontAbort> {
     let source_len = e.offset_from(s) as usize;
     let buffer = xmalloc((source_len + 5) as libc::size_t) as *mut c_char;
     ptr::copy_nonoverlapping(s, buffer, source_len);
@@ -602,10 +601,14 @@ unsafe fn load_mapping_file_in(
         let read = ttstub_input_read(map, mapping, mapping_size);
 
         if read < 0 || read as libc::size_t != mapping_size {
-            _tt_abort(c"could not read mapping file".as_ptr());
+            return Err(NativeFontAbort::CouldNotReadMapping);
         }
 
-        ttstub_input_close(map);
+        // Non-longjmp input-close (`01d` §2.1): the C ttstub_input_close wrapper
+        // longjmp'd on a serious internal close error; propagate it as an abort.
+        if crate::io::input_close(map) {
+            return Err(NativeFontAbort::InputClose);
+        }
 
         if byte_mapping != 0 {
             TECkit_CreateConverter(
@@ -654,7 +657,7 @@ unsafe fn load_mapping_file_in(
     }
 
     libc::free(buffer as *mut c_void);
-    cnv
+    Ok(cnv)
 }
 
 // translated from xetex-ext.c:236 (check_for_tfm_font_mapping)
@@ -677,7 +680,9 @@ pub(crate) unsafe fn check_for_tfm_font_mapping_in(name_of_file: *mut c_char) {
 }
 
 // translated from xetex-ext.c:251 (load_tfm_font_mapping)
-pub(crate) unsafe fn load_tfm_font_mapping_in(st: &mut EngineState) -> *mut c_void {
+pub(crate) unsafe fn load_tfm_font_mapping_in(
+    st: &mut EngineState,
+) -> Result<*mut c_void, NativeFontAbort> {
     let mut rval = ptr::null_mut();
     if !SAVED_MAPPING_NAME.is_null() {
         rval = load_mapping_file_in(
@@ -685,10 +690,10 @@ pub(crate) unsafe fn load_tfm_font_mapping_in(st: &mut EngineState) -> *mut c_vo
             SAVED_MAPPING_NAME,
             SAVED_MAPPING_NAME.add(libc::strlen(SAVED_MAPPING_NAME)),
             1,
-        );
+        )?;
         SAVED_MAPPING_NAME = mfree_ptr(SAVED_MAPPING_NAME);
     }
-    rval
+    Ok(rval)
 }
 
 // translated from xetex-ext.c:263 (apply_tfm_font_mapping)
@@ -717,31 +722,10 @@ pub unsafe fn apply_tfm_font_mapping(cnv: *mut c_void, c: c_int) -> c_int {
     }
 }
 
-// translated from xetex-ext.c:310 (readCommonFeatures)
-#[no_mangle]
-pub unsafe extern "C" fn readCommonFeatures(
-    feat: *const c_char,
-    end: *const c_char,
-    extend: *mut f32,
-    slant: *mut f32,
-    embolden: *mut f32,
-    letterspace: *mut f32,
-    rgb_value: *mut u32,
-) -> c_int {
-    crate::state::with_state_mut(|st| {
-        read_common_features_in(
-            st,
-            feat,
-            end,
-            extend,
-            slant,
-            embolden,
-            letterspace,
-            rgb_value,
-        )
-    })
-}
-
+// translated from xetex-ext.c:310 (readCommonFeatures). The `#[no_mangle]`
+// C-ABI wrapper was deleted (`01d` §5.6, DEAD set): no live C caller, and the
+// sole live (Rust) caller `find_native_font_in` propagates the mapping-read
+// `NativeFontAbort` directly.
 unsafe fn read_common_features_in(
     st: &mut EngineState,
     feat: *const c_char,
@@ -751,60 +735,60 @@ unsafe fn read_common_features_in(
     embolden: *mut f32,
     letterspace: *mut f32,
     rgb_value: *mut u32,
-) -> c_int {
+) -> Result<c_int, NativeFontAbort> {
     let mut sep = str_starts_with(feat, b"mapping");
     if !sep.is_null() {
         if peek(sep) != b'=' {
-            return -1;
+            return Ok(-1);
         }
-        st.fonts.loaded_font_mapping = load_mapping_file_in(st, sep.add(1), end, 0);
-        return 1;
+        st.fonts.loaded_font_mapping = load_mapping_file_in(st, sep.add(1), end, 0)?;
+        return Ok(1);
     }
 
     sep = str_starts_with(feat, b"extend");
     if !sep.is_null() {
         if peek(sep) != b'=' {
-            return -1;
+            return Ok(-1);
         }
         sep = sep.add(1);
         *extend = read_double(&mut sep) as f32;
-        return 1;
+        return Ok(1);
     }
 
     sep = str_starts_with(feat, b"slant");
     if !sep.is_null() {
         if peek(sep) != b'=' {
-            return -1;
+            return Ok(-1);
         }
         sep = sep.add(1);
         *slant = read_double(&mut sep) as f32;
-        return 1;
+        return Ok(1);
     }
 
     sep = str_starts_with(feat, b"embolden");
     if !sep.is_null() {
         if peek(sep) != b'=' {
-            return -1;
+            return Ok(-1);
         }
         sep = sep.add(1);
         *embolden = read_double(&mut sep) as f32;
-        return 1;
+        return Ok(1);
     }
 
     sep = str_starts_with(feat, b"letterspace");
     if !sep.is_null() {
         if peek(sep) != b'=' {
-            return -1;
+            return Ok(-1);
         }
         sep = sep.add(1);
         *letterspace = read_double(&mut sep) as f32;
-        return 1;
+        return Ok(1);
     }
 
     sep = str_starts_with(feat, b"color");
     if !sep.is_null() {
         if peek(sep) != b'=' {
-            return -1;
+            return Ok(-1);
         }
         sep = sep.add(1);
         let start = sep;
@@ -814,12 +798,12 @@ unsafe fn read_common_features_in(
             st.fonts.loaded_font_flags =
                 (st.fonts.loaded_font_flags as i32 | FONT_FLAGS_COLORED) as c_char;
         } else {
-            return -1;
+            return Ok(-1);
         }
-        return 1;
+        return Ok(1);
     }
 
-    0
+    Ok(0)
 }
 
 // translated from xetex-ext.c:72 (loadOTfont) — private helper
@@ -829,7 +813,7 @@ unsafe fn load_ot_font(
     font: XeTeXFont,
     scaled_size: i32,
     mut cp1: *mut c_char,
-) -> *mut c_void {
+) -> Result<*mut c_void, NativeFontAbort> {
     let mut engine: XeTeXLayoutEngine = ptr::null_mut();
     let mut script = HB_TAG_NONE;
     let mut language: *mut c_char = ptr::null_mut();
@@ -872,7 +856,7 @@ unsafe fn load_ot_font(
             embolden,
         );
         if engine.is_null() {
-            return ptr::null_mut();
+            return Ok(ptr::null_mut());
         }
     }
 
@@ -953,7 +937,7 @@ unsafe fn load_ot_font(
                     &mut embolden,
                     &mut letterspace,
                     &mut rgb_value,
-                );
+                )?;
                 if i == 1 {
                     handled = true;
                 } else if i == -1 {
@@ -1066,7 +1050,7 @@ unsafe fn load_ot_font(
         st.fonts.native_font_type_flag = OTGR_FONT_FLAG as i32;
     }
 
-    engine
+    Ok(engine)
 }
 
 fn name_of_file_mut_ptr(st: &mut EngineState) -> *mut c_char {
@@ -1082,7 +1066,7 @@ pub(crate) unsafe fn find_native_font_in(
     st: &mut EngineState,
     uname: *mut c_char,
     mut scaled_size: i32,
-) -> *mut c_void {
+) -> Result<*mut c_void, NativeFontAbort> {
     let mut rval: *mut c_void = ptr::null_mut();
     let name = uname;
     let mut var: *mut c_char = ptr::null_mut();
@@ -1140,7 +1124,7 @@ pub(crate) unsafe fn find_native_font_in(
                 }
             }
 
-            rval = load_ot_font(st, ptr::null_mut(), font, scaled_size, feat_string);
+            rval = load_ot_font(st, ptr::null_mut(), font, scaled_size, feat_string)?;
             if rval.is_null() {
                 deleteFont(font);
             }
@@ -1201,7 +1185,7 @@ pub(crate) unsafe fn find_native_font_in(
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
-                    rval = load_ot_font(st, font_ref, font, scaled_size, feat_string);
+                    rval = load_ot_font(st, font_ref, font, scaled_size, feat_string)?;
                     if rval.is_null() {
                         deleteFont(font);
                     }
@@ -1224,7 +1208,7 @@ pub(crate) unsafe fn find_native_font_in(
     libc::free(feat_string as *mut c_void);
     libc::free(name_string as *mut c_void);
 
-    rval
+    Ok(rval)
 }
 
 // translated from xetex-ext.c:440 (splitFontName)
@@ -1464,15 +1448,19 @@ pub unsafe fn gr_font_get_named_1(what: i32, p_engine: *mut c_void, param: i32) 
 /// Every arm mirrors the former inline `_tt_abort` exactly — no cleanup, sets the
 /// surfaced message, history 3 — via [`EngineAbort::TtAbort`]. The `BadFlag` arms
 /// are internal-consistency checks (`font_area` is neither AAT nor OTGR), which
-/// are *unreachable* for a real native node/font; `LinebreakIterator` is a genuine
-/// resource failure. (The font-loader's `load_mapping_file` "could not read
-/// mapping file" + input-close still thread separately — its callers are not yet
-/// `Result`.)
+/// are *unreachable* for a real native node/font; `LinebreakIterator` /
+/// `CouldNotReadMapping` are genuine resource failures and `InputClose` is the
+/// deferred serious-internal input-close error (`01d` §2.1).
 pub(crate) enum NativeFontAbort {
     /// `_tt_abort("bad native font flag in `<fn>`")`.
     BadFlag(*const c_char),
     /// `_tt_abort("failed to create linebreak iterator")`.
     LinebreakIterator,
+    /// `_tt_abort("could not read mapping file")` — the font mapping `.tec` file
+    /// could not be read.
+    CouldNotReadMapping,
+    /// The deferred `ttstub_input_close` serious-internal error (`01d` §2.1).
+    InputClose,
 }
 
 impl NativeFontAbort {
@@ -1483,6 +1471,8 @@ impl NativeFontAbort {
         crate::errors::EngineAbort::TtAbort(match self {
             NativeFontAbort::BadFlag(m) => m,
             NativeFontAbort::LinebreakIterator => c"failed to create linebreak iterator".as_ptr(),
+            NativeFontAbort::CouldNotReadMapping => c"could not read mapping file".as_ptr(),
+            NativeFontAbort::InputClose => c"serious internal error closing an input file".as_ptr(),
         })
     }
 }

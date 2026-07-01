@@ -335,6 +335,12 @@ pub(crate) enum ReadFontInfoAbort {
     InputClose,
 }
 
+impl From<crate::ext::NativeFontAbort> for ReadFontInfoAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        ReadFontInfoAbort::Native(LoadNativeFontAbort::NativeFont(e))
+    }
+}
+
 impl ReadFontInfoAbort {
     /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
     /// former `finish()` cold-abort tail without longjmp-ing.
@@ -455,7 +461,7 @@ pub(crate) unsafe fn read_font_info_in(
             TfmParse::Bad => bad!(),
             TfmParse::Loaded(f) => {
                 g = f;
-                let mapping = load_tfm_font_mapping_in(st);
+                let mapping = load_tfm_font_mapping_in(st)?;
                 st.fonts.set_font_mapping_ptr(f, mapping);
             }
         }
@@ -1030,6 +1036,14 @@ pub(crate) enum LoadNativeFontAbort {
     StringOverflow(NodeRecycleAbort),
     NativeChar(NativeCharAbort),
     Error(ErrorOutcome),
+    /// A native-font measurement/mapping cold abort (`01d` §5.6).
+    NativeFont(crate::ext::NativeFontAbort),
+}
+
+impl From<crate::ext::NativeFontAbort> for LoadNativeFontAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        LoadNativeFontAbort::NativeFont(e)
+    }
 }
 
 impl LoadNativeFontAbort {
@@ -1048,6 +1062,7 @@ impl LoadNativeFontAbort {
             LoadNativeFontAbort::StringOverflow(e) => e.into_engine_abort(),
             LoadNativeFontAbort::NativeChar(e) => e.into_engine_abort(),
             LoadNativeFontAbort::Error(outcome) => outcome.into_engine_abort(),
+            LoadNativeFontAbort::NativeFont(e) => e.into_engine_abort(),
         }
     }
 }
@@ -1073,7 +1088,7 @@ pub(crate) unsafe fn load_native_font_in(
     } else {
         st.input.name_of_file.as_mut_ptr()
     };
-    let font_engine = find_native_font_in(st, name_of_file, s);
+    let font_engine = find_native_font_in(st, name_of_file, s)?;
     if font_engine.is_null() {
         return Ok(FONT_BASE);
     }
