@@ -70,6 +70,18 @@ impl InputAbort {
             InputAbort::MainMemory => crate::mem::fire_main_memory_overflow(),
         }
     }
+
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`fire`](InputAbort::fire) without longjmp-ing. Call only *after* the
+    /// state borrow drops (`MainMemory` re-enters `with_state` via `runaway`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            InputAbort::Overflow { what, n } => crate::errors::EngineAbort::Overflow { what, n },
+            InputAbort::Fatal(msg) => crate::errors::EngineAbort::Fatal(msg),
+            InputAbort::TtAbort(msg) => crate::errors::EngineAbort::TtAbort(msg),
+            InputAbort::MainMemory => crate::mem::main_memory_overflow_abort(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

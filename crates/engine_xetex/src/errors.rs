@@ -129,6 +129,31 @@ impl ErrorOutcome {
             ErrorOutcome::Overflow { what, n } => overflow(what.as_ptr(), n),
         }
     }
+
+    /// Map this cold outcome to the unified [`EngineAbort`] terminal (`01d`
+    /// §5.5), mirroring [`finish`](ErrorOutcome::finish) arm-for-arm but
+    /// *without* firing — the caller propagates the value up to `tt_run_engine`,
+    /// which runs the print+cleanup via [`EngineAbort::into_history`]. The
+    /// `Halt`/`Hundred` `post_error_message(false)` runs inside
+    /// `into_history(HaltMessage)`, not here. `Continue` never reaches a terminal.
+    pub(crate) fn into_engine_abort(self) -> EngineAbort {
+        match self {
+            ErrorOutcome::Continue => {
+                unreachable!("Continue is never propagated as a terminal abort")
+            }
+            ErrorOutcome::Halt => EngineAbort::HaltMessage(
+                c"halted on potentially-recoverable error as specified".as_ptr(),
+            ),
+            ErrorOutcome::Hundred => EngineAbort::HaltMessage(
+                c"halted after 100 potentially-recoverable errors".as_ptr(),
+            ),
+            ErrorOutcome::Confusion(msg) => EngineAbort::Confusion(msg.as_ptr()),
+            ErrorOutcome::Overflow { what, n } => EngineAbort::Overflow {
+                what: what.as_ptr(),
+                n,
+            },
+        }
+    }
 }
 
 /// Handle a recoverable TeX error.

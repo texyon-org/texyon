@@ -232,6 +232,22 @@ pub(crate) unsafe fn fire_make_tex_string(e: MakeTexStringAbort) -> ! {
     }
 }
 
+impl MakeTexStringAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`fire_make_tex_string`] without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            MakeTexStringAbort::PoolOverflow => {
+                crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
+            }
+            MakeTexStringAbort::StringOverflow => crate::errors::EngineAbort::Overflow {
+                what: c"number of strings".as_ptr(),
+                n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
+            },
+        }
+    }
+}
+
 /// translated from xetex-texmfmp.c:245 (maketexstring)
 pub unsafe fn maketexstring(s: *const libc::c_char) -> i32 {
     match crate::state::with_state_mut(|st| maketexstring_in(&mut st.strings, s)) {

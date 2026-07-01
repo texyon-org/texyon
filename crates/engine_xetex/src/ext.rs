@@ -2501,15 +2501,20 @@ pub(crate) enum InsertSrcAbort {
 }
 
 impl InsertSrcAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`fire`](InsertSrcAbort::fire) without longjmp-ing. `MakeSrcPool` is the
+    /// `fire_make_src_pool_overflow` `_tt_abort`; `MainMemory` runs `runaway`.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            InsertSrcAbort::MakeSrcPool => crate::texmfmp::fire_make_src_pool_overflow(),
-            InsertSrcAbort::StrToksPool => crate::errors::overflow(
-                c"pool size".as_ptr(),
-                crate::globals::pool_size() - crate::globals::init_pool_ptr(),
-            ),
-            InsertSrcAbort::MainMemory => crate::mem::fire_main_memory_overflow(),
-            InsertSrcAbort::Input(e) => e.fire(),
+            InsertSrcAbort::MakeSrcPool => {
+                crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
+            }
+            InsertSrcAbort::StrToksPool => crate::errors::EngineAbort::Overflow {
+                what: c"pool size".as_ptr(),
+                n: crate::globals::pool_size() - crate::globals::init_pool_ptr(),
+            },
+            InsertSrcAbort::MainMemory => crate::mem::main_memory_overflow_abort(),
+            InsertSrcAbort::Input(e) => e.into_engine_abort(),
         }
     }
 }

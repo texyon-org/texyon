@@ -45,6 +45,29 @@ pub(crate) fn trie_abort(e: TrieAbort) -> ! {
     }
 }
 
+impl TrieAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`trie_abort`] without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            TrieAbort::PatternMemoryOverflow(size) => crate::errors::EngineAbort::Overflow {
+                what: c"pattern memory".as_ptr(),
+                n: size,
+            },
+            TrieAbort::PatternMemoryOpsOverflow(size) => crate::errors::EngineAbort::Overflow {
+                what: c"pattern memory ops".as_ptr(),
+                n: size,
+            },
+            TrieAbort::PatternMemoryOpsPerLanguageOverflow(size) => {
+                crate::errors::EngineAbort::Overflow {
+                    what: c"pattern memory ops per language".as_ptr(),
+                    n: size,
+                }
+            }
+        }
+    }
+}
+
 fn new_trie_op_in(
     hyph: &mut HyphState,
     cur_lang: u8,

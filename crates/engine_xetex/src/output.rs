@@ -3258,17 +3258,17 @@ pub(crate) enum IssueMessageAbort {
 }
 
 impl IssueMessageAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire()` cold-abort tail without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            IssueMessageAbort::Scanner(e) => e.fire(),
-            IssueMessageAbort::NodeRecycle(e) => crate::scan::node_recycle_abort(e),
-            IssueMessageAbort::Error(o) => {
-                o.finish();
-                unreachable!("issue_message error outcome should be divergent")
-            }
-            IssueMessageAbort::PoolSize => {
-                crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr())
-            }
+            IssueMessageAbort::Scanner(e) => e.into_engine_abort(),
+            IssueMessageAbort::NodeRecycle(e) => e.into_engine_abort(),
+            IssueMessageAbort::Error(o) => o.into_engine_abort(),
+            IssueMessageAbort::PoolSize => crate::errors::EngineAbort::Overflow {
+                what: c"pool size".as_ptr(),
+                n: pool_size() - init_pool_ptr(),
+            },
         }
     }
 }
@@ -3610,16 +3610,19 @@ pub(crate) enum ShowWhateverAbort {
 }
 
 impl ShowWhateverAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire()` cold-abort tail without longjmp-ing. `MainMemoryOverflow`
+    /// is a plain overflow (no `runaway`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            ShowWhateverAbort::Scanner(e) => e.fire(),
-            ShowWhateverAbort::Error(o) => {
-                o.finish();
-                unreachable!("show_whatever error outcome should be divergent")
-            }
+            ShowWhateverAbort::Scanner(e) => e.into_engine_abort(),
+            ShowWhateverAbort::Error(o) => o.into_engine_abort(),
             ShowWhateverAbort::MainMemoryOverflow => {
                 const MEM_TOP: i32 = 4_999_999;
-                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+                crate::errors::EngineAbort::Overflow {
+                    what: c"main memory size".as_ptr(),
+                    n: MEM_TOP + 1,
+                }
             }
         }
     }

@@ -1358,6 +1358,17 @@ impl From<NodeRecycleAbort> for VertBreakAbort {
     }
 }
 
+impl VertBreakAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// `PageBuildAbort::VertBreak` arms of `fire_page_build_abort`.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            VertBreakAbort::NodeRecycle(e) => e.into_engine_abort(),
+            VertBreakAbort::Error(o) => o.into_engine_abort(),
+        }
+    }
+}
+
 /// `&mut EngineState` form of [`vert_break`]: runs the vertical-break state
 /// machine, emits the infinite-shrinkage diagnostic, and repairs the offending
 /// glue without dropping the caller's state borrow. The cold abort sentinel is
@@ -1719,6 +1730,17 @@ pub(crate) enum VsplitAbort {
 impl From<NodeRecycleAbort> for VsplitAbort {
     fn from(e: NodeRecycleAbort) -> Self {
         VsplitAbort::Node(e)
+    }
+}
+
+impl VsplitAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// `MainControlAbort::Vsplit` arms of `MainControlAbort::fire`.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            VsplitAbort::Node(e) => e.into_engine_abort(),
+            VsplitAbort::Error(o) => o.into_engine_abort(),
+        }
     }
 }
 

@@ -9,7 +9,7 @@ use crate::node::{
     ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, KernNode,
     LigatureNode, MathNode, NodePtr, PassiveNode, PenaltyNode, WhatsitNode,
 };
-use crate::scan::{node_recycle_abort, NodeRecycleAbort};
+use crate::scan::NodeRecycleAbort;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, HyphState, LinebreakState,
     MemState, ScannerState,
@@ -1283,33 +1283,31 @@ pub(crate) enum LineBreakOutcome {
     Error(crate::errors::ErrorOutcome),
 }
 
-/// Dispatch a deferred [`LineBreakOutcome`] cold abort after the state borrow
-/// has dropped (`01b` §5). Shared by the [`line_break`] wrapper and threaded
-/// callers (e.g. `end_graf_in`). `Done` is a no-op.
-pub(crate) unsafe fn fire_line_break_outcome(o: LineBreakOutcome) {
-    const MEM_TOP: i32 = 4_999_999;
-    match o {
-        LineBreakOutcome::Done => {}
-        LineBreakOutcome::Overflow => {
-            crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
-        }
-        LineBreakOutcome::Node(e) => node_recycle_abort(e),
-        LineBreakOutcome::TryBreak(TryBreakAbort::Node(e)) => node_recycle_abort(e),
-        LineBreakOutcome::TryBreak(TryBreakAbort::HlistStackFailure) => {
-            crate::errors::pdf_error(c"total_pw".as_ptr(), c"hlist stack failure".as_ptr())
-        }
-        LineBreakOutcome::Hyphenate(a) => a.finish(),
-        LineBreakOutcome::Trie(e) => crate::hyphenation::trie_abort(e),
-        LineBreakOutcome::PostLineBreak(o) => match o {
-            PostLineBreakOutcome::Done => {}
-            PostLineBreakOutcome::Node(e) => node_recycle_abort(e),
-            PostLineBreakOutcome::PdfError { proc_name, message } => {
-                crate::errors::pdf_error(proc_name.as_ptr(), message.as_ptr())
+impl LineBreakOutcome {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire_line_break_outcome` dispatcher arm-for-arm without
+    /// longjmp-ing. `Done` never reaches a terminal (callers filter it before
+    /// propagating).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        const MEM_TOP: i32 = 4_999_999;
+        match self {
+            LineBreakOutcome::Done => {
+                unreachable!("LineBreakOutcome::Done is never propagated as a terminal abort")
             }
-            PostLineBreakOutcome::Confusion(message) => crate::errors::confusion(message.as_ptr()),
-        },
-        LineBreakOutcome::Confusion(message) => crate::errors::confusion(message.as_ptr()),
-        LineBreakOutcome::Error(o) => o.finish(),
+            LineBreakOutcome::Overflow => crate::errors::EngineAbort::Overflow {
+                what: c"main memory size".as_ptr(),
+                n: MEM_TOP + 1,
+            },
+            LineBreakOutcome::Node(e) => e.into_engine_abort(),
+            LineBreakOutcome::TryBreak(a) => a.into_engine_abort(),
+            LineBreakOutcome::Hyphenate(a) => a.into_engine_abort(),
+            LineBreakOutcome::Trie(e) => e.into_engine_abort(),
+            LineBreakOutcome::PostLineBreak(o) => o.into_engine_abort(),
+            LineBreakOutcome::Confusion(message) => {
+                crate::errors::EngineAbort::Confusion(message.as_ptr())
+            }
+            LineBreakOutcome::Error(o) => o.into_engine_abort(),
+        }
     }
 }
 
@@ -2589,6 +2587,29 @@ pub(crate) enum PostLineBreakOutcome {
     Confusion(&'static std::ffi::CStr),
 }
 
+impl PostLineBreakOutcome {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// `PostLineBreak` arms of [`fire_line_break_outcome`]. `Done` never reaches
+    /// a terminal.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            PostLineBreakOutcome::Done => {
+                unreachable!("PostLineBreakOutcome::Done is never propagated as a terminal abort")
+            }
+            PostLineBreakOutcome::Node(e) => e.into_engine_abort(),
+            PostLineBreakOutcome::PdfError { proc_name, message } => {
+                crate::errors::EngineAbort::PdfError {
+                    t: proc_name.as_ptr(),
+                    p: message.as_ptr(),
+                }
+            }
+            PostLineBreakOutcome::Confusion(message) => {
+                crate::errors::EngineAbort::Confusion(message.as_ptr())
+            }
+        }
+    }
+}
+
 /// Threaded core (Phase C) of [`post_line_break`]: holds one `&mut EngineState`
 /// borrow across the whole per-line loop. The `hpack` packaging (and its
 /// in-order over/underfull diagnostic) runs via
@@ -2670,6 +2691,20 @@ fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBr
 pub(crate) enum TryBreakAbort {
     Node(NodeRecycleAbort),
     HlistStackFailure,
+}
+
+impl TryBreakAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// `TryBreak` arms of [`fire_line_break_outcome`].
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            TryBreakAbort::Node(e) => e.into_engine_abort(),
+            TryBreakAbort::HlistStackFailure => crate::errors::EngineAbort::PdfError {
+                t: c"total_pw".as_ptr(),
+                p: c"hlist stack failure".as_ptr(),
+            },
+        }
+    }
 }
 
 // translated from xetex-linebreak.c:978 (try_break)
@@ -3373,6 +3408,18 @@ pub(crate) enum HyphNativeAbort {
     Confusion(&'static std::ffi::CStr),
 }
 
+impl HyphNativeAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// `Native` arms of [`HyphenateAbort::finish`].
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            HyphNativeAbort::Recycle(e) => e.into_engine_abort(),
+            HyphNativeAbort::NativeChar(nc) => nc.into_engine_abort(),
+            HyphNativeAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
+        }
+    }
+}
+
 pub(crate) enum HyphenateAbort {
     MainMemoryOverflow,
     Native(HyphNativeAbort),
@@ -3382,20 +3429,20 @@ pub(crate) enum HyphenateAbort {
 }
 
 impl HyphenateAbort {
-    fn finish(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `finish()` cold-abort tail without longjmp-ing. `MainMemoryOverflow`
+    /// is a plain overflow (no `runaway`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        const MEM_TOP: i32 = 4_999_999;
         match self {
-            HyphenateAbort::MainMemoryOverflow => unsafe {
-                const MEM_TOP: i32 = 4_999_999;
-                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
+            HyphenateAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
+                what: c"main memory size".as_ptr(),
+                n: MEM_TOP + 1,
             },
-            HyphenateAbort::Native(HyphNativeAbort::Recycle(e)) => unsafe { node_recycle_abort(e) },
-            HyphenateAbort::Native(HyphNativeAbort::NativeChar(nc)) => nc.finish(),
-            HyphenateAbort::Native(HyphNativeAbort::Confusion(msg)) => unsafe {
-                crate::errors::confusion(msg.as_ptr())
-            },
-            HyphenateAbort::NewCharacter(nc) => nc.finish(),
-            HyphenateAbort::Recycle(e) => unsafe { node_recycle_abort(e) },
-            HyphenateAbort::Confusion(msg) => unsafe { crate::errors::confusion(msg.as_ptr()) },
+            HyphenateAbort::Native(a) => a.into_engine_abort(),
+            HyphenateAbort::NewCharacter(nc) => nc.into_engine_abort(),
+            HyphenateAbort::Recycle(e) => e.into_engine_abort(),
+            HyphenateAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
         }
     }
 }

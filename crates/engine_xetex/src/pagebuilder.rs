@@ -235,28 +235,26 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
     Ok(())
 }
 
-pub(crate) unsafe fn fire_page_build_abort(a: PageBuildAbort) -> ! {
-    match a {
-        PageBuildAbort::Input(a) => a.fire(),
-        PageBuildAbort::NodeRecycle(a) => crate::scan::node_recycle_abort(a),
-        PageBuildAbort::Save(a) => {
-            crate::save::raise_save_abort(Some(a));
-            unreachable!("save abort returned")
+impl PageBuildAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire_page_build_abort` dispatcher arm-for-arm without longjmp-ing.
+    /// `MainMemoryOverflow` is a plain overflow; `MainMemoryOverflowRunaway`
+    /// runs `runaway` first.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            PageBuildAbort::Input(a) => a.into_engine_abort(),
+            PageBuildAbort::NodeRecycle(a) => a.into_engine_abort(),
+            PageBuildAbort::Save(a) => a.into_engine_abort(),
+            PageBuildAbort::Scc(a) => a.into_engine_abort(),
+            PageBuildAbort::Shipout(a) => a.into_engine_abort(),
+            PageBuildAbort::VertBreak(a) => a.into_engine_abort(),
+            PageBuildAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
+                what: c"main memory size".as_ptr(),
+                n: MEM_TOP + 1,
+            },
+            PageBuildAbort::MainMemoryOverflowRunaway => crate::mem::main_memory_overflow_abort(),
+            PageBuildAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s.as_ptr()),
         }
-        PageBuildAbort::Scc(a) => a.fire(),
-        PageBuildAbort::Shipout(a) => crate::shipout::fire_shipout_abort(a),
-        PageBuildAbort::VertBreak(crate::packaging::VertBreakAbort::NodeRecycle(a)) => {
-            crate::scan::node_recycle_abort(a)
-        }
-        PageBuildAbort::VertBreak(crate::packaging::VertBreakAbort::Error(e)) => {
-            e.finish();
-            unreachable!("terminal vert_break error outcome returned")
-        }
-        PageBuildAbort::MainMemoryOverflow => {
-            crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
-        }
-        PageBuildAbort::MainMemoryOverflowRunaway => crate::mem::fire_main_memory_overflow(),
-        PageBuildAbort::Confusion(s) => crate::errors::confusion(s.as_ptr()),
     }
 }
 

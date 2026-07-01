@@ -945,6 +945,16 @@ impl OpenOrCloseAbort {
             OpenOrCloseAbort::MakeString(e) => crate::texmfmp::fire_make_tex_string(e),
         }
     }
+
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`fire`](OpenOrCloseAbort::fire) without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            OpenOrCloseAbort::Scanner(e) => e.into_engine_abort(),
+            OpenOrCloseAbort::Name(e) => e.into_engine_abort(),
+            OpenOrCloseAbort::MakeString(e) => e.into_engine_abort(),
+        }
+    }
 }
 
 /// Bridge-down wrapper for legacy callers (`01b` §3, §5).
@@ -1085,6 +1095,23 @@ pub(crate) unsafe fn fire_name_overflow(e: NameAbort) -> ! {
             c"number of strings".as_ptr(),
             crate::globals::max_strings() - crate::globals::init_str_ptr(),
         ),
+    }
+}
+
+impl NameAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`fire_name_overflow`] without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            NameAbort::PoolSize => crate::errors::EngineAbort::Overflow {
+                what: c"pool size".as_ptr(),
+                n: pool_size() - init_pool_ptr(),
+            },
+            NameAbort::NumberOfStrings => crate::errors::EngineAbort::Overflow {
+                what: c"number of strings".as_ptr(),
+                n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
+            },
+        }
     }
 }
 /// `&mut EngineState` core of [`end_name`] (`01b` §3). Touches `strings` +
@@ -1280,6 +1307,18 @@ impl OpenLogAbort {
             OpenLogAbort::MakeString(e) => crate::texmfmp::fire_make_tex_string(e),
             OpenLogAbort::Name(e) => fire_name_overflow(e),
             OpenLogAbort::CannotOpen => _tt_abort(c"cannot open log file output".as_ptr()),
+        }
+    }
+
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`fire`](OpenLogAbort::fire) without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            OpenLogAbort::MakeString(e) => e.into_engine_abort(),
+            OpenLogAbort::Name(e) => e.into_engine_abort(),
+            OpenLogAbort::CannotOpen => {
+                crate::errors::EngineAbort::TtAbort(c"cannot open log file output".as_ptr())
+            }
         }
     }
 }

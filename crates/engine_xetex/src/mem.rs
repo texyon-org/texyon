@@ -103,6 +103,20 @@ pub(crate) unsafe fn fire_main_memory_overflow() -> ! {
     overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
 }
 
+/// The `main memory size` overflow as an [`EngineAbort`] value (`01d` §5.5) —
+/// the non-longjmp twin of [`fire_main_memory_overflow`]: run `runaway()` (the
+/// runaway-diagnostic side effect) then hand back the `Overflow` terminal for
+/// the caller to propagate. Call only *after* the state borrow drops (`runaway`
+/// re-enters `with_state`).
+pub(crate) fn main_memory_overflow_abort() -> crate::errors::EngineAbort {
+    // SAFETY: post-borrow; `runaway` re-enters `with_state` freely here.
+    unsafe { runaway() };
+    crate::errors::EngineAbort::Overflow {
+        what: c"main memory size".as_ptr(),
+        n: MEM_TOP + 1,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // flush_list
 // ---------------------------------------------------------------------------
@@ -635,13 +649,16 @@ pub(crate) enum PushNestAbort {
 }
 
 impl PushNestAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire()` cold-abort tail without longjmp-ing. `MainMemory` runs
+    /// `runaway` first (via `main_memory_overflow_abort`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            PushNestAbort::SemanticNest => {
-                let n = nest_size();
-                crate::errors::overflow(c"semantic nest size".as_ptr(), n)
-            }
-            PushNestAbort::MainMemory => fire_main_memory_overflow(),
+            PushNestAbort::SemanticNest => crate::errors::EngineAbort::Overflow {
+                what: c"semantic nest size".as_ptr(),
+                n: nest_size(),
+            },
+            PushNestAbort::MainMemory => main_memory_overflow_abort(),
         }
     }
 }

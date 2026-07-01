@@ -1324,6 +1324,23 @@ pub(crate) unsafe fn node_recycle_abort(e: NodeRecycleAbort) -> ! {
     }
 }
 
+impl NodeRecycleAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`node_recycle_abort`] without longjmp-ing. Call only *after* the state
+    /// borrow drops (`OverflowRunaway` re-enters `with_state` via `runaway`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        const MEM_TOP_NR: i32 = 4_999_999;
+        match self {
+            NodeRecycleAbort::Overflow => crate::errors::EngineAbort::Overflow {
+                what: c"main memory size".as_ptr(),
+                n: MEM_TOP_NR + 1,
+            },
+            NodeRecycleAbort::OverflowRunaway => crate::mem::main_memory_overflow_abort(),
+            NodeRecycleAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
+        }
+    }
+}
+
 /// `get_node` under the `mem` borrow, returning [`NodeRecycleAbort::Overflow`]
 /// from the enclosing function on arena exhaustion (`01b` §5 sentinel).
 macro_rules! cnl_get_node {
@@ -2330,6 +2347,39 @@ impl SccAbort {
             SccAbort::PdfError { t, p } => crate::errors::pdf_error(t, p),
             SccAbort::OpenLog(e) => e.fire(),
             SccAbort::MakeTexString(e) => crate::texmfmp::fire_make_tex_string(e),
+        }
+    }
+
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`fire`](SccAbort::fire) arm-for-arm without longjmp-ing. Call only
+    /// *after* the state borrow drops (`NoLegalEnd` opens the log, the recursive
+    /// arms re-enter `with_state`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            SccAbort::Error(oc) => oc.into_engine_abort(),
+            SccAbort::Input(a) => a.into_engine_abort(),
+            SccAbort::NoLegalEnd { open_log } => {
+                if open_log {
+                    // SAFETY: post-borrow; `open_log_file` re-enters `with_state`.
+                    unsafe { open_log_file() };
+                }
+                crate::errors::EngineAbort::Fatal(
+                    c"*** (job aborted, no legal \\end found)".as_ptr(),
+                )
+            }
+            SccAbort::TokensToString(a) => match a {
+                TokensToStringAbort::SelectorNewString => crate::errors::EngineAbort::PdfError {
+                    t: c"tokens".as_ptr(),
+                    p: c"tokens_to_string() called while selector = new_string".as_ptr(),
+                },
+                TokensToStringAbort::StringOverflow => crate::errors::EngineAbort::Overflow {
+                    what: c"number of strings".as_ptr(),
+                    n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
+                },
+            },
+            SccAbort::PdfError { t, p } => crate::errors::EngineAbort::PdfError { t, p },
+            SccAbort::OpenLog(e) => e.into_engine_abort(),
+            SccAbort::MakeTexString(e) => e.into_engine_abort(),
         }
     }
 }

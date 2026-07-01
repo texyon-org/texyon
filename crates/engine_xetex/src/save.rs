@@ -51,14 +51,17 @@ pub(crate) enum SaveAbort {
     Confusion(&'static std::ffi::CStr),
 }
 
-/// Raise a deferred [`SaveAbort`] after the state borrow has dropped. Never
-/// returns when `a` is `Some` (both arms `longjmp`).
-#[inline]
-pub(crate) unsafe fn raise_save_abort(a: Option<SaveAbort>) {
-    match a {
-        Some(SaveAbort::Overflow(s, n)) => crate::errors::overflow(s.as_ptr(), n),
-        Some(SaveAbort::Confusion(s)) => crate::errors::confusion(s.as_ptr()),
-        None => {}
+impl SaveAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `raise_save_abort` mapping without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            SaveAbort::Overflow(s, n) => crate::errors::EngineAbort::Overflow {
+                what: s.as_ptr(),
+                n,
+            },
+            SaveAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s.as_ptr()),
+        }
     }
 }
 
@@ -622,15 +625,20 @@ pub(crate) enum SaMutationAbort {
 }
 
 impl SaMutationAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire()` cold-abort tail without longjmp-ing. `MainMemory` here is
+    /// a plain overflow (no `runaway`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            SaMutationAbort::MainMemory => {
-                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
-            }
-            SaMutationAbort::SaveOverflow => {
-                crate::errors::overflow(c"save size".as_ptr(), save_size())
-            }
-            SaMutationAbort::Confusion(m) => crate::errors::confusion(m.as_ptr()),
+            SaMutationAbort::MainMemory => crate::errors::EngineAbort::Overflow {
+                what: c"main memory size".as_ptr(),
+                n: MEM_TOP + 1,
+            },
+            SaMutationAbort::SaveOverflow => crate::errors::EngineAbort::Overflow {
+                what: c"save size".as_ptr(),
+                n: save_size(),
+            },
+            SaMutationAbort::Confusion(m) => crate::errors::EngineAbort::Confusion(m.as_ptr()),
         }
     }
 }
@@ -706,14 +714,14 @@ pub(crate) enum UnsaveAbort {
 }
 
 impl UnsaveAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `fire()` cold-abort tail without longjmp-ing. `MainMemory` runs
+    /// `runaway` (via `main_memory_overflow_abort`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            UnsaveAbort::Save(a) => {
-                raise_save_abort(Some(a));
-                unreachable!("save abort should be divergent")
-            }
-            UnsaveAbort::Input(e) => e.fire(),
-            UnsaveAbort::MainMemory => crate::mem::fire_main_memory_overflow(),
+            UnsaveAbort::Save(a) => a.into_engine_abort(),
+            UnsaveAbort::Input(e) => e.into_engine_abort(),
+            UnsaveAbort::MainMemory => crate::mem::main_memory_overflow_abort(),
         }
     }
 }

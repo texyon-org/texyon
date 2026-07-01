@@ -1454,7 +1454,12 @@ pub unsafe extern "C" fn tt_run_engine(
     crate::state::with_state_mut(|st| crate::synctex::synctex_init_command(st));
     crate::io::start_input(input_file_name);
     crate::globals::set_history(HISTORY_SPOTLESS);
-    crate::main_control::main_control();
+    if let Err(a) = crate::main_control::main_control() {
+        // A fatal main-control abort. into_history runs the print + cleanup and
+        // returns HISTORY_FATAL_ERROR, skipping final_cleanup — identical to the
+        // old `MainControlAbort::fire` longjmp straight to the setjmp (`01d` §5.5).
+        return a.into_history();
+    }
     if let Err(a) = final_cleanup() {
         // into_history runs the print + cleanup (incl. close_files_and_terminate
         // + tt_cleanup via post_error_message) and returns HISTORY_FATAL_ERROR —

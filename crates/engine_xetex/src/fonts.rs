@@ -12,7 +12,7 @@ use crate::ext::{
 use crate::io::{pack_file_name_in, tt_xetex_open_input_in};
 use crate::output::char_warning_in;
 use crate::scan::cnl_get_node;
-use crate::scan::{node_recycle_abort, NodeRecycleAbort};
+use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, FontState};
 
 extern "C" {
@@ -149,23 +149,21 @@ pub(crate) enum NativeCharAbort {
 }
 
 impl NativeCharAbort {
-    /// Run the divergent cold-abort tail. Must be called *after* the state borrow
-    /// that produced the sentinel has dropped (§5). Shared by the
-    /// [`new_native_character`] wrapper and the threaded hyphenation island.
-    pub(crate) fn finish(self) -> ! {
-        // SAFETY: every arm is a `-> !` cold-abort tail (overflow / confusion /
-        // _tt_abort), run only after the producing state borrow has dropped.
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `finish()` cold-abort tail without longjmp-ing. Call only *after*
+    /// the producing state borrow has dropped (`PoolOverflow` re-reads state).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             NativeCharAbort::PoolOverflow => {
                 let (pool_size, init_pool_ptr) =
                     crate::state::with_state(|st| (st.strings.pool_size, st.strings.init_pool_ptr));
-                unsafe { crate::errors::overflow(c"pool size".as_ptr(), pool_size - init_pool_ptr) }
+                crate::errors::EngineAbort::Overflow {
+                    what: c"pool size".as_ptr(),
+                    n: pool_size - init_pool_ptr,
+                }
             }
-            NativeCharAbort::Recycle(e) => unsafe { node_recycle_abort(e) },
-            NativeCharAbort::Error(outcome) => {
-                unsafe { outcome.finish() };
-                unreachable!("char_warning outcome is always divergent here")
-            }
+            NativeCharAbort::Recycle(e) => e.into_engine_abort(),
+            NativeCharAbort::Error(outcome) => outcome.into_engine_abort(),
         }
     }
 }
@@ -327,16 +325,15 @@ pub(crate) enum ReadFontInfoAbort {
 }
 
 impl ReadFontInfoAbort {
-    pub(crate) fn finish(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `finish()` cold-abort tail without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            ReadFontInfoAbort::TfmOutOfMemory => unsafe {
-                _tt_abort(c"not enough memory to load another font".as_ptr())
-            },
-            ReadFontInfoAbort::Native(e) => e.finish(),
-            ReadFontInfoAbort::Error(outcome) => {
-                unsafe { outcome.finish() };
-                unreachable!("read_font_info error outcome is divergent here")
-            }
+            ReadFontInfoAbort::TfmOutOfMemory => crate::errors::EngineAbort::TtAbort(
+                c"not enough memory to load another font".as_ptr(),
+            ),
+            ReadFontInfoAbort::Native(e) => e.into_engine_abort(),
+            ReadFontInfoAbort::Error(outcome) => outcome.into_engine_abort(),
         }
     }
 }
@@ -1020,19 +1017,21 @@ pub(crate) enum LoadNativeFontAbort {
 }
 
 impl LoadNativeFontAbort {
-    pub(crate) fn finish(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `finish()` cold-abort tail without longjmp-ing.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             LoadNativeFontAbort::PoolOverflow => {
                 let (pool_size, init_pool_ptr) =
                     crate::state::with_state(|st| (st.strings.pool_size, st.strings.init_pool_ptr));
-                unsafe { crate::errors::overflow(c"pool size".as_ptr(), pool_size - init_pool_ptr) }
+                crate::errors::EngineAbort::Overflow {
+                    what: c"pool size".as_ptr(),
+                    n: pool_size - init_pool_ptr,
+                }
             }
-            LoadNativeFontAbort::StringOverflow(e) => unsafe { node_recycle_abort(e) },
-            LoadNativeFontAbort::NativeChar(e) => e.finish(),
-            LoadNativeFontAbort::Error(outcome) => {
-                unsafe { outcome.finish() };
-                unreachable!("load_native_font error outcome is divergent here")
-            }
+            LoadNativeFontAbort::StringOverflow(e) => e.into_engine_abort(),
+            LoadNativeFontAbort::NativeChar(e) => e.into_engine_abort(),
+            LoadNativeFontAbort::Error(outcome) => outcome.into_engine_abort(),
         }
     }
 }

@@ -2036,19 +2036,14 @@ pub(crate) enum NewCharacterAbort {
 }
 
 impl NewCharacterAbort {
-    pub(crate) fn finish(self) -> ! {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// former `finish()` cold-abort tail without longjmp-ing. `MainMemoryOverflow`
+    /// runs `runaway` first (via `main_memory_overflow_abort`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            NewCharacterAbort::Native(a) => a.finish(),
-            NewCharacterAbort::Error(outcome) => {
-                // SAFETY: only non-Continue warning outcomes are wrapped here.
-                unsafe { outcome.finish() };
-                unreachable!("char_warning abort outcome should be divergent")
-            }
-            NewCharacterAbort::MainMemoryOverflow => unsafe {
-                const MEM_TOP: i32 = 4_999_999;
-                crate::errors::runaway();
-                crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
-            },
+            NewCharacterAbort::Native(a) => a.into_engine_abort(),
+            NewCharacterAbort::Error(outcome) => outcome.into_engine_abort(),
+            NewCharacterAbort::MainMemoryOverflow => crate::mem::main_memory_overflow_abort(),
         }
     }
 }
@@ -2187,45 +2182,35 @@ impl From<crate::fonts::ReadFontInfoAbort> for MainControlAbort {
 }
 
 impl MainControlAbort {
-    pub(crate) unsafe fn fire(self) -> ! {
+    /// Map the aggregated main-control cold abort to the unified [`EngineAbort`]
+    /// terminal (`01d` §5.5), delegating to each leaf's `into_engine_abort`. Runs
+    /// *after* the `main_control_in` borrow drops (fired at [`main_control`]);
+    /// `tt_run_engine` then prints + cleans via [`EngineAbort::into_history`]
+    /// instead of longjmp-ing. Replaces the former `fire()` longjmp dispatcher.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            MainControlAbort::Scanner(e) => e.fire(),
-            MainControlAbort::NodeRecycle(e) => crate::scan::node_recycle_abort(e),
-            MainControlAbort::PageBuild(e) => crate::pagebuilder::fire_page_build_abort(e),
-            MainControlAbort::LineBreak(o) => {
-                crate::linebreak::fire_line_break_outcome(o);
-                unreachable!("line_break outcome reaching MainControlAbort::fire is divergent")
-            }
-            MainControlAbort::PushNest(e) => e.fire(),
-            MainControlAbort::Vsplit(crate::packaging::VsplitAbort::Node(e)) => {
-                crate::scan::node_recycle_abort(e)
-            }
-            MainControlAbort::Vsplit(crate::packaging::VsplitAbort::Error(o)) => {
-                o.finish();
-                unreachable!("vsplit error outcome should be divergent")
-            }
-            MainControlAbort::Input(e) => e.fire(),
-            MainControlAbort::Shipout(e) => crate::shipout::fire_shipout_abort(e),
-            MainControlAbort::Save(a) => {
-                crate::save::raise_save_abort(Some(a));
-                unreachable!("save abort should be divergent")
-            }
-            MainControlAbort::SaMutation(a) => a.fire(),
-            MainControlAbort::Unsave(a) => a.fire(),
-            MainControlAbort::InsertSrc(a) => a.fire(),
-            MainControlAbort::IssueMessage(a) => a.fire(),
-            MainControlAbort::ShowWhatever(a) => a.fire(),
-            MainControlAbort::OpenLog(a) => a.fire(),
-            MainControlAbort::OpenOrClose(a) => a.fire(),
-            MainControlAbort::MakeTexString(a) => crate::texmfmp::fire_make_tex_string(a),
-            MainControlAbort::ReadFontInfo(a) => a.finish(),
-            MainControlAbort::Error(o) => {
-                o.finish();
-                unreachable!("error outcome reaching MainControlAbort::fire is divergent")
-            }
-            MainControlAbort::Confusion(m) => crate::errors::confusion(m.as_ptr()),
-            MainControlAbort::NewCharacter(a) => a.finish(),
-            MainControlAbort::Trie(e) => crate::hyphenation::trie_abort(e),
+            MainControlAbort::Scanner(e) => e.into_engine_abort(),
+            MainControlAbort::NodeRecycle(e) => e.into_engine_abort(),
+            MainControlAbort::PageBuild(e) => e.into_engine_abort(),
+            MainControlAbort::LineBreak(o) => o.into_engine_abort(),
+            MainControlAbort::PushNest(e) => e.into_engine_abort(),
+            MainControlAbort::Vsplit(a) => a.into_engine_abort(),
+            MainControlAbort::Input(e) => e.into_engine_abort(),
+            MainControlAbort::Shipout(e) => e.into_engine_abort(),
+            MainControlAbort::Save(a) => a.into_engine_abort(),
+            MainControlAbort::SaMutation(a) => a.into_engine_abort(),
+            MainControlAbort::Unsave(a) => a.into_engine_abort(),
+            MainControlAbort::InsertSrc(a) => a.into_engine_abort(),
+            MainControlAbort::IssueMessage(a) => a.into_engine_abort(),
+            MainControlAbort::ShowWhatever(a) => a.into_engine_abort(),
+            MainControlAbort::OpenLog(a) => a.into_engine_abort(),
+            MainControlAbort::OpenOrClose(a) => a.into_engine_abort(),
+            MainControlAbort::MakeTexString(a) => a.into_engine_abort(),
+            MainControlAbort::ReadFontInfo(a) => a.into_engine_abort(),
+            MainControlAbort::Error(o) => o.into_engine_abort(),
+            MainControlAbort::Confusion(m) => crate::errors::EngineAbort::Confusion(m.as_ptr()),
+            MainControlAbort::NewCharacter(a) => a.into_engine_abort(),
+            MainControlAbort::Trie(e) => e.into_engine_abort(),
         }
     }
 }
@@ -6747,11 +6732,13 @@ unsafe fn main_control_in(st: &mut crate::state::EngineState) -> Result<(), Main
     }
 }
 
-pub unsafe fn main_control() {
-    match crate::state::with_state_mut(|st| main_control_in(st)) {
-        Ok(()) => {}
-        Err(e) => e.fire(),
-    }
+/// Run the main control loop under one borrow, mapping any cold
+/// [`MainControlAbort`] to the unified [`EngineAbort`] terminal *after* the
+/// borrow drops (`01d` §5.5). `tt_run_engine` catches the `Err` and returns
+/// `into_history()` — observationally identical to the former `e.fire()` longjmp
+/// (which also skipped `final_cleanup`).
+pub unsafe fn main_control() -> Result<(), crate::errors::EngineAbort> {
+    crate::state::with_state_mut(|st| main_control_in(st)).map_err(|e| e.into_engine_abort())
 }
 
 // ---- moved verbatim from ini.rs (workstream 02) ----

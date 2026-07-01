@@ -268,6 +268,53 @@ pub(crate) unsafe fn fire_shipout_abort(a: ShipoutAbort) -> ! {
     }
 }
 
+impl ShipoutAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
+    /// [`fire_shipout_abort`] arm-for-arm without longjmp-ing. `MainMemoryOverflow`
+    /// is a plain overflow (no `runaway`). `CannotOpenOutput` rebuilds the message
+    /// from `name_of_file()` (post-borrow) into a leaked heap buffer so the
+    /// pointer stays valid through `into_history`.
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            ShipoutAbort::ConfusionLr2 => crate::errors::EngineAbort::Confusion(c"LR2".as_ptr()),
+            ShipoutAbort::PoolSizeOverflow => crate::errors::EngineAbort::Overflow {
+                what: c"pool size".as_ptr(),
+                n: pool_size() - init_pool_ptr(),
+            },
+            ShipoutAbort::NodeRecycle(e) => e.into_engine_abort(),
+            ShipoutAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
+            ShipoutAbort::DviWriteFailed => {
+                crate::errors::EngineAbort::TtAbort(c"failed to write data to XDV file".as_ptr())
+            }
+            ShipoutAbort::DviLengthOverflow => {
+                crate::errors::EngineAbort::Fatal(c"dvi length exceeds 0x7FFFFFFF".as_ptr())
+            }
+            ShipoutAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
+                what: c"main memory size".as_ptr(),
+                n: MEM_TOP + 1,
+            },
+            ShipoutAbort::Scc(e) => e.into_engine_abort(),
+            ShipoutAbort::CannotOpenOutput => {
+                let mut buf = vec![0u8; 512];
+                // SAFETY: FFI formatting into an owned 512-byte buffer; `name_of_file()`
+                // is a valid C string. The buffer is leaked below so the returned
+                // pointer outlives this frame (through `into_history`).
+                unsafe {
+                    libc::snprintf(
+                        buf.as_mut_ptr() as *mut libc::c_char,
+                        buf.len(),
+                        c"cannot open output file \"%s\"".as_ptr(),
+                        name_of_file(),
+                    );
+                }
+                let ptr = buf.leak().as_ptr() as *const libc::c_char;
+                crate::errors::EngineAbort::TtAbort(ptr)
+            }
+            ShipoutAbort::Name(e) => e.into_engine_abort(),
+        }
+    }
+}
+
 /// Threaded analog of `write_to_dvi_global`: flush `dvi_buf[a..=b]` to the
 /// output file by reading the buffer fields directly under the held borrow.
 /// The cold I/O-failure abort is deferred (§5).
