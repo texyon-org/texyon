@@ -13,7 +13,6 @@ use crate::globals::{
 // History constants (xetex-xetexd.h:355–358).
 use crate::engine::tt_cleanup;
 use crate::io::close_files_and_terminate;
-use crate::io::open_log_file;
 use crate::output::capture_to_diagnostic;
 use crate::output::error_here_with_diagnostic;
 use crate::output::print_char;
@@ -59,7 +58,13 @@ unsafe fn pre_error_message() {
         set_selector(SELECTOR_TERM_ONLY);
     }
     if job_name() == 0 {
-        open_log_file();
+        // Absorb an open-log failure instead of the open_log_file()/OpenLogAbort
+        // longjmp: pre_error_message runs inside into_history's terminal cleanup
+        // (post-borrow), which commits to HISTORY_FATAL_ERROR just below. A
+        // CannotOpen is dropped — the selector already fell back to TERM_ONLY, and
+        // into_history still returns 3 surfacing the primary abort's message
+        // (mirrors post_error_message's absorb) (`01d` §5.6).
+        let _ = crate::state::with_state_mut(|st| unsafe { crate::io::open_log_file_in(st) });
     }
     if interaction() == BATCH_MODE {
         set_selector(selector() - 1);

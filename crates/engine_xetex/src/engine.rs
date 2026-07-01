@@ -323,7 +323,12 @@ pub unsafe fn final_cleanup() -> Result<(), crate::errors::EngineAbort> {
     }
 
     if job_name() == 0 {
-        crate::io::open_log_file();
+        // Propagate an open-log failure as EngineAbort instead of the
+        // open_log_file()/OpenLogAbort longjmp: final_cleanup returns Result and
+        // is caught at tt_run_engine (`01d` §5.6). final_cleanup re-enters
+        // with_state (no long-lived borrow held here), so this is safe.
+        crate::state::with_state_mut(|st| crate::io::open_log_file_in(st))
+            .map_err(|e| e.into_engine_abort())?;
     }
 
     while crate::state::with_state(|s| s.input.input_ptr) > 0 {

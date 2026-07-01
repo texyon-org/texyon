@@ -2370,8 +2370,14 @@ impl SccAbort {
             SccAbort::Input(a) => a.into_engine_abort(),
             SccAbort::NoLegalEnd { open_log } => {
                 if open_log {
-                    // SAFETY: post-borrow; `open_log_file` re-enters `with_state`.
-                    unsafe { open_log_file() };
+                    // Absorb an open-log failure instead of the open_log_file()
+                    // longjmp: this is the Result (into_engine_abort) path, so it
+                    // must not longjmp; a CannotOpen is dropped and the Fatal below
+                    // still surfaces via into_history (`01d` §5.6). SAFETY:
+                    // post-borrow; open_log_file_in re-enters with_state.
+                    let _ = crate::state::with_state_mut(|st| unsafe {
+                        crate::io::open_log_file_in(st)
+                    });
                 }
                 crate::errors::EngineAbort::Fatal(
                     c"*** (job aborted, no legal \\end found)".as_ptr(),
