@@ -227,63 +227,6 @@ pub unsafe fn tt_xetex_open_input(filefmt: libc::c_int) -> usize {
     handle
 }
 
-// ---------------------------------------------------------------------------
-// u_open_in
-// ---------------------------------------------------------------------------
-
-/// Open a UFILE for reading with BOM-sniffing encoding detection.
-///
-/// translated from xetex-io.c:127 (u_open_in)
-pub unsafe fn u_open_in(
-    f: *mut *mut UFile,
-    filefmt: i32,
-    _fopen_mode: *const libc::c_char,
-    mut mode: i32,
-    encoding_data: i32,
-) -> libc::c_int {
-    let handle = tt_xetex_open_input(filefmt);
-    if handle == INVALID_HANDLE {
-        return 0;
-    }
-
-    *f = xmalloc(std::mem::size_of::<UFile>()) as *mut UFile;
-    (**f).encoding_mode = 0;
-    (**f).conversion_data = std::ptr::null_mut();
-    (**f).saved_char = -1;
-    (**f).skip_next_lf = 0;
-    (**f).handle = handle;
-
-    if mode == AUTO {
-        let b1 = ttstub_input_getc((**f).handle);
-        let b2 = ttstub_input_getc((**f).handle);
-
-        if b1 == 0xfe && b2 == 0xff {
-            mode = UTF16BE;
-        } else if b2 == 0xfe && b1 == 0xff {
-            mode = UTF16LE;
-        } else if b1 == 0 && b2 != 0 {
-            mode = UTF16BE;
-            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
-        } else if b2 == 0 && b1 != 0 {
-            mode = UTF16LE;
-            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
-        } else if b1 == 0xEF && b2 == 0xBB {
-            let b3 = ttstub_input_getc((**f).handle);
-            if b3 == 0xBF {
-                mode = UTF8;
-            }
-        }
-
-        if mode == AUTO {
-            ttstub_input_seek((**f).handle, 0, libc::SEEK_SET);
-            mode = UTF8;
-        }
-    }
-
-    set_input_file_encoding(*f, mode, encoding_data);
-    1
-}
-
 /// `&mut EngineState` core of [`tt_xetex_open_input`] so a threaded caller
 /// (`start_input_in`) can open under the borrow without re-entering `with_state`.
 pub(crate) unsafe fn tt_xetex_open_input_in(
@@ -390,14 +333,6 @@ pub(crate) unsafe fn u_open_in_in(
 /// Set the encoding mode (and optional ICU converter) on an open UFILE.
 ///
 /// translated from xetex-io.c:47 (set_input_file_encoding)
-pub unsafe fn set_input_file_encoding(f: *mut UFile, mode: i32, encoding_data: i32) {
-    if let Err(e) =
-        crate::state::with_state_mut(|st| set_input_file_encoding_in(st, f, mode, encoding_data))
-    {
-        crate::texmfmp::fire_make_tex_string(e);
-    }
-}
-
 pub(crate) unsafe fn set_input_file_encoding_in(
     st: &mut crate::state::EngineState,
     f: *mut UFile,
