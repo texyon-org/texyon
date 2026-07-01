@@ -370,17 +370,24 @@ or at the flip):** `input_line`, `open_or_close`, `more_name`, `end_name`,
 (`input_line_in`, `u_open_in_in`, …); the `xetex-xetexd.h` C prototypes are
 vestigial (declare C-ABI symbols no live C references). *Verified: 0 call-sites.*
 
-**`(A)` but non-trivial — convertible, NOT a wrapper-flip, deferred:** `error()`
-(`errors.rs`). The audit **corrected the recon**: `error()` has **no genuinely
-un-threadable caller** — its 4 firing sites are `store_fmt_file` ×2 (already
-`Result`), `post_error_message` (inside `into_history`'s terminal machinery — the
-`Halt`/`Hundred` outcome is absorbable, cleanup already commits to
-`HISTORY_FATAL_ERROR`), and `m_log`'s `x ≤ 0` branch (a **dead** branch —
-`norm_rand`/`\normaldeviate` always feeds `x ≥ 1`; and it runs under
-`conv_toks_in`'s held borrow with a `Result` path, so it would double-borrow-panic,
-not longjmp). So `error()` does **not** fundamentally block the flip — but
-converting it is a multi-site `ErrorOutcome`-threading change touching the
-recoverable-error machinery, so it is a separate follow-up (needs its own verify).
+**`(A)` but non-trivial — DONE (session 248):** `error()` (`errors.rs`) deleted;
+all 4 callers threaded, 6/6 adversarial-verified EQUIVALENT. The recon-corrected
+census held: `store_fmt_file` ×2 (already `Result`) → `error_in` +
+`Err(into_engine_abort())` on non-`Continue`; `post_error_message` (inside
+`into_history`'s terminal machinery) → **absorb** the nested `Halt`/`Hundred`
+outcome (`let _ = with_state_mut(error_in)`), since cleanup already commits to
+`HISTORY_FATAL_ERROR`; `m_log`'s `x ≤ 0` branch (dead — `norm_rand`/`\normaldeviate`
+always feeds `x ≥ 1`, and it runs under `conv_toks_in`'s held borrow so it
+double-borrow-panics *before* `m_log`, since norm_rand's own RNG accessors
+`random_entry`/`j_random` are `with_state`) → the same `let _ = with_state_mut(
+error_in)` (panic-identical to the old `error()`, never executed). The lone
+behavioral delta — `post_error_message`'s surfaced `format_buf` message on the
+nested-Halt terminal path (OLD "halted on potentially-recoverable error as
+specified" vs NEW the primary abort's message) — is **test-invisible**: `halt_on_
+error_p` is the harness/tectonic default, but a passing run never fires a terminal
+overflow/confusion/pdf_error, TRIP runs `halt_on_error_mode(false)`, and the message
+is never written to the compared `.log`/`.xdv`. `ErrorOutcome::finish` remains (the
+`SccAbort::fire` backstop); `error_in` stays the shared recoverable-error core.
 
 **`(B)` flip-gated — deferred-fire wrapper with an un-threadable
 terminal-machinery caller (the genuine deferred blockers):**
@@ -396,11 +403,16 @@ Converting either forces its shared cleanup helper (`pre_error_message` /
 
 **Inline longjmps — direct `_tt_abort`/`fatal_error`, not deferred-fire; block the
 setjmp until restructured:**
-- `main_control.rs:706` (`get_preamble_token_in`): direct
-  `fatal_error("(interwoven alignment preambles are not allowed)")` **under the
-  `&mut EngineState` borrow** — a still-live longjmp reachable from
-  `main_control`'s alignment path, distinct from the folded deferred
-  `MainControlAbort` spine. Needs threading as a `MainControlAbort`/align variant.
+- ~~`main_control.rs:706` (`get_preamble_token_in`) interwoven-align `fatal_error`~~
+  **DONE (session 248):** threaded via the sibling `fin_align` idiom
+  `return Err(MainControlAbort::Input(InputAbort::Fatal(msg)))` →
+  `EngineAbort::Fatal` → `into_history`, propagated by `?` through the two call
+  sites. Verified EQUIVALENT (and strictly more correct — the OLD under-borrow
+  `fatal_error` would have RefCell-panicked via `into_history`'s
+  `close_files_and_terminate` re-entering `with_state`, on an unreachable path).
+  This was the *only* live interwoven-align longjmp; the other five sites
+  (input.rs `end_token_list_in`, scan.rs `get_next`, the two `fin_align` sites)
+  were already threaded.
 - `ext.rs` native-font helpers (**13** sites): direct `_tt_abort` — 11×
   `"bad native font flag in <fn>"` (`measure_native_node`, `measure_native_glyph`,
   `get_native_char_height_depth`, `get_native_char_side_bearings`,
@@ -412,24 +424,33 @@ setjmp until restructured:**
   consistency + resource aborts. These thread only when the native-font measurement
   layer grows an error channel.
 
-**Blocker summary (what still gates setjmp deletion, post-session):** the Rust
-longjmps are now a **small, enumerable set** — the two `(B)` wrappers
-(`open_log_file`, `finalize_dvi_file`) + `error()` (`(A)`-nontrivial) + the two
-inline classes (`main_control` interwoven-align, `ext.rs` native-font ×13), plus
-the dispatcher machinery reachable *only through* those live wrappers
-(`OpenLogAbort::fire` under `open_log_file`; `fire_shipout_abort`/`SccAbort::fire`
-under `finalize_dvi_file`). Everything else reachable-and-threadable is now
-`Result`; the DEAD set never fires. The `(A)`/`(B)` split came out **`(A)`-heavier
-than expected** (8 converted + `error()` convertible) and **`(B)`-light** (only 2
-true deferred blockers), with the structural remainder being the two inline
-classes. This is the precondition proof for **Stage II** (§2): neutralize the
-C-side `bridge_core` I/O longjmps (`ttstub_input_seek`/`close`) + `xmalloc`; then
-the flip (§6) is gated only on `error()` + the two inline classes threading.
+**Blocker summary (what still gates setjmp deletion, after session 248).** Stage II
+(§2, session 247) neutralized the bridge_core `ttstub_input_seek`/`close` longjmps
+except two deferred `input_close` sites (`u_close`, `load_mapping_file_in`); session
+248 threaded `error()` (deleted) and the `main_control` interwoven-align inline
+`fatal_error`. So the Rust `_tt_abort` residue is now just:
+- **`open_log_file` + `finalize_dvi_file`** — the two `(B)` deferred-fire wrappers
+  with an un-threadable caller inside `into_history`'s terminal machinery
+  (`pre_error_message` / `close_files_and_terminate`), plus the dispatcher machinery
+  reachable *only through* them (`OpenLogAbort::fire`; `fire_shipout_abort`/
+  `SccAbort::fire`). Converting either forces its shared cleanup helper to return
+  `Result` — a §6-flip concern (how the terminal handlers absorb a *second* error
+  during cleanup, the pattern `post_error_message`'s absorb established).
+- **`ext.rs` native-font ×13** — the one remaining inline class; threads only when
+  the native-font measurement layer grows an error channel (also unblocks the
+  deferred `load_mapping_file_in` `_tt_abort` + input-close).
+
+Everything else reachable-and-threadable is now `Result`; the DEAD set never fires.
+The flip (§6) is gated only on these three clusters + the two deferred bridge_core
+input-closes.
 
 ## 6. Final flip (all-or-nothing, later session)
 
 Once **no Rust path longjmps** (steps 1–5 done) *and* Stage II (§2) neutralizes
-the bridge_core I/O longjmps:
+the bridge_core I/O longjmps. **Remaining preconditions (after session 248):** the
+`open_log_file`/`finalize_dvi_file` `(B)` pair + `ext.rs` native-font ×13 inline
+class (§5.6 blocker summary), and the two deferred `ttstub_input_close` sites
+(`u_close`, `load_mapping_file_in`, §2.1). When those are gone:
 
 - `tt_run_engine` owns `let mut st = EngineState::new();` and threads `&mut st`
   everywhere; its body becomes `match inner(&mut st) { Ok(h) => h, Err(a) =>

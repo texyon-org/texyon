@@ -4,6 +4,37 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-07-01 (last session = session 248, **execution — the two most
+tractable Rust `_tt_abort` residue pieces: the `main_control` interwoven-align inline
+`fatal_error` and the whole `error()` recoverable-error wrapper (`01d` §5.6)**. Three
+commits (dashboard **29/2/7/4** each; `unsafe fn` **260→259**; warnings **37**) + a
+6-agent adversarial verify (**6/6 EQUIVALENT**). (1) `ceea6093`:
+`get_preamble_token_in`'s `ENDV` interwoven-align `fatal_error` — the last inline
+longjmp under the `&mut EngineState` borrow — threaded via the sibling `fin_align`
+idiom `return Err(MainControlAbort::Input(InputAbort::Fatal(msg)))` → `EngineAbort::
+Fatal` → `into_history` (the other five interwoven-align sites were already threaded).
+(2) `a9030166`: the two `store_fmt_file` recoverable `error()` sites (`\dump`-in-group,
+native-fonts refusal) → `error_in` + `Err(into_engine_abort())` on non-`Continue`.
+(3) `0cd792f4`: the last two callers + **delete `error()`** — `m_log`'s `x<=0` branch
+(dead: `norm_rand` always passes `x>=1`; runs under `conv_toks_in`'s borrow so it
+double-borrow-panics before `m_log`, panic-identical to the old `error()`) and
+`post_error_message` (absorb the nested Halt/Hundred outcome; it runs inside
+`into_history`'s terminal cleanup already committed to `HISTORY_FATAL_ERROR`). Verifier
+finding: the OLD under-borrow interwoven `fatal_error` would have RefCell-panicked if
+ever reached (`into_history` re-enters `with_state`), so NEW is strictly more correct
+there — but unreachable, so no exercised-path change. The one behavioral difference —
+`post_error_message`'s surfaced-message change on the nested-Halt terminal path — is
+**test-invisible** (`capture_to_diagnostic(null)` idempotent, `close_files`/`tt_cleanup`
+once each; `halt_on_error_p` is the default but passing runs never fire a terminal
+abort, TRIP runs `halt_on_error_mode(false)`, and `format_buf` is never in the compared
+`.log`/`.xdv`; same class as the Stage II close-message delta). `ErrorOutcome::finish`
+remains for `SccAbort::fire`; `error_in` stays the shared core. Validation: full corpus
+**637 passed / 2 diverged** (same known-FP pair, doc-count 639 unchanged). **Next
+(`01d` §6):** the Rust residue is now `open_log_file` + `finalize_dvi_file` (B-class) +
+the `ext.rs` native-font ×13 inline class (also unblocks the deferred
+`load_mapping_file_in` close); the bridge_core I/O side longjmps only from the two
+deferred `ttstub_input_close` sites. See SESSION_LOG session 248.)
+
 Last updated: 2026-07-01 (last session = session 247, **execution — Stage II: the
 input-I/O longjmp sweep (`01d` §2/§2.1)**. Six commits (dashboard **29/2/7/4** each;
 `unsafe fn` **263→260**; warnings **37**) + an 11-agent adversarial verify

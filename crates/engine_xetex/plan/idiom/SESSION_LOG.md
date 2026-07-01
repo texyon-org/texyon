@@ -8,6 +8,86 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 248 — 2026-07-01 — Execution: the two most tractable Rust `_tt_abort` residue pieces — interwoven-align + `error()`
+
+**Type:** execution (`01d` §5.6). Autonomous: three commits + a 6-agent adversarial
+verify (**6/6 EQUIVALENT**). Threaded the two most tractable Rust longjmp residue
+pieces gating the §6 setjmp flip: the `main_control` interwoven-align inline
+`fatal_error`, and the whole `error()` recoverable-error wrapper (deleted).
+
+**The job (`01d` §5.6).** After Stage I/II, the Rust `_tt_abort` spine gating setjmp
+deletion was down to `error()` + `open_log_file`/`finalize_dvi_file` (B-class) + two
+inline classes (interwoven-align, ext native-font ×13). This session took the two
+smallest levers.
+
+**Commit 1 (`ceea6093`) — interwoven-align.** `get_preamble_token_in`'s `ENDV`
+check called `crate::errors::fatal_error("(interwoven alignment preambles are not
+allowed)")` **directly under the `&mut EngineState` borrow** — the last live inline
+longjmp on main_control's alignment path (distinct from the folded deferred
+`MainControlAbort` spine). Recon found the other **five** "interwoven alignment"
+sites already threaded (input.rs `end_token_list_in`, scan.rs `get_next`, the two
+`fin_align` sites at main_control.rs ~881/~1599 via `MainControlAbort::Input(
+InputAbort::Fatal(...))`), so this was the sole holdout. Replaced it with that exact
+sibling idiom: `return Err(MainControlAbort::Input(InputAbort::Fatal(msg)))` →
+`into_engine_abort` → `EngineAbort::Fatal(msg)` → `into_history` ("Emergency stop" +
+msg + inline cleanup, returns 3). Propagated via `?` through the two
+`get_preamble_token_in` call sites. **Verifier finding:** the OLD under-borrow
+`fatal_error` would have *RefCell-panicked* if ever reached (`into_history`'s
+`close_files_and_terminate` re-enters `with_state`), so NEW is strictly more correct
+on that cold path — but it is unreachable by TRIP/corpus, so no exercised-path change.
+
+**Commit 2 (`a9030166`) — the two `store_fmt_file` `error()` sites.** The
+`\dump`-inside-a-group refusal and the native-fonts/font-mappings dump refusal both
+called the global `error()` wrapper (whose `.finish()` longjmps `_tt_abort` on the
+Halt/Hundred outcome). Threaded each: run `error_in` under a fresh borrow, and on a
+non-`Continue` outcome `return Err(outcome.into_engine_abort())`. Continue is
+unchanged (dump-in-group falls through to its `TtAbort` terminal; native-fonts
+resumes the font-dump loop); Halt/Hundred → `EngineAbort::HaltMessage` → the same
+`post_error_message(false)` (one `close_files_and_terminate`) + surfaced halt message,
+history 3. Both fns already return `Result<(), EngineAbort>`.
+
+**Commit 3 (`0cd792f4`) — the last two `error()` callers + delete `error()`.**
+- `scaled_math.rs` `m_log` `x<=0`: a **dead** branch (its only caller `norm_rand`
+  always passes `x >= 1`) that additionally runs under `conv_toks_in`'s held borrow
+  (norm_rand's RNG accessors — `random_entry`/`j_random` in globals.rs — are
+  `with_state`, so the path double-borrow-panics *before* `m_log`). Replaced `error()`
+  with `let _ = with_state_mut(error_in)`: same panic-if-reached at the same
+  `with_state_mut`, never executed, no longjmp. Dropped the now-unused
+  `use crate::errors::error`.
+- `errors.rs` `post_error_message`: runs inside `into_history`'s terminal cleanup
+  (post-borrow), which unconditionally commits to `HISTORY_FATAL_ERROR` immediately
+  after. **Absorb** a nested Halt/Hundred outcome (drop it) rather than longjmp.
+- With all four callers threaded, deleted `pub unsafe fn error()` (`error_in` stays
+  the shared core; `ErrorOutcome::finish` remains for `SccAbort::fire`).
+
+**Adversarial verification (Workflow, 6 skeptics, ultracode).** One agent per
+converted path (interwoven-align, store_fmt ×2, m_log dead-branch, post_error_message
+absorb, deletion cleanliness), each re-deriving OLD (baseline `f3b264ba`) vs NEW.
+**Result: 6/6 EQUIVALENT.** The one flagged behavioral difference — the
+**post_error_message absorb**'s surfaced-message change on the nested Halt/Hundred
+terminal path (OLD "halted on potentially-recoverable error as specified" vs NEW the
+primary abort's "halted on overflow()"/…) — is **test-invisible**: `capture_to_
+diagnostic(null)` is idempotent and `close_files_and_terminate`/`tt_cleanup` still run
+exactly once, and although `halt_on_error_p` is the harness/tectonic *default* (so the
+path is not merely the rare 100th-error case — audit correction to the recon), a
+passing run never fires a terminal overflow/confusion/pdf_error, TRIP runs
+`halt_on_error_mode(false)`, and the surfaced `format_buf` string is never written to
+the compared `.log`/`.xdv`. Same acceptance class as the Stage II close-message delta.
+
+**Metrics:** `unsafe fn` **260 → 259** (`error()` deleted; the `into_engine_abort`
+threading adds none); warnings **37**; `with_state` unchanged. Validation: dashboard
+**29/2/7/4** per commit (TRIP 2/2 — exercises the recoverable-error machinery); release
+rebuild; full corpus **637 passed / 2 diverged** (same known-FP pair, doc-count 639
+unchanged). Commits `ceea6093`, `a9030166`, `0cd792f4`.
+
+**Next (`01d` §6).** The Rust `_tt_abort` residue is now down to `open_log_file` +
+`finalize_dvi_file` (the two B-class deferred-fire wrappers with terminal-machinery
+callers) + the `ext.rs` native-font ×13 inline class (which also unblocks the deferred
+`load_mapping_file_in` close). The bridge_core input-I/O side still longjmps only from
+the two deferred `ttstub_input_close` sites (`u_close`, `load_mapping_file_in`). Only
+once **no** Rust path AND **no** bridge_core I/O path longjmps does the setjmp +
+owned-`EngineState` flip (§6) land.
+
 ## Idiom session 247 — 2026-07-01 — Execution: Stage II — the input-I/O longjmp sweep (ttstub_input_seek/close → ttbc_*/Result)
 
 **Type:** execution (Stage II, `01d` §2/§2.1). Autonomous: six commits + an 11-agent
