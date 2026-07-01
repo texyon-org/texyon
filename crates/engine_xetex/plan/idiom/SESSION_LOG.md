@@ -8,6 +8,70 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 249 — 2026-07-01 — Execution: eliminate EVERY remaining longjmp — 0 `_tt_abort`, 0 `.fire()`, 0 bridge_core input-close (01d §5.6/§5.7/§6)
+
+**Type:** execution (`01d` §5.6 → §6 unblock). Autonomous: **8 commits**, dashboard
+29/2/7/4 per commit, corpus 637/2 (known-FP only) validated.
+
+**The job.** Session 248 left the longjmp residue at 28 `_tt_abort` + 4 `.fire()`.
+This session drove it to **zero of every longjmp kind** — no Rust `_tt_abort`, no
+deferred-fire `.fire()`, no C `ttstub_input_seek`/`close` — so the setjmp is now a
+dead backstop and the §6 flip is unblocked (gated only on the general `with_state`
+drain, not longjmp).
+
+**The seven levers (see `01d` §5.7 for the full census):**
+1. **DEAD wrapper deletion** — the §5.6 DEAD set (`input_line`/`open_or_close`/
+   `more_name`/`end_name`/`scan_*_name` in io.rs, `make_src_special` in texmfmp.rs)
+   + the now-dead `OpenOrCloseAbort::fire`/`fire_make_src_pool_overflow`.
+2. **`open_log_file` `(B)` fold** — `final_cleanup` propagates via `?`;
+   `pre_error_message` + `SccAbort::into_engine_abort` NoLegalEnd absorb (mirroring
+   session-248's `post_error_message` absorb).
+3. **`finalize_dvi_file` fold → deferred-fire spine collapse (the big one)** —
+   `close_files_and_terminate` → `Result<(), EngineAbort>` (normal-exit propagates
+   via `into_history`; the three terminal-cleanup callers absorb). With
+   `finalize_dvi_file()` gone the whole backstop tree became unreachable and was
+   deleted: `fire_shipout_abort`, `SccAbort::fire`, `InputAbort::fire`,
+   `OpenLogAbort::fire`, `ErrorOutcome::finish`, `node_recycle_abort`,
+   `fire_name_overflow`, `fire_make_tex_string`, `fire_main_memory_overflow`, the
+   `open_log_file` wrapper, and the four `overflow`/`confusion`/`fatal_error`/
+   `pdf_error` `-> !` primitives. `.fire()` **4 → 0**.
+4. **Two non-native inline `_tt_abort`** — `ship_out_in` CannotOpenOutput (a latent
+   under-borrow longjmp) → `Err(ShipoutAbort::CannotOpenOutput)`; dead
+   `check_pool_pointer` deleted.
+5. **Native-font measurement ×12** — new `NativeFontAbort` leaf; the 11 "bad native
+   font flag" consistency checks (unreachable — OK path byte-identical, callers gain
+   `?`) + `linebreak_start_in`'s iterator error, threaded through ~40 sites via
+   `From<NativeFontAbort>` on SccAbort/MainControlAbort/ShipoutAbort/MathBuildAbort/
+   NativeCharAbort/NodeRecycleAbort/HyphNativeAbort, plus the non-Result
+   intermediaries `set_native_metrics`/`store_justified_native_glyphs`.
+6. **Font-loader mapping-file cascade** — the last `_tt_abort`
+   (`load_mapping_file_in` "could not read mapping file" + its deferred input-close)
+   threaded through `read_common_features_in`→`load_ot_font`→`find_native_font_in`→
+   `load_native_font_in`/`read_font_info_in` (each single-/few-return → `Result`);
+   deleted the dead `readCommonFeatures` `#[no_mangle]` C-ABI export. `_tt_abort` **→ 0**.
+7. **`u_close`** — the last bridge_core input longjmp → `io::input_close` + bool;
+   `end_file_reading_in` → `Result<(), InputAbort>` (new `InputAbort::InputClose`),
+   threaded through read_toks/get_next/final_cleanup; `\read`/`\closein` closes →
+   `SccAbort`/`OpenOrCloseAbort::InputClose`; terminal `tt_cleanup` absorbs.
+
+**Behavior preservation.** Every terminal maps to the same `EngineAbort` arm the old
+longjmp produced (`into_history` = same prints/cleanup/history 3/surfaced message).
+The recurring absorb pattern (terminal cleanup drops a *second* error, already
+committed to `HISTORY_FATAL_ERROR`) is the session-248 `post_error_message` idiom.
+The 11 "bad flag" branches are unreachable, so all exercised paths are byte-identical
+— corpus 637/2 confirms.
+
+**Metrics:** `_tt_abort` **28 → 0**, `.fire()` **4 → 0**, `ttstub_input_seek/close`
+calls **→ 0**; `unsafe fn` 260 → ~230; warnings **37**. Commits `6654b005`,
+`eee12af1`, `d6fc9ccc`, `a20373a3`, `7ca7f43e`, `8d92f9f0`, `868d0efa` (+ docs).
+
+**Next (`01d` §6).** The flip is unblocked. It remains all-or-nothing and large:
+thread the ≈221 `with_state`/`with_state_mut` sites + ≈191 `globals.rs` accessors +
+41 `mod raw` scalars off the `thread_local! RefCell`, then `tt_run_engine` owns
+`EngineState`, `xetex-engine-interface.c` drops the (now-dead) setjmp, and the
+global-state machinery deletes together. No longjmp concern gates it any more — it is
+the general Phase-C drain.
+
 ## Idiom session 248 — 2026-07-01 — Execution: the two most tractable Rust `_tt_abort` residue pieces — interwoven-align + `error()`
 
 **Type:** execution (`01d` §5.6). Autonomous: three commits + a 6-agent adversarial

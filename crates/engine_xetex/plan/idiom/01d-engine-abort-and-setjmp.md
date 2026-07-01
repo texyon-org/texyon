@@ -424,33 +424,67 @@ setjmp until restructured:**
   consistency + resource aborts. These thread only when the native-font measurement
   layer grows an error channel.
 
-**Blocker summary (what still gates setjmp deletion, after session 248).** Stage II
-(§2, session 247) neutralized the bridge_core `ttstub_input_seek`/`close` longjmps
-except two deferred `input_close` sites (`u_close`, `load_mapping_file_in`); session
-248 threaded `error()` (deleted) and the `main_control` interwoven-align inline
-`fatal_error`. So the Rust `_tt_abort` residue is now just:
-- **`open_log_file` + `finalize_dvi_file`** — the two `(B)` deferred-fire wrappers
-  with an un-threadable caller inside `into_history`'s terminal machinery
-  (`pre_error_message` / `close_files_and_terminate`), plus the dispatcher machinery
-  reachable *only through* them (`OpenLogAbort::fire`; `fire_shipout_abort`/
-  `SccAbort::fire`). Converting either forces its shared cleanup helper to return
-  `Result` — a §6-flip concern (how the terminal handlers absorb a *second* error
-  during cleanup, the pattern `post_error_message`'s absorb established).
-- **`ext.rs` native-font ×13** — the one remaining inline class; threads only when
-  the native-font measurement layer grows an error channel (also unblocks the
-  deferred `load_mapping_file_in` `_tt_abort` + input-close).
+**Blocker summary — RESOLVED (session 249).** As of session 249 **every longjmp
+source of any kind is gone**: the crate has **0 `_tt_abort` calls, 0 `.fire()`
+calls, and 0 C `ttstub_input_seek`/`close` calls**. The clusters listed here in
+session 248 were all cleared:
+- **`open_log_file` + `finalize_dvi_file` `(B)` pair** — folded (§6a below):
+  `close_files_and_terminate` now returns `Result` (normal-exit propagates, the
+  three terminal-cleanup callers absorb); the whole deferred-fire backstop tree
+  collapsed with them (`fire_shipout_abort`/`SccAbort::fire`/`InputAbort::fire`/
+  `OpenLogAbort::fire`/`ErrorOutcome::finish`/`node_recycle_abort`/
+  `fire_name_overflow`/`fire_make_tex_string`/`fire_main_memory_overflow`/the four
+  `overflow`/`confusion`/`fatal_error`/`pdf_error` `-> !` primitives — all deleted).
+- **`ext.rs` native-font ×13** — threaded via `NativeFontAbort` (the 11 "bad flag"
+  consistency checks + linebreak iterator, plus the font-loader mapping-read +
+  input-close cascade `load_mapping_file_in`→`read_common_features_in`→`load_ot_font`
+  →`find_native_font_in`→`load_native_font_in`/`read_font_info_in`).
+- **the two deferred `ttstub_input_close` sites** — `load_mapping_file_in` (folded
+  with the native-font cluster) and `u_close` (threaded via
+  `InputAbort::InputClose`/`SccAbort::InputClose`/`OpenOrCloseAbort::InputClose`;
+  `end_file_reading_in` now returns `Result`, terminal `tt_cleanup` absorbs).
 
-Everything else reachable-and-threadable is now `Result`; the DEAD set never fires.
-The flip (§6) is gated only on these three clusters + the two deferred bridge_core
-input-closes.
+**No Rust path and no bridge_core I/O path longjmps.** The setjmp is now a dead
+backstop that can never fire. The flip (§6) is unblocked — gated only on the
+general Phase-C `with_state` drain (≈221 sites + ≈191 `globals.rs` accessors),
+not on any longjmp concern.
+
+## 5.7 The session-249 longjmp-elimination sweep
+
+Eight commits took the residue from 28 `_tt_abort` + 4 `.fire()` (session-248 end)
+to **zero of each**:
+1. **Delete the §5.6 DEAD wrappers** — `input_line`/`open_or_close`/`more_name`/
+   `end_name`/`scan_and_pack_name`/`scan_file_name`/`scan_file_name_braced` (io.rs),
+   `make_src_special` (texmfmp.rs), + the now-dead `OpenOrCloseAbort::fire` /
+   `fire_make_src_pool_overflow`. −1 `_tt_abort`.
+2. **`open_log_file` Result/terminal callers** — `final_cleanup` propagates,
+   `pre_error_message` + `SccAbort::into_engine_abort` NoLegalEnd absorb.
+3. **`finalize_dvi_file` fold → the deferred-fire spine collapse** —
+   `close_files_and_terminate` → `Result`; the whole `fire`/`-> !` backstop tree
+   deleted. `.fire()` 4 → 0, `_tt_abort` 27 → 15.
+4. **The two non-native inline `_tt_abort`** — `ship_out_in` CannotOpenOutput (a
+   latent under-borrow longjmp) → `Err(ShipoutAbort::CannotOpenOutput)`;
+   `check_pool_pointer` (dead) deleted. 15 → 13.
+5. **Native-font measurement ×12** — `NativeFontAbort`; `_tt_abort` 13 → 1.
+6. **Font-loader mapping-file cascade** — the last `_tt_abort` → 0.
+7. **`u_close`** — the last bridge_core input longjmp → 0.
+
+`unsafe fn` 260 → ~230; warnings 37 throughout; dashboard 29/2/7/4 per commit;
+corpus 637/2 (known-FP only). The `-> !` fatal primitives, the deferred-fire
+`fire()` dispatchers, and the C input-I/O longjmp wrappers are all gone from every
+reachable path; `EngineAbort::into_history` is the sole terminal, `Result` the sole
+channel to `tt_run_engine`.
 
 ## 6. Final flip (all-or-nothing, later session)
 
-Once **no Rust path longjmps** (steps 1–5 done) *and* Stage II (§2) neutralizes
-the bridge_core I/O longjmps. **Remaining preconditions (after session 248):** the
-`open_log_file`/`finalize_dvi_file` `(B)` pair + `ext.rs` native-font ×13 inline
-class (§5.6 blocker summary), and the two deferred `ttstub_input_close` sites
-(`u_close`, `load_mapping_file_in`, §2.1). When those are gone:
+**Preconditions MET (session 249): no Rust path and no bridge_core I/O path
+longjmps** — 0 `_tt_abort`, 0 `.fire()`, 0 `ttstub_input_seek`/`close`. The setjmp
+is a dead backstop. The flip is now gated **only** on the general Phase-C
+`with_state` drain (≈221 `with_state`/`with_state_mut` sites + ≈191 `globals.rs`
+accessors + the 41 `mod raw` scalars must be threaded off the `thread_local!
+RefCell` first, so that owning `EngineState` in `tt_run_engine` leaves no live
+`with_state` leaf to double-borrow) — not on any longjmp concern. When that drain
+completes:
 
 - `tt_run_engine` owns `let mut st = EngineState::new();` and threads `&mut st`
   everywhere; its body becomes `match inner(&mut st) { Ok(h) => h, Err(a) =>
