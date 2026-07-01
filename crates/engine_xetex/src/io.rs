@@ -1383,12 +1383,14 @@ pub(crate) unsafe fn open_log_file_in(
     Ok(())
 }
 /// translated from xetex-xetex0.c:6431 (start_input)
-pub unsafe fn start_input(primary_input_name: *const libc::c_char) {
-    if let Err(e) =
-        crate::state::with_state_mut(|st| unsafe { start_input_in(st, primary_input_name) })
-    {
-        unsafe { e.fire() }
-    }
+pub unsafe fn start_input(
+    primary_input_name: *const libc::c_char,
+) -> Result<(), crate::errors::EngineAbort> {
+    // Propagate the cold `SccAbort` as a unified `EngineAbort` for `tt_run_engine`
+    // to catch (the direct analog of the `main_control` fold, `01d` §5.6). The
+    // map runs *post-borrow*, mirroring the old `e.fire()` longjmp-to-setjmp.
+    crate::state::with_state_mut(|st| unsafe { start_input_in(st, primary_input_name) })
+        .map_err(|e| e.into_engine_abort())
 }
 // translated from xetex-xetex0.c:6381 (pack_file_name)
 pub unsafe fn pack_file_name(n: i32, a: i32, e: i32) {

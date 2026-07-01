@@ -1452,7 +1452,13 @@ pub unsafe extern "C" fn tt_run_engine(
 
     pdf_files_init();
     crate::state::with_state_mut(|st| crate::synctex::synctex_init_command(st));
-    crate::io::start_input(input_file_name);
+    if let Err(a) = crate::io::start_input(input_file_name) {
+        // A fatal abort while opening the primary input. into_history runs the
+        // print + cleanup and returns HISTORY_FATAL_ERROR, skipping the rest of
+        // tt_run_engine — identical to the old `SccAbort::fire` longjmp straight
+        // to the setjmp (`01d` §5.6).
+        return a.into_history();
+    }
     crate::globals::set_history(HISTORY_SPOTLESS);
     if let Err(a) = crate::main_control::main_control() {
         // A fatal main-control abort. into_history runs the print + cleanup and
