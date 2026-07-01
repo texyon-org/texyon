@@ -6,8 +6,6 @@ use crate::consts::{
     EQTB_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD,
     PENALTY_NODE, PRIM_EQTB_BASE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
 };
-// Relocated to errors.rs (workstream 02); still called from scan.rs.
-use crate::errors::runaway;
 use crate::ext::aat_font_get;
 use crate::ext::aat_font_get_1;
 use crate::ext::aat_font_get_2;
@@ -42,7 +40,6 @@ use crate::output::print_int_in;
 use crate::output::print_nl_cstr_in;
 // Relocated to main_control.rs (workstream 02); still called from scan.rs.
 
-use crate::io::open_log_file;
 use crate::node::{GlueSpecNode, NodePtr, RuleDimen};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
@@ -1308,22 +1305,6 @@ pub(crate) enum NodeRecycleAbort {
     Confusion(&'static std::ffi::CStr),
 }
 
-/// Run the deferred cold abort for a [`NodeRecycleAbort`] after the state
-/// borrow has dropped. Never returns (each arm longjmps).
-pub(crate) unsafe fn node_recycle_abort(e: NodeRecycleAbort) -> ! {
-    const MEM_TOP_NR: i32 = 4_999_999;
-    match e {
-        NodeRecycleAbort::Overflow => {
-            crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP_NR + 1)
-        }
-        NodeRecycleAbort::OverflowRunaway => {
-            runaway();
-            crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP_NR + 1)
-        }
-        NodeRecycleAbort::Confusion(msg) => crate::errors::confusion(msg.as_ptr()),
-    }
-}
-
 impl NodeRecycleAbort {
     /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
     /// [`node_recycle_abort`] without longjmp-ing. Call only *after* the state
@@ -2323,43 +2304,6 @@ pub(crate) enum SccAbort {
 }
 
 impl SccAbort {
-    /// Run the deferred cold tail. Must be called *after* the borrow drops.
-    pub(crate) unsafe fn fire(self) -> ! {
-        match self {
-            SccAbort::Error(oc) => {
-                oc.finish();
-                unreachable!("ErrorOutcome::finish returned for a stored (non-Continue) outcome")
-            }
-            SccAbort::Input(a) => a.fire(),
-            SccAbort::NoLegalEnd { open_log } => {
-                if open_log {
-                    open_log_file();
-                }
-                crate::errors::fatal_error(c"*** (job aborted, no legal \\end found)".as_ptr());
-                unreachable!("fatal_error returned")
-            }
-            SccAbort::TokensToString(a) => match a {
-                TokensToStringAbort::SelectorNewString => crate::errors::pdf_error(
-                    c"tokens".as_ptr(),
-                    c"tokens_to_string() called while selector = new_string".as_ptr(),
-                ),
-                TokensToStringAbort::StringOverflow => crate::errors::overflow(
-                    c"number of strings".as_ptr(),
-                    crate::globals::max_strings() - crate::globals::init_str_ptr(),
-                ),
-            },
-            SccAbort::PdfError { t, p } => crate::errors::pdf_error(t, p),
-            SccAbort::OpenLog(e) => e.fire(),
-            SccAbort::MakeTexString(e) => crate::texmfmp::fire_make_tex_string(e),
-            // Dead arm: `InputClose` is produced only on the `conv_toks` /
-            // `scan_something_internal` Result path (caught via `into_engine_abort`),
-            // never through a `fire()`ing wrapper. Kept for exhaustiveness.
-            SccAbort::InputClose => {
-                _tt_abort(c"serious internal error closing an input file".as_ptr())
-            }
-        }
-    }
-
     /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
     /// [`fire`](SccAbort::fire) arm-for-arm without longjmp-ing. Call only
     /// *after* the state borrow drops (`NoLegalEnd` opens the log, the recursive

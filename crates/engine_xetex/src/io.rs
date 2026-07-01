@@ -20,7 +20,6 @@ use crate::output::print_cstr;
 ///
 /// On Linux x86_64 the C layout is:
 use crate::output::print_nl_cstr;
-use crate::shipout::finalize_dvi_file;
 
 // Consts used by the file-naming / start_input / close_files group, moved with
 // it from scan.rs (workstream 02).
@@ -1048,20 +1047,6 @@ pub(crate) fn more_name_in(st: &mut crate::state::EngineState, c: u16) -> Result
     Ok(true)
 }
 
-/// Run a deferred file-name [`NameAbort`] overflow after the borrow drops.
-/// Never returns.
-pub(crate) unsafe fn fire_name_overflow(e: NameAbort) -> ! {
-    match e {
-        NameAbort::PoolSize => {
-            crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr())
-        }
-        NameAbort::NumberOfStrings => crate::errors::overflow(
-            c"number of strings".as_ptr(),
-            crate::globals::max_strings() - crate::globals::init_str_ptr(),
-        ),
-    }
-}
-
 impl NameAbort {
     /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
     /// [`fire_name_overflow`] without longjmp-ing.
@@ -1240,17 +1225,8 @@ pub(crate) enum OpenLogAbort {
 }
 
 impl OpenLogAbort {
-    /// Raise the deferred abort after the state borrow drops (all arms `longjmp`).
-    pub(crate) unsafe fn fire(self) -> ! {
-        match self {
-            OpenLogAbort::MakeString(e) => crate::texmfmp::fire_make_tex_string(e),
-            OpenLogAbort::Name(e) => fire_name_overflow(e),
-            OpenLogAbort::CannotOpen => _tt_abort(c"cannot open log file output".as_ptr()),
-        }
-    }
-
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`fire`](OpenLogAbort::fire) without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5). The longjmp-ing
+    /// `fire` was deleted with the DEAD `open_log_file` wrapper (`01d` §5.6).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             OpenLogAbort::MakeString(e) => e.into_engine_abort(),
@@ -1262,14 +1238,12 @@ impl OpenLogAbort {
     }
 }
 
-/// translated from xetex-xetex0.c:7937 (open_log_file)
-pub unsafe fn open_log_file() {
-    if let Err(e) = crate::state::with_state_mut(|st| open_log_file_in(st)) {
-        e.fire();
-    }
-}
-
-/// `&mut EngineState` core of [`open_log_file`] (scanner-SCC prereq).
+/// translated from xetex-xetex0.c:7937 (open_log_file). The legacy firing
+/// wrapper was deleted (`01d` §5.6): every caller now runs the `_in` core under
+/// `with_state_mut` and either propagates the `OpenLogAbort` as `EngineAbort`
+/// (via `into_engine_abort`) or absorbs it on a terminal-cleanup path.
+///
+/// `&mut EngineState` core (scanner-SCC prereq).
 ///
 /// Opens and writes the transcript banner under one borrow via the threaded
 /// `maketexstring_in`/`pack_job_name_in`/`make_name_string_in` and print cores;
@@ -1374,7 +1348,15 @@ pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i3
     libc::free(work_buffer as *mut libc::c_void);
 }
 /// translated from xetex-xetex0.c:9722 (close_files_and_terminate)
-pub unsafe fn close_files_and_terminate() {
+///
+/// Returns `Err(EngineAbort)` for a `finalize_dvi_file` failure instead of
+/// longjmp-ing (`01d` §5.6): the normal-exit caller (`tt_run_engine`) propagates
+/// it via `into_history`; the terminal-cleanup callers (`post_error_message`,
+/// `into_history`'s `Fatal` arm, `store_fmt_file`'s `\dump`-in-group) **absorb**
+/// it (`let _ = …`), since they already commit to `HISTORY_FATAL_ERROR`. The
+/// success path (the only one exercised by TRIP/corpus) runs identically and
+/// returns `Ok(())`.
+pub unsafe fn close_files_and_terminate() -> Result<(), crate::errors::EngineAbort> {
     use crate::globals::log_opened;
 
     for k in 0usize..=15 {
@@ -1387,7 +1369,8 @@ pub unsafe fn close_files_and_terminate() {
 
     set_eqtb_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR_CFT, -1);
 
-    finalize_dvi_file();
+    crate::state::with_state_mut(crate::shipout::finalize_dvi_file_in)
+        .map_err(|e| e.into_engine_abort())?;
     let log_was_opened = log_opened();
     crate::state::with_state_mut(|st| crate::synctex::synctex_terminate(st, log_was_opened));
 
@@ -1405,6 +1388,7 @@ pub unsafe fn close_files_and_terminate() {
     }
 
     crate::output::print_ln();
+    Ok(())
 }
 
 static mut STDIN_UFILE: UFile = UFile {

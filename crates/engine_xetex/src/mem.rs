@@ -6,7 +6,6 @@
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE};
-use crate::errors::overflow;
 use crate::errors::runaway;
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
@@ -92,15 +91,6 @@ pub fn get_avail(mem: &mut MemState) -> i32 {
 
     mem.set_b32s1(p, TEX_NULL);
     p
-}
-
-/// Fire the cold `runaway()` + `overflow("main memory size")` abort that an
-/// arena-exhausted [`get_avail`] / [`get_node`] defers to its caller via the
-/// `ALLOC_FAILED` sentinel (`01b` §5). Must be called only **after** any live
-/// `with_state*`/`&mut EngineState` borrow has dropped. Never returns.
-pub(crate) unsafe fn fire_main_memory_overflow() -> ! {
-    runaway();
-    overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
 }
 
 /// The `main memory size` overflow as an [`EngineAbort`] value (`01d` §5.5) —

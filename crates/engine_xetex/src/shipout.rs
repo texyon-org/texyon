@@ -236,38 +236,6 @@ fn get_node_ship(mem: &mut MemState, s: i32) -> Result<i32, ShipoutAbort> {
     Ok(p)
 }
 
-/// Fire a deferred shipout cold abort after the state borrow has dropped (§5).
-pub(crate) unsafe fn fire_shipout_abort(a: ShipoutAbort) -> ! {
-    match a {
-        ShipoutAbort::ConfusionLr2 => crate::errors::confusion(c"LR2".as_ptr()),
-        ShipoutAbort::PoolSizeOverflow => {
-            crate::errors::overflow(c"pool size".as_ptr(), pool_size() - init_pool_ptr())
-        }
-        ShipoutAbort::NodeRecycle(e) => crate::scan::node_recycle_abort(e),
-        ShipoutAbort::Confusion(msg) => crate::errors::confusion(msg.as_ptr()),
-        ShipoutAbort::DviWriteFailed => _tt_abort(c"failed to write data to XDV file".as_ptr()),
-        ShipoutAbort::DviLengthOverflow => {
-            crate::errors::fatal_error(c"dvi length exceeds 0x7FFFFFFF".as_ptr());
-            unreachable!()
-        }
-        ShipoutAbort::MainMemoryOverflow => {
-            crate::errors::overflow(c"main memory size".as_ptr(), MEM_TOP + 1)
-        }
-        ShipoutAbort::Scc(e) => e.fire(),
-        ShipoutAbort::CannotOpenOutput => {
-            let mut buf = [0u8; 512];
-            libc::snprintf(
-                buf.as_mut_ptr() as *mut libc::c_char,
-                buf.len(),
-                c"cannot open output file \"%s\"".as_ptr(),
-                name_of_file(),
-            );
-            _tt_abort(buf.as_ptr() as *const libc::c_char)
-        }
-        ShipoutAbort::Name(e) => crate::io::fire_name_overflow(e),
-    }
-}
-
 impl ShipoutAbort {
     /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
     /// [`fire_shipout_abort`] arm-for-arm without longjmp-ing. `MainMemoryOverflow`
@@ -2177,13 +2145,10 @@ unsafe fn print_c_string_here_in(st: &mut crate::state::EngineState, s: *const l
 }
 
 // translated from xetex-shipout.c:2173 (finalize_dvi_file)
-pub unsafe fn finalize_dvi_file() {
-    if let Err(e) = crate::state::with_state_mut(finalize_dvi_file_in) {
-        fire_shipout_abort(e);
-    }
-}
-
-fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
+// The legacy no-arg firing wrapper was deleted (`01d` §5.6): its sole caller
+// close_files_and_terminate now calls this `_in` core directly and propagates
+// the ShipoutAbort as EngineAbort (via into_engine_abort) instead of longjmp-ing.
+pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     while st.shipout.cur_s > -1 {
         if st.shipout.cur_s > 0 {
             emit_dvi_out(&mut st.shipout, POP)?;

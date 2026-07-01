@@ -1486,7 +1486,12 @@ pub unsafe extern "C" fn tt_run_engine(
         // identical to the old confusion() longjmp (`01d` §5.2).
         return a.into_history();
     }
-    crate::io::close_files_and_terminate();
+    // Normal exit: a finalize_dvi_file failure here (e.g. XDV write error) aborts
+    // via into_history — identical to the old fire_shipout_abort longjmp, which
+    // also skipped tt_cleanup and returned HISTORY_FATAL_ERROR (`01d` §5.6).
+    if let Err(a) = crate::io::close_files_and_terminate() {
+        return a.into_history();
+    }
     tt_cleanup();
 
     history()

@@ -57,20 +57,6 @@ pub(crate) enum InputAbort {
 }
 
 impl InputAbort {
-    /// Run the deferred cold abort. Call only **after** the state borrow has
-    /// dropped (it re-enters `with_state`). Never returns.
-    pub(crate) unsafe fn fire(self) -> ! {
-        match self {
-            InputAbort::Overflow { what, n } => crate::errors::overflow(what, n),
-            InputAbort::Fatal(msg) => {
-                crate::errors::fatal_error(msg);
-                unreachable!("fatal_error longjmps")
-            }
-            InputAbort::TtAbort(msg) => _tt_abort(msg),
-            InputAbort::MainMemory => crate::mem::fire_main_memory_overflow(),
-        }
-    }
-
     /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
     /// [`fire`](InputAbort::fire) without longjmp-ing. Call only *after* the
     /// state borrow drops (`MainMemory` re-enters `with_state` via `runaway`).

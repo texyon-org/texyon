@@ -217,18 +217,6 @@ pub(crate) enum MakeTexStringAbort {
     StringOverflow,
 }
 
-/// Raise a deferred [`MakeTexStringAbort`] after the state borrow has dropped
-/// (both arms `longjmp`; a real caller never observes the sentinel).
-pub(crate) unsafe fn fire_make_tex_string(e: MakeTexStringAbort) -> ! {
-    match e {
-        MakeTexStringAbort::PoolOverflow => _tt_abort(c"string pool overflow".as_ptr()),
-        MakeTexStringAbort::StringOverflow => crate::errors::overflow(
-            c"number of strings".as_ptr(),
-            crate::globals::max_strings() - crate::globals::init_str_ptr(),
-        ),
-    }
-}
-
 impl MakeTexStringAbort {
     /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
     /// [`fire_make_tex_string`] without longjmp-ing.

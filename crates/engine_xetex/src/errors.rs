@@ -91,7 +91,9 @@ unsafe fn post_error_message(need_to_print_it: bool) {
         let _ = crate::state::with_state_mut(error_in);
     }
     set_history(HISTORY_FATAL_ERROR);
-    close_files_and_terminate();
+    // Absorb a finalize_dvi_file failure during terminal cleanup: we already
+    // committed to HISTORY_FATAL_ERROR (`01d` §5.6).
+    let _ = close_files_and_terminate();
     tt_cleanup();
     ttstub_output_flush(rust_stdout());
 }
@@ -121,26 +123,6 @@ pub(crate) enum ErrorOutcome {
 }
 
 impl ErrorOutcome {
-    /// Run the cold abort tail (only ever non-`Continue` on a real abort, never
-    /// in a passing run). Must be called *after* the state borrow has dropped.
-    pub(crate) unsafe fn finish(self) {
-        match self {
-            ErrorOutcome::Continue => {}
-            ErrorOutcome::Halt => {
-                let msg = c"halted on potentially-recoverable error as specified".as_ptr();
-                EngineAbort::HaltMessage(msg).into_history();
-                _tt_abort(msg);
-            }
-            ErrorOutcome::Hundred => {
-                let msg = c"halted after 100 potentially-recoverable errors".as_ptr();
-                EngineAbort::HaltMessage(msg).into_history();
-                _tt_abort(msg);
-            }
-            ErrorOutcome::Confusion(msg) => confusion(msg.as_ptr()),
-            ErrorOutcome::Overflow { what, n } => overflow(what.as_ptr(), n),
-        }
-    }
-
     /// Map this cold outcome to the unified [`EngineAbort`] terminal (`01d`
     /// §5.5), mirroring [`finish`](ErrorOutcome::finish) arm-for-arm but
     /// *without* firing — the caller propagates the value up to `tt_run_engine`,
@@ -212,31 +194,6 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
     ErrorOutcome::Continue
 }
 
-// ---------------------------------------------------------------------------
-// fatal_error
-// ---------------------------------------------------------------------------
-
-/// Print `s` as a fatal "Emergency stop" message and abort.
-///
-/// translated from xetex-errors.c:98 (fatal_error)
-pub unsafe fn fatal_error(s: *const libc::c_char) {
-    EngineAbort::Fatal(s).into_history();
-    _tt_abort(s);
-}
-
-// ---------------------------------------------------------------------------
-// overflow
-// ---------------------------------------------------------------------------
-
-/// Report a TeX capacity overflow for resource `s` of size `n` and abort.
-///
-/// translated from xetex-errors.c:113 (overflow)
-pub unsafe fn overflow(s: *const libc::c_char, n: i32) -> ! {
-    // Print + cleanup through the shared terminal, then the longjmp the setjmp
-    // backstop still catches for unconverted callers (`01d` §4).
-    EngineAbort::Overflow { what: s, n }.into_history();
-    _tt_abort(c"halted on overflow()".as_ptr())
-}
 
 // ---------------------------------------------------------------------------
 // EngineAbort — the unified terminal abort (plan/idiom/01d-engine-abort-and-setjmp.md)
@@ -330,7 +287,9 @@ impl EngineAbort {
                 print_cstr(c"Emergency stop".as_ptr());
                 print_nl_cstr(s);
                 capture_to_diagnostic(std::ptr::null_mut());
-                close_files_and_terminate();
+                // Absorb a finalize_dvi_file failure during terminal cleanup
+                // (`01d` §5.6).
+                let _ = close_files_and_terminate();
                 tt_cleanup();
                 ttstub_output_flush(rust_stdout());
                 _ttbc_set_error_message(s);
@@ -361,20 +320,6 @@ impl EngineAbort {
         }
         HISTORY_FATAL_ERROR
     }
-}
-
-// ---------------------------------------------------------------------------
-// confusion
-// ---------------------------------------------------------------------------
-
-/// Report an internal consistency failure and abort.
-///
-/// translated from xetex-errors.c:132 (confusion)
-pub unsafe fn confusion(s: *const libc::c_char) -> ! {
-    // Print + cleanup through the shared terminal, then the longjmp the setjmp
-    // backstop still catches for unconverted callers (`01d` §4).
-    EngineAbort::Confusion(s).into_history();
-    _tt_abort(c"halted on confusion()".as_ptr())
 }
 
 // ---------------------------------------------------------------------------
@@ -409,12 +354,6 @@ pub(crate) fn not_font_error_common_in(
     print_cstr_in(st, suffix);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     error_in(st)
-}
-
-/// translated from xetex-errors.c:157 (pdf_error)
-pub unsafe fn pdf_error(t: *const libc::c_char, p: *const libc::c_char) -> ! {
-    EngineAbort::PdfError { t, p }.into_history();
-    _tt_abort(c"halted on pdf_error()".as_ptr())
 }
 
 // translated from xetex-xetex0.c:13499 (give_err_help)
