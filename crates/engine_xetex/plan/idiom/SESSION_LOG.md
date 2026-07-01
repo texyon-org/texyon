@@ -8,6 +8,65 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 243–244 — 2026-07-01 — Execution: format_io fully longjmp-free + EngineAbort terminal set; main_control gate disproved
+
+**Type:** execution (continuation of session 242's EngineAbort lever).
+Autonomous multi-commit run.
+
+**Commits (4, dashboard 29/2/7/4 green each; `unsafe fn` 273, warnings 37):**
+1. **`load_fmt_file` undump → `Result`** (`01d` §5.4). Fixes the longjmp-under-
+   borrow hazard the session-242 verify workflow flagged: `load_fmt_file_in`
+   holds one `&mut EngineState` borrow across the whole undump and `undump_bytes`
+   `_tt_abort`'d on a short/corrupt read. Now `undump_bytes`/`undump_slice`/
+   `undump_one`/`undump_int`/`undump_checked_i32`/`undump_upper_i32`/
+   `undump_upper_u16` return `Result<_, EngineAbort>`; `load_fmt_file_in ->
+   Result<bool, EngineAbort>` (78 undump `?` + 52 bad-format `Err` → `TtAbort`);
+   `load_fmt_file -> Result<bool, EngineAbort>`; `tt_run_engine` maps
+   `Ok(true)`→continue / `Ok(false)`→`return history()` / `Err(a)`→
+   `a.into_history()`. **`format_io.rs` no longer references `_tt_abort`** — fully
+   Rust-longjmp-free (dump + undump). TRIP validates (dumps AND undumps a format).
+2. **`get_strings_started` → `Result`**: the last `tt_run_engine`-direct init
+   fatal (`must increase pool_size`); `engine.rs` `_tt_abort` extern removed.
+   `tt_run_engine`'s body + all its direct init helpers are now Result-based.
+3. **EngineAbort + `Fatal`/`PdfError`**: `fatal_error`/`pdf_error` split like
+   `overflow`/`confusion` (body → `into_history`, set `format_buf` to the same
+   string the `_tt_abort` would).
+4. **EngineAbort + `HaltMessage`**: the 6th terminal (`post_error_message(false)`
+   + `_tt_abort(msg)`, the ErrorOutcome Halt/Hundred path). `ErrorOutcome::finish`
+   routes its Halt/Hundred arms through it. **EngineAbort now covers all 6
+   terminals** (Overflow/Confusion/Fatal/PdfError/TtAbort/HaltMessage) — the
+   complete foundation for the `main_control` fold.
+5. (docs)
+
+**Headline finding — the `main_control` single-borrow gate is RESOLVED.** The
+memory note `main-control-single-borrow-premature` (session 228) is stale:
+`main_control()` is already `match with_state_mut(|st| main_control_in(st)) {
+Err(e) => e.fire() }`, and `main_control_in(&mut EngineState) -> Result<(),
+MainControlAbort>` holds **one** borrow over the whole loop — the entire
+`main_control.rs` has only two `with_state` textual hits (this wrapper + a
+comment), so no leaf remains to nest-panic. The Phase-C drain for main_control's
+tree is complete. **So converting `main_control` to propagate `EngineAbort` to
+`tt_run_engine` is UNBLOCKED** — the bulk of remaining longjmps, and the
+unification step (1) from the original brief.
+
+**Why it was deferred (not started this session).** `main_control()`'s `e.fire()`
+is **post-borrow** (the `with_state_mut` already returned), so it is NOT a
+longjmp-under-borrow hazard — converting it is critical-path progress toward the
+final flip but NOT a correctness fix, and the flip is independently gated on
+bridge_core Stage II. The fold is also genuinely intricate, not mechanical:
+`MainControlAbort` aggregates ~21 leaf `*Abort` types; several have **pre-terminal
+side-effects** (`SccAbort::NoLegalEnd` opens the log before `fatal_error`,
+`node_recycle_abort::OverflowRunaway` calls `runaway()` first) and **deep
+nesting** (`ErrorOutcome` threads through SccAbort/IssueMessage/ShowWhatever/
+ReadFontInfo/NewCharacter/Vsplit). It is **all-or-nothing** (leaf
+`into_engine_abort`s are dead code until `main_control` uses them, so no
+incremental validation) and lands entirely on **fatal paths no test exercises**.
+Big-banging that unsupervised for low marginal value was judged imprudent; it is
+fully scoped in `01d` §5.5 as the next session's work (with adversarial verify).
+
+**Validation:** dashboard 29/2/7/4 per commit; release rebuild; full corpus
+**637 passed / 2 diverged** (known FP only) on the session 243–244 binary.
+
 ## Idiom session 242 — 2026-07-01 — Architecture + execution: EngineAbort — start killing the Rust longjmp spine (the real lever behind the wrapper/mod-raw endgame)
 
 **Type:** architecture verification + execution (workstream 01 / Phase C — the

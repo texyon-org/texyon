@@ -4,6 +4,34 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-07-01 (last session = session 243–244, **execution —
+format_io fully longjmp-free + EngineAbort terminal set; `main_control` gate
+disproved**. Continued the session-242 lever. Four commits (dashboard 29/2/7/4
+each; `unsafe fn` 273, warnings 37): (1) `load_fmt_file` undump path →
+`Result<bool, EngineAbort>` (undump_* helpers return `Result`; 78 `?` + 52
+bad-format `Err`→`TtAbort`; tt_run_engine maps the result) — fixes the
+longjmp-under-borrow hazard the session-242 verify flagged and makes
+`format_io.rs` reference no `_tt_abort` at all (dump + undump longjmp-free). (2)
+`get_strings_started` → `Result` (last tt_run_engine-direct init fatal; engine.rs
+`_tt_abort` extern removed). (3) EngineAbort gains `Fatal` + `PdfError`
+(fatal_error/pdf_error split into `into_history`) then `HaltMessage` (ErrorOutcome
+Halt/Hundred) — **all 6 terminals now complete** (the full foundation for the
+main_control fold). **Headline
+finding:** the `main-control-single-borrow-premature` memory note is **stale** —
+`main_control()` already runs `with_state_mut(|st| main_control_in(st))` with
+`main_control_in` holding one borrow over the whole loop (only two `with_state`
+hits in the file: the wrapper + a comment). So the **`main_control` →
+`EngineAbort` fold is unblocked** (the bulk of remaining longjmps, the
+unification step 1). Deferred this session — it is all-or-nothing, lands on
+fatal paths no test exercises, and is intricate (side-effecting leaves:
+`SccAbort::NoLegalEnd` opens the log, `node_recycle_abort::OverflowRunaway` runs
+`runaway()`; `ErrorOutcome` nested through ~6 leaves), while being only
+post-borrow progress (not a correctness fix; the final flip is independently
+gated on bridge_core Stage II). Fully scoped with a leaf-terminal map in `01d`
+§5.5 as the next session, to be done with adversarial verify. Validation: full
+corpus **637 passed / 2 diverged**. **Next:** the `01d` §5.5 `main_control` fold.
+See SESSION_LOG session 243–244.)
+
 Last updated: 2026-07-01 (last session = session 242, **architecture + execution
 — EngineAbort: start killing the Rust longjmp spine**. The session-241 pivot
 said the ~98 `globals.rs` wrappers + 41 `mod raw` scalars drain only when the

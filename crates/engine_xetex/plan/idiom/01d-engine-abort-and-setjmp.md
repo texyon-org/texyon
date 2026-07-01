@@ -171,13 +171,64 @@ longjmping via the setjmp backstop until then.
    `Result` so `?` propagates. Larger; its own slice.
 4. **`load_fmt_file`** → `Result`, propagate the `!load_fmt_file()` early-return
    at `tt_run_engine:1275`.
-5. **`main_control` cluster** — only after the Phase-C `with_state` drain lets
-   `main_control` carry a borrow / return `Result`. Folds `MainControlAbort`,
-   `PageBuildAbort`, `SccAbort`, the linebreak/output/save/input aborts.
+5. **`main_control` cluster** — **UNBLOCKED** (session 243 disproved the stale
+   gate). See §5.5.
 
 Each step: fold the leaf `*Abort`(s) it owns into `EngineAbort`; keep the setjmp
 backstop so unconverted callers still abort identically; dashboard green per
 commit.
+
+## 5.5 The `main_control` fold (next session — fully scoped)
+
+`main_control()` is already `match with_state_mut(|st| main_control_in(st)) {
+Ok(()) => {} Err(e) => e.fire() }`, with `main_control_in` holding **one** borrow
+(no `with_state` leaf below it — verified). The `e.fire()` is **post-borrow**, so
+this is critical-path progress toward "tt_run_engine catches everything", not a
+borrow-safety fix. Target:
+
+```rust
+pub unsafe fn main_control() -> Result<(), crate::errors::EngineAbort> {
+    crate::state::with_state_mut(|st| main_control_in(st)).map_err(|e| e.into_engine_abort())
+}
+// tt_run_engine: if let Err(a) = main_control() { return a.into_history(); }  // skips final_cleanup, == old longjmp
+```
+
+All 6 `EngineAbort` terminals now exist (Overflow/Confusion/Fatal/PdfError/
+TtAbort/HaltMessage), each with an `into_history` arm — the foundation is
+complete. Remaining work is `MainControlAbort::into_engine_abort()` mirroring its
+`fire()`. **Leaf-terminal map** (transcribe each leaf's `fire()`/`finish()` into
+an `into_engine_abort`):
+
+| leaf | terminal → EngineAbort |
+|---|---|
+| `overflow(w,n)` / `fire_main_memory_overflow` / `*::MainMemory` | `Overflow{w,n}` (main mem = `{"main memory size", MEM_TOP+1}`) |
+| `confusion(s)` / `*::Confusion(s)` | `Confusion(s)` |
+| `fatal_error(s)` | `Fatal(s)` |
+| `pdf_error(t,p)` | `PdfError{t,p}` |
+| `_tt_abort(msg)` | `TtAbort(msg)` |
+| `ErrorOutcome` (Halt/Hundred/Confusion/Overflow) | `HaltMessage`/`Confusion`/`Overflow` |
+| `TrieAbort` | `Overflow{"pattern memory[…]", size}` |
+| `MakeTexStringAbort` (PoolOverflow/StringOverflow) | `TtAbort("string pool overflow")` / `Overflow{"number of strings",…}` |
+| `NameAbort`/`OpenLogAbort`/`OpenOrCloseAbort` | recurse to inner (Name→Overflow, Scanner→Scc, MakeString→MakeTexString) |
+| `SaveAbort`/`SaMutationAbort`/`UnsaveAbort` | Overflow/Confusion (save) |
+| `PageBuildAbort`/`ShipoutAbort`/`InsertSrcAbort`/`Issue/ShowWhatever`/`ReadFontInfo`/`NewCharacter`/`PushNest`/`Vsplit`/`Input`/`NodeRecycle` | recurse to inner / their single terminal |
+
+**Tricky (NOT pure value maps — `into_engine_abort` is `unsafe` + side-effecting
+for these):**
+- `SccAbort::NoLegalEnd{open_log}` — opens the log (if `!log_opened`) **then**
+  `Fatal("*** (job aborted, no legal \\end found)")`. Keep the open_log side
+  effect before returning `Fatal`.
+- `scan::node_recycle_abort::OverflowRunaway` — calls `runaway()` **then**
+  `Overflow{"main memory size",…}`.
+- `ErrorOutcome`'s `post_error_message` runs inside `into_history(HaltMessage)`
+  (correct timing — post-borrow, at the catch), not in `into_engine_abort`.
+
+**Validation:** all-or-nothing (one commit; leaf maps are dead until
+`main_control` uses them). Dashboard exercises only recovery, not fatal aborts —
+so **adversarially verify** each leaf map against its `fire()` (the session-242
+verify caught the `format_buf` surfacing; the same risk class applies per leaf).
+Likely **decreases** `unsafe fn` (delete `MainControlAbort::fire` + any
+now-unused `fire_*` whose sole caller was main_control). Corpus at the end.
 
 ## 6. Final flip (all-or-nothing, later session)
 
