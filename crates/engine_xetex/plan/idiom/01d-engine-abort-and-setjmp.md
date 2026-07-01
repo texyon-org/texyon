@@ -551,6 +551,15 @@ is concentrated in the boundary/wrapper layer that the setjmp gated.
    The frame is now fully drained (zero with_state re-entries — the flip-gate condition).
 5. **`store_fmt_file`** (format_io.rs) — the big drain (~34 sites), mechanically uniform;
    after #2 (it calls `close_files_and_terminate`).
+   **DONE session 250** (`fbb1d488`, with_state 208→161): `store_fmt_file_in(st)` + thin
+   wrapper — the whole ~600-line dump under one borrow. All ~40 with_state re-entries →
+   direct `st.*`; every `print_*`/`output::` → `_in`; the two `error()` sites call
+   `error_in(st)`; `pack_job_name`/`make_name_string`/`close_files_and_terminate`/`init_trie`
+   use their `_in` cores (`map_err` into EngineAbort). The eqtb-run/hash-word helper
+   closures now take `st` as a parameter (capture nothing) so no immutable borrow outlives
+   the mutable tail. **Cascade landed early:** `store_fmt_file` was the last non-`_in`
+   caller of `print`/`print_ln`/`print_esc`/`print_file_name` (output.rs), 10 strings/
+   font/save globals accessors, and `init_trie` (hyphenation.rs) — all 15 deleted.
 6. **`final_cleanup`** (engine.rs:309) — after #5; its input-SCC calls
    (`end_token_list`/`end_file_reading`) return `InputAbort`, so bare `?` becomes
    `map_err(|e| e.into_engine_abort())?`.
