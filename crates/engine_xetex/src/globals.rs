@@ -436,28 +436,9 @@ pub(crate) fn set_temp_ptr(v: i32) {
 // selector / term_offset / file_offset
 // ---------------------------------------------------------------------------
 
-/// Returns the current output selector (xetex-xetexd.h:431).
-#[inline]
-pub(crate) fn selector() -> i32 {
-    crate::state::with_state(|state| state.shipout.selector)
-}
-/// Write `selector = v`.
-#[inline]
-pub(crate) fn set_selector(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.shipout.selector = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // rust_stdout / log_file / write_file / current_diagnostic
 // ---------------------------------------------------------------------------
-
-/// Returns the `rust_stdout` output handle.
-#[inline]
-pub(crate) fn rust_stdout() -> usize {
-    crate::state::with_state(|s| s.shipout.rust_stdout)
-}
 
 // ---------------------------------------------------------------------------
 // print_raw_char globals
@@ -518,35 +499,6 @@ pub(crate) fn spec_log(k: usize) -> i32 {
 // ---------------------------------------------------------------------------
 // interaction / history / error_count / use_err_help / halt_on_error_p
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn interaction() -> u8 {
-    crate::state::with_state(|state| state.errors.interaction)
-}
-#[inline]
-pub(crate) fn set_interaction(v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.errors.interaction = v;
-    });
-}
-#[inline]
-pub(crate) fn history() -> i32 {
-    crate::state::with_state(|state| state.errors.history)
-}
-#[inline]
-pub(crate) fn set_history(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.history = v;
-    });
-}
-#[inline]
-pub(crate) fn log_opened() -> bool {
-    crate::state::with_state(|state| state.errors.log_opened)
-}
-#[inline]
-pub(crate) fn job_name() -> i32 {
-    crate::state::with_state(|state| state.strings.job_name)
-}
 
 // ---------------------------------------------------------------------------
 // engine launch config flags (set by tt_xetex_set_int_variable)

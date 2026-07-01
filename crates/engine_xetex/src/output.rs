@@ -111,13 +111,6 @@ pub(crate) fn print_the_digs_in(st: &mut EngineState, mut k: u8) {
 // print_int
 // ---------------------------------------------------------------------------
 
-/// Print an integer in decimal.
-///
-/// translated from xetex-output.c:363 (print_int)
-pub unsafe fn print_int(n: i32) {
-    crate::state::with_state_mut(|st| print_int_in(st, n));
-}
-
 /// `&mut EngineState` core of [`print_int`].
 pub(crate) fn print_int_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
@@ -470,13 +463,6 @@ pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool)
 // ---------------------------------------------------------------------------
 // print_char
 // ---------------------------------------------------------------------------
-
-/// Print a single Unicode code point `s` to the current output destination.
-///
-/// translated from xetex-output.c:76 (print_char)
-pub unsafe fn print_char(s: i32) {
-    crate::state::with_state_mut(|st| print_char_in(st, s));
-}
 
 /// `&mut EngineState` core of [`print_char`].
 pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {

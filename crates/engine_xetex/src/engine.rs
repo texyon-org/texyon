@@ -1232,22 +1232,22 @@ pub unsafe extern "C" fn tt_run_engine(
         );
         // Consistency check failed: terminate with HISTORY_FATAL_ERROR (the
         // setjmp longjmp's observable result), no longjmp (`01d` §5).
-        return crate::errors::EngineAbort::TtAbort(msg.as_ptr()).into_history();
+        return crate::errors::EngineAbort::TtAbort(msg.as_ptr()).into_history(&mut *st);
     }
 
     initialize_more_variables_in(&mut *st);
     if st.config.in_initex_mode {
         if let Err(a) = get_strings_started_in(&mut *st) {
-            return a.into_history();
+            return a.into_history(&mut *st);
         }
         let format_ident = match crate::texmfmp::maketexstring(c" (INITEX)".as_ptr()) {
             Ok(v) => v,
-            Err(a) => return a.into_history(),
+            Err(a) => return a.into_history(&mut *st),
         };
         initialize_more_initex_variables_in(&mut *st, format_ident);
         let result = initialize_primitives(&mut *st);
         if let Err(e) = result {
-            return e.into_engine_abort().into_history();
+            return e.into_engine_abort().into_history(&mut *st);
         }
         {
             let state = &mut *st;
@@ -1321,7 +1321,7 @@ pub unsafe extern "C" fn tt_run_engine(
             // the old `!load_fmt_file()` early return).
             Ok(false) => return st.errors.history,
             // Fatal undump abort: HISTORY_FATAL_ERROR with no longjmp (`01d` §5.4).
-            Err(a) => return a.into_history(),
+            Err(a) => return a.into_history(&mut *st),
         }
     }
 
@@ -1418,7 +1418,7 @@ pub unsafe extern "C" fn tt_run_engine(
         // `maketexstring`, computed before the block.
         let nullfont_name = match crate::texmfmp::maketexstring(c"nullfont".as_ptr()) {
             Ok(v) => v,
-            Err(a) => return a.into_history(),
+            Err(a) => return a.into_history(&mut *st),
         };
         {
             let s = &mut *st;
@@ -1482,7 +1482,7 @@ pub unsafe extern "C" fn tt_run_engine(
         // print + cleanup and returns HISTORY_FATAL_ERROR, skipping the rest of
         // tt_run_engine — identical to the old `SccAbort::fire` longjmp straight
         // to the setjmp (`01d` §5.6).
-        return a.into_history();
+        return a.into_history(&mut *st);
     }
     st.errors.history = HISTORY_SPOTLESS;
     if let Err(a) = crate::main_control::main_control_in(&mut *st).map_err(|e| e.into_engine_abort())
@@ -1490,27 +1490,23 @@ pub unsafe extern "C" fn tt_run_engine(
         // A fatal main-control abort. into_history runs the print + cleanup and
         // returns HISTORY_FATAL_ERROR, skipping final_cleanup — identical to the
         // old `MainControlAbort::fire` longjmp straight to the setjmp (`01d` §5.5).
-        return a.into_history();
+        return a.into_history(&mut *st);
     }
     if let Err(a) = final_cleanup_in(&mut *st) {
         // into_history runs the print + cleanup (incl. close_files_and_terminate
         // + tt_cleanup via post_error_message) and returns HISTORY_FATAL_ERROR —
         // identical to the old confusion() longjmp (`01d` §5.2).
-        return a.into_history();
+        return a.into_history(&mut *st);
     }
     // Normal exit: a finalize_dvi_file failure here (e.g. XDV write error) aborts
     // via into_history — identical to the old fire_shipout_abort longjmp, which
     // also skipped tt_cleanup and returned HISTORY_FATAL_ERROR (`01d` §5.6).
     if let Err(a) = crate::io::close_files_and_terminate_in(&mut *st) {
-        return a.into_history();
+        return a.into_history(&mut *st);
     }
     tt_cleanup_in(&mut *st);
 
     st.errors.history
-}
-// translated from xetex-ini.c:2226 (tt_cleanup)
-pub unsafe fn tt_cleanup() {
-    crate::state::with_state_mut(|st| tt_cleanup_in(st));
 }
 // Threaded core: the whole teardown runs under one held `&mut EngineState`
 // borrow (`01d` §6.1 drain step 3). The only re-entrant calls are pure FFI
