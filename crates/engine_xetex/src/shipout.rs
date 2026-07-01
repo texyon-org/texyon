@@ -679,14 +679,12 @@ pub(crate) unsafe fn ship_out_in(
             crate::io::pack_job_name_in(st, output_file_extension)?;
             st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
             if st.shipout.dvi_file == INVALID_HANDLE {
-                let mut buf = [0u8; 512];
-                libc::snprintf(
-                    buf.as_mut_ptr() as *mut libc::c_char,
-                    buf.len(),
-                    c"cannot open output file \"%s\"".as_ptr(),
-                    st.input.name_of_file.as_ptr(),
-                );
-                _tt_abort(buf.as_ptr() as *const libc::c_char);
+                // Propagate as ShipoutAbort instead of the old under-borrow
+                // _tt_abort longjmp (`01d` §5.6): into_engine_abort rebuilds the
+                // "cannot open output file" message from name_of_file() post-borrow
+                // (identical text — name_of_file is unchanged between here and the
+                // catch), so this is behavior-preserving and borrow-safe.
+                return Err(ShipoutAbort::CannotOpenOutput);
             }
             st.shipout.output_file_name = crate::io::make_name_string_in(st)?;
         }

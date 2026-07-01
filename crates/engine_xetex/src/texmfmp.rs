@@ -3,7 +3,6 @@
 //! Functions involving `makepdftime` / the C-static state (`last_source_name`,
 //! `start_time_str`) or complex bridge calls remain in C for now.
 
-use crate::globals::pool_size;
 
 // ---------------------------------------------------------------------------
 // C externs needed by this module
@@ -198,13 +197,6 @@ pub unsafe fn gettexstring_in(strings: &crate::state::StringsState, s: i32) -> *
 // ---------------------------------------------------------------------------
 // checkpool_pointer (private) + maketexstring — heap UTF-8 → pool UTF-16
 // ---------------------------------------------------------------------------
-
-/// translated from xetex-texmfmp.c:237 (checkpool_pointer, was static)
-unsafe fn check_pool_pointer(pp: i32, len: usize) {
-    if (pp as usize) + len >= pool_size() as usize {
-        _tt_abort(c"string pool overflow".as_ptr());
-    }
-}
 
 /// Convert a NUL-terminated C UTF-8 string to a TeX string-pool entry and
 /// return its str_number.
