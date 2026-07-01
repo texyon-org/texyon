@@ -89,10 +89,10 @@ impl InputAbort {
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3108 (end_token_list)
-pub unsafe fn end_token_list() {
-    if let Err(a) = crate::state::with_state_mut(end_token_list_in) {
-        a.fire();
-    }
+pub unsafe fn end_token_list() -> Result<(), crate::errors::EngineAbort> {
+    // Sole caller is final_cleanup (Result-threadable); propagate the cold
+    // InputAbort as EngineAbort instead of longjmp-ing (`01d` §5.6).
+    crate::state::with_state_mut(end_token_list_in).map_err(|a| a.into_engine_abort())
 }
 
 /// `&mut EngineState` core of [`end_token_list`] (`01b` §3). Touches the input

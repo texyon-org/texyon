@@ -31,20 +31,6 @@ pub(crate) enum TrieAbort {
     PatternMemoryOpsPerLanguageOverflow(i32),
 }
 
-pub(crate) fn trie_abort(e: TrieAbort) -> ! {
-    match e {
-        TrieAbort::PatternMemoryOverflow(size) => unsafe {
-            crate::errors::overflow(c"pattern memory".as_ptr(), size)
-        },
-        TrieAbort::PatternMemoryOpsOverflow(size) => unsafe {
-            crate::errors::overflow(c"pattern memory ops".as_ptr(), size)
-        },
-        TrieAbort::PatternMemoryOpsPerLanguageOverflow(size) => unsafe {
-            crate::errors::overflow(c"pattern memory ops per language".as_ptr(), size)
-        },
-    }
-}
-
 impl TrieAbort {
     /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
     /// [`trie_abort`] without longjmp-ing.
@@ -283,10 +269,12 @@ fn trie_fix(hyph: &mut HyphState, mut p: i32) {
     }
 }
 // translated from xetex-ini.c:858 (init_trie)
-pub unsafe fn init_trie() {
-    if let Err(e) = crate::state::with_state_mut(|state| init_trie_in(&mut state.hyph)) {
-        trie_abort(e);
-    }
+pub unsafe fn init_trie() -> Result<(), crate::errors::EngineAbort> {
+    // Sole caller is load_fmt_file (Result-threadable); propagate the cold
+    // TrieAbort pattern-memory overflow as EngineAbort instead of longjmp-ing
+    // (`01d` §5.6).
+    crate::state::with_state_mut(|state| init_trie_in(&mut state.hyph))
+        .map_err(|e| e.into_engine_abort())
 }
 
 pub(crate) fn init_trie_in(hyph: &mut HyphState) -> Result<(), TrieAbort> {

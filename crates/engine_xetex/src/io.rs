@@ -1247,11 +1247,10 @@ pub(crate) unsafe fn make_name_string_in(
 
 /// Bridge-down wrapper for legacy `make_name_string` callers (`01b` §3, §5).
 /// translated from xetex-xetex0.c:7928 (make_name_string)
-pub unsafe fn make_name_string() -> i32 {
-    match crate::state::with_state_mut(|st| make_name_string_in(st)) {
-        Ok(v) => v,
-        Err(e) => fire_name_overflow(e),
-    }
+pub unsafe fn make_name_string() -> Result<i32, crate::errors::EngineAbort> {
+    // Sole caller is store_fmt_file (Result-threadable); propagate the cold
+    // NameAbort overflow as EngineAbort instead of longjmp-ing (`01d` §5.6).
+    crate::state::with_state_mut(|st| make_name_string_in(st)).map_err(|e| e.into_engine_abort())
 }
 /// translated from xetex-xetex0.c:13424 (scan_and_pack_name)
 pub unsafe fn scan_and_pack_name() {
@@ -1271,10 +1270,10 @@ pub unsafe fn scan_file_name() {
     }
 }
 /// translated from xetex-xetex0.c:7970 (pack_job_name)
-pub unsafe fn pack_job_name(s: *const libc::c_char) {
-    if let Err(e) = crate::state::with_state_mut(|st| pack_job_name_in(st, s)) {
-        crate::texmfmp::fire_make_tex_string(e);
-    }
+pub unsafe fn pack_job_name(s: *const libc::c_char) -> Result<(), crate::errors::EngineAbort> {
+    // Sole caller is store_fmt_file (Result-threadable); propagate the cold
+    // MakeTexStringAbort as EngineAbort instead of longjmp-ing (`01d` §5.6).
+    crate::state::with_state_mut(|st| pack_job_name_in(st, s)).map_err(|e| e.into_engine_abort())
 }
 
 /// `&mut EngineState` core of [`pack_job_name`] (scanner-SCC prereq). The string

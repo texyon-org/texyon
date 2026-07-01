@@ -328,7 +328,7 @@ pub unsafe fn final_cleanup() -> Result<(), crate::errors::EngineAbort> {
 
     while crate::state::with_state(|s| s.input.input_ptr) > 0 {
         if cur_input().state == TOKEN_LIST {
-            crate::input::end_token_list();
+            crate::input::end_token_list()?;
         } else {
             crate::input::end_file_reading();
         }

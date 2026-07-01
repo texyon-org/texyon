@@ -300,7 +300,7 @@ pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
         Err(e) => return Err(e.into_engine_abort()),
     };
     set_format_ident(new_format_ident);
-    crate::io::pack_job_name(c".fmt".as_ptr());
+    crate::io::pack_job_name(c".fmt".as_ptr())?;
 
     let fmt_out = ttstub_output_open(crate::globals::name_of_file(), 0);
     if fmt_out == INVALID_HANDLE {
@@ -310,7 +310,7 @@ pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
     }
 
     crate::output::print_nl_cstr(c"Beginning to dump on file ".as_ptr());
-    crate::output::print(crate::io::make_name_string());
+    crate::output::print(crate::io::make_name_string()?);
 
     set_str_ptr(str_ptr() - 1);
     set_pool_ptr(str_start(str_ptr() - TOO_BIG_CHAR));
@@ -770,7 +770,7 @@ pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
     }
 
     if trie_not_ready() {
-        init_trie();
+        init_trie()?;
     }
 
     // trie_max/hyph_start/max_hyph_char/trie_op_ptr are final after init_trie;
