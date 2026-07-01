@@ -268,14 +268,6 @@ fn trie_fix(hyph: &mut HyphState, mut p: i32) {
         }
     }
 }
-// translated from xetex-ini.c:858 (init_trie)
-pub unsafe fn init_trie() -> Result<(), crate::errors::EngineAbort> {
-    // Sole caller is load_fmt_file (Result-threadable); propagate the cold
-    // TrieAbort pattern-memory overflow as EngineAbort instead of longjmp-ing
-    // (`01d` §5.6).
-    crate::state::with_state_mut(|state| init_trie_in(&mut state.hyph))
-        .map_err(|e| e.into_engine_abort())
-}
 
 pub(crate) fn init_trie_in(hyph: &mut HyphState) -> Result<(), TrieAbort> {
     hyph.max_hyph_char += 1;

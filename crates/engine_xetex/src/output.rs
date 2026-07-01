@@ -287,13 +287,6 @@ pub(crate) fn print_nl_in(st: &mut EngineState, s: i32) {
 // print_esc
 // ---------------------------------------------------------------------------
 
-/// Print the escape character (if any) followed by string `s`.
-///
-/// translated from xetex-output.c:310 (print_esc)
-pub unsafe fn print_esc(s: i32) {
-    crate::state::with_state_mut(|st| print_esc_in(st, s));
-}
-
 /// `&mut EngineState` core of [`print_esc`].
 pub(crate) fn print_esc_in(st: &mut EngineState, s: i32) {
     let c = st.eqtb.b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
@@ -390,13 +383,6 @@ pub(crate) fn warn_char_in(st: &mut EngineState, c: i32) {
 // ---------------------------------------------------------------------------
 // print_ln
 // ---------------------------------------------------------------------------
-
-/// Emit a newline to the current output destination(s).
-///
-/// translated from xetex-output.c:84 (print_ln)
-pub unsafe fn print_ln() {
-    crate::state::with_state_mut(|st| print_ln_in(st));
-}
 
 /// `&mut EngineState` core of [`print_ln`].
 pub(crate) fn print_ln_in(st: &mut EngineState) {
@@ -582,13 +568,6 @@ pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
 // ---------------------------------------------------------------------------
 // print
 // ---------------------------------------------------------------------------
-
-/// Print string number `s` from the TeX string pool (or a single character).
-///
-/// translated from xetex-output.c:146 (print)
-pub unsafe fn print(s: i32) {
-    crate::state::with_state_mut(|st| print_in(st, s));
-}
 
 /// `&mut EngineState` core of [`print`].
 pub(crate) fn print_in(st: &mut EngineState, s: i32) {
@@ -832,14 +811,6 @@ pub(crate) fn print_write_whatsit_in(
 // ---------------------------------------------------------------------------
 // print_file_name
 // ---------------------------------------------------------------------------
-
-/// Print a filename composed of area `a`, name `n`, and extension `e`,
-/// quoting if needed.
-///
-/// translated from xetex-output.c:128 (print_file_name)
-pub unsafe fn print_file_name(n: i32, a: i32, e: i32) {
-    crate::state::with_state_mut(|st| print_file_name_in(st, n, a, e));
-}
 
 /// `&mut EngineState` core of [`print_file_name`].
 pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {

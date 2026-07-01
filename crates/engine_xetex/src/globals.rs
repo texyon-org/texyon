@@ -425,18 +425,6 @@ pub(crate) fn name_length() -> i32 {
     crate::state::with_state(|s| s.input.name_length)
 }
 
-/// Returns the current number of strings in the string pool.
-#[inline]
-pub(crate) fn str_ptr() -> i32 {
-    crate::state::with_state(|state| state.strings.str_ptr)
-}
-
-/// Returns `str_start[k]` — the pool offset of the k-th string.
-#[inline]
-pub(crate) fn str_start(k: i32) -> i32 {
-    crate::state::with_state(|state| state.strings.str_start[k as usize])
-}
-
 // ---------------------------------------------------------------------------
 // in_open / full_source_filename_stack / line_stack / file_line_error_style_p
 // ---------------------------------------------------------------------------
@@ -634,27 +622,10 @@ pub(crate) fn set_half_error_line(v: i32) {
 pub(crate) fn pool_size() -> i32 {
     crate::state::with_state(|state| state.strings.pool_size)
 }
-#[inline]
-pub(crate) fn pool_ptr() -> i32 {
-    crate::state::with_state(|state| state.strings.pool_ptr)
-}
-#[inline]
-pub(crate) fn set_pool_ptr(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.strings.pool_ptr = v;
-    });
-}
 // ---------------------------------------------------------------------------
 // str_start write / str_ptr write / string pool limits
 // ---------------------------------------------------------------------------
 
-/// Write `str_ptr = v`.
-#[inline]
-pub(crate) fn set_str_ptr(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.strings.str_ptr = v;
-    });
-}
 #[inline]
 pub(crate) fn max_strings() -> i32 {
     crate::state::with_state(|state| state.strings.max_strings)
@@ -821,10 +792,6 @@ pub(crate) fn set_name_in_progress(v: bool) {
 // ---------------------------------------------------------------------------
 
 #[inline]
-pub(crate) fn save_ptr() -> i32 {
-    crate::state::with_state(|state| state.save_stack.save_ptr)
-}
-#[inline]
 pub(crate) fn save_size() -> i32 {
     unsafe { raw::save_size }
 }
@@ -890,11 +857,6 @@ pub(crate) fn refresh_font_ffi_mirrors(fonts: &crate::state::FontState) {
     }
 }
 
-/// Returns `font_area[f]` — the str_number encoding the font's area.
-#[inline]
-pub(crate) fn font_area_entry(f: i32) -> i32 {
-    crate::state::with_state(|state| state.fonts.font_area[f as usize])
-}
 /// C++ bridge for OpenType math helpers that still need font_area. Reads the
 /// borrow-free mirror so it is safe to call under a held `EngineState` borrow
 /// (see `font_ffi_mirror`).
@@ -916,11 +878,6 @@ pub extern "C" fn tt_get_font_size_entry(f: i32) -> i32 {
 pub extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
     // SAFETY: mirror kept in sync with fonts.font_layout_engine by refresh_font_ffi_mirrors.
     unsafe { *font_ffi_mirror::FONT_LAYOUT_ENGINE.add(f as usize) }
-}
-/// Returns `font_mapping[f]`.
-#[inline]
-pub(crate) fn font_mapping_ptr(f: i32) -> *mut libc::c_void {
-    crate::state::with_state(|s| s.fonts.font_mapping[f as usize])
 }
 #[inline]
 pub(crate) fn random_seed() -> i32 {
@@ -1612,14 +1569,3 @@ pub(crate) fn set_used_tectonic_coda_tokens(v: bool) {
 // ---------------------------------------------------------------------------
 // format_ident / edit_name_start / empty / sa_null per-field setters
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn format_ident() -> i32 {
-    crate::state::with_state(|state| state.strings.format_ident)
-}
-#[inline]
-pub(crate) fn set_format_ident(v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.strings.format_ident = v;
-    });
-}
