@@ -497,6 +497,78 @@ completes:
 
 This is gated, not scheduled: it lands only when both preconditions hold.
 
+## 6.1 The `with_state` drain roadmap (session 249 frontier map)
+
+A 5-agent frontier map (session 249, all claims source-verified) settled the *shape*
+and *order* of the post-longjmp drain toward §6. Reconciled counts: **221** real
+`with_state`/`with_state_mut` sites — `globals.rs` 98 / `format_io.rs` 35 / `engine.rs`
+32 / `output.rs` 17 / `io.rs` 14 / `texmfmp.rs` 7 / rest ≤4. The leaf subsystems
+(`main_control` 1, `scan` 1, `math`/`packaging` 0…) are already threaded; the residue
+is concentrated in the boundary/wrapper layer that the setjmp gated.
+
+**Shape: incremental drain → ONE atomic final flip.** Not one giant commit.
+- **Drain (safe, per-commit, RefCell alive throughout):** the established sessions-232–248
+  pattern (with_state 352→221; globals wrappers 198→98). A boundary calls
+  `with_state_mut(|st| core_in(st))`, taking one borrow for the whole callee and
+  threading `&mut st` down; converting a leaf to `&mut EngineState` deletes its inner
+  `with_state` and pushes the borrow point up. Only one borrow is ever live per path,
+  so nothing nests. A `globals.rs` accessor deletes the moment its last external caller
+  threads.
+- **Final flip (genuinely atomic, §6):** in ONE commit `tt_run_engine` swaps its
+  scattered `with_state_mut` blocks for `let mut st = EngineState::new()` and deletes
+  `with_state`/`with_state_mut` + the `thread_local! RefCell` (`state.rs:1455–1467`) +
+  the ~98 `globals.rs` wrappers, folds in the `mod raw` scalars, drops the dead setjmp.
+  Cannot be split: an owned local `st` alongside any surviving external `with_state`
+  leaf ⟹ that leaf reads the *orphaned* thread-local (silent split-brain), and deleting
+  `with_state` is a compile-break unless zero external callers remain.
+- **Exact flip gate:** *zero `with_state`/`with_state_mut` outside `tt_run_engine`'s own
+  frame.* NOT "zero everywhere first" — the ~32 sites lexically inside `tt_run_engine`
+  (engine.rs:1067…1471) convert atomically *in* the flip commit itself.
+
+**Ordered roadmap (dependency-sorted):**
+1. **`get_strings_started`** (engine.rs:149) — pilot; 3 inline sites + `set_pool_ptr`/
+   `set_str_ptr`/`pool_size` calls → `st.strings.*`; 1 caller (INITEX init). **DONE
+   session 249** (`fe16b82d`, with_state 221→219).
+2. **`close_files_and_terminate`** (io.rs) — 5 sites, all workers threaded
+   (`finalize_dvi_file_in`, `synctex_terminate(st,…)`, `print_*_in`); already `Result`.
+   **Prerequisite for `store_fmt_file`**; its four callers (normal-exit + errors.rs:99/294
+   post-borrow + format_io.rs:260) all hold no borrow, so bridge cleanly.
+3. **`tt_cleanup`** (engine.rs) — 5 sites, no Result friction; two big single-borrow blocks.
+4. **`load_fmt_file`** (format_io.rs) — trivial once `pack_buffered_name` gets a one-line
+   `_in`; `load_fmt_file_in` is already the flip's reference model.
+5. **`store_fmt_file`** (format_io.rs) — the big drain (~34 sites), mechanically uniform;
+   after #2 (it calls `close_files_and_terminate`).
+6. **`final_cleanup`** (engine.rs:309) — after #5; its input-SCC calls
+   (`end_token_list`/`end_file_reading`) return `InputAbort`, so bare `?` becomes
+   `map_err(|e| e.into_engine_abort())?`.
+7. **Cascade:** with #1–6 done the ~140 thin wrappers lose their last un-threaded callers
+   and delete with their bodies — the 5 boundary-only init/deinit wrappers
+   (`initialize_pagebuilder_variables`, `initialize/deinitialize_shipout_variables`,
+   `init_trie`, `pack_buffered_name`), the output/texmfmp/io/scaled_math leaves, and the
+   98 `globals.rs` accessors becoming caller-free.
+8. **Residue:** 5 post-borrow re-entries (scan.rs:2351, errors.rs:70/94, fonts.rs:169/1059)
+   need small `_in` pulls; the C-ABI entries (`font_feature_warning` output.rs, and
+   `tt_xetex_open_input` io.rs) need a raw-pointer stash rather than the borrow.
+9. **FINAL FLIP** (one commit, §6).
+
+**Traps (session-249 map, verified):**
+- **`mod raw` scalars STAY PUT during the drain.** Do NOT fold
+  `cur_cs`/`cur_tok`/`cur_chr`/`cur_cmd`/`cur_val`/`cur_ptr`/`line`/… (globals.rs
+  category-B, ~92 fns) into `EngineState` until the flip — they are the borrow bridge
+  (`main_control.rs:23–26` reads them under the live `main_control_in` borrow). Folding
+  one while any `with_state` leaf survives creates a held-`&mut` conflict.
+- **No `is_char_node`/`hi_mem_min` freshness hazard** in any boundary fn (the lone
+  `hi_mem_min` write at format_io.rs:764 is a plain field store). The real friction is
+  **split-borrow**: a folded site sometimes needs two disjoint sub-structs at once
+  (`errors`+`strings`, `input`+`shipout`) — take per-field reborrows the single-field
+  wrapper hides.
+- **Config carry-over (flip-only, easy to miss):** `tt_xetex_set_int_variable`
+  (engine_interface.rs:11–34) writes 5 config fields (`halt_on_error_p`,
+  `in_initex_mode`, `synctex_enabled`, `semantic_pagination_enabled`,
+  `shell_escape_enabled`) into the thread-local *before* `tt_run_engine` runs, so a fresh
+  `EngineState::new()` in the flip would discard them — stash in retained statics and read
+  into `st` at startup.
+
 ## 7. Session 242 slice (this session)
 
 Stage-I bootstrap, setjmp kept as backstop:

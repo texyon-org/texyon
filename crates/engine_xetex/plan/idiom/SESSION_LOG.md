@@ -8,6 +8,34 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 250 — 2026-07-01 — Map the post-longjmp `with_state` drain frontier + pilot slice (01d §6.1)
+
+**Type:** understand + execution. A 5-agent frontier-map workflow (all claims
+source-verified) + the pilot drain slice. Answers "can we now continue threading?" —
+**yes**, and writes down the how.
+
+**The map (→ `01d` §6.1).** With every longjmp gone (session 249), the only thing that
+forbade a boundary fn from holding a long-lived `&mut EngineState` — a `longjmp`
+discarding the `RefCell` borrow guard (`state.rs:1461`) without `Drop`, poisoning the
+cell — is gone. The 221 `with_state` sites concentrate in the boundary/wrapper layer
+(`globals.rs` 98 / `format_io.rs` 35 / `engine.rs` 32); the leaf subsystems are already
+threaded. Shape: **incremental drain → ONE atomic final flip** (the flip can't be split —
+an owned local `st` beside any surviving external `with_state` leaf = split-brain). Exact
+flip gate: **zero `with_state` outside `tt_run_engine`'s own frame**. Ordered 9-step
+roadmap + traps (mod-raw scalars stay put; split-borrow not `is_char_node` freshness; the
+`tt_xetex_set_int_variable` config carry-over must be stashed in retained statics at the
+flip) — all in `01d` §6.1.
+
+**Pilot (`fe16b82d`).** `get_strings_started` → `get_strings_started_in(st: &mut
+EngineState) -> Result<(), EngineAbort>`: 3 inline `with_state` + the `set_pool_ptr`/
+`set_str_ptr`/`pool_size` wrapper calls → direct `st.strings.*`; sole caller
+(`tt_run_engine` INITEX init) bridges via one `with_state_mut(|st| …_in(st))`. Dropped
+the now-unused imports. `with_state` **221 → 219**; warnings 37; dashboard 29/2/7/4
+(TRIP's `\dump` exercises this INITEX path).
+
+**Next:** roadmap step 2 — `close_files_and_terminate` (prerequisite for `store_fmt_file`,
+clears the errors.rs terminal path), then the format-file pair. See [[globals-wrappers-gated-on-setjmp-boundary]].
+
 ## Idiom session 249 — 2026-07-01 — Execution: eliminate EVERY remaining longjmp — 0 `_tt_abort`, 0 `.fire()`, 0 bridge_core input-close (01d §5.6/§5.7/§6)
 
 **Type:** execution (`01d` §5.6 → §6 unblock). Autonomous: **8 commits**, dashboard
