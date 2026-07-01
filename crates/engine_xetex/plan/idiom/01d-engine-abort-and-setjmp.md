@@ -536,6 +536,11 @@ is concentrated in the boundary/wrapper layer that the setjmp gated.
    session 250** (`c6c79fe6`, 219→215): `close_files_and_terminate_in(st)` + a thin
    one-`with_state_mut` bridge wrapper keeping the four callers unchanged.
 3. **`tt_cleanup`** (engine.rs) — 5 sites, no Result friction; two big single-borrow blocks.
+   **DONE session 250** (`cd1b2142`, with_state 215→209): `tt_cleanup_in(st)` + a thin
+   one-`with_state_mut` bridge wrapper (3 callers — engine.rs normal-exit + errors.rs:100/295
+   post-borrow — unchanged); the font-loop `font_area_entry`/`font_mapping_ptr` reads and the
+   `set_font_mapping_ptr`/`deinitialize_shipout_variables` wrappers fold to direct `st.*`,
+   deleting both now-dead wrappers. Re-entrant calls are all pure FFI, sound under the borrow.
 4. **`load_fmt_file`** (format_io.rs) — trivial once `pack_buffered_name` gets a one-line
    `_in`; `load_fmt_file_in` is already the flip's reference model.
 5. **`store_fmt_file`** (format_io.rs) — the big drain (~34 sites), mechanically uniform;
