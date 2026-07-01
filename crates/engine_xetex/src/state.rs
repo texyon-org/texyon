@@ -746,7 +746,7 @@ pub(crate) struct ScannerState {
     pub save_native_len: i32,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub(crate) struct ConfigState {
     pub file_line_error_style_p: i32,
     pub halt_on_error_p: i32,
@@ -1449,18 +1449,55 @@ impl Default for LinebreakState {
     }
 }
 
+// --- §6 flip transition (drain step 9) ---------------------------------------
+// The engine state is being moved from a persistent thread-local `RefCell` to a
+// value OWNED by `tt_run_engine`. During a run, `tt_run_engine` installs a raw
+// pointer to its owned `EngineState` (`ENGINE_STATE_PTR`) and `with_state`/
+// `with_state_mut` reach it through that pointer — letting the still-unthreaded
+// accessor/terminal code keep working while the remaining `with_state` sites are
+// drained to direct `&mut EngineState` threading. When the pointer is null (unit
+// tests that never enter `tt_run_engine`, and host `tt_xetex_set_int_variable`
+// calls made *before* a run) the calls fall back to the old thread-local
+// `RefCell`, which also preserves that path's double-borrow panic net. Once the
+// drain reaches zero `with_state` calls, the pointer, the fallback, and these two
+// fns all delete and the flip is complete.
 thread_local! {
-    static ENGINE_STATE: RefCell<EngineState> = RefCell::new(EngineState::default());
+    static ENGINE_STATE_PTR: std::cell::Cell<*mut EngineState> =
+        const { std::cell::Cell::new(std::ptr::null_mut()) };
+    static ENGINE_STATE_FALLBACK: RefCell<EngineState> = RefCell::new(EngineState::default());
+}
+
+/// Install (or clear, with a null pointer) the owner pointer for the current
+/// thread. Called by `tt_run_engine` at entry (set) and on every exit path (clear
+/// via a drop guard).
+///
+/// SAFETY: while non-null, `p` must point to an `EngineState` that outlives every
+/// `with_state`/`with_state_mut` call on this thread until it is cleared.
+pub(crate) fn set_engine_state_ptr(p: *mut EngineState) {
+    ENGINE_STATE_PTR.with(|c| c.set(p));
 }
 
 #[inline]
 pub(crate) fn with_state<R>(f: impl FnOnce(&EngineState) -> R) -> R {
-    ENGINE_STATE.with(|state| f(&state.borrow()))
+    let p = ENGINE_STATE_PTR.with(|c| c.get());
+    if p.is_null() {
+        return ENGINE_STATE_FALLBACK.with(|state| f(&state.borrow()));
+    }
+    // SAFETY: `p` points to `tt_run_engine`'s owned `EngineState`, live for the
+    // whole run; the no-double-borrow invariant (proven under the former RefCell)
+    // guarantees no aliasing `&mut` is active. Transitional (§6 flip).
+    f(unsafe { &*p })
 }
 
 #[inline]
 pub(crate) fn with_state_mut<R>(f: impl FnOnce(&mut EngineState) -> R) -> R {
-    ENGINE_STATE.with(|state| f(&mut state.borrow_mut()))
+    let p = ENGINE_STATE_PTR.with(|c| c.get());
+    if p.is_null() {
+        return ENGINE_STATE_FALLBACK.with(|state| f(&mut state.borrow_mut()));
+    }
+    // SAFETY: as `with_state`; the invariant guarantees this is the only live
+    // borrow of `*p` for the closure's duration. Transitional (§6 flip).
+    f(unsafe { &mut *p })
 }
 
 pub(crate) struct HyphState {

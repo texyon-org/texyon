@@ -1018,6 +1018,26 @@ pub unsafe extern "C" fn tt_run_engine(
     input_file_name: *const libc::c_char,
     build_date: libc::time_t,
 ) -> i32 {
+    // §6 flip (drain step 9): own the engine state here instead of a persistent
+    // thread-local. Heap-boxed so the ~KB struct isn't a fresh stack frame. The
+    // host set config (halt_on_error_p/in_initex_mode/…) via
+    // `tt_xetex_set_int_variable` *before* this call — that landed in the
+    // pre-run fallback `EngineState`; copy its config into the owned state before
+    // installing the owner pointer, then all `with_state` calls reach `st`.
+    let mut st = Box::new(crate::state::EngineState::default());
+    st.config = crate::state::with_state(|s| s.config);
+    // Clears the owner pointer on every exit path so a stale pointer to the
+    // (dropped) `st` never outlives the run (e.g. a between-runs
+    // `tt_xetex_set_int_variable` must hit the fallback, not freed memory).
+    struct PtrGuard;
+    impl Drop for PtrGuard {
+        fn drop(&mut self) {
+            crate::state::set_engine_state_ptr(std::ptr::null_mut());
+        }
+    }
+    crate::state::set_engine_state_ptr(&mut *st as *mut crate::state::EngineState);
+    let _ptr_guard = PtrGuard;
+
     tre_TEX_format_default = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
     libc::strcpy(tre_TEX_format_default, dump_name);
     tre_format_default_length = libc::strlen(dump_name) as i32;
