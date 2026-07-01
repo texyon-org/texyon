@@ -773,11 +773,6 @@ pub(crate) unsafe fn make_utf16_name_in(st: &mut crate::state::EngineState) {
     st.input.name_length16 = t.offset_from(t0) as i32;
 }
 
-/// Bridge-down wrapper for legacy `make_utf16_name` callers (`01b` §3).
-pub unsafe fn make_utf16_name() {
-    crate::state::with_state_mut(|st| make_utf16_name_in(st));
-}
-
 // ---------------------------------------------------------------------------
 // get_uni_c
 // ---------------------------------------------------------------------------
@@ -1014,10 +1009,6 @@ pub(crate) fn begin_name_in(st: &mut crate::state::EngineState) {
     st.scanner.file_name_quote_char = 0;
 }
 
-/// Bridge-down wrapper for legacy `begin_name` callers (`01b` §3).
-pub fn begin_name() {
-    crate::state::with_state_mut(|st| begin_name_in(st));
-}
 /// Cold abort reasons threaded out of the file-name machinery
 /// ([`more_name_in`]/[`end_name_in`]/[`make_name_string_in`]) so the bridge
 /// wrappers run the `overflow` longjmp after the state borrow drops (`01b` §5).
@@ -1203,20 +1194,6 @@ pub(crate) unsafe fn make_name_string_in(
     Ok(result)
 }
 
-/// Bridge-down wrapper for legacy `make_name_string` callers (`01b` §3, §5).
-/// translated from xetex-xetex0.c:7928 (make_name_string)
-pub unsafe fn make_name_string() -> Result<i32, crate::errors::EngineAbort> {
-    // Sole caller is store_fmt_file (Result-threadable); propagate the cold
-    // NameAbort overflow as EngineAbort instead of longjmp-ing (`01d` §5.6).
-    crate::state::with_state_mut(|st| make_name_string_in(st)).map_err(|e| e.into_engine_abort())
-}
-/// translated from xetex-xetex0.c:7970 (pack_job_name)
-pub unsafe fn pack_job_name(s: *const libc::c_char) -> Result<(), crate::errors::EngineAbort> {
-    // Sole caller is store_fmt_file (Result-threadable); propagate the cold
-    // MakeTexStringAbort as EngineAbort instead of longjmp-ing (`01d` §5.6).
-    crate::state::with_state_mut(|st| pack_job_name_in(st, s)).map_err(|e| e.into_engine_abort())
-}
-
 /// `&mut EngineState` core of [`pack_job_name`] (scanner-SCC prereq). The string
 /// build's overflow rides [`crate::texmfmp::MakeTexStringAbort`] (`01b` §5).
 pub(crate) unsafe fn pack_job_name_in(
@@ -1311,20 +1288,6 @@ pub(crate) unsafe fn open_log_file_in(
     st.shipout.selector = old_setting + 2;
     Ok(())
 }
-/// translated from xetex-xetex0.c:6431 (start_input)
-pub unsafe fn start_input(
-    primary_input_name: *const libc::c_char,
-) -> Result<(), crate::errors::EngineAbort> {
-    // Propagate the cold `SccAbort` as a unified `EngineAbort` for `tt_run_engine`
-    // to catch (the direct analog of the `main_control` fold, `01d` §5.6). The
-    // map runs *post-borrow*, mirroring the old `e.fire()` longjmp-to-setjmp.
-    crate::state::with_state_mut(|st| unsafe { start_input_in(st, primary_input_name) })
-        .map_err(|e| e.into_engine_abort())
-}
-// translated from xetex-xetex0.c:6381 (pack_file_name)
-pub unsafe fn pack_file_name(n: i32, a: i32, e: i32) {
-    crate::state::with_state_mut(|st| pack_file_name_in(st, n, a, e));
-}
 
 /// `&mut EngineState` core of [`pack_file_name`] (scanner-SCC prereq).
 ///
@@ -1362,20 +1325,6 @@ pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i3
     st.input.name_of_file.resize(len + 1, 0);
     libc::strcpy(st.input.name_of_file.as_mut_ptr(), work_buffer);
     libc::free(work_buffer as *mut libc::c_void);
-}
-/// translated from xetex-xetex0.c:9722 (close_files_and_terminate)
-///
-/// Returns `Err(EngineAbort)` for a `finalize_dvi_file` failure instead of
-/// longjmp-ing (`01d` §5.6): the normal-exit caller (`tt_run_engine`) propagates
-/// it via `into_history`; the terminal-cleanup callers (`post_error_message`,
-/// `into_history`'s `Fatal` arm, `store_fmt_file`'s `\dump`-in-group) **absorb**
-/// it (`let _ = …`), since they already commit to `HISTORY_FATAL_ERROR`. The
-/// success path (the only one exercised by TRIP/corpus) runs identically and
-/// returns `Ok(())`.
-pub unsafe fn close_files_and_terminate() -> Result<(), crate::errors::EngineAbort> {
-    // Thin bridge for the not-yet-threaded callers (tt_run_engine normal exit +
-    // the errors.rs terminal-cleanup paths + store_fmt_file); they hold no borrow.
-    crate::state::with_state_mut(|st| close_files_and_terminate_in(st))
 }
 
 /// Threaded `_in` core of [`close_files_and_terminate`] (`01d` §6.1 drain, step 2).
