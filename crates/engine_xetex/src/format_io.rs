@@ -32,8 +32,6 @@ extern "C" {
 
     #[link_name = "TEX_format_default"]
     static mut tre_TEX_format_default: *mut libc::c_char;
-    #[link_name = "format_default_length"]
-    static mut tre_format_default_length: i32;
     #[link_name = "pool_free"]
     static mut tre_pool_free: i32;
     #[link_name = "strings_free"]
@@ -851,38 +849,42 @@ pub unsafe fn store_fmt_file() -> Result<(), crate::errors::EngineAbort> {
     ttstub_output_close(fmt_out);
     Ok(())
 }
-// translated from xetex-ini.c:590 (pack_buffered_name)
-unsafe fn pack_buffered_name(_n: i16, _a: i32, _b: i32) {
-    let v = tre_TEX_format_default;
-    crate::state::with_state_mut(|s| {
-        let len = libc::strlen(v);
-        s.input.name_of_file.resize(len + 1, 0);
-        libc::strcpy(s.input.name_of_file.as_mut_ptr(), v);
-    });
-    crate::globals::set_name_length(libc::strlen(tre_TEX_format_default) as i32);
-}
 // translated from xetex-ini.c:602 (load_fmt_file)
 pub unsafe fn load_fmt_file() -> Result<bool, crate::errors::EngineAbort> {
-    let j = cur_input().loc;
-    pack_buffered_name((tre_format_default_length - 4) as i16, 1, 0);
+    // Phase-C (`01b` §3) / drain step 4 (`01d` §6.1): the whole load — the
+    // pack-name prelude AND the undump — runs under one `&mut EngineState`
+    // borrow. `cur_input` is a `mod raw` scalar (borrow-independent, stays put
+    // until the flip); the file open is plain FFI; `undump_*` return
+    // `EngineAbort` instead of longjmp-ing under the borrow (`01d` §5.4), as do
+    // the bad-format paths. The wrapper propagates the `Result` to
+    // `tt_run_engine`, which turns it into `HISTORY_FATAL_ERROR`.
+    crate::state::with_state_mut(|st| {
+        let j = cur_input().loc;
 
-    let fmt_in = ttstub_input_open(crate::globals::name_of_file(), TTBC_FILE_FORMAT_FORMAT, 0);
-    if fmt_in == INVALID_HANDLE {
-        return Err(crate::errors::EngineAbort::TtAbort(
-            c"cannot open the format file".as_ptr(),
-        ));
-    }
+        // pack_buffered_name (xetex-ini.c:590), inlined onto the borrow: copy
+        // the format-default name into name_of_file and set name_length.
+        let v = tre_TEX_format_default;
+        let len = libc::strlen(v);
+        st.input.name_of_file.resize(len + 1, 0);
+        libc::strcpy(st.input.name_of_file.as_mut_ptr(), v);
+        st.input.name_length = len as i32;
 
-    set_cur_input_loc(j);
+        let name_ptr = if st.input.name_of_file.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            st.input.name_of_file.as_ptr() as *mut libc::c_char
+        };
+        let fmt_in = ttstub_input_open(name_ptr, TTBC_FILE_FORMAT_FORMAT, 0);
+        if fmt_in == INVALID_HANDLE {
+            return Err(crate::errors::EngineAbort::TtAbort(
+                c"cannot open the format file".as_ptr(),
+            ));
+        }
 
-    // Phase-C (`01b` §3): the whole undump runs under one `&mut EngineState`
-    // borrow. `undump_*` are plain file FFI; on a short/corrupt read they now
-    // return `EngineAbort` instead of longjmp-ing under the borrow (`01d` §5.4),
-    // as do the bad-format paths; this wrapper propagates the `Result` to
-    // `tt_run_engine`, which turns it into `HISTORY_FATAL_ERROR`. The file-open
-    // prelude stays out of the borrow (`name_of_file`/`pack_buffered_name` are
-    // still `with_state`-bearing).
-    crate::state::with_state_mut(|st| load_fmt_file_in(st, fmt_in))
+        set_cur_input_loc(j);
+
+        load_fmt_file_in(st, fmt_in)
+    })
 }
 
 /// Threaded core of [`load_fmt_file`] (`01b` §3): holds one `&mut EngineState`
