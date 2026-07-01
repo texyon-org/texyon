@@ -4,6 +4,37 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-07-01 (last session = session 247, **execution — Stage II: the
+input-I/O longjmp sweep (`01d` §2/§2.1)**. Six commits (dashboard **29/2/7/4** each;
+`unsafe fn` **263→260**; warnings **37**) + an 11-agent adversarial verify
+(**11/11 EQUIVALENT**). Neutralized bridge_core longjmp sources (2)/(3) — the C
+`ttstub_input_seek`/`ttstub_input_close` wrappers that `longjmp` on a serious internal
+I/O error. **Recon decision (§2.1): Option A** — call the exported C-ABI
+`ttbc_input_seek`/`ttbc_input_close` directly (they return the error, never jump) via
+the existing `_ttbc_get_core_state()` accessor; decisive because
+`CoreBridgeState::input_seek` is a **private `fn`** so Option B isn't in-crate for
+seek, and B would thread a second long-lived `&mut CoreBridgeState` through the whole
+I/O tree. `io::input_seek`/`io::input_close` wrap the ttbc calls. **Converted 15 of 17
+sites:** deleted dead `u_open_in`/`set_input_file_encoding` (drops 3 seeks); all **7
+seek** sites → `io::input_seek` (SEEK_SET ⟹ `internal_error` never set ⟹ seek longjmp
+provably unreachable, no abort arm); **8 close** sites thread `Err(<Sub>Abort::InputClose)
+→ EngineAbort::TtAbort → tt_run_engine → into_history` (history 3) — `load_fmt_file_in`,
+`read_font_info_in` (new `ReadFontInfoAbort::InputClose`), the conv_toks trio
+`getfilesize/dump/moddate_in` (new `SccAbort::InputClose`, via `conv_toks_in`),
+`find_pic_file` (new `MainControlAbort::InputClose`) + `count_pdf_file_pages_named`.
+The old bare `longjmp` (support.c, NOT `_tt_abort`) ran no cleanup and left `format_buf`
+undefined; `TtAbort` runs no cleanup, sets a descriptive message, returns 3 —
+control-flow identical, message a test-invisible improvement. **Deferred 2** (§2.1
+table): `u_close` (io) — (B)-class, close-abort reached from `close_files_and_terminate`
+in terminal machinery; `load_mapping_file_in` (ext) — folds with the ext native-font
+inline-`_tt_abort` class (§5.6). `xmalloc` fold stays deferred (OOM terminal). These
+I/O-error paths are exercised by neither dashboard nor corpus, so the 11/11 adversarial
+verify is the correctness gate. Validation: full corpus **637 passed / 2 diverged**
+(known FP). **Next (§6):** the setjmp still has the 2 deferred `ttstub_input_close`
+sites + the Rust `_tt_abort` residue (`error()`, `open_log_file`/`finalize_dvi_file`,
+the two inline classes, §5.6) to thread before the owned-`EngineState` flip. See
+SESSION_LOG session 247.)
+
 Last updated: 2026-07-01 (last session = session 246, **execution + census —
 the Stage-I residue: convert the whole directly-propagatable `(A)` set + census
 the rest (`01d` §5.6)**. Four commits (dashboard **29/2/7/4** each; `unsafe fn`

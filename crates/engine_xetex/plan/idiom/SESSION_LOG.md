@@ -8,6 +8,81 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 247 — 2026-07-01 — Execution: Stage II — the input-I/O longjmp sweep (ttstub_input_seek/close → ttbc_*/Result)
+
+**Type:** execution (Stage II, `01d` §2/§2.1). Autonomous: six commits + an 11-agent
+adversarial verify (**11/11 EQUIVALENT**).
+
+**The job (`01d` §2).** Neutralize longjmp sources (2)/(3) of the three feeding the
+xetex setjmp — the C `ttstub_input_seek`/`ttstub_input_close` wrappers, which
+`longjmp` *from C* on a serious internal I/O error. (Source (1), the Rust `_tt_abort`
+spine, was converted-or-enumerated in Stage I / session 246.)
+
+**Recon → decision (`01d` §2.1): Option A.** Call the exported C-ABI
+`ttbc_input_seek`/`ttbc_input_close` directly (they return the error as a value,
+never jump), getting `&mut CoreBridgeState` from the existing `_ttbc_get_core_state()`
+accessor. **Decisive:** `CoreBridgeState::input_seek` is a **private `fn`** in
+bridge_core, so Option B ("call the Rust method") isn't even in-crate for seek — only
+the exported `ttbc_*` symbols are reachable. B would also thread a second long-lived
+`&mut CoreBridgeState` through the whole deep I/O tree alongside the `with_state`
+RefCell (large blast radius, nothing gained). `io::input_seek`/`io::input_close` wrap
+the two ttbc calls.
+
+**Converted 15 of 17 sites (6 commits; dashboard 29/2/7/4 each, warnings 37):**
+- **Dead-code (`7870b9b5`):** deleted `u_open_in` + `set_input_file_encoding` (0 live
+  callers) — drops 3 seek sites for free.
+- **Seek (`02cb5a9b`):** all 7 seek sites → `io::input_seek`. Every site rewinds with
+  `SEEK_SET`, and `ttbc_input_seek` flags `internal_error` only for an invalid `whence`,
+  so the seek longjmp is **provably unreachable** (asserted) — no abort arm needed.
+- **Close, Result-direct (`4ec64abf`):** `load_fmt_file_in` (→ `EngineAbort::TtAbort`)
+  + `read_font_info_in` (→ new `ReadFontInfoAbort::InputClose`), enclosing fns already
+  return `Result`.
+- **Close, conv_toks trio (`0a4b3b6b`):** `getfilesize_in`/`getfiledump_in`/
+  `getfilemoddate_in` → `Result<(), SccAbort>` (new `SccAbort::InputClose`), propagated
+  via `?` through their sole live caller `conv_toks_in`; deleted the 3 dead bridge
+  wrappers.
+- **Close, pic (`b149a1f9`):** `find_pic_file` → `Result<c_int, MainControlAbort>`
+  (new `MainControlAbort::InputClose`), `count_pdf_file_pages_named` →
+  `Result<c_int, SccAbort>`, propagated via `?` through `load_picture_in` /
+  `scan_something_internal_in`.
+- (`2e450322`: rustfmt line-wrap of the `input_seek` ttbc call — no behavior change.)
+
+Each close site: on `ttbc_input_close != 0` (the exact condition the C wrapper
+`longjmp`'d on — `input_close`'s `scan_remainder` failed) return
+`Err(<Subsystem>Abort::InputClose)` → `EngineAbort::TtAbort` → `tt_run_engine` →
+`into_history` (history 3). The old bare `longjmp` (support.c:332, **not** `_tt_abort`)
+ran no cleanup and left `format_buf` undefined; `TtAbort` runs no cleanup, sets a
+descriptive message, returns 3 — control-flow identical, the message a documented,
+test-invisible improvement.
+
+**Deferred (2 sites, with rationale — `01d` §2.1 table):** `u_close` (io.rs) —
+**(B)-class**: its close-abort is reached from `close_files_and_terminate` inside
+`into_history`'s terminal machinery (a §6-flip concern), alongside threadable callers.
+`load_mapping_file_in` (ext.rs) — folds with the **ext.rs native-font ×13
+inline-`_tt_abort` class** (§5.6), which threads only when the measurement layer grows
+an error channel. The `xmalloc` `_tt_abort` fold stays deferred (OOM terminal, §2).
+
+**Adversarial verification (Workflow, 11 skeptics, ultracode).** One agent per
+conversion class + the ABI/terminal infra, each re-deriving the old ttstub longjmp vs
+the new ttbc/Result path (extern ABI compat vs bridge_core, `SEEK_SET`
+unreachability, close terminal = `TtAbort`/no-cleanup/history-3, guard preservation).
+**Result: 11/11 EQUIVALENT, 0 divergent.** These I/O-error paths are exercised by
+neither the dashboard nor the corpus (they need a mid-read internal failure), so the
+verify was the primary correctness gate.
+
+**Metrics:** `unsafe fn` **263 → 260** (−3 dead wrappers; the InputClose variants add
+zero unsafe fns); `with_state` unchanged; warnings **37**. Validation: dashboard
+**29/2/7/4** per commit; release rebuild; full corpus **637 passed / 2 diverged**
+(known FP pair). Left the pre-existing `format_io.rs` compact one-liners un-fmt'd (as
+prior sessions). Commits `7870b9b5`, `02cb5a9b`, `4ec64abf`, `0a4b3b6b`, `b149a1f9`,
+`2e450322`.
+
+**Next (`01d` §6).** Two `ttstub_input_close` longjmp sites remain (the deferred
+`u_close` + the `ext` native-font class). The Rust `_tt_abort` residue still to thread
+before the flip: `error()` + `open_log_file`/`finalize_dvi_file` + the two inline
+classes (§5.6). Only once **no** Rust path AND **no** bridge_core input-I/O path
+longjmps does the setjmp + owned-`EngineState` flip (§6) land.
+
 ## Idiom session 246 — 2026-07-01 — Execution + census: the Stage-I residue (convert the (A) scatter, census the rest)
 
 **Type:** execution + census (continuation of the session-245 EngineAbort lever).

@@ -92,19 +92,106 @@ So the end-state is staged, but **both stages are engine_xetex-local**:
 
 - **Stage I (this track):** convert the *Rust* `_tt_abort` spine to
   `Result`/`EngineAbort` up to `tt_run_engine`. Setjmp stays as a thin backstop.
-- **Stage II (also in-crate):** replace the ~19 `ttstub_input_seek/close` call
-  sites with `ttbc_*`/`CoreBridgeState` + error→`Result` threading (same
-  mechanical work as Stage I, just for the I/O error paths). Cleanest is the
-  `CoreBridgeState::input_seek` `Result` (the C `ttbc_input_seek` out-param has a
-  `TODO` and doesn't set `internal_error` on a real seek `Err`). **Also fold the
-  allocator jumps:** `_tt_abort` is called from `xmalloc/xcalloc/xrealloc`
-  (support.c) and `tt_run_engine` uses `xmalloc` — replace those few with Rust
-  allocation (or accept, since OOM is terminal). After Stage II nothing longjmps,
-  and the setjmp + owned-`EngineState` flip (§6) becomes possible.
+- **Stage II (also in-crate) — 15 of 17 seek/close sites done (session 247, §2.1).**
+  Replace the `ttstub_input_seek/close` call sites with the exported `ttbc_*` C-ABI
+  fns + error→`Result` threading (same mechanical work as Stage I, for the I/O error
+  paths). **Decision was Option A, not `CoreBridgeState::input_seek`'s `Result`:** that
+  method is a **private `fn`** in bridge_core, so it isn't callable in-crate — only the
+  exported `ttbc_input_seek`/`ttbc_input_close` are (§2.1). All 7 seeks + 8 of 10
+  closes converted (11/11 adversarial-verified EQUIVALENT); **2 closes deferred**
+  (`u_close` (B)-class terminal-cleanup caller; `load_mapping_file_in` folds with the
+  ext native-font inline class, §5.6). **The `xmalloc/xcalloc/xrealloc` `_tt_abort`
+  jumps stay deferred** (OOM is terminal — accept per §2). So after session 247 the
+  bridge_core input-I/O longjmp is gone from every reachable Result-threadable path;
+  the two deferred closes + the Rust `_tt_abort` residue (§5.6) remain before the
+  setjmp + owned-`EngineState` flip (§6) becomes possible.
 
 Stage I already removes the scattered deferred-`fire` machinery, unifies it, and
 makes the boundary functions abort-safe w.r.t. *fatal* aborts — the dominant
 case. Stage II is not a blast-radius wildcard; it is a bounded in-crate sweep.
+
+## 2.1 Stage II — the A-vs-B decision (session 247: **Option A**)
+
+**Recon settled it: Option A — call the exported C-ABI `ttbc_input_seek` /
+`ttbc_input_close` directly, obtaining `&mut CoreBridgeState` from the existing
+`_ttbc_get_core_state()` accessor.** Not B (thread `&mut CoreBridgeState` from
+`tt_engine_xetex_main` through `tt_run_engine` and the deep I/O tree).
+
+Why A, decisively:
+
+1. **B is not even in-crate for seek.** `CoreBridgeState::input_seek`
+   (`bridge_core/src/lib.rs:684`) is a **private `fn`** (no `pub`) — engine_xetex
+   cannot call it without a `bridge_core` edit, contradicting "in-crate." Only the
+   exported `#[no_mangle] pub extern "C" fn ttbc_input_seek` (`:1107`) is reachable.
+   (`input_close` at `:711` *is* `pub`, but that lone method doesn't justify the B
+   plumbing.) So the exported `ttbc_*` C-ABI symbols are the only in-crate path — A.
+2. **Both A and B need `&mut CoreBridgeState`.** A gets it for free from
+   `_ttbc_get_core_state()` (`bridge_core/support/support.c:128`, plain exported
+   fn returning the `tectonic_global_bridge_core` global the C `ttstub_*` wrappers
+   already use). engine_xetex already declares such non-header externs
+   (`_ttbc_set_error_message`, `errors.rs:51`). B would instead thread a **second
+   long-lived `&mut` state param** from the C entry through `tt_run_engine` and
+   every deep I/O call site (`io`/`texmfmp`/`format_io`/`pic`/`fonts`/`ext`) —
+   alongside the `thread_local! RefCell` `EngineState` borrow — a large blast
+   radius that fights the with_state architecture and buys nothing over A.
+3. **The longjmp lives only in the C `ttstub_*` wrappers.** `ttbc_input_seek` /
+   `ttbc_input_close` return the error as a value and never jump; calling them
+   directly neutralizes the longjmp at the source (the setjmp precondition).
+
+**Plumbing sketch (io.rs — shared, `pub(crate)`):**
+
+```rust
+extern "C" {                       // non-header exports (like _ttbc_set_error_message)
+    fn _ttbc_get_core_state() -> *mut libc::c_void;   // the global CoreBridgeState
+    fn ttbc_input_seek(es: *mut libc::c_void, handle: usize, offset: libc::ssize_t,
+                       whence: libc::c_int, internal_error: *mut libc::c_int) -> libc::size_t;
+    fn ttbc_input_close(es: *mut libc::c_void, handle: usize) -> libc::c_int;
+}
+/// Non-longjmp seek. Every engine site passes SEEK_SET, and ttbc_input_seek sets
+/// internal_error only for an invalid whence, so the seek longjmp is UNREACHABLE:
+/// returns the new position like the C ttstub_input_seek wrapper, asserts ie==0.
+pub(crate) unsafe fn input_seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) -> libc::size_t { … }
+/// Non-longjmp close. Returns true on the serious internal close error the C
+/// ttstub_input_close wrapper `longjmp`'d on (ttbc_input_close != 0); Result-path
+/// callers propagate it as EngineAbort::TtAbort (no cleanup, sets the surfaced
+/// message, history 3) — mirroring the old bare longjmp's control flow.
+#[must_use] pub(crate) unsafe fn input_close(handle: usize) -> bool { ttbc_input_close(_ttbc_get_core_state(), handle) != 0 }
+```
+
+**Behavior-preservation.** *Seek* — provably no abort (SEEK_SET ⟹ `internal_error`
+never set; the C `ttbc_input_seek` out-param's TODO — misreporting a *real* seek
+`Err` as position 0 with no `internal_error` — is moot here because the error arm
+is unreachable at every rewind site; A inherits the exact unreachable behavior).
+*Close* — the old bare `longjmp(jump_buffer,1)` (support.c:332, **not** `_tt_abort`)
+ran no cleanup and left `format_buf` undefined; `EngineAbort::TtAbort(msg)`
+(`errors.rs`) into_history runs no cleanup, sets a **descriptive** message, and
+returns 3 — control-flow identical, the message a documented, test-invisible
+improvement over "undefined stale `format_buf`".
+
+**`CoreBridgeState` aliasing is sound.** `_ttbc_get_core_state()` returns the same
+non-null global the C `ttstub_*` wrappers pass; engine_xetex holds no other
+reference to it, so forming a fresh `&mut` per ttbc call mirrors the C side exactly.
+
+**Reachability of the close abort → tractability (session-247 census).** A close
+error longjmps only when `input_close`'s `scan_remainder()` fails (rare mid-read
+I/O error). Faithful preservation needs each close site's enclosing fn to
+propagate that as a `Result`. Live-caller analysis:
+
+| close site (fn) | live caller → error type | this session |
+|---|---|---|
+| `load_fmt_file_in` (format_io) | self — `Result<_, EngineAbort>` | convert (direct `TtAbort`) |
+| `read_font_info_in` (fonts) | self — `Result<_, ReadFontInfoAbort>` | convert (+ `InputClose` variant) |
+| `getfilesize_in`/`getfiledump_in`/`getfilemoddate_in` (texmfmp) | `conv_toks_in` — `Result<_, SccAbort>` (the non-`_in` wrappers are DEAD) | convert (+ `SccAbort::InputClose`) |
+| `find_pic_file` (pic) | `load_picture_in` — `Result<_, MainControlAbort>` | convert (+ `MainControlAbort::InputClose`) |
+| `count_pdf_file_pages_named` (pic) | `scan_something_internal_in` — `Result<_, SccAbort>` | convert (`SccAbort::InputClose`) |
+| `u_close` (io) | `open_or_close_in` (Result) **and** `close_files_and_terminate` (terminal cleanup, un-threadable) | **DEFER — (B)-class**: its abort is reached from `into_history`'s terminal machinery, a §6-flip concern |
+| `load_mapping_file_in` (ext) | itself already has an inline `_tt_abort` ("could not read mapping file") | **DEFER** with the ext.rs native-font ×13 inline-longjmp class (§5.6) |
+
+Seek sites: `u_open_in` (DEAD — delete, superseded by `u_open_in_in`; drops 3 sites
++ its sole callee `set_input_file_encoding`), `u_open_in_in` (×3, Result but no
+abort), `getfiledump_in` (×1). So this session converts **15 of 17** sites and
+defers **2** (`u_close`, `load_mapping_file_in`) with the (B)/native-font rationale
+above — the `xmalloc` fold stays deferred (OOM is terminal, §2).
 
 ## 3. Current state — already deferred-fire
 
