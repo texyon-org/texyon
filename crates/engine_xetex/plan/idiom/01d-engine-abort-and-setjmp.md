@@ -63,33 +63,48 @@ same surfaced message. This is the correctness basis for the conversion. (The
 log/terminal diagnostics from `pre_/post_error_message` are unchanged regardless;
 the surfaced-string fidelity is the part that needs `_ttbc_set_error_message`.)
 
-## 2. The corrected lever — the bridge_core I/O tail (key finding)
+## 2. The bridge_core I/O tail — and why it's IN-CRATE (corrected)
 
 Converting the whole Rust `_tt_abort` spine to `Result` is **necessary but not
 sufficient** to delete the setjmp. Sources (2) and (3) — `ttstub_input_seek` /
-`ttstub_input_close` — `longjmp` *from C*, on every input seek/close the engine
+`ttstub_input_close` — `longjmp` *from C*, on input seek/close the engine
 performs (called from `io.rs`, `format_io.rs`, `texmfmp.rs`, `fonts.rs`,
-`pic.rs`, `ext.rs`; including inside `close_files_and_terminate` at `io.rs:921`
-and the format-undump close at `format_io.rs:1476` — i.e. inside the boundary
-functions themselves). A boundary fn holding `&mut EngineState` across one of
-those FFI calls is still UB on the (rare) internal-error jump.
+`pic.rs`, `ext.rs`; incl. inside `close_files_and_terminate` and the
+format-undump close — i.e. inside the boundary functions). A boundary fn holding
+`&mut EngineState` across one of those FFI calls is UB on the (rare)
+internal-error jump.
 
-So the honest end-state is staged:
+**But this is NOT a cross-crate change (corrects an earlier draft).** The longjmp
+lives *only* in the C `ttstub_input_seek`/`ttstub_input_close` wrappers
+(`bridge_core/support/support.c:280-283, 318-321`). Those wrappers call the Rust
+`ttbc_input_seek` (`bridge_core/src/lib.rs:1107`) / `ttbc_input_close` (`:1233`),
+which **return the error as a value and never jump** — they wrap
+`CoreBridgeState::input_seek -> Result<u64>` / `input_close -> bool`. So
+`engine_xetex` kills the I/O longjmp entirely on its own side: **stop calling the
+C `ttstub_*` seek/close wrappers; call `ttbc_input_seek`/`ttbc_input_close`
+directly** (both `#[no_mangle] pub extern "C"`, already exported + linked —
+support.c calls them the same way), or **thread `&mut CoreBridgeState` from
+`tt_engine_xetex_main` into `tt_run_engine` and call the Rust methods directly**
+(they already return `Result`). The shared C `ttstub_*` wrappers stay untouched
+for bibtex/dvipdfmx — **no other-engine impact, no coordination.**
 
-- **Stage I (this track):** convert the *Rust* fatal spine to `Result`/`EngineAbort`
-  so the only longjmps left are the two bridge_core I/O ones. The setjmp stays as
-  a thin I/O-only backstop. This is fully inside `engine_xetex`.
-- **Stage II (cross-crate, gates the final flip):** make `ttstub_input_seek`/
-  `ttstub_input_close` return error codes that Rust checks and propagates, instead
-  of `longjmp`-ing. `bridge_core` is shared with bibtex/dvipdfmx/xdvipdfmx, so
-  this has blast radius beyond this crate and must be coordinated. Only after
-  Stage II can the setjmp be deleted and `tt_run_engine` own `EngineState`
-  outright.
+So the end-state is staged, but **both stages are engine_xetex-local**:
 
-This caveat does **not** reduce the value of Stage I: it removes the scattered
-deferred-`fire` longjmp machinery, unifies it, and makes the boundary functions
-abort-safe w.r.t. *fatal* aborts — the dominant case. It just means "delete the
-setjmp" is gated on a bridge_core change the pivot framing omitted.
+- **Stage I (this track):** convert the *Rust* `_tt_abort` spine to
+  `Result`/`EngineAbort` up to `tt_run_engine`. Setjmp stays as a thin backstop.
+- **Stage II (also in-crate):** replace the ~19 `ttstub_input_seek/close` call
+  sites with `ttbc_*`/`CoreBridgeState` + error→`Result` threading (same
+  mechanical work as Stage I, just for the I/O error paths). Cleanest is the
+  `CoreBridgeState::input_seek` `Result` (the C `ttbc_input_seek` out-param has a
+  `TODO` and doesn't set `internal_error` on a real seek `Err`). **Also fold the
+  allocator jumps:** `_tt_abort` is called from `xmalloc/xcalloc/xrealloc`
+  (support.c) and `tt_run_engine` uses `xmalloc` — replace those few with Rust
+  allocation (or accept, since OOM is terminal). After Stage II nothing longjmps,
+  and the setjmp + owned-`EngineState` flip (§6) becomes possible.
+
+Stage I already removes the scattered deferred-`fire` machinery, unifies it, and
+makes the boundary functions abort-safe w.r.t. *fatal* aborts — the dominant
+case. Stage II is not a blast-radius wildcard; it is a bounded in-crate sweep.
 
 ## 3. Current state — already deferred-fire
 

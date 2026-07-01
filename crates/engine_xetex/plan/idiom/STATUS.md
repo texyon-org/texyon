@@ -40,9 +40,13 @@ lever is killing the Rust longjmp. **Verified-architecture finding:** the
 `engine-interface.c:33` setjmp is the one-shot fatal bailout (no retry/signals)
 but has **three** longjmp sources — Rust `_tt_abort` **plus** `bridge_core`
 `ttstub_input_seek`/`close` (longjmp from C on I/O errors). So deleting the
-setjmp (the precondition for the final RefCell/ownership flip) is gated on a
-**cross-crate `bridge_core` change** the pivot omitted (Stage II), not just the
-Rust spine conversion. Output I/O does not longjmp. Built `01d-engine-abort-and-
+setjmp (the precondition for the final RefCell/ownership flip) needs the input
+I/O longjmp gone too (Stage II) — but that is **IN-CRATE, not cross-crate**
+(later correction, `01d` §2): the longjmp is only in the C `ttstub_*` wrappers;
+the Rust `ttbc_input_seek`/`ttbc_input_close` (and `CoreBridgeState` methods) they
+call return errors as values, so engine_xetex calls those directly + threads a
+`Result` — no shared-API change, no other-engine impact. Output I/O never
+longjmps. Built `01d-engine-abort-and-
 setjmp.md` (unified `EngineAbort`, `into_history`→i32 Result catch, top-down
 conversion order from `tt_run_engine`, final-flip sequencing). **Execution (4
 commits):** (1) `EngineAbort {Overflow,Confusion,TtAbort}` + `into_history` in
@@ -64,7 +68,9 @@ longjmp lever); warnings **37**. Validation: dashboard **29/2/7/4** per commit
 diverged**. **Next:** `load_fmt_file` → `Result`; propagate `!load_fmt_file()` at
 `tt_run_engine:1295`; the `main_control` cluster waits on the Phase-C `with_state`
 drain. Fold leaf `*Abort` enums into `EngineAbort` only as their subsystem
-converts. Setjmp deletion stays gated on the cross-crate `bridge_core` I/O fix.
+converts. Setjmp deletion stays gated on the bridge_core I/O fix — which is
+**in-crate** (call `ttbc_*`/`CoreBridgeState` directly; `01d` §2), not a
+cross-crate change.
 See SESSION_LOG session 242 + `01d`.)
 
 Last updated: 2026-06-30 (last session = session 241, **execution — globals.rs

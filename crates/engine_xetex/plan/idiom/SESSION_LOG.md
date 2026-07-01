@@ -83,9 +83,13 @@ longjmp**, not folding wrappers.
 `ttstub_input_seek` (support.c:282) and `ttstub_input_close` (320), which longjmp
 *from C* on internal I/O errors. So **deleting the setjmp** (the precondition for
 the final RefCell/ownership flip) is gated not just on converting the Rust spine
-but on a **cross-crate `bridge_core` change** the pivot framing omitted — Stage
-II. Output I/O (`ttstub_output_write/close/flush`) does **not** longjmp, which is
-why `store_fmt_file` could go fully Rust-longjmp-free. Also verified: the Rust
+but on neutralizing that input I/O longjmp — Stage II. **[Corrected post-session:
+Stage II is IN-CRATE, not cross-crate — see `01d` §2.** The longjmp is only in the
+C `ttstub_*` wrappers; the Rust `ttbc_input_seek`/`ttbc_input_close` they call
+return errors as values, so engine_xetex calls those (or the `CoreBridgeState`
+methods) directly + threads a `Result`. No shared-API change, no other-engine
+impact.] Output I/O (`ttstub_output_write/close/flush`) does **not** longjmp,
+which is why `store_fmt_file` could go fully Rust-longjmp-free. Also verified: the Rust
 fatal spine is *already* almost entirely deferred-fire (37 `*Abort` enums + 11
 `fire` fns, all reducing to 5 terminal causes — `overflow`/`confusion`/
 `fatal_error`/`pdf_error`/`_tt_abort`); the inline longjmps that remain cluster
@@ -137,8 +141,9 @@ longjmp-under-borrow); (b) propagate the `!load_fmt_file()` early return at
 `tt_run_engine:1295`; (c) the `main_control` cluster waits on the Phase-C
 `with_state` drain before `main_control` can return `Result`. Fold each leaf
 `*Abort` into `EngineAbort` only as its subsystem converts (not a 17-file
-big-bang). Final setjmp deletion remains gated on the cross-crate `bridge_core`
-I/O-longjmp neutralization (Stage II). See `01d` + memory notes
+big-bang). Final setjmp deletion remains gated on the `bridge_core`
+I/O-longjmp neutralization (Stage II) — which is **in-crate** (call `ttbc_*`/
+`CoreBridgeState` directly; corrected, `01d` §2). See `01d` + memory notes
 `setjmp-deletion-gated-on-bridge-core-io`, `engineabort-unification-progress`.
 
 ## Idiom session 241 — 2026-06-30 — Execution: globals.rs category-1 drain — fold the setjmp/IO boundary fns, delete 100 with_state wrappers
