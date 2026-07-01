@@ -2316,6 +2316,10 @@ pub(crate) enum SccAbort {
     OpenLog(crate::io::OpenLogAbort),
     /// A `maketexstring` overflow (reached from `start_input`).
     MakeTexString(crate::texmfmp::MakeTexStringAbort),
+    /// Serious internal error closing an input file opened by a `conv_toks` file
+    /// primitive (`\filesize`/`\filedump`/`\filemoddate`) or `count_pdf_file_pages`
+    /// — the C `ttstub_input_close` wrapper `longjmp`'d here (`01d` §2.1).
+    InputClose,
 }
 
 impl SccAbort {
@@ -2347,6 +2351,12 @@ impl SccAbort {
             SccAbort::PdfError { t, p } => crate::errors::pdf_error(t, p),
             SccAbort::OpenLog(e) => e.fire(),
             SccAbort::MakeTexString(e) => crate::texmfmp::fire_make_tex_string(e),
+            // Dead arm: `InputClose` is produced only on the `conv_toks` /
+            // `scan_something_internal` Result path (caught via `into_engine_abort`),
+            // never through a `fire()`ing wrapper. Kept for exhaustiveness.
+            SccAbort::InputClose => {
+                _tt_abort(c"serious internal error closing an input file".as_ptr())
+            }
         }
     }
 
@@ -2380,6 +2390,9 @@ impl SccAbort {
             SccAbort::PdfError { t, p } => crate::errors::EngineAbort::PdfError { t, p },
             SccAbort::OpenLog(e) => e.into_engine_abort(),
             SccAbort::MakeTexString(e) => e.into_engine_abort(),
+            SccAbort::InputClose => crate::errors::EngineAbort::TtAbort(
+                c"serious internal error closing an input file".as_ptr(),
+            ),
         }
     }
 }

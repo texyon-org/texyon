@@ -32,7 +32,6 @@ extern "C" {
     ) -> usize;
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;
     fn ttstub_input_get_mtime(handle: usize) -> libc::time_t;
-    fn ttstub_input_close(handle: usize) -> libc::c_int;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
 }
 
@@ -433,22 +432,25 @@ pub(crate) fn make_src_special_in(
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:155 (getfilesize)
-pub unsafe fn getfilesize(s: i32) {
-    crate::state::with_state_mut(|st| getfilesize_in(&mut st.strings, s));
-}
-
-/// `&mut StringsState` core of [`getfilesize`] (scanner-SCC `conv_toks`).
-pub(crate) unsafe fn getfilesize_in(strings: &mut crate::state::StringsState, s: i32) {
+///
+/// `&mut StringsState` scanner-SCC `conv_toks` core (the former `getfilesize`
+/// bridge wrapper was dead — `01d` §2.1).
+pub(crate) unsafe fn getfilesize_in(
+    strings: &mut crate::state::StringsState,
+    s: i32,
+) -> Result<(), crate::scan::SccAbort> {
     let name = gettexstring_in(strings, s);
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
     libc::free(name as *mut libc::c_void);
 
     if handle == INVALID_HANDLE {
-        return;
+        return Ok(());
     }
 
     let file_len = ttstub_input_get_size(handle);
-    ttstub_input_close(handle);
+    if crate::io::input_close(handle) {
+        return Err(crate::scan::SccAbort::InputClose);
+    }
 
     // C used `snprintf(buf, 20, "%lu", file_len)` then wrote bytes to pool.
     let text = format!("{}", file_len as u64);
@@ -463,6 +465,7 @@ pub(crate) unsafe fn getfilesize_in(strings: &mut crate::state::StringsState, s:
             strings.pool_ptr += 1;
         }
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -470,30 +473,28 @@ pub(crate) unsafe fn getfilesize_in(strings: &mut crate::state::StringsState, s:
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:189 (getfiledump)
-pub unsafe fn getfiledump(s: i32, offset: libc::c_int, length: libc::c_int) {
-    crate::state::with_state_mut(|st| getfiledump_in(&mut st.strings, s, offset, length));
-}
-
-/// `&mut StringsState` core of [`getfiledump`] (scanner-SCC `conv_toks`).
+///
+/// `&mut StringsState` scanner-SCC `conv_toks` core (the former `getfiledump`
+/// bridge wrapper was dead — `01d` §2.1).
 pub(crate) unsafe fn getfiledump_in(
     strings: &mut crate::state::StringsState,
     s: i32,
     offset: libc::c_int,
     length: libc::c_int,
-) {
+) -> Result<(), crate::scan::SccAbort> {
     if length == 0 {
-        return;
+        return Ok(());
     }
 
     if strings.pool_ptr + 2 * length + 1 >= strings.pool_size {
         strings.pool_ptr = strings.pool_size;
-        return;
+        return Ok(());
     }
 
     let buffer = xmalloc((length + 1) as libc::size_t) as *mut u8;
     if buffer.is_null() {
         strings.pool_ptr = strings.pool_size;
-        return;
+        return Ok(());
     }
 
     let name = gettexstring_in(strings, s);
@@ -502,12 +503,16 @@ pub(crate) unsafe fn getfiledump_in(
 
     if handle == INVALID_HANDLE {
         libc::free(buffer as *mut libc::c_void);
-        return;
+        return Ok(());
     }
 
     crate::io::input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
     let actual = ttstub_input_read(handle, buffer, length as libc::size_t);
-    ttstub_input_close(handle);
+    if crate::io::input_close(handle) {
+        // Serious internal close error the C wrapper longjmp'd on; the old bare
+        // longjmp skipped the buffer free too (immaterial on a terminal abort).
+        return Err(crate::scan::SccAbort::InputClose);
+    }
 
     // C used `snprintf(strbuf, 3, "%.2X", buffer[j])` — 2 uppercase hex digits.
     for j in 0..actual as usize {
@@ -520,6 +525,7 @@ pub(crate) unsafe fn getfiledump_in(
     }
 
     libc::free(buffer as *mut libc::c_void);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -708,25 +714,26 @@ pub(crate) unsafe fn getcreationdate_in(
 }
 
 /// Push the modification date of a file (named by pool string `s`) into the
-/// string pool as a PDF date string.
+/// string pool as a PDF date string. `&mut StringsState` scanner-SCC `conv_toks`
+/// core (the former `getfilemoddate` bridge wrapper was dead — `01d` §2.1).
 ///
 /// translated from xetex-texmfmp.c:120 (getfilemoddate)
-pub unsafe fn getfilemoddate(s: i32) {
-    crate::state::with_state_mut(|st| getfilemoddate_in(&mut st.strings, s));
-}
-
-/// `&mut StringsState` core of [`getfilemoddate`] (scanner-SCC `conv_toks`).
-pub(crate) unsafe fn getfilemoddate_in(strings: &mut crate::state::StringsState, s: i32) {
+pub(crate) unsafe fn getfilemoddate_in(
+    strings: &mut crate::state::StringsState,
+    s: i32,
+) -> Result<(), crate::scan::SccAbort> {
     let name = gettexstring_in(strings, s);
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_TEX, 0);
     libc::free(name as *mut libc::c_void);
 
     if handle == INVALID_HANDLE {
-        return;
+        return Ok(());
     }
 
     let mtime = ttstub_input_get_mtime(handle);
-    ttstub_input_close(handle);
+    if crate::io::input_close(handle) {
+        return Err(crate::scan::SccAbort::InputClose);
+    }
 
     // Use a 30-byte buffer (= TIME_STR_SIZE) not the C's 20-byte buf which
     // was too small for non-UTC timestamps.
@@ -742,4 +749,5 @@ pub(crate) unsafe fn getfilemoddate_in(strings: &mut crate::state::StringsState,
             strings.pool_ptr += 1;
         }
     }
+    Ok(())
 }

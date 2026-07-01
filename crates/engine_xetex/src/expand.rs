@@ -694,7 +694,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
             b = st.strings.pool_ptr;
-            unsafe { crate::texmfmp::getfilemoddate_in(&mut st.strings, s) };
+            unsafe { crate::texmfmp::getfilemoddate_in(&mut st.strings, s) }?;
             let v = str_toks_scc(st, b, 0)?;
             st.mem.set_b32s1(GARBAGE_CT, v);
             if s == st.strings.str_ptr - 1 {
@@ -738,7 +738,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
             b = st.strings.pool_ptr;
-            unsafe { crate::texmfmp::getfilesize_in(&mut st.strings, s) };
+            unsafe { crate::texmfmp::getfilesize_in(&mut st.strings, s) }?;
             let v = str_toks_scc(st, b, 0)?;
             st.mem.set_b32s1(GARBAGE_CT, v);
             if s == st.strings.str_ptr - 1 {
@@ -859,7 +859,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
             b = st.strings.pool_ptr;
-            unsafe { crate::texmfmp::getfiledump_in(&mut st.strings, s, i, j) };
+            unsafe { crate::texmfmp::getfiledump_in(&mut st.strings, s, i, j) }?;
             let v = str_toks_scc(st, b, 0)?;
             st.mem.set_b32s1(GARBAGE_CT, v);
             if s == st.strings.str_ptr - 1 {
