@@ -3,7 +3,6 @@
 //! Functions involving `makepdftime` / the C-static state (`last_source_name`,
 //! `start_time_str`) or complex bridge calls remain in C for now.
 
-
 // ---------------------------------------------------------------------------
 // C externs needed by this module
 // ---------------------------------------------------------------------------

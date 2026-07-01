@@ -1303,6 +1303,15 @@ pub(crate) enum NodeRecycleAbort {
     OverflowRunaway,
     /// Internal-consistency failure: `confusion(msg)`.
     Confusion(&'static std::ffi::CStr),
+    /// A native-font measurement cold abort carried through a node-building path
+    /// (`01d` §5.6).
+    NativeFont(crate::ext::NativeFontAbort),
+}
+
+impl From<crate::ext::NativeFontAbort> for NodeRecycleAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        NodeRecycleAbort::NativeFont(e)
+    }
 }
 
 impl NodeRecycleAbort {
@@ -1318,6 +1327,7 @@ impl NodeRecycleAbort {
             },
             NodeRecycleAbort::OverflowRunaway => crate::mem::main_memory_overflow_abort(),
             NodeRecycleAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
+            NodeRecycleAbort::NativeFont(e) => e.into_engine_abort(),
         }
     }
 }
@@ -2301,6 +2311,14 @@ pub(crate) enum SccAbort {
     /// primitive (`\filesize`/`\filedump`/`\filemoddate`) or `count_pdf_file_pages`
     /// — the C `ttstub_input_close` wrapper `longjmp`'d here (`01d` §2.1).
     InputClose,
+    /// A native-font measurement cold abort (`01d` §5.6).
+    NativeFont(crate::ext::NativeFontAbort),
+}
+
+impl From<crate::ext::NativeFontAbort> for SccAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        SccAbort::NativeFont(e)
+    }
 }
 
 impl SccAbort {
@@ -2343,6 +2361,7 @@ impl SccAbort {
             SccAbort::InputClose => crate::errors::EngineAbort::TtAbort(
                 c"serious internal error closing an input file".as_ptr(),
             ),
+            SccAbort::NativeFont(e) => e.into_engine_abort(),
         }
     }
 }
@@ -4441,7 +4460,7 @@ pub(crate) fn scan_something_internal_in(
                                                 n,
                                                 cur_val(),
                                             )
-                                        };
+                                        }?;
                                         set_cur_val(v);
                                     }
                                 } else {
@@ -4477,7 +4496,7 @@ pub(crate) fn scan_something_internal_in(
                                                 crate::ext::getnativecharic(&st.fonts, q, cur_val())
                                             }
                                         }
-                                    };
+                                    }?;
                                     set_cur_val(v);
                                 } else {
                                     let bc = st.fonts.font_bc[q as usize] as i32;
@@ -4857,7 +4876,7 @@ pub(crate) fn scan_something_internal_in(
                                     scan_int_in(st)?;
                                     n = cur_val();
                                     let v =
-                                        unsafe { crate::ext::map_char_to_glyph(&st.fonts, cf, n) };
+                                        unsafe { crate::ext::map_char_to_glyph(&st.fonts, cf, n) }?;
                                     set_cur_val(v);
                                 } else {
                                     scc_err(crate::errors::not_font_error_common_in(
@@ -4882,7 +4901,7 @@ pub(crate) fn scan_something_internal_in(
                                     };
                                     let v = unsafe {
                                         crate::ext::map_glyph_to_index(&st.fonts, cf, name)
-                                    };
+                                    }?;
                                     set_cur_val(v);
                                 } else {
                                     scc_err(crate::errors::not_font_error_common_in(
@@ -4921,7 +4940,7 @@ pub(crate) fn scan_something_internal_in(
                                             n,
                                             (m == XETEX_FIRST_CHAR_CODE) as i32,
                                         )
-                                    };
+                                    }?;
                                     set_cur_val(v);
                                 } else if m == XETEX_FIRST_CHAR_CODE {
                                     set_cur_val(st.fonts.font_bc[n as usize] as i32);
@@ -5328,12 +5347,12 @@ pub(crate) fn scan_glyph_number_in(
         } else {
             st.input.name_of_file.as_ptr() as *mut libc::c_char
         };
-        let v = unsafe { crate::ext::map_glyph_to_index(&st.fonts, f, name) };
+        let v = unsafe { crate::ext::map_glyph_to_index(&st.fonts, f, name) }?;
         set_cur_val(v);
         st.scanner.cur_val_level = INT_VAL as u8;
     } else if scan_keyword_in(st, c"u".as_ptr())? {
         scan_char_num_in(st)?;
-        let v = unsafe { crate::ext::map_char_to_glyph(&st.fonts, f, cur_val()) };
+        let v = unsafe { crate::ext::map_char_to_glyph(&st.fonts, f, cur_val()) }?;
         set_cur_val(v);
         st.scanner.cur_val_level = INT_VAL as u8;
     } else {

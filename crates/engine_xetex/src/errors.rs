@@ -194,7 +194,6 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
     ErrorOutcome::Continue
 }
 
-
 // ---------------------------------------------------------------------------
 // EngineAbort — the unified terminal abort (plan/idiom/01d-engine-abort-and-setjmp.md)
 // ---------------------------------------------------------------------------

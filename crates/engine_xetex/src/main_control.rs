@@ -2077,6 +2077,14 @@ pub(crate) enum MainControlAbort {
     /// Serious internal error closing an input file (the C `ttstub_input_close`
     /// wrapper `longjmp`'d here); reached from `load_picture_in` (`01d` §2.1).
     InputClose,
+    /// A native-font measurement cold abort (`01d` §5.6).
+    NativeFont(crate::ext::NativeFontAbort),
+}
+
+impl From<crate::ext::NativeFontAbort> for MainControlAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        MainControlAbort::NativeFont(e)
+    }
 }
 
 impl From<crate::hyphenation::TrieAbort> for MainControlAbort {
@@ -2220,6 +2228,7 @@ impl MainControlAbort {
             MainControlAbort::InputClose => crate::errors::EngineAbort::TtAbort(
                 c"serious internal error closing an input file".as_ptr(),
             ),
+            MainControlAbort::NativeFont(e) => e.into_engine_abort(),
         }
     }
 }
@@ -3614,7 +3623,7 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
                     cur_val(),
                     &mut lsb,
                     &mut rsb,
-                );
+                )?;
             }
         }
         av
@@ -3649,7 +3658,13 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
             let mut hv: i32 = 0;
             let mut dv: i32 = 0;
             unsafe {
-                crate::ext::get_native_char_height_depth(&st.fonts, f, cur_val(), &mut hv, &mut dv);
+                crate::ext::get_native_char_height_depth(
+                    &st.fonts,
+                    f,
+                    cur_val(),
+                    &mut hv,
+                    &mut dv,
+                )?;
             }
             (wv, hv)
         } else {
@@ -5438,7 +5453,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                     mc += *st.scanner.native_text.as_mut_ptr().add(tp as usize) as i32 - 0xDC00;
                     tp += 1;
                 }
-                if crate::ext::map_char_to_glyph(&st.fonts, main_f(), mc) == 0 {
+                if crate::ext::map_char_to_glyph(&st.fonts, main_f(), mc)? == 0 {
                     mc_propagate_error(crate::output::char_warning_in(st, main_f(), mc))?;
                 }
             }
@@ -5655,7 +5670,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                     &st.fonts,
                     st.mem.node_addr(cur_list_tail()),
                     (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
-                );
+                )?;
                 let mut prev = cur_list_head();
                 if prev != main_pp() {
                     while st.mem.b32s1(prev) != main_pp() {
@@ -5679,7 +5694,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                     &st.fonts,
                     st.mem.node_addr(cur_list_tail()),
                     (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
-                );
+                )?;
             }
         }
 
@@ -5760,7 +5775,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                             st.mem.node_addr(tmp),
                             (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0)
                                 as libc::c_int,
-                        );
+                        )?;
                         let t_val = st.mem.b32s1(tmp + 1)
                             - st.mem.b32s1(pp + 1)
                             - st.mem.b32s1(cur_list_tail() + 1);

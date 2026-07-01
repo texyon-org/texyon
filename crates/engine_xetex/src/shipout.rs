@@ -178,6 +178,14 @@ pub(crate) enum ShipoutAbort {
     CannotOpenOutput,
     /// A file-name pool overflow bubbled up from `make_name_string_in`.
     Name(crate::io::NameAbort),
+    /// A native-font measurement cold abort (`01d` §5.6, reached from `make_font_def`).
+    NativeFont(crate::ext::NativeFontAbort),
+}
+
+impl From<crate::ext::NativeFontAbort> for ShipoutAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        ShipoutAbort::NativeFont(e)
+    }
 }
 
 impl From<crate::scan::SccAbort> for ShipoutAbort {
@@ -279,6 +287,7 @@ impl ShipoutAbort {
                 crate::errors::EngineAbort::TtAbort(ptr)
             }
             ShipoutAbort::Name(e) => e.into_engine_abort(),
+            ShipoutAbort::NativeFont(e) => e.into_engine_abort(),
         }
     }
 }
@@ -814,7 +823,7 @@ fn dvi_font_def_in(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shi
         || st.fonts.font_area_entry(f) == OTGR_FONT_FLAG
     {
         // SAFETY: FFI; fills st.fonts.xdv_buffer and returns the def length.
-        let font_def_length = unsafe { crate::ext::make_font_def(&mut st.fonts, f) };
+        let font_def_length = unsafe { crate::ext::make_font_def(&mut st.fonts, f) }?;
         dvi_native_font_def(&st.fonts, f, font_def_length)
     } else {
         let font_area = st.fonts.font_area_entry(f);
@@ -1016,7 +1025,7 @@ fn merge_justifiable_native_words(
                 mem.set_b32s1(q + 1, k);
                 let addr = mem.node_addr(q);
                 // SAFETY: `addr` points at the native-word node; FFI does not re-enter.
-                unsafe { crate::ext::store_justified_native_glyphs(fonts, addr) };
+                unsafe { crate::ext::store_justified_native_glyphs(fonts, addr) }?;
                 mem.set_b32s1(prev_p, q);
                 mem.set_b32s1(q, mem.b32s1(p));
                 mem.set_b32s1(p, TEX_NULL);

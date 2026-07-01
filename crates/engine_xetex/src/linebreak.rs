@@ -403,13 +403,13 @@ fn split_native_tail_for_linebreak(
     st.mem.set_b16s0(q, st.mem.b16s0(ha));
     unsafe {
         copy_native_tail(&mut st.mem, q, ha, start);
-        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q);
+        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q)?;
     }
     st.mem.set_b32s1(q, st.mem.b32s1(ha));
     st.mem.set_b32s1(ha, q);
     set_native_node_len_in(&mut st.mem, ha, start);
     unsafe {
-        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, ha);
+        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, ha)?;
     }
     if advance_ha {
         st.linebreak.ha = st.mem.b32s1(ha);
@@ -1044,7 +1044,12 @@ pub fn reconstitute(
 }
 
 #[inline]
-pub unsafe fn set_native_metrics(mem: &MemState, eqtb: &EqtbState, fonts: &FontState, p: i32) {
+pub unsafe fn set_native_metrics(
+    mem: &MemState,
+    eqtb: &EqtbState,
+    fonts: &FontState,
+    p: i32,
+) -> Result<(), crate::ext::NativeFontAbort> {
     // Call the threaded `measure_native_node(&FontState, …)` directly rather than
     // the `measure_native_node_global` bridge: the bridge re-borrows the whole
     // `ENGINE_STATE` `RefCell`, so it cannot be reached from a threaded caller
@@ -1055,7 +1060,7 @@ pub unsafe fn set_native_metrics(mem: &MemState, eqtb: &EqtbState, fonts: &FontS
         fonts,
         mem.node_addr(p),
         (eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
-    );
+    )
 }
 
 #[inline]
@@ -3406,6 +3411,14 @@ pub(crate) enum HyphNativeAbort {
     Recycle(NodeRecycleAbort),
     NativeChar(crate::fonts::NativeCharAbort),
     Confusion(&'static std::ffi::CStr),
+    /// A native-font measurement cold abort (`01d` §5.6).
+    NativeFont(crate::ext::NativeFontAbort),
+}
+
+impl From<crate::ext::NativeFontAbort> for HyphNativeAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        HyphNativeAbort::NativeFont(e)
+    }
 }
 
 impl HyphNativeAbort {
@@ -3416,6 +3429,7 @@ impl HyphNativeAbort {
             HyphNativeAbort::Recycle(e) => e.into_engine_abort(),
             HyphNativeAbort::NativeChar(nc) => nc.into_engine_abort(),
             HyphNativeAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
+            HyphNativeAbort::NativeFont(e) => e.into_engine_abort(),
         }
     }
 }
@@ -3488,7 +3502,7 @@ fn hyphenate_native_word_if_needed(
                 for i in 0..=(j - hp - 1) {
                     *dst.add(i as usize) = *src.add((i + hp) as usize);
                 }
-                set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q);
+                set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q)?;
             }
             st.mem.set_b32s1(s, q);
             s = q;
@@ -3519,7 +3533,7 @@ fn hyphenate_native_word_if_needed(
         for i in 0..=(new_hn - hp - 1) {
             *dst.add(i as usize) = *src.add((i + hp) as usize);
         }
-        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q);
+        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q)?;
     }
     st.mem.set_b32s1(s, q);
     s = q;
@@ -4019,12 +4033,12 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
         let addr = st.mem.node_addr(cur_list_tail());
-        measure_native_node(&st.fonts, addr, use_glyph as libc::c_int);
+        measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
     } else {
         let use_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
         let penalty_val = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
         let use_penalty = penalty_val != 0 || !use_skip;
-        linebreak_start_in(st, main_f, locale, native_text.add(s as usize), len);
+        linebreak_start_in(st, main_f, locale, native_text.add(s as usize), len)?;
         let mut offs: i32 = 0;
         loop {
             let prev_offs = offs;
@@ -4066,7 +4080,7 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }
                 let addr = st.mem.node_addr(cur_list_tail());
-                measure_native_node(&st.fonts, addr, use_glyph as libc::c_int);
+                measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
             }
             if offs < 0 {
                 break;

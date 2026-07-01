@@ -1283,7 +1283,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                             if h2 > 0 {
                                 p_w.set_native_glyph(&mut st.mem, g as u16);
                                 let addr = node_addr_in(st, p);
-                                crate::ext::measure_native_glyph(&st.fonts, addr, 1);
+                                crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
                             }
                             n += 1;
                             if h2 < 0 || h2 >= h1 {
@@ -1310,7 +1310,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                             }
                         } else {
                             let addr = node_addr_in(st, p);
-                            crate::ext::measure_native_glyph(&st.fonts, addr, 1);
+                            crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
                         }
                     }
                     delta = get_ot_math_ital_corr(cur_f, p_w.native_glyph(&st.mem) as i32);
@@ -1853,12 +1853,12 @@ unsafe fn make_math_accent_in(
         p = glyph.p;
         {
             let addr = node_addr_in(st, p);
-            crate::ext::measure_native_glyph(&st.fonts, addr, 1);
+            crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
         }
         finish_native_accent_glyph_start(&mut st.mem, y, glyph);
         if !initial.kind.is_multiple_of(2) {
             let addr = node_addr_in(st, p);
-            crate::ext::measure_native_glyph(&st.fonts, addr, 1);
+            crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
         } else {
             let c_glyph = st.mem.b16s1(p + 4) as i32;
             let mut a_var: i32 = 0;
@@ -1868,7 +1868,7 @@ unsafe fn make_math_accent_in(
                 if w2 > 0 && w2 <= w {
                     st.mem.set_b16s1(p + 4, g as u16);
                     let addr = node_addr_in(st, p);
-                    crate::ext::measure_native_glyph(&st.fonts, addr, 1);
+                    crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
                     a_var += 1;
                 }
                 if w2 < 0 || w2 >= w {
@@ -1889,7 +1889,7 @@ unsafe fn make_math_accent_in(
                     }
                 } else {
                     let addr = node_addr_in(st, p);
-                    crate::ext::measure_native_glyph(&st.fonts, addr, 1);
+                    crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
                 }
             }
             // found:
@@ -2912,7 +2912,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                             let zaddr = node_addr_in(st, z);
                             p_w.set_native_glyph(&mut st.mem, real_get_native_glyph(zaddr, 0));
                             let paddr = node_addr_in(st, p);
-                            crate::ext::measure_native_glyph(&st.fonts, paddr, 1);
+                            crate::ext::measure_native_glyph(&st.fonts, paddr, 1)?;
                             let z_w = st
                                 .mem
                                 .classify_whatsit(MemIdx::new(z))
@@ -3240,6 +3240,14 @@ pub(crate) enum MathBuildAbort {
     NativeChar(crate::fonts::NativeCharAbort),
     /// A recoverable `error()` (from `fetch_in`) went terminal under the borrow.
     Error(crate::errors::ErrorOutcome),
+    /// A native-font measurement cold abort (`01d` §5.6).
+    NativeFont(crate::ext::NativeFontAbort),
+}
+
+impl From<crate::ext::NativeFontAbort> for MathBuildAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        MathBuildAbort::NativeFont(e)
+    }
 }
 
 impl From<NodeRecycleAbort> for MathBuildAbort {
@@ -3281,6 +3289,7 @@ fn math_build_abort_main(a: MathBuildAbort) -> crate::main_control::MainControlA
             crate::main_control::NewCharacterAbort::Native(e),
         ),
         MathBuildAbort::Error(o) => crate::main_control::MainControlAbort::Error(o),
+        MathBuildAbort::NativeFont(e) => crate::main_control::MainControlAbort::NativeFont(e),
     }
 }
 
@@ -3417,7 +3426,7 @@ fn stack_glyph_into_box_in(
     let addr = st.mem.data.as_mut_ptr().wrapping_add(p.idx().index()) as *mut std::ffi::c_void;
     // SAFETY: `measure_native_glyph` reads only `&FontState` and writes the
     // freshly-allocated node `p` through `addr`; no `with_state` re-entry.
-    unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) };
+    unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) }?;
     let b_box = classify_box_or_panic(&st.mem, b);
     stack_glyph_into_box(&mut st.mem, b_box, p);
     Ok(())
@@ -3448,7 +3457,7 @@ fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, 
     let (b, p) = native_glyph_vbox_start(&mut st.mem, f, g)?;
     let addr = st.mem.data.as_mut_ptr().wrapping_add(p.idx().index()) as *mut std::ffi::c_void;
     // SAFETY: see `stack_glyph_into_box_in` — re-entry-free `&FontState` measure.
-    unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) };
+    unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) }?;
     native_glyph_vbox_finish(&mut st.mem, b, p);
     Ok(b)
 }
@@ -5470,7 +5479,7 @@ unsafe fn var_delimiter_in(
                         if font_area == AAT_FONT_FLAG
                             || (font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine))
                         {
-                            x = crate::ext::map_char_to_glyph(&st.fonts, g, x);
+                            x = crate::ext::map_char_to_glyph(&st.fonts, g, x)?;
                             f = g;
                             c = x as u16;
                             w = 0;

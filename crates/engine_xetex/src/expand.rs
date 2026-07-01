@@ -392,7 +392,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             crate::scan::scan_usv_num_in(st)?;
             let fa = st.fonts.font_area[n as usize];
             b = if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                unsafe { crate::ext::map_char_to_glyph(&st.fonts, n, cur_val()) > 0 }
+                unsafe { crate::ext::map_char_to_glyph(&st.fonts, n, cur_val()) }? > 0
             } else {
                 let bc = st.fonts.font_bc[n as usize] as i32;
                 let ec = st.fonts.font_ec[n as usize] as i32;
@@ -1214,7 +1214,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         XETEX_GLYPH_NAME_CODE_CT => {
             let fa = st.fonts.font_area[fnt as usize];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                unsafe { crate::ext::print_glyph_name_in(st, fnt, arg1) };
+                unsafe { crate::ext::print_glyph_name_in(st, fnt, arg1) }?;
             }
         }
         JOB_NAME_CODE_CT => {

@@ -1459,12 +1459,40 @@ pub unsafe fn gr_font_get_named_1(what: i32, p_engine: *mut c_void, param: i32) 
     rval as i32
 }
 
+/// Cold-abort sentinel for the native-font measurement layer (`01d` §5.6).
+///
+/// Every arm mirrors the former inline `_tt_abort` exactly — no cleanup, sets the
+/// surfaced message, history 3 — via [`EngineAbort::TtAbort`]. The `BadFlag` arms
+/// are internal-consistency checks (`font_area` is neither AAT nor OTGR), which
+/// are *unreachable* for a real native node/font; `LinebreakIterator` is a genuine
+/// resource failure. (The font-loader's `load_mapping_file` "could not read
+/// mapping file" + input-close still thread separately — its callers are not yet
+/// `Result`.)
+pub(crate) enum NativeFontAbort {
+    /// `_tt_abort("bad native font flag in `<fn>`")`.
+    BadFlag(*const c_char),
+    /// `_tt_abort("failed to create linebreak iterator")`.
+    LinebreakIterator,
+}
+
+impl NativeFontAbort {
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5) — every arm is a
+    /// `TtAbort` (the former `_tt_abort`: no cleanup, sets the surfaced message,
+    /// returns `HISTORY_FATAL_ERROR`).
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        crate::errors::EngineAbort::TtAbort(match self {
+            NativeFontAbort::BadFlag(m) => m,
+            NativeFontAbort::LinebreakIterator => c"failed to create linebreak iterator".as_ptr(),
+        })
+    }
+}
+
 // translated from xetex-ext.c:98 (measure_native_node)
 pub unsafe fn measure_native_node(
     fonts: &crate::state::FontState,
     p_node: *mut c_void,
     use_glyph_metrics: c_int,
-) {
+) -> Result<(), NativeFontAbort> {
     let node = p_node as *mut crate::mem_types::MemoryWord;
     let txt_len = (*node.add(4)).b16.s1 as i32; // native_length
     let txt_ptr = node.add(6) as *mut u16; // node + NATIVE_NODE_SIZE
@@ -1644,7 +1672,9 @@ pub unsafe fn measure_native_node(
         }
         libc::free(glyph_advances as *mut c_void);
     } else {
-        _tt_abort(c"bad native font flag in `measure_native_node`".as_ptr());
+        return Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `measure_native_node`".as_ptr(),
+        ));
     }
 
     if use_glyph_metrics == 0 || (*node.add(4)).b16.s0 == 0 {
@@ -1689,6 +1719,7 @@ pub unsafe fn measure_native_node(
         (*node.add(3)).b32.s1 = D2Fix(y_max as c_double);
         (*node.add(2)).b32.s1 = -D2Fix(y_min as c_double);
     }
+    Ok(())
 }
 
 // translated from xetex-ext.c:921 (real_get_native_glyph)
@@ -1750,7 +1781,7 @@ pub unsafe fn measure_native_glyph(
     fonts: &crate::state::FontState,
     p_node: *mut c_void,
     use_glyph_metrics: c_int,
-) {
+) -> Result<(), NativeFontAbort> {
     let node = p_node as *mut crate::mem_types::MemoryWord;
     let gid = (*node.add(4)).b16.s1; // native_glyph = native_length
     let f = (*node.add(4)).b16.s2 as i32; // native_font
@@ -1766,7 +1797,9 @@ pub unsafe fn measure_native_glyph(
             getGlyphHeightDepth(engine, gid as u32, &mut ht, &mut dp);
         }
     } else {
-        _tt_abort(c"bad native font flag in `measure_native_glyph`".as_ptr());
+        return Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `measure_native_glyph`".as_ptr(),
+        ));
     }
 
     if use_glyph_metrics != 0 {
@@ -1776,6 +1809,7 @@ pub unsafe fn measure_native_glyph(
         (*node.add(3)).b32.s1 = fonts.height_base_entry(f); // node_height = height_base[f]
         (*node.add(2)).b32.s1 = fonts.depth_base_entry(f); // node_depth = depth_base[f]
     }
+    Ok(())
 }
 
 // translated from xetex-ext.c:1559 (real_get_native_word_cp)
@@ -1813,7 +1847,7 @@ pub unsafe fn get_native_char_height_depth(
     ch: i32,
     height: *mut i32,
     depth: *mut i32,
-) {
+) -> Result<(), NativeFontAbort> {
     let mut ht = 0.0f32;
     let mut dp = 0.0f32;
 
@@ -1822,7 +1856,9 @@ pub unsafe fn get_native_char_height_depth(
         let gid = mapCharToGlyph(engine, ch as u32);
         getGlyphHeightDepth(engine, gid, &mut ht, &mut dp);
     } else {
-        _tt_abort(c"bad native font flag in `get_native_char_height_depth`".as_ptr());
+        return Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `get_native_char_height_depth`".as_ptr(),
+        ));
     }
 
     *height = D2Fix(ht as c_double);
@@ -1842,22 +1878,31 @@ pub unsafe fn get_native_char_height_depth(
         fonts.font_info_b32s1(8 + fonts.param_base(font)),
         fuzz,
     );
+    Ok(())
 }
 
 // translated from xetex-ext.c:822 (getnativecharht)
-pub unsafe fn getnativecharht(fonts: &crate::state::FontState, f: i32, c: i32) -> i32 {
+pub unsafe fn getnativecharht(
+    fonts: &crate::state::FontState,
+    f: i32,
+    c: i32,
+) -> Result<i32, NativeFontAbort> {
     let mut h = 0i32;
     let mut d = 0i32;
-    get_native_char_height_depth(fonts, f, c, &mut h, &mut d);
-    h
+    get_native_char_height_depth(fonts, f, c, &mut h, &mut d)?;
+    Ok(h)
 }
 
 // translated from xetex-ext.c:830 (getnativechardp)
-pub unsafe fn getnativechardp(fonts: &crate::state::FontState, f: i32, c: i32) -> i32 {
+pub unsafe fn getnativechardp(
+    fonts: &crate::state::FontState,
+    f: i32,
+    c: i32,
+) -> Result<i32, NativeFontAbort> {
     let mut h = 0i32;
     let mut d = 0i32;
-    get_native_char_height_depth(fonts, f, c, &mut h, &mut d);
-    d
+    get_native_char_height_depth(fonts, f, c, &mut h, &mut d)?;
+    Ok(d)
 }
 
 // translated from xetex-ext.c:838 (get_native_char_sidebearings)
@@ -1867,7 +1912,7 @@ pub unsafe fn get_native_char_sidebearings(
     ch: i32,
     lsb: *mut i32,
     rsb: *mut i32,
-) {
+) -> Result<(), NativeFontAbort> {
     let mut l = 0.0f32;
     let mut r = 0.0f32;
 
@@ -1876,11 +1921,14 @@ pub unsafe fn get_native_char_sidebearings(
         let gid = mapCharToGlyph(engine, ch as u32);
         getGlyphSidebearings(engine, gid, &mut l, &mut r);
     } else {
-        _tt_abort(c"bad native font flag in `get_native_char_side_bearings`".as_ptr());
+        return Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `get_native_char_side_bearings`".as_ptr(),
+        ));
     }
 
     *lsb = D2Fix(l as c_double);
     *rsb = D2Fix(r as c_double);
+    Ok(())
 }
 
 // translated from xetex-ext.c:862 (get_glyph_bounds)
@@ -1889,7 +1937,7 @@ pub unsafe fn get_glyph_bounds(
     font: i32,
     edge: i32,
     gid: i32,
-) -> i32 {
+) -> Result<i32, NativeFontAbort> {
     // edge codes: 1,2,3,4 => L T R B
     let mut a = 0.0f32;
     let mut b = 0.0f32;
@@ -1902,77 +1950,103 @@ pub unsafe fn get_glyph_bounds(
             getGlyphHeightDepth(engine, gid as u32, &mut a, &mut b);
         }
     } else {
-        _tt_abort(c"bad native font flag in `get_glyph_bounds`".as_ptr());
+        return Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `get_glyph_bounds`".as_ptr(),
+        ));
     }
-    D2Fix(if edge <= 2 { a } else { b } as c_double)
+    Ok(D2Fix(if edge <= 2 { a } else { b } as c_double))
 }
 
 // translated from xetex-ext.c:889 (getnativecharic)
-pub unsafe fn getnativecharic(fonts: &crate::state::FontState, f: i32, c: i32) -> i32 {
+pub unsafe fn getnativecharic(
+    fonts: &crate::state::FontState,
+    f: i32,
+    c: i32,
+) -> Result<i32, NativeFontAbort> {
     let mut lsb = 0i32;
     let mut rsb = 0i32;
-    get_native_char_sidebearings(fonts, f, c, &mut lsb, &mut rsb);
-    if rsb < 0 {
+    get_native_char_sidebearings(fonts, f, c, &mut lsb, &mut rsb)?;
+    Ok(if rsb < 0 {
         fonts.font_letter_space_entry(f) - rsb
     } else {
         fonts.font_letter_space_entry(f)
-    }
+    })
 }
 
 // translated from xetex-ext.c:900 (getnativecharwd)
-pub unsafe fn getnativecharwd(fonts: &crate::state::FontState, f: i32, c: i32) -> i32 {
+pub unsafe fn getnativecharwd(
+    fonts: &crate::state::FontState,
+    f: i32,
+    c: i32,
+) -> Result<i32, NativeFontAbort> {
     if fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
         let engine = fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
         let gid = mapCharToGlyph(engine, c as u32);
-        D2Fix(getGlyphWidthFromEngine(engine, gid) as c_double)
+        Ok(D2Fix(getGlyphWidthFromEngine(engine, gid) as c_double))
     } else {
-        _tt_abort(c"bad native font flag in `get_native_char_wd`".as_ptr())
+        Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `get_native_char_wd`".as_ptr(),
+        ))
     }
 }
 
 // translated from xetex-ext.c:1261 (map_char_to_glyph)
-pub unsafe fn map_char_to_glyph(fonts: &crate::state::FontState, font: i32, ch: i32) -> i32 {
+pub unsafe fn map_char_to_glyph(
+    fonts: &crate::state::FontState,
+    font: i32,
+    ch: i32,
+) -> Result<i32, NativeFontAbort> {
     if ch > 0x10ffff || (0xd800..=0xdfff).contains(&ch) {
-        return 0;
+        return Ok(0);
     }
     if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
-        mapCharToGlyph(
+        Ok(mapCharToGlyph(
             fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine,
             ch as u32,
-        ) as i32
+        ) as i32)
     } else {
-        _tt_abort(c"bad native font flag in `map_char_to_glyph`".as_ptr())
+        Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `map_char_to_glyph`".as_ptr(),
+        ))
     }
 }
 
 // translated from xetex-ext.c:1278 (map_glyph_to_index)
 // `name` (the glyph name to look up, originally `name_of_file`) is read by the
-// `_global` wrapper *before* the state borrow, since `name_of_file()` is itself
+// caller *before* the state borrow, since `name_of_file()` is itself
 // `with_state`-bearing and would nest-panic under a live borrow (§4a).
 pub unsafe fn map_glyph_to_index(
     fonts: &crate::state::FontState,
     font: i32,
     name: *const c_char,
-) -> i32 {
+) -> Result<i32, NativeFontAbort> {
     if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
-        mapGlyphToIndex(
+        Ok(mapGlyphToIndex(
             fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine,
             name,
-        )
+        ))
     } else {
-        _tt_abort(c"bad native font flag in `map_glyph_to_index`".as_ptr())
+        Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `map_glyph_to_index`".as_ptr(),
+        ))
     }
 }
 
 // translated from xetex-ext.c:1293 (get_font_char_range)
-pub unsafe fn get_font_char_range(fonts: &crate::state::FontState, font: i32, first: i32) -> i32 {
+pub unsafe fn get_font_char_range(
+    fonts: &crate::state::FontState,
+    font: i32,
+    first: i32,
+) -> Result<i32, NativeFontAbort> {
     if fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
-        getFontCharRange(
+        Ok(getFontCharRange(
             fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine,
             first,
-        )
+        ))
     } else {
-        _tt_abort(c"bad native font flag in `get_font_char_range'`".as_ptr())
+        Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `get_font_char_range'`".as_ptr(),
+        ))
     }
 }
 
@@ -1982,7 +2056,7 @@ pub(crate) unsafe fn linebreak_start_in(
     locale_str_num: i32,
     text: *mut u16,
     text_length: i32,
-) {
+) -> Result<(), NativeFontAbort> {
     let mut status: i32 = 0; // U_ZERO_ERROR
     let locale = crate::texmfmp::gettexstring_in(&st.strings, locale_str_num);
 
@@ -1995,7 +2069,7 @@ pub(crate) unsafe fn linebreak_start_in(
         if libc::strcmp(locale, c"G".as_ptr()) == 0
             && initGraphiteBreaking(engine, text as *const u16, text_length as u32)
         {
-            return; // locale intentionally not freed (matches C behavior)
+            return Ok(()); // locale intentionally not freed (matches C behavior)
         }
     }
 
@@ -2026,10 +2100,11 @@ pub(crate) unsafe fn linebreak_start_in(
     }
 
     if BRK_ITER.is_null() {
-        _tt_abort(c"failed to create linebreak iterator".as_ptr());
+        return Err(NativeFontAbort::LinebreakIterator);
     }
 
     ubrk_setText(BRK_ITER, text as *const u16, text_length, &mut status);
+    Ok(())
 }
 
 // translated from xetex-ext.c:116 (linebreak_next)
@@ -2043,7 +2118,10 @@ pub unsafe fn linebreak_next(fonts: &crate::state::FontState, f: c_int) -> c_int
 }
 
 // translated from xetex-ext.c:584 (make_font_def)
-pub unsafe fn make_font_def(fonts: &mut crate::state::FontState, f: i32) -> c_int {
+pub unsafe fn make_font_def(
+    fonts: &mut crate::state::FontState,
+    f: i32,
+) -> Result<c_int, NativeFontAbort> {
     let mut flags: u16 = 0;
     let rgba: u32;
     let size: i32;
@@ -2070,7 +2148,9 @@ pub unsafe fn make_font_def(fonts: &mut crate::state::FontState, f: i32) -> c_in
         embolden = getEmboldenFactor(engine);
         size = D2Fix(getPointSize(engine) as c_double);
     } else {
-        _tt_abort(c"bad native font flag in `make_font_def`".as_ptr());
+        return Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `make_font_def`".as_ptr(),
+        ));
     }
 
     let filename_len = libc::strlen(filename) as u8;
@@ -2139,7 +2219,7 @@ pub unsafe fn make_font_def(fonts: &mut crate::state::FontState, f: i32) -> c_in
 
     freeFontFilename(filename);
 
-    font_def_length as c_int
+    Ok(font_def_length as c_int)
 }
 
 // translated from xetex-ext.c:738 (apply_mapping)
@@ -2193,12 +2273,15 @@ pub unsafe fn apply_mapping(
 }
 
 // translated from xetex-ext.c:776 (store_justified_native_glyphs)
-pub unsafe fn store_justified_native_glyphs(fonts: &crate::state::FontState, p_node: *mut c_void) {
+pub unsafe fn store_justified_native_glyphs(
+    fonts: &crate::state::FontState,
+    p_node: *mut c_void,
+) -> Result<(), NativeFontAbort> {
     let node = p_node as *mut crate::mem_types::MemoryWord;
     let f = (*node.add(4)).b16.s2 as i32;
 
     let saved_width = (*node.add(1)).b32.s1;
-    measure_native_node(fonts, p_node, 0);
+    measure_native_node(fonts, p_node, 0)?;
 
     if (*node.add(1)).b32.s1 != saved_width {
         let just_amount = Fix2D(saved_width - (*node.add(1)).b32.s1);
@@ -2208,7 +2291,7 @@ pub unsafe fn store_justified_native_glyphs(fonts: &crate::state::FontState, p_n
         let locations = glyph_info as *mut FixedPoint;
         let glyph_ids = glyph_info.add(glyph_count * 8) as *mut u16;
 
-        let space_glyph = map_char_to_glyph(fonts, f, b' ' as i32);
+        let space_glyph = map_char_to_glyph(fonts, f, b' ' as i32)?;
         let mut space_count = 0i32;
         for i in 0..glyph_count {
             if *glyph_ids.add(i) as i32 == space_glyph {
@@ -2237,6 +2320,7 @@ pub unsafe fn store_justified_native_glyphs(fonts: &crate::state::FontState, p_n
 
         (*node.add(1)).b32.s1 = saved_width;
     }
+    Ok(())
 }
 
 // translated from xetex-ext.c:1027 (aat_get_font_metrics)
@@ -2287,12 +2371,18 @@ pub fn aat_print_font_name(_what: c_int, _attributes: *mut c_void, _param1: c_in
 /// `&mut EngineState` core of [`print_glyph_name`] so a threaded caller
 /// (`conv_toks_in`) can print under the borrow. Reads the font engine from
 /// `st.fonts` directly instead of via `with_state`.
-pub(crate) unsafe fn print_glyph_name_in(st: &mut crate::state::EngineState, font: i32, gid: i32) {
+pub(crate) unsafe fn print_glyph_name_in(
+    st: &mut crate::state::EngineState,
+    font: i32,
+    gid: i32,
+) -> Result<(), NativeFontAbort> {
     let mut len: c_int = 0;
     let engine = if st.fonts.font_area_entry(font) as u32 == OTGR_FONT_FLAG {
         st.fonts.font_layout_engine_ptr(font) as XeTeXLayoutEngine
     } else {
-        _tt_abort(c"bad native font flag in `print_glyph_name`".as_ptr())
+        return Err(NativeFontAbort::BadFlag(
+            c"bad native font flag in `print_glyph_name`".as_ptr(),
+        ));
     };
     let s = getGlyphName(getFont(engine), gid as u16, &mut len);
 
@@ -2305,6 +2395,7 @@ pub(crate) unsafe fn print_glyph_name_in(st: &mut crate::state::EngineState, fon
     if !s.is_null() {
         freeGlyphName(s as *mut c_char);
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2777,7 +2868,7 @@ pub(crate) fn do_extension_in(
                         st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_DE) > 0;
                     let node_ptr = st.mem.node_addr(crate::globals::cur_list_tail());
                     unsafe {
-                        measure_native_glyph(&st.fonts, node_ptr, use_glyph_metrics as i32);
+                        measure_native_glyph(&st.fonts, node_ptr, use_glyph_metrics as i32)?;
                     }
                 } else {
                     mc_propagate_error(crate::errors::not_font_error_common_in(

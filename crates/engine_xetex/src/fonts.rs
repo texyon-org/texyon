@@ -145,6 +145,14 @@ pub(crate) enum NativeCharAbort {
     /// `char_warning` would have aborted at this exact point too (before building
     /// the node) — deferring it to the wrapper is behaviour-identical.
     Error(ErrorOutcome),
+    /// A native-font measurement cold abort (`01d` §5.6).
+    NativeFont(crate::ext::NativeFontAbort),
+}
+
+impl From<crate::ext::NativeFontAbort> for NativeCharAbort {
+    fn from(e: crate::ext::NativeFontAbort) -> Self {
+        NativeCharAbort::NativeFont(e)
+    }
 }
 
 impl NativeCharAbort {
@@ -163,6 +171,7 @@ impl NativeCharAbort {
             }
             NativeCharAbort::Recycle(e) => e.into_engine_abort(),
             NativeCharAbort::Error(outcome) => outcome.into_engine_abort(),
+            NativeCharAbort::NativeFont(e) => e.into_engine_abort(),
         }
     }
 }
@@ -219,7 +228,7 @@ pub(crate) fn new_native_character_in(
                     + st.fonts.mapped_text[(i + 1) as usize] as u32
                     + 9216;
                 // SAFETY: pure font-table + FFI glyph lookup, no state re-entry.
-                if unsafe { map_char_to_glyph(&st.fonts, f, c as i32) } == 0 {
+                if unsafe { map_char_to_glyph(&st.fonts, f, c as i32) }? == 0 {
                     let outcome = char_warning_in(st, f, c as i32);
                     if !matches!(outcome, ErrorOutcome::Continue) {
                         return Err(NativeCharAbort::Error(outcome));
@@ -227,7 +236,7 @@ pub(crate) fn new_native_character_in(
                 }
                 i += 2;
             } else {
-                if unsafe { map_char_to_glyph(&st.fonts, f, mapped as i32) } == 0 {
+                if unsafe { map_char_to_glyph(&st.fonts, f, mapped as i32) }? == 0 {
                     let outcome = char_warning_in(st, f, mapped as i32);
                     if !matches!(outcome, ErrorOutcome::Continue) {
                         return Err(NativeCharAbort::Error(outcome));
@@ -240,7 +249,7 @@ pub(crate) fn new_native_character_in(
         NativeCharSrc::Mapped(len)
     } else {
         if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS_NC) > 0
-            && unsafe { map_char_to_glyph(&st.fonts, f, c as i32) } == 0
+            && unsafe { map_char_to_glyph(&st.fonts, f, c as i32) }? == 0
         {
             let outcome = char_warning_in(st, f, c as i32);
             if !matches!(outcome, ErrorOutcome::Continue) {
@@ -261,7 +270,7 @@ pub(crate) fn new_native_character_in(
             &st.fonts,
             st.mem.node_addr(p),
             (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0) as libc::c_int,
-        );
+        )?;
     }
     Ok(p)
 }

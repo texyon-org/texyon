@@ -2320,7 +2320,7 @@ fn hpack_in(
                                     fonts,
                                     mem.node_addr(p),
                                     use_glyph_metrics as libc::c_int,
-                                );
+                                )?;
                             }
                         }
                         let p_native = mem
