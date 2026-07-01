@@ -41,8 +41,9 @@ const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 /// Cold abort/divergent paths the threaded input-stack `_in` cores cannot run
 /// while holding the `&mut EngineState` borrow (they re-enter `with_state`
 /// through the print/error subtree). The `_in` core returns the sentinel; the
-/// thin global wrapper [`fire`](InputAbort::fire)s it after the borrow drops.
-/// Never reached on a passing run.
+/// caller propagates it as an [`EngineAbort`](crate::errors::EngineAbort) via
+/// [`into_engine_abort`](InputAbort::into_engine_abort). Never reached on a
+/// passing run.
 pub(crate) enum InputAbort {
     /// `overflow(what, n)` — capacity exhaustion (input stack / buffer).
     Overflow { what: *const libc::c_char, n: i32 },
@@ -54,18 +55,25 @@ pub(crate) enum InputAbort {
     /// Main-memory arena exhaustion (the `get_avail`/`get_node` `ALLOC_FAILED`
     /// sentinel surfaced into the input layer).
     MainMemory,
+    /// Serious internal error closing an input file at end-of-file (the C
+    /// `ttstub_input_close` wrapper `longjmp`'d here) — reached from
+    /// `end_file_reading_in`'s `u_close` (`01d` §2.1).
+    InputClose,
 }
 
 impl InputAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`fire`](InputAbort::fire) without longjmp-ing. Call only *after* the
-    /// state borrow drops (`MainMemory` re-enters `with_state` via `runaway`).
+    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), without
+    /// longjmp-ing. Call only *after* the state borrow drops (`MainMemory`
+    /// re-enters `with_state` via `runaway`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             InputAbort::Overflow { what, n } => crate::errors::EngineAbort::Overflow { what, n },
             InputAbort::Fatal(msg) => crate::errors::EngineAbort::Fatal(msg),
             InputAbort::TtAbort(msg) => crate::errors::EngineAbort::TtAbort(msg),
             InputAbort::MainMemory => crate::mem::main_memory_overflow_abort(),
+            InputAbort::InputClose => crate::errors::EngineAbort::TtAbort(
+                c"serious internal error closing an input file".as_ptr(),
+            ),
         }
     }
 }
@@ -279,15 +287,19 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-xetex0.c:3127 (end_file_reading)
-pub unsafe fn end_file_reading() {
-    crate::state::with_state_mut(end_file_reading_in);
+pub unsafe fn end_file_reading() -> Result<(), crate::errors::EngineAbort> {
+    // Sole caller is final_cleanup (Result-threadable); propagate the cold
+    // InputClose abort as EngineAbort instead of longjmp-ing (`01d` §2.1).
+    crate::state::with_state_mut(end_file_reading_in).map_err(|a| a.into_engine_abort())
 }
 
 /// `&mut EngineState` core of [`end_file_reading`] (`01b` §3). Touches the input
 /// stack (`st.input`) directly; `cur_input`/`first`/`line` are raw `mod raw`
 /// globals (safe under the borrow); pseudo-file teardown uses the threaded
-/// `pseudo_close`. No cold path.
-pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) {
+/// `pseudo_close`. The lone cold path is `u_close`'s serious internal close
+/// error, propagated as [`InputAbort::InputClose`] (`01d` §2.1) — the old C
+/// `ttstub_input_close` longjmp likewise aborted before the input-stack pop.
+pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
     set_first(cur_input().start);
     set_line(st.input.line_stack[cur_input().index as usize]);
     let name = cur_input().name;
@@ -297,13 +309,16 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) {
     } else if name > 17 {
         let idx = cur_input().index as usize;
         // SAFETY: FFI close of the open input file handle at this stack slot.
-        unsafe { u_close(st.input.input_file[idx]) };
+        if unsafe { u_close(st.input.input_file[idx]) } {
+            return Err(InputAbort::InputClose);
+        }
         st.input.input_file[idx] = std::ptr::null_mut();
     }
     let ptr = st.input.input_ptr - 1;
     st.input.input_ptr = ptr;
     set_cur_input(st.input.input_stack[ptr as usize]);
     st.input.in_open -= 1;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

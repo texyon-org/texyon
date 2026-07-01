@@ -335,7 +335,7 @@ pub unsafe fn final_cleanup() -> Result<(), crate::errors::EngineAbort> {
         if cur_input().state == TOKEN_LIST {
             crate::input::end_token_list()?;
         } else {
-            crate::input::end_file_reading();
+            crate::input::end_file_reading()?;
         }
     }
 
@@ -1523,7 +1523,9 @@ pub unsafe fn tt_cleanup() {
     for i in 1..=in_open {
         let f = crate::state::with_state(|s| s.input.input_file[i as usize]);
         if !f.is_null() {
-            crate::io::u_close(f);
+            // Terminal cleanup (tt_cleanup): absorb a serious close error — the
+            // engine is already tearing down (`01d` §2.1).
+            let _ = crate::io::u_close(f);
         }
     }
 

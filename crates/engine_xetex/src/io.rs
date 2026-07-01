@@ -188,7 +188,6 @@ extern "C" {
     fn ttstub_input_open_primary() -> usize;
     fn ttstub_get_last_input_abspath(buffer: *mut libc::c_char, len: libc::size_t)
         -> libc::ssize_t;
-    fn ttstub_input_close(handle: usize) -> libc::c_int;
     fn ttstub_input_getc(handle: usize) -> libc::c_int;
     fn ttstub_input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int;
     fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
@@ -895,20 +894,30 @@ pub(crate) unsafe fn get_uni_c_in(
 // ---------------------------------------------------------------------------
 
 // translated from xetex-io.c:273 (u_close)
-pub unsafe fn u_close(f: *mut UFile) {
+///
+/// Returns `true` on the serious internal close error the C `ttstub_input_close`
+/// wrapper `longjmp`'d on (`01d` §2.1): callers on a `Result` path propagate it
+/// as their `InputClose` abort, the terminal-cleanup caller (`tt_cleanup`)
+/// absorbs it. On that error the ICU-converter close + `free(f)` are skipped —
+/// exactly as the old longjmp skipped them.
+#[must_use]
+pub unsafe fn u_close(f: *mut UFile) -> bool {
     const ICUMAPPING: i16 = 5; // xetex-xetexd.h:1215
 
     if f.is_null() || (*f).handle == INVALID_HANDLE {
-        return;
+        return false;
     }
 
-    ttstub_input_close((*f).handle);
+    if crate::io::input_close((*f).handle) {
+        return true;
+    }
 
     if (*f).encoding_mode == ICUMAPPING && !(*f).conversion_data.is_null() {
         xetex_ucnv_close((*f).conversion_data);
     }
 
     libc::free(f as *mut libc::c_void);
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -922,6 +931,9 @@ pub(crate) enum OpenOrCloseAbort {
     Scanner(SccAbort),
     Name(NameAbort),
     MakeString(crate::texmfmp::MakeTexStringAbort),
+    /// Serious internal error closing a `\read` stream (the C `ttstub_input_close`
+    /// wrapper `longjmp`'d here) — from `u_close` (`01d` §2.1).
+    InputClose,
 }
 
 impl OpenOrCloseAbort {
@@ -932,6 +944,9 @@ impl OpenOrCloseAbort {
             OpenOrCloseAbort::Scanner(e) => e.into_engine_abort(),
             OpenOrCloseAbort::Name(e) => e.into_engine_abort(),
             OpenOrCloseAbort::MakeString(e) => e.into_engine_abort(),
+            OpenOrCloseAbort::InputClose => crate::errors::EngineAbort::TtAbort(
+                c"serious internal error closing an input file".as_ptr(),
+            ),
         }
     }
 }
@@ -944,7 +959,9 @@ pub(crate) unsafe fn open_or_close_in(
     let n = cur_val() as u8 as usize;
 
     if st.input.read_open[n] != CLOSED {
-        u_close(st.input.read_file[n]);
+        if u_close(st.input.read_file[n]) {
+            return Err(OpenOrCloseAbort::InputClose);
+        }
         st.input.read_open[n] = CLOSED;
     }
 

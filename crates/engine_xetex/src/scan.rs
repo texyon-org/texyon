@@ -783,14 +783,18 @@ pub(crate) fn read_toks_in(
             if unsafe { crate::io::input_line_in(st, rf)? } != 0 {
                 st.input.read_open[m] = NORMAL_SCANNER; // NORMAL = 0
             } else {
-                unsafe { crate::io::u_close(st.input.read_file[m]) };
+                if unsafe { crate::io::u_close(st.input.read_file[m]) } {
+                    return Err(SccAbort::InputClose);
+                }
                 st.input.read_open[m] = CLOSED;
             }
         } else {
             // §505
             let rf = st.input.read_file[m];
             if unsafe { crate::io::input_line_in(st, rf)? } == 0 {
-                unsafe { crate::io::u_close(st.input.read_file[m]) };
+                if unsafe { crate::io::u_close(st.input.read_file[m]) } {
+                    return Err(SccAbort::InputClose);
+                }
                 st.input.read_open[m] = CLOSED;
                 if st.scanner.align_state != 1_000_000 {
                     crate::errors::runaway_in(st);
@@ -864,7 +868,7 @@ pub(crate) fn read_toks_in(
             }
         }
         // done:
-        crate::input::end_file_reading_in(st);
+        crate::input::end_file_reading_in(st).map_err(SccAbort::Input)?;
 
         if st.scanner.align_state == 1_000_000 {
             break;
@@ -2138,7 +2142,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
                             }
                             st.input.force_eof = false;
-                            crate::input::end_file_reading_in(st);
+                            if let Err(a) = crate::input::end_file_reading_in(st) {
+                                return GetNextOutcome::Abort(a);
+                            }
                             match check_outer_validity_in(st) {
                                 Ok(crate::errors::ErrorOutcome::Continue) => {}
                                 Ok(oc) => return GetNextOutcome::Error(oc),
@@ -2162,7 +2168,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                             return GetNextOutcome::Done;
                         }
                         if st.input.input_ptr > 0 {
-                            crate::input::end_file_reading_in(st);
+                            if let Err(a) = crate::input::end_file_reading_in(st) {
+                                return GetNextOutcome::Abort(a);
+                            }
                             continue 'restart;
                         }
                         if !st.scanner.used_tectonic_coda_tokens
