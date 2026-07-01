@@ -4994,7 +4994,7 @@ pub(crate) fn scan_something_internal_in(
                                 };
                                 set_cur_val(unsafe {
                                     crate::pic::count_pdf_file_pages_named(name)
-                                });
+                                }?);
                             }
                             CURRENT_GROUP_LEVEL_CODE => {
                                 set_cur_val(st.save_stack.cur_level as i32 - 1);

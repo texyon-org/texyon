@@ -116,7 +116,6 @@ extern "C" {
 
     // bridge I/O
     fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
-    fn ttstub_input_close(handle: usize) -> c_int;
     // C string utilities
     fn xstrdup(s: *const c_char) -> *mut c_char;
 }
@@ -284,7 +283,7 @@ unsafe fn find_pic_file(
     bounds: &mut RealRect,
     pdf_box_type: c_int,
     page: c_int,
-) -> c_int {
+) -> Result<c_int, MainControlAbort> {
     let handle = ttstub_input_open(name_of_file, TTBC_FILE_FORMAT_PICT, 0);
     bounds.x = 0.0;
     bounds.y = 0.0;
@@ -292,7 +291,7 @@ unsafe fn find_pic_file(
     bounds.ht = 0.0;
 
     if handle == INVALID_HANDLE {
-        return 1;
+        return Ok(1);
     }
 
     let err = if pdf_box_type != 0 {
@@ -309,8 +308,12 @@ unsafe fn find_pic_file(
     if err == 0 {
         *path = xstrdup(name_of_file);
     }
-    ttstub_input_close(handle);
-    err
+    if crate::io::input_close(handle) {
+        // The C ttstub_input_close wrapper longjmp'd on this serious internal
+        // close error; propagate it as a fatal abort (`01d` §2.1).
+        return Err(MainControlAbort::InputClose);
+    }
+    Ok(err)
 }
 
 // translated from xetex-pic.c:258 (transform_point)
@@ -439,9 +442,9 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
     let name_of_file = st.input.name_of_file.as_mut_ptr();
     let result = unsafe {
         if pdf_box_type == PDFBOX_NONE {
-            find_pic_file(name_of_file, &mut pic_path, &mut bounds, PDFBOX_CROP, page)
+            find_pic_file(name_of_file, &mut pic_path, &mut bounds, PDFBOX_CROP, page)?
         } else {
-            find_pic_file(name_of_file, &mut pic_path, &mut bounds, pdf_box_type, page)
+            find_pic_file(name_of_file, &mut pic_path, &mut bounds, pdf_box_type, page)?
         }
     };
 
@@ -710,18 +713,26 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
 /// `name`-passing core of [`count_pdf_file_pages`] so a threaded caller holding
 /// `&mut EngineState` can supply the file name read directly from `st.input`
 /// instead of re-entering `with_state` via `name_of_file()`.
-pub(crate) unsafe fn count_pdf_file_pages_named(name: *const libc::c_char) -> c_int {
+pub(crate) unsafe fn count_pdf_file_pages_named(
+    name: *const libc::c_char,
+) -> Result<c_int, crate::scan::SccAbort> {
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_PICT, 0);
     if handle == INVALID_HANDLE {
-        return 0;
+        return Ok(0);
     }
     let pf = pdf_open(name, handle);
     if pf.is_null() {
-        ttstub_input_close(handle);
-        return 0;
+        if crate::io::input_close(handle) {
+            return Err(crate::scan::SccAbort::InputClose);
+        }
+        return Ok(0);
     }
     let pages = pdf_doc_get_page_count(pf);
     pdf_close(pf);
-    ttstub_input_close(handle);
-    pages
+    if crate::io::input_close(handle) {
+        // The C ttstub_input_close wrapper longjmp'd on this serious internal
+        // close error; propagate it as a fatal abort (`01d` §2.1).
+        return Err(crate::scan::SccAbort::InputClose);
+    }
+    Ok(pages)
 }

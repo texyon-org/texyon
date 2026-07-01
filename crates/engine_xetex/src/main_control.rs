@@ -2071,6 +2071,9 @@ pub(crate) enum MainControlAbort {
     Confusion(&'static std::ffi::CStr),
     NewCharacter(NewCharacterAbort),
     Trie(crate::hyphenation::TrieAbort),
+    /// Serious internal error closing an input file (the C `ttstub_input_close`
+    /// wrapper `longjmp`'d here); reached from `load_picture_in` (`01d` §2.1).
+    InputClose,
 }
 
 impl From<crate::hyphenation::TrieAbort> for MainControlAbort {
@@ -2211,6 +2214,9 @@ impl MainControlAbort {
             MainControlAbort::Confusion(m) => crate::errors::EngineAbort::Confusion(m.as_ptr()),
             MainControlAbort::NewCharacter(a) => a.into_engine_abort(),
             MainControlAbort::Trie(e) => e.into_engine_abort(),
+            MainControlAbort::InputClose => crate::errors::EngineAbort::TtAbort(
+                c"serious internal error closing an input file".as_ptr(),
+            ),
         }
     }
 }
