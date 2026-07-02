@@ -1013,7 +1013,7 @@ pub unsafe extern "C" fn tt_run_engine(
     // pre-run fallback `EngineState`; copy its config into the owned state before
     // installing the owner pointer, then all `with_state` calls reach `st`.
     let mut st = Box::new(crate::state::EngineState::default());
-    st.config = crate::state::with_state(|s| s.config);
+    crate::engine_interface::apply_config(&mut st.config);
     // Clears the owner pointer on every exit path so a stale pointer to the
     // (dropped) `st` never outlives the run (e.g. a between-runs
     // `tt_xetex_set_int_variable` must hit the fallback, not freed memory).
