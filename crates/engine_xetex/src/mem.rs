@@ -6,7 +6,6 @@
 //! state migration (see `plan/02-state.md`), all arena access goes
 //! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE};
-use crate::errors::runaway;
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
     MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
@@ -99,12 +98,9 @@ pub fn get_avail(mem: &mut MemState) -> i32 {
 /// the caller to propagate. Call only *after* the state borrow drops (`runaway`
 /// re-enters `with_state`).
 pub(crate) fn main_memory_overflow_abort() -> crate::errors::EngineAbort {
-    // SAFETY: post-borrow; `runaway` re-enters `with_state` freely here.
-    unsafe { runaway() };
-    crate::errors::EngineAbort::Overflow {
-        what: c"main memory size".as_ptr(),
-        n: MEM_TOP + 1,
-    }
+    // runaway() + the "main memory size" report are deferred to into_history
+    // (which holds st); this mapping site needs no state borrow.
+    crate::errors::EngineAbort::MainMemoryOverflow
 }
 
 // ---------------------------------------------------------------------------

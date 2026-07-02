@@ -206,6 +206,10 @@ pub(crate) enum EngineAbort {
     /// `overflow("number of strings", max_strings - init_str_ptr)` — as above but
     /// for the string count (`st.strings.max_strings - init_str_ptr`).
     StringOverflow,
+    /// `runaway()` then `overflow("main memory size", MEM_TOP+1)`. `into_history`
+    /// runs `runaway_in(st)` + the report (both need `st`), so the mapping site
+    /// (`main_memory_overflow_abort`) needs no state borrow.
+    MainMemoryOverflow,
     /// `confusion(s)` — internal consistency failure ("This can't happen").
     Confusion(*const libc::c_char),
     /// `fatal_error(s)` — "Emergency stop" + `s` (its own inline cleanup, not
@@ -259,6 +263,11 @@ impl EngineAbort {
             EngineAbort::StringOverflow => {
                 let n = st.strings.max_strings - st.strings.init_str_ptr;
                 Self::overflow_report(st, c"number of strings".as_ptr(), n);
+            }
+            EngineAbort::MainMemoryOverflow => {
+                runaway_in(st);
+                // MEM_TOP + 1 (MEM_TOP = 4_999_999); constant, unchanged.
+                Self::overflow_report(st, c"main memory size".as_ptr(), 5_000_000);
             }
             // The print + cleanup half of `confusion`.
             EngineAbort::Confusion(s) => {
@@ -462,12 +471,7 @@ pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
     st.eqtb.set_b32s1(BOX_BASE + n as i32, crate::mem::TEX_NULL);
     ErrorOutcome::Continue
 }
-// translated from xetex-xetex0.c:107 (runaway)
-pub unsafe fn runaway() {
-    crate::state::with_state_mut(runaway_in);
-}
-
-/// `&mut EngineState` core of [`runaway`] (`01b` §3). Self-contained cold
+/// `&mut EngineState` core of `runaway` (`01b` §3). Self-contained cold
 /// diagnostic: reads `scanner_status`/`def_ref` (`st.scanner`), `error_line`
 /// (`st.errors`), and the token-list head (`st.mem`), printing in-order through
 /// the threaded `print_*_in`/`show_token_list_in` cores (sessions 182–183). No
