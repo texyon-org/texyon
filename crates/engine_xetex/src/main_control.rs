@@ -1794,9 +1794,7 @@ pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), M
 // effects (`tex_remainder`, plus `arith_error` on overflow); `None` when the
 // spacing branch taken did no scaling arithmetic.
 pub(crate) fn app_space(
-    mem: &mut crate::state::MemState,
-    eqtb: &crate::state::EqtbState,
-    fonts: &mut crate::state::FontState,
+    st: &mut crate::state::EngineState,
 ) -> Result<Option<(i32, bool)>, crate::scan::NodeRecycleAbort> {
     use crate::globals::{main_k, main_p, set_cur_list_tail, set_main_k, set_main_p};
     const GLUE_PAR_SPACE_SKIP: i32 = 12; // xetex_format.h:161
@@ -1804,65 +1802,65 @@ pub(crate) fn app_space(
     const EXTRA_SPACE_CODE: i32 = 7; // xetex-constants.h:299
 
     let space_factor = crate::globals::cur_list_aux_b32s0();
-    let cf = eqtb.b32s1(CUR_FONT_LOC);
+    let cf = st.eqtb.b32s1(CUR_FONT_LOC);
     let q;
     let mut side_effects = None;
-    if space_factor >= 2000 && eqtb.b32s1(GLUE_BASE + GLUE_PAR_XSPACE_SKIP) != 0 {
-        q = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_XSPACE_SKIP as i16);
+    if space_factor >= 2000 && st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XSPACE_SKIP) != 0 {
+        q = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_XSPACE_SKIP as i16);
         if q == crate::mem::ALLOC_FAILED {
             return Err(crate::scan::NodeRecycleAbort::Overflow);
         }
     } else {
-        if eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP) != 0 {
-            set_main_p(eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP));
+        if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP) != 0 {
+            set_main_p(st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP));
         } else {
-            set_main_p(fonts.font_glue(cf));
+            set_main_p(st.fonts.font_glue(cf));
             if main_p() == crate::mem::TEX_NULL {
-                set_main_p(crate::mem::new_spec(mem, 0));
+                set_main_p(crate::mem::new_spec(&mut st.mem, 0));
                 if main_p() == crate::mem::ALLOC_FAILED {
                     return Err(crate::scan::NodeRecycleAbort::Overflow);
                 }
-                set_main_k(fonts.param_base(cf) + 2);
+                set_main_k(st.fonts.param_base(cf) + 2);
                 // width = space, stretch = space_stretch, shrink = space_shrink
-                mem.set_b32s1(main_p() + 1, fonts.font_info_b32s1(main_k()));
-                mem.set_b32s1(main_p() + 2, fonts.font_info_b32s1(main_k() + 1));
-                mem.set_b32s1(main_p() + 3, fonts.font_info_b32s1(main_k() + 2));
-                fonts.set_font_glue(cf, main_p());
+                st.mem.set_b32s1(main_p() + 1, st.fonts.font_info_b32s1(main_k()));
+                st.mem.set_b32s1(main_p() + 2, st.fonts.font_info_b32s1(main_k() + 1));
+                st.mem.set_b32s1(main_p() + 3, st.fonts.font_info_b32s1(main_k() + 2));
+                st.fonts.set_font_glue(cf, main_p());
             }
         }
-        set_main_p(crate::mem::new_spec(mem, main_p()));
+        set_main_p(crate::mem::new_spec(&mut st.mem, main_p()));
         if main_p() == crate::mem::ALLOC_FAILED {
             return Err(crate::scan::NodeRecycleAbort::Overflow);
         }
         if space_factor >= 2000 {
             // add extra_space to width
-            let extra = fonts.font_info_b32s1(EXTRA_SPACE_CODE + fonts.param_base(cf));
-            mem.set_b32s1(main_p() + 1, mem.b32s1(main_p() + 1) + extra);
+            let extra = st.fonts.font_info_b32s1(EXTRA_SPACE_CODE + st.fonts.param_base(cf));
+            st.mem.set_b32s1(main_p() + 1, st.mem.b32s1(main_p() + 1) + extra);
         }
         // scale stretch by space_factor / 1000
         let (new_stretch, _r1, ov1) =
-            crate::scaled_math::xn_over_d_parts(mem.b32s1(main_p() + 2), space_factor, 1000);
-        mem.set_b32s1(main_p() + 2, new_stretch);
+            crate::scaled_math::xn_over_d_parts(st.mem.b32s1(main_p() + 2), space_factor, 1000);
+        st.mem.set_b32s1(main_p() + 2, new_stretch);
         // scale shrink by 1000 / space_factor
         let (new_shrink, r2, ov2) =
-            crate::scaled_math::xn_over_d_parts(mem.b32s1(main_p() + 3), 1000, space_factor);
-        mem.set_b32s1(main_p() + 3, new_shrink);
+            crate::scaled_math::xn_over_d_parts(st.mem.b32s1(main_p() + 3), 1000, space_factor);
+        st.mem.set_b32s1(main_p() + 3, new_shrink);
         // `xn_over_d` sets `tex_remainder` (last call wins) and `arith_error`
         // on any overflow; defer both to after the borrow drops (§129).
         side_effects = Some((r2, ov1 || ov2));
-        q = crate::mem::new_glue(mem, main_p());
+        q = crate::mem::new_glue(&mut st.mem, main_p());
         if q == crate::mem::ALLOC_FAILED {
             return Err(crate::scan::NodeRecycleAbort::Overflow);
         }
-        mem.set_b32s1(main_p(), crate::mem::TEX_NULL);
+        st.mem.set_b32s1(main_p(), crate::mem::TEX_NULL);
     }
-    mem.set_b32s1(crate::globals::cur_list_tail(), q);
+    st.mem.set_b32s1(crate::globals::cur_list_tail(), q);
     set_cur_list_tail(q);
     Ok(side_effects)
 }
 
 pub(crate) fn app_space_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    if let Some((remainder, overflowed)) = app_space(&mut st.mem, &st.eqtb, &mut st.fonts)? {
+    if let Some((remainder, overflowed)) = app_space(st)? {
         if overflowed {
             st.errors.arith_error = true;
         }
