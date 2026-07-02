@@ -8,7 +8,21 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
-## Idiom session 251 — 2026-07-02 — Execute the §6 flip via a pointer bridge (01d §6.2); with_state 142→48
+## Idiom session 251 — 2026-07-02 — Execute the §6 flip via a pointer bridge (01d §6.2); with_state 142→15
+
+**Update (cont.):** after the boundary-layer flip (below), the drain continued through the
+leaf frontier to **`with_state` 15** (~15 commits total, all dashboard 29/2/7/4 + 80 unit +
+36 warn; corpus 637/2): random/log math cluster + arith-test refactor + `get_microinterval`
++ `load_fmt_file`/`init_io`/`init_start_time`/`initialize_*_variables` + cascade-deletion of
+dead wrappers (culminating in `tt_xetex_open_input` → 4 output wrappers). **The remaining ~15
+is the practical floor: C++ callbacks (`font_feature_warning`/`gr_font_get_named`) that call
+BACK into Rust are `#[no_mangle]` with no `st` — they MUST use the bridge, so true
+zero-`with_state` is architecturally unreachable.** The bridge (pointer to the owned `st`) is
+the legitimate end-state; the fallback `RefCell` is never touched in production. Rest of the
+15: the `into_engine_abort` diagnostic-count pin (design change, not 96 sites) + deep `hash_s1`.
+The §6 flip is COMPLETE — `EngineState` is owned; the engine threads `&mut st`. Full detail:
+`01d` §6.2, [[engineabort-unification-progress]].
+
 
 **Type:** execution — the §6 flip (owned `EngineState`). Instead of the "one atomic
 commit" the roadmap feared, a **staged pointer bridge** made it incremental and
