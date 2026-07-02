@@ -158,3 +158,41 @@ Remaining after this session: `cur_input` (InputState struct, knot 1), `line` (k
 `cur_list` (~560 sites via its field accessors — big but mechanical, gated on whether every
 `cur_list_*` site holds `st`), the main-loop block (knot 2), and the 3 font FFI mirror
 pointers (locators, NOT state — leave them).
+
+## Session 249 continued — the main-loop + ligature block (mod-raw 25→5)
+
+Threading-then-fold cleared the entire main-loop/ligature scratch, the biggest
+gated cluster. Pattern proven twice: **thread the one non-`st` scratch user to
+`&mut EngineState` first (its callers already hold `st`), then fold.**
+
+- **app_space** `(mem,eqtb,fonts)` → `(st)` [commit] — pure refactor, sole caller
+  `app_space_in` passes `st`. Unblocked the 11 main_control-only scalars.
+- **fold main-loop block** → new `MainLoopState`: `main_p/k/f/h/pp/ppp/s`, `bchar`,
+  `false_bchar`, `space_class`, `prev_class` (25→14). **Regression caught+fixed:**
+  `linebreak.rs` had its OWN `extern "C" { static mut main_f }` read bare by
+  `do_locale_linebreaks_in` → native word nodes got font 0 (`bad native font flag`,
+  graphite/otf/utf8 tests). Bound a local `main_f = st.mainloop.main_f`, deleted the
+  rogue extern. **New rule: audit `grep -rn "static mut <name>"` across all src before
+  every fold** (see the memory note).
+- **reconstitute** `(mem,hyph,fonts,…)` → `(st,…)` [commit] — the ligature/kern core;
+  body `mem./hyph./fonts.` → `st.*`, helper args → `&mut st.mem` etc., two `new_ligature`
+  sites hoist `mem.b32s1(cur_q())` (E0502). Inner `update_right` also threaded (it sets
+  cur_r). Callers = `goto_found` (holds st).
+- **fold ligature block** → `MainLoopState`: `cur_l/r/q`, `lig_stack`,
+  `ligature_present`, `lft_hit`, `rt_hit`, `cancel_boundary`, `ins_disc` (14→5).
+
+**Remaining mod-raw = 5, only 2 are real state:**
+- `cur_input` (InputState struct, 125 sites) — DEFERRED, same `get_node` synctex knot as
+  `line`: `get_node` (mem-only) reads `cur_input.synctex_tag` for the node trailer. Can't
+  split one field off the struct; options are (a) a `MemState` synctex-pos mirror updated
+  on input push/pop (duplicate state, bad for clone), or (b) thread the synctex tag through
+  `get_node` (huge). Fold cur_input into `st.input.cur_input` and solve the trailer read
+  as its own step.
+- `cur_list` (ListStateRecord, ~585 field-accessor sites across 15 files) — DEFERRED, big +
+  delicate: needs a custom multi-accessor fold (`cur_list_head/tail/mode/prev_graf/
+  e_tex_aux/mode_line/aux_b32s0/aux_b32s1` → `st.input.cur_list.<field>`; aux is a union →
+  `unsafe`). Most sites hold `st` (main_control 304, math 83, linebreak reconstitute-free);
+  audit stragglers first. Home = `st.input.cur_list` (sibling to `st.input.nest`;
+  push_nest/pop_nest already hold st).
+- `FONT_SIZE`/`FONT_AREA`/`FONT_LAYOUT_ENGINE` — FFI mirror *locators*, re-established on
+  resume; NOT state, leave them.
