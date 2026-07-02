@@ -735,9 +735,7 @@ pub fn finite_shrink(mem: &mut MemState, p: i32) -> Result<i32, NodeRecycleAbort
 /// Phase-C: threaded to `&mut MemState`, `&mut HyphState`, and
 /// `&mut FontState`.
 pub fn reconstitute(
-    mem: &mut MemState,
-    hyph: &mut HyphState,
-    fonts: &mut FontState,
+    st: &mut crate::state::EngineState,
     mut j: i16,
     n: i16,
     mut bchar: i32,
@@ -767,43 +765,43 @@ pub fn reconstitute(
         }
     }
 
-    hyph.hyphen_passed = 0;
+    st.hyph.hyphen_passed = 0;
     let mut t = HOLD_HEAD;
     let mut w = 0;
-    mem.set_b32s1(HOLD_HEAD, TEX_NULL);
-    set_cur_l(hyph.hu[j as usize]);
+    st.mem.set_b32s1(HOLD_HEAD, TEX_NULL);
+    set_cur_l(st.hyph.hu[j as usize]);
     set_cur_q(t);
 
     if j == 0 {
-        set_ligature_present(hyph.init_lig);
-        let mut p = hyph.init_list;
+        set_ligature_present(st.hyph.init_lig);
+        let mut p = st.hyph.init_list;
         if ligature_present() {
-            set_lft_hit(hyph.init_lft);
+            set_lft_hit(st.hyph.init_lft);
         }
         while p > TEX_NULL {
-            let q = crate::mem::get_avail(mem);
+            let q = crate::mem::get_avail(&mut st.mem);
             if q == crate::mem::ALLOC_FAILED {
                 return Err(NodeRecycleAbort::OverflowRunaway);
             }
-            mem.set_b32s1(t, q);
-            t = mem.b32s1(t);
-            mem.set_b16s1(t, hyph.hf as u16);
-            mem.set_b16s0(t, mem.b16s0(p));
-            p = mem.b32s1(p);
+            st.mem.set_b32s1(t, q);
+            t = st.mem.b32s1(t);
+            st.mem.set_b16s1(t, st.hyph.hf as u16);
+            st.mem.set_b16s0(t, st.mem.b16s0(p));
+            p = st.mem.b32s1(p);
         }
     } else if cur_l() < TOO_BIG_CHAR {
-        let q = crate::mem::get_avail(mem);
+        let q = crate::mem::get_avail(&mut st.mem);
         if q == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::OverflowRunaway);
         }
-        mem.set_b32s1(t, q);
-        t = mem.b32s1(t);
-        mem.set_b16s1(t, hyph.hf as u16);
-        mem.set_b16s0(t, cur_l() as u16);
+        st.mem.set_b32s1(t, q);
+        t = st.mem.b32s1(t);
+        st.mem.set_b16s1(t, st.hyph.hf as u16);
+        st.mem.set_b16s0(t, cur_l() as u16);
     }
 
     set_lig_stack(TEX_NULL);
-    let mut cur_rh = update_right(hyph, j, n, bchar, hchar);
+    let mut cur_rh = update_right(&st.hyph, j, n, bchar, hchar);
 
     loop {
         'continue_: loop {
@@ -811,27 +809,27 @@ pub fn reconstitute(
             let mut q;
 
             if cur_l() == TOO_BIG_CHAR {
-                k = fonts.bchar_label_entry(hyph.hf);
+                k = st.fonts.bchar_label_entry(st.hyph.hf);
                 if k == NON_ADDRESS {
                     break 'continue_;
                 }
-                q = fonts.font_info_b16(k);
+                q = st.fonts.font_info_b16(k);
             } else {
-                let char_base = fonts.char_base_entry(hyph.hf);
-                let effective = crate::fonts::effective_char(fonts, true, hyph.hf, cur_l() as u16);
-                q = fonts.font_info_b16(char_base + effective);
+                let char_base = st.fonts.char_base_entry(st.hyph.hf);
+                let effective = crate::fonts::effective_char(&mut st.fonts, true, st.hyph.hf, cur_l() as u16);
+                q = st.fonts.font_info_b16(char_base + effective);
                 if q.s1 % 4 != LIG_TAG {
                     break 'continue_;
                 }
-                k = fonts.lig_kern_base_entry(hyph.hf) + q.s0 as i32;
-                q = fonts.font_info_b16(k);
+                k = st.fonts.lig_kern_base_entry(st.hyph.hf) + q.s0 as i32;
+                q = st.fonts.font_info_b16(k);
                 if q.s3 > 128 {
-                    k = fonts.lig_kern_base_entry(hyph.hf)
+                    k = st.fonts.lig_kern_base_entry(st.hyph.hf)
                         + 256 * q.s1 as i32
                         + q.s0 as i32
                         + 32768
                         - 256 * 128;
-                    q = fonts.font_info_b16(k);
+                    q = st.fonts.font_info_b16(k);
                 }
             }
 
@@ -844,14 +842,14 @@ pub fn reconstitute(
             loop {
                 if q.s2 as i32 == test_char && q.s3 <= 128 {
                     if cur_rh < TOO_BIG_CHAR {
-                        hyph.hyphen_passed = j;
+                        st.hyph.hyphen_passed = j;
                         hchar = TOO_BIG_CHAR;
                         cur_rh = TOO_BIG_CHAR;
                         continue 'continue_;
                     }
 
-                    if hchar < TOO_BIG_CHAR && odd(hyph.hyf[j as usize]) {
-                        hyph.hyphen_passed = j;
+                    if hchar < TOO_BIG_CHAR && odd(st.hyph.hyf[j as usize]) {
+                        st.hyph.hyphen_passed = j;
                         hchar = TOO_BIG_CHAR;
                     }
 
@@ -871,9 +869,9 @@ pub fn reconstitute(
                             2 | 6 => {
                                 set_cur_r(q.s0 as i32);
                                 if lig_stack() > TEX_NULL {
-                                    mem.set_b16s0(lig_stack(), cur_r() as u16);
+                                    st.mem.set_b16s0(lig_stack(), cur_r() as u16);
                                 } else {
-                                    let lig_item = crate::mem::new_lig_item(mem, cur_r() as u16);
+                                    let lig_item = crate::mem::new_lig_item(&mut st.mem, cur_r() as u16);
                                     if lig_item == crate::mem::ALLOC_FAILED {
                                         return Err(NodeRecycleAbort::Overflow);
                                     }
@@ -881,42 +879,43 @@ pub fn reconstitute(
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
-                                        let p = crate::mem::get_avail(mem);
+                                        let p = crate::mem::get_avail(&mut st.mem);
                                         if p == crate::mem::ALLOC_FAILED {
                                             return Err(NodeRecycleAbort::OverflowRunaway);
                                         }
-                                        mem.set_b32s1(lig_stack() + 1, p);
-                                        mem.set_b16s0(p, hyph.hu[(j + 1) as usize] as u16);
-                                        mem.set_b16s1(p, hyph.hf as u16);
+                                        st.mem.set_b32s1(lig_stack() + 1, p);
+                                        st.mem.set_b16s0(p, st.hyph.hu[(j + 1) as usize] as u16);
+                                        st.mem.set_b16s1(p, st.hyph.hf as u16);
                                     }
                                 }
                             }
                             3 => {
                                 set_cur_r(q.s0 as i32);
                                 let p = lig_stack();
-                                let lig_item = crate::mem::new_lig_item(mem, cur_r() as u16);
+                                let lig_item = crate::mem::new_lig_item(&mut st.mem, cur_r() as u16);
                                 if lig_item == crate::mem::ALLOC_FAILED {
                                     return Err(NodeRecycleAbort::Overflow);
                                 }
                                 set_lig_stack(lig_item);
-                                mem.set_b32s1(lig_stack(), p);
+                                st.mem.set_b32s1(lig_stack(), p);
                             }
                             7 | 11 => {
                                 if ligature_present() {
+                                    let mq = st.mem.b32s1(cur_q());
                                     let p = crate::mem::new_ligature(
-                                        mem,
-                                        hyph.hf,
+                                        &mut st.mem,
+                                        st.hyph.hf,
                                         cur_l() as u16,
-                                        mem.b32s1(cur_q()),
+                                        mq,
                                     );
                                     if p == crate::mem::ALLOC_FAILED {
                                         return Err(NodeRecycleAbort::Overflow);
                                     }
                                     if lft_hit() {
-                                        mem.set_b16s0(p, 2);
+                                        st.mem.set_b16s0(p, 2);
                                         set_lft_hit(false);
                                     }
-                                    mem.set_b32s1(cur_q(), p);
+                                    st.mem.set_b32s1(cur_q(), p);
                                     t = p;
                                     set_ligature_present(false);
                                 }
@@ -928,32 +927,32 @@ pub fn reconstitute(
                                 set_cur_l(q.s0 as i32);
                                 set_ligature_present(true);
                                 if lig_stack() > TEX_NULL {
-                                    if mem.b32s1(lig_stack() + 1) > TEX_NULL {
-                                        mem.set_b32s1(t, mem.b32s1(lig_stack() + 1));
-                                        t = mem.b32s1(t);
+                                    if st.mem.b32s1(lig_stack() + 1) > TEX_NULL {
+                                        st.mem.set_b32s1(t, st.mem.b32s1(lig_stack() + 1));
+                                        t = st.mem.b32s1(t);
                                         j += 1;
                                     }
                                     let p = lig_stack();
-                                    set_lig_stack(mem.b32s1(p));
-                                    crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
+                                    set_lig_stack(st.mem.b32s1(p));
+                                    crate::mem::free_node(&mut st.mem, p, SMALL_NODE_SIZE);
                                     if lig_stack() == TEX_NULL {
-                                        cur_rh = update_right(hyph, j, n, bchar, hchar);
+                                        cur_rh = update_right(&st.hyph, j, n, bchar, hchar);
                                     } else {
-                                        set_cur_r(mem.b16s0(lig_stack()) as i32);
+                                        set_cur_r(st.mem.b16s0(lig_stack()) as i32);
                                     }
                                 } else if j == n {
                                     break 'continue_;
                                 } else {
-                                    let p = crate::mem::get_avail(mem);
+                                    let p = crate::mem::get_avail(&mut st.mem);
                                     if p == crate::mem::ALLOC_FAILED {
                                         return Err(NodeRecycleAbort::OverflowRunaway);
                                     }
-                                    mem.set_b32s1(t, p);
-                                    t = mem.b32s1(t);
-                                    mem.set_b16s1(t, hyph.hf as u16);
-                                    mem.set_b16s0(t, cur_r() as u16);
+                                    st.mem.set_b32s1(t, p);
+                                    t = st.mem.b32s1(t);
+                                    st.mem.set_b16s1(t, st.hyph.hf as u16);
+                                    st.mem.set_b16s0(t, cur_r() as u16);
                                     j += 1;
-                                    cur_rh = update_right(hyph, j, n, bchar, hchar);
+                                    cur_rh = update_right(&st.hyph, j, n, bchar, hchar);
                                 }
                             }
                         }
@@ -964,8 +963,8 @@ pub fn reconstitute(
                         continue 'continue_;
                     }
 
-                    w = fonts.font_info_b32s1(
-                        fonts.kern_base_entry(hyph.hf) + 256 * q.s1 as i32 + q.s0 as i32,
+                    w = st.fonts.font_info_b32s1(
+                        st.fonts.kern_base_entry(st.hyph.hf) + 256 * q.s1 as i32 + q.s0 as i32,
                     );
                     break 'continue_;
                 }
@@ -979,7 +978,7 @@ pub fn reconstitute(
                 }
 
                 k += q.s3 as i32 + 1;
-                q = fonts.font_info_b16(k);
+                q = st.fonts.font_info_b16(k);
                 test_char = if cur_rh < TOO_BIG_CHAR {
                     cur_rh
                 } else {
@@ -989,50 +988,51 @@ pub fn reconstitute(
         }
 
         if ligature_present() {
-            let p = crate::mem::new_ligature(mem, hyph.hf, cur_l() as u16, mem.b32s1(cur_q()));
+            let mq = st.mem.b32s1(cur_q());
+            let p = crate::mem::new_ligature(&mut st.mem, st.hyph.hf, cur_l() as u16, mq);
             if p == crate::mem::ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow);
             }
             if lft_hit() {
-                mem.set_b16s0(p, 2);
+                st.mem.set_b16s0(p, 2);
                 set_lft_hit(false);
             }
             if rt_hit() && lig_stack() == TEX_NULL {
-                mem.set_b16s0(p, mem.b16s0(p) + 1);
+                st.mem.set_b16s0(p, st.mem.b16s0(p) + 1);
                 set_rt_hit(false);
             }
-            mem.set_b32s1(cur_q(), p);
+            st.mem.set_b32s1(cur_q(), p);
             t = p;
             set_ligature_present(false);
         }
 
         if w != 0 {
-            let p = crate::mem::new_kern(mem, w);
+            let p = crate::mem::new_kern(&mut st.mem, w);
             if p == crate::mem::ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow);
             }
-            mem.set_b32s1(t, p);
-            t = mem.b32s1(t);
+            st.mem.set_b32s1(t, p);
+            t = st.mem.b32s1(t);
             w = 0;
-            mem.set_b32s0(t + 2, 0);
+            st.mem.set_b32s0(t + 2, 0);
         }
 
         if lig_stack() > TEX_NULL {
             set_cur_q(t);
-            set_cur_l(mem.b16s0(lig_stack()) as i32);
+            set_cur_l(st.mem.b16s0(lig_stack()) as i32);
             set_ligature_present(true);
-            if mem.b32s1(lig_stack() + 1) > TEX_NULL {
-                mem.set_b32s1(t, mem.b32s1(lig_stack() + 1));
-                t = mem.b32s1(t);
+            if st.mem.b32s1(lig_stack() + 1) > TEX_NULL {
+                st.mem.set_b32s1(t, st.mem.b32s1(lig_stack() + 1));
+                t = st.mem.b32s1(t);
                 j += 1;
             }
             let p = lig_stack();
-            set_lig_stack(mem.b32s1(p));
-            crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
+            set_lig_stack(st.mem.b32s1(p));
+            crate::mem::free_node(&mut st.mem, p, SMALL_NODE_SIZE);
             if lig_stack() == TEX_NULL {
-                cur_rh = update_right(hyph, j, n, bchar, hchar);
+                cur_rh = update_right(&st.hyph, j, n, bchar, hchar);
             } else {
-                set_cur_r(mem.b16s0(lig_stack()) as i32);
+                set_cur_r(st.mem.b16s0(lig_stack()) as i32);
             }
             continue;
         }
@@ -3736,9 +3736,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
         let mut l = j;
         let hyf_char = st.hyph.hyf_char;
         j = reconstitute(
-            &mut st.mem,
-            &mut st.hyph,
-            &mut st.fonts,
+            st,
             j,
             hn_v,
             bchar,
@@ -3791,9 +3789,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 while l <= i {
                     let font_bchar = st.fonts.font_bchar_entry(st.hyph.hf);
                     l = reconstitute(
-                        &mut st.mem,
-                        &mut st.hyph,
-                        &mut st.fonts,
+                        st,
                         l,
                         i,
                         font_bchar,
@@ -3835,9 +3831,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 while l < j {
                     loop {
                         l = reconstitute(
-                            &mut st.mem,
-                            &mut st.hyph,
-                            &mut st.fonts,
+                            st,
                             l,
                             hn_v,
                             bchar,
@@ -3868,9 +3862,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
 
                     while l > j {
                         j = reconstitute(
-                            &mut st.mem,
-                            &mut st.hyph,
-                            &mut st.fonts,
+                            st,
                             j,
                             hn_v,
                             bchar,
