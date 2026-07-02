@@ -112,3 +112,49 @@ blocker; the real cost is moving the hot-path scalar STORAGE into `EngineState` 
 moved scalar through the bridge would double-borrow callers that already hold `&mut st`),
 plus a custom non-memcpy `Clone` for the ICU/TECkit handle caches and rehoming the one
 `font_feature_warning` C++ callback.
+
+## Execution notes (session 249, continuation — the clean-scalar sweep)
+
+Folded the scalars that DON'T hit the threading gate — the ones whose sites already
+hold `st` (or a sub-struct their accessors uniformly hold). `mod raw` scalar count
+**31 → 26** across five validated commits (each: dashboard 29/2/7/4, unit 80, warnings 36):
+
+- `cur_val` → `st.scanner.cur_val` (625 sites; 2 borrow-hoist + 1 else-if restructure).
+- `temp_ptr` → `st.mem.temp_ptr` (82 sites). Home is **MemState not ScannerState**: every
+  non-`st` user (`new_skip_param` + its `append_to_vlist`/`insert_split_top_skip_before`
+  callers that read it as an out-param, plus `reverse`/`just_reverse`) holds `&mut MemState`;
+  two-phase borrows keep `mem.f(mem.temp_ptr, …)` legal.
+- `cur_ptr` → `st.scanner.cur_ptr` (84 sites; sibling to `sa_root`). Promoted
+  `new_index`/`sa_alloc_chain` to `&mut ScannerState`; threaded `scanner` into `do_marks`
+  (5 callers, sa_root args hoisted).
+- `first` → `st.input.first` (43 sites; sibling to `last`). All sites hold `st`.
+- `nest_size` → `st.input.nest_size` (config constant; `NestOverflow` no-count variant).
+
+**Two structural knots block the remaining 26 — map for next session:**
+
+1. **`get_node` couples `line` + `cur_input` (+ synctex).** `get_node(mem: &mut MemState, s)`
+   writes a synctex trailer for MEDIUM+ nodes reading BOTH `line()` and
+   `cur_input_synctex_tag()` (mem.rs:250-251). `get_node` is called from hundreds of
+   mem-only sites, so it cannot reach `st.input`. ⇒ `line` and `cur_input` (the InputState
+   struct) are a **coupled fold**: either thread the two synctex scalars as params through
+   every `get_node` call, or give `get_node` a `&InputClusterState` (cascade). `line` could
+   be mechanically forced into `MemState` (get_node holds mem; only straggler = `new_save_level`
+   which holds `save_stack` → pass `line` as a param, its 11 callers all hold `st`) — but that
+   splits input scalars (`first`/`last` in `st.input`, `line` in `st.mem`) — a semantic wart.
+   Defer as a deliberate coupled unit.
+
+2. **`app_space` + `linebreak.rs` gate the main-loop scratch block** (`main_p/k/f/h/pp/ppp/s`,
+   `bchar`, `false_bchar`, `space_class`, `prev_class` — main_control-only; plus `cur_l/r/q`,
+   `lig_stack`, `ligature_present`, `lft_hit`, `rt_hit`, `cancel_boundary`, `ins_disc` which
+   also leak to linebreak/engine). `app_space(mem, eqtb, fonts)` uses `main_p` etc. as local
+   scratch but holds no `st`; `linebreak.rs` ligature cores hold `hyph/mem/fonts`. Folding into
+   a `MainLoopState`/`LigatureState` sub-struct requires FIRST threading `app_space` and the
+   linebreak ligature cores to `&mut EngineState` (their `st`-holding callers then pass `st`),
+   OR proving the scratch is never shared across the app_space↔main_loop call boundary and
+   localizing it. The latter needs care in TeX's ligature loop (highest-risk code) — thread
+   first, localize never.
+
+Remaining after this session: `cur_input` (InputState struct, knot 1), `line` (knot 1),
+`cur_list` (~560 sites via its field accessors — big but mechanical, gated on whether every
+`cur_list_*` site holds `st`), the main-loop block (knot 2), and the 3 font FFI mirror
+pointers (locators, NOT state — leave them).
