@@ -314,13 +314,6 @@ pub(crate) fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
 // print_scaled
 // ---------------------------------------------------------------------------
 
-/// Print a scaled integer (fixed-point with 16 fractional bits) as a decimal.
-///
-/// translated from xetex-output.c:612 (print_scaled)
-pub unsafe fn print_scaled(s: i32) {
-    crate::state::with_state_mut(|st| print_scaled_in(st, s));
-}
-
 /// `&mut EngineState` core of [`print_scaled`].
 pub(crate) fn print_scaled_in(st: &mut EngineState, mut s: i32) {
     if s < 0 {
@@ -687,13 +680,6 @@ pub(crate) fn diagnostic_begin_capture_warning_here_in(
 // ---------------------------------------------------------------------------
 // error_here_with_diagnostic
 // ---------------------------------------------------------------------------
-
-/// Begin an error diagnostic with file/line context, and emit to TeX output.
-///
-/// translated from xetex-output.c:58 (error_here_with_diagnostic)
-pub unsafe fn error_here_with_diagnostic(message: *const libc::c_char) -> *mut std::ffi::c_void {
-    crate::state::with_state_mut(|st| error_here_with_diagnostic_in(st, message))
-}
 
 /// `&mut EngineState` core of [`error_here_with_diagnostic`].
 pub(crate) fn error_here_with_diagnostic_in(

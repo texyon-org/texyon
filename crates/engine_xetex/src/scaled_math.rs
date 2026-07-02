@@ -8,15 +8,7 @@
 //!
 //! See `plan/04-migration-order.md` Phase 1 for context on why these
 //! functions are the very first ones translated.
-use crate::output::capture_to_diagnostic;
-use crate::output::error_here_with_diagnostic;
-use crate::output::print_cstr;
-use crate::output::print_scaled;
-
-use crate::globals::{
-    j_random, random_entry, set_arith_error, set_help_line, set_help_ptr, set_j_random,
-    set_random_entry, spec_log, two_to_the,
-};
+use crate::globals::set_arith_error;
 
 extern "C" {}
 
@@ -494,18 +486,18 @@ pub fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
 /// subtraction generator).
 ///
 /// translated from xetex-scaledmath.c:418 (new_randoms)
-pub fn new_randoms() {
+pub fn new_randoms(errors: &mut crate::state::ErrorState) {
     for k in 0_usize..24 {
-        let x = random_entry(k).wrapping_sub(random_entry(k + 31));
-        set_random_entry(k, if x < 0 { x + 0x1000_0000 } else { x });
+        let x = errors.randoms[k].wrapping_sub(errors.randoms[k + 31]);
+        errors.randoms[k] = if x < 0 { x + 0x1000_0000 } else { x };
     }
 
     for k in 24_usize..55 {
-        let x = random_entry(k).wrapping_sub(random_entry(k - 24));
-        set_random_entry(k, if x < 0 { x + 0x1000_0000 } else { x });
+        let x = errors.randoms[k].wrapping_sub(errors.randoms[k - 24]);
+        errors.randoms[k] = if x < 0 { x + 0x1000_0000 } else { x };
     }
 
-    set_j_random(54);
+    errors.j_random = 54;
 }
 
 // ---------------------------------------------------------------------------
@@ -515,7 +507,7 @@ pub fn new_randoms() {
 /// Seed the pseudo-random table and run three warmup cycles.
 ///
 /// translated from xetex-scaledmath.c:441 (init_randoms)
-pub fn init_randoms(seed: i32) {
+pub fn init_randoms(errors: &mut crate::state::ErrorState, seed: i32) {
     let mut j = seed.abs();
 
     while j >= 0x1000_0000 {
@@ -531,12 +523,12 @@ pub fn init_randoms(seed: i32) {
         if k < 0 {
             k += 0x1000_0000;
         }
-        set_random_entry(((i as usize) * 21) % 55, j);
+        errors.randoms[((i as usize) * 21) % 55] = j;
     }
 
-    new_randoms();
-    new_randoms();
-    new_randoms();
+    new_randoms(errors);
+    new_randoms(errors);
+    new_randoms(errors);
 }
 
 // ---------------------------------------------------------------------------
@@ -547,14 +539,14 @@ pub fn init_randoms(seed: i32) {
 /// `[0, abs(x))` (or `(-abs(x), 0]` when `x < 0`).
 ///
 /// translated from xetex-scaledmath.c:468 (unif_rand)
-pub fn unif_rand(x: i32) -> i32 {
-    if j_random() == 0 {
-        new_randoms();
+pub fn unif_rand(errors: &mut crate::state::ErrorState, x: i32) -> i32 {
+    if errors.j_random == 0 {
+        new_randoms(errors);
     } else {
-        set_j_random(j_random() - 1);
+        errors.j_random -= 1;
     }
 
-    let y = take_frac(x.abs(), random_entry(j_random() as usize));
+    let y = take_frac(x.abs(), errors.randoms[errors.j_random as usize]);
     if y == x.abs() {
         0
     } else if x > 0 {
@@ -571,27 +563,19 @@ pub fn unif_rand(x: i32) -> i32 {
 /// Natural logarithm in TeX's scaled-point units (result = ln(x/2^30) * 2^24).
 ///
 /// translated from xetex-scaledmath.c:22 (m_log)
-pub unsafe fn m_log(mut x: i32) -> i32 {
+pub unsafe fn m_log(st: &mut crate::state::EngineState, mut x: i32) -> i32 {
     if x <= 0 {
-        error_here_with_diagnostic(c"Logarithm of ".as_ptr());
-        print_scaled(x);
-        print_cstr(c" has been replaced by 0".as_ptr());
-        capture_to_diagnostic(std::ptr::null_mut());
-        set_help_ptr(2);
-        set_help_line(
-            1,
-            c"Since I don't take logs of non-positive numbers,".as_ptr(),
-        );
-        set_help_line(
-            0,
-            c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr(),
-        );
-        // Dead branch: m_log's only caller (norm_rand) always passes x >= 1, and it
-        // runs under conv_toks_in's &mut EngineState borrow, so this with_state_mut
-        // double-borrow-panics exactly as the old error() did before reaching its
-        // .finish() — never actually executed. Non-longjmp, so error() can be
-        // deleted (`01d` §5.6).
-        let _ = crate::state::with_state_mut(crate::errors::error_in);
+        crate::output::error_here_with_diagnostic_in(st, c"Logarithm of ".as_ptr());
+        crate::output::print_scaled_in(st, x);
+        crate::output::print_cstr_in(st, c" has been replaced by 0".as_ptr());
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        st.errors.help_ptr = 2;
+        st.errors.help_line[1] = c"Since I don't take logs of non-positive numbers,".as_ptr();
+        st.errors.help_line[0] =
+            c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr();
+        // Dead branch: m_log's only caller (norm_rand) always passes x >= 1 (`01d`
+        // §5.6). Threaded on `st` for the flip; still never executed.
+        let _ = crate::errors::error_in(st);
         return 0;
     }
 
@@ -608,12 +592,12 @@ pub unsafe fn m_log(mut x: i32) -> i32 {
     let mut k: usize = 2;
 
     while x > 0x4000_0004 {
-        let mut z = ((x - 1) / two_to_the(k)) + 1;
+        let mut z = ((x - 1) / st.errors.two_to_the[k]) + 1;
         while x < 0x4000_0000 + z {
             z = (z + 1) / 2;
             k += 1;
         }
-        y += spec_log(k);
+        y += st.errors.spec_log[k];
         x -= z;
     }
 
@@ -627,25 +611,25 @@ pub unsafe fn m_log(mut x: i32) -> i32 {
 /// Return a pseudo-random integer drawn from a normal distribution.
 ///
 /// translated from xetex-scaledmath.c:487 (norm_rand). Calls `m_log`.
-pub unsafe fn norm_rand() -> i32 {
+pub unsafe fn norm_rand(st: &mut crate::state::EngineState) -> i32 {
     loop {
         let (x, u);
 
         // inner do-while
         loop {
-            if j_random() == 0 {
-                new_randoms();
+            if st.errors.j_random == 0 {
+                new_randoms(&mut st.errors);
             } else {
-                set_j_random(j_random() - 1);
+                st.errors.j_random -= 1;
             }
-            let xi = take_frac(112429, random_entry(j_random() as usize) - 0x0800_0000);
+            let xi = take_frac(112429, st.errors.randoms[st.errors.j_random as usize] - 0x0800_0000);
 
-            if j_random() == 0 {
-                new_randoms();
+            if st.errors.j_random == 0 {
+                new_randoms(&mut st.errors);
             } else {
-                set_j_random(j_random() - 1);
+                st.errors.j_random -= 1;
             }
-            let ui = random_entry(j_random() as usize);
+            let ui = st.errors.randoms[st.errors.j_random as usize];
 
             if xi.abs() < ui {
                 x = xi;
@@ -655,7 +639,7 @@ pub unsafe fn norm_rand() -> i32 {
         }
 
         let xi = make_frac(x, u);
-        let l = 139_548_960_i32 - m_log(u);
+        let l = 139_548_960_i32 - m_log(st, u);
         if ab_vs_cd(1024, l, xi, xi) >= 0 {
             return xi;
         }

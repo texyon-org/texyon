@@ -1465,7 +1465,8 @@ pub unsafe extern "C" fn tt_run_engine(
     }
 
     st.errors.random_seed = st.shipout.microseconds * 1000 + (st.shipout.epochseconds % 1_000_000);
-    crate::scaled_math::init_randoms(st.errors.random_seed);
+    let random_seed = st.errors.random_seed;
+    crate::scaled_math::init_randoms(&mut st.errors, random_seed);
 
     if st.errors.interaction == BATCH_MODE {
         st.shipout.selector = SELECTOR_NO_PRINT;

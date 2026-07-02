@@ -2805,7 +2805,8 @@ pub(crate) fn do_extension_in(
                 set_cur_val(-cur_val());
             }
             st.errors.random_seed = cur_val();
-            crate::scaled_math::init_randoms(st.errors.random_seed);
+            let random_seed = st.errors.random_seed;
+            crate::scaled_math::init_randoms(&mut st.errors, random_seed);
         }
 
         PIC_FILE_CODE_DE => {

@@ -238,36 +238,6 @@ pub(crate) fn tex_remainder() -> i32 {
 // randoms / j_random
 // ---------------------------------------------------------------------------
 
-/// Returns `randoms[k]`, the k-th element of the pseudo-random table.
-///
-/// Panics in debug mode if `k >= 55`.
-#[inline]
-pub(crate) fn random_entry(k: usize) -> i32 {
-    crate::state::with_state(|state| state.errors.randoms[k])
-}
-
-/// Sets `randoms[k]` to `v`.
-#[inline]
-pub(crate) fn set_random_entry(k: usize, v: i32) {
-    crate::state::with_state_mut(|state| {
-        state.errors.randoms[k] = v;
-    });
-}
-
-/// Returns the current `j_random` index.
-#[inline]
-pub(crate) fn j_random() -> u8 {
-    crate::state::with_state(|state| state.errors.j_random)
-}
-
-/// Sets `j_random`.
-#[inline]
-pub(crate) fn set_j_random(v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.errors.j_random = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // mem arena word accessors
 // ---------------------------------------------------------------------------
@@ -469,32 +439,9 @@ pub(crate) fn init_pool_ptr() -> i32 {
 // help_ptr / help_line
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn set_help_ptr(v: u8) {
-    crate::state::with_state_mut(|state| {
-        state.errors.help_ptr = v;
-    });
-}
-/// Write `help_line[k] = v` (a C string pointer; caller owns the lifetime).
-#[inline]
-pub(crate) fn set_help_line(k: usize, v: *const libc::c_char) {
-    crate::state::with_state_mut(|state| {
-        state.errors.help_line[k] = v;
-    });
-}
-
 // ---------------------------------------------------------------------------
 // two_to_the / spec_log (read-only tables from xetex-ini.c)
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn two_to_the(k: usize) -> i32 {
-    crate::state::with_state(|state| state.errors.two_to_the[k])
-}
-#[inline]
-pub(crate) fn spec_log(k: usize) -> i32 {
-    crate::state::with_state(|state| state.errors.spec_log[k])
-}
 
 // ---------------------------------------------------------------------------
 // interaction / history / error_count / use_err_help / halt_on_error_p
