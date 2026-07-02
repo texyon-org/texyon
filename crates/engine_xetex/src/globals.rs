@@ -349,13 +349,6 @@ pub(crate) fn name_of_file() -> *mut libc::c_char {
         }
     })
 }
-/// Write `name_length = v`.
-#[inline]
-pub(crate) fn set_name_length(v: i32) {
-    crate::state::with_state_mut(|s| {
-        s.input.name_length = v;
-    });
-}
 /// Returns `name_length`.
 #[inline]
 pub(crate) fn name_length() -> i32 {

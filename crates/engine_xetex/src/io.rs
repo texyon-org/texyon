@@ -1,15 +1,12 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
-use crate::globals::{buf_size, cur_chr, cur_val, first, name_of_file, set_name_length};
+use crate::globals::{buf_size, cur_chr, cur_val, first};
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, set_cur_cs, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
 };
 use crate::input::InputAbort;
-use crate::output::capture_to_diagnostic;
-use crate::output::diagnostic_begin_capture_warning_here;
-use crate::output::print_cstr;
 
 // ---------------------------------------------------------------------------
 // UFILE — Rust mirror of the C `UFILE` struct (xetex-io.h:12–18)
@@ -18,7 +15,6 @@ use crate::output::print_cstr;
 /// Rust mirror of `UFILE` (xetex-io.h:12–18). Must stay layout-compatible.
 ///
 /// On Linux x86_64 the C layout is:
-use crate::output::print_nl_cstr;
 
 // Consts used by the file-naming / start_input / close_files group, moved with
 // it from scan.rs (workstream 02).
@@ -242,44 +238,6 @@ extern "C" {
 // tt_xetex_open_input
 // ---------------------------------------------------------------------------
 
-/// Open the current input file (named by `name_of_file`) via the bridge.
-///
-/// translated from xetex-io.c:22 (tt_xetex_open_input)
-pub unsafe fn tt_xetex_open_input(filefmt: libc::c_int) -> usize {
-    let handle = if filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY {
-        ttstub_input_open_primary()
-    } else if *name_of_file() == b'|' as libc::c_char {
-        print_nl_cstr(c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here();
-        print_cstr(c"piped inputs from external commands are not implemented in Tectonic".as_ptr());
-        capture_to_diagnostic(std::ptr::null_mut());
-        return INVALID_HANDLE;
-    } else {
-        ttstub_input_open(name_of_file(), filefmt, 0)
-    };
-
-    if handle == INVALID_HANDLE {
-        return INVALID_HANDLE;
-    }
-
-    crate::state::with_state_mut(|state| {
-        if ttstub_get_last_input_abspath(
-            state.input.abspath_of_input_file.0.as_mut_ptr(),
-            state.input.abspath_of_input_file.0.len(),
-        ) < 1
-        {
-            state.input.abspath_of_input_file.0[0] = 0;
-        }
-    });
-
-    let nof = name_of_file();
-    set_name_length(libc::strlen(nof) as i32);
-    crate::state::with_state_mut(|state| {
-        libc::free(state.input.name_of_input_file as *mut libc::c_void);
-        state.input.name_of_input_file = xstrdup(nof);
-    });
-    handle
-}
 
 /// `&mut EngineState` core of [`tt_xetex_open_input`] so a threaded caller
 /// (`start_input_in`) can open under the borrow without re-entering `with_state`.

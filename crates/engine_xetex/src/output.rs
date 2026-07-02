@@ -197,13 +197,6 @@ pub(crate) fn print_ucs_code_in(st: &mut EngineState, mut n: i32) {
 // print_cstr
 // ---------------------------------------------------------------------------
 
-/// Print a C string one character at a time via `print_char`.
-///
-/// translated from xetex-output.c:301 (print_cstr)
-pub unsafe fn print_cstr(str_ptr: *const libc::c_char) {
-    crate::state::with_state_mut(|st| print_cstr_in(st, str_ptr));
-}
-
 /// `&mut EngineState` core of [`print_cstr`].
 pub(crate) fn print_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
     let s = unsafe { std::ffi::CStr::from_ptr(str_ptr) };
@@ -215,13 +208,6 @@ pub(crate) fn print_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) 
 // ---------------------------------------------------------------------------
 // print_nl_cstr
 // ---------------------------------------------------------------------------
-
-/// Start a new line if needed, then print a C string.
-///
-/// translated from xetex-output.c:319 (print_nl_cstr)
-pub unsafe fn print_nl_cstr(str_ptr: *const libc::c_char) {
-    crate::state::with_state_mut(|st| print_nl_cstr_in(st, str_ptr));
-}
 
 /// `&mut EngineState` core of [`print_nl_cstr`].
 pub(crate) fn print_nl_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
@@ -604,13 +590,6 @@ pub(crate) fn print_current_string_in(st: &mut EngineState) {
 // capture_to_diagnostic
 // ---------------------------------------------------------------------------
 
-/// Set the active diagnostic capture target, finishing the previous one.
-///
-/// translated from xetex-output.c:14 (capture_to_diagnostic)
-pub unsafe fn capture_to_diagnostic(diagnostic: *mut std::ffi::c_void) {
-    crate::state::with_state_mut(|st| capture_to_diagnostic_in(st, diagnostic));
-}
-
 /// `&mut EngineState` core of [`capture_to_diagnostic`].
 pub(crate) fn capture_to_diagnostic_in(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
     let cur = st.shipout.current_diagnostic;
@@ -659,13 +638,6 @@ pub(crate) fn diagnostic_print_file_line_in(
 // ---------------------------------------------------------------------------
 // diagnostic_begin_capture_warning_here
 // ---------------------------------------------------------------------------
-
-/// Begin a warning diagnostic capturing file/line context.
-///
-/// translated from xetex-output.c:48 (diagnostic_begin_capture_warning_here)
-pub unsafe fn diagnostic_begin_capture_warning_here() -> *mut std::ffi::c_void {
-    crate::state::with_state_mut(|st| diagnostic_begin_capture_warning_here_in(st))
-}
 
 /// `&mut EngineState` core of [`diagnostic_begin_capture_warning_here`].
 pub(crate) fn diagnostic_begin_capture_warning_here_in(
