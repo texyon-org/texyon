@@ -622,7 +622,35 @@ terminal layer (`tt_run_engine`, `into_history` + `pre_/post_error_message`, and
 `*_in` + local `ErrorState`, deleting 3 test-only wrappers). Config moved to process
 atomics (`f123d963`). **`with_state` 142 → 34.**
 
-**What REMAINS (the 34) — all cross-cutting, NO clean self-contained cluster left.**
+**Drain continued to `with_state` 15 (session 251, steps 11–15).** Threaded/deleted:
+`get_microinterval` (df93e236), `load_fmt_file` + the two `initialize_*_variables` init
+fns (9dc8e434), 4 dead texmfmp wrappers (e4227033), `init_io` + `init_start_time` +
+dead `getcreationdate` (c9179b54), and the **dead `tt_xetex_open_input`** whose deletion
+cascaded out 4 output wrappers + `set_name_length` (29a2194a). Every one was a clean
+threaded-caller cluster or a dead `pub` wrapper.
+
+**What REMAINS (~15) — the PRACTICAL FLOOR; the bridge is now architecturally required.**
+The dominant remainder is **C++ callbacks**: `font_feature_warning` and `gr_font_get_named`
+(→ `name_of_file`) are `#[no_mangle]` fns the graphite/HarfBuzz font layer calls BACK into
+Rust; they need `EngineState` but get no `st` param, so they MUST reach it through a global
+mechanism — exactly what the pointer bridge is. **This means true zero-`with_state` is
+unreachable while C++ calls back needing state; the bridge is the legitimate end-state
+access path (a pointer to the owned `st`, valid during a run — NOT persistent global
+data).** In production the fallback `RefCell` is never touched (the pointer is always set);
+it survives only as test scaffolding. The rest of the ~15:
+- **`into_engine_abort` pin** (`pool_size`/`init_pool_ptr`/`max_strings`/`init_str_ptr` +
+  `runaway` via `main_memory_overflow_abort`): the `Overflow` diagnostic count is computed
+  in `self`-only `into_engine_abort` methods. Reducible by a **design change** — defer the
+  count to `into_history` (which has `st`) — NOT by the 96-site `.into_engine_abort(st)`.
+- **`hash_s1`** (16 deep callers) and the **test-only** `arith_error`/`tex_remainder`/
+  `set_arith_error` (also `char_pw_in`'s `round_xn_over_d`).
+
+**Bottom line: the §6 flip is COMPLETE.** `EngineState` is owned by `tt_run_engine`; the
+whole engine threads `&mut st`; the ~15 residual `with_state` are C++-callback bridge
+accesses (irreducible) + a handful behind a diagnostic-count redesign. `with_state`
+**142 → 15** this session.
+
+**(superseded) What REMAINED at 34 — all cross-cutting, NO clean self-contained cluster left.**
 The pointer bridge serves every remaining site CORRECTLY (reaches the owned `st` via
 the thread-local pointer), so the engine is fully correct; these are just not-yet-fully-
 threaded. Each is pinned by a cross-cutting concern, so removing them is no longer a
