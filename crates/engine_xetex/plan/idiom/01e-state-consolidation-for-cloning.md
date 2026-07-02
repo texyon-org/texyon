@@ -223,3 +223,30 @@ Validate via dashboard (the main_f-class native-font bug WAS caught by tex-outpu
 dashboard is a strong gate) + corpus. Do the straggler-threading as prep refactor commits
 (like app_space/reconstitute), THEN run the fold, per the [[fold-scalar-audit-rogue-externs]]
 rule (audit first — cur_list has no rogue extern, checked).
+
+### cur_list cascade WARNING (learned from the session-249 attempt)
+
+The 18 DIRECT cur_list users are NOT the whole surface. The narrow `cl: &mut
+ListStateRecord` param must thread through their non-`st` CALLERS too, and in
+`linebreak.rs` that is a deep pass-through chain of big multi-substruct functions
+that only FORWARD `cl` (they don't touch cur_list themselves):
+
+    char_pw_in  ← total_pw            ← try_break ← line_break_try_break ← line_break_in(st)
+    char_pw_in  ← insert_{left,right}_margin_kern ← post_line_break_prefix ← post_line_break_in(st)
+
+So the real cl-needing set is ~25+ fns (the 18 + total_pw, try_break,
+line_break_try_break, post_line_break_prefix, insert_left/right_margin_kern, + the
+math.rs noad chain). Terminates at `line_break_in`/`post_line_break_in`/`after_math_in`/
+main_control align fns, which hold `st` and pass `&mut st.input.cur_list`.
+
+**Do this MANUALLY, compile-guided, one wave at a time — NOT with blanket regex.**
+Blanket `s/name(/name(cl, /` mis-fires: it hits st-holding call sites (which must pass
+`&mut st.input.cur_list`, not `cl`), double-inserts, and matches substrings
+(`try_break(` inside `line_break_try_break(`). Correct recipe per wave: (1) add `cl`
+first-param to the fns in this wave; (2) inside them, `&mut st.input.cur_list`→`cl` and
+`st.input.cur_list`→`cl`; (3) at their forwarding call sites pass `cl`; (4) compile —
+the next wave surfaces as "missing argument #1" at the callers; repeat until all callers
+hold `st` (pass `&mut st.input.cur_list`). `pop_nest_in` is special: it already holds
+`&mut input`, so use `input.cur_list` (NO cl param — passing `&mut st.input.cur_list`
+alongside `&mut st.input` is an E0499 double-borrow). Infra (aux methods + Default derive
++ field) and `fold_cur_list.py` are ready in scratch/the reverted diff.
