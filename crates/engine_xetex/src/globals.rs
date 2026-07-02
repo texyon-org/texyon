@@ -144,14 +144,7 @@ mod raw {
 
         // mapped_text moved to EngineState.fonts.mapped_text.
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
-        pub(super) static mut main_p: i32;
-        pub(super) static mut main_k: i32;
         // main_control inner-loop state (xetex-xetexd.h:672–686).
-        pub(super) static mut main_f: i32; // internal_font_number
-        pub(super) static mut main_h: i32;
-        pub(super) static mut main_pp: i32;
-        pub(super) static mut main_ppp: i32;
-        pub(super) static mut main_s: i32;
         // Ligature/kern inner-loop state (xetex-xetexd.h:630–634, 683–686).
         pub(super) static mut cur_l: i32;
         pub(super) static mut cur_r: i32;
@@ -162,13 +155,9 @@ mod raw {
         pub(super) static mut rt_hit: bool;
         // native_text cluster moved to EngineState.scanner.
         // Further main_loop state (xetex-xetexd.h:679–686).
-        pub(super) static mut bchar: i32;
-        pub(super) static mut false_bchar: i32;
         pub(super) static mut cancel_boundary: bool;
         pub(super) static mut ins_disc: bool;
         // XeTeX inter-character class state (xetex-xetexd.h:679-681).
-        pub(super) static mut space_class: i32;
-        pub(super) static mut prev_class: i32;
         // Hyphenation trie and exception tables (xetex-xetexd.h:635-645).
 
         // last_leftmost_char .. best_pl_glue (the line-breaker / LR-reverse /
@@ -670,78 +659,12 @@ pub(crate) fn set_cur_input_limit(v: i32) {
 // gave_char_warning_help / main_p / main_k
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn main_p() -> i32 {
-    unsafe { raw::main_p }
-}
-#[inline]
-pub(crate) fn set_main_p(v: i32) {
-    unsafe {
-        raw::main_p = v;
-    }
-}
-#[inline]
-pub(crate) fn main_k() -> i32 {
-    unsafe { raw::main_k }
-}
-#[inline]
-pub(crate) fn set_main_k(v: i32) {
-    unsafe {
-        raw::main_k = v;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // main_loop inner-loop globals
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn main_f() -> i32 {
-    unsafe { raw::main_f }
-}
-#[inline]
-pub(crate) fn set_main_f(v: i32) {
-    unsafe {
-        raw::main_f = v;
-    }
-}
-#[inline]
-pub(crate) fn main_h() -> i32 {
-    unsafe { raw::main_h }
-}
-#[inline]
-pub(crate) fn set_main_h(v: i32) {
-    unsafe {
-        raw::main_h = v;
-    }
-}
-#[inline]
-pub(crate) fn main_pp() -> i32 {
-    unsafe { raw::main_pp }
-}
-#[inline]
-pub(crate) fn set_main_pp(v: i32) {
-    unsafe {
-        raw::main_pp = v;
-    }
-}
-#[inline]
-pub(crate) fn main_ppp() -> i32 {
-    unsafe { raw::main_ppp }
-}
-#[inline]
-pub(crate) fn set_main_ppp(v: i32) {
-    unsafe {
-        raw::main_ppp = v;
-    }
-}
 
-#[inline]
-pub(crate) fn set_main_s(v: i32) {
-    unsafe {
-        raw::main_s = v;
-    }
-}
 #[inline]
 pub(crate) fn cur_l() -> i32 {
     unsafe { raw::cur_l }
@@ -813,26 +736,6 @@ pub(crate) fn set_rt_hit(v: bool) {
     }
 }
 #[inline]
-pub(crate) fn bchar() -> i32 {
-    unsafe { raw::bchar }
-}
-#[inline]
-pub(crate) fn set_bchar(v: i32) {
-    unsafe {
-        raw::bchar = v;
-    }
-}
-#[inline]
-pub(crate) fn false_bchar() -> i32 {
-    unsafe { raw::false_bchar }
-}
-#[inline]
-pub(crate) fn set_false_bchar(v: i32) {
-    unsafe {
-        raw::false_bchar = v;
-    }
-}
-#[inline]
 pub(crate) fn cancel_boundary() -> bool {
     unsafe { raw::cancel_boundary }
 }
@@ -853,26 +756,6 @@ pub(crate) fn set_ins_disc(v: bool) {
     }
 }
 
-#[inline]
-pub(crate) fn space_class() -> i32 {
-    unsafe { raw::space_class }
-}
-#[inline]
-pub(crate) fn set_space_class(v: i32) {
-    unsafe {
-        raw::space_class = v;
-    }
-}
-#[inline]
-pub(crate) fn prev_class() -> i32 {
-    unsafe { raw::prev_class }
-}
-#[inline]
-pub(crate) fn set_prev_class(v: i32) {
-    unsafe {
-        raw::prev_class = v;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // hyphenation globals / cur_lang / insert_src_special_every_par

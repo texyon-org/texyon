@@ -18,6 +18,32 @@ pub(crate) struct EngineState {
     pub linebreak: LinebreakState,
     pub texmf: TexmfState,
     pub synctex: SynctexCtxt,
+    pub mainloop: MainLoopState,
+}
+
+/// Scratch registers of `main_control`'s character/ligature main loop
+/// (xetex-xetexd.h:672–686). Folded off `mod raw` (`01e`); pure per-iteration
+/// scratch (set-before-read within the loop), grouped here for the
+/// zero-global-state / cloning goal.
+#[derive(Default)]
+pub(crate) struct MainLoopState {
+    /// Scratch glue-spec pointer (xetex-xetexd.h:675).
+    pub main_p: i32,
+    /// Scratch font-info index (xetex-xetexd.h:676).
+    pub main_k: i32,
+    /// Current font of the main loop — `internal_font_number` (xetex-xetexd.h:672).
+    pub main_f: i32,
+    pub main_h: i32,
+    pub main_pp: i32,
+    pub main_ppp: i32,
+    pub main_s: i32,
+    /// Boundary char of the current font (xetex-xetexd.h:684).
+    pub bchar: i32,
+    /// Non-existent boundary-char sentinel (xetex-xetexd.h:685).
+    pub false_bchar: i32,
+    /// Inter-character space class of the current / previous char.
+    pub space_class: i32,
+    pub prev_class: i32,
 }
 
 /// SyncTeX recorder callback (`xetex-synctex.c`); a deferred node-recording fn

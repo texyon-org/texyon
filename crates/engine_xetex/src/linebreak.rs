@@ -107,8 +107,6 @@ const EJECT_PENALTY: i32 = -10_000;
 
 extern "C" {
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
-    // Hot tokenizer scalar — stays raw per ws02 Decision 4 (read under `unsafe`).
-    static mut main_f: i32;
 }
 
 // translated from xetex-linebreak.c:77 (get_native_usv)
@@ -4016,6 +4014,10 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
     len: i32,
 ) -> Result<(), NodeRecycleAbort> {
     use crate::globals::{cur_list_tail, set_cur_list_tail};
+    // The main-loop current font, folded off `mod raw` into `st.mainloop` (`01e`).
+    // Bound to a local (it is read-only here) so the reads below need no `st`
+    // reborrow alongside the `linebreak_start_in(st, …)` call.
+    let main_f = st.mainloop.main_f;
     // native_text is a scanner Vec that is not resized during this routine, so a
     // raw pointer captured once stays valid across the mem allocations below.
     let native_text = st.scanner.native_text.as_mut_ptr();
