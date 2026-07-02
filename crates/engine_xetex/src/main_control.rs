@@ -4329,21 +4329,21 @@ pub(crate) fn main_control_append_normal_space_in(
             );
             st.fonts.set_font_glue(cur_font, crate::globals::main_p());
         }
-        crate::globals::set_temp_ptr(crate::mem::new_glue(&mut st.mem, crate::globals::main_p()));
+        st.mem.temp_ptr = crate::mem::new_glue(&mut st.mem, crate::globals::main_p());
     } else {
-        crate::globals::set_temp_ptr(crate::mem::new_param_glue(
+        st.mem.temp_ptr = crate::mem::new_param_glue(
             &mut st.mem,
             &st.eqtb,
             GLUE_PAR_SPACE_SKIP_MC,
-        ));
+        );
     }
-    if crate::globals::temp_ptr() == crate::mem::ALLOC_FAILED {
+    if st.mem.temp_ptr == crate::mem::ALLOC_FAILED {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
 
     st.mem
-        .set_b32s1(crate::globals::cur_list_tail(), crate::globals::temp_ptr());
-    crate::globals::set_cur_list_tail(crate::globals::temp_ptr());
+        .set_b32s1(crate::globals::cur_list_tail(), st.mem.temp_ptr);
+    crate::globals::set_cur_list_tail(st.mem.temp_ptr);
     Ok(())
 }
 

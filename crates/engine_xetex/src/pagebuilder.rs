@@ -6,8 +6,7 @@ use crate::consts::{
 };
 use crate::globals::{
     cur_ptr, line, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_mode_line,
-    set_cur_list_tail, temp_ptr,
-};
+    set_cur_list_tail, };
 
 // Former C module-level statics, now bridged onto EngineState.shipout
 // (session 46). Thin module-private accessors over the thread-local.
@@ -726,7 +725,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     }
                     let q = page_new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR__top_skip as i16)?;
                     let top_skip_spec =
-                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(temp_ptr()))
+                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(st.mem.temp_ptr))
                             .expect("non-null top skip spec");
                     let top_skip_width = top_skip_spec.width(&st.mem).0;
                     if top_skip_width > height {

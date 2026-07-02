@@ -14,8 +14,7 @@ use crate::globals::{
     cur_input, first, set_cancel_boundary,
     set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
     set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_first,
-    set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, set_temp_ptr, temp_ptr,
-};
+    set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, };
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
 
@@ -362,11 +361,11 @@ pub(crate) unsafe fn final_cleanup_in(
         let new_cur_if = unsafe { st.mem.data[cond_ptr as usize].b16.s0 } as i16;
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         let new_cond_ptr = unsafe { st.mem.data[cond_ptr as usize].b32.s1 };
-        set_temp_ptr(cond_ptr);
+        st.mem.temp_ptr = cond_ptr;
         st.scanner.if_line = new_if_line;
         st.scanner.cur_if = new_cur_if;
         st.scanner.cond_ptr = new_cond_ptr;
-        let p = temp_ptr();
+        let p = st.mem.temp_ptr;
         crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE);
     }
 

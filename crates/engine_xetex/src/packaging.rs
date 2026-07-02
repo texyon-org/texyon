@@ -15,7 +15,6 @@ use crate::consts::{
 use crate::errors::ErrorOutcome;
 use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
-use crate::globals::{temp_ptr};
 use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, MarkNode, NodePtr,
     RuleDimen, SaNode, VListNode, WhatsitNode,
@@ -415,8 +414,7 @@ pub fn just_reverse(
     scanner: &mut crate::state::ScannerState,
     p: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    use crate::globals::{set_temp_ptr, temp_ptr};
-    use crate::mem::TEX_NULL;
+        use crate::mem::TEX_NULL;
 
     const TEMP_HEAD: i32 = 4_999_996; // MEM_TOP - 3
     const L_CODE: i32 = 4; // xetex-constants.h:142
@@ -472,10 +470,10 @@ pub fn just_reverse(
                             scanner.LR_problems += 1;
                         } else {
                             // pop LR_ptr
-                            set_temp_ptr(scanner.LR_ptr);
-                            scanner.LR_ptr = mem.b32s1(temp_ptr());
-                            mem.set_b32s1(temp_ptr(), mem.avail);
-                            mem.avail = temp_ptr();
+                            mem.temp_ptr = scanner.LR_ptr;
+                            scanner.LR_ptr = mem.b32s1(mem.temp_ptr);
+                            mem.set_b32s1(mem.temp_ptr, mem.avail);
+                            mem.avail = mem.temp_ptr;
 
                             if n > MIN_HALFWORD {
                                 n -= 1;
@@ -495,10 +493,10 @@ pub fn just_reverse(
                         // even subtype = begin math node
                         // push LR_ptr
                         let tp = cnl_get_avail!(mem);
-                        set_temp_ptr(tp);
-                        mem.set_b32s0(temp_ptr(), L_CODE * (subtype / L_CODE) + 3);
-                        mem.set_b32s1(temp_ptr(), scanner.LR_ptr);
-                        scanner.LR_ptr = temp_ptr();
+                        mem.temp_ptr = tp;
+                        mem.set_b32s0(mem.temp_ptr, L_CODE * (subtype / L_CODE) + 3);
+                        mem.set_b32s1(mem.temp_ptr, scanner.LR_ptr);
+                        scanner.LR_ptr = mem.temp_ptr;
 
                         if n > MIN_HALFWORD || (subtype / R_CODE) != scanner.cur_dir as i32 {
                             n += 1;
@@ -988,7 +986,7 @@ pub fn append_to_vlist(
                 return Err(NodeRecycleAbort::Overflow);
             }
             let bsl_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(
-                crate::globals::temp_ptr(),
+                mem.temp_ptr,
             ))
             .expect("new_skip_param sets temp_ptr to a glue spec");
             bsl_spec.set_width(mem, Scaled(d));
@@ -1806,7 +1804,7 @@ fn insert_split_top_skip_before(
     }
     mem.set_b32s1(prev_p, q);
     mem.set_b32s1(q, p);
-    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(temp_ptr()))
+    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.temp_ptr))
         .expect("new_skip_param sets temp_ptr to a glue spec");
     let avail_ht = spec.width(mem).0;
     if avail_ht > height {

@@ -412,6 +412,11 @@ pub(crate) struct MemState {
     pub rover: i32,
     pub var_used: i32,
     pub dyn_used: i32,
+    /// General-purpose scratch node pointer — TeX's `temp_ptr`. Folded off
+    /// `mod raw` (`01e`). Lives here (not ScannerState) because every user
+    /// holds `&mut MemState`; two-phase borrows keep `mem.f(mem.temp_ptr,…)`
+    /// legal. Function-local scratch reused across many routines.
+    pub temp_ptr: i32,
 }
 
 impl MemState {

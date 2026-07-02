@@ -471,7 +471,7 @@ pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
     if s == ALLOC_FAILED {
         return s;
     }
-    crate::globals::set_temp_ptr(s);
+    mem.temp_ptr = s;
     let p = new_glue(mem, s);
     if p == ALLOC_FAILED {
         return p;

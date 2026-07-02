@@ -3138,7 +3138,7 @@ pub(crate) fn print_totals_in(st: &mut EngineState) {
 
 /// translated from xetex-xetex0.c:9942 (show_info)
 pub(crate) fn show_info_in(st: &mut EngineState) {
-    let tp = crate::globals::temp_ptr();
+    let tp = st.mem.temp_ptr;
     let p = st.mem.b32s0(tp);
     show_node_list_in(st, p);
 }
@@ -4015,7 +4015,7 @@ fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u16) {
     } else {
         st.strings.str_pool[st.strings.pool_ptr as usize] = c;
         st.strings.pool_ptr += 1;
-        crate::globals::set_temp_ptr(p);
+        st.mem.temp_ptr = p;
         match st.mem.b32s1(p) {
             MATH_CHAR_SNL => {
                 print_ln_in(st);

@@ -57,7 +57,6 @@ mod raw {
         // eqtb (*mut memory_word) moved to EngineState.eqtb.data (session 51).
 
         // xetex-xetexd.h:459 — temporary pointer register.
-        pub(super) static mut temp_ptr: i32;
 
         // The `mem` arena (`memory_word *mem`) and its bookkeeping scalars
         // (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`,
@@ -367,18 +366,6 @@ pub(crate) fn hash_s1(p: i32) -> i32 {
 // temp_ptr
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn temp_ptr() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::temp_ptr }
-}
-#[inline]
-pub(crate) fn set_temp_ptr(v: i32) {
-    // SAFETY: see module-level doc.
-    unsafe {
-        raw::temp_ptr = v;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // dig
