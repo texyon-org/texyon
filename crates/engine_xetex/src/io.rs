@@ -1376,7 +1376,7 @@ static mut STDIN_UFILE: UFile = UFile {
 };
 
 // translated from xetex-ini.c:3035 (init_io)
-pub unsafe fn init_io() {
+pub unsafe fn init_io(st: &mut crate::state::EngineState) {
     // This is largely vestigial at this point.
     STDIN_UFILE.handle = INVALID_HANDLE;
     STDIN_UFILE.saved_char = -1;
@@ -1385,12 +1385,10 @@ pub unsafe fn init_io() {
     STDIN_UFILE.conversion_data = std::ptr::null_mut();
 
     let first = first();
-    let last = crate::state::with_state_mut(|s| {
-        s.input.input_file[0] = (&raw mut STDIN_UFILE).cast();
-        s.input.buffer[first as usize] = 0;
-        s.input.last = first;
-        s.input.last
-    });
+    st.input.input_file[0] = (&raw mut STDIN_UFILE).cast();
+    st.input.buffer[first as usize] = 0;
+    st.input.last = first;
+    let last = st.input.last;
     set_cur_input_loc(first);
     set_cur_input_limit(last);
     set_first(last + 1);

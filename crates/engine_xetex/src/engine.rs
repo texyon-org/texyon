@@ -1266,7 +1266,7 @@ pub unsafe extern "C" fn tt_run_engine(
     crate::texmfmp::get_seconds_and_micros(&mut epoch, &mut micros);
     st.shipout.epochseconds = epoch;
     st.shipout.microseconds = micros;
-    crate::texmfmp::init_start_time(build_date);
+    crate::texmfmp::init_start_time(&mut *st, build_date);
 
     st.shipout.selector = SELECTOR_TERM_ONLY;
     st.errors.tally = 0;
@@ -1307,7 +1307,7 @@ pub unsafe extern "C" fn tt_run_engine(
     st.input.force_eof = false;
     st.scanner.align_state = 1_000_000;
 
-    init_io();
+    init_io(&mut *st);
 
     if st.config.in_initex_mode {
         st.eqtb.no_new_control_sequence = false;

@@ -602,21 +602,10 @@ unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
 /// static buffer for later use by `getcreationdate`.
 ///
 /// translated from xetex-texmfmp.c:84 (init_start_time)
-pub unsafe fn init_start_time(source_date_epoch: libc::time_t) {
+pub unsafe fn init_start_time(st: &mut crate::state::EngineState, source_date_epoch: libc::time_t) {
     let mut buf = [0u8; 30];
     makepdftime(source_date_epoch, &mut buf, true);
-    crate::state::with_state_mut(|s| s.texmf.start_time_str = buf);
-}
-
-/// Push the creation-date string (filled by `init_start_time`) into the
-/// string pool.
-///
-/// translated from xetex-texmfmp.c:91 (getcreationdate)
-pub unsafe fn getcreationdate() {
-    crate::state::with_state_mut(|s| {
-        let s = &mut *s;
-        getcreationdate_in(&s.texmf, &mut s.strings)
-    });
+    st.texmf.start_time_str = buf;
 }
 
 /// `&mut StringsState` core of [`getcreationdate`] so a threaded caller holding
