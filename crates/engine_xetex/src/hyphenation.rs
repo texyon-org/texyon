@@ -10,7 +10,7 @@ const MIN_TRIE_OP: i32 = 0;
 pub(crate) const BIGGEST_LANG: i32 = 255;
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
-use crate::globals::{cur_chr, cur_val, set_cur_chr};
+use crate::globals::{cur_val};
 use crate::state::HyphState;
 
 // ---- moved verbatim from ini.rs (workstream 02) ----
@@ -556,14 +556,14 @@ pub(crate) fn new_patterns_in(
                 crate::scan::get_x_token_in(st)?;
                 match st.scanner.cur_cmd {
                     LETTER | OTHER_CHAR => {
-                        if digit_sensed || cur_chr() < b'0' as i32 || cur_chr() > b'9' as i32 {
-                            if cur_chr() == b'.' as i32 {
-                                set_cur_chr(0);
+                        if digit_sensed || st.scanner.cur_chr < b'0' as i32 || st.scanner.cur_chr > b'9' as i32 {
+                            if st.scanner.cur_chr == b'.' as i32 {
+                                st.scanner.cur_chr = 0;
                             } else {
-                                set_cur_chr(unsafe {
-                                    st.eqtb.data[(LC_CODE_BASE + cur_chr()) as usize].b32.s1
-                                });
-                                if cur_chr() == 0 {
+                                st.scanner.cur_chr = unsafe {
+                                    st.eqtb.data[(LC_CODE_BASE + st.scanner.cur_chr) as usize].b32.s1
+                                };
+                                if st.scanner.cur_chr == 0 {
                                     crate::output::error_here_with_diagnostic_in(
                                         st,
                                         c"Nonletter".as_ptr(),
@@ -578,18 +578,18 @@ pub(crate) fn new_patterns_in(
                                 }
                             }
 
-                            if cur_chr() > st.hyph.max_hyph_char {
-                                st.hyph.max_hyph_char = cur_chr();
+                            if st.scanner.cur_chr > st.hyph.max_hyph_char {
+                                st.hyph.max_hyph_char = st.scanner.cur_chr;
                             }
 
                             if k < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
                                 k += 1;
-                                st.hyph.hc[k as usize] = cur_chr();
+                                st.hyph.hc[k as usize] = st.scanner.cur_chr;
                                 st.hyph.hyf[k as usize] = 0;
                                 digit_sensed = false;
                             }
                         } else if k < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
-                            st.hyph.hyf[k as usize] = (cur_chr() - b'0' as i32) as u8;
+                            st.hyph.hyf[k as usize] = (st.scanner.cur_chr - b'0' as i32) as u8;
                             digit_sensed = true;
                         }
                     }
@@ -704,7 +704,7 @@ pub(crate) fn new_hyph_exceptions_in(
         loop {
             match st.scanner.cur_cmd {
                 LETTER | OTHER_CHAR | CHAR_GIVEN => {
-                    if cur_chr() == b'-' as i32 {
+                    if st.scanner.cur_chr == b'-' as i32 {
                         if n < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
                             let q = crate::scan::get_avail_scc(st)?;
                             st.mem.set_b32s1(q, p);
@@ -712,14 +712,14 @@ pub(crate) fn new_hyph_exceptions_in(
                             p = q;
                         }
                     } else {
-                        let hc0 = if st.hyph.hyph_index == 0 || cur_chr() > 255 {
-                            unsafe { st.eqtb.data[(LC_CODE_BASE + cur_chr()) as usize].b32.s1 }
-                        } else if st.hyph.trie_trc[(st.hyph.hyph_index + cur_chr()) as usize]
-                            != cur_chr() as u16
+                        let hc0 = if st.hyph.hyph_index == 0 || st.scanner.cur_chr > 255 {
+                            unsafe { st.eqtb.data[(LC_CODE_BASE + st.scanner.cur_chr) as usize].b32.s1 }
+                        } else if st.hyph.trie_trc[(st.hyph.hyph_index + st.scanner.cur_chr) as usize]
+                            != st.scanner.cur_chr as u16
                         {
                             0
                         } else {
-                            st.hyph.trie_tro[(st.hyph.hyph_index + cur_chr()) as usize]
+                            st.hyph.trie_tro[(st.hyph.hyph_index + st.scanner.cur_chr) as usize]
                         };
                         st.hyph.hc[0] = hc0;
 
@@ -750,7 +750,7 @@ pub(crate) fn new_hyph_exceptions_in(
                 }
                 CHAR_NUM => {
                     crate::scan::scan_char_num_in(st)?;
-                    set_cur_chr(cur_val());
+                    st.scanner.cur_chr = cur_val();
                     st.scanner.cur_cmd = CHAR_GIVEN;
                     // continue inner loop → re-run match with new cur_cmd
                 }

@@ -1,7 +1,7 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
-use crate::globals::{cur_chr, cur_val, first};
+use crate::globals::{cur_val, first};
 use crate::globals::{
     cur_cs, cur_input, set_cur_cs, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
@@ -906,7 +906,7 @@ impl OpenOrCloseAbort {
 pub(crate) unsafe fn open_or_close_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), OpenOrCloseAbort> {
-    let c = cur_chr() as u8;
+    let c = st.scanner.cur_chr as u8;
     crate::scan::scan_four_bit_int_in(st).map_err(OpenOrCloseAbort::Scanner)?;
     let n = cur_val() as u8 as usize;
 
@@ -1436,12 +1436,12 @@ pub(crate) fn scan_file_name_in(st: &mut crate::state::EngineState) -> Result<()
         }
 
         loop {
-            if st.scanner.cur_cmd > OTHER_CHAR || cur_chr() > BIGGEST_CHAR {
+            if st.scanner.cur_cmd > OTHER_CHAR || st.scanner.cur_chr > BIGGEST_CHAR {
                 crate::input::back_input_in(st)?;
                 break;
             }
 
-            if !more_name_in(st, cur_chr() as u16).map_err(|e| name_abort_scc(st, e))? {
+            if !more_name_in(st, st.scanner.cur_chr as u16).map_err(|e| name_abort_scc(st, e))? {
                 break;
             }
 

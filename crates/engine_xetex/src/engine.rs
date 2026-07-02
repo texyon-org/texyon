@@ -11,7 +11,7 @@ use crate::consts::{
 };
 use crate::format_io::load_fmt_file;
 use crate::globals::{
-    cur_chr, cur_input, cur_val, first, set_cancel_boundary,
+    cur_input, cur_val, first, set_cancel_boundary,
     set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
     set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_cur_val, set_first,
     set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, set_temp_ptr, temp_ptr,
@@ -303,7 +303,7 @@ pub(crate) unsafe fn final_cleanup_in(
     const HISTORY_SPOTLESS: i32 = 0;
     const HISTORY_WARNING_ISSUED: i32 = 1;
 
-    let mut c = cur_chr();
+    let mut c = st.scanner.cur_chr;
 
     if c != 1 {
         st.eqtb.data[(INT_BASE + INT_PAR_NEW_LINE_CHAR) as usize].b32.s1 = -1;

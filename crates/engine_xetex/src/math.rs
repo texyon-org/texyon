@@ -6,7 +6,7 @@ use crate::consts::{
 };
 use crate::ext::real_get_native_glyph;
 use crate::globals::{
-    cur_chr, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
+    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
     cur_list_prev_graf, cur_list_tail, cur_val, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
     set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
     set_cur_val, set_temp_ptr, temp_ptr,
@@ -3582,7 +3582,7 @@ pub(crate) fn scan_delimiter_in(
     r: bool,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     if r {
-        if cur_chr() == 1 {
+        if st.scanner.cur_chr == 1 {
             st.scanner.cur_val1 = 0x4000_0000;
             crate::scan::scan_math_fam_int_in(st)?;
             st.scanner.cur_val1 += cur_val() * 0x20_0000;
@@ -3600,9 +3600,9 @@ pub(crate) fn scan_delimiter_in(
         }
 
         match st.scanner.cur_cmd {
-            LETTER | OTHER_CHAR => set_cur_val(st.eqtb.b32s1(DEL_CODE_BASE + cur_chr())),
+            LETTER | OTHER_CHAR => set_cur_val(st.eqtb.b32s1(DEL_CODE_BASE + st.scanner.cur_chr)),
             DELIM_NUM => {
-                if cur_chr() == 1 {
+                if st.scanner.cur_chr == 1 {
                     st.scanner.cur_val1 = 0x4000_0000;
                     crate::scan::scan_math_class_int_in(st)?;
                     crate::scan::scan_math_fam_int_in(st)?;
@@ -3660,7 +3660,7 @@ pub(crate) fn start_eq_no_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::main_control::MainControlAbort;
-    st.save_stack.set_b32s1(st.save_stack.save_ptr, cur_chr());
+    st.save_stack.set_b32s1(st.save_stack.save_ptr, st.scanner.cur_chr);
     st.save_stack.save_ptr += 1;
 
     crate::main_control::push_math_in(st, MATH_SHIFT_GROUP)?;
@@ -3698,7 +3698,7 @@ fn apply_math_limit_switch(mem: &mut MemState, limit: u16) -> bool {
 pub(crate) fn math_limit_switch_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    if apply_math_limit_switch(&mut st.mem, cur_chr() as u16) {
+    if apply_math_limit_switch(&mut st.mem, st.scanner.cur_chr as u16) {
         return Ok(());
     }
     crate::output::error_here_with_diagnostic_in(
@@ -3962,7 +3962,7 @@ fn finish_fraction_rule(mem: &mut MemState, c: i32, rule_thickness: i32) {
 pub(crate) fn math_fraction_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    let c = cur_chr();
+    let c = st.scanner.cur_chr;
 
     if cur_list_aux_b32s1() != TEX_NULL {
         if c >= DELIMITED_CODE {
@@ -4097,7 +4097,7 @@ fn append_inner_noad_for_right(mem: &mut MemState, q: i32) -> Result<(), NodeRec
 pub(crate) fn math_left_right_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    let t = cur_chr() as u16;
+    let t = st.scanner.cur_chr as u16;
     if t != LEFT_NOAD && st.save_stack.cur_group != MATH_LEFT_GROUP {
         if st.save_stack.cur_group == MATH_SHIFT_GROUP {
             scan_delimiter_in(st, GARBAGE, false)?;
@@ -4181,7 +4181,7 @@ pub(crate) fn math_ac_in(
 
     let tail = append_accent_noad(&mut st.mem)?;
 
-    if cur_chr() == 1 {
+    if st.scanner.cur_chr == 1 {
         if crate::scan::scan_keyword_in(st, c"fixed".as_ptr())? {
             set_accent_kind(&mut st.mem, tail, FIXED_ACC);
         } else if crate::scan::scan_keyword_in(st, c"bottom".as_ptr())? {

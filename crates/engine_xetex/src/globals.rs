@@ -92,7 +92,6 @@ mod raw {
         pub(super) static mut cur_tok: i32;
         // align_state moved to EngineState.scanner (scalar).
         // Current character code (xetex-xetexd.h:500).
-        pub(super) static mut cur_chr: i32;
         // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
         // cur_mark[5] moved to EngineState.scanner (inline fixed array).
         // Current parsed integer value (xetex-xetexd.h:530).
@@ -449,10 +448,6 @@ pub(crate) fn set_cur_tok(v: i32) {
     }
 }
 #[inline]
-pub(crate) fn cur_chr() -> i32 {
-    unsafe { raw::cur_chr }
-}
-#[inline]
 pub(crate) fn cur_val() -> i32 {
     unsafe { raw::cur_val }
 }
@@ -662,13 +657,6 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 // cur_cmd / cur_mark
 // ---------------------------------------------------------------------------
 
-/// Sets `cur_chr`.
-#[inline]
-pub(crate) fn set_cur_chr(v: i32) {
-    unsafe {
-        raw::cur_chr = v;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // input_stack / input_ptr / base_ptr

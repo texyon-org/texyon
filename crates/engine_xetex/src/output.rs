@@ -10,7 +10,7 @@ use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
 use crate::globals::{
-    cur_chr, cur_cs, cur_input, cur_list_mode, cur_val, line, };
+    cur_cs, cur_input, cur_list_mode, cur_val, line, };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -2669,15 +2669,15 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
 ///
 /// translated from xetex-xetex0.c:3383 (print_meaning)
 pub(crate) fn print_meaning_in(st: &mut EngineState) {
-    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
+    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
     if st.scanner.cur_cmd as u16 >= CALL {
         print_char_in(st, ':' as i32);
         print_ln_in(st);
-        token_show_in(st, cur_chr());
-    } else if st.scanner.cur_cmd as u16 == TOP_BOT_MARK && (cur_chr() as usize) < 5 {
+        token_show_in(st, st.scanner.cur_chr);
+    } else if st.scanner.cur_cmd as u16 == TOP_BOT_MARK && (st.scanner.cur_chr as usize) < 5 {
         print_char_in(st, ':' as i32);
         print_ln_in(st);
-        token_show_in(st, st.scanner.cur_mark[cur_chr() as usize]);
+        token_show_in(st, st.scanner.cur_mark[st.scanner.cur_chr as usize]);
     }
 }
 
@@ -2855,7 +2855,7 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
         print_cstr_in(st, c": ".as_ptr());
         st.scanner.shown_mode = cur_list_mode();
     }
-    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
+    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
     if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
         && st.scanner.cur_cmd >= IF_TEST as u8
         && st.scanner.cur_cmd <= FI_OR_ELSE
@@ -3164,7 +3164,7 @@ impl IssueMessageAbort {
 }
 
 pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageAbort> {
-    let c = cur_chr() as u8;
+    let c = st.scanner.cur_chr as u8;
     let toks = crate::scan::scan_toks_in(st, false, true).map_err(IssueMessageAbort::Scanner)?;
     st.mem.set_b32s1(GARBAGE, toks);
     let old_setting = st.shipout.selector as u8;
@@ -3527,7 +3527,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
 
     crate::output::diagnostic_begin_capture_warning_here_in(st);
 
-    let goto_common_ending = match cur_chr() {
+    let goto_common_ending = match st.scanner.cur_chr {
         3 => {
             crate::output::begin_diagnostic_in(st);
             show_activities_in(st);

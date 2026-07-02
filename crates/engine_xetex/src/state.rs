@@ -706,6 +706,8 @@ pub(crate) struct ScannerState {
     /// Current command code — the scanner's `cur_cmd` (`eight_bits`). Folded off
     /// the `mod raw` C global (`01e`).
     pub cur_cmd: u8,
+    /// Current character code — the scanner's `cur_chr`. Folded off `mod raw` (`01e`).
+    pub cur_chr: i32,
     /// Mark registers: `cur_mark[0..=4]` (xetex-xetexd.h:527). Each entry is
     /// a token-list pointer (`int32_t`). Inline fixed array; no alloc/cleanup
     /// edge. Plain `int32_t` elements, no newtype debt.

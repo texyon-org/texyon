@@ -2,7 +2,7 @@
 use crate::state::EngineState;
 
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
-use crate::globals::{cur_chr, cur_cs, cur_val, set_cur_cs, set_cur_val};
+use crate::globals::{cur_cs, cur_val, set_cur_cs, set_cur_val};
 use crate::main_control::{mc_propagate_error, new_graf_in};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::pic::load_picture_in;
@@ -2552,7 +2552,7 @@ pub(crate) fn new_write_whatsit_in(
     st: &mut EngineState,
     w: i16,
 ) -> Result<(), NewWriteWhatsitAbort> {
-    let p = crate::mem::new_whatsit(&mut st.mem, cur_chr() as i16, w);
+    let p = crate::mem::new_whatsit(&mut st.mem, st.scanner.cur_chr as i16, w);
     if p == crate::mem::ALLOC_FAILED {
         return Err(NewWriteWhatsitAbort::MainMemory);
     }
@@ -2706,7 +2706,7 @@ pub(crate) fn do_extension_in(
 ) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::mem::TEX_NULL;
 
-    match cur_chr() {
+    match st.scanner.cur_chr {
         OPEN_NODE_DE => {
             do_new_write_whatsit_in(st, OPEN_NODE_SIZE_DE)?;
             crate::scan::scan_optional_equals_in(st)?;
@@ -2745,7 +2745,7 @@ pub(crate) fn do_extension_in(
 
         IMMEDIATE_CODE_DE => {
             get_x_token_in(st)?;
-            if st.scanner.cur_cmd == EXTENSION_DE && cur_chr() <= CLOSE_NODE_DE {
+            if st.scanner.cur_cmd == EXTENSION_DE && st.scanner.cur_chr <= CLOSE_NODE_DE {
                 let p = crate::globals::cur_list_tail();
                 do_extension_in(st)?;
                 crate::shipout::out_what_in(st, crate::globals::cur_list_tail())?;
