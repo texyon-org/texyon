@@ -417,6 +417,11 @@ pub(crate) struct MemState {
     pub rover: i32,
     pub var_used: i32,
     pub dyn_used: i32,
+    /// Current source line number — TeX's `line`. Folded off `mod raw` (`01e`).
+    /// Lives in MemState because `get_node` (the sole mem-only reader, called
+    /// from hundreds of `&mut MemState`-only sites) stamps it into the synctex
+    /// trailer of MEDIUM+ nodes; it is the allocation-time source line.
+    pub line: i32,
     /// General-purpose scratch node pointer — TeX's `temp_ptr`. Folded off
     /// `mod raw` (`01e`). Lives here (not ScannerState) because every user
     /// holds `&mut MemState`; two-phase borrows keep `mem.f(mem.temp_ptr,…)`

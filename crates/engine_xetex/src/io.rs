@@ -3,8 +3,7 @@
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{
     cur_input, set_cur_input_limit,
-    set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_line,
-};
+    set_cur_input_loc, set_cur_input_name, set_cur_input_state, };
 use crate::input::InputAbort;
 
 // ---------------------------------------------------------------------------
@@ -1632,7 +1631,7 @@ pub(crate) unsafe fn start_input_in(
     let synctex_job_name = st.strings.job_name;
     let synctex_tmp = crate::texmfmp::gettexstring_in(&st.strings, synctex_job_name);
     crate::synctex::synctex_start_input(st, synctex_tmp);
-    set_line(1);
+    st.mem.line = 1;
     let f = st.input.input_file[idx as usize];
     input_line_in(st, f)?;
     set_cur_input_limit(st.input.last);

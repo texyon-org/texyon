@@ -1285,7 +1285,7 @@ pub unsafe extern "C" fn tt_run_engine(
     crate::globals::set_cur_input_state(NEW_LINE);
     crate::globals::set_cur_input_start(1);
     crate::globals::set_cur_input_index(0);
-    crate::globals::set_line(0);
+    st.mem.line = 0;
     crate::globals::set_cur_input_name(0);
     st.input.force_eof = false;
     st.scanner.align_state = 1_000_000;

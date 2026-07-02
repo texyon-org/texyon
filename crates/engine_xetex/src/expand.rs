@@ -120,8 +120,7 @@ fn pop_cond_node_in(st: &mut crate::state::EngineState) {
 
 pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_list_mode, line,
-        };
+        cur_list_mode, };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, get_node_scc, scc_err};
 
@@ -148,7 +147,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
     st.scanner.cond_ptr = p;
     st.scanner.cur_if = st.scanner.cur_chr as i16;
     st.scanner.if_limit = IF_CODE;
-    st.scanner.if_line = line();
+    st.scanner.if_line = st.mem.line;
 
     let save_cond_ptr: i32 = st.scanner.cond_ptr;
     let is_unless: bool = st.scanner.cur_chr >= UNLESS_CODE;

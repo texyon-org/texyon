@@ -10,7 +10,7 @@ use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
 use crate::globals::{
-    cur_input, cur_list_mode, line, };
+    cur_input, cur_list_mode, };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -619,7 +619,7 @@ pub(crate) fn diagnostic_print_file_line_in(
         let source_line = if level != st.input.in_open {
             st.input.line_stack[(level + 1) as usize]
         } else {
-            line()
+            st.mem.line
         };
         let filename = unsafe {
             crate::texmfmp::gettexstring_in(
@@ -691,7 +691,7 @@ pub(crate) fn print_file_line_in(st: &mut EngineState) {
         print_in(st, st.input.full_source_filename_stack[(level) as usize]);
         print_char_in(st, b':' as i32);
         if level == st.input.in_open {
-            print_int_in(st, line());
+            print_int_in(st, st.mem.line);
         } else {
             print_int_in(st, st.input.line_stack[(level + 1) as usize]);
         }
@@ -2866,7 +2866,7 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
             print_char_in(st, b' ' as i32);
             (0_i32, st.scanner.if_line)
         } else {
-            (1_i32, line())
+            (1_i32, st.mem.line)
         };
         let mut p = st.scanner.cond_ptr;
         while p != TEX_NULL {
@@ -3009,7 +3009,7 @@ pub(crate) fn bad_utf8_warning_in(st: &mut EngineState) {
         print_cstr_in(st, c" in terminal input".as_ptr());
     } else {
         print_cstr_in(st, c" at line ".as_ptr());
-        print_int_in(st, crate::globals::line());
+        print_int_in(st, st.mem.line);
     }
     print_cstr_in(st, c" replaced by U+FFFD.".as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
@@ -4548,7 +4548,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
 // translated from xetex-xetex0.c:2764 (show_context)
 /// `&mut EngineState` core of `show_context`.
 pub(crate) fn show_context_in(st: &mut EngineState) {
-    use crate::globals::{line, set_cur_input};
+    use crate::globals::{set_cur_input};
 
     const TOKEN_LIST: u16 = 0;
     const BACKED_UP: u16 = 3;
@@ -4616,7 +4616,7 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
                     } else {
                         crate::output::print_nl_cstr_in(st, c"l.".as_ptr());
                         if ci.index as i32 == st.input.in_open {
-                            crate::output::print_int_in(st, line());
+                            crate::output::print_int_in(st, st.mem.line);
                         } else {
                             crate::output::print_int_in(
                                 st,

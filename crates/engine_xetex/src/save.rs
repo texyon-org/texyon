@@ -5,7 +5,7 @@ use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
-    cur_input, line, set_cur_input_loc, set_cur_input_start,
+    cur_input, set_cur_input_loc, set_cur_input_start,
     };
 use crate::mem_types::MemoryWord;
 
@@ -71,22 +71,22 @@ impl SaveAbort {
 /// Push a new grouping level onto the save stack.
 ///
 /// Phase-C: threaded to `&mut SaveStackState`; touches the save stack only plus
-/// the raw `line()` read (safe under a borrow, `01b` §4). The two cold capacity
+/// the raw `st.mem.line` read (safe under a borrow, `01b` §4). The two cold capacity
 /// branches return the `01b` §5 [`SaveAbort`] sentinel, raised by
 /// [`new_save_level_global`] after the borrow drops. Legacy callers use
 /// [`new_save_level_global`].
 ///
 /// translated from xetex-xetex0.c:3932 (new_save_level)
-pub(crate) fn new_save_level(save_stack: &mut SaveStackState, c: u8) -> Option<SaveAbort> {
+pub(crate) fn new_save_level(save_stack: &mut SaveStackState, c: u8, line: i32) -> Option<SaveAbort> {
     if save_stack.save_ptr > save_stack.max_save_stack {
         save_stack.max_save_stack = save_stack.save_ptr;
         if save_stack.max_save_stack > save_stack.save_size - 7 {
             return Some(SaveAbort::Overflow(c"semantic nest size", save_stack.save_size));
         }
     }
-    // `line()` reads the raw `line` global (deferred Phase-C set); it is not
-    // `with_state`-bearing, so it is safe to call directly here (`01b` §4).
-    save_stack.set_b32s1(save_stack.save_ptr, line());
+    // `line` is passed in by the caller (which holds `st`); it is stamped into
+    // the save stack for `\tracingrestores` group-line tracking (`01e`).
+    save_stack.set_b32s1(save_stack.save_ptr, line);
     save_stack.save_ptr += 1;
     save_stack.set_b16s1(save_stack.save_ptr, LEVEL_BOUNDARY);
     save_stack.set_b16s0(save_stack.save_ptr, save_stack.cur_group as u16);

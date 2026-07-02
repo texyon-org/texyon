@@ -2658,7 +2658,7 @@ fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: Any
         } else {
             print_cstr_in(st, c") detected at line ".as_ptr());
         }
-        print_int_in(st, crate::globals::line());
+        print_int_in(st, st.mem.line);
     }
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     print_ln_in(st);
@@ -2975,7 +2975,7 @@ fn print_vpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: Any
         } else {
             print_cstr_in(st, c") detected at line ".as_ptr());
         }
-        print_int_in(st, crate::globals::line());
+        print_int_in(st, st.mem.line);
         print_ln_in(st);
     }
     capture_to_diagnostic_in(st, std::ptr::null_mut());

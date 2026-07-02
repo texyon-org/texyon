@@ -5,10 +5,9 @@ use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
 use crate::io::u_close;
 
 use crate::globals::{
-    cur_input, line, set_cur_input,
+    cur_input, set_cur_input,
     set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_line,
-};
+    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, };
 
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
@@ -266,7 +265,7 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
     st.input.eof_seen[idx] = false;
     st.input.grp_stack[idx] = st.save_stack.cur_boundary;
     st.input.if_stack[idx] = st.scanner.cond_ptr;
-    st.input.line_stack[idx] = line();
+    st.input.line_stack[idx] = st.mem.line;
     set_cur_input_start(st.input.first);
     set_cur_input_state(MID_LINE);
     set_cur_input_name(0);
@@ -286,7 +285,7 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
 /// `ttstub_input_close` longjmp likewise aborted before the input-stack pop.
 pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
     st.input.first = cur_input().start;
-    set_line(st.input.line_stack[cur_input().index as usize]);
+    st.mem.line = st.input.line_stack[cur_input().index as usize];
     let name = cur_input().name;
     if name == 18 || name == 19 {
         let s = &mut *st;

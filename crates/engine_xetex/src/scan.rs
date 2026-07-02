@@ -20,8 +20,7 @@ use crate::ext::ot_font_get_3;
 
 use crate::globals::{
     cur_input, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_state, set_cur_input_synctex_tag, set_line,
-};
+    set_cur_input_state, set_cur_input_synctex_tag, };
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
 use crate::errors::int_error_in;
@@ -507,7 +506,7 @@ pub(crate) fn scan_spec_in(
     st.save_stack.set_b32s1(sp, spec_code as i32);
     st.save_stack.set_b32s1(sp + 1, st.scanner.cur_val);
     st.save_stack.save_ptr = sp + 2;
-    if let Some(abort) = crate::save::new_save_level(&mut st.save_stack, c) {
+    if let Some(abort) = crate::save::new_save_level(&mut st.save_stack, c, st.mem.line) {
         return Err(match abort {
             crate::save::SaveAbort::Overflow(what, n) => {
                 SccAbort::Input(crate::input::InputAbort::Overflow {
@@ -1563,7 +1562,6 @@ pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::I
 /// borrow). Cold abort / recoverable-error / no-legal-`\end` tails ride
 /// [`GetNextOutcome`].
 pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome {
-    use crate::globals::{line, set_line};
 
     macro_rules! try_in {
         ($e:expr) => {
@@ -2067,7 +2065,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     set_cur_input_state(NEW_LINE);
 
                     if cur_input().name > 17 {
-                        set_line(line() + 1);
+                        st.mem.line = st.mem.line + 1;
                         st.input.first = cur_input().start;
 
                         if !st.input.force_eof {
@@ -2794,7 +2792,7 @@ pub(crate) fn pass_text_in(st: &mut crate::state::EngineState) -> Result<(), Scc
     let save_scanner_status = st.scanner.scanner_status;
     st.scanner.scanner_status = SKIPPING;
     let mut l: i32 = 0;
-    st.scanner.skip_line = crate::globals::line();
+    st.scanner.skip_line = st.mem.line;
 
     loop {
         get_next_scc(st)?;
@@ -2910,7 +2908,7 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
     st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
 
     crate::input::begin_file_reading_in(st)?;
-    set_line(0);
+    st.mem.line = 0;
     let start = cur_input().start;
     set_cur_input_limit(start);
     set_cur_input_loc(start + 1);
@@ -4596,7 +4594,7 @@ pub(crate) fn scan_something_internal_in(
                         // m >= INPUT_LINE_NO_CODE && m < XETEX_DIM
                         match m {
                             INPUT_LINE_NO_CODE => {
-                                st.scanner.cur_val = crate::globals::line();
+                                st.scanner.cur_val = st.mem.line;
                             }
                             BADNESS_CODE => {
                                 st.scanner.cur_val = st.shipout.last_badness;

@@ -2504,9 +2504,9 @@ mod tests {
 pub(crate) fn append_src_special_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), InsertSrcAbort> {
-    use crate::globals::{cur_list_tail, line};
+    use crate::globals::{cur_list_tail};
     let fname = st.input.source_filename_stack[st.input.in_open as usize];
-    if fname > 0 && crate::texmfmp::is_new_source_in(st, fname, line()) {
+    if fname > 0 && crate::texmfmp::is_new_source_in(st, fname, st.mem.line) {
         let p = crate::mem::new_whatsit(&mut st.mem, SPECIAL_NODE, WRITE_NODE_SIZE);
         if p == crate::mem::ALLOC_FAILED {
             return Err(InsertSrcAbort::MainMemory);
@@ -2518,7 +2518,7 @@ pub(crate) fn append_src_special_in(
         }
         st.scanner.def_ref = d;
         st.mem.set_b32s0(d, crate::mem::TEX_NULL);
-        let b = crate::texmfmp::make_src_special_in(st, fname, line())
+        let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
             .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
         match crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0) {
             Ok(_) => {}
@@ -2531,7 +2531,7 @@ pub(crate) fn append_src_special_in(
         };
         st.mem.set_b32s1(d, st.mem.b32s1(TEMP_HEAD));
         st.mem.set_b32s1(cur_list_tail() + 1, d);
-        crate::texmfmp::remember_source_info_in(st, fname, line());
+        crate::texmfmp::remember_source_info_in(st, fname, st.mem.line);
     }
     Ok(())
 }
@@ -2604,19 +2604,18 @@ impl From<crate::input::InputAbort> for InsertSrcAbort {
 
 /// `&mut EngineState` core of [`insert_src_special`]: builds the
 /// `\special{src:<line> <file>}` token list under one borrow and inserts it.
-/// `line()` stays raw `mod raw`; the texmfmp/`str_toks`/`begin_token_list`
+/// `st.mem.line` stays raw `mod raw`; the texmfmp/`str_toks`/`begin_token_list`
 /// callees run threaded under the borrow. Cold aborts ride [`InsertSrcAbort`].
 ///
 /// translated from xetex-xetex0.c:9966 (insert_src_special)
 pub(crate) fn insert_src_special_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), InsertSrcAbort> {
-    use crate::globals::line;
     const FROZEN_SPECIAL: i32 = 2_243_226 + 10; // FROZEN_CONTROL_SEQUENCE + 10
     const RIGHT_BRACE_TOKEN: i32 = 0x400000; // xetex-constants.h:351
 
     let sfn = st.input.source_filename_stack[st.input.in_open as usize];
-    if sfn > 0 && crate::texmfmp::is_new_source_in(st, sfn, line()) {
+    if sfn > 0 && crate::texmfmp::is_new_source_in(st, sfn, st.mem.line) {
         let toklist = crate::mem::get_avail(&mut st.mem);
         if toklist == crate::mem::ALLOC_FAILED {
             return Err(InsertSrcAbort::MainMemory);
@@ -2630,7 +2629,7 @@ pub(crate) fn insert_src_special_in(
         st.mem.set_b32s1(p, nxt);
         p = st.mem.b32s1(p);
         st.mem.set_b32s0(p, LEFT_BRACE_TOKEN + b'{' as i32);
-        let b = crate::texmfmp::make_src_special_in(st, sfn, line())
+        let b = crate::texmfmp::make_src_special_in(st, sfn, st.mem.line)
             .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
         let q = match crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0) {
             Ok(q) => q,
@@ -2651,7 +2650,7 @@ pub(crate) fn insert_src_special_in(
         p = st.mem.b32s1(p);
         st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
         crate::input::begin_token_list_in(st, toklist, INSERTED)?;
-        crate::texmfmp::remember_source_info_in(st, sfn, line());
+        crate::texmfmp::remember_source_info_in(st, sfn, st.mem.line);
     }
     Ok(())
 }

@@ -51,8 +51,7 @@ mod raw {
         // xetex-xetexd.h:506 — current input state; layout mirrors InputState above.
         pub(super) static mut cur_input: super::InputState;
         // open_parens moved to EngineState.input.open_parens.
-        // xetex-xetexd.h:510 — current source line number.
-        pub(super) static mut line: i32;
+        // line moved to EngineState.mem.line (01e; get_node stamps the synctex trailer).
 
         // eqtb (*mut memory_word) moved to EngineState.eqtb.data (session 51).
 
@@ -298,12 +297,6 @@ pub(crate) fn set_cur_input(v: InputState) {
     }
 }
 
-/// Returns the current source line number.
-#[inline]
-pub(crate) fn line() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::line }
-}
 
 // ---------------------------------------------------------------------------
 // mem word-level accessors (b16 and gr fields)
@@ -651,13 +644,6 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 // source_filename_stack / full_source_filename_stack / line_stack
 // ---------------------------------------------------------------------------
 
-/// Sets `line`.
-#[inline]
-pub(crate) fn set_line(v: i32) {
-    unsafe {
-        raw::line = v;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // max_buf_stack / set_buffer_entry / cur_input_limit

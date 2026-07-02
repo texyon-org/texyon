@@ -5,7 +5,7 @@ use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE, MAX_HALFWORD, TEX_NULL,
 };
 use crate::globals::{
-    line, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_mode_line,
+    set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_mode_line,
     set_cur_list_tail, };
 
 // Former C module-level statics, now bridged onto EngineState.shipout
@@ -229,7 +229,7 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
     crate::globals::set_cur_list_head(h);
     crate::globals::set_cur_list_tail(h);
     crate::globals::set_cur_list_prev_graf(0);
-    crate::globals::set_cur_list_mode_line(line());
+    crate::globals::set_cur_list_mode_line(st.mem.line);
     crate::globals::set_cur_list_e_tex_aux(TEX_NULL);
     Ok(())
 }
@@ -614,7 +614,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
             push_nest_pagebuilder_in(st)?;
             set_cur_list_mode(-VMODE);
             set_cur_list_aux_b32s1(IGNORE_DEPTH); // prev_depth
-            set_cur_list_mode_line(-line());
+            set_cur_list_mode_line(-st.mem.line);
             crate::input::begin_token_list_in(
                 st,
                 st.eqtb.b32s1(LOCAL_BASE + LOCAL__output_routine),
@@ -623,6 +623,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
             page_save(crate::save::new_save_level(
                 &mut st.save_stack,
                 OUTPUT_GROUP,
+                st.mem.line,
             ))?;
             page_save(crate::main_control::normal_paragraph(
                 &mut st.eqtb,

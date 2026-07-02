@@ -651,7 +651,7 @@ pub(crate) fn align_peek_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         }
         if st.scanner.cur_cmd == NO_ALIGN {
             crate::scan::scan_left_brace_in(st)?;
-            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, NO_ALIGN_GROUP) {
+            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, NO_ALIGN_GROUP, st.mem.line) {
                 return Err(MainControlAbort::Save(a));
             }
             if crate::globals::cur_list_mode() == -1 {
@@ -953,7 +953,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
     }
     if st.mem.b32s0(st.scanner.cur_align + 5) != SPAN_CODE {
         crate::save::unsave_in(st)?;
-        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, ALIGN_GROUP) {
+        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, ALIGN_GROUP, st.mem.line) {
             return Err(MainControlAbort::Save(a));
         }
         let (u, w) = if cur_list_mode() == INNER_HMODE {
@@ -1290,7 +1290,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
 
     // done:
     st.scanner.scanner_status = NORMAL_SCANNER;
-    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, ALIGN_GROUP) {
+    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, ALIGN_GROUP, st.mem.line) {
         return Err(MainControlAbort::Save(a));
     }
     let every_cr = st.eqtb.b32s1(LOCAL_BASE + LOCAL__EVERY_CR);
@@ -1311,7 +1311,7 @@ pub(crate) fn push_math_in(
     crate::mem::push_nest_in(st)?;
     crate::globals::set_cur_list_mode(-207); // -MMODE (xetex_format.h:370)
     crate::globals::set_cur_list_aux_b32s1(crate::mem::TEX_NULL);
-    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, c) {
+    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, c, st.mem.line) {
         return Err(MainControlAbort::Save(a));
     }
     Ok(())
@@ -1561,7 +1561,7 @@ pub(crate) fn begin_insert_or_adjust_in(
         st.save_stack.set_b32s1(sp + 1, 0);
     }
     st.save_stack.save_ptr = sp + 2;
-    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, INSERT_GROUP) {
+    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, INSERT_GROUP, st.mem.line) {
         return Err(MainControlAbort::Save(a));
     }
     crate::scan::scan_left_brace_in(st)?;
@@ -3348,7 +3348,7 @@ pub(crate) fn append_discretionary_in(
         let sp = st.save_stack.save_ptr;
         st.save_stack.set_b32s1(sp, 0);
         st.save_stack.save_ptr = sp + 1;
-        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, DISC_GROUP) {
+        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, DISC_GROUP, st.mem.line) {
             return Err(MainControlAbort::Save(a));
         }
         crate::scan::scan_left_brace_in(st)?;
@@ -3510,7 +3510,7 @@ pub(crate) fn build_discretionary_in(
     }
     st.save_stack
         .set_b32s1(st.save_stack.save_ptr - 1, slot + 1);
-    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, DISC_GROUP) {
+    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, DISC_GROUP, st.mem.line) {
         return Err(MainControlAbort::Save(a));
     }
     crate::scan::scan_left_brace_in(st)?;
@@ -4560,12 +4560,12 @@ pub(crate) fn main_control_simple_list_group_cases_in(
             append_kern_in(st)?
         }
         (VMODE_MC, LEFT_BRACE_MC) | (HMODE_MC, LEFT_BRACE_MC) => {
-            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, SIMPLE_GROUP_MC) {
+            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, SIMPLE_GROUP_MC, st.mem.line) {
                 return Err(MainControlAbort::Save(a));
             }
         }
         (VMODE_MC, BEGIN_GROUP_MC) | (HMODE_MC, BEGIN_GROUP_MC) | (MMODE_MC, BEGIN_GROUP_MC) => {
-            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, SEMI_SIMPLE_GROUP_MC) {
+            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, SEMI_SIMPLE_GROUP_MC, st.mem.line) {
                 return Err(MainControlAbort::Save(a));
             }
         }

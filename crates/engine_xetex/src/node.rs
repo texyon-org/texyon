@@ -2624,6 +2624,7 @@ mod tests {
             rover: 0,
             var_used: 0,
             dyn_used: 0,
+            line: 0,
             temp_ptr: 0,
         }
     }
