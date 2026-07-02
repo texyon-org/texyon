@@ -18,7 +18,7 @@ use crate::consts::{
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val,
+    cur_list_mode, cur_ptr, cur_val, set_cur_input_index, set_cur_ptr, set_cur_val,
 };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
@@ -122,7 +122,7 @@ pub(crate) fn align_error_in(st: &mut crate::state::EngineState) -> Result<(), M
         crate::output::error_here_with_diagnostic_in(st, c"Misplaced ".as_ptr());
         crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        if cur_tok() == TAB_TOKEN + 38 {
+        if st.scanner.cur_tok == TAB_TOKEN + 38 {
             st.errors.help_ptr = 6;
             st.errors.help_line[5] =
                 c"I can't figure out why you would want to use a tab mark".as_ptr();
@@ -155,12 +155,12 @@ pub(crate) fn align_error_in(st: &mut crate::state::EngineState) -> Result<(), M
             crate::output::error_here_with_diagnostic_in(st, c"Missing { inserted".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.scanner.align_state += 1;
-            set_cur_tok(LEFT_BRACE_TOKEN + 123);
+            st.scanner.cur_tok = LEFT_BRACE_TOKEN + 123;
         } else {
             crate::output::error_here_with_diagnostic_in(st, c"Missing } inserted".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.scanner.align_state -= 1;
-            set_cur_tok(RIGHT_BRACE_TOKEN + 125);
+            st.scanner.cur_tok = RIGHT_BRACE_TOKEN + 125;
         }
         st.errors.help_ptr = 3;
         st.errors.help_line[2] = c"I've put in what seems to be necessary to fix".as_ptr();
@@ -1113,7 +1113,7 @@ pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainC
 // translated from xetex-xetex0.c:7732 (init_align)
 pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     use crate::globals::{
-        cur_cs, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
+        cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
         set_cur_list_aux_b32s1, set_cur_list_mode,
     };
     use crate::mem::{get_avail, new_null_box, new_param_glue, ALLOC_FAILED, TEX_NULL};
@@ -1135,7 +1135,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
     const MAC_PARAM: u8 = 6;
     const SPACER: u8 = 10;
 
-    let save_cs_ptr = cur_cs();
+    let save_cs_ptr = st.scanner.cur_cs;
     push_alignment_in(st)?;
     st.scanner.align_state = -1_000_000;
 
@@ -1222,7 +1222,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
                 }
                 st.mem.set_b32s1(p, av);
                 p = st.mem.b32s1(p);
-                st.mem.set_b32s0(p, cur_tok());
+                st.mem.set_b32s0(p, st.scanner.cur_tok);
             }
         }
 
@@ -1271,7 +1271,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
             }
             st.mem.set_b32s1(p, av);
             p = st.mem.b32s1(p);
-            st.mem.set_b32s0(p, cur_tok());
+            st.mem.set_b32s0(p, st.scanner.cur_tok);
         }
 
         // done2: append FROZEN_END_TEMPLATE and store v-template
@@ -1528,7 +1528,7 @@ pub(crate) fn head_for_vmode_in(
         }
     } else {
         crate::input::back_input_in(st)?;
-        set_cur_tok(st.input.par_token);
+        st.scanner.cur_tok = st.input.par_token;
         crate::input::back_input_in(st)?;
         set_cur_input_index(INSERTED);
     }
@@ -2704,7 +2704,7 @@ pub(crate) fn begin_box_in(
 pub(crate) fn handle_right_brace_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    use crate::globals::{cur_input, cur_list_head, cur_list_tail, set_cur_list_tail, set_cur_tok};
+    use crate::globals::{cur_input, cur_list_head, cur_list_tail, set_cur_list_tail};
     use crate::mem::{
         delete_glue_ref, free_node, get_node, new_noad, pop_nest_in, ALLOC_FAILED, TEX_NULL,
     };
@@ -2927,7 +2927,7 @@ pub(crate) fn handle_right_brace_in(
 
         ALIGN_GROUP => {
             crate::input::back_input_in(st)?;
-            set_cur_tok(CS_TOKEN_FLAG + FROZEN_CR);
+            st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_CR;
             crate::output::error_here_with_diagnostic_in(st, c"Missing ".as_ptr());
             crate::output::print_esc_cstr_in(st, c"cr".as_ptr());
             crate::output::print_cstr_in(st, c" inserted".as_ptr());
@@ -3725,7 +3725,7 @@ pub(crate) unsafe fn new_font_in(
     }
 
     crate::scan::get_r_token_in(st)?;
-    let u = cur_cs();
+    let u = st.scanner.cur_cs;
     let t = if u >= HASH_BASE {
         st.eqtb.hash_s1(u)
     } else if u >= SINGLE_BASE {
@@ -4387,11 +4387,11 @@ pub(crate) fn main_control_mode_independent_in(
         | SET_INTERACTION_MC => prefixed_command_in(st)?,
         AFTER_ASSIGNMENT_MC => {
             crate::scan::get_token_in(st)?;
-            st.scanner.after_token = cur_tok();
+            st.scanner.after_token = st.scanner.cur_tok;
         }
         AFTER_GROUP_MC => {
             crate::scan::get_token_in(st)?;
-            if let Some(a) = crate::save::save_for_after(&mut st.save_stack, cur_tok()) {
+            if let Some(a) = crate::save::save_for_after(&mut st.save_stack, st.scanner.cur_tok) {
                 return Err(MainControlAbort::Save(a));
             }
         }
@@ -5002,21 +5002,21 @@ pub(crate) fn main_control_ignore_spaces_in(
         let get_next_result: Result<(), crate::scan::SccAbort> = get_next_outcome.into();
         get_next_result?;
 
-        if cur_cs() < HASH_BASE {
-            let v = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, cur_cs() - SINGLE_BASE)
+        if st.scanner.cur_cs < HASH_BASE {
+            let v = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, st.scanner.cur_cs - SINGLE_BASE)
                 .map_err(crate::scan::hash_err_abort)?;
-            set_cur_cs(v);
+            st.scanner.cur_cs = v;
         } else {
-            let s = st.eqtb.hash_s1(cur_cs());
+            let s = st.eqtb.hash_s1(st.scanner.cur_cs);
             let v = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)
                 .map_err(crate::scan::hash_err_abort)?;
-            set_cur_cs(v);
+            st.scanner.cur_cs = v;
         }
 
-        if cur_cs() != UNDEFINED_PRIMITIVE {
-            st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8;
-            st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + cur_cs());
-            set_cur_tok(CS_TOKEN_FLAG + PRIM_EQTB_BASE + cur_cs());
+        if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
+            st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + st.scanner.cur_cs) as u8;
+            st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + st.scanner.cur_cs);
+            st.scanner.cur_tok = CS_TOKEN_FLAG + PRIM_EQTB_BASE + st.scanner.cur_cs;
         }
     }
     // Caller must do: goto reswitch
@@ -5055,13 +5055,13 @@ fn set_current_token_for_inter_char_boundary(
     st: &mut crate::state::EngineState,
     char_num_cmd: u8,
 ) {
-    if cur_cs() == 0 {
+    if st.scanner.cur_cs == 0 {
         if st.scanner.cur_cmd == char_num_cmd {
             st.scanner.cur_cmd = OTHER_CHAR;
         }
-        set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr);
+        st.scanner.cur_tok = st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
     } else {
-        set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+        st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
     }
 }
 
@@ -5149,7 +5149,7 @@ fn inter_char_before_current_char_action(
     if st.scanner.cur_cmd != letter_cmd {
         st.scanner.cur_cmd = other_cmd;
     }
-    set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr);
+    st.scanner.cur_tok = st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
     InterCharInputAction::BackInputThenBeginTokenList {
         token_list,
         force_cur_input_index: Some(BACKED_UP_CHAR),
@@ -7018,7 +7018,7 @@ pub(crate) fn prefixed_command_in(
 
                 e = st.scanner.cur_chr >= 2;
                 crate::scan::get_r_token_in(st)?;
-                p = cur_cs();
+                p = st.scanner.cur_cs;
                 q = crate::scan::scan_toks_in(st, true, e)?;
 
                 if j != 0 {
@@ -7037,7 +7037,7 @@ pub(crate) fn prefixed_command_in(
             LET => {
                 n = st.scanner.cur_chr;
                 crate::scan::get_r_token_in(st)?;
-                p = cur_cs();
+                p = st.scanner.cur_cs;
 
                 if n == NORMAL {
                     loop {
@@ -7047,7 +7047,7 @@ pub(crate) fn prefixed_command_in(
                         }
                     }
 
-                    if cur_tok() == OTHER_TOKEN + '=' as i32 {
+                    if st.scanner.cur_tok == OTHER_TOKEN + '=' as i32 {
                         crate::scan::get_token_in(st)?;
                         if st.scanner.cur_cmd as i32 == SPACER {
                             crate::scan::get_token_in(st)?;
@@ -7055,10 +7055,10 @@ pub(crate) fn prefixed_command_in(
                     }
                 } else {
                     crate::scan::get_token_in(st)?;
-                    q = cur_tok();
+                    q = st.scanner.cur_tok;
                     crate::scan::get_token_in(st)?;
                     crate::input::back_input_in(st)?;
-                    set_cur_tok(q);
+                    st.scanner.cur_tok = q;
                     crate::input::back_input_in(st)?;
                 }
 
@@ -7089,7 +7089,7 @@ pub(crate) fn prefixed_command_in(
                 } else {
                     n = st.scanner.cur_chr;
                     crate::scan::get_r_token_in(st)?;
-                    p = cur_cs();
+                    p = st.scanner.cur_cs;
 
                     pc_define(st, a >= 4, p, RELAX_CMD as u16, TOO_BIG_USV)?;
 
@@ -7220,14 +7220,14 @@ pub(crate) fn prefixed_command_in(
                 }
 
                 crate::scan::get_r_token_in(st)?;
-                p = cur_cs();
+                p = st.scanner.cur_cs;
                 crate::scan::read_toks_in(st, n, p, j)?;
 
                 pc_define(st, a >= 4, p, CALL as u16, cur_val())?;
             }
 
             TOKS_REGISTER | ASSIGN_TOKS => {
-                q = cur_cs();
+                q = st.scanner.cur_cs;
                 e = false;
 
                 if st.scanner.cur_cmd as i32 == TOKS_REGISTER {
@@ -7348,7 +7348,7 @@ pub(crate) fn prefixed_command_in(
                 }
 
                 crate::input::back_input_in(st)?;
-                set_cur_cs(q);
+                st.scanner.cur_cs = q;
                 q = crate::scan::scan_toks_in(st, false, false)?;
 
                 if st.mem.b32s1(st.scanner.def_ref) == TEX_NULL {
@@ -7723,7 +7723,7 @@ pub(crate) fn prefixed_command_in(
 
     // done:
     if st.scanner.after_token != 0 {
-        set_cur_tok(st.scanner.after_token);
+        st.scanner.cur_tok = st.scanner.after_token;
         crate::input::back_input_in(st)?;
         st.scanner.after_token = 0;
     }

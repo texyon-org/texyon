@@ -10,7 +10,7 @@ use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
 use crate::globals::{
-    cur_cs, cur_input, cur_list_mode, cur_val, line, };
+    cur_input, cur_list_mode, cur_val, line, };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -3563,8 +3563,8 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
         0 => {
             crate::scan::get_token_in(st)?;
             crate::output::print_nl_cstr_in(st, c"> ".as_ptr());
-            if cur_cs() != 0 {
-                crate::output::sprint_cs_in(st, cur_cs());
+            if st.scanner.cur_cs != 0 {
+                crate::output::sprint_cs_in(st, st.scanner.cur_cs);
                 crate::output::print_char_in(st, '=' as i32);
             }
             crate::output::print_meaning_in(st);

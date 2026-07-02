@@ -5,9 +5,8 @@ use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
-    cur_input, cur_ptr, cur_tok, line, set_cur_input_loc, set_cur_input_start,
-    set_cur_ptr, set_cur_tok,
-};
+    cur_input, cur_ptr, line, set_cur_input_loc, set_cur_input_start,
+    set_cur_ptr, };
 use crate::mem_types::MemoryWord;
 
 extern "C" {
@@ -774,19 +773,19 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
             }
             let p = st.save_stack.b32s1(sp);
             if st.save_stack.b16s1(sp) == INSERT_TOKEN {
-                let t = cur_tok();
-                set_cur_tok(p);
+                let t = st.scanner.cur_tok;
+                st.scanner.cur_tok = p;
                 if a {
                     let pn = crate::mem::get_avail(&mut st.mem);
                     if pn == crate::mem::ALLOC_FAILED {
                         return Err(UnsaveAbort::MainMemory);
                     }
-                    st.mem.set_b32s0(pn, cur_tok());
+                    st.mem.set_b32s0(pn, st.scanner.cur_tok);
                     st.mem.set_b32s1(pn, cur_input().loc);
                     set_cur_input_loc(pn);
                     set_cur_input_start(pn);
-                    if cur_tok() < RIGHT_BRACE_LIMIT {
-                        if cur_tok() < LEFT_BRACE_LIMIT {
+                    if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
+                        if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
                             st.scanner.align_state -= 1;
                         } else {
                             st.scanner.align_state += 1;
@@ -796,7 +795,7 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
                     crate::input::back_input_in(st)?;
                     a = true;
                 }
-                set_cur_tok(t);
+                st.scanner.cur_tok = t;
             } else if st.save_stack.b16s1(sp) == RESTORE_SA {
                 sa_restore_in(st).map_err(|m| UnsaveAbort::Save(SaveAbort::Confusion(m)))?;
                 st.scanner.sa_chain = p;

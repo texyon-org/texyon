@@ -5,9 +5,9 @@ use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
 use crate::io::u_close;
 
 use crate::globals::{
-    cur_cs, cur_input, cur_tok, first, line, set_cur_input,
+    cur_input, first, line, set_cur_input,
     set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_first,
+    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_first,
     set_line,
 };
 
@@ -137,9 +137,9 @@ pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), In
     if p == crate::mem::ALLOC_FAILED {
         return Err(InputAbort::MainMemory);
     }
-    st.mem.set_b32s0(p, cur_tok());
-    if cur_tok() < RIGHT_BRACE_LIMIT {
-        if cur_tok() < LEFT_BRACE_LIMIT {
+    st.mem.set_b32s0(p, st.scanner.cur_tok);
+    if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
+        if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
             st.scanner.align_state -= 1;
         } else {
             st.scanner.align_state += 1;
@@ -371,9 +371,9 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
 /// `cur_cs`/`cur_tok` are raw `mod raw` globals; both `back_input`s ride
 /// [`InputAbort`].
 pub(crate) fn insert_relax_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
-    set_cur_tok(CS_TOKEN_FLAG + cur_cs());
+    st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
     back_input_in(st)?;
-    set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);
+    st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_RELAX;
     back_input_in(st)?;
     set_cur_input_index(INSERTED);
     Ok(())

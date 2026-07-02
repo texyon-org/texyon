@@ -120,9 +120,8 @@ fn pop_cond_node_in(st: &mut crate::state::EngineState) {
 
 pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, first, line,
-        set_cur_cs,
-    };
+        cur_list_mode, cur_ptr, cur_val, first, line,
+        };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, get_node_scc, scc_err};
 
@@ -160,7 +159,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             crate::scan::get_x_token_in(st)?;
             if st.scanner.cur_cmd == RELAX && st.scanner.cur_chr == NO_EXPAND_FLAG {
                 st.scanner.cur_cmd = ACTIVE_CHAR_C;
-                st.scanner.cur_chr = cur_tok() - (CS_TOKEN_FLAG + ACTIVE_BASE);
+                st.scanner.cur_chr = st.scanner.cur_tok - (CS_TOKEN_FLAG + ACTIVE_BASE);
             }
             if st.scanner.cur_cmd > ACTIVE_CHAR_C || st.scanner.cur_chr > BIGGEST_USV {
                 m = RELAX as i32;
@@ -172,7 +171,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             crate::scan::get_x_token_in(st)?;
             if st.scanner.cur_cmd == RELAX && st.scanner.cur_chr == NO_EXPAND_FLAG {
                 st.scanner.cur_cmd = ACTIVE_CHAR_C;
-                st.scanner.cur_chr = cur_tok() - (CS_TOKEN_FLAG + ACTIVE_BASE);
+                st.scanner.cur_chr = st.scanner.cur_tok - (CS_TOKEN_FLAG + ACTIVE_BASE);
             }
             if st.scanner.cur_cmd > ACTIVE_CHAR_C || st.scanner.cur_chr > BIGGEST_USV {
                 st.scanner.cur_cmd = RELAX;
@@ -197,8 +196,8 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                     break;
                 }
             }
-            if cur_tok() >= OTHER_TOKEN + 60 && cur_tok() <= OTHER_TOKEN + 62 {
-                r = (cur_tok() - OTHER_TOKEN) as u8;
+            if st.scanner.cur_tok >= OTHER_TOKEN + 60 && st.scanner.cur_tok <= OTHER_TOKEN + 62 {
+                r = (st.scanner.cur_tok - OTHER_TOKEN) as u8;
             } else {
                 crate::output::error_here_with_diagnostic_in(
                     st,
@@ -270,7 +269,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             save_scanner_status = st.scanner.scanner_status;
             st.scanner.scanner_status = NORMAL_SCAN;
             crate::scan::get_next_scc(st)?;
-            n = cur_cs();
+            n = st.scanner.cur_cs;
             p = st.scanner.cur_cmd as i32;
             q = st.scanner.cur_chr;
             crate::scan::get_next_scc(st)?;
@@ -325,13 +324,13 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             st.scanner.is_in_csname = true;
             loop {
                 crate::scan::get_x_token_in(st)?;
-                if cur_cs() == 0 {
+                if st.scanner.cur_cs == 0 {
                     q = get_avail_scc(st)?;
                     st.mem.set_b32s1(p, q);
-                    st.mem.set_b32s0(q, cur_tok());
+                    st.mem.set_b32s0(q, st.scanner.cur_tok);
                     p = q;
                 }
-                if cur_cs() != 0 {
+                if st.scanner.cur_cs != 0 {
                     break;
                 }
             }
@@ -378,9 +377,9 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                 )
                 .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
             };
-            set_cur_cs(cur_cs_val);
+            st.scanner.cur_cs = cur_cs_val;
             crate::mem::flush_list(&mut st.mem, n);
-            b = st.eqtb.b16s1(cur_cs()) != UNDEFINED_CS as u16;
+            b = st.eqtb.b16s1(st.scanner.cur_cs) != UNDEFINED_CS as u16;
             st.scanner.is_in_csname = e;
         }
         IF_IN_CSNAME_CODE => {
@@ -456,7 +455,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             st.scanner.scanner_status = NORMAL_SCAN;
             crate::scan::get_next_scc(st)?;
             st.scanner.scanner_status = save_scanner_status;
-            let cs = cur_cs();
+            let cs = st.scanner.cur_cs;
             m = if cs < HASH_BASE {
                 crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, cs - SINGLE_BASE)
                     .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
@@ -529,7 +528,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
     }
 }
 pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
-    use crate::globals::{cur_cs, cur_ptr, cur_val, set_cur_val};
+    use crate::globals::{cur_ptr, cur_val, set_cur_val};
     use crate::mem::TEX_NULL;
     use crate::scan::{scc_err, str_toks_scc};
 
@@ -1030,8 +1029,8 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             crate::output::print_roman_int_in(st, cur_val());
         }
         STRING_CODE_CT => {
-            if cur_cs() != 0 {
-                crate::output::sprint_cs_in(st, cur_cs());
+            if st.scanner.cur_cs != 0 {
+                crate::output::sprint_cs_in(st, st.scanner.cur_cs);
             } else {
                 crate::output::print_char_in(st, st.scanner.cur_chr);
             }
@@ -1241,9 +1240,9 @@ fn make_string_overflow_scc(st: &crate::state::EngineState) -> SccAbort {
 }
 pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_cs, cur_input, cur_ptr, cur_tok, cur_val, first, hash_s1,
-        set_cur_cs, set_cur_input_loc, set_cur_input_start, set_cur_ptr,
-        set_cur_tok, set_cur_val,
+        cur_input, cur_ptr, cur_val, first, hash_s1,
+        set_cur_input_loc, set_cur_input_start, set_cur_ptr,
+        set_cur_val,
     };
     use crate::scan::{get_avail_scc, scc_err};
 
@@ -1323,14 +1322,14 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                 EXPAND_AFTER => {
                     if st.scanner.cur_chr == 0 {
                         crate::scan::get_token_in(st)?;
-                        let t = cur_tok();
+                        let t = st.scanner.cur_tok;
                         crate::scan::get_token_in(st)?;
                         if st.scanner.cur_cmd > MAX_COMMAND {
                             expand_in(st)?;
                         } else {
                             crate::input::back_input_in(st)?;
                         }
-                        set_cur_tok(t);
+                        st.scanner.cur_tok = t;
                         crate::input::back_input_in(st)?;
                     } else {
                         // \unless
@@ -1361,7 +1360,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         st.scanner.scanner_status = NORMAL_SCANNER;
                         crate::scan::get_token_in(st)?;
                         st.scanner.scanner_status = save_scanner_status;
-                        let t = cur_tok();
+                        let t = st.scanner.cur_tok;
                         crate::input::back_input_in(st)?;
                         if t >= CS_TOKEN_FLAG {
                             let p = get_avail_scc(st)?;
@@ -1376,26 +1375,26 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         st.scanner.scanner_status = NORMAL_SCANNER;
                         crate::scan::get_token_in(st)?;
                         st.scanner.scanner_status = save_scanner_status;
-                        let cs = if cur_cs() < HASH_BASE {
+                        let cs = if st.scanner.cur_cs < HASH_BASE {
                             crate::hash::prim_lookup(
                                 &mut st.eqtb,
                                 &mut st.strings,
-                                cur_cs() - SINGLE_BASE,
+                                st.scanner.cur_cs - SINGLE_BASE,
                             )
                             .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?
                         } else {
-                            let s = hash_s1(cur_cs());
+                            let s = hash_s1(st.scanner.cur_cs);
                             crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)
                                 .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?
                         };
-                        set_cur_cs(cs);
-                        if cur_cs() != UNDEFINED_PRIMITIVE {
-                            let t = st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8;
+                        st.scanner.cur_cs = cs;
+                        if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
+                            let t = st.eqtb.b16s1(PRIM_EQTB_BASE + st.scanner.cur_cs) as u8;
                             if t > MAX_COMMAND {
                                 st.scanner.cur_cmd = t;
-                                st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + cur_cs());
-                                set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr);
-                                set_cur_cs(0);
+                                st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + st.scanner.cur_cs);
+                                st.scanner.cur_tok = st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
+                                st.scanner.cur_cs = 0;
                                 continue 'reswitch;
                             } else {
                                 crate::input::back_input_in(st)?;
@@ -1415,13 +1414,13 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                     st.scanner.is_in_csname = true;
                     loop {
                         crate::scan::get_x_token_in(st)?;
-                        if cur_cs() == 0 {
+                        if st.scanner.cur_cs == 0 {
                             let q = get_avail_scc(st)?;
                             st.mem.set_b32s1(p, q);
-                            st.mem.set_b32s0(q, cur_tok());
+                            st.mem.set_b32s0(q, st.scanner.cur_tok);
                             p = q;
                         }
-                        if cur_cs() != 0 {
+                        if st.scanner.cur_cs != 0 {
                             break;
                         }
                     }
@@ -1473,21 +1472,22 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                     } else {
                         SINGLE_BASE + st.input.buffer[first() as usize]
                     };
-                    set_cur_cs(cs);
+                    st.scanner.cur_cs = cs;
                     crate::mem::flush_list(&mut st.mem, r);
-                    if st.eqtb.b16s1(cur_cs()) == UNDEFINED_CS_CMD {
+                    if st.eqtb.b16s1(st.scanner.cur_cs) == UNDEFINED_CS_CMD {
+                        let cur_cs = st.scanner.cur_cs;
                         let s = &mut *st;
                         crate::save::eq_define(
                             &mut s.eqtb,
                             &mut s.save_stack,
                             &mut s.mem,
                             &mut s.scanner,
-                            cur_cs(),
+                            cur_cs,
                             RELAX as u16,
                             TOO_BIG_USV,
                         );
                     }
-                    set_cur_tok(cur_cs() + CS_TOKEN_FLAG);
+                    st.scanner.cur_tok = st.scanner.cur_cs + CS_TOKEN_FLAG;
                     crate::input::back_input_in(st)?;
                 }
                 CONVERT_CMD => {
@@ -1566,7 +1566,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
         } else if st.scanner.cur_cmd < END_TEMPLATE {
             macro_call_in(st)?;
         } else {
-            set_cur_tok(CS_TOKEN_FLAG + FROZEN_ENDV);
+            st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_ENDV;
             crate::input::back_input_in(st)?;
         }
         break 'reswitch;
@@ -1582,9 +1582,8 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
 }
 pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_cs, cur_input, cur_tok, set_cur_input_loc, set_cur_input_name,
-        set_cur_tok,
-    };
+        cur_input, set_cur_input_loc, set_cur_input_name,
+        };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, scc_err};
 
@@ -1599,7 +1598,7 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
 
     let save_scanner_status = st.scanner.scanner_status;
     let save_warning_index = st.scanner.warning_index;
-    st.scanner.warning_index = cur_cs();
+    st.scanner.warning_index = st.scanner.cur_cs;
     let ref_count = st.scanner.cur_chr;
     let mut r = st.mem.b32s1(ref_count);
     let mut n: i32 = 0;
@@ -1646,7 +1645,7 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
         if st.mem.b32s0(r) != END_MATCH_TOKEN {
             st.scanner.scanner_status = MATCHING;
             let mut unbalance: i32 = 0;
-            st.scanner.long_state = st.eqtb.b16s1(cur_cs()) as u8;
+            st.scanner.long_state = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
             if st.scanner.long_state >= OUTER_CALL {
                 st.scanner.long_state -= 2;
             }
@@ -1672,10 +1671,10 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                 'continue_: loop {
                     crate::scan::get_token_in(st)?;
 
-                    if cur_tok() == st.mem.b32s0(r) {
+                    if st.scanner.cur_tok == st.mem.b32s0(r) {
                         r = st.mem.b32s1(r);
                         if st.mem.b32s0(r) >= MATCH_TOKEN && st.mem.b32s0(r) <= END_MATCH_TOKEN {
-                            if cur_tok() < LEFT_BRACE_LIMIT {
+                            if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
                                 st.scanner.align_state -= 1;
                             }
                             break 'continue_; // goto found
@@ -1718,7 +1717,7 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                                 let mut v = s;
                                 loop {
                                     if u == r {
-                                        if cur_tok() != st.mem.b32s0(v) {
+                                        if st.scanner.cur_tok != st.mem.b32s0(v) {
                                             break; // goto done
                                         } else {
                                             r = st.mem.b32s1(v);
@@ -1741,7 +1740,7 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                         }
                     }
 
-                    if cur_tok() == st.input.par_token && st.scanner.long_state != LONG_CALL {
+                    if st.scanner.cur_tok == st.input.par_token && st.scanner.long_state != LONG_CALL {
                         if st.scanner.long_state == CALL {
                             crate::errors::runaway_in(st);
                             crate::output::error_here_with_diagnostic_in(
@@ -1771,8 +1770,8 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                         break 'mac; // goto exit
                     }
 
-                    if cur_tok() < RIGHT_BRACE_LIMIT {
-                        if cur_tok() < LEFT_BRACE_LIMIT {
+                    if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
+                        if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
                             // left brace: gather a braced group
                             unbalance = 1;
                             loop {
@@ -1785,12 +1784,12 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                                     get_avail_scc(st)?
                                 };
                                 st.mem.set_b32s1(p, q);
-                                st.mem.set_b32s0(q, cur_tok());
+                                st.mem.set_b32s0(q, st.scanner.cur_tok);
                                 p = q;
 
                                 crate::scan::get_token_in(st)?;
 
-                                if cur_tok() == st.input.par_token
+                                if st.scanner.cur_tok == st.input.par_token
                                     && st.scanner.long_state != LONG_CALL
                                 {
                                     if st.scanner.long_state == CALL {
@@ -1820,8 +1819,8 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                                     break 'mac; // goto exit
                                 }
 
-                                if cur_tok() < RIGHT_BRACE_LIMIT {
-                                    if cur_tok() < LEFT_BRACE_LIMIT {
+                                if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
+                                    if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
                                         unbalance += 1;
                                     } else {
                                         unbalance -= 1;
@@ -1835,7 +1834,7 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                             rbrace_ptr = p;
                             let q = get_avail_scc(st)?;
                             st.mem.set_b32s1(p, q);
-                            st.mem.set_b32s0(q, cur_tok());
+                            st.mem.set_b32s0(q, st.scanner.cur_tok);
                             p = q;
                         } else {
                             // right brace with no matching left brace (413)
@@ -1864,14 +1863,14 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                                     .as_ptr();
                             st.scanner.align_state += 1;
                             st.scanner.long_state = CALL;
-                            set_cur_tok(st.input.par_token);
+                            st.scanner.cur_tok = st.input.par_token;
                             let oc = crate::input::ins_error_in(st)?;
                             scc_err(oc)?;
                             continue 'continue_; // goto continue_
                         }
                     } else {
                         // 411: non-brace token
-                        if cur_tok() == SPACE_TOKEN
+                        if st.scanner.cur_tok == SPACE_TOKEN
                             && st.mem.b32s0(r) <= END_MATCH_TOKEN
                             && st.mem.b32s0(r) >= MATCH_TOKEN
                         {
@@ -1879,7 +1878,7 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                         }
                         let q = get_avail_scc(st)?;
                         st.mem.set_b32s1(p, q);
-                        st.mem.set_b32s0(q, cur_tok());
+                        st.mem.set_b32s0(q, st.scanner.cur_tok);
                         p = q;
                     }
 

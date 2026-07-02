@@ -8,7 +8,7 @@ use crate::consts::{
 use crate::ext::apply_tfm_font_mapping;
 
 use crate::globals::{
-    cur_list_mode, cur_tok, name_of_file, set_cur_cs, set_cur_list_mode,
+    cur_list_mode, name_of_file, set_cur_list_mode,
     set_temp_ptr, temp_ptr,
 };
 use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode};
@@ -2754,11 +2754,11 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
 
     let old_mode = cur_list_mode();
     set_cur_list_mode(0);
-    set_cur_cs(st.shipout.write_loc);
+    st.scanner.cur_cs = st.shipout.write_loc;
     crate::scan::scan_toks_in(st, false, true)?;
     crate::scan::get_token_in(st)?;
 
-    if cur_tok() != CS_TOKEN_FLAG + END_WRITE {
+    if st.scanner.cur_tok != CS_TOKEN_FLAG + END_WRITE {
         crate::output::error_here_with_diagnostic_in(st, c"Unbalanced write command".as_ptr());
         crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
         st.errors.help_ptr = 2;
@@ -2768,7 +2768,7 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
         ship_err(crate::errors::error_in(st))?;
         loop {
             crate::scan::get_token_in(st)?;
-            if cur_tok() == CS_TOKEN_FLAG + END_WRITE {
+            if st.scanner.cur_tok == CS_TOKEN_FLAG + END_WRITE {
                 break;
             }
         }

@@ -3,7 +3,7 @@
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{cur_val, first};
 use crate::globals::{
-    cur_cs, cur_input, set_cur_cs, set_cur_input_limit,
+    cur_input, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
 };
 use crate::input::InputAbort;
@@ -1378,10 +1378,10 @@ pub(crate) fn scan_and_pack_name_in(st: &mut crate::state::EngineState) -> Resul
 pub(crate) fn scan_file_name_braced_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let save_scanner_status = st.scanner.scanner_status;
     let save_def_ref = st.scanner.def_ref;
-    let save_cur_cs = cur_cs();
+    let save_cur_cs = st.scanner.cur_cs;
     let save_stop_at_space = st.scanner.stop_at_space;
 
-    set_cur_cs(st.scanner.warning_index);
+    st.scanner.cur_cs = st.scanner.warning_index;
     crate::scan::scan_toks_in(st, false, true)?;
 
     st.shipout.old_setting = st.shipout.selector as u8;
@@ -1396,7 +1396,7 @@ pub(crate) fn scan_file_name_braced_in(st: &mut crate::state::EngineState) -> Re
     let dr = st.scanner.def_ref;
     crate::mem::delete_token_ref(&mut st.mem, dr);
     st.scanner.def_ref = save_def_ref;
-    set_cur_cs(save_cur_cs);
+    st.scanner.cur_cs = save_cur_cs;
     st.scanner.scanner_status = save_scanner_status;
 
     begin_name_in(st);
@@ -1411,7 +1411,7 @@ pub(crate) fn scan_file_name_braced_in(st: &mut crate::state::EngineState) -> Re
 }
 pub(crate) fn scan_file_name_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let save_warning_index = st.scanner.warning_index;
-    st.scanner.warning_index = cur_cs();
+    st.scanner.warning_index = st.scanner.cur_cs;
 
     loop {
         crate::scan::get_x_token_in(st)?;

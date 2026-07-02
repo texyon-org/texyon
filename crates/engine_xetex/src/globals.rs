@@ -87,9 +87,7 @@ mod raw {
         // font_info moved to EngineState.fonts.font_info (Vec<MemoryWord>).
         // xdv_buffer moved to EngineState.fonts.xdv_buffer.
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
-        pub(super) static mut cur_cs: i32;
         // Current token (xetex-xetexd.h:502; token encoded as int32).
-        pub(super) static mut cur_tok: i32;
         // align_state moved to EngineState.scanner (scalar).
         // Current character code (xetex-xetexd.h:500).
         // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
@@ -427,26 +425,6 @@ pub(crate) fn set_temp_ptr(v: i32) {
 // cur_chr / cur_val / cur_name / cur_area / cur_ext
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn cur_cs() -> i32 {
-    unsafe { raw::cur_cs }
-}
-#[inline]
-pub(crate) fn set_cur_cs(v: i32) {
-    unsafe {
-        raw::cur_cs = v;
-    }
-}
-#[inline]
-pub(crate) fn cur_tok() -> i32 {
-    unsafe { raw::cur_tok }
-}
-#[inline]
-pub(crate) fn set_cur_tok(v: i32) {
-    unsafe {
-        raw::cur_tok = v;
-    }
-}
 #[inline]
 pub(crate) fn cur_val() -> i32 {
     unsafe { raw::cur_val }

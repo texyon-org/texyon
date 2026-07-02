@@ -2,7 +2,7 @@
 use crate::state::EngineState;
 
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
-use crate::globals::{cur_cs, cur_val, set_cur_cs, set_cur_val};
+use crate::globals::{cur_val, set_cur_val};
 use crate::main_control::{mc_propagate_error, new_graf_in};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::pic::load_picture_in;
@@ -2720,9 +2720,9 @@ pub(crate) fn do_extension_in(
         }
 
         WRITE_NODE_DE => {
-            let k = cur_cs();
+            let k = st.scanner.cur_cs;
             do_new_write_whatsit_in(st, WRITE_NODE_SIZE_DE)?;
-            set_cur_cs(k);
+            st.scanner.cur_cs = k;
             crate::scan::scan_toks_in(st, false, false)?;
             st.mem
                 .set_b32s1(crate::globals::cur_list_tail() + 1, st.scanner.def_ref);
