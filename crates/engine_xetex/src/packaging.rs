@@ -1451,7 +1451,6 @@ fn find_box_register(
     eqtb: &EqtbState,
     n: i32,
 ) -> Result<i32, NodeRecycleAbort> {
-    use crate::globals::cur_ptr;
     use crate::mem::TEX_NULL;
 
     scanner.cur_val = n;
@@ -1462,10 +1461,10 @@ fn find_box_register(
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        if cur_ptr() == TEX_NULL {
+        if scanner.cur_ptr == TEX_NULL {
             Ok(TEX_NULL)
         } else {
-            Ok(mem.b32s1(cur_ptr() + 1))
+            Ok(mem.b32s1(scanner.cur_ptr + 1))
         }
     }
 }
@@ -1480,8 +1479,8 @@ fn reset_vsplit_marks(
     flush_node_list(mem, disc).map_err(NodeRecycleAbort::Confusion)?;
     scanner.disc_ptr[VSPLIT_CODE_VS] = TEX_NULL;
 
-    if scanner.sa_root[MARK_VAL_VS] != TEX_NULL && do_marks(mem, 0, 0, scanner.sa_root[MARK_VAL_VS])
-    {
+    let vsr = scanner.sa_root[MARK_VAL_VS];
+    if vsr != TEX_NULL && do_marks(mem, scanner, 0, 0, vsr) {
         scanner.sa_root[MARK_VAL_VS] = TEX_NULL;
     }
 
@@ -1535,7 +1534,6 @@ fn collect_split_mark(
     scanner: &mut ScannerState,
     mark: NodePtr<MarkNode>,
 ) -> Result<(), NodeRecycleAbort> {
-    use crate::globals::cur_ptr;
     use crate::mem::TEX_NULL;
 
     let mark_class = mark.mark_class(mem);
@@ -1545,14 +1543,14 @@ fn collect_split_mark(
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        if mem.b32s1(cur_ptr() + 2) == TEX_NULL {
-            mem.set_b32s1(cur_ptr() + 2, mark_ptr);
+        if mem.b32s1(scanner.cur_ptr + 2) == TEX_NULL {
+            mem.set_b32s1(scanner.cur_ptr + 2, mark_ptr);
             mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
         } else {
-            let old = mem.b32s0(cur_ptr() + 3);
+            let old = mem.b32s0(scanner.cur_ptr + 3);
             crate::mem::delete_token_ref(mem, old);
         }
-        mem.set_b32s0(cur_ptr() + 3, mark_ptr);
+        mem.set_b32s0(scanner.cur_ptr + 3, mark_ptr);
         mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
     } else if scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] == TEX_NULL {
         scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] = mark_ptr;
@@ -1603,7 +1601,6 @@ fn store_split_remainder(
     eqtb: &mut EqtbState,
     q: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    use crate::globals::cur_ptr;
     use crate::mem::TEX_NULL;
 
     if scanner.cur_val < 256 {
@@ -1613,10 +1610,10 @@ fn store_split_remainder(
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        if cur_ptr() != TEX_NULL {
-            mem.set_b32s1(cur_ptr() + 1, q);
-            mem.set_b32s0(cur_ptr() + 1, mem.b32s0(cur_ptr() + 1) + 1);
-            crate::save::delete_sa_ref(mem, scanner, cur_ptr());
+        if scanner.cur_ptr != TEX_NULL {
+            mem.set_b32s1(scanner.cur_ptr + 1, q);
+            mem.set_b32s0(scanner.cur_ptr + 1, mem.b32s0(scanner.cur_ptr + 1) + 1);
+            crate::save::delete_sa_ref(mem, scanner, scanner.cur_ptr);
         }
     }
     Ok(())
@@ -1966,8 +1963,13 @@ pub fn prune_page_top(
 /// global (safe under the borrow). No cold abort path. Free-function calls that
 /// take a `mem`-derived argument precompute it into a local to avoid overlapping
 /// the `&mut mem` reborrow.
-pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> bool {
-    use crate::globals::{cur_ptr, set_cur_ptr};
+pub fn do_marks(
+    mem: &mut crate::state::MemState,
+    scanner: &mut crate::state::ScannerState,
+    a: i16,
+    l: i16,
+    q: i32,
+) -> bool {
     use crate::mem::TEX_NULL;
     let mut q = q;
     // SAFETY: `do_marks` is only entered (and recursed) with a real
@@ -1978,10 +1980,10 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
 
     if l < 4 {
         for i in 0i16..=15 {
-            set_cur_ptr(node.child(mem, i as i32).0);
+            scanner.cur_ptr = node.child(mem, i as i32).0;
 
-            let cur = cur_ptr();
-            if cur != TEX_NULL && do_marks(mem, a, l + 1, cur) {
+            let cur = scanner.cur_ptr;
+            if cur != TEX_NULL && do_marks(mem, scanner, a, l + 1, cur) {
                 node.set_child(mem, i as i32, MemPtr::NULL);
                 // index node populated-child reference count--
                 node.set_ref_count(mem, node.ref_count(mem) - 1);
@@ -2032,10 +2034,10 @@ pub fn do_marks(mem: &mut crate::state::MemState, a: i16, l: i16, q: i32) -> boo
             }
             DESTROY_MARKS_DM => {
                 for i in TOP_MARK_CODE_DM..=SPLIT_BOT_MARK_CODE_DM {
-                    set_cur_ptr(node.child(mem, i as i32).0);
+                    scanner.cur_ptr = node.child(mem, i as i32).0;
 
-                    if cur_ptr() != TEX_NULL {
-                        crate::mem::delete_token_ref(mem, cur_ptr());
+                    if scanner.cur_ptr != TEX_NULL {
+                        crate::mem::delete_token_ref(mem, scanner.cur_ptr);
                         node.set_child(mem, i as i32, MemPtr::NULL);
                     }
                 }

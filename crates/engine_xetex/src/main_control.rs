@@ -18,7 +18,7 @@ use crate::consts::{
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    cur_list_mode, cur_ptr, set_cur_input_index, set_cur_ptr, };
+    cur_list_mode, set_cur_input_index, };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
 use crate::node::{AnyNode, GlueSpecNode, NodePtr};
@@ -1632,10 +1632,10 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         } else {
             let __cv18 = st.scanner.cur_val;
             crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv18, false);
-            if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
+            if st.scanner.cur_ptr == crate::mem::TEX_NULL {
                 crate::mem::TEX_NULL
             } else {
-                st.mem.b32s1(crate::globals::cur_ptr() + 1)
+                st.mem.b32s1(st.scanner.cur_ptr + 1)
             }
         };
 
@@ -1675,7 +1675,7 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
             } else {
                 let __cv17 = st.scanner.cur_val;
                 crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv17, false);
-                let cp = crate::globals::cur_ptr();
+                let cp = st.scanner.cur_ptr;
                 if cp != crate::mem::TEX_NULL {
                     st.mem.set_b32s1(cp + 1, crate::mem::TEX_NULL);
                     let rc = st.mem.b32s0(cp + 1) + 1;
@@ -2286,7 +2286,7 @@ pub(crate) fn box_end_in(
     box_context: i32,
 ) -> Result<(), MainControlAbort> {
     use crate::globals::{
-        cur_list_mode, cur_list_tail, cur_ptr, set_cur_list_aux_b32s0, set_cur_list_tail,
+        cur_list_mode, cur_list_tail, set_cur_list_aux_b32s0, set_cur_list_tail,
         };
     use crate::mem::TEX_NULL;
 
@@ -2400,7 +2400,7 @@ pub(crate) fn box_end_in(
             if r == crate::mem::ALLOC_FAILED {
                 return Err(crate::scan::NodeRecycleAbort::Overflow.into());
             }
-            let p = cur_ptr();
+            let p = st.scanner.cur_ptr;
             let result = if a >= 4 {
                 crate::save::gsa_def(&mut st.mem, p, cb)
             } else {
@@ -2461,7 +2461,7 @@ pub(crate) fn begin_box_in(
     box_context: i32,
 ) -> Result<(), MainControlAbort> {
     use crate::globals::{
-        cur_list_head, cur_list_mode, cur_list_tail, cur_ptr, set_cur_list_aux_b32s0,
+        cur_list_head, cur_list_mode, cur_list_tail, set_cur_list_aux_b32s0,
         set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_tail,
     };
     use crate::mem::TEX_NULL;
@@ -2498,7 +2498,7 @@ pub(crate) fn begin_box_in(
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                 }
-                let cp = cur_ptr();
+                let cp = st.scanner.cur_ptr;
                 st.scanner.cur_box = if cp == TEX_NULL {
                     TEX_NULL
                 } else {
@@ -2512,7 +2512,7 @@ pub(crate) fn begin_box_in(
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                 }
-                let cp = cur_ptr();
+                let cp = st.scanner.cur_ptr;
                 if cp != TEX_NULL {
                     st.mem.set_b32s1(cp + 1, TEX_NULL);
                     st.mem.set_b32s0(cp + 1, st.mem.b32s0(cp + 1) + 1);
@@ -2531,7 +2531,7 @@ pub(crate) fn begin_box_in(
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                 }
-                let cp = cur_ptr();
+                let cp = st.scanner.cur_ptr;
                 if cp == TEX_NULL {
                     TEX_NULL
                 } else {
@@ -3214,10 +3214,10 @@ pub(crate) fn alter_box_dimen_in(
     } else {
         let __cv13 = st.scanner.cur_val;
         crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv13, false);
-        if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
+        if st.scanner.cur_ptr == crate::mem::TEX_NULL {
             crate::mem::TEX_NULL
         } else {
-            st.mem.b32s1(crate::globals::cur_ptr() + 1)
+            st.mem.b32s1(st.scanner.cur_ptr + 1)
         }
     };
     crate::scan::scan_optional_equals_in(st)?;
@@ -4022,7 +4022,7 @@ pub(crate) fn do_register_command_in(
                     __cv12,
                     true,
                 );
-                (cur_ptr(), p, true)
+                (st.scanner.cur_ptr, p, true)
             } else {
                 let l = match p {
                     INT_VAL => st.scanner.cur_val + COUNT_BASE,
@@ -5100,7 +5100,7 @@ fn inter_char_boundary_after_space_action(
         sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
         false,
     );
-    let cur_ptr = crate::globals::cur_ptr();
+    let cur_ptr = st.scanner.cur_ptr;
     if cur_ptr == crate::mem::TEX_NULL {
         return InterCharInputAction::None;
     }
@@ -5149,7 +5149,7 @@ fn inter_char_before_current_char_action(
         );
     }
 
-    let cur_ptr = crate::globals::cur_ptr();
+    let cur_ptr = st.scanner.cur_ptr;
     if cur_ptr == crate::mem::TEX_NULL {
         return InterCharInputAction::None;
     }
@@ -5268,10 +5268,10 @@ pub(crate) unsafe fn main_control_main_loop_in(
 ) -> Result<bool, MainControlAbort> {
     use crate::globals::{
         bchar, cancel_boundary, cur_l, cur_list_aux_b32s0, cur_list_aux_b32s1,
-        cur_list_head, cur_list_mode, cur_list_tail, cur_ptr, cur_q, cur_r, ins_disc, lft_hit,
+        cur_list_head, cur_list_mode, cur_list_tail, cur_q, cur_r, ins_disc, lft_hit,
         lig_stack, ligature_present, main_f, main_h, main_p, main_pp, main_ppp, prev_class, rt_hit,
         set_bchar, set_cancel_boundary, set_cur_l, set_cur_list_aux_b32s0,
-        set_cur_list_tail, set_cur_ptr, set_cur_q, set_cur_r, set_false_bchar, set_ins_disc,
+        set_cur_list_tail, set_cur_q, set_cur_r, set_false_bchar, set_ins_disc,
         set_lft_hit, set_lig_stack, set_ligature_present, set_main_f, set_main_h, set_main_p,
         set_main_pp, set_main_ppp, set_main_s, set_prev_class, set_rt_hit, set_space_class,
         space_class,
@@ -5342,7 +5342,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 set_cur_list_aux_b32s0(ms);
             }
 
-            set_cur_ptr(TEX_NULL);
+            st.scanner.cur_ptr = TEX_NULL;
             set_space_class(sf / 65536);
             let sc = space_class();
 
@@ -5808,7 +5808,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
         }
 
         // Exit: cur_ptr set iff inter-char token injected
-        return Ok(cur_ptr() != TEX_NULL);
+        return Ok(st.scanner.cur_ptr != TEX_NULL);
     }
 
     // =========================================================================
@@ -5831,7 +5831,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
         set_cur_list_aux_b32s0(ms);
     }
 
-    set_cur_ptr(TEX_NULL);
+    st.scanner.cur_ptr = TEX_NULL;
     set_space_class(sf / 65536);
     let sc = space_class();
 
@@ -6247,7 +6247,7 @@ unsafe fn do_lookahead(
 ) -> Result<bool, MainControlAbort> {
     use crate::globals::{
         bchar, cur_list_aux_b32s0, false_bchar, main_f, prev_class, set_bchar,
-        set_cur_list_aux_b32s0, set_cur_ptr, set_cur_r, set_lig_stack, set_prev_class,
+        set_cur_list_aux_b32s0, set_cur_r, set_lig_stack, set_prev_class,
         set_space_class, space_class,
     };
 
@@ -6294,7 +6294,7 @@ unsafe fn do_lookahead(
     } else {
         set_cur_list_aux_b32s0(ms);
     }
-    set_cur_ptr(crate::mem::TEX_NULL);
+    st.scanner.cur_ptr = crate::mem::TEX_NULL;
     set_space_class(sf / 65536);
     let sc = space_class();
 
@@ -7151,7 +7151,7 @@ pub(crate) fn prefixed_command_in(
                                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                                 }
                                 st.mem
-                                    .set_b32s0(cur_ptr() + 1, st.mem.b32s0(cur_ptr() + 1) + 1);
+                                    .set_b32s0(st.scanner.cur_ptr + 1, st.mem.b32s0(st.scanner.cur_ptr + 1) + 1);
 
                                 if j == TOK_VAL {
                                     j = TOKS_REGISTER;
@@ -7159,7 +7159,7 @@ pub(crate) fn prefixed_command_in(
                                     j = REGISTER;
                                 }
 
-                                pc_define(st, a >= 4, p, j as u16, cur_ptr())?;
+                                pc_define(st, a >= 4, p, j as u16, st.scanner.cur_ptr)?;
                             } else {
                                 match n {
                                     COUNT_DEF_CODE => {
@@ -7258,7 +7258,7 @@ pub(crate) fn prefixed_command_in(
                             if found == crate::mem::ALLOC_FAILED {
                                 return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                             }
-                            st.scanner.cur_chr = cur_ptr();
+                            st.scanner.cur_chr = st.scanner.cur_ptr;
                             e = true;
                         } else {
                             st.scanner.cur_chr = TOKS_BASE + st.scanner.cur_val;
@@ -7268,20 +7268,21 @@ pub(crate) fn prefixed_command_in(
                     }
                 } else if st.scanner.cur_chr == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
                     crate::scan::scan_char_class_not_ignored_in(st)?;
-                    set_cur_ptr(st.scanner.cur_val);
+                    st.scanner.cur_ptr = st.scanner.cur_val;
                     crate::scan::scan_char_class_not_ignored_in(st)?;
                     let __cv5 = st.scanner.cur_val;
+                    let __cp5 = st.scanner.cur_ptr;
                     let found = crate::save::find_sa_element(
                         &mut st.mem,
                         &mut st.scanner,
                         INTER_CHAR_VAL as u16,
-                        cur_ptr() * CHAR_CLASS_LIMIT + __cv5,
+                        __cp5 * CHAR_CLASS_LIMIT + __cv5,
                         true,
                     );
                     if found == crate::mem::ALLOC_FAILED {
                         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                     }
-                    st.scanner.cur_chr = cur_ptr();
+                    st.scanner.cur_chr = st.scanner.cur_ptr;
                     e = true;
                 }
 
@@ -7312,10 +7313,10 @@ pub(crate) fn prefixed_command_in(
                                     __cv4,
                                     false,
                                 );
-                                if cur_ptr() == TEX_NULL {
+                                if st.scanner.cur_ptr == TEX_NULL {
                                     q = TEX_NULL;
                                 } else {
-                                    q = st.mem.b32s1(cur_ptr() + 1);
+                                    q = st.mem.b32s1(st.scanner.cur_ptr + 1);
                                 }
                             }
                         } else {
@@ -7323,20 +7324,21 @@ pub(crate) fn prefixed_command_in(
                         }
                     } else if st.scanner.cur_chr == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
                         crate::scan::scan_char_class_not_ignored_in(st)?;
-                        set_cur_ptr(st.scanner.cur_val);
+                        st.scanner.cur_ptr = st.scanner.cur_val;
                         crate::scan::scan_char_class_not_ignored_in(st)?;
                         let __cv3 = st.scanner.cur_val;
+                        let __cp3 = st.scanner.cur_ptr;
                         crate::save::find_sa_element(
                             &mut st.mem,
                             &mut st.scanner,
                             INTER_CHAR_VAL as u16,
-                            cur_ptr() * CHAR_CLASS_LIMIT + __cv3,
+                            __cp3 * CHAR_CLASS_LIMIT + __cv3,
                             false,
                         );
-                        if cur_ptr() == TEX_NULL {
+                        if st.scanner.cur_ptr == TEX_NULL {
                             q = TEX_NULL;
                         } else {
-                            q = st.mem.b32s1(cur_ptr() + 1);
+                            q = st.mem.b32s1(st.scanner.cur_ptr + 1);
                         }
                     } else {
                         q = st.eqtb.b32s1(st.scanner.cur_chr);

@@ -3544,10 +3544,10 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(ShowWhateverAbort::MainMemoryOverflow);
                 }
-                if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
+                if st.scanner.cur_ptr == crate::mem::TEX_NULL {
                     crate::mem::TEX_NULL
                 } else {
-                    st.mem.b32s1(crate::globals::cur_ptr() + 1)
+                    st.mem.b32s1(st.scanner.cur_ptr + 1)
                 }
             };
             crate::output::begin_diagnostic_in(st);

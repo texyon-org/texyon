@@ -105,7 +105,6 @@ mod raw {
 
         // SA trie cursor — scratch pointer used during SA node traversal/allocation
         // (xetex-xetexd.h:710; xetex-ini.c:336).
-        pub(super) static mut cur_ptr: i32;
 
         // `var_used` / `dyn_used` memory-usage counters moved to
         // EngineState.mem (MemState) with the `mem` arena. (session 58)
@@ -633,18 +632,6 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 // cur_ptr / sa_null
 // ---------------------------------------------------------------------------
 
-/// Returns `cur_ptr` — SA trie traversal cursor (xetex-xetexd.h:710).
-#[inline]
-pub(crate) fn cur_ptr() -> i32 {
-    unsafe { raw::cur_ptr }
-}
-/// Sets `cur_ptr`.
-#[inline]
-pub(crate) fn set_cur_ptr(v: i32) {
-    unsafe {
-        raw::cur_ptr = v;
-    }
-}
 // ---------------------------------------------------------------------------
 // shown_mode
 // ---------------------------------------------------------------------------

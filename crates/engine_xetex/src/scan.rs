@@ -28,8 +28,7 @@ use crate::errors::int_error_in;
 use crate::expand::{expand_in, macro_call_in};
 use crate::globals::{
     cur_list, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
-    cur_ptr, set_cur_ptr,
-};
+    };
 use crate::output::capture_to_diagnostic_in;
 use crate::output::error_here_with_diagnostic_in;
 use crate::output::print_cmd_chr_in;
@@ -4138,10 +4137,10 @@ pub(crate) fn scan_something_internal_in(
                                     __cv25,
                                     false,
                                 );
-                                if cur_ptr() == TEX_NULL {
+                                if st.scanner.cur_ptr == TEX_NULL {
                                     st.scanner.cur_val = TEX_NULL;
                                 } else {
-                                    st.scanner.cur_val = st.mem.b32s1(cur_ptr() + 1);
+                                    st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
                                 }
                             }
                         } else {
@@ -4149,20 +4148,21 @@ pub(crate) fn scan_something_internal_in(
                         }
                     } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
                         scan_char_class_not_ignored_in(st)?;
-                        set_cur_ptr(st.scanner.cur_val);
+                        st.scanner.cur_ptr = st.scanner.cur_val;
                         scan_char_class_not_ignored_in(st)?;
                         let __cv24 = st.scanner.cur_val;
+                        let __cp24 = st.scanner.cur_ptr;
                         crate::save::find_sa_element(
                             &mut st.mem,
                             &mut st.scanner,
                             INTER_CHAR_VAL as u16,
-                            cur_ptr() * CHAR_CLASS_LIMIT + __cv24,
+                            __cp24 * CHAR_CLASS_LIMIT + __cv24,
                             false,
                         );
-                        if cur_ptr() == TEX_NULL {
+                        if st.scanner.cur_ptr == TEX_NULL {
                             st.scanner.cur_val = TEX_NULL;
                         } else {
-                            st.scanner.cur_val = st.mem.b32s1(cur_ptr() + 1);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
                         }
                     } else {
                         st.scanner.cur_val = st.eqtb.b32s1(m);
@@ -4288,10 +4288,10 @@ pub(crate) fn scan_something_internal_in(
                 } else {
                     let __cv23 = st.scanner.cur_val;
                     crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv23, false);
-                    if cur_ptr() == TEX_NULL {
+                    if st.scanner.cur_ptr == TEX_NULL {
                         q = TEX_NULL;
                     } else {
-                        q = st.mem.b32s1(cur_ptr() + 1);
+                        q = st.mem.b32s1(st.scanner.cur_ptr + 1);
                     }
                 }
                 if q == TEX_NULL {
@@ -4363,12 +4363,12 @@ pub(crate) fn scan_something_internal_in(
                             __cv22,
                             false,
                         );
-                        if cur_ptr() == TEX_NULL {
+                        if st.scanner.cur_ptr == TEX_NULL {
                             st.scanner.cur_val = 0;
                         } else if (st.scanner.cur_val_level as i16) < GLUE_VAL {
-                            st.scanner.cur_val = st.mem.b32s1(cur_ptr() + 2);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 2);
                         } else {
-                            st.scanner.cur_val = st.mem.b32s1(cur_ptr() + 1);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
                         }
                     } else {
                         match st.scanner.cur_val_level as i16 {

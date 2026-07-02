@@ -120,7 +120,7 @@ fn pop_cond_node_in(st: &mut crate::state::EngineState) {
 
 pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_list_mode, cur_ptr, first, line,
+        cur_list_mode, first, line,
         };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, get_node_scc, scc_err};
@@ -247,10 +247,10 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             } else {
                 let __cv2 = st.scanner.cur_val;
                 crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv2, false);
-                if cur_ptr() == TEX_NULL {
+                if st.scanner.cur_ptr == TEX_NULL {
                     TEX_NULL
                 } else {
-                    NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(cur_ptr()))
+                    NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr))
                         .expect("non-null sa element")
                         .sa_ptr(&st.mem)
                         .0
@@ -529,7 +529,6 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
     }
 }
 pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
-    use crate::globals::{cur_ptr};
     use crate::mem::TEX_NULL;
     use crate::scan::{scc_err, str_toks_scc};
 
@@ -642,10 +641,10 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             } else {
                 let __cv1 = st.scanner.cur_val;
                 crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv1, false);
-                if cur_ptr() == TEX_NULL {
+                if st.scanner.cur_ptr == TEX_NULL {
                     p = TEX_NULL;
                 } else {
-                    p = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(cur_ptr()))
+                    p = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr))
                         .expect("non-null sa element")
                         .sa_ptr(&st.mem)
                         .0;
@@ -1242,9 +1241,8 @@ fn make_string_overflow_scc(st: &crate::state::EngineState) -> SccAbort {
 }
 pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_input, cur_ptr, first, hash_s1,
-        set_cur_input_loc, set_cur_input_start, set_cur_ptr,
-        };
+        cur_input, first, hash_s1,
+        set_cur_input_loc, set_cur_input_start, };
     use crate::scan::{get_avail_scc, scc_err};
 
     const TOP_BOT_MARK: u8 = 112;
@@ -1301,7 +1299,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         st.scanner.cur_val = 0;
                     }
                     if st.scanner.cur_val == 0 {
-                        set_cur_ptr(st.scanner.cur_mark[t]);
+                        st.scanner.cur_ptr = st.scanner.cur_mark[t];
                     } else {
                         let __cv0 = st.scanner.cur_val;
                         crate::save::find_sa_element(
@@ -1311,14 +1309,14 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                             __cv0,
                             false,
                         );
-                        if cur_ptr() != crate::mem::TEX_NULL {
-                            let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(cur_ptr()))
+                        if st.scanner.cur_ptr != crate::mem::TEX_NULL {
+                            let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr))
                                 .expect("non-null sa element");
-                            set_cur_ptr(sa.child(&st.mem, t as i32).0);
+                            st.scanner.cur_ptr = sa.child(&st.mem, t as i32).0;
                         }
                     }
-                    if cur_ptr() != crate::mem::TEX_NULL {
-                        crate::input::begin_token_list_in(st, cur_ptr(), MARK_TEXT_TL)?;
+                    if st.scanner.cur_ptr != crate::mem::TEX_NULL {
+                        crate::input::begin_token_list_in(st, st.scanner.cur_ptr, MARK_TEXT_TL)?;
                     }
                 }
                 EXPAND_AFTER => {

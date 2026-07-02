@@ -5,7 +5,7 @@ use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE, MAX_HALFWORD, TEX_NULL,
 };
 use crate::globals::{
-    cur_ptr, line, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_mode_line,
+    line, set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_mode_line,
     set_cur_list_tail, };
 
 // Former C module-level statics, now bridged onto EngineState.shipout
@@ -282,8 +282,9 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     }
 
     // Update extended marks
-    if st.scanner.sa_root[MARK_VAL] != TEX_NULL
-        && crate::packaging::do_marks(&mut st.mem, FIRE_UP_INIT, 0, st.scanner.sa_root[MARK_VAL])
+    let mark_root = st.scanner.sa_root[MARK_VAL];
+    if mark_root != TEX_NULL
+        && crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_INIT, 0, mark_root)
     {
         st.scanner.sa_root[MARK_VAL] = TEX_NULL;
     }
@@ -463,7 +464,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                     if r == crate::mem::ALLOC_FAILED {
                         return Err(PageBuildAbort::MainMemoryOverflow);
                     }
-                    let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(cur_ptr()))
+                    let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr))
                         .expect("find_sa_element returned a mark-class element");
                     if sa.child(&st.mem, 1).is_null() {
                         // ETEX_MARK_sa_first_mark == TEX_NULL
@@ -576,8 +577,9 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     st.mem.set_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD);
 
     // Handle extended marks after new-page setup
-    if st.scanner.sa_root[MARK_VAL] != TEX_NULL
-        && crate::packaging::do_marks(&mut st.mem, FIRE_UP_DONE, 0, st.scanner.sa_root[MARK_VAL])
+    let mark_root = st.scanner.sa_root[MARK_VAL];
+    if mark_root != TEX_NULL
+        && crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_DONE, 0, mark_root)
     {
         st.scanner.sa_root[MARK_VAL] = TEX_NULL;
     }

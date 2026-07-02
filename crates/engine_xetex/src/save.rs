@@ -5,8 +5,8 @@ use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
-    cur_input, cur_ptr, line, set_cur_input_loc, set_cur_input_start,
-    set_cur_ptr, };
+    cur_input, line, set_cur_input_loc, set_cur_input_start,
+    };
 use crate::mem_types::MemoryWord;
 
 extern "C" {
@@ -857,12 +857,12 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
 /// Allocate a new INDEX_NODE_SIZE node for the sparse-array trie.
 ///
 /// translated from xetex-xetex0.c:4111 (new_index)
-fn new_index(mem: &mut MemState, scanner: &ScannerState, i: u16, q: i32) -> i32 {
+fn new_index(mem: &mut MemState, scanner: &mut ScannerState, i: u16, q: i32) -> i32 {
     let p = crate::mem::get_node(mem, INDEX_NODE_SIZE);
     if p == crate::mem::ALLOC_FAILED {
         return p;
     }
-    set_cur_ptr(p);
+    scanner.cur_ptr = p;
     mem.set_b16s1(p, i);
     mem.set_b16s0(p, 0);
     mem.set_b32s1(p, q);
@@ -900,7 +900,7 @@ fn sa_set_child(mem: &mut MemState, q: i32, i: i32, p: i32) {
 /// Corresponds to C's "fall-through" chain lab46 → lab47 → lab48 → lab49.
 fn sa_alloc_chain(
     mem: &mut MemState,
-    scanner: &ScannerState,
+    scanner: &mut ScannerState,
     t: u16,
     n: i32,
     mut q: i32,
@@ -913,7 +913,7 @@ fn sa_alloc_chain(
             return p;
         }
         sa_set_child(mem, q, lv_i, p);
-        q = cur_ptr();
+        q = scanner.cur_ptr;
     }
     // Allocate the data (leaf) node (lab49).
     let leaf_i = levels[levels.len() - 1];
@@ -923,7 +923,7 @@ fn sa_alloc_chain(
         if p == crate::mem::ALLOC_FAILED {
             return p;
         }
-        set_cur_ptr(p);
+        scanner.cur_ptr = p;
         mem.set_word(p + 1, scanner.sa_null);
         mem.set_word(p + 2, scanner.sa_null);
         mem.set_word(p + 3, scanner.sa_null);
@@ -932,7 +932,7 @@ fn sa_alloc_chain(
         if p == crate::mem::ALLOC_FAILED {
             return p;
         }
-        set_cur_ptr(p);
+        scanner.cur_ptr = p;
         mem.set_b32s1(p + 2, 0);
         mem.set_b32s1(p + 1, n);
     } else {
@@ -940,7 +940,7 @@ fn sa_alloc_chain(
         if p == crate::mem::ALLOC_FAILED {
             return p;
         }
-        set_cur_ptr(p);
+        scanner.cur_ptr = p;
         if t <= MU_VAL {
             mem.set_b32s1(p + 1, 0);
             // GLUE_SPEC_ref_count(0)++ : mem[0].b32.s1
@@ -971,10 +971,10 @@ pub fn find_sa_element(
     let lvl = [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64];
 
     // Traversal: navigate the 4-level trie, recording parents for linking.
-    set_cur_ptr(scanner.sa_root[t as usize]);
+    scanner.cur_ptr = scanner.sa_root[t as usize];
 
     // Check root level (not_found in C).
-    if cur_ptr() == TEX_NULL {
+    if scanner.cur_ptr == TEX_NULL {
         if !w {
             return 0;
         }
@@ -982,18 +982,18 @@ pub fn find_sa_element(
         if p == crate::mem::ALLOC_FAILED {
             return p;
         }
-        scanner.sa_root[t as usize] = cur_ptr();
+        scanner.sa_root[t as usize] = scanner.cur_ptr;
         // lab46..lab49: allocate all 4 levels from this root.
-        let p = sa_alloc_chain(mem, scanner, t, n, cur_ptr(), &lvl);
+        let p = sa_alloc_chain(mem, scanner, t, n, scanner.cur_ptr, &lvl);
         return if p == crate::mem::ALLOC_FAILED { p } else { 0 };
     }
 
     // Levels 0–2: index nodes.
     let mut qs = [TEX_NULL; 4];
     for k in 0..3usize {
-        qs[k] = cur_ptr();
-        set_cur_ptr(sa_get_child(mem, qs[k], lvl[k]));
-        if cur_ptr() == TEX_NULL {
+        qs[k] = scanner.cur_ptr;
+        scanner.cur_ptr = sa_get_child(mem, qs[k], lvl[k]);
+        if scanner.cur_ptr == TEX_NULL {
             if !w {
                 return 0;
             }
@@ -1004,9 +1004,9 @@ pub fn find_sa_element(
     }
 
     // Level 3: leaf.
-    qs[3] = cur_ptr();
-    set_cur_ptr(sa_get_child(mem, qs[3], lvl[3]));
-    if cur_ptr() == TEX_NULL && w {
+    qs[3] = scanner.cur_ptr;
+    scanner.cur_ptr = sa_get_child(mem, qs[3], lvl[3]);
+    if scanner.cur_ptr == TEX_NULL && w {
         // lab49: allocate just the data node.
         let p = sa_alloc_chain(mem, scanner, t, n, qs[3], &lvl[3..]);
         if p == crate::mem::ALLOC_FAILED {

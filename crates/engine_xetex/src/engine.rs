@@ -396,7 +396,9 @@ pub(crate) unsafe fn final_cleanup_in(
             }
 
             let marks = st.scanner.sa_root[MARK_VAL];
-            if marks != crate::mem::TEX_NULL && crate::packaging::do_marks(&mut st.mem, 3, 0, marks) {
+            if marks != crate::mem::TEX_NULL
+                && crate::packaging::do_marks(&mut st.mem, &mut st.scanner, 3, 0, marks)
+            {
                 st.scanner.sa_root[MARK_VAL] = crate::mem::TEX_NULL;
             }
 
