@@ -195,6 +195,9 @@ pub(crate) struct InputClusterState {
     /// Set true by `\endinput` to force end-of-file on the current input level
     /// (xetex-xetexd.h:524). Plain `bool`.
     pub force_eof: bool,
+    /// Start of the current input line in the buffer — TeX's `first`
+    /// (xetex-xetexd.h:395). Folded off `mod raw` (`01e`); sibling to `last`.
+    pub first: i32,
     /// End of the current input line in the buffer (xetex-xetexd.h:395;
     /// next position after the last character). Plain `int32_t`.
     pub last: i32,

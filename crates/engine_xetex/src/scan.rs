@@ -19,8 +19,8 @@ use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
 
 use crate::globals::{
-    cur_input, first, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_state, set_cur_input_synctex_tag, set_first, set_line,
+    cur_input, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
+    set_cur_input_state, set_cur_input_synctex_tag, set_line,
 };
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
@@ -820,7 +820,7 @@ pub(crate) fn read_toks_in(
         } else {
             st.input.buffer[lim as usize] = end_char;
         }
-        set_first(cur_input().limit + 1);
+        st.input.first = cur_input().limit + 1;
         set_cur_input_loc(cur_input().start);
         set_cur_input_state(NEW_LINE);
 
@@ -2068,7 +2068,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                     if cur_input().name > 17 {
                         set_line(line() + 1);
-                        set_first(cur_input().start);
+                        st.input.first = cur_input().start;
 
                         if !st.input.force_eof {
                             if cur_input().name <= 19 {
@@ -2077,7 +2077,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 } else if st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF) != TEX_NULL
                                     && !st.input.eof_seen[(cur_input().index as i32) as usize]
                                 {
-                                    set_cur_input_limit(first() - 1);
+                                    set_cur_input_limit(st.input.first - 1);
                                     st.input.eof_seen[(cur_input().index as i32) as usize] = true;
                                     {
                                         let __p = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF);
@@ -2100,7 +2100,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                             } else if st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF) != TEX_NULL
                                 && !st.input.eof_seen[(cur_input().index as i32) as usize]
                             {
-                                set_cur_input_limit(first() - 1);
+                                set_cur_input_limit(st.input.first - 1);
                                 st.input.eof_seen[(cur_input().index as i32) as usize] = true;
                                 {
                                     let __p = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF);
@@ -2148,7 +2148,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                         } else {
                             st.input.buffer[(cur_input().limit) as usize] = end_char;
                         }
-                        set_first(cur_input().limit + 1);
+                        st.input.first = cur_input().limit + 1;
                         set_cur_input_loc(cur_input().start);
                     } else {
                         if cur_input().name != 0 {

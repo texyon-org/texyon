@@ -11,10 +11,9 @@ use crate::consts::{
 };
 use crate::format_io::load_fmt_file;
 use crate::globals::{
-    cur_input, first, set_cancel_boundary,
+    cur_input, set_cancel_boundary,
     set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
-    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_first,
-    set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, };
+    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, };
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
 
@@ -246,20 +245,20 @@ unsafe fn primitive(
     if len > 1 {
         let s = crate::texmfmp::maketexstring_in(&mut st.strings, ident)?;
 
-        if first() + len > st.input.buf_size + 1 {
+        if st.input.first + len > st.input.buf_size + 1 {
             return Err(PrimitiveInitAbort::BufferSize(st.input.buf_size));
         }
 
         for i in 0..len {
             let b = *ident.offset(i as isize) as u8 as i32;
-            st.input.buffer[(first() + i) as usize] = b;
+            st.input.buffer[(st.input.first + i) as usize] = b;
         }
 
         st.scanner.cur_val = crate::hash::id_lookup(
             &mut st.eqtb,
             &mut st.strings,
             &st.input.buffer,
-            first(),
+            st.input.first,
             len,
         )?;
         st.strings.str_ptr -= 1;
@@ -909,7 +908,7 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
     const XF_PRIM_INIT_WRITE: i32 = 2;
 
     st.eqtb.no_new_control_sequence = false;
-    set_first(0);
+    st.input.first = 0;
 
     let table_ptr = &raw const xetex_primitives;
     let count = xetex_primitives_count;
@@ -1280,11 +1279,11 @@ pub unsafe extern "C" fn tt_run_engine(
     st.input.max_param_stack = 0;
     st.scanner.used_tectonic_coda_tokens = false;
     st.fonts.gave_char_warning_help = false;
-    set_first(0);
+    st.input.first = 0;
 
     st.scanner.scanner_status = NORMAL as u8;
     st.scanner.warning_index = crate::mem::TEX_NULL;
-    set_first(1);
+    st.input.first = 1;
     crate::globals::set_cur_input_state(NEW_LINE);
     crate::globals::set_cur_input_start(1);
     crate::globals::set_cur_input_index(0);

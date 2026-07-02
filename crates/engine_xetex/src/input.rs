@@ -5,10 +5,9 @@ use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
 use crate::io::u_close;
 
 use crate::globals::{
-    cur_input, first, line, set_cur_input,
+    cur_input, line, set_cur_input,
     set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_first,
-    set_line,
+    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_line,
 };
 
 extern "C" {
@@ -241,7 +240,7 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
             n: st.input.max_in_open,
         });
     }
-    if first() == st.input.buf_size {
+    if st.input.first == st.input.buf_size {
         return Err(InputAbort::Overflow {
             what: c"buffer size".as_ptr(),
             n: st.input.buf_size,
@@ -268,7 +267,7 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
     st.input.grp_stack[idx] = st.save_stack.cur_boundary;
     st.input.if_stack[idx] = st.scanner.cond_ptr;
     st.input.line_stack[idx] = line();
-    set_cur_input_start(first());
+    set_cur_input_start(st.input.first);
     set_cur_input_state(MID_LINE);
     set_cur_input_name(0);
     set_cur_input_synctex_tag(0);
@@ -286,7 +285,7 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
 /// error, propagated as [`InputAbort::InputClose`] (`01d` §2.1) — the old C
 /// `ttstub_input_close` longjmp likewise aborted before the input-stack pop.
 pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
-    set_first(cur_input().start);
+    st.input.first = cur_input().start;
     set_line(st.input.line_stack[cur_input().index as usize]);
     let name = cur_input().name;
     if name == 18 || name == 19 {
@@ -320,7 +319,7 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<
 /// `overflow` rides the [`InputAbort`] sentinel (after restoring `loc`/`limit`,
 /// matching the original).
 pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool, InputAbort> {
-    st.input.last = first();
+    st.input.last = st.input.first;
     let p = st.mem.b32s0(st.input.pseudo_files);
     if p == crate::mem::TEX_NULL {
         return Ok(false);
@@ -329,14 +328,14 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
     st.mem.set_b32s0(st.input.pseudo_files, next);
     let sz = st.mem.b32s0(p);
     if 4 * sz - 3 >= st.input.buf_size - st.input.last {
-        set_cur_input_loc(first());
+        set_cur_input_loc(st.input.first);
         set_cur_input_limit(st.input.last - 1);
         return Err(InputAbort::Overflow {
             what: c"buffer size".as_ptr(),
             n: st.input.buf_size,
         });
     }
-    st.input.last = first();
+    st.input.last = st.input.first;
     let mut r = p + 1;
     let for_end = p + sz - 1;
     while r <= for_end {
@@ -355,7 +354,7 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
     if st.input.last >= st.input.max_buf_stack {
         st.input.max_buf_stack = st.input.last + 1;
     }
-    while st.input.last > first() && st.input.buffer[(st.input.last - 1) as usize] == ' ' as i32 {
+    while st.input.last > st.input.first && st.input.buffer[(st.input.last - 1) as usize] == ' ' as i32 {
         st.input.last -= 1;
     }
     crate::mem::free_node(&mut st.mem, p, sz);

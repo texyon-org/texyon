@@ -136,7 +136,6 @@ mod raw {
         // Input buffer: first = next free slot; buf_size = capacity
         // last/max_buf_stack moved to EngineState.input (scalars).
         // (xetex-xetexd.h:393–395, 409).
-        pub(super) static mut first: i32;
         // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
 
         // is_in_csname moved to EngineState.scanner.
@@ -649,18 +648,6 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 // first / buf_size / max_in_open
 // ---------------------------------------------------------------------------
 
-/// Returns `first` — next free index in the input buffer (xetex-xetexd.h:393).
-#[inline]
-pub(crate) fn first() -> i32 {
-    unsafe { raw::first }
-}
-/// Sets `first`.
-#[inline]
-pub(crate) fn set_first(v: i32) {
-    unsafe {
-        raw::first = v;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // set_in_open

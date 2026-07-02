@@ -1,10 +1,9 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
-use crate::globals::{first};
 use crate::globals::{
     cur_input, set_cur_input_limit,
-    set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
+    set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_line,
 };
 use crate::input::InputAbort;
 
@@ -438,8 +437,8 @@ unsafe fn apply_normalization_in(
 
     let mut in_used: u32 = 0;
     let mut out_used: u32 = 0;
-    let out_ptr = st.input.buffer.as_mut_ptr().add(first() as usize) as *mut u8;
-    let out_cap = (4 * (st.input.buf_size - first())) as u32;
+    let out_ptr = st.input.buffer.as_mut_ptr().add(st.input.first as usize) as *mut u8;
+    let out_cap = (4 * (st.input.buf_size - st.input.first)) as u32;
     let status = TECkit_ConvertBuffer(
         *norm_ptr,
         buf as *const u8,
@@ -456,7 +455,7 @@ unsafe fn apply_normalization_in(
             c"unable to read an entire line (buffer too small)".as_ptr(),
         ));
     }
-    st.input.last = first() + (out_used / 4) as i32;
+    st.input.last = st.input.first + (out_used / 4) as i32;
     Ok(())
 }
 
@@ -493,7 +492,7 @@ pub(crate) unsafe fn input_line_in(
         ));
     }
 
-    st.input.last = first();
+    st.input.last = st.input.first;
 
     if (*f).encoding_mode as i32 == ICUMAPPING {
         // ICU-converter path.
@@ -561,11 +560,11 @@ pub(crate) unsafe fn input_line_in(
             }
             _ => {
                 // No normalization: convert directly into buffer[first..].
-                let out_ptr = st.input.buffer.as_mut_ptr().add(first() as usize);
+                let out_ptr = st.input.buffer.as_mut_ptr().add(st.input.first as usize);
                 let out_len = xetex_ucnv_to_utf32(
                     cnv,
                     out_ptr as *mut libc::c_char,
-                    4 * (st.input.buf_size - first()),
+                    4 * (st.input.buf_size - st.input.first),
                     BYTE_BUFFER as *const libc::c_char,
                     bytes_read as i32,
                     &mut error_code,
@@ -574,7 +573,7 @@ pub(crate) unsafe fn input_line_in(
                     conversion_error_in(st, error_code);
                     return Ok(0);
                 }
-                st.input.last = first() + out_len / 4;
+                st.input.last = st.input.first + out_len / 4;
             }
         }
 
@@ -644,7 +643,7 @@ pub(crate) unsafe fn input_line_in(
 
                 if i == libc::EOF
                     && *libc::__errno_location() != libc::EINTR
-                    && st.input.last == first()
+                    && st.input.last == st.input.first
                 {
                     return Ok(0);
                 }
@@ -668,7 +667,7 @@ pub(crate) unsafe fn input_line_in(
 
     // Trim trailing spaces and EOL characters.
     loop {
-        if st.input.last <= first() {
+        if st.input.last <= st.input.first {
             break;
         }
         let c = st.input.buffer[(st.input.last - 1) as usize];
@@ -1336,14 +1335,14 @@ pub unsafe fn init_io(st: &mut crate::state::EngineState) {
     STDIN_UFILE.encoding_mode = UTF8 as i16;
     STDIN_UFILE.conversion_data = std::ptr::null_mut();
 
-    let first = first();
+    let first = st.input.first;
     st.input.input_file[0] = (&raw mut STDIN_UFILE).cast();
     st.input.buffer[first as usize] = 0;
     st.input.last = first;
     let last = st.input.last;
     set_cur_input_loc(first);
     set_cur_input_limit(last);
-    set_first(last + 1);
+    st.input.first = last + 1;
 }
 
 // scanner / `expand` SCC — threaded `_in` cores (session 204 big pass).
@@ -1644,7 +1643,7 @@ pub(crate) unsafe fn start_input_in(
     } else {
         st.input.buffer[cur_input().limit as usize] = elc;
     }
-    set_first(cur_input().limit + 1);
+    st.input.first = cur_input().limit + 1;
     set_cur_input_loc(cur_input().start);
     Ok(())
 }

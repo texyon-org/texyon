@@ -120,7 +120,7 @@ fn pop_cond_node_in(st: &mut crate::state::EngineState) {
 
 pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_list_mode, first, line,
+        cur_list_mode, line,
         };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, get_node_scc, scc_err};
@@ -347,7 +347,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                 let oc = crate::input::back_error_in(st)?;
                 scc_err(oc)?;
             }
-            m = first();
+            m = st.input.first;
             p = st.mem.b32s1(n);
             while p != TEX_NULL {
                 if m >= st.input.max_buf_stack {
@@ -363,18 +363,18 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                 m += 1;
                 p = st.mem.b32s1(p);
             }
-            let cur_cs_val = if m == first() {
+            let cur_cs_val = if m == st.input.first {
                 NULL_CS
-            } else if m == first() + 1 {
-                SINGLE_BASE + st.input.buffer[first() as usize]
+            } else if m == st.input.first + 1 {
+                SINGLE_BASE + st.input.buffer[st.input.first as usize]
             } else {
                 let s = &mut *st;
                 crate::hash::id_lookup(
                     &mut s.eqtb,
                     &mut s.strings,
                     &s.input.buffer,
-                    first(),
-                    m - first(),
+                    s.input.first,
+                    m - s.input.first,
                 )
                 .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
             };
@@ -1241,7 +1241,7 @@ fn make_string_overflow_scc(st: &crate::state::EngineState) -> SccAbort {
 }
 pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_input, first, hash_s1,
+        cur_input, hash_s1,
         set_cur_input_loc, set_cur_input_start, };
     use crate::scan::{get_avail_scc, scc_err};
 
@@ -1438,7 +1438,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         scc_err(oc)?;
                     }
                     st.scanner.is_in_csname = b;
-                    let mut j = first();
+                    let mut j = st.input.first;
                     p = st.mem.b32s1(r);
                     while p != crate::mem::TEX_NULL {
                         if j >= st.input.max_buf_stack {
@@ -1454,23 +1454,23 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         j += 1;
                         p = st.mem.b32s1(p);
                     }
-                    let cs = if j > first() + 1 || st.input.buffer[first() as usize] > 65535 {
+                    let cs = if j > st.input.first + 1 || st.input.buffer[st.input.first as usize] > 65535 {
                         st.eqtb.no_new_control_sequence = false;
                         let s = &mut *st;
                         let cs = crate::hash::id_lookup(
                             &mut s.eqtb,
                             &mut s.strings,
                             &s.input.buffer,
-                            first(),
-                            j - first(),
+                            s.input.first,
+                            j - s.input.first,
                         )
                         .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?;
                         st.eqtb.no_new_control_sequence = true;
                         cs
-                    } else if j == first() {
+                    } else if j == st.input.first {
                         NULL_CS_V
                     } else {
-                        SINGLE_BASE + st.input.buffer[first() as usize]
+                        SINGLE_BASE + st.input.buffer[st.input.first as usize]
                     };
                     st.scanner.cur_cs = cs;
                     crate::mem::flush_list(&mut st.mem, r);
