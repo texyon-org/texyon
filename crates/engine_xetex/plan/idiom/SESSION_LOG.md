@@ -8,6 +8,38 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 251 — 2026-07-02 — Execute the §6 flip via a pointer bridge (01d §6.2); with_state 142→48
+
+**Type:** execution — the §6 flip (owned `EngineState`). Instead of the "one atomic
+commit" the roadmap feared, a **staged pointer bridge** made it incremental and
+validatable: `tt_run_engine` OWNS its `EngineState` (heap-boxed local) and installs a
+thread-local raw pointer; `with_state`/`with_state_mut` reach `st` through it, falling
+back to the old thread-local `RefCell` only when the pointer is null (unit tests +
+pre-run `tt_xetex_set_int_variable`, which also keeps that path's double-borrow panic
+net). Each `with_state` region then drained to direct `&mut EngineState` threading, one
+validated commit at a time.
+
+**8 commits, each dashboard 29/2/7/4 + 80 unit tests + 37 warnings** (corpus 637/2 on
+the bridge pivot `0ee31a4a`; a clean corpus on the final state was running at handoff):
+1. `0ee31a4a` — bridge + owned `st` + config carryover (behavior-identical).
+2. `80ec07a6` — `tt_run_engine`'s 13 in-frame `with_state_mut` blocks → owned `st`.
+3. `54838c23` — all ~65 `tt_run_engine` accessor calls → `st.*`; **57 dead accessors deleted**.
+4. `3f6c2bbb` + `8afaa725` — `tt_run_engine`'s boundary calls go to the `*_in` cores
+   (`main_control_in`/`final_cleanup_in`/`close_files_and_terminate_in`/`tt_cleanup_in`/
+   `start_input_in`/`maketexstring_in`); `final_cleanup`/`main_control`/7 io wrappers/
+   `maketexstring` wrapper deleted.
+5. `03ed6003` — **`into_history(self, st)`** + `pre_/post_error_message_in` thread the
+   whole terminal-cleanup tree; 12 more dead accessors deleted.
+6. `f123d963` — host config moved to process atomics (off the state); `apply_config`.
+
+**`with_state` 142 → 48.** The ENTIRE boundary/terminal layer (`tt_run_engine`,
+`into_history` + `pre_/post_error_message`, every `*_in` boundary fn) is now threaded
+with zero `with_state`; `EngineState` is owned. **Remaining 48** = leaf re-entries in
+not-yet-threaded functions (the general Phase-C frontier: ~21 globals accessors +
+output/texmfmp/scaled_math wrappers). Removing the bridge + fallback entirely (true
+zero-`with_state`) is now a pure mechanical cascade with NO architectural blocker.
+Full detail: `01d` §6.2, [[engineabort-unification-progress]].
+
 ## Idiom session 250 — 2026-07-01 — Map the post-longjmp `with_state` drain frontier + pilot slice (01d §6.1)
 
 **Type:** understand + execution. A 5-agent frontier-map workflow (all claims
