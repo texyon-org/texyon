@@ -94,7 +94,6 @@ mod raw {
         // Current character code (xetex-xetexd.h:500).
         pub(super) static mut cur_chr: i32;
         // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
-        pub(super) static mut cur_cmd: u8;
         // cur_mark[5] moved to EngineState.scanner (inline fixed array).
         // Current parsed integer value (xetex-xetexd.h:530).
         pub(super) static mut cur_val: i32;
@@ -663,18 +662,6 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 // cur_cmd / cur_mark
 // ---------------------------------------------------------------------------
 
-/// Returns the current command code (`cur_cmd`, xetex-xetexd.h:499).
-#[inline]
-pub(crate) fn cur_cmd() -> u8 {
-    unsafe { raw::cur_cmd }
-}
-/// Sets `cur_cmd`.
-#[inline]
-pub(crate) fn set_cur_cmd(v: u8) {
-    unsafe {
-        raw::cur_cmd = v;
-    }
-}
 /// Sets `cur_chr`.
 #[inline]
 pub(crate) fn set_cur_chr(v: i32) {

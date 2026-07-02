@@ -18,8 +18,7 @@ use crate::consts::{
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, set_cur_chr, set_cur_cmd,
-    set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val,
+    cur_chr, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, set_cur_chr, set_cur_cs, set_cur_input_index, set_cur_ptr, set_cur_tok, set_cur_val,
 };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
@@ -121,7 +120,7 @@ const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73; // xetex_format.h:108
 pub(crate) fn align_error_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     if st.scanner.align_state.abs() > 2 {
         crate::output::error_here_with_diagnostic_in(st, c"Misplaced ".as_ptr());
-        crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         if cur_tok() == TAB_TOKEN + 38 {
             st.errors.help_ptr = 6;
@@ -557,7 +556,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     if cur_list_mode() == MMODE {
         // §1241: display math alignment — add penalties + display glue
         do_assignments_in(st)?;
-        if cur_cmd() != MATH_SHIFT {
+        if st.scanner.cur_cmd != MATH_SHIFT {
             crate::output::error_here_with_diagnostic_in(st, c"Missing $$ inserted".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 2;
@@ -569,7 +568,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         } else {
             // §1232: check for second $$
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() != MATH_SHIFT {
+            if st.scanner.cur_cmd != MATH_SHIFT {
                 crate::output::error_here_with_diagnostic_in(
                     st,
                     c"Display math should end with $$".as_ptr(),
@@ -647,11 +646,11 @@ pub(crate) fn align_peek_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         st.scanner.align_state = 1_000_000;
         loop {
             crate::scan::get_x_or_protected_in(st)?;
-            if cur_cmd() != SPACER {
+            if st.scanner.cur_cmd != SPACER {
                 break;
             }
         }
-        if cur_cmd() == NO_ALIGN {
+        if st.scanner.cur_cmd == NO_ALIGN {
             crate::scan::scan_left_brace_in(st)?;
             if let Some(a) = crate::save::new_save_level(&mut st.save_stack, NO_ALIGN_GROUP) {
                 return Err(MainControlAbort::Save(a));
@@ -667,10 +666,10 @@ pub(crate) fn align_peek_in(st: &mut crate::state::EngineState) -> Result<(), Ma
                 }
             }
             return Ok(());
-        } else if cur_cmd() == RIGHT_BRACE {
+        } else if st.scanner.cur_cmd == RIGHT_BRACE {
             fin_align_in(st)?;
             return Ok(());
-        } else if cur_cmd() == CAR_RET && cur_chr() == CR_CR_CODE {
+        } else if st.scanner.cur_cmd == CAR_RET && cur_chr() == CR_CR_CODE {
             continue;
         } else {
             init_row_in(st)?;
@@ -690,14 +689,14 @@ pub(crate) fn get_preamble_token_in(
 
     'restart: loop {
         crate::scan::get_token_in(st)?;
-        while cur_chr() == SPAN_CODE_GPT && cur_cmd() == TAB_MARK {
+        while cur_chr() == SPAN_CODE_GPT && st.scanner.cur_cmd == TAB_MARK {
             crate::scan::get_token_in(st)?;
-            if cur_cmd() > MAX_COMMAND {
+            if st.scanner.cur_cmd > MAX_COMMAND {
                 crate::expand::expand_in(st)?;
                 crate::scan::get_token_in(st)?;
             }
         }
-        if cur_cmd() == ENDV {
+        if st.scanner.cur_cmd == ENDV {
             // Interwoven alignment preamble: propagate as a Result instead of the
             // direct fatal_error longjmp under the &mut EngineState borrow, mirroring
             // the sibling sites at fin_align (MainControlAbort::Input -> InputAbort::
@@ -707,7 +706,7 @@ pub(crate) fn get_preamble_token_in(
                 c"(interwoven alignment preambles are not allowed)".as_ptr(),
             )));
         }
-        if cur_cmd() == ASSIGN_GLUE && cur_chr() == GLUE_BASE_TAB_SKIP {
+        if st.scanner.cur_cmd == ASSIGN_GLUE && cur_chr() == GLUE_BASE_TAB_SKIP {
             crate::scan::scan_optional_equals_in(st)?;
             crate::scan::scan_glue_in(st, GLUE_VAL)?;
             if st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) > 0 {
@@ -795,8 +794,8 @@ pub(crate) fn init_col_in(st: &mut crate::state::EngineState) -> Result<(), Main
     const OMIT_CMD: u8 = 63; // xetex_format.h:301
     const U_TEMPLATE: u16 = 1; // xetex-constants.h:200
 
-    st.mem.set_b32s0(st.scanner.cur_align + 5, cur_cmd() as i32);
-    if cur_cmd() == OMIT_CMD {
+    st.mem.set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_cmd as i32);
+    if st.scanner.cur_cmd == OMIT_CMD {
         st.scanner.align_state = 0;
     } else {
         crate::input::back_input_in(st)?;
@@ -1053,7 +1052,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
     st.scanner.align_state = 1_000_000;
     loop {
         crate::scan::get_x_or_protected_in(st)?;
-        if cur_cmd() != SPACER {
+        if st.scanner.cur_cmd != SPACER {
             break;
         }
     }
@@ -1183,7 +1182,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         let ca = st.scanner.cur_align;
         st.mem.set_b32s1(ca, g);
         st.scanner.cur_align = st.mem.b32s1(ca);
-        if cur_cmd() == CAR_RET {
+        if st.scanner.cur_cmd == CAR_RET {
             break 'outer;
         }
 
@@ -1193,12 +1192,12 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         // scan u-template up to first #
         loop {
             get_preamble_token_in(st)?;
-            if cur_cmd() == MAC_PARAM {
+            if st.scanner.cur_cmd == MAC_PARAM {
                 break; // done1
             }
-            if cur_cmd() <= CAR_RET && cur_cmd() >= TAB_MARK && st.scanner.align_state == -1_000_000
+            if st.scanner.cur_cmd <= CAR_RET && st.scanner.cur_cmd >= TAB_MARK && st.scanner.align_state == -1_000_000
             {
-                if p == HOLD_HEAD && st.scanner.cur_loop == TEX_NULL && cur_cmd() == TAB_MARK {
+                if p == HOLD_HEAD && st.scanner.cur_loop == TEX_NULL && st.scanner.cur_cmd == TAB_MARK {
                     st.scanner.cur_loop = st.scanner.cur_align;
                 } else {
                     crate::output::error_here_with_diagnostic_in(
@@ -1216,7 +1215,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
                     mc_propagate_error(crate::input::back_error_in(st)?)?;
                     break; // done1
                 }
-            } else if cur_cmd() != SPACER || p != HOLD_HEAD {
+            } else if st.scanner.cur_cmd != SPACER || p != HOLD_HEAD {
                 let av = get_avail(&mut st.mem);
                 if av == ALLOC_FAILED {
                     return Err(NodeRecycleAbort::Overflow.into());
@@ -1246,11 +1245,11 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         // scan v-template after #
         loop {
             get_preamble_token_in(st)?;
-            if cur_cmd() <= CAR_RET && cur_cmd() >= TAB_MARK && st.scanner.align_state == -1_000_000
+            if st.scanner.cur_cmd <= CAR_RET && st.scanner.cur_cmd >= TAB_MARK && st.scanner.align_state == -1_000_000
             {
                 break; // done2
             }
-            if cur_cmd() == MAC_PARAM {
+            if st.scanner.cur_cmd == MAC_PARAM {
                 crate::output::error_here_with_diagnostic_in(
                     st,
                     c"Only one # is allowed per tab".as_ptr(),
@@ -1512,7 +1511,7 @@ pub(crate) fn head_for_vmode_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
     if cur_list_mode() < 0 {
-        if cur_cmd() != HRULE {
+        if st.scanner.cur_cmd != HRULE {
             off_save_in(st)?;
         } else {
             crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
@@ -1537,7 +1536,7 @@ pub(crate) fn head_for_vmode_in(
 pub(crate) fn begin_insert_or_adjust_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    if cur_cmd() == VADJUST {
+    if st.scanner.cur_cmd == VADJUST {
         set_cur_val(255);
     } else {
         crate::scan::scan_eight_bit_int_in(st)?;
@@ -1554,7 +1553,7 @@ pub(crate) fn begin_insert_or_adjust_in(
     }
     let sp = st.save_stack.save_ptr;
     st.save_stack.set_b32s1(sp, cur_val());
-    if cur_cmd() == VADJUST && crate::scan::scan_keyword_in(st, c"pre".as_ptr())? {
+    if st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword_in(st, c"pre".as_ptr())? {
         st.save_stack.set_b32s1(sp + 1, 1);
     } else {
         st.save_stack.set_b32s1(sp + 1, 0);
@@ -1871,20 +1870,19 @@ pub(crate) fn scan_box_in(
     st: &mut crate::state::EngineState,
     box_context: i32,
 ) -> Result<(), MainControlAbort> {
-    use crate::globals::cur_cmd;
     const MAKE_BOX: u8 = 20; // xetex_format.h:258
     const HRULE: u8 = 36; // xetex_format.h:274
     const VRULE: u8 = 35; // xetex_format.h:273
     const LEADER_FLAG: i32 = 0x40010001; // xetex-constants.h:375
     loop {
         crate::scan::get_x_token_in(st)?;
-        if cur_cmd() != SPACER && cur_cmd() != RELAX {
+        if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
             break;
         }
     }
-    if cur_cmd() == MAKE_BOX {
+    if st.scanner.cur_cmd == MAKE_BOX {
         begin_box_in(st, box_context)?;
-    } else if box_context >= LEADER_FLAG && (cur_cmd() == HRULE || cur_cmd() == VRULE) {
+    } else if box_context >= LEADER_FLAG && (st.scanner.cur_cmd == HRULE || st.scanner.cur_cmd == VRULE) {
         st.scanner.cur_box = crate::scan::scan_rule_spec_in(st)?;
         box_end_in(st, box_context)?;
     } else {
@@ -2408,13 +2406,13 @@ pub(crate) fn box_end_in(
         if box_context > SHIP_OUT_FLAG {
             loop {
                 crate::scan::get_x_token_in(st)?;
-                if cur_cmd() != SPACER && cur_cmd() != RELAX {
+                if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
                     break;
                 }
             }
 
-            if (cur_cmd() == HSKIP && cur_list_mode().abs() != VMODE)
-                || (cur_cmd() == VSKIP && cur_list_mode().abs() == VMODE)
+            if (st.scanner.cur_cmd == HSKIP && cur_list_mode().abs() != VMODE)
+                || (st.scanner.cur_cmd == VSKIP && cur_list_mode().abs() == VMODE)
             {
                 append_glue_in(st)?;
                 let tail = cur_list_tail();
@@ -3273,7 +3271,7 @@ pub(crate) fn fix_language(
 pub(crate) fn off_save_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     if st.save_stack.cur_group == BOTTOM_LEVEL {
         crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
-        crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 1;
         st.errors.help_line[0] =
@@ -3638,10 +3636,10 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
     do_assignments_in(st)?;
     let mut q = crate::mem::TEX_NULL;
     f = st.eqtb.b32s1(CUR_FONT_LOC);
-    if cur_cmd() == LETTER || cur_cmd() == OTHER_CHAR || cur_cmd() == CHAR_GIVEN {
+    if st.scanner.cur_cmd == LETTER || st.scanner.cur_cmd == OTHER_CHAR || st.scanner.cur_cmd == CHAR_GIVEN {
         q = new_character_in(st, f, cur_chr() as u16)?;
         set_cur_val(cur_chr());
-    } else if cur_cmd() == CHAR_NUM {
+    } else if st.scanner.cur_cmd == CHAR_NUM {
         crate::scan::scan_char_num_in(st)?;
         q = new_character_in(st, f, cur_val() as u16)?;
     } else {
@@ -3979,7 +3977,7 @@ pub(crate) fn do_register_command_in(
     const GLUE_REF: u16 = 119; // xetex_format.h:361
     const NORMAL: u16 = 0; // xetex_format.h:420
 
-    let q = cur_cmd();
+    let q = st.scanner.cur_cmd;
     let mut w: i32 = 0;
     let mut s: i32 = crate::mem::TEX_NULL;
 
@@ -3987,12 +3985,12 @@ pub(crate) fn do_register_command_in(
     let (l, p, e) = 'determine: {
         if q != REGISTER {
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() >= ASSIGN_INT && cur_cmd() <= ASSIGN_MU_GLUE {
-                break 'determine (cur_chr(), (cur_cmd() - ASSIGN_INT) as i16, false);
+            if st.scanner.cur_cmd >= ASSIGN_INT && st.scanner.cur_cmd <= ASSIGN_MU_GLUE {
+                break 'determine (cur_chr(), (st.scanner.cur_cmd - ASSIGN_INT) as i16, false);
             }
-            if cur_cmd() != REGISTER {
+            if st.scanner.cur_cmd != REGISTER {
                 crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
-                crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+                crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
                 crate::output::print_cstr_in(st, c"' after ".as_ptr());
                 crate::output::print_cmd_chr_in(st, q as u16, 0);
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
@@ -4269,11 +4267,11 @@ pub(crate) fn do_assignments_in(
     loop {
         loop {
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() != SPACER && cur_cmd() != RELAX {
+            if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
                 break;
             }
         }
-        if cur_cmd() <= MAX_NON_PREFIXED_COMMAND {
+        if st.scanner.cur_cmd <= MAX_NON_PREFIXED_COMMAND {
             return Ok(());
         }
         st.scanner.set_box_allowed = false;
@@ -4378,7 +4376,7 @@ pub(crate) fn main_control_mode_independent_in(
     const HYPH_DATA_MC: u8 = 101;
     const SET_INTERACTION_MC: u8 = 102;
 
-    match cur_cmd() {
+    match st.scanner.cur_cmd {
         TOKS_REGISTER_MC | ASSIGN_TOKS_MC | ASSIGN_INT_MC | ASSIGN_DIMEN_MC | ASSIGN_GLUE_MC
         | ASSIGN_MU_GLUE_MC | ASSIGN_FONT_DIMEN_MC | ASSIGN_FONT_INT_MC | SET_AUX_MC
         | SET_PREV_GRAF_MC | SET_PAGE_DIMEN_MC | SET_PAGE_INT_MC | SET_BOX_DIMEN_MC
@@ -4445,7 +4443,7 @@ pub(crate) fn main_control_mode_error_cases_in(
     const XETEX_MATH_GIVEN_MC: u8 = 70;
     const LAST_ITEM_MC: u8 = 71;
 
-    match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
+    match (crate::globals::cur_list_mode().unsigned_abs(), st.scanner.cur_cmd) {
         (VMODE_MC, VMOVE_MC)
         | (HMODE_MC, HMOVE_MC)
         | (MMODE_MC, HMOVE_MC)
@@ -4530,7 +4528,7 @@ pub(crate) fn main_control_simple_list_group_cases_in(
     const IGNORE_DEPTH_MC: i32 = -65_536_000;
 
     let mode = crate::globals::cur_list_mode().unsigned_abs();
-    match (mode, cur_cmd()) {
+    match (mode, st.scanner.cur_cmd) {
         (VMODE_MC, HRULE_MC) | (HMODE_MC, VRULE_MC) | (MMODE_MC, VRULE_MC) => {
             let p = crate::scan::scan_rule_spec_in(st)?;
             st.mem.set_b32s1(crate::globals::cur_list_tail(), p);
@@ -4612,7 +4610,7 @@ fn main_control_box_list_cases_in(
     const LEADER_FLAG_MC: i32 = 0x4001_0001;
     const A_LEADERS_MC: i32 = 100;
 
-    match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
+    match (crate::globals::cur_list_mode().unsigned_abs(), st.scanner.cur_cmd) {
         (VMODE_MC, RIGHT_BRACE_MC) | (HMODE_MC, RIGHT_BRACE_MC) | (MMODE_MC, RIGHT_BRACE_MC) => {
             handle_right_brace_in(st)?
         }
@@ -4730,7 +4728,7 @@ pub(crate) fn main_control_alignment_cases_in(
     const INT_PAR_TEXXET_MC: i32 = 69;
     const MATH_SHIFT_GROUP_MC: u8 = 15;
 
-    match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
+    match (crate::globals::cur_list_mode().unsigned_abs(), st.scanner.cur_cmd) {
         (VMODE_MC, NO_ALIGN_MC) | (HMODE_MC, NO_ALIGN_MC) | (MMODE_MC, NO_ALIGN_MC) => {
             no_align_error_in(st)?
         }
@@ -4741,7 +4739,7 @@ pub(crate) fn main_control_alignment_cases_in(
                 let enabled = crate::scan::eTeX_enabled_in(
                     st,
                     st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_MC) > 0,
-                    cur_cmd() as u16,
+                    st.scanner.cur_cmd as u16,
                     cur_chr(),
                 )?;
                 if enabled {
@@ -4814,10 +4812,10 @@ pub(crate) fn main_control_math_cases_in(
     const LOCAL_EVERY_VBOX_MC: i32 = 6; // xetex_format.h:178
 
     use crate::globals::{
-        cur_chr, cur_cmd, cur_list_mode, cur_list_tail, set_cur_chr, set_cur_list_tail,
+        cur_chr, cur_list_mode, cur_list_tail, set_cur_chr, set_cur_list_tail,
     };
 
-    match (cur_list_mode().unsigned_abs(), cur_cmd()) {
+    match (cur_list_mode().unsigned_abs(), st.scanner.cur_cmd) {
         (HMODE_MC, MATH_SHIFT_MC) => init_math_in(st)?,
 
         (MMODE_MC, EQ_NO_MC) => {
@@ -4991,7 +4989,7 @@ pub(crate) fn main_control_ignore_spaces_in(
     if cur_chr() == 0 {
         loop {
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() != SPACER_MC {
+            if st.scanner.cur_cmd != SPACER_MC {
                 break;
             }
         }
@@ -5015,7 +5013,7 @@ pub(crate) fn main_control_ignore_spaces_in(
         }
 
         if cur_cs() != UNDEFINED_PRIMITIVE {
-            set_cur_cmd(st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
+            st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8;
             set_cur_chr(st.eqtb.b32s1(PRIM_EQTB_BASE + cur_cs()));
             set_cur_tok(CS_TOKEN_FLAG + PRIM_EQTB_BASE + cur_cs());
         }
@@ -5052,12 +5050,15 @@ impl InterCharInputAction {
     }
 }
 
-fn set_current_token_for_inter_char_boundary(char_num_cmd: u8) {
+fn set_current_token_for_inter_char_boundary(
+    st: &mut crate::state::EngineState,
+    char_num_cmd: u8,
+) {
     if cur_cs() == 0 {
-        if cur_cmd() == char_num_cmd {
-            set_cur_cmd(OTHER_CHAR);
+        if st.scanner.cur_cmd == char_num_cmd {
+            st.scanner.cur_cmd = OTHER_CHAR;
         }
-        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+        set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + cur_chr());
     } else {
         set_cur_tok(CS_TOKEN_FLAG + cur_cs());
     }
@@ -5095,7 +5096,7 @@ fn inter_char_boundary_after_space_action(
         return InterCharInputAction::None;
     }
 
-    set_current_token_for_inter_char_boundary(char_num_cmd);
+    set_current_token_for_inter_char_boundary(st, char_num_cmd);
     InterCharInputAction::BackInputThenBeginTokenList {
         token_list,
         force_cur_input_index: None,
@@ -5144,10 +5145,10 @@ fn inter_char_before_current_char_action(
         return InterCharInputAction::None;
     }
 
-    if cur_cmd() != letter_cmd {
-        set_cur_cmd(other_cmd);
+    if st.scanner.cur_cmd != letter_cmd {
+        st.scanner.cur_cmd = other_cmd;
     }
-    set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+    set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + cur_chr());
     InterCharInputAction::BackInputThenBeginTokenList {
         token_list,
         force_cur_input_index: Some(BACKED_UP_CHAR),
@@ -5231,7 +5232,7 @@ pub(crate) fn main_control_spacer_cases_in(
     const SPACER_MC: u8 = 10; // xetex_format.h:242
     const EX_SPACE_MC: u8 = 64; // xetex_format.h:302
 
-    match (crate::globals::cur_list_mode().unsigned_abs(), cur_cmd()) {
+    match (crate::globals::cur_list_mode().unsigned_abs(), st.scanner.cur_cmd) {
         (HMODE_MC, SPACER_MC) => {
             if crate::globals::cur_list_aux_b32s0() == 1000 {
                 main_control_append_normal_space_in(st)?;
@@ -5253,7 +5254,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
     st: &mut crate::state::EngineState,
 ) -> Result<bool, MainControlAbort> {
     use crate::globals::{
-        bchar, cancel_boundary, cur_chr, cur_cmd, cur_l, cur_list_aux_b32s0, cur_list_aux_b32s1,
+        bchar, cancel_boundary, cur_chr, cur_l, cur_list_aux_b32s0, cur_list_aux_b32s1,
         cur_list_head, cur_list_mode, cur_list_tail, cur_ptr, cur_q, cur_r, ins_disc, lft_hit,
         lig_stack, ligature_present, main_f, main_h, main_p, main_pp, main_ppp, prev_class, rt_hit,
         set_bchar, set_cancel_boundary, set_cur_chr, set_cur_l, set_cur_list_aux_b32s0,
@@ -5388,14 +5389,14 @@ pub(crate) unsafe fn main_control_main_loop_in(
 
             // Look ahead for more chars (same font)
             crate::scan::get_next_scc(st)?;
-            if cur_cmd() == LETTER || cur_cmd() == OTHER_CHAR || cur_cmd() == CHAR_GIVEN {
+            if st.scanner.cur_cmd == LETTER || st.scanner.cur_cmd == OTHER_CHAR || st.scanner.cur_cmd == CHAR_GIVEN {
                 continue 'collect;
             }
             crate::scan::x_token_in(st)?;
-            if cur_cmd() == LETTER || cur_cmd() == OTHER_CHAR || cur_cmd() == CHAR_GIVEN {
+            if st.scanner.cur_cmd == LETTER || st.scanner.cur_cmd == OTHER_CHAR || st.scanner.cur_cmd == CHAR_GIVEN {
                 continue 'collect;
             }
-            if cur_cmd() == CHAR_NUM {
+            if st.scanner.cur_cmd == CHAR_NUM {
                 crate::scan::scan_usv_num_in(st)?;
                 set_cur_chr(cur_val());
                 continue 'collect;
@@ -6232,7 +6233,7 @@ unsafe fn do_lookahead(
     _mf: i32,
 ) -> Result<bool, MainControlAbort> {
     use crate::globals::{
-        bchar, cur_chr, cur_cmd, cur_list_aux_b32s0, false_bchar, main_f, prev_class, set_bchar,
+        bchar, cur_chr, cur_list_aux_b32s0, false_bchar, main_f, prev_class, set_bchar,
         set_cur_chr, set_cur_list_aux_b32s0, set_cur_ptr, set_cur_r, set_lig_stack, set_prev_class,
         set_space_class, space_class,
     };
@@ -6247,17 +6248,17 @@ unsafe fn do_lookahead(
 
     let is_char_cmd = |cmd: u8| cmd == LETTER || cmd == OTHER_CHAR || cmd == CHAR_GIVEN;
 
-    if !is_char_cmd(cur_cmd()) {
+    if !is_char_cmd(st.scanner.cur_cmd) {
         crate::scan::x_token_in(st)?;
     }
-    if !is_char_cmd(cur_cmd()) {
-        if cur_cmd() == CHAR_NUM {
+    if !is_char_cmd(st.scanner.cur_cmd) {
+        if st.scanner.cur_cmd == CHAR_NUM {
             crate::scan::scan_char_num_in(st)?;
             set_cur_chr(cur_val());
             // fall through to is_char_cmd path
         } else {
             // Not a char: set cur_r = bchar, lig_stack = NULL
-            if cur_cmd() == NO_BOUNDARY {
+            if st.scanner.cur_cmd == NO_BOUNDARY {
                 set_bchar(TOO_BIG_CHAR);
             }
             set_cur_r(bchar());
@@ -6439,7 +6440,7 @@ pub(crate) unsafe fn main_control_in(
     const EVERY_JOB_TEXT: u16 = 13; // xetex-constants.h:212
     const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
 
-    use crate::globals::{cur_cmd, cur_list_mode, cur_val, set_cancel_boundary, set_cur_chr};
+    use crate::globals::{cur_list_mode, cur_val, set_cancel_boundary, set_cur_chr};
     use crate::mem::TEX_NULL;
 
     let every_job = st.eqtb.b32s1(CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB);
@@ -6456,7 +6457,7 @@ pub(crate) unsafe fn main_control_in(
             }
 
             let mode = cur_list_mode().unsigned_abs();
-            let cmd = cur_cmd();
+            let cmd = st.scanner.cur_cmd;
 
             // Fast char path and boundary check (first switch in C, before inter-char check)
             match (mode, cmd) {
@@ -6476,7 +6477,7 @@ pub(crate) unsafe fn main_control_in(
                 }
                 (HMODE, NO_BOUNDARY) => {
                     crate::scan::get_x_token_in(st)?;
-                    if matches!(cur_cmd(), LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM) {
+                    if matches!(st.scanner.cur_cmd, LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM) {
                         set_cancel_boundary(true);
                     }
                     continue 'reswitch;
@@ -6932,24 +6933,24 @@ pub(crate) fn prefixed_command_in(
     let mut n: i32;
     let mut e: bool;
 
-    while cur_cmd() as i32 == PREFIX {
+    while st.scanner.cur_cmd as i32 == PREFIX {
         if (a / cur_chr()) & 1 == 0 {
             a += cur_chr();
         }
 
         loop {
             crate::scan::get_x_token_in(st)?;
-            if !(cur_cmd() as i32 == SPACER || cur_cmd() as i32 == RELAX_CMD) {
+            if !(st.scanner.cur_cmd as i32 == SPACER || st.scanner.cur_cmd as i32 == RELAX_CMD) {
                 break;
             }
         }
 
-        if (cur_cmd() as i32) <= MAX_NON_PREFIXED_COMMAND {
+        if (st.scanner.cur_cmd as i32) <= MAX_NON_PREFIXED_COMMAND {
             crate::output::error_here_with_diagnostic_in(
                 st,
                 c"You can't use a prefix with `".as_ptr(),
             );
-            crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+            crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
             crate::output::print_char_in(st, '\'' as i32);
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 1;
@@ -6973,7 +6974,7 @@ pub(crate) fn prefixed_command_in(
         j = 0;
     }
 
-    if cur_cmd() as i32 != DEF && (a % 4 != 0 || j != 0) {
+    if st.scanner.cur_cmd as i32 != DEF && (a % 4 != 0 || j != 0) {
         crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
         crate::output::print_esc_cstr_in(st, c"long".as_ptr());
         crate::output::print_cstr_in(st, c"' or `".as_ptr());
@@ -6981,7 +6982,7 @@ pub(crate) fn prefixed_command_in(
         crate::output::print_cstr_in(st, c"' or `".as_ptr());
         crate::output::print_esc_cstr_in(st, c"protected".as_ptr());
         crate::output::print_cstr_in(st, c"' with `".as_ptr());
-        crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
         crate::output::print_char_in(st, '\'' as i32);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 1;
@@ -7001,7 +7002,7 @@ pub(crate) fn prefixed_command_in(
     }
 
     'sw: {
-        match cur_cmd() as i32 {
+        match st.scanner.cur_cmd as i32 {
             SET_FONT => {
                 pc_define(st, a >= 4, CUR_FONT_LOC, DATA as u16, cur_chr())?;
             }
@@ -7040,14 +7041,14 @@ pub(crate) fn prefixed_command_in(
                 if n == NORMAL {
                     loop {
                         crate::scan::get_token_in(st)?;
-                        if cur_cmd() as i32 != SPACER {
+                        if st.scanner.cur_cmd as i32 != SPACER {
                             break;
                         }
                     }
 
                     if cur_tok() == OTHER_TOKEN + '=' as i32 {
                         crate::scan::get_token_in(st)?;
-                        if cur_cmd() as i32 == SPACER {
+                        if st.scanner.cur_cmd as i32 == SPACER {
                             crate::scan::get_token_in(st)?;
                         }
                     }
@@ -7060,16 +7061,16 @@ pub(crate) fn prefixed_command_in(
                     crate::input::back_input_in(st)?;
                 }
 
-                if cur_cmd() as i32 >= CALL {
+                if st.scanner.cur_cmd as i32 >= CALL {
                     st.mem.set_b32s0(cur_chr(), st.mem.b32s0(cur_chr()) + 1);
-                } else if (cur_cmd() as i32 == REGISTER || cur_cmd() as i32 == TOKS_REGISTER)
+                } else if (st.scanner.cur_cmd as i32 == REGISTER || st.scanner.cur_cmd as i32 == TOKS_REGISTER)
                     && (cur_chr() < 0 || cur_chr() > 19)
                 {
                     st.mem
                         .set_b32s0(cur_chr() + 1, st.mem.b32s0(cur_chr() + 1) + 1);
                 }
 
-                pc_define(st, a >= 4, p, cur_cmd() as u16, cur_chr())?;
+                pc_define(st, a >= 4, p, st.scanner.cur_cmd as u16, cur_chr())?;
             }
 
             SHORTHAND_DEF => {
@@ -7228,7 +7229,7 @@ pub(crate) fn prefixed_command_in(
                 q = cur_cs();
                 e = false;
 
-                if cur_cmd() as i32 == TOKS_REGISTER {
+                if st.scanner.cur_cmd as i32 == TOKS_REGISTER {
                     if cur_chr() == 0 {
                         crate::scan::scan_register_num_in(st)?;
                         if cur_val() > 255 {
@@ -7273,15 +7274,15 @@ pub(crate) fn prefixed_command_in(
 
                 loop {
                     crate::scan::get_x_token_in(st)?;
-                    if !(cur_cmd() as i32 == SPACER || cur_cmd() as i32 == RELAX_CMD) {
+                    if !(st.scanner.cur_cmd as i32 == SPACER || st.scanner.cur_cmd as i32 == RELAX_CMD) {
                         break;
                     }
                 }
 
-                if cur_cmd() as i32 != LEFT_BRACE
-                    && (cur_cmd() as i32 == TOKS_REGISTER || cur_cmd() as i32 == ASSIGN_TOKS)
+                if st.scanner.cur_cmd as i32 != LEFT_BRACE
+                    && (st.scanner.cur_cmd as i32 == TOKS_REGISTER || st.scanner.cur_cmd as i32 == ASSIGN_TOKS)
                 {
-                    if cur_cmd() as i32 == TOKS_REGISTER {
+                    if st.scanner.cur_cmd as i32 == TOKS_REGISTER {
                         if cur_chr() == 0 {
                             crate::scan::scan_register_num_in(st)?;
                             if cur_val() < 256 {
@@ -7404,7 +7405,7 @@ pub(crate) fn prefixed_command_in(
 
             ASSIGN_GLUE | ASSIGN_MU_GLUE => {
                 p = cur_chr();
-                n = cur_cmd() as i32;
+                n = st.scanner.cur_cmd as i32;
                 crate::scan::scan_optional_equals_in(st)?;
                 if n == ASSIGN_MU_GLUE {
                     crate::scan::scan_glue_in(st, MU_VAL as i16)?;
@@ -7648,7 +7649,7 @@ pub(crate) fn prefixed_command_in(
 
                     loop {
                         crate::scan::get_token_in(st)?;
-                        if cur_cmd() as i32 == RIGHT_BRACE {
+                        if st.scanner.cur_cmd as i32 == RIGHT_BRACE {
                             break;
                         }
                     }

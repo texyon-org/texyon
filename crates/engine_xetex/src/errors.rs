@@ -3,7 +3,7 @@
 use crate::consts::{
     BATCH_MODE, BOX_BASE, ERROR_STOP_MODE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
 };
-use crate::globals::{cur_chr, cur_cmd, cur_list_mode};
+use crate::globals::{cur_chr, cur_list_mode};
 
 // Interaction-mode constants (xetex_format.h:644–647).
 
@@ -419,7 +419,7 @@ pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
 /// `&mut EngineState` core of the `you_cant` diagnostic.
 pub(crate) fn you_cant_in(st: &mut EngineState) {
     error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
-    print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
     print_in_mode_in(st, cur_list_mode() as i32);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
 }

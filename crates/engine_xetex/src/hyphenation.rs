@@ -10,7 +10,7 @@ const MIN_TRIE_OP: i32 = 0;
 pub(crate) const BIGGEST_LANG: i32 = 255;
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
-use crate::globals::{cur_chr, cur_cmd, cur_val, set_cur_chr, set_cur_cmd};
+use crate::globals::{cur_chr, cur_val, set_cur_chr};
 use crate::state::HyphState;
 
 // ---- moved verbatim from ini.rs (workstream 02) ----
@@ -554,7 +554,7 @@ pub(crate) fn new_patterns_in(
         'done: {
             loop {
                 crate::scan::get_x_token_in(st)?;
-                match cur_cmd() {
+                match st.scanner.cur_cmd {
                     LETTER | OTHER_CHAR => {
                         if digit_sensed || cur_chr() < b'0' as i32 || cur_chr() > b'9' as i32 {
                             if cur_chr() == b'.' as i32 {
@@ -611,7 +611,7 @@ pub(crate) fn new_patterns_in(
                             set_pattern_word_op_in(&mut st.hyph, insert);
                         }
 
-                        if cur_cmd() == RIGHT_BRACE_CMD {
+                        if st.scanner.cur_cmd == RIGHT_BRACE_CMD {
                             break 'done;
                         }
 
@@ -702,7 +702,7 @@ pub(crate) fn new_hyph_exceptions_in(
 
         // reswitch: re-evaluate after CHAR_NUM changes cur_cmd
         loop {
-            match cur_cmd() {
+            match st.scanner.cur_cmd {
                 LETTER | OTHER_CHAR | CHAR_GIVEN => {
                     if cur_chr() == b'-' as i32 {
                         if n < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
@@ -751,7 +751,7 @@ pub(crate) fn new_hyph_exceptions_in(
                 CHAR_NUM => {
                     crate::scan::scan_char_num_in(st)?;
                     set_cur_chr(cur_val());
-                    set_cur_cmd(CHAR_GIVEN);
+                    st.scanner.cur_cmd = CHAR_GIVEN;
                     // continue inner loop → re-run match with new cur_cmd
                 }
                 SPACER | RIGHT_BRACE_CMD => {
@@ -853,7 +853,7 @@ pub(crate) fn new_hyph_exceptions_in(
                         st.hyph.hyph_list[h as usize] = p;
                     }
 
-                    if cur_cmd() == RIGHT_BRACE_CMD {
+                    if st.scanner.cur_cmd == RIGHT_BRACE_CMD {
                         return Ok(());
                     }
 

@@ -6,7 +6,7 @@ use crate::consts::{
 };
 use crate::ext::real_get_native_glyph;
 use crate::globals::{
-    cur_chr, cur_cmd, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
+    cur_chr, cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
     cur_list_prev_graf, cur_list_tail, cur_val, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
     set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
     set_cur_val, set_temp_ptr, temp_ptr,
@@ -3594,12 +3594,12 @@ pub(crate) fn scan_delimiter_in(
     } else {
         loop {
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() != SPACER && cur_cmd() != RELAX {
+            if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
                 break;
             }
         }
 
-        match cur_cmd() {
+        match st.scanner.cur_cmd {
             LETTER | OTHER_CHAR => set_cur_val(st.eqtb.b32s1(DEL_CODE_BASE + cur_chr())),
             DELIM_NUM => {
                 if cur_chr() == 1 {
@@ -3897,7 +3897,7 @@ fn prepare_sub_sup(
 pub(crate) fn sub_sup_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    let cmd = cur_cmd();
+    let cmd = st.scanner.cur_cmd;
     let (p, duplicate) = prepare_sub_sup(&mut st.mem, cmd)?;
     if let Some(duplicate) = duplicate {
         match duplicate {
@@ -4166,7 +4166,7 @@ fn set_family_bits(x: i32) -> i32 {
 pub(crate) fn math_ac_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    if cur_cmd() == ACCENT {
+    if st.scanner.cur_cmd == ACCENT {
         crate::output::error_here_with_diagnostic_in(st, c"Please use ".as_ptr());
         crate::output::print_esc_cstr_in(st, c"mathaccent".as_ptr());
         crate::output::print_cstr_in(st, c" for accents in math mode".as_ptr());
@@ -4240,7 +4240,7 @@ pub(crate) fn resume_after_display_in(
     set_cur_list_prev_graf((lhm * 64 + rhm) * 65536 + cl as i32);
 
     crate::scan::get_x_token_in(st)?;
-    if cur_cmd() != SPACER {
+    if st.scanner.cur_cmd != SPACER {
         crate::input::back_input_in(st)?;
     }
     if st.input.nest_ptr == 1 {
@@ -4475,7 +4475,7 @@ pub(crate) fn after_math_in(
     if cur_list_mode() as i32 == -m {
         // eTeX display math: second `$$` ends an inner display
         crate::scan::get_x_token_in(st)?;
-        if cur_cmd() != MATH_SHIFT {
+        if st.scanner.cur_cmd != MATH_SHIFT {
             crate::output::error_here_with_diagnostic_in(
                 st,
                 c"Display math should end with $$".as_ptr(),
@@ -4550,7 +4550,7 @@ pub(crate) fn after_math_in(
         // display math
         if a == TEX_NULL {
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() != MATH_SHIFT {
+            if st.scanner.cur_cmd != MATH_SHIFT {
                 crate::output::error_here_with_diagnostic_in(
                     st,
                     c"Display math should end with $$".as_ptr(),
@@ -4738,7 +4738,7 @@ pub(crate) fn init_math_in(
 ) -> Result<(), crate::main_control::MainControlAbort> {
     crate::scan::get_token_in(st)?;
 
-    if cur_cmd() == MATH_SHIFT && cur_list_mode() > 0 {
+    if st.scanner.cur_cmd == MATH_SHIFT && cur_list_mode() > 0 {
         let mut j = TEX_NULL;
         let mut w = -MAX_HALFWORD;
         let x;

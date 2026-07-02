@@ -19,8 +19,8 @@ use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, first, set_cur_chr,
-    set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
+    cur_chr, cur_cs, cur_input, cur_tok, cur_val, first, set_cur_chr,
+    set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
     set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_first, set_line,
 };
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
@@ -394,7 +394,7 @@ pub(crate) fn insert_dollar_sign_in(
 pub(crate) fn scan_optional_equals_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
         get_x_token_in(st)?;
-        if cur_cmd() != SPACER {
+        if st.scanner.cur_cmd != SPACER {
             break;
         }
     }
@@ -416,11 +416,11 @@ const LEFT_BRACE_TOKEN: i32 = 0x200000;
 pub(crate) fn get_x_or_protected_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
         get_token_in(st)?;
-        if cur_cmd() <= MAX_COMMAND {
+        if st.scanner.cur_cmd <= MAX_COMMAND {
             return Ok(());
         }
-        if cur_cmd() >= CALL
-            && cur_cmd() < END_TEMPLATE
+        if st.scanner.cur_cmd >= CALL
+            && st.scanner.cur_cmd < END_TEMPLATE
             && st.mem.b32s0(st.mem.b32s1(cur_chr())) == PROTECTED_TOKEN
         {
             return Ok(());
@@ -568,7 +568,7 @@ pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i3
         .classify_rule(MemIdx::new(q))
         .expect("valid new rule")
         .expect("new rule");
-    if cur_cmd() == VRULE {
+    if st.scanner.cur_cmd == VRULE {
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
         r.set_height(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
@@ -1118,7 +1118,7 @@ pub(crate) fn scan_math_in(
     st: &mut crate::state::EngineState,
     p: i32,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    use crate::globals::{cur_chr, cur_cmd, set_cur_chr, set_cur_cmd, set_cur_cs};
+    use crate::globals::{cur_chr, set_cur_chr, set_cur_cs};
     const LETTER: u8 = 11; // xetex_format.h:243
     const OTHER_CHAR_CMD: u8 = 12; // xetex_format.h:244
     const DELIM_NUM: u8 = 15; // xetex_format.h:251
@@ -1137,17 +1137,17 @@ pub(crate) fn scan_math_in(
     'main: loop {
         loop {
             get_x_token_in(st)?;
-            if cur_cmd() != SPACER && cur_cmd() != RELAX {
+            if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
                 break;
             }
         }
         c = loop {
-            break match cur_cmd() {
+            break match st.scanner.cur_cmd {
                 LETTER | OTHER_CHAR_CMD | CHAR_GIVEN_CMD => {
                     let mc = st.eqtb.b32s1(MATH_CODE_BASE + cur_chr());
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
                         set_cur_cs(cur_chr() + 1);
-                        set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+                        st.scanner.cur_cmd = st.eqtb.b16s1(cur_cs()) as u8;
                         set_cur_chr(st.eqtb.b32s1(cur_cs()));
                         x_token_in(st)?;
                         crate::input::back_input_in(st)?;
@@ -1158,7 +1158,7 @@ pub(crate) fn scan_math_in(
                 CHAR_NUM_CMD => {
                     scan_char_num_in(st)?;
                     set_cur_chr(cur_val());
-                    set_cur_cmd(CHAR_GIVEN_CMD);
+                    st.scanner.cur_cmd = CHAR_GIVEN_CMD;
                     continue; // goto reswitch
                 }
                 MATH_CHAR_NUM => {
@@ -1229,7 +1229,7 @@ pub(crate) fn set_math_char_in(
     st: &mut crate::state::EngineState,
     c: i32,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    use crate::globals::{cur_chr, cur_cs, set_cur_chr, set_cur_cmd, set_cur_cs};
+    use crate::globals::{cur_chr, cur_cs, set_cur_chr, set_cur_cs};
     const ACTIVE_MATH_CHAR_SM: i32 = 0x1FFFFF;
     const MATH_CHAR_NODE_SM: i32 = 1; // xetex-constants.h:269
     const ORD_NOAD: u16 = 16; // xetex_format.h:401
@@ -1238,7 +1238,7 @@ pub(crate) fn set_math_char_in(
 
     if math_char_fn(c) == ACTIVE_MATH_CHAR_SM {
         set_cur_cs(cur_chr() + 1);
-        set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+        st.scanner.cur_cmd = st.eqtb.b16s1(cur_cs()) as u8;
         set_cur_chr(st.eqtb.b32s1(cur_cs()));
         x_token_in(st)?;
         crate::input::back_input_in(st)?;
@@ -1402,7 +1402,7 @@ pub(crate) fn check_outer_validity_in(
     st: &mut crate::state::EngineState,
 ) -> Result<crate::errors::ErrorOutcome, crate::input::InputAbort> {
     use crate::errors::ErrorOutcome;
-    use crate::globals::{cur_cs, cur_input, set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_tok};
+    use crate::globals::{cur_cs, cur_input, set_cur_chr, set_cur_cs, set_cur_tok};
     use crate::input::InputAbort;
 
     if st.scanner.scanner_status == NORMAL_COV {
@@ -1421,7 +1421,7 @@ pub(crate) fn check_outer_validity_in(
             st.mem.set_b32s0(p, CS_TOKEN_FLAG + cur_cs());
             crate::input::begin_token_list_in(st, p, 3 /* BACKED_UP */)?;
         }
-        set_cur_cmd(SPACER);
+        st.scanner.cur_cmd = SPACER;
         set_cur_chr(' ' as i32);
     }
 
@@ -1643,7 +1643,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                     'reswitch: loop {
                         let cat = st.eqtb.b32s1(CAT_CODE_BASE + cur_chr()) as u8;
-                        set_cur_cmd(cat);
+                        st.scanner.cur_cmd = cat;
                         let sc = cur_input().state as i32 + cat as i32;
 
                         match sc {
@@ -1895,9 +1895,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                     }
                                 }
                                 // found:
-                                set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+                                st.scanner.cur_cmd = st.eqtb.b16s1(cur_cs()) as u8;
                                 set_cur_chr(st.eqtb.b32s1(cur_cs()));
-                                if cur_cmd() >= OUTER_CALL_GN {
+                                if st.scanner.cur_cmd >= OUTER_CALL_GN {
                                     match check_outer_validity_in(st) {
                                         Ok(crate::errors::ErrorOutcome::Continue) => {}
                                         Ok(oc) => return GetNextOutcome::Error(oc),
@@ -1909,10 +1909,10 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                             // ANY_STATE_PLUS(ACTIVE_CHAR): active character
                             14 | 30 | 46 => {
                                 set_cur_cs(cur_chr() + 1);
-                                set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+                                st.scanner.cur_cmd = st.eqtb.b16s1(cur_cs()) as u8;
                                 set_cur_chr(st.eqtb.b32s1(cur_cs()));
                                 set_cur_input_state(MID_LINE);
-                                if cur_cmd() >= OUTER_CALL_GN {
+                                if st.scanner.cur_cmd >= OUTER_CALL_GN {
                                     match check_outer_validity_in(st) {
                                         Ok(crate::errors::ErrorOutcome::Continue) => {}
                                         Ok(oc) => return GetNextOutcome::Error(oc),
@@ -2011,7 +2011,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                             // MID_LINE + CAR_RET
                             6 => {
                                 set_cur_input_loc(cur_input().limit + 1);
-                                set_cur_cmd(SPACER);
+                                st.scanner.cur_cmd = SPACER;
                                 set_cur_chr(b' ' as i32);
                             }
 
@@ -2025,9 +2025,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                             38 => {
                                 set_cur_input_loc(cur_input().limit + 1);
                                 set_cur_cs(st.input.par_loc);
-                                set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+                                st.scanner.cur_cmd = st.eqtb.b16s1(cur_cs()) as u8;
                                 set_cur_chr(st.eqtb.b32s1(cur_cs()));
-                                if cur_cmd() >= OUTER_CALL_GN {
+                                if st.scanner.cur_cmd >= OUTER_CALL_GN {
                                     match check_outer_validity_in(st) {
                                         Ok(crate::errors::ErrorOutcome::Continue) => {}
                                         Ok(oc) => return GetNextOutcome::Error(oc),
@@ -2163,7 +2163,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                         set_cur_input_loc(cur_input().start);
                     } else {
                         if cur_input().name != 0 {
-                            set_cur_cmd(0);
+                            st.scanner.cur_cmd = 0;
                             set_cur_chr(0);
                             return GetNextOutcome::Done;
                         }
@@ -2201,16 +2201,16 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
             if t >= CS_TOKEN_FLAG {
                 set_cur_cs(t - CS_TOKEN_FLAG);
-                set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+                st.scanner.cur_cmd = st.eqtb.b16s1(cur_cs()) as u8;
                 set_cur_chr(st.eqtb.b32s1(cur_cs()));
-                if cur_cmd() >= OUTER_CALL_GN {
-                    if cur_cmd() == DONT_EXPAND_GN {
+                if st.scanner.cur_cmd >= OUTER_CALL_GN {
+                    if st.scanner.cur_cmd == DONT_EXPAND_GN {
                         set_cur_cs(st.mem.b32s0(cur_input().loc) - CS_TOKEN_FLAG);
                         set_cur_input_loc(TEX_NULL);
-                        set_cur_cmd(st.eqtb.b16s1(cur_cs()) as u8);
+                        st.scanner.cur_cmd = st.eqtb.b16s1(cur_cs()) as u8;
                         set_cur_chr(st.eqtb.b32s1(cur_cs()));
-                        if cur_cmd() > MAX_COMMAND_GN {
-                            set_cur_cmd(RELAX_GN);
+                        if st.scanner.cur_cmd > MAX_COMMAND_GN {
+                            st.scanner.cur_cmd = RELAX_GN;
                             set_cur_chr(NO_EXPAND_FLAG_GN);
                         }
                     } else {
@@ -2222,9 +2222,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     }
                 }
             } else {
-                set_cur_cmd((t / MAX_CHAR_VAL_GN) as u8);
+                st.scanner.cur_cmd = (t / MAX_CHAR_VAL_GN) as u8;
                 set_cur_chr(t % MAX_CHAR_VAL_GN);
-                match cur_cmd() {
+                match st.scanner.cur_cmd {
                     x if x == LEFT_BRACE_CAT => {
                         st.scanner.align_state = st.scanner.align_state + 1;
                     }
@@ -2249,7 +2249,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
         }
 
         // Alignment preamble check (§818)
-        if cur_cmd() <= CAR_RET && cur_cmd() >= TAB_MARK_CAT && st.scanner.align_state == 0 {
+        if st.scanner.cur_cmd <= CAR_RET && st.scanner.cur_cmd >= TAB_MARK_CAT && st.scanner.align_state == 0 {
             if st.scanner.scanner_status == ALIGNING_GN || st.scanner.cur_align == TEX_NULL {
                 return GetNextOutcome::Abort(crate::input::InputAbort::Fatal(
                     c"(interwoven alignment preambles are not allowed)".as_ptr(),
@@ -2268,7 +2268,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     try_in!(crate::input::begin_token_list_in(st, __p, V_TEMPLATE_GN))
                 };
             }
-            set_cur_cmd(saved_cmd as u8);
+            st.scanner.cur_cmd = saved_cmd as u8;
             st.scanner.align_state = 1_000_000;
             continue 'restart;
         }
@@ -2492,12 +2492,12 @@ fn leaf_int_range_error(
 }
 
 pub(crate) fn x_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
-    while cur_cmd() > MAX_COMMAND {
+    while st.scanner.cur_cmd > MAX_COMMAND {
         expand_in(st)?;
         get_next_scc(st)?;
     }
     if cur_cs() == 0 {
-        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+        set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + cur_chr());
     } else {
         set_cur_tok(CS_TOKEN_FLAG + cur_cs());
     }
@@ -2506,15 +2506,15 @@ pub(crate) fn x_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAb
 pub(crate) fn get_x_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
         get_next_scc(st)?;
-        if cur_cmd() <= MAX_COMMAND {
+        if st.scanner.cur_cmd <= MAX_COMMAND {
             break;
         }
-        if cur_cmd() >= CALL {
-            if cur_cmd() < END_TEMPLATE {
+        if st.scanner.cur_cmd >= CALL {
+            if st.scanner.cur_cmd < END_TEMPLATE {
                 macro_call_in(st)?;
             } else {
                 set_cur_cs(FROZEN_ENDV);
-                set_cur_cmd(ENDV);
+                st.scanner.cur_cmd = ENDV;
                 break;
             }
         } else {
@@ -2522,7 +2522,7 @@ pub(crate) fn get_x_token_in(st: &mut crate::state::EngineState) -> Result<(), S
         }
     }
     if cur_cs() == 0 {
-        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+        set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + cur_chr());
     } else {
         set_cur_tok(CS_TOKEN_FLAG + cur_cs());
     }
@@ -2632,7 +2632,7 @@ pub(crate) fn scan_toks_in(
                     if cur_tok() < RIGHT_BRACE_LIMIT {
                         break 'param_scan false; // goto done1
                     }
-                    if cur_cmd() == MAC_PARAM {
+                    if st.scanner.cur_cmd == MAC_PARAM {
                         // §495
                         let s = MATCH_TOKEN + cur_chr();
                         get_token_in(st)?;
@@ -2694,7 +2694,7 @@ pub(crate) fn scan_toks_in(
                 st.mem.set_b32s0(q, END_MATCH_TOKEN);
                 p = q;
                 // §494: check for missing {
-                if cur_cmd() == RIGHT_BRACE {
+                if st.scanner.cur_cmd == RIGHT_BRACE {
                     error_here_with_diagnostic_in(st, c"Missing { inserted".as_ptr());
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
                     st.scanner.align_state += 1;
@@ -2719,15 +2719,15 @@ pub(crate) fn scan_toks_in(
                 // §497: expand, but handle \the specially
                 loop {
                     get_next_scc(st)?;
-                    if cur_cmd() >= CALL && st.mem.b32s0(st.mem.b32s1(cur_chr())) == PROTECTED_TOKEN
+                    if st.scanner.cur_cmd >= CALL && st.mem.b32s0(st.mem.b32s1(cur_chr())) == PROTECTED_TOKEN
                     {
-                        set_cur_cmd(RELAX);
+                        st.scanner.cur_cmd = RELAX;
                         set_cur_chr(NO_EXPAND_FLAG);
                     }
-                    if cur_cmd() <= MAX_COMMAND {
+                    if st.scanner.cur_cmd <= MAX_COMMAND {
                         break; // done2
                     }
-                    if cur_cmd() != THE {
+                    if st.scanner.cur_cmd != THE {
                         expand_in(st)?;
                     } else {
                         let q = the_toks_in(st)?;
@@ -2745,7 +2745,7 @@ pub(crate) fn scan_toks_in(
             }
 
             if cur_tok() < RIGHT_BRACE_LIMIT {
-                if cur_cmd() < RIGHT_BRACE {
+                if st.scanner.cur_cmd < RIGHT_BRACE {
                     unbalance += 1;
                 } else {
                     unbalance -= 1;
@@ -2753,7 +2753,7 @@ pub(crate) fn scan_toks_in(
                         break 'found; // goto found
                     }
                 }
-            } else if cur_cmd() == MAC_PARAM && macro_def {
+            } else if st.scanner.cur_cmd == MAC_PARAM && macro_def {
                 // §498: parameter reference in definition body
                 let s = cur_tok();
                 if xpand {
@@ -2761,7 +2761,7 @@ pub(crate) fn scan_toks_in(
                 } else {
                     get_token_in(st)?;
                 }
-                if cur_cmd() != MAC_PARAM {
+                if st.scanner.cur_cmd != MAC_PARAM {
                     if cur_tok() <= ZERO_TOKEN || cur_tok() > t {
                         error_here_with_diagnostic_in(
                             st,
@@ -2809,14 +2809,14 @@ pub(crate) fn pass_text_in(st: &mut crate::state::EngineState) -> Result<(), Scc
 
     loop {
         get_next_scc(st)?;
-        if cur_cmd() == FI_OR_ELSE {
+        if st.scanner.cur_cmd == FI_OR_ELSE {
             if l == 0 {
                 break; // done:
             }
             if cur_chr() == FI_CODE as i32 {
                 l -= 1;
             }
-        } else if cur_cmd() == IF_TEST {
+        } else if st.scanner.cur_cmd == IF_TEST {
             l += 1;
         }
     }
@@ -2955,7 +2955,7 @@ pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccA
     loop {
         loop {
             get_x_token_in(st)?;
-            if cur_cmd() != SPACER {
+            if st.scanner.cur_cmd != SPACER {
                 break;
             }
         }
@@ -2973,9 +2973,9 @@ pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccA
             get_token_in(st)?;
             if cur_tok() < CS_TOKEN_FLAG {
                 set_cur_val(cur_chr());
-                if cur_cmd() <= 2 {
+                if st.scanner.cur_cmd <= 2 {
                     // RIGHT_BRACE = 2 (xetex_format.h:232)
-                    if cur_cmd() == 2 {
+                    if st.scanner.cur_cmd == 2 {
                         st.scanner.align_state += 1;
                     } else {
                         st.scanner.align_state -= 1;
@@ -2998,7 +2998,7 @@ pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccA
                 scc_err(oc)?;
             } else {
                 get_x_token_in(st)?;
-                if cur_cmd() != SPACER {
+                if st.scanner.cur_cmd != SPACER {
                     crate::input::back_input_in(st)?;
                 }
             }
@@ -3016,18 +3016,18 @@ pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccA
                 set_cur_cs(v);
             }
             if cur_cs() != UNDEFINED_PRIMITIVE {
-                set_cur_cmd(st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
+                st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8;
                 set_cur_chr(st.eqtb.b32s1(PRIM_EQTB_BASE + cur_cs()));
                 set_cur_cs(PRIM_EQTB_BASE + cur_cs());
                 set_cur_tok(CS_TOKEN_FLAG + cur_cs());
             } else {
-                set_cur_cmd(RELAX);
+                st.scanner.cur_cmd = RELAX;
                 set_cur_chr(0);
                 set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);
                 set_cur_cs(FROZEN_RELAX);
             }
             continue 'restart;
-        } else if cur_cmd() >= MIN_INTERNAL && cur_cmd() <= MAX_INTERNAL {
+        } else if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
             scan_something_internal_in(st, INT_VAL, false)?;
         } else {
             let mut radix_val: i32 = 10;
@@ -3092,7 +3092,7 @@ pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccA
                     c"look up `weird error' in the index to The TeXbook.)".as_ptr();
                 let oc = crate::input::back_error_in(st)?;
                 scc_err(oc)?;
-            } else if cur_cmd() != SPACER {
+            } else if st.scanner.cur_cmd != SPACER {
                 crate::input::back_input_in(st)?;
             }
         }
@@ -3140,7 +3140,7 @@ pub(crate) fn xetex_scan_dimen_in(
             loop {
                 loop {
                     get_x_token_in(st)?;
-                    if cur_cmd() != SPACER {
+                    if st.scanner.cur_cmd != SPACER {
                         break;
                     }
                 }
@@ -3153,7 +3153,7 @@ pub(crate) fn xetex_scan_dimen_in(
                 }
             }
 
-            if cur_cmd() >= MIN_INTERNAL && cur_cmd() <= MAX_INTERNAL {
+            if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
                 if mu {
                     scan_something_internal_in(st, MU_VAL, false)?;
                     if st.scanner.cur_val_level as i16 >= GLUE_VAL {
@@ -3219,7 +3219,7 @@ pub(crate) fn xetex_scan_dimen_in(
                         kk -= 1;
                     }
                     f = round_decimals(&st.errors, k);
-                    if cur_cmd() != SPACER {
+                    if st.scanner.cur_cmd != SPACER {
                         crate::input::back_input_in(st)?;
                     }
                 }
@@ -3257,12 +3257,12 @@ pub(crate) fn xetex_scan_dimen_in(
                 let save_cv = cur_val();
                 loop {
                     get_x_token_in(st)?;
-                    if cur_cmd() != SPACER {
+                    if st.scanner.cur_cmd != SPACER {
                         break;
                     }
                 }
 
-                if cur_cmd() >= MIN_INTERNAL && cur_cmd() <= MAX_INTERNAL {
+                if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
                     if mu {
                         scan_something_internal_in(st, MU_VAL, false)?;
                         if st.scanner.cur_val_level as i16 >= GLUE_VAL {
@@ -3313,7 +3313,7 @@ pub(crate) fn xetex_scan_dimen_in(
 
                 if let Some(v) = em_ex {
                     get_x_token_in(st)?;
-                    if cur_cmd() != SPACER {
+                    if st.scanner.cur_cmd != SPACER {
                         crate::input::back_input_in(st)?;
                     }
                     let xod = crate::scaled_math::xn_over_d_in(&mut st.errors, v, f, 65536);
@@ -3432,7 +3432,7 @@ pub(crate) fn xetex_scan_dimen_in(
             }
             if read_spacer {
                 get_x_token_in(st)?;
-                if cur_cmd() != SPACER {
+                if st.scanner.cur_cmd != SPACER {
                     crate::input::back_input_in(st)?;
                 }
             }
@@ -3472,7 +3472,7 @@ pub(crate) fn scan_glue_in(st: &mut crate::state::EngineState, level: i16) -> Re
     loop {
         loop {
             get_x_token_in(st)?;
-            if cur_cmd() != SPACER {
+            if st.scanner.cur_cmd != SPACER {
                 break;
             }
         }
@@ -3485,7 +3485,7 @@ pub(crate) fn scan_glue_in(st: &mut crate::state::EngineState, level: i16) -> Re
         }
     }
 
-    if cur_cmd() >= MIN_INTERNAL && cur_cmd() <= MAX_INTERNAL {
+    if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
         scan_something_internal_in(st, level, negative)?;
         if st.scanner.cur_val_level as i16 >= GLUE_VAL {
             if st.scanner.cur_val_level as i16 != level {
@@ -3569,7 +3569,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 let o: i16 = if s == EXPR_NONE { l } else { INT_VAL };
                 loop {
                     get_x_token_in(st)?;
-                    if cur_cmd() != SPACER {
+                    if st.scanner.cur_cmd != SPACER {
                         break;
                     }
                 }
@@ -3603,7 +3603,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             // found:
             loop {
                 get_x_token_in(st)?;
-                if cur_cmd() != SPACER {
+                if st.scanner.cur_cmd != SPACER {
                     break;
                 }
             }
@@ -3620,7 +3620,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             };
             if o == EXPR_NONE {
                 if p == crate::mem::TEX_NULL {
-                    if cur_cmd() != RELAX {
+                    if st.scanner.cur_cmd != RELAX {
                         crate::input::back_input_in(st)?;
                     }
                 } else if cur_tok() != OTHER_TOKEN + 41 {
@@ -3912,7 +3912,7 @@ pub(crate) fn scan_keyword_in(
                 let head = st.mem.b32s1(BACKUP_HEAD);
                 crate::mem::flush_list(&mut st.mem, head);
                 return Ok(true);
-            } else if cur_cmd() != SPACER || p != BACKUP_HEAD {
+            } else if st.scanner.cur_cmd != SPACER || p != BACKUP_HEAD {
                 crate::input::back_input_in(st)?;
                 if p != BACKUP_HEAD {
                     let head = st.mem.b32s1(BACKUP_HEAD);
@@ -3934,7 +3934,7 @@ pub(crate) fn scan_keyword_in(
             st.mem.set_b32s0(q, cur_tok());
             p = q;
             i += 1;
-        } else if cur_cmd() != SPACER || p != BACKUP_HEAD {
+        } else if st.scanner.cur_cmd != SPACER || p != BACKUP_HEAD {
             crate::input::back_input_in(st)?;
             if p != BACKUP_HEAD {
                 let head = st.mem.b32s1(BACKUP_HEAD);
@@ -3950,11 +3950,11 @@ pub(crate) fn scan_keyword_in(
 pub(crate) fn scan_left_brace_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
         get_x_token_in(st)?;
-        if cur_cmd() != SPACER && cur_cmd() != RELAX {
+        if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
             break;
         }
     }
-    if cur_cmd() != LEFT_BRACE {
+    if st.scanner.cur_cmd != LEFT_BRACE {
         error_here_with_diagnostic_in(st, c"Missing { inserted".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 4;
@@ -3966,7 +3966,7 @@ pub(crate) fn scan_left_brace_in(st: &mut crate::state::EngineState) -> Result<(
         let oc = crate::input::back_error_in(st)?;
         scc_err(oc)?;
         set_cur_tok(LEFT_BRACE_TOKEN + '{' as i32);
-        set_cur_cmd(LEFT_BRACE);
+        st.scanner.cur_cmd = LEFT_BRACE;
         set_cur_chr('{' as i32);
         st.scanner.align_state += 1;
     }
@@ -4012,7 +4012,7 @@ pub(crate) fn scan_something_internal_in(
     'restart: loop {
         m = cur_chr();
 
-        match cur_cmd() {
+        match st.scanner.cur_cmd {
             DEF_CODE => {
                 scan_usv_num_in(st)?;
                 if m == MATH_CODE_BASE {
@@ -4133,8 +4133,8 @@ pub(crate) fn scan_something_internal_in(
                     scc_err(oc)?;
                     set_cur_val(0);
                     st.scanner.cur_val_level = DIMEN_VAL as u8;
-                } else if cur_cmd() <= ASSIGN_TOKS {
-                    if cur_cmd() < ASSIGN_TOKS {
+                } else if st.scanner.cur_cmd <= ASSIGN_TOKS {
+                    if st.scanner.cur_cmd < ASSIGN_TOKS {
                         if m == 0 {
                             scan_register_num_in(st)?;
                             if cur_val() < 256 {
@@ -5128,12 +5128,12 @@ pub(crate) fn scan_something_internal_in(
                         set_cur_cs(v);
                     }
                     if cur_cs() != UNDEFINED_PRIMITIVE {
-                        set_cur_cmd(st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8);
+                        st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8;
                         set_cur_chr(st.eqtb.b32s1(PRIM_EQTB_BASE + cur_cs()));
                         set_cur_cs(PRIM_EQTB_BASE + cur_cs());
                         set_cur_tok(CS_TOKEN_FLAG + cur_cs());
                     } else {
-                        set_cur_cmd(RELAX);
+                        st.scanner.cur_cmd = RELAX;
                         set_cur_chr(0);
                         set_cur_tok(CS_TOKEN_FLAG + FROZEN_RELAX);
                         set_cur_cs(FROZEN_RELAX);
@@ -5143,7 +5143,7 @@ pub(crate) fn scan_something_internal_in(
             }
             _ => {
                 error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
-                print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+                print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
                 print_cstr_in(st, c"' after ".as_ptr());
                 print_esc_cstr_in(st, c"the".as_ptr());
                 capture_to_diagnostic_in(st, std::ptr::null_mut());
@@ -5249,15 +5249,15 @@ pub(crate) fn scan_font_ident_in(st: &mut crate::state::EngineState) -> Result<(
     let f;
     loop {
         get_x_token_in(st)?;
-        if cur_cmd() != SPACER {
+        if st.scanner.cur_cmd != SPACER {
             break;
         }
     }
-    if cur_cmd() == DEF_FONT {
+    if st.scanner.cur_cmd == DEF_FONT {
         f = st.eqtb.b32s1(CUR_FONT_LOC);
-    } else if cur_cmd() == SET_FONT {
+    } else if st.scanner.cur_cmd == SET_FONT {
         f = cur_chr();
-    } else if cur_cmd() == DEF_FAMILY {
+    } else if st.scanner.cur_cmd == DEF_FAMILY {
         let m = cur_chr();
         scan_math_fam_int_in(st)?;
         f = st.eqtb.b32s1(m + cur_val());
@@ -5372,7 +5372,7 @@ pub(crate) fn get_token_in(st: &mut crate::state::EngineState) -> Result<(), Scc
     get_next_scc(st)?;
     st.eqtb.no_new_control_sequence = true;
     if cur_cs() == 0 {
-        set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+        set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + cur_chr());
     } else {
         set_cur_tok(CS_TOKEN_FLAG + cur_cs());
     }
@@ -5393,7 +5393,7 @@ pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result
     loop {
         get_token_in(st)?;
         if cur_tok() < RIGHT_BRACE_LIMIT {
-            if cur_cmd() < RIGHT_BRACE {
+            if st.scanner.cur_cmd < RIGHT_BRACE {
                 unbalance += 1;
             } else {
                 unbalance -= 1;

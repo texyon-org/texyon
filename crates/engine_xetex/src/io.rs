@@ -3,7 +3,7 @@
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{cur_chr, cur_val, first};
 use crate::globals::{
-    cur_cmd, cur_cs, cur_input, set_cur_cs, set_cur_input_limit,
+    cur_cs, cur_input, set_cur_cs, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
 };
 use crate::input::InputAbort;
@@ -1415,14 +1415,14 @@ pub(crate) fn scan_file_name_in(st: &mut crate::state::EngineState) -> Result<()
 
     loop {
         crate::scan::get_x_token_in(st)?;
-        if cur_cmd() != SPACER && cur_cmd() != RELAX {
+        if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
             break;
         }
     }
 
     crate::input::back_input_in(st)?;
 
-    if cur_cmd() == LEFT_BRACE {
+    if st.scanner.cur_cmd == LEFT_BRACE {
         scan_file_name_braced_in(st)?;
     } else {
         st.scanner.name_in_progress = true;
@@ -1430,13 +1430,13 @@ pub(crate) fn scan_file_name_in(st: &mut crate::state::EngineState) -> Result<()
 
         loop {
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() != SPACER {
+            if st.scanner.cur_cmd != SPACER {
                 break;
             }
         }
 
         loop {
-            if cur_cmd() > OTHER_CHAR || cur_chr() > BIGGEST_CHAR {
+            if st.scanner.cur_cmd > OTHER_CHAR || cur_chr() > BIGGEST_CHAR {
                 crate::input::back_input_in(st)?;
                 break;
             }

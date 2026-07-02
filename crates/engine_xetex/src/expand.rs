@@ -120,8 +120,8 @@ fn pop_cond_node_in(st: &mut crate::state::EngineState) {
 
 pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_chr, cur_cmd, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, first, line,
-        set_cur_chr, set_cur_cmd, set_cur_cs,
+        cur_chr, cur_cs, cur_list_mode, cur_ptr, cur_tok, cur_val, first, line,
+        set_cur_chr, set_cur_cs,
     };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, get_node_scc, scc_err};
@@ -158,30 +158,30 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
     match this_if {
         IF_CHAR_CODE | IF_CAT_CODE => {
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() == RELAX && cur_chr() == NO_EXPAND_FLAG {
-                set_cur_cmd(ACTIVE_CHAR_C);
+            if st.scanner.cur_cmd == RELAX && cur_chr() == NO_EXPAND_FLAG {
+                st.scanner.cur_cmd = ACTIVE_CHAR_C;
                 set_cur_chr(cur_tok() - (CS_TOKEN_FLAG + ACTIVE_BASE));
             }
-            if cur_cmd() > ACTIVE_CHAR_C || cur_chr() > BIGGEST_USV {
+            if st.scanner.cur_cmd > ACTIVE_CHAR_C || cur_chr() > BIGGEST_USV {
                 m = RELAX as i32;
                 n = TOO_BIG_USV_C;
             } else {
-                m = cur_cmd() as i32;
+                m = st.scanner.cur_cmd as i32;
                 n = cur_chr();
             }
             crate::scan::get_x_token_in(st)?;
-            if cur_cmd() == RELAX && cur_chr() == NO_EXPAND_FLAG {
-                set_cur_cmd(ACTIVE_CHAR_C);
+            if st.scanner.cur_cmd == RELAX && cur_chr() == NO_EXPAND_FLAG {
+                st.scanner.cur_cmd = ACTIVE_CHAR_C;
                 set_cur_chr(cur_tok() - (CS_TOKEN_FLAG + ACTIVE_BASE));
             }
-            if cur_cmd() > ACTIVE_CHAR_C || cur_chr() > BIGGEST_USV {
-                set_cur_cmd(RELAX);
+            if st.scanner.cur_cmd > ACTIVE_CHAR_C || cur_chr() > BIGGEST_USV {
+                st.scanner.cur_cmd = RELAX;
                 set_cur_chr(TOO_BIG_USV_C);
             }
             b = if this_if == IF_CHAR_CODE {
                 n == cur_chr()
             } else {
-                m == cur_cmd() as i32
+                m == st.scanner.cur_cmd as i32
             };
         }
         IF_INT_CODE | IF_DIM_CODE => {
@@ -193,7 +193,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             n = cur_val();
             loop {
                 crate::scan::get_x_token_in(st)?;
-                if cur_cmd() != SPACER {
+                if st.scanner.cur_cmd != SPACER {
                     break;
                 }
             }
@@ -271,12 +271,12 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             st.scanner.scanner_status = NORMAL_SCAN;
             crate::scan::get_next_scc(st)?;
             n = cur_cs();
-            p = cur_cmd() as i32;
+            p = st.scanner.cur_cmd as i32;
             q = cur_chr();
             crate::scan::get_next_scc(st)?;
-            if cur_cmd() != p as u8 {
+            if st.scanner.cur_cmd != p as u8 {
                 b = false;
-            } else if (cur_cmd() as i32) < CALL as i32 {
+            } else if (st.scanner.cur_cmd as i32) < CALL as i32 {
                 b = cur_chr() == q;
             } else {
                 p = st.mem.b32s1(cur_chr());
@@ -315,7 +315,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             save_scanner_status = st.scanner.scanner_status;
             st.scanner.scanner_status = NORMAL_SCAN;
             crate::scan::get_next_scc(st)?;
-            b = cur_cmd() != UNDEFINED_CS;
+            b = st.scanner.cur_cmd != UNDEFINED_CS;
             st.scanner.scanner_status = save_scanner_status;
         }
         IF_CS_CODE => {
@@ -335,7 +335,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                     break;
                 }
             }
-            if cur_cmd() != END_CS_NAME {
+            if st.scanner.cur_cmd != END_CS_NAME {
                 crate::output::error_here_with_diagnostic_in(st, c"Missing ".as_ptr());
                 crate::output::print_esc_cstr_in(st, c"endcsname".as_ptr());
                 crate::output::print_cstr_in(st, c" inserted".as_ptr());
@@ -465,9 +465,9 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                 crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)
                     .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
             };
-            b = cur_cmd() != UNDEFINED_CS
+            b = st.scanner.cur_cmd != UNDEFINED_CS
                 && m != UNDEFINED_PRIMITIVE
-                && cur_cmd() as i32 == st.eqtb.b16s1(PRIM_EQTB_BASE + m) as i32
+                && st.scanner.cur_cmd as i32 == st.eqtb.b16s1(PRIM_EQTB_BASE + m) as i32
                 && cur_chr() == st.eqtb.b32s1(PRIM_EQTB_BASE + m);
         }
         _ => {}
@@ -1241,8 +1241,8 @@ fn make_string_overflow_scc(st: &crate::state::EngineState) -> SccAbort {
 }
 pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_chr, cur_cmd, cur_cs, cur_input, cur_ptr, cur_tok, cur_val, first, hash_s1,
-        set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_loc, set_cur_input_start, set_cur_ptr,
+        cur_chr, cur_cs, cur_input, cur_ptr, cur_tok, cur_val, first, hash_s1,
+        set_cur_chr, set_cur_cs, set_cur_input_loc, set_cur_input_start, set_cur_ptr,
         set_cur_tok, set_cur_val,
     };
     use crate::scan::{get_avail_scc, scc_err};
@@ -1288,11 +1288,11 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
     let backup_backup = st.mem.b32s1(BACKUP_HEAD);
 
     'reswitch: loop {
-        if cur_cmd() < CALL {
+        if st.scanner.cur_cmd < CALL {
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 1 {
                 crate::output::show_cur_cmd_chr_in(st);
             }
-            match cur_cmd() {
+            match st.scanner.cur_cmd {
                 TOP_BOT_MARK => {
                     let t = (cur_chr() % MARKS_CODE) as usize;
                     if cur_chr() >= MARKS_CODE {
@@ -1325,7 +1325,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         crate::scan::get_token_in(st)?;
                         let t = cur_tok();
                         crate::scan::get_token_in(st)?;
-                        if cur_cmd() > MAX_COMMAND {
+                        if st.scanner.cur_cmd > MAX_COMMAND {
                             expand_in(st)?;
                         } else {
                             crate::input::back_input_in(st)?;
@@ -1335,7 +1335,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                     } else {
                         // \unless
                         crate::scan::get_token_in(st)?;
-                        if cur_cmd() == IF_TEST_CMD && cur_chr() != IF_CASE_CODE_VAL {
+                        if st.scanner.cur_cmd == IF_TEST_CMD && cur_chr() != IF_CASE_CODE_VAL {
                             set_cur_chr(cur_chr() + UNLESS_CODE);
                             continue 'reswitch;
                         }
@@ -1345,7 +1345,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         );
                         crate::output::print_esc_cstr_in(st, c"unless".as_ptr());
                         crate::output::print_cstr_in(st, c"' before `".as_ptr());
-                        crate::output::print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+                        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
                         crate::output::print_char_in(st, '\'' as i32);
                         crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
                         st.errors.help_ptr = 1;
@@ -1392,9 +1392,9 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         if cur_cs() != UNDEFINED_PRIMITIVE {
                             let t = st.eqtb.b16s1(PRIM_EQTB_BASE + cur_cs()) as u8;
                             if t > MAX_COMMAND {
-                                set_cur_cmd(t);
+                                st.scanner.cur_cmd = t;
                                 set_cur_chr(st.eqtb.b32s1(PRIM_EQTB_BASE + cur_cs()));
-                                set_cur_tok(cur_cmd() as i32 * MAX_CHAR_VAL + cur_chr());
+                                set_cur_tok(st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + cur_chr());
                                 set_cur_cs(0);
                                 continue 'reswitch;
                             } else {
@@ -1425,7 +1425,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                             break;
                         }
                     }
-                    if cur_cmd() != END_CS_NAME {
+                    if st.scanner.cur_cmd != END_CS_NAME {
                         crate::output::error_here_with_diagnostic_in(st, c"Missing ".as_ptr());
                         crate::output::print_esc_cstr_in(st, c"endcsname".as_ptr());
                         crate::output::print_cstr_in(st, c" inserted".as_ptr());
@@ -1563,7 +1563,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                     scc_err(crate::errors::error_in(st))?;
                 }
             }
-        } else if cur_cmd() < END_TEMPLATE {
+        } else if st.scanner.cur_cmd < END_TEMPLATE {
             macro_call_in(st)?;
         } else {
             set_cur_tok(CS_TOKEN_FLAG + FROZEN_ENDV);

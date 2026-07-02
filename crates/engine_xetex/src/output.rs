@@ -10,7 +10,7 @@ use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, line, };
+    cur_chr, cur_cs, cur_input, cur_list_mode, cur_val, line, };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -2669,12 +2669,12 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
 ///
 /// translated from xetex-xetex0.c:3383 (print_meaning)
 pub(crate) fn print_meaning_in(st: &mut EngineState) {
-    print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
-    if cur_cmd() as u16 >= CALL {
+    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
+    if st.scanner.cur_cmd as u16 >= CALL {
         print_char_in(st, ':' as i32);
         print_ln_in(st);
         token_show_in(st, cur_chr());
-    } else if cur_cmd() as u16 == TOP_BOT_MARK && (cur_chr() as usize) < 5 {
+    } else if st.scanner.cur_cmd as u16 == TOP_BOT_MARK && (cur_chr() as usize) < 5 {
         print_char_in(st, ':' as i32);
         print_ln_in(st);
         token_show_in(st, st.scanner.cur_mark[cur_chr() as usize]);
@@ -2855,13 +2855,13 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
         print_cstr_in(st, c": ".as_ptr());
         st.scanner.shown_mode = cur_list_mode();
     }
-    print_cmd_chr_in(st, cur_cmd() as u16, cur_chr());
+    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, cur_chr());
     if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
-        && cur_cmd() >= IF_TEST as u8
-        && cur_cmd() <= FI_OR_ELSE
+        && st.scanner.cur_cmd >= IF_TEST as u8
+        && st.scanner.cur_cmd <= FI_OR_ELSE
     {
         print_cstr_in(st, c": ".as_ptr());
-        let (mut n, l) = if cur_cmd() == FI_OR_ELSE {
+        let (mut n, l) = if st.scanner.cur_cmd == FI_OR_ELSE {
             print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
             print_char_in(st, b' ' as i32);
             (0_i32, st.scanner.if_line)

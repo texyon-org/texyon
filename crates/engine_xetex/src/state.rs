@@ -703,6 +703,9 @@ pub(crate) struct ScannerState {
     /// Expansion-depth limit (`expand_depth`); set once at init. Folded off the
     /// former `mod raw` C global for the zero-global-state goal (`01e`).
     pub expand_depth: i32,
+    /// Current command code — the scanner's `cur_cmd` (`eight_bits`). Folded off
+    /// the `mod raw` C global (`01e`).
+    pub cur_cmd: u8,
     /// Mark registers: `cur_mark[0..=4]` (xetex-xetexd.h:527). Each entry is
     /// a token-list pointer (`int32_t`). Inline fixed array; no alloc/cleanup
     /// edge. Plain `int32_t` elements, no newtype debt.

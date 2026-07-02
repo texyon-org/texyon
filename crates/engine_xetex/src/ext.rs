@@ -2,7 +2,7 @@
 use crate::state::EngineState;
 
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
-use crate::globals::{cur_chr, cur_cmd, cur_cs, cur_val, set_cur_cs, set_cur_val};
+use crate::globals::{cur_chr, cur_cs, cur_val, set_cur_cs, set_cur_val};
 use crate::main_control::{mc_propagate_error, new_graf_in};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::pic::load_picture_in;
@@ -2745,7 +2745,7 @@ pub(crate) fn do_extension_in(
 
         IMMEDIATE_CODE_DE => {
             get_x_token_in(st)?;
-            if cur_cmd() == EXTENSION_DE && cur_chr() <= CLOSE_NODE_DE {
+            if st.scanner.cur_cmd == EXTENSION_DE && cur_chr() <= CLOSE_NODE_DE {
                 let p = crate::globals::cur_list_tail();
                 do_extension_in(st)?;
                 crate::shipout::out_what_in(st, crate::globals::cur_list_tail())?;
