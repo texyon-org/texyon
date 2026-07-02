@@ -5265,12 +5265,9 @@ pub(crate) unsafe fn main_control_main_loop_in(
     st: &mut crate::state::EngineState,
 ) -> Result<bool, MainControlAbort> {
     use crate::globals::{
-        cancel_boundary, cur_l, cur_list_aux_b32s0, cur_list_aux_b32s1,
-        cur_list_head, cur_list_mode, cur_list_tail, cur_q, cur_r, ins_disc, lft_hit,
-        lig_stack, ligature_present, rt_hit,
-        set_cancel_boundary, set_cur_l, set_cur_list_aux_b32s0,
-        set_cur_list_tail, set_cur_q, set_cur_r, set_ins_disc,
-        set_lft_hit, set_lig_stack, set_ligature_present, set_rt_hit, };
+        cur_list_aux_b32s0, cur_list_aux_b32s1,
+        cur_list_head, cur_list_mode, cur_list_tail, set_cur_list_aux_b32s0,
+        set_cur_list_tail, };
     use crate::mem::TEX_NULL;
 
     // Constants
@@ -5855,15 +5852,15 @@ pub(crate) unsafe fn main_control_main_loop_in(
         st.mem.set_b32s1(a, TEX_NULL);
         a
     };
-    set_lig_stack(ls);
+    st.mainloop.lig_stack = ls;
     st.mem.set_b16s1(ls, mf as u16);
-    set_cur_l(st.scanner.cur_chr);
-    st.mem.set_b16s0(ls, cur_l() as u16);
-    set_cur_q(cur_list_tail());
+    st.mainloop.cur_l = st.scanner.cur_chr;
+    st.mem.set_b16s0(ls, st.mainloop.cur_l as u16);
+    st.mainloop.cur_q = cur_list_tail();
 
     // Determine entry point: NON_ADDRESS → move_2; else → lig_loop_1 (bchar)
-    let bchar_lbl = if cancel_boundary() {
-        set_cancel_boundary(false);
+    let bchar_lbl = if st.mainloop.cancel_boundary {
+        st.mainloop.cancel_boundary = false;
         NON_ADDRESS
     } else {
         st.fonts.bchar_label_entry(mf)
@@ -5871,8 +5868,8 @@ pub(crate) unsafe fn main_control_main_loop_in(
 
     // `enter_lig1_k`: if Some(k), enter lig loop at _1 with that k; else enter at move_2
     let mut enter_lig1_k: Option<i32> = if bchar_lbl != NON_ADDRESS {
-        set_cur_r(cur_l());
-        set_cur_l(TOO_BIG_CHAR);
+        st.mainloop.cur_r = st.mainloop.cur_l;
+        st.mainloop.cur_l = TOO_BIG_CHAR;
         Some(bchar_lbl)
     } else {
         None
@@ -5903,7 +5900,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
             lig_result = lig_inner_loop(st, init_k, &mut main_i, &mut enter_lig1_k)?;
         } else {
             // Enter at main_lig_loop top: check preconditions
-            if (main_i.s1 % 4) as u8 != LIG_TAG as u8 || cur_r() == TOO_BIG_CHAR {
+            if (main_i.s1 % 4) as u8 != LIG_TAG as u8 || st.mainloop.cur_r == TOO_BIG_CHAR {
                 lig_result = 0; // goto main_loop_wrapup
             } else {
                 let init_k = st.fonts.lig_kern_base_entry(st.mainloop.main_f) + main_i.s0 as i32;
@@ -5931,29 +5928,29 @@ pub(crate) unsafe fn main_control_main_loop_in(
 
         if lig_result == 0 {
             // main_loop_wrapup: only when lig_result==0 (result 1=goto_move, 2=goto_move1 both skip wrapup)
-            if cur_l() < TOO_BIG_CHAR {
-                if st.mem.b32s1(cur_q()) > TEX_NULL
+            if st.mainloop.cur_l < TOO_BIG_CHAR {
+                if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
                     && st.mem.b16s0(cur_list_tail()) == st.fonts.hyphen_char_entry(st.mainloop.main_f) as u16
                 {
-                    set_ins_disc(true);
+                    st.mainloop.ins_disc = true;
                 }
-                if ligature_present() {
-                    let lq = st.mem.b32s1(cur_q());
-                    let mp = mc_new_ligature(st, st.mainloop.main_f, cur_l() as u16, lq)?;
-                    if lft_hit() {
+                if st.mainloop.ligature_present {
+                    let lq = st.mem.b32s1(st.mainloop.cur_q);
+                    let mp = mc_new_ligature(st, st.mainloop.main_f, st.mainloop.cur_l as u16, lq)?;
+                    if st.mainloop.lft_hit {
                         st.mem.set_b16s0(mp, 2);
-                        set_lft_hit(false);
+                        st.mainloop.lft_hit = false;
                     }
-                    if rt_hit() && lig_stack() == TEX_NULL {
+                    if st.mainloop.rt_hit && st.mainloop.lig_stack == TEX_NULL {
                         st.mem.set_b16s0(mp, st.mem.b16s0(mp) + 1);
-                        set_rt_hit(false);
+                        st.mainloop.rt_hit = false;
                     }
-                    st.mem.set_b32s1(cur_q(), mp);
+                    st.mem.set_b32s1(st.mainloop.cur_q, mp);
                     set_cur_list_tail(mp);
-                    set_ligature_present(false);
+                    st.mainloop.ligature_present = false;
                 }
-                if ins_disc() {
-                    set_ins_disc(false);
+                if st.mainloop.ins_disc {
+                    st.mainloop.ins_disc = false;
                     if cur_list_mode() > 0 {
                         let nd = mc_new_disc(st)?;
                         st.mem.set_b32s1(cur_list_tail(), nd);
@@ -5967,31 +5964,31 @@ pub(crate) unsafe fn main_control_main_loop_in(
         // main_loop_move: check if lig_stack is exhausted
         // (for lig_result==2 / move1: skip this check, cur_l already set)
         if lig_result != 2 {
-            if lig_stack() == TEX_NULL {
+            if st.mainloop.lig_stack == TEX_NULL {
                 return Ok(false); // goto reswitch
             }
-            set_cur_q(cur_list_tail());
-            set_cur_l(st.mem.b16s0(lig_stack()) as i32);
+            st.mainloop.cur_q = cur_list_tail();
+            st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
         }
 
         // main_loop_move_1: is lig_stack a char node or a lig item?
-        if !mc_is_char_node(st, lig_stack()) {
+        if !mc_is_char_node(st, st.mainloop.lig_stack) {
             // main_loop_move_lig: handle lig item in lig_stack
-            st.mainloop.main_p = st.mem.b32s1(lig_stack() + 1);
+            st.mainloop.main_p = st.mem.b32s1(st.mainloop.lig_stack + 1);
             if st.mainloop.main_p > TEX_NULL {
                 st.mem.set_b32s1(cur_list_tail(), st.mainloop.main_p);
                 set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
             }
-            let temp = lig_stack();
-            set_lig_stack(st.mem.b32s1(temp));
+            let temp = st.mainloop.lig_stack;
+            st.mainloop.lig_stack = st.mem.b32s1(temp);
             crate::mem::free_node(&mut st.mem, temp, SMALL_NODE_SIZE);
-            let ec = crate::fonts::effective_char(&mut st.fonts, true, st.mainloop.main_f, cur_l() as u16);
+            let ec = crate::fonts::effective_char(&mut st.fonts, true, st.mainloop.main_f, st.mainloop.cur_l as u16);
             main_i = st
                 .fonts
                 .font_info_b16(st.fonts.char_base_entry(st.mainloop.main_f) + ec);
-            set_ligature_present(true);
+            st.mainloop.ligature_present = true;
 
-            if lig_stack() == TEX_NULL {
+            if st.mainloop.lig_stack == TEX_NULL {
                 if st.mainloop.main_p > TEX_NULL {
                     // goto main_loop_lookahead (enter with main_i set, skip move_2)
                     // We do the lookahead inline here:
@@ -6000,10 +5997,10 @@ pub(crate) unsafe fn main_control_main_loop_in(
                     }
                     continue 'char_proc;
                 } else {
-                    set_cur_r(st.mainloop.bchar);
+                    st.mainloop.cur_r = st.mainloop.bchar;
                 }
             } else {
-                set_cur_r(st.mem.b16s0(lig_stack()) as i32);
+                st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
             }
             // goto main_lig_loop (outer top) — continue 'char_proc
             continue 'char_proc;
@@ -6015,19 +6012,19 @@ pub(crate) unsafe fn main_control_main_loop_in(
             || eff < st.fonts.font_bc_entry(st.mainloop.main_f) as i32
         {
             mc_propagate_error(crate::output::char_warning_in(st, st.mainloop.main_f, st.scanner.cur_chr))?;
-            st.mem.set_b32s1(lig_stack(), st.mem.avail());
-            st.mem.set_avail(lig_stack());
+            st.mem.set_b32s1(st.mainloop.lig_stack, st.mem.avail());
+            st.mem.set_avail(st.mainloop.lig_stack);
             return Ok(true); // goto big_switch
         }
-        main_i = crate::fonts::effective_char_info(&mut st.fonts, st.mainloop.main_f, cur_l() as u16);
+        main_i = crate::fonts::effective_char_info(&mut st.fonts, st.mainloop.main_f, st.mainloop.cur_l as u16);
         if main_i.s3 == 0 {
             mc_propagate_error(crate::output::char_warning_in(st, st.mainloop.main_f, st.scanner.cur_chr))?;
-            st.mem.set_b32s1(lig_stack(), st.mem.avail());
-            st.mem.set_avail(lig_stack());
+            st.mem.set_b32s1(st.mainloop.lig_stack, st.mem.avail());
+            st.mem.set_avail(st.mainloop.lig_stack);
             return Ok(true); // goto big_switch
         }
-        st.mem.set_b32s1(cur_list_tail(), lig_stack());
-        set_cur_list_tail(lig_stack());
+        st.mem.set_b32s1(cur_list_tail(), st.mainloop.lig_stack);
+        set_cur_list_tail(st.mainloop.lig_stack);
 
         // main_loop_lookahead: get next token, set up lig_stack for it
         if !do_lookahead(st, &mut main_i, &mut enter_lig1_k, mf)? {
@@ -6047,10 +6044,7 @@ unsafe fn lig_inner_loop(
     enter_lig1_k: &mut Option<i32>,
 ) -> Result<u8, MainControlAbort> {
     use crate::globals::{
-        cur_l, cur_list_mode, cur_list_tail, cur_q, cur_r, ins_disc, lft_hit, lig_stack,
-        ligature_present, set_cur_l, set_cur_list_tail, set_cur_q, set_cur_r,
-        set_ins_disc, set_lft_hit, set_lig_stack, set_ligature_present, set_rt_hit,
-    };
+        cur_list_mode, cur_list_tail, set_cur_list_tail, };
 
     let mut mk = init_k;
 
@@ -6058,31 +6052,31 @@ unsafe fn lig_inner_loop(
         // main_lig_loop_1 / main_lig_loop_2
         let mj = st.fonts.font_info_b16(mk);
 
-        if mj.s2 as i32 == cur_r() {
+        if mj.s2 as i32 == st.mainloop.cur_r {
             if mj.s3 <= 128 {
                 if mj.s1 >= 128 {
                     // Kern case: partial wrapup + append kern
-                    if cur_l() < TOO_BIG_CHAR {
-                        if st.mem.b32s1(cur_q()) > TEX_NULL
+                    if st.mainloop.cur_l < TOO_BIG_CHAR {
+                        if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
                             && st.mem.b16s0(cur_list_tail())
                                 == st.fonts.hyphen_char_entry(st.mainloop.main_f) as u16
                         {
-                            set_ins_disc(true);
+                            st.mainloop.ins_disc = true;
                         }
-                        if ligature_present() {
-                            let lq = st.mem.b32s1(cur_q());
-                            let mp = mc_new_ligature(st, st.mainloop.main_f, cur_l() as u16, lq)?;
-                            if lft_hit() {
+                        if st.mainloop.ligature_present {
+                            let lq = st.mem.b32s1(st.mainloop.cur_q);
+                            let mp = mc_new_ligature(st, st.mainloop.main_f, st.mainloop.cur_l as u16, lq)?;
+                            if st.mainloop.lft_hit {
                                 st.mem.set_b16s0(mp, 2);
-                                set_lft_hit(false);
+                                st.mainloop.lft_hit = false;
                             }
                             // rt_hit: only if lig_stack == NULL (not applicable here since we have kern)
-                            st.mem.set_b32s1(cur_q(), mp);
+                            st.mem.set_b32s1(st.mainloop.cur_q, mp);
                             set_cur_list_tail(mp);
-                            set_ligature_present(false);
+                            st.mainloop.ligature_present = false;
                         }
-                        if ins_disc() {
-                            set_ins_disc(false);
+                        if st.mainloop.ins_disc {
+                            st.mainloop.ins_disc = false;
                             if cur_list_mode() > 0 {
                                 let nd = mc_new_disc(st)?;
                                 st.mem.set_b32s1(cur_list_tail(), nd);
@@ -6100,68 +6094,68 @@ unsafe fn lig_inner_loop(
                 }
 
                 // Ligature case
-                if cur_l() == TOO_BIG_CHAR {
-                    set_lft_hit(true);
-                } else if lig_stack() == TEX_NULL {
-                    set_rt_hit(true);
+                if st.mainloop.cur_l == TOO_BIG_CHAR {
+                    st.mainloop.lft_hit = true;
+                } else if st.mainloop.lig_stack == TEX_NULL {
+                    st.mainloop.rt_hit = true;
                 }
 
                 match mj.s1 {
                     1 | 5 => {
-                        set_cur_l(mj.s0 as i32);
+                        st.mainloop.cur_l = mj.s0 as i32;
                         let ec = crate::fonts::effective_char(
                             &mut st.fonts,
                             true,
                             st.mainloop.main_f,
-                            cur_l() as u16,
+                            st.mainloop.cur_l as u16,
                         );
                         *main_i = st
                             .fonts
                             .font_info_b16(st.fonts.char_base_entry(st.mainloop.main_f) + ec);
-                        set_ligature_present(true);
+                        st.mainloop.ligature_present = true;
                     }
                     2 | 6 => {
-                        set_cur_r(mj.s0 as i32);
-                        if lig_stack() == TEX_NULL {
-                            set_lig_stack(mc_new_lig_item(st, cur_r() as u16)?);
+                        st.mainloop.cur_r = mj.s0 as i32;
+                        if st.mainloop.lig_stack == TEX_NULL {
+                            st.mainloop.lig_stack = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
                             st.mainloop.bchar = TOO_BIG_CHAR;
-                        } else if mc_is_char_node(st, lig_stack()) {
-                            let prev = lig_stack();
-                            set_lig_stack(mc_new_lig_item(st, cur_r() as u16)?);
-                            st.mem.set_b32s1(lig_stack() + 1, prev);
+                        } else if mc_is_char_node(st, st.mainloop.lig_stack) {
+                            let prev = st.mainloop.lig_stack;
+                            st.mainloop.lig_stack = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
+                            st.mem.set_b32s1(st.mainloop.lig_stack + 1, prev);
                         } else {
-                            st.mem.set_b16s0(lig_stack(), cur_r() as u16);
+                            st.mem.set_b16s0(st.mainloop.lig_stack, st.mainloop.cur_r as u16);
                         }
                     }
                     3 => {
-                        set_cur_r(mj.s0 as i32);
-                        let prev = lig_stack();
-                        set_lig_stack(mc_new_lig_item(st, cur_r() as u16)?);
-                        st.mem.set_b32s1(lig_stack(), prev);
+                        st.mainloop.cur_r = mj.s0 as i32;
+                        let prev = st.mainloop.lig_stack;
+                        st.mainloop.lig_stack = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
+                        st.mem.set_b32s1(st.mainloop.lig_stack, prev);
                     }
                     7 | 11 => {
                         // Partial wrapup
-                        if cur_l() < TOO_BIG_CHAR {
-                            if st.mem.b32s1(cur_q()) > TEX_NULL
+                        if st.mainloop.cur_l < TOO_BIG_CHAR {
+                            if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
                                 && st.mem.b16s0(cur_list_tail())
                                     == st.fonts.hyphen_char_entry(st.mainloop.main_f) as u16
                             {
-                                set_ins_disc(true);
+                                st.mainloop.ins_disc = true;
                             }
-                            if ligature_present() {
-                                let lq = st.mem.b32s1(cur_q());
-                                let mp = mc_new_ligature(st, st.mainloop.main_f, cur_l() as u16, lq)?;
-                                if lft_hit() {
+                            if st.mainloop.ligature_present {
+                                let lq = st.mem.b32s1(st.mainloop.cur_q);
+                                let mp = mc_new_ligature(st, st.mainloop.main_f, st.mainloop.cur_l as u16, lq)?;
+                                if st.mainloop.lft_hit {
                                     st.mem.set_b16s0(mp, 2);
-                                    set_lft_hit(false);
+                                    st.mainloop.lft_hit = false;
                                 }
                                 // no rt_hit for type 7/11
-                                st.mem.set_b32s1(cur_q(), mp);
+                                st.mem.set_b32s1(st.mainloop.cur_q, mp);
                                 set_cur_list_tail(mp);
-                                set_ligature_present(false);
+                                st.mainloop.ligature_present = false;
                             }
-                            if ins_disc() {
-                                set_ins_disc(false);
+                            if st.mainloop.ins_disc {
+                                st.mainloop.ins_disc = false;
                                 if cur_list_mode() > 0 {
                                     let nd = mc_new_disc(st)?;
                                     st.mem.set_b32s1(cur_list_tail(), nd);
@@ -6169,24 +6163,24 @@ unsafe fn lig_inner_loop(
                                 }
                             }
                         }
-                        set_cur_q(cur_list_tail());
-                        set_cur_l(mj.s0 as i32);
+                        st.mainloop.cur_q = cur_list_tail();
+                        st.mainloop.cur_l = mj.s0 as i32;
                         let ec = crate::fonts::effective_char(
                             &mut st.fonts,
                             true,
                             st.mainloop.main_f,
-                            cur_l() as u16,
+                            st.mainloop.cur_l as u16,
                         );
                         *main_i = st
                             .fonts
                             .font_info_b16(st.fonts.char_base_entry(st.mainloop.main_f) + ec);
-                        set_ligature_present(true);
+                        st.mainloop.ligature_present = true;
                     }
                     _ => {
                         // Type 0 or 4 (default): =: or |=:|
-                        set_cur_l(mj.s0 as i32);
-                        set_ligature_present(true);
-                        if lig_stack() == TEX_NULL {
+                        st.mainloop.cur_l = mj.s0 as i32;
+                        st.mainloop.ligature_present = true;
+                        if st.mainloop.lig_stack == TEX_NULL {
                             return Ok(0); // goto main_loop_wrapup
                         } else {
                             return Ok(2); // goto main_loop_move_1
@@ -6199,7 +6193,7 @@ unsafe fn lig_inner_loop(
                     return Ok(0); // types 5,6,11 → wrapup
                 }
                 // Types 1,2,3,7: re-enter lig loop
-                if cur_l() < TOO_BIG_CHAR {
+                if st.mainloop.cur_l < TOO_BIG_CHAR {
                     // re-enter main_lig_loop (outer): signal caller via enter_lig1_k = None
                     // The outer loop will re-enter at top (checking LIG_TAG)
                     // We need to break out and let caller restart 'char_proc at lig_loop top
@@ -6241,7 +6235,7 @@ unsafe fn do_lookahead(
     _mf: i32,
 ) -> Result<bool, MainControlAbort> {
     use crate::globals::{
-        cur_list_aux_b32s0, set_cur_list_aux_b32s0, set_cur_r, set_lig_stack, };
+        cur_list_aux_b32s0, set_cur_list_aux_b32s0, };
 
     const LETTER: u8 = 11;
     const OTHER_CHAR: u8 = 12;
@@ -6266,8 +6260,8 @@ unsafe fn do_lookahead(
             if st.scanner.cur_cmd == NO_BOUNDARY {
                 st.mainloop.bchar = TOO_BIG_CHAR;
             }
-            set_cur_r(st.mainloop.bchar);
-            set_lig_stack(crate::mem::TEX_NULL);
+            st.mainloop.cur_r = st.mainloop.bchar;
+            st.mainloop.lig_stack = crate::mem::TEX_NULL;
             return Ok(true); // normal: re-enter lig loop at top
         }
     }
@@ -6311,13 +6305,13 @@ unsafe fn do_lookahead(
         st.mem.set_b32s1(a, crate::mem::TEX_NULL);
         a
     };
-    set_lig_stack(ls);
+    st.mainloop.lig_stack = ls;
     st.mem.set_b16s1(ls, st.mainloop.main_f as u16);
     let cr = st.scanner.cur_chr;
-    set_cur_r(cr);
+    st.mainloop.cur_r = cr;
     st.mem.set_b16s0(ls, cr as u16);
     if cr == st.mainloop.false_bchar {
-        set_cur_r(TOO_BIG_CHAR);
+        st.mainloop.cur_r = TOO_BIG_CHAR;
     }
 
     Ok(true) // normal lookahead complete, continue lig loop
@@ -6445,7 +6439,7 @@ pub(crate) unsafe fn main_control_in(
     const EVERY_JOB_TEXT: u16 = 13; // xetex-constants.h:212
     const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
 
-    use crate::globals::{cur_list_mode, set_cancel_boundary};
+    use crate::globals::{cur_list_mode};
     use crate::mem::TEX_NULL;
 
     let every_job = st.eqtb.b32s1(CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB);
@@ -6483,7 +6477,7 @@ pub(crate) unsafe fn main_control_in(
                 (HMODE, NO_BOUNDARY) => {
                     crate::scan::get_x_token_in(st)?;
                     if matches!(st.scanner.cur_cmd, LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM) {
-                        set_cancel_boundary(true);
+                        st.mainloop.cancel_boundary = true;
                     }
                     continue 'reswitch;
                 }

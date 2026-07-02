@@ -146,17 +146,8 @@ mod raw {
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         // main_control inner-loop state (xetex-xetexd.h:672–686).
         // Ligature/kern inner-loop state (xetex-xetexd.h:630–634, 683–686).
-        pub(super) static mut cur_l: i32;
-        pub(super) static mut cur_r: i32;
-        pub(super) static mut cur_q: i32;
-        pub(super) static mut lig_stack: i32;
-        pub(super) static mut ligature_present: bool;
-        pub(super) static mut lft_hit: bool;
-        pub(super) static mut rt_hit: bool;
         // native_text cluster moved to EngineState.scanner.
         // Further main_loop state (xetex-xetexd.h:679–686).
-        pub(super) static mut cancel_boundary: bool;
-        pub(super) static mut ins_disc: bool;
         // XeTeX inter-character class state (xetex-xetexd.h:679-681).
         // Hyphenation trie and exception tables (xetex-xetexd.h:635-645).
 
@@ -665,96 +656,6 @@ pub(crate) fn set_cur_input_limit(v: i32) {
 // ---------------------------------------------------------------------------
 
 
-#[inline]
-pub(crate) fn cur_l() -> i32 {
-    unsafe { raw::cur_l }
-}
-#[inline]
-pub(crate) fn set_cur_l(v: i32) {
-    unsafe {
-        raw::cur_l = v;
-    }
-}
-#[inline]
-pub(crate) fn cur_r() -> i32 {
-    unsafe { raw::cur_r }
-}
-#[inline]
-pub(crate) fn set_cur_r(v: i32) {
-    unsafe {
-        raw::cur_r = v;
-    }
-}
-#[inline]
-pub(crate) fn cur_q() -> i32 {
-    unsafe { raw::cur_q }
-}
-#[inline]
-pub(crate) fn set_cur_q(v: i32) {
-    unsafe {
-        raw::cur_q = v;
-    }
-}
-#[inline]
-pub(crate) fn lig_stack() -> i32 {
-    unsafe { raw::lig_stack }
-}
-#[inline]
-pub(crate) fn set_lig_stack(v: i32) {
-    unsafe {
-        raw::lig_stack = v;
-    }
-}
-#[inline]
-pub(crate) fn ligature_present() -> bool {
-    unsafe { raw::ligature_present }
-}
-#[inline]
-pub(crate) fn set_ligature_present(v: bool) {
-    unsafe {
-        raw::ligature_present = v;
-    }
-}
-#[inline]
-pub(crate) fn lft_hit() -> bool {
-    unsafe { raw::lft_hit }
-}
-#[inline]
-pub(crate) fn set_lft_hit(v: bool) {
-    unsafe {
-        raw::lft_hit = v;
-    }
-}
-#[inline]
-pub(crate) fn rt_hit() -> bool {
-    unsafe { raw::rt_hit }
-}
-#[inline]
-pub(crate) fn set_rt_hit(v: bool) {
-    unsafe {
-        raw::rt_hit = v;
-    }
-}
-#[inline]
-pub(crate) fn cancel_boundary() -> bool {
-    unsafe { raw::cancel_boundary }
-}
-#[inline]
-pub(crate) fn set_cancel_boundary(v: bool) {
-    unsafe {
-        raw::cancel_boundary = v;
-    }
-}
-#[inline]
-pub(crate) fn ins_disc() -> bool {
-    unsafe { raw::ins_disc }
-}
-#[inline]
-pub(crate) fn set_ins_disc(v: bool) {
-    unsafe {
-        raw::ins_disc = v;
-    }
-}
 
 
 // ---------------------------------------------------------------------------

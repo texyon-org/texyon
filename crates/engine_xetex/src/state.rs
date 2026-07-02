@@ -44,6 +44,17 @@ pub(crate) struct MainLoopState {
     /// Inter-character space class of the current / previous char.
     pub space_class: i32,
     pub prev_class: i32,
+    /// Ligature/kern reconstitution scratch (xetex-xetexd.h:630–634, 683–686);
+    /// shared between `main_control`'s main loop and `linebreak::reconstitute`.
+    pub cur_l: i32,
+    pub cur_r: i32,
+    pub cur_q: i32,
+    pub lig_stack: i32,
+    pub ligature_present: bool,
+    pub lft_hit: bool,
+    pub rt_hit: bool,
+    pub cancel_boundary: bool,
+    pub ins_disc: bool,
 }
 
 /// SyncTeX recorder callback (`xetex-synctex.c`); a deferred node-recording fn

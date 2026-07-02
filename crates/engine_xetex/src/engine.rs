@@ -11,9 +11,8 @@ use crate::consts::{
 };
 use crate::format_io::load_fmt_file;
 use crate::globals::{
-    cur_input, set_cancel_boundary,
-    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
-    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, };
+    cur_input, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
+    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, };
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
 
@@ -584,11 +583,11 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
 
     st.shipout.output_active = false;
     st.shipout.insert_penalties = 0;
-    set_ligature_present(false);
-    set_cancel_boundary(false);
-    set_lft_hit(false);
-    set_rt_hit(false);
-    set_ins_disc(false);
+    st.mainloop.ligature_present = false;
+    st.mainloop.cancel_boundary = false;
+    st.mainloop.lft_hit = false;
+    st.mainloop.rt_hit = false;
+    st.mainloop.ins_disc = false;
     st.scanner.after_token = 0;
     st.errors.long_help_seen = false;
     st.strings.format_ident = 0;
