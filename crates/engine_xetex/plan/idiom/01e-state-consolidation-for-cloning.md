@@ -76,6 +76,36 @@ gone. `with_state` 142 → 8 already.
 strict zero-global, replace with a pre-run `Config` builder owned by the C-API shim; low
 priority.
 
+## Execution notes (session 251, from doing the capacity fold)
+
+- **The fold loop, proven (commits `8efe108c`, `45585eb9`):** add field to the semantic
+  `EngineState` sub-struct → set it in `tt_run_engine` (it also drives arena sizing +
+  consistency checks) → convert reader sites to direct `st.<field>` → delete the accessor
+  + `raw::` decl + `tre_*` extern + imports. **Rust-only** — leave the orphaned C
+  `xetex-ini.c` global def (it's a harmless unused symbol; no C logic uses it, per recon).
+  DONE: `stack_size`/`buf_size`/`param_size`/`max_in_open` → `st.input`,
+  `expand_depth` → `st.scanner`. `mod raw` scalar count ~41 → 36.
+- **The gate is real and pervasive (KEY):** a scalar folds only when ALL its sites hold
+  `st`. The remaining hot-path scalars FAIL this because they're read from functions that
+  take SUB-STRUCTS, not `st`:
+  - `nest_size` — 1 site in a `*Abort::into_engine_abort(self)` (no st); `save_size` — ALL
+    8 sites in `save.rs` fns taking `&mut SaveStackState`.
+  - **main-loop scratch** (`main_p/k/f/…`, `cur_l/r/q`, `lig_stack`, flags — 381 sites):
+    most in `main_control.rs` `st`-fns, BUT `app_space` takes `mem/eqtb/fonts` and
+    `linebreak.rs` fns take `hyph/mem/fonts` — both access these scalars without `st`.
+  - `cur_cs/cur_tok/cur_chr/cur_cmd/cur_val/cur_ptr/temp_ptr/cur_input/line/cur_list`
+    (thousands of sites) are spread across scan/expand/main_control/linebreak/… with the
+    same mix.
+  ⇒ **"zero global state" = threading the ENTIRE remaining frontier**: every sub-struct-
+  taking fn (`app_space`, the `linebreak.rs`/`save.rs` cores, …) must be converted to take
+  `&mut EngineState` so its callers (which already hold `st`) pass `st`, THEN the scalar
+  folds. This is the culmination of the whole port's threading effort — large & systematic,
+  best driven per-function up the call tree, one scalar/cluster per validated commit.
+- **Do NOT route a moved scalar through `with_state`** (would double-borrow `st`-holding
+  callers). And the into_engine_abort `n:` count sites: defer to `into_history` via a
+  no-count variant (the `PoolOverflow`/`StringOverflow`/`MainMemoryOverflow` pattern from
+  `01d` §6.2) so those sites need no state.
+
 **Headline:** zero external mutable state + mid-run cloning is achievable with no logical
 blocker; the real cost is moving the hot-path scalar STORAGE into `EngineState` via direct
 `st`-field access (gated on the threading frontier, NOT the `with_state` bridge — routing a
