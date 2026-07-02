@@ -1,7 +1,7 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
-use crate::globals::{buf_size, cur_chr, cur_val, first};
+use crate::globals::{cur_chr, cur_val, first};
 use crate::globals::{
     cur_cmd, cur_cs, cur_input, set_cur_cs, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
@@ -439,7 +439,7 @@ unsafe fn apply_normalization_in(
     let mut in_used: u32 = 0;
     let mut out_used: u32 = 0;
     let out_ptr = st.input.buffer.as_mut_ptr().add(first() as usize) as *mut u8;
-    let out_cap = (4 * (buf_size() - first())) as u32;
+    let out_cap = (4 * (st.input.buf_size - first())) as u32;
     let status = TECkit_ConvertBuffer(
         *norm_ptr,
         buf as *const u8,
@@ -501,7 +501,7 @@ pub(crate) unsafe fn input_line_in(
         let mut error_code: libc::c_int = 0;
 
         if BYTE_BUFFER.is_null() {
-            BYTE_BUFFER = xmalloc((buf_size() + 1) as libc::size_t) as *mut libc::c_char;
+            BYTE_BUFFER = xmalloc((st.input.buf_size + 1) as libc::size_t) as *mut libc::c_char;
         }
 
         let mut i = ttstub_input_getc((*f).handle);
@@ -515,7 +515,7 @@ pub(crate) unsafe fn input_line_in(
         if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
             *BYTE_BUFFER.add(bytes_read as usize) = i as libc::c_char;
             bytes_read += 1;
-            while bytes_read < buf_size() as u32 {
+            while bytes_read < st.input.buf_size as u32 {
                 i = ttstub_input_getc((*f).handle);
                 if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
                     break;
@@ -542,12 +542,12 @@ pub(crate) unsafe fn input_line_in(
                 // NFC or NFD: convert to utf32Buf first, then normalize into buffer.
                 if UTF32_BUF.is_null() {
                     UTF32_BUF =
-                        xcalloc(buf_size() as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
+                        xcalloc(st.input.buf_size as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
                 }
                 let tmp_len = xetex_ucnv_to_utf32(
                     cnv,
                     UTF32_BUF as *mut libc::c_char,
-                    buf_size() * 4,
+                    st.input.buf_size * 4,
                     BYTE_BUFFER as *const libc::c_char,
                     bytes_read as i32,
                     &mut error_code,
@@ -565,7 +565,7 @@ pub(crate) unsafe fn input_line_in(
                 let out_len = xetex_ucnv_to_utf32(
                     cnv,
                     out_ptr as *mut libc::c_char,
-                    4 * (buf_size() - first()),
+                    4 * (st.input.buf_size - first()),
                     BYTE_BUFFER as *const libc::c_char,
                     bytes_read as i32,
                     &mut error_code,
@@ -597,13 +597,13 @@ pub(crate) unsafe fn input_line_in(
                 // NFC or NFD: read into utf32Buf then normalize.
                 if UTF32_BUF.is_null() {
                     UTF32_BUF =
-                        xcalloc(buf_size() as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
+                        xcalloc(st.input.buf_size as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
                 }
                 let mut tmp_len: i32 = 0;
                 if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
                     *UTF32_BUF.add(tmp_len as usize) = i as u32;
                     tmp_len += 1;
-                    while tmp_len < buf_size() {
+                    while tmp_len < st.input.buf_size {
                         i = get_uni_c_in(st, f)?;
                         if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
                             break;
@@ -625,14 +625,14 @@ pub(crate) unsafe fn input_line_in(
             }
             _ => {
                 // No normalization: store directly into buffer[last..].
-                if st.input.last < buf_size()
+                if st.input.last < st.input.buf_size
                     && i != libc::EOF
                     && i != b'\n' as i32
                     && i != b'\r' as i32
                 {
                     st.input.buffer[st.input.last as usize] = i;
                     st.input.last += 1;
-                    while st.input.last < buf_size() {
+                    while st.input.last < st.input.buf_size {
                         i = get_uni_c_in(st, f)?;
                         if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
                             break;

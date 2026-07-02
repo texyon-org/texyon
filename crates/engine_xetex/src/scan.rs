@@ -19,7 +19,7 @@ use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, expand_depth, first, set_cur_chr,
+    cur_chr, cur_cmd, cur_cs, cur_input, cur_tok, cur_val, first, set_cur_chr,
     set_cur_cmd, set_cur_cs, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
     set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_cur_val, set_first, set_line,
 };
@@ -3538,10 +3538,10 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
     let mut p = crate::mem::TEX_NULL;
 
     st.scanner.expand_depth_count += 1;
-    if st.scanner.expand_depth_count >= expand_depth() {
+    if st.scanner.expand_depth_count >= st.scanner.expand_depth {
         return Err(SccAbort::Input(crate::input::InputAbort::Overflow {
             what: c"expansion depth".as_ptr(),
-            n: expand_depth(),
+            n: st.scanner.expand_depth,
         }));
     }
 

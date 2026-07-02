@@ -11,7 +11,7 @@ use crate::consts::{
 };
 use crate::format_io::load_fmt_file;
 use crate::globals::{
-    buf_size, cur_chr, cur_input, cur_val, first, set_cancel_boundary,
+    cur_chr, cur_input, cur_val, first, set_cancel_boundary,
     set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
     set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_cur_val, set_first,
     set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, set_temp_ptr, temp_ptr,
@@ -88,18 +88,10 @@ extern "C" {
     static mut tre_pool_free: i32;
     #[link_name = "strings_free"]
     static mut tre_strings_free: i32;
-    #[link_name = "buf_size"]
-    static mut tre_buf_size: i32;
     #[link_name = "nest_size"]
     static mut tre_nest_size: i32;
-    #[link_name = "max_in_open"]
-    static mut tre_max_in_open: i32;
-    #[link_name = "param_size"]
-    static mut tre_param_size: i32;
     #[link_name = "save_size"]
     static mut tre_save_size: i32;
-    #[link_name = "expand_depth"]
-    static mut tre_expand_depth: i32;
     // `mem` is now Rust-owned (`EngineState.mem.data`); no FFI alias. (session 58)
     // `eqtb` is now Rust-owned (`EngineState.eqtb.data`); no FFI alias. (session 51)
     // `hash` is now Rust-owned (`EngineState.eqtb.hash`); no FFI alias. (session 52)
@@ -257,8 +249,8 @@ unsafe fn primitive(
     if len > 1 {
         let s = crate::texmfmp::maketexstring_in(&mut st.strings, ident)?;
 
-        if first() + len > buf_size() + 1 {
-            return Err(PrimitiveInitAbort::BufferSize(buf_size()));
+        if first() + len > st.input.buf_size + 1 {
+            return Err(PrimitiveInitAbort::BufferSize(st.input.buf_size));
         }
 
         for i in 0..len {
@@ -1039,16 +1031,16 @@ pub unsafe extern "C" fn tt_run_engine(
     st.fonts.font_max = 9_000;
     TRE_TRIE_SIZE = 1_000_000;
     TRE_HYPH_SIZE = 8_191;
-    tre_buf_size = 200_000;
+    st.input.buf_size = 200_000;
     tre_nest_size = 500;
-    tre_max_in_open = 15;
-    tre_param_size = 10_000;
+    st.input.max_in_open = 15;
+    st.input.param_size = 10_000;
     tre_save_size = 80_000;
     st.input.stack_size = 5_000;
     st.errors.error_line = 79;
     st.errors.half_error_line = 50;
     st.config.max_print_line = 79;
-    tre_expand_depth = 10_000;
+    st.scanner.expand_depth = 10_000;
 
     // Allocate every Rust-owned per-run arena under a single borrow. All sizes
     // (`*_size + 1`, matching the former `xmalloc_array` shapes) are precomputed
@@ -1056,13 +1048,13 @@ pub unsafe extern "C" fn tt_run_engine(
     // Allocated fresh each run; released by `tt_cleanup`; never reallocated
     // during a run (overflow errors instead of growing). Zero-init replaces the
     // former explicit `write_bytes(.., 0, ..)`.
-    let buf_words = (tre_buf_size as usize) + 1;
+    let buf_words = (st.input.buf_size as usize) + 1;
     let nest_words = (tre_nest_size as usize) + 1;
     let save_words = (tre_save_size as usize) + 1;
-    let input_file_words = (tre_max_in_open as usize) + 1;
+    let input_file_words = (st.input.max_in_open as usize) + 1;
     let stack_words = (st.input.stack_size as usize) + 1;
-    let in_open_words = (tre_max_in_open as usize) + 1;
-    let param_words = (tre_param_size as usize) + 1;
+    let in_open_words = (st.input.max_in_open as usize) + 1;
+    let param_words = (st.input.param_size as usize) + 1;
     let hyph_words = (TRE_HYPH_SIZE as usize) + 1;
     {
         let state = &mut *st;
@@ -1184,7 +1176,7 @@ pub unsafe extern "C" fn tt_run_engine(
     if HASH_PRIME > HASH_SIZE {
         tre_bad = 5;
     }
-    if tre_max_in_open >= 128 {
+    if st.input.max_in_open >= 128 {
         tre_bad = 6;
     }
     if MEM_TOP < 267 {
@@ -1202,7 +1194,7 @@ pub unsafe extern "C" fn tt_run_engine(
     if tre_save_size > MAX_HALFWORD || TRE_MAX_STRINGS > MAX_HALFWORD {
         tre_bad = 17;
     }
-    if tre_buf_size > MAX_HALFWORD {
+    if st.input.buf_size > MAX_HALFWORD {
         tre_bad = 18;
     }
     if CS_TOKEN_FLAG + EQTB_SIZE + st.eqtb.hash_extra > MAX_HALFWORD {

@@ -174,10 +174,12 @@ pub(crate) struct InputClusterState {
     pub max_nest_stack: i32,
     /// Current top of the input-state stack. Plain `int32_t`.
     pub input_ptr: i32,
-    /// Capacity of the input stack (`stack_size`); set once at engine init.
-    /// Folded off the former `mod raw` C global for the clonable-state goal
-    /// (`01e`). Sized from `tre_stack_size` in `tt_run_engine`.
+    /// Input-related capacity constants, set once at engine init (folded off the
+    /// former `mod raw` C globals for the zero-global-state goal, `01e`).
     pub stack_size: i32,
+    pub buf_size: i32,
+    pub param_size: i32,
+    pub max_in_open: i32,
     /// Peak value ever reached by `input_ptr`. Plain `int32_t`.
     pub max_in_stack: i32,
     /// Search base in the input stack (xetex-xetexd.h:521). Plain `int32_t`.
@@ -694,6 +696,9 @@ pub(crate) struct ScannerState {
     /// Alignment brace-nesting counter (xetex-xetexd.h:520). Positive = extra
     /// open braces; negative = unmatched `&` or `\cr`. Plain `int32_t`.
     pub align_state: i32,
+    /// Expansion-depth limit (`expand_depth`); set once at init. Folded off the
+    /// former `mod raw` C global for the zero-global-state goal (`01e`).
+    pub expand_depth: i32,
     /// Mark registers: `cur_mark[0..=4]` (xetex-xetexd.h:527). Each entry is
     /// a token-list pointer (`int32_t`). Inline fixed array; no alloc/cleanup
     /// edge. Plain `int32_t` elements, no newtype debt.

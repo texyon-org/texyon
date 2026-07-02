@@ -5,7 +5,7 @@ use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
 use crate::io::u_close;
 
 use crate::globals::{
-    buf_size, cur_cs, cur_input, cur_tok, first, line, max_in_open, set_cur_input,
+    cur_cs, cur_input, cur_tok, first, line, set_cur_input,
     set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
     set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_first,
     set_line,
@@ -235,16 +235,16 @@ pub(crate) fn pseudo_close(
 /// `stack_size` are raw `mod raw` globals (safe under the borrow). Cold
 /// `overflow`s ride the [`InputAbort`] sentinel.
 pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
-    if st.input.in_open == max_in_open() {
+    if st.input.in_open == st.input.max_in_open {
         return Err(InputAbort::Overflow {
             what: c"text input levels".as_ptr(),
-            n: max_in_open(),
+            n: st.input.max_in_open,
         });
     }
-    if first() == buf_size() {
+    if first() == st.input.buf_size {
         return Err(InputAbort::Overflow {
             what: c"buffer size".as_ptr(),
-            n: buf_size(),
+            n: st.input.buf_size,
         });
     }
     st.input.in_open += 1;
@@ -328,12 +328,12 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
     let next = st.mem.b32s1(p);
     st.mem.set_b32s0(st.input.pseudo_files, next);
     let sz = st.mem.b32s0(p);
-    if 4 * sz - 3 >= buf_size() - st.input.last {
+    if 4 * sz - 3 >= st.input.buf_size - st.input.last {
         set_cur_input_loc(first());
         set_cur_input_limit(st.input.last - 1);
         return Err(InputAbort::Overflow {
             what: c"buffer size".as_ptr(),
-            n: buf_size(),
+            n: st.input.buf_size,
         });
     }
     st.input.last = first();

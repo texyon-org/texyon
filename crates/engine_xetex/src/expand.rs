@@ -352,10 +352,10 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             while p != TEX_NULL {
                 if m >= st.input.max_buf_stack {
                     st.input.max_buf_stack = m + 1;
-                    if st.input.max_buf_stack == crate::globals::buf_size() {
+                    if st.input.max_buf_stack == st.input.buf_size {
                         return Err(SccAbort::Input(crate::input::InputAbort::Overflow {
                             what: c"buffer size".as_ptr(),
-                            n: crate::globals::buf_size(),
+                            n: st.input.buf_size,
                         }));
                     }
                 }
@@ -1241,7 +1241,7 @@ fn make_string_overflow_scc(st: &crate::state::EngineState) -> SccAbort {
 }
 pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        buf_size, cur_chr, cur_cmd, cur_cs, cur_input, cur_ptr, cur_tok, cur_val, first, hash_s1,
+        cur_chr, cur_cmd, cur_cs, cur_input, cur_ptr, cur_tok, cur_val, first, hash_s1,
         set_cur_chr, set_cur_cmd, set_cur_cs, set_cur_input_loc, set_cur_input_start, set_cur_ptr,
         set_cur_tok, set_cur_val,
     };
@@ -1274,10 +1274,10 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
     const FI_CODE_VAL: i32 = 2;
 
     st.scanner.expand_depth_count += 1;
-    if st.scanner.expand_depth_count >= crate::globals::expand_depth() {
+    if st.scanner.expand_depth_count >= st.scanner.expand_depth {
         return Err(SccAbort::Input(crate::input::InputAbort::Overflow {
             what: c"expansion depth".as_ptr(),
-            n: crate::globals::expand_depth(),
+            n: st.scanner.expand_depth,
         }));
     }
 
@@ -1444,10 +1444,10 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                     while p != crate::mem::TEX_NULL {
                         if j >= st.input.max_buf_stack {
                             st.input.max_buf_stack = j + 1;
-                            if st.input.max_buf_stack == buf_size() {
+                            if st.input.max_buf_stack == st.input.buf_size {
                                 return Err(SccAbort::Input(crate::input::InputAbort::Overflow {
                                     what: c"buffer size".as_ptr(),
-                                    n: buf_size(),
+                                    n: st.input.buf_size,
                                 }));
                             }
                         }
@@ -1582,7 +1582,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
 }
 pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_chr, cur_cs, cur_input, cur_tok, param_size, set_cur_input_loc, set_cur_input_name,
+        cur_chr, cur_cs, cur_input, cur_tok, set_cur_input_loc, set_cur_input_name,
         set_cur_tok,
     };
     use crate::mem::TEX_NULL;
@@ -1948,10 +1948,10 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
         if n > 0 {
             if st.input.param_ptr + n > st.input.max_param_stack {
                 st.input.max_param_stack = st.input.param_ptr + n;
-                if st.input.max_param_stack > param_size() {
+                if st.input.max_param_stack > st.input.param_size {
                     return Err(SccAbort::Input(crate::input::InputAbort::Overflow {
                         what: c"parameter stack size".as_ptr(),
-                        n: param_size(),
+                        n: st.input.param_size,
                     }));
                 }
             }

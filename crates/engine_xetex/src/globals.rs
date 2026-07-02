@@ -108,7 +108,6 @@ mod raw {
         // array is Rust-owned on `EngineState.input.param_stack`; the scalars
         // param_ptr/max_param_stack are now on EngineState.input too.
         // Allocated size of param_stack stays a C global.
-        pub(super) static mut param_size: i32;
 
         // SA trie cursor — scratch pointer used during SA node traversal/allocation
         // (xetex-xetexd.h:710; xetex-ini.c:336).
@@ -137,7 +136,6 @@ mod raw {
         // moved to EngineState.eqtb.xeq_level (session 49).
 
         // Expression-depth guard (xetex-xetexd.h:415, 525).
-        pub(super) static mut expand_depth: i32;
         // cur_val_level moved to EngineState.scanner.
 
         // scanner_status / warning_index / def_ref / long_state moved to
@@ -147,9 +145,7 @@ mod raw {
         // last/max_buf_stack moved to EngineState.input (scalars).
         // (xetex-xetexd.h:393–395, 409).
         pub(super) static mut first: i32;
-        pub(super) static mut buf_size: i32;
         // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
-        pub(super) static mut max_in_open: i32;
 
         // is_in_csname moved to EngineState.scanner.
         // force_eof moved to EngineState.input.
@@ -737,11 +733,6 @@ pub(crate) fn set_cur_ptr(v: i32) {
 // param_stack / param_ptr / max_param_stack
 // ---------------------------------------------------------------------------
 
-/// Returns `param_size` — allocated capacity of param_stack (xetex-ini.c:3596).
-#[inline]
-pub(crate) fn param_size() -> i32 {
-    unsafe { raw::param_size }
-}
 
 // ---------------------------------------------------------------------------
 // first / buf_size / max_in_open
@@ -758,16 +749,6 @@ pub(crate) fn set_first(v: i32) {
     unsafe {
         raw::first = v;
     }
-}
-/// Returns `buf_size` — capacity of the input buffer (xetex-xetexd.h:409).
-#[inline]
-pub(crate) fn buf_size() -> i32 {
-    unsafe { raw::buf_size }
-}
-/// Returns `max_in_open` — maximum allowed input-nesting depth (xetex-xetexd.h:411).
-#[inline]
-pub(crate) fn max_in_open() -> i32 {
-    unsafe { raw::max_in_open }
 }
 
 // ---------------------------------------------------------------------------
@@ -802,10 +783,6 @@ pub(crate) fn set_cur_input_limit(v: i32) {
 // expand_depth / expand_depth_count / cur_val_level
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn expand_depth() -> i32 {
-    unsafe { raw::expand_depth }
-}
 
 // ---------------------------------------------------------------------------
 // scanner_status / warning_index / def_ref
