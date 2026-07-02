@@ -210,6 +210,10 @@ pub(crate) enum EngineAbort {
     /// runs `runaway_in(st)` + the report (both need `st`), so the mapping site
     /// (`main_memory_overflow_abort`) needs no state borrow.
     MainMemoryOverflow,
+    /// `overflow("save size", save_size)` — `into_history` reads the count from
+    /// `st.save_stack.save_size`, so the `SaMutationAbort` mapping site (which has
+    /// no `save_stack`) needs no state borrow (`01e`).
+    SaveOverflow,
     /// `confusion(s)` — internal consistency failure ("This can't happen").
     Confusion(*const libc::c_char),
     /// `fatal_error(s)` — "Emergency stop" + `s` (its own inline cleanup, not
@@ -268,6 +272,10 @@ impl EngineAbort {
                 runaway_in(st);
                 // MEM_TOP + 1 (MEM_TOP = 4_999_999); constant, unchanged.
                 Self::overflow_report(st, c"main memory size".as_ptr(), 5_000_000);
+            }
+            EngineAbort::SaveOverflow => {
+                let n = st.save_stack.save_size;
+                Self::overflow_report(st, c"save size".as_ptr(), n);
             }
             // The print + cleanup half of `confusion`.
             EngineAbort::Confusion(s) => {

@@ -131,7 +131,6 @@ mod raw {
         // Save-stack (xetex-xetexd.h:492–494). The `save_stack` array itself
         // is Rust-owned (`EngineState.save_stack.data`); only the capacity
         // `save_size` remains a C global here.
-        pub(super) static mut save_size: i32;
         // _xeq_level_array (XEQ_LEVEL; EQTB_SIZE - INT_BASE + 1 = 1114730 entries)
         // moved to EngineState.eqtb.xeq_level (session 49).
 
@@ -472,10 +471,6 @@ pub(crate) fn set_cur_val(v: i32) {
 // save_stack / save_ptr / cur_level / cur_group
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn save_size() -> i32 {
-    unsafe { raw::save_size }
-}
 
 // ---------------------------------------------------------------------------
 // read_open / read_file (for \read stream management)

@@ -90,8 +90,6 @@ extern "C" {
     static mut tre_strings_free: i32;
     #[link_name = "nest_size"]
     static mut tre_nest_size: i32;
-    #[link_name = "save_size"]
-    static mut tre_save_size: i32;
     // `mem` is now Rust-owned (`EngineState.mem.data`); no FFI alias. (session 58)
     // `eqtb` is now Rust-owned (`EngineState.eqtb.data`); no FFI alias. (session 51)
     // `hash` is now Rust-owned (`EngineState.eqtb.hash`); no FFI alias. (session 52)
@@ -1035,7 +1033,7 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_nest_size = 500;
     st.input.max_in_open = 15;
     st.input.param_size = 10_000;
-    tre_save_size = 80_000;
+    st.save_stack.save_size = 80_000;
     st.input.stack_size = 5_000;
     st.errors.error_line = 79;
     st.errors.half_error_line = 50;
@@ -1050,7 +1048,7 @@ pub unsafe extern "C" fn tt_run_engine(
     // former explicit `write_bytes(.., 0, ..)`.
     let buf_words = (st.input.buf_size as usize) + 1;
     let nest_words = (tre_nest_size as usize) + 1;
-    let save_words = (tre_save_size as usize) + 1;
+    let save_words = (st.save_stack.save_size as usize) + 1;
     let input_file_words = (st.input.max_in_open as usize) + 1;
     let stack_words = (st.input.stack_size as usize) + 1;
     let in_open_words = (st.input.max_in_open as usize) + 1;
@@ -1191,7 +1189,7 @@ pub unsafe extern "C" fn tt_run_engine(
     if st.fonts.font_max > FONT_BASE + 9000 {
         tre_bad = 16;
     }
-    if tre_save_size > MAX_HALFWORD || TRE_MAX_STRINGS > MAX_HALFWORD {
+    if st.save_stack.save_size > MAX_HALFWORD || TRE_MAX_STRINGS > MAX_HALFWORD {
         tre_bad = 17;
     }
     if st.input.buf_size > MAX_HALFWORD {

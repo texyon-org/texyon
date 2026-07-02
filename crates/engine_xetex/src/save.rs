@@ -5,7 +5,7 @@ use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
 use crate::globals::{
-    cur_input, cur_ptr, cur_tok, line, save_size, set_cur_input_loc, set_cur_input_start,
+    cur_input, cur_ptr, cur_tok, line, set_cur_input_loc, set_cur_input_start,
     set_cur_ptr, set_cur_tok,
 };
 use crate::mem_types::MemoryWord;
@@ -81,8 +81,8 @@ impl SaveAbort {
 pub(crate) fn new_save_level(save_stack: &mut SaveStackState, c: u8) -> Option<SaveAbort> {
     if save_stack.save_ptr > save_stack.max_save_stack {
         save_stack.max_save_stack = save_stack.save_ptr;
-        if save_stack.max_save_stack > save_size() - 7 {
-            return Some(SaveAbort::Overflow(c"semantic nest size", save_size()));
+        if save_stack.max_save_stack > save_stack.save_size - 7 {
+            return Some(SaveAbort::Overflow(c"semantic nest size", save_stack.save_size));
         }
     }
     // `line()` reads the raw `line` global (deferred Phase-C set); it is not
@@ -121,8 +121,8 @@ pub(crate) fn eq_save(
 ) -> Option<SaveAbort> {
     if save_stack.save_ptr > save_stack.max_save_stack {
         save_stack.max_save_stack = save_stack.save_ptr;
-        if save_stack.max_save_stack > save_size() - 7 {
-            return Some(SaveAbort::Overflow(c"save size", save_size()));
+        if save_stack.max_save_stack > save_stack.save_size - 7 {
+            return Some(SaveAbort::Overflow(c"save size", save_stack.save_size));
         }
     }
     if l == LEVEL_ZERO {
@@ -198,8 +198,8 @@ pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Option<
     if save_stack.cur_level > LEVEL_ONE {
         if save_stack.save_ptr > save_stack.max_save_stack {
             save_stack.max_save_stack = save_stack.save_ptr;
-            if save_stack.max_save_stack > save_size() - 7 {
-                return Some(SaveAbort::Overflow(c"save size", save_size()));
+            if save_stack.max_save_stack > save_stack.save_size - 7 {
+                return Some(SaveAbort::Overflow(c"save size", save_stack.save_size));
             }
         }
         save_stack.set_b16s1(save_stack.save_ptr, INSERT_TOKEN);
@@ -478,7 +478,7 @@ pub fn sa_save(
     if save_stack.cur_level != scanner.sa_level {
         if save_stack.save_ptr > save_stack.max_save_stack {
             save_stack.max_save_stack = save_stack.save_ptr;
-            if save_stack.max_save_stack > save_size() - 7 {
+            if save_stack.max_save_stack > save_stack.save_size - 7 {
                 return SAVE_OVERFLOW;
             }
         }
@@ -634,10 +634,7 @@ impl SaMutationAbort {
                 what: c"main memory size".as_ptr(),
                 n: MEM_TOP + 1,
             },
-            SaMutationAbort::SaveOverflow => crate::errors::EngineAbort::Overflow {
-                what: c"save size".as_ptr(),
-                n: save_size(),
-            },
+            SaMutationAbort::SaveOverflow => crate::errors::EngineAbort::SaveOverflow,
             SaMutationAbort::Confusion(m) => crate::errors::EngineAbort::Confusion(m.as_ptr()),
         }
     }

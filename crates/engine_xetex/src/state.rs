@@ -566,6 +566,10 @@ impl MemState {
 pub(crate) struct SaveStackState {
     pub save_ptr: i32,
     pub max_save_stack: i32,
+    /// Capacity of the save stack (`save_size`); set once at engine init.
+    /// Folded off the former `mod raw` C global (`01e`) into this sub-struct so
+    /// the `save.rs` cores read it via their `&mut SaveStackState` param (no `st`).
+    pub save_size: i32,
     pub cur_level: u16,
     pub cur_group: u8,
     pub cur_boundary: i32,
