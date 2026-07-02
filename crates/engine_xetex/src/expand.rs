@@ -120,7 +120,7 @@ fn pop_cond_node_in(st: &mut crate::state::EngineState) {
 
 pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_list_mode, cur_ptr, cur_val, first, line,
+        cur_list_mode, cur_ptr, first, line,
         };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, get_node_scc, scc_err};
@@ -189,7 +189,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             } else {
                 crate::scan::scan_dimen_in(st, false, false, false)?;
             }
-            n = cur_val();
+            n = st.scanner.cur_val;
             loop {
                 crate::scan::get_x_token_in(st)?;
                 if st.scanner.cur_cmd != SPACER {
@@ -217,7 +217,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             } else {
                 crate::scan::scan_dimen_in(st, false, false, false)?;
             }
-            let cv = cur_val();
+            let cv = st.scanner.cur_val;
             b = match r {
                 60 => n < cv,
                 61 => n == cv,
@@ -226,7 +226,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
         }
         IF_ODD_CODE => {
             crate::scan::scan_int_in(st)?;
-            b = (cur_val() % 2) != 0;
+            b = (st.scanner.cur_val % 2) != 0;
         }
         IF_VMODE_CODE => {
             b = cur_list_mode().abs() == VMODE;
@@ -242,10 +242,11 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
         }
         IF_VOID_CODE | IF_HBOX_CODE | IF_VBOX_CODE => {
             crate::scan::scan_register_num_in(st)?;
-            p = if cur_val() < 256 {
-                st.eqtb.b32s1(BOX_BASE + cur_val())
+            p = if st.scanner.cur_val < 256 {
+                st.eqtb.b32s1(BOX_BASE + st.scanner.cur_val)
             } else {
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
+                let __cv2 = st.scanner.cur_val;
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv2, false);
                 if cur_ptr() == TEX_NULL {
                     TEX_NULL
                 } else {
@@ -298,10 +299,10 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
         }
         IF_EOF_CODE => {
             crate::scan::scan_four_bit_int_or_18_in(st)?;
-            b = if cur_val() == 18 {
+            b = if st.scanner.cur_val == 18 {
                 !st.config.shell_escape_enabled
             } else {
-                st.input.read_open[cur_val() as usize] == 2 // CLOSED = 2
+                st.input.read_open[st.scanner.cur_val as usize] == 2 // CLOSED = 2
             };
         }
         IF_TRUE_CODE => {
@@ -387,17 +388,17 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
         }
         IF_FONT_CHAR_CODE => {
             crate::scan::scan_font_ident_in(st)?;
-            n = cur_val();
+            n = st.scanner.cur_val;
             crate::scan::scan_usv_num_in(st)?;
             let fa = st.fonts.font_area[n as usize];
             b = if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                unsafe { crate::ext::map_char_to_glyph(&st.fonts, n, cur_val()) }? > 0
+                unsafe { crate::ext::map_char_to_glyph(&st.fonts, n, st.scanner.cur_val) }? > 0
             } else {
                 let bc = st.fonts.font_bc[n as usize] as i32;
                 let ec = st.fonts.font_ec[n as usize] as i32;
-                if bc <= cur_val() && ec >= cur_val() {
+                if bc <= st.scanner.cur_val && ec >= st.scanner.cur_val {
                     let ec_char =
-                        crate::fonts::effective_char(&mut st.fonts, true, n, cur_val() as u16);
+                        crate::fonts::effective_char(&mut st.fonts, true, n, st.scanner.cur_val as u16);
                     let i = unsafe {
                         st.fonts.font_info[(st.fonts.char_base[n as usize] + ec_char) as usize].b16
                     };
@@ -409,7 +410,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
         }
         IF_CASE_CODE => {
             crate::scan::scan_int_in(st)?;
-            n = cur_val();
+            n = st.scanner.cur_val;
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 1 {
                 crate::output::begin_diagnostic_in(st);
                 crate::output::diagnostic_begin_capture_warning_here_in(st);
@@ -528,7 +529,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
     }
 }
 pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
-    use crate::globals::{cur_ptr, cur_val, set_cur_val};
+    use crate::globals::{cur_ptr};
     use crate::mem::TEX_NULL;
     use crate::scan::{scc_err, str_toks_scc};
 
@@ -636,10 +637,11 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         }
         LEFT_MARGIN_KERN_CODE_CT | RIGHT_MARGIN_KERN_CODE_CT => {
             crate::scan::scan_register_num_in(st)?;
-            if cur_val() < 256 {
-                p = st.eqtb.b32s1(BOX_BASE + cur_val());
+            if st.scanner.cur_val < 256 {
+                p = st.eqtb.b32s1(BOX_BASE + st.scanner.cur_val);
             } else {
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
+                let __cv1 = st.scanner.cur_val;
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv1, false);
                 if cur_ptr() == TEX_NULL {
                     p = TEX_NULL;
                 } else {
@@ -809,38 +811,38 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             } else {
                 0
             };
-            set_cur_val(0);
+            st.scanner.cur_val = 0;
             if crate::scan::scan_keyword_in(st, c"offset".as_ptr())? {
                 crate::scan::scan_int_in(st)?;
-                if cur_val() < 0 {
+                if st.scanner.cur_val < 0 {
                     crate::output::error_here_with_diagnostic_in(st, c"Bad file offset".as_ptr());
                     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
                     st.errors.help_ptr = 2;
                     st.errors.help_line[1] =
                         c"A file offset must be between 0 and 2^_31_-1,".as_ptr();
                     st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
-                    let cv = cur_val();
+                    let cv = st.scanner.cur_val;
                     scc_err(crate::errors::int_error_in(st, cv))?;
-                    set_cur_val(0);
+                    st.scanner.cur_val = 0;
                 }
             }
-            let i = cur_val();
-            set_cur_val(0);
+            let i = st.scanner.cur_val;
+            st.scanner.cur_val = 0;
             if crate::scan::scan_keyword_in(st, c"length".as_ptr())? {
                 crate::scan::scan_int_in(st)?;
-                if cur_val() < 0 {
+                if st.scanner.cur_val < 0 {
                     crate::output::error_here_with_diagnostic_in(st, c"Bad dump length".as_ptr());
                     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
                     st.errors.help_ptr = 2;
                     st.errors.help_line[1] =
                         c"A dump length must be between 0 and 2^_31_-1,".as_ptr();
                     st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
-                    let cv = cur_val();
+                    let cv = st.scanner.cur_val;
                     scc_err(crate::errors::int_error_in(st, cv))?;
-                    set_cur_val(0);
+                    st.scanner.cur_val = 0;
                 }
             }
-            let j = cur_val();
+            let j = st.scanner.cur_val;
             crate::scan::scan_pdf_ext_toks_in(st)?;
             tokens_selector_check!();
             let old_sel = st.shipout.selector;
@@ -899,19 +901,19 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         }
         XETEX_UCHARCAT_CODE_CT => {
             crate::scan::scan_usv_num_in(st)?;
-            let saved_chr = cur_val();
+            let saved_chr = st.scanner.cur_val;
             crate::scan::scan_int_in(st)?;
             const LEFT_BRACE_CV: i32 = 1;
             const ACTIVE_CHAR_CV: i32 = 13;
             const OUT_PARAM_CV: i32 = 5;
             const IGNORE_CV: i32 = 9;
-            if cur_val() < LEFT_BRACE_CV
-                || cur_val() > ACTIVE_CHAR_CV
-                || cur_val() == OUT_PARAM_CV
-                || cur_val() == IGNORE_CV
+            if st.scanner.cur_val < LEFT_BRACE_CV
+                || st.scanner.cur_val > ACTIVE_CHAR_CV
+                || st.scanner.cur_val == OUT_PARAM_CV
+                || st.scanner.cur_val == IGNORE_CV
             {
                 crate::output::error_here_with_diagnostic_in(st, c"Invalid code (".as_ptr());
-                crate::output::print_int_in(st, cur_val());
+                crate::output::print_int_in(st, st.scanner.cur_val);
                 crate::output::print_cstr_in(
                     st,
                     c"), should be in the ranges 1..4, 6..8, 10..13".as_ptr(),
@@ -923,17 +925,17 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 scc_err(crate::errors::error_in(st))?;
                 cat = 12;
             } else {
-                cat = cur_val();
+                cat = st.scanner.cur_val;
             }
-            set_cur_val(saved_chr);
+            st.scanner.cur_val = saved_chr;
         }
         XETEX_REVISION_CODE_CT => {}
         XETEX_VARIATION_NAME_CODE_CT => {
             crate::scan::scan_font_ident_in(st)?;
-            fnt = cur_val();
+            fnt = st.scanner.cur_val;
             if st.fonts.font_area[fnt as usize] == AAT_FONT_FLAG {
                 crate::scan::scan_int_in(st)?;
-                arg1 = cur_val();
+                arg1 = st.scanner.cur_val;
                 arg2 = 0;
             } else {
                 scc_err(crate::errors::not_font_error_common_in(
@@ -947,14 +949,14 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         }
         XETEX_FEATURE_NAME_CODE_CT => {
             crate::scan::scan_font_ident_in(st)?;
-            fnt = cur_val();
+            fnt = st.scanner.cur_val;
             let fa = st.fonts.font_area[fnt as usize];
             if fa == AAT_FONT_FLAG
                 || (fa == OTGR_FONT_FLAG
                     && unsafe { usingGraphite(st.fonts.font_layout_engine[fnt as usize]) })
             {
                 crate::scan::scan_int_in(st)?;
-                arg1 = cur_val();
+                arg1 = st.scanner.cur_val;
                 arg2 = 0;
             } else {
                 scc_err(crate::errors::not_font_error_common_in(
@@ -968,16 +970,16 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         }
         XETEX_SELECTOR_NAME_CODE_CT => {
             crate::scan::scan_font_ident_in(st)?;
-            fnt = cur_val();
+            fnt = st.scanner.cur_val;
             let fa = st.fonts.font_area[fnt as usize];
             if fa == AAT_FONT_FLAG
                 || (fa == OTGR_FONT_FLAG
                     && unsafe { usingGraphite(st.fonts.font_layout_engine[fnt as usize]) })
             {
                 crate::scan::scan_int_in(st)?;
-                arg1 = cur_val();
+                arg1 = st.scanner.cur_val;
                 crate::scan::scan_int_in(st)?;
-                arg2 = cur_val();
+                arg2 = st.scanner.cur_val;
             } else {
                 scc_err(crate::errors::not_font_error_common_in(
                     st,
@@ -990,11 +992,11 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         }
         XETEX_GLYPH_NAME_CODE_CT => {
             crate::scan::scan_font_ident_in(st)?;
-            fnt = cur_val();
+            fnt = st.scanner.cur_val;
             let fa = st.fonts.font_area[fnt as usize];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 crate::scan::scan_int_in(st)?;
-                arg1 = cur_val();
+                arg1 = st.scanner.cur_val;
             } else {
                 scc_err(crate::errors::not_font_error_common_in(
                     st,
@@ -1023,10 +1025,10 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
 
     match c {
         NUMBER_CODE_CT => {
-            crate::output::print_int_in(st, cur_val());
+            crate::output::print_int_in(st, st.scanner.cur_val);
         }
         ROMAN_NUMERAL_CODE_CT => {
-            crate::output::print_roman_int_in(st, cur_val());
+            crate::output::print_roman_int_in(st, st.scanner.cur_val);
         }
         STRING_CODE_CT => {
             if st.scanner.cur_cs != 0 {
@@ -1039,8 +1041,8 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             crate::output::print_meaning_in(st);
         }
         FONT_NAME_CODE_CT => {
-            let font_name_str = st.fonts.font_name[cur_val() as usize];
-            let fa = st.fonts.font_area[cur_val() as usize];
+            let font_name_str = st.fonts.font_name[st.scanner.cur_val as usize];
+            let fa = st.fonts.font_area[st.scanner.cur_val as usize];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 let mut quote_char: i32 = '"' as i32;
                 let base = st.strings.str_start[(font_name_str - TOO_BIG_CHAR) as usize];
@@ -1055,9 +1057,9 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             } else {
                 crate::output::print_in(st, font_name_str);
             }
-            if st.fonts.font_size[cur_val() as usize] != st.fonts.font_dsize[cur_val() as usize] {
+            if st.fonts.font_size[st.scanner.cur_val as usize] != st.fonts.font_dsize[st.scanner.cur_val as usize] {
                 crate::output::print_cstr_in(st, c" at ".as_ptr());
-                let fs = st.fonts.font_size[cur_val() as usize];
+                let fs = st.fonts.font_size[st.scanner.cur_val as usize];
                 crate::output::print_scaled_in(st, fs);
                 crate::output::print_cstr_in(st, c"pt".as_ptr());
             }
@@ -1175,10 +1177,10 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             crate::output::print_cstr_in(st, c"pt".as_ptr());
         }
         PDF_STRCMP_CODE_CT => {
-            crate::output::print_int_in(st, cur_val());
+            crate::output::print_int_in(st, st.scanner.cur_val);
         }
         UNIFORM_DEVIATE_CODE_CT => {
-            let v = unsafe { crate::scaled_math::unif_rand(&mut st.errors, cur_val()) };
+            let v = unsafe { crate::scaled_math::unif_rand(&mut st.errors, st.scanner.cur_val) };
             crate::output::print_int_in(st, v);
         }
         NORMAL_DEVIATE_CODE_CT => {
@@ -1186,7 +1188,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             crate::output::print_int_in(st, v);
         }
         XETEX_UCHAR_CODE_CT | XETEX_UCHARCAT_CODE_CT => {
-            crate::output::print_char_in(st, cur_val());
+            crate::output::print_char_in(st, st.scanner.cur_val);
         }
         XETEX_REVISION_CODE_CT => {
             crate::output::print_cstr_in(st, c".999994".as_ptr());
@@ -1240,10 +1242,9 @@ fn make_string_overflow_scc(st: &crate::state::EngineState) -> SccAbort {
 }
 pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_input, cur_ptr, cur_val, first, hash_s1,
+        cur_input, cur_ptr, first, hash_s1,
         set_cur_input_loc, set_cur_input_start, set_cur_ptr,
-        set_cur_val,
-    };
+        };
     use crate::scan::{get_avail_scc, scc_err};
 
     const TOP_BOT_MARK: u8 = 112;
@@ -1280,7 +1281,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
         }));
     }
 
-    let cv_backup = cur_val();
+    let cv_backup = st.scanner.cur_val;
     let cvl_backup = st.scanner.cur_val_level;
     let radix_backup = st.scanner.radix;
     let co_backup = st.scanner.cur_order;
@@ -1297,16 +1298,17 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                     if st.scanner.cur_chr >= MARKS_CODE {
                         crate::scan::scan_register_num_in(st)?;
                     } else {
-                        set_cur_val(0);
+                        st.scanner.cur_val = 0;
                     }
-                    if cur_val() == 0 {
+                    if st.scanner.cur_val == 0 {
                         set_cur_ptr(st.scanner.cur_mark[t]);
                     } else {
+                        let __cv0 = st.scanner.cur_val;
                         crate::save::find_sa_element(
                             &mut st.mem,
                             &mut st.scanner,
                             MARK_VAL_IDX as u16,
-                            cur_val(),
+                            __cv0,
                             false,
                         );
                         if cur_ptr() != crate::mem::TEX_NULL {
@@ -1572,7 +1574,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
         break 'reswitch;
     }
 
-    set_cur_val(cv_backup);
+    st.scanner.cur_val = cv_backup;
     st.scanner.cur_val_level = cvl_backup;
     st.scanner.radix = radix_backup;
     st.scanner.cur_order = co_backup;

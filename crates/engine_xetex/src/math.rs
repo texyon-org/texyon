@@ -7,9 +7,9 @@ use crate::consts::{
 use crate::ext::real_get_native_glyph;
 use crate::globals::{
     cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
-    cur_list_prev_graf, cur_list_tail, cur_val, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
+    cur_list_prev_graf, cur_list_tail, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
     set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
-    set_cur_val, set_temp_ptr, temp_ptr,
+    set_temp_ptr, temp_ptr,
 };
 use crate::mem::{
     free_node, get_avail, get_node, new_choice, new_glue, new_kern, new_noad, new_null_box,
@@ -3585,9 +3585,9 @@ pub(crate) fn scan_delimiter_in(
         if st.scanner.cur_chr == 1 {
             st.scanner.cur_val1 = 0x4000_0000;
             crate::scan::scan_math_fam_int_in(st)?;
-            st.scanner.cur_val1 += cur_val() * 0x20_0000;
+            st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
             crate::scan::scan_usv_num_in(st)?;
-            set_cur_val(cur_val() + st.scanner.cur_val1);
+            st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
         } else {
             crate::scan::scan_delimiter_int_in(st)?;
         }
@@ -3600,24 +3600,24 @@ pub(crate) fn scan_delimiter_in(
         }
 
         match st.scanner.cur_cmd {
-            LETTER | OTHER_CHAR => set_cur_val(st.eqtb.b32s1(DEL_CODE_BASE + st.scanner.cur_chr)),
+            LETTER | OTHER_CHAR => st.scanner.cur_val = st.eqtb.b32s1(DEL_CODE_BASE + st.scanner.cur_chr),
             DELIM_NUM => {
                 if st.scanner.cur_chr == 1 {
                     st.scanner.cur_val1 = 0x4000_0000;
                     crate::scan::scan_math_class_int_in(st)?;
                     crate::scan::scan_math_fam_int_in(st)?;
-                    st.scanner.cur_val1 += cur_val() * 0x2_0000;
+                    st.scanner.cur_val1 += st.scanner.cur_val * 0x2_0000;
                     crate::scan::scan_usv_num_in(st)?;
-                    set_cur_val(cur_val() + st.scanner.cur_val1);
+                    st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
                 } else {
                     crate::scan::scan_delimiter_int_in(st)?;
                 }
             }
-            _ => set_cur_val(-1),
+            _ => st.scanner.cur_val = -1,
         }
     }
 
-    if cur_val() < 0 {
+    if st.scanner.cur_val < 0 {
         if st.config.file_line_error_style_p != 0 {
             crate::output::print_file_line_in(st);
         } else {
@@ -3636,22 +3636,22 @@ pub(crate) fn scan_delimiter_in(
         st.errors.help_line[0] =
             c"nonnegative, or you can use `\\delimiter <delimiter code>'.".as_ptr();
         crate::main_control::mc_propagate_error(crate::input::back_error_in(st)?)?;
-        set_cur_val(0);
+        st.scanner.cur_val = 0;
     }
 
-    if cur_val() >= 0x4000_0000 {
+    if st.scanner.cur_val >= 0x4000_0000 {
         st.mem.set_b16s3(
             p,
-            (((cur_val() % 0x20_0000) / 0x1_0000) * 0x100 + (cur_val() / 0x20_0000) % 0x100) as u16,
+            (((st.scanner.cur_val % 0x20_0000) / 0x1_0000) * 0x100 + (st.scanner.cur_val / 0x20_0000) % 0x100) as u16,
         );
-        st.mem.set_b16s2(p, (cur_val() % 0x1_0000) as u16);
+        st.mem.set_b16s2(p, (st.scanner.cur_val % 0x1_0000) as u16);
         st.mem.set_b16s1(p, 0);
         st.mem.set_b16s0(p, 0);
     } else {
-        st.mem.set_b16s3(p, ((cur_val() / 0x10_0000) % 16) as u16);
-        st.mem.set_b16s2(p, ((cur_val() / 0x1000) % 0x100) as u16);
-        st.mem.set_b16s1(p, ((cur_val() / 0x100) % 16) as u16);
-        st.mem.set_b16s0(p, (cur_val() % 0x100) as u16);
+        st.mem.set_b16s3(p, ((st.scanner.cur_val / 0x10_0000) % 16) as u16);
+        st.mem.set_b16s2(p, ((st.scanner.cur_val / 0x1000) % 0x100) as u16);
+        st.mem.set_b16s1(p, ((st.scanner.cur_val / 0x100) % 16) as u16);
+        st.mem.set_b16s0(p, (st.scanner.cur_val % 0x100) as u16);
     }
     Ok(())
 }
@@ -3997,7 +3997,7 @@ pub(crate) fn math_fraction_in(
 
         let rule_thickness = if c % DELIMITED_CODE == ABOVE_CODE {
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            cur_val()
+            st.scanner.cur_val
         } else {
             0
         };
@@ -4192,21 +4192,19 @@ pub(crate) fn math_ac_in(
             }
         }
         crate::scan::scan_math_class_int_in(st)?;
-        let mut c = set_class_bits(cur_val());
+        let mut c = set_class_bits(st.scanner.cur_val);
         crate::scan::scan_math_fam_int_in(st)?;
-        c += set_family_bits(cur_val());
+        c += set_family_bits(st.scanner.cur_val);
         crate::scan::scan_usv_num_in(st)?;
-        set_cur_val(cur_val() + c);
+        st.scanner.cur_val = st.scanner.cur_val + c;
     } else {
         crate::scan::scan_fifteen_bit_int_in(st)?;
-        set_cur_val(
-            set_class_bits(cur_val() / 4096)
-                + set_family_bits((cur_val() % 4096) / 256)
-                + (cur_val() % 256),
-        );
+        st.scanner.cur_val = set_class_bits(st.scanner.cur_val / 4096)
+                + set_family_bits((st.scanner.cur_val % 4096) / 256)
+                + (st.scanner.cur_val % 256);
     }
 
-    let value = cur_val();
+    let value = st.scanner.cur_val;
     finish_accent_math_field(&mut st.mem, &st.eqtb, tail, value);
     crate::scan::scan_math_in(st, tail.idx().0 + 1)
 }

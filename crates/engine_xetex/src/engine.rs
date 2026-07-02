@@ -11,9 +11,9 @@ use crate::consts::{
 };
 use crate::format_io::load_fmt_file;
 use crate::globals::{
-    cur_input, cur_val, first, set_cancel_boundary,
+    cur_input, first, set_cancel_boundary,
     set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
-    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_cur_val, set_first,
+    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, set_first,
     set_ins_disc, set_lft_hit, set_ligature_present, set_rt_hit, set_temp_ptr, temp_ptr,
 };
 use crate::io::init_io;
@@ -256,26 +256,26 @@ unsafe fn primitive(
             st.input.buffer[(first() + i) as usize] = b;
         }
 
-        set_cur_val(crate::hash::id_lookup(
+        st.scanner.cur_val = crate::hash::id_lookup(
             &mut st.eqtb,
             &mut st.strings,
             &st.input.buffer,
             first(),
             len,
-        )?);
+        )?;
         st.strings.str_ptr -= 1;
         st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
-        st.eqtb.set_hash_s1(cur_val(), s);
+        st.eqtb.set_hash_s1(st.scanner.cur_val, s);
         prim_val = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)?;
     } else {
         let ch = *ident as u8 as i32;
-        set_cur_val(ch + SINGLE_BASE);
+        st.scanner.cur_val = ch + SINGLE_BASE;
         prim_val = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, ch)?;
     }
 
-    st.eqtb.set_b16s0(cur_val(), LEVEL_ONE);
-    st.eqtb.set_b16s1(cur_val(), c);
-    st.eqtb.set_b32s1(cur_val(), o);
+    st.eqtb.set_b16s0(st.scanner.cur_val, LEVEL_ONE);
+    st.eqtb.set_b16s1(st.scanner.cur_val, c);
+    st.eqtb.set_b32s1(st.scanner.cur_val, o);
     st.eqtb.set_b16s0(PRIM_EQTB_BASE + prim_val, LEVEL_ONE);
     st.eqtb.set_b16s1(PRIM_EQTB_BASE + prim_val, c);
     st.eqtb.set_b32s1(PRIM_EQTB_BASE + prim_val, o);
@@ -529,7 +529,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.cur_mark[BOT_MARK_CODE] = crate::mem::TEX_NULL;
     st.scanner.cur_mark[SPLIT_FIRST_MARK_CODE] = crate::mem::TEX_NULL;
     st.scanner.cur_mark[SPLIT_BOT_MARK_CODE] = crate::mem::TEX_NULL;
-    set_cur_val(0);
+    st.scanner.cur_val = 0;
     st.scanner.cur_val_level = INT_VAL;
     st.scanner.radix = 0;
     st.scanner.cur_order = NORMAL;
@@ -921,18 +921,18 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
             match prim.extra_init {
                 XF_PRIM_INIT_NONE => {}
                 XF_PRIM_INIT_PAR => {
-                    st.input.par_loc = cur_val();
+                    st.input.par_loc = st.scanner.cur_val;
                     st.input.par_token = CS_TOKEN_FLAG + st.input.par_loc;
                 }
                 XF_PRIM_INIT_WRITE => {
-                    st.shipout.write_loc = cur_val();
+                    st.shipout.write_loc = st.scanner.cur_val;
                 }
                 frozen => {
                     st.eqtb.set_hash_s1(
                         frozen,
                         crate::texmfmp::maketexstring_in(&mut st.strings, prim.name)?,
                     );
-                    st.eqtb.data[frozen as usize] = st.eqtb.word(cur_val());
+                    st.eqtb.data[frozen as usize] = st.eqtb.word(st.scanner.cur_val);
                 }
             }
         }

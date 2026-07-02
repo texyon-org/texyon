@@ -1,7 +1,7 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
-use crate::globals::{cur_val, first};
+use crate::globals::{first};
 use crate::globals::{
     cur_input, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
@@ -908,7 +908,7 @@ pub(crate) unsafe fn open_or_close_in(
 ) -> Result<(), OpenOrCloseAbort> {
     let c = st.scanner.cur_chr as u8;
     crate::scan::scan_four_bit_int_in(st).map_err(OpenOrCloseAbort::Scanner)?;
-    let n = cur_val() as u8 as usize;
+    let n = st.scanner.cur_val as u8 as usize;
 
     if st.input.read_open[n] != CLOSED {
         if u_close(st.input.read_file[n]) {

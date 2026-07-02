@@ -15,7 +15,7 @@ use crate::consts::{
 use crate::errors::ErrorOutcome;
 use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
-use crate::globals::{cur_val, set_cur_val, temp_ptr};
+use crate::globals::{temp_ptr};
 use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, MarkNode, NodePtr,
     RuleDimen, SaNode, VListNode, WhatsitNode,
@@ -1456,11 +1456,11 @@ fn find_box_register(
     use crate::globals::cur_ptr;
     use crate::mem::TEX_NULL;
 
-    set_cur_val(n);
-    if cur_val() < 256 {
-        Ok(eqtb.b32s1(BOX_BASE + cur_val()))
+    scanner.cur_val = n;
+    if scanner.cur_val < 256 {
+        Ok(eqtb.b32s1(BOX_BASE + scanner.cur_val))
     } else {
-        let r = crate::save::find_sa_element(mem, scanner, 4, cur_val(), false);
+        let r = crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false);
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
@@ -1608,10 +1608,10 @@ fn store_split_remainder(
     use crate::globals::cur_ptr;
     use crate::mem::TEX_NULL;
 
-    if cur_val() < 256 {
-        eqtb.set_b32s1(BOX_BASE + cur_val(), q);
+    if scanner.cur_val < 256 {
+        eqtb.set_b32s1(BOX_BASE + scanner.cur_val, q);
     } else {
-        let r = crate::save::find_sa_element(mem, scanner, 4, cur_val(), false);
+        let r = crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false);
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }

@@ -18,8 +18,7 @@ use crate::consts::{
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    cur_list_mode, cur_ptr, cur_val, set_cur_input_index, set_cur_ptr, set_cur_val,
-};
+    cur_list_mode, cur_ptr, set_cur_input_index, set_cur_ptr, };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
 use crate::node::{AnyNode, GlueSpecNode, NodePtr};
@@ -710,17 +709,19 @@ pub(crate) fn get_preamble_token_in(
             crate::scan::scan_optional_equals_in(st)?;
             crate::scan::scan_glue_in(st, GLUE_VAL)?;
             if st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) > 0 {
+                let __cv20 = st.scanner.cur_val;
                 if let Some(a) = crate::save::geq_define(
                     &mut st.eqtb,
                     &mut st.mem,
                     &mut st.scanner,
                     GLUE_BASE_TAB_SKIP,
                     GLUE_REF_GPT,
-                    cur_val(),
+                    __cv20,
                 ) {
                     return Err(MainControlAbort::Save(a));
                 }
             } else {
+                let __cv19 = st.scanner.cur_val;
                 if let Some(a) = crate::save::eq_define(
                     &mut st.eqtb,
                     &mut st.save_stack,
@@ -728,7 +729,7 @@ pub(crate) fn get_preamble_token_in(
                     &mut st.scanner,
                     GLUE_BASE_TAB_SKIP,
                     GLUE_REF_GPT,
-                    cur_val(),
+                    __cv19,
                 ) {
                     return Err(MainControlAbort::Save(a));
                 }
@@ -1361,7 +1362,7 @@ pub(crate) fn append_penalty_in(
 ) -> Result<(), MainControlAbort> {
     crate::scan::scan_int_in(st)?;
     let tail = crate::globals::cur_list_tail();
-    let p = append_penalty_node(&mut st.mem, tail, cur_val());
+    let p = append_penalty_node(&mut st.mem, tail, st.scanner.cur_val);
     if p == crate::mem::ALLOC_FAILED {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
@@ -1538,22 +1539,22 @@ pub(crate) fn begin_insert_or_adjust_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
     if st.scanner.cur_cmd == VADJUST {
-        set_cur_val(255);
+        st.scanner.cur_val = 255;
     } else {
         crate::scan::scan_eight_bit_int_in(st)?;
-        if cur_val() == 255 {
+        if st.scanner.cur_val == 255 {
             crate::output::error_here_with_diagnostic_in(st, c"You can't ".as_ptr());
             crate::output::print_esc_cstr_in(st, c"insert".as_ptr());
-            crate::output::print_int_in(st, cur_val());
+            crate::output::print_int_in(st, st.scanner.cur_val);
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 1;
             st.errors.help_line[0] = c"I'm changing to \\insert0; box 255 is special.".as_ptr();
             mc_propagate_error(crate::errors::error_in(st))?;
-            set_cur_val(0);
+            st.scanner.cur_val = 0;
         }
     }
     let sp = st.save_stack.save_ptr;
-    st.save_stack.set_b32s1(sp, cur_val());
+    st.save_stack.set_b32s1(sp, st.scanner.cur_val);
     if st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword_in(st, c"pre".as_ptr())? {
         st.save_stack.set_b32s1(sp + 1, 1);
     } else {
@@ -1626,10 +1627,11 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     } else {
         let c = st.scanner.cur_chr;
         crate::scan::scan_register_num_in(st)?;
-        let p = if cur_val() < 256 {
-            st.eqtb.b32s1(BOX_BASE + cur_val())
+        let p = if st.scanner.cur_val < 256 {
+            st.eqtb.b32s1(BOX_BASE + st.scanner.cur_val)
         } else {
-            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
+            let __cv18 = st.scanner.cur_val;
+            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv18, false);
             if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
                 crate::mem::TEX_NULL
             } else {
@@ -1667,11 +1669,12 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
             st.mem.set_b32s1(tail, copy);
         } else {
             st.mem.set_b32s1(tail, list_head);
-            if cur_val() < 256 {
+            if st.scanner.cur_val < 256 {
                 st.eqtb
-                    .set_b32s1(BOX_BASE + cur_val(), crate::mem::TEX_NULL);
+                    .set_b32s1(BOX_BASE + st.scanner.cur_val, crate::mem::TEX_NULL);
             } else {
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
+                let __cv17 = st.scanner.cur_val;
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv17, false);
                 let cp = crate::globals::cur_ptr();
                 if cp != crate::mem::TEX_NULL {
                     st.mem.set_b32s1(cp + 1, crate::mem::TEX_NULL);
@@ -2284,8 +2287,7 @@ pub(crate) fn box_end_in(
 ) -> Result<(), MainControlAbort> {
     use crate::globals::{
         cur_list_mode, cur_list_tail, cur_ptr, set_cur_list_aux_b32s0, set_cur_list_tail,
-        set_cur_val,
-    };
+        };
     use crate::mem::TEX_NULL;
 
     const VMODE: i16 = 1;
@@ -2363,26 +2365,28 @@ pub(crate) fn box_end_in(
         } else {
             (box_context - GLOBAL_BOX_FLAG, 4i16)
         };
-        set_cur_val(val);
+        st.scanner.cur_val = val;
         let cb = st.scanner.cur_box;
 
-        if cur_val() < 256 {
+        if st.scanner.cur_val < 256 {
             let abort = if a >= 4 {
+                let __cv16 = st.scanner.cur_val;
                 crate::save::geq_define(
                     &mut st.eqtb,
                     &mut st.mem,
                     &mut st.scanner,
-                    BOX_BASE + cur_val(),
+                    BOX_BASE + __cv16,
                     BOX_REF,
                     cb,
                 )
             } else {
+                let __cv15 = st.scanner.cur_val;
                 crate::save::eq_define(
                     &mut st.eqtb,
                     &mut st.save_stack,
                     &mut st.mem,
                     &mut st.scanner,
-                    BOX_BASE + cur_val(),
+                    BOX_BASE + __cv15,
                     BOX_REF,
                     cb,
                 )
@@ -2391,7 +2395,8 @@ pub(crate) fn box_end_in(
                 return Err(MainControlAbort::Save(sa));
             }
         } else {
-            let r = crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), true);
+            let __cv14 = st.scanner.cur_val;
+            let r = crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv14, true);
             if r == crate::mem::ALLOC_FAILED {
                 return Err(crate::scan::NodeRecycleAbort::Overflow.into());
             }
@@ -2485,7 +2490,7 @@ pub(crate) fn begin_box_in(
     match st.scanner.cur_chr {
         BOX_CODE => {
             crate::scan::scan_register_num_in(st)?;
-            let v = cur_val();
+            let v = st.scanner.cur_val;
             if v < 256 {
                 st.scanner.cur_box = st.eqtb.b32s1(BOX_BASE + v);
             } else {
@@ -2518,7 +2523,7 @@ pub(crate) fn begin_box_in(
 
         COPY_CODE => {
             crate::scan::scan_register_num_in(st)?;
-            let v = cur_val();
+            let v = st.scanner.cur_val;
             let q = if v < 256 {
                 st.eqtb.b32s1(BOX_BASE + v)
             } else {
@@ -2629,7 +2634,7 @@ pub(crate) fn begin_box_in(
 
         VSPLIT_CODE_I => {
             crate::scan::scan_register_num_in(st)?;
-            let n = cur_val();
+            let n = st.scanner.cur_val;
             if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
                 crate::output::error_here_with_diagnostic_in(st, c"Missing `to' inserted".as_ptr());
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
@@ -2643,7 +2648,7 @@ pub(crate) fn begin_box_in(
                 }
             }
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            st.scanner.cur_box = crate::packaging::vsplit_in(st, n, cur_val())?;
+            st.scanner.cur_box = crate::packaging::vsplit_in(st, n, st.scanner.cur_val)?;
         }
 
         _ => {
@@ -3038,17 +3043,17 @@ fn append_glue_node(
 pub(crate) fn append_glue_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let s = st.scanner.cur_chr as i16;
     match s {
-        0 => set_cur_val(4),
-        1 => set_cur_val(8),
-        2 => set_cur_val(12),
-        3 => set_cur_val(16),
+        0 => st.scanner.cur_val = 4,
+        1 => st.scanner.cur_val = 8,
+        2 => st.scanner.cur_val = 12,
+        3 => st.scanner.cur_val = 16,
         4 => crate::scan::scan_glue_in(st, GLUE_VAL)?, // SKIP_CODE
         5 => crate::scan::scan_glue_in(st, MU_VAL_SCAN)?, // MSKIP_CODE
         _ => {}
     }
     let subtype = if s > SKIP_CODE { MU_GLUE } else { 0 };
     let tail = crate::globals::cur_list_tail();
-    let p = append_glue_node(&mut st.mem, tail, cur_val(), subtype, s >= SKIP_CODE);
+    let p = append_glue_node(&mut st.mem, tail, st.scanner.cur_val, subtype, s >= SKIP_CODE);
     if p == crate::mem::ALLOC_FAILED {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
@@ -3074,7 +3079,7 @@ pub(crate) fn append_kern_in(st: &mut crate::state::EngineState) -> Result<(), M
     let s = st.scanner.cur_chr as u16;
     crate::scan::scan_dimen_in(st, s == MU_GLUE, false, false)?;
     let tail = crate::globals::cur_list_tail();
-    let p = append_kern_node(&mut st.mem, tail, cur_val(), s);
+    let p = append_kern_node(&mut st.mem, tail, st.scanner.cur_val, s);
     if p == crate::mem::ALLOC_FAILED {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
@@ -3086,7 +3091,7 @@ pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         0
     } else {
         crate::scan::scan_register_num_in(st)?;
-        cur_val()
+        st.scanner.cur_val
     };
     crate::scan::scan_toks_in(st, false, true)?; // side effect: sets def_ref; return value discarded
     let p = crate::mem::get_node(&mut st.mem, SMALL_NODE_SIZE);
@@ -3126,19 +3131,19 @@ pub(crate) fn alter_aux_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     crate::scan::scan_optional_equals_in(st)?;
     if c == VMODE as i32 {
         crate::scan::scan_dimen_in(st, false, false, false)?;
-        crate::globals::set_cur_list_aux_b32s1(cur_val());
+        crate::globals::set_cur_list_aux_b32s1(st.scanner.cur_val);
     } else {
         crate::scan::scan_int_in(st)?;
-        if cur_val() <= 0 || cur_val() > 32767 {
+        if st.scanner.cur_val <= 0 || st.scanner.cur_val > 32767 {
             let errmsg =
                 crate::output::error_here_with_diagnostic_in(st, c"Bad space factor".as_ptr());
-            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 1;
             st.errors.help_line[0] = c"I allow only values in the range 1..32767 here.".as_ptr();
-            return mc_propagate_error(crate::errors::int_error_in(st, cur_val()));
+            return mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val));
         }
-        crate::globals::set_cur_list_aux_b32s0(cur_val());
+        crate::globals::set_cur_list_aux_b32s0(st.scanner.cur_val);
     }
     Ok(())
 }
@@ -3153,16 +3158,16 @@ pub(crate) fn alter_prev_graf_in(
     }
     crate::scan::scan_optional_equals_in(st)?;
     crate::scan::scan_int_in(st)?;
-    if cur_val() < 0 {
+    if st.scanner.cur_val < 0 {
         let errmsg = crate::output::error_here_with_diagnostic_in(st, c"Bad ".as_ptr());
-        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
         crate::output::print_esc_cstr_in(st, c"prevgraf".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 1;
         st.errors.help_line[0] = c"I allow only nonnegative values here.".as_ptr();
-        return mc_propagate_error(crate::errors::int_error_in(st, cur_val()));
+        return mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val));
     }
-    st.input.nest[p as usize].prev_graf = cur_val();
+    st.input.nest[p as usize].prev_graf = st.scanner.cur_val;
     crate::globals::set_cur_list_record(st.input.nest[np as usize]);
     Ok(())
 }
@@ -3172,7 +3177,7 @@ pub(crate) fn alter_page_so_far_in(
     let c = st.scanner.cur_chr as usize;
     crate::scan::scan_optional_equals_in(st)?;
     crate::scan::scan_dimen_in(st, false, false, false)?;
-    st.shipout.page_so_far[c] = cur_val();
+    st.shipout.page_so_far[c] = st.scanner.cur_val;
     Ok(())
 }
 pub(crate) fn alter_integer_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
@@ -3180,22 +3185,22 @@ pub(crate) fn alter_integer_in(st: &mut crate::state::EngineState) -> Result<(),
     crate::scan::scan_optional_equals_in(st)?;
     crate::scan::scan_int_in(st)?;
     if c == 0 {
-        st.shipout.dead_cycles = cur_val();
+        st.shipout.dead_cycles = st.scanner.cur_val;
     } else if c == 2 {
-        if cur_val() < BATCH_MODE as i32 || cur_val() > ERROR_STOP_MODE as i32 {
+        if st.scanner.cur_val < BATCH_MODE as i32 || st.scanner.cur_val > ERROR_STOP_MODE as i32 {
             let errmsg =
                 crate::output::error_here_with_diagnostic_in(st, c"Bad interaction mode".as_ptr());
-            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 2;
             st.errors.help_line[1] = c"Modes are 0=batch, 1=nonstop, 2=scroll, and".as_ptr();
             st.errors.help_line[0] = c"3=errorstop. Proceed, and I'll ignore this case.".as_ptr();
-            return mc_propagate_error(crate::errors::int_error_in(st, cur_val()));
+            return mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val));
         }
-        st.scanner.cur_chr = cur_val();
+        st.scanner.cur_chr = st.scanner.cur_val;
         new_interaction_in(st);
     } else {
-        st.shipout.insert_penalties = cur_val();
+        st.shipout.insert_penalties = st.scanner.cur_val;
     }
     Ok(())
 }
@@ -3204,10 +3209,11 @@ pub(crate) fn alter_box_dimen_in(
 ) -> Result<(), MainControlAbort> {
     let c = st.scanner.cur_chr;
     crate::scan::scan_register_num_in(st)?;
-    let b = if cur_val() < 256 {
-        st.eqtb.b32s1(BOX_BASE + cur_val())
+    let b = if st.scanner.cur_val < 256 {
+        st.eqtb.b32s1(BOX_BASE + st.scanner.cur_val)
     } else {
-        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
+        let __cv13 = st.scanner.cur_val;
+        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv13, false);
         if crate::globals::cur_ptr() == crate::mem::TEX_NULL {
             crate::mem::TEX_NULL
         } else {
@@ -3217,7 +3223,7 @@ pub(crate) fn alter_box_dimen_in(
     crate::scan::scan_optional_equals_in(st)?;
     crate::scan::scan_dimen_in(st, false, false, false)?;
     if b != crate::mem::TEX_NULL {
-        st.mem.set_b32s1(b + c, cur_val());
+        st.mem.set_b32s1(b + c, st.scanner.cur_val);
     }
     Ok(())
 }
@@ -3225,15 +3231,14 @@ pub(crate) fn alter_box_dimen_in(
 ///
 /// Phase-C: threaded to `&mut MemState` (`01b` §3); legacy callers use
 /// [`trap_zero_glue_global`]. No allocation, so no cold-path sentinel.
-pub(crate) fn trap_zero_glue(mem: &mut crate::state::MemState) {
-    if mem.b32s1(cur_val() + 1) == 0
-        && mem.b32s1(cur_val() + 2) == 0
-        && mem.b32s1(cur_val() + 3) == 0
-    {
+pub(crate) fn trap_zero_glue(st: &mut crate::state::EngineState) {
+    let cv = st.scanner.cur_val;
+    if st.mem.b32s1(cv + 1) == 0 && st.mem.b32s1(cv + 2) == 0 && st.mem.b32s1(cv + 3) == 0 {
         // GLUE_SPEC_ref_count(0)++ = mem[0].b32.s1++
-        mem.set_b32s1(0, mem.b32s1(0) + 1);
-        crate::mem::delete_glue_ref(mem, cur_val());
-        set_cur_val(0);
+        let r = st.mem.b32s1(0) + 1;
+        st.mem.set_b32s1(0, r);
+        crate::mem::delete_glue_ref(&mut st.mem, cv);
+        st.scanner.cur_val = 0;
     }
 }
 
@@ -3597,7 +3602,7 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
 
     crate::scan::scan_char_num_in(st)?;
     let mut f = st.eqtb.b32s1(CUR_FONT_LOC);
-    let p = new_character_in(st, f, cur_val() as u16)?;
+    let p = new_character_in(st, f, st.scanner.cur_val as u16)?;
 
     if p == crate::mem::TEX_NULL {
         return Ok(());
@@ -3619,7 +3624,7 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
                 crate::ext::get_native_char_sidebearings(
                     &st.fonts,
                     f,
-                    cur_val(),
+                    st.scanner.cur_val,
                     &mut lsb,
                     &mut rsb,
                 )?;
@@ -3639,10 +3644,10 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
     f = st.eqtb.b32s1(CUR_FONT_LOC);
     if st.scanner.cur_cmd == LETTER || st.scanner.cur_cmd == OTHER_CHAR || st.scanner.cur_cmd == CHAR_GIVEN {
         q = new_character_in(st, f, st.scanner.cur_chr as u16)?;
-        set_cur_val(st.scanner.cur_chr);
+        st.scanner.cur_val = st.scanner.cur_chr;
     } else if st.scanner.cur_cmd == CHAR_NUM {
         crate::scan::scan_char_num_in(st)?;
-        q = new_character_in(st, f, cur_val() as u16)?;
+        q = new_character_in(st, f, st.scanner.cur_val as u16)?;
     } else {
         crate::input::back_input_in(st)?;
     }
@@ -3660,7 +3665,7 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
                 crate::ext::get_native_char_height_depth(
                     &st.fonts,
                     f,
-                    cur_val(),
+                    st.scanner.cur_val,
                     &mut hv,
                     &mut dv,
                 )?;
@@ -3792,7 +3797,7 @@ pub(crate) unsafe fn new_font_in(
 
     let s = if crate::scan::scan_keyword_in(st, c"at".as_ptr())? {
         crate::scan::scan_dimen_in(st, false, false, false)?;
-        let sv = cur_val();
+        let sv = st.scanner.cur_val;
         if sv <= 0 || sv >= 0x800_0000 {
             crate::output::error_here_with_diagnostic_in(st, c"Improper `at' size (".as_ptr());
             crate::output::print_scaled_in(st, sv);
@@ -3809,7 +3814,7 @@ pub(crate) unsafe fn new_font_in(
         }
     } else if crate::scan::scan_keyword_in(st, c"scaled".as_ptr())? {
         crate::scan::scan_int_in(st)?;
-        let sv = cur_val();
+        let sv = st.scanner.cur_val;
         if sv <= 0 || sv > 32768 {
             let errmsg = crate::output::error_here_with_diagnostic_in(
                 st,
@@ -4008,21 +4013,22 @@ pub(crate) fn do_register_command_in(
         } else {
             let p = st.scanner.cur_chr as i16;
             crate::scan::scan_register_num_in(st)?;
-            if cur_val() > 255 {
+            if st.scanner.cur_val > 255 {
+                let __cv12 = st.scanner.cur_val;
                 crate::save::find_sa_element(
                     &mut st.mem,
                     &mut st.scanner,
                     p as u16,
-                    cur_val(),
+                    __cv12,
                     true,
                 );
                 (cur_ptr(), p, true)
             } else {
                 let l = match p {
-                    INT_VAL => cur_val() + COUNT_BASE,
-                    DIMEN_VAL => cur_val() + SCALED_BASE,
-                    GLUE_VAL => cur_val() + SKIP_BASE,
-                    MU_VAL => cur_val() + MU_SKIP_BASE,
+                    INT_VAL => st.scanner.cur_val + COUNT_BASE,
+                    DIMEN_VAL => st.scanner.cur_val + SCALED_BASE,
+                    GLUE_VAL => st.scanner.cur_val + SKIP_BASE,
+                    MU_VAL => st.scanner.cur_val + MU_SKIP_BASE,
                     _ => unreachable!(),
                 };
                 (l, p, false)
@@ -4059,17 +4065,17 @@ pub(crate) fn do_register_command_in(
                 crate::scan::scan_dimen_in(st, false, false, false)?;
             }
             if q == ADVANCE {
-                set_cur_val(cur_val() + w);
+                st.scanner.cur_val = st.scanner.cur_val + w;
             }
         } else {
             crate::scan::scan_glue_in(st, p)?;
             if q == ADVANCE {
-                let qs = crate::mem::new_spec(&mut st.mem, cur_val());
+                let qs = crate::mem::new_spec(&mut st.mem, st.scanner.cur_val);
                 if qs == crate::mem::ALLOC_FAILED {
                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                 }
                 let r = s;
-                crate::mem::delete_glue_ref(&mut st.mem, cur_val());
+                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
                 let qs_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(qs))
                     .expect("non-null glue spec");
                 let r_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(r))
@@ -4102,7 +4108,7 @@ pub(crate) fn do_register_command_in(
                     qs_p.set_shrink(&mut st.mem, rs);
                     qs_p.set_shrink_order(&mut st.mem, ro);
                 }
-                set_cur_val(qs);
+                st.scanner.cur_val = qs;
             }
         }
     } else {
@@ -4110,28 +4116,28 @@ pub(crate) fn do_register_command_in(
         if p < GLUE_VAL {
             if q == MULTIPLY {
                 if p == INT_VAL {
-                    set_cur_val(crate::scaled_math::mult_and_add_in(
+                    st.scanner.cur_val = crate::scaled_math::mult_and_add_in(
                         &mut st.errors,
                         w,
-                        cur_val(),
+                        st.scanner.cur_val,
                         0,
                         TEX_INFINITY,
-                    ));
+                    );
                 } else {
-                    set_cur_val(crate::scaled_math::mult_and_add_in(
+                    st.scanner.cur_val = crate::scaled_math::mult_and_add_in(
                         &mut st.errors,
                         w,
-                        cur_val(),
+                        st.scanner.cur_val,
                         0,
                         MAX_HALFWORD,
-                    ));
+                    );
                 }
             } else {
-                set_cur_val(crate::scaled_math::x_over_n_in(
+                st.scanner.cur_val = crate::scaled_math::x_over_n_in(
                     &mut st.errors,
                     w,
-                    cur_val(),
-                ));
+                    st.scanner.cur_val,
+                );
             }
         } else {
             let r = crate::mem::new_spec(&mut st.mem, s);
@@ -4151,7 +4157,7 @@ pub(crate) fn do_register_command_in(
                 let v = crate::scaled_math::mult_and_add_in(
                     &mut st.errors,
                     sw.0,
-                    cur_val(),
+                    st.scanner.cur_val,
                     0,
                     MAX_HALFWORD,
                 );
@@ -4159,7 +4165,7 @@ pub(crate) fn do_register_command_in(
                 let v = crate::scaled_math::mult_and_add_in(
                     &mut st.errors,
                     sst.0,
-                    cur_val(),
+                    st.scanner.cur_val,
                     0,
                     MAX_HALFWORD,
                 );
@@ -4167,20 +4173,20 @@ pub(crate) fn do_register_command_in(
                 let v = crate::scaled_math::mult_and_add_in(
                     &mut st.errors,
                     ssh.0,
-                    cur_val(),
+                    st.scanner.cur_val,
                     0,
                     MAX_HALFWORD,
                 );
                 r_p.set_shrink(&mut st.mem, Scaled(v));
             } else {
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, sw.0, cur_val());
+                let v = crate::scaled_math::x_over_n_in(&mut st.errors, sw.0, st.scanner.cur_val);
                 r_p.set_width(&mut st.mem, Scaled(v));
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, sst.0, cur_val());
+                let v = crate::scaled_math::x_over_n_in(&mut st.errors, sst.0, st.scanner.cur_val);
                 r_p.set_stretch(&mut st.mem, Scaled(v));
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, ssh.0, cur_val());
+                let v = crate::scaled_math::x_over_n_in(&mut st.errors, ssh.0, st.scanner.cur_val);
                 r_p.set_shrink(&mut st.mem, Scaled(v));
             }
-            set_cur_val(r);
+            st.scanner.cur_val = r;
         }
     }
 
@@ -4191,7 +4197,7 @@ pub(crate) fn do_register_command_in(
         st.errors.help_line[1] = c"I can't carry out that multiplication or division,".as_ptr();
         st.errors.help_line[0] = c"since the result is out of range.".as_ptr();
         if p >= GLUE_VAL {
-            crate::mem::delete_glue_ref(&mut st.mem, cur_val());
+            crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
         }
         return mc_propagate_error(crate::errors::error_in(st));
     }
@@ -4199,60 +4205,66 @@ pub(crate) fn do_register_command_in(
     if p < GLUE_VAL {
         if e {
             let result = if a >= 4 {
-                crate::save::gsa_w_def(&mut st.mem, l, cur_val())
+                crate::save::gsa_w_def(&mut st.mem, l, st.scanner.cur_val)
             } else {
+                let __cv11 = st.scanner.cur_val;
                 crate::save::sa_w_def(
                     &mut st.mem,
                     &mut st.scanner,
                     &mut st.save_stack,
                     l,
-                    cur_val(),
+                    __cv11,
                 )
             };
             crate::save::finish_sa_mutation_in(st, l, result)?;
         } else if a >= 4 {
-            crate::save::geq_word_define(&mut st.eqtb, l, cur_val());
+            crate::save::geq_word_define(&mut st.eqtb, l, st.scanner.cur_val);
         } else if let Some(ab) =
-            crate::save::eq_word_define(&mut st.eqtb, &mut st.save_stack, l, cur_val())
+            crate::save::eq_word_define(&mut st.eqtb, &mut st.save_stack, l, st.scanner.cur_val)
         {
             return Err(MainControlAbort::Save(ab));
         }
     } else {
-        crate::main_control::trap_zero_glue(&mut st.mem);
+        crate::main_control::trap_zero_glue(st);
         if e {
             let result = if a >= 4 {
-                crate::save::gsa_def(&mut st.mem, l, cur_val())
+                crate::save::gsa_def(&mut st.mem, l, st.scanner.cur_val)
             } else {
+                let __cv10 = st.scanner.cur_val;
                 crate::save::sa_def(
                     &mut st.mem,
                     &mut st.scanner,
                     &mut st.save_stack,
                     l,
-                    cur_val(),
+                    __cv10,
                 )
             };
             crate::save::finish_sa_mutation_in(st, l, result)?;
         } else if a >= 4 {
+            let __cv9 = st.scanner.cur_val;
             if let Some(ab) = crate::save::geq_define(
                 &mut st.eqtb,
                 &mut st.mem,
                 &mut st.scanner,
                 l,
                 GLUE_REF,
-                cur_val(),
+                __cv9,
             ) {
                 return Err(MainControlAbort::Save(ab));
             }
-        } else if let Some(ab) = crate::save::eq_define(
-            &mut st.eqtb,
-            &mut st.save_stack,
-            &mut st.mem,
-            &mut st.scanner,
-            l,
-            GLUE_REF,
-            cur_val(),
-        ) {
-            return Err(MainControlAbort::Save(ab));
+        } else {
+            let __cv8 = st.scanner.cur_val;
+            if let Some(ab) = crate::save::eq_define(
+                &mut st.eqtb,
+                &mut st.save_stack,
+                &mut st.mem,
+                &mut st.scanner,
+                l,
+                GLUE_REF,
+                __cv8,
+            ) {
+                return Err(MainControlAbort::Save(ab));
+            }
         }
     }
     Ok(())
@@ -4619,9 +4631,9 @@ fn main_control_box_list_cases_in(
             let t = st.scanner.cur_chr;
             crate::scan::scan_dimen_in(st, false, false, false)?;
             if t == 0 {
-                scan_box_in(st, cur_val())?;
+                scan_box_in(st, st.scanner.cur_val)?;
             } else {
-                scan_box_in(st, -cur_val())?;
+                scan_box_in(st, -st.scanner.cur_val)?;
             }
         }
         (VMODE_MC, LEADER_SHIP_MC) | (HMODE_MC, LEADER_SHIP_MC) | (MMODE_MC, LEADER_SHIP_MC) => {
@@ -4846,7 +4858,7 @@ pub(crate) fn main_control_math_cases_in(
 
         (MMODE_MC, CHAR_NUM_MC) => {
             crate::scan::scan_char_num_in(st)?;
-            st.scanner.cur_chr = cur_val();
+            st.scanner.cur_chr = st.scanner.cur_val;
             crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?;
         }
 
@@ -4854,19 +4866,19 @@ pub(crate) fn main_control_math_cases_in(
             if st.scanner.cur_chr == 2 {
                 // \Umathchar
                 crate::scan::scan_math_class_int_in(st)?;
-                let mut t = set_class_fn(cur_val());
+                let mut t = set_class_fn(st.scanner.cur_val);
                 crate::scan::scan_math_fam_int_in(st)?;
-                t += set_family_fn(cur_val());
+                t += set_family_fn(st.scanner.cur_val);
                 crate::scan::scan_usv_num_in(st)?;
-                t += cur_val();
+                t += st.scanner.cur_val;
                 crate::scan::set_math_char_in(st, t)?;
             } else if st.scanner.cur_chr == 1 {
                 // \Umathcharnum
                 crate::scan::scan_xetex_math_char_int_in(st)?;
-                crate::scan::set_math_char_in(st, cur_val())?;
+                crate::scan::set_math_char_in(st, st.scanner.cur_val)?;
             } else {
                 crate::scan::scan_fifteen_bit_int_in(st)?;
-                let v = cur_val();
+                let v = st.scanner.cur_val;
                 crate::scan::set_math_char_in(
                     st,
                     set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256),
@@ -4890,15 +4902,15 @@ pub(crate) fn main_control_math_cases_in(
             if st.scanner.cur_chr == 1 {
                 // \Udelimiter
                 crate::scan::scan_math_class_int_in(st)?;
-                let mut t = set_class_fn(cur_val());
+                let mut t = set_class_fn(st.scanner.cur_val);
                 crate::scan::scan_math_fam_int_in(st)?;
-                t += set_family_fn(cur_val());
+                t += set_family_fn(st.scanner.cur_val);
                 crate::scan::scan_usv_num_in(st)?;
-                t += cur_val();
+                t += st.scanner.cur_val;
                 crate::scan::set_math_char_in(st, t)?;
             } else {
                 crate::scan::scan_delimiter_int_in(st)?;
-                let v = cur_val() / 4096;
+                let v = st.scanner.cur_val / 4096;
                 crate::scan::set_math_char_in(
                     st,
                     set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256),
@@ -5399,7 +5411,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
             }
             if st.scanner.cur_cmd == CHAR_NUM {
                 crate::scan::scan_usv_num_in(st)?;
-                st.scanner.cur_chr = cur_val();
+                st.scanner.cur_chr = st.scanner.cur_val;
                 continue 'collect;
             }
 
@@ -6255,7 +6267,7 @@ unsafe fn do_lookahead(
     if !is_char_cmd(st.scanner.cur_cmd) {
         if st.scanner.cur_cmd == CHAR_NUM {
             crate::scan::scan_char_num_in(st)?;
-            st.scanner.cur_chr = cur_val();
+            st.scanner.cur_chr = st.scanner.cur_val;
             // fall through to is_char_cmd path
         } else {
             // Not a char: set cur_r = bchar, lig_stack = NULL
@@ -6441,7 +6453,7 @@ pub(crate) unsafe fn main_control_in(
     const EVERY_JOB_TEXT: u16 = 13; // xetex-constants.h:212
     const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
 
-    use crate::globals::{cur_list_mode, cur_val, set_cancel_boundary};
+    use crate::globals::{cur_list_mode, set_cancel_boundary};
     use crate::mem::TEX_NULL;
 
     let every_job = st.eqtb.b32s1(CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB);
@@ -6470,7 +6482,7 @@ pub(crate) unsafe fn main_control_in(
                 }
                 (HMODE, CHAR_NUM) => {
                     crate::scan::scan_usv_num_in(st)?;
-                    st.scanner.cur_chr = cur_val();
+                    st.scanner.cur_chr = st.scanner.cur_val;
                     if main_control_main_loop_in(st)? {
                         break 'reswitch;
                     }
@@ -7098,40 +7110,41 @@ pub(crate) fn prefixed_command_in(
                     match n {
                         CHAR_DEF_CODE => {
                             crate::scan::scan_usv_num_in(st)?;
-                            pc_define(st, a >= 4, p, CHAR_GIVEN as u16, cur_val())?;
+                            pc_define(st, a >= 4, p, CHAR_GIVEN as u16, st.scanner.cur_val)?;
                         }
                         MATH_CHAR_DEF_CODE => {
                             crate::scan::scan_fifteen_bit_int_in(st)?;
-                            pc_define(st, a >= 4, p, MATH_GIVEN as u16, cur_val())?;
+                            pc_define(st, a >= 4, p, MATH_GIVEN as u16, st.scanner.cur_val)?;
                         }
                         XETEX_MATH_CHAR_NUM_DEF_CODE => {
                             crate::scan::scan_xetex_math_char_int_in(st)?;
-                            pc_define(st, a >= 4, p, XETEX_MATH_GIVEN as u16, cur_val())?;
+                            pc_define(st, a >= 4, p, XETEX_MATH_GIVEN as u16, st.scanner.cur_val)?;
                         }
                         XETEX_MATH_CHAR_DEF_CODE => {
                             crate::scan::scan_math_class_int_in(st)?;
-                            n = set_class(cur_val());
+                            n = set_class(st.scanner.cur_val);
                             crate::scan::scan_math_fam_int_in(st)?;
-                            n = n.wrapping_add(set_family(cur_val()));
+                            n = n.wrapping_add(set_family(st.scanner.cur_val));
                             crate::scan::scan_usv_num_in(st)?;
-                            n = n.wrapping_add(cur_val());
+                            n = n.wrapping_add(st.scanner.cur_val);
                             pc_define(st, a >= 4, p, XETEX_MATH_GIVEN as u16, n)?;
                         }
                         _ => {
                             crate::scan::scan_register_num_in(st)?;
 
-                            if cur_val() > 255 {
+                            if st.scanner.cur_val > 255 {
                                 j = n - 2;
 
                                 if j > MU_VAL {
                                     j = TOK_VAL;
                                 }
 
+                                let __cv7 = st.scanner.cur_val;
                                 let found = crate::save::find_sa_element(
                                     &mut st.mem,
                                     &mut st.scanner,
                                     j as u16,
-                                    cur_val(),
+                                    __cv7,
                                     true,
                                 );
                                 if found == crate::mem::ALLOC_FAILED {
@@ -7155,7 +7168,7 @@ pub(crate) fn prefixed_command_in(
                                             a >= 4,
                                             p,
                                             ASSIGN_INT as u16,
-                                            COUNT_BASE + cur_val(),
+                                            COUNT_BASE + st.scanner.cur_val,
                                         )?;
                                     }
                                     DIMEN_DEF_CODE => {
@@ -7164,7 +7177,7 @@ pub(crate) fn prefixed_command_in(
                                             a >= 4,
                                             p,
                                             ASSIGN_DIMEN as u16,
-                                            SCALED_BASE + cur_val(),
+                                            SCALED_BASE + st.scanner.cur_val,
                                         )?;
                                     }
                                     SKIP_DEF_CODE => {
@@ -7173,7 +7186,7 @@ pub(crate) fn prefixed_command_in(
                                             a >= 4,
                                             p,
                                             ASSIGN_GLUE as u16,
-                                            SKIP_BASE + cur_val(),
+                                            SKIP_BASE + st.scanner.cur_val,
                                         )?;
                                     }
                                     MU_SKIP_DEF_CODE => {
@@ -7182,7 +7195,7 @@ pub(crate) fn prefixed_command_in(
                                             a >= 4,
                                             p,
                                             ASSIGN_MU_GLUE as u16,
-                                            MU_SKIP_BASE + cur_val(),
+                                            MU_SKIP_BASE + st.scanner.cur_val,
                                         )?;
                                     }
                                     TOKS_DEF_CODE => {
@@ -7191,7 +7204,7 @@ pub(crate) fn prefixed_command_in(
                                             a >= 4,
                                             p,
                                             ASSIGN_TOKS as u16,
-                                            TOKS_BASE + cur_val(),
+                                            TOKS_BASE + st.scanner.cur_val,
                                         )?;
                                     }
                                     _ => {}
@@ -7205,7 +7218,7 @@ pub(crate) fn prefixed_command_in(
             READ_TO_CS => {
                 j = st.scanner.cur_chr;
                 crate::scan::scan_int_in(st)?;
-                n = cur_val();
+                n = st.scanner.cur_val;
                 if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
                     crate::output::error_here_with_diagnostic_in(
                         st,
@@ -7223,7 +7236,7 @@ pub(crate) fn prefixed_command_in(
                 p = st.scanner.cur_cs;
                 crate::scan::read_toks_in(st, n, p, j)?;
 
-                pc_define(st, a >= 4, p, CALL as u16, cur_val())?;
+                pc_define(st, a >= 4, p, CALL as u16, st.scanner.cur_val)?;
             }
 
             TOKS_REGISTER | ASSIGN_TOKS => {
@@ -7233,12 +7246,13 @@ pub(crate) fn prefixed_command_in(
                 if st.scanner.cur_cmd as i32 == TOKS_REGISTER {
                     if st.scanner.cur_chr == 0 {
                         crate::scan::scan_register_num_in(st)?;
-                        if cur_val() > 255 {
+                        if st.scanner.cur_val > 255 {
+                            let __cv6 = st.scanner.cur_val;
                             let found = crate::save::find_sa_element(
                                 &mut st.mem,
                                 &mut st.scanner,
                                 TOK_VAL as u16,
-                                cur_val(),
+                                __cv6,
                                 true,
                             );
                             if found == crate::mem::ALLOC_FAILED {
@@ -7247,20 +7261,21 @@ pub(crate) fn prefixed_command_in(
                             st.scanner.cur_chr = cur_ptr();
                             e = true;
                         } else {
-                            st.scanner.cur_chr = TOKS_BASE + cur_val();
+                            st.scanner.cur_chr = TOKS_BASE + st.scanner.cur_val;
                         }
                     } else {
                         e = true;
                     }
                 } else if st.scanner.cur_chr == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
                     crate::scan::scan_char_class_not_ignored_in(st)?;
-                    set_cur_ptr(cur_val());
+                    set_cur_ptr(st.scanner.cur_val);
                     crate::scan::scan_char_class_not_ignored_in(st)?;
+                    let __cv5 = st.scanner.cur_val;
                     let found = crate::save::find_sa_element(
                         &mut st.mem,
                         &mut st.scanner,
                         INTER_CHAR_VAL as u16,
-                        cur_ptr() * CHAR_CLASS_LIMIT + cur_val(),
+                        cur_ptr() * CHAR_CLASS_LIMIT + __cv5,
                         true,
                     );
                     if found == crate::mem::ALLOC_FAILED {
@@ -7286,14 +7301,15 @@ pub(crate) fn prefixed_command_in(
                     if st.scanner.cur_cmd as i32 == TOKS_REGISTER {
                         if st.scanner.cur_chr == 0 {
                             crate::scan::scan_register_num_in(st)?;
-                            if cur_val() < 256 {
-                                q = st.eqtb.b32s1(TOKS_BASE + cur_val());
+                            if st.scanner.cur_val < 256 {
+                                q = st.eqtb.b32s1(TOKS_BASE + st.scanner.cur_val);
                             } else {
+                                let __cv4 = st.scanner.cur_val;
                                 crate::save::find_sa_element(
                                     &mut st.mem,
                                     &mut st.scanner,
                                     TOK_VAL as u16,
-                                    cur_val(),
+                                    __cv4,
                                     false,
                                 );
                                 if cur_ptr() == TEX_NULL {
@@ -7307,13 +7323,14 @@ pub(crate) fn prefixed_command_in(
                         }
                     } else if st.scanner.cur_chr == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
                         crate::scan::scan_char_class_not_ignored_in(st)?;
-                        set_cur_ptr(cur_val());
+                        set_cur_ptr(st.scanner.cur_val);
                         crate::scan::scan_char_class_not_ignored_in(st)?;
+                        let __cv3 = st.scanner.cur_val;
                         crate::save::find_sa_element(
                             &mut st.mem,
                             &mut st.scanner,
                             INTER_CHAR_VAL as u16,
-                            cur_ptr() * CHAR_CLASS_LIMIT + cur_val(),
+                            cur_ptr() * CHAR_CLASS_LIMIT + __cv3,
                             false,
                         );
                         if cur_ptr() == TEX_NULL {
@@ -7394,14 +7411,14 @@ pub(crate) fn prefixed_command_in(
                 p = st.scanner.cur_chr;
                 crate::scan::scan_optional_equals_in(st)?;
                 crate::scan::scan_int_in(st)?;
-                pc_word_define(st, a >= 4, p, cur_val())?;
+                pc_word_define(st, a >= 4, p, st.scanner.cur_val)?;
             }
 
             ASSIGN_DIMEN => {
                 p = st.scanner.cur_chr;
                 crate::scan::scan_optional_equals_in(st)?;
                 crate::scan::scan_dimen_in(st, false, false, false)?;
-                pc_word_define(st, a >= 4, p, cur_val())?;
+                pc_word_define(st, a >= 4, p, st.scanner.cur_val)?;
             }
 
             ASSIGN_GLUE | ASSIGN_MU_GLUE => {
@@ -7413,56 +7430,56 @@ pub(crate) fn prefixed_command_in(
                 } else {
                     crate::scan::scan_glue_in(st, GLUE_VAL as i16)?;
                 }
-                crate::main_control::trap_zero_glue(&mut st.mem);
-                pc_define(st, a >= 4, p, GLUE_REF as u16, cur_val())?;
+                crate::main_control::trap_zero_glue(st);
+                pc_define(st, a >= 4, p, GLUE_REF as u16, st.scanner.cur_val)?;
             }
 
             XETEX_DEF_CODE => {
                 if st.scanner.cur_chr == SF_CODE_BASE {
                     p = st.scanner.cur_chr;
                     crate::scan::scan_usv_num_in(st)?;
-                    p += cur_val();
-                    n = st.eqtb.b32s1(SF_CODE_BASE + cur_val()) % 65536;
+                    p += st.scanner.cur_val;
+                    n = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_val) % 65536;
                     crate::scan::scan_optional_equals_in(st)?;
                     crate::scan::scan_char_class_in(st)?;
-                    let v = cur_val().wrapping_mul(65536).wrapping_add(n);
+                    let v = st.scanner.cur_val.wrapping_mul(65536).wrapping_add(n);
                     pc_define(st, a >= 4, p, DATA as u16, v)?;
                 } else if st.scanner.cur_chr == MATH_CODE_BASE {
                     p = st.scanner.cur_chr;
                     crate::scan::scan_usv_num_in(st)?;
-                    p += cur_val();
+                    p += st.scanner.cur_val;
                     crate::scan::scan_optional_equals_in(st)?;
                     crate::scan::scan_xetex_math_char_int_in(st)?;
-                    pc_define(st, a >= 4, p, DATA as u16, cur_val())?;
+                    pc_define(st, a >= 4, p, DATA as u16, st.scanner.cur_val)?;
                 } else if st.scanner.cur_chr == MATH_CODE_BASE + 1 {
                     p = st.scanner.cur_chr - 1;
                     crate::scan::scan_usv_num_in(st)?;
-                    p += cur_val();
+                    p += st.scanner.cur_val;
                     crate::scan::scan_optional_equals_in(st)?;
                     crate::scan::scan_math_class_int_in(st)?;
-                    n = set_class(cur_val());
+                    n = set_class(st.scanner.cur_val);
                     crate::scan::scan_math_fam_int_in(st)?;
-                    n = n.wrapping_add(set_family(cur_val()));
+                    n = n.wrapping_add(set_family(st.scanner.cur_val));
                     crate::scan::scan_usv_num_in(st)?;
-                    n = n.wrapping_add(cur_val());
+                    n = n.wrapping_add(st.scanner.cur_val);
                     pc_define(st, a >= 4, p, DATA as u16, n)?;
                 } else if st.scanner.cur_chr == DEL_CODE_BASE {
                     p = st.scanner.cur_chr;
                     crate::scan::scan_usv_num_in(st)?;
-                    p += cur_val();
+                    p += st.scanner.cur_val;
                     crate::scan::scan_optional_equals_in(st)?;
                     crate::scan::scan_int_in(st)?;
-                    pc_word_define(st, a >= 4, p, cur_val())?;
+                    pc_word_define(st, a >= 4, p, st.scanner.cur_val)?;
                 } else {
                     p = st.scanner.cur_chr - 1;
                     crate::scan::scan_usv_num_in(st)?;
-                    p += cur_val();
+                    p += st.scanner.cur_val;
                     crate::scan::scan_optional_equals_in(st)?;
                     n = 0x4000_0000; // "extended delimiter code flag"
                     crate::scan::scan_math_fam_int_in(st)?;
-                    n = n.wrapping_add(cur_val().wrapping_mul(0x20_0000)); // extended delimiter family
+                    n = n.wrapping_add(st.scanner.cur_val.wrapping_mul(0x20_0000)); // extended delimiter family
                     crate::scan::scan_usv_num_in(st)?;
-                    n = n.wrapping_add(cur_val());
+                    n = n.wrapping_add(st.scanner.cur_val);
                     pc_word_define(st, a >= 4, p, n)?;
                 }
             }
@@ -7482,13 +7499,13 @@ pub(crate) fn prefixed_command_in(
 
                 p = st.scanner.cur_chr;
                 crate::scan::scan_usv_num_in(st)?;
-                p += cur_val();
+                p += st.scanner.cur_val;
                 crate::scan::scan_optional_equals_in(st)?;
                 crate::scan::scan_int_in(st)?;
 
-                if (cur_val() < 0 && p < DEL_CODE_BASE) || cur_val() > n {
+                if (st.scanner.cur_val < 0 && p < DEL_CODE_BASE) || st.scanner.cur_val > n {
                     crate::output::error_here_with_diagnostic_in(st, c"Invalid code (".as_ptr());
-                    crate::output::print_int_in(st, cur_val());
+                    crate::output::print_int_in(st, st.scanner.cur_val);
                     if p < DEL_CODE_BASE {
                         crate::output::print_cstr_in(st, c"), should be in the range 0..".as_ptr());
                     } else {
@@ -7500,40 +7517,40 @@ pub(crate) fn prefixed_command_in(
                     st.errors.help_line[0] =
                         c"I'm going to use 0 instead of that illegal code value.".as_ptr();
                     mc_propagate_error(crate::errors::error_in(st))?;
-                    set_cur_val(0);
+                    st.scanner.cur_val = 0;
                 }
 
                 if p < MATH_CODE_BASE {
                     if p >= SF_CODE_BASE {
                         n = st.eqtb.b32s1(p) / 65536;
-                        let v = n.wrapping_mul(65536).wrapping_add(cur_val());
+                        let v = n.wrapping_mul(65536).wrapping_add(st.scanner.cur_val);
                         pc_define(st, a >= 4, p, DATA as u16, v)?;
                     } else {
-                        pc_define(st, a >= 4, p, DATA as u16, cur_val())?;
+                        pc_define(st, a >= 4, p, DATA as u16, st.scanner.cur_val)?;
                     }
                 } else if p < DEL_CODE_BASE {
-                    if cur_val() == 32768 {
-                        set_cur_val(ACTIVE_MATH_CHAR);
+                    if st.scanner.cur_val == 32768 {
+                        st.scanner.cur_val = ACTIVE_MATH_CHAR;
                     } else {
-                        let v = set_class(cur_val() / 4096)
-                            .wrapping_add(set_family((cur_val() % 4096) / 256))
-                            .wrapping_add(cur_val() % 256);
-                        set_cur_val(v);
+                        let v = set_class(st.scanner.cur_val / 4096)
+                            .wrapping_add(set_family((st.scanner.cur_val % 4096) / 256))
+                            .wrapping_add(st.scanner.cur_val % 256);
+                        st.scanner.cur_val = v;
                     }
 
-                    pc_define(st, a >= 4, p, DATA as u16, cur_val())?;
+                    pc_define(st, a >= 4, p, DATA as u16, st.scanner.cur_val)?;
                 } else {
-                    pc_word_define(st, a >= 4, p, cur_val())?;
+                    pc_word_define(st, a >= 4, p, st.scanner.cur_val)?;
                 }
             }
 
             DEF_FAMILY => {
                 p = st.scanner.cur_chr;
                 crate::scan::scan_math_fam_int_in(st)?;
-                p += cur_val();
+                p += st.scanner.cur_val;
                 crate::scan::scan_optional_equals_in(st)?;
                 crate::scan::scan_font_ident_in(st)?;
-                pc_define(st, a >= 4, p, DATA as u16, cur_val())?;
+                pc_define(st, a >= 4, p, DATA as u16, st.scanner.cur_val)?;
             }
 
             REGISTER | ADVANCE | MULTIPLY | DIVIDE => {
@@ -7543,9 +7560,9 @@ pub(crate) fn prefixed_command_in(
             SET_BOX => {
                 crate::scan::scan_register_num_in(st)?;
                 if a >= 4 {
-                    n = GLOBAL_BOX_FLAG + cur_val();
+                    n = GLOBAL_BOX_FLAG + st.scanner.cur_val;
                 } else {
-                    n = BOX_FLAG + cur_val();
+                    n = BOX_FLAG + st.scanner.cur_val;
                 }
 
                 crate::scan::scan_optional_equals_in(st)?;
@@ -7589,24 +7606,24 @@ pub(crate) fn prefixed_command_in(
                 q = st.scanner.cur_chr;
                 crate::scan::scan_optional_equals_in(st)?;
                 crate::scan::scan_int_in(st)?;
-                n = cur_val();
+                n = st.scanner.cur_val;
 
                 if n <= 0 {
                     p = TEX_NULL;
                 } else if q > PC_LOCAL_BASE + LOCAL__PAR_SHAPE {
-                    n = (cur_val() / 2) + 1;
+                    n = (st.scanner.cur_val / 2) + 1;
                     p = crate::mem::get_node(&mut st.mem, 2 * n + 1);
                     if p == crate::mem::ALLOC_FAILED {
                         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                     }
                     st.mem.set_b32s0(p, n);
-                    n = cur_val();
+                    n = st.scanner.cur_val;
                     st.mem.set_b32s1(p + 1, n);
 
                     j = p + 2;
                     while j <= p + n + 1 {
                         crate::scan::scan_int_in(st)?;
-                        st.mem.set_b32s1(j, cur_val());
+                        st.mem.set_b32s1(j, st.scanner.cur_val);
                         j += 1;
                     }
 
@@ -7623,9 +7640,9 @@ pub(crate) fn prefixed_command_in(
                     j = 1;
                     while j <= n {
                         crate::scan::scan_dimen_in(st, false, false, false)?;
-                        st.mem.set_b32s1(p + 2 * j - 1, cur_val());
+                        st.mem.set_b32s1(p + 2 * j - 1, st.scanner.cur_val);
                         crate::scan::scan_dimen_in(st, false, false, false)?;
-                        st.mem.set_b32s1(p + 2 * j, cur_val());
+                        st.mem.set_b32s1(p + 2 * j, st.scanner.cur_val);
                         j += 1;
                     }
                 }
@@ -7664,24 +7681,24 @@ pub(crate) fn prefixed_command_in(
 
             ASSIGN_FONT_DIMEN => {
                 crate::scan::find_font_dimen_in(st, true)?;
-                k = cur_val();
+                k = st.scanner.cur_val;
                 crate::scan::scan_optional_equals_in(st)?;
                 crate::scan::scan_dimen_in(st, false, false, false)?;
-                st.fonts.set_font_info_b32s1(k, cur_val());
+                st.fonts.set_font_info_b32s1(k, st.scanner.cur_val);
             }
 
             ASSIGN_FONT_INT => {
                 n = st.scanner.cur_chr;
                 crate::scan::scan_font_ident_in(st)?;
-                f = cur_val();
+                f = st.scanner.cur_val;
 
                 if n < 2 {
                     crate::scan::scan_optional_equals_in(st)?;
                     crate::scan::scan_int_in(st)?;
                     if n == 0 {
-                        st.fonts.set_hyphen_char_entry(f, cur_val());
+                        st.fonts.set_hyphen_char_entry(f, st.scanner.cur_val);
                     } else {
-                        st.fonts.set_skew_char_entry(f, cur_val());
+                        st.fonts.set_skew_char_entry(f, st.scanner.cur_val);
                     }
                 } else {
                     if st.fonts.font_area_entry(f) == AAT_FONT_FLAG
@@ -7692,15 +7709,15 @@ pub(crate) fn prefixed_command_in(
                         crate::scan::scan_char_num_in(st)?;
                     }
 
-                    p = cur_val();
+                    p = st.scanner.cur_val;
                     crate::scan::scan_optional_equals_in(st)?;
                     crate::scan::scan_int_in(st)?;
                     match n {
                         LP_CODE_BASE => unsafe {
-                            set_cp_code(f, p as u32, PC_LEFT_SIDE, cur_val())
+                            set_cp_code(f, p as u32, PC_LEFT_SIDE, st.scanner.cur_val)
                         },
                         RP_CODE_BASE => unsafe {
-                            set_cp_code(f, p as u32, PC_RIGHT_SIDE, cur_val())
+                            set_cp_code(f, p as u32, PC_RIGHT_SIDE, st.scanner.cur_val)
                         },
                         _ => {}
                     }

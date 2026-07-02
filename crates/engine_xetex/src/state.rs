@@ -712,6 +712,8 @@ pub(crate) struct ScannerState {
     pub cur_cs: i32,
     /// Current token — the scanner's `cur_tok`. Folded off `mod raw` (`01e`).
     pub cur_tok: i32,
+    /// Current parsed integer value — the scanner's `cur_val`. Folded off `mod raw` (`01e`).
+    pub cur_val: i32,
     /// Mark registers: `cur_mark[0..=4]` (xetex-xetexd.h:527). Each entry is
     /// a token-list pointer (`int32_t`). Inline fixed array; no alloc/cleanup
     /// edge. Plain `int32_t` elements, no newtype debt.

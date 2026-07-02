@@ -2,7 +2,6 @@
 use crate::state::EngineState;
 
 use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
-use crate::globals::{cur_val, set_cur_val};
 use crate::main_control::{mc_propagate_error, new_graf_in};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::pic::load_picture_in;
@@ -2560,14 +2559,14 @@ pub(crate) fn new_write_whatsit_in(
         crate::scan::scan_four_bit_int_in(st)?;
     } else {
         crate::scan::scan_int_in(st)?;
-        if cur_val() < 0 {
-            set_cur_val(17);
-        } else if cur_val() > 15 && cur_val() != 18 {
-            set_cur_val(16);
+        if st.scanner.cur_val < 0 {
+            st.scanner.cur_val = 17;
+        } else if st.scanner.cur_val > 15 && st.scanner.cur_val != 18 {
+            st.scanner.cur_val = 16;
         }
     }
     st.mem
-        .set_b32s0(crate::globals::cur_list_tail() + 1, cur_val());
+        .set_b32s0(crate::globals::cur_list_tail() + 1, st.scanner.cur_val);
     Ok(())
 }
 // translated from xetex-xetex0.c:9978 (insert_src_special)
@@ -2764,10 +2763,10 @@ pub(crate) fn do_extension_in(
             } else {
                 do_new_whatsit_in(st, LANGUAGE_NODE_DE_W, SMALL_NODE_SIZE_DE)?;
                 scan_int_in(st)?;
-                let lang = if cur_val() <= 0 || cur_val() > 255 {
+                let lang = if st.scanner.cur_val <= 0 || st.scanner.cur_val > 255 {
                     0
                 } else {
-                    cur_val()
+                    st.scanner.cur_val
                 };
                 crate::globals::set_cur_list_aux_b32s1(lang);
                 st.mem.set_b32s1(crate::globals::cur_list_tail() + 1, lang);
@@ -2798,10 +2797,10 @@ pub(crate) fn do_extension_in(
 
         SET_RANDOM_SEED_CODE_DE => {
             scan_int_in(st)?;
-            if cur_val() < 0 {
-                set_cur_val(-cur_val());
+            if st.scanner.cur_val < 0 {
+                st.scanner.cur_val = -st.scanner.cur_val;
             }
-            st.errors.random_seed = cur_val();
+            st.errors.random_seed = st.scanner.cur_val;
             let random_seed = st.errors.random_seed;
             crate::scaled_math::init_randoms(&mut st.errors, random_seed);
         }
@@ -2834,22 +2833,22 @@ pub(crate) fn do_extension_in(
                 if fa == AAT_FONT_FLAG_DE || fa == OTGR_FONT_FLAG_DE {
                     do_new_whatsit_in(st, GLYPH_NODE_TYPE_DE_W, GLYPH_NODE_SIZE_DE)?;
                     scan_int_in(st)?;
-                    if cur_val() < 0 || cur_val() > 65535 {
+                    if st.scanner.cur_val < 0 || st.scanner.cur_val > 65535 {
                         let errmsg =
                             error_here_with_diagnostic_in(st, c"Bad glyph number".as_ptr());
-                        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), cur_val()) };
+                        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
                         st.errors.help_ptr = 2;
                         st.errors.help_line[1] =
                             c"A glyph number must be between 0 and 65535.".as_ptr();
                         st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
-                        mc_propagate_error(crate::errors::int_error_in(st, cur_val()))?;
-                        set_cur_val(0);
+                        mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val))?;
+                        st.scanner.cur_val = 0;
                     }
                     st.mem
                         .set_b16s2(crate::globals::cur_list_tail() + 4, cur_font as u16);
                     st.mem
-                        .set_b16s1(crate::globals::cur_list_tail() + 4, cur_val() as u16);
+                        .set_b16s1(crate::globals::cur_list_tail() + 4, st.scanner.cur_val as u16);
                     // set_native_glyph_metrics(cur_list.tail, ...) expands to
                     // measure_native_glyph(&mem[cur_list.tail], use_glyph_metrics)
                     let use_glyph_metrics =

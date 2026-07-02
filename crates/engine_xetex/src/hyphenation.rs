@@ -10,7 +10,6 @@ const MIN_TRIE_OP: i32 = 0;
 pub(crate) const BIGGEST_LANG: i32 = 255;
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
-use crate::globals::{cur_val};
 use crate::state::HyphState;
 
 // ---- moved verbatim from ini.rs (workstream 02) ----
@@ -750,7 +749,7 @@ pub(crate) fn new_hyph_exceptions_in(
                 }
                 CHAR_NUM => {
                     crate::scan::scan_char_num_in(st)?;
-                    st.scanner.cur_chr = cur_val();
+                    st.scanner.cur_chr = st.scanner.cur_val;
                     st.scanner.cur_cmd = CHAR_GIVEN;
                     // continue inner loop → re-run match with new cur_cmd
                 }

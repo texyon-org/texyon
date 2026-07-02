@@ -17,7 +17,6 @@ pub struct PdfFile {
 // dpx layout types — must match C struct layout exactly (dpx-pdfdev.h)
 use crate::ext::D2Fix;
 use crate::ext::Fix2D;
-use crate::globals::cur_val;
 use crate::main_control::{mc_propagate_error, MainControlAbort};
 use crate::state::EngineState;
 
@@ -416,7 +415,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
     if is_pdf {
         if crate::scan::scan_keyword_in(st, c"page".as_ptr())? {
             crate::scan::scan_int_in(st)?;
-            page = cur_val();
+            page = st.scanner.cur_val;
         }
         pdf_box_type = PDFBOX_NONE;
         if crate::scan::scan_keyword_in(st, c"crop".as_ptr())? {
@@ -492,7 +491,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         if crate::scan::scan_keyword_in(st, c"scaled".as_ptr())? {
             crate::scan::scan_int_in(st)?;
             if x_size_req == 0.0 && y_size_req == 0.0 {
-                let s = cur_val() as f64 / 1000.0;
+                let s = st.scanner.cur_val as f64 / 1000.0;
                 make_scale(&mut t2, s, s);
                 for c in corners.iter_mut() {
                     transform_point(c, &t2);
@@ -502,7 +501,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         } else if crate::scan::scan_keyword_in(st, c"xscaled".as_ptr())? {
             crate::scan::scan_int_in(st)?;
             if x_size_req == 0.0 && y_size_req == 0.0 {
-                make_scale(&mut t2, cur_val() as f64 / 1000.0, 1.0);
+                make_scale(&mut t2, st.scanner.cur_val as f64 / 1000.0, 1.0);
                 for c in corners.iter_mut() {
                     transform_point(c, &t2);
                 }
@@ -511,7 +510,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         } else if crate::scan::scan_keyword_in(st, c"yscaled".as_ptr())? {
             crate::scan::scan_int_in(st)?;
             if x_size_req == 0.0 && y_size_req == 0.0 {
-                make_scale(&mut t2, 1.0, cur_val() as f64 / 1000.0);
+                make_scale(&mut t2, 1.0, st.scanner.cur_val as f64 / 1000.0);
                 for c in corners.iter_mut() {
                     transform_point(c, &t2);
                 }
@@ -519,10 +518,10 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
             }
         } else if crate::scan::scan_keyword_in(st, c"width".as_ptr())? {
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            if cur_val() <= 0 {
+            if st.scanner.cur_val <= 0 {
                 crate::output::error_here_with_diagnostic_in(st, c"Improper image ".as_ptr());
                 crate::output::print_cstr_in(st, c"size (".as_ptr());
-                crate::output::print_scaled_in(st, cur_val());
+                crate::output::print_scaled_in(st, st.scanner.cur_val);
                 crate::output::print_cstr_in(st, c"pt) will be ignored".as_ptr());
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
                 st.errors.help_ptr = 2;
@@ -531,14 +530,14 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
                 st.errors.help_line[0] = c"so I'm ignoring this.".as_ptr();
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {
-                x_size_req = Fix2D(cur_val());
+                x_size_req = Fix2D(st.scanner.cur_val);
             }
         } else if crate::scan::scan_keyword_in(st, c"height".as_ptr())? {
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            if cur_val() <= 0 {
+            if st.scanner.cur_val <= 0 {
                 crate::output::error_here_with_diagnostic_in(st, c"Improper image ".as_ptr());
                 crate::output::print_cstr_in(st, c"size (".as_ptr());
-                crate::output::print_scaled_in(st, cur_val());
+                crate::output::print_scaled_in(st, st.scanner.cur_val);
                 crate::output::print_cstr_in(st, c"pt) will be ignored".as_ptr());
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
                 st.errors.help_ptr = 2;
@@ -547,7 +546,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
                 st.errors.help_line[0] = c"so I'm ignoring this.".as_ptr();
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {
-                y_size_req = Fix2D(cur_val());
+                y_size_req = Fix2D(st.scanner.cur_val);
             }
         } else if crate::scan::scan_keyword_in(st, c"rotated".as_ptr())? {
             crate::scan::xetex_scan_dimen_in(st, false, false, false, false)?;
@@ -570,7 +569,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
                 y_size_req = 0.0;
                 transform_concat(&mut t, &t2);
             }
-            make_rotation(&mut t2, Fix2D(cur_val()) * std::f64::consts::PI / 180.0);
+            make_rotation(&mut t2, Fix2D(st.scanner.cur_val) * std::f64::consts::PI / 180.0);
             for c in corners.iter_mut() {
                 transform_point(c, &t2);
             }

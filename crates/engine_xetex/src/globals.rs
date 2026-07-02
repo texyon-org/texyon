@@ -93,7 +93,6 @@ mod raw {
         // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
         // cur_mark[5] moved to EngineState.scanner (inline fixed array).
         // Current parsed integer value (xetex-xetexd.h:530).
-        pub(super) static mut cur_val: i32;
 
         // Input state stack ownership moved to EngineState.input.input_stack
         // (Rust-owned Vec<InputState>); see src/state.rs.
@@ -425,16 +424,6 @@ pub(crate) fn set_temp_ptr(v: i32) {
 // cur_chr / cur_val / cur_name / cur_area / cur_ext
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn cur_val() -> i32 {
-    unsafe { raw::cur_val }
-}
-#[inline]
-pub(crate) fn set_cur_val(v: i32) {
-    unsafe {
-        raw::cur_val = v;
-    }
-}
 // ---------------------------------------------------------------------------
 // name_in_progress / stop_at_space
 // ---------------------------------------------------------------------------

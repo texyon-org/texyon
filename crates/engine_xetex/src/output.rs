@@ -10,7 +10,7 @@ use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
 use crate::globals::{
-    cur_input, cur_list_mode, cur_val, line, };
+    cur_input, cur_list_mode, line, };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -3535,11 +3535,12 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
         }
         1 => {
             crate::scan::scan_register_num_in(st)?;
-            let p = if cur_val() < 256 {
-                st.eqtb.b32s1(BOX_BASE + cur_val())
+            let p = if st.scanner.cur_val < 256 {
+                st.eqtb.b32s1(BOX_BASE + st.scanner.cur_val)
             } else {
+                let __cv21 = st.scanner.cur_val;
                 let r =
-                    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, cur_val(), false);
+                    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv21, false);
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(ShowWhateverAbort::MainMemoryOverflow);
                 }
@@ -3551,7 +3552,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
             };
             crate::output::begin_diagnostic_in(st);
             crate::output::print_nl_cstr_in(st, c"> \\box".as_ptr());
-            crate::output::print_int_in(st, cur_val());
+            crate::output::print_int_in(st, st.scanner.cur_val);
             crate::output::print_char_in(st, '=' as i32);
             if p == crate::mem::TEX_NULL {
                 crate::output::print_cstr_in(st, c"void".as_ptr());
