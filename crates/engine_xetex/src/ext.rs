@@ -2590,10 +2590,7 @@ impl InsertSrcAbort {
             InsertSrcAbort::MakeSrcPool => {
                 crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
             }
-            InsertSrcAbort::StrToksPool => crate::errors::EngineAbort::Overflow {
-                what: c"pool size".as_ptr(),
-                n: crate::globals::pool_size() - crate::globals::init_pool_ptr(),
-            },
+            InsertSrcAbort::StrToksPool => crate::errors::EngineAbort::PoolOverflow,
             InsertSrcAbort::MainMemory => crate::mem::main_memory_overflow_abort(),
             InsertSrcAbort::Input(e) => e.into_engine_abort(),
         }

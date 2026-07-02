@@ -162,12 +162,7 @@ impl NativeCharAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             NativeCharAbort::PoolOverflow => {
-                let (pool_size, init_pool_ptr) =
-                    crate::state::with_state(|st| (st.strings.pool_size, st.strings.init_pool_ptr));
-                crate::errors::EngineAbort::Overflow {
-                    what: c"pool size".as_ptr(),
-                    n: pool_size - init_pool_ptr,
-                }
+                crate::errors::EngineAbort::PoolOverflow
             }
             NativeCharAbort::Recycle(e) => e.into_engine_abort(),
             NativeCharAbort::Error(outcome) => outcome.into_engine_abort(),
@@ -1052,12 +1047,7 @@ impl LoadNativeFontAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             LoadNativeFontAbort::PoolOverflow => {
-                let (pool_size, init_pool_ptr) =
-                    crate::state::with_state(|st| (st.strings.pool_size, st.strings.init_pool_ptr));
-                crate::errors::EngineAbort::Overflow {
-                    what: c"pool size".as_ptr(),
-                    n: pool_size - init_pool_ptr,
-                }
+                crate::errors::EngineAbort::PoolOverflow
             }
             LoadNativeFontAbort::StringOverflow(e) => e.into_engine_abort(),
             LoadNativeFontAbort::NativeChar(e) => e.into_engine_abort(),

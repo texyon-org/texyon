@@ -207,10 +207,7 @@ impl MakeTexStringAbort {
             MakeTexStringAbort::PoolOverflow => {
                 crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
             }
-            MakeTexStringAbort::StringOverflow => crate::errors::EngineAbort::Overflow {
-                what: c"number of strings".as_ptr(),
-                n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
-            },
+            MakeTexStringAbort::StringOverflow => crate::errors::EngineAbort::StringOverflow,
         }
     }
 }

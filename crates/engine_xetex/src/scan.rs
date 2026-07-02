@@ -2358,10 +2358,7 @@ impl SccAbort {
                     t: c"tokens".as_ptr(),
                     p: c"tokens_to_string() called while selector = new_string".as_ptr(),
                 },
-                TokensToStringAbort::StringOverflow => crate::errors::EngineAbort::Overflow {
-                    what: c"number of strings".as_ptr(),
-                    n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
-                },
+                TokensToStringAbort::StringOverflow => crate::errors::EngineAbort::StringOverflow,
             },
             SccAbort::PdfError { t, p } => crate::errors::EngineAbort::PdfError { t, p },
             SccAbort::OpenLog(e) => e.into_engine_abort(),

@@ -226,10 +226,7 @@ impl PrimitiveInitAbort {
                 crate::texmfmp::MakeTexStringAbort::PoolOverflow => {
                     EngineAbort::TtAbort(c"string pool overflow".as_ptr())
                 }
-                crate::texmfmp::MakeTexStringAbort::StringOverflow => EngineAbort::Overflow {
-                    what: c"number of strings".as_ptr(),
-                    n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
-                },
+                crate::texmfmp::MakeTexStringAbort::StringOverflow => EngineAbort::StringOverflow,
             },
             PrimitiveInitAbort::HashLookup(e) => {
                 use crate::hash::HashLookupError::*;

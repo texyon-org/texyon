@@ -3,7 +3,7 @@
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
 use crate::globals::{buf_size, cur_chr, cur_val, first};
 use crate::globals::{
-    cur_cmd, cur_cs, cur_input, init_pool_ptr, pool_size, set_cur_cs, set_cur_input_limit,
+    cur_cmd, cur_cs, cur_input, set_cur_cs, set_cur_input_limit,
     set_cur_input_loc, set_cur_input_name, set_cur_input_state, set_first, set_line,
 };
 use crate::input::InputAbort;
@@ -1017,14 +1017,8 @@ impl NameAbort {
     /// former `fire_name_overflow` without longjmp-ing.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            NameAbort::PoolSize => crate::errors::EngineAbort::Overflow {
-                what: c"pool size".as_ptr(),
-                n: pool_size() - init_pool_ptr(),
-            },
-            NameAbort::NumberOfStrings => crate::errors::EngineAbort::Overflow {
-                what: c"number of strings".as_ptr(),
-                n: crate::globals::max_strings() - crate::globals::init_str_ptr(),
-            },
+            NameAbort::PoolSize => crate::errors::EngineAbort::PoolOverflow,
+            NameAbort::NumberOfStrings => crate::errors::EngineAbort::StringOverflow,
         }
     }
 }

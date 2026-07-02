@@ -10,8 +10,7 @@ use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
 use crate::globals::{
-    cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, init_pool_ptr, line, pool_size,
-};
+    cur_chr, cur_cmd, cur_cs, cur_input, cur_list_mode, cur_val, line, };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -3159,10 +3158,7 @@ impl IssueMessageAbort {
             IssueMessageAbort::Scanner(e) => e.into_engine_abort(),
             IssueMessageAbort::NodeRecycle(e) => e.into_engine_abort(),
             IssueMessageAbort::Error(o) => o.into_engine_abort(),
-            IssueMessageAbort::PoolSize => crate::errors::EngineAbort::Overflow {
-                what: c"pool size".as_ptr(),
-                n: pool_size() - init_pool_ptr(),
-            },
+            IssueMessageAbort::PoolSize => crate::errors::EngineAbort::PoolOverflow,
         }
     }
 }

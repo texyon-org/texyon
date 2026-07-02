@@ -407,26 +407,9 @@ pub(crate) fn set_temp_ptr(v: i32) {
 // print_raw_char globals
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn pool_size() -> i32 {
-    crate::state::with_state(|state| state.strings.pool_size)
-}
 // ---------------------------------------------------------------------------
 // str_start write / str_ptr write / string pool limits
 // ---------------------------------------------------------------------------
-
-#[inline]
-pub(crate) fn max_strings() -> i32 {
-    crate::state::with_state(|state| state.strings.max_strings)
-}
-#[inline]
-pub(crate) fn init_str_ptr() -> i32 {
-    crate::state::with_state(|state| state.strings.init_str_ptr)
-}
-#[inline]
-pub(crate) fn init_pool_ptr() -> i32 {
-    crate::state::with_state(|state| state.strings.init_pool_ptr)
-}
 
 // ---------------------------------------------------------------------------
 // help_ptr / help_line

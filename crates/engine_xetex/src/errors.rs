@@ -199,6 +199,13 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
 pub(crate) enum EngineAbort {
     /// `overflow(what, n)` — TeX capacity exceeded.
     Overflow { what: *const libc::c_char, n: i32 },
+    /// `overflow("pool size", pool_size - init_pool_ptr)` — string-pool capacity
+    /// exceeded. The count is computed from `st.strings` in `into_history` (which
+    /// holds `st`), so the `into_engine_abort` mapping site needs no state borrow.
+    PoolOverflow,
+    /// `overflow("number of strings", max_strings - init_str_ptr)` — as above but
+    /// for the string count (`st.strings.max_strings - init_str_ptr`).
+    StringOverflow,
     /// `confusion(s)` — internal consistency failure ("This can't happen").
     Confusion(*const libc::c_char),
     /// `fatal_error(s)` — "Emergency stop" + `s` (its own inline cleanup, not
@@ -223,21 +230,35 @@ impl EngineAbort {
     /// matching longjmp: same prints, same cleanup, the C wrapper returns 3, and
     /// the bridge's surfaced message is set to the same string `_tt_abort` would
     /// have written (`01d` §1).
+    /// Shared print+cleanup for the three overflow terminals (`Overflow`,
+    /// `PoolOverflow`, `StringOverflow`) — the former inline `Overflow` arm.
+    unsafe fn overflow_report(st: &mut EngineState, what: *const libc::c_char, n: i32) {
+        pre_error_message_in(st);
+        print_cstr_in(st, c"TeX capacity exceeded, sorry [".as_ptr());
+        print_cstr_in(st, what);
+        print_char_in(st, b'=' as i32);
+        print_int_in(st, n);
+        print_char_in(st, b']' as i32);
+        st.errors.help_ptr = 2;
+        st.errors.help_line[1] = c"If you really absolutely need more capacity,".as_ptr();
+        st.errors.help_line[0] = c"you can ask a wizard to enlarge me.".as_ptr();
+        post_error_message_in(st, true);
+        _ttbc_set_error_message(c"halted on overflow()".as_ptr());
+    }
+
     pub(crate) unsafe fn into_history(self, st: &mut EngineState) -> i32 {
         match self {
             // The print + cleanup half of `overflow` (everything bar `_tt_abort`).
-            EngineAbort::Overflow { what, n } => {
-                pre_error_message_in(st);
-                print_cstr_in(st, c"TeX capacity exceeded, sorry [".as_ptr());
-                print_cstr_in(st, what);
-                print_char_in(st, b'=' as i32);
-                print_int_in(st, n);
-                print_char_in(st, b']' as i32);
-                st.errors.help_ptr = 2;
-                st.errors.help_line[1] = c"If you really absolutely need more capacity,".as_ptr();
-                st.errors.help_line[0] = c"you can ask a wizard to enlarge me.".as_ptr();
-                post_error_message_in(st, true);
-                _ttbc_set_error_message(c"halted on overflow()".as_ptr());
+            EngineAbort::Overflow { what, n } => Self::overflow_report(st, what, n),
+            // Pool/string capacity overflows compute their count from `st` here
+            // (in into_history) so the mapping sites need no state borrow.
+            EngineAbort::PoolOverflow => {
+                let n = st.strings.pool_size - st.strings.init_pool_ptr;
+                Self::overflow_report(st, c"pool size".as_ptr(), n);
+            }
+            EngineAbort::StringOverflow => {
+                let n = st.strings.max_strings - st.strings.init_str_ptr;
+                Self::overflow_report(st, c"number of strings".as_ptr(), n);
             }
             // The print + cleanup half of `confusion`.
             EngineAbort::Confusion(s) => {

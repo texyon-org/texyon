@@ -8,7 +8,7 @@ use crate::consts::{
 use crate::ext::apply_tfm_font_mapping;
 
 use crate::globals::{
-    cur_list_mode, cur_tok, init_pool_ptr, name_of_file, pool_size, set_cur_cs, set_cur_list_mode,
+    cur_list_mode, cur_tok, name_of_file, set_cur_cs, set_cur_list_mode,
     set_temp_ptr, temp_ptr,
 };
 use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode};
@@ -253,10 +253,7 @@ impl ShipoutAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             ShipoutAbort::ConfusionLr2 => crate::errors::EngineAbort::Confusion(c"LR2".as_ptr()),
-            ShipoutAbort::PoolSizeOverflow => crate::errors::EngineAbort::Overflow {
-                what: c"pool size".as_ptr(),
-                n: pool_size() - init_pool_ptr(),
-            },
+            ShipoutAbort::PoolSizeOverflow => crate::errors::EngineAbort::PoolOverflow,
             ShipoutAbort::NodeRecycle(e) => e.into_engine_abort(),
             ShipoutAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
             ShipoutAbort::DviWriteFailed => {
