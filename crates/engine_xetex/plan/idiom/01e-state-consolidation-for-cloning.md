@@ -196,3 +196,30 @@ gated cluster. Pattern proven twice: **thread the one non-`st` scratch user to
   push_nest/pop_nest already hold st).
 - `FONT_SIZE`/`FONT_AREA`/`FONT_LAYOUT_ENGINE` — FFI mirror *locators*, re-established on
   resume; NOT state, leave them.
+
+## cur_list fold — scoped, ready to execute (attempted session 249, reverted)
+
+Home = `st.input.cur_list` (added `ListStateRecord: Default` via MemoryWord's manual
+Default; `push_nest`/`pop_nest` already hold st). Custom fold script exists in scratch
+(`fold_cur_list.py`): maps the 8 field accessors to `st.input.cur_list.<field>`, the two
+`aux` accessors to methods `aux_s0()/aux_s1()/set_aux_s0/set_aux_s1` (add these to
+`impl ListStateRecord` — reading the `aux` union field is `unsafe`, writing is safe),
+whole-record `cur_list()` → `st.input.cur_list`, `set_cur_list_record(x)` → assign.
+
+**511 sites; 443 hold `st` (fold them directly). 60 stragglers in 17 fns** (hold
+sub-structs, NOT st) — the gate. Fix each by adding a `cl: &mut ListStateRecord` param
+(NARROW — `&mut st.input.cur_list` is disjoint from the `&mut st.mem`/`eqtb`/… these fns
+already take, so no borrow conflict) and replacing `st.input.cur_list` → `cl`; callers
+(mostly st-holding) pass `&mut st.input.cur_list`. The straggler fns:
+- `mem::pop_nest_in` — already holds `InputClusterState`, so use `input.cur_list` (no param).
+- `math.rs` (12): `flush_math`, `apply_math_limit_switch`, `append_radical_noad`,
+  `append_choices_core`, `build_choices_finish`, `fin_mlist`, `prepare_sub_sup`,
+  `start_fraction_noad`, `finish_fraction_rule`, `append_accent_noad`,
+  `finish_left_right_group`, `append_inner_noad_for_right` — all hold `MemState` (±SaveStack).
+- `linebreak::post_line_break_suffix`, `linebreak::char_pw_in`, `packaging::append_to_vlist`,
+  `main_control::fix_language`, `mem::new_whatsit`.
+
+Validate via dashboard (the main_f-class native-font bug WAS caught by tex-outputs, so the
+dashboard is a strong gate) + corpus. Do the straggler-threading as prep refactor commits
+(like app_space/reconstitute), THEN run the fold, per the [[fold-scalar-audit-rogue-externs]]
+rule (audit first — cur_list has no rogue extern, checked).
