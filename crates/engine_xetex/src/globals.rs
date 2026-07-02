@@ -580,15 +580,6 @@ pub extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
 // epochseconds / microseconds
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn epochseconds() -> i32 {
-    crate::state::with_state(|state| state.shipout.epochseconds)
-}
-#[inline]
-pub(crate) fn microseconds() -> i32 {
-    crate::state::with_state(|state| state.shipout.microseconds)
-}
-
 // ---------------------------------------------------------------------------
 // mag_set
 // ---------------------------------------------------------------------------

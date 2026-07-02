@@ -71,20 +71,19 @@ pub unsafe fn get_date_and_time(
 /// Return a fixed-point scaled representation of (now - epoch) in 1/65536 sec.
 ///
 /// translated from xetex-xetex0.c:155 (get_microinterval)
-pub unsafe fn get_microinterval() -> i32 {
+pub unsafe fn get_microinterval(shipout: &crate::state::ShipoutState) -> i32 {
     let mut s = 0i32;
     let mut m = 0i32;
     get_seconds_and_micros(&mut s, &mut m);
-    if (s - crate::globals::epochseconds()) > 0x7FFF {
+    if (s - shipout.epochseconds) > 0x7FFF {
         -1
-    } else if crate::globals::microseconds() > m {
-        let t = (s - 1 - crate::globals::epochseconds()) as f64 * 65536.0
-            + ((m as f64 + 1_000_000.0 - crate::globals::microseconds() as f64) / 100.0) * 65536.0
-                / 10_000.0;
+    } else if shipout.microseconds > m {
+        let t = (s - 1 - shipout.epochseconds) as f64 * 65536.0
+            + ((m as f64 + 1_000_000.0 - shipout.microseconds as f64) / 100.0) * 65536.0 / 10_000.0;
         t as i32
     } else {
-        let t = (s - crate::globals::epochseconds()) as f64 * 65536.0
-            + ((m - crate::globals::microseconds()) as f64 / 100.0) * 65536.0 / 10_000.0;
+        let t = (s - shipout.epochseconds) as f64 * 65536.0
+            + ((m - shipout.microseconds) as f64 / 100.0) * 65536.0 / 10_000.0;
         t as i32
     }
 }

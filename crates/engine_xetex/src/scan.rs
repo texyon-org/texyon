@@ -4611,7 +4611,7 @@ pub(crate) fn scan_something_internal_in(
                                 set_cur_val(st.shipout.last_badness);
                             }
                             ELAPSED_TIME_CODE => {
-                                set_cur_val(unsafe { crate::texmfmp::get_microinterval() });
+                                set_cur_val(unsafe { crate::texmfmp::get_microinterval(&st.shipout) });
                             }
                             RANDOM_SEED_CODE => {
                                 set_cur_val(st.errors.random_seed);
