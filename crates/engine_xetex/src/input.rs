@@ -8,7 +8,7 @@ use crate::globals::{
     buf_size, cur_cs, cur_input, cur_tok, first, line, max_in_open, set_cur_input,
     set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
     set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, set_cur_tok, set_first,
-    set_line, stack_size,
+    set_line,
 };
 
 extern "C" {
@@ -148,10 +148,10 @@ pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), In
     let ptr = st.input.input_ptr;
     if ptr > st.input.max_in_stack {
         st.input.max_in_stack = ptr;
-        if ptr == stack_size() {
+        if ptr == st.input.stack_size {
             return Err(InputAbort::Overflow {
                 what: c"input stack size".as_ptr(),
-                n: stack_size(),
+                n: st.input.stack_size,
             });
         }
     }
@@ -251,10 +251,10 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
     let ptr = st.input.input_ptr;
     if ptr > st.input.max_in_stack {
         st.input.max_in_stack = ptr;
-        if ptr == stack_size() {
+        if ptr == st.input.stack_size {
             return Err(InputAbort::Overflow {
                 what: c"input stack size".as_ptr(),
-                n: stack_size(),
+                n: st.input.stack_size,
             });
         }
     }
@@ -401,10 +401,10 @@ pub(crate) fn begin_token_list_in(
 ) -> Result<(), InputAbort> {
     if st.input.input_ptr > st.input.max_in_stack {
         st.input.max_in_stack = st.input.input_ptr;
-        if st.input.input_ptr == stack_size() {
+        if st.input.input_ptr == st.input.stack_size {
             return Err(InputAbort::Overflow {
                 what: c"input stack size".as_ptr(),
-                n: stack_size(),
+                n: st.input.stack_size,
             });
         }
     }

@@ -174,6 +174,10 @@ pub(crate) struct InputClusterState {
     pub max_nest_stack: i32,
     /// Current top of the input-state stack. Plain `int32_t`.
     pub input_ptr: i32,
+    /// Capacity of the input stack (`stack_size`); set once at engine init.
+    /// Folded off the former `mod raw` C global for the clonable-state goal
+    /// (`01e`). Sized from `tre_stack_size` in `tt_run_engine`.
+    pub stack_size: i32,
     /// Peak value ever reached by `input_ptr`. Plain `int32_t`.
     pub max_in_stack: i32,
     /// Search base in the input stack (xetex-xetexd.h:521). Plain `int32_t`.

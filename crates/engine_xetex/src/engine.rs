@@ -98,8 +98,6 @@ extern "C" {
     static mut tre_param_size: i32;
     #[link_name = "save_size"]
     static mut tre_save_size: i32;
-    #[link_name = "stack_size"]
-    static mut tre_stack_size: i32;
     #[link_name = "expand_depth"]
     static mut tre_expand_depth: i32;
     // `mem` is now Rust-owned (`EngineState.mem.data`); no FFI alias. (session 58)
@@ -1046,7 +1044,7 @@ pub unsafe extern "C" fn tt_run_engine(
     tre_max_in_open = 15;
     tre_param_size = 10_000;
     tre_save_size = 80_000;
-    tre_stack_size = 5_000;
+    st.input.stack_size = 5_000;
     st.errors.error_line = 79;
     st.errors.half_error_line = 50;
     st.config.max_print_line = 79;
@@ -1062,7 +1060,7 @@ pub unsafe extern "C" fn tt_run_engine(
     let nest_words = (tre_nest_size as usize) + 1;
     let save_words = (tre_save_size as usize) + 1;
     let input_file_words = (tre_max_in_open as usize) + 1;
-    let stack_words = (tre_stack_size as usize) + 1;
+    let stack_words = (st.input.stack_size as usize) + 1;
     let in_open_words = (tre_max_in_open as usize) + 1;
     let param_words = (tre_param_size as usize) + 1;
     let hyph_words = (TRE_HYPH_SIZE as usize) + 1;

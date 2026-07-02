@@ -101,9 +101,8 @@ mod raw {
 
         // Input state stack ownership moved to EngineState.input.input_stack
         // (Rust-owned Vec<InputState>); see src/state.rs.
-        // input_ptr/max_in_stack/base_ptr/par_loc/par_token moved to
-        // EngineState.input (scalars). Capacity stack_size stays a C global.
-        pub(super) static mut stack_size: i32;
+        // input_ptr/max_in_stack/base_ptr/par_loc/par_token + capacity
+        // stack_size moved to EngineState.input (scalars) — see `01e`.
 
         // Macro parameter stack (xetex-xetexd.h:517–519). The `param_stack`
         // array is Rust-owned on `EngineState.input.param_stack`; the scalars
@@ -697,11 +696,6 @@ pub(crate) fn set_cur_chr(v: i32) {
 // input_stack / input_ptr / base_ptr
 // ---------------------------------------------------------------------------
 
-/// Returns `stack_size` — capacity of the input stack (xetex-xetexd.h:410).
-#[inline]
-pub(crate) fn stack_size() -> i32 {
-    unsafe { raw::stack_size }
-}
 
 // ---------------------------------------------------------------------------
 // grp_stack / if_stack
