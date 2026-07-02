@@ -68,17 +68,6 @@ pub fn half(x: i32) -> i32 {
 // mult_and_add
 // ---------------------------------------------------------------------------
 
-/// Compute `n*x + y` with overflow detection.
-///
-/// Sets the `arith_error` flag (and returns 0) if the result would
-/// exceed `max_answer` in magnitude.
-///
-/// translated from xetex-scaledmath.c:60 (mult_and_add)
-#[cfg(test)]
-pub fn mult_and_add(n: i32, x: i32, y: i32, max_answer: i32) -> i32 {
-    crate::state::with_state_mut(|st| mult_and_add_in(&mut st.errors, n, x, y, max_answer))
-}
-
 /// `&mut ErrorState` core of `mult_and_add` (callable under a held borrow).
 pub(crate) fn mult_and_add_in(
     errors: &mut crate::state::ErrorState,
@@ -124,16 +113,6 @@ pub(crate) fn mult_and_add_in(
 // x_over_n
 // ---------------------------------------------------------------------------
 
-/// Integer division `x / n` with `tex_remainder` set to `x % n`,
-/// following TeX's sign conventions. Sets `arith_error` (and returns
-/// 0, with `tex_remainder = x`) on division by zero.
-///
-/// translated from xetex-scaledmath.c:79 (x_over_n)
-#[cfg(test)]
-pub fn x_over_n(x: i32, n: i32) -> i32 {
-    crate::state::with_state_mut(|st| x_over_n_in(&mut st.errors, x, n))
-}
-
 /// `&mut ErrorState` core of [`x_over_n`] (touches `tex_remainder`/`arith_error`
 /// directly so it is callable under a live state borrow).
 pub fn x_over_n_in(errors: &mut crate::state::ErrorState, mut x: i32, mut n: i32) -> i32 {
@@ -177,16 +156,6 @@ pub fn x_over_n_in(errors: &mut crate::state::ErrorState, mut x: i32, mut n: i32
 // ---------------------------------------------------------------------------
 // xn_over_d
 // ---------------------------------------------------------------------------
-
-/// Compute `x * n / d` using a 47-bit intermediate (low 15 bits + high
-/// 32 bits) to avoid overflow on the multiply. `tex_remainder` is set
-/// to the unsigned remainder, then sign-flipped to follow the sign of
-/// `x`.
-///
-/// translated from xetex-scaledmath.c:105 (xn_over_d)
-pub fn xn_over_d(x: i32, n: i32, d: i32) -> i32 {
-    crate::state::with_state_mut(|st| xn_over_d_in(&mut st.errors, x, n, d))
-}
 
 /// `&mut ErrorState` core of [`xn_over_d`] (callable under a held borrow).
 pub(crate) fn xn_over_d_in(errors: &mut crate::state::ErrorState, x: i32, n: i32, d: i32) -> i32 {
@@ -668,7 +637,7 @@ mod tests {
     //! assertion would poison the mutex for the rest of the run.
 
     use super::*;
-    use crate::globals::{arith_error, set_arith_error, tex_remainder};
+    use crate::globals::set_arith_error;
     use std::sync::Mutex;
 
     static GLOBALS_LOCK: Mutex<()> = Mutex::new(());
@@ -727,33 +696,31 @@ mod tests {
 
     #[test]
     fn mult_and_add_basic() {
-        let _g = lock();
         // TeX calls `mult_and_add` with `max_answer = MAX_HALFWORD`
         // (0x3FFFFFFF) in practice — the i32::MAX value exceeds the
         // algorithm's internal precondition that `max_answer ± y`
         // still fits in i32, so we pick a realistic cap here.
         const MAX: i32 = 0x3FFF_FFFF;
 
-        set_arith_error(false);
-        assert_eq!(mult_and_add(3, 7, 1, MAX), 22);
-        assert!(!arith_error());
+        let mut e = crate::state::ErrorState::default();
+        assert_eq!(mult_and_add_in(&mut e, 3, 7, 1, MAX), 22);
+        assert!(!e.arith_error);
 
-        assert_eq!(mult_and_add(0, 7, 42, MAX), 42);
-        assert!(!arith_error());
+        assert_eq!(mult_and_add_in(&mut e, 0, 7, 42, MAX), 42);
+        assert!(!e.arith_error);
 
         // Negative n flips the sign of x and continues.
-        assert_eq!(mult_and_add(-2, 3, 1, MAX), -5);
-        assert!(!arith_error());
+        assert_eq!(mult_and_add_in(&mut e, -2, 3, 1, MAX), -5);
+        assert!(!e.arith_error);
     }
 
     #[test]
     fn mult_and_add_detects_overflow() {
-        let _g = lock();
-        set_arith_error(false);
+        let mut e = crate::state::ErrorState::default();
         // Chosen so that n*x + y > max_answer => arith_error.
-        let r = mult_and_add(2, 2_000_000_000, 1_000_000_000, i32::MAX);
+        let r = mult_and_add_in(&mut e, 2, 2_000_000_000, 1_000_000_000, i32::MAX);
         assert_eq!(r, 0);
-        assert!(arith_error());
+        assert!(e.arith_error);
     }
 
     // -----------------------------------------------------------------
@@ -762,29 +729,26 @@ mod tests {
 
     #[test]
     fn x_over_n_positive() {
-        let _g = lock();
-        set_arith_error(false);
-        assert_eq!(x_over_n(17, 5), 3);
-        assert_eq!(tex_remainder(), 2);
-        assert!(!arith_error());
+        let mut e = crate::state::ErrorState::default();
+        assert_eq!(x_over_n_in(&mut e, 17, 5), 3);
+        assert_eq!(e.tex_remainder, 2);
+        assert!(!e.arith_error);
     }
 
     #[test]
     fn x_over_n_negative_x_gives_negative_remainder() {
-        let _g = lock();
-        set_arith_error(false);
-        assert_eq!(x_over_n(-17, 5), -3);
-        assert_eq!(tex_remainder(), -2);
-        assert!(!arith_error());
+        let mut e = crate::state::ErrorState::default();
+        assert_eq!(x_over_n_in(&mut e, -17, 5), -3);
+        assert_eq!(e.tex_remainder, -2);
+        assert!(!e.arith_error);
     }
 
     #[test]
     fn x_over_n_zero_divisor_sets_flag() {
-        let _g = lock();
-        set_arith_error(false);
-        assert_eq!(x_over_n(42, 0), 0);
-        assert_eq!(tex_remainder(), 42);
-        assert!(arith_error());
+        let mut e = crate::state::ErrorState::default();
+        assert_eq!(x_over_n_in(&mut e, 42, 0), 0);
+        assert_eq!(e.tex_remainder, 42);
+        assert!(e.arith_error);
     }
 
     // -----------------------------------------------------------------
@@ -793,48 +757,44 @@ mod tests {
 
     #[test]
     fn xn_over_d_small_values() {
-        let _g = lock();
-        set_arith_error(false);
+        let mut e = crate::state::ErrorState::default();
         // 10 * 3 / 4 = 7.5 → truncated to 7, remainder 2
-        assert_eq!(xn_over_d(10, 3, 4), 7);
-        assert_eq!(tex_remainder(), 2);
-        assert!(!arith_error());
+        assert_eq!(xn_over_d_in(&mut e, 10, 3, 4), 7);
+        assert_eq!(e.tex_remainder, 2);
+        assert!(!e.arith_error);
     }
 
     #[test]
     fn xn_over_d_large_x_and_divisor() {
-        let _g = lock();
         // The C algorithm is only well-defined when
         // `(x / 32768) / d < 32768`, i.e., `x < d * 2^30`. With a
         // moderately-large `d`, this leaves plenty of headroom.
-        set_arith_error(false);
+        let mut e = crate::state::ErrorState::default();
         // Exact: 1_000_000_000 * 3 / 1000 = 3_000_000
-        assert_eq!(xn_over_d(1_000_000_000, 3, 1000), 3_000_000);
-        assert!(!arith_error());
+        assert_eq!(xn_over_d_in(&mut e, 1_000_000_000, 3, 1000), 3_000_000);
+        assert!(!e.arith_error);
         // Remainder: 1_000_000_000 % 1000 == 0, so no remainder.
-        assert_eq!(tex_remainder(), 0);
+        assert_eq!(e.tex_remainder, 0);
     }
 
     #[test]
     fn xn_over_d_detects_overflow() {
-        let _g = lock();
         // With d=1, `u/d == u == x/32768` must stay below 32768,
         // i.e. x < 2^30. i32::MAX exceeds this bound and triggers
         // the arith_error path; the returned `u` is the pre-final
         // value (still 65535 after the high-half split). We don't
         // check the numeric return — only that the flag got set,
         // matching the C behaviour.
-        set_arith_error(false);
-        let _ = xn_over_d(i32::MAX, 1, 1);
-        assert!(arith_error());
+        let mut e = crate::state::ErrorState::default();
+        let _ = xn_over_d_in(&mut e, i32::MAX, 1, 1);
+        assert!(e.arith_error);
     }
 
     #[test]
     fn xn_over_d_negative_x_negates_result_and_remainder() {
-        let _g = lock();
-        set_arith_error(false);
-        assert_eq!(xn_over_d(-10, 3, 4), -7);
-        assert_eq!(tex_remainder(), -2);
+        let mut e = crate::state::ErrorState::default();
+        assert_eq!(xn_over_d_in(&mut e, -10, 3, 4), -7);
+        assert_eq!(e.tex_remainder, -2);
     }
 
     // -----------------------------------------------------------------
