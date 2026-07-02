@@ -645,10 +645,22 @@ it survives only as test scaffolding. The rest of the ~15:
 - **`hash_s1`** (16 deep callers) and the **test-only** `arith_error`/`tex_remainder`/
   `set_arith_error` (also `char_pw_in`'s `round_xn_over_d`).
 
-**Bottom line: the §6 flip is COMPLETE.** `EngineState` is owned by `tt_run_engine`; the
-whole engine threads `&mut st`; the ~15 residual `with_state` are C++-callback bridge
-accesses (irreducible) + a handful behind a diagnostic-count redesign. `with_state`
-**142 → 15** this session.
+**Then the diagnostic-count redesign drained the `into_engine_abort`/`main_memory` pin to
+`with_state` 8** (steps 16–17): new `EngineAbort::PoolOverflow`/`StringOverflow`/
+`MainMemoryOverflow` variants carry NO count — `into_history` (which holds `st`) computes
+`pool_size - init_pool_ptr` / `max_strings - init_str_ptr` / runs `runaway_in(st)` at print
+time (all constant during a run, so byte-identical output). This freed the ~7+1 subsystem
+`into_engine_abort` methods from reading state, deleting `pool_size`/`init_pool_ptr`/
+`max_strings`/`init_str_ptr` + the `runaway` wrapper.
+
+**Bottom line: the §6 flip is COMPLETE; `with_state` 142 → 8 (94%).** `EngineState` is owned
+by `tt_run_engine`; the whole engine threads `&mut st`. **The residual 8 are the PRACTICAL
+FLOOR:** 3 C++ callbacks (`font_feature_warning`/`gr_font_get_named`→`name_of_file`/
+`name_length`) that are `#[no_mangle]` and MUST use the bridge (irreducible); `hash_s1`
+(16 threaded callers — a clean but 16-edit-for-−1 drain, deferred); the test-only
+`arith_error`/`tex_remainder`/`set_arith_error` (+ `char_pw_in`'s `round_xn_over_d` cascade);
+and one `open_log_file` post-borrow re-entry on a Fatal error path. The bridge is the
+legitimate end-state access path for the C++ callbacks (a pointer to the owned `st`).
 
 **(superseded) What REMAINED at 34 — all cross-cutting, NO clean self-contained cluster left.**
 The pointer bridge serves every remaining site CORRECTLY (reaches the owned `st` via
