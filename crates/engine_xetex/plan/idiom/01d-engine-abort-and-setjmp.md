@@ -616,15 +616,32 @@ terminal layer (`tt_run_engine`, `into_history` + `pre_/post_error_message`, and
 `*_in` boundary fn) threads `&mut st` with zero `with_state`. The `mod-raw` scalars
 (`cur_input`/`set_cur_input_*`/`set_line`/`set_first`) stay as before (borrow-safe).
 
-**What REMAINS (the 50):** leaf `with_state` re-entries in not-yet-threaded functions
-(the general Phase-C frontier) — ~21 `globals.rs` accessors still called from
-un-threaded leaves (arith_error/name_of_file/pool_size/two_to_the/…), the
-output/texmfmp/scaled_math print+math wrappers with un-threaded callers, and the
-config fallback path (`engine_interface` set + `engine.rs` carryover). Removing the
-pointer bridge + fallback entirely (true zero-`with_state`) is now a pure mechanical
-cascade with NO architectural blocker: thread each remaining leaf caller, delete the
-wrapper. The bridge is sound in the interim (owned `st`, no persistent global data
-except the tests-only fallback).
+**Also drained (session 251 cont.):** the random/log math cluster (`639d2852` —
+`norm_rand`/`m_log` on `&mut EngineState`, `unif_rand`/`new_randoms`/`init_randoms` on
+`&mut ErrorState`; 10 dead accessors) and the scaled_math arith tests (`2cf00d0f` — to
+`*_in` + local `ErrorState`, deleting 3 test-only wrappers). Config moved to process
+atomics (`f123d963`). **`with_state` 142 → 34.**
+
+**What REMAINS (the 34) — all cross-cutting, NO clean self-contained cluster left.**
+The pointer bridge serves every remaining site CORRECTLY (reaches the owned `st` via
+the thread-local pointer), so the engine is fully correct; these are just not-yet-fully-
+threaded. Each is pinned by a cross-cutting concern, so removing them is no longer a
+"clean cluster" drain but a dedicated refactor:
+- **`into_engine_abort` pin (~4 accessors: `pool_size`/`init_pool_ptr`/`max_strings`/
+  `init_str_ptr`).** Read only in the `Overflow` arm of ~7 subsystem `*Abort::
+  into_engine_abort(self)` methods (io/ext/output/shipout/texmfmp/scan/engine). Threading
+  needs `into_engine_abort(self, st)` — an **all-or-nothing** change across **96**
+  `.into_engine_abort()` call sites. Biggest single lever; do it as one focused commit.
+- **C-ABI callback pin (`name_of_file`/`name_length`/`set_name_length`).** Called from
+  `gr_font_get_named` (graphite bridge) + `tt_xetex_open_input` — `#[no_mangle]` fns with
+  no `st`. The bridge already handles them; true threading needs a raw-pointer stash.
+- **`char_pw_in` cascade (`round_xn_over_d` + `set_arith_error`).** `char_pw_in` takes
+  `mem`/`fonts`/`linebreak` sub-structs, not `errors`; threading `round_xn_over_d` needs
+  `errors` plumbed up that call tree.
+- **Heavily-used `hash_s1` (16 callers), `epochseconds`/`microseconds`, and the
+  test-only `arith_error`/`tex_remainder`/`set_arith_error` residue.**
+The bridge is sound in the interim (owned `st`; the only persistent global data is the
+tests-only fallback `RefCell`). Removing it entirely = doing the above refactors.
 
 **Traps (session-249 map, verified):**
 - **`mod raw` scalars STAY PUT during the drain.** Do NOT fold
