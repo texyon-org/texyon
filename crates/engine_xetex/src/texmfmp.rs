@@ -104,14 +104,6 @@ pub unsafe fn get_seconds_and_micros(seconds: *mut i32, micros: *mut i32) {
 // gettexstring — pool UTF-16 → heap UTF-8
 // ---------------------------------------------------------------------------
 
-/// Convert a TeX string-pool string to a heap-allocated NUL-terminated UTF-8
-/// string. The caller must free the returned pointer.
-///
-/// translated from xetex-texmfmp.c:282 (gettexstring)
-pub unsafe fn gettexstring(s: i32) -> *mut libc::c_char {
-    crate::state::with_state(|st| gettexstring_in(&st.strings, s))
-}
-
 /// `&StringsState` core of [`gettexstring`] — safe to call under a live state
 /// borrow (the global `gettexstring` reads the pool through `with_state`).
 pub unsafe fn gettexstring_in(strings: &crate::state::StringsState, s: i32) -> *mut libc::c_char {
@@ -223,7 +215,6 @@ impl MakeTexStringAbort {
     }
 }
 
-
 /// `&mut StringsState` core of [`maketexstring`] (scanner-SCC prereq).
 ///
 /// Writes the UTF-8 → pool UTF-16 conversion directly into the string pool under
@@ -299,14 +290,6 @@ fn convert_string_to_hex(input: &[u8; DIGEST_SIZE], out: &mut [u8; 2 * DIGEST_SI
         j += 1;
     }
     out[j] = 0;
-}
-
-/// Compute MD5 of a file or a data string and push the hex digest into the
-/// string pool.
-///
-/// translated from xetex-texmfmp.c:413 (getmd5sum)
-pub unsafe fn getmd5sum(s: i32, file: bool) {
-    crate::state::with_state_mut(|st| getmd5sum_in(&mut st.strings, s, file));
 }
 
 /// `&mut StringsState` core of [`getmd5sum`] (scanner-SCC `conv_toks`).
@@ -520,14 +503,6 @@ unsafe fn compare_paths(p1: *const libc::c_char, p2: *const libc::c_char) -> i32
     }
 }
 
-/// Return true if the source file or line number changed since the last call to
-/// `remember_source_info`.
-///
-/// translated from xetex-texmfmp.c:257 (is_new_source)
-pub unsafe fn is_new_source(srcfilename: i32, lineno: i32) -> bool {
-    crate::state::with_state(|st| is_new_source_in(st, srcfilename, lineno))
-}
-
 /// `&EngineState` core of [`is_new_source`].
 pub(crate) fn is_new_source_in(
     st: &crate::state::EngineState,
@@ -542,14 +517,6 @@ pub(crate) fn is_new_source_in(
         libc::free(name as *mut libc::c_void);
         changed
     }
-}
-
-/// Record the current source file and line number for later comparison by
-/// `is_new_source`.
-///
-/// translated from xetex-texmfmp.c:264 (remember_source_info)
-pub unsafe fn remember_source_info(srcfilename: i32, lineno: i32) {
-    crate::state::with_state_mut(|st| remember_source_info_in(st, srcfilename, lineno));
 }
 
 /// `&mut EngineState` core of [`remember_source_info`].
