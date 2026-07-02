@@ -214,6 +214,10 @@ pub(crate) enum EngineAbort {
     /// `st.save_stack.save_size`, so the `SaMutationAbort` mapping site (which has
     /// no `save_stack`) needs no state borrow (`01e`).
     SaveOverflow,
+    /// `overflow("semantic nest size", nest_size)` — `into_history` reads the
+    /// count from `st.input.nest_size`, so the `PushNestAbort` mapping site
+    /// (which has no `st`) needs no state borrow (`01e`).
+    NestOverflow,
     /// `confusion(s)` — internal consistency failure ("This can't happen").
     Confusion(*const libc::c_char),
     /// `fatal_error(s)` — "Emergency stop" + `s` (its own inline cleanup, not
@@ -276,6 +280,10 @@ impl EngineAbort {
             EngineAbort::SaveOverflow => {
                 let n = st.save_stack.save_size;
                 Self::overflow_report(st, c"save size".as_ptr(), n);
+            }
+            EngineAbort::NestOverflow => {
+                let n = st.input.nest_size;
+                Self::overflow_report(st, c"semantic nest size".as_ptr(), n);
             }
             // The print + cleanup half of `confusion`.
             EngineAbort::Confusion(s) => {

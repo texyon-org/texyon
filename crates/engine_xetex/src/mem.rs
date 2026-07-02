@@ -14,7 +14,7 @@ use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemIdx, MemPtr, Scaled};
 
 use crate::globals::{
-    cur_input_synctex_tag, cur_list_head, line, nest_size, set_cur_list_e_tex_aux,
+    cur_input_synctex_tag, cur_list_head, line, set_cur_list_e_tex_aux,
     set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
 };
 
@@ -640,10 +640,7 @@ impl PushNestAbort {
     /// `runaway` first (via `main_memory_overflow_abort`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            PushNestAbort::SemanticNest => crate::errors::EngineAbort::Overflow {
-                what: c"semantic nest size".as_ptr(),
-                n: nest_size(),
-            },
+            PushNestAbort::SemanticNest => crate::errors::EngineAbort::NestOverflow,
             PushNestAbort::MainMemory => main_memory_overflow_abort(),
         }
     }
@@ -657,7 +654,7 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     let np = st.input.nest_ptr;
     if np > st.input.max_nest_stack {
         st.input.max_nest_stack = np;
-        if np == crate::globals::nest_size() {
+        if np == st.input.nest_size {
             return Err(PushNestAbort::SemanticNest);
         }
     }

@@ -180,6 +180,8 @@ pub(crate) struct InputClusterState {
     pub buf_size: i32,
     pub param_size: i32,
     pub max_in_open: i32,
+    /// Capacity of the semantic-nest stack (`st.input.nest`); TeX's `nest_size`.
+    pub nest_size: i32,
     /// Peak value ever reached by `input_ptr`. Plain `int32_t`.
     pub max_in_stack: i32,
     /// Search base in the input stack (xetex-xetexd.h:521). Plain `int32_t`.

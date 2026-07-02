@@ -113,9 +113,7 @@ mod raw {
         // EngineState.scanner (scalars).
 
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
-        // nest_ptr/max_nest_stack moved to EngineState.input (scalars).
-        // Capacity nest_size stays a C global.
-        pub(super) static mut nest_size: i32;
+        // nest_ptr/max_nest_stack/nest_size moved to EngineState.input (scalars).
         // Current list state (xetex-xetexd.h:479; direct struct, not a pointer).
         pub(super) static mut cur_list: crate::mem_types::ListStateRecord;
         // read_open moved to EngineState.input.read_open ([u8; 17]).
@@ -500,10 +498,6 @@ pub extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
 // semantic nest (nest / nest_ptr / max_nest_stack / nest_size / cur_list)
 // ---------------------------------------------------------------------------
 
-#[inline]
-pub(crate) fn nest_size() -> i32 {
-    unsafe { raw::nest_size }
-}
 /// Read `cur_list` (the raw current-list record) by value.
 #[inline]
 pub(crate) fn cur_list() -> crate::mem_types::ListStateRecord {

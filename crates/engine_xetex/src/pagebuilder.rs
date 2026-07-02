@@ -213,10 +213,10 @@ fn ensure_vbox_in(st: &mut EngineState, n: u8) -> Result<(), PageBuildAbort> {
 fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> {
     if st.input.nest_ptr > st.input.max_nest_stack {
         st.input.max_nest_stack = st.input.nest_ptr;
-        if st.input.nest_ptr == crate::globals::nest_size() {
+        if st.input.nest_ptr == st.input.nest_size {
             return Err(PageBuildAbort::Save(crate::save::SaveAbort::Overflow(
                 c"semantic nest size",
-                crate::globals::nest_size(),
+                st.input.nest_size,
             )));
         }
     }

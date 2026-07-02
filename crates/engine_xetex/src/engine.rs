@@ -86,8 +86,6 @@ extern "C" {
     static mut tre_pool_free: i32;
     #[link_name = "strings_free"]
     static mut tre_strings_free: i32;
-    #[link_name = "nest_size"]
-    static mut tre_nest_size: i32;
     // `mem` is now Rust-owned (`EngineState.mem.data`); no FFI alias. (session 58)
     // `eqtb` is now Rust-owned (`EngineState.eqtb.data`); no FFI alias. (session 51)
     // `hash` is now Rust-owned (`EngineState.eqtb.hash`); no FFI alias. (session 52)
@@ -1030,7 +1028,7 @@ pub unsafe extern "C" fn tt_run_engine(
     TRE_TRIE_SIZE = 1_000_000;
     TRE_HYPH_SIZE = 8_191;
     st.input.buf_size = 200_000;
-    tre_nest_size = 500;
+    st.input.nest_size = 500;
     st.input.max_in_open = 15;
     st.input.param_size = 10_000;
     st.save_stack.save_size = 80_000;
@@ -1047,7 +1045,7 @@ pub unsafe extern "C" fn tt_run_engine(
     // during a run (overflow errors instead of growing). Zero-init replaces the
     // former explicit `write_bytes(.., 0, ..)`.
     let buf_words = (st.input.buf_size as usize) + 1;
-    let nest_words = (tre_nest_size as usize) + 1;
+    let nest_words = (st.input.nest_size as usize) + 1;
     let save_words = (st.save_stack.save_size as usize) + 1;
     let input_file_words = (st.input.max_in_open as usize) + 1;
     let stack_words = (st.input.stack_size as usize) + 1;
