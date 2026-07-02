@@ -73,8 +73,8 @@ const SCALED_BASE: i32 = 8_941_203;
 
 extern "C" {}
 
-pub fn initialize_pagebuilder_variables() {
-    crate::state::with_state_mut(|st| st.shipout.page_max_depth = 0);
+pub fn initialize_pagebuilder_variables(st: &mut crate::state::EngineState) {
+    st.shipout.page_max_depth = 0;
 }
 
 /// Threaded core (Phase C, bucket B): pure `EqtbState` read + `ShipoutState`

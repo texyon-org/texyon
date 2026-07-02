@@ -508,18 +508,17 @@ fn dvi_font_select_bytes(f: i32) -> Vec<u8> {
 }
 
 // translated from xetex-shipout.c:48 (initialize_shipout_variables)
-pub fn initialize_shipout_variables() {
-    crate::state::with_state_mut(|s| {
-        s.shipout.output_file_name = 0;
-        s.shipout.dvi_buf = vec![0u8; (DVI_BUF_SIZE + 1) as usize];
-        s.shipout.dvi_limit = DVI_BUF_SIZE;
-        s.shipout.dvi_ptr = 0;
-        s.shipout.dvi_offset = 0;
-        s.shipout.dvi_gone = 0;
-        s.shipout.down_ptr = TEX_NULL;
-        s.shipout.right_ptr = TEX_NULL;
-        s.shipout.cur_s = -1;
-    });
+pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
+    let s = &mut *st;
+    s.shipout.output_file_name = 0;
+    s.shipout.dvi_buf = vec![0u8; (DVI_BUF_SIZE + 1) as usize];
+    s.shipout.dvi_limit = DVI_BUF_SIZE;
+    s.shipout.dvi_ptr = 0;
+    s.shipout.dvi_offset = 0;
+    s.shipout.dvi_gone = 0;
+    s.shipout.down_ptr = TEX_NULL;
+    s.shipout.right_ptr = TEX_NULL;
+    s.shipout.cur_s = -1;
 }
 
 // translated from xetex-shipout.c:2306 (dvi_swap)

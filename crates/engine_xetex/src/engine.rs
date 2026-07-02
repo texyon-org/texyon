@@ -1259,8 +1259,8 @@ pub unsafe extern "C" fn tt_run_engine(
     }
 
     crate::math::initialize_math_variables();
-    crate::pagebuilder::initialize_pagebuilder_variables();
-    crate::shipout::initialize_shipout_variables();
+    crate::pagebuilder::initialize_pagebuilder_variables(&mut *st);
+    crate::shipout::initialize_shipout_variables(&mut *st);
     let mut epoch = 0;
     let mut micros = 0;
     crate::texmfmp::get_seconds_and_micros(&mut epoch, &mut micros);
@@ -1317,7 +1317,7 @@ pub unsafe extern "C" fn tt_run_engine(
     st.eqtb.no_new_control_sequence = true;
 
     if !st.config.in_initex_mode {
-        match load_fmt_file() {
+        match load_fmt_file(&mut *st) {
             Ok(true) => {}
             // Graceful load failure: terminate with the current history (matches
             // the old `!load_fmt_file()` early return).

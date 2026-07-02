@@ -838,15 +838,15 @@ pub(crate) unsafe fn store_fmt_file_in(
     Ok(())
 }
 // translated from xetex-ini.c:602 (load_fmt_file)
-pub unsafe fn load_fmt_file() -> Result<bool, crate::errors::EngineAbort> {
+pub unsafe fn load_fmt_file(
+    st: &mut crate::state::EngineState,
+) -> Result<bool, crate::errors::EngineAbort> {
     // Phase-C (`01b` §3) / drain step 4 (`01d` §6.1): the whole load — the
-    // pack-name prelude AND the undump — runs under one `&mut EngineState`
-    // borrow. `cur_input` is a `mod raw` scalar (borrow-independent, stays put
-    // until the flip); the file open is plain FFI; `undump_*` return
-    // `EngineAbort` instead of longjmp-ing under the borrow (`01d` §5.4), as do
-    // the bad-format paths. The wrapper propagates the `Result` to
-    // `tt_run_engine`, which turns it into `HISTORY_FATAL_ERROR`.
-    crate::state::with_state_mut(|st| {
+    // pack-name prelude AND the undump — runs on the caller's held
+    // `&mut EngineState`. `cur_input` is a `mod raw` scalar (borrow-independent);
+    // the file open is plain FFI; `undump_*` return `EngineAbort` instead of
+    // longjmp-ing (`01d` §5.4). The `Result` propagates to `tt_run_engine`.
+    {
         let j = cur_input().loc;
 
         // pack_buffered_name (xetex-ini.c:590), inlined onto the borrow: copy
@@ -872,7 +872,7 @@ pub unsafe fn load_fmt_file() -> Result<bool, crate::errors::EngineAbort> {
         set_cur_input_loc(j);
 
         load_fmt_file_in(st, fmt_in)
-    })
+    }
 }
 
 /// Threaded core of [`load_fmt_file`] (`01b` §3): holds one `&mut EngineState`
