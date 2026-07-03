@@ -1231,14 +1231,9 @@ pub(crate) fn set_math_char_in(
         x_token_in(st)?;
         crate::input::back_input_in(st)?;
     } else {
-        let p = crate::mem::new_noad(&mut st.mem);
-        // `new_noad` stamps an `OrdNoad` type, so classify is total here. The
-        // +1 word is the noad nucleus sub-record (type/char/fam).
-        let nd = st
-            .mem
-            .classify_noad(MemIdx::new(p))
-            .expect("valid new noad")
-            .expect("new noad");
+        // `alloc_noad` hands back the typed handle directly; this site does not
+        // guard main-memory overflow (as before), so a failure panics here.
+        let nd = crate::mem::alloc_noad(&mut st.mem).expect("new noad");
         nd.set_nucleus_type(&mut st.mem, MATH_CHAR_NODE_SM);
         let ch = math_char_fn(c);
         nd.set_nucleus_char(&mut st.mem, (ch % 65536) as u16);
@@ -1257,8 +1252,8 @@ pub(crate) fn set_math_char_in(
         }
         let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;
         nd.set_nucleus_fam(&mut st.mem, fam);
-        st.mem.set_b32s1(st.input.cur_list.tail, p);
-        st.input.cur_list.tail = p;
+        st.mem.set_b32s1(st.input.cur_list.tail, nd.idx().0);
+        st.input.cur_list.tail = nd.idx().0;
     }
     Ok(())
 }

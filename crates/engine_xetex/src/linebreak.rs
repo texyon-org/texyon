@@ -653,14 +653,9 @@ pub fn insert_right_margin_kern(errors: &mut crate::state::ErrorState,
         return Ok(q);
     }
 
-    let k = crate::mem::new_margin_kern(mem, -w, last_rightmost, 1);
-    if k == crate::mem::ALLOC_FAILED {
+    let Some(k) = crate::mem::alloc_margin_kern(mem, -w, last_rightmost, 1) else {
         return Err(MarginKernAbort::Overflow);
-    }
-    let k = mem
-        .classify_margin_kern(MemIdx::new(k))
-        .expect("new_margin_kern stamps a valid node type")
-        .expect("new_margin_kern returns a margin kern node");
+    };
     k.set_link(mem, MemPtr::from_raw(mem.b32s1(ptmp)));
     mem.set_b32s1(ptmp, k.idx().0);
     let new_q = if ptmp == q { mem.b32s1(q) } else { q };
@@ -689,14 +684,9 @@ pub fn insert_left_margin_kern(errors: &mut crate::state::ErrorState,
         return Ok(q);
     }
 
-    let k = crate::mem::new_margin_kern(mem, -w, last_leftmost, 0);
-    if k == crate::mem::ALLOC_FAILED {
+    let Some(k) = crate::mem::alloc_margin_kern(mem, -w, last_leftmost, 0) else {
         return Err(MarginKernAbort::Overflow);
-    }
-    let k = mem
-        .classify_margin_kern(MemIdx::new(k))
-        .expect("new_margin_kern stamps a valid node type")
-        .expect("new_margin_kern returns a margin kern node");
+    };
     k.set_link(mem, MemPtr::from_raw(q));
     Ok(k.idx().0)
 }

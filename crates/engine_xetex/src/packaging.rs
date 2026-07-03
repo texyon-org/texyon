@@ -2489,15 +2489,10 @@ fn hpack_in(
                     while mem.b32s1(q) != TEX_NULL {
                         q = mem.b32s1(q);
                     }
-                    let rule = crate::mem::new_rule(mem);
-                    if rule == crate::mem::ALLOC_FAILED {
+                    let Some(rule_node) = crate::mem::alloc_rule(mem) else {
                         return Err(NodeRecycleAbort::Overflow);
-                    }
-                    let rule_node = mem
-                        .classify_rule(MemIdx::new(rule))
-                        .expect("valid rule node type")
-                        .expect("rule node");
-                    mem.set_b32s1(q, rule);
+                    };
+                    mem.set_b32s1(q, rule_node.idx().0);
                     rule_node.set_width(
                         mem,
                         RuleDimen::Set(Scaled(eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE_HP))),

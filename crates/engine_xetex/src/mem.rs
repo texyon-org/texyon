@@ -291,15 +291,19 @@ pub fn new_null_box(mem: &mut MemState) -> i32 {
 /// translated from xetex-xetex0.c:162 (new_rule)
 ///
 /// Phase-C: threaded to `&mut MemState` (callers use [`new_rule`] directly).
-pub fn new_rule(mem: &mut MemState) -> i32 {
-    let Some(p) = NodePtr::<RuleNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+/// Typed twin of [`new_rule`]: allocate a running-dimension rule and return its
+/// `NodePtr<RuleNode>` handle directly. `None` is the arena-exhaustion sentinel.
+pub fn alloc_rule(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
+    let p = NodePtr::<RuleNode>::alloc(mem)?;
     p.set_subtype(mem, 0);
     p.set_width(mem, RuleDimen::Running);
     p.set_depth(mem, RuleDimen::Running);
     p.set_height(mem, RuleDimen::Running);
-    p.idx().0
+    Some(p)
+}
+
+pub fn new_rule(mem: &mut MemState) -> i32 {
+    alloc_rule(mem).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
@@ -738,10 +742,10 @@ pub fn is_char_node(mem: &MemState, p: i32) -> bool {
 /// translated from xetex-xetex0.c:10542 (new_noad)
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_noad_global`].
-pub fn new_noad(mem: &mut MemState) -> i32 {
-    let Some(p) = NodePtr::<Noad>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+/// Typed twin of [`new_noad`]: allocate an empty `OrdNoad` and return its
+/// `NodePtr<Noad>` handle directly. `None` is the arena-exhaustion sentinel.
+pub fn alloc_noad(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+    let p = NodePtr::<Noad>::alloc(mem)?;
     p.set_subtype(mem, NORMAL);
     p.set_nucleus_type(mem, EMPTY);
     p.set_nucleus_field(mem, TEX_NULL);
@@ -749,7 +753,11 @@ pub fn new_noad(mem: &mut MemState) -> i32 {
     p.set_supscr_field(mem, TEX_NULL);
     p.set_subscr_type(mem, EMPTY);
     p.set_subscr_field(mem, TEX_NULL);
-    p.idx().0
+    Some(p)
+}
+
+pub fn new_noad(mem: &mut MemState) -> i32 {
+    alloc_noad(mem).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 /// Allocate a style node (STYLE_NODE_SIZE = 3 words).
@@ -788,13 +796,19 @@ pub fn new_choice(mem: &mut MemState) -> i32 {
 /// translated from xetex-xetex0.c:9838 (new_margin_kern)
 ///
 /// Phase-C: threaded to `&mut MemState`.
-pub fn new_margin_kern(mem: &mut MemState, w: i32, _p: i32, side: i16) -> i32 {
-    let Some(k) = NodePtr::<MarginKernNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+/// Typed twin of [`new_margin_kern`]: allocate a margin kern of width `w` on the
+/// given `side` and return its `NodePtr<MarginKernNode>` handle directly. `None`
+/// is the arena-exhaustion sentinel.
+pub fn alloc_margin_kern(
+    mem: &mut MemState,
+    w: i32,
+    _p: i32,
+    side: i16,
+) -> Option<NodePtr<MarginKernNode>> {
+    let k = NodePtr::<MarginKernNode>::alloc(mem)?;
     k.set_subtype(mem, side as u16);
     k.set_width(mem, Scaled(w));
-    k.idx().0
+    Some(k)
 }
 
 // translated from xetex-xetex0.c:13763 (new_whatsit)
