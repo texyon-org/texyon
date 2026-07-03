@@ -2025,6 +2025,67 @@ pub enum WhatsitNode {}
 impl NodeKind for WhatsitNode {}
 impl HasNodeHeader for WhatsitNode {}
 
+/// The `subtype` of a whatsit node (`mem[p].b16.s0`, xetex_format.h:456–467). A
+/// non-contiguous domain: the I/O whatsits (`Open`..`Language`, 0–4) carry no box
+/// dimensions; the extension whatsits (`NativeWord`..`Pdf`, 40–44) do. Replaces
+/// the ~40 duplicated `const OPEN_NODE`/`NATIVE_WORD_NODE`/… definitions that were
+/// scattered across shipout/linebreak/math/main_control/packaging.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(u16)]
+pub enum WhatsitSubtype {
+    Open = 0,
+    Write = 1,
+    Close = 2,
+    Special = 3,
+    Language = 4,
+    NativeWord = 40,
+    NativeWordAt = 41,
+    Glyph = 42,
+    Pic = 43,
+    Pdf = 44,
+}
+
+impl WhatsitSubtype {
+    /// Decode a raw `b16.s0` subtype; `None` for an unknown code.
+    pub fn from_raw(v: u16) -> Option<WhatsitSubtype> {
+        Some(match v {
+            0 => WhatsitSubtype::Open,
+            1 => WhatsitSubtype::Write,
+            2 => WhatsitSubtype::Close,
+            3 => WhatsitSubtype::Special,
+            4 => WhatsitSubtype::Language,
+            40 => WhatsitSubtype::NativeWord,
+            41 => WhatsitSubtype::NativeWordAt,
+            42 => WhatsitSubtype::Glyph,
+            43 => WhatsitSubtype::Pic,
+            44 => WhatsitSubtype::Pdf,
+            _ => return None,
+        })
+    }
+
+    /// The extension whatsits (native word / glyph / picture / PDF) that contribute
+    /// box dimensions — the old `sub == NATIVE_WORD_NODE || … || PDF_NODE` predicate,
+    /// equivalently the `>= 40` group.
+    pub fn has_dimensions(self) -> bool {
+        matches!(
+            self,
+            WhatsitSubtype::NativeWord
+                | WhatsitSubtype::NativeWordAt
+                | WhatsitSubtype::Glyph
+                | WhatsitSubtype::Pic
+                | WhatsitSubtype::Pdf
+        )
+    }
+}
+
+impl NodePtr<WhatsitNode> {
+    /// The whatsit's decoded `subtype` (`None` for an unknown code).
+    #[inline]
+    pub fn whatsit_subtype(self, mem: &MemState) -> Option<WhatsitSubtype> {
+        WhatsitSubtype::from_raw(mem.b16s0(self.idx.0))
+    }
+}
+
 impl NodePtr<WhatsitNode> {
     /// `\write`/`\special` token list = `mem[(p) + 1].b32.s1`
     /// (`WRITE_NODE_tokens`); a token-list ref, not a node list.

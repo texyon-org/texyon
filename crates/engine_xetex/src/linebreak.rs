@@ -2801,12 +2801,7 @@ unsafe fn try_break(
                                         linebreak.break_width[1] -= typed_list_width_in(mem, v);
                                     }
                                     AnyNode::Whatsit(w) => {
-                                        let sub = mem.b16s0(v);
-                                        if sub == NATIVE_WORD_NODE
-                                            || sub == NATIVE_WORD_NODE_AT
-                                            || sub == GLYPH_NODE
-                                            || sub == PIC_NODE
-                                            || sub == PDF_NODE
+                                        if w.whatsit_subtype(mem).is_some_and(|s| s.has_dimensions())
                                         {
                                             linebreak.break_width[1] -= w.width(mem).0;
                                         } else {
@@ -2844,12 +2839,7 @@ unsafe fn try_break(
                                         linebreak.break_width[1] += typed_list_width_in(mem, s);
                                     }
                                     AnyNode::Whatsit(w) => {
-                                        let sub = mem.b16s0(s);
-                                        if sub == NATIVE_WORD_NODE
-                                            || sub == NATIVE_WORD_NODE_AT
-                                            || sub == GLYPH_NODE
-                                            || sub == PIC_NODE
-                                            || sub == PDF_NODE
+                                        if w.whatsit_subtype(mem).is_some_and(|s| s.has_dimensions())
                                         {
                                             linebreak.break_width[1] += w.width(mem).0;
                                         } else {
