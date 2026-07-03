@@ -64,8 +64,9 @@ extern "C" {
     fn ttstub_diag_finish(diag: *mut std::ffi::c_void);
     fn ttbc_diag_begin_warning() -> *mut std::ffi::c_void;
     fn ttbc_diag_begin_error() -> *mut std::ffi::c_void;
-    fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...);
-    fn ttstub_issue_warning(fmt: *const libc::c_char, ...) -> libc::c_void;
+    fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...)
+        -> libc::c_int;
+    fn ttstub_issue_warning(fmt: *const libc::c_char, ...);
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
 
     // Still in C — complex context display.

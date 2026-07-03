@@ -4495,7 +4495,7 @@ pub(crate) fn scan_something_internal_in(
                                 let engine = st.fonts.font_layout_engine[n as usize];
                                 let fa = st.fonts.font_area[n as usize];
                                 st.scanner.cur_val = if fa == AAT_FONT_FLAG {
-                                    unsafe { aat_font_get(m - XETEX_INT, engine) }
+                                    aat_font_get(m - XETEX_INT, engine)
                                 } else if fa == OTGR_FONT_FLAG {
                                     unsafe { ot_font_get(m - XETEX_INT, engine) }
                                 } else {
@@ -4508,7 +4508,7 @@ pub(crate) fn scan_something_internal_in(
                                 let engine = st.fonts.font_layout_engine[n as usize];
                                 let fa = st.fonts.font_area[n as usize];
                                 st.scanner.cur_val = if fa == AAT_FONT_FLAG {
-                                    unsafe { aat_font_get(m - XETEX_INT, engine) }
+                                    aat_font_get(m - XETEX_INT, engine)
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     unsafe { ot_font_get(m - XETEX_INT, engine) }
                                 } else {
@@ -4534,9 +4534,7 @@ pub(crate) fn scan_something_internal_in(
                                 if fa == AAT_FONT_FLAG {
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
-                                    st.scanner.cur_val = unsafe {
-                                        aat_font_get_1(m - XETEX_INT, engine, k)
-                                    };
+                                    st.scanner.cur_val = aat_font_get_1(m - XETEX_INT, engine, k);
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
@@ -4561,9 +4559,7 @@ pub(crate) fn scan_something_internal_in(
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
                                     scan_int_in(st)?;
-                                    st.scanner.cur_val = unsafe {
-                                        aat_font_get_2(m - XETEX_INT, engine, k, st.scanner.cur_val)
-                                    };
+                                    st.scanner.cur_val = aat_font_get_2(m - XETEX_INT, engine, k, st.scanner.cur_val);
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
@@ -4589,9 +4585,7 @@ pub(crate) fn scan_something_internal_in(
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == AAT_FONT_FLAG {
                                     crate::io::scan_and_pack_name_in(st)?;
-                                    st.scanner.cur_val = unsafe {
-                                        aat_font_get_named(m - XETEX_INT, engine)
-                                    };
+                                    st.scanner.cur_val = aat_font_get_named(m - XETEX_INT, engine);
                                 } else {
                                     scc_err(crate::errors::not_font_error_common_in(
                                         st,
@@ -4610,9 +4604,7 @@ pub(crate) fn scan_something_internal_in(
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == AAT_FONT_FLAG {
                                     crate::io::scan_and_pack_name_in(st)?;
-                                    st.scanner.cur_val = unsafe {
-                                        aat_font_get_named(m - XETEX_INT, engine)
-                                    };
+                                    st.scanner.cur_val = aat_font_get_named(m - XETEX_INT, engine);
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     crate::io::scan_and_pack_name_in(st)?;
                                     st.scanner.cur_val = unsafe {
@@ -4638,9 +4630,7 @@ pub(crate) fn scan_something_internal_in(
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
                                     crate::io::scan_and_pack_name_in(st)?;
-                                    st.scanner.cur_val = unsafe {
-                                        aat_font_get_named_1(m - XETEX_INT, engine, k)
-                                    };
+                                    st.scanner.cur_val = aat_font_get_named_1(m - XETEX_INT, engine, k);
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;

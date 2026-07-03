@@ -6046,8 +6046,8 @@ unsafe fn lig_inner_loop(
 #[inline(always)]
 unsafe fn do_lookahead(
     st: &mut crate::state::EngineState,
-    main_i: &mut crate::mem_types::B16x4,
-    enter_lig1_k: &mut Option<i32>,
+    _main_i: &mut crate::mem_types::B16x4,
+    _enter_lig1_k: &mut Option<i32>,
     _mf: i32,
 ) -> Result<bool, MainControlAbort> {
 

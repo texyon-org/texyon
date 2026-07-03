@@ -1153,7 +1153,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             crate::output::print_int_in(st, st.scanner.cur_val);
         }
         UNIFORM_DEVIATE_CODE_CT => {
-            let v = unsafe { crate::scaled_math::unif_rand(&mut st.errors, st.scanner.cur_val) };
+            let v = crate::scaled_math::unif_rand(&mut st.errors, st.scanner.cur_val);
             crate::output::print_int_in(st, v);
         }
         NORMAL_DEVIATE_CODE_CT => {
