@@ -296,3 +296,31 @@ repointing the 5 live sites to direct `st` (gated on their FFI/setjmp-boundary c
 per [[globals-wrappers-gated-on-setjmp-boundary]]) and reworking the 3 dead wrappers'
 test usage. THEN phase 2 (the user's second ask): properly-typed pointers (kill the
 residual `i32`/`b32.s1` handles).
+
+## STATUS: ZERO GLOBAL STATE ACHIEVED (session 249) — with_state = 0, FALLBACK = 0
+
+The `with_state`/`with_state_mut` closure bridge and the `ENGINE_STATE_FALLBACK`
+(pre-run/test second `EngineState`) are DELETED. All engine state is threaded through
+`&mut EngineState` or owned by `tt_run_engine`'s `Box<EngineState>`. Drain order:
+1. Deleted 3 dead accessor wrappers (`arith_error`/`tex_remainder`/`hash_s1`).
+2. `set_arith_error` → `&mut ErrorState`: threaded `round_xn_over_d`/`make_frac`/`take_frac`
+   (+ the short `char_pw_in` linebreak cascade, since `try_break` already carries errors).
+3. `name_of_file`/`name_length`: threaded `st` into `gr_font_get_named`/`_1` (called from
+   `scan_something_internal_in`); the last user, `ShipoutAbort::CannotOpenOutput`, defers its
+   message to `into_history` via `EngineAbort::CannotOpenOutput`. → `with_state` (immut) deleted.
+4. `SccAbort::NoLegalEnd` defers `open_log_file` + `fatal_error` to `into_history` via
+   `EngineAbort::NoLegalEnd { open_log }` (+ extracted `fatal_report` helper).
+5. `font_feature_warning` (macOS AAT `#[no_mangle]` callback, fires mid-`loadAATfont` deep in
+   Core Text with no Rust frame between — the one irreducible reach-back; `loadAATfont`'s
+   caller isn't even in the visible tree, and xetex-macos.c is macOS-only) now reads the run's
+   owned state via a minimal `ENGINE_STATE_PTR` locator (`current_engine_state()`), NOT
+   `with_state_mut`. → `with_state_mut` + `ENGINE_STATE_FALLBACK` deleted.
+
+**Remaining `static mut`/thread-locals are all LOCATORS, not state** (re-established at each
+run entry; a clone captures the state, then re-points these): `ENGINE_STATE_PTR` (macOS
+callback), `FONT_SIZE`/`FONT_AREA`/`FONT_LAYOUT_ENGINE` (C++ OT-math FFI). Corpus-validated
+across the whole effort (637/2, the 2 standing known FPs).
+
+**Phase 2 (the user's second ask): properly-typed pointers** — kill residual `i32`/`b32.s1`
+handles; largely done in prior sessions (packaging/linebreak), residue is deliberate hot-loop
+discriminant reads + box-header/bucket-D patterns (see the typing memory notes).
