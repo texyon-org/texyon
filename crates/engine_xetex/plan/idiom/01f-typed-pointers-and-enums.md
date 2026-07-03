@@ -168,6 +168,35 @@ Sequence: S1→S2→S3(phased)→S4→S5→S6→S7→S8→S9. Validation: dashbo
   noad_type() nesting + EDGE/STYLE care), the deferred S9 whole-match. Read-guard double-expects
   (glyph_nucleus) are awkward to convert. Leave until/unless that restructure is taken on.
 
+## Session 251 — i32→NodePtr propagation cascade (goal: "all i32s are nodeptrs")
+
+Propagating `AnyBox`/typed handles so raw i32 node indices disappear from use sites,
+leaving `.idx().0` only at genuine i32 boundaries (mem-arena links, packer list-args,
+`free_node`, nest-stack fields — i32 by the `memory_word` layout, NOT convertible).
+
+- **DONE (corpus-gated):** after_math_in display hbox `b`→AnyBox (`26798d6a`);
+  build_opentype_assembly + its two stack wrappers→AnyBox (`26798d6a`); make_op
+  wrapper vbox via `alloc_null_vbox` twin (`287b50bd`); `ReboxResult::Done(i32)`→
+  `Done(AnyBox)` + rebox param→AnyBox, killing rebox's double-expect (`3be6c78a`).
+  classify_box_or_panic 18→12.
+- **The remaining 12 classify_box_or_panic are DELIBERATE, not round-trips:**
+  * nullable box handles (`after_math a`, `make_math_accent x`) that flow into i32-param
+    fns (`app_display_in`) + i32 links — typing them `Option<AnyBox>` would spray
+    `map_or(TEX_NULL, |x| x.idx().0)` sentinels (the net-negative anti-vein). Leave i32.
+  * state-field provenance (`scanner.just_box`) — a typed field needs `Option<AnyBox>`
+    (default None) + a guarded `.expect()` at the read; marginal, deferred.
+  * raw-list-index conditionally-a-box (`clean_box_in:536`) — genuine classify.
+- **NEXT big clean win = the mlist_to_hlist first-pass restructure** (`math.rs:2720`).
+  Currently `match NodeType::from_raw(b16s1(q))` forces `classify_{choice,rule,glue,kern}()
+  .expect().expect()` in the non-noad arms (~6 double-expects, incl. 3× classify_glue).
+  Convert to `match st.mem.classify(MemIdx::new(q))`: `Ok(AnyNode::Noad(qn)) => match
+  qn.noad_type() {…}` keeps noad granularity (qn replaces assume_noad(q); the 16 noad
+  types are exhaustive, `_=>unreachable`), while `AnyNode::Glue(glue)/Kern/Rule/Choice`
+  give typed handles directly. EDGE/STYLE aliasing (type 14) does NOT apply — math lists
+  contain no edge nodes, so `AnyNode::Style` is correct here. HOTTEST math path: preserve
+  the `continue 'reswitch` retype flow + r_type coupling exactly; dedicated corpus gate.
+  Do the same for the second-pass match (`:2992`).
+
 ## Status after session 250 (S8 + S9 + GroupCode + typed-twins done)
 
 Constants→enums for node/whatsit/noad type codes AND group codes is now COMPLETE: no
