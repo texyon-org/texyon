@@ -3416,7 +3416,7 @@ pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: NodePtr<Whatsi
 /// it — all under the caller's `&mut EngineState`.
 fn stack_glyph_into_box_in(
     st: &mut EngineState,
-    b: i32,
+    b: AnyBox,
     f: i32,
     g: i32,
 ) -> Result<(), NodeRecycleAbort> {
@@ -3425,8 +3425,7 @@ fn stack_glyph_into_box_in(
     // SAFETY: `measure_native_glyph` reads only `&FontState` and writes the
     // freshly-allocated node `p` through `addr`; no `with_state` re-entry.
     unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) }?;
-    let b_box = classify_box_or_panic(&st.mem, b);
-    stack_glyph_into_box(&mut st.mem, b_box, p);
+    stack_glyph_into_box(&mut st.mem, b, p);
     Ok(())
 }
 
@@ -3510,12 +3509,11 @@ fn stack_glue_into_box(
 /// caller's `&mut EngineState`.
 fn stack_glue_into_box_in(
     st: &mut EngineState,
-    b: i32,
+    b: AnyBox,
     min: i32,
     max: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    let b_box = classify_box_or_panic(&st.mem, b);
-    stack_glue_into_box(&mut st.mem, b_box, min, max)
+    stack_glue_into_box(&mut st.mem, b, min, max)
 }
 
 enum OtMathAccentPosStep {
@@ -4567,15 +4565,13 @@ pub(crate) fn after_math_in(
         p = st.mem.b32s1(TEMP_HEAD);
         st.scanner.adjust_tail = ADJUST_HEAD;
         st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-        let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?
-            .idx()
-            .0;
-        p = classify_box_or_panic(&st.mem, b).list_ptr(&st.mem).0;
+        let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
+        p = b.list_ptr(&st.mem).0;
         let t = st.scanner.adjust_tail;
         st.scanner.adjust_tail = TEX_NULL;
         let pre_t = st.scanner.pre_adjust_tail;
         st.scanner.pre_adjust_tail = TEX_NULL;
-        let mut w = classify_box_or_panic(&st.mem, b).width(&st.mem).0;
+        let mut w = b.width(&st.mem).0;
         let z = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
         let mut s = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
         if st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
@@ -4596,20 +4592,18 @@ pub(crate) fn after_math_in(
                     || st.scanner.total_shrink[FILL] != 0
                     || st.scanner.total_shrink[FILLL] != 0)
             {
-                crate::mem::free_node(&mut st.mem, b, BOX_NODE_SIZE);
-                b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?
-                    .idx()
-                    .0;
+                crate::mem::free_node(&mut st.mem, b.idx().0, BOX_NODE_SIZE);
+                b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?;
             } else {
                 e = 0;
                 if w > z {
-                    crate::mem::free_node(&mut st.mem, b, BOX_NODE_SIZE);
-                    b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?.idx().0;
+                    crate::mem::free_node(&mut st.mem, b.idx().0, BOX_NODE_SIZE);
+                    b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?;
                 }
             }
-            w = classify_box_or_panic(&st.mem, b).width(&st.mem).0;
+            w = b.width(&st.mem).0;
         }
-        st.mem.set_b16s0(b, DLIST);
+        b.set_subtype(&mut st.mem, DLIST);
         let mut d = crate::scaled_math::half(z - w);
         if e > 0 && d < 2 * e {
             d = crate::scaled_math::half(z - w - e);
@@ -4662,19 +4656,18 @@ pub(crate) fn after_math_in(
             }
             if l {
                 st.mem.set_b32s1(a, r);
-                st.mem.set_b32s1(r, b);
-                b = a;
+                st.mem.set_b32s1(r, b.idx().0);
+                // `a` is a real box in this `e != 0` branch (`e` is its width).
+                b = classify_box_or_panic(&st.mem, a);
                 d = 0;
             } else {
-                st.mem.set_b32s1(b, r);
+                st.mem.set_b32s1(b.idx().0, r);
                 st.mem.set_b32s1(r, a);
             }
-            b = crate::packaging::hpack_emit_in(st, b, 0, ADDITIONAL)?
-                .idx()
-                .0;
+            b = crate::packaging::hpack_emit_in(st, b.idx().0, 0, ADDITIONAL)?;
         }
 
-        app_display_in(st, j, b, d)?;
+        app_display_in(st, j, b.idx().0, d)?;
 
         if a != TEX_NULL && e == 0 && !l {
             let inf_node2 = crate::mem::new_penalty(&mut st.mem, INF_PENALTY);
@@ -5231,12 +5224,15 @@ unsafe fn build_opentype_assembly_in(
     s: i32,
     horiz: bool,
 ) -> Result<AnyBox, NodeRecycleAbort> {
-    let b = crate::mem::new_null_box(&mut st.mem);
-    if b == ALLOC_FAILED {
+    let b_idx = crate::mem::new_null_box(&mut st.mem);
+    if b_idx == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
+    // `new_null_box` stamps an hlist; retype to the requested axis, then classify
+    // once — `b` is the typed handle used for all stacking + measurement below.
     st.mem
-        .set_b16s1(b, if horiz { HLIST_NODE } else { VLIST_NODE });
+        .set_b16s1(b_idx, if horiz { HLIST_NODE } else { VLIST_NODE });
+    let b = classify_box_or_panic(&st.mem, b_idx);
     let mut n: i32 = -1;
     let mut no_extenders = true;
     let min_o = ot_min_connector_overlap(f);
@@ -5311,8 +5307,7 @@ unsafe fn build_opentype_assembly_in(
         }
     }
     // Measure natural size and total stretch — pure `mem` reads.
-    let b_box = classify_box_or_panic(&st.mem, b);
-    let mut p = b_box.list_ptr(&st.mem).0;
+    let mut p = b.list_ptr(&st.mem).0;
     let mut nat: i32 = 0;
     let mut str: i32 = 0;
     while p != TEX_NULL {
@@ -5336,24 +5331,24 @@ unsafe fn build_opentype_assembly_in(
     // Write the resolved dimensions — pure `mem` writes through the typed box.
     if s > nat && str > 0 {
         let o = if s - nat > str { str } else { s - nat };
-        b_box.set_glue_order(&mut st.mem, NORMAL);
-        b_box.set_glue_sign(&mut st.mem, STRETCHING);
+        b.set_glue_order(&mut st.mem, NORMAL);
+        b.set_glue_sign(&mut st.mem, STRETCHING);
         // The C reads MEM[b+6].gr back after storing it; an f64 round-trips
         // exactly, so the stored `ratio` is byte-identical to the re-read.
         let ratio = o as f64 / str as f64;
-        b_box.set_glue_set(&mut st.mem, ratio);
+        b.set_glue_set(&mut st.mem, ratio);
         let set_dim = Scaled(nat + crate::scaled_math::tex_round(str as f64 * ratio));
         if horiz {
-            b_box.set_width(&mut st.mem, set_dim);
+            b.set_width(&mut st.mem, set_dim);
         } else {
-            b_box.set_depth(&mut st.mem, set_dim);
+            b.set_depth(&mut st.mem, set_dim);
         }
     } else if horiz {
-        b_box.set_width(&mut st.mem, Scaled(nat));
+        b.set_width(&mut st.mem, Scaled(nat));
     } else {
-        b_box.set_depth(&mut st.mem, Scaled(nat));
+        b.set_depth(&mut st.mem, Scaled(nat));
     }
-    Ok(b_box)
+    Ok(b)
 }
 
 /// Build the extensible (`EXT_TAG`) delimiter box for [`var_delimiter_global`].
