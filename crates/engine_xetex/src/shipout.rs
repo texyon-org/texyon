@@ -1,9 +1,12 @@
 //! Shipout helpers translated from `xetex/xetex-shipout.c`.
 use crate::consts::{
-    CS_TOKEN_FLAG, DIMEN_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, INT_BASE, KERN_NODE,
-    LIGATURE_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NULL_FLAG,
-    PENALTY_NODE, RULE_NODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, TEX_NULL,
-    TOO_BIG_CHAR,
+    A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, DIMEN_BASE, DLIST, FONT_BASE, GLUE_NODE,
+    GLUE_SPEC_SIZE, HLIST_NODE, INSERTED, INT_BASE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE,
+    INVALID_HANDLE, KERN_NODE, LEFT_TO_RIGHT, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD,
+    MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NULL_FLAG, PENALTY_NODE,
+    PIC_NODE_SIZE, RIGHT_TO_LEFT, RULE_NODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
+    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SHRINKING, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
+    STRETCHING, TEX_NULL, TOO_BIG_CHAR, WRITE_TEXT,
 };
 use crate::ext::apply_tfm_font_mapping;
 
@@ -50,7 +53,6 @@ const MARK_NODE: u16 = 4;
 const ADJUST_NODE: u16 = 5;
 const WHATSIT_NODE: u16 = 8;
 const EDGE_NODE: u16 = 14;
-const MEM_TOP: i32 = 4_999_999;
 const AAT_FONT_FLAG: i32 = 65533;
 const OTGR_FONT_FLAG: i32 = 65534;
 const FNT_DEF1: u8 = 243;
@@ -76,41 +78,22 @@ const MOV_Z_SEEN: i32 = 12;
 // Glue and leader constants: xetex-constants.h:175,182,275,281; xetex_format.h:422.
 const FILLL: u16 = 3;
 const NORMAL: u16 = 0;
-const STRETCHING: u16 = 1;
-const SHRINKING: u16 = 2;
-const A_LEADERS: u16 = 100;
 const C_LEADERS: u16 = 101;
-const SPACE_ADJUSTMENT: u16 = 3;
 
 // MATH_NODE LR constants: xetex-constants.h:142-143; xetex_format.h:437.
 const L_CODE: u16 = 4;
 const R_CODE: u16 = 8;
 const END_M_CODE: u16 = 3;
-const BEFORE: i32 = 0;
-const DLIST: u16 = 2;
 const REVERSED: u16 = 1;
 const LIG_TRICK: i32 = 4_999_987;
 
 const INT_PAR_XETEX_INTERWORD_SPACE_SHAPING: i32 = 78;
 
-// xetex-constants.h:133, tectonic_bridge_core_generated.h:12
-const PIC_NODE_SIZE: i32 = 9;
-const INVALID_HANDLE: usize = 0;
-
-// INT_PAR index for \tracingonline — xetex_format.h
-const INT_PAR_TRACING_ONLINE: i32 = 29;
-
 // Token constants — xetex-constants.h:204,217,348–351
-const INSERTED: u16 = 5;
-const WRITE_TEXT: u16 = 18;
 const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
 const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
 // END_WRITE = FROZEN_CONTROL_SEQUENCE + 8 = 2_243_226 + 8
 const END_WRITE: i32 = 2_243_234;
-
-// Output selector values — xetex-core.h:43–50
-const SELECTOR_LOG_ONLY: i32 = 18;
-const SELECTOR_NEW_STRING: i32 = 21;
 
 /// Create a new edge node of subtype `s` and width `w`.
 ///
@@ -2051,17 +2034,11 @@ const XDV_ID_BYTE: u8 = 7;
 const SPX_ID_BYTE: u8 = 100;
 // xetex-constants.h:117
 // xetex_format.h:52; xetex-xetexd.h INT_BASE
-const INT_PAR_MAG: i32 = 17;
 const INT_PAR_TRACING_OUTPUT: i32 = 34;
 const DIMEN_PAR_H_OFFSET: i32 = 18;
 const DIMEN_PAR_V_OFFSET: i32 = 19;
 const DIMEN_PAR_PDF_PAGE_WIDTH: i32 = 21;
 const DIMEN_PAR_PDF_PAGE_HEIGHT: i32 = 22;
-const COUNT_BASE: i32 = 7_826_812;
-// scan.rs FONT_BASE
-const FONT_BASE: i32 = 0;
-const LEFT_TO_RIGHT: i16 = 0;
-const RIGHT_TO_LEFT: i16 = 1;
 const ONE_INCH: i32 = 4_736_287;
 const ONE_INCH_LESS_ONE: i32 = 4_736_286;
 
@@ -2214,8 +2191,6 @@ fn font_character_width(fonts: &FontState, f: i32, c: i32) -> i32 {
     let info = fonts.font_info_b16(fonts.char_base_entry(f) + c);
     fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
 }
-
-const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
 #[repr(C)]
 struct FixedPoint {

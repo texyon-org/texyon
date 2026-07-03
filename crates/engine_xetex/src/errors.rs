@@ -2,7 +2,7 @@
 
 use crate::state::GroupCode;
 use crate::consts::{
-    BOX_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+    BOX_BASE, HISTORY_FATAL_ERROR, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
 };
 
 // Interaction-mode constants (xetex_format.h:644–647).
@@ -18,7 +18,6 @@ use crate::state::EngineState;
 use crate::state::InteractionMode;
 
 const HISTORY_ERROR_ISSUED: i32 = 2;
-const HISTORY_FATAL_ERROR: i32 = 3;
 
 // Group codes matched by `extra_right_brace`.
 

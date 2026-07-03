@@ -6,10 +6,9 @@
 pub(crate) const TRIE_OP_SIZE: i32 = 35_111;
 const NEG_TRIE_OP_SIZE: i32 = -35_111;
 pub(crate) const MAX_TRIE_OP: u16 = 65_535;
-const MIN_TRIE_OP: i32 = 0;
-pub(crate) const BIGGEST_LANG: i32 = 255;
 
-use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
+pub(crate) use crate::consts::BIGGEST_LANG;
+use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, MIN_TRIE_OP, TOO_BIG_CHAR};
 use crate::state::HyphState;
 
 #[inline]

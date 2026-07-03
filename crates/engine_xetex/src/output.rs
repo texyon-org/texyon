@@ -1,8 +1,12 @@
 //! Printing helpers translated from `xetex/xetex-output.c`.
 use crate::state::GroupCode;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, INT_BASE, LOCAL_BASE, NULL_FLAG, PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
-    SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
+    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, FI_CODE,
+    FI_OR_ELSE, HISTORY_SPOTLESS, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
+    INT_PAR_TRACING_IFS, INT_PAR_TRACING_ONLINE, LOCAL_BASE, NULL_CS, NULL_FLAG, PRIM_EQTB_BASE,
+    SCRIPT_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
+    SELECTOR_TERM_ONLY, SINGLE_BASE, TEXT_SIZE, TEX_NULL, TOKEN_LIST, TOO_BIG_CHAR,
+    UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::errors::{error_in, ErrorOutcome};
 use crate::node::{AnyBox, AnyNode, NodePtr, WhatsitNode};
@@ -19,54 +23,38 @@ const AAT_FONT_FLAG: i32 = 0xFFFF;
 const LOCAL__ERR_HELP: i32 = 9; // xetex_format.h:181
 const INT_PAR_SHOW_BOX_DEPTH: i32 = 25;
 const INT_PAR_SHOW_BOX_BREADTH: i32 = 24;
-const INT_PAR_END_LINE_CHAR: i32 = 48;
 
 // Selector constants (xetex-core.h:42–51).
-const SELECTOR_NO_PRINT: i32 = 16;
-const SELECTOR_LOG_ONLY: i32 = 18;
 const SELECTOR_PSEUDO: i32 = 20;
-const SELECTOR_NEW_STRING: i32 = 21;
 
 // Constants for INTPAR(escape_char) = eqtb[INT_BASE + INT_PAR__escape_char].b32.s1
 // (xetex_format.h:219,80 and xetex-constants.h:83).
 const INT_PAR_ESCAPE_CHAR: i32 = 45;
-const INT_PAR_NEW_LINE_CHAR: i32 = 49;
-const INT_PAR_TRACING_ONLINE: i32 = 29;
 
 // History values (xetex-xetexd.h:355–356).
-const HISTORY_SPOTLESS: i32 = 0;
 const HISTORY_WARNING_ISSUED: i32 = 1;
 
 // Mode divisor for print_mode / print_in_mode (xetex_format.h:345).
 const MAX_COMMAND_PLUS_1: i32 = 103; // MAX_COMMAND + 1
 const BIGGEST_USV: i32 = 0x10_FFFF;
-#[allow(dead_code)]
-const TEXT_SIZE: i32 = 0;
-const SCRIPT_SIZE: i32 = 256;
 // print_cs / sprint_cs constants (xetex_format.h).
-const NULL_CS: i32 = 2_228_225;
 const HASH_BASE: i32 = 2_228_226;
 const FROZEN_NULL_FONT: i32 = 2_245_338;
-const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 const LETTER: i32 = 11;
 // print_sa_num (xetex-constants.h:326).
 const DIMEN_VAL_LIMIT: i32 = 128;
 // FONT_ID_BASE = FROZEN_NULL_FONT (xetex-constants.h:68, xetex_format.h:203).
 const FONT_ID_BASE: i32 = FROZEN_NULL_FONT;
 // Token-state constants (xetex-constants.h:261).
-const TOKEN_LIST: u16 = 0;
 // Conditional command codes (xetex_format.h:349,355,537).
 const IF_TEST: u16 = 107;
 const TOP_BOT_MARK: u16 = 112; // xetex_format.h:354
 const CALL: u16 = 113;
-const FI_CODE: u8 = 2;
 
 // INT_PAR__tracing_nesting (xetex_format.h:95).
 const INT_PAR_TRACING_NESTING: i32 = 60;
 // FI_OR_ELSE command code (xetex_format.h:350).
-const FI_OR_ELSE: u8 = 108;
 // INT_PAR__tracing_ifs (xetex_format.h:93).
-const INT_PAR_TRACING_IFS: i32 = 58;
 
 // C functions not yet translated — still live in xetex-output.c or bridge.
 extern "C" {

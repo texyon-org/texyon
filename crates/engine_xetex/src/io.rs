@@ -1,6 +1,10 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
-use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
+use crate::consts::{
+    BIGGEST_CHAR, CLOSED, INT_BASE, INT_PAR_END_LINE_CHAR, INVALID_HANDLE, JUST_OPEN, LEFT_BRACE,
+    NEW_LINE, OTHER_CHAR, RELAX, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, SPACER,
+    TOO_BIG_CHAR,
+};
 use crate::input::InputAbort;
 
 // ---------------------------------------------------------------------------
@@ -13,16 +17,8 @@ use crate::input::InputAbort;
 
 // Consts used by the file-naming / start_input / close_files group.
 const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
-const INT_PAR_END_LINE_CHAR: i32 = 48;
 const INT_PAR_NEW_LINE_CHAR_CFT: i32 = 49;
 const INT_PAR_TRACING_STACK_LEVELS: i32 = 55;
-const LEFT_BRACE: u8 = 1;
-const NEW_LINE: u16 = 33;
-const OTHER_CHAR: u8 = 12;
-const RELAX: u8 = 0;
-const SELECTOR_LOG_ONLY: i32 = 18;
-const SELECTOR_NEW_STRING: i32 = 21;
-const SPACER: u8 = 10;
 const TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI: i32 = 59;
 const TTBC_FILE_FORMAT_TEX_SI: i32 = 26;
 
@@ -78,12 +74,6 @@ const K_STATUS_NO_ERROR: i64 = 0;
 // File format constants (tectonic_bridge_core_generated.h).
 const TTBC_FILE_FORMAT_TECTONIC_PRIMARY: libc::c_int = 59;
 const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
-// INVALID_HANDLE = 0
-const INVALID_HANDLE: usize = 0;
-
-// Constants for open_or_close_in (xetex-constants.h:268,277).
-const JUST_OPEN: u8 = 1;
-const CLOSED: u8 = 2;
 
 // INT_BASE and INT_PAR offsets used by open_or_close_in (xetex_format.h:219,110–111).
 const INT_PAR_XETEX_DEFAULT_INPUT_MODE: i32 = 75;

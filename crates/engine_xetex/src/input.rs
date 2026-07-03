@@ -1,5 +1,7 @@
 //! Input-stack management functions translated from `xetex/xetex-xetex0.c`.
-use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
+use crate::consts::{
+    BACKED_UP, CS_TOKEN_FLAG, INSERTED, INT_BASE, LOCAL_BASE, OUTPUT_TEXT, TOKEN_LIST, WRITE_TEXT,
+};
 use crate::io::u_close;
 
 
@@ -8,16 +10,11 @@ extern "C" {
 }
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
-const TOKEN_LIST: u16 = 0;
 const U_TEMPLATE: u16 = 1;
 const V_TEMPLATE: u16 = 2;
-const BACKED_UP: u16 = 3;
-const INSERTED: u16 = 5;
 const MACRO: u16 = 6;
-const OUTPUT_TEXT: u16 = 7; // xetex-constants.h:206
 const MARK_TEXT: u16 = 15; // xetex-constants.h:214
-const WRITE_TEXT: u16 = 18; // xetex-constants.h:217
-                            // Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
+// Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
 const FROZEN_RELAX: i32 = 2_243_226 + 7; // FROZEN_CONTROL_SEQUENCE + 7
                                          // Scanner-state constants (xetex-constants.h:221).
 const MID_LINE: u16 = 1;

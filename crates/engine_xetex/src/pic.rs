@@ -17,6 +17,7 @@ pub struct PdfFile {
 // dpx layout types — must match C struct layout exactly (dpx-pdfdev.h)
 use crate::ext::D2Fix;
 use crate::ext::Fix2D;
+use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
 use crate::main_control::{mc_propagate_error, MainControlAbort};
 use crate::state::EngineState;
 
@@ -119,7 +120,6 @@ extern "C" {
     fn xstrdup(s: *const c_char) -> *mut c_char;
 }
 
-const INVALID_HANDLE: usize = 0;
 const TTBC_FILE_FORMAT_PICT: c_int = 25; // tectonic_bridge_core_generated.h:74
 
 // pdfbox constants from xetex-ext.h:53–58
@@ -165,9 +165,6 @@ impl PageboxType {
         }
     }
 }
-
-// node constants from xetex_format.h:466–467 and xetex-constants.h:133
-const PIC_NODE_SIZE: i32 = 9;
 
 // translated from xetex-pic.c:99 (pdf_get_rect)
 unsafe fn pdf_get_rect(

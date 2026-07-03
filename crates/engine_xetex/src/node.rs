@@ -28,9 +28,10 @@
 use std::marker::PhantomData;
 
 use crate::consts::{
-    BOX_NODE_SIZE, DISC_NODE, GLUE_NODE, GLUE_SPEC_SIZE, HLIST_NODE, KERN_NODE, LIGATURE_NODE,
-    MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_NODE, MEDIUM_NODE_SIZE, NULL_FLAG, PENALTY_NODE,
-    RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE,
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, DISC_NODE, FRACTION_NOAD_SIZE, GLUE_NODE, GLUE_SPEC_SIZE,
+    HLIST_NODE, KERN_NODE, LIGATURE_NODE, MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_NODE,
+    MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PENALTY_NODE, RADICAL_NOAD_SIZE, RULE_NODE,
+    RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
 use crate::mem::{free_node, get_node, ALLOC_FAILED};
 use crate::state::MemState;
@@ -913,8 +914,6 @@ impl MemState {
 
 // --- math style/choice nodes (NODE_type 14 and 15) ---
 
-const STYLE_NODE_SIZE: i32 = 3;
-
 /// `STYLE_NODE` (`NODE_type` = 14): changes the current math style.
 pub enum StyleNode {}
 /// `EDGE_NODE` (`NODE_type` = 14 in LR-edge context): a shipout edge record.
@@ -1058,11 +1057,6 @@ impl MemState {
 }
 
 // --- the math noad family (NODE_type 16 to 31) ---
-
-const NOAD_SIZE: i32 = 4;
-const RADICAL_NOAD_SIZE: i32 = 5;
-const ACCENT_NOAD_SIZE: i32 = 5;
-const FRACTION_NOAD_SIZE: i32 = 6;
 
 /// `Noad` (math noads, `NODE_type` between 16 and 31 inclusive): represents a math noad structure.
 pub enum Noad {}

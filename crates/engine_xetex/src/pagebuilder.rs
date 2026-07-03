@@ -2,7 +2,9 @@
 #![allow(non_upper_case_globals)]
 
 use crate::consts::{
-    BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE, MAX_HALFWORD, TEX_NULL,
+    AWFUL_BAD, BOX_BASE, BOX_NODE_SIZE, CONTRIB_HEAD, COUNT_BASE, DIMEN_BASE, EJECT_PENALTY,
+    GLUE_BASE, IGNORE_DEPTH, INT_BASE, LOCAL_BASE, MAX_HALFWORD, MEM_TOP, OUTPUT_TEXT, SCALED_BASE,
+    SKIP_BASE, TEX_NULL, VMODE,
 };
 
 use crate::errors::ErrorOutcome;
@@ -15,9 +17,7 @@ use crate::units::{MemIdx, MemPtr, Scaled};
 const MATH_NODE: i32 = crate::consts::MATH_NODE as i32;
 
 // Glue/page constants (xetex-constants.h)
-const MEM_TOP: i32 = 4_999_999;
 const PAGE_INS_HEAD: i32 = MEM_TOP;
-const CONTRIB_HEAD: i32 = MEM_TOP - 1;
 const PAGE_HEAD: i32 = MEM_TOP - 2;
 const HOLD_HEAD: i32 = MEM_TOP - 4;
 const NORMAL: i32 = 0;
@@ -33,13 +33,8 @@ const PAGE_INS_NODE_SIZE: i32 = 4;
 const INS_NODE_SIZE: i32 = 5;
 const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
-const VMODE: i16 = 1;
-const OUTPUT_TEXT: u16 = 7;
-const IGNORE_DEPTH: i32 = -65_536_000;
-const EJECT_PENALTY: i32 = -10_000;
 const INF_BAD: i32 = 10_000;
 const INF_PENALTY: i32 = 10_000;
-const AWFUL_BAD: i32 = MAX_HALFWORD;
 const TOP_MARK_CODE: usize = 0;
 const FIRST_MARK_CODE: usize = 1;
 const BOT_MARK_CODE: usize = 2;
@@ -58,9 +53,6 @@ const DIMEN_PAR__vfuzz: i32 = 9;
 const GLUE_PAR__top_skip: i32 = 9;
 const GLUE_PAR__split_top_skip: i32 = 10;
 const LOCAL__output_routine: i32 = 1;
-const SKIP_BASE: i32 = 2_254_359;
-const COUNT_BASE: i32 = 7_826_812;
-const SCALED_BASE: i32 = 8_941_203;
 
 extern "C" {}
 

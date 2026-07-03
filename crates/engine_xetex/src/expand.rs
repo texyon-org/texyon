@@ -35,7 +35,6 @@ const MMODE_C: i16 = 207; // xetex_format.h:370
 const ACTIVE_CHAR_C: u8 = 13; // xetex_format.h:246
 const UNDEFINED_CS: u8 = 103; // xetex_format.h:344
 const END_CS_NAME: u8 = 67; // xetex_format.h:305
-const NULL_CS: i32 = 2_228_225; // xetex_format.h:199
 const TOO_BIG_USV_C: i32 = 1_114_112; // xetex_format.h:22 (BIGGEST_USV + 1)
 const NORMAL_SCAN: u8 = 0; // xetex-constants.h:182 / xetex_format.h:420
 const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
@@ -43,34 +42,23 @@ const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
 // Module-private consts shared with scan.rs (duplicated, same value).
 const GARBAGE: i32 = 4_999_999 - 12; // MEM_TOP - 12 (xetex-constants.h:49)
 const TEMP_HEAD: i32 = 4_999_999 - 3; // MEM_TOP - 3
-const INSERTED: u16 = 5; // xetex-constants.h:204
 
 use crate::consts::{
-    ACTIVE_BASE, BOX_BASE, CS_TOKEN_FLAG, DISC_NODE, GLUE_NODE, HLIST_NODE, INT_BASE, KERN_NODE,
-    MATH_NODE, PENALTY_NODE, PRIM_EQTB_BASE, SINGLE_BASE, TOO_BIG_CHAR,
+    ACTIVE_BASE, BACKUP_HEAD, BOX_BASE, CS_TOKEN_FLAG, DISC_NODE, ELSE_CODE, END_TEMPLATE, FI_CODE,
+    FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_NODE, HLIST_NODE, INSERTED, INT_BASE, INT_PAR_TRACING_IFS,
+    KERN_NODE, MATH_NODE, MAX_COMMAND, NORMAL_SCANNER, NULL_CS, OR_CODE, PENALTY_NODE,
+    PRIM_EQTB_BASE, RELAX, SELECTOR_NEW_STRING, SINGLE_BASE, SPACER, TOO_BIG_CHAR,
+    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 
 // Command/token/code consts that live module-private in scan.rs (duplicated
 // here, same values — they are referenced bare by the moved expander match arms).
 const CALL: u8 = 113;
-const RELAX: u8 = 0;
-const SPACER: u8 = 10;
-const VMODE: i16 = 1;
 const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
-const MAX_COMMAND: u8 = 102;
-const BACKUP_HEAD: i32 = 4_999_999 - 13;
 const BIGGEST_USV: i32 = 0x10_FFFF;
-const ELSE_CODE: u8 = 3;
-const END_TEMPLATE: u8 = 117;
-const FI_CODE: u8 = 2;
-const FROZEN_ENDV: i32 = 2_243_226 + 6;
-const FROZEN_PRIMITIVE: i32 = 2_243_237; // FROZEN_CONTROL_SEQUENCE + 11
 const HASH_BASE: i32 = 2_228_226;
 const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
 const NO_EXPAND_FLAG: i32 = 0x10_FFFF + 2;
-const OR_CODE: u8 = 4;
-const UNDEFINED_PRIMITIVE: i32 = 0;
-const UNLESS_CODE: i32 = 32;
 const AAT_FONT_FLAG: i32 = 0xFFFF;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
 const END_MATCH_TOKEN: i32 = 0x1C00000;
@@ -79,12 +67,9 @@ const RIGHT_BRACE_LIMIT: i32 = 0x600000;
 const LEFT_BRACE_LIMIT: i32 = 0x400000;
 const SPACE_TOKEN: i32 = 0x1400020;
 const PROTECTED_TOKEN: i32 = 0x1C00001;
-const INT_PAR_TRACING_IFS: i32 = 58;
 
 // Command codes used bare in expand/conditional matches (xetex_format.h:352).
 const IF_TEST: u8 = 107;
-const NORMAL_SCANNER: u8 = 0;
-const SELECTOR_NEW_STRING: i32 = 21;
 
 extern "C" {
     fn usingGraphite(engine: *mut libc::c_void) -> bool;

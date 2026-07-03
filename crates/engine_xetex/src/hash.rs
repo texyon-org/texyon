@@ -1,7 +1,9 @@
 //! Control-sequence hash table lookups (id_lookup, prim_lookup).
 //!
 //! Translated from xetex-xetex0.c.
-use crate::consts::{BIGGEST_CHAR, EQTB_SIZE, TOO_BIG_CHAR};
+use crate::consts::{
+    BIGGEST_CHAR, EQTB_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_PRIMITIVE,
+};
 use crate::state::{EqtbState, StringsState};
 
 // xetex-constants.h:25
@@ -18,11 +20,6 @@ const PRIM_PRIME: i32 = 1777;
 const PRIM_BASE: i32 = 1;
 // xetex_format.h:200
 const HASH_BASE: i32 = 2_228_226;
-// xetex_format.h:204
-const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
-// xetex_format.h:224
-// xetex-constants.h:262
-const UNDEFINED_PRIMITIVE: i32 = 0;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum HashLookupError {

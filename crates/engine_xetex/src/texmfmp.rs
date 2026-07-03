@@ -30,10 +30,10 @@ extern "C" {
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
 }
 
+use crate::consts::INVALID_HANDLE;
+
 // TTBC_FILE_FORMAT_TEX = 26 (tectonic_bridge_core_generated.h:94).
 const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
-// INVALID_HANDLE = 0 (tectonic_bridge_core_generated.h:12).
-const INVALID_HANDLE: usize = 0;
 
 // `last_source_name` is an owned C string; its free/reassign lifecycle stays
 // in `remember_source_info` (no `tt_cleanup` edge — see state.rs::TexmfState).

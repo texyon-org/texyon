@@ -2,8 +2,10 @@
 //! translated from the format-I/O part of xetex-ini.c.
 
 use crate::consts::{
-    ACTIVE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, MAX_HALFWORD, MIN_HALFWORD,
-    SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR,
+    ACTIVE_BASE, CONTRIB_HEAD, CS_TOKEN_FLAG, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
+    HISTORY_FATAL_ERROR, INT_PAR_DAY, INT_PAR_MONTH, INT_PAR_YEAR, INVALID_HANDLE, MAX_FONT_MAX,
+    MAX_HALFWORD, MEM_TOP, MIN_HALFWORD, PC_INT_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
+    SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{sort_avail_in, TRE_MAX_STRINGS, TRE_POOL_SIZE};
 use crate::state::InteractionMode;
@@ -33,19 +35,10 @@ extern "C" {
     static mut tre_strings_free: i32;
 }
 
-const INVALID_HANDLE: usize = 0;
-const MEM_TOP: i32 = 4_999_999;
-const FONT_BASE: i32 = 0;
-const MAX_FONT_MAX: i32 = 9_000;
-const CONTRIB_HEAD: i32 = MEM_TOP - 1;
 const PAGE_HEAD: i32 = MEM_TOP - 2;
 const PRE_ADJUST_HEAD: i32 = MEM_TOP - 14;
 const HI_MEM_STAT_USAGE: i32 = 15;
-const HISTORY_FATAL_ERROR: i32 = 3;
 const EMPTY_STRING: i32 = 65_536;
-const INT_PAR_DAY: i32 = 21;
-const INT_PAR_MONTH: i32 = 22;
-const INT_PAR_YEAR: i32 = 23;
 const INT_PAR_TRACING_STATS: i32 = 31;
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -54,13 +47,9 @@ const FORMAT_HASH_PRIME: i32 = 8_501;
 const FORMAT_HYPH_PRIME: i32 = 607;
 const FORMAT_HASH_BASE: i32 = 2_228_226;
 const INT_VAL: i32 = 0;
-const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226;
-const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 const FONT_ID_BASE: i32 = 2_245_338;
 const PRIM_SIZE: i32 = 2_100;
 const FORMAT_INT_BASE: i32 = 7_826_729;
-const SELECTOR_LOG_ONLY: i32 = 18;
-const SELECTOR_NEW_STRING: i32 = 21;
 const TTBC_FILE_FORMAT_FORMAT: libc::c_int = 10;
 const SUP_MAX_STRINGS: i32 = 2_097_151;
 const SUP_FONT_MEM_SIZE: i32 = 147_483_647;
@@ -70,7 +59,6 @@ const UNDEFINED_CS: i32 = 103;
 const INTER_CHAR_VAL: i32 = 6;
 const AAT_FONT_FLAG: i32 = 0xFFFF;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
-const PC_INT_BASE: i32 = 7_826_729;
 
 #[inline]
 unsafe fn dump_bytes(

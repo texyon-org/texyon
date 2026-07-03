@@ -2,7 +2,10 @@
 //! plus the `effective_char` accessors. Relocated from `scan.rs` (= xetex0.c's
 //! font-loading group).
 
-use crate::consts::{INT_BASE, TOO_BIG_CHAR};
+use crate::consts::{
+    FONT_BASE, INT_BASE, INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_XETEX_TRACING_FONTS,
+    INVALID_HANDLE, TOO_BIG_CHAR,
+};
 use crate::errors::ErrorOutcome;
 use crate::ext::{
     aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping_in,
@@ -1184,9 +1187,7 @@ const INT_PAR_DEFAULT_HYPHEN_CHAR_LNF: i32 = 46;
 const INT_PAR_DEFAULT_SKEW_CHAR_LNF: i32 = 47;
 const INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR_RFI: i32 = 65;
 const INT_PAR_TRACING_LOST_CHARS_NC: i32 = 35;
-const INT_PAR_XETEX_GENERATE_ACTUAL_TEXT: i32 = 79;
 const INT_PAR_XETEX_USE_GLYPH_METRICS_NC: i32 = 72;
-const INVALID_HANDLE: usize = 0;
 const LIST_TAG_RFI: u16 = 2;
 const NATIVE_WORD_NODE_AT_NN: u16 = 41;
 const NATIVE_WORD_NODE_NN: u16 = 40;
@@ -1196,8 +1197,6 @@ const WHATSIT_NODE_NN: u16 = 8;
 const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
 
 // Shared consts duplicated from scan.rs (still used there too).
-const INT_PAR_XETEX_TRACING_FONTS: i32 = 77; // xetex_format.h:112
 const AAT_FONT_FLAG: i32 = 0xFFFF;
 const NATIVE_NODE_SIZE_NN: i32 = 6;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
-const FONT_BASE: i32 = 0;

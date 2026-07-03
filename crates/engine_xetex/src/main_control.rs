@@ -3,11 +3,17 @@
 
 use crate::state::GroupCode;
 use crate::consts::{
-    BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
-    DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE,
-    HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE,
-    MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_ONLY,
-    SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
+    ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, BACKED_UP, BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE,
+    CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
+    DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DISC_NODE, ENDV,
+    ETEX_PEN_BASE, FONT_BASE, GLUE_BASE, GLUE_NODE, GLUE_VAL, HLIST_NODE, HMODE, IGNORE_DEPTH,
+    INSERTED, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN,
+    INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN, KERN_NODE, LIGATURE_NODE, LOCAL_BASE,
+    MATH_CODE_BASE, MATH_NODE, MAX_COMMAND, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE,
+    MU_VAL_SCAN, NULL_CS, NULL_FLAG, OTHER_CHAR, PENALTY_NODE, PRIM_EQTB_BASE, REGISTER, RELAX,
+    RIGHT_BRACE, RULE_NODE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT,
+    SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACER,
+    SUB_BOX, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
@@ -27,39 +33,14 @@ extern "C" {
 const RIGHT_BRACE_TOKEN: i32 = 0x40_0000; // xetex-constants.h:351
 const LEFT_BRACE_TOKEN: i32 = 0x200000;
 const TAB_TOKEN: i32 = 0x80_0000; // xetex-constants.h:354
-const RIGHT_BRACE: u8 = 2;
-const MAX_COMMAND: u8 = 102;
-const ENDV: u8 = 9;
-const GLUE_VAL: i16 = 2;
-const ASSIGN_GLUE: u8 = 76;
-const SPACER: u8 = 10;
-const IGNORE_DEPTH: i32 = -65_536_000; // xetex_format.h:388
 const AAT_FONT_FLAG: i32 = 0xFFFF;
-const DIMEN_PAR_HANG_INDENT: i32 = 17; // xetex_format.h:139
-const DIMEN_PAR_HSIZE: i32 = 3; // xetex_format.h:125
 const END_M_CODE: u16 = 3;
-const HMODE: i16 = 104; // xetex_format.h:369
 const HMODE_I: i16 = 104; // xetex_format.h:369
 const HRULE: u8 = 36; // xetex_format.h:274
-const INSERTED: u16 = 5;
-const INT_PAR_HANG_AFTER: i32 = 41; // xetex_format.h:76
-const INT_PAR_LANGUAGE: i32 = 50; // xetex_format.h:85
-const INT_PAR_LEFT_HYPHEN_MIN: i32 = 51; // xetex_format.h:86
-const INT_PAR_LOOSENESS: i32 = 19; // xetex_format.h:54
-const INT_PAR_RIGHT_HYPHEN_MIN: i32 = 52; // xetex_format.h:87
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
 const PAGE_HEAD: i32 = 4_999_997; // MEM_TOP - 2 (xetex_format.h:30)
-const RELAX: u8 = 0;
 const SHAPE_REF: u16 = 120; // xetex_format.h:362
-const SUB_BOX: i32 = 2; // xetex_format.h:283
 const VADJUST: u8 = 38; // xetex_format.h:276
-const VMODE: i16 = 1;
-const ASSIGN_INT: u8 = 74;
-const ASSIGN_MU_GLUE: u8 = 77;
-const BACKED_UP: u16 = 3;
-const CHAR_GIVEN: u8 = 68;
-const COUNT_BASE: i32 = 7_826_812;
-const FONT_BASE: i32 = 0;
 const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
 const FROZEN_END_GROUP: i32 = 2_243_226 + 2; // xetex_format.h:201 + xetex-constants.h:57
 const FROZEN_RIGHT: i32 = 2_243_226 + 3; // xetex_format.h:201 + xetex-constants.h:58
@@ -69,28 +50,14 @@ const LANGUAGE_NODE_SUBTYPE: i16 = 4; // xetex_format.h:461 (whatsit subtype)
 const MARK_NODE: u16 = 4; // xetex_format.h:384
 const MATH_SHIFT_TOKEN: i32 = 0x600000;
 const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
-const MMODE: i16 = 207; // xetex_format.h:370
-const MU_GLUE: u16 = 99;
-const MU_SKIP_BASE: i32 = 2_254_615;
-const MU_VAL_SCAN: i16 = 3;
-const NULL_CS: i32 = 2_228_225; // xetex_format.h:199
-const OTHER_CHAR: u8 = 12;
 const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
-const REGISTER: u8 = 91;
-const SCALED_BASE: i32 = 8_941_203;
-const SELECTOR_NEW_STRING: i32 = 21;
-const SELECTOR_NO_PRINT: i32 = 16; // xetex-core.h:45
-const SET_FONT: u8 = 89;
-const SKIP_BASE: i32 = 2_254_359;
 const SKIP_CODE: i16 = 4; // xetex_format.h:674
 const TEMP_HEAD: i32 = 4_999_999 - 3;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 const WHATSIT_NODE: u16 = 8; // xetex_format.h:388
 const DIMEN_VAL: i16 = 1;
 const MU_VAL: i16 = 3;
-const CHAR_CLASS_LIMIT: i32 = 4096;
 const INTER_CHAR_VAL: i16 = 6;
-const UNDEFINED_PRIMITIVE: i32 = 0;
 const INTER_CHAR_TEXT: u16 = 17; // xetex-constants.h:216
 const BACKED_UP_CHAR: u16 = 4;
 const TOKEN_LIST_INPUT: u16 = 0;

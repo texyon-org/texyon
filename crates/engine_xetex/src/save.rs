@@ -1,5 +1,8 @@
 //! Save-stack management functions translated from `xetex/xetex-xetex0.c`.
-use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
+use crate::consts::{
+    EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, TEX_NULL,
+    UNDEFINED_CONTROL_SEQUENCE,
+};
 use crate::state::{EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 
 use crate::mem_types::MemoryWord;
@@ -18,14 +21,12 @@ const LEVEL_BOUNDARY: u16 = 3;
 
 // Grouping level constants (xetex-constants.h:89–90).
 const LEVEL_ZERO: u16 = 0;
-const LEVEL_ONE: u16 = 1;
 
 // Brace-token limits for align_state tracking (xetex-constants.h:350,352).
 const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
 const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 
 // eqtb range constants (xetex_format.h:198,204,224).
-const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 
 // ---------------------------------------------------------------------------
 // Cold-path abort sentinel
@@ -189,7 +190,6 @@ pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Option<
 // ---------------------------------------------------------------------------
 
 // INT_PAR__mag = 17 (xetex_format.h:52).
-const INT_PAR_MAG: i32 = 17;
 
 /// Validates `\mag`. Both recoverable `int_error` sites return an
 /// [`ErrorOutcome`]; a non-`Continue` outcome is propagated (the original would
@@ -346,7 +346,6 @@ const POINTER_NODE_SIZE: i32 = 2;
 const WORD_NODE_SIZE: i32 = 3;
 const MARK_CLASS_NODE_SIZE: i32 = 4;
 const INDEX_NODE_SIZE: i32 = 33;
-const MEM_TOP: i32 = 4_999_999;
 
 // SA register type values (xetex_format.h:568–570; xetex-constants.h:288,300).
 const DIMEN_VAL: u16 = 1;

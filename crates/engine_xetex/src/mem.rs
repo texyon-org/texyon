@@ -1,6 +1,9 @@
 //! Memory arena types and allocator functions translated from
 //! `xetex/xetex-xetex0.c`.
-use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE};
+use crate::consts::{
+    GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NATIVE_GLYPH_INFO_SIZE,
+};
+pub(crate) use crate::consts::TEX_NULL;
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
     MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
@@ -10,8 +13,6 @@ use crate::units::{FontId, MemIdx, MemPtr, Scaled};
 
 
 // TeX constants (xetex-constants.h / xetex_format.h)
-pub(crate) const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
-const MEM_TOP: i32 = 4_999_999;
 const NORMAL: u16 = 0;
 // Node type values (mem[p].b16.s1)
 // eqtb base indices (xetex_format.h)
@@ -19,8 +20,6 @@ const NORMAL: u16 = 0;
 // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
 const EMPTY: i32 = 0; // xetex-constants.h:230
 
-// native node glyph info size in bytes (xetex-constants.h:304)
-const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
 // C functions not yet translated — still live in xetex-xetex0.c.
 extern "C" {

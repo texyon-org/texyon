@@ -4,8 +4,9 @@
 //! `just_reverse`.
 
 use crate::consts::{
-    BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, GLUE_SPEC_SIZE, INT_BASE, KERN_NODE, MATH_NODE,
-    MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, RULE_NODE_SIZE, SMALL_NODE_SIZE,
+    BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, GLUE_SPEC_SIZE, IGNORE_DEPTH, INT_BASE,
+    KERN_NODE, MATH_NODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, RULE_NODE_SIZE,
+    SMALL_NODE_SIZE,
 };
 use crate::errors::ErrorOutcome;
 use crate::ext::measure_native_node;
@@ -25,7 +26,6 @@ use crate::units::{MemIdx, MemPtr, Scaled};
 // Module-private consts shared with scan.rs (TEMP_HEAD/IGNORE_DEPTH still used
 // there too, so duplicated rather than relocated — same value).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
-const IGNORE_DEPTH: i32 = -65_536_000; // xetex_format.h:388
 
 // ---------------------------------------------------------------------------
 // flush_node_list — NODE_type dispatch now goes through `MemState::classify`

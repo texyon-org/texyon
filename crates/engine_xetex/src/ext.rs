@@ -1,7 +1,10 @@
 // translated from xetex-ext.c
 use crate::state::EngineState;
 
-use crate::consts::{CS_TOKEN_FLAG, CUR_FONT_LOC, INT_BASE};
+use crate::consts::{
+    CS_TOKEN_FLAG, CUR_FONT_LOC, INSERTED, INT_BASE, INT_PAR_XETEX_TRACING_FONTS, LEFT_SIDE,
+    NATIVE_GLYPH_INFO_SIZE, RIGHT_SIDE, XETEX_INT,
+};
 use crate::main_control::{mc_propagate_error, new_graf_in};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::pic::load_picture_in;
@@ -15,7 +18,6 @@ type XeTeXLayoutEngine = *mut c_void;
 type RawPlatformFontRef = *mut c_void;
 
 const TTBC_FILE_FORMAT_MISC_FONTS: c_int = 41;
-const XETEX_INT: i32 = 27;
 const XETEX_FEATURE_NAME_CODE: i32 = 35;
 const XETEX_SELECTOR_NAME_CODE: i32 = 36;
 const XETEX_COUNT_GLYPHS: i32 = 28 - XETEX_INT;
@@ -53,7 +55,6 @@ const UTF16_NATIVE: u16 = 3;
 #[cfg(target_endian = "little")]
 const UTF16_NATIVE: u16 = 4;
 const FONT_FLAGS_COLORED: i32 = 0x01;
-const INT_PAR_XETEX_TRACING_FONTS: i32 = 77; // xetex_format.h:112
 
 static mut SAVED_MAPPING_NAME: *mut c_char = ptr::null_mut();
 
@@ -255,8 +256,6 @@ extern "C" {
     fn CFRelease(cf: *const c_void);
 }
 
-const LEFT_SIDE: i32 = 0;
-const RIGHT_SIDE: i32 = 1;
 const FONT_FLAGS_VERTICAL: i32 = 0x02;
 const UBRK_LINE: c_int = 2;
 const UBIDI_RTL: c_int = 1;
@@ -266,7 +265,6 @@ const XDV_FLAG_COLORED: u16 = 0x0200;
 const XDV_FLAG_EXTEND: u16 = 0x1000;
 const XDV_FLAG_SLANT: u16 = 0x2000;
 const XDV_FLAG_EMBOLDEN: u16 = 0x4000;
-const NATIVE_GLYPH_INFO_SIZE: usize = 10;
 
 static mut BRK_ITER: *mut c_void = ptr::null_mut();
 static mut BRK_LOCALE_STR_NUM: i32 = 0;
@@ -2976,5 +2974,4 @@ const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING_DE: i32 = 76;
 // Shared consts duplicated from scan.rs with the ext group (still used there too).
 const LEFT_BRACE_TOKEN: i32 = 0x200000;
 const WRITE_NODE_SIZE: i16 = 2; // xetex-constants.h:112
-const INSERTED: u16 = 5;
 const TEMP_HEAD: i32 = 4_999_999 - 3;

@@ -3,9 +3,16 @@
 //! Translated from xetex-xetex0.c.
 use crate::state::GroupCode;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE,
-    EQTB_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD,
-    PENALTY_NODE, PRIM_EQTB_BASE, SF_CODE_BASE, SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
+    ACTIVE_BASE, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, BACKED_UP, BACKUP_HEAD, BIGGEST_CHAR,
+    BOX_BASE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, CLOSED, COUNT_BASE, CS_TOKEN_FLAG,
+    CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, END_TEMPLATE, ENDV, EQTB_SIZE, FI_CODE, FI_OR_ELSE,
+    FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_NODE, GLUE_VAL, INT_BASE,
+    INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, JUST_OPEN, KERN_NODE,
+    LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_NODE, MAX_COMMAND,
+    MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN, NEW_LINE, NORMAL_SCANNER, NUMBER_MATH_FAMILIES,
+    OR_CODE, PENALTY_NODE, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE,
+    SELECTOR_NEW_STRING, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACER, SPACE_CODE, TEX_NULL,
+    TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE, XETEX_INT,
 };
 use crate::ext::aat_font_get;
 use crate::ext::aat_font_get_1;
@@ -48,8 +55,6 @@ extern "C" {
 }
 
 // Value-type constants for scan_glue (xetex_format.h:568–570).
-const GLUE_VAL: i16 = 2;
-const MU_VAL_SCAN: i16 = 3;
 
 // INT_BASE + INT_PAR__xetex_hyphenatable_length offset for max_hyphenatable_length
 // (xetex_format.h:568, xetex_format.h:115; xetex_format.h:7826729 = INT_BASE).
@@ -59,26 +64,20 @@ const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095; // xetex-constants.h:334
 // xetex-constants.h:26
 const BIGGEST_USV: i32 = 0x10_FFFF;
 // xetex-constants.h:335
-const CHAR_CLASS_LIMIT: i32 = 4096;
 // xetex-constants.h:343
 const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
 // xetex-constants.h:25
 // xetex_format.h (NUMBER_MATH_FAMILIES)
-const NUMBER_MATH_FAMILIES: i32 = 256;
 
 // --- Constants for scan_something_internal / scan_int ---
 // Command codes (xetex_format.h).
 const DEF_CODE: u8 = 86;
 const XETEX_DEF_CODE: u8 = 87;
 const DEF_FAMILY: u8 = 88;
-const SET_FONT: u8 = 89;
 const DEF_FONT: u8 = 90;
 const TOKS_REGISTER: u8 = 72;
 const ASSIGN_TOKS: u8 = 73;
-const ASSIGN_INT: u8 = 74;
 const ASSIGN_DIMEN: u8 = 75;
-const ASSIGN_GLUE: u8 = 76;
-const ASSIGN_MU_GLUE: u8 = 77;
 const ASSIGN_FONT_DIMEN: u8 = 78;
 const ASSIGN_FONT_INT: u8 = 79;
 const SET_AUX: u8 = 80;
@@ -87,11 +86,9 @@ const SET_PAGE_DIMEN: u8 = 82;
 const SET_PAGE_INT: u8 = 83;
 const SET_BOX_DIMEN: u8 = 84;
 const SET_SHAPE: u8 = 85;
-const CHAR_GIVEN: u8 = 68;
 const MATH_GIVEN: u8 = 69;
 const XETEX_MATH_GIVEN: u8 = 70;
 const LAST_ITEM: u8 = 71;
-const REGISTER: u8 = 91;
 const IGNORE_SPACES: u8 = 39;
 const MIN_INTERNAL: u8 = 68;
 const MAX_INTERNAL: u8 = 91;
@@ -103,26 +100,16 @@ const TOK_VAL: i16 = 5;
 const IDENT_VAL: i16 = 4;
 const INTER_CHAR_VAL: i16 = 6;
 // Mode codes.
-const VMODE: i16 = 1;
 // eqtb bases (xetex_format.h).
-const SKIP_BASE: i32 = 2_254_359;
-const MU_SKIP_BASE: i32 = 2_254_615;
-const COUNT_BASE: i32 = 7_826_812;
-const SCALED_BASE: i32 = 8_941_203;
 const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
 const HASH_BASE: i32 = 2_228_226;
 const FROZEN_RELAX: i32 = 2_243_233; // FROZEN_CONTROL_SEQUENCE + 7
-const FROZEN_PRIMITIVE: i32 = 2_243_237; // FROZEN_CONTROL_SEQUENCE + 11
-const UNDEFINED_PRIMITIVE: i32 = 0;
 // LOCAL__ offsets (xetex_format.h:172,183).
-const LOCAL_PAR_SHAPE: i32 = 0;
 const LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
 // Font flags (xetex-ext.h:47–48).
 const AAT_FONT_FLAG: i32 = 0xFFFF;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
 // LEFT/RIGHT side (xetex_layout/src/c_api.rs).
-const LEFT_SIDE: i32 = 0;
-const RIGHT_SIDE: i32 = 1;
 // LP/RP code bases for get_cp_code (xetex-constants.h:377–378).
 const LP_CODE_BASE: i32 = 2;
 const RP_CODE_BASE: i32 = 3;
@@ -185,18 +172,12 @@ const ETEX_MU: i32 = 66;
 const ETEX_EXPR: i32 = 67;
 const MU_TO_GLUE_CODE: i32 = 65;
 const GLUE_TO_MU_CODE: i32 = 66;
-const XETEX_INT: i32 = 27;
 const XETEX_DIM: i32 = 55;
 const LAST_NODE_TYPE_CODE_VAL: i32 = 3; // distinct name from other LAST_NODE_ uses
                                         // Node type codes (xetex_format.h:389–437).
 const UNSET_NODE: u16 = 13;
 const END_M_CODE: u16 = 3;
-const MU_GLUE: u16 = 99;
 // Conditional codes (xetex_format.h:537–539).
-const FI_CODE: u8 = 2;
-const ELSE_CODE: u8 = 3;
-const OR_CODE: u8 = 4;
-const UNLESS_CODE: i32 = 32;
 // Engine version constants (xetex-constants.h:255,279).
 const ETEX_VERSION: i32 = 2;
 const XETEX_VERSION: i32 = 0;
@@ -349,15 +330,10 @@ pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
 // ---------------------------------------------------------------------------
 
 // Command-code constants (xetex_format.h / xetex-constants.h).
-const MAX_COMMAND: u8 = 102;
 const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
-const SPACER: u8 = 10;
 const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
 const CALL: u8 = 113;
-const END_TEMPLATE: u8 = 117;
-const ENDV: u8 = 9;
 // FROZEN_CONTROL_SEQUENCE + 6 (xetex_format.h:201, xetex-constants.h:61)
-const FROZEN_ENDV: i32 = 2_243_226 + 6;
 // END_MATCH_TOKEN + 1 (xetex-constants.h:360–361)
 const PROTECTED_TOKEN: i32 = 0x1C00001;
 
@@ -391,8 +367,6 @@ pub(crate) fn scan_optional_equals_in(st: &mut crate::state::EngineState) -> Res
 }
 
 // Command-code values for scan_left_brace (xetex_format.h).
-const RELAX: u8 = 0;
-const LEFT_BRACE: u8 = 1;
 const LEFT_BRACE_TOKEN: i32 = 0x200000;
 
 // ---------------------------------------------------------------------------
@@ -420,9 +394,7 @@ pub(crate) fn get_x_or_protected_in(st: &mut crate::state::EngineState) -> Resul
 // ---------------------------------------------------------------------------
 
 // MEM_TOP - 13 (xetex_format.h:30, xetex-constants.h:50)
-const BACKUP_HEAD: i32 = 4_999_999 - 13;
 // xetex-constants.h:202
-const BACKED_UP: u16 = 3;
 
 // ---------------------------------------------------------------------------
 // scan_expr
@@ -447,7 +419,6 @@ const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 // xetex-constants.h:187
 const ABSORBING: u8 = 5;
 // xetex_format.h:232
-const RIGHT_BRACE: u8 = 2;
 // xetex-constants.h:352
 const RIGHT_BRACE_LIMIT: i32 = 0x600000;
 // MEM_TOP - 3 (xetex-constants.h:40)
@@ -579,10 +550,8 @@ pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i3
 // ---------------------------------------------------------------------------
 
 // INT_BASE = 7_826_729 (xetex_format.h); INT_PAR__new_line_char = 49
-const INT_PAR_NEW_LINE_CHAR: i32 = 49; // xetex_format.h:84
 const INT_PAR_TRACING_SCAN_TOKENS: i32 = 59; // xetex_format.h:94
                                              // xetex-core.h / xetex-xetexd.h:430
-const SELECTOR_NEW_STRING: i32 = 21;
 
 // ---------------------------------------------------------------------------
 // str_toks_cat / str_toks
@@ -679,16 +648,13 @@ pub(crate) fn str_toks_cat_in(
 // xetex_format.h:349,350,537; xetex-constants.h:183
 const SKIPPING: u8 = 1;
 const IF_TEST: u8 = 107;
-const FI_OR_ELSE: u8 = 108;
 // INT_PAR__tracing_ifs = 58 (xetex_format.h:93)
-const INT_PAR_TRACING_IFS: i32 = 58;
 
 // ---------------------------------------------------------------------------
 // scan_toks
 // ---------------------------------------------------------------------------
 
 // xetex-constants.h:182,184
-const NORMAL_SCANNER: u8 = 0;
 const DEFINING: u8 = 2;
 // xetex-constants.h:297 / xetex_format.h:237
 const MAC_PARAM: u8 = 6;
@@ -709,11 +675,7 @@ const ZERO_TOKEN: i32 = OTHER_TOKEN + b'0' as i32;
 // ---------------------------------------------------------------------------
 
 // xetex-constants.h:268,277,223
-const JUST_OPEN: u8 = 1;
-const CLOSED: u8 = 2;
-const NEW_LINE: u16 = 33;
 // INT_PAR__end_line_char = 48 (xetex_format.h:83)
-const INT_PAR_END_LINE_CHAR: i32 = 48;
 
 /// translated from xetex-xetex0.c:7268 (read_toks)
 pub(crate) fn read_toks_in(
@@ -870,8 +832,6 @@ pub(crate) fn read_toks_in(
 // scan_font_ident
 // ---------------------------------------------------------------------------
 
-const FONT_BASE: i32 = 0;
-const SPACE_CODE: i32 = 2;
 const SPACE_SHRINK_CODE: i32 = 4;
 
 // ---------------------------------------------------------------------------
@@ -997,7 +957,6 @@ pub(crate) fn tokens_to_string_in(
 // get_r_token
 // ---------------------------------------------------------------------------
 
-const FROZEN_CONTROL_SEQUENCE: i32 = 2_243_226; // xetex_format.h:201
 const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE; // xetex-constants.h:55
 
 // translated from xetex-xetex0.c:10407 (get_r_token)

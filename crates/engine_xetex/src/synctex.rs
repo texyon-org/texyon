@@ -2,7 +2,8 @@
  * Translated to Rust from xetex-synctex.c. */
 
 use crate::consts::{
-    BOX_NODE_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, MEDIUM_NODE_SIZE, RULE_NODE, RULE_NODE_SIZE,
+    BOX_NODE_SIZE, GLUE_NODE, INT_BASE, INVALID_HANDLE, KERN_NODE, MEDIUM_NODE_SIZE, RULE_NODE,
+    RULE_NODE_SIZE,
 };
 use libc::{c_char, c_int, size_t};
 use std::ptr;
@@ -16,7 +17,6 @@ const SYNCTEX_FIELD_SIZE: i32 = 1;
 // Node-type constants matching xetex-synctex.c.
 
 const SYNCTEX_VERSION: i32 = 1;
-const INVALID_HANDLE: usize = 0;
 
 extern "C" {
     fn ttstub_output_open(path: *const c_char, is_gz: c_int) -> usize;
