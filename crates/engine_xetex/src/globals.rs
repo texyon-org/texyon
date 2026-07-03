@@ -168,13 +168,6 @@ mod raw {
 // ---------------------------------------------------------------------------
 
 
-/// Sets the engine's `arith_error` flag.
-#[inline]
-pub(crate) fn set_arith_error(v: bool) {
-    crate::state::with_state_mut(|state| {
-        state.errors.arith_error = v;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // tex_remainder

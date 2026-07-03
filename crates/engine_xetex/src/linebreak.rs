@@ -479,7 +479,7 @@ pub fn pop_node(linebreak: &mut LinebreakState) -> Option<i32> {
 }
 
 // translated from xetex-linebreak.c:2692 (total_pw)
-pub fn total_pw(
+pub fn total_pw(errors: &mut crate::state::ErrorState, 
     mem: &mut MemState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
@@ -530,7 +530,7 @@ pub fn total_pw(
     // `char_pw_in` is fully threaded (mem/font reads only, no `with_state`
     // bridge), so the protrusion widths fold directly into this borrow rather
     // than running after it drops (the session-76 split is no longer needed).
-    Some(char_pw_in(mem, fonts, linebreak, l, 0) + char_pw_in(mem, fonts, linebreak, r, 1))
+    Some(char_pw_in(errors, mem, fonts, linebreak, l, 0) + char_pw_in(errors, mem, fonts, linebreak, r, 1))
 }
 
 // translated from xetex-linebreak.c:2731 (find_protchar_left)
@@ -650,7 +650,7 @@ pub(crate) enum MarginKernAbort {
     PdfError,
 }
 
-pub fn insert_right_margin_kern(
+pub fn insert_right_margin_kern(errors: &mut crate::state::ErrorState, 
     mem: &mut MemState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
@@ -661,7 +661,7 @@ pub fn insert_right_margin_kern(
     let (p, ptmp) =
         right_margin_kern_target(mem, linebreak, q, disc_break).ok_or(MarginKernAbort::PdfError)?;
 
-    let w = char_pw_in(mem, fonts, linebreak, p, 1);
+    let w = char_pw_in(errors, mem, fonts, linebreak, p, 1);
     if w == 0 {
         return Ok(q);
     }
@@ -688,7 +688,7 @@ fn left_margin_kern_target(
     find_protchar_left(mem, linebreak, q, false)
 }
 
-pub fn insert_left_margin_kern(
+pub fn insert_left_margin_kern(errors: &mut crate::state::ErrorState, 
     mem: &mut MemState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
@@ -697,7 +697,7 @@ pub fn insert_left_margin_kern(
 ) -> Result<i32, MarginKernAbort> {
     let p = left_margin_kern_target(mem, linebreak, q).ok_or(MarginKernAbort::PdfError)?;
 
-    let w = char_pw_in(mem, fonts, linebreak, p, 0);
+    let w = char_pw_in(errors, mem, fonts, linebreak, p, 0);
     if w == 0 {
         return Ok(q);
     }
@@ -2244,7 +2244,7 @@ fn update_lr_stack_checked(
     }
 }
 
-fn post_line_break_prefix(
+fn post_line_break_prefix(errors: &mut crate::state::ErrorState, 
     mem: &mut MemState,
     scanner: &mut ScannerState,
     linebreak: &mut LinebreakState,
@@ -2358,7 +2358,7 @@ fn post_line_break_prefix(
     }
 
     if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
-        q = insert_right_margin_kern(
+        q = insert_right_margin_kern(errors, 
             mem,
             fonts,
             linebreak,
@@ -2409,7 +2409,7 @@ fn post_line_break_prefix(
     mem.set_b32s1(TEMP_HEAD, r);
 
     if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 0 {
-        q = insert_left_margin_kern(mem, fonts, linebreak, q, linebreak.last_leftmost_char)
+        q = insert_left_margin_kern(errors, mem, fonts, linebreak, q, linebreak.last_leftmost_char)
             .map_err(|e| match e {
                 MarginKernAbort::PdfError => PostLineAbort::HlistStackFailure,
                 MarginKernAbort::Overflow => PostLineAbort::Node(NodeRecycleAbort::Overflow),
@@ -2627,6 +2627,7 @@ fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBr
     let mut cur_line = st.input.cur_list.prev_graf + 1;
     loop {
         let hpack = match post_line_break_prefix(
+            &mut st.errors,
             &mut st.mem,
             &mut st.scanner,
             &mut st.linebreak,
@@ -3102,7 +3103,7 @@ unsafe fn try_break(
             artificial_demerits = false;
             shortfall = line_width - linebreak.cur_active_width[1];
             if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 1 {
-                shortfall += total_pw(mem, fonts, linebreak, r, linebreak.cur_p)
+                shortfall += total_pw(errors, mem, fonts, linebreak, r, linebreak.cur_p)
                     .ok_or(TryBreakAbort::HlistStackFailure)?;
             }
         }
@@ -3912,7 +3913,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
 // ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:6968 (char_pw)
-pub fn char_pw_in(
+pub fn char_pw_in(errors: &mut crate::state::ErrorState, 
     mem: &MemState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
@@ -3944,7 +3945,7 @@ pub fn char_pw_in(
             // NATIVE_NODE_glyph_info_ptr != NULL
             let f = whatsit_node_in(mem, p).native_font(mem).0; // NATIVE_NODE_font
             let cp = unsafe { real_get_native_word_cp(mem.node_addr(p), side as libc::c_int) };
-            return crate::scaled_math::round_xn_over_d(
+            return crate::scaled_math::round_xn_over_d(errors, 
                 fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
                 cp,
                 1000,
@@ -3964,7 +3965,7 @@ pub fn char_pw_in(
         let f = w.native_font(mem).0; // mem[p + 4].b16.s2
         let code = w.native_glyph(mem) as u32; // mem[p + 4].b16.s1 (char code)
         let cp = unsafe { get_cp_code(f, code, side as i32) };
-        return crate::scaled_math::round_xn_over_d(
+        return crate::scaled_math::round_xn_over_d(errors, 
             fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
             cp,
             1000,
@@ -3992,7 +3993,7 @@ pub fn char_pw_in(
     if c == 0 {
         return 0;
     }
-    crate::scaled_math::round_xn_over_d(
+    crate::scaled_math::round_xn_over_d(errors, 
         fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
         c,
         1000,

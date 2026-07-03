@@ -8,7 +8,6 @@
 //!
 //! See `plan/04-migration-order.md` Phase 1 for context on why these
 //! functions are the very first ones translated.
-use crate::globals::set_arith_error;
 
 extern "C" {}
 
@@ -213,7 +212,7 @@ pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
 /// (ties away from zero). Does not touch `tex_remainder`.
 ///
 /// translated from xetex-scaledmath.c:137 (round_xn_over_d)
-pub fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
+pub fn round_xn_over_d(errors: &mut crate::state::ErrorState, mut x: i32, n: i32, d: i32) -> i32 {
     // scaled_t is i32
 
     let positive: bool;
@@ -230,7 +229,7 @@ pub fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
     let v = (u % d).wrapping_mul(32768).wrapping_add(t % 32768);
 
     if u / d >= 32768 {
-        set_arith_error(true);
+        errors.arith_error = true;
     } else {
         u = 32768i32.wrapping_mul(u / d).wrapping_add(v / d);
     }
@@ -256,7 +255,7 @@ pub fn round_xn_over_d(mut x: i32, n: i32, d: i32) -> i32 {
 /// ±0x7FFFFFFF if |p/q| >= 8.
 ///
 /// translated from xetex-scaledmath.c:165 (make_frac)
-pub fn make_frac(mut p: i32, mut q: i32) -> i32 {
+pub fn make_frac(errors: &mut crate::state::ErrorState, mut p: i32, mut q: i32) -> i32 {
     let mut negative = p < 0;
     if negative {
         p = -p;
@@ -271,7 +270,7 @@ pub fn make_frac(mut p: i32, mut q: i32) -> i32 {
     p %= q;
 
     if n >= 8 {
-        set_arith_error(true);
+        errors.arith_error = true;
         return if negative { -0x7FFF_FFFF } else { 0x7FFF_FFFF };
     }
 
@@ -312,7 +311,7 @@ pub fn make_frac(mut p: i32, mut q: i32) -> i32 {
 /// a scaled integer. Sets `arith_error` on overflow.
 ///
 /// translated from xetex-scaledmath.c:220 (take_frac)
-pub fn take_frac(mut q: i32, mut f: i32) -> i32 {
+pub fn take_frac(errors: &mut crate::state::ErrorState, mut q: i32, mut f: i32) -> i32 {
     let mut negative = f < 0;
     if negative {
         f = -f;
@@ -331,7 +330,7 @@ pub fn take_frac(mut q: i32, mut f: i32) -> i32 {
         if q <= 0x7FFF_FFFF / nn {
             nn * q
         } else {
-            set_arith_error(true);
+            errors.arith_error = true;
             0x7FFF_FFFF
         }
     };
@@ -367,7 +366,7 @@ pub fn take_frac(mut q: i32, mut f: i32) -> i32 {
 
     let be_careful = n - 0x7FFF_FFFF;
     if be_careful + p > 0 {
-        set_arith_error(true);
+        errors.arith_error = true;
         n = 0x7FFF_FFFF - p;
     }
 
@@ -515,7 +514,8 @@ pub fn unif_rand(errors: &mut crate::state::ErrorState, x: i32) -> i32 {
         errors.j_random -= 1;
     }
 
-    let y = take_frac(x.abs(), errors.randoms[errors.j_random as usize]);
+    let r = errors.randoms[errors.j_random as usize];
+    let y = take_frac(errors, x.abs(), r);
     if y == x.abs() {
         0
     } else if x > 0 {
@@ -591,7 +591,8 @@ pub unsafe fn norm_rand(st: &mut crate::state::EngineState) -> i32 {
             } else {
                 st.errors.j_random -= 1;
             }
-            let xi = take_frac(112429, st.errors.randoms[st.errors.j_random as usize] - 0x0800_0000);
+            let r = st.errors.randoms[st.errors.j_random as usize] - 0x0800_0000;
+            let xi = take_frac(&mut st.errors, 112429, r);
 
             if st.errors.j_random == 0 {
                 new_randoms(&mut st.errors);
@@ -607,7 +608,7 @@ pub unsafe fn norm_rand(st: &mut crate::state::EngineState) -> i32 {
             }
         }
 
-        let xi = make_frac(x, u);
+        let xi = make_frac(&mut st.errors, x, u);
         let l = 139_548_960_i32 - m_log(st, u);
         if ab_vs_cd(1024, l, xi, xi) >= 0 {
             return xi;
@@ -637,16 +638,6 @@ mod tests {
     //! assertion would poison the mutex for the rest of the run.
 
     use super::*;
-    use crate::globals::set_arith_error;
-    use std::sync::Mutex;
-
-    static GLOBALS_LOCK: Mutex<()> = Mutex::new(());
-
-    fn lock() -> std::sync::MutexGuard<'static, ()> {
-        GLOBALS_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
 
     // -----------------------------------------------------------------
     // tex_round
@@ -803,22 +794,20 @@ mod tests {
 
     #[test]
     fn round_xn_over_d_rounds_half_up() {
-        let _g = lock();
-        set_arith_error(false);
+        let mut e = crate::state::ErrorState::default();
         // 10 * 3 / 4 = 7.5 → rounds to 8
-        assert_eq!(round_xn_over_d(10, 3, 4), 8);
+        assert_eq!(round_xn_over_d(&mut e, 10, 3, 4), 8);
         // 10 * 3 / 5 = 6.0
-        assert_eq!(round_xn_over_d(10, 3, 5), 6);
+        assert_eq!(round_xn_over_d(&mut e, 10, 3, 5), 6);
         // 10 * 2 / 4 = 5.0 (exact, no rounding)
-        assert_eq!(round_xn_over_d(10, 2, 4), 5);
+        assert_eq!(round_xn_over_d(&mut e, 10, 2, 4), 5);
     }
 
     #[test]
     fn round_xn_over_d_negative_x() {
-        let _g = lock();
-        set_arith_error(false);
+        let mut e = crate::state::ErrorState::default();
         // -10 * 3 / 4 = -7.5 → rounds away from zero to -8
-        assert_eq!(round_xn_over_d(-10, 3, 4), -8);
+        assert_eq!(round_xn_over_d(&mut e, -10, 3, 4), -8);
     }
 }
 
