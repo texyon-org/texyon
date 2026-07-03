@@ -2714,143 +2714,116 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
         let mut delta = 0;
         let action = 'reswitch: loop {
             delta = 0;
-            match NodeType::from_raw(st.mem.b16s1(q)) {
-                Ok(NodeType::BinNoad) => {
-                    match NodeType::from_raw(r_type) {
-                        Ok(NodeType::BinNoad)
-                        | Ok(NodeType::OpNoad)
-                        | Ok(NodeType::RelNoad)
-                        | Ok(NodeType::OpenNoad)
-                        | Ok(NodeType::PunctNoad)
-                        | Ok(NodeType::LeftNoad) => {
-                            assume_noad(q).set_noad_type(&mut st.mem, NodeType::OrdNoad);
-                            continue 'reswitch;
+            match st.mem.classify(MemIdx::new(q)) {
+                Ok(AnyNode::Noad(qn)) => match qn.noad_type(&st.mem) {
+                    NodeType::BinNoad => {
+                        match NodeType::from_raw(r_type) {
+                            Ok(NodeType::BinNoad)
+                            | Ok(NodeType::OpNoad)
+                            | Ok(NodeType::RelNoad)
+                            | Ok(NodeType::OpenNoad)
+                            | Ok(NodeType::PunctNoad)
+                            | Ok(NodeType::LeftNoad) => {
+                                qn.set_noad_type(&mut st.mem, NodeType::OrdNoad);
+                                continue 'reswitch;
+                            }
+                            _ => {}
                         }
-                        _ => {}
+                        break 'reswitch FirstPass::ProcessNucleus;
                     }
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::RelNoad)
-                | Ok(NodeType::CloseNoad)
-                | Ok(NodeType::PunctNoad)
-                | Ok(NodeType::RightNoad) => {
-                    if r_type == NodeType::BinNoad.as_raw() {
-                        assume_noad(r).set_noad_type(&mut st.mem, NodeType::OrdNoad);
+                    nt @ (NodeType::RelNoad
+                    | NodeType::CloseNoad
+                    | NodeType::PunctNoad
+                    | NodeType::RightNoad) => {
+                        if r_type == NodeType::BinNoad.as_raw() {
+                            assume_noad(r).set_noad_type(&mut st.mem, NodeType::OrdNoad);
+                        }
+                        if nt == NodeType::RightNoad {
+                            break 'reswitch FirstPass::DoneWithNoad;
+                        }
+                        break 'reswitch FirstPass::ProcessNucleus;
                     }
-                    if st.mem.b16s1(q) == NodeType::RightNoad.as_raw() {
-                        break 'reswitch FirstPass::DoneWithNoad;
-                    }
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::LeftNoad) => break 'reswitch FirstPass::DoneWithNoad,
-                Ok(NodeType::FractionNoad) => {
-                    make_fraction_in(st, assume_noad(q))?;
-                    break 'reswitch FirstPass::CheckDimensions;
-                }
-                Ok(NodeType::OpNoad) => {
-                    delta = make_op_in(st, assume_noad(q))?;
-                    if st.mem.b16s0(q) == LIMITS {
+                    NodeType::LeftNoad => break 'reswitch FirstPass::DoneWithNoad,
+                    NodeType::FractionNoad => {
+                        make_fraction_in(st, qn)?;
                         break 'reswitch FirstPass::CheckDimensions;
                     }
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::OrdNoad) => {
-                    make_ord_in(st, assume_noad(q))?;
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::OpenNoad) | Ok(NodeType::InnerNoad) => {
-                    break 'reswitch FirstPass::ProcessNucleus
-                }
-                Ok(NodeType::RadicalNoad) => {
-                    make_radical_in(st, assume_noad(q))?;
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::OverNoad) => {
-                    make_over_in(st, assume_noad(q))?;
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::UnderNoad) => {
-                    make_under_in(st, assume_noad(q))?;
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::AccentNoad) => {
-                    make_math_accent_in(st, assume_noad(q))?;
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::VcenterNoad) => {
-                    make_vcenter_in(st, assume_noad(q))?;
-                    break 'reswitch FirstPass::ProcessNucleus;
-                }
-                Ok(NodeType::Style) => {
+                    NodeType::OpNoad => {
+                        delta = make_op_in(st, qn)?;
+                        if st.mem.b16s0(q) == LIMITS {
+                            break 'reswitch FirstPass::CheckDimensions;
+                        }
+                        break 'reswitch FirstPass::ProcessNucleus;
+                    }
+                    NodeType::OrdNoad => {
+                        make_ord_in(st, qn)?;
+                        break 'reswitch FirstPass::ProcessNucleus;
+                    }
+                    NodeType::OpenNoad | NodeType::InnerNoad => {
+                        break 'reswitch FirstPass::ProcessNucleus
+                    }
+                    NodeType::RadicalNoad => {
+                        make_radical_in(st, qn)?;
+                        break 'reswitch FirstPass::ProcessNucleus;
+                    }
+                    NodeType::OverNoad => {
+                        make_over_in(st, qn)?;
+                        break 'reswitch FirstPass::ProcessNucleus;
+                    }
+                    NodeType::UnderNoad => {
+                        make_under_in(st, qn)?;
+                        break 'reswitch FirstPass::ProcessNucleus;
+                    }
+                    NodeType::AccentNoad => {
+                        make_math_accent_in(st, qn)?;
+                        break 'reswitch FirstPass::ProcessNucleus;
+                    }
+                    NodeType::VcenterNoad => {
+                        make_vcenter_in(st, qn)?;
+                        break 'reswitch FirstPass::ProcessNucleus;
+                    }
+                    _ => unreachable!("AnyNode::Noad always has a noad type (16..=31)"),
+                },
+                Ok(AnyNode::Style(_)) => {
                     st.scanner.cur_style = st.mem.b16s0(q) as i16;
                     update_math_style_params_in(st);
                     break 'reswitch FirstPass::DoneWithNode;
                 }
-                Ok(NodeType::Choice) => {
+                Ok(AnyNode::Choice(choice)) => {
                     let cs = st.scanner.cur_style;
-                    let choice = st
-                        .mem
-                        .classify_choice(MemIdx::new(q))
-                        .expect("valid node type")
-                        .expect("choice node");
                     mlist_choice_node(&mut st.mem, choice, cs)
                         .map_err(NodeRecycleAbort::Confusion)?;
                     break 'reswitch FirstPass::DoneWithNode;
                 }
-                Ok(NodeType::Ins)
-                | Ok(NodeType::Mark)
-                | Ok(NodeType::Adjust)
-                | Ok(NodeType::Whatsit)
-                | Ok(NodeType::Penalty)
-                | Ok(NodeType::Disc) => {
+                Ok(AnyNode::Ins(_))
+                | Ok(AnyNode::Mark(_))
+                | Ok(AnyNode::Adjust(_))
+                | Ok(AnyNode::Whatsit(_))
+                | Ok(AnyNode::Penalty(_))
+                | Ok(AnyNode::Disc(_)) => {
                     break 'reswitch FirstPass::DoneWithNode;
                 }
-                Ok(NodeType::Rule) => {
-                    let rule = st
-                        .mem
-                        .classify_rule(MemIdx::new(q))
-                        .expect("valid node type")
-                        .expect("rule node");
+                Ok(AnyNode::Rule(rule)) => {
                     mlist_track_rule(&st.mem, rule, &mut max_h, &mut max_d);
                     break 'reswitch FirstPass::DoneWithNode;
                 }
-                Ok(NodeType::Glue) => {
-                    let glue = st
-                        .mem
-                        .classify_glue(MemIdx::new(q))
-                        .expect("valid node type")
-                        .expect("glue node");
+                Ok(AnyNode::Glue(glue)) => {
                     let subtype = glue.subtype(&st.mem);
                     let mu = st.scanner.cur_mu;
                     let x = glue.glue_ptr(&st.mem).0;
                     if subtype == MU_GLUE {
                         let y = math_glue_in(st, x, mu)?;
-                        let glue = st
-                            .mem
-                            .classify_glue(MemIdx::new(q))
-                            .expect("valid node type")
-                            .expect("glue node");
                         crate::mem::delete_glue_ref(&mut st.mem, x);
                         glue.set_glue_ptr(&mut st.mem, MemPtr::from_raw(y));
                         glue.set_subtype(&mut st.mem, NORMAL);
                     } else if subtype == COND_MATH_GLUE {
-                        let glue = st
-                            .mem
-                            .classify_glue(MemIdx::new(q))
-                            .expect("valid node type")
-                            .expect("glue node");
                         let cur_size = st.scanner.cur_size;
                         mlist_cond_math_glue(&mut st.mem, glue, cur_size)
                             .map_err(NodeRecycleAbort::Confusion)?;
                     }
                     break 'reswitch FirstPass::DoneWithNode;
                 }
-                Ok(NodeType::Kern) => {
-                    let kern = st
-                        .mem
-                        .classify_kern(MemIdx::new(q))
-                        .expect("valid node type")
-                        .expect("kern node");
+                Ok(AnyNode::Kern(kern)) => {
                     let mu = st.scanner.cur_mu;
                     math_kern_in(st, kern, mu);
                     break 'reswitch FirstPass::DoneWithNode;
