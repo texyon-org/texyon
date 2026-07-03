@@ -197,6 +197,32 @@ leaving `.idx().0` only at genuine i32 boundaries (mem-arena links, packer list-
   the `continue 'reswitch` retype flow + r_type coupling exactly; dedicated corpus gate.
   Do the same for the second-pass match (`:2992`).
 
+### Session 251 result — clean box/dispatch propagation COMPLETE
+
+Commits `26798d6a`→`29813451` (all corpus-gated 637/2/0): after_math hbox, build_opentype
+assembly + stack wrappers, make_op vbox, ReboxResult::Done, **mlist first-pass dispatch →
+`match classify()` (typed AnyNode arms, −6 double-expects on the hottest path)**,
+make_radical params, box_height_width param, make_math_accent `x` → AnyBox.
+**classify_box_or_panic 18→10, double-expect chains 18→8.**
+
+**The 10 remaining classify_box_or_panic are all DELIBERATE** (verified site-by-site):
+the helper def; a raw-list-index conditionally-a-box (`clean_box:536`); the dynamic
+hlist/vlist creation classify (`build_opentype:5193`); a state field (`just_box`); the
+genuinely-nullable `after_math a` (real `a = TEX_NULL` branch → `Option` would spray
+`map_or(TEX_NULL,…)` sentinels) and its `app_display_in` b_in coupling.
+**LESSON: distinguish a *defensive-dead* null guard (var only ever assigned non-null,
+e.g. make_math_accent `x` from clean_box → clean `AnyBox`, no Option) from a *genuine*
+null branch (after_math `a` → stays i32).** Check for an actual `= TEX_NULL` assignment
+before deciding a "nullable" box can't be typed.
+
+The fetch loop (`~4835/4890/4920`) stays deferred: the `6 =>` arm splices `p = GARBAGE`
+(≥ hi_mem_min) and re-loops, so a whole-match `classify()` hits the GARBAGE landmine; its
+double-expects sit inside arms already dispatched on raw `b16s1`. Not cleanly convertible.
+
+Everything past this point (nullable→Option sentinel spray, producer returns whose callers
+do offset arithmetic, state-field provenance, the fetch loop) trades readability for
+`.idx().0` sprawl — the net-negative anti-vein. The clean i32→NodePtr scope is complete.
+
 ## Status after session 250 (S8 + S9 + GroupCode + typed-twins done)
 
 Constants→enums for node/whatsit/noad type codes AND group codes is now COMPLETE: no
