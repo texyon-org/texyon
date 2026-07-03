@@ -167,13 +167,6 @@ mod raw {
 // arith_error
 // ---------------------------------------------------------------------------
 
-/// Returns the current value of the engine's `arith_error` flag.
-#[inline]
-#[allow(dead_code)] // used in unit tests and by future Rust callers of
-                    // `mult_and_add` / `xn_over_d`.
-pub(crate) fn arith_error() -> bool {
-    crate::state::with_state(|state| state.errors.arith_error)
-}
 
 /// Sets the engine's `arith_error` flag.
 #[inline]
@@ -187,13 +180,6 @@ pub(crate) fn set_arith_error(v: bool) {
 // tex_remainder
 // ---------------------------------------------------------------------------
 
-/// Returns the `tex_remainder` output register of `x_over_n` /
-/// `xn_over_d`.
-#[inline]
-#[allow(dead_code)] // used in unit tests and by future Rust callers.
-pub(crate) fn tex_remainder() -> i32 {
-    crate::state::with_state(|state| state.errors.tex_remainder)
-}
 
 // ---------------------------------------------------------------------------
 // randoms / j_random
@@ -256,11 +242,6 @@ pub(crate) fn name_length() -> i32 {
 // hash / prim / eqtb_top
 // ---------------------------------------------------------------------------
 
-/// Read `hash[p].s1` (the "text" half of a hash-table entry).
-#[inline]
-pub(crate) fn hash_s1(p: i32) -> i32 {
-    crate::state::with_state(|s| s.eqtb.hash[(p as usize) - 514].s1)
-}
 
 // ---------------------------------------------------------------------------
 // hash management globals (hash_used / hash_extra / hash_high /

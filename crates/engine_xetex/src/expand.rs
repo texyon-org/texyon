@@ -1237,9 +1237,6 @@ fn make_string_overflow_scc(st: &crate::state::EngineState) -> SccAbort {
     })
 }
 pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
-    use crate::globals::{
-        hash_s1,
-        };
     use crate::scan::{get_avail_scc, scc_err};
 
     const TOP_BOT_MARK: u8 = 112;
@@ -1380,7 +1377,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                             )
                             .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?
                         } else {
-                            let s = hash_s1(st.scanner.cur_cs);
+                            let s = st.eqtb.hash_s1(st.scanner.cur_cs);
                             crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)
                                 .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?
                         };
