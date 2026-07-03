@@ -167,8 +167,6 @@ impl PageboxType {
 }
 
 // node constants from xetex_format.h:466–467 and xetex-constants.h:133
-const PIC_NODE: i16 = 43;
-const PDF_NODE: u16 = 44;
 const PIC_NODE_SIZE: i32 = 9;
 
 // translated from xetex-pic.c:99 (pdf_get_rect)
@@ -688,14 +686,14 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         let mem_word_bytes = std::mem::size_of::<crate::mem_types::MemoryWord>() as i32;
         let extra_words = (path_len as i32 + mem_word_bytes - 1) / mem_word_bytes;
         let p =
-            crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, PIC_NODE, (PIC_NODE_SIZE + extra_words) as i16);
+            crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, crate::node::WhatsitSubtype::Pic as i16, (PIC_NODE_SIZE + extra_words) as i16);
         if p == crate::mem::ALLOC_FAILED {
             return Err(crate::scan::NodeRecycleAbort::Overflow.into());
         }
 
         let tail = st.input.cur_list.tail;
         if is_pdf {
-            st.mem.set_b16s0(tail, PDF_NODE);
+            st.mem.set_b16s0(tail, crate::node::WhatsitSubtype::Pdf as u16);
         }
         // PIC_NODE_path_len: mem[p+4].b16.s1
         st.mem.set_b16s1(tail + 4, path_len as u16);

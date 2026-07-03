@@ -2027,9 +2027,10 @@ impl HasNodeHeader for WhatsitNode {}
 
 /// The `subtype` of a whatsit node (`mem[p].b16.s0`, xetex_format.h:456–467). A
 /// non-contiguous domain: the I/O whatsits (`Open`..`Language`, 0–4) carry no box
-/// dimensions; the extension whatsits (`NativeWord`..`Pdf`, 40–44) do. Replaces
-/// the ~40 duplicated `const OPEN_NODE`/`NATIVE_WORD_NODE`/… definitions that were
-/// scattered across shipout/linebreak/math/main_control/packaging.
+/// dimensions; `PdfSavePos` (21) is a bare marker; the extension whatsits
+/// (`NativeWord`..`Pdf`, 40–44) do carry dimensions. Replaces the ~40 duplicated
+/// `const OPEN_NODE`/`NATIVE_WORD_NODE`/… definitions that were scattered across
+/// shipout/linebreak/math/main_control/packaging/pagebuilder/pic/ext.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(u16)]
 pub enum WhatsitSubtype {
@@ -2038,6 +2039,7 @@ pub enum WhatsitSubtype {
     Close = 2,
     Special = 3,
     Language = 4,
+    PdfSavePos = 21,
     NativeWord = 40,
     NativeWordAt = 41,
     Glyph = 42,
@@ -2054,6 +2056,7 @@ impl WhatsitSubtype {
             2 => WhatsitSubtype::Close,
             3 => WhatsitSubtype::Special,
             4 => WhatsitSubtype::Language,
+            21 => WhatsitSubtype::PdfSavePos,
             40 => WhatsitSubtype::NativeWord,
             41 => WhatsitSubtype::NativeWordAt,
             42 => WhatsitSubtype::Glyph,
@@ -2081,6 +2084,19 @@ impl WhatsitSubtype {
     /// `sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT` predicate.
     pub fn is_native_word(self) -> bool {
         matches!(self, WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt)
+    }
+
+    /// The classic dimensionless I/O whatsits (`Open`..`Language`, 0–4) — the old
+    /// `sub <= LANGUAGE_NODE` range filter, expressed as explicit membership.
+    pub fn is_io(self) -> bool {
+        matches!(
+            self,
+            WhatsitSubtype::Open
+                | WhatsitSubtype::Write
+                | WhatsitSubtype::Close
+                | WhatsitSubtype::Special
+                | WhatsitSubtype::Language
+        )
     }
 }
 

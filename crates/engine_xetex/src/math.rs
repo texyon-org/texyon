@@ -11,7 +11,7 @@ use crate::mem::{
 };
 use crate::node::{
     AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, HListNode, KernNode, Noad, NodePtr,
-    RuleDimen, RuleNode, VListNode, WhatsitNode,
+    RuleDimen, RuleNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, EqtbState, FontState, MemState, SaveStackState, ScannerState};
@@ -110,11 +110,6 @@ const TEMP_HEAD: i32 = 4_999_996;
 const EVERY_DISPLAY_TEXT: u16 = 10;
 const LOCAL_EVERY_DISPLAY: i32 = 4;
 const LOCAL_PAR_SHAPE: i32 = 0;
-const NATIVE_WORD_NODE: u16 = 40;
-const NATIVE_WORD_NODE_AT: u16 = 41;
-const GLYPH_NODE: u16 = 42;
-const PIC_NODE: u16 = 43;
-const PDF_NODE: u16 = 44;
 const STRETCHING: u16 = 1;
 const SHRINKING: u16 = 2;
 const A_LEADERS: u16 = 100;
@@ -1254,7 +1249,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
             if p != TEX_NULL
                 && !crate::mem::is_char_node(&st.mem, p)
                 && st.mem.b16s1(p) == WHATSIT_NODE
-                && st.mem.b16s0(p) == GLYPH_NODE
+                && WhatsitSubtype::from_raw(st.mem.b16s0(p)) == Some(WhatsitSubtype::Glyph)
             {
                 'found: {
                     let p_w = st
@@ -1630,7 +1625,7 @@ fn start_native_accent_glyph(
     }
     let old_node = y.list_ptr(mem).0;
     mem.set_b16s1(p, WHATSIT_NODE);
-    mem.set_b16s0(p, GLYPH_NODE);
+    mem.set_b16s0(p, WhatsitSubtype::Glyph as u16);
     mem.set_b16s2(p + 4, f as u16);
     Ok(NativeAccentGlyph { p, old_node })
 }
@@ -1893,7 +1888,7 @@ unsafe fn make_math_accent_in(
         if p != TEX_NULL
             && !crate::mem::is_char_node(&st.mem, p)
             && st.mem.b16s1(p) == WHATSIT_NODE
-            && st.mem.b16s0(p) == GLYPH_NODE
+            && WhatsitSubtype::from_raw(st.mem.b16s0(p)) == Some(WhatsitSubtype::Glyph)
         {
             let sa0 = get_ot_math_accent_pos(f, st.mem.b16s1(p + 4) as i32);
             let sa = if sa0 == TEX_INFINITY {
@@ -1993,7 +1988,7 @@ fn glyph_nucleus(mem: &MemState, p: i32) -> Option<ScriptGlyphNucleus> {
     if p != TEX_NULL
         && !crate::mem::is_char_node(mem, p)
         && mem.b16s1(p) == WHATSIT_NODE
-        && mem.b16s0(p) == GLYPH_NODE
+        && WhatsitSubtype::from_raw(mem.b16s0(p)) == Some(WhatsitSubtype::Glyph)
     {
         let pw = mem
             .classify_whatsit(MemIdx::new(p))
@@ -2896,7 +2891,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                                 return Err(NodeRecycleAbort::Overflow.into());
                             }
                             st.mem.set_b16s1(p, WHATSIT_NODE);
-                            st.mem.set_b16s0(p, GLYPH_NODE);
+                            st.mem.set_b16s0(p, WhatsitSubtype::Glyph as u16);
                             let p_w = st
                                 .mem
                                 .classify_whatsit(MemIdx::new(p))
@@ -3361,7 +3356,7 @@ fn new_stack_glyph(
         return Err(NodeRecycleAbort::Overflow);
     }
     mem.set_b16s1(p, WHATSIT_NODE);
-    mem.set_b16s0(p, GLYPH_NODE);
+    mem.set_b16s0(p, WhatsitSubtype::Glyph as u16);
     // Freshly allocated and type-stamped GLYPH_NODE whatsit; this is the
     // family's audited construction boundary (`01c` §8).
     let pw = unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(p)) };
@@ -4955,12 +4950,8 @@ pub(crate) fn init_math_in(
                             break 'reswitch;
                         }
                         8 => {
-                            let subtype = st.mem.b16s0(p);
-                            if subtype == NATIVE_WORD_NODE
-                                || subtype == NATIVE_WORD_NODE_AT
-                                || subtype == GLYPH_NODE
-                                || subtype == PIC_NODE
-                                || subtype == PDF_NODE
+                            if WhatsitSubtype::from_raw(st.mem.b16s0(p))
+                                .is_some_and(|s| s.has_dimensions())
                             {
                                 d = st
                                     .mem

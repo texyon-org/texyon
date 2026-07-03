@@ -2510,7 +2510,7 @@ pub(crate) fn append_src_special_in(
 ) -> Result<(), InsertSrcAbort> {
     let fname = st.input.source_filename_stack[st.input.in_open as usize];
     if fname > 0 && crate::texmfmp::is_new_source_in(st, fname, st.mem.line) {
-        let p = crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, SPECIAL_NODE, WRITE_NODE_SIZE);
+        let p = crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, crate::node::WhatsitSubtype::Special as i16, WRITE_NODE_SIZE);
         if p == crate::mem::ALLOC_FAILED {
             return Err(InsertSrcAbort::MainMemory);
         }
@@ -2736,7 +2736,7 @@ pub(crate) fn do_extension_in(
         }
 
         SPECIAL_NODE_DE => {
-            do_new_whatsit_in(st, SPECIAL_NODE_DE as i16, WRITE_NODE_SIZE_DE)?;
+            do_new_whatsit_in(st, crate::node::WhatsitSubtype::Special as i16, WRITE_NODE_SIZE_DE)?;
             st.mem
                 .set_b32s0(st.input.cur_list.tail + 1, TEX_NULL);
             crate::scan::scan_toks_in(st, false, true)?;
@@ -2763,7 +2763,7 @@ pub(crate) fn do_extension_in(
             if (st.input.cur_list.mode as i32).abs() != HMODE_DE as i32 {
                 mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
             } else {
-                do_new_whatsit_in(st, LANGUAGE_NODE_DE_W, SMALL_NODE_SIZE_DE)?;
+                do_new_whatsit_in(st, crate::node::WhatsitSubtype::Language as i16, SMALL_NODE_SIZE_DE)?;
                 scan_int_in(st)?;
                 let lang = if st.scanner.cur_val <= 0 || st.scanner.cur_val > 255 {
                     0
@@ -2786,7 +2786,7 @@ pub(crate) fn do_extension_in(
         }
 
         PDF_SAVE_POS_NODE_DE => {
-            do_new_whatsit_in(st, PDF_SAVE_POS_NODE_DE_W, SMALL_NODE_SIZE_DE)?;
+            do_new_whatsit_in(st, crate::node::WhatsitSubtype::PdfSavePos as i16, SMALL_NODE_SIZE_DE)?;
         }
 
         RESET_TIMER_CODE_DE => {
@@ -2833,7 +2833,7 @@ pub(crate) fn do_extension_in(
                 let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
                 let fa = st.fonts.font_area_entry(cur_font);
                 if fa == AAT_FONT_FLAG_DE || fa == OTGR_FONT_FLAG_DE {
-                    do_new_whatsit_in(st, GLYPH_NODE_TYPE_DE_W, GLYPH_NODE_SIZE_DE)?;
+                    do_new_whatsit_in(st, crate::node::WhatsitSubtype::Glyph as i16, GLYPH_NODE_SIZE_DE)?;
                     scan_int_in(st)?;
                     if st.scanner.cur_val < 0 || st.scanner.cur_val > 65535 {
                         let errmsg =
@@ -2961,10 +2961,7 @@ const OPEN_NODE_DE: i32 = 0;
 const WRITE_NODE_DE: i32 = 1;
 const CLOSE_NODE_DE: i32 = 2;
 const SPECIAL_NODE_DE: i32 = 3;
-const LANGUAGE_NODE_DE_W: i16 = 4; // as i16 for new_whatsit_global
 const PDF_SAVE_POS_NODE_DE: i32 = 21;
-const PDF_SAVE_POS_NODE_DE_W: i16 = 21; // as i16 for new_whatsit_global
-const GLYPH_NODE_TYPE_DE_W: i16 = 42; // node type 42 for new_whatsit_global
 const IMMEDIATE_CODE_DE: i32 = 4;
 const SET_LANGUAGE_CODE_DE: i32 = 5;
 const RESET_TIMER_CODE_DE: i32 = 31;
@@ -3001,7 +2998,6 @@ const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING_DE: i32 = 76;
 
 // Shared consts duplicated from scan.rs with the ext group (still used there too).
 const LEFT_BRACE_TOKEN: i32 = 0x200000;
-const SPECIAL_NODE: i16 = 3; // xetex_format.h:460
 const WRITE_NODE_SIZE: i16 = 2; // xetex-constants.h:112
 const INSERTED: u16 = 5;
 const TEMP_HEAD: i32 = 4_999_999 - 3;

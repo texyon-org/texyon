@@ -7,7 +7,7 @@ use crate::consts::{
 };
 use crate::ext::apply_tfm_font_mapping;
 
-use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode};
+use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -72,19 +72,6 @@ const MOV_Z_OK: i32 = 5;
 const MOV_Y_SEEN: i32 = 6;
 const MOV_D_FIXED: i32 = 6;
 const MOV_Z_SEEN: i32 = 12;
-
-// Whatsit subtype codes — xetex_format.h:457–461
-const OPEN_NODE: u16 = 0;
-const WRITE_NODE: u16 = 1;
-const CLOSE_NODE: u16 = 2;
-const SPECIAL_NODE: u16 = 3;
-const LANGUAGE_NODE: u16 = 4;
-const NATIVE_WORD_NODE: u16 = 40;
-const NATIVE_WORD_NODE_AT: u16 = 41;
-const GLYPH_NODE: u16 = 42;
-const PIC_NODE: u16 = 43;
-const PDF_NODE: u16 = 44;
-const PDF_SAVE_POS_NODE: u16 = 21;
 
 // Glue and leader constants: xetex-constants.h:175,182,275,281; xetex_format.h:422.
 const FILLL: u16 = 3;
@@ -844,7 +831,8 @@ fn is_ignorable_interword_node(mem: &MemState, p: i32) -> bool {
             || mem.b16s1(p) == INS_NODE
             || mem.b16s1(p) == MARK_NODE
             || mem.b16s1(p) == ADJUST_NODE
-            || (mem.b16s1(p) == WHATSIT_NODE && mem.b16s0(p) <= LANGUAGE_NODE))
+            || (mem.b16s1(p) == WHATSIT_NODE
+            && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_io())))
 }
 
 fn skip_ignorable_interword_nodes(mem: &MemState, mut q: i32) -> i32 {
@@ -870,7 +858,7 @@ fn merge_justifiable_native_words(
         if mem.b32s1(p) != TEX_NULL
             && !crate::mem::is_char_node(mem, p)
             && mem.b16s1(p) == WHATSIT_NODE
-            && (mem.b16s0(p) == NATIVE_WORD_NODE || mem.b16s0(p) == NATIVE_WORD_NODE_AT)
+            && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_native_word())
             && fonts.font_letter_space_entry(mem.b16s2(p + 4) as i32) == 0
         {
             let r = p;
@@ -888,8 +876,7 @@ fn merge_justifiable_native_words(
                             if q != TEX_NULL
                                 && !crate::mem::is_char_node(mem, q)
                                 && mem.b16s1(q) == WHATSIT_NODE
-                                && (mem.b16s0(q) == NATIVE_WORD_NODE
-                                    || mem.b16s0(q) == NATIVE_WORD_NODE_AT)
+                                && WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word())
                                 && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                             {
                                 p = q;
@@ -911,8 +898,7 @@ fn merge_justifiable_native_words(
                             if q != TEX_NULL
                                 && !crate::mem::is_char_node(mem, q)
                                 && mem.b16s1(q) == WHATSIT_NODE
-                                && (mem.b16s0(q) == NATIVE_WORD_NODE
-                                    || mem.b16s0(q) == NATIVE_WORD_NODE_AT)
+                                && WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word())
                                 && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                             {
                                 p = q;
@@ -922,7 +908,7 @@ fn merge_justifiable_native_words(
                             }
                         }
                     } else if mem.b16s1(q) == WHATSIT_NODE
-                        && (mem.b16s0(q) == NATIVE_WORD_NODE || mem.b16s0(q) == NATIVE_WORD_NODE_AT)
+                        && WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word())
                         && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                     {
                         p = q;
@@ -943,7 +929,7 @@ fn merge_justifiable_native_words(
                 q = r;
                 loop {
                     if mem.b16s1(q) == WHATSIT_NODE {
-                        if mem.b16s0(q) == NATIVE_WORD_NODE || mem.b16s0(q) == NATIVE_WORD_NODE_AT {
+                        if WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word()) {
                             let text = mem.as_u16_ptr(q + 6);
                             for j in 0..(mem.b16s1(q + 4) as i32) {
                                 // SAFETY: native-word text spans `mem[q+6..]`, length b16s1(q+4).
@@ -1438,9 +1424,11 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                             finish_hlist_rule_in(st, this_box, base_line, p)?;
                         }
                         AnyNode::Whatsit(whatsit) => {
-                            let subtype = whatsit.subtype(&st.mem);
+                            let subtype = whatsit.whatsit_subtype(&st.mem);
                             match subtype {
-                                NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE => {
+                                Some(WhatsitSubtype::NativeWord)
+                                | Some(WhatsitSubtype::NativeWordAt)
+                                | Some(WhatsitSubtype::Glyph) => {
                                     if st.shipout.cur_h != st.shipout.dvi_h {
                                         let delta = st.shipout.cur_h - st.shipout.dvi_h;
                                         emit_movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
@@ -1454,7 +1442,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                     let f = whatsit.native_font(&st.mem).0;
                                     ensure_dvi_font_in(st, f)?;
 
-                                    if subtype == GLYPH_NODE {
+                                    if subtype == Some(WhatsitSubtype::Glyph) {
                                         emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
                                         emit_dvi_four(&mut st.shipout, whatsit.width(&st.mem).0)?;
                                         emit_dvi_two(&mut st.shipout, 1)?;
@@ -1466,7 +1454,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                         )?;
                                         st.shipout.cur_h += whatsit.width(&st.mem).0;
                                     } else {
-                                        if subtype == NATIVE_WORD_NODE_AT {
+                                        if subtype == Some(WhatsitSubtype::NativeWordAt) {
                                             if whatsit.native_length(&st.mem) > 0
                                                 || !whatsit.native_glyph_info_ptr(&st.mem).is_null()
                                             {
@@ -1503,7 +1491,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                     }
                                     st.shipout.dvi_h = st.shipout.cur_h;
                                 }
-                                PIC_NODE | PDF_NODE => {
+                                Some(WhatsitSubtype::Pic) | Some(WhatsitSubtype::Pdf) => {
                                     let save_h = st.shipout.dvi_h;
                                     let save_v = st.shipout.dvi_v;
                                     st.shipout.cur_v = base_line;
@@ -1514,7 +1502,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                     st.shipout.cur_h = edge;
                                     st.shipout.cur_v = base_line;
                                 }
-                                PDF_SAVE_POS_NODE => {
+                                Some(WhatsitSubtype::PdfSavePos) => {
                                     st.shipout.pdf_last_x_pos =
                                         st.shipout.cur_h + ONE_INCH_LESS_ONE;
                                     st.shipout.pdf_last_y_pos = st.shipout.cur_page_height
@@ -1779,8 +1767,8 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                     st.shipout.rule_wd = rule.width(&st.mem).raw();
                     finish_vlist_rule_in(st, this_box, left_edge, upwards)?;
                 }
-                AnyNode::Whatsit(whatsit) => match whatsit.subtype(&st.mem) {
-                    GLYPH_NODE => {
+                AnyNode::Whatsit(whatsit) => match whatsit.whatsit_subtype(&st.mem) {
+                    Some(WhatsitSubtype::Glyph) => {
                         st.shipout.cur_v += whatsit.height(&st.mem).0;
                         st.shipout.cur_h = left_edge;
 
@@ -1809,7 +1797,7 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                         st.shipout.cur_v += whatsit.depth(&st.mem).0;
                         st.shipout.cur_h = left_edge;
                     }
-                    PIC_NODE | PDF_NODE => {
+                    Some(WhatsitSubtype::Pic) | Some(WhatsitSubtype::Pdf) => {
                         let save_h = st.shipout.dvi_h;
                         let save_v = st.shipout.dvi_v;
                         st.shipout.cur_v += whatsit.height(&st.mem).0;
@@ -1819,7 +1807,7 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                         st.shipout.cur_v = save_v + whatsit.depth(&st.mem).0;
                         st.shipout.cur_h = left_edge;
                     }
-                    PDF_SAVE_POS_NODE => {
+                    Some(WhatsitSubtype::PdfSavePos) => {
                         st.shipout.pdf_last_x_pos = st.shipout.cur_h + ONE_INCH_LESS_ONE;
                         st.shipout.pdf_last_y_pos =
                             st.shipout.cur_page_height - st.shipout.cur_v - ONE_INCH_LESS_ONE;
@@ -2377,13 +2365,15 @@ pub fn reverse(
                     HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
                         shipout.rule_wd = mem.b32s1(p + 1);
                     }
-                    WHATSIT_NODE => match mem.b16s0(p) {
-                        NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT | GLYPH_NODE | PIC_NODE
-                        | PDF_NODE => {
+                    WHATSIT_NODE => {
+                        if WhatsitSubtype::from_raw(mem.b16s0(p))
+                            .is_some_and(|s| s.has_dimensions())
+                        {
                             shipout.rule_wd = mem.b32s1(p + 1);
+                        } else {
+                            add_width = false;
                         }
-                        _ => add_width = false,
-                    },
+                    }
                     GLUE_NODE => {
                         let mut g = mem.b32s0(p + 1);
                         shipout.rule_wd = mem.b32s1(g + 1) - *cur_g;
@@ -2902,8 +2892,9 @@ pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(
 // translated from xetex-shipout.c:1682 (out_what)
 // Only a dead prototype remains in xetex-xetexd.h; internal Rust fn.
 pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
-    match st.mem.b16s0(p) {
-        OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
+    let sub = WhatsitSubtype::from_raw(st.mem.b16s0(p));
+    match sub {
+        Some(WhatsitSubtype::Open) | Some(WhatsitSubtype::Write) | Some(WhatsitSubtype::Close) => {
             if !st.shipout.doing_leaders {
                 let w = st
                     .mem
@@ -2911,7 +2902,7 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<
                     .expect("valid whatsit")
                     .expect("open/write/close whatsit");
                 let j = w.write_stream(&st.mem);
-                if st.mem.b16s0(p) == WRITE_NODE {
+                if sub == Some(WhatsitSubtype::Write) {
                     write_out_in(st, p)?;
                     return Ok(());
                 }
@@ -2919,7 +2910,7 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<
                     // SAFETY: FFI close of the write-stream output handle.
                     unsafe { ttstub_output_close(st.shipout.write_file[j as usize]) };
                 }
-                if st.mem.b16s0(p) == CLOSE_NODE {
+                if sub == Some(WhatsitSubtype::Close) {
                     st.shipout.write_open[j as usize] = false;
                     return Ok(());
                 }
@@ -2966,8 +2957,8 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<
                 }
             }
         }
-        SPECIAL_NODE => special_out_in(st, p)?,
-        LANGUAGE_NODE => {}
+        Some(WhatsitSubtype::Special) => special_out_in(st, p)?,
+        Some(WhatsitSubtype::Language) => {}
         _ => return Err(ShipoutAbort::Confusion(c"ext4")),
     }
     Ok(())

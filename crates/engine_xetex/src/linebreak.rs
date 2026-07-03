@@ -6,7 +6,7 @@ use crate::ext::{
     linebreak_next, linebreak_start_in, measure_native_node, real_get_native_word_cp,
 };
 use crate::node::{
-    ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, LigatureNode, MathNode, NodePtr, PassiveNode, PenaltyNode, WhatsitNode,
+    ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, LigatureNode, MathNode, NodePtr, PassiveNode, PenaltyNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::NodeRecycleAbort;
 use crate::state::{
@@ -35,10 +35,6 @@ const MATH_NODE: i32 = crate::consts::MATH_NODE as i32;
 const GLUE_NODE: i32 = crate::consts::GLUE_NODE as i32;
 const KERN_NODE: i32 = crate::consts::KERN_NODE as i32;
 const PENALTY_NODE: i32 = crate::consts::PENALTY_NODE as i32;
-const LANGUAGE_NODE: u16 = 4;
-const GLYPH_NODE: u16 = 42;
-const PIC_NODE: u16 = 43;
-const PDF_NODE: u16 = 44;
 const NORMAL: u16 = 0;
 const HOLD_HEAD: i32 = 4_999_995;
 const ACTIVE_LIST: i32 = 4_999_992;
@@ -49,8 +45,6 @@ const ACTIVE_NODE_SIZE_EXTENDED: i16 = 5;
 const DELTA_NODE_SIZE: i32 = 7;
 const LIG_TAG: u16 = 1;
 const NON_ADDRESS: i32 = 0;
-const NATIVE_WORD_NODE: u16 = 40;
-const NATIVE_WORD_NODE_AT: u16 = 41;
 const MIN_TRIE_OP: i32 = 0;
 const HYPH_PRIME: i32 = 607;
 const INT_PAR_PRETOLERANCE: i32 = 0;
@@ -1395,12 +1389,7 @@ fn add_node_width_to_active(
             scanner.active_width[1] += box_width_in(mem, p);
         }
         WHATSIT_NODE => {
-            let subtype = node_subtype_in(mem, p);
-            if subtype == NATIVE_WORD_NODE
-                || subtype == NATIVE_WORD_NODE_AT
-                || subtype == GLYPH_NODE
-                || subtype == PIC_NODE
-                || subtype == PDF_NODE
+            if WhatsitSubtype::from_raw(node_subtype_in(mem, p)).is_some_and(|s| s.has_dimensions())
             {
                 scanner.active_width[1] += box_width_in(mem, p);
             } else {
@@ -1637,18 +1626,13 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                     aw!(1, box_width_in(&st.mem, cur));
                 }
                 WHATSIT_NODE => {
-                    let subtype = node_subtype_in(&st.mem, cur);
-                    if subtype == LANGUAGE_NODE {
+                    let subtype = WhatsitSubtype::from_raw(node_subtype_in(&st.mem, cur));
+                    if subtype == Some(WhatsitSubtype::Language) {
                         st.hyph.cur_lang = language_node_what_lang_in(&st.mem, cur);
                         st.hyph.l_hyf = language_node_what_lhm_in(&st.mem, cur);
                         st.hyph.r_hyf = language_node_what_rhm_in(&st.mem, cur);
                         set_current_hyph_index(&mut st.hyph);
-                    } else if subtype == NATIVE_WORD_NODE
-                        || subtype == NATIVE_WORD_NODE_AT
-                        || subtype == GLYPH_NODE
-                        || subtype == PIC_NODE
-                        || subtype == PDF_NODE
-                    {
+                    } else if subtype.is_some_and(|s| s.has_dimensions()) {
                         aw!(1, box_width_in(&st.mem, cur));
                     }
                 }
@@ -1719,8 +1703,8 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                                     s = st.mem.b32s1(prev_s);
                                     continue;
                                 } else if node_type_in(&st.mem, s) == WHATSIT_NODE {
-                                    if node_subtype_in(&st.mem, s) == NATIVE_WORD_NODE
-                                        || node_subtype_in(&st.mem, s) == NATIVE_WORD_NODE_AT
+                                    if WhatsitSubtype::from_raw(node_subtype_in(&st.mem, s))
+                                        .is_some_and(|sub| sub.is_native_word())
                                     {
                                         l = 0;
                                         while l < native_node_len_in(&st.mem, s) {
@@ -1746,7 +1730,9 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                                         }
                                     }
 
-                                    if node_subtype_in(&st.mem, s) == LANGUAGE_NODE {
+                                    if WhatsitSubtype::from_raw(node_subtype_in(&st.mem, s))
+                                        == Some(WhatsitSubtype::Language)
+                                    {
                                         st.hyph.cur_lang = language_node_what_lang_in(&st.mem, s);
                                         st.hyph.l_hyf = language_node_what_lhm_in(&st.mem, s);
                                         st.hyph.r_hyf = language_node_what_rhm_in(&st.mem, s);
@@ -1796,9 +1782,8 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                             if st.linebreak.ha != TEX_NULL
                                 && st.linebreak.ha < st.mem.hi_mem_min
                                 && node_type_in(&st.mem, st.linebreak.ha) == WHATSIT_NODE
-                                && (node_subtype_in(&st.mem, st.linebreak.ha) == NATIVE_WORD_NODE
-                                    || node_subtype_in(&st.mem, st.linebreak.ha)
-                                        == NATIVE_WORD_NODE_AT)
+                                && WhatsitSubtype::from_raw(node_subtype_in(&st.mem, st.linebreak.ha))
+                                    .is_some_and(|sub| sub.is_native_word())
                             {
                                 s = st.mem.b32s1(st.linebreak.ha);
                                 loop {
@@ -3453,7 +3438,7 @@ fn hyphenate_native_word_if_needed(
     let is_native = ha != TEX_NULL
         && !crate::mem::is_char_node(&st.mem, ha)
         && st.mem.b16s1(ha) as i32 == WHATSIT_NODE
-        && (st.mem.b16s0(ha) == NATIVE_WORD_NODE || st.mem.b16s0(ha) == NATIVE_WORD_NODE_AT);
+        && WhatsitSubtype::from_raw(st.mem.b16s0(ha)).is_some_and(|s| s.is_native_word());
     if !is_native {
         return Ok(false);
     }
@@ -3905,9 +3890,6 @@ pub fn char_pw_in(errors: &mut crate::state::ErrorState,
     side: i16,
 ) -> i32 {
     const WHATSIT_NODE: u16 = 8;
-    const NATIVE_WORD_NODE: u16 = 40;
-    const NATIVE_WORD_NODE_AT: u16 = 41;
-    const GLYPH_NODE: u16 = 42;
     const QUAD_CODE: i32 = 6; // xetex-constants.h:298
 
     if side == 0 {
@@ -3923,7 +3905,7 @@ pub fn char_pw_in(errors: &mut crate::state::ErrorState,
     if p != TEX_NULL
         && p < mem.hi_mem_min
         && mem.b16s1(p) == WHATSIT_NODE
-        && (mem.b16s0(p) == NATIVE_WORD_NODE || mem.b16s0(p) == NATIVE_WORD_NODE_AT)
+        && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_native_word())
     {
         if !whatsit_node_in(mem, p).native_glyph_info_ptr(mem).is_null() {
             // NATIVE_NODE_glyph_info_ptr != NULL
@@ -3943,7 +3925,7 @@ pub fn char_pw_in(errors: &mut crate::state::ErrorState,
     if p != TEX_NULL
         && p < mem.hi_mem_min
         && mem.b16s1(p) == WHATSIT_NODE
-        && mem.b16s0(p) == GLYPH_NODE
+        && WhatsitSubtype::from_raw(mem.b16s0(p)) == Some(WhatsitSubtype::Glyph)
     {
         let w = whatsit_node_in(mem, p);
         let f = w.native_font(mem).0; // mem[p + 4].b16.s2

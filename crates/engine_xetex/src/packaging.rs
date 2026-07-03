@@ -17,7 +17,7 @@ use crate::ext::measure_native_node;
 use crate::fonts::{effective_char, new_native_word_node};
 use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, MarkNode, NodePtr,
-    RuleDimen, SaNode, VListNode, WhatsitNode,
+    RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::units::NodeType;
 
@@ -253,17 +253,6 @@ pub fn just_copy(
     const PIC_NODE_SIZE: i32 = 9; // xetex-constants.h:133
     const MEM_WORD_BYTES: i32 = 8; // sizeof(memory_word)
     const SYNCTEX_FIELD_SIZE: i32 = 1; // xetex-constants.h:102
-    const OPEN_NODE: u16 = 0;
-    const WRITE_NODE: u16 = 1;
-    const CLOSE_NODE: u16 = 2;
-    const SPECIAL_NODE: u16 = 3;
-    const LANGUAGE_NODE: u16 = 4;
-    const NATIVE_WORD_NODE: u16 = 40;
-    const NATIVE_WORD_NODE_AT: u16 = 41;
-    const GLYPH_NODE: u16 = 42;
-    const PIC_NODE: u16 = 43;
-    const PDF_NODE: u16 = 44;
-    const PDF_SAVE_POS_NODE: u16 = 21;
 
     let mut p = p;
     let mut h = h;
@@ -320,12 +309,12 @@ pub fn just_copy(
                     Some(r)
                 }
                 Some(AnyNode::Whatsit(ws)) => {
-                    match ws.subtype(mem) {
-                        OPEN_NODE => {
+                    match ws.whatsit_subtype(mem) {
+                        Some(WhatsitSubtype::Open) => {
                             words = OPEN_NODE_SIZE;
                             Some(cnl_get_node!(mem, OPEN_NODE_SIZE))
                         }
-                        WRITE_NODE | SPECIAL_NODE => {
+                        Some(WhatsitSubtype::Write) | Some(WhatsitSubtype::Special) => {
                             let r = cnl_get_node!(mem, WRITE_NODE_SIZE);
                             // TOKEN_LIST_ref_count(WRITE_NODE_tokens(p))++
                             let toks = ws.write_tokens(mem).0;
@@ -333,11 +322,11 @@ pub fn just_copy(
                             words = WRITE_NODE_SIZE;
                             Some(r)
                         }
-                        CLOSE_NODE | LANGUAGE_NODE => {
+                        Some(WhatsitSubtype::Close) | Some(WhatsitSubtype::Language) => {
                             words = SMALL_NODE_SIZE;
                             Some(cnl_get_node!(mem, SMALL_NODE_SIZE))
                         }
-                        NATIVE_WORD_NODE | NATIVE_WORD_NODE_AT => {
+                        Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
                             let sz = ws.native_size(mem); // NATIVE_NODE_size(p)
                             let r = cnl_get_node!(mem, sz);
                             let mut nw = sz;
@@ -359,17 +348,17 @@ pub fn just_copy(
                             words = 0; // already copied, skip outer loop
                             Some(r)
                         }
-                        GLYPH_NODE => {
+                        Some(WhatsitSubtype::Glyph) => {
                             words = GLYPH_NODE_SIZE;
                             Some(cnl_get_node!(mem, GLYPH_NODE_SIZE))
                         }
-                        PIC_NODE | PDF_NODE => {
+                        Some(WhatsitSubtype::Pic) | Some(WhatsitSubtype::Pdf) => {
                             let path_len = ws.pic_path_len(mem) as i32; // PIC_NODE_path_len
                             words =
                                 PIC_NODE_SIZE + (path_len + MEM_WORD_BYTES - 1) / MEM_WORD_BYTES;
                             Some(cnl_get_node!(mem, words))
                         }
-                        PDF_SAVE_POS_NODE => Some(cnl_get_node!(mem, SMALL_NODE_SIZE)),
+                        Some(WhatsitSubtype::PdfSavePos) => Some(cnl_get_node!(mem, SMALL_NODE_SIZE)),
                         _ => {
                             return Err(NodeRecycleAbort::Confusion(c"ext2"));
                         }
@@ -1114,8 +1103,6 @@ fn classify_vert_break_next(
     use crate::mem::TEX_NULL;
 
     const EJECT_PENALTY: i32 = -10_000; // xetex-constants.h:336
-    const PIC_NODE: u16 = 43; // xetex_format.h:466
-    const PDF_NODE: u16 = 44; // xetex_format.h:467
 
     if cursor.p.is_null() {
         return Ok(VertBreakNext::CheckPi {
@@ -1145,8 +1132,8 @@ fn classify_vert_break_next(
             Ok(VertBreakNext::NotFound)
         }
         AnyNode::Whatsit(w) => {
-            let sub = w.subtype(mem);
-            if sub == PIC_NODE || sub == PDF_NODE {
+            let sub = w.whatsit_subtype(mem);
+            if sub == Some(WhatsitSubtype::Pic) || sub == Some(WhatsitSubtype::Pdf) {
                 scanner.active_width[1] += cursor.prev_dp + w.height(mem).0;
                 cursor.prev_dp = w.depth(mem).0;
             }

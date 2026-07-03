@@ -9,14 +9,12 @@ use crate::consts::{
 // (session 46). Thin module-private accessors over the thread-local.
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
-use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, SaNode};
+use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, SaNode, WhatsitSubtype};
 use crate::state::{EngineState, EqtbState, MemState, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
 // Node types (xetex_format.h)
 const MATH_NODE: i32 = crate::consts::MATH_NODE as i32;
-const PIC_NODE: i32 = 43;
-const PDF_NODE: i32 = 44;
 
 // Glue/page constants (xetex-constants.h)
 const MEM_TOP: i32 = 4_999_999;
@@ -757,8 +755,8 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
             }
             AnyNode::Whatsit(whatsit) => {
                 // 1401
-                let sub = whatsit.subtype(&st.mem) as i32;
-                if sub == PIC_NODE || sub == PDF_NODE {
+                let sub = whatsit.whatsit_subtype(&st.mem);
+                if sub == Some(WhatsitSubtype::Pic) || sub == Some(WhatsitSubtype::Pdf) {
                     st.shipout.page_so_far[1] +=
                         st.shipout.page_so_far[7] + whatsit.height(&st.mem).0;
                     st.shipout.page_so_far[7] = whatsit.depth(&st.mem).0;
