@@ -40,6 +40,9 @@ extern "C" {
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     static xetex_primitives: XetexPrimitiveDef;
     static xetex_primitives_count: libc::size_t;
+    // bridge_core: record a fatal message without longjmp-ing, so the host's
+    // ttbc_get_error_message() surfaces it after we return HISTORY_FATAL_ERROR.
+    fn _ttbc_set_error_message(message: *const libc::c_char);
 }
 
 /// Mirror of C `xetex_format_primitive_def_t` (xetex_format.h:715).
@@ -937,7 +940,40 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
 }
 // translated from xetex-ini.c:1474 (tt_run_engine)
 #[no_mangle]
+/// Engine entry point (called from the C bridge `tt_engine_xetex_main`).
+///
+/// Wraps the run in [`catch_unwind`] so a Rust panic — out-of-memory from the
+/// allocators, or an internal invariant violation — is turned into a
+/// `HISTORY_FATAL_ERROR` return with a surfaced message, instead of unwinding
+/// across the `extern "C"` boundary (which is UB). This is the Rust-native
+/// replacement for the C bridge's setjmp/longjmp fatal bailout.
+///
+/// [`catch_unwind`]: std::panic::catch_unwind
 pub unsafe extern "C" fn tt_run_engine(
+    dump_name: *const libc::c_char,
+    input_file_name: *const libc::c_char,
+    build_date: libc::time_t,
+) -> i32 {
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        tt_run_engine_inner(dump_name, input_file_name, build_date)
+    }));
+    match outcome {
+        Ok(rv) => rv,
+        Err(payload) => {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("internal engine panic");
+            if let Ok(cmsg) = std::ffi::CString::new(msg) {
+                _ttbc_set_error_message(cmsg.as_ptr());
+            }
+            HISTORY_FATAL_ERROR
+        }
+    }
+}
+
+unsafe fn tt_run_engine_inner(
     dump_name: *const libc::c_char,
     input_file_name: *const libc::c_char,
     build_date: libc::time_t,
