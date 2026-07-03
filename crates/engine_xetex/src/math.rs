@@ -1508,8 +1508,7 @@ fn math_accent_initial(
     }
 }
 
-fn box_height_width(mem: &MemState, box_node: i32) -> (i32, i32) {
-    let b = classify_box_or_panic(mem, box_node);
+fn box_height_width(mem: &MemState, b: AnyBox) -> (i32, i32) {
     (b.width(mem).0, b.height(mem).0)
 }
 
@@ -1683,8 +1682,9 @@ unsafe fn make_math_accent_in(
             s = 0;
         }
         let clean_style = 2 * (st.scanner.cur_style / 2) + 1;
-        x = clean_box_in(st, q_raw + 1, clean_style)?.idx().0;
-        (w, h) = box_height_width(&st.mem, x);
+        let xb = clean_box_in(st, q_raw + 1, clean_style)?;
+        (w, h) = box_height_width(&st.mem, xb);
+        x = xb.idx().0;
     } else if initial.i.s3 > 0 {
         let mut acc_i = initial.i;
         c = initial.c;
@@ -1730,8 +1730,9 @@ unsafe fn make_math_accent_in(
             };
         }
         let clean_style = 2 * (st.scanner.cur_style / 2) + 1;
-        x = clean_box_in(st, q_raw + 1, clean_style)?.idx().0;
-        (w, h) = box_height_width(&st.mem, x);
+        let xb = clean_box_in(st, q_raw + 1, clean_style)?;
+        (w, h) = box_height_width(&st.mem, xb);
+        x = xb.idx().0;
         loop {
             if acc_i.s1 % 4 != LIST_TAG {
                 break;
