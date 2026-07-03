@@ -260,10 +260,12 @@ pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
 ///
 /// Phase-C: threaded to `&mut MemState`. Calls the threaded [`get_node`]
 /// directly and propagates its [`ALLOC_FAILED`] sentinel (`01b` §5).
-pub fn new_null_box(mem: &mut MemState) -> i32 {
-    let Some(p) = NodePtr::<HListNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+/// Typed twin of [`new_null_box`]: allocate a zeroed hlist box and return its
+/// `NodePtr<HListNode>` handle directly, for callers that immediately set its
+/// dimensions instead of re-deriving the handle via `classify_box`. `None` is
+/// the arena-exhaustion sentinel.
+pub fn alloc_null_box(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
+    let p = NodePtr::<HListNode>::alloc(mem)?;
     p.set_subtype(mem, 0);
     p.set_width(mem, Scaled(0));
     p.set_depth(mem, Scaled(0));
@@ -273,7 +275,11 @@ pub fn new_null_box(mem: &mut MemState) -> i32 {
     p.set_glue_sign(mem, NORMAL);
     p.set_glue_order(mem, NORMAL);
     p.set_glue_set(mem, 0.0);
-    p.idx().0
+    Some(p)
+}
+
+pub fn new_null_box(mem: &mut MemState) -> i32 {
+    alloc_null_box(mem).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
@@ -436,10 +442,13 @@ pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
 /// translated from xetex-xetex0.c:258 (new_glue)
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_glue_global`].
-pub fn new_glue(mem: &mut MemState, q: i32) -> i32 {
-    let Some(p) = NodePtr::<GlueNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+/// Typed twin of [`new_glue`]: allocate a glue node pointing at spec `q` and
+/// return its `NodePtr<GlueNode>` handle directly. Callers that immediately need
+/// the typed node (to set its subtype / read its spec) use this instead of
+/// re-deriving it from `new_glue`'s raw index via `classify_glue().expect()`.
+/// `None` is the arena-exhaustion sentinel.
+pub fn alloc_glue(mem: &mut MemState, q: i32) -> Option<NodePtr<GlueNode>> {
+    let p = NodePtr::<GlueNode>::alloc(mem)?;
     // GLUE_SPEC_shrink_order(p) = NORMAL  →  mem[p].b16.s0 = NORMAL
     p.set_subtype(mem, NORMAL);
     p.set_leader_ptr(mem, MemPtr::NULL);
@@ -448,7 +457,11 @@ pub fn new_glue(mem: &mut MemState, q: i32) -> i32 {
     let spec =
         NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q)).expect("non-null glue spec");
     spec.set_ref_count(mem, spec.ref_count(mem) + 1);
-    p.idx().0
+    Some(p)
+}
+
+pub fn new_glue(mem: &mut MemState, q: i32) -> i32 {
+    alloc_glue(mem, q).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
@@ -489,17 +502,20 @@ pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
 /// translated from xetex-xetex0.c:281 (new_kern)
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_kern_global`].
-pub fn new_kern(mem: &mut MemState, w: i32) -> i32 {
+/// Typed twin of [`new_kern`]: allocate a normal kern of width `w` and return
+/// its `NodePtr<KernNode>` handle directly, for callers that immediately set its
+/// subtype. `None` is the arena-exhaustion sentinel.
+pub fn alloc_kern(mem: &mut MemState, w: i32) -> Option<NodePtr<KernNode>> {
     // Typesafe allocation: `alloc` type-stamps NODE_type = KERN_NODE and
-    // confines the family's `from_idx_unchecked` (`01b` §3a / `01c` §8). This
-    // body is now `unsafe`-free and fully typed; `None` is the §5 arena-
-    // exhaustion sentinel the `new_kern_global` wrapper maps to `overflow()`.
-    let Some(p) = NodePtr::<KernNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+    // confines the family's `from_idx_unchecked` (`01b` §3a / `01c` §8).
+    let p = NodePtr::<KernNode>::alloc(mem)?;
     p.set_subtype(mem, NORMAL);
     p.set_width(mem, Scaled(w));
-    p.idx().0
+    Some(p)
+}
+
+pub fn new_kern(mem: &mut MemState, w: i32) -> i32 {
+    alloc_kern(mem, w).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------

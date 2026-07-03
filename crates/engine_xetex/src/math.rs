@@ -1594,15 +1594,13 @@ fn start_native_accent_glyph(
     y: AnyBox,
     f: i32,
 ) -> Result<NativeAccentGlyph, NodeRecycleAbort> {
-    let p = get_node(mem, GLYPH_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
+    let pw = alloc_glyph_whatsit(mem)?;
     let old_node = y.list_ptr(mem).0;
-    mem.set_b16s1(p, WHATSIT_NODE);
-    mem.set_b16s0(p, WhatsitSubtype::Glyph as u16);
-    mem.set_b16s2(p + 4, f as u16);
-    Ok(NativeAccentGlyph { p, old_node })
+    pw.set_native_font(mem, f as u16);
+    Ok(NativeAccentGlyph {
+        p: pw.idx().0,
+        old_node,
+    })
 }
 
 fn set_native_accent_glyph_id(mem: &mut MemState, glyph: NativeAccentGlyph, glyph_id: u16) {
@@ -2882,17 +2880,8 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                         if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
                             let cc = st.scanner.cur_c as u32;
                             let z = crate::fonts::new_native_character_in(st, cur_f, cc)?;
-                            p = crate::mem::get_node(&mut st.mem, GLYPH_NODE_SIZE);
-                            if p == ALLOC_FAILED {
-                                return Err(NodeRecycleAbort::Overflow.into());
-                            }
-                            st.mem.set_b16s1(p, WHATSIT_NODE);
-                            st.mem.set_b16s0(p, WhatsitSubtype::Glyph as u16);
-                            let p_w = st
-                                .mem
-                                .classify_whatsit(MemIdx::new(p))
-                                .expect("valid whatsit")
-                                .expect("glyph node");
+                            let p_w = alloc_glyph_whatsit(&mut st.mem)?;
+                            p = p_w.idx().0;
                             p_w.set_native_font(&mut st.mem, cur_f as u16);
                             let zaddr = node_addr_in(st, z);
                             p_w.set_native_glyph(&mut st.mem, real_get_native_glyph(zaddr, 0));
@@ -3359,20 +3348,27 @@ pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
         + fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16)
 }
 
-fn new_stack_glyph(
-    mem: &mut MemState,
-    f: i32,
-    g: i32,
-) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
-    let p = crate::mem::get_node(mem, GLYPH_NODE_SIZE);
+/// Allocate + type-stamp a fresh `GLYPH_NODE` whatsit and hand back its typed
+/// handle. This is the single audited `from_idx_unchecked` construction site for
+/// glyph whatsits (`01c` §8): callers receive a `NodePtr<WhatsitNode>` directly
+/// instead of re-deriving one from a raw index via
+/// `classify_whatsit().expect().expect()`.
+fn alloc_glyph_whatsit(mem: &mut MemState) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+    let p = get_node(mem, GLYPH_NODE_SIZE);
     if p == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
     mem.set_b16s1(p, WHATSIT_NODE);
     mem.set_b16s0(p, WhatsitSubtype::Glyph as u16);
-    // Freshly allocated and type-stamped GLYPH_NODE whatsit; this is the
-    // family's audited construction boundary (`01c` §8).
-    let pw = unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(p)) };
+    Ok(unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(p)) })
+}
+
+fn new_stack_glyph(
+    mem: &mut MemState,
+    f: i32,
+    g: i32,
+) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+    let pw = alloc_glyph_whatsit(mem)?;
     pw.set_native_font(mem, f as u16);
     pw.set_native_glyph(mem, g as u16);
     Ok(pw)
@@ -4777,13 +4773,14 @@ pub(crate) fn init_math_in(
             }
             st.mem.set_b32s1(p_glue, j);
 
-            j = crate::mem::new_null_box(&mut st.mem);
-            if j == ALLOC_FAILED {
+            let Some(jbox) = crate::mem::alloc_null_box(&mut st.mem) else {
                 return Err(NodeRecycleAbort::Overflow.into());
-            }
+            };
+            // `j` (the raw box index) is stored into `cur_list.e_tex_aux` later
+            // in this function; keep it in sync with the typed handle.
+            j = jbox.idx().0;
             let just_box = st.scanner.just_box;
             let jb = classify_box_or_panic(&st.mem, just_box);
-            let jbox = classify_box_or_panic(&st.mem, j);
             let jb_w = jb.width(&st.mem);
             let jb_sh = jb.shift_amount(&st.mem);
             let jb_go = jb.glue_order(&st.mem);
@@ -5580,14 +5577,12 @@ unsafe fn var_delimiter_in(
         }
     } else {
         // Null delimiter: an empty box of \nulldelimiterspace width.
-        let bb = crate::mem::new_null_box(&mut st.mem);
-        if bb == ALLOC_FAILED {
+        let Some(bb) = crate::mem::alloc_null_box(&mut st.mem) else {
             return Err(NodeRecycleAbort::Overflow.into());
-        }
-        let bb = classify_box_or_panic(&st.mem, bb);
+        };
         let width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE);
         bb.set_width(&mut st.mem, Scaled(width));
-        b = bb;
+        b = AnyBox::HList(bb);
     }
     let axis = axis_height(&st.fonts, &st.eqtb, s);
     let b_box = b;

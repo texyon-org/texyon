@@ -2951,14 +2951,9 @@ fn append_glue_node(
     subtype: u16,
     decrement_spec_ref: bool,
 ) -> i32 {
-    let p_raw = crate::mem::new_glue(mem, glue_spec);
-    if p_raw == crate::mem::ALLOC_FAILED {
-        return p_raw;
-    }
-    let p = mem
-        .classify_glue(MemIdx::new(p_raw))
-        .expect("new_glue stamped a valid node")
-        .expect("new_glue returned a glue node");
+    let Some(p) = crate::mem::alloc_glue(mem, glue_spec) else {
+        return crate::mem::ALLOC_FAILED;
+    };
     mem.set_b32s1(tail, p.idx().0);
     if decrement_spec_ref {
         let spec = p.glue_spec(mem).expect("non-null glue spec");
@@ -2990,14 +2985,9 @@ pub(crate) fn append_glue_in(st: &mut crate::state::EngineState) -> Result<(), M
 }
 // translated from xetex-xetex0.c:9395 (append_kern)
 fn append_kern_node(mem: &mut crate::state::MemState, tail: i32, width: i32, subtype: u16) -> i32 {
-    let p_raw = crate::mem::new_kern(mem, width);
-    if p_raw == crate::mem::ALLOC_FAILED {
-        return p_raw;
-    }
-    let p = mem
-        .classify_kern(MemIdx::new(p_raw))
-        .expect("new_kern stamped a valid node")
-        .expect("new_kern returned a kern node");
+    let Some(p) = crate::mem::alloc_kern(mem, width) else {
+        return crate::mem::ALLOC_FAILED;
+    };
     mem.set_b32s1(tail, p.idx().0);
     p.set_subtype(mem, subtype);
     p.idx().0
