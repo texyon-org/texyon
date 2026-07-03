@@ -4,6 +4,27 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-07-03 (sessions 249–252, **execution — typing/enums/state DONE +
+clean-engine pass**). (1) **Zero global mutable state** (01e): mod-raw 31→3 (the 3 are
+FONT_* FFI locators), with_state/ENGINE_STATE_FALLBACK drained to 0. (2) **Constants→enums**
+(01f): WhatsitSubtype, noad→NodeType, GroupCode (cur_group typed), PageboxType,
+InteractionMode — every duplicated node/whatsit/noad/group type-code magic constant gone.
+(3) **Typed pointers** (01f): the clean AnyBox/NodePtr propagation is complete — typed-twin
+allocators, after_math/build_opentype/make_op/rebox/make_radical/make_math_accent boxes →
+AnyBox, and the **mlist_to_hlist first-pass dispatch → `match classify()`** with typed
+AnyNode arms (−6 double-expects on the hottest path). classify_box_or_panic 18→10 (the 10
+left are deliberate nullable/provenance boundaries). (4) **Clean-engine pass** (session 252):
+~1000 stale migration-scaffolding comments stripped (SAFETY + C-provenance kept); 168
+duplicate constants consolidated into consts.rs (defs 2454→2286); warnings 36→5. All slices
+dashboard 29/2 + corpus 637/2/0.
+
+**Still NOT done — the setjmp/longjmp I/O tail (01d §6):** the C `_tt_abort` longjmp extern
+still backs a handful of B-class terminal I/O aborts — `open_log_file`, `finalize_dvi_file`,
+`u_close`, two deferred `ttstub_input_close` sites, and the `ext.rs` native-font ×13 inline
+class (unblocks `load_mapping_file_in`). `unsafe fn` ~201. The engine is fully functional
+(corpus 637/2); these longjmps only fire on terminal I/O errors passing runs never hit. This
+is the remaining Stage-2 work.
+
 Last updated: 2026-07-01 (last session = session 248, **execution — the two most
 tractable Rust `_tt_abort` residue pieces: the `main_control` interwoven-align inline
 `fatal_error` and the whole `error()` recoverable-error wrapper (`01d` §5.6)**. Three
