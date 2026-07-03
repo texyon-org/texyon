@@ -1221,7 +1221,6 @@ pub(crate) fn set_math_char_in(
 ) -> Result<(), crate::main_control::MainControlAbort> {
     const ACTIVE_MATH_CHAR_SM: i32 = 0x1FFFFF;
     const MATH_CHAR_NODE_SM: i32 = 1; // xetex-constants.h:269
-    const ORD_NOAD: u16 = 16; // xetex_format.h:401
     const INT_PAR_CUR_FAM_SM: i32 = 44;
     const NUMBER_MATH_FAM_SM: i32 = 256;
 
@@ -1253,7 +1252,7 @@ pub(crate) fn set_math_char_in(
         } else {
             nd.set_noad_type(
                 &mut st.mem,
-                NodeType::from_raw(ORD_NOAD + math_class_fn(c) as u16).expect("valid noad type"),
+                NodeType::from_raw(NodeType::OrdNoad.as_raw() + math_class_fn(c) as u16).expect("valid noad type"),
             );
         }
         let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;

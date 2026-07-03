@@ -3251,7 +3251,6 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
     const VMOVE: u16 = 22; // xetex_format.h:260
     const LEADER_SHIP: u16 = 31; // xetex_format.h:269
     const EQ_NO: u16 = 48; // xetex_format.h:286
-    const LEFT_NOAD: u16 = 30; // xetex_format.h:415
     const VMODE: i16 = 1;
     const HMODE: i16 = 104;
     const MMODE: i16 = 207;
@@ -3413,7 +3412,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 After::Found
             }
             MATH_LEFT_GROUP => {
-                if st.mem.b16s1(st.input.nest[(p + 1) as usize].e_tex_aux) == LEFT_NOAD {
+                if st.mem.b16s1(st.input.nest[(p + 1) as usize].e_tex_aux) == NodeType::LeftNoad.as_raw() {
                     crate::output::print_esc_cstr_in(st, c"left".as_ptr());
                 } else {
                     crate::output::print_esc_cstr_in(st, c"middle".as_ptr());

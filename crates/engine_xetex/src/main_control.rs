@@ -21,7 +21,7 @@ use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
 use crate::node::{AnyNode, GlueSpecNode, NodePtr};
 use crate::scan::{set_class_fn, set_family_fn};
-use crate::units::{MemIdx, MemPtr, Scaled};
+use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
 extern "C" {
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
@@ -2716,9 +2716,6 @@ pub(crate) fn handle_right_brace_in(
     const GLUE_PAR_SPLIT_TOP_SKIP: i32 = 10; // xetex_format.h:159
     const INS_NODE: u16 = 3; // xetex_format.h:383
     const ADJUST_NODE: u16 = 5; // xetex_format.h:385
-    const VCENTER_NOAD: u16 = 29; // xetex_format.h:414
-    const ORD_NOAD: u16 = 16; // xetex_format.h:401
-    const ACCENT_NOAD: u16 = 28; // xetex_format.h:413
     const SUB_BOX: i32 = 2; // xetex-constants.h:283
     const SUB_MLIST: i32 = 3; // xetex-constants.h:287
     const EMPTY: i32 = 0; // xetex-constants.h:230
@@ -2930,7 +2927,7 @@ pub(crate) fn handle_right_brace_in(
             }
             st.mem.set_b32s1(st.input.cur_list.tail, noad);
             st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
-            st.mem.set_b16s1(st.input.cur_list.tail, VCENTER_NOAD);
+            st.mem.set_b16s1(st.input.cur_list.tail, NodeType::VcenterNoad.as_raw());
             st.mem.set_b32s1(st.input.cur_list.tail + 1, SUB_BOX);
             st.mem.set_b32s0(st.input.cur_list.tail + 1, p.idx().0);
         }
@@ -2948,7 +2945,7 @@ pub(crate) fn handle_right_brace_in(
             st.mem.set_b32s0(save_loc, p);
 
             if p != TEX_NULL && st.mem.b32s1(p) == TEX_NULL {
-                if st.mem.b16s1(p) == ORD_NOAD
+                if st.mem.b16s1(p) == NodeType::OrdNoad.as_raw()
                     && st.mem.b32s1(p + 3) == EMPTY
                     && st.mem.b32s1(p + 2) == EMPTY
                 {
@@ -2956,9 +2953,9 @@ pub(crate) fn handle_right_brace_in(
                     st.mem.set_b32s0(save_loc, st.mem.b32s0(p + 1));
                     st.mem.set_b32s1(save_loc, st.mem.b32s1(p + 1));
                     free_node(&mut st.mem, p, NOAD_SIZE);
-                } else if st.mem.b16s1(p) == ACCENT_NOAD
+                } else if st.mem.b16s1(p) == NodeType::AccentNoad.as_raw()
                     && save_loc == st.input.cur_list.tail + 1
-                    && st.mem.b16s1(st.input.cur_list.tail) == ORD_NOAD
+                    && st.mem.b16s1(st.input.cur_list.tail) == NodeType::OrdNoad.as_raw()
                 {
                     // merge accent noad into ord
                     let mut q = st.input.cur_list.head;
