@@ -72,7 +72,6 @@ const FONT_BASE: i32 = 0;
 const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
 const FROZEN_END_GROUP: i32 = 2_243_226 + 2; // xetex_format.h:201 + xetex-constants.h:57
 const FROZEN_RIGHT: i32 = 2_243_226 + 3; // xetex_format.h:201 + xetex-constants.h:58
-const GLYPH_NODE_BD: u16 = 42; // xetex_format.h:465
 const HASH_BASE: i32 = 2_228_226;
 const INT_VAL: i16 = 0;
 const LANGUAGE_NODE_SUBTYPE: i16 = 4; // xetex_format.h:461 (whatsit subtype)
@@ -83,8 +82,6 @@ const MMODE: i16 = 207; // xetex_format.h:370
 const MU_GLUE: u16 = 99;
 const MU_SKIP_BASE: i32 = 2_254_615;
 const MU_VAL_SCAN: i16 = 3;
-const NATIVE_WORD_NODE: u16 = 40; // xetex_format.h:463
-const NATIVE_WORD_NODE_AT: u16 = 41; // xetex_format.h:464
 const NULL_CS: i32 = 2_228_225; // xetex_format.h:199
 const OTHER_CHAR: u8 = 12;
 const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
@@ -3381,8 +3378,9 @@ pub(crate) fn build_discretionary_in(
                 let ok = ntype == KERN_NODE   // 11
                     || ntype == LIGATURE_NODE  // 6
                     || ntype == WHATSIT_NODE && {
-                        let sub = st.mem.b16s0(p);
-                        sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT || sub == GLYPH_NODE_BD
+                        crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(p)).is_some_and(|s| {
+                            s.is_native_word() || s == crate::node::WhatsitSubtype::Glyph
+                        })
                     };
                 if !ok {
                     crate::output::error_here_with_diagnostic_in(
@@ -5244,8 +5242,6 @@ pub(crate) unsafe fn main_control_main_loop_in(
     const NATIVE_NODE_SIZE: i32 = 6;
     const SPACE_ADJUSTMENT: u16 = 3;
     const WHATSIT_NODE: u16 = 8;
-    const NATIVE_WORD_NODE: u16 = 40;
-    const NATIVE_WORD_NODE_AT: u16 = 41;
     const INS_NODE: u16 = 3;
     const MARK_NODE: u16 = 4;
     const ADJUST_NODE: u16 = 5;
@@ -5462,8 +5458,8 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 let tail_is_native = st.mainloop.main_pp != TEX_NULL
                     && !mc_is_char_node(st, st.mainloop.main_pp)
                     && st.mem.b16s1(st.mainloop.main_pp) == WHATSIT_NODE
-                    && (st.mem.b16s0(st.mainloop.main_pp) == NATIVE_WORD_NODE
-                        || st.mem.b16s0(st.mainloop.main_pp) == NATIVE_WORD_NODE_AT)
+                    && crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(st.mainloop.main_pp))
+                        .is_some_and(|s| s.is_native_word())
                     && st.mem.b16s2(st.mainloop.main_pp + 4) == st.mainloop.main_f as u16
                     && st.mainloop.main_ppp != st.mainloop.main_pp
                     && !mc_is_char_node(st, st.mainloop.main_ppp)
@@ -5608,8 +5604,8 @@ pub(crate) unsafe fn main_control_main_loop_in(
             let tail_is_native = st.mainloop.main_pp != TEX_NULL
                 && !mc_is_char_node(st, st.mainloop.main_pp)
                 && st.mem.b16s1(st.mainloop.main_pp) == WHATSIT_NODE
-                && (st.mem.b16s0(st.mainloop.main_pp) == NATIVE_WORD_NODE
-                    || st.mem.b16s0(st.mainloop.main_pp) == NATIVE_WORD_NODE_AT)
+                && crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(st.mainloop.main_pp))
+                        .is_some_and(|s| s.is_native_word())
                 && st.mem.b16s2(st.mainloop.main_pp + 4) == mf as u16
                 && st.mainloop.main_ppp != st.mainloop.main_pp
                 && !mc_is_char_node(st, st.mainloop.main_ppp)
@@ -5679,8 +5675,8 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 if p != TEX_NULL
                     && !mc_is_char_node(st, p)
                     && st.mem.b16s1(p) == WHATSIT_NODE
-                    && (st.mem.b16s0(p) == NATIVE_WORD_NODE
-                        || st.mem.b16s0(p) == NATIVE_WORD_NODE_AT)
+                    && crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(p))
+                        .is_some_and(|s| s.is_native_word())
                 {
                     pp = p;
                 }
