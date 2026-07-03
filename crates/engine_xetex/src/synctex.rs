@@ -7,7 +7,6 @@ use crate::consts::{
 use libc::{c_char, c_int, size_t};
 use std::ptr;
 
-use crate::globals::{cur_input, set_cur_input_synctex_tag};
 
 // INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
 const INT_PAR_SYNCTEX: i32 = 81;
@@ -637,7 +636,8 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
         return;
     }
     let tag = synctex.synctex_tag_counter as i32;
-    set_cur_input_synctex_tag(tag);
+    st.input.cur_input.synctex_tag = tag;
+    st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
 
     if synctex.synctex_tag_counter == 1 {
         synctex.root_name = xstrdup(st.input.get_current_name().as_ptr());
@@ -653,7 +653,7 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
 
     if synctex.file != INVALID_HANDLE || synctex_dot_open(synctex, &st.eqtb, tmp) != INVALID_HANDLE
     {
-        let ci = cur_input();
+        let ci = st.input.cur_input;
         let tmp_name = st.input.get_current_name();
         synctex_record_input(synctex, ci.synctex_tag, tmp_name.as_ptr());
     }

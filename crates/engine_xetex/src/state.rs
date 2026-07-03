@@ -182,6 +182,11 @@ pub(crate) struct InputClusterState {
     /// `input_state_t`) — a compound struct, not a scalar typedef, no
     /// newtype debt.
     pub input_stack: Vec<crate::globals::InputState>,
+    /// The live top-of-input-stack record — TeX's `cur_input` (xetex-xetexd.h:506).
+    /// Folded off `mod raw` (`01e`); `push_input` saves it into `input_stack[input_ptr]`,
+    /// `pop_input` restores it. `synctex_tag` is mirrored into `st.mem.cur_synctex_tag`
+    /// for `get_node`.
+    pub cur_input: crate::globals::InputState,
     /// Rust-owned main input-file stack (`max_in_open + 1` handles, matching
     /// the former `xmalloc_array` shape). Allocated at engine init and released
     /// by `tt_cleanup`; never reallocated during a run (the pointer-escaping
@@ -459,6 +464,11 @@ pub(crate) struct MemState {
     /// from hundreds of `&mut MemState`-only sites) stamps it into the synctex
     /// trailer of MEDIUM+ nodes; it is the allocation-time source line.
     pub line: i32,
+    /// Mirror of `st.input.cur_input.synctex_tag` for `get_node`'s synctex trailer
+    /// (`01e`). `synctex_tag` proper is a stack-saved field of the folded `cur_input`
+    /// struct and can't leave it; `get_node` holds only `&mut MemState`, so it reads
+    /// this mirror, kept in sync at the 7 sites that write `cur_input.synctex_tag`.
+    pub cur_synctex_tag: i32,
     /// General-purpose scratch node pointer — TeX's `temp_ptr`. Folded off
     /// `mod raw` (`01e`). Lives here (not ScannerState) because every user
     /// holds `&mut MemState`; two-phase borrows keep `mem.f(mem.temp_ptr,…)`

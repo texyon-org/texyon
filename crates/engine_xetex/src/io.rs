@@ -1,9 +1,6 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
 use crate::consts::{BIGGEST_CHAR, INT_BASE, SELECTOR_TERM_ONLY, TOO_BIG_CHAR};
-use crate::globals::{
-    cur_input, set_cur_input_limit,
-    set_cur_input_loc, set_cur_input_name, set_cur_input_state, };
 use crate::input::InputAbort;
 
 // ---------------------------------------------------------------------------
@@ -1217,9 +1214,9 @@ pub(crate) unsafe fn open_log_file_in(
     st.shipout.selector = SELECTOR_LOG_ONLY;
     st.errors.log_opened = true;
 
-    // `cur_input()` reads the raw `cur_input` global (safe under the borrow).
+    // `st.input.cur_input` reads the raw `cur_input` global (safe under the borrow).
     let ptr = st.input.input_ptr;
-    st.input.input_stack[ptr as usize] = cur_input();
+    st.input.input_stack[ptr as usize] = st.input.cur_input;
 
     crate::output::print_nl_cstr_in(st, c"**".as_ptr());
     let mut l = st.input.input_stack[0].limit;
@@ -1339,8 +1336,8 @@ pub unsafe fn init_io(st: &mut crate::state::EngineState) {
     st.input.buffer[first as usize] = 0;
     st.input.last = first;
     let last = st.input.last;
-    set_cur_input_loc(first);
-    set_cur_input_limit(last);
+    st.input.cur_input.loc = first;
+    st.input.cur_input.limit = last;
     st.input.first = last + 1;
 }
 
@@ -1531,7 +1528,7 @@ pub(crate) unsafe fn start_input_in(
     pack_file_name_in(st, n, a, e);
     crate::input::begin_file_reading_in(st)?;
 
-    let idx = cur_input().index as i32;
+    let idx = st.input.cur_input.index as i32;
     let fptr = st.input.input_file.as_mut_ptr().add(idx as usize);
     let mode = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let enc = st
@@ -1567,18 +1564,18 @@ pub(crate) unsafe fn start_input_in(
     st.scanner.name_in_progress = false;
 
     let name = make_name_string_in(st).map_err(|e| name_abort_scc(st, e))?;
-    set_cur_input_name(name);
+    st.input.cur_input.name = name;
     let io = st.input.in_open;
-    st.input.source_filename_stack[io as usize] = cur_input().name;
+    st.input.source_filename_stack[io as usize] = st.input.cur_input.name;
     let nif = st.input.name_of_input_file;
     let fss_str =
         crate::texmfmp::maketexstring_in(&mut st.strings, nif).map_err(SccAbort::MakeTexString)?;
     st.input.full_source_filename_stack[io as usize] = fss_str;
 
-    if cur_input().name == st.strings.str_ptr - 1 {
-        let temp_str = crate::string_pool::search_string(&st.strings, cur_input().name);
+    if st.input.cur_input.name == st.strings.str_ptr - 1 {
+        let temp_str = crate::string_pool::search_string(&st.strings, st.input.cur_input.name);
         if temp_str > 0 {
-            set_cur_input_name(temp_str);
+            st.input.cur_input.name = temp_str;
             st.strings.str_ptr -= 1;
             st.strings.pool_ptr =
                 st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
@@ -1627,22 +1624,22 @@ pub(crate) unsafe fn start_input_in(
         crate::output::end_diagnostic_in(st, false);
     }
 
-    set_cur_input_state(NEW_LINE);
+    st.input.cur_input.state = NEW_LINE;
     let synctex_job_name = st.strings.job_name;
     let synctex_tmp = crate::texmfmp::gettexstring_in(&st.strings, synctex_job_name);
     crate::synctex::synctex_start_input(st, synctex_tmp);
     st.mem.line = 1;
     let f = st.input.input_file[idx as usize];
     input_line_in(st, f)?;
-    set_cur_input_limit(st.input.last);
+    st.input.cur_input.limit = st.input.last;
 
     let elc = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
     if elc < 0 || elc > 255 {
-        set_cur_input_limit(cur_input().limit - 1);
+        st.input.cur_input.limit = st.input.cur_input.limit - 1;
     } else {
-        st.input.buffer[cur_input().limit as usize] = elc;
+        st.input.buffer[st.input.cur_input.limit as usize] = elc;
     }
-    st.input.first = cur_input().limit + 1;
-    set_cur_input_loc(cur_input().start);
+    st.input.first = st.input.cur_input.limit + 1;
+    st.input.cur_input.loc = st.input.cur_input.start;
     Ok(())
 }

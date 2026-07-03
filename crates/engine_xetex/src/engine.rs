@@ -11,7 +11,7 @@ use crate::consts::{
 };
 use crate::format_io::load_fmt_file;
 use crate::globals::{
-    cur_input, set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
+    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
     set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, };
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
@@ -312,7 +312,7 @@ pub(crate) unsafe fn final_cleanup_in(
     }
 
     while st.input.input_ptr > 0 {
-        if cur_input().state == TOKEN_LIST {
+        if st.input.cur_input.state == TOKEN_LIST {
             crate::input::end_token_list_in(st).map_err(|e| e.into_engine_abort())?;
         } else {
             crate::input::end_file_reading_in(st).map_err(|e| e.into_engine_abort())?;
@@ -1281,11 +1281,11 @@ pub unsafe extern "C" fn tt_run_engine(
     st.scanner.scanner_status = NORMAL as u8;
     st.scanner.warning_index = crate::mem::TEX_NULL;
     st.input.first = 1;
-    crate::globals::set_cur_input_state(NEW_LINE);
-    crate::globals::set_cur_input_start(1);
-    crate::globals::set_cur_input_index(0);
+    st.input.cur_input.state = NEW_LINE;
+    st.input.cur_input.start = 1;
+    st.input.cur_input.index = 0;
     st.mem.line = 0;
-    crate::globals::set_cur_input_name(0);
+    st.input.cur_input.name = 0;
     st.input.force_eof = false;
     st.scanner.align_state = 1_000_000;
 
@@ -1312,9 +1312,9 @@ pub unsafe extern "C" fn tt_run_engine(
     // SAFETY: union projection; the eqtb index is a valid int-param slot.
     let end_line_char = unsafe { st.eqtb.data[(PC_INT_BASE + INT_PAR_END_LINE_CHAR) as usize].b32.s1 };
     if end_line_char < 0 || end_line_char > BIGGEST_CHAR {
-        crate::globals::set_cur_input_limit(crate::globals::cur_input().limit - 1);
+        st.input.cur_input.limit = st.input.cur_input.limit - 1;
     } else {
-        st.input.buffer[crate::globals::cur_input().limit as usize] = end_line_char;
+        st.input.buffer[st.input.cur_input.limit as usize] = end_line_char;
     }
 
     if st.config.in_initex_mode {

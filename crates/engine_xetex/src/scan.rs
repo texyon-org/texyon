@@ -18,9 +18,6 @@ use crate::ext::ot_font_get_1;
 use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
 
-use crate::globals::{
-    cur_input, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_state, set_cur_input_synctex_tag, };
 // Relocated to packaging.rs (workstream 02); still called from scan.rs.
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
 use crate::errors::int_error_in;
@@ -768,7 +765,7 @@ pub(crate) fn read_toks_in(
     loop {
         // do…while(align_state != 1_000_000) — §502
         crate::input::begin_file_reading_in(st)?;
-        set_cur_input_name((m + 1) as i32);
+        st.input.cur_input.name = (m + 1) as i32;
 
         if st.input.read_open[m] == CLOSED {
             return Err(SccAbort::Input(crate::input::InputAbort::TtAbort(
@@ -801,32 +798,32 @@ pub(crate) fn read_toks_in(
                     st.errors.help_ptr = 1;
                     st.errors.help_line[0] = c"This \\read has unbalanced braces.".as_ptr();
                     st.scanner.align_state = 1_000_000;
-                    set_cur_input_limit(0);
+                    st.input.cur_input.limit = 0;
                     scc_err(crate::errors::error_in(st))?;
                 }
             }
         }
 
         let lim = st.input.last;
-        set_cur_input_limit(lim);
+        st.input.cur_input.limit = lim;
         let end_char = unsafe {
             st.eqtb.data[(INT_BASE + INT_PAR_END_LINE_CHAR) as usize]
                 .b32
                 .s1
         };
         if !(0..=255).contains(&end_char) {
-            set_cur_input_limit(lim - 1);
+            st.input.cur_input.limit = lim - 1;
         } else {
             st.input.buffer[lim as usize] = end_char;
         }
-        st.input.first = cur_input().limit + 1;
-        set_cur_input_loc(cur_input().start);
-        set_cur_input_state(NEW_LINE);
+        st.input.first = st.input.cur_input.limit + 1;
+        st.input.cur_input.loc = st.input.cur_input.start;
+        st.input.cur_input.state = NEW_LINE;
 
         if j == 1 {
             // §: direct token scan (no expansion)
-            let mut loc = cur_input().loc;
-            while loc <= cur_input().limit {
+            let mut loc = st.input.cur_input.loc;
+            while loc <= st.input.cur_input.limit {
                 let c = st.input.buffer[loc as usize];
                 loc += 1;
                 let tok = if c == b' ' as i32 {
@@ -1397,7 +1394,6 @@ pub(crate) fn check_outer_validity_in(
     st: &mut crate::state::EngineState,
 ) -> Result<crate::errors::ErrorOutcome, crate::input::InputAbort> {
     use crate::errors::ErrorOutcome;
-    use crate::globals::{cur_input};
     use crate::input::InputAbort;
 
     if st.scanner.scanner_status == NORMAL_COV {
@@ -1407,7 +1403,7 @@ pub(crate) fn check_outer_validity_in(
 
     // If cur_cs is a control sequence, push it back as a backed-up token.
     if st.scanner.cur_cs != 0 {
-        let ci = cur_input();
+        let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST_COV || ci.name < 1 || ci.name > 17 {
             let p = crate::mem::get_avail(&mut st.mem);
             if p == crate::mem::ALLOC_FAILED {
@@ -1616,29 +1612,29 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
     'restart: loop {
         st.scanner.cur_cs = 0;
 
-        if cur_input().state != TOKEN_LIST {
+        if st.input.cur_input.state != TOKEN_LIST {
             'texswitch: loop {
-                if cur_input().loc <= cur_input().limit {
+                if st.input.cur_input.loc <= st.input.cur_input.limit {
                     // Read next character from the buffer
-                    st.scanner.cur_chr = st.input.buffer[(cur_input().loc) as usize];
-                    set_cur_input_loc(cur_input().loc + 1);
+                    st.scanner.cur_chr = st.input.buffer[(st.input.cur_input.loc) as usize];
+                    st.input.cur_input.loc = st.input.cur_input.loc + 1;
 
                     // Handle UTF-16 surrogate pair
                     if st.scanner.cur_chr >= 0xD800
                         && st.scanner.cur_chr < 0xDC00
-                        && cur_input().loc <= cur_input().limit
-                        && st.input.buffer[(cur_input().loc) as usize] >= 0xDC00
-                        && st.input.buffer[(cur_input().loc) as usize] < 0xE000
+                        && st.input.cur_input.loc <= st.input.cur_input.limit
+                        && st.input.buffer[(st.input.cur_input.loc) as usize] >= 0xDC00
+                        && st.input.buffer[(st.input.cur_input.loc) as usize] < 0xE000
                     {
-                        let lower = st.input.buffer[(cur_input().loc) as usize] - 0xDC00;
-                        set_cur_input_loc(cur_input().loc + 1);
+                        let lower = st.input.buffer[(st.input.cur_input.loc) as usize] - 0xDC00;
+                        st.input.cur_input.loc = st.input.cur_input.loc + 1;
                         st.scanner.cur_chr = 65536 + (st.scanner.cur_chr - 0xD800) * 1024 + lower;
                     }
 
                     'reswitch: loop {
                         let cat = st.eqtb.b32s1(CAT_CODE_BASE + st.scanner.cur_chr) as u8;
                         st.scanner.cur_cmd = cat;
-                        let sc = cur_input().state as i32 + cat as i32;
+                        let sc = st.input.cur_input.state as i32 + cat as i32;
 
                         match sc {
                             // ANY_STATE_PLUS(IGNORE) + SKIP_BLANKS+SPACER + NEW_LINE+SPACER
@@ -1649,29 +1645,27 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                             // ANY_STATE_PLUS(ESCAPE): escape sequence
                             1 | 17 | 33 => {
-                                if cur_input().loc > cur_input().limit {
+                                if st.input.cur_input.loc > st.input.cur_input.limit {
                                     st.scanner.cur_cs = NULL_CS_GN;
                                 } else {
                                     'start_cs: loop {
-                                        let cs_start = cur_input().loc;
+                                        let cs_start = st.input.cur_input.loc;
                                         let first_chr = st.input.buffer[(cs_start) as usize];
                                         let first_cat =
                                             st.eqtb.b32s1(CAT_CODE_BASE + first_chr) as u8;
                                         let mut k = cs_start + 1;
-                                        set_cur_input_state(
-                                            if first_cat == LETTER || first_cat == SPACER {
+                                        st.input.cur_input.state = if first_cat == LETTER || first_cat == SPACER {
                                                 SKIP_BLANKS
                                             } else {
                                                 MID_LINE
-                                            },
-                                        );
+                                            };
 
-                                        if first_cat == LETTER && k <= cur_input().limit {
+                                        if first_cat == LETTER && k <= st.input.cur_input.limit {
                                             // Multi-letter control word
                                             let mut chr = st.input.buffer[(k) as usize];
                                             let mut cat2 = st.eqtb.b32s1(CAT_CODE_BASE + chr) as u8;
                                             k += 1;
-                                            while cat2 == LETTER && k <= cur_input().limit {
+                                            while cat2 == LETTER && k <= st.input.cur_input.limit {
                                                 chr = st.input.buffer[(k) as usize];
                                                 cat2 = st.eqtb.b32s1(CAT_CODE_BASE + chr) as u8;
                                                 k += 1;
@@ -1680,11 +1674,11 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                             // Sup-mark (^^^) handling in multi-letter path
                                             if cat2 == SUP_MARK
                                                 && st.input.buffer[(k) as usize] == chr
-                                                && k < cur_input().limit
+                                                && k < st.input.cur_input.limit
                                             {
                                                 let mut sup_count: i32 = 2;
                                                 while sup_count < 6
-                                                    && k + 2 * sup_count - 2 <= cur_input().limit
+                                                    && k + 2 * sup_count - 2 <= st.input.cur_input.limit
                                                     && st.input.buffer[(k + sup_count - 1) as usize]
                                                         == chr
                                                 {
@@ -1706,11 +1700,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                             };
                                                             st.input.buffer[(k - 1) as usize] =
                                                                 new_val;
-                                                            set_cur_input_limit(
-                                                                cur_input().limit - 2,
-                                                            );
+                                                            st.input.cur_input.limit = st.input.cur_input.limit - 2;
                                                             let mut kk = k;
-                                                            while kk <= cur_input().limit {
+                                                            while kk <= st.input.cur_input.limit {
                                                                 st.input.buffer[(kk) as usize] =
                                                                     st.input.buffer
                                                                         [(kk + 2) as usize];
@@ -1739,11 +1731,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                     if new_chr <= BIGGEST_USV_GN {
                                                         st.input.buffer[(k - 1) as usize] = new_chr;
                                                         let shift = 2 * sup_count - 1;
-                                                        set_cur_input_limit(
-                                                            cur_input().limit - shift,
-                                                        );
+                                                        st.input.cur_input.limit = st.input.cur_input.limit - shift;
                                                         let mut kk = k;
-                                                        while kk <= cur_input().limit {
+                                                        while kk <= st.input.cur_input.limit {
                                                             st.input.buffer[(kk) as usize] =
                                                                 st.input.buffer
                                                                     [(kk + shift) as usize];
@@ -1758,13 +1748,13 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                             if cat2 != LETTER {
                                                 k -= 1;
                                             }
-                                            if k > cur_input().loc + 1 {
+                                            if k > st.input.cur_input.loc + 1 {
                                                 st.scanner.cur_cs = match crate::hash::id_lookup(
                                                         &mut st.eqtb,
                                                         &mut st.strings,
                                                         &st.input.buffer,
-                                                        cur_input().loc,
-                                                        k - cur_input().loc,
+                                                        st.input.cur_input.loc,
+                                                        k - st.input.cur_input.loc,
                                                     ) {
                                                         Ok(p) => p,
                                                         Err(e) => {
@@ -1773,7 +1763,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                             )
                                                         }
                                                     };
-                                                set_cur_input_loc(k);
+                                                st.input.cur_input.loc = k;
                                                 break 'start_cs; // goto found
                                             }
                                             // Single letter: fall through to single-char handling
@@ -1781,11 +1771,11 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                             // Single-char (non-LETTER first char) or end of line
                                             if first_cat == SUP_MARK
                                                 && st.input.buffer[(k) as usize] == first_chr
-                                                && k < cur_input().limit
+                                                && k < st.input.cur_input.limit
                                             {
                                                 let mut sup_count: i32 = 2;
                                                 while sup_count < 6
-                                                    && k + 2 * sup_count - 2 <= cur_input().limit
+                                                    && k + 2 * sup_count - 2 <= st.input.cur_input.limit
                                                     && st.input.buffer[(k + sup_count - 1) as usize]
                                                         == first_chr
                                                 {
@@ -1807,11 +1797,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                             };
                                                             st.input.buffer[(k - 1) as usize] =
                                                                 new_val;
-                                                            set_cur_input_limit(
-                                                                cur_input().limit - 2,
-                                                            );
+                                                            st.input.cur_input.limit = st.input.cur_input.limit - 2;
                                                             let mut kk = k;
-                                                            while kk <= cur_input().limit {
+                                                            while kk <= st.input.cur_input.limit {
                                                                 st.input.buffer[(kk) as usize] =
                                                                     st.input.buffer
                                                                         [(kk + 2) as usize];
@@ -1840,11 +1828,9 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                     if new_chr <= BIGGEST_USV_GN {
                                                         st.input.buffer[(k - 1) as usize] = new_chr;
                                                         let shift = 2 * sup_count - 1;
-                                                        set_cur_input_limit(
-                                                            cur_input().limit - shift,
-                                                        );
+                                                        st.input.cur_input.limit = st.input.cur_input.limit - shift;
                                                         let mut kk = k;
-                                                        while kk <= cur_input().limit {
+                                                        while kk <= st.input.cur_input.limit {
                                                             st.input.buffer[(kk) as usize] =
                                                                 st.input.buffer
                                                                     [(kk + shift) as usize];
@@ -1858,12 +1844,12 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                         }
 
                                         // Single-char CS: either buffer > 65535 uses id_lookup(1), else SINGLE_BASE
-                                        if st.input.buffer[(cur_input().loc) as usize] > 65535 {
+                                        if st.input.buffer[(st.input.cur_input.loc) as usize] > 65535 {
                                             st.scanner.cur_cs = match crate::hash::id_lookup(
                                                     &mut st.eqtb,
                                                     &mut st.strings,
                                                     &st.input.buffer,
-                                                    cur_input().loc,
+                                                    st.input.cur_input.loc,
                                                     1,
                                                 ) {
                                                     Ok(p) => p,
@@ -1873,12 +1859,12 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                         )
                                                     }
                                                 };
-                                            set_cur_input_loc(cur_input().loc + 1);
+                                            st.input.cur_input.loc = st.input.cur_input.loc + 1;
                                             break 'start_cs; // goto found
                                         }
                                         st.scanner.cur_cs = SINGLE_BASE
-                                                + st.input.buffer[(cur_input().loc) as usize];
-                                        set_cur_input_loc(cur_input().loc + 1);
+                                                + st.input.buffer[(st.input.cur_input.loc) as usize];
+                                        st.input.cur_input.loc = st.input.cur_input.loc + 1;
                                         break 'start_cs;
                                     }
                                 }
@@ -1899,7 +1885,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 st.scanner.cur_cs = st.scanner.cur_chr + 1;
                                 st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
                                 st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
-                                set_cur_input_state(MID_LINE);
+                                st.input.cur_input.state = MID_LINE;
                                 if st.scanner.cur_cmd >= OUTER_CALL_GN {
                                     match check_outer_validity_in(st) {
                                         Ok(crate::errors::ErrorOutcome::Continue) => {}
@@ -1911,15 +1897,15 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                             // ANY_STATE_PLUS(SUP_MARK): caret (^^) expansion
                             8 | 24 | 40 => {
-                                if st.scanner.cur_chr == st.input.buffer[(cur_input().loc) as usize]
-                                    && cur_input().loc < cur_input().limit
+                                if st.scanner.cur_chr == st.input.buffer[(st.input.cur_input.loc) as usize]
+                                    && st.input.cur_input.loc < st.input.cur_input.limit
                                 {
                                     let mut sup_count: i32 = 2;
                                     while sup_count < 6
-                                        && cur_input().loc + 2 * sup_count - 2 <= cur_input().limit
+                                        && st.input.cur_input.loc + 2 * sup_count - 2 <= st.input.cur_input.limit
                                         && st.scanner.cur_chr
                                             == st.input.buffer
-                                                [(cur_input().loc + sup_count - 1) as usize]
+                                                [(st.input.cur_input.loc + sup_count - 1) as usize]
                                     {
                                         sup_count += 1;
                                     }
@@ -1928,11 +1914,11 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                     for d in 1..=sup_count_save {
                                         if !is_lc_hex(
                                             st.input.buffer
-                                                [(cur_input().loc + sup_count - 2 + d) as usize],
+                                                [(st.input.cur_input.loc + sup_count - 2 + d) as usize],
                                         ) {
-                                            let c = st.input.buffer[(cur_input().loc + 1) as usize];
+                                            let c = st.input.buffer[(st.input.cur_input.loc + 1) as usize];
                                             if c < 128 {
-                                                set_cur_input_loc(cur_input().loc + 2);
+                                                st.input.cur_input.loc = st.input.cur_input.loc + 2;
                                                 st.scanner.cur_chr = if c < 64 { c + 64 } else { c - 64 };
                                                 continue 'reswitch;
                                             }
@@ -1944,7 +1930,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                         let mut new_chr: i32 = 0;
                                         for d in 1..=sup_count {
                                             let c = st.input.buffer
-                                                [(cur_input().loc + sup_count - 2 + d) as usize];
+                                                [(st.input.cur_input.loc + sup_count - 2 + d) as usize];
                                             new_chr = 16 * new_chr
                                                 + if c <= b'9' as i32 {
                                                     c - b'0' as i32
@@ -1954,17 +1940,17 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                         }
                                         if new_chr > BIGGEST_USV_GN {
                                             st.scanner.cur_chr =
-                                                st.input.buffer[(cur_input().loc) as usize];
+                                                st.input.buffer[(st.input.cur_input.loc) as usize];
                                             // fall to not_exp
                                         } else {
                                             st.scanner.cur_chr = new_chr;
-                                            set_cur_input_loc(cur_input().loc + 2 * sup_count - 1);
+                                            st.input.cur_input.loc = st.input.cur_input.loc + 2 * sup_count - 1;
                                             continue 'reswitch;
                                         }
                                     }
                                 }
                                 // not_exp:
-                                set_cur_input_state(MID_LINE);
+                                st.input.cur_input.state = MID_LINE;
                             }
 
                             // ANY_STATE_PLUS(INVALID_CHAR): invalid character
@@ -1991,26 +1977,26 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                             // MID_LINE + SPACER
                             11 => {
-                                set_cur_input_state(SKIP_BLANKS);
+                                st.input.cur_input.state = SKIP_BLANKS;
                                 st.scanner.cur_chr = b' ' as i32;
                             }
 
                             // MID_LINE + CAR_RET
                             6 => {
-                                set_cur_input_loc(cur_input().limit + 1);
+                                st.input.cur_input.loc = st.input.cur_input.limit + 1;
                                 st.scanner.cur_cmd = SPACER;
                                 st.scanner.cur_chr = b' ' as i32;
                             }
 
                             // ANY_STATE_PLUS(COMMENT) + SKIP_BLANKS+CAR_RET → skip rest of line, goto texswitch
                             15 | 31 | 47 | 22 => {
-                                set_cur_input_loc(cur_input().limit + 1);
+                                st.input.cur_input.loc = st.input.cur_input.limit + 1;
                                 continue 'texswitch;
                             }
 
                             // NEW_LINE + CAR_RET: insert \par
                             38 => {
-                                set_cur_input_loc(cur_input().limit + 1);
+                                st.input.cur_input.loc = st.input.cur_input.limit + 1;
                                 st.scanner.cur_cs = st.input.par_loc;
                                 st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
                                 st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
@@ -2030,7 +2016,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                             // SKIP_BLANKS + LEFT_BRACE | NEW_LINE + LEFT_BRACE
                             18 | 34 => {
-                                set_cur_input_state(MID_LINE);
+                                st.input.cur_input.state = MID_LINE;
                                 st.scanner.align_state = st.scanner.align_state + 1;
                             }
 
@@ -2041,18 +2027,18 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                             // SKIP_BLANKS + RIGHT_BRACE | NEW_LINE + RIGHT_BRACE
                             19 | 35 => {
-                                set_cur_input_state(MID_LINE);
+                                st.input.cur_input.state = MID_LINE;
                                 st.scanner.align_state = st.scanner.align_state - 1;
                             }
 
                             // ADD_DELIMS_TO(SKIP_BLANKS): SKIP_BLANKS + MATH_SHIFT/TAB_MARK/MAC_PARAM/SUB_MARK/LETTER/OTHER_CHAR
                             20 | 21 | 23 | 25 | 28 | 29 => {
-                                set_cur_input_state(MID_LINE);
+                                st.input.cur_input.state = MID_LINE;
                             }
 
                             // ADD_DELIMS_TO(NEW_LINE): NEW_LINE + MATH_SHIFT/TAB_MARK/MAC_PARAM/SUB_MARK/LETTER/OTHER_CHAR
                             36 | 37 | 39 | 41 | 44 | 45 => {
-                                set_cur_input_state(MID_LINE);
+                                st.input.cur_input.state = MID_LINE;
                             }
 
                             _ => {} // default: do nothing
@@ -2062,21 +2048,21 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     break 'texswitch;
                 } else {
                     // End of line / end of file
-                    set_cur_input_state(NEW_LINE);
+                    st.input.cur_input.state = NEW_LINE;
 
-                    if cur_input().name > 17 {
+                    if st.input.cur_input.name > 17 {
                         st.mem.line = st.mem.line + 1;
-                        st.input.first = cur_input().start;
+                        st.input.first = st.input.cur_input.start;
 
                         if !st.input.force_eof {
-                            if cur_input().name <= 19 {
+                            if st.input.cur_input.name <= 19 {
                                 if try_in!(crate::input::pseudo_input_in(st)) {
-                                    set_cur_input_limit(st.input.last);
+                                    st.input.cur_input.limit = st.input.last;
                                 } else if st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF) != TEX_NULL
-                                    && !st.input.eof_seen[(cur_input().index as i32) as usize]
+                                    && !st.input.eof_seen[(st.input.cur_input.index as i32) as usize]
                                 {
-                                    set_cur_input_limit(st.input.first - 1);
-                                    st.input.eof_seen[(cur_input().index as i32) as usize] = true;
+                                    st.input.cur_input.limit = st.input.first - 1;
+                                    st.input.eof_seen[(st.input.cur_input.index as i32) as usize] = true;
                                     {
                                         let __p = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF);
                                         try_in!(crate::input::begin_token_list_in(
@@ -2090,16 +2076,16 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                     st.input.force_eof = true;
                                 }
                             } else if {
-                                let __f = st.input.input_file[(cur_input().index as i32) as usize];
+                                let __f = st.input.input_file[(st.input.cur_input.index as i32) as usize];
                                 try_in!(unsafe { crate::io::input_line_in(st, __f) })
                             } != 0
                             {
-                                set_cur_input_limit(st.input.last);
+                                st.input.cur_input.limit = st.input.last;
                             } else if st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF) != TEX_NULL
-                                && !st.input.eof_seen[(cur_input().index as i32) as usize]
+                                && !st.input.eof_seen[(st.input.cur_input.index as i32) as usize]
                             {
-                                set_cur_input_limit(st.input.first - 1);
-                                st.input.eof_seen[(cur_input().index as i32) as usize] = true;
+                                st.input.cur_input.limit = st.input.first - 1;
+                                st.input.eof_seen[(st.input.cur_input.index as i32) as usize] = true;
                                 {
                                     let __p = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF);
                                     try_in!(crate::input::begin_token_list_in(
@@ -2123,7 +2109,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                             {
                                 crate::output::file_warning_in(st);
                             }
-                            if cur_input().name >= 19 {
+                            if st.input.cur_input.name >= 19 {
                                 crate::output::print_char_in(st, b')' as i32);
                                 st.input.open_parens = st.input.open_parens - 1;
                                 unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
@@ -2142,14 +2128,14 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                         let end_char = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR_GN);
                         if !(0..=255).contains(&end_char) {
-                            set_cur_input_limit(cur_input().limit - 1);
+                            st.input.cur_input.limit = st.input.cur_input.limit - 1;
                         } else {
-                            st.input.buffer[(cur_input().limit) as usize] = end_char;
+                            st.input.buffer[(st.input.cur_input.limit) as usize] = end_char;
                         }
-                        st.input.first = cur_input().limit + 1;
-                        set_cur_input_loc(cur_input().start);
+                        st.input.first = st.input.cur_input.limit + 1;
+                        st.input.cur_input.loc = st.input.cur_input.start;
                     } else {
-                        if cur_input().name != 0 {
+                        if st.input.cur_input.name != 0 {
                             st.scanner.cur_cmd = 0;
                             st.scanner.cur_chr = 0;
                             return GetNextOutcome::Done;
@@ -2181,10 +2167,10 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     continue 'texswitch;
                 }
             }
-        } else if cur_input().loc != TEX_NULL {
+        } else if st.input.cur_input.loc != TEX_NULL {
             // Reading from a token list
-            let t = st.mem.b32s0(cur_input().loc);
-            set_cur_input_loc(st.mem.b32s1(cur_input().loc)); // LLIST_link
+            let t = st.mem.b32s0(st.input.cur_input.loc);
+            st.input.cur_input.loc = st.mem.b32s1(st.input.cur_input.loc); // LLIST_link
 
             if t >= CS_TOKEN_FLAG {
                 st.scanner.cur_cs = t - CS_TOKEN_FLAG;
@@ -2192,8 +2178,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                 st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
                 if st.scanner.cur_cmd >= OUTER_CALL_GN {
                     if st.scanner.cur_cmd == DONT_EXPAND_GN {
-                        st.scanner.cur_cs = st.mem.b32s0(cur_input().loc) - CS_TOKEN_FLAG;
-                        set_cur_input_loc(TEX_NULL);
+                        st.scanner.cur_cs = st.mem.b32s0(st.input.cur_input.loc) - CS_TOKEN_FLAG;
+                        st.input.cur_input.loc = TEX_NULL;
                         st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
                         st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
                         if st.scanner.cur_cmd > MAX_COMMAND_GN {
@@ -2221,7 +2207,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     x if x == OUT_PARAM_GN => {
                         {
                             let __p =
-                                st.input.param_stack[(cur_input().limit + st.scanner.cur_chr - 1) as usize];
+                                st.input.param_stack[(st.input.cur_input.limit + st.scanner.cur_chr - 1) as usize];
                             try_in!(crate::input::begin_token_list_in(st, __p, PARAMETER_GN))
                         };
                         continue 'restart;
@@ -2909,9 +2895,9 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
 
     crate::input::begin_file_reading_in(st)?;
     st.mem.line = 0;
-    let start = cur_input().start;
-    set_cur_input_limit(start);
-    set_cur_input_loc(start + 1);
+    let start = st.input.cur_input.start;
+    st.input.cur_input.limit = start;
+    st.input.cur_input.loc = start + 1;
 
     if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_SCAN_TOKENS) > 0 {
         if st.shipout.term_offset > st.config.max_print_line - 3 {
@@ -2919,13 +2905,14 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
             crate::output::print_char_in(st, b' ' as i32);
         }
-        set_cur_input_name(19);
+        st.input.cur_input.name = 19;
         crate::output::print_cstr_in(st, c"( ".as_ptr());
         st.input.open_parens += 1;
         unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
     } else {
-        set_cur_input_name(18);
-        set_cur_input_synctex_tag(0);
+        st.input.cur_input.name = 18;
+        st.input.cur_input.synctex_tag = 0;
+        st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
     }
     Ok(())
 }

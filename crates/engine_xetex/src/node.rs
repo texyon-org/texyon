@@ -2625,6 +2625,7 @@ mod tests {
             var_used: 0,
             dyn_used: 0,
             line: 0,
+            cur_synctex_tag: 0,
             temp_ptr: 0,
         }
     }

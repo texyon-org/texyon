@@ -10,7 +10,7 @@ use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
 use crate::globals::{
-    cur_input, cur_list_mode, };
+    cur_list_mode, };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -2690,7 +2690,7 @@ pub(crate) fn print_meaning_in(st: &mut EngineState) {
 /// translated from xetex-xetex0.c:2961 (group_warning)
 pub(crate) fn group_warning_in(st: &mut EngineState) {
     st.input.base_ptr = st.input.input_ptr;
-    st.input.input_stack[st.input.base_ptr as usize] = cur_input();
+    st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     let mut i = st.input.in_open;
     let mut w = false;
     while st.input.grp_stack[(i) as usize] == st.save_stack.cur_boundary && i > 0 {
@@ -2733,7 +2733,7 @@ pub(crate) fn group_warning_in(st: &mut EngineState) {
 /// `&mut EngineState` core of [`if_warning`].
 pub(crate) fn if_warning_in(st: &mut EngineState) {
     st.input.base_ptr = st.input.input_ptr;
-    st.input.input_stack[st.input.base_ptr as usize] = cur_input();
+    st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     let mut i = st.input.in_open;
     let mut w = false;
     while st.input.if_stack[(i) as usize] == st.scanner.cond_ptr {
@@ -3005,7 +3005,7 @@ pub(crate) fn bad_utf8_warning_in(st: &mut EngineState) {
     begin_diagnostic_in(st);
     diagnostic_begin_capture_warning_here_in(st);
     print_nl_cstr_in(st, c"Invalid UTF-8 byte or sequence".as_ptr());
-    if crate::globals::cur_input().name == 0 {
+    if st.input.cur_input.name == 0 {
         print_cstr_in(st, c" in terminal input".as_ptr());
     } else {
         print_cstr_in(st, c" at line ".as_ptr());
@@ -4548,7 +4548,6 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
 // translated from xetex-xetex0.c:2764 (show_context)
 /// `&mut EngineState` core of `show_context`.
 pub(crate) fn show_context_in(st: &mut EngineState) {
-    use crate::globals::{set_cur_input};
 
     const TOKEN_LIST: u16 = 0;
     const BACKED_UP: u16 = 3;
@@ -4575,19 +4574,20 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
     const INT_PAR_ERROR_CONTEXT_LINES: i32 = 54;
 
     st.input.base_ptr = st.input.input_ptr;
-    st.input.input_stack[st.input.base_ptr as usize] = cur_input();
+    st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     let mut nn: i32 = -1;
     let mut bottom_line = false;
 
     'outer: loop {
-        set_cur_input(st.input.input_stack[(st.input.base_ptr) as usize]);
-        let ci = cur_input();
+        st.input.cur_input = st.input.input_stack[(st.input.base_ptr) as usize];
+        st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
+        let ci = st.input.cur_input;
         if ci.state != TOKEN_LIST && (ci.name > 19 || st.input.base_ptr == 0) {
             bottom_line = true;
         }
         let error_context_lines = st.eqtb.b32s1(INT_BASE + INT_PAR_ERROR_CONTEXT_LINES);
         if st.input.base_ptr == st.input.input_ptr || bottom_line || nn < error_context_lines {
-            let ci = cur_input();
+            let ci = st.input.cur_input;
             if st.input.base_ptr == st.input.input_ptr
                 || ci.state != TOKEN_LIST
                 || ci.index != BACKED_UP
@@ -4789,7 +4789,8 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
         }
         st.input.base_ptr = st.input.base_ptr - 1;
     }
-    set_cur_input(st.input.input_stack[(st.input.input_ptr) as usize]);
+    st.input.cur_input = st.input.input_stack[(st.input.input_ptr) as usize];
+    st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
 }
 
 // ---- consts moved verbatim from scan.rs with the show_* group (workstream 02) ----

@@ -4,10 +4,6 @@
 use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
 use crate::io::u_close;
 
-use crate::globals::{
-    cur_input, set_cur_input,
-    set_cur_input_index, set_cur_input_limit, set_cur_input_loc, set_cur_input_name,
-    set_cur_input_start, set_cur_input_state, set_cur_input_synctex_tag, };
 
 extern "C" {
     fn _tt_abort(fmt: *const libc::c_char) -> !;
@@ -86,7 +82,7 @@ impl InputAbort {
 /// the threaded `flush_list`/`delete_token_ref`. The cold interwoven-alignment
 /// `fatal_error` rides the [`InputAbort`] sentinel.
 pub(crate) fn end_token_list_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
-    let ci = cur_input();
+    let ci = st.input.cur_input;
     if ci.index >= BACKED_UP {
         if ci.index <= INSERTED {
             crate::mem::flush_list(&mut st.mem, ci.start);
@@ -111,7 +107,8 @@ pub(crate) fn end_token_list_in(st: &mut crate::state::EngineState) -> Result<()
     }
     let ptr = st.input.input_ptr - 1;
     st.input.input_ptr = ptr;
-    set_cur_input(st.input.input_stack[ptr as usize]);
+    st.input.cur_input = st.input.input_stack[ptr as usize];
+    st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
     Ok(())
 }
 
@@ -125,9 +122,9 @@ pub(crate) fn end_token_list_in(st: &mut crate::state::EngineState) -> Result<()
 /// through the threaded `get_avail`. The cold `overflow` and the arena-exhausted
 /// `get_avail` path ride the [`InputAbort`] sentinel.
 pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
-    while cur_input().state == TOKEN_LIST
-        && cur_input().loc == crate::mem::TEX_NULL
-        && cur_input().index != V_TEMPLATE
+    while st.input.cur_input.state == TOKEN_LIST
+        && st.input.cur_input.loc == crate::mem::TEX_NULL
+        && st.input.cur_input.index != V_TEMPLATE
     {
         end_token_list_in(st)?;
     }
@@ -153,12 +150,12 @@ pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), In
             });
         }
     }
-    st.input.input_stack[ptr as usize] = cur_input();
+    st.input.input_stack[ptr as usize] = st.input.cur_input;
     st.input.input_ptr = ptr + 1;
-    set_cur_input_state(TOKEN_LIST);
-    set_cur_input_start(p);
-    set_cur_input_index(BACKED_UP);
-    set_cur_input_loc(p);
+    st.input.cur_input.state = TOKEN_LIST;
+    st.input.cur_input.start = p;
+    st.input.cur_input.index = BACKED_UP;
+    st.input.cur_input.loc = p;
     Ok(())
 }
 
@@ -188,7 +185,7 @@ pub(crate) fn ins_error_in(
     st: &mut crate::state::EngineState,
 ) -> Result<crate::errors::ErrorOutcome, InputAbort> {
     back_input_in(st)?;
-    set_cur_input_index(INSERTED);
+    st.input.cur_input.index = INSERTED;
     Ok(crate::errors::error_in(st))
 }
 
@@ -256,20 +253,21 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
             });
         }
     }
-    st.input.input_stack[ptr as usize] = cur_input();
+    st.input.input_stack[ptr as usize] = st.input.cur_input;
     st.input.input_ptr = ptr + 1;
     let idx = st.input.in_open as usize;
-    set_cur_input_index(idx as u16);
+    st.input.cur_input.index = idx as u16;
     st.input.source_filename_stack[idx] = 0;
     st.input.full_source_filename_stack[idx] = 0;
     st.input.eof_seen[idx] = false;
     st.input.grp_stack[idx] = st.save_stack.cur_boundary;
     st.input.if_stack[idx] = st.scanner.cond_ptr;
     st.input.line_stack[idx] = st.mem.line;
-    set_cur_input_start(st.input.first);
-    set_cur_input_state(MID_LINE);
-    set_cur_input_name(0);
-    set_cur_input_synctex_tag(0);
+    st.input.cur_input.start = st.input.first;
+    st.input.cur_input.state = MID_LINE;
+    st.input.cur_input.name = 0;
+    st.input.cur_input.synctex_tag = 0;
+    st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
     Ok(())
 }
 
@@ -284,14 +282,14 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
 /// error, propagated as [`InputAbort::InputClose`] (`01d` §2.1) — the old C
 /// `ttstub_input_close` longjmp likewise aborted before the input-stack pop.
 pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
-    st.input.first = cur_input().start;
-    st.mem.line = st.input.line_stack[cur_input().index as usize];
-    let name = cur_input().name;
+    st.input.first = st.input.cur_input.start;
+    st.mem.line = st.input.line_stack[st.input.cur_input.index as usize];
+    let name = st.input.cur_input.name;
     if name == 18 || name == 19 {
         let s = &mut *st;
         pseudo_close(&mut s.mem, &mut s.input);
     } else if name > 17 {
-        let idx = cur_input().index as usize;
+        let idx = st.input.cur_input.index as usize;
         // SAFETY: FFI close of the open input file handle at this stack slot.
         if unsafe { u_close(st.input.input_file[idx]) } {
             return Err(InputAbort::InputClose);
@@ -300,7 +298,8 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<
     }
     let ptr = st.input.input_ptr - 1;
     st.input.input_ptr = ptr;
-    set_cur_input(st.input.input_stack[ptr as usize]);
+    st.input.cur_input = st.input.input_stack[ptr as usize];
+    st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
     st.input.in_open -= 1;
     Ok(())
 }
@@ -327,8 +326,8 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
     st.mem.set_b32s0(st.input.pseudo_files, next);
     let sz = st.mem.b32s0(p);
     if 4 * sz - 3 >= st.input.buf_size - st.input.last {
-        set_cur_input_loc(st.input.first);
-        set_cur_input_limit(st.input.last - 1);
+        st.input.cur_input.loc = st.input.first;
+        st.input.cur_input.limit = st.input.last - 1;
         return Err(InputAbort::Overflow {
             what: c"buffer size".as_ptr(),
             n: st.input.buf_size,
@@ -373,7 +372,7 @@ pub(crate) fn insert_relax_in(st: &mut crate::state::EngineState) -> Result<(), 
     back_input_in(st)?;
     st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_RELAX;
     back_input_in(st)?;
-    set_cur_input_index(INSERTED);
+    st.input.cur_input.index = INSERTED;
     Ok(())
 }
 
@@ -406,17 +405,17 @@ pub(crate) fn begin_token_list_in(
             });
         }
     }
-    st.input.input_stack[st.input.input_ptr as usize] = cur_input();
+    st.input.input_stack[st.input.input_ptr as usize] = st.input.cur_input;
     st.input.input_ptr += 1;
-    set_cur_input_state(TOKEN_LIST);
-    set_cur_input_start(p);
-    set_cur_input_index(t);
+    st.input.cur_input.state = TOKEN_LIST;
+    st.input.cur_input.start = p;
+    st.input.cur_input.index = t;
     if t >= MACRO {
         st.mem.set_b32s0(p, st.mem.b32s0(p) + 1); // increment ref count
         if t == MACRO {
-            set_cur_input_limit(st.input.param_ptr);
+            st.input.cur_input.limit = st.input.param_ptr;
         } else {
-            set_cur_input_loc(st.mem.b32s1(p));
+            st.input.cur_input.loc = st.mem.b32s1(p);
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_MACROS) > 1 {
                 crate::output::begin_diagnostic_in(st);
                 crate::output::diagnostic_begin_capture_warning_here_in(st);
@@ -437,7 +436,7 @@ pub(crate) fn begin_token_list_in(
             }
         }
     } else {
-        set_cur_input_loc(p);
+        st.input.cur_input.loc = p;
     }
     Ok(())
 }

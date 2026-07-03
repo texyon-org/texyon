@@ -35,7 +35,7 @@
 /// Rust mirror of `input_state_t` (xetex-xetexd.h:344–352).
 /// Must stay layout-compatible with the C struct (`#[repr(C)]`).
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub(crate) struct InputState {
     pub state: u16,
     pub index: u16,
@@ -49,7 +49,6 @@ pub(crate) struct InputState {
 mod raw {
     extern "C" {
         // xetex-xetexd.h:506 — current input state; layout mirrors InputState above.
-        pub(super) static mut cur_input: super::InputState;
         // open_parens moved to EngineState.input.open_parens.
         // line moved to EngineState.mem.line (01e; get_node stamps the synctex trailer).
 
@@ -213,69 +212,7 @@ pub(crate) fn tex_remainder() -> i32 {
 // cur_input / line
 // ---------------------------------------------------------------------------
 
-/// Returns `cur_input.synctex_tag`.
-#[inline]
-pub(crate) fn cur_input_synctex_tag() -> i32 {
-    // SAFETY: see module-level doc.
-    unsafe { raw::cur_input.synctex_tag }
-}
 
-/// Returns a copy of the entire `cur_input` input-state struct.
-/// Used to save the current state onto `input_stack`.
-#[inline]
-pub(crate) fn cur_input() -> InputState {
-    // SAFETY: see module-level doc.  InputState is Copy.
-    unsafe { raw::cur_input }
-}
-/// Writes `cur_input.loc = v`.
-#[inline]
-pub(crate) fn set_cur_input_loc(v: i32) {
-    unsafe {
-        raw::cur_input.loc = v;
-    }
-}
-/// Writes `cur_input.start = v`.
-#[inline]
-pub(crate) fn set_cur_input_start(v: i32) {
-    unsafe {
-        raw::cur_input.start = v;
-    }
-}
-/// Writes `cur_input.state = v`.
-#[inline]
-pub(crate) fn set_cur_input_state(v: u16) {
-    unsafe {
-        raw::cur_input.state = v;
-    }
-}
-/// Writes `cur_input.index = v`.
-#[inline]
-pub(crate) fn set_cur_input_index(v: u16) {
-    unsafe {
-        raw::cur_input.index = v;
-    }
-}
-/// Writes `cur_input.name = v`.
-#[inline]
-pub(crate) fn set_cur_input_name(v: i32) {
-    unsafe {
-        raw::cur_input.name = v;
-    }
-}
-/// Writes `cur_input.synctex_tag = v`.
-#[inline]
-pub(crate) fn set_cur_input_synctex_tag(v: i32) {
-    unsafe {
-        raw::cur_input.synctex_tag = v;
-    }
-}
-/// Replaces the entire `cur_input` struct (e.g. when restoring from input_stack).
-#[inline]
-pub(crate) fn set_cur_input(v: InputState) {
-    unsafe {
-        raw::cur_input = v;
-    }
-}
 
 
 // ---------------------------------------------------------------------------
@@ -629,13 +566,6 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 // max_buf_stack / set_buffer_entry / cur_input_limit
 // ---------------------------------------------------------------------------
 
-/// Writes `cur_input.limit = v`.
-#[inline]
-pub(crate) fn set_cur_input_limit(v: i32) {
-    unsafe {
-        raw::cur_input.limit = v;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // expand_depth / expand_depth_count / cur_val_level

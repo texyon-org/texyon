@@ -18,7 +18,7 @@ use crate::consts::{
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
 use crate::globals::{
-    cur_list_mode, set_cur_input_index, };
+    cur_list_mode, };
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
 use crate::node::{AnyNode, GlueSpecNode, NodePtr};
@@ -1531,7 +1531,7 @@ pub(crate) fn head_for_vmode_in(
         crate::input::back_input_in(st)?;
         st.scanner.cur_tok = st.input.par_token;
         crate::input::back_input_in(st)?;
-        set_cur_input_index(INSERTED);
+        st.input.cur_input.index = INSERTED;
     }
     Ok(())
 }
@@ -1585,7 +1585,7 @@ pub(crate) fn do_endv_in(st: &mut crate::state::EngineState) -> Result<(), MainC
     const ALIGN_GROUP: u8 = 6; // xetex-constants.h:158
 
     st.input.base_ptr = st.input.input_ptr;
-    st.input.input_stack[st.input.base_ptr as usize] = crate::globals::cur_input();
+    st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     while st.input.input_stack[st.input.base_ptr as usize].index != V_TEMPLATE
         && st.input.input_stack[st.input.base_ptr as usize].loc == crate::mem::TEX_NULL
         && st.input.input_stack[st.input.base_ptr as usize].state == TOKEN_LIST
@@ -2707,7 +2707,7 @@ pub(crate) fn begin_box_in(
 pub(crate) fn handle_right_brace_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    use crate::globals::{cur_input, cur_list_head, cur_list_tail, set_cur_list_tail};
+    use crate::globals::{cur_list_head, cur_list_tail, set_cur_list_tail};
     use crate::mem::{
         delete_glue_ref, free_node, get_node, new_noad, pop_nest_in, ALLOC_FAILED, TEX_NULL,
     };
@@ -2858,8 +2858,8 @@ pub(crate) fn handle_right_brace_in(
         }
 
         OUTPUT_GROUP => {
-            if cur_input().loc != TEX_NULL
-                || (cur_input().index != OUTPUT_TEXT && cur_input().index != BACKED_UP)
+            if st.input.cur_input.loc != TEX_NULL
+                || (st.input.cur_input.index != OUTPUT_TEXT && st.input.cur_input.index != BACKED_UP)
             {
                 crate::output::error_here_with_diagnostic_in(
                     st,
@@ -2873,7 +2873,7 @@ pub(crate) fn handle_right_brace_in(
                 mc_propagate_error(crate::errors::error_in(st))?;
                 loop {
                     crate::scan::get_token_in(st)?;
-                    if cur_input().loc == TEX_NULL {
+                    if st.input.cur_input.loc == TEX_NULL {
                         break;
                     }
                 }
@@ -5052,7 +5052,7 @@ impl InterCharInputAction {
             } => {
                 crate::input::back_input_in(st)?;
                 if let Some(index) = force_cur_input_index {
-                    set_cur_input_index(index);
+                    st.input.cur_input.index = index;
                 }
                 crate::input::begin_token_list_in(st, token_list, INTER_CHAR_TEXT)?;
                 Ok(true)
@@ -5126,7 +5126,7 @@ fn inter_char_before_current_char_action(
 
     let prev = st.mainloop.prev_class;
     if prev == CHAR_CLASS_LIMIT - 1 {
-        let cur_input = crate::globals::cur_input();
+        let cur_input = st.input.cur_input;
         if cur_input.state == TOKEN_LIST_INPUT && cur_input.index == BACKED_UP_CHAR {
             return InterCharInputAction::None;
         }

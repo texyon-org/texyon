@@ -4,9 +4,6 @@
 use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
 use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
 
-use crate::globals::{
-    cur_input, set_cur_input_loc, set_cur_input_start,
-    };
 use crate::mem_types::MemoryWord;
 
 extern "C" {
@@ -781,9 +778,9 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
                         return Err(UnsaveAbort::MainMemory);
                     }
                     st.mem.set_b32s0(pn, st.scanner.cur_tok);
-                    st.mem.set_b32s1(pn, cur_input().loc);
-                    set_cur_input_loc(pn);
-                    set_cur_input_start(pn);
+                    st.mem.set_b32s1(pn, st.input.cur_input.loc);
+                    st.input.cur_input.loc = pn;
+                    st.input.cur_input.start = pn;
                     if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
                         if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
                             st.scanner.align_state -= 1;

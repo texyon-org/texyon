@@ -6,7 +6,6 @@ use crate::consts::{
     SCROLL_MODE, SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR,
 };
 use crate::engine::{sort_avail_in, TRE_MAX_STRINGS, TRE_POOL_SIZE};
-use crate::globals::{cur_input, set_cur_input_loc};
 use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 
 extern "C" {
@@ -847,7 +846,7 @@ pub unsafe fn load_fmt_file(
     // the file open is plain FFI; `undump_*` return `EngineAbort` instead of
     // longjmp-ing (`01d` §5.4). The `Result` propagates to `tt_run_engine`.
     {
-        let j = cur_input().loc;
+        let j = st.input.cur_input.loc;
 
         // pack_buffered_name (xetex-ini.c:590), inlined onto the borrow: copy
         // the format-default name into name_of_file and set name_length.
@@ -869,7 +868,7 @@ pub unsafe fn load_fmt_file(
             ));
         }
 
-        set_cur_input_loc(j);
+        st.input.cur_input.loc = j;
 
         load_fmt_file_in(st, fmt_in)
     }

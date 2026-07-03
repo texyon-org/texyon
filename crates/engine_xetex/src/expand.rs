@@ -1240,8 +1240,8 @@ fn make_string_overflow_scc(st: &crate::state::EngineState) -> SccAbort {
 }
 pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     use crate::globals::{
-        cur_input, hash_s1,
-        set_cur_input_loc, set_cur_input_start, };
+        hash_s1,
+        };
     use crate::scan::{get_avail_scc, scc_err};
 
     const TOP_BOT_MARK: u8 = 112;
@@ -1364,9 +1364,9 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         if t >= CS_TOKEN_FLAG {
                             let p = get_avail_scc(st)?;
                             st.mem.set_b32s0(p, FROZEN_CS_TOKEN);
-                            st.mem.set_b32s1(p, cur_input().loc);
-                            set_cur_input_start(p);
-                            set_cur_input_loc(p);
+                            st.mem.set_b32s1(p, st.input.cur_input.loc);
+                            st.input.cur_input.start = p;
+                            st.input.cur_input.loc = p;
                         }
                     } else {
                         // \primitive
@@ -1399,9 +1399,9 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                                 crate::input::back_input_in(st)?;
                                 let p = get_avail_scc(st)?;
                                 st.mem.set_b32s0(p, FROZEN_PRIM_CS_TOKEN);
-                                st.mem.set_b32s1(p, cur_input().loc);
-                                set_cur_input_loc(p);
-                                set_cur_input_start(p);
+                                st.mem.set_b32s1(p, st.input.cur_input.loc);
+                                st.input.cur_input.loc = p;
+                                st.input.cur_input.start = p;
                             }
                         }
                     }
@@ -1580,9 +1580,6 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
     Ok(())
 }
 pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
-    use crate::globals::{
-        cur_input, set_cur_input_loc, set_cur_input_name,
-        };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, scc_err};
 
@@ -1932,16 +1929,16 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
         } // end if mem_b32s0(r) != END_MATCH_TOKEN
 
         // Flush exhausted token lists before installing macro body
-        while cur_input().state == TOKEN_LIST
-            && cur_input().loc == TEX_NULL
-            && cur_input().index != V_TEMPLATE
+        while st.input.cur_input.state == TOKEN_LIST
+            && st.input.cur_input.loc == TEX_NULL
+            && st.input.cur_input.index != V_TEMPLATE
         {
             crate::input::end_token_list_in(st)?;
         }
 
         crate::input::begin_token_list_in(st, ref_count, MACRO)?;
-        set_cur_input_name(st.scanner.warning_index);
-        set_cur_input_loc(st.mem.b32s1(r));
+        st.input.cur_input.name = st.scanner.warning_index;
+        st.input.cur_input.loc = st.mem.b32s1(r);
 
         if n > 0 {
             if st.input.param_ptr + n > st.input.max_param_stack {

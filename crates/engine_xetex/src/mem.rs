@@ -14,7 +14,7 @@ use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemIdx, MemPtr, Scaled};
 
 use crate::globals::{
-    cur_input_synctex_tag, cur_list_head, set_cur_list_e_tex_aux,
+    cur_list_head, set_cur_list_e_tex_aux,
     set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
 };
 
@@ -159,7 +159,7 @@ pub fn flush_list(mem: &mut MemState, p: i32) {
 /// Phase-C: threaded to `&mut MemState`. The cold exhaustion path returns
 /// [`ALLOC_FAILED`] instead of calling `overflow()` under the borrow (`01b`
 /// §5); [`get_node_global`] performs the abort. The synctex trailer reads
-/// `mem.line` (folded, `01e`) and `cur_input_synctex_tag()` (still `mod raw`,
+/// `mem.line` (folded, `01e`) and `st.input.cur_input.synctex_tag` (still `mod raw`,
 /// safe under a live borrow, `01b` §4).
 pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
     let r = 'restart: loop {
@@ -244,7 +244,7 @@ pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
     // found:
     mem.set_b32s1(r, TEX_NULL);
     if s >= MEDIUM_NODE_SIZE {
-        mem.set_b32s0(r + s - 1, cur_input_synctex_tag());
+        mem.set_b32s0(r + s - 1, mem.cur_synctex_tag);
         mem.set_b32s1(r + s - 1, mem.line);
     }
     r
