@@ -146,7 +146,29 @@ Sequence: S1→S2→S3(phased)→S4→S5→S6→S7→S8→S9. Validation: dashbo
   boundary; bulk `X_CONST → Enum::Variant` by word-boundary regex (remove the `const` DEFS
   first). Watch suffixed twins (`_MC`/`_TYPE`) and benign unreachable-`_` warnings.
 
-## Status after session 250 (S8 + S9 + GroupCode done)
+- **S3 (targeted subset) — typed-twin allocators DONE (session 250, `41029e94` + `97bb7a42`).**
+  The user picked the CLEAN subset of the typed-pointer cascade (not the net-negative global
+  flip). For each `new_*`/`get_node` site whose caller immediately re-derived a handle via
+  `classify_*().expect().expect()` (or `classify_box_or_panic`), added a typed twin
+  `alloc_*() -> Option<NodePtr<K>>` that returns the handle; `new_*` became a thin
+  `.map_or(ALLOC_FAILED, |p| p.idx().0)` wrapper kept for the many i32-link callers (no
+  anti-vein spray). Twins: `mem::alloc_glue`/`alloc_kern`/`alloc_null_box`/`alloc_rule`/
+  `alloc_noad`/`alloc_margin_kern` + `math::alloc_glyph_whatsit` (the single audited glyph-
+  whatsit `from_idx_unchecked` site). Removed ~7 double-expects + 2 `classify_box_or_panic`
+  reclassifies across mlist fetch-loop / append_glue / append_kern / init_math / packaging
+  overfull-rule / scan set_math_char / margin-kern insert. `new_margin_kern` deleted (callerless).
+  **CRITICAL lesson (the `e_tex_aux` near-miss):** when a twin replaces `let x = new_*(); …
+  classify(x)`, the raw `x` index is often reused far below (init_math stored it into
+  `cur_list.e_tex_aux` ~60 lines later) — it COMPILES against an outer `mut x` holding a stale
+  value. ALWAYS grep the raw index's FULL function scope (word-boundary) before dropping it;
+  keep `x = handle.idx().0` wherever the raw index is later read.
+- **Remaining double-expects are the thorny spots, not twin candidates:** the mlist first-pass
+  dispatch arms (`classify_glue/kern/rule/choice` at ~2802–2860) and the fetch loop
+  (~4885–4971) — both need the big `match classify()` restructure (AnyNode typed handles +
+  noad_type() nesting + EDGE/STYLE care), the deferred S9 whole-match. Read-guard double-expects
+  (glyph_nucleus) are awkward to convert. Leave until/unless that restructure is taken on.
+
+## Status after session 250 (S8 + S9 + GroupCode + typed-twins done)
 
 Constants→enums for node/whatsit/noad type codes AND group codes is now COMPLETE: no
 `const *_NOAD`, `const *_NODE` whatsit-subtype, duplicated node-type literals, or
