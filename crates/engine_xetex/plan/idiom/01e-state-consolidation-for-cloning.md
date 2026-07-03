@@ -250,3 +250,26 @@ hold `st` (pass `&mut st.input.cur_list`). `pop_nest_in` is special: it already 
 `&mut input`, so use `input.cur_list` (NO cl param — passing `&mut st.input.cur_list`
 alongside `&mut st.input` is an E0499 double-borrow). Infra (aux methods + Default derive
 + field) and `fold_cur_list.py` are ready in scratch/the reverted diff.
+
+## cur_input is the EASIER remaining fold (revised — do it BEFORE cur_list)
+
+Measured: 191 sites, but only **4 straggler sites in 2 real fns** (vs cur_list's 25+
+cascade). Home = `st.input.cur_input` (folds the whole InputState struct; push/pop already
+save/restore it via `input_stack`). Custom multi-field fold like cur_list but simpler:
+`cur_input()` → `st.input.cur_input` (field reads `.loc/.state/…` follow for free since it's
+Copy); `set_cur_input_X(v)` → `st.input.cur_input.X = v`; `set_cur_input(rec)` → assign.
+
+**The only knot is `get_node`'s `cur_input_synctex_tag()`** (mem.rs:250) — the sole reader,
+mem-only, stamps the synctex trailer. `synctex_tag` is a field of InputState (stack-saved),
+so it can't leave the struct. Solution = a **MemState mirror** `mem.cur_synctex_tag` (same
+spirit as folding `line`→mem): get_node reads `mem.cur_synctex_tag`; update the mirror at the
+7 sites that change `cur_input.synctex_tag`, ALL of which hold `st`:
+- 3 `set_cur_input_synctex_tag` (synctex.rs:640, input.rs:275, scan.rs:2931)
+- 4 whole `set_cur_input` restores (input.rs:117,306; output.rs:4586,4795)
+i.e. append `st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;` after each. (Mirror is
+fine for cloning — both copies clone together; it's only a maintenance concern.)
+Second straggler: `undump_upper_u16` (format_io, uses `cur_input.loc` as undump scratch) —
+thread to `st` (its caller `load_fmt_file_in` holds st). All other 187 sites hold st.
+scan.rs is 101 of them (hot tokenizer) — validate hard via dashboard (runs the tokenizer for
+every test) + corpus. Audit rogue externs first ([[fold-scalar-audit-rogue-externs]]) — none
+found for cur_input in a prior grep, but re-check.
