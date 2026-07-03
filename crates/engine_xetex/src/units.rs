@@ -1,28 +1,17 @@
-//! Scalar newtypes for the typed memory foundation (`plan/idiom/01c` §2
-//! Stage 1; `plan/03-memory-and-nodes.md`).
+//! Scalar newtypes for the typed memory foundation.
 //!
-//! These are the zero-cost semantic wrappers that the Phase-C
-//! "type-as-you-thread" slices adopt (`01b` §3a): a `mem` arena index, a
+//! These are the zero-cost semantic wrappers: a `mem` arena index, a
 //! nullable TeX halfword, a scaled length, a string number, a font number,
 //! and a packed token. Every one is `#[repr(transparent)]` over its C
 //! representation and `Copy`, so it compiles to the same load/store as the
-//! raw integer (the zero-cost gate, `01c` §4 — exercised for real once the
-//! `NodePtr<K>` field methods land in Stage 3).
-//!
-//! This module is built *before* its consumers exist (the foundation-first
-//! prerequisite, `01`-§4a), so its items are intentionally unused for now;
-//! see the `#[allow(dead_code)]` on `mod units;` in `lib.rs`.
-//!
-//! ## Two corrections vs. the vestigial stubs + the parent sketch (`01c` §2)
+//! raw integer.
 //!
 //! 1. **`TEX_NULL = MIN_HALFWORD = -0x0FFFFFFF`** (`crate::consts::TEX_NULL`,
 //!    `xetex-constants.h:14`), *not* `0`. Null-ness lives on [`MemPtr`]
-//!    keyed to `TEX_NULL`; [`MemIdx`] has no null. (The earlier
-//!    `mem.rs` `MemIdx::NULL = MemIdx(0)` and the `03-memory-and-nodes.md`
-//!    `MemPtr::NULL = MemPtr(0)` sketch were both wrong for this codebase.)
+//!    keyed to `TEX_NULL`; [`MemIdx`] has no null.
 //! 2. **`FontId` wraps `i32`**, not `u16`: `internal_font_number` is
 //!    `int32_t` (`xetex-xetexd.h:326`). Do not narrow before a dedicated
-//!    audit (`01`-§4).
+//!    audit.
 
 use crate::consts::TEX_NULL;
 
@@ -38,7 +27,7 @@ pub struct MemIdx(pub i32);
 impl MemIdx {
     /// Wrap a known-valid arena index. In debug builds this asserts the
     /// value is not the `TEX_NULL` sentinel (the caller must have already
-    /// classified it as a real index — `01c` §3).
+    /// classified it as a real index).
     #[inline]
     pub fn new(idx: i32) -> MemIdx {
         debug_assert!(idx != TEX_NULL, "MemIdx must not hold TEX_NULL");
@@ -63,7 +52,7 @@ impl MemIdx {
 ///
 /// TeX's "pointer" fields (`link`, `glue_ptr`, `list_ptr`, …) store either
 /// a `mem` index or `TEX_NULL = -0x0FFFFFFF`. Classification to a real
-/// index happens once, at a checked boundary (`01c` §3), via [`as_idx`].
+/// index happens once, at a checked boundary, via [`as_idx`].
 ///
 /// [`as_idx`]: MemPtr::as_idx
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -82,7 +71,7 @@ impl MemPtr {
 
     /// A non-null pointer to a known-valid node. The idiomatic way to store a
     /// typed node handle (`p.idx()`) into another node's pointer field without
-    /// dropping back to a raw `i32` (`01c` propagation).
+    /// dropping back to a raw `i32`.
     #[inline]
     pub fn from_idx(idx: MemIdx) -> MemPtr {
         MemPtr(idx.0)
@@ -98,7 +87,7 @@ impl MemPtr {
     ///
     /// This is the single checked boundary where a nullable halfword
     /// becomes a real index — never construct a `MemIdx` directly from a
-    /// field that can hold a sentinel (`01`-§10 sentinel hazard).
+    /// field that can hold a sentinel.
     #[inline]
     pub fn as_idx(self) -> Option<MemIdx> {
         if self.is_null() {
@@ -134,7 +123,7 @@ pub struct Token(pub i32);
 /// The kind of a node, as stored in `mem[p].b16.s1` (the `NODE_type`
 /// field). Codes mirror `xetex/xetex_format.h:380–416` exactly.
 ///
-/// This is the *first* classification layer. Two subtleties (`01c` §1):
+/// This is the *first* classification layer. Two subtleties:
 ///
 /// - **Context aliases, not separate codes.** `DELTA_NODE` reuses
 ///   [`Rule`](NodeType::Rule)'s code `2` and `EDGE_NODE` reuses
@@ -145,7 +134,7 @@ pub struct Token(pub i32);
 ///   node's `NODE_subtype` (`b16.s0`) selects `OPEN_NODE`/`WRITE_NODE`/…/
 ///   `NATIVE_WORD_NODE`(40)/`GLYPH_NODE`(42)/`PIC_NODE`(43)/`PDF_NODE`(44)
 ///   (`xetex_format.h:457–467`). Those are *subtype* codes in a different
-///   field, classified separately (`03-memory-and-nodes.md`), and must not
+///   field, classified separately, and must not
 ///   be confused with the `MARGIN_KERN_NODE`(40) *type* code below.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 #[repr(u16)]
@@ -193,7 +182,7 @@ pub struct InvalidNodeType(pub u16);
 impl NodeType {
     /// Convert a raw `mem[p].b16.s1` value to a [`NodeType`] with a
     /// **checked** path (never `transmute` — an invalid discriminant is
-    /// Rust UB, `03-memory-and-nodes.md`).
+    /// Rust UB).
     #[inline]
     pub fn from_raw(raw: u16) -> Result<NodeType, InvalidNodeType> {
         use NodeType::*;
@@ -248,7 +237,7 @@ mod tests {
     use std::mem::size_of;
 
     /// `#[repr(transparent)]` guarantee: every newtype is exactly its inner
-    /// representation, so it is zero-cost vs. the raw integer (`01c` §4).
+    /// representation, so it is zero-cost vs. the raw integer.
     #[test]
     fn newtypes_are_zero_cost_repr() {
         assert_eq!(size_of::<MemIdx>(), size_of::<i32>());

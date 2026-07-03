@@ -1,6 +1,4 @@
 //! Save-stack management functions translated from `xetex/xetex-xetex0.c`.
-//!
-//! Phase A: all state accessed through the C globals via `src/globals.rs`.
 use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
 use crate::state::{EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 
@@ -30,16 +28,12 @@ const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 const UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 
 // ---------------------------------------------------------------------------
-// Cold-path abort sentinel (01b §5)
+// Cold-path abort sentinel
 // ---------------------------------------------------------------------------
 
-/// A cold-path abort requested by a threaded save-stack function. The threaded
-/// body returns it instead of calling the `with_state`-bearing
-/// `overflow`/`confusion` (which would nest-panic under the live state borrow);
-/// the `_global` wrapper raises it *after* the borrow drops (`01b` §5). Both
-/// abort paths `longjmp`, so a real caller never observes the sentinel — only
-/// the wrapper does, on a capacity/consistency failure that no passing test
-/// reaches.
+/// A cold-path abort requested by a save-stack function. Both abort paths
+/// `longjmp`, so a real caller never observes the sentinel — it fires only on a
+/// capacity/consistency failure that no passing test reaches.
 pub(crate) enum SaveAbort {
     /// `overflow(msg, n)` — capacity exhaustion.
     Overflow(&'static std::ffi::CStr, i32),
@@ -48,8 +42,7 @@ pub(crate) enum SaveAbort {
 }
 
 impl SaveAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `raise_save_abort` mapping without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             SaveAbort::Overflow(s, n) => crate::errors::EngineAbort::Overflow {
@@ -67,12 +60,6 @@ impl SaveAbort {
 
 /// Push a new grouping level onto the save stack.
 ///
-/// Phase-C: threaded to `&mut SaveStackState`; touches the save stack only plus
-/// the raw `st.mem.line` read (safe under a borrow, `01b` §4). The two cold capacity
-/// branches return the `01b` §5 [`SaveAbort`] sentinel, raised by
-/// [`new_save_level_global`] after the borrow drops. Legacy callers use
-/// [`new_save_level_global`].
-///
 /// translated from xetex-xetex0.c:3932 (new_save_level)
 pub(crate) fn new_save_level(
     save_stack: &mut SaveStackState,
@@ -85,8 +72,8 @@ pub(crate) fn new_save_level(
             return Some(SaveAbort::Overflow(c"semantic nest size", save_stack.save_size));
         }
     }
-    // `line` is passed in by the caller (which holds `st`); it is stamped into
-    // the save stack for `\tracingrestores` group-line tracking (`01e`).
+    // `line` is passed in by the caller; it is stamped into
+    // the save stack for `\tracingrestores` group-line tracking.
     save_stack.set_b32s1(save_stack.save_ptr, line);
     save_stack.save_ptr += 1;
     save_stack.set_b16s1(save_stack.save_ptr, LEVEL_BOUNDARY);
@@ -107,10 +94,6 @@ pub(crate) fn new_save_level(
 // ---------------------------------------------------------------------------
 
 /// Save the current value of `eqtb[p]` at level `l` on the save stack.
-///
-/// Phase-C: threaded to `&mut SaveStackState` + `&EqtbState`. The cold capacity
-/// branch returns the [`SaveAbort`] sentinel; callers within `save.rs` propagate
-/// it to their own `_global` wrappers (`01b` §5).
 ///
 /// translated from xetex-xetex0.c:3914 (eq_save)
 pub(crate) fn eq_save(
@@ -144,9 +127,6 @@ pub(crate) fn eq_save(
 
 /// Assign `eqtb[p].b32.s1 = w`, saving the old value if necessary.
 ///
-/// Phase-C: threaded to `&mut EqtbState` + `&mut SaveStackState`; propagates the
-/// cold [`SaveAbort`] from [`eq_save`].
-///
 /// translated from xetex-xetex0.c:3954 (eq_word_define)
 pub(crate) fn eq_word_define(
     eqtb: &mut EqtbState,
@@ -175,9 +155,6 @@ pub(crate) fn eq_word_define(
 
 /// Globally assign `eqtb[p].b32.s1 = w` at LEVEL_ONE.
 ///
-/// Phase-C: threaded to `&mut EqtbState`. Legacy callers use
-/// [`geq_word_define_global`].
-///
 /// translated from xetex-xetex0.c:3977 (geq_word_define)
 pub(crate) fn geq_word_define(eqtb: &mut EqtbState, p: i32, w: i32) {
     eqtb.set_b32s1(p, w);
@@ -189,9 +166,6 @@ pub(crate) fn geq_word_define(eqtb: &mut EqtbState, p: i32, w: i32) {
 // ---------------------------------------------------------------------------
 
 /// Push token `t` onto the save stack for deferred processing after `}`.
-///
-/// Phase-C: threaded to `&mut SaveStackState`; cold capacity branch returns the
-/// [`SaveAbort`] sentinel. Legacy callers use [`save_for_after_global`].
 ///
 /// translated from xetex-xetex0.c:3984 (save_for_after)
 pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Option<SaveAbort> {
@@ -217,12 +191,10 @@ pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Option<
 // INT_PAR__mag = 17 (xetex_format.h:52).
 const INT_PAR_MAG: i32 = 17;
 
-/// `&mut EngineState` core of [`prepare_mag`] (scanner-SCC prereq).
-///
-/// Validates `\mag` under one borrow via the threaded diagnostic/error cores.
-/// Both recoverable `int_error` sites return an [`ErrorOutcome`]; a non-`Continue`
-/// outcome is propagated to the wrapper's `finish()` (the original would have
-/// longjmp'd before reaching the `geq_word_define`, so the early return matches).
+/// Validates `\mag`. Both recoverable `int_error` sites return an
+/// [`ErrorOutcome`]; a non-`Continue` outcome is propagated (the original would
+/// have longjmp'd before reaching the `geq_word_define`, so the early return
+/// matches).
 pub(crate) fn prepare_mag_in(st: &mut crate::state::EngineState) -> crate::errors::ErrorOutcome {
     use crate::errors::ErrorOutcome;
 
@@ -275,11 +247,6 @@ pub(crate) fn prepare_mag_in(st: &mut crate::state::EngineState) -> crate::error
 
 /// Free any heap resource held by an eqtb entry (token list, glue, box, or sa-ref).
 ///
-/// Phase-C: threaded to `&mut MemState` + `&mut ScannerState`; calls the threaded
-/// node-recycling helpers directly. The cold box-flush arm (`flush_node_list`)
-/// returns a [`SaveAbort::Confusion`] sentinel on a corrupt node; callers raise
-/// it after the borrow drops (`01b` §5). Legacy callers use [`eq_destroy_global`].
-///
 /// translated from xetex-xetex0.c:3831 (eq_destroy)
 pub(crate) fn eq_destroy(
     mem: &mut MemState,
@@ -315,10 +282,6 @@ pub(crate) fn eq_destroy(
 
 /// Assign `eqtb[p] = (level=cur_level, type=t, value=e)`, saving if needed.
 ///
-/// Phase-C: threaded to `&mut EqtbState` + `&mut SaveStackState` + `&mut MemState`
-/// + `&mut ScannerState`; propagates the cold [`SaveAbort`] from
-/// [`eq_destroy`]/[`eq_save`]. Legacy callers use [`eq_define_global`].
-///
 /// translated from xetex-xetex0.c:3867 (eq_define)
 pub(crate) fn eq_define(
     eqtb: &mut EqtbState,
@@ -353,10 +316,6 @@ pub(crate) fn eq_define(
 }
 
 /// Globally assign `eqtb[p] = (level=LEVEL_ONE, type=t, value=e)`.
-///
-/// Phase-C: threaded to `&mut EqtbState` + `&mut MemState` + `&mut ScannerState`;
-/// propagates the cold [`SaveAbort`] from [`eq_destroy`]. Legacy callers use
-/// [`geq_define_global`].
 ///
 /// translated from xetex-xetex0.c:3886 (geq_define)
 pub(crate) fn geq_define(
@@ -617,7 +576,7 @@ pub(crate) fn gsa_w_def(mem: &mut MemState, p: i32, w: i32) -> SaMutationResult 
     SaMutationResult::default()
 }
 
-/// Cold abort sentinel for [`finish_sa_mutation_in`] (`01b` §5).
+/// Cold abort sentinel for [`finish_sa_mutation_in`].
 pub(crate) enum SaMutationAbort {
     MainMemory,
     SaveOverflow,
@@ -625,8 +584,7 @@ pub(crate) enum SaMutationAbort {
 }
 
 impl SaMutationAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire()` cold-abort tail without longjmp-ing. `MainMemory` here is
+    /// Map to the unified [`EngineAbort`] terminal. `MainMemory` here is
     /// a plain overflow (no `runaway`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
@@ -640,9 +598,7 @@ impl SaMutationAbort {
     }
 }
 
-/// Threaded (Phase C) core of [`finish_sa_mutation`]: applies the deferred
-/// flush + ref-decrement of an `sa_def`/`gsa_def` result under a held borrow,
-/// returning the cold abort instead of `longjmp`ing in place (`01b` §5).
+/// Applies the deferred flush + ref-decrement of an `sa_def`/`gsa_def` result.
 pub(crate) fn finish_sa_mutation_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -702,8 +658,8 @@ fn sa_restore_prepare(mem: &mut MemState, scanner: &mut ScannerState) -> SaResto
 
 /// Cold-path abort raised by [`unsave_in`]. Surfaces the deferred
 /// `eq_destroy`/`flush_node_list` `confusion`, the `back_input` input abort, and
-/// the `get_avail` main-memory overflow (`01b` §5). Both legacy and threaded
-/// callers `longjmp` on it; no passing test reaches any arm.
+/// the `get_avail` main-memory overflow. Callers `longjmp` on it; no passing
+/// test reaches any arm.
 pub(crate) enum UnsaveAbort {
     Save(SaveAbort),
     Input(crate::input::InputAbort),
@@ -711,8 +667,7 @@ pub(crate) enum UnsaveAbort {
 }
 
 impl UnsaveAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire()` cold-abort tail without longjmp-ing. `MainMemory` runs
+    /// Map to the unified [`EngineAbort`] terminal. `MainMemory` runs
     /// `runaway` (via `main_memory_overflow_abort`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
@@ -729,9 +684,7 @@ impl From<crate::input::InputAbort> for UnsaveAbort {
     }
 }
 
-/// Threaded (Phase C) form of `sa_restore`: restore the sparse-array chain under
-/// a held borrow, returning the cold `flush_node_list` confusion instead of
-/// `longjmp`ing in place (`01b` §5). Mirrors [`sa_restore_global`].
+/// Restore the sparse-array chain, returning the `flush_node_list` confusion.
 fn sa_restore_in(st: &mut crate::state::EngineState) -> Result<(), &'static std::ffi::CStr> {
     loop {
         let step = {
@@ -755,10 +708,7 @@ fn sa_restore_in(st: &mut crate::state::EngineState) -> Result<(), &'static std:
     Ok(())
 }
 
-/// Threaded (Phase C) core of [`unsave`]: pops one grouping level under a single
-/// `&mut EngineState` borrow. `cur_tok`/`cur_input` stay raw `mod raw`; the
-/// `eq_destroy`/`group_warning`/`back_input` callees run threaded under the
-/// borrow. Cold aborts ride [`UnsaveAbort`] (`01b` §5).
+/// Pops one grouping level. Cold aborts ride [`UnsaveAbort`].
 ///
 /// translated from xetex-xetex0.c:2814 (unsave)
 pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), UnsaveAbort> {

@@ -67,9 +67,7 @@ struct XetexPrimitiveDef {
 
 const _: () = assert!(std::mem::size_of::<XetexPrimitiveDef>() == 24);
 
-// Raw lifecycle state used by tt_run_engine. Kept local because this top-level
-// transition glue allocates many globals in one place and will disappear when
-// EngineState replaces the C globals.
+// Raw lifecycle state used by tt_run_engine.
 extern "C" {
     fn ttstub_output_open_stdout() -> usize;
     fn pdf_files_init();
@@ -83,9 +81,6 @@ extern "C" {
     static mut tre_pool_free: i32;
     #[link_name = "strings_free"]
     static mut tre_strings_free: i32;
-    // `mem` is now Rust-owned (`EngineState.mem.data`); no FFI alias. (session 58)
-    // `eqtb` is now Rust-owned (`EngineState.eqtb.data`); no FFI alias. (session 51)
-    // `hash` is now Rust-owned (`EngineState.eqtb.hash`); no FFI alias. (session 52)
 
     #[link_name = "bad"]
     static mut tre_bad: i32;
@@ -105,20 +100,9 @@ extern "C" {
     fn tt_cleanup_TECkit_DisposeConverter(cnv: *mut libc::c_void);
     #[link_name = "TEX_format_default"]
     static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
-    // `eqtb` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.data`. (session 51)
-    // `hash` cleanup is now the Rust `Vec` drop on `EngineState.eqtb.hash`. (session 52)
-    // `mem` cleanup is now the Rust `Vec` drop on `EngineState.mem.data`. (session 58)
-    // font_info cleanup moved to EngineState.fonts.font_info (Vec::new() reset).
 }
 
-// ---- moved verbatim from ini.rs (workstream 02) ----
-
 // translated from xetex-ini.c:3452 (get_strings_started)
-//
-// Threaded `_in` core (`01d` §6 drain): holds the one `&mut EngineState` its caller
-// (`tt_run_engine`'s INITEX init) opens, touching `st.strings` directly instead of
-// re-entering the thread_local through the `set_pool_ptr`/`set_str_ptr`/`pool_size`
-// wrappers + inline `with_state`. Now safe to hold the borrow: no path longjmps.
 pub(crate) unsafe fn get_strings_started_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::errors::EngineAbort> {
@@ -130,10 +114,6 @@ pub(crate) unsafe fn get_strings_started_in(
     let spare_size = st.strings.pool_size - st.strings.string_vacancies;
     let loaded = match crate::string_pool::load_pool_strings(&mut st.strings, spare_size) {
         Ok(value) => value,
-        // Main-memory recycle abort → EngineAbort, propagated to tt_run_engine
-        // (01d §5.6) instead of the old setjmp-backstopped longjmp. Equivalent
-        // per arm: OverflowRunaway runs runaway() then the "main memory size"
-        // Overflow via main_memory_overflow_abort; Confusion(msg) → Confusion(msg).
         Err(e) => return Err(e.into_engine_abort()),
     };
     if loaded == 0 {
@@ -199,7 +179,7 @@ impl From<crate::hash::HashLookupError> for PrimitiveInitAbort {
 
 impl PrimitiveInitAbort {
     /// Fold this init-time sentinel into the unified terminal [`EngineAbort`].
-    /// `tt_run_engine` catches it and returns `into_history()` (no longjmp).
+    /// `tt_run_engine` catches it and returns `into_history()`.
     fn into_engine_abort(self) -> crate::errors::EngineAbort {
         use crate::errors::EngineAbort;
         match self {
@@ -275,12 +255,6 @@ unsafe fn primitive(
     Ok(())
 }
 // translated from xetex-ini.c:2201 (final_cleanup)
-// Threaded core (`01d` §6.1 drain step 6): the whole cleanup runs under one held
-// `&mut EngineState` borrow. All with_state re-entries fold to direct `st.*`
-// access; `print_*`/`output::` → `_in`; `end_token_list`/`end_file_reading`/
-// `open_log_file` use their `_in` cores (`map_err` into EngineAbort);
-// `cur_chr`/`cur_input`/`temp_ptr` are mod-raw scalars (borrow-independent, stay
-// put until the flip). Fatals return EngineAbort, caught at tt_run_engine.
 pub(crate) unsafe fn final_cleanup_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::errors::EngineAbort> {
@@ -303,9 +277,6 @@ pub(crate) unsafe fn final_cleanup_in(
     }
 
     if st.strings.job_name == 0 {
-        // Propagate an open-log failure as EngineAbort instead of the
-        // open_log_file()/OpenLogAbort longjmp: final_cleanup returns Result and
-        // is caught at tt_run_engine (`01d` §5.6).
         crate::io::open_log_file_in(st).map_err(|e| e.into_engine_abort())?;
     }
 
@@ -398,8 +369,6 @@ pub(crate) unsafe fn final_cleanup_in(
 
             c = LAST_BOX_CODE as i32;
             loop {
-                // Propagate the confusion to tt_run_engine's return instead of
-                // longjmp-ing (`01d` §5.2).
                 crate::packaging::flush_node_list(&mut st.mem, st.scanner.disc_ptr[c as usize])
                     .map_err(|msg| crate::errors::EngineAbort::Confusion(msg.as_ptr()))?;
                 if c as usize >= VSPLIT_CODE {
@@ -985,12 +954,10 @@ pub unsafe extern "C" fn tt_run_engine(
     input_file_name: *const libc::c_char,
     build_date: libc::time_t,
 ) -> i32 {
-    // §6 flip (drain step 9): own the engine state here instead of a persistent
-    // thread-local. Heap-boxed so the ~KB struct isn't a fresh stack frame. The
-    // host set config (halt_on_error_p/in_initex_mode/…) via
-    // `tt_xetex_set_int_variable` *before* this call — that landed in the
-    // pre-run fallback `EngineState`; copy its config into the owned state before
-    // installing the owner pointer, then all `with_state` calls reach `st`.
+    // Own the engine state here, heap-boxed so the ~KB struct isn't a fresh
+    // stack frame. The host set config (halt_on_error_p/in_initex_mode/…) via
+    // `tt_xetex_set_int_variable` *before* this call; copy its config into the
+    // owned state before installing the owner pointer.
     let mut st = Box::new(crate::state::EngineState::default());
     crate::engine_interface::apply_config(&mut st.config);
     // Clears the owner pointer on every exit path so a stale pointer to the
@@ -1034,12 +1001,10 @@ pub unsafe extern "C" fn tt_run_engine(
     st.config.max_print_line = 79;
     st.scanner.expand_depth = 10_000;
 
-    // Allocate every Rust-owned per-run arena under a single borrow. All sizes
-    // (`*_size + 1`, matching the former `xmalloc_array` shapes) are precomputed
-    // from the `tre_*` locals so the borrow holds no `with_state`-bearing call.
+    // Allocate every Rust-owned per-run arena. All sizes (`*_size + 1`, matching
+    // the former `xmalloc_array` shapes) are precomputed from the `tre_*` locals.
     // Allocated fresh each run; released by `tt_cleanup`; never reallocated
-    // during a run (overflow errors instead of growing). Zero-init replaces the
-    // former explicit `write_bytes(.., 0, ..)`.
+    // during a run (overflow errors instead of growing).
     let buf_words = (st.input.buf_size as usize) + 1;
     let nest_words = (st.input.nest_size as usize) + 1;
     let save_words = (st.save_stack.save_size as usize) + 1;
@@ -1209,8 +1174,7 @@ pub unsafe extern "C" fn tt_run_engine(
             c"failed internal consistency check #%d".as_ptr(),
             tre_bad,
         );
-        // Consistency check failed: terminate with HISTORY_FATAL_ERROR (the
-        // setjmp longjmp's observable result), no longjmp (`01d` §5).
+        // Consistency check failed: terminate with HISTORY_FATAL_ERROR.
         return crate::errors::EngineAbort::TtAbort(msg.as_ptr()).into_history(&mut *st);
     }
 
@@ -1298,10 +1262,9 @@ pub unsafe extern "C" fn tt_run_engine(
     if !st.config.in_initex_mode {
         match load_fmt_file(&mut *st) {
             Ok(true) => {}
-            // Graceful load failure: terminate with the current history (matches
-            // the old `!load_fmt_file()` early return).
+            // Graceful load failure: terminate with the current history.
             Ok(false) => return st.errors.history,
-            // Fatal undump abort: HISTORY_FATAL_ERROR with no longjmp (`01d` §5.4).
+            // Fatal undump abort: HISTORY_FATAL_ERROR.
             Err(a) => return a.into_history(&mut *st),
         }
     }
@@ -1395,8 +1358,7 @@ pub unsafe extern "C" fn tt_run_engine(
         }
 
         // The nullfont (FONT_BASE) bootstrap is a contiguous run of font-table
-        // writes on the owned state; the only state-touching argument is
-        // `maketexstring`, computed before the block.
+        // writes.
         let nullfont_name = match crate::texmfmp::maketexstring_in(&mut st.strings, c"nullfont".as_ptr())
             .map_err(|e| e.into_engine_abort())
         {
@@ -1466,27 +1428,23 @@ pub unsafe extern "C" fn tt_run_engine(
     {
         // A fatal abort while opening the primary input. into_history runs the
         // print + cleanup and returns HISTORY_FATAL_ERROR, skipping the rest of
-        // tt_run_engine — identical to the old `SccAbort::fire` longjmp straight
-        // to the setjmp (`01d` §5.6).
+        // tt_run_engine.
         return a.into_history(&mut *st);
     }
     st.errors.history = HISTORY_SPOTLESS;
     if let Err(a) = crate::main_control::main_control_in(&mut *st).map_err(|e| e.into_engine_abort())
     {
         // A fatal main-control abort. into_history runs the print + cleanup and
-        // returns HISTORY_FATAL_ERROR, skipping final_cleanup — identical to the
-        // old `MainControlAbort::fire` longjmp straight to the setjmp (`01d` §5.5).
+        // returns HISTORY_FATAL_ERROR, skipping final_cleanup.
         return a.into_history(&mut *st);
     }
     if let Err(a) = final_cleanup_in(&mut *st) {
         // into_history runs the print + cleanup (incl. close_files_and_terminate
-        // + tt_cleanup via post_error_message) and returns HISTORY_FATAL_ERROR —
-        // identical to the old confusion() longjmp (`01d` §5.2).
+        // + tt_cleanup via post_error_message) and returns HISTORY_FATAL_ERROR.
         return a.into_history(&mut *st);
     }
     // Normal exit: a finalize_dvi_file failure here (e.g. XDV write error) aborts
-    // via into_history — identical to the old fire_shipout_abort longjmp, which
-    // also skipped tt_cleanup and returned HISTORY_FATAL_ERROR (`01d` §5.6).
+    // via into_history, skipping tt_cleanup and returning HISTORY_FATAL_ERROR.
     if let Err(a) = crate::io::close_files_and_terminate_in(&mut *st) {
         return a.into_history(&mut *st);
     }
@@ -1494,10 +1452,6 @@ pub unsafe extern "C" fn tt_run_engine(
 
     st.errors.history
 }
-// Threaded core: the whole teardown runs under one held `&mut EngineState`
-// borrow (`01d` §6.1 drain step 3). The only re-entrant calls are pure FFI
-// (release_font_engine / TECkit_DisposeConverter / u_close→bridge input_close),
-// none of which touch EngineState, so they are sound under the held borrow.
 pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
     tt_cleanup_pdf_files_close();
     libc::free(tt_cleanup_TEX_format_default as *mut _);
@@ -1522,13 +1476,13 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
         let f = st.input.input_file[i as usize];
         if !f.is_null() {
             // Terminal cleanup (tt_cleanup): absorb a serious close error — the
-            // engine is already tearing down (`01d` §2.1).
+            // engine is already tearing down.
             let _ = crate::io::u_close(f);
         }
     }
 
-    // Release all Rust-owned arenas (were C `malloc`'d / format-loaded arrays)
-    // under the held borrow: the save-stack, the input nest/file/macro/buffer
+    // Release all Rust-owned arenas (were C `malloc`'d / format-loaded arrays):
+    // the save-stack, the input nest/file/macro/buffer
     // arrays, the hyph exception table, the scanner native_text scratch, the
     // mem/eqtb/strings/fonts format arenas, and the hyphenation trie arrays.
     {

@@ -1,11 +1,9 @@
 //! Centralized bindings to XeTeX's C globals.
 //!
-//! During Phase A of the C→Rust migration (see `plan/02-state.md`),
-//! translated Rust functions read and write the engine's global state
+//! Translated Rust functions read and write the engine's global state
 //! through this module rather than declaring `extern "C"` statics at
-//! their call sites. This keeps the `unsafe` blob small, ensures we
-//! audit aliasing in one place, and gives us a trivial rename target
-//! once state is threaded through `EngineState` in Phase B.
+//! their call sites. This keeps the `unsafe` blob small and ensures we
+//! audit aliasing in one place.
 //!
 //! ## Safety invariant for this entire module
 //!
@@ -49,117 +47,46 @@ pub(crate) struct InputState {
 mod raw {
     extern "C" {
         // xetex-xetexd.h:506 — current input state; layout mirrors InputState above.
-        // open_parens moved to EngineState.input.open_parens.
-        // line moved to EngineState.mem.line (01e; get_node stamps the synctex trailer).
-
-        // eqtb (*mut memory_word) moved to EngineState.eqtb.data (session 51).
 
         // xetex-xetexd.h:459 — temporary pointer register.
-
-        // The `mem` arena (`memory_word *mem`) and its bookkeeping scalars
-        // (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`, `var_used`,
-        // `dyn_used`) are now Rust-owned on `EngineState.mem` (`MemState`);
-        // accessors index `s.mem.data` / read the scalars. (session 58)
 
         // Output file handles (xetex-xetexd.h:429–430, 691).
         // `rust_output_handle_t` is `uintptr_t` (tectonic_bridge_core_generated.h:9).
 
-        // Current diagnostic capture handle (xetex-output.c, un-static'd session 8).
+        // Current diagnostic capture handle (xetex-output.c).
         // Null (0) means no active capture. Type is opaque `ttbc_diagnostic_t *`.
 
-        // pseudo_files moved to EngineState.input.pseudo_files.
-        // in_open moved to EngineState.input.in_open.
-        // Hash table: `b32x2 *hash` moved to EngineState.eqtb.hash (session 52).
-        // Hash table management globals: `hash_extra` moved to EngineState.eqtb.hash_extra (session 52).
-        // prim[PRIM_SIZE + 1] moved to EngineState.eqtb.prim (session 49).
-        // Top of the eqtb array: `eqtb_top` moved to EngineState.eqtb.eqtb_top (session 52).
-
         // Name-of-file globals (xetex-xetexd.h:388–391).
-        // name_of_file moved to EngineState.input.name_of_file.
-        // name_length moved to EngineState.input.name_length (i32).
-        // name_of_file16 moved to EngineState.input.name_of_file16.
-        // name_length16 moved to EngineState.input.name_length16 (i32).
 
         // Font memory tables (xetex-xetexd.h:555–590).
-        // font_info moved to EngineState.fonts.font_info (Vec<MemoryWord>).
-        // xdv_buffer moved to EngineState.fonts.xdv_buffer.
         // Current control-sequence index (xetex-xetexd.h:501; 0 = not a cs).
         // Current token (xetex-xetexd.h:502; token encoded as int32).
-        // align_state moved to EngineState.scanner (scalar).
         // Current character code (xetex-xetexd.h:500).
         // Current command code (`eight_bits` = u8, xetex-xetexd.h:499).
-        // cur_mark[5] moved to EngineState.scanner (inline fixed array).
         // Current parsed integer value (xetex-xetexd.h:530).
 
-        // Input state stack ownership moved to EngineState.input.input_stack
-        // (Rust-owned Vec<InputState>); see src/state.rs.
-        // input_ptr/max_in_stack/base_ptr/par_loc/par_token + capacity
-        // stack_size moved to EngineState.input (scalars) — see `01e`.
-
-        // Macro parameter stack (xetex-xetexd.h:517–519). The `param_stack`
-        // array is Rust-owned on `EngineState.input.param_stack`; the scalars
-        // param_ptr/max_param_stack are now on EngineState.input too.
-        // Allocated size of param_stack stays a C global.
+        // Macro parameter stack (xetex-xetexd.h:517–519).
 
         // SA trie cursor — scratch pointer used during SA node traversal/allocation
         // (xetex-xetexd.h:710; xetex-ini.c:336).
 
-        // `var_used` / `dyn_used` memory-usage counters moved to
-        // EngineState.mem (MemState) with the `mem` arena. (session 58)
-
-        // cond_ptr / if_limit / cur_if / if_line / skip_line moved to
-        // EngineState.scanner (scalars).
-
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
-        // nest_ptr/max_nest_stack/nest_size moved to EngineState.input (scalars).
         // Current list state (xetex-xetexd.h:479; direct struct, not a pointer).
-        // read_open moved to EngineState.input.read_open ([u8; 17]).
-        // read_file moved to EngineState.input.read_file ([*mut c_void; 16]).
 
-        // Save-stack (xetex-xetexd.h:492–494). The `save_stack` array itself
-        // is Rust-owned (`EngineState.save_stack.data`); only the capacity
-        // `save_size` remains a C global here.
-        // _xeq_level_array (XEQ_LEVEL; EQTB_SIZE - INT_BASE + 1 = 1114730 entries)
-        // moved to EngineState.eqtb.xeq_level (session 49).
+        // Save-stack (xetex-xetexd.h:492–494).
 
         // Expression-depth guard (xetex-xetexd.h:415, 525).
-        // cur_val_level moved to EngineState.scanner.
-
-        // scanner_status / warning_index / def_ref / long_state moved to
-        // EngineState.scanner (scalars).
 
         // Input buffer: first = next free slot; buf_size = capacity
-        // last/max_buf_stack moved to EngineState.input (scalars).
         // (xetex-xetexd.h:393–395, 409).
         // Maximum allowed input-nesting depth (xetex-xetexd.h:411).
 
-        // is_in_csname moved to EngineState.scanner.
-        // force_eof moved to EngineState.input.
-        // used_tectonic_coda_tokens moved to EngineState.scanner.
-        // cur_val1 moved to EngineState.scanner.
-
-        // disc_ptr[4] moved to EngineState.scanner (inline fixed array).
-
-        // mapped_text moved to EngineState.fonts.mapped_text.
         // main_control scratch glue-spec and font-info index (xetex-xetexd.h:675–676).
         // main_control inner-loop state (xetex-xetexd.h:672–686).
         // Ligature/kern inner-loop state (xetex-xetexd.h:630–634, 683–686).
-        // native_text cluster moved to EngineState.scanner.
         // Further main_loop state (xetex-xetexd.h:679–686).
         // XeTeX inter-character class state (xetex-xetexd.h:679-681).
         // Hyphenation trie and exception tables (xetex-xetexd.h:635-645).
-
-        // last_leftmost_char .. best_pl_glue (the line-breaker / LR-reverse /
-        // hyphenation-attempt scratch) moved to EngineState.linebreak
-        // (LinebreakState); see src/state.rs.
-        // Shipout / DVI output state (total_pages, max_v, max_h, max_push,
-        // last_bop, doing_leaders, rule_ht/dp/wd, cur_h, cur_v,
-        // cur_page_width/height, cur_h_offset/v_offset, write_loc) moved to
-        // EngineState.shipout (ShipoutState); see src/state.rs (session 47).
-
-        // xetex-math.c module-level state (cur_mlist, cur_style, cur_size,
-        // cur_mu, mlist_penalties) moved to EngineState.scanner (ScannerState);
-        // see src/state.rs (session 48).
     }
 }
 
@@ -291,16 +218,12 @@ mod raw {
 // font_name
 // ---------------------------------------------------------------------------
 
-/// Returns `param_base[f]`.
-
 /// Raw borrow-free mirrors of the three `FontState` arrays the OpenType-math
 /// C++ FFI (`xetex-XeTeXOTMath.cpp`) reads back via the `tt_get_font_*_entry`
-/// callbacks below. Those callbacks run *inside* the C++ OT-math helpers, which
-/// are themselves called from a threaded `_in` core holding `with_state_mut`
-/// (the `mlist_to_hlist` SCC). A callback that took the `ENGINE_STATE` borrow
-/// would nest-panic (`RefCell already borrowed`) — the session-206 wall — so it
-/// must read through these raw pointers instead, like the `mod raw` deferred
-/// set (`line`/`cur_input`).
+/// callbacks below. Those callbacks run *inside* the C++ OT-math helpers.
+/// A callback that took the `ENGINE_STATE` borrow would nest-panic
+/// (`RefCell already borrowed`), so it must read through these raw pointers
+/// instead.
 ///
 /// INVARIANT: `refresh_font_ffi_mirrors` must run after **every** reallocation
 /// of `fonts.{font_size,font_area,font_layout_engine}`. Those Vecs are sized to
@@ -331,8 +254,7 @@ pub(crate) fn refresh_font_ffi_mirrors(fonts: &crate::state::FontState) {
 }
 
 /// C++ bridge for OpenType math helpers that still need font_area. Reads the
-/// borrow-free mirror so it is safe to call under a held `EngineState` borrow
-/// (see `font_ffi_mirror`).
+/// borrow-free mirror (see `font_ffi_mirror`).
 #[no_mangle]
 pub extern "C" fn tt_get_font_area_entry(f: i32) -> i32 {
     // SAFETY: mirror kept in sync with fonts.font_area by refresh_font_ffi_mirrors.

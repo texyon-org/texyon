@@ -11,8 +11,7 @@ use crate::input::InputAbort;
 ///
 /// On Linux x86_64 the C layout is:
 
-// Consts used by the file-naming / start_input / close_files group, moved with
-// it from scan.rs (workstream 02).
+// Consts used by the file-naming / start_input / close_files group.
 const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
 const INT_PAR_END_LINE_CHAR: i32 = 48;
 const INT_PAR_NEW_LINE_CHAR_CFT: i32 = 49;
@@ -27,7 +26,7 @@ const SPACER: u8 = 10;
 const TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI: i32 = 59;
 const TTBC_FILE_FORMAT_TEX_SI: i32 = 26;
 
-// UTF-8 decode tables used by start_input (moved with it from scan.rs, ws02).
+// UTF-8 decode tables used by start_input.
 mod raw_utf8 {
     extern "C" {
         pub(super) static bytesFromUTF8: [u8; 256];
@@ -102,15 +101,14 @@ mod raw {
 }
 
 // ---------------------------------------------------------------------------
-// Non-longjmp input seek (Stage II, `01d` §2.1)
+// Non-longjmp input seek
 // ---------------------------------------------------------------------------
 //
 // The C `ttstub_input_seek`/`ttstub_input_close` wrappers `longjmp` to the engine
-// setjmp on a serious internal I/O error. To let the boundary functions eventually
-// hold a real `&mut EngineState` across an input seek/close (the §6 flip), call the
-// exported `ttbc_*` functions directly — they return the error as a value and never
-// jump. `es` is the global `CoreBridgeState` the C wrappers use, obtained from
-// `_ttbc_get_core_state()` (both non-header exports from `bridge_core/support`).
+// setjmp on a serious internal I/O error. Call the exported `ttbc_*` functions
+// directly — they return the error as a value and never jump. `es` is the global
+// `CoreBridgeState` the C wrappers use, obtained from `_ttbc_get_core_state()`
+// (both non-header exports from `bridge_core/support`).
 
 extern "C" {
     fn _ttbc_get_core_state() -> *mut libc::c_void;
@@ -151,7 +149,7 @@ pub(crate) unsafe fn input_seek(
 /// Non-longjmp replacement for the C `ttstub_input_close` wrapper. Returns `true`
 /// on the serious internal close error the C wrapper `longjmp`'d on
 /// (`ttbc_input_close != 0`, i.e. `input_close`'s `scan_remainder` failed); a
-/// `Result`-path caller propagates it as `EngineAbort::TtAbort` (`01d` §2.1). The
+/// `Result`-path caller propagates it as `EngineAbort::TtAbort`. The
 /// old bare `longjmp` ran no cleanup and left the surfaced message undefined, so
 /// `TtAbort` (no cleanup, sets a descriptive message, history 3) is control-flow
 /// equivalent with a strictly-better message on this rare path.
@@ -234,8 +232,6 @@ extern "C" {
 // ---------------------------------------------------------------------------
 
 
-/// `&mut EngineState` core of [`tt_xetex_open_input`] so a threaded caller
-/// (`start_input_in`) can open under the borrow without re-entering `with_state`.
 pub(crate) unsafe fn tt_xetex_open_input_in(
     st: &mut crate::state::EngineState,
     filefmt: libc::c_int,
@@ -281,8 +277,7 @@ pub(crate) unsafe fn tt_xetex_open_input_in(
     handle
 }
 
-/// `&mut EngineState` core of [`u_open_in`] so threaded callers can open and
-/// configure the input file without re-entering the global state borrow.
+/// Open and configure the input file.
 pub(crate) unsafe fn u_open_in_in(
     st: &mut crate::state::EngineState,
     f: *mut *mut UFile,
@@ -393,8 +388,6 @@ static mut UTF32_BUF: *mut u32 = std::ptr::null_mut();
 static mut NORMALIZERS: [*mut libc::c_void; 2] = [std::ptr::null_mut(), std::ptr::null_mut()];
 
 // translated from xetex-io.c:98 (conversion_error, was static)
-// Threaded `_in` core (`01b` §3); prints through the threaded diagnostic cores
-// under the live `&mut EngineState` borrow.
 fn conversion_error_in(st: &mut crate::state::EngineState, errcode: i32) {
     crate::output::begin_diagnostic_in(st);
     crate::output::print_nl_in(st, b'U' as i32);
@@ -407,7 +400,7 @@ fn conversion_error_in(st: &mut crate::state::EngineState, errcode: i32) {
 // translated from xetex-io.c:110 (apply_normalization, was static)
 // Sets `input.last` on return; called from `input_line_in`. The cold
 // converter-creation / buffer-overflow `_tt_abort`s ride the `InputAbort`
-// sentinel (`01b` §5).
+// sentinel.
 unsafe fn apply_normalization_in(
     st: &mut crate::state::EngineState,
     buf: *mut u32,
@@ -461,15 +454,9 @@ unsafe fn apply_normalization_in(
 
 /// Read one line from UFILE into the TeX `buffer`, handling encodings.
 ///
-/// translated from xetex-io.c:135 (input_line). The legacy no-arg bridge
-/// wrapper was deleted (`01d` §5.6, DEAD set): all live callers reach the
-/// `_in` core directly.
+/// translated from xetex-io.c:135 (input_line).
 ///
-/// Threaded `_in` core (`01b` §3). Holds one `&mut
-/// EngineState` borrow across the read, touching `st.input` (buffer/`last`/
-/// `max_buf_stack`) and `st.eqtb` (input normalization) directly and calling
-/// the threaded `get_uni_c_in`/`apply_normalization_in`/`conversion_error_in`
-/// cores under it. Cold `_tt_abort`s ride the [`InputAbort`] sentinel.
+/// Cold `_tt_abort`s ride the [`InputAbort`] sentinel.
 pub(crate) unsafe fn input_line_in(
     st: &mut crate::state::EngineState,
     f: *mut UFile,
@@ -683,9 +670,6 @@ pub(crate) unsafe fn input_line_in(
 /// Convert `name_of_file` (UTF-8) to UTF-16 in `name_of_file16`.
 ///
 /// translated from xetex-io.c:481 (make_utf16_name)
-/// `&mut EngineState` core of [`make_utf16_name`] (`01b` §3). Touches only the
-/// `input` cluster (name buffers); no cold path. Safe to call under a live
-/// borrow.
 pub(crate) unsafe fn make_utf16_name_in(st: &mut crate::state::EngineState) {
     let name_len = st.input.name_length as usize;
     let needed = name_len + 10;
@@ -733,9 +717,8 @@ pub(crate) unsafe fn make_utf16_name_in(st: &mut crate::state::EngineState) {
 /// Read one Unicode codepoint from a UFILE (handles UTF-8, UTF-16BE/LE, RAW).
 ///
 /// translated from xetex-io.c:373 (get_uni_c)
-// Threaded `_in` core (`01b` §3); only re-enters state through the threaded
-// `bad_utf8_warning_in`. The impossible invalid-mode `_tt_abort` rides the
-// `InputAbort` sentinel. Called only from `input_line_in`.
+// The impossible invalid-mode `_tt_abort` rides the `InputAbort` sentinel.
+// Called only from `input_line_in`.
 pub(crate) unsafe fn get_uni_c_in(
     st: &mut crate::state::EngineState,
     f: *mut UFile,
@@ -843,7 +826,7 @@ pub(crate) unsafe fn get_uni_c_in(
 // translated from xetex-io.c:273 (u_close)
 ///
 /// Returns `true` on the serious internal close error the C `ttstub_input_close`
-/// wrapper `longjmp`'d on (`01d` §2.1): callers on a `Result` path propagate it
+/// wrapper `longjmp`'d on: callers on a `Result` path propagate it
 /// as their `InputClose` abort, the terminal-cleanup caller (`tt_cleanup`)
 /// absorbs it. On that error the ICU-converter close + `free(f)` are skipped —
 /// exactly as the old longjmp skipped them.
@@ -879,13 +862,12 @@ pub(crate) enum OpenOrCloseAbort {
     Name(NameAbort),
     MakeString(crate::texmfmp::MakeTexStringAbort),
     /// Serious internal error closing a `\read` stream (the C `ttstub_input_close`
-    /// wrapper `longjmp`'d here) — from `u_close` (`01d` §2.1).
+    /// wrapper `longjmp`'d here) — from `u_close`.
     InputClose,
 }
 
 impl OpenOrCloseAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5). The longjmp-ing
-    /// `fire` was deleted with the DEAD `open_or_close` wrapper (`01d` §5.6).
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             OpenOrCloseAbort::Scanner(e) => e.into_engine_abort(),
@@ -951,10 +933,7 @@ pub(crate) unsafe fn open_or_close_in(
     Ok(())
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
-
 /// translated from xetex-xetex0.c:7827 (begin_name)
-/// `&mut EngineState` core of [`begin_name`] (`01b` §3). Touches `scanner` only.
 pub(crate) fn begin_name_in(st: &mut crate::state::EngineState) {
     st.scanner.area_delimiter = 0;
     st.scanner.ext_delimiter = 0;
@@ -963,8 +942,7 @@ pub(crate) fn begin_name_in(st: &mut crate::state::EngineState) {
 }
 
 /// Cold abort reasons threaded out of the file-name machinery
-/// ([`more_name_in`]/[`end_name_in`]/[`make_name_string_in`]) so the bridge
-/// wrappers run the `overflow` longjmp after the state borrow drops (`01b` §5).
+/// ([`more_name_in`]/[`end_name_in`]/[`make_name_string_in`]).
 pub(crate) enum NameAbort {
     /// `pool_ptr + 1 > pool_size`: `overflow("pool size", …)`.
     PoolSize,
@@ -972,8 +950,7 @@ pub(crate) enum NameAbort {
     NumberOfStrings,
 }
 
-/// `&mut EngineState` core of the `more_name` file-name op (`01b` §3). Touches
-/// `scanner` + `strings`; the cold pool-size `overflow` defers via [`NameAbort`].
+/// The cold pool-size `overflow` defers via [`NameAbort`].
 pub(crate) fn more_name_in(st: &mut crate::state::EngineState, c: u16) -> Result<bool, NameAbort> {
     let stop = st.scanner.stop_at_space;
     let q = st.scanner.file_name_quote_char;
@@ -1008,8 +985,7 @@ pub(crate) fn more_name_in(st: &mut crate::state::EngineState, c: u16) -> Result
 }
 
 impl NameAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire_name_overflow` without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             NameAbort::PoolSize => crate::errors::EngineAbort::PoolOverflow,
@@ -1017,8 +993,7 @@ impl NameAbort {
         }
     }
 }
-/// `&mut EngineState` core of the `end_name` file-name op (`01b` §3). Touches `strings` +
-/// `scanner`; the cold `overflow("number of strings")` (direct or via
+/// The cold `overflow("number of strings")` (direct or via
 /// `make_string`/`slow_make_string`) defers via [`NameAbort`].
 pub(crate) fn end_name_in(st: &mut crate::state::EngineState) -> Result<(), NameAbort> {
     use crate::string_pool::{make_string, search_string, slow_make_string};
@@ -1092,8 +1067,7 @@ pub(crate) fn end_name_in(st: &mut crate::state::EngineState) -> Result<(), Name
     Ok(())
 }
 
-/// `&mut EngineState` core of [`make_name_string`] (`01b` §3). Touches
-/// `strings`/`scanner`/`input`; cold `overflow` defers via [`NameAbort`].
+/// The cold `overflow` defers via [`NameAbort`].
 pub(crate) unsafe fn make_name_string_in(
     st: &mut crate::state::EngineState,
 ) -> Result<i32, NameAbort> {
@@ -1141,8 +1115,7 @@ pub(crate) unsafe fn make_name_string_in(
     Ok(result)
 }
 
-/// `&mut EngineState` core of [`pack_job_name`] (scanner-SCC prereq). The string
-/// build's overflow rides [`crate::texmfmp::MakeTexStringAbort`] (`01b` §5).
+/// The string build's overflow rides [`crate::texmfmp::MakeTexStringAbort`].
 pub(crate) unsafe fn pack_job_name_in(
     st: &mut crate::state::EngineState,
     s: *const libc::c_char,
@@ -1154,7 +1127,7 @@ pub(crate) unsafe fn pack_job_name_in(
     pack_file_name_in(st, n, a, e);
     Ok(())
 }
-/// Cold-abort sentinel for [`open_log_file_in`] (`01b` §5).
+/// Cold-abort sentinel for [`open_log_file_in`].
 pub(crate) enum OpenLogAbort {
     /// A `maketexstring`/`pack_job_name` overflow.
     MakeString(crate::texmfmp::MakeTexStringAbort),
@@ -1165,8 +1138,7 @@ pub(crate) enum OpenLogAbort {
 }
 
 impl OpenLogAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5). The longjmp-ing
-    /// `fire` was deleted with the DEAD `open_log_file` wrapper (`01d` §5.6).
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             OpenLogAbort::MakeString(e) => e.into_engine_abort(),
@@ -1178,16 +1150,10 @@ impl OpenLogAbort {
     }
 }
 
-/// translated from xetex-xetex0.c:7937 (open_log_file). The legacy firing
-/// wrapper was deleted (`01d` §5.6): every caller now runs the `_in` core under
-/// `with_state_mut` and either propagates the `OpenLogAbort` as `EngineAbort`
-/// (via `into_engine_abort`) or absorbs it on a terminal-cleanup path.
+/// translated from xetex-xetex0.c:7937 (open_log_file).
 ///
-/// `&mut EngineState` core (scanner-SCC prereq).
-///
-/// Opens and writes the transcript banner under one borrow via the threaded
-/// `maketexstring_in`/`pack_job_name_in`/`make_name_string_in` and print cores;
-/// the three cold paths ride [`OpenLogAbort`] (`01b` §5).
+/// Opens and writes the transcript banner; the three cold paths ride
+/// [`OpenLogAbort`].
 pub(crate) unsafe fn open_log_file_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), OpenLogAbort> {
@@ -1214,7 +1180,7 @@ pub(crate) unsafe fn open_log_file_in(
     st.shipout.selector = SELECTOR_LOG_ONLY;
     st.errors.log_opened = true;
 
-    // `st.input.cur_input` reads the raw `cur_input` global (safe under the borrow).
+    // `st.input.cur_input` reads the raw `cur_input` global.
     let ptr = st.input.input_ptr;
     st.input.input_stack[ptr as usize] = st.input.cur_input;
 
@@ -1236,10 +1202,7 @@ pub(crate) unsafe fn open_log_file_in(
     Ok(())
 }
 
-/// `&mut EngineState` core of [`pack_file_name`] (scanner-SCC prereq).
-///
-/// Builds `name_of_file`/`name_length` from the three string-pool components
-/// under one borrow via the threaded `string_pool::length`/`gettexstring_in`.
+/// Builds `name_of_file`/`name_length` from the three string-pool components.
 pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i32, a: i32, e: i32) {
     extern "C" {
         fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
@@ -1274,12 +1237,6 @@ pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i3
     libc::free(work_buffer as *mut libc::c_void);
 }
 
-/// Threaded `_in` core of [`close_files_and_terminate`] (`01d` §6.1 drain, step 2).
-/// Holds one `&mut EngineState` across the whole teardown — every former
-/// `with_state`/wrapper re-entry (`set_eqtb_b32s1`/`log_opened`/`selector`/
-/// `set_selector`/`print_*`) is now direct `st.*` access or an `_in` print. Safe
-/// to hold the borrow: no path longjmps. Prerequisite for threading
-/// `store_fmt_file`, which will call this directly under its own borrow.
 pub(crate) unsafe fn close_files_and_terminate_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::errors::EngineAbort> {
@@ -1341,15 +1298,11 @@ pub unsafe fn init_io(st: &mut crate::state::EngineState) {
     st.input.first = last + 1;
 }
 
-// scanner / `expand` SCC — threaded `_in` cores (session 204 big pass).
-// Stubs first (manifest §d step 1); bodies translated from the global versions.
-// ---------------------------------------------------------------------------
-
 use crate::scan::SccAbort;
 
 /// Lift a file-name [`NameAbort`] overflow into [`SccAbort`] (via the
 /// input-stack overflow sentinel), computing `n` from the live pool/string
-/// scalars before the borrow drops.
+/// scalars.
 fn name_abort_scc(st: &crate::state::EngineState, e: NameAbort) -> SccAbort {
     let (what, n) = match e {
         NameAbort::PoolSize => (

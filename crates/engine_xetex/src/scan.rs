@@ -19,8 +19,6 @@ use crate::ext::ot_font_get_1;
 use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
 
-// Relocated to packaging.rs (workstream 02); still called from scan.rs.
-// Relocated to expand.rs (workstream 02); still called from scan.rs.
 use crate::errors::int_error_in;
 use crate::expand::{expand_in, macro_call_in};
 use crate::output::capture_to_diagnostic_in;
@@ -30,7 +28,6 @@ use crate::output::print_cstr_in;
 use crate::output::print_esc_cstr_in;
 use crate::output::print_int_in;
 use crate::output::print_nl_cstr_in;
-// Relocated to main_control.rs (workstream 02); still called from scan.rs.
 
 use crate::node::{GlueSpecNode, NodePtr, RuleDimen};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
@@ -333,9 +330,7 @@ pub(crate) fn scan_delimiter_int_in(st: &mut crate::state::EngineState) -> Resul
 // max_hyphenatable_length
 // ---------------------------------------------------------------------------
 
-/// Threaded (Phase C) core of `max_hyphenatable_length`: reads the
-/// `\XeTeXhyphenatablelength` integer parameter directly from the borrowed
-/// `eqtb`, so it is safe to call under a live `&mut EngineState` borrow.
+/// Reads the `\XeTeXhyphenatablelength` integer parameter from `eqtb`.
 pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
     let v = eqtb.b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH);
     if v > HYPHENATABLE_LENGTH_LIMIT {
@@ -369,7 +364,6 @@ const PROTECTED_TOKEN: i32 = 0x1C00001;
 // Token-encoding constants (xetex-constants.h:353).
 const MATH_SHIFT_TOKEN: i32 = 0x600000;
 
-/// `&mut EngineState` core of [`insert_dollar_sign`] (`01b` §3).
 pub(crate) fn insert_dollar_sign_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -467,9 +461,8 @@ const TEMP_HEAD: i32 = 4_999_999 - 3;
 const EXACTLY: u8 = 0;
 const ADDITIONAL: u8 = 1;
 
-/// Threaded (Phase C) core of `scan_spec`. The save stack lives in
-/// `st.save_stack`; the only cold abort is `new_save_level`'s save-stack
-/// overflow, surfaced through [`SccAbort`].
+/// The save stack lives in `st.save_stack`; the only cold abort is
+/// `new_save_level`'s save-stack overflow, surfaced through [`SccAbort`].
 pub(crate) fn scan_spec_in(
     st: &mut crate::state::EngineState,
     c: GroupCode,
@@ -523,9 +516,6 @@ pub(crate) fn scan_spec_in(
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:4392 (round_decimals, was static)
-//
-// Phase-C (scanner-SCC prereq): reads `dig` directly from `&ErrorState` so a
-// threaded caller holding `&mut EngineState` can call it under the borrow.
 fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
     let mut a: i32 = 0;
     let mut k = k;
@@ -548,7 +538,6 @@ fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
 const VRULE: u8 = 35;
 const DEFAULT_RULE: i32 = 26214;
 
-/// Threaded (Phase C) core of [`scan_rule_spec`].
 pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i32, SccAbort> {
     let q = crate::mem::new_rule(&mut st.mem);
     if q == crate::mem::ALLOC_FAILED {
@@ -605,9 +594,7 @@ const SPACE_TOKEN: i32 = 0x1400020;
 const ACTIVE_CHAR: i32 = 13;
 
 /// translated from xetex-xetex0.c:6363 (str_toks_cat)
-/// Cold abort reasons threaded out of [`str_toks_cat_in`] so the bridge
-/// wrapper can run the `overflow` longjmp *after* the `with_state` borrow
-/// drops (`01b` §5). Never observed on a passing run.
+/// Cold abort reasons for [`str_toks_cat_in`].
 pub(crate) enum StrToksAbort {
     /// `pool_ptr + 1 > pool_size`: `overflow("pool size", …)`.
     PoolOverflow,
@@ -615,9 +602,7 @@ pub(crate) enum StrToksAbort {
     MainMemoryOverflow,
 }
 
-/// `&mut` core of `str_toks_cat` (`01b` §3). Touches `mem` (token list) and
-/// `strings` (pool) only; both cold overflow paths defer to the caller via
-/// [`StrToksAbort`] (`01b` §5).
+/// Both cold overflow paths defer to the caller via [`StrToksAbort`].
 pub(crate) fn str_toks_cat_in(
     mem: &mut crate::state::MemState,
     strings: &mut crate::state::StringsState,
@@ -972,7 +957,7 @@ pub(crate) fn eTeX_enabled_in(
 // ---------------------------------------------------------------------------
 
 // translated from xetex-xetex0.c:13060 (tokens_to_string)
-/// Cold-abort sentinel for [`tokens_to_string_in`] (`01b` §5).
+/// Cold-abort sentinel for [`tokens_to_string_in`].
 pub(crate) enum TokensToStringAbort {
     /// Called with `selector` already `new_string` (a programmer error).
     SelectorNewString,
@@ -980,11 +965,9 @@ pub(crate) enum TokensToStringAbort {
     StringOverflow,
 }
 
-/// `&mut EngineState` core of [`tokens_to_string`] (scanner-SCC prereq).
-///
-/// Renders token list `p` into the string pool under one borrow via the
-/// threaded `show_token_list_in`; the `new_string`-reentrancy guard and the
-/// string-pool overflow ride [`TokensToStringAbort`] (`01b` §5).
+/// Renders token list `p` into the string pool via `show_token_list_in`; the
+/// `new_string`-reentrancy guard and the string-pool overflow ride
+/// [`TokensToStringAbort`].
 pub(crate) fn tokens_to_string_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -1103,9 +1086,8 @@ pub(crate) fn get_r_token_in(st: &mut crate::state::EngineState) -> Result<(), S
 // delete_last
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`scan_math`] (`01b` §3): scans one math field
-/// under one borrow over the threaded scanner/input cores; the `{`...`}`
-/// sub-formula arm pushes a `GroupCode::Math` and returns.
+/// Scans one math field; the `{`...`}` sub-formula arm pushes a
+/// `GroupCode::Math` and returns.
 pub(crate) fn scan_math_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -1213,8 +1195,7 @@ pub(crate) fn scan_math_in(
     Ok(())
 }
 
-/// `&mut EngineState` core of [`set_math_char`] (`01b` §3): appends a math-char
-/// noad (or expands the active-math-char) under one borrow.
+/// Appends a math-char noad (or expands the active-math-char).
 pub(crate) fn set_math_char_in(
     st: &mut crate::state::EngineState,
     c: i32,
@@ -1279,10 +1260,8 @@ pub(crate) fn set_family_fn(x: i32) -> i32 {
     (((x as u32) & 0xFF) << 24) as i32
 }
 
-/// Cold abort reasons threaded out of the node-recycling functions
-/// (`copy_node_list`, `prune_page_top`) so the `_global` wrappers can run the
-/// `runaway`/`overflow`/`confusion` longjmp *after* the `with_state` borrow
-/// drops (`01b` §5). Never observed on a passing run.
+/// Cold abort reasons for the node-recycling functions (`copy_node_list`,
+/// `prune_page_top`).
 pub(crate) enum NodeRecycleAbort {
     /// `get_node` / `new_skip_param` exhausted the arena: `overflow`.
     Overflow,
@@ -1290,8 +1269,7 @@ pub(crate) enum NodeRecycleAbort {
     OverflowRunaway,
     /// Internal-consistency failure: `confusion(msg)`.
     Confusion(&'static std::ffi::CStr),
-    /// A native-font measurement cold abort carried through a node-building path
-    /// (`01d` §5.6).
+    /// A native-font measurement cold abort carried through a node-building path.
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -1302,9 +1280,7 @@ impl From<crate::ext::NativeFontAbort> for NodeRecycleAbort {
 }
 
 impl NodeRecycleAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `node_recycle_abort` without longjmp-ing. Call only *after* the state
-    /// borrow drops (`OverflowRunaway` re-enters `with_state` via `runaway`).
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         const MEM_TOP_NR: i32 = 4_999_999;
         match self {
@@ -1319,8 +1295,8 @@ impl NodeRecycleAbort {
     }
 }
 
-/// `get_node` under the `mem` borrow, returning [`NodeRecycleAbort::Overflow`]
-/// from the enclosing function on arena exhaustion (`01b` §5 sentinel).
+/// `get_node`, returning [`NodeRecycleAbort::Overflow`] from the enclosing
+/// function on arena exhaustion.
 macro_rules! cnl_get_node {
     ($mem:expr, $sz:expr) => {{
         let __r = crate::mem::get_node($mem, $sz);
@@ -1331,9 +1307,8 @@ macro_rules! cnl_get_node {
     }};
 }
 
-/// `get_avail` under the `mem` borrow, returning
-/// [`NodeRecycleAbort::OverflowRunaway`] from the enclosing function on
-/// exhaustion (`get_avail_global` runs `runaway()` before `overflow`).
+/// `get_avail`, returning [`NodeRecycleAbort::OverflowRunaway`] from the
+/// enclosing function on exhaustion.
 macro_rules! cnl_get_avail {
     ($mem:expr) => {{
         let __r = crate::mem::get_avail($mem);
@@ -1344,10 +1319,10 @@ macro_rules! cnl_get_avail {
     }};
 }
 
-// Re-export cnl_get_node for the relocated font-loading group in fonts.rs (ws02)
-// and copy_node_list in packaging.rs (ws02).
+// Re-export cnl_get_node for the font-loading group in fonts.rs and
+// copy_node_list in packaging.rs.
 pub(crate) use cnl_get_node;
-// Re-export cnl_get_avail for copy_node_list in packaging.rs (ws02).
+// Re-export cnl_get_avail for copy_node_list in packaging.rs.
 pub(crate) use cnl_get_avail;
 
 // ---------------------------------------------------------------------------
@@ -1370,17 +1345,11 @@ const IF_TEST_COV: u16 = 107; // xetex_format.h:349
                               // Input-state discriminant (already TOKEN_LIST = 0 in input.rs).
 const TOKEN_LIST_COV: u16 = 0;
 
-/// `&mut EngineState` core of [`check_outer_validity`] (`01b` §3). The whole
-/// cold runaway/forbidden-cs/incomplete-`\if` recovery now runs under one
-/// borrow: scanner/error/input state is touched directly; `cur_cs`/`cur_input`/
-/// `set_cur_*` are raw `mod raw` globals; the token-list pushes go through
-/// `begin_token_list_in`, the diagnostics through `runaway_in`/the threaded
-/// `print_*_in`/`error_here_with_diagnostic_in` cores, and the recovery error
-/// through `error_in`/`ins_error_in`. The final `error`/`ins_error`
-/// [`ErrorOutcome`](crate::errors::ErrorOutcome) is returned for the wrapper to
-/// `finish` after the borrow drops; arena exhaustion and `begin_token_list`
-/// overflow ride [`InputAbort`](crate::input::InputAbort). Normal (`NORMAL`)
-/// status returns `ErrorOutcome::Continue`.
+/// Handles the cold runaway / forbidden-cs / incomplete-`\if` recovery,
+/// returning the recovering `error`/`ins_error`
+/// [`ErrorOutcome`](crate::errors::ErrorOutcome); arena exhaustion and
+/// `begin_token_list` overflow ride [`InputAbort`](crate::input::InputAbort).
+/// Normal (`NORMAL`) status returns `ErrorOutcome::Continue`.
 pub(crate) fn check_outer_validity_in(
     st: &mut crate::state::EngineState,
 ) -> Result<crate::errors::ErrorOutcome, crate::input::InputAbort> {
@@ -1514,9 +1483,7 @@ pub(crate) fn check_outer_validity_in(
 // expand
 // ---------------------------------------------------------------------------
 
-/// Deferred cold outcomes of [`get_next_in`] (`01b` §5): each re-enters
-/// `with_state` (print / error / log), so it runs in the thin wrapper after the
-/// `&mut EngineState` borrow drops. Never produced on a normal token read.
+/// Deferred cold outcomes of [`get_next_in`].
 pub(crate) enum GetNextOutcome {
     /// Normal completion — `cur_cmd`/`cur_chr`/`cur_cs` are now set.
     Done,
@@ -1529,7 +1496,7 @@ pub(crate) enum GetNextOutcome {
 }
 
 /// Map a hash `id_lookup` capacity overflow onto the deferred input-abort
-/// sentinel so the `overflow(...)` print runs after the borrow drops.
+/// sentinel.
 pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::InputAbort {
     use crate::hash::HashLookupError::*;
     let (what, n) = match e {
@@ -1541,13 +1508,8 @@ pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::I
     crate::input::InputAbort::Overflow { what, n }
 }
 
-/// Threaded `_in` core of [`get_next`] (`01b` §3) — the central tokenizer,
-/// holding one `&mut EngineState` borrow across the whole read. Buffer / eqtb /
-/// mem / scanner / input / save state is touched directly and the threaded
-/// input-stack / error `_in` cores run under the borrow; `cur_input` / `cur_chr`
-/// / `cur_cmd` / `cur_cs` / `line` / `first` stay raw `mod raw` (safe under the
-/// borrow). Cold abort / recoverable-error / no-legal-`\end` tails ride
-/// [`GetNextOutcome`].
+/// The central tokenizer. Cold abort / recoverable-error / no-legal-`\end`
+/// tails ride [`GetNextOutcome`].
 pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome {
 
     macro_rules! try_in {
@@ -2256,11 +2218,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 // main_control
 // ---------------------------------------------------------------------------
 
-/// Deferred cold outcomes of the scanner / `expand` SCC `_in` cores (`01b` §5).
-/// Every SCC `_in` returns `Result<T, SccAbort>`; sibling calls propagate with
-/// `?`. Each arm re-enters `with_state` (print / error / input-stack / log), so
-/// it runs in the thin wrapper *after* the `&mut EngineState` borrow drops.
-/// Never produced on a normal scan.
+/// Deferred cold outcomes of the scanner / `expand` cores.
 pub(crate) enum SccAbort {
     /// A recoverable `error()`/`int_error()` produced a terminal outcome.
     Error(crate::errors::ErrorOutcome),
@@ -2281,9 +2239,9 @@ pub(crate) enum SccAbort {
     MakeTexString(crate::texmfmp::MakeTexStringAbort),
     /// Serious internal error closing an input file opened by a `conv_toks` file
     /// primitive (`\filesize`/`\filedump`/`\filemoddate`) or `count_pdf_file_pages`
-    /// — the C `ttstub_input_close` wrapper `longjmp`'d here (`01d` §2.1).
+    /// — the C `ttstub_input_close` wrapper `longjmp`'d here.
     InputClose,
-    /// A native-font measurement cold abort (`01d` §5.6).
+    /// A native-font measurement cold abort.
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -2294,18 +2252,14 @@ impl From<crate::ext::NativeFontAbort> for SccAbort {
 }
 
 impl SccAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `SccAbort::fire` arm-for-arm without longjmp-ing. Call only
-    /// *after* the state borrow drops (`NoLegalEnd` opens the log, the recursive
-    /// arms re-enter `with_state`).
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             SccAbort::Error(oc) => oc.into_engine_abort(),
             SccAbort::Input(a) => a.into_engine_abort(),
             SccAbort::NoLegalEnd { open_log } => {
                 // Defer the (conditional) open_log_file + fatal_error to
-                // into_history, which holds `st` — this self-only method has none
-                // and no longer re-enters `with_state` (`01e`).
+                // into_history.
                 crate::errors::EngineAbort::NoLegalEnd { open_log }
             }
             SccAbort::TokensToString(a) => match a {
@@ -2344,8 +2298,8 @@ impl From<crate::input::InputAbort> for SccAbort {
 }
 
 /// Propagate a recoverable-error outcome (`error_in`/`int_error_in`/…) as an
-/// `SccAbort`: `Continue` keeps the scan going, anything else became terminal
-/// under the borrow and must fire after it drops. Use as `scc_err(o)?;`.
+/// `SccAbort`: `Continue` keeps the scan going, anything else became terminal.
+/// Use as `scc_err(o)?;`.
 pub(crate) fn scc_err(o: crate::errors::ErrorOutcome) -> Result<(), SccAbort> {
     if matches!(o, crate::errors::ErrorOutcome::Continue) {
         Ok(())
@@ -2354,8 +2308,8 @@ pub(crate) fn scc_err(o: crate::errors::ErrorOutcome) -> Result<(), SccAbort> {
     }
 }
 
-/// `get_next` under the borrow, with its [`GetNextOutcome`] cold tails lifted
-/// into [`SccAbort`]. Use as `get_next_scc(st)?;` inside the SCC.
+/// `get_next`, with its [`GetNextOutcome`] cold tails lifted into [`SccAbort`].
+/// Use as `get_next_scc(st)?;`.
 pub(crate) fn get_next_scc(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     Result::from(get_next_in(st))
 }
@@ -2369,7 +2323,7 @@ pub(crate) fn main_mem_overflow_scc() -> SccAbort {
     })
 }
 
-/// `get_node` under the borrow with its `ALLOC_FAILED` lifted into [`SccAbort`].
+/// `get_node` with its `ALLOC_FAILED` lifted into [`SccAbort`].
 pub(crate) fn get_node_scc(st: &mut crate::state::EngineState, s: i32) -> Result<i32, SccAbort> {
     let r = crate::mem::get_node(&mut st.mem, s);
     if r == crate::mem::ALLOC_FAILED {
@@ -2378,8 +2332,7 @@ pub(crate) fn get_node_scc(st: &mut crate::state::EngineState, s: i32) -> Result
     Ok(r)
 }
 
-/// `get_avail` under the borrow with its `ALLOC_FAILED` lifted into
-/// [`SccAbort`] (`get_avail_global` runs `runaway()` then `overflow`).
+/// `get_avail` with its `ALLOC_FAILED` lifted into [`SccAbort`].
 pub(crate) fn get_avail_scc(st: &mut crate::state::EngineState) -> Result<i32, SccAbort> {
     let r = crate::mem::get_avail(&mut st.mem);
     if r == crate::mem::ALLOC_FAILED {
@@ -2388,7 +2341,7 @@ pub(crate) fn get_avail_scc(st: &mut crate::state::EngineState) -> Result<i32, S
     Ok(r)
 }
 
-/// `new_spec` under the borrow with its `ALLOC_FAILED` lifted into [`SccAbort`].
+/// `new_spec` with its `ALLOC_FAILED` lifted into [`SccAbort`].
 pub(crate) fn new_spec_scc(st: &mut crate::state::EngineState, p: i32) -> Result<i32, SccAbort> {
     let r = crate::mem::new_spec(&mut st.mem, p);
     if r == crate::mem::ALLOC_FAILED {
@@ -2397,8 +2350,8 @@ pub(crate) fn new_spec_scc(st: &mut crate::state::EngineState, p: i32) -> Result
     Ok(r)
 }
 
-/// `str_toks_cat` under the borrow with its [`StrToksAbort`] cold overflow tails
-/// lifted into [`SccAbort`] (via [`crate::input::InputAbort`]).
+/// `str_toks_cat` with its [`StrToksAbort`] cold overflow tails lifted into
+/// [`SccAbort`] (via [`crate::input::InputAbort`]).
 pub(crate) fn str_toks_scc(
     st: &mut crate::state::EngineState,
     b: i32,
@@ -2418,18 +2371,12 @@ pub(crate) fn str_toks_scc(
     }
 }
 
-/// Map a hash `id_lookup` capacity overflow onto the deferred input-abort
-/// sentinel so the `overflow(...)` print runs after the borrow drops.
-
-// scanner / `expand` SCC — threaded `_in` cores (session 204 big pass).
-// Stubs first (manifest §d step 1); bodies translated from the global versions
-// below, sibling calls propagate via `?`, cold tails ride `SccAbort`.
 // ---------------------------------------------------------------------------
 
 /// Shared tail of the leaf `scan_int` range-check members: emit the "Bad …"
-/// diagnostic for an out-of-range `cur_val`, then reset it to zero. Mirrors the
-/// global leaves (`scan_char_num` & kin); `help1` is the variable second help
-/// line (constant for most, `max_reg_help_line` for `scan_register_num`).
+/// diagnostic for an out-of-range `cur_val`, then reset it to zero. `help1` is
+/// the variable second help line (constant for most, `max_reg_help_line` for
+/// `scan_register_num`).
 fn leaf_int_range_error(
     st: &mut crate::state::EngineState,
     err_msg: *const libc::c_char,
@@ -5305,7 +5252,6 @@ pub(crate) fn scan_glyph_number_in(
 ) -> Result<(), SccAbort> {
     if scan_keyword_in(st, c"/".as_ptr())? {
         crate::io::scan_and_pack_name_in(st)?;
-        // `name_of_file` read directly (its `_global` getter is with_state-bearing).
         let name = if st.input.name_of_file.is_empty() {
             std::ptr::null_mut()
         } else {
@@ -5324,8 +5270,6 @@ pub(crate) fn scan_glyph_number_in(
     }
     Ok(())
 }
-/// Threaded core of `get_token` (`01b` §3). Not itself an SCC member, but
-/// reached under the borrow by several SCC scanners, so it needs an `_in` form.
 pub(crate) fn get_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     st.eqtb.no_new_control_sequence = false;
     get_next_scc(st)?;

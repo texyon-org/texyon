@@ -45,11 +45,6 @@ fn synctex_curv(shipout: &ShipoutState) -> i32 {
     shipout.cur_v + 4736287
 }
 
-// Phase-C: the synctex node-field readers below are pure `mem`-arena leaves.
-// Each is threaded onto a narrow `&MemState` borrow (direct, safe slice
-// indexing). Public recording entry points borrow the thread-local once at the
-// boundary and pass disjoint state fields through.
-
 // SYNCTEX_TAG_MODEL / SYNCTEX_LINE_MODEL for BOX (BOX_NODE_SIZE = 8, field = offset 7).
 #[inline]
 fn synctex_tag_box(mem: &crate::state::MemState, p: i32) -> i32 {

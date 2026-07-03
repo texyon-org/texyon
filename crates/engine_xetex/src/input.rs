@@ -1,6 +1,4 @@
 //! Input-stack management functions translated from `xetex/xetex-xetex0.c`.
-//!
-//! Phase A: all state accessed through the C globals via `src/globals.rs`.
 use crate::consts::{CS_TOKEN_FLAG, INT_BASE, LOCAL_BASE};
 use crate::io::u_close;
 
@@ -29,13 +27,11 @@ const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
 const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 
 // ---------------------------------------------------------------------------
-// InputAbort — cold-path sentinel for the threaded input-stack layer (`01b` §5)
+// InputAbort — cold-path sentinel for the input-stack layer
 // ---------------------------------------------------------------------------
 
-/// Cold abort/divergent paths the threaded input-stack `_in` cores cannot run
-/// while holding the `&mut EngineState` borrow (they re-enter `with_state`
-/// through the print/error subtree). The `_in` core returns the sentinel; the
-/// caller propagates it as an [`EngineAbort`](crate::errors::EngineAbort) via
+/// Cold abort/divergent paths. The caller propagates the sentinel as an
+/// [`EngineAbort`](crate::errors::EngineAbort) via
 /// [`into_engine_abort`](InputAbort::into_engine_abort). Never reached on a
 /// passing run.
 pub(crate) enum InputAbort {
@@ -51,14 +47,12 @@ pub(crate) enum InputAbort {
     MainMemory,
     /// Serious internal error closing an input file at end-of-file (the C
     /// `ttstub_input_close` wrapper `longjmp`'d here) — reached from
-    /// `end_file_reading_in`'s `u_close` (`01d` §2.1).
+    /// `end_file_reading_in`'s `u_close`.
     InputClose,
 }
 
 impl InputAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), without
-    /// longjmp-ing. Call only *after* the state borrow drops (`MainMemory`
-    /// re-enters `with_state` via `runaway`).
+    /// Map to the unified [`EngineAbort`] terminal, without longjmp-ing.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             InputAbort::Overflow { what, n } => crate::errors::EngineAbort::Overflow { what, n },
@@ -76,11 +70,6 @@ impl InputAbort {
 // end_token_list
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`end_token_list`] (`01b` §3). Touches the input
-/// stack (`st.input`) and `align_state` (`st.scanner`) directly; `cur_input` is
-/// the raw `mod raw` global (safe under the borrow); list recycling goes through
-/// the threaded `flush_list`/`delete_token_ref`. The cold interwoven-alignment
-/// `fatal_error` rides the [`InputAbort`] sentinel.
 pub(crate) fn end_token_list_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
     let ci = st.input.cur_input;
     if ci.index >= BACKED_UP {
@@ -116,11 +105,6 @@ pub(crate) fn end_token_list_in(st: &mut crate::state::EngineState) -> Result<()
 // back_input
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`back_input`] (`01b` §3). Touches the input stack
-/// (`st.input`) and `align_state` (`st.scanner`) directly; `cur_input`/`cur_tok`
-/// are raw `mod raw` globals (safe under the borrow); the avail-list pop goes
-/// through the threaded `get_avail`. The cold `overflow` and the arena-exhausted
-/// `get_avail` path ride the [`InputAbort`] sentinel.
 pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
     while st.input.cur_input.state == TOKEN_LIST
         && st.input.cur_input.loc == crate::mem::TEX_NULL
@@ -163,10 +147,7 @@ pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), In
 // back_error
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`back_error`] (`01b` §3): [`back_input_in`] then
-/// [`error_in`]. The `error` cold tail rides the returned [`ErrorOutcome`]
-/// (`finish`ed by the wrapper after the borrow drops); the `back_input`
-/// overflow rides [`InputAbort`].
+/// [`back_input_in`] then [`error_in`].
 pub(crate) fn back_error_in(
     st: &mut crate::state::EngineState,
 ) -> Result<crate::errors::ErrorOutcome, InputAbort> {
@@ -178,9 +159,8 @@ pub(crate) fn back_error_in(
 // ins_error
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`ins_error`] (`01b` §3): [`back_input_in`], stamp
-/// the backed-up token list as `INSERTED`, then [`error_in`]. Same dual-sentinel
-/// shape as [`back_error_in`].
+/// [`back_input_in`], stamp the backed-up token list as `INSERTED`, then
+/// [`error_in`].
 pub(crate) fn ins_error_in(
     st: &mut crate::state::EngineState,
 ) -> Result<crate::errors::ErrorOutcome, InputAbort> {
@@ -197,8 +177,7 @@ pub(crate) fn ins_error_in(
 ///
 /// translated from xetex-xetex0.c:2766 (pseudo_close)
 ///
-/// Phase-C: threaded to `&mut MemState` + `&mut InputState` (`01b` §3). Pure
-/// node recycling (no allocation), so no cold-path sentinel.
+/// Pure node recycling (no allocation).
 pub(crate) fn pseudo_close(
     mem: &mut crate::state::MemState,
     input: &mut crate::state::InputClusterState,
@@ -224,11 +203,6 @@ pub(crate) fn pseudo_close(
 // begin_file_reading
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of `begin_file_reading` (`01b` §3). Input-stack
-/// fields are `st.input`; `cur_boundary`/`cond_ptr` read `st.save_stack`/
-/// `st.scanner`; `cur_input`/`first`/`line`/`max_in_open`/`buf_size`/
-/// `stack_size` are raw `mod raw` globals (safe under the borrow). Cold
-/// `overflow`s ride the [`InputAbort`] sentinel.
 pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
     if st.input.in_open == st.input.max_in_open {
         return Err(InputAbort::Overflow {
@@ -275,12 +249,8 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
 // end_file_reading
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`end_file_reading`] (`01b` §3). Touches the input
-/// stack (`st.input`) directly; `cur_input`/`first`/`line` are raw `mod raw`
-/// globals (safe under the borrow); pseudo-file teardown uses the threaded
-/// `pseudo_close`. The lone cold path is `u_close`'s serious internal close
-/// error, propagated as [`InputAbort::InputClose`] (`01d` §2.1) — the old C
-/// `ttstub_input_close` longjmp likewise aborted before the input-stack pop.
+/// On `u_close`'s serious internal close error, the old C `ttstub_input_close`
+/// longjmp aborted before the input-stack pop.
 pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
     st.input.first = st.input.cur_input.start;
     st.mem.line = st.input.line_stack[st.input.cur_input.index as usize];
@@ -308,14 +278,10 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<
 // pseudo_input
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of `pseudo_input` (translated from
-/// xetex-xetex0.c:2722); the legacy global wrapper is retired now that
-/// `get_next_in` is its only caller. `last`/`buffer`/
-/// `max_buf_stack`/`pseudo_files` are `st.input`; the block node is read/freed
-/// through `st.mem`/threaded `free_node`; `first`/`buf_size`/`set_cur_input_*`
-/// are raw `mod raw` globals (safe under the borrow). The cold buffer-size
-/// `overflow` rides the [`InputAbort`] sentinel (after restoring `loc`/`limit`,
-/// matching the original).
+/// translated from xetex-xetex0.c:2722 (pseudo_input)
+///
+/// The buffer-size `overflow` restores `loc`/`limit` first, matching the
+/// original.
 pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool, InputAbort> {
     st.input.last = st.input.first;
     let p = st.mem.b32s0(st.input.pseudo_files);
@@ -363,10 +329,8 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
 // insert_relax
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`insert_relax`] (`01b` §3): back up the current
-/// control sequence followed by a frozen `\relax`, marking the stack `INSERTED`.
-/// `cur_cs`/`cur_tok` are raw `mod raw` globals; both `back_input`s ride
-/// [`InputAbort`].
+/// Back up the current control sequence followed by a frozen `\relax`, marking
+/// the stack `INSERTED`.
 pub(crate) fn insert_relax_in(st: &mut crate::state::EngineState) -> Result<(), InputAbort> {
     st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
     back_input_in(st)?;
@@ -385,12 +349,6 @@ const INT_PAR_TRACING_MACROS: i32 = 30; // xetex_format.h:65
 const LOCAL__OUTPUT_ROUTINE_BTL: i32 = 1; // xetex_format.h:173
 const ASSIGN_TOKS_BTL: u16 = 73; // xetex_format.h:313
 
-/// `&mut EngineState` core of [`begin_token_list`] (`01b` §3). Touches the input
-/// stack (`st.input`) directly; `cur_input`/`stack_size` are raw `mod raw`
-/// globals (safe under the borrow); the `\tracingmacros` diagnostic prints
-/// in-order through the threaded `print_*_in`/`token_show_in`/`*_diagnostic_in`
-/// cores (sessions 182–184). The cold `overflow` rides the [`InputAbort`]
-/// sentinel.
 pub(crate) fn begin_token_list_in(
     st: &mut crate::state::EngineState,
     p: i32,

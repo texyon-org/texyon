@@ -1,10 +1,5 @@
-//! Memory arena types and Phase-2 allocator functions translated from
+//! Memory arena types and allocator functions translated from
 //! `xetex/xetex-xetex0.c`.
-//!
-//! Phase 2 targets are the node allocation helpers (`get_avail`,
-//! `flush_list`, `get_node`, `free_node`, `new_*`). During Phase A of
-//! state migration (see `plan/02-state.md`), all arena access goes
-//! through the raw C `mem[]` pointer wired up in `src/globals.rs`.
 use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE};
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
@@ -34,23 +29,14 @@ extern "C" {
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
 }
 
-// The scalar memory newtypes (`MemIdx`, `MemPtr`, `Scaled`, `StrNumber`,
-// `FontId`, `Token`) now live in `crate::units` — the typed-memory
-// foundation module (`plan/idiom/01c` §2 Stage 1). The vestigial stubs
-// that used to sit here (with the wrong `MemIdx::NULL = MemIdx(0)`) had no
-// call sites and were superseded; see `units.rs` for the corrected forms.
-
 // ---------------------------------------------------------------------------
 // get_avail
 // ---------------------------------------------------------------------------
 
-/// Overflow sentinel returned by the threaded allocators ([`get_avail`],
-/// [`get_node`]) when the `mem` arena is exhausted (`01b` §5). Because
-/// `overflow()`/`runaway()` are `with_state`-bearing, they cannot be called
-/// under the live borrow held while a threaded allocator runs; the allocator
-/// returns this sentinel instead and the bridge-down wrapper aborts after the
-/// borrow drops. `i32::MIN` lies outside every valid arena index, `TEX_NULL`,
-/// and `MAX_HALFWORD`, so it can never collide with a real return value.
+/// Overflow sentinel returned by the allocators ([`get_avail`], [`get_node`])
+/// when the `mem` arena is exhausted. `i32::MIN` lies outside every valid
+/// arena index, `TEX_NULL`, and `MAX_HALFWORD`, so it can never collide with a
+/// real return value.
 pub(crate) const ALLOC_FAILED: i32 = i32::MIN;
 
 /// Allocate one word from the single-word (hi-mem) free list.
@@ -59,10 +45,6 @@ pub(crate) const ALLOC_FAILED: i32 = i32::MIN;
 /// (`mem[p].b32.s1`) is set to `TEX_NULL`.
 ///
 /// translated from xetex-xetex0.c:170 (get_avail)
-///
-/// Phase-C: threaded to `&mut MemState`. On arena exhaustion it returns
-/// [`ALLOC_FAILED`] rather than calling `runaway()`/`overflow()` under the
-/// borrow (`01b` §5); the [`get_avail_global`] wrapper performs the abort.
 pub fn get_avail(mem: &mut MemState) -> i32 {
     let p = mem.avail;
 
@@ -88,14 +70,11 @@ pub fn get_avail(mem: &mut MemState) -> i32 {
     p
 }
 
-/// The `main memory size` overflow as an [`EngineAbort`] value (`01d` §5.5) —
-/// the non-longjmp twin of the former `fire_main_memory_overflow`: run `runaway()` (the
-/// runaway-diagnostic side effect) then hand back the `Overflow` terminal for
-/// the caller to propagate. Call only *after* the state borrow drops (`runaway`
-/// re-enters `with_state`).
+/// The `main memory size` overflow as an [`EngineAbort`] value: run `runaway()`
+/// (the runaway-diagnostic side effect) then hand back the `Overflow` terminal
+/// for the caller to propagate.
 pub(crate) fn main_memory_overflow_abort() -> crate::errors::EngineAbort {
-    // runaway() + the "main memory size" report are deferred to into_history
-    // (which holds st); this mapping site needs no state borrow.
+    // runaway() + the "main memory size" report are deferred to into_history.
     crate::errors::EngineAbort::MainMemoryOverflow
 }
 
@@ -109,9 +88,6 @@ pub(crate) fn main_memory_overflow_abort() -> crate::errors::EngineAbort {
 /// the tail, then splices the whole list onto the front of `avail`.
 ///
 /// translated from xetex-xetex0.c:192 (flush_list)
-///
-/// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only (no cold
-/// path, zero `with_state` calls). Legacy callers use [`flush_list_global`].
 pub fn flush_list(mem: &mut MemState, p: i32) {
     if p == TEX_NULL {
         return;
@@ -151,12 +127,6 @@ pub fn flush_list(mem: &mut MemState, p: i32) {
 ///   - `goto restart` → `continue 'restart`
 ///
 /// translated from xetex-xetex0.c:150 (get_node)
-///
-/// Phase-C: threaded to `&mut MemState`. The cold exhaustion path returns
-/// [`ALLOC_FAILED`] instead of calling `overflow()` under the borrow (`01b`
-/// §5); [`get_node_global`] performs the abort. The synctex trailer reads
-/// `mem.line` (folded, `01e`) and `st.input.cur_input.synctex_tag` (still `mod raw`,
-/// safe under a live borrow, `01b` §4).
 pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
     let r = 'restart: loop {
         let mut p = mem.rover;
@@ -258,8 +228,6 @@ pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
 ///
 /// translated from xetex-xetex0.c:147 (new_null_box)
 ///
-/// Phase-C: threaded to `&mut MemState`. Calls the threaded [`get_node`]
-/// directly and propagates its [`ALLOC_FAILED`] sentinel (`01b` §5).
 /// Typed twin of [`new_null_box`]: allocate a zeroed hlist box and return its
 /// `NodePtr<HListNode>` handle directly, for callers that immediately set its
 /// dimensions instead of re-deriving the handle via `classify_box`. `None` is
@@ -290,7 +258,6 @@ pub fn new_null_box(mem: &mut MemState) -> i32 {
 ///
 /// translated from xetex-xetex0.c:162 (new_rule)
 ///
-/// Phase-C: threaded to `&mut MemState` (callers use [`new_rule`] directly).
 /// Typed twin of [`new_rule`]: allocate a running-dimension rule and return its
 /// `NodePtr<RuleNode>` handle directly. `None` is the arena-exhaustion sentinel.
 pub fn alloc_rule(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
@@ -317,8 +284,6 @@ pub fn new_rule(mem: &mut MemState) -> i32 {
 /// matching the C's implicit narrowing assignment.
 ///
 /// translated from xetex-xetex0.c:174 (new_ligature)
-///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_ligature_global`].
 pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: i32) -> i32 {
     let Some(p) = NodePtr::<LigatureNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -337,8 +302,6 @@ pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: i32) -> i32 {
 /// Allocate a lig-item node (SMALL_NODE_SIZE) for char `c`.
 ///
 /// translated from xetex-xetex0.c:186 (new_lig_item)
-///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_lig_item_global`].
 pub fn new_lig_item(mem: &mut MemState, c: u16) -> i32 {
     let Some(p) = NodePtr::<LigItem>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -355,8 +318,6 @@ pub fn new_lig_item(mem: &mut MemState, c: u16) -> i32 {
 /// Allocate a discretionary node (SMALL_NODE_SIZE words) with null lists.
 ///
 /// translated from xetex-xetex0.c:195 (new_disc)
-///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_disc_global`].
 pub fn new_disc(mem: &mut MemState) -> i32 {
     let Some(p) = NodePtr::<DiscNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -374,8 +335,6 @@ pub fn new_disc(mem: &mut MemState) -> i32 {
 /// Allocate a math-on/off node of width `w` and subtype `s`.
 ///
 /// translated from xetex-xetex0.c:221 (new_math)
-///
-/// Phase-C: threaded to `&mut MemState`.
 pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
     let Some(p) = NodePtr::<MathNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -393,8 +352,6 @@ pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
 /// at `p`, then clear the copy's reference-count / link field to TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:231 (new_spec)
-///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_spec_global`].
 pub fn new_spec(mem: &mut MemState, p: i32) -> i32 {
     let Some(q) = NodePtr::<GlueSpecNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -418,8 +375,6 @@ pub fn new_spec(mem: &mut MemState, p: i32) -> i32 {
 /// parameter table.
 ///
 /// translated from xetex-xetex0.c:243 (new_param_glue)
-///
-/// Phase-C: threaded to `&mut MemState` and `&EqtbState`; legacy callers use [`new_param_glue_global`].
 pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
     let Some(p) = NodePtr::<GlueNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -445,7 +400,6 @@ pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
 ///
 /// translated from xetex-xetex0.c:258 (new_glue)
 ///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_glue_global`].
 /// Typed twin of [`new_glue`]: allocate a glue node pointing at spec `q` and
 /// return its `NodePtr<GlueNode>` handle directly. Callers that immediately need
 /// the typed node (to set its subtype / read its spec) use this instead of
@@ -476,8 +430,6 @@ pub fn new_glue(mem: &mut MemState, q: i32) -> i32 {
 /// setting `temp_ptr` to the copy.
 ///
 /// translated from xetex-xetex0.c:270 (new_skip_param)
-///
-/// Phase-C: threaded to `&mut MemState` and `&EqtbState`; legacy callers use [`new_skip_param_global`].
 pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
     let spec = eqtb.b32s1(GLUE_BASE + n as i32);
     let s = new_spec(mem, spec);
@@ -505,13 +457,12 @@ pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
 ///
 /// translated from xetex-xetex0.c:281 (new_kern)
 ///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_kern_global`].
 /// Typed twin of [`new_kern`]: allocate a normal kern of width `w` and return
 /// its `NodePtr<KernNode>` handle directly, for callers that immediately set its
 /// subtype. `None` is the arena-exhaustion sentinel.
 pub fn alloc_kern(mem: &mut MemState, w: i32) -> Option<NodePtr<KernNode>> {
     // Typesafe allocation: `alloc` type-stamps NODE_type = KERN_NODE and
-    // confines the family's `from_idx_unchecked` (`01b` §3a / `01c` §8).
+    // confines the family's `from_idx_unchecked`.
     let p = NodePtr::<KernNode>::alloc(mem)?;
     p.set_subtype(mem, NORMAL);
     p.set_width(mem, Scaled(w));
@@ -530,13 +481,12 @@ pub fn new_kern(mem: &mut MemState, w: i32) -> i32 {
 ///
 /// translated from xetex-xetex0.c:291 (new_penalty)
 ///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_penalty_global`].
 /// Typed twin of [`new_penalty`]: allocate a penalty node of value `m` and
 /// return its `NodePtr<PenaltyNode>` handle directly. `None` is the
 /// arena-exhaustion sentinel.
 pub fn alloc_penalty(mem: &mut MemState, m: i32) -> Option<NodePtr<PenaltyNode>> {
     // Typesafe allocation: `alloc` type-stamps NODE_type = PENALTY_NODE and
-    // confines the family's `from_idx_unchecked` (`01b` §3a / `01c` §8).
+    // confines the family's `from_idx_unchecked`.
     let p = NodePtr::<PenaltyNode>::alloc(mem)?;
     p.set_subtype(mem, 0);
     p.set_penalty(mem, m);
@@ -555,10 +505,6 @@ pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
 /// variable-size free list rooted at `rover`.
 ///
 /// translated from xetex-xetex0.c:284 (free_node)
-///
-/// Phase-C: threaded to take `&mut MemState` directly (no thread-local
-/// bridge). Touches the `mem` arena only — zero `with_state`-bearing calls,
-/// so it is safe under any borrow (`01b` §4).
 pub fn free_node(mem: &mut MemState, p: i32, s: i32) {
     // Record node size and mark it as a free block (MAX_HALFWORD sentinel).
     mem.set_b32s0(p, s);
@@ -584,11 +530,6 @@ pub fn free_node(mem: &mut MemState, p: i32, s: i32) {
 /// `NATIVE_NODE_glyph_count(p)`    = `mem[p+4].b16.s0`
 ///
 /// translated from xetex-xetex0.c:146 (copy_native_glyph_info)
-///
-/// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only plus a
-/// raw `xmalloc`/`copy_nonoverlapping` of the native-glyph buffer (no
-/// `with_state` calls, no cold path). Called by the threaded `copy_node_list`
-/// and `just_copy`.
 pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
     let src_ptr = mem.ptr(src + 5);
     if !src_ptr.is_null() {
@@ -614,9 +555,6 @@ pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
 /// Decrement the reference count of a token list; free if it reaches TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:976 (delete_token_ref)
-///
-/// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only and calls
-/// the threaded [`flush_list`] (no cold path, zero `with_state` calls).
 pub fn delete_token_ref(mem: &mut MemState, p: i32) {
     if mem.b32s0(p) == TEX_NULL {
         flush_list(mem, p);
@@ -628,9 +566,6 @@ pub fn delete_token_ref(mem: &mut MemState, p: i32) {
 /// Decrement the reference count of a glue spec; free if it reaches TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:984 (delete_glue_ref)
-///
-/// Phase-C: threaded to `&mut MemState`; touches the `mem` arena only and calls
-/// the threaded [`free_node`] (no cold path, zero `with_state` calls).
 pub fn delete_glue_ref(mem: &mut MemState, p: i32) {
     if let Some(spec) = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)) {
         if spec.ref_count(mem) == TEX_NULL {
@@ -645,17 +580,15 @@ pub fn delete_glue_ref(mem: &mut MemState, p: i32) {
 // push_nest / pop_nest
 // ---------------------------------------------------------------------------
 
-/// Cold abort sentinel for [`push_nest_in`] (`01b` §5): either the semantic
-/// nest stack is full or the avail list is exhausted. Both `-> !` after the
-/// borrow drops.
+/// Cold abort sentinel for [`push_nest_in`]: either the semantic
+/// nest stack is full or the avail list is exhausted.
 pub(crate) enum PushNestAbort {
     SemanticNest,
     MainMemory,
 }
 
 impl PushNestAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire()` cold-abort tail without longjmp-ing. `MainMemory` runs
+    /// Map to the [`EngineAbort`] terminal. `MainMemory` runs
     /// `runaway` first (via `main_memory_overflow_abort`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
@@ -665,8 +598,7 @@ impl PushNestAbort {
     }
 }
 
-/// Threaded (Phase C) core of [`push_nest`]: the nest stack lives in
-/// `st.input`; `cur_list` is the raw `mod raw` record (safe under the borrow).
+/// Core of [`push_nest`].
 ///
 /// translated from xetex-xetex0.c:1323 (push_nest)
 pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), PushNestAbort> {
@@ -691,11 +623,7 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     Ok(())
 }
 
-/// Threaded (Phase C) core of [`pop_nest`]: touches the `mem` arena and the
-/// `nest` stack directly through the borrowed clusters, so it is safe to call
-/// under a live `&mut EngineState` borrow. `cur_list` is still the deferred
-/// `mod raw` static, so reading/writing it (via `cur_list_head` /
-/// `set_cur_list_record`) is a raw access that does not re-enter `with_state`.
+/// Core of [`pop_nest`].
 pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterState) {
     let head = input.cur_list.head;
     mem.set_b32s1(head, mem.avail);
@@ -728,9 +656,7 @@ pub fn prev_rightmost(mem: &MemState, s: i32, e: i32) -> i32 {
 // ---------------------------------------------------------------------------
 
 /// `is_char_node(p)` ≡ `p >= hi_mem_min`: a node pointer that lives in the
-/// upper "one-word" region of `mem` is a character node. Canonical threaded
-/// form, shared by linebreak / math / shipout (was duplicated as
-/// `is_char_node_in`).
+/// upper "one-word" region of `mem` is a character node.
 #[inline]
 pub fn is_char_node(mem: &MemState, p: i32) -> bool {
     p >= mem.hi_mem_min
@@ -744,7 +670,6 @@ pub fn is_char_node(mem: &MemState, p: i32) -> bool {
 ///
 /// translated from xetex-xetex0.c:10542 (new_noad)
 ///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_noad_global`].
 /// Typed twin of [`new_noad`]: allocate an empty `OrdNoad` and return its
 /// `NodePtr<Noad>` handle directly. `None` is the arena-exhaustion sentinel.
 pub fn alloc_noad(mem: &mut MemState) -> Option<NodePtr<Noad>> {
@@ -766,8 +691,6 @@ pub fn new_noad(mem: &mut MemState) -> i32 {
 /// Allocate a style node (STYLE_NODE_SIZE = 3 words).
 ///
 /// translated from xetex-xetex0.c:10554 (new_style)
-///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_style_global`].
 pub fn new_style(mem: &mut MemState, s: i16) -> i32 {
     let Some(p) = NodePtr::<StyleNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -780,8 +703,6 @@ pub fn new_style(mem: &mut MemState, s: i16) -> i32 {
 /// Allocate a choice node (STYLE_NODE_SIZE = 3 words).
 ///
 /// translated from xetex-xetex0.c:10565 (new_choice)
-///
-/// Phase-C: threaded to `&mut MemState`.
 pub fn new_choice(mem: &mut MemState) -> i32 {
     let Some(p) = NodePtr::<ChoiceNode>::alloc(mem) else {
         return ALLOC_FAILED;
@@ -798,7 +719,6 @@ pub fn new_choice(mem: &mut MemState) -> i32 {
 ///
 /// translated from xetex-xetex0.c:9838 (new_margin_kern)
 ///
-/// Phase-C: threaded to `&mut MemState`.
 /// Typed twin of [`new_margin_kern`]: allocate a margin kern of width `w` on the
 /// given `side` and return its `NodePtr<MarginKernNode>` handle directly. `None`
 /// is the arena-exhaustion sentinel.
@@ -815,8 +735,6 @@ pub fn alloc_margin_kern(
 }
 
 // translated from xetex-xetex0.c:13763 (new_whatsit)
-///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_whatsit_global`].
 pub fn new_whatsit(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, s: i16, w: i16) -> i32 {
     let p = get_node(mem, w as i32);
     if p == ALLOC_FAILED {

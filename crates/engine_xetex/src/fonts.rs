@@ -1,6 +1,6 @@
 //! Font loading — TFM reader and native (OpenType/AAT/Graphite) font loading,
 //! plus the `effective_char` accessors. Relocated from `scan.rs` (= xetex0.c's
-//! font-loading group) by workstream 02 (module decomposition).
+//! font-loading group).
 
 use crate::consts::{INT_BASE, TOO_BIG_CHAR};
 use crate::errors::ErrorOutcome;
@@ -23,12 +23,7 @@ extern "C" {
     fn get_ot_math_constant(f: i32, n: i32) -> i32;
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
-
 /// translated from xetex-xetex0.c:4457 (effective_char)
-///
-/// Phase-C: threaded to `&mut FontState`; legacy callers use
-/// [`effective_char_global`].
 pub fn effective_char(fonts: &mut FontState, _err_p: bool, f: i32, c: u16) -> i32 {
     let mut c = c;
     let mapping = fonts.font_mapping_ptr(f);
@@ -40,9 +35,6 @@ pub fn effective_char(fonts: &mut FontState, _err_p: bool, f: i32, c: u16) -> i3
     c as i32
 }
 /// translated from xetex-xetex0.c:6434 (effective_char_info)
-///
-/// Phase-C: threaded to `&mut FontState`; legacy callers use
-/// [`effective_char_info_global`].
 pub fn effective_char_info(fonts: &mut FontState, f: i32, c: u16) -> crate::mem_types::B16x4 {
     let c = effective_char(fonts, true, f, c);
     fonts.font_info_b16(fonts.char_base_entry(f) + c)
@@ -50,12 +42,6 @@ pub fn effective_char_info(fonts: &mut FontState, f: i32, c: u16) -> crate::mem_
 /// Allocate a native-word whatsit node for `n` UTF-16 code units of font `f`.
 ///
 /// translated from xetex-xetex0.c:6250 (new_native_word_node)
-///
-/// Phase-C: threaded to `&mut MemState` (+ a disjoint `&EqtbState` read for the
-/// `xetex_generate_actual_text` int-param). Bucket **B**: pure mem allocation
-/// over the threaded [`crate::mem::get_node`], propagating the `01b` §5
-/// [`NodeRecycleAbort::Overflow`] sentinel; [`new_native_word_node_global`]
-/// runs the cold `overflow()` abort after the borrow drops.
 pub(crate) fn new_native_word_node(
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
@@ -78,13 +64,7 @@ pub(crate) fn new_native_word_node(
     mem.set_ptr(q + 5, std::ptr::null_mut());
     Ok(q)
 }
-/// Phase-C threaded mem core of [`new_native_character`]: allocate the native
-/// node and fill its UTF-16 payload under a narrow `&mut MemState` (+ disjoint
-/// `&EqtbState` for `new_native_word_node`, `&FontState` for the mapped text).
-/// Bucket **B**; propagates the `01b` §5 [`NodeRecycleAbort::Overflow`] sentinel.
-/// All the `with_state`-bearing work (string pool, TECkit mapping, lost-char
-/// warnings, native measurement) stays in the [`new_native_character`] wrapper,
-/// outside this borrow.
+/// Allocate the native node and fill its UTF-16 payload.
 fn build_native_character(
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
@@ -132,9 +112,7 @@ fn build_native_character(
         }
     }
 }
-/// Cold-abort sentinel (§5) for [`new_native_character_in`]: the threaded core
-/// returns this and the [`new_native_character`] wrapper runs the divergent tail
-/// *after* the state borrow drops.
+/// Cold-abort sentinel for [`new_native_character_in`].
 pub(crate) enum NativeCharAbort {
     /// String-pool capacity exhausted while staging the mapped text.
     PoolOverflow,
@@ -145,7 +123,7 @@ pub(crate) enum NativeCharAbort {
     /// `char_warning` would have aborted at this exact point too (before building
     /// the node) — deferring it to the wrapper is behaviour-identical.
     Error(ErrorOutcome),
-    /// A native-font measurement cold abort (`01d` §5.6).
+    /// A native-font measurement cold abort.
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -156,9 +134,7 @@ impl From<crate::ext::NativeFontAbort> for NativeCharAbort {
 }
 
 impl NativeCharAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `finish()` cold-abort tail without longjmp-ing. Call only *after*
-    /// the producing state borrow has dropped (`PoolOverflow` re-reads state).
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             NativeCharAbort::PoolOverflow => {
@@ -171,14 +147,9 @@ impl NativeCharAbort {
     }
 }
 
-/// `&mut EngineState` core of [`new_native_character`]. Threaded so it can be
-/// reached from a caller that already holds a state borrow (the hyphenation /
-/// line-break / math measurer paths — the 135/136 FFI re-entry wall): the
-/// string-pool staging, TECkit mapping, lost-char `char_warning_in`, node build,
-/// and native measurement all run under one borrow, calling the threaded
-/// `measure_native_node` / `map_char_to_glyph` / `char_warning_in` cores directly
-/// rather than the re-entrant `_global` bridges. Cold aborts ride
-/// [`NativeCharAbort`] (§5).
+/// Build a native-word node for font `f` and code point `c`: string-pool
+/// staging, TECkit mapping, lost-char `char_warning_in`, node build, and native
+/// measurement. Cold aborts ride [`NativeCharAbort`].
 pub(crate) fn new_native_character_in(
     st: &mut crate::state::EngineState,
     f: i32,
@@ -326,7 +297,7 @@ pub(crate) enum ReadFontInfoAbort {
     Native(LoadNativeFontAbort),
     Error(ErrorOutcome),
     /// Serious internal error closing the TFM file (the C `ttstub_input_close`
-    /// wrapper `longjmp`'d here); propagated as a fatal abort (`01d` §2.1).
+    /// wrapper `longjmp`'d here); propagated as a fatal abort.
     InputClose,
 }
 
@@ -337,8 +308,7 @@ impl From<crate::ext::NativeFontAbort> for ReadFontInfoAbort {
 }
 
 impl ReadFontInfoAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `finish()` cold-abort tail without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             ReadFontInfoAbort::TfmOutOfMemory => crate::errors::EngineAbort::TtAbort(
@@ -433,14 +403,9 @@ pub(crate) unsafe fn read_font_info_in(
 
         file_opened = true;
 
-        // Phase-C (session 129): the pure TFM parse + font-table fill runs
-        // under one `&mut FontState` borrow (plus a disjoint `&EqtbState` read
-        // for the two default-char int-params). The cold `_tt_abort` overflow
-        // path and the with_state-bearing `load_tfm_font_mapping` are kept
-        // OUTSIDE the borrow (01b §4a/§5 borrow-dropping).
         let (parse, scale_side_effect) =
             read_font_info_tfm(&mut st.fonts, &st.eqtb, tfm_file, nom, aire, s);
-        // Apply the borrow-free `xn_over_d` side effects (01b §4a). Timing is
+        // Apply the `xn_over_d` side effects. Timing is
         // observably identical to the original: nothing between the scaling
         // point and here reads `tex_remainder`/`arith_error`.
         if let Some((remainder, overflowed)) = scale_side_effect {
@@ -518,7 +483,7 @@ pub(crate) unsafe fn read_font_info_in(
 
     if file_opened && crate::io::input_close(tfm_file) {
         // The C ttstub_input_close wrapper longjmp'd on this serious internal
-        // close error; propagate it to tt_run_engine as a fatal abort (`01d` §2.1).
+        // close error; propagate it to tt_run_engine as a fatal abort.
         return Err(ReadFontInfoAbort::InputClose);
     }
 
@@ -542,23 +507,18 @@ pub(crate) unsafe fn read_font_info_in(
     Ok(g)
 }
 
-/// Outcome of the threaded TFM-parse core ([`read_font_info_tfm`]).
+/// Outcome of the TFM-parse core ([`read_font_info_tfm`]).
 enum TfmParse {
     /// Metrics parsed and font tables filled; the new font is `f`.
     Loaded(i32),
     /// The TFM file is malformed; the caller takes the `bad_tfm` error path.
     Bad,
-    /// The font tables are full (the `01b` §5 cold abort sentinel): the caller
-    /// runs `_tt_abort` after the `&mut FontState` borrow has dropped.
+    /// The font tables are full: the caller runs `_tt_abort`.
     OutOfMemory,
 }
 
-/// Phase-C threaded core of [`read_font_info`]: read the opened TFM file
-/// (`tfm_file`) and fill the font-metric tables for the next font slot under a
-/// single `&mut FontState` borrow (plus a disjoint `&EqtbState` for the two
-/// default hyphen/skew char int-params). Touches **no** with_state-bearing
-/// helper — the cold `_tt_abort` overflow path returns [`TfmParse::OutOfMemory`]
-/// and the trailing `load_tfm_font_mapping` write stays in the wrapper (01b §4a).
+/// Read the opened TFM file (`tfm_file`) and fill the font-metric tables for the
+/// next font slot.
 ///
 /// translated from the metric-reading body of xetex-xetex0.c:6350 (read_font_info)
 unsafe fn read_font_info_tfm(
@@ -570,7 +530,7 @@ unsafe fn read_font_info_tfm(
     s: i32,
 ) -> (TfmParse, Option<(i32, bool)>) {
     // Captured side effect of the size-scaling `xn_over_d` (remainder, overflow);
-    // applied by the wrapper after the borrow drops (01b §4a). `None` until the
+    // applied by the wrapper. `None` until the
     // `s < 0` scaling branch runs; returned on every exit so the `bad_tfm` path
     // preserves the original `tex_remainder`/`arith_error` writes.
     let mut scale_side_effect: Option<(i32, bool)> = None;
@@ -700,8 +660,8 @@ unsafe fn read_font_info_tfm(
         if s >= 0 {
             z = s;
         } else {
-            // Borrow-free `xn_over_d`; the wrapper applies the
-            // `tex_remainder`/`arith_error` side effects after the borrow drops.
+            // `xn_over_d`; the wrapper applies the
+            // `tex_remainder`/`arith_error` side effects.
             let (q, rem, overflowed) = crate::scaled_math::xn_over_d_parts(z, -s, 1000);
             z = q;
             scale_side_effect = Some((rem, overflowed));
@@ -944,14 +904,11 @@ unsafe fn read_font_info_tfm(
     (TfmParse::Loaded(f), scale_side_effect)
 }
 
-/// Phase-C threaded core of [`load_native_font`]: initialize the per-font
-/// metric tables for the newly-allocated native font slot under one
-/// `&mut FontState` borrow (+ disjoint `&EqtbState` for the two default
-/// hyphen/skew char int-params). Calls only the extern-C font-metric
-/// extractors (`aat_get_font_metrics`/`ot_get_font_metrics`,
-/// `get_loaded_font_design_size`), which hold no thread-local borrow. Returns
-/// `(font_ptr, x_ht, cap_ht, font_slant)`; the caller uses the latter three for
-/// the `font_info` parameter pushes after the borrow drops.
+/// Initialize the per-font metric tables for the newly-allocated native font
+/// slot. Calls only the extern-C font-metric extractors
+/// (`aat_get_font_metrics`/`ot_get_font_metrics`, `get_loaded_font_design_size`).
+/// Returns `(font_ptr, x_ht, cap_ht, font_slant)`; the caller uses the latter
+/// three for the `font_info` parameter pushes.
 ///
 /// translated from the font-table-init body of xetex-xetex0.c:6284 (load_native_font)
 unsafe fn init_native_font_tables(
@@ -1031,7 +988,7 @@ pub(crate) enum LoadNativeFontAbort {
     StringOverflow(NodeRecycleAbort),
     NativeChar(NativeCharAbort),
     Error(ErrorOutcome),
-    /// A native-font measurement/mapping cold abort (`01d` §5.6).
+    /// A native-font measurement/mapping cold abort.
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -1042,8 +999,7 @@ impl From<crate::ext::NativeFontAbort> for LoadNativeFontAbort {
 }
 
 impl LoadNativeFontAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `finish()` cold-abort tail without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             LoadNativeFontAbort::PoolOverflow => {
@@ -1211,7 +1167,7 @@ pub(crate) unsafe fn load_native_font_in(
     Ok(font_ptr)
 }
 
-// ---- consts + NativeCharSrc moved/duplicated from scan.rs (workstream 02) ----
+// ---- consts + NativeCharSrc ----
 
 /// Source of the UTF-16 text payload for [`build_native_character`].
 enum NativeCharSrc {
@@ -1222,7 +1178,7 @@ enum NativeCharSrc {
     Single(u32),
 }
 
-// Single-function-private consts relocated with the font-loading group.
+// Single-function-private consts.
 const EOF_RFI: i32 = -1;
 const INT_PAR_DEFAULT_HYPHEN_CHAR_LNF: i32 = 46;
 const INT_PAR_DEFAULT_SKEW_CHAR_LNF: i32 = 47;

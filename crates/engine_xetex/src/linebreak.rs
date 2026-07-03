@@ -15,7 +15,6 @@ use crate::state::{
 };
 use crate::units::{MemIdx, MemPtr, Scaled};
 
-// Consts relocated from scan.rs with the locale-linebreak group (workstream 02).
 const GLUE_PAR_XETEX_LINEBREAK_SKIP: i32 = 15;
 const INT_PAR_XETEX_LINEBREAK_LOCALE: i32 = 66;
 const INT_PAR_XETEX_LINEBREAK_PENALTY: i32 = 67;
@@ -123,7 +122,7 @@ fn font_character_width(fonts: &mut FontState, f: i32, c: u16) -> i32 {
 }
 
 /// Wrap an active-list pointer as a typed [`NodePtr<ActiveNode>`]. This is
-/// the active list's single **context-classification** boundary (`01c` §3):
+/// the active list's single **context-classification** boundary:
 /// every caller below is walking the line-breaker active list, which
 /// establishes the kind (active vs. delta is by list position, not by the
 /// type word — see the `node.rs` family note), and `p` is always a real
@@ -514,9 +513,6 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
         l = find_protchar_left(mem, linebreak, l, true)?;
     }
 
-    // `char_pw_in` is fully threaded (mem/font reads only, no `with_state`
-    // bridge), so the protrusion widths fold directly into this borrow rather
-    // than running after it drops (the session-76 split is no longer needed).
     Some(char_pw_in(errors, mem, fonts, linebreak, l, 0) + char_pw_in(errors, mem, fonts, linebreak, r, 1))
 }
 
@@ -692,9 +688,6 @@ pub fn insert_left_margin_kern(errors: &mut crate::state::ErrorState,
 }
 
 /// translated from xetex-linebreak.c:2377 (finite_shrink)
-///
-/// Phase-C: threaded to `&mut MemState`; legacy callers use
-/// [`finite_shrink_global`].
 pub fn finite_shrink(mem: &mut MemState, p: i32) -> Result<i32, NodeRecycleAbort> {
     let q = crate::mem::new_spec(mem, p);
     if q == crate::mem::ALLOC_FAILED {
@@ -708,9 +701,6 @@ pub fn finite_shrink(mem: &mut MemState, p: i32) -> Result<i32, NodeRecycleAbort
 }
 
 /// translated from xetex-linebreak.c:2402 (reconstitute)
-///
-/// Phase-C: threaded to `&mut MemState`, `&mut HyphState`, and
-/// `&mut FontState`.
 pub fn reconstitute(
     st: &mut crate::state::EngineState,
     mut j: i16,
@@ -1026,12 +1016,6 @@ pub unsafe fn set_native_metrics(
     fonts: &FontState,
     p: i32,
 ) -> Result<(), crate::ext::NativeFontAbort> {
-    // Call the threaded `measure_native_node(&FontState, …)` directly rather than
-    // the `measure_native_node_global` bridge: the bridge re-borrows the whole
-    // `ENGINE_STATE` `RefCell`, so it cannot be reached from a threaded caller
-    // that already holds a borrow (the 135/136 FFI re-entry wall). The C++
-    // measurer itself only touches the passed `&FontState` + pure C FFI, so it is
-    // re-entry-free under any borrow.
     measure_native_node(
         fonts,
         mem.node_addr(p),
@@ -1242,12 +1226,7 @@ fn finish_last_line_fit(
 }
 
 // translated from xetex-linebreak.c:90 (line_break)
-/// Cold-abort outcomes deferred out of [`line_break_in`] (`01b` §5). The
-/// threaded core holds one `&mut EngineState` borrow across the whole
-/// line-breaking pass and *returns* any cold abort — capacity overflow,
-/// node-recycle confusion, a `try_break`/hyphenation/trie failure, or the
-/// post-line-break sentinel — so the thin [`line_break`] wrapper can dispatch
-/// it after the borrow has dropped.
+/// Cold-abort outcomes deferred out of [`line_break_in`].
 pub(crate) enum LineBreakOutcome {
     Done,
     Overflow,
@@ -1257,18 +1236,15 @@ pub(crate) enum LineBreakOutcome {
     Trie(crate::hyphenation::TrieAbort),
     PostLineBreak(PostLineBreakOutcome),
     Confusion(&'static core::ffi::CStr),
-    /// Deferred tail of the recoverable `error()` raised by the threaded
+    /// Deferred tail of the recoverable `error()` raised by the
     /// `finite_shrink` diagnostic. `Continue` never reaches here (it stays
-    /// inline); any cold abort (`Halt`/`Hundred`/…) is finished after the
-    /// borrow drops.
+    /// inline); any cold abort (`Halt`/`Hundred`/…) is finished.
     Error(crate::errors::ErrorOutcome),
 }
 
 impl LineBreakOutcome {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire_line_break_outcome` dispatcher arm-for-arm without
-    /// longjmp-ing. `Done` never reaches a terminal (callers filter it before
-    /// propagating).
+    /// Map to the unified [`EngineAbort`] terminal. `Done` never reaches a
+    /// terminal (callers filter it before propagating).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         const MEM_TOP: i32 = 4_999_999;
         match self {
@@ -1292,13 +1268,12 @@ impl LineBreakOutcome {
     }
 }
 
-/// Threaded (Phase C) translation of `finite_shrink_global`: when this is the
-/// first infinite-shrinkage hit of the paragraph (`no_shrink_error_yet`), emit
-/// the recoverable diagnostic through the threaded `error_*_in` path under the
-/// borrow, then make the glue spec's shrink finite via [`finite_shrink`]. The
-/// recoverable `error()` returns `ErrorOutcome::Continue` on the hot path; any
-/// cold abort is deferred to the [`line_break`] wrapper via
-/// [`LineBreakOutcome::Error`].
+/// When this is the first infinite-shrinkage hit of the paragraph
+/// (`no_shrink_error_yet`), emit the recoverable diagnostic through the
+/// `error_*_in` path, then make the glue spec's shrink finite via
+/// [`finite_shrink`]. The recoverable `error()` returns
+/// `ErrorOutcome::Continue` on the hot path; any cold abort is deferred to the
+/// [`line_break`] wrapper via [`LineBreakOutcome::Error`].
 fn finite_shrink_emit(st: &mut EngineState, p: i32) -> Result<i32, LineBreakOutcome> {
     if st.errors.no_shrink_error_yet {
         st.errors.no_shrink_error_yet = false;
@@ -1351,7 +1326,7 @@ fn line_break_try_break(
     }
 }
 
-/// Threaded (Phase C) translation of the linebreak `add_active_width(1, …)`
+/// Translation of the linebreak `add_active_width(1, …)`
 /// helper for a single discardable list node: adds the node's width to
 /// `scanner.active_width[1]`. Returns the confusion message on the unexpected
 /// node-type / bad-whatsit branch so the caller can defer it.
@@ -1391,12 +1366,7 @@ fn add_node_width_to_active(
     None
 }
 
-/// Threaded (Phase C) core of [`line_break`]: holds one `&mut EngineState`
-/// borrow across the whole line-breaking driver. Every per-node accessor reads
-/// the borrowed clusters directly (`mem`/`eqtb`/`scanner`/`linebreak`/`hyph`/
-/// `fonts`); the `cur_list` reads/writes are the deferred `mod raw` static and
-/// so don't re-enter `with_state`. Cold aborts ride the [`LineBreakOutcome`]
-/// sentinel (`01b` §5).
+/// Core of [`line_break`]. Cold aborts ride the [`LineBreakOutcome`] sentinel.
 pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
     use crate::scan::max_hyphenatable_length_in;
 
@@ -2140,11 +2110,9 @@ fn odd_i32(v: i32) -> bool {
     (v & 1) != 0
 }
 
-/// Phase-C: threaded to `&mut MemState`. Touches the `mem` arena directly and
-/// allocates through the threaded [`crate::mem::get_avail`]. On arena
-/// exhaustion it returns `true` (the `01b` §5 sentinel) rather than calling
-/// `runaway()`/`overflow()` under the borrow; `post_line_break` performs the
-/// abort after the borrow drops.
+/// Allocates through [`crate::mem::get_avail`]. On arena exhaustion it returns
+/// `true` (the sentinel) rather than calling `runaway()`/`overflow()`;
+/// `post_line_break` performs the abort.
 #[inline]
 fn update_lr_stack(mem: &mut MemState, q: NodePtr<MathNode>, lr_ptr: &mut i32) -> bool {
     let q_subtype = q.subtype(mem) as i32;
@@ -2544,11 +2512,9 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
 }
 
 // translated from xetex-linebreak.c:971 (post_line_break)
-/// Deferred cold-abort signal from [`post_line_break_in`] (§5): the threaded
-/// core runs entirely under one `&mut EngineState` borrow, so the
-/// with_state-bearing abort/print-and-die paths it would hit cannot run inline
-/// — they are returned and fired by the [`post_line_break`] wrapper after the
-/// borrow drops. On a passing run the outcome is always `Done`.
+/// Deferred cold-abort signal from [`post_line_break_in`], returned to and
+/// fired by the [`post_line_break`] wrapper. On a passing run the outcome is
+/// always `Done`.
 pub(crate) enum PostLineBreakOutcome {
     Done,
     Node(NodeRecycleAbort),
@@ -2560,9 +2526,8 @@ pub(crate) enum PostLineBreakOutcome {
 }
 
 impl PostLineBreakOutcome {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// `PostLineBreak` arms of [`fire_line_break_outcome`]. `Done` never reaches
-    /// a terminal.
+    /// Map to the unified [`EngineAbort`] terminal. `Done` never reaches a
+    /// terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             PostLineBreakOutcome::Done => {
@@ -2582,11 +2547,9 @@ impl PostLineBreakOutcome {
     }
 }
 
-/// Threaded core (Phase C) of [`post_line_break`]: holds one `&mut EngineState`
-/// borrow across the whole per-line loop. The `hpack` packaging (and its
-/// in-order over/underfull diagnostic) runs via
-/// [`crate::packaging::hpack_emit_in`] under that borrow; cold aborts ride the
-/// [`PostLineBreakOutcome`] sentinel.
+/// Core of [`post_line_break`]. The `hpack` packaging (and its in-order
+/// over/underfull diagnostic) runs via [`crate::packaging::hpack_emit_in`];
+/// cold aborts ride the [`PostLineBreakOutcome`] sentinel.
 fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBreakOutcome {
     let mut lr_ptr = st.input.cur_list.e_tex_aux;
 
@@ -2667,8 +2630,7 @@ pub(crate) enum TryBreakAbort {
 }
 
 impl TryBreakAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// `TryBreak` arms of [`fire_line_break_outcome`].
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             TryBreakAbort::Node(e) => e.into_engine_abort(),
@@ -3363,14 +3325,14 @@ unsafe fn try_break(
 }
 
 // translated from xetex-linebreak.c:2010 (hyphenate)
-/// Cold-abort sentinel (§5) for the threaded native-word hyphenation island in
+/// Cold-abort sentinel for the native-word hyphenation island in
 /// [`hyphenate`]'s `goto_found`: the island returns this and the orchestrator
-/// runs the divergent tail after the state borrow drops.
+/// runs the divergent tail.
 pub(crate) enum HyphNativeAbort {
     Recycle(NodeRecycleAbort),
     NativeChar(crate::fonts::NativeCharAbort),
     Confusion(&'static std::ffi::CStr),
-    /// A native-font measurement cold abort (`01d` §5.6).
+    /// A native-font measurement cold abort.
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -3381,8 +3343,7 @@ impl From<crate::ext::NativeFontAbort> for HyphNativeAbort {
 }
 
 impl HyphNativeAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// `Native` arms of [`HyphenateAbort::finish`].
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             HyphNativeAbort::Recycle(e) => e.into_engine_abort(),
@@ -3402,8 +3363,7 @@ pub(crate) enum HyphenateAbort {
 }
 
 impl HyphenateAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `finish()` cold-abort tail without longjmp-ing. `MainMemoryOverflow`
+    /// Map to the unified [`EngineAbort`] terminal. `MainMemoryOverflow`
     /// is a plain overflow (no `runaway`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         const MEM_TOP: i32 = 4_999_999;
@@ -3611,13 +3571,9 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
 
     // Native-word hyphenation: split `ha`'s native_word_node into measured
     // fragments separated by discretionaries whose pre-break is a fresh
-    // native hyphen character. Threaded into a single `with_state_mut` island
-    // now that `new_native_character_in` no longer re-enters the state
-    // RefCell (the 135/136 measurer wall is cleared): `new_native_word_node`,
-    // `set_native_metrics`, `new_disc`, `new_native_character_in` and
-    // `flush_node_list` all run under one borrow, in the original allocation
-    // order. Cold aborts ride `HyphNativeAbort` and fire after the borrow
-    // drops (§5).
+    // native hyphen character. `new_native_word_node`, `set_native_metrics`,
+    // `new_disc`, `new_native_character_in` and `flush_node_list` run in the
+    // original allocation order. Cold aborts ride `HyphNativeAbort`.
     match hyphenate_native_word_if_needed(st, hn_v).map_err(HyphenateAbort::Native)? {
         true => return Ok(()),
         false => {}
@@ -3869,8 +3825,6 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
     Ok(())
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
-
 // translated from xetex-xetex0.c:6968 (char_pw)
 pub fn char_pw_in(errors: &mut crate::state::ErrorState, 
     mem: &MemState,
@@ -3963,7 +3917,7 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
     s: i32,
     len: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    // The main-loop current font, folded off `mod raw` into `st.mainloop` (`01e`).
+    // The main-loop current font.
     // Bound to a local (it is read-only here) so the reads below need no `st`
     // reborrow alongside the `linebreak_start_in(st, …)` call.
     let main_f = st.mainloop.main_f;

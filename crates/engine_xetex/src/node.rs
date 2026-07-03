@@ -1,18 +1,11 @@
-//! Typed node handles over the flat `mem` arena (`plan/idiom/01c` §3;
-//! `plan/03-memory-and-nodes.md`).
+//! Typed node handles over the flat `mem` arena.
 //!
 //! [`NodePtr<K>`] is a `#[repr(transparent)]` wrapper over a [`MemIdx`] plus
 //! a compile-time-only `PhantomData<K>` kind marker. It is `Copy`, holds no
 //! borrow of the arena, and — after inlining — compiles to the same
-//! load/store as the raw `i32` index (the zero-cost gate, `01c` §4). Field
+//! load/store as the raw `i32` index (the zero-cost gate). Field
 //! access is done by passing the [`MemState`] arena as a context parameter
-//! (`p.width(mem)` / `p.set_width(mem, w)`); there are no view structs
-//! (`03` §"Avoidance of View Structs").
-//!
-//! This is the first family layer (`01c` §1 build order: the shared header
-//! word + the box family). It is built before its consumers — the Phase-C
-//! type-as-you-thread slices (`01`-§4a) — so it is `#[allow(dead_code)]` in
-//! `lib.rs` until a threading slice adopts it.
+//! (`p.width(mem)` / `p.set_width(mem, w)`); there are no view structs.
 //!
 //! ## Field offsets (verified against `xetex/xetex-xetexd.h:211–218`)
 //!
@@ -207,8 +200,8 @@ impl NodePtr<HListNode> {
     /// with `NODE_type = HLIST_NODE`, and return a typed handle to it — or
     /// `None` if the arena is exhausted.
     ///
-    /// This is the box-family form of the typed allocation boundary (`01c`
-    /// §8): it wraps TeX's free-list allocator, writes the node type tag, and
+    /// This is the box-family form of the typed allocation boundary: it wraps
+    /// TeX's free-list allocator, writes the node type tag, and
     /// confines the family's `from_idx_unchecked` construction to this single
     /// audited site. The caller fills the remaining box fields.
     #[inline]
@@ -511,12 +504,11 @@ impl AnyBox {
 }
 
 /// A fully classified lo-mem node: the typed handle for every family whose
-/// `NodePtr<K>` layer is built, or a raw [`MemIdx`] for families not yet typed
-/// (`01c` §1: native/whatsit, unset, ins/mark/adjust). This is the single
-/// dispatch surface the plan calls for (`01c` §3, "classification happens
-/// ONCE"): a consumer calls [`MemState::classify`] once at the list-walk
-/// boundary and matches on the result, so the per-arm `from_idx_unchecked` that
-/// a raw `NODE_type` match forces is gone — each arm carries its static type.
+/// `NodePtr<K>` layer is built, or a raw [`MemIdx`] for families not yet typed.
+/// This is the single dispatch surface: a consumer calls [`MemState::classify`]
+/// once at the list-walk boundary and matches on the result, so the per-arm
+/// `from_idx_unchecked` that a raw `NODE_type` match forces is gone — each arm
+/// carries its static type.
 ///
 /// Context-disambiguated codes are classified by their **node-list** meaning:
 /// type 2 → [`AnyNode::Rule`] (not the linebreak-active-list `DELTA_NODE`) and
@@ -575,15 +567,15 @@ impl AnyNode {
 impl MemState {
     /// Read the `NODE_type` (`mem[p].b16.s1`) of a lo-mem node as a checked
     /// [`NodeType`]. `p` must be a real lo-mem node index (the caller did
-    /// the null / `is_char_node` check at the list-walk boundary, `01c` §7).
+    /// the null / `is_char_node` check at the list-walk boundary).
     #[inline]
     pub fn node_type(&self, p: MemIdx) -> Result<NodeType, InvalidNodeType> {
         NodeType::from_raw(self.b16s1(p.0))
     }
 
-    /// Classify a non-null lo-mem node into its typed handle ([`AnyNode`],
-    /// `01c` §3). `p` must be a real lo-mem node index — the caller did the
-    /// null / `is_char_node` check at the list-walk boundary (`01c` §7). `Err`
+    /// Classify a non-null lo-mem node into its typed handle ([`AnyNode`]).
+    /// `p` must be a real lo-mem node index — the caller did the
+    /// null / `is_char_node` check at the list-walk boundary. `Err`
     /// if the `NODE_type` code is not valid at all (the 32–39 gap / 41+).
     ///
     /// This confines every built family's `from_idx_unchecked` assertion to one
@@ -623,7 +615,7 @@ impl MemState {
     ///
     /// `Ok(Some(_))` if `p` is an hlist or vlist; `Ok(None)` if it is some
     /// other (valid) node type; `Err` if the type code is not a valid
-    /// `NODE_type` at all (the 32–39 gap / 41+, `01c` §1). `p` must already
+    /// `NODE_type` at all (the 32–39 gap / 41+). `p` must already
     /// be a non-null lo-mem index.
     #[inline]
     pub fn classify_box(&self, p: MemIdx) -> Result<Option<AnyBox>, InvalidNodeType> {
@@ -1178,10 +1170,7 @@ impl NodePtr<Noad> {
     }
 
     // Noad script layout (matches TeX/this build): superscript = offset +2,
-    // subscript = offset +3 (cf. `prepare_subscript_global(q + 3)` in math.rs).
-    // Session 163 swapped the previously-inverted `subscr_*`/`supscr_*` names so
-    // they now match their offsets; the swap was offset-preserving at every call
-    // site (names and bodies moved together).
+    // subscript = offset +3.
 
     /// Superscript type = `mem[p + 2].b32.s1`
     #[inline]
@@ -1414,7 +1403,7 @@ impl MemState {
 // **not** a `node_type` branch. Only the glue *node* is classified by
 // `NODE_type` (== `GLUE_NODE`), via [`MemState::classify_glue`].
 //
-// **The ref_count trap (`01c` §3).** `GLUE_SPEC_ref_count` lives in the
+// **The ref_count trap.** `GLUE_SPEC_ref_count` lives in the
 // `0.b32.s1` word — the same word that holds `link()` in a real list node.
 // On a glue_spec it is a reference count, so it is exposed as `ref_count() ->
 // i32`, never as `link()`/`MemPtr`. Treating it as a pointer is a silent
@@ -1503,14 +1492,13 @@ impl NodePtr<GlueSpecNode> {
 
     /// Allocate a fresh, **uninitialised** glue_spec record on the `mem`
     /// free-list arena and return a typed handle to it, or `None` if the
-    /// arena is exhausted (the §5 overflow condition — the caller maps it to
-    /// its abort sentinel after the borrow drops).
+    /// arena is exhausted.
     ///
-    /// This is the **typesafe node-allocation boundary** for the family
-    /// (`01b` §3a / `01c` §8): it confines the one `from_idx_unchecked` to a
+    /// This is the **typesafe node-allocation boundary** for the family:
+    /// it confines the one `from_idx_unchecked` to a
     /// single audited site (a node *being initialised* has no `NODE_type` to
     /// classify yet), so call sites never write `unsafe`. It keeps TeX's
-    /// free-list arena (no per-node heap alloc, `01c` §8) — it is exactly the
+    /// free-list arena (no per-node heap alloc) — it is exactly the
     /// `get_node(GLUE_SPEC_SIZE)` the C `new_spec`/`math_glue` do, lifted to a
     /// typed return. A glue_spec carries no `NODE_type`, so nothing is
     /// stamped; the caller fills `width`/`stretch`/`shrink`/orders. (A
@@ -1530,7 +1518,7 @@ impl NodePtr<GlueSpecNode> {
 
     /// `GLUE_SPEC_ref_count(p)` = `mem[p].b32.s1`.
     ///
-    /// **This is a reference count, not a link** (`01c` §3). It occupies the
+    /// **This is a reference count, not a link.** It occupies the
     /// `0.b32.s1` word — the slot that holds the successor pointer on a real
     /// list node — but on a glue_spec it counts the glue nodes sharing this
     /// record. Exposed as a plain `i32`; never as `link()`/[`MemPtr`].
@@ -1604,7 +1592,7 @@ impl MemState {
     /// handle. `Ok(Some(_))` if `p` is a `GLUE_NODE`; `Ok(None)` if it is some
     /// other (valid) node type; `Err` if the type code is invalid. `p` must
     /// already be a non-null lo-mem index (the caller did the list-walk
-    /// null/`is_char_node` check, `01c` §7).
+    /// null/`is_char_node` check).
     ///
     /// Note there is no analogous `classify_glue_spec`: a glue_spec carries no
     /// `NODE_type`, so it is reached only through
@@ -1645,11 +1633,10 @@ impl NodeKind for KernNode {}
 impl NodePtr<KernNode> {
     /// Allocate a fresh kern node on the `mem` free-list arena, **type-stamped**
     /// with `NODE_type = KERN_NODE`, and return a typed handle to it — or `None`
-    /// if the arena is exhausted (the §5 overflow condition, mapped by the
-    /// caller to its abort sentinel after the borrow drops).
+    /// if the arena is exhausted.
     ///
     /// This is the **type-stamping** form of the typesafe node-allocation
-    /// boundary (`01b` §3a / `01c` §8): unlike
+    /// boundary: unlike
     /// [`NodePtr::<GlueSpecNode>::alloc`] (a glue_spec carries no `NODE_type`,
     /// so it stamps nothing), a kern node *is* a list node, so its `alloc`
     /// additionally writes `NODE_type` into the header before returning. It
@@ -1687,7 +1674,7 @@ impl NodePtr<KernNode> {
 impl MemState {
     /// Classify a known lo-mem node as a kern node. `Ok(Some(_))` if `p` is a
     /// `KERN_NODE`; `Ok(None)` if some other valid type; `Err` if invalid.
-    /// `p` must already be a non-null lo-mem index (`01c` §7).
+    /// `p` must already be a non-null lo-mem index.
     #[inline]
     pub fn classify_kern(&self, p: MemIdx) -> Result<Option<NodePtr<KernNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
@@ -1707,7 +1694,7 @@ impl MemState {
 // |-----------|-----------------|----------------------------|
 // | `penalty` | +1.b32.s1       | **`i32`** (NOT `Scaled`)    |
 //
-// **The penalty trap (`01c` §3).** `PENALTY_NODE_penalty` occupies the same
+// **The penalty trap.** `PENALTY_NODE_penalty` occupies the same
 // +1.b32.s1 slot as the box/kern `width` (a `Scaled`), but it is a plain
 // **integer breakpoint penalty** (`int`), not a scaled length. Returning
 // `Scaled` here would be a silent type/parity error — it is exposed as
@@ -1722,10 +1709,9 @@ impl NodeKind for PenaltyNode {}
 impl NodePtr<PenaltyNode> {
     /// Allocate a fresh penalty node on the `mem` free-list arena,
     /// **type-stamped** with `NODE_type = PENALTY_NODE`, and return a typed
-    /// handle to it — or `None` on arena exhaustion (the §5 overflow condition,
-    /// mapped by the caller to its abort sentinel after the borrow drops).
+    /// handle to it — or `None` on arena exhaustion.
     ///
-    /// The type-stamping `alloc` form (`01b` §3a / `01c` §8), like
+    /// The type-stamping `alloc` form, like
     /// [`NodePtr::<KernNode>::alloc`]: it writes `NODE_type` and confines the
     /// family's one `from_idx_unchecked` to this single audited site, keeping
     /// TeX's free-list arena. It is the `get_node(MEDIUM_NODE_SIZE)` +
@@ -1746,7 +1732,7 @@ impl NodePtr<PenaltyNode> {
 
     /// `PENALTY_NODE_penalty(p)` = `mem[(p) + 1].b32.s1`.
     ///
-    /// **A plain `i32`, not `Scaled`** (`01c` §3) — the breakpoint penalty,
+    /// **A plain `i32`, not `Scaled`** — the breakpoint penalty,
     /// even though it shares the +1.b32.s1 slot with box/kern `width`.
     #[inline]
     pub fn penalty(self, mem: &MemState) -> i32 {
@@ -1761,7 +1747,7 @@ impl NodePtr<PenaltyNode> {
 impl MemState {
     /// Classify a known lo-mem node as a penalty node. `Ok(Some(_))` if `p`
     /// is a `PENALTY_NODE`; `Ok(None)` if some other valid type; `Err` if
-    /// invalid. `p` must already be a non-null lo-mem index (`01c` §7).
+    /// invalid. `p` must already be a non-null lo-mem index.
     #[inline]
     pub fn classify_penalty(
         &self,
@@ -2016,7 +2002,7 @@ impl NodePtr<UnsetNode> {
 /// (`b16.s0`, reached through [`subtype`](NodePtr::subtype)): both the node size
 /// and which `+N` fields are live depend on the subtype
 /// (`xetex_format.h:457–467`). Field offsets verified against
-/// `xetex/xetex-xetexd.h:250–289`. Only the fields the threaded list-walkers
+/// `xetex/xetex-xetexd.h:250–289`. Only the fields the list-walkers
 /// read/write are exposed; constructing and FFI-measuring native nodes stays in
 /// `ext.rs`/`fonts.rs` (the inline UTF-16/path data past `+4`/`+5` is not a
 /// typed field).

@@ -24,7 +24,7 @@ use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
 use tectonic_errors::prelude::*;
 
 // Internal modules holding the growing Rust translation of the XeTeX
-// engine. See `plan/` for the long-running migration strategy.
+// engine.
 mod consts;
 mod engine;
 mod engine_interface;
@@ -57,14 +57,10 @@ mod shipout;
 mod state;
 #[allow(dead_code)]
 mod string_pool;
-// Typed-memory foundation (`plan/idiom/01c` §2 Stage 1). Built before its
-// consumers (the Phase-C "type-as-you-thread" slices, `01`-§4a), so its
-// items are intentionally unused until Stage 2/3 adopt them.
+// Typed-memory foundation.
 #[allow(dead_code)]
 mod units;
-// Typed node-handle layer over the arena (`plan/idiom/01c` §3, Stage 3).
-// Built before its consumers (the type-as-you-thread slices), so its items
-// are intentionally unused until a threading slice adopts them.
+// Typed node-handle layer over the arena.
 #[allow(dead_code)]
 mod node;
 mod synctex;

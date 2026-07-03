@@ -7,12 +7,10 @@
 
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
-// §6 flip: the host sets these BEFORE `tt_run_engine` runs (i.e. before an owned
+// The host sets these BEFORE `tt_run_engine` runs (i.e. before an owned
 // `EngineState` exists), so they cannot live in the state. They are retained in
 // process-global atomics; `tt_run_engine` copies them into its owned
-// `st.config` at entry via `apply_config`. (Formerly written into the persistent
-// thread-local `RefCell` and copied from there — this removes config from the
-// state machinery entirely.)
+// `st.config` at entry via `apply_config`.
 static CFG_HALT_ON_ERROR_P: AtomicI32 = AtomicI32::new(0);
 static CFG_IN_INITEX_MODE: AtomicBool = AtomicBool::new(false);
 static CFG_SYNCTEX_ENABLED: AtomicI32 = AtomicI32::new(0);

@@ -1,7 +1,4 @@
 //! Pure helper functions translated from `xetex/xetex-xetex0.c`.
-//!
-//! These are Phase 1 targets: small, pure, or nearly-pure functions with
-//! no complex state dependencies. See `plan/04-migration-order.md`.
 
 // TeX constant from xetex-constants.h:337
 const INF_BAD: i32 = 10000;

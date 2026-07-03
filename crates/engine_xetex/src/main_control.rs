@@ -1,12 +1,5 @@
 //! The main control loop, its command verbs, and the `\halign`/`\valign`
-//! alignment family. Relocated from `scan.rs` (= xetex0.c's main_control
-//! group) by workstream 02 (module decomposition).
-//!
-//! This slice seeds the module with the alignment family
-//! (`init_align`/`align_peek`/`fin_align`/`init_span`/`init_row`/`init_col`/
-//! `push_alignment`/`pop_alignment`/`fin_col`/`fin_row`/`get_preamble_token`/
-//! `align_error`/`no_align_error`/`omit_error`); the `main_control*` dispatch
-//! and verbs follow in later slices.
+//! alignment family (= xetex0.c's main_control group).
 
 use crate::state::GroupCode;
 use crate::consts::{
@@ -103,7 +96,6 @@ const BACKED_UP_CHAR: u16 = 4;
 const TOKEN_LIST_INPUT: u16 = 0;
 const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73; // xetex_format.h:108
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:10390 (align_error)
 pub(crate) fn align_error_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
@@ -679,11 +671,8 @@ pub(crate) fn get_preamble_token_in(
             }
         }
         if st.scanner.cur_cmd == ENDV {
-            // Interwoven alignment preamble: propagate as a Result instead of the
-            // direct fatal_error longjmp under the &mut EngineState borrow, mirroring
-            // the sibling sites at fin_align (MainControlAbort::Input -> InputAbort::
-            // Fatal -> EngineAbort::Fatal; into_history prints "Emergency stop" + msg
-            // and returns 3, same as the old fatal_error) — `01d` §5.6.
+            // Interwoven alignment preamble: a fatal error (prints "Emergency
+            // stop" plus the message and returns 3).
             return Err(MainControlAbort::Input(crate::input::InputAbort::Fatal(
                 c"(interwoven alignment preambles are not allowed)".as_ptr(),
             )));
@@ -1274,9 +1263,8 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
     Ok(())
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
 
-/// `&mut EngineState` core of [`push_math`]: enters math mode under one borrow.
+/// Enters math mode.
 pub(crate) fn push_math_in(
     st: &mut crate::state::EngineState,
     c: GroupCode,
@@ -1341,12 +1329,6 @@ pub(crate) fn append_penalty_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:9496 (normal_paragraph)
-///
-/// Phase-C: threaded to disjoint `&mut EqtbState`/`&mut SaveStackState`/`&mut
-/// MemState`/`&mut ScannerState` borrows (`01b` §3). The `eq_word_define`/
-/// `eq_define` calls return the `01b` §5 [`crate::save::SaveAbort`] sentinel on
-/// a cold save-stack overflow; this fn short-circuits on the first one and
-/// [`normal_paragraph_global`] raises it after the borrow drops.
 pub(crate) fn normal_paragraph(
     eqtb: &mut crate::state::EqtbState,
     save_stack: &mut crate::state::SaveStackState,
@@ -1441,11 +1423,6 @@ pub(crate) fn its_all_over_in(
     Ok(false)
 }
 // translated from xetex-xetex0.c:9808 (indent_in_hmode)
-///
-/// Phase-C: threaded to `&mut MemState` + `&EqtbState` (`01b` §3). The cold
-/// arena-exhaustion branches of `new_null_box`/`new_noad` return the `01b` §5
-/// [`crate::scan::NodeRecycleAbort`] sentinel; [`indent_in_hmode_global`] runs
-/// the `overflow` abort after the borrow drops.
 pub(crate) fn indent_in_hmode(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::scan::NodeRecycleAbort> {
@@ -1756,10 +1733,9 @@ pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), M
     Ok(())
 }
 // translated from xetex-xetex0.c:9223 (app_space)
-// Phase-C: threaded to `&mut MemState`/`&EqtbState`/`&mut FontState`; legacy
-// entry points use [`app_space_in`]. Returns the deferred `xn_over_d` side
-// effects (`tex_remainder`, plus `arith_error` on overflow); `None` when the
-// spacing branch taken did no scaling arithmetic.
+// Returns the deferred `xn_over_d` side effects (`tex_remainder`, plus
+// `arith_error` on overflow); `None` when the spacing branch taken did no
+// scaling arithmetic.
 pub(crate) fn app_space(
     st: &mut crate::state::EngineState,
 ) -> Result<Option<(i32, bool)>, crate::scan::NodeRecycleAbort> {
@@ -1812,7 +1788,7 @@ pub(crate) fn app_space(
             crate::scaled_math::xn_over_d_parts(st.mem.b32s1(st.mainloop.main_p + 3), 1000, space_factor);
         st.mem.set_b32s1(st.mainloop.main_p + 3, new_shrink);
         // `xn_over_d` sets `tex_remainder` (last call wins) and `arith_error`
-        // on any overflow; defer both to after the borrow drops (§129).
+        // on any overflow.
         side_effects = Some((r2, ov1 || ov2));
         q = crate::mem::new_glue(&mut st.mem, st.mainloop.main_p);
         if q == crate::mem::ALLOC_FAILED {
@@ -1873,10 +1849,7 @@ pub(crate) fn scan_box_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:9509 (package)
-/// `&mut EngineState` core of [`package`]: closes a box group, packs the inner
-/// list, and dispatches via [`box_end_in`] — all under one borrow. `cur_list_*`
-/// stay raw `mod raw`; `cur_box` is `st.scanner.cur_box`. Cold aborts ride
-/// [`MainControlAbort`].
+/// Closes a box group, packs the inner list, and dispatches via [`box_end_in`].
 ///
 /// translated from xetex-xetex0.c:9509 (package)
 pub(crate) fn package_in(
@@ -1925,10 +1898,8 @@ pub(crate) fn package_in(
     box_end_in(st, ctx)?;
     Ok(())
 }
-/// `&mut EngineState` core of [`new_graf`]: starts a new paragraph (par-skip
-/// glue, nest push, hyphenation/language setup, optional indent box +
-/// src-special, `\everypar`, page build) under one borrow. `cur_list_*` stay
-/// raw `mod raw`. Cold aborts ride [`MainControlAbort`].
+/// Starts a new paragraph (par-skip glue, nest push, hyphenation/language
+/// setup, optional indent box + src-special, `\everypar`, page build).
 ///
 /// translated from xetex-xetex0.c:9549 (new_graf)
 pub(crate) fn new_graf_in(
@@ -2000,8 +1971,7 @@ pub(crate) enum NewCharacterAbort {
 }
 
 impl NewCharacterAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `finish()` cold-abort tail without longjmp-ing. `MainMemoryOverflow`
+    /// Map to the unified [`EngineAbort`] terminal. `MainMemoryOverflow`
     /// runs `runaway` first (via `main_memory_overflow_abort`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
@@ -2036,9 +2006,9 @@ pub(crate) enum MainControlAbort {
     NewCharacter(NewCharacterAbort),
     Trie(crate::hyphenation::TrieAbort),
     /// Serious internal error closing an input file (the C `ttstub_input_close`
-    /// wrapper `longjmp`'d here); reached from `load_picture_in` (`01d` §2.1).
+    /// wrapper `longjmp`'d here); reached from `load_picture_in`.
     InputClose,
-    /// A native-font measurement cold abort (`01d` §5.6).
+    /// A native-font measurement cold abort.
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -2158,10 +2128,7 @@ impl From<crate::fonts::ReadFontInfoAbort> for MainControlAbort {
 
 impl MainControlAbort {
     /// Map the aggregated main-control cold abort to the unified [`EngineAbort`]
-    /// terminal (`01d` §5.5), delegating to each leaf's `into_engine_abort`. Runs
-    /// *after* the `main_control_in` borrow drops (fired at [`main_control`]);
-    /// `tt_run_engine` then prints + cleans via [`EngineAbort::into_history`]
-    /// instead of longjmp-ing. Replaces the former `fire()` longjmp dispatcher.
+    /// terminal, delegating to each leaf's `into_engine_abort`.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             MainControlAbort::Scanner(e) => e.into_engine_abort(),
@@ -2194,9 +2161,9 @@ impl MainControlAbort {
     }
 }
 
-/// Propagate a recoverable [`crate::errors::ErrorOutcome`] from a threaded
+/// Propagate a recoverable [`crate::errors::ErrorOutcome`] from a
 /// main-control verb: `Continue` returns `Ok(())`, any cold tail rides
-/// [`MainControlAbort::Error`] to be `finish()`ed after the borrow drops.
+/// [`MainControlAbort::Error`].
 #[inline]
 pub(crate) fn mc_propagate_error(o: crate::errors::ErrorOutcome) -> Result<(), MainControlAbort> {
     if matches!(o, crate::errors::ErrorOutcome::Continue) {
@@ -2936,7 +2903,6 @@ pub(crate) fn handle_right_brace_in(
     Ok(())
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:9358 (append_glue)
 fn append_glue_node(
@@ -3145,9 +3111,6 @@ pub(crate) fn alter_box_dimen_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:10570 (trap_zero_glue)
-///
-/// Phase-C: threaded to `&mut MemState` (`01b` §3); legacy callers use
-/// [`trap_zero_glue_global`]. No allocation, so no cold-path sentinel.
 pub(crate) fn trap_zero_glue(st: &mut crate::state::EngineState) {
     let cv = st.scanner.cur_val;
     if st.mem.b32s1(cv + 1) == 0 && st.mem.b32s1(cv + 2) == 0 && st.mem.b32s1(cv + 3) == 0 {
@@ -3160,11 +3123,6 @@ pub(crate) fn trap_zero_glue(st: &mut crate::state::EngineState) {
 }
 
 // translated from xetex-xetex0.c:11357 (fix_language)
-///
-/// Phase-C: threaded to `&mut MemState` + `&EqtbState` (`01b` §3). The cold
-/// arena-exhaustion branch of `new_whatsit` returns the `01b` §5
-/// [`crate::scan::NodeRecycleAbort`] sentinel; [`fix_language_global`] runs the
-/// `overflow` abort after the borrow drops.
 pub(crate) fn fix_language(cl: &mut crate::mem_types::ListStateRecord, 
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
@@ -3297,10 +3255,7 @@ pub(crate) fn shift_case_in(st: &mut crate::state::EngineState) -> Result<(), Ma
     Ok(())
 }
 // translated from xetex-xetex0.c:9958 (build_discretionary)
-/// `&mut EngineState` core of [`build_discretionary`]: validates and stitches the
-/// three discretionary sublists under one borrow. `cur_list_*` stay raw `mod
-/// raw`; the diagnostics/error/scan callees run threaded. Cold aborts ride
-/// [`MainControlAbort`].
+/// Validates and stitches the three discretionary sublists.
 ///
 /// translated from xetex-xetex0.c:9958 (build_discretionary)
 pub(crate) fn build_discretionary_in(
@@ -4206,7 +4161,6 @@ pub(crate) fn do_assignments_in(
     }
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:8221 (main_control append_normal_space label)
 pub(crate) fn main_control_append_normal_space_in(
@@ -5073,16 +5027,15 @@ fn inter_char_before_current_char_action(
     }
 }
 
-// `is_char_node` for the threaded main loop: reads `hi_mem_min` directly under
-// the held borrow (it can shrink on the get_avail hi-mem-exhaustion path, so it
-// must be read fresh, not captured).
+// `is_char_node`: reads `hi_mem_min` directly (it can shrink on the get_avail
+// hi-mem-exhaustion path, so it must be read fresh, not captured).
 #[inline(always)]
 fn mc_is_char_node(st: &crate::state::EngineState, p: i32) -> bool {
     p >= st.mem.hi_mem_min
 }
 
-// Node-allocation helpers for the threaded main loop: allocate under the held
-// borrow and lift the cold `ALLOC_FAILED` overflow into `MainControlAbort`.
+// Node-allocation helpers: allocate and lift the cold `ALLOC_FAILED` overflow
+// into `MainControlAbort`.
 #[inline]
 fn mc_get_avail(st: &mut crate::state::EngineState) -> Result<i32, MainControlAbort> {
     let p = crate::mem::get_avail(&mut st.mem);
@@ -5319,9 +5272,6 @@ pub(crate) unsafe fn main_control_main_loop_in(
         // Apply font mapping if present
         let fm = st.fonts.font_mapping_ptr(st.mainloop.main_f);
         if !fm.is_null() {
-            // Evaluate the with_state-bearing `native_text`/`native_len` reads
-            // before taking the `apply_mapping` borrow (it now threads `&mut
-            // FontState`); they would nest-panic inside the closure.
             let nt = st.scanner.native_text.as_mut_ptr();
             let nl = st.scanner.native_len();
             let mk = apply_mapping(&mut st.fonts, fm, nt, nl);
@@ -6215,9 +6165,6 @@ unsafe fn do_lookahead(
 }
 // translated from xetex-xetex0.c:6766 (main_control)
 // Top-level TeX command dispatcher: big_switch / reswitch loop.
-//
-// The public wrapper is the thread-local anchor; the full command loop holds
-// one state borrow and threads it through every dispatcher below this point.
 pub(crate) unsafe fn main_control_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
@@ -6655,7 +6602,6 @@ pub(crate) unsafe fn main_control_in(
 }
 
 
-// ---- moved verbatim from ini.rs (workstream 02) ----
 
 // translated from xetex-ini.c:583 (prefixed_command)
 #[inline]

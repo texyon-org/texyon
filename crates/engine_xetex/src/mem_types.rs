@@ -1,6 +1,6 @@
 //! Low-level `memory_word` bit-layout types, mirroring `xetex-core.h:99–104`.
 //!
-//! During the C→Rust migration (Phase A of `plan/02-state.md`), the C and
+//! During the C→Rust migration, the C and
 //! Rust code share a single backing array of `memory_word` / [`MemoryWord`]
 //! values. `#[repr(C)]` is therefore *required*, not a stylistic choice.
 
@@ -39,7 +39,7 @@ pub struct B16x4 {
 ///
 /// Corresponds exactly to the C `memory_word` union (`xetex-core.h:99`).
 /// The `#[repr(C)]` is load-bearing: the C and Rust engine share the same
-/// backing array during Phase A of the migration, so the union layout
+/// backing array, so the union layout
 /// must match bit-for-bit.
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -98,7 +98,7 @@ pub struct ListStateRecord {
 const _: () = assert!(size_of::<ListStateRecord>() == 32);
 
 impl ListStateRecord {
-    /// Read `aux.b32.s0`. Reading a union field is `unsafe`; localized here (`01e`).
+    /// Read `aux.b32.s0`. Reading a union field is `unsafe`; localized here.
     #[inline]
     pub fn aux_s0(&self) -> i32 { unsafe { self.aux.b32.s0 } }
     /// Read `aux.b32.s1`.

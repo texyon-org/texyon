@@ -1,7 +1,4 @@
 //! Miscellaneous C-callable helpers from xetex-texmfmp.c.
-//!
-//! Functions involving `makepdftime` / the C-static state (`last_source_name`,
-//! `start_time_str`) or complex bridge calls remain in C for now.
 
 // ---------------------------------------------------------------------------
 // C externs needed by this module
@@ -38,13 +35,11 @@ const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 // INVALID_HANDLE = 0 (tectonic_bridge_core_generated.h:12).
 const INVALID_HANDLE: usize = 0;
 
-// Former C file-statics (xetex-texmfmp.c:19–27) now live on
-// `EngineState.texmf` (session 46), bridged through the thread-local.
 // `last_source_name` is an owned C string; its free/reassign lifecycle stays
 // in `remember_source_info` (no `tt_cleanup` edge — see state.rs::TexmfState).
 
 // ---------------------------------------------------------------------------
-// get_date_and_time / get_seconds_and_micros (translated session 13)
+// get_date_and_time / get_seconds_and_micros
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:116 (get_date_and_time)
@@ -104,8 +99,7 @@ pub unsafe fn get_seconds_and_micros(seconds: *mut i32, micros: *mut i32) {
 // gettexstring — pool UTF-16 → heap UTF-8
 // ---------------------------------------------------------------------------
 
-/// `&StringsState` core of [`gettexstring`] — safe to call under a live state
-/// borrow (the global `gettexstring` reads the pool through `with_state`).
+/// `&StringsState` core of [`gettexstring`].
 pub unsafe fn gettexstring_in(strings: &crate::state::StringsState, s: i32) -> *mut libc::c_char {
     let str_start = |k: i32| strings.str_start[k as usize];
     let str_pool_entry = |k: i32| strings.str_pool[k as usize];
@@ -191,7 +185,7 @@ pub unsafe fn gettexstring_in(strings: &crate::state::StringsState, s: i32) -> *
 /// Convert a NUL-terminated C UTF-8 string to a TeX string-pool entry and
 /// return its str_number.
 ///
-/// Cold-abort sentinel for [`maketexstring_in`] (`01b` §5).
+/// Cold-abort sentinel for [`maketexstring_in`].
 pub(crate) enum MakeTexStringAbort {
     /// `_tt_abort("string pool overflow")` — the pool can't hold the string.
     PoolOverflow,
@@ -200,8 +194,7 @@ pub(crate) enum MakeTexStringAbort {
 }
 
 impl MakeTexStringAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire_make_tex_string` without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             MakeTexStringAbort::PoolOverflow => {
@@ -212,11 +205,11 @@ impl MakeTexStringAbort {
     }
 }
 
-/// `&mut StringsState` core of [`maketexstring`] (scanner-SCC prereq).
+/// `&mut StringsState` core of [`maketexstring`].
 ///
-/// Writes the UTF-8 → pool UTF-16 conversion directly into the string pool under
-/// one borrow; the pool-overflow and string-overflow cold paths ride
-/// [`MakeTexStringAbort`] (`01b` §5).
+/// Writes the UTF-8 → pool UTF-16 conversion directly into the string pool;
+/// the pool-overflow and string-overflow cold paths ride
+/// [`MakeTexStringAbort`].
 pub(crate) unsafe fn maketexstring_in(
     strings: &mut crate::state::StringsState,
     s: *const libc::c_char,
@@ -289,7 +282,7 @@ fn convert_string_to_hex(input: &[u8; DIGEST_SIZE], out: &mut [u8; 2 * DIGEST_SI
     out[j] = 0;
 }
 
-/// `&mut StringsState` core of [`getmd5sum`] (scanner-SCC `conv_toks`).
+/// `&mut StringsState` core of [`getmd5sum`].
 pub(crate) unsafe fn getmd5sum_in(strings: &mut crate::state::StringsState, s: i32, file: bool) {
     let mut digest = [0u8; DIGEST_SIZE];
     let mut outbuf = [0u8; 2 * DIGEST_SIZE + 1];
@@ -325,7 +318,7 @@ pub(crate) unsafe fn getmd5sum_in(strings: &mut crate::state::StringsState, s: i
 // ---------------------------------------------------------------------------
 
 /// `&mut EngineState` core of the `make_src_special` op. Returns the cold pool
-/// overflow as `Err(())` for the caller to defer (`01b` §5).
+/// overflow as `Err(())` for the caller to defer.
 pub(crate) fn make_src_special_in(
     st: &mut crate::state::EngineState,
     srcfilename: i32,
@@ -369,9 +362,6 @@ pub(crate) fn make_src_special_in(
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:155 (getfilesize)
-///
-/// `&mut StringsState` scanner-SCC `conv_toks` core (the former `getfilesize`
-/// bridge wrapper was dead — `01d` §2.1).
 pub(crate) unsafe fn getfilesize_in(
     strings: &mut crate::state::StringsState,
     s: i32,
@@ -410,9 +400,6 @@ pub(crate) unsafe fn getfilesize_in(
 // ---------------------------------------------------------------------------
 
 /// translated from xetex-texmfmp.c:189 (getfiledump)
-///
-/// `&mut StringsState` scanner-SCC `conv_toks` core (the former `getfiledump`
-/// bridge wrapper was dead — `01d` §2.1).
 pub(crate) unsafe fn getfiledump_in(
     strings: &mut crate::state::StringsState,
     s: i32,
@@ -605,8 +592,7 @@ pub unsafe fn init_start_time(st: &mut crate::state::EngineState, source_date_ep
     st.texmf.start_time_str = buf;
 }
 
-/// `&mut StringsState` core of [`getcreationdate`] so a threaded caller holding
-/// `&mut EngineState` can call it under the borrow (scanner-SCC `conv_toks`).
+/// `&mut StringsState` core of [`getcreationdate`].
 pub(crate) unsafe fn getcreationdate_in(
     texmf: &crate::state::TexmfState,
     strings: &mut crate::state::StringsState,
@@ -624,8 +610,7 @@ pub(crate) unsafe fn getcreationdate_in(
 }
 
 /// Push the modification date of a file (named by pool string `s`) into the
-/// string pool as a PDF date string. `&mut StringsState` scanner-SCC `conv_toks`
-/// core (the former `getfilemoddate` bridge wrapper was dead — `01d` §2.1).
+/// string pool as a PDF date string.
 ///
 /// translated from xetex-texmfmp.c:120 (getfilemoddate)
 pub(crate) unsafe fn getfilemoddate_in(

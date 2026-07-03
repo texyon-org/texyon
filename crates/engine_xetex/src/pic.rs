@@ -344,7 +344,7 @@ unsafe fn find_pic_file(
     }
     if crate::io::input_close(handle) {
         // The C ttstub_input_close wrapper longjmp'd on this serious internal
-        // close error; propagate it as a fatal abort (`01d` §2.1).
+        // close error; propagate it as a fatal abort.
         return Err(MainControlAbort::InputClose);
     }
     Ok(err)
@@ -747,9 +747,6 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
     Ok(())
 }
 
-/// `name`-passing core of [`count_pdf_file_pages`] so a threaded caller holding
-/// `&mut EngineState` can supply the file name read directly from `st.input`
-/// instead of re-entering `with_state` via `name_of_file()`.
 pub(crate) unsafe fn count_pdf_file_pages_named(
     name: *const libc::c_char,
 ) -> Result<c_int, crate::scan::SccAbort> {
@@ -768,7 +765,7 @@ pub(crate) unsafe fn count_pdf_file_pages_named(
     pdf_close(pf);
     if crate::io::input_close(handle) {
         // The C ttstub_input_close wrapper longjmp'd on this serious internal
-        // close error; propagate it as a fatal abort (`01d` §2.1).
+        // close error; propagate it as a fatal abort.
         return Err(crate::scan::SccAbort::InputClose);
     }
     Ok(pages)

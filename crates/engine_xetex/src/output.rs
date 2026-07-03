@@ -1,4 +1,4 @@
-//! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
+//! Printing helpers translated from `xetex/xetex-output.c`.
 use crate::state::GroupCode;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, INT_BASE, LOCAL_BASE, NULL_FLAG, PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
@@ -11,7 +11,7 @@ use crate::state::InteractionMode;
 use crate::units::{MemIdx, NodeType};
 
 
-// Consts used by the show_* group, moved with it from scan.rs (workstream 02).
+// Consts used by the show_* group.
 const TEMP_HEAD: i32 = 4_999_999 - 3;
 const GARBAGE: i32 = 4_999_999 - 12;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
@@ -109,7 +109,6 @@ pub(crate) fn print_the_digs_in(st: &mut EngineState, mut k: u8) {
 // print_int
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_int`].
 pub(crate) fn print_int_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
 
@@ -150,7 +149,6 @@ pub(crate) fn print_int_in(st: &mut EngineState, mut n: i32) {
 /// Print an integer in hexadecimal with a leading `"`.
 ///
 /// translated from xetex-output.c:658 (print_hex)
-/// `&mut EngineState` core of `print_hex`.
 pub(crate) fn print_hex_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
     print_char_in(st, b'"' as i32);
@@ -172,7 +170,6 @@ pub(crate) fn print_hex_in(st: &mut EngineState, mut n: i32) {
 /// Print a Unicode scalar value in `U+XXXX` form.
 ///
 /// translated from xetex-output.c:749 (print_ucs_code)
-/// `&mut EngineState` core of `print_ucs_code`.
 pub(crate) fn print_ucs_code_in(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
     print_cstr_in(st, c"U+".as_ptr());
@@ -195,7 +192,6 @@ pub(crate) fn print_ucs_code_in(st: &mut EngineState, mut n: i32) {
 // print_cstr
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_cstr`].
 pub(crate) fn print_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
     let s = unsafe { std::ffi::CStr::from_ptr(str_ptr) };
     for &b in s.to_bytes() {
@@ -207,7 +203,6 @@ pub(crate) fn print_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) 
 // print_nl_cstr
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_nl_cstr`].
 pub(crate) fn print_nl_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
     let sel = st.shipout.selector;
     if ((st.shipout.term_offset > 0) && (sel & 1 != 0))
@@ -222,7 +217,6 @@ pub(crate) fn print_nl_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_cha
 // print_esc_cstr
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_esc_cstr`].
 pub(crate) fn print_esc_cstr_in(st: &mut EngineState, s: *const libc::c_char) {
     let c = st.eqtb.b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
     if (0..=BIGGEST_USV).contains(&c) {
@@ -235,7 +229,6 @@ pub(crate) fn print_esc_cstr_in(st: &mut EngineState, s: *const libc::c_char) {
 // print_nl
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_nl`].
 pub(crate) fn print_nl_in(st: &mut EngineState, s: i32) {
     let sel = st.shipout.selector;
     if ((st.shipout.term_offset > 0) && (sel & 1 != 0))
@@ -250,7 +243,6 @@ pub(crate) fn print_nl_in(st: &mut EngineState, s: i32) {
 // print_esc
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_esc`].
 pub(crate) fn print_esc_in(st: &mut EngineState, s: i32) {
     let c = st.eqtb.b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
     if (0..=BIGGEST_USV).contains(&c) {
@@ -263,7 +255,6 @@ pub(crate) fn print_esc_in(st: &mut EngineState, s: i32) {
 // print_roman_int
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_roman_int`].
 pub(crate) fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
     // "m2d5c2l5x2v5i": alternating letter/divisor pairs encoding the
     // standard Roman numeral values and their subtraction thresholds.
@@ -298,7 +289,6 @@ pub(crate) fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
 // print_scaled
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_scaled`].
 pub(crate) fn print_scaled_in(st: &mut EngineState, mut s: i32) {
     if s < 0 {
         print_char_in(st, b'-' as i32);
@@ -340,7 +330,6 @@ pub(crate) fn warn_char_in(st: &mut EngineState, c: i32) {
 // print_ln
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_ln`].
 pub(crate) fn print_ln_in(st: &mut EngineState) {
     match st.shipout.selector {
         SELECTOR_TERM_AND_LOG => {
@@ -374,7 +363,6 @@ pub(crate) fn print_ln_in(st: &mut EngineState) {
 /// Write one UTF-16 code unit to the current output destination(s).
 ///
 /// translated from xetex-output.c:76 (print_raw_char)
-/// `&mut EngineState` core of `print_raw_char`.
 pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool) {
     match st.shipout.selector {
         SELECTOR_TERM_AND_LOG => {
@@ -441,7 +429,6 @@ pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool)
 // print_char
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_char`].
 pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
     // Fast path for NEW_STRING: store as UTF-16 code unit(s).
     if st.shipout.selector > SELECTOR_PSEUDO && !st.shipout.doing_special {
@@ -518,7 +505,6 @@ pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
 // print
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print`].
 pub(crate) fn print_in(st: &mut EngineState, s: i32) {
     if s >= st.strings.str_ptr {
         return print_cstr_in(st, c"???".as_ptr());
@@ -588,7 +574,6 @@ pub(crate) fn print_current_string_in(st: &mut EngineState) {
 // capture_to_diagnostic
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`capture_to_diagnostic`].
 pub(crate) fn capture_to_diagnostic_in(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
     let cur = st.shipout.current_diagnostic;
     if !cur.is_null() {
@@ -637,7 +622,6 @@ pub(crate) fn diagnostic_print_file_line_in(
 // diagnostic_begin_capture_warning_here
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`diagnostic_begin_capture_warning_here`].
 pub(crate) fn diagnostic_begin_capture_warning_here_in(
     st: &mut EngineState,
 ) -> *mut std::ffi::c_void {
@@ -651,7 +635,6 @@ pub(crate) fn diagnostic_begin_capture_warning_here_in(
 // error_here_with_diagnostic
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`error_here_with_diagnostic`].
 pub(crate) fn error_here_with_diagnostic_in(
     st: &mut EngineState,
     message: *const libc::c_char,
@@ -702,7 +685,6 @@ pub(crate) fn print_file_line_in(st: &mut EngineState) {
 // print_size
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_size`].
 pub(crate) fn print_size_in(st: &mut EngineState, s: i32) {
     if s == TEXT_SIZE {
         print_esc_cstr_in(st, c"textfont".as_ptr());
@@ -740,7 +722,6 @@ pub(crate) fn print_write_whatsit_in(
 // print_file_name
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_file_name`].
 pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
     // Scan all three string components to decide if quoting is needed.
     let mut must_quote = false;
@@ -802,7 +783,6 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
 // print_cs
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_cs`].
 pub(crate) fn print_cs_in(st: &mut EngineState, p: i32) {
     if p < HASH_BASE {
         if p >= SINGLE_BASE {
@@ -906,7 +886,6 @@ pub(crate) fn print_native_word_in(st: &mut EngineState, p: i32) {
 // print_sa_num
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_sa_num`].
 pub(crate) fn print_sa_num_in(st: &mut EngineState, q: i32) {
     let n = if (st.mem.b16s1(q) as i32) < DIMEN_VAL_LIMIT {
         st.mem.b32s1(q + 1)
@@ -960,7 +939,6 @@ pub(crate) fn end_diagnostic_in(st: &mut EngineState, blank_line: bool) {
 /// Print a textual description of the current TeX mode m.
 ///
 /// translated from xetex-xetex0.c:1327 (print_mode)
-/// `&mut EngineState` core of [`print_mode`].
 pub(crate) fn print_mode_in(st: &mut EngineState, m: i32) {
     if m > 0 {
         match m / MAX_COMMAND_PLUS_1 {
@@ -990,7 +968,6 @@ pub(crate) fn print_mode_in(st: &mut EngineState, m: i32) {
 /// Print a textual name for the current group, with level and entry line.
 ///
 /// translated from xetex-xetex0.c:3464 (print_group)
-/// `&mut EngineState` core of [`print_group`].
 pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
     let g = st.save_stack.cur_group;
     match g {
@@ -1050,7 +1027,6 @@ pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
 /// Print "' in <mode>" for use in error messages.
 ///
 /// translated from xetex-xetex0.c:1356 (print_in_mode)
-/// `&mut EngineState` core of `print_in_mode`.
 pub(crate) fn print_in_mode_in(st: &mut EngineState, m: i32) {
     if m > 0 {
         match m / MAX_COMMAND_PLUS_1 {
@@ -1089,7 +1065,6 @@ pub(crate) fn token_show_in(st: &mut EngineState, p: i32) {
 // print_spec
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_spec`].
 pub(crate) fn print_spec_in(st: &mut EngineState, p: i32, s: *const libc::c_char) {
     if p < 0 || p >= st.mem.lo_mem_max {
         print_char_in(st, '*' as i32);
@@ -1122,7 +1097,6 @@ pub(crate) fn print_spec_in(st: &mut EngineState, p: i32, s: *const libc::c_char
 // print_skip_param / print_param / print_length_param
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_skip_param`].
 pub(crate) fn print_skip_param_in(st: &mut EngineState, n: i32) {
     match n {
         0 => print_esc_cstr_in(st, c"lineskip".as_ptr()),
@@ -1148,7 +1122,6 @@ pub(crate) fn print_skip_param_in(st: &mut EngineState, n: i32) {
     }
 }
 
-/// `&mut EngineState` core of [`print_param`].
 pub(crate) fn print_param_in(st: &mut EngineState, n: i32) {
     match n {
         0 => print_esc_cstr_in(st, c"pretolerance".as_ptr()),
@@ -1240,7 +1213,6 @@ pub(crate) fn print_param_in(st: &mut EngineState, n: i32) {
 // print_style / print_fam_and_char / print_delimiter
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`print_style`].
 pub(crate) fn print_style_in(st: &mut EngineState, c: i32) {
     match c / 2 {
         0 => print_esc_cstr_in(st, c"displaystyle".as_ptr()), // DISPLAY_STYLE / 2
@@ -1323,7 +1295,6 @@ pub(crate) fn print_glue_in(st: &mut EngineState, d: i32, order: i32, s: *const 
     }
 }
 
-/// `&mut EngineState` core of [`print_length_param`].
 pub(crate) fn print_length_param_in(st: &mut EngineState, n: i32) {
     match n {
         0 => print_esc_cstr_in(st, c"parindent".as_ptr()),
@@ -1780,7 +1751,6 @@ const CC_OTGR_FONT_FLAG: i32 = 0xFFFE;
 // PROTECTED_TOKEN (xetex-constants.h:361)
 const CC_PROTECTED_TOKEN: i32 = 0x1C00001;
 
-/// `&mut EngineState` core of [`print_cmd_chr`].
 pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
     // Helper: print a char/codepoint (> 65535 uses print_char for raw code).
     let print_char_or_wide = |st: &mut EngineState, code: i32| {
@@ -2711,7 +2681,6 @@ pub(crate) fn group_warning_in(st: &mut EngineState) {
 // if_warning
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`if_warning`].
 pub(crate) fn if_warning_in(st: &mut EngineState) {
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
@@ -2758,7 +2727,6 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
 // file_warning
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`file_warning`].
 pub(crate) fn file_warning_in(st: &mut EngineState) {
     // Save and restore save-stack / level / group state while scanning.
     let p = st.save_stack.save_ptr;
@@ -2828,7 +2796,6 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
 // show_cur_cmd_chr
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`show_cur_cmd_chr`].
 pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
     begin_diagnostic_in(st);
     diagnostic_begin_capture_warning_here_in(st);
@@ -2873,8 +2840,6 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
 // change_if_limit
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of [`change_if_limit`]. Returns the cold
-/// `confusion("if")` path as a §5 sentinel.
 pub(crate) fn change_if_limit_in(st: &mut EngineState, l: i16, p: i32) -> ErrorOutcome {
     if p == st.scanner.cond_ptr {
         st.scanner.if_limit = l as u8;
@@ -2909,15 +2874,13 @@ pub unsafe extern "C" fn font_feature_warning(
     set_len: i32,
 ) {
     // Reach the run's owned `EngineState` through the locator pointer — the one
-    // irreducible C++-callback access (see `state.rs`); every other path is
-    // threaded. macOS-only; null outside a run.
+    // irreducible C++-callback access (see `state.rs`). macOS-only; null outside a run.
     let p = crate::state::current_engine_state();
     if !p.is_null() {
         font_feature_warning_in(&mut *p, feature_name_p, feat_len, setting_name_p, set_len);
     }
 }
 
-/// `&mut EngineState` core of [`font_feature_warning`].
 pub(crate) fn font_feature_warning_in(
     st: &mut EngineState,
     feature_name_p: *const libc::c_void,
@@ -2942,7 +2905,6 @@ pub(crate) fn font_feature_warning_in(
     end_diagnostic_in(st, false);
 }
 
-/// `&mut EngineState` core of [`font_mapping_warning`].
 pub(crate) fn font_mapping_warning_in(
     st: &mut EngineState,
     mapping_name_p: *const libc::c_void,
@@ -2985,9 +2947,7 @@ fn print_name_of_file_in(st: &mut EngineState) {
 // bad_utf8_warning
 // ---------------------------------------------------------------------------
 
-/// `&mut EngineState` core of `bad_utf8_warning` (translated from
-/// xetex-xetex0.c:8970); the legacy global wrapper is retired now that
-/// `get_uni_c_in` is its only caller.
+/// translated from xetex-xetex0.c:8970 (bad_utf8_warning)
 pub(crate) fn bad_utf8_warning_in(st: &mut EngineState) {
     begin_diagnostic_in(st);
     diagnostic_begin_capture_warning_here_in(st);
@@ -3025,7 +2985,6 @@ const OTHER_CHAR_STL: i32 = 12;
 const MATCH_STL: i32 = 13;
 const END_MATCH_STL: i32 = 14;
 
-/// `&mut EngineState` core of [`show_token_list`].
 pub(crate) fn show_token_list_in(st: &mut EngineState, mut p: i32, q: i32, l: i32) {
     let mut match_chr: i32 = '#' as i32;
     let mut n: i32 = '0' as i32;
@@ -3092,7 +3051,6 @@ pub(crate) fn show_token_list_in(st: &mut EngineState, mut p: i32, q: i32, l: i3
     }
 }
 
-/// `&mut EngineState` core of [`print_totals`].
 pub(crate) fn print_totals_in(st: &mut EngineState) {
     print_scaled_in(st, st.shipout.page_so_far[1]);
     if st.shipout.page_so_far[2] != 0 {
@@ -3121,8 +3079,6 @@ pub(crate) fn print_totals_in(st: &mut EngineState) {
     }
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
-
 /// translated from xetex-xetex0.c:9942 (show_info)
 pub(crate) fn show_info_in(st: &mut EngineState) {
     let tp = st.mem.temp_ptr;
@@ -3138,8 +3094,6 @@ pub(crate) enum IssueMessageAbort {
 }
 
 impl IssueMessageAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire()` cold-abort tail without longjmp-ing.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             IssueMessageAbort::Scanner(e) => e.into_engine_abort(),
@@ -3207,7 +3161,6 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
     Ok(())
 }
 
-/// `&mut EngineState` core of [`show_save_groups`].
 pub(crate) fn show_save_groups_in(st: &mut EngineState) {
     const EXACTLY: i32 = 0; // xetex-constants.h:256
     const BOX_FLAG: i32 = 0x4000_0000; // xetex-constants.h:372
@@ -3468,9 +3421,7 @@ pub(crate) enum ShowWhateverAbort {
 }
 
 impl ShowWhateverAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire()` cold-abort tail without longjmp-ing. `MainMemoryOverflow`
-    /// is a plain overflow (no `runaway`).
+    /// `MainMemoryOverflow` is a plain overflow (no `runaway`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             ShowWhateverAbort::Scanner(e) => e.into_engine_abort(),
@@ -3651,8 +3602,6 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
     }
 }
 
-/// `&mut EngineState` core of [`char_warning`]. Returns the cold-abort sentinel
-/// (§5) for the `error()` / `make_string` overflow paths.
 pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome {
     const INT_PAR_TRACING_LOST_CHARS: i32 = 35; // xetex_format.h:70
     const INT_PAR_TRACING_ONLINE: i32 = 29; // xetex_format.h:64
@@ -3771,8 +3720,6 @@ pub(crate) fn show_box_in(st: &mut EngineState, p: i32) {
 }
 
 /// translated from xetex-xetex0.c:117 (short_display)
-/// `&mut EngineState` core of `short_display` (the global wrapper was retired
-/// once the threaded `print_*_common_ending_in` cores became its only callers).
 pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
     while p > 0 {
         if p >= st.mem.hi_mem_min {
@@ -3977,7 +3924,6 @@ pub(crate) fn show_activities_in(st: &mut EngineState) {
     }
 }
 /// translated from xetex-xetex0.c:215 (print_subsidiary_data)
-/// `&mut EngineState` core of `print_subsidiary_data`.
 fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u16) {
     if crate::hash::cur_length(&st.strings) >= st.errors.depth_threshold {
         if st.mem.b32s1(p) != 0 {
@@ -4518,7 +4464,6 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
     }
 }
 // translated from xetex-xetex0.c:2764 (show_context)
-/// `&mut EngineState` core of `show_context`.
 pub(crate) fn show_context_in(st: &mut EngineState) {
 
     const TOKEN_LIST: u16 = 0;
@@ -4764,8 +4709,6 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
     st.input.cur_input = st.input.input_stack[(st.input.input_ptr) as usize];
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
 }
-
-// ---- consts moved verbatim from scan.rs with the show_* group (workstream 02) ----
 
 // Node-type constants (xetex_format.h:380–390).
 const NATIVE_WORD_NODE_SD: u16 = 40;

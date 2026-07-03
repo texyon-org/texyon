@@ -1,6 +1,5 @@
 //! Expansion, macros, and conditionals — `expand`/`macro_call`/`conditional`/
-//! `pop_cond_node`/`conv_toks`/`ins_the_toks`. Relocated from `scan.rs`
-//! (= xetex0.c's expansion group) by workstream 02 (module decomposition).
+//! `pop_cond_node`/`conv_toks`/`ins_the_toks`. From xetex0.c's expansion group.
 
 // ---------------------------------------------------------------------------
 // conditional (IF_ sub-codes — xetex_format.h:543–564)
@@ -91,12 +90,6 @@ extern "C" {
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
-
-// scanner / `expand` SCC — threaded `_in` cores (session 204 big pass).
-// Stubs first (manifest §d step 1); bodies translated from the global versions.
-// ---------------------------------------------------------------------------
-
 use crate::node::{NodePtr, SaNode};
 use crate::scan::SccAbort;
 use crate::units::{MemIdx, MemPtr};
@@ -108,7 +101,6 @@ pub(crate) fn ins_the_toks_in(st: &mut crate::state::EngineState) -> Result<(), 
     crate::input::begin_token_list_in(st, th, INSERTED)?;
     Ok(())
 }
-/// `&mut`-threaded `pop_cond_node` (§515).
 fn pop_cond_node_in(st: &mut crate::state::EngineState) {
     let p = st.scanner.cond_ptr;
     st.scanner.if_line = st.mem.b32s1(p + 1);

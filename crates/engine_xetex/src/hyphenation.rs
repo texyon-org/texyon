@@ -12,8 +12,6 @@ pub(crate) const BIGGEST_LANG: i32 = 255;
 use crate::consts::{BIGGEST_CHAR, INT_BASE, LC_CODE_BASE, TOO_BIG_CHAR};
 use crate::state::HyphState;
 
-// ---- moved verbatim from ini.rs (workstream 02) ----
-
 #[inline]
 fn trie_op_hash_in(hyph: &HyphState, k: i32) -> i32 {
     hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize]
@@ -31,8 +29,7 @@ pub(crate) enum TrieAbort {
 }
 
 impl TrieAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`trie_abort`] without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             TrieAbort::PatternMemoryOverflow(size) => crate::errors::EngineAbort::Overflow {

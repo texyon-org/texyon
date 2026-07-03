@@ -125,9 +125,6 @@ pub fn new_edge(mem: &mut MemState, s: i16, w: i32) -> i32 {
     p.idx().0
 }
 
-/// What a threaded DVI byte write needs its bridge-down wrapper to do
-/// *after* the `with_state_mut` borrow drops: file I/O and the cold overflow
-/// abort must not run while the thread-local is borrowed (§5 sentinel rule).
 enum DviFlush {
     /// Flush `dvi_buf[a..=b]` to the output file.
     Write(i32, i32),
@@ -135,9 +132,6 @@ enum DviFlush {
     Fatal,
 }
 
-/// Cold `-> !` abort sentinel for threaded shipout helpers: the work is done
-/// under the live state borrow and the divergent abort is fired by the thin
-/// `_global` wrapper after the borrow drops (§5 sentinel rule).
 pub(crate) enum ShipoutAbort {
     /// `confusion("LR2")` — internal LR-consistency failure in `reverse`.
     ConfusionLr2,
@@ -153,15 +147,14 @@ pub(crate) enum ShipoutAbort {
     DviLengthOverflow,
     /// `overflow("main memory size", …)` — movement-node allocation failure.
     MainMemoryOverflow,
-    /// A scanner/tokenizer cold tail bubbled up from a threaded SCC core
+    /// A scanner/tokenizer cold tail bubbled up from a SCC core
     /// (`scan_toks_in`/`get_token_in`/…) called from `write_out`.
     Scc(crate::scan::SccAbort),
-    /// `_tt_abort("cannot open output file …")` — deferred so the message is
-    /// rebuilt from `name_of_file()` after the borrow drops.
+    /// `_tt_abort("cannot open output file …")`
     CannotOpenOutput,
     /// A file-name pool overflow bubbled up from `make_name_string_in`.
     Name(crate::io::NameAbort),
-    /// A native-font measurement cold abort (`01d` §5.6, reached from `make_font_def`).
+    /// A native-font measurement cold abort (reached from `make_font_def`).
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -202,12 +195,12 @@ impl From<crate::texmfmp::MakeTexStringAbort> for ShipoutAbort {
 }
 
 /// Propagate a recoverable-error outcome as a [`ShipoutAbort`]: `Continue`
-/// keeps going, anything else became terminal under the borrow.
+/// keeps going, anything else became terminal.
 fn ship_err(o: crate::errors::ErrorOutcome) -> Result<(), ShipoutAbort> {
     crate::scan::scc_err(o).map_err(ShipoutAbort::Scc)
 }
 
-/// `get_avail` under the borrow with its `ALLOC_FAILED` lifted into the
+/// `get_avail` with its `ALLOC_FAILED` lifted into the
 /// movement/main-memory overflow tail.
 fn get_avail_ship(mem: &mut MemState) -> Result<i32, ShipoutAbort> {
     let p = crate::mem::get_avail(mem);
@@ -217,7 +210,7 @@ fn get_avail_ship(mem: &mut MemState) -> Result<i32, ShipoutAbort> {
     Ok(p)
 }
 
-/// `get_node` under the borrow with its `ALLOC_FAILED` lifted into the
+/// `get_node` with its `ALLOC_FAILED` lifted into the
 /// main-memory overflow tail.
 fn get_node_ship(mem: &mut MemState, s: i32) -> Result<i32, ShipoutAbort> {
     let p = crate::mem::get_node(mem, s);
@@ -228,10 +221,9 @@ fn get_node_ship(mem: &mut MemState, s: i32) -> Result<i32, ShipoutAbort> {
 }
 
 impl ShipoutAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire_shipout_abort` arm-for-arm without longjmp-ing. `MainMemoryOverflow`
+    /// Map to the unified [`EngineAbort`] terminal. `MainMemoryOverflow`
     /// is a plain overflow (no `runaway`). `CannotOpenOutput` rebuilds the message
-    /// from `name_of_file()` (post-borrow) into a leaked heap buffer so the
+    /// from `name_of_file()` into a leaked heap buffer so the
     /// pointer stays valid through `into_history`.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
@@ -251,8 +243,8 @@ impl ShipoutAbort {
             },
             ShipoutAbort::Scc(e) => e.into_engine_abort(),
             ShipoutAbort::CannotOpenOutput => {
-                // The message is formatted in `into_history` from the folded
-                // `st.input.name_of_file` (`01e`), so no state borrow here.
+                // The message is formatted in `into_history` from
+                // `st.input.name_of_file`.
                 crate::errors::EngineAbort::CannotOpenOutput
             }
             ShipoutAbort::Name(e) => e.into_engine_abort(),
@@ -261,9 +253,8 @@ impl ShipoutAbort {
     }
 }
 
-/// Threaded analog of `write_to_dvi_global`: flush `dvi_buf[a..=b]` to the
-/// output file by reading the buffer fields directly under the held borrow.
-/// The cold I/O-failure abort is deferred (§5).
+/// Flush `dvi_buf[a..=b]` to the
+/// output file by reading the buffer fields directly.
 fn write_to_dvi(shipout: &ShipoutState, a: i32, b: i32) -> Result<(), ShipoutAbort> {
     let n = (b - a + 1) as libc::size_t;
     let file = shipout.dvi_file;
@@ -276,7 +267,7 @@ fn write_to_dvi(shipout: &ShipoutState, a: i32, b: i32) -> Result<(), ShipoutAbo
     Ok(())
 }
 
-/// Perform a deferred DVI buffer flush under the held borrow (§5).
+/// Perform a deferred DVI buffer flush.
 fn handle_dvi_flush(shipout: &ShipoutState, flush: Option<DviFlush>) -> Result<(), ShipoutAbort> {
     match flush {
         None => Ok(()),
@@ -285,13 +276,11 @@ fn handle_dvi_flush(shipout: &ShipoutState, flush: Option<DviFlush>) -> Result<(
     }
 }
 
-/// Threaded analog of `dvi_out_global`.
 fn emit_dvi_out(shipout: &mut ShipoutState, c: u8) -> Result<(), ShipoutAbort> {
     let flush = dvi_out(shipout, c);
     handle_dvi_flush(shipout, flush)
 }
 
-/// Threaded analog of `dvi_four_global`.
 fn emit_dvi_four(shipout: &mut ShipoutState, x: i32) -> Result<(), ShipoutAbort> {
     let mut start = 0;
     while start < 4 {
@@ -302,7 +291,6 @@ fn emit_dvi_four(shipout: &mut ShipoutState, x: i32) -> Result<(), ShipoutAbort>
     Ok(())
 }
 
-/// Threaded analog of `dvi_two_global`.
 fn emit_dvi_two(shipout: &mut ShipoutState, s: u16) -> Result<(), ShipoutAbort> {
     let mut start = 0;
     while start < 2 {
@@ -313,7 +301,7 @@ fn emit_dvi_two(shipout: &mut ShipoutState, s: u16) -> Result<(), ShipoutAbort> 
     Ok(())
 }
 
-/// Threaded analog of `movement_global`: build the movement bytes and emit them.
+/// Build the movement bytes and emit them.
 fn emit_movement(
     mem: &mut MemState,
     shipout: &mut ShipoutState,
@@ -492,9 +480,7 @@ pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
 
 // translated from xetex-shipout.c:2306 (dvi_swap)
 //
-// Direct `&mut ShipoutState` buffer-swap bookkeeping. The byte flush and the
-// cold overflow abort are returned to the wrapper instead of run under the
-// borrow. The state updates are reordered before the (deferred) flush, which
+// The state updates are reordered before the (deferred) flush, which
 // is sound: `dvi_limit/offset/ptr/gone` do not affect the bytes being written.
 fn dvi_swap(shipout: &mut ShipoutState) -> DviFlush {
     if shipout.dvi_ptr > TEX_INFINITY - shipout.dvi_offset {
@@ -516,9 +502,8 @@ fn dvi_swap(shipout: &mut ShipoutState) -> DviFlush {
 
 // translated from xetex-shipout.c:71 (dvi_out)
 //
-// Direct `&mut ShipoutState` byte write. Returns the deferred flush action
-// (if the buffer filled) for the bridge-down wrapper to perform after the
-// borrow drops.
+// Byte write. Returns the deferred flush action
+// (if the buffer filled).
 fn dvi_out(shipout: &mut ShipoutState, c: u8) -> Option<DviFlush> {
     let ptr = shipout.dvi_ptr;
     shipout.dvi_buf[ptr as usize] = c;
@@ -651,11 +636,6 @@ pub(crate) unsafe fn ship_out_in(
             crate::io::pack_job_name_in(st, output_file_extension)?;
             st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
             if st.shipout.dvi_file == INVALID_HANDLE {
-                // Propagate as ShipoutAbort instead of the old under-borrow
-                // _tt_abort longjmp (`01d` §5.6): into_engine_abort rebuilds the
-                // "cannot open output file" message from name_of_file() post-borrow
-                // (identical text — name_of_file is unchanged between here and the
-                // catch), so this is behavior-preserving and borrow-safe.
                 return Err(ShipoutAbort::CannotOpenOutput);
             }
             st.shipout.output_file_name = crate::io::make_name_string_in(st)?;
@@ -779,8 +759,7 @@ pub fn dvi_pop(shipout: &mut ShipoutState, l: i32) -> bool {
     }
 }
 
-/// Threaded analog of `dvi_font_def_global`: emit the font definition under the
-/// held borrow.
+/// Emit the font definition.
 fn dvi_font_def_in(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
     let bytes = if st.fonts.font_area_entry(f) == AAT_FONT_FLAG
         || st.fonts.font_area_entry(f) == OTGR_FONT_FLAG
@@ -807,8 +786,7 @@ fn dvi_font_def_in(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shi
     Ok(())
 }
 
-/// Threaded analog of `ensure_dvi_font_global`: select (defining if needed)
-/// the DVI font under the held borrow.
+/// Select (defining if needed) the DVI font.
 fn ensure_dvi_font_in(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
     if f == st.shipout.dvi_f {
         return Ok(());
@@ -1082,7 +1060,6 @@ fn finish_hlist_rule(
     }
 }
 
-/// Threaded analog of `finish_hlist_rule_global` (under the held borrow).
 fn finish_hlist_rule_in(
     st: &mut crate::state::EngineState,
     this_box: i32,
@@ -2029,7 +2006,6 @@ fn finish_vlist_rule(
     }
 }
 
-/// Threaded analog of `finish_vlist_rule_global` (under the held borrow).
 fn finish_vlist_rule_in(
     st: &mut crate::state::EngineState,
     this_box: i32,
@@ -2116,9 +2092,6 @@ unsafe fn print_c_string_here_in(st: &mut crate::state::EngineState, s: *const l
 }
 
 // translated from xetex-shipout.c:2173 (finalize_dvi_file)
-// The legacy no-arg firing wrapper was deleted (`01d` §5.6): its sole caller
-// close_files_and_terminate now calls this `_in` core directly and propagates
-// the ShipoutAbort as EngineAbort (via into_engine_abort) instead of longjmp-ing.
 pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     while st.shipout.cur_s > -1 {
         if st.shipout.cur_s > 0 {
@@ -2315,7 +2288,6 @@ unsafe fn make_xdv_glyph_array_data_in(
 }
 
 // translated from xetex-shipout.c:1470 (reverse)
-// Called by the (now Rust) hlist_out; internal Rust fn.
 pub fn reverse(
     mem: &mut MemState,
     shipout: &mut ShipoutState,
@@ -2655,7 +2627,6 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
 }
 
 // translated from xetex-shipout.c:1930 (special_out)
-// Only called from out_what (Rust) → private.
 fn special_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
     if st.shipout.cur_h != st.shipout.dvi_h {
         let d = st.shipout.cur_h - st.shipout.dvi_h;
@@ -2707,7 +2678,6 @@ fn special_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Ship
 }
 
 // translated from xetex-shipout.c:1976 (write_out)
-// Only called from out_what (Rust) → private.
 fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
     let q = get_avail_ship(&mut st.mem)?;
     st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + b'}' as i32);
@@ -2818,7 +2788,6 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
 }
 
 // translated from xetex-shipout.c:2071 (pic_out)
-// Called from the (now Rust) hlist_out; internal Rust fn.
 pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
     if st.shipout.cur_h != st.shipout.dvi_h {
         let d = st.shipout.cur_h - st.shipout.dvi_h;
@@ -2890,7 +2859,6 @@ pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(
 }
 
 // translated from xetex-shipout.c:1682 (out_what)
-// Only a dead prototype remains in xetex-xetexd.h; internal Rust fn.
 pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
     let sub = WhatsitSubtype::from_raw(st.mem.b16s0(p));
     match sub {

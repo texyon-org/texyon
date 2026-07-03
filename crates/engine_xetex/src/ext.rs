@@ -566,8 +566,7 @@ pub unsafe fn readFeatureNumber(
     s == e
 }
 
-/// translated from xetex-ext.c:173 (print_utf8_str). Threaded core only — the
-/// global wrapper was removed once its callers (the font warnings) threaded.
+/// translated from xetex-ext.c:173 (print_utf8_str).
 pub(crate) fn print_utf8_str_in(
     st: &mut crate::state::EngineState,
     mut str_: *const u8,
@@ -603,7 +602,7 @@ unsafe fn load_mapping_file_in(
             return Err(NativeFontAbort::CouldNotReadMapping);
         }
 
-        // Non-longjmp input-close (`01d` §2.1): the C ttstub_input_close wrapper
+        // Non-longjmp input-close: the C ttstub_input_close wrapper
         // longjmp'd on a serious internal close error; propagate it as an abort.
         if crate::io::input_close(map) {
             return Err(NativeFontAbort::InputClose);
@@ -660,9 +659,6 @@ unsafe fn load_mapping_file_in(
 }
 
 // translated from xetex-ext.c:236 (check_for_tfm_font_mapping)
-// `name_of_file` is read (and the `:mapping=` separator nulled out) through the
-// pointer passed by the `_global` wrapper, which reads `name_of_file()` (itself
-// with_state-bearing) before the call.
 pub(crate) unsafe fn check_for_tfm_font_mapping_in(name_of_file: *mut c_char) {
     let cp = libc::strstr(name_of_file, c":mapping=".as_ptr());
     SAVED_MAPPING_NAME = mfree_ptr(SAVED_MAPPING_NAME);
@@ -721,10 +717,7 @@ pub unsafe fn apply_tfm_font_mapping(cnv: *mut c_void, c: c_int) -> c_int {
     }
 }
 
-// translated from xetex-ext.c:310 (readCommonFeatures). The `#[no_mangle]`
-// C-ABI wrapper was deleted (`01d` §5.6, DEAD set): no live C caller, and the
-// sole live (Rust) caller `find_native_font_in` propagates the mapping-read
-// `NativeFontAbort` directly.
+// translated from xetex-ext.c:310 (readCommonFeatures).
 unsafe fn read_common_features_in(
     st: &mut EngineState,
     feat: *const c_char,
@@ -1389,8 +1382,6 @@ pub unsafe fn ot_font_get_3(
     }
 }
 
-/// `&mut EngineState` core of [`gr_print_font_name`] so a threaded caller
-/// (`conv_toks_in`) can print under the borrow.
 pub(crate) unsafe fn gr_print_font_name_in(
     st: &mut crate::state::EngineState,
     what: i32,
@@ -1446,14 +1437,14 @@ pub unsafe fn gr_font_get_named_1(
     rval as i32
 }
 
-/// Cold-abort sentinel for the native-font measurement layer (`01d` §5.6).
+/// Cold-abort sentinel for the native-font measurement layer.
 ///
 /// Every arm mirrors the former inline `_tt_abort` exactly — no cleanup, sets the
 /// surfaced message, history 3 — via [`EngineAbort::TtAbort`]. The `BadFlag` arms
 /// are internal-consistency checks (`font_area` is neither AAT nor OTGR), which
 /// are *unreachable* for a real native node/font; `LinebreakIterator` /
 /// `CouldNotReadMapping` are genuine resource failures and `InputClose` is the
-/// deferred serious-internal input-close error (`01d` §2.1).
+/// deferred serious-internal input-close error.
 pub(crate) enum NativeFontAbort {
     /// `_tt_abort("bad native font flag in `<fn>`")`.
     BadFlag(*const c_char),
@@ -1462,12 +1453,12 @@ pub(crate) enum NativeFontAbort {
     /// `_tt_abort("could not read mapping file")` — the font mapping `.tec` file
     /// could not be read.
     CouldNotReadMapping,
-    /// The deferred `ttstub_input_close` serious-internal error (`01d` §2.1).
+    /// The deferred `ttstub_input_close` serious-internal error.
     InputClose,
 }
 
 impl NativeFontAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5) — every arm is a
+    /// Map to the unified [`EngineAbort`] terminal — every arm is a
     /// `TtAbort` (the former `_tt_abort`: no cleanup, sets the surfaced message,
     /// returns `HISTORY_FATAL_ERROR`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
@@ -2005,9 +1996,6 @@ pub unsafe fn map_char_to_glyph(
 }
 
 // translated from xetex-ext.c:1278 (map_glyph_to_index)
-// `name` (the glyph name to look up, originally `name_of_file`) is read by the
-// caller *before* the state borrow, since `name_of_file()` is itself
-// `with_state`-bearing and would nest-panic under a live borrow (§4a).
 pub unsafe fn map_glyph_to_index(
     fonts: &crate::state::FontState,
     font: i32,
@@ -2226,10 +2214,6 @@ pub unsafe fn apply_mapping(
     const K_STATUS_OUTPUT_BUFFER_FULL: i64 = 1;
     let txt_bytes = txt_len as u32 * 2; // sizeof(UniChar) == 2
 
-    // Threaded over `&mut FontState` (it only manages the `mapped_text` output
-    // buffer) so it is re-entry-free and can run under a caller's borrow — the
-    // `new_native_character_in` measurer path needs this (the legacy bridge took
-    // its own `with_state` and would nest-panic).
     let mut needed = (txt_bytes + 32) as usize;
     let needed_u16 = needed / 2;
     if fonts.mapped_text.len() < needed_u16 {
@@ -2361,9 +2345,6 @@ pub fn aat_font_get_named_1(_what: c_int, _attributes: *mut c_void, _param: c_in
 pub fn aat_print_font_name(_what: c_int, _attributes: *mut c_void, _param1: c_int, _param2: c_int) {
 }
 
-/// `&mut EngineState` core of [`print_glyph_name`] so a threaded caller
-/// (`conv_toks_in`) can print under the borrow. Reads the font engine from
-/// `st.fonts` directly instead of via `with_state`.
 pub(crate) unsafe fn print_glyph_name_in(
     st: &mut crate::state::EngineState,
     font: i32,
@@ -2502,7 +2483,6 @@ mod tests {
     }
 }
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
 
 // translated from xetex-xetex0.c:11376 (append_src_special)
 pub(crate) fn append_src_special_in(
@@ -2573,9 +2553,9 @@ pub(crate) fn new_write_whatsit_in(
     Ok(())
 }
 // translated from xetex-xetex0.c:9978 (insert_src_special)
-/// Cold-path abort raised by [`insert_src_special_in`] (`01b` §5). Surfaces the
+/// Cold-path abort raised by [`insert_src_special_in`]. Surfaces the
 /// `make_src_special`/`str_toks` pool overflow, the `get_avail` main-memory
-/// overflow, and the `begin_token_list` input abort. No passing test reaches it.
+/// overflow, and the `begin_token_list` input abort.
 pub(crate) enum InsertSrcAbort {
     MakeSrcPool,
     StrToksPool,
@@ -2584,8 +2564,7 @@ pub(crate) enum InsertSrcAbort {
 }
 
 impl InsertSrcAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring
-    /// [`fire`](InsertSrcAbort::fire) without longjmp-ing. `MakeSrcPool` is the
+    /// Map to the unified [`EngineAbort`] terminal. `MakeSrcPool` is the
     /// `fire_make_src_pool_overflow` `_tt_abort`; `MainMemory` runs `runaway`.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
@@ -2605,10 +2584,8 @@ impl From<crate::input::InputAbort> for InsertSrcAbort {
     }
 }
 
-/// `&mut EngineState` core of [`insert_src_special`]: builds the
-/// `\special{src:<line> <file>}` token list under one borrow and inserts it.
-/// `st.mem.line` stays raw `mod raw`; the texmfmp/`str_toks`/`begin_token_list`
-/// callees run threaded under the borrow. Cold aborts ride [`InsertSrcAbort`].
+/// Builds the `\special{src:<line> <file>}` token list and inserts it. Cold
+/// aborts ride [`InsertSrcAbort`].
 ///
 /// translated from xetex-xetex0.c:9966 (insert_src_special)
 pub(crate) fn insert_src_special_in(
@@ -2954,7 +2931,7 @@ fn do_new_write_whatsit_in(
     })
 }
 
-// ---- do_extension consts moved verbatim from scan.rs (workstream 02) ----
+// ---- do_extension consts ----
 
 // xetex_format.h:457–461, 462, 465, 524–533
 const OPEN_NODE_DE: i32 = 0;

@@ -72,8 +72,6 @@ const AAT_FONT_FLAG: i32 = 0xFFFF;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
 const PC_INT_BASE: i32 = 7_826_729;
 
-// ---- moved verbatim from ini.rs (workstream 02) ----
-
 #[inline]
 unsafe fn dump_bytes(
     fmt_out: usize,
@@ -93,8 +91,8 @@ unsafe fn dump_bytes(
     };
 
     if written != byte_len {
-        // A short write returns the abort instead of longjmp-ing under any held
-        // borrow (`01d` §5.3); tt_run_engine turns it into HISTORY_FATAL_ERROR.
+        // A short write returns the abort; tt_run_engine turns it into
+        // HISTORY_FATAL_ERROR.
         return Err(crate::errors::EngineAbort::TtAbort(
             c"could not write format file data".as_ptr(),
         ));
@@ -139,8 +137,7 @@ unsafe fn undump_bytes(
     let byte_len = item_size * nitems;
     let read = ttstub_input_read(fmt_in, ptr, byte_len);
     if read < 0 || read as usize != byte_len {
-        // A short/corrupt read returns the abort instead of longjmp-ing under the
-        // load_fmt_file_in `&mut EngineState` borrow (`01d` §5.4).
+        // A short/corrupt read returns the abort.
         return Err(crate::errors::EngineAbort::TtAbort(
             c"could not read format file data".as_ptr(),
         ));
@@ -224,12 +221,6 @@ unsafe fn undump_upper_u16(
     }
     Ok(true)
 }
-// Threaded core (`01d` §6.1 drain step 5): the whole dump runs under one held
-// `&mut EngineState` borrow. All former `with_state` re-entries fold to direct
-// `st.*` access, `print_*` → `print_*_in`, the globals accessors to their
-// fields, and the two `error()`-outcome sites call `error_in(st)` directly.
-// `dump_*`/`undump_*` are plain file FFI (no state); fatals return `EngineAbort`
-// (no longjmp under the borrow), propagated to `tt_run_engine` (`01d` §5.6).
 pub(crate) unsafe fn store_fmt_file_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::errors::EngineAbort> {
@@ -243,10 +234,9 @@ pub(crate) unsafe fn store_fmt_file_in(
             st.errors.interaction = InteractionMode::Scroll;
         }
         if st.errors.log_opened {
-            // Thread error()'s outcome instead of the error()/finish() longjmp:
             // Continue falls through to the terminal below; a Halt/Hundred outcome
             // propagates as EngineAbort (into_history runs post_error_message and
-            // surfaces the halt message, returns 3) — `01d` §5.6.
+            // surfaces the halt message, returns 3).
             let outcome = crate::errors::error_in(st);
             if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
                 return Err(outcome.into_engine_abort());
@@ -254,11 +244,11 @@ pub(crate) unsafe fn store_fmt_file_in(
         }
 
         st.errors.history = HISTORY_FATAL_ERROR;
-        // Absorb a finalize_dvi_file failure during terminal cleanup (`01d` §5.6).
+        // Absorb a finalize_dvi_file failure during terminal cleanup.
         let _ = crate::io::close_files_and_terminate_in(st);
         ttstub_output_flush(st.shipout.rust_stdout);
         // Cleanup already done above; propagate the terminal (TtAbort runs no
-        // further cleanup in into_history) instead of longjmp-ing (`01d` §5.3).
+        // further cleanup in into_history).
         return Err(crate::errors::EngineAbort::TtAbort(
             c"\\dump inside a group".as_ptr(),
         ));
@@ -301,12 +291,10 @@ pub(crate) unsafe fn store_fmt_file_in(
                 n: st.strings.max_strings - st.strings.init_str_ptr,
             })
         }
-        // Other recycle aborts (main-memory) → EngineAbort, propagated via `?`
-        // through final_cleanup to tt_run_engine (01d §5.6) instead of the old
-        // setjmp-backstopped longjmp. Equivalent per arm: OverflowRunaway runs
+        // Other recycle aborts (main-memory) → EngineAbort: OverflowRunaway runs
         // runaway() then the "main memory size" Overflow (main_memory_overflow_abort),
         // Confusion(msg) → Confusion(msg). (The string-count Overflow above keeps
-        // its distinct "number of strings" message and is unchanged.)
+        // its distinct "number of strings" message.)
         Err(e) => return Err(e.into_engine_abort()),
     };
     st.strings.format_ident = new_format_ident;
@@ -367,7 +355,7 @@ pub(crate) unsafe fn store_fmt_file_in(
     sort_avail_in(&mut st.mem);
     // These mem bookkeeping scalars do not change during the dump; snapshot the
     // immutable ones once and track var_used/dyn_used as locals (written back
-    // below), so the free-list walk holds no per-read borrow.
+    // below).
     let (lo_mem_max, rover, hi_mem_min, mem_end, avail) = (
         st.mem.lo_mem_max,
         st.mem.rover,
@@ -385,8 +373,8 @@ pub(crate) unsafe fn store_fmt_file_in(
     }
 
     // `mem` is now a Rust-owned `Vec`; take a stable base pointer once (the
-    // thread-local owner never reallocates) so the free-list `dump_slice`
-    // calls below hold no borrow. (session 58, the session-51 eqtb pattern.)
+    // thread-local owner never reallocates) for the free-list `dump_slice`
+    // calls below.
     let mem_ptr = st.mem.data.as_ptr();
     let mut p = 0;
     let mut q = rover;
@@ -439,12 +427,11 @@ pub(crate) unsafe fn store_fmt_file_in(
     crate::output::print_int_in(st, dyn_used);
 
     // `eqtb` is now a Rust-owned `Vec`; take a stable base pointer once (the
-    // thread-local owner never reallocates) so the sparse-region `dump_slice`
-    // calls below — interleaved with `eqtb_*` reads — hold no borrow.
+    // thread-local owner never reallocates) for the sparse-region `dump_slice`
+    // calls below.
     let eqtb_ptr = st.eqtb.data.as_ptr();
     // Two eqtb words are "equal" for run-length dumping when their b32.s1 +
-    // b16.s1 + b16.s0 fields all match. Take `st` as a parameter (capture
-    // nothing) so no immutable borrow is held across the mutable tail.
+    // b16.s1 + b16.s0 fields all match.
     let eqtb_words_equal = |st: &crate::state::EngineState, a: i32, b: i32| -> bool {
         // SAFETY: union projection; the `Vec` indices are bounds-checked.
         unsafe {
@@ -517,8 +504,7 @@ pub(crate) unsafe fn store_fmt_file_in(
     // These hash/eqtb scalars are immutable during the dump; snapshot once.
     let hash_high = st.eqtb.hash_high;
     let hash_used = st.eqtb.hash_used;
-    // Read both halves of hash word `p` (offset −514 == HASH_BASE). Takes `st`
-    // as a parameter so no immutable borrow outlives the call.
+    // Read both halves of hash word `p` (offset −514 == HASH_BASE).
     let hash_word = |st: &crate::state::EngineState, p: i32| -> (i32, i32) {
         let w = st.eqtb.hash[(p as usize) - 514];
         (w.s0, w.s1)
@@ -568,9 +554,9 @@ pub(crate) unsafe fn store_fmt_file_in(
     let fmp = st.fonts.fmem_ptr;
     let font_ptr = st.fonts.font_ptr;
     dump_int(fmt_out, fmp)?;
-    // Dump the entire font-table region under the held borrow (`01b` §3). The
-    // interleaved `dump_int`/`dump_slice` are plain file FFI and `fmp`/`font_ptr`
-    // are snapshotted scalars; the dump order is preserved byte-for-byte.
+    // Dump the entire font-table region. The interleaved `dump_int`/`dump_slice`
+    // are plain file FFI and `fmp`/`font_ptr` are snapshotted scalars; the dump
+    // order is preserved byte-for-byte.
     dump_slice(fmt_out, st.fonts.font_info.as_ptr(), fmp)?;
     dump_int(fmt_out, font_ptr)?;
     dump_slice(
@@ -711,10 +697,8 @@ pub(crate) unsafe fn store_fmt_file_in(
             st.errors.help_line[1] = c"It won't work, and only confuses me.".as_ptr();
             st.errors.help_line[0] =
                 c"(Load them at runtime, not as part of the format file.)".as_ptr();
-            // Thread error()'s outcome instead of the error()/finish() longjmp:
             // Continue resumes the font-dump loop; a Halt/Hundred outcome propagates
-            // as EngineAbort (into_history prints + surfaces the halt, returns 3) —
-            // `01d` §5.6.
+            // as EngineAbort (into_history prints + surfaces the halt, returns 3).
             let outcome = crate::errors::error_in(st);
             if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
                 return Err(outcome.into_engine_abort());
@@ -788,9 +772,9 @@ pub(crate) unsafe fn store_fmt_file_in(
     );
     dump_int(fmt_out, trie_max)?;
     dump_int(fmt_out, hyph_start)?;
-    // Snapshot all six trie array base pointers under the held borrow (`01b` §3
-    // snapshot idiom): the arenas never reallocate during dump, so the pointers
-    // stay valid across the FFI `dump_slice`/`dump_int` calls below.
+    // Snapshot all six trie array base pointers: the arenas never reallocate
+    // during dump, so the pointers stay valid across the FFI `dump_slice`/
+    // `dump_int` calls below.
     let (fmt_trie_trl, fmt_trie_tro, fmt_trie_trc, fmt_hyf_distance, fmt_hyf_num, fmt_hyf_next) = (
         st.hyph.trie_trl.as_ptr(),
         st.hyph.trie_tro.as_ptr(),
@@ -841,16 +825,11 @@ pub(crate) unsafe fn store_fmt_file_in(
 pub unsafe fn load_fmt_file(
     st: &mut crate::state::EngineState,
 ) -> Result<bool, crate::errors::EngineAbort> {
-    // Phase-C (`01b` §3) / drain step 4 (`01d` §6.1): the whole load — the
-    // pack-name prelude AND the undump — runs on the caller's held
-    // `&mut EngineState`. `cur_input` is a `mod raw` scalar (borrow-independent);
-    // the file open is plain FFI; `undump_*` return `EngineAbort` instead of
-    // longjmp-ing (`01d` §5.4). The `Result` propagates to `tt_run_engine`.
     {
         let j = st.input.cur_input.loc;
 
-        // pack_buffered_name (xetex-ini.c:590), inlined onto the borrow: copy
-        // the format-default name into name_of_file and set name_length.
+        // pack_buffered_name (xetex-ini.c:590): copy the format-default name
+        // into name_of_file and set name_length.
         let v = tre_TEX_format_default;
         let len = libc::strlen(v);
         st.input.name_of_file.resize(len + 1, 0);
@@ -875,10 +854,6 @@ pub unsafe fn load_fmt_file(
     }
 }
 
-/// Threaded core of [`load_fmt_file`] (`01b` §3): holds one `&mut EngineState`
-/// borrow across the entire format undump, touching every cluster directly.
-/// Bad-format and short-read fatals return `Err(EngineAbort)` (no longjmp under
-/// the borrow); the wrapper propagates them to `tt_run_engine` (`01d` §5.4).
 unsafe fn load_fmt_file_in(
     st: &mut crate::state::EngineState,
     fmt_in: usize,
@@ -1072,9 +1047,8 @@ unsafe fn load_fmt_file_in(
     }
 
     // `mem`/`eqtb`/`hash` are Rust-owned `Vec`s; take a stable mutable base
-    // pointer once (never reallocated under this borrow) for the free-list /
-    // sparse-region `undump_slice` calls, which then interleave with direct
-    // `st.mem.*` / `st.eqtb.*` reads holding no further borrow.
+    // pointer once (never reallocated) for the free-list / sparse-region
+    // `undump_slice` calls.
     let mem_ptr = st.mem.data.as_mut_ptr();
     p = 0;
     q = st.mem.rover;
@@ -1639,7 +1613,7 @@ unsafe fn load_fmt_file_in(
 
     if crate::io::input_close(fmt_in) {
         // The C ttstub_input_close wrapper longjmp'd on this serious internal
-        // close error; propagate it to tt_run_engine as a fatal abort (`01d` §2.1).
+        // close error; propagate it to tt_run_engine as a fatal abort.
         return Err(crate::errors::EngineAbort::TtAbort(
             c"serious internal error closing the format file".as_ptr(),
         ));

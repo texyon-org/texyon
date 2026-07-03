@@ -1,12 +1,7 @@
 //! Box/node packing and list utilities — `hpack`/`vpackage`/`vsplit`/
 //! `vert_break`/`append_to_vlist`/`prune_page_top`/`do_marks` and the
 //! node-recycle utilities `copy_node_list`/`flush_node_list`/`just_copy`/
-//! `just_reverse`. Relocated from `scan.rs` (= xetex0.c's box/node-packing
-//! group) by workstream 02 (module decomposition).
-//!
-//! Transitional home (Decision 3): this is node-layer code destined for the
-//! `node/` tree, which depends on the typed-accessor design of workstream 03
-//! (not yet built). Parked flat here until then.
+//! `just_reverse`.
 
 use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, GLUE_SPEC_SIZE, INT_BASE, KERN_NODE, MATH_NODE,
@@ -217,8 +212,6 @@ const INT_PAR_XETEX_UPWARDS_VP: i32 = 71;
 const INT_PAR_VBADNESS_VP: i32 = 27;
 const DIMEN_PAR_VFUZZ_VP: i32 = 9;
 
-// ---- moved verbatim from scan.rs (workstream 02) ----
-
 fn copy_box_shell(
     mem: &mut crate::state::MemState,
     p: i32,
@@ -389,15 +382,6 @@ pub fn just_copy(
 }
 
 // translated from xetex-xetex0.c:8155 (just_reverse)
-//
-// Phase-C: threaded to `&mut MemState` + `&mut ScannerState`. The mem arena is
-// touched directly; the `cur_dir`/`LR_ptr`/`LR_problems` scanner scalars are
-// read/written as `scanner` fields; `temp_ptr` stays the raw global accessor
-// (safe under the borrow per `01b` §4). Calls the threaded `just_copy`,
-// `flush_node_list`, `new_edge`, `get_avail`, and `free_node`; arena exhaustion
-// and the corrupt-node `confusion` propagate the `01b` §5 [`NodeRecycleAbort`]
-// sentinel. FFI-free (no C++ measurer / `new_native_character` / print /
-// scanner re-entry).
 pub fn just_reverse(
     mem: &mut crate::state::MemState,
     scanner: &mut crate::state::ScannerState,
@@ -510,15 +494,6 @@ pub fn just_reverse(
 }
 
 /// translated from xetex-xetex0.c:765 (flush_node_list)
-///
-/// Phase-C: threaded to `&mut MemState`. Touches the `mem` arena directly,
-/// recurses on itself, and calls the threaded [`crate::mem::free_node`] /
-/// [`crate::mem::delete_glue_ref`] / [`crate::mem::delete_token_ref`]. The two
-/// impossible corrupt-node arms cannot call the `with_state`-bearing
-/// `confusion()` under the borrow, so they return `Err(message)` (the `01b` §5
-/// sentinel) so its caller can perform the abort after the borrow drops.
-/// Recursive-call arguments are precomputed into locals so the immutable
-/// arena read does not overlap the `&mut mem` reborrow.
 pub fn flush_node_list(
     mem: &mut crate::state::MemState,
     mut p: i32,
@@ -712,14 +687,6 @@ pub fn flush_node_list(
     Ok(())
 }
 /// translated from xetex-xetex0.c:953 (copy_node_list)
-///
-/// Phase-C: threaded to `&mut MemState`. Recurses on itself and bottoms out on
-/// the threaded `get_avail`/`get_node`/`copy_native_glyph_info`; allocation
-/// failure and the two impossible corrupt-node `confusion` arms return the
-/// `01b` §5 [`NodeRecycleAbort`] sentinel, which [`copy_node_list_global`]
-/// fires after the borrow drops. Recursive-call arguments are precomputed into
-/// locals to avoid overlapping the `&mut mem` reborrow. Legacy callers use
-/// [`copy_node_list_global`].
 pub fn copy_node_list(
     mem: &mut crate::state::MemState,
     mut p: i32,
@@ -928,17 +895,7 @@ pub fn copy_node_list(
     mem.avail = h;
     Ok(result)
 }
-// ---- moved verbatim from scan.rs (workstream 02) ----
-
 // translated from xetex-xetex0.c:8020 (append_to_vlist)
-//
-// Phase-C: threaded to `&mut MemState` + `&EqtbState`. The mem arena is touched
-// directly; baseline-skip parameters are read as `eqtb` fields; the `cur_list`
-// aux/tail scalars and `temp_ptr` stay raw global accessors (safe under the
-// borrow per `01b` §4). The two glue constructors `new_param_glue`/
-// `new_skip_param` are threaded; arena exhaustion propagates the `01b` §5
-// [`NodeRecycleAbort::Overflow`] sentinel. FFI-free (no measurer / print /
-// scanner re-entry).
 pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord, 
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
@@ -994,8 +951,7 @@ pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord,
     Ok(())
 }
 
-/// `&mut EngineState` core of `append_to_vlist` (`01b` §3): classifies
-/// the raw box halfword then appends it, all under the caller's borrow.
+/// Classifies the raw box halfword then appends it.
 pub(crate) fn append_to_vlist_emit_in(
     st: &mut crate::state::EngineState,
     b: i32,
@@ -1344,7 +1300,7 @@ impl From<NodeRecycleAbort> for VertBreakAbort {
 }
 
 impl VertBreakAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// Map to the unified [`EngineAbort`] terminal, mirroring the
     /// `PageBuildAbort::VertBreak` arms of `fire_page_build_abort`.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
@@ -1354,11 +1310,8 @@ impl VertBreakAbort {
     }
 }
 
-/// `&mut EngineState` form of [`vert_break`]: runs the vertical-break state
-/// machine, emits the infinite-shrinkage diagnostic, and repairs the offending
-/// glue without dropping the caller's state borrow. The cold abort sentinel is
-/// wider than [`NodeRecycleAbort`] only because `error_in` can become terminal
-/// and must finish after the state borrow drops.
+/// Runs the vertical-break state machine, emits the infinite-shrinkage
+/// diagnostic, and repairs the offending glue.
 pub(crate) fn vert_break_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -1703,7 +1656,7 @@ fn print_vsplit_packages_in(st: &mut crate::state::EngineState, outcome: VsplitO
     }
 }
 
-/// Cold abort sentinel for [`vsplit_in`] (`01b` §5).
+/// Cold abort sentinel for [`vsplit_in`].
 pub(crate) enum VsplitAbort {
     Node(NodeRecycleAbort),
     Error(ErrorOutcome),
@@ -1716,7 +1669,7 @@ impl From<NodeRecycleAbort> for VsplitAbort {
 }
 
 impl VsplitAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
+    /// Map to the unified [`EngineAbort`] terminal, mirroring the
     /// `MainControlAbort::Vsplit` arms of `MainControlAbort::fire`.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
@@ -1726,10 +1679,8 @@ impl VsplitAbort {
     }
 }
 
-/// Threaded (Phase C) core (callers use [`vsplit_in`] directly): one borrow
-/// across start/resume; the
-/// over/underfull-vbox and infinite-shrinkage diagnostics print through their
-/// `_in` cores and defer only a terminal `error()` outcome (`01b` §5).
+/// The over/underfull-vbox and infinite-shrinkage diagnostics print through
+/// their `_in` cores.
 pub(crate) fn vsplit_in(
     st: &mut crate::state::EngineState,
     n: i32,
@@ -1860,15 +1811,6 @@ fn prune_discard_node(
 }
 
 /// translated from xetex-xetex0.c:9761 (prune_page_top)
-///
-/// Phase-C: threaded to disjoint `&mut MemState` / `&mut ScannerState` /
-/// `&EqtbState` borrows. Walks the mem arena directly, allocates a split-top
-/// skip glue via the threaded `new_skip_param`, frees discarded nodes via the
-/// threaded `flush_node_list`, and touches `disc_ptr` on `ScannerState`
-/// directly; `temp_ptr` is a raw `mod raw` global (safe under the borrow).
-/// Arena exhaustion and the impossible corrupt-node `confusion` arm return the
-/// `01b` §5 [`NodeRecycleAbort`] sentinel, which [`prune_page_top_global`]
-/// fires after the borrow drops. Legacy callers use [`prune_page_top_global`].
 pub fn prune_page_top(
     mem: &mut crate::state::MemState,
     scanner: &mut crate::state::ScannerState,
@@ -1944,12 +1886,6 @@ pub fn prune_page_top(
     Ok(mem.b32s1(TEMP_HEAD))
 }
 /// translated from xetex-xetex0.c:9817 (do_marks)
-///
-/// Phase-C: threaded to `&mut MemState`. Recurses on itself and bottoms out on
-/// the threaded `free_node` / `delete_token_ref`; `cur_ptr` is a raw `mod raw`
-/// global (safe under the borrow). No cold abort path. Free-function calls that
-/// take a `mem`-derived argument precompute it into a local to avoid overlapping
-/// the `&mut mem` reborrow.
 pub fn do_marks(
     mem: &mut crate::state::MemState,
     scanner: &mut crate::state::ScannerState,
@@ -2566,10 +2502,7 @@ fn hpack_in(
     })
 }
 
-/// Threaded core (Phase C): emit the over/underfull-`\hbox` diagnostic under a
-/// live `&mut EngineState` borrow, so a threaded caller (e.g. the line breaker)
-/// can print it in-order between its per-line islands without dropping the
-/// borrow. Byte-identical to [`print_hpack_diag`].
+/// Emit the over/underfull-`\hbox` diagnostic.
 pub(crate) fn print_hpack_diag_in(
     st: &mut crate::state::EngineState,
     box_ptr: AnyBox,
@@ -2653,11 +2586,8 @@ fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: Any
     end_diagnostic_in(st, true);
 }
 
-/// `&mut EngineState` form of `hpack` for threaded callers (the line breaker):
-/// runs the [`hpack_in`] core and prints any over/underfull-`\hbox` diagnostic
-/// *under the live borrow* (via [`print_hpack_diag_in`]) so log order is
-/// preserved. The cold arena-exhaustion abort is returned, not fired, so the
-/// caller can run it after the borrow drops (§5).
+/// Runs the [`hpack_in`] core and prints any over/underfull-`\hbox` diagnostic
+/// (via [`print_hpack_diag_in`]) so log order is preserved.
 pub(crate) fn hpack_emit_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -2895,8 +2825,7 @@ fn vpackage_in(
     })
 }
 
-/// Threaded core (Phase C): emit the over/underfull-`\vbox` diagnostic under a
-/// live `&mut EngineState` borrow. Byte-identical to [`print_vpack_diag`].
+/// Emit the over/underfull-`\vbox` diagnostic.
 pub(crate) fn print_vpack_diag_in(
     st: &mut crate::state::EngineState,
     box_ptr: AnyBox,
@@ -2966,9 +2895,7 @@ fn print_vpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: Any
     end_diagnostic_in(st, true);
 }
 
-/// Threaded equivalent of [`vpackage`] (`01b` §3): runs [`vpackage_in`] and emits
-/// any over/underfull diagnostic under the held `&mut EngineState` borrow, so a
-/// threaded caller (the `mlist_to_hlist` SCC) can package under one borrow.
+/// Runs [`vpackage_in`] and emits any over/underfull diagnostic.
 pub(crate) fn vpackage_emit_in(
     st: &mut crate::state::EngineState,
     p: i32,

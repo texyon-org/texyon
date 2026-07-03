@@ -5,8 +5,6 @@ use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE, MAX_HALFWORD, TEX_NULL,
 };
 
-// Former C module-level statics, now bridged onto EngineState.shipout
-// (session 46). Thin module-private accessors over the thread-local.
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
 use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, SaNode, WhatsitSubtype};
@@ -70,9 +68,6 @@ pub fn initialize_pagebuilder_variables(st: &mut crate::state::EngineState) {
     st.shipout.page_max_depth = 0;
 }
 
-/// Threaded core (Phase C, bucket B): pure `EqtbState` read + `ShipoutState`
-/// writes, no `with_state`-bearing engine calls. Legacy callers go through
-/// `freeze_page_specs_global`.
 fn freeze_page_specs(eqtb: &EqtbState, shipout: &mut ShipoutState, s: u8) {
     shipout.set_page_contents(s);
     shipout.set_page_so_far(0, eqtb.b32s1(DIMEN_BASE + DIMEN_PAR__vsize));
@@ -87,10 +82,7 @@ fn freeze_page_specs(eqtb: &EqtbState, shipout: &mut ShipoutState, s: u8) {
     shipout.set_least_page_cost(MAX_HALFWORD);
 }
 
-/// Threaded core (Phase C, bucket B): decides whether box register `n` is an
-/// `\hbox` that must be flagged. Pure `EqtbState` / `MemState` reads, no
-/// `with_state`-bearing calls; the cold diagnostic/`box_error` path runs in
-/// `ensure_vbox_global` after the borrow drops.
+/// Decides whether box register `n` is an `\hbox` that must be flagged.
 fn ensure_vbox_is_hbox(eqtb: &EqtbState, mem: &MemState, n: u8) -> bool {
     let p = eqtb.b32s1(BOX_BASE + n as i32);
     if p == TEX_NULL {
@@ -229,8 +221,7 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
 }
 
 impl PageBuildAbort {
-    /// Map to the unified [`EngineAbort`] terminal (`01d` §5.5), mirroring the
-    /// former `fire_page_build_abort` dispatcher arm-for-arm without longjmp-ing.
+    /// Map to the unified [`EngineAbort`] terminal.
     /// `MainMemoryOverflow` is a plain overflow; `MainMemoryOverflowRunaway`
     /// runs `runaway` first.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {

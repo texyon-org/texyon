@@ -331,10 +331,6 @@ pub fn big_op_spacing5(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i3
 }
 
 /// translated from xetex-math.c:170 (fraction_rule)
-///
-/// Phase-C: threaded to `&mut MemState`; bottoms out on the threaded
-/// [`NodePtr::<RuleNode>::alloc`] and propagates its allocation sentinel as
-/// [`NodeRecycleAbort::Overflow`] (`01b` §5).
 pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<NodePtr<RuleNode>, NodeRecycleAbort> {
     let Some(p) = NodePtr::<RuleNode>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
@@ -348,11 +344,9 @@ pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<NodePtr<RuleNode>, No
 
 /// translated from xetex-math.c:181 (overbar)
 ///
-/// Phase-C: threaded to `&mut MemState`. Builds the kern/rule/kern chain
+/// Builds the kern/rule/kern chain
 /// directly through the typed [`alloc_kern_node`]/[`fraction_rule`] handles and
-/// returns its head; with_state-bearing `vpackage` callers run after the borrow
-/// drops (bucket C). Allocation failure propagates the
-/// [`NodeRecycleAbort`] sentinel (`01b` §5).
+/// returns its head.
 pub fn overbar(mem: &mut MemState, b: AnyBox, k: i32, t: i32) -> Result<i32, NodeRecycleAbort> {
     let p = alloc_kern_node(mem, k)?;
     p.set_link(mem, MemPtr::from_idx(b.idx()));
@@ -372,9 +366,6 @@ struct MathGlueInput {
     shrink: i32,
 }
 
-/// `&mut ErrorState` core of [`scaled_mu_value`] (callable under a held borrow):
-/// the `x_over_n`/`mult_and_add`/`xn_over_d` arithmetic touches
-/// `tex_remainder`/`arith_error` directly instead of via `with_state`.
 fn scaled_mu_value_in(errors: &mut crate::state::ErrorState, v: i32, m: i32) -> i32 {
     let mut n = crate::scaled_math::x_over_n_in(errors, m, 65_536);
     let mut f = errors.tex_remainder;
@@ -386,8 +377,7 @@ fn scaled_mu_value_in(errors: &mut crate::state::ErrorState, v: i32, m: i32) -> 
     crate::scaled_math::mult_and_add_in(errors, n, v, xnd, MAX_HALFWORD)
 }
 
-/// Threaded core of [`math_glue_global`]: builds the scaled glue spec for math
-/// glue `g` at `mu` `m` under the caller's `&mut EngineState` borrow.
+/// Builds the scaled glue spec for math glue `g` at `mu` `m`.
 fn math_glue_in(st: &mut EngineState, g: i32, m: i32) -> Result<i32, NodeRecycleAbort> {
     let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(g))
         .expect("non-null math glue spec");
@@ -419,8 +409,7 @@ fn math_glue_in(st: &mut EngineState, g: i32, m: i32) -> Result<i32, NodeRecycle
     )
 }
 
-/// Threaded core of [`math_kern_global`]: scales an explicit math kern under the
-/// caller's `&mut EngineState` borrow.
+/// Scales an explicit math kern.
 fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
     let is_mu_glue = p.subtype(&st.mem) == MU_GLUE;
     let width_val = p.width(&st.mem).0;
@@ -432,8 +421,7 @@ fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
     math_kern(&mut st.mem, p, scaled_width);
 }
 
-/// Borrow-safe equivalent of [`crate::globals::mem_node_addr`]: computes the raw
-/// node address from the held `mem` arena (the global re-enters `with_state`).
+/// Computes the raw node address from the `mem` arena.
 #[inline]
 fn node_addr_in(st: &EngineState, p: i32) -> *mut libc::c_void {
     unsafe { st.mem.data.as_ptr().add(p as usize) as *mut libc::c_void }
@@ -441,8 +429,8 @@ fn node_addr_in(st: &EngineState, p: i32) -> *mut libc::c_void {
 
 fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycleAbort> {
     // Typesafe allocation: `alloc` confines the `from_idx_unchecked` to one
-    // audited site and yields the typed handle directly (`01b` §3a). `None`
-    // is the arena-exhaustion sentinel, mapped to the §5 abort here.
+    // audited site and yields the typed handle directly. `None`
+    // is the arena-exhaustion sentinel, mapped to the abort here.
     let spec = NodePtr::<GlueSpecNode>::alloc(mem).ok_or(NodeRecycleAbort::Overflow)?;
     spec.set_width(mem, Scaled(input.width));
     spec.set_stretch_order(mem, input.stretch_order);
@@ -462,11 +450,9 @@ fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scal
 
 /// translated from xetex-math.c:80 (flush_math)
 ///
-/// Phase C (`01b` §4a bucket B/C): touches the `mem` arena directly through
-/// `&mut MemState` and recycles the two current-list chains via the threaded
-/// [`crate::packaging::flush_node_list`]. The `cur_list` reads/writes go through the
-/// raw `cur_list` global (the deferred Phase-C set — safe under a live borrow).
-/// The two impossible corrupt-node `confusion` arms propagate out as `Err`.
+/// Recycles the two current-list chains via
+/// [`crate::packaging::flush_node_list`]. The two impossible corrupt-node
+/// `confusion` arms propagate out as `Err`.
 pub fn flush_math(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
     let head = cl.head;
     let p1 = mem.b32s1(head);
@@ -479,9 +465,9 @@ pub fn flush_math(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState
     Ok(())
 }
 
-/// translated from xetex-math.c:91 (clean_box). Threaded SCC core: builds the
-/// cleaned hbox for math field `p` at style `s` under the caller's single
-/// `&mut EngineState` borrow, recursing into [`mlist_to_hlist_in`].
+/// translated from xetex-math.c:91 (clean_box). Builds the
+/// cleaned hbox for math field `p` at style `s`,
+/// recursing into [`mlist_to_hlist_in`].
 unsafe fn clean_box_in(st: &mut EngineState, p: i32, s: i16) -> Result<AnyBox, MathBuildAbort> {
     let q;
     match st.mem.b32s1(p) {
@@ -562,10 +548,8 @@ fn clean_box_reset_mu(st: &mut EngineState) {
 }
 
 /// translated from xetex-math.c:115 (fetch)
-/// Deferred-output signal from the threaded [`fetch_core`] (`01b` §4a bucket C):
-/// the cold diagnostic / warning paths cannot run under a live state borrow, so
-/// the core sets the `cur_*` fields directly and returns what `fetch_global`
-/// must emit after the borrow drops.
+/// `fetch_core` sets the `cur_*` fields directly and returns the cold
+/// diagnostic / warning that the caller must emit.
 enum FetchOutcome {
     /// Normal: nothing to emit.
     Ok,
@@ -577,9 +561,9 @@ enum FetchOutcome {
     CharMissing { f: i32, c: i32 },
 }
 
-/// Threaded core (Phase C): set `cur_c` / `cur_f` / `cur_i` for math char `a`
-/// directly from `mem` / `fonts` / `eqtb` / `scanner`. The with_state-bearing
-/// diagnostic and `char_warning` paths are deferred to `fetch_global` via
+/// Sets `cur_c` / `cur_f` / `cur_i` for math char `a`
+/// from `mem` / `fonts` / `eqtb` / `scanner`. The
+/// diagnostic and `char_warning` paths are deferred via
 /// [`FetchOutcome`].
 fn fetch_core(
     mem: &mut MemState,
@@ -624,11 +608,9 @@ fn fetch_core(
     FetchOutcome::Ok
 }
 
-/// Threaded form of [`fetch_global`]: runs [`fetch_core`] and emits its deferred
-/// diagnostic / warning under the held `&mut EngineState` borrow (the print/error
-/// `_in` cores from sessions 182–185), returning the recoverable
-/// [`ErrorOutcome`](crate::errors::ErrorOutcome) so the threaded caller can defer
-/// a non-`Continue` abort to its wrapper (`01b` §5).
+/// Runs [`fetch_core`] and emits its deferred
+/// diagnostic / warning, returning the recoverable
+/// [`ErrorOutcome`](crate::errors::ErrorOutcome).
 fn fetch_in(st: &mut EngineState, a: i32) -> crate::errors::ErrorOutcome {
     use crate::errors::ErrorOutcome;
     match fetch_core(&mut st.mem, &st.fonts, &st.eqtb, &mut st.scanner, a) {
@@ -727,9 +709,6 @@ fn make_vcenter(
     Ok(())
 }
 
-// The session-193 workaround that kept `axis_height` outside the borrow is no
-// longer needed: the OT-math FFI's `tt_get_font_*` callbacks are borrow-free
-// (session 207 mirror), so `axis_height` is safe under the held borrow.
 unsafe fn make_vcenter_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let axis_height = axis_height(&st.fonts, &st.eqtb, st.scanner.cur_size);
     make_vcenter(&mut st.mem, q, axis_height)?;
@@ -761,8 +740,7 @@ fn make_radical_prepare_delimiter(
     (delta.0, x_height, rule_height)
 }
 
-/// translated from xetex-math.c:80 (make_radical). Threaded SCC core: one borrow
-/// across the OT/TFM radical build (the OT readers are borrow-safe, session 207).
+/// translated from xetex-math.c:80 (make_radical).
 unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let q_raw = q.idx().0;
     let f = math_font(
@@ -941,9 +919,9 @@ fn alloc_kern_node(mem: &mut MemState, width: i32) -> Result<NodePtr<KernNode>, 
 }
 
 /// Typed HLIST twin of [`new_null_box`]: confines the family's single
-/// `from_idx_unchecked` to one audited allocator site (`01c` §8) so box-building
+/// `from_idx_unchecked` to one audited allocator site so box-building
 /// callers receive the handle directly instead of re-classifying the `i32`
-/// index. `Err` is the arena-exhaustion sentinel (`01b` §5).
+/// index. `Err` is the arena-exhaustion sentinel.
 fn alloc_null_box(mem: &mut MemState) -> Result<NodePtr<HListNode>, NodeRecycleAbort> {
     let b = new_null_box(mem);
     if b == ALLOC_FAILED {
@@ -1024,7 +1002,7 @@ fn make_op_finish_limits(
     Ok(())
 }
 
-/// translated from xetex-math.c:313 (make_fraction). Threaded SCC core.
+/// translated from xetex-math.c:313 (make_fraction).
 unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let q_raw = q.idx().0;
     if q.thickness(&st.mem) == DEFAULT_CODE {
@@ -1153,16 +1131,8 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
     Ok(())
 }
 
-/// translated from xetex-math.c:270 (make_op). Phase-C orchestrator (bucket
-/// C/D): the clean mem-write clusters run under short disjoint `mem`/`fonts`/
-/// `eqtb`/`scanner` borrows (threaded `new_kern`/`new_null_box`/`free_node` +
-/// threaded `big_op_spacing*`/`axis_height`), while the with_state-bearing
-/// `fetch_global`/`clean_box`/`rebox_global`/OT-math/measurement stay between
-/// borrows. The OT-math glyph-variant/assembly region is left on bridge
-/// accessors (genuinely interleaved with `measure_native_glyph` —
-/// bucket D). Returns the math `delta` italic correction. A cold allocator
-/// exhaustion in the LIMITS tail aborts via `node_recycle_abort` after the
-/// borrow drops (`01b` §5).
+/// translated from xetex-math.c:270 (make_op). Returns the math `delta` italic
+/// correction.
 unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAbort> {
     use crate::errors::ErrorOutcome;
     let q_raw = q.idx().0;
@@ -1202,9 +1172,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
         let x = clean_box_in(st, q_raw + 1, st.scanner.cur_style)?;
         let x_box = x;
 
-        // OT-math glyph variant / assembly selection (now safe under the borrow,
-        // session 207): `measure_native_glyph` is `&FontState`, the `get_ot_*`
-        // FFI reads `font_*` through the borrow-free mirror.
+        // OT-math glyph variant / assembly selection.
         let cur_f = st.scanner.cur_f;
         if st.fonts.font_area_entry(cur_f) == OTGR_FONT_FLAG
             && isOpenTypeMathFont(st.fonts.font_layout_engine_ptr(cur_f))
@@ -1326,23 +1294,18 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
     Ok(delta)
 }
 
-/// Outcome of one threaded [`make_ord_body`] pass (`01b` §4a / §5): the body
-/// runs under a disjoint `mem`/`fonts`/`scanner` borrow, but the `\restart`
-/// re-runs the with_state-bearing `fetch_global`, and allocator exhaustion must
-/// abort after the borrow drops, so it cannot loop or abort itself.
+/// Outcome of one [`make_ord_body`] pass.
 enum MakeOrdStep {
     /// Done — return from `make_ord`.
     Return,
     /// A ligature replaced the nucleus — re-run the `\restart` loop.
     Restart,
-    /// `new_kern` / `new_noad` exhausted the arena — abort after the borrow drops.
+    /// `new_kern` / `new_noad` exhausted the arena.
     Overflow,
 }
 
-/// Threaded core (Phase C, bucket B): the ligature/kern body of `make_ord`,
-/// running entirely on direct `mem` / `fonts` / `scanner` access (no
-/// `with_state`-bearing call). `cur_f` / `cur_i` were already set by the
-/// preceding `fetch_global`. Allocator exhaustion returns `Overflow`.
+/// The ligature/kern body of `make_ord`. `cur_f` / `cur_i` were already set by
+/// the preceding `fetch`. Allocator exhaustion returns `Overflow`.
 fn make_ord_body(
     mem: &mut MemState,
     fonts: &FontState,
@@ -1426,14 +1389,9 @@ fn make_ord_body(
     }
 }
 
-/// translated from xetex-math.c:272 (make_ord). Orchestrator: the early mem
-/// checks + the with_state-bearing `fetch_global` run between borrows; each
-/// `\restart` iteration runs the threaded [`make_ord_body`] under one disjoint
-/// `mem`/`fonts`/`scanner` borrow and aborts a cold allocator overflow after it
-/// drops.
-/// Deferred-abort sentinel for the threaded [`make_ord_in`] (`01b` §5): the
-/// allocator overflow and the recoverable `fetch` error both abort after the
-/// state borrow drops.
+/// translated from xetex-math.c:272 (make_ord).
+/// Abort from [`make_ord_in`]: an allocator overflow or a recoverable `fetch`
+/// error.
 enum MakeOrdAbort {
     Overflow,
     Error(crate::errors::ErrorOutcome),
@@ -1651,8 +1609,7 @@ fn finish_accent_nucleus(mem: &mut MemState, q: NodePtr<Noad>, x: AnyBox, y: Any
     q.set_nucleus_type(mem, SUB_BOX);
 }
 
-/// translated from xetex-math.c:79 (make_math_accent). Threaded SCC core: one
-/// borrow across the AAT/OTGR/TFM accent build (OT readers borrow-safe, session 207).
+/// translated from xetex-math.c:79 (make_math_accent).
 unsafe fn make_math_accent_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
@@ -1893,10 +1850,9 @@ unsafe fn make_math_accent_in(
 }
 
 /// translated from xetex-math.c:275 (attach_hkern_to_new_hlist)
-/// Threaded core (Phase C, bucket B): builds a kern and appends it to the
-/// `new_hlist` of noad `q`, all in `mem`. `new_kern` exhaustion propagates the
-/// `01b` §5 [`NodeRecycleAbort::Overflow`] sentinel; `attach_hkern_to_new_hlist_global`
-/// aborts after the borrow drops.
+/// Builds a kern and appends it to the
+/// `new_hlist` of noad `q`. `new_kern` exhaustion propagates the
+/// [`NodeRecycleAbort::Overflow`] sentinel.
 fn attach_hkern_to_new_hlist(
     mem: &mut MemState,
     q: NodePtr<Noad>,
@@ -2532,8 +2488,6 @@ unsafe fn make_left_right_in(
     Ok((q.noad_type(&st.mem).as_raw() as i32 - (NodeType::LeftNoad.as_raw() as i32 - 20)) as i16)
 }
 
-/// Threaded equivalent of `update_math_style_params` (callable under the held
-/// `&mut EngineState` borrow of the `mlist_to_hlist` SCC).
 #[inline]
 fn update_math_style_params_in(st: &mut EngineState) {
     if st.scanner.cur_style < SCRIPT_STYLE {
@@ -2548,8 +2502,7 @@ fn update_math_style_params_in(st: &mut EngineState) {
 /// First-pass `CHOICE_NODE` handling for [`mlist_to_hlist`]: keep the branch
 /// matching the current style, flush the other three, then stamp the node down
 /// to a style node and splice the kept branch into the main list after it.
-/// Returns any `flush_node_list` confusion message for the caller to raise
-/// after the `mem` borrow drops (`01b` §4a bucket C).
+/// Returns any `flush_node_list` confusion message for the caller to raise.
 fn mlist_choice_node(
     mem: &mut MemState,
     choice: NodePtr<ChoiceNode>,
@@ -2613,7 +2566,7 @@ fn mlist_track_rule(mem: &MemState, rule: NodePtr<RuleNode>, max_h: &mut i32, ma
 }
 
 /// Record the hpacked box `z`'s height/depth into the running maxima and
-/// recycle it (one `mem` borrow; `hpack` itself runs before, bucket C).
+/// recycle it.
 fn mlist_track_box(mem: &mut MemState, z: AnyBox, max_h: &mut i32, max_d: &mut i32) {
     let h = z.height(mem).0;
     let d = z.depth(mem).0;
@@ -2660,8 +2613,8 @@ fn mlist_move_output_node(mem: &mut MemState, tail: i32, node: AnyNode) -> (i32,
 
 /// First-pass noad advance: remember the current noad as `r` with its type,
 /// reset to the outer `style` after a right delimiter, and step `q` to the next
-/// node. Returns the new `(r, r_type, q)`. (`r_type` and `q`'s link are read in
-/// one borrow; the intervening style reset does not touch `mem[q].link`.)
+/// node. Returns the new `(r, r_type, q)`. (`r_type` and `q`'s link are read
+/// together; the intervening style reset does not touch `mem[q].link`.)
 fn mlist_advance_in(st: &mut EngineState, q: i32, style: i16) -> (i32, u16, i32) {
     let r = q;
     let mut r_type = st.mem.b16s1(r);
@@ -2675,11 +2628,8 @@ fn mlist_advance_in(st: &mut EngineState, q: i32, style: i16) -> (i32, u16, i32)
 }
 
 /// translated from xetex-math.c:84 (mlist_to_hlist)
-/// translated from xetex-math.c:84 (mlist_to_hlist). Thin wrapper for the
-/// non-SCC callers (`after_math`/`init_math`/`app_display`): runs the threaded
-/// Threaded SCC core: converts `cur_mlist` to an hlist on `TEMP_HEAD` under a
-/// single `&mut EngineState` borrow, recursing through `clean_box_in`/`make_*_in`
-/// (the OT-math FFI is borrow-safe, session 207).
+/// Converts `cur_mlist` to an hlist on `TEMP_HEAD`,
+/// recursing through `clean_box_in`/`make_*_in`.
 unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
     use crate::errors::ErrorOutcome;
     let mlist = st.scanner.cur_mlist;
@@ -3110,10 +3060,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
     Ok(())
 }
 
-/// Precomputed (outside the `mem` borrow) inputs for the threaded [`char_box`].
-/// Both the native-character allocation and the TFM font-table reads are
-/// `with_state`-bearing, so [`char_box_global`] performs them before borrowing
-/// (bucket C, "precompute font reads outside the mem borrow").
+/// Inputs for [`char_box`].
 enum CharBoxInput {
     /// Native (AAT/OTGR) font: `p` is the `new_native_character` node.
     Native { p: i32 },
@@ -3129,16 +3076,10 @@ enum CharBoxInput {
 
 /// translated from xetex-math.c:1432 (char_box)
 ///
-/// Phase-C: threaded to `&mut MemState`. The `with_state`-bearing work — the
-/// native-character allocation and the TFM font-table reads — is precomputed
-/// into [`CharBoxInput`] by [`char_box_global`] before the borrow. Allocation
-/// failure propagates the [`NodeRecycleAbort`] sentinel (`01b` §5).
-///
-/// Note: on the native branch the `new_native_character` node is now allocated
-/// (in the wrapper) *before* the box, the reverse of the C order, because that
-/// allocation is `with_state`-bearing; only absolute `mem` addresses differ,
-/// which no output (`.xdv`/`.log`) or `mem`-image (TRIP uses TFM fonts only)
-/// path observes.
+/// Note: on the native branch the `new_native_character` node is allocated
+/// *before* the box, the reverse of the C order; only absolute `mem` addresses
+/// differ, which no output (`.xdv`/`.log`) or `mem`-image (TRIP uses TFM fonts
+/// only) path observes.
 fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<AnyBox, NodeRecycleAbort> {
     let bb = AnyBox::HList(alloc_null_box(mem)?);
     let p = match input {
@@ -3178,17 +3119,15 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<AnyBox, NodeRecyc
     Ok(bb)
 }
 
-/// Unified cold-abort sentinel for the threaded math builders (`01b` §5): a
-/// fused-borrow `_in` core may hit either an arena-recycle overflow
+/// Abort from a math builder: either an arena-recycle overflow
 /// ([`NodeRecycleAbort`]) or the native-character build path
-/// ([`NativeCharAbort`]). The wrapper fires the appropriate divergent tail
-/// after the state borrow drops.
+/// ([`NativeCharAbort`]).
 pub(crate) enum MathBuildAbort {
     Recycle(NodeRecycleAbort),
     NativeChar(crate::fonts::NativeCharAbort),
-    /// A recoverable `error()` (from `fetch_in`) went terminal under the borrow.
+    /// A recoverable `error()` (from `fetch_in`) went terminal.
     Error(crate::errors::ErrorOutcome),
-    /// A native-font measurement cold abort (`01d` §5.6).
+    /// A native-font measurement cold abort.
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -3241,10 +3180,7 @@ fn math_build_abort_main(a: MathBuildAbort) -> crate::main_control::MainControlA
     }
 }
 
-/// Threaded core (`01b` §3a): build the char box for `f`/`c` under one borrow.
-/// The native path's `new_native_character_in` and the TFM metric reads are all
-/// `_in`/`&FontState` (no `with_state` re-entry), so the whole build holds the
-/// caller's `&mut EngineState`.
+/// Build the char box for `f`/`c`.
 fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuildAbort> {
     let area = st.fonts.font_area_entry(f);
     // `char_box`/`char_box_tfm` classify the freshly-built box at their creation
@@ -3259,11 +3195,9 @@ fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuild
     }
 }
 
-/// Build a TFM character box under a single `mem`+`fonts` borrow. All the metric
-/// reads (`effective_char` + the width/italic/height/depth table lookups) are
-/// pure `FontState` accesses with no `with_state`-bearing FFI re-entry, so this
-/// is safe to call from inside an existing state borrow (used by
-/// [`build_ext_delimiter_box`]).
+/// Build a TFM character box. The metric reads are `effective_char` plus the
+/// width/italic/height/depth table lookups. Used by
+/// [`build_ext_delimiter_box`].
 fn char_box_tfm(
     mem: &mut MemState,
     fonts: &mut FontState,
@@ -3285,7 +3219,7 @@ fn char_box_tfm(
 
 /// translated from xetex-math.c:1463 (stack_into_box)
 ///
-/// Phase-C: threaded to `&mut MemState`; takes the character box `p` already
+/// Takes the character box `p` already
 /// built by [`char_box_tfm`] (in [`build_ext_delimiter_box`]) and links it.
 fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
     let link = b_box.list_ptr(mem);
@@ -3296,8 +3230,6 @@ fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
 }
 
 /// translated from xetex-math.c:1474 (height_plus_depth)
-///
-/// Phase-C: threaded to `&mut FontState`.
 pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
     let c = crate::fonts::effective_char(fonts, true, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c);
@@ -3307,7 +3239,7 @@ pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
 
 /// Allocate + type-stamp a fresh `GLYPH_NODE` whatsit and hand back its typed
 /// handle. This is the single audited `from_idx_unchecked` construction site for
-/// glyph whatsits (`01c` §8): callers receive a `NodePtr<WhatsitNode>` directly
+/// glyph whatsits: callers receive a `NodePtr<WhatsitNode>` directly
 /// instead of re-deriving one from a raw index via
 /// `classify_whatsit().expect().expect()`.
 fn alloc_glyph_whatsit(mem: &mut MemState) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
@@ -3333,10 +3265,8 @@ fn new_stack_glyph(
 
 /// translated from xetex-math.c:1482 (stack_glyph_into_box)
 ///
-/// Phase-C: the measured glyph node `p` (a typed `GLYPH_NODE` whatsit handle)
-/// is spliced into `b_box` under the caller's `MemState` borrow. The threaded
-/// `stack_glyph_into_box_in` allocates the node, drops the borrow for
-/// `measure_native_glyph`, then links it here.
+/// The measured glyph node `p` (a typed `GLYPH_NODE` whatsit handle)
+/// is spliced into `b_box`.
 pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: NodePtr<WhatsitNode>) {
     if matches!(b_box, AnyBox::HList(_)) {
         let mut q = b_box.list_ptr(mem).0;
@@ -3368,9 +3298,8 @@ pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: NodePtr<Whatsi
     }
 }
 
-/// Threaded core (`01b` §3a): allocate the glyph node, measure it via the
-/// re-entry-free `measure_native_glyph` (`&FontState`, session 187), and splice
-/// it — all under the caller's `&mut EngineState`.
+/// Allocate the glyph node, measure it via
+/// `measure_native_glyph`, and splice it.
 fn stack_glyph_into_box_in(
     st: &mut EngineState,
     b: AnyBox,
@@ -3406,7 +3335,7 @@ fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: NodePtr<Whatsi
     b_box.set_depth(mem, Scaled(d));
 }
 
-/// Threaded core (`01b` §3a): build the single-glyph vbox under one borrow.
+/// Build the single-glyph vbox.
 fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, NodeRecycleAbort> {
     let (b, p) = native_glyph_vbox_start(&mut st.mem, f, g)?;
     let addr = st.mem.data.as_mut_ptr().wrapping_add(p.idx().index()) as *mut std::ffi::c_void;
@@ -3417,11 +3346,6 @@ fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, 
 }
 
 /// translated from xetex-math.c:1517 (stack_glue_into_box)
-///
-/// Phase-C: threaded to `&mut MemState`; bottoms out on the threaded
-/// [`new_spec`]/[`new_glue`] and propagates their [`ALLOC_FAILED`] sentinel as
-/// [`NodeRecycleAbort::Overflow`] (`01b` §5). Legacy callers use
-/// [`stack_glue_into_box_global`].
 fn stack_glue_into_box(
     mem: &mut MemState,
     b_box: AnyBox,
@@ -3462,8 +3386,7 @@ fn stack_glue_into_box(
     Ok(())
 }
 
-/// Threaded core (`01b` §3a): classify `b` and splice the glue under the
-/// caller's `&mut EngineState`.
+/// Classify `b` and splice the glue.
 fn stack_glue_into_box_in(
     st: &mut EngineState,
     b: AnyBox,
@@ -3495,7 +3418,7 @@ fn compute_ot_math_accent_pos_step(mem: &MemState, p: NodePtr<Noad>) -> OtMathAc
     }
 }
 
-/// translated from xetex-math.c:199 (compute_ot_math_accent_pos). Threaded SCC core.
+/// translated from xetex-math.c:199 (compute_ot_math_accent_pos).
 unsafe fn compute_ot_math_accent_pos_in(
     st: &mut EngineState,
     mut p: i32,
@@ -3525,8 +3448,7 @@ unsafe fn compute_ot_math_accent_pos_in(
 }
 
 /// translated from xetex-math.c:388 (scan_delimiter)
-/// The whole delimiter
-/// scan under one borrow over the threaded scanner cores; the recoverable
+/// The recoverable
 /// "Missing delimiter" `back_error` is printed in order then deferred via
 /// [`mc_propagate_error`](crate::main_control::mc_propagate_error).
 pub(crate) fn scan_delimiter_in(
@@ -3717,10 +3639,8 @@ pub(crate) fn append_choices_in(
 
 /// translated from xetex-math.c:545 (fin_mlist)
 ///
-/// Phase C (`01b` §4a bucket C): the mem work + raw `cur_list` reads run under a
-/// single `&mut MemState` borrow. The impossible corrupt-node `confusion`
-/// (`q` not a `LEFT_NOAD`) propagates out as `Err`; the threaded caller then
-/// runs `pop_nest_in` under the same `EngineState` borrow.
+/// The impossible corrupt-node `confusion`
+/// (`q` not a `LEFT_NOAD`) propagates out as `Err`.
 fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr> {
     let q;
     let aux = cl.aux_s1();
@@ -3753,8 +3673,8 @@ fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: 
     Ok(q)
 }
 
-/// `&mut EngineState` core: runs [`fin_mlist`] then `pop_nest_in` under one
-/// borrow, deferring the cold corrupt-node `confusion` via
+/// Runs [`fin_mlist`] then `pop_nest_in`,
+/// deferring the corrupt-node `confusion` via
 /// [`MainControlAbort::Confusion`].
 pub(crate) fn fin_mlist_in(
     st: &mut crate::state::EngineState,
@@ -3785,8 +3705,8 @@ fn build_choices_finish(cl: &mut crate::mem_types::ListStateRecord, mem: &mut Me
     false
 }
 
-/// `&mut EngineState` core: closes one math-choice sublist (`\mathchoice`)
-/// under one borrow. Mirrors `fin_mlist_in`'s fin_mlist+pop_nest, then either
+/// Closes one math-choice sublist (`\mathchoice`).
+/// Mirrors `fin_mlist_in`'s fin_mlist+pop_nest, then either
 /// completes or pushes the next choice group.
 ///
 /// translated from xetex-math.c:571 (build_choices)
@@ -4212,7 +4132,7 @@ fn ext_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
     fonts.font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(fonts, f)
 }
 
-/// translated from xetex-math.c:82 (app_display) — private helper, threaded core.
+/// translated from xetex-math.c:82 (app_display)
 fn app_display_in(
     st: &mut EngineState,
     j: i32,
@@ -4359,8 +4279,6 @@ fn app_display_in(
 }
 
 /// Emit error for insufficient math fonts, flush the math list, set danger.
-/// Threaded core (`01b` §3): font-param checks + recoverable error under one
-/// borrow; the recoverable `error` is deferred via `mc_propagate_error`.
 fn check_math_font_params_in(
     st: &mut EngineState,
     danger: &mut bool,
@@ -5129,9 +5047,9 @@ fn rebox(
     }
 }
 
-/// Threaded core (`01b` §3a): repack box `b` to width `w` under one borrow. The
+/// Repack box `b` to width `w`. The
 /// re-pack and final pack go through [`crate::packaging::hpack_emit_in`] (which
-/// prints any over/underfull diagnostic in-order under the borrow, session 186).
+/// prints any over/underfull diagnostic in-order).
 fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecycleAbort> {
     let mut bb = b;
     if bb.width(&st.mem).0 != w && !bb.list_ptr(&st.mem).is_null() && matches!(bb, AnyBox::VList(_))
@@ -5164,14 +5082,6 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
 }
 
 /// translated from xetex-math.c:1206 (build_opentype_assembly)
-///
-/// Phase-C (`01b` §3a): threaded to a single `&mut EngineState` borrow. The C++
-/// OpenType readers (`ot_min_*`, `ot_part_*`) are raw `extern "C"` calls with no
-/// `with_state` re-entry, and the part-stacking helpers now have `_in` cores
-/// (`stack_glue_into_box_in` / `stack_glyph_into_box_in`, whose native-glyph
-/// measurement is the re-entry-free `&FontState` `measure_native_glyph`, session
-/// 187), so the whole build — box-type set, node-list construction, and the
-/// natural-size measurement + dimension write — runs under one borrow.
 unsafe fn build_opentype_assembly_in(
     st: &mut EngineState,
     f: i32,
@@ -5261,7 +5171,7 @@ unsafe fn build_opentype_assembly_in(
             prev_o = ot_part_end_connector(f, a, i);
         }
     }
-    // Measure natural size and total stretch — pure `mem` reads.
+    // Measure natural size and total stretch.
     let mut p = b.list_ptr(&st.mem).0;
     let mut nat: i32 = 0;
     let mut str: i32 = 0;
@@ -5283,7 +5193,7 @@ unsafe fn build_opentype_assembly_in(
         }
         p = st.mem.b32s1(p);
     }
-    // Write the resolved dimensions — pure `mem` writes through the typed box.
+    // Write the resolved dimensions.
     if s > nat && str > 0 {
         let o = if s - nat > str { str } else { s - nat };
         b.set_glue_order(&mut st.mem, NORMAL);
@@ -5306,18 +5216,12 @@ unsafe fn build_opentype_assembly_in(
     Ok(b)
 }
 
-/// Build the extensible (`EXT_TAG`) delimiter box for [`var_delimiter_global`].
+/// Build the extensible (`EXT_TAG`) delimiter box.
 ///
-/// Phase-C: extensible delimiters are a pure-TFM math-font path — every font
-/// read is a `FontState` table lookup and every char box is built with
-/// [`char_box_tfm`], so there is **no** `with_state`-bearing FFI re-entry. The
-/// whole construction therefore runs under one disjoint `mem`+`fonts` borrow
-/// (taken by the caller in [`var_delimiter_global`]), replacing the ~12
-/// scattered bridge closures the C translation left behind. Allocation order is
-/// preserved (the vlist box first, then each stacked char box), so the mem image
-/// is byte-identical to the inline version. (Unlike the OpenType assembly /
-/// native-glyph paths, this one holds no borrow across a C++ measurer — see
-/// `01b` §4 and the session-135 revert.)
+/// Extensible delimiters are a pure-TFM math-font path: every font read is a
+/// `FontState` table lookup and every char box is built with [`char_box_tfm`].
+/// Allocation order is preserved (the vlist box first, then each stacked char
+/// box), so the mem image is byte-identical to the inline version.
 fn build_ext_delimiter_box(
     mem: &mut MemState,
     fonts: &mut FontState,
@@ -5381,11 +5285,7 @@ fn build_ext_delimiter_box(
 }
 
 /// translated from xetex-math.c:1017 (var_delimiter)
-/// Threaded core (`01b` §3a): pick and build the variable-size delimiter under
-/// one `&mut EngineState` borrow. The font scan reads `eqtb`/`fonts` directly;
-/// the OT readers (`usingOpenType`/`get_ot_*`/`free_ot_assembly`) and
-/// `map_char_to_glyph` are raw `extern "C"` / `&FontState` (no `with_state`
-/// re-entry), and the delimiter builders are the `_in` cores threaded above.
+/// Pick and build the variable-size delimiter.
 unsafe fn var_delimiter_in(
     st: &mut EngineState,
     d: i32,

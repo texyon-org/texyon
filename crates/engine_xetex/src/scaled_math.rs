@@ -5,9 +5,6 @@
 //! these routines, so correctness is paramount. Translations here are
 //! deliberately boring: they match the C source line-for-line,
 //! preserving the same overflow checks and remainder-sign conventions.
-//!
-//! See `plan/04-migration-order.md` Phase 1 for context on why these
-//! functions are the very first ones translated.
 
 extern "C" {}
 
@@ -67,7 +64,6 @@ pub fn half(x: i32) -> i32 {
 // mult_and_add
 // ---------------------------------------------------------------------------
 
-/// `&mut ErrorState` core of `mult_and_add` (callable under a held borrow).
 pub(crate) fn mult_and_add_in(
     errors: &mut crate::state::ErrorState,
     mut n: i32,
@@ -112,8 +108,6 @@ pub(crate) fn mult_and_add_in(
 // x_over_n
 // ---------------------------------------------------------------------------
 
-/// `&mut ErrorState` core of [`x_over_n`] (touches `tex_remainder`/`arith_error`
-/// directly so it is callable under a live state borrow).
 pub fn x_over_n_in(errors: &mut crate::state::ErrorState, mut x: i32, mut n: i32) -> i32 {
     // scaled_t is i32
 
@@ -156,7 +150,6 @@ pub fn x_over_n_in(errors: &mut crate::state::ErrorState, mut x: i32, mut n: i32
 // xn_over_d
 // ---------------------------------------------------------------------------
 
-/// `&mut ErrorState` core of [`xn_over_d`] (callable under a held borrow).
 pub(crate) fn xn_over_d_in(errors: &mut crate::state::ErrorState, x: i32, n: i32, d: i32) -> i32 {
     let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
     if overflowed {
@@ -169,10 +162,6 @@ pub(crate) fn xn_over_d_in(errors: &mut crate::state::ErrorState, x: i32, n: i32
 /// Pure arithmetic core of [`xn_over_d`]: returns
 /// `(quotient, remainder, overflowed)` with **no** global side effects (unlike
 /// `xn_over_d`, which sets `tex_remainder`, and `arith_error` on overflow).
-///
-/// Phase-C callers that compute `xn_over_d` while holding a state borrow use
-/// this and apply the side effects (`set_tex_remainder` / `set_arith_error`)
-/// after the borrow drops — see `fonts::read_font_info`.
 pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
     // scaled_t is i32
 
@@ -542,8 +531,7 @@ pub unsafe fn m_log(st: &mut crate::state::EngineState, mut x: i32) -> i32 {
         st.errors.help_line[1] = c"Since I don't take logs of non-positive numbers,".as_ptr();
         st.errors.help_line[0] =
             c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr();
-        // Dead branch: m_log's only caller (norm_rand) always passes x >= 1 (`01d`
-        // §5.6). Threaded on `st` for the flip; still never executed.
+        // Dead branch: m_log's only caller (norm_rand) always passes x >= 1.
         let _ = crate::errors::error_in(st);
         return 0;
     }
@@ -815,7 +803,6 @@ mod tests {
 // add_or_sub / quotient / fract
 // ---------------------------------------------------------------------------
 
-/// `&mut ErrorState` core of [`add_or_sub`] (callable under a held borrow).
 pub(crate) fn add_or_sub_in(
     errors: &mut crate::state::ErrorState,
     x: i32,
@@ -839,7 +826,6 @@ pub(crate) fn add_or_sub_in(
     }
 }
 
-/// `&mut ErrorState` core of [`quotient`] (callable under a held borrow).
 pub(crate) fn quotient_in(errors: &mut crate::state::ErrorState, mut n: i32, mut d: i32) -> i32 {
     if d == 0 {
         errors.arith_error = true;
@@ -868,7 +854,6 @@ pub(crate) fn quotient_in(errors: &mut crate::state::ErrorState, mut n: i32, mut
     }
 }
 
-/// `&mut ErrorState` core of [`fract`] (callable under a held borrow).
 pub(crate) fn fract_in(
     errors: &mut crate::state::ErrorState,
     mut x: i32,
