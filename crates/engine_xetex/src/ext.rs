@@ -1,4 +1,5 @@
 // translated from xetex-ext.c
+use crate::mem::{xcalloc, xmalloc, xrealloc};
 use crate::state::EngineState;
 
 use crate::consts::{
@@ -60,9 +61,6 @@ static mut SAVED_MAPPING_NAME: *mut c_char = ptr::null_mut();
 
 extern "C" {
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
-    fn xmalloc(size: libc::size_t) -> *mut c_void;
-    fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut c_void;
-    fn xrealloc(ptr: *mut c_void, size: libc::size_t) -> *mut c_void;
     fn xstrdup(s: *const c_char) -> *mut c_char;
     fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;

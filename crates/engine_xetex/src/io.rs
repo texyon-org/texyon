@@ -1,5 +1,6 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
+use crate::mem::{xcalloc, xmalloc};
 use crate::consts::{
     BIGGEST_CHAR, CLOSED, INT_BASE, INT_PAR_END_LINE_CHAR, INVALID_HANDLE, JUST_OPEN, LEFT_BRACE,
     NEW_LINE, OTHER_CHAR, RELAX, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, SPACER,
@@ -153,8 +154,6 @@ pub(crate) unsafe fn input_close(handle: usize) -> bool {
 // ---------------------------------------------------------------------------
 
 extern "C" {
-    fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
-    fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut libc::c_void;
     fn xstrdup(s: *const libc::c_char) -> *mut libc::c_char;
 
     fn ttstub_input_open(
@@ -1194,7 +1193,6 @@ pub(crate) unsafe fn open_log_file_in(
 /// Builds `name_of_file`/`name_length` from the three string-pool components.
 pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i32, a: i32, e: i32) {
     extern "C" {
-        fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     }
 
     let len_a = crate::string_pool::length(&st.strings, a) as usize;

@@ -14,7 +14,6 @@ mod raw {
 }
 
 extern "C" {
-    fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     fn ttstub_get_file_md5(path: *const libc::c_char, digest: *mut u8) -> libc::c_int;
     fn ttbc_get_data_md5(data: *const u8, len: libc::size_t, digest: *mut u8) -> libc::c_int;
     // Bridge I/O functions (tectonic_bridge_core.h).
@@ -29,6 +28,7 @@ extern "C" {
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
 }
 
+use crate::mem::{xmalloc};
 use crate::consts::INVALID_HANDLE;
 
 // TTBC_FILE_FORMAT_TEX = 26 (tectonic_bridge_core_generated.h:94).

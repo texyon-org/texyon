@@ -2,6 +2,7 @@
 //! initialize_* primers, primitive registration, and teardown — translated
 //! from the driver part of xetex-ini.c.
 
+use crate::mem::{xmalloc};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
     DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FONT_BASE, GLUE_BASE, GLUE_NODE,
@@ -37,7 +38,6 @@ static mut TRE_TRIE_SIZE: i32 = 0;
 static mut TRE_HYPH_SIZE: i32 = 0;
 
 extern "C" {
-    fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     static xetex_primitives: XetexPrimitiveDef;
     static xetex_primitives_count: libc::size_t;
     // bridge_core: record a fatal message without longjmp-ing, so the host's

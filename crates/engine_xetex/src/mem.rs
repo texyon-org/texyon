@@ -22,10 +22,36 @@ const EMPTY: i32 = 0; // xetex-constants.h:230
 
 
 // C functions not yet translated — still live in xetex-xetex0.c.
-extern "C" {
+/// Non-longjmp replacements for bridge_core's `xmalloc`/`xcalloc`/`xrealloc`,
+/// which `_tt_abort`/`longjmp` on OOM. These allocate via `libc` and **panic**
+/// on exhaustion; `tt_run_engine`'s `catch_unwind` turns that panic into a
+/// `HISTORY_FATAL_ERROR` return with a surfaced message — the same terminal
+/// outcome as the old longjmp, but without any `longjmp` reaching the engine.
+///
+/// # Safety
+/// The returned pointer is uninitialized C memory (`xcalloc` zeroes it); callers
+/// own it and free it with `libc::free`, exactly as with the C allocators.
+pub(crate) unsafe fn xmalloc(size: libc::size_t) -> *mut libc::c_void {
+    // Mirror bridge_core: `malloc(size ? size : 1)` — a 0-size request still
+    // yields a non-null pointer.
+    let p = libc::malloc(if size == 0 { 1 } else { size });
+    assert!(!p.is_null(), "out of memory: malloc({size} bytes) failed");
+    p
+}
 
-    // bridge_core: tectonic_bridge_core.h:155
-    fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
+pub(crate) unsafe fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut libc::c_void {
+    let p = libc::calloc(if nelem == 0 { 1 } else { nelem }, if elsize == 0 { 1 } else { elsize });
+    assert!(!p.is_null(), "out of memory: calloc({nelem}, {elsize}) failed");
+    p
+}
+
+pub(crate) unsafe fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mut libc::c_void {
+    if ptr.is_null() {
+        return xmalloc(size);
+    }
+    let p = libc::realloc(ptr, if size == 0 { 1 } else { size });
+    assert!(!p.is_null(), "out of memory: realloc({size} bytes) failed");
+    p
 }
 
 // ---------------------------------------------------------------------------

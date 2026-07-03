@@ -1,6 +1,7 @@
 /* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License.
  * Translated to Rust from xetex-synctex.c. */
 
+use crate::mem::{xrealloc};
 use crate::consts::{
     BOX_NODE_SIZE, GLUE_NODE, INT_BASE, INVALID_HANDLE, KERN_NODE, MEDIUM_NODE_SIZE, RULE_NODE,
     RULE_NODE_SIZE,
@@ -26,7 +27,6 @@ extern "C" {
     fn ttstub_issue_error(fmt: *const c_char, ...);
 
     fn xstrdup(s: *const c_char) -> *mut c_char;
-    fn xrealloc(ptr: *mut libc::c_void, size: size_t) -> *mut libc::c_void;
 }
 
 use crate::state::{EqtbState, ShipoutState};
