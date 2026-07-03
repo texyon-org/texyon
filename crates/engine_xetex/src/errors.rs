@@ -26,7 +26,6 @@ const HISTORY_ERROR_ISSUED: i32 = 2;
 extern "C" {
 
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
     /// Set the bridge's abort message without longjmp-ing, so the host's
     /// `EngineAbortedError` surfaces the same string a `_tt_abort` would have
     /// (the fatal return path bypasses `_tt_abort`).

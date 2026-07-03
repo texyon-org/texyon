@@ -6,7 +6,6 @@ use crate::io::u_close;
 
 
 extern "C" {
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
 }
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).

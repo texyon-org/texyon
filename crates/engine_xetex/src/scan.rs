@@ -45,8 +45,6 @@ extern "C" {
 
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
 
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
-
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
 

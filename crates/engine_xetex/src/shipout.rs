@@ -24,7 +24,6 @@ extern "C" {
     fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize;
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t);
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
 
     static output_file_extension: *const libc::c_char;
 }

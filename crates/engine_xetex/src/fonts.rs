@@ -19,7 +19,6 @@ use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, FontState};
 
 extern "C" {
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
     fn ttstub_input_getc(handle: usize) -> libc::c_int;
     fn get_loaded_font_design_size() -> i32;
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;

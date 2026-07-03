@@ -59,7 +59,6 @@ const FONT_FLAGS_COLORED: i32 = 0x01;
 static mut SAVED_MAPPING_NAME: *mut c_char = ptr::null_mut();
 
 extern "C" {
-    fn _tt_abort(fmt: *const c_char) -> !;
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
     fn xmalloc(size: libc::size_t) -> *mut c_void;
     fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut c_void;

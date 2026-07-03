@@ -156,7 +156,6 @@ extern "C" {
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut libc::c_void;
     fn xstrdup(s: *const libc::c_char) -> *mut libc::c_char;
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
 
     fn ttstub_input_open(
         path: *const libc::c_char,

@@ -17,7 +17,6 @@ extern "C" {
     fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     fn ttstub_get_file_md5(path: *const libc::c_char, digest: *mut u8) -> libc::c_int;
     fn ttbc_get_data_md5(data: *const u8, len: libc::size_t, digest: *mut u8) -> libc::c_int;
-    fn _tt_abort(fmt: *const libc::c_char) -> !;
     // Bridge I/O functions (tectonic_bridge_core.h).
     // rust_input_handle_t = uintptr_t = usize; INVALID_HANDLE = 0.
     fn ttstub_input_open(
