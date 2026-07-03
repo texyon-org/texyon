@@ -531,17 +531,20 @@ pub fn new_kern(mem: &mut MemState, w: i32) -> i32 {
 /// translated from xetex-xetex0.c:291 (new_penalty)
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_penalty_global`].
-pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
+/// Typed twin of [`new_penalty`]: allocate a penalty node of value `m` and
+/// return its `NodePtr<PenaltyNode>` handle directly. `None` is the
+/// arena-exhaustion sentinel.
+pub fn alloc_penalty(mem: &mut MemState, m: i32) -> Option<NodePtr<PenaltyNode>> {
     // Typesafe allocation: `alloc` type-stamps NODE_type = PENALTY_NODE and
-    // confines the family's `from_idx_unchecked` (`01b` §3a / `01c` §8). This
-    // body is now `unsafe`-free and fully typed; `None` is the §5 arena-
-    // exhaustion sentinel the `new_penalty_global` wrapper maps to `overflow()`.
-    let Some(p) = NodePtr::<PenaltyNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+    // confines the family's `from_idx_unchecked` (`01b` §3a / `01c` §8).
+    let p = NodePtr::<PenaltyNode>::alloc(mem)?;
     p.set_subtype(mem, 0);
     p.set_penalty(mem, m);
-    p.idx().0
+    Some(p)
+}
+
+pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
+    alloc_penalty(mem, m).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
