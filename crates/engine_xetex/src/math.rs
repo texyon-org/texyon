@@ -1663,7 +1663,7 @@ unsafe fn make_math_accent_in(
         ErrorOutcome::Continue => {}
         other => return Err(MathBuildAbort::Error(other)),
     }
-    let mut x: i32;
+    let mut x: AnyBox;
     let mut ot_assembly_ptr: *mut libc::c_void = std::ptr::null_mut();
     let mut c: i32;
     let f: i32;
@@ -1684,7 +1684,7 @@ unsafe fn make_math_accent_in(
         let clean_style = 2 * (st.scanner.cur_style / 2) + 1;
         let xb = clean_box_in(st, q_raw + 1, clean_style)?;
         (w, h) = box_height_width(&st.mem, xb);
-        x = xb.idx().0;
+        x = xb;
     } else if initial.i.s3 > 0 {
         let mut acc_i = initial.i;
         c = initial.c;
@@ -1732,7 +1732,7 @@ unsafe fn make_math_accent_in(
         let clean_style = 2 * (st.scanner.cur_style / 2) + 1;
         let xb = clean_box_in(st, q_raw + 1, clean_style)?;
         (w, h) = box_height_width(&st.mem, xb);
-        x = xb.idx().0;
+        x = xb;
         loop {
             if acc_i.s1 % 4 != LIST_TAG {
                 break;
@@ -1755,7 +1755,7 @@ unsafe fn make_math_accent_in(
         return Ok(());
     }
 
-    if x == TEX_NULL {
+    if x.idx().0 == TEX_NULL {
         free_ot_assembly(ot_assembly_ptr);
         return Ok(());
     }
@@ -1779,10 +1779,10 @@ unsafe fn make_math_accent_in(
 
     let needs_reclean = accent_base_needs_reclean(&st.mem, q);
     if needs_reclean {
-        move_accent_base_scripts_to_mlist(&mut st.mem, q, x)?;
+        move_accent_base_scripts_to_mlist(&mut st.mem, q, x.idx().0)?;
         let xb = clean_box_in(st, q_raw + 1, st.scanner.cur_style)?;
         let new_h = xb.height(&st.mem).0;
-        x = xb.idx().0;
+        x = xb;
         delta += new_h - h;
         h = new_h;
     }
@@ -1873,11 +1873,11 @@ unsafe fn make_math_accent_in(
 
     // `x` was proven non-null at the top guard; classify it once here and reuse
     // the handle across both accent-stacking branches.
-    let x_box = classify_box_or_panic(&st.mem, x);
+    let x_box = x;
     zero_box_width(&mut st.mem, y);
     if bottom_accent {
         link_bottom_accent_stack(&mut st.mem, x_box, y);
-        let y_box = crate::packaging::vpackage_emit_in(st, x, 0, ADDITIONAL, MAX_HALFWORD)?;
+        let y_box = crate::packaging::vpackage_emit_in(st, x.idx().0, 0, ADDITIONAL, MAX_HALFWORD)?;
         let y_height = y_box.height(&st.mem).0;
         y_box.set_shift_amount(&mut st.mem, Scaled(-(h - y_height)));
         finish_accent_nucleus(&mut st.mem, q, x_box, y_box);
