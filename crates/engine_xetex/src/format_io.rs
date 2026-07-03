@@ -964,8 +964,8 @@ unsafe fn load_fmt_file_in(
         ));
     }
 
-    crate::globals::set_cur_list_head(CONTRIB_HEAD);
-    crate::globals::set_cur_list_tail(CONTRIB_HEAD);
+    st.input.cur_list.head = CONTRIB_HEAD;
+    st.input.cur_list.tail = CONTRIB_HEAD;
     st.shipout.page_tail = PAGE_HEAD;
     // `xmalloc_array(MEM_TOP)` allocated `MEM_TOP + 1` words; match it.
     let mem_words_load = (MEM_TOP as usize) + 1;

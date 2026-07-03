@@ -5,11 +5,6 @@ use crate::consts::{
     PENALTY_NODE, RULE_NODE,
 };
 use crate::ext::real_get_native_glyph;
-use crate::globals::{
-    cur_list_aux_b32s1, cur_list_e_tex_aux, cur_list_head, cur_list_mode,
-    cur_list_prev_graf, cur_list_tail, set_cur_list_aux_b32s0, set_cur_list_aux_b32s1,
-    set_cur_list_e_tex_aux, set_cur_list_mode, set_cur_list_prev_graf, set_cur_list_tail,
-    };
 use crate::mem::{
     free_node, get_avail, get_node, new_choice, new_glue, new_kern, new_noad, new_null_box,
     new_spec, ALLOC_FAILED, TEX_NULL,
@@ -502,15 +497,15 @@ fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scal
 /// [`crate::packaging::flush_node_list`]. The `cur_list` reads/writes go through the
 /// raw `cur_list` global (the deferred Phase-C set — safe under a live borrow).
 /// The two impossible corrupt-node `confusion` arms propagate out as `Err`.
-pub fn flush_math(mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
-    let head = cur_list_head();
+pub fn flush_math(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
+    let head = cl.head;
     let p1 = mem.b32s1(head);
     crate::packaging::flush_node_list(mem, p1)?;
-    let p2 = cur_list_aux_b32s1();
+    let p2 = cl.aux_s1();
     crate::packaging::flush_node_list(mem, p2)?;
     mem.set_b32s1(head, TEX_NULL);
-    set_cur_list_tail(head);
-    set_cur_list_aux_b32s1(TEX_NULL);
+    cl.tail = head;
+    cl.set_aux_s1(TEX_NULL);
     Ok(())
 }
 
@@ -3682,9 +3677,9 @@ pub(crate) fn start_eq_no_in(
 }
 
 /// translated from xetex-math.c:368 (math_limit_switch)
-fn apply_math_limit_switch(mem: &mut MemState, limit: u16) -> bool {
-    let tail = cur_list_tail();
-    if cur_list_head() != tail && mem.b16s1(tail) == OP_NOAD {
+fn apply_math_limit_switch(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, limit: u16) -> bool {
+    let tail = cl.tail;
+    if cl.head != tail && mem.b16s1(tail) == OP_NOAD {
         // SAFETY: the `NODE_type == OP_NOAD` check just proved this is an op noad.
         let noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(tail)) };
         noad.set_subtype(mem, limit);
@@ -3697,7 +3692,7 @@ fn apply_math_limit_switch(mem: &mut MemState, limit: u16) -> bool {
 pub(crate) fn math_limit_switch_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    if apply_math_limit_switch(&mut st.mem, st.scanner.cur_chr as u16) {
+    if apply_math_limit_switch(&mut st.input.cur_list, &mut st.mem, st.scanner.cur_chr as u16) {
         return Ok(());
     }
     crate::output::error_here_with_diagnostic_in(
@@ -3712,12 +3707,12 @@ pub(crate) fn math_limit_switch_in(
 }
 
 /// translated from xetex-math.c:461 (math_radical)
-fn append_radical_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+fn append_radical_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let Some(node) = NodePtr::<Noad>::alloc_radical(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
-    mem.set_b32s1(cur_list_tail(), node.idx().0);
-    set_cur_list_tail(node.idx().0);
+    mem.set_b32s1(cl.tail, node.idx().0);
+    cl.tail = node.idx().0;
     node.set_subtype(mem, NORMAL);
     node.set_nucleus_type(mem, EMPTY);
     node.set_nucleus_field(mem, TEX_NULL);
@@ -3731,13 +3726,13 @@ fn append_radical_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleA
 pub(crate) fn math_radical_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    let tail = append_radical_noad(&mut st.mem)?;
+    let tail = append_radical_noad(&mut st.input.cur_list, &mut st.mem)?;
     scan_delimiter_in(st, tail.delimiter_addr(), true)?;
     crate::scan::scan_math_in(st, tail.idx().0 + 1)
 }
 
 /// translated from xetex-math.c:533 (append_choices)
-fn append_choices_core(
+fn append_choices_core(cl: &mut crate::mem_types::ListStateRecord, 
     mem: &mut MemState,
     save_stack: &mut SaveStackState,
 ) -> Result<(), NodeRecycleAbort> {
@@ -3745,8 +3740,8 @@ fn append_choices_core(
     if choice == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b32s1(cur_list_tail(), choice);
-    set_cur_list_tail(mem.b32s1(cur_list_tail()));
+    mem.set_b32s1(cl.tail, choice);
+    cl.tail = mem.b32s1(cl.tail);
     save_stack.save_ptr += 1;
     save_stack.set_b32s1(save_stack.save_ptr - 1, 0);
     Ok(())
@@ -3755,7 +3750,7 @@ fn append_choices_core(
 pub(crate) fn append_choices_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    append_choices_core(&mut st.mem, &mut st.save_stack)?;
+    append_choices_core(&mut st.input.cur_list, &mut st.mem, &mut st.save_stack)?;
     crate::main_control::push_math_in(st, MATH_CHOICE_GROUP)?;
     crate::scan::scan_left_brace_in(st)?;
     Ok(())
@@ -3767,13 +3762,13 @@ pub(crate) fn append_choices_in(
 /// single `&mut MemState` borrow. The impossible corrupt-node `confusion`
 /// (`q` not a `LEFT_NOAD`) propagates out as `Err`; the threaded caller then
 /// runs `pop_nest_in` under the same `EngineState` borrow.
-fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr> {
+fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr> {
     let q;
-    let aux = cur_list_aux_b32s1();
+    let aux = cl.aux_s1();
     if aux != TEX_NULL {
         let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
         aux_noad.set_subscr_type(mem, SUB_MLIST);
-        let head_link = mem.b32s1(cur_list_head());
+        let head_link = mem.b32s1(cl.head);
         aux_noad.set_subscr_field(mem, head_link);
         if p == TEX_NULL {
             q = aux;
@@ -3781,7 +3776,7 @@ fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr>
             q = aux_noad.supscr_field(mem);
             let q_idx = MemIdx::new(q);
             let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
-            let etex_aux = cur_list_e_tex_aux();
+            let etex_aux = cl.e_tex_aux;
             if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
                 return Err(c"right");
             }
@@ -3793,8 +3788,8 @@ fn fin_mlist(mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr>
             aux_noad.set_link(mem, MemPtr::from_raw(p));
         }
     } else {
-        mem.set_b32s1(cur_list_tail(), p);
-        q = mem.b32s1(cur_list_head());
+        mem.set_b32s1(cl.tail, p);
+        q = mem.b32s1(cl.head);
     }
     Ok(q)
 }
@@ -3806,14 +3801,14 @@ pub(crate) fn fin_mlist_in(
     st: &mut crate::state::EngineState,
     p: i32,
 ) -> Result<i32, crate::main_control::MainControlAbort> {
-    let q = fin_mlist(&mut st.mem, p).map_err(crate::main_control::MainControlAbort::Confusion)?;
+    let q = fin_mlist(&mut st.input.cur_list, &mut st.mem, p).map_err(crate::main_control::MainControlAbort::Confusion)?;
     crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
     Ok(q)
 }
 
 /// translated from xetex-math.c:571 (build_choices)
-fn build_choices_finish(mem: &mut MemState, save_stack: &mut SaveStackState, p: i32) -> bool {
-    let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cur_list_tail())) };
+fn build_choices_finish(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, save_stack: &mut SaveStackState, p: i32) -> bool {
+    let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cl.tail)) };
     let p_ptr = MemPtr::from_raw(p);
     match save_stack.b32s1(save_stack.save_ptr - 1) {
         0 => tail.set_display_mlist(mem, p_ptr),
@@ -3840,10 +3835,10 @@ pub(crate) fn build_choices_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     crate::save::unsave_in(st)?;
-    let p = fin_mlist(&mut st.mem, TEX_NULL)
+    let p = fin_mlist(&mut st.input.cur_list, &mut st.mem, TEX_NULL)
         .map_err(crate::main_control::MainControlAbort::Confusion)?;
     crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
-    let complete = build_choices_finish(&mut st.mem, &mut st.save_stack, p);
+    let complete = build_choices_finish(&mut st.input.cur_list, &mut st.mem, &mut st.save_stack, p);
     if complete {
         return Ok(());
     }
@@ -3858,17 +3853,17 @@ enum ScriptDuplication {
     Subscript,
 }
 
-fn prepare_sub_sup(
+fn prepare_sub_sup(cl: &mut crate::mem_types::ListStateRecord, 
     mem: &mut MemState,
     cmd: u8,
 ) -> Result<(i32, Option<ScriptDuplication>), NodeRecycleAbort> {
     let mut t = EMPTY;
     let mut p = TEX_NULL;
 
-    if cur_list_tail() != cur_list_head() {
-        let node_type = mem.b16s1(cur_list_tail());
+    if cl.tail != cl.head {
+        let node_type = mem.b16s1(cl.tail);
         if (16..LEFT_NOAD).contains(&node_type) {
-            p = cur_list_tail() + 2 + cmd as i32 - 7;
+            p = cl.tail + 2 + cmd as i32 - 7;
             t = mem.b32s1(p);
         }
     }
@@ -3879,9 +3874,9 @@ fn prepare_sub_sup(
         if noad == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        mem.set_b32s1(cur_list_tail(), noad);
-        set_cur_list_tail(mem.b32s1(cur_list_tail()));
-        p = cur_list_tail() + 2 + cmd as i32 - 7;
+        mem.set_b32s1(cl.tail, noad);
+        cl.tail = mem.b32s1(cl.tail);
+        p = cl.tail + 2 + cmd as i32 - 7;
         if t != EMPTY {
             duplicate = Some(if cmd == SUP_MARK {
                 ScriptDuplication::Superscript
@@ -3897,7 +3892,7 @@ pub(crate) fn sub_sup_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     let cmd = st.scanner.cur_cmd;
-    let (p, duplicate) = prepare_sub_sup(&mut st.mem, cmd)?;
+    let (p, duplicate) = prepare_sub_sup(&mut st.input.cur_list, &mut st.mem, cmd)?;
     if let Some(duplicate) = duplicate {
         match duplicate {
             ScriptDuplication::Superscript => {
@@ -3917,14 +3912,14 @@ pub(crate) fn sub_sup_in(
 }
 
 /// translated from xetex-math.c:644 (math_fraction)
-fn start_fraction_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+fn start_fraction_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let Some(fraction) = NodePtr::<Noad>::alloc_fraction(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
-    set_cur_list_aux_b32s1(fraction.idx().0);
+    cl.set_aux_s1(fraction.idx().0);
     fraction.set_subtype(mem, NORMAL);
     fraction.set_supscr_type(mem, SUB_MLIST);
-    fraction.set_supscr_field(mem, mem.b32s1(cur_list_head()));
+    fraction.set_supscr_field(mem, mem.b32s1(cl.head));
     fraction.set_subscr_type(mem, EMPTY);
     fraction.set_subscr_field(mem, TEX_NULL);
 
@@ -3940,13 +3935,13 @@ fn start_fraction_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleA
     mem.set_b16s1(delim_r, 0);
     mem.set_b16s0(delim_r, 0);
 
-    mem.set_b32s1(cur_list_head(), TEX_NULL);
-    set_cur_list_tail(cur_list_head());
+    mem.set_b32s1(cl.head, TEX_NULL);
+    cl.tail = cl.head;
     Ok(fraction)
 }
 
-fn finish_fraction_rule(mem: &mut MemState, c: i32, rule_thickness: i32) {
-    if let Some(aux) = MemPtr(cur_list_aux_b32s1()).as_idx() {
+fn finish_fraction_rule(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, c: i32, rule_thickness: i32) {
+    if let Some(aux) = MemPtr(cl.aux_s1()).as_idx() {
         if let Ok(Some(fraction)) = mem.classify_noad(aux) {
             match c % DELIMITED_CODE {
                 ABOVE_CODE => fraction.set_thickness(mem, rule_thickness),
@@ -3963,7 +3958,7 @@ pub(crate) fn math_fraction_in(
 ) -> Result<(), crate::main_control::MainControlAbort> {
     let c = st.scanner.cur_chr;
 
-    if cur_list_aux_b32s1() != TEX_NULL {
+    if st.input.cur_list.aux_s1() != TEX_NULL {
         if c >= DELIMITED_CODE {
             scan_delimiter_in(st, GARBAGE, false)?;
             scan_delimiter_in(st, GARBAGE, false)?;
@@ -3987,7 +3982,7 @@ pub(crate) fn math_fraction_in(
             c"means `{x \\over y} \\over z' or `x \\over {y \\over z}'.".as_ptr();
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     } else {
-        let aux = start_fraction_noad(&mut st.mem)?;
+        let aux = start_fraction_noad(&mut st.input.cur_list, &mut st.mem)?;
 
         if c >= DELIMITED_CODE {
             scan_delimiter_in(st, aux.fraction_left_delimiter_addr(), false)?;
@@ -4000,17 +3995,17 @@ pub(crate) fn math_fraction_in(
         } else {
             0
         };
-        finish_fraction_rule(&mut st.mem, c, rule_thickness);
+        finish_fraction_rule(&mut st.input.cur_list, &mut st.mem, c, rule_thickness);
     }
     Ok(())
 }
 
-fn append_accent_noad(mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+fn append_accent_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let Some(accent) = NodePtr::<Noad>::alloc_accent(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
-    mem.set_b32s1(cur_list_tail(), accent.idx().0);
-    set_cur_list_tail(accent.idx().0);
+    mem.set_b32s1(cl.tail, accent.idx().0);
+    cl.tail = accent.idx().0;
     accent.set_subtype(mem, NORMAL);
     accent.set_nucleus_type(mem, EMPTY);
     accent.set_nucleus_field(mem, TEX_NULL);
@@ -4067,13 +4062,13 @@ fn mark_middle_noad(mem: &mut MemState, p: NodePtr<Noad>) {
     p.set_subtype(mem, 1);
 }
 
-fn finish_left_right_group(mem: &mut MemState, q: i32, p: i32) {
-    mem.set_b32s1(cur_list_head(), q);
-    set_cur_list_tail(p);
-    set_cur_list_e_tex_aux(p);
+fn finish_left_right_group(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: i32, p: i32) {
+    mem.set_b32s1(cl.head, q);
+    cl.tail = p;
+    cl.e_tex_aux = p;
 }
 
-fn append_inner_noad_for_right(mem: &mut MemState, q: i32) -> Result<(), NodeRecycleAbort> {
+fn append_inner_noad_for_right(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: i32) -> Result<(), NodeRecycleAbort> {
     let Some(inner) = NodePtr::<Noad>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
@@ -4085,8 +4080,8 @@ fn append_inner_noad_for_right(mem: &mut MemState, q: i32) -> Result<(), NodeRec
     inner.set_subscr_type(mem, EMPTY);
     inner.set_subscr_field(mem, TEX_NULL);
 
-    mem.set_b32s1(cur_list_tail(), inner.idx().0);
-    set_cur_list_tail(inner.idx().0);
+    mem.set_b32s1(cl.tail, inner.idx().0);
+    cl.tail = inner.idx().0;
     inner.set_noad_type(mem, NodeType::InnerNoad);
     inner.set_nucleus_type(mem, SUB_MLIST);
     inner.set_nucleus_field(mem, q);
@@ -4132,9 +4127,9 @@ pub(crate) fn math_left_right_in(
         };
         if t != RIGHT_NOAD {
             crate::main_control::push_math_in(st, MATH_LEFT_GROUP)?;
-            finish_left_right_group(&mut st.mem, q, p.idx().0);
+            finish_left_right_group(&mut st.input.cur_list, &mut st.mem, q, p.idx().0);
         } else {
-            append_inner_noad_for_right(&mut st.mem, q)?;
+            append_inner_noad_for_right(&mut st.input.cur_list, &mut st.mem, q)?;
         }
     }
     Ok(())
@@ -4178,7 +4173,7 @@ pub(crate) fn math_ac_in(
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     }
 
-    let tail = append_accent_noad(&mut st.mem)?;
+    let tail = append_accent_noad(&mut st.input.cur_list, &mut st.mem)?;
 
     if st.scanner.cur_chr == 1 {
         if crate::scan::scan_keyword_in(st, c"fixed".as_ptr())? {
@@ -4218,10 +4213,10 @@ pub(crate) fn resume_after_display_in(
     }
 
     crate::save::unsave_in(st)?;
-    set_cur_list_prev_graf(cur_list_prev_graf() + 3);
+    st.input.cur_list.prev_graf = st.input.cur_list.prev_graf + 3;
     crate::mem::push_nest_in(st)?;
-    set_cur_list_mode(HMODE);
-    set_cur_list_aux_b32s0(1000);
+    st.input.cur_list.mode = HMODE;
+    st.input.cur_list.set_aux_s0(1000);
 
     let lang = st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE);
     let cl: u8 = if lang <= 0 || lang > BIGGEST_LANG {
@@ -4230,11 +4225,11 @@ pub(crate) fn resume_after_display_in(
         lang as u8
     };
     st.hyph.cur_lang = cl;
-    set_cur_list_aux_b32s1(cl as i32);
+    st.input.cur_list.set_aux_s1(cl as i32);
 
     let lhm = crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as i32;
     let rhm = crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
-    set_cur_list_prev_graf((lhm * 64 + rhm) * 65536 + cl as i32);
+    st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + cl as i32;
 
     crate::scan::get_x_token_in(st)?;
     if st.scanner.cur_cmd != SPACER {
@@ -4426,7 +4421,7 @@ fn check_math_font_params_in(
         st.errors.help_line[1] = c"and \\scriptfont 2 and \\scriptscriptfont 2 have all".as_ptr();
         st.errors.help_line[0] = c"the \\fontdimen values needed in math symbol fonts.".as_ptr();
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
-        flush_math(&mut st.mem).map_err(MainControlAbort::Confusion)?;
+        flush_math(&mut st.input.cur_list, &mut st.mem).map_err(MainControlAbort::Confusion)?;
         *danger = true;
     } else if !ext_font_ok(&st.fonts, &st.eqtb, TEXT_SIZE)
         || !ext_font_ok(&st.fonts, &st.eqtb, SCRIPT_SIZE)
@@ -4442,7 +4437,7 @@ fn check_math_font_params_in(
         st.errors.help_line[1] = c"and \\scriptfont 3 and \\scriptscriptfont 3 have all".as_ptr();
         st.errors.help_line[0] = c"the \\fontdimen values needed in math extension fonts.".as_ptr();
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
-        flush_math(&mut st.mem).map_err(MainControlAbort::Confusion)?;
+        flush_math(&mut st.input.cur_list, &mut st.mem).map_err(MainControlAbort::Confusion)?;
         *danger = true;
     }
     Ok(())
@@ -4456,20 +4451,20 @@ pub(crate) fn after_math_in(
 
     let mut danger = false;
 
-    let mut j = if cur_list_mode() == MMODE {
-        cur_list_e_tex_aux()
+    let mut j = if st.input.cur_list.mode == MMODE {
+        st.input.cur_list.e_tex_aux
     } else {
         TEX_NULL
     };
 
     check_math_font_params_in(st, &mut danger)?;
 
-    let mut m = cur_list_mode() as i32;
+    let mut m = st.input.cur_list.mode as i32;
     let mut l = false;
     let mut p = fin_mlist_in(st, TEX_NULL)?;
 
     let a;
-    if cur_list_mode() as i32 == -m {
+    if st.input.cur_list.mode as i32 == -m {
         // eTeX display math: second `$$` ends an inner display
         crate::scan::get_x_token_in(st)?;
         if st.scanner.cur_cmd != MATH_SHIFT {
@@ -4499,15 +4494,15 @@ pub(crate) fn after_math_in(
         }
         danger = false;
 
-        j = if cur_list_mode() == MMODE {
-            cur_list_e_tex_aux()
+        j = if st.input.cur_list.mode == MMODE {
+            st.input.cur_list.e_tex_aux
         } else {
             TEX_NULL
         };
 
         check_math_font_params_in(st, &mut danger)?;
 
-        m = cur_list_mode() as i32;
+        m = st.input.cur_list.mode as i32;
         p = fin_mlist_in(st, TEX_NULL)?;
     } else {
         a = TEX_NULL;
@@ -4520,23 +4515,23 @@ pub(crate) fn after_math_in(
         if node == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(cur_list_tail(), node);
-        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+        st.mem.set_b32s1(st.input.cur_list.tail, node);
+        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
         st.scanner.cur_mlist = p;
         st.scanner.cur_style = TEXT_STYLE;
-        st.scanner.mlist_penalties = cur_list_mode() > 0;
+        st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
         unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
-        st.mem.set_b32s1(cur_list_tail(), st.mem.b32s1(TEMP_HEAD));
-        while st.mem.b32s1(cur_list_tail()) != TEX_NULL {
-            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+        st.mem.set_b32s1(st.input.cur_list.tail, st.mem.b32s1(TEMP_HEAD));
+        while st.mem.b32s1(st.input.cur_list.tail) != TEX_NULL {
+            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
         }
         let node2 = crate::mem::new_math(&mut st.mem, math_surround, AFTER);
         if node2 == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(cur_list_tail(), node2);
-        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
-        set_cur_list_aux_b32s0(1000);
+        st.mem.set_b32s1(st.input.cur_list.tail, node2);
+        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+        st.input.cur_list.set_aux_s0(1000);
 
         if st.config.semantic_pagination_enabled {
             unsafe { crate::ext::tt_insert_special_in(st, c"tdux:ce math".as_ptr()) }?;
@@ -4626,8 +4621,8 @@ pub(crate) fn after_math_in(
         if penalty_node == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(cur_list_tail(), penalty_node);
-        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+        st.mem.set_b32s1(st.input.cur_list.tail, penalty_node);
+        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
 
         let pre_display_size = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
         let (g1, mut g2);
@@ -4645,15 +4640,15 @@ pub(crate) fn after_math_in(
             if inf_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(cur_list_tail(), inf_node);
-            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            st.mem.set_b32s1(st.input.cur_list.tail, inf_node);
+            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
         } else {
             let g1_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g1);
             if g1_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(cur_list_tail(), g1_node);
-            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            st.mem.set_b32s1(st.input.cur_list.tail, g1_node);
+            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
         }
 
         if e != 0 {
@@ -4682,21 +4677,21 @@ pub(crate) fn after_math_in(
             if inf_node2 == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(cur_list_tail(), inf_node2);
-            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            st.mem.set_b32s1(st.input.cur_list.tail, inf_node2);
+            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
             let a_width = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
             app_display_in(st, j, a, z - a_width)?;
             g2 = 0;
         }
 
         if t != ADJUST_HEAD {
-            st.mem.set_b32s1(cur_list_tail(), st.mem.b32s1(ADJUST_HEAD));
-            set_cur_list_tail(t);
+            st.mem.set_b32s1(st.input.cur_list.tail, st.mem.b32s1(ADJUST_HEAD));
+            st.input.cur_list.tail = t;
         }
         if pre_t != PRE_ADJUST_HEAD {
             st.mem
-                .set_b32s1(cur_list_tail(), st.mem.b32s1(PRE_ADJUST_HEAD));
-            set_cur_list_tail(pre_t);
+                .set_b32s1(st.input.cur_list.tail, st.mem.b32s1(PRE_ADJUST_HEAD));
+            st.input.cur_list.tail = pre_t;
         }
 
         let post_pen = crate::mem::new_penalty(
@@ -4706,16 +4701,16 @@ pub(crate) fn after_math_in(
         if post_pen == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(cur_list_tail(), post_pen);
-        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+        st.mem.set_b32s1(st.input.cur_list.tail, post_pen);
+        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
 
         if g2 > 0 {
             let g2_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g2);
             if g2_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(cur_list_tail(), g2_node);
-            set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+            st.mem.set_b32s1(st.input.cur_list.tail, g2_node);
+            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
         }
 
         crate::packaging::flush_node_list(&mut st.mem, j).map_err(MainControlAbort::Confusion)?;
@@ -4735,16 +4730,16 @@ pub(crate) fn init_math_in(
 ) -> Result<(), crate::main_control::MainControlAbort> {
     crate::scan::get_token_in(st)?;
 
-    if st.scanner.cur_cmd == MATH_SHIFT && cur_list_mode() > 0 {
+    if st.scanner.cur_cmd == MATH_SHIFT && st.input.cur_list.mode > 0 {
         let mut j = TEX_NULL;
         let mut w = -MAX_HALFWORD;
         let x;
 
-        if cur_list_head() == cur_list_tail() {
+        if st.input.cur_list.head == st.input.cur_list.tail {
             crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
-            x = if cur_list_e_tex_aux() == TEX_NULL {
+            x = if st.input.cur_list.e_tex_aux == TEX_NULL {
                 0
-            } else if st.mem.b32s0(cur_list_e_tex_aux()) >= R_CODE {
+            } else if st.mem.b32s0(st.input.cur_list.e_tex_aux) >= R_CODE {
                 -1
             } else {
                 1
@@ -4794,9 +4789,9 @@ pub(crate) fn init_math_in(
             jbox.set_glue_set(&mut st.mem, jb_gset);
 
             let mut v = jb_sh.0;
-            x = if cur_list_e_tex_aux() == TEX_NULL {
+            x = if st.input.cur_list.e_tex_aux == TEX_NULL {
                 0
-            } else if st.mem.b32s0(cur_list_e_tex_aux()) >= R_CODE {
+            } else if st.mem.b32s0(st.input.cur_list.e_tex_aux) >= R_CODE {
                 -1
             } else {
                 1
@@ -5029,7 +5024,7 @@ pub(crate) fn init_math_in(
         if par_shape == TEX_NULL {
             let hang = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HANG_INDENT);
             let hang_after = st.eqtb.b32s1(INT_BASE + INT_PAR_HANG_AFTER);
-            let prev_graf = cur_list_prev_graf();
+            let prev_graf = st.input.cur_list.prev_graf;
             if hang != 0
                 && ((hang_after >= 0 && prev_graf + 2 > hang_after) || prev_graf + 1 < -hang_after)
             {
@@ -5041,17 +5036,17 @@ pub(crate) fn init_math_in(
             }
         } else {
             let n = st.mem.b32s0(par_shape);
-            let p = if cur_list_prev_graf() + 2 >= n {
+            let p = if st.input.cur_list.prev_graf + 2 >= n {
                 par_shape + 2 * n
             } else {
-                par_shape + 2 * (cur_list_prev_graf() + 2)
+                par_shape + 2 * (st.input.cur_list.prev_graf + 2)
             };
             s = st.mem.b32s1(p - 1);
             l = st.mem.b32s1(p);
         }
 
         crate::main_control::push_math_in(st, MATH_SHIFT_GROUP)?;
-        set_cur_list_mode(MMODE);
+        st.input.cur_list.mode = MMODE;
         if let Some(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,
@@ -5068,7 +5063,7 @@ pub(crate) fn init_math_in(
         ) {
             return Err(crate::main_control::MainControlAbort::Save(a));
         }
-        set_cur_list_e_tex_aux(j);
+        st.input.cur_list.e_tex_aux = j;
         if let Some(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,

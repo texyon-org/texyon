@@ -8,8 +8,7 @@ use crate::consts::{
 use crate::ext::apply_tfm_font_mapping;
 
 use crate::globals::{
-    cur_list_mode, name_of_file, set_cur_list_mode,
-    };
+    name_of_file, };
 use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{MemIdx, MemPtr, Scaled};
@@ -2751,8 +2750,8 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
     st.mem.set_b32s0(q2, LEFT_BRACE_TOKEN + b'{' as i32);
     crate::input::begin_token_list_in(st, q2, INSERTED)?;
 
-    let old_mode = cur_list_mode();
-    set_cur_list_mode(0);
+    let old_mode = st.input.cur_list.mode;
+    st.input.cur_list.mode = 0;
     st.scanner.cur_cs = st.shipout.write_loc;
     crate::scan::scan_toks_in(st, false, true)?;
     crate::scan::get_token_in(st)?;
@@ -2773,7 +2772,7 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
         }
     }
 
-    set_cur_list_mode(old_mode);
+    st.input.cur_list.mode = old_mode;
     crate::input::end_token_list_in(st)?;
     let old_setting = st.shipout.selector;
     let w = st

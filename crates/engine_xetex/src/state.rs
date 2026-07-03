@@ -203,6 +203,8 @@ pub(crate) struct InputClusterState {
     /// `list_state_record`) — a compound struct, not a scalar typedef, no
     /// newtype debt.
     pub nest: Vec<crate::mem_types::ListStateRecord>,
+    /// The live top-of-nest semantic list — TeX's `cur_list` (`01e`); sibling to `nest`.
+    pub cur_list: crate::mem_types::ListStateRecord,
     /// Count of open pseudo-file parentheses emitted to the transcript.
     /// Plain `int32_t`, no newtype debt.
     pub open_parens: i32,

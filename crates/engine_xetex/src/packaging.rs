@@ -950,7 +950,7 @@ pub fn copy_node_list(
 // `new_skip_param` are threaded; arena exhaustion propagates the `01b` §5
 // [`NodeRecycleAbort::Overflow`] sentinel. FFI-free (no measurer / print /
 // scanner re-entry).
-pub fn append_to_vlist(
+pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord, 
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
     b: AnyBox,
@@ -962,13 +962,13 @@ pub fn append_to_vlist(
 
     let upwards = eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS) > 0;
     let b_idx = b.idx().0;
-    if crate::globals::cur_list_aux_b32s1() > IGNORE_DEPTH {
+    if cl.aux_s1() > IGNORE_DEPTH {
         let baseline_spec = eqtb.b32s1(GLUE_BASE + GLUE_PAR_BASELINE_SKIP);
         // \baselineskip is a glue parameter spec (never null).
         let bsl =
             NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(baseline_spec)).expect("spec");
         let d = bsl.width(mem).0
-            - crate::globals::cur_list_aux_b32s1()
+            - cl.aux_s1()
             - if upwards {
                 b.depth(mem).0
             } else {
@@ -992,12 +992,12 @@ pub fn append_to_vlist(
             bsl_spec.set_width(mem, Scaled(d));
             p
         };
-        mem.set_b32s1(crate::globals::cur_list_tail(), p);
-        crate::globals::set_cur_list_tail(p);
+        mem.set_b32s1(cl.tail, p);
+        cl.tail = p;
     }
-    mem.set_b32s1(crate::globals::cur_list_tail(), b_idx);
-    crate::globals::set_cur_list_tail(b_idx);
-    crate::globals::set_cur_list_aux_b32s1(if upwards {
+    mem.set_b32s1(cl.tail, b_idx);
+    cl.tail = b_idx;
+    cl.set_aux_s1(if upwards {
         b.height(mem).0
     } else {
         b.depth(mem).0
@@ -1016,7 +1016,7 @@ pub(crate) fn append_to_vlist_emit_in(
         .classify_box(MemIdx::new(b))
         .expect("valid node type for append_to_vlist")
         .expect("append_to_vlist receives an hlist or vlist node");
-    append_to_vlist(&mut st.mem, &st.eqtb, bx)
+    append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, bx)
 }
 // translated from xetex-xetex0.c:7725 (vert_break)
 struct VertBreakCursor {

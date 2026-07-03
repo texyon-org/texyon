@@ -1435,18 +1435,18 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
         }};
     }
 
-    st.scanner.pack_begin_line = crate::globals::cur_list_mode_line();
-    let head = crate::globals::cur_list_head();
+    st.scanner.pack_begin_line = st.input.cur_list.mode_line;
+    let head = st.input.cur_list.head;
     st.mem.set_b32s1(TEMP_HEAD, st.mem.b32s1(head));
 
-    let tail = crate::globals::cur_list_tail();
+    let tail = st.input.cur_list.tail;
     if crate::mem::is_char_node(&st.mem, tail) || node_type_in(&st.mem, tail) != GLUE_NODE {
         let p = crate::mem::new_penalty(&mut st.mem, INF_PENALTY);
         if p == crate::mem::ALLOC_FAILED {
             return LineBreakOutcome::Overflow;
         }
         st.mem.set_b32s1(tail, p);
-        crate::globals::set_cur_list_tail(p);
+        st.input.cur_list.tail = p;
     } else {
         st.mem.set_b16s1(tail, PENALTY_NODE as u16);
         let gp = glue_ptr_in(&st.mem, tail);
@@ -1464,10 +1464,10 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
     }
     let last_line_fill_node = glue_node(last_line_fill);
     st.mem
-        .set_b32s1(crate::globals::cur_list_tail(), last_line_fill);
-    st.hyph.init_l_hyf = crate::globals::cur_list_prev_graf() / 0x0040_0000;
-    st.hyph.init_r_hyf = (crate::globals::cur_list_prev_graf() / 65_536) % 64;
-    let init_cur_lang = (crate::globals::cur_list_prev_graf() % 65_536) as u8;
+        .set_b32s1(st.input.cur_list.tail, last_line_fill);
+    st.hyph.init_l_hyf = st.input.cur_list.prev_graf / 0x0040_0000;
+    st.hyph.init_r_hyf = (st.input.cur_list.prev_graf / 65_536) % 64;
+    let init_cur_lang = (st.input.cur_list.prev_graf % 65_536) as u8;
 
     crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
     st.errors.no_shrink_error_yet = true;
@@ -1613,7 +1613,7 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
             &mut st.scanner,
             &mut st.linebreak,
             &mut st.errors,
-            crate::globals::cur_list_prev_graf(),
+            st.input.cur_list.prev_graf,
         ) {
             Ok(v) => v,
             Err(e) => return LineBreakOutcome::Node(e),
@@ -2450,7 +2450,7 @@ fn post_line_break_prefix(
     })
 }
 
-fn post_line_break_suffix(
+fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord, 
     mem: &mut MemState,
     scanner: &mut ScannerState,
     linebreak: &mut LinebreakState,
@@ -2465,16 +2465,16 @@ fn post_line_break_suffix(
     just_box.set_shift_amount(mem, Scaled(hpack.cur_indent));
 
     if PRE_ADJUST_HEAD != scanner.pre_adjust_tail {
-        mem.set_b32s1(crate::globals::cur_list_tail(), mem.b32s1(PRE_ADJUST_HEAD));
-        crate::globals::set_cur_list_tail(scanner.pre_adjust_tail);
+        mem.set_b32s1(cl.tail, mem.b32s1(PRE_ADJUST_HEAD));
+        cl.tail = scanner.pre_adjust_tail;
     }
 
     scanner.pre_adjust_tail = TEX_NULL;
-    crate::packaging::append_to_vlist(mem, eqtb, just_box).map_err(PostLineAbort::Node)?;
+    crate::packaging::append_to_vlist(cl, mem, eqtb, just_box).map_err(PostLineAbort::Node)?;
 
     if ADJUST_HEAD != scanner.adjust_tail {
-        mem.set_b32s1(crate::globals::cur_list_tail(), mem.b32s1(ADJUST_HEAD));
-        crate::globals::set_cur_list_tail(scanner.adjust_tail);
+        mem.set_b32s1(cl.tail, mem.b32s1(ADJUST_HEAD));
+        cl.tail = scanner.adjust_tail;
     }
 
     scanner.adjust_tail = TEX_NULL;
@@ -2494,12 +2494,12 @@ fn post_line_break_suffix(
 
         q = eqtb.b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_CLUB_PENALTIES);
         if q != TEX_NULL {
-            let mut r = *cur_line - crate::globals::cur_list_prev_graf();
+            let mut r = *cur_line - cl.prev_graf;
             if r > mem.b32s1(q + 1) {
                 r = mem.b32s1(q + 1);
             }
             pen += mem.b32s1(q + r + 1);
-        } else if *cur_line == crate::globals::cur_list_prev_graf() + 1 {
+        } else if *cur_line == cl.prev_graf + 1 {
             pen += eqtb.b32s1(INT_BASE + INT_PAR_CLUB_PENALTY);
         }
 
@@ -2532,8 +2532,8 @@ fn post_line_break_suffix(
             if r == crate::mem::ALLOC_FAILED {
                 return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
             }
-            mem.set_b32s1(crate::globals::cur_list_tail(), r);
-            crate::globals::set_cur_list_tail(r);
+            mem.set_b32s1(cl.tail, r);
+            cl.tail = r;
         }
     }
 
@@ -2620,11 +2620,11 @@ impl PostLineBreakOutcome {
 /// [`crate::packaging::hpack_emit_in`] under that borrow; cold aborts ride the
 /// [`PostLineBreakOutcome`] sentinel.
 fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBreakOutcome {
-    let mut lr_ptr = crate::globals::cur_list_e_tex_aux();
+    let mut lr_ptr = st.input.cur_list.e_tex_aux;
 
     reverse_best_breaks(&mut st.mem, &mut st.linebreak);
 
-    let mut cur_line = crate::globals::cur_list_prev_graf() + 1;
+    let mut cur_line = st.input.cur_list.prev_graf + 1;
     loop {
         let hpack = match post_line_break_prefix(
             &mut st.mem,
@@ -2656,7 +2656,7 @@ fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBr
             Err(e) => return PostLineBreakOutcome::Node(e),
         };
 
-        let done = match post_line_break_suffix(
+        let done = match post_line_break_suffix(&mut st.input.cur_list, 
             &mut st.mem,
             &mut st.scanner,
             &mut st.linebreak,
@@ -2687,8 +2687,8 @@ fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBr
     }
 
     let best_line = st.linebreak.best_line;
-    crate::globals::set_cur_list_prev_graf(best_line - 1);
-    crate::globals::set_cur_list_e_tex_aux(lr_ptr);
+    st.input.cur_list.prev_graf = best_line - 1;
+    st.input.cur_list.e_tex_aux = lr_ptr;
     PostLineBreakOutcome::Done
 }
 
@@ -4006,7 +4006,6 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
     s: i32,
     len: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    use crate::globals::{cur_list_tail, set_cur_list_tail};
     // The main-loop current font, folded off `mod raw` into `st.mainloop` (`01e`).
     // Bound to a local (it is read-only here) so the reads below need no `st`
     // reborrow alongside the `linebreak_start_in(st, …)` call.
@@ -4020,14 +4019,14 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
 
     if locale == 0 || len == 1 {
         let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, main_f, len)?;
-        st.mem.set_b32s1(cur_list_tail(), node);
-        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
-        let t = cur_list_tail();
+        st.mem.set_b32s1(st.input.cur_list.tail, node);
+        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+        let t = st.input.cur_list.tail;
         let text = whatsit_node_in(&st.mem, t).native_text_ptr_mut(&mut st.mem);
         for i in 0..len {
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
-        let addr = st.mem.node_addr(cur_list_tail());
+        let addr = st.mem.node_addr(st.input.cur_list.tail);
         measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
     } else {
         let use_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
@@ -4045,8 +4044,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                         if node == crate::mem::ALLOC_FAILED {
                             return Err(NodeRecycleAbort::Overflow);
                         }
-                        st.mem.set_b32s1(cur_list_tail(), node);
-                        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+                        st.mem.set_b32s1(st.input.cur_list.tail, node);
+                        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
                     }
                     if use_skip {
                         let node = crate::mem::new_param_glue(
@@ -4057,8 +4056,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                         if node == crate::mem::ALLOC_FAILED {
                             return Err(NodeRecycleAbort::Overflow);
                         }
-                        st.mem.set_b32s1(cur_list_tail(), node);
-                        set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
+                        st.mem.set_b32s1(st.input.cur_list.tail, node);
+                        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
                     }
                 }
                 let node = crate::fonts::new_native_word_node(
@@ -4067,14 +4066,14 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                     main_f,
                     offs - prev_offs,
                 )?;
-                st.mem.set_b32s1(cur_list_tail(), node);
-                set_cur_list_tail(st.mem.b32s1(cur_list_tail()));
-                let t = cur_list_tail();
+                st.mem.set_b32s1(st.input.cur_list.tail, node);
+                st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+                let t = st.input.cur_list.tail;
                 let text = whatsit_node_in(&st.mem, t).native_text_ptr_mut(&mut st.mem);
                 for i in prev_offs..offs {
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }
-                let addr = st.mem.node_addr(cur_list_tail());
+                let addr = st.mem.node_addr(st.input.cur_list.tail);
                 measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
             }
             if offs < 0 {

@@ -9,8 +9,6 @@ use crate::node::{AnyBox, AnyNode, NodePtr, WhatsitNode};
 use crate::state::EngineState;
 use crate::units::{MemIdx, NodeType};
 
-use crate::globals::{
-    cur_list_mode, };
 
 // Consts used by the show_* group, moved with it from scan.rs (workstream 02).
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -2850,10 +2848,10 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
     begin_diagnostic_in(st);
     diagnostic_begin_capture_warning_here_in(st);
     print_nl_in(st, b'{' as i32);
-    if cur_list_mode() != st.scanner.shown_mode {
-        print_mode_in(st, cur_list_mode() as i32);
+    if st.input.cur_list.mode != st.scanner.shown_mode {
+        print_mode_in(st, st.input.cur_list.mode as i32);
         print_cstr_in(st, c": ".as_ptr());
-        st.scanner.shown_mode = cur_list_mode();
+        st.scanner.shown_mode = st.input.cur_list.mode;
     }
     print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
     if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
@@ -3256,7 +3254,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
 
     // Save and override state for walking the group stack
     let mut p = st.input.nest_ptr;
-    st.input.nest[(p) as usize] = crate::globals::cur_list();
+    st.input.nest[(p) as usize] = st.input.cur_list;
     let v = st.save_stack.save_ptr;
     let l = st.save_stack.cur_level;
     let c = st.save_stack.cur_group;
@@ -3886,7 +3884,7 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
 }
 /// translated from xetex-xetex0.c:1123 (show_activities)
 pub(crate) fn show_activities_in(st: &mut EngineState) {
-    st.input.nest[(st.input.nest_ptr) as usize] = crate::globals::cur_list();
+    st.input.nest[(st.input.nest_ptr) as usize] = st.input.cur_list;
     crate::output::print_nl_cstr_in(st, c"".as_ptr());
     crate::output::print_ln_in(st);
     let np = st.input.nest_ptr;

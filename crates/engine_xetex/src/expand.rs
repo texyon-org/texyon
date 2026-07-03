@@ -119,8 +119,6 @@ fn pop_cond_node_in(st: &mut crate::state::EngineState) {
 }
 
 pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
-    use crate::globals::{
-        cur_list_mode, };
     use crate::mem::TEX_NULL;
     use crate::scan::{get_avail_scc, get_node_scc, scc_err};
 
@@ -228,16 +226,16 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             b = (st.scanner.cur_val % 2) != 0;
         }
         IF_VMODE_CODE => {
-            b = cur_list_mode().abs() == VMODE;
+            b = st.input.cur_list.mode.abs() == VMODE;
         }
         IF_HMODE_CODE => {
-            b = cur_list_mode().abs() == HMODE_C;
+            b = st.input.cur_list.mode.abs() == HMODE_C;
         }
         IF_MMODE_CODE => {
-            b = cur_list_mode().abs() == MMODE_C;
+            b = st.input.cur_list.mode.abs() == MMODE_C;
         }
         IF_INNER_CODE => {
-            b = cur_list_mode() < 0;
+            b = st.input.cur_list.mode < 0;
         }
         IF_VOID_CODE | IF_HBOX_CODE | IF_VBOX_CODE => {
             crate::scan::scan_register_num_in(st)?;

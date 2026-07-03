@@ -3,7 +3,6 @@
 use crate::consts::{
     BATCH_MODE, BOX_BASE, ERROR_STOP_MODE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
 };
-use crate::globals::{cur_list_mode};
 
 // Interaction-mode constants (xetex_format.h:644–647).
 
@@ -428,7 +427,7 @@ pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
 pub(crate) fn you_cant_in(st: &mut EngineState) {
     error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
     print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
-    print_in_mode_in(st, cur_list_mode() as i32);
+    print_in_mode_in(st, st.input.cur_list.mode as i32);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
 }
 /// `&mut EngineState` core of [`report_illegal_case`].
@@ -443,7 +442,7 @@ pub(crate) fn report_illegal_case_in(st: &mut EngineState) -> ErrorOutcome {
     error_in(st)
 }
 pub(crate) fn privileged_in(st: &mut EngineState) -> Result<bool, ErrorOutcome> {
-    if cur_list_mode() > 0 {
+    if st.input.cur_list.mode > 0 {
         Ok(true)
     } else {
         let o = report_illegal_case_in(st);

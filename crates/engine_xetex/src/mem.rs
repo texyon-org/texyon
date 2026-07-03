@@ -13,10 +13,6 @@ use crate::node::{
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemIdx, MemPtr, Scaled};
 
-use crate::globals::{
-    cur_list_head, set_cur_list_e_tex_aux,
-    set_cur_list_head, set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail,
-};
 
 // TeX constants (xetex-constants.h / xetex_format.h)
 pub(crate) const TEX_NULL: i32 = -0x0FFF_FFFF; // MIN_HALFWORD
@@ -658,17 +654,17 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
             return Err(PushNestAbort::SemanticNest);
         }
     }
-    st.input.nest[np as usize] = crate::globals::cur_list();
+    st.input.nest[np as usize] = st.input.cur_list;
     st.input.nest_ptr = np + 1;
     let h = get_avail(&mut st.mem);
     if h == ALLOC_FAILED {
         return Err(PushNestAbort::MainMemory);
     }
-    set_cur_list_head(h);
-    set_cur_list_tail(h);
-    set_cur_list_prev_graf(0);
-    set_cur_list_mode_line(st.mem.line);
-    set_cur_list_e_tex_aux(TEX_NULL);
+    st.input.cur_list.head = h;
+    st.input.cur_list.tail = h;
+    st.input.cur_list.prev_graf = 0;
+    st.input.cur_list.mode_line = st.mem.line;
+    st.input.cur_list.e_tex_aux = TEX_NULL;
     Ok(())
 }
 
@@ -678,12 +674,12 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
 /// `mod raw` static, so reading/writing it (via `cur_list_head` /
 /// `set_cur_list_record`) is a raw access that does not re-enter `with_state`.
 pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterState) {
-    let head = cur_list_head();
+    let head = input.cur_list.head;
     mem.set_b32s1(head, mem.avail);
     mem.avail = head;
     input.nest_ptr -= 1;
     let rec = input.nest[input.nest_ptr as usize];
-    crate::globals::set_cur_list_record(rec);
+    input.cur_list = rec;
 }
 
 // ---------------------------------------------------------------------------
@@ -788,14 +784,14 @@ pub fn new_margin_kern(mem: &mut MemState, w: i32, _p: i32, side: i16) -> i32 {
 // translated from xetex-xetex0.c:13763 (new_whatsit)
 ///
 /// Phase-C: threaded to `&mut MemState`; legacy callers use [`new_whatsit_global`].
-pub fn new_whatsit(mem: &mut MemState, s: i16, w: i16) -> i32 {
+pub fn new_whatsit(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, s: i16, w: i16) -> i32 {
     let p = get_node(mem, w as i32);
     if p == ALLOC_FAILED {
         return p;
     }
     mem.set_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
     mem.set_b16s0(p, s as u16);
-    mem.set_b32s1(crate::globals::cur_list_tail(), p);
-    crate::globals::set_cur_list_tail(p);
+    mem.set_b32s1(cl.tail, p);
+    cl.tail = p;
     p
 }

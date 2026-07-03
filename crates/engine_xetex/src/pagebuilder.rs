@@ -4,9 +4,6 @@
 use crate::consts::{
     BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE, MAX_HALFWORD, TEX_NULL,
 };
-use crate::globals::{
-    set_cur_list_aux_b32s1, set_cur_list_mode, set_cur_list_mode_line,
-    set_cur_list_tail, };
 
 // Former C module-level statics, now bridged onto EngineState.shipout
 // (session 46). Thin module-private accessors over the thread-local.
@@ -220,17 +217,17 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
             )));
         }
     }
-    st.input.nest[st.input.nest_ptr as usize] = crate::globals::cur_list();
+    st.input.nest[st.input.nest_ptr as usize] = st.input.cur_list;
     st.input.nest_ptr += 1;
     let h = crate::mem::get_avail(&mut st.mem);
     if h == crate::mem::ALLOC_FAILED {
         return Err(PageBuildAbort::MainMemoryOverflowRunaway);
     }
-    crate::globals::set_cur_list_head(h);
-    crate::globals::set_cur_list_tail(h);
-    crate::globals::set_cur_list_prev_graf(0);
-    crate::globals::set_cur_list_mode_line(st.mem.line);
-    crate::globals::set_cur_list_e_tex_aux(TEX_NULL);
+    st.input.cur_list.head = h;
+    st.input.cur_list.tail = h;
+    st.input.cur_list.prev_graf = 0;
+    st.input.cur_list.mode_line = st.mem.line;
+    st.input.cur_list.e_tex_aux = TEX_NULL;
     Ok(())
 }
 
@@ -518,7 +515,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     if p != TEX_NULL {
         if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
             if st.input.nest_ptr == 0 {
-                set_cur_list_tail(st.shipout.page_tail);
+                st.input.cur_list.tail = st.shipout.page_tail;
             } else {
                 st.input.nest[0].tail = st.shipout.page_tail;
             }
@@ -612,9 +609,9 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
             st.shipout.output_active = true;
             st.shipout.dead_cycles += 1;
             push_nest_pagebuilder_in(st)?;
-            set_cur_list_mode(-VMODE);
-            set_cur_list_aux_b32s1(IGNORE_DEPTH); // prev_depth
-            set_cur_list_mode_line(-st.mem.line);
+            st.input.cur_list.mode = -VMODE;
+            st.input.cur_list.set_aux_s1(IGNORE_DEPTH); // prev_depth
+            st.input.cur_list.mode_line = -st.mem.line;
             crate::input::begin_token_list_in(
                 st,
                 st.eqtb.b32s1(LOCAL_BASE + LOCAL__output_routine),
@@ -640,7 +637,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     if st.mem.b32s1(PAGE_HEAD) != TEX_NULL {
         if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
             if st.input.nest_ptr == 0 {
-                set_cur_list_tail(st.shipout.page_tail);
+                st.input.cur_list.tail = st.shipout.page_tail;
             } else {
                 st.input.nest[0].tail = st.shipout.page_tail;
             }
@@ -1112,7 +1109,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
 
     // After loop: update nest tail to point at contribution list head
     if st.input.nest_ptr == 0 {
-        set_cur_list_tail(CONTRIB_HEAD);
+        st.input.cur_list.tail = CONTRIB_HEAD;
     } else {
         st.input.nest[0].tail = CONTRIB_HEAD;
     }

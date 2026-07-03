@@ -113,7 +113,6 @@ mod raw {
         // Semantic nest (mode stack, xetex-xetexd.h:476–479,413).
         // nest_ptr/max_nest_stack/nest_size moved to EngineState.input (scalars).
         // Current list state (xetex-xetexd.h:479; direct struct, not a pointer).
-        pub(super) static mut cur_list: crate::mem_types::ListStateRecord;
         // read_open moved to EngineState.input.read_open ([u8; 17]).
         // read_file moved to EngineState.input.read_file ([*mut c_void; 16]).
 
@@ -408,102 +407,8 @@ pub extern "C" fn tt_get_font_layout_engine_entry(f: i32) -> *mut libc::c_void {
 // semantic nest (nest / nest_ptr / max_nest_stack / nest_size / cur_list)
 // ---------------------------------------------------------------------------
 
-/// Read `cur_list` (the raw current-list record) by value.
-#[inline]
-pub(crate) fn cur_list() -> crate::mem_types::ListStateRecord {
-    unsafe { raw::cur_list }
-}
 
-/// Overwrite `cur_list` with a record by value. A raw `mod raw` write (no
-/// `with_state`), so it is safe under a live `&mut EngineState` borrow.
-#[inline]
-pub(crate) fn set_cur_list_record(v: crate::mem_types::ListStateRecord) {
-    unsafe {
-        raw::cur_list = v;
-    }
-}
 
-// cur_list field accessors
-#[inline]
-pub(crate) fn cur_list_mode() -> i16 {
-    unsafe { raw::cur_list.mode }
-}
-#[inline]
-pub(crate) fn set_cur_list_mode(v: i16) {
-    unsafe {
-        raw::cur_list.mode = v;
-    }
-}
-#[inline]
-pub(crate) fn cur_list_head() -> i32 {
-    unsafe { raw::cur_list.head }
-}
-#[inline]
-pub(crate) fn set_cur_list_head(v: i32) {
-    unsafe {
-        raw::cur_list.head = v;
-    }
-}
-#[inline]
-pub(crate) fn cur_list_tail() -> i32 {
-    unsafe { raw::cur_list.tail }
-}
-#[inline]
-pub(crate) fn set_cur_list_tail(v: i32) {
-    unsafe {
-        raw::cur_list.tail = v;
-    }
-}
-#[inline]
-pub(crate) fn cur_list_prev_graf() -> i32 {
-    unsafe { raw::cur_list.prev_graf }
-}
-/// Returns `cur_list.aux.b32.s0` (the integer/spacefactor half of aux).
-#[inline]
-pub(crate) fn cur_list_aux_b32s0() -> i32 {
-    unsafe { raw::cur_list.aux.b32.s0 }
-}
-/// Sets `cur_list.aux.b32.s0 = v`.
-#[inline]
-pub(crate) fn set_cur_list_aux_b32s0(v: i32) {
-    unsafe {
-        raw::cur_list.aux.b32.s0 = v;
-    }
-}
-/// Returns `cur_list.aux.b32.s1` (the prevdepth half of aux).
-#[inline]
-pub(crate) fn cur_list_aux_b32s1() -> i32 {
-    unsafe { raw::cur_list.aux.b32.s1 }
-}
-/// Sets `cur_list.aux.b32.s1 = v`.
-#[inline]
-pub(crate) fn set_cur_list_aux_b32s1(v: i32) {
-    unsafe {
-        raw::cur_list.aux.b32.s1 = v;
-    }
-}
-#[inline]
-pub(crate) fn set_cur_list_prev_graf(v: i32) {
-    unsafe {
-        raw::cur_list.prev_graf = v;
-    }
-}
-#[inline]
-pub(crate) fn set_cur_list_mode_line(v: i32) {
-    unsafe {
-        raw::cur_list.mode_line = v;
-    }
-}
-#[inline]
-pub(crate) fn cur_list_e_tex_aux() -> i32 {
-    unsafe { raw::cur_list.e_tex_aux }
-}
-#[inline]
-pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
-    unsafe {
-        raw::cur_list.e_tex_aux = v;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // font_max
@@ -606,11 +511,6 @@ pub(crate) fn set_cur_list_e_tex_aux(v: i32) {
 // hpack adjust-tail / total_stretch / total_shrink
 // ---------------------------------------------------------------------------
 
-/// Returns `cur_list.mode_line` (the source line where the current mode started).
-#[inline]
-pub(crate) fn cur_list_mode_line() -> i32 {
-    unsafe { raw::cur_list.mode_line }
-}
 
 // ---------------------------------------------------------------------------
 // active_width / best_height_plus_depth

@@ -22,9 +22,6 @@ use crate::ext::ot_font_get_3;
 // Relocated to expand.rs (workstream 02); still called from scan.rs.
 use crate::errors::int_error_in;
 use crate::expand::{expand_in, macro_call_in};
-use crate::globals::{
-    cur_list, cur_list_aux_b32s0, cur_list_aux_b32s1, cur_list_head, cur_list_mode, cur_list_tail,
-    };
 use crate::output::capture_to_diagnostic_in;
 use crate::output::error_here_with_diagnostic_in;
 use crate::output::print_cmd_chr_in;
@@ -1261,8 +1258,8 @@ pub(crate) fn set_math_char_in(
         }
         let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;
         nd.set_nucleus_fam(&mut st.mem, fam);
-        st.mem.set_b32s1(crate::globals::cur_list_tail(), p);
-        crate::globals::set_cur_list_tail(p);
+        st.mem.set_b32s1(st.input.cur_list.tail, p);
+        st.input.cur_list.tail = p;
     }
     Ok(())
 }
@@ -4177,7 +4174,7 @@ pub(crate) fn scan_something_internal_in(
                 st.scanner.cur_val_level = MU_VAL as u8;
             }
             SET_AUX => {
-                if (cur_list_mode().abs() as i32) != m {
+                if (st.input.cur_list.mode.abs() as i32) != m {
                     error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
                     print_cmd_chr_in(st, SET_AUX as u16, m);
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
@@ -4199,20 +4196,20 @@ pub(crate) fn scan_something_internal_in(
                         st.scanner.cur_val_level = INT_VAL as u8;
                     }
                 } else if m == VMODE as i32 {
-                    st.scanner.cur_val = cur_list_aux_b32s1();
+                    st.scanner.cur_val = st.input.cur_list.aux_s1();
                     st.scanner.cur_val_level = DIMEN_VAL as u8;
                 } else {
-                    st.scanner.cur_val = cur_list_aux_b32s0();
+                    st.scanner.cur_val = st.input.cur_list.aux_s0();
                     st.scanner.cur_val_level = INT_VAL as u8;
                 }
             }
             SET_PREV_GRAF => {
-                if cur_list_mode() == 0 {
+                if st.input.cur_list.mode == 0 {
                     st.scanner.cur_val = 0;
                     st.scanner.cur_val_level = INT_VAL as u8;
                 } else {
                     let np = st.input.nest_ptr;
-                    st.input.nest[np as usize] = cur_list();
+                    st.input.nest[np as usize] = st.input.cur_list;
                     let mut p = np;
                     while (st.input.nest[p as usize].mode.abs() as i32) != VMODE as i32 {
                         p -= 1;
@@ -5001,12 +4998,12 @@ pub(crate) fn scan_something_internal_in(
                 } else {
                     // m < INPUT_LINE_NO_CODE: last-node queries
                     st.scanner.cur_val = 0;
-                    tx = cur_list_tail();
+                    tx = st.input.cur_list.tail;
                     if tx < st.mem.hi_mem_min {
                         let node_type = st.mem.b16s1(tx);
                         let subtype = st.mem.b16s0(tx);
                         if node_type == MATH_NODE && subtype == END_M_CODE {
-                            r = cur_list_head();
+                            r = st.input.cur_list.head;
                             loop {
                                 q = r;
                                 r = st.mem.b32s1(q);
@@ -5019,13 +5016,13 @@ pub(crate) fn scan_something_internal_in(
                     }
                     if st.scanner.cur_chr == LAST_NODE_TYPE_CODE_VAL {
                         st.scanner.cur_val_level = INT_VAL as u8;
-                        if tx == cur_list_head() || cur_list_mode() == 0 {
+                        if tx == st.input.cur_list.head || st.input.cur_list.mode == 0 {
                             st.scanner.cur_val = -1;
                         }
                     } else {
                         st.scanner.cur_val_level = st.scanner.cur_chr as u8;
                     }
-                    if tx < st.mem.hi_mem_min && cur_list_mode() != 0 {
+                    if tx < st.mem.hi_mem_min && st.input.cur_list.mode != 0 {
                         let node_type = st.mem.b16s1(tx);
                         match st.scanner.cur_chr {
                             x if x == INT_VAL as i32 => {
@@ -5070,7 +5067,7 @@ pub(crate) fn scan_something_internal_in(
                             }
                             _ => {}
                         }
-                    } else if cur_list_mode() == VMODE && tx == cur_list_head() {
+                    } else if st.input.cur_list.mode == VMODE && tx == st.input.cur_list.head {
                         match st.scanner.cur_chr {
                             x if x == INT_VAL as i32 => st.scanner.cur_val = st.shipout.last_penalty,
                             x if x == DIMEN_VAL as i32 => st.scanner.cur_val = st.shipout.last_kern,

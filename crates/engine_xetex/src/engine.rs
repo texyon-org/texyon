@@ -10,9 +10,6 @@ use crate::consts::{
     TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
 };
 use crate::format_io::load_fmt_file;
-use crate::globals::{
-    set_cur_list_aux_b32s1, set_cur_list_e_tex_aux, set_cur_list_head, set_cur_list_mode,
-    set_cur_list_mode_line, set_cur_list_prev_graf, set_cur_list_tail, };
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
 
@@ -484,13 +481,13 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
 
     st.input.nest_ptr = 0;
     st.input.max_nest_stack = 0;
-    set_cur_list_mode(VMODE);
-    set_cur_list_head(CONTRIB_HEAD);
-    set_cur_list_tail(CONTRIB_HEAD);
-    set_cur_list_e_tex_aux(crate::mem::TEX_NULL);
-    set_cur_list_aux_b32s1(IGNORE_DEPTH);
-    set_cur_list_mode_line(0);
-    set_cur_list_prev_graf(0);
+    st.input.cur_list.mode = VMODE;
+    st.input.cur_list.head = CONTRIB_HEAD;
+    st.input.cur_list.tail = CONTRIB_HEAD;
+    st.input.cur_list.e_tex_aux = crate::mem::TEX_NULL;
+    st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+    st.input.cur_list.mode_line = 0;
+    st.input.cur_list.prev_graf = 0;
     st.scanner.shown_mode = 0;
     st.shipout.page_contents = EMPTY;
     st.shipout.page_tail = PAGE_HEAD;
