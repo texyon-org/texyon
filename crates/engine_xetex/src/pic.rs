@@ -123,12 +123,48 @@ const INVALID_HANDLE: usize = 0;
 const TTBC_FILE_FORMAT_PICT: c_int = 25; // tectonic_bridge_core_generated.h:74
 
 // pdfbox constants from xetex-ext.h:53–58
-const PDFBOX_CROP: c_int = 1;
-const PDFBOX_MEDIA: c_int = 2;
-const PDFBOX_BLEED: c_int = 3;
-const PDFBOX_TRIM: c_int = 4;
-const PDFBOX_ART: c_int = 5;
-const PDFBOX_NONE: c_int = 6;
+/// PDF page-box selector for `\XeTeXpdffile` (xetex-pic.c). The `\media`/`\crop`/…
+/// keyword the user gave, stored in the pic node's `b16.s1(+8)` field and echoed
+/// by the shipout `show` path. `Unset` is TeX's default (no keyword → treated as
+/// crop for extraction, printed as nothing). A raw i32 of 0 (non-PDF image) is the
+/// `None` of an `Option<PageboxType>`.
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[repr(u16)]
+pub(crate) enum PageboxType {
+    Crop = 1,
+    Media = 2,
+    Bleed = 3,
+    Trim = 4,
+    Art = 5,
+    Unset = 6,
+}
+
+impl PageboxType {
+    /// Decode the stored `b16.s1(+8)` selector; `None` for 0 (non-PDF) or unknown.
+    pub(crate) fn from_raw(v: u16) -> Option<PageboxType> {
+        match v {
+            1 => Some(PageboxType::Crop),
+            2 => Some(PageboxType::Media),
+            3 => Some(PageboxType::Bleed),
+            4 => Some(PageboxType::Trim),
+            5 => Some(PageboxType::Art),
+            6 => Some(PageboxType::Unset),
+            _ => None,
+        }
+    }
+
+    /// The `show`-box label, or `None` for `Unset` (no keyword ⇒ no echo).
+    pub(crate) fn label(self) -> Option<&'static std::ffi::CStr> {
+        match self {
+            PageboxType::Crop => Some(c"pagebox cropbox "),
+            PageboxType::Media => Some(c"pagebox mediabox "),
+            PageboxType::Bleed => Some(c"pagebox bleedbox "),
+            PageboxType::Trim => Some(c"pagebox trimbox "),
+            PageboxType::Art => Some(c"pagebox artbox "),
+            PageboxType::Unset => None,
+        }
+    }
+}
 
 // node constants from xetex_format.h:466–467 and xetex-constants.h:133
 const PIC_NODE: i16 = 43;
@@ -140,7 +176,7 @@ unsafe fn pdf_get_rect(
     filename: *const c_char,
     handle: usize,
     mut page_num: c_int,
-    pdf_box: c_int,
+    pdf_box: PageboxType,
     box_out: &mut RealRect,
 ) -> c_int {
     let pf = pdf_open(filename, handle);
@@ -160,11 +196,12 @@ unsafe fn pdf_get_rect(
     }
 
     let dpx_options: c_int = match pdf_box {
-        PDFBOX_MEDIA => 2,
-        PDFBOX_BLEED => 5,
-        PDFBOX_TRIM => 4,
-        PDFBOX_ART => 3,
-        _ => 1, // PDFBOX_CROP and default
+        PageboxType::Media => 2,
+        PageboxType::Bleed => 5,
+        PageboxType::Trim => 4,
+        PageboxType::Art => 3,
+        // Crop and the (unreachable here) Unset default → dpx crop-box.
+        PageboxType::Crop | PageboxType::Unset => 1,
     };
 
     let mut bbox = PdfRect {
@@ -280,7 +317,7 @@ unsafe fn find_pic_file(
     name_of_file: *const c_char,
     path: &mut *mut c_char,
     bounds: &mut RealRect,
-    pdf_box_type: c_int,
+    pdf_box_type: Option<PageboxType>,
     page: c_int,
 ) -> Result<c_int, MainControlAbort> {
     let handle = ttstub_input_open(name_of_file, TTBC_FILE_FORMAT_PICT, 0);
@@ -293,8 +330,8 @@ unsafe fn find_pic_file(
         return Ok(1);
     }
 
-    let err = if pdf_box_type != 0 {
-        pdf_get_rect(name_of_file, handle, page, pdf_box_type, bounds)
+    let err = if let Some(pdf_box) = pdf_box_type {
+        pdf_get_rect(name_of_file, handle, page, pdf_box, bounds)
     } else {
         let mut wd: f64 = 0.0;
         let mut ht: f64 = 0.0;
@@ -409,7 +446,8 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         );
     }
 
-    let mut pdf_box_type: c_int = 0;
+    // `None` = non-PDF image (no page box); `Some(..)` once we know it is a PDF.
+    let mut pdf_box_type: Option<PageboxType> = None;
     let mut page: i32 = 0;
 
     if is_pdf {
@@ -417,18 +455,19 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
             crate::scan::scan_int_in(st)?;
             page = st.scanner.cur_val;
         }
-        pdf_box_type = PDFBOX_NONE;
-        if crate::scan::scan_keyword_in(st, c"crop".as_ptr())? {
-            pdf_box_type = PDFBOX_CROP;
+        pdf_box_type = Some(if crate::scan::scan_keyword_in(st, c"crop".as_ptr())? {
+            PageboxType::Crop
         } else if crate::scan::scan_keyword_in(st, c"media".as_ptr())? {
-            pdf_box_type = PDFBOX_MEDIA;
+            PageboxType::Media
         } else if crate::scan::scan_keyword_in(st, c"bleed".as_ptr())? {
-            pdf_box_type = PDFBOX_BLEED;
+            PageboxType::Bleed
         } else if crate::scan::scan_keyword_in(st, c"trim".as_ptr())? {
-            pdf_box_type = PDFBOX_TRIM;
+            PageboxType::Trim
         } else if crate::scan::scan_keyword_in(st, c"art".as_ptr())? {
-            pdf_box_type = PDFBOX_ART;
-        }
+            PageboxType::Art
+        } else {
+            PageboxType::Unset
+        });
     }
 
     let mut bounds = RealRect {
@@ -440,11 +479,12 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
     let mut pic_path: *mut c_char = std::ptr::null_mut();
     let name_of_file = st.input.name_of_file.as_mut_ptr();
     let result = unsafe {
-        if pdf_box_type == PDFBOX_NONE {
-            find_pic_file(name_of_file, &mut pic_path, &mut bounds, PDFBOX_CROP, page)?
-        } else {
-            find_pic_file(name_of_file, &mut pic_path, &mut bounds, pdf_box_type, page)?
-        }
+        // `Unset` (PDF with no explicit keyword) extracts the crop box.
+        let effective = match pdf_box_type {
+            Some(PageboxType::Unset) => Some(PageboxType::Crop),
+            other => other,
+        };
+        find_pic_file(name_of_file, &mut pic_path, &mut bounds, effective, page)?
     };
 
     let mut corners: [RealPoint; 4] = [
@@ -662,7 +702,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         // page: mem[p+4].b16.s0
         st.mem.set_b16s0(tail + 4, page as u16);
         // pdf_box_type: mem[p+8].b16.s1
-        st.mem.set_b16s1(tail + 8, pdf_box_type as u16);
+        st.mem.set_b16s1(tail + 8, pdf_box_type.map_or(0, |pb| pb as u16));
         // width: mem[p+1].b32.s1
         st.mem.set_b32s1(tail + 1, D2Fix(xmax - xmin));
         // height: mem[p+3].b32.s1

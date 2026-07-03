@@ -2861,13 +2861,10 @@ pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(
     crate::output::print_int_in(st, st.mem.b16s0(p + 4) as i32);
     crate::output::print_in(st, b' ' as i32);
 
-    match st.mem.b16s1(p + 8) {
-        1 => crate::output::print_cstr_in(st, c"pagebox cropbox ".as_ptr()),
-        2 => crate::output::print_cstr_in(st, c"pagebox mediabox ".as_ptr()),
-        3 => crate::output::print_cstr_in(st, c"pagebox bleedbox ".as_ptr()),
-        4 => crate::output::print_cstr_in(st, c"pagebox trimbox ".as_ptr()),
-        5 => crate::output::print_cstr_in(st, c"pagebox artbox ".as_ptr()),
-        _ => {}
+    if let Some(label) =
+        crate::pic::PageboxType::from_raw(st.mem.b16s1(p + 8)).and_then(|pb| pb.label())
+    {
+        crate::output::print_cstr_in(st, label.as_ptr());
     }
 
     crate::output::print_in(st, b'(' as i32);
