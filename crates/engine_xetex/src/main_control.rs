@@ -3492,7 +3492,6 @@ pub(crate) fn append_italic_correction_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
     const EXPLICIT: u16 = 1; // xetex_format.h:428
-    const GLYPH_NODE: u16 = 42; // xetex_format.h:465
 
     // get_native_italic_correction(p) = real_get_native_italic_correction(&mem[p])
     let native_kern = |st: &mut crate::state::EngineState,
@@ -3529,10 +3528,10 @@ pub(crate) fn append_italic_correction_in(
     } else if st.mem.b16s1(tail) == LIGATURE_NODE {
         tail + 1
     } else if st.mem.b16s1(tail) == WHATSIT_NODE {
-        let sub = st.mem.b16s0(tail);
-        if sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT {
+        let sub = crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(tail));
+        if sub.is_some_and(|s| s.is_native_word()) {
             native_kern(st, tail, false)?;
-        } else if sub == GLYPH_NODE {
+        } else if sub == Some(crate::node::WhatsitSubtype::Glyph) {
             native_kern(st, tail, true)?;
         }
         return Ok(());

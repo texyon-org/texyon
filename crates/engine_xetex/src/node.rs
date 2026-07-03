@@ -2076,6 +2076,12 @@ impl WhatsitSubtype {
                 | WhatsitSubtype::Pdf
         )
     }
+
+    /// A native-word whatsit (`NativeWord` or `NativeWordAt`) — the very common
+    /// `sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT` predicate.
+    pub fn is_native_word(self) -> bool {
+        matches!(self, WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt)
+    }
 }
 
 impl NodePtr<WhatsitNode> {
