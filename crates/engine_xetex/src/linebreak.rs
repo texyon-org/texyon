@@ -431,28 +431,27 @@ fn is_empty_box_in(mem: &MemState, p: i32) -> bool {
 
 #[inline]
 fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
-    !crate::mem::is_char_node(mem, p)
-        && match mem.b16s1(p) as i32 {
-            INS_NODE | MARK_NODE | ADJUST_NODE | PENALTY_NODE => true,
-            DISC_NODE => {
-                let p = disc_node(p);
-                p.pre_break(mem).is_null() && p.post_break(mem).is_null() && p.subtype(mem) == 0
-            }
-            MATH_NODE => math_node(p).width(mem).0 == 0,
-            KERN_NODE => {
-                let p = kern_node(p);
-                p.width(mem).0 == 0 || p.subtype(mem) == NORMAL
-            }
-            GLUE_NODE => glue_node(p).glue_ptr(mem).0 == 0,
-            HLIST_NODE => {
-                let p = box_node(mem, p);
-                p.width(mem).0 == 0
-                    && p.height(mem).0 == 0
-                    && p.depth(mem).0 == 0
-                    && p.list_ptr(mem).is_null()
-            }
-            _ => false,
+    use crate::node::AnyNode;
+    if crate::mem::is_char_node(mem, p) {
+        return false;
+    }
+    // Classify once at the boundary (the node is non-char, so its type is valid).
+    match mem.classify(MemIdx::new(p)).expect("non-char node has a valid type") {
+        AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
+        AnyNode::Disc(d) => {
+            d.pre_break(mem).is_null() && d.post_break(mem).is_null() && d.subtype(mem) == 0
         }
+        AnyNode::Math(m) => m.width(mem).0 == 0,
+        AnyNode::Kern(k) => k.width(mem).0 == 0 || k.subtype(mem) == NORMAL,
+        AnyNode::Glue(g) => g.glue_ptr(mem).0 == 0,
+        AnyNode::HList(h) => {
+            h.width(mem).0 == 0
+                && h.height(mem).0 == 0
+                && h.depth(mem).0 == 0
+                && h.list_ptr(mem).is_null()
+        }
+        _ => false,
+    }
 }
 
 // translated from xetex-linebreak.c:2827 (push_node)
