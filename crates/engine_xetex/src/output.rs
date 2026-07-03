@@ -1,4 +1,5 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
+use crate::state::GroupCode;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, INT_BASE, LOCAL_BASE, NULL_FLAG, PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
     SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
@@ -985,23 +986,6 @@ pub(crate) fn print_mode_in(st: &mut EngineState, m: i32) {
 // ---------------------------------------------------------------------------
 
 // Group-code constants (xetex-constants.h:152–168; group_code = u8).
-const BOTTOM_LEVEL: u8 = 0;
-const SIMPLE_GROUP: u8 = 1;
-const HBOX_GROUP: u8 = 2;
-const ADJUSTED_HBOX_GROUP: u8 = 3;
-const VBOX_GROUP: u8 = 4;
-const VTOP_GROUP: u8 = 5;
-const ALIGN_GROUP: u8 = 6;
-const NO_ALIGN_GROUP: u8 = 7;
-const OUTPUT_GROUP: u8 = 8;
-const MATH_GROUP: u8 = 9;
-const DISC_GROUP: u8 = 10;
-const INSERT_GROUP: u8 = 11;
-const VCENTER_GROUP: u8 = 12;
-const MATH_CHOICE_GROUP: u8 = 13;
-const SEMI_SIMPLE_GROUP: u8 = 14;
-const MATH_SHIFT_GROUP: u8 = 15;
-const MATH_LEFT_GROUP: u8 = 16;
 
 /// Print a textual name for the current group, with level and entry line.
 ///
@@ -1010,45 +994,44 @@ const MATH_LEFT_GROUP: u8 = 16;
 pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
     let g = st.save_stack.cur_group;
     match g {
-        BOTTOM_LEVEL => {
+        GroupCode::BottomLevel => {
             print_cstr_in(st, c"bottom level".as_ptr());
             return;
         }
-        SIMPLE_GROUP | SEMI_SIMPLE_GROUP => {
-            if g == SEMI_SIMPLE_GROUP {
+        GroupCode::Simple | GroupCode::SemiSimple => {
+            if g == GroupCode::SemiSimple {
                 print_cstr_in(st, c"semi ".as_ptr());
             }
             print_cstr_in(st, c"simple".as_ptr());
         }
-        HBOX_GROUP | ADJUSTED_HBOX_GROUP => {
-            if g == ADJUSTED_HBOX_GROUP {
+        GroupCode::Hbox | GroupCode::AdjustedHbox => {
+            if g == GroupCode::AdjustedHbox {
                 print_cstr_in(st, c"adjusted ".as_ptr());
             }
             print_cstr_in(st, c"hbox".as_ptr());
         }
-        VBOX_GROUP => print_cstr_in(st, c"vbox".as_ptr()),
-        VTOP_GROUP => print_cstr_in(st, c"vtop".as_ptr()),
-        ALIGN_GROUP | NO_ALIGN_GROUP => {
-            if g == NO_ALIGN_GROUP {
+        GroupCode::Vbox => print_cstr_in(st, c"vbox".as_ptr()),
+        GroupCode::Vtop => print_cstr_in(st, c"vtop".as_ptr()),
+        GroupCode::Align | GroupCode::NoAlign => {
+            if g == GroupCode::NoAlign {
                 print_cstr_in(st, c"no ".as_ptr());
             }
             print_cstr_in(st, c"align".as_ptr());
         }
-        OUTPUT_GROUP => print_cstr_in(st, c"output".as_ptr()),
-        DISC_GROUP => print_cstr_in(st, c"disc".as_ptr()),
-        INSERT_GROUP => print_cstr_in(st, c"insert".as_ptr()),
-        VCENTER_GROUP => print_cstr_in(st, c"vcenter".as_ptr()),
-        MATH_GROUP | MATH_CHOICE_GROUP | MATH_SHIFT_GROUP | MATH_LEFT_GROUP => {
+        GroupCode::Output => print_cstr_in(st, c"output".as_ptr()),
+        GroupCode::Disc => print_cstr_in(st, c"disc".as_ptr()),
+        GroupCode::Insert => print_cstr_in(st, c"insert".as_ptr()),
+        GroupCode::Vcenter => print_cstr_in(st, c"vcenter".as_ptr()),
+        GroupCode::Math | GroupCode::MathChoice | GroupCode::MathShift | GroupCode::MathLeft => {
             print_cstr_in(st, c"math".as_ptr());
-            if g == MATH_CHOICE_GROUP {
+            if g == GroupCode::MathChoice {
                 print_cstr_in(st, c" choice".as_ptr());
-            } else if g == MATH_SHIFT_GROUP {
+            } else if g == GroupCode::MathShift {
                 print_cstr_in(st, c" shift".as_ptr());
-            } else if g == MATH_LEFT_GROUP {
+            } else if g == GroupCode::MathLeft {
                 print_cstr_in(st, c" left".as_ptr());
             }
         }
-        _ => {}
     }
     print_cstr_in(st, c" group (level ".as_ptr());
     print_int_in(st, st.save_stack.cur_level as i32);
@@ -2791,8 +2774,10 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
         print_group_in(st, true);
         print_cstr_in(st, c" is incomplete".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.save_stack.cur_group =
-            unsafe { st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 } as u8;
+        st.save_stack.cur_group = GroupCode::from_raw(unsafe {
+            st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 as u8
+        })
+        .expect("valid group code");
         st.save_stack.save_ptr = st.save_stack.b32s1(st.save_stack.save_ptr);
     }
     st.save_stack.save_ptr = p;
@@ -3224,23 +3209,6 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
 
 /// `&mut EngineState` core of [`show_save_groups`].
 pub(crate) fn show_save_groups_in(st: &mut EngineState) {
-    const BOTTOM_LEVEL: u8 = 0;
-    const SIMPLE_GROUP: u8 = 1;
-    const HBOX_GROUP: u8 = 2;
-    const ADJUSTED_HBOX_GROUP: u8 = 3;
-    const VBOX_GROUP: u8 = 4;
-    const VTOP_GROUP: u8 = 5;
-    const ALIGN_GROUP: u8 = 6;
-    const NO_ALIGN_GROUP: u8 = 7;
-    const OUTPUT_GROUP: u8 = 8;
-    const MATH_GROUP: u8 = 9;
-    const DISC_GROUP: u8 = 10;
-    const INSERT_GROUP: u8 = 11;
-    const VCENTER_GROUP: u8 = 12;
-    const MATH_CHOICE_GROUP: u8 = 13;
-    const SEMI_SIMPLE_GROUP: u8 = 14;
-    const MATH_SHIFT_GROUP: u8 = 15;
-    const MATH_LEFT_GROUP: u8 = 16;
     const EXACTLY: i32 = 0; // xetex-constants.h:256
     const BOX_FLAG: i32 = 0x4000_0000; // xetex-constants.h:372
     const GLOBAL_BOX_FLAG: i32 = 0x4000_8000; // xetex-constants.h:373
@@ -3272,7 +3240,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
         crate::output::print_nl_cstr_in(st, c"### ".as_ptr());
         crate::output::print_group_in(st, true);
 
-        if st.save_stack.cur_group == BOTTOM_LEVEL {
+        if st.save_stack.cur_group == GroupCode::BottomLevel {
             break 'outer;
         }
 
@@ -3309,23 +3277,23 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
         let mut s: *const libc::c_char = std::ptr::null();
 
         let after = match st.save_stack.cur_group {
-            SIMPLE_GROUP => {
+            GroupCode::Simple => {
                 p += 1;
                 After::Found2
             }
-            HBOX_GROUP | ADJUSTED_HBOX_GROUP => {
+            GroupCode::Hbox | GroupCode::AdjustedHbox => {
                 s = c"hbox".as_ptr();
                 After::Preamble
             }
-            VBOX_GROUP => {
+            GroupCode::Vbox => {
                 s = c"vbox".as_ptr();
                 After::Preamble
             }
-            VTOP_GROUP => {
+            GroupCode::Vtop => {
                 s = c"vtop".as_ptr();
                 After::Preamble
             }
-            ALIGN_GROUP => {
+            GroupCode::Align => {
                 if a == 0 {
                     s = if m == -VMODE {
                         c"halign".as_ptr()
@@ -3347,19 +3315,19 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                     After::Found
                 }
             }
-            NO_ALIGN_GROUP => {
+            GroupCode::NoAlign => {
                 p += 1;
                 a = -1;
                 crate::output::print_esc_cstr_in(st, c"noalign".as_ptr());
                 After::Found2
             }
-            OUTPUT_GROUP => {
+            GroupCode::Output => {
                 crate::output::print_esc_cstr_in(st, c"output".as_ptr());
                 After::Found
             }
-            MATH_GROUP => After::Found2,
-            DISC_GROUP | MATH_CHOICE_GROUP => {
-                if st.save_stack.cur_group == DISC_GROUP {
+            GroupCode::Math => After::Found2,
+            GroupCode::Disc | GroupCode::MathChoice => {
+                if st.save_stack.cur_group == GroupCode::Disc {
                     crate::output::print_esc_cstr_in(st, c"discretionary".as_ptr());
                 } else {
                     crate::output::print_esc_cstr_in(st, c"mathchoice".as_ptr());
@@ -3372,7 +3340,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 }
                 After::Found2
             }
-            INSERT_GROUP => {
+            GroupCode::Insert => {
                 let val = st.save_stack.b32s1(st.save_stack.save_ptr - 2);
                 if val == 255 {
                     crate::output::print_esc_cstr_in(st, c"vadjust".as_ptr());
@@ -3382,16 +3350,16 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 }
                 After::Found2
             }
-            VCENTER_GROUP => {
+            GroupCode::Vcenter => {
                 s = c"vcenter".as_ptr();
                 After::Found1
             }
-            SEMI_SIMPLE_GROUP => {
+            GroupCode::SemiSimple => {
                 p += 1;
                 crate::output::print_esc_cstr_in(st, c"begingroup".as_ptr());
                 After::Found
             }
-            MATH_SHIFT_GROUP => {
+            GroupCode::MathShift => {
                 // C: if m==MMODE print '$' (fall through to another '$' = "$$")
                 //    else if nest[p].mode==MMODE: print EQ_NO, goto found
                 //    else: (fall through to '$' + goto found)
@@ -3402,16 +3370,17 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                     // goto found (no '$')
                     crate::output::print_char_in(st, ')' as i32);
                     st.save_stack.cur_level = st.save_stack.cur_level - 1;
-                    st.save_stack.cur_group =
-                        unsafe { st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 }
-                            as u8;
+                    st.save_stack.cur_group = GroupCode::from_raw(unsafe {
+                        st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 as u8
+                    })
+                    .expect("valid group code");
                     st.save_stack.save_ptr = st.save_stack.b32s1(st.save_stack.save_ptr);
                     continue 'outer;
                 }
                 crate::output::print_char_in(st, '$' as i32);
                 After::Found
             }
-            MATH_LEFT_GROUP => {
+            GroupCode::MathLeft => {
                 if st.mem.b16s1(st.input.nest[(p + 1) as usize].e_tex_aux) == NodeType::LeftNoad.as_raw() {
                     crate::output::print_esc_cstr_in(st, c"left".as_ptr());
                 } else {
@@ -3479,8 +3448,10 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
         // found: print ')', advance group-boundary chain
         crate::output::print_char_in(st, ')' as i32);
         st.save_stack.cur_level = st.save_stack.cur_level - 1;
-        st.save_stack.cur_group =
-            unsafe { st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 } as u8;
+        st.save_stack.cur_group = GroupCode::from_raw(unsafe {
+            st.save_stack.data[(st.save_stack.save_ptr) as usize].b16.s0 as u8
+        })
+        .expect("valid group code");
         st.save_stack.save_ptr = st.save_stack.b32s1(st.save_stack.save_ptr);
     }
 

@@ -10,7 +10,7 @@ use crate::consts::{
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
 use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, SaNode, WhatsitSubtype};
-use crate::state::{EngineState, EqtbState, MemState, ShipoutState};
+use crate::state::{EngineState, EqtbState, GroupCode, MemState, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
 // Node types (xetex_format.h)
@@ -36,7 +36,6 @@ const INS_NODE_SIZE: i32 = 5;
 const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
 const VMODE: i16 = 1;
-const OUTPUT_GROUP: u8 = 8;
 const OUTPUT_TEXT: u16 = 7;
 const IGNORE_DEPTH: i32 = -65_536_000;
 const EJECT_PENALTY: i32 = -10_000;
@@ -617,7 +616,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
             )?;
             page_save(crate::save::new_save_level(
                 &mut st.save_stack,
-                OUTPUT_GROUP,
+                GroupCode::Output,
                 st.mem.line,
             ))?;
             page_save(crate::main_control::normal_paragraph(

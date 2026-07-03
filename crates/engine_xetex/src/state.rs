@@ -625,6 +625,69 @@ impl MemState {
     }
 }
 
+/// The kind of grouping level on the save stack (`cur_group`,
+/// xetex-constants.h:152–169). A pure classification field — compared for
+/// equality and dispatched in `handle_right_brace`/`off_save`/`show_save_groups`,
+/// never used in arithmetic — so it is typed directly rather than kept as a raw
+/// `u8`. Replaces the ~70 duplicated `const SIMPLE_GROUP`/`HBOX_GROUP`/… code
+/// definitions that were scattered across main_control/output/math/save/errors.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+#[repr(u8)]
+pub(crate) enum GroupCode {
+    #[default]
+    BottomLevel = 0,
+    Simple = 1,
+    Hbox = 2,
+    AdjustedHbox = 3,
+    Vbox = 4,
+    Vtop = 5,
+    Align = 6,
+    NoAlign = 7,
+    Output = 8,
+    Math = 9,
+    Disc = 10,
+    Insert = 11,
+    Vcenter = 12,
+    MathChoice = 13,
+    SemiSimple = 14,
+    MathShift = 15,
+    MathLeft = 16,
+}
+
+impl GroupCode {
+    /// Decode a raw `cur_group` byte; `None` for an unknown code.
+    #[inline]
+    pub(crate) fn from_raw(v: u8) -> Option<GroupCode> {
+        Some(match v {
+            0 => GroupCode::BottomLevel,
+            1 => GroupCode::Simple,
+            2 => GroupCode::Hbox,
+            3 => GroupCode::AdjustedHbox,
+            4 => GroupCode::Vbox,
+            5 => GroupCode::Vtop,
+            6 => GroupCode::Align,
+            7 => GroupCode::NoAlign,
+            8 => GroupCode::Output,
+            9 => GroupCode::Math,
+            10 => GroupCode::Disc,
+            11 => GroupCode::Insert,
+            12 => GroupCode::Vcenter,
+            13 => GroupCode::MathChoice,
+            14 => GroupCode::SemiSimple,
+            15 => GroupCode::MathShift,
+            16 => GroupCode::MathLeft,
+            _ => return None,
+        })
+    }
+
+    /// The raw `cur_group` byte for this group (`self as u8`); used only at the
+    /// save-stack (de)serialization boundary.
+    #[inline]
+    pub(crate) fn as_raw(self) -> u8 {
+        self as u8
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct SaveStackState {
     pub save_ptr: i32,
@@ -634,7 +697,7 @@ pub(crate) struct SaveStackState {
     /// the `save.rs` cores read it via their `&mut SaveStackState` param (no `st`).
     pub save_size: i32,
     pub cur_level: u16,
-    pub cur_group: u8,
+    pub cur_group: GroupCode,
     pub cur_boundary: i32,
     /// Rust-owned save-stack arena (`save_size + 1` words). Allocated at
     /// engine init and released by `tt_cleanup`; never reallocated during a

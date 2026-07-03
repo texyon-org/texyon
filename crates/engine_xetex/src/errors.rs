@@ -1,5 +1,6 @@
 //! Error-handling functions translated from `xetex/xetex-errors.c`.
 
+use crate::state::GroupCode;
 use crate::consts::{
     BOX_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
 };
@@ -20,9 +21,6 @@ const HISTORY_ERROR_ISSUED: i32 = 2;
 const HISTORY_FATAL_ERROR: i32 = 3;
 
 // Group codes matched by `extra_right_brace` (relocated from scan.rs, ws02).
-const SEMI_SIMPLE_GROUP: u8 = 14;
-const MATH_SHIFT_GROUP: u8 = 15;
-const MATH_LEFT_GROUP: u8 = 16;
 
 // Selector constants (xetex-core.h:46–48).
 
@@ -442,9 +440,9 @@ pub(crate) fn mu_error_in(st: &mut EngineState) -> ErrorOutcome {
 pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
     error_here_with_diagnostic_in(st, c"Extra }, or forgotten ".as_ptr());
     match st.save_stack.cur_group {
-        SEMI_SIMPLE_GROUP => print_esc_cstr_in(st, c"endgroup".as_ptr()),
-        MATH_SHIFT_GROUP => print_char_in(st, b'$' as i32),
-        MATH_LEFT_GROUP => print_esc_cstr_in(st, c"right".as_ptr()),
+        GroupCode::SemiSimple => print_esc_cstr_in(st, c"endgroup".as_ptr()),
+        GroupCode::MathShift => print_char_in(st, b'$' as i32),
+        GroupCode::MathLeft => print_esc_cstr_in(st, c"right".as_ptr()),
         _ => {}
     }
     capture_to_diagnostic_in(st, std::ptr::null_mut());

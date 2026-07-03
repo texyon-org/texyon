@@ -11,7 +11,7 @@ use crate::consts::{
 };
 use crate::format_io::load_fmt_file;
 use crate::io::init_io;
-use crate::state::{EngineState, MemState};
+use crate::state::{EngineState, GroupCode, MemState};
 use crate::state::InteractionMode;
 
 const LEVEL_ONE: u16 = 1;
@@ -438,7 +438,6 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     const CLOSED: u8 = 2;
     const TOO_BIG_LANG: i32 = 256;
     const LEVEL_ZERO_U16: u16 = 0;
-    const BOTTOM_LEVEL: u8 = 0;
     const LEFT_TO_RIGHT: i16 = 0;
     const MARK_VAL: usize = 7;
     const LAST_BOX_CODE: usize = 2;
@@ -513,7 +512,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
 
     st.save_stack.save_ptr = 0;
     st.save_stack.cur_level = LEVEL_ONE;
-    st.save_stack.cur_group = BOTTOM_LEVEL;
+    st.save_stack.cur_group = GroupCode::BottomLevel;
     st.save_stack.cur_boundary = 0;
     st.save_stack.max_save_stack = 0;
     st.scanner.mag_set = 0;

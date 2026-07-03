@@ -2,7 +2,7 @@
 //!
 //! Phase A: all state accessed through the C globals via `src/globals.rs`.
 use crate::consts::{EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, TEX_NULL};
-use crate::state::{EqtbState, MemState, SaveStackState, ScannerState};
+use crate::state::{EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 
 use crate::mem_types::MemoryWord;
 
@@ -74,7 +74,11 @@ impl SaveAbort {
 /// [`new_save_level_global`].
 ///
 /// translated from xetex-xetex0.c:3932 (new_save_level)
-pub(crate) fn new_save_level(save_stack: &mut SaveStackState, c: u8, line: i32) -> Option<SaveAbort> {
+pub(crate) fn new_save_level(
+    save_stack: &mut SaveStackState,
+    c: GroupCode,
+    line: i32,
+) -> Option<SaveAbort> {
     if save_stack.save_ptr > save_stack.max_save_stack {
         save_stack.max_save_stack = save_stack.save_ptr;
         if save_stack.max_save_stack > save_stack.save_size - 7 {
@@ -86,7 +90,7 @@ pub(crate) fn new_save_level(save_stack: &mut SaveStackState, c: u8, line: i32) 
     save_stack.set_b32s1(save_stack.save_ptr, line);
     save_stack.save_ptr += 1;
     save_stack.set_b16s1(save_stack.save_ptr, LEVEL_BOUNDARY);
-    save_stack.set_b16s0(save_stack.save_ptr, save_stack.cur_group as u16);
+    save_stack.set_b16s0(save_stack.save_ptr, save_stack.cur_group.as_raw() as u16);
     save_stack.set_b32s1(save_stack.save_ptr, save_stack.cur_boundary);
     if save_stack.cur_level == u16::MAX {
         return Some(SaveAbort::Overflow(c"grouping levels", u16::MAX as i32));
@@ -838,7 +842,8 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
             crate::output::group_warning_in(st);
         }
         let sp = st.save_stack.save_ptr;
-        st.save_stack.cur_group = st.save_stack.b16s0(sp) as u8;
+        st.save_stack.cur_group =
+            GroupCode::from_raw(st.save_stack.b16s0(sp) as u8).expect("valid group code");
         st.save_stack.cur_boundary = st.save_stack.b32s1(sp);
         st.save_stack.save_ptr -= 1;
         Ok(())

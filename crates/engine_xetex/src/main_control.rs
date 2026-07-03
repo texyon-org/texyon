@@ -8,6 +8,7 @@
 //! `align_error`/`no_align_error`/`omit_error`); the `main_control*` dispatch
 //! and verbs follow in later slices.
 
+use crate::state::GroupCode;
 use crate::consts::{
     BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
     DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE,
@@ -48,7 +49,6 @@ const HMODE: i16 = 104; // xetex_format.h:369
 const HMODE_I: i16 = 104; // xetex_format.h:369
 const HRULE: u8 = 36; // xetex_format.h:274
 const INSERTED: u16 = 5;
-const INSERT_GROUP: u8 = 11; // xetex-constants.h:163
 const INT_PAR_HANG_AFTER: i32 = 41; // xetex_format.h:76
 const INT_PAR_LANGUAGE: i32 = 50; // xetex_format.h:85
 const INT_PAR_LEFT_HYPHEN_MIN: i32 = 51; // xetex_format.h:86
@@ -64,10 +64,8 @@ const VMODE: i16 = 1;
 const ASSIGN_INT: u8 = 74;
 const ASSIGN_MU_GLUE: u8 = 77;
 const BACKED_UP: u16 = 3;
-const BOTTOM_LEVEL: u8 = 0; // xetex_format.h (group level 0)
 const CHAR_GIVEN: u8 = 68;
 const COUNT_BASE: i32 = 7_826_812;
-const DISC_GROUP: u8 = 10; // xetex-constants.h:162
 const FONT_BASE: i32 = 0;
 const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
 const FROZEN_END_GROUP: i32 = 2_243_226 + 2; // xetex_format.h:201 + xetex-constants.h:57
@@ -95,9 +93,6 @@ const SKIP_CODE: i16 = 4; // xetex_format.h:674
 const TEMP_HEAD: i32 = 4_999_999 - 3;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 const WHATSIT_NODE: u16 = 8; // xetex_format.h:388
-const SEMI_SIMPLE_GROUP: u8 = 14;
-const MATH_SHIFT_GROUP: u8 = 15;
-const MATH_LEFT_GROUP: u8 = 16;
 const DIMEN_VAL: i16 = 1;
 const MU_VAL: i16 = 3;
 const CHAR_CLASS_LIMIT: i32 = 4096;
@@ -195,7 +190,6 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     use crate::packaging::flush_node_list;
     use crate::scan::NodeRecycleAbort;
 
-    const ALIGN_GROUP: u8 = 6; // xetex-constants.h:158
     const ALIGN_HEAD: i32 = 4_999_991; // MEM_TOP - 8
     const END_SPAN: i32 = 4_999_990; // MEM_TOP - 9
     const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
@@ -220,11 +214,11 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     const MATH_SHIFT: u8 = 3; // xetex_format.h:233
     const GLUE_PAR_TAB_SKIP: u16 = 12; // GLUE_PAR__tab_skip + 1
 
-    if st.save_stack.cur_group != ALIGN_GROUP {
+    if st.save_stack.cur_group != GroupCode::Align {
         return Err(MainControlAbort::Confusion(c"align1"));
     }
     crate::save::unsave_in(st)?;
-    if st.save_stack.cur_group != ALIGN_GROUP {
+    if st.save_stack.cur_group != GroupCode::Align {
         return Err(MainControlAbort::Confusion(c"align0"));
     }
     crate::save::unsave_in(st)?;
@@ -627,7 +621,6 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
 // translated from xetex-xetex0.c:8785 (align_peek)
 pub(crate) fn align_peek_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const NO_ALIGN: u8 = 34; // xetex_format.h:272
-    const NO_ALIGN_GROUP: u8 = 7; // xetex-constants.h:159
     const CAR_RET: u8 = 5; // xetex_format.h:235
     const CR_CR_CODE: i32 = 1_114_115; // xetex-constants.h:681
 
@@ -641,7 +634,7 @@ pub(crate) fn align_peek_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         }
         if st.scanner.cur_cmd == NO_ALIGN {
             crate::scan::scan_left_brace_in(st)?;
-            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, NO_ALIGN_GROUP, st.mem.line) {
+            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::NoAlign, st.mem.line) {
                 return Err(MainControlAbort::Save(a));
             }
             if st.input.cur_list.mode == -1 {
@@ -848,7 +841,6 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
     const SPAN_CODE: i32 = 1_114_113; // xetex_format.h:679
     const CR_CODE: i32 = 1_114_114; // xetex_format.h:680
     const SPAN_NODE_SIZE: i32 = 2; // xetex-constants.h:111
-    const ALIGN_GROUP: u8 = 6; // xetex-constants.h:158
     const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
     const END_SPAN: i32 = 4_999_990; // MEM_TOP - 9
     const GLUE_PAR_TAB_SKIP: u16 = 12; // GLUE_PAR__tab_skip + 1
@@ -942,7 +934,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
     }
     if st.mem.b32s0(st.scanner.cur_align + 5) != SPAN_CODE {
         crate::save::unsave_in(st)?;
-        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, ALIGN_GROUP, st.mem.line) {
+        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::Align, st.mem.line) {
             return Err(MainControlAbort::Save(a));
         }
         let (u, w) = if st.input.cur_list.mode == INNER_HMODE {
@@ -1106,7 +1098,6 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
     const END_SPAN: i32 = 4_999_990; // MEM_TOP - 9
     const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
     const FROZEN_END_TEMPLATE: i32 = 2_243_226 + 5; // FROZEN_CONTROL_SEQUENCE + 5
-    const ALIGN_GROUP: u8 = 6;
     const EVERY_CR_TEXT: u16 = 14;
     const LOCAL__EVERY_CR: i32 = 8;
     const GLUE_PAR_TAB_SKIP: i16 = 11; // GLUE_PAR__tab_skip
@@ -1149,7 +1140,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         st.input.cur_list.mode = -(st.input.cur_list.mode as i32) as i16;
     }
 
-    crate::scan::scan_spec_in(st, ALIGN_GROUP, false)?;
+    crate::scan::scan_spec_in(st, GroupCode::Align, false)?;
     st.mem.set_b32s1(ALIGN_HEAD, TEX_NULL);
     st.scanner.cur_align = ALIGN_HEAD;
     st.scanner.cur_loop = TEX_NULL;
@@ -1272,7 +1263,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
 
     // done:
     st.scanner.scanner_status = NORMAL_SCANNER;
-    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, ALIGN_GROUP, st.mem.line) {
+    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::Align, st.mem.line) {
         return Err(MainControlAbort::Save(a));
     }
     let every_cr = st.eqtb.b32s1(LOCAL_BASE + LOCAL__EVERY_CR);
@@ -1288,7 +1279,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
 /// `&mut EngineState` core of [`push_math`]: enters math mode under one borrow.
 pub(crate) fn push_math_in(
     st: &mut crate::state::EngineState,
-    c: u8,
+    c: GroupCode,
 ) -> Result<(), MainControlAbort> {
     crate::mem::push_nest_in(st)?;
     st.input.cur_list.mode = -207; // -MMODE (xetex_format.h:370)
@@ -1543,7 +1534,7 @@ pub(crate) fn begin_insert_or_adjust_in(
         st.save_stack.set_b32s1(sp + 1, 0);
     }
     st.save_stack.save_ptr = sp + 2;
-    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, INSERT_GROUP, st.mem.line) {
+    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::Insert, st.mem.line) {
         return Err(MainControlAbort::Save(a));
     }
     crate::scan::scan_left_brace_in(st)?;
@@ -1564,7 +1555,6 @@ pub(crate) fn begin_insert_or_adjust_in(
 pub(crate) fn do_endv_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const V_TEMPLATE: u16 = 2; // xetex-constants.h:201
     const TOKEN_LIST: u16 = 0; // xetex-constants.h:261
-    const ALIGN_GROUP: u8 = 6; // xetex-constants.h:158
 
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
@@ -1582,7 +1572,7 @@ pub(crate) fn do_endv_in(st: &mut crate::state::EngineState) -> Result<(), MainC
             c"(interwoven alignment preambles are not allowed)".as_ptr(),
         )));
     }
-    if st.save_stack.cur_group == ALIGN_GROUP {
+    if st.save_stack.cur_group == GroupCode::Align {
         end_graf_in(st)?;
         if fin_col_in(st)? {
             fin_row_in(st)?;
@@ -2444,10 +2434,6 @@ pub(crate) fn begin_box_in(
     const HMODE: i16 = 104; // xetex_format.h:369
     const BEGIN_M_CODE: u16 = 2; // xetex_format.h:436
     const END_M_CODE: u16 = 3; // xetex_format.h:437
-    const HBOX_GROUP: u8 = 2; // xetex-constants.h:154
-    const ADJUSTED_HBOX_GROUP: u8 = 3; // xetex-constants.h:155
-    const VBOX_GROUP: u8 = 4; // xetex-constants.h:156
-    const VTOP_GROUP: u8 = 5; // xetex-constants.h:157
     const EVERY_HBOX_TEXT: u16 = 11; // xetex-constants.h:210
     const EVERY_VBOX_TEXT: u16 = 12; // xetex-constants.h:211
     const IGNORE_DEPTH: i32 = -65_536_000; // xetex-constants.h:388
@@ -2624,15 +2610,15 @@ pub(crate) fn begin_box_in(
             st.save_stack.set_b32s1(sp, box_context);
             if k == HMODE as i32 {
                 if box_context < BOX_FLAG && st.input.cur_list.mode.abs() == VMODE {
-                    crate::scan::scan_spec_in(st, ADJUSTED_HBOX_GROUP, true)?;
+                    crate::scan::scan_spec_in(st, GroupCode::AdjustedHbox, true)?;
                 } else {
-                    crate::scan::scan_spec_in(st, HBOX_GROUP, true)?;
+                    crate::scan::scan_spec_in(st, GroupCode::Hbox, true)?;
                 }
             } else {
                 if k == VMODE as i32 {
-                    crate::scan::scan_spec_in(st, VBOX_GROUP, true)?;
+                    crate::scan::scan_spec_in(st, GroupCode::Vbox, true)?;
                 } else {
-                    crate::scan::scan_spec_in(st, VTOP_GROUP, true)?;
+                    crate::scan::scan_spec_in(st, GroupCode::Vtop, true)?;
                     // k = VMODE for the nest push below
                 }
                 if let Some(a) = normal_paragraph(
@@ -2645,8 +2631,8 @@ pub(crate) fn begin_box_in(
                 }
             }
             crate::mem::push_nest_in(st)?;
-            // If k was adjusted to VTOP_GROUP branch: k was neither HMODE nor VMODE,
-            // so the else branch above ran and after scan_spec(VTOP_GROUP), we want k=VMODE.
+            // If k was adjusted to GroupCode::Vtop branch: k was neither HMODE nor VMODE,
+            // so the else branch above ran and after scan_spec(GroupCode::Vtop), we want k=VMODE.
             let k_mode = if k != HMODE as i32 && k != VMODE as i32 {
                 VMODE as i32
             } else {
@@ -2682,23 +2668,6 @@ pub(crate) fn handle_right_brace_in(
     use crate::packaging::flush_node_list;
     use crate::scan::NodeRecycleAbort;
 
-    const BOTTOM_LEVEL: u8 = 0; // xetex-constants.h:152
-    const SIMPLE_GROUP: u8 = 1;
-    const HBOX_GROUP: u8 = 2;
-    const ADJUSTED_HBOX_GROUP: u8 = 3;
-    const VBOX_GROUP: u8 = 4;
-    const VTOP_GROUP: u8 = 5;
-    const ALIGN_GROUP: u8 = 6;
-    const NO_ALIGN_GROUP: u8 = 7;
-    const OUTPUT_GROUP: u8 = 8;
-    const MATH_GROUP: u8 = 9;
-    const DISC_GROUP: u8 = 10;
-    const INSERT_GROUP: u8 = 11;
-    const VCENTER_GROUP: u8 = 12;
-    const MATH_CHOICE_GROUP: u8 = 13;
-    const SEMI_SIMPLE_GROUP: u8 = 14;
-    const MATH_SHIFT_GROUP: u8 = 15;
-    const MATH_LEFT_GROUP: u8 = 16;
 
     const INS_NODE_SIZE: i32 = 5;
     const NOAD_SIZE: i32 = 4;
@@ -2722,11 +2691,11 @@ pub(crate) fn handle_right_brace_in(
     const FROZEN_CR: i32 = 2_243_226 + 1; // FROZEN_CONTROL_SEQUENCE + 1
 
     match st.save_stack.cur_group {
-        SIMPLE_GROUP => {
+        GroupCode::Simple => {
             crate::save::unsave_in(st)?;
         }
 
-        BOTTOM_LEVEL => {
+        GroupCode::BottomLevel => {
             crate::output::error_here_with_diagnostic_in(st, c"Too many }'s".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 2;
@@ -2736,31 +2705,31 @@ pub(crate) fn handle_right_brace_in(
             mc_propagate_error(crate::errors::error_in(st))?;
         }
 
-        SEMI_SIMPLE_GROUP | MATH_SHIFT_GROUP | MATH_LEFT_GROUP => {
+        GroupCode::SemiSimple | GroupCode::MathShift | GroupCode::MathLeft => {
             mc_propagate_error(crate::errors::extra_right_brace_in(st))?;
         }
 
-        HBOX_GROUP => {
+        GroupCode::Hbox => {
             package_in(st, 0)?;
         }
 
-        ADJUSTED_HBOX_GROUP => {
+        GroupCode::AdjustedHbox => {
             st.scanner.adjust_tail = ADJUST_HEAD;
             st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
             package_in(st, 0)?;
         }
 
-        VBOX_GROUP => {
+        GroupCode::Vbox => {
             end_graf_in(st)?;
             package_in(st, 0)?;
         }
 
-        VTOP_GROUP => {
+        GroupCode::Vtop => {
             end_graf_in(st)?;
             package_in(st, VTOP_CODE)?;
         }
 
-        INSERT_GROUP => {
+        GroupCode::Insert => {
             end_graf_in(st)?;
             // GLUEPAR(split_top_skip)
             let q = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP);
@@ -2822,7 +2791,7 @@ pub(crate) fn handle_right_brace_in(
             }
         }
 
-        OUTPUT_GROUP => {
+        GroupCode::Output => {
             if st.input.cur_input.loc != TEX_NULL
                 || (st.input.cur_input.index != OUTPUT_TEXT && st.input.cur_input.index != BACKED_UP)
             {
@@ -2889,11 +2858,11 @@ pub(crate) fn handle_right_brace_in(
             crate::pagebuilder::build_page_in(st)?;
         }
 
-        DISC_GROUP => {
+        GroupCode::Disc => {
             build_discretionary_in(st)?;
         }
 
-        ALIGN_GROUP => {
+        GroupCode::Align => {
             crate::input::back_input_in(st)?;
             st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_CR;
             crate::output::error_here_with_diagnostic_in(st, c"Missing ".as_ptr());
@@ -2906,13 +2875,13 @@ pub(crate) fn handle_right_brace_in(
             mc_propagate_error(crate::input::ins_error_in(st)?)?;
         }
 
-        NO_ALIGN_GROUP => {
+        GroupCode::NoAlign => {
             end_graf_in(st)?;
             crate::save::unsave_in(st)?;
             align_peek_in(st)?;
         }
 
-        VCENTER_GROUP => {
+        GroupCode::Vcenter => {
             end_graf_in(st)?;
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 2;
@@ -2932,11 +2901,11 @@ pub(crate) fn handle_right_brace_in(
             st.mem.set_b32s0(st.input.cur_list.tail + 1, p.idx().0);
         }
 
-        MATH_CHOICE_GROUP => {
+        GroupCode::MathChoice => {
             crate::math::build_choices_in(st)?;
         }
 
-        MATH_GROUP => {
+        GroupCode::Math => {
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 1;
             let save_loc = st.save_stack.b32s1(st.save_stack.save_ptr);
@@ -2967,10 +2936,6 @@ pub(crate) fn handle_right_brace_in(
                     st.input.cur_list.tail = p;
                 }
             }
-        }
-
-        _ => {
-            return Err(MainControlAbort::Confusion(c"rightbrace"));
         }
     }
     Ok(())
@@ -3242,7 +3207,7 @@ pub(crate) fn fix_language(cl: &mut crate::mem_types::ListStateRecord,
 }
 
 pub(crate) fn off_save_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    if st.save_stack.cur_group == BOTTOM_LEVEL {
+    if st.save_stack.cur_group == GroupCode::BottomLevel {
         crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
         crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
@@ -3256,15 +3221,15 @@ pub(crate) fn off_save_in(st: &mut crate::state::EngineState) -> Result<(), Main
         st.mem.set_b32s1(TEMP_HEAD, p);
         crate::output::error_here_with_diagnostic_in(st, c"Missing ".as_ptr());
         match st.save_stack.cur_group {
-            SEMI_SIMPLE_GROUP => {
+            GroupCode::SemiSimple => {
                 st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_GROUP);
                 crate::output::print_esc_cstr_in(st, c"endgroup".as_ptr());
             }
-            MATH_SHIFT_GROUP => {
+            GroupCode::MathShift => {
                 st.mem.set_b32s0(p, MATH_SHIFT_TOKEN + b'$' as i32);
                 crate::output::print_char_in(st, b'$' as i32);
             }
-            MATH_LEFT_GROUP => {
+            GroupCode::MathLeft => {
                 st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_RIGHT);
                 let q = crate::scan::get_avail_scc(st)?;
                 st.mem.set_b32s1(p, q);
@@ -3315,7 +3280,7 @@ pub(crate) fn append_discretionary_in(
         let sp = st.save_stack.save_ptr;
         st.save_stack.set_b32s1(sp, 0);
         st.save_stack.save_ptr = sp + 1;
-        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, DISC_GROUP, st.mem.line) {
+        if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::Disc, st.mem.line) {
             return Err(MainControlAbort::Save(a));
         }
         crate::scan::scan_left_brace_in(st)?;
@@ -3474,7 +3439,7 @@ pub(crate) fn build_discretionary_in(
     }
     st.save_stack
         .set_b32s1(st.save_stack.save_ptr - 1, slot + 1);
-    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, DISC_GROUP, st.mem.line) {
+    if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::Disc, st.mem.line) {
         return Err(MainControlAbort::Save(a));
     }
     crate::scan::scan_left_brace_in(st)?;
@@ -4499,8 +4464,6 @@ pub(crate) fn main_control_simple_list_group_cases_in(
     const END_GROUP_MC: u8 = 62;
     const HRULE_MC: u8 = 36;
     const VRULE_MC: u8 = 35;
-    const SIMPLE_GROUP_MC: u8 = 1;
-    const SEMI_SIMPLE_GROUP_MC: u8 = 14;
     const IGNORE_DEPTH_MC: i32 = -65_536_000;
 
     let mode = st.input.cur_list.mode.unsigned_abs();
@@ -4523,17 +4486,17 @@ pub(crate) fn main_control_simple_list_group_cases_in(
             append_kern_in(st)?
         }
         (VMODE_MC, LEFT_BRACE_MC) | (HMODE_MC, LEFT_BRACE_MC) => {
-            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, SIMPLE_GROUP_MC, st.mem.line) {
+            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::Simple, st.mem.line) {
                 return Err(MainControlAbort::Save(a));
             }
         }
         (VMODE_MC, BEGIN_GROUP_MC) | (HMODE_MC, BEGIN_GROUP_MC) | (MMODE_MC, BEGIN_GROUP_MC) => {
-            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, SEMI_SIMPLE_GROUP_MC, st.mem.line) {
+            if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::SemiSimple, st.mem.line) {
                 return Err(MainControlAbort::Save(a));
             }
         }
         (VMODE_MC, END_GROUP_MC) | (HMODE_MC, END_GROUP_MC) | (MMODE_MC, END_GROUP_MC) => {
-            if st.save_stack.cur_group == SEMI_SIMPLE_GROUP_MC {
+            if st.save_stack.cur_group == GroupCode::SemiSimple {
                 crate::save::unsave_in(st)?;
             } else {
                 off_save_in(st)?;
@@ -4702,7 +4665,6 @@ pub(crate) fn main_control_alignment_cases_in(
     const OMIT_MC: u8 = 63;
     const END_CS_NAME_MC: u8 = 67;
     const INT_PAR_TEXXET_MC: i32 = 69;
-    const MATH_SHIFT_GROUP_MC: u8 = 15;
 
     match (st.input.cur_list.mode.unsigned_abs(), st.scanner.cur_cmd) {
         (VMODE_MC, NO_ALIGN_MC) | (HMODE_MC, NO_ALIGN_MC) | (MMODE_MC, NO_ALIGN_MC) => {
@@ -4732,7 +4694,7 @@ pub(crate) fn main_control_alignment_cases_in(
         }
         (MMODE_MC, HALIGN_MC) => {
             if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
-                if st.save_stack.cur_group == MATH_SHIFT_GROUP_MC {
+                if st.save_stack.cur_group == GroupCode::MathShift {
                     init_align_in(st)?;
                 } else {
                     off_save_in(st)?;
@@ -4780,9 +4742,7 @@ pub(crate) fn main_control_math_cases_in(
     const MATH_GIVEN_MC: u8 = 69; // xetex_format.h:308
     const XETEX_MATH_GIVEN_MC: u8 = 70; // xetex_format.h:309
 
-    const MATH_SHIFT_GROUP_MC: u8 = 15; // xetex-constants.h:167
     const COND_MATH_GLUE_MC: u16 = 98; // xetex-constants.h:324
-    const VCENTER_GROUP_MC: u8 = 12; // xetex-constants.h:164
     const IGNORE_DEPTH_MC: i32 = -65_536_000; // xetex_format.h:388
     const EVERY_VBOX_TEXT_MC: u16 = 12; // xetex-constants.h:211
     const LOCAL_EVERY_VBOX_MC: i32 = 6; // xetex_format.h:178
@@ -4793,7 +4753,7 @@ pub(crate) fn main_control_math_cases_in(
 
         (MMODE_MC, EQ_NO_MC) => {
             if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
-                if st.save_stack.cur_group == MATH_SHIFT_GROUP_MC {
+                if st.save_stack.cur_group == GroupCode::MathShift {
                     crate::math::start_eq_no_in(st)?;
                 } else {
                     off_save_in(st)?;
@@ -4894,7 +4854,7 @@ pub(crate) fn main_control_math_cases_in(
         (MMODE_MC, ACCENT_MC) | (MMODE_MC, MATH_ACCENT_MC) => crate::math::math_ac_in(st)?,
 
         (MMODE_MC, VCENTER_MC) => {
-            crate::scan::scan_spec_in(st, VCENTER_GROUP_MC, false)?;
+            crate::scan::scan_spec_in(st, GroupCode::Vcenter, false)?;
             let save_abort = normal_paragraph(
                 &mut st.eqtb,
                 &mut st.save_stack,
@@ -4941,7 +4901,7 @@ pub(crate) fn main_control_math_cases_in(
         (MMODE_MC, LEFT_RIGHT_MC) => crate::math::math_left_right_in(st)?,
 
         (MMODE_MC, MATH_SHIFT_MC) => {
-            if st.save_stack.cur_group == MATH_SHIFT_GROUP_MC {
+            if st.save_stack.cur_group == GroupCode::MathShift {
                 after_math_in(st)?;
             } else {
                 off_save_in(st)?;

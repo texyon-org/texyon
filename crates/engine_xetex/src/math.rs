@@ -13,16 +13,13 @@ use crate::node::{
     RuleDimen, RuleNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::NodeRecycleAbort;
-use crate::state::{EngineState, EqtbState, FontState, MemState, SaveStackState, ScannerState};
+use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState, SaveStackState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
 const INT_PAR_CUR_FAM: i32 = 44;
 const LOCAL_EVERY_MATH: i32 = 3;
 
 const EVERY_MATH_TEXT: u16 = 9;
-const MATH_CHOICE_GROUP: u8 = 13;
-const MATH_SHIFT_GROUP: u8 = 15;
-const MATH_LEFT_GROUP: u8 = 16;
 
 const RELAX: u8 = 0;
 const SPACER: u8 = 10;
@@ -3668,7 +3665,7 @@ pub(crate) fn start_eq_no_in(
     st.save_stack.set_b32s1(st.save_stack.save_ptr, st.scanner.cur_chr);
     st.save_stack.save_ptr += 1;
 
-    crate::main_control::push_math_in(st, MATH_SHIFT_GROUP)?;
+    crate::main_control::push_math_in(st, GroupCode::MathShift)?;
     if let Some(a) = crate::save::eq_word_define(
         &mut st.eqtb,
         &mut st.save_stack,
@@ -3762,7 +3759,7 @@ pub(crate) fn append_choices_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     append_choices_core(&mut st.input.cur_list, &mut st.mem, &mut st.save_stack)?;
-    crate::main_control::push_math_in(st, MATH_CHOICE_GROUP)?;
+    crate::main_control::push_math_in(st, GroupCode::MathChoice)?;
     crate::scan::scan_left_brace_in(st)?;
     Ok(())
 }
@@ -3853,7 +3850,7 @@ pub(crate) fn build_choices_in(
     if complete {
         return Ok(());
     }
-    crate::main_control::push_math_in(st, MATH_CHOICE_GROUP)?;
+    crate::main_control::push_math_in(st, GroupCode::MathChoice)?;
     crate::scan::scan_left_brace_in(st)?;
     Ok(())
 }
@@ -4103,8 +4100,8 @@ pub(crate) fn math_left_right_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     let t = st.scanner.cur_chr as u16;
-    if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != MATH_LEFT_GROUP {
-        if st.save_stack.cur_group == MATH_SHIFT_GROUP {
+    if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != GroupCode::MathLeft {
+        if st.save_stack.cur_group == GroupCode::MathShift {
             scan_delimiter_in(st, GARBAGE, false)?;
             crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
             if t == 1 {
@@ -4137,7 +4134,7 @@ pub(crate) fn math_left_right_in(
             q
         };
         if t != NodeType::RightNoad.as_raw() {
-            crate::main_control::push_math_in(st, MATH_LEFT_GROUP)?;
+            crate::main_control::push_math_in(st, GroupCode::MathLeft)?;
             finish_left_right_group(&mut st.input.cur_list, &mut st.mem, q, p.idx().0);
         } else {
             append_inner_noad_for_right(&mut st.input.cur_list, &mut st.mem, q)?;
@@ -4219,7 +4216,7 @@ pub(crate) fn resume_after_display_in(
 ) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::main_control::MainControlAbort;
 
-    if st.save_stack.cur_group != MATH_SHIFT_GROUP {
+    if st.save_stack.cur_group != GroupCode::MathShift {
         return Err(MainControlAbort::Confusion(c"display"));
     }
 
@@ -5052,7 +5049,7 @@ pub(crate) fn init_math_in(
             l = st.mem.b32s1(p);
         }
 
-        crate::main_control::push_math_in(st, MATH_SHIFT_GROUP)?;
+        crate::main_control::push_math_in(st, GroupCode::MathShift)?;
         st.input.cur_list.mode = MMODE;
         if let Some(a) = crate::save::eq_word_define(
             &mut st.eqtb,
@@ -5109,7 +5106,7 @@ pub(crate) fn init_math_in(
         }
     } else {
         crate::input::back_input_in(st)?;
-        crate::main_control::push_math_in(st, MATH_SHIFT_GROUP)?;
+        crate::main_control::push_math_in(st, GroupCode::MathShift)?;
         if let Some(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,

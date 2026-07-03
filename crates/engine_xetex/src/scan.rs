@@ -1,6 +1,7 @@
 //! Scanner range-validation helpers and mu_error.
 //!
 //! Translated from xetex-xetex0.c.
+use crate::state::GroupCode;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE,
     EQTB_SIZE, GLUE_NODE, INT_BASE, KERN_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE, MAX_HALFWORD,
@@ -471,7 +472,7 @@ const ADDITIONAL: u8 = 1;
 /// overflow, surfaced through [`SccAbort`].
 pub(crate) fn scan_spec_in(
     st: &mut crate::state::EngineState,
-    c: u8,
+    c: GroupCode,
     three_codes: bool,
 ) -> Result<(), SccAbort> {
     let s = if three_codes {
@@ -1104,7 +1105,7 @@ pub(crate) fn get_r_token_in(st: &mut crate::state::EngineState) -> Result<(), S
 
 /// `&mut EngineState` core of [`scan_math`] (`01b` §3): scans one math field
 /// under one borrow over the threaded scanner/input cores; the `{`...`}`
-/// sub-formula arm pushes a `MATH_GROUP` and returns.
+/// sub-formula arm pushes a `GroupCode::Math` and returns.
 pub(crate) fn scan_math_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -1119,7 +1120,6 @@ pub(crate) fn scan_math_in(
     const XETEX_MATH_GIVEN: u8 = 70; // xetex_format.h:309
     const ACTIVE_MATH_CHAR: i32 = 0x1FFFFF; // xetex-constants.h:343
     const MATH_CHAR_NODE: i32 = 1; // xetex-constants.h:269
-    const MATH_GROUP_TYPE: u8 = 9; // xetex-constants.h:161
     const INT_PAR_CUR_FAM: i32 = 44; // xetex_format.h:79
     const NUMBER_MATH_FAMILIES_VAL: i32 = 256; // xetex-constants.h:31
 
@@ -1192,7 +1192,7 @@ pub(crate) fn scan_math_in(
                     scan_left_brace_in(st)?;
                     st.save_stack.set_b32s1(st.save_stack.save_ptr, p);
                     st.save_stack.save_ptr += 1;
-                    crate::main_control::push_math_in(st, MATH_GROUP_TYPE)?;
+                    crate::main_control::push_math_in(st, GroupCode::Math)?;
                     return Ok(());
                 }
             };
