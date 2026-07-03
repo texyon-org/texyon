@@ -2923,9 +2923,13 @@ pub unsafe extern "C" fn font_feature_warning(
     setting_name_p: *const libc::c_void,
     set_len: i32,
 ) {
-    crate::state::with_state_mut(|st| {
-        font_feature_warning_in(st, feature_name_p, feat_len, setting_name_p, set_len)
-    });
+    // Reach the run's owned `EngineState` through the locator pointer — the one
+    // irreducible C++-callback access (see `state.rs`); every other path is
+    // threaded. macOS-only; null outside a run.
+    let p = crate::state::current_engine_state();
+    if !p.is_null() {
+        font_feature_warning_in(&mut *p, feature_name_p, feat_len, setting_name_p, set_len);
+    }
 }
 
 /// `&mut EngineState` core of [`font_feature_warning`].

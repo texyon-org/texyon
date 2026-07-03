@@ -1,6 +1,5 @@
 //! Rust-owned engine state during the Stage 2 idiomatization.
 
-use std::cell::RefCell;
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -1540,22 +1539,20 @@ impl Default for LinebreakState {
     }
 }
 
-// --- §6 flip transition (drain step 9) ---------------------------------------
-// The engine state is being moved from a persistent thread-local `RefCell` to a
-// value OWNED by `tt_run_engine`. During a run, `tt_run_engine` installs a raw
-// pointer to its owned `EngineState` (`ENGINE_STATE_PTR`) and `with_state`/
-// `with_state_mut` reach it through that pointer — letting the still-unthreaded
-// accessor/terminal code keep working while the remaining `with_state` sites are
-// drained to direct `&mut EngineState` threading. When the pointer is null (unit
-// tests that never enter `tt_run_engine`, and host `tt_xetex_set_int_variable`
-// calls made *before* a run) the calls fall back to the old thread-local
-// `RefCell`, which also preserves that path's double-borrow panic net. Once the
-// drain reaches zero `with_state` calls, the pointer, the fallback, and these two
-// fns all delete and the flip is complete.
+// --- Owned-state locator for the one irreducible C++ callback ----------------
+// The engine state is OWNED by `tt_run_engine` (a `Box<EngineState>`). Every
+// access is threaded through `&mut EngineState` — with ONE exception that cannot
+// be: `font_feature_warning`, the macOS AAT `#[no_mangle]` callback that fires
+// mid-`loadAATfont` deep inside Core Text (xetex-macos.c, built only on macOS)
+// with no Rust frame in between to carry a borrow. For it alone, `tt_run_engine`
+// installs a raw pointer to its owned state here; the callback reads it via
+// `current_engine_state()`. This is a LOCATOR (re-established at each run entry,
+// like the `FONT_*` FFI mirrors), NOT engine state — a clone captures the state,
+// not this pointer. Never used on the Linux build. The former `with_state`/
+// `with_state_mut` closure bridge and its `RefCell` fallback are gone (`01e`).
 thread_local! {
     static ENGINE_STATE_PTR: std::cell::Cell<*mut EngineState> =
         const { std::cell::Cell::new(std::ptr::null_mut()) };
-    static ENGINE_STATE_FALLBACK: RefCell<EngineState> = RefCell::new(EngineState::default());
 }
 
 /// Install (or clear, with a null pointer) the owner pointer for the current
@@ -1563,21 +1560,19 @@ thread_local! {
 /// via a drop guard).
 ///
 /// SAFETY: while non-null, `p` must point to an `EngineState` that outlives every
-/// `with_state`/`with_state_mut` call on this thread until it is cleared.
+/// `current_engine_state()` read on this thread until it is cleared.
 pub(crate) fn set_engine_state_ptr(p: *mut EngineState) {
     ENGINE_STATE_PTR.with(|c| c.set(p));
 }
 
-
-#[inline]
-pub(crate) fn with_state_mut<R>(f: impl FnOnce(&mut EngineState) -> R) -> R {
-    let p = ENGINE_STATE_PTR.with(|c| c.get());
-    if p.is_null() {
-        return ENGINE_STATE_FALLBACK.with(|state| f(&mut state.borrow_mut()));
-    }
-    // SAFETY: as `with_state`; the invariant guarantees this is the only live
-    // borrow of `*p` for the closure's duration. Transitional (§6 flip).
-    f(unsafe { &mut *p })
+/// The current run's owned `EngineState`, for the macOS `font_feature_warning`
+/// callback only (see the module comment). Null outside a run.
+///
+/// SAFETY: the caller must not create an aliasing `&mut` while another borrow of
+/// the same `EngineState` is live; `font_feature_warning` runs inside a C font
+/// load with no other live Rust borrow.
+pub(crate) unsafe fn current_engine_state() -> *mut EngineState {
+    ENGINE_STATE_PTR.with(|c| c.get())
 }
 
 pub(crate) struct HyphState {
