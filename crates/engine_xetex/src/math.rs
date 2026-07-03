@@ -1302,15 +1302,9 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
         let mut y = clean_box_in(st, q_raw + 1, st.scanner.cur_style)?;
         let mut z = clean_box_in(st, q_raw + 3, (2 * (cs / 4) + 5) as i16)?;
 
-        // Allocate the wrapper vbox and set its width to the max of x/y/z.
-        let v = new_null_box(&mut st.mem);
-        if v == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b16s1(v, NodeType::VList.as_raw());
-        // Classify the wrapper vbox once; the handle is `Copy` and holds no
-        // borrow, so it stays valid across the `rebox_in` calls below.
-        let v_box = classify_box_or_panic(&st.mem, v);
+        // Allocate the wrapper vbox directly as a typed handle (`Copy`, holds no
+        // borrow, so it stays valid across the `rebox_in` calls below).
+        let v_box = AnyBox::VList(alloc_null_vbox(&mut st.mem)?);
         let w = make_op_prepare_limits_box(&mut st.mem, v_box, x, y, z);
 
         x = rebox_in(st, x, w)?;
