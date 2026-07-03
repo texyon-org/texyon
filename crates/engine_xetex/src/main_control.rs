@@ -9,8 +9,8 @@
 //! and verbs follow in later slices.
 
 use crate::consts::{
-    BATCH_MODE, BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
-    DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, ERROR_STOP_MODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE,
+    BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
+    DEL_CODE_BASE, DIMEN_BASE, DISC_NODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE,
     HLIST_NODE, INT_BASE, KERN_NODE, LIGATURE_NODE, LOCAL_BASE, MATH_CODE_BASE, MATH_NODE,
     MAX_HALFWORD, NULL_FLAG, PENALTY_NODE, PRIM_EQTB_BASE, RULE_NODE, SELECTOR_TERM_ONLY,
     SF_CODE_BASE, SINGLE_BASE, SMALL_NODE_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
@@ -3082,8 +3082,12 @@ pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), Mai
 }
 pub(crate) fn new_interaction_in(st: &mut crate::state::EngineState) {
     crate::output::print_ln_in(st);
-    st.errors.interaction = st.scanner.cur_chr as u8;
-    if st.errors.interaction == BATCH_MODE {
+    // The `\batchmode`/`\nonstopmode`/`\scrollmode`/`\errorstopmode` primitives
+    // are registered with chr 0..=3, so this is the single classify boundary where
+    // the mode enters the typed domain.
+    st.errors.interaction = crate::state::InteractionMode::from_raw(st.scanner.cur_chr)
+        .expect("interaction primitive chr is 0..=3");
+    if st.errors.interaction == crate::state::InteractionMode::Batch {
         st.shipout.selector = SELECTOR_NO_PRINT;
     } else {
         st.shipout.selector = SELECTOR_TERM_ONLY;
@@ -3156,7 +3160,7 @@ pub(crate) fn alter_integer_in(st: &mut crate::state::EngineState) -> Result<(),
     if c == 0 {
         st.shipout.dead_cycles = st.scanner.cur_val;
     } else if c == 2 {
-        if st.scanner.cur_val < BATCH_MODE as i32 || st.scanner.cur_val > ERROR_STOP_MODE as i32 {
+        if crate::state::InteractionMode::from_raw(st.scanner.cur_val).is_none() {
             let errmsg =
                 crate::output::error_here_with_diagnostic_in(st, c"Bad interaction mode".as_ptr());
             unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };

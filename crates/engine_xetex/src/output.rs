@@ -1,12 +1,12 @@
 //! Phase 3 — printing helpers translated from `xetex/xetex-output.c`.
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, ERROR_STOP_MODE,
-    INT_BASE, LOCAL_BASE, NULL_FLAG, PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, INT_BASE, LOCAL_BASE, NULL_FLAG, PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
     SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::{error_in, ErrorOutcome};
 use crate::node::{AnyBox, AnyNode, NodePtr, WhatsitNode};
 use crate::state::EngineState;
+use crate::state::InteractionMode;
 use crate::units::{MemIdx, NodeType};
 
 
@@ -3199,7 +3199,7 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
             st.errors.help_ptr = 1;
             st.errors.help_line[0] = c"(That was another \\errmessage.)".as_ptr();
         } else {
-            if st.errors.interaction < ERROR_STOP_MODE {
+            if st.errors.interaction < InteractionMode::ErrorStop {
                 st.errors.long_help_seen = true;
             }
             st.errors.help_ptr = 4;
@@ -3653,7 +3653,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
 
     // common_ending:
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    if st.errors.interaction < ERROR_STOP_MODE {
+    if st.errors.interaction < InteractionMode::ErrorStop {
         st.errors.help_ptr = 0;
         st.errors.error_count -= 1;
     } else if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) > 0 {

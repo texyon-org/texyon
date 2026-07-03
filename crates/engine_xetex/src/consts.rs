@@ -29,9 +29,6 @@ pub const MARGIN_KERN_NODE: u16 = 40;
 
 pub const SELECTOR_TERM_ONLY: i32 = 17;
 pub const SELECTOR_TERM_AND_LOG: i32 = 19;
-pub const BATCH_MODE: u8 = 0;
-pub const SCROLL_MODE: u8 = 2;
-pub const ERROR_STOP_MODE: u8 = 3;
 
 // eqtb bases & parameter counts
 pub const ACTIVE_BASE: i32 = 1;

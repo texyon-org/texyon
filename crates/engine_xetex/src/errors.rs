@@ -1,7 +1,7 @@
 //! Error-handling functions translated from `xetex/xetex-errors.c`.
 
 use crate::consts::{
-    BATCH_MODE, BOX_BASE, ERROR_STOP_MODE, SCROLL_MODE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+    BOX_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
 };
 
 // Interaction-mode constants (xetex_format.h:644–647).
@@ -14,6 +14,7 @@ use crate::output::{
     print_nl_cstr_in, show_box_in, show_context_in, token_show_in,
 };
 use crate::state::EngineState;
+use crate::state::InteractionMode;
 
 const HISTORY_ERROR_ISSUED: i32 = 2;
 const HISTORY_FATAL_ERROR: i32 = 3;
@@ -53,7 +54,7 @@ unsafe fn pre_error_message_in(st: &mut EngineState) {
         // 3 surfacing the primary abort's message (`01d` §5.6).
         let _ = crate::io::open_log_file_in(st);
     }
-    if st.errors.interaction == BATCH_MODE {
+    if st.errors.interaction == InteractionMode::Batch {
         st.shipout.selector -= 1;
     }
     crate::output::error_here_with_diagnostic_in(st, c"".as_ptr());
@@ -65,8 +66,8 @@ unsafe fn pre_error_message_in(st: &mut EngineState) {
 
 unsafe fn post_error_message_in(st: &mut EngineState, need_to_print_it: bool) {
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    if st.errors.interaction == ERROR_STOP_MODE {
-        st.errors.interaction = SCROLL_MODE;
+    if st.errors.interaction == InteractionMode::ErrorStop {
+        st.errors.interaction = InteractionMode::Scroll;
     }
     if need_to_print_it && st.errors.log_opened {
         // Absorb the recoverable-error outcome instead of the error()/finish()
@@ -158,7 +159,7 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
         return ErrorOutcome::Hundred;
     }
 
-    if st.errors.interaction > BATCH_MODE {
+    if st.errors.interaction > InteractionMode::Batch {
         st.shipout.selector -= 1;
     }
     if st.errors.use_err_help {
@@ -173,7 +174,7 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
         st.errors.help_ptr = hp;
     }
     print_ln_in(st);
-    if st.errors.interaction > BATCH_MODE {
+    if st.errors.interaction > InteractionMode::Batch {
         st.shipout.selector += 1;
     }
     print_ln_in(st);

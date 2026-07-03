@@ -2,10 +2,11 @@
 //! translated from the format-I/O part of xetex-ini.c.
 
 use crate::consts::{
-    ACTIVE_BASE, BATCH_MODE, CS_TOKEN_FLAG, EQTB_SIZE, ERROR_STOP_MODE, MAX_HALFWORD, MIN_HALFWORD,
-    SCROLL_MODE, SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR,
+    ACTIVE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, MAX_HALFWORD, MIN_HALFWORD,
+    SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR,
 };
 use crate::engine::{sort_avail_in, TRE_MAX_STRINGS, TRE_POOL_SIZE};
+use crate::state::InteractionMode;
 use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 
 extern "C" {
@@ -238,8 +239,8 @@ pub(crate) unsafe fn store_fmt_file_in(
         st.errors.help_ptr = 1;
         st.errors.help_line[0] = c"`{...\\dump}' is a no-no.".as_ptr();
 
-        if st.errors.interaction == ERROR_STOP_MODE {
-            st.errors.interaction = SCROLL_MODE;
+        if st.errors.interaction == InteractionMode::ErrorStop {
+            st.errors.interaction = InteractionMode::Scroll;
         }
         if st.errors.log_opened {
             // Thread error()'s outcome instead of the error()/finish() longjmp:
@@ -278,7 +279,7 @@ pub(crate) unsafe fn store_fmt_file_in(
     crate::output::print_int_in(st, day);
     crate::output::print_char_in(st, b')' as i32);
 
-    if st.errors.interaction == BATCH_MODE {
+    if st.errors.interaction == InteractionMode::Batch {
         st.shipout.selector = SELECTOR_LOG_ONLY;
     } else {
         st.shipout.selector = SELECTOR_TERM_AND_LOG;

@@ -3,8 +3,8 @@
 //! from the driver part of xetex-ini.c.
 
 use crate::consts::{
-    ACTIVE_BASE, BATCH_MODE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
-    DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ERROR_STOP_MODE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE,
+    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
+    DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, GLUE_BASE, GLUE_NODE,
     INT_BASE, LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_HALFWORD, NUMBER_USVS,
     PRIM_EQTB_BASE, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
     TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
@@ -12,6 +12,7 @@ use crate::consts::{
 use crate::format_io::load_fmt_file;
 use crate::io::init_io;
 use crate::state::{EngineState, MemState};
+use crate::state::InteractionMode;
 
 const LEVEL_ONE: u16 = 1;
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -363,7 +364,7 @@ pub(crate) unsafe fn final_cleanup_in(
     }
 
     if st.errors.history != HISTORY_SPOTLESS
-        && (st.errors.history == HISTORY_WARNING_ISSUED || st.errors.interaction < ERROR_STOP_MODE)
+        && (st.errors.history == HISTORY_WARNING_ISSUED || st.errors.interaction < InteractionMode::ErrorStop)
         && st.shipout.selector == SELECTOR_TERM_AND_LOG
     {
         st.shipout.selector = SELECTOR_TERM_ONLY;
@@ -448,7 +449,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.native_text_size = 128;
     st.scanner.native_text = vec![0; 128];
 
-    st.errors.interaction = ERROR_STOP_MODE;
+    st.errors.interaction = InteractionMode::ErrorStop;
 
     st.errors.deletions_allowed = true;
     st.scanner.set_box_allowed = true;
@@ -1447,7 +1448,7 @@ pub unsafe extern "C" fn tt_run_engine(
     let random_seed = st.errors.random_seed;
     crate::scaled_math::init_randoms(&mut st.errors, random_seed);
 
-    if st.errors.interaction == BATCH_MODE {
+    if st.errors.interaction == InteractionMode::Batch {
         st.shipout.selector = SELECTOR_NO_PRINT;
     } else {
         st.shipout.selector = SELECTOR_TERM_ONLY;

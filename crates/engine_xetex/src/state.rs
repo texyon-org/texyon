@@ -1360,6 +1360,33 @@ impl ShipoutState {
     }
 }
 
+/// TeX's error-interaction mode (`\batchmode`/`\nonstopmode`/`\scrollmode`/
+/// `\errorstopmode`, xetex-constants.h). Ordered Batch < Nonstop < Scroll <
+/// ErrorStop (the numeric encoding), matching the `interaction < ERROR_STOP_MODE`
+/// / `> BATCH_MODE` tests that gate terminal prompting and log verbosity.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[repr(u8)]
+pub(crate) enum InteractionMode {
+    Batch = 0,
+    Nonstop = 1,
+    Scroll = 2,
+    ErrorStop = 3,
+}
+
+impl InteractionMode {
+    /// Decode a scanned mode value; `None` for out-of-range (this IS the
+    /// `\interactionmode=N` bounds check — 0..=3).
+    pub(crate) fn from_raw(v: i32) -> Option<InteractionMode> {
+        match v {
+            0 => Some(InteractionMode::Batch),
+            1 => Some(InteractionMode::Nonstop),
+            2 => Some(InteractionMode::Scroll),
+            3 => Some(InteractionMode::ErrorStop),
+            _ => None,
+        }
+    }
+}
+
 pub(crate) struct ErrorState {
     pub arith_error: bool,
     pub tex_remainder: i32,
@@ -1370,7 +1397,7 @@ pub(crate) struct ErrorState {
     pub help_ptr: u8,
     pub two_to_the: [i32; 31],
     pub spec_log: [i32; 29],
-    pub interaction: u8,
+    pub interaction: InteractionMode,
     pub history: i32,
     pub error_count: i8,
     pub use_err_help: bool,
@@ -1402,7 +1429,7 @@ impl Default for ErrorState {
             help_ptr: 0,
             two_to_the: [0; 31],
             spec_log: [0; 29],
-            interaction: 0,
+            interaction: InteractionMode::Batch,
             history: 0,
             error_count: 0,
             use_err_help: false,
