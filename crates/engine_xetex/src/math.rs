@@ -743,23 +743,12 @@ fn make_radical_finish(mem: &mut MemState, q: NodePtr<Noad>, x: AnyBox) {
 
 fn make_radical_prepare_delimiter(
     mem: &mut MemState,
-    y: i32,
-    x: i32,
+    y_box: AnyBox,
+    x_box: AnyBox,
     clr: i32,
     rule_thickness: i32,
     is_ot_math: bool,
 ) -> (i32, i32, i32) {
-    let y_idx = MemIdx::new(y);
-    let y_box = mem
-        .classify_box(y_idx)
-        .expect("valid box")
-        .expect("y is a box");
-    let x_idx = MemIdx::new(x);
-    let x_box = mem
-        .classify_box(x_idx)
-        .expect("valid box")
-        .expect("x is a box");
-
     if is_ot_math {
         let new_depth = Scaled(y_box.depth(mem).0 + y_box.height(mem).0 - rule_thickness);
         y_box.set_depth(mem, new_depth);
@@ -807,8 +796,8 @@ unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), 
     let y = var_delimiter_in(st, q_raw + 4, cur_size, delimiter_height)?;
     let (delta, x_height, rule_height) = make_radical_prepare_delimiter(
         &mut st.mem,
-        y.idx().0,
-        x.idx().0,
+        y,
+        x,
         clr,
         rule_thickness,
         is_ot_math,
