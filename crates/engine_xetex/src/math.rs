@@ -5121,21 +5121,19 @@ pub fn initialize_math_variables() {
 
 /// translated from xetex-math.c:1356 (rebox)
 enum ReboxResult {
-    Done(i32),
+    /// The box was repacked in place (width set); the typed handle is returned.
+    Done(AnyBox),
+    /// The box was dissolved into a glue-wrapped list; the raw list head must be
+    /// hpacked by the caller.
     Hpack(i32),
 }
 
 fn rebox(
     mem: &mut MemState,
-    b: i32,
+    bb: AnyBox,
     w: i32,
     char_kern_width: Option<i32>,
 ) -> Result<ReboxResult, NodeRecycleAbort> {
-    let mut b = b;
-    let bb = mem
-        .classify_box(MemIdx::new(b))
-        .expect("valid node type for rebox")
-        .expect("rebox receives a box");
     if bb.width(mem).0 != w && !bb.list_ptr(mem).is_null() {
         let mut p = bb.list_ptr(mem).0;
         if let Some(v) = char_kern_width {
@@ -5147,12 +5145,12 @@ fn rebox(
                 mem.set_b32s1(p, k);
             }
         }
-        free_node(mem, b, BOX_NODE_SIZE);
-        b = new_glue(mem, 12);
-        if b == ALLOC_FAILED {
+        free_node(mem, bb.idx().0, BOX_NODE_SIZE);
+        let g = new_glue(mem, 12);
+        if g == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        mem.set_b32s1(b, p);
+        mem.set_b32s1(g, p);
         while mem.b32s1(p) != TEX_NULL {
             p = mem.b32s1(p);
         }
@@ -5161,10 +5159,10 @@ fn rebox(
             return Err(NodeRecycleAbort::Overflow);
         }
         mem.set_b32s1(p, tail_glue);
-        Ok(ReboxResult::Hpack(b))
+        Ok(ReboxResult::Hpack(g))
     } else {
         bb.set_width(mem, Scaled(w));
-        Ok(ReboxResult::Done(b))
+        Ok(ReboxResult::Done(bb))
     }
 }
 
@@ -5196,8 +5194,8 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
         None
     };
 
-    match rebox(&mut st.mem, bb.idx().0, w, char_kern_width)? {
-        ReboxResult::Done(rb) => Ok(classify_box_or_panic(&st.mem, rb)),
+    match rebox(&mut st.mem, bb, w, char_kern_width)? {
+        ReboxResult::Done(rb) => Ok(rb),
         ReboxResult::Hpack(rb) => Ok(crate::packaging::hpack_emit_in(st, rb, w, EXACTLY)?),
     }
 }
