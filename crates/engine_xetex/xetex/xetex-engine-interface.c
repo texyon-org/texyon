@@ -30,6 +30,13 @@ tt_engine_xetex_main(
 ) {
     int rv;
 
+    /* The Rust engine no longer triggers a longjmp: all fatal aborts are
+     * Result-propagated to tt_run_engine -> into_history, its allocators panic
+     * (not longjmp) on OOM, and tt_run_engine wraps its body in catch_unwind to
+     * turn any panic into a HISTORY_FATAL_ERROR return (src/engine.rs). This
+     * setjmp is now only a defensive backstop for the macOS-only DoAATLayout
+     * _tt_abort (xetex-macos.c) and any residual C longjmp; on the Linux build
+     * it is dead. ttbc_global_engine_enter() still runs (it registers the api). */
     if (setjmp(*ttbc_global_engine_enter(api))) {
         ttbc_global_engine_exit();
         return HISTORY_FATAL_ERROR;
