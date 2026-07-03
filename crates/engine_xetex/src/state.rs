@@ -1568,17 +1568,6 @@ pub(crate) fn set_engine_state_ptr(p: *mut EngineState) {
     ENGINE_STATE_PTR.with(|c| c.set(p));
 }
 
-#[inline]
-pub(crate) fn with_state<R>(f: impl FnOnce(&EngineState) -> R) -> R {
-    let p = ENGINE_STATE_PTR.with(|c| c.get());
-    if p.is_null() {
-        return ENGINE_STATE_FALLBACK.with(|state| f(&state.borrow()));
-    }
-    // SAFETY: `p` points to `tt_run_engine`'s owned `EngineState`, live for the
-    // whole run; the no-double-borrow invariant (proven under the former RefCell)
-    // guarantees no aliasing `&mut` is active. Transitional (§6 flip).
-    f(unsafe { &*p })
-}
 
 #[inline]
 pub(crate) fn with_state_mut<R>(f: impl FnOnce(&mut EngineState) -> R) -> R {

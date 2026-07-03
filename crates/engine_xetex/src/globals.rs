@@ -210,22 +210,6 @@ mod raw {
 // str_ptr / str_start / str_pool (read accessor)
 // ---------------------------------------------------------------------------
 
-/// Returns `name_of_file` as a raw pointer (NUL-terminated C string).
-#[inline]
-pub(crate) fn name_of_file() -> *mut libc::c_char {
-    crate::state::with_state(|s| {
-        if s.input.name_of_file.is_empty() {
-            std::ptr::null_mut()
-        } else {
-            s.input.name_of_file.as_ptr() as *mut libc::c_char
-        }
-    })
-}
-/// Returns `name_length`.
-#[inline]
-pub(crate) fn name_length() -> i32 {
-    crate::state::with_state(|s| s.input.name_length)
-}
 
 // ---------------------------------------------------------------------------
 // in_open / full_source_filename_stack / line_stack / file_line_error_style_p

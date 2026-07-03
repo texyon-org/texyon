@@ -1414,30 +1414,34 @@ pub(crate) unsafe fn gr_print_font_name_in(
 }
 
 // translated from xetex-ext.c:670 (gr_font_get_named)
-pub unsafe fn gr_font_get_named(what: i32, p_engine: *mut c_void) -> i32 {
+pub unsafe fn gr_font_get_named(
+    st: &mut crate::state::EngineState,
+    what: i32,
+    p_engine: *mut c_void,
+) -> i32 {
     let mut rval: c_long = -1;
     let engine = p_engine as XeTeXLayoutEngine;
     if what == XETEX_FIND_FEATURE_BY_NAME {
-        rval = findGraphiteFeatureNamed(
-            engine,
-            crate::globals::name_of_file(),
-            crate::globals::name_length(),
-        );
+        let np = name_of_file_mut_ptr(st);
+        let nl = st.input.name_length;
+        rval = findGraphiteFeatureNamed(engine, np, nl);
     }
     rval as i32
 }
 
 // translated from xetex-ext.c:683 (gr_font_get_named_1)
-pub unsafe fn gr_font_get_named_1(what: i32, p_engine: *mut c_void, param: i32) -> i32 {
+pub unsafe fn gr_font_get_named_1(
+    st: &mut crate::state::EngineState,
+    what: i32,
+    p_engine: *mut c_void,
+    param: i32,
+) -> i32 {
     let mut rval: c_long = -1;
     let engine = p_engine as XeTeXLayoutEngine;
     if what == XETEX_FIND_SELECTOR_BY_NAME {
-        rval = findGraphiteFeatureSettingNamed(
-            engine,
-            param as u32,
-            crate::globals::name_of_file(),
-            crate::globals::name_length(),
-        );
+        let np = name_of_file_mut_ptr(st);
+        let nl = st.input.name_length;
+        rval = findGraphiteFeatureSettingNamed(engine, param as u32, np, nl);
     }
     rval as i32
 }

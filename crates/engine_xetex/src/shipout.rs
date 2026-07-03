@@ -7,8 +7,6 @@ use crate::consts::{
 };
 use crate::ext::apply_tfm_font_mapping;
 
-use crate::globals::{
-    name_of_file, };
 use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{MemIdx, MemPtr, Scaled};
@@ -266,20 +264,9 @@ impl ShipoutAbort {
             },
             ShipoutAbort::Scc(e) => e.into_engine_abort(),
             ShipoutAbort::CannotOpenOutput => {
-                let mut buf = vec![0u8; 512];
-                // SAFETY: FFI formatting into an owned 512-byte buffer; `name_of_file()`
-                // is a valid C string. The buffer is leaked below so the returned
-                // pointer outlives this frame (through `into_history`).
-                unsafe {
-                    libc::snprintf(
-                        buf.as_mut_ptr() as *mut libc::c_char,
-                        buf.len(),
-                        c"cannot open output file \"%s\"".as_ptr(),
-                        name_of_file(),
-                    );
-                }
-                let ptr = buf.leak().as_ptr() as *const libc::c_char;
-                crate::errors::EngineAbort::TtAbort(ptr)
+                // The message is formatted in `into_history` from the folded
+                // `st.input.name_of_file` (`01e`), so no state borrow here.
+                crate::errors::EngineAbort::CannotOpenOutput
             }
             ShipoutAbort::Name(e) => e.into_engine_abort(),
             ShipoutAbort::NativeFont(e) => e.into_engine_abort(),

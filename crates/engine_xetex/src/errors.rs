@@ -229,6 +229,10 @@ pub(crate) enum EngineAbort {
     },
     /// `_tt_abort(msg)` — direct longjmp; `msg` is the surfaced abort message.
     TtAbort(*const libc::c_char),
+    /// `_tt_abort("cannot open output file \"<name>\"")` — the message is formatted
+    /// in `into_history` (which holds `st`) from `st.input.name_of_file`, so the
+    /// `ShipoutAbort` mapping site needs no state borrow (`01e`).
+    CannotOpenOutput,
     /// `post_error_message(false)` then `_tt_abort(msg)` — the `ErrorOutcome`
     /// `Halt`/`Hundred` terminal (halt-on-error / 100-errors).
     HaltMessage(*const libc::c_char),
@@ -336,6 +340,24 @@ impl EngineAbort {
             // `_tt_abort(msg)` prints nothing and runs no cleanup; it only writes
             // `msg` to the bridge's surfaced message — mirror exactly that.
             EngineAbort::TtAbort(msg) => _ttbc_set_error_message(msg),
+            // Format the "cannot open output file" message here (holds `st`) from
+            // the folded `st.input.name_of_file`, mirroring the former shipout site.
+            EngineAbort::CannotOpenOutput => {
+                let mut buf = vec![0u8; 512];
+                let np = if st.input.name_of_file.is_empty() {
+                    std::ptr::null()
+                } else {
+                    st.input.name_of_file.as_ptr()
+                };
+                libc::snprintf(
+                    buf.as_mut_ptr() as *mut libc::c_char,
+                    buf.len(),
+                    c"cannot open output file \"%s\"".as_ptr(),
+                    np,
+                );
+                let ptr = buf.leak().as_ptr() as *const libc::c_char;
+                _ttbc_set_error_message(ptr);
+            }
             // ErrorOutcome Halt/Hundred: post_error_message(false) then the
             // `msg` the `_tt_abort` surfaced.
             EngineAbort::HaltMessage(msg) => {
