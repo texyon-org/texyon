@@ -95,3 +95,24 @@ Sequence: S1→S2→S3(phased)→S4→S5→S6→S7→S8→S9. Validation: dashbo
   `NodePtr::<Noad>::noad_type()` (classify to AnyNode::Noad, then noad_type()). Bigger slice
   (noad consts are used widely across math.rs); do after S9. This is the largest remaining
   "constants→enum" win.
+
+## More findings (session 249, S9 investigation)
+
+- **math.rs:4859 whole-match classify() DEFERRED — thornier than recon thought.** The
+  GARBAGE landmine is a FALSE alarm (GARBAGE=4_999_987 ≥ hi_mem_min ⇒ caught by the char
+  guard before the match; classify-at-match is memory-safe). BUT: (a) type 14 is EDGE_NODE
+  *aliased to STYLE* — `classify()` returns `AnyNode::Style` for it, so matching an edge as
+  `Style` would be MISLEADING (fails "readable"); (b) arms 9 and 10 are
+  `classify_math/glue(..).expect().expect()` double-expects (a `Result<Option<_>>` artifact).
+  A clean whole-match conversion needs an EDGE/STYLE-disambiguating classify + resolving the
+  double-expects first. Leave until those exist.
+- **The `classify_X(..).expect().expect()` double-expect (16 sites in math.rs) is a SYMPTOM,
+  not an independent slice.** `classify_math/glue/whatsit/noad/box` return
+  `Result<Option<NodePtr<K>>>` (Err=bad type, Ok(None)=other family, Ok(Some)=this family);
+  callers that KNOW the family double-unwrap. The PROPER fix is propagating the typed handle
+  from where the family is determined (the S3–S5 cascade) — a single-expect helper would just
+  be "less expecting," still a use-site assert. Tests (node.rs) rely on the `Result<Option>`
+  distinction (`is_err`/`Ok(None)`), so DON'T fold the signature. Fix these as the cascade lands.
+- **Next clean win = WhatsitSubtype (S8)** — kills the repeated
+  `sub == NATIVE_WORD_NODE || NATIVE_WORD_NODE_AT || GLYPH_NODE || PIC_NODE || PDF_NODE`
+  predicate (readability) + the `<= 4` range filters (membership, not range).
