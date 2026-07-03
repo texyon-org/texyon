@@ -1064,7 +1064,7 @@ pub(crate) unsafe fn find_native_font_in(
     let mut end: *mut c_char = ptr::null_mut();
     let mut var_string: *mut c_char = ptr::null_mut();
     let mut feat_string: *mut c_char = ptr::null_mut();
-    let mut font: XeTeXFont = ptr::null_mut();
+    let mut font: XeTeXFont;
     let mut index = 0;
 
     st.fonts.loaded_font_mapping = ptr::null_mut();

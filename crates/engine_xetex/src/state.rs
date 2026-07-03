@@ -861,8 +861,9 @@ pub(crate) struct ScannerState {
     pub set_box_allowed: bool,
     pub active_width: [i32; 7],
     pub best_height_plus_depth: i32,
-    pub LR_ptr: i32,
-    pub LR_problems: i32,
+    // TeXXeT left-right directionality state.
+    pub lr_ptr: i32,
+    pub lr_problems: i32,
     pub cur_dir: i16,
     /// Sparse-array trie roots: `sa_root[0..=7]` (xetex-xetexd.h:709).
     pub sa_root: [i32; 8],

@@ -550,8 +550,8 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
         st.shipout.write_open[k] = false;
     }
 
-    st.scanner.LR_ptr = crate::mem::TEX_NULL;
-    st.scanner.LR_problems = 0;
+    st.scanner.lr_ptr = crate::mem::TEX_NULL;
+    st.scanner.lr_problems = 0;
     st.scanner.cur_dir = LEFT_TO_RIGHT;
     st.input.pseudo_files = crate::mem::TEX_NULL;
     st.scanner.sa_root[MARK_VAL] = crate::mem::TEX_NULL;

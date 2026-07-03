@@ -704,19 +704,19 @@ pub(crate) unsafe fn ship_out_in(
         st.shipout.cur_s = -1;
     }
 
-    if st.scanner.LR_problems > 0 {
+    if st.scanner.lr_problems > 0 {
         crate::output::print_ln_in(st);
         crate::output::print_nl_cstr_in(st, c"\\endL or \\endR problem (".as_ptr());
-        crate::output::print_int_in(st, st.scanner.LR_problems / 10000);
+        crate::output::print_int_in(st, st.scanner.lr_problems / 10000);
         crate::output::print_cstr_in(st, c" missing, ".as_ptr());
-        crate::output::print_int_in(st, st.scanner.LR_problems % 10000);
+        crate::output::print_int_in(st, st.scanner.lr_problems % 10000);
         crate::output::print_cstr_in(st, c" extra".as_ptr());
-        st.scanner.LR_problems = 0;
+        st.scanner.lr_problems = 0;
         crate::output::print_char_in(st, b')' as i32);
         crate::output::print_ln_in(st);
     }
 
-    if st.scanner.LR_ptr != TEX_NULL || st.scanner.cur_dir != LEFT_TO_RIGHT {
+    if st.scanner.lr_ptr != TEX_NULL || st.scanner.cur_dir != LEFT_TO_RIGHT {
         return Err(ShipoutAbort::Confusion(c"LR3"));
     }
 
@@ -1254,8 +1254,8 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     let lr_node = get_avail_ship(&mut st.mem)?;
     st.mem.temp_ptr = lr_node;
     st.mem.set_b32s0(lr_node, BEFORE);
-    st.mem.set_b32s1(lr_node, st.scanner.LR_ptr);
-    st.scanner.LR_ptr = lr_node;
+    st.mem.set_b32s1(lr_node, st.scanner.lr_ptr);
+    st.scanner.lr_ptr = lr_node;
 
     if this_box_b.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
@@ -1494,23 +1494,23 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                             crate::synctex::synctex_math(st, p, this_box);
                             let math_width = math.width(&st.mem).0;
                             if !math.subtype(&st.mem).is_multiple_of(2) {
-                                if st.mem.b32s0(st.scanner.LR_ptr) as u16
+                                if st.mem.b32s0(st.scanner.lr_ptr) as u16
                                     == math_node_end_lr_type(&st.mem, p)
                                 {
-                                    st.mem.temp_ptr = st.scanner.LR_ptr;
-                                    st.scanner.LR_ptr = st.mem.b32s1(st.mem.temp_ptr);
+                                    st.mem.temp_ptr = st.scanner.lr_ptr;
+                                    st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
                                     st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
                                     st.mem.avail = st.mem.temp_ptr;
                                 } else if math.subtype(&st.mem) > L_CODE {
-                                    st.scanner.LR_problems += 1;
+                                    st.scanner.lr_problems += 1;
                                 }
                             } else {
                                 let lr_node = get_avail_ship(&mut st.mem)?;
                                 st.mem.temp_ptr = lr_node;
                                 st.mem
                                     .set_b32s0(lr_node, math_node_end_lr_type(&st.mem, p) as i32);
-                                st.mem.set_b32s1(lr_node, st.scanner.LR_ptr);
-                                st.scanner.LR_ptr = lr_node;
+                                st.mem.set_b32s1(lr_node, st.scanner.lr_ptr);
+                                st.scanner.lr_ptr = lr_node;
 
                                 if math_node_lr_dir(&st.mem, p) as i16 != st.scanner.cur_dir {
                                     let save_h = st.shipout.cur_h;
@@ -1581,18 +1581,18 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
 
     crate::synctex::synctex_tsilh(st, this_box);
 
-    while st.mem.b32s0(st.scanner.LR_ptr) != BEFORE {
-        if st.mem.b32s0(st.scanner.LR_ptr) as u16 > L_CODE {
-            st.scanner.LR_problems += 10000;
+    while st.mem.b32s0(st.scanner.lr_ptr) != BEFORE {
+        if st.mem.b32s0(st.scanner.lr_ptr) as u16 > L_CODE {
+            st.scanner.lr_problems += 10000;
         }
-        st.mem.temp_ptr = st.scanner.LR_ptr;
-        st.scanner.LR_ptr = st.mem.b32s1(st.mem.temp_ptr);
+        st.mem.temp_ptr = st.scanner.lr_ptr;
+        st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
         st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
         st.mem.avail = st.mem.temp_ptr;
     }
 
-    st.mem.temp_ptr = st.scanner.LR_ptr;
-    st.scanner.LR_ptr = st.mem.b32s1(st.mem.temp_ptr);
+    st.mem.temp_ptr = st.scanner.lr_ptr;
+    st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
     st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
     st.mem.avail = st.mem.temp_ptr;
 
@@ -2379,12 +2379,12 @@ pub fn reverse(
                         shipout.rule_wd = mem.b32s1(p + 1);
 
                         if !mem.b16s0(p).is_multiple_of(2) {
-                            if mem.b32s0(scanner.LR_ptr) as u16 != math_node_end_lr_type(mem, p) {
+                            if mem.b32s0(scanner.lr_ptr) as u16 != math_node_end_lr_type(mem, p) {
                                 mem.set_b16s1(p, KERN_NODE);
-                                scanner.LR_problems += 1;
+                                scanner.lr_problems += 1;
                             } else {
-                                mem.temp_ptr = scanner.LR_ptr;
-                                scanner.LR_ptr = mem.b32s1(mem.temp_ptr);
+                                mem.temp_ptr = scanner.lr_ptr;
+                                scanner.lr_ptr = mem.b32s1(mem.temp_ptr);
                                 mem.set_b32s1(mem.temp_ptr, mem.avail);
                                 mem.avail = mem.temp_ptr;
 
@@ -2408,8 +2408,8 @@ pub fn reverse(
                         } else {
                             mem.temp_ptr = crate::mem::get_avail(mem);
                             mem.set_b32s0(mem.temp_ptr, math_node_end_lr_type(mem, p) as i32);
-                            mem.set_b32s1(mem.temp_ptr, scanner.LR_ptr);
-                            scanner.LR_ptr = mem.temp_ptr;
+                            mem.set_b32s1(mem.temp_ptr, scanner.lr_ptr);
+                            scanner.lr_ptr = mem.temp_ptr;
 
                             if n > MIN_HALFWORD
                                 || math_node_lr_dir(mem, p) as i16 != scanner.cur_dir
@@ -2449,8 +2449,8 @@ pub fn reverse(
             return Ok(l);
         }
 
-        p = crate::mem::new_math(mem, 0, mem.b32s0(scanner.LR_ptr) as i16);
-        scanner.LR_problems += 10000;
+        p = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16);
+        scanner.lr_problems += 10000;
     }
 }
 

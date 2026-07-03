@@ -1623,7 +1623,7 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                             }
 
                             let mut c: i32;
-                            let mut l: i32 = 0;
+                            let mut l: i32;
 
                             loop {
                                 if crate::mem::is_char_node(&st.mem, s) {

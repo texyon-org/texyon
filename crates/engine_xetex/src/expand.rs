@@ -101,9 +101,9 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
 
     let mut b = false;
     let e: bool;
-    let mut r: u8 = 0;
-    let mut m: i32 = 0;
-    let mut n: i32 = 0;
+    let r: u8;
+    let mut m: i32;
+    let mut n: i32;
     let mut p: i32;
     let mut q: i32;
     let save_scanner_status: u8;

@@ -1656,8 +1656,8 @@ pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), M
     // Walk the list to find the node before tx
     let mut q = st.input.cur_list.head;
     let mut p = crate::mem::TEX_NULL;
-    let mut r_save = p;
-    let mut fm = false;
+    let mut r_save;
+    let mut fm;
     loop {
         r_save = p;
         p = q;
@@ -2466,8 +2466,8 @@ pub(crate) fn begin_box_in(
                         if nt == HLIST_NODE || nt == VLIST_NODE {
                             let mut q = st.input.cur_list.head;
                             let mut p = TEX_NULL;
-                            let mut r = TEX_NULL;
-                            let mut fm = false;
+                            let mut r;
+                            let mut fm;
                             loop {
                                 r = p;
                                 p = q;
@@ -5859,7 +5859,7 @@ unsafe fn lig_inner_loop(
     st: &mut crate::state::EngineState,
     init_k: i32,
     main_i: &mut crate::mem_types::B16x4,
-    enter_lig1_k: &mut Option<i32>,
+    _enter_lig1_k: &mut Option<i32>,
 ) -> Result<u8, MainControlAbort> {
 
     let mut mk = init_k;
@@ -6736,7 +6736,7 @@ pub(crate) fn prefixed_command_in(
     let f: i32;
     let mut j: i32;
     let k: i32;
-    let mut p: i32 = 0;
+    let mut p: i32;
     let mut q: i32;
     let mut n: i32;
     let mut e: bool;

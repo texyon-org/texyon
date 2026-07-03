@@ -2806,9 +2806,9 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
 }
 pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let mut negative = false;
-    let mut m: i32 = 0;
-    let mut d: i32 = 0;
-    let mut vacuous = false;
+    let mut m: i32;
+    let mut d: i32;
+    let mut vacuous;
     let mut ok_so_far = true;
 
     st.scanner.radix = 0;
@@ -3863,7 +3863,7 @@ pub(crate) fn scan_something_internal_in(
     use crate::mem::TEX_NULL;
 
     let mut m: i32;
-    let mut n: i32 = 0;
+    let n: i32;
     let k: i32;
     let kk: i32;
     let mut q: i32;

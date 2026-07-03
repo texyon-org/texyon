@@ -1012,7 +1012,7 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
         )
     };
 
-    let mut delta = 0;
+    let delta;
     if q.thickness(&st.mem) == 0 {
         let clr = if font_is_ot_math(&st.fonts, cur_f) {
             if cur_style < TEXT_STYLE {
@@ -2621,7 +2621,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
     }
 
     while q != TEX_NULL {
-        let mut delta = 0;
+        let mut delta;
         let action = 'reswitch: loop {
             delta = 0;
             match st.mem.classify(MemIdx::new(q)) {
@@ -4672,8 +4672,8 @@ pub(crate) fn init_math_in(
                 }
                 st.mem.temp_ptr = tp;
                 st.mem.set_b32s0(st.mem.temp_ptr, BEFORE);
-                st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.LR_ptr);
-                st.scanner.LR_ptr = st.mem.temp_ptr;
+                st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.lr_ptr);
+                st.scanner.lr_ptr = st.mem.temp_ptr;
             }
 
             'outer: loop {
@@ -4724,11 +4724,11 @@ pub(crate) fn init_math_in(
                                 .0;
                             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
                                 if st.mem.b16s0(p) & 1 != 0 {
-                                    if st.mem.b32s0(st.scanner.LR_ptr)
+                                    if st.mem.b32s0(st.scanner.lr_ptr)
                                         == L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3
                                     {
-                                        st.mem.temp_ptr = st.scanner.LR_ptr;
-                                        st.scanner.LR_ptr = st.mem.b32s1(st.mem.temp_ptr);
+                                        st.mem.temp_ptr = st.scanner.lr_ptr;
+                                        st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
                                         st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
                                         st.mem.avail = st.mem.temp_ptr;
                                     } else if st.mem.b16s0(p) as i32 > L_CODE {
@@ -4745,8 +4745,8 @@ pub(crate) fn init_math_in(
                                         st.mem.temp_ptr,
                                         L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3,
                                     );
-                                    st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.LR_ptr);
-                                    st.scanner.LR_ptr = st.mem.temp_ptr;
+                                    st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.lr_ptr);
+                                    st.scanner.lr_ptr = st.mem.temp_ptr;
                                     if st.mem.b16s0(p) as i32 / R_CODE != st.scanner.cur_dir as i32
                                     {
                                         crate::packaging::just_reverse(
@@ -4839,15 +4839,15 @@ pub(crate) fn init_math_in(
             }
 
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                while st.scanner.LR_ptr != TEX_NULL {
-                    st.mem.temp_ptr = st.scanner.LR_ptr;
-                    st.scanner.LR_ptr = st.mem.b32s1(st.mem.temp_ptr);
+                while st.scanner.lr_ptr != TEX_NULL {
+                    st.mem.temp_ptr = st.scanner.lr_ptr;
+                    st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
                     st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
                     st.mem.avail = st.mem.temp_ptr;
                 }
-                if st.scanner.LR_problems != 0 {
+                if st.scanner.lr_problems != 0 {
                     w = MAX_HALFWORD;
-                    st.scanner.LR_problems = 0;
+                    st.scanner.lr_problems = 0;
                 }
             }
 
