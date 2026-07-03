@@ -18,12 +18,19 @@ left are deliberate nullable/provenance boundaries). (4) **Clean-engine pass** (
 duplicate constants consolidated into consts.rs (defs 2454→2286); warnings 36→5. All slices
 dashboard 29/2 + corpus 637/2/0.
 
-**Still NOT done — the setjmp/longjmp I/O tail (01d §6):** the C `_tt_abort` longjmp extern
-still backs a handful of B-class terminal I/O aborts — `open_log_file`, `finalize_dvi_file`,
-`u_close`, two deferred `ttstub_input_close` sites, and the `ext.rs` native-font ×13 inline
-class (unblocks `load_mapping_file_in`). `unsafe fn` ~201. The engine is fully functional
-(corpus 637/2); these longjmps only fire on terminal I/O errors passing runs never hit. This
-is the remaining Stage-2 work.
+**Setjmp/longjmp elimination — DONE for the portable Rust engine (session 252, 01d §6).**
+The Rust engine is now longjmp-free: (1) all fatal aborts Result-propagate to `tt_run_engine
+→ into_history` (the I/O-close/`_tt_abort`/native-font residue was threaded in sessions
+247–249); (2) the last longjmp source — bridge_core's `xmalloc`/`xcalloc`/`xrealloc` OOM
+`_tt_abort` — is replaced by `mem::{xmalloc,…}` that panic on OOM; (3) `tt_run_engine` wraps
+its body in `catch_unwind` → panics become `HISTORY_FATAL_ERROR` (build is panic=unwind). The
+owned-`EngineState` flip was already done (`tt_run_engine` heap-owns its `Box`). On the Linux
+build the `xetex-engine-interface.c` setjmp now catches nothing and is a dead backstop —
+**retained deliberately** for the macOS-only `xetex-macos.c` `DoAATLayout` non-AAT-font
+`_tt_abort` (a never-happens defensive check in macOS-only C that can't be validated on
+Linux; deleting the setjmp would make that path UB). Corpus 637/2. **Stage 2 is functionally
+complete** for the Linux target; the only open item is the macOS `DoAATLayout` port (needed
+before the 4 setjmp lines can be removed) — a macOS-specific follow-up.
 
 Last updated: 2026-07-01 (last session = session 248, **execution — the two most
 tractable Rust `_tt_abort` residue pieces: the `main_control` interwoven-align inline
