@@ -6,8 +6,7 @@ use crate::ext::{
     linebreak_next, linebreak_start_in, measure_native_node, real_get_native_word_cp,
 };
 use crate::node::{
-    ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, KernNode,
-    LigatureNode, MathNode, NodePtr, PassiveNode, PenaltyNode, WhatsitNode,
+    ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, LigatureNode, MathNode, NodePtr, PassiveNode, PenaltyNode, WhatsitNode,
 };
 use crate::scan::NodeRecycleAbort;
 use crate::state::{
@@ -167,11 +166,6 @@ fn glue_spec(spec: i32) -> NodePtr<GlueSpecNode> {
     NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(spec)).expect("non-null glue spec")
 }
 
-#[inline]
-fn kern_node(node: i32) -> NodePtr<KernNode> {
-    // SAFETY: callers enter through a `KERN_NODE` branch.
-    unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(node)) }
-}
 
 #[inline]
 fn ligature_node(node: i32) -> NodePtr<LigatureNode> {
@@ -2793,18 +2787,20 @@ unsafe fn try_break(
                                 linebreak.break_width[1] -=
                                     font_character_width(fonts, f, mem.b16s0(v));
                             } else {
-                                match mem.b16s1(v) as i32 {
-                                    LIGATURE_NODE => {
-                                        let lig = ligature_node(v);
+                                match mem.classify(MemIdx::new(v)).expect("disc node valid") {
+                                    AnyNode::Ligature(lig) => {
                                         let f = lig.font(mem).0;
                                         fonts.set_xtx_ligature_present(true);
                                         linebreak.break_width[1] -=
                                             font_character_width(fonts, f, lig.character(mem));
                                     }
-                                    HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
+                                    AnyNode::HList(_)
+                                    | AnyNode::VList(_)
+                                    | AnyNode::Rule(_)
+                                    | AnyNode::Kern(_) => {
                                         linebreak.break_width[1] -= typed_list_width_in(mem, v);
                                     }
-                                    WHATSIT_NODE => {
+                                    AnyNode::Whatsit(w) => {
                                         let sub = mem.b16s0(v);
                                         if sub == NATIVE_WORD_NODE
                                             || sub == NATIVE_WORD_NODE_AT
@@ -2812,8 +2808,7 @@ unsafe fn try_break(
                                             || sub == PIC_NODE
                                             || sub == PDF_NODE
                                         {
-                                            linebreak.break_width[1] -=
-                                                whatsit_node_in(mem, v).width(mem).0;
+                                            linebreak.break_width[1] -= w.width(mem).0;
                                         } else {
                                             return Err(TryBreakAbort::Node(
                                                 NodeRecycleAbort::Confusion(c"disc1a"),
@@ -2835,18 +2830,20 @@ unsafe fn try_break(
                                 linebreak.break_width[1] +=
                                     font_character_width(fonts, f, mem.b16s0(s));
                             } else {
-                                match mem.b16s1(s) as i32 {
-                                    LIGATURE_NODE => {
-                                        let lig = ligature_node(s);
+                                match mem.classify(MemIdx::new(s)).expect("disc node valid") {
+                                    AnyNode::Ligature(lig) => {
                                         let f = lig.font(mem).0;
                                         fonts.set_xtx_ligature_present(true);
                                         linebreak.break_width[1] +=
                                             font_character_width(fonts, f, lig.character(mem));
                                     }
-                                    HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
+                                    AnyNode::HList(_)
+                                    | AnyNode::VList(_)
+                                    | AnyNode::Rule(_)
+                                    | AnyNode::Kern(_) => {
                                         linebreak.break_width[1] += typed_list_width_in(mem, s);
                                     }
-                                    WHATSIT_NODE => {
+                                    AnyNode::Whatsit(w) => {
                                         let sub = mem.b16s0(s);
                                         if sub == NATIVE_WORD_NODE
                                             || sub == NATIVE_WORD_NODE_AT
@@ -2854,8 +2851,7 @@ unsafe fn try_break(
                                             || sub == PIC_NODE
                                             || sub == PDF_NODE
                                         {
-                                            linebreak.break_width[1] +=
-                                                whatsit_node_in(mem, s).width(mem).0;
+                                            linebreak.break_width[1] += w.width(mem).0;
                                         } else {
                                             return Err(TryBreakAbort::Node(
                                                 NodeRecycleAbort::Confusion(c"disc2a"),
@@ -2884,20 +2880,19 @@ unsafe fn try_break(
                             break;
                         }
 
-                        match mem.b16s1(s) as i32 {
-                            GLUE_NODE => {
-                                let v = glue_node(s).glue_spec(mem).expect("glue node has spec");
+                        match mem.classify(MemIdx::new(s)).expect("disc node valid") {
+                            AnyNode::Glue(g) => {
+                                let v = g.glue_spec(mem).expect("glue node has spec");
                                 linebreak.break_width[1] -= v.width(mem).0;
                                 linebreak.break_width[2 + v.stretch_order(mem) as usize] -=
                                     v.stretch(mem).0;
                                 linebreak.break_width[6] -= v.shrink(mem).0;
                             }
-                            PENALTY_NODE => {}
-                            MATH_NODE => {
-                                linebreak.break_width[1] -= math_node(s).width(mem).0;
+                            AnyNode::Penalty(_) => {}
+                            AnyNode::Math(m) => {
+                                linebreak.break_width[1] -= m.width(mem).0;
                             }
-                            KERN_NODE => {
-                                let kern = kern_node(s);
+                            AnyNode::Kern(kern) => {
                                 if kern.subtype(mem) != EXPLICIT {
                                     break;
                                 }
