@@ -233,6 +233,10 @@ pub(crate) enum EngineAbort {
     /// in `into_history` (which holds `st`) from `st.input.name_of_file`, so the
     /// `ShipoutAbort` mapping site needs no state borrow (`01e`).
     CannotOpenOutput,
+    /// `no legal \end found`: `open_log_file` (if `open_log`) then `fatal_error`.
+    /// Run in `into_history` (holds `st`) so the `SccAbort` mapping site — a
+    /// `self`-only method — needs no state borrow (`01e`).
+    NoLegalEnd { open_log: bool },
     /// `post_error_message(false)` then `_tt_abort(msg)` — the `ErrorOutcome`
     /// `Halt`/`Hundred` terminal (halt-on-error / 100-errors).
     HaltMessage(*const libc::c_char),
@@ -259,6 +263,20 @@ impl EngineAbort {
         st.errors.help_line[0] = c"you can ask a wizard to enlarge me.".as_ptr();
         post_error_message_in(st, true);
         _ttbc_set_error_message(c"halted on overflow()".as_ptr());
+    }
+
+    /// Shared print+cleanup for the `fatal_error(s)` terminal ("Emergency stop" +
+    /// `s`, its own inline cleanup) — used by `Fatal` and `NoLegalEnd`.
+    unsafe fn fatal_report(st: &mut EngineState, s: *const libc::c_char) {
+        pre_error_message_in(st);
+        print_cstr_in(st, c"Emergency stop".as_ptr());
+        print_nl_cstr_in(st, s);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        // Absorb a finalize_dvi_file failure during terminal cleanup (`01d` §5.6).
+        let _ = crate::io::close_files_and_terminate_in(st);
+        crate::engine::tt_cleanup_in(st);
+        ttstub_output_flush(st.shipout.rust_stdout);
+        _ttbc_set_error_message(s);
     }
 
     pub(crate) unsafe fn into_history(self, st: &mut EngineState) -> i32 {
@@ -311,17 +329,15 @@ impl EngineAbort {
             }
             // The print + cleanup half of `fatal_error` (its own inline cleanup,
             // not `post_error_message`); `_tt_abort(s)` surfaced `s`.
-            EngineAbort::Fatal(s) => {
-                pre_error_message_in(st);
-                print_cstr_in(st, c"Emergency stop".as_ptr());
-                print_nl_cstr_in(st, s);
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                // Absorb a finalize_dvi_file failure during terminal cleanup
-                // (`01d` §5.6).
-                let _ = crate::io::close_files_and_terminate_in(st);
-                crate::engine::tt_cleanup_in(st);
-                ttstub_output_flush(st.shipout.rust_stdout);
-                _ttbc_set_error_message(s);
+            EngineAbort::Fatal(s) => Self::fatal_report(st, s),
+            // `no legal \end found`: open the log first (deferred here because the
+            // `SccAbort` mapping site is a `self`-only method with no `st`), then
+            // the `fatal_error` terminal (`01e`).
+            EngineAbort::NoLegalEnd { open_log } => {
+                if open_log {
+                    let _ = crate::io::open_log_file_in(st);
+                }
+                Self::fatal_report(st, c"*** (job aborted, no legal \\end found)".as_ptr());
             }
             // The print + cleanup half of `pdf_error`.
             EngineAbort::PdfError { t, p } => {
