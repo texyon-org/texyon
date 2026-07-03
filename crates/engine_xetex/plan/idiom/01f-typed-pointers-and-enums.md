@@ -89,12 +89,20 @@ Sequence: S1→S2→S3(phased)→S4→S5→S6→S7→S8→S9. Validation: dashbo
   (`classify_math(..).expect().expect().width()`) collapses to `AnyNode::Math(m)=>m.width()`.
   The `6`(ligature)/`9`(math) arm bodies stay raw (GARBAGE splice, LR/texxet) — that is
   fine, they're not re-derives. HOTTEST math path ⇒ corpus-gate, smallest commit.
-- **NoadType enum candidate** — the noad-type dispatches `math.rs:2426/2752/3018` (and
-  `mlist_to_hlist`'s r_type spacing machine) match named noad consts (ORD_NOAD=16 … 
-  RIGHT_NOAD) with raw-manipulation arms. Cleanest as a checked `NoadType` enum matched via
-  `NodePtr::<Noad>::noad_type()` (classify to AnyNode::Noad, then noad_type()). Bigger slice
-  (noad consts are used widely across math.rs); do after S9. This is the largest remaining
-  "constants→enum" win.
+- **NoadType — DONE, folded into `NodeType` not a new enum (S9, 6d048e87).** The noad types
+  are ALREADY `NodeType` variants (units.rs:172 `OrdNoad=16`..`RightNoad=31`) with a checked
+  `from_raw` and a typed `NodePtr::<Noad>::noad_type()/set_noad_type()`; a separate `NoadType`
+  would have duplicated that. Consolidated the ~30 duplicated `const ORD_NOAD/…/RIGHT_NOAD`
+  (+ STYLE_NODE/CHOICE_NODE) across math/main_control/scan/output:
+  * the two `mlist_to_hlist` dispatch matches + the script-scan match now `match
+    NodeType::from_raw(b16s1(q)) { Ok(NodeType::Variant) => … }` — the derive-at-match-arm win;
+  * `mlist_to_hlist`'s `r_type`/`t` spacing-machine locals stay numeric `u16` (the `0` sentinel
+    collides with `HList=0`; the `offset_table[(type-ORD)]` indexing is inherently ORD-relative)
+    but source every value from `NodeType::X.as_raw()` — enum as single source of truth, no magic
+    literals, no `Option<NodeType>` refactor risk on the hottest path;
+  * noad-type writes → `set_noad_type(NodeType::X)`; scattered `==`/range checks → `.as_raw()`.
+  Behavior-preserving (every `X_NOAD` maps to the same u16; `from_raw` None folds into the
+  existing catch-all). Corpus-gated.
 
 ## More findings (session 249, S9 investigation)
 
@@ -113,6 +121,22 @@ Sequence: S1→S2→S3(phased)→S4→S5→S6→S7→S8→S9. Validation: dashbo
   from where the family is determined (the S3–S5 cascade) — a single-expect helper would just
   be "less expecting," still a use-site assert. Tests (node.rs) rely on the `Result<Option>`
   distinction (`is_err`/`Ok(None)`), so DON'T fold the signature. Fix these as the cascade lands.
-- **Next clean win = WhatsitSubtype (S8)** — kills the repeated
-  `sub == NATIVE_WORD_NODE || NATIVE_WORD_NODE_AT || GLYPH_NODE || PIC_NODE || PDF_NODE`
-  predicate (readability) + the `<= 4` range filters (membership, not range).
+- **WhatsitSubtype (S8) — DONE (7581a011 S8a/b, c635964b S8c, dfab391c S8d).** Added the
+  `WhatsitSubtype` enum (node.rs; Open..Language 0–4, PdfSavePos 21, NativeWord..Pdf 40–44)
+  with `from_raw` + `is_native_word()`/`has_dimensions()`/`is_io()`. Consolidated ALL ~40
+  duplicated `const OPEN_NODE/NATIVE_WORD_NODE/…` across shipout/linebreak/math/main_control/
+  packaging/pagebuilder/pic/ext: predicates → `from_raw(..).is_some_and(|s| …)`; whatsit-subtype
+  dispatch matches → `match whatsit_subtype(..) { Some(Variant) => … }`; construction/write sites
+  → `WhatsitSubtype::Variant as u16/i16`. The extension `_DE` COMMAND-code domain (do_extension)
+  is left alone — that's a distinct `ExtensionCmd` enum candidate, NOT whatsit subtypes.
+
+## Status after session 250 (S8 + S9 done)
+
+Constants→enums for node/whatsit/noad type codes is now COMPLETE: no `const *_NOAD`,
+`const *_NODE` whatsit-subtype, or duplicated node-type literals remain in the hot dispatch
+paths — all route through `NodeType`/`WhatsitSubtype`/`PageboxType`/`InteractionMode`.
+Remaining phase-2 work is the **S3–S5 typed-pointer cascade** (typed allocator returns →
+typed `free_node`/`hpack`/`vpackage` params) which is also the proper fix for the 16 math.rs
+`classify_X().expect().expect()` double-expects and the deferred `math.rs` fetch-loop whole-
+match. `ExtensionCmd` enum (do_extension `_DE` codes) is a smaller standalone constants→enum
+follow-up.
