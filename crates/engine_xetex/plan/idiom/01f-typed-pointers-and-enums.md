@@ -72,3 +72,26 @@ MARGIN_KERN=40 gap.
 Sequence: S1→S2→S3(phased)→S4→S5→S6→S7→S8→S9. Validation: dashboard 29/2/7/4 + unit 80
 + warnings baseline every commit; corpus (passed+diverged, NOXDV/NOLOG) for S6/S7/S9
 (+ spot-check S3 box/glue commits).
+
+## Execution findings (session 249, during S1/S2/S7)
+
+- **DONE:** S1 PageboxType (c8f27c53), S2 InteractionMode (50e5e35f), S7a
+  ignorable_protrusion→classify (9e137312), S7b the 3 disc break-width walks→classify
+  (48c6bd39). All dashboard-green; S7 corpus-gated.
+- **S6 (shipout.rs:2379) is a SKIP — not a clean target.** On inspection the `hlist_out`
+  reswitch arms do raw memory manipulation + in-place retyping (`set_b16s1(p, KERN_NODE)`,
+  the LR/texxet logic, `free_node`, glue-set fill-order) — they do NOT re-derive typed
+  nodes. Wrapping the outer `match b16s1(p)` in `classify()` yields ZERO arm cleanup at
+  MAX risk (hottest ship path) ⇒ types-for-types-sake, fails the bar. Leave it raw.
+- **S9 target confirmed = the math FETCH loop `math.rs:4859`** (mlist_to_hlist reswitch).
+  Genuine wins: (a) magic literals `0..=2 | 6 | 11|40 | 9` → named `AnyNode` variants;
+  (b) the recon-flagged **double-expect** at 4880
+  (`classify_math(..).expect().expect().width()`) collapses to `AnyNode::Math(m)=>m.width()`.
+  The `6`(ligature)/`9`(math) arm bodies stay raw (GARBAGE splice, LR/texxet) — that is
+  fine, they're not re-derives. HOTTEST math path ⇒ corpus-gate, smallest commit.
+- **NoadType enum candidate** — the noad-type dispatches `math.rs:2426/2752/3018` (and
+  `mlist_to_hlist`'s r_type spacing machine) match named noad consts (ORD_NOAD=16 … 
+  RIGHT_NOAD) with raw-manipulation arms. Cleanest as a checked `NoadType` enum matched via
+  `NodePtr::<Noad>::noad_type()` (classify to AnyNode::Noad, then noad_type()). Bigger slice
+  (noad consts are used widely across math.rs); do after S9. This is the largest remaining
+  "constants→enum" win.
