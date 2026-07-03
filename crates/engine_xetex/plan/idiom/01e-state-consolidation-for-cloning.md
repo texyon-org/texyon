@@ -273,3 +273,26 @@ thread to `st` (its caller `load_fmt_file_in` holds st). All other 187 sites hol
 scan.rs is 101 of them (hot tokenizer) — validate hard via dashboard (runs the tokenizer for
 every test) + corpus. Audit rogue externs first ([[fold-scalar-audit-rogue-externs]]) — none
 found for cur_input in a prior grep, but re-check.
+
+## STATUS: mod-raw scalar fold COMPLETE (session 249) — mod-raw 31 → 3
+
+Every hot-path `mod raw` C-extern scalar is now folded into `EngineState`. All engine
+STATE lives in `EngineState`; a mid-run clone of `st` captures the whole engine.
+The 3 remaining `static mut` are **NOT state** — they are `font_ffi_mirror::{FONT_SIZE,
+FONT_AREA,FONT_LAYOUT_ENGINE}`, `*const` pointers INTO `st.fonts.{font_size,font_area,
+font_layout_engine}` that the C++ OT-math FFI callbacks (`tt_get_font_*_entry`) read
+borrow-free. `refresh_font_ffi_mirrors(&fonts)` re-points them at every fonts-Vec
+realloc (init/undump/cleanup); a clone just re-runs it against the clone's `st.fonts`.
+Corpus-validated across the whole fold (main-loop, ligature, cur_input, cur_list all
+637/2 clean; the 2 divergences are the standing known FPs).
+
+**Remaining for STRICT zero-global (the with_state bridge + fallback — separate phase):**
+`with_state` occurrences 142 (flip) → 8. Those 8: 3 dead-but-`#[allow(dead_code)]`
+accessor wrappers kept for unit tests (`arith_error`/`tex_remainder`/`hash_s1`), and 5
+live (`set_arith_error` ← scaled_math ×6; `name_of_file`/`name_length` ← ext.rs FFI;
+`output.rs:2929`; `scan.rs:2321`). Deleting `ENGINE_STATE_FALLBACK` (the pre-run/test
+second `EngineState`) + `with_state`/`with_state_mut` + `ENGINE_STATE_PTR` requires
+repointing the 5 live sites to direct `st` (gated on their FFI/setjmp-boundary callers,
+per [[globals-wrappers-gated-on-setjmp-boundary]]) and reworking the 3 dead wrappers'
+test usage. THEN phase 2 (the user's second ask): properly-typed pointers (kill the
+residual `i32`/`b32.s1` handles).
