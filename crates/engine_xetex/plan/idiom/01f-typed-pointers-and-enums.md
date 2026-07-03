@@ -130,13 +130,32 @@ Sequence: S1→S2→S3(phased)→S4→S5→S6→S7→S8→S9. Validation: dashbo
   → `WhatsitSubtype::Variant as u16/i16`. The extension `_DE` COMMAND-code domain (do_extension)
   is left alone — that's a distinct `ExtensionCmd` enum candidate, NOT whatsit subtypes.
 
-## Status after session 250 (S8 + S9 done)
+- **GroupCode — DONE (session 250, `bcef98a7`).** Typed the field `SaveStackState.cur_group:
+  u8 → GroupCode` (`state.rs`; BottomLevel..MathLeft 0-16). Group codes are pure classification
+  (equality + dispatch, NO arithmetic), so unlike the noad spacing machine the FIELD is typed,
+  not just the boundaries — comparisons/dispatch arms are clean `GroupCode::Variant` equality,
+  no `.as_raw()` casts. Folded ~75 duplicated `const SIMPLE_GROUP/…/MATH_LEFT_GROUP` (+ the
+  `_MC`/`_TYPE` suffixed twins) across main_control/output/math/save/errors/engine/scan/
+  pagebuilder. `new_save_level`/`push_math_in`/`scan_spec_in` params → GroupCode. The ONLY
+  numeric touchpoints are the save-stack (de)serialize boundary (`as_raw()` on push,
+  `from_raw().expect("valid group code")` on restore, in save.rs + output.rs). handle_right_brace
+  + show_save_groups are now exhaustive over GroupCode → their unreachable `_ =>` arms removed
+  (invalid-group upgraded from runtime `confusion` to compile-time exhaustiveness).
+  **Method (reusable for field-type flips):** flip the field type first, let `cargo check`
+  enumerate every mismatch as the checklist; fix leaf fn signatures + the (de)serialize
+  boundary; bulk `X_CONST → Enum::Variant` by word-boundary regex (remove the `const` DEFS
+  first). Watch suffixed twins (`_MC`/`_TYPE`) and benign unreachable-`_` warnings.
 
-Constants→enums for node/whatsit/noad type codes is now COMPLETE: no `const *_NOAD`,
-`const *_NODE` whatsit-subtype, or duplicated node-type literals remain in the hot dispatch
-paths — all route through `NodeType`/`WhatsitSubtype`/`PageboxType`/`InteractionMode`.
-Remaining phase-2 work is the **S3–S5 typed-pointer cascade** (typed allocator returns →
-typed `free_node`/`hpack`/`vpackage` params) which is also the proper fix for the 16 math.rs
-`classify_X().expect().expect()` double-expects and the deferred `math.rs` fetch-loop whole-
-match. `ExtensionCmd` enum (do_extension `_DE` codes) is a smaller standalone constants→enum
-follow-up.
+## Status after session 250 (S8 + S9 + GroupCode done)
+
+Constants→enums for node/whatsit/noad type codes AND group codes is now COMPLETE: no
+`const *_NOAD`, `const *_NODE` whatsit-subtype, duplicated node-type literals, or
+`const *_GROUP` remain — all route through `NodeType`/`WhatsitSubtype`/`GroupCode`/
+`PageboxType`/`InteractionMode`. Remaining phase-2 work is the **S3–S5 typed-pointer cascade**
+(typed allocator returns → typed `free_node`/`hpack`/`vpackage` params), which is also the
+proper fix for the 16 math.rs `classify_X().expect().expect()` double-expects and the deferred
+`math.rs` fetch-loop whole-match — BUT memory `typing-frontier-is-bucket-d-residue` flags the
+global constructor-return flip as a **net-negative anti-vein** (sprays `.idx().0` at the i32
+link/state-field stores), so it must be done as a targeted phased bundle, not a blanket flip.
+`ExtensionCmd` enum (do_extension `_DE` codes) is DESCOPED like IfTest — a single well-named
+dispatch, not a duplicated cluster, so low payoff.
