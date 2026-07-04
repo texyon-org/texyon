@@ -1268,7 +1268,8 @@ pub(crate) fn end_graf_in(st: &mut crate::state::EngineState) -> Result<(), Main
     Ok(())
 }
 // translated from xetex-xetex0.c:10016 (append_penalty)
-fn append_penalty_node(mem: &mut crate::state::MemState, tail: i32, penalty: i32) -> i32 {
+fn append_penalty_node(mem: &mut crate::state::MemState, tail: impl crate::units::MemAddr, penalty: i32) -> i32 {
+    let tail = tail.addr();
     let Some(p) = crate::mem::alloc_penalty(mem, penalty) else {
         return crate::mem::ALLOC_FAILED;
     };
@@ -2908,7 +2909,8 @@ pub(crate) fn append_glue_in(st: &mut crate::state::EngineState) -> Result<(), M
     Ok(())
 }
 // translated from xetex-xetex0.c:9395 (append_kern)
-fn append_kern_node(mem: &mut crate::state::MemState, tail: i32, width: i32, subtype: u16) -> i32 {
+fn append_kern_node(mem: &mut crate::state::MemState, tail: impl crate::units::MemAddr, width: i32, subtype: u16) -> i32 {
+    let tail = tail.addr();
     let Some(p) = crate::mem::alloc_kern(mem, width) else {
         return crate::mem::ALLOC_FAILED;
     };

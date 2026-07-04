@@ -231,22 +231,26 @@ fn typed_list_width_in(mem: &MemState, node: i32) -> i32 {
 }
 
 #[inline]
-fn glue_spec_stretch_order_in(mem: &MemState, p: i32) -> u16 {
+fn glue_spec_stretch_order_in(mem: &MemState, p: impl crate::units::MemAddr) -> u16 {
+    let p = p.addr();
     glue_spec(p).stretch_order(mem)
 }
 
 #[inline]
-fn glue_spec_shrink_order_in(mem: &MemState, p: i32) -> u16 {
+fn glue_spec_shrink_order_in(mem: &MemState, p: impl crate::units::MemAddr) -> u16 {
+    let p = p.addr();
     glue_spec(p).shrink_order(mem)
 }
 
 #[inline]
-fn glue_spec_stretch_in(mem: &MemState, p: i32) -> i32 {
+fn glue_spec_stretch_in(mem: &MemState, p: impl crate::units::MemAddr) -> i32 {
+    let p = p.addr();
     glue_spec(p).stretch(mem).0
 }
 
 #[inline]
-fn glue_spec_shrink_in(mem: &MemState, p: i32) -> i32 {
+fn glue_spec_shrink_in(mem: &MemState, p: impl crate::units::MemAddr) -> i32 {
+    let p = p.addr();
     glue_spec(p).shrink(mem).0
 }
 
@@ -273,7 +277,9 @@ fn set_native_node_len_in(mem: &mut MemState, p: impl crate::units::MemAddr, v: 
 
 
 #[inline]
-pub unsafe fn copy_native_tail(mem: &mut MemState, q: i32, ha: i32, start: i32) {
+pub unsafe fn copy_native_tail(mem: &mut MemState, q: impl crate::units::MemAddr, ha: impl crate::units::MemAddr, start: i32) {
+    let q = q.addr();
+    let ha = ha.addr();
     let qh = whatsit_node_in(mem, q);
     let dst = qh.native_text_ptr_mut(mem);
     let hah = whatsit_node_in(mem, ha);
@@ -606,7 +612,8 @@ pub fn insert_left_margin_kern(errors: &mut crate::state::ErrorState,
 }
 
 /// translated from xetex-linebreak.c:2377 (finite_shrink)
-pub fn finite_shrink(mem: &mut MemState, p: i32) -> Result<i32, NodeRecycleAbort> {
+pub fn finite_shrink(mem: &mut MemState, p: impl crate::units::MemAddr) -> Result<i32, NodeRecycleAbort> {
+    let p = p.addr();
     let q = crate::mem::new_spec(mem, p);
     if q == crate::mem::ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
@@ -1198,7 +1205,8 @@ impl LineBreakOutcome {
 /// [`finite_shrink`]. The recoverable `error()` returns
 /// `ErrorOutcome::Continue` on the hot path; any cold abort is deferred to the
 /// [`line_break`] wrapper via [`LineBreakOutcome::Error`].
-fn finite_shrink_emit(st: &mut EngineState, p: i32) -> Result<i32, LineBreakOutcome> {
+fn finite_shrink_emit(st: &mut EngineState, p: impl crate::units::MemAddr) -> Result<i32, LineBreakOutcome> {
+    let p = p.addr();
     if st.errors.no_shrink_error_yet {
         st.errors.no_shrink_error_yet = false;
         crate::output::error_here_with_diagnostic_in(
