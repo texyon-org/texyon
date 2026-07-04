@@ -279,7 +279,7 @@ fn split_native_tail_for_linebreak(
     start: i32,
     advance_ha: bool,
 ) -> Result<(), NodeRecycleAbort> {
-    let ha = st.linebreak.ha;
+    let ha = st.linebreak.ha.0;
     let len = native_node_len_in(&st.mem, ha);
     let q = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, st.hyph.hf, len - start)?;
     st.mem.set_b16s0(q, st.mem.b16s0(ha));
@@ -294,7 +294,7 @@ fn split_native_tail_for_linebreak(
         set_native_metrics(&st.mem, &st.eqtb, &st.fonts, ha)?;
     }
     if advance_ha {
-        st.linebreak.ha = st.mem.b32s1(ha);
+        st.linebreak.ha = MemPtr::from_raw(st.mem.b32s1(ha));
     }
     Ok(())
 }
@@ -984,7 +984,7 @@ fn start_linebreak_pass(
     for k in 1..=6 {
         scanner.active_width[k] = linebreak.background[k];
     }
-    linebreak.passive = TEX_NULL;
+    linebreak.passive = MemPtr::NULL;
     errors.font_in_short_display = 0;
     linebreak.cur_p = MemPtr::from_raw(mem.b32s1(TEMP_HEAD));
     linebreak.global_prev_p = linebreak.cur_p;
@@ -1009,7 +1009,7 @@ fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakSt
         q = linebreak.cur_p.0;
     }
 
-    q = linebreak.passive;
+    q = linebreak.passive.0;
     while q != TEX_NULL {
         linebreak.cur_p = passive_node(q).link(mem);
         crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
@@ -1035,7 +1035,7 @@ fn free_final_linebreak_lists(mem: &mut MemState, linebreak: &mut LinebreakState
         q = next;
     }
 
-    q = linebreak.passive;
+    q = linebreak.passive.0;
     while q != TEX_NULL {
         let next = passive_node(q).link(mem).0;
         crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
@@ -1667,22 +1667,22 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                             if st.hyph.hyf_char < 0 || st.hyph.hyf_char > TOO_BIG_CHAR - 1 {
                                 break 'hyphen_probe;
                             }
-                            st.linebreak.ha = prev_s;
+                            st.linebreak.ha = MemPtr::from_raw(prev_s);
                             if st.hyph.l_hyf + st.hyph.r_hyf > max_hyphenatable_length_in(&st.eqtb)
                             {
                                 break 'hyphen_probe;
                             }
 
-                            if st.linebreak.ha != TEX_NULL
-                                && st.linebreak.ha < st.mem.hi_mem_min
+                            if !st.linebreak.ha.is_null()
+                                && st.linebreak.ha.0 < st.mem.hi_mem_min
                                 && matches!(
-                                    st.mem.classify(MemIdx::new(st.linebreak.ha)),
+                                    st.mem.classify(MemIdx::new(st.linebreak.ha.0)),
                                     Ok(AnyNode::Whatsit(w))
                                         if WhatsitSubtype::from_raw(w.subtype(&st.mem))
                                             .is_some_and(|sub| sub.is_native_word())
                                 )
                             {
-                                s = st.mem.b32s1(st.linebreak.ha);
+                                s = st.mem.b32s1(st.linebreak.ha.0);
                                 loop {
                                     if !crate::mem::is_char_node(&st.mem, s) {
                                         match st.mem.classify(MemIdx::new(s)) {
@@ -1706,10 +1706,10 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
 
                                 st.linebreak.hn = 0;
                                 'restart_native: loop {
-                                    let len = native_node_len_in(&st.mem, st.linebreak.ha);
+                                    let len = native_node_len_in(&st.mem, st.linebreak.ha.0);
                                     l = 0;
                                     while l < len {
-                                        c = get_native_usv(&st.mem, st.linebreak.ha, l);
+                                        c = get_native_usv(&st.mem, st.linebreak.ha.0, l);
                                         if st.hyph.hyph_index == 0 || c > 255 {
                                             st.hyph.hc[0] = lc_code(&st.eqtb, c);
                                         } else if st.hyph.trie_trc
@@ -1793,7 +1793,7 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                                         {
                                             break;
                                         }
-                                        st.linebreak.hb = s;
+                                        st.linebreak.hb = MemPtr::from_raw(s);
                                         st.linebreak.hn += 1;
                                         st.hyph.hu[st.linebreak.hn as usize] = c;
                                         st.hyph.hc[st.linebreak.hn as usize] = st.hyph.hc[0];
@@ -1834,7 +1834,7 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                                                     st.hyph.hc[j as usize] = st.hyph.hc[0];
                                                     q = st.mem.b32s1(q);
                                                 }
-                                                st.linebreak.hb = s;
+                                                st.linebreak.hb = MemPtr::from_raw(s);
                                                 st.linebreak.hn = j;
                                                 if odd(lig.subtype(&st.mem) as u8) {
                                                     st.hyph.hyf_bchar =
@@ -1844,7 +1844,7 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                                                 }
                                             }
                                             Ok(AnyNode::Kern(k)) if k.subtype(&st.mem) == NORMAL => {
-                                                st.linebreak.hb = s;
+                                                st.linebreak.hb = MemPtr::from_raw(s);
                                                 st.hyph.hyf_bchar =
                                                     st.fonts.font_bchar[st.hyph.hf as usize];
                                             }
@@ -2883,11 +2883,10 @@ unsafe fn try_break(
                 for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
                     if linebreak.minimal_demerits[fit_class] <= linebreak.minimum_demerits {
                         let passive_p = alloc_passive_node(mem).map_err(TryBreakAbort::Node)?;
-                        passive_p.set_link(mem, MemPtr::from_raw(linebreak.passive));
-                        linebreak.passive = passive_p.idx().0;
+                        passive_p.set_link(mem, linebreak.passive);
+                        linebreak.passive = MemPtr::from_idx(passive_p.idx());
                         passive_p.set_cur_break(mem, linebreak.cur_p);
-                        passive_p
-                            .set_prev_break(mem, MemPtr::from_raw(linebreak.best_place[fit_class]));
+                        passive_p.set_prev_break(mem, linebreak.best_place[fit_class]);
 
                         let q_active = alloc_active_node(
                             mem,
@@ -2895,7 +2894,7 @@ unsafe fn try_break(
                             MemPtr::from_raw(r),
                         )
                         .map_err(TryBreakAbort::Node)?;
-                        q_active.set_break_node(mem, MemPtr::from_raw(linebreak.passive));
+                        q_active.set_break_node(mem, linebreak.passive);
                         q_active.set_line_number(mem, linebreak.best_pl_line[fit_class] + 1);
                         q_active.set_fitness(mem, fit_class as u16);
                         q_active.set_break_type(mem, break_type as u16);
@@ -3174,7 +3173,7 @@ unsafe fn try_break(
         d += r_active.total_demerits(mem);
         if d <= linebreak.minimal_demerits[fit_class] {
             linebreak.minimal_demerits[fit_class] = d;
-            linebreak.best_place[fit_class] = r_active.break_node(mem).0;
+            linebreak.best_place[fit_class] = r_active.break_node(mem);
             linebreak.best_pl_line[fit_class] = l;
 
             if linebreak.do_last_line_fit {
@@ -3347,7 +3346,7 @@ fn hyphenate_native_word_if_needed(
     st: &mut EngineState,
     hn_v: i16,
 ) -> Result<bool, HyphNativeAbort> {
-    let ha = st.linebreak.ha;
+    let ha = st.linebreak.ha.0;
     let is_native = ha != TEX_NULL
         && !crate::mem::is_char_node(&st.mem, ha)
         && st.mem.b16s1(ha) as i32 == WHATSIT_NODE
@@ -3544,39 +3543,40 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
         false => {}
     }
 
-    let q_final = st.mem.b32s1(st.linebreak.hb);
-    st.mem.set_b32s1(st.linebreak.hb, TEX_NULL);
-    let r = st.mem.b32s1(st.linebreak.ha);
-    st.mem.set_b32s1(st.linebreak.ha, TEX_NULL);
+    let q_final = st.mem.b32s1(st.linebreak.hb.0);
+    st.mem.set_b32s1(st.linebreak.hb.0, TEX_NULL);
+    let r = st.mem.b32s1(st.linebreak.ha.0);
+    st.mem.set_b32s1(st.linebreak.ha.0, TEX_NULL);
     let bchar = st.hyph.hyf_bchar;
+    let ha = st.linebreak.ha.0;
 
-    let (mut s, mut j) = if crate::mem::is_char_node(&st.mem, st.linebreak.ha) {
-        if st.mem.b16s1(st.linebreak.ha) as i32 != st.hyph.hf {
+    let (mut s, mut j) = if crate::mem::is_char_node(&st.mem, ha) {
+        if st.mem.b16s1(ha) as i32 != st.hyph.hf {
             st.hyph.hu[0] = st.hyph.max_hyph_char;
             st.hyph.init_lig = false;
             st.hyph.init_list = TEX_NULL;
-            (st.linebreak.ha, 0)
+            (ha, 0)
         } else {
-            st.hyph.init_list = st.linebreak.ha;
+            st.hyph.init_list = ha;
             st.hyph.init_lig = false;
-            st.hyph.hu[0] = st.mem.b16s0(st.linebreak.ha) as i32;
+            st.hyph.hu[0] = st.mem.b16s0(ha) as i32;
             let mut s = st.linebreak.cur_p.0;
-            while st.mem.b32s1(s) != st.linebreak.ha {
+            while st.mem.b32s1(s) != ha {
                 s = st.mem.b32s1(s);
             }
             (s, 0)
         }
-    } else if st.mem.b16s1(st.linebreak.ha) as i32 == LIGATURE_NODE {
+    } else if st.mem.b16s1(ha) as i32 == LIGATURE_NODE {
         let ha_lig = st
             .mem
-            .classify_ligature(MemIdx::new(st.linebreak.ha))
+            .classify_ligature(MemIdx::new(ha))
             .expect("valid ligature node type")
             .expect("ligature branch");
         if ha_lig.font(&st.mem).0 != st.hyph.hf {
             st.hyph.hu[0] = st.hyph.max_hyph_char;
             st.hyph.init_lig = false;
             st.hyph.init_list = TEX_NULL;
-            (st.linebreak.ha, 0)
+            (ha, 0)
         } else {
             st.hyph.init_list = ha_lig.lig_ptr(&st.mem).0;
             st.hyph.init_lig = true;
@@ -3586,9 +3586,9 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 st.hyph.hu[0] = st.hyph.max_hyph_char;
                 st.hyph.init_lig = false;
             }
-            crate::mem::free_node(&mut st.mem, st.linebreak.ha, SMALL_NODE_SIZE);
+            crate::mem::free_node(&mut st.mem, ha, SMALL_NODE_SIZE);
             let mut s = st.linebreak.cur_p.0;
-            while st.mem.b32s1(s) != st.linebreak.ha {
+            while st.mem.b32s1(s) != ha {
                 s = st.mem.b32s1(s);
             }
             (s, 0)
@@ -3606,10 +3606,10 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
         st.hyph.hu[0] = st.hyph.max_hyph_char;
         st.hyph.init_lig = false;
         st.hyph.init_list = TEX_NULL;
-        (st.linebreak.ha, 0)
+        (ha, 0)
     } else {
         st.hyph.init_list = TEX_NULL;
-        (st.linebreak.ha, 1)
+        (ha, 1)
     };
 
     crate::packaging::flush_node_list(&mut st.mem, r).map_err(HyphenateAbort::Confusion)?;
