@@ -2323,8 +2323,8 @@ fn post_line_break_prefix(errors: &mut crate::state::ErrorState,
         )
     };
 
-    scanner.adjust_tail = ADJUST_HEAD;
-    scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
+    scanner.adjust_tail.0 = ADJUST_HEAD;
+    scanner.pre_adjust_tail.0 = PRE_ADJUST_HEAD;
 
     Ok(PostLineHpack {
         q,
@@ -2347,23 +2347,23 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
     lr_ptr: &mut i32,
     cur_line: &mut i32,
 ) -> Result<bool, PostLineAbort> {
-    scanner.just_box = just_box.idx().0;
+    scanner.just_box.0 = just_box.idx().0;
     just_box.set_shift_amount(mem, Scaled(hpack.cur_indent));
 
-    if PRE_ADJUST_HEAD != scanner.pre_adjust_tail {
+    if PRE_ADJUST_HEAD != scanner.pre_adjust_tail.0 {
         mem.set_b32s1(cl.tail.0, mem.b32s1(PRE_ADJUST_HEAD));
-        cl.tail.0 = scanner.pre_adjust_tail;
+        cl.tail.0 = scanner.pre_adjust_tail.0;
     }
 
-    scanner.pre_adjust_tail = TEX_NULL;
+    scanner.pre_adjust_tail.0 = TEX_NULL;
     crate::packaging::append_to_vlist(cl, mem, eqtb, just_box).map_err(PostLineAbort::Node)?;
 
-    if ADJUST_HEAD != scanner.adjust_tail {
+    if ADJUST_HEAD != scanner.adjust_tail.0 {
         mem.set_b32s1(cl.tail.0, mem.b32s1(ADJUST_HEAD));
-        cl.tail.0 = scanner.adjust_tail;
+        cl.tail.0 = scanner.adjust_tail.0;
     }
 
-    scanner.adjust_tail = TEX_NULL;
+    scanner.adjust_tail.0 = TEX_NULL;
 
     if *cur_line + 1 != linebreak.best_line {
         let mut q = eqtb.b32s1(ETEX_PEN_BASE + ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES);

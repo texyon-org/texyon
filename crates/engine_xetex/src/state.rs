@@ -755,10 +755,10 @@ pub(crate) struct ScannerState {
     pub cur_span: i32,
     pub cur_loop: i32,
     pub align_ptr: i32,
-    pub cur_head: i32,
-    pub cur_tail: i32,
-    pub cur_pre_head: i32,
-    pub cur_pre_tail: i32,
+    pub cur_head: crate::units::MemPtr,
+    pub cur_tail: crate::units::MemPtr,
+    pub cur_pre_head: crate::units::MemPtr,
+    pub cur_pre_tail: crate::units::MemPtr,
     pub shown_mode: i16,
     pub mag_set: i32,
     pub radix: u8,
@@ -835,7 +835,7 @@ pub(crate) struct ScannerState {
     // globals).
     /// Mlist being converted by `mlist_to_hlist` (xetex-math.c). Mem pointer
     /// stored as `int32_t`; pointer-taxonomy-sweep candidate, no typedef debt.
-    pub cur_mlist: i32,
+    pub cur_mlist: crate::units::MemPtr,
     /// Current math style (C type `small_number` = `short`). Newtype debt:
     /// `SmallNumber`.
     pub cur_style: i16,
@@ -846,14 +846,14 @@ pub(crate) struct ScannerState {
     pub cur_mu: i32,
     /// Whether `mlist_to_hlist` inserts penalties (`bool`). Plain.
     pub mlist_penalties: bool,
-    pub cur_box: i32,
+    pub cur_box: crate::units::MemPtr,
     pub after_token: i32,
     pub cur_order: u8,
-    pub adjust_tail: i32,
-    pub pre_adjust_tail: i32,
+    pub adjust_tail: crate::units::MemPtr,
+    pub pre_adjust_tail: crate::units::MemPtr,
     pub total_stretch: [i32; 4],
     pub total_shrink: [i32; 4],
-    pub just_box: i32,
+    pub just_box: crate::units::MemPtr,
     pub cur_f: i32,
     pub cur_c: i32,
     pub cur_i: crate::mem_types::B16x4,

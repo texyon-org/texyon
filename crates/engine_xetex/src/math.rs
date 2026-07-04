@@ -446,7 +446,7 @@ unsafe fn clean_box_in(st: &mut EngineState, p: i32, s: i16) -> Result<AnyBox, M
             if mlist == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.scanner.cur_mlist = mlist;
+            st.scanner.cur_mlist.0 = mlist;
             let w = st.mem.word(p);
             st.mem.set_word(mlist + 1, w);
 
@@ -462,7 +462,7 @@ unsafe fn clean_box_in(st: &mut EngineState, p: i32, s: i16) -> Result<AnyBox, M
             q = st.mem.b32s0(p);
         }
         SUB_MLIST => {
-            st.scanner.cur_mlist = st.mem.b32s0(p);
+            st.scanner.cur_mlist.0 = st.mem.b32s0(p);
 
             let save_style = st.scanner.cur_style;
             st.scanner.cur_style = s;
@@ -2587,7 +2587,7 @@ fn mlist_advance_in(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16
 /// recursing through `clean_box_in`/`make_*_in`.
 unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
     use crate::errors::ErrorOutcome;
-    let mlist = st.scanner.cur_mlist;
+    let mlist = st.scanner.cur_mlist.0;
     let penalties = st.scanner.mlist_penalties;
     let style = st.scanner.cur_style;
     let mut q = mlist;
@@ -2802,7 +2802,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                     EMPTY => TEX_NULL,
                     SUB_BOX => qn.nucleus_field(&st.mem),
                     SUB_MLIST => {
-                        st.scanner.cur_mlist = qn.nucleus_field(&st.mem);
+                        st.scanner.cur_mlist.0 = qn.nucleus_field(&st.mem);
                         let save_style = st.scanner.cur_style;
                         st.scanner.mlist_penalties = false;
                         mlist_to_hlist_in(st)?;
@@ -4325,7 +4325,7 @@ pub(crate) fn after_math_in(
             st.errors.help_line[0] = c"So I shall assume that you typed `$$' both times.".as_ptr();
             mc_propagate_error(crate::input::back_error_in(st)?)?;
         }
-        st.scanner.cur_mlist = p;
+        st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
         unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
@@ -4363,7 +4363,7 @@ pub(crate) fn after_math_in(
         }
         st.mem.set_b32s1(st.input.cur_list.tail.0, node);
         st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
-        st.scanner.cur_mlist = p;
+        st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
         unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
@@ -4402,19 +4402,19 @@ pub(crate) fn after_math_in(
                 mc_propagate_error(crate::input::back_error_in(st)?)?;
             }
         }
-        st.scanner.cur_mlist = p;
+        st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = DISPLAY_STYLE;
         st.scanner.mlist_penalties = false;
         unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
         p = st.mem.b32s1(TEMP_HEAD);
-        st.scanner.adjust_tail = ADJUST_HEAD;
-        st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
+        st.scanner.adjust_tail.0 = ADJUST_HEAD;
+        st.scanner.pre_adjust_tail.0 = PRE_ADJUST_HEAD;
         let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
         p = b.list_ptr(&st.mem).0;
-        let t = st.scanner.adjust_tail;
-        st.scanner.adjust_tail = TEX_NULL;
-        let pre_t = st.scanner.pre_adjust_tail;
-        st.scanner.pre_adjust_tail = TEX_NULL;
+        let t = st.scanner.adjust_tail.0;
+        st.scanner.adjust_tail.0 = TEX_NULL;
+        let pre_t = st.scanner.pre_adjust_tail.0;
+        st.scanner.pre_adjust_tail.0 = TEX_NULL;
         let mut w = b.width(&st.mem).0;
         let z = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
         let mut s = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
@@ -4615,7 +4615,7 @@ pub(crate) fn init_math_in(
             // `j` (the raw box index) is stored into `cur_list.e_tex_aux` later
             // in this function; keep it in sync with the typed handle.
             j = jbox.idx().0;
-            let just_box = st.scanner.just_box;
+            let just_box = st.scanner.just_box.0;
             let jb = classify_box_or_panic(&st.mem, just_box);
             let jb_w = jb.width(&st.mem);
             let jb_sh = jb.shift_amount(&st.mem);

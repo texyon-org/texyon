@@ -2055,26 +2055,26 @@ fn hpack_in(
                 }
             }
             Ok(AnyNode::Adjust(adjust)) => {
-                if scanner.adjust_tail != TEX_NULL || scanner.pre_adjust_tail != TEX_NULL {
+                if scanner.adjust_tail.0 != TEX_NULL || scanner.pre_adjust_tail.0 != TEX_NULL {
                     while mem.b32s1(q) != p {
                         q = mem.b32s1(q);
                     }
                     let adjust_list = adjust.adjust_ptr(mem).0;
                     if adjust.subtype(mem) != 0 {
-                        if scanner.pre_adjust_tail == TEX_NULL {
+                        if scanner.pre_adjust_tail.0 == TEX_NULL {
                             return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
                         }
-                        mem.set_b32s1(scanner.pre_adjust_tail, adjust_list);
-                        while mem.b32s1(scanner.pre_adjust_tail) != TEX_NULL {
-                            scanner.pre_adjust_tail = mem.b32s1(scanner.pre_adjust_tail);
+                        mem.set_b32s1(scanner.pre_adjust_tail.0, adjust_list);
+                        while mem.b32s1(scanner.pre_adjust_tail.0) != TEX_NULL {
+                            scanner.pre_adjust_tail.0 = mem.b32s1(scanner.pre_adjust_tail.0);
                         }
                     } else {
-                        if scanner.adjust_tail == TEX_NULL {
+                        if scanner.adjust_tail.0 == TEX_NULL {
                             return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
                         }
-                        mem.set_b32s1(scanner.adjust_tail, adjust_list);
-                        while mem.b32s1(scanner.adjust_tail) != TEX_NULL {
-                            scanner.adjust_tail = mem.b32s1(scanner.adjust_tail);
+                        mem.set_b32s1(scanner.adjust_tail.0, adjust_list);
+                        while mem.b32s1(scanner.adjust_tail.0) != TEX_NULL {
+                            scanner.adjust_tail.0 = mem.b32s1(scanner.adjust_tail.0);
                         }
                     }
                     let removed = p;
@@ -2085,24 +2085,24 @@ fn hpack_in(
                 }
             }
             Ok(AnyNode::Ins(ins)) => {
-                if scanner.adjust_tail != TEX_NULL || scanner.pre_adjust_tail != TEX_NULL {
+                if scanner.adjust_tail.0 != TEX_NULL || scanner.pre_adjust_tail.0 != TEX_NULL {
                     while mem.b32s1(q) != p {
                         q = mem.b32s1(q);
                     }
-                    mem.set_b32s1(scanner.adjust_tail, p);
-                    scanner.adjust_tail = p;
+                    mem.set_b32s1(scanner.adjust_tail.0, p);
+                    scanner.adjust_tail.0 = p;
                     p = ins.link(mem).0;
                     mem.set_b32s1(q, p);
                     p = q;
                 }
             }
             Ok(AnyNode::Mark(mark)) => {
-                if scanner.adjust_tail != TEX_NULL || scanner.pre_adjust_tail != TEX_NULL {
+                if scanner.adjust_tail.0 != TEX_NULL || scanner.pre_adjust_tail.0 != TEX_NULL {
                     while mem.b32s1(q) != p {
                         q = mem.b32s1(q);
                     }
-                    mem.set_b32s1(scanner.adjust_tail, p);
-                    scanner.adjust_tail = p;
+                    mem.set_b32s1(scanner.adjust_tail.0, p);
+                    scanner.adjust_tail.0 = p;
                     p = mark.link(mem).0;
                     mem.set_b32s1(q, p);
                     p = q;
@@ -2314,11 +2314,11 @@ fn hpack_in(
         p = mem.b32s1(p);
     }
 
-    if scanner.adjust_tail != TEX_NULL {
-        mem.set_b32s1(scanner.adjust_tail, TEX_NULL);
+    if scanner.adjust_tail.0 != TEX_NULL {
+        mem.set_b32s1(scanner.adjust_tail.0, TEX_NULL);
     }
-    if scanner.pre_adjust_tail != TEX_NULL {
-        mem.set_b32s1(scanner.pre_adjust_tail, TEX_NULL);
+    if scanner.pre_adjust_tail.0 != TEX_NULL {
+        mem.set_b32s1(scanner.pre_adjust_tail.0, TEX_NULL);
     }
     r_node.set_height(mem, Scaled(h));
     r_node.set_depth(mem, Scaled(d));

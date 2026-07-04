@@ -509,9 +509,9 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.shipout.last_bop = -1;
     st.shipout.doing_leaders = false;
     st.shipout.dead_cycles = 0;
-    st.scanner.adjust_tail = crate::mem::TEX_NULL;
+    st.scanner.adjust_tail.0 = crate::mem::TEX_NULL;
     st.shipout.last_badness = 0;
-    st.scanner.pre_adjust_tail = crate::mem::TEX_NULL;
+    st.scanner.pre_adjust_tail.0 = crate::mem::TEX_NULL;
     st.scanner.pack_begin_line = 0;
     st.scanner.empty.s1 = EMPTY as i32;
     st.scanner.empty.s0 = crate::mem::TEX_NULL;
@@ -519,10 +519,10 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.cur_align = crate::mem::TEX_NULL;
     st.scanner.cur_span = crate::mem::TEX_NULL;
     st.scanner.cur_loop = crate::mem::TEX_NULL;
-    st.scanner.cur_head = crate::mem::TEX_NULL;
-    st.scanner.cur_tail = crate::mem::TEX_NULL;
-    st.scanner.cur_pre_head = crate::mem::TEX_NULL;
-    st.scanner.cur_pre_tail = crate::mem::TEX_NULL;
+    st.scanner.cur_head.0 = crate::mem::TEX_NULL;
+    st.scanner.cur_tail.0 = crate::mem::TEX_NULL;
+    st.scanner.cur_pre_head.0 = crate::mem::TEX_NULL;
+    st.scanner.cur_pre_tail.0 = crate::mem::TEX_NULL;
     st.scanner.cur_f = 0;
     st.hyph.max_hyph_char = TOO_BIG_LANG;
 
