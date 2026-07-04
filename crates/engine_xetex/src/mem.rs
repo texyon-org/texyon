@@ -389,7 +389,8 @@ pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
 /// at `p`, then clear the copy's reference-count / link field to TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:231 (new_spec)
-pub fn new_spec(mem: &mut MemState, p: i32) -> i32 {
+pub fn new_spec(mem: &mut MemState, p: impl crate::units::MemAddr) -> i32 {
+    let p = p.addr();
     let Some(q) = NodePtr::<GlueSpecNode>::alloc(mem) else {
         return ALLOC_FAILED;
     };
@@ -446,7 +447,8 @@ pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
 /// the typed node (to set its subtype / read its spec) use this instead of
 /// re-deriving it from `new_glue`'s raw index via `classify_glue().expect()`.
 /// `None` is the arena-exhaustion sentinel.
-pub fn alloc_glue(mem: &mut MemState, q: i32) -> Option<NodePtr<GlueNode>> {
+pub fn alloc_glue(mem: &mut MemState, q: impl crate::units::MemAddr) -> Option<NodePtr<GlueNode>> {
+    let q = q.addr();
     let p = NodePtr::<GlueNode>::alloc(mem)?;
     // GLUE_SPEC_shrink_order(p) = NORMAL  →  mem[p].b16.s0 = NORMAL
     p.set_subtype(mem, NORMAL);
@@ -459,7 +461,7 @@ pub fn alloc_glue(mem: &mut MemState, q: i32) -> Option<NodePtr<GlueNode>> {
     Some(p)
 }
 
-pub fn new_glue(mem: &mut MemState, q: i32) -> i32 {
+pub fn new_glue(mem: &mut MemState, q: impl crate::units::MemAddr) -> i32 {
     alloc_glue(mem, q).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
