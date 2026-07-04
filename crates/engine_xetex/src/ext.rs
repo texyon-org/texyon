@@ -2489,7 +2489,7 @@ pub(crate) fn append_src_special_in(
         if p == crate::mem::ALLOC_FAILED {
             return Err(InsertSrcAbort::MainMemory);
         }
-        st.mem.set_b32s0(st.input.cur_list.tail.0 + 1, 0);
+        st.mem.set_b32s0(st.input.cur_list.tail + 1, 0);
         let d = crate::mem::get_avail(&mut st.mem);
         if d == crate::mem::ALLOC_FAILED {
             return Err(InsertSrcAbort::MainMemory);
@@ -2508,7 +2508,7 @@ pub(crate) fn append_src_special_in(
             }
         };
         st.mem.set_b32s1(d, st.mem.b32s1(TEMP_HEAD));
-        st.mem.set_b32s1(st.input.cur_list.tail.0 + 1, d);
+        st.mem.set_b32s1(st.input.cur_list.tail + 1, d);
         crate::texmfmp::remember_source_info_in(st, fname, st.mem.line);
     }
     Ok(())
@@ -2743,7 +2743,7 @@ pub(crate) fn do_extension_in(
                     st.scanner.cur_val
                 };
                 st.input.cur_list.set_aux_s1(lang);
-                st.mem.set_b32s1(st.input.cur_list.tail.0 + 1, lang);
+                st.mem.set_b32s1(st.input.cur_list.tail + 1, lang);
                 st.mem.set_b16s1(
                     st.input.cur_list.tail.0 + 1,
                     crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN_DE))
@@ -2827,7 +2827,7 @@ pub(crate) fn do_extension_in(
                     // measure_native_glyph(&mem[cur_list.tail.0], use_glyph_metrics)
                     let use_glyph_metrics =
                         st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_DE) > 0;
-                    let node_ptr = st.mem.node_addr(st.input.cur_list.tail.0);
+                    let node_ptr = st.mem.node_addr(st.input.cur_list.tail);
                     unsafe {
                         measure_native_glyph(&st.fonts, node_ptr, use_glyph_metrics as i32)?;
                     }

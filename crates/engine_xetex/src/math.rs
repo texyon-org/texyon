@@ -3561,7 +3561,7 @@ fn append_radical_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut Mem
     let Some(node) = NodePtr::<Noad>::alloc_radical(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
-    mem.set_b32s1(cl.tail.0, node.idx().0);
+    mem.set_b32s1(cl.tail, node.idx().0);
     cl.tail.0 = node.idx().0;
     node.set_subtype(mem, NORMAL);
     node.set_nucleus_type(mem, EMPTY);
@@ -3590,8 +3590,8 @@ fn append_choices_core(cl: &mut crate::mem_types::ListStateRecord,
     if choice == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b32s1(cl.tail.0, choice);
-    cl.tail.0 = mem.b32s1(cl.tail.0);
+    mem.set_b32s1(cl.tail, choice);
+    cl.tail.0 = mem.b32s1(cl.tail);
     save_stack.save_ptr += 1;
     save_stack.set_b32s1(save_stack.save_ptr - 1, 0);
     Ok(())
@@ -3616,7 +3616,7 @@ fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: 
     if aux != TEX_NULL {
         let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
         aux_noad.set_subscr_type(mem, SUB_MLIST);
-        let head_link = mem.b32s1(cl.head.0);
+        let head_link = mem.b32s1(cl.head);
         aux_noad.set_subscr_field(mem, head_link);
         if p == TEX_NULL {
             q = aux;
@@ -3636,8 +3636,8 @@ fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: 
             aux_noad.set_link(mem, MemPtr::from_raw(p));
         }
     } else {
-        mem.set_b32s1(cl.tail.0, p);
-        q = mem.b32s1(cl.head.0);
+        mem.set_b32s1(cl.tail, p);
+        q = mem.b32s1(cl.head);
     }
     Ok(q)
 }
@@ -3709,7 +3709,7 @@ fn prepare_sub_sup(cl: &mut crate::mem_types::ListStateRecord,
     let mut p = TEX_NULL;
 
     if cl.tail.0 != cl.head.0 {
-        let node_type = mem.b16s1(cl.tail.0);
+        let node_type = mem.b16s1(cl.tail);
         if (NodeType::OrdNoad.as_raw()..NodeType::LeftNoad.as_raw()).contains(&node_type) {
             p = cl.tail.0 + 2 + cmd as i32 - 7;
             t = mem.b32s1(p);
@@ -3722,8 +3722,8 @@ fn prepare_sub_sup(cl: &mut crate::mem_types::ListStateRecord,
         if noad == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        mem.set_b32s1(cl.tail.0, noad);
-        cl.tail.0 = mem.b32s1(cl.tail.0);
+        mem.set_b32s1(cl.tail, noad);
+        cl.tail.0 = mem.b32s1(cl.tail);
         p = cl.tail.0 + 2 + cmd as i32 - 7;
         if t != EMPTY {
             duplicate = Some(if cmd == SUP_MARK {
@@ -3767,7 +3767,7 @@ fn start_fraction_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut Mem
     cl.set_aux_s1(fraction.idx().0);
     fraction.set_subtype(mem, NORMAL);
     fraction.set_supscr_type(mem, SUB_MLIST);
-    fraction.set_supscr_field(mem, mem.b32s1(cl.head.0));
+    fraction.set_supscr_field(mem, mem.b32s1(cl.head));
     fraction.set_subscr_type(mem, EMPTY);
     fraction.set_subscr_field(mem, TEX_NULL);
 
@@ -3783,7 +3783,7 @@ fn start_fraction_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut Mem
     mem.set_b16s1(delim_r, 0);
     mem.set_b16s0(delim_r, 0);
 
-    mem.set_b32s1(cl.head.0, TEX_NULL);
+    mem.set_b32s1(cl.head, TEX_NULL);
     cl.tail.0 = cl.head.0;
     Ok(fraction)
 }
@@ -3852,7 +3852,7 @@ fn append_accent_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemS
     let Some(accent) = NodePtr::<Noad>::alloc_accent(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
-    mem.set_b32s1(cl.tail.0, accent.idx().0);
+    mem.set_b32s1(cl.tail, accent.idx().0);
     cl.tail.0 = accent.idx().0;
     accent.set_subtype(mem, NORMAL);
     accent.set_nucleus_type(mem, EMPTY);
@@ -3911,7 +3911,7 @@ fn mark_middle_noad(mem: &mut MemState, p: NodePtr<Noad>) {
 }
 
 fn finish_left_right_group(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: i32, p: i32) {
-    mem.set_b32s1(cl.head.0, q);
+    mem.set_b32s1(cl.head, q);
     cl.tail.0 = p;
     cl.e_tex_aux = crate::units::MemPtr::from_raw(p);
 }
@@ -3928,7 +3928,7 @@ fn append_inner_noad_for_right(cl: &mut crate::mem_types::ListStateRecord, mem: 
     inner.set_subscr_type(mem, EMPTY);
     inner.set_subscr_field(mem, TEX_NULL);
 
-    mem.set_b32s1(cl.tail.0, inner.idx().0);
+    mem.set_b32s1(cl.tail, inner.idx().0);
     cl.tail.0 = inner.idx().0;
     inner.set_noad_type(mem, NodeType::InnerNoad);
     inner.set_nucleus_type(mem, SUB_MLIST);
@@ -4198,12 +4198,12 @@ fn app_display_in(
             st.mem.set_b32s1(q, jj);
             st.mem.set_b32s1(jj, u);
             let jspec = st.mem.b32s0(t + 1);
-            st.mem.set_b16s1(st.mem.temp_ptr.0, st.mem.b16s1(jspec));
-            st.mem.set_b16s0(st.mem.temp_ptr.0, st.mem.b16s0(jspec));
+            st.mem.set_b16s1(st.mem.temp_ptr, st.mem.b16s1(jspec));
+            st.mem.set_b16s0(st.mem.temp_ptr, st.mem.b16s0(jspec));
             st.mem
                 .set_b32s1(st.mem.temp_ptr.0 + 1, e - st.mem.b32s1(jspec + 1));
-            st.mem.set_b32s1(st.mem.temp_ptr.0 + 2, -st.mem.b32s1(jspec + 2));
-            st.mem.set_b32s1(st.mem.temp_ptr.0 + 3, -st.mem.b32s1(jspec + 3));
+            st.mem.set_b32s1(st.mem.temp_ptr + 2, -st.mem.b32s1(jspec + 2));
+            st.mem.set_b32s1(st.mem.temp_ptr + 3, -st.mem.b32s1(jspec + 3));
             st.mem.set_b32s1(u, t);
         } else {
             st.mem.set_b32s1(t + 1, e);
@@ -4222,12 +4222,12 @@ fn app_display_in(
             st.mem.set_b32s1(u2, jj);
             st.mem.set_b32s1(jj, p);
             let jspec = st.mem.b32s0(r + 1);
-            st.mem.set_b16s1(st.mem.temp_ptr.0, st.mem.b16s1(jspec));
-            st.mem.set_b16s0(st.mem.temp_ptr.0, st.mem.b16s0(jspec));
+            st.mem.set_b16s1(st.mem.temp_ptr, st.mem.b16s1(jspec));
+            st.mem.set_b16s0(st.mem.temp_ptr, st.mem.b16s0(jspec));
             st.mem
                 .set_b32s1(st.mem.temp_ptr.0 + 1, d - st.mem.b32s1(jspec + 1));
-            st.mem.set_b32s1(st.mem.temp_ptr.0 + 2, -st.mem.b32s1(jspec + 2));
-            st.mem.set_b32s1(st.mem.temp_ptr.0 + 3, -st.mem.b32s1(jspec + 3));
+            st.mem.set_b32s1(st.mem.temp_ptr + 2, -st.mem.b32s1(jspec + 2));
+            st.mem.set_b32s1(st.mem.temp_ptr + 3, -st.mem.b32s1(jspec + 3));
             st.mem.set_b32s1(r, u2);
         } else {
             st.mem.set_b32s1(r + 1, d);
@@ -4361,22 +4361,22 @@ pub(crate) fn after_math_in(
         if node == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(st.input.cur_list.tail.0, node);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+        st.mem.set_b32s1(st.input.cur_list.tail, node);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
         unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
-        st.mem.set_b32s1(st.input.cur_list.tail.0, st.mem.b32s1(TEMP_HEAD));
-        while st.mem.b32s1(st.input.cur_list.tail.0) != TEX_NULL {
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+        st.mem.set_b32s1(st.input.cur_list.tail, st.mem.b32s1(TEMP_HEAD));
+        while st.mem.b32s1(st.input.cur_list.tail) != TEX_NULL {
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         }
         let node2 = crate::mem::new_math(&mut st.mem, math_surround, AFTER);
         if node2 == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(st.input.cur_list.tail.0, node2);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+        st.mem.set_b32s1(st.input.cur_list.tail, node2);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         st.input.cur_list.set_aux_s0(1000);
 
         if st.config.semantic_pagination_enabled {
@@ -4463,8 +4463,8 @@ pub(crate) fn after_math_in(
         if penalty_node == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(st.input.cur_list.tail.0, penalty_node);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+        st.mem.set_b32s1(st.input.cur_list.tail, penalty_node);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
 
         let pre_display_size = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
         let (g1, mut g2);
@@ -4482,15 +4482,15 @@ pub(crate) fn after_math_in(
             if inf_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(st.input.cur_list.tail.0, inf_node);
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+            st.mem.set_b32s1(st.input.cur_list.tail, inf_node);
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         } else {
             let g1_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g1);
             if g1_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(st.input.cur_list.tail.0, g1_node);
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+            st.mem.set_b32s1(st.input.cur_list.tail, g1_node);
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         }
 
         if e != 0 {
@@ -4517,15 +4517,15 @@ pub(crate) fn after_math_in(
             if inf_node2 == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(st.input.cur_list.tail.0, inf_node2);
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+            st.mem.set_b32s1(st.input.cur_list.tail, inf_node2);
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
             let a_width = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
             app_display_in(st, j, a, z - a_width)?;
             g2 = 0;
         }
 
         if t != ADJUST_HEAD {
-            st.mem.set_b32s1(st.input.cur_list.tail.0, st.mem.b32s1(ADJUST_HEAD));
+            st.mem.set_b32s1(st.input.cur_list.tail, st.mem.b32s1(ADJUST_HEAD));
             st.input.cur_list.tail.0 = t;
         }
         if pre_t != PRE_ADJUST_HEAD {
@@ -4541,16 +4541,16 @@ pub(crate) fn after_math_in(
         if post_pen == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(st.input.cur_list.tail.0, post_pen);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+        st.mem.set_b32s1(st.input.cur_list.tail, post_pen);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
 
         if g2 > 0 {
             let g2_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g2);
             if g2_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(st.input.cur_list.tail.0, g2_node);
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+            st.mem.set_b32s1(st.input.cur_list.tail, g2_node);
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         }
 
         crate::packaging::flush_node_list(&mut st.mem, j).map_err(MainControlAbort::Confusion)?;
@@ -4669,8 +4669,8 @@ pub(crate) fn init_math_in(
                     return Err(NodeRecycleAbort::Overflow.into());
                 }
                 st.mem.temp_ptr.0 = tp;
-                st.mem.set_b32s0(st.mem.temp_ptr.0, BEFORE);
-                st.mem.set_b32s1(st.mem.temp_ptr.0, st.scanner.lr_ptr.0);
+                st.mem.set_b32s0(st.mem.temp_ptr, BEFORE);
+                st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.lr_ptr.0);
                 st.scanner.lr_ptr.0 = st.mem.temp_ptr.0;
             }
 
@@ -4722,12 +4722,12 @@ pub(crate) fn init_math_in(
                                 .0;
                             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
                                 if st.mem.b16s0(p) & 1 != 0 {
-                                    if st.mem.b32s0(st.scanner.lr_ptr.0)
+                                    if st.mem.b32s0(st.scanner.lr_ptr)
                                         == L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3
                                     {
                                         st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
-                                        st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
-                                        st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+                                        st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr);
+                                        st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
                                         st.mem.avail = st.mem.temp_ptr.0;
                                     } else if st.mem.b16s0(p) as i32 > L_CODE {
                                         w = MAX_HALFWORD;
@@ -4743,7 +4743,7 @@ pub(crate) fn init_math_in(
                                         st.mem.temp_ptr.0,
                                         L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3,
                                     );
-                                    st.mem.set_b32s1(st.mem.temp_ptr.0, st.scanner.lr_ptr.0);
+                                    st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.lr_ptr.0);
                                     st.scanner.lr_ptr.0 = st.mem.temp_ptr.0;
                                     if st.mem.b16s0(p) as i32 / R_CODE != st.scanner.cur_dir as i32
                                     {
@@ -4839,8 +4839,8 @@ pub(crate) fn init_math_in(
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
                 while st.scanner.lr_ptr.0 != TEX_NULL {
                     st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
-                    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
-                    st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+                    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr);
+                    st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
                     st.mem.avail = st.mem.temp_ptr.0;
                 }
                 if st.scanner.lr_problems != 0 {

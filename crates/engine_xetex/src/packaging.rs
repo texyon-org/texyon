@@ -406,14 +406,14 @@ pub fn just_reverse(
                     if subtype & 1 != 0 {
                         // odd subtype = end math node
                         let expected = L_CODE * (subtype / L_CODE) + 3;
-                        if mem.b32s0(scanner.lr_ptr.0) != expected {
+                        if mem.b32s0(scanner.lr_ptr) != expected {
                             mem.set_b16s1(p, KERN_NODE); // NODE_type(p) = KERN_NODE
                             scanner.lr_problems += 1;
                         } else {
                             // pop lr_ptr
                             mem.temp_ptr.0 = scanner.lr_ptr.0;
-                            scanner.lr_ptr.0 = mem.b32s1(mem.temp_ptr.0);
-                            mem.set_b32s1(mem.temp_ptr.0, mem.avail);
+                            scanner.lr_ptr.0 = mem.b32s1(mem.temp_ptr);
+                            mem.set_b32s1(mem.temp_ptr, mem.avail);
                             mem.avail = mem.temp_ptr.0;
 
                             if n > MIN_HALFWORD {
@@ -435,8 +435,8 @@ pub fn just_reverse(
                         // push lr_ptr
                         let tp = cnl_get_avail!(mem);
                         mem.temp_ptr.0 = tp;
-                        mem.set_b32s0(mem.temp_ptr.0, L_CODE * (subtype / L_CODE) + 3);
-                        mem.set_b32s1(mem.temp_ptr.0, scanner.lr_ptr.0);
+                        mem.set_b32s0(mem.temp_ptr, L_CODE * (subtype / L_CODE) + 3);
+                        mem.set_b32s1(mem.temp_ptr, scanner.lr_ptr.0);
                         scanner.lr_ptr.0 = mem.temp_ptr.0;
 
                         if n > MIN_HALFWORD || (subtype / R_CODE) != scanner.cur_dir as i32 {
@@ -904,10 +904,10 @@ pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord,
             bsl_spec.set_width(mem, Scaled(d));
             p
         };
-        mem.set_b32s1(cl.tail.0, p);
+        mem.set_b32s1(cl.tail, p);
         cl.tail.0 = p;
     }
-    mem.set_b32s1(cl.tail.0, b_idx);
+    mem.set_b32s1(cl.tail, b_idx);
     cl.tail.0 = b_idx;
     cl.set_aux_s1(if upwards {
         b.height(mem).0
@@ -1370,7 +1370,7 @@ fn find_box_register(
         if scanner.cur_ptr.0 == TEX_NULL {
             Ok(TEX_NULL)
         } else {
-            Ok(mem.b32s1(scanner.cur_ptr.0 + 1))
+            Ok(mem.b32s1(scanner.cur_ptr + 1))
         }
     }
 }
@@ -1449,14 +1449,14 @@ fn collect_split_mark(
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        if mem.b32s1(scanner.cur_ptr.0 + 2) == TEX_NULL {
-            mem.set_b32s1(scanner.cur_ptr.0 + 2, mark_ptr);
+        if mem.b32s1(scanner.cur_ptr + 2) == TEX_NULL {
+            mem.set_b32s1(scanner.cur_ptr + 2, mark_ptr);
             mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
         } else {
-            let old = mem.b32s0(scanner.cur_ptr.0 + 3);
+            let old = mem.b32s0(scanner.cur_ptr + 3);
             crate::mem::delete_token_ref(mem, old);
         }
-        mem.set_b32s0(scanner.cur_ptr.0 + 3, mark_ptr);
+        mem.set_b32s0(scanner.cur_ptr + 3, mark_ptr);
         mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
     } else if scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] == TEX_NULL {
         scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] = mark_ptr;
@@ -1517,8 +1517,8 @@ fn store_split_remainder(
             return Err(NodeRecycleAbort::Overflow);
         }
         if scanner.cur_ptr.0 != TEX_NULL {
-            mem.set_b32s1(scanner.cur_ptr.0 + 1, q);
-            mem.set_b32s0(scanner.cur_ptr.0 + 1, mem.b32s0(scanner.cur_ptr.0 + 1) + 1);
+            mem.set_b32s1(scanner.cur_ptr + 1, q);
+            mem.set_b32s0(scanner.cur_ptr + 1, mem.b32s0(scanner.cur_ptr + 1) + 1);
             crate::save::delete_sa_ref(mem, scanner, scanner.cur_ptr.0);
         }
     }
@@ -2064,17 +2064,17 @@ fn hpack_in(
                         if scanner.pre_adjust_tail.0 == TEX_NULL {
                             return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
                         }
-                        mem.set_b32s1(scanner.pre_adjust_tail.0, adjust_list);
-                        while mem.b32s1(scanner.pre_adjust_tail.0) != TEX_NULL {
-                            scanner.pre_adjust_tail.0 = mem.b32s1(scanner.pre_adjust_tail.0);
+                        mem.set_b32s1(scanner.pre_adjust_tail, adjust_list);
+                        while mem.b32s1(scanner.pre_adjust_tail) != TEX_NULL {
+                            scanner.pre_adjust_tail.0 = mem.b32s1(scanner.pre_adjust_tail);
                         }
                     } else {
                         if scanner.adjust_tail.0 == TEX_NULL {
                             return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
                         }
-                        mem.set_b32s1(scanner.adjust_tail.0, adjust_list);
-                        while mem.b32s1(scanner.adjust_tail.0) != TEX_NULL {
-                            scanner.adjust_tail.0 = mem.b32s1(scanner.adjust_tail.0);
+                        mem.set_b32s1(scanner.adjust_tail, adjust_list);
+                        while mem.b32s1(scanner.adjust_tail) != TEX_NULL {
+                            scanner.adjust_tail.0 = mem.b32s1(scanner.adjust_tail);
                         }
                     }
                     let removed = p;
@@ -2089,7 +2089,7 @@ fn hpack_in(
                     while mem.b32s1(q) != p {
                         q = mem.b32s1(q);
                     }
-                    mem.set_b32s1(scanner.adjust_tail.0, p);
+                    mem.set_b32s1(scanner.adjust_tail, p);
                     scanner.adjust_tail.0 = p;
                     p = ins.link(mem).0;
                     mem.set_b32s1(q, p);
@@ -2101,7 +2101,7 @@ fn hpack_in(
                     while mem.b32s1(q) != p {
                         q = mem.b32s1(q);
                     }
-                    mem.set_b32s1(scanner.adjust_tail.0, p);
+                    mem.set_b32s1(scanner.adjust_tail, p);
                     scanner.adjust_tail.0 = p;
                     p = mark.link(mem).0;
                     mem.set_b32s1(q, p);
@@ -2280,7 +2280,7 @@ fn hpack_in(
                     let sub = math.subtype(mem);
                     if !sub.is_multiple_of(2) {
                         let expected = (L_CODE_HP as u32) * (sub as u32 / L_CODE_HP as u32) + 3;
-                        if mem.b32s0(scanner.lr_ptr.0) == expected as i32 {
+                        if mem.b32s0(scanner.lr_ptr) == expected as i32 {
                             let t = scanner.lr_ptr.0;
                             scanner.lr_ptr.0 = mem.b32s1(t);
                             mem.set_b32s1(t, mem.avail);
@@ -2315,10 +2315,10 @@ fn hpack_in(
     }
 
     if scanner.adjust_tail.0 != TEX_NULL {
-        mem.set_b32s1(scanner.adjust_tail.0, TEX_NULL);
+        mem.set_b32s1(scanner.adjust_tail, TEX_NULL);
     }
     if scanner.pre_adjust_tail.0 != TEX_NULL {
-        mem.set_b32s1(scanner.pre_adjust_tail.0, TEX_NULL);
+        mem.set_b32s1(scanner.pre_adjust_tail, TEX_NULL);
     }
     r_node.set_height(mem, Scaled(h));
     r_node.set_depth(mem, Scaled(d));
@@ -2422,13 +2422,13 @@ fn hpack_in(
     }
 
     if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
-        if mem.b32s0(scanner.lr_ptr.0) != BEFORE_HP as i32 {
+        if mem.b32s0(scanner.lr_ptr) != BEFORE_HP as i32 {
             while mem.b32s1(q) != TEX_NULL {
                 q = mem.b32s1(q);
             }
             loop {
                 let t = q;
-                let new_q = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr.0) as i16);
+                let new_q = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16);
                 if new_q == crate::mem::ALLOC_FAILED {
                     return Err(NodeRecycleAbort::Overflow);
                 }
@@ -2439,7 +2439,7 @@ fn hpack_in(
                 scanner.lr_ptr.0 = mem.b32s1(t2);
                 mem.set_b32s1(t2, mem.avail);
                 mem.avail = t2;
-                if mem.b32s0(scanner.lr_ptr.0) == BEFORE_HP as i32 {
+                if mem.b32s0(scanner.lr_ptr) == BEFORE_HP as i32 {
                     break;
                 }
             }

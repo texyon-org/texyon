@@ -742,7 +742,7 @@ pub fn reconstitute(
                             2 | 6 => {
                                 st.mainloop.cur_r = q.s0 as i32;
                                 if st.mainloop.lig_stack.0 > TEX_NULL {
-                                    st.mem.set_b16s0(st.mainloop.lig_stack.0, st.mainloop.cur_r as u16);
+                                    st.mem.set_b16s0(st.mainloop.lig_stack, st.mainloop.cur_r as u16);
                                 } else {
                                     let lig_item = crate::mem::new_lig_item(&mut st.mem, st.mainloop.cur_r as u16);
                                     if lig_item == crate::mem::ALLOC_FAILED {
@@ -756,7 +756,7 @@ pub fn reconstitute(
                                         if p == crate::mem::ALLOC_FAILED {
                                             return Err(NodeRecycleAbort::OverflowRunaway);
                                         }
-                                        st.mem.set_b32s1(st.mainloop.lig_stack.0 + 1, p);
+                                        st.mem.set_b32s1(st.mainloop.lig_stack + 1, p);
                                         st.mem.set_b16s0(p, st.hyph.hu[(j + 1) as usize] as u16);
                                         st.mem.set_b16s1(p, st.hyph.hf as u16);
                                     }
@@ -770,11 +770,11 @@ pub fn reconstitute(
                                     return Err(NodeRecycleAbort::Overflow);
                                 }
                                 st.mainloop.lig_stack.0 = lig_item;
-                                st.mem.set_b32s1(st.mainloop.lig_stack.0, p);
+                                st.mem.set_b32s1(st.mainloop.lig_stack, p);
                             }
                             7 | 11 => {
                                 if st.mainloop.ligature_present {
-                                    let mq = st.mem.b32s1(st.mainloop.cur_q.0);
+                                    let mq = st.mem.b32s1(st.mainloop.cur_q);
                                     let p = crate::mem::new_ligature(
                                         &mut st.mem,
                                         st.hyph.hf,
@@ -788,7 +788,7 @@ pub fn reconstitute(
                                         st.mem.set_b16s0(p, 2);
                                         st.mainloop.lft_hit = false;
                                     }
-                                    st.mem.set_b32s1(st.mainloop.cur_q.0, p);
+                                    st.mem.set_b32s1(st.mainloop.cur_q, p);
                                     t = p;
                                     st.mainloop.ligature_present = false;
                                 }
@@ -800,8 +800,8 @@ pub fn reconstitute(
                                 st.mainloop.cur_l = q.s0 as i32;
                                 st.mainloop.ligature_present = true;
                                 if st.mainloop.lig_stack.0 > TEX_NULL {
-                                    if st.mem.b32s1(st.mainloop.lig_stack.0 + 1) > TEX_NULL {
-                                        st.mem.set_b32s1(t, st.mem.b32s1(st.mainloop.lig_stack.0 + 1));
+                                    if st.mem.b32s1(st.mainloop.lig_stack + 1) > TEX_NULL {
+                                        st.mem.set_b32s1(t, st.mem.b32s1(st.mainloop.lig_stack + 1));
                                         t = st.mem.b32s1(t);
                                         j += 1;
                                     }
@@ -811,7 +811,7 @@ pub fn reconstitute(
                                     if st.mainloop.lig_stack.0 == TEX_NULL {
                                         cur_rh = update_right(st, j, n, bchar, hchar);
                                     } else {
-                                        st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack.0) as i32;
+                                        st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
                                     }
                                 } else if j == n {
                                     break 'continue_;
@@ -861,7 +861,7 @@ pub fn reconstitute(
         }
 
         if st.mainloop.ligature_present {
-            let mq = st.mem.b32s1(st.mainloop.cur_q.0);
+            let mq = st.mem.b32s1(st.mainloop.cur_q);
             let p = crate::mem::new_ligature(&mut st.mem, st.hyph.hf, st.mainloop.cur_l as u16, mq);
             if p == crate::mem::ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow);
@@ -874,7 +874,7 @@ pub fn reconstitute(
                 st.mem.set_b16s0(p, st.mem.b16s0(p) + 1);
                 st.mainloop.rt_hit = false;
             }
-            st.mem.set_b32s1(st.mainloop.cur_q.0, p);
+            st.mem.set_b32s1(st.mainloop.cur_q, p);
             t = p;
             st.mainloop.ligature_present = false;
         }
@@ -892,10 +892,10 @@ pub fn reconstitute(
 
         if st.mainloop.lig_stack.0 > TEX_NULL {
             st.mainloop.cur_q.0 = t;
-            st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack.0) as i32;
+            st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
             st.mainloop.ligature_present = true;
-            if st.mem.b32s1(st.mainloop.lig_stack.0 + 1) > TEX_NULL {
-                st.mem.set_b32s1(t, st.mem.b32s1(st.mainloop.lig_stack.0 + 1));
+            if st.mem.b32s1(st.mainloop.lig_stack + 1) > TEX_NULL {
+                st.mem.set_b32s1(t, st.mem.b32s1(st.mainloop.lig_stack + 1));
                 t = st.mem.b32s1(t);
                 j += 1;
             }
@@ -905,7 +905,7 @@ pub fn reconstitute(
             if st.mainloop.lig_stack.0 == TEX_NULL {
                 cur_rh = update_right(st, j, n, bchar, hchar);
             } else {
-                st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack.0) as i32;
+                st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
             }
             continue;
         }
@@ -2351,7 +2351,7 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
     just_box.set_shift_amount(mem, Scaled(hpack.cur_indent));
 
     if PRE_ADJUST_HEAD != scanner.pre_adjust_tail.0 {
-        mem.set_b32s1(cl.tail.0, mem.b32s1(PRE_ADJUST_HEAD));
+        mem.set_b32s1(cl.tail, mem.b32s1(PRE_ADJUST_HEAD));
         cl.tail.0 = scanner.pre_adjust_tail.0;
     }
 
@@ -2359,7 +2359,7 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
     crate::packaging::append_to_vlist(cl, mem, eqtb, just_box).map_err(PostLineAbort::Node)?;
 
     if ADJUST_HEAD != scanner.adjust_tail.0 {
-        mem.set_b32s1(cl.tail.0, mem.b32s1(ADJUST_HEAD));
+        mem.set_b32s1(cl.tail, mem.b32s1(ADJUST_HEAD));
         cl.tail.0 = scanner.adjust_tail.0;
     }
 
@@ -2418,7 +2418,7 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
             if r == crate::mem::ALLOC_FAILED {
                 return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
             }
-            mem.set_b32s1(cl.tail.0, r);
+            mem.set_b32s1(cl.tail, r);
             cl.tail.0 = r;
         }
     }
@@ -3895,14 +3895,14 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
 
     if locale == 0 || len == 1 {
         let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, main_f, len)?;
-        st.mem.set_b32s1(st.input.cur_list.tail.0, node);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+        st.mem.set_b32s1(st.input.cur_list.tail, node);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         let t = st.input.cur_list.tail.0;
         let text = whatsit_node_in(&st.mem, t).native_text_ptr_mut(&mut st.mem);
         for i in 0..len {
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
-        let addr = st.mem.node_addr(st.input.cur_list.tail.0);
+        let addr = st.mem.node_addr(st.input.cur_list.tail);
         measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
     } else {
         let use_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
@@ -3920,8 +3920,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                         if node == crate::mem::ALLOC_FAILED {
                             return Err(NodeRecycleAbort::Overflow);
                         }
-                        st.mem.set_b32s1(st.input.cur_list.tail.0, node);
-                        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+                        st.mem.set_b32s1(st.input.cur_list.tail, node);
+                        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
                     }
                     if use_skip {
                         let node = crate::mem::new_param_glue(
@@ -3932,8 +3932,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                         if node == crate::mem::ALLOC_FAILED {
                             return Err(NodeRecycleAbort::Overflow);
                         }
-                        st.mem.set_b32s1(st.input.cur_list.tail.0, node);
-                        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+                        st.mem.set_b32s1(st.input.cur_list.tail, node);
+                        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
                     }
                 }
                 let node = crate::fonts::new_native_word_node(
@@ -3942,14 +3942,14 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                     main_f,
                     offs - prev_offs,
                 )?;
-                st.mem.set_b32s1(st.input.cur_list.tail.0, node);
-                st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+                st.mem.set_b32s1(st.input.cur_list.tail, node);
+                st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
                 let t = st.input.cur_list.tail.0;
                 let text = whatsit_node_in(&st.mem, t).native_text_ptr_mut(&mut st.mem);
                 for i in prev_offs..offs {
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }
-                let addr = st.mem.node_addr(st.input.cur_list.tail.0);
+                let addr = st.mem.node_addr(st.input.cur_list.tail);
                 measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
             }
             if offs < 0 {

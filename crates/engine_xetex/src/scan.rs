@@ -1183,7 +1183,7 @@ pub(crate) fn set_math_char_in(
         }
         let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;
         nd.set_nucleus_fam(&mut st.mem, fam);
-        st.mem.set_b32s1(st.input.cur_list.tail.0, nd.idx().0);
+        st.mem.set_b32s1(st.input.cur_list.tail, nd.idx().0);
         st.input.cur_list.tail.0 = nd.idx().0;
     }
     Ok(())
@@ -2131,8 +2131,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     c"(interwoven alignment preambles are not allowed)".as_ptr(),
                 ));
             }
-            let saved_cmd = st.mem.b32s0(st.scanner.cur_align.0 + 5);
-            st.mem.set_b32s0(st.scanner.cur_align.0 + 5, st.scanner.cur_chr);
+            let saved_cmd = st.mem.b32s0(st.scanner.cur_align + 5);
+            st.mem.set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_chr);
             if saved_cmd as u8 == OMIT_GN {
                 {
                     let __p = OMIT_TEMPLATE_GN;
@@ -2140,7 +2140,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                 };
             } else {
                 {
-                    let __p = st.mem.b32s1(st.scanner.cur_align.0 + 2);
+                    let __p = st.mem.b32s1(st.scanner.cur_align + 2);
                     try_in!(crate::input::begin_token_list_in(st, __p, V_TEMPLATE_GN))
                 };
             }
@@ -4004,7 +4004,7 @@ pub(crate) fn scan_something_internal_in(
                                 if st.scanner.cur_ptr.0 == TEX_NULL {
                                     st.scanner.cur_val = TEX_NULL;
                                 } else {
-                                    st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
+                                    st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
                                 }
                             }
                         } else {
@@ -4026,7 +4026,7 @@ pub(crate) fn scan_something_internal_in(
                         if st.scanner.cur_ptr.0 == TEX_NULL {
                             st.scanner.cur_val = TEX_NULL;
                         } else {
-                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
                         }
                     } else {
                         st.scanner.cur_val = st.eqtb.b32s1(m);
@@ -4155,7 +4155,7 @@ pub(crate) fn scan_something_internal_in(
                     if st.scanner.cur_ptr.0 == TEX_NULL {
                         q = TEX_NULL;
                     } else {
-                        q = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
+                        q = st.mem.b32s1(st.scanner.cur_ptr + 1);
                     }
                 }
                 if q == TEX_NULL {
@@ -4230,9 +4230,9 @@ pub(crate) fn scan_something_internal_in(
                         if st.scanner.cur_ptr.0 == TEX_NULL {
                             st.scanner.cur_val = 0;
                         } else if (st.scanner.cur_val_level as i16) < GLUE_VAL {
-                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr.0 + 2);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 2);
                         } else {
-                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
                         }
                     } else {
                         match st.scanner.cur_val_level as i16 {

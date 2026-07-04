@@ -783,7 +783,7 @@ pub fn new_whatsit(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemStat
     }
     mem.set_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
     mem.set_b16s0(p, s as u16);
-    mem.set_b32s1(cl.tail.0, p);
+    mem.set_b32s1(cl.tail, p);
     cl.tail.0 = p;
     p
 }

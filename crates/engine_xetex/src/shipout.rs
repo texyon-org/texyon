@@ -1493,12 +1493,12 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                             crate::synctex::synctex_math(st, p, this_box);
                             let math_width = math.width(&st.mem).0;
                             if !math.subtype(&st.mem).is_multiple_of(2) {
-                                if st.mem.b32s0(st.scanner.lr_ptr.0) as u16
+                                if st.mem.b32s0(st.scanner.lr_ptr) as u16
                                     == math_node_end_lr_type(&st.mem, p)
                                 {
                                     st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
-                                    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
-                                    st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+                                    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr);
+                                    st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
                                     st.mem.avail = st.mem.temp_ptr.0;
                                 } else if math.subtype(&st.mem) > L_CODE {
                                     st.scanner.lr_problems += 1;
@@ -1580,19 +1580,19 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
 
     crate::synctex::synctex_tsilh(st, this_box);
 
-    while st.mem.b32s0(st.scanner.lr_ptr.0) != BEFORE {
-        if st.mem.b32s0(st.scanner.lr_ptr.0) as u16 > L_CODE {
+    while st.mem.b32s0(st.scanner.lr_ptr) != BEFORE {
+        if st.mem.b32s0(st.scanner.lr_ptr) as u16 > L_CODE {
             st.scanner.lr_problems += 10000;
         }
         st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
-        st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
-        st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+        st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr);
+        st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
         st.mem.avail = st.mem.temp_ptr.0;
     }
 
     st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
-    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
-    st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr);
+    st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
     st.mem.avail = st.mem.temp_ptr.0;
 
     if this_box_b.subtype(&st.mem) == DLIST {
@@ -2369,7 +2369,7 @@ pub fn reverse(
                         crate::mem::flush_list(mem, mem.b32s1(p + 1));
                         mem.temp_ptr.0 = p;
                         p = crate::mem::get_avail(mem);
-                        mem.set_word(p, mem.word(mem.temp_ptr.0 + 1));
+                        mem.set_word(p, mem.word(mem.temp_ptr + 1));
                         mem.set_b32s1(p, q);
                         crate::mem::free_node(mem, mem.temp_ptr.0, SMALL_NODE_SIZE);
                         continue 'reswitch;
@@ -2378,13 +2378,13 @@ pub fn reverse(
                         shipout.rule_wd = mem.b32s1(p + 1);
 
                         if !mem.b16s0(p).is_multiple_of(2) {
-                            if mem.b32s0(scanner.lr_ptr.0) as u16 != math_node_end_lr_type(mem, p) {
+                            if mem.b32s0(scanner.lr_ptr) as u16 != math_node_end_lr_type(mem, p) {
                                 mem.set_b16s1(p, KERN_NODE);
                                 scanner.lr_problems += 1;
                             } else {
                                 mem.temp_ptr.0 = scanner.lr_ptr.0;
-                                scanner.lr_ptr.0 = mem.b32s1(mem.temp_ptr.0);
-                                mem.set_b32s1(mem.temp_ptr.0, mem.avail);
+                                scanner.lr_ptr.0 = mem.b32s1(mem.temp_ptr);
+                                mem.set_b32s1(mem.temp_ptr, mem.avail);
                                 mem.avail = mem.temp_ptr.0;
 
                                 if n > MIN_HALFWORD {
@@ -2406,8 +2406,8 @@ pub fn reverse(
                             }
                         } else {
                             mem.temp_ptr.0 = crate::mem::get_avail(mem);
-                            mem.set_b32s0(mem.temp_ptr.0, math_node_end_lr_type(mem, p) as i32);
-                            mem.set_b32s1(mem.temp_ptr.0, scanner.lr_ptr.0);
+                            mem.set_b32s0(mem.temp_ptr, math_node_end_lr_type(mem, p) as i32);
+                            mem.set_b32s1(mem.temp_ptr, scanner.lr_ptr.0);
                             scanner.lr_ptr.0 = mem.temp_ptr.0;
 
                             if n > MIN_HALFWORD
@@ -2448,7 +2448,7 @@ pub fn reverse(
             return Ok(l);
         }
 
-        p = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr.0) as i16);
+        p = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16);
         scanner.lr_problems += 10000;
     }
 }

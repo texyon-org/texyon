@@ -280,12 +280,12 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<
 /// original.
 pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool, InputAbort> {
     st.input.last = st.input.first;
-    let p = st.mem.b32s0(st.input.pseudo_files.0);
+    let p = st.mem.b32s0(st.input.pseudo_files);
     if p == crate::mem::TEX_NULL {
         return Ok(false);
     }
     let next = st.mem.b32s1(p);
-    st.mem.set_b32s0(st.input.pseudo_files.0, next);
+    st.mem.set_b32s0(st.input.pseudo_files, next);
     let sz = st.mem.b32s0(p);
     if 4 * sz - 3 >= st.input.buf_size - st.input.last {
         st.input.cur_input.loc = st.input.first;

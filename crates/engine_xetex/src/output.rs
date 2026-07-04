@@ -2688,7 +2688,7 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
                 w = true;
             }
         }
-        st.input.if_stack[(i) as usize] = st.mem.b32s1(st.scanner.cond_ptr.0);
+        st.input.if_stack[(i) as usize] = st.mem.b32s1(st.scanner.cond_ptr);
         i -= 1;
     }
     if w {
@@ -2760,10 +2760,10 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
         }
         print_cstr_in(st, c" is incomplete".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.scanner.if_line = st.mem.b32s1(st.scanner.cond_ptr.0 + 1);
-        st.scanner.cur_if = st.mem.b16s0(st.scanner.cond_ptr.0) as i16;
-        st.scanner.if_limit = st.mem.b16s1(st.scanner.cond_ptr.0) as u8;
-        st.scanner.cond_ptr.0 = st.mem.b32s1(st.scanner.cond_ptr.0);
+        st.scanner.if_line = st.mem.b32s1(st.scanner.cond_ptr + 1);
+        st.scanner.cur_if = st.mem.b16s0(st.scanner.cond_ptr) as i16;
+        st.scanner.if_limit = st.mem.b16s1(st.scanner.cond_ptr) as u8;
+        st.scanner.cond_ptr.0 = st.mem.b32s1(st.scanner.cond_ptr);
     }
     st.scanner.cond_ptr.0 = cp;
     st.scanner.if_limit = il;
@@ -3459,7 +3459,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
                 if st.scanner.cur_ptr.0 == crate::mem::TEX_NULL {
                     crate::mem::TEX_NULL
                 } else {
-                    st.mem.b32s1(st.scanner.cur_ptr.0 + 1)
+                    st.mem.b32s1(st.scanner.cur_ptr + 1)
                 }
             };
             crate::output::begin_diagnostic_in(st);

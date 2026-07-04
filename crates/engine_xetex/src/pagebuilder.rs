@@ -749,7 +749,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 page_glue = Some(glue);
                 if st.shipout.page_contents < BOX_THERE {
                     need_done1 = true;
-                } else if (st.mem.b16s1(st.shipout.page_tail.0) as i32) < MATH_NODE {
+                } else if (st.mem.b16s1(st.shipout.page_tail) as i32) < MATH_NODE {
                     // is_non_discardable_node(page_tail)
                     pi = 0;
                 } else {
@@ -1050,7 +1050,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 st.shipout.page_so_far[1] += st.shipout.page_so_far[7] - st.shipout.page_max_depth;
                 st.shipout.page_so_far[7] = st.shipout.page_max_depth;
             }
-            st.mem.set_b32s1(st.shipout.page_tail.0, p);
+            st.mem.set_b32s1(st.shipout.page_tail, p);
             st.shipout.page_tail.0 = p;
             st.mem.set_b32s1(CONTRIB_HEAD, st.mem.b32s1(p));
             st.mem.set_b32s1(p, TEX_NULL);
