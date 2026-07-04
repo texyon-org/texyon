@@ -28,12 +28,10 @@ use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
 const TEMP_HEAD: i32 = 4_999_999 - 3;
 
 // ---------------------------------------------------------------------------
-// flush_node_list — NODE_type dispatch now goes through `MemState::classify`
-// (`AnyNode`); only the two noad variants whose *size* differs from the base
-// `NOAD_SIZE` need a raw type code to pick the free size.
+// flush_node_list — NODE_type dispatch goes through `MemState::classify`
+// (`AnyNode`); the two noad variants whose *size* differs from the base
+// `NOAD_SIZE` are picked by matching `NodeType::{RadicalNoad,AccentNoad}`.
 // ---------------------------------------------------------------------------
-const RADICAL_NOAD_FNL: u16 = 24;
-const ACCENT_NOAD_FNL: u16 = 28;
 // Whatsit subtypes are matched via the `WhatsitSubtype` enum (node.rs).
 // Node sizes (xetex-constants.h).
 const INS_NODE_SIZE_FNL: i32 = 5;
@@ -636,14 +634,12 @@ pub fn flush_node_list(
                                     let c = p_noad.subscr_field(mem);
                                     flush_node_list(mem, c)?;
                                 }
-                                let ntype = p_noad.noad_type(mem).as_raw();
-                                if ntype == RADICAL_NOAD_FNL {
-                                    crate::mem::free_node(mem, p, RADICAL_NOAD_SIZE_FNL);
-                                } else if ntype == ACCENT_NOAD_FNL {
-                                    crate::mem::free_node(mem, p, ACCENT_NOAD_SIZE_FNL);
-                                } else {
-                                    crate::mem::free_node(mem, p, NOAD_SIZE_FNL);
-                                }
+                                let sz = match p_noad.noad_type(mem) {
+                                    NodeType::RadicalNoad => RADICAL_NOAD_SIZE_FNL,
+                                    NodeType::AccentNoad => ACCENT_NOAD_SIZE_FNL,
+                                    _ => NOAD_SIZE_FNL,
+                                };
+                                crate::mem::free_node(mem, p, sz);
                             }
                         }
                         break 'done;
