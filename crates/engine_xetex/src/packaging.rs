@@ -464,8 +464,9 @@ pub fn just_reverse(
 /// translated from xetex-xetex0.c:765 (flush_node_list)
 pub fn flush_node_list(
     mem: &mut crate::state::MemState,
-    mut p: i32,
+    p: impl crate::units::MemAddr,
 ) -> Result<(), &'static std::ffi::CStr> {
+    let mut p = p.addr();
     while p != crate::mem::TEX_NULL {
         let q = mem.b32s1(p);
         if p >= mem.hi_mem_min {

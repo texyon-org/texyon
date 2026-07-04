@@ -596,7 +596,8 @@ pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
 /// Decrement the reference count of a token list; free if it reaches TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:976 (delete_token_ref)
-pub fn delete_token_ref(mem: &mut MemState, p: i32) {
+pub fn delete_token_ref(mem: &mut MemState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     if mem.b32s0(p) == TEX_NULL {
         flush_list(mem, crate::units::MemPtr::from_raw(p));
     } else {
@@ -607,7 +608,8 @@ pub fn delete_token_ref(mem: &mut MemState, p: i32) {
 /// Decrement the reference count of a glue spec; free if it reaches TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:984 (delete_glue_ref)
-pub fn delete_glue_ref(mem: &mut MemState, p: i32) {
+pub fn delete_glue_ref(mem: &mut MemState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     if let Some(spec) = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)) {
         if spec.ref_count(mem) == TEX_NULL {
             free_node(mem, crate::units::MemPtr::from_idx(spec.idx()), GLUE_SPEC_SIZE);
@@ -699,8 +701,8 @@ pub fn prev_rightmost(mem: &MemState, s: i32, e: i32) -> i32 {
 /// `is_char_node(p)` ≡ `p >= hi_mem_min`: a node pointer that lives in the
 /// upper "one-word" region of `mem` is a character node.
 #[inline]
-pub fn is_char_node(mem: &MemState, p: i32) -> bool {
-    p >= mem.hi_mem_min
+pub fn is_char_node(mem: &MemState, p: impl crate::units::MemAddr) -> bool {
+    p.addr() >= mem.hi_mem_min
 }
 
 // ---------------------------------------------------------------------------
