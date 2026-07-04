@@ -89,7 +89,8 @@ extern "C" {
 }
 
 // translated from xetex-linebreak.c:77 (get_native_usv)
-pub fn get_native_usv(mem: &MemState, p: i32, i: i32) -> i32 {
+pub fn get_native_usv(mem: &MemState, p: impl crate::units::MemAddr, i: i32) -> i32 {
+    let p = p.addr();
     let text = whatsit_node_in(mem, p).native_text_ptr(mem);
     let c = unsafe { *text.add(i as usize) };
 
@@ -115,21 +116,24 @@ fn font_character_width(fonts: &mut FontState, f: i32, c: u16) -> i32 {
 /// type word — see the `node.rs` family note), and `p` is always a real
 /// active node, never `TEX_NULL`.
 #[inline]
-fn active(p: i32) -> NodePtr<ActiveNode> {
+fn active(p: impl crate::units::MemAddr) -> NodePtr<ActiveNode> {
+    let p = p.addr();
     // SAFETY: the caller is walking the active list; `p` is a real active
     // node (the context boundary that justifies `from_idx_unchecked`).
     unsafe { NodePtr::<ActiveNode>::from_idx_unchecked(MemIdx::new(p)) }
 }
 
 #[inline]
-fn delta_node(p: i32) -> NodePtr<DeltaNode> {
+fn delta_node(p: impl crate::units::MemAddr) -> NodePtr<DeltaNode> {
+    let p = p.addr();
     // SAFETY: the caller is walking the active list and has already established
     // this node as `DELTA_NODE` in that list context.
     unsafe { NodePtr::<DeltaNode>::from_idx_unchecked(MemIdx::new(p)) }
 }
 
 #[inline]
-fn passive_node(p: i32) -> NodePtr<PassiveNode> {
+fn passive_node(p: impl crate::units::MemAddr) -> NodePtr<PassiveNode> {
+    let p = p.addr();
     // SAFETY: the caller is walking or constructing the passive list; passive
     // nodes are context-classified records with no NODE_type header.
     unsafe { NodePtr::<PassiveNode>::from_idx_unchecked(MemIdx::new(p)) }
@@ -150,7 +154,8 @@ enum ActiveOrDelta {
 /// walking the active list dispatches on the enum instead of re-reading the
 /// type word and re-casting at each site.
 #[inline]
-fn classify_active_or_delta(mem: &MemState, p: i32) -> ActiveOrDelta {
+fn classify_active_or_delta(mem: &MemState, p: impl crate::units::MemAddr) -> ActiveOrDelta {
+    let p = p.addr();
     if mem.b16s1(p) as i32 == DELTA_NODE {
         ActiveOrDelta::Delta(delta_node(p))
     } else {
@@ -166,7 +171,8 @@ fn glue_spec(spec: i32) -> NodePtr<GlueSpecNode> {
 
 
 #[inline]
-fn box_node(mem: &MemState, node: i32) -> AnyBox {
+fn box_node(mem: &MemState, node: impl crate::units::MemAddr) -> AnyBox {
+    let node = node.addr();
     mem.classify_box(MemIdx::new(node))
         .expect("valid box node type")
         .expect("box node")
@@ -245,7 +251,8 @@ fn glue_spec_shrink_in(mem: &MemState, p: i32) -> i32 {
 }
 
 #[inline]
-fn whatsit_node_in(mem: &MemState, p: i32) -> NodePtr<WhatsitNode> {
+fn whatsit_node_in(mem: &MemState, p: impl crate::units::MemAddr) -> NodePtr<WhatsitNode> {
+    let p = p.addr();
     mem.classify_whatsit(MemIdx::new(p))
         .ok()
         .flatten()
@@ -253,12 +260,14 @@ fn whatsit_node_in(mem: &MemState, p: i32) -> NodePtr<WhatsitNode> {
 }
 
 #[inline]
-fn native_node_len_in(mem: &MemState, p: i32) -> i32 {
+fn native_node_len_in(mem: &MemState, p: impl crate::units::MemAddr) -> i32 {
+    let p = p.addr();
     whatsit_node_in(mem, p).native_length(mem) as i32
 }
 
 #[inline]
-fn set_native_node_len_in(mem: &mut MemState, p: i32, v: i32) {
+fn set_native_node_len_in(mem: &mut MemState, p: impl crate::units::MemAddr, v: i32) {
+    let p = p.addr();
     whatsit_node_in(mem, p).set_native_length(mem, v as u16);
 }
 
@@ -300,12 +309,14 @@ fn split_native_tail_for_linebreak(
 }
 
 #[inline]
-fn is_non_discardable_node(mem: &MemState, p: i32) -> bool {
+fn is_non_discardable_node(mem: &MemState, p: impl crate::units::MemAddr) -> bool {
+    let p = p.addr();
     (mem.b16s1(p) as i32) < MATH_NODE
 }
 
 #[inline]
-fn is_empty_box_in(mem: &MemState, p: i32) -> bool {
+fn is_empty_box_in(mem: &MemState, p: impl crate::units::MemAddr) -> bool {
+    let p = p.addr();
     if mem.b16s1(p) as i32 != HLIST_NODE {
         return false;
     }
@@ -314,7 +325,8 @@ fn is_empty_box_in(mem: &MemState, p: i32) -> bool {
 }
 
 #[inline]
-fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
+fn ignorable_protrusion_node_in(mem: &MemState, p: impl crate::units::MemAddr) -> bool {
+    let p = p.addr();
     use crate::node::AnyNode;
     if crate::mem::is_char_node(mem, p) {
         return false;
@@ -339,7 +351,8 @@ fn ignorable_protrusion_node_in(mem: &MemState, p: i32) -> bool {
 }
 
 // translated from xetex-linebreak.c:2827 (push_node)
-pub fn push_node(linebreak: &mut LinebreakState, p: i32) -> bool {
+pub fn push_node(linebreak: &mut LinebreakState, p: impl crate::units::MemAddr) -> bool {
+    let p = p.addr();
     let level = linebreak.hlist_stack_level;
     if level > MAX_HLIST_STACK {
         return false;
