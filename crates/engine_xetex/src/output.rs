@@ -4342,54 +4342,54 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                     st.strings.pool_ptr -= 1;
                 }
                 Ok(AnyNode::Noad(node)) if node.noad_type(&st.mem) != NodeType::FractionNoad => {
-                    let ntype = node.noad_type(&st.mem).as_raw();
-                    match ntype {
-                        ORD_NOAD_SNL => {
+                    let nt = node.noad_type(&st.mem);
+                    match nt {
+                        NodeType::OrdNoad => {
                             print_esc_cstr_in(st, c"mathord".as_ptr());
                         }
-                        OP_NOAD_SNL => {
+                        NodeType::OpNoad => {
                             print_esc_cstr_in(st, c"mathop".as_ptr());
                         }
-                        BIN_NOAD_SNL => {
+                        NodeType::BinNoad => {
                             print_esc_cstr_in(st, c"mathbin".as_ptr());
                         }
-                        REL_NOAD_SNL => {
+                        NodeType::RelNoad => {
                             print_esc_cstr_in(st, c"mathrel".as_ptr());
                         }
-                        OPEN_NOAD_SNL => {
+                        NodeType::OpenNoad => {
                             print_esc_cstr_in(st, c"mathopen".as_ptr());
                         }
-                        CLOSE_NOAD_SNL => {
+                        NodeType::CloseNoad => {
                             print_esc_cstr_in(st, c"mathclose".as_ptr());
                         }
-                        PUNCT_NOAD_SNL => {
+                        NodeType::PunctNoad => {
                             print_esc_cstr_in(st, c"mathpunct".as_ptr());
                         }
-                        INNER_NOAD_SNL => {
+                        NodeType::InnerNoad => {
                             print_esc_cstr_in(st, c"mathinner".as_ptr());
                         }
-                        OVER_NOAD_SNL => {
+                        NodeType::OverNoad => {
                             print_esc_cstr_in(st, c"overline".as_ptr());
                         }
-                        UNDER_NOAD_SNL => {
+                        NodeType::UnderNoad => {
                             print_esc_cstr_in(st, c"underline".as_ptr());
                         }
-                        VCENTER_NOAD_SNL => {
+                        NodeType::VcenterNoad => {
                             print_esc_cstr_in(st, c"vcenter".as_ptr());
                         }
-                        RADICAL_NOAD_SNL => {
+                        NodeType::RadicalNoad => {
                             print_esc_cstr_in(st, c"radical".as_ptr());
                             print_delimiter_in(st, p + 4);
                         }
-                        ACCENT_NOAD_SNL => {
+                        NodeType::AccentNoad => {
                             print_esc_cstr_in(st, c"accent".as_ptr());
                             print_fam_and_char_in(st, p + 4);
                         }
-                        LEFT_NOAD_SNL => {
+                        NodeType::LeftNoad => {
                             print_esc_cstr_in(st, c"left".as_ptr());
                             print_delimiter_in(st, p + 1);
                         }
-                        RIGHT_NOAD_SNL => {
+                        NodeType::RightNoad => {
                             if node.subtype(&st.mem) == NORMAL_SNL {
                                 print_esc_cstr_in(st, c"right".as_ptr());
                             } else {
@@ -4399,7 +4399,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         }
                         _ => {}
                     }
-                    if ntype < LEFT_NOAD_SNL {
+                    if !matches!(nt, NodeType::LeftNoad | NodeType::RightNoad) {
                         if node.subtype(&st.mem) != NORMAL_SNL {
                             if node.subtype(&st.mem) == LIMITS_SNL {
                                 print_esc_cstr_in(st, c"limits".as_ptr());
@@ -4731,21 +4731,7 @@ const R_CODE_SNL: u16 = 8; // xetex-constants.h:143
 const ACC_KERN_SNL: u16 = 2; // xetex_format.h:429
 const SPACE_ADJUSTMENT_SNL: u16 = 3; // xetex_format.h:430
 const LIMITS_SNL: u16 = 1; // xetex_format.h:452
-const LEFT_NOAD_SNL: u16 = 30; // xetex_format.h:415
-const ORD_NOAD_SNL: u16 = 16;
-const OP_NOAD_SNL: u16 = 17;
-const BIN_NOAD_SNL: u16 = 18;
-const REL_NOAD_SNL: u16 = 19;
-const OPEN_NOAD_SNL: u16 = 20;
-const CLOSE_NOAD_SNL: u16 = 21;
-const PUNCT_NOAD_SNL: u16 = 22;
-const INNER_NOAD_SNL: u16 = 23;
-const RADICAL_NOAD_SNL: u16 = 24;
-const UNDER_NOAD_SNL: u16 = 26;
-const OVER_NOAD_SNL: u16 = 27;
-const ACCENT_NOAD_SNL: u16 = 28;
-const VCENTER_NOAD_SNL: u16 = 29;
-const RIGHT_NOAD_SNL: u16 = 31;
+// Noad types are matched via the `NodeType` enum (OrdNoad..RightNoad).
 // Whatsit subtypes.
 // Whatsit subtypes are matched via the `WhatsitSubtype` enum (node.rs).
 // print_subsidiary_data: mem[p].b32.s1 cases.
