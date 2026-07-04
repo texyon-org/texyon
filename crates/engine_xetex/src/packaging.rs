@@ -34,18 +34,7 @@ const TEMP_HEAD: i32 = 4_999_999 - 3;
 // ---------------------------------------------------------------------------
 const RADICAL_NOAD_FNL: u16 = 24;
 const ACCENT_NOAD_FNL: u16 = 28;
-// Whatsit subtypes (xetex_format.h:457–467).
-const OPEN_NODE_FNL: u16 = 0;
-const WRITE_NODE_FNL: u16 = 1;
-const CLOSE_NODE_FNL: u16 = 2;
-const SPECIAL_NODE_FNL: u16 = 3;
-const LANGUAGE_NODE_FNL: u16 = 4;
-const PDF_SAVE_POS_NODE_FNL: u16 = 21;
-const NATIVE_WORD_NODE_FNL: u16 = 40;
-const NATIVE_WORD_NODE_AT_FNL: u16 = 41;
-const GLYPH_NODE_FNL: u16 = 42;
-const PIC_NODE_FNL: u16 = 43;
-const PDF_NODE_FNL: u16 = 44;
+// Whatsit subtypes are matched via the `WhatsitSubtype` enum (node.rs).
 // Node sizes (xetex-constants.h).
 const INS_NODE_SIZE_FNL: i32 = 5;
 const OPEN_NODE_SIZE_FNL: i32 = 3;
@@ -66,18 +55,7 @@ const MEMORY_WORD_SIZE_FNL: i32 = 8;
 // copy_node_list — NODE_type dispatch now goes through `MemState::classify`
 // (`AnyNode`); only the whatsit subtypes below stay as raw codes.
 // ---------------------------------------------------------------------------
-// Whatsit subtypes.
-const OPEN_NODE_CNL: u16 = 0;
-const WRITE_NODE_CNL: u16 = 1;
-const SPECIAL_NODE_CNL: u16 = 3;
-const CLOSE_NODE_CNL: u16 = 2;
-const LANGUAGE_NODE_CNL: u16 = 4;
-const NATIVE_WORD_NODE_CNL: u16 = 40;
-const NATIVE_WORD_NODE_AT_CNL: u16 = 41;
-const GLYPH_NODE_CNL: u16 = 42;
-const PIC_NODE_CNL: u16 = 43;
-const PDF_NODE_CNL: u16 = 44;
-const PDF_SAVE_POS_NODE_CNL: u16 = 21;
+// Whatsit subtypes are matched via the `WhatsitSubtype` enum (node.rs).
 // Node sizes.
 const INS_NODE_SIZE_CNL: i32 = 5;
 const OPEN_NODE_SIZE_CNL: i32 = 3;
@@ -116,10 +94,8 @@ const MARK_CLASS_NODE_SIZE_DM: i32 = 4;
 // hpack
 // ---------------------------------------------------------------------------
 
-// whatsit subtypes
-const NATIVE_WORD_NODE_HP: u16 = 40;
-const NATIVE_WORD_NODE_AT_HP: u16 = 41;
-// GLYPH_NODE = 42, PIC/PDF = 43/44: contribute width/height/depth
+// Native-word/glyph/pic/pdf whatsit subtypes are matched via the
+// `WhatsitSubtype` enum (node.rs); they contribute width/height/depth.
 const A_LEADERS_HP: u16 = 100;
 // glue orders
 const NORMAL_HP: usize = 0;
@@ -141,8 +117,8 @@ fn classify_native_word_hp(mem: &MemState, p: i32) -> Option<NodePtr<WhatsitNode
         return None;
     }
     let w = mem.classify_whatsit(MemIdx::new(p)).ok().flatten()?;
-    match w.subtype(mem) {
-        NATIVE_WORD_NODE_HP | NATIVE_WORD_NODE_AT_HP => Some(w),
+    match w.whatsit_subtype(mem) {
+        Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => Some(w),
         _ => None,
     }
 }
@@ -200,9 +176,7 @@ const FIL_VP: usize = 1;
 const FILL_VP: usize = 2;
 const FILLL_VP: usize = 3;
 const A_LEADERS_VP: u16 = 100;
-// xetex_format.h:381, 383–384, 466–467
-const PIC_NODE_VP: u16 = 43;
-const PDF_NODE_VP: u16 = 44;
+// PIC_NODE(43)/PDF_NODE(44) whatsit subtypes are matched via `WhatsitSubtype`.
 // xetex_format.h:71, 106, 131
 const INT_PAR_XETEX_UPWARDS_VP: i32 = 71;
 const INT_PAR_VBADNESS_VP: i32 = 27;
@@ -535,20 +509,20 @@ pub fn flush_node_list(
                         break 'done;
                     }
                     AnyNode::Whatsit(w) => {
-                        match w.subtype(mem) {
-                            OPEN_NODE_FNL => {
+                        match w.whatsit_subtype(mem) {
+                            Some(WhatsitSubtype::Open) => {
                                 crate::mem::free_node(mem, p, OPEN_NODE_SIZE_FNL);
                             }
-                            WRITE_NODE_FNL | SPECIAL_NODE_FNL => {
+                            Some(WhatsitSubtype::Write) | Some(WhatsitSubtype::Special) => {
                                 let t = w.write_tokens(mem).0;
                                 crate::mem::delete_token_ref(mem, t);
                                 crate::mem::free_node(mem, p, WRITE_NODE_SIZE_FNL);
                                 break 'done;
                             }
-                            CLOSE_NODE_FNL | LANGUAGE_NODE_FNL => {
+                            Some(WhatsitSubtype::Close) | Some(WhatsitSubtype::Language) => {
                                 crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
-                            NATIVE_WORD_NODE_FNL | NATIVE_WORD_NODE_AT_FNL => {
+                            Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
                                 let glyph_ptr = w.native_glyph_info_ptr(mem);
                                 if !glyph_ptr.is_null() {
                                     // SAFETY: glyph_ptr was xmalloc'd by the native-word shaper.
@@ -559,16 +533,16 @@ pub fn flush_node_list(
                                 let sz = w.native_size(mem);
                                 crate::mem::free_node(mem, p, sz);
                             }
-                            GLYPH_NODE_FNL => {
+                            Some(WhatsitSubtype::Glyph) => {
                                 crate::mem::free_node(mem, p, GLYPH_NODE_SIZE_FNL);
                             }
-                            PIC_NODE_FNL | PDF_NODE_FNL => {
+                            Some(WhatsitSubtype::Pic) | Some(WhatsitSubtype::Pdf) => {
                                 let path_len = w.pic_path_len(mem) as i32;
                                 let sz = PIC_NODE_SIZE_FNL
                                     + (path_len + MEMORY_WORD_SIZE_FNL - 1) / MEMORY_WORD_SIZE_FNL;
                                 crate::mem::free_node(mem, p, sz);
                             }
-                            PDF_SAVE_POS_NODE_FNL => {
+                            Some(WhatsitSubtype::PdfSavePos) => {
                                 crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
                             _ => {
@@ -740,23 +714,23 @@ pub fn copy_node_list(
                     words = INS_NODE_SIZE_CNL - 1;
                 }
                 AnyNode::Whatsit(ws) => {
-                    match ws.subtype(mem) {
-                        OPEN_NODE_CNL => {
+                    match ws.whatsit_subtype(mem) {
+                        Some(WhatsitSubtype::Open) => {
                             r = cnl_get_node!(mem, OPEN_NODE_SIZE_CNL);
                             words = OPEN_NODE_SIZE_CNL;
                         }
-                        WRITE_NODE_CNL | SPECIAL_NODE_CNL => {
+                        Some(WhatsitSubtype::Write) | Some(WhatsitSubtype::Special) => {
                             // mem[mem[p+1].b32.s1].b32.s0++ (token list ref count)
                             let tok = ws.write_tokens(mem).0;
                             mem.set_b32s0(tok, mem.b32s0(tok) + 1);
                             r = cnl_get_node!(mem, WRITE_NODE_SIZE_CNL);
                             words = WRITE_NODE_SIZE_CNL;
                         }
-                        CLOSE_NODE_CNL | LANGUAGE_NODE_CNL => {
+                        Some(WhatsitSubtype::Close) | Some(WhatsitSubtype::Language) => {
                             r = cnl_get_node!(mem, SMALL_NODE_SIZE);
                             words = SMALL_NODE_SIZE;
                         }
-                        NATIVE_WORD_NODE_CNL | NATIVE_WORD_NODE_AT_CNL => {
+                        Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
                             let sz = ws.native_size(mem);
                             r = cnl_get_node!(mem, sz);
                             let mut nw = sz;
@@ -776,18 +750,18 @@ pub fn copy_node_list(
                             crate::mem::copy_native_glyph_info(mem, p, r);
                             words = 0;
                         }
-                        GLYPH_NODE_CNL => {
+                        Some(WhatsitSubtype::Glyph) => {
                             r = cnl_get_node!(mem, GLYPH_NODE_SIZE_CNL);
                             words = GLYPH_NODE_SIZE_CNL;
                         }
-                        PIC_NODE_CNL | PDF_NODE_CNL => {
+                        Some(WhatsitSubtype::Pic) | Some(WhatsitSubtype::Pdf) => {
                             let path_len = ws.pic_path_len(mem) as i32;
                             let sz = PIC_NODE_SIZE_CNL
                                 + (path_len + MEMORY_WORD_SIZE_CNL - 1) / MEMORY_WORD_SIZE_CNL;
                             r = cnl_get_node!(mem, sz);
                             words = sz;
                         }
-                        PDF_SAVE_POS_NODE_CNL => {
+                        Some(WhatsitSubtype::PdfSavePos) => {
                             r = cnl_get_node!(mem, SMALL_NODE_SIZE);
                         }
                         _ => {
@@ -2139,12 +2113,11 @@ fn hpack_in(
                 }
             }
             Ok(AnyNode::Whatsit(w)) => {
-                let sub = w.subtype(mem);
                 // The matched node's native font, used to test mergeability of the
                 // following native-word fragments.
                 let p_font = w.native_font(mem).0;
-                match sub {
-                    NATIVE_WORD_NODE_HP | NATIVE_WORD_NODE_AT_HP => {
+                match w.whatsit_subtype(mem) {
+                    Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
                         let mut k: i32 = if q != r_node.idx().offset(5).0 {
                             if let Some(disc) = classify_disc_hp(mem, q) {
                                 disc.subtype(mem) as i32
@@ -2256,7 +2229,9 @@ fn hpack_in(
                         }
                         x += p_native.width(mem).0;
                     }
-                    42..=44 => {
+                    Some(WhatsitSubtype::Glyph)
+                    | Some(WhatsitSubtype::Pic)
+                    | Some(WhatsitSubtype::Pdf) => {
                         // GLYPH_NODE / PIC_NODE / PDF_NODE: `p` is unchanged here
                         // (only the native-word branch above can reassign it), so
                         // the matched handle still applies.
@@ -2683,8 +2658,10 @@ fn vpackage_in(
                     }
                 }
                 Ok(AnyNode::Whatsit(wn)) => {
-                    let sub = wn.subtype(mem);
-                    if sub == PIC_NODE_VP || sub == PDF_NODE_VP {
+                    if matches!(
+                        wn.whatsit_subtype(mem),
+                        Some(WhatsitSubtype::Pic) | Some(WhatsitSubtype::Pdf)
+                    ) {
                         x += d + wn.height(mem).0;
                         d = wn.depth(mem).0;
                         let ww = wn.width(mem).0;
