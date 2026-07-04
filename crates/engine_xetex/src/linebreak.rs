@@ -647,7 +647,7 @@ pub fn reconstitute(
 
     if j == 0 {
         st.mainloop.ligature_present = st.hyph.init_lig;
-        let mut p = st.hyph.init_list;
+        let mut p = st.hyph.init_list.0;
         if st.mainloop.ligature_present {
             st.mainloop.lft_hit = st.hyph.init_lft;
         }
@@ -3554,10 +3554,10 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
         if st.mem.b16s1(ha) as i32 != st.hyph.hf {
             st.hyph.hu[0] = st.hyph.max_hyph_char;
             st.hyph.init_lig = false;
-            st.hyph.init_list = TEX_NULL;
+            st.hyph.init_list.0 = TEX_NULL;
             (ha, 0)
         } else {
-            st.hyph.init_list = ha;
+            st.hyph.init_list.0 = ha;
             st.hyph.init_lig = false;
             st.hyph.hu[0] = st.mem.b16s0(ha) as i32;
             let mut s = st.linebreak.cur_p.0;
@@ -3575,14 +3575,14 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
         if ha_lig.font(&st.mem).0 != st.hyph.hf {
             st.hyph.hu[0] = st.hyph.max_hyph_char;
             st.hyph.init_lig = false;
-            st.hyph.init_list = TEX_NULL;
+            st.hyph.init_list.0 = TEX_NULL;
             (ha, 0)
         } else {
-            st.hyph.init_list = ha_lig.lig_ptr(&st.mem).0;
+            st.hyph.init_list.0 = ha_lig.lig_ptr(&st.mem).0;
             st.hyph.init_lig = true;
             st.hyph.init_lft = ha_lig.subtype(&st.mem) > 1;
             st.hyph.hu[0] = ha_lig.character(&st.mem) as i32;
-            if st.hyph.init_list == TEX_NULL && st.hyph.init_lft {
+            if st.hyph.init_list.0 == TEX_NULL && st.hyph.init_lft {
                 st.hyph.hu[0] = st.hyph.max_hyph_char;
                 st.hyph.init_lig = false;
             }
@@ -3605,10 +3605,10 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
     {
         st.hyph.hu[0] = st.hyph.max_hyph_char;
         st.hyph.init_lig = false;
-        st.hyph.init_list = TEX_NULL;
+        st.hyph.init_list.0 = TEX_NULL;
         (ha, 0)
     } else {
-        st.hyph.init_list = TEX_NULL;
+        st.hyph.init_list.0 = TEX_NULL;
         (ha, 1)
     };
 
@@ -3786,7 +3786,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
     }
 
     st.mem.set_b32s1(s, q_final);
-    crate::mem::flush_list(&mut st.mem, st.hyph.init_list);
+    crate::mem::flush_list(&mut st.mem, st.hyph.init_list.0);
     Ok(())
 }
 

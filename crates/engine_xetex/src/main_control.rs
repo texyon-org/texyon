@@ -1614,7 +1614,7 @@ pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), M
         && st.input.cur_list.tail.0 == st.input.cur_list.head.0
     {
         // On page: only allowed for \lastskip when last_glue != MAX_HALFWORD
-        if st.scanner.cur_chr as u16 != GLUE_NODE || st.shipout.last_glue != MAX_HALFWORD {
+        if st.scanner.cur_chr as u16 != GLUE_NODE || st.shipout.last_glue.0 != MAX_HALFWORD {
             crate::errors::you_cant_in(st);
             st.errors.help_ptr = 2;
             st.errors.help_line[1] =

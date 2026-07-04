@@ -236,10 +236,10 @@ impl PageBuildAbort {
 
 fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     // 1048: Set output_penalty
-    let best_penalty = (st.shipout.best_page_break != TEX_NULL)
+    let best_penalty = (st.shipout.best_page_break.0 != TEX_NULL)
         .then(|| {
             st.mem
-                .classify_penalty(MemIdx::new(st.shipout.best_page_break))
+                .classify_penalty(MemIdx::new(st.shipout.best_page_break.0))
                 .expect("valid best page break")
         })
         .flatten();
@@ -279,8 +279,8 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     }
 
     // 1049: Put optimal page into box 255
-    if c == st.shipout.best_page_break {
-        st.shipout.best_page_break = TEX_NULL;
+    if c == st.shipout.best_page_break.0 {
+        st.shipout.best_page_break.0 = TEX_NULL;
     }
 
     if st.eqtb.b32s1(BOX_BASE + 255) != TEX_NULL {
@@ -329,7 +329,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     let mut p = st.mem.b32s1(prev_p);
 
     // Walk page list up to best_page_break, processing insertions and marks
-    while p != st.shipout.best_page_break {
+    while p != st.shipout.best_page_break.0 {
         let node = st.mem.classify(MemIdx::new(p)).expect("valid page node");
         let reset_p = if let (AnyNode::Ins(ins), true) = (node, process_inserts) {
             // 1055: Process insertion node
@@ -524,15 +524,15 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
         .set_b32s1(INT_BASE + INT_PAR__vbadness, save_vbadness);
     st.eqtb.set_b32s1(DIMEN_BASE + DIMEN_PAR__vfuzz, save_vfuzz);
 
-    if st.shipout.last_glue != MAX_HALFWORD {
-        crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
+    if st.shipout.last_glue.0 != MAX_HALFWORD {
+        crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue.0);
     }
 
     // 1026: Start a new current page
     st.shipout.page_contents = EMPTY;
     st.shipout.page_tail.0 = PAGE_HEAD;
     st.mem.set_b32s1(PAGE_HEAD, TEX_NULL);
-    st.shipout.last_glue = MAX_HALFWORD;
+    st.shipout.last_glue.0 = MAX_HALFWORD;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
     st.shipout.last_node_type = -1;
@@ -646,20 +646,20 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, nt: i32) {
     match node {
         AnyNode::Glue(glue) => {
             let spec = glue.glue_spec(&st.mem).expect("non-null glue spec");
-            st.shipout.last_glue = spec.idx().0;
+            st.shipout.last_glue.0 = spec.idx().0;
             let ref_count = spec.ref_count(&st.mem);
             spec.set_ref_count(&mut st.mem, ref_count + 1);
         }
         AnyNode::Penalty(penalty) => {
-            st.shipout.last_glue = MAX_HALFWORD;
+            st.shipout.last_glue.0 = MAX_HALFWORD;
             st.shipout.last_penalty = penalty.penalty(&st.mem);
         }
         AnyNode::Kern(kern) => {
-            st.shipout.last_glue = MAX_HALFWORD;
+            st.shipout.last_glue.0 = MAX_HALFWORD;
             st.shipout.last_kern = kern.width(&st.mem).0;
         }
         _ => {
-            st.shipout.last_glue = MAX_HALFWORD;
+            st.shipout.last_glue.0 = MAX_HALFWORD;
         }
     }
 }
@@ -675,8 +675,8 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
         let node = st.mem.classify(MemIdx::new(p)).expect("valid page node");
 
         // 1031: Update last_glue, last_penalty, last_kern, last_node_type
-        if st.shipout.last_glue != MAX_HALFWORD {
-            crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
+        if st.shipout.last_glue.0 != MAX_HALFWORD {
+            crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue.0);
         }
         update_last_node_info(st, node, nt);
 
@@ -972,7 +972,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 }
 
                 if c <= st.shipout.least_page_cost {
-                    st.shipout.best_page_break = p;
+                    st.shipout.best_page_break.0 = p;
                     st.shipout.best_size = st.shipout.page_so_far[0];
                     st.shipout.least_page_cost = c;
                     let mut r = st.mem.b32s1(PAGE_INS_HEAD);

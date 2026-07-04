@@ -4944,8 +4944,8 @@ pub(crate) fn scan_something_internal_in(
                             x if x == INT_VAL as i32 => st.scanner.cur_val = st.shipout.last_penalty,
                             x if x == DIMEN_VAL as i32 => st.scanner.cur_val = st.shipout.last_kern,
                             x if x == GLUE_VAL as i32 => {
-                                if st.shipout.last_glue != MAX_HALFWORD {
-                                    st.scanner.cur_val = st.shipout.last_glue;
+                                if st.shipout.last_glue.0 != MAX_HALFWORD {
+                                    st.scanner.cur_val = st.shipout.last_glue.0;
                                 }
                             }
                             x if x == LAST_NODE_TYPE_CODE_VAL => {

@@ -584,7 +584,7 @@ pub fn synctex_init_command(st: &mut crate::state::EngineState) {
     synctex.file = INVALID_HANDLE;
     synctex.root_name = ptr::null_mut();
     synctex.count = 0;
-    synctex.node = 0;
+    synctex.node.0 = 0;
     synctex.recorder = None;
     synctex.tag = 0;
     synctex.line = 0;
@@ -690,7 +690,7 @@ pub unsafe fn synctex_vlist(st: &mut crate::state::EngineState, this_box: i32) {
     if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
         return;
     }
-    synctex.node = this_box;
+    synctex.node.0 = this_box;
     synctex.recorder = None;
     synctex.tag = synctex_tag_box(&st.mem, this_box);
     synctex.line = synctex_line_box(&st.mem, this_box);
@@ -704,7 +704,7 @@ pub unsafe fn synctex_tsilv(st: &mut crate::state::EngineState, this_box: i32) {
     if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
         return;
     }
-    synctex.node = this_box;
+    synctex.node.0 = this_box;
     synctex.tag = synctex_tag_box(&st.mem, this_box);
     synctex.line = synctex_line_box(&st.mem, this_box);
     synctex.curh = synctex_curh(&st.shipout);
@@ -718,7 +718,7 @@ pub unsafe fn synctex_void_vlist(st: &mut crate::state::EngineState, p: i32, _th
     if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
         return;
     }
-    synctex.node = p;
+    synctex.node.0 = p;
     synctex.tag = synctex_tag_box(&st.mem, p);
     synctex.line = synctex_line_box(&st.mem, p);
     synctex.curh = synctex_curh(&st.shipout);
@@ -732,7 +732,7 @@ pub unsafe fn synctex_hlist(st: &mut crate::state::EngineState, this_box: i32) {
     if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
         return;
     }
-    synctex.node = this_box;
+    synctex.node.0 = this_box;
     synctex.tag = synctex_tag_box(&st.mem, this_box);
     synctex.line = synctex_line_box(&st.mem, this_box);
     synctex.curh = synctex_curh(&st.shipout);
@@ -746,7 +746,7 @@ pub unsafe fn synctex_tsilh(st: &mut crate::state::EngineState, this_box: i32) {
     if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
         return;
     }
-    synctex.node = this_box;
+    synctex.node.0 = this_box;
     synctex.tag = synctex_tag_box(&st.mem, this_box);
     synctex.line = synctex_line_box(&st.mem, this_box);
     synctex.curh = synctex_curh(&st.shipout);
@@ -764,10 +764,10 @@ pub unsafe fn synctex_void_hlist(st: &mut crate::state::EngineState, p: i32, _th
     }
     // Flush pending recorder before context change.
     if let Some(rec) = synctex.recorder {
-        let node = synctex.node;
+        let node = synctex.node.0;
         rec(synctex, &st.mem, node);
     }
-    synctex.node = p;
+    synctex.node.0 = p;
     synctex.tag = tag;
     synctex.line = line;
     synctex.curh = synctex_curh(&st.shipout);
@@ -784,14 +784,14 @@ pub unsafe fn synctex_math(st: &mut crate::state::EngineState, p: i32, _this_box
     let tag = synctex_tag_medium(&st.mem, p);
     let line = synctex_line_medium(&st.mem, p);
     // SYNCTEX_CONTEXT_DID_CHANGE: node == 0 or tag/line differ.
-    let ctx_changed = synctex.node == 0 || tag != synctex.tag || line != synctex.line;
+    let ctx_changed = synctex.node.0 == 0 || tag != synctex.tag || line != synctex.line;
     if let Some(rec) = synctex.recorder {
         if ctx_changed {
-            let node = synctex.node;
+            let node = synctex.node.0;
             rec(synctex, &st.mem, node);
         }
     }
-    synctex.node = p;
+    synctex.node.0 = p;
     synctex.tag = tag;
     synctex.line = line;
     synctex.curh = synctex_curh(&st.shipout);
@@ -840,7 +840,7 @@ pub unsafe fn synctex_horizontal_rule_or_glue(
         }
     }
 
-    synctex.node = p;
+    synctex.node.0 = p;
     synctex.curh = synctex_curh(&st.shipout);
     synctex.curv = synctex_curv(&st.shipout);
     synctex.recorder = None;
@@ -875,17 +875,17 @@ pub unsafe fn synctex_kern(st: &mut crate::state::EngineState, p: i32, this_box:
         return;
     }
     // SYNCTEX_CONTEXT_DID_CHANGE
-    let ctx_changed = synctex.node == 0 || tag != synctex.tag || line != synctex.line;
+    let ctx_changed = synctex.node.0 == 0 || tag != synctex.tag || line != synctex.line;
     if ctx_changed {
         // Flush pending recorder.
         if let Some(rec) = synctex.recorder {
-            let node = synctex.node;
+            let node = synctex.node.0;
             rec(synctex, &st.mem, node);
         }
-        synctex.node = p;
+        synctex.node.0 = p;
         synctex.tag = tag;
         synctex.line = line;
-        if synctex.node == this_box {
+        if synctex.node.0 == this_box {
             // First node in hlist.
             synctex.recorder = Some(synctex_record_node_kern);
         } else {
@@ -894,7 +894,7 @@ pub unsafe fn synctex_kern(st: &mut crate::state::EngineState, p: i32, this_box:
         }
     } else {
         // Same context — defer recording.
-        synctex.node = p;
+        synctex.node.0 = p;
         synctex.tag = tag;
         synctex.line = line;
         synctex.recorder = Some(synctex_record_node_kern);

@@ -368,8 +368,8 @@ pub(crate) unsafe fn final_cleanup_in(
                 c += 1;
             }
 
-            if st.shipout.last_glue != MAX_HALFWORD {
-                crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
+            if st.shipout.last_glue.0 != MAX_HALFWORD {
+                crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue.0);
             }
 
             crate::format_io::store_fmt_file_in(st)?;
@@ -451,7 +451,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.shown_mode = 0;
     st.shipout.page_contents = EMPTY;
     st.shipout.page_tail.0 = PAGE_HEAD;
-    st.shipout.last_glue = MAX_HALFWORD;
+    st.shipout.last_glue.0 = MAX_HALFWORD;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
     st.shipout.last_node_type = -1;
