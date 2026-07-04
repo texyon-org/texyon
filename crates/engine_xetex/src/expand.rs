@@ -29,7 +29,6 @@ const IF_PRIMITIVE_CODE: i16 = 21;
 // Node / command codes for conditional.
 const IF_NODE_SIZE: i32 = 2;
 const IF_CODE: u8 = 1; // xetex-constants.h:267
-const VLIST_NODE_C: u16 = 1; // xetex_format.h:381
 const HMODE_C: i16 = 104; // xetex_format.h:369
 const MMODE_C: i16 = 207; // xetex_format.h:370
 const ACTIVE_CHAR_C: u8 = 13; // xetex_format.h:246
@@ -44,9 +43,9 @@ const GARBAGE: i32 = 4_999_999 - 12; // MEM_TOP - 12 (xetex-constants.h:49)
 const TEMP_HEAD: i32 = 4_999_999 - 3; // MEM_TOP - 3
 
 use crate::consts::{
-    ACTIVE_BASE, BACKUP_HEAD, BOX_BASE, CS_TOKEN_FLAG, DISC_NODE, ELSE_CODE, END_TEMPLATE, FI_CODE,
-    FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_NODE, HLIST_NODE, INSERTED, INT_BASE, INT_PAR_TRACING_IFS,
-    KERN_NODE, MATH_NODE, MAX_COMMAND, NORMAL_SCANNER, NULL_CS, OR_CODE, PENALTY_NODE,
+    ACTIVE_BASE, BACKUP_HEAD, BOX_BASE, CS_TOKEN_FLAG, ELSE_CODE, END_TEMPLATE, FI_CODE,
+    FROZEN_ENDV, FROZEN_PRIMITIVE, INSERTED, INT_BASE, INT_PAR_TRACING_IFS,
+    MAX_COMMAND, NORMAL_SCANNER, NULL_CS, OR_CODE,
     PRIM_EQTB_BASE, RELAX, SELECTOR_NEW_STRING, SINGLE_BASE, SPACER, TOO_BIG_CHAR,
     UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
@@ -77,7 +76,7 @@ extern "C" {
 
 use crate::node::{NodePtr, SaNode};
 use crate::scan::SccAbort;
-use crate::units::{MemIdx, MemPtr};
+use crate::units::{MemIdx, MemPtr, NodeType};
 
 pub(crate) fn ins_the_toks_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let v = crate::scan::the_toks_in(st)?;
@@ -235,9 +234,9 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             } else if p == TEX_NULL {
                 false
             } else if this_if == IF_HBOX_CODE {
-                st.mem.b16s1(p) == HLIST_NODE
+                st.mem.node_type(MemIdx::new(p)) == Ok(NodeType::HList)
             } else {
-                st.mem.b16s1(p) == VLIST_NODE_C
+                st.mem.node_type(MemIdx::new(p)) == Ok(NodeType::VList)
             };
         }
         IFX_CODE => {
@@ -506,11 +505,6 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
     use crate::mem::TEX_NULL;
     use crate::scan::{scc_err, str_toks_scc};
 
-    const INS_NODE_CT: u16 = 3;
-    const MARK_NODE_CT: u16 = 4;
-    const ADJUST_NODE_CT: u16 = 5;
-    const MARGIN_KERN_NODE_CT: u16 = 40;
-
     const NUMBER_CODE_CT: i32 = 0;
     const ROMAN_NUMERAL_CODE_CT: i32 = 1;
     const STRING_CODE_CT: i32 = 2;
@@ -624,7 +618,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                         .0;
                 }
             }
-            if p == TEX_NULL || st.mem.b16s1(p) != HLIST_NODE {
+            if p == TEX_NULL || st.mem.node_type(MemIdx::new(p)) != Ok(NodeType::HList) {
                 return Err(SccAbort::PdfError {
                     t: c"marginkern".as_ptr(),
                     p: c"a non-empty hbox expected".as_ptr(),
@@ -1050,28 +1044,28 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 .expect("hlist box register");
             p = bx.list_ptr(&st.mem).0;
             while p != TEX_NULL {
-                let tp = st.mem.b16s1(p);
+                let tp = st.mem.node_type(MemIdx::new(p));
                 let is_low = p < st.mem.hi_mem_min;
                 let skip = (is_low
-                    && (tp == INS_NODE_CT
-                        || tp == MARK_NODE_CT
-                        || tp == ADJUST_NODE_CT
-                        || tp == PENALTY_NODE
-                        || (tp == DISC_NODE
+                    && (tp == Ok(NodeType::Ins)
+                        || tp == Ok(NodeType::Mark)
+                        || tp == Ok(NodeType::Adjust)
+                        || tp == Ok(NodeType::Penalty)
+                        || (tp == Ok(NodeType::Disc)
                             && st.mem.b32s0(p + 1) == TEX_NULL
                             && st.mem.b32s1(p + 1) == TEX_NULL
                             && st.mem.b16s0(p) == 0)
-                        || (tp == MATH_NODE && st.mem.b32s1(p + 1) == 0)
-                        || (tp == KERN_NODE
+                        || (tp == Ok(NodeType::Math) && st.mem.b32s1(p + 1) == 0)
+                        || (tp == Ok(NodeType::Kern)
                             && (st.mem.b32s1(p + 1) == 0 || st.mem.b16s0(p) == 0))
-                        || (tp == GLUE_NODE && st.mem.b32s0(p + 1) == 0)
-                        || (tp == HLIST_NODE
+                        || (tp == Ok(NodeType::Glue) && st.mem.b32s0(p + 1) == 0)
+                        || (tp == Ok(NodeType::HList)
                             && st.mem.b32s1(p + 1) == 0
                             && st.mem.b32s1(p + 3) == 0
                             && st.mem.b32s1(p + 2) == 0
                             && st.mem.b32s1(p + 5) == TEX_NULL)))
                     || (is_low
-                        && tp == GLUE_NODE
+                        && tp == Ok(NodeType::Glue)
                         && st.mem.b16s0(p) == (GLUE_PAR_LEFT_SKIP + 1) as u16);
                 if !skip {
                     break;
@@ -1080,7 +1074,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             }
             if p != TEX_NULL
                 && p < st.mem.hi_mem_min
-                && st.mem.b16s1(p) == MARGIN_KERN_NODE_CT
+                && st.mem.node_type(MemIdx::new(p)) == Ok(NodeType::MarginKern)
                 && st.mem.b16s0(p) == 0
             {
                 let mk = st
@@ -1104,28 +1098,28 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             let q = bx.list_ptr(&st.mem).0;
             p = crate::mem::prev_rightmost(&st.mem, q, TEX_NULL);
             while p != TEX_NULL {
-                let tp = st.mem.b16s1(p);
+                let tp = st.mem.node_type(MemIdx::new(p));
                 let is_low = p < st.mem.hi_mem_min;
                 let skip = (is_low
-                    && (tp == INS_NODE_CT
-                        || tp == MARK_NODE_CT
-                        || tp == ADJUST_NODE_CT
-                        || tp == PENALTY_NODE
-                        || (tp == DISC_NODE
+                    && (tp == Ok(NodeType::Ins)
+                        || tp == Ok(NodeType::Mark)
+                        || tp == Ok(NodeType::Adjust)
+                        || tp == Ok(NodeType::Penalty)
+                        || (tp == Ok(NodeType::Disc)
                             && st.mem.b32s0(p + 1) == TEX_NULL
                             && st.mem.b32s1(p + 1) == TEX_NULL
                             && st.mem.b16s0(p) == 0)
-                        || (tp == MATH_NODE && st.mem.b32s1(p + 1) == 0)
-                        || (tp == KERN_NODE
+                        || (tp == Ok(NodeType::Math) && st.mem.b32s1(p + 1) == 0)
+                        || (tp == Ok(NodeType::Kern)
                             && (st.mem.b32s1(p + 1) == 0 || st.mem.b16s0(p) == 0))
-                        || (tp == GLUE_NODE && st.mem.b32s0(p + 1) == 0)
-                        || (tp == HLIST_NODE
+                        || (tp == Ok(NodeType::Glue) && st.mem.b32s0(p + 1) == 0)
+                        || (tp == Ok(NodeType::HList)
                             && st.mem.b32s1(p + 1) == 0
                             && st.mem.b32s1(p + 3) == 0
                             && st.mem.b32s1(p + 2) == 0
                             && st.mem.b32s1(p + 5) == TEX_NULL)))
                     || (is_low
-                        && tp == GLUE_NODE
+                        && tp == Ok(NodeType::Glue)
                         && st.mem.b16s0(p) == (GLUE_PAR_RIGHT_SKIP + 1) as u16);
                 if !skip {
                     break;
@@ -1134,7 +1128,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             }
             if p != TEX_NULL
                 && p < st.mem.hi_mem_min
-                && st.mem.b16s1(p) == MARGIN_KERN_NODE_CT
+                && st.mem.node_type(MemIdx::new(p)) == Ok(NodeType::MarginKern)
                 && st.mem.b16s0(p) == 1
             {
                 let mk = st
