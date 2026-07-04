@@ -785,7 +785,8 @@ fn ensure_dvi_font_in(st: &mut crate::state::EngineState, f: i32) -> Result<(), 
 }
 
 #[inline]
-fn is_ignorable_interword_node(mem: &MemState, p: i32) -> bool {
+fn is_ignorable_interword_node(mem: &MemState, p: impl crate::units::MemAddr) -> bool {
+    let p = p.addr();
     !crate::mem::is_char_node(mem, p)
         && (mem.b16s1(p) == PENALTY_NODE
             || mem.b16s1(p) == INS_NODE
@@ -795,7 +796,8 @@ fn is_ignorable_interword_node(mem: &MemState, p: i32) -> bool {
             && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_io())))
 }
 
-fn skip_ignorable_interword_nodes(mem: &MemState, mut q: i32) -> i32 {
+fn skip_ignorable_interword_nodes(mem: &MemState, q: impl crate::units::MemAddr) -> i32 {
+    let mut q = q.addr();
     while q != TEX_NULL && is_ignorable_interword_node(mem, q) {
         q = mem.b32s1(q);
     }
@@ -2176,12 +2178,14 @@ pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result
 }
 
 #[inline]
-fn math_node_lr_dir(mem: &MemState, p: i32) -> u16 {
+fn math_node_lr_dir(mem: &MemState, p: impl crate::units::MemAddr) -> u16 {
+    let p = p.addr();
     mem.b16s0(p) / R_CODE
 }
 
 #[inline]
-fn math_node_end_lr_type(mem: &MemState, p: i32) -> u16 {
+fn math_node_end_lr_type(mem: &MemState, p: impl crate::units::MemAddr) -> u16 {
+    let p = p.addr();
     L_CODE * (mem.b16s0(p) / L_CODE) + END_M_CODE
 }
 
@@ -2601,7 +2605,8 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
 }
 
 // translated from xetex-shipout.c:1930 (special_out)
-fn special_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+fn special_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
+    let p = p.addr();
     if st.shipout.cur_h != st.shipout.dvi_h {
         let d = st.shipout.cur_h - st.shipout.dvi_h;
         emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
@@ -2652,7 +2657,8 @@ fn special_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Ship
 }
 
 // translated from xetex-shipout.c:1976 (write_out)
-fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+fn write_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
+    let p = p.addr();
     let q = get_avail_ship(&mut st.mem)?;
     st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + b'}' as i32);
     let r = get_avail_ship(&mut st.mem)?;
@@ -2762,7 +2768,8 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
 }
 
 // translated from xetex-shipout.c:2071 (pic_out)
-pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
+    let p = p.addr();
     if st.shipout.cur_h != st.shipout.dvi_h {
         let d = st.shipout.cur_h - st.shipout.dvi_h;
         emit_movement(&mut st.mem, &mut st.shipout, d, RIGHT1)?;
@@ -2833,7 +2840,8 @@ pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(
 }
 
 // translated from xetex-shipout.c:1682 (out_what)
-pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
+pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
+    let p = p.addr();
     let sub = WhatsitSubtype::from_raw(st.mem.b16s0(p));
     match sub {
         Some(WhatsitSubtype::Open) | Some(WhatsitSubtype::Write) | Some(WhatsitSubtype::Close) => {
