@@ -4575,7 +4575,7 @@ pub(crate) fn init_math_in(
         let mut w = -MAX_HALFWORD;
         let x;
 
-        if st.input.cur_list.head.0 == st.input.cur_list.tail.0 {
+        if st.input.cur_list.head == st.input.cur_list.tail {
             crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
             x = if st.input.cur_list.e_tex_aux.is_null() {
                 0

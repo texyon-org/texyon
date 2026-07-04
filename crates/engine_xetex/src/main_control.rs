@@ -1242,7 +1242,7 @@ pub(crate) fn push_math_in(
 }
 pub(crate) fn end_graf_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     if st.input.cur_list.mode == HMODE {
-        if st.input.cur_list.head.0 == st.input.cur_list.tail.0 {
+        if st.input.cur_list.head == st.input.cur_list.tail {
             crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
         } else {
             match crate::linebreak::line_break_in(st, false) {
@@ -1353,7 +1353,7 @@ pub(crate) fn its_all_over_in(
 ) -> Result<bool, MainControlAbort> {
     if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
         if st.shipout.page_tail == PAGE_HEAD
-            && st.input.cur_list.head.0 == st.input.cur_list.tail.0
+            && st.input.cur_list.head == st.input.cur_list.tail
             && st.shipout.dead_cycles == 0
         {
             return Ok(true);
@@ -1879,7 +1879,7 @@ pub(crate) fn new_graf_in(
 
     st.input.cur_list.prev_graf = 0;
 
-    if st.input.cur_list.mode == VMODE_I16 || st.input.cur_list.head.0 != st.input.cur_list.tail.0 {
+    if st.input.cur_list.mode == VMODE_I16 || st.input.cur_list.head != st.input.cur_list.tail {
         let pg = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_PAR_SKIP);
         if pg == crate::mem::ALLOC_FAILED {
             return Err(crate::scan::NodeRecycleAbort::Overflow.into());
@@ -2430,7 +2430,7 @@ pub(crate) fn begin_box_in(
                 if !matches!(o, crate::errors::ErrorOutcome::Continue) {
                     return Err(MainControlAbort::Error(o));
                 }
-            } else if st.input.cur_list.mode == VMODE && st.input.cur_list.head.0 == st.input.cur_list.tail.0 {
+            } else if st.input.cur_list.mode == VMODE && st.input.cur_list.head == st.input.cur_list.tail {
                 crate::errors::you_cant_in(st);
                 st.errors.help_ptr = 2;
                 st.errors.help_line[1] =
@@ -5108,7 +5108,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
 
     // === main_loop: entry point ===
     // SyncTeX: append special at start of new paragraph
-    if st.input.cur_list.head.0 == st.input.cur_list.tail.0
+    if st.input.cur_list.head == st.input.cur_list.tail
         && st.input.cur_list.mode > 0
         && st.shipout.insert_src_special_auto()
     {
