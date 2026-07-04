@@ -371,12 +371,12 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
 ) -> Option<i32> {
     let break_node = active(q).break_node(mem);
     let mut l = if break_node.is_null() {
-        linebreak.first_p
+        linebreak.first_p.0
     } else {
         passive_node(break_node.0).cur_break(mem).0
     };
 
-    let mut r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p, p);
+    let mut r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p.0, p);
     let p_disc = if p != TEX_NULL {
         mem.classify_disc(MemIdx::new(p)).ok().flatten()
     } else {
@@ -986,11 +986,11 @@ fn start_linebreak_pass(
     }
     linebreak.passive = TEX_NULL;
     errors.font_in_short_display = 0;
-    linebreak.cur_p = mem.b32s1(TEMP_HEAD);
+    linebreak.cur_p = MemPtr::from_raw(mem.b32s1(TEMP_HEAD));
     linebreak.global_prev_p = linebreak.cur_p;
     linebreak.first_p = linebreak.cur_p;
 
-    Ok(linebreak.cur_p)
+    Ok(linebreak.cur_p.0)
 }
 
 fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
@@ -998,22 +998,22 @@ fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakSt
     while q != LAST_ACTIVE {
         match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
-                linebreak.cur_p = d.link(mem).0;
+                linebreak.cur_p = d.link(mem);
                 crate::mem::free_node(mem, q, DELTA_NODE_SIZE);
             }
             ActiveOrDelta::Active(a) => {
-                linebreak.cur_p = a.link(mem).0;
+                linebreak.cur_p = a.link(mem);
                 crate::mem::free_node(mem, q, linebreak.active_node_size as i32);
             }
         }
-        q = linebreak.cur_p;
+        q = linebreak.cur_p.0;
     }
 
     q = linebreak.passive;
     while q != TEX_NULL {
-        linebreak.cur_p = passive_node(q).link(mem).0;
+        linebreak.cur_p = passive_node(q).link(mem);
         crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
-        q = linebreak.cur_p;
+        q = linebreak.cur_p.0;
     }
 }
 
@@ -1488,25 +1488,25 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
         };
         let mut auto_breaking = true;
 
-        while st.linebreak.cur_p != TEX_NULL && st.mem.b32s1(ACTIVE_LIST) != LAST_ACTIVE {
-            let mut cur = st.linebreak.cur_p;
+        while !st.linebreak.cur_p.is_null() && st.mem.b32s1(ACTIVE_LIST) != LAST_ACTIVE {
+            let mut cur = st.linebreak.cur_p.0;
 
             if crate::mem::is_char_node(&st.mem, cur) {
                 prev_p = cur;
-                st.linebreak.global_prev_p = cur;
+                st.linebreak.global_prev_p = MemPtr::from_raw(cur);
                 loop {
                     let f = st.mem.b16s1(cur) as i32;
                     let c = st.mem.b16s0(cur);
                     aw!(1, font_character_width(&mut st.fonts, f, c));
                     cur = st.mem.b32s1(cur);
-                    st.linebreak.cur_p = cur;
+                    st.linebreak.cur_p = MemPtr::from_raw(cur);
                     if !crate::mem::is_char_node(&st.mem, cur) {
                         break;
                     }
                 }
             }
 
-            cur = st.linebreak.cur_p;
+            cur = st.linebreak.cur_p.0;
             // `cur` is non-char here (the char-run loop above consumed any run),
             // so classify derives its kind once for the whole dispatch.
             match st.mem.classify(MemIdx::new(cur)) {
@@ -1975,8 +1975,8 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
                     }
 
                     prev_p = cur;
-                    st.linebreak.global_prev_p = cur;
-                    st.linebreak.cur_p = s;
+                    st.linebreak.global_prev_p = MemPtr::from_raw(cur);
+                    st.linebreak.cur_p = MemPtr::from_raw(s);
                     continue;
                 }
                 Ok(AnyNode::Math(m)) => {
@@ -2008,11 +2008,11 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
             }
 
             prev_p = cur;
-            st.linebreak.global_prev_p = cur;
-            st.linebreak.cur_p = st.mem.b32s1(cur);
+            st.linebreak.global_prev_p = MemPtr::from_raw(cur);
+            st.linebreak.cur_p = MemPtr::from_raw(st.mem.b32s1(cur));
         }
 
-        if st.linebreak.cur_p == TEX_NULL {
+        if st.linebreak.cur_p.is_null() {
             if let Err(e) = line_break_try_break(st, EJECT_PENALTY, HYPHENATED) {
                 return LineBreakOutcome::TryBreak(e);
             }
@@ -2090,12 +2090,12 @@ fn update_lr_stack(mem: &mut MemState, q: NodePtr<MathNode>, lr_ptr: &mut i32) -
 
 fn reverse_best_breaks(mem: &mut MemState, linebreak: &mut LinebreakState) {
     let mut q = linebreak.best_bet.expect(BEST_BET_SET).break_node(mem).0;
-    linebreak.cur_p = TEX_NULL;
+    linebreak.cur_p = MemPtr::NULL;
     loop {
         let r = passive_node(q);
         q = r.next_break(mem).0;
-        r.set_next_break(mem, MemPtr::from_raw(linebreak.cur_p));
-        linebreak.cur_p = r.idx().0;
+        r.set_next_break(mem, linebreak.cur_p);
+        linebreak.cur_p = MemPtr::from_idx(r.idx());
         if q == TEX_NULL {
             break;
         }
@@ -2159,7 +2159,7 @@ fn post_line_break_prefix(errors: &mut crate::state::ErrorState,
             mem.set_b32s1(TEMP_HEAD, r);
         }
 
-        let cur_break = passive_node(linebreak.cur_p).cur_break(mem).0;
+        let cur_break = passive_node(linebreak.cur_p.0).cur_break(mem).0;
         while q != cur_break {
             // `q < hi_mem_min` proves `q` is a lo-mem node, so `classify` is valid.
             if q < mem.hi_mem_min {
@@ -2171,7 +2171,7 @@ fn post_line_break_prefix(errors: &mut crate::state::ErrorState,
         }
     }
 
-    let mut q = passive_node(linebreak.cur_p).cur_break(mem).0;
+    let mut q = passive_node(linebreak.cur_p.0).cur_break(mem).0;
     let mut disc_break = false;
     let mut post_disc_break = false;
     let mut glue_break = false;
@@ -2424,10 +2424,10 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
     }
 
     *cur_line += 1;
-    linebreak.cur_p = passive_node(linebreak.cur_p).next_break(mem).0;
+    linebreak.cur_p = passive_node(linebreak.cur_p.0).next_break(mem);
 
-    if linebreak.cur_p != TEX_NULL && !hpack.post_disc_break {
-        let cur_break = passive_node(linebreak.cur_p).cur_break(mem).0;
+    if !linebreak.cur_p.is_null() && !hpack.post_disc_break {
+        let cur_break = passive_node(linebreak.cur_p.0).cur_break(mem).0;
         let mut r = TEMP_HEAD;
         let mut q;
         loop {
@@ -2461,7 +2461,7 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
         }
     }
 
-    Ok(linebreak.cur_p == TEX_NULL)
+    Ok(linebreak.cur_p.is_null())
 }
 
 // translated from xetex-linebreak.c:971 (post_line_break)
@@ -2607,7 +2607,7 @@ unsafe fn try_break(
     mut pi: i32,
     break_type: i16,
 ) -> Result<(), TryBreakAbort> {
-    if config.semantic_pagination_enabled && linebreak.cur_p != TEX_NULL {
+    if config.semantic_pagination_enabled && !linebreak.cur_p.is_null() {
         return Ok(());
     }
 
@@ -2664,18 +2664,18 @@ unsafe fn try_break(
                     for k in 1..=6 {
                         linebreak.break_width[k] = linebreak.background[k];
                     }
-                    let mut s = linebreak.cur_p;
+                    let mut s = linebreak.cur_p.0;
 
-                    if break_type > UNHYPHENATED && linebreak.cur_p != TEX_NULL {
+                    if break_type > UNHYPHENATED && !linebreak.cur_p.is_null() {
                         // A hyphenated break (`break_type > UNHYPHENATED`) is always at a
                         // disc node.
                         let cur_disc = mem
-                            .classify_disc(MemIdx::new(linebreak.cur_p))
+                            .classify_disc(MemIdx::new(linebreak.cur_p.0))
                             .ok()
                             .flatten()
                             .expect("hyphenated break node is a disc");
                         let mut t = cur_disc.subtype(mem) as i32;
-                        let mut v = linebreak.cur_p;
+                        let mut v = linebreak.cur_p.0;
                         s = cur_disc.post_break(mem).0;
 
                         while t > 0 {
@@ -2885,7 +2885,7 @@ unsafe fn try_break(
                         let passive_p = alloc_passive_node(mem).map_err(TryBreakAbort::Node)?;
                         passive_p.set_link(mem, MemPtr::from_raw(linebreak.passive));
                         linebreak.passive = passive_p.idx().0;
-                        passive_p.set_cur_break(mem, MemPtr::from_raw(linebreak.cur_p));
+                        passive_p.set_cur_break(mem, linebreak.cur_p);
                         passive_p
                             .set_prev_break(mem, MemPtr::from_raw(linebreak.best_place[fit_class]));
 
@@ -2987,7 +2987,7 @@ unsafe fn try_break(
             artificial_demerits = false;
             shortfall = line_width - linebreak.cur_active_width[1];
             if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_PROTRUDE_CHARS) > 1 {
-                shortfall += total_pw(errors, mem, fonts, linebreak, r, linebreak.cur_p)
+                shortfall += total_pw(errors, mem, fonts, linebreak, r, linebreak.cur_p.0)
                     .ok_or(TryBreakAbort::HlistStackFailure)?;
             }
         }
@@ -3003,7 +3003,7 @@ unsafe fn try_break(
             {
                 let mut last_line_fit_found = false;
                 if linebreak.do_last_line_fit
-                    && linebreak.cur_p == TEX_NULL
+                    && linebreak.cur_p.is_null()
                     && r_active.shortfall(mem).0 != 0
                     && r_active.glue(mem).0 > 0
                     && linebreak.cur_active_width[3] == linebreak.fill_width[0]
@@ -3105,7 +3105,7 @@ unsafe fn try_break(
         }
 
         if linebreak.do_last_line_fit && !jumped_to_found {
-            if linebreak.cur_p == TEX_NULL {
+            if linebreak.cur_p.is_null() {
                 shortfall = 0;
             }
             g = if shortfall > 0 {
@@ -3157,7 +3157,7 @@ unsafe fn try_break(
             }
 
             if break_type == HYPHENATED && r_active.break_type(mem) as i16 == HYPHENATED {
-                if linebreak.cur_p != TEX_NULL {
+                if !linebreak.cur_p.is_null() {
                     d += eqtb.b32s1(INT_BASE + INT_PAR_DOUBLE_HYPHEN_DEMERITS);
                 } else {
                     d += eqtb.b32s1(INT_BASE + INT_PAR_FINAL_HYPHEN_DEMERITS);
@@ -3361,7 +3361,7 @@ fn hyphenate_native_word_if_needed(
     let l_hyf = st.hyph.l_hyf;
     let r_hyf = st.hyph.r_hyf;
 
-    let mut s = st.linebreak.cur_p;
+    let mut s = st.linebreak.cur_p.0;
     while st.mem.b32s1(s) != ha {
         s = st.mem.b32s1(s);
     }
@@ -3560,7 +3560,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
             st.hyph.init_list = st.linebreak.ha;
             st.hyph.init_lig = false;
             st.hyph.hu[0] = st.mem.b16s0(st.linebreak.ha) as i32;
-            let mut s = st.linebreak.cur_p;
+            let mut s = st.linebreak.cur_p.0;
             while st.mem.b32s1(s) != st.linebreak.ha {
                 s = st.mem.b32s1(s);
             }
@@ -3587,7 +3587,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 st.hyph.init_lig = false;
             }
             crate::mem::free_node(&mut st.mem, st.linebreak.ha, SMALL_NODE_SIZE);
-            let mut s = st.linebreak.cur_p;
+            let mut s = st.linebreak.cur_p.0;
             while st.mem.b32s1(s) != st.linebreak.ha {
                 s = st.mem.b32s1(s);
             }
