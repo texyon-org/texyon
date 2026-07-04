@@ -1312,7 +1312,7 @@ pub(crate) fn scan_and_pack_name_in(st: &mut crate::state::EngineState) -> Resul
 }
 pub(crate) fn scan_file_name_braced_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let save_scanner_status = st.scanner.scanner_status;
-    let save_def_ref = st.scanner.def_ref;
+    let save_def_ref = st.scanner.def_ref.0;
     let save_cur_cs = st.scanner.cur_cs;
     let save_stop_at_space = st.scanner.stop_at_space;
 
@@ -1321,16 +1321,16 @@ pub(crate) fn scan_file_name_braced_in(st: &mut crate::state::EngineState) -> Re
 
     st.shipout.old_setting = st.shipout.selector as u8;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    let arg = st.mem.b32s1(st.scanner.def_ref);
+    let arg = st.mem.b32s1(st.scanner.def_ref.0);
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list_in(st, arg, crate::mem::TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting as i32;
 
     let s = crate::string_pool::make_string(&mut st.strings)
         .map_err(|_| name_abort_scc(st, NameAbort::NumberOfStrings))?;
-    let dr = st.scanner.def_ref;
+    let dr = st.scanner.def_ref.0;
     crate::mem::delete_token_ref(&mut st.mem, dr);
-    st.scanner.def_ref = save_def_ref;
+    st.scanner.def_ref.0 = save_def_ref;
     st.scanner.cur_cs = save_cur_cs;
     st.scanner.scanner_status = save_scanner_status;
 

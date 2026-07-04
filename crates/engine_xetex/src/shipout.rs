@@ -455,8 +455,8 @@ pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
     s.shipout.dvi_ptr = 0;
     s.shipout.dvi_offset = 0;
     s.shipout.dvi_gone = 0;
-    s.shipout.down_ptr = TEX_NULL;
-    s.shipout.right_ptr = TEX_NULL;
+    s.shipout.down_ptr.0 = TEX_NULL;
+    s.shipout.right_ptr.0 = TEX_NULL;
     s.shipout.cur_s = -1;
 }
 
@@ -691,7 +691,7 @@ pub(crate) unsafe fn ship_out_in(
         st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
 
         st.shipout.cur_v = p_box.height(&st.mem).0 + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_V_OFFSET);
-        st.mem.temp_ptr = p;
+        st.mem.temp_ptr.0 = p;
         if matches!(p_box, AnyBox::VList(_)) {
             vlist_out_in(st)?;
         } else {
@@ -715,7 +715,7 @@ pub(crate) unsafe fn ship_out_in(
         crate::output::print_ln_in(st);
     }
 
-    if st.scanner.lr_ptr != TEX_NULL || st.scanner.cur_dir != LEFT_TO_RIGHT {
+    if st.scanner.lr_ptr.0 != TEX_NULL || st.scanner.cur_dir != LEFT_TO_RIGHT {
         return Err(ShipoutAbort::Confusion(c"LR3"));
     }
 
@@ -1174,7 +1174,7 @@ unsafe fn output_hlist_glue_in(
                 }
                 let save_h = st.shipout.dvi_h;
 
-                st.mem.temp_ptr = leader_box;
+                st.mem.temp_ptr.0 = leader_box;
                 if st.scanner.cur_dir == RIGHT_TO_LEFT {
                     st.shipout.cur_h += leader_wd;
                 }
@@ -1212,7 +1212,7 @@ unsafe fn output_hlist_glue_in(
 unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     let mut cur_g = 0;
     let mut cur_glue = 0.0;
-    let this_box = st.mem.temp_ptr;
+    let this_box = st.mem.temp_ptr.0;
     let this_box_b = st
         .mem
         .classify_box(MemIdx::new(this_box))
@@ -1251,10 +1251,10 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     let mut prev_p = this_box + 5;
 
     let lr_node = get_avail_ship(&mut st.mem)?;
-    st.mem.temp_ptr = lr_node;
+    st.mem.temp_ptr.0 = lr_node;
     st.mem.set_b32s0(lr_node, BEFORE);
-    st.mem.set_b32s1(lr_node, st.scanner.lr_ptr);
-    st.scanner.lr_ptr = lr_node;
+    st.mem.set_b32s1(lr_node, st.scanner.lr_ptr.0);
+    st.scanner.lr_ptr.0 = lr_node;
 
     if this_box_b.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
@@ -1267,7 +1267,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
 
     if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box_b.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
-        st.mem.temp_ptr = p;
+        st.mem.temp_ptr.0 = p;
         p = crate::mem::new_kern(&mut st.mem, 0);
         if p == crate::mem::ALLOC_FAILED {
             return Err(ShipoutAbort::MainMemoryOverflow);
@@ -1359,7 +1359,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                         let save_h = st.shipout.dvi_h;
                         let save_v = st.shipout.dvi_v;
                         st.shipout.cur_v = base_line + bb.shift_amount(&st.mem).0;
-                        st.mem.temp_ptr = p;
+                        st.mem.temp_ptr.0 = p;
                         let edge = st.shipout.cur_h + bb.width(&st.mem).0;
                         if st.scanner.cur_dir == RIGHT_TO_LEFT {
                             st.shipout.cur_h = edge;
@@ -1493,27 +1493,27 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                             crate::synctex::synctex_math(st, p, this_box);
                             let math_width = math.width(&st.mem).0;
                             if !math.subtype(&st.mem).is_multiple_of(2) {
-                                if st.mem.b32s0(st.scanner.lr_ptr) as u16
+                                if st.mem.b32s0(st.scanner.lr_ptr.0) as u16
                                     == math_node_end_lr_type(&st.mem, p)
                                 {
-                                    st.mem.temp_ptr = st.scanner.lr_ptr;
-                                    st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
-                                    st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
-                                    st.mem.avail = st.mem.temp_ptr;
+                                    st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
+                                    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
+                                    st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+                                    st.mem.avail = st.mem.temp_ptr.0;
                                 } else if math.subtype(&st.mem) > L_CODE {
                                     st.scanner.lr_problems += 1;
                                 }
                             } else {
                                 let lr_node = get_avail_ship(&mut st.mem)?;
-                                st.mem.temp_ptr = lr_node;
+                                st.mem.temp_ptr.0 = lr_node;
                                 st.mem
                                     .set_b32s0(lr_node, math_node_end_lr_type(&st.mem, p) as i32);
-                                st.mem.set_b32s1(lr_node, st.scanner.lr_ptr);
-                                st.scanner.lr_ptr = lr_node;
+                                st.mem.set_b32s1(lr_node, st.scanner.lr_ptr.0);
+                                st.scanner.lr_ptr.0 = lr_node;
 
                                 if math_node_lr_dir(&st.mem, p) as i16 != st.scanner.cur_dir {
                                     let save_h = st.shipout.cur_h;
-                                    st.mem.temp_ptr = math.link(&st.mem).0;
+                                    st.mem.temp_ptr.0 = math.link(&st.mem).0;
                                     st.shipout.rule_wd = math_width;
                                     crate::mem::free_node(&mut st.mem, p, MEDIUM_NODE_SIZE);
                                     st.scanner.cur_dir = 1 - st.scanner.cur_dir;
@@ -1580,20 +1580,20 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
 
     crate::synctex::synctex_tsilh(st, this_box);
 
-    while st.mem.b32s0(st.scanner.lr_ptr) != BEFORE {
-        if st.mem.b32s0(st.scanner.lr_ptr) as u16 > L_CODE {
+    while st.mem.b32s0(st.scanner.lr_ptr.0) != BEFORE {
+        if st.mem.b32s0(st.scanner.lr_ptr.0) as u16 > L_CODE {
             st.scanner.lr_problems += 10000;
         }
-        st.mem.temp_ptr = st.scanner.lr_ptr;
-        st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
-        st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
-        st.mem.avail = st.mem.temp_ptr;
+        st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
+        st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
+        st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+        st.mem.avail = st.mem.temp_ptr.0;
     }
 
-    st.mem.temp_ptr = st.scanner.lr_ptr;
-    st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
-    st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
-    st.mem.avail = st.mem.temp_ptr;
+    st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
+    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
+    st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+    st.mem.avail = st.mem.temp_ptr.0;
 
     if this_box_b.subtype(&st.mem) == DLIST {
         st.scanner.cur_dir = RIGHT_TO_LEFT;
@@ -1611,7 +1611,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
 unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     let mut cur_g = 0;
     let mut cur_glue = 0.0;
-    let this_box = st.mem.temp_ptr;
+    let this_box = st.mem.temp_ptr.0;
     let this_box_b = st
         .mem
         .classify_box(MemIdx::new(this_box))
@@ -1700,7 +1700,7 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                     st.shipout.cur_h = left_edge + bb.shift_amount(&st.mem).0;
                 }
 
-                st.mem.temp_ptr = p;
+                st.mem.temp_ptr.0 = p;
                 if is_vlist {
                     vlist_out_in(st)?;
                 } else {
@@ -1867,7 +1867,7 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                     }
 
                                     let save_v = st.shipout.dvi_v;
-                                    st.mem.temp_ptr = leader_box;
+                                    st.mem.temp_ptr.0 = leader_box;
                                     let outer_doing_leaders = st.shipout.doing_leaders;
                                     st.shipout.doing_leaders = true;
 
@@ -2043,18 +2043,18 @@ const ONE_INCH_LESS_ONE: i32 = 4_736_286;
 
 // translated from xetex-shipout.c:1930 (prune_movements)
 pub fn prune_movements(mem: &mut MemState, shipout: &mut ShipoutState, l: i32) {
-    while let Some(p) = NodePtr::<MovementNode>::from_ptr(MemPtr::from_raw(shipout.down_ptr)) {
+    while let Some(p) = NodePtr::<MovementNode>::from_ptr(MemPtr::from_raw(shipout.down_ptr.0)) {
         if p.location(mem) < l {
             break;
         }
-        shipout.down_ptr = p.link(mem).0;
+        shipout.down_ptr.0 = p.link(mem).0;
         p.free(mem);
     }
-    while let Some(p) = NodePtr::<MovementNode>::from_ptr(MemPtr::from_raw(shipout.right_ptr)) {
+    while let Some(p) = NodePtr::<MovementNode>::from_ptr(MemPtr::from_raw(shipout.right_ptr.0)) {
         if p.location(mem) < l {
             return;
         }
-        shipout.right_ptr = p.link(mem).0;
+        shipout.right_ptr.0 = p.link(mem).0;
         p.free(mem);
     }
 }
@@ -2280,7 +2280,7 @@ pub fn reverse(
     let g_order = bb.glue_order(mem);
     let g_sign = bb.glue_sign(mem);
     let mut l = t;
-    let mut p = mem.temp_ptr;
+    let mut p = mem.temp_ptr.0;
     let mut m = MIN_HALFWORD;
     let mut n = MIN_HALFWORD;
 
@@ -2367,25 +2367,25 @@ pub fn reverse(
                     }
                     LIGATURE_NODE => {
                         crate::mem::flush_list(mem, mem.b32s1(p + 1));
-                        mem.temp_ptr = p;
+                        mem.temp_ptr.0 = p;
                         p = crate::mem::get_avail(mem);
-                        mem.set_word(p, mem.word(mem.temp_ptr + 1));
+                        mem.set_word(p, mem.word(mem.temp_ptr.0 + 1));
                         mem.set_b32s1(p, q);
-                        crate::mem::free_node(mem, mem.temp_ptr, SMALL_NODE_SIZE);
+                        crate::mem::free_node(mem, mem.temp_ptr.0, SMALL_NODE_SIZE);
                         continue 'reswitch;
                     }
                     MATH_NODE => {
                         shipout.rule_wd = mem.b32s1(p + 1);
 
                         if !mem.b16s0(p).is_multiple_of(2) {
-                            if mem.b32s0(scanner.lr_ptr) as u16 != math_node_end_lr_type(mem, p) {
+                            if mem.b32s0(scanner.lr_ptr.0) as u16 != math_node_end_lr_type(mem, p) {
                                 mem.set_b16s1(p, KERN_NODE);
                                 scanner.lr_problems += 1;
                             } else {
-                                mem.temp_ptr = scanner.lr_ptr;
-                                scanner.lr_ptr = mem.b32s1(mem.temp_ptr);
-                                mem.set_b32s1(mem.temp_ptr, mem.avail);
-                                mem.avail = mem.temp_ptr;
+                                mem.temp_ptr.0 = scanner.lr_ptr.0;
+                                scanner.lr_ptr.0 = mem.b32s1(mem.temp_ptr.0);
+                                mem.set_b32s1(mem.temp_ptr.0, mem.avail);
+                                mem.avail = mem.temp_ptr.0;
 
                                 if n > MIN_HALFWORD {
                                     n -= 1;
@@ -2405,10 +2405,10 @@ pub fn reverse(
                                 }
                             }
                         } else {
-                            mem.temp_ptr = crate::mem::get_avail(mem);
-                            mem.set_b32s0(mem.temp_ptr, math_node_end_lr_type(mem, p) as i32);
-                            mem.set_b32s1(mem.temp_ptr, scanner.lr_ptr);
-                            scanner.lr_ptr = mem.temp_ptr;
+                            mem.temp_ptr.0 = crate::mem::get_avail(mem);
+                            mem.set_b32s0(mem.temp_ptr.0, math_node_end_lr_type(mem, p) as i32);
+                            mem.set_b32s1(mem.temp_ptr.0, scanner.lr_ptr.0);
+                            scanner.lr_ptr.0 = mem.temp_ptr.0;
 
                             if n > MIN_HALFWORD
                                 || math_node_lr_dir(mem, p) as i16 != scanner.cur_dir
@@ -2448,7 +2448,7 @@ pub fn reverse(
             return Ok(l);
         }
 
-        p = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16);
+        p = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr.0) as i16);
         scanner.lr_problems += 10000;
     }
 }
@@ -2504,11 +2504,11 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
     q.set_location(mem, shipout.dvi_offset + shipout.dvi_ptr);
 
     if o == DOWN1 {
-        q.set_link(mem, MemPtr::from_raw(shipout.down_ptr));
-        shipout.down_ptr = q.idx().0;
+        q.set_link(mem, MemPtr::from_raw(shipout.down_ptr.0));
+        shipout.down_ptr.0 = q.idx().0;
     } else {
-        q.set_link(mem, MemPtr::from_raw(shipout.right_ptr));
-        shipout.right_ptr = q.idx().0;
+        q.set_link(mem, MemPtr::from_raw(shipout.right_ptr.0));
+        shipout.right_ptr.0 = q.idx().0;
     }
 
     let mut p = NodePtr::<MovementNode>::from_ptr(q.link(mem));
@@ -2714,7 +2714,7 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
         crate::output::print_nl_cstr_in(st, c"".as_ptr());
     }
 
-    let def_ref = st.scanner.def_ref;
+    let def_ref = st.scanner.def_ref.0;
     crate::output::token_show_in(st, def_ref);
     crate::output::print_ln_in(st);
     crate::mem::flush_list(&mut st.mem, def_ref);

@@ -441,7 +441,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                     if r == crate::mem::ALLOC_FAILED {
                         return Err(PageBuildAbort::MainMemoryOverflow);
                     }
-                    let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr))
+                    let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr.0))
                         .expect("find_sa_element returned a mark-class element");
                     if sa.child(&st.mem, 1).is_null() {
                         // ETEX_MARK_sa_first_mark == TEX_NULL
@@ -495,13 +495,13 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     if p != TEX_NULL {
         if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
             if st.input.nest_ptr == 0 {
-                st.input.cur_list.tail.0 = st.shipout.page_tail;
+                st.input.cur_list.tail.0 = st.shipout.page_tail.0;
             } else {
-                st.input.nest[0].tail.0 = st.shipout.page_tail;
+                st.input.nest[0].tail.0 = st.shipout.page_tail.0;
             }
         }
         st.mem
-            .set_b32s1(st.shipout.page_tail, st.mem.b32s1(CONTRIB_HEAD));
+            .set_b32s1(st.shipout.page_tail.0, st.mem.b32s1(CONTRIB_HEAD));
         st.mem.set_b32s1(CONTRIB_HEAD, p);
         st.mem.set_b32s1(prev_p, TEX_NULL);
     }
@@ -530,7 +530,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
 
     // 1026: Start a new current page
     st.shipout.page_contents = EMPTY;
-    st.shipout.page_tail = PAGE_HEAD;
+    st.shipout.page_tail.0 = PAGE_HEAD;
     st.mem.set_b32s1(PAGE_HEAD, TEX_NULL);
     st.shipout.last_glue = MAX_HALFWORD;
     st.shipout.last_penalty = 0;
@@ -541,7 +541,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
 
     if hold_q != HOLD_HEAD {
         st.mem.set_b32s1(PAGE_HEAD, st.mem.b32s1(HOLD_HEAD));
-        st.shipout.page_tail = hold_q;
+        st.shipout.page_tail.0 = hold_q;
     }
 
     // 1054: Delete page-insertion nodes
@@ -617,17 +617,17 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     if st.mem.b32s1(PAGE_HEAD) != TEX_NULL {
         if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
             if st.input.nest_ptr == 0 {
-                st.input.cur_list.tail.0 = st.shipout.page_tail;
+                st.input.cur_list.tail.0 = st.shipout.page_tail.0;
             } else {
-                st.input.nest[0].tail.0 = st.shipout.page_tail;
+                st.input.nest[0].tail.0 = st.shipout.page_tail.0;
             }
         } else {
             st.mem
-                .set_b32s1(st.shipout.page_tail, st.mem.b32s1(CONTRIB_HEAD));
+                .set_b32s1(st.shipout.page_tail.0, st.mem.b32s1(CONTRIB_HEAD));
         }
         st.mem.set_b32s1(CONTRIB_HEAD, st.mem.b32s1(PAGE_HEAD));
         st.mem.set_b32s1(PAGE_HEAD, TEX_NULL);
-        st.shipout.page_tail = PAGE_HEAD;
+        st.shipout.page_tail.0 = PAGE_HEAD;
     }
 
     crate::packaging::flush_node_list(&mut st.mem, st.scanner.disc_ptr[LAST_BOX_CODE])
@@ -705,7 +705,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     }
                     let q = page_new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR__top_skip as i16)?;
                     let top_skip_spec =
-                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(st.mem.temp_ptr))
+                        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(st.mem.temp_ptr.0))
                             .expect("non-null top skip spec");
                     let top_skip_width = top_skip_spec.width(&st.mem).0;
                     if top_skip_width > height {
@@ -749,7 +749,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 page_glue = Some(glue);
                 if st.shipout.page_contents < BOX_THERE {
                     need_done1 = true;
-                } else if (st.mem.b16s1(st.shipout.page_tail) as i32) < MATH_NODE {
+                } else if (st.mem.b16s1(st.shipout.page_tail.0) as i32) < MATH_NODE {
                     // is_non_discardable_node(page_tail)
                     pi = 0;
                 } else {
@@ -1050,8 +1050,8 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 st.shipout.page_so_far[1] += st.shipout.page_so_far[7] - st.shipout.page_max_depth;
                 st.shipout.page_so_far[7] = st.shipout.page_max_depth;
             }
-            st.mem.set_b32s1(st.shipout.page_tail, p);
-            st.shipout.page_tail = p;
+            st.mem.set_b32s1(st.shipout.page_tail.0, p);
+            st.shipout.page_tail.0 = p;
             st.mem.set_b32s1(CONTRIB_HEAD, st.mem.b32s1(p));
             st.mem.set_b32s1(p, TEX_NULL);
             if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {

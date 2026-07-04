@@ -4198,12 +4198,12 @@ fn app_display_in(
             st.mem.set_b32s1(q, jj);
             st.mem.set_b32s1(jj, u);
             let jspec = st.mem.b32s0(t + 1);
-            st.mem.set_b16s1(st.mem.temp_ptr, st.mem.b16s1(jspec));
-            st.mem.set_b16s0(st.mem.temp_ptr, st.mem.b16s0(jspec));
+            st.mem.set_b16s1(st.mem.temp_ptr.0, st.mem.b16s1(jspec));
+            st.mem.set_b16s0(st.mem.temp_ptr.0, st.mem.b16s0(jspec));
             st.mem
-                .set_b32s1(st.mem.temp_ptr + 1, e - st.mem.b32s1(jspec + 1));
-            st.mem.set_b32s1(st.mem.temp_ptr + 2, -st.mem.b32s1(jspec + 2));
-            st.mem.set_b32s1(st.mem.temp_ptr + 3, -st.mem.b32s1(jspec + 3));
+                .set_b32s1(st.mem.temp_ptr.0 + 1, e - st.mem.b32s1(jspec + 1));
+            st.mem.set_b32s1(st.mem.temp_ptr.0 + 2, -st.mem.b32s1(jspec + 2));
+            st.mem.set_b32s1(st.mem.temp_ptr.0 + 3, -st.mem.b32s1(jspec + 3));
             st.mem.set_b32s1(u, t);
         } else {
             st.mem.set_b32s1(t + 1, e);
@@ -4222,12 +4222,12 @@ fn app_display_in(
             st.mem.set_b32s1(u2, jj);
             st.mem.set_b32s1(jj, p);
             let jspec = st.mem.b32s0(r + 1);
-            st.mem.set_b16s1(st.mem.temp_ptr, st.mem.b16s1(jspec));
-            st.mem.set_b16s0(st.mem.temp_ptr, st.mem.b16s0(jspec));
+            st.mem.set_b16s1(st.mem.temp_ptr.0, st.mem.b16s1(jspec));
+            st.mem.set_b16s0(st.mem.temp_ptr.0, st.mem.b16s0(jspec));
             st.mem
-                .set_b32s1(st.mem.temp_ptr + 1, d - st.mem.b32s1(jspec + 1));
-            st.mem.set_b32s1(st.mem.temp_ptr + 2, -st.mem.b32s1(jspec + 2));
-            st.mem.set_b32s1(st.mem.temp_ptr + 3, -st.mem.b32s1(jspec + 3));
+                .set_b32s1(st.mem.temp_ptr.0 + 1, d - st.mem.b32s1(jspec + 1));
+            st.mem.set_b32s1(st.mem.temp_ptr.0 + 2, -st.mem.b32s1(jspec + 2));
+            st.mem.set_b32s1(st.mem.temp_ptr.0 + 3, -st.mem.b32s1(jspec + 3));
             st.mem.set_b32s1(r, u2);
         } else {
             st.mem.set_b32s1(r + 1, d);
@@ -4668,10 +4668,10 @@ pub(crate) fn init_math_in(
                 if tp == ALLOC_FAILED {
                     return Err(NodeRecycleAbort::Overflow.into());
                 }
-                st.mem.temp_ptr = tp;
-                st.mem.set_b32s0(st.mem.temp_ptr, BEFORE);
-                st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.lr_ptr);
-                st.scanner.lr_ptr = st.mem.temp_ptr;
+                st.mem.temp_ptr.0 = tp;
+                st.mem.set_b32s0(st.mem.temp_ptr.0, BEFORE);
+                st.mem.set_b32s1(st.mem.temp_ptr.0, st.scanner.lr_ptr.0);
+                st.scanner.lr_ptr.0 = st.mem.temp_ptr.0;
             }
 
             'outer: loop {
@@ -4722,13 +4722,13 @@ pub(crate) fn init_math_in(
                                 .0;
                             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
                                 if st.mem.b16s0(p) & 1 != 0 {
-                                    if st.mem.b32s0(st.scanner.lr_ptr)
+                                    if st.mem.b32s0(st.scanner.lr_ptr.0)
                                         == L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3
                                     {
-                                        st.mem.temp_ptr = st.scanner.lr_ptr;
-                                        st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
-                                        st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
-                                        st.mem.avail = st.mem.temp_ptr;
+                                        st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
+                                        st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
+                                        st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+                                        st.mem.avail = st.mem.temp_ptr.0;
                                     } else if st.mem.b16s0(p) as i32 > L_CODE {
                                         w = MAX_HALFWORD;
                                         break 'outer;
@@ -4738,13 +4738,13 @@ pub(crate) fn init_math_in(
                                     if tp == ALLOC_FAILED {
                                         return Err(NodeRecycleAbort::Overflow.into());
                                     }
-                                    st.mem.temp_ptr = tp;
+                                    st.mem.temp_ptr.0 = tp;
                                     st.mem.set_b32s0(
-                                        st.mem.temp_ptr,
+                                        st.mem.temp_ptr.0,
                                         L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3,
                                     );
-                                    st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.lr_ptr);
-                                    st.scanner.lr_ptr = st.mem.temp_ptr;
+                                    st.mem.set_b32s1(st.mem.temp_ptr.0, st.scanner.lr_ptr.0);
+                                    st.scanner.lr_ptr.0 = st.mem.temp_ptr.0;
                                     if st.mem.b16s0(p) as i32 / R_CODE != st.scanner.cur_dir as i32
                                     {
                                         crate::packaging::just_reverse(
@@ -4837,11 +4837,11 @@ pub(crate) fn init_math_in(
             }
 
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                while st.scanner.lr_ptr != TEX_NULL {
-                    st.mem.temp_ptr = st.scanner.lr_ptr;
-                    st.scanner.lr_ptr = st.mem.b32s1(st.mem.temp_ptr);
-                    st.mem.set_b32s1(st.mem.temp_ptr, st.mem.avail);
-                    st.mem.avail = st.mem.temp_ptr;
+                while st.scanner.lr_ptr.0 != TEX_NULL {
+                    st.mem.temp_ptr.0 = st.scanner.lr_ptr.0;
+                    st.scanner.lr_ptr.0 = st.mem.b32s1(st.mem.temp_ptr.0);
+                    st.mem.set_b32s1(st.mem.temp_ptr.0, st.mem.avail);
+                    st.mem.avail = st.mem.temp_ptr.0;
                 }
                 if st.scanner.lr_problems != 0 {
                     w = MAX_HALFWORD;

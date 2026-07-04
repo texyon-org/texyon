@@ -680,7 +680,7 @@ pub(crate) fn read_toks_in(
     st.scanner.scanner_status = DEFINING;
     st.scanner.warning_index = r;
     let new_def = get_avail_scc(st)?;
-    st.scanner.def_ref = new_def;
+    st.scanner.def_ref.0 = new_def;
     st.mem.set_b32s0(new_def, TEX_NULL);
     let mut p = new_def;
 
@@ -2468,7 +2468,7 @@ pub(crate) fn scan_toks_in(
     }
     st.scanner.warning_index = st.scanner.cur_cs;
     let new_def = crate::mem::get_avail(&mut st.mem);
-    st.scanner.def_ref = new_def;
+    st.scanner.def_ref.0 = new_def;
     st.mem.set_b32s0(new_def, TEX_NULL);
     let mut p = new_def;
     let mut hash_brace: i32 = 0;
@@ -4001,10 +4001,10 @@ pub(crate) fn scan_something_internal_in(
                                     __cv25,
                                     false,
                                 );
-                                if st.scanner.cur_ptr == TEX_NULL {
+                                if st.scanner.cur_ptr.0 == TEX_NULL {
                                     st.scanner.cur_val = TEX_NULL;
                                 } else {
-                                    st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
+                                    st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
                                 }
                             }
                         } else {
@@ -4012,10 +4012,10 @@ pub(crate) fn scan_something_internal_in(
                         }
                     } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
                         scan_char_class_not_ignored_in(st)?;
-                        st.scanner.cur_ptr = st.scanner.cur_val;
+                        st.scanner.cur_ptr.0 = st.scanner.cur_val;
                         scan_char_class_not_ignored_in(st)?;
                         let __cv24 = st.scanner.cur_val;
-                        let __cp24 = st.scanner.cur_ptr;
+                        let __cp24 = st.scanner.cur_ptr.0;
                         crate::save::find_sa_element(
                             &mut st.mem,
                             &mut st.scanner,
@@ -4023,10 +4023,10 @@ pub(crate) fn scan_something_internal_in(
                             __cp24 * CHAR_CLASS_LIMIT + __cv24,
                             false,
                         );
-                        if st.scanner.cur_ptr == TEX_NULL {
+                        if st.scanner.cur_ptr.0 == TEX_NULL {
                             st.scanner.cur_val = TEX_NULL;
                         } else {
-                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
                         }
                     } else {
                         st.scanner.cur_val = st.eqtb.b32s1(m);
@@ -4152,10 +4152,10 @@ pub(crate) fn scan_something_internal_in(
                 } else {
                     let __cv23 = st.scanner.cur_val;
                     crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv23, false);
-                    if st.scanner.cur_ptr == TEX_NULL {
+                    if st.scanner.cur_ptr.0 == TEX_NULL {
                         q = TEX_NULL;
                     } else {
-                        q = st.mem.b32s1(st.scanner.cur_ptr + 1);
+                        q = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
                     }
                 }
                 if q == TEX_NULL {
@@ -4227,12 +4227,12 @@ pub(crate) fn scan_something_internal_in(
                             __cv22,
                             false,
                         );
-                        if st.scanner.cur_ptr == TEX_NULL {
+                        if st.scanner.cur_ptr.0 == TEX_NULL {
                             st.scanner.cur_val = 0;
                         } else if (st.scanner.cur_val_level as i16) < GLUE_VAL {
-                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 2);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr.0 + 2);
                         } else {
-                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr + 1);
+                            st.scanner.cur_val = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
                         }
                     } else {
                         match st.scanner.cur_val_level as i16 {
@@ -5224,11 +5224,11 @@ pub(crate) fn get_token_in(st: &mut crate::state::EngineState) -> Result<(), Scc
 pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let s = st.scanner.scanner_status;
     let w = st.scanner.warning_index;
-    let d = st.scanner.def_ref;
+    let d = st.scanner.def_ref.0;
     st.scanner.scanner_status = ABSORBING;
     st.scanner.warning_index = st.scanner.cur_cs;
     let new_def = crate::mem::get_avail(&mut st.mem);
-    st.scanner.def_ref = new_def;
+    st.scanner.def_ref.0 = new_def;
     st.mem.set_b32s0(new_def, crate::mem::TEX_NULL);
     let mut p = new_def;
     scan_left_brace_in(st)?;
@@ -5251,7 +5251,7 @@ pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result
         p = q;
     }
     // found:
-    let dr = st.scanner.def_ref;
+    let dr = st.scanner.def_ref.0;
     let q = st.mem.b32s1(dr);
     let av = st.mem.avail;
     st.mem.set_b32s1(dr, av);
@@ -5264,7 +5264,7 @@ pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result
     st.mem.set_b32s1(TEMP_HEAD, q);
     st.scanner.scanner_status = s;
     st.scanner.warning_index = w;
-    st.scanner.def_ref = d;
+    st.scanner.def_ref.0 = d;
     Ok(())
 }
 pub(crate) fn scan_pdf_ext_toks_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
@@ -5274,15 +5274,15 @@ pub(crate) fn scan_pdf_ext_toks_in(st: &mut crate::state::EngineState) -> Result
 pub(crate) fn compare_strings_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let save_cur_cs = st.scanner.cur_cs;
     scan_toks_in(st, false, true)?;
-    let dr1 = st.scanner.def_ref;
+    let dr1 = st.scanner.def_ref.0;
     let s1 = tokens_to_string_in(st, dr1).map_err(SccAbort::TokensToString)?;
-    let dr1 = st.scanner.def_ref;
+    let dr1 = st.scanner.def_ref.0;
     crate::mem::delete_token_ref(&mut st.mem, dr1);
     st.scanner.cur_cs = save_cur_cs;
     scan_toks_in(st, false, true)?;
-    let dr2 = st.scanner.def_ref;
+    let dr2 = st.scanner.def_ref.0;
     let s2 = tokens_to_string_in(st, dr2).map_err(SccAbort::TokensToString)?;
-    let dr2 = st.scanner.def_ref;
+    let dr2 = st.scanner.def_ref.0;
     crate::mem::delete_token_ref(&mut st.mem, dr2);
 
     let i1 = st.strings.str_start[(s1 - 65536) as usize];

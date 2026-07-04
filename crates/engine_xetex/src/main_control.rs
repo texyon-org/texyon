@@ -1352,7 +1352,7 @@ pub(crate) fn its_all_over_in(
     st: &mut crate::state::EngineState,
 ) -> Result<bool, MainControlAbort> {
     if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
-        if st.shipout.page_tail == PAGE_HEAD
+        if st.shipout.page_tail.0 == PAGE_HEAD
             && st.input.cur_list.head == st.input.cur_list.tail
             && st.shipout.dead_cycles == 0
         {
@@ -1539,10 +1539,10 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         } else {
             let __cv18 = st.scanner.cur_val;
             crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv18, false);
-            if st.scanner.cur_ptr == crate::mem::TEX_NULL {
+            if st.scanner.cur_ptr.0 == crate::mem::TEX_NULL {
                 crate::mem::TEX_NULL
             } else {
-                st.mem.b32s1(st.scanner.cur_ptr + 1)
+                st.mem.b32s1(st.scanner.cur_ptr.0 + 1)
             }
         };
 
@@ -1582,7 +1582,7 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
             } else {
                 let __cv17 = st.scanner.cur_val;
                 crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv17, false);
-                let cp = st.scanner.cur_ptr;
+                let cp = st.scanner.cur_ptr.0;
                 if cp != crate::mem::TEX_NULL {
                     st.mem.set_b32s1(cp + 1, crate::mem::TEX_NULL);
                     let rc = st.mem.b32s0(cp + 1) + 1;
@@ -2286,7 +2286,7 @@ pub(crate) fn box_end_in(
             if r == crate::mem::ALLOC_FAILED {
                 return Err(crate::scan::NodeRecycleAbort::Overflow.into());
             }
-            let p = st.scanner.cur_ptr;
+            let p = st.scanner.cur_ptr.0;
             let result = if a >= 4 {
                 crate::save::gsa_def(&mut st.mem, p, cb)
             } else {
@@ -2376,7 +2376,7 @@ pub(crate) fn begin_box_in(
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                 }
-                let cp = st.scanner.cur_ptr;
+                let cp = st.scanner.cur_ptr.0;
                 st.scanner.cur_box.0 = if cp == TEX_NULL {
                     TEX_NULL
                 } else {
@@ -2390,7 +2390,7 @@ pub(crate) fn begin_box_in(
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                 }
-                let cp = st.scanner.cur_ptr;
+                let cp = st.scanner.cur_ptr.0;
                 if cp != TEX_NULL {
                     st.mem.set_b32s1(cp + 1, TEX_NULL);
                     st.mem.set_b32s0(cp + 1, st.mem.b32s0(cp + 1) + 1);
@@ -2409,7 +2409,7 @@ pub(crate) fn begin_box_in(
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                 }
-                let cp = st.scanner.cur_ptr;
+                let cp = st.scanner.cur_ptr.0;
                 if cp == TEX_NULL {
                     TEX_NULL
                 } else {
@@ -2761,19 +2761,19 @@ pub(crate) fn handle_right_brace_in(
 
             if st.input.cur_list.tail.0 != st.input.cur_list.head.0 {
                 let head_link = st.mem.b32s1(st.input.cur_list.head.0);
-                st.mem.set_b32s1(st.shipout.page_tail, head_link);
-                st.shipout.page_tail = st.input.cur_list.tail.0;
+                st.mem.set_b32s1(st.shipout.page_tail.0, head_link);
+                st.shipout.page_tail.0 = st.input.cur_list.tail.0;
             }
 
             if st.mem.b32s1(PAGE_HEAD) != TEX_NULL {
                 if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
-                    st.input.nest[0].tail.0 = st.shipout.page_tail;
+                    st.input.nest[0].tail.0 = st.shipout.page_tail.0;
                 }
                 let contrib = st.mem.b32s1(CONTRIB_HEAD);
-                st.mem.set_b32s1(st.shipout.page_tail, contrib);
+                st.mem.set_b32s1(st.shipout.page_tail.0, contrib);
                 st.mem.set_b32s1(CONTRIB_HEAD, st.mem.b32s1(PAGE_HEAD));
                 st.mem.set_b32s1(PAGE_HEAD, TEX_NULL);
-                st.shipout.page_tail = PAGE_HEAD;
+                st.shipout.page_tail.0 = PAGE_HEAD;
             }
 
             let dp = st.scanner.disc_ptr[LAST_BOX_CODE];
@@ -2947,7 +2947,7 @@ pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     };
     mark.set_mark_class(&mut st.mem, c);
     mark.set_subtype(&mut st.mem, 0);
-    mark.set_mark_ptr(&mut st.mem, MemPtr::from_raw(st.scanner.def_ref));
+    mark.set_mark_ptr(&mut st.mem, MemPtr::from_raw(st.scanner.def_ref.0));
     let tail = st.input.cur_list.tail.0;
     st.mem.set_b32s1(tail, p);
     st.input.cur_list.tail.0 = p;
@@ -3060,10 +3060,10 @@ pub(crate) fn alter_box_dimen_in(
     } else {
         let __cv13 = st.scanner.cur_val;
         crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv13, false);
-        if st.scanner.cur_ptr == crate::mem::TEX_NULL {
+        if st.scanner.cur_ptr.0 == crate::mem::TEX_NULL {
             crate::mem::TEX_NULL
         } else {
-            st.mem.b32s1(st.scanner.cur_ptr + 1)
+            st.mem.b32s1(st.scanner.cur_ptr.0 + 1)
         }
     };
     crate::scan::scan_optional_equals_in(st)?;
@@ -3200,7 +3200,7 @@ pub(crate) fn append_discretionary_in(
 pub(crate) fn shift_case_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let b = st.scanner.cur_chr;
     crate::scan::scan_toks_in(st, false, false)?;
-    let mut p = st.mem.b32s1(st.scanner.def_ref);
+    let mut p = st.mem.b32s1(st.scanner.def_ref.0);
     while p != crate::mem::TEX_NULL {
         let t = st.mem.b32s0(p);
         if t < CS_TOKEN_FLAG + SINGLE_BASE {
@@ -3211,7 +3211,7 @@ pub(crate) fn shift_case_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         }
         p = st.mem.b32s1(p);
     }
-    let def_ref = st.scanner.def_ref;
+    let def_ref = st.scanner.def_ref.0;
     crate::input::begin_token_list_in(st, st.mem.b32s1(def_ref), BACKED_UP)?;
     st.mem.set_b32s1(def_ref, st.mem.avail);
     st.mem.avail = def_ref;
@@ -3851,7 +3851,7 @@ pub(crate) fn do_register_command_in(
                     __cv12,
                     true,
                 );
-                (st.scanner.cur_ptr, p, true)
+                (st.scanner.cur_ptr.0, p, true)
             } else {
                 let l = match p {
                     INT_VAL => st.scanner.cur_val + COUNT_BASE,
@@ -4157,21 +4157,21 @@ pub(crate) fn main_control_append_normal_space_in(
             );
             st.fonts.set_font_glue(cur_font, st.mainloop.main_p);
         }
-        st.mem.temp_ptr = crate::mem::new_glue(&mut st.mem, st.mainloop.main_p);
+        st.mem.temp_ptr.0 = crate::mem::new_glue(&mut st.mem, st.mainloop.main_p);
     } else {
-        st.mem.temp_ptr = crate::mem::new_param_glue(
+        st.mem.temp_ptr.0 = crate::mem::new_param_glue(
             &mut st.mem,
             &st.eqtb,
             GLUE_PAR_SPACE_SKIP_MC,
         );
     }
-    if st.mem.temp_ptr == crate::mem::ALLOC_FAILED {
+    if st.mem.temp_ptr.0 == crate::mem::ALLOC_FAILED {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     }
 
     st.mem
-        .set_b32s1(st.input.cur_list.tail.0, st.mem.temp_ptr);
-    st.input.cur_list.tail.0 = st.mem.temp_ptr;
+        .set_b32s1(st.input.cur_list.tail.0, st.mem.temp_ptr.0);
+    st.input.cur_list.tail.0 = st.mem.temp_ptr.0;
     Ok(())
 }
 
@@ -4920,7 +4920,7 @@ fn inter_char_boundary_after_space_action(
         sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
         false,
     );
-    let cur_ptr = st.scanner.cur_ptr;
+    let cur_ptr = st.scanner.cur_ptr.0;
     if cur_ptr == crate::mem::TEX_NULL {
         return InterCharInputAction::None;
     }
@@ -4969,7 +4969,7 @@ fn inter_char_before_current_char_action(
         );
     }
 
-    let cur_ptr = st.scanner.cur_ptr;
+    let cur_ptr = st.scanner.cur_ptr.0;
     if cur_ptr == crate::mem::TEX_NULL {
         return InterCharInputAction::None;
     }
@@ -5149,7 +5149,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 st.input.cur_list.set_aux_s0(ms);
             }
 
-            st.scanner.cur_ptr = TEX_NULL;
+            st.scanner.cur_ptr.0 = TEX_NULL;
             st.mainloop.space_class = sf / 65536;
             let sc = st.mainloop.space_class;
 
@@ -5612,7 +5612,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
         }
 
         // Exit: cur_ptr set iff inter-char token injected
-        return Ok(st.scanner.cur_ptr != TEX_NULL);
+        return Ok(st.scanner.cur_ptr.0 != TEX_NULL);
     }
 
     // =========================================================================
@@ -5635,7 +5635,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
         st.input.cur_list.set_aux_s0(ms);
     }
 
-    st.scanner.cur_ptr = TEX_NULL;
+    st.scanner.cur_ptr.0 = TEX_NULL;
     st.mainloop.space_class = sf / 65536;
     let sc = st.mainloop.space_class;
 
@@ -6088,7 +6088,7 @@ unsafe fn do_lookahead(
     } else {
         st.input.cur_list.set_aux_s0(ms);
     }
-    st.scanner.cur_ptr = crate::mem::TEX_NULL;
+    st.scanner.cur_ptr.0 = crate::mem::TEX_NULL;
     st.mainloop.space_class = sf / 65536;
     let sc = st.mainloop.space_class;
 
@@ -6828,11 +6828,11 @@ pub(crate) fn prefixed_command_in(
                         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                     }
                     st.mem.set_b32s0(q, j);
-                    st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref));
-                    st.mem.set_b32s1(st.scanner.def_ref, q);
+                    st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref.0));
+                    st.mem.set_b32s1(st.scanner.def_ref.0, q);
                 }
 
-                pc_define(st, a >= 4, p, (CALL + (a % 4)) as u16, st.scanner.def_ref)?;
+                pc_define(st, a >= 4, p, (CALL + (a % 4)) as u16, st.scanner.def_ref.0)?;
             }
 
             LET => {
@@ -6940,7 +6940,7 @@ pub(crate) fn prefixed_command_in(
                                     return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                                 }
                                 st.mem
-                                    .set_b32s0(st.scanner.cur_ptr + 1, st.mem.b32s0(st.scanner.cur_ptr + 1) + 1);
+                                    .set_b32s0(st.scanner.cur_ptr.0 + 1, st.mem.b32s0(st.scanner.cur_ptr.0 + 1) + 1);
 
                                 if j == TOK_VAL {
                                     j = TOKS_REGISTER;
@@ -6948,7 +6948,7 @@ pub(crate) fn prefixed_command_in(
                                     j = REGISTER;
                                 }
 
-                                pc_define(st, a >= 4, p, j as u16, st.scanner.cur_ptr)?;
+                                pc_define(st, a >= 4, p, j as u16, st.scanner.cur_ptr.0)?;
                             } else {
                                 match n {
                                     COUNT_DEF_CODE => {
@@ -7047,7 +7047,7 @@ pub(crate) fn prefixed_command_in(
                             if found == crate::mem::ALLOC_FAILED {
                                 return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                             }
-                            st.scanner.cur_chr = st.scanner.cur_ptr;
+                            st.scanner.cur_chr = st.scanner.cur_ptr.0;
                             e = true;
                         } else {
                             st.scanner.cur_chr = TOKS_BASE + st.scanner.cur_val;
@@ -7057,10 +7057,10 @@ pub(crate) fn prefixed_command_in(
                     }
                 } else if st.scanner.cur_chr == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
                     crate::scan::scan_char_class_not_ignored_in(st)?;
-                    st.scanner.cur_ptr = st.scanner.cur_val;
+                    st.scanner.cur_ptr.0 = st.scanner.cur_val;
                     crate::scan::scan_char_class_not_ignored_in(st)?;
                     let __cv5 = st.scanner.cur_val;
-                    let __cp5 = st.scanner.cur_ptr;
+                    let __cp5 = st.scanner.cur_ptr.0;
                     let found = crate::save::find_sa_element(
                         &mut st.mem,
                         &mut st.scanner,
@@ -7071,7 +7071,7 @@ pub(crate) fn prefixed_command_in(
                     if found == crate::mem::ALLOC_FAILED {
                         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                     }
-                    st.scanner.cur_chr = st.scanner.cur_ptr;
+                    st.scanner.cur_chr = st.scanner.cur_ptr.0;
                     e = true;
                 }
 
@@ -7102,10 +7102,10 @@ pub(crate) fn prefixed_command_in(
                                     __cv4,
                                     false,
                                 );
-                                if st.scanner.cur_ptr == TEX_NULL {
+                                if st.scanner.cur_ptr.0 == TEX_NULL {
                                     q = TEX_NULL;
                                 } else {
-                                    q = st.mem.b32s1(st.scanner.cur_ptr + 1);
+                                    q = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
                                 }
                             }
                         } else {
@@ -7113,10 +7113,10 @@ pub(crate) fn prefixed_command_in(
                         }
                     } else if st.scanner.cur_chr == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
                         crate::scan::scan_char_class_not_ignored_in(st)?;
-                        st.scanner.cur_ptr = st.scanner.cur_val;
+                        st.scanner.cur_ptr.0 = st.scanner.cur_val;
                         crate::scan::scan_char_class_not_ignored_in(st)?;
                         let __cv3 = st.scanner.cur_val;
-                        let __cp3 = st.scanner.cur_ptr;
+                        let __cp3 = st.scanner.cur_ptr.0;
                         crate::save::find_sa_element(
                             &mut st.mem,
                             &mut st.scanner,
@@ -7124,10 +7124,10 @@ pub(crate) fn prefixed_command_in(
                             __cp3 * CHAR_CLASS_LIMIT + __cv3,
                             false,
                         );
-                        if st.scanner.cur_ptr == TEX_NULL {
+                        if st.scanner.cur_ptr.0 == TEX_NULL {
                             q = TEX_NULL;
                         } else {
-                            q = st.mem.b32s1(st.scanner.cur_ptr + 1);
+                            q = st.mem.b32s1(st.scanner.cur_ptr.0 + 1);
                         }
                     } else {
                         q = st.eqtb.b32s1(st.scanner.cur_chr);
@@ -7159,7 +7159,7 @@ pub(crate) fn prefixed_command_in(
                 st.scanner.cur_cs = q;
                 q = crate::scan::scan_toks_in(st, false, false)?;
 
-                if st.mem.b32s1(st.scanner.def_ref) == TEX_NULL {
+                if st.mem.b32s1(st.scanner.def_ref.0) == TEX_NULL {
                     if e {
                         pc_sa_def(st, a >= 4, p, TEX_NULL)?;
                     } else if a >= 4 {
@@ -7168,8 +7168,8 @@ pub(crate) fn prefixed_command_in(
                         pc_define(st, false, p, UNDEFINED_CS as u16, TEX_NULL)?;
                     }
 
-                    st.mem.set_b32s1(st.scanner.def_ref, st.mem.avail);
-                    st.mem.avail = st.scanner.def_ref;
+                    st.mem.set_b32s1(st.scanner.def_ref.0, st.mem.avail);
+                    st.mem.avail = st.scanner.def_ref.0;
                 } else {
                     if p == PC_LOCAL_BASE + LOCAL__OUTPUT_ROUTINE && !e {
                         let new_avail = crate::mem::get_avail(&mut st.mem);
@@ -7184,16 +7184,16 @@ pub(crate) fn prefixed_command_in(
                             return Err(crate::scan::NodeRecycleAbort::Overflow.into());
                         }
                         st.mem.set_b32s0(q, LEFT_BRACE_TOKEN + 123);
-                        st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref));
-                        st.mem.set_b32s1(st.scanner.def_ref, q);
+                        st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref.0));
+                        st.mem.set_b32s1(st.scanner.def_ref.0, q);
                     }
 
                     if e {
-                        pc_sa_def(st, a >= 4, p, st.scanner.def_ref)?;
+                        pc_sa_def(st, a >= 4, p, st.scanner.def_ref.0)?;
                     } else if a >= 4 {
-                        pc_define(st, true, p, CALL as u16, st.scanner.def_ref)?;
+                        pc_define(st, true, p, CALL as u16, st.scanner.def_ref.0)?;
                     } else {
-                        pc_define(st, false, p, CALL as u16, st.scanner.def_ref)?;
+                        pc_define(st, false, p, CALL as u16, st.scanner.def_ref.0)?;
                     }
                 }
             }

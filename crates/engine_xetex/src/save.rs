@@ -442,9 +442,9 @@ pub fn sa_save(
         }
         save_stack.data[save_stack.save_ptr as usize].b16.s1 = RESTORE_SA;
         save_stack.data[save_stack.save_ptr as usize].b16.s0 = scanner.sa_level;
-        save_stack.data[save_stack.save_ptr as usize].b32.s1 = scanner.sa_chain;
+        save_stack.data[save_stack.save_ptr as usize].b32.s1 = scanner.sa_chain.0;
         save_stack.save_ptr += 1;
-        scanner.sa_chain = TEX_NULL;
+        scanner.sa_chain.0 = TEX_NULL;
         scanner.sa_level = save_stack.cur_level;
     }
     let mut i = mem.b16s1(p);
@@ -474,8 +474,8 @@ pub fn sa_save(
     mem.set_b32s0(q + 1, p);
     mem.set_b16s1(q, i);
     mem.set_b16s0(q, mem.b16s0(p));
-    mem.set_b32s1(q, scanner.sa_chain);
-    scanner.sa_chain = q;
+    mem.set_b32s1(q, scanner.sa_chain.0);
+    scanner.sa_chain.0 = q;
     mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
     0
 }
@@ -624,7 +624,7 @@ struct SaRestoreStep {
 
 // translated from xetex-xetex0.c:2942 (sa_restore)
 fn sa_restore_prepare(mem: &mut MemState, scanner: &mut ScannerState) -> SaRestoreStep {
-    let sc = scanner.sa_chain;
+    let sc = scanner.sa_chain.0;
     let p = mem.b32s0(sc + 1);
     let mut flush_list = None;
     if mem.b16s0(p) == LEVEL_ONE {
@@ -694,13 +694,13 @@ fn sa_restore_in(st: &mut crate::state::EngineState) -> Result<(), &'static std:
             crate::packaging::flush_node_list(&mut st.mem, list)?;
         }
         delete_sa_ref(&mut st.mem, &mut st.scanner, step.p);
-        st.scanner.sa_chain = st.mem.b32s1(step.chain);
+        st.scanner.sa_chain.0 = st.mem.b32s1(step.chain);
         if st.mem.b16s1(step.chain) < DIMEN_VAL_LIMIT {
             crate::mem::free_node(&mut st.mem, step.chain, WORD_NODE_SIZE);
         } else {
             crate::mem::free_node(&mut st.mem, step.chain, POINTER_NODE_SIZE);
         }
-        if st.scanner.sa_chain == TEX_NULL {
+        if st.scanner.sa_chain.0 == TEX_NULL {
             break;
         }
     }
@@ -748,7 +748,7 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
                 st.scanner.cur_tok = t;
             } else if st.save_stack.b16s1(sp) == RESTORE_SA {
                 sa_restore_in(st).map_err(|m| UnsaveAbort::Save(SaveAbort::Confusion(m)))?;
-                st.scanner.sa_chain = p;
+                st.scanner.sa_chain.0 = p;
                 st.scanner.sa_level = st.save_stack.b16s0(st.save_stack.save_ptr);
             } else {
                 if st.save_stack.b16s1(sp) == RESTORE_OLD_VALUE {
@@ -813,7 +813,7 @@ fn new_index(mem: &mut MemState, scanner: &mut ScannerState, i: u16, q: i32) -> 
     if p == crate::mem::ALLOC_FAILED {
         return p;
     }
-    scanner.cur_ptr = p;
+    scanner.cur_ptr.0 = p;
     mem.set_b16s1(p, i);
     mem.set_b16s0(p, 0);
     mem.set_b32s1(p, q);
@@ -864,7 +864,7 @@ fn sa_alloc_chain(
             return p;
         }
         sa_set_child(mem, q, lv_i, p);
-        q = scanner.cur_ptr;
+        q = scanner.cur_ptr.0;
     }
     // Allocate the data (leaf) node (lab49).
     let leaf_i = levels[levels.len() - 1];
@@ -874,7 +874,7 @@ fn sa_alloc_chain(
         if p == crate::mem::ALLOC_FAILED {
             return p;
         }
-        scanner.cur_ptr = p;
+        scanner.cur_ptr.0 = p;
         mem.set_word(p + 1, scanner.sa_null);
         mem.set_word(p + 2, scanner.sa_null);
         mem.set_word(p + 3, scanner.sa_null);
@@ -883,7 +883,7 @@ fn sa_alloc_chain(
         if p == crate::mem::ALLOC_FAILED {
             return p;
         }
-        scanner.cur_ptr = p;
+        scanner.cur_ptr.0 = p;
         mem.set_b32s1(p + 2, 0);
         mem.set_b32s1(p + 1, n);
     } else {
@@ -891,7 +891,7 @@ fn sa_alloc_chain(
         if p == crate::mem::ALLOC_FAILED {
             return p;
         }
-        scanner.cur_ptr = p;
+        scanner.cur_ptr.0 = p;
         if t <= MU_VAL {
             mem.set_b32s1(p + 1, 0);
             // GLUE_SPEC_ref_count(0)++ : mem[0].b32.s1
@@ -922,10 +922,10 @@ pub fn find_sa_element(
     let lvl = [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64];
 
     // Traversal: navigate the 4-level trie, recording parents for linking.
-    scanner.cur_ptr = scanner.sa_root[t as usize];
+    scanner.cur_ptr.0 = scanner.sa_root[t as usize];
 
     // Check root level (not_found in C).
-    if scanner.cur_ptr == TEX_NULL {
+    if scanner.cur_ptr.0 == TEX_NULL {
         if !w {
             return 0;
         }
@@ -933,18 +933,18 @@ pub fn find_sa_element(
         if p == crate::mem::ALLOC_FAILED {
             return p;
         }
-        scanner.sa_root[t as usize] = scanner.cur_ptr;
+        scanner.sa_root[t as usize] = scanner.cur_ptr.0;
         // lab46..lab49: allocate all 4 levels from this root.
-        let p = sa_alloc_chain(mem, scanner, t, n, scanner.cur_ptr, &lvl);
+        let p = sa_alloc_chain(mem, scanner, t, n, scanner.cur_ptr.0, &lvl);
         return if p == crate::mem::ALLOC_FAILED { p } else { 0 };
     }
 
     // Levels 0–2: index nodes.
     let mut qs = [TEX_NULL; 4];
     for k in 0..3usize {
-        qs[k] = scanner.cur_ptr;
-        scanner.cur_ptr = sa_get_child(mem, qs[k], lvl[k]);
-        if scanner.cur_ptr == TEX_NULL {
+        qs[k] = scanner.cur_ptr.0;
+        scanner.cur_ptr.0 = sa_get_child(mem, qs[k], lvl[k]);
+        if scanner.cur_ptr.0 == TEX_NULL {
             if !w {
                 return 0;
             }
@@ -955,9 +955,9 @@ pub fn find_sa_element(
     }
 
     // Level 3: leaf.
-    qs[3] = scanner.cur_ptr;
-    scanner.cur_ptr = sa_get_child(mem, qs[3], lvl[3]);
-    if scanner.cur_ptr == TEX_NULL && w {
+    qs[3] = scanner.cur_ptr.0;
+    scanner.cur_ptr.0 = sa_get_child(mem, qs[3], lvl[3]);
+    if scanner.cur_ptr.0 == TEX_NULL && w {
         // lab49: allocate just the data node.
         let p = sa_alloc_chain(mem, scanner, t, n, qs[3], &lvl[3..]);
         if p == crate::mem::ALLOC_FAILED {

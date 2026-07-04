@@ -505,7 +505,7 @@ pub(crate) fn runaway_in(st: &mut crate::state::EngineState) {
         let p = match st.scanner.scanner_status {
             DEFINING => {
                 crate::output::print_nl_cstr_in(st, c"Runaway definition".as_ptr());
-                st.scanner.def_ref
+                st.scanner.def_ref.0
             }
             MATCHING => {
                 crate::output::print_nl_cstr_in(st, c"Runaway argument".as_ptr());
@@ -517,7 +517,7 @@ pub(crate) fn runaway_in(st: &mut crate::state::EngineState) {
             }
             ABSORBING => {
                 crate::output::print_nl_cstr_in(st, c"Runaway text".as_ptr());
-                st.scanner.def_ref
+                st.scanner.def_ref.0
             }
             _ => return,
         };

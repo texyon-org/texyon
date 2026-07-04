@@ -406,15 +406,15 @@ pub fn just_reverse(
                     if subtype & 1 != 0 {
                         // odd subtype = end math node
                         let expected = L_CODE * (subtype / L_CODE) + 3;
-                        if mem.b32s0(scanner.lr_ptr) != expected {
+                        if mem.b32s0(scanner.lr_ptr.0) != expected {
                             mem.set_b16s1(p, KERN_NODE); // NODE_type(p) = KERN_NODE
                             scanner.lr_problems += 1;
                         } else {
                             // pop lr_ptr
-                            mem.temp_ptr = scanner.lr_ptr;
-                            scanner.lr_ptr = mem.b32s1(mem.temp_ptr);
-                            mem.set_b32s1(mem.temp_ptr, mem.avail);
-                            mem.avail = mem.temp_ptr;
+                            mem.temp_ptr.0 = scanner.lr_ptr.0;
+                            scanner.lr_ptr.0 = mem.b32s1(mem.temp_ptr.0);
+                            mem.set_b32s1(mem.temp_ptr.0, mem.avail);
+                            mem.avail = mem.temp_ptr.0;
 
                             if n > MIN_HALFWORD {
                                 n -= 1;
@@ -434,10 +434,10 @@ pub fn just_reverse(
                         // even subtype = begin math node
                         // push lr_ptr
                         let tp = cnl_get_avail!(mem);
-                        mem.temp_ptr = tp;
-                        mem.set_b32s0(mem.temp_ptr, L_CODE * (subtype / L_CODE) + 3);
-                        mem.set_b32s1(mem.temp_ptr, scanner.lr_ptr);
-                        scanner.lr_ptr = mem.temp_ptr;
+                        mem.temp_ptr.0 = tp;
+                        mem.set_b32s0(mem.temp_ptr.0, L_CODE * (subtype / L_CODE) + 3);
+                        mem.set_b32s1(mem.temp_ptr.0, scanner.lr_ptr.0);
+                        scanner.lr_ptr.0 = mem.temp_ptr.0;
 
                         if n > MIN_HALFWORD || (subtype / R_CODE) != scanner.cur_dir as i32 {
                             n += 1;
@@ -898,7 +898,7 @@ pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord,
                 return Err(NodeRecycleAbort::Overflow);
             }
             let bsl_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(
-                mem.temp_ptr,
+                mem.temp_ptr.0,
             ))
             .expect("new_skip_param sets temp_ptr to a glue spec");
             bsl_spec.set_width(mem, Scaled(d));
@@ -1367,10 +1367,10 @@ fn find_box_register(
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        if scanner.cur_ptr == TEX_NULL {
+        if scanner.cur_ptr.0 == TEX_NULL {
             Ok(TEX_NULL)
         } else {
-            Ok(mem.b32s1(scanner.cur_ptr + 1))
+            Ok(mem.b32s1(scanner.cur_ptr.0 + 1))
         }
     }
 }
@@ -1449,14 +1449,14 @@ fn collect_split_mark(
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        if mem.b32s1(scanner.cur_ptr + 2) == TEX_NULL {
-            mem.set_b32s1(scanner.cur_ptr + 2, mark_ptr);
+        if mem.b32s1(scanner.cur_ptr.0 + 2) == TEX_NULL {
+            mem.set_b32s1(scanner.cur_ptr.0 + 2, mark_ptr);
             mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
         } else {
-            let old = mem.b32s0(scanner.cur_ptr + 3);
+            let old = mem.b32s0(scanner.cur_ptr.0 + 3);
             crate::mem::delete_token_ref(mem, old);
         }
-        mem.set_b32s0(scanner.cur_ptr + 3, mark_ptr);
+        mem.set_b32s0(scanner.cur_ptr.0 + 3, mark_ptr);
         mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
     } else if scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] == TEX_NULL {
         scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] = mark_ptr;
@@ -1516,10 +1516,10 @@ fn store_split_remainder(
         if r == crate::mem::ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        if scanner.cur_ptr != TEX_NULL {
-            mem.set_b32s1(scanner.cur_ptr + 1, q);
-            mem.set_b32s0(scanner.cur_ptr + 1, mem.b32s0(scanner.cur_ptr + 1) + 1);
-            crate::save::delete_sa_ref(mem, scanner, scanner.cur_ptr);
+        if scanner.cur_ptr.0 != TEX_NULL {
+            mem.set_b32s1(scanner.cur_ptr.0 + 1, q);
+            mem.set_b32s0(scanner.cur_ptr.0 + 1, mem.b32s0(scanner.cur_ptr.0 + 1) + 1);
+            crate::save::delete_sa_ref(mem, scanner, scanner.cur_ptr.0);
         }
     }
     Ok(())
@@ -1705,7 +1705,7 @@ fn insert_split_top_skip_before(
     }
     mem.set_b32s1(prev_p, q);
     mem.set_b32s1(q, p);
-    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.temp_ptr))
+    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.temp_ptr.0))
         .expect("new_skip_param sets temp_ptr to a glue spec");
     let avail_ht = spec.width(mem).0;
     if avail_ht > height {
@@ -1869,9 +1869,9 @@ pub fn do_marks(
 
     if l < 4 {
         for i in 0i16..=15 {
-            scanner.cur_ptr = node.child(mem, i as i32).0;
+            scanner.cur_ptr.0 = node.child(mem, i as i32).0;
 
-            let cur = scanner.cur_ptr;
+            let cur = scanner.cur_ptr.0;
             if cur != TEX_NULL && do_marks(mem, scanner, a, l + 1, cur) {
                 node.set_child(mem, i as i32, MemPtr::NULL);
                 // index node populated-child reference count--
@@ -1923,10 +1923,10 @@ pub fn do_marks(
             }
             DESTROY_MARKS_DM => {
                 for i in TOP_MARK_CODE_DM..=SPLIT_BOT_MARK_CODE_DM {
-                    scanner.cur_ptr = node.child(mem, i as i32).0;
+                    scanner.cur_ptr.0 = node.child(mem, i as i32).0;
 
-                    if scanner.cur_ptr != TEX_NULL {
-                        crate::mem::delete_token_ref(mem, scanner.cur_ptr);
+                    if scanner.cur_ptr.0 != TEX_NULL {
+                        crate::mem::delete_token_ref(mem, scanner.cur_ptr.0);
                         node.set_child(mem, i as i32, MemPtr::NULL);
                     }
                 }
@@ -1978,8 +1978,8 @@ fn hpack_in(
             return Err(NodeRecycleAbort::OverflowRunaway);
         }
         mem.set_b32s0(t, BEFORE_HP as i32);
-        mem.set_b32s1(t, scanner.lr_ptr);
-        scanner.lr_ptr = t;
+        mem.set_b32s1(t, scanner.lr_ptr.0);
+        scanner.lr_ptr.0 = t;
     }
 
     let mut p = list;
@@ -2280,9 +2280,9 @@ fn hpack_in(
                     let sub = math.subtype(mem);
                     if !sub.is_multiple_of(2) {
                         let expected = (L_CODE_HP as u32) * (sub as u32 / L_CODE_HP as u32) + 3;
-                        if mem.b32s0(scanner.lr_ptr) == expected as i32 {
-                            let t = scanner.lr_ptr;
-                            scanner.lr_ptr = mem.b32s1(t);
+                        if mem.b32s0(scanner.lr_ptr.0) == expected as i32 {
+                            let t = scanner.lr_ptr.0;
+                            scanner.lr_ptr.0 = mem.b32s1(t);
                             mem.set_b32s1(t, mem.avail);
                             mem.avail = t;
                         } else {
@@ -2296,8 +2296,8 @@ fn hpack_in(
                             return Err(NodeRecycleAbort::OverflowRunaway);
                         }
                         mem.set_b32s0(t, (L_CODE_HP as i32) * (sub as i32 / L_CODE_HP as i32) + 3);
-                        mem.set_b32s1(t, scanner.lr_ptr);
-                        scanner.lr_ptr = t;
+                        mem.set_b32s1(t, scanner.lr_ptr.0);
+                        scanner.lr_ptr.0 = t;
                     }
                 }
             }
@@ -2422,24 +2422,24 @@ fn hpack_in(
     }
 
     if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
-        if mem.b32s0(scanner.lr_ptr) != BEFORE_HP as i32 {
+        if mem.b32s0(scanner.lr_ptr.0) != BEFORE_HP as i32 {
             while mem.b32s1(q) != TEX_NULL {
                 q = mem.b32s1(q);
             }
             loop {
                 let t = q;
-                let new_q = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16);
+                let new_q = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr.0) as i16);
                 if new_q == crate::mem::ALLOC_FAILED {
                     return Err(NodeRecycleAbort::Overflow);
                 }
                 mem.set_b32s1(t, new_q);
                 q = new_q;
                 scanner.lr_problems += 10000;
-                let t2 = scanner.lr_ptr;
-                scanner.lr_ptr = mem.b32s1(t2);
+                let t2 = scanner.lr_ptr.0;
+                scanner.lr_ptr.0 = mem.b32s1(t2);
                 mem.set_b32s1(t2, mem.avail);
                 mem.avail = t2;
-                if mem.b32s0(scanner.lr_ptr) == BEFORE_HP as i32 {
+                if mem.b32s0(scanner.lr_ptr.0) == BEFORE_HP as i32 {
                     break;
                 }
             }
@@ -2454,11 +2454,11 @@ fn hpack_in(
             );
             scanner.lr_problems = 0;
         }
-        let t = scanner.lr_ptr;
-        scanner.lr_ptr = mem.b32s1(t);
+        let t = scanner.lr_ptr.0;
+        scanner.lr_ptr.0 = mem.b32s1(t);
         mem.set_b32s1(t, mem.avail);
         mem.avail = t;
-        if scanner.lr_ptr != TEX_NULL {
+        if scanner.lr_ptr.0 != TEX_NULL {
             return Err(NodeRecycleAbort::Confusion(c"LR1"));
         }
     }

@@ -2494,7 +2494,7 @@ pub(crate) fn append_src_special_in(
         if d == crate::mem::ALLOC_FAILED {
             return Err(InsertSrcAbort::MainMemory);
         }
-        st.scanner.def_ref = d;
+        st.scanner.def_ref.0 = d;
         st.mem.set_b32s0(d, crate::mem::TEX_NULL);
         let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
             .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
@@ -2698,7 +2698,7 @@ pub(crate) fn do_extension_in(
             st.scanner.cur_cs = k;
             crate::scan::scan_toks_in(st, false, false)?;
             st.mem
-                .set_b32s1(st.input.cur_list.tail.0 + 1, st.scanner.def_ref);
+                .set_b32s1(st.input.cur_list.tail.0 + 1, st.scanner.def_ref.0);
         }
 
         CLOSE_NODE_DE => {
@@ -2713,7 +2713,7 @@ pub(crate) fn do_extension_in(
                 .set_b32s0(st.input.cur_list.tail.0 + 1, TEX_NULL);
             crate::scan::scan_toks_in(st, false, true)?;
             st.mem
-                .set_b32s1(st.input.cur_list.tail.0 + 1, st.scanner.def_ref);
+                .set_b32s1(st.input.cur_list.tail.0 + 1, st.scanner.def_ref.0);
         }
 
         IMMEDIATE_CODE_DE => {

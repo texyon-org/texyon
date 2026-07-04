@@ -317,11 +317,11 @@ pub(crate) unsafe fn final_cleanup_in(
         let new_cur_if = unsafe { st.mem.data[cond_ptr as usize].b16.s0 } as i16;
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         let new_cond_ptr = unsafe { st.mem.data[cond_ptr as usize].b32.s1 };
-        st.mem.temp_ptr = cond_ptr;
+        st.mem.temp_ptr.0 = cond_ptr;
         st.scanner.if_line = new_if_line;
         st.scanner.cur_if = new_cur_if;
         st.scanner.cond_ptr = new_cond_ptr;
-        let p = st.mem.temp_ptr;
+        let p = st.mem.temp_ptr.0;
         crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE);
     }
 
@@ -450,7 +450,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.input.cur_list.prev_graf = 0;
     st.scanner.shown_mode = 0;
     st.shipout.page_contents = EMPTY;
-    st.shipout.page_tail = PAGE_HEAD;
+    st.shipout.page_tail.0 = PAGE_HEAD;
     st.shipout.last_glue = MAX_HALFWORD;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
@@ -553,7 +553,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
         st.shipout.write_open[k] = false;
     }
 
-    st.scanner.lr_ptr = crate::mem::TEX_NULL;
+    st.scanner.lr_ptr.0 = crate::mem::TEX_NULL;
     st.scanner.lr_problems = 0;
     st.scanner.cur_dir = LEFT_TO_RIGHT;
     st.input.pseudo_files = crate::mem::TEX_NULL;
@@ -564,7 +564,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
             s1: crate::mem::TEX_NULL,
         },
     };
-    st.scanner.sa_chain = crate::mem::TEX_NULL;
+    st.scanner.sa_chain.0 = crate::mem::TEX_NULL;
     st.scanner.sa_level = LEVEL_ZERO_U16;
     st.scanner.disc_ptr[LAST_BOX_CODE] = crate::mem::TEX_NULL;
     st.scanner.disc_ptr[VSPLIT_CODE] = crate::mem::TEX_NULL;

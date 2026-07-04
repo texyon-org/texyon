@@ -220,10 +220,10 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             } else {
                 let __cv2 = st.scanner.cur_val;
                 crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv2, false);
-                if st.scanner.cur_ptr == TEX_NULL {
+                if st.scanner.cur_ptr.0 == TEX_NULL {
                     TEX_NULL
                 } else {
-                    NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr))
+                    NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr.0))
                         .expect("non-null sa element")
                         .sa_ptr(&st.mem)
                         .0
@@ -578,7 +578,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         EXPANDED_CODE_CT => {
             let save_ss = st.scanner.scanner_status;
             let save_wi = st.scanner.warning_index;
-            let save_dr = st.scanner.def_ref;
+            let save_dr = st.scanner.def_ref.0;
             let u = if st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
                 < st.strings.pool_ptr
             {
@@ -590,13 +590,13 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             crate::scan::scan_pdf_ext_toks_in(st)?;
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             let tl = st.mem.b32s1(dr);
             crate::input::begin_token_list_in(st, tl, INSERTED)?;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             st.mem.set_b32s1(dr, st.mem.avail);
             st.mem.avail = dr;
-            st.scanner.def_ref = save_dr;
+            st.scanner.def_ref.0 = save_dr;
             if u != 0 {
                 st.strings.str_ptr -= 1;
             }
@@ -609,10 +609,10 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             } else {
                 let __cv1 = st.scanner.cur_val;
                 crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv1, false);
-                if st.scanner.cur_ptr == TEX_NULL {
+                if st.scanner.cur_ptr.0 == TEX_NULL {
                     p = TEX_NULL;
                 } else {
-                    p = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr))
+                    p = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr.0))
                         .expect("non-null sa element")
                         .sa_ptr(&st.mem)
                         .0;
@@ -636,7 +636,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         PDF_FILE_MOD_DATE_CODE_CT => {
             let save_ss = st.scanner.scanner_status;
             let save_wi = st.scanner.warning_index;
-            let save_dr = st.scanner.def_ref;
+            let save_dr = st.scanner.def_ref.0;
             let u = if st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
                 < st.strings.pool_ptr
             {
@@ -649,16 +649,16 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             tokens_selector_check!();
             let old_sel = st.shipout.selector;
             st.shipout.selector = SELECTOR_NEW_STRING;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             let arg = st.mem.b32s1(dr);
             let l = st.strings.pool_size - st.strings.pool_ptr;
             crate::output::show_token_list_in(st, arg, TEX_NULL, l);
             st.shipout.selector = old_sel;
             s = crate::string_pool::make_string(&mut st.strings)
                 .map_err(|_| make_string_overflow_scc(st))?;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             crate::mem::delete_token_ref(&mut st.mem, dr);
-            st.scanner.def_ref = save_dr;
+            st.scanner.def_ref.0 = save_dr;
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
             b = st.strings.pool_ptr;
@@ -680,7 +680,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         PDF_FILE_SIZE_CODE_CT => {
             let save_ss = st.scanner.scanner_status;
             let save_wi = st.scanner.warning_index;
-            let save_dr = st.scanner.def_ref;
+            let save_dr = st.scanner.def_ref.0;
             let u = if st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
                 < st.strings.pool_ptr
             {
@@ -693,16 +693,16 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             tokens_selector_check!();
             let old_sel = st.shipout.selector;
             st.shipout.selector = SELECTOR_NEW_STRING;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             let arg = st.mem.b32s1(dr);
             let l = st.strings.pool_size - st.strings.pool_ptr;
             crate::output::show_token_list_in(st, arg, TEX_NULL, l);
             st.shipout.selector = old_sel;
             s = crate::string_pool::make_string(&mut st.strings)
                 .map_err(|_| make_string_overflow_scc(st))?;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             crate::mem::delete_token_ref(&mut st.mem, dr);
-            st.scanner.def_ref = save_dr;
+            st.scanner.def_ref.0 = save_dr;
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
             b = st.strings.pool_ptr;
@@ -724,7 +724,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         PDF_MDFIVE_SUM_CODE_CT => {
             let save_ss = st.scanner.scanner_status;
             let save_wi = st.scanner.warning_index;
-            let save_dr = st.scanner.def_ref;
+            let save_dr = st.scanner.def_ref.0;
             let u = if st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
                 < st.strings.pool_ptr
             {
@@ -738,16 +738,16 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             tokens_selector_check!();
             let old_sel = st.shipout.selector;
             st.shipout.selector = SELECTOR_NEW_STRING;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             let arg = st.mem.b32s1(dr);
             let l = st.strings.pool_size - st.strings.pool_ptr;
             crate::output::show_token_list_in(st, arg, TEX_NULL, l);
             st.shipout.selector = old_sel;
             s = crate::string_pool::make_string(&mut st.strings)
                 .map_err(|_| make_string_overflow_scc(st))?;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             crate::mem::delete_token_ref(&mut st.mem, dr);
-            st.scanner.def_ref = save_dr;
+            st.scanner.def_ref.0 = save_dr;
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
             b = st.strings.pool_ptr;
@@ -769,7 +769,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         PDF_FILE_DUMP_CODE_CT => {
             let save_ss = st.scanner.scanner_status;
             let save_wi = st.scanner.warning_index;
-            let save_dr = st.scanner.def_ref;
+            let save_dr = st.scanner.def_ref.0;
             let u = if st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
                 < st.strings.pool_ptr
             {
@@ -814,16 +814,16 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             tokens_selector_check!();
             let old_sel = st.shipout.selector;
             st.shipout.selector = SELECTOR_NEW_STRING;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             let arg = st.mem.b32s1(dr);
             let l = st.strings.pool_size - st.strings.pool_ptr;
             crate::output::show_token_list_in(st, arg, TEX_NULL, l);
             st.shipout.selector = old_sel;
             s = crate::string_pool::make_string(&mut st.strings)
                 .map_err(|_| make_string_overflow_scc(st))?;
-            let dr = st.scanner.def_ref;
+            let dr = st.scanner.def_ref.0;
             crate::mem::delete_token_ref(&mut st.mem, dr);
-            st.scanner.def_ref = save_dr;
+            st.scanner.def_ref.0 = save_dr;
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
             b = st.strings.pool_ptr;
@@ -845,7 +845,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         PDF_STRCMP_CODE_CT => {
             let save_ss = st.scanner.scanner_status;
             let save_wi = st.scanner.warning_index;
-            let save_dr = st.scanner.def_ref;
+            let save_dr = st.scanner.def_ref.0;
             let u = if st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
                 < st.strings.pool_ptr
             {
@@ -855,7 +855,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 0
             };
             crate::scan::compare_strings_in(st)?;
-            st.scanner.def_ref = save_dr;
+            st.scanner.def_ref.0 = save_dr;
             st.scanner.warning_index = save_wi;
             st.scanner.scanner_status = save_ss;
             if u != 0 {
@@ -1264,7 +1264,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         st.scanner.cur_val = 0;
                     }
                     if st.scanner.cur_val == 0 {
-                        st.scanner.cur_ptr = st.scanner.cur_mark[t];
+                        st.scanner.cur_ptr.0 = st.scanner.cur_mark[t];
                     } else {
                         let __cv0 = st.scanner.cur_val;
                         crate::save::find_sa_element(
@@ -1274,14 +1274,14 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                             __cv0,
                             false,
                         );
-                        if st.scanner.cur_ptr != crate::mem::TEX_NULL {
-                            let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr))
+                        if st.scanner.cur_ptr.0 != crate::mem::TEX_NULL {
+                            let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr.0))
                                 .expect("non-null sa element");
-                            st.scanner.cur_ptr = sa.child(&st.mem, t as i32).0;
+                            st.scanner.cur_ptr.0 = sa.child(&st.mem, t as i32).0;
                         }
                     }
-                    if st.scanner.cur_ptr != crate::mem::TEX_NULL {
-                        crate::input::begin_token_list_in(st, st.scanner.cur_ptr, MARK_TEXT_TL)?;
+                    if st.scanner.cur_ptr.0 != crate::mem::TEX_NULL {
+                        crate::input::begin_token_list_in(st, st.scanner.cur_ptr.0, MARK_TEXT_TL)?;
                     }
                 }
                 EXPAND_AFTER => {

@@ -649,7 +649,7 @@ pub(crate) fn new_patterns_in(
         mc_propagate_error(crate::errors::error_in(st))?;
 
         let _ = crate::scan::scan_toks_in(st, false, false)?;
-        crate::mem::flush_list(&mut st.mem, st.scanner.def_ref);
+        crate::mem::flush_list(&mut st.mem, st.scanner.def_ref.0);
     }
     Ok(())
 }

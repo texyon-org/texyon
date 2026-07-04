@@ -3070,7 +3070,7 @@ pub(crate) fn print_totals_in(st: &mut EngineState) {
 
 /// translated from xetex-xetex0.c:9942 (show_info)
 pub(crate) fn show_info_in(st: &mut EngineState) {
-    let tp = st.mem.temp_ptr;
+    let tp = st.mem.temp_ptr.0;
     let p = st.mem.b32s0(tp);
     show_node_list_in(st, p);
 }
@@ -3099,9 +3099,9 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
     st.mem.set_b32s1(GARBAGE, toks);
     let old_setting = st.shipout.selector as u8;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    token_show_in(st, st.scanner.def_ref);
+    token_show_in(st, st.scanner.def_ref.0);
     st.shipout.selector = old_setting as i32;
-    crate::mem::flush_list(&mut st.mem, st.scanner.def_ref);
+    crate::mem::flush_list(&mut st.mem, st.scanner.def_ref.0);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(IssueMessageAbort::PoolSize);
     }
@@ -3456,10 +3456,10 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
                 if r == crate::mem::ALLOC_FAILED {
                     return Err(ShowWhateverAbort::MainMemoryOverflow);
                 }
-                if st.scanner.cur_ptr == crate::mem::TEX_NULL {
+                if st.scanner.cur_ptr.0 == crate::mem::TEX_NULL {
                     crate::mem::TEX_NULL
                 } else {
-                    st.mem.b32s1(st.scanner.cur_ptr + 1)
+                    st.mem.b32s1(st.scanner.cur_ptr.0 + 1)
                 }
             };
             crate::output::begin_diagnostic_in(st);
@@ -3822,7 +3822,7 @@ pub(crate) fn show_activities_in(st: &mut EngineState) {
             crate::output::print_cstr_in(st, c" (\\output routine)".as_ptr());
         }
         if p == 0 {
-            if PAGE_HEAD_SA != st.shipout.page_tail {
+            if PAGE_HEAD_SA != st.shipout.page_tail.0 {
                 crate::output::print_nl_cstr_in(st, c"### current page:".as_ptr());
                 if st.shipout.output_active {
                     crate::output::print_cstr_in(st, c" (held over for next output)".as_ptr());
@@ -3922,7 +3922,7 @@ fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u16) {
     } else {
         st.strings.str_pool[st.strings.pool_ptr as usize] = c;
         st.strings.pool_ptr += 1;
-        st.mem.temp_ptr = p;
+        st.mem.temp_ptr.0 = p;
         match st.mem.b32s1(p) {
             MATH_CHAR_SNL => {
                 print_ln_in(st);

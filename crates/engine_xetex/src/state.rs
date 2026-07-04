@@ -464,9 +464,9 @@ pub(crate) struct MemState {
     pub cur_synctex_tag: i32,
     /// General-purpose scratch node pointer — TeX's `temp_ptr`. Lives here
     /// (not ScannerState) because every user holds `&mut MemState`; two-phase
-    /// borrows keep `mem.f(mem.temp_ptr,…)` legal. Function-local scratch
+    /// borrows keep `mem.f(mem.temp_ptr.0,…)` legal. Function-local scratch
     /// reused across many routines.
-    pub temp_ptr: i32,
+    pub temp_ptr: crate::units::MemPtr,
 }
 
 impl MemState {
@@ -763,7 +763,7 @@ pub(crate) struct ScannerState {
     pub mag_set: i32,
     pub radix: u8,
     pub expand_depth_count: i32,
-    pub sa_chain: i32,
+    pub sa_chain: crate::units::MemPtr,
     pub sa_level: u16,
     pub max_reg_num: i32,
     /// Head of the conditional-stack list (xetex-xetexd.h:537). Plain `int32_t`.
@@ -801,7 +801,7 @@ pub(crate) struct ScannerState {
     pub warning_index: i32,
     /// Head of the current macro-definition token list (xetex-xetexd.h:516).
     /// Plain `int32_t`.
-    pub def_ref: i32,
+    pub def_ref: crate::units::MemPtr,
     /// Macro call type (xetex-xetexd.h:528; `unsigned char`;
     /// CALL/LONG_CALL/OUTER_CALL/LONG_OUTER_CALL). Plain, no newtype debt.
     pub long_state: u8,
@@ -822,7 +822,7 @@ pub(crate) struct ScannerState {
     pub cur_val: i32,
     /// Sparse-array cursor — TeX's `cur_ptr`. Sibling to `sa_root`, set/read by
     /// the sa-element machinery.
-    pub cur_ptr: i32,
+    pub cur_ptr: crate::units::MemPtr,
     /// Mark registers: `cur_mark[0..=4]` (xetex-xetexd.h:527). Each entry is
     /// a token-list pointer (`int32_t`). Inline fixed array; no alloc/cleanup
     /// edge. Plain `int32_t` elements, no newtype debt.
@@ -862,7 +862,7 @@ pub(crate) struct ScannerState {
     pub active_width: [i32; 7],
     pub best_height_plus_depth: i32,
     // TeXXeT left-right directionality state.
-    pub lr_ptr: i32,
+    pub lr_ptr: crate::units::MemPtr,
     pub lr_problems: i32,
     pub cur_dir: i16,
     /// Sparse-array trie roots: `sa_root[0..=7]` (xetex-xetexd.h:709).
@@ -1313,7 +1313,7 @@ pub(crate) struct ShipoutState {
     pub epochseconds: i32,
     pub microseconds: i32,
     pub dead_cycles: i32,
-    pub page_tail: i32,
+    pub page_tail: crate::units::MemPtr,
     pub last_badness: i32,
     pub page_contents: u8,
     pub page_so_far: [i32; 8],
@@ -1360,8 +1360,8 @@ pub(crate) struct ShipoutState {
     pub dvi_ptr: i32,
     pub dvi_offset: i32,
     pub dvi_gone: i32,
-    pub down_ptr: i32,
-    pub right_ptr: i32,
+    pub down_ptr: crate::units::MemPtr,
+    pub right_ptr: crate::units::MemPtr,
     pub cur_s: i32,
     pub dvi_h: i32,
     pub dvi_v: i32,
