@@ -839,7 +839,8 @@ pub(crate) fn sprint_cs_in(st: &mut EngineState, p: i32) {
 /// Print the UTF-16 text of a native-word node.
 ///
 /// translated from xetex-output.c:260 (print_native_word)
-pub(crate) fn print_native_word_in(st: &mut EngineState, p: i32) {
+pub(crate) fn print_native_word_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     // NATIVE_NODE_text(p) = (unsigned short *) &mem[p + NATIVE_NODE_SIZE]
     // NATIVE_NODE_SIZE = 6 (xetex-constants.h:130)
     // mem[p+4].b16.s1 = character count
@@ -875,7 +876,8 @@ pub(crate) fn print_native_word_in(st: &mut EngineState, p: i32) {
 // print_sa_num
 // ---------------------------------------------------------------------------
 
-pub(crate) fn print_sa_num_in(st: &mut EngineState, q: i32) {
+pub(crate) fn print_sa_num_in(st: &mut EngineState, q: impl crate::units::MemAddr) {
+    let q = q.addr();
     let n = if (st.mem.b16s1(q) as i32) < DIMEN_VAL_LIMIT {
         st.mem.b32s1(q + 1)
     } else {
@@ -1043,7 +1045,8 @@ pub(crate) fn print_in_mode_in(st: &mut EngineState, m: i32) {
 /// Display a token list headed at p.
 ///
 /// translated from xetex-xetex0.c:3893 (token_show)
-pub(crate) fn token_show_in(st: &mut EngineState, p: i32) {
+pub(crate) fn token_show_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     if p != TEX_NULL {
         let head = st.mem.b32s1(p);
         show_token_list_in(st, head, TEX_NULL, 10_000_000);
@@ -1054,7 +1057,8 @@ pub(crate) fn token_show_in(st: &mut EngineState, p: i32) {
 // print_spec
 // ---------------------------------------------------------------------------
 
-pub(crate) fn print_spec_in(st: &mut EngineState, p: i32, s: *const libc::c_char) {
+pub(crate) fn print_spec_in(st: &mut EngineState, p: impl crate::units::MemAddr, s: *const libc::c_char) {
+    let p = p.addr();
     if p < 0 || p >= st.mem.lo_mem_max {
         print_char_in(st, '*' as i32);
     } else {
@@ -1215,7 +1219,8 @@ pub(crate) fn print_style_in(st: &mut EngineState, c: i32) {
 /// Print the fam number and character code stored in a math node p.
 ///
 /// translated from xetex-xetex0.c:294 (print_fam_and_char)
-pub(crate) fn print_fam_and_char_in(st: &mut EngineState, p: i32) {
+pub(crate) fn print_fam_and_char_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     print_esc_cstr_in(st, c"fam".as_ptr());
     print_int_in(st, (st.mem.b16s1(p) % 256) as i32);
     print_char_in(st, ' ' as i32);
@@ -1230,7 +1235,8 @@ pub(crate) fn print_fam_and_char_in(st: &mut EngineState, p: i32) {
 /// Print a delimiter code (four 16-bit fields packed as a hex number).
 ///
 /// translated from xetex-xetex0.c:307 (print_delimiter)
-pub(crate) fn print_delimiter_in(st: &mut EngineState, p: i32) {
+pub(crate) fn print_delimiter_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     let s3 = st.mem.b16s3(p) as i64;
     let s2 = st.mem.b16s2(p) as i64;
     let s1 = st.mem.b16s1(p) as i64;
@@ -1320,7 +1326,8 @@ pub(crate) fn print_length_param_in(st: &mut EngineState, n: i32) {
 /// Print the font escape-name and character for a char-node at `p`.
 ///
 /// translated from xetex-xetex0.c:225 (print_font_and_char)
-pub(crate) fn print_font_and_char_in(st: &mut EngineState, p: i32) {
+pub(crate) fn print_font_and_char_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     if p > st.mem.mem_end {
         print_esc_cstr_in(st, c"CLOBBERED.".as_ptr());
     } else {
@@ -1343,7 +1350,8 @@ pub(crate) fn print_font_and_char_in(st: &mut EngineState, p: i32) {
 /// Print a mark token list enclosed in `{…}`.
 ///
 /// translated from xetex-xetex0.c:240 (print_mark)
-pub(crate) fn print_mark_in(st: &mut EngineState, p: i32) {
+pub(crate) fn print_mark_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     print_char_in(st, '{' as i32);
     if p < st.mem.hi_mem_min || p > st.mem.mem_end {
         print_esc_cstr_in(st, c"CLOBBERED.".as_ptr());
@@ -2829,7 +2837,8 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
 // change_if_limit
 // ---------------------------------------------------------------------------
 
-pub(crate) fn change_if_limit_in(st: &mut EngineState, l: i16, p: i32) -> ErrorOutcome {
+pub(crate) fn change_if_limit_in(st: &mut EngineState, l: i16, p: impl crate::units::MemAddr) -> ErrorOutcome {
+    let p = p.addr();
     if p == st.scanner.cond_ptr.0 {
         st.scanner.if_limit = l as u8;
     } else {
@@ -2974,7 +2983,8 @@ const OTHER_CHAR_STL: i32 = 12;
 const MATCH_STL: i32 = 13;
 const END_MATCH_STL: i32 = 14;
 
-pub(crate) fn show_token_list_in(st: &mut EngineState, mut p: i32, q: i32, l: i32) {
+pub(crate) fn show_token_list_in(st: &mut EngineState, p: impl crate::units::MemAddr, q: i32, l: i32) {
+    let mut p = p.addr();
     let mut match_chr: i32 = '#' as i32;
     let mut n: i32 = '0' as i32;
     st.errors.tally = 0;
