@@ -362,7 +362,8 @@ const TOK_VAL_LIMIT: u16 = 384;
 const RESTORE_SA: u16 = 4;
 const SAVE_OVERFLOW: i32 = i32::MIN + 1;
 
-fn delete_glue_ref_threaded(mem: &mut MemState, p: i32) {
+fn delete_glue_ref_threaded(mem: &mut MemState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     if mem.b32s1(p) == TEX_NULL {
         crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), GLUE_SPEC_SIZE);
     } else {
@@ -370,7 +371,8 @@ fn delete_glue_ref_threaded(mem: &mut MemState, p: i32) {
     }
 }
 
-fn delete_token_ref_threaded(mem: &mut MemState, p: i32) {
+fn delete_token_ref_threaded(mem: &mut MemState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     if mem.b32s0(p) == TEX_NULL {
         crate::mem::flush_list(mem, crate::units::MemPtr::from_raw(p));
     } else {
@@ -379,7 +381,8 @@ fn delete_token_ref_threaded(mem: &mut MemState, p: i32) {
 }
 
 // translated from xetex-xetex0.c:2789 (delete_sa_ref)
-pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: i32) {
+pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: impl crate::units::MemAddr) {
+    let q = q.addr();
     mem.set_b32s0(q + 1, mem.b32s0(q + 1) - 1);
     if mem.b32s0(q + 1) != TEX_NULL {
         return;
@@ -487,7 +490,8 @@ pub(crate) struct SaMutationResult {
 }
 
 // translated from xetex-xetex0.c:2878 (sa_destroy)
-pub(crate) fn sa_destroy(mem: &mut MemState, p: i32) -> Option<i32> {
+pub(crate) fn sa_destroy(mem: &mut MemState, p: impl crate::units::MemAddr) -> Option<i32> {
+    let p = p.addr();
     if mem.b16s1(p) < MU_VAL_LIMIT {
         delete_glue_ref_threaded(mem, mem.b32s1(p + 1));
         None
@@ -556,7 +560,8 @@ pub(crate) fn sa_w_def(
 }
 
 // translated from xetex-xetex0.c:2923 (gsa_def)
-pub(crate) fn gsa_def(mem: &mut MemState, p: i32, e: i32) -> SaMutationResult {
+pub(crate) fn gsa_def(mem: &mut MemState, p: impl crate::units::MemAddr, e: i32) -> SaMutationResult {
+    let p = p.addr();
     mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
     let flush_list = sa_destroy(mem, p);
     mem.set_b16s0(p, LEVEL_ONE);
@@ -568,7 +573,8 @@ pub(crate) fn gsa_def(mem: &mut MemState, p: i32, e: i32) -> SaMutationResult {
 }
 
 // translated from xetex-xetex0.c:2933 (gsa_w_def)
-pub(crate) fn gsa_w_def(mem: &mut MemState, p: i32, w: i32) -> SaMutationResult {
+pub(crate) fn gsa_w_def(mem: &mut MemState, p: impl crate::units::MemAddr, w: i32) -> SaMutationResult {
+    let p = p.addr();
     mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
     mem.set_b16s0(p, LEVEL_ONE);
     mem.set_b32s1(p + 2, w);
@@ -808,7 +814,8 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
 /// Allocate a new INDEX_NODE_SIZE node for the sparse-array trie.
 ///
 /// translated from xetex-xetex0.c:4111 (new_index)
-fn new_index(mem: &mut MemState, scanner: &mut ScannerState, i: u16, q: i32) -> i32 {
+fn new_index(mem: &mut MemState, scanner: &mut ScannerState, i: u16, q: impl crate::units::MemAddr) -> i32 {
+    let q = q.addr();
     let p = crate::mem::get_node(mem, INDEX_NODE_SIZE);
     if p == crate::mem::ALLOC_FAILED {
         return p;
@@ -827,7 +834,8 @@ fn new_index(mem: &mut MemState, scanner: &mut ScannerState, i: u16, q: i32) -> 
 /// Helper: read the child pointer at trie index `i` within node `q`.
 /// Odd `i` → b32.s1; even `i` → b32.s0.
 #[inline]
-fn sa_get_child(mem: &MemState, q: i32, i: i32) -> i32 {
+fn sa_get_child(mem: &MemState, q: impl crate::units::MemAddr, i: i32) -> i32 {
+    let q = q.addr();
     if i & 1 != 0 {
         mem.b32s1(q + i / 2 + 1)
     } else {
@@ -837,7 +845,9 @@ fn sa_get_child(mem: &MemState, q: i32, i: i32) -> i32 {
 
 /// Helper: write the child pointer and increment the ref-count in node `q`.
 #[inline]
-fn sa_set_child(mem: &mut MemState, q: i32, i: i32, p: i32) {
+fn sa_set_child(mem: &mut MemState, q: impl crate::units::MemAddr, i: i32, p: impl crate::units::MemAddr) {
+    let q = q.addr();
+    let p = p.addr();
     if i & 1 != 0 {
         mem.set_b32s1(q + i / 2 + 1, p);
     } else {
