@@ -2366,7 +2366,7 @@ pub fn reverse(
                         }
                     }
                     LIGATURE_NODE => {
-                        crate::mem::flush_list(mem, mem.b32s1(p + 1));
+                        crate::mem::flush_list(mem, crate::units::MemPtr::from_raw(mem.b32s1(p + 1)));
                         mem.temp_ptr.0 = p;
                         p = crate::mem::get_avail(mem);
                         mem.set_word(p, mem.word(mem.temp_ptr + 1));
@@ -2717,7 +2717,7 @@ fn write_out_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), Shipou
     let def_ref = st.scanner.def_ref.0;
     crate::output::token_show_in(st, def_ref);
     crate::output::print_ln_in(st);
-    crate::mem::flush_list(&mut st.mem, def_ref);
+    crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(def_ref));
 
     if j == 18 {
         if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {

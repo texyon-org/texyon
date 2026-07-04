@@ -352,7 +352,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                 .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
             };
             st.scanner.cur_cs = cur_cs_val;
-            crate::mem::flush_list(&mut st.mem, n);
+            crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(n));
             b = st.eqtb.b16s1(st.scanner.cur_cs) != UNDEFINED_CS as u16;
             st.scanner.is_in_csname = e;
         }
@@ -1438,7 +1438,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         SINGLE_BASE + st.input.buffer[st.input.first as usize]
                     };
                     st.scanner.cur_cs = cs;
-                    crate::mem::flush_list(&mut st.mem, r);
+                    crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(r));
                     if st.eqtb.b16s1(st.scanner.cur_cs) == UNDEFINED_CS_CMD {
                         let cur_cs = st.scanner.cur_cs;
                         let s = &mut *st;
@@ -1727,7 +1727,7 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                         pstack[n as usize] = st.mem.b32s1(TEMP_HEAD);
                         st.scanner.align_state -= unbalance;
                         for m2 in 0..=n {
-                            crate::mem::flush_list(&mut st.mem, pstack[m2 as usize]);
+                            crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(pstack[m2 as usize]));
                         }
                         break 'mac; // goto exit
                     }
@@ -1776,7 +1776,7 @@ pub(crate) fn macro_call_in(st: &mut crate::state::EngineState) -> Result<(), Sc
                                     pstack[n as usize] = st.mem.b32s1(TEMP_HEAD);
                                     st.scanner.align_state -= unbalance;
                                     for m2 in 0..=n {
-                                        crate::mem::flush_list(&mut st.mem, pstack[m2 as usize]);
+                                        crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(pstack[m2 as usize]));
                                     }
                                     break 'mac; // goto exit
                                 }

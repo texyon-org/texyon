@@ -2396,7 +2396,7 @@ pub(crate) fn the_toks_in(st: &mut crate::state::EngineState) -> Result<i32, Scc
             let th = st.mem.b32s1(TEMP_HEAD);
             st.mem.set_b32s1(p, th);
             crate::output::token_show_in(st, p);
-            crate::mem::flush_list(&mut st.mem, p);
+            crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(p));
             st.shipout.selector = old_setting;
             return str_toks_scc(st, b, 0);
         }
@@ -2686,7 +2686,7 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
     crate::output::token_show_in(st, TEMP_HEAD);
     st.shipout.selector = old_setting;
     let head = st.mem.b32s1(TEMP_HEAD);
-    crate::mem::flush_list(&mut st.mem, head);
+    crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(head));
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(SccAbort::Error(crate::errors::ErrorOutcome::Overflow {
@@ -3763,7 +3763,7 @@ pub(crate) fn scan_keyword_in(
                 st.mem.set_b32s0(q, st.scanner.cur_tok);
                 p = q;
                 let head = st.mem.b32s1(BACKUP_HEAD);
-                crate::mem::flush_list(&mut st.mem, head);
+                crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(head));
                 return Ok(true);
             } else if st.scanner.cur_cmd != SPACER || p != BACKUP_HEAD {
                 crate::input::back_input_in(st)?;
@@ -3797,7 +3797,7 @@ pub(crate) fn scan_keyword_in(
         }
     }
     let head = st.mem.b32s1(BACKUP_HEAD);
-    crate::mem::flush_list(&mut st.mem, head);
+    crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(head));
     Ok(true)
 }
 pub(crate) fn scan_left_brace_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {

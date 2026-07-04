@@ -70,14 +70,14 @@ pub(crate) fn end_token_list_in(st: &mut crate::state::EngineState) -> Result<()
     let ci = st.input.cur_input;
     if ci.index >= BACKED_UP {
         if ci.index <= INSERTED {
-            crate::mem::flush_list(&mut st.mem, ci.start);
+            crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(ci.start));
         } else {
             crate::mem::delete_token_ref(&mut st.mem, ci.start);
             if ci.index == MACRO {
                 while st.input.param_ptr > ci.limit {
                     st.input.param_ptr -= 1;
                     let p = st.input.param_stack[st.input.param_ptr as usize];
-                    crate::mem::flush_list(&mut st.mem, p);
+                    crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(p));
                 }
             }
         }

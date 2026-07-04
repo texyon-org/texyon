@@ -190,9 +190,9 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     let mut q = st.mem.b32s1(st.mem.b32s1(ALIGN_HEAD));
     loop {
         let fl3 = st.mem.b32s1(q + 3);
-        flush_list(&mut st.mem, fl3);
+        flush_list(&mut st.mem, crate::units::MemPtr::from_raw(fl3));
         let fl2 = st.mem.b32s1(q + 2);
-        flush_list(&mut st.mem, fl2);
+        flush_list(&mut st.mem, crate::units::MemPtr::from_raw(fl2));
         let p = st.mem.b32s1(st.mem.b32s1(q));
         // §831: if NULL_FLAG width, clear the tab_skip glue leader
         if st.mem.b32s1(q + 1) == NULL_FLAG {
@@ -1252,7 +1252,7 @@ pub(crate) fn end_graf_in(st: &mut crate::state::EngineState) -> Result<(), Main
         }
         let aux = st.input.cur_list.e_tex_aux.0;
         if aux != crate::mem::TEX_NULL {
-            crate::mem::flush_list(&mut st.mem, aux);
+            crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(aux));
             st.input.cur_list.e_tex_aux = crate::units::MemPtr::NULL;
         }
         if let Some(a) = normal_paragraph(

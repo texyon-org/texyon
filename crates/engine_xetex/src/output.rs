@@ -3101,7 +3101,7 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
     st.shipout.selector = SELECTOR_NEW_STRING;
     token_show_in(st, st.scanner.def_ref.0);
     st.shipout.selector = old_setting as i32;
-    crate::mem::flush_list(&mut st.mem, st.scanner.def_ref.0);
+    crate::mem::flush_list(&mut st.mem, st.scanner.def_ref);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(IssueMessageAbort::PoolSize);
     }
@@ -3538,7 +3538,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
             crate::output::print_nl_cstr_in(st, c"> ".as_ptr());
             crate::output::token_show_in(st, TEMP_HEAD);
             let temp_head_link = st.mem.b32s1(TEMP_HEAD);
-            crate::mem::flush_list(&mut st.mem, temp_head_link);
+            crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(temp_head_link));
             true
         }
     };

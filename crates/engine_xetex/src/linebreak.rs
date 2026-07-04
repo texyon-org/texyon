@@ -3786,7 +3786,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
     }
 
     st.mem.set_b32s1(s, q_final);
-    crate::mem::flush_list(&mut st.mem, st.hyph.init_list.0);
+    crate::mem::flush_list(&mut st.mem, st.hyph.init_list);
     Ok(())
 }
 

@@ -113,8 +113,8 @@ pub(crate) fn main_memory_overflow_abort() -> crate::errors::EngineAbort {
 /// the tail, then splices the whole list onto the front of `avail`.
 ///
 /// translated from xetex-xetex0.c:192 (flush_list)
-pub fn flush_list(mem: &mut MemState, p: i32) {
-    if p == TEX_NULL {
+pub fn flush_list(mem: &mut MemState, p: MemPtr) {
+    if p.is_null() {
         return;
     }
 
@@ -122,15 +122,15 @@ pub fn flush_list(mem: &mut MemState, p: i32) {
     let mut q;
     loop {
         q = r;
-        r = mem.b32s1(r);
-        if r == TEX_NULL {
+        r = mem.link(r);
+        if r.is_null() {
             break;
         }
     }
     // q is now the tail; splice: tail.link = old_avail; avail = p
     let avail = mem.avail;
-    mem.set_b32s1(q, avail);
-    mem.avail = p;
+    mem.set_link(q, MemPtr::from_raw(avail));
+    mem.avail = p.0;
 }
 
 // ---------------------------------------------------------------------------
@@ -598,7 +598,7 @@ pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
 /// translated from xetex-xetex0.c:976 (delete_token_ref)
 pub fn delete_token_ref(mem: &mut MemState, p: i32) {
     if mem.b32s0(p) == TEX_NULL {
-        flush_list(mem, p);
+        flush_list(mem, crate::units::MemPtr::from_raw(p));
     } else {
         mem.set_b32s0(p, mem.b32s0(p) - 1);
     }

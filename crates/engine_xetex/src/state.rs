@@ -484,6 +484,20 @@ impl MemState {
         unsafe { self.data[p.addr() as usize].b32.s1 }
     }
 
+    /// Read the successor link `mem[p].b32.s1` (`LLIST_link`) typed as a
+    /// nullable node pointer — the typed form of a raw `b32s1(p)` link read
+    /// used when walking a node list.
+    #[inline]
+    pub(crate) fn link(&self, p: impl crate::units::MemAddr) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.b32s1(p))
+    }
+
+    /// Write the successor link `mem[p].b32.s1 = q`.
+    #[inline]
+    pub(crate) fn set_link(&mut self, p: impl crate::units::MemAddr, q: crate::units::MemPtr) {
+        self.set_b32s1(p, q.0);
+    }
+
     /// Read `mem[p].b16.s0`.
     #[inline]
     pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {

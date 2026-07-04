@@ -372,7 +372,7 @@ fn delete_glue_ref_threaded(mem: &mut MemState, p: i32) {
 
 fn delete_token_ref_threaded(mem: &mut MemState, p: i32) {
     if mem.b32s0(p) == TEX_NULL {
-        crate::mem::flush_list(mem, p);
+        crate::mem::flush_list(mem, crate::units::MemPtr::from_raw(p));
     } else {
         mem.set_b32s0(p, mem.b32s0(p) - 1);
     }
