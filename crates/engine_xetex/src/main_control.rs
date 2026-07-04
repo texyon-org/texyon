@@ -21,7 +21,7 @@ use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
 use crate::node::{AnyNode, GlueSpecNode, NodePtr};
 use crate::scan::{set_class_fn, set_family_fn};
-use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
 extern "C" {
     fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
@@ -159,8 +159,6 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     const UNSET_NODE: u16 = 13;
     const SPAN_NODE_SIZE: i32 = 2;
     const ADDITIONAL: i16 = 1;
-    const STRETCHING: u16 = 1; // xetex-constants.h:275
-    const SHRINKING: u16 = 2; // xetex-constants.h:281
     const DLIST: u16 = 2; // xetex-constants.h:278
     const NORMAL: u16 = 0;
     // GLUE_PAR__above_display_skip = 3, GLUE_PAR__below_display_skip = 4
@@ -313,7 +311,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                     st.mem.set_b32s1(q + 3, p.height(&st.mem).0);
                 }
                 st.mem.set_b16s0(q + 5, p.glue_order(&st.mem));
-                st.mem.set_b16s1(q + 5, p.glue_sign(&st.mem));
+                st.mem.set_b16s1(q + 5, p.glue_sign(&st.mem).as_raw());
                 st.mem.set_gr(q + 6, p.glue_set(&st.mem));
                 st.mem.set_b32s1(q + 4, o);
 
@@ -343,13 +341,13 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                         u = st.mem.b32s1(u);
                         st.mem.set_b16s0(u, GLUE_PAR_TAB_SKIP);
                         t += v_p.width(&st.mem).0;
-                        if p.glue_sign(&st.mem) == STRETCHING {
+                        if p.glue_sign(&st.mem) == GlueSign::Stretching {
                             if v_p.stretch_order(&st.mem) == p.glue_order(&st.mem) {
                                 t += crate::scaled_math::tex_round(
                                     p.glue_set(&st.mem) * v_p.stretch(&st.mem).0 as f64,
                                 );
                             }
-                        } else if p.glue_sign(&st.mem) == SHRINKING
+                        } else if p.glue_sign(&st.mem) == GlueSign::Shrinking
                             && v_p.shrink_order(&st.mem) == p.glue_order(&st.mem)
                         {
                             t -= crate::scaled_math::tex_round(
@@ -381,7 +379,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                             st.mem.set_b16s0(r + 5, NORMAL);
                             st.mem.set_gr(r + 6, 0.0);
                         } else if t > st.mem.b32s1(r + 1) {
-                            st.mem.set_b16s1(r + 5, STRETCHING);
+                            st.mem.set_b16s1(r + 5, GlueSign::Stretching.as_raw());
                             if st.mem.b32s1(r + 6) == 0 {
                                 st.mem.set_gr(r + 6, 0.0);
                             } else {
@@ -392,7 +390,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                             }
                         } else {
                             st.mem.set_b16s0(r + 5, st.mem.b16s1(r + 5));
-                            st.mem.set_b16s1(r + 5, SHRINKING);
+                            st.mem.set_b16s1(r + 5, GlueSign::Shrinking.as_raw());
                             if st.mem.b32s1(r + 4) == 0 {
                                 st.mem.set_gr(r + 6, 0.0);
                             } else if st.mem.b16s0(r + 5) == NORMAL
@@ -416,7 +414,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                             st.mem.set_b16s0(r + 5, NORMAL);
                             st.mem.set_gr(r + 6, 0.0);
                         } else if t > st.mem.b32s1(r + 3) {
-                            st.mem.set_b16s1(r + 5, STRETCHING);
+                            st.mem.set_b16s1(r + 5, GlueSign::Stretching.as_raw());
                             if st.mem.b32s1(r + 6) == 0 {
                                 st.mem.set_gr(r + 6, 0.0);
                             } else {
@@ -427,7 +425,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                             }
                         } else {
                             st.mem.set_b16s0(r + 5, st.mem.b16s1(r + 5));
-                            st.mem.set_b16s1(r + 5, SHRINKING);
+                            st.mem.set_b16s1(r + 5, GlueSign::Shrinking.as_raw());
                             if st.mem.b32s1(r + 4) == 0 {
                                 st.mem.set_gr(r + 6, 0.0);
                             } else if st.mem.b16s0(r + 5) == NORMAL
@@ -716,14 +714,12 @@ pub(crate) fn init_row_in(st: &mut crate::state::EngineState) -> Result<(), Main
     }
     let align_head_link = st.mem.b32s1(ALIGN_HEAD_IR);
     let glue_spec = st.mem.b32s0(align_head_link + 1);
-    let glue_node = crate::mem::new_glue(&mut st.mem, glue_spec);
-    if glue_node == crate::mem::ALLOC_FAILED {
+    let Some(glue) = crate::mem::alloc_glue(&mut st.mem, glue_spec) else {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
-    st.mem.set_b32s1(st.input.cur_list.tail, glue_node);
-    st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
-    st.mem
-        .set_b16s0(st.input.cur_list.tail, GLUE_PAR_TAB_SKIP);
+    };
+    st.mem.set_b32s1(st.input.cur_list.tail, glue.idx().0);
+    st.input.cur_list.tail = glue.idx().0;
+    glue.set_subtype(&mut st.mem, GLUE_PAR_TAB_SKIP);
     st.scanner.cur_align = st.mem.b32s1(align_head_link);
     st.scanner.cur_tail = st.scanner.cur_head;
     st.scanner.cur_pre_tail = st.scanner.cur_pre_head;
@@ -3374,13 +3370,13 @@ pub(crate) fn append_italic_correction_in(
                 crate::ext::real_get_native_italic_correction(&st.fonts, node_addr)
             }
         };
-        let kern = crate::mem::new_kern(&mut st.mem, ic);
-        if kern == crate::mem::ALLOC_FAILED {
+        let Some(kern) = crate::mem::alloc_kern(&mut st.mem, ic) else {
             return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(tail, kern);
-        st.input.cur_list.tail = kern;
-        st.mem.set_b16s0(kern, EXPLICIT);
+        };
+        let kern_idx = kern.idx().0;
+        st.mem.set_b32s1(tail, kern_idx);
+        st.input.cur_list.tail = kern_idx;
+        kern.set_subtype(&mut st.mem, EXPLICIT);
         Ok(())
     };
 
@@ -3412,14 +3408,14 @@ pub(crate) fn append_italic_correction_in(
     let italic = st
         .fonts
         .font_info_b32s1(st.fonts.italic_base_entry(f) + (info.s1 / 4) as i32);
-    let kern = crate::mem::new_kern(&mut st.mem, italic);
-    if kern == crate::mem::ALLOC_FAILED {
+    let Some(kern) = crate::mem::alloc_kern(&mut st.mem, italic) else {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
+    };
+    let kern_idx = kern.idx().0;
     let tail2 = st.input.cur_list.tail;
-    st.mem.set_b32s1(tail2, kern);
-    st.input.cur_list.tail = kern;
-    st.mem.set_b16s0(kern, EXPLICIT);
+    st.mem.set_b32s1(tail2, kern_idx);
+    st.input.cur_list.tail = kern_idx;
+    kern.set_subtype(&mut st.mem, EXPLICIT);
     Ok(())
 }
 // translated from xetex-xetex0.c:9910 (make_accent)
@@ -3532,20 +3528,18 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
         } else {
             crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
         };
-        let r = crate::mem::new_kern(&mut st.mem, delta);
-        if r == crate::mem::ALLOC_FAILED {
+        let Some(r) = crate::mem::alloc_kern(&mut st.mem, delta) else {
             return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b16s0(r, ACC_KERN);
-        st.mem.set_b32s1(st.input.cur_list.tail, r);
-        st.mem.set_b32s1(r, pa);
-        let new_tail = crate::mem::new_kern(&mut st.mem, -a - delta);
-        if new_tail == crate::mem::ALLOC_FAILED {
+        };
+        r.set_subtype(&mut st.mem, ACC_KERN);
+        st.mem.set_b32s1(st.input.cur_list.tail, r.idx().0);
+        r.set_link(&mut st.mem, MemPtr::from_raw(pa));
+        let Some(new_tail) = crate::mem::alloc_kern(&mut st.mem, -a - delta) else {
             return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        }
-        st.input.cur_list.tail = new_tail;
-        st.mem.set_b16s0(new_tail, ACC_KERN);
-        st.mem.set_b32s1(pa, new_tail);
+        };
+        st.input.cur_list.tail = new_tail.idx().0;
+        new_tail.set_subtype(&mut st.mem, ACC_KERN);
+        st.mem.set_b32s1(pa, new_tail.idx().0);
         // p = q (in C); we use q directly below
     }
 

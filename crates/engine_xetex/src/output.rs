@@ -12,7 +12,7 @@ use crate::errors::{error_in, ErrorOutcome};
 use crate::node::{AnyBox, AnyNode, NodePtr, WhatsitNode};
 use crate::state::EngineState;
 use crate::state::InteractionMode;
-use crate::units::{MemIdx, NodeType};
+use crate::units::{GlueSign, MemIdx, NodeType};
 
 
 // Consts used by the show_* group.
@@ -4000,9 +4000,9 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                         AnyBox::HList(b) => b.glue_order(&st.mem),
                         AnyBox::VList(b) => b.glue_order(&st.mem),
                     };
-                    if g != 0.0 && glue_sign != NORMAL_SNL {
+                    if g != 0.0 && glue_sign != GlueSign::Normal {
                         print_cstr_in(st, c", glue set ".as_ptr());
-                        if glue_sign == SHRINKING_SNL {
+                        if glue_sign == GlueSign::Shrinking {
                             print_cstr_in(st, c"- ".as_ptr());
                         }
                         if g.abs() > 20000.0 {
@@ -4720,7 +4720,6 @@ const COUNT_BASE_SA: i32 = 7_826_812; // xetex-constants.h:220
 
 // Constants for show_node_list / print_subsidiary_data.
 const NORMAL_SNL: u16 = 0;
-const SHRINKING_SNL: u16 = 2; // xetex-constants.h:281
 const DLIST_SNL: u16 = 2; // xetex-constants.h:278
 const A_LEADERS_SNL: u16 = 100; // xetex_format.h:422
 const C_LEADERS_SNL: u16 = 101; // xetex_format.h:423

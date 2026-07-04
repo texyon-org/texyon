@@ -265,7 +265,7 @@ pub fn alloc_null_box(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
     p.set_height(mem, Scaled(0));
     p.set_shift_amount(mem, Scaled(0));
     p.set_list_ptr(mem, crate::units::MemPtr::NULL);
-    p.set_glue_sign(mem, NORMAL);
+    p.set_glue_sign(mem, crate::units::GlueSign::Normal);
     p.set_glue_order(mem, NORMAL);
     p.set_glue_set(mem, 0.0);
     Some(p)
@@ -294,9 +294,6 @@ pub fn alloc_rule(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
     Some(p)
 }
 
-pub fn new_rule(mem: &mut MemState) -> i32 {
-    alloc_rule(mem).map_or(ALLOC_FAILED, |p| p.idx().0)
-}
 
 // ---------------------------------------------------------------------------
 // new_ligature
@@ -340,33 +337,48 @@ pub fn new_lig_item(mem: &mut MemState, c: u16) -> i32 {
 // new_disc
 // ---------------------------------------------------------------------------
 
+/// Allocate an empty discretionary node (SMALL_NODE_SIZE words: subtype 0,
+/// empty pre/post-break), returning its typed `NodePtr<DiscNode>` handle
+/// (`None` on arena exhaustion).
+///
+/// Typed twin of [`new_disc`].
+pub fn alloc_disc(mem: &mut MemState) -> Option<NodePtr<DiscNode>> {
+    let p = NodePtr::<DiscNode>::alloc(mem)?;
+    p.set_subtype(mem, 0);
+    p.set_pre_break(mem, MemPtr::NULL);
+    p.set_post_break(mem, MemPtr::NULL);
+    Some(p)
+}
+
 /// Allocate a discretionary node (SMALL_NODE_SIZE words) with null lists.
 ///
 /// translated from xetex-xetex0.c:195 (new_disc)
 pub fn new_disc(mem: &mut MemState) -> i32 {
-    let Some(p) = NodePtr::<DiscNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
-    p.set_subtype(mem, 0);
-    p.set_pre_break(mem, MemPtr::NULL);
-    p.set_post_break(mem, MemPtr::NULL);
-    p.idx().0
+    alloc_disc(mem).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
 // new_math
 // ---------------------------------------------------------------------------
 
+/// Allocate a math-on/off node of width `w` and subtype `s`, returning its
+/// typed `NodePtr<MathNode>` handle directly (`None` on arena exhaustion).
+///
+/// Typed twin of [`new_math`]: callers that immediately need the typed node
+/// (to set its link / read fields) use this instead of re-deriving it from
+/// `new_math`'s raw index.
+pub fn alloc_math(mem: &mut MemState, w: i32, s: i16) -> Option<NodePtr<MathNode>> {
+    let p = NodePtr::<MathNode>::alloc(mem)?;
+    p.set_subtype(mem, s as u16);
+    p.set_width(mem, Scaled(w));
+    Some(p)
+}
+
 /// Allocate a math-on/off node of width `w` and subtype `s`.
 ///
 /// translated from xetex-xetex0.c:221 (new_math)
 pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
-    let Some(p) = NodePtr::<MathNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
-    p.set_subtype(mem, s as u16);
-    p.set_width(mem, Scaled(w));
-    p.idx().0
+    alloc_math(mem, w, s).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
@@ -396,14 +408,13 @@ pub fn new_spec(mem: &mut MemState, p: i32) -> i32 {
 // new_param_glue
 // ---------------------------------------------------------------------------
 
-/// Allocate a glue node referencing parameter `n` from the format's glue
-/// parameter table.
+/// Allocate a glue node for glue parameter `n` from the format's glue
+/// parameter table, returning its typed `NodePtr<GlueNode>` handle (`None` on
+/// arena exhaustion).
 ///
-/// translated from xetex-xetex0.c:243 (new_param_glue)
-pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
-    let Some(p) = NodePtr::<GlueNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+/// Typed twin of [`new_param_glue`].
+pub fn alloc_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
+    let p = NodePtr::<GlueNode>::alloc(mem)?;
     p.set_subtype(mem, n as u16 + 1); // subtype = n + 1
     p.set_leader_ptr(mem, MemPtr::NULL);
     // q = eqtb[GLUE_BASE + n].b32.s1
@@ -413,7 +424,12 @@ pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
     let spec =
         NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q)).expect("non-null glue spec");
     spec.set_ref_count(mem, spec.ref_count(mem) + 1);
-    p.idx().0
+    Some(p)
+}
+
+/// translated from xetex-xetex0.c:243 (new_param_glue)
+pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
+    alloc_param_glue(mem, eqtb, n).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------

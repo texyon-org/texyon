@@ -35,7 +35,7 @@ use crate::consts::{
 };
 use crate::mem::{free_node, get_node, ALLOC_FAILED};
 use crate::state::MemState;
-use crate::units::{FontId, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, GlueSign, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
 /// Marker trait for node kinds. Implemented only by the zero-sized kind
 /// markers below; never constructed.
@@ -294,12 +294,12 @@ impl<K: HasListPtr> NodePtr<K> {
 impl<K: HasGlueSet> NodePtr<K> {
     /// `BOX_glue_sign(p)` = `mem[(p) + 5].b16.s1`.
     #[inline]
-    pub fn glue_sign(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(5).0)
+    pub fn glue_sign(self, mem: &MemState) -> GlueSign {
+        GlueSign::from_raw(mem.b16s1(self.idx.offset(5).0))
     }
     #[inline]
-    pub fn set_glue_sign(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.offset(5).0, v);
+    pub fn set_glue_sign(self, mem: &mut MemState, v: GlueSign) {
+        mem.set_b16s1(self.idx.offset(5).0, v.as_raw());
     }
 
     /// `BOX_glue_order(p)` = `mem[(p) + 5].b16.s0`.
@@ -456,7 +456,7 @@ impl AnyBox {
     }
 
     #[inline]
-    pub fn glue_sign(self, mem: &MemState) -> u16 {
+    pub fn glue_sign(self, mem: &MemState) -> GlueSign {
         match self {
             AnyBox::HList(p) => p.glue_sign(mem),
             AnyBox::VList(p) => p.glue_sign(mem),
@@ -480,7 +480,7 @@ impl AnyBox {
     }
 
     #[inline]
-    pub fn set_glue_sign(self, mem: &mut MemState, v: u16) {
+    pub fn set_glue_sign(self, mem: &mut MemState, v: GlueSign) {
         match self {
             AnyBox::HList(p) => p.set_glue_sign(mem, v),
             AnyBox::VList(p) => p.set_glue_sign(mem, v),
@@ -561,6 +561,24 @@ impl AnyNode {
             AnyNode::Ins(p) => p.idx(),
             AnyNode::Unset(p) => p.idx(),
             AnyNode::Whatsit(p) => p.idx(),
+        }
+    }
+
+    /// The horizontal-list width contribution — the `+1` width word, shared by
+    /// boxes, rules, kerns, math nodes, and box-dimensioned whatsits (the node
+    /// kinds that add their width to the running line total in the line-breaker).
+    /// Other kinds contribute nothing (`0`); callers reach this only via a
+    /// width-bearing dispatch arm.
+    #[inline]
+    pub fn hlist_width(self, mem: &MemState) -> i32 {
+        match self {
+            AnyNode::HList(p) => p.width(mem).0,
+            AnyNode::VList(p) => p.width(mem).0,
+            AnyNode::Rule(p) => p.width(mem).raw(),
+            AnyNode::Kern(p) => p.width(mem).0,
+            AnyNode::Math(p) => p.width(mem).0,
+            AnyNode::Whatsit(p) => p.width(mem).0,
+            _ => 0,
         }
     }
 }
@@ -1134,6 +1152,23 @@ impl NodePtr<Noad> {
     pub fn set_nucleus_type(self, mem: &mut MemState, t: i32) {
         mem.set_b32s1(self.idx.offset(1).0, t);
     }
+
+    /// The noad's translated hlist (`new_hlist(q)`), physically aliasing the
+    /// nucleus math_type word (`mem[p + 1].b32.s1`).
+    ///
+    /// This is TeX's deliberate storage reuse: once `mlist_to_hlist`'s first
+    /// pass has converted the nucleus into a box or char list, the math_type
+    /// is dead and the resulting hlist pointer is parked in the same word.
+    /// Reads/writes here therefore clobber [`nucleus_type`](Self::nucleus_type)
+    /// and vice versa — use whichever name reflects the phase you are in.
+    #[inline]
+    pub fn new_hlist(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_new_hlist(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(1).0, v);
+    }
     /// Nucleus field = `mem[p + 1].b32.s0`
     #[inline]
     pub fn nucleus_field(self, mem: &MemState) -> i32 {
@@ -1252,6 +1287,12 @@ impl NodePtr<Noad> {
         mem.set_b32s1(self.idx.offset(1).0, v);
     }
 
+    /// Accent character field address (Accent only) = word 4.
+    #[inline]
+    pub fn accent_char_addr(self) -> i32 {
+        self.idx.offset(4).0
+    }
+
     /// Accent character type (Accent only) = `mem[p + 4].b32.s1`
     #[inline]
     pub fn accent_char_type(self, mem: &MemState) -> i32 {
@@ -1329,6 +1370,20 @@ impl NodePtr<Noad> {
     /// Get the subscr field address (word 3)
     #[inline]
     pub fn subscr_addr(self) -> i32 {
+        self.idx.offset(3).0
+    }
+
+    /// Fraction numerator field address (word 2 — aliases `supscr` for
+    /// fraction noads, matching TeX's `numerator(#) == supscr(#)`).
+    #[inline]
+    pub fn numerator_addr(self) -> i32 {
+        self.idx.offset(2).0
+    }
+
+    /// Fraction denominator field address (word 3 — aliases `subscr` for
+    /// fraction noads, matching TeX's `denominator(#) == subscr(#)`).
+    #[inline]
+    pub fn denominator_addr(self) -> i32 {
         self.idx.offset(3).0
     }
 }
@@ -2712,7 +2767,7 @@ mod tests {
         b.set_height(&mut mem, Scaled(0x3333));
         b.set_shift_amount(&mut mem, Scaled(0x4444));
         b.set_list_ptr(&mut mem, MemPtr::from_raw(150));
-        b.set_glue_sign(&mut mem, 2);
+        b.set_glue_sign(&mut mem, GlueSign::Shrinking);
         b.set_glue_order(&mut mem, 1);
         b.set_glue_set(&mut mem, 1.5_f64);
 
@@ -2721,7 +2776,7 @@ mod tests {
         assert_eq!(b.height(&mem), Scaled(0x3333));
         assert_eq!(b.shift_amount(&mem), Scaled(0x4444));
         assert_eq!(b.list_ptr(&mem), MemPtr::from_raw(150));
-        assert_eq!(b.glue_sign(&mem), 2);
+        assert_eq!(b.glue_sign(&mem), GlueSign::Shrinking);
         assert_eq!(b.glue_order(&mem), 1);
         assert_eq!(b.glue_set(&mem), 1.5_f64);
 

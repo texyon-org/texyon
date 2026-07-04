@@ -508,16 +508,9 @@ const VRULE: u8 = 35;
 const DEFAULT_RULE: i32 = 26214;
 
 pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i32, SccAbort> {
-    let q = crate::mem::new_rule(&mut st.mem);
-    if q == crate::mem::ALLOC_FAILED {
+    let Some(r) = crate::mem::alloc_rule(&mut st.mem) else {
         return Err(main_mem_overflow_scc());
-    }
-    // `new_rule` stamps `RULE_NODE`, so classify is total here.
-    let r = st
-        .mem
-        .classify_rule(MemIdx::new(q))
-        .expect("valid new rule")
-        .expect("new rule");
+    };
     if st.scanner.cur_cmd == VRULE {
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
@@ -538,7 +531,7 @@ pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i3
             break;
         }
     }
-    Ok(q)
+    Ok(r.idx().0)
 }
 
 // xetex-constants.h:204

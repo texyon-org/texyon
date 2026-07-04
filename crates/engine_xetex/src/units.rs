@@ -231,6 +231,36 @@ impl NodeType {
     }
 }
 
+/// A box's glue-set sign (`BOX_glue_sign` = `mem[p+5].b16.s1`): whether the
+/// box's glue is left at natural size, stretched, or shrunk. Only these three
+/// codes are ever stored, so [`from_raw`](Self::from_raw) is infallible.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(u16)]
+pub enum GlueSign {
+    Normal = 0,
+    Stretching = 1,
+    Shrinking = 2,
+}
+
+impl GlueSign {
+    /// Convert a raw `b16.s1` glue-sign value. Any value other than
+    /// `1`/`2` maps to `Normal` (TeX only ever stores 0/1/2).
+    #[inline]
+    pub fn from_raw(raw: u16) -> GlueSign {
+        match raw {
+            1 => GlueSign::Stretching,
+            2 => GlueSign::Shrinking,
+            _ => GlueSign::Normal,
+        }
+    }
+
+    /// The raw `b16.s1` code for this glue sign (zero-cost: `self as u16`).
+    #[inline]
+    pub fn as_raw(self) -> u16 {
+        self as u16
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

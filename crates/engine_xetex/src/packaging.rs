@@ -21,7 +21,7 @@ use crate::units::NodeType;
 // prune_page_top and the relocated font-loading group); import it here.
 use crate::scan::{cnl_get_avail, cnl_get_node, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState};
-use crate::units::{MemIdx, MemPtr, Scaled};
+use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
 
 // Module-private consts shared with scan.rs (TEMP_HEAD/IGNORE_DEPTH still used
 // there too, so duplicated rather than relocated — same value).
@@ -126,8 +126,6 @@ const NORMAL_HP: usize = 0;
 const FIL_HP: usize = 1;
 const FILL_HP: usize = 2;
 const FILLL_HP: usize = 3;
-const STRETCHING_HP: u16 = 1;
-const SHRINKING_HP: u16 = 2;
 // Bidi
 const BEFORE_HP: u32 = 0;
 const L_CODE_HP: u16 = 4;
@@ -201,8 +199,6 @@ const NORMAL_VP: usize = 0;
 const FIL_VP: usize = 1;
 const FILL_VP: usize = 2;
 const FILLL_VP: usize = 3;
-const STRETCHING_VP: u16 = 1;
-const SHRINKING_VP: u16 = 2;
 const A_LEADERS_VP: u16 = 100;
 // xetex_format.h:381, 383–384, 466–467
 const PIC_NODE_VP: u16 = 43;
@@ -2361,7 +2357,7 @@ fn hpack_in(
     x = w - x;
 
     if x == 0 {
-        r_node.set_glue_sign(mem, 0);
+        r_node.set_glue_sign(mem, GlueSign::Normal);
         r_node.set_glue_order(mem, 0);
         r_node.set_glue_set(mem, 0.0);
     } else if x > 0 {
@@ -2375,11 +2371,11 @@ fn hpack_in(
             NORMAL_HP
         };
         r_node.set_glue_order(mem, o as u16);
-        r_node.set_glue_sign(mem, STRETCHING_HP);
+        r_node.set_glue_sign(mem, GlueSign::Stretching);
         if scanner.total_stretch[o] != 0 {
             r_node.set_glue_set(mem, x as f64 / scanner.total_stretch[o] as f64);
         } else {
-            r_node.set_glue_sign(mem, 0);
+            r_node.set_glue_sign(mem, GlueSign::Normal);
             r_node.set_glue_set(mem, 0.0);
         }
         if o == NORMAL_HP && !r_node.list_ptr(mem).is_null() {
@@ -2405,11 +2401,11 @@ fn hpack_in(
             NORMAL_HP
         };
         r_node.set_glue_order(mem, o as u16);
-        r_node.set_glue_sign(mem, SHRINKING_HP);
+        r_node.set_glue_sign(mem, GlueSign::Shrinking);
         if scanner.total_shrink[o] != 0 {
             r_node.set_glue_set(mem, (-x) as f64 / scanner.total_shrink[o] as f64);
         } else {
-            r_node.set_glue_sign(mem, 0);
+            r_node.set_glue_sign(mem, GlueSign::Normal);
             r_node.set_glue_set(mem, 0.0);
         }
         if scanner.total_shrink[o] < (-x) && o == NORMAL_HP && !r_node.list_ptr(mem).is_null() {
@@ -2742,7 +2738,7 @@ fn vpackage_in(
     x = h - x;
 
     if x == 0 {
-        r_node.set_glue_sign(mem, 0);
+        r_node.set_glue_sign(mem, GlueSign::Normal);
         r_node.set_glue_order(mem, 0);
         r_node.set_glue_set(mem, 0.0);
     } else if x > 0 {
@@ -2756,11 +2752,11 @@ fn vpackage_in(
             NORMAL_VP
         };
         r_node.set_glue_order(mem, o as u16);
-        r_node.set_glue_sign(mem, STRETCHING_VP);
+        r_node.set_glue_sign(mem, GlueSign::Stretching);
         if scanner.total_stretch[o] != 0 {
             r_node.set_glue_set(mem, x as f64 / scanner.total_stretch[o] as f64);
         } else {
-            r_node.set_glue_sign(mem, 0);
+            r_node.set_glue_sign(mem, GlueSign::Normal);
             r_node.set_glue_set(mem, 0.0);
         }
         if o == NORMAL_VP && !r_node.list_ptr(mem).is_null() {
@@ -2786,11 +2782,11 @@ fn vpackage_in(
             NORMAL_VP
         };
         r_node.set_glue_order(mem, o as u16);
-        r_node.set_glue_sign(mem, SHRINKING_VP);
+        r_node.set_glue_sign(mem, GlueSign::Shrinking);
         if scanner.total_shrink[o] != 0 {
             r_node.set_glue_set(mem, (-(x as i64)) as f64 / scanner.total_shrink[o] as f64);
         } else {
-            r_node.set_glue_sign(mem, 0);
+            r_node.set_glue_sign(mem, GlueSign::Normal);
             r_node.set_glue_set(mem, 0.0);
         }
         if scanner.total_shrink[o] < (-x) && o == NORMAL_VP && !r_node.list_ptr(mem).is_null() {

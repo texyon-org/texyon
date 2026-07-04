@@ -5,14 +5,14 @@ use crate::consts::{
     INVALID_HANDLE, KERN_NODE, LEFT_TO_RIGHT, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD,
     MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NULL_FLAG, PENALTY_NODE,
     PIC_NODE_SIZE, RIGHT_TO_LEFT, RULE_NODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
-    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SHRINKING, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
-    STRETCHING, TEX_NULL, TOO_BIG_CHAR, WRITE_TEXT,
+    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
+    TEX_NULL, TOO_BIG_CHAR, WRITE_TEXT,
 };
 use crate::ext::apply_tfm_font_mapping;
 
 use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
-use crate::units::{MemIdx, MemPtr, Scaled};
+use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
 
 extern "C" {
     fn ttstub_output_write(
@@ -809,7 +809,7 @@ fn merge_justifiable_native_words(
     eqtb: &EqtbState,
     this_box: i32,
     g_order: u16,
-    g_sign: u16,
+    g_sign: GlueSign,
 ) -> Result<(), ShipoutAbort> {
     let mut p = mem.b32s1(this_box + 5);
     let mut prev_p = this_box + 5;
@@ -906,8 +906,8 @@ fn merge_justifiable_native_words(
                         let g = mem.b32s0(q + 1);
                         k += mem.b32s1(g + 1);
 
-                        if g_sign != NORMAL {
-                            if g_sign == STRETCHING {
+                        if g_sign != GlueSign::Normal {
+                            if g_sign == GlueSign::Stretching {
                                 if mem.b16s1(g) == g_order {
                                     k += crate::scaled_math::tex_round(
                                         mem.gr(this_box + 6) * mem.b32s1(g + 2) as f64,
@@ -1074,15 +1074,15 @@ unsafe fn output_hlist_glue_in(
     left_edge: i32,
     p: i32,
     g_order: u16,
-    g_sign: u16,
+    g_sign: GlueSign,
     cur_g: &mut i32,
     cur_glue: &mut f64,
 ) -> Result<(), ShipoutAbort> {
     let mut g = st.mem.b32s0(p + 1);
     st.shipout.rule_wd = st.mem.b32s1(g + 1) - *cur_g;
 
-    if g_sign != NORMAL {
-        if g_sign == STRETCHING {
+    if g_sign != GlueSign::Normal {
+        if g_sign == GlueSign::Stretching {
             if st.mem.b16s1(g) == g_order {
                 *cur_glue += st.mem.b32s1(g + 2) as f64;
                 *cur_g = crate::scaled_math::tex_round(
@@ -1099,8 +1099,8 @@ unsafe fn output_hlist_glue_in(
 
     st.shipout.rule_wd += *cur_g;
 
-    if (g_sign == STRETCHING && st.mem.b16s1(g) == g_order)
-        || (g_sign == SHRINKING && st.mem.b16s0(g) == g_order)
+    if (g_sign == GlueSign::Stretching && st.mem.b16s1(g) == g_order)
+        || (g_sign == GlueSign::Shrinking && st.mem.b16s0(g) == g_order)
     {
         if st.mem.b32s1(g) == TEX_NULL {
             crate::mem::free_node(&mut st.mem, g, GLUE_SPEC_SIZE);
@@ -1779,8 +1779,8 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                         .expect("glue node in vlist_out has a glue spec");
                     st.shipout.rule_ht = spec.width(&st.mem).0 - cur_g;
 
-                    if g_sign != NORMAL {
-                        if g_sign == STRETCHING {
+                    if g_sign != GlueSign::Normal {
+                        if g_sign == GlueSign::Stretching {
                             if spec.stretch_order(&st.mem) == g_order {
                                 cur_glue += spec.stretch(&st.mem).0 as f64;
                                 let glue_temp = (this_box_b.glue_set(&st.mem) * cur_glue)
@@ -2324,8 +2324,8 @@ pub fn reverse(
                         let mut g = mem.b32s0(p + 1);
                         shipout.rule_wd = mem.b32s1(g + 1) - *cur_g;
 
-                        if g_sign != NORMAL {
-                            if g_sign == STRETCHING {
+                        if g_sign != GlueSign::Normal {
+                            if g_sign == GlueSign::Stretching {
                                 if mem.b16s1(g) == g_order {
                                     *cur_glue += mem.b32s1(g + 2) as f64;
                                     let mut glue_temp = bb.glue_set(mem) * *cur_glue;
@@ -2342,8 +2342,8 @@ pub fn reverse(
 
                         shipout.rule_wd += *cur_g;
 
-                        if (g_sign == STRETCHING && mem.b16s1(g) == g_order)
-                            || (g_sign == SHRINKING && mem.b16s0(g) == g_order)
+                        if (g_sign == GlueSign::Stretching && mem.b16s1(g) == g_order)
+                            || (g_sign == GlueSign::Shrinking && mem.b16s0(g) == g_order)
                         {
                             if mem.b32s1(g) == TEX_NULL {
                                 crate::mem::free_node(mem, g, GLUE_SPEC_SIZE);
