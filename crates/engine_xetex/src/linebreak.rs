@@ -3480,10 +3480,10 @@ fn hyphenate_in(st: &mut EngineState) -> Result<(), HyphenateAbort> {
                 j += 1;
                 u += 1;
                 if j > hn_v {
-                    let mut s = st.hyph.hyph_list[h as usize];
-                    while s != TEX_NULL {
+                    let mut s = crate::units::MemPtr::from_raw(st.hyph.hyph_list[h as usize]);
+                    while !s.is_null() {
                         st.hyph.hyf[st.mem.b32s0(s) as usize] = 1;
-                        s = st.mem.b32s1(s);
+                        s = st.mem.link(s);
                     }
                     hn_v -= 1;
                     st.linebreak.hn = hn_v;

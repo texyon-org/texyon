@@ -2815,10 +2815,10 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
         } else {
             (1_i32, st.mem.line)
         };
-        let mut p = st.scanner.cond_ptr.0;
-        while p != TEX_NULL {
+        let mut p = st.scanner.cond_ptr;
+        while !p.is_null() {
             n += 1;
-            p = st.mem.b32s1(p);
+            p = st.mem.link(p);
         }
         print_cstr_in(st, c"(level ".as_ptr());
         print_int_in(st, n);
