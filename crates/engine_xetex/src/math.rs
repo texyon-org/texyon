@@ -393,7 +393,8 @@ fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
 
 /// Computes the raw node address from the `mem` arena.
 #[inline]
-fn node_addr_in(st: &EngineState, p: i32) -> *mut libc::c_void {
+fn node_addr_in(st: &EngineState, p: impl crate::units::MemAddr) -> *mut libc::c_void {
+    let p = p.addr();
     unsafe { st.mem.data.as_ptr().add(p as usize) as *mut libc::c_void }
 }
 
@@ -438,7 +439,8 @@ pub fn flush_math(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState
 /// translated from xetex-math.c:91 (clean_box). Builds the
 /// cleaned hbox for math field `p` at style `s`,
 /// recursing into [`mlist_to_hlist_in`].
-unsafe fn clean_box_in(st: &mut EngineState, p: i32, s: i16) -> Result<AnyBox, MathBuildAbort> {
+unsafe fn clean_box_in(st: &mut EngineState, p: impl crate::units::MemAddr, s: i16) -> Result<AnyBox, MathBuildAbort> {
+    let p = p.addr();
     let q;
     match st.mem.b32s1(p) {
         MATH_CHAR => {
@@ -817,7 +819,8 @@ fn make_fraction_finish(mem: &mut MemState, q: NodePtr<Noad>, hbox: AnyBox) {
 }
 
 #[inline]
-fn classify_box_or_panic(mem: &MemState, p: i32) -> AnyBox {
+fn classify_box_or_panic(mem: &MemState, p: impl crate::units::MemAddr) -> AnyBox {
+    let p = p.addr();
     mem.classify_box(MemIdx::new(p))
         .expect("valid node type")
         .expect("box node")
@@ -1514,7 +1517,8 @@ fn finish_native_accent_glyph_start(mem: &mut MemState, y: AnyBox, glyph: Native
     y.set_list_ptr(mem, MemPtr::from_raw(glyph.p));
 }
 
-fn sync_accent_box_to_glyph(mem: &mut MemState, y: AnyBox, p: i32, bottom: bool) {
+fn sync_accent_box_to_glyph(mem: &mut MemState, y: AnyBox, p: impl crate::units::MemAddr, bottom: bool) {
+    let p = p.addr();
     y.set_width(mem, Scaled(mem.b32s1(p + 1)));
     y.set_height(mem, Scaled(mem.b32s1(p + 3)));
     y.set_depth(mem, Scaled(mem.b32s1(p + 2)));
@@ -1858,7 +1862,8 @@ struct ScriptKernAttachment {
     is_ot_math: bool,
 }
 
-fn glyph_nucleus(mem: &MemState, p: i32) -> Option<ScriptGlyphNucleus> {
+fn glyph_nucleus(mem: &MemState, p: impl crate::units::MemAddr) -> Option<ScriptGlyphNucleus> {
+    let p = p.addr();
     if p != TEX_NULL
         && !crate::mem::is_char_node(mem, p)
         && mem.b16s1(p) == WHATSIT_NODE
@@ -3610,7 +3615,8 @@ pub(crate) fn append_choices_in(
 ///
 /// The impossible corrupt-node `confusion`
 /// (`q` not a `LEFT_NOAD`) propagates out as `Err`.
-fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: i32) -> Result<i32, &'static std::ffi::CStr> {
+fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: impl crate::units::MemAddr) -> Result<i32, &'static std::ffi::CStr> {
+    let p = p.addr();
     let q;
     let aux = cl.aux_s1();
     if aux != TEX_NULL {
@@ -3655,7 +3661,8 @@ pub(crate) fn fin_mlist_in(
 }
 
 /// translated from xetex-math.c:571 (build_choices)
-fn build_choices_finish(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, save_stack: &mut SaveStackState, p: i32) -> bool {
+fn build_choices_finish(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, save_stack: &mut SaveStackState, p: impl crate::units::MemAddr) -> bool {
+    let p = p.addr();
     let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cl.tail.0)) };
     let p_ptr = MemPtr::from_raw(p);
     match save_stack.b32s1(save_stack.save_ptr - 1) {
@@ -3910,13 +3917,16 @@ fn mark_middle_noad(mem: &mut MemState, p: NodePtr<Noad>) {
     p.set_subtype(mem, 1);
 }
 
-fn finish_left_right_group(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: i32, p: i32) {
+fn finish_left_right_group(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: impl crate::units::MemAddr, p: impl crate::units::MemAddr) {
+    let q = q.addr();
+    let p = p.addr();
     mem.set_b32s1(cl.head, q);
     cl.tail.0 = p;
     cl.e_tex_aux = crate::units::MemPtr::from_raw(p);
 }
 
-fn append_inner_noad_for_right(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: i32) -> Result<(), NodeRecycleAbort> {
+fn append_inner_noad_for_right(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: impl crate::units::MemAddr) -> Result<(), NodeRecycleAbort> {
+    let q = q.addr();
     let Some(inner) = NodePtr::<Noad>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
