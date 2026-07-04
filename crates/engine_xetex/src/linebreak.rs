@@ -32,6 +32,10 @@ const MATH_NODE: i32 = crate::consts::MATH_NODE as i32;
 const KERN_NODE: i32 = crate::consts::KERN_NODE as i32;
 const PENALTY_NODE: i32 = crate::consts::PENALTY_NODE as i32;
 const NORMAL: u16 = 0;
+/// Invariant asserted when reading `LinebreakState::best_bet`: `choose_best_break`
+/// always selects a breakpoint before any consumer runs (the active list always
+/// holds at least the forced final breakpoint).
+const BEST_BET_SET: &str = "best_bet is set by choose_best_break before use";
 const HOLD_HEAD: i32 = 4_999_995;
 const ACTIVE_LIST: i32 = 4_999_992;
 const LAST_ACTIVE: i32 = ACTIVE_LIST;
@@ -1052,7 +1056,7 @@ fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &Eqtb
             ActiveOrDelta::Active(a) => {
                 if a.total_demerits(mem) < fewest_demerits {
                     fewest_demerits = a.total_demerits(mem);
-                    linebreak.best_bet = r;
+                    linebreak.best_bet = Some(a);
                 }
                 a.link(mem).0
             }
@@ -1061,7 +1065,7 @@ fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &Eqtb
             break;
         }
     }
-    linebreak.best_line = active(linebreak.best_bet).line_number(mem);
+    linebreak.best_line = linebreak.best_bet.expect(BEST_BET_SET).line_number(mem);
 
     let looseness = eqtb.b32s1(INT_BASE + INT_PAR_LOOSENESS);
     if looseness == 0 {
@@ -1078,13 +1082,13 @@ fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &Eqtb
                 if (line_diff < actual_looseness && looseness <= line_diff)
                     || (line_diff > actual_looseness && looseness >= line_diff)
                 {
-                    linebreak.best_bet = r;
+                    linebreak.best_bet = Some(a);
                     actual_looseness = line_diff;
                     fewest_demerits = a.total_demerits(mem);
                 } else if line_diff == actual_looseness
                     && a.total_demerits(mem) < fewest_demerits
                 {
-                    linebreak.best_bet = r;
+                    linebreak.best_bet = Some(a);
                     fewest_demerits = a.total_demerits(mem);
                 }
                 a.link(mem).0
@@ -1095,7 +1099,7 @@ fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &Eqtb
         }
     }
 
-    linebreak.best_line = active(linebreak.best_bet).line_number(mem);
+    linebreak.best_line = linebreak.best_bet.expect(BEST_BET_SET).line_number(mem);
     actual_looseness == looseness || linebreak.final_pass
 }
 
@@ -1108,7 +1112,7 @@ fn finish_last_line_fit(
         return Ok(());
     }
 
-    let best = active(linebreak.best_bet);
+    let best = linebreak.best_bet.expect(BEST_BET_SET);
     if best.shortfall(mem).0 == 0 {
         linebreak.do_last_line_fit = false;
         return Ok(());
@@ -2085,7 +2089,7 @@ fn update_lr_stack(mem: &mut MemState, q: NodePtr<MathNode>, lr_ptr: &mut i32) -
 }
 
 fn reverse_best_breaks(mem: &mut MemState, linebreak: &mut LinebreakState) {
-    let mut q = active(linebreak.best_bet).break_node(mem).0;
+    let mut q = linebreak.best_bet.expect(BEST_BET_SET).break_node(mem).0;
     linebreak.cur_p = TEX_NULL;
     loop {
         let r = passive_node(q);

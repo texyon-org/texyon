@@ -1532,7 +1532,10 @@ pub(crate) struct LinebreakState {
     pub second_width: i32,
     pub first_indent: i32,
     pub second_indent: i32,
-    pub best_bet: i32,
+    /// The chosen best breakpoint's active node (set by `choose_best_break`;
+    /// `None` until then). Typed once here so the readers skip the
+    /// `active(..)` `from_idx_unchecked` re-cast.
+    pub best_bet: Option<crate::node::NodePtr<crate::node::ActiveNode>>,
     pub best_line: i32,
     pub hn: i16,
     pub ha: i32,
@@ -1571,7 +1574,7 @@ impl Default for LinebreakState {
             second_width: 0,
             first_indent: 0,
             second_indent: 0,
-            best_bet: 0,
+            best_bet: None,
             best_line: 0,
             hn: 0,
             ha: 0,
