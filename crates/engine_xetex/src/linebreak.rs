@@ -544,7 +544,7 @@ pub fn insert_right_margin_kern(errors: &mut crate::state::ErrorState,
     linebreak: &mut LinebreakState,
     q: i32,
     disc_break: bool,
-    last_rightmost: i32,
+    last_rightmost: MemPtr,
 ) -> Result<i32, MarginKernAbort> {
     let (p, ptmp) =
         right_margin_kern_target(mem, linebreak, q, disc_break).ok_or(MarginKernAbort::PdfError)?;
@@ -554,7 +554,7 @@ pub fn insert_right_margin_kern(errors: &mut crate::state::ErrorState,
         return Ok(q);
     }
 
-    let Some(k) = crate::mem::alloc_margin_kern(mem, -w, last_rightmost, 1) else {
+    let Some(k) = crate::mem::alloc_margin_kern(mem, -w, last_rightmost.0, 1) else {
         return Err(MarginKernAbort::Overflow);
     };
     k.set_link(mem, MemPtr::from_raw(mem.b32s1(ptmp)));
@@ -576,7 +576,7 @@ pub fn insert_left_margin_kern(errors: &mut crate::state::ErrorState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
     q: i32,
-    last_leftmost: i32,
+    last_leftmost: MemPtr,
 ) -> Result<i32, MarginKernAbort> {
     let p = left_margin_kern_target(mem, linebreak, q).ok_or(MarginKernAbort::PdfError)?;
 
@@ -585,7 +585,7 @@ pub fn insert_left_margin_kern(errors: &mut crate::state::ErrorState,
         return Ok(q);
     }
 
-    let Some(k) = crate::mem::alloc_margin_kern(mem, -w, last_leftmost, 0) else {
+    let Some(k) = crate::mem::alloc_margin_kern(mem, -w, last_leftmost.0, 0) else {
         return Err(MarginKernAbort::Overflow);
     };
     k.set_link(mem, MemPtr::from_raw(q));
@@ -3802,9 +3802,9 @@ pub fn char_pw_in(errors: &mut crate::state::ErrorState,
     const QUAD_CODE: i32 = 6; // xetex-constants.h:298
 
     if side == 0 {
-        linebreak.last_leftmost_char = TEX_NULL;
+        linebreak.last_leftmost_char = MemPtr::NULL;
     } else {
-        linebreak.last_rightmost_char = TEX_NULL;
+        linebreak.last_rightmost_char = MemPtr::NULL;
     }
     if p == TEX_NULL {
         return 0;
@@ -3861,9 +3861,9 @@ pub fn char_pw_in(errors: &mut crate::state::ErrorState,
     let f = mem.b16s1(p) as i32; // CHAR_NODE_font(p) = mem[p].b16.s1
     let c = unsafe { get_cp_code(f, mem.b16s0(p) as u32, side as i32) };
     if side == 0 {
-        linebreak.last_leftmost_char = p;
+        linebreak.last_leftmost_char = MemPtr::from_raw(p);
     } else {
-        linebreak.last_rightmost_char = p;
+        linebreak.last_rightmost_char = MemPtr::from_raw(p);
     }
     if c == 0 {
         return 0;

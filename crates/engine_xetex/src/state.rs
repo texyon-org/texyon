@@ -1519,8 +1519,8 @@ pub(crate) struct StringsState {
 /// fields. The `int32_t` mem-pointer fields (`cur_p`, `passive`, …) are
 /// pointer-taxonomy sweep candidates, not typedef-loss rows.
 pub(crate) struct LinebreakState {
-    pub last_leftmost_char: i32,
-    pub last_rightmost_char: i32,
+    pub last_leftmost_char: crate::units::MemPtr,
+    pub last_rightmost_char: crate::units::MemPtr,
     /// Heap-backed; sized `MAX_HLIST_STACK + 1` (= 513) in `Default`.
     pub hlist_stack: Vec<i32>,
     pub hlist_stack_level: i16,
@@ -1562,8 +1562,8 @@ pub(crate) struct LinebreakState {
 impl Default for LinebreakState {
     fn default() -> Self {
         Self {
-            last_leftmost_char: 0,
-            last_rightmost_char: 0,
+            last_leftmost_char: crate::units::MemPtr::from_raw(0),
+            last_rightmost_char: crate::units::MemPtr::from_raw(0),
             hlist_stack: vec![0i32; 513],
             hlist_stack_level: 0,
             first_p: 0,
