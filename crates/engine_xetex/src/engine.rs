@@ -556,7 +556,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.lr_ptr.0 = crate::mem::TEX_NULL;
     st.scanner.lr_problems = 0;
     st.scanner.cur_dir = LEFT_TO_RIGHT;
-    st.input.pseudo_files = crate::mem::TEX_NULL;
+    st.input.pseudo_files.0 = crate::mem::TEX_NULL;
     st.scanner.sa_root[MARK_VAL] = crate::mem::TEX_NULL;
     st.scanner.sa_null = crate::mem_types::MemoryWord {
         b32: crate::mem_types::B32x2 {

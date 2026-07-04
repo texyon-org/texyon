@@ -2766,8 +2766,8 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
 
     let pl = st.mem.b32s1(p);
     st.mem.set_b32s0(p, pl);
-    st.mem.set_b32s1(p, st.input.pseudo_files);
-    st.input.pseudo_files = p;
+    st.mem.set_b32s1(p, st.input.pseudo_files.0);
+    st.input.pseudo_files.0 = p;
     // pop the temporary string (str_ptr--, pool_ptr = str_start[str_ptr - TOO_BIG_CHAR])
     st.strings.str_ptr -= 1;
     st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];

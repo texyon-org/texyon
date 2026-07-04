@@ -207,7 +207,7 @@ pub(crate) struct InputClusterState {
     /// Current input-nesting depth (number of open input files). Plain `int32_t`.
     pub in_open: i32,
     /// Head of the pseudo-file linked list (xetex-xetexd.h:704). Plain `int32_t`.
-    pub pseudo_files: i32,
+    pub pseudo_files: crate::units::MemPtr,
     /// Current top of the semantic-nest stack. Plain `int32_t`.
     pub nest_ptr: i32,
     /// Peak value ever reached by `nest_ptr`. Plain `int32_t`.

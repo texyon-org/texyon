@@ -178,14 +178,14 @@ pub(crate) fn pseudo_close(
     mem: &mut crate::state::MemState,
     input: &mut crate::state::InputClusterState,
 ) {
-    let pf = input.pseudo_files;
+    let pf = input.pseudo_files.0;
     let p = mem.b32s1(pf);
     let mut q = mem.b32s0(pf);
     // Free the pseudo_files head node onto the avail list.
     let av = mem.avail;
     mem.set_b32s1(pf, av);
     mem.avail = pf;
-    input.pseudo_files = p;
+    input.pseudo_files.0 = p;
     // Walk the chain and free each block node.
     while q != crate::mem::TEX_NULL {
         let next = mem.b32s1(q);
@@ -280,12 +280,12 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<
 /// original.
 pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool, InputAbort> {
     st.input.last = st.input.first;
-    let p = st.mem.b32s0(st.input.pseudo_files);
+    let p = st.mem.b32s0(st.input.pseudo_files.0);
     if p == crate::mem::TEX_NULL {
         return Ok(false);
     }
     let next = st.mem.b32s1(p);
-    st.mem.set_b32s0(st.input.pseudo_files, next);
+    st.mem.set_b32s0(st.input.pseudo_files.0, next);
     let sz = st.mem.b32s0(p);
     if 4 * sz - 3 >= st.input.buf_size - st.input.last {
         st.input.cur_input.loc = st.input.first;

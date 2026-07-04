@@ -315,7 +315,7 @@ pub(crate) unsafe fn store_fmt_file_in(
     dump_int(fmt_out, FORMAT_SERIAL)?;
     dump_int(fmt_out, st.eqtb.hash_high)?;
 
-    while st.input.pseudo_files != crate::mem::TEX_NULL {
+    while st.input.pseudo_files.0 != crate::mem::TEX_NULL {
         crate::input::pseudo_close(&mut st.mem, &mut st.input);
     }
 
