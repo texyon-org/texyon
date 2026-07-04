@@ -3694,7 +3694,8 @@ pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutc
     ErrorOutcome::Continue
 }
 /// translated from xetex-xetex0.c:735 (show_box)
-pub(crate) fn show_box_in(st: &mut EngineState, p: i32) {
+pub(crate) fn show_box_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     st.errors.depth_threshold = st.eqtb.b32s1(INT_BASE + INT_PAR_SHOW_BOX_DEPTH);
     st.errors.breadth_max = st.eqtb.b32s1(INT_BASE + INT_PAR_SHOW_BOX_BREADTH);
     if st.errors.breadth_max <= 0 {
@@ -3709,7 +3710,8 @@ pub(crate) fn show_box_in(st: &mut EngineState, p: i32) {
 }
 
 /// translated from xetex-xetex0.c:117 (short_display)
-pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
+pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let mut p = p.addr();
     while p > 0 {
         if p >= st.mem.hi_mem_min {
             // is_char_node(p)
@@ -3913,7 +3915,8 @@ pub(crate) fn show_activities_in(st: &mut EngineState) {
     }
 }
 /// translated from xetex-xetex0.c:215 (print_subsidiary_data)
-fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u16) {
+fn print_subsidiary_data_in(st: &mut EngineState, p: impl crate::units::MemAddr, c: u16) {
+    let p = p.addr();
     if crate::hash::cur_length(&st.strings) >= st.errors.depth_threshold {
         if st.mem.b32s1(p) != 0 {
             // EMPTY = 0
@@ -3947,7 +3950,8 @@ fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u16) {
     }
 }
 /// translated from xetex-xetex0.c:259 (show_node_list)
-pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
+pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+    let mut p = p.addr();
     if crate::hash::cur_length(&st.strings) > st.errors.depth_threshold {
         if p > crate::mem::TEX_NULL {
             print_cstr_in(st, c" []".as_ptr());

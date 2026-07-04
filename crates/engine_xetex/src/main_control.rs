@@ -4991,8 +4991,8 @@ fn inter_char_before_current_char_action(
 // `is_char_node`: reads `hi_mem_min` directly (it can shrink on the get_avail
 // hi-mem-exhaustion path, so it must be read fresh, not captured).
 #[inline(always)]
-fn mc_is_char_node(st: &crate::state::EngineState, p: i32) -> bool {
-    p >= st.mem.hi_mem_min
+fn mc_is_char_node(st: &crate::state::EngineState, p: impl crate::units::MemAddr) -> bool {
+    p.addr() >= st.mem.hi_mem_min
 }
 
 // Node-allocation helpers: allocate and lift the cold `ALLOC_FAILED` overflow
