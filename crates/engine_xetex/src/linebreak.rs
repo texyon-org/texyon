@@ -345,7 +345,7 @@ pub fn push_node(linebreak: &mut LinebreakState, p: i32) -> bool {
         return false;
     }
 
-    linebreak.hlist_stack[level as usize] = p;
+    linebreak.hlist_stack[level as usize] = MemPtr::from_raw(p);
     linebreak.hlist_stack_level = level + 1;
     true
 }
@@ -358,7 +358,7 @@ pub fn pop_node(linebreak: &mut LinebreakState) -> Option<i32> {
         return None;
     }
 
-    Some(linebreak.hlist_stack[level as usize])
+    Some(linebreak.hlist_stack[level as usize].0)
 }
 
 // translated from xetex-linebreak.c:2692 (total_pw)

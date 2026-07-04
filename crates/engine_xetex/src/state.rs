@@ -1522,7 +1522,7 @@ pub(crate) struct LinebreakState {
     pub last_leftmost_char: crate::units::MemPtr,
     pub last_rightmost_char: crate::units::MemPtr,
     /// Heap-backed; sized `MAX_HLIST_STACK + 1` (= 513) in `Default`.
-    pub hlist_stack: Vec<i32>,
+    pub hlist_stack: Vec<crate::units::MemPtr>,
     pub hlist_stack_level: i16,
     pub first_p: crate::units::MemPtr,
     pub global_prev_p: crate::units::MemPtr,
@@ -1564,7 +1564,7 @@ impl Default for LinebreakState {
         Self {
             last_leftmost_char: crate::units::MemPtr::from_raw(0),
             last_rightmost_char: crate::units::MemPtr::from_raw(0),
-            hlist_stack: vec![0i32; 513],
+            hlist_stack: vec![crate::units::MemPtr::from_raw(0); 513],
             hlist_stack_level: 0,
             first_p: crate::units::MemPtr::from_raw(0),
             global_prev_p: crate::units::MemPtr::from_raw(0),
