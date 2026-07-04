@@ -468,37 +468,37 @@ pub fn flush_node_list(
     mem: &mut crate::state::MemState,
     p: impl crate::units::MemAddr,
 ) -> Result<(), &'static std::ffi::CStr> {
-    let mut p = p.addr();
-    while p != crate::mem::TEX_NULL {
-        let q = mem.b32s1(p);
-        if p >= mem.hi_mem_min {
+    let mut p = crate::units::MemPtr::from_raw(p.addr());
+    while !p.is_null() {
+        let q = mem.link(p);
+        if p.0 >= mem.hi_mem_min {
             // is_char_node(p): free to avail list
             mem.set_b32s1(p, mem.avail);
-            mem.avail = p;
+            mem.avail = p.0;
         } else {
             // Goto-done pattern: break 'done skips free_node(p, crate::units::MemPtr::from_raw(SMALL_NODE_SIZE) at end.
             'done: {
-                match mem.classify(MemIdx::new(p)).map_err(|_| c"flushing")? {
+                match mem.classify(MemIdx::new(p.0)).map_err(|_| c"flushing")? {
                     AnyNode::HList(b) => {
                         let c = b.list_ptr(mem).0;
                         flush_node_list(mem, c)?;
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), BOX_NODE_SIZE);
+                        crate::mem::free_node(mem, p, BOX_NODE_SIZE);
                         break 'done;
                     }
                     AnyNode::VList(b) => {
                         let c = b.list_ptr(mem).0;
                         flush_node_list(mem, c)?;
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), BOX_NODE_SIZE);
+                        crate::mem::free_node(mem, p, BOX_NODE_SIZE);
                         break 'done;
                     }
                     AnyNode::Unset(u) => {
                         let c = u.list_ptr(mem).0;
                         flush_node_list(mem, c)?;
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), BOX_NODE_SIZE);
+                        crate::mem::free_node(mem, p, BOX_NODE_SIZE);
                         break 'done;
                     }
                     AnyNode::Rule(_) => {
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), RULE_NODE_SIZE);
+                        crate::mem::free_node(mem, p, RULE_NODE_SIZE);
                         break 'done;
                     }
                     AnyNode::Ins(ins) => {
@@ -506,22 +506,22 @@ pub fn flush_node_list(
                         flush_node_list(mem, c)?;
                         let g = ins.split_top_ptr(mem).0;
                         crate::mem::delete_glue_ref(mem, g);
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), INS_NODE_SIZE_FNL);
+                        crate::mem::free_node(mem, p, INS_NODE_SIZE_FNL);
                         break 'done;
                     }
                     AnyNode::Whatsit(w) => {
                         match w.whatsit_subtype(mem) {
                             Some(WhatsitSubtype::Open) => {
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), OPEN_NODE_SIZE_FNL);
+                                crate::mem::free_node(mem, p, OPEN_NODE_SIZE_FNL);
                             }
                             Some(WhatsitSubtype::Write) | Some(WhatsitSubtype::Special) => {
                                 let t = w.write_tokens(mem).0;
                                 crate::mem::delete_token_ref(mem, t);
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), WRITE_NODE_SIZE_FNL);
+                                crate::mem::free_node(mem, p, WRITE_NODE_SIZE_FNL);
                                 break 'done;
                             }
                             Some(WhatsitSubtype::Close) | Some(WhatsitSubtype::Language) => {
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), SMALL_NODE_SIZE);
+                                crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
                             Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
                                 let glyph_ptr = w.native_glyph_info_ptr(mem);
@@ -532,19 +532,19 @@ pub fn flush_node_list(
                                     w.set_native_glyph_count(mem, 0);
                                 }
                                 let sz = w.native_size(mem);
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), sz);
+                                crate::mem::free_node(mem, p, sz);
                             }
                             Some(WhatsitSubtype::Glyph) => {
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), GLYPH_NODE_SIZE_FNL);
+                                crate::mem::free_node(mem, p, GLYPH_NODE_SIZE_FNL);
                             }
                             Some(WhatsitSubtype::Pic) | Some(WhatsitSubtype::Pdf) => {
                                 let path_len = w.pic_path_len(mem) as i32;
                                 let sz = PIC_NODE_SIZE_FNL
                                     + (path_len + MEMORY_WORD_SIZE_FNL - 1) / MEMORY_WORD_SIZE_FNL;
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), sz);
+                                crate::mem::free_node(mem, p, sz);
                             }
                             Some(WhatsitSubtype::PdfSavePos) => {
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), SMALL_NODE_SIZE);
+                                crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
                             _ => {
                                 return Err(c"ext3");
@@ -563,33 +563,33 @@ pub fn flush_node_list(
                         if leader.0 != crate::mem::TEX_NULL {
                             flush_node_list(mem, leader.0)?;
                         }
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
+                        crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                         break 'done;
                     }
                     AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => {
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
+                        crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
                         break 'done;
                     }
                     AnyNode::MarginKern(_) => {
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), MARGIN_KERN_NODE_SIZE_FNL);
+                        crate::mem::free_node(mem, p, MARGIN_KERN_NODE_SIZE_FNL);
                         break 'done;
                     }
                     AnyNode::Ligature(lig) => {
                         let c = lig.lig_ptr(mem).0;
                         flush_node_list(mem, c)?;
-                        // falls through to free_node(p, crate::units::MemPtr::from_raw(SMALL_NODE_SIZE)
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
                     AnyNode::Mark(mark) => {
                         let t = mark.mark_ptr(mem).0;
                         crate::mem::delete_token_ref(mem, t);
-                        // falls through to free_node(p, crate::units::MemPtr::from_raw(SMALL_NODE_SIZE)
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
                     AnyNode::Disc(disc) => {
                         let c1 = disc.pre_break(mem).0;
                         flush_node_list(mem, c1)?;
                         let c2 = disc.post_break(mem).0;
                         flush_node_list(mem, c2)?;
-                        // falls through to free_node(p, crate::units::MemPtr::from_raw(SMALL_NODE_SIZE)
+                        // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
                     AnyNode::Adjust(adjust) => {
                         let c = adjust.adjust_ptr(mem).0;
@@ -597,7 +597,7 @@ pub fn flush_node_list(
                         // falls through to free_node(p, SMALL_NODE_SIZE)
                     }
                     AnyNode::Style(_) => {
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), STYLE_NODE_SIZE_FNL);
+                        crate::mem::free_node(mem, p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
                     AnyNode::Choice(choice) => {
@@ -609,20 +609,20 @@ pub fn flush_node_list(
                         flush_node_list(mem, c3)?;
                         let c4 = choice.script_script_mlist(mem).0;
                         flush_node_list(mem, c4)?;
-                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), STYLE_NODE_SIZE_FNL);
+                        crate::mem::free_node(mem, p, STYLE_NODE_SIZE_FNL);
                         break 'done;
                     }
                     AnyNode::Noad(p_noad) => {
                         match p_noad.noad_type(mem) {
                             NodeType::LeftNoad | NodeType::RightNoad => {
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), NOAD_SIZE_FNL);
+                                crate::mem::free_node(mem, p, NOAD_SIZE_FNL);
                             }
                             NodeType::FractionNoad => {
                                 let c1 = p_noad.supscr_field(mem);
                                 flush_node_list(mem, c1)?;
                                 let c2 = p_noad.subscr_field(mem);
                                 flush_node_list(mem, c2)?;
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), FRACTION_NOAD_SIZE_FNL);
+                                crate::mem::free_node(mem, p, FRACTION_NOAD_SIZE_FNL);
                             }
                             _ => {
                                 if p_noad.nucleus_type(mem) >= SUB_BOX_FNL {
@@ -642,13 +642,13 @@ pub fn flush_node_list(
                                     NodeType::AccentNoad => ACCENT_NOAD_SIZE_FNL,
                                     _ => NOAD_SIZE_FNL,
                                 };
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), sz);
+                                crate::mem::free_node(mem, p, sz);
                             }
                         }
                         break 'done;
                     }
                 }
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), SMALL_NODE_SIZE);
+                crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
             }
         }
         p = q;
