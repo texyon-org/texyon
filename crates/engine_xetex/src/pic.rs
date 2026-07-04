@@ -688,7 +688,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
             return Err(crate::scan::NodeRecycleAbort::Overflow.into());
         }
 
-        let tail = st.input.cur_list.tail;
+        let tail = st.input.cur_list.tail.0;
         if is_pdf {
             st.mem.set_b16s0(tail, crate::node::WhatsitSubtype::Pdf as u16);
         }

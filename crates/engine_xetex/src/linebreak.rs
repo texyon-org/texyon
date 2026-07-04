@@ -1294,17 +1294,17 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
     }
 
     st.scanner.pack_begin_line = st.input.cur_list.mode_line;
-    let head = st.input.cur_list.head;
+    let head = st.input.cur_list.head.0;
     st.mem.set_b32s1(TEMP_HEAD, st.mem.b32s1(head));
 
-    let tail = st.input.cur_list.tail;
+    let tail = st.input.cur_list.tail.0;
     if crate::mem::is_char_node(&st.mem, tail) || st.mem.node_type(MemIdx::new(tail)) != Ok(NodeType::Glue) {
         let p = crate::mem::new_penalty(&mut st.mem, INF_PENALTY);
         if p == crate::mem::ALLOC_FAILED {
             return LineBreakOutcome::Overflow;
         }
         st.mem.set_b32s1(tail, p);
-        st.input.cur_list.tail = p;
+        st.input.cur_list.tail.0 = p;
     } else {
         // `tail` is the trailing rightskip glue: read its spec and leader list
         // while it is still glue, then repurpose the same node in place as an
@@ -1332,7 +1332,7 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
     };
     let last_line_fill = last_line_fill_node.idx().0;
     st.mem
-        .set_b32s1(st.input.cur_list.tail, last_line_fill);
+        .set_b32s1(st.input.cur_list.tail.0, last_line_fill);
     st.hyph.init_l_hyf = st.input.cur_list.prev_graf / 0x0040_0000;
     st.hyph.init_r_hyf = (st.input.cur_list.prev_graf / 65_536) % 64;
     let init_cur_lang = (st.input.cur_list.prev_graf % 65_536) as u8;
@@ -2351,16 +2351,16 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
     just_box.set_shift_amount(mem, Scaled(hpack.cur_indent));
 
     if PRE_ADJUST_HEAD != scanner.pre_adjust_tail {
-        mem.set_b32s1(cl.tail, mem.b32s1(PRE_ADJUST_HEAD));
-        cl.tail = scanner.pre_adjust_tail;
+        mem.set_b32s1(cl.tail.0, mem.b32s1(PRE_ADJUST_HEAD));
+        cl.tail.0 = scanner.pre_adjust_tail;
     }
 
     scanner.pre_adjust_tail = TEX_NULL;
     crate::packaging::append_to_vlist(cl, mem, eqtb, just_box).map_err(PostLineAbort::Node)?;
 
     if ADJUST_HEAD != scanner.adjust_tail {
-        mem.set_b32s1(cl.tail, mem.b32s1(ADJUST_HEAD));
-        cl.tail = scanner.adjust_tail;
+        mem.set_b32s1(cl.tail.0, mem.b32s1(ADJUST_HEAD));
+        cl.tail.0 = scanner.adjust_tail;
     }
 
     scanner.adjust_tail = TEX_NULL;
@@ -2418,8 +2418,8 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
             if r == crate::mem::ALLOC_FAILED {
                 return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
             }
-            mem.set_b32s1(cl.tail, r);
-            cl.tail = r;
+            mem.set_b32s1(cl.tail.0, r);
+            cl.tail.0 = r;
         }
     }
 
@@ -3895,14 +3895,14 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
 
     if locale == 0 || len == 1 {
         let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, main_f, len)?;
-        st.mem.set_b32s1(st.input.cur_list.tail, node);
-        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
-        let t = st.input.cur_list.tail;
+        st.mem.set_b32s1(st.input.cur_list.tail.0, node);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+        let t = st.input.cur_list.tail.0;
         let text = whatsit_node_in(&st.mem, t).native_text_ptr_mut(&mut st.mem);
         for i in 0..len {
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
-        let addr = st.mem.node_addr(st.input.cur_list.tail);
+        let addr = st.mem.node_addr(st.input.cur_list.tail.0);
         measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
     } else {
         let use_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
@@ -3920,8 +3920,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                         if node == crate::mem::ALLOC_FAILED {
                             return Err(NodeRecycleAbort::Overflow);
                         }
-                        st.mem.set_b32s1(st.input.cur_list.tail, node);
-                        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+                        st.mem.set_b32s1(st.input.cur_list.tail.0, node);
+                        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
                     }
                     if use_skip {
                         let node = crate::mem::new_param_glue(
@@ -3932,8 +3932,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                         if node == crate::mem::ALLOC_FAILED {
                             return Err(NodeRecycleAbort::Overflow);
                         }
-                        st.mem.set_b32s1(st.input.cur_list.tail, node);
-                        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+                        st.mem.set_b32s1(st.input.cur_list.tail.0, node);
+                        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
                     }
                 }
                 let node = crate::fonts::new_native_word_node(
@@ -3942,14 +3942,14 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                     main_f,
                     offs - prev_offs,
                 )?;
-                st.mem.set_b32s1(st.input.cur_list.tail, node);
-                st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
-                let t = st.input.cur_list.tail;
+                st.mem.set_b32s1(st.input.cur_list.tail.0, node);
+                st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
+                let t = st.input.cur_list.tail.0;
                 let text = whatsit_node_in(&st.mem, t).native_text_ptr_mut(&mut st.mem);
                 for i in prev_offs..offs {
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }
-                let addr = st.mem.node_addr(st.input.cur_list.tail);
+                let addr = st.mem.node_addr(st.input.cur_list.tail.0);
                 measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
             }
             if offs < 0 {

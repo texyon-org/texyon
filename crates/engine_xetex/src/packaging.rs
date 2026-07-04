@@ -904,11 +904,11 @@ pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord,
             bsl_spec.set_width(mem, Scaled(d));
             p
         };
-        mem.set_b32s1(cl.tail, p);
-        cl.tail = p;
+        mem.set_b32s1(cl.tail.0, p);
+        cl.tail.0 = p;
     }
-    mem.set_b32s1(cl.tail, b_idx);
-    cl.tail = b_idx;
+    mem.set_b32s1(cl.tail.0, b_idx);
+    cl.tail.0 = b_idx;
     cl.set_aux_s1(if upwards {
         b.height(mem).0
     } else {

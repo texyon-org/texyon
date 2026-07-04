@@ -2489,7 +2489,7 @@ pub(crate) fn append_src_special_in(
         if p == crate::mem::ALLOC_FAILED {
             return Err(InsertSrcAbort::MainMemory);
         }
-        st.mem.set_b32s0(st.input.cur_list.tail + 1, 0);
+        st.mem.set_b32s0(st.input.cur_list.tail.0 + 1, 0);
         let d = crate::mem::get_avail(&mut st.mem);
         if d == crate::mem::ALLOC_FAILED {
             return Err(InsertSrcAbort::MainMemory);
@@ -2508,7 +2508,7 @@ pub(crate) fn append_src_special_in(
             }
         };
         st.mem.set_b32s1(d, st.mem.b32s1(TEMP_HEAD));
-        st.mem.set_b32s1(st.input.cur_list.tail + 1, d);
+        st.mem.set_b32s1(st.input.cur_list.tail.0 + 1, d);
         crate::texmfmp::remember_source_info_in(st, fname, st.mem.line);
     }
     Ok(())
@@ -2544,7 +2544,7 @@ pub(crate) fn new_write_whatsit_in(
         }
     }
     st.mem
-        .set_b32s0(st.input.cur_list.tail + 1, st.scanner.cur_val);
+        .set_b32s0(st.input.cur_list.tail.0 + 1, st.scanner.cur_val);
     Ok(())
 }
 // translated from xetex-xetex0.c:9978 (insert_src_special)
@@ -2685,11 +2685,11 @@ pub(crate) fn do_extension_in(
             crate::scan::scan_optional_equals_in(st)?;
             crate::io::scan_file_name_in(st)?;
             st.mem
-                .set_b32s1(st.input.cur_list.tail + 1, st.scanner.cur_name);
+                .set_b32s1(st.input.cur_list.tail.0 + 1, st.scanner.cur_name);
             st.mem
-                .set_b32s0(st.input.cur_list.tail + 2, st.scanner.cur_area);
+                .set_b32s0(st.input.cur_list.tail.0 + 2, st.scanner.cur_area);
             st.mem
-                .set_b32s1(st.input.cur_list.tail + 2, st.scanner.cur_ext);
+                .set_b32s1(st.input.cur_list.tail.0 + 2, st.scanner.cur_ext);
         }
 
         WRITE_NODE_DE => {
@@ -2698,33 +2698,33 @@ pub(crate) fn do_extension_in(
             st.scanner.cur_cs = k;
             crate::scan::scan_toks_in(st, false, false)?;
             st.mem
-                .set_b32s1(st.input.cur_list.tail + 1, st.scanner.def_ref);
+                .set_b32s1(st.input.cur_list.tail.0 + 1, st.scanner.def_ref);
         }
 
         CLOSE_NODE_DE => {
             do_new_write_whatsit_in(st, WRITE_NODE_SIZE_DE)?;
             st.mem
-                .set_b32s1(st.input.cur_list.tail + 1, TEX_NULL);
+                .set_b32s1(st.input.cur_list.tail.0 + 1, TEX_NULL);
         }
 
         SPECIAL_NODE_DE => {
             do_new_whatsit_in(st, crate::node::WhatsitSubtype::Special as i16, WRITE_NODE_SIZE_DE)?;
             st.mem
-                .set_b32s0(st.input.cur_list.tail + 1, TEX_NULL);
+                .set_b32s0(st.input.cur_list.tail.0 + 1, TEX_NULL);
             crate::scan::scan_toks_in(st, false, true)?;
             st.mem
-                .set_b32s1(st.input.cur_list.tail + 1, st.scanner.def_ref);
+                .set_b32s1(st.input.cur_list.tail.0 + 1, st.scanner.def_ref);
         }
 
         IMMEDIATE_CODE_DE => {
             get_x_token_in(st)?;
             if st.scanner.cur_cmd == EXTENSION_DE && st.scanner.cur_chr <= CLOSE_NODE_DE {
-                let p = st.input.cur_list.tail;
+                let p = st.input.cur_list.tail.0;
                 do_extension_in(st)?;
-                crate::shipout::out_what_in(st, st.input.cur_list.tail)?;
-                crate::packaging::flush_node_list(&mut st.mem, st.input.cur_list.tail)
+                crate::shipout::out_what_in(st, st.input.cur_list.tail.0)?;
+                crate::packaging::flush_node_list(&mut st.mem, st.input.cur_list.tail.0)
                     .map_err(crate::main_control::MainControlAbort::Confusion)?;
-                st.input.cur_list.tail = p;
+                st.input.cur_list.tail.0 = p;
                 st.mem.set_b32s1(p, TEX_NULL);
             } else {
                 crate::input::back_input_in(st)?;
@@ -2743,14 +2743,14 @@ pub(crate) fn do_extension_in(
                     st.scanner.cur_val
                 };
                 st.input.cur_list.set_aux_s1(lang);
-                st.mem.set_b32s1(st.input.cur_list.tail + 1, lang);
+                st.mem.set_b32s1(st.input.cur_list.tail.0 + 1, lang);
                 st.mem.set_b16s1(
-                    st.input.cur_list.tail + 1,
+                    st.input.cur_list.tail.0 + 1,
                     crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN_DE))
                         as u16,
                 );
                 st.mem.set_b16s0(
-                    st.input.cur_list.tail + 1,
+                    st.input.cur_list.tail.0 + 1,
                     crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN_DE))
                         as u16,
                 );
@@ -2820,14 +2820,14 @@ pub(crate) fn do_extension_in(
                         st.scanner.cur_val = 0;
                     }
                     st.mem
-                        .set_b16s2(st.input.cur_list.tail + 4, cur_font as u16);
+                        .set_b16s2(st.input.cur_list.tail.0 + 4, cur_font as u16);
                     st.mem
-                        .set_b16s1(st.input.cur_list.tail + 4, st.scanner.cur_val as u16);
-                    // set_native_glyph_metrics(cur_list.tail, ...) expands to
-                    // measure_native_glyph(&mem[cur_list.tail], use_glyph_metrics)
+                        .set_b16s1(st.input.cur_list.tail.0 + 4, st.scanner.cur_val as u16);
+                    // set_native_glyph_metrics(cur_list.tail.0, ...) expands to
+                    // measure_native_glyph(&mem[cur_list.tail.0], use_glyph_metrics)
                     let use_glyph_metrics =
                         st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_DE) > 0;
-                    let node_ptr = st.mem.node_addr(st.input.cur_list.tail);
+                    let node_ptr = st.mem.node_addr(st.input.cur_list.tail.0);
                     unsafe {
                         measure_native_glyph(&st.fonts, node_ptr, use_glyph_metrics as i32)?;
                     }

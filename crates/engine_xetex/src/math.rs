@@ -424,13 +424,13 @@ fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scal
 /// [`crate::packaging::flush_node_list`]. The two impossible corrupt-node
 /// `confusion` arms propagate out as `Err`.
 pub fn flush_math(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
-    let head = cl.head;
+    let head = cl.head.0;
     let p1 = mem.b32s1(head);
     crate::packaging::flush_node_list(mem, p1)?;
     let p2 = cl.aux_s1();
     crate::packaging::flush_node_list(mem, p2)?;
     mem.set_b32s1(head, TEX_NULL);
-    cl.tail = head;
+    cl.tail.0 = head;
     cl.set_aux_s1(TEX_NULL);
     Ok(())
 }
@@ -3526,8 +3526,8 @@ pub(crate) fn start_eq_no_in(
 
 /// translated from xetex-math.c:368 (math_limit_switch)
 fn apply_math_limit_switch(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, limit: u16) -> bool {
-    let tail = cl.tail;
-    if cl.head == tail {
+    let tail = cl.tail.0;
+    if cl.head.0 == tail {
         return false;
     }
     match mem.classify_noad(MemIdx::new(tail)) {
@@ -3561,8 +3561,8 @@ fn append_radical_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut Mem
     let Some(node) = NodePtr::<Noad>::alloc_radical(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
-    mem.set_b32s1(cl.tail, node.idx().0);
-    cl.tail = node.idx().0;
+    mem.set_b32s1(cl.tail.0, node.idx().0);
+    cl.tail.0 = node.idx().0;
     node.set_subtype(mem, NORMAL);
     node.set_nucleus_type(mem, EMPTY);
     node.set_nucleus_field(mem, TEX_NULL);
@@ -3590,8 +3590,8 @@ fn append_choices_core(cl: &mut crate::mem_types::ListStateRecord,
     if choice == ALLOC_FAILED {
         return Err(NodeRecycleAbort::Overflow);
     }
-    mem.set_b32s1(cl.tail, choice);
-    cl.tail = mem.b32s1(cl.tail);
+    mem.set_b32s1(cl.tail.0, choice);
+    cl.tail.0 = mem.b32s1(cl.tail.0);
     save_stack.save_ptr += 1;
     save_stack.set_b32s1(save_stack.save_ptr - 1, 0);
     Ok(())
@@ -3616,7 +3616,7 @@ fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: 
     if aux != TEX_NULL {
         let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
         aux_noad.set_subscr_type(mem, SUB_MLIST);
-        let head_link = mem.b32s1(cl.head);
+        let head_link = mem.b32s1(cl.head.0);
         aux_noad.set_subscr_field(mem, head_link);
         if p == TEX_NULL {
             q = aux;
@@ -3636,8 +3636,8 @@ fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: 
             aux_noad.set_link(mem, MemPtr::from_raw(p));
         }
     } else {
-        mem.set_b32s1(cl.tail, p);
-        q = mem.b32s1(cl.head);
+        mem.set_b32s1(cl.tail.0, p);
+        q = mem.b32s1(cl.head.0);
     }
     Ok(q)
 }
@@ -3656,7 +3656,7 @@ pub(crate) fn fin_mlist_in(
 
 /// translated from xetex-math.c:571 (build_choices)
 fn build_choices_finish(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, save_stack: &mut SaveStackState, p: i32) -> bool {
-    let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cl.tail)) };
+    let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cl.tail.0)) };
     let p_ptr = MemPtr::from_raw(p);
     match save_stack.b32s1(save_stack.save_ptr - 1) {
         0 => tail.set_display_mlist(mem, p_ptr),
@@ -3708,10 +3708,10 @@ fn prepare_sub_sup(cl: &mut crate::mem_types::ListStateRecord,
     let mut t = EMPTY;
     let mut p = TEX_NULL;
 
-    if cl.tail != cl.head {
-        let node_type = mem.b16s1(cl.tail);
+    if cl.tail.0 != cl.head.0 {
+        let node_type = mem.b16s1(cl.tail.0);
         if (NodeType::OrdNoad.as_raw()..NodeType::LeftNoad.as_raw()).contains(&node_type) {
-            p = cl.tail + 2 + cmd as i32 - 7;
+            p = cl.tail.0 + 2 + cmd as i32 - 7;
             t = mem.b32s1(p);
         }
     }
@@ -3722,9 +3722,9 @@ fn prepare_sub_sup(cl: &mut crate::mem_types::ListStateRecord,
         if noad == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        mem.set_b32s1(cl.tail, noad);
-        cl.tail = mem.b32s1(cl.tail);
-        p = cl.tail + 2 + cmd as i32 - 7;
+        mem.set_b32s1(cl.tail.0, noad);
+        cl.tail.0 = mem.b32s1(cl.tail.0);
+        p = cl.tail.0 + 2 + cmd as i32 - 7;
         if t != EMPTY {
             duplicate = Some(if cmd == SUP_MARK {
                 ScriptDuplication::Superscript
@@ -3767,7 +3767,7 @@ fn start_fraction_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut Mem
     cl.set_aux_s1(fraction.idx().0);
     fraction.set_subtype(mem, NORMAL);
     fraction.set_supscr_type(mem, SUB_MLIST);
-    fraction.set_supscr_field(mem, mem.b32s1(cl.head));
+    fraction.set_supscr_field(mem, mem.b32s1(cl.head.0));
     fraction.set_subscr_type(mem, EMPTY);
     fraction.set_subscr_field(mem, TEX_NULL);
 
@@ -3783,8 +3783,8 @@ fn start_fraction_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut Mem
     mem.set_b16s1(delim_r, 0);
     mem.set_b16s0(delim_r, 0);
 
-    mem.set_b32s1(cl.head, TEX_NULL);
-    cl.tail = cl.head;
+    mem.set_b32s1(cl.head.0, TEX_NULL);
+    cl.tail.0 = cl.head.0;
     Ok(fraction)
 }
 
@@ -3852,8 +3852,8 @@ fn append_accent_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemS
     let Some(accent) = NodePtr::<Noad>::alloc_accent(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
-    mem.set_b32s1(cl.tail, accent.idx().0);
-    cl.tail = accent.idx().0;
+    mem.set_b32s1(cl.tail.0, accent.idx().0);
+    cl.tail.0 = accent.idx().0;
     accent.set_subtype(mem, NORMAL);
     accent.set_nucleus_type(mem, EMPTY);
     accent.set_nucleus_field(mem, TEX_NULL);
@@ -3911,8 +3911,8 @@ fn mark_middle_noad(mem: &mut MemState, p: NodePtr<Noad>) {
 }
 
 fn finish_left_right_group(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: i32, p: i32) {
-    mem.set_b32s1(cl.head, q);
-    cl.tail = p;
+    mem.set_b32s1(cl.head.0, q);
+    cl.tail.0 = p;
     cl.e_tex_aux = crate::units::MemPtr::from_raw(p);
 }
 
@@ -3928,8 +3928,8 @@ fn append_inner_noad_for_right(cl: &mut crate::mem_types::ListStateRecord, mem: 
     inner.set_subscr_type(mem, EMPTY);
     inner.set_subscr_field(mem, TEX_NULL);
 
-    mem.set_b32s1(cl.tail, inner.idx().0);
-    cl.tail = inner.idx().0;
+    mem.set_b32s1(cl.tail.0, inner.idx().0);
+    cl.tail.0 = inner.idx().0;
     inner.set_noad_type(mem, NodeType::InnerNoad);
     inner.set_nucleus_type(mem, SUB_MLIST);
     inner.set_nucleus_field(mem, q);
@@ -4361,22 +4361,22 @@ pub(crate) fn after_math_in(
         if node == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(st.input.cur_list.tail, node);
-        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+        st.mem.set_b32s1(st.input.cur_list.tail.0, node);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
         st.scanner.cur_mlist = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
         unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
-        st.mem.set_b32s1(st.input.cur_list.tail, st.mem.b32s1(TEMP_HEAD));
-        while st.mem.b32s1(st.input.cur_list.tail) != TEX_NULL {
-            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+        st.mem.set_b32s1(st.input.cur_list.tail.0, st.mem.b32s1(TEMP_HEAD));
+        while st.mem.b32s1(st.input.cur_list.tail.0) != TEX_NULL {
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
         }
         let node2 = crate::mem::new_math(&mut st.mem, math_surround, AFTER);
         if node2 == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(st.input.cur_list.tail, node2);
-        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+        st.mem.set_b32s1(st.input.cur_list.tail.0, node2);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
         st.input.cur_list.set_aux_s0(1000);
 
         if st.config.semantic_pagination_enabled {
@@ -4463,8 +4463,8 @@ pub(crate) fn after_math_in(
         if penalty_node == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(st.input.cur_list.tail, penalty_node);
-        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+        st.mem.set_b32s1(st.input.cur_list.tail.0, penalty_node);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
 
         let pre_display_size = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
         let (g1, mut g2);
@@ -4482,15 +4482,15 @@ pub(crate) fn after_math_in(
             if inf_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(st.input.cur_list.tail, inf_node);
-            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+            st.mem.set_b32s1(st.input.cur_list.tail.0, inf_node);
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
         } else {
             let g1_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g1);
             if g1_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(st.input.cur_list.tail, g1_node);
-            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+            st.mem.set_b32s1(st.input.cur_list.tail.0, g1_node);
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
         }
 
         if e != 0 {
@@ -4517,21 +4517,21 @@ pub(crate) fn after_math_in(
             if inf_node2 == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(st.input.cur_list.tail, inf_node2);
-            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+            st.mem.set_b32s1(st.input.cur_list.tail.0, inf_node2);
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
             let a_width = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
             app_display_in(st, j, a, z - a_width)?;
             g2 = 0;
         }
 
         if t != ADJUST_HEAD {
-            st.mem.set_b32s1(st.input.cur_list.tail, st.mem.b32s1(ADJUST_HEAD));
-            st.input.cur_list.tail = t;
+            st.mem.set_b32s1(st.input.cur_list.tail.0, st.mem.b32s1(ADJUST_HEAD));
+            st.input.cur_list.tail.0 = t;
         }
         if pre_t != PRE_ADJUST_HEAD {
             st.mem
-                .set_b32s1(st.input.cur_list.tail, st.mem.b32s1(PRE_ADJUST_HEAD));
-            st.input.cur_list.tail = pre_t;
+                .set_b32s1(st.input.cur_list.tail.0, st.mem.b32s1(PRE_ADJUST_HEAD));
+            st.input.cur_list.tail.0 = pre_t;
         }
 
         let post_pen = crate::mem::new_penalty(
@@ -4541,16 +4541,16 @@ pub(crate) fn after_math_in(
         if post_pen == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        st.mem.set_b32s1(st.input.cur_list.tail, post_pen);
-        st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+        st.mem.set_b32s1(st.input.cur_list.tail.0, post_pen);
+        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
 
         if g2 > 0 {
             let g2_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g2);
             if g2_node == ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow.into());
             }
-            st.mem.set_b32s1(st.input.cur_list.tail, g2_node);
-            st.input.cur_list.tail = st.mem.b32s1(st.input.cur_list.tail);
+            st.mem.set_b32s1(st.input.cur_list.tail.0, g2_node);
+            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
         }
 
         crate::packaging::flush_node_list(&mut st.mem, j).map_err(MainControlAbort::Confusion)?;
@@ -4575,7 +4575,7 @@ pub(crate) fn init_math_in(
         let mut w = -MAX_HALFWORD;
         let x;
 
-        if st.input.cur_list.head == st.input.cur_list.tail {
+        if st.input.cur_list.head.0 == st.input.cur_list.tail.0 {
             crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
             x = if st.input.cur_list.e_tex_aux.is_null() {
                 0

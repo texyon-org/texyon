@@ -3874,7 +3874,7 @@ pub(crate) fn show_activities_in(st: &mut EngineState) {
                 crate::output::print_nl_cstr_in(st, c"### recent contributions:".as_ptr());
             }
         }
-        show_box_in(st, st.mem.b32s1(st.input.nest[(p) as usize].head));
+        show_box_in(st, st.mem.b32s1(st.input.nest[(p) as usize].head.0));
         match (m.abs() / (MAX_COMMAND_SA + 1)) as i32 {
             0 => {
                 crate::output::print_nl_cstr_in(st, c"prevdepth ".as_ptr());

@@ -1183,8 +1183,8 @@ pub(crate) fn set_math_char_in(
         }
         let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;
         nd.set_nucleus_fam(&mut st.mem, fam);
-        st.mem.set_b32s1(st.input.cur_list.tail, nd.idx().0);
-        st.input.cur_list.tail = nd.idx().0;
+        st.mem.set_b32s1(st.input.cur_list.tail.0, nd.idx().0);
+        st.input.cur_list.tail.0 = nd.idx().0;
     }
     Ok(())
 }
@@ -4870,12 +4870,12 @@ pub(crate) fn scan_something_internal_in(
                 } else {
                     // m < INPUT_LINE_NO_CODE: last-node queries
                     st.scanner.cur_val = 0;
-                    tx = st.input.cur_list.tail;
+                    tx = st.input.cur_list.tail.0;
                     if tx < st.mem.hi_mem_min {
                         let node_type = st.mem.b16s1(tx);
                         let subtype = st.mem.b16s0(tx);
                         if node_type == MATH_NODE && subtype == END_M_CODE {
-                            r = st.input.cur_list.head;
+                            r = st.input.cur_list.head.0;
                             loop {
                                 q = r;
                                 r = st.mem.b32s1(q);
@@ -4888,7 +4888,7 @@ pub(crate) fn scan_something_internal_in(
                     }
                     if st.scanner.cur_chr == LAST_NODE_TYPE_CODE_VAL {
                         st.scanner.cur_val_level = INT_VAL as u8;
-                        if tx == st.input.cur_list.head || st.input.cur_list.mode == 0 {
+                        if tx == st.input.cur_list.head.0 || st.input.cur_list.mode == 0 {
                             st.scanner.cur_val = -1;
                         }
                     } else {
@@ -4939,7 +4939,7 @@ pub(crate) fn scan_something_internal_in(
                             }
                             _ => {}
                         }
-                    } else if st.input.cur_list.mode == VMODE && tx == st.input.cur_list.head {
+                    } else if st.input.cur_list.mode == VMODE && tx == st.input.cur_list.head.0 {
                         match st.scanner.cur_chr {
                             x if x == INT_VAL as i32 => st.scanner.cur_val = st.shipout.last_penalty,
                             x if x == DIMEN_VAL as i32 => st.scanner.cur_val = st.shipout.last_kern,

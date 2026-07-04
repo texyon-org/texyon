@@ -204,8 +204,8 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
     if h == crate::mem::ALLOC_FAILED {
         return Err(PageBuildAbort::MainMemoryOverflowRunaway);
     }
-    st.input.cur_list.head = h;
-    st.input.cur_list.tail = h;
+    st.input.cur_list.head.0 = h;
+    st.input.cur_list.tail.0 = h;
     st.input.cur_list.prev_graf = 0;
     st.input.cur_list.mode_line = st.mem.line;
     st.input.cur_list.e_tex_aux = crate::units::MemPtr::NULL;
@@ -495,9 +495,9 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     if p != TEX_NULL {
         if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
             if st.input.nest_ptr == 0 {
-                st.input.cur_list.tail = st.shipout.page_tail;
+                st.input.cur_list.tail.0 = st.shipout.page_tail;
             } else {
-                st.input.nest[0].tail = st.shipout.page_tail;
+                st.input.nest[0].tail.0 = st.shipout.page_tail;
             }
         }
         st.mem
@@ -617,9 +617,9 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     if st.mem.b32s1(PAGE_HEAD) != TEX_NULL {
         if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
             if st.input.nest_ptr == 0 {
-                st.input.cur_list.tail = st.shipout.page_tail;
+                st.input.cur_list.tail.0 = st.shipout.page_tail;
             } else {
-                st.input.nest[0].tail = st.shipout.page_tail;
+                st.input.nest[0].tail.0 = st.shipout.page_tail;
             }
         } else {
             st.mem
@@ -1089,9 +1089,9 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
 
     // After loop: update nest tail to point at contribution list head
     if st.input.nest_ptr == 0 {
-        st.input.cur_list.tail = CONTRIB_HEAD;
+        st.input.cur_list.tail.0 = CONTRIB_HEAD;
     } else {
-        st.input.nest[0].tail = CONTRIB_HEAD;
+        st.input.nest[0].tail.0 = CONTRIB_HEAD;
     }
     Ok(())
 }

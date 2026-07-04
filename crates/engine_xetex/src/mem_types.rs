@@ -87,8 +87,8 @@ const _: () = {
 pub struct ListStateRecord {
     pub mode: i16,
     // 2 bytes implicit padding
-    pub head: i32,
-    pub tail: i32,
+    pub head: crate::units::MemPtr,
+    pub tail: crate::units::MemPtr,
     pub e_tex_aux: crate::units::MemPtr,
     pub prev_graf: i32,
     pub mode_line: i32,

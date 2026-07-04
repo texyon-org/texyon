@@ -928,8 +928,8 @@ unsafe fn load_fmt_file_in(
         ));
     }
 
-    st.input.cur_list.head = CONTRIB_HEAD;
-    st.input.cur_list.tail = CONTRIB_HEAD;
+    st.input.cur_list.head.0 = CONTRIB_HEAD;
+    st.input.cur_list.tail.0 = CONTRIB_HEAD;
     st.shipout.page_tail = PAGE_HEAD;
     // `xmalloc_array(MEM_TOP)` allocated `MEM_TOP + 1` words; match it.
     let mem_words_load = (MEM_TOP as usize) + 1;

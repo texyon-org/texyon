@@ -656,8 +656,8 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     if h == ALLOC_FAILED {
         return Err(PushNestAbort::MainMemory);
     }
-    st.input.cur_list.head = h;
-    st.input.cur_list.tail = h;
+    st.input.cur_list.head.0 = h;
+    st.input.cur_list.tail.0 = h;
     st.input.cur_list.prev_graf = 0;
     st.input.cur_list.mode_line = st.mem.line;
     st.input.cur_list.e_tex_aux = crate::units::MemPtr::NULL;
@@ -666,7 +666,7 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
 
 /// Core of [`pop_nest`].
 pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterState) {
-    let head = input.cur_list.head;
+    let head = input.cur_list.head.0;
     mem.set_b32s1(head, mem.avail);
     mem.avail = head;
     input.nest_ptr -= 1;
@@ -783,7 +783,7 @@ pub fn new_whatsit(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemStat
     }
     mem.set_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
     mem.set_b16s0(p, s as u16);
-    mem.set_b32s1(cl.tail, p);
-    cl.tail = p;
+    mem.set_b32s1(cl.tail.0, p);
+    cl.tail.0 = p;
     p
 }
