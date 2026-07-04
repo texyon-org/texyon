@@ -47,7 +47,7 @@ pub(crate) struct MainLoopState {
     pub cur_l: i32,
     pub cur_r: i32,
     pub cur_q: crate::units::MemPtr,
-    pub lig_stack: i32,
+    pub lig_stack: crate::units::MemPtr,
     pub ligature_present: bool,
     pub lft_hit: bool,
     pub rt_hit: bool,
@@ -751,9 +751,9 @@ pub(crate) struct ScannerState {
     pub file_name_quote_char: u16,
     pub name_in_progress: bool,
     pub stop_at_space: bool,
-    pub cur_align: i32,
+    pub cur_align: crate::units::MemPtr,
     pub cur_span: i32,
-    pub cur_loop: i32,
+    pub cur_loop: crate::units::MemPtr,
     pub align_ptr: i32,
     pub cur_head: crate::units::MemPtr,
     pub cur_tail: crate::units::MemPtr,
@@ -767,7 +767,7 @@ pub(crate) struct ScannerState {
     pub sa_level: u16,
     pub max_reg_num: i32,
     /// Head of the conditional-stack list (xetex-xetexd.h:537). Plain `int32_t`.
-    pub cond_ptr: i32,
+    pub cond_ptr: crate::units::MemPtr,
     /// Current `\if` nesting limit code (xetex-xetexd.h:538). Stored as `u8`
     /// (`unsigned char` in C); plain, no semantic typedef debt.
     pub if_limit: u8,

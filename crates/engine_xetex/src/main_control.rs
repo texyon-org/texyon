@@ -720,22 +720,22 @@ pub(crate) fn init_row_in(st: &mut crate::state::EngineState) -> Result<(), Main
     st.mem.set_b32s1(st.input.cur_list.tail.0, glue.idx().0);
     st.input.cur_list.tail.0 = glue.idx().0;
     glue.set_subtype(&mut st.mem, GLUE_PAR_TAB_SKIP);
-    st.scanner.cur_align = st.mem.b32s1(align_head_link);
+    st.scanner.cur_align.0 = st.mem.b32s1(align_head_link);
     st.scanner.cur_tail.0 = st.scanner.cur_head.0;
     st.scanner.cur_pre_tail.0 = st.scanner.cur_pre_head.0;
-    init_span_in(st, st.scanner.cur_align)?;
+    init_span_in(st, st.scanner.cur_align.0)?;
     Ok(())
 }
 pub(crate) fn init_col_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     const OMIT_CMD: u8 = 63; // xetex_format.h:301
     const U_TEMPLATE: u16 = 1; // xetex-constants.h:200
 
-    st.mem.set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_cmd as i32);
+    st.mem.set_b32s0(st.scanner.cur_align.0 + 5, st.scanner.cur_cmd as i32);
     if st.scanner.cur_cmd == OMIT_CMD {
         st.scanner.align_state = 0;
     } else {
         crate::input::back_input_in(st)?;
-        crate::input::begin_token_list_in(st, st.mem.b32s1(st.scanner.cur_align + 3), U_TEMPLATE)?;
+        crate::input::begin_token_list_in(st, st.mem.b32s1(st.scanner.cur_align.0 + 3), U_TEMPLATE)?;
     }
     Ok(())
 }
@@ -747,10 +747,10 @@ pub(crate) fn push_alignment_in(
 
     let p = crate::scan::get_node_scc(st, ALIGN_STACK_NODE_SIZE)?;
     st.mem.set_b32s1(p, st.scanner.align_ptr);
-    st.mem.set_b32s0(p, st.scanner.cur_align);
+    st.mem.set_b32s0(p, st.scanner.cur_align.0);
     st.mem.set_b32s0(p + 1, st.mem.b32s1(ALIGN_HEAD));
     st.mem.set_b32s1(p + 1, st.scanner.cur_span);
-    st.mem.set_b32s1(p + 2, st.scanner.cur_loop);
+    st.mem.set_b32s1(p + 2, st.scanner.cur_loop.0);
     st.mem.set_b32s1(p + 3, st.scanner.align_state);
     st.mem.set_b32s0(p + 4, st.scanner.cur_head.0);
     st.mem.set_b32s1(p + 4, st.scanner.cur_tail.0);
@@ -778,10 +778,10 @@ pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
     st.scanner.cur_pre_tail.0 = st.mem.b32s1(p + 5);
     st.scanner.cur_pre_head.0 = st.mem.b32s0(p + 5);
     st.scanner.align_state = st.mem.b32s1(p + 3);
-    st.scanner.cur_loop = st.mem.b32s1(p + 2);
+    st.scanner.cur_loop.0 = st.mem.b32s1(p + 2);
     st.scanner.cur_span = st.mem.b32s1(p + 1);
     st.mem.set_b32s1(ALIGN_HEAD, st.mem.b32s0(p + 1));
-    st.scanner.cur_align = st.mem.b32s0(p);
+    st.scanner.cur_align.0 = st.mem.b32s0(p);
     st.scanner.align_ptr = st.mem.b32s1(p);
     crate::mem::free_node(&mut st.mem, p, ALIGN_STACK_NODE_SIZE);
 }
@@ -802,10 +802,10 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
     const FILLL: usize = 3;
     const UNSET_NODE: u16 = 13; // xetex_format.h
 
-    if st.scanner.cur_align == TEX_NULL {
+    if st.scanner.cur_align.0 == TEX_NULL {
         return Err(MainControlAbort::Confusion(c"endv"));
     }
-    let q = st.mem.b32s1(st.scanner.cur_align);
+    let q = st.mem.b32s1(st.scanner.cur_align.0);
     if q == TEX_NULL {
         return Err(MainControlAbort::Confusion(c"endv"));
     }
@@ -815,8 +815,8 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
         )));
     }
     let mut p = st.mem.b32s1(q);
-    if p == TEX_NULL && st.mem.b32s0(st.scanner.cur_align + 5) < CR_CODE {
-        if st.scanner.cur_loop != TEX_NULL {
+    if p == TEX_NULL && st.mem.b32s0(st.scanner.cur_align.0 + 5) < CR_CODE {
+        if st.scanner.cur_loop.0 != TEX_NULL {
             // §822: extend preamble by duplicating the loop template
             let nb = new_null_box(&mut st.mem);
             if nb == ALLOC_FAILED {
@@ -826,10 +826,10 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             p = st.mem.b32s1(q);
             st.mem.set_b32s0(p, END_SPAN);
             st.mem.set_b32s1(p + 1, NULL_FLAG);
-            st.scanner.cur_loop = st.mem.b32s1(st.scanner.cur_loop);
+            st.scanner.cur_loop.0 = st.mem.b32s1(st.scanner.cur_loop.0);
             // copy u-template from cur_loop+3 into HOLD_HEAD list → p+3
             let mut wq = HOLD_HEAD;
-            let mut r = st.mem.b32s1(st.scanner.cur_loop + 3);
+            let mut r = st.mem.b32s1(st.scanner.cur_loop.0 + 3);
             while r != TEX_NULL {
                 let av = get_avail(&mut st.mem);
                 if av == ALLOC_FAILED {
@@ -844,7 +844,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             st.mem.set_b32s1(p + 3, st.mem.b32s1(HOLD_HEAD));
             // copy v-template from cur_loop+2 into HOLD_HEAD list → p+2
             wq = HOLD_HEAD;
-            r = st.mem.b32s1(st.scanner.cur_loop + 2);
+            r = st.mem.b32s1(st.scanner.cur_loop.0 + 2);
             while r != TEX_NULL {
                 let av = get_avail(&mut st.mem);
                 if av == ALLOC_FAILED {
@@ -857,8 +857,8 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             }
             st.mem.set_b32s1(wq, TEX_NULL);
             st.mem.set_b32s1(p + 2, st.mem.b32s1(HOLD_HEAD));
-            st.scanner.cur_loop = st.mem.b32s1(st.scanner.cur_loop);
-            let gv = st.mem.b32s0(st.scanner.cur_loop + 1);
+            st.scanner.cur_loop.0 = st.mem.b32s1(st.scanner.cur_loop.0);
+            let gv = st.mem.b32s0(st.scanner.cur_loop.0 + 1);
             let g = new_glue(&mut st.mem, gv);
             if g == ALLOC_FAILED {
                 return Err(crate::scan::NodeRecycleAbort::Overflow.into());
@@ -880,11 +880,11 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
                 c"in the preamble to the \\halign or \\valign now in progress.".as_ptr();
             st.errors.help_line[0] =
                 c"So I'll assume that you meant to type \\cr instead.".as_ptr();
-            st.mem.set_b32s0(st.scanner.cur_align + 5, CR_CODE);
+            st.mem.set_b32s0(st.scanner.cur_align.0 + 5, CR_CODE);
             mc_propagate_error(crate::errors::error_in(st))?;
         }
     }
-    if st.mem.b32s0(st.scanner.cur_align + 5) != SPAN_CODE {
+    if st.mem.b32s0(st.scanner.cur_align.0 + 5) != SPAN_CODE {
         crate::save::unsave_in(st)?;
         if let Some(a) = crate::save::new_save_level(&mut st.save_stack, GroupCode::Align, st.mem.line) {
             return Err(MainControlAbort::Save(a));
@@ -911,13 +911,13 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             (u, w)
         };
         let mut n: i32 = 0;
-        if st.scanner.cur_span != st.scanner.cur_align {
+        if st.scanner.cur_span != st.scanner.cur_align.0 {
             // §827: compare accumulated span width with recorded widths
             let mut sq = st.scanner.cur_span;
             loop {
                 n += 1;
                 sq = st.mem.b32s1(st.mem.b32s1(sq));
-                if sq == st.scanner.cur_align {
+                if sq == st.scanner.cur_align.0 {
                     break;
                 }
             }
@@ -940,8 +940,8 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             } else if st.mem.b32s1(st.mem.b32s0(sq) + 1) < w {
                 st.mem.set_b32s1(st.mem.b32s0(sq) + 1, w);
             }
-        } else if w > st.mem.b32s1(st.scanner.cur_align + 1) {
-            st.mem.set_b32s1(st.scanner.cur_align + 1, w);
+        } else if w > st.mem.b32s1(st.scanner.cur_align.0 + 1) {
+            st.mem.set_b32s1(st.scanner.cur_align.0 + 1, w);
         }
         st.mem.set_b16s1(u, UNSET_NODE);
         st.mem.set_b16s0(u, n as u16);
@@ -970,7 +970,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
         crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
         st.mem.set_b32s1(st.input.cur_list.tail.0, u);
         st.input.cur_list.tail.0 = u;
-        let gv = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1);
+        let gv = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align.0) + 1);
         let g = new_glue(&mut st.mem, gv);
         if g == ALLOC_FAILED {
             return Err(crate::scan::NodeRecycleAbort::Overflow.into());
@@ -978,7 +978,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
         st.mem.set_b32s1(st.input.cur_list.tail.0, g);
         st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
         st.mem.set_b16s0(st.input.cur_list.tail.0, GLUE_PAR_TAB_SKIP);
-        if st.mem.b32s0(st.scanner.cur_align + 5) >= CR_CODE {
+        if st.mem.b32s0(st.scanner.cur_align.0 + 5) >= CR_CODE {
             return Ok(true);
         }
         init_span_in(st, p)?;
@@ -990,7 +990,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             break;
         }
     }
-    st.scanner.cur_align = p;
+    st.scanner.cur_align.0 = p;
     init_col_in(st)?;
     Ok(false)
 }
@@ -1094,8 +1094,8 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
 
     crate::scan::scan_spec_in(st, GroupCode::Align, false)?;
     st.mem.set_b32s1(ALIGN_HEAD, TEX_NULL);
-    st.scanner.cur_align = ALIGN_HEAD;
-    st.scanner.cur_loop = TEX_NULL;
+    st.scanner.cur_align.0 = ALIGN_HEAD;
+    st.scanner.cur_loop.0 = TEX_NULL;
     st.scanner.scanner_status = ALIGNING;
     st.scanner.warning_index = save_cs_ptr;
     st.scanner.align_state = -1_000_000;
@@ -1105,9 +1105,9 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         if g == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        let ca = st.scanner.cur_align;
+        let ca = st.scanner.cur_align.0;
         st.mem.set_b32s1(ca, g);
-        st.scanner.cur_align = st.mem.b32s1(ca);
+        st.scanner.cur_align.0 = st.mem.b32s1(ca);
         if st.scanner.cur_cmd == CAR_RET {
             break 'outer;
         }
@@ -1123,8 +1123,8 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
             }
             if st.scanner.cur_cmd <= CAR_RET && st.scanner.cur_cmd >= TAB_MARK && st.scanner.align_state == -1_000_000
             {
-                if p == HOLD_HEAD && st.scanner.cur_loop == TEX_NULL && st.scanner.cur_cmd == TAB_MARK {
-                    st.scanner.cur_loop = st.scanner.cur_align;
+                if p == HOLD_HEAD && st.scanner.cur_loop.0 == TEX_NULL && st.scanner.cur_cmd == TAB_MARK {
+                    st.scanner.cur_loop.0 = st.scanner.cur_align.0;
                 } else {
                     crate::output::error_here_with_diagnostic_in(
                         st,
@@ -1157,10 +1157,10 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         if nb == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow.into());
         }
-        let ca = st.scanner.cur_align;
+        let ca = st.scanner.cur_align.0;
         st.mem.set_b32s1(ca, nb);
-        st.scanner.cur_align = st.mem.b32s1(ca);
-        let ca = st.scanner.cur_align;
+        st.scanner.cur_align.0 = st.mem.b32s1(ca);
+        let ca = st.scanner.cur_align.0;
         st.mem.set_b32s0(ca, END_SPAN);
         st.mem.set_b32s1(ca + 1, NULL_FLAG);
         let hh = st.mem.b32s1(HOLD_HEAD);
@@ -1208,7 +1208,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
         st.mem.set_b32s1(p, av);
         p = st.mem.b32s1(p);
         st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
-        let ca = st.scanner.cur_align;
+        let ca = st.scanner.cur_align.0;
         let hh = st.mem.b32s1(HOLD_HEAD);
         st.mem.set_b32s1(ca + 2, hh);
     }
@@ -5664,7 +5664,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
         st.mem.set_b32s1(a, TEX_NULL);
         a
     };
-    st.mainloop.lig_stack = ls;
+    st.mainloop.lig_stack.0 = ls;
     st.mem.set_b16s1(ls, mf as u16);
     st.mainloop.cur_l = st.scanner.cur_chr;
     st.mem.set_b16s0(ls, st.mainloop.cur_l as u16);
@@ -5753,7 +5753,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                         st.mem.set_b16s0(mp, 2);
                         st.mainloop.lft_hit = false;
                     }
-                    if st.mainloop.rt_hit && st.mainloop.lig_stack == TEX_NULL {
+                    if st.mainloop.rt_hit && st.mainloop.lig_stack.0 == TEX_NULL {
                         st.mem.set_b16s0(mp, st.mem.b16s0(mp) + 1);
                         st.mainloop.rt_hit = false;
                     }
@@ -5776,23 +5776,23 @@ pub(crate) unsafe fn main_control_main_loop_in(
         // main_loop_move: check if lig_stack is exhausted
         // (for lig_result==2 / move1: skip this check, cur_l already set)
         if lig_result != 2 {
-            if st.mainloop.lig_stack == TEX_NULL {
+            if st.mainloop.lig_stack.0 == TEX_NULL {
                 return Ok(false); // goto reswitch
             }
             st.mainloop.cur_q.0 = st.input.cur_list.tail.0;
-            st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
+            st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack.0) as i32;
         }
 
         // main_loop_move_1: is lig_stack a char node or a lig item?
-        if !mc_is_char_node(st, st.mainloop.lig_stack) {
+        if !mc_is_char_node(st, st.mainloop.lig_stack.0) {
             // main_loop_move_lig: handle lig item in lig_stack
-            st.mainloop.main_p.0 = st.mem.b32s1(st.mainloop.lig_stack + 1);
+            st.mainloop.main_p.0 = st.mem.b32s1(st.mainloop.lig_stack.0 + 1);
             if st.mainloop.main_p.0 > TEX_NULL {
                 st.mem.set_b32s1(st.input.cur_list.tail.0, st.mainloop.main_p.0);
                 st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail.0);
             }
-            let temp = st.mainloop.lig_stack;
-            st.mainloop.lig_stack = st.mem.b32s1(temp);
+            let temp = st.mainloop.lig_stack.0;
+            st.mainloop.lig_stack.0 = st.mem.b32s1(temp);
             crate::mem::free_node(&mut st.mem, temp, SMALL_NODE_SIZE);
             let ec = crate::fonts::effective_char(&mut st.fonts, true, st.mainloop.main_f, st.mainloop.cur_l as u16);
             main_i = st
@@ -5800,7 +5800,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 .font_info_b16(st.fonts.char_base_entry(st.mainloop.main_f) + ec);
             st.mainloop.ligature_present = true;
 
-            if st.mainloop.lig_stack == TEX_NULL {
+            if st.mainloop.lig_stack.0 == TEX_NULL {
                 if st.mainloop.main_p.0 > TEX_NULL {
                     // goto main_loop_lookahead (enter with main_i set, skip move_2)
                     // We do the lookahead inline here:
@@ -5812,7 +5812,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                     st.mainloop.cur_r = st.mainloop.bchar;
                 }
             } else {
-                st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
+                st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack.0) as i32;
             }
             // goto main_lig_loop (outer top) — continue 'char_proc
             continue 'char_proc;
@@ -5824,19 +5824,19 @@ pub(crate) unsafe fn main_control_main_loop_in(
             || eff < st.fonts.font_bc_entry(st.mainloop.main_f) as i32
         {
             mc_propagate_error(crate::output::char_warning_in(st, st.mainloop.main_f, st.scanner.cur_chr))?;
-            st.mem.set_b32s1(st.mainloop.lig_stack, st.mem.avail());
-            st.mem.set_avail(st.mainloop.lig_stack);
+            st.mem.set_b32s1(st.mainloop.lig_stack.0, st.mem.avail());
+            st.mem.set_avail(st.mainloop.lig_stack.0);
             return Ok(true); // goto big_switch
         }
         main_i = crate::fonts::effective_char_info(&mut st.fonts, st.mainloop.main_f, st.mainloop.cur_l as u16);
         if main_i.s3 == 0 {
             mc_propagate_error(crate::output::char_warning_in(st, st.mainloop.main_f, st.scanner.cur_chr))?;
-            st.mem.set_b32s1(st.mainloop.lig_stack, st.mem.avail());
-            st.mem.set_avail(st.mainloop.lig_stack);
+            st.mem.set_b32s1(st.mainloop.lig_stack.0, st.mem.avail());
+            st.mem.set_avail(st.mainloop.lig_stack.0);
             return Ok(true); // goto big_switch
         }
-        st.mem.set_b32s1(st.input.cur_list.tail.0, st.mainloop.lig_stack);
-        st.input.cur_list.tail.0 = st.mainloop.lig_stack;
+        st.mem.set_b32s1(st.input.cur_list.tail.0, st.mainloop.lig_stack.0);
+        st.input.cur_list.tail.0 = st.mainloop.lig_stack.0;
 
         // main_loop_lookahead: get next token, set up lig_stack for it
         if !do_lookahead(st, &mut main_i, &mut enter_lig1_k, mf)? {
@@ -5906,7 +5906,7 @@ unsafe fn lig_inner_loop(
                 // Ligature case
                 if st.mainloop.cur_l == TOO_BIG_CHAR {
                     st.mainloop.lft_hit = true;
-                } else if st.mainloop.lig_stack == TEX_NULL {
+                } else if st.mainloop.lig_stack.0 == TEX_NULL {
                     st.mainloop.rt_hit = true;
                 }
 
@@ -5926,22 +5926,22 @@ unsafe fn lig_inner_loop(
                     }
                     2 | 6 => {
                         st.mainloop.cur_r = mj.s0 as i32;
-                        if st.mainloop.lig_stack == TEX_NULL {
-                            st.mainloop.lig_stack = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
+                        if st.mainloop.lig_stack.0 == TEX_NULL {
+                            st.mainloop.lig_stack.0 = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
                             st.mainloop.bchar = TOO_BIG_CHAR;
-                        } else if mc_is_char_node(st, st.mainloop.lig_stack) {
-                            let prev = st.mainloop.lig_stack;
-                            st.mainloop.lig_stack = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
-                            st.mem.set_b32s1(st.mainloop.lig_stack + 1, prev);
+                        } else if mc_is_char_node(st, st.mainloop.lig_stack.0) {
+                            let prev = st.mainloop.lig_stack.0;
+                            st.mainloop.lig_stack.0 = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
+                            st.mem.set_b32s1(st.mainloop.lig_stack.0 + 1, prev);
                         } else {
-                            st.mem.set_b16s0(st.mainloop.lig_stack, st.mainloop.cur_r as u16);
+                            st.mem.set_b16s0(st.mainloop.lig_stack.0, st.mainloop.cur_r as u16);
                         }
                     }
                     3 => {
                         st.mainloop.cur_r = mj.s0 as i32;
-                        let prev = st.mainloop.lig_stack;
-                        st.mainloop.lig_stack = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
-                        st.mem.set_b32s1(st.mainloop.lig_stack, prev);
+                        let prev = st.mainloop.lig_stack.0;
+                        st.mainloop.lig_stack.0 = mc_new_lig_item(st, st.mainloop.cur_r as u16)?;
+                        st.mem.set_b32s1(st.mainloop.lig_stack.0, prev);
                     }
                     7 | 11 => {
                         // Partial wrapup
@@ -5990,7 +5990,7 @@ unsafe fn lig_inner_loop(
                         // Type 0 or 4 (default): =: or |=:|
                         st.mainloop.cur_l = mj.s0 as i32;
                         st.mainloop.ligature_present = true;
-                        if st.mainloop.lig_stack == TEX_NULL {
+                        if st.mainloop.lig_stack.0 == TEX_NULL {
                             return Ok(0); // goto main_loop_wrapup
                         } else {
                             return Ok(2); // goto main_loop_move_1
@@ -6069,7 +6069,7 @@ unsafe fn do_lookahead(
                 st.mainloop.bchar = TOO_BIG_CHAR;
             }
             st.mainloop.cur_r = st.mainloop.bchar;
-            st.mainloop.lig_stack = crate::mem::TEX_NULL;
+            st.mainloop.lig_stack.0 = crate::mem::TEX_NULL;
             return Ok(true); // normal: re-enter lig loop at top
         }
     }
@@ -6113,7 +6113,7 @@ unsafe fn do_lookahead(
         st.mem.set_b32s1(a, crate::mem::TEX_NULL);
         a
     };
-    st.mainloop.lig_stack = ls;
+    st.mainloop.lig_stack.0 = ls;
     st.mem.set_b16s1(ls, st.mainloop.main_f as u16);
     let cr = st.scanner.cur_chr;
     st.mainloop.cur_r = cr;

@@ -298,7 +298,7 @@ pub(crate) unsafe fn final_cleanup_in(
         crate::output::show_save_groups_in(st);
     }
 
-    while st.scanner.cond_ptr != crate::mem::TEX_NULL {
+    while st.scanner.cond_ptr.0 != crate::mem::TEX_NULL {
         crate::output::print_nl_in(st, b'(' as i32);
         crate::output::print_esc_cstr_in(st, c"end occurred ".as_ptr());
         crate::output::print_cstr_in(st, c"when ".as_ptr());
@@ -310,7 +310,7 @@ pub(crate) unsafe fn final_cleanup_in(
             crate::output::print_int_in(st, if_line);
         }
         crate::output::print_cstr_in(st, c" was incomplete)".as_ptr());
-        let cond_ptr = st.scanner.cond_ptr;
+        let cond_ptr = st.scanner.cond_ptr.0;
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         let new_if_line = unsafe { st.mem.data[(cond_ptr + 1) as usize].b32.s1 };
         // SAFETY: union projection; the `Vec` index is bounds-checked.
@@ -320,7 +320,7 @@ pub(crate) unsafe fn final_cleanup_in(
         st.mem.temp_ptr.0 = cond_ptr;
         st.scanner.if_line = new_if_line;
         st.scanner.cur_if = new_cur_if;
-        st.scanner.cond_ptr = new_cond_ptr;
+        st.scanner.cond_ptr.0 = new_cond_ptr;
         let p = st.mem.temp_ptr.0;
         crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE);
     }
@@ -492,7 +492,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
         st.input.read_open[k] = CLOSED;
     }
 
-    st.scanner.cond_ptr = crate::mem::TEX_NULL;
+    st.scanner.cond_ptr.0 = crate::mem::TEX_NULL;
     st.scanner.if_limit = NORMAL;
     st.scanner.cur_if = 0;
     st.scanner.if_line = 0;
@@ -516,9 +516,9 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.empty.s1 = EMPTY as i32;
     st.scanner.empty.s0 = crate::mem::TEX_NULL;
     st.scanner.align_ptr = crate::mem::TEX_NULL;
-    st.scanner.cur_align = crate::mem::TEX_NULL;
+    st.scanner.cur_align.0 = crate::mem::TEX_NULL;
     st.scanner.cur_span = crate::mem::TEX_NULL;
-    st.scanner.cur_loop = crate::mem::TEX_NULL;
+    st.scanner.cur_loop.0 = crate::mem::TEX_NULL;
     st.scanner.cur_head.0 = crate::mem::TEX_NULL;
     st.scanner.cur_tail.0 = crate::mem::TEX_NULL;
     st.scanner.cur_pre_head.0 = crate::mem::TEX_NULL;

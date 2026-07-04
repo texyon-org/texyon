@@ -2675,7 +2675,7 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     let mut i = st.input.in_open;
     let mut w = false;
-    while st.input.if_stack[(i) as usize] == st.scanner.cond_ptr {
+    while st.input.if_stack[(i) as usize] == st.scanner.cond_ptr.0 {
         if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 0 {
             let mut bp = st.input.base_ptr;
             while st.input.input_stack[(bp) as usize].state == TOKEN_LIST
@@ -2688,7 +2688,7 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
                 w = true;
             }
         }
-        st.input.if_stack[(i) as usize] = st.mem.b32s1(st.scanner.cond_ptr);
+        st.input.if_stack[(i) as usize] = st.mem.b32s1(st.scanner.cond_ptr.0);
         i -= 1;
     }
     if w {
@@ -2742,11 +2742,11 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
     st.save_stack.cur_group = c;
 
     // Traverse cond_ptr chain.
-    let cp = st.scanner.cond_ptr;
+    let cp = st.scanner.cond_ptr.0;
     let il = st.scanner.if_limit;
     let ci = st.scanner.cur_if;
     let iln = st.scanner.if_line;
-    while st.input.if_stack[(st.input.in_open) as usize] != st.scanner.cond_ptr {
+    while st.input.if_stack[(st.input.in_open) as usize] != st.scanner.cond_ptr.0 {
         print_nl_cstr_in(st, c"Warning: ".as_ptr());
         diagnostic_begin_capture_warning_here_in(st);
         print_cstr_in(st, c"end of file when ".as_ptr());
@@ -2760,12 +2760,12 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
         }
         print_cstr_in(st, c" is incomplete".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.scanner.if_line = st.mem.b32s1(st.scanner.cond_ptr + 1);
-        st.scanner.cur_if = st.mem.b16s0(st.scanner.cond_ptr) as i16;
-        st.scanner.if_limit = st.mem.b16s1(st.scanner.cond_ptr) as u8;
-        st.scanner.cond_ptr = st.mem.b32s1(st.scanner.cond_ptr);
+        st.scanner.if_line = st.mem.b32s1(st.scanner.cond_ptr.0 + 1);
+        st.scanner.cur_if = st.mem.b16s0(st.scanner.cond_ptr.0) as i16;
+        st.scanner.if_limit = st.mem.b16s1(st.scanner.cond_ptr.0) as u8;
+        st.scanner.cond_ptr.0 = st.mem.b32s1(st.scanner.cond_ptr.0);
     }
-    st.scanner.cond_ptr = cp;
+    st.scanner.cond_ptr.0 = cp;
     st.scanner.if_limit = il;
     st.scanner.cur_if = ci;
     st.scanner.if_line = iln;
@@ -2807,7 +2807,7 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
         } else {
             (1_i32, st.mem.line)
         };
-        let mut p = st.scanner.cond_ptr;
+        let mut p = st.scanner.cond_ptr.0;
         while p != TEX_NULL {
             n += 1;
             p = st.mem.b32s1(p);
@@ -2830,10 +2830,10 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
 // ---------------------------------------------------------------------------
 
 pub(crate) fn change_if_limit_in(st: &mut EngineState, l: i16, p: i32) -> ErrorOutcome {
-    if p == st.scanner.cond_ptr {
+    if p == st.scanner.cond_ptr.0 {
         st.scanner.if_limit = l as u8;
     } else {
-        let mut q = st.scanner.cond_ptr;
+        let mut q = st.scanner.cond_ptr.0;
         loop {
             if q == crate::mem::TEX_NULL {
                 return ErrorOutcome::Confusion(c"if");
@@ -3492,11 +3492,11 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
             crate::output::begin_diagnostic_in(st);
             crate::output::print_nl_cstr_in(st, c"".as_ptr());
             crate::output::print_ln_in(st);
-            if st.scanner.cond_ptr == crate::mem::TEX_NULL {
+            if st.scanner.cond_ptr.0 == crate::mem::TEX_NULL {
                 crate::output::print_nl_cstr_in(st, c"### ".as_ptr());
                 crate::output::print_cstr_in(st, c"no active conditionals".as_ptr());
             } else {
-                let mut p = st.scanner.cond_ptr;
+                let mut p = st.scanner.cond_ptr.0;
                 let mut n: i32 = 0;
                 loop {
                     n += 1;
@@ -3505,7 +3505,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
                         break;
                     }
                 }
-                p = st.scanner.cond_ptr;
+                p = st.scanner.cond_ptr.0;
                 let mut t = st.scanner.cur_if;
                 let mut l = st.scanner.if_line;
                 let mut m = st.scanner.if_limit;

@@ -86,11 +86,11 @@ pub(crate) fn ins_the_toks_in(st: &mut crate::state::EngineState) -> Result<(), 
     Ok(())
 }
 fn pop_cond_node_in(st: &mut crate::state::EngineState) {
-    let p = st.scanner.cond_ptr;
+    let p = st.scanner.cond_ptr.0;
     st.scanner.if_line = st.mem.b32s1(p + 1);
     st.scanner.cur_if = st.mem.b16s0(p) as i16;
     st.scanner.if_limit = st.mem.b16s1(p) as u8;
-    st.scanner.cond_ptr = st.mem.b32s1(p);
+    st.scanner.cond_ptr.0 = st.mem.b32s1(p);
     crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE);
 }
 
@@ -114,16 +114,16 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
     }
 
     p = get_node_scc(st, IF_NODE_SIZE)?;
-    st.mem.set_b32s1(p, st.scanner.cond_ptr);
+    st.mem.set_b32s1(p, st.scanner.cond_ptr.0);
     st.mem.set_b16s1(p, st.scanner.if_limit as u16);
     st.mem.set_b16s0(p, st.scanner.cur_if as u16);
     st.mem.set_b32s1(p + 1, st.scanner.if_line);
-    st.scanner.cond_ptr = p;
+    st.scanner.cond_ptr.0 = p;
     st.scanner.cur_if = st.scanner.cur_chr as i16;
     st.scanner.if_limit = IF_CODE;
     st.scanner.if_line = st.mem.line;
 
-    let save_cond_ptr: i32 = st.scanner.cond_ptr;
+    let save_cond_ptr: i32 = st.scanner.cond_ptr.0;
     let is_unless: bool = st.scanner.cur_chr >= UNLESS_CODE;
     let this_if: i16 = (st.scanner.cur_chr % UNLESS_CODE) as i16;
 
@@ -395,13 +395,13 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             }
             while n != 0 {
                 crate::scan::pass_text_in(st)?;
-                if st.scanner.cond_ptr == save_cond_ptr {
+                if st.scanner.cond_ptr.0 == save_cond_ptr {
                     if st.scanner.cur_chr == OR_CODE as i32 {
                         n -= 1;
                     } else {
                         // goto common_ending
                         if st.scanner.cur_chr == FI_CODE as i32 {
-                            if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
+                            if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
                                 crate::output::if_warning_in(st);
                             }
                             pop_cond_node_in(st);
@@ -411,7 +411,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                         return Ok(());
                     }
                 } else if st.scanner.cur_chr == FI_CODE as i32 {
-                    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
+                    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
                         crate::output::if_warning_in(st);
                     }
                     pop_cond_node_in(st);
@@ -474,11 +474,11 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
     // false branch: skip until \else or \fi at our nesting level
     loop {
         crate::scan::pass_text_in(st)?;
-        if st.scanner.cond_ptr == save_cond_ptr {
+        if st.scanner.cond_ptr.0 == save_cond_ptr {
             if st.scanner.cur_chr != OR_CODE as i32 {
                 // common_ending
                 if st.scanner.cur_chr == FI_CODE as i32 {
-                    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
+                    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
                         crate::output::if_warning_in(st);
                     }
                     pop_cond_node_in(st);
@@ -494,7 +494,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             st.errors.help_line[0] = c"I'm ignoring this; it doesn't match any \\if.".as_ptr();
             scc_err(crate::errors::error_in(st))?;
         } else if st.scanner.cur_chr == FI_CODE as i32 {
-            if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
+            if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
                 crate::output::if_warning_in(st);
             }
             pop_cond_node_in(st);
@@ -1486,14 +1486,14 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         while st.scanner.cur_chr != FI_CODE_VAL {
                             crate::scan::pass_text_in(st)?;
                         }
-                        if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
+                        if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
                             crate::output::if_warning_in(st);
                         }
-                        let p = st.scanner.cond_ptr;
+                        let p = st.scanner.cond_ptr.0;
                         st.scanner.if_line = st.mem.b32s1(p + 1);
                         st.scanner.cur_if = st.mem.b16s0(p) as i16;
                         st.scanner.if_limit = st.mem.b16s1(p) as u8;
-                        st.scanner.cond_ptr = st.mem.b32s1(p);
+                        st.scanner.cond_ptr.0 = st.mem.b32s1(p);
                         crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE_V);
                     }
                 }

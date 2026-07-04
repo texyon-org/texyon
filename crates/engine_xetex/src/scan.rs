@@ -2008,7 +2008,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 && (st.input.grp_stack[(st.input.in_open) as usize]
                                     != st.save_stack.cur_boundary
                                     || st.input.if_stack[(st.input.in_open) as usize]
-                                        != st.scanner.cond_ptr)
+                                        != st.scanner.cond_ptr.0)
                             {
                                 crate::output::file_warning_in(st);
                             }
@@ -2126,13 +2126,13 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
         // Alignment preamble check (§818)
         if st.scanner.cur_cmd <= CAR_RET && st.scanner.cur_cmd >= TAB_MARK_CAT && st.scanner.align_state == 0 {
-            if st.scanner.scanner_status == ALIGNING_GN || st.scanner.cur_align == TEX_NULL {
+            if st.scanner.scanner_status == ALIGNING_GN || st.scanner.cur_align.0 == TEX_NULL {
                 return GetNextOutcome::Abort(crate::input::InputAbort::Fatal(
                     c"(interwoven alignment preambles are not allowed)".as_ptr(),
                 ));
             }
-            let saved_cmd = st.mem.b32s0(st.scanner.cur_align + 5);
-            st.mem.set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_chr);
+            let saved_cmd = st.mem.b32s0(st.scanner.cur_align.0 + 5);
+            st.mem.set_b32s0(st.scanner.cur_align.0 + 5, st.scanner.cur_chr);
             if saved_cmd as u8 == OMIT_GN {
                 {
                     let __p = OMIT_TEMPLATE_GN;
@@ -2140,7 +2140,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                 };
             } else {
                 {
-                    let __p = st.mem.b32s1(st.scanner.cur_align + 2);
+                    let __p = st.mem.b32s1(st.scanner.cur_align.0 + 2);
                     try_in!(crate::input::begin_token_list_in(st, __p, V_TEMPLATE_GN))
                 };
             }
@@ -4823,7 +4823,7 @@ pub(crate) fn scan_something_internal_in(
                                 st.scanner.cur_val = st.save_stack.cur_group as i32;
                             }
                             CURRENT_IF_LEVEL_CODE => {
-                                q = st.scanner.cond_ptr;
+                                q = st.scanner.cond_ptr.0;
                                 let mut cnt = 0i32;
                                 while q != TEX_NULL {
                                     cnt += 1;
@@ -4832,7 +4832,7 @@ pub(crate) fn scan_something_internal_in(
                                 st.scanner.cur_val = cnt;
                             }
                             CURRENT_IF_TYPE_CODE => {
-                                if st.scanner.cond_ptr == TEX_NULL {
+                                if st.scanner.cond_ptr.0 == TEX_NULL {
                                     st.scanner.cur_val = 0;
                                 } else if (st.scanner.cur_if as i32) < UNLESS_CODE {
                                     st.scanner.cur_val = st.scanner.cur_if as i32 + 1;
