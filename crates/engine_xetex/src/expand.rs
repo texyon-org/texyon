@@ -91,7 +91,7 @@ fn pop_cond_node_in(st: &mut crate::state::EngineState) {
     st.scanner.cur_if = st.mem.b16s0(p) as i16;
     st.scanner.if_limit = st.mem.b16s1(p) as u8;
     st.scanner.cond_ptr.0 = st.mem.b32s1(p);
-    crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE);
+    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), IF_NODE_SIZE);
 }
 
 pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
@@ -1494,7 +1494,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         st.scanner.cur_if = st.mem.b16s0(p) as i16;
                         st.scanner.if_limit = st.mem.b16s1(p) as u8;
                         st.scanner.cond_ptr.0 = st.mem.b32s1(p);
-                        crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE_V);
+                        crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), IF_NODE_SIZE_V);
                     }
                 }
                 INPUT => {

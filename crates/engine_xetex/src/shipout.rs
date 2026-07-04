@@ -1103,7 +1103,7 @@ unsafe fn output_hlist_glue_in(
         || (g_sign == GlueSign::Shrinking && st.mem.b16s0(g) == g_order)
     {
         if st.mem.b32s1(g) == TEX_NULL {
-            crate::mem::free_node(&mut st.mem, g, GLUE_SPEC_SIZE);
+            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(g), GLUE_SPEC_SIZE);
         } else {
             st.mem.set_b32s1(g, st.mem.b32s1(g) - 1);
         }
@@ -1515,7 +1515,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                     let save_h = st.shipout.cur_h;
                                     st.mem.temp_ptr.0 = math.link(&st.mem).0;
                                     st.shipout.rule_wd = math_width;
-                                    crate::mem::free_node(&mut st.mem, p, MEDIUM_NODE_SIZE);
+                                    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
                                     st.scanner.cur_dir = 1 - st.scanner.cur_dir;
                                     p = new_edge(
                                         &mut st.mem,
@@ -2346,7 +2346,7 @@ pub fn reverse(
                             || (g_sign == GlueSign::Shrinking && mem.b16s0(g) == g_order)
                         {
                             if mem.b32s1(g) == TEX_NULL {
-                                crate::mem::free_node(mem, g, GLUE_SPEC_SIZE);
+                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(g), GLUE_SPEC_SIZE);
                             } else {
                                 mem.set_b32s1(g, mem.b32s1(g) - 1);
                             }
@@ -2371,7 +2371,7 @@ pub fn reverse(
                         p = crate::mem::get_avail(mem);
                         mem.set_word(p, mem.word(mem.temp_ptr + 1));
                         mem.set_b32s1(p, q);
-                        crate::mem::free_node(mem, mem.temp_ptr.0, SMALL_NODE_SIZE);
+                        crate::mem::free_node(mem, mem.temp_ptr, SMALL_NODE_SIZE);
                         continue 'reswitch;
                     }
                     MATH_NODE => {
@@ -2396,7 +2396,7 @@ pub fn reverse(
                                     if m > MIN_HALFWORD {
                                         m -= 1;
                                     } else {
-                                        crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
+                                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
                                         mem.set_b32s1(t, q);
                                         mem.set_b32s1(t + 1, shipout.rule_wd);
                                         mem.set_b32s1(t + 2, -shipout.cur_h - shipout.rule_wd);
@@ -2436,7 +2436,7 @@ pub fn reverse(
             mem.set_b32s1(p, l);
 
             if mem.b16s1(p) == KERN_NODE && (shipout.rule_wd == 0 || l == TEX_NULL) {
-                crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
                 p = l;
             }
 

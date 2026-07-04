@@ -807,7 +807,7 @@ pub fn reconstitute(
                                     }
                                     let p = st.mainloop.lig_stack.0;
                                     st.mainloop.lig_stack.0 = st.mem.b32s1(p);
-                                    crate::mem::free_node(&mut st.mem, p, SMALL_NODE_SIZE);
+                                    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), SMALL_NODE_SIZE);
                                     if st.mainloop.lig_stack.0 == TEX_NULL {
                                         cur_rh = update_right(st, j, n, bchar, hchar);
                                     } else {
@@ -901,7 +901,7 @@ pub fn reconstitute(
             }
             let p = st.mainloop.lig_stack.0;
             st.mainloop.lig_stack.0 = st.mem.b32s1(p);
-            crate::mem::free_node(&mut st.mem, p, SMALL_NODE_SIZE);
+            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), SMALL_NODE_SIZE);
             if st.mainloop.lig_stack.0 == TEX_NULL {
                 cur_rh = update_right(st, j, n, bchar, hchar);
             } else {
@@ -999,11 +999,11 @@ fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakSt
         match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
                 linebreak.cur_p = d.link(mem);
-                crate::mem::free_node(mem, q, DELTA_NODE_SIZE);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), DELTA_NODE_SIZE);
             }
             ActiveOrDelta::Active(a) => {
                 linebreak.cur_p = a.link(mem);
-                crate::mem::free_node(mem, q, linebreak.active_node_size as i32);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), linebreak.active_node_size as i32);
             }
         }
         q = linebreak.cur_p.0;
@@ -1012,7 +1012,7 @@ fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakSt
     q = linebreak.passive.0;
     while q != TEX_NULL {
         linebreak.cur_p = passive_node(q).link(mem);
-        crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
+        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), PASSIVE_NODE_SIZE);
         q = linebreak.cur_p.0;
     }
 }
@@ -1023,12 +1023,12 @@ fn free_final_linebreak_lists(mem: &mut MemState, linebreak: &mut LinebreakState
         let next = match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
                 let next = d.link(mem).0;
-                crate::mem::free_node(mem, q, DELTA_NODE_SIZE);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), DELTA_NODE_SIZE);
                 next
             }
             ActiveOrDelta::Active(a) => {
                 let next = a.link(mem).0;
-                crate::mem::free_node(mem, q, linebreak.active_node_size as i32);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), linebreak.active_node_size as i32);
                 next
             }
         };
@@ -1038,7 +1038,7 @@ fn free_final_linebreak_lists(mem: &mut MemState, linebreak: &mut LinebreakState
     q = linebreak.passive.0;
     while q != TEX_NULL {
         let next = passive_node(q).link(mem).0;
-        crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
+        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), PASSIVE_NODE_SIZE);
         q = next;
     }
 }
@@ -3212,7 +3212,7 @@ unsafe fn try_break(
                 ActiveOrDelta::Active(a) => a.set_link(mem, r_link),
             }
         }
-        crate::mem::free_node(mem, r, linebreak.active_node_size as i32);
+        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(r), linebreak.active_node_size as i32);
 
         if *prev_r == ACTIVE_LIST {
             let r = mem.b32s1(ACTIVE_LIST);
@@ -3230,7 +3230,7 @@ unsafe fn try_break(
                 linebreak.cur_active_width[5] = scanner.active_width[5];
                 linebreak.cur_active_width[6] = scanner.active_width[6];
                 mem.set_b32s1(ACTIVE_LIST, r_delta.link(mem).0);
-                crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(r), DELTA_NODE_SIZE);
             }
         } else if let ActiveOrDelta::Delta(prev_delta) = classify_active_or_delta(mem, *prev_r) {
             let r = prev_delta.link(mem).0;
@@ -3246,7 +3246,7 @@ unsafe fn try_break(
                 } else {
                     active(*prev_prev_r).set_link(mem, MemPtr::from_raw(LAST_ACTIVE));
                 }
-                crate::mem::free_node(mem, *prev_r, DELTA_NODE_SIZE);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(*prev_r), DELTA_NODE_SIZE);
                 *prev_r = *prev_prev_r;
             } else if let ActiveOrDelta::Delta(r_delta) = classify_active_or_delta(mem, r) {
                 linebreak.cur_active_width[1] += r_delta.dwidth(mem).0;
@@ -3280,7 +3280,7 @@ unsafe fn try_break(
                     Scaled(prev_delta.dshrink(mem).0 + r_delta.dshrink(mem).0),
                 );
                 prev_delta.set_link(mem, r_delta.link(mem));
-                crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(r), DELTA_NODE_SIZE);
             }
         }
     }
@@ -3586,7 +3586,7 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 st.hyph.hu[0] = st.hyph.max_hyph_char;
                 st.hyph.init_lig = false;
             }
-            crate::mem::free_node(&mut st.mem, ha, SMALL_NODE_SIZE);
+            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(ha), SMALL_NODE_SIZE);
             let mut s = st.linebreak.cur_p.0;
             while st.mem.b32s1(s) != ha {
                 s = st.mem.b32s1(s);

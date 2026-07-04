@@ -3712,7 +3712,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 r = (st.mem.b16s0(q) % 4) as i16;
                 l = st.mem.b16s1(q) as i16;
                 p = st.mem.b32s1(q);
-                crate::mem::free_node(&mut st.mem, q, EXPR_NODE_SIZE);
+                crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(q), EXPR_NODE_SIZE);
                 skip_scan = true;
                 continue; // goto found
             }

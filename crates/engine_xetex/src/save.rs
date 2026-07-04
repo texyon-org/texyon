@@ -262,7 +262,7 @@ pub(crate) fn eq_destroy(
         119 => crate::mem::delete_glue_ref(mem, val),
         120 => {
             if val != TEX_NULL {
-                crate::mem::free_node(mem, val, mem.b32s0(val) + mem.b32s0(val) + 1);
+                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(val), mem.b32s0(val) + mem.b32s0(val) + 1);
             }
         }
         121 => {
@@ -364,7 +364,7 @@ const SAVE_OVERFLOW: i32 = i32::MIN + 1;
 
 fn delete_glue_ref_threaded(mem: &mut MemState, p: i32) {
     if mem.b32s1(p) == TEX_NULL {
-        crate::mem::free_node(mem, p, GLUE_SPEC_SIZE);
+        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), GLUE_SPEC_SIZE);
     } else {
         mem.set_b32s1(p, mem.b32s1(p) - 1);
     }
@@ -408,7 +408,7 @@ pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: i32) {
         let i = (mem.b16s1(q) % 64) as i32;
         let p = q;
         q = mem.b32s1(p);
-        crate::mem::free_node(mem, p, s);
+        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), s);
         if q == TEX_NULL {
             scanner.sa_root[i as usize] = TEX_NULL;
             return;
@@ -696,9 +696,9 @@ fn sa_restore_in(st: &mut crate::state::EngineState) -> Result<(), &'static std:
         delete_sa_ref(&mut st.mem, &mut st.scanner, step.p);
         st.scanner.sa_chain.0 = st.mem.b32s1(step.chain);
         if st.mem.b16s1(step.chain) < DIMEN_VAL_LIMIT {
-            crate::mem::free_node(&mut st.mem, step.chain, WORD_NODE_SIZE);
+            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(step.chain), WORD_NODE_SIZE);
         } else {
-            crate::mem::free_node(&mut st.mem, step.chain, POINTER_NODE_SIZE);
+            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(step.chain), POINTER_NODE_SIZE);
         }
         if st.scanner.sa_chain.0 == TEX_NULL {
             break;

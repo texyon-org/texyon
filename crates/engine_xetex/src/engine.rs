@@ -322,7 +322,7 @@ pub(crate) unsafe fn final_cleanup_in(
         st.scanner.cur_if = new_cur_if;
         st.scanner.cond_ptr.0 = new_cond_ptr;
         let p = st.mem.temp_ptr.0;
-        crate::mem::free_node(&mut st.mem, p, IF_NODE_SIZE);
+        crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), IF_NODE_SIZE);
     }
 
     if st.errors.history != HISTORY_SPOTLESS

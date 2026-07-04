@@ -498,7 +498,7 @@ unsafe fn clean_box_in(st: &mut EngineState, p: i32, s: i16) -> Result<AnyBox, M
             && !crate::mem::is_char_node(&st.mem, r)
             && st.mem.b16s1(r) == KERN_NODE
         {
-            crate::mem::free_node(&mut st.mem, r, MEDIUM_NODE_SIZE);
+            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(r), MEDIUM_NODE_SIZE);
             st.mem.set_b32s1(qq, TEX_NULL);
         }
     }
@@ -927,7 +927,7 @@ fn make_op_finish_limits(
     scanner.cur_f = save_f;
 
     if q.supscr_type(mem) == EMPTY {
-        free_node(mem, x.idx().0, BOX_NODE_SIZE);
+        free_node(mem, crate::units::MemPtr::from_idx(x.idx()), BOX_NODE_SIZE);
         v.set_list_ptr(mem, MemPtr::from_idx(y.idx()));
     } else {
         let mut shift_up = spacings.bos3 - x.depth(mem).0;
@@ -945,7 +945,7 @@ fn make_op_finish_limits(
     }
 
     if q.subscr_type(mem) == EMPTY {
-        free_node(mem, z.idx().0, BOX_NODE_SIZE);
+        free_node(mem, crate::units::MemPtr::from_idx(z.idx()), BOX_NODE_SIZE);
     } else {
         let mut shift_down = spacings.bos4 - z.height(mem).0;
         if shift_down < spacings.bos2 {
@@ -1175,7 +1175,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                             let assembly_ptr = get_ot_assembly_ptr(cur_f, c_glyph as i32, 0);
                             if !assembly_ptr.is_null() {
                                 ot_assembly_ptr = assembly_ptr;
-                                crate::mem::free_node(&mut st.mem, p, GLYPH_NODE_SIZE);
+                                crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), GLYPH_NODE_SIZE);
                                 p = build_opentype_assembly_in(
                                     st,
                                     cur_f,
@@ -1329,7 +1329,7 @@ fn make_ord_body(
                         mem.set_word(q.idx().offset(3).0, w3);
                         let w2 = mem.word(p.idx().offset(2).0);
                         mem.set_word(q.idx().offset(2).0, w2);
-                        free_node(mem, p.idx().0, NOAD_SIZE);
+                        free_node(mem, crate::units::MemPtr::from_idx(p.idx()), NOAD_SIZE);
                     }
                 }
                 if scanner.cur_i.s1 > 3 {
@@ -1510,7 +1510,7 @@ fn set_native_accent_glyph_id(mem: &mut MemState, glyph: NativeAccentGlyph, glyp
 }
 
 fn finish_native_accent_glyph_start(mem: &mut MemState, y: AnyBox, glyph: NativeAccentGlyph) {
-    free_node(mem, glyph.old_node, mem.b16s3(glyph.old_node + 4) as i32);
+    free_node(mem, crate::units::MemPtr::from_raw(glyph.old_node), mem.b16s3(glyph.old_node + 4) as i32);
     y.set_list_ptr(mem, MemPtr::from_raw(glyph.p));
 }
 
@@ -1744,7 +1744,7 @@ unsafe fn make_math_accent_in(
                     let assembly_ptr = get_ot_assembly_ptr(f, c_glyph, 1);
                     if !assembly_ptr.is_null() {
                         ot_assembly_ptr = assembly_ptr;
-                        crate::mem::free_node(&mut st.mem, p, GLYPH_NODE_SIZE);
+                        crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), GLYPH_NODE_SIZE);
                         p = build_opentype_assembly_in(st, f, ot_assembly_ptr, w, true)?
                             .idx()
                             .0;
@@ -1990,7 +1990,7 @@ unsafe fn initial_script_shifts_in(
             up: zb.height(&st.mem).0 - sup_drop(&st.fonts, &st.eqtb, t),
             down: zb.depth(&st.mem).0 + sub_drop(&st.fonts, &st.eqtb, t),
         };
-        free_node(&mut st.mem, zb.idx().0, BOX_NODE_SIZE);
+        free_node(&mut st.mem, crate::units::MemPtr::from_idx(zb.idx()), BOX_NODE_SIZE);
         Ok(shifts)
     }
 }
@@ -2531,7 +2531,7 @@ fn mlist_track_box(mem: &mut MemState, z: AnyBox, max_h: &mut i32, max_d: &mut i
     if d > *max_d {
         *max_d = d;
     }
-    crate::mem::free_node(mem, z.idx().0, BOX_NODE_SIZE);
+    crate::mem::free_node(mem, crate::units::MemPtr::from_idx(z.idx()), BOX_NODE_SIZE);
 }
 
 fn mlist_cond_math_glue(
@@ -2757,7 +2757,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                                 .expect("valid whatsit")
                                 .expect("native char node");
                             let zsize = z_w.native_size(&st.mem);
-                            crate::mem::free_node(&mut st.mem, z, zsize);
+                            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(z), zsize);
                             delta = get_ot_math_ital_corr(cur_f, p_w.native_glyph(&st.mem) as i32);
                             if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR
                                 && !font_is_ot_math(&st.fonts, cur_f)
@@ -3022,7 +3022,7 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
         }
 
         let nq = st.mem.b32s1(q);
-        crate::mem::free_node(&mut st.mem, q, s);
+        crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(q), s);
         q = nq;
     }
     Ok(())
@@ -4144,7 +4144,7 @@ fn app_display_in(
             p = p_orig;
         } else {
             let r0 = p_orig_box.list_ptr(&st.mem).0;
-            crate::mem::free_node(&mut st.mem, p_orig, BOX_NODE_SIZE);
+            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p_orig), BOX_NODE_SIZE);
             if r0 == TEX_NULL {
                 return Err(MainControlAbort::Confusion(c"LR4"));
             }
@@ -4436,12 +4436,12 @@ pub(crate) fn after_math_in(
                     || st.scanner.total_shrink[FILL] != 0
                     || st.scanner.total_shrink[FILLL] != 0)
             {
-                crate::mem::free_node(&mut st.mem, b.idx().0, BOX_NODE_SIZE);
+                crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_idx(b.idx()), BOX_NODE_SIZE);
                 b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?;
             } else {
                 e = 0;
                 if w > z {
-                    crate::mem::free_node(&mut st.mem, b.idx().0, BOX_NODE_SIZE);
+                    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_idx(b.idx()), BOX_NODE_SIZE);
                     b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?;
                 }
             }
@@ -4994,7 +4994,7 @@ fn rebox(
                 mem.set_b32s1(p, k);
             }
         }
-        free_node(mem, bb.idx().0, BOX_NODE_SIZE);
+        free_node(mem, crate::units::MemPtr::from_idx(bb.idx()), BOX_NODE_SIZE);
         let g = new_glue(mem, 12);
         if g == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);

@@ -190,7 +190,7 @@ pub(crate) fn pseudo_close(
     while q != crate::mem::TEX_NULL {
         let next = mem.b32s1(q);
         let sz = mem.b32s0(q);
-        crate::mem::free_node(mem, q, sz);
+        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), sz);
         q = next;
     }
 }
@@ -317,7 +317,7 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
     while st.input.last > st.input.first && st.input.buffer[(st.input.last - 1) as usize] == ' ' as i32 {
         st.input.last -= 1;
     }
-    crate::mem::free_node(&mut st.mem, p, sz);
+    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), sz);
     Ok(true)
 }
 

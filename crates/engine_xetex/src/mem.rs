@@ -546,7 +546,7 @@ pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
 /// variable-size free list rooted at `rover`.
 ///
 /// translated from xetex-xetex0.c:284 (free_node)
-pub fn free_node(mem: &mut MemState, p: i32, s: i32) {
+pub fn free_node(mem: &mut MemState, p: MemPtr, s: i32) {
     // Record node size and mark it as a free block (MAX_HALFWORD sentinel).
     mem.set_b32s0(p, s);
     mem.set_b32s1(p, MAX_HALFWORD);
@@ -556,8 +556,8 @@ pub fn free_node(mem: &mut MemState, p: i32, s: i32) {
     let q = mem.b32s0(rover + 1);
     mem.set_b32s0(p + 1, q);
     mem.set_b32s1(p + 1, rover);
-    mem.set_b32s0(rover + 1, p);
-    mem.set_b32s1(q + 1, p);
+    mem.set_b32s0(rover + 1, p.0);
+    mem.set_b32s1(q + 1, p.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -610,7 +610,7 @@ pub fn delete_token_ref(mem: &mut MemState, p: i32) {
 pub fn delete_glue_ref(mem: &mut MemState, p: i32) {
     if let Some(spec) = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)) {
         if spec.ref_count(mem) == TEX_NULL {
-            free_node(mem, spec.idx().0, GLUE_SPEC_SIZE);
+            free_node(mem, crate::units::MemPtr::from_idx(spec.idx()), GLUE_SPEC_SIZE);
         } else {
             spec.set_ref_count(mem, spec.ref_count(mem) - 1);
         }

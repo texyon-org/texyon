@@ -383,7 +383,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                             let height_plus_depth =
                                 tmp_box.height(&st.mem).0 + tmp_box.depth(&st.mem).0;
                             ins.set_height(&mut st.mem, Scaled(height_plus_depth));
-                            crate::mem::free_node(&mut st.mem, tmp_box.idx().0, BOX_NODE_SIZE);
+                            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_idx(tmp_box.idx()), BOX_NODE_SIZE);
                             inner_wait = true;
                         }
                     }
@@ -397,7 +397,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                         .expect("insertion box")
                         .list_ptr(&st.mem)
                         .0;
-                    crate::mem::free_node(&mut st.mem, box_n, BOX_NODE_SIZE);
+                    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(box_n), BOX_NODE_SIZE);
                     let packed =
                         crate::packaging::vpackage_emit_in(st, box_lp, 0, ADDITIONAL, MAX_HALFWORD);
                     st.eqtb.set_b32s1(BOX_BASE + n2 as i32, packed?.idx().0);
@@ -422,7 +422,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
             } else {
                 let split_top_ptr = ins.split_top_ptr(&st.mem).0;
                 crate::mem::delete_glue_ref(&mut st.mem, split_top_ptr); // INSERTION_NODE_split_top_ptr
-                crate::mem::free_node(&mut st.mem, p, INS_NODE_SIZE);
+                crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), INS_NODE_SIZE);
             }
             true // reset p to prev_p
         } else {
@@ -548,7 +548,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     let mut r = st.mem.b32s1(PAGE_INS_HEAD);
     while r != PAGE_INS_HEAD {
         let next = st.mem.b32s1(r);
-        crate::mem::free_node(&mut st.mem, r, PAGE_INS_NODE_SIZE);
+        crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(r), PAGE_INS_NODE_SIZE);
         r = next;
     }
     st.mem.set_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD);

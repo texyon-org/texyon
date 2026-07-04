@@ -1145,7 +1145,7 @@ pub(crate) unsafe fn load_native_font_in(
         st.mem.set_ptr(p + 5, std::ptr::null_mut());
     }
     let node_size = st.mem.b16s3(p + 4) as i32;
-    crate::mem::free_node(&mut st.mem, p, node_size);
+    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), node_size);
 
     push_font_info_b32s1_in(st, font_slant);
     push_font_info_b32s1_in(st, s);

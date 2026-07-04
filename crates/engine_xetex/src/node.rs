@@ -2388,7 +2388,7 @@ impl NodePtr<MovementNode> {
     /// Free this movement record back to the node arena.
     #[inline]
     pub fn free(self, mem: &mut MemState) {
-        free_node(mem, self.idx.0, MOVEMENT_NODE_SIZE);
+        free_node(mem, crate::units::MemPtr::from_raw(self.idx.0), MOVEMENT_NODE_SIZE);
     }
 
     /// Movement-list successor = `mem[p].b32.s1`.
