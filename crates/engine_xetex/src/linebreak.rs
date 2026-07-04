@@ -1015,51 +1015,51 @@ fn start_linebreak_pass(
 }
 
 fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
-    let mut q = mem.b32s1(ACTIVE_LIST);
-    while q != LAST_ACTIVE {
+    let mut q = mem.link(ACTIVE_LIST);
+    while q.0 != LAST_ACTIVE {
         match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
                 linebreak.cur_p = d.link(mem);
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), DELTA_NODE_SIZE);
+                crate::mem::free_node(mem, q, DELTA_NODE_SIZE);
             }
             ActiveOrDelta::Active(a) => {
                 linebreak.cur_p = a.link(mem);
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), linebreak.active_node_size as i32);
+                crate::mem::free_node(mem, q, linebreak.active_node_size as i32);
             }
         }
-        q = linebreak.cur_p.0;
+        q = linebreak.cur_p;
     }
 
-    q = linebreak.passive.0;
-    while q != TEX_NULL {
+    q = linebreak.passive;
+    while !q.is_null() {
         linebreak.cur_p = passive_node(q).link(mem);
-        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), PASSIVE_NODE_SIZE);
-        q = linebreak.cur_p.0;
+        crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
+        q = linebreak.cur_p;
     }
 }
 
 fn free_final_linebreak_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
-    let mut q = mem.b32s1(ACTIVE_LIST);
-    while q != ACTIVE_LIST {
+    let mut q = mem.link(ACTIVE_LIST);
+    while q.0 != ACTIVE_LIST {
         let next = match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
-                let next = d.link(mem).0;
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), DELTA_NODE_SIZE);
+                let next = d.link(mem);
+                crate::mem::free_node(mem, q, DELTA_NODE_SIZE);
                 next
             }
             ActiveOrDelta::Active(a) => {
-                let next = a.link(mem).0;
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), linebreak.active_node_size as i32);
+                let next = a.link(mem);
+                crate::mem::free_node(mem, q, linebreak.active_node_size as i32);
                 next
             }
         };
         q = next;
     }
 
-    q = linebreak.passive.0;
-    while q != TEX_NULL {
-        let next = passive_node(q).link(mem).0;
-        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), PASSIVE_NODE_SIZE);
+    q = linebreak.passive;
+    while !q.is_null() {
+        let next = passive_node(q).link(mem);
+        crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
         q = next;
     }
 }
