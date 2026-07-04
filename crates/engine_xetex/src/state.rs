@@ -26,14 +26,14 @@ pub(crate) struct EngineState {
 #[derive(Default)]
 pub(crate) struct MainLoopState {
     /// Scratch glue-spec pointer (xetex-xetexd.h:675).
-    pub main_p: i32,
+    pub main_p: crate::units::MemPtr,
     /// Scratch font-info index (xetex-xetexd.h:676).
     pub main_k: i32,
     /// Current font of the main loop — `internal_font_number` (xetex-xetexd.h:672).
     pub main_f: i32,
     pub main_h: i32,
-    pub main_pp: i32,
-    pub main_ppp: i32,
+    pub main_pp: crate::units::MemPtr,
+    pub main_ppp: crate::units::MemPtr,
     pub main_s: i32,
     /// Boundary char of the current font (xetex-xetexd.h:684).
     pub bchar: i32,
@@ -46,7 +46,7 @@ pub(crate) struct MainLoopState {
     /// shared between `main_control`'s main loop and `linebreak::reconstitute`.
     pub cur_l: i32,
     pub cur_r: i32,
-    pub cur_q: i32,
+    pub cur_q: crate::units::MemPtr,
     pub lig_stack: i32,
     pub ligature_present: bool,
     pub lft_hit: bool,

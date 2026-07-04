@@ -643,7 +643,7 @@ pub fn reconstitute(
     let mut w = 0;
     st.mem.set_b32s1(HOLD_HEAD, TEX_NULL);
     st.mainloop.cur_l = st.hyph.hu[j as usize];
-    st.mainloop.cur_q = t;
+    st.mainloop.cur_q.0 = t;
 
     if j == 0 {
         st.mainloop.ligature_present = st.hyph.init_lig;
@@ -774,7 +774,7 @@ pub fn reconstitute(
                             }
                             7 | 11 => {
                                 if st.mainloop.ligature_present {
-                                    let mq = st.mem.b32s1(st.mainloop.cur_q);
+                                    let mq = st.mem.b32s1(st.mainloop.cur_q.0);
                                     let p = crate::mem::new_ligature(
                                         &mut st.mem,
                                         st.hyph.hf,
@@ -788,11 +788,11 @@ pub fn reconstitute(
                                         st.mem.set_b16s0(p, 2);
                                         st.mainloop.lft_hit = false;
                                     }
-                                    st.mem.set_b32s1(st.mainloop.cur_q, p);
+                                    st.mem.set_b32s1(st.mainloop.cur_q.0, p);
                                     t = p;
                                     st.mainloop.ligature_present = false;
                                 }
-                                st.mainloop.cur_q = t;
+                                st.mainloop.cur_q.0 = t;
                                 st.mainloop.cur_l = q.s0 as i32;
                                 st.mainloop.ligature_present = true;
                             }
@@ -861,7 +861,7 @@ pub fn reconstitute(
         }
 
         if st.mainloop.ligature_present {
-            let mq = st.mem.b32s1(st.mainloop.cur_q);
+            let mq = st.mem.b32s1(st.mainloop.cur_q.0);
             let p = crate::mem::new_ligature(&mut st.mem, st.hyph.hf, st.mainloop.cur_l as u16, mq);
             if p == crate::mem::ALLOC_FAILED {
                 return Err(NodeRecycleAbort::Overflow);
@@ -874,7 +874,7 @@ pub fn reconstitute(
                 st.mem.set_b16s0(p, st.mem.b16s0(p) + 1);
                 st.mainloop.rt_hit = false;
             }
-            st.mem.set_b32s1(st.mainloop.cur_q, p);
+            st.mem.set_b32s1(st.mainloop.cur_q.0, p);
             t = p;
             st.mainloop.ligature_present = false;
         }
@@ -891,7 +891,7 @@ pub fn reconstitute(
         }
 
         if st.mainloop.lig_stack > TEX_NULL {
-            st.mainloop.cur_q = t;
+            st.mainloop.cur_q.0 = t;
             st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
             st.mainloop.ligature_present = true;
             if st.mem.b32s1(st.mainloop.lig_stack + 1) > TEX_NULL {
