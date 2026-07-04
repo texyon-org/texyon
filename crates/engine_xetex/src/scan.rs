@@ -2292,7 +2292,7 @@ pub(crate) fn get_avail_scc(st: &mut crate::state::EngineState) -> Result<i32, S
 }
 
 /// `new_spec` with its `ALLOC_FAILED` lifted into [`SccAbort`].
-pub(crate) fn new_spec_scc(st: &mut crate::state::EngineState, p: i32) -> Result<i32, SccAbort> {
+pub(crate) fn new_spec_scc(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<i32, SccAbort> {
     let r = crate::mem::new_spec(&mut st.mem, p);
     if r == crate::mem::ALLOC_FAILED {
         return Err(main_mem_overflow_scc());

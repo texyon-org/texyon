@@ -110,7 +110,8 @@ const INT_PAR_HBADNESS_HP: i32 = 26;
 const DIMEN_PAR_HFUZZ_HP: i32 = 8;
 const DIMEN_PAR_OVERFULL_RULE_HP: i32 = 16;
 
-fn classify_native_word_hp(mem: &MemState, p: i32) -> Option<NodePtr<WhatsitNode>> {
+fn classify_native_word_hp(mem: &MemState, p: impl crate::units::MemAddr) -> Option<NodePtr<WhatsitNode>> {
+    let p = p.addr();
     if p == crate::mem::TEX_NULL || p >= mem.hi_mem_min {
         return None;
     }
@@ -130,7 +131,8 @@ fn classify_native_word_with_font_hp(
     (w.native_font(mem).0 == font).then_some(w)
 }
 
-fn classify_disc_hp(mem: &MemState, p: i32) -> Option<NodePtr<DiscNode>> {
+fn classify_disc_hp(mem: &MemState, p: impl crate::units::MemAddr) -> Option<NodePtr<DiscNode>> {
+    let p = p.addr();
     if p >= mem.hi_mem_min {
         return None;
     }

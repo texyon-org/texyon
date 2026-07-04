@@ -164,7 +164,7 @@ fn page_new_skip_param(
     Ok(p)
 }
 
-fn page_new_spec(mem: &mut MemState, p: i32) -> Result<i32, PageBuildAbort> {
+fn page_new_spec(mem: &mut MemState, p: impl crate::units::MemAddr) -> Result<i32, PageBuildAbort> {
     let q = crate::mem::new_spec(mem, p);
     if q == crate::mem::ALLOC_FAILED {
         return Err(PageBuildAbort::MainMemoryOverflow);
