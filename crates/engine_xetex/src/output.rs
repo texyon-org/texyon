@@ -9,7 +9,7 @@ use crate::consts::{
     UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::errors::{error_in, ErrorOutcome};
-use crate::node::{AnyBox, AnyNode, NodePtr, WhatsitNode};
+use crate::node::{AnyBox, AnyNode, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::state::EngineState;
 use crate::state::InteractionMode;
 use crate::units::{GlueSign, MemIdx, NodeType};
@@ -3739,8 +3739,8 @@ pub(crate) fn short_display_in(st: &mut EngineState, mut p: i32) {
                 | Ok(AnyNode::Unset(_)) => {
                     print_cstr_in(st, c"[]".as_ptr());
                 }
-                Ok(AnyNode::Whatsit(w)) => match w.subtype(&st.mem) {
-                    NATIVE_WORD_NODE_SD | NATIVE_WORD_NODE_AT_SD => {
+                Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(&st.mem) {
+                    Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
                         let fnt = w.native_font(&st.mem).0;
                         if fnt != st.errors.font_in_short_display {
                             let s = st.eqtb.hash_s1(FONT_ID_BASE_SD + fnt);
@@ -4098,8 +4098,8 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                     st.strings.pool_ptr -= 1;
                 }
                 Ok(AnyNode::Whatsit(node)) => {
-                    match node.subtype(&st.mem) {
-                        OPEN_NODE_SNL => {
+                    match node.whatsit_subtype(&st.mem) {
+                        Some(WhatsitSubtype::Open) => {
                             print_write_whatsit_in(st, c"openout".as_ptr(), node);
                             print_char_in(st, '=' as i32);
                             print_file_name_in(
@@ -4109,18 +4109,18 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                                 node.open_ext(&st.mem),
                             );
                         }
-                        WRITE_NODE_SNL => {
+                        Some(WhatsitSubtype::Write) => {
                             print_write_whatsit_in(st, c"write".as_ptr(), node);
                             print_mark_in(st, node.write_tokens(&st.mem).0);
                         }
-                        CLOSE_NODE_SNL => {
+                        Some(WhatsitSubtype::Close) => {
                             print_write_whatsit_in(st, c"closeout".as_ptr(), node);
                         }
-                        SPECIAL_NODE_SNL => {
+                        Some(WhatsitSubtype::Special) => {
                             print_esc_cstr_in(st, c"special".as_ptr());
                             print_mark_in(st, node.write_tokens(&st.mem).0);
                         }
-                        LANGUAGE_NODE_SNL => {
+                        Some(WhatsitSubtype::Language) => {
                             print_esc_cstr_in(st, c"setlanguage".as_ptr());
                             print_int_in(st, node.what_lang(&st.mem));
                             print_cstr_in(st, c" (hyphenmin ".as_ptr());
@@ -4129,10 +4129,10 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                             print_int_in(st, node.what_rhm(&st.mem) as i32);
                             print_char_in(st, ')' as i32);
                         }
-                        PDF_SAVE_POS_NODE_SNL => {
+                        Some(WhatsitSubtype::PdfSavePos) => {
                             print_esc_cstr_in(st, c"pdfsavepos".as_ptr());
                         }
-                        NATIVE_WORD_NODE_SNL | NATIVE_WORD_NODE_AT_SNL => {
+                        Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
                             // hash[FONT_ID_BASE + mem[p+4].b16.s2].s1
                             print_esc_in(
                                 st,
@@ -4142,7 +4142,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                             print_char_in(st, ' ' as i32);
                             print_native_word_in(st, p);
                         }
-                        GLYPH_NODE_SNL => {
+                        Some(WhatsitSubtype::Glyph) => {
                             print_esc_in(
                                 st,
                                 st.eqtb
@@ -4151,8 +4151,8 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, mut p: i32) {
                             print_cstr_in(st, c" glyph#".as_ptr());
                             print_int_in(st, node.native_glyph(&st.mem) as i32);
                         }
-                        PIC_NODE_SNL | PDF_NODE_SNL => {
-                            if node.subtype(&st.mem) == PIC_NODE_SNL {
+                        Some(WhatsitSubtype::Pic) | Some(WhatsitSubtype::Pdf) => {
+                            if node.whatsit_subtype(&st.mem) == Some(WhatsitSubtype::Pic) {
                                 print_esc_cstr_in(st, c"XeTeXpicfile".as_ptr());
                             } else {
                                 print_esc_cstr_in(st, c"XeTeXpdffile".as_ptr());
@@ -4699,9 +4699,7 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
 }
 
-// Node-type constants (xetex_format.h:380–390).
-const NATIVE_WORD_NODE_SD: u16 = 40;
-const NATIVE_WORD_NODE_AT_SD: u16 = 41;
+// Native-word whatsit subtypes are matched via the `WhatsitSubtype` enum.
 const L_CODE_SD: u16 = 4; // xetex-constants.h:142
 const FONT_ID_BASE_SD: i32 = 2_245_338; // xetex_format.h:188
 
@@ -4749,17 +4747,7 @@ const ACCENT_NOAD_SNL: u16 = 28;
 const VCENTER_NOAD_SNL: u16 = 29;
 const RIGHT_NOAD_SNL: u16 = 31;
 // Whatsit subtypes.
-const OPEN_NODE_SNL: u16 = 0;
-const WRITE_NODE_SNL: u16 = 1;
-const CLOSE_NODE_SNL: u16 = 2;
-const SPECIAL_NODE_SNL: u16 = 3;
-const LANGUAGE_NODE_SNL: u16 = 4;
-const PDF_SAVE_POS_NODE_SNL: u16 = 21;
-const NATIVE_WORD_NODE_SNL: u16 = 40;
-const NATIVE_WORD_NODE_AT_SNL: u16 = 41;
-const GLYPH_NODE_SNL: u16 = 42;
-const PIC_NODE_SNL: u16 = 43;
-const PDF_NODE_SNL: u16 = 44;
+// Whatsit subtypes are matched via the `WhatsitSubtype` enum (node.rs).
 // print_subsidiary_data: mem[p].b32.s1 cases.
 const MATH_CHAR_SNL: i32 = 1; // xetex-constants.h:269
 const SUB_BOX_SNL: i32 = 2; // xetex-constants.h:283
