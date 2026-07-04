@@ -583,7 +583,8 @@ fn fetch_core(
 /// Runs [`fetch_core`] and emits its deferred
 /// diagnostic / warning, returning the recoverable
 /// [`ErrorOutcome`](crate::errors::ErrorOutcome).
-fn fetch_in(st: &mut EngineState, a: i32) -> crate::errors::ErrorOutcome {
+fn fetch_in(st: &mut EngineState, a: impl crate::units::MemAddr) -> crate::errors::ErrorOutcome {
+    let a = a.addr();
     use crate::errors::ErrorOutcome;
     match fetch_core(&mut st.mem, &st.fonts, &st.eqtb, &mut st.scanner, a) {
         FetchOutcome::Ok => ErrorOutcome::Continue,

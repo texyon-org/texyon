@@ -164,8 +164,8 @@ fn classify_active_or_delta(mem: &MemState, p: impl crate::units::MemAddr) -> Ac
 }
 
 #[inline]
-fn glue_spec(spec: i32) -> NodePtr<GlueSpecNode> {
-    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(spec)).expect("non-null glue spec")
+fn glue_spec(spec: impl crate::units::MemAddr) -> NodePtr<GlueSpecNode> {
+    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(spec.addr())).expect("non-null glue spec")
 }
 
 

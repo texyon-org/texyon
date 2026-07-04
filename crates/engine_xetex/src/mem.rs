@@ -574,7 +574,9 @@ pub fn free_node(mem: &mut MemState, p: MemPtr, s: i32) {
 /// `NATIVE_NODE_glyph_count(p)`    = `mem[p+4].b16.s0`
 ///
 /// translated from xetex-xetex0.c:146 (copy_native_glyph_info)
-pub fn copy_native_glyph_info(mem: &mut MemState, src: i32, dest: i32) {
+pub fn copy_native_glyph_info(mem: &mut MemState, src: impl crate::units::MemAddr, dest: impl crate::units::MemAddr) {
+    let src = src.addr();
+    let dest = dest.addr();
     let src_ptr = mem.ptr(src + 5);
     if !src_ptr.is_null() {
         let glyph_count = mem.b16s0(src + 4) as usize;
@@ -683,8 +685,9 @@ pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterSta
 // prev_rightmost
 // ---------------------------------------------------------------------------
 
-pub fn prev_rightmost(mem: &MemState, s: i32, e: i32) -> i32 {
-    let mut p = s;
+pub fn prev_rightmost(mem: &MemState, s: impl crate::units::MemAddr, e: impl crate::units::MemAddr) -> i32 {
+    let e = e.addr();
+    let mut p = s.addr();
     if p == TEX_NULL {
         return TEX_NULL;
     }
