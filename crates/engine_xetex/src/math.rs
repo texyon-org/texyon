@@ -2563,7 +2563,8 @@ fn mlist_cond_math_glue(
     Ok(())
 }
 
-fn mlist_move_output_node(mem: &mut MemState, tail: i32, node: AnyNode) -> (i32, i32) {
+fn mlist_move_output_node(mem: &mut MemState, tail: impl crate::units::MemAddr, node: AnyNode) -> (i32, i32) {
+    let tail = tail.addr();
     let q = node.idx().0;
     mem.set_b32s1(tail, q);
     let next = mem.b32s1(q);

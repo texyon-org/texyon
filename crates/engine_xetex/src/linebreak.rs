@@ -216,7 +216,8 @@ fn alloc_passive_node(mem: &mut MemState) -> Result<NodePtr<PassiveNode>, NodeRe
 }
 
 #[inline]
-fn typed_list_width_in(mem: &MemState, node: i32) -> i32 {
+fn typed_list_width_in(mem: &MemState, node: impl crate::units::MemAddr) -> i32 {
+    let node = node.addr();
     match mem
         .classify(MemIdx::new(node))
         .expect("expected valid width-bearing node")
