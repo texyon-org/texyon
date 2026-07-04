@@ -53,11 +53,11 @@ pub(crate) fn new_native_word_node(
     // sizeof(UTF16_code) = 2, sizeof(memory_word) = 8
     let l = NATIVE_NODE_SIZE_NN + (n * 2 + 7) / 8;
     let q = cnl_get_node!(mem, l);
-    mem.set_b16s1(q, WHATSIT_NODE_NN);
+    mem.set_b16s1(q, crate::units::NodeType::Whatsit as u16);
     if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
-        mem.set_b16s0(q, NATIVE_WORD_NODE_AT_NN);
+        mem.set_b16s0(q, crate::node::WhatsitSubtype::NativeWordAt as u16);
     } else {
-        mem.set_b16s0(q, NATIVE_WORD_NODE_NN);
+        mem.set_b16s0(q, crate::node::WhatsitSubtype::NativeWord as u16);
     }
     mem.set_b16s3(q + 4, l as u16);
     mem.set_b16s2(q + 4, f as u16);
@@ -89,8 +89,8 @@ fn build_native_character(
         }
         NativeCharSrc::Single(c) => {
             let p = cnl_get_node!(mem, NATIVE_NODE_SIZE_NN + 1);
-            mem.set_b16s1(p, WHATSIT_NODE_NN);
-            mem.set_b16s0(p, NATIVE_WORD_NODE_NN);
+            mem.set_b16s1(p, crate::units::NodeType::Whatsit as u16);
+            mem.set_b16s0(p, crate::node::WhatsitSubtype::NativeWord as u16);
             mem.set_b16s3(p + 4, (NATIVE_NODE_SIZE_NN + 1) as u16);
             mem.set_b16s0(p + 4, 0);
             mem.set_ptr(p + 5, std::ptr::null_mut());
@@ -1188,11 +1188,8 @@ const INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR_RFI: i32 = 65;
 const INT_PAR_TRACING_LOST_CHARS_NC: i32 = 35;
 const INT_PAR_XETEX_USE_GLYPH_METRICS_NC: i32 = 72;
 const LIST_TAG_RFI: u16 = 2;
-const NATIVE_WORD_NODE_AT_NN: u16 = 41;
-const NATIVE_WORD_NODE_NN: u16 = 40;
 const NON_ADDRESS_RFI: i32 = 0;
 const TTBC_FILE_FORMAT_TFM: libc::c_int = 3;
-const WHATSIT_NODE_NN: u16 = 8;
 const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
 
 // Shared consts duplicated from scan.rs (still used there too).
