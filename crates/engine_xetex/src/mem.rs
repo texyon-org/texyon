@@ -660,7 +660,7 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     st.input.cur_list.tail = h;
     st.input.cur_list.prev_graf = 0;
     st.input.cur_list.mode_line = st.mem.line;
-    st.input.cur_list.e_tex_aux = TEX_NULL;
+    st.input.cur_list.e_tex_aux = crate::units::MemPtr::NULL;
     Ok(())
 }
 

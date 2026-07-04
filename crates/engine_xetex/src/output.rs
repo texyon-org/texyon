@@ -3323,7 +3323,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 After::Found
             }
             GroupCode::MathLeft => {
-                if st.mem.b16s1(st.input.nest[(p + 1) as usize].e_tex_aux) == NodeType::LeftNoad.as_raw() {
+                if st.mem.b16s1(st.input.nest[(p + 1) as usize].e_tex_aux.0) == NodeType::LeftNoad.as_raw() {
                     crate::output::print_esc_cstr_in(st, c"left".as_ptr());
                 } else {
                     crate::output::print_esc_cstr_in(st, c"middle".as_ptr());

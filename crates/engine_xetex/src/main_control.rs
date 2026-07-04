@@ -522,7 +522,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                 mc_propagate_error(crate::input::back_error_in(st)?)?;
             }
         }
-        let etex_aux = st.input.cur_list.e_tex_aux;
+        let etex_aux = st.input.cur_list.e_tex_aux.0;
         flush_node_list(&mut st.mem, etex_aux).map_err(MainControlAbort::Confusion)?;
         pop_nest_in(&mut st.mem, &mut st.input);
         // Insert pre-display penalty and above-display skip
@@ -1250,10 +1250,10 @@ pub(crate) fn end_graf_in(st: &mut crate::state::EngineState) -> Result<(), Main
                 o => return Err(MainControlAbort::LineBreak(o)),
             }
         }
-        let aux = st.input.cur_list.e_tex_aux;
+        let aux = st.input.cur_list.e_tex_aux.0;
         if aux != crate::mem::TEX_NULL {
             crate::mem::flush_list(&mut st.mem, aux);
-            st.input.cur_list.e_tex_aux = crate::mem::TEX_NULL;
+            st.input.cur_list.e_tex_aux = crate::units::MemPtr::NULL;
         }
         if let Some(a) = normal_paragraph(
             &mut st.eqtb,

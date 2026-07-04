@@ -55,7 +55,7 @@ impl MemIdx {
 /// index happens once, at a checked boundary, via [`as_idx`].
 ///
 /// [`as_idx`]: MemPtr::as_idx
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[repr(transparent)]
 pub struct MemPtr(pub i32);
 

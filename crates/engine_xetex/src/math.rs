@@ -3624,7 +3624,7 @@ fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: 
             q = aux_noad.supscr_field(mem);
             let q_idx = MemIdx::new(q);
             let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
-            let etex_aux = cl.e_tex_aux;
+            let etex_aux = cl.e_tex_aux.0;
             if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
                 return Err(c"right");
             }
@@ -3913,7 +3913,7 @@ fn mark_middle_noad(mem: &mut MemState, p: NodePtr<Noad>) {
 fn finish_left_right_group(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: i32, p: i32) {
     mem.set_b32s1(cl.head, q);
     cl.tail = p;
-    cl.e_tex_aux = p;
+    cl.e_tex_aux = crate::units::MemPtr::from_raw(p);
 }
 
 fn append_inner_noad_for_right(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: i32) -> Result<(), NodeRecycleAbort> {
@@ -4298,7 +4298,7 @@ pub(crate) fn after_math_in(
     let mut danger = false;
 
     let mut j = if st.input.cur_list.mode == MMODE {
-        st.input.cur_list.e_tex_aux
+        st.input.cur_list.e_tex_aux.0
     } else {
         TEX_NULL
     };
@@ -4341,7 +4341,7 @@ pub(crate) fn after_math_in(
         danger = false;
 
         j = if st.input.cur_list.mode == MMODE {
-            st.input.cur_list.e_tex_aux
+            st.input.cur_list.e_tex_aux.0
         } else {
             TEX_NULL
         };
@@ -4577,9 +4577,9 @@ pub(crate) fn init_math_in(
 
         if st.input.cur_list.head == st.input.cur_list.tail {
             crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
-            x = if st.input.cur_list.e_tex_aux == TEX_NULL {
+            x = if st.input.cur_list.e_tex_aux.is_null() {
                 0
-            } else if st.mem.b32s0(st.input.cur_list.e_tex_aux) >= R_CODE {
+            } else if st.mem.b32s0(st.input.cur_list.e_tex_aux.0) >= R_CODE {
                 -1
             } else {
                 1
@@ -4630,9 +4630,9 @@ pub(crate) fn init_math_in(
             jbox.set_glue_set(&mut st.mem, jb_gset);
 
             let mut v = jb_sh.0;
-            x = if st.input.cur_list.e_tex_aux == TEX_NULL {
+            x = if st.input.cur_list.e_tex_aux.is_null() {
                 0
-            } else if st.mem.b32s0(st.input.cur_list.e_tex_aux) >= R_CODE {
+            } else if st.mem.b32s0(st.input.cur_list.e_tex_aux.0) >= R_CODE {
                 -1
             } else {
                 1
@@ -4900,7 +4900,7 @@ pub(crate) fn init_math_in(
         ) {
             return Err(crate::main_control::MainControlAbort::Save(a));
         }
-        st.input.cur_list.e_tex_aux = j;
+        st.input.cur_list.e_tex_aux = crate::units::MemPtr::from_raw(j);
         if let Some(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,

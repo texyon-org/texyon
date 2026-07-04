@@ -444,7 +444,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.input.cur_list.mode = VMODE;
     st.input.cur_list.head = CONTRIB_HEAD;
     st.input.cur_list.tail = CONTRIB_HEAD;
-    st.input.cur_list.e_tex_aux = crate::mem::TEX_NULL;
+    st.input.cur_list.e_tex_aux = crate::units::MemPtr::NULL;
     st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
@@ -1052,7 +1052,7 @@ unsafe fn tt_run_engine_inner(
                 mode: 0,
                 head: 0,
                 tail: 0,
-                e_tex_aux: 0,
+                e_tex_aux: crate::units::MemPtr::from_raw(0),
                 prev_graf: 0,
                 mode_line: 0,
                 aux: crate::mem_types::MemoryWord {

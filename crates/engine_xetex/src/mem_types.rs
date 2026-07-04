@@ -89,7 +89,7 @@ pub struct ListStateRecord {
     // 2 bytes implicit padding
     pub head: i32,
     pub tail: i32,
-    pub e_tex_aux: i32,
+    pub e_tex_aux: crate::units::MemPtr,
     pub prev_graf: i32,
     pub mode_line: i32,
     pub aux: MemoryWord,

@@ -2504,7 +2504,7 @@ impl PostLineBreakOutcome {
 /// over/underfull diagnostic) runs via [`crate::packaging::hpack_emit_in`];
 /// cold aborts ride the [`PostLineBreakOutcome`] sentinel.
 fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBreakOutcome {
-    let mut lr_ptr = st.input.cur_list.e_tex_aux;
+    let mut lr_ptr = st.input.cur_list.e_tex_aux.0;
 
     reverse_best_breaks(&mut st.mem, &mut st.linebreak);
 
@@ -2573,7 +2573,7 @@ fn post_line_break_in(st: &mut crate::state::EngineState, d: bool) -> PostLineBr
 
     let best_line = st.linebreak.best_line;
     st.input.cur_list.prev_graf = best_line - 1;
-    st.input.cur_list.e_tex_aux = lr_ptr;
+    st.input.cur_list.e_tex_aux = MemPtr::from_raw(lr_ptr);
     PostLineBreakOutcome::Done
 }
 
