@@ -59,6 +59,41 @@ impl MemIdx {
 #[repr(transparent)]
 pub struct MemPtr(pub i32);
 
+impl std::ops::Add<i32> for MemPtr {
+    type Output = MemPtr;
+    /// Field offset within a node (`mem[p + k]`): `MemPtr(base) + k`. Zero-cost.
+    #[inline]
+    fn add(self, rhs: i32) -> MemPtr {
+        MemPtr(self.0 + rhs)
+    }
+}
+
+/// A value usable as a `mem[]` arena address by the [`MemState`](crate::state::MemState)
+/// word accessors. Implemented for the raw `i32`, the nullable [`MemPtr`], and the
+/// checked [`MemIdx`]; all resolve to the same raw index at zero cost, so the
+/// accessors accept a typed pointer directly without a `.0` at the call site.
+pub trait MemAddr {
+    fn addr(self) -> i32;
+}
+impl MemAddr for i32 {
+    #[inline]
+    fn addr(self) -> i32 {
+        self
+    }
+}
+impl MemAddr for MemPtr {
+    #[inline]
+    fn addr(self) -> i32 {
+        self.0
+    }
+}
+impl MemAddr for MemIdx {
+    #[inline]
+    fn addr(self) -> i32 {
+        self.0
+    }
+}
+
 impl MemPtr {
     /// The TeX null pointer (`TEX_NULL = MIN_HALFWORD = -0x0FFFFFFF`).
     pub const NULL: MemPtr = MemPtr(TEX_NULL);

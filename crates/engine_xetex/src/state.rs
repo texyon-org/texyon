@@ -472,140 +472,140 @@ pub(crate) struct MemState {
 impl MemState {
     /// Read `mem[p].b32.s0`.
     #[inline]
-    pub(crate) fn b32s0(&self, p: i32) -> i32 {
+    pub(crate) fn b32s0(&self, p: impl crate::units::MemAddr) -> i32 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p as usize].b32.s0 }
+        unsafe { self.data[p.addr() as usize].b32.s0 }
     }
 
     /// Read `mem[p].b32.s1` (the `LLIST_link` / successor-pointer field).
     #[inline]
-    pub(crate) fn b32s1(&self, p: i32) -> i32 {
+    pub(crate) fn b32s1(&self, p: impl crate::units::MemAddr) -> i32 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p as usize].b32.s1 }
+        unsafe { self.data[p.addr() as usize].b32.s1 }
     }
 
     /// Read `mem[p].b16.s0`.
     #[inline]
-    pub(crate) fn b16s0(&self, p: i32) -> u16 {
+    pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p as usize].b16.s0 }
+        unsafe { self.data[p.addr() as usize].b16.s0 }
     }
 
     /// Read `mem[p].b16.s1`.
     #[inline]
-    pub(crate) fn b16s1(&self, p: i32) -> u16 {
+    pub(crate) fn b16s1(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p as usize].b16.s1 }
+        unsafe { self.data[p.addr() as usize].b16.s1 }
     }
 
     /// Read `mem[p].b16.s2`.
     #[inline]
-    pub(crate) fn b16s2(&self, p: i32) -> u16 {
+    pub(crate) fn b16s2(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p as usize].b16.s2 }
+        unsafe { self.data[p.addr() as usize].b16.s2 }
     }
 
     /// Read `mem[p].b16.s3`.
     #[inline]
-    pub(crate) fn b16s3(&self, p: i32) -> u16 {
+    pub(crate) fn b16s3(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p as usize].b16.s3 }
+        unsafe { self.data[p.addr() as usize].b16.s3 }
     }
 
     /// Read `mem[p].ptr` (the native-glyph pointer field).
     #[inline]
-    pub(crate) fn ptr(&self, p: i32) -> *mut std::ffi::c_void {
+    pub(crate) fn ptr(&self, p: impl crate::units::MemAddr) -> *mut std::ffi::c_void {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p as usize].ptr }
+        unsafe { self.data[p.addr() as usize].ptr }
     }
 
     /// Write `mem[p].ptr`. Union writes through a `&mut` index are safe.
     #[inline]
-    pub(crate) fn set_ptr(&mut self, p: i32, v: *mut std::ffi::c_void) {
-        self.data[p as usize].ptr = v;
+    pub(crate) fn set_ptr(&mut self, p: impl crate::units::MemAddr, v: *mut std::ffi::c_void) {
+        self.data[p.addr() as usize].ptr = v;
     }
 
     /// Write `mem[p].b32.s0`. Union writes through a `&mut` index are safe.
     #[inline]
-    pub(crate) fn set_b32s0(&mut self, p: i32, v: i32) {
-        self.data[p as usize].b32.s0 = v;
+    pub(crate) fn set_b32s0(&mut self, p: impl crate::units::MemAddr, v: i32) {
+        self.data[p.addr() as usize].b32.s0 = v;
     }
 
     /// Write `mem[p].b32.s1` (the `LLIST_link` field).
     #[inline]
-    pub(crate) fn set_b32s1(&mut self, p: i32, v: i32) {
-        self.data[p as usize].b32.s1 = v;
+    pub(crate) fn set_b32s1(&mut self, p: impl crate::units::MemAddr, v: i32) {
+        self.data[p.addr() as usize].b32.s1 = v;
     }
 
     /// Write `mem[p].b16.s0` (low 16 bits of the first half-word). Union writes
     /// through a `&mut` index are safe.
     #[inline]
-    pub(crate) fn set_b16s0(&mut self, p: i32, v: u16) {
-        self.data[p as usize].b16.s0 = v;
+    pub(crate) fn set_b16s0(&mut self, p: impl crate::units::MemAddr, v: u16) {
+        self.data[p.addr() as usize].b16.s0 = v;
     }
 
     /// Write `mem[p].b16.s1` (high 16 bits of the first half-word).
     #[inline]
-    pub(crate) fn set_b16s1(&mut self, p: i32, v: u16) {
-        self.data[p as usize].b16.s1 = v;
+    pub(crate) fn set_b16s1(&mut self, p: impl crate::units::MemAddr, v: u16) {
+        self.data[p.addr() as usize].b16.s1 = v;
     }
 
     /// Write `mem[p].b16.s2`.
     #[inline]
-    pub(crate) fn set_b16s2(&mut self, p: i32, v: u16) {
-        self.data[p as usize].b16.s2 = v;
+    pub(crate) fn set_b16s2(&mut self, p: impl crate::units::MemAddr, v: u16) {
+        self.data[p.addr() as usize].b16.s2 = v;
     }
 
     /// Write `mem[p].b16.s3`.
     #[inline]
-    pub(crate) fn set_b16s3(&mut self, p: i32, v: u16) {
-        self.data[p as usize].b16.s3 = v;
+    pub(crate) fn set_b16s3(&mut self, p: impl crate::units::MemAddr, v: u16) {
+        self.data[p.addr() as usize].b16.s3 = v;
     }
 
     /// Read the `gr` (f64) field of `mem[p]`.
     #[inline]
-    pub(crate) fn gr(&self, p: i32) -> f64 {
+    pub(crate) fn gr(&self, p: impl crate::units::MemAddr) -> f64 {
         // SAFETY: `MemoryWord` union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p as usize].gr }
+        unsafe { self.data[p.addr() as usize].gr }
     }
 
     /// Write the `gr` (f64) field of `mem[p]`.
     #[inline]
-    pub(crate) fn set_gr(&mut self, p: i32, v: f64) {
-        self.data[p as usize].gr = v;
+    pub(crate) fn set_gr(&mut self, p: impl crate::units::MemAddr, v: f64) {
+        self.data[p.addr() as usize].gr = v;
     }
 
     /// Reinterpret the arena from word `p` onward as a `*mut u16`. Valid past
     /// the borrow because the thread-local owner never reallocates.
     #[inline]
-    pub(crate) fn as_u16_ptr_mut(&mut self, p: i32) -> *mut u16 {
-        self.data.as_mut_ptr().wrapping_add(p as usize) as *mut u16
+    pub(crate) fn as_u16_ptr_mut(&mut self, p: impl crate::units::MemAddr) -> *mut u16 {
+        self.data.as_mut_ptr().wrapping_add(p.addr() as usize) as *mut u16
     }
 
     /// Reinterpret the arena from word `p` onward as a `*const u16`. Valid past
     /// the borrow because the thread-local owner never reallocates.
     #[inline]
-    pub(crate) fn as_u16_ptr(&self, p: i32) -> *const u16 {
-        self.data.as_ptr().wrapping_add(p as usize) as *const u16
+    pub(crate) fn as_u16_ptr(&self, p: impl crate::units::MemAddr) -> *const u16 {
+        self.data.as_ptr().wrapping_add(p.addr() as usize) as *const u16
     }
 
     /// Reinterpret the arena from word `p` onward as a `*mut std::ffi::c_void`. Valid
     /// past the borrow because the thread-local owner never reallocates.
     #[inline]
-    pub(crate) fn node_addr(&self, p: i32) -> *mut std::ffi::c_void {
-        self.data.as_ptr().wrapping_add(p as usize) as *mut std::ffi::c_void
+    pub(crate) fn node_addr(&self, p: impl crate::units::MemAddr) -> *mut std::ffi::c_void {
+        self.data.as_ptr().wrapping_add(p.addr() as usize) as *mut std::ffi::c_void
     }
 
     /// Copy the full `MemoryWord` at `mem[p]`.
     #[inline]
-    pub(crate) fn word(&self, p: i32) -> crate::mem_types::MemoryWord {
-        self.data[p as usize]
+    pub(crate) fn word(&self, p: impl crate::units::MemAddr) -> crate::mem_types::MemoryWord {
+        self.data[p.addr() as usize]
     }
 
     /// Write a full `MemoryWord` to `mem[p]`.
     #[inline]
-    pub(crate) fn set_word(&mut self, p: i32, w: crate::mem_types::MemoryWord) {
-        self.data[p as usize] = w;
+    pub(crate) fn set_word(&mut self, p: impl crate::units::MemAddr, w: crate::mem_types::MemoryWord) {
+        self.data[p.addr() as usize] = w;
     }
 }
 
