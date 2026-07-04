@@ -306,7 +306,8 @@ pub fn alloc_rule(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
 /// matching the C's implicit narrowing assignment.
 ///
 /// translated from xetex-xetex0.c:174 (new_ligature)
-pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: i32) -> i32 {
+pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: impl crate::units::MemAddr) -> i32 {
+    let q = q.addr();
     let Some(p) = NodePtr::<LigatureNode>::alloc(mem) else {
         return ALLOC_FAILED;
     };
