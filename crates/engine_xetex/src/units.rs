@@ -29,7 +29,8 @@ impl MemIdx {
     /// value is not the `TEX_NULL` sentinel (the caller must have already
     /// classified it as a real index).
     #[inline]
-    pub fn new(idx: i32) -> MemIdx {
+    pub fn new(idx: impl MemAddr) -> MemIdx {
+        let idx = idx.addr();
         debug_assert!(idx != TEX_NULL, "MemIdx must not hold TEX_NULL");
         MemIdx(idx)
     }
