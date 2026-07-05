@@ -37,8 +37,8 @@ const NORMAL: u16 = 0;
 /// holds at least the forced final breakpoint).
 const BEST_BET_SET: &str = "best_bet is set by choose_best_break before use";
 const HOLD_HEAD: i32 = 4_999_995;
-const ACTIVE_LIST: i32 = 4_999_992;
-const LAST_ACTIVE: i32 = ACTIVE_LIST;
+const ACTIVE_LIST: MemPtr = MemPtr(4_999_992);
+const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
 const PASSIVE_NODE_SIZE: i32 = 2;
 const ACTIVE_NODE_SIZE_NORMAL: i16 = 3;
 const ACTIVE_NODE_SIZE_EXTENDED: i16 = 5;
@@ -386,7 +386,7 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
     mem: &mut MemState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
-    q: i32,
+    q: impl crate::units::MemAddr,
     p: i32,
 ) -> Option<i32> {
     let break_node = active(q).break_node(mem);
@@ -992,7 +992,7 @@ fn start_linebreak_pass(
     let q_active = alloc_active_node(
         mem,
         linebreak.active_node_size as i32,
-        MemPtr::from_raw(LAST_ACTIVE),
+        LAST_ACTIVE,
     )?;
     q_active.set_break_type(mem, UNHYPHENATED as u16);
     q_active.set_fitness(mem, DECENT_FIT as u16);
@@ -1018,8 +1018,8 @@ fn start_linebreak_pass(
 }
 
 fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
-    let mut q = MemPtr::from_raw(ACTIVE_LIST).link(mem);
-    while q.0 != LAST_ACTIVE {
+    let mut q = ACTIVE_LIST.link(mem);
+    while q != LAST_ACTIVE {
         match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
                 linebreak.cur_p = d.link(mem);
@@ -1042,8 +1042,8 @@ fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakSt
 }
 
 fn free_final_linebreak_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
-    let mut q = MemPtr::from_raw(ACTIVE_LIST).link(mem);
-    while q.0 != ACTIVE_LIST {
+    let mut q = ACTIVE_LIST.link(mem);
+    while q != ACTIVE_LIST {
         let next = match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
                 let next = d.link(mem);
@@ -1068,21 +1068,21 @@ fn free_final_linebreak_lists(mem: &mut MemState, linebreak: &mut LinebreakState
 }
 
 fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &EqtbState) -> bool {
-    if mem.b32s1(ACTIVE_LIST) == LAST_ACTIVE {
+    if ACTIVE_LIST.link(mem) == LAST_ACTIVE {
         return false;
     }
 
-    let mut r = mem.b32s1(ACTIVE_LIST);
+    let mut r = ACTIVE_LIST.link(mem);
     let mut fewest_demerits = MAX_HALFWORD;
     loop {
         r = match classify_active_or_delta(mem, r) {
-            ActiveOrDelta::Delta(d) => d.link(mem).0,
+            ActiveOrDelta::Delta(d) => d.link(mem),
             ActiveOrDelta::Active(a) => {
                 if a.total_demerits(mem) < fewest_demerits {
                     fewest_demerits = a.total_demerits(mem);
                     linebreak.best_bet = Some(a);
                 }
-                a.link(mem).0
+                a.link(mem)
             }
         };
         if r == LAST_ACTIVE {
@@ -1096,11 +1096,11 @@ fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &Eqtb
         return true;
     }
 
-    let mut r = mem.b32s1(ACTIVE_LIST);
+    let mut r = ACTIVE_LIST.link(mem);
     let mut actual_looseness = 0;
     loop {
         r = match classify_active_or_delta(mem, r) {
-            ActiveOrDelta::Delta(d) => d.link(mem).0,
+            ActiveOrDelta::Delta(d) => d.link(mem),
             ActiveOrDelta::Active(a) => {
                 let line_diff = a.line_number(mem) - linebreak.best_line;
                 if (line_diff < actual_looseness && looseness <= line_diff)
@@ -1115,7 +1115,7 @@ fn choose_best_break(mem: &MemState, linebreak: &mut LinebreakState, eqtb: &Eqtb
                     linebreak.best_bet = Some(a);
                     fewest_demerits = a.total_demerits(mem);
                 }
-                a.link(mem).0
+                a.link(mem)
             }
         };
         if r == LAST_ACTIVE {
@@ -1513,7 +1513,7 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
         };
         let mut auto_breaking = true;
 
-        while !st.linebreak.cur_p.is_null() && st.mem.b32s1(ACTIVE_LIST) != LAST_ACTIVE {
+        while !st.linebreak.cur_p.is_null() && ACTIVE_LIST.link(&st.mem) != LAST_ACTIVE {
             let mut cur = st.linebreak.cur_p.0;
 
             if crate::mem::is_char_node(&st.mem, cur) {
@@ -2645,7 +2645,7 @@ unsafe fn try_break(
 
     let mut no_break_yet = true;
     let mut prev_r = ACTIVE_LIST;
-    let mut prev_prev_r = TEX_NULL;
+    let mut prev_prev_r = MemPtr::NULL;
     let mut old_l = 0;
     let mut line_width = 0;
     let mut g = 0;
@@ -2656,11 +2656,11 @@ unsafe fn try_break(
 
     loop {
         let r = if prev_r == ACTIVE_LIST {
-            mem.b32s1(ACTIVE_LIST)
+            ACTIVE_LIST.link(mem)
         } else {
             match classify_active_or_delta(mem, prev_r) {
-                ActiveOrDelta::Delta(d) => d.link(mem).0,
-                ActiveOrDelta::Active(a) => a.link(mem).0,
+                ActiveOrDelta::Delta(d) => d.link(mem),
+                ActiveOrDelta::Active(a) => a.link(mem),
             }
         };
 
@@ -2868,7 +2868,7 @@ unsafe fn try_break(
                     }
                 } else {
                     let q =
-                        alloc_delta_node(mem, MemPtr::from_raw(r)).map_err(TryBreakAbort::Node)?;
+                        alloc_delta_node(mem, r).map_err(TryBreakAbort::Node)?;
                     q.set_dwidth(
                         mem,
                         Scaled(linebreak.break_width[1] - linebreak.cur_active_width[1]),
@@ -2895,7 +2895,7 @@ unsafe fn try_break(
                     );
                     active(prev_r).set_link(mem, MemPtr::from_idx(q.idx()));
                     prev_prev_r = prev_r;
-                    prev_r = q.idx().0;
+                    prev_r = MemPtr::from_idx(q.idx());
                 }
 
                 let adj = eqtb.b32s1(INT_BASE + INT_PAR_ADJ_DEMERITS).abs();
@@ -2916,7 +2916,7 @@ unsafe fn try_break(
                         let q_active = alloc_active_node(
                             mem,
                             linebreak.active_node_size as i32,
-                            MemPtr::from_raw(r),
+                            r,
                         )
                         .map_err(TryBreakAbort::Node)?;
                         q_active.set_break_node(mem, linebreak.passive);
@@ -2938,7 +2938,7 @@ unsafe fn try_break(
                                 a.set_link(mem, MemPtr::from_idx(q_active.idx()))
                             }
                         }
-                        prev_r = q_active.idx().0;
+                        prev_r = MemPtr::from_idx(q_active.idx());
                     }
 
                     linebreak.minimal_demerits[fit_class] = MAX_HALFWORD;
@@ -2948,7 +2948,7 @@ unsafe fn try_break(
 
                 if r != LAST_ACTIVE {
                     let q =
-                        alloc_delta_node(mem, MemPtr::from_raw(r)).map_err(TryBreakAbort::Node)?;
+                        alloc_delta_node(mem, r).map_err(TryBreakAbort::Node)?;
                     q.set_dwidth(
                         mem,
                         Scaled(linebreak.cur_active_width[1] - linebreak.break_width[1]),
@@ -2978,7 +2978,7 @@ unsafe fn try_break(
                         ActiveOrDelta::Active(a) => a.set_link(mem, MemPtr::from_idx(q.idx())),
                     }
                     prev_prev_r = prev_r;
-                    prev_r = q.idx().0;
+                    prev_r = MemPtr::from_idx(q.idx());
                 }
             }
 
@@ -3145,7 +3145,7 @@ unsafe fn try_break(
         if b > INF_BAD || pi == EJECT_PENALTY {
             if linebreak.final_pass
                 && linebreak.minimum_demerits == AWFUL_BAD
-                && r_active.link(mem).0 == LAST_ACTIVE
+                && r_active.link(mem) == LAST_ACTIVE
                 && prev_r == ACTIVE_LIST
             {
                 artificial_demerits = true;
@@ -3222,25 +3222,25 @@ unsafe fn try_break(
         mem: &mut MemState,
         scanner: &mut ScannerState,
         linebreak: &mut LinebreakState,
-        r: i32,
-        prev_r: &mut i32,
-        prev_prev_r: &mut i32,
+        r: MemPtr,
+        prev_r: &mut MemPtr,
+        prev_prev_r: &mut MemPtr,
     ) {
         // Splice `r` out of the active list: its successor takes its place,
         // whether the predecessor is the head sentinel, a delta, or an active node.
         let r_link = active(r).link(mem);
         if *prev_r == ACTIVE_LIST {
-            mem.set_b32s1(ACTIVE_LIST, r_link.0);
+            ACTIVE_LIST.set_link(mem, r_link);
         } else {
             match classify_active_or_delta(mem, *prev_r) {
                 ActiveOrDelta::Delta(d) => d.set_link(mem, r_link),
                 ActiveOrDelta::Active(a) => a.set_link(mem, r_link),
             }
         }
-        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(r), linebreak.active_node_size as i32);
+        crate::mem::free_node(mem, r, linebreak.active_node_size as i32);
 
         if *prev_r == ACTIVE_LIST {
-            let r = mem.b32s1(ACTIVE_LIST);
+            let r = ACTIVE_LIST.link(mem);
             if let ActiveOrDelta::Delta(r_delta) = classify_active_or_delta(mem, r) {
                 scanner.active_width[1] += r_delta.dwidth(mem).0;
                 scanner.active_width[2] += r_delta.dstretch0(mem).0;
@@ -3254,11 +3254,11 @@ unsafe fn try_break(
                 linebreak.cur_active_width[4] = scanner.active_width[4];
                 linebreak.cur_active_width[5] = scanner.active_width[5];
                 linebreak.cur_active_width[6] = scanner.active_width[6];
-                mem.set_b32s1(ACTIVE_LIST, r_delta.link(mem).0);
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(r), DELTA_NODE_SIZE);
+                ACTIVE_LIST.set_link(mem, r_delta.link(mem));
+                crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
             }
         } else if let ActiveOrDelta::Delta(prev_delta) = classify_active_or_delta(mem, *prev_r) {
-            let r = prev_delta.link(mem).0;
+            let r = prev_delta.link(mem);
             if r == LAST_ACTIVE {
                 linebreak.cur_active_width[1] -= prev_delta.dwidth(mem).0;
                 linebreak.cur_active_width[2] -= prev_delta.dstretch0(mem).0;
@@ -3267,11 +3267,11 @@ unsafe fn try_break(
                 linebreak.cur_active_width[5] -= prev_delta.dstretch3(mem).0;
                 linebreak.cur_active_width[6] -= prev_delta.dshrink(mem).0;
                 if *prev_prev_r == ACTIVE_LIST {
-                    mem.set_b32s1(ACTIVE_LIST, LAST_ACTIVE);
+                    ACTIVE_LIST.set_link(mem, LAST_ACTIVE);
                 } else {
-                    active(*prev_prev_r).set_link(mem, MemPtr::from_raw(LAST_ACTIVE));
+                    active(*prev_prev_r).set_link(mem, LAST_ACTIVE);
                 }
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(*prev_r), DELTA_NODE_SIZE);
+                crate::mem::free_node(mem, *prev_r, DELTA_NODE_SIZE);
                 *prev_r = *prev_prev_r;
             } else if let ActiveOrDelta::Delta(r_delta) = classify_active_or_delta(mem, r) {
                 linebreak.cur_active_width[1] += r_delta.dwidth(mem).0;
@@ -3305,7 +3305,7 @@ unsafe fn try_break(
                     Scaled(prev_delta.dshrink(mem).0 + r_delta.dshrink(mem).0),
                 );
                 prev_delta.set_link(mem, r_delta.link(mem));
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(r), DELTA_NODE_SIZE);
+                crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
             }
         }
     }
