@@ -17,7 +17,7 @@ use crate::units::{MemIdx, MemPtr, Scaled};
 const MATH_NODE: i32 = crate::consts::MATH_NODE as i32;
 
 // Glue/page constants (xetex-constants.h)
-const PAGE_INS_HEAD: i32 = MEM_TOP;
+const PAGE_INS_HEAD: MemPtr = MemPtr(MEM_TOP);
 const PAGE_HEAD: i32 = MEM_TOP - 2;
 const HOLD_HEAD: i32 = MEM_TOP - 4;
 const NORMAL: i32 = 0;
@@ -303,7 +303,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
 
     if process_inserts {
         // 1053: Prepare insertion boxes as queues
-        let mut r = st.mem.b32s1(PAGE_INS_HEAD);
+        let mut r = PAGE_INS_HEAD.link(&st.mem);
         while r != PAGE_INS_HEAD {
             if st.mem.b32s0(r + 2) != TEX_NULL {
                 // PAGE_INS_NODE_best_ins_ptr != TEX_NULL
@@ -319,7 +319,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                 }
                 st.mem.set_b32s1(r + 2, p); // PAGE_INS_NODE_last_ins_ptr = p
             }
-            r = st.mem.b32s1(r); // LLIST_link
+            r = r.link(&st.mem); // LLIST_link
         }
     }
 
@@ -333,10 +333,10 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
         let node = st.mem.classify(MemIdx::new(p)).expect("valid page node");
         let reset_p = if let (AnyNode::Ins(ins), true) = (node, process_inserts) {
             // 1055: Process insertion node
-            let mut r = st.mem.b32s1(PAGE_INS_HEAD);
+            let mut r = PAGE_INS_HEAD.link(&st.mem);
             while st.mem.b16s0(r) != ins.subtype(&st.mem) {
                 // NODE_subtype(r) != NODE_subtype(p)
-                r = st.mem.b32s1(r);
+                r = r.link(&st.mem);
             }
 
             let wait = if st.mem.b32s0(r + 2) == TEX_NULL {
@@ -545,13 +545,13 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
     }
 
     // 1054: Delete page-insertion nodes
-    let mut r = st.mem.b32s1(PAGE_INS_HEAD);
+    let mut r = PAGE_INS_HEAD.link(&st.mem);
     while r != PAGE_INS_HEAD {
-        let next = st.mem.b32s1(r);
-        crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(r), PAGE_INS_NODE_SIZE);
+        let next = r.link(&st.mem);
+        crate::mem::free_node(&mut st.mem, r, PAGE_INS_NODE_SIZE);
         r = next;
     }
-    st.mem.set_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD);
+    PAGE_INS_HEAD.set_link(&mut st.mem, PAGE_INS_HEAD);
 
     // Handle extended marks after new-page setup
     let mark_root = st.scanner.sa_root[MARK_VAL];
@@ -790,8 +790,8 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 }
                 let n = ins.subtype(&st.mem) as u8;
                 let mut r = PAGE_INS_HEAD;
-                while n as u16 >= st.mem.b16s0(st.mem.b32s1(r)) {
-                    r = st.mem.b32s1(r);
+                while n as u16 >= st.mem.b16s0(r.link(&st.mem)) {
+                    r = r.link(&st.mem);
                 }
 
                 if st.mem.b16s0(r) as u8 != n {
@@ -799,7 +799,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     let q2 = page_get_node(&mut st.mem, PAGE_INS_NODE_SIZE)?;
                     st.mem.set_b32s1(q2, st.mem.b32s1(r));
                     st.mem.set_b32s1(r, q2);
-                    r = q2;
+                    r = MemPtr::from_raw(q2);
                     st.mem.set_b16s0(r, n as u16); // NODE_subtype = n
                     st.mem.set_b16s1(r, INSERTING); // NODE_type = INSERTING
                     ensure_vbox_in(st, n)?;
@@ -975,11 +975,11 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     st.shipout.best_page_break.0 = p;
                     st.shipout.best_size = st.shipout.page_so_far[0];
                     st.shipout.least_page_cost = c;
-                    let mut r = st.mem.b32s1(PAGE_INS_HEAD);
+                    let mut r = PAGE_INS_HEAD.link(&st.mem);
                     while r != PAGE_INS_HEAD {
                         // best_ins_ptr = last_ins_ptr
                         st.mem.set_b32s0(r + 2, st.mem.b32s1(r + 2));
-                        r = st.mem.b32s1(r);
+                        r = r.link(&st.mem);
                     }
                 }
 
