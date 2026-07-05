@@ -2853,9 +2853,9 @@ pub(crate) fn handle_right_brace_in(
                     && st.mem.b16s1(st.input.cur_list.tail) == NodeType::OrdNoad.as_raw()
                 {
                     // merge accent noad into ord
-                    let mut q = st.input.cur_list.head.0;
-                    while st.mem.b32s1(q) != st.input.cur_list.tail.0 {
-                        q = st.mem.b32s1(q);
+                    let mut q = st.input.cur_list.head;
+                    while st.mem.link(q) != st.input.cur_list.tail {
+                        q = st.mem.link(q);
                     }
                     st.mem.set_b32s1(q, p);
                     free_node(&mut st.mem, st.input.cur_list.tail, NOAD_SIZE);
@@ -5491,13 +5491,13 @@ pub(crate) unsafe fn main_control_main_loop_in(
                     st.mem.node_addr(st.input.cur_list.tail),
                     (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
                 )?;
-                let mut prev = st.input.cur_list.head.0;
-                if prev != st.mainloop.main_pp.0 {
-                    while st.mem.b32s1(prev) != st.mainloop.main_pp.0 {
-                        prev = st.mem.b32s1(prev);
+                let mut prev = st.input.cur_list.head;
+                if prev != st.mainloop.main_pp {
+                    while st.mem.link(prev) != st.mainloop.main_pp {
+                        prev = st.mem.link(prev);
                     }
                 }
-                st.mem.set_b32s1(prev, st.mem.b32s1(st.mainloop.main_pp));
+                st.mem.set_link(prev, st.mem.link(st.mainloop.main_pp));
                 st.mem.set_b32s1(st.mainloop.main_pp, TEX_NULL);
                 let fnsz = st.mem.b16s3(st.mainloop.main_pp + 4) as i32;
                 crate::mem::free_node(&mut st.mem, st.mainloop.main_pp, fnsz);
@@ -5524,10 +5524,10 @@ pub(crate) unsafe fn main_control_main_loop_in(
             .b32s1(INT_BASE + INT_PAR_XETEX_INTERWORD_SPACE_SHAPING)
             > 0
         {
-            let mut p = st.input.cur_list.head.0;
-            let mut pp = TEX_NULL;
-            while p != st.input.cur_list.tail.0 {
-                if p != TEX_NULL
+            let mut p = st.input.cur_list.head;
+            let mut pp = MemPtr::NULL;
+            while p != st.input.cur_list.tail {
+                if !p.is_null()
                     && !mc_is_char_node(st, p)
                     && st.mem.b16s1(p) == WHATSIT_NODE
                     && crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(p))
@@ -5535,10 +5535,10 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 {
                     pp = p;
                 }
-                p = st.mem.b32s1(p);
+                p = st.mem.link(p);
             }
-            if pp != TEX_NULL && st.mem.b16s2(pp + 4) == mf as u16 {
-                let mut p2 = st.mem.b32s1(pp);
+            if !pp.is_null() && st.mem.b16s2(pp + 4) == mf as u16 {
+                let mut p2 = st.mem.link(pp);
                 while !mc_is_char_node(st, p2)
                     && (st.mem.b16s1(p2) == PENALTY_NODE
                         || st.mem.b16s1(p2) == INS_NODE
@@ -5546,10 +5546,10 @@ pub(crate) unsafe fn main_control_main_loop_in(
                         || st.mem.b16s1(p2) == ADJUST_NODE
                         || (st.mem.b16s1(p2) == WHATSIT_NODE && st.mem.b16s0(p2) <= 4))
                 {
-                    p2 = st.mem.b32s1(p2);
+                    p2 = st.mem.link(p2);
                 }
                 if !mc_is_char_node(st, p2) && st.mem.b16s1(p2) == GLUE_NODE {
-                    let p3 = st.mem.b32s1(p2);
+                    let p3 = st.mem.link(p2);
                     let mut p3m = p3;
                     while !mc_is_char_node(st, p3m)
                         && (st.mem.b16s1(p3m) == PENALTY_NODE
@@ -5558,9 +5558,9 @@ pub(crate) unsafe fn main_control_main_loop_in(
                             || st.mem.b16s1(p3m) == ADJUST_NODE
                             || (st.mem.b16s1(p3m) == WHATSIT_NODE && st.mem.b16s0(p3m) <= 4))
                     {
-                        p3m = st.mem.b32s1(p3m);
+                        p3m = st.mem.link(p3m);
                     }
-                    if p3m == st.input.cur_list.tail.0 {
+                    if p3m == st.input.cur_list.tail {
                         let pp_len = st.mem.b16s1(pp + 4) as i32;
                         let tail_len = st.mem.b16s1(st.input.cur_list.tail + 4) as i32;
                         let tmp = crate::fonts::new_native_word_node(
