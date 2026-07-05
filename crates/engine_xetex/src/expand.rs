@@ -1096,7 +1096,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 .expect("valid box")
                 .expect("hlist box register");
             let q = bx.list_ptr(&st.mem).0;
-            p = crate::mem::prev_rightmost(&st.mem, q, TEX_NULL);
+            p = crate::mem::prev_rightmost(&st.mem, q, TEX_NULL).0;
             while p != TEX_NULL {
                 let tp = st.mem.node_type(MemIdx::new(p));
                 let is_low = p < st.mem.hi_mem_min;
@@ -1124,7 +1124,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 if !skip {
                     break;
                 }
-                p = crate::mem::prev_rightmost(&st.mem, q, p);
+                p = crate::mem::prev_rightmost(&st.mem, q, p).0;
             }
             if p != TEX_NULL
                 && p < st.mem.hi_mem_min

@@ -685,19 +685,19 @@ pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterSta
 // prev_rightmost
 // ---------------------------------------------------------------------------
 
-pub fn prev_rightmost(mem: &MemState, s: impl crate::units::MemAddr, e: impl crate::units::MemAddr) -> i32 {
+pub fn prev_rightmost(mem: &MemState, s: impl crate::units::MemAddr, e: impl crate::units::MemAddr) -> MemPtr {
     let e = e.addr();
     let mut p = MemPtr::from_raw(s.addr());
     if p.is_null() {
-        return TEX_NULL;
+        return MemPtr::NULL;
     }
     while mem.link(p).0 != e {
         p = mem.link(p);
         if p.is_null() {
-            return TEX_NULL;
+            return MemPtr::NULL;
         }
     }
-    p.0
+    p
 }
 
 // ---------------------------------------------------------------------------

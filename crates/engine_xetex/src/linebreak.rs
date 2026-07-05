@@ -371,14 +371,14 @@ pub fn push_node(linebreak: &mut LinebreakState, p: impl crate::units::MemAddr) 
 }
 
 // translated from xetex-linebreak.c:2837 (pop_node)
-pub fn pop_node(linebreak: &mut LinebreakState) -> Option<i32> {
+pub fn pop_node(linebreak: &mut LinebreakState) -> Option<MemPtr> {
     let level = linebreak.hlist_stack_level - 1;
     linebreak.hlist_stack_level = level;
     if level < 0 {
         return None;
     }
 
-    Some(linebreak.hlist_stack[level as usize].0)
+    Some(linebreak.hlist_stack[level as usize])
 }
 
 // translated from xetex-linebreak.c:2692 (total_pw)
@@ -391,12 +391,12 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
 ) -> Option<i32> {
     let break_node = active(q).break_node(mem);
     let mut l = if break_node.is_null() {
-        linebreak.first_p.0
+        linebreak.first_p
     } else {
-        passive_node(break_node.0).cur_break(mem).0
+        passive_node(break_node.0).cur_break(mem)
     };
 
-    let mut r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p.0, p);
+    let mut r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p, p);
     let p_disc = if p != TEX_NULL {
         mem.classify_disc(MemIdx::new(p)).ok().flatten()
     } else {
@@ -404,9 +404,9 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
     };
     if let Some(p_disc) = p_disc {
         if !p_disc.pre_break(mem).is_null() {
-            r = p_disc.pre_break(mem).0;
-            while mem.b32s1(r) != TEX_NULL {
-                r = mem.b32s1(r);
+            r = p_disc.pre_break(mem);
+            while !mem.link(r).is_null() {
+                r = mem.link(r);
             }
         } else {
             r = find_protchar_right(mem, linebreak, l, r)?;
@@ -415,20 +415,20 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
         r = find_protchar_right(mem, linebreak, l, r)?;
     }
 
-    let l_disc = if l != TEX_NULL {
-        mem.classify_disc(MemIdx::new(l)).ok().flatten()
+    let l_disc = if !l.is_null() {
+        mem.classify_disc(MemIdx::new(l.0)).ok().flatten()
     } else {
         None
     };
     if let Some(l_disc) = l_disc {
         if !l_disc.post_break(mem).is_null() {
-            l = l_disc.post_break(mem).0;
+            l = l_disc.post_break(mem);
         } else {
             let mut n = l_disc.subtype(mem);
-            l = l_disc.link(mem).0;
+            l = l_disc.link(mem);
             while n > 0 {
-                if mem.b32s1(l) != TEX_NULL {
-                    l = mem.b32s1(l);
+                if !mem.link(l).is_null() {
+                    l = mem.link(l);
                 }
                 n -= 1;
             }
@@ -445,16 +445,17 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
 pub fn find_protchar_left(
     mem: &mut MemState,
     linebreak: &mut LinebreakState,
-    mut l: i32,
+    l: impl crate::units::MemAddr,
     d: bool,
-) -> Option<i32> {
+) -> Option<MemPtr> {
+    let mut l = MemPtr::from_raw(l.addr());
     if is_empty_box_in(mem, l) {
-        l = mem.b32s1(l);
+        l = mem.link(l);
     } else if d {
-        while mem.b32s1(l) != TEX_NULL
+        while !mem.link(l).is_null()
             && !(crate::mem::is_char_node(mem, l) || is_non_discardable_node(mem, l))
         {
-            l = mem.b32s1(l);
+            l = mem.link(l);
         }
     }
 
@@ -467,16 +468,16 @@ pub fn find_protchar_left(
             if !push_node(linebreak, l) {
                 return None;
             }
-            l = box_node(mem, l).list_ptr(mem).0;
+            l = box_node(mem, l).list_ptr(mem);
         }
 
         while run && ignorable_protrusion_node_in(mem, l) {
-            while mem.b32s1(l) == TEX_NULL && linebreak.hlist_stack_level > 0 {
+            while mem.link(l).is_null() && linebreak.hlist_stack_level > 0 {
                 l = pop_node(linebreak)?;
             }
 
-            if mem.b32s1(l) != TEX_NULL {
-                l = mem.b32s1(l);
+            if !mem.link(l).is_null() {
+                l = mem.link(l);
             } else if linebreak.hlist_stack_level == 0 {
                 run = false;
             }
@@ -494,11 +495,13 @@ pub fn find_protchar_left(
 pub fn find_protchar_right(
     mem: &mut MemState,
     linebreak: &mut LinebreakState,
-    mut l: i32,
-    mut r: i32,
-) -> Option<i32> {
-    if r == TEX_NULL {
-        return Some(TEX_NULL);
+    l: impl crate::units::MemAddr,
+    r: impl crate::units::MemAddr,
+) -> Option<MemPtr> {
+    let mut l = MemPtr::from_raw(l.addr());
+    let mut r = MemPtr::from_raw(r.addr());
+    if r.is_null() {
+        return Some(MemPtr::NULL);
     }
 
     linebreak.hlist_stack_level = 0;
@@ -510,10 +513,10 @@ pub fn find_protchar_right(
             if !push_node(linebreak, l) || !push_node(linebreak, r) {
                 return None;
             }
-            l = box_node(mem, r).list_ptr(mem).0;
+            l = box_node(mem, r).list_ptr(mem);
             r = l;
-            while mem.b32s1(r) != TEX_NULL {
-                r = mem.b32s1(r);
+            while !mem.link(r).is_null() {
+                r = mem.link(r);
             }
         }
 
@@ -523,7 +526,7 @@ pub fn find_protchar_right(
                 l = pop_node(linebreak)?;
             }
 
-            if r != l && r != TEX_NULL {
+            if r != l && !r.is_null() {
                 r = crate::mem::prev_rightmost(mem, l, r);
             } else if r == l && linebreak.hlist_stack_level == 0 {
                 run = false;
@@ -543,9 +546,9 @@ fn right_margin_kern_target(
     linebreak: &mut LinebreakState,
     q: i32,
     disc_break: bool,
-) -> Option<(i32, i32)> {
+) -> Option<(MemPtr, MemPtr)> {
     if disc_break && (crate::mem::is_char_node(mem, q) || mem.b16s1(q) as i32 != DISC_NODE) {
-        Some((q, q))
+        Some((MemPtr::from_raw(q), MemPtr::from_raw(q)))
     } else {
         let ptmp = crate::mem::prev_rightmost(mem, mem.b32s1(TEMP_HEAD), q);
         let p = find_protchar_right(mem, linebreak, mem.b32s1(TEMP_HEAD), ptmp)?;
@@ -577,9 +580,9 @@ pub fn insert_right_margin_kern(errors: &mut crate::state::ErrorState,
     let Some(k) = crate::mem::alloc_margin_kern(mem, -w, last_rightmost.0, 1) else {
         return Err(MarginKernAbort::Overflow);
     };
-    k.set_link(mem, MemPtr::from_raw(mem.b32s1(ptmp)));
+    k.set_link(mem, mem.link(ptmp));
     mem.set_b32s1(ptmp, k.idx().0);
-    let new_q = if ptmp == q { mem.b32s1(q) } else { q };
+    let new_q = if ptmp.0 == q { mem.b32s1(q) } else { q };
     Ok(new_q)
 }
 
@@ -587,7 +590,7 @@ fn left_margin_kern_target(
     mem: &mut MemState,
     linebreak: &mut LinebreakState,
     q: i32,
-) -> Option<i32> {
+) -> Option<MemPtr> {
     find_protchar_left(mem, linebreak, q, false)
 }
 
@@ -3817,11 +3820,12 @@ pub fn char_pw_in(errors: &mut crate::state::ErrorState,
     mem: &MemState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
-    p: i32,
+    p: impl crate::units::MemAddr,
     side: i16,
 ) -> i32 {
     const WHATSIT_NODE: u16 = 8;
     const QUAD_CODE: i32 = 6; // xetex-constants.h:298
+    let p = p.addr();
 
     if side == 0 {
         linebreak.last_leftmost_char = MemPtr::NULL;
