@@ -2006,9 +2006,9 @@ fn append_script_box(mem: &mut MemState, q: NodePtr<Noad>, box_node: AnyBox) {
     if q.nucleus_type(mem) == TEX_NULL {
         q.set_nucleus_type(mem, box_idx);
     } else {
-        let mut p = q.nucleus_type(mem);
-        while mem.b32s1(p) != TEX_NULL {
-            p = mem.b32s1(p);
+        let mut p = MemPtr::from_raw(q.nucleus_type(mem));
+        while !mem.link(p).is_null() {
+            p = mem.link(p);
         }
         mem.set_b32s1(p, box_idx);
     }
@@ -2504,13 +2504,13 @@ fn mlist_choice_node(
     mem.set_b32s1(q + 1, 0);
     mem.set_b32s1(q + 2, 0);
     if let Some(kept) = kept.as_idx() {
-        let z = mem.b32s1(q);
+        let z = mem.link(q);
         mem.set_b32s1(q, kept.0);
-        let mut p = kept.0;
-        while mem.b32s1(p) != TEX_NULL {
-            p = mem.b32s1(p);
+        let mut p = MemPtr::from_idx(kept);
+        while !mem.link(p).is_null() {
+            p = mem.link(p);
         }
-        mem.set_b32s1(p, z);
+        mem.set_link(p, z);
     }
     Ok(())
 }
@@ -3244,14 +3244,14 @@ fn new_stack_glyph(
 /// is spliced into `b_box`.
 pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: NodePtr<WhatsitNode>) {
     if matches!(b_box, AnyBox::HList(_)) {
-        let mut q = b_box.list_ptr(mem).0;
-        if q == TEX_NULL {
+        let mut q = b_box.list_ptr(mem);
+        if q.is_null() {
             b_box.set_list_ptr(mem, MemPtr::from_idx(p.idx()));
         } else {
-            while mem.b32s1(q) != TEX_NULL {
-                q = mem.b32s1(q);
+            while !mem.link(q).is_null() {
+                q = mem.link(q);
             }
-            mem.set_b32s1(q, p.idx().0);
+            mem.set_link(q, MemPtr::from_idx(p.idx()));
             let glyph_height = p.height(mem).0;
             if b_box.height(mem).0 < glyph_height {
                 b_box.set_height(mem, Scaled(glyph_height));
@@ -3340,12 +3340,12 @@ fn stack_glue_into_box(
         return Err(NodeRecycleAbort::Overflow);
     }
     if matches!(b_box, AnyBox::HList(_)) {
-        let mut q = b_box.list_ptr(mem).0;
-        if q == TEX_NULL {
+        let mut q = b_box.list_ptr(mem);
+        if q.is_null() {
             b_box.set_list_ptr(mem, MemPtr::from_raw(p));
         } else {
-            while mem.b32s1(q) != TEX_NULL {
-                q = mem.b32s1(q);
+            while !mem.link(q).is_null() {
+                q = mem.link(q);
             }
             mem.set_b32s1(q, p);
         }
@@ -4996,7 +4996,7 @@ fn rebox(
     char_kern_width: Option<i32>,
 ) -> Result<ReboxResult, NodeRecycleAbort> {
     if bb.width(mem).0 != w && !bb.list_ptr(mem).is_null() {
-        let mut p = bb.list_ptr(mem).0;
+        let mut p = bb.list_ptr(mem);
         if let Some(v) = char_kern_width {
             if v != bb.width(mem).0 {
                 let k = new_kern(mem, bb.width(mem).0 - v);
@@ -5011,9 +5011,9 @@ fn rebox(
         if g == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        mem.set_b32s1(g, p);
-        while mem.b32s1(p) != TEX_NULL {
-            p = mem.b32s1(p);
+        mem.set_link(g, p);
+        while !mem.link(p).is_null() {
+            p = mem.link(p);
         }
         let tail_glue = new_glue(mem, 12);
         if tail_glue == ALLOC_FAILED {
