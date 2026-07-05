@@ -796,10 +796,10 @@ fn is_ignorable_interword_node(mem: &MemState, p: impl crate::units::MemAddr) ->
             && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_io())))
 }
 
-fn skip_ignorable_interword_nodes(mem: &MemState, q: impl crate::units::MemAddr) -> i32 {
-    let mut q = q.addr();
-    while q != TEX_NULL && is_ignorable_interword_node(mem, q) {
-        q = mem.b32s1(q);
+fn skip_ignorable_interword_nodes(mem: &MemState, q: impl crate::units::MemAddr) -> MemPtr {
+    let mut q = MemPtr::from_raw(q.addr());
+    while !q.is_null() && is_ignorable_interword_node(mem, q) {
+        q = q.link(mem);
     }
     q
 }
@@ -813,11 +813,11 @@ fn merge_justifiable_native_words(
     g_order: u16,
     g_sign: GlueSign,
 ) -> Result<(), ShipoutAbort> {
-    let mut p = mem.b32s1(this_box + 5);
-    let mut prev_p = this_box + 5;
+    let mut p = MemPtr::from_raw(this_box + 5).link(mem);
+    let mut prev_p = MemPtr::from_raw(this_box + 5);
 
-    while p != TEX_NULL {
-        if mem.b32s1(p) != TEX_NULL
+    while !p.is_null() {
+        if !p.link(mem).is_null()
             && !crate::mem::is_char_node(mem, p)
             && mem.b16s1(p) == WHATSIT_NODE
             && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_native_word())
@@ -825,17 +825,17 @@ fn merge_justifiable_native_words(
         {
             let r = p;
             let mut k = mem.b16s1(r + 4) as i32;
-            let mut q = mem.b32s1(p);
+            let mut q = p.link(mem);
 
             'check_next: loop {
                 q = skip_ignorable_interword_nodes(mem, q);
 
-                if q != TEX_NULL && !crate::mem::is_char_node(mem, q) {
+                if !q.is_null() && !crate::mem::is_char_node(mem, q) {
                     if mem.b16s1(q) == GLUE_NODE && mem.b16s0(mem.b32s0(q + 1)) == NORMAL {
                         if mem.b32s0(q + 1) == fonts.font_glue(mem.b16s2(r + 4) as i32) {
-                            q = skip_ignorable_interword_nodes(mem, mem.b32s1(q));
+                            q = skip_ignorable_interword_nodes(mem, q.link(mem));
 
-                            if q != TEX_NULL
+                            if !q.is_null()
                                 && !crate::mem::is_char_node(mem, q)
                                 && mem.b16s1(q) == WHATSIT_NODE
                                 && WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word())
@@ -843,21 +843,21 @@ fn merge_justifiable_native_words(
                             {
                                 p = q;
                                 k += 1 + mem.b16s1(q + 4) as i32;
-                                q = mem.b32s1(q);
+                                q = q.link(mem);
                                 continue 'check_next;
                             }
                         } else {
-                            q = mem.b32s1(q);
+                            q = q.link(mem);
                         }
 
-                        if q != TEX_NULL
+                        if !q.is_null()
                             && !crate::mem::is_char_node(mem, q)
                             && mem.b16s1(q) == KERN_NODE
                             && mem.b16s0(q) == SPACE_ADJUSTMENT
                         {
-                            q = skip_ignorable_interword_nodes(mem, mem.b32s1(q));
+                            q = skip_ignorable_interword_nodes(mem, q.link(mem));
 
-                            if q != TEX_NULL
+                            if !q.is_null()
                                 && !crate::mem::is_char_node(mem, q)
                                 && mem.b16s1(q) == WHATSIT_NODE
                                 && WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word())
@@ -865,7 +865,7 @@ fn merge_justifiable_native_words(
                             {
                                 p = q;
                                 k += 1 + mem.b16s1(q + 4) as i32;
-                                q = mem.b32s1(q);
+                                q = q.link(mem);
                                 continue 'check_next;
                             }
                         }
@@ -874,7 +874,7 @@ fn merge_justifiable_native_words(
                         && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                     {
                         p = q;
-                        q = mem.b32s1(q);
+                        q = q.link(mem);
                         continue 'check_next;
                     }
                 }
@@ -928,12 +928,14 @@ fn merge_justifiable_native_words(
                     if q == p {
                         break;
                     }
-                    q = mem.b32s1(q);
+                    q = q.link(mem);
                 }
 
                 let nlen = crate::hash::cur_length(strings);
-                q = crate::fonts::new_native_word_node(mem, eqtb, mem.b16s2(r + 4) as i32, nlen)
-                    .map_err(ShipoutAbort::NodeRecycle)?;
+                q = MemPtr::from_raw(
+                    crate::fonts::new_native_word_node(mem, eqtb, mem.b16s2(r + 4) as i32, nlen)
+                        .map_err(ShipoutAbort::NodeRecycle)?,
+                );
                 mem.set_b16s0(q, mem.b16s0(r));
 
                 let base = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
@@ -950,22 +952,22 @@ fn merge_justifiable_native_words(
                 let addr = mem.node_addr(q);
                 // SAFETY: `addr` points at the native-word node; FFI does not re-enter.
                 unsafe { crate::ext::store_justified_native_glyphs(fonts, addr) }?;
-                mem.set_b32s1(prev_p, q);
-                mem.set_b32s1(q, mem.b32s1(p));
-                mem.set_b32s1(p, TEX_NULL);
+                prev_p.set_link(mem, q);
+                q.set_link(mem, p.link(mem));
+                p.set_link(mem, MemPtr::NULL);
                 prev_p = r;
-                p = mem.b32s1(r);
+                p = r.link(mem);
 
-                while p != TEX_NULL {
+                while !p.is_null() {
                     if is_ignorable_interword_node(mem, p) {
-                        mem.set_b32s1(prev_p, mem.b32s1(p));
-                        mem.set_b32s1(p, mem.b32s1(q));
-                        mem.set_b32s1(q, p);
+                        prev_p.set_link(mem, p.link(mem));
+                        p.set_link(mem, q.link(mem));
+                        q.set_link(mem, p);
                         q = p;
                     }
 
                     prev_p = p;
-                    p = mem.b32s1(p);
+                    p = p.link(mem);
                 }
 
                 crate::packaging::flush_node_list(mem, r).map_err(ShipoutAbort::Confusion)?;
@@ -975,7 +977,7 @@ fn merge_justifiable_native_words(
         }
 
         prev_p = p;
-        p = mem.b32s1(p);
+        p = p.link(mem);
     }
 
     Ok(())

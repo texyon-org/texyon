@@ -196,6 +196,20 @@ impl<K: HasNodeHeader> NodePtr<K> {
     }
 }
 
+impl MemPtr {
+    /// Link pointer to the next list element = `mem[p].b32.s1`. A list cursor
+    /// has no statically-known node kind, so the universal link field lives on
+    /// the pointer itself — same word every node type shares.
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.0))
+    }
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.0, q.0);
+    }
+}
+
 impl NodePtr<HListNode> {
     /// Allocate a fresh hlist box node (`BOX_NODE_SIZE` words), type-stamped
     /// with `NODE_type = HLIST_NODE`, and return a typed handle to it — or

@@ -2854,8 +2854,8 @@ pub(crate) fn handle_right_brace_in(
                 {
                     // merge accent noad into ord
                     let mut q = st.input.cur_list.head;
-                    while st.mem.link(q) != st.input.cur_list.tail {
-                        q = st.mem.link(q);
+                    while q.link(&st.mem) != st.input.cur_list.tail {
+                        q = q.link(&st.mem);
                     }
                     st.mem.set_b32s1(q, p);
                     free_node(&mut st.mem, st.input.cur_list.tail, NOAD_SIZE);
@@ -5493,11 +5493,12 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 )?;
                 let mut prev = st.input.cur_list.head;
                 if prev != st.mainloop.main_pp {
-                    while st.mem.link(prev) != st.mainloop.main_pp {
-                        prev = st.mem.link(prev);
+                    while prev.link(&st.mem) != st.mainloop.main_pp {
+                        prev = prev.link(&st.mem);
                     }
                 }
-                st.mem.set_link(prev, st.mem.link(st.mainloop.main_pp));
+                let main_pp_link = st.mainloop.main_pp.link(&st.mem);
+                prev.set_link(&mut st.mem, main_pp_link);
                 st.mem.set_b32s1(st.mainloop.main_pp, TEX_NULL);
                 let fnsz = st.mem.b16s3(st.mainloop.main_pp + 4) as i32;
                 crate::mem::free_node(&mut st.mem, st.mainloop.main_pp, fnsz);
@@ -5535,10 +5536,10 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 {
                     pp = p;
                 }
-                p = st.mem.link(p);
+                p = p.link(&st.mem);
             }
             if !pp.is_null() && st.mem.b16s2(pp + 4) == mf as u16 {
-                let mut p2 = st.mem.link(pp);
+                let mut p2 = pp.link(&st.mem);
                 while !mc_is_char_node(st, p2)
                     && (st.mem.b16s1(p2) == PENALTY_NODE
                         || st.mem.b16s1(p2) == INS_NODE
@@ -5546,10 +5547,10 @@ pub(crate) unsafe fn main_control_main_loop_in(
                         || st.mem.b16s1(p2) == ADJUST_NODE
                         || (st.mem.b16s1(p2) == WHATSIT_NODE && st.mem.b16s0(p2) <= 4))
                 {
-                    p2 = st.mem.link(p2);
+                    p2 = p2.link(&st.mem);
                 }
                 if !mc_is_char_node(st, p2) && st.mem.b16s1(p2) == GLUE_NODE {
-                    let p3 = st.mem.link(p2);
+                    let p3 = p2.link(&st.mem);
                     let mut p3m = p3;
                     while !mc_is_char_node(st, p3m)
                         && (st.mem.b16s1(p3m) == PENALTY_NODE
@@ -5558,7 +5559,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                             || st.mem.b16s1(p3m) == ADJUST_NODE
                             || (st.mem.b16s1(p3m) == WHATSIT_NODE && st.mem.b16s0(p3m) <= 4))
                     {
-                        p3m = st.mem.link(p3m);
+                        p3m = p3m.link(&st.mem);
                     }
                     if p3m == st.input.cur_list.tail {
                         let pp_len = st.mem.b16s1(pp + 4) as i32;

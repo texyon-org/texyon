@@ -122,14 +122,14 @@ pub fn flush_list(mem: &mut MemState, p: MemPtr) {
     let mut q;
     loop {
         q = r;
-        r = mem.link(r);
+        r = r.link(mem);
         if r.is_null() {
             break;
         }
     }
     // q is now the tail; splice: tail.link = old_avail; avail = p
     let avail = mem.avail;
-    mem.set_link(q, MemPtr::from_raw(avail));
+    q.set_link(mem, MemPtr::from_raw(avail));
     mem.avail = p.0;
 }
 
@@ -691,8 +691,8 @@ pub fn prev_rightmost(mem: &MemState, s: impl crate::units::MemAddr, e: impl cra
     if p.is_null() {
         return MemPtr::NULL;
     }
-    while mem.link(p).0 != e {
-        p = mem.link(p);
+    while p.link(mem).0 != e {
+        p = p.link(mem);
         if p.is_null() {
             return MemPtr::NULL;
         }

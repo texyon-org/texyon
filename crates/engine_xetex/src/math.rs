@@ -2007,8 +2007,8 @@ fn append_script_box(mem: &mut MemState, q: NodePtr<Noad>, box_node: AnyBox) {
         q.set_nucleus_type(mem, box_idx);
     } else {
         let mut p = MemPtr::from_raw(q.nucleus_type(mem));
-        while !mem.link(p).is_null() {
-            p = mem.link(p);
+        while !p.link(mem).is_null() {
+            p = p.link(mem);
         }
         mem.set_b32s1(p, box_idx);
     }
@@ -2504,13 +2504,13 @@ fn mlist_choice_node(
     mem.set_b32s1(q + 1, 0);
     mem.set_b32s1(q + 2, 0);
     if let Some(kept) = kept.as_idx() {
-        let z = mem.link(q);
+        let z = MemPtr::from_raw(q).link(mem);
         mem.set_b32s1(q, kept.0);
         let mut p = MemPtr::from_idx(kept);
-        while !mem.link(p).is_null() {
-            p = mem.link(p);
+        while !p.link(mem).is_null() {
+            p = p.link(mem);
         }
-        mem.set_link(p, z);
+        p.set_link(mem, z);
     }
     Ok(())
 }
@@ -3248,10 +3248,10 @@ pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: NodePtr<Whatsi
         if q.is_null() {
             b_box.set_list_ptr(mem, MemPtr::from_idx(p.idx()));
         } else {
-            while !mem.link(q).is_null() {
-                q = mem.link(q);
+            while !q.link(mem).is_null() {
+                q = q.link(mem);
             }
-            mem.set_link(q, MemPtr::from_idx(p.idx()));
+            q.set_link(mem, MemPtr::from_idx(p.idx()));
             let glyph_height = p.height(mem).0;
             if b_box.height(mem).0 < glyph_height {
                 b_box.set_height(mem, Scaled(glyph_height));
@@ -3344,8 +3344,8 @@ fn stack_glue_into_box(
         if q.is_null() {
             b_box.set_list_ptr(mem, MemPtr::from_raw(p));
         } else {
-            while !mem.link(q).is_null() {
-                q = mem.link(q);
+            while !q.link(mem).is_null() {
+                q = q.link(mem);
             }
             mem.set_b32s1(q, p);
         }
@@ -5011,9 +5011,9 @@ fn rebox(
         if g == ALLOC_FAILED {
             return Err(NodeRecycleAbort::Overflow);
         }
-        mem.set_link(g, p);
-        while !mem.link(p).is_null() {
-            p = mem.link(p);
+        MemPtr::from_raw(g).set_link(mem, p);
+        while !p.link(mem).is_null() {
+            p = p.link(mem);
         }
         let tail_glue = new_glue(mem, 12);
         if tail_glue == ALLOC_FAILED {

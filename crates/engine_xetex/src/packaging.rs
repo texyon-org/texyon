@@ -470,7 +470,7 @@ pub fn flush_node_list(
 ) -> Result<(), &'static std::ffi::CStr> {
     let mut p = crate::units::MemPtr::from_raw(p.addr());
     while !p.is_null() {
-        let q = mem.link(p);
+        let q = p.link(mem);
         if p.0 >= mem.hi_mem_min {
             // is_char_node(p): free to avail list
             mem.set_b32s1(p, mem.avail);

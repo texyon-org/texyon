@@ -2818,7 +2818,7 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
         let mut p = st.scanner.cond_ptr;
         while !p.is_null() {
             n += 1;
-            p = st.mem.link(p);
+            p = p.link(&st.mem);
         }
         print_cstr_in(st, c"(level ".as_ptr());
         print_int_in(st, n);

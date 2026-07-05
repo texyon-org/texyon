@@ -405,8 +405,8 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
     if let Some(p_disc) = p_disc {
         if !p_disc.pre_break(mem).is_null() {
             r = p_disc.pre_break(mem);
-            while !mem.link(r).is_null() {
-                r = mem.link(r);
+            while !r.link(mem).is_null() {
+                r = r.link(mem);
             }
         } else {
             r = find_protchar_right(mem, linebreak, l, r)?;
@@ -427,8 +427,8 @@ pub fn total_pw(errors: &mut crate::state::ErrorState,
             let mut n = l_disc.subtype(mem);
             l = l_disc.link(mem);
             while n > 0 {
-                if !mem.link(l).is_null() {
-                    l = mem.link(l);
+                if !l.link(mem).is_null() {
+                    l = l.link(mem);
                 }
                 n -= 1;
             }
@@ -450,12 +450,12 @@ pub fn find_protchar_left(
 ) -> Option<MemPtr> {
     let mut l = MemPtr::from_raw(l.addr());
     if is_empty_box_in(mem, l) {
-        l = mem.link(l);
+        l = l.link(mem);
     } else if d {
-        while !mem.link(l).is_null()
+        while !l.link(mem).is_null()
             && !(crate::mem::is_char_node(mem, l) || is_non_discardable_node(mem, l))
         {
-            l = mem.link(l);
+            l = l.link(mem);
         }
     }
 
@@ -472,12 +472,12 @@ pub fn find_protchar_left(
         }
 
         while run && ignorable_protrusion_node_in(mem, l) {
-            while mem.link(l).is_null() && linebreak.hlist_stack_level > 0 {
+            while l.link(mem).is_null() && linebreak.hlist_stack_level > 0 {
                 l = pop_node(linebreak)?;
             }
 
-            if !mem.link(l).is_null() {
-                l = mem.link(l);
+            if !l.link(mem).is_null() {
+                l = l.link(mem);
             } else if linebreak.hlist_stack_level == 0 {
                 run = false;
             }
@@ -515,8 +515,8 @@ pub fn find_protchar_right(
             }
             l = box_node(mem, r).list_ptr(mem);
             r = l;
-            while !mem.link(r).is_null() {
-                r = mem.link(r);
+            while !r.link(mem).is_null() {
+                r = r.link(mem);
             }
         }
 
@@ -580,7 +580,7 @@ pub fn insert_right_margin_kern(errors: &mut crate::state::ErrorState,
     let Some(k) = crate::mem::alloc_margin_kern(mem, -w, last_rightmost.0, 1) else {
         return Err(MarginKernAbort::Overflow);
     };
-    k.set_link(mem, mem.link(ptmp));
+    k.set_link(mem, ptmp.link(mem));
     mem.set_b32s1(ptmp, k.idx().0);
     let new_q = if ptmp.0 == q { mem.b32s1(q) } else { q };
     Ok(new_q)
@@ -1018,7 +1018,7 @@ fn start_linebreak_pass(
 }
 
 fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
-    let mut q = mem.link(ACTIVE_LIST);
+    let mut q = MemPtr::from_raw(ACTIVE_LIST).link(mem);
     while q.0 != LAST_ACTIVE {
         match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
@@ -1042,7 +1042,7 @@ fn free_active_and_passive_lists(mem: &mut MemState, linebreak: &mut LinebreakSt
 }
 
 fn free_final_linebreak_lists(mem: &mut MemState, linebreak: &mut LinebreakState) {
-    let mut q = mem.link(ACTIVE_LIST);
+    let mut q = MemPtr::from_raw(ACTIVE_LIST).link(mem);
     while q.0 != ACTIVE_LIST {
         let next = match classify_active_or_delta(mem, q) {
             ActiveOrDelta::Delta(d) => {
@@ -3486,7 +3486,7 @@ fn hyphenate_in(st: &mut EngineState) -> Result<(), HyphenateAbort> {
                     let mut s = crate::units::MemPtr::from_raw(st.hyph.hyph_list[h as usize]);
                     while !s.is_null() {
                         st.hyph.hyf[st.mem.b32s0(s) as usize] = 1;
-                        s = st.mem.link(s);
+                        s = s.link(&st.mem);
                     }
                     hn_v -= 1;
                     st.linebreak.hn = hn_v;
