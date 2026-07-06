@@ -11,8 +11,8 @@ use crate::consts::{
 };
 use crate::ext::real_get_native_glyph;
 use crate::mem::{
-    free_node, get_avail, get_node, new_choice, new_glue, new_kern, new_noad, new_null_box,
-    new_spec, ALLOC_FAILED, TEX_NULL,
+    alloc_choice, alloc_kern, alloc_noad, free_node, get_avail, get_node, new_glue, new_spec,
+    ALLOC_FAILED, TEX_NULL,
 };
 use crate::node::{
     AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, HListNode, KernNode, Noad, NodePtr,
@@ -444,10 +444,10 @@ unsafe fn clean_box_in(st: &mut EngineState, p: impl crate::units::MemAddr, s: i
     let q;
     match st.mem.b32s1(p) {
         MATH_CHAR => {
-            let mlist = crate::mem::new_noad(&mut st.mem);
-            if mlist == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
+            let mlist = crate::mem::alloc_noad(&mut st.mem)
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0;
             st.scanner.cur_mlist.0 = mlist;
             let w = st.mem.word(p);
             st.mem.set_word(mlist + 1, w);
@@ -475,10 +475,10 @@ unsafe fn clean_box_in(st: &mut EngineState, p: impl crate::units::MemAddr, s: i
             clean_box_reset_mu(st);
         }
         _ => {
-            q = crate::mem::new_null_box(&mut st.mem);
-            if q == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
+            q = crate::mem::alloc_null_box(&mut st.mem)
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0;
         }
     }
 
@@ -884,30 +884,18 @@ fn alloc_kern_node(mem: &mut MemState, width: i32) -> Result<NodePtr<KernNode>, 
     Ok(p)
 }
 
-/// Typed HLIST twin of [`new_null_box`]: confines the family's single
-/// `from_idx_unchecked` to one audited allocator site so box-building
-/// callers receive the handle directly instead of re-classifying the `i32`
-/// index. `Err` is the arena-exhaustion sentinel.
+/// HLIST twin of [`crate::mem::alloc_null_box`] with this module's abort type.
 fn alloc_null_box(mem: &mut MemState) -> Result<NodePtr<HListNode>, NodeRecycleAbort> {
-    let b = new_null_box(mem);
-    if b == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    // SAFETY: `new_null_box` type-stamps HLIST_NODE and zeroes the box fields.
-    Ok(unsafe { NodePtr::<HListNode>::from_idx_unchecked(MemIdx::new(b)) })
+    crate::mem::alloc_null_box(mem).ok_or(NodeRecycleAbort::Overflow)
 }
 
-/// Typed VLIST twin of [`new_null_box`]: allocates the null box, re-stamps it
-/// `VLIST_NODE`, and returns the typed handle (same single-audited-site
-/// confinement as [`alloc_null_box`]).
+/// VLIST twin of [`alloc_null_box`]: allocates the null box, re-stamps it
+/// `VLIST_NODE`, and returns the typed handle.
 fn alloc_null_vbox(mem: &mut MemState) -> Result<NodePtr<VListNode>, NodeRecycleAbort> {
-    let b = new_null_box(mem);
-    if b == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b16s1(b, VLIST_NODE);
+    let b = crate::mem::alloc_null_box(mem).ok_or(NodeRecycleAbort::Overflow)?;
+    mem.set_b16s1(b.ptr().0, VLIST_NODE);
     // SAFETY: `b` was just stamped `VLIST_NODE`.
-    Ok(unsafe { NodePtr::<VListNode>::from_idx_unchecked(MemIdx::new(b)) })
+    Ok(unsafe { NodePtr::<VListNode>::from_idx_unchecked(b.idx()) })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1446,10 +1434,7 @@ fn move_accent_base_scripts_to_mlist(
     box_node: i32,
 ) -> Result<(), NodeRecycleAbort> {
     crate::packaging::flush_node_list(mem, box_node).map_err(NodeRecycleAbort::Confusion)?;
-    let x = new_noad(mem);
-    if x == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
+    let x = alloc_noad(mem).ok_or(NodeRecycleAbort::Overflow)?.ptr().0;
 
     mem.set_word(x + 1, mem.word(q.idx().offset(1).0));
     mem.set_word(x + 2, mem.word(q.idx().offset(2).0));
@@ -2772,11 +2757,9 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                                 delta = 0;
                             }
                             if qn.subscr_type(&st.mem) == EMPTY && delta != 0 {
-                                let k = new_kern(&mut st.mem, delta);
-                                if k == ALLOC_FAILED {
-                                    return Err(NodeRecycleAbort::Overflow.into());
-                                }
-                                st.mem.set_b32s1(p, k);
+                                let k = alloc_kern(&mut st.mem, delta)
+                                    .ok_or(NodeRecycleAbort::Overflow)?;
+                                st.mem.set_b32s1(p, k.ptr().0);
                                 delta = 0;
                             }
                         } else if st.scanner.cur_i.s3 > 0 {
@@ -2794,11 +2777,9 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                                 delta = 0;
                             }
                             if qn.subscr_type(&st.mem) == EMPTY && delta != 0 {
-                                let k = new_kern(&mut st.mem, delta);
-                                if k == ALLOC_FAILED {
-                                    return Err(NodeRecycleAbort::Overflow.into());
-                                }
-                                st.mem.set_b32s1(p, k);
+                                let k = alloc_kern(&mut st.mem, delta)
+                                    .ok_or(NodeRecycleAbort::Overflow)?;
+                                st.mem.set_b32s1(p, k.ptr().0);
                                 delta = 0;
                             }
                         } else {
@@ -3015,9 +2996,10 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                 if penalties && ql != TEX_NULL && pen < INF_PENALTY {
                     let next_type = st.mem.b16s1(ql);
                     if next_type != PENALTY_NODE && next_type != NodeType::RelNoad.as_raw() {
-                        let z = crate::mem::new_penalty(&mut st.mem, pen);
-                        st.mem.set_b32s1(p, z);
-                        p = z;
+                        let z = crate::mem::alloc_penalty(&mut st.mem, pen)
+                            .ok_or(NodeRecycleAbort::Overflow)?;
+                        st.mem.set_b32s1(p, z.ptr().0);
+                        p = z.ptr().0;
                     }
                 }
             }
@@ -3587,12 +3569,9 @@ fn append_choices_core(cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
     save_stack: &mut SaveStackState,
 ) -> Result<(), NodeRecycleAbort> {
-    let choice = new_choice(mem);
-    if choice == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b32s1(cl.tail, choice);
-    cl.tail.0 = mem.b32s1(cl.tail);
+    let choice = alloc_choice(mem).ok_or(NodeRecycleAbort::Overflow)?;
+    cl.tail.set_link(mem, choice.ptr());
+    cl.tail = choice.ptr();
     save_stack.save_ptr += 1;
     save_stack.set_b32s1(save_stack.save_ptr - 1, 0);
     Ok(())
@@ -3721,12 +3700,9 @@ fn prepare_sub_sup(cl: &mut crate::mem_types::ListStateRecord,
 
     let mut duplicate = None;
     if p == TEX_NULL || t != EMPTY {
-        let noad = new_noad(mem);
-        if noad == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
-        mem.set_b32s1(cl.tail, noad);
-        cl.tail.0 = mem.b32s1(cl.tail);
+        let noad = alloc_noad(mem).ok_or(NodeRecycleAbort::Overflow)?;
+        cl.tail.set_link(mem, noad.ptr());
+        cl.tail = noad.ptr();
         p = cl.tail.0 + 2 + cmd as i32 - 7;
         if t != EMPTY {
             duplicate = Some(if cmd == SUP_MARK {
@@ -4180,22 +4156,22 @@ fn app_display_in(
         }
         let (r, t);
         if j == TEX_NULL {
-            r = crate::mem::new_kern(&mut st.mem, 0);
-            if r == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
-            t = crate::mem::new_kern(&mut st.mem, 0);
-            if t == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
+            r = alloc_kern(&mut st.mem, 0)
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0;
+            t = alloc_kern(&mut st.mem, 0)
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0;
         } else {
             r = st.mem.b32s1(b + 5);
             t = st.mem.b32s1(r);
         }
-        let u = crate::mem::new_math(&mut st.mem, 0, END_M_CODE);
-        if u == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
+        let u = crate::mem::alloc_math(&mut st.mem, 0, END_M_CODE)
+            .ok_or(NodeRecycleAbort::Overflow)?
+            .ptr()
+            .0;
         if st.mem.b16s1(t) == GLUE_NODE {
             let jj = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16);
             if jj == ALLOC_FAILED {
@@ -4216,10 +4192,10 @@ fn app_display_in(
             st.mem.set_b32s1(t, u);
             st.mem.set_b32s1(q, t);
         }
-        let u2 = crate::mem::new_math(&mut st.mem, 0, BEGIN_M_CODE);
-        if u2 == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
+        let u2 = crate::mem::alloc_math(&mut st.mem, 0, BEGIN_M_CODE)
+            .ok_or(NodeRecycleAbort::Overflow)?
+            .ptr()
+            .0;
         if st.mem.b16s1(r) == GLUE_NODE {
             let jj = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16);
             if jj == ALLOC_FAILED {
@@ -4363,12 +4339,10 @@ pub(crate) fn after_math_in(
     if m < 0 {
         // inline math (or inner/restricted hmode)
         let math_surround = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
-        let node = crate::mem::new_math(&mut st.mem, math_surround, BEFORE as i16);
-        if node == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, node);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+        let node = crate::mem::alloc_math(&mut st.mem, math_surround, BEFORE as i16)
+            .ok_or(NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, node.ptr());
+        st.input.cur_list.tail = node.ptr();
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
@@ -4377,12 +4351,10 @@ pub(crate) fn after_math_in(
         while st.mem.b32s1(st.input.cur_list.tail) != TEX_NULL {
             st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         }
-        let node2 = crate::mem::new_math(&mut st.mem, math_surround, AFTER);
-        if node2 == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, node2);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+        let node2 = crate::mem::alloc_math(&mut st.mem, math_surround, AFTER)
+            .ok_or(NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, node2.ptr());
+        st.input.cur_list.tail = node2.ptr();
         st.input.cur_list.set_aux_s0(1000);
 
         if st.config.semantic_pagination_enabled {
@@ -4462,15 +4434,13 @@ pub(crate) fn after_math_in(
             }
         }
 
-        let penalty_node = crate::mem::new_penalty(
+        let penalty_node = crate::mem::alloc_penalty(
             &mut st.mem,
             st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY),
-        );
-        if penalty_node == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, penalty_node);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+        )
+        .ok_or(NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, penalty_node.ptr());
+        st.input.cur_list.tail = penalty_node.ptr();
 
         let pre_display_size = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
         let (g1, mut g2);
@@ -4484,12 +4454,10 @@ pub(crate) fn after_math_in(
 
         if l && e == 0 {
             app_display_in(st, j, a, 0)?;
-            let inf_node = crate::mem::new_penalty(&mut st.mem, INF_PENALTY);
-            if inf_node == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
-            st.mem.set_b32s1(st.input.cur_list.tail, inf_node);
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+            let inf_node = crate::mem::alloc_penalty(&mut st.mem, INF_PENALTY)
+                .ok_or(NodeRecycleAbort::Overflow)?;
+            st.input.cur_list.tail.set_link(&mut st.mem, inf_node.ptr());
+            st.input.cur_list.tail = inf_node.ptr();
         } else {
             let g1_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g1);
             if g1_node == ALLOC_FAILED {
@@ -4519,12 +4487,10 @@ pub(crate) fn after_math_in(
         app_display_in(st, j, b.idx().0, d)?;
 
         if a != TEX_NULL && e == 0 && !l {
-            let inf_node2 = crate::mem::new_penalty(&mut st.mem, INF_PENALTY);
-            if inf_node2 == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
-            st.mem.set_b32s1(st.input.cur_list.tail, inf_node2);
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+            let inf_node2 = crate::mem::alloc_penalty(&mut st.mem, INF_PENALTY)
+                .ok_or(NodeRecycleAbort::Overflow)?;
+            st.input.cur_list.tail.set_link(&mut st.mem, inf_node2.ptr());
+            st.input.cur_list.tail = inf_node2.ptr();
             let a_width = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
             app_display_in(st, j, a, z - a_width)?;
             g2 = 0;
@@ -4540,15 +4506,13 @@ pub(crate) fn after_math_in(
             st.input.cur_list.tail.0 = pre_t;
         }
 
-        let post_pen = crate::mem::new_penalty(
+        let post_pen = crate::mem::alloc_penalty(
             &mut st.mem,
             st.eqtb.b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY),
-        );
-        if post_pen == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, post_pen);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+        )
+        .ok_or(NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, post_pen.ptr());
+        st.input.cur_list.tail = post_pen.ptr();
 
         if g2 > 0 {
             let g2_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g2);
@@ -4597,7 +4561,10 @@ pub(crate) fn init_math_in(
             }
 
             j = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_RIGHT_SKIP) == 0 {
-                crate::mem::new_kern(&mut st.mem, 0)
+                alloc_kern(&mut st.mem, 0)
+                    .ok_or(NodeRecycleAbort::Overflow)?
+                    .ptr()
+                    .0
             } else {
                 crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16)
             };
@@ -4606,7 +4573,10 @@ pub(crate) fn init_math_in(
             }
 
             let p_glue = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP) == 0 {
-                crate::mem::new_kern(&mut st.mem, 0)
+                alloc_kern(&mut st.mem, 0)
+                    .ok_or(NodeRecycleAbort::Overflow)?
+                    .ptr()
+                    .0
             } else {
                 crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16)
             };
@@ -4650,15 +4620,15 @@ pub(crate) fn init_math_in(
                 st.mem.set_b32s1(TEMP_HEAD, TEX_NULL);
             } else {
                 v = -v - jb.width(&st.mem).0;
-                p = crate::mem::new_math(&mut st.mem, 0, BEGIN_L_CODE);
-                if p == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow.into());
-                }
+                p = crate::mem::alloc_math(&mut st.mem, 0, BEGIN_L_CODE)
+                    .ok_or(NodeRecycleAbort::Overflow)?
+                    .ptr()
+                    .0;
                 st.mem.set_b32s1(TEMP_HEAD, p);
-                let end = crate::mem::new_math(&mut st.mem, 0, END_L_CODE);
-                if end == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow.into());
-                }
+                let end = crate::mem::alloc_math(&mut st.mem, 0, END_L_CODE)
+                    .ok_or(NodeRecycleAbort::Overflow)?
+                    .ptr()
+                    .0;
                 let list = jb.list_ptr(&st.mem).0;
                 crate::packaging::just_copy(&mut st.mem, list, p, end)?;
                 st.scanner.cur_dir = RIGHT_TO_LEFT;
@@ -4987,11 +4957,8 @@ fn rebox(
         let mut p = bb.list_ptr(mem);
         if let Some(v) = char_kern_width {
             if v != bb.width(mem).0 {
-                let k = new_kern(mem, bb.width(mem).0 - v);
-                if k == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow);
-                }
-                mem.set_b32s1(p, k);
+                let k = alloc_kern(mem, bb.width(mem).0 - v).ok_or(NodeRecycleAbort::Overflow)?;
+                mem.set_b32s1(p, k.ptr().0);
             }
         }
         free_node(mem, crate::units::MemPtr::from_idx(bb.idx()), BOX_NODE_SIZE);
@@ -5057,11 +5024,11 @@ unsafe fn build_opentype_assembly_in(
     s: i32,
     horiz: bool,
 ) -> Result<AnyBox, NodeRecycleAbort> {
-    let b_idx = crate::mem::new_null_box(&mut st.mem);
-    if b_idx == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    // `new_null_box` stamps an hlist; retype to the requested axis, then classify
+    let b_idx = crate::mem::alloc_null_box(&mut st.mem)
+        .ok_or(NodeRecycleAbort::Overflow)?
+        .ptr()
+        .0;
+    // The null box is stamped hlist; retype to the requested axis, then classify
     // once — `b` is the typed handle used for all stacking + measurement below.
     st.mem
         .set_b16s1(b_idx, if horiz { HLIST_NODE } else { VLIST_NODE });

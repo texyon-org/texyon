@@ -95,6 +95,13 @@ impl<K: NodeKind> NodePtr<K> {
     pub fn idx(self) -> MemIdx {
         self.idx
     }
+
+    /// The node's address as an untyped [`MemPtr`], for link stores and other
+    /// places that traffic in plain arena pointers.
+    #[inline]
+    pub fn ptr(self) -> MemPtr {
+        MemPtr::from_idx(self.idx)
+    }
 }
 
 // --- the box family: hlist and vlist nodes (NODE_type 0 and 1) ---

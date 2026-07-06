@@ -253,14 +253,10 @@ pub fn get_node(mem: &mut MemState, s: i32) -> Option<MemPtr> {
 // new_null_box
 // ---------------------------------------------------------------------------
 
-/// Allocate and zero-initialize an empty hbox node (BOX_NODE_SIZE words).
+/// Allocate and zero-initialize an empty hbox node (BOX_NODE_SIZE words),
+/// returning its `NodePtr<HListNode>` handle (`None` on arena exhaustion).
 ///
 /// translated from xetex-xetex0.c:147 (new_null_box)
-///
-/// Typed twin of [`new_null_box`]: allocate a zeroed hlist box and return its
-/// `NodePtr<HListNode>` handle directly, for callers that immediately set its
-/// dimensions instead of re-deriving the handle via `classify_box`. `None` is
-/// the arena-exhaustion sentinel.
 pub fn alloc_null_box(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
     let p = NodePtr::<HListNode>::alloc(mem)?;
     p.set_subtype(mem, 0);
@@ -273,10 +269,6 @@ pub fn alloc_null_box(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
     p.set_glue_order(mem, NORMAL);
     p.set_glue_set(mem, 0.0);
     Some(p)
-}
-
-pub fn new_null_box(mem: &mut MemState) -> i32 {
-    alloc_null_box(mem).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
@@ -310,16 +302,19 @@ pub fn alloc_rule(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
 /// matching the C's implicit narrowing assignment.
 ///
 /// translated from xetex-xetex0.c:174 (new_ligature)
-pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: impl crate::units::MemAddr) -> i32 {
+pub fn alloc_ligature(
+    mem: &mut MemState,
+    f: i32,
+    c: u16,
+    q: impl crate::units::MemAddr,
+) -> Option<NodePtr<LigatureNode>> {
     let q = q.addr();
-    let Some(p) = NodePtr::<LigatureNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+    let p = NodePtr::<LigatureNode>::alloc(mem)?;
     p.set_font(mem, FontId(f));
     p.set_character(mem, c);
     p.set_lig_ptr(mem, MemPtr::from_raw(q));
     p.set_subtype(mem, 0);
-    p.idx().0
+    Some(p)
 }
 
 // ---------------------------------------------------------------------------
@@ -329,13 +324,11 @@ pub fn new_ligature(mem: &mut MemState, f: i32, c: u16, q: impl crate::units::Me
 /// Allocate a lig-item node (SMALL_NODE_SIZE) for char `c`.
 ///
 /// translated from xetex-xetex0.c:186 (new_lig_item)
-pub fn new_lig_item(mem: &mut MemState, c: u16) -> i32 {
-    let Some(p) = NodePtr::<LigItem>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+pub fn alloc_lig_item(mem: &mut MemState, c: u16) -> Option<NodePtr<LigItem>> {
+    let p = NodePtr::<LigItem>::alloc(mem)?;
     p.set_character(mem, c);
     p.set_component(mem, MemPtr::from_raw(TEX_NULL));
-    p.idx().0
+    Some(p)
 }
 
 // ---------------------------------------------------------------------------
@@ -355,35 +348,19 @@ pub fn alloc_disc(mem: &mut MemState) -> Option<NodePtr<DiscNode>> {
     Some(p)
 }
 
-/// Allocate a discretionary node (SMALL_NODE_SIZE words) with null lists.
-///
-/// translated from xetex-xetex0.c:195 (new_disc)
-pub fn new_disc(mem: &mut MemState) -> i32 {
-    alloc_disc(mem).map_or(ALLOC_FAILED, |p| p.idx().0)
-}
-
 // ---------------------------------------------------------------------------
 // new_math
 // ---------------------------------------------------------------------------
 
 /// Allocate a math-on/off node of width `w` and subtype `s`, returning its
-/// typed `NodePtr<MathNode>` handle directly (`None` on arena exhaustion).
+/// typed `NodePtr<MathNode>` handle (`None` on arena exhaustion).
 ///
-/// Typed twin of [`new_math`]: callers that immediately need the typed node
-/// (to set its link / read fields) use this instead of re-deriving it from
-/// `new_math`'s raw index.
+/// translated from xetex-xetex0.c:221 (new_math)
 pub fn alloc_math(mem: &mut MemState, w: i32, s: i16) -> Option<NodePtr<MathNode>> {
     let p = NodePtr::<MathNode>::alloc(mem)?;
     p.set_subtype(mem, s as u16);
     p.set_width(mem, Scaled(w));
     Some(p)
-}
-
-/// Allocate a math-on/off node of width `w` and subtype `s`.
-///
-/// translated from xetex-xetex0.c:221 (new_math)
-pub fn new_math(mem: &mut MemState, w: i32, s: i16) -> i32 {
-    alloc_math(mem, w, s).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
@@ -505,9 +482,8 @@ pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
 ///
 /// translated from xetex-xetex0.c:281 (new_kern)
 ///
-/// Typed twin of [`new_kern`]: allocate a normal kern of width `w` and return
-/// its `NodePtr<KernNode>` handle directly, for callers that immediately set its
-/// subtype. `None` is the arena-exhaustion sentinel.
+/// Allocate a normal kern of width `w` and return its `NodePtr<KernNode>`
+/// handle. `None` is the arena-exhaustion sentinel.
 pub fn alloc_kern(mem: &mut MemState, w: i32) -> Option<NodePtr<KernNode>> {
     // Typesafe allocation: `alloc` type-stamps NODE_type = KERN_NODE and
     // confines the family's `from_idx_unchecked`.
@@ -515,10 +491,6 @@ pub fn alloc_kern(mem: &mut MemState, w: i32) -> Option<NodePtr<KernNode>> {
     p.set_subtype(mem, NORMAL);
     p.set_width(mem, Scaled(w));
     Some(p)
-}
-
-pub fn new_kern(mem: &mut MemState, w: i32) -> i32 {
-    alloc_kern(mem, w).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
@@ -529,9 +501,8 @@ pub fn new_kern(mem: &mut MemState, w: i32) -> i32 {
 ///
 /// translated from xetex-xetex0.c:291 (new_penalty)
 ///
-/// Typed twin of [`new_penalty`]: allocate a penalty node of value `m` and
-/// return its `NodePtr<PenaltyNode>` handle directly. `None` is the
-/// arena-exhaustion sentinel.
+/// Allocate a penalty node of value `m` and return its `NodePtr<PenaltyNode>`
+/// handle. `None` is the arena-exhaustion sentinel.
 pub fn alloc_penalty(mem: &mut MemState, m: i32) -> Option<NodePtr<PenaltyNode>> {
     // Typesafe allocation: `alloc` type-stamps NODE_type = PENALTY_NODE and
     // confines the family's `from_idx_unchecked`.
@@ -539,10 +510,6 @@ pub fn alloc_penalty(mem: &mut MemState, m: i32) -> Option<NodePtr<PenaltyNode>>
     p.set_subtype(mem, 0);
     p.set_penalty(mem, m);
     Some(p)
-}
-
-pub fn new_penalty(mem: &mut MemState, m: i32) -> i32 {
-    alloc_penalty(mem, m).map_or(ALLOC_FAILED, |p| p.idx().0)
 }
 
 // ---------------------------------------------------------------------------
@@ -716,12 +683,10 @@ pub fn is_char_node(mem: &MemState, p: impl crate::units::MemAddr) -> bool {
 // new_noad / new_style / new_choice
 // ---------------------------------------------------------------------------
 
-/// Allocate and zero-initialize an ordinary noad (NOAD_SIZE = 4 words).
+/// Allocate and zero-initialize an ordinary noad (NOAD_SIZE = 4 words),
+/// returning its `NodePtr<Noad>` handle (`None` on arena exhaustion).
 ///
 /// translated from xetex-xetex0.c:10542 (new_noad)
-///
-/// Typed twin of [`new_noad`]: allocate an empty `OrdNoad` and return its
-/// `NodePtr<Noad>` handle directly. `None` is the arena-exhaustion sentinel.
 pub fn alloc_noad(mem: &mut MemState) -> Option<NodePtr<Noad>> {
     let p = NodePtr::<Noad>::alloc(mem)?;
     p.set_subtype(mem, NORMAL);
@@ -734,35 +699,27 @@ pub fn alloc_noad(mem: &mut MemState) -> Option<NodePtr<Noad>> {
     Some(p)
 }
 
-pub fn new_noad(mem: &mut MemState) -> i32 {
-    alloc_noad(mem).map_or(ALLOC_FAILED, |p| p.idx().0)
-}
-
 /// Allocate a style node (STYLE_NODE_SIZE = 3 words).
 ///
 /// translated from xetex-xetex0.c:10554 (new_style)
-pub fn new_style(mem: &mut MemState, s: i16) -> i32 {
-    let Some(p) = NodePtr::<StyleNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+pub fn alloc_style(mem: &mut MemState, s: i16) -> Option<NodePtr<StyleNode>> {
+    let p = NodePtr::<StyleNode>::alloc(mem)?;
     p.set_subtype(mem, s as u16);
     p.clear_payload(mem);
-    p.idx().0
+    Some(p)
 }
 
 /// Allocate a choice node (STYLE_NODE_SIZE = 3 words).
 ///
 /// translated from xetex-xetex0.c:10565 (new_choice)
-pub fn new_choice(mem: &mut MemState) -> i32 {
-    let Some(p) = NodePtr::<ChoiceNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+pub fn alloc_choice(mem: &mut MemState) -> Option<NodePtr<ChoiceNode>> {
+    let p = NodePtr::<ChoiceNode>::alloc(mem)?;
     p.set_subtype(mem, 0);
     p.set_display_mlist(mem, MemPtr::NULL);
     p.set_text_mlist(mem, MemPtr::NULL);
     p.set_script_mlist(mem, MemPtr::NULL);
     p.set_script_script_mlist(mem, MemPtr::NULL);
-    p.idx().0
+    Some(p)
 }
 
 /// Allocate a margin kern node (MARGIN_KERN_NODE_SIZE = 3 words).
@@ -785,13 +742,16 @@ pub fn alloc_margin_kern(
 }
 
 // translated from xetex-xetex0.c:13763 (new_whatsit)
-pub fn new_whatsit(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, s: i16, w: i16) -> i32 {
-    let Some(p) = get_node(mem, w as i32) else {
-        return ALLOC_FAILED;
-    };
+pub fn new_whatsit(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+    s: i16,
+    w: i16,
+) -> Option<MemPtr> {
+    let p = get_node(mem, w as i32)?;
     mem.set_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
     mem.set_b16s0(p, s as u16);
     cl.tail.set_link(mem, p);
     cl.tail = p;
-    p.0
+    Some(p)
 }

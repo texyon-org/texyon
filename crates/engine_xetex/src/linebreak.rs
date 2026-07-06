@@ -753,11 +753,10 @@ pub fn reconstitute(
                                 if st.mainloop.lig_stack.0 > TEX_NULL {
                                     st.mem.set_b16s0(st.mainloop.lig_stack, st.mainloop.cur_r as u16);
                                 } else {
-                                    let lig_item = crate::mem::new_lig_item(&mut st.mem, st.mainloop.cur_r as u16);
-                                    if lig_item == crate::mem::ALLOC_FAILED {
-                                        return Err(NodeRecycleAbort::Overflow);
-                                    }
-                                    st.mainloop.lig_stack.0 = lig_item;
+                                    let lig_item =
+                                        crate::mem::alloc_lig_item(&mut st.mem, st.mainloop.cur_r as u16)
+                                            .ok_or(NodeRecycleAbort::Overflow)?;
+                                    st.mainloop.lig_stack = lig_item.ptr();
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
@@ -772,31 +771,28 @@ pub fn reconstitute(
                             3 => {
                                 st.mainloop.cur_r = q.s0 as i32;
                                 let p = st.mainloop.lig_stack.0;
-                                let lig_item = crate::mem::new_lig_item(&mut st.mem, st.mainloop.cur_r as u16);
-                                if lig_item == crate::mem::ALLOC_FAILED {
-                                    return Err(NodeRecycleAbort::Overflow);
-                                }
-                                st.mainloop.lig_stack.0 = lig_item;
+                                let lig_item =
+                                    crate::mem::alloc_lig_item(&mut st.mem, st.mainloop.cur_r as u16)
+                                        .ok_or(NodeRecycleAbort::Overflow)?;
+                                st.mainloop.lig_stack = lig_item.ptr();
                                 st.mem.set_b32s1(st.mainloop.lig_stack, p);
                             }
                             7 | 11 => {
                                 if st.mainloop.ligature_present {
                                     let mq = st.mem.b32s1(st.mainloop.cur_q);
-                                    let p = crate::mem::new_ligature(
+                                    let p = crate::mem::alloc_ligature(
                                         &mut st.mem,
                                         st.hyph.hf,
                                         st.mainloop.cur_l as u16,
                                         mq,
-                                    );
-                                    if p == crate::mem::ALLOC_FAILED {
-                                        return Err(NodeRecycleAbort::Overflow);
-                                    }
+                                    )
+                                    .ok_or(NodeRecycleAbort::Overflow)?;
                                     if st.mainloop.lft_hit {
-                                        st.mem.set_b16s0(p, 2);
+                                        p.set_subtype(&mut st.mem, 2);
                                         st.mainloop.lft_hit = false;
                                     }
-                                    st.mem.set_b32s1(st.mainloop.cur_q, p);
-                                    t = p;
+                                    st.mem.set_b32s1(st.mainloop.cur_q, p.ptr().0);
+                                    t = p.ptr().0;
                                     st.mainloop.ligature_present = false;
                                 }
                                 st.mainloop.cur_q.0 = t;
@@ -867,30 +863,26 @@ pub fn reconstitute(
 
         if st.mainloop.ligature_present {
             let mq = st.mem.b32s1(st.mainloop.cur_q);
-            let p = crate::mem::new_ligature(&mut st.mem, st.hyph.hf, st.mainloop.cur_l as u16, mq);
-            if p == crate::mem::ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow);
-            }
+            let p = crate::mem::alloc_ligature(&mut st.mem, st.hyph.hf, st.mainloop.cur_l as u16, mq)
+                .ok_or(NodeRecycleAbort::Overflow)?;
             if st.mainloop.lft_hit {
-                st.mem.set_b16s0(p, 2);
+                p.set_subtype(&mut st.mem, 2);
                 st.mainloop.lft_hit = false;
             }
             if st.mainloop.rt_hit && st.mainloop.lig_stack.0 == TEX_NULL {
-                st.mem.set_b16s0(p, st.mem.b16s0(p) + 1);
+                let s = p.subtype(&st.mem);
+                p.set_subtype(&mut st.mem, s + 1);
                 st.mainloop.rt_hit = false;
             }
-            st.mem.set_b32s1(st.mainloop.cur_q, p);
-            t = p;
+            st.mem.set_b32s1(st.mainloop.cur_q, p.ptr().0);
+            t = p.ptr().0;
             st.mainloop.ligature_present = false;
         }
 
         if w != 0 {
-            let p = crate::mem::new_kern(&mut st.mem, w);
-            if p == crate::mem::ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow);
-            }
-            st.mem.set_b32s1(t, p);
-            t = st.mem.b32s1(t);
+            let p = crate::mem::alloc_kern(&mut st.mem, w).ok_or(NodeRecycleAbort::Overflow)?;
+            st.mem.set_b32s1(t, p.ptr().0);
+            t = p.ptr().0;
             w = 0;
             st.mem.set_b32s0(t + 2, 0);
         }
@@ -1305,12 +1297,11 @@ pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
 
     let tail = st.input.cur_list.tail.0;
     if crate::mem::is_char_node(&st.mem, tail) || st.mem.node_type(MemIdx::new(tail)) != Ok(NodeType::Glue) {
-        let p = crate::mem::new_penalty(&mut st.mem, INF_PENALTY);
-        if p == crate::mem::ALLOC_FAILED {
+        let Some(p) = crate::mem::alloc_penalty(&mut st.mem, INF_PENALTY) else {
             return LineBreakOutcome::Overflow;
-        }
-        st.mem.set_b32s1(tail, p);
-        st.input.cur_list.tail.0 = p;
+        };
+        st.mem.set_b32s1(tail, p.ptr().0);
+        st.input.cur_list.tail = p.ptr();
     } else {
         // `tail` is the trailing rightskip glue: read its spec and leader list
         // while it is still glue, then repurpose the same node in place as an
@@ -2281,12 +2272,10 @@ fn post_line_break_prefix(errors: &mut crate::state::ErrorState,
 
         r = *lr_ptr;
         while r != TEX_NULL {
-            let temp_ptr = crate::mem::new_math(mem, 0, mem.b32s0(r) as i16);
-            if temp_ptr == crate::mem::ALLOC_FAILED {
-                return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
-            }
-            mem.set_b32s1(s, temp_ptr);
-            s = temp_ptr;
+            let temp_ptr = crate::mem::alloc_math(mem, 0, mem.b32s0(r) as i16)
+                .ok_or(PostLineAbort::Node(NodeRecycleAbort::Overflow))?;
+            mem.set_b32s1(s, temp_ptr.ptr().0);
+            s = temp_ptr.ptr().0;
             r = mem.b32s1(r);
         }
         mem.set_b32s1(s, q);
@@ -2416,12 +2405,10 @@ fn post_line_break_suffix(cl: &mut crate::mem_types::ListStateRecord,
         }
 
         if pen != 0 {
-            let r = crate::mem::new_penalty(mem, pen);
-            if r == crate::mem::ALLOC_FAILED {
-                return Err(PostLineAbort::Node(NodeRecycleAbort::Overflow));
-            }
-            mem.set_b32s1(cl.tail, r);
-            cl.tail.0 = r;
+            let r = crate::mem::alloc_penalty(mem, pen)
+                .ok_or(PostLineAbort::Node(NodeRecycleAbort::Overflow))?;
+            cl.tail.set_link(mem, r.ptr());
+            cl.tail = r.ptr();
         }
     }
 
@@ -3919,12 +3906,10 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
             if offs > 0 {
                 if prev_offs != 0 {
                     if use_penalty {
-                        let node = crate::mem::new_penalty(&mut st.mem, penalty_val);
-                        if node == crate::mem::ALLOC_FAILED {
-                            return Err(NodeRecycleAbort::Overflow);
-                        }
-                        st.mem.set_b32s1(st.input.cur_list.tail, node);
-                        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+                        let node = crate::mem::alloc_penalty(&mut st.mem, penalty_val)
+                            .ok_or(NodeRecycleAbort::Overflow)?;
+                        st.input.cur_list.tail.set_link(&mut st.mem, node.ptr());
+                        st.input.cur_list.tail = node.ptr();
                     }
                     if use_skip {
                         let node = crate::mem::new_param_glue(

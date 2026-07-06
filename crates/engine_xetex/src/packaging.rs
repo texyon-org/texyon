@@ -2432,12 +2432,10 @@ fn hpack_in(
             }
             loop {
                 let t = q;
-                let new_q = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16);
-                if new_q == crate::mem::ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow);
-                }
-                mem.set_b32s1(t, new_q);
-                q = new_q;
+                let new_q = crate::mem::alloc_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16)
+                    .ok_or(NodeRecycleAbort::Overflow)?;
+                mem.set_b32s1(t, new_q.ptr().0);
+                q = new_q.ptr().0;
                 scanner.lr_problems += 10000;
                 let t2 = scanner.lr_ptr.0;
                 scanner.lr_ptr.0 = mem.b32s1(t2);

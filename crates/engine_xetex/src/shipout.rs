@@ -1265,10 +1265,10 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box_b.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr.0 = p;
-        p = crate::mem::new_kern(&mut st.mem, 0);
-        if p == crate::mem::ALLOC_FAILED {
-            return Err(ShipoutAbort::MainMemoryOverflow);
-        }
+        p = crate::mem::alloc_kern(&mut st.mem, 0)
+            .ok_or(ShipoutAbort::MainMemoryOverflow)?
+            .ptr()
+            .0;
         st.mem.set_b32s0(p + 2, 0);
         st.mem.set_b32s1(prev_p, p);
         st.shipout.cur_h = 0;
@@ -2449,7 +2449,10 @@ pub fn reverse(
             return Ok(l);
         }
 
-        p = crate::mem::new_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16);
+        p = crate::mem::alloc_math(mem, 0, mem.b32s0(scanner.lr_ptr) as i16)
+            .ok_or(ShipoutAbort::MainMemoryOverflow)?
+            .ptr()
+            .0;
         scanner.lr_problems += 10000;
     }
 }

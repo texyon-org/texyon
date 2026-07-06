@@ -682,11 +682,13 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         let path_len = unsafe { libc::strlen(pic_path) };
         let mem_word_bytes = std::mem::size_of::<crate::mem_types::MemoryWord>() as i32;
         let extra_words = (path_len as i32 + mem_word_bytes - 1) / mem_word_bytes;
-        let p =
-            crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, crate::node::WhatsitSubtype::Pic as i16, (PIC_NODE_SIZE + extra_words) as i16);
-        if p == crate::mem::ALLOC_FAILED {
-            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        }
+        crate::mem::new_whatsit(
+            &mut st.input.cur_list,
+            &mut st.mem,
+            crate::node::WhatsitSubtype::Pic as i16,
+            (PIC_NODE_SIZE + extra_words) as i16,
+        )
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
 
         let tail = st.input.cur_list.tail.0;
         if is_pdf {

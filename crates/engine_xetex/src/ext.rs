@@ -2485,10 +2485,13 @@ pub(crate) fn append_src_special_in(
 ) -> Result<(), InsertSrcAbort> {
     let fname = st.input.source_filename_stack[st.input.in_open as usize];
     if fname > 0 && crate::texmfmp::is_new_source_in(st, fname, st.mem.line) {
-        let p = crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, crate::node::WhatsitSubtype::Special as i16, WRITE_NODE_SIZE);
-        if p == crate::mem::ALLOC_FAILED {
-            return Err(InsertSrcAbort::MainMemory);
-        }
+        crate::mem::new_whatsit(
+            &mut st.input.cur_list,
+            &mut st.mem,
+            crate::node::WhatsitSubtype::Special as i16,
+            WRITE_NODE_SIZE,
+        )
+        .ok_or(InsertSrcAbort::MainMemory)?;
         st.mem.set_b32s0(st.input.cur_list.tail + 1, 0);
         let d = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
         st.scanner.def_ref = d;
@@ -2527,10 +2530,8 @@ pub(crate) fn new_write_whatsit_in(
     st: &mut EngineState,
     w: i16,
 ) -> Result<(), NewWriteWhatsitAbort> {
-    let p = crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, st.scanner.cur_chr as i16, w);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(NewWriteWhatsitAbort::MainMemory);
-    }
+    crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, st.scanner.cur_chr as i16, w)
+        .ok_or(NewWriteWhatsitAbort::MainMemory)?;
     if w != WRITE_NODE_SIZE {
         crate::scan::scan_four_bit_int_in(st)?;
     } else {
@@ -2891,10 +2892,8 @@ fn do_new_whatsit_in(
     s: i16,
     w: i16,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    let p = crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, s, w);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
+    crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, s, w)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     Ok(())
 }
 

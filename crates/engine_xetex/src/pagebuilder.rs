@@ -142,11 +142,10 @@ fn page_get_node(mem: &mut MemState, s: i32) -> Result<i32, PageBuildAbort> {
 }
 
 fn page_new_null_box(mem: &mut MemState) -> Result<i32, PageBuildAbort> {
-    let p = crate::mem::new_null_box(mem);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(PageBuildAbort::MainMemoryOverflow);
-    }
-    Ok(p)
+    Ok(crate::mem::alloc_null_box(mem)
+        .ok_or(PageBuildAbort::MainMemoryOverflow)?
+        .ptr()
+        .0)
 }
 
 fn page_new_skip_param(
