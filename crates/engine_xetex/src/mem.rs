@@ -58,13 +58,6 @@ pub(crate) unsafe fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mu
 // get_avail
 // ---------------------------------------------------------------------------
 
-/// Overflow sentinel returned by the i32-returning allocators ([`get_node`]
-/// and the `new_*` wrappers) when the `mem` arena is exhausted. `i32::MIN`
-/// lies outside every valid arena index, `TEX_NULL`, and `MAX_HALFWORD`, so
-/// it can never collide with a real return value. ([`get_avail`] signals the
-/// same exhaustion as `None`.)
-pub(crate) const ALLOC_FAILED: i32 = i32::MIN;
-
 /// Allocate one word from the single-word (hi-mem) free list.
 ///
 /// Returns a pointer to the allocated word, whose link field

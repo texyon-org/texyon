@@ -38,7 +38,7 @@ pub(crate) enum InputAbort {
     /// `_tt_abort(msg)` — direct longjmp abort (input-buffer overflow / invalid
     /// file input mode). Unlike `Fatal` this does not print a TeX error first.
     TtAbort(*const libc::c_char),
-    /// Main-memory arena exhaustion (the `get_avail`/`get_node` `ALLOC_FAILED`
+    /// Main-memory arena exhaustion (the `get_avail`/`get_node` `None`
     /// sentinel surfaced into the input layer).
     MainMemory,
     /// Serious internal error closing an input file at end-of-file (the C

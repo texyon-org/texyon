@@ -2226,7 +2226,8 @@ pub(crate) fn get_next_scc(st: &mut crate::state::EngineState) -> Result<(), Scc
 }
 
 /// The deferred `overflow("main memory size", MEM_TOP + 1)` tail of the node
-/// allocators (`get_node`/`new_spec` `ALLOC_FAILED`), lifted into [`SccAbort`].
+/// allocators (`get_node`/`alloc_spec` returning `None`), lifted into
+/// [`SccAbort`].
 pub(crate) fn main_mem_overflow_scc() -> SccAbort {
     SccAbort::Input(crate::input::InputAbort::Overflow {
         what: c"main memory size".as_ptr(),

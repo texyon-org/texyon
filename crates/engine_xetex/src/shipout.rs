@@ -94,17 +94,16 @@ const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
 // END_WRITE = FROZEN_CONTROL_SEQUENCE + 8 = 2_243_226 + 8
 const END_WRITE: i32 = 2_243_234;
 
-/// Create a new edge node of subtype `s` and width `w`.
+/// Create a new edge node of subtype `s` and width `w`. `None` is the
+/// arena-exhaustion sentinel.
 ///
 /// translated from xetex-shipout.c:1708 (new_edge)
-pub fn new_edge(mem: &mut MemState, s: i16, w: i32) -> i32 {
-    let Some(p) = NodePtr::<EdgeNode>::alloc(mem) else {
-        return crate::mem::ALLOC_FAILED;
-    };
+pub fn new_edge(mem: &mut MemState, s: i16, w: i32) -> Option<NodePtr<EdgeNode>> {
+    let p = NodePtr::<EdgeNode>::alloc(mem)?;
     p.set_subtype(mem, s as u16);
     p.set_width(mem, Scaled(w));
     p.set_edge_dist(mem, Scaled(0));
-    p.idx().0
+    Some(p)
 }
 
 enum DviFlush {
@@ -1514,21 +1513,17 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                     st.shipout.rule_wd = math_width;
                                     crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
                                     st.scanner.cur_dir = 1 - st.scanner.cur_dir;
-                                    p = new_edge(
-                                        &mut st.mem,
-                                        st.scanner.cur_dir,
-                                        st.shipout.rule_wd,
-                                    );
-                                    if p == crate::mem::ALLOC_FAILED {
-                                        return Err(ShipoutAbort::MainMemoryOverflow);
-                                    }
+                                    p = new_edge(&mut st.mem, st.scanner.cur_dir, st.shipout.rule_wd)
+                                        .ok_or(ShipoutAbort::MainMemoryOverflow)?
+                                        .ptr()
+                                        .0;
                                     st.mem.set_b32s1(prev_p, p);
                                     st.shipout.cur_h =
                                         st.shipout.cur_h - left_edge + st.shipout.rule_wd;
-                                    let edge = new_edge(&mut st.mem, 1 - st.scanner.cur_dir, 0);
-                                    if edge == crate::mem::ALLOC_FAILED {
-                                        return Err(ShipoutAbort::MainMemoryOverflow);
-                                    }
+                                    let edge = new_edge(&mut st.mem, 1 - st.scanner.cur_dir, 0)
+                                        .ok_or(ShipoutAbort::MainMemoryOverflow)?
+                                        .ptr()
+                                        .0;
                                     let reversed = reverse(
                                         &mut st.mem,
                                         &mut st.shipout,

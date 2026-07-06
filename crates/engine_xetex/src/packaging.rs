@@ -381,10 +381,10 @@ pub fn just_reverse(
         q
     };
 
-    let t = crate::shipout::new_edge(mem, scanner.cur_dir, 0);
-    if t == crate::mem::ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
+    let t = crate::shipout::new_edge(mem, scanner.cur_dir, 0)
+        .ok_or(NodeRecycleAbort::Overflow)?
+        .ptr()
+        .0;
     let mut l = t;
     scanner.cur_dir = 1 - scanner.cur_dir;
 
@@ -1365,10 +1365,7 @@ fn find_box_register(
     if scanner.cur_val < 256 {
         Ok(eqtb.b32s1(BOX_BASE + scanner.cur_val))
     } else {
-        let r = crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false);
-        if r == crate::mem::ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
+        crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false).ok_or(NodeRecycleAbort::Overflow)?;
         if scanner.cur_ptr.0 == TEX_NULL {
             Ok(TEX_NULL)
         } else {
@@ -1447,10 +1444,7 @@ fn collect_split_mark(
     let mark_class = mark.mark_class(mem);
     let mark_ptr = mark.mark_ptr(mem).0;
     if mark_class != 0 {
-        let r = crate::save::find_sa_element(mem, scanner, MARK_VAL_VS as u16, mark_class, true);
-        if r == crate::mem::ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
+        crate::save::find_sa_element(mem, scanner, MARK_VAL_VS as u16, mark_class, true).ok_or(NodeRecycleAbort::Overflow)?;
         if mem.b32s1(scanner.cur_ptr + 2) == TEX_NULL {
             mem.set_b32s1(scanner.cur_ptr + 2, mark_ptr);
             mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
@@ -1514,10 +1508,7 @@ fn store_split_remainder(
     if scanner.cur_val < 256 {
         eqtb.set_b32s1(BOX_BASE + scanner.cur_val, q);
     } else {
-        let r = crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false);
-        if r == crate::mem::ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
+        crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false).ok_or(NodeRecycleAbort::Overflow)?;
         if scanner.cur_ptr.0 != TEX_NULL {
             mem.set_b32s1(scanner.cur_ptr + 1, q);
             mem.set_b32s0(scanner.cur_ptr + 1, mem.b32s0(scanner.cur_ptr + 1) + 1);

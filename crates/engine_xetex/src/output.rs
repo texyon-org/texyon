@@ -3461,11 +3461,8 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
                 st.eqtb.b32s1(BOX_BASE + st.scanner.cur_val)
             } else {
                 let __cv21 = st.scanner.cur_val;
-                let r =
-                    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv21, false);
-                if r == crate::mem::ALLOC_FAILED {
-                    return Err(ShowWhateverAbort::MainMemoryOverflow);
-                }
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv21, false)
+                    .ok_or(ShowWhateverAbort::MainMemoryOverflow)?;
                 if st.scanner.cur_ptr.0 == crate::mem::TEX_NULL {
                     crate::mem::TEX_NULL
                 } else {

@@ -1236,25 +1236,14 @@ pub(crate) fn end_graf_in(st: &mut crate::state::EngineState) -> Result<(), Main
     Ok(())
 }
 // translated from xetex-xetex0.c:10016 (append_penalty)
-fn append_penalty_node(mem: &mut crate::state::MemState, tail: impl crate::units::MemAddr, penalty: i32) -> i32 {
-    let tail = tail.addr();
-    let Some(p) = crate::mem::alloc_penalty(mem, penalty) else {
-        return crate::mem::ALLOC_FAILED;
-    };
-    mem.set_b32s1(tail, p.idx().0);
-    p.idx().0
-}
-
 pub(crate) fn append_penalty_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
     crate::scan::scan_int_in(st)?;
-    let tail = st.input.cur_list.tail.0;
-    let p = append_penalty_node(&mut st.mem, tail, st.scanner.cur_val);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
-    st.input.cur_list.tail.0 = p;
+    let p = crate::mem::alloc_penalty(&mut st.mem, st.scanner.cur_val)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    st.input.cur_list.tail.set_link(&mut st.mem, p.ptr());
+    st.input.cur_list.tail = p.ptr();
     if st.input.cur_list.mode == VMODE {
         crate::pagebuilder::build_page_in(st)?;
     }
@@ -2238,15 +2227,12 @@ pub(crate) fn box_end_in(
             }
         } else {
             let __cv14 = st.scanner.cur_val;
-            let r = crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv14, true);
-            if r == crate::mem::ALLOC_FAILED {
-                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-            }
+            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv14, true).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             let p = st.scanner.cur_ptr.0;
             let result = if a >= 4 {
                 crate::save::gsa_def(&mut st.mem, p, cb)
             } else {
-                crate::save::sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, cb)
+                crate::save::sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, cb)?
             };
             crate::save::finish_sa_mutation_in(st, p, result)?;
         }
@@ -2328,10 +2314,7 @@ pub(crate) fn begin_box_in(
             if v < 256 {
                 st.scanner.cur_box.0 = st.eqtb.b32s1(BOX_BASE + v);
             } else {
-                let r = crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, v, false);
-                if r == crate::mem::ALLOC_FAILED {
-                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                }
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, v, false).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 let cp = st.scanner.cur_ptr.0;
                 st.scanner.cur_box.0 = if cp == TEX_NULL {
                     TEX_NULL
@@ -2342,10 +2325,7 @@ pub(crate) fn begin_box_in(
             if v < 256 {
                 st.eqtb.set_b32s1(BOX_BASE + v, TEX_NULL);
             } else {
-                let r = crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, v, false);
-                if r == crate::mem::ALLOC_FAILED {
-                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                }
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, v, false).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 let cp = st.scanner.cur_ptr.0;
                 if cp != TEX_NULL {
                     st.mem.set_b32s1(cp + 1, TEX_NULL);
@@ -2361,10 +2341,7 @@ pub(crate) fn begin_box_in(
             let q = if v < 256 {
                 st.eqtb.b32s1(BOX_BASE + v)
             } else {
-                let r = crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, v, false);
-                if r == crate::mem::ALLOC_FAILED {
-                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                }
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, v, false).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 let cp = st.scanner.cur_ptr.0;
                 if cp == TEX_NULL {
                     TEX_NULL
@@ -2823,17 +2800,15 @@ fn append_glue_node(
     glue_spec: i32,
     subtype: u16,
     decrement_spec_ref: bool,
-) -> i32 {
-    let Some(p) = crate::mem::alloc_glue(mem, glue_spec) else {
-        return crate::mem::ALLOC_FAILED;
-    };
+) -> Option<crate::node::NodePtr<crate::node::GlueNode>> {
+    let p = crate::mem::alloc_glue(mem, glue_spec)?;
     mem.set_b32s1(tail, p.idx().0);
     if decrement_spec_ref {
         let spec = p.glue_spec(mem).expect("non-null glue spec");
         spec.set_ref_count(mem, spec.ref_count(mem) - 1);
         p.set_subtype(mem, subtype);
     }
-    p.idx().0
+    Some(p)
 }
 
 pub(crate) fn append_glue_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
@@ -2849,33 +2824,20 @@ pub(crate) fn append_glue_in(st: &mut crate::state::EngineState) -> Result<(), M
     }
     let subtype = if s > SKIP_CODE { MU_GLUE } else { 0 };
     let tail = st.input.cur_list.tail.0;
-    let p = append_glue_node(&mut st.mem, tail, st.scanner.cur_val, subtype, s >= SKIP_CODE);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
-    st.input.cur_list.tail.0 = p;
+    let p = append_glue_node(&mut st.mem, tail, st.scanner.cur_val, subtype, s >= SKIP_CODE)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    st.input.cur_list.tail = p.ptr();
     Ok(())
 }
 // translated from xetex-xetex0.c:9395 (append_kern)
-fn append_kern_node(mem: &mut crate::state::MemState, tail: impl crate::units::MemAddr, width: i32, subtype: u16) -> i32 {
-    let tail = tail.addr();
-    let Some(p) = crate::mem::alloc_kern(mem, width) else {
-        return crate::mem::ALLOC_FAILED;
-    };
-    mem.set_b32s1(tail, p.idx().0);
-    p.set_subtype(mem, subtype);
-    p.idx().0
-}
-
 pub(crate) fn append_kern_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     let s = st.scanner.cur_chr as u16;
     crate::scan::scan_dimen_in(st, s == MU_GLUE, false, false)?;
-    let tail = st.input.cur_list.tail.0;
-    let p = append_kern_node(&mut st.mem, tail, st.scanner.cur_val, s);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
-    st.input.cur_list.tail.0 = p;
+    let p = crate::mem::alloc_kern(&mut st.mem, st.scanner.cur_val)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    p.set_subtype(&mut st.mem, s);
+    st.input.cur_list.tail.set_link(&mut st.mem, p.ptr());
+    st.input.cur_list.tail = p.ptr();
     Ok(())
 }
 pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
@@ -3975,7 +3937,7 @@ pub(crate) fn do_register_command_in(
                     &mut st.save_stack,
                     l,
                     __cv11,
-                )
+                )?
             };
             crate::save::finish_sa_mutation_in(st, l, result)?;
         } else if a >= 4 {
@@ -3998,7 +3960,7 @@ pub(crate) fn do_register_command_in(
                     &mut st.save_stack,
                     l,
                     __cv10,
-                )
+                )?
             };
             crate::save::finish_sa_mutation_in(st, l, result)?;
         } else if a >= 4 {
@@ -4912,7 +4874,7 @@ fn mc_is_char_node(st: &crate::state::EngineState, p: impl crate::units::MemAddr
     p.addr() >= st.mem.hi_mem_min
 }
 
-// Node-allocation helpers: allocate and lift the cold `ALLOC_FAILED` overflow
+// Node-allocation helpers: allocate and lift the cold arena-exhaustion `None`
 // into `MainControlAbort`.
 #[inline]
 fn mc_get_avail(
@@ -6515,7 +6477,7 @@ fn pc_sa_def(
     let result = if global {
         crate::save::gsa_def(&mut st.mem, p, e)
     } else {
-        crate::save::sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, e)
+        crate::save::sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, e)?
     };
     crate::save::finish_sa_mutation_in(st, p, result)?;
     Ok(())
@@ -6826,16 +6788,13 @@ pub(crate) fn prefixed_command_in(
                                 }
 
                                 let __cv7 = st.scanner.cur_val;
-                                let found = crate::save::find_sa_element(
+                                crate::save::find_sa_element(
                                     &mut st.mem,
                                     &mut st.scanner,
                                     j as u16,
                                     __cv7,
                                     true,
-                                );
-                                if found == crate::mem::ALLOC_FAILED {
-                                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                                }
+                                ).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                                 st.mem
                                     .set_b32s0(st.scanner.cur_ptr.0 + 1, st.mem.b32s0(st.scanner.cur_ptr + 1) + 1);
 
@@ -6934,16 +6893,13 @@ pub(crate) fn prefixed_command_in(
                         crate::scan::scan_register_num_in(st)?;
                         if st.scanner.cur_val > 255 {
                             let __cv6 = st.scanner.cur_val;
-                            let found = crate::save::find_sa_element(
+                            crate::save::find_sa_element(
                                 &mut st.mem,
                                 &mut st.scanner,
                                 TOK_VAL as u16,
                                 __cv6,
                                 true,
-                            );
-                            if found == crate::mem::ALLOC_FAILED {
-                                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                            }
+                            ).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                             st.scanner.cur_chr = st.scanner.cur_ptr.0;
                             e = true;
                         } else {
@@ -6958,16 +6914,13 @@ pub(crate) fn prefixed_command_in(
                     crate::scan::scan_char_class_not_ignored_in(st)?;
                     let __cv5 = st.scanner.cur_val;
                     let __cp5 = st.scanner.cur_ptr.0;
-                    let found = crate::save::find_sa_element(
+                    crate::save::find_sa_element(
                         &mut st.mem,
                         &mut st.scanner,
                         INTER_CHAR_VAL as u16,
                         __cp5 * CHAR_CLASS_LIMIT + __cv5,
                         true,
-                    );
-                    if found == crate::mem::ALLOC_FAILED {
-                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                    }
+                    ).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                     st.scanner.cur_chr = st.scanner.cur_ptr.0;
                     e = true;
                 }

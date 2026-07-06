@@ -423,16 +423,13 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                     // MARK_NODE_class != 0
                     // 1618: Update current marks (extended)
                     let mark_class = mark_node.mark_class(&st.mem);
-                    let r = crate::save::find_sa_element(
+                    crate::save::find_sa_element(
                         &mut st.mem,
                         &mut st.scanner,
                         MARK_VAL as u16,
                         mark_class,
                         true,
-                    );
-                    if r == crate::mem::ALLOC_FAILED {
-                        return Err(PageBuildAbort::MainMemoryOverflow);
-                    }
+                    ).ok_or(PageBuildAbort::MainMemoryOverflow)?;
                     let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr.0))
                         .expect("find_sa_element returned a mark-class element");
                     if sa.child(&st.mem, 1).is_null() {
