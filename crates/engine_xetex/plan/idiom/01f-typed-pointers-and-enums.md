@@ -236,3 +236,26 @@ global constructor-return flip as a **net-negative anti-vein** (sprays `.idx().0
 link/state-field stores), so it must be done as a targeted phased bundle, not a blanket flip.
 `ExtensionCmd` enum (do_extension `_DE` codes) is DESCOPED like IfTest — a single well-named
 dispatch, not a duplicated cluster, so low payoff.
+
+## Status after session 253 (S3 allocator-return typing DONE — ALLOC_FAILED eliminated)
+
+The S3 "typed allocator returns" slice is COMPLETE and the anti-vein warning above turned
+out to be avoidable: with `get_avail`/`get_node` returning `Option<MemPtr>` (sessions
+earlier this branch) and `NodePtr::ptr()` added for link stores, the constructor-return
+flip is net-POSITIVE. Every i32-returning `new_*` wrapper is gone from `mem.rs`:
+
+- `alloc_penalty/kern/math/disc/ligature/lig_item/style/choice/noad/null_box/rule/
+  spec/glue/param_glue/skip_param/margin_kern` — all `Option<NodePtr<K>>`.
+- `new_whatsit` (appends to `cl.tail`, C-faithful name) returns `Option<MemPtr>`;
+  `shipout::new_edge` returns `Option<NodePtr<EdgeNode>>`.
+- Sparse-array trie: `find_sa_element -> Option<()>` (result via `scanner.cur_ptr`),
+  `new_index`/`sa_alloc_chain -> Option<i32>`; `sa_save`/`sa_def`/`sa_w_def ->
+  Result<_, SaMutationAbort>` (SAVE_OVERFLOW const gone).
+- `ALLOC_FAILED` const DELETED — arena exhaustion is uniformly `Option`/`ok_or(...)?`.
+
+Caller pattern: tail appends became `tail.set_link(&mut st.mem, p.ptr()); tail = p.ptr();`
+(dropping the C `tail = mem[tail].s1` re-read); raw-cursor neighborhoods keep i32 via
+`.ptr().0`. Three previously UNCHECKED OOM sites (mlist penalty/glue insert, shipout
+reverse new_math) now propagate aborts. Gates: check 0/5-baseline, unit 80/80, TRIP 2/2,
+tex-outputs 29, corpus 637/2-known-FP (through commit `748306bc`; final state corpus-gated
+in-session).
