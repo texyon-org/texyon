@@ -9,7 +9,7 @@ use crate::node::{
     MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
 };
 use crate::state::{EqtbState, MemState};
-use crate::units::{FontId, MemIdx, MemPtr, Scaled};
+use crate::units::{FontId, MemPtr, Scaled};
 
 
 // TeX constants (xetex-constants.h / xetex_format.h)
@@ -369,13 +369,15 @@ pub fn alloc_math(mem: &mut MemState, w: i32, s: i16) -> Option<NodePtr<MathNode
 
 /// Allocate a glue-spec node (GLUE_SPEC_SIZE words) copied from the spec
 /// at `p`, then clear the copy's reference-count / link field to TEX_NULL.
+/// `None` is the arena-exhaustion sentinel.
 ///
 /// translated from xetex-xetex0.c:231 (new_spec)
-pub fn new_spec(mem: &mut MemState, p: impl crate::units::MemAddr) -> i32 {
+pub fn alloc_spec(
+    mem: &mut MemState,
+    p: impl crate::units::MemAddr,
+) -> Option<NodePtr<GlueSpecNode>> {
     let p = p.addr();
-    let Some(q) = NodePtr::<GlueSpecNode>::alloc(mem) else {
-        return ALLOC_FAILED;
-    };
+    let q = NodePtr::<GlueSpecNode>::alloc(mem)?;
     let p_spec =
         NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)).expect("non-null glue spec");
     let word = mem.word(p);
@@ -384,7 +386,7 @@ pub fn new_spec(mem: &mut MemState, p: impl crate::units::MemAddr) -> i32 {
     q.set_width(mem, p_spec.width(mem));
     q.set_stretch(mem, p_spec.stretch(mem));
     q.set_shrink(mem, p_spec.shrink(mem));
-    q.idx().0
+    Some(q)
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +397,7 @@ pub fn new_spec(mem: &mut MemState, p: impl crate::units::MemAddr) -> i32 {
 /// parameter table, returning its typed `NodePtr<GlueNode>` handle (`None` on
 /// arena exhaustion).
 ///
-/// Typed twin of [`new_param_glue`].
+/// translated from xetex-xetex0.c:243 (new_param_glue)
 pub fn alloc_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
     let p = NodePtr::<GlueNode>::alloc(mem)?;
     p.set_subtype(mem, n as u16 + 1); // subtype = n + 1
@@ -410,11 +412,6 @@ pub fn alloc_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<
     Some(p)
 }
 
-/// translated from xetex-xetex0.c:243 (new_param_glue)
-pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
-    alloc_param_glue(mem, eqtb, n).map_or(ALLOC_FAILED, |p| p.idx().0)
-}
-
 // ---------------------------------------------------------------------------
 // new_glue
 // ---------------------------------------------------------------------------
@@ -424,11 +421,8 @@ pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
 ///
 /// translated from xetex-xetex0.c:258 (new_glue)
 ///
-/// Typed twin of [`new_glue`]: allocate a glue node pointing at spec `q` and
-/// return its `NodePtr<GlueNode>` handle directly. Callers that immediately need
-/// the typed node (to set its subtype / read its spec) use this instead of
-/// re-deriving it from `new_glue`'s raw index via `classify_glue().expect()`.
-/// `None` is the arena-exhaustion sentinel.
+/// Returns the glue node's `NodePtr<GlueNode>` handle; `None` is the
+/// arena-exhaustion sentinel.
 pub fn alloc_glue(mem: &mut MemState, q: impl crate::units::MemAddr) -> Option<NodePtr<GlueNode>> {
     let q = q.addr();
     let p = NodePtr::<GlueNode>::alloc(mem)?;
@@ -443,35 +437,22 @@ pub fn alloc_glue(mem: &mut MemState, q: impl crate::units::MemAddr) -> Option<N
     Some(p)
 }
 
-pub fn new_glue(mem: &mut MemState, q: impl crate::units::MemAddr) -> i32 {
-    alloc_glue(mem, q).map_or(ALLOC_FAILED, |p| p.idx().0)
-}
-
 // ---------------------------------------------------------------------------
 // new_skip_param
 // ---------------------------------------------------------------------------
 
 /// Allocate a glue node whose spec is a fresh copy of parameter `n`,
-/// setting `temp_ptr` to the copy.
+/// setting `temp_ptr` to the copy. `None` is the arena-exhaustion sentinel.
 ///
 /// translated from xetex-xetex0.c:270 (new_skip_param)
-pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> i32 {
+pub fn alloc_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
     let spec = eqtb.b32s1(GLUE_BASE + n as i32);
-    let s = new_spec(mem, spec);
-    if s == ALLOC_FAILED {
-        return s;
-    }
-    mem.temp_ptr.0 = s;
-    let p = new_glue(mem, s);
-    if p == ALLOC_FAILED {
-        return p;
-    }
-    let s_spec =
-        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s)).expect("non-null glue spec");
-    s_spec.set_ref_count(mem, TEX_NULL); // clear the spec's ref_count link
-    let p_glue = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p)) };
-    p_glue.set_subtype(mem, n as u16 + 1); // subtype = n + 1
-    p
+    let s = alloc_spec(mem, spec)?;
+    mem.temp_ptr = s.ptr();
+    let p = alloc_glue(mem, s.ptr())?;
+    s.set_ref_count(mem, TEX_NULL); // clear the spec's ref_count link
+    p.set_subtype(mem, n as u16 + 1); // subtype = n + 1
+    Some(p)
 }
 
 // ---------------------------------------------------------------------------

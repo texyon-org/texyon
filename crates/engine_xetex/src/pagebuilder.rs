@@ -153,19 +153,17 @@ fn page_new_skip_param(
     eqtb: &EqtbState,
     n: i16,
 ) -> Result<i32, PageBuildAbort> {
-    let p = crate::mem::new_skip_param(mem, eqtb, n);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(PageBuildAbort::MainMemoryOverflow);
-    }
-    Ok(p)
+    Ok(crate::mem::alloc_skip_param(mem, eqtb, n)
+        .ok_or(PageBuildAbort::MainMemoryOverflow)?
+        .ptr()
+        .0)
 }
 
-fn page_new_spec(mem: &mut MemState, p: impl crate::units::MemAddr) -> Result<i32, PageBuildAbort> {
-    let q = crate::mem::new_spec(mem, p);
-    if q == crate::mem::ALLOC_FAILED {
-        return Err(PageBuildAbort::MainMemoryOverflow);
-    }
-    Ok(q)
+fn page_new_spec(
+    mem: &mut MemState,
+    p: impl crate::units::MemAddr,
+) -> Result<crate::node::NodePtr<crate::node::GlueSpecNode>, PageBuildAbort> {
+    crate::mem::alloc_spec(mem, p).ok_or(PageBuildAbort::MainMemoryOverflow)
 }
 
 fn ensure_vbox_in(st: &mut EngineState, n: u8) -> Result<(), PageBuildAbort> {
@@ -1024,8 +1022,6 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                         c"since the offensive shrinkability has been made finite.".as_ptr();
                     page_error(crate::errors::error_in(st))?;
                     let rr = page_new_spec(&mut st.mem, spec.idx().0)?;
-                    let rr = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(rr))
-                        .expect("non-null copied glue spec");
                     rr.set_shrink_order(&mut st.mem, NORMAL as u16);
                     crate::mem::delete_glue_ref(&mut st.mem, spec.idx().0);
                     glue.set_glue_ptr(&mut st.mem, MemPtr::from_idx(rr.idx()));

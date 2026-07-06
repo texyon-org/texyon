@@ -897,22 +897,19 @@ pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord,
                 b.height(mem).0
             };
         let p = if d < eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_LINE_SKIP_LIMIT) {
-            let p = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_LINE_SKIP);
-            if p == crate::mem::ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow);
-            }
-            p
+            crate::mem::alloc_param_glue(mem, eqtb, GLUE_PAR_LINE_SKIP)
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0
         } else {
-            let p = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_BASELINE_SKIP as i16);
-            if p == crate::mem::ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow);
-            }
+            let p = crate::mem::alloc_skip_param(mem, eqtb, GLUE_PAR_BASELINE_SKIP as i16)
+                .ok_or(NodeRecycleAbort::Overflow)?;
             let bsl_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(
                 mem.temp_ptr.0,
             ))
-            .expect("new_skip_param sets temp_ptr to a glue spec");
+            .expect("alloc_skip_param sets temp_ptr to a glue spec");
             bsl_spec.set_width(mem, Scaled(d));
-            p
+            p.ptr().0
         };
         mem.set_b32s1(cl.tail, p);
         cl.tail.0 = p;
@@ -1252,15 +1249,10 @@ fn repair_vert_break_infinite_shrinkage(
 ) -> Result<(), NodeRecycleAbort> {
     const NORMAL: u16 = 0;
 
-    let r = crate::mem::new_spec(mem, spec.idx().0);
-    if r == crate::mem::ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    let new_spec =
-        NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(r)).expect("new_spec returns spec");
+    let new_spec = crate::mem::alloc_spec(mem, spec.idx().0).ok_or(NodeRecycleAbort::Overflow)?;
     new_spec.set_shrink_order(mem, NORMAL);
     crate::mem::delete_glue_ref(mem, spec.idx().0);
-    glue.set_glue_ptr(mem, MemPtr::from_raw(r));
+    glue.set_glue_ptr(mem, new_spec.ptr());
     Ok(())
 }
 
@@ -1709,14 +1701,12 @@ fn insert_split_top_skip_before(
     p: i32,
     height: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    let q = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_SPLIT_TOP_SKIP_PPT);
-    if q == crate::mem::ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    mem.set_b32s1(prev_p, q);
-    mem.set_b32s1(q, p);
+    let q = crate::mem::alloc_skip_param(mem, eqtb, GLUE_PAR_SPLIT_TOP_SKIP_PPT)
+        .ok_or(NodeRecycleAbort::Overflow)?;
+    mem.set_b32s1(prev_p, q.ptr().0);
+    q.set_link(mem, MemPtr::from_raw(p));
     let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.temp_ptr.0))
-        .expect("new_skip_param sets temp_ptr to a glue spec");
+        .expect("alloc_skip_param sets temp_ptr to a glue spec");
     let avail_ht = spec.width(mem).0;
     if avail_ht > height {
         spec.set_width(mem, Scaled(avail_ht - height));

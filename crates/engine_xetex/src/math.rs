@@ -11,8 +11,8 @@ use crate::consts::{
 };
 use crate::ext::real_get_native_glyph;
 use crate::mem::{
-    alloc_choice, alloc_kern, alloc_noad, free_node, get_avail, get_node, new_glue, new_spec,
-    ALLOC_FAILED, TEX_NULL,
+    alloc_choice, alloc_glue, alloc_kern, alloc_noad, alloc_spec, free_node, get_avail, get_node,
+    TEX_NULL,
 };
 use crate::node::{
     AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, HListNode, KernNode, Noad, NodePtr,
@@ -2970,7 +2970,10 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                     let g = st.eqtb.b32s1(GLUE_BASE + x);
                     let mu = st.scanner.cur_mu;
                     let y = math_glue_in(st, g, mu)?;
-                    let z = crate::mem::new_glue(&mut st.mem, y);
+                    let z = crate::mem::alloc_glue(&mut st.mem, y)
+                        .ok_or(NodeRecycleAbort::Overflow)?
+                        .ptr()
+                        .0;
                     st.mem.set_b32s1(y, TEX_NULL);
                     st.mem.set_b32s1(p, z);
                     st.mem.set_b16s0(z, (x + 1) as u16);
@@ -3303,18 +3306,13 @@ fn stack_glue_into_box(
     min: i32,
     max: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    let q_spec = new_spec(mem, 0);
-    if q_spec == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    // `q_spec` is a freshly allocated glue spec; type its width/stretch writes.
-    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q_spec)).unwrap();
+    let spec = alloc_spec(mem, 0).ok_or(NodeRecycleAbort::Overflow)?;
     spec.set_width(mem, Scaled(min));
     spec.set_stretch(mem, Scaled(max - min));
-    let p = new_glue(mem, q_spec);
-    if p == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
+    let p = alloc_glue(mem, spec.ptr())
+        .ok_or(NodeRecycleAbort::Overflow)?
+        .ptr()
+        .0;
     if matches!(b_box, AnyBox::HList(_)) {
         let mut q = b_box.list_ptr(mem);
         if q.is_null() {
@@ -4173,10 +4171,10 @@ fn app_display_in(
             .ptr()
             .0;
         if st.mem.b16s1(t) == GLUE_NODE {
-            let jj = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16);
-            if jj == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
+            let jj = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16)
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0;
             st.mem.set_b32s1(q, jj);
             st.mem.set_b32s1(jj, u);
             let jspec = st.mem.b32s0(t + 1);
@@ -4197,10 +4195,10 @@ fn app_display_in(
             .ptr()
             .0;
         if st.mem.b16s1(r) == GLUE_NODE {
-            let jj = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16);
-            if jj == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
+            let jj = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16)
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0;
             st.mem.set_b32s1(u2, jj);
             st.mem.set_b32s1(jj, p);
             let jspec = st.mem.b32s0(r + 1);
@@ -4459,12 +4457,10 @@ pub(crate) fn after_math_in(
             st.input.cur_list.tail.set_link(&mut st.mem, inf_node.ptr());
             st.input.cur_list.tail = inf_node.ptr();
         } else {
-            let g1_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g1);
-            if g1_node == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
-            st.mem.set_b32s1(st.input.cur_list.tail, g1_node);
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+            let g1_node = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, g1)
+                .ok_or(NodeRecycleAbort::Overflow)?;
+            st.input.cur_list.tail.set_link(&mut st.mem, g1_node.ptr());
+            st.input.cur_list.tail = g1_node.ptr();
         }
 
         if e != 0 {
@@ -4515,10 +4511,10 @@ pub(crate) fn after_math_in(
         st.input.cur_list.tail = post_pen.ptr();
 
         if g2 > 0 {
-            let g2_node = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g2);
-            if g2_node == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
+            let g2_node = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, g2)
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0;
             st.mem.set_b32s1(st.input.cur_list.tail, g2_node);
             st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         }
@@ -4566,11 +4562,11 @@ pub(crate) fn init_math_in(
                     .ptr()
                     .0
             } else {
-                crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16)
+                crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16)
+                    .ok_or(NodeRecycleAbort::Overflow)?
+                    .ptr()
+                    .0
             };
-            if j == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
 
             let p_glue = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_LEFT_SKIP) == 0 {
                 alloc_kern(&mut st.mem, 0)
@@ -4578,11 +4574,11 @@ pub(crate) fn init_math_in(
                     .ptr()
                     .0
             } else {
-                crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16)
+                crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP as i16)
+                    .ok_or(NodeRecycleAbort::Overflow)?
+                    .ptr()
+                    .0
             };
-            if p_glue == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
             st.mem.set_b32s1(p_glue, j);
 
             let Some(jbox) = crate::mem::alloc_null_box(&mut st.mem) else {
@@ -4962,20 +4958,14 @@ fn rebox(
             }
         }
         free_node(mem, crate::units::MemPtr::from_idx(bb.idx()), BOX_NODE_SIZE);
-        let g = new_glue(mem, 12);
-        if g == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
-        MemPtr::from_raw(g).set_link(mem, p);
+        let g = alloc_glue(mem, 12).ok_or(NodeRecycleAbort::Overflow)?;
+        g.set_link(mem, p);
         while !p.link(mem).is_null() {
             p = p.link(mem);
         }
-        let tail_glue = new_glue(mem, 12);
-        if tail_glue == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
-        mem.set_b32s1(p, tail_glue);
-        Ok(ReboxResult::Hpack(g))
+        let tail_glue = alloc_glue(mem, 12).ok_or(NodeRecycleAbort::Overflow)?;
+        mem.set_b32s1(p, tail_glue.ptr().0);
+        Ok(ReboxResult::Hpack(g.ptr().0))
     } else {
         bb.set_width(mem, Scaled(w));
         Ok(ReboxResult::Done(bb))

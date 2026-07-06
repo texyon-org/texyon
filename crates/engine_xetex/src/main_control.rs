@@ -143,8 +143,8 @@ pub(crate) fn omit_error_in(st: &mut crate::state::EngineState) -> Result<(), Ma
 // translated from xetex-xetex0.c:8074 (fin_align)
 pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     use crate::mem::{
-        alloc_null_box, delete_glue_ref, flush_list, free_node, new_glue, new_param_glue,
-        alloc_penalty, pop_nest_in, ALLOC_FAILED, TEX_NULL,
+        alloc_glue, alloc_null_box, alloc_param_glue, alloc_penalty, delete_glue_ref, flush_list,
+        free_node, pop_nest_in, TEX_NULL,
     };
     use crate::packaging::flush_node_list;
     use crate::scan::NodeRecycleAbort;
@@ -333,12 +333,12 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                         let v = st.mem.b32s0(ss + 1);
                         let v_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(v))
                             .expect("non-null glue spec");
-                        let g = new_glue(&mut st.mem, v);
-                        if g == ALLOC_FAILED {
-                            return Err(NodeRecycleAbort::Overflow.into());
-                        }
+                        let g = alloc_glue(&mut st.mem, v)
+                            .ok_or(NodeRecycleAbort::Overflow)?
+                            .ptr()
+                            .0;
                         st.mem.set_b32s1(u, g);
-                        u = st.mem.b32s1(u);
+                        u = g;
                         st.mem.set_b16s0(u, GLUE_PAR_TAB_SKIP);
                         t += v_p.width(&st.mem).0;
                         if p.glue_sign(&st.mem) == GlueSign::Stretching {
@@ -530,12 +530,10 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         let pen = alloc_penalty(&mut st.mem, pre_pen).ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail.set_link(&mut st.mem, pen.ptr());
         st.input.cur_list.tail = pen.ptr();
-        let ag = new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_ABOVE_DISPLAY);
-        if ag == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, ag);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+        let ag = alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_ABOVE_DISPLAY)
+            .ok_or(NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, ag.ptr());
+        st.input.cur_list.tail = ag.ptr();
         // Attach alignment rows
         st.mem.set_b32s1(st.input.cur_list.tail, pp);
         if pp != TEX_NULL {
@@ -546,12 +544,10 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         let pen2 = alloc_penalty(&mut st.mem, post_pen).ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail.set_link(&mut st.mem, pen2.ptr());
         st.input.cur_list.tail = pen2.ptr();
-        let bg = new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_BELOW_DISPLAY);
-        if bg == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, bg);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+        let bg = alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_BELOW_DISPLAY)
+            .ok_or(NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, bg.ptr());
+        st.input.cur_list.tail = bg.ptr();
         // Only prevdepth (aux.b32.s1) is restored for MMODE (C: cur_list.aux.b32.s1 = aux_save.b32.s1)
         st.input.cur_list.set_aux_s1(aux_save_s1);
         crate::math::resume_after_display_in(st)?;
@@ -781,7 +777,7 @@ pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
 }
 // translated from xetex-xetex0.c:7859 (fin_col)
 pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, MainControlAbort> {
-    use crate::mem::{alloc_null_box, get_avail, new_glue, ALLOC_FAILED, TEX_NULL};
+    use crate::mem::{alloc_glue, alloc_null_box, get_avail, TEX_NULL};
 
     const ADDITIONAL: i16 = 1;
     const SPAN_CODE: i32 = 1_114_113; // xetex_format.h:679
@@ -849,13 +845,12 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             st.mem.set_b32s1(p + 2, st.mem.b32s1(HOLD_HEAD));
             st.scanner.cur_loop.0 = st.mem.b32s1(st.scanner.cur_loop);
             let gv = st.mem.b32s0(st.scanner.cur_loop + 1);
-            let g = new_glue(&mut st.mem, gv);
-            if g == ALLOC_FAILED {
-                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-            }
+            let g = alloc_glue(&mut st.mem, gv)
+                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+                .ptr()
+                .0;
             st.mem.set_b32s1(p, g);
-            let pp = st.mem.b32s1(p);
-            st.mem.set_b16s0(pp, GLUE_PAR_TAB_SKIP);
+            st.mem.set_b16s0(g, GLUE_PAR_TAB_SKIP);
         } else {
             crate::output::error_here_with_diagnostic_in(
                 st,
@@ -960,12 +955,9 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
         st.mem.set_b32s1(st.input.cur_list.tail, u);
         st.input.cur_list.tail.0 = u;
         let gv = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1);
-        let g = new_glue(&mut st.mem, gv);
-        if g == ALLOC_FAILED {
-            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, g);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+        let g = alloc_glue(&mut st.mem, gv).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, g.ptr());
+        st.input.cur_list.tail = g.ptr();
         st.mem.set_b16s0(st.input.cur_list.tail, GLUE_PAR_TAB_SKIP);
         if st.mem.b32s0(st.scanner.cur_align + 5) >= CR_CODE {
             return Ok(true);
@@ -1032,7 +1024,7 @@ pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainC
 }
 // translated from xetex-xetex0.c:7732 (init_align)
 pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    use crate::mem::{alloc_null_box, get_avail, new_param_glue, ALLOC_FAILED, TEX_NULL};
+    use crate::mem::{alloc_null_box, alloc_param_glue, get_avail, TEX_NULL};
     use crate::scan::NodeRecycleAbort;
 
     const ALIGN_HEAD: i32 = 4_999_991; // MEM_TOP - 8
@@ -1090,13 +1082,11 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
     st.scanner.align_state = -1_000_000;
 
     'outer: loop {
-        let g = new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_TAB_SKIP);
-        if g == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        let ca = st.scanner.cur_align.0;
-        st.mem.set_b32s1(ca, g);
-        st.scanner.cur_align.0 = st.mem.b32s1(ca);
+        let g = alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_TAB_SKIP)
+            .ok_or(NodeRecycleAbort::Overflow)?
+            .ptr();
+        st.scanner.cur_align.set_link(&mut st.mem, g);
+        st.scanner.cur_align = g;
         if st.scanner.cur_cmd == CAR_RET {
             break 'outer;
         }
@@ -1346,12 +1336,10 @@ pub(crate) fn its_all_over_in(
             st.input.cur_list.tail.0 + 1,
             st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE),
         );
-        let ng = crate::mem::new_glue(&mut st.mem, 8);
-        if ng == crate::mem::ALLOC_FAILED {
-            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, ng);
-        st.input.cur_list.tail.0 = ng;
+        let ng =
+            crate::mem::alloc_glue(&mut st.mem, 8).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, ng.ptr());
+        st.input.cur_list.tail = ng.ptr();
         let np = crate::mem::alloc_penalty(&mut st.mem, NULL_FLAG)
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail.set_link(&mut st.mem, np.ptr());
@@ -1686,20 +1674,19 @@ pub(crate) fn app_space(
     let q;
     let mut side_effects = None;
     if space_factor >= 2000 && st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XSPACE_SKIP) != 0 {
-        q = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_XSPACE_SKIP as i16);
-        if q == crate::mem::ALLOC_FAILED {
-            return Err(crate::scan::NodeRecycleAbort::Overflow);
-        }
+        q = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_XSPACE_SKIP as i16)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+            .ptr()
+            .0;
     } else {
         if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP) != 0 {
             st.mainloop.main_p.0 = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP);
         } else {
             st.mainloop.main_p.0 = st.fonts.font_glue(cf);
             if st.mainloop.main_p.0 == crate::mem::TEX_NULL {
-                st.mainloop.main_p.0 = crate::mem::new_spec(&mut st.mem, 0);
-                if st.mainloop.main_p.0 == crate::mem::ALLOC_FAILED {
-                    return Err(crate::scan::NodeRecycleAbort::Overflow);
-                }
+                st.mainloop.main_p = crate::mem::alloc_spec(&mut st.mem, 0)
+                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+                    .ptr();
                 st.mainloop.main_k = st.fonts.param_base(cf) + 2;
                 // width = space, stretch = space_stretch, shrink = space_shrink
                 st.mem.set_b32s1(st.mainloop.main_p + 1, st.fonts.font_info_b32s1(st.mainloop.main_k));
@@ -1708,10 +1695,9 @@ pub(crate) fn app_space(
                 st.fonts.set_font_glue(cf, st.mainloop.main_p.0);
             }
         }
-        st.mainloop.main_p.0 = crate::mem::new_spec(&mut st.mem, st.mainloop.main_p.0);
-        if st.mainloop.main_p.0 == crate::mem::ALLOC_FAILED {
-            return Err(crate::scan::NodeRecycleAbort::Overflow);
-        }
+        st.mainloop.main_p = crate::mem::alloc_spec(&mut st.mem, st.mainloop.main_p.0)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+            .ptr();
         if space_factor >= 2000 {
             // add extra_space to width
             let extra = st.fonts.font_info_b32s1(EXTRA_SPACE_CODE + st.fonts.param_base(cf));
@@ -1728,10 +1714,10 @@ pub(crate) fn app_space(
         // `xn_over_d` sets `tex_remainder` (last call wins) and `arith_error`
         // on any overflow.
         side_effects = Some((r2, ov1 || ov2));
-        q = crate::mem::new_glue(&mut st.mem, st.mainloop.main_p.0);
-        if q == crate::mem::ALLOC_FAILED {
-            return Err(crate::scan::NodeRecycleAbort::Overflow);
-        }
+        q = crate::mem::alloc_glue(&mut st.mem, st.mainloop.main_p.0)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+            .ptr()
+            .0;
         st.mem.set_b32s1(st.mainloop.main_p, crate::mem::TEX_NULL);
     }
     st.mem.set_b32s1(st.input.cur_list.tail, q);
@@ -1855,12 +1841,10 @@ pub(crate) fn new_graf_in(
     st.input.cur_list.prev_graf = 0;
 
     if st.input.cur_list.mode == VMODE_I16 || st.input.cur_list.head != st.input.cur_list.tail {
-        let pg = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_PAR_SKIP);
-        if pg == crate::mem::ALLOC_FAILED {
-            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(st.input.cur_list.tail, pg);
-        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+        let pg = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_PAR_SKIP)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        st.input.cur_list.tail.set_link(&mut st.mem, pg.ptr());
+        st.input.cur_list.tail = pg.ptr();
     }
 
     crate::mem::push_nest_in(st)?;
@@ -3855,14 +3839,10 @@ pub(crate) fn do_register_command_in(
         } else {
             crate::scan::scan_glue_in(st, p)?;
             if q == ADVANCE {
-                let qs = crate::mem::new_spec(&mut st.mem, st.scanner.cur_val);
-                if qs == crate::mem::ALLOC_FAILED {
-                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                }
+                let qs_p = crate::mem::alloc_spec(&mut st.mem, st.scanner.cur_val)
+                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 let r = s;
                 crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
-                let qs_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(qs))
-                    .expect("non-null glue spec");
                 let r_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(r))
                     .expect("non-null glue spec");
                 let w = qs_p.width(&st.mem).0 + r_p.width(&st.mem).0;
@@ -3893,7 +3873,7 @@ pub(crate) fn do_register_command_in(
                     qs_p.set_shrink(&mut st.mem, rs);
                     qs_p.set_shrink_order(&mut st.mem, ro);
                 }
-                st.scanner.cur_val = qs;
+                st.scanner.cur_val = qs_p.ptr().0;
             }
         }
     } else {
@@ -3925,13 +3905,9 @@ pub(crate) fn do_register_command_in(
                 );
             }
         } else {
-            let r = crate::mem::new_spec(&mut st.mem, s);
-            if r == crate::mem::ALLOC_FAILED {
-                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-            }
+            let r_p = crate::mem::alloc_spec(&mut st.mem, s)
+                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             let s_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s))
-                .expect("non-null glue spec");
-            let r_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(r))
                 .expect("non-null glue spec");
             let (sw, sst, ssh) = (
                 s_p.width(&st.mem),
@@ -3971,7 +3947,7 @@ pub(crate) fn do_register_command_in(
                 let v = crate::scaled_math::x_over_n_in(&mut st.errors, ssh.0, st.scanner.cur_val);
                 r_p.set_shrink(&mut st.mem, Scaled(v));
             }
-            st.scanner.cur_val = r;
+            st.scanner.cur_val = r_p.ptr().0;
         }
     }
 
@@ -4094,10 +4070,9 @@ pub(crate) fn main_control_append_normal_space_in(
     if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP_MC as i32) == 0 {
         st.mainloop.main_p.0 = st.fonts.font_glue(cur_font);
         if st.mainloop.main_p.0 == crate::mem::TEX_NULL {
-            st.mainloop.main_p.0 = crate::mem::new_spec(&mut st.mem, 0);
-            if st.mainloop.main_p.0 == crate::mem::ALLOC_FAILED {
-                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-            }
+            st.mainloop.main_p = crate::mem::alloc_spec(&mut st.mem, 0)
+                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+                .ptr();
             st.mainloop.main_k = st.fonts.param_base(cur_font) + 2;
             st.mem.set_b32s1(
                 st.mainloop.main_p.0 + 1,
@@ -4113,21 +4088,19 @@ pub(crate) fn main_control_append_normal_space_in(
             );
             st.fonts.set_font_glue(cur_font, st.mainloop.main_p.0);
         }
-        st.mem.temp_ptr.0 = crate::mem::new_glue(&mut st.mem, st.mainloop.main_p.0);
+        st.mem.temp_ptr = crate::mem::alloc_glue(&mut st.mem, st.mainloop.main_p.0)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+            .ptr();
     } else {
-        st.mem.temp_ptr.0 = crate::mem::new_param_glue(
-            &mut st.mem,
-            &st.eqtb,
-            GLUE_PAR_SPACE_SKIP_MC,
-        );
-    }
-    if st.mem.temp_ptr.0 == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
+        st.mem.temp_ptr =
+            crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_SPACE_SKIP_MC)
+                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+                .ptr();
     }
 
-    st.mem
-        .set_b32s1(st.input.cur_list.tail.0, st.mem.temp_ptr.0);
-    st.input.cur_list.tail.0 = st.mem.temp_ptr.0;
+    let tp = st.mem.temp_ptr;
+    st.input.cur_list.tail.set_link(&mut st.mem, tp);
+    st.input.cur_list.tail = tp;
     Ok(())
 }
 
@@ -4732,12 +4705,10 @@ pub(crate) fn main_control_math_cases_in(
         }
 
         (MMODE_MC, NON_SCRIPT_MC) => {
-            let g = crate::mem::new_glue(&mut st.mem, 0);
-            if g == crate::mem::ALLOC_FAILED {
-                return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-            }
-            st.mem.set_b32s1(st.input.cur_list.tail, g);
-            st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+            let g = crate::mem::alloc_glue(&mut st.mem, 0)
+                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+            st.input.cur_list.tail.set_link(&mut st.mem, g.ptr());
+            st.input.cur_list.tail = g.ptr();
             st.mem.set_b16s0(st.input.cur_list.tail, COND_MATH_GLUE_MC);
         }
 

@@ -2248,13 +2248,12 @@ pub(crate) fn get_avail_scc(
         .ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
 }
 
-/// `new_spec` with its `ALLOC_FAILED` lifted into [`SccAbort`].
-pub(crate) fn new_spec_scc(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<i32, SccAbort> {
-    let r = crate::mem::new_spec(&mut st.mem, p);
-    if r == crate::mem::ALLOC_FAILED {
-        return Err(main_mem_overflow_scc());
-    }
-    Ok(r)
+/// [`crate::mem::alloc_spec`] with arena exhaustion lifted into [`SccAbort`].
+pub(crate) fn new_spec_scc(
+    st: &mut crate::state::EngineState,
+    p: impl crate::units::MemAddr,
+) -> Result<NodePtr<GlueSpecNode>, SccAbort> {
+    crate::mem::alloc_spec(&mut st.mem, p).ok_or_else(main_mem_overflow_scc)
 }
 
 /// `str_toks_cat` with its [`StrToksAbort`] cold overflow tails lifted into
@@ -3311,9 +3310,7 @@ pub(crate) fn scan_glue_in(st: &mut crate::state::EngineState, level: i16) -> Re
         }
     }
 
-    let q = new_spec_scc(st, 0)?;
-    // A fresh glue_spec carries no NODE_type; reach it via `from_glue_ptr`.
-    let gs = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q)).expect("new glue spec");
+    let gs = new_spec_scc(st, 0)?;
     gs.set_width(&mut st.mem, Scaled(st.scanner.cur_val));
 
     if scan_keyword_in(st, c"plus".as_ptr())? {
@@ -3327,7 +3324,7 @@ pub(crate) fn scan_glue_in(st: &mut crate::state::EngineState, level: i16) -> Re
         gs.set_shrink_order(&mut st.mem, st.scanner.cur_order as u16);
     }
 
-    st.scanner.cur_val = q;
+    st.scanner.cur_val = gs.ptr().0;
     Ok(())
 }
 pub(crate) fn scan_normal_glue_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
@@ -3460,14 +3457,14 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             {
                 st.errors.arith_error = true;
                 crate::mem::delete_glue_ref(&mut st.mem, f);
-                f = new_spec_scc(st, 0)?;
+                f = new_spec_scc(st, 0)?.ptr().0;
             }
 
             // o may be modified inside case 3 (EXPR_MULT → EXPR_SCALE)
             match s {
                 0 => {
                     if l >= GLUE_VAL_EXPR && o != EXPR_NONE {
-                        t = new_spec_scc(st, f)?;
+                        t = new_spec_scc(st, f)?.ptr().0;
                         crate::mem::delete_glue_ref(&mut st.mem, f);
                         if st.mem.b32s1(t + 2) == 0 {
                             st.mem.set_b16s1(t, NORMAL_EXPR);
@@ -4230,12 +4227,9 @@ pub(crate) fn scan_something_internal_in(
                         if negative {
                             if (st.scanner.cur_val_level as i16) >= GLUE_VAL {
                                 let gm = st.scanner.cur_val;
-                                let nv = new_spec_scc(st, gm)?;
-                                st.scanner.cur_val = nv;
+                                let gs = new_spec_scc(st, gm)?;
+                                st.scanner.cur_val = gs.ptr().0;
                                 crate::mem::delete_glue_ref(&mut st.mem, gm);
-                                let gs =
-                                    NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(nv))
-                                        .expect("non-null glue spec");
                                 let (w, str_, shr) =
                                     (gs.width(&st.mem), gs.stretch(&st.mem), gs.shrink(&st.mem));
                                 gs.set_width(&mut st.mem, Scaled(-w.0));
@@ -4975,10 +4969,8 @@ pub(crate) fn scan_something_internal_in(
     if negative {
         if (st.scanner.cur_val_level as i16) >= GLUE_VAL {
             let gm = st.scanner.cur_val;
-            let nv = new_spec_scc(st, gm)?;
-            st.scanner.cur_val = nv;
-            let gs = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(nv))
-                .expect("non-null glue spec");
+            let gs = new_spec_scc(st, gm)?;
+            st.scanner.cur_val = gs.ptr().0;
             let (w, str_, shr) = (gs.width(&st.mem), gs.stretch(&st.mem), gs.shrink(&st.mem));
             gs.set_width(&mut st.mem, Scaled(-w.0));
             gs.set_stretch(&mut st.mem, Scaled(-str_.0));

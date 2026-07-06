@@ -609,15 +609,10 @@ pub fn insert_left_margin_kern(errors: &mut crate::state::ErrorState,
 /// translated from xetex-linebreak.c:2377 (finite_shrink)
 pub fn finite_shrink(mem: &mut MemState, p: impl crate::units::MemAddr) -> Result<i32, NodeRecycleAbort> {
     let p = p.addr();
-    let q = crate::mem::new_spec(mem, p);
-    if q == crate::mem::ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q))
-        .expect("new_spec returns a glue spec");
-    spec.set_shrink_order(mem, NORMAL);
+    let q = crate::mem::alloc_spec(mem, p).ok_or(NodeRecycleAbort::Overflow)?;
+    q.set_shrink_order(mem, NORMAL);
     crate::mem::delete_glue_ref(mem, p);
-    Ok(q)
+    Ok(q.ptr().0)
 }
 
 /// translated from xetex-linebreak.c:2402 (reconstitute)
@@ -1116,20 +1111,15 @@ fn finish_last_line_fit(
     }
 
     let old_spec = last_line_fill.glue_ptr(mem);
-    let q = crate::mem::new_spec(mem, old_spec.0);
-    if q == crate::mem::ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
+    let spec = crate::mem::alloc_spec(mem, old_spec.0).ok_or(NodeRecycleAbort::Overflow)?;
     crate::mem::delete_glue_ref(mem, old_spec.0);
 
-    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(q))
-        .expect("new_spec returns a glue spec");
     spec.set_width(
         mem,
         Scaled(spec.width(mem).0 + best.shortfall(mem).0 - best.glue(mem).0),
     );
     spec.set_stretch(mem, Scaled(0));
-    last_line_fill.set_glue_ptr(mem, MemPtr::from_raw(q));
+    last_line_fill.set_glue_ptr(mem, spec.ptr());
     Ok(())
 }
 
@@ -3912,16 +3902,14 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                         st.input.cur_list.tail = node.ptr();
                     }
                     if use_skip {
-                        let node = crate::mem::new_param_glue(
+                        let node = crate::mem::alloc_param_glue(
                             &mut st.mem,
                             &st.eqtb,
                             GLUE_PAR_XETEX_LINEBREAK_SKIP as i16,
-                        );
-                        if node == crate::mem::ALLOC_FAILED {
-                            return Err(NodeRecycleAbort::Overflow);
-                        }
-                        st.mem.set_b32s1(st.input.cur_list.tail, node);
-                        st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+                        )
+                        .ok_or(NodeRecycleAbort::Overflow)?;
+                        st.input.cur_list.tail.set_link(&mut st.mem, node.ptr());
+                        st.input.cur_list.tail = node.ptr();
                     }
                 }
                 let node = crate::fonts::new_native_word_node(
