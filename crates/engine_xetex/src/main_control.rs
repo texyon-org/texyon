@@ -925,13 +925,12 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
                 sq = st.mem.b32s0(sq);
             }
             if st.mem.b32s1(st.mem.b32s0(sq)) > n {
-                let s = crate::mem::get_node(&mut st.mem, SPAN_NODE_SIZE);
-                if s == ALLOC_FAILED {
-                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                }
-                st.mem.set_b32s0(s, st.mem.b32s0(sq));
+                let s = crate::mem::get_node(&mut st.mem, SPAN_NODE_SIZE)
+                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+                let sq0 = st.mem.b32s0(sq);
+                s.set_info(&mut st.mem, sq0);
                 st.mem.set_b32s1(s, n);
-                st.mem.set_b32s0(sq, s);
+                st.mem.set_b32s0(sq, s.0);
                 st.mem.set_b32s1(s + 1, w);
             } else if st.mem.b32s1(st.mem.b32s0(sq) + 1) < w {
                 st.mem.set_b32s1(st.mem.b32s0(sq) + 1, w);
@@ -2655,12 +2654,10 @@ pub(crate) fn handle_right_brace_in(
             pop_nest_in(&mut st.mem, &mut st.input);
 
             if st.save_stack.b32s1(st.save_stack.save_ptr) < 255 {
-                let new_node = get_node(&mut st.mem, INS_NODE_SIZE);
-                if new_node == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow.into());
-                }
-                st.mem.set_b32s1(st.input.cur_list.tail, new_node);
-                st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+                let new_node =
+                    get_node(&mut st.mem, INS_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
+                st.input.cur_list.tail.set_link(&mut st.mem, new_node);
+                st.input.cur_list.tail = new_node;
                 let tail = st.input.cur_list.tail.0;
                 st.mem.set_b16s1(tail, INS_NODE);
                 let ins = match st.mem.classify(MemIdx::new(tail)) {
@@ -2677,12 +2674,10 @@ pub(crate) fn handle_right_brace_in(
                 ins.set_depth(&mut st.mem, Scaled(d));
                 ins.set_float_cost(&mut st.mem, f);
             } else {
-                let new_node = get_node(&mut st.mem, SMALL_NODE_SIZE);
-                if new_node == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow.into());
-                }
-                st.mem.set_b32s1(st.input.cur_list.tail, new_node);
-                st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
+                let new_node =
+                    get_node(&mut st.mem, SMALL_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
+                st.input.cur_list.tail.set_link(&mut st.mem, new_node);
+                st.input.cur_list.tail = new_node;
                 let tail = st.input.cur_list.tail.0;
                 st.mem.set_b16s1(tail, ADJUST_NODE);
                 let adj = match st.mem.classify(MemIdx::new(tail)) {
@@ -2923,10 +2918,8 @@ pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         st.scanner.cur_val
     };
     crate::scan::scan_toks_in(st, false, true)?; // side effect: sets def_ref; return value discarded
-    let p = crate::mem::get_node(&mut st.mem, SMALL_NODE_SIZE);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
+    let p = crate::mem::get_node(&mut st.mem, SMALL_NODE_SIZE)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.mem.set_b16s1(p, MARK_NODE); // NODE_type(p)
     let mark = match st.mem.classify(MemIdx::new(p)) {
         Ok(AnyNode::Mark(mark)) => mark,
@@ -2935,9 +2928,8 @@ pub(crate) fn make_mark_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     mark.set_mark_class(&mut st.mem, c);
     mark.set_subtype(&mut st.mem, 0);
     mark.set_mark_ptr(&mut st.mem, MemPtr::from_raw(st.scanner.def_ref.0));
-    let tail = st.input.cur_list.tail.0;
-    st.mem.set_b32s1(tail, p);
-    st.input.cur_list.tail.0 = p;
+    st.input.cur_list.tail.set_link(&mut st.mem, p);
+    st.input.cur_list.tail = p;
     Ok(())
 }
 pub(crate) fn new_interaction_in(st: &mut crate::state::EngineState) {
@@ -7371,10 +7363,9 @@ pub(crate) fn prefixed_command_in(
                     p = TEX_NULL;
                 } else if q > PC_LOCAL_BASE + LOCAL__PAR_SHAPE {
                     n = (st.scanner.cur_val / 2) + 1;
-                    p = crate::mem::get_node(&mut st.mem, 2 * n + 1);
-                    if p == crate::mem::ALLOC_FAILED {
-                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                    }
+                    p = crate::mem::get_node(&mut st.mem, 2 * n + 1)
+                        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+                        .0;
                     st.mem.set_b32s0(p, n);
                     n = st.scanner.cur_val;
                     st.mem.set_b32s1(p + 1, n);
@@ -7390,10 +7381,9 @@ pub(crate) fn prefixed_command_in(
                         st.mem.set_b32s1(p + n + 2, 0);
                     }
                 } else {
-                    p = crate::mem::get_node(&mut st.mem, 2 * n + 1);
-                    if p == crate::mem::ALLOC_FAILED {
-                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                    }
+                    p = crate::mem::get_node(&mut st.mem, 2 * n + 1)
+                        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+                        .0;
                     st.mem.set_b32s0(p, n);
 
                     j = 1;

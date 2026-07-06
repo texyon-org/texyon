@@ -188,14 +188,11 @@ fn get_avail_ship(mem: &mut MemState) -> Result<crate::units::MemPtr, ShipoutAbo
     crate::mem::get_avail(mem).ok_or(ShipoutAbort::MainMemoryOverflow)
 }
 
-/// `get_node` with its `ALLOC_FAILED` lifted into the
+/// `get_node` with its exhaustion `None` lifted into the
 /// main-memory overflow tail.
 fn get_node_ship(mem: &mut MemState, s: i32) -> Result<i32, ShipoutAbort> {
-    let p = crate::mem::get_node(mem, s);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(ShipoutAbort::MainMemoryOverflow);
-    }
-    Ok(p)
+    let p = crate::mem::get_node(mem, s).ok_or(ShipoutAbort::MainMemoryOverflow)?;
+    Ok(p.0)
 }
 
 impl ShipoutAbort {
@@ -2357,7 +2354,7 @@ pub fn reverse(
                                 mem.set_b16s1(p, KERN_NODE);
                                 mem.set_b32s1(p + 1, shipout.rule_wd);
                             } else {
-                                g = crate::mem::get_node(mem, GLUE_SPEC_SIZE);
+                                g = get_node_ship(mem, GLUE_SPEC_SIZE)?;
                                 mem.set_b16s1(g, FILLL + 1);
                                 mem.set_b16s0(g, FILLL + 1);
                                 mem.set_b32s1(g + 1, shipout.rule_wd);

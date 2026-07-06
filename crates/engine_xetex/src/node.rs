@@ -33,7 +33,7 @@ use crate::consts::{
     MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PENALTY_NODE, RADICAL_NOAD_SIZE, RULE_NODE,
     RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
-use crate::mem::{free_node, get_node, ALLOC_FAILED};
+use crate::mem::{free_node, get_node};
 use crate::state::MemState;
 use crate::units::{FontId, GlueSign, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -231,10 +231,7 @@ impl NodePtr<HListNode> {
     /// audited site. The caller fills the remaining box fields.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
-        let p = get_node(mem, BOX_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, BOX_NODE_SIZE)?;
         // type-stamp: an hlist node carries NODE_type = HLIST_NODE.
         mem.set_b16s1(p, HLIST_NODE);
         // SAFETY: `p` is a freshly allocated `BOX_NODE_SIZE` node just stamped
@@ -249,10 +246,7 @@ impl NodePtr<VListNode> {
     /// `None` if the arena is exhausted.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<VListNode>> {
-        let p = get_node(mem, BOX_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, BOX_NODE_SIZE)?;
         mem.set_b16s1(p, NodeType::VList.as_raw());
         // SAFETY: `p` is a freshly allocated `BOX_NODE_SIZE` node just stamped
         // VLIST_NODE; this is the family's audited construction site.
@@ -690,10 +684,7 @@ impl NodePtr<RuleNode> {
     /// `NODE_type = RULE_NODE`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
-        let p = get_node(mem, RULE_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, RULE_NODE_SIZE)?;
         mem.set_b16s1(p, RULE_NODE);
         // SAFETY: `p` is freshly allocated as a rule-sized node and just
         // stamped RULE_NODE.
@@ -741,10 +732,7 @@ impl NodePtr<LigatureNode> {
     /// with `NODE_type = LIGATURE_NODE`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<LigatureNode>> {
-        let p = get_node(mem, SMALL_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, SMALL_NODE_SIZE)?;
         mem.set_b16s1(p, LIGATURE_NODE);
         // SAFETY: `p` is freshly allocated as a small node and just stamped
         // LIGATURE_NODE.
@@ -812,10 +800,7 @@ impl NodePtr<LigItem> {
     /// exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<LigItem>> {
-        let p = get_node(mem, SMALL_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, SMALL_NODE_SIZE)?;
         // SAFETY: `p` is a freshly allocated `SMALL_NODE_SIZE` record; this is
         // the family's single audited construction site.
         Some(unsafe { NodePtr::<LigItem>::from_idx_unchecked(MemIdx::new(p)) })
@@ -865,10 +850,7 @@ impl NodePtr<DiscNode> {
     /// exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<DiscNode>> {
-        let p = get_node(mem, SMALL_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, SMALL_NODE_SIZE)?;
         mem.set_b16s1(p, DISC_NODE);
         // SAFETY: `p` is freshly allocated as a small node and just stamped
         // DISC_NODE.
@@ -921,10 +903,7 @@ impl NodePtr<MathNode> {
     /// with `NODE_type = MATH_NODE`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MathNode>> {
-        let p = get_node(mem, MEDIUM_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, MEDIUM_NODE_SIZE)?;
         mem.set_b16s1(p, MATH_NODE);
         // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just
         // stamped MATH_NODE; this is the family's audited construction site.
@@ -973,10 +952,7 @@ impl NodePtr<StyleNode> {
     /// with `NODE_type = STYLE_NODE`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<StyleNode>> {
-        let p = get_node(mem, STYLE_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, STYLE_NODE_SIZE)?;
         mem.set_b16s1(p, NodeType::Style.as_raw());
         // SAFETY: `p` is freshly allocated and just stamped STYLE_NODE.
         Some(unsafe { NodePtr::<StyleNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -995,10 +971,7 @@ impl NodePtr<EdgeNode> {
     /// `NODE_type = STYLE_NODE` because XeTeX aliases `EDGE_NODE` to code 14.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<EdgeNode>> {
-        let p = get_node(mem, STYLE_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, STYLE_NODE_SIZE)?;
         mem.set_b16s1(p, NodeType::Style.as_raw());
         // SAFETY: `p` is freshly allocated and just stamped with the edge
         // context's NODE_type code.
@@ -1023,10 +996,7 @@ impl NodePtr<ChoiceNode> {
     /// with `NODE_type = CHOICE_NODE`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<ChoiceNode>> {
-        let p = get_node(mem, STYLE_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, STYLE_NODE_SIZE)?;
         mem.set_b16s1(p, NodeType::Choice.as_raw());
         // SAFETY: `p` is freshly allocated and just stamped CHOICE_NODE.
         Some(unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -1110,10 +1080,7 @@ impl NodePtr<Noad> {
     /// with `NODE_type = OrdNoad`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        let p = get_node(mem, NOAD_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, NOAD_SIZE)?;
         mem.set_b16s1(p, NodeType::OrdNoad.as_raw());
         // SAFETY: `p` is freshly allocated and type-stamped.
         Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
@@ -1123,10 +1090,7 @@ impl NodePtr<Noad> {
     /// with `NODE_type = RadicalNoad`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc_radical(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        let p = get_node(mem, RADICAL_NOAD_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, RADICAL_NOAD_SIZE)?;
         mem.set_b16s1(p, NodeType::RadicalNoad.as_raw());
         Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
     }
@@ -1135,10 +1099,7 @@ impl NodePtr<Noad> {
     /// with `NODE_type = AccentNoad`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc_accent(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        let p = get_node(mem, ACCENT_NOAD_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, ACCENT_NOAD_SIZE)?;
         mem.set_b16s1(p, NodeType::AccentNoad.as_raw());
         Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
     }
@@ -1147,10 +1108,7 @@ impl NodePtr<Noad> {
     /// with `NODE_type = FractionNoad`, returning `None` on arena exhaustion.
     #[inline]
     pub fn alloc_fraction(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        let p = get_node(mem, FRACTION_NOAD_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, FRACTION_NOAD_SIZE)?;
         mem.set_b16s1(p, NodeType::FractionNoad.as_raw());
         Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
     }
@@ -1503,10 +1461,7 @@ impl NodePtr<GlueNode> {
     /// `subtype`/`glue_ptr`/`leader_ptr`.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<GlueNode>> {
-        let p = get_node(mem, MEDIUM_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, MEDIUM_NODE_SIZE)?;
         mem.set_b16s1(p, GLUE_NODE);
         // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just
         // stamped GLUE_NODE; this is the family's audited construction site.
@@ -1579,10 +1534,7 @@ impl NodePtr<GlueSpecNode> {
     /// before returning — the pattern extends per family as consumers appear.)
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<GlueSpecNode>> {
-        let p = get_node(mem, GLUE_SPEC_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, GLUE_SPEC_SIZE)?;
         // SAFETY: `p` is a freshly allocated `GLUE_SPEC_SIZE` record; this is
         // the family's single audited construction site (the node is being
         // initialised by the caller, so there is no tag to classify).
@@ -1721,10 +1673,7 @@ impl NodePtr<KernNode> {
     /// the caller fills `subtype`/`width`.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<KernNode>> {
-        let p = get_node(mem, MEDIUM_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, MEDIUM_NODE_SIZE)?;
         // type-stamp: a kern node carries NODE_type = KERN_NODE in its header.
         mem.set_b16s1(p, KERN_NODE);
         // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just stamped
@@ -1792,10 +1741,7 @@ impl NodePtr<PenaltyNode> {
     /// `subtype`/`penalty`.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<PenaltyNode>> {
-        let p = get_node(mem, MEDIUM_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, MEDIUM_NODE_SIZE)?;
         // type-stamp: a penalty node carries NODE_type = PENALTY_NODE.
         mem.set_b16s1(p, PENALTY_NODE);
         // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just stamped
@@ -1847,10 +1793,7 @@ impl NodePtr<MarginKernNode> {
     /// handle to it — or `None` on arena exhaustion.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MarginKernNode>> {
-        let p = get_node(mem, MARGIN_KERN_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, MARGIN_KERN_NODE_SIZE)?;
         mem.set_b16s1(p, MARGIN_KERN_NODE);
         Some(unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(MemIdx::new(p)) })
     }
@@ -2393,10 +2336,7 @@ impl NodePtr<MovementNode> {
     /// Allocate a fresh movement record (`MOVEMENT_NODE_SIZE` words).
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MovementNode>> {
-        let p = get_node(mem, MOVEMENT_NODE_SIZE);
-        if p == ALLOC_FAILED {
-            return None;
-        }
+        let p = get_node(mem, MOVEMENT_NODE_SIZE)?;
         // SAFETY: `p` is a freshly allocated movement-sized record; it is
         // classified by the shipout movement-list context.
         Some(unsafe { NodePtr::<MovementNode>::from_idx_unchecked(MemIdx::new(p)) })

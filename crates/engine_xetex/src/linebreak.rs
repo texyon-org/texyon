@@ -183,11 +183,8 @@ fn alloc_active_node(
     active_node_size: i32,
     link: MemPtr,
 ) -> Result<NodePtr<ActiveNode>, NodeRecycleAbort> {
-    let p = crate::mem::get_node(mem, active_node_size);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    let p = active(p);
+    let p = crate::mem::get_node(mem, active_node_size).ok_or(NodeRecycleAbort::Overflow)?;
+    let p = active(p.0);
     p.set_link(mem, link);
     Ok(p)
 }
@@ -196,11 +193,8 @@ fn alloc_delta_node(
     mem: &mut MemState,
     link: MemPtr,
 ) -> Result<NodePtr<DeltaNode>, NodeRecycleAbort> {
-    let p = crate::mem::get_node(mem, DELTA_NODE_SIZE);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    let p = delta_node(p);
+    let p = crate::mem::get_node(mem, DELTA_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
+    let p = delta_node(p.0);
     p.set_link(mem, link);
     mem.set_b16s1(p.idx().0, DELTA_NODE as u16);
     mem.set_b16s0(p.idx().0, 0);
@@ -208,11 +202,8 @@ fn alloc_delta_node(
 }
 
 fn alloc_passive_node(mem: &mut MemState) -> Result<NodePtr<PassiveNode>, NodeRecycleAbort> {
-    let p = crate::mem::get_node(mem, PASSIVE_NODE_SIZE);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
-    Ok(passive_node(p))
+    let p = crate::mem::get_node(mem, PASSIVE_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
+    Ok(passive_node(p.0))
 }
 
 #[inline]

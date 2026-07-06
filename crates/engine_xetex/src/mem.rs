@@ -146,16 +146,17 @@ pub fn flush_list(mem: &mut MemState, p: MemPtr) {
 
 /// Allocate a variable-size node of `s` words from the lo-mem free list.
 ///
-/// Returns the index of the first word of the allocated block. Calls
-/// `overflow()` (never returns) if memory is exhausted. Returns
-/// `MAX_HALFWORD` for the special sentinel request `s == 0x40000000`.
+/// Returns a pointer to the first word of the allocated block, or `None`
+/// if memory is exhausted (the caller propagates the `main memory size`
+/// overflow). The special sentinel request `s == 0x40000000` (the
+/// `sort_avail` coalescing probe) yields `Some(MAX_HALFWORD)`.
 ///
 /// The two C `goto` labels are handled with Rust's labeled-loop break:
 ///   - `goto found`   → `break 'search r`
 ///   - `goto restart` → `continue 'restart`
 ///
 /// translated from xetex-xetex0.c:150 (get_node)
-pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
+pub fn get_node(mem: &mut MemState, s: i32) -> Option<MemPtr> {
     let r = 'restart: loop {
         let mut p = mem.rover;
 
@@ -203,7 +204,7 @@ pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
 
         // No suitable block found in one pass through the free list.
         if s == 0x4000_0000 {
-            return MAX_HALFWORD;
+            return Some(MemPtr::from_raw(MAX_HALFWORD));
         }
 
         if mem.lo_mem_max + 2 < mem.hi_mem_min && mem.lo_mem_max + 2 <= MAX_HALFWORD {
@@ -232,7 +233,7 @@ pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
             continue 'restart;
         }
 
-        return ALLOC_FAILED;
+        return None;
     };
 
     // found:
@@ -241,7 +242,7 @@ pub fn get_node(mem: &mut MemState, s: i32) -> i32 {
         mem.set_b32s0(r + s - 1, mem.cur_synctex_tag);
         mem.set_b32s1(r + s - 1, mem.line);
     }
-    r
+    Some(MemPtr::from_raw(r))
 }
 
 // ---------------------------------------------------------------------------
@@ -785,13 +786,12 @@ pub fn alloc_margin_kern(
 
 // translated from xetex-xetex0.c:13763 (new_whatsit)
 pub fn new_whatsit(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, s: i16, w: i16) -> i32 {
-    let p = get_node(mem, w as i32);
-    if p == ALLOC_FAILED {
-        return p;
-    }
+    let Some(p) = get_node(mem, w as i32) else {
+        return ALLOC_FAILED;
+    };
     mem.set_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
     mem.set_b16s0(p, s as u16);
-    mem.set_b32s1(cl.tail, p);
-    cl.tail.0 = p;
-    p
+    cl.tail.set_link(mem, p);
+    cl.tail = p;
+    p.0
 }

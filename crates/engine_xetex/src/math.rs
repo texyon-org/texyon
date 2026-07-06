@@ -3215,10 +3215,7 @@ pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
 /// instead of re-deriving one from a raw index via
 /// `classify_whatsit().expect().expect()`.
 fn alloc_glyph_whatsit(mem: &mut MemState) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
-    let p = get_node(mem, GLYPH_NODE_SIZE);
-    if p == ALLOC_FAILED {
-        return Err(NodeRecycleAbort::Overflow);
-    }
+    let p = get_node(mem, GLYPH_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
     mem.set_b16s1(p, WHATSIT_NODE);
     mem.set_b16s0(p, WhatsitSubtype::Glyph as u16);
     Ok(unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(p)) })

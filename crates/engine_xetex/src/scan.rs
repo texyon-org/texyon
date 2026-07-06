@@ -1231,16 +1231,14 @@ impl NodeRecycleAbort {
     }
 }
 
-/// `get_node`, returning [`NodeRecycleAbort::Overflow`] from the enclosing
-/// function on arena exhaustion.
+/// `get_node` as a raw index, returning [`NodeRecycleAbort::Overflow`] from
+/// the enclosing function on arena exhaustion.
 macro_rules! cnl_get_node {
-    ($mem:expr, $sz:expr) => {{
-        let __r = crate::mem::get_node($mem, $sz);
-        if __r == crate::mem::ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow);
-        }
-        __r
-    }};
+    ($mem:expr, $sz:expr) => {
+        crate::mem::get_node($mem, $sz)
+            .ok_or(NodeRecycleAbort::Overflow)?
+            .0
+    };
 }
 
 // Re-export cnl_get_node for the font-loading group in fonts.rs and
@@ -2236,13 +2234,10 @@ pub(crate) fn main_mem_overflow_scc() -> SccAbort {
     })
 }
 
-/// `get_node` with its `ALLOC_FAILED` lifted into [`SccAbort`].
+/// `get_node` with its exhaustion `None` lifted into [`SccAbort`].
 pub(crate) fn get_node_scc(st: &mut crate::state::EngineState, s: i32) -> Result<i32, SccAbort> {
-    let r = crate::mem::get_node(&mut st.mem, s);
-    if r == crate::mem::ALLOC_FAILED {
-        return Err(main_mem_overflow_scc());
-    }
-    Ok(r)
+    let r = crate::mem::get_node(&mut st.mem, s).ok_or_else(main_mem_overflow_scc)?;
+    Ok(r.0)
 }
 
 /// `get_avail` with its exhaustion `None` lifted into [`SccAbort`].
@@ -2676,7 +2671,7 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
         if sz == 1 {
             sz = 2;
         }
-        let r_base = crate::mem::get_node(&mut st.mem, sz);
+        let r_base = get_node_scc(st, sz)?;
         st.mem.set_b32s1(q, r_base);
         q = r_base;
         st.mem.set_b32s0(q, sz);

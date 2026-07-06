@@ -454,24 +454,24 @@ pub fn sa_save(
     let q: i32;
     if i < DIMEN_VAL_LIMIT {
         if mem.b32s1(p + 2) == 0 {
-            q = crate::mem::get_node(mem, POINTER_NODE_SIZE);
-            if q == crate::mem::ALLOC_FAILED {
-                return q;
-            }
+            q = match crate::mem::get_node(mem, POINTER_NODE_SIZE) {
+                Some(p) => p.0,
+                None => return crate::mem::ALLOC_FAILED,
+            };
             i = TOK_VAL_LIMIT;
         } else {
-            q = crate::mem::get_node(mem, WORD_NODE_SIZE);
-            if q == crate::mem::ALLOC_FAILED {
-                return q;
-            }
+            q = match crate::mem::get_node(mem, WORD_NODE_SIZE) {
+                Some(p) => p.0,
+                None => return crate::mem::ALLOC_FAILED,
+            };
             mem.set_b32s1(q + 2, mem.b32s1(p + 2));
         }
         mem.set_b32s1(q + 1, TEX_NULL);
     } else {
-        q = crate::mem::get_node(mem, POINTER_NODE_SIZE);
-        if q == crate::mem::ALLOC_FAILED {
-            return q;
-        }
+        q = match crate::mem::get_node(mem, POINTER_NODE_SIZE) {
+            Some(p) => p.0,
+            None => return crate::mem::ALLOC_FAILED,
+        };
         mem.set_b32s1(q + 1, mem.b32s1(p + 1));
     }
     mem.set_b32s0(q + 1, p);
@@ -814,10 +814,10 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
 /// translated from xetex-xetex0.c:4111 (new_index)
 fn new_index(mem: &mut MemState, scanner: &mut ScannerState, i: u16, q: impl crate::units::MemAddr) -> i32 {
     let q = q.addr();
-    let p = crate::mem::get_node(mem, INDEX_NODE_SIZE);
-    if p == crate::mem::ALLOC_FAILED {
-        return p;
-    }
+    let p = match crate::mem::get_node(mem, INDEX_NODE_SIZE) {
+        Some(p) => p.0,
+        None => return crate::mem::ALLOC_FAILED,
+    };
     scanner.cur_ptr.0 = p;
     mem.set_b16s1(p, i);
     mem.set_b16s0(p, 0);
@@ -878,27 +878,27 @@ fn sa_alloc_chain(
     let leaf_i = levels[levels.len() - 1];
     let p;
     if t == MARK_VAL {
-        p = crate::mem::get_node(mem, MARK_CLASS_NODE_SIZE);
-        if p == crate::mem::ALLOC_FAILED {
-            return p;
-        }
+        p = match crate::mem::get_node(mem, MARK_CLASS_NODE_SIZE) {
+            Some(p) => p.0,
+            None => return crate::mem::ALLOC_FAILED,
+        };
         scanner.cur_ptr.0 = p;
         mem.set_word(p + 1, scanner.sa_null);
         mem.set_word(p + 2, scanner.sa_null);
         mem.set_word(p + 3, scanner.sa_null);
     } else if t <= DIMEN_VAL {
-        p = crate::mem::get_node(mem, WORD_NODE_SIZE);
-        if p == crate::mem::ALLOC_FAILED {
-            return p;
-        }
+        p = match crate::mem::get_node(mem, WORD_NODE_SIZE) {
+            Some(p) => p.0,
+            None => return crate::mem::ALLOC_FAILED,
+        };
         scanner.cur_ptr.0 = p;
         mem.set_b32s1(p + 2, 0);
         mem.set_b32s1(p + 1, n);
     } else {
-        p = crate::mem::get_node(mem, POINTER_NODE_SIZE);
-        if p == crate::mem::ALLOC_FAILED {
-            return p;
-        }
+        p = match crate::mem::get_node(mem, POINTER_NODE_SIZE) {
+            Some(p) => p.0,
+            None => return crate::mem::ALLOC_FAILED,
+        };
         scanner.cur_ptr.0 = p;
         if t <= MU_VAL {
             mem.set_b32s1(p + 1, 0);

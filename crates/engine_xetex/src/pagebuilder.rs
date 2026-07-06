@@ -137,11 +137,8 @@ fn page_save(abort: Option<crate::save::SaveAbort>) -> Result<(), PageBuildAbort
 }
 
 fn page_get_node(mem: &mut MemState, s: i32) -> Result<i32, PageBuildAbort> {
-    let p = crate::mem::get_node(mem, s);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(PageBuildAbort::MainMemoryOverflow);
-    }
-    Ok(p)
+    let p = crate::mem::get_node(mem, s).ok_or(PageBuildAbort::MainMemoryOverflow)?;
+    Ok(p.0)
 }
 
 fn page_new_null_box(mem: &mut MemState) -> Result<i32, PageBuildAbort> {
