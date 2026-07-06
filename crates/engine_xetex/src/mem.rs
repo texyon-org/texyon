@@ -58,19 +58,22 @@ pub(crate) unsafe fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mu
 // get_avail
 // ---------------------------------------------------------------------------
 
-/// Overflow sentinel returned by the allocators ([`get_avail`], [`get_node`])
-/// when the `mem` arena is exhausted. `i32::MIN` lies outside every valid
-/// arena index, `TEX_NULL`, and `MAX_HALFWORD`, so it can never collide with a
-/// real return value.
+/// Overflow sentinel returned by the i32-returning allocators ([`get_node`]
+/// and the `new_*` wrappers) when the `mem` arena is exhausted. `i32::MIN`
+/// lies outside every valid arena index, `TEX_NULL`, and `MAX_HALFWORD`, so
+/// it can never collide with a real return value. ([`get_avail`] signals the
+/// same exhaustion as `None`.)
 pub(crate) const ALLOC_FAILED: i32 = i32::MIN;
 
 /// Allocate one word from the single-word (hi-mem) free list.
 ///
-/// Returns the index of the allocated word. The word's link field
-/// (`mem[p].b32.s1`) is set to `TEX_NULL`.
+/// Returns a pointer to the allocated word, whose link field
+/// (`mem[p].b32.s1`) is set to `TEX_NULL` — or `None` if the arena is
+/// exhausted (the caller propagates the `main memory size` overflow).
 ///
 /// translated from xetex-xetex0.c:170 (get_avail)
-pub fn get_avail(mem: &mut MemState) -> i32 {
+#[inline]
+pub fn get_avail(mem: &mut MemState) -> Option<MemPtr> {
     let p = mem.avail;
 
     if p != TEX_NULL {
@@ -79,20 +82,20 @@ pub fn get_avail(mem: &mut MemState) -> i32 {
         mem.mem_end += 1;
         let p = mem.mem_end;
         mem.set_b32s1(p, TEX_NULL);
-        return p;
+        return Some(MemPtr::from_raw(p));
     } else {
         mem.hi_mem_min -= 1;
         let p = mem.hi_mem_min;
         // is_char_node(lo_mem_max) ≡ lo_mem_max >= hi_mem_min
         if mem.lo_mem_max >= mem.hi_mem_min {
-            return ALLOC_FAILED;
+            return None;
         }
         mem.set_b32s1(p, TEX_NULL);
-        return p;
+        return Some(MemPtr::from_raw(p));
     }
 
     mem.set_b32s1(p, TEX_NULL);
-    p
+    Some(MemPtr::from_raw(p))
 }
 
 /// The `main memory size` overflow as an [`EngineAbort`] value: run `runaway()`
@@ -659,12 +662,9 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     }
     st.input.nest[np as usize] = st.input.cur_list;
     st.input.nest_ptr = np + 1;
-    let h = get_avail(&mut st.mem);
-    if h == ALLOC_FAILED {
-        return Err(PushNestAbort::MainMemory);
-    }
-    st.input.cur_list.head.0 = h;
-    st.input.cur_list.tail.0 = h;
+    let h = get_avail(&mut st.mem).ok_or(PushNestAbort::MainMemory)?;
+    st.input.cur_list.head = h;
+    st.input.cur_list.tail = h;
     st.input.cur_list.prev_graf = 0;
     st.input.cur_list.mode_line = st.mem.line;
     st.input.cur_list.e_tex_aux = crate::units::MemPtr::NULL;

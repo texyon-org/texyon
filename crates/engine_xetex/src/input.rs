@@ -108,11 +108,8 @@ pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), In
     {
         end_token_list_in(st)?;
     }
-    let p = crate::mem::get_avail(&mut st.mem);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(InputAbort::MainMemory);
-    }
-    st.mem.set_b32s0(p, st.scanner.cur_tok);
+    let p = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
+    p.set_info(&mut st.mem, st.scanner.cur_tok);
     if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
         if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
             st.scanner.align_state -= 1;
@@ -133,9 +130,9 @@ pub(crate) fn back_input_in(st: &mut crate::state::EngineState) -> Result<(), In
     st.input.input_stack[ptr as usize] = st.input.cur_input;
     st.input.input_ptr = ptr + 1;
     st.input.cur_input.state = TOKEN_LIST;
-    st.input.cur_input.start = p;
+    st.input.cur_input.start = p.0;
     st.input.cur_input.index = BACKED_UP;
-    st.input.cur_input.loc = p;
+    st.input.cur_input.loc = p.0;
     Ok(())
 }
 

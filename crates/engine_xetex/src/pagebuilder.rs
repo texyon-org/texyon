@@ -200,12 +200,10 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
     }
     st.input.nest[st.input.nest_ptr as usize] = st.input.cur_list;
     st.input.nest_ptr += 1;
-    let h = crate::mem::get_avail(&mut st.mem);
-    if h == crate::mem::ALLOC_FAILED {
-        return Err(PageBuildAbort::MainMemoryOverflowRunaway);
-    }
-    st.input.cur_list.head.0 = h;
-    st.input.cur_list.tail.0 = h;
+    let h = crate::mem::get_avail(&mut st.mem)
+        .ok_or(PageBuildAbort::MainMemoryOverflowRunaway)?;
+    st.input.cur_list.head = h;
+    st.input.cur_list.tail = h;
     st.input.cur_list.prev_graf = 0;
     st.input.cur_list.mode_line = st.mem.line;
     st.input.cur_list.e_tex_aux = crate::units::MemPtr::NULL;

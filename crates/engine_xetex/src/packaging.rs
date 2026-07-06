@@ -19,7 +19,7 @@ use crate::units::NodeType;
 
 // Shared node-recycle infrastructure stays in scan.rs (also used by
 // prune_page_top and the relocated font-loading group); import it here.
-use crate::scan::{cnl_get_avail, cnl_get_node, NodeRecycleAbort};
+use crate::scan::{cnl_get_node, NodeRecycleAbort};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
 
@@ -226,7 +226,7 @@ pub fn just_copy(
         // Determine r and words for this node. None = skip linking (goto not_found).
         let r_opt: Option<i32> = if p >= mem.hi_mem_min {
             // char node
-            Some(cnl_get_avail!(mem))
+            Some(crate::mem::get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?.0)
         } else {
             match mem.classify(MemIdx::new(p)).ok() {
                 Some(AnyNode::HList(_)) | Some(AnyNode::VList(_)) => {
@@ -239,7 +239,9 @@ pub fn just_copy(
                     Some(cnl_get_node!(mem, RULE_NODE_SIZE))
                 }
                 Some(AnyNode::Ligature(_)) => {
-                    let r = cnl_get_avail!(mem);
+                    let r = crate::mem::get_avail(mem)
+                        .ok_or(NodeRecycleAbort::OverflowRunaway)?
+                        .0;
                     mem.set_word(r, mem.word(p + 1)); // mem[r] = mem[p + 1]
                     words = 0; // skip the copy loop (goto found)
                     Some(r)
@@ -435,11 +437,12 @@ pub fn just_reverse(
                     } else {
                         // even subtype = begin math node
                         // push lr_ptr
-                        let tp = cnl_get_avail!(mem);
-                        mem.temp_ptr.0 = tp;
-                        mem.set_b32s0(mem.temp_ptr, L_CODE * (subtype / L_CODE) + 3);
-                        mem.set_b32s1(mem.temp_ptr, scanner.lr_ptr.0);
-                        scanner.lr_ptr.0 = mem.temp_ptr.0;
+                        let tp = crate::mem::get_avail(mem)
+                            .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                        mem.temp_ptr = tp;
+                        tp.set_info(mem, L_CODE * (subtype / L_CODE) + 3);
+                        tp.set_link(mem, scanner.lr_ptr);
+                        scanner.lr_ptr = tp;
 
                         if n > MIN_HALFWORD || (subtype / R_CODE) != scanner.cur_dir as i32 {
                             n += 1;
@@ -661,13 +664,17 @@ pub fn copy_node_list(
     mut p: i32,
 ) -> Result<i32, NodeRecycleAbort> {
     use crate::mem::TEX_NULL;
-    let h = cnl_get_avail!(mem);
+    let h = crate::mem::get_avail(mem)
+        .ok_or(NodeRecycleAbort::OverflowRunaway)?
+        .0;
     let mut q = h;
     while p != TEX_NULL {
         let mut words = 1i32;
         let r: i32;
         if p >= mem.hi_mem_min {
-            r = cnl_get_avail!(mem);
+            r = crate::mem::get_avail(mem)
+                .ok_or(NodeRecycleAbort::OverflowRunaway)?
+                .0;
         } else {
             match mem
                 .classify(MemIdx::new(p))
@@ -1976,13 +1983,10 @@ fn hpack_in(
     let mut diags = [None, None];
 
     if eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_HP) > 0 {
-        let t = get_avail(mem);
-        if t == crate::mem::ALLOC_FAILED {
-            return Err(NodeRecycleAbort::OverflowRunaway);
-        }
-        mem.set_b32s0(t, BEFORE_HP as i32);
-        mem.set_b32s1(t, scanner.lr_ptr.0);
-        scanner.lr_ptr.0 = t;
+        let t = get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
+        t.set_info(mem, BEFORE_HP as i32);
+        t.set_link(mem, scanner.lr_ptr);
+        scanner.lr_ptr = t;
     }
 
     let mut p = list;
@@ -2294,13 +2298,10 @@ fn hpack_in(
                             mem.set_b16s0(p, EXPLICIT_HP);
                         }
                     } else {
-                        let t = get_avail(mem);
-                        if t == crate::mem::ALLOC_FAILED {
-                            return Err(NodeRecycleAbort::OverflowRunaway);
-                        }
-                        mem.set_b32s0(t, (L_CODE_HP as i32) * (sub as i32 / L_CODE_HP as i32) + 3);
-                        mem.set_b32s1(t, scanner.lr_ptr.0);
-                        scanner.lr_ptr.0 = t;
+                        let t = get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                        t.set_info(mem, (L_CODE_HP as i32) * (sub as i32 / L_CODE_HP as i32) + 3);
+                        t.set_link(mem, scanner.lr_ptr);
+                        scanner.lr_ptr = t;
                     }
                 }
             }

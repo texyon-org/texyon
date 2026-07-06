@@ -2490,12 +2490,9 @@ pub(crate) fn append_src_special_in(
             return Err(InsertSrcAbort::MainMemory);
         }
         st.mem.set_b32s0(st.input.cur_list.tail + 1, 0);
-        let d = crate::mem::get_avail(&mut st.mem);
-        if d == crate::mem::ALLOC_FAILED {
-            return Err(InsertSrcAbort::MainMemory);
-        }
-        st.scanner.def_ref.0 = d;
-        st.mem.set_b32s0(d, crate::mem::TEX_NULL);
+        let d = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
+        st.scanner.def_ref = d;
+        d.set_info(&mut st.mem, crate::mem::TEX_NULL);
         let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
             .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
         match crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0) {
@@ -2507,8 +2504,9 @@ pub(crate) fn append_src_special_in(
                 return Err(InsertSrcAbort::MainMemory)
             }
         };
-        st.mem.set_b32s1(d, st.mem.b32s1(TEMP_HEAD));
-        st.mem.set_b32s1(st.input.cur_list.tail + 1, d);
+        let th = crate::units::MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+        d.set_link(&mut st.mem, th);
+        st.mem.set_b32s1(st.input.cur_list.tail + 1, d.0);
         crate::texmfmp::remember_source_info_in(st, fname, st.mem.line);
     }
     Ok(())
@@ -2591,19 +2589,13 @@ pub(crate) fn insert_src_special_in(
 
     let sfn = st.input.source_filename_stack[st.input.in_open as usize];
     if sfn > 0 && crate::texmfmp::is_new_source_in(st, sfn, st.mem.line) {
-        let toklist = crate::mem::get_avail(&mut st.mem);
-        if toklist == crate::mem::ALLOC_FAILED {
-            return Err(InsertSrcAbort::MainMemory);
-        }
+        let toklist = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
         let mut p = toklist;
-        st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-        let nxt = crate::mem::get_avail(&mut st.mem);
-        if nxt == crate::mem::ALLOC_FAILED {
-            return Err(InsertSrcAbort::MainMemory);
-        }
-        st.mem.set_b32s1(p, nxt);
-        p = st.mem.b32s1(p);
-        st.mem.set_b32s0(p, LEFT_BRACE_TOKEN + b'{' as i32);
+        p.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
+        let nxt = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
+        p.set_link(&mut st.mem, nxt);
+        p = nxt;
+        p.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
         let b = crate::texmfmp::make_src_special_in(st, sfn, st.mem.line)
             .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
         let q = match crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0) {
@@ -2615,16 +2607,14 @@ pub(crate) fn insert_src_special_in(
                 return Err(InsertSrcAbort::MainMemory)
             }
         };
-        st.mem.set_b32s1(p, st.mem.b32s1(TEMP_HEAD));
+        let th = crate::units::MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+        p.set_link(&mut st.mem, th);
         p = q;
-        let nxt = crate::mem::get_avail(&mut st.mem);
-        if nxt == crate::mem::ALLOC_FAILED {
-            return Err(InsertSrcAbort::MainMemory);
-        }
-        st.mem.set_b32s1(p, nxt);
-        p = st.mem.b32s1(p);
-        st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN + b'}' as i32);
-        crate::input::begin_token_list_in(st, toklist, INSERTED)?;
+        let nxt = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
+        p.set_link(&mut st.mem, nxt);
+        p = nxt;
+        p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
+        crate::input::begin_token_list_in(st, toklist.0, INSERTED)?;
         crate::texmfmp::remember_source_info_in(st, sfn, st.mem.line);
     }
     Ok(())
@@ -2650,27 +2640,19 @@ pub(crate) unsafe fn tt_insert_special_in(
         st.strings.pool_ptr += 1;
     }
 
-    let toklist_start = crate::mem::get_avail(&mut st.mem);
-    if toklist_start == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
-    st.mem
-        .set_b32s0(toklist_start, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-    let q = crate::mem::get_avail(&mut st.mem);
-    if q == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
-    st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + b'{' as i32);
-    st.mem.set_b32s1(toklist_start, q);
+    let toklist_start = crate::mem::get_avail(&mut st.mem)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    toklist_start.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
+    let q = crate::mem::get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'{' as i32);
+    toklist_start.set_link(&mut st.mem, q);
     let p = crate::scan::str_toks_scc(st, start_pool, 0)?;
-    st.mem.set_b32s1(q, st.mem.b32s1(TEMP_HEAD));
-    let q2 = crate::mem::get_avail(&mut st.mem);
-    if q2 == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
-    st.mem.set_b32s0(q2, RIGHT_BRACE_TOKEN + b'}' as i32);
-    st.mem.set_b32s1(p, q2);
-    crate::input::begin_token_list_in(st, toklist_start, INSERTED)?;
+    let th = crate::units::MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+    q.set_link(&mut st.mem, th);
+    let q2 = crate::mem::get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    q2.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
+    p.set_link(&mut st.mem, q2);
+    crate::input::begin_token_list_in(st, toklist_start.0, INSERTED)?;
     Ok(())
 }
 /// translated from xetex-xetex0.c:8024 (do_extension)

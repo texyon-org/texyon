@@ -3081,13 +3081,10 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<AnyBox, NodeRecyc
             bb.set_width(mem, Scaled(width));
             bb.set_height(mem, Scaled(height));
             bb.set_depth(mem, Scaled(depth));
-            let p = get_avail(mem);
-            if p == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::OverflowRunaway);
-            }
+            let p = get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
             mem.set_b16s0(p, c);
             mem.set_b16s1(p, f as u16);
-            p
+            p.0
         }
     };
     bb.set_list_ptr(mem, MemPtr::from_raw(p));
@@ -4676,14 +4673,12 @@ pub(crate) fn init_math_in(
                 .font_info_b32s1(QUAD_CODE + st.fonts.param_base(cur_font));
 
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                let tp = crate::mem::get_avail(&mut st.mem);
-                if tp == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow.into());
-                }
-                st.mem.temp_ptr.0 = tp;
-                st.mem.set_b32s0(st.mem.temp_ptr, BEFORE);
-                st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.lr_ptr.0);
-                st.scanner.lr_ptr.0 = st.mem.temp_ptr.0;
+                let tp = crate::mem::get_avail(&mut st.mem)
+                    .ok_or(NodeRecycleAbort::Overflow)?;
+                st.mem.temp_ptr = tp;
+                tp.set_info(&mut st.mem, BEFORE);
+                tp.set_link(&mut st.mem, st.scanner.lr_ptr);
+                st.scanner.lr_ptr = tp;
             }
 
             'outer: loop {
@@ -4746,17 +4741,13 @@ pub(crate) fn init_math_in(
                                         break 'outer;
                                     }
                                 } else {
-                                    let tp = crate::mem::get_avail(&mut st.mem);
-                                    if tp == ALLOC_FAILED {
-                                        return Err(NodeRecycleAbort::Overflow.into());
-                                    }
-                                    st.mem.temp_ptr.0 = tp;
-                                    st.mem.set_b32s0(
-                                        st.mem.temp_ptr.0,
-                                        L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3,
-                                    );
-                                    st.mem.set_b32s1(st.mem.temp_ptr, st.scanner.lr_ptr.0);
-                                    st.scanner.lr_ptr.0 = st.mem.temp_ptr.0;
+                                    let tp = crate::mem::get_avail(&mut st.mem)
+                                        .ok_or(NodeRecycleAbort::Overflow)?;
+                                    st.mem.temp_ptr = tp;
+                                    let v = L_CODE * (st.mem.b16s0(p) as i32 / L_CODE) + 3;
+                                    tp.set_info(&mut st.mem, v);
+                                    tp.set_link(&mut st.mem, st.scanner.lr_ptr);
+                                    st.scanner.lr_ptr = tp;
                                     if st.mem.b16s0(p) as i32 / R_CODE != st.scanner.cur_dir as i32
                                     {
                                         crate::packaging::just_reverse(

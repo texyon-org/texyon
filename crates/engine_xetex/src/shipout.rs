@@ -182,14 +182,10 @@ fn ship_err(o: crate::errors::ErrorOutcome) -> Result<(), ShipoutAbort> {
     crate::scan::scc_err(o).map_err(ShipoutAbort::Scc)
 }
 
-/// `get_avail` with its `ALLOC_FAILED` lifted into the
+/// `get_avail` with its exhaustion `None` lifted into the
 /// movement/main-memory overflow tail.
-fn get_avail_ship(mem: &mut MemState) -> Result<i32, ShipoutAbort> {
-    let p = crate::mem::get_avail(mem);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(ShipoutAbort::MainMemoryOverflow);
-    }
-    Ok(p)
+fn get_avail_ship(mem: &mut MemState) -> Result<crate::units::MemPtr, ShipoutAbort> {
+    crate::mem::get_avail(mem).ok_or(ShipoutAbort::MainMemoryOverflow)
 }
 
 /// `get_node` with its `ALLOC_FAILED` lifted into the
@@ -1255,10 +1251,10 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     let mut prev_p = this_box + 5;
 
     let lr_node = get_avail_ship(&mut st.mem)?;
-    st.mem.temp_ptr.0 = lr_node;
-    st.mem.set_b32s0(lr_node, BEFORE);
-    st.mem.set_b32s1(lr_node, st.scanner.lr_ptr.0);
-    st.scanner.lr_ptr.0 = lr_node;
+    st.mem.temp_ptr = lr_node;
+    lr_node.set_info(&mut st.mem, BEFORE);
+    lr_node.set_link(&mut st.mem, st.scanner.lr_ptr);
+    st.scanner.lr_ptr = lr_node;
 
     if this_box_b.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
@@ -1509,11 +1505,11 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                 }
                             } else {
                                 let lr_node = get_avail_ship(&mut st.mem)?;
-                                st.mem.temp_ptr.0 = lr_node;
-                                st.mem
-                                    .set_b32s0(lr_node, math_node_end_lr_type(&st.mem, p) as i32);
-                                st.mem.set_b32s1(lr_node, st.scanner.lr_ptr.0);
-                                st.scanner.lr_ptr.0 = lr_node;
+                                st.mem.temp_ptr = lr_node;
+                                let v = math_node_end_lr_type(&st.mem, p) as i32;
+                                lr_node.set_info(&mut st.mem, v);
+                                lr_node.set_link(&mut st.mem, st.scanner.lr_ptr);
+                                st.scanner.lr_ptr = lr_node;
 
                                 if math_node_lr_dir(&st.mem, p) as i16 != st.scanner.cur_dir {
                                     let save_h = st.shipout.cur_h;
@@ -2374,7 +2370,7 @@ pub fn reverse(
                     LIGATURE_NODE => {
                         crate::mem::flush_list(mem, crate::units::MemPtr::from_raw(mem.b32s1(p + 1)));
                         mem.temp_ptr.0 = p;
-                        p = crate::mem::get_avail(mem);
+                        p = get_avail_ship(mem)?.0;
                         mem.set_word(p, mem.word(mem.temp_ptr + 1));
                         mem.set_b32s1(p, q);
                         crate::mem::free_node(mem, mem.temp_ptr, SMALL_NODE_SIZE);
@@ -2411,10 +2407,12 @@ pub fn reverse(
                                 }
                             }
                         } else {
-                            mem.temp_ptr.0 = crate::mem::get_avail(mem);
-                            mem.set_b32s0(mem.temp_ptr, math_node_end_lr_type(mem, p) as i32);
-                            mem.set_b32s1(mem.temp_ptr, scanner.lr_ptr.0);
-                            scanner.lr_ptr.0 = mem.temp_ptr.0;
+                            let tp = get_avail_ship(mem)?;
+                            mem.temp_ptr = tp;
+                            let v = math_node_end_lr_type(mem, p) as i32;
+                            tp.set_info(mem, v);
+                            tp.set_link(mem, scanner.lr_ptr);
+                            scanner.lr_ptr = tp;
 
                             if n > MIN_HALFWORD
                                 || math_node_lr_dir(mem, p) as i16 != scanner.cur_dir
@@ -2662,11 +2660,11 @@ fn special_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemA
 fn write_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
     let p = p.addr();
     let q = get_avail_ship(&mut st.mem)?;
-    st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + b'}' as i32);
+    q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
     let r = get_avail_ship(&mut st.mem)?;
-    st.mem.set_b32s1(q, r);
-    st.mem.set_b32s0(r, CS_TOKEN_FLAG + END_WRITE);
-    crate::input::begin_token_list_in(st, q, INSERTED)?;
+    q.set_link(&mut st.mem, r);
+    r.set_info(&mut st.mem, CS_TOKEN_FLAG + END_WRITE);
+    crate::input::begin_token_list_in(st, q.0, INSERTED)?;
     let write_text_ptr = st
         .mem
         .classify_whatsit(MemIdx::new(p))
@@ -2676,8 +2674,8 @@ fn write_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAdd
         .0;
     crate::input::begin_token_list_in(st, write_text_ptr, WRITE_TEXT)?;
     let q2 = get_avail_ship(&mut st.mem)?;
-    st.mem.set_b32s0(q2, LEFT_BRACE_TOKEN + b'{' as i32);
-    crate::input::begin_token_list_in(st, q2, INSERTED)?;
+    q2.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
+    crate::input::begin_token_list_in(st, q2.0, INSERTED)?;
 
     let old_mode = st.input.cur_list.mode;
     st.input.cur_list.mode = 0;

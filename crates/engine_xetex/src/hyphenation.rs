@@ -703,8 +703,8 @@ pub(crate) fn new_hyph_exceptions_in(
                         if n < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
                             let q = crate::scan::get_avail_scc(st)?;
                             st.mem.set_b32s1(q, p);
-                            st.mem.set_b32s0(q, n as i32);
-                            p = q;
+                            q.set_info(&mut st.mem, n as i32);
+                            p = q.0;
                         }
                     } else {
                         let hc0 = if st.hyph.hyph_index == 0 || st.scanner.cur_chr > 255 {

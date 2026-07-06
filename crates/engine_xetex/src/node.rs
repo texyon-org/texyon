@@ -208,6 +208,16 @@ impl MemPtr {
     pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
         mem.set_b32s1(self.0, q.0);
     }
+    /// `info(p)` = `mem[p].b32.s0` — the payload half of a one-word
+    /// (token-list / avail-list) word, Knuth's `info` field.
+    #[inline]
+    pub fn info(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.0)
+    }
+    #[inline]
+    pub fn set_info(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.0, v);
+    }
 }
 
 impl NodePtr<HListNode> {

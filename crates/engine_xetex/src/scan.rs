@@ -568,15 +568,13 @@ pub(crate) fn str_toks_cat_in(
     strings: &mut crate::state::StringsState,
     b: i32,
     cat: i16,
-) -> Result<i32, StrToksAbort> {
-    use crate::mem::TEX_NULL;
-
+) -> Result<crate::units::MemPtr, StrToksAbort> {
     if strings.pool_ptr + 1 > strings.pool_size {
         return Err(StrToksAbort::PoolOverflow);
     }
 
-    let mut p = TEMP_HEAD;
-    mem.set_b32s1(p, TEX_NULL);
+    let mut p = crate::units::MemPtr::from_raw(TEMP_HEAD);
+    p.set_link(mem, crate::units::MemPtr::NULL);
     let mut k = b;
 
     while k < strings.pool_ptr {
@@ -605,21 +603,9 @@ pub(crate) fn str_toks_cat_in(
             }
         }
 
-        let q = if mem.avail == TEX_NULL {
-            let qa = crate::mem::get_avail(mem);
-            if qa == crate::mem::ALLOC_FAILED {
-                return Err(StrToksAbort::MainMemoryOverflow);
-            }
-            qa
-        } else {
-            let qa = mem.avail;
-            mem.avail = mem.b32s1(qa);
-            mem.set_b32s1(qa, TEX_NULL);
-            qa
-        };
-
-        mem.set_b32s1(p, q);
-        mem.set_b32s0(q, t);
+        let q = crate::mem::get_avail(mem).ok_or(StrToksAbort::MainMemoryOverflow)?;
+        p.set_link(mem, q);
+        q.set_info(mem, t);
         p = q;
         k += 1;
     }
@@ -680,13 +666,13 @@ pub(crate) fn read_toks_in(
     st.scanner.scanner_status = DEFINING;
     st.scanner.warning_index = r;
     let new_def = get_avail_scc(st)?;
-    st.scanner.def_ref.0 = new_def;
-    st.mem.set_b32s0(new_def, TEX_NULL);
+    st.scanner.def_ref = new_def;
+    new_def.set_info(&mut st.mem, TEX_NULL);
     let mut p = new_def;
 
     let q = get_avail_scc(st)?;
-    st.mem.set_b32s1(p, q);
-    st.mem.set_b32s0(q, END_MATCH_TOKEN);
+    p.set_link(&mut st.mem, q);
+    q.set_info(&mut st.mem, END_MATCH_TOKEN);
     p = q;
 
     let m: usize = if !(0..=15).contains(&n) {
@@ -770,8 +756,8 @@ pub(crate) fn read_toks_in(
                 st.scanner.cur_chr = c;
                 st.scanner.cur_tok = tok;
                 let q2 = get_avail_scc(st)?;
-                st.mem.set_b32s1(p, q2);
-                st.mem.set_b32s0(q2, tok);
+                p.set_link(&mut st.mem, q2);
+                q2.set_info(&mut st.mem, tok);
                 p = q2;
             }
             // goto done → end_file_reading then check while condition
@@ -792,8 +778,8 @@ pub(crate) fn read_toks_in(
                     break; // goto done
                 }
                 let q2 = get_avail_scc(st)?;
-                st.mem.set_b32s1(p, q2);
-                st.mem.set_b32s0(q2, st.scanner.cur_tok);
+                p.set_link(&mut st.mem, q2);
+                q2.set_info(&mut st.mem, st.scanner.cur_tok);
                 p = q2;
             }
         }
@@ -805,7 +791,7 @@ pub(crate) fn read_toks_in(
         }
     }
 
-    st.scanner.cur_val = new_def;
+    st.scanner.cur_val = new_def.0;
     st.scanner.scanner_status = NORMAL_SCANNER;
     st.scanner.align_state = s;
     Ok(())
@@ -1257,23 +1243,9 @@ macro_rules! cnl_get_node {
     }};
 }
 
-/// `get_avail`, returning [`NodeRecycleAbort::OverflowRunaway`] from the
-/// enclosing function on exhaustion.
-macro_rules! cnl_get_avail {
-    ($mem:expr) => {{
-        let __r = crate::mem::get_avail($mem);
-        if __r == crate::mem::ALLOC_FAILED {
-            return Err(NodeRecycleAbort::OverflowRunaway);
-        }
-        __r
-    }};
-}
-
 // Re-export cnl_get_node for the font-loading group in fonts.rs and
 // copy_node_list in packaging.rs.
 pub(crate) use cnl_get_node;
-// Re-export cnl_get_avail for copy_node_list in packaging.rs.
-pub(crate) use cnl_get_avail;
 
 // ---------------------------------------------------------------------------
 // check_outer_validity
@@ -1315,12 +1287,9 @@ pub(crate) fn check_outer_validity_in(
     if st.scanner.cur_cs != 0 {
         let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST_COV || ci.name < 1 || ci.name > 17 {
-            let p = crate::mem::get_avail(&mut st.mem);
-            if p == crate::mem::ALLOC_FAILED {
-                return Err(InputAbort::MainMemory);
-            }
-            st.mem.set_b32s0(p, CS_TOKEN_FLAG + st.scanner.cur_cs);
-            crate::input::begin_token_list_in(st, p, 3 /* BACKED_UP */)?;
+            let p = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
+            p.set_info(&mut st.mem, CS_TOKEN_FLAG + st.scanner.cur_cs);
+            crate::input::begin_token_list_in(st, p.0, 3 /* BACKED_UP */)?;
         }
         st.scanner.cur_cmd = SPACER;
         st.scanner.cur_chr = ' ' as i32;
@@ -1339,33 +1308,27 @@ pub(crate) fn check_outer_validity_in(
             );
         }
 
-        let p = crate::mem::get_avail(&mut st.mem);
-        if p == crate::mem::ALLOC_FAILED {
-            return Err(InputAbort::MainMemory);
-        }
+        let p = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
         match st.scanner.scanner_status {
             DEFINING_COV => {
                 crate::output::print_cstr_in(st, c" while scanning definition".as_ptr());
-                st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
             }
             MATCHING_COV => {
                 crate::output::print_cstr_in(st, c" while scanning use".as_ptr());
                 let par_token = st.input.par_token;
-                st.mem.set_b32s0(p, par_token);
+                p.set_info(&mut st.mem, par_token);
                 st.scanner.long_state = OUTER_CALL_COV;
             }
             ALIGNING_COV => {
                 crate::output::print_cstr_in(st, c" while scanning preamble".as_ptr());
-                st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
                 let q = p;
-                let p2 = crate::mem::get_avail(&mut st.mem);
-                if p2 == crate::mem::ALLOC_FAILED {
-                    return Err(InputAbort::MainMemory);
-                }
-                st.mem.set_b32s1(p2, q);
-                st.mem.set_b32s0(p2, CS_TOKEN_FLAG + FROZEN_CR_COV);
+                let p2 = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
+                p2.set_link(&mut st.mem, q);
+                p2.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_CR_COV);
                 st.scanner.align_state = -1_000_000;
-                crate::input::begin_token_list_in(st, p2, 5 /* INSERTED */)?;
+                crate::input::begin_token_list_in(st, p2.0, 5 /* INSERTED */)?;
                 // For ALIGNING, we push p2 as the token list, not p.
                 // Then fall through to the help message.
                 crate::output::print_cstr_in(st, c" of ".as_ptr());
@@ -1385,12 +1348,12 @@ pub(crate) fn check_outer_validity_in(
             }
             ABSORBING_COV => {
                 crate::output::print_cstr_in(st, c" while scanning text".as_ptr());
-                st.mem.set_b32s0(p, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
             }
             _ => {}
         }
 
-        crate::input::begin_token_list_in(st, p, 5 /* INSERTED */)?;
+        crate::input::begin_token_list_in(st, p.0, 5 /* INSERTED */)?;
         crate::output::print_cstr_in(st, c" of ".as_ptr());
         let warning_index = st.scanner.warning_index;
         crate::output::sprint_cs_in(st, warning_index);
@@ -2282,13 +2245,12 @@ pub(crate) fn get_node_scc(st: &mut crate::state::EngineState, s: i32) -> Result
     Ok(r)
 }
 
-/// `get_avail` with its `ALLOC_FAILED` lifted into [`SccAbort`].
-pub(crate) fn get_avail_scc(st: &mut crate::state::EngineState) -> Result<i32, SccAbort> {
-    let r = crate::mem::get_avail(&mut st.mem);
-    if r == crate::mem::ALLOC_FAILED {
-        return Err(SccAbort::Input(crate::input::InputAbort::MainMemory));
-    }
-    Ok(r)
+/// `get_avail` with its exhaustion `None` lifted into [`SccAbort`].
+pub(crate) fn get_avail_scc(
+    st: &mut crate::state::EngineState,
+) -> Result<crate::units::MemPtr, SccAbort> {
+    crate::mem::get_avail(&mut st.mem)
+        .ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
 }
 
 /// `new_spec` with its `ALLOC_FAILED` lifted into [`SccAbort`].
@@ -2306,7 +2268,7 @@ pub(crate) fn str_toks_scc(
     st: &mut crate::state::EngineState,
     b: i32,
     cat: i16,
-) -> Result<i32, SccAbort> {
+) -> Result<crate::units::MemPtr, SccAbort> {
     match str_toks_cat_in(&mut st.mem, &mut st.strings, b, cat) {
         Ok(p) => Ok(p),
         Err(StrToksAbort::PoolOverflow) => {
@@ -2380,23 +2342,25 @@ pub(crate) fn get_x_token_in(st: &mut crate::state::EngineState) -> Result<(), S
     }
     Ok(())
 }
-pub(crate) fn the_toks_in(st: &mut crate::state::EngineState) -> Result<i32, SccAbort> {
+pub(crate) fn the_toks_in(
+    st: &mut crate::state::EngineState,
+) -> Result<crate::units::MemPtr, SccAbort> {
     use crate::mem::TEX_NULL;
 
     if st.scanner.cur_chr & 1 != 0 {
         let c = st.scanner.cur_chr;
         scan_general_text_in(st)?;
         if c == 1 {
-            return Ok(st.scanner.cur_val);
+            return Ok(crate::units::MemPtr::from_raw(st.scanner.cur_val));
         } else {
             let old_setting = st.shipout.selector;
             st.shipout.selector = SELECTOR_NEW_STRING;
             let b = st.strings.pool_ptr;
-            let p = crate::mem::get_avail(&mut st.mem);
-            let th = st.mem.b32s1(TEMP_HEAD);
-            st.mem.set_b32s1(p, th);
+            let p = get_avail_scc(st)?;
+            let th = crate::units::MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+            p.set_link(&mut st.mem, th);
             crate::output::token_show_in(st, p);
-            crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(p));
+            crate::mem::flush_list(&mut st.mem, p);
             st.shipout.selector = old_setting;
             return str_toks_scc(st, b, 0);
         }
@@ -2404,29 +2368,22 @@ pub(crate) fn the_toks_in(st: &mut crate::state::EngineState) -> Result<i32, Scc
     get_x_token_in(st)?;
     scan_something_internal_in(st, TOK_VAL, false)?;
     if st.scanner.cur_val_level >= IDENT_VAL as u8 {
-        let mut p = TEMP_HEAD;
-        st.mem.set_b32s1(p, TEX_NULL);
+        let mut p = crate::units::MemPtr::from_raw(TEMP_HEAD);
+        p.set_link(&mut st.mem, crate::units::MemPtr::NULL);
         if st.scanner.cur_val_level == IDENT_VAL as u8 {
-            let q = crate::mem::get_avail(&mut st.mem);
-            st.mem.set_b32s1(p, q);
-            st.mem.set_b32s0(q, CS_TOKEN_FLAG + st.scanner.cur_val);
+            let q = get_avail_scc(st)?;
+            p.set_link(&mut st.mem, q);
+            q.set_info(&mut st.mem, CS_TOKEN_FLAG + st.scanner.cur_val);
             p = q;
         } else if st.scanner.cur_val != TEX_NULL {
-            let mut r = st.mem.b32s1(st.scanner.cur_val);
-            while r != TEX_NULL {
-                let q = if st.mem.avail == TEX_NULL {
-                    crate::mem::get_avail(&mut st.mem)
-                } else {
-                    let qa = st.mem.avail;
-                    st.mem.avail = st.mem.b32s1(qa);
-                    st.mem.set_b32s1(qa, TEX_NULL);
-                    qa
-                };
-                st.mem.set_b32s1(p, q);
-                let v = st.mem.b32s0(r);
-                st.mem.set_b32s0(q, v);
+            let mut r = crate::units::MemPtr::from_raw(st.scanner.cur_val).link(&st.mem);
+            while !r.is_null() {
+                let q = get_avail_scc(st)?;
+                p.set_link(&mut st.mem, q);
+                let v = r.info(&st.mem);
+                q.set_info(&mut st.mem, v);
                 p = q;
-                r = st.mem.b32s1(r);
+                r = r.link(&st.mem);
             }
         }
         Ok(p)
@@ -2467,9 +2424,9 @@ pub(crate) fn scan_toks_in(
         st.scanner.scanner_status = ABSORBING;
     }
     st.scanner.warning_index = st.scanner.cur_cs;
-    let new_def = crate::mem::get_avail(&mut st.mem);
-    st.scanner.def_ref.0 = new_def;
-    st.mem.set_b32s0(new_def, TEX_NULL);
+    let new_def = get_avail_scc(st)?;
+    st.scanner.def_ref = new_def;
+    new_def.set_info(&mut st.mem, TEX_NULL);
     let mut p = new_def;
     let mut hash_brace: i32 = 0;
     let mut t = ZERO_TOKEN;
@@ -2490,13 +2447,13 @@ pub(crate) fn scan_toks_in(
                         get_token_in(st)?;
                         if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
                             hash_brace = st.scanner.cur_tok;
-                            let q = crate::mem::get_avail(&mut st.mem);
-                            st.mem.set_b32s1(p, q);
-                            st.mem.set_b32s0(q, st.scanner.cur_tok);
+                            let q = get_avail_scc(st)?;
+                            p.set_link(&mut st.mem, q);
+                            q.set_info(&mut st.mem, st.scanner.cur_tok);
                             p = q;
-                            let q2 = crate::mem::get_avail(&mut st.mem);
-                            st.mem.set_b32s1(p, q2);
-                            st.mem.set_b32s0(q2, END_MATCH_TOKEN);
+                            let q2 = get_avail_scc(st)?;
+                            p.set_link(&mut st.mem, q2);
+                            q2.set_info(&mut st.mem, END_MATCH_TOKEN);
                             p = q2;
                             break 'param_scan true; // goto done
                         }
@@ -2533,17 +2490,17 @@ pub(crate) fn scan_toks_in(
                         }
                     }
                     // append cur_tok to list
-                    let q = crate::mem::get_avail(&mut st.mem);
-                    st.mem.set_b32s1(p, q);
-                    st.mem.set_b32s0(q, st.scanner.cur_tok);
+                    let q = get_avail_scc(st)?;
+                    p.set_link(&mut st.mem, q);
+                    q.set_info(&mut st.mem, st.scanner.cur_tok);
                     p = q;
                 }
             };
             // done1: append END_MATCH_TOKEN
             if !reached_done {
-                let q = crate::mem::get_avail(&mut st.mem);
-                st.mem.set_b32s1(p, q);
-                st.mem.set_b32s0(q, END_MATCH_TOKEN);
+                let q = get_avail_scc(st)?;
+                p.set_link(&mut st.mem, q);
+                q.set_info(&mut st.mem, END_MATCH_TOKEN);
                 p = q;
                 // §494: check for missing {
                 if st.scanner.cur_cmd == RIGHT_BRACE {
@@ -2583,9 +2540,9 @@ pub(crate) fn scan_toks_in(
                         expand_in(st)?;
                     } else {
                         let q = the_toks_in(st)?;
-                        let th = st.mem.b32s1(TEMP_HEAD);
-                        if th != TEX_NULL {
-                            st.mem.set_b32s1(p, th);
+                        let th = crate::units::MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+                        if !th.is_null() {
+                            p.set_link(&mut st.mem, th);
                             p = q;
                         }
                     }
@@ -2637,21 +2594,21 @@ pub(crate) fn scan_toks_in(
                 }
             }
             // append cur_tok to list
-            let q = crate::mem::get_avail(&mut st.mem);
-            st.mem.set_b32s1(p, q);
-            st.mem.set_b32s0(q, st.scanner.cur_tok);
+            let q = get_avail_scc(st)?;
+            p.set_link(&mut st.mem, q);
+            q.set_info(&mut st.mem, st.scanner.cur_tok);
             p = q;
         }
     }
     // found:
     st.scanner.scanner_status = NORMAL_SCANNER;
     if hash_brace != 0 {
-        let q = crate::mem::get_avail(&mut st.mem);
-        st.mem.set_b32s1(p, q);
-        st.mem.set_b32s0(q, hash_brace);
+        let q = get_avail_scc(st)?;
+        p.set_link(&mut st.mem, q);
+        q.set_info(&mut st.mem, hash_brace);
         p = q;
     }
-    Ok(p)
+    Ok(p.0)
 }
 pub(crate) fn pass_text_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     let save_scanner_status = st.scanner.scanner_status;
@@ -2707,8 +2664,8 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
     st.strings.str_pool[pp as usize] = b' ' as u16;
     let mut l = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
     let nl = st.eqtb.b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR);
-    let p = crate::mem::get_avail(&mut st.mem);
-    let mut q = p;
+    let p = get_avail_scc(st)?;
+    let mut q = p.0;
 
     while l < st.strings.pool_ptr {
         let m = l;
@@ -2764,10 +2721,10 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
         }
     }
 
-    let pl = st.mem.b32s1(p);
-    st.mem.set_b32s0(p, pl);
-    st.mem.set_b32s1(p, st.input.pseudo_files.0);
-    st.input.pseudo_files.0 = p;
+    let pl = p.link(&st.mem);
+    p.set_info(&mut st.mem, pl.0);
+    p.set_link(&mut st.mem, st.input.pseudo_files);
+    st.input.pseudo_files = p;
     // pop the temporary string (str_ptr--, pool_ptr = str_start[str_ptr - TOO_BIG_CHAR])
     st.strings.str_ptr -= 1;
     st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
@@ -3055,10 +3012,10 @@ pub(crate) fn xetex_scan_dimen_in(
                             break 'decimal;
                         }
                         if k < 17 {
-                            let q = crate::mem::get_avail(&mut st.mem);
+                            let q = get_avail_scc(st)?;
                             st.mem.set_b32s1(q, p);
-                            st.mem.set_b32s0(q, st.scanner.cur_tok - ZERO_TOKEN);
-                            p = q;
+                            q.set_info(&mut st.mem, st.scanner.cur_tok - ZERO_TOKEN);
+                            p = q.0;
                             k += 1;
                         }
                     }
@@ -3758,10 +3715,10 @@ pub(crate) fn scan_keyword_in(
         loop {
             get_x_token_in(st)?;
             if st.scanner.cur_cs == 0 && (st.scanner.cur_chr == c || st.scanner.cur_chr == c - 32) {
-                let q = crate::mem::get_avail(&mut st.mem);
-                st.mem.set_b32s1(p, q);
-                st.mem.set_b32s0(q, st.scanner.cur_tok);
-                p = q;
+                let q = get_avail_scc(st)?;
+                st.mem.set_b32s1(p, q.0);
+                q.set_info(&mut st.mem, st.scanner.cur_tok);
+                p = q.0;
                 let head = st.mem.b32s1(BACKUP_HEAD);
                 crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(head));
                 return Ok(true);
@@ -3782,10 +3739,10 @@ pub(crate) fn scan_keyword_in(
         get_x_token_in(st)?;
         let ch = unsafe { *s.add(i) } as i32;
         if st.scanner.cur_cs == 0 && (st.scanner.cur_chr == ch || st.scanner.cur_chr == ch - 32) {
-            let q = crate::mem::get_avail(&mut st.mem);
-            st.mem.set_b32s1(p, q);
-            st.mem.set_b32s0(q, st.scanner.cur_tok);
-            p = q;
+            let q = get_avail_scc(st)?;
+            st.mem.set_b32s1(p, q.0);
+            q.set_info(&mut st.mem, st.scanner.cur_tok);
+            p = q.0;
             i += 1;
         } else if st.scanner.cur_cmd != SPACER || p != BACKUP_HEAD {
             crate::input::back_input_in(st)?;
@@ -5227,9 +5184,9 @@ pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result
     let d = st.scanner.def_ref.0;
     st.scanner.scanner_status = ABSORBING;
     st.scanner.warning_index = st.scanner.cur_cs;
-    let new_def = crate::mem::get_avail(&mut st.mem);
-    st.scanner.def_ref.0 = new_def;
-    st.mem.set_b32s0(new_def, crate::mem::TEX_NULL);
+    let new_def = get_avail_scc(st)?;
+    st.scanner.def_ref = new_def;
+    new_def.set_info(&mut st.mem, crate::mem::TEX_NULL);
     let mut p = new_def;
     scan_left_brace_in(st)?;
     let mut unbalance: i32 = 1;
@@ -5245,9 +5202,9 @@ pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result
                 }
             }
         }
-        let q = crate::mem::get_avail(&mut st.mem);
-        st.mem.set_b32s1(p, q);
-        st.mem.set_b32s0(q, st.scanner.cur_tok);
+        let q = get_avail_scc(st)?;
+        p.set_link(&mut st.mem, q);
+        q.set_info(&mut st.mem, st.scanner.cur_tok);
         p = q;
     }
     // found:
@@ -5259,7 +5216,7 @@ pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result
     if q == crate::mem::TEX_NULL {
         st.scanner.cur_val = TEMP_HEAD;
     } else {
-        st.scanner.cur_val = p;
+        st.scanner.cur_val = p.0;
     }
     st.mem.set_b32s1(TEMP_HEAD, q);
     st.scanner.scanner_status = s;

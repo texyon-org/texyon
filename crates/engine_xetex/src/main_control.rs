@@ -757,8 +757,8 @@ pub(crate) fn push_alignment_in(
     st.mem.set_b32s0(p + 5, st.scanner.cur_pre_head.0);
     st.mem.set_b32s1(p + 5, st.scanner.cur_pre_tail.0);
     st.scanner.align_ptr = p;
-    st.scanner.cur_head.0 = crate::scan::get_avail_scc(st)?;
-    st.scanner.cur_pre_head.0 = crate::scan::get_avail_scc(st)?;
+    st.scanner.cur_head = crate::scan::get_avail_scc(st)?;
+    st.scanner.cur_pre_head = crate::scan::get_avail_scc(st)?;
     Ok(())
 }
 pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
@@ -831,12 +831,10 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             let mut wq = HOLD_HEAD;
             let mut r = st.mem.b32s1(st.scanner.cur_loop + 3);
             while r != TEX_NULL {
-                let av = get_avail(&mut st.mem);
-                if av == ALLOC_FAILED {
-                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                }
-                st.mem.set_b32s1(wq, av);
-                wq = st.mem.b32s1(wq);
+                let av = get_avail(&mut st.mem)
+                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+                st.mem.set_b32s1(wq, av.0);
+                wq = av.0;
                 st.mem.set_b32s0(wq, st.mem.b32s0(r));
                 r = st.mem.b32s1(r);
             }
@@ -846,12 +844,10 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             wq = HOLD_HEAD;
             r = st.mem.b32s1(st.scanner.cur_loop + 2);
             while r != TEX_NULL {
-                let av = get_avail(&mut st.mem);
-                if av == ALLOC_FAILED {
-                    return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                }
-                st.mem.set_b32s1(wq, av);
-                wq = st.mem.b32s1(wq);
+                let av = get_avail(&mut st.mem)
+                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+                st.mem.set_b32s1(wq, av.0);
+                wq = av.0;
                 st.mem.set_b32s0(wq, st.mem.b32s0(r));
                 r = st.mem.b32s1(r);
             }
@@ -1142,12 +1138,9 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
                     break; // done1
                 }
             } else if st.scanner.cur_cmd != SPACER || p != HOLD_HEAD {
-                let av = get_avail(&mut st.mem);
-                if av == ALLOC_FAILED {
-                    return Err(NodeRecycleAbort::Overflow.into());
-                }
-                st.mem.set_b32s1(p, av);
-                p = st.mem.b32s1(p);
+                let av = get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+                st.mem.set_b32s1(p, av.0);
+                p = av.0;
                 st.mem.set_b32s0(p, st.scanner.cur_tok);
             }
         }
@@ -1191,22 +1184,16 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
                 mc_propagate_error(crate::errors::error_in(st))?;
                 continue; // goto continue_: restart this inner loop
             }
-            let av = get_avail(&mut st.mem);
-            if av == ALLOC_FAILED {
-                return Err(NodeRecycleAbort::Overflow.into());
-            }
-            st.mem.set_b32s1(p, av);
-            p = st.mem.b32s1(p);
+            let av = get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+            st.mem.set_b32s1(p, av.0);
+            p = av.0;
             st.mem.set_b32s0(p, st.scanner.cur_tok);
         }
 
         // done2: append FROZEN_END_TEMPLATE and store v-template
-        let av = get_avail(&mut st.mem);
-        if av == ALLOC_FAILED {
-            return Err(NodeRecycleAbort::Overflow.into());
-        }
-        st.mem.set_b32s1(p, av);
-        p = st.mem.b32s1(p);
+        let av = get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+        st.mem.set_b32s1(p, av.0);
+        p = av.0;
         st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
         let ca = st.scanner.cur_align.0;
         let hh = st.mem.b32s1(HOLD_HEAD);
@@ -2154,13 +2141,11 @@ pub(crate) fn new_character_in(
             .fonts
             .font_info_b16(st.fonts.char_base_entry(f) + ec as i32);
         if info.s3 > 0 {
-            let p = crate::mem::get_avail(&mut st.mem);
-            if p == crate::mem::ALLOC_FAILED {
-                return Err(NewCharacterAbort::MainMemoryOverflow);
-            }
+            let p = crate::mem::get_avail(&mut st.mem)
+                .ok_or(NewCharacterAbort::MainMemoryOverflow)?;
             st.mem.set_b16s1(p, f as u16);
             st.mem.set_b16s0(p, c);
-            return Ok(p);
+            return Ok(p.0);
         }
     }
     let outcome = crate::output::char_warning_in(st, f, c as i32);
@@ -3126,7 +3111,7 @@ pub(crate) fn off_save_in(st: &mut crate::state::EngineState) -> Result<(), Main
     } else {
         crate::input::back_input_in(st)?;
         let p = crate::scan::get_avail_scc(st)?;
-        st.mem.set_b32s1(TEMP_HEAD, p);
+        st.mem.set_b32s1(TEMP_HEAD, p.0);
         crate::output::error_here_with_diagnostic_in(st, c"Missing ".as_ptr());
         match st.save_stack.cur_group {
             GroupCode::SemiSimple => {
@@ -3138,11 +3123,10 @@ pub(crate) fn off_save_in(st: &mut crate::state::EngineState) -> Result<(), Main
                 crate::output::print_char_in(st, b'$' as i32);
             }
             GroupCode::MathLeft => {
-                st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_RIGHT);
+                p.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_RIGHT);
                 let q = crate::scan::get_avail_scc(st)?;
-                st.mem.set_b32s1(p, q);
-                let p2 = st.mem.b32s1(p); // = LLIST_link(p)
-                st.mem.set_b32s0(p2, OTHER_TOKEN + b'.' as i32);
+                p.set_link(&mut st.mem, q);
+                q.set_info(&mut st.mem, OTHER_TOKEN + b'.' as i32);
                 crate::output::print_esc_cstr_in(st, c"right.".as_ptr());
             }
             _ => {
@@ -5000,12 +4984,11 @@ fn mc_is_char_node(st: &crate::state::EngineState, p: impl crate::units::MemAddr
 // Node-allocation helpers: allocate and lift the cold `ALLOC_FAILED` overflow
 // into `MainControlAbort`.
 #[inline]
-fn mc_get_avail(st: &mut crate::state::EngineState) -> Result<i32, MainControlAbort> {
-    let p = crate::mem::get_avail(&mut st.mem);
-    if p == crate::mem::ALLOC_FAILED {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    }
-    Ok(p)
+fn mc_get_avail(
+    st: &mut crate::state::EngineState,
+) -> Result<crate::units::MemPtr, MainControlAbort> {
+    crate::mem::get_avail(&mut st.mem)
+        .ok_or_else(|| crate::scan::NodeRecycleAbort::Overflow.into())
 }
 #[inline]
 fn mc_new_disc(st: &mut crate::state::EngineState) -> Result<i32, MainControlAbort> {
@@ -5659,15 +5642,8 @@ pub(crate) unsafe fn main_control_main_loop_in(
     }
 
     // Allocate lig_stack node from avail list
-    let ls = if st.mem.avail() == TEX_NULL {
-        mc_get_avail(st)?
-    } else {
-        let a = st.mem.avail();
-        st.mem.set_avail(st.mem.b32s1(a));
-        st.mem.set_b32s1(a, TEX_NULL);
-        a
-    };
-    st.mainloop.lig_stack.0 = ls;
+    let ls = mc_get_avail(st)?;
+    st.mainloop.lig_stack = ls;
     st.mem.set_b16s1(ls, mf as u16);
     st.mainloop.cur_l = st.scanner.cur_chr;
     st.mem.set_b16s0(ls, st.mainloop.cur_l as u16);
@@ -6108,15 +6084,8 @@ unsafe fn do_lookahead(
     }
 
     // Allocate lig_stack for the new char
-    let ls = if st.mem.avail() == crate::mem::TEX_NULL {
-        mc_get_avail(st)?
-    } else {
-        let a = st.mem.avail();
-        st.mem.set_avail(st.mem.b32s1(a));
-        st.mem.set_b32s1(a, crate::mem::TEX_NULL);
-        a
-    };
-    st.mainloop.lig_stack.0 = ls;
+    let ls = mc_get_avail(st)?;
+    st.mainloop.lig_stack = ls;
     st.mem.set_b16s1(ls, st.mainloop.main_f as u16);
     let cr = st.scanner.cur_chr;
     st.mainloop.cur_r = cr;
@@ -6826,10 +6795,9 @@ pub(crate) fn prefixed_command_in(
                 q = crate::scan::scan_toks_in(st, true, e)?;
 
                 if j != 0 {
-                    q = crate::mem::get_avail(&mut st.mem);
-                    if q == crate::mem::ALLOC_FAILED {
-                        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                    }
+                    q = crate::mem::get_avail(&mut st.mem)
+                        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+                        .0;
                     st.mem.set_b32s0(q, j);
                     st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref));
                     st.mem.set_b32s1(st.scanner.def_ref, q);
@@ -7175,17 +7143,14 @@ pub(crate) fn prefixed_command_in(
                     st.mem.avail = st.scanner.def_ref.0;
                 } else {
                     if p == PC_LOCAL_BASE + LOCAL__OUTPUT_ROUTINE && !e {
-                        let new_avail = crate::mem::get_avail(&mut st.mem);
-                        if new_avail == crate::mem::ALLOC_FAILED {
-                            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                        }
-                        st.mem.set_b32s1(q, new_avail);
-                        q = st.mem.b32s1(q);
+                        let new_avail = crate::mem::get_avail(&mut st.mem)
+                            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+                        st.mem.set_b32s1(q, new_avail.0);
+                        q = new_avail.0;
                         st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + 125);
-                        q = crate::mem::get_avail(&mut st.mem);
-                        if q == crate::mem::ALLOC_FAILED {
-                            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-                        }
+                        q = crate::mem::get_avail(&mut st.mem)
+                            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+                            .0;
                         st.mem.set_b32s0(q, LEFT_BRACE_TOKEN + 123);
                         st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref));
                         st.mem.set_b32s1(st.scanner.def_ref, q);

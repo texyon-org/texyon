@@ -676,23 +676,17 @@ pub fn reconstitute(
             st.mainloop.lft_hit = st.hyph.init_lft;
         }
         while p > TEX_NULL {
-            let q = crate::mem::get_avail(&mut st.mem);
-            if q == crate::mem::ALLOC_FAILED {
-                return Err(NodeRecycleAbort::OverflowRunaway);
-            }
-            st.mem.set_b32s1(t, q);
-            t = st.mem.b32s1(t);
+            let q = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
+            st.mem.set_b32s1(t, q.0);
+            t = q.0;
             st.mem.set_b16s1(t, st.hyph.hf as u16);
             st.mem.set_b16s0(t, st.mem.b16s0(p));
             p = st.mem.b32s1(p);
         }
     } else if st.mainloop.cur_l < TOO_BIG_CHAR {
-        let q = crate::mem::get_avail(&mut st.mem);
-        if q == crate::mem::ALLOC_FAILED {
-            return Err(NodeRecycleAbort::OverflowRunaway);
-        }
-        st.mem.set_b32s1(t, q);
-        t = st.mem.b32s1(t);
+        let q = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
+        st.mem.set_b32s1(t, q.0);
+        t = q.0;
         st.mem.set_b16s1(t, st.hyph.hf as u16);
         st.mem.set_b16s0(t, st.mainloop.cur_l as u16);
     }
@@ -776,11 +770,9 @@ pub fn reconstitute(
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
-                                        let p = crate::mem::get_avail(&mut st.mem);
-                                        if p == crate::mem::ALLOC_FAILED {
-                                            return Err(NodeRecycleAbort::OverflowRunaway);
-                                        }
-                                        st.mem.set_b32s1(st.mainloop.lig_stack + 1, p);
+                                        let p = crate::mem::get_avail(&mut st.mem)
+                                            .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                                        st.mem.set_b32s1(st.mainloop.lig_stack + 1, p.0);
                                         st.mem.set_b16s0(p, st.hyph.hu[(j + 1) as usize] as u16);
                                         st.mem.set_b16s1(p, st.hyph.hf as u16);
                                     }
@@ -840,12 +832,10 @@ pub fn reconstitute(
                                 } else if j == n {
                                     break 'continue_;
                                 } else {
-                                    let p = crate::mem::get_avail(&mut st.mem);
-                                    if p == crate::mem::ALLOC_FAILED {
-                                        return Err(NodeRecycleAbort::OverflowRunaway);
-                                    }
-                                    st.mem.set_b32s1(t, p);
-                                    t = st.mem.b32s1(t);
+                                    let p = crate::mem::get_avail(&mut st.mem)
+                                        .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                                    st.mem.set_b32s1(t, p.0);
+                                    t = p.0;
                                     st.mem.set_b16s1(t, st.hyph.hf as u16);
                                     st.mem.set_b16s0(t, st.mainloop.cur_r as u16);
                                     j += 1;
@@ -2099,16 +2089,12 @@ fn update_lr_stack(mem: &mut MemState, q: NodePtr<MathNode>, lr_ptr: &mut i32) -
             mem.avail = temp_ptr;
         }
     } else {
-        let temp_ptr = crate::mem::get_avail(mem);
-        if temp_ptr == crate::mem::ALLOC_FAILED {
+        let Some(temp_ptr) = crate::mem::get_avail(mem) else {
             return true;
-        }
-        mem.set_b32s0(
-            temp_ptr,
-            L_CODE as i32 * (q_subtype / L_CODE as i32) + END_M_CODE as i32,
-        );
+        };
+        temp_ptr.set_info(mem, L_CODE as i32 * (q_subtype / L_CODE as i32) + END_M_CODE as i32);
         mem.set_b32s1(temp_ptr, *lr_ptr);
-        *lr_ptr = temp_ptr;
+        *lr_ptr = temp_ptr.0;
     }
     false
 }

@@ -732,14 +732,12 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = p;
                 if a {
-                    let pn = crate::mem::get_avail(&mut st.mem);
-                    if pn == crate::mem::ALLOC_FAILED {
-                        return Err(UnsaveAbort::MainMemory);
-                    }
-                    st.mem.set_b32s0(pn, st.scanner.cur_tok);
+                    let pn = crate::mem::get_avail(&mut st.mem)
+                        .ok_or(UnsaveAbort::MainMemory)?;
+                    pn.set_info(&mut st.mem, st.scanner.cur_tok);
                     st.mem.set_b32s1(pn, st.input.cur_input.loc);
-                    st.input.cur_input.loc = pn;
-                    st.input.cur_input.start = pn;
+                    st.input.cur_input.loc = pn.0;
+                    st.input.cur_input.start = pn.0;
                     if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
                         if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
                             st.scanner.align_state -= 1;
