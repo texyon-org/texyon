@@ -1472,7 +1472,7 @@ fn split_vlist_at_break(
     scanner: &mut ScannerState,
     state: &VsplitState,
     q: i32,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<MemPtr, NodeRecycleAbort> {
     use crate::mem::TEX_NULL;
 
     let mut p = state.v.list_ptr(mem).0;
@@ -1494,7 +1494,7 @@ fn split_vlist_at_break(
         }
     }
 
-    Ok(state.v.list_ptr(mem).0)
+    Ok(state.v.list_ptr(mem))
 }
 
 fn store_split_remainder(
@@ -1526,15 +1526,13 @@ fn finish_vsplit_after_break(
     state: &VsplitState,
     q: i32,
 ) -> Result<VsplitOutcome, NodeRecycleAbort> {
-    use crate::mem::TEX_NULL;
-
     let mut packages = [None, None];
     let p = split_vlist_at_break(mem, scanner, state, q)?;
     let save_discards = eqtb.b32s1(INT_BASE + INT_PAR_SAVING_VDISCARDS_VS) > 0;
     let mut q = prune_page_top(mem, scanner, eqtb, q, save_discards)?;
 
     crate::mem::free_node(mem, crate::units::MemPtr::from_idx(state.v.idx()), BOX_NODE_SIZE);
-    if q != TEX_NULL {
+    if !q.is_null() {
         let packed = vpackage_in(
             mem,
             eqtb,
@@ -1545,10 +1543,10 @@ fn finish_vsplit_after_break(
             ADDITIONAL_VS,
             MAX_HALFWORD,
         )?;
-        q = packed.r_box.idx().0;
+        q = packed.r_box.ptr();
         push_vsplit_package(&mut packages, packed);
     }
-    store_split_remainder(mem, scanner, eqtb, q)?;
+    store_split_remainder(mem, scanner, eqtb, q.0)?;
 
     let result = vpackage_in(
         mem,
@@ -1774,7 +1772,7 @@ pub fn prune_page_top(
     eqtb: &crate::state::EqtbState,
     p: i32,
     s: bool,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<MemPtr, NodeRecycleAbort> {
     use crate::mem::TEX_NULL;
     let mut p = p;
     let mut prev_p;
@@ -1840,7 +1838,7 @@ pub fn prune_page_top(
         }
     }
 
-    Ok(mem.b32s1(TEMP_HEAD))
+    Ok(mem.link_ptr(TEMP_HEAD))
 }
 /// translated from xetex-xetex0.c:9817 (do_marks)
 pub fn do_marks(
@@ -1939,7 +1937,7 @@ fn hpack_in(
     fonts: &mut FontState,
     scanner: &mut ScannerState,
     shipout: &mut ShipoutState,
-    list: i32,
+    list: MemPtr,
     w: i32,
     m: i16,
 ) -> Result<PackOutcome, NodeRecycleAbort> {
@@ -1954,7 +1952,7 @@ fn hpack_in(
     };
     r_node.set_subtype(mem, 0);
     r_node.set_shift_amount(mem, Scaled(0));
-    r_node.set_list_ptr(mem, MemPtr::from_raw(list));
+    r_node.set_list_ptr(mem, list);
     let mut q = r_node.idx().offset(5).0;
     let mut h: i32 = 0;
     let mut d: i32 = 0;
@@ -1970,7 +1968,7 @@ fn hpack_in(
         scanner.lr_ptr = t;
     }
 
-    let mut p = list;
+    let mut p = list.0;
     'outer: while p != TEX_NULL {
         while p >= mem.hi_mem_min {
             let f = mem.b16s1(p) as i32;
@@ -2540,7 +2538,7 @@ fn print_hpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: Any
 /// (via [`print_hpack_diag_in`]) so log order is preserved.
 pub(crate) fn hpack_emit_in(
     st: &mut crate::state::EngineState,
-    p: i32,
+    list: MemPtr,
     w: i32,
     m: i16,
 ) -> Result<AnyBox, NodeRecycleAbort> {
@@ -2550,7 +2548,7 @@ pub(crate) fn hpack_emit_in(
         &mut st.fonts,
         &mut st.scanner,
         &mut st.shipout,
-        p,
+        list,
         w,
         m,
     )?;
@@ -2567,7 +2565,7 @@ fn vpackage_in(
     eqtb: &EqtbState,
     scanner: &mut ScannerState,
     shipout: &mut ShipoutState,
-    list: i32,
+    list: MemPtr,
     h: i32,
     m: i16,
     l: i32,
@@ -2586,7 +2584,7 @@ fn vpackage_in(
         r_node.set_subtype(mem, 0);
     }
     r_node.set_shift_amount(mem, Scaled(0));
-    r_node.set_list_ptr(mem, MemPtr::from_raw(list));
+    r_node.set_list_ptr(mem, list);
 
     let mut w: i32 = 0;
     let mut d: i32 = 0;
@@ -2595,7 +2593,7 @@ fn vpackage_in(
     scanner.total_shrink = [0; 4];
     let mut diags = [None, None];
 
-    let mut p = list;
+    let mut p = list.0;
     while p != TEX_NULL {
         if p >= mem.hi_mem_min {
             return Err(NodeRecycleAbort::Confusion(c"vpack"));
@@ -2850,7 +2848,7 @@ fn print_vpack_common_ending_in(st: &mut crate::state::EngineState, box_ptr: Any
 /// Runs [`vpackage_in`] and emits any over/underfull diagnostic.
 pub(crate) fn vpackage_emit_in(
     st: &mut crate::state::EngineState,
-    p: i32,
+    list: MemPtr,
     h: i32,
     m: i16,
     l: i32,
@@ -2860,7 +2858,7 @@ pub(crate) fn vpackage_emit_in(
         &st.eqtb,
         &mut st.scanner,
         &mut st.shipout,
-        p,
+        list,
         h,
         m,
         l,

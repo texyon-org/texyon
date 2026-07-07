@@ -2086,7 +2086,7 @@ fn reverse_best_breaks(mem: &mut MemState, linebreak: &mut LinebreakState) {
 }
 
 struct PostLineHpack {
-    q: i32,
+    q: MemPtr,
     cur_width: i32,
     cur_indent: i32,
     semantic_pagination: bool,
@@ -2308,7 +2308,7 @@ fn post_line_break_prefix(errors: &mut crate::state::ErrorState,
     scanner.pre_adjust_tail.0 = PRE_ADJUST_HEAD;
 
     Ok(PostLineHpack {
-        q,
+        q: MemPtr::from_raw(q),
         cur_width,
         cur_indent,
         semantic_pagination: config.semantic_pagination_enabled,

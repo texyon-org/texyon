@@ -486,6 +486,15 @@ impl MemState {
         unsafe { self.data[p.addr() as usize].b32.s1 }
     }
 
+    /// Read `mem[p].b32.s1` as a nullable link — the typed sibling of
+    /// [`b32s1`](Self::b32s1) for reading a list head off a pseudo-node
+    /// (`ALIGN_HEAD`/`TEMP_HEAD`/`PAGE_HEAD`/`cur_list.head`) where no
+    /// `NodePtr` family applies.
+    #[inline]
+    pub(crate) fn link_ptr(&self, p: impl crate::units::MemAddr) -> crate::units::MemPtr {
+        crate::units::MemPtr::from_raw(self.b32s1(p))
+    }
+
     /// Read `mem[p].b16.s0`.
     #[inline]
     pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {

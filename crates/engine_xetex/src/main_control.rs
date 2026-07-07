@@ -257,7 +257,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     let p = if st.input.cur_list.mode == INNER_VMODE {
         let rule_save = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE);
         st.eqtb.set_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE, 0);
-        let head = st.mem.b32s1(ALIGN_HEAD);
+        let head = st.mem.link_ptr(ALIGN_HEAD);
         let w = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
         let m = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
         let pp = crate::packaging::hpack_emit_in(st, head, w, m)?;
@@ -275,7 +275,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                 break;
             }
         }
-        let head = st.mem.b32s1(ALIGN_HEAD);
+        let head = st.mem.link_ptr(ALIGN_HEAD);
         let w = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
         let m = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
         let pp = crate::packaging::vpackage_emit_in(st, head, w, m, MAX_HALFWORD)?;
@@ -469,7 +469,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                 if o != 0 {
                     let r = st.mem.b32s1(q);
                     st.mem.set_b32s1(q, TEX_NULL);
-                    let qq2 = crate::packaging::hpack_emit_in(st, q, 0, ADDITIONAL)?
+                    let qq2 = crate::packaging::hpack_emit_in(st, crate::units::MemPtr::from_raw(q), 0, ADDITIONAL)?
                         .idx()
                         .0;
                     st.mem.set_b32s1(qq2 + 4, o);
@@ -877,7 +877,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
         let (u, w) = if st.input.cur_list.mode == INNER_HMODE {
             st.scanner.adjust_tail.0 = st.scanner.cur_tail.0;
             st.scanner.pre_adjust_tail.0 = st.scanner.cur_pre_tail.0;
-            let head = st.mem.b32s1(st.input.cur_list.head);
+            let head = st.mem.link_ptr(st.input.cur_list.head);
             let u = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?
                 .idx()
                 .0;
@@ -888,7 +888,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             st.scanner.pre_adjust_tail.0 = TEX_NULL;
             (u, w)
         } else {
-            let head = st.mem.b32s1(st.input.cur_list.head);
+            let head = st.mem.link_ptr(st.input.cur_list.head);
             let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, 0)?
                 .idx()
                 .0;
@@ -986,7 +986,7 @@ pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainC
     const LOCAL__EVERY_CR: i32 = 8; // xetex_format.h:180
 
     let p = if st.input.cur_list.mode == INNER_HMODE {
-        let head = st.mem.b32s1(st.input.cur_list.head);
+        let head = st.mem.link_ptr(st.input.cur_list.head);
         let u = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?;
         pop_nest_in(&mut st.mem, &mut st.input);
         if st.scanner.cur_pre_head.0 != st.scanner.cur_pre_tail.0 {
@@ -1003,7 +1003,7 @@ pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainC
         // `u` is re-stamped as an UNSET_NODE below, so drop to the raw index here.
         u.idx().0
     } else {
-        let head = st.mem.b32s1(st.input.cur_list.head);
+        let head = st.mem.link_ptr(st.input.cur_list.head);
         let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?
             .idx()
             .0;
@@ -1783,13 +1783,13 @@ pub(crate) fn package_in(
     st.eqtb.set_b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS, u);
     if st.input.cur_list.mode == INNER_HMODE {
         let sp = st.save_stack.save_ptr;
-        let list = st.mem.b32s1(st.input.cur_list.head);
+        let list = st.mem.link_ptr(st.input.cur_list.head);
         let w = st.save_stack.b32s1(sp + 2);
         let m = st.save_stack.b32s1(sp + 1) as i16;
         st.scanner.cur_box.0 = crate::packaging::hpack_emit_in(st, list, w, m)?.idx().0;
     } else {
         let sp = st.save_stack.save_ptr;
-        let list = st.mem.b32s1(st.input.cur_list.head);
+        let list = st.mem.link_ptr(st.input.cur_list.head);
         let h = st.save_stack.b32s1(sp + 2);
         let m = st.save_stack.b32s1(sp + 1) as i16;
         let cb = crate::packaging::vpackage_emit_in(st, list, h, m, d)?;
@@ -2597,7 +2597,7 @@ pub(crate) fn handle_right_brace_in(
             let f = st.eqtb.b32s1(INT_BASE + INT_PAR_FLOATING_PENALTY);
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 2;
-            let head = st.mem.b32s1(st.input.cur_list.head);
+            let head = st.mem.link_ptr(st.input.cur_list.head);
             let p = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
             pop_nest_in(&mut st.mem, &mut st.input);
 
@@ -2739,7 +2739,7 @@ pub(crate) fn handle_right_brace_in(
             end_graf_in(st)?;
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 2;
-            let head = st.mem.b32s1(st.input.cur_list.head);
+            let head = st.mem.link_ptr(st.input.cur_list.head);
             let w = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
             let m = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
             let p = crate::packaging::vpackage_emit_in(st, head, w, m, MAX_HALFWORD)?;
@@ -3418,7 +3418,7 @@ pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), M
         };
         let mut pa = p;
         if h != x {
-            pa = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?
+            pa = crate::packaging::hpack_emit_in(st, crate::units::MemPtr::from_raw(p), 0, ADDITIONAL)?
                 .idx()
                 .0;
             st.mem.set_b32s1(pa + 4, x - h);

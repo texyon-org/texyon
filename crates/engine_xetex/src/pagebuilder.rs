@@ -362,12 +362,12 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                             broken_ptr,
                             false,
                         )?;
-                        ins.set_ins_ptr(&mut st.mem, MemPtr::from_raw(pruned));
+                        ins.set_ins_ptr(&mut st.mem, pruned);
                         if ins.ins_ptr(&st.mem) != MemPtr::NULL {
                             // INSERTION_NODE_ins_ptr != TEX_NULL
                             let tmp_box = crate::packaging::vpackage_emit_in(
                                 st,
-                                ins.ins_ptr(&st.mem).0,
+                                ins.ins_ptr(&st.mem),
                                 0,
                                 ADDITIONAL,
                                 MAX_HALFWORD,
@@ -387,8 +387,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                         .classify_box(MemIdx::new(box_n))
                         .expect("valid insertion box")
                         .expect("insertion box")
-                        .list_ptr(&st.mem)
-                        .0;
+                        .list_ptr(&st.mem);
                     crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(box_n), BOX_NODE_SIZE);
                     let packed =
                         crate::packaging::vpackage_emit_in(st, box_lp, 0, ADDITIONAL, MAX_HALFWORD);
@@ -503,7 +502,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
         .set_b32s1(DIMEN_BASE + DIMEN_PAR__vfuzz, MAX_HALFWORD);
     let packed_255 = crate::packaging::vpackage_emit_in(
         st,
-        st.mem.b32s1(PAGE_HEAD),
+        st.mem.link_ptr(PAGE_HEAD),
         st.shipout.best_size,
         EXACTLY,
         st.shipout.page_max_depth,
