@@ -50,6 +50,7 @@ mod output;
 mod packaging;
 mod pagebuilder;
 mod pic;
+mod primitives;
 mod save;
 mod scaled_math;
 mod scan;
@@ -66,6 +67,7 @@ mod node;
 mod synctex;
 #[allow(dead_code)]
 mod texmfmp;
+mod utf8;
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,

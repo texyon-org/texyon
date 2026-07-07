@@ -23,13 +23,7 @@ const INT_PAR_TRACING_STACK_LEVELS: i32 = 55;
 const TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI: i32 = 59;
 const TTBC_FILE_FORMAT_TEX_SI: i32 = 26;
 
-// UTF-8 decode tables used by start_input.
-mod raw_utf8 {
-    extern "C" {
-        pub(super) static bytesFromUTF8: [u8; 256];
-        pub(super) static offsetsFromUTF8: [u32; 6];
-    }
-}
+// UTF-8 decode tables used by start_input (crate::utf8).
 
 ///   offset 0: handle (uintptr_t, 8 B)
 ///   offset 8: savedChar (long, 8 B)
@@ -80,16 +74,6 @@ const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 const INT_PAR_XETEX_DEFAULT_INPUT_MODE: i32 = 75;
 const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING: i32 = 76;
 
-// ---------------------------------------------------------------------------
-// C-side lookup tables (defined in xetex-io.c, declared extern in xetex-io.h)
-// ---------------------------------------------------------------------------
-
-mod raw {
-    extern "C" {
-        pub(super) static bytesFromUTF8: [u8; 256];
-        pub(super) static offsetsFromUTF8: [u32; 6];
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Non-longjmp input seek
@@ -171,18 +155,6 @@ extern "C" {
     fn ttstub_output_close(handle: usize) -> libc::c_int;
     fn ttstub_output_putc(handle: usize, c: i32) -> i32;
 
-    // Thin C wrappers around ICU functions (ICU linked via C objects, not directly from Rust).
-    fn xetex_ucnv_close(converter: *mut libc::c_void);
-    fn xetex_ucnv_open(name: *const libc::c_char, out_err: *mut libc::c_int) -> *mut libc::c_void;
-    fn xetex_ucnv_to_utf32(
-        cnv: *mut libc::c_void,
-        target: *mut libc::c_char,
-        target_capacity: i32,
-        source: *const libc::c_char,
-        source_length: i32,
-        out_err: *mut libc::c_int,
-    ) -> i32;
-
     // TECkit functions (C++ engine with C API — extern "C" ABI).
     // TECkit_Status is `long` = i64 on Linux 64-bit; TECkit_Converter is opaque ptr (*mut c_void).
     fn TECkit_CreateConverter(
@@ -213,6 +185,76 @@ extern "C" {
 
     // Callees of open_or_close_in still in C.
 
+}
+
+// ---------------------------------------------------------------------------
+// ICU converter FFI (direct, using the versioned symbol names)
+// ---------------------------------------------------------------------------
+
+// UCNV_UTF32_NativeEndian (xetex-core.h:30,35): the UConverterType enum value
+// for host-endian UTF-32 (unicode/ucnv.h: BigEndian = 7, LittleEndian = 8).
+#[cfg(target_endian = "little")]
+const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 8;
+#[cfg(target_endian = "big")]
+const UCNV_UTF32_NATIVE_ENDIAN: libc::c_int = 7;
+
+// UErrorCode is a C enum: i32 ABI, U_ZERO_ERROR = 0. ICU checks the incoming
+// value (U_FAILURE short-circuits), so it must be zero-initialized before calls.
+extern "C" {
+    #[link_name = concat!("ucnv_open", env!("ICU_VERSION_SUFFIX"))]
+    fn ucnv_open(converter_name: *const libc::c_char, err: *mut i32) -> *mut libc::c_void;
+    #[link_name = concat!("ucnv_close", env!("ICU_VERSION_SUFFIX"))]
+    fn ucnv_close(converter: *mut libc::c_void);
+    #[link_name = concat!("ucnv_toAlgorithmic", env!("ICU_VERSION_SUFFIX"))]
+    fn ucnv_toAlgorithmic(
+        algorithmic_type: libc::c_int,
+        cnv: *mut libc::c_void,
+        target: *mut libc::c_char,
+        target_capacity: i32,
+        source: *const libc::c_char,
+        source_length: i32,
+        err: *mut i32,
+    ) -> i32;
+}
+
+/// translated from xetex-io.c (xetex_ucnv_close)
+pub(crate) unsafe fn xetex_ucnv_close(converter: *mut libc::c_void) {
+    ucnv_close(converter);
+}
+
+/// translated from xetex-io.c (xetex_ucnv_open)
+pub(crate) unsafe fn xetex_ucnv_open(name: *const libc::c_char, out_err: *mut libc::c_int) -> *mut libc::c_void {
+    let mut err: i32 = 0;
+    let cnv = ucnv_open(name, &mut err);
+    if !out_err.is_null() {
+        *out_err = err;
+    }
+    cnv
+}
+
+/// translated from xetex-io.c (xetex_ucnv_to_utf32)
+pub(crate) unsafe fn xetex_ucnv_to_utf32(
+    cnv: *mut libc::c_void,
+    target: *mut libc::c_char,
+    target_capacity: i32,
+    source: *const libc::c_char,
+    source_length: i32,
+    out_err: *mut libc::c_int,
+) -> i32 {
+    let mut err: i32 = 0;
+    let result = ucnv_toAlgorithmic(
+        UCNV_UTF32_NATIVE_ENDIAN,
+        cnv,
+        target,
+        target_capacity,
+        source,
+        source_length,
+        &mut err,
+    );
+    if !out_err.is_null() {
+        *out_err = err;
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -673,7 +715,7 @@ pub(crate) unsafe fn make_utf16_name_in(st: &mut crate::state::EngineState) {
     while s < end {
         let mut rval = *s as u32;
         s = s.add(1);
-        let extra_bytes = raw::bytesFromUTF8[rval as usize] as usize;
+        let extra_bytes = crate::utf8::BYTES_FROM_UTF8[rval as usize] as usize;
         // Translate C's falling-through switch (same pattern as maketexstring).
         for _ in 0..extra_bytes {
             if *s != 0 {
@@ -683,7 +725,7 @@ pub(crate) unsafe fn make_utf16_name_in(st: &mut crate::state::EngineState) {
                 rval <<= 6;
             }
         }
-        rval -= raw::offsetsFromUTF8[extra_bytes] as u32;
+        rval -= crate::utf8::OFFSETS_FROM_UTF8[extra_bytes] as u32;
         if rval > 0xffff {
             rval -= 0x10000;
             *t = (0xd800 + rval / 0x0400) as u16;
@@ -739,7 +781,7 @@ pub(crate) unsafe fn get_uni_c_in(
             let mut c = ttstub_input_getc((*f).handle);
             rval = c;
             if rval != libc::EOF {
-                let extra_bytes = raw::bytesFromUTF8[rval as usize] as usize;
+                let extra_bytes = crate::utf8::BYTES_FROM_UTF8[rval as usize] as usize;
                 if extra_bytes >= 4 {
                     // case 5 and 4 in C: invalid leading bytes
                     crate::output::bad_utf8_warning_in(st);
@@ -759,7 +801,7 @@ pub(crate) unsafe fn get_uni_c_in(
                     rval = (rval << 6) + c;
                 }
                 // Subtract offset and validate range.
-                let offset = raw::offsetsFromUTF8[extra_bytes];
+                let offset = crate::utf8::OFFSETS_FROM_UTF8[extra_bytes];
                 rval = (rval as u32).wrapping_sub(offset) as i32;
                 if !(0..=0x10ffff).contains(&rval) {
                     crate::output::bad_utf8_warning_in(st);
@@ -1434,7 +1476,7 @@ pub(crate) unsafe fn start_input_in(
                 break;
             }
             let mut rval = first_byte as u32;
-            let extra_bytes = raw_utf8::bytesFromUTF8[rval as usize] as usize;
+            let extra_bytes = crate::utf8::BYTES_FROM_UTF8[rval as usize] as usize;
             for _ in 0..extra_bytes {
                 if *cp != 0 {
                     rval = (rval << 6) + *cp as u32;
@@ -1443,7 +1485,7 @@ pub(crate) unsafe fn start_input_in(
                     rval <<= 6;
                 }
             }
-            rval -= raw_utf8::offsetsFromUTF8[extra_bytes];
+            rval -= crate::utf8::OFFSETS_FROM_UTF8[extra_bytes];
 
             if rval > 0xffff {
                 rval -= 0x10000;

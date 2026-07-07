@@ -376,15 +376,12 @@ bool is_new_source(str_number, int);
 pool_pointer make_src_special(str_number, int);
 void remember_source_info(str_number, int);
 
-/* Needed here for UFILE */
-#include "xetex-io.h"
 
 /* variables! */
 
 /* All the following variables are defined in xetexini.c */
 extern bool shell_escape_enabled;
 extern memory_word *eqtb;
-extern int32_t bad;
 extern char *name_of_file;
 extern UTF16_code *name_of_file16;
 extern int32_t name_length;
@@ -398,10 +395,8 @@ extern int32_t error_line;
 extern int32_t half_error_line;
 extern int32_t max_print_line;
 extern int32_t max_strings;
-extern int32_t strings_free;
 extern int32_t string_vacancies;
 extern int32_t pool_size;
-extern int32_t pool_free;
 extern int32_t font_mem_size;
 extern int32_t font_max;
 extern int32_t hyph_size;
@@ -506,7 +501,6 @@ extern int32_t max_in_stack;
 extern input_state_t cur_input;
 extern int32_t in_open;
 extern int32_t open_parens;
-extern UFILE **input_file;
 extern int32_t line;
 extern int32_t *line_stack;
 extern str_number *source_filename_stack;
@@ -532,7 +526,6 @@ extern int32_t cur_val1;
 extern unsigned char cur_val_level;
 extern small_number radix;
 extern glue_ord cur_order;
-extern UFILE *read_file[16];
 extern unsigned char read_open[17];
 extern int32_t cond_ptr;
 extern unsigned char if_limit;
@@ -545,12 +538,9 @@ extern str_number cur_ext;
 extern pool_pointer area_delimiter;
 extern pool_pointer ext_delimiter;
 extern UTF16_code file_name_quote_char;
-extern int32_t format_default_length;
-extern char *TEX_format_default;
 extern bool name_in_progress;
 extern str_number job_name;
 extern bool log_opened;
-extern const char* output_file_extension;
 extern str_number texmf_log_name;
 extern memory_word *font_info;
 extern font_index fmem_ptr;
@@ -1238,6 +1228,5 @@ void tt_insert_special(const char *ascii_text);
 
 END_EXTERN_C
 
-#include "xetex-stringpool.h"
 
 #endif /* TECTONIC_XETEX_XETEXD_H */

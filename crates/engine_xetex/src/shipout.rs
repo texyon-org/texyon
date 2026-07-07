@@ -24,9 +24,9 @@ extern "C" {
     fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize;
     fn ttstub_output_flush(handle: usize) -> libc::c_int;
     fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t);
-
-    static output_file_extension: *const libc::c_char;
 }
+
+use crate::engine::OUTPUT_FILE_EXTENSION;
 
 // xetex-shipout.c:11–12
 const DVI_BUF_SIZE: i32 = 16384;
@@ -607,7 +607,7 @@ pub(crate) unsafe fn ship_out_in(
             if st.strings.job_name == 0 {
                 crate::io::open_log_file_in(st)?;
             }
-            crate::io::pack_job_name_in(st, output_file_extension)?;
+            crate::io::pack_job_name_in(st, OUTPUT_FILE_EXTENSION)?;
             st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
             if st.shipout.dvi_file == INVALID_HANDLE {
                 return Err(ShipoutAbort::CannotOpenOutput);

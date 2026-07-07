@@ -4,15 +4,6 @@
 // C externs needed by this module
 // ---------------------------------------------------------------------------
 
-mod raw {
-    extern "C" {
-        // Lookup tables defined in xetex-io.c (declared extern in xetex-io.h).
-        pub(super) static firstByteMark: [u8; 7];
-        pub(super) static bytesFromUTF8: [u8; 256];
-        pub(super) static offsetsFromUTF8: [u32; 6];
-    }
-}
-
 extern "C" {
     fn ttstub_get_file_md5(path: *const libc::c_char, digest: *mut u8) -> libc::c_int;
     fn ttbc_get_data_md5(data: *const u8, len: libc::size_t, digest: *mut u8) -> libc::c_int;
@@ -152,22 +143,22 @@ pub unsafe fn gettexstring_in(strings: &crate::state::StringsState, s: i32) -> *
                 c >>= 6;
                 *name.add(start + 1) = ((c | 0x80) & 0xBF) as u8;
                 c >>= 6;
-                *name.add(start) = (c | raw::firstByteMark[4] as u32) as u8;
+                *name.add(start) = (c | crate::utf8::FIRST_BYTE_MARK[4] as u32) as u8;
             }
             3 => {
                 *name.add(start + 2) = ((c | 0x80) & 0xBF) as u8;
                 c >>= 6;
                 *name.add(start + 1) = ((c | 0x80) & 0xBF) as u8;
                 c >>= 6;
-                *name.add(start) = (c | raw::firstByteMark[3] as u32) as u8;
+                *name.add(start) = (c | crate::utf8::FIRST_BYTE_MARK[3] as u32) as u8;
             }
             2 => {
                 *name.add(start + 1) = ((c | 0x80) & 0xBF) as u8;
                 c >>= 6;
-                *name.add(start) = (c | raw::firstByteMark[2] as u32) as u8;
+                *name.add(start) = (c | crate::utf8::FIRST_BYTE_MARK[2] as u32) as u8;
             }
             _ => {
-                *name.add(start) = (c | raw::firstByteMark[1] as u32) as u8;
+                *name.add(start) = (c | crate::utf8::FIRST_BYTE_MARK[1] as u32) as u8;
             }
         }
 
@@ -233,7 +224,7 @@ pub(crate) unsafe fn maketexstring_in(
         }
         cp = cp.add(1);
 
-        let extra_bytes = raw::bytesFromUTF8[rval as usize] as usize;
+        let extra_bytes = crate::utf8::BYTES_FROM_UTF8[rval as usize] as usize;
         // Translate C's falling-through switch (case 5 … case 0) that shifts in
         // continuation bytes. Each iteration corresponds to one case, running from
         // `extra_bytes` down to 1 (case 0 is a no-op).
@@ -244,7 +235,7 @@ pub(crate) unsafe fn maketexstring_in(
                 cp = cp.add(1);
             }
         }
-        rval -= raw::offsetsFromUTF8[extra_bytes];
+        rval -= crate::utf8::OFFSETS_FROM_UTF8[extra_bytes];
 
         if rval > 0xffff {
             rval -= 0x10000;

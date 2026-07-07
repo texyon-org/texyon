@@ -210,24 +210,7 @@ const C_FLAGS: &[&str] = &[
     "-std=gnu11",
 ];
 
-const C_FILES: &[&str] = &[
-    "xetex/xetex-engine-interface.c",
-    "xetex/xetex-errors.c",
-    "xetex/xetex-ext.c",
-    "xetex/xetex-ini.c",
-    "xetex/xetex-io.c",
-    "xetex/xetex-linebreak.c",
-    "xetex/xetex-math.c",
-    "xetex/xetex-output.c",
-    "xetex/xetex-pagebuilder.c",
-    "xetex/xetex-pic.c",
-    "xetex/xetex-scaledmath.c",
-    "xetex/xetex-shipout.c",
-    "xetex/xetex-stringpool.c",
-    "xetex/xetex-synctex.c",
-    "xetex/xetex-texmfmp.c",
-    "xetex/xetex-xetex0.c",
-];
+const C_FILES: &[&str] = &["xetex/xetex-engine-interface.c"];
 
 const CXX_FLAGS: &[&str] = &[
     "-std=c++14",

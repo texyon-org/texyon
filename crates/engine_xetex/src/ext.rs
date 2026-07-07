@@ -65,8 +65,6 @@ extern "C" {
     fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
     fn ttstub_input_get_size(handle: usize) -> libc::size_t;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
-    fn xetex_ucnv_open(name: *const c_char, out_err: *mut c_int) -> *mut c_void;
-    fn xetex_ucnv_close(cnv: *mut c_void);
     fn TECkit_CreateConverter(
         mapping: *const u8,
         mapping_size: u32,
@@ -473,7 +471,7 @@ pub(crate) unsafe fn get_encoding_mode_and_info_in(
     }
 
     let mut err = 0;
-    let cnv = xetex_ucnv_open(name_of_file, &mut err);
+    let cnv = crate::io::xetex_ucnv_open(name_of_file, &mut err);
     if cnv.is_null() {
         crate::output::begin_diagnostic_in(st);
         crate::output::print_nl_in(st, b'U' as i32);
@@ -483,7 +481,7 @@ pub(crate) unsafe fn get_encoding_mode_and_info_in(
         crate::output::end_diagnostic_in(st, true);
         Ok(RAW)
     } else {
-        xetex_ucnv_close(cnv);
+        crate::io::xetex_ucnv_close(cnv);
         *info = crate::texmfmp::maketexstring_in(&mut st.strings, name_of_file)?;
         Ok(ICUMAPPING)
     }

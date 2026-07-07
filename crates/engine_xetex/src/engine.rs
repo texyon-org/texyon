@@ -38,47 +38,25 @@ static mut TRE_TRIE_SIZE: i32 = 0;
 static mut TRE_HYPH_SIZE: i32 = 0;
 
 extern "C" {
-    static xetex_primitives: XetexPrimitiveDef;
-    static xetex_primitives_count: libc::size_t;
     // bridge_core: record a fatal message without longjmp-ing, so the host's
     // ttbc_get_error_message() surfaces it after we return HISTORY_FATAL_ERROR.
     fn _ttbc_set_error_message(message: *const libc::c_char);
 }
 
-/// Mirror of C `xetex_format_primitive_def_t` (xetex_format.h:715).
-/// Layout: pointer (8) + u8 cmd (1+3 pad) + i32 chr (4) + i32 extra_init (4) + 4 trailing pad = 24.
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct XetexPrimitiveDef {
-    name: *const libc::c_char,
-    cmd: u8,
-    chr: i32,
-    extra_init: i32,
-}
-
-const _: () = assert!(std::mem::size_of::<XetexPrimitiveDef>() == 24);
-
 // Raw lifecycle state used by tt_run_engine.
 extern "C" {
     fn ttstub_output_open_stdout() -> usize;
     fn pdf_files_init();
-
-    #[link_name = "TEX_format_default"]
-    static mut tre_TEX_format_default: *mut libc::c_char;
-
-    #[link_name = "format_default_length"]
-    static mut tre_format_default_length: i32;
-    #[link_name = "pool_free"]
-    static mut tre_pool_free: i32;
-    #[link_name = "strings_free"]
-    static mut tre_strings_free: i32;
-
-    #[link_name = "bad"]
-    static mut tre_bad: i32;
-
-    #[link_name = "output_file_extension"]
-    static mut tre_output_file_extension: *const libc::c_char;
 }
+
+// Engine-lifecycle globals formerly defined in xetex-ini.c. Set once per run in
+// tt_run_engine; TEX_FORMAT_DEFAULT is freed in tt_cleanup_in.
+pub(crate) static mut TEX_FORMAT_DEFAULT: *mut libc::c_char = std::ptr::null_mut();
+pub(crate) static mut FORMAT_DEFAULT_LENGTH: i32 = 0;
+pub(crate) static mut POOL_FREE: i32 = 0;
+pub(crate) static mut STRINGS_FREE: i32 = 0;
+pub(crate) static mut OUTPUT_FILE_EXTENSION: *const libc::c_char = std::ptr::null();
+static mut BAD: i32 = 0;
 
 // All tt_cleanup_ items need #[link_name] since the Rust names carry a prefix
 // that doesn't exist in C, and some also clash with existing accessor functions.
@@ -89,8 +67,6 @@ extern "C" {
     fn tt_cleanup_destroy_font_manager();
     #[link_name = "TECkit_DisposeConverter"]
     fn tt_cleanup_TECkit_DisposeConverter(cnv: *mut libc::c_void);
-    #[link_name = "TEX_format_default"]
-    static mut tt_cleanup_TEX_format_default: *mut libc::c_char;
 }
 
 // translated from xetex-ini.c:3452 (get_strings_started)
@@ -864,13 +840,9 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
     st.eqtb.no_new_control_sequence = false;
     st.input.first = 0;
 
-    let table_ptr = &raw const xetex_primitives;
-    let count = xetex_primitives_count;
-    for i in 0..count {
-        let prim = table_ptr.add(i).read();
-
-        if !prim.name.is_null() {
-            primitive(st, prim.name, prim.cmd as u16, prim.chr)?;
+    for prim in crate::primitives::XETEX_PRIMITIVES.iter() {
+        if let Some(name) = prim.name {
+            primitive(st, name.as_ptr(), prim.cmd as u16, prim.chr)?;
 
             match prim.extra_init {
                 XF_PRIM_INIT_NONE => {}
@@ -884,7 +856,7 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
                 frozen => {
                     st.eqtb.set_hash_s1(
                         frozen,
-                        crate::texmfmp::maketexstring_in(&mut st.strings, prim.name)?,
+                        crate::texmfmp::maketexstring_in(&mut st.strings, name.as_ptr())?,
                     );
                     st.eqtb.data[frozen as usize] = st.eqtb.word(st.scanner.cur_val);
                 }
@@ -996,9 +968,9 @@ unsafe fn tt_run_engine_inner(
     crate::state::set_engine_state_ptr(&mut *st as *mut crate::state::EngineState);
     let _ptr_guard = PtrGuard;
 
-    tre_TEX_format_default = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
-    libc::strcpy(tre_TEX_format_default, dump_name);
-    tre_format_default_length = libc::strlen(dump_name) as i32;
+    TEX_FORMAT_DEFAULT = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
+    libc::strcpy(TEX_FORMAT_DEFAULT, dump_name);
+    FORMAT_DEFAULT_LENGTH = libc::strlen(dump_name) as i32;
     st.shipout.rust_stdout = ttstub_output_open_stdout();
 
     if st.config.file_line_error_style_p < 0 {
@@ -1007,9 +979,9 @@ unsafe fn tt_run_engine_inner(
 
     TRE_POOL_SIZE = 6_250_000;
     TRE_STRING_VACANCIES = 90_000;
-    tre_pool_free = 47_500;
+    POOL_FREE = 47_500;
     TRE_MAX_STRINGS = 565_536;
-    tre_strings_free = 100;
+    STRINGS_FREE = 100;
     st.fonts.font_mem_size = 8_000_000;
     st.fonts.font_max = 9_000;
     TRE_TRIE_SIZE = 1_000_000;
@@ -1131,59 +1103,59 @@ unsafe fn tt_run_engine_inner(
     }
 
     st.errors.history = HISTORY_FATAL_ERROR;
-    tre_bad = 0;
+    BAD = 0;
     if st.errors.half_error_line < 30 || st.errors.half_error_line > st.errors.error_line - 15 {
-        tre_bad = 1;
+        BAD = 1;
     }
     if st.config.max_print_line < 60 {
-        tre_bad = 2;
+        BAD = 2;
     }
     if 1100 > MEM_TOP {
-        tre_bad = 4;
+        BAD = 4;
     }
     if HASH_PRIME > HASH_SIZE {
-        tre_bad = 5;
+        BAD = 5;
     }
     if st.input.max_in_open >= 128 {
-        tre_bad = 6;
+        BAD = 6;
     }
     if MEM_TOP < 267 {
-        tre_bad = 7;
+        BAD = 7;
     }
     if crate::mem::TEX_NULL > 0 {
-        tre_bad = 12;
+        BAD = 12;
     }
     if MAX_FONT_MAX < crate::mem::TEX_NULL || MAX_FONT_MAX > MAX_HALFWORD {
-        tre_bad = 15;
+        BAD = 15;
     }
     if st.fonts.font_max > FONT_BASE + 9000 {
-        tre_bad = 16;
+        BAD = 16;
     }
     if st.save_stack.save_size > MAX_HALFWORD || TRE_MAX_STRINGS > MAX_HALFWORD {
-        tre_bad = 17;
+        BAD = 17;
     }
     if st.input.buf_size > MAX_HALFWORD {
-        tre_bad = 18;
+        BAD = 18;
     }
     if CS_TOKEN_FLAG + EQTB_SIZE + st.eqtb.hash_extra > MAX_HALFWORD {
-        tre_bad = 21;
+        BAD = 21;
     }
     if FORMAT_HASH_OFFSET < 0 || FORMAT_HASH_OFFSET > HASH_BASE {
-        tre_bad = 42;
+        BAD = 42;
     }
-    if tre_format_default_length > i32::MAX {
-        tre_bad = 31;
+    if FORMAT_DEFAULT_LENGTH > i32::MAX {
+        BAD = 31;
     }
     if 2 * MAX_HALFWORD < MEM_TOP {
-        tre_bad = 41;
+        BAD = 41;
     }
-    if tre_bad > 0 {
+    if BAD > 0 {
         let mut msg = [0 as libc::c_char; 80];
         libc::snprintf(
             msg.as_mut_ptr(),
             msg.len(),
             c"failed internal consistency check #%d".as_ptr(),
-            tre_bad,
+            BAD,
         );
         // Consistency check failed: terminate with HISTORY_FATAL_ERROR.
         return crate::errors::EngineAbort::TtAbort(msg.as_ptr()).into_history(&mut *st);
@@ -1229,7 +1201,7 @@ unsafe fn tt_run_engine_inner(
     st.strings.job_name = 0;
     st.scanner.name_in_progress = false;
     st.errors.log_opened = false;
-    tre_output_file_extension = if st.config.semantic_pagination_enabled {
+    OUTPUT_FILE_EXTENSION = if st.config.semantic_pagination_enabled {
         c".spx".as_ptr()
     } else {
         c".xdv".as_ptr()
@@ -1465,7 +1437,7 @@ unsafe fn tt_run_engine_inner(
 }
 pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
     tt_cleanup_pdf_files_close();
-    libc::free(tt_cleanup_TEX_format_default as *mut _);
+    libc::free(TEX_FORMAT_DEFAULT as *mut _);
     st.shipout.dvi_buf = Vec::new();
 
     tt_cleanup_destroy_font_manager();

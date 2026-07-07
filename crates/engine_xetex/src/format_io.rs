@@ -26,14 +26,9 @@ extern "C" {
         is_gz: libc::c_int,
     ) -> usize;
     fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
-
-    #[link_name = "TEX_format_default"]
-    static mut tre_TEX_format_default: *mut libc::c_char;
-    #[link_name = "pool_free"]
-    static mut tre_pool_free: i32;
-    #[link_name = "strings_free"]
-    static mut tre_strings_free: i32;
 }
+
+use crate::engine::{POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
 
 const PAGE_HEAD: i32 = MEM_TOP - 2;
 const PRE_ADJUST_HEAD: i32 = MEM_TOP - 14;
@@ -818,7 +813,7 @@ pub unsafe fn load_fmt_file(
 
         // pack_buffered_name (xetex-ini.c:590): copy the format-default name
         // into name_of_file and set name_length.
-        let v = tre_TEX_format_default;
+        let v = TEX_FORMAT_DEFAULT;
         let len = libc::strlen(v);
         st.input.name_of_file.resize(len + 1, 0);
         libc::strcpy(st.input.name_of_file.as_mut_ptr(), v);
@@ -951,14 +946,14 @@ unsafe fn load_fmt_file_in(
             c"fatal format file error".as_ptr(),
         ));
     }
-    if x > SUP_POOL_SIZE - tre_pool_free {
+    if x > SUP_POOL_SIZE - POOL_FREE {
         return Err(crate::errors::EngineAbort::TtAbort(
             c"must increase string_pool_size".as_ptr(),
         ));
     }
     st.strings.pool_ptr = x;
-    if TRE_POOL_SIZE < st.strings.pool_ptr + tre_pool_free {
-        TRE_POOL_SIZE = st.strings.pool_ptr + tre_pool_free;
+    if TRE_POOL_SIZE < st.strings.pool_ptr + POOL_FREE {
+        TRE_POOL_SIZE = st.strings.pool_ptr + POOL_FREE;
     }
     st.strings.pool_size = TRE_POOL_SIZE;
 
@@ -968,14 +963,14 @@ unsafe fn load_fmt_file_in(
             c"fatal format file error".as_ptr(),
         ));
     }
-    if x > SUP_MAX_STRINGS - tre_strings_free {
+    if x > SUP_MAX_STRINGS - STRINGS_FREE {
         return Err(crate::errors::EngineAbort::TtAbort(
             c"must increase sup_strings".as_ptr(),
         ));
     }
     st.strings.str_ptr = x;
-    if TRE_MAX_STRINGS < st.strings.str_ptr + tre_strings_free {
-        TRE_MAX_STRINGS = st.strings.str_ptr + tre_strings_free;
+    if TRE_MAX_STRINGS < st.strings.str_ptr + STRINGS_FREE {
+        TRE_MAX_STRINGS = st.strings.str_ptr + STRINGS_FREE;
     }
     st.strings.max_strings = TRE_MAX_STRINGS;
 
