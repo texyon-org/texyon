@@ -981,26 +981,21 @@ struct HListRuleAction {
     v_move: Option<i32>,
     rule_ht: i32,
     rule_wd: i32,
-    synctex_p: i32,
-    synctex_box: i32,
+    synctex_p: MemPtr,
 }
 
 fn finish_hlist_rule(
     mem: &MemState,
     shipout: &mut ShipoutState,
-    this_box: i32,
+    this_box: AnyBox,
     base_line: i32,
-    p: i32,
+    p: MemPtr,
 ) -> HListRuleAction {
-    let bb = mem
-        .classify_box(MemIdx::new(this_box))
-        .expect("valid node type for hlist_out box")
-        .expect("hlist_out operates on a box");
     if shipout.rule_ht == NULL_FLAG {
-        shipout.rule_ht = bb.height(mem).0;
+        shipout.rule_ht = this_box.height(mem).0;
     }
     if shipout.rule_dp == NULL_FLAG {
-        shipout.rule_dp = bb.depth(mem).0;
+        shipout.rule_dp = this_box.depth(mem).0;
     }
     shipout.rule_ht += shipout.rule_dp;
 
@@ -1034,15 +1029,14 @@ fn finish_hlist_rule(
         rule_ht: shipout.rule_ht,
         rule_wd: shipout.rule_wd,
         synctex_p: p,
-        synctex_box: this_box,
     }
 }
 
 fn finish_hlist_rule_in(
     st: &mut crate::state::EngineState,
-    this_box: i32,
+    this_box: AnyBox,
     base_line: i32,
-    p: i32,
+    p: MemPtr,
 ) -> Result<(), ShipoutAbort> {
     let action = finish_hlist_rule(&st.mem, &mut st.shipout, this_box, base_line, p);
     if action.emit {
@@ -1058,14 +1052,14 @@ fn finish_hlist_rule_in(
     }
     // SAFETY: synctex bookkeeping over the shared engine state.
     unsafe {
-        crate::synctex::synctex_horizontal_rule_or_glue(st, action.synctex_p, action.synctex_box);
+        crate::synctex::synctex_horizontal_rule_or_glue(st, action.synctex_p);
     }
     Ok(())
 }
 
 unsafe fn output_hlist_glue_in(
     st: &mut crate::state::EngineState,
-    this_box: i32,
+    this_box: AnyBox,
     base_line: i32,
     left_edge: i32,
     p: i32,
@@ -1082,13 +1076,14 @@ unsafe fn output_hlist_glue_in(
             if st.mem.b16s1(g) == g_order {
                 *cur_glue += st.mem.b32s1(g + 2) as f64;
                 *cur_g = crate::scaled_math::tex_round(
-                    (st.mem.gr(this_box + 6) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
+                    (this_box.glue_set(&st.mem) * *cur_glue)
+                        .clamp(-1_000_000_000.0, 1_000_000_000.0),
                 );
             }
         } else if st.mem.b16s0(g) == g_order {
             *cur_glue -= st.mem.b32s1(g + 3) as f64;
             *cur_g = crate::scaled_math::tex_round(
-                (st.mem.gr(this_box + 6) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
+                (this_box.glue_set(&st.mem) * *cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0),
             );
         }
     }
@@ -1123,7 +1118,7 @@ unsafe fn output_hlist_glue_in(
         if st.mem.b16s1(leader_box) == RULE_NODE {
             st.shipout.rule_ht = st.mem.b32s1(leader_box + 3);
             st.shipout.rule_dp = st.mem.b32s1(leader_box + 2);
-            finish_hlist_rule_in(st, this_box, base_line, p)?;
+            finish_hlist_rule_in(st, this_box, base_line, MemPtr::from_raw(p))?;
             return Ok(());
         }
 
@@ -1200,7 +1195,7 @@ unsafe fn output_hlist_glue_in(
     }
 
     st.shipout.cur_h += st.shipout.rule_wd;
-    crate::synctex::synctex_horizontal_rule_or_glue(st, p, this_box);
+    crate::synctex::synctex_horizontal_rule_or_glue(st, MemPtr::from_raw(p));
     Ok(())
 }
 
@@ -1288,7 +1283,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
     }
 
     let mut left_edge = st.shipout.cur_h;
-    crate::synctex::synctex_hlist(st, this_box);
+    crate::synctex::synctex_hlist(st, this_box_b);
 
     while p != TEX_NULL {
         'reswitch: loop {
@@ -1345,10 +1340,9 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
 
                 if let Some((bb, is_vlist)) = box_node {
                     if bb.list_ptr(&st.mem).is_null() {
-                        if is_vlist {
-                            crate::synctex::synctex_void_vlist(st, p, this_box);
-                        } else {
-                            crate::synctex::synctex_void_hlist(st, p, this_box);
+                        match bb {
+                            AnyBox::VList(v) => crate::synctex::synctex_void_vlist(st, v),
+                            AnyBox::HList(h) => crate::synctex::synctex_void_hlist(st, h),
                         }
                         st.shipout.cur_h += bb.width(&st.mem).0;
                     } else {
@@ -1376,7 +1370,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                             st.shipout.rule_ht = rule.height(&st.mem).raw();
                             st.shipout.rule_dp = rule.depth(&st.mem).raw();
                             st.shipout.rule_wd = rule.width(&st.mem).raw();
-                            finish_hlist_rule_in(st, this_box, base_line, p)?;
+                            finish_hlist_rule_in(st, this_box_b, base_line, rule.ptr())?;
                         }
                         AnyNode::Whatsit(whatsit) => {
                             let subtype = whatsit.whatsit_subtype(&st.mem);
@@ -1470,7 +1464,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                         AnyNode::Glue(glue) => {
                             output_hlist_glue_in(
                                 st,
-                                this_box,
+                                this_box_b,
                                 base_line,
                                 left_edge,
                                 glue.idx().0,
@@ -1482,11 +1476,11 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                         }
                         AnyNode::MarginKern(kern) => st.shipout.cur_h += kern.width(&st.mem).0,
                         AnyNode::Kern(kern) => {
-                            crate::synctex::synctex_kern(st, p, this_box);
+                            crate::synctex::synctex_kern(st, kern, this_box_b);
                             st.shipout.cur_h += kern.width(&st.mem).0;
                         }
                         AnyNode::Math(math) => {
-                            crate::synctex::synctex_math(st, p, this_box);
+                            crate::synctex::synctex_math(st, math);
                             let math_width = math.width(&st.mem).0;
                             if !math.subtype(&st.mem).is_multiple_of(2) {
                                 if st.mem.b32s0(st.scanner.lr_ptr) as u16
@@ -1570,7 +1564,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
         }
     }
 
-    crate::synctex::synctex_tsilh(st, this_box);
+    crate::synctex::synctex_tsilh(st, this_box_b);
 
     while st.mem.b32s0(st.scanner.lr_ptr) != BEFORE {
         if st.mem.b32s0(st.scanner.lr_ptr) as u16 > L_CODE {
@@ -1625,7 +1619,7 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
 
     let save_loc = st.shipout.dvi_offset + st.shipout.dvi_ptr;
     let left_edge = st.shipout.cur_h;
-    crate::synctex::synctex_vlist(st, this_box);
+    crate::synctex::synctex_vlist(st, this_box_b);
 
     if upwards {
         st.shipout.cur_v = st.shipout.cur_v + this_box_b.depth(&st.mem).0;
@@ -1659,10 +1653,9 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                     st.shipout.cur_v += bb.height(&st.mem).0;
                 }
 
-                if is_vlist {
-                    crate::synctex::synctex_void_vlist(st, p, this_box);
-                } else {
-                    crate::synctex::synctex_void_hlist(st, p, this_box);
+                match bb {
+                    AnyBox::VList(v) => crate::synctex::synctex_void_vlist(st, v),
+                    AnyBox::HList(h) => crate::synctex::synctex_void_hlist(st, h),
                 }
 
                 if upwards {
@@ -1903,7 +1896,7 @@ unsafe fn vlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
         }
     }
 
-    crate::synctex::synctex_tsilv(st, this_box);
+    crate::synctex::synctex_tsilv(st, this_box_b);
     prune_movements(&mut st.mem, &mut st.shipout, save_loc);
 
     if st.shipout.cur_s > 0 {

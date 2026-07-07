@@ -55,9 +55,6 @@ pub(crate) struct MainLoopState {
     pub ins_disc: bool,
 }
 
-/// SyncTeX recorder callback (`xetex-synctex.c`); a deferred node-recording fn
-/// pointer over the SyncTeX context and mem arena.
-pub(crate) type Recorder = unsafe fn(&mut SynctexCtxt, &MemState, i32);
 
 /// SyncTeX boolean flag block (formerly the `synctex_flags_t` bitfield struct).
 #[derive(Default)]
@@ -78,7 +75,12 @@ pub(crate) struct SynctexCtxt {
     pub root_name: *mut libc::c_char,
     pub count: i32,
     pub node: crate::units::MemPtr,
-    pub recorder: Option<Recorder>,
+    /// A kern node whose SyncTeX record is deferred until the context changes
+    /// (the C `synctex_recorder` fn pointer — kern is the only node kind this
+    /// engine ever defers, so the typed handle replaces the callback; when
+    /// `Some`, it always equals `node`). Flush sites must record it *before*
+    /// reassigning `node`.
+    pub deferred_kern: Option<crate::node::NodePtr<crate::node::KernNode>>,
     pub tag: i32,
     pub line: i32,
     pub curh: i32,
@@ -100,7 +102,7 @@ impl Default for SynctexCtxt {
             root_name: std::ptr::null_mut(),
             count: 0,
             node: crate::units::MemPtr::from_raw(0),
-            recorder: None,
+            deferred_kern: None,
             tag: 0,
             line: 0,
             curh: 0,
