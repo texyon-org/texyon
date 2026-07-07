@@ -160,6 +160,14 @@ pub trait HasGlueSet: NodeKind {}
 /// 0.b16.s0). Glue specs deliberately do not implement this: their header word
 /// holds ref_count/stretch_order/shrink_order instead of a node type.
 pub trait HasNodeHeader: NodeKind {}
+/// Has the two-word SyncTeX trailer (`SYNCTEX_tag` .b32.s0 / `SYNCTEX_line`
+/// .b32.s1) in the node's last word, stamped by `get_node` at allocation
+/// (`mem.rs`). The offset is `node size − SYNCTEX_FIELD_SIZE(=1)`, so it
+/// differs per family: boxes +7, rules +4, medium (glue/kern/math) +2.
+pub trait HasSyncFields: NodeKind {
+    /// Word offset of the SyncTeX trailer within the node.
+    const SYNC_OFFSET: i32;
+}
 
 impl HasDimensions for HListNode {}
 impl HasDimensions for VListNode {}
@@ -180,6 +188,25 @@ impl HasNodeHeader for KernNode {}
 impl HasNodeHeader for PenaltyNode {}
 impl HasNodeHeader for Noad {}
 impl HasNodeHeader for MarginKernNode {}
+
+impl HasSyncFields for HListNode {
+    const SYNC_OFFSET: i32 = BOX_NODE_SIZE - 1;
+}
+impl HasSyncFields for VListNode {
+    const SYNC_OFFSET: i32 = BOX_NODE_SIZE - 1;
+}
+impl HasSyncFields for RuleNode {
+    const SYNC_OFFSET: i32 = RULE_NODE_SIZE - 1;
+}
+impl HasSyncFields for GlueNode {
+    const SYNC_OFFSET: i32 = MEDIUM_NODE_SIZE - 1;
+}
+impl HasSyncFields for KernNode {
+    const SYNC_OFFSET: i32 = MEDIUM_NODE_SIZE - 1;
+}
+impl HasSyncFields for MathNode {
+    const SYNC_OFFSET: i32 = MEDIUM_NODE_SIZE - 1;
+}
 
 impl<K: HasNodeHeader> NodePtr<K> {
     /// Shared list-node subtype = `mem[p].b16.s0`.
@@ -352,6 +379,22 @@ impl<K: HasGlueSet> NodePtr<K> {
     }
 }
 
+impl<K: HasSyncFields> NodePtr<K> {
+    /// `SYNCTEX_tag(p, size)` = `mem[p + size − 1].b32.s0` — the input-file
+    /// tag stamped at allocation time.
+    #[inline]
+    pub fn sync_tag(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(K::SYNC_OFFSET).0)
+    }
+
+    /// `SYNCTEX_line(p, size)` = `mem[p + size − 1].b32.s1` — the source
+    /// line stamped at allocation time.
+    #[inline]
+    pub fn sync_line(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(K::SYNC_OFFSET).0)
+    }
+}
+
 /// A classified box: either an hlist or a vlist node.
 #[derive(Copy, Clone, Debug)]
 pub enum AnyBox {
@@ -365,6 +408,32 @@ impl AnyBox {
         match self {
             AnyBox::HList(p) => p.idx(),
             AnyBox::VList(p) => p.idx(),
+        }
+    }
+
+    /// The box's address as a nullable [`MemPtr`] — for link stores and
+    /// pointer-identity comparisons.
+    #[inline]
+    pub fn ptr(self) -> MemPtr {
+        match self {
+            AnyBox::HList(p) => p.ptr(),
+            AnyBox::VList(p) => p.ptr(),
+        }
+    }
+
+    #[inline]
+    pub fn sync_tag(self, mem: &MemState) -> i32 {
+        match self {
+            AnyBox::HList(p) => p.sync_tag(mem),
+            AnyBox::VList(p) => p.sync_tag(mem),
+        }
+    }
+
+    #[inline]
+    pub fn sync_line(self, mem: &MemState) -> i32 {
+        match self {
+            AnyBox::HList(p) => p.sync_line(mem),
+            AnyBox::VList(p) => p.sync_line(mem),
         }
     }
 
@@ -2723,6 +2792,37 @@ mod tests {
     fn nodeptr_is_zero_cost() {
         assert_eq!(size_of::<NodePtr<HListNode>>(), size_of::<i32>());
         assert_eq!(size_of::<NodePtr<VListNode>>(), size_of::<i32>());
+    }
+
+    #[test]
+    fn sync_trailer_reads_the_last_word_of_each_family() {
+        let mut mem = fresh_mem(200);
+        let p = MemIdx::new(100);
+
+        // The trailer is the node's LAST word (size − SYNCTEX_FIELD_SIZE(=1)),
+        // which is what `get_node` stamps at allocation.
+        assert_eq!(<HListNode as HasSyncFields>::SYNC_OFFSET, BOX_NODE_SIZE - 1);
+        assert_eq!(<VListNode as HasSyncFields>::SYNC_OFFSET, BOX_NODE_SIZE - 1);
+        assert_eq!(<RuleNode as HasSyncFields>::SYNC_OFFSET, RULE_NODE_SIZE - 1);
+        assert_eq!(<GlueNode as HasSyncFields>::SYNC_OFFSET, MEDIUM_NODE_SIZE - 1);
+        assert_eq!(<KernNode as HasSyncFields>::SYNC_OFFSET, MEDIUM_NODE_SIZE - 1);
+        assert_eq!(<MathNode as HasSyncFields>::SYNC_OFFSET, MEDIUM_NODE_SIZE - 1);
+
+        mem.set_b16s1(p.0, NodeType::HList.as_raw());
+        let b = unsafe { NodePtr::<HListNode>::from_idx_unchecked(p) };
+        mem.set_b32s0(p.0 + BOX_NODE_SIZE - 1, 42); // tag
+        mem.set_b32s1(p.0 + BOX_NODE_SIZE - 1, 7); // line
+        assert_eq!(b.sync_tag(&mem), 42);
+        assert_eq!(b.sync_line(&mem), 7);
+        assert_eq!(AnyBox::HList(b).sync_tag(&mem), 42);
+        assert_eq!(AnyBox::HList(b).sync_line(&mem), 7);
+
+        mem.set_b16s1(p.0, NodeType::Kern.as_raw());
+        let k = unsafe { NodePtr::<KernNode>::from_idx_unchecked(p) };
+        mem.set_b32s0(p.0 + MEDIUM_NODE_SIZE - 1, 9);
+        mem.set_b32s1(p.0 + MEDIUM_NODE_SIZE - 1, 3);
+        assert_eq!(k.sync_tag(&mem), 9);
+        assert_eq!(k.sync_line(&mem), 3);
     }
 
     #[test]
