@@ -213,8 +213,7 @@ pub(crate) unsafe fn maketexstring_in(
     strings: &mut crate::state::StringsState,
     s: *const libc::c_char,
 ) -> Result<i32, MakeTexStringAbort> {
-    // EMPTY_STRING = TOO_BIG_CHAR + 1 (xetex-stringpool.h:12)
-    const EMPTY_STRING: i32 = 65537;
+    use crate::consts::EMPTY_STRING;
 
     if s.is_null() || *s == 0 {
         return Ok(EMPTY_STRING);

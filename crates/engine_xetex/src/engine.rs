@@ -25,7 +25,7 @@ const HASH_PRIME: i32 = 557_111;
 const HASH_SIZE: i32 = 2_242_711;
 const HASH_BASE: i32 = 1_114_114;
 const HASH_TOP_UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
-const EMPTY_STRING: i32 = 65_536;
+use crate::consts::EMPTY_STRING;
 const INT_PAR_TIME: i32 = 20;
 const NORMAL: i32 = 0;
 

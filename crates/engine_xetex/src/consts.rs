@@ -3,6 +3,10 @@
 pub const BIGGEST_CHAR: i32 = 0xFFFF;
 pub const NUMBER_USVS: i32 = 0x10_FFFF + 1; // 1,114,112
 pub const TOO_BIG_CHAR: i32 = 65_536;
+/// The empty string's `str_number` (xetex-stringpool.h:12). NOT `TOO_BIG_CHAR`
+/// itself: pool string 65536 is the "this marks the start of the stringpool"
+/// marker; the empty string is the one after it.
+pub const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
 
 pub const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
 pub const MAX_HALFWORD: i32 = 0x3FFF_FFFF;

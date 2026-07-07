@@ -9,7 +9,7 @@ use crate::consts::TOO_BIG_CHAR;
 use crate::scan::NodeRecycleAbort;
 use crate::state::StringsState;
 
-const EMPTY_STRING: i32 = 65537;
+use crate::consts::EMPTY_STRING;
 
 // ---------------------------------------------------------------------------
 // length

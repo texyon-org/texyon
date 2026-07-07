@@ -1190,7 +1190,7 @@ const INT_PAR_XETEX_USE_GLYPH_METRICS_NC: i32 = 72;
 const LIST_TAG_RFI: u16 = 2;
 const NON_ADDRESS_RFI: i32 = 0;
 const TTBC_FILE_FORMAT_TFM: libc::c_int = 3;
-const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
+use crate::consts::EMPTY_STRING;
 
 // Shared consts duplicated from scan.rs (still used there too).
 const AAT_FONT_FLAG: i32 = 0xFFFF;

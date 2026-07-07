@@ -17,7 +17,7 @@ use crate::input::InputAbort;
 /// On Linux x86_64 the C layout is:
 
 // Consts used by the file-naming / start_input / close_files group.
-const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
+use crate::consts::EMPTY_STRING;
 const INT_PAR_NEW_LINE_CHAR_CFT: i32 = 49;
 const INT_PAR_TRACING_STACK_LEVELS: i32 = 55;
 const TTBC_FILE_FORMAT_TECTONIC_PRIMARY_SI: i32 = 59;

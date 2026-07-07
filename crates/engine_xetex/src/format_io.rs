@@ -38,7 +38,7 @@ extern "C" {
 const PAGE_HEAD: i32 = MEM_TOP - 2;
 const PRE_ADJUST_HEAD: i32 = MEM_TOP - 14;
 const HI_MEM_STAT_USAGE: i32 = 15;
-const EMPTY_STRING: i32 = 65_536;
+use crate::consts::EMPTY_STRING;
 const INT_PAR_TRACING_STATS: i32 = 31;
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
