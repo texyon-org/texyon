@@ -39,11 +39,9 @@ use crate::output::print_nl_cstr_in;
 use crate::node::{GlueSpecNode, NodePtr, RuleDimen};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
+use crate::bridge::{diag_append_str, ttstub_output_flush};
+
 extern "C" {
-
-    fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
-
-    fn ttstub_output_flush(handle: usize) -> libc::c_int;
 
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
@@ -266,7 +264,7 @@ pub(crate) fn scan_xetex_math_char_int_in(
     if mc == ACTIVE_MATH_CHAR as u32 {
         if st.scanner.cur_val != ACTIVE_MATH_CHAR {
             let errmsg = error_here_with_diagnostic_in(st, c"Bad active XeTeX math code".as_ptr());
-            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
+            unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
             capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 2;
             st.errors.help_line[1] =
@@ -277,7 +275,7 @@ pub(crate) fn scan_xetex_math_char_int_in(
         }
     } else if mc > BIGGEST_USV as u32 {
         let errmsg = error_here_with_diagnostic_in(st, c"Bad XeTeX math character code".as_ptr());
-        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
+        unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
         capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 2;
         st.errors.help_line[1] =
@@ -293,7 +291,7 @@ pub(crate) fn scan_delimiter_int_in(st: &mut crate::state::EngineState) -> Resul
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > 0x7FF_FFFF {
         let errmsg = error_here_with_diagnostic_in(st, c"Bad delimiter code".as_ptr());
-        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
+        unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
         capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 2;
         st.errors.help_line[1] =
@@ -2301,7 +2299,7 @@ fn leaf_int_range_error(
     help1: *const libc::c_char,
 ) -> Result<(), SccAbort> {
     let errmsg = error_here_with_diagnostic_in(st, err_msg);
-    unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
+    unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     st.errors.help_ptr = 2;
     st.errors.help_line[1] = help1;
@@ -3842,7 +3840,7 @@ pub(crate) fn scan_something_internal_in(
                             c"Extended mathchar used as mathchar".as_ptr(),
                         );
                         unsafe {
-                            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val1)
+                            diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val1))
                         };
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
                         st.errors.help_ptr = 2;

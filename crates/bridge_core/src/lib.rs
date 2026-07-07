@@ -65,6 +65,18 @@ impl InputId {
     fn idx(self) -> usize {
         self.0.get() - 1
     }
+
+    /// Reconstitute an ID from the raw `usize` handle representation used
+    /// across the engine C ABI (`rust_input_handle_t`; 0 means "no handle").
+    pub fn from_raw(raw: usize) -> Option<Self> {
+        NonZeroUsize::new(raw).map(InputId)
+    }
+
+    /// The raw `usize` handle representation of an optional ID (0 means "no
+    /// handle") — the inverse of [`InputId::from_raw`].
+    pub fn to_raw(id: Option<Self>) -> usize {
+        id.map_or(0, |i| i.0.get())
+    }
 }
 
 /// The ID of an OutputHandle, used for Rust core state
@@ -79,6 +91,18 @@ impl OutputId {
 
     fn idx(self) -> usize {
         self.0.get() - 1
+    }
+
+    /// Reconstitute an ID from the raw `usize` handle representation used
+    /// across the engine C ABI (`rust_output_handle_t`; 0 means "no handle").
+    pub fn from_raw(raw: usize) -> Option<Self> {
+        NonZeroUsize::new(raw).map(OutputId)
+    }
+
+    /// The raw `usize` handle representation of an optional ID (0 means "no
+    /// handle") — the inverse of [`OutputId::from_raw`].
+    pub fn to_raw(id: Option<Self>) -> usize {
+        id.map_or(0, |i| i.0.get())
     }
 }
 

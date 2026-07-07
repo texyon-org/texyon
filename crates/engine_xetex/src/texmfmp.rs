@@ -1,24 +1,9 @@
 //! Miscellaneous C-callable helpers from xetex-texmfmp.c.
 
-// ---------------------------------------------------------------------------
-// C externs needed by this module
-// ---------------------------------------------------------------------------
-
-extern "C" {
-    fn ttstub_get_file_md5(path: *const libc::c_char, digest: *mut u8) -> libc::c_int;
-    fn ttbc_get_data_md5(data: *const u8, len: libc::size_t, digest: *mut u8) -> libc::c_int;
-    // Bridge I/O functions (tectonic_bridge_core.h).
-    // rust_input_handle_t = uintptr_t = usize; INVALID_HANDLE = 0.
-    fn ttstub_input_open(
-        path: *const libc::c_char,
-        format: libc::c_int,
-        is_gz: libc::c_int,
-    ) -> usize;
-    fn ttstub_input_get_size(handle: usize) -> libc::size_t;
-    fn ttstub_input_get_mtime(handle: usize) -> libc::time_t;
-    fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
-}
-
+use crate::bridge::{
+    ttstub_get_file_md5, ttstub_input_get_mtime, ttstub_input_get_size, ttstub_input_open,
+    ttstub_input_read,
+};
 use crate::mem::{xmalloc};
 use crate::consts::INVALID_HANDLE;
 
@@ -282,7 +267,7 @@ pub(crate) unsafe fn getmd5sum_in(strings: &mut crate::state::StringsState, s: i
         ttstub_get_file_md5(xname, digest.as_mut_ptr())
     } else {
         let len = libc::strlen(xname);
-        ttbc_get_data_md5(xname as *const u8, len, digest.as_mut_ptr())
+        tectonic_bridge_core::ttbc_get_data_md5(xname as *const u8, len, digest.as_mut_ptr())
     };
 
     libc::free(xname as *mut libc::c_void);

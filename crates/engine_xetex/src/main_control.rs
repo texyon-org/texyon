@@ -23,8 +23,9 @@ use crate::node::{AnyNode, GlueSpecNode, NodePtr};
 use crate::scan::{set_class_fn, set_family_fn};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
+use crate::bridge::diag_append_str;
+
 extern "C" {
-    fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
     fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
 }
 
@@ -2892,7 +2893,7 @@ pub(crate) fn alter_aux_in(st: &mut crate::state::EngineState) -> Result<(), Mai
         if st.scanner.cur_val <= 0 || st.scanner.cur_val > 32767 {
             let errmsg =
                 crate::output::error_here_with_diagnostic_in(st, c"Bad space factor".as_ptr());
-            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
+            unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 1;
             st.errors.help_line[0] = c"I allow only values in the range 1..32767 here.".as_ptr();
@@ -2915,7 +2916,7 @@ pub(crate) fn alter_prev_graf_in(
     crate::scan::scan_int_in(st)?;
     if st.scanner.cur_val < 0 {
         let errmsg = crate::output::error_here_with_diagnostic_in(st, c"Bad ".as_ptr());
-        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
+        unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
         crate::output::print_esc_cstr_in(st, c"prevgraf".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 1;
@@ -2945,7 +2946,7 @@ pub(crate) fn alter_integer_in(st: &mut crate::state::EngineState) -> Result<(),
         if crate::state::InteractionMode::from_raw(st.scanner.cur_val).is_none() {
             let errmsg =
                 crate::output::error_here_with_diagnostic_in(st, c"Bad interaction mode".as_ptr());
-            unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
+            unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 2;
             st.errors.help_line[1] = c"Modes are 0=batch, 1=nonstop, 2=scroll, and".as_ptr();
@@ -3551,7 +3552,7 @@ pub(crate) unsafe fn new_font_in(
                 st,
                 c"Illegal magnification has been changed to 1000".as_ptr(),
             );
-            ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), sv);
+            diag_append_str(errmsg, &format!(" ({})", sv));
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help_ptr = 1;
             st.errors.help_line[0] =

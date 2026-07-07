@@ -1,4 +1,7 @@
 // translated from xetex-ext.c
+use crate::bridge::{
+    diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read,
+};
 use crate::mem::{xcalloc, xmalloc, xrealloc};
 use crate::state::EngineState;
 
@@ -60,11 +63,7 @@ const FONT_FLAGS_COLORED: i32 = 0x01;
 static mut SAVED_MAPPING_NAME: *mut c_char = ptr::null_mut();
 
 extern "C" {
-    fn ttstub_diag_printf(d: *mut std::ffi::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
     fn xstrdup(s: *const c_char) -> *mut c_char;
-    fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
-    fn ttstub_input_get_size(handle: usize) -> libc::size_t;
-    fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
     fn TECkit_CreateConverter(
         mapping: *const u8,
         mapping_size: u32,
@@ -2790,7 +2789,7 @@ pub(crate) fn do_extension_in(
                     if st.scanner.cur_val < 0 || st.scanner.cur_val > 65535 {
                         let errmsg =
                             error_here_with_diagnostic_in(st, c"Bad glyph number".as_ptr());
-                        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), st.scanner.cur_val) };
+                        unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
                         st.errors.help_ptr = 2;
                         st.errors.help_line[1] =

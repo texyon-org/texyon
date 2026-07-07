@@ -3,15 +3,10 @@ use crate::consts::{
     EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, TEX_NULL,
     UNDEFINED_CONTROL_SEQUENCE,
 };
+use crate::bridge::diag_append_str;
 use crate::state::{EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 
 use crate::mem_types::MemoryWord;
-
-extern "C" {
-
-    fn ttstub_diag_printf(d: *mut libc::c_void, fmt: *const libc::c_char, ...) -> libc::c_int;
-
-}
 
 // Save-stack discriminant values (xetex-constants.h:260–285).
 const RESTORE_OLD_VALUE: u16 = 0;
@@ -208,7 +203,7 @@ pub(crate) fn prepare_mag_in(st: &mut crate::state::EngineState) -> crate::error
         crate::output::print_int_in(st, mag);
         crate::output::print_cstr_in(st, c");".as_ptr());
         crate::output::print_nl_cstr_in(st, c" the previous value will be retained".as_ptr());
-        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag_set) };
+        unsafe { diag_append_str(errmsg, &format!(" ({})", mag_set)) };
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 2;
         st.errors.help_line[1] =
@@ -227,7 +222,7 @@ pub(crate) fn prepare_mag_in(st: &mut crate::state::EngineState) -> crate::error
             st,
             c"Illegal magnification has been changed to 1000".as_ptr(),
         );
-        unsafe { ttstub_diag_printf(errmsg, c" (%d)".as_ptr(), mag2) };
+        unsafe { diag_append_str(errmsg, &format!(" ({})", mag2)) };
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 1;
         st.errors.help_line[0] = c"The magnification ratio must be between 1 and 32768.".as_ptr();

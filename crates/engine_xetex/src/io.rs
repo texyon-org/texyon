@@ -75,63 +75,15 @@ const INT_PAR_XETEX_DEFAULT_INPUT_MODE: i32 = 75;
 const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING: i32 = 76;
 
 
-// ---------------------------------------------------------------------------
-// Non-longjmp input seek
-// ---------------------------------------------------------------------------
-//
-// The C `ttstub_input_seek`/`ttstub_input_close` wrappers `longjmp` to the engine
-// setjmp on a serious internal I/O error. Call the exported `ttbc_*` functions
-// directly — they return the error as a value and never jump. `es` is the global
-// `CoreBridgeState` the C wrappers use, obtained from `_ttbc_get_core_state()`
-// (both non-header exports from `bridge_core/support`).
-
-extern "C" {
-    fn _ttbc_get_core_state() -> *mut libc::c_void;
-    fn ttbc_input_seek(
-        es: *mut libc::c_void,
-        handle: usize,
-        offset: libc::ssize_t,
-        whence: libc::c_int,
-        internal_error: *mut libc::c_int,
-    ) -> libc::size_t;
-    fn ttbc_input_close(es: *mut libc::c_void, handle: usize) -> libc::c_int;
-}
-
-/// Non-longjmp replacement for the C `ttstub_input_seek` wrapper. Every engine call
-/// site rewinds with `SEEK_SET`, and `ttbc_input_seek` sets `internal_error` only
-/// for an invalid `whence`, so the seek longjmp is unreachable here: this returns
-/// the new position like the C wrapper and asserts `internal_error == 0`.
-pub(crate) unsafe fn input_seek(
-    handle: usize,
-    offset: libc::ssize_t,
-    whence: libc::c_int,
-) -> libc::size_t {
-    let mut internal_error: libc::c_int = 0;
-    let rv = ttbc_input_seek(
-        _ttbc_get_core_state(),
-        handle,
-        offset,
-        whence,
-        &mut internal_error,
-    );
-    debug_assert_eq!(
-        internal_error, 0,
-        "ttbc_input_seek flags internal_error only for an invalid whence"
-    );
-    rv
-}
-
-/// Non-longjmp replacement for the C `ttstub_input_close` wrapper. Returns `true`
-/// on the serious internal close error the C wrapper `longjmp`'d on
-/// (`ttbc_input_close != 0`, i.e. `input_close`'s `scan_remainder` failed); a
-/// `Result`-path caller propagates it as `EngineAbort::TtAbort`. The
-/// old bare `longjmp` ran no cleanup and left the surfaced message undefined, so
-/// `TtAbort` (no cleanup, sets a descriptive message, history 3) is control-flow
-/// equivalent with a strictly-better message on this rare path.
-#[must_use]
-pub(crate) unsafe fn input_close(handle: usize) -> bool {
-    ttbc_input_close(_ttbc_get_core_state(), handle) != 0
-}
+// Bridge I/O: direct Rust calls into tectonic_bridge_core (crate::bridge),
+// keeping the C shim names. `input_seek`/`input_close` are the non-longjmp
+// seek/close replacements, re-exported here for their cross-module callers.
+pub(crate) use crate::bridge::{input_close, input_seek};
+use crate::bridge::{
+    ttstub_get_last_input_abspath, ttstub_input_getc, ttstub_input_open,
+    ttstub_input_open_primary, ttstub_input_ungetc, ttstub_output_close, ttstub_output_flush,
+    ttstub_output_open, ttstub_output_putc,
+};
 
 // ---------------------------------------------------------------------------
 // C externs needed by translated functions
@@ -139,21 +91,6 @@ pub(crate) unsafe fn input_close(handle: usize) -> bool {
 
 extern "C" {
     fn xstrdup(s: *const libc::c_char) -> *mut libc::c_char;
-
-    fn ttstub_input_open(
-        path: *const libc::c_char,
-        format: libc::c_int,
-        is_gz: libc::c_int,
-    ) -> usize;
-    fn ttstub_input_open_primary() -> usize;
-    fn ttstub_get_last_input_abspath(buffer: *mut libc::c_char, len: libc::size_t)
-        -> libc::ssize_t;
-    fn ttstub_input_getc(handle: usize) -> libc::c_int;
-    fn ttstub_input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int;
-    fn ttstub_output_open(path: *const libc::c_char, gzip: libc::c_int) -> usize;
-    fn ttstub_output_flush(handle: usize) -> libc::c_int;
-    fn ttstub_output_close(handle: usize) -> libc::c_int;
-    fn ttstub_output_putc(handle: usize, c: i32) -> i32;
 
     // TECkit functions (C++ engine with C API — extern "C" ABI).
     // TECkit_Status is `long` = i64 on Linux 64-bit; TECkit_Converter is opaque ptr (*mut c_void).

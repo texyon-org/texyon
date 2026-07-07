@@ -44,8 +44,8 @@ extern "C" {
 }
 
 // Raw lifecycle state used by tt_run_engine.
+use crate::bridge::ttstub_output_open_stdout;
 extern "C" {
-    fn ttstub_output_open_stdout() -> usize;
     fn pdf_files_init();
 }
 
@@ -922,10 +922,22 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
 ///
 /// [`catch_unwind`]: std::panic::catch_unwind
 pub unsafe extern "C" fn tt_run_engine(
+    api: *mut libc::c_void,
     dump_name: *const libc::c_char,
     input_file_name: *const libc::c_char,
     build_date: libc::time_t,
 ) -> i32 {
+    // Install the bridge-state locator for the run; cleared on every exit
+    // path (including panics) so it can't dangle between runs.
+    crate::bridge::set_bridge_state(api);
+    struct BridgeGuard;
+    impl Drop for BridgeGuard {
+        fn drop(&mut self) {
+            unsafe { crate::bridge::set_bridge_state(std::ptr::null_mut()) };
+        }
+    }
+    let _bridge_guard = BridgeGuard;
+
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         tt_run_engine_inner(dump_name, input_file_name, build_date)
     }));

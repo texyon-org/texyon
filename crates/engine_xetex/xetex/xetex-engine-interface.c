@@ -44,7 +44,7 @@ tt_engine_xetex_main(
 
     /* See ttstub_input_get_mtime() in tectonic_bridge_core about bridging time_t
     * over FFI. */
-    rv = tt_run_engine(dump_name, input_file_name, (time_t) build_date);
+    rv = tt_run_engine(api, dump_name, input_file_name, (time_t) build_date);
     ttbc_global_engine_exit();
     return rv;
 }

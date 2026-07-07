@@ -1191,7 +1191,7 @@ cur_length(void) {
 
 /* Tectonic related functions */
 void tt_cleanup(void);
-tt_history_t tt_run_engine(const char *dump_name, const char *input_file_name, time_t build_date);
+tt_history_t tt_run_engine(ttbc_state_t *api, const char *dump_name, const char *input_file_name, time_t build_date);
 
 void tt_insert_special(const char *ascii_text);
 

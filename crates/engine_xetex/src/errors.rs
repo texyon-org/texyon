@@ -1,5 +1,6 @@
 //! Error-handling functions translated from `xetex/xetex-errors.c`.
 
+use crate::bridge::ttstub_output_flush;
 use crate::state::GroupCode;
 use crate::consts::{
     BOX_BASE, HISTORY_FATAL_ERROR, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
@@ -25,7 +26,6 @@ const HISTORY_ERROR_ISSUED: i32 = 2;
 
 extern "C" {
 
-    fn ttstub_output_flush(handle: usize) -> libc::c_int;
     /// Set the bridge's abort message without longjmp-ing, so the host's
     /// `EngineAbortedError` surfaces the same string a `_tt_abort` would have
     /// (the fatal return path bypasses `_tt_abort`).

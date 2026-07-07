@@ -13,19 +13,10 @@ use crate::ext::apply_tfm_font_mapping;
 use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
-
-extern "C" {
-    fn ttstub_output_write(
-        handle: usize,
-        data: *const libc::c_char,
-        len: libc::size_t,
-    ) -> libc::size_t;
-    fn ttstub_output_close(handle: usize) -> libc::c_int;
-    fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize;
-    fn ttstub_output_flush(handle: usize) -> libc::c_int;
-    fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t);
-}
-
+use crate::bridge::{
+    ttstub_output_close, ttstub_output_flush, ttstub_output_open, ttstub_output_write,
+    ttstub_shell_escape,
+};
 use crate::engine::OUTPUT_FILE_EXTENSION;
 
 // xetex-shipout.c:11–12

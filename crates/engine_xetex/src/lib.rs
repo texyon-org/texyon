@@ -25,6 +25,7 @@ use tectonic_errors::prelude::*;
 
 // Internal modules holding the growing Rust translation of the XeTeX
 // engine.
+mod bridge;
 mod consts;
 mod engine;
 mod engine_interface;

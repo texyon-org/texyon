@@ -11,22 +11,10 @@ use crate::engine::{sort_avail_in, TRE_MAX_STRINGS, TRE_POOL_SIZE};
 use crate::state::InteractionMode;
 use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 
-extern "C" {
-    fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize;
-    fn ttstub_output_write(
-        handle: usize,
-        data: *const libc::c_char,
-        len: libc::size_t,
-    ) -> libc::size_t;
-    fn ttstub_output_close(handle: usize) -> libc::c_int;
-    fn ttstub_output_flush(handle: usize) -> libc::c_int;
-    fn ttstub_input_open(
-        path: *const libc::c_char,
-        format: libc::c_int,
-        is_gz: libc::c_int,
-    ) -> usize;
-    fn ttstub_input_read(handle: usize, data: *mut u8, len: libc::size_t) -> libc::ssize_t;
-}
+use crate::bridge::{
+    ttstub_input_open, ttstub_input_read, ttstub_output_close, ttstub_output_flush,
+    ttstub_output_open, ttstub_output_write,
+};
 
 use crate::engine::{POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
 

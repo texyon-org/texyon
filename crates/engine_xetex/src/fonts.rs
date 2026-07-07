@@ -18,8 +18,9 @@ use crate::scan::cnl_get_node;
 use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, FontState};
 
+use crate::bridge::ttstub_input_getc;
+
 extern "C" {
-    fn ttstub_input_getc(handle: usize) -> libc::c_int;
     fn get_loaded_font_design_size() -> i32;
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
     fn get_ot_math_constant(f: i32, n: i32) -> i32;

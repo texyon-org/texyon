@@ -5,7 +5,7 @@ use crate::consts::{INT_BASE, INVALID_HANDLE};
 use crate::mem::xrealloc;
 use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
 use crate::units::{MemIdx, MemPtr};
-use libc::{c_char, c_int, size_t};
+use libc::c_char;
 use std::ptr;
 
 
@@ -14,13 +14,12 @@ const INT_PAR_SYNCTEX: i32 = 81;
 
 const SYNCTEX_VERSION: i32 = 1;
 
-extern "C" {
-    fn ttstub_output_open(path: *const c_char, is_gz: c_int) -> usize;
-    fn ttstub_output_write(handle: usize, data: *const c_char, len: size_t) -> size_t;
-    fn ttstub_output_close(handle: usize) -> c_int;
-    fn ttstub_issue_warning(fmt: *const c_char, ...);
-    fn ttstub_issue_error(fmt: *const c_char, ...);
+use crate::bridge::{
+    issue_error_cstr, issue_warning_cstr, ttstub_output_close, ttstub_output_open,
+    ttstub_output_write,
+};
 
+extern "C" {
     fn xstrdup(s: *const c_char) -> *mut c_char;
 }
 
@@ -606,7 +605,7 @@ pub unsafe fn synctex_sheet(st: &mut crate::state::EngineState, mag: i32, tmp: *
         libc::free(tmp as *mut libc::c_void);
         if intpar_synctex(&st.eqtb) != 0 && !st.synctex.flags.warn {
             st.synctex.flags.warn = true;
-            ttstub_issue_warning(
+            issue_warning_cstr(
                 c"SyncTeX was disabled -- changing the value of \\synctex has no effect".as_ptr(),
             );
         }
@@ -775,7 +774,7 @@ pub unsafe fn synctex_horizontal_rule_or_glue(st: &mut crate::state::EngineState
         }
         _ => {
             let s = format!("unknown node type {} in SyncTeX\0", st.mem.b16s1(p.0));
-            ttstub_issue_error(s.as_ptr() as *const c_char);
+            issue_error_cstr(s.as_ptr() as *const c_char);
             return;
         }
     }

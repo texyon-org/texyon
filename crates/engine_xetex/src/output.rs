@@ -56,22 +56,12 @@ const INT_PAR_TRACING_NESTING: i32 = 60;
 // FI_OR_ELSE command code (xetex_format.h:350).
 // INT_PAR__tracing_ifs (xetex_format.h:93).
 
-// C functions not yet translated — still live in xetex-output.c or bridge.
-extern "C" {
-    // tectonic_bridge_core output helpers.
-    fn ttstub_output_putc(handle: usize, c: i32) -> i32;
-    fn ttbc_diag_append(diag: *mut std::ffi::c_void, text: *const libc::c_char);
-    fn ttstub_diag_finish(diag: *mut std::ffi::c_void);
-    fn ttbc_diag_begin_warning() -> *mut std::ffi::c_void;
-    fn ttbc_diag_begin_error() -> *mut std::ffi::c_void;
-    fn ttstub_diag_printf(diag: *mut std::ffi::c_void, fmt: *const libc::c_char, ...)
-        -> libc::c_int;
-    fn ttstub_issue_warning(fmt: *const libc::c_char, ...);
-    fn ttstub_output_flush(handle: usize) -> libc::c_int;
-
-    // Still in C — complex context display.
-
-}
+// Bridge output/diagnostic helpers: direct Rust calls (crate::bridge).
+use crate::bridge::{
+    diag_append_cstr, diag_append_str, issue_warning_cstr, issue_warning_str,
+    ttbc_diag_begin_error_ptr, ttbc_diag_begin_warning_ptr, ttstub_diag_finish,
+    ttstub_output_flush, ttstub_output_putc,
+};
 
 // ---------------------------------------------------------------------------
 // print_the_digs (static helper — not exported; all C callers translated here)
@@ -311,7 +301,7 @@ pub(crate) fn warn_char_in(st: &mut EngineState, c: i32) {
     let diag = st.shipout.current_diagnostic;
     if !diag.is_null() {
         let bytes: [u8; 2] = [c as u8, 0];
-        unsafe { ttbc_diag_append(diag, bytes.as_ptr() as *const libc::c_char) };
+        unsafe { diag_append_cstr(diag, bytes.as_ptr() as *const libc::c_char) };
     }
 }
 
@@ -587,7 +577,7 @@ pub(crate) fn diagnostic_print_file_line_in(
         level -= 1;
     }
     if level == 0 {
-        unsafe { ttbc_diag_append(diagnostic, c"!".as_ptr()) };
+        unsafe { diag_append_cstr(diagnostic, c"!".as_ptr()) };
     } else {
         let source_line = if level != st.input.in_open {
             st.input.line_stack[(level + 1) as usize]
@@ -601,7 +591,8 @@ pub(crate) fn diagnostic_print_file_line_in(
             )
         };
         unsafe {
-            ttstub_diag_printf(diagnostic, c"%s:%d: ".as_ptr(), filename, source_line);
+            let name = std::ffi::CStr::from_ptr(filename).to_string_lossy();
+            diag_append_str(diagnostic, &format!("{name}:{source_line}: "));
             libc::free(filename as *mut std::ffi::c_void);
         }
     }
@@ -614,7 +605,7 @@ pub(crate) fn diagnostic_print_file_line_in(
 pub(crate) fn diagnostic_begin_capture_warning_here_in(
     st: &mut EngineState,
 ) -> *mut std::ffi::c_void {
-    let warning = unsafe { ttbc_diag_begin_warning() };
+    let warning = ttbc_diag_begin_warning_ptr();
     diagnostic_print_file_line_in(st, warning);
     capture_to_diagnostic_in(st, warning);
     warning
@@ -628,9 +619,9 @@ pub(crate) fn error_here_with_diagnostic_in(
     st: &mut EngineState,
     message: *const libc::c_char,
 ) -> *mut std::ffi::c_void {
-    let error = unsafe { ttbc_diag_begin_error() };
+    let error = ttbc_diag_begin_error_ptr();
     diagnostic_print_file_line_in(st, error);
-    unsafe { ttstub_diag_printf(error, c"%s".as_ptr(), message) };
+    unsafe { diag_append_cstr(error, message) };
 
     if st.config.file_line_error_style_p != 0 {
         print_file_line_in(st);
@@ -3677,22 +3668,22 @@ pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutc
     st.strings.str_ptr -= 1;
     st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
     unsafe {
-        ttstub_issue_warning(
-            c"could not represent character \"%s\" (0x%x) in font \"%s\"".as_ptr(),
-            chr_c,
+        issue_warning_str(&format!(
+            "could not represent character \"{}\" (0x{:x}) in font \"{}\"",
+            std::ffi::CStr::from_ptr(chr_c).to_string_lossy(),
             c as u32,
-            font_name_c,
-        );
+            std::ffi::CStr::from_ptr(font_name_c).to_string_lossy(),
+        ));
         libc::free(font_name_c as *mut libc::c_void);
         libc::free(chr_c as *mut libc::c_void);
     }
     if !st.fonts.gave_char_warning_help {
         unsafe {
-            ttstub_issue_warning(
+            issue_warning_cstr(
                 c"  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to"
                     .as_ptr(),
             );
-            ttstub_issue_warning(
+            issue_warning_cstr(
                 c"  choose a different font that covers the unrepresentable character(s)".as_ptr(),
             );
         }

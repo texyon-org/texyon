@@ -15,6 +15,7 @@ pub struct PdfFile {
 }
 
 // dpx layout types — must match C struct layout exactly (dpx-pdfdev.h)
+use crate::bridge::ttstub_input_open;
 use crate::ext::D2Fix;
 use crate::ext::Fix2D;
 use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
@@ -114,8 +115,6 @@ extern "C" {
     fn max4(v1: c_double, v2: c_double, v3: c_double, v4: c_double) -> c_double;
     // xetex-ext.c conversion helpers (still in C)
 
-    // bridge I/O
-    fn ttstub_input_open(path: *const c_char, format: c_int, mag: c_int) -> usize;
     // C string utilities
     fn xstrdup(s: *const c_char) -> *mut c_char;
 }
