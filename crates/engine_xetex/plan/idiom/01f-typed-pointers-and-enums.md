@@ -259,3 +259,56 @@ Caller pattern: tail appends became `tail.set_link(&mut st.mem, p.ptr()); tail =
 reverse new_math) now propagate aborts. Gates: check 0/5-baseline, unit 80/80, TRIP 2/2,
 tex-outputs 29, corpus 637/2-known-FP (through commit `748306bc`; final state corpus-gated
 in-session).
+
+## Status after session 254 (S5 + synctex cluster DONE)
+
+Recon: 3-agent parallel workflow (A=packer list param, B=synctex, C=state fields),
+site-exact inventories + trap audits; all three GO.
+
+- **S5 packer list param DONE.** `hpack_in`/`hpack_emit_in`/`vpackage_in`/
+  `vpackage_emit_in` take `list: MemPtr` (nullable/char-node heads are legal — never
+  AnyBox here). Internal `set_list_ptr(MemPtr::from_raw(list))` lies removed; the
+  self-advance scan cursors stay `let mut p = list.0` (documented floor). Feeder
+  returns typed in the same slice: `overbar`/`split_vlist_at_break`/`prune_page_top`
+  → `Result<MemPtr,_>`, `ReboxResult::Hpack(MemPtr)`, `PostLineHpack.q: MemPtr`.
+  New helper `MemState::link_ptr(p) -> MemPtr` (typed sibling of `b32s1`) covers the
+  13 pseudo-node head reads (ALIGN_HEAD/TEMP_HEAD/PAGE_HEAD/cur_list.head).
+  Boundary `from_raw` kept ONLY at: live-cursor traps (fin_align `q` :475,
+  make_accent `p`, after_math `u2` — raw locals reused after the call), the dual-use
+  `new_hlist`/nucleus reads (math), and clean_box's conditionally-boxed `q`.
+- **synctex cluster DONE** (the "b32-like accessors → typed methods" showcase):
+  `HasSyncFields` capability trait (assoc `SYNC_OFFSET`: box 7 / rule 4 / medium 2)
+  + `sync_tag`/`sync_line` on NodePtr + AnyBox delegates + `AnyBox::ptr()`; all 10
+  raw `mem.b32s0(p+SIZE-1)` helpers in synctex.rs deleted. Pub fns typed at the
+  shipout match-arms: `synctex_hlist/tsilv/tsilh/vlist(AnyBox)`,
+  `synctex_void_{h,v}list(NodePtr<K>)` (dead `_this_box` params dropped),
+  `synctex_math(NodePtr<MathNode>)`, `synctex_kern(NodePtr<KernNode>, AnyBox)`.
+  `SynctexCtxt.recorder` fn-pointer → `deferred_kern: Option<NodePtr<KernNode>>`
+  (kern is the only deferred record in this engine; invariant Some ⇒ == node).
+  `finish_hlist_rule`/`output_hlist_glue_in` take `this_box: AnyBox` (kills the
+  re-classify double-expect; glue_set read → accessor).
+  **CENTRAL TRAP (recon-caught): `output_hlist_glue_in` re-stamps its glue node to
+  KERN_NODE in place BEFORE its synctex call — `synctex_horizontal_rule_or_glue`
+  stays `MemPtr` + ONE internal classify (genuine polymorphic re-derive: runtime
+  input set is Rule|Glue|re-stamped Kern; caller handles would be stale).**
+  Extra gate: `.synctex.gz` byte-diff before/after (corpus does NOT cover synctex
+  output) — byte-identical.
+- Gates both slices: check 5-warn baseline, unit 81/81 (new trailer-offset test),
+  tex-outputs 29/29, TRIP 2/2, corpus 637-passed/2-known-FP.
+
+- **State-field flip DONE (same session):** `cur_mark[5]`/`disc_ptr[4]`/
+  `sa_root[8]`/`align_ptr`/`cur_span` (verified a real span-chain POINTER, not a
+  count) + `if_stack: Vec<MemPtr>`. All six families have genuine `= TEX_NULL`
+  sites ⇒ MemPtr, never NodePtr. sa_root is the one format-dumped field: dump
+  `val.0`, undump keeps the raw bounds check then `.0 = x` — repr(transparent),
+  format bytes unchanged (digest-verified; NOTE: tests/formats.rs plain_format
+  was ALREADY red before this session — stale golden 2b52cf6d vs ddc9c790, same
+  digest with and without the flip; not a session regression, left unblessed).
+  `do_marks(q: MemIdx)` + explicit `freed` bool replaces the C `q = TEX_NULL`
+  dance; recursion via checked `cur_ptr.as_idx()`. Raw scan cursors (fin_col
+  `sq`/`p`, pagebuilder contrib cursor) stay i32 per the cursor floor.
+
+Remaining known-deferred (recon C): `param_stack` (ripples into macro_call
+pstack), `hyph_list` (format-dumped + hyphenation coupling), cs/eqtb locations
+(`warning_index`/`par_loc`/`write_loc`), polymorphic token values
+(`cur_chr`/`cur_val`/`after_token`); `get_node_scc -> Result<MemPtr>` micro-slice.
