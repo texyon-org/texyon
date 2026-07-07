@@ -65,17 +65,31 @@ pub(crate) unsafe fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mu
 /// exhausted (the caller propagates the `main memory size` overflow).
 ///
 /// translated from xetex-xetex0.c:170 (get_avail)
-#[inline]
+///
+/// The avail-list pop is forced inline — C compilers splice it into
+/// `macro_call`'s argument loop (the C source hand-expands it as
+/// `fast_get_avail`) — while the arena-growth tail stays cold.
+#[inline(always)]
 pub fn get_avail(mem: &mut MemState) -> Option<MemPtr> {
     let p = mem.avail;
-
     if p != TEX_NULL {
         mem.avail = mem.b32s1(p);
-    } else if mem.mem_end < MEM_TOP {
+        mem.set_b32s1(p, TEX_NULL);
+        Some(MemPtr::from_raw(p))
+    } else {
+        get_avail_grow(mem)
+    }
+}
+
+/// The `avail == TEX_NULL` tail of [`get_avail`]: grow `mem_end` upward or
+/// `hi_mem_min` downward, or report arena exhaustion as `None`.
+#[cold]
+fn get_avail_grow(mem: &mut MemState) -> Option<MemPtr> {
+    if mem.mem_end < MEM_TOP {
         mem.mem_end += 1;
         let p = mem.mem_end;
         mem.set_b32s1(p, TEX_NULL);
-        return Some(MemPtr::from_raw(p));
+        Some(MemPtr::from_raw(p))
     } else {
         mem.hi_mem_min -= 1;
         let p = mem.hi_mem_min;
@@ -84,11 +98,8 @@ pub fn get_avail(mem: &mut MemState) -> Option<MemPtr> {
             return None;
         }
         mem.set_b32s1(p, TEX_NULL);
-        return Some(MemPtr::from_raw(p));
+        Some(MemPtr::from_raw(p))
     }
-
-    mem.set_b32s1(p, TEX_NULL);
-    Some(MemPtr::from_raw(p))
 }
 
 /// The `main memory size` overflow as an [`EngineAbort`] value: run `runaway()`

@@ -2219,6 +2219,9 @@ pub(crate) fn scc_err(o: crate::errors::ErrorOutcome) -> Result<(), SccAbort> {
 
 /// `get_next`, with its [`GetNextOutcome`] cold tails lifted into [`SccAbort`].
 /// Use as `get_next_scc(st)?;`.
+/// Inlined: as an out-of-line symbol this pure trampoline pays a call/ret plus
+/// a second multi-word outcome conversion on every token read.
+#[inline]
 pub(crate) fn get_next_scc(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     Result::from(get_next_in(st))
 }
@@ -2242,6 +2245,14 @@ pub(crate) fn get_node_scc(
 }
 
 /// `get_avail` with its exhaustion `None` lifted into [`SccAbort`].
+///
+/// `#[inline(always)]`: `Result<MemPtr, SccAbort>` is too wide for a register
+/// return, so an out-of-line call round-trips the `Ok` through a caller stack
+/// slot (sret) on every single-word token allocation — where C's `get_avail`
+/// returns its `int32_t` in a register (and the C original hand-expands
+/// `fast_get_avail` directly inside the hot token-copy loops). Inlining folds
+/// the `Ok`/`?` pair away on those paths.
+#[inline(always)]
 pub(crate) fn get_avail_scc(
     st: &mut crate::state::EngineState,
 ) -> Result<crate::units::MemPtr, SccAbort> {

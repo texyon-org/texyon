@@ -702,15 +702,30 @@ pub(crate) unsafe fn make_utf16_name_in(st: &mut crate::state::EngineState) {
 // get_uni_c
 // ---------------------------------------------------------------------------
 
+/// Sole abort from [`get_uni_c_in`]: the C `_tt_abort("internal error; file
+/// input mode is invalid")`. A dedicated fieldless error keeps the
+/// per-character `Result` a scalar pair returned in registers — carrying
+/// `InputAbort` (16-byte aggregate) forced an sret memory return on every
+/// character read, ~2x the C `get_uni_c` cost on this hot path.
+pub(crate) struct InvalidInputMode;
+
+impl From<InvalidInputMode> for InputAbort {
+    fn from(_: InvalidInputMode) -> Self {
+        InputAbort::TtAbort(c"internal error; file input mode is invalid".as_ptr())
+    }
+}
+
 /// Read one Unicode codepoint from a UFILE (handles UTF-8, UTF-16BE/LE, RAW).
 ///
 /// translated from xetex-io.c:373 (get_uni_c)
-// The impossible invalid-mode `_tt_abort` rides the `InputAbort` sentinel.
+// The impossible invalid-mode `_tt_abort` rides the `InvalidInputMode`
+// sentinel; the `?` at the `input_line_in` call sites converts it to
+// `InputAbort::TtAbort` with the C abort message.
 // Called only from `input_line_in`.
 pub(crate) unsafe fn get_uni_c_in(
     st: &mut crate::state::EngineState,
     f: *mut UFile,
-) -> Result<libc::c_int, InputAbort> {
+) -> Result<libc::c_int, InvalidInputMode> {
     if (*f).saved_char != -1 {
         let rval = (*f).saved_char as i32;
         (*f).saved_char = -1;
@@ -798,9 +813,7 @@ pub(crate) unsafe fn get_uni_c_in(
         }
 
         _ => {
-            return Err(InputAbort::TtAbort(
-                c"internal error; file input mode is invalid".as_ptr(),
-            ));
+            return Err(InvalidInputMode);
         }
     }
 

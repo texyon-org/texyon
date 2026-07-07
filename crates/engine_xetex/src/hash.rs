@@ -35,6 +35,17 @@ pub(crate) fn cur_length(strings: &StringsState) -> i32 {
     strings.pool_ptr - strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize]
 }
 
+/// Out-of-line residue reduction for `id_lookup`'s hash loop; the result is
+/// identical to repeatedly subtracting `HASH_PRIME` until `h < HASH_PRIME`.
+/// `#[cold]`/`#[inline(never)]` keep LLVM from speculating the modulo back
+/// onto the hot path (which would recreate the imul chain the peeling in
+/// `id_lookup` avoids).
+#[cold]
+#[inline(never)]
+fn hash_mod_rare(h: i32) -> i32 {
+    h % HASH_PRIME
+}
+
 // translated from xetex-xetex0.c:2713 (id_lookup)
 pub fn id_lookup(
     eqtb: &mut EqtbState,
@@ -46,8 +57,21 @@ pub fn id_lookup(
     let mut h: i32 = 0;
     for k in j..=(j + l - 1) {
         h = h + h + buffer[k as usize];
-        while h >= HASH_PRIME {
+        // Faithful to C's `while (h >= HASH_PRIME) h -= 8501;`, but with the
+        // (at most) two subtractions ASCII names ever need peeled by hand:
+        // written as a plain while loop, LLVM strength-reduces it into a
+        // hardware modulo (imul/shr/imul) on the loop-carried `h` dependency
+        // chain, ~3x slower here than gcc's predictable compare-and-subtract
+        // code. The residue call is only reachable for buffer values >= 8503
+        // (2*h + c >= 3*HASH_PRIME with h < HASH_PRIME), i.e. non-Latin text.
+        if h >= HASH_PRIME {
             h -= HASH_PRIME;
+            if h >= HASH_PRIME {
+                h -= HASH_PRIME;
+                if h >= HASH_PRIME {
+                    h = hash_mod_rare(h);
+                }
+            }
         }
     }
 
