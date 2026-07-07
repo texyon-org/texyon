@@ -301,9 +301,12 @@ site-exact inventories + trap audits; all three GO.
   count) + `if_stack: Vec<MemPtr>`. All six families have genuine `= TEX_NULL`
   sites ⇒ MemPtr, never NodePtr. sa_root is the one format-dumped field: dump
   `val.0`, undump keeps the raw bounds check then `.0 = x` — repr(transparent),
-  format bytes unchanged (digest-verified; NOTE: tests/formats.rs plain_format
-  was ALREADY red before this session — stale golden 2b52cf6d vs ddc9c790, same
-  digest with and without the flip; not a session regression, left unblessed).
+  format bytes unchanged (digest-verified; the pre-existing tests/formats.rs
+  plain_format failure turned out to be a REAL BUG, not a stale golden — an
+  EMPTY_STRING transcription error (65536 vs C's 65536+1; string 65536 is the
+  pool marker) put the marker string into nullfont's font_area, one byte in
+  9.3 MB. Fixed in-session (`669586b5`, consts.rs consolidation); plain_format
+  is green with the ORIGINAL upstream digest and belongs in the gate battery).
   `do_marks(q: MemIdx)` + explicit `freed` bool replaces the C `q = TEX_NULL`
   dance; recursion via checked `cur_ptr.as_idx()`. Raw scan cursors (fin_col
   `sq`/`p`, pagebuilder contrib cursor) stay i32 per the cursor floor.
