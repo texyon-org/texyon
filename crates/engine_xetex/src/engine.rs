@@ -1061,12 +1061,7 @@ unsafe fn tt_run_engine_inner(
             };
             nest_words
         ];
-        state.save_stack.data = vec![
-            crate::mem_types::MemoryWord {
-                b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
-            };
-            save_words
-        ];
+        state.save_stack.data = crate::mem_types::zeroed_vec(save_words);
         state.input.input_file = vec![std::ptr::null_mut(); input_file_words];
         state.input.input_stack = vec![
             crate::globals::InputState {
@@ -1097,12 +1092,7 @@ unsafe fn tt_run_engine_inner(
         let mem_words_init = (MEM_TOP as usize) + 2;
         {
             let s = &mut *st;
-            s.mem.data = vec![
-                crate::mem_types::MemoryWord {
-                    b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
-                };
-                mem_words_init
-            ];
+            s.mem.data = crate::mem_types::zeroed_vec(mem_words_init);
 
             s.eqtb.eqtb_top = EQTB_SIZE + s.eqtb.hash_extra;
             s.eqtb.hash_top = if s.eqtb.hash_extra == 0 {
@@ -1112,7 +1102,7 @@ unsafe fn tt_run_engine_inner(
             };
 
             let n = (1 + s.eqtb.hash_top - 514) as usize;
-            s.eqtb.hash = vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n];
+            s.eqtb.hash = crate::mem_types::zeroed_vec(n);
         }
 
         st.eqtb.hash[(HASH_BASE as usize) - 514].s0 = 0;
@@ -1129,17 +1119,14 @@ unsafe fn tt_run_engine_inner(
         st.eqtb.hash_used = h_top;
 
         let fms_initex = st.fonts.font_mem_size;
-        let zero_word_initex = crate::mem_types::MemoryWord {
-            b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
-        };
         // `xcalloc_array(n)` allocated `n + 1` zeroed words; match that.
         let eqtb_words_initex = (st.eqtb.eqtb_top as usize) + 1;
         {
             let state = &mut *st;
-            state.eqtb.data = vec![zero_word_initex; eqtb_words_initex];
+            state.eqtb.data = crate::mem_types::zeroed_vec(eqtb_words_initex);
             state.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
             state.strings.str_pool = vec![0u16; (TRE_POOL_SIZE as usize) + 1];
-            state.fonts.font_info = vec![zero_word_initex; (fms_initex as usize) + 1];
+            state.fonts.font_info = crate::mem_types::zeroed_vec((fms_initex as usize) + 1);
         }
     }
 

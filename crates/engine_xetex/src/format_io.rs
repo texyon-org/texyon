@@ -892,22 +892,13 @@ unsafe fn load_fmt_file_in(
         st.eqtb.eqtb_top
     };
     let n = (1 + st.eqtb.hash_top - 514) as usize;
-    st.eqtb.hash = vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; n];
-
-    let base_hash = crate::mem_types::B32x2 { s0: 0, s1: 0 };
-    st.eqtb.hash[(FORMAT_HASH_BASE - 514) as usize] = base_hash;
-    for h in (FORMAT_HASH_BASE + 1)..=st.eqtb.hash_top {
-        st.eqtb.hash[(h - 514) as usize] = base_hash;
-    }
+    // C `xmalloc`'d the hash and zeroed `hash[HASH_BASE..=hash_top]` by loop;
+    // the lazily-zeroed allocation subsumes that fill.
+    st.eqtb.hash = crate::mem_types::zeroed_vec(n);
 
     // `xmalloc_array(n)` allocated `n + 1` words; match that inclusive size.
     let eqtb_words_load = (st.eqtb.eqtb_top as usize) + 1;
-    st.eqtb.data = vec![
-        crate::mem_types::MemoryWord {
-            b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
-        };
-        eqtb_words_load
-    ];
+    st.eqtb.data = crate::mem_types::zeroed_vec(eqtb_words_load);
     st.eqtb
         .set_b16s1(UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_CS as u16);
     st.eqtb
@@ -933,12 +924,7 @@ unsafe fn load_fmt_file_in(
     st.shipout.page_tail.0 = PAGE_HEAD;
     // `xmalloc_array(MEM_TOP)` allocated `MEM_TOP + 1` words; match it.
     let mem_words_load = (MEM_TOP as usize) + 1;
-    st.mem.data = vec![
-        crate::mem_types::MemoryWord {
-            b32: crate::mem_types::B32x2 { s0: 0, s1: 0 }
-        };
-        mem_words_load
-    ];
+    st.mem.data = crate::mem_types::zeroed_vec(mem_words_load);
 
     x = undump_int(fmt_in)?;
     if x != EQTB_SIZE {
@@ -1202,10 +1188,7 @@ unsafe fn load_fmt_file_in(
 
     let fms = st.fonts.font_mem_size;
     let fmp = st.fonts.fmem_ptr;
-    let zero_word = crate::mem_types::MemoryWord {
-        b32: crate::mem_types::B32x2 { s0: 0, s1: 0 },
-    };
-    st.fonts.font_info = vec![zero_word; (fms as usize) + 1];
+    st.fonts.font_info = crate::mem_types::zeroed_vec((fms as usize) + 1);
     undump_slice(fmt_in, st.fonts.font_info.as_mut_ptr(), fmp)?;
 
     x = undump_int(fmt_in)?;

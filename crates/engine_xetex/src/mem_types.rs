@@ -67,6 +67,44 @@ const _: () = {
     assert!(size_of::<B16x4>() == 8);
 };
 
+/// Marker for the arena word types whose all-zero bit pattern is a valid
+/// value, so a lazily-zeroed allocation is equivalent to `vec![zero; n]`.
+///
+/// # Safety
+/// Implementors must be plain-old-data with every field valid at all-zero
+/// bits (no niches, no references).
+pub(crate) unsafe trait ZeroWord: Copy {}
+// SAFETY: unions/structs of i32/u16/f64/raw-pointer; zero bits are valid
+// for every interpretation.
+unsafe impl ZeroWord for MemoryWord {}
+unsafe impl ZeroWord for B32x2 {}
+
+/// Allocate a `Vec` of `len` zeroed words without dirtying its pages.
+///
+/// `vec![zero; len]` on these custom word types misses std's `IsZero`
+/// specialization and writes the whole arena upfront — for the big engine
+/// arenas (`mem`, `eqtb`, `hash`, `font_info`) that is ~256 MB of page
+/// faults + memsets per run that the C engine never paid (`xmalloc` /
+/// lazy `xcalloc`). `alloc_zeroed` lowers to `calloc`/`mmap`, so the
+/// kernel hands back copy-on-write zero pages and untouched words never
+/// cost anything, restoring the C cost model with identical contents.
+pub(crate) fn zeroed_vec<T: ZeroWord>(len: usize) -> Vec<T> {
+    if len == 0 {
+        return Vec::new();
+    }
+    let layout = std::alloc::Layout::array::<T>(len).expect("arena size overflow");
+    // SAFETY: `layout` is non-zero-sized; all-zero bytes are a valid `T`
+    // (`ZeroWord` contract); length == capacity matches the allocation
+    // layout, so `Vec`'s destructor deallocates with the same layout.
+    unsafe {
+        let ptr = std::alloc::alloc_zeroed(layout) as *mut T;
+        if ptr.is_null() {
+            std::alloc::handle_alloc_error(layout);
+        }
+        Vec::from_raw_parts(ptr, len, len)
+    }
+}
+
 /// Rust mirror of C `list_state_record` (xetex-xetexd.h:334–342).
 ///
 /// Represents one entry on TeX's "semantic nest" (mode stack).
