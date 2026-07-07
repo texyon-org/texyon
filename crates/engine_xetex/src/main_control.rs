@@ -669,7 +669,7 @@ pub(crate) fn get_preamble_token_in(
 }
 pub(crate) fn init_span_in(
     st: &mut crate::state::EngineState,
-    p: i32,
+    p: crate::units::MemPtr,
 ) -> Result<(), MainControlAbort> {
     const INNER_HMODE: i16 = -104;
 
@@ -713,7 +713,7 @@ pub(crate) fn init_row_in(st: &mut crate::state::EngineState) -> Result<(), Main
     st.scanner.cur_align.0 = st.mem.b32s1(align_head_link);
     st.scanner.cur_tail.0 = st.scanner.cur_head.0;
     st.scanner.cur_pre_tail.0 = st.scanner.cur_pre_head.0;
-    init_span_in(st, st.scanner.cur_align.0)?;
+    init_span_in(st, st.scanner.cur_align)?;
     Ok(())
 }
 pub(crate) fn init_col_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
@@ -736,17 +736,17 @@ pub(crate) fn push_alignment_in(
     const ALIGN_STACK_NODE_SIZE: i32 = 6; // xetex-constants.h:129
 
     let p = crate::scan::get_node_scc(st, ALIGN_STACK_NODE_SIZE)?;
-    st.mem.set_b32s1(p, st.scanner.align_ptr);
+    st.mem.set_b32s1(p, st.scanner.align_ptr.0);
     st.mem.set_b32s0(p, st.scanner.cur_align.0);
     st.mem.set_b32s0(p + 1, st.mem.b32s1(ALIGN_HEAD));
-    st.mem.set_b32s1(p + 1, st.scanner.cur_span);
+    st.mem.set_b32s1(p + 1, st.scanner.cur_span.0);
     st.mem.set_b32s1(p + 2, st.scanner.cur_loop.0);
     st.mem.set_b32s1(p + 3, st.scanner.align_state);
     st.mem.set_b32s0(p + 4, st.scanner.cur_head.0);
     st.mem.set_b32s1(p + 4, st.scanner.cur_tail.0);
     st.mem.set_b32s0(p + 5, st.scanner.cur_pre_head.0);
     st.mem.set_b32s1(p + 5, st.scanner.cur_pre_tail.0);
-    st.scanner.align_ptr = p;
+    st.scanner.align_ptr.0 = p;
     st.scanner.cur_head = crate::scan::get_avail_scc(st)?;
     st.scanner.cur_pre_head = crate::scan::get_avail_scc(st)?;
     Ok(())
@@ -769,11 +769,11 @@ pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
     st.scanner.cur_pre_head.0 = st.mem.b32s0(p + 5);
     st.scanner.align_state = st.mem.b32s1(p + 3);
     st.scanner.cur_loop.0 = st.mem.b32s1(p + 2);
-    st.scanner.cur_span = st.mem.b32s1(p + 1);
+    st.scanner.cur_span.0 = st.mem.b32s1(p + 1);
     st.mem.set_b32s1(ALIGN_HEAD, st.mem.b32s0(p + 1));
     st.scanner.cur_align.0 = st.mem.b32s0(p);
-    st.scanner.align_ptr = st.mem.b32s1(p);
-    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), ALIGN_STACK_NODE_SIZE);
+    st.scanner.align_ptr.0 = st.mem.b32s1(p);
+    crate::mem::free_node(&mut st.mem, p, ALIGN_STACK_NODE_SIZE);
 }
 // translated from xetex-xetex0.c:7859 (fin_col)
 pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, MainControlAbort> {
@@ -896,9 +896,9 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             (u, w)
         };
         let mut n: i32 = 0;
-        if st.scanner.cur_span != st.scanner.cur_align.0 {
+        if st.scanner.cur_span != st.scanner.cur_align {
             // §827: compare accumulated span width with recorded widths
-            let mut sq = st.scanner.cur_span;
+            let mut sq = st.scanner.cur_span.0;
             loop {
                 n += 1;
                 sq = st.mem.b32s1(st.mem.b32s1(sq));
@@ -909,7 +909,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
             if n > u16::MAX as i32 {
                 return Err(MainControlAbort::Confusion(c"too many spans"));
             }
-            sq = st.scanner.cur_span;
+            sq = st.scanner.cur_span.0;
             while st.mem.b32s1(st.mem.b32s0(sq)) < n {
                 sq = st.mem.b32s0(sq);
             }
@@ -962,7 +962,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
         if st.mem.b32s0(st.scanner.cur_align + 5) >= CR_CODE {
             return Ok(true);
         }
-        init_span_in(st, p)?;
+        init_span_in(st, crate::units::MemPtr::from_raw(p))?;
     }
     st.scanner.align_state = 1_000_000;
     loop {
@@ -1480,8 +1480,8 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     if st.scanner.cur_chr > COPY_CODE {
         let tail = st.input.cur_list.tail.0;
         st.mem
-            .set_b32s1(tail, st.scanner.disc_ptr[st.scanner.cur_chr as usize]);
-        st.scanner.disc_ptr[st.scanner.cur_chr as usize] = crate::mem::TEX_NULL;
+            .set_b32s1(tail, st.scanner.disc_ptr[st.scanner.cur_chr as usize].0);
+        st.scanner.disc_ptr[st.scanner.cur_chr as usize] = crate::units::MemPtr::NULL;
         // goto done — jump to tail-walk loop
     } else {
         let c = st.scanner.cur_chr;
@@ -2707,7 +2707,7 @@ pub(crate) fn handle_right_brace_in(
 
             let dp = st.scanner.disc_ptr[LAST_BOX_CODE];
             flush_node_list(&mut st.mem, dp).map_err(MainControlAbort::Confusion)?;
-            st.scanner.disc_ptr[LAST_BOX_CODE] = TEX_NULL;
+            st.scanner.disc_ptr[LAST_BOX_CODE] = crate::units::MemPtr::NULL;
             pop_nest_in(&mut st.mem, &mut st.input);
             crate::pagebuilder::build_page_in(st)?;
         }

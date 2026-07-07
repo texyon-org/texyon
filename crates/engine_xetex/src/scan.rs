@@ -1969,7 +1969,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 && (st.input.grp_stack[(st.input.in_open) as usize]
                                     != st.save_stack.cur_boundary
                                     || st.input.if_stack[(st.input.in_open) as usize]
-                                        != st.scanner.cond_ptr.0)
+                                        != st.scanner.cond_ptr)
                             {
                                 crate::output::file_warning_in(st);
                             }

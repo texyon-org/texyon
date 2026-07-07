@@ -342,7 +342,7 @@ pub(crate) unsafe fn final_cleanup_in(
             c = TOP_MARK_CODE as i32;
             loop {
                 let mark = st.scanner.cur_mark[c as usize];
-                if mark != crate::mem::TEX_NULL {
+                if !mark.is_null() {
                     crate::mem::delete_token_ref(&mut st.mem, mark);
                 }
                 if c as usize >= SPLIT_BOT_MARK_CODE {
@@ -352,10 +352,10 @@ pub(crate) unsafe fn final_cleanup_in(
             }
 
             let marks = st.scanner.sa_root[MARK_VAL];
-            if marks != crate::mem::TEX_NULL
-                && crate::packaging::do_marks(&mut st.mem, &mut st.scanner, 3, 0, marks)
-            {
-                st.scanner.sa_root[MARK_VAL] = crate::mem::TEX_NULL;
+            if let Some(marks) = marks.as_idx() {
+                if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, 3, 0, marks) {
+                    st.scanner.sa_root[MARK_VAL] = crate::units::MemPtr::NULL;
+                }
             }
 
             c = LAST_BOX_CODE as i32;
@@ -478,11 +478,11 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.mag_set = 0;
     st.scanner.expand_depth_count = 0;
     st.scanner.is_in_csname = false;
-    st.scanner.cur_mark[TOP_MARK_CODE] = crate::mem::TEX_NULL;
-    st.scanner.cur_mark[FIRST_MARK_CODE] = crate::mem::TEX_NULL;
-    st.scanner.cur_mark[BOT_MARK_CODE] = crate::mem::TEX_NULL;
-    st.scanner.cur_mark[SPLIT_FIRST_MARK_CODE] = crate::mem::TEX_NULL;
-    st.scanner.cur_mark[SPLIT_BOT_MARK_CODE] = crate::mem::TEX_NULL;
+    st.scanner.cur_mark[TOP_MARK_CODE] = crate::units::MemPtr::NULL;
+    st.scanner.cur_mark[FIRST_MARK_CODE] = crate::units::MemPtr::NULL;
+    st.scanner.cur_mark[BOT_MARK_CODE] = crate::units::MemPtr::NULL;
+    st.scanner.cur_mark[SPLIT_FIRST_MARK_CODE] = crate::units::MemPtr::NULL;
+    st.scanner.cur_mark[SPLIT_BOT_MARK_CODE] = crate::units::MemPtr::NULL;
     st.scanner.cur_val = 0;
     st.scanner.cur_val_level = INT_VAL;
     st.scanner.radix = 0;
@@ -515,9 +515,9 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.pack_begin_line = 0;
     st.scanner.empty.s1 = EMPTY as i32;
     st.scanner.empty.s0 = crate::mem::TEX_NULL;
-    st.scanner.align_ptr = crate::mem::TEX_NULL;
+    st.scanner.align_ptr = crate::units::MemPtr::NULL;
     st.scanner.cur_align.0 = crate::mem::TEX_NULL;
-    st.scanner.cur_span = crate::mem::TEX_NULL;
+    st.scanner.cur_span = crate::units::MemPtr::NULL;
     st.scanner.cur_loop.0 = crate::mem::TEX_NULL;
     st.scanner.cur_head.0 = crate::mem::TEX_NULL;
     st.scanner.cur_tail.0 = crate::mem::TEX_NULL;
@@ -557,7 +557,7 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     st.scanner.lr_problems = 0;
     st.scanner.cur_dir = LEFT_TO_RIGHT;
     st.input.pseudo_files.0 = crate::mem::TEX_NULL;
-    st.scanner.sa_root[MARK_VAL] = crate::mem::TEX_NULL;
+    st.scanner.sa_root[MARK_VAL] = crate::units::MemPtr::NULL;
     st.scanner.sa_null = crate::mem_types::MemoryWord {
         b32: crate::mem_types::B32x2 {
             s0: crate::mem::TEX_NULL,
@@ -566,8 +566,8 @@ fn initialize_more_variables_in(st: &mut crate::state::EngineState) {
     };
     st.scanner.sa_chain.0 = crate::mem::TEX_NULL;
     st.scanner.sa_level = LEVEL_ZERO_U16;
-    st.scanner.disc_ptr[LAST_BOX_CODE] = crate::mem::TEX_NULL;
-    st.scanner.disc_ptr[VSPLIT_CODE] = crate::mem::TEX_NULL;
+    st.scanner.disc_ptr[LAST_BOX_CODE] = crate::units::MemPtr::NULL;
+    st.scanner.disc_ptr[VSPLIT_CODE] = crate::units::MemPtr::NULL;
     st.strings.edit_name_start = 0;
     st.scanner.stop_at_space = true;
 }
@@ -832,7 +832,7 @@ fn initialize_more_initex_variables_in(st: &mut crate::state::EngineState, forma
     st.scanner.max_reg_help_line = c"A register number must be between 0 and 32767.".as_ptr();
 
     for i in INT_VAL..=INTER_CHAR_VAL {
-        st.scanner.sa_root[i] = crate::mem::TEX_NULL;
+        st.scanner.sa_root[i] = crate::units::MemPtr::NULL;
     }
 
     st.eqtb
@@ -1082,7 +1082,7 @@ unsafe fn tt_run_engine_inner(
         ];
         state.input.line_stack = vec![0i32; in_open_words];
         state.input.grp_stack = vec![0i32; in_open_words];
-        state.input.if_stack = vec![0i32; in_open_words];
+        state.input.if_stack = vec![crate::units::MemPtr::from_raw(0); in_open_words];
         state.input.source_filename_stack = vec![0i32; in_open_words];
         state.input.full_source_filename_stack = vec![0i32; in_open_words];
         state.input.eof_seen = vec![false; in_open_words];
@@ -1256,7 +1256,7 @@ unsafe fn tt_run_engine_inner(
     st.input.open_parens = 0;
     st.input.max_buf_stack = 0;
     st.input.grp_stack[0] = 0;
-    st.input.if_stack[0] = crate::mem::TEX_NULL;
+    st.input.if_stack[0] = crate::units::MemPtr::NULL;
     st.input.param_ptr = 0;
     st.input.max_param_stack = 0;
     st.scanner.used_tectonic_coda_tokens = false;

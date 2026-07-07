@@ -401,7 +401,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                     } else {
                         // goto common_ending
                         if st.scanner.cur_chr == FI_CODE as i32 {
-                            if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
+                            if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
                                 crate::output::if_warning_in(st);
                             }
                             pop_cond_node_in(st);
@@ -411,7 +411,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
                         return Ok(());
                     }
                 } else if st.scanner.cur_chr == FI_CODE as i32 {
-                    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
+                    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
                         crate::output::if_warning_in(st);
                     }
                     pop_cond_node_in(st);
@@ -478,7 +478,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             if st.scanner.cur_chr != OR_CODE as i32 {
                 // common_ending
                 if st.scanner.cur_chr == FI_CODE as i32 {
-                    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
+                    if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
                         crate::output::if_warning_in(st);
                     }
                     pop_cond_node_in(st);
@@ -494,7 +494,7 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
             st.errors.help_line[0] = c"I'm ignoring this; it doesn't match any \\if.".as_ptr();
             scc_err(crate::errors::error_in(st))?;
         } else if st.scanner.cur_chr == FI_CODE as i32 {
-            if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
+            if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
                 crate::output::if_warning_in(st);
             }
             pop_cond_node_in(st);
@@ -1264,7 +1264,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         st.scanner.cur_val = 0;
                     }
                     if st.scanner.cur_val == 0 {
-                        st.scanner.cur_ptr.0 = st.scanner.cur_mark[t];
+                        st.scanner.cur_ptr = st.scanner.cur_mark[t];
                     } else {
                         let __cv0 = st.scanner.cur_val;
                         crate::save::find_sa_element(
@@ -1486,7 +1486,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                         while st.scanner.cur_chr != FI_CODE_VAL {
                             crate::scan::pass_text_in(st)?;
                         }
-                        if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr.0 {
+                        if st.input.if_stack[st.input.in_open as usize] == st.scanner.cond_ptr {
                             crate::output::if_warning_in(st);
                         }
                         let p = st.scanner.cond_ptr.0;

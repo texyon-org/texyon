@@ -412,7 +412,7 @@ pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: impl cra
         q = mem.b32s1(p);
         crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), s);
         if q == TEX_NULL {
-            scanner.sa_root[i as usize] = TEX_NULL;
+            scanner.sa_root[i as usize] = crate::units::MemPtr::NULL;
             return;
         }
         if (i & 1) != 0 {
@@ -902,7 +902,7 @@ pub fn find_sa_element(
     let lvl = [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64];
 
     // Traversal: navigate the 4-level trie, recording parents for linking.
-    scanner.cur_ptr.0 = scanner.sa_root[t as usize];
+    scanner.cur_ptr = scanner.sa_root[t as usize];
 
     // Check root level (not_found in C).
     if scanner.cur_ptr.0 == TEX_NULL {
@@ -910,7 +910,7 @@ pub fn find_sa_element(
             return Some(());
         }
         new_index(mem, scanner, t, TEX_NULL)?;
-        scanner.sa_root[t as usize] = scanner.cur_ptr.0;
+        scanner.sa_root[t as usize] = scanner.cur_ptr;
         // lab46..lab49: allocate all 4 levels from this root.
         sa_alloc_chain(mem, scanner, t, n, scanner.cur_ptr.0, &lvl)?;
         return Some(());

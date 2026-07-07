@@ -252,22 +252,22 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
 
     // Update extended marks
     let mark_root = st.scanner.sa_root[MARK_VAL];
-    if mark_root != TEX_NULL
-        && crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_INIT, 0, mark_root)
-    {
-        st.scanner.sa_root[MARK_VAL] = TEX_NULL;
+    if let Some(mark_root) = mark_root.as_idx() {
+        if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_INIT, 0, mark_root) {
+            st.scanner.sa_root[MARK_VAL] = crate::units::MemPtr::NULL;
+        }
     }
 
     // 1047: Update top_mark / first_mark / bot_mark
-    if st.scanner.cur_mark[BOT_MARK_CODE] != TEX_NULL {
-        if st.scanner.cur_mark[TOP_MARK_CODE] != TEX_NULL {
+    if !st.scanner.cur_mark[BOT_MARK_CODE].is_null() {
+        if !st.scanner.cur_mark[TOP_MARK_CODE].is_null() {
             crate::mem::delete_token_ref(&mut st.mem, st.scanner.cur_mark[TOP_MARK_CODE]);
         }
         st.scanner.cur_mark[TOP_MARK_CODE] = st.scanner.cur_mark[BOT_MARK_CODE];
         let top = st.scanner.cur_mark[TOP_MARK_CODE];
         st.mem.set_b32s0(top, st.mem.b32s0(top) + 1); // TOKEN_LIST_ref_count++
         crate::mem::delete_token_ref(&mut st.mem, st.scanner.cur_mark[FIRST_MARK_CODE]);
-        st.scanner.cur_mark[FIRST_MARK_CODE] = TEX_NULL;
+        st.scanner.cur_mark[FIRST_MARK_CODE] = crate::units::MemPtr::NULL;
     }
 
     // 1049: Put optimal page into box 255
@@ -451,18 +451,18 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                 // TOKEN_LIST_ref_count++
                 } else {
                     // 1051: Update first_mark and bot_mark (default)
-                    if st.scanner.cur_mark[FIRST_MARK_CODE] == TEX_NULL {
-                        st.scanner.cur_mark[FIRST_MARK_CODE] = mark_node.mark_ptr(&st.mem).0;
+                    if st.scanner.cur_mark[FIRST_MARK_CODE].is_null() {
+                        st.scanner.cur_mark[FIRST_MARK_CODE] = mark_node.mark_ptr(&st.mem);
                         let first = st.scanner.cur_mark[FIRST_MARK_CODE];
                         st.mem.set_b32s0(first, st.mem.b32s0(first) + 1);
                     }
-                    if st.scanner.cur_mark[BOT_MARK_CODE] != TEX_NULL {
+                    if !st.scanner.cur_mark[BOT_MARK_CODE].is_null() {
                         crate::mem::delete_token_ref(
                             &mut st.mem,
                             st.scanner.cur_mark[BOT_MARK_CODE],
                         );
                     }
-                    st.scanner.cur_mark[BOT_MARK_CODE] = mark_node.mark_ptr(&st.mem).0;
+                    st.scanner.cur_mark[BOT_MARK_CODE] = mark_node.mark_ptr(&st.mem);
                     let bot = st.scanner.cur_mark[BOT_MARK_CODE];
                     st.mem.set_b32s0(bot, st.mem.b32s0(bot) + 1);
                 }
@@ -543,14 +543,14 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
 
     // Handle extended marks after new-page setup
     let mark_root = st.scanner.sa_root[MARK_VAL];
-    if mark_root != TEX_NULL
-        && crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_DONE, 0, mark_root)
-    {
-        st.scanner.sa_root[MARK_VAL] = TEX_NULL;
+    if let Some(mark_root) = mark_root.as_idx() {
+        if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_DONE, 0, mark_root) {
+            st.scanner.sa_root[MARK_VAL] = crate::units::MemPtr::NULL;
+        }
     }
 
-    if st.scanner.cur_mark[TOP_MARK_CODE] != TEX_NULL
-        && st.scanner.cur_mark[FIRST_MARK_CODE] == TEX_NULL
+    if !st.scanner.cur_mark[TOP_MARK_CODE].is_null()
+        && st.scanner.cur_mark[FIRST_MARK_CODE].is_null()
     {
         st.scanner.cur_mark[FIRST_MARK_CODE] = st.scanner.cur_mark[TOP_MARK_CODE];
         let top = st.scanner.cur_mark[TOP_MARK_CODE];
@@ -620,7 +620,7 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
 
     crate::packaging::flush_node_list(&mut st.mem, st.scanner.disc_ptr[LAST_BOX_CODE])
         .map_err(PageBuildAbort::Confusion)?;
-    st.scanner.disc_ptr[LAST_BOX_CODE] = TEX_NULL;
+    st.scanner.disc_ptr[LAST_BOX_CODE] = crate::units::MemPtr::NULL;
     unsafe { crate::shipout::ship_out_in(st, st.eqtb.b32s1(BOX_BASE + 255))? };
     st.eqtb.set_b32s1(BOX_BASE + 255, TEX_NULL);
     Ok(())
@@ -1054,12 +1054,12 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 crate::packaging::flush_node_list(&mut st.mem, p)
                     .map_err(PageBuildAbort::Confusion)?;
             } else {
-                if st.scanner.disc_ptr[LAST_BOX_CODE] == TEX_NULL {
-                    st.scanner.disc_ptr[LAST_BOX_CODE] = p;
+                if st.scanner.disc_ptr[LAST_BOX_CODE].is_null() {
+                    st.scanner.disc_ptr[LAST_BOX_CODE].0 = p;
                 } else {
                     st.mem.set_b32s1(st.scanner.disc_ptr[COPY_CODE], p);
                 }
-                st.scanner.disc_ptr[COPY_CODE] = p;
+                st.scanner.disc_ptr[COPY_CODE].0 = p;
             }
             if st.mem.b32s1(CONTRIB_HEAD) == TEX_NULL {
                 break 'outer;

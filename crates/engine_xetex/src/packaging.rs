@@ -1378,24 +1378,24 @@ fn reset_vsplit_marks(
     mem: &mut MemState,
     scanner: &mut ScannerState,
 ) -> Result<(), NodeRecycleAbort> {
-    use crate::mem::TEX_NULL;
-
     let disc = scanner.disc_ptr[VSPLIT_CODE_VS];
     flush_node_list(mem, disc).map_err(NodeRecycleAbort::Confusion)?;
-    scanner.disc_ptr[VSPLIT_CODE_VS] = TEX_NULL;
+    scanner.disc_ptr[VSPLIT_CODE_VS] = MemPtr::NULL;
 
     let vsr = scanner.sa_root[MARK_VAL_VS];
-    if vsr != TEX_NULL && do_marks(mem, scanner, 0, 0, vsr) {
-        scanner.sa_root[MARK_VAL_VS] = TEX_NULL;
+    if let Some(vsr) = vsr.as_idx() {
+        if do_marks(mem, scanner, 0, 0, vsr) {
+            scanner.sa_root[MARK_VAL_VS] = MemPtr::NULL;
+        }
     }
 
-    if scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] != TEX_NULL {
+    if !scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS].is_null() {
         let first = scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS];
         crate::mem::delete_token_ref(mem, first);
-        scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] = TEX_NULL;
+        scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] = MemPtr::NULL;
         let bot = scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS];
         crate::mem::delete_token_ref(mem, bot);
-        scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS] = TEX_NULL;
+        scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS] = MemPtr::NULL;
     }
 
     Ok(())
@@ -1442,19 +1442,19 @@ fn collect_split_mark(
     use crate::mem::TEX_NULL;
 
     let mark_class = mark.mark_class(mem);
-    let mark_ptr = mark.mark_ptr(mem).0;
+    let mark_ptr = mark.mark_ptr(mem);
     if mark_class != 0 {
         crate::save::find_sa_element(mem, scanner, MARK_VAL_VS as u16, mark_class, true).ok_or(NodeRecycleAbort::Overflow)?;
         if mem.b32s1(scanner.cur_ptr + 2) == TEX_NULL {
-            mem.set_b32s1(scanner.cur_ptr + 2, mark_ptr);
+            mem.set_b32s1(scanner.cur_ptr + 2, mark_ptr.0);
             mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
         } else {
             let old = mem.b32s0(scanner.cur_ptr + 3);
             crate::mem::delete_token_ref(mem, old);
         }
-        mem.set_b32s0(scanner.cur_ptr + 3, mark_ptr);
+        mem.set_b32s0(scanner.cur_ptr + 3, mark_ptr.0);
         mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
-    } else if scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] == TEX_NULL {
+    } else if scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS].is_null() {
         scanner.cur_mark[SPLIT_FIRST_MARK_CODE_VS] = mark_ptr;
         scanner.cur_mark[SPLIT_BOT_MARK_CODE_VS] = mark_ptr;
         mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 2);
@@ -1746,19 +1746,17 @@ fn prune_discard_node(
     node: PruneDiscardNode,
     save_discards: bool,
 ) -> Result<i32, NodeRecycleAbort> {
-    use crate::mem::TEX_NULL;
-
     let q = node.link(mem).0;
     node.set_link(mem, MemPtr::NULL);
     mem.set_b32s1(prev_p, q);
     if save_discards {
-        let discarded = node.idx().0;
-        if scanner.disc_ptr[VSPLIT_CODE_PPT] == TEX_NULL {
+        let discarded = MemPtr::from_idx(node.idx());
+        if scanner.disc_ptr[VSPLIT_CODE_PPT].is_null() {
             scanner.disc_ptr[VSPLIT_CODE_PPT] = discarded;
         } else {
-            mem.set_b32s1(*r, discarded);
+            mem.set_b32s1(*r, discarded.0);
         }
-        *r = discarded;
+        *r = discarded.0;
     } else {
         flush_node_list(mem, node.idx().0).map_err(NodeRecycleAbort::Confusion)?;
     }
@@ -1841,36 +1839,40 @@ pub fn prune_page_top(
     Ok(mem.link_ptr(TEMP_HEAD))
 }
 /// translated from xetex-xetex0.c:9817 (do_marks)
+///
+/// Returns `true` iff the record at `q` was freed (the C signals this by
+/// nulling its local `q`); the caller then nulls its child slot / root.
 pub fn do_marks(
     mem: &mut crate::state::MemState,
     scanner: &mut crate::state::ScannerState,
     a: i16,
     l: i16,
-    q: i32,
+    q: MemIdx,
 ) -> bool {
     use crate::mem::TEX_NULL;
-    let mut q = q;
+    let mut freed = false;
     // SAFETY: `do_marks` is only entered (and recursed) with a real
     // sparse-array record index — an index node (l < 4) or a mark-class node
     // (l == 4). This is the family's single audited construction site; it has
     // no NODE_type to classify. Child/mark slot `i` maps to `mem[q+i/2+1].b32`.
-    let node = unsafe { NodePtr::<SaNode>::from_idx_unchecked(MemIdx::new(q)) };
+    let node = unsafe { NodePtr::<SaNode>::from_idx_unchecked(q) };
 
     if l < 4 {
         for i in 0i16..=15 {
-            scanner.cur_ptr.0 = node.child(mem, i as i32).0;
+            scanner.cur_ptr = node.child(mem, i as i32);
 
-            let cur = scanner.cur_ptr.0;
-            if cur != TEX_NULL && do_marks(mem, scanner, a, l + 1, cur) {
-                node.set_child(mem, i as i32, MemPtr::NULL);
-                // index node populated-child reference count--
-                node.set_ref_count(mem, node.ref_count(mem) - 1);
+            if let Some(cur) = scanner.cur_ptr.as_idx() {
+                if do_marks(mem, scanner, a, l + 1, cur) {
+                    node.set_child(mem, i as i32, MemPtr::NULL);
+                    // index node populated-child reference count--
+                    node.set_ref_count(mem, node.ref_count(mem) - 1);
+                }
             }
         }
 
         if node.ref_count(mem) == 0 {
-            crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), INDEX_NODE_SIZE_DM);
-            q = TEX_NULL;
+            crate::mem::free_node(mem, MemPtr::from_idx(q), INDEX_NODE_SIZE_DM);
+            freed = true;
         }
     } else {
         // Mark-class node child slots, by eTeX mark code:
@@ -1924,12 +1926,12 @@ pub fn do_marks(
         }
 
         if node.child(mem, 2).is_null() && node.child(mem, 4).is_null() {
-            crate::mem::free_node(mem, crate::units::MemPtr::from_raw(q), MARK_CLASS_NODE_SIZE_DM);
-            q = TEX_NULL;
+            crate::mem::free_node(mem, MemPtr::from_idx(q), MARK_CLASS_NODE_SIZE_DM);
+            freed = true;
         }
     }
 
-    q == TEX_NULL
+    freed
 }
 fn hpack_in(
     mem: &mut MemState,

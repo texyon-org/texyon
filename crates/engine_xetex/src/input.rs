@@ -228,7 +228,7 @@ pub(crate) fn begin_file_reading_in(st: &mut crate::state::EngineState) -> Resul
     st.input.full_source_filename_stack[idx] = 0;
     st.input.eof_seen[idx] = false;
     st.input.grp_stack[idx] = st.save_stack.cur_boundary;
-    st.input.if_stack[idx] = st.scanner.cond_ptr.0;
+    st.input.if_stack[idx] = st.scanner.cond_ptr;
     st.input.line_stack[idx] = st.mem.line;
     st.input.cur_input.start = st.input.first;
     st.input.cur_input.state = MID_LINE;

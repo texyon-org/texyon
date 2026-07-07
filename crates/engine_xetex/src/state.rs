@@ -158,7 +158,7 @@ pub(crate) struct InputClusterState {
     /// are `str_number` (newtype debts).
     pub line_stack: Vec<i32>,
     pub grp_stack: Vec<i32>,
-    pub if_stack: Vec<i32>,
+    pub if_stack: Vec<crate::units::MemPtr>,
     pub source_filename_stack: Vec<i32>,
     pub full_source_filename_stack: Vec<i32>,
     /// `eof_seen[k]`: true when EOF was seen at input level k. Sized
@@ -763,9 +763,9 @@ pub(crate) struct ScannerState {
     pub name_in_progress: bool,
     pub stop_at_space: bool,
     pub cur_align: crate::units::MemPtr,
-    pub cur_span: i32,
+    pub cur_span: crate::units::MemPtr,
     pub cur_loop: crate::units::MemPtr,
-    pub align_ptr: i32,
+    pub align_ptr: crate::units::MemPtr,
     pub cur_head: crate::units::MemPtr,
     pub cur_tail: crate::units::MemPtr,
     pub cur_pre_head: crate::units::MemPtr,
@@ -835,13 +835,12 @@ pub(crate) struct ScannerState {
     /// the sa-element machinery.
     pub cur_ptr: crate::units::MemPtr,
     /// Mark registers: `cur_mark[0..=4]` (xetex-xetexd.h:527). Each entry is
-    /// a token-list pointer (`int32_t`). Inline fixed array; no alloc/cleanup
-    /// edge. Plain `int32_t` elements, no newtype debt.
-    pub cur_mark: [i32; 5],
+    /// a nullable token-list pointer. Inline fixed array; no alloc/cleanup
+    /// edge.
+    pub cur_mark: [crate::units::MemPtr; 5],
     /// Saved discretionary break pointers (xetex-xetexd.h:716). Inline fixed
-    /// array of 4 `int32_t` half-word pointers. No alloc/cleanup edge. Plain
-    /// `int32_t` elements, no newtype debt.
-    pub disc_ptr: [i32; 4],
+    /// array of 4 nullable node-list heads. No alloc/cleanup edge.
+    pub disc_ptr: [crate::units::MemPtr; 4],
     // Math-list-to-hlist conversion scratch (former xetex-math.c module
     // globals).
     /// Mlist being converted by `mlist_to_hlist` (xetex-math.c). Mem pointer
@@ -877,7 +876,7 @@ pub(crate) struct ScannerState {
     pub lr_problems: i32,
     pub cur_dir: i16,
     /// Sparse-array trie roots: `sa_root[0..=7]` (xetex-xetexd.h:709).
-    pub sa_root: [i32; 8],
+    pub sa_root: [crate::units::MemPtr; 8],
     /// Sparse-array null sentinel (xetex-ini.c:3203).
     pub sa_null: crate::mem_types::MemoryWord,
     /// The all-zero B32x2 template (xetex-xetexd.h:608).

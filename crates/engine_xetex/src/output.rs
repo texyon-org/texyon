@@ -2683,7 +2683,7 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     let mut i = st.input.in_open;
     let mut w = false;
-    while st.input.if_stack[(i) as usize] == st.scanner.cond_ptr.0 {
+    while st.input.if_stack[(i) as usize] == st.scanner.cond_ptr {
         if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_NESTING) > 0 {
             let mut bp = st.input.base_ptr;
             while st.input.input_stack[(bp) as usize].state == TOKEN_LIST
@@ -2696,7 +2696,7 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
                 w = true;
             }
         }
-        st.input.if_stack[(i) as usize] = st.mem.b32s1(st.scanner.cond_ptr);
+        st.input.if_stack[(i) as usize].0 = st.mem.b32s1(st.scanner.cond_ptr);
         i -= 1;
     }
     if w {
@@ -2754,7 +2754,7 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
     let il = st.scanner.if_limit;
     let ci = st.scanner.cur_if;
     let iln = st.scanner.if_line;
-    while st.input.if_stack[(st.input.in_open) as usize] != st.scanner.cond_ptr.0 {
+    while st.input.if_stack[(st.input.in_open) as usize] != st.scanner.cond_ptr {
         print_nl_cstr_in(st, c"Warning: ".as_ptr());
         diagnostic_begin_capture_warning_here_in(st);
         print_cstr_in(st, c"end of file when ".as_ptr());

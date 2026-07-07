@@ -357,7 +357,7 @@ pub(crate) unsafe fn store_fmt_file_in(
 
     for k in INT_VAL as usize..=INTER_CHAR_VAL as usize {
         let val = st.scanner.sa_root[k];
-        dump_int(fmt_out, val)?;
+        dump_int(fmt_out, val.0)?;
     }
 
     // `mem` is now a Rust-owned `Vec`; take a stable base pointer once (the
@@ -1031,7 +1031,7 @@ unsafe fn load_fmt_file_in(
                 c"fatal format file error".as_ptr(),
             ));
         }
-        st.scanner.sa_root[idx as usize] = x;
+        st.scanner.sa_root[idx as usize].0 = x;
     }
 
     // `mem`/`eqtb`/`hash` are Rust-owned `Vec`s; take a stable mutable base
