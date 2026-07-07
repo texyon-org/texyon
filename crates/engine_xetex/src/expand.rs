@@ -113,12 +113,12 @@ pub(crate) fn conditional_in(st: &mut crate::state::EngineState) -> Result<(), S
         crate::output::show_cur_cmd_chr_in(st);
     }
 
-    p = get_node_scc(st, IF_NODE_SIZE)?;
-    st.mem.set_b32s1(p, st.scanner.cond_ptr.0);
-    st.mem.set_b16s1(p, st.scanner.if_limit as u16);
-    st.mem.set_b16s0(p, st.scanner.cur_if as u16);
-    st.mem.set_b32s1(p + 1, st.scanner.if_line);
-    st.scanner.cond_ptr.0 = p;
+    let cond_node = get_node_scc(st, IF_NODE_SIZE)?;
+    st.mem.set_b32s1(cond_node, st.scanner.cond_ptr.0);
+    st.mem.set_b16s1(cond_node, st.scanner.if_limit as u16);
+    st.mem.set_b16s0(cond_node, st.scanner.cur_if as u16);
+    st.mem.set_b32s1(cond_node + 1, st.scanner.if_line);
+    st.scanner.cond_ptr = cond_node;
     st.scanner.cur_if = st.scanner.cur_chr as i16;
     st.scanner.if_limit = IF_CODE;
     st.scanner.if_line = st.mem.line;

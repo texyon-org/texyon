@@ -746,7 +746,7 @@ pub(crate) fn push_alignment_in(
     st.mem.set_b32s1(p + 4, st.scanner.cur_tail.0);
     st.mem.set_b32s0(p + 5, st.scanner.cur_pre_head.0);
     st.mem.set_b32s1(p + 5, st.scanner.cur_pre_tail.0);
-    st.scanner.align_ptr.0 = p;
+    st.scanner.align_ptr = p;
     st.scanner.cur_head = crate::scan::get_avail_scc(st)?;
     st.scanner.cur_pre_head = crate::scan::get_avail_scc(st)?;
     Ok(())

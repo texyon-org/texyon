@@ -2236,9 +2236,11 @@ pub(crate) fn main_mem_overflow_scc() -> SccAbort {
 }
 
 /// `get_node` with its exhaustion `None` lifted into [`SccAbort`].
-pub(crate) fn get_node_scc(st: &mut crate::state::EngineState, s: i32) -> Result<i32, SccAbort> {
-    let r = crate::mem::get_node(&mut st.mem, s).ok_or_else(main_mem_overflow_scc)?;
-    Ok(r.0)
+pub(crate) fn get_node_scc(
+    st: &mut crate::state::EngineState,
+    s: i32,
+) -> Result<crate::units::MemPtr, SccAbort> {
+    crate::mem::get_node(&mut st.mem, s).ok_or_else(main_mem_overflow_scc)
 }
 
 /// `get_avail` with its exhaustion `None` lifted into [`SccAbort`].
@@ -2671,7 +2673,7 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
         if sz == 1 {
             sz = 2;
         }
-        let r_base = get_node_scc(st, sz)?;
+        let r_base = get_node_scc(st, sz)?.0;
         st.mem.set_b32s1(q, r_base);
         q = r_base;
         st.mem.set_b32s0(q, sz);
@@ -3378,7 +3380,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 }
                 if st.scanner.cur_tok == OTHER_TOKEN + 40 {
                     // '('
-                    let q = get_node_scc(st, EXPR_NODE_SIZE)?;
+                    let q = get_node_scc(st, EXPR_NODE_SIZE)?.0;
                     st.mem.set_b32s1(q, p);
                     st.mem.set_b16s1(q, l as u16);
                     st.mem.set_b16s0(q, (4 * s + r) as u16);
