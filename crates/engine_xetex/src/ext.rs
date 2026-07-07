@@ -2190,7 +2190,6 @@ pub unsafe fn make_font_def(
     }
     if flags & XDV_FLAG_EMBOLDEN != 0 {
         std::ptr::write_unaligned(cp as *mut u32, (D2Fix(embolden as c_double) as u32).to_be());
-        cp = cp.add(4);
     }
 
     freeFontFilename(filename);

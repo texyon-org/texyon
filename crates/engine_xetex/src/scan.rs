@@ -3722,7 +3722,6 @@ pub(crate) fn scan_keyword_in(
                 let q = get_avail_scc(st)?;
                 st.mem.set_b32s1(p, q.0);
                 q.set_info(&mut st.mem, st.scanner.cur_tok);
-                p = q.0;
                 let head = st.mem.b32s1(BACKUP_HEAD);
                 crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(head));
                 return Ok(true);
@@ -4470,7 +4469,6 @@ pub(crate) fn scan_something_internal_in(
                             | XETEX_VARIATION_DEFAULT_CODE
                             | XETEX_COUNT_VARIATIONS_CODE => {
                                 scan_font_ident_in(st)?;
-                                n = st.scanner.cur_val;
                                 st.scanner.cur_val = 0;
                             }
                             XETEX_FEATURE_CODE_CODE

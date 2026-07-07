@@ -3675,7 +3675,6 @@ fn goto_found(st: &mut EngineState, hn_v: i16) -> Result<(), HyphenateAbort> {
                 if hyf_node != TEX_NULL {
                     st.hyph.hu[i as usize] = saved_c;
                     l = i;
-                    i -= 1;
                 }
 
                 minor_tail = TEX_NULL;

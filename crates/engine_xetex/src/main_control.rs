@@ -6680,7 +6680,7 @@ pub(crate) fn prefixed_command_in(
                 e = st.scanner.cur_chr >= 2;
                 crate::scan::get_r_token_in(st)?;
                 p = st.scanner.cur_cs;
-                q = crate::scan::scan_toks_in(st, true, e)?;
+                crate::scan::scan_toks_in(st, true, e)?;
 
                 if j != 0 {
                     q = crate::mem::get_avail(&mut st.mem)
