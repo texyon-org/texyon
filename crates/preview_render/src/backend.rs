@@ -1,6 +1,6 @@
 //! Backend seam for platform-specific page drawing.
 
-use crate::{RenderError, ResourceIdentity};
+use crate::{Color, RenderError, ResourceIdentity};
 
 /// Affine transform in backend point space.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -71,21 +71,23 @@ pub trait Backend {
         face_index: u32,
     ) -> Result<FontId, RenderError>;
 
-    /// Fill an axis-aligned rule in black.
+    /// Fill an axis-aligned rule in `color`.
     fn fill_rule(
         &mut self,
         x_bp: f32,
         y_bp: f32,
         width_bp: f32,
         height_bp: f32,
+        color: Color,
     ) -> Result<(), RenderError>;
 
-    /// Fill positioned native-font glyph outlines in black.
+    /// Fill positioned native-font glyph outlines in `color`.
     fn fill_glyphs(
         &mut self,
         font: FontId,
         size_bp: f32,
         glyphs: &[PositionedGlyph],
+        color: Color,
     ) -> Result<(), RenderError>;
 
     /// Draw an encoded raster image using its analyzed transform.
@@ -128,6 +130,7 @@ impl Backend for NullBackend {
         _y_bp: f32,
         _width_bp: f32,
         _height_bp: f32,
+        _color: Color,
     ) -> Result<(), RenderError> {
         Ok(())
     }
@@ -137,6 +140,7 @@ impl Backend for NullBackend {
         _font: FontId,
         _size_bp: f32,
         _glyphs: &[PositionedGlyph],
+        _color: Color,
     ) -> Result<(), RenderError> {
         Ok(())
     }

@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tectonic_xdv::{FileType, XdvError, XdvEvents, XdvParser};
 
 use crate::backend::{Backend, Matrix, PositionedGlyph};
+use crate::color::Color;
 use crate::fingerprint::page_digest;
 use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
 use crate::resource::{
@@ -229,17 +230,20 @@ impl<P: ResourceProvider> HotRenderer<P> {
                         y,
                         height,
                         width,
+                        color,
                     } => backend.fill_rule(
                         *x as f32 * SP_TO_BP,
                         *y as f32 * SP_TO_BP,
                         *width as f32 * SP_TO_BP,
                         *height as f32 * SP_TO_BP,
+                        *color,
                     )?,
                     DrawOperation::NativeGlyphs {
                         identity,
                         face_index,
                         size,
                         glyphs,
+                        color,
                     } => {
                         let handle = match font_handles.get(identity) {
                             Some(handle) => *handle,
@@ -267,7 +271,12 @@ impl<P: ResourceProvider> HotRenderer<P> {
                                 y_bp: glyph.y as f32 * SP_TO_BP,
                             })
                             .collect();
-                        backend.fill_glyphs(handle, *size as f32 * SP_TO_BP, &positioned)?;
+                        backend.fill_glyphs(
+                            handle,
+                            *size as f32 * SP_TO_BP,
+                            &positioned,
+                            *color,
+                        )?;
                     }
                     DrawOperation::Image {
                         identity,
@@ -324,12 +333,14 @@ pub(crate) enum DrawOperation {
         y: i32,
         height: i32,
         width: i32,
+        color: Color,
     },
     NativeGlyphs {
         identity: ResourceIdentity,
         face_index: u32,
         size: i32,
         glyphs: Vec<GlyphPosition>,
+        color: Color,
     },
     Image {
         identity: ResourceIdentity,
@@ -369,6 +380,9 @@ struct Walker<'a, P> {
     fonts: BTreeMap<i32, NativeFont>,
     resources: BTreeMap<ResourceIdentity, Resource>,
     ledger: CoverageLedger,
+    color: Color,
+    color_stack: Vec<Color>,
+    pdf_color_stacks: BTreeMap<i32, Vec<Color>>,
 }
 
 impl<'a, P: ResourceProvider> Walker<'a, P> {
@@ -381,6 +395,9 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             fonts: BTreeMap::new(),
             resources: BTreeMap::new(),
             ledger: CoverageLedger::default(),
+            color: Color::BLACK,
+            color_stack: Vec::new(),
+            pdf_color_stacks: BTreeMap::new(),
         }
     }
 
@@ -402,6 +419,88 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         if let Some(page) = self.page.take() {
             self.pages.push(page);
         }
+    }
+
+    fn apply_color_special(&mut self, contents: &[u8]) -> Result<bool, RenderError> {
+        let Ok(text) = std::str::from_utf8(contents) else {
+            return Ok(false);
+        };
+        let text = text.trim();
+        if let Some(args) = text.strip_prefix("color") {
+            let args = args.trim();
+            if let Some(spec) = args.strip_prefix("push") {
+                self.color_stack.push(self.color);
+                let Some(color) = parse_color_spec(spec.trim()) else {
+                    self.unsupported("malformed-color")?;
+                    return Ok(true);
+                };
+                self.color = color;
+            } else if args == "pop" {
+                let Some(color) = self.color_stack.pop() else {
+                    self.unsupported("color-stack-underflow")?;
+                    return Ok(true);
+                };
+                self.color = color;
+            } else {
+                let Some(color) = parse_color_spec(args) else {
+                    self.unsupported("malformed-color")?;
+                    return Ok(true);
+                };
+                self.color = color;
+            }
+            self.ledger.record_supported("color");
+            return Ok(true);
+        }
+        if let Some(args) = text.strip_prefix("pdfcolorstack") {
+            let mut tokens = args.split_whitespace();
+            let Some(stack_number) = tokens.next().and_then(|value| value.parse::<i32>().ok())
+            else {
+                self.unsupported("malformed-pdfcolorstack")?;
+                return Ok(true);
+            };
+            let Some(action) = tokens.next() else {
+                self.unsupported("malformed-pdfcolorstack")?;
+                return Ok(true);
+            };
+            match action {
+                "push" => {
+                    self.pdf_color_stacks
+                        .entry(stack_number)
+                        .or_default()
+                        .push(self.color);
+                    let Some(color) = parse_pdf_color(args) else {
+                        self.unsupported("malformed-pdfcolorstack")?;
+                        return Ok(true);
+                    };
+                    self.color = color;
+                }
+                "pop" => {
+                    let color = self
+                        .pdf_color_stacks
+                        .get_mut(&stack_number)
+                        .and_then(Vec::pop);
+                    let Some(color) = color else {
+                        self.unsupported("pdfcolorstack-underflow")?;
+                        return Ok(true);
+                    };
+                    self.color = color;
+                }
+                "set" => {
+                    let Some(color) = parse_pdf_color(args) else {
+                        self.unsupported("malformed-pdfcolorstack")?;
+                        return Ok(true);
+                    };
+                    self.color = color;
+                }
+                _ => {
+                    self.unsupported("unknown-pdfcolorstack-action")?;
+                    return Ok(true);
+                }
+            }
+            self.ledger.record_supported("pdfcolorstack");
+            return Ok(true);
+        }
+        Ok(false)
     }
 }
 
@@ -441,6 +540,9 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
     fn handle_special(&mut self, x: i32, y: i32, contents: &[u8]) -> Result<(), Self::Error> {
         if is_page_size_special(contents) {
             self.ledger.record_supported("page-size");
+            return Ok(());
+        }
+        if self.apply_color_special(contents)? {
             return Ok(());
         }
         if let Some(image) = parse_image_special(contents, x, y) {
@@ -512,6 +614,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             .zip(y)
             .map(|((&glyph_id, &x), &y)| GlyphPosition { glyph_id, x, y })
             .collect();
+        let color = self.color;
         self.page_mut()?
             .operations
             .push(DrawOperation::NativeGlyphs {
@@ -519,6 +622,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 face_index,
                 size,
                 glyphs: positions,
+                color,
             });
         self.ledger.record_supported("native-glyph-run");
         Ok(())
@@ -578,11 +682,13 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
 
     fn handle_rule(&mut self, x: i32, y: i32, height: i32, width: i32) -> Result<(), Self::Error> {
         if height > 0 && width > 0 {
+            let color = self.color;
             self.page_mut()?.operations.push(DrawOperation::Rule {
                 x,
                 y,
                 height,
                 width,
+                color,
             });
             self.ledger.record_supported("rule");
         }
@@ -597,6 +703,40 @@ struct ImageSpecial {
     page: u32,
     width: Option<f32>,
     height: Option<f32>,
+}
+
+fn parse_color_spec(spec: &str) -> Option<Color> {
+    let mut tokens = spec.split_whitespace();
+    let model = tokens.next()?;
+    let values: Vec<f32> = tokens.filter_map(|value| value.parse().ok()).collect();
+    match model.to_ascii_lowercase().as_str() {
+        "gray" if !values.is_empty() => Some(Color::gray(values[0])),
+        "rgb" if values.len() >= 3 => Some(Color::rgb(values[0], values[1], values[2])),
+        "cmyk" if values.len() >= 4 => {
+            Some(Color::cmyk(values[0], values[1], values[2], values[3]))
+        }
+        _ => None,
+    }
+}
+
+fn parse_pdf_color(args: &str) -> Option<Color> {
+    let open = args.find('(')?;
+    let close = args[open + 1..]
+        .find(')')
+        .map(|index| open + 1 + index)
+        .unwrap_or(args.len());
+    let mut tokens: Vec<_> = args[open + 1..close].split_whitespace().collect();
+    let operator = tokens.pop()?;
+    let values: Vec<f32> = tokens
+        .into_iter()
+        .filter_map(|value| value.parse().ok())
+        .collect();
+    match operator {
+        "g" if !values.is_empty() => Some(Color::gray(values[0])),
+        "rg" if values.len() >= 3 => Some(Color::rgb(values[0], values[1], values[2])),
+        "k" if values.len() >= 4 => Some(Color::cmyk(values[0], values[1], values[2], values[3])),
+        _ => None,
+    }
 }
 
 fn parse_image_special(contents: &[u8], x: i32, y: i32) -> Option<ImageSpecial> {
@@ -720,6 +860,37 @@ mod tests {
         }
     }
 
+    fn rule_xdv(color_special: &str) -> Arc<[u8]> {
+        let mut bytes = vec![247, 7];
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.push(0);
+        bytes.push(139);
+        bytes.extend_from_slice(&[0; 40]);
+        bytes.extend_from_slice(&(-1i32).to_be_bytes());
+        bytes.push(239);
+        bytes.push(color_special.len() as u8);
+        bytes.extend_from_slice(color_special.as_bytes());
+        bytes.push(132);
+        bytes.extend_from_slice(&65_536i32.to_be_bytes());
+        bytes.extend_from_slice(&131_072i32.to_be_bytes());
+        bytes.push(140);
+        bytes.push(248);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&2u16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.push(249);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.push(7);
+        bytes.extend_from_slice(&[223; 4]);
+        Arc::from(bytes)
+    }
+
     #[test]
     fn real_xdv_is_analyzed_conservatively_without_classic_font_support() {
         let mut renderer = HotRenderer::new(());
@@ -799,5 +970,23 @@ mod tests {
         assert_ne!(first_identity, second_identity);
         assert_eq!(&*first.resources[&first_identity].bytes, b"first");
         assert_eq!(&*second.resources[&second_identity].bytes, b"second");
+    }
+
+    #[test]
+    fn drawing_color_participates_in_a_stable_fingerprint() {
+        let mut renderer = HotRenderer::new(());
+        let red = renderer.analyze(rule_xdv("color rgb 1 0 0")).unwrap();
+        let blue = renderer
+            .analyze(rule_xdv("pdfcolorstack 0 set (0 0 1 rg)"))
+            .unwrap();
+        assert!(matches!(
+            red.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
+        assert!(matches!(
+            blue.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
+        assert_ne!(red.pages()[0].fingerprint, blue.pages()[0].fingerprint);
     }
 }

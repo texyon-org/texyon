@@ -16,10 +16,14 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                 y,
                 height,
                 width,
+                color,
             } => {
                 digest.update([0]);
                 for value in [x, y, height, width] {
                     digest.update(value.to_be_bytes());
+                }
+                for value in [color.red, color.green, color.blue] {
+                    digest.update(value.to_bits().to_be_bytes());
                 }
             }
             DrawOperation::NativeGlyphs {
@@ -27,6 +31,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                 face_index,
                 size,
                 glyphs,
+                color,
             } => {
                 digest.update([1]);
                 digest.update(identity.0);
@@ -37,6 +42,9 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                     digest.update(glyph.glyph_id.to_be_bytes());
                     digest.update(glyph.x.to_be_bytes());
                     digest.update(glyph.y.to_be_bytes());
+                }
+                for value in [color.red, color.green, color.blue] {
+                    digest.update(value.to_bits().to_be_bytes());
                 }
             }
             DrawOperation::Image {

@@ -6,12 +6,14 @@
 //! becoming part of page semantics.
 
 mod backend;
+mod color;
 mod fingerprint;
 mod pagesize;
 mod render;
 mod resource;
 
 pub use backend::{Backend, FontId, Matrix, NullBackend, PositionedGlyph};
+pub use color::Color;
 pub use render::{
     Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, RenderError,
     UnsupportedSummary,
