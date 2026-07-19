@@ -866,6 +866,23 @@ fn length_changing_child_horizon_resumes_exactly() {
         .unwrap();
     assert!(foreground.frame.tail_pending);
     assert_eq!(foreground.frame.pages.len(), 1);
+    let foreground_hit = foreground
+        .frame
+        .sync_index
+        .forward("child", 1)
+        .expect("fenced child foreground lost source geometry");
+    assert_eq!(foreground_hit.page_index, 0);
+    let inverse = foreground
+        .frame
+        .sync_index
+        .backward(
+            foreground_hit.page_index,
+            foreground_hit.h,
+            foreground_hit.v,
+        )
+        .expect("fenced child foreground lost inverse geometry");
+    assert!(inverse.path.ends_with("child.tex"));
+    assert_eq!(inverse.line, 1);
     let foreground_xdv = foreground.xdv.unwrap();
     let foreground_fragment = foreground.frame.splice_at.map_or(
         DocumentFragment::Complete(foreground_xdv.as_ref()),
@@ -882,6 +899,14 @@ fn length_changing_child_horizon_resumes_exactly() {
         .continue_tail(&cancellation)
         .unwrap()
         .expect("child horizon did not retain a continuation");
+    assert_eq!(
+        tail.frame
+            .sync_index
+            .forward("child.tex", 3)
+            .expect("child continuation lost source geometry")
+            .page_index,
+        2
+    );
     let tail_xdv = tail.xdv.unwrap();
     let splice_at = tail
         .frame
@@ -1236,7 +1261,8 @@ fn resident_synctex_index_stays_in_memory_and_tracks_children() {
         .sync_index
         .backward(child_hit.page_index, child_hit.h, child_hit.v)
         .expect("indexed child geometry was not searchable");
-    assert!(!backward.path.is_empty());
+    assert!(backward.path.ends_with("child.tex"));
+    assert_eq!(backward.line, 1);
     assert!(
         output
             .files
