@@ -2864,12 +2864,11 @@ pub(crate) fn do_extension_in(
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {
                 unsafe {
-                    crate::io::set_input_file_encoding_in(
-                        st,
-                        st.input.input_file[st.input.in_open as usize],
-                        i,
-                        j,
-                    )?;
+                    let f = st.input.input_file_ptr(st.input.in_open);
+                    // `\scantokens` occupies an input level without a UFile.
+                    if !f.is_null() {
+                        crate::io::set_input_file_encoding_in(st, f, i, j)?;
+                    }
                 }
             }
         }

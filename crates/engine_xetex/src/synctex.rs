@@ -2,11 +2,9 @@
  * Translated to Rust from xetex-synctex.c. */
 
 use crate::consts::{INT_BASE, INVALID_HANDLE};
-use crate::mem::xrealloc;
 use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
 use crate::units::{MemIdx, MemPtr};
 use libc::c_char;
-use std::ptr;
 
 
 // INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
@@ -18,10 +16,6 @@ use crate::bridge::{
     issue_error_cstr, issue_warning_cstr, ttstub_output_close, ttstub_output_open,
     ttstub_output_write,
 };
-
-extern "C" {
-    fn xstrdup(s: *const c_char) -> *mut c_char;
-}
 
 use crate::state::{EqtbState, ShipoutState};
 
@@ -63,18 +57,12 @@ unsafe fn synctex_write(handle: usize, s: &str) -> i32 {
     }
 }
 
-// Free a C pointer and return null (replaces `mfree(ptr)`).
-unsafe fn mfree_ptr<T>(ptr: *mut T) -> *mut T {
-    libc::free(ptr as *mut libc::c_void);
-    ptr::null_mut()
-}
-
 unsafe fn synctexabort(synctex: &mut crate::state::SynctexCtxt) {
     if synctex.file != INVALID_HANDLE {
         ttstub_output_close(synctex.file);
         synctex.file = INVALID_HANDLE;
     }
-    synctex.root_name = mfree_ptr(synctex.root_name);
+    synctex.root_name = None;
     synctex.flags.off = true;
 }
 
@@ -489,10 +477,8 @@ unsafe fn synctex_dot_open(
     }
     synctex.unit = 1;
 
-    if !synctex.root_name.is_null() {
-        let rn = synctex.root_name;
-        synctex_record_input(synctex, 1, rn);
-        synctex.root_name = mfree_ptr(synctex.root_name);
+    if let Some(root_name) = synctex.root_name.take() {
+        synctex_record_input(synctex, 1, root_name.as_ptr());
     }
 
     synctex.count = 0;
@@ -526,7 +512,7 @@ unsafe fn synctex_prepare_content(
 pub fn synctex_init_command(st: &mut crate::state::EngineState) {
     let synctex = &mut st.synctex;
     synctex.file = INVALID_HANDLE;
-    synctex.root_name = ptr::null_mut();
+    synctex.root_name = None;
     synctex.count = 0;
     synctex.node.0 = 0;
     synctex.deferred_kern = None;
@@ -579,14 +565,13 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
 
     if synctex.synctex_tag_counter == 1 {
-        synctex.root_name = xstrdup(st.input.get_current_name().as_ptr());
+        let name = st.input.get_current_name();
+        synctex.root_name = Some(if name.is_empty() {
+            c"texput".to_owned()
+        } else {
+            name.to_owned()
+        });
         libc::free(tmp as *mut libc::c_void);
-        if libc::strlen(synctex.root_name) == 0 {
-            let texput = b"texput\0";
-            synctex.root_name =
-                xrealloc(synctex.root_name as *mut libc::c_void, texput.len()) as *mut c_char;
-            libc::strcpy(synctex.root_name, texput.as_ptr() as *const c_char);
-        }
         return;
     }
 

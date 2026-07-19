@@ -253,11 +253,11 @@ pub(crate) fn end_file_reading_in(st: &mut crate::state::EngineState) -> Result<
         pseudo_close(&mut s.mem, &mut s.input);
     } else if name > 17 {
         let idx = st.input.cur_input.index as usize;
+        let slot = std::mem::take(&mut st.input.input_file[idx]);
         // SAFETY: FFI close of the open input file handle at this stack slot.
-        if unsafe { u_close(st.input.input_file[idx]) } {
+        if unsafe { u_close(slot) } {
             return Err(InputAbort::InputClose);
         }
-        st.input.input_file[idx] = std::ptr::null_mut();
     }
     let ptr = st.input.input_ptr - 1;
     st.input.input_ptr = ptr;

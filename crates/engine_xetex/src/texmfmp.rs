@@ -475,8 +475,12 @@ pub(crate) fn is_new_source_in(
     // SAFETY: `gettexstring_in` returns an owned C string compared by FFI then freed.
     unsafe {
         let name = gettexstring_in(&st.strings, srcfilename);
-        let changed =
-            compare_paths(name, st.texmf.last_source_name) != 0 || lineno != st.texmf.last_lineno;
+        let last_name = st
+            .texmf
+            .last_source_name
+            .as_deref()
+            .map_or(std::ptr::null(), |name| name.as_ptr());
+        let changed = compare_paths(name, last_name) != 0 || lineno != st.texmf.last_lineno;
         libc::free(name as *mut libc::c_void);
         changed
     }
@@ -488,12 +492,11 @@ pub(crate) fn remember_source_info_in(
     srcfilename: i32,
     lineno: i32,
 ) {
-    // SAFETY: frees the previously-owned name and stores a fresh owned C string.
+    // SAFETY: `gettexstring_in` returns a fresh owned C string.
     unsafe {
-        let old = st.texmf.last_source_name;
-        libc::free(old as *mut libc::c_void);
         let new_name = gettexstring_in(&st.strings, srcfilename);
-        st.texmf.last_source_name = new_name;
+        st.texmf.last_source_name = Some(std::ffi::CStr::from_ptr(new_name).to_owned());
+        libc::free(new_name as *mut libc::c_void);
     }
     st.texmf.last_lineno = lineno;
 }

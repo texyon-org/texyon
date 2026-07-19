@@ -46,6 +46,20 @@ const _: () = assert!(
     "UFile size mismatch with C UFILE"
 );
 
+impl Drop for UFile {
+    fn drop(&mut self) {
+        if self.encoding_mode == ICUMAPPING as i16 && !self.conversion_data.is_null() {
+            // SAFETY: this slot owns the converter installed by
+            // `set_input_file_encoding_in`.
+            unsafe { xetex_ucnv_close(self.conversion_data) };
+        }
+    }
+}
+
+pub(crate) fn stdin_ufile_ptr() -> *mut UFile {
+    &raw mut STDIN_UFILE
+}
+
 // Encoding mode constants (xetex-xetexd.h:1210–1215).
 const AUTO: i32 = 0;
 const UTF8: i32 = 1;
@@ -90,8 +104,6 @@ use crate::bridge::{
 // ---------------------------------------------------------------------------
 
 extern "C" {
-    fn xstrdup(s: *const libc::c_char) -> *mut libc::c_char;
-
     // TECkit functions (C++ engine with C API — extern "C" ABI).
     // TECkit_Status is `long` = i64 on Linux 64-bit; TECkit_Converter is opaque ptr (*mut c_void).
     fn TECkit_CreateConverter(
@@ -239,34 +251,33 @@ pub(crate) unsafe fn tt_xetex_open_input_in(
 
     let nof_ptr = nof();
     st.input.name_length = libc::strlen(nof_ptr) as i32;
-    libc::free(st.input.name_of_input_file as *mut libc::c_void);
-    st.input.name_of_input_file = xstrdup(nof_ptr);
+    st.input.name_of_input_file = Some(std::ffi::CStr::from_ptr(nof_ptr).to_owned());
     handle
 }
 
-/// Open and configure the input file.
+/// Open and configure an owned input file. `None` means the bridge open failed.
 pub(crate) unsafe fn u_open_in_in(
     st: &mut crate::state::EngineState,
-    f: *mut *mut UFile,
     filefmt: i32,
     mut mode: i32,
     encoding_data: i32,
-) -> Result<libc::c_int, crate::texmfmp::MakeTexStringAbort> {
+) -> Result<Option<Box<UFile>>, crate::texmfmp::MakeTexStringAbort> {
     let handle = tt_xetex_open_input_in(st, filefmt);
     if handle == INVALID_HANDLE {
-        return Ok(0);
+        return Ok(None);
     }
 
-    *f = xmalloc(std::mem::size_of::<UFile>()) as *mut UFile;
-    (**f).encoding_mode = 0;
-    (**f).conversion_data = std::ptr::null_mut();
-    (**f).saved_char = -1;
-    (**f).skip_next_lf = 0;
-    (**f).handle = handle;
+    let mut f = Box::new(UFile {
+        handle,
+        saved_char: -1,
+        skip_next_lf: 0,
+        encoding_mode: 0,
+        conversion_data: std::ptr::null_mut(),
+    });
 
     if mode == AUTO {
-        let b1 = ttstub_input_getc((**f).handle);
-        let b2 = ttstub_input_getc((**f).handle);
+        let b1 = ttstub_input_getc(f.handle);
+        let b2 = ttstub_input_getc(f.handle);
 
         if b1 == 0xfe && b2 == 0xff {
             mode = UTF16BE;
@@ -274,25 +285,25 @@ pub(crate) unsafe fn u_open_in_in(
             mode = UTF16LE;
         } else if b1 == 0 && b2 != 0 {
             mode = UTF16BE;
-            input_seek((**f).handle, 0, libc::SEEK_SET);
+            input_seek(f.handle, 0, libc::SEEK_SET);
         } else if b2 == 0 && b1 != 0 {
             mode = UTF16LE;
-            input_seek((**f).handle, 0, libc::SEEK_SET);
+            input_seek(f.handle, 0, libc::SEEK_SET);
         } else if b1 == 0xEF && b2 == 0xBB {
-            let b3 = ttstub_input_getc((**f).handle);
+            let b3 = ttstub_input_getc(f.handle);
             if b3 == 0xBF {
                 mode = UTF8;
             }
         }
 
         if mode == AUTO {
-            input_seek((**f).handle, 0, libc::SEEK_SET);
+            input_seek(f.handle, 0, libc::SEEK_SET);
             mode = UTF8;
         }
     }
 
-    set_input_file_encoding_in(st, *f, mode, encoding_data)?;
-    Ok(1)
+    set_input_file_encoding_in(st, &mut *f, mode, encoding_data)?;
+    Ok(Some(f))
 }
 
 // ---------------------------------------------------------------------------
@@ -811,22 +822,23 @@ pub(crate) unsafe fn get_uni_c_in(
 /// absorbs it. On that error the ICU-converter close + `free(f)` are skipped —
 /// exactly as the old longjmp skipped them.
 #[must_use]
-pub unsafe fn u_close(f: *mut UFile) -> bool {
-    const ICUMAPPING: i16 = 5; // xetex-xetexd.h:1215
+pub unsafe fn u_close(slot: crate::state::InputSlot) -> bool {
+    let crate::state::InputSlot::Open(f) = slot else {
+        return false;
+    };
 
-    if f.is_null() || (*f).handle == INVALID_HANDLE {
+    if f.handle == INVALID_HANDLE {
+        std::mem::forget(f);
         return false;
     }
 
-    if crate::io::input_close((*f).handle) {
+    if crate::io::input_close(f.handle) {
+        // Preserve the legacy longjmp path, which skipped converter cleanup.
+        std::mem::forget(f);
         return true;
     }
 
-    if (*f).encoding_mode == ICUMAPPING && !(*f).conversion_data.is_null() {
-        xetex_ucnv_close((*f).conversion_data);
-    }
-
-    libc::free(f as *mut libc::c_void);
+    drop(f);
     false
 }
 
@@ -868,7 +880,8 @@ pub(crate) unsafe fn open_or_close_in(
     let n = st.scanner.cur_val as u8 as usize;
 
     if st.input.read_open[n] != CLOSED {
-        if u_close(st.input.read_file[n]) {
+        let slot = std::mem::take(&mut st.input.read_file[n]);
+        if u_close(slot) {
             return Err(OpenOrCloseAbort::InputClose);
         }
         st.input.read_open[n] = CLOSED;
@@ -880,18 +893,16 @@ pub(crate) unsafe fn open_or_close_in(
         let (name, area, ext) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
         pack_file_name_in(st, name, area, ext);
 
-        let read_file = st.input.read_file.as_mut_ptr().add(n);
-        if u_open_in_in(
+        if let Some(file) = u_open_in_in(
             st,
-            read_file,
             TTBC_FILE_FORMAT_TEX,
             st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE),
             st.eqtb
                 .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING),
         )
         .map_err(OpenOrCloseAbort::MakeString)?
-            != 0
         {
+            st.input.read_file[n] = crate::state::InputSlot::Open(file);
             make_utf16_name_in(st);
             st.scanner.name_in_progress = true;
             begin_name_in(st);
@@ -1268,7 +1279,7 @@ pub unsafe fn init_io(st: &mut crate::state::EngineState) {
     STDIN_UFILE.conversion_data = std::ptr::null_mut();
 
     let first = st.input.first;
-    st.input.input_file[0] = (&raw mut STDIN_UFILE).cast();
+    st.input.input_file[0] = crate::state::InputSlot::Terminal;
     st.input.buffer[first as usize] = 0;
     st.input.last = first;
     let last = st.input.last;
@@ -1461,12 +1472,11 @@ pub(crate) unsafe fn start_input_in(
     crate::input::begin_file_reading_in(st)?;
 
     let idx = st.input.cur_input.index as i32;
-    let fptr = st.input.input_file.as_mut_ptr().add(idx as usize);
     let mode = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let enc = st
         .eqtb
         .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
-    if u_open_in_in(st, fptr, format, mode, enc).map_err(SccAbort::MakeTexString)? == 0 {
+    let Some(file) = u_open_in_in(st, format, mode, enc).map_err(SccAbort::MakeTexString)? else {
         // Build "failed to open input file "<name>"" into a leaked buffer for
         // the deferred _tt_abort (the C reads name_of_file via snprintf).
         let name = if st.input.name_of_file.is_empty() {
@@ -1477,7 +1487,8 @@ pub(crate) unsafe fn start_input_in(
         let buf = libc::malloc(512) as *mut libc::c_char;
         libc::snprintf(buf, 512, c"failed to open input file \"%s\"".as_ptr(), name);
         return Err(SccAbort::Input(InputAbort::TtAbort(buf)));
-    }
+    };
+    st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
 
     make_utf16_name_in(st);
     st.scanner.name_in_progress = true;
@@ -1499,7 +1510,11 @@ pub(crate) unsafe fn start_input_in(
     st.input.cur_input.name = name;
     let io = st.input.in_open;
     st.input.source_filename_stack[io as usize] = st.input.cur_input.name;
-    let nif = st.input.name_of_input_file;
+    let nif = st
+        .input
+        .name_of_input_file
+        .as_deref()
+        .map_or(std::ptr::null(), |name| name.as_ptr());
     let fss_str =
         crate::texmfmp::maketexstring_in(&mut st.strings, nif).map_err(SccAbort::MakeTexString)?;
     st.input.full_source_filename_stack[io as usize] = fss_str;
@@ -1561,7 +1576,7 @@ pub(crate) unsafe fn start_input_in(
     let synctex_tmp = crate::texmfmp::gettexstring_in(&st.strings, synctex_job_name);
     crate::synctex::synctex_start_input(st, synctex_tmp);
     st.mem.line = 1;
-    let f = st.input.input_file[idx as usize];
+    let f = st.input.input_file_ptr(idx);
     input_line_in(st, f)?;
     st.input.cur_input.limit = st.input.last;
 

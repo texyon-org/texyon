@@ -693,20 +693,22 @@ pub(crate) fn read_toks_in(
             )));
         } else if st.input.read_open[m] == JUST_OPEN {
             // §504
-            let rf = st.input.read_file[m];
+            let rf = st.input.read_file_ptr(m);
             if unsafe { crate::io::input_line_in(st, rf)? } != 0 {
                 st.input.read_open[m] = NORMAL_SCANNER; // NORMAL = 0
             } else {
-                if unsafe { crate::io::u_close(st.input.read_file[m]) } {
+                let slot = std::mem::take(&mut st.input.read_file[m]);
+                if unsafe { crate::io::u_close(slot) } {
                     return Err(SccAbort::InputClose);
                 }
                 st.input.read_open[m] = CLOSED;
             }
         } else {
             // §505
-            let rf = st.input.read_file[m];
+            let rf = st.input.read_file_ptr(m);
             if unsafe { crate::io::input_line_in(st, rf)? } == 0 {
-                if unsafe { crate::io::u_close(st.input.read_file[m]) } {
+                let slot = std::mem::take(&mut st.input.read_file[m]);
+                if unsafe { crate::io::u_close(slot) } {
                     return Err(SccAbort::InputClose);
                 }
                 st.input.read_open[m] = CLOSED;
@@ -1936,7 +1938,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                     st.input.force_eof = true;
                                 }
                             } else if {
-                                let __f = st.input.input_file[(st.input.cur_input.index as i32) as usize];
+                                let __f = st.input.input_file_ptr(st.input.cur_input.index as i32);
                                 try_in!(unsafe { crate::io::input_line_in(st, __f) })
                             } != 0
                             {

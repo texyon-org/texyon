@@ -67,12 +67,11 @@ pub(crate) struct SynctexFlags {
     pub output_p: bool,
 }
 
-/// The SyncTeX context. `root_name` is an owned C string managed via
-/// `synctexabort`/the synctex open path (its lifecycle stays in synctex.rs, no
-/// `tt_cleanup` edge).
+/// The SyncTeX context. `root_name` is owned and consumed by the SyncTeX open
+/// or abort path.
 pub(crate) struct SynctexCtxt {
     pub file: usize,
-    pub root_name: *mut libc::c_char,
+    pub root_name: Option<std::ffi::CString>,
     pub count: i32,
     pub node: crate::units::MemPtr,
     /// A kern node whose SyncTeX record is deferred until the context changes
@@ -99,7 +98,7 @@ impl Default for SynctexCtxt {
         // Every field zero/null/None/false except `lastv`, which starts at -1.
         Self {
             file: 0, // INVALID_HANDLE
-            root_name: std::ptr::null_mut(),
+            root_name: None,
             count: 0,
             node: crate::units::MemPtr::from_raw(0),
             deferred_kern: None,
@@ -122,13 +121,10 @@ impl Default for SynctexCtxt {
 /// `xetex-texmfmp.c` file-statics (`last_source_name`, `last_lineno`,
 /// `start_time_str`).
 ///
-/// `last_source_name` is an **owned C string** (`gettexstring`/`libc::free`):
-/// its free/reassign lifecycle stays entirely in `remember_source_info`, with
-/// no `tt_cleanup` edge (the last allocation leaks at teardown exactly as
-/// before). Eventual newtype target: `Option<CString>`.
+/// `last_source_name` is the owned name most recently reported to SyncTeX.
 #[derive(Default)]
 pub(crate) struct TexmfState {
-    pub last_source_name: *mut libc::c_char,
+    pub last_source_name: Option<std::ffi::CString>,
     pub last_lineno: i32,
     /// TIME_STR_SIZE = 30 ("D:YYYYmmddHHMMSS+HH'MM'" plus NUL and headroom).
     pub start_time_str: [u8; 30],
@@ -139,6 +135,17 @@ impl Default for AbsPathBuf {
     fn default() -> Self {
         AbsPathBuf([0; 1024])
     }
+}
+
+/// An owned main-input or `\read` stream slot.
+#[derive(Default)]
+pub(crate) enum InputSlot {
+    #[default]
+    Empty,
+    /// Address-stable terminal sentinel owned by `io.rs`.
+    Terminal,
+    /// Open file state; the box keeps raw FFI borrows address-stable.
+    Open(Box<crate::io::UFile>),
 }
 
 /// The `input` cluster's Rust-owned state. Distinct from
@@ -185,14 +192,8 @@ pub(crate) struct InputClusterState {
     /// `pop_input` restores it. `synctex_tag` is mirrored into `st.mem.cur_synctex_tag`
     /// for `get_node`.
     pub cur_input: crate::globals::InputState,
-    /// Rust-owned main input-file stack (`max_in_open + 1` handles, matching
-    /// the former `xmalloc_array` shape). Allocated at engine init and released
-    /// by `tt_cleanup`; never reallocated during a run (the pointer-escaping
-    /// `input_file_ptr` accessor relies on this). Replaces the former
-    /// C-`malloc`'d `input_file` pointer. Not serialized in format dump/undump.
-    /// Element type is a `UFILE*` handle, stored as `*mut c_void` to avoid a
-    /// cyclic dependency on `io.rs` — a plain pointer, no newtype debt.
-    pub input_file: Vec<*mut crate::io::UFile>,
+    /// Owned main input-file stack (`max_in_open + 1` slots). Not serialized.
+    pub input_file: Vec<InputSlot>,
     /// Rust-owned semantic-nest (mode) stack (`nest_size + 1` records, matching
     /// the former `xmalloc_array` shape). Allocated at engine init and released
     /// by `tt_cleanup`; never reallocated during a run. Replaces the former
@@ -253,18 +254,14 @@ pub(crate) struct InputClusterState {
     /// File-open states for `\read` streams (xetex-xetexd.h:536; CLOSED=2, JUST_OPEN=1,
     /// NORMAL=0). BSS array of 17 bytes — default all-zero = NORMAL. Plain `u8`, no newtype debt.
     pub read_open: [u8; 17],
-    /// `UFILE*` handles for `\read` streams (xetex-xetexd.h:535). BSS array of 16 pointers —
-    /// default all-null. Stored as `*mut c_void` to avoid cyclic dependency with `io.rs` (same
-    /// convention as `input_file`). The pointer-escaping accessor `read_file_ptr` is valid
-    /// because the array lives in the `'static` thread-local and is never moved. Plain opaque
-    /// pointer, no newtype debt.
-    pub read_file: [*mut crate::io::UFile; 16],
+    /// Owned `\read` stream slots (xetex-xetexd.h:535).
+    pub read_file: [InputSlot; 16],
     /// Rust-owned name buffer (NUL-terminated C string).
     pub name_of_file: Vec<libc::c_char>,
     /// Rust-owned UTF-16 name buffer.
     pub name_of_file16: Vec<u16>,
-    /// Rust-owned name of current input file.
-    pub name_of_input_file: *mut libc::c_char,
+    /// Owned name of the most recently opened input file.
+    pub name_of_input_file: Option<std::ffi::CString>,
     /// Rust-owned absolute path of current input file.
     pub abspath_of_input_file: AbsPathBuf,
 }
@@ -1822,6 +1819,22 @@ impl InputClusterState {
     pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {
         // SAFETY: self.abspath_of_input_file.0 is a NUL-terminated buffer of length 1024.
         unsafe { std::ffi::CStr::from_ptr(self.abspath_of_input_file.0.as_ptr()) }
+    }
+
+    pub(crate) fn input_file_ptr(&mut self, idx: i32) -> *mut crate::io::UFile {
+        Self::slot_ptr(&mut self.input_file[idx as usize])
+    }
+
+    pub(crate) fn read_file_ptr(&mut self, idx: usize) -> *mut crate::io::UFile {
+        Self::slot_ptr(&mut self.read_file[idx])
+    }
+
+    fn slot_ptr(slot: &mut InputSlot) -> *mut crate::io::UFile {
+        match slot {
+            InputSlot::Empty => std::ptr::null_mut(),
+            InputSlot::Terminal => crate::io::stdin_ufile_ptr(),
+            InputSlot::Open(file) => &mut **file,
+        }
     }
 }
 

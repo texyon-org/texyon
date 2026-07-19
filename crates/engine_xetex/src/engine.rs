@@ -1068,7 +1068,9 @@ unsafe fn initialize_engine(
             nest_words
         ];
         state.save_stack.data = crate::mem_types::zeroed_vec(save_words);
-        state.input.input_file = vec![std::ptr::null_mut(); input_file_words];
+        state.input.input_file = std::iter::repeat_with(|| crate::state::InputSlot::Empty)
+            .take(input_file_words)
+            .collect();
         state.input.input_stack = vec![
             crate::globals::InputState {
                 state: 0,
@@ -1558,12 +1560,12 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
     st.fonts.loaded_font_mapping = None;
 
     for i in 1..=st.input.in_open {
-        let f = st.input.input_file[i as usize];
-        if !f.is_null() {
-            // Terminal cleanup (tt_cleanup): absorb a serious close error — the
-            // engine is already tearing down.
-            let _ = crate::io::u_close(f);
-        }
+        let slot = std::mem::take(&mut st.input.input_file[i as usize]);
+        // Terminal cleanup absorbs a serious close error: teardown has begun.
+        let _ = crate::io::u_close(slot);
+    }
+    for slot in st.input.read_file.iter_mut() {
+        *slot = crate::state::InputSlot::Empty;
     }
 
     // Release all Rust-owned arenas (were C `malloc`'d / format-loaded arrays):
@@ -1574,13 +1576,11 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
         let s = &mut *st;
         s.save_stack.data = Vec::new();
 
-        if !s.input.name_of_input_file.is_null() {
-            libc::free(s.input.name_of_input_file as *mut libc::c_void);
-            s.input.name_of_input_file = std::ptr::null_mut();
-        }
+        s.input.name_of_input_file = None;
         s.input.abspath_of_input_file.0 = [0; 1024];
         s.input.nest = Vec::new();
         s.input.input_file = Vec::new();
+        s.input.read_file = Default::default();
         s.input.input_stack = Vec::new();
         s.input.param_stack = Vec::new();
         s.input.line_stack = Vec::new();
