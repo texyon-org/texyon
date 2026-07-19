@@ -55,6 +55,7 @@ members = [
     "crates/io_base",
     "crates/mac_core",
     "crates/pdf_io",
+    "crates/preview_protocol",
     "crates/preview_render",
     "crates/status_base",
     "crates/xdv",
@@ -95,6 +96,7 @@ tectonic_engine_xetex = { path = "crates/engine_xetex", version = "0.0.0-dev.0" 
 tectonic_errors = { path = "crates/errors", version = "0.0.0-dev.0" }
 tectonic_geturl = { path = "crates/geturl", version = "0.0.0-dev.0", default-features = false }
 tectonic_io_base = { path = "crates/io_base", version = "0.0.0-dev.0" }
+tectonic_preview_protocol = { path = "crates/preview_protocol", version = "0.0.0-dev.0" }
 tectonic_preview_render = { path = "crates/preview_render", version = "0.0.0-dev.0" }
 tectonic_status_base = { path = "crates/status_base", version = "0.0.0-dev.0" }
 tectonic_xdv = { path = "crates/xdv", version = "0.0.0-dev.0" }

@@ -2,18 +2,7 @@ use std::{collections::BTreeMap, fmt, sync::Arc};
 
 use tectonic_preview_render::{PageSvg, PageVisual};
 
-use super::{FrameId, RequestSeq, SequenceExhausted, SourceRevision};
-
-/// Rendering phase represented by a coherent frame.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FramePhase {
-    /// Immediate foreground response to a source operation.
-    Foreground,
-    /// Later completion at the same source revision.
-    TailSettle,
-    /// Full replay of retained belief after a client reload.
-    Resync,
-}
+use super::{FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision};
 
 /// One page payload included in a frame patch.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -2966,6 +2966,7 @@ dependencies = [
  "tectonic_errors",
  "tectonic_geturl",
  "tectonic_io_base",
+ "tectonic_preview_protocol",
  "tectonic_preview_render",
  "tectonic_status_base",
  "tectonic_xdv",
@@ -3207,6 +3208,14 @@ dependencies = [
  "tectonic_bridge_flate",
  "tectonic_bridge_png",
  "tectonic_cfg_support",
+]
+
+[[package]]
+name = "tectonic_preview_protocol"
+version = "0.0.0-dev.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

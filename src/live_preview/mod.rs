@@ -5,13 +5,13 @@
 
 mod assembler;
 mod publication;
-mod sequence;
 
 pub use assembler::{
     AssembledDocument, DocumentAssembler, DocumentFragment, XdvAssemblyError, XdvFileType,
 };
 pub use publication::{
-    ClientBelief, FramePage, FramePatch, FramePhase, FrameSink, PageBelief, PreviewPublisher,
-    PublicationError,
+    ClientBelief, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher, PublicationError,
 };
-pub use sequence::{FrameId, RequestSeq, SequenceExhausted, SourceRevision};
+pub use tectonic_preview_protocol::{
+    FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision,
+};
