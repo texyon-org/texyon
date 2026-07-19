@@ -655,8 +655,8 @@ pub(crate) unsafe fn store_fmt_file_in(
 
         let font_name = st.fonts.font_name[k as usize];
         let font_area = st.fonts.font_area[k as usize];
-        let font_mapping = st.fonts.font_mapping[k as usize];
-        if font_area == AAT_FONT_FLAG || font_area == OTGR_FONT_FLAG || !font_mapping.is_null() {
+        let has_font_mapping = st.fonts.font_mapping[k as usize].is_some();
+        if font_area == AAT_FONT_FLAG || font_area == OTGR_FONT_FLAG || has_font_mapping {
             crate::output::print_file_name_in(st, font_name, EMPTY_STRING, EMPTY_STRING);
             crate::output::error_here_with_diagnostic_in(
                 st,
@@ -1188,8 +1188,9 @@ unsafe fn load_fmt_file_in(
     st.fonts.font_ptr = x;
 
     let font_check_len = (st.fonts.font_max as usize) + 1;
-    st.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
-    st.fonts.font_mapping = vec![std::ptr::null_mut(); font_check_len];
+    st.fonts.font_layout_engine = vec![None; font_check_len];
+    st.fonts.font_layout_engine_mirror = vec![std::ptr::null_mut(); font_check_len];
+    st.fonts.font_mapping = vec![None; font_check_len];
     st.fonts.font_flags = vec![0i8; font_check_len];
     st.fonts.font_letter_space = vec![0i32; font_check_len];
     st.fonts.font_check = vec![

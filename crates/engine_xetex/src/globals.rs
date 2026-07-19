@@ -249,7 +249,7 @@ pub(crate) fn refresh_font_ffi_mirrors(fonts: &crate::state::FontState) {
     unsafe {
         font_ffi_mirror::FONT_SIZE = fonts.font_size.as_ptr();
         font_ffi_mirror::FONT_AREA = fonts.font_area.as_ptr();
-        font_ffi_mirror::FONT_LAYOUT_ENGINE = fonts.font_layout_engine.as_ptr();
+        font_ffi_mirror::FONT_LAYOUT_ENGINE = fonts.font_layout_engine_mirror.as_ptr();
     }
 }
 

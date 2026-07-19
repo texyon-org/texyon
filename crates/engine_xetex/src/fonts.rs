@@ -10,7 +10,7 @@ use crate::errors::ErrorOutcome;
 use crate::ext::{
     aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping_in,
     find_native_font_in, load_tfm_font_mapping_in, map_char_to_glyph, measure_native_node,
-    ot_get_font_metrics, release_font_engine,
+    ot_get_font_metrics,
 };
 use crate::io::{pack_file_name_in, tt_xetex_open_input_in};
 use crate::output::char_warning_in;
@@ -160,7 +160,7 @@ pub(crate) fn new_native_character_in(
     f: i32,
     mut c: u32,
 ) -> Result<i32, NativeCharAbort> {
-    let src = if !st.fonts.font_mapping[f as usize].is_null() {
+    let src = if st.fonts.font_mapping[f as usize].is_some() {
         if c > 65_535 {
             if st.strings.pool_ptr + 2 > st.strings.pool_size {
                 return Err(NativeCharAbort::PoolOverflow);
@@ -180,7 +180,7 @@ pub(crate) fn new_native_character_in(
         }
 
         let start = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
-        let map = st.fonts.font_mapping[f as usize];
+        let map = st.fonts.font_mapping_ptr(f);
         let cl = crate::hash::cur_length(&st.strings);
         // SAFETY: TECkit mapping over a raw pointer into the (non-reallocating)
         // string pool; identical to the legacy `str_pool_ptr(start)` call. `dst`
@@ -428,7 +428,7 @@ pub(crate) unsafe fn read_font_info_in(
             TfmParse::Loaded(f) => {
                 g = f;
                 let mapping = load_tfm_font_mapping_in(st)?;
-                st.fonts.set_font_mapping_ptr(f, mapping);
+                st.fonts.set_font_mapping(f, mapping);
             }
         }
     }
@@ -920,7 +920,7 @@ unsafe fn read_font_info_tfm(
 unsafe fn init_native_font_tables(
     fonts: &mut FontState,
     eqtb: &crate::state::EqtbState,
-    font_engine: *mut libc::c_void,
+    font_engine: crate::state::FontEngineHandle,
     full_name: i32,
     actual_size: i32,
     num_font_dimens: i32,
@@ -949,7 +949,7 @@ unsafe fn init_native_font_tables(
     let mut font_slant = 0;
     if fonts.native_font_type_flag == AAT_FONT_FLAG {
         aat_get_font_metrics(
-            font_engine,
+            font_engine.raw,
             &mut ascent,
             &mut descent,
             &mut x_ht,
@@ -958,7 +958,7 @@ unsafe fn init_native_font_tables(
         );
     } else {
         ot_get_font_metrics(
-            font_engine,
+            font_engine.raw,
             &mut ascent,
             &mut descent,
             &mut x_ht,
@@ -982,8 +982,8 @@ unsafe fn init_native_font_tables(
         eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR_LNF),
     );
     fonts.set_param_base(font_ptr, fonts.fmem_ptr - 1);
-    fonts.set_font_layout_engine_ptr(font_ptr, font_engine);
-    fonts.set_font_mapping_ptr(font_ptr, std::ptr::null_mut());
+    fonts.set_font_layout_engine(font_ptr, Some(std::sync::Arc::new(font_engine)));
+    fonts.set_font_mapping(font_ptr, None);
     fonts.set_font_letter_space_entry(font_ptr, fonts.loaded_font_letter_space);
 
     (font_ptr, x_ht, cap_ht, font_slant)
@@ -1040,10 +1040,9 @@ pub(crate) unsafe fn load_native_font_in(
     } else {
         st.input.name_of_file.as_mut_ptr()
     };
-    let font_engine = find_native_font_in(st, name_of_file, s)?;
-    if font_engine.is_null() {
+    let Some(font_engine) = find_native_font_in(st, name_of_file, s)? else {
         return Ok(FONT_BASE);
-    }
+    };
 
     let actual_size = if s >= 0 {
         s
@@ -1076,7 +1075,7 @@ pub(crate) unsafe fn load_native_font_in(
             )
             && st.fonts.font_size[f as usize] == actual_size
         {
-            release_font_engine(font_engine, st.fonts.native_font_type_flag);
+            drop(font_engine);
             st.strings.str_ptr -= 1;
             st.strings.pool_ptr =
                 st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
@@ -1086,7 +1085,9 @@ pub(crate) unsafe fn load_native_font_in(
     }
 
     let num_font_dimens =
-        if st.fonts.native_font_type_flag == OTGR_FONT_FLAG && isOpenTypeMathFont(font_engine) {
+        if st.fonts.native_font_type_flag == OTGR_FONT_FLAG
+            && isOpenTypeMathFont(font_engine.raw)
+        {
             65
         } else {
             8
@@ -1168,8 +1169,8 @@ pub(crate) unsafe fn load_native_font_in(
         }
     }
 
-    st.fonts
-        .set_font_mapping_ptr(font_ptr, st.fonts.loaded_font_mapping);
+    let staged_mapping = st.fonts.loaded_font_mapping.take();
+    st.fonts.set_font_mapping(font_ptr, staged_mapping);
     st.fonts.font_flags[font_ptr as usize] = st.fonts.loaded_font_flags as i8;
     Ok(font_ptr)
 }

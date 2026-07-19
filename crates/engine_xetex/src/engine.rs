@@ -65,8 +65,6 @@ extern "C" {
     fn tt_cleanup_pdf_files_close();
     #[link_name = "destroy_font_manager"]
     fn tt_cleanup_destroy_font_manager();
-    #[link_name = "TECkit_DisposeConverter"]
-    fn tt_cleanup_TECkit_DisposeConverter(cnv: *mut libc::c_void);
 }
 
 // translated from xetex-ini.c:3452 (get_strings_started)
@@ -1351,8 +1349,9 @@ unsafe fn initialize_engine(
         let base_fmt_len = (st.fonts.font_max as usize) + 1;
         {
             let state = &mut *st;
-            state.fonts.font_layout_engine = vec![std::ptr::null_mut(); font_check_len];
-            state.fonts.font_mapping = vec![std::ptr::null_mut(); font_check_len];
+            state.fonts.font_layout_engine = vec![None; font_check_len];
+            state.fonts.font_layout_engine_mirror = vec![std::ptr::null_mut(); font_check_len];
+            state.fonts.font_mapping = vec![None; font_check_len];
             state.fonts.font_flags = vec![0i8; font_check_len];
             state.fonts.font_letter_space = vec![0i32; font_check_len];
             state.fonts.font_check = vec![
@@ -1424,7 +1423,7 @@ unsafe fn initialize_engine(
             s.fonts.exten_base[f] = 0;
             s.fonts.font_glue[f] = crate::mem::TEX_NULL;
             s.fonts.font_params[f] = 7;
-            s.fonts.font_mapping[f] = std::ptr::null_mut();
+            s.fonts.font_mapping[f] = None;
             s.fonts.param_base[f] = -1;
             for font_k in 0..=6usize {
                 s.fonts.font_info[font_k].b32.s1 = 0;
@@ -1546,18 +1545,16 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
 
     tt_cleanup_destroy_font_manager();
 
-    for font_k in 0..st.fonts.font_max {
-        let engine = st.fonts.font_layout_engine[font_k as usize];
-        if !engine.is_null() {
-            crate::ext::release_font_engine(engine, st.fonts.font_area[font_k as usize]);
-            st.fonts.font_layout_engine[font_k as usize] = std::ptr::null_mut();
-        }
-        let mapping = st.fonts.font_mapping[font_k as usize];
-        if !mapping.is_null() {
-            tt_cleanup_TECkit_DisposeConverter(mapping);
-            st.fonts.font_mapping[font_k as usize] = std::ptr::null_mut();
-        }
+    for slot in st.fonts.font_layout_engine.iter_mut() {
+        *slot = None;
     }
+    for raw in st.fonts.font_layout_engine_mirror.iter_mut() {
+        *raw = std::ptr::null_mut();
+    }
+    for slot in st.fonts.font_mapping.iter_mut() {
+        *slot = None;
+    }
+    st.fonts.loaded_font_mapping = None;
 
     for i in 1..=st.input.in_open {
         let f = st.input.input_file[i as usize];
@@ -1627,6 +1624,7 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
 
         s.fonts.font_info = Vec::new();
         s.fonts.font_layout_engine = Vec::new();
+        s.fonts.font_layout_engine_mirror = Vec::new();
         s.fonts.font_mapping = Vec::new();
         s.fonts.font_flags = Vec::new();
         s.fonts.font_letter_space = Vec::new();

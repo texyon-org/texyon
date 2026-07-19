@@ -4442,7 +4442,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_COUNT_GLYPHS_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 st.scanner.cur_val = if fa == AAT_FONT_FLAG {
                                     aat_font_get(m - XETEX_INT, engine)
@@ -4455,7 +4455,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_COUNT_FEATURES_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 st.scanner.cur_val = if fa == AAT_FONT_FLAG {
                                     aat_font_get(m - XETEX_INT, engine)
@@ -4478,7 +4478,7 @@ pub(crate) fn scan_something_internal_in(
                             | XETEX_COUNT_SELECTORS_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == AAT_FONT_FLAG {
                                     scan_int_in(st)?;
@@ -4502,7 +4502,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_SELECTOR_CODE_CODE | XETEX_IS_DEFAULT_SELECTOR_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == AAT_FONT_FLAG {
                                     scan_int_in(st)?;
@@ -4530,7 +4530,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_FIND_VARIATION_BY_NAME_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == AAT_FONT_FLAG {
                                     crate::io::scan_and_pack_name_in(st)?;
@@ -4549,7 +4549,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_FIND_FEATURE_BY_NAME_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == AAT_FONT_FLAG {
                                     crate::io::scan_and_pack_name_in(st)?;
@@ -4573,7 +4573,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_FIND_SELECTOR_BY_NAME_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == AAT_FONT_FLAG {
                                     scan_int_in(st)?;
@@ -4601,7 +4601,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_OT_COUNT_SCRIPTS_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 st.scanner.cur_val = if fa == OTGR_FONT_FLAG && unsafe { usingOpenType(engine) } {
                                         unsafe { ot_font_get(m - XETEX_INT, engine) }
@@ -4612,7 +4612,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_OT_COUNT_LANGUAGES_CODE | XETEX_OT_SCRIPT_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == OTGR_FONT_FLAG && unsafe { usingOpenType(engine) } {
                                     scan_int_in(st)?;
@@ -4633,7 +4633,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_OT_COUNT_FEATURES_CODE | XETEX_OT_LANGUAGE_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == OTGR_FONT_FLAG && unsafe { usingOpenType(engine) } {
                                     scan_int_in(st)?;
@@ -4656,7 +4656,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_OT_FEATURE_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 if fa == OTGR_FONT_FLAG && unsafe { usingOpenType(engine) } {
                                     scan_int_in(st)?;
@@ -4726,7 +4726,7 @@ pub(crate) fn scan_something_internal_in(
                             XETEX_FONT_TYPE_CODE => {
                                 scan_font_ident_in(st)?;
                                 n = st.scanner.cur_val;
-                                let engine = st.fonts.font_layout_engine[n as usize];
+                                let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
                                 st.scanner.cur_val = if fa == AAT_FONT_FLAG {
                                     1

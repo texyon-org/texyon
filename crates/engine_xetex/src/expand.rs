@@ -920,7 +920,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             let fa = st.fonts.font_area[fnt as usize];
             if fa == AAT_FONT_FLAG
                 || (fa == OTGR_FONT_FLAG
-                    && unsafe { usingGraphite(st.fonts.font_layout_engine[fnt as usize]) })
+                    && unsafe { usingGraphite(st.fonts.font_layout_engine_ptr(fnt)) })
             {
                 crate::scan::scan_int_in(st)?;
                 arg1 = st.scanner.cur_val;
@@ -941,7 +941,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             let fa = st.fonts.font_area[fnt as usize];
             if fa == AAT_FONT_FLAG
                 || (fa == OTGR_FONT_FLAG
-                    && unsafe { usingGraphite(st.fonts.font_layout_engine[fnt as usize]) })
+                    && unsafe { usingGraphite(st.fonts.font_layout_engine_ptr(fnt)) })
             {
                 crate::scan::scan_int_in(st)?;
                 arg1 = st.scanner.cur_val;
@@ -1164,7 +1164,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             if st.fonts.font_area[fnt as usize] == AAT_FONT_FLAG {
                 crate::ext::aat_print_font_name(
                     c,
-                    st.fonts.font_layout_engine[fnt as usize],
+                    st.fonts.font_layout_engine_ptr(fnt),
                     arg1,
                     arg2,
                 );
@@ -1172,7 +1172,7 @@ pub(crate) fn conv_toks_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         }
         XETEX_FEATURE_NAME_CODE_CT | XETEX_SELECTOR_NAME_CODE_CT => {
             let fa = st.fonts.font_area[fnt as usize];
-            let engine = st.fonts.font_layout_engine[fnt as usize];
+            let engine = st.fonts.font_layout_engine_ptr(fnt);
             if fa == AAT_FONT_FLAG {
                 crate::ext::aat_print_font_name(c, engine, arg1, arg2);
             } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {

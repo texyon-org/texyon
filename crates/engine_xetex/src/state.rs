@@ -892,18 +892,47 @@ pub(crate) struct ConfigState {
     pub max_print_line: i32,
 }
 
+/// Owned native layout engine with exactly-once disposal. Multiple resident
+/// checkpoints may share the handle, but the underlying engine is released
+/// only after the final owner is dropped.
+pub(crate) struct FontEngineHandle {
+    pub raw: *mut libc::c_void,
+    pub area: i32,
+}
+
+impl Drop for FontEngineHandle {
+    fn drop(&mut self) {
+        // SAFETY: construction is restricted to successful native-font loads;
+        // Arc sharing preserves exactly-once disposal.
+        unsafe { crate::ext::release_font_engine(self.raw, self.area) }
+    }
+}
+
+/// Owned TECkit converter with exactly-once disposal.
+pub(crate) struct FontMappingHandle {
+    pub raw: *mut libc::c_void,
+}
+
+impl Drop for FontMappingHandle {
+    fn drop(&mut self) {
+        // SAFETY: construction is restricted to successful converter loads;
+        // Arc sharing preserves exactly-once disposal.
+        unsafe { crate::ext::dispose_font_mapping(self.raw) }
+    }
+}
+
 pub(crate) struct FontState {
-    pub loaded_font_mapping: *mut libc::c_void,
+    /// Converter staged by a `mapping=` font feature until it is transferred
+    /// into a font slot.
+    pub loaded_font_mapping: Option<std::sync::Arc<FontMappingHandle>>,
     pub loaded_font_flags: libc::c_char,
-    /// Rust-owned per-font layout engine handle table (`font_max + 1` entries).
-    /// Stores `XeTeXLayoutEngine` (opaque void *) pointers; not format-
-    /// serialized; handles are released explicitly in `tt_cleanup` before the
-    /// Vec is dropped. Plain `*mut c_void`, no newtype debt.
-    pub font_layout_engine: Vec<*mut libc::c_void>,
-    /// Rust-owned per-font TECkit mapping handle table (`font_max + 1` entries).
-    /// Stores `TECkit_Converter` (opaque void *) pointers; not format-serialized;
-    /// converters are disposed explicitly in `tt_cleanup`. Plain `*mut c_void`.
-    pub font_mapping: Vec<*mut libc::c_void>,
+    /// Owned per-font native layout engines. Not format-serialized.
+    pub font_layout_engine: Vec<Option<std::sync::Arc<FontEngineHandle>>>,
+    /// Flat raw mirror used by the borrow-free C++ OpenType-math callback.
+    /// Kept in lockstep by `set_font_layout_engine`.
+    pub font_layout_engine_mirror: Vec<*mut libc::c_void>,
+    /// Owned per-font TECkit mappings. Not format-serialized.
+    pub font_mapping: Vec<Option<std::sync::Arc<FontMappingHandle>>>,
     pub loaded_font_letter_space: i32,
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
@@ -993,9 +1022,10 @@ pub(crate) struct FontState {
 impl Default for FontState {
     fn default() -> Self {
         Self {
-            loaded_font_mapping: std::ptr::null_mut(),
+            loaded_font_mapping: None,
             loaded_font_flags: 0,
             font_layout_engine: Vec::new(),
+            font_layout_engine_mirror: Vec::new(),
             font_mapping: Vec::new(),
             loaded_font_letter_space: 0,
             xtx_ligature_present: false,
@@ -1053,6 +1083,8 @@ impl FontState {
     #[inline]
     pub(crate) fn font_layout_engine_ptr(&self, f: i32) -> *mut libc::c_void {
         self.font_layout_engine[f as usize]
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |handle| handle.raw)
     }
 
     #[inline]
@@ -1081,6 +1113,8 @@ impl FontState {
     #[inline]
     pub(crate) fn font_mapping_ptr(&self, f: i32) -> *mut libc::c_void {
         self.font_mapping[f as usize]
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |handle| handle.raw)
     }
 
     #[inline]
@@ -1287,11 +1321,21 @@ impl FontState {
         self.font_used[f as usize] = v;
     }
     #[inline]
-    pub(crate) fn set_font_layout_engine_ptr(&mut self, f: i32, v: *mut libc::c_void) {
+    pub(crate) fn set_font_layout_engine(
+        &mut self,
+        f: i32,
+        v: Option<std::sync::Arc<FontEngineHandle>>,
+    ) {
+        self.font_layout_engine_mirror[f as usize] =
+            v.as_ref().map_or(std::ptr::null_mut(), |handle| handle.raw);
         self.font_layout_engine[f as usize] = v;
     }
     #[inline]
-    pub(crate) fn set_font_mapping_ptr(&mut self, f: i32, v: *mut libc::c_void) {
+    pub(crate) fn set_font_mapping(
+        &mut self,
+        f: i32,
+        v: Option<std::sync::Arc<FontMappingHandle>>,
+    ) {
         self.font_mapping[f as usize] = v;
     }
     #[inline]

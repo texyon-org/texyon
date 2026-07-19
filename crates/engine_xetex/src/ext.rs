@@ -84,6 +84,7 @@ extern "C" {
         input_is_complete: u8,
     ) -> i64;
     fn TECkit_ResetConverter(converter: *mut c_void) -> i64;
+    fn TECkit_DisposeConverter(converter: *mut c_void) -> i64;
     fn hb_tag_from_string(str_: *const c_char, len: c_int) -> u32;
 
     fn deleteLayoutEngine(engine: XeTeXLayoutEngine);
@@ -572,7 +573,7 @@ unsafe fn load_mapping_file_in(
     s: *const c_char,
     e: *const c_char,
     byte_mapping: c_char,
-) -> Result<*mut c_void, NativeFontAbort> {
+) -> Result<Option<std::sync::Arc<crate::state::FontMappingHandle>>, NativeFontAbort> {
     let source_len = e.offset_from(s) as usize;
     let buffer = xmalloc((source_len + 5) as libc::size_t) as *mut c_char;
     ptr::copy_nonoverlapping(s, buffer, source_len);
@@ -642,7 +643,9 @@ unsafe fn load_mapping_file_in(
     }
 
     libc::free(buffer as *mut c_void);
-    Ok(cnv)
+    Ok((!cnv.is_null()).then(|| {
+        std::sync::Arc::new(crate::state::FontMappingHandle { raw: cnv })
+    }))
 }
 
 // translated from xetex-ext.c:236 (check_for_tfm_font_mapping)
@@ -664,8 +667,8 @@ pub(crate) unsafe fn check_for_tfm_font_mapping_in(name_of_file: *mut c_char) {
 // translated from xetex-ext.c:251 (load_tfm_font_mapping)
 pub(crate) unsafe fn load_tfm_font_mapping_in(
     st: &mut EngineState,
-) -> Result<*mut c_void, NativeFontAbort> {
-    let mut rval = ptr::null_mut();
+) -> Result<Option<std::sync::Arc<crate::state::FontMappingHandle>>, NativeFontAbort> {
+    let mut rval = None;
     if !SAVED_MAPPING_NAME.is_null() {
         rval = load_mapping_file_in(
             st,
@@ -792,7 +795,7 @@ unsafe fn load_ot_font(
     font: XeTeXFont,
     scaled_size: i32,
     mut cp1: *mut c_char,
-) -> Result<*mut c_void, NativeFontAbort> {
+) -> Result<Option<crate::state::FontEngineHandle>, NativeFontAbort> {
     let mut engine: XeTeXLayoutEngine = ptr::null_mut();
     let mut script = HB_TAG_NONE;
     let mut language: *mut c_char = ptr::null_mut();
@@ -835,7 +838,7 @@ unsafe fn load_ot_font(
             embolden,
         );
         if engine.is_null() {
-            return Ok(ptr::null_mut());
+            return Ok(None);
         }
     }
 
@@ -1027,9 +1030,13 @@ unsafe fn load_ot_font(
     }
     if !engine.is_null() {
         st.fonts.native_font_type_flag = OTGR_FONT_FLAG as i32;
+        Ok(Some(crate::state::FontEngineHandle {
+            raw: engine,
+            area: OTGR_FONT_FLAG as i32,
+        }))
+    } else {
+        Ok(None)
     }
-
-    Ok(engine)
 }
 
 fn name_of_file_mut_ptr(st: &mut EngineState) -> *mut c_char {
@@ -1045,8 +1052,8 @@ pub(crate) unsafe fn find_native_font_in(
     st: &mut EngineState,
     uname: *mut c_char,
     mut scaled_size: i32,
-) -> Result<*mut c_void, NativeFontAbort> {
-    let mut rval: *mut c_void = ptr::null_mut();
+) -> Result<Option<crate::state::FontEngineHandle>, NativeFontAbort> {
+    let mut rval = None;
     let name = uname;
     let mut var: *mut c_char = ptr::null_mut();
     let mut feat: *mut c_char = ptr::null_mut();
@@ -1056,7 +1063,7 @@ pub(crate) unsafe fn find_native_font_in(
     let mut font: XeTeXFont;
     let mut index = 0;
 
-    st.fonts.loaded_font_mapping = ptr::null_mut();
+    st.fonts.loaded_font_mapping = None;
     st.fonts.loaded_font_flags = 0;
     st.fonts.loaded_font_letter_space = 0;
 
@@ -1104,10 +1111,10 @@ pub(crate) unsafe fn find_native_font_in(
             }
 
             rval = load_ot_font(st, ptr::null_mut(), font, scaled_size, feat_string)?;
-            if rval.is_null() {
+            if rval.is_none() {
                 deleteFont(font);
             }
-            if !rval.is_null() && st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+            if rval.is_some() && st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic_in(st);
                 crate::output::print_nl_in(st, b' ' as i32);
                 print_c_string_in(st, c"-> ".as_ptr());
@@ -1165,7 +1172,7 @@ pub(crate) unsafe fn find_native_font_in(
                 #[cfg(not(target_os = "macos"))]
                 {
                     rval = load_ot_font(st, font_ref, font, scaled_size, feat_string)?;
-                    if rval.is_null() {
+                    if rval.is_none() {
                         deleteFont(font);
                     }
                 }
@@ -1246,6 +1253,10 @@ pub unsafe fn splitFontName(
     if (*var).is_null() {
         *var = *feat;
     }
+}
+
+pub(crate) unsafe fn dispose_font_mapping(cnv: *mut c_void) {
+    TECkit_DisposeConverter(cnv);
 }
 
 // translated from xetex-ext.c:503 (release_font_engine)
