@@ -2,7 +2,7 @@ use std::{fmt, io::Write};
 
 use tectonic_preview_protocol::{
     encode_event, OperationMetrics, PageSize, PageSvgPayload, ProtocolError, ProtocolLimits,
-    ServerEvent, UpdateOutcome,
+    ServerEvent,
 };
 
 use super::{FramePatch, FrameSink};
@@ -91,7 +91,7 @@ impl<W: Write> JsonlFrameSink<W> {
                 source_revision: frame.source_revision,
                 applied_request_seq: frame.applied_request_seq,
                 phase: frame.phase,
-                outcome: UpdateOutcome::Complete,
+                outcome: frame.outcome,
                 page_count: frame.pages.len(),
                 changed: frame.changed.clone(),
                 removed: frame.removed.clone(),
@@ -145,7 +145,9 @@ impl<W: Write> FrameSink for JsonlFrameSink<W> {
 mod tests {
     use std::{collections::BTreeMap, io};
 
-    use tectonic_preview_protocol::{FrameId, FramePhase, RequestSeq, SourceRevision};
+    use tectonic_preview_protocol::{
+        FrameId, FramePhase, RequestSeq, SourceRevision, UpdateOutcome,
+    };
     use tectonic_preview_render::{PageFingerprint, PageVisual};
 
     use super::*;
@@ -157,6 +159,7 @@ mod tests {
             source_revision: SourceRevision::new(3),
             applied_request_seq: RequestSeq::new(4),
             phase: FramePhase::Foreground,
+            outcome: UpdateOutcome::Complete,
             pages: vec![PageVisual {
                 fingerprint: PageFingerprint::Stable([1; 32]),
                 size_bp: [612.0, 792.0],

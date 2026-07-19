@@ -1,5 +1,6 @@
 use std::{fmt, sync::Arc};
 
+use tectonic_preview_protocol::UpdateOutcome;
 use tectonic_preview_render::{Backend, HotRenderer, RenderError, ResourceProvider};
 
 use super::{
@@ -72,6 +73,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         source_revision: SourceRevision,
         applied_request_seq: RequestSeq,
         phase: FramePhase,
+        outcome: UpdateOutcome,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
         self.process_fragment(
             sink,
@@ -79,6 +81,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             source_revision,
             applied_request_seq,
             phase,
+            outcome,
         )
     }
 
@@ -90,6 +93,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         source_revision: SourceRevision,
         applied_request_seq: RequestSeq,
         phase: FramePhase,
+        outcome: UpdateOutcome,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
         let document = self
             .assembler
@@ -125,6 +129,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
                 source_revision,
                 applied_request_seq,
                 phase,
+                outcome,
                 analysis.pages(),
                 rendered,
             )
@@ -202,6 +207,7 @@ mod tests {
                 SourceRevision::ZERO,
                 RequestSeq::ZERO,
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
             )
             .unwrap();
         let second = pipeline
@@ -211,6 +217,7 @@ mod tests {
                 SourceRevision::new(1),
                 RequestSeq::new(1),
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
             )
             .unwrap();
 
@@ -233,6 +240,7 @@ mod tests {
                 SourceRevision::ZERO,
                 RequestSeq::ZERO,
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
             )
             .unwrap();
         let previous = Arc::clone(pipeline.last_document().unwrap().bytes());
@@ -247,6 +255,7 @@ mod tests {
                 SourceRevision::new(1),
                 RequestSeq::new(1),
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
             ),
             Err(PreviewPipelineError::Assembly(_))
         ));
@@ -261,6 +270,7 @@ mod tests {
                 SourceRevision::new(1),
                 RequestSeq::new(1),
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
             ),
             Err(PreviewPipelineError::Publication(PublicationError::Sink(
                 "closed"

@@ -11,8 +11,16 @@ use tectonic::engines::tex::{
 };
 use tectonic::io::testing::SingleInputFileIo;
 use tectonic::io::{IoProvider, IoStack, MemoryIo};
+use tectonic::live_preview::{
+    DocumentRoot, JsonlFrameSink, PreviewWorkerProcessor, ResidentEngineSupport,
+    ResidentPreviewProcessor, ResidentXeTeX, SourceSet, WorkerRun,
+};
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_io_base::stdstreams::BufferedPrimaryIo;
+use tectonic_preview_protocol::{ProtocolLimits, RequestSeq};
+use tectonic_preview_render::{
+    NullBackend, RenderError, Resource, ResourceKind, ResourceProvider, ResourceRequest,
+};
 use tectonic_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
@@ -231,6 +239,119 @@ fn cooperative_cancel_rewinds_and_next_edit_recovers() {
         assert_eq!(frame.outcome, TexOutcome::Spotless);
         session.finish(&mut launcher).unwrap();
     }
+}
+
+#[test]
+fn resident_engine_driver_captures_complete_xdv_and_revision() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let expected = cold_xdv(b"A\n\\bye\n");
+    let temp = tempfile::tempdir().unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        "A\n\\bye\n".into(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+
+    let first = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert_eq!(first.xdv.unwrap().as_ref(), expected);
+    assert_eq!(first.frame.source_revision.get(), 0);
+
+    sources.replace(None, "B\n\\bye\n".into()).unwrap();
+    let edited = runner
+        .compile(sources.snapshot(), Some((0, 0)), &cancellation)
+        .unwrap();
+    assert!(edited.xdv.is_some());
+    assert_eq!(edited.frame.source_revision.get(), 1);
+
+    cancellation.request();
+    let cancelled = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert!(cancelled.frame.cancelled);
+    assert!(cancelled.xdv.is_none());
+    cancellation.rearm();
+    assert!(runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap()
+        .xdv
+        .is_some());
+    runner.finish().unwrap();
+}
+
+#[test]
+fn resident_processor_publishes_engine_output_as_svg_frame() {
+    struct ClassicResources;
+
+    impl ResourceProvider for ClassicResources {
+        fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
+            let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let path = match request.kind {
+                ResourceKind::Tfm => root.join("tests/assets/cmr10.tfm"),
+                ResourceKind::FontProgram => root.join("tests/assets/cmr10.pfb"),
+                ResourceKind::Encoding => return Ok(None),
+                _ => return Ok(None),
+            };
+            Ok(Some(Resource::from_bytes(std::fs::read(path).unwrap())))
+        }
+    }
+
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let temp = tempfile::tempdir().unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        "A\n\\bye\n".into(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let engine = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    let sink = JsonlFrameSink::new(Vec::new(), ProtocolLimits::default());
+    let mut processor = ResidentPreviewProcessor::new(engine, ClassicResources, NullBackend, sink);
+
+    let first = processor.compile(sources.snapshot(), RequestSeq::ZERO, None, &cancellation);
+    assert!(matches!(
+        first,
+        WorkerRun::Complete(frame) if frame.frame_id.get() == 1
+    ));
+    sources.replace(None, "B\n\\bye\n".into()).unwrap();
+    let second = processor.compile(
+        sources.snapshot(),
+        RequestSeq::new(1),
+        Some((0, 0)),
+        &cancellation,
+    );
+    assert!(matches!(
+        second,
+        WorkerRun::Complete(frame) if frame.frame_id.get() == 2
+    ));
+    processor
+        .resync(sources.snapshot(), RequestSeq::new(1))
+        .unwrap();
+
+    let wire = processor.sink().writer();
+    assert_eq!(wire.iter().filter(|&&byte| byte == b'\n').count(), 3);
+    processor.shutdown().unwrap();
 }
 
 #[test]

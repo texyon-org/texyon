@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
+use tectonic_preview_protocol::UpdateOutcome;
 use tectonic_preview_render::{PageSvg, PageVisual};
 
 use super::{FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision};
@@ -24,6 +25,8 @@ pub struct FramePatch {
     pub applied_request_seq: RequestSeq,
     /// Operation phase.
     pub phase: FramePhase,
+    /// Engine operation result represented by this coherent frame.
+    pub outcome: UpdateOutcome,
     /// Complete page visual metadata in document order.
     pub pages: Vec<PageVisual>,
     /// Added or changed page indices.
@@ -128,6 +131,7 @@ impl PreviewPublisher {
         source_revision: SourceRevision,
         applied_request_seq: RequestSeq,
         phase: FramePhase,
+        outcome: UpdateOutcome,
         visuals: &[PageVisual],
         rendered: Vec<PageSvg>,
     ) -> Result<FrameId, PublicationError<S::Error>> {
@@ -169,6 +173,7 @@ impl PreviewPublisher {
             source_revision,
             applied_request_seq,
             phase,
+            outcome,
             pages: visuals.to_vec(),
             changed,
             removed,
@@ -197,6 +202,7 @@ impl PreviewPublisher {
             source_revision,
             applied_request_seq,
             phase: FramePhase::Resync,
+            outcome: UpdateOutcome::Complete,
             pages: self
                 .belief
                 .pages
@@ -324,6 +330,7 @@ mod tests {
                 SourceRevision::ZERO,
                 RequestSeq::ZERO,
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
                 &[visual(1), visual(2), visual(3)],
                 vec![svg(0, "a"), svg(1, "b"), svg(2, "c")],
             )
@@ -334,6 +341,7 @@ mod tests {
                 SourceRevision::new(1),
                 RequestSeq::new(1),
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
                 &[visual(1), visual(9)],
                 vec![svg(1, "changed")],
             )
@@ -357,6 +365,7 @@ mod tests {
                 SourceRevision::ZERO,
                 RequestSeq::ZERO,
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
                 &[visual(1)],
                 vec![svg(0, "a")],
             )
@@ -367,6 +376,7 @@ mod tests {
                 SourceRevision::new(1),
                 RequestSeq::new(1),
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
                 &[visual(1)],
                 vec![],
             )
@@ -392,6 +402,7 @@ mod tests {
                 SourceRevision::ZERO,
                 RequestSeq::ZERO,
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
                 &[visual(1)],
                 vec![svg(0, "a")],
             ),
@@ -418,6 +429,7 @@ mod tests {
                     SourceRevision::ZERO,
                     RequestSeq::ZERO,
                     FramePhase::Foreground,
+                    UpdateOutcome::Complete,
                     &[visual(1), visual(2)],
                     rendered,
                 ),
@@ -437,6 +449,7 @@ mod tests {
                 SourceRevision::ZERO,
                 RequestSeq::ZERO,
                 FramePhase::Foreground,
+                UpdateOutcome::Complete,
                 &[visual(1), visual(2)],
                 vec![svg(0, "a"), svg(1, "b")],
             )
