@@ -178,6 +178,12 @@ test("extension harness initializes dirty children, relays edits, resyncs, and r
   extension.activate(context);
   commands.get("tectonicPreview.start")();
   assert.equal(panels.length, 1);
+  const html = panels[0].webview.html;
+  assert.match(html, /default-src 'none'/);
+  assert.match(html, /script-src vscode-webview:/);
+  assert.match(html, /style-src vscode-webview:/);
+  assert.match(html, /img-src data:/);
+  assert.doesNotMatch(html, /unsafe-inline|unsafe-eval|https?:/);
 
   fakeProcess.event({ type: "ready", protocol_version: 1, capabilities: ["svg", "synctex"], bundle_digest: "abc" });
   await tick();
