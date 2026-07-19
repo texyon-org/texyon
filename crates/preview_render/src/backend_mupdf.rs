@@ -3,6 +3,7 @@
 //! Enabling this module links MuPDF 1.19 and therefore subjects the resulting
 //! binary to MuPDF's AGPL-3.0-or-later licensing terms.
 
+use std::collections::BTreeMap;
 use std::ffi::c_void;
 
 use crate::{
@@ -14,6 +15,19 @@ extern "C" {
     fn pr_backend_new() -> *mut c_void;
     fn pr_backend_drop(backend: *mut c_void);
     fn pr_backend_begin(backend: *mut c_void, width: f32, height: f32) -> i32;
+    fn pr_backend_font(backend: *mut c_void, data: *const u8, length: usize, face: i32) -> i32;
+    fn pr_backend_glyphs(
+        backend: *mut c_void,
+        font: i32,
+        size: f32,
+        gids: *const u16,
+        positions: *const f32,
+        count: i32,
+        rgba: *const f32,
+        extend: f32,
+        slant: f32,
+        vertical: i32,
+    ) -> i32;
     fn pr_backend_rule(
         backend: *mut c_void,
         x: f32,
@@ -29,6 +43,7 @@ extern "C" {
 /// MuPDF 1.19 backend producing self-contained path SVG pages.
 pub struct MupdfBackend {
     raw: *mut c_void,
+    fonts: BTreeMap<(ResourceIdentity, u32), FontId>,
 }
 
 impl MupdfBackend {
@@ -41,7 +56,10 @@ impl MupdfBackend {
                 "could not create MuPDF context".into(),
             ));
         }
-        Ok(Self { raw })
+        Ok(Self {
+            raw,
+            fonts: BTreeMap::new(),
+        })
     }
 }
 
@@ -65,13 +83,23 @@ impl Backend for MupdfBackend {
 
     fn register_font(
         &mut self,
-        _identity: ResourceIdentity,
-        _bytes: &[u8],
-        _face_index: u32,
+        identity: ResourceIdentity,
+        bytes: &[u8],
+        face_index: u32,
     ) -> Result<FontId, RenderError> {
-        Err(RenderError::Backend(
-            "MuPDF font registration is not implemented".into(),
-        ))
+        let key = (identity, face_index);
+        if let Some(font) = self.fonts.get(&key) {
+            return Ok(*font);
+        }
+        // SAFETY: byte slice remains live; the shim copies it and catches exceptions.
+        let raw =
+            unsafe { pr_backend_font(self.raw, bytes.as_ptr(), bytes.len(), face_index as i32) };
+        if raw < 0 {
+            return Err(RenderError::Backend("MuPDF rejected font bytes".into()));
+        }
+        let font = FontId(raw as u32);
+        self.fonts.insert(key, font);
+        Ok(font)
     }
 
     fn register_classic_font(
@@ -105,15 +133,42 @@ impl Backend for MupdfBackend {
 
     fn fill_glyphs(
         &mut self,
-        _font: FontId,
-        _size_bp: f32,
-        _glyphs: &[PositionedGlyph],
-        _color: Color,
-        _style: FontStyle,
+        font: FontId,
+        size_bp: f32,
+        glyphs: &[PositionedGlyph],
+        color: Color,
+        style: FontStyle,
     ) -> Result<(), RenderError> {
-        Err(RenderError::Backend(
-            "MuPDF glyph drawing is not implemented".into(),
-        ))
+        if style.embolden != 0.0 {
+            return Err(RenderError::Backend(
+                "MuPDF synthetic emboldening is not implemented".into(),
+            ));
+        }
+        let gids: Vec<_> = glyphs.iter().map(|glyph| glyph.glyph_id).collect();
+        let positions: Vec<_> = glyphs
+            .iter()
+            .flat_map(|glyph| [glyph.x_bp, glyph.y_bp])
+            .collect();
+        let rgba = [color.red, color.green, color.blue, color.alpha];
+        // SAFETY: all slices remain live and the C shim catches MuPDF exceptions.
+        let ok = unsafe {
+            pr_backend_glyphs(
+                self.raw,
+                font.0 as i32,
+                size_bp,
+                gids.as_ptr(),
+                positions.as_ptr(),
+                gids.len() as i32,
+                rgba.as_ptr(),
+                style.extend,
+                style.slant,
+                i32::from(style.vertical),
+            )
+        };
+        if ok == 0 {
+            return Err(RenderError::Backend("MuPDF glyph drawing failed".into()));
+        }
+        Ok(())
     }
 
     fn fill_chars(
@@ -181,6 +236,37 @@ mod tests {
             .unwrap();
         let svg = backend.finish_page().unwrap();
         assert!(svg.contains("<svg"));
+        assert!(svg.contains("path"));
+    }
+
+    #[test]
+    fn emits_native_glyph_outlines() {
+        let bytes = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").unwrap();
+        let resource = crate::Resource::from_bytes(bytes);
+        let mut backend = MupdfBackend::new().unwrap();
+        backend.begin_page(100.0, 120.0).unwrap();
+        let font = backend
+            .register_font(resource.identity, &resource.bytes, 0)
+            .unwrap();
+        backend
+            .fill_glyphs(
+                font,
+                20.0,
+                &[PositionedGlyph {
+                    glyph_id: 36,
+                    x_bp: 10.0,
+                    y_bp: 30.0,
+                }],
+                Color::BLACK,
+                FontStyle {
+                    extend: 1.0,
+                    slant: 0.0,
+                    embolden: 0.0,
+                    vertical: false,
+                },
+            )
+            .unwrap();
+        let svg = backend.finish_page().unwrap();
         assert!(svg.contains("path"));
     }
 }
