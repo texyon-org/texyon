@@ -4,6 +4,7 @@
 //! the document-level state and publication rules that connect them.
 
 mod assembler;
+mod pipeline;
 mod publication;
 mod source;
 mod worker_clock;
@@ -11,6 +12,7 @@ mod worker_clock;
 pub use assembler::{
     AssembledDocument, DocumentAssembler, DocumentFragment, XdvAssemblyError, XdvFileType,
 };
+pub use pipeline::{PreviewPipeline, PreviewPipelineError};
 pub use publication::{
     ClientBelief, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher, PublicationError,
 };
