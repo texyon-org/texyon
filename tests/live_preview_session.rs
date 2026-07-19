@@ -17,7 +17,7 @@ use tectonic::live_preview::{
 };
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_io_base::stdstreams::BufferedPrimaryIo;
-use tectonic_preview_protocol::{FramePhase, ProtocolLimits, RequestSeq, ServerEvent};
+use tectonic_preview_protocol::{FramePhase, ProtocolLimits, RequestSeq, ServerEvent, SourceFile};
 use tectonic_preview_render::{
     NullBackend, RenderError, Resource, ResourceKind, ResourceProvider, ResourceRequest,
 };
@@ -632,7 +632,7 @@ fn viewport_foreground_and_tail_reassemble_to_cold_xdv() {
         .unwrap();
     assert!(foreground.frame.tail_pending);
     assert!(runner.has_pending_tail());
-    assert_eq!(foreground.frame.pages.len(), 2);
+    assert_eq!(foreground.frame.pages.len(), 1);
     let foreground_xdv = foreground.xdv.unwrap();
     let foreground_fragment = foreground.frame.splice_at.map_or(
         DocumentFragment::Complete(foreground_xdv.as_ref()),
@@ -661,6 +661,165 @@ fn viewport_foreground_and_tail_reassemble_to_cold_xdv() {
     );
     let complete = assembler
         .assemble(Some(&foreground_document), tail_fragment)
+        .unwrap();
+    assert_eq!(complete.bytes().as_ref(), expected);
+    runner.finish().unwrap();
+}
+
+#[test]
+fn cancelled_tail_preserves_its_horizon_fence() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let original = "A\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n";
+    let first_edit = "Z\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n";
+    let second_edit = "Z\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nY\\bye\n";
+    let expected = cold_xdv(second_edit.as_bytes());
+    let temp = tempfile::tempdir().unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        original.into(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    let assembler = DocumentAssembler::new();
+    let initial = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    let initial_xdv = initial.xdv.unwrap();
+    let initial_document = assembler
+        .assemble(None, DocumentFragment::Complete(&initial_xdv))
+        .unwrap();
+
+    sources.replace(None, first_edit.into()).unwrap();
+    let foreground = runner
+        .compile(sources.snapshot(), Some((0, 0)), &cancellation)
+        .unwrap();
+    let foreground_xdv = foreground.xdv.unwrap();
+    let foreground_fragment = foreground.frame.splice_at.map_or(
+        DocumentFragment::Complete(foreground_xdv.as_ref()),
+        |prefix_len| DocumentFragment::Tail {
+            prefix_len,
+            bytes: foreground_xdv.as_ref(),
+        },
+    );
+    let foreground_document = assembler
+        .assemble(Some(&initial_document), foreground_fragment)
+        .unwrap();
+
+    cancellation.request();
+    let cancelled = runner
+        .continue_tail(&cancellation)
+        .unwrap()
+        .expect("foreground advertised a pending tail");
+    assert!(cancelled.frame.cancelled);
+    assert!(cancelled.frame.checkpoint_rungs > 1);
+    cancellation.rearm();
+
+    sources.replace(None, second_edit.into()).unwrap();
+    let replay = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert!(!replay.frame.tail_pending);
+    let splice_at = replay
+        .frame
+        .splice_at
+        .expect("cancelled tail discarded its horizon fence");
+    let replay_xdv = replay.xdv.unwrap();
+    let complete = assembler
+        .assemble(
+            Some(&foreground_document),
+            DocumentFragment::Tail {
+                prefix_len: splice_at,
+                bytes: replay_xdv.as_ref(),
+            },
+        )
+        .unwrap();
+    assert_eq!(complete.bytes().as_ref(), expected);
+    runner.finish().unwrap();
+}
+
+#[test]
+fn horizon_inside_editor_owned_child_resumes_exactly() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let primary = b"\\input child\n\\bye\n";
+    let original_child = "A\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
+    let edited_child = "Z\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
+    let expected = cold_xdv_with_child(primary, Some(edited_child.as_bytes()));
+    let temp = tempfile::tempdir().unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        String::from_utf8(primary.to_vec()).unwrap(),
+        vec![SourceFile {
+            path: "child.tex".into(),
+            text: original_child.into(),
+        }],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    let assembler = DocumentAssembler::new();
+    let initial = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    let initial_xdv = initial.xdv.unwrap();
+    let initial_document = assembler
+        .assemble(None, DocumentFragment::Complete(&initial_xdv))
+        .unwrap();
+
+    sources
+        .replace(Some("child.tex"), edited_child.into())
+        .unwrap();
+    let foreground = runner
+        .compile(sources.snapshot(), Some((0, 0)), &cancellation)
+        .unwrap();
+    assert!(foreground.frame.tail_pending);
+    assert_eq!(foreground.frame.pages.len(), 1);
+    let foreground_xdv = foreground.xdv.unwrap();
+    let foreground_fragment = foreground.frame.splice_at.map_or(
+        DocumentFragment::Complete(foreground_xdv.as_ref()),
+        |prefix_len| DocumentFragment::Tail {
+            prefix_len,
+            bytes: foreground_xdv.as_ref(),
+        },
+    );
+    let foreground_document = assembler
+        .assemble(Some(&initial_document), foreground_fragment)
+        .unwrap();
+
+    let tail = runner
+        .continue_tail(&cancellation)
+        .unwrap()
+        .expect("child horizon did not retain a continuation");
+    let tail_xdv = tail.xdv.unwrap();
+    let splice_at = tail
+        .frame
+        .splice_at
+        .expect("child continuation lost its replay splice");
+    let complete = assembler
+        .assemble(
+            Some(&foreground_document),
+            DocumentFragment::Tail {
+                prefix_len: splice_at,
+                bytes: tail_xdv.as_ref(),
+            },
+        )
         .unwrap();
     assert_eq!(complete.bytes().as_ref(), expected);
     runner.finish().unwrap();
@@ -732,8 +891,28 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
         WorkerRun::Complete(Some(frame))
             if frame.frame_id.get() == 3 && !frame.tail_pending
     ));
+    sources
+        .replace(
+            None,
+            "% harmless\nZ\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n".into(),
+        )
+        .unwrap();
+    assert!(matches!(
+        processor.compile(
+            sources.snapshot(),
+            RequestSeq::new(2),
+            Some((0, 0)),
+            &cancellation,
+        ),
+        WorkerRun::Complete(frame) if frame.frame_id.get() == 4 && frame.tail_pending
+    ));
+    assert!(matches!(
+        processor.continue_tail(RequestSeq::new(2), &cancellation),
+        WorkerRun::Complete(Some(frame))
+            if frame.frame_id.get() == 5 && !frame.tail_pending
+    ));
     processor
-        .resync(sources.snapshot(), RequestSeq::new(1))
+        .resync(sources.snapshot(), RequestSeq::new(2))
         .unwrap();
 
     let wire = processor.sink().writer();
@@ -742,15 +921,17 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice::<ServerEvent>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(events.len(), 4);
+    assert_eq!(events.len(), 6);
     assert!(matches!(
         &events[1],
         ServerEvent::Update {
             phase: FramePhase::Foreground,
             tail_pending: true,
-            page_count: 2,
+            page_count: 4,
+            changed,
+            removed,
             ..
-        }
+        } if changed == &[0] && removed.is_empty()
     ));
     assert!(matches!(
         &events[2],
@@ -760,6 +941,26 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
             page_count: 4,
             ..
         }
+    ));
+    assert!(matches!(
+        &events[3],
+        ServerEvent::Update {
+            phase: FramePhase::Foreground,
+            tail_pending: true,
+            changed,
+            pages_svg,
+            ..
+        } if changed.is_empty() && pages_svg.is_empty()
+    ));
+    assert!(matches!(
+        &events[4],
+        ServerEvent::Update {
+            phase: FramePhase::TailSettle,
+            tail_pending: false,
+            changed,
+            pages_svg,
+            ..
+        } if changed.is_empty() && pages_svg.is_empty()
     ));
     processor.shutdown().unwrap();
 }

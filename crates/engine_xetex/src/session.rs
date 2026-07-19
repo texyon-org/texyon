@@ -136,8 +136,7 @@ pub(crate) fn resident_active() -> bool {
     RESIDENT_ACTIVE.load(Ordering::Acquire)
 }
 
-/// Page interval requested by a preview client. Rung-zero replay currently
-/// compiles the complete document; horizon handling consumes this in M8.
+/// Page interval requested by a preview client for foreground horizon work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageRange {
     /// First visible page, zero-based and inclusive.
@@ -192,7 +191,7 @@ pub struct EngineFrame {
     pub source_revision: SourceRevision,
     /// Recoverable fatal-class TeX abort; prior good output remains authoritative.
     pub aborted: Option<String>,
-    /// Operation was cooperatively cancelled and rung-zero state was restored.
+    /// Operation was cooperatively cancelled and a safe replay state restored.
     pub cancelled: bool,
     /// Page-boundary execution facts for exact XDV suffix comparison.
     pub pages: Vec<PageExecution>,
@@ -215,7 +214,7 @@ pub struct IncrementalXeTeXSession {
     ladder: Option<CheckpointLadder<EngineBundle>>,
     strings_base: Option<StringWatermark>,
     last_sources: Option<SourceSnapshot>,
-    pending_continuation: Option<(usize, SourceSnapshot)>,
+    pending_continuation: Option<(u64, SourceSnapshot)>,
     opened: bool,
     dead: bool,
     owns_global_lease: bool,
@@ -313,6 +312,7 @@ impl IncrementalXeTeXSession {
                     None,
                     Vec::new(),
                     None,
+                    None,
                 )
             }))
         });
@@ -329,8 +329,8 @@ impl IncrementalXeTeXSession {
     }
 
     /// Replace the immutable source set and resume from the deepest safe fence.
-    /// When a viewport is supplied, return after its one-page lookahead and
-    /// retain an exact command fence for [`continue_tail`](Self::continue_tail).
+    /// When a viewport is supplied, return after its last required fresh page
+    /// and retain an exact command fence for [`continue_tail`](Self::continue_tail).
     pub fn edit(
         &mut self,
         launcher: &mut CoreBridgeLauncher,
@@ -377,7 +377,7 @@ impl IncrementalXeTeXSession {
                     None
                 };
                 let first_shipped = state.shipout.total_pages.max(0) as usize;
-                let horizon_last = viewport.map(|range| range.last.max(first_shipped) + 1);
+                let horizon_last = viewport.map(|range| range.last.max(first_shipped));
                 ladder.clear_protections();
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
@@ -391,11 +391,12 @@ impl IncrementalXeTeXSession {
                     splice_at,
                     pending_fences,
                     horizon_last,
+                    None,
                 )
             }))
         })?;
-        if let OperationResult::Horizoned { rung, .. } = &result {
-            self.pending_continuation = Some((*rung, accepted_sources.clone()));
+        if let OperationResult::Horizoned { rung_clock, .. } = &result {
+            self.pending_continuation = Some((*rung_clock, accepted_sources.clone()));
         }
         self.last_sources = Some(accepted_sources);
         self.finish_operation(result, revision)
@@ -406,7 +407,7 @@ impl IncrementalXeTeXSession {
         &mut self,
         launcher: &mut CoreBridgeLauncher,
     ) -> Result<Option<EngineFrame>> {
-        let Some((target, sources)) = self.pending_continuation.take() else {
+        let Some((rung_clock, sources)) = self.pending_continuation.take() else {
             return Ok(None);
         };
         let revision = sources.revision();
@@ -418,9 +419,12 @@ impl IncrementalXeTeXSession {
             .expect("opened session without string watermark");
         let state = &mut *self.state;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
+        let target = ladder
+            .rung_at_clock(rung_clock)
+            .ok_or_else(|| anyhow!("pending tail fence disappeared"))?;
         let fence = ladder
             .replay_fence(target)
-            .ok_or_else(|| anyhow!("pending tail fence disappeared"))?;
+            .ok_or_else(|| anyhow!("pending tail rung is not resumable"))?;
         let splice_at = fence.splice_at();
         let fence_sources = sources.clone();
         let result = launcher.with_global_lock(|api| {
@@ -433,6 +437,7 @@ impl IncrementalXeTeXSession {
                     return OperationResult::Aborted;
                 }
                 ladder.clear_protections();
+                assert!(ladder.protect_rung(target));
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
                 run_document(
@@ -445,6 +450,7 @@ impl IncrementalXeTeXSession {
                     Some(splice_at),
                     Vec::new(),
                     None,
+                    Some(rung_clock),
                 )
             }))
         })?;
@@ -518,7 +524,7 @@ impl IncrementalXeTeXSession {
             OperationResult::Horizoned {
                 history,
                 splice_at,
-                rung: _,
+                rung_clock: _,
             } => Ok(EngineFrame {
                 outcome: history_to_outcome(history)?,
                 source_revision: revision,
@@ -536,7 +542,7 @@ impl IncrementalXeTeXSession {
                 cancelled: false,
                 pages: Vec::new(),
                 splice_at: None,
-                checkpoint_rungs: 1,
+                checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
                 tail_pending: false,
             }),
             OperationResult::Cancelled => Ok(EngineFrame {
@@ -546,7 +552,7 @@ impl IncrementalXeTeXSession {
                 cancelled: true,
                 pages: Vec::new(),
                 splice_at: None,
-                checkpoint_rungs: 1,
+                checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
                 tail_pending: false,
             }),
             OperationResult::Budget(error) => {
@@ -591,7 +597,7 @@ enum OperationResult {
     Horizoned {
         history: i32,
         splice_at: Option<usize>,
-        rung: usize,
+        rung_clock: u64,
     },
     Aborted,
     Cancelled,
@@ -610,6 +616,7 @@ unsafe fn run_document(
     splice_at: Option<usize>,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
+    cancellation_rung_clock: Option<u64>,
 ) -> OperationResult {
     let mut horizon_rung = None;
     let _fences = install_fence_controller(
@@ -652,15 +659,21 @@ unsafe fn run_document(
             OperationResult::Horizoned {
                 history: state.errors.history,
                 splice_at,
-                rung,
+                rung_clock: ladder
+                    .rung_clock(rung)
+                    .expect("admitted horizon rung disappeared"),
             }
         }
         Err(error) => {
             crate::engine::release_operation_inputs(state);
-            ladder.rewind_engine(state, 0);
             if matches!(error, crate::errors::EngineAbort::Cancelled) {
+                let cancellation_rung = cancellation_rung_clock
+                    .and_then(|clock| ladder.rung_at_clock(clock))
+                    .unwrap_or(0);
+                ladder.rewind_engine(state, cancellation_rung);
                 OperationResult::Cancelled
             } else {
+                ladder.rewind_engine(state, 0);
                 OperationResult::Aborted
             }
         }

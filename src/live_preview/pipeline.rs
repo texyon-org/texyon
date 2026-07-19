@@ -103,6 +103,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             phase,
             outcome,
             0.0,
+            false,
         )
     }
 
@@ -115,6 +116,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         phase: FramePhase,
         outcome: UpdateOutcome,
         engine_ms: f64,
+        preserve_tail_belief: bool,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
         let document = self
             .assembler
@@ -126,8 +128,15 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             .analyze(Arc::clone(document.bytes()))
             .map_err(PreviewPipelineError::Render)?;
         let analysis_ms = analysis_started.elapsed().as_secs_f64() * 1000.0;
-        let selected = analysis
-            .pages()
+        let mut visuals = analysis.pages().to_vec();
+        if preserve_tail_belief && self.publisher.belief().pages().len() > visuals.len() {
+            visuals.extend(
+                self.publisher.belief().pages()[visuals.len()..]
+                    .iter()
+                    .map(|page| page.visual.clone()),
+            );
+        }
+        let selected = visuals
             .iter()
             .enumerate()
             .filter_map(|(page_index, visual)| {
@@ -161,7 +170,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
                 applied_request_seq,
                 phase,
                 outcome,
-                analysis.pages(),
+                &visuals,
                 rendered,
             )
             .map_err(PreviewPipelineError::Publication)?;

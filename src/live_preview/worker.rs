@@ -208,6 +208,7 @@ pub struct LivePreviewWorker<T> {
     announced: Arc<AtomicU64>,
     applied: Arc<AtomicU64>,
     durable_stop: Arc<AtomicBool>,
+    tail_running: Arc<AtomicBool>,
     worker_done: Arc<AtomicBool>,
     supersede_grace: Duration,
     next_request: RequestSeq,
@@ -272,12 +273,14 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         let announced = Arc::new(AtomicU64::new(0));
         let applied = Arc::new(AtomicU64::new(0));
         let durable_stop = Arc::new(AtomicBool::new(false));
+        let tail_running = Arc::new(AtomicBool::new(false));
         let worker_done = Arc::new(AtomicBool::new(false));
 
         let worker_cancellation = cancellation.clone();
         let worker_announced = Arc::clone(&announced);
         let worker_applied = Arc::clone(&applied);
         let worker_stop = Arc::clone(&durable_stop);
+        let worker_tail_running = Arc::clone(&tail_running);
         let worker_finished = Arc::clone(&worker_done);
         let worker = thread::Builder::new()
             .name("tectonic-preview-engine".into())
@@ -304,6 +307,7 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
                     worker_announced,
                     worker_applied,
                     worker_stop,
+                    worker_tail_running,
                     Duration::from_millis(tuning.tail_idle_ms),
                 );
                 worker_finished.store(true, Ordering::Release);
@@ -337,6 +341,7 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
             announced,
             applied,
             durable_stop,
+            tail_running,
             worker_done,
             supersede_grace: Duration::from_millis(tuning.supersede_grace_ms),
             next_request: RequestSeq::ZERO,
@@ -372,6 +377,9 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
             .map_err(|_| WorkerFailure::RequestSequenceExhausted)?;
         self.next_request = sequence;
         self.announced.store(sequence.get(), Ordering::Release);
+        if self.tail_running.load(Ordering::Acquire) {
+            self.cancellation.request();
+        }
         self.commands
             .send(Command::Replace {
                 sequence,
@@ -505,6 +513,7 @@ fn run_worker<P: PreviewWorkerProcessor>(
     announced: Arc<AtomicU64>,
     applied_atomic: Arc<AtomicU64>,
     durable_stop: Arc<AtomicBool>,
+    tail_running: Arc<AtomicBool>,
     tail_idle: Duration,
 ) {
     let mut sources = match sources {
@@ -540,20 +549,34 @@ fn run_worker<P: PreviewWorkerProcessor>(
         let _ = processor.shutdown();
         return;
     }
+    let mut tail_deadline = processor
+        .has_pending_tail()
+        .then(|| Instant::now() + tail_idle);
 
     'worker: loop {
-        let first = if processor.has_pending_tail() {
-            match commands.recv_timeout(tail_idle) {
+        let first = if processor.has_pending_tail()
+            && !durable_stop.load(Ordering::Acquire)
+            && !clock.is_stopped()
+        {
+            let deadline = *tail_deadline.get_or_insert_with(|| Instant::now() + tail_idle);
+            match commands.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                 Ok(command) => command,
                 Err(RecvTimeoutError::Timeout) => {
                     cancellation.rearm();
-                    if !emit_continue(
+                    tail_deadline = None;
+                    tail_running.store(true, Ordering::Release);
+                    if announced.load(Ordering::Acquire) > clock.applied().get() {
+                        cancellation.request();
+                    }
+                    let keep_running = emit_continue(
                         &mut processor,
                         &sources,
                         &events,
                         clock.applied(),
                         &cancellation,
-                    ) {
+                    );
+                    tail_running.store(false, Ordering::Release);
+                    if !keep_running {
                         break;
                     }
                     continue;
@@ -637,6 +660,7 @@ fn run_worker<P: PreviewWorkerProcessor>(
                 Command::Cancel => {
                     clock.stop();
                     durable_stop.store(true, Ordering::Release);
+                    tail_deadline = None;
                 }
                 Command::Shutdown => break 'worker,
             }
@@ -664,6 +688,9 @@ fn run_worker<P: PreviewWorkerProcessor>(
             ) {
                 break 'worker;
             }
+            tail_deadline = processor
+                .has_pending_tail()
+                .then(|| Instant::now() + tail_idle);
         }
         if resync && !emit_resync(&mut processor, &sources, &events, clock.applied()) {
             break 'worker;
@@ -857,7 +884,7 @@ mod tests {
                 .get(snapshot.primary())
                 .unwrap()
                 .to_string();
-            self.pending = self.last == "tail";
+            self.pending = self.last.starts_with("tail");
             WorkerRun::Complete(format!("foreground:{}", self.last))
         }
 
@@ -868,9 +895,15 @@ mod tests {
         fn continue_tail(
             &mut self,
             _applied_request_seq: RequestSeq,
-            _cancellation: &EngineCancellation,
+            cancellation: &EngineCancellation,
         ) -> WorkerRun<Option<Self::Output>, Self::Error> {
             let pending = std::mem::take(&mut self.pending);
+            if pending && self.last == "tail-hang" {
+                while !cancellation.is_requested() {
+                    thread::yield_now();
+                }
+                return WorkerRun::Cancelled;
+            }
             WorkerRun::Complete(pending.then(|| format!("settled:{}", self.last)))
         }
 
@@ -961,6 +994,137 @@ mod tests {
         ));
         assert!(matches!(
             worker.recv_timeout(Duration::from_millis(150)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn viewport_does_not_restart_tail_idle_deadline() {
+        let (_temp, sources) = sources();
+        let mut worker = LivePreviewWorker::spawn(
+            sources,
+            PreviewTuning {
+                tail_idle_ms: 200,
+                ..tuning()
+            },
+            || TailProcessor {
+                last: String::new(),
+                pending: false,
+            },
+        )
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.replace(None, "tail".into()).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        thread::sleep(Duration::from_millis(120));
+        worker.viewport(4, 4).unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_millis(170)),
+            Ok(WorkerEvent::Update { output, .. }) if output == "settled:tail"
+        ));
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn running_tail_is_cancelled_without_foreground_grace() {
+        let (_temp, sources) = sources();
+        let mut worker = LivePreviewWorker::spawn(
+            sources,
+            PreviewTuning {
+                supersede_grace_ms: 2_000,
+                tail_idle_ms: 0,
+                ..PreviewTuning::default()
+            },
+            || TailProcessor {
+                last: String::new(),
+                pending: false,
+            },
+        )
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.replace(None, "tail-hang".into()).unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, .. }) if output == "foreground:tail-hang"
+        ));
+        thread::sleep(Duration::from_millis(20));
+        let started = Instant::now();
+        worker.replace(None, "fresh".into()).unwrap();
+        let mut cancelled = false;
+        let mut fresh = false;
+        for _ in 0..3 {
+            match worker.recv_timeout(Duration::from_secs(1)).unwrap() {
+                WorkerEvent::Cancelled { .. } => cancelled = true,
+                WorkerEvent::Update { output, .. } if output == "foreground:fresh" => {
+                    fresh = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        assert!(cancelled && fresh);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn burst_defers_every_tail_until_typing_stops() {
+        let (_temp, sources) = sources();
+        let mut worker = LivePreviewWorker::spawn(
+            sources,
+            PreviewTuning {
+                tail_idle_ms: 200,
+                ..tuning()
+            },
+            || TailProcessor {
+                last: String::new(),
+                pending: false,
+            },
+        )
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        for index in 0..10 {
+            let text = format!("tail-{index}");
+            worker.replace(None, text.clone()).unwrap();
+            assert!(matches!(
+                worker.recv_timeout(Duration::from_secs(1)),
+                Ok(WorkerEvent::Update { output, .. })
+                    if output == format!("foreground:{text}")
+            ));
+        }
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, .. }) if output == "settled:tail-9"
+        ));
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn durable_stop_drops_owed_tail() {
+        let (_temp, sources) = sources();
+        let mut worker = LivePreviewWorker::spawn(
+            sources,
+            PreviewTuning {
+                tail_idle_ms: 20,
+                ..tuning()
+            },
+            || TailProcessor {
+                last: String::new(),
+                pending: false,
+            },
+        )
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.replace(None, "tail".into()).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.cancel().unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Stopped { .. })
+        ));
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_millis(60)),
             Err(RecvTimeoutError::Timeout)
         ));
         worker.shutdown().unwrap();

@@ -161,6 +161,7 @@ where
             FramePhase::Foreground,
             outcome,
             engine_ms,
+            tail_pending,
         ) {
             Ok(frame_id) => frame_id,
             Err(error) if pipeline_error_is_fatal(&error) => {
@@ -236,6 +237,7 @@ where
             FramePhase::TailSettle,
             outcome,
             engine_ms,
+            false,
         ) {
             Ok(frame_id) => frame_id,
             Err(error) if pipeline_error_is_fatal(&error) => {

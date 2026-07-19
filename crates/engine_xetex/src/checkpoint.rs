@@ -242,6 +242,22 @@ impl<B> CheckpointLadder<B> {
         }
     }
 
+    pub(crate) fn protect_rung(&mut self, index: usize) -> bool {
+        let Some(rung) = self.rungs.get_mut(index) else {
+            return false;
+        };
+        rung.protected = true;
+        true
+    }
+
+    pub(crate) fn rung_clock(&self, index: usize) -> Option<u64> {
+        self.rungs.get(index).map(|rung| rung.clock)
+    }
+
+    pub(crate) fn rung_at_clock(&self, clock: u64) -> Option<usize> {
+        self.rungs.iter().position(|rung| rung.clock == clock)
+    }
+
     pub(crate) fn delta_bytes(&self) -> usize {
         self.rungs
             .iter()
