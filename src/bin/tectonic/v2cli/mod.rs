@@ -16,6 +16,8 @@ use tectonic_errors::prelude::anyhow;
 use tectonic_status_base::plain::PlainStatusBackend;
 use tracing::level_filters::LevelFilter;
 
+#[cfg(all(feature = "preview-mupdf", target_os = "linux"))]
+use self::commands::preview::PreviewCommand;
 use self::commands::{
     build::BuildCommand,
     bundle::BundleCommand,
@@ -97,6 +99,8 @@ pub fn v2_main(effective_args: &[OsString]) {
         Commands::Compile(_) => {} // avoid namespacing/etc issues
         Commands::Dump(o) => o.customize(&mut customizations),
         Commands::New(o) => o.customize(&mut customizations),
+        #[cfg(all(feature = "preview-mupdf", target_os = "linux"))]
+        Commands::Preview(o) => o.customize(&mut customizations),
         Commands::Init(o) => o.customize(&mut customizations),
         Commands::Show(o) => o.customize(&mut customizations),
         Commands::Watch(o) => o.customize(&mut customizations),
@@ -135,6 +139,8 @@ pub fn v2_main(effective_args: &[OsString]) {
         Commands::Compile(o) => o.execute(config, &mut *status),
         Commands::Dump(o) => o.execute(config, &mut *status),
         Commands::New(o) => o.execute(config, &mut *status),
+        #[cfg(all(feature = "preview-mupdf", target_os = "linux"))]
+        Commands::Preview(o) => o.execute(config, &mut *status),
         Commands::Init(o) => o.execute(config, &mut *status),
         Commands::Show(o) => o.execute(config, &mut *status),
         Commands::Watch(o) => o.execute(config, &mut *status),
@@ -177,6 +183,11 @@ enum Commands {
     #[command(name = "new")]
     /// Create a new document project
     New(NewCommand),
+
+    #[cfg(all(feature = "preview-mupdf", target_os = "linux"))]
+    #[command(name = "preview")]
+    /// Serve an SVG live preview over JSON Lines stdio
+    Preview(PreviewCommand),
 
     #[command(name = "init")]
     /// Initializes a new document in the current directory

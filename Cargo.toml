@@ -143,6 +143,10 @@ native-tls-vendored = [
 # developer feature to compile with the necessary flags for profiling tectonic.
 profile = []
 
+# The native SVG backend links MuPDF, whose distribution terms are AGPL.
+# Keep it opt-in so the portable/MIT library build remains unchanged.
+preview-mupdf = ["tectonic_preview_render/backend-mupdf"]
+
 [dev-dependencies]
 filetime = "^0.2"
 sha2 = "^0.10"

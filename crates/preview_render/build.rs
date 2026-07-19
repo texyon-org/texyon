@@ -36,8 +36,12 @@ fn main() {
     println!("cargo:rustc-link-lib=static=mupdf_preview");
     println!("cargo:rustc-link-search=native=/usr/lib");
     println!("cargo:rustc-link-lib=static=mupdf-third");
+    // Tectonic also builds a private, feature-reduced `libharfbuzz.a`. Request
+    // the system shared object by its exact soname so that MuPDF's FreeType
+    // integration cannot accidentally bind to that private archive.
+    println!("cargo:rustc-link-lib=dylib:+verbatim=libharfbuzz.so.0");
     for library in [
-        "freetype", "harfbuzz", "jbig2dec", "openjp2", "jpeg", "z", "m", "gumbo", "mujs",
+        "freetype", "jbig2dec", "openjp2", "jpeg", "z", "m", "gumbo", "mujs",
     ] {
         println!("cargo:rustc-link-lib=dylib={library}");
     }
