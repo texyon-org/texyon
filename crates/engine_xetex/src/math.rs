@@ -391,13 +391,6 @@ fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
     math_kern(&mut st.mem, p, scaled_width);
 }
 
-/// Computes the raw node address from the `mem` arena.
-#[inline]
-fn node_addr_in(st: &EngineState, p: impl crate::units::MemAddr) -> *mut libc::c_void {
-    let p = p.addr();
-    unsafe { st.mem.data.as_ptr().add(p as usize) as *mut libc::c_void }
-}
-
 fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycleAbort> {
     // Typesafe allocation: `alloc` confines the `from_idx_unchecked` to one
     // audited site and yields the typed handle directly. `None`
@@ -1156,8 +1149,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                             let g = get_ot_math_variant(cur_f, c_glyph as i32, n, &mut h2, 0);
                             if h2 > 0 {
                                 p_w.set_native_glyph(&mut st.mem, g as u16);
-                                let addr = node_addr_in(st, p);
-                                crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
+                                crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p, 1)?;
                             }
                             n += 1;
                             if h2 < 0 || h2 >= h1 {
@@ -1183,8 +1175,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                                 break 'found;
                             }
                         } else {
-                            let addr = node_addr_in(st, p);
-                            crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
+                            crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p, 1)?;
                         }
                     }
                     delta = get_ot_math_ital_corr(cur_f, p_w.native_glyph(&st.mem) as i32);
@@ -1500,6 +1491,10 @@ fn set_native_accent_glyph_id(mem: &mut MemState, glyph: NativeAccentGlyph, glyp
 }
 
 fn finish_native_accent_glyph_start(mem: &mut MemState, y: AnyBox, glyph: NativeAccentGlyph) {
+    let handle = mem.b32s0(glyph.old_node + 5);
+    if handle != 0 {
+        mem.glyph_blobs.release(handle);
+    }
     free_node(mem, crate::units::MemPtr::from_raw(glyph.old_node), mem.b16s3(glyph.old_node + 4) as i32);
     y.set_list_ptr(mem, MemPtr::from_raw(glyph.p));
 }
@@ -1700,20 +1695,13 @@ unsafe fn make_math_accent_in(
     let mut p: i32;
     if initial.area == AAT_FONT_FLAG || initial.area == OTGR_FONT_FLAG {
         let glyph = start_native_accent_glyph(&mut st.mem, y, f)?;
-        let glyph_id = {
-            let addr = node_addr_in(st, glyph.old_node);
-            real_get_native_glyph(addr, 0)
-        };
+        let glyph_id = real_get_native_glyph(&st.mem, glyph.old_node, 0);
         set_native_accent_glyph_id(&mut st.mem, glyph, glyph_id);
         p = glyph.p;
-        {
-            let addr = node_addr_in(st, p);
-            crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
-        }
+        crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p, 1)?;
         finish_native_accent_glyph_start(&mut st.mem, y, glyph);
         if !initial.kind.is_multiple_of(2) {
-            let addr = node_addr_in(st, p);
-            crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
+            crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p, 1)?;
         } else {
             let c_glyph = st.mem.b16s1(p + 4) as i32;
             let mut a_var: i32 = 0;
@@ -1722,8 +1710,7 @@ unsafe fn make_math_accent_in(
                 let g = get_ot_math_variant(f, c_glyph, a_var, &mut w2, 1);
                 if w2 > 0 && w2 <= w {
                     st.mem.set_b16s1(p + 4, g as u16);
-                    let addr = node_addr_in(st, p);
-                    crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
+                    crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p, 1)?;
                     a_var += 1;
                 }
                 if w2 < 0 || w2 >= w {
@@ -1743,8 +1730,7 @@ unsafe fn make_math_accent_in(
                         break 'found;
                     }
                 } else {
-                    let addr = node_addr_in(st, p);
-                    crate::ext::measure_native_glyph(&st.fonts, addr, 1)?;
+                    crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p, 1)?;
                 }
             }
             // found:
@@ -2359,8 +2345,7 @@ unsafe fn first_script_glyph_in(
                 cur_f_after_fetch,
                 cur_c_after_fetch as u32,
             )?;
-            let addr = node_addr_in(st, script_c);
-            script_g = real_get_native_glyph(addr, 0);
+            script_g = real_get_native_glyph(&st.mem, script_c, 0);
             script_f = cur_f_after_fetch;
         }
 
@@ -2740,16 +2725,19 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                             let p_w = alloc_glyph_whatsit(&mut st.mem)?;
                             p = p_w.idx().0;
                             p_w.set_native_font(&mut st.mem, cur_f as u16);
-                            let zaddr = node_addr_in(st, z);
-                            p_w.set_native_glyph(&mut st.mem, real_get_native_glyph(zaddr, 0));
-                            let paddr = node_addr_in(st, p);
-                            crate::ext::measure_native_glyph(&st.fonts, paddr, 1)?;
+                            let z_glyph = real_get_native_glyph(&st.mem, z, 0);
+                            p_w.set_native_glyph(&mut st.mem, z_glyph);
+                            crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p, 1)?;
                             let z_w = st
                                 .mem
                                 .classify_whatsit(MemIdx::new(z))
                                 .expect("valid whatsit")
                                 .expect("native char node");
                             let zsize = z_w.native_size(&st.mem);
+                            let z_handle = st.mem.b32s0(z + 5);
+                            if z_handle != 0 {
+                                st.mem.glyph_blobs.release(z_handle);
+                            }
                             crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(z), zsize);
                             delta = get_ot_math_ital_corr(cur_f, p_w.native_glyph(&st.mem) as i32);
                             if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR
@@ -3262,10 +3250,7 @@ fn stack_glyph_into_box_in(
     g: i32,
 ) -> Result<(), NodeRecycleAbort> {
     let p = new_stack_glyph(&mut st.mem, f, g)?;
-    let addr = st.mem.data.as_mut_ptr().wrapping_add(p.idx().index()) as *mut std::ffi::c_void;
-    // SAFETY: `measure_native_glyph` reads only `&FontState` and writes the
-    // freshly-allocated node `p` through `addr`; no `with_state` re-entry.
-    unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) }?;
+    unsafe { crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p.idx().0, 1) }?;
     stack_glyph_into_box(&mut st.mem, b, p);
     Ok(())
 }
@@ -3293,9 +3278,7 @@ fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: NodePtr<Whatsi
 /// Build the single-glyph vbox.
 fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, NodeRecycleAbort> {
     let (b, p) = native_glyph_vbox_start(&mut st.mem, f, g)?;
-    let addr = st.mem.data.as_mut_ptr().wrapping_add(p.idx().index()) as *mut std::ffi::c_void;
-    // SAFETY: see `stack_glyph_into_box_in` — re-entry-free `&FontState` measure.
-    unsafe { crate::ext::measure_native_glyph(&st.fonts, addr, 1) }?;
+    unsafe { crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p.idx().0, 1) }?;
     native_glyph_vbox_finish(&mut st.mem, b, p);
     Ok(b)
 }
@@ -3384,8 +3367,7 @@ unsafe fn compute_ot_math_accent_pos_in(
                 let f = st.scanner.cur_f;
                 let c = st.scanner.cur_c;
                 let q = crate::fonts::new_native_character_in(st, f, c as u32)?;
-                let addr = node_addr_in(st, q);
-                let g = real_get_native_glyph(addr, 0);
+                let g = real_get_native_glyph(&st.mem, q, 0);
                 return Ok(get_ot_math_accent_pos(f, g as i32));
             }
             OtMathAccentPosStep::Recurse(r) => {

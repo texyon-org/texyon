@@ -3264,13 +3264,11 @@ pub(crate) fn append_italic_correction_in(
                        tail: i32,
                        glyph: bool|
      -> Result<(), MainControlAbort> {
-        let node_addr =
-            unsafe { st.mem.data.as_mut_ptr().add(tail as usize) as *mut std::ffi::c_void };
         let ic = unsafe {
             if glyph {
-                crate::ext::real_get_native_glyph_italic_correction(&st.fonts, node_addr)
+                crate::ext::real_get_native_glyph_italic_correction(&st.fonts, &st.mem, tail)
             } else {
-                crate::ext::real_get_native_italic_correction(&st.fonts, node_addr)
+                crate::ext::real_get_native_italic_correction(&st.fonts, &st.mem, tail)
             }
         };
         let Some(kern) = crate::mem::alloc_kern(&mut st.mem, ic) else {
@@ -5358,7 +5356,8 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 }
                 crate::ext::measure_native_node(
                     &st.fonts,
-                    st.mem.node_addr(st.input.cur_list.tail),
+                    &mut st.mem,
+                    st.input.cur_list.tail.0,
                     (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
                 )?;
                 let mut prev = st.input.cur_list.head;
@@ -5370,8 +5369,8 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 let main_pp_link = st.mainloop.main_pp.link(&st.mem);
                 prev.set_link(&mut st.mem, main_pp_link);
                 st.mem.set_b32s1(st.mainloop.main_pp, TEX_NULL);
-                let fnsz = st.mem.b16s3(st.mainloop.main_pp + 4) as i32;
-                crate::mem::free_node(&mut st.mem, st.mainloop.main_pp, fnsz);
+                crate::packaging::flush_node_list(&mut st.mem, st.mainloop.main_pp.0)
+                    .map_err(MainControlAbort::Confusion)?;
             } else {
                 let new_node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, mk)?;
                 st.mem.set_b32s1(st.mainloop.main_pp, new_node);
@@ -5383,7 +5382,8 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 }
                 crate::ext::measure_native_node(
                     &st.fonts,
-                    st.mem.node_addr(st.input.cur_list.tail),
+                    &mut st.mem,
+                    st.input.cur_list.tail.0,
                     (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
                 )?;
             }
@@ -5463,13 +5463,18 @@ pub(crate) unsafe fn main_control_main_loop_in(
                         }
                         crate::ext::measure_native_node(
                             &st.fonts,
-                            st.mem.node_addr(tmp),
+                            &mut st.mem,
+                            tmp,
                             (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0)
                                 as libc::c_int,
                         )?;
                         let t_val = st.mem.b32s1(tmp + 1)
                             - st.mem.b32s1(pp + 1)
                             - st.mem.b32s1(st.input.cur_list.tail + 1);
+                        let tmp_handle = st.mem.b32s0(tmp + 5);
+                        if tmp_handle != 0 {
+                            st.mem.glyph_blobs.release(tmp_handle);
+                        }
                         let fnsz = st.mem.b16s3(tmp + 4) as i32;
                         crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(tmp), fnsz);
                         if t_val != st.mem.b32s1(st.fonts.font_glue(mf) + 1) {

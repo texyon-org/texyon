@@ -35,6 +35,7 @@ mod ext;
 mod fonts;
 mod format_io;
 mod globals;
+mod glyph_arena;
 mod hash;
 mod helpers;
 mod hyphenation;

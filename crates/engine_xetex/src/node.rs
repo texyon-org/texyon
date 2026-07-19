@@ -2310,16 +2310,15 @@ impl NodePtr<WhatsitNode> {
     pub fn height(self, mem: &MemState) -> Scaled {
         Scaled(mem.b32s1(self.idx.offset(3).0))
     }
-    /// Native-node shaped-glyph info pointer = `mem[(p) + 5].ptr`
-    /// (`NATIVE_NODE_glyph_info_ptr`); a raw `*mut c_void` owned by the native
-    /// shaper, freed with `libc::free`.
+    /// One-based shaped-glyph arena handle; zero means no shaped glyphs.
     #[inline]
-    pub fn native_glyph_info_ptr(self, mem: &MemState) -> *mut std::ffi::c_void {
-        mem.ptr(self.idx.offset(5).0)
+    pub fn native_glyph_info_handle(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(5).0)
     }
     #[inline]
-    pub fn set_native_glyph_info_ptr(self, mem: &mut MemState, v: *mut std::ffi::c_void) {
-        mem.set_ptr(self.idx.offset(5).0, v);
+    pub fn set_native_glyph_info_handle(self, mem: &mut MemState, handle: i32) {
+        mem.set_b32s0(self.idx.offset(5).0, handle);
+        mem.set_b32s1(self.idx.offset(5).0, 0);
     }
 
     /// Pointer to the inline UTF-16 native-word text payload at
@@ -2775,6 +2774,7 @@ mod tests {
     fn fresh_mem(n: usize) -> MemState {
         MemState {
             data: vec![zero_word(); n],
+            glyph_blobs: Default::default(),
             lo_mem_max: 0,
             hi_mem_min: 1_000_000, // every test index is lo-mem
             avail: 0,
@@ -3316,12 +3316,12 @@ mod tests {
         assert_eq!(w.native_glyph_count(&mem), 3);
         assert_eq!(mem.b16s0(p.0 + 4), 3);
 
-        // Glyph-info pointer at +5 (raw native pointer).
-        assert!(w.native_glyph_info_ptr(&mem).is_null());
-        let fake = 0xdead_beef_usize as *mut std::ffi::c_void;
-        w.set_native_glyph_info_ptr(&mut mem, fake);
-        assert_eq!(w.native_glyph_info_ptr(&mem), fake);
-        w.set_native_glyph_info_ptr(&mut mem, std::ptr::null_mut());
+        // Glyph-info handle at +5 (zero means no shaped glyphs).
+        assert_eq!(w.native_glyph_info_handle(&mem), 0);
+        w.set_native_glyph_info_handle(&mut mem, 7);
+        assert_eq!(w.native_glyph_info_handle(&mem), 7);
+        assert_eq!(mem.b32s1(p.0 + 5), 0);
+        w.set_native_glyph_info_handle(&mut mem, 0);
 
         // WRITE/SPECIAL token list + LANGUAGE fields share the +1 word.
         mem.set_b32s1(p.0 + 1, 0x55);

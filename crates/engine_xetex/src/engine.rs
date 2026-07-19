@@ -1607,6 +1607,7 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
         s.eqtb.data = Vec::new();
         s.eqtb.hash = Vec::new();
         s.mem.data = Vec::new();
+        s.mem.glyph_blobs.clear();
 
         s.strings.str_start = Vec::new();
         s.strings.str_pool = Vec::new();

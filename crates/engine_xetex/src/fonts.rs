@@ -64,7 +64,8 @@ pub(crate) fn new_native_word_node(
     mem.set_b16s2(q + 4, f as u16);
     mem.set_b16s1(q + 4, n as u16);
     mem.set_b16s0(q + 4, 0);
-    mem.set_ptr(q + 5, std::ptr::null_mut());
+    mem.set_b32s0(q + 5, 0);
+    mem.set_b32s1(q + 5, 0);
     Ok(q)
 }
 /// Allocate the native node and fill its UTF-16 payload.
@@ -94,7 +95,8 @@ fn build_native_character(
             mem.set_b16s0(p, crate::node::WhatsitSubtype::NativeWord as u16);
             mem.set_b16s3(p + 4, (NATIVE_NODE_SIZE_NN + 1) as u16);
             mem.set_b16s0(p + 4, 0);
-            mem.set_ptr(p + 5, std::ptr::null_mut());
+            mem.set_b32s0(p + 5, 0);
+            mem.set_b32s1(p + 5, 0);
             mem.set_b16s2(p + 4, f as u16);
             if c > 65_535 {
                 mem.set_b16s1(p + 4, 2);
@@ -237,7 +239,8 @@ pub(crate) fn new_native_character_in(
     unsafe {
         measure_native_node(
             &st.fonts,
-            st.mem.node_addr(p),
+            &mut st.mem,
+            p,
             (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_NC) > 0) as libc::c_int,
         )?;
     }
@@ -1140,10 +1143,11 @@ pub(crate) unsafe fn load_native_font_in(
     let p = new_native_character_in(st, font_ptr, b' ' as u32)
         .map_err(LoadNativeFontAbort::NativeChar)?;
     s = st.mem.b32s1(p + 1) + st.fonts.loaded_font_letter_space;
-    let glyph_info = st.mem.ptr(p + 5);
-    if !glyph_info.is_null() {
-        libc::free(glyph_info);
-        st.mem.set_ptr(p + 5, std::ptr::null_mut());
+    let glyph_handle = st.mem.b32s0(p + 5);
+    if glyph_handle != 0 {
+        st.mem.glyph_blobs.release(glyph_handle);
+        st.mem.set_b32s0(p + 5, 0);
+        st.mem.set_b32s1(p + 5, 0);
     }
     let node_size = st.mem.b16s3(p + 4) as i32;
     crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), node_size);

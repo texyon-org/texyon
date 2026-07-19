@@ -9,6 +9,7 @@ use crate::consts::{
     CS_TOKEN_FLAG, CUR_FONT_LOC, INSERTED, INT_BASE, INT_PAR_XETEX_TRACING_FONTS, LEFT_SIDE,
     NATIVE_GLYPH_INFO_SIZE, RIGHT_SIDE, XETEX_INT,
 };
+use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::main_control::{mc_propagate_error, new_graf_in};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::pic::load_picture_in;
@@ -262,12 +263,6 @@ const XDV_FLAG_EMBOLDEN: u16 = 0x4000;
 
 static mut BRK_ITER: *mut c_void = ptr::null_mut();
 static mut BRK_LOCALE_STR_NUM: i32 = 0;
-
-#[repr(C)]
-struct FixedPoint {
-    x: i32,
-    y: i32,
-}
 
 #[repr(C)]
 struct FloatPoint {
@@ -1466,20 +1461,21 @@ impl NativeFontAbort {
 // translated from xetex-ext.c:98 (measure_native_node)
 pub unsafe fn measure_native_node(
     fonts: &crate::state::FontState,
-    p_node: *mut c_void,
+    mem: &mut crate::state::MemState,
+    p: i32,
     use_glyph_metrics: c_int,
 ) -> Result<(), NativeFontAbort> {
-    let node = p_node as *mut crate::mem_types::MemoryWord;
+    let node = mem.data.as_mut_ptr().add(p as usize);
     let txt_len = (*node.add(4)).b16.s1 as i32; // native_length
     let txt_ptr = node.add(6) as *mut u16; // node + NATIVE_NODE_SIZE
     let f = (*node.add(4)).b16.s2 as i32; // native_font
     let mut locations: *mut FixedPoint = ptr::null_mut();
     let mut glyph_advances: *mut i32 = ptr::null_mut();
+    let mut glyph_info: *mut c_void = ptr::null_mut();
     let mut total_glyph_count = 0i32;
 
     if fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
         let engine = fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
-        let mut glyph_info: *mut c_void = ptr::null_mut();
         let bidi = ubidi_open();
         let mut error_code = 0i32;
 
@@ -1577,7 +1573,6 @@ pub unsafe fn measure_native_node(
 
             (*node.add(1)).b32.s1 = D2Fix(width);
             (*node.add(4)).b16.s0 = total_glyph_count as u16;
-            (*node.add(5)).ptr = glyph_info;
         } else {
             let mut width = 0.0f64;
             total_glyph_count = layoutChars(engine, txt_ptr, 0, txt_len, txt_len, dir == UBIDI_RTL);
@@ -1622,7 +1617,6 @@ pub unsafe fn measure_native_node(
 
             (*node.add(1)).b32.s1 = D2Fix(width);
             (*node.add(4)).b16.s0 = total_glyph_count as u16;
-            (*node.add(5)).ptr = glyph_info;
 
             libc::free(glyphs as *mut c_void);
             libc::free(positions as *mut c_void);
@@ -1658,7 +1652,6 @@ pub unsafe fn measure_native_node(
         (*node.add(2)).b32.s1 = fonts.depth_base_entry(f);
     } else {
         let glyph_count = (*node.add(4)).b16.s0 as usize;
-        let locations = (*node.add(5)).ptr as *mut FixedPoint;
         let glyph_ids = locations.add(glyph_count) as *mut u16;
         let mut y_min = 65536.0f32;
         let mut y_max = -65536.0f32;
@@ -1695,35 +1688,48 @@ pub unsafe fn measure_native_node(
         (*node.add(3)).b32.s1 = D2Fix(y_max as c_double);
         (*node.add(2)).b32.s1 = -D2Fix(y_min as c_double);
     }
+    let old_handle = mem.b32s0(p + 5);
+    if old_handle != 0 {
+        mem.glyph_blobs.release(old_handle);
+    }
+    let glyph_count = (*node.add(4)).b16.s0 as usize;
+    let handle = if glyph_count == 0 {
+        0
+    } else {
+        let glyph_ids = locations.add(glyph_count) as *const u16;
+        let blob = GlyphBlob {
+            locations: std::slice::from_raw_parts(locations, glyph_count).to_vec(),
+            gids: std::slice::from_raw_parts(glyph_ids, glyph_count).to_vec(),
+        };
+        mem.glyph_blobs.insert(blob)
+    };
+    libc::free(glyph_info);
+    mem.set_b32s0(p + 5, handle);
+    mem.set_b32s1(p + 5, 0);
     Ok(())
 }
 
 // translated from xetex-ext.c:921 (real_get_native_glyph)
 // glyph info buffer layout: [FixedPoint(8b) * glyph_count][u16 * glyph_count]
-pub unsafe fn real_get_native_glyph(p_node: *mut c_void, index: u32) -> u16 {
-    let node = p_node as *mut crate::mem_types::MemoryWord;
-    let glyph_count = (*node.add(4)).b16.s0 as usize;
-    let glyph_info = (*node.add(5)).ptr as *const u8;
-    let glyph_ids = glyph_info.add(glyph_count * 8) as *const u16;
+pub fn real_get_native_glyph(mem: &crate::state::MemState, p: i32, index: u32) -> u16 {
+    let glyph_count = mem.b16s0(p + 4) as usize;
     if index as usize >= glyph_count {
         0
     } else {
-        *glyph_ids.add(index as usize)
+        mem.glyph_blobs.get(mem.b32s0(p + 5)).gids[index as usize]
     }
 }
 
 // translated from xetex-ext.c:1183 (real_get_native_italic_correction)
 pub unsafe fn real_get_native_italic_correction(
     fonts: &crate::state::FontState,
-    p_node: *mut c_void,
+    mem: &crate::state::MemState,
+    p: i32,
 ) -> i32 {
-    let node = p_node as *mut crate::mem_types::MemoryWord;
-    let f = (*node.add(4)).b16.s2 as i32; // native_font
-    let n = (*node.add(4)).b16.s0 as usize; // native_glyph_count
+    let f = mem.b16s2(p + 4) as i32; // native_font
+    let n = mem.b16s0(p + 4) as usize; // native_glyph_count
     if n > 0 {
-        let glyph_info = (*node.add(5)).ptr as *const u8; // native_glyph_info_ptr
-        let glyph_ids = glyph_info.add(n * 8) as *const u16;
-        let last_glyph = *glyph_ids.add(n - 1);
+        let last_glyph = mem.glyph_blobs.get(mem.b32s0(p + 5)).gids[n - 1];
         if fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
             return D2Fix(getGlyphItalCorr(
                 fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine,
@@ -1738,11 +1744,11 @@ pub unsafe fn real_get_native_italic_correction(
 // translated from xetex-ext.c:1207 (real_get_native_glyph_italic_correction)
 pub unsafe fn real_get_native_glyph_italic_correction(
     fonts: &crate::state::FontState,
-    p_node: *mut c_void,
+    mem: &crate::state::MemState,
+    p: i32,
 ) -> i32 {
-    let node = p_node as *mut crate::mem_types::MemoryWord;
-    let gid = (*node.add(4)).b16.s1; // native_glyph = native_length
-    let f = (*node.add(4)).b16.s2 as i32; // native_font
+    let gid = mem.b16s1(p + 4); // native_glyph = native_length
+    let f = mem.b16s2(p + 4) as i32; // native_font
     if fonts.font_area_entry(f) as u32 == OTGR_FONT_FLAG {
         return D2Fix(getGlyphItalCorr(
             fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine,
@@ -1755,12 +1761,12 @@ pub unsafe fn real_get_native_glyph_italic_correction(
 // translated from xetex-ext.c:1224 (measure_native_glyph)
 pub unsafe fn measure_native_glyph(
     fonts: &crate::state::FontState,
-    p_node: *mut c_void,
+    mem: &mut crate::state::MemState,
+    p: i32,
     use_glyph_metrics: c_int,
 ) -> Result<(), NativeFontAbort> {
-    let node = p_node as *mut crate::mem_types::MemoryWord;
-    let gid = (*node.add(4)).b16.s1; // native_glyph = native_length
-    let f = (*node.add(4)).b16.s2 as i32; // native_font
+    let gid = mem.b16s1(p + 4); // native_glyph = native_length
+    let f = mem.b16s2(p + 4) as i32; // native_font
     let mut ht = 0.0f32;
     let mut dp = 0.0f32;
 
@@ -1768,7 +1774,7 @@ pub unsafe fn measure_native_glyph(
         let engine = fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
         let font_inst = getFont(engine);
         // node_width(node) = node[1].b32.s1
-        (*node.add(1)).b32.s1 = D2Fix(getGlyphWidth(font_inst, gid as u32) as c_double);
+        mem.set_b32s1(p + 1, D2Fix(getGlyphWidth(font_inst, gid as u32) as c_double));
         if use_glyph_metrics != 0 {
             getGlyphHeightDepth(engine, gid as u32, &mut ht, &mut dp);
         }
@@ -1779,30 +1785,31 @@ pub unsafe fn measure_native_glyph(
     }
 
     if use_glyph_metrics != 0 {
-        (*node.add(3)).b32.s1 = D2Fix(ht as c_double); // node_height
-        (*node.add(2)).b32.s1 = D2Fix(dp as c_double); // node_depth
+        mem.set_b32s1(p + 3, D2Fix(ht as c_double)); // node_height
+        mem.set_b32s1(p + 2, D2Fix(dp as c_double)); // node_depth
     } else {
-        (*node.add(3)).b32.s1 = fonts.height_base_entry(f); // node_height = height_base[f]
-        (*node.add(2)).b32.s1 = fonts.depth_base_entry(f); // node_depth = depth_base[f]
+        mem.set_b32s1(p + 3, fonts.height_base_entry(f)); // node_height = height_base[f]
+        mem.set_b32s1(p + 2, fonts.depth_base_entry(f)); // node_depth = depth_base[f]
     }
     Ok(())
 }
 
 // translated from xetex-ext.c:1559 (real_get_native_word_cp)
-pub unsafe fn real_get_native_word_cp(p_node: *mut c_void, side: c_int) -> i32 {
-    let node = p_node as *mut crate::mem_types::MemoryWord;
-    let glyph_count = (*node.add(4)).b16.s0;
-    let f = (*node.add(4)).b16.s2 as i32; // native_font
-    let glyph_info = (*node.add(5)).ptr as *const u8; // native_glyph_info_ptr
-    let glyph_ids = glyph_info.add(glyph_count as usize * 8) as *const u16;
+pub unsafe fn real_get_native_word_cp(
+    mem: &crate::state::MemState,
+    p: i32,
+    side: c_int,
+) -> i32 {
+    let glyph_count = mem.b16s0(p + 4) as usize;
+    let f = mem.b16s2(p + 4) as i32; // native_font
 
     if glyph_count == 0 {
         return 0;
     }
 
     let actual_glyph = match side {
-        LEFT_SIDE => *glyph_ids,
-        RIGHT_SIDE => *glyph_ids.add(glyph_count as usize - 1),
+        LEFT_SIDE => mem.glyph_blobs.get(mem.b32s0(p + 5)).gids[0],
+        RIGHT_SIDE => mem.glyph_blobs.get(mem.b32s0(p + 5)).gids[glyph_count - 1],
         _ => unreachable!(), // C: assert(0) — should not reach this point
     };
     get_cp_code(f, actual_glyph as u32, side)
@@ -2243,26 +2250,25 @@ pub unsafe fn apply_mapping(
 // translated from xetex-ext.c:776 (store_justified_native_glyphs)
 pub unsafe fn store_justified_native_glyphs(
     fonts: &crate::state::FontState,
-    p_node: *mut c_void,
+    mem: &mut crate::state::MemState,
+    p: i32,
 ) -> Result<(), NativeFontAbort> {
-    let node = p_node as *mut crate::mem_types::MemoryWord;
-    let f = (*node.add(4)).b16.s2 as i32;
+    let f = mem.b16s2(p + 4) as i32;
 
-    let saved_width = (*node.add(1)).b32.s1;
-    measure_native_node(fonts, p_node, 0)?;
+    let saved_width = mem.b32s1(p + 1);
+    measure_native_node(fonts, mem, p, 0)?;
 
-    if (*node.add(1)).b32.s1 != saved_width {
-        let just_amount = Fix2D(saved_width - (*node.add(1)).b32.s1);
+    if mem.b32s1(p + 1) != saved_width {
+        let just_amount = Fix2D(saved_width - mem.b32s1(p + 1));
 
-        let glyph_count = (*node.add(4)).b16.s0 as usize;
-        let glyph_info = (*node.add(5)).ptr as *mut u8;
-        let locations = glyph_info as *mut FixedPoint;
-        let glyph_ids = glyph_info.add(glyph_count * 8) as *mut u16;
+        let glyph_count = mem.b16s0(p + 4) as usize;
+        let handle = mem.b32s0(p + 5);
+        let glyphs = mem.glyph_blobs.get_mut(handle);
 
         let space_glyph = map_char_to_glyph(fonts, f, b' ' as i32)?;
         let mut space_count = 0i32;
         for i in 0..glyph_count {
-            if *glyph_ids.add(i) as i32 == space_glyph {
+            if glyphs.gids[i] as i32 == space_glyph {
                 space_count += 1;
             }
         }
@@ -2271,22 +2277,22 @@ pub unsafe fn store_justified_native_glyphs(
             let mut adjustment = 0.0f64;
             let mut space_index = 0i32;
             for i in 0..glyph_count {
-                (*locations.add(i)).x = D2Fix(Fix2D((*locations.add(i)).x) + adjustment);
-                if *glyph_ids.add(i) as i32 == space_glyph {
+                glyphs.locations[i].x = D2Fix(Fix2D(glyphs.locations[i].x) + adjustment);
+                if glyphs.gids[i] as i32 == space_glyph {
                     space_index += 1;
                     adjustment = just_amount * space_index as f64 / space_count as f64;
                 }
             }
         } else {
             for i in 1..glyph_count {
-                (*locations.add(i)).x = D2Fix(
-                    Fix2D((*locations.add(i)).x)
+                glyphs.locations[i].x = D2Fix(
+                    Fix2D(glyphs.locations[i].x)
                         + just_amount * i as f64 / (glyph_count - 1) as f64,
                 );
             }
         }
 
-        (*node.add(1)).b32.s1 = saved_width;
+        mem.set_b32s1(p + 1, saved_width);
     }
     Ok(())
 }
@@ -2808,9 +2814,14 @@ pub(crate) fn do_extension_in(
                     // measure_native_glyph(&mem[cur_list.tail.0], use_glyph_metrics)
                     let use_glyph_metrics =
                         st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS_DE) > 0;
-                    let node_ptr = st.mem.node_addr(st.input.cur_list.tail);
+                    let tail = st.input.cur_list.tail.0;
                     unsafe {
-                        measure_native_glyph(&st.fonts, node_ptr, use_glyph_metrics as i32)?;
+                        measure_native_glyph(
+                            &st.fonts,
+                            &mut st.mem,
+                            tail,
+                            use_glyph_metrics as i32,
+                        )?;
                     }
                 } else {
                     mc_propagate_error(crate::errors::not_font_error_common_in(

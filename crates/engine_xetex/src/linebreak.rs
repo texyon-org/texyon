@@ -292,13 +292,13 @@ fn split_native_tail_for_linebreak(
     st.mem.set_b16s0(q, st.mem.b16s0(ha));
     unsafe {
         copy_native_tail(&mut st.mem, q, ha, start);
-        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q)?;
+        set_native_metrics(&mut st.mem, &st.eqtb, &st.fonts, q)?;
     }
     st.mem.set_b32s1(q, st.mem.b32s1(ha));
     st.mem.set_b32s1(ha, q);
     set_native_node_len_in(&mut st.mem, ha, start);
     unsafe {
-        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, ha)?;
+        set_native_metrics(&mut st.mem, &st.eqtb, &st.fonts, ha)?;
     }
     if advance_ha {
         st.linebreak.ha = MemPtr::from_raw(st.mem.b32s1(ha));
@@ -908,14 +908,15 @@ pub fn reconstitute(
 
 #[inline]
 pub unsafe fn set_native_metrics(
-    mem: &MemState,
+    mem: &mut MemState,
     eqtb: &EqtbState,
     fonts: &FontState,
     p: i32,
 ) -> Result<(), crate::ext::NativeFontAbort> {
     measure_native_node(
         fonts,
-        mem.node_addr(p),
+        mem,
+        p,
         (eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
     )
 }
@@ -3362,7 +3363,7 @@ fn hyphenate_native_word_if_needed(
                 for i in 0..=(j - hp - 1) {
                     *dst.add(i as usize) = *src.add((i + hp) as usize);
                 }
-                set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q)?;
+                set_native_metrics(&mut st.mem, &st.eqtb, &st.fonts, q)?;
             }
             st.mem.set_b32s1(s, q);
             s = q;
@@ -3395,7 +3396,7 @@ fn hyphenate_native_word_if_needed(
         for i in 0..=(new_hn - hp - 1) {
             *dst.add(i as usize) = *src.add((i + hp) as usize);
         }
-        set_native_metrics(&st.mem, &st.eqtb, &st.fonts, q)?;
+        set_native_metrics(&mut st.mem, &st.eqtb, &st.fonts, q)?;
     }
     st.mem.set_b32s1(s, q);
     s = q;
@@ -3795,10 +3796,9 @@ pub fn char_pw_in(errors: &mut crate::state::ErrorState,
         && mem.b16s1(p) == WHATSIT_NODE
         && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_native_word())
     {
-        if !whatsit_node_in(mem, p).native_glyph_info_ptr(mem).is_null() {
-            // NATIVE_NODE_glyph_info_ptr != NULL
+        if whatsit_node_in(mem, p).native_glyph_info_handle(mem) != 0 {
             let f = whatsit_node_in(mem, p).native_font(mem).0; // NATIVE_NODE_font
-            let cp = unsafe { real_get_native_word_cp(mem.node_addr(p), side as libc::c_int) };
+            let cp = unsafe { real_get_native_word_cp(mem, p, side as libc::c_int) };
             return crate::scaled_math::round_xn_over_d(errors, 
                 fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f)),
                 cp,
@@ -3881,8 +3881,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
         for i in 0..len {
             *text.add(i as usize) = *native_text.add((s + i) as usize);
         }
-        let addr = st.mem.node_addr(st.input.cur_list.tail);
-        measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
+        let tail = st.input.cur_list.tail.0;
+        measure_native_node(&st.fonts, &mut st.mem, tail, use_glyph as libc::c_int)?;
     } else {
         let use_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_XETEX_LINEBREAK_SKIP) != 0;
         let penalty_val = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_PENALTY);
@@ -3924,8 +3924,8 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                 for i in prev_offs..offs {
                     *text.add((i - prev_offs) as usize) = *native_text.add((s + i) as usize);
                 }
-                let addr = st.mem.node_addr(st.input.cur_list.tail);
-                measure_native_node(&st.fonts, addr, use_glyph as libc::c_int)?;
+                let tail = st.input.cur_list.tail.0;
+                measure_native_node(&st.fonts, &mut st.mem, tail, use_glyph as libc::c_int)?;
             }
             if offs < 0 {
                 break;

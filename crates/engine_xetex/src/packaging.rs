@@ -307,7 +307,7 @@ pub fn just_copy(
                                 AnyNode::Whatsit(rw) => rw,
                                 _ => unreachable!("copied whatsit header classifies as whatsit"),
                             };
-                            rw.set_native_glyph_info_ptr(mem, std::ptr::null_mut());
+                            rw.set_native_glyph_info_handle(mem, 0);
                             rw.set_native_glyph_count(mem, 0);
                             crate::mem::copy_native_glyph_info(mem, p, r);
                             words = 0; // already copied, skip outer loop
@@ -527,11 +527,10 @@ pub fn flush_node_list(
                                 crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
                             Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
-                                let glyph_ptr = w.native_glyph_info_ptr(mem);
-                                if !glyph_ptr.is_null() {
-                                    // SAFETY: glyph_ptr was xmalloc'd by the native-word shaper.
-                                    unsafe { libc::free(glyph_ptr) };
-                                    w.set_native_glyph_info_ptr(mem, std::ptr::null_mut());
+                                let glyph_handle = w.native_glyph_info_handle(mem);
+                                if glyph_handle != 0 {
+                                    mem.glyph_blobs.release(glyph_handle);
+                                    w.set_native_glyph_info_handle(mem, 0);
                                     w.set_native_glyph_count(mem, 0);
                                 }
                                 let sz = w.native_size(mem);
@@ -751,7 +750,7 @@ pub fn copy_node_list(
                                 AnyNode::Whatsit(rw) => rw,
                                 _ => unreachable!("copied whatsit header classifies as whatsit"),
                             };
-                            rw.set_native_glyph_info_ptr(mem, std::ptr::null_mut());
+                            rw.set_native_glyph_info_handle(mem, 0);
                             rw.set_native_glyph_count(mem, 0);
                             crate::mem::copy_native_glyph_info(mem, p, r);
                             words = 0;
@@ -2194,7 +2193,8 @@ fn hpack_in(
                             unsafe {
                                 measure_native_node(
                                     fonts,
-                                    mem.node_addr(p),
+                                    mem,
+                                    p,
                                     use_glyph_metrics as libc::c_int,
                                 )?;
                             }

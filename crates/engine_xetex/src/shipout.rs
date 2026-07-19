@@ -932,9 +932,7 @@ fn merge_justifiable_native_words(
                 }
 
                 mem.set_b32s1(q + 1, k);
-                let addr = mem.node_addr(q);
-                // SAFETY: `addr` points at the native-word node; FFI does not re-enter.
-                unsafe { crate::ext::store_justified_native_glyphs(fonts, addr) }?;
+                unsafe { crate::ext::store_justified_native_glyphs(fonts, mem, q.0) }?;
                 prev_p.set_link(mem, q);
                 q.set_link(mem, p.link(mem));
                 p.set_link(mem, MemPtr::NULL);
@@ -1396,7 +1394,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                     } else {
                                         if subtype == Some(WhatsitSubtype::NativeWordAt) {
                                             if whatsit.native_length(&st.mem) > 0
-                                                || !whatsit.native_glyph_info_ptr(&st.mem).is_null()
+                                                || whatsit.native_glyph_info_handle(&st.mem) != 0
                                             {
                                                 emit_dvi_out(&mut st.shipout, SET_TEXT_AND_GLYPHS)?;
                                                 let len = whatsit.native_length(&st.mem) as i32;
@@ -1416,7 +1414,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                                     )?;
                                                 }
                                             }
-                                        } else if !whatsit.native_glyph_info_ptr(&st.mem).is_null()
+                                        } else if whatsit.native_glyph_info_handle(&st.mem) != 0
                                         {
                                             emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
                                             let len = make_xdv_glyph_array_data_in(st, whatsit);
@@ -2169,12 +2167,6 @@ fn font_character_width(fonts: &FontState, f: i32, c: i32) -> i32 {
     fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
 }
 
-#[repr(C)]
-struct FixedPoint {
-    x: i32,
-    y: i32,
-}
-
 unsafe fn make_xdv_glyph_array_data_in(
     st: &mut crate::state::EngineState,
     p: NodePtr<WhatsitNode>,
@@ -2185,9 +2177,10 @@ unsafe fn make_xdv_glyph_array_data_in(
         st.fonts.xdv_buffer.resize(needed, 0);
     }
 
-    let glyph_info = p.native_glyph_info_ptr(&st.mem) as *const u8;
-    let locations = glyph_info as *const FixedPoint;
-    let glyph_ids = glyph_info.add(glyph_count * 8) as *const u16;
+    let glyphs = st
+        .mem
+        .glyph_blobs
+        .get(p.native_glyph_info_handle(&st.mem));
 
     let xdv_ptr = st.fonts.xdv_buffer.as_mut_ptr();
     let mut cp = xdv_ptr;
@@ -2208,8 +2201,8 @@ unsafe fn make_xdv_glyph_array_data_in(
     cp = cp.add(1);
 
     for i in 0..glyph_count {
-        let x = (*locations.add(i)).x as u32;
-        let y = (*locations.add(i)).y as u32;
+        let x = glyphs.locations[i].x as u32;
+        let y = glyphs.locations[i].y as u32;
         *cp = (x >> 24) as u8;
         cp = cp.add(1);
         *cp = (x >> 16) as u8;
@@ -2229,7 +2222,7 @@ unsafe fn make_xdv_glyph_array_data_in(
     }
 
     for i in 0..glyph_count {
-        let g = *glyph_ids.add(i);
+        let g = glyphs.gids[i];
         *cp = (g >> 8) as u8;
         cp = cp.add(1);
         *cp = g as u8;

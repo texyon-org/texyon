@@ -1,7 +1,7 @@
 //! Memory arena types and allocator functions translated from
 //! `xetex/xetex-xetex0.c`.
 use crate::consts::{
-    GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NATIVE_GLYPH_INFO_SIZE,
+    GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP,
 };
 pub(crate) use crate::consts::TEX_NULL;
 use crate::node::{
@@ -523,30 +523,22 @@ pub fn free_node(mem: &mut MemState, p: MemPtr, s: i32) {
 // copy_native_glyph_info
 // ---------------------------------------------------------------------------
 
-/// Copy glyph layout info from native node `src` to `dest`, allocating a
-/// fresh heap buffer for the destination.
+/// Give `dest` a fresh arena slot sharing `src`'s immutable glyph payload.
 ///
-/// `NATIVE_NODE_glyph_info_ptr(p)` = `mem[p+5].ptr`
+/// `NATIVE_NODE_glyph_info_handle(p)` = `mem[p+5].b32.s0`
 /// `NATIVE_NODE_glyph_count(p)`    = `mem[p+4].b16.s0`
 ///
 /// translated from xetex-xetex0.c:146 (copy_native_glyph_info)
 pub fn copy_native_glyph_info(mem: &mut MemState, src: impl crate::units::MemAddr, dest: impl crate::units::MemAddr) {
     let src = src.addr();
     let dest = dest.addr();
-    let src_ptr = mem.ptr(src + 5);
-    if !src_ptr.is_null() {
-        let glyph_count = mem.b16s0(src + 4) as usize;
-        let byte_count = glyph_count * NATIVE_GLYPH_INFO_SIZE;
-        // xmalloc_array(char, glyph_count * NATIVE_GLYPH_INFO_SIZE)
-        //   = xmalloc((glyph_count * NATIVE_GLYPH_INFO_SIZE + 1) * sizeof(char))
-        // SAFETY: `xmalloc` returns an owned buffer of `byte_count + 1` bytes;
-        // `src_ptr` (checked non-null) holds at least `byte_count` bytes.
-        let new_ptr = unsafe { xmalloc(byte_count + 1) };
-        unsafe {
-            std::ptr::copy_nonoverlapping(src_ptr as *const u8, new_ptr as *mut u8, byte_count);
-        }
-        mem.set_ptr(dest + 5, new_ptr);
-        mem.set_b16s0(dest + 4, glyph_count as u16);
+    let src_handle = mem.b32s0(src + 5);
+    if src_handle != 0 {
+        let glyph_count = mem.b16s0(src + 4);
+        let new_handle = mem.glyph_blobs.clone_handle(src_handle);
+        mem.set_b32s0(dest + 5, new_handle);
+        mem.set_b32s1(dest + 5, 0);
+        mem.set_b16s0(dest + 4, glyph_count);
     }
 }
 

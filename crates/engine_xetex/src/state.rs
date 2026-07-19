@@ -447,6 +447,8 @@ impl EqtbState {
 #[derive(Default)]
 pub(crate) struct MemState {
     pub data: Vec<crate::mem_types::MemoryWord>,
+    /// Owned shaped-glyph payloads referenced by handles in native nodes.
+    pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
     pub lo_mem_max: i32,
     pub hi_mem_min: i32,
     pub avail: i32,
@@ -521,19 +523,6 @@ impl MemState {
     pub(crate) fn b16s3(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s3 }
-    }
-
-    /// Read `mem[p].ptr` (the native-glyph pointer field).
-    #[inline]
-    pub(crate) fn ptr(&self, p: impl crate::units::MemAddr) -> *mut std::ffi::c_void {
-        // SAFETY: union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p.addr() as usize].ptr }
-    }
-
-    /// Write `mem[p].ptr`. Union writes through a `&mut` index are safe.
-    #[inline]
-    pub(crate) fn set_ptr(&mut self, p: impl crate::units::MemAddr, v: *mut std::ffi::c_void) {
-        self.data[p.addr() as usize].ptr = v;
     }
 
     /// Write `mem[p].b32.s0`. Union writes through a `&mut` index are safe.

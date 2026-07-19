@@ -34,7 +34,7 @@ pub struct B16x4 {
     pub s3: u16,
 }
 
-/// The fundamental TeX memory word: a tagged union of the four
+/// The fundamental TeX memory word: a tagged union of the three
 /// interpretations the engine uses.
 ///
 /// Corresponds exactly to the C `memory_word` union (`xetex-core.h:99`).
@@ -47,7 +47,6 @@ pub union MemoryWord {
     pub b32: B32x2,
     pub b16: B16x4,
     pub gr: f64,
-    pub ptr: *mut std::ffi::c_void,
 }
 
 impl Default for MemoryWord {
@@ -74,7 +73,7 @@ const _: () = {
 /// Implementors must be plain-old-data with every field valid at all-zero
 /// bits (no niches, no references).
 pub(crate) unsafe trait ZeroWord: Copy {}
-// SAFETY: unions/structs of i32/u16/f64/raw-pointer; zero bits are valid
+// SAFETY: unions/structs of i32/u16/f64; zero bits are valid
 // for every interpretation.
 unsafe impl ZeroWord for MemoryWord {}
 unsafe impl ZeroWord for B32x2 {}
