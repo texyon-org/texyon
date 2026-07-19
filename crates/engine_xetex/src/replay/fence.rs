@@ -30,12 +30,24 @@ impl ReplayFence {
         state: &crate::state::EngineState,
         snapshot: &SourceSnapshot,
     ) -> Option<Self> {
-        if state.shipout.write_open.iter().any(|open| *open)
-            || state
+        if state
                 .input
                 .read_file
                 .iter()
                 .any(|slot| matches!(slot, crate::state::InputSlot::Open(_)))
+        {
+            return None;
+        }
+        if state
+            .shipout
+            .write_open
+            .iter()
+            .enumerate()
+            .any(|(stream, open)| {
+                *open
+                    && (stream >= state.shipout.write_name.len()
+                        || state.shipout.write_name[stream].last() != Some(&0))
+            })
         {
             return None;
         }

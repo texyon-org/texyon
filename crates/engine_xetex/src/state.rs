@@ -1516,6 +1516,10 @@ pub(crate) struct ShipoutState {
     pub pdf_last_y_pos: i32,
     pub write_file: [usize; 16],
     pub write_open: [bool; 18],
+    /// Packed NUL-terminated names for bridge-local `\write` handles.
+    pub write_name: [Vec<libc::c_char>; 16],
+    /// Code units emitted before the current replay fence.
+    pub write_prefix: [Vec<i32>; 16],
     pub rust_stdout: usize,
     pub log_file: usize,
     pub current_diagnostic: *mut std::ffi::c_void,

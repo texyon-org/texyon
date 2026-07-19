@@ -331,6 +331,7 @@ pub(crate) fn print_ln_in(st: &mut EngineState) {
         SELECTOR_NO_PRINT | SELECTOR_PSEUDO | SELECTOR_NEW_STRING => {}
         sel => {
             unsafe { ttstub_output_putc(st.shipout.write_file[sel as usize], b'\n' as i32) };
+            st.shipout.write_prefix[sel as usize].push(b'\n' as i32);
         }
     }
 }
@@ -399,6 +400,7 @@ pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool)
         }
         sel => {
             unsafe { ttstub_output_putc(st.shipout.write_file[sel as usize], s as i32) };
+            st.shipout.write_prefix[sel as usize].push(s as i32);
         }
     }
     st.errors.tally += 1;

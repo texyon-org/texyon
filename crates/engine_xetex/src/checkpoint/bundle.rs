@@ -90,6 +90,18 @@ impl EngineBundle {
 
     pub(crate) fn allocated_bytes(&self) -> usize {
         self.shipout.dvi_buf.capacity()
+            + self
+                .shipout
+                .write_name
+                .iter()
+                .map(Vec::capacity)
+                .sum::<usize>()
+            + self
+                .shipout
+                .write_prefix
+                .iter()
+                .map(|prefix| prefix.capacity() * size_of::<i32>())
+                .sum::<usize>()
             + self.scanner.native_text.capacity() * size_of::<u16>()
             + self.linebreak.hlist_stack.capacity() * size_of::<crate::units::MemPtr>()
             + self.mem.allocated_bytes()

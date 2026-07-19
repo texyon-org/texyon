@@ -1277,6 +1277,8 @@ pub(crate) unsafe fn close_files_and_terminate_in(
 ) -> Result<(), crate::errors::EngineAbort> {
     for k in 0usize..=15 {
         if st.shipout.write_open[k] {
+            crate::shipout::ensure_write_stream_open(st, k)
+                .map_err(|error| error.into_engine_abort())?;
             ttstub_output_close(st.shipout.write_file[k]);
         }
     }

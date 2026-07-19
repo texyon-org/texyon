@@ -60,6 +60,10 @@ fn cold_xdv(bytes: &[u8]) -> Vec<u8> {
 }
 
 fn cold_xdv_with_child(bytes: &[u8], child: Option<&[u8]>) -> Vec<u8> {
+    cold_output_with_child(bytes, child, "session.xdv")
+}
+
+fn cold_output_with_child(bytes: &[u8], child: Option<&[u8]>, name: &str) -> Vec<u8> {
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let mut primary = BufferedPrimaryIo::from_buffer(bytes.to_vec());
@@ -82,7 +86,7 @@ fn cold_xdv_with_child(bytes: &[u8], child: Option<&[u8]>) -> Vec<u8> {
             .unwrap();
         assert_eq!(outcome, TexOutcome::Spotless);
     }
-    output_bytes(&output, "session.xdv")
+    output_bytes(&output, name)
 }
 
 #[test]
@@ -359,6 +363,79 @@ fn changing_a_consumed_child_falls_back_to_rung_zero() {
     };
     assert_eq!(frame.splice_at, None);
     assert_eq!(output_bytes(&edit_output, "session.xdv"), cold_edited);
+}
+
+#[test]
+fn live_write_stream_is_reopened_with_its_checkpointed_prefix() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let mut original = String::from(
+        "\\newwrite\\previewaux\n\\immediate\\openout\\previewaux=state.aux\n\\immediate\\write\\previewaux{prefix record}\n",
+    );
+    for index in 0..1400 {
+        if index == 1200 {
+            original.push_str("ORIGINAL WRITE MARKER\\par\n");
+        } else {
+            original.push_str(&format!("write test line {index} has words\\par\n"));
+        }
+    }
+    original.push_str(
+        "\\immediate\\write\\previewaux{tail record}\n\\immediate\\closeout\\previewaux\n\\bye\n",
+    );
+    let edited = original.replace("ORIGINAL WRITE MARKER", "EDITED WRITE MARKER");
+    let cold_original = cold_xdv(original.as_bytes());
+    let cold_edited = cold_xdv(edited.as_bytes());
+    let cold_aux = cold_output_with_child(edited.as_bytes(), None, "state.aux");
+
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let source = snapshot(original.as_bytes());
+    let mut first_output = MemoryIo::new(true);
+    {
+        let io = IoStack::new(vec![
+            &mut first_output as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        session.open(&mut launcher, source.clone()).unwrap();
+    }
+    assert_eq!(output_bytes(&first_output, "session.xdv"), cold_original);
+
+    let changed = source
+        .replace("session.tex", Arc::from(edited.as_bytes()))
+        .unwrap();
+    let mut edit_output = MemoryIo::new(true);
+    let frame = {
+        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session.edit(&mut launcher, changed.snapshot, None).unwrap();
+        session.finish(&mut launcher).unwrap();
+        frame
+    };
+    let splice_at = frame
+        .splice_at
+        .expect("live write stream made the edit fall back to rung zero");
+    let assembler = DocumentAssembler::new();
+    let base = assembler
+        .assemble(None, DocumentFragment::Complete(&cold_original))
+        .unwrap();
+    let tail = output_bytes(&edit_output, "session.xdv");
+    let assembled = assembler
+        .assemble(
+            Some(&base),
+            DocumentFragment::Tail {
+                prefix_len: splice_at,
+                bytes: &tail,
+            },
+        )
+        .unwrap();
+    assert_eq!(assembled.bytes().as_ref(), cold_edited);
+    assert_eq!(output_bytes(&edit_output, "state.aux"), cold_aux);
 }
 
 #[test]

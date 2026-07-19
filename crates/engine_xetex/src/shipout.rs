@@ -2700,6 +2700,7 @@ fn write_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAdd
     if j == 18 {
         st.shipout.selector = SELECTOR_NEW_STRING;
     } else if st.shipout.write_open[j as usize] {
+        ensure_write_stream_open(st, j as usize)?;
         st.shipout.selector = j;
     } else {
         if j == 17 && st.shipout.selector == SELECTOR_TERM_AND_LOG {
@@ -2845,11 +2846,15 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: impl crate::uni
                     return Ok(());
                 }
                 if st.shipout.write_open[j as usize] {
+                    ensure_write_stream_open(st, j as usize)?;
                     // SAFETY: FFI close of the write-stream output handle.
                     unsafe { ttstub_output_close(st.shipout.write_file[j as usize]) };
                 }
                 if sub == Some(WhatsitSubtype::Close) {
                     st.shipout.write_open[j as usize] = false;
+                    if j < 16 {
+                        st.shipout.write_file[j as usize] = INVALID_HANDLE;
+                    }
                     return Ok(());
                 }
                 // OPEN_NODE
@@ -2874,6 +2879,11 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: impl crate::uni
                     }
                     st.shipout.write_file[j as usize] = handle;
                     st.shipout.write_open[j as usize] = true;
+                    let name_len = st.input.name_length as usize;
+                    st.shipout.write_name[j as usize].clear();
+                    st.shipout.write_name[j as usize]
+                        .extend_from_slice(&st.input.name_of_file[..=name_len]);
+                    st.shipout.write_prefix[j as usize].clear();
                     if st.errors.log_opened {
                         let old_setting = st.shipout.selector;
                         if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0 {
@@ -2899,5 +2909,28 @@ pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: impl crate::uni
         Some(WhatsitSubtype::Language) => {}
         _ => return Err(ShipoutAbort::Confusion(c"ext4")),
     }
+    Ok(())
+}
+
+/// Lazily recreate a checkpoint-restored TeX output stream and its prefix.
+pub(crate) fn ensure_write_stream_open(
+    st: &mut crate::state::EngineState,
+    stream: usize,
+) -> Result<(), ShipoutAbort> {
+    if st.shipout.write_file[stream] != INVALID_HANDLE {
+        return Ok(());
+    }
+    let name = &st.shipout.write_name[stream];
+    if name.last() != Some(&0) {
+        return Err(ShipoutAbort::CannotOpenOutput);
+    }
+    let handle = unsafe { ttstub_output_open(name.as_ptr(), 0) };
+    if handle == INVALID_HANDLE {
+        return Err(ShipoutAbort::CannotOpenOutput);
+    }
+    for &code_unit in &st.shipout.write_prefix[stream] {
+        unsafe { crate::bridge::ttstub_output_putc(handle, code_unit) };
+    }
+    st.shipout.write_file[stream] = handle;
     Ok(())
 }
