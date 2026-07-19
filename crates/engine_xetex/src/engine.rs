@@ -2,21 +2,20 @@
 //! initialize_* primers, primitive registration, and teardown — translated
 //! from the driver part of xetex-ini.c.
 
-use crate::mem::{xmalloc};
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
-    DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FONT_BASE, GLUE_BASE, GLUE_NODE,
-    HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, INT_BASE, INT_PAR_DAY, INT_PAR_END_LINE_CHAR,
-    INT_PAR_MONTH, INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_YEAR, LC_CODE_BASE, LEVEL_ONE,
-    LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, NEW_LINE,
-    NON_ADDRESS, NUMBER_USVS, PC_INT_BASE, PRIM_EQTB_BASE, SELECTOR_NO_PRINT,
-    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, TOKS_BASE, TOO_BIG_CHAR,
-    UC_CODE_BASE,
+    ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE,
+    DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FONT_BASE, GLUE_BASE, GLUE_NODE, HISTORY_FATAL_ERROR,
+    HISTORY_SPOTLESS, INT_BASE, INT_PAR_DAY, INT_PAR_END_LINE_CHAR, INT_PAR_MONTH,
+    INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_YEAR, LC_CODE_BASE, LEVEL_ONE, LOCAL_BASE,
+    MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, NEW_LINE, NON_ADDRESS,
+    NUMBER_USVS, PC_INT_BASE, PRIM_EQTB_BASE, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
+    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
 };
 use crate::format_io::load_fmt_file;
 use crate::io::init_io;
-use crate::state::{EngineState, GroupCode, MemState};
+use crate::mem::xmalloc;
 use crate::state::InteractionMode;
+use crate::state::{EngineState, GroupCode, MemState};
 
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
 
@@ -245,7 +244,9 @@ pub(crate) unsafe fn final_cleanup_in(
     let mut c = st.scanner.cur_chr;
 
     if c != 1 {
-        st.eqtb.data[(INT_BASE + INT_PAR_NEW_LINE_CHAR) as usize].b32.s1 = -1;
+        st.eqtb.data[(INT_BASE + INT_PAR_NEW_LINE_CHAR) as usize]
+            .b32
+            .s1 = -1;
     }
 
     if st.strings.job_name == 0 {
@@ -307,7 +308,8 @@ pub(crate) unsafe fn final_cleanup_in(
     }
 
     if st.errors.history != HISTORY_SPOTLESS
-        && (st.errors.history == HISTORY_WARNING_ISSUED || st.errors.interaction < InteractionMode::ErrorStop)
+        && (st.errors.history == HISTORY_WARNING_ISSUED
+            || st.errors.interaction < InteractionMode::ErrorStop)
         && st.shipout.selector == SELECTOR_TERM_AND_LOG
     {
         st.shipout.selector = SELECTOR_TERM_ONLY;
@@ -1019,7 +1021,6 @@ pub(crate) unsafe fn initialize_engine(
     dump_name: *const libc::c_char,
     build_date: libc::time_t,
 ) -> InitOutcome {
-
     TEX_FORMAT_DEFAULT = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
     libc::strcpy(TEX_FORMAT_DEFAULT, dump_name);
     FORMAT_DEFAULT_LENGTH = libc::strlen(dump_name) as i32;
@@ -1222,12 +1223,13 @@ pub(crate) unsafe fn initialize_engine(
         if let Err(a) = get_strings_started_in(&mut *st) {
             return InitOutcome::Terminate(a.into_history(&mut *st));
         }
-        let format_ident = match crate::texmfmp::maketexstring_in(&mut st.strings, c" (INITEX)".as_ptr())
-            .map_err(|e| e.into_engine_abort())
-        {
-            Ok(v) => v,
-            Err(a) => return InitOutcome::Terminate(a.into_history(&mut *st)),
-        };
+        let format_ident =
+            match crate::texmfmp::maketexstring_in(&mut st.strings, c" (INITEX)".as_ptr())
+                .map_err(|e| e.into_engine_abort())
+            {
+                Ok(v) => v,
+                Err(a) => return InitOutcome::Terminate(a.into_history(&mut *st)),
+            };
         initialize_more_initex_variables_in(&mut *st, format_ident);
         let result = initialize_primitives(&mut *st);
         if let Err(e) = result {
@@ -1314,7 +1316,11 @@ pub(crate) unsafe fn initialize_engine(
     }
 
     // SAFETY: union projection; the eqtb index is a valid int-param slot.
-    let end_line_char = unsafe { st.eqtb.data[(PC_INT_BASE + INT_PAR_END_LINE_CHAR) as usize].b32.s1 };
+    let end_line_char = unsafe {
+        st.eqtb.data[(PC_INT_BASE + INT_PAR_END_LINE_CHAR) as usize]
+            .b32
+            .s1
+    };
     if end_line_char < 0 || end_line_char > BIGGEST_CHAR {
         st.input.cur_input.limit = st.input.cur_input.limit - 1;
     } else {
@@ -1411,12 +1417,13 @@ pub(crate) unsafe fn initialize_engine(
 
         // The nullfont (FONT_BASE) bootstrap is a contiguous run of font-table
         // writes.
-        let nullfont_name = match crate::texmfmp::maketexstring_in(&mut st.strings, c"nullfont".as_ptr())
-            .map_err(|e| e.into_engine_abort())
-        {
-            Ok(v) => v,
-            Err(a) => return InitOutcome::Terminate(a.into_history(&mut *st)),
-        };
+        let nullfont_name =
+            match crate::texmfmp::maketexstring_in(&mut st.strings, c"nullfont".as_ptr())
+                .map_err(|e| e.into_engine_abort())
+            {
+                Ok(v) => v,
+                Err(a) => return InitOutcome::Terminate(a.into_history(&mut *st)),
+            };
         {
             let s = &mut *st;
             let f = FONT_BASE as usize;
@@ -1500,7 +1507,8 @@ unsafe fn run_document_to_end(
         return a.into_history(&mut *st);
     }
     st.errors.history = HISTORY_SPOTLESS;
-    if let Err(a) = crate::main_control::main_control_in(&mut *st).map_err(|e| e.into_engine_abort())
+    if let Err(a) =
+        crate::main_control::main_control_in(&mut *st).map_err(|e| e.into_engine_abort())
     {
         // A fatal main-control abort. into_history runs the print + cleanup and
         // returns HISTORY_FATAL_ERROR, skipping final_cleanup.
@@ -1531,6 +1539,17 @@ pub(crate) unsafe fn run_resident_document(
     crate::io::start_input_in(st, input_file_name).map_err(|e| e.into_engine_abort())?;
     st.errors.history = HISTORY_SPOTLESS;
     crate::main_control::main_control_in(st).map_err(|e| e.into_engine_abort())?;
+    final_cleanup_in(st)?;
+    crate::io::close_files_and_terminate_in(st)?;
+    Ok(st.errors.history)
+}
+
+/// Resume a resident document with the restored command already fetched.
+pub(crate) unsafe fn resume_resident_document(
+    st: &mut crate::state::EngineState,
+) -> Result<i32, crate::errors::EngineAbort> {
+    crate::io::reopen_resident_outputs_in(st)?;
+    crate::main_control::main_control_resume_in(st).map_err(|e| e.into_engine_abort())?;
     final_cleanup_in(st)?;
     crate::io::close_files_and_terminate_in(st)?;
     Ok(st.errors.history)

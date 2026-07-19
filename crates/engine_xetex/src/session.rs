@@ -1,7 +1,9 @@
 //! Synchronous rung-zero resident XeTeX session.
 
+use std::cell::RefCell;
 use std::ffi::CString;
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
@@ -12,11 +14,87 @@ use tectonic_errors::prelude::*;
 use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, StringWatermark,
 };
-use crate::EngineCancellation;
 use crate::state::{EngineExecutionMode, EngineState};
+use crate::EngineCancellation;
 use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
 
 static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+const PERIODIC_FENCE_TOKENS: u64 = 500;
+
+struct FenceController {
+    ladder: NonNull<CheckpointLadder<EngineBundle>>,
+    snapshot: NonNull<SourceSnapshot>,
+    strings_base: StringWatermark,
+    budget: LadderBudget,
+    next_clock: u64,
+}
+
+thread_local! {
+    static FENCE_CONTROLLER: RefCell<Option<FenceController>> = const { RefCell::new(None) };
+}
+
+struct FenceControllerGuard;
+
+impl Drop for FenceControllerGuard {
+    fn drop(&mut self) {
+        FENCE_CONTROLLER.with(|controller| {
+            controller.borrow_mut().take();
+        });
+    }
+}
+
+fn install_fence_controller(
+    ladder: &mut CheckpointLadder<EngineBundle>,
+    snapshot: &SourceSnapshot,
+    strings_base: StringWatermark,
+    budget: LadderBudget,
+    current_clock: u64,
+) -> FenceControllerGuard {
+    FENCE_CONTROLLER.with(|controller| {
+        let previous = controller.borrow_mut().replace(FenceController {
+            ladder: NonNull::from(ladder),
+            snapshot: NonNull::from(snapshot),
+            strings_base,
+            budget,
+            next_clock: current_clock.saturating_add(PERIODIC_FENCE_TOKENS),
+        });
+        assert!(previous.is_none(), "nested resident fence controller");
+    });
+    FenceControllerGuard
+}
+
+/// Capture an undispatched-command checkpoint when the active cadence fires.
+pub(crate) fn capture_command_fence(state: &mut EngineState) {
+    FENCE_CONTROLLER.with(|controller| {
+        let mut controller = controller.borrow_mut();
+        let Some(controller) = controller.as_mut() else {
+            return;
+        };
+        if state.scanner.logical_clock < controller.next_clock {
+            return;
+        }
+        controller.next_clock = state
+            .scanner
+            .logical_clock
+            .saturating_add(PERIODIC_FENCE_TOKENS);
+        // SAFETY: the controller is installed around one synchronous engine
+        // call on this thread; both pointees outlive the guard and are not
+        // accessed through another reference while this hook runs.
+        let snapshot = unsafe { controller.snapshot.as_ref() };
+        let Some(fence) = crate::replay::fence::ReplayFence::capture(state, snapshot) else {
+            return;
+        };
+        let ladder = unsafe { controller.ladder.as_mut() };
+        let _ = ladder.admit_engine_fence(
+            state,
+            controller.strings_base,
+            fence,
+            false,
+            controller.budget,
+        );
+    });
+}
 
 pub(crate) fn resident_active() -> bool {
     RESIDENT_ACTIVE.load(Ordering::Acquire)
@@ -82,6 +160,10 @@ pub struct EngineFrame {
     pub cancelled: bool,
     /// Page-boundary execution facts for exact XDV suffix comparison.
     pub pages: Vec<PageExecution>,
+    /// Old-document byte prefix retained by a fence-local replay.
+    pub splice_at: Option<usize>,
+    /// Number of checkpoint rungs retained after this operation.
+    pub checkpoint_rungs: usize,
 }
 
 /// One initialized XeTeX state repeatedly replayed from rung zero.
@@ -157,6 +239,7 @@ impl IncrementalXeTeXSession {
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| unsafe {
                 configure(state, &config);
+                let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
                 match crate::engine::initialize_engine(state, format.as_ptr(), build_date) {
                     crate::engine::InitOutcome::Ready => {}
@@ -167,18 +250,25 @@ impl IncrementalXeTeXSession {
                 state.config.execution_mode = EngineExecutionMode::Resident;
                 crate::journal::arm(state);
                 let base = StringWatermark::capture(state);
-                let mut new_ladder = match CheckpointLadder::from_engine_with_budget(
-                    state, base, budget,
-                ) {
-                    Ok(ladder) => ladder,
-                    Err(error) => return OperationResult::Budget(error),
-                };
+                let mut new_ladder =
+                    match CheckpointLadder::from_engine_with_budget(state, base, budget) {
+                        Ok(ladder) => ladder,
+                        Err(error) => return OperationResult::Budget(error),
+                    };
                 if verify {
                     new_ladder.enable_verification(state);
                 }
                 *strings_base = Some(base);
                 *ladder = Some(new_ladder);
-                run_document(state, ladder.as_mut().unwrap(), input.as_ptr())
+                run_document(
+                    state,
+                    ladder.as_mut().unwrap(),
+                    input.as_ptr(),
+                    &fence_sources,
+                    base,
+                    budget,
+                    None,
+                )
             }))
         });
         let result = match result {
@@ -192,7 +282,7 @@ impl IncrementalXeTeXSession {
         self.finish_operation(result, revision)
     }
 
-    /// Replace the immutable source set and fully replay from rung zero.
+    /// Replace the immutable source set and resume from the deepest safe fence.
     /// `viewport` is accepted now so the API does not change when M8 adds a
     /// foreground horizon; it does not shorten execution yet.
     pub fn edit(
@@ -210,15 +300,41 @@ impl IncrementalXeTeXSession {
         let input = CString::new(sources.primary().as_str())?;
         let revision = sources.revision();
         let config = self.config.clone();
+        let budget = self.budget();
+        let strings_base = self
+            .strings_base
+            .expect("opened session without string watermark");
         let state = &mut *self.state;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| unsafe {
+                let selection = ladder.select_replay_fence(&sources);
+                let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
-                ladder.rewind_engine(state, 0);
+                let splice_at = if let Some((target, fence)) = selection {
+                    crate::engine::release_operation_inputs(state);
+                    ladder.rewind_engine(state, target);
+                    assert!(
+                        fence.restore_inputs(state),
+                        "eligible replay fence failed input reconstruction"
+                    );
+                    Some(fence.splice_at())
+                } else {
+                    ladder.rewind_engine(state, 0);
+                    None
+                };
+                ladder.clear_protections();
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
-                run_document(state, ladder, input.as_ptr())
+                run_document(
+                    state,
+                    ladder,
+                    input.as_ptr(),
+                    &fence_sources,
+                    strings_base,
+                    budget,
+                    splice_at,
+                )
             }))
         })?;
         self.finish_operation(result, revision)
@@ -273,12 +389,14 @@ impl IncrementalXeTeXSession {
         revision: SourceRevision,
     ) -> Result<EngineFrame> {
         match result {
-            OperationResult::Complete(history) => Ok(EngineFrame {
+            OperationResult::Complete { history, splice_at } => Ok(EngineFrame {
                 outcome: history_to_outcome(history)?,
                 source_revision: revision,
                 aborted: None,
                 cancelled: false,
                 pages: self.state.shipout.page_manifest.take_pages(),
+                splice_at,
+                checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
             }),
             OperationResult::Aborted => Ok(EngineFrame {
                 outcome: TexOutcome::Errors,
@@ -286,6 +404,8 @@ impl IncrementalXeTeXSession {
                 aborted: Some("XeTeX aborted; resident state rewound to rung zero".into()),
                 cancelled: false,
                 pages: Vec::new(),
+                splice_at: None,
+                checkpoint_rungs: 1,
             }),
             OperationResult::Cancelled => Ok(EngineFrame {
                 outcome: TexOutcome::Errors,
@@ -293,6 +413,8 @@ impl IncrementalXeTeXSession {
                 aborted: None,
                 cancelled: true,
                 pages: Vec::new(),
+                splice_at: None,
+                checkpoint_rungs: 1,
             }),
             OperationResult::Budget(error) => {
                 self.dead = true;
@@ -302,7 +424,9 @@ impl IncrementalXeTeXSession {
             OperationResult::Terminal(history) => {
                 self.dead = true;
                 self.release_global_lease();
-                Err(anyhow!("XeTeX initialization terminated with history {history}"))
+                Err(anyhow!(
+                    "XeTeX initialization terminated with history {history}"
+                ))
             }
             OperationResult::Panicked => {
                 self.dead = true;
@@ -327,7 +451,10 @@ impl Drop for IncrementalXeTeXSession {
 }
 
 enum OperationResult {
-    Complete(i32),
+    Complete {
+        history: i32,
+        splice_at: Option<usize>,
+    },
     Aborted,
     Cancelled,
     Budget(BudgetError),
@@ -339,10 +466,34 @@ unsafe fn run_document(
     state: &mut EngineState,
     ladder: &mut CheckpointLadder<EngineBundle>,
     input: *const libc::c_char,
+    snapshot: &SourceSnapshot,
+    strings_base: StringWatermark,
+    budget: LadderBudget,
+    splice_at: Option<usize>,
 ) -> OperationResult {
-    state.shipout.page_manifest.begin_operation();
-    match crate::engine::run_resident_document(state, input) {
-        Ok(history) => OperationResult::Complete(history),
+    let _fences = install_fence_controller(
+        ladder,
+        snapshot,
+        strings_base,
+        budget,
+        state.scanner.logical_clock,
+    );
+    if splice_at.is_some() {
+        let manifest_start = (state.shipout.dvi_offset + state.shipout.dvi_ptr) as u64;
+        state
+            .shipout
+            .page_manifest
+            .begin_operation_at(manifest_start);
+    } else {
+        state.shipout.page_manifest.begin_operation();
+    }
+    let execution = if splice_at.is_some() {
+        crate::engine::resume_resident_document(state)
+    } else {
+        crate::engine::run_resident_document(state, input)
+    };
+    match execution {
+        Ok(history) => OperationResult::Complete { history, splice_at },
         Err(error) => {
             crate::engine::release_operation_inputs(state);
             ladder.rewind_engine(state, 0);

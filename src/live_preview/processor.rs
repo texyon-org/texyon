@@ -6,7 +6,7 @@ use tectonic_preview_render::{Backend, ResourceProvider};
 use crate::engines::tex::{EngineCancellation, TexOutcome};
 
 use super::{
-    AcceptedSourceSnapshot, FrameSink, PreviewPipeline, PreviewPipelineError,
+    AcceptedSourceSnapshot, DocumentFragment, FrameSink, PreviewPipeline, PreviewPipelineError,
     PreviewWorkerProcessor, PublicationError, ResidentEngineError, ResidentXeTeX, SourceRevision,
     WorkerRun,
 };
@@ -134,9 +134,19 @@ where
         } else {
             UpdateOutcome::Complete
         };
-        let frame_id = match self.pipeline.process_complete(
+        let fragment =
+            engine
+                .frame
+                .splice_at
+                .map_or(DocumentFragment::Complete(&xdv), |prefix_len| {
+                    DocumentFragment::Tail {
+                        prefix_len,
+                        bytes: &xdv,
+                    }
+                });
+        let frame_id = match self.pipeline.process_fragment(
             &mut self.sink,
-            &xdv,
+            fragment,
             SourceRevision::new(revision.get()),
             applied_request_seq,
             FramePhase::Foreground,

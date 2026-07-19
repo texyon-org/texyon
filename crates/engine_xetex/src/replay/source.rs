@@ -172,7 +172,9 @@ impl SourceSnapshot {
     /// Resolve editor-owned bytes, including XeTeX's implicit `.tex` spelling.
     pub fn bytes(&self, path: impl AsRef<Path>) -> Option<Arc<[u8]>> {
         let path = normalize(&self.root, path.as_ref()).ok()?;
-        self.entries.get(&path).map(|entry| Arc::clone(&entry.bytes))
+        self.entries
+            .get(&path)
+            .map(|entry| Arc::clone(&entry.bytes))
     }
 
     /// Resolve the strong identity of editor-owned source bytes.
@@ -234,6 +236,12 @@ impl SourceSnapshot {
         self.entries
             .get(&path)
             .map(|entry| (path, Arc::clone(&entry.bytes)))
+    }
+
+    pub(crate) fn entry(&self, path: &SourcePath) -> Option<(Arc<[u8]>, SourceIdentity)> {
+        self.entries
+            .get(path)
+            .map(|entry| (Arc::clone(&entry.bytes), entry.identity))
     }
 
     pub(crate) fn absolute_path(&self, path: &SourcePath) -> PathBuf {

@@ -1,12 +1,12 @@
 //! Rust translation of xetex-io.c: low-level input/output helpers.
 
-use crate::mem::{xcalloc, xmalloc};
 use crate::consts::{
     BIGGEST_CHAR, CLOSED, INT_BASE, INT_PAR_END_LINE_CHAR, INVALID_HANDLE, JUST_OPEN, LEFT_BRACE,
-    NEW_LINE, OTHER_CHAR, RELAX, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, SPACER,
-    TOO_BIG_CHAR,
+    NEW_LINE, OTHER_CHAR, RELAX, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY,
+    SPACER, TOO_BIG_CHAR,
 };
 use crate::input::InputAbort;
+use crate::mem::{xcalloc, xmalloc};
 
 // ---------------------------------------------------------------------------
 // UFILE — Rust mirror of the C `UFILE` struct (xetex-io.h:12–18)
@@ -15,7 +15,6 @@ use crate::input::InputAbort;
 /// Rust mirror of `UFILE` (xetex-io.h:12–18). Must stay layout-compatible.
 ///
 /// On Linux x86_64 the C layout is:
-
 // Consts used by the file-naming / start_input / close_files group.
 use crate::consts::EMPTY_STRING;
 const INT_PAR_NEW_LINE_CHAR_CFT: i32 = 49;
@@ -88,15 +87,14 @@ const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 const INT_PAR_XETEX_DEFAULT_INPUT_MODE: i32 = 75;
 const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING: i32 = 76;
 
-
 // Bridge I/O: direct Rust calls into tectonic_bridge_core (crate::bridge),
 // keeping the C shim names. `input_seek`/`input_close` are the non-longjmp
 // seek/close replacements, re-exported here for their cross-module callers.
 pub(crate) use crate::bridge::{input_close, input_seek};
 use crate::bridge::{
-    ttstub_get_last_input_abspath, ttstub_input_getc, ttstub_input_open,
-    ttstub_input_open_primary, ttstub_input_ungetc, ttstub_output_close, ttstub_output_flush,
-    ttstub_output_open, ttstub_output_putc,
+    ttstub_get_last_input_abspath, ttstub_input_getc, ttstub_input_open, ttstub_input_open_primary,
+    ttstub_input_ungetc, ttstub_output_close, ttstub_output_flush, ttstub_output_open,
+    ttstub_output_putc,
 };
 
 // ---------------------------------------------------------------------------
@@ -172,7 +170,10 @@ pub(crate) unsafe fn xetex_ucnv_close(converter: *mut libc::c_void) {
 }
 
 /// translated from xetex-io.c (xetex_ucnv_open)
-pub(crate) unsafe fn xetex_ucnv_open(name: *const libc::c_char, out_err: *mut libc::c_int) -> *mut libc::c_void {
+pub(crate) unsafe fn xetex_ucnv_open(
+    name: *const libc::c_char,
+    out_err: *mut libc::c_int,
+) -> *mut libc::c_void {
     let mut err: i32 = 0;
     let cnv = ucnv_open(name, &mut err);
     if !out_err.is_null() {
@@ -209,7 +210,6 @@ pub(crate) unsafe fn xetex_ucnv_to_utf32(
 // ---------------------------------------------------------------------------
 // tt_xetex_open_input
 // ---------------------------------------------------------------------------
-
 
 pub(crate) unsafe fn tt_xetex_open_input_in(
     st: &mut crate::state::EngineState,
@@ -501,8 +501,10 @@ pub(crate) unsafe fn input_line_in(
             1 | 2 => {
                 // NFC or NFD: convert to utf32Buf first, then normalize into buffer.
                 if UTF32_BUF.is_null() {
-                    UTF32_BUF =
-                        xcalloc(st.input.buf_size as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
+                    UTF32_BUF = xcalloc(
+                        st.input.buf_size as libc::size_t,
+                        std::mem::size_of::<u32>(),
+                    ) as *mut u32;
                 }
                 let tmp_len = xetex_ucnv_to_utf32(
                     cnv,
@@ -556,8 +558,10 @@ pub(crate) unsafe fn input_line_in(
             1 | 2 => {
                 // NFC or NFD: read into utf32Buf then normalize.
                 if UTF32_BUF.is_null() {
-                    UTF32_BUF =
-                        xcalloc(st.input.buf_size as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
+                    UTF32_BUF = xcalloc(
+                        st.input.buf_size as libc::size_t,
+                        std::mem::size_of::<u32>(),
+                    ) as *mut u32;
                 }
                 let mut tmp_len: i32 = 0;
                 if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
@@ -1193,10 +1197,51 @@ pub(crate) unsafe fn open_log_file_in(
     Ok(())
 }
 
+/// Recreate bridge-owned output handles after restoring a resident checkpoint.
+///
+/// Checkpoints retain the logical output state (DVI offsets, selector, and
+/// whether the transcript was opened), but bridge handles and diagnostic
+/// pointers are valid only for the operation that created them.
+pub(crate) unsafe fn reopen_resident_outputs_in(
+    st: &mut crate::state::EngineState,
+) -> Result<(), crate::errors::EngineAbort> {
+    use crate::bridge::ttstub_output_open;
+    use crate::consts::INVALID_HANDLE;
+
+    st.shipout.current_diagnostic = core::ptr::null_mut();
+    st.shipout.write_file = [INVALID_HANDLE; 16];
+    st.shipout.log_file = INVALID_HANDLE;
+    st.shipout.dvi_file = INVALID_HANDLE;
+
+    if st.errors.log_opened {
+        pack_job_name_in(st, c".log".as_ptr()).map_err(|e| e.into_engine_abort())?;
+        let handle = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
+        if handle == INVALID_HANDLE {
+            return Err(crate::errors::EngineAbort::TtAbort(
+                c"cannot reopen log file output".as_ptr(),
+            ));
+        }
+        st.shipout.log_file = handle;
+    }
+
+    if st.shipout.output_file_name != 0 {
+        pack_job_name_in(st, crate::engine::OUTPUT_FILE_EXTENSION)
+            .map_err(|e| e.into_engine_abort())?;
+        let handle = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
+        if handle == INVALID_HANDLE {
+            return Err(crate::errors::EngineAbort::TtAbort(
+                c"cannot reopen XDV file output".as_ptr(),
+            ));
+        }
+        st.shipout.dvi_file = handle;
+    }
+
+    Ok(())
+}
+
 /// Builds `name_of_file`/`name_length` from the three string-pool components.
 pub(crate) unsafe fn pack_file_name_in(st: &mut crate::state::EngineState, n: i32, a: i32, e: i32) {
-    extern "C" {
-    }
+    extern "C" {}
 
     let len_a = crate::string_pool::length(&st.strings, a) as usize;
     let len_n = crate::string_pool::length(&st.strings, n) as usize;

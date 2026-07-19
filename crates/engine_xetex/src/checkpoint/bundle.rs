@@ -101,7 +101,10 @@ impl EngineBundle {
     }
 
     pub(crate) fn shared_hyph_tables(&self) -> (*const HyphTables, usize) {
-        (Arc::as_ptr(&self.hyph.tables), self.hyph.tables.allocated_bytes())
+        (
+            Arc::as_ptr(&self.hyph.tables),
+            self.hyph.tables.allocated_bytes(),
+        )
     }
 }
 
@@ -284,8 +287,14 @@ impl StringsBundle {
         } = src;
         let pool_top = (*pool_ptr).max(0) as usize;
         let start_top = (*str_ptr - crate::consts::TOO_BIG_CHAR).max(0) as usize;
-        assert!(pool_top >= base.pool, "string pool dipped below checkpoint base");
-        assert!(start_top >= base.starts, "string table dipped below checkpoint base");
+        assert!(
+            pool_top >= base.pool,
+            "string pool dipped below checkpoint base"
+        );
+        assert!(
+            start_top >= base.starts,
+            "string table dipped below checkpoint base"
+        );
         Self {
             base,
             str_ptr: *str_ptr,
@@ -327,8 +336,7 @@ impl StringsBundle {
     }
 
     fn allocated_bytes(&self) -> usize {
-        self.pool_span.capacity() * size_of::<u16>()
-            + self.start_span.capacity() * size_of::<i32>()
+        self.pool_span.capacity() * size_of::<u16>() + self.start_span.capacity() * size_of::<i32>()
     }
 }
 
@@ -462,7 +470,8 @@ impl InputBundle {
         dst.line_stack.clone_from(&self.line_stack);
         dst.grp_stack.clone_from(&self.grp_stack);
         dst.if_stack.clone_from(&self.if_stack);
-        dst.source_filename_stack.clone_from(&self.source_filename_stack);
+        dst.source_filename_stack
+            .clone_from(&self.source_filename_stack);
         dst.full_source_filename_stack
             .clone_from(&self.full_source_filename_stack);
         dst.eof_seen.clone_from(&self.eof_seen);
@@ -673,7 +682,8 @@ impl FontBundle {
         }
         // The ICU iterator points into transient text and is rebuilt lazily.
         unsafe { crate::ext::release_linebreak_state(dst) };
-        dst.loaded_font_mapping.clone_from(&self.loaded_font_mapping);
+        dst.loaded_font_mapping
+            .clone_from(&self.loaded_font_mapping);
         dst.loaded_font_flags = self.loaded_font_flags;
         dst.saved_mapping_name.clone_from(&self.saved_mapping_name);
         dst.loaded_font_letter_space = self.loaded_font_letter_space;
@@ -747,10 +757,8 @@ impl FontBundle {
             + self.param_base.capacity() * size_of::<i32>()
             + self.hyphen_char.capacity() * size_of::<i32>()
             + self.skew_char.capacity() * size_of::<i32>()
-            + self.engines.capacity()
-                * size_of::<Option<Arc<crate::state::FontEngineHandle>>>()
-            + self.mappings.capacity()
-                * size_of::<Option<Arc<crate::state::FontMappingHandle>>>()
+            + self.engines.capacity() * size_of::<Option<Arc<crate::state::FontEngineHandle>>>()
+            + self.mappings.capacity() * size_of::<Option<Arc<crate::state::FontMappingHandle>>>()
             + self.xdv_buffer.capacity()
             + self.mapped_text.capacity() * size_of::<u16>()
     }
@@ -1043,7 +1051,10 @@ mod tests {
         assert_eq!(st.input.buffer[0], 13);
         assert_eq!(st.hyph.hc[0], 14);
         assert_eq!(st.mem.glyph_blobs.get(glyph).locations[0].x, 15);
-        assert!(matches!(st.input.input_file.last(), Some(crate::state::InputSlot::Terminal)));
+        assert!(matches!(
+            st.input.input_file.last(),
+            Some(crate::state::InputSlot::Terminal)
+        ));
     }
 
     #[test]

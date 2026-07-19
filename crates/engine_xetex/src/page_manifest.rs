@@ -31,8 +31,14 @@ pub(crate) struct PageManifest {
 
 impl PageManifest {
     pub(crate) fn begin_operation(&mut self) {
+        self.begin_operation_at(0);
+    }
+
+    /// Start observing newly emitted bytes at an existing absolute XDV
+    /// position, as happens when a resident compile resumes from a fence.
+    pub(crate) fn begin_operation_at(&mut self, span_start: u64) {
         self.enabled = true;
-        self.span_start = 0;
+        self.span_start = span_start;
         self.span.clear();
         self.page_bop = None;
         self.pages.clear();

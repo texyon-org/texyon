@@ -165,7 +165,11 @@ fn digest_strings(st: &EngineState) -> u64 {
     for &value in strings.str_start.iter().take(start_top.saturating_add(1)) {
         h.i32(value);
     }
-    for &value in strings.str_pool.iter().take(strings.pool_ptr.max(0) as usize) {
+    for &value in strings
+        .str_pool
+        .iter()
+        .take(strings.pool_ptr.max(0) as usize)
+    {
         h.word(value as u64);
     }
     h.finish()
@@ -312,7 +316,11 @@ fn digest_input(st: &EngineState) -> u64 {
         digest_list(&mut h, value);
     }
     digest_list(&mut h, &input.cur_list);
-    for &value in input.param_stack.iter().take(input.param_ptr.max(0) as usize) {
+    for &value in input
+        .param_stack
+        .iter()
+        .take(input.param_ptr.max(0) as usize)
+    {
         h.i32(value);
     }
     for &value in &input.line_stack {
