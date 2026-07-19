@@ -16,6 +16,12 @@ saved TeX document, and run **Tectonic: Start Live Preview**. The extension
 sends the primary buffer and every already-dirty eligible child buffer during
 initialization, then streams complete UTF-8 buffer replacements.
 
+Run **Tectonic: Show Cursor in Live Preview** to scroll to and highlight the
+box associated with the active source line. Ctrl-click on Linux/Windows or
+Cmd-click on macOS inside a preview page to reveal the nearest primary or child
+source line. Both directions query the last coherent frame and do not trigger a
+compile or create a `.synctex.gz` file.
+
 The preview webview accepts only sanitized SVG page payloads. It retains page
 slots and scroll position, renders only the visible page plus a one-page
 prefetch band, and asks the server for a full resynchronization after a webview
