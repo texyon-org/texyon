@@ -1544,12 +1544,14 @@ pub(crate) unsafe fn run_resident_document(
     Ok(st.errors.history)
 }
 
-/// Resume a resident document with the restored command already fetched.
+/// Resume a resident document at a restored command boundary.
 pub(crate) unsafe fn resume_resident_document(
     st: &mut crate::state::EngineState,
+    resume_pending_command: bool,
 ) -> Result<i32, crate::errors::EngineAbort> {
     crate::io::reopen_resident_outputs_in(st)?;
-    crate::main_control::main_control_resume_in(st).map_err(|e| e.into_engine_abort())?;
+    crate::main_control::main_control_resume_in(st, resume_pending_command)
+        .map_err(|e| e.into_engine_abort())?;
     final_cleanup_in(st)?;
     crate::io::close_files_and_terminate_in(st)?;
     Ok(st.errors.history)

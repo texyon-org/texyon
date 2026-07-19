@@ -297,8 +297,10 @@ fn late_child_edit_resumes_with_the_nested_input_open() {
         }
     }
     let edited_child = child.replace("ORIGINAL CHILD MARKER", "EDITED CHILD MARKER");
+    let edited_again = child.replace("ORIGINAL CHILD MARKER", "EDITED AGAIN CHILD MARKER");
     let cold_original = cold_xdv_with_child(primary, Some(child.as_bytes()));
     let cold_edited = cold_xdv_with_child(primary, Some(edited_child.as_bytes()));
+    let cold_edited_again = cold_xdv_with_child(primary, Some(edited_again.as_bytes()));
 
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
@@ -319,15 +321,16 @@ fn late_child_edit_resumes_with_the_nested_input_open() {
     let changed = source
         .replace("child.tex", Arc::from(edited_child.as_bytes()))
         .unwrap();
+    let changed_snapshot = changed.snapshot;
     let mut edit_output = MemoryIo::new(true);
     let frame = {
         let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
         let mut hooks = MinimalDriver::new(io);
         let mut status = NoopStatusBackend::default();
         let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-        let frame = session.edit(&mut launcher, changed.snapshot, None).unwrap();
-        session.finish(&mut launcher).unwrap();
-        frame
+        session
+            .edit(&mut launcher, changed_snapshot.clone(), None)
+            .unwrap()
     };
     let splice_at = frame
         .splice_at
@@ -348,6 +351,38 @@ fn late_child_edit_resumes_with_the_nested_input_open() {
         )
         .unwrap();
     assert_eq!(assembled.bytes().as_ref(), cold_edited);
+
+    let changed_again = changed_snapshot
+        .replace("child.tex", Arc::from(edited_again.as_bytes()))
+        .unwrap();
+    let mut second_output = MemoryIo::new(true);
+    let second_frame = {
+        let io = IoStack::new(vec![&mut second_output as &mut dyn IoProvider]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session
+            .edit(&mut launcher, changed_again.snapshot, None)
+            .unwrap();
+        session.finish(&mut launcher).unwrap();
+        frame
+    };
+    assert!(second_frame.replay_rung > frame.replay_rung);
+    assert!(second_frame.replay_commands < frame.replay_commands);
+    let second_splice = second_frame
+        .splice_at
+        .expect("repeat child edit did not use its protected prefetch fence");
+    let second_tail = output_bytes(&second_output, "session.xdv");
+    let assembled_again = assembler
+        .assemble(
+            Some(&assembled),
+            DocumentFragment::Tail {
+                prefix_len: second_splice,
+                bytes: &second_tail,
+            },
+        )
+        .unwrap();
+    assert_eq!(assembled_again.bytes().as_ref(), cold_edited_again);
 }
 
 #[test]

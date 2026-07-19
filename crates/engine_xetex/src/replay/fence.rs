@@ -23,12 +23,14 @@ pub(crate) struct ReplayFence {
     inputs: ReplayFenceInputs,
     slots: Vec<InputSlotCheckpoint>,
     splice_at: usize,
+    resume_pending_command: bool,
 }
 
 impl ReplayFence {
     pub(crate) fn capture(
         state: &crate::state::EngineState,
         snapshot: &SourceSnapshot,
+        resume_pending_command: bool,
     ) -> Option<Self> {
         if state
             .input
@@ -79,6 +81,7 @@ impl ReplayFence {
             inputs,
             slots,
             splice_at: state.shipout.dvi_gone.max(0) as usize,
+            resume_pending_command,
         })
     }
 
@@ -123,6 +126,10 @@ impl ReplayFence {
         self.splice_at
     }
 
+    pub(crate) fn resume_pending_command(&self) -> bool {
+        self.resume_pending_command
+    }
+
     pub(crate) fn allocated_bytes(&self) -> usize {
         self.inputs.allocated_bytes()
             + self.slots.capacity() * std::mem::size_of::<InputSlotCheckpoint>()
@@ -147,8 +154,9 @@ impl ReplayFenceInputs {
 
     /// Whether all consumed source constraints remain sound in `snapshot`.
     ///
-    /// An open input may differ only at or after its byte cursor. A closed
-    /// input was consumed through EOF, so any identity change invalidates it.
+    /// An input may differ only after the source prefix that was observed or
+    /// lies before its resumable byte cursor. Size and EOF observations also
+    /// constrain length, including for closed existence/encoding probes.
     pub(crate) fn is_eligible(&self, snapshot: &SourceSnapshot) -> bool {
         self.inputs.iter().all(|input| {
             let Some((bytes, identity)) = snapshot.replay_entry(&input.path) else {
@@ -157,10 +165,15 @@ impl ReplayFenceInputs {
             if identity == input.identity {
                 return true;
             }
-            if input.closed {
+            if bytes.len() < input.minimum_size {
                 return false;
             }
-            first_difference(&input.bytes, &bytes).is_some_and(|offset| offset >= input.position)
+            if input.exact_size_observed && input.bytes.len() != bytes.len() {
+                return false;
+            }
+            let constrained_prefix = input.position.max(input.observed_prefix);
+            first_difference(&input.bytes, &bytes)
+                .is_some_and(|offset| offset >= constrained_prefix)
         })
     }
 
@@ -217,12 +230,16 @@ mod tests {
         let normalized = source.primary().clone();
         let (bytes, identity) = source.replay_entry(&normalized).unwrap();
         assert_eq!(path, "main.tex");
+        let exact_size_observed = closed && position == bytes.len();
         MemoryInputCheckpoint {
             path: normalized,
             bytes,
             identity,
             position,
             pushback: None,
+            observed_prefix: position,
+            minimum_size: position,
+            exact_size_observed,
             closed,
         }
     }
@@ -250,6 +267,44 @@ mod tests {
     }
 
     #[test]
+    fn change_to_an_unread_closed_probe_preserves_the_fence() {
+        let original = b"prefix\nlate text\n";
+        let fence = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![checkpoint("main.tex", original, 0, true)],
+        };
+        assert!(fence.is_eligible(&snapshot(2, b"changed entirely\n", b"child")));
+    }
+
+    #[test]
+    fn size_probe_requires_only_the_same_length() {
+        let original = b"same length";
+        let mut input = checkpoint("main.tex", original, 0, true);
+        input.exact_size_observed = true;
+        let fence = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![input],
+        };
+        assert!(fence.is_eligible(&snapshot(2, b"SAME LENGTH", b"child")));
+        assert!(!fence.is_eligible(&snapshot(2, b"different length", b"child")));
+    }
+
+    #[test]
+    fn rewound_prefix_probe_constrains_only_observed_bytes() {
+        let original = b"prefix late text";
+        let mut input = checkpoint("main.tex", original, 0, true);
+        input.observed_prefix = 6;
+        input.minimum_size = 6;
+        let fence = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![input],
+        };
+        assert!(fence.is_eligible(&snapshot(2, b"prefix LATE TEXT", b"child")));
+        assert!(fence.is_eligible(&snapshot(2, b"prefix much longer late text", b"child")));
+        assert!(!fence.is_eligible(&snapshot(2, b"PREFIX late text", b"child")));
+    }
+
+    #[test]
     fn complete_fence_recreates_open_ufile_state() {
         let original = snapshot(1, b"abcdef", b"child");
         let fence = {
@@ -266,7 +321,7 @@ mod tests {
                 encoding_mode: 1,
                 conversion_data: std::ptr::null_mut(),
             }));
-            ReplayFence::capture(&state, &original).unwrap()
+            ReplayFence::capture(&state, &original, true).unwrap()
         };
         let edited = snapshot(2, b"abcdEF", b"child");
         assert!(fence.is_eligible(&edited));
@@ -279,5 +334,6 @@ mod tests {
         };
         assert_eq!(file.skip_next_lf, 1);
         assert_eq!(adapter::getc(file.handle), Some(b'c'.into()));
+        assert!(fence.resume_pending_command());
     }
 }

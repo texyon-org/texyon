@@ -27,6 +27,9 @@ struct MemInput {
     identity: SourceIdentity,
     position: usize,
     pushback: Option<u8>,
+    observed_prefix: usize,
+    minimum_size: usize,
+    exact_size_observed: bool,
     closed: bool,
 }
 
@@ -38,6 +41,9 @@ pub(crate) struct MemoryInputCheckpoint {
     pub(crate) identity: SourceIdentity,
     pub(crate) position: usize,
     pub(crate) pushback: Option<u8>,
+    pub(crate) observed_prefix: usize,
+    pub(crate) minimum_size: usize,
+    pub(crate) exact_size_observed: bool,
     pub(crate) closed: bool,
 }
 
@@ -78,6 +84,9 @@ pub(crate) fn checkpoint_inputs() -> Option<Vec<MemoryInputCheckpoint>> {
                     identity: input.identity,
                     position: input.position,
                     pushback: input.pushback,
+                    observed_prefix: input.observed_prefix,
+                    minimum_size: input.minimum_size,
+                    exact_size_observed: input.exact_size_observed,
                     closed: input.closed,
                 })
                 .collect(),
@@ -109,6 +118,9 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
                 identity,
                 position: checkpoint.position,
                 pushback: checkpoint.pushback,
+                observed_prefix: checkpoint.observed_prefix,
+                minimum_size: checkpoint.minimum_size,
+                exact_size_observed: checkpoint.exact_size_observed,
                 closed: checkpoint.closed,
             });
         }
@@ -203,7 +215,10 @@ pub(crate) fn open_position(path: &SourcePath) -> Option<usize> {
 }
 
 pub(crate) fn get_size(handle: usize) -> Option<usize> {
-    with_input(handle, |input| input.bytes.len())
+    with_input_mut(handle, |input| {
+        input.exact_size_observed = true;
+        input.bytes.len()
+    })
 }
 
 pub(crate) fn getc(handle: usize) -> Option<libc::c_int> {
@@ -212,9 +227,11 @@ pub(crate) fn getc(handle: usize) -> Option<libc::c_int> {
             return byte.into();
         }
         let Some(&byte) = input.bytes.get(input.position) else {
+            input.exact_size_observed = true;
             return libc::EOF;
         };
         input.position += 1;
+        input.observed_prefix = input.observed_prefix.max(input.position);
         byte.into()
     })
 }
@@ -247,10 +264,12 @@ pub(crate) unsafe fn read(handle: usize, data: *mut u8, len: usize) -> Option<li
             direct,
         );
         input.position += direct;
+        input.observed_prefix = input.observed_prefix.max(input.position);
         copied += direct;
         if copied == len {
             len as libc::ssize_t
         } else {
+            input.exact_size_observed = true;
             -1
         }
     })
@@ -261,14 +280,19 @@ pub(crate) fn seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) ->
         let base = match whence {
             libc::SEEK_SET => 0i128,
             libc::SEEK_CUR => input.position as i128,
-            libc::SEEK_END => input.bytes.len() as i128,
+            libc::SEEK_END => {
+                input.exact_size_observed = true;
+                input.bytes.len() as i128
+            }
             _ => return 0,
         };
         let target = base + offset as i128;
         if !(0..=input.bytes.len() as i128).contains(&target) {
+            input.exact_size_observed = true;
             return 0;
         }
         input.position = target as usize;
+        input.minimum_size = input.minimum_size.max(input.position);
         input.pushback = None;
         input.position
     })
@@ -298,26 +322,14 @@ impl ReplaySources {
             identity,
             position: 0,
             pushback: None,
+            observed_prefix: 0,
+            minimum_size: 0,
+            exact_size_observed: false,
             closed: false,
         });
         self.last_path = Some(path);
         MEM_TAG | self.inputs.len()
     }
-}
-
-fn with_input<T>(handle: usize, f: impl FnOnce(&MemInput) -> T) -> Option<T> {
-    if !is_mem(handle) {
-        return None;
-    }
-    ACTIVE.with(|active| {
-        let active = active.borrow();
-        let sources = active
-            .as_ref()
-            .expect("memory handle without installed snapshot");
-        let input = &sources.inputs[index(handle)];
-        assert!(!input.closed, "use of closed memory input");
-        Some(f(input))
-    })
 }
 
 fn with_input_mut<T>(handle: usize, f: impl FnOnce(&mut MemInput) -> T) -> Option<T> {

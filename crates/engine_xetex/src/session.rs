@@ -85,16 +85,33 @@ fn install_fence_controller(
     FenceControllerGuard
 }
 
+/// Capture a protected edit fence before fetching the next command.
+///
+/// At this point the source adapter still points to the start of the next TeX
+/// line, so a subsequent edit within that line can reuse the fence.
+pub(crate) fn capture_prefetch_fence(state: &mut EngineState) {
+    let _ = capture_fence(state, false, false);
+}
+
 /// Capture an undispatched-command checkpoint when the active cadence fires.
 pub(crate) fn capture_command_fence(state: &mut EngineState) -> bool {
+    capture_fence(state, true, true)
+}
+
+fn capture_fence(
+    state: &mut EngineState,
+    resume_pending_command: bool,
+    allow_periodic_or_horizon: bool,
+) -> bool {
     FENCE_CONTROLLER.with(|controller| {
         let mut controller = controller.borrow_mut();
         let Some(controller) = controller.as_mut() else {
             return false;
         };
-        let horizon_due = controller
-            .horizon_last
-            .is_some_and(|last| state.shipout.total_pages.max(0) as usize > last);
+        let horizon_due = allow_periodic_or_horizon
+            && controller
+                .horizon_last
+                .is_some_and(|last| state.shipout.total_pages.max(0) as usize > last);
         let mut protected = false;
         for (path, fences) in &mut controller.pending_fences {
             let Some(position) = crate::replay::adapter::open_position(path) else {
@@ -108,7 +125,9 @@ pub(crate) fn capture_command_fence(state: &mut EngineState) -> bool {
         controller
             .pending_fences
             .retain(|(_, fences)| !fences.is_empty());
-        if !horizon_due && !protected && state.scanner.logical_clock < controller.next_clock {
+        let periodic_due = allow_periodic_or_horizon
+            && state.scanner.logical_clock >= controller.next_clock;
+        if !horizon_due && !protected && !periodic_due {
             return false;
         }
         controller.next_clock = state
@@ -119,7 +138,11 @@ pub(crate) fn capture_command_fence(state: &mut EngineState) -> bool {
         // call on this thread; both pointees outlive the guard and are not
         // accessed through another reference while this hook runs.
         let snapshot = unsafe { controller.snapshot.as_ref() };
-        let Some(fence) = crate::replay::fence::ReplayFence::capture(state, snapshot) else {
+        let Some(fence) = crate::replay::fence::ReplayFence::capture(
+            state,
+            snapshot,
+            resume_pending_command,
+        ) else {
             return false;
         };
         let ladder = unsafe { controller.ladder.as_mut() };
@@ -347,6 +370,7 @@ impl IncrementalXeTeXSession {
                     base,
                     budget,
                     None,
+                    None,
                     Vec::new(),
                     None,
                     None,
@@ -405,18 +429,22 @@ impl IncrementalXeTeXSession {
             Ok(catch_operation(api, state, |state| unsafe {
                 let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
-                let splice_at = if let Some((target, fence)) = selection {
-                    crate::engine::release_operation_inputs(state);
-                    ladder.rewind_engine(state, target);
-                    assert!(
-                        fence.restore_inputs(state),
-                        "eligible replay fence failed input reconstruction"
-                    );
-                    Some(fence.splice_at())
-                } else {
-                    ladder.rewind_engine(state, 0);
-                    None
-                };
+                let (splice_at, resume_pending_command) =
+                    if let Some((target, fence)) = selection {
+                        crate::engine::release_operation_inputs(state);
+                        ladder.rewind_engine(state, target);
+                        assert!(
+                            fence.restore_inputs(state),
+                            "eligible replay fence failed input reconstruction"
+                        );
+                        (
+                            Some(fence.splice_at()),
+                            Some(fence.resume_pending_command()),
+                        )
+                    } else {
+                        ladder.rewind_engine(state, 0);
+                        (None, None)
+                    };
                 let first_shipped = state.shipout.total_pages.max(0) as usize;
                 let horizon_last = viewport.map(|range| range.last.max(first_shipped));
                 ladder.clear_protections();
@@ -430,6 +458,7 @@ impl IncrementalXeTeXSession {
                     strings_base,
                     budget,
                     splice_at,
+                    resume_pending_command,
                     pending_fences,
                     horizon_last,
                     None,
@@ -474,6 +503,7 @@ impl IncrementalXeTeXSession {
             .replay_fence(target)
             .ok_or_else(|| anyhow!("pending tail rung is not resumable"))?;
         let splice_at = fence.splice_at();
+        let resume_pending_command = fence.resume_pending_command();
         let fence_sources = sources.clone();
         let replay_clock = ladder.rung_clock(target).unwrap_or(rung_clock);
         let mut checkpoint_activity = CheckpointActivity::default();
@@ -486,7 +516,8 @@ impl IncrementalXeTeXSession {
                     ladder.rewind_engine(state, 0);
                     return OperationResult::Aborted;
                 }
-                ladder.clear_protections();
+                // Keep this edit's local fences pinned while the tail plants
+                // periodic rungs. The next edit clears all stale protections.
                 assert!(ladder.protect_rung(target));
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
@@ -498,6 +529,7 @@ impl IncrementalXeTeXSession {
                     strings_base,
                     budget,
                     Some(splice_at),
+                    Some(resume_pending_command),
                     Vec::new(),
                     None,
                     Some(rung_clock),
@@ -732,6 +764,7 @@ unsafe fn run_document(
     strings_base: StringWatermark,
     budget: LadderBudget,
     splice_at: Option<usize>,
+    resume_pending_command: Option<bool>,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
     cancellation_rung_clock: Option<u64>,
@@ -758,10 +791,12 @@ unsafe fn run_document(
     } else {
         state.shipout.page_manifest.begin_operation();
     }
-    let execution = if splice_at.is_some() {
-        crate::engine::resume_resident_document(state)
-    } else {
-        crate::engine::run_resident_document(state, input)
+    let execution = match (splice_at, resume_pending_command) {
+        (Some(_), Some(resume_pending_command)) => {
+            crate::engine::resume_resident_document(state, resume_pending_command)
+        }
+        (None, None) => crate::engine::run_resident_document(state, input),
+        _ => unreachable!("splice and resume mode must be present together"),
     };
     match execution {
         Ok(history) => OperationResult::Complete { history, splice_at },

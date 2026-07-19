@@ -6148,6 +6148,7 @@ unsafe fn do_lookahead(
 // Top-level TeX command dispatcher: big_switch / reswitch loop.
 unsafe fn main_control_from_in(
     st: &mut crate::state::EngineState,
+    run_every_job: bool,
     mut resume_pending_command: bool,
 ) -> Result<(), MainControlAbort> {
     // Mode constants (xetex_format.h)
@@ -6267,7 +6268,7 @@ unsafe fn main_control_from_in(
 
     use crate::mem::TEX_NULL;
 
-    if !resume_pending_command {
+    if run_every_job {
         let every_job = st.eqtb.b32s1(CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB);
         if every_job != TEX_NULL {
             crate::input::begin_token_list_in(st, every_job, EVERY_JOB_TEXT)?;
@@ -6281,6 +6282,7 @@ unsafe fn main_control_from_in(
         if resume_pending_command {
             resume_pending_command = false;
         } else {
+            crate::session::capture_prefetch_fence(st);
             crate::scan::get_x_token_in(st)?;
         }
         if crate::session::capture_command_fence(st) {
@@ -6602,14 +6604,15 @@ unsafe fn main_control_from_in(
 pub(crate) unsafe fn main_control_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    main_control_from_in(st, false)
+    main_control_from_in(st, true, false)
 }
 
-/// Resume with the restored fence command already fetched but undispatched.
+/// Resume at a restored command boundary, optionally with a command already fetched.
 pub(crate) unsafe fn main_control_resume_in(
     st: &mut crate::state::EngineState,
+    resume_pending_command: bool,
 ) -> Result<(), MainControlAbort> {
-    main_control_from_in(st, true)
+    main_control_from_in(st, false, resume_pending_command)
 }
 
 // translated from xetex-ini.c:583 (prefixed_command)
