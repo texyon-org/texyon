@@ -138,6 +138,7 @@ pub struct ResidentXeTeX {
     config: EnginePreviewConfig,
     session: Option<IncrementalXeTeXSession>,
     opened: bool,
+    output_name: Option<String>,
 }
 
 impl ResidentXeTeX {
@@ -148,6 +149,7 @@ impl ResidentXeTeX {
             config,
             session: None,
             opened: false,
+            output_name: None,
         }
     }
 
@@ -167,6 +169,7 @@ impl ResidentXeTeX {
             .engine_snapshot()
             .map_err(|error| ResidentEngineError::Source(error.to_string()))?;
         let output_name = output_name(engine_snapshot.primary().as_str());
+        self.output_name = Some(output_name.clone());
         let mut output = MemoryIo::new(true);
 
         if self.session.is_none() {
@@ -203,6 +206,51 @@ impl ResidentXeTeX {
             Some(Arc::from(data))
         };
         Ok(ResidentEngineOutput { frame, xdv })
+    }
+
+    /// Resume a pending viewport-bounded edit through the document tail.
+    pub fn continue_tail(
+        &mut self,
+        cancellation: &EngineCancellation,
+    ) -> Result<Option<ResidentEngineOutput>, ResidentEngineError> {
+        let Some(session) = &mut self.session else {
+            return Ok(None);
+        };
+        if !session.has_pending_tail() {
+            return Ok(None);
+        }
+        self.config.cancellation = cancellation.clone();
+        let output_name = self
+            .output_name
+            .clone()
+            .ok_or_else(|| ResidentEngineError::MissingOutput("pending XDV name".into()))?;
+        let mut output = MemoryIo::new(true);
+        let frame = self
+            .support
+            .with_launcher(&mut output, |launcher| session.continue_tail(launcher))
+            .map_err(|error| ResidentEngineError::Engine(error.to_string()))?;
+        let Some(frame) = frame else {
+            return Ok(None);
+        };
+        let xdv = if frame.cancelled || frame.aborted.is_some() {
+            None
+        } else {
+            let files = output.files.borrow();
+            let data = files
+                .get(&output_name)
+                .ok_or_else(|| ResidentEngineError::MissingOutput(output_name.clone()))?
+                .data
+                .clone();
+            Some(Arc::from(data))
+        };
+        Ok(Some(ResidentEngineOutput { frame, xdv }))
+    }
+
+    /// Whether this resident engine retains a viewport tail continuation.
+    pub fn has_pending_tail(&self) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(IncrementalXeTeXSession::has_pending_tail)
     }
 
     /// Release resident native resources on the owning worker thread.

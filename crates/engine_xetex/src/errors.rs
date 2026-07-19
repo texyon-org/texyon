@@ -184,6 +184,8 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
 pub(crate) enum EngineAbort {
     /// Cooperative resident-operation cancellation.
     Cancelled,
+    /// A viewport-bounded resident operation stopped at a resumable command fence.
+    Horizoned,
     /// `overflow(what, n)` — TeX capacity exceeded.
     Overflow { what: *const libc::c_char, n: i32 },
     /// `overflow("pool size", pool_size - init_pool_ptr)` — string-pool capacity
@@ -258,6 +260,12 @@ impl EngineAbort {
     pub(crate) unsafe fn into_history(self, st: &mut EngineState) -> i32 {
         match self {
             EngineAbort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
+            EngineAbort::Horizoned => {
+                return EngineAbort::Confusion(
+                    c"horizon stop escaped resident orchestration".as_ptr(),
+                )
+                .into_history(st)
+            }
             // The print + cleanup half of `overflow` (everything bar `_tt_abort`).
             EngineAbort::Overflow { what, n } => Self::overflow_report(st, what, n),
             EngineAbort::PoolOverflow => {

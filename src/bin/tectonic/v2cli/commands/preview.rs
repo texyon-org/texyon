@@ -34,7 +34,7 @@ pub struct PreviewCommand {
     #[arg(long, default_value_t = 500)]
     supersede_grace_ms: u64,
 
-    /// Reserved tail-settle idle delay.
+    /// Idle delay before resuming a viewport-bounded document tail.
     #[arg(long, default_value_t = 200)]
     tail_idle_ms: u64,
 

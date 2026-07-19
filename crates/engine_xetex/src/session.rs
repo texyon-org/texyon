@@ -31,6 +31,8 @@ struct FenceController {
     budget: LadderBudget,
     next_clock: u64,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
+    horizon_last: Option<usize>,
+    horizon_rung: NonNull<Option<usize>>,
 }
 
 thread_local! {
@@ -54,6 +56,8 @@ fn install_fence_controller(
     budget: LadderBudget,
     current_clock: u64,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
+    horizon_last: Option<usize>,
+    horizon_rung: &mut Option<usize>,
 ) -> FenceControllerGuard {
     FENCE_CONTROLLER.with(|controller| {
         let previous = controller.borrow_mut().replace(FenceController {
@@ -63,6 +67,8 @@ fn install_fence_controller(
             budget,
             next_clock: current_clock.saturating_add(PERIODIC_FENCE_TOKENS),
             pending_fences,
+            horizon_last,
+            horizon_rung: NonNull::from(horizon_rung),
         });
         assert!(previous.is_none(), "nested resident fence controller");
     });
@@ -70,12 +76,15 @@ fn install_fence_controller(
 }
 
 /// Capture an undispatched-command checkpoint when the active cadence fires.
-pub(crate) fn capture_command_fence(state: &mut EngineState) {
+pub(crate) fn capture_command_fence(state: &mut EngineState) -> bool {
     FENCE_CONTROLLER.with(|controller| {
         let mut controller = controller.borrow_mut();
         let Some(controller) = controller.as_mut() else {
-            return;
+            return false;
         };
+        let horizon_due = controller
+            .horizon_last
+            .is_some_and(|last| state.shipout.total_pages.max(0) as usize > last);
         let mut protected = false;
         for (path, fences) in &mut controller.pending_fences {
             let Some(position) = crate::replay::adapter::open_position(path) else {
@@ -89,8 +98,8 @@ pub(crate) fn capture_command_fence(state: &mut EngineState) {
         controller
             .pending_fences
             .retain(|(_, fences)| !fences.is_empty());
-        if !protected && state.scanner.logical_clock < controller.next_clock {
-            return;
+        if !horizon_due && !protected && state.scanner.logical_clock < controller.next_clock {
+            return false;
         }
         controller.next_clock = state
             .scanner
@@ -101,17 +110,26 @@ pub(crate) fn capture_command_fence(state: &mut EngineState) {
         // accessed through another reference while this hook runs.
         let snapshot = unsafe { controller.snapshot.as_ref() };
         let Some(fence) = crate::replay::fence::ReplayFence::capture(state, snapshot) else {
-            return;
+            return false;
         };
         let ladder = unsafe { controller.ladder.as_mut() };
-        let _ = ladder.admit_engine_fence(
+        let admission = ladder.admit_engine_fence(
             state,
             controller.strings_base,
             fence,
-            protected,
+            protected || horizon_due,
             controller.budget,
         );
-    });
+        if horizon_due {
+            if let crate::checkpoint::RungAdmission::Admitted { index, .. } = admission {
+                // SAFETY: the pointer targets run_document's local slot and the
+                // controller cannot outlive its guard.
+                unsafe { *controller.horizon_rung.as_mut() = Some(index) };
+                return true;
+            }
+        }
+        false
+    })
 }
 
 pub(crate) fn resident_active() -> bool {
@@ -182,6 +200,8 @@ pub struct EngineFrame {
     pub splice_at: Option<usize>,
     /// Number of checkpoint rungs retained after this operation.
     pub checkpoint_rungs: usize,
+    /// A resumable tail remains after a viewport-bounded foreground edit.
+    pub tail_pending: bool,
 }
 
 /// One initialized XeTeX state repeatedly replayed from rung zero.
@@ -195,6 +215,7 @@ pub struct IncrementalXeTeXSession {
     ladder: Option<CheckpointLadder<EngineBundle>>,
     strings_base: Option<StringWatermark>,
     last_sources: Option<SourceSnapshot>,
+    pending_continuation: Option<(usize, SourceSnapshot)>,
     opened: bool,
     dead: bool,
     owns_global_lease: bool,
@@ -215,6 +236,7 @@ impl IncrementalXeTeXSession {
             ladder: None,
             strings_base: None,
             last_sources: None,
+            pending_continuation: None,
             opened: false,
             dead: false,
             owns_global_lease: false,
@@ -290,6 +312,7 @@ impl IncrementalXeTeXSession {
                     budget,
                     None,
                     Vec::new(),
+                    None,
                 )
             }))
         });
@@ -306,13 +329,13 @@ impl IncrementalXeTeXSession {
     }
 
     /// Replace the immutable source set and resume from the deepest safe fence.
-    /// `viewport` is accepted now so the API does not change when M8 adds a
-    /// foreground horizon; it does not shorten execution yet.
+    /// When a viewport is supplied, return after its one-page lookahead and
+    /// retain an exact command fence for [`continue_tail`](Self::continue_tail).
     pub fn edit(
         &mut self,
         launcher: &mut CoreBridgeLauncher,
         sources: SourceSnapshot,
-        _viewport: Option<PageRange>,
+        viewport: Option<PageRange>,
     ) -> Result<EngineFrame> {
         if self.dead {
             bail!("resident XeTeX session is dead");
@@ -320,6 +343,7 @@ impl IncrementalXeTeXSession {
         if !self.opened {
             bail!("resident XeTeX session was edited before open");
         }
+        self.pending_continuation = None;
         let input = CString::new(sources.primary().as_str())?;
         let revision = sources.revision();
         let pending_fences = self
@@ -352,6 +376,8 @@ impl IncrementalXeTeXSession {
                     ladder.rewind_engine(state, 0);
                     None
                 };
+                let first_shipped = state.shipout.total_pages.max(0) as usize;
+                let horizon_last = viewport.map(|range| range.last.max(first_shipped) + 1);
                 ladder.clear_protections();
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
@@ -364,11 +390,70 @@ impl IncrementalXeTeXSession {
                     budget,
                     splice_at,
                     pending_fences,
+                    horizon_last,
                 )
             }))
         })?;
+        if let OperationResult::Horizoned { rung, .. } = &result {
+            self.pending_continuation = Some((*rung, accepted_sources.clone()));
+        }
         self.last_sources = Some(accepted_sources);
         self.finish_operation(result, revision)
+    }
+
+    /// Resume a viewport-bounded edit from its exact command fence to `\end`.
+    pub fn continue_tail(
+        &mut self,
+        launcher: &mut CoreBridgeLauncher,
+    ) -> Result<Option<EngineFrame>> {
+        let Some((target, sources)) = self.pending_continuation.take() else {
+            return Ok(None);
+        };
+        let revision = sources.revision();
+        let input = CString::new(sources.primary().as_str())?;
+        let config = self.config.clone();
+        let budget = self.budget();
+        let strings_base = self
+            .strings_base
+            .expect("opened session without string watermark");
+        let state = &mut *self.state;
+        let ladder = self.ladder.as_mut().expect("opened session without ladder");
+        let fence = ladder
+            .replay_fence(target)
+            .ok_or_else(|| anyhow!("pending tail fence disappeared"))?;
+        let splice_at = fence.splice_at();
+        let fence_sources = sources.clone();
+        let result = launcher.with_global_lock(|api| {
+            Ok(catch_operation(api, state, |state| unsafe {
+                let _sources = crate::replay::adapter::install(sources);
+                crate::engine::release_operation_inputs(state);
+                ladder.rewind_engine(state, target);
+                if !fence.restore_inputs(state) {
+                    ladder.rewind_engine(state, 0);
+                    return OperationResult::Aborted;
+                }
+                ladder.clear_protections();
+                configure(state, &config);
+                state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
+                run_document(
+                    state,
+                    ladder,
+                    input.as_ptr(),
+                    &fence_sources,
+                    strings_base,
+                    budget,
+                    Some(splice_at),
+                    Vec::new(),
+                    None,
+                )
+            }))
+        })?;
+        self.finish_operation(result, revision).map(Some)
+    }
+
+    /// Whether a viewport-bounded foreground operation left resumable tail work.
+    pub fn has_pending_tail(&self) -> bool {
+        self.pending_continuation.is_some()
     }
 
     /// Release process-global native resources and all initialized arenas.
@@ -428,6 +513,21 @@ impl IncrementalXeTeXSession {
                 pages: self.state.shipout.page_manifest.take_pages(),
                 splice_at,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
+                tail_pending: false,
+            }),
+            OperationResult::Horizoned {
+                history,
+                splice_at,
+                rung: _,
+            } => Ok(EngineFrame {
+                outcome: history_to_outcome(history)?,
+                source_revision: revision,
+                aborted: None,
+                cancelled: false,
+                pages: self.state.shipout.page_manifest.take_pages(),
+                splice_at,
+                checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
+                tail_pending: true,
             }),
             OperationResult::Aborted => Ok(EngineFrame {
                 outcome: TexOutcome::Errors,
@@ -437,6 +537,7 @@ impl IncrementalXeTeXSession {
                 pages: Vec::new(),
                 splice_at: None,
                 checkpoint_rungs: 1,
+                tail_pending: false,
             }),
             OperationResult::Cancelled => Ok(EngineFrame {
                 outcome: TexOutcome::Errors,
@@ -446,6 +547,7 @@ impl IncrementalXeTeXSession {
                 pages: Vec::new(),
                 splice_at: None,
                 checkpoint_rungs: 1,
+                tail_pending: false,
             }),
             OperationResult::Budget(error) => {
                 self.dead = true;
@@ -486,6 +588,11 @@ enum OperationResult {
         history: i32,
         splice_at: Option<usize>,
     },
+    Horizoned {
+        history: i32,
+        splice_at: Option<usize>,
+        rung: usize,
+    },
     Aborted,
     Cancelled,
     Budget(BudgetError),
@@ -502,7 +609,9 @@ unsafe fn run_document(
     budget: LadderBudget,
     splice_at: Option<usize>,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
+    horizon_last: Option<usize>,
 ) -> OperationResult {
+    let mut horizon_rung = None;
     let _fences = install_fence_controller(
         ladder,
         snapshot,
@@ -510,6 +619,8 @@ unsafe fn run_document(
         budget,
         state.scanner.logical_clock,
         pending_fences,
+        horizon_last,
+        &mut horizon_rung,
     );
     if splice_at.is_some() {
         let manifest_start = (state.shipout.dvi_offset + state.shipout.dvi_ptr) as u64;
@@ -527,6 +638,23 @@ unsafe fn run_document(
     };
     match execution {
         Ok(history) => OperationResult::Complete { history, splice_at },
+        Err(crate::errors::EngineAbort::Horizoned) => {
+            let Some(rung) = horizon_rung else {
+                crate::engine::release_operation_inputs(state);
+                ladder.rewind_engine(state, 0);
+                return OperationResult::Aborted;
+            };
+            crate::engine::release_operation_inputs(state);
+            if crate::io::close_files_and_terminate_in(state).is_err() {
+                ladder.rewind_engine(state, 0);
+                return OperationResult::Aborted;
+            }
+            OperationResult::Horizoned {
+                history: state.errors.history,
+                splice_at,
+                rung,
+            }
+        }
         Err(error) => {
             crate::engine::release_operation_inputs(state);
             ladder.rewind_engine(state, 0);

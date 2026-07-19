@@ -136,6 +136,10 @@ impl<W: Write> FrameSink for JsonlFrameSink<W> {
         self.metrics = metrics;
     }
 
+    fn set_tail_pending(&mut self, tail_pending: bool) {
+        self.tail_pending = tail_pending;
+    }
+
     fn publish(&mut self, frame: &FramePatch) -> Result<(), Self::Error> {
         let encoded = self.encode_frame(frame)?;
         self.writer

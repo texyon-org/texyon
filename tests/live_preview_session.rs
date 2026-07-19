@@ -17,7 +17,7 @@ use tectonic::live_preview::{
 };
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_io_base::stdstreams::BufferedPrimaryIo;
-use tectonic_preview_protocol::{ProtocolLimits, RequestSeq};
+use tectonic_preview_protocol::{FramePhase, ProtocolLimits, RequestSeq, ServerEvent};
 use tectonic_preview_render::{
     NullBackend, RenderError, Resource, ResourceKind, ResourceProvider, ResourceRequest,
 };
@@ -592,6 +592,81 @@ fn resident_engine_driver_captures_complete_xdv_and_revision() {
 }
 
 #[test]
+fn viewport_foreground_and_tail_reassemble_to_cold_xdv() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let original = b"A\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n";
+    let edited = b"Z\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n";
+    let expected = cold_xdv(edited);
+    let temp = tempfile::tempdir().unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        String::from_utf8(original.to_vec()).unwrap(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    let assembler = DocumentAssembler::new();
+
+    let initial = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    let initial_xdv = initial.xdv.unwrap();
+    let initial_document = assembler
+        .assemble(None, DocumentFragment::Complete(&initial_xdv))
+        .unwrap();
+
+    sources
+        .replace(None, String::from_utf8(edited.to_vec()).unwrap())
+        .unwrap();
+    let foreground = runner
+        .compile(sources.snapshot(), Some((0, 0)), &cancellation)
+        .unwrap();
+    assert!(foreground.frame.tail_pending);
+    assert!(runner.has_pending_tail());
+    assert_eq!(foreground.frame.pages.len(), 2);
+    let foreground_xdv = foreground.xdv.unwrap();
+    let foreground_fragment = foreground.frame.splice_at.map_or(
+        DocumentFragment::Complete(foreground_xdv.as_ref()),
+        |prefix_len| DocumentFragment::Tail {
+            prefix_len,
+            bytes: foreground_xdv.as_ref(),
+        },
+    );
+    let foreground_document = assembler
+        .assemble(Some(&initial_document), foreground_fragment)
+        .unwrap();
+
+    let tail = runner
+        .continue_tail(&cancellation)
+        .unwrap()
+        .expect("foreground advertised a pending tail");
+    assert!(!tail.frame.tail_pending);
+    assert!(!runner.has_pending_tail());
+    let tail_xdv = tail.xdv.unwrap();
+    let tail_fragment = tail.frame.splice_at.map_or(
+        DocumentFragment::Complete(tail_xdv.as_ref()),
+        |prefix_len| DocumentFragment::Tail {
+            prefix_len,
+            bytes: tail_xdv.as_ref(),
+        },
+    );
+    let complete = assembler
+        .assemble(Some(&foreground_document), tail_fragment)
+        .unwrap();
+    assert_eq!(complete.bytes().as_ref(), expected);
+    runner.finish().unwrap();
+}
+
+#[test]
 fn resident_processor_publishes_engine_output_as_svg_frame() {
     struct ClassicResources;
 
@@ -615,7 +690,7 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
     let mut sources = SourceSet::initialize(
         root,
         "main.tex",
-        "A\n\\bye\n".into(),
+        "A\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n".into(),
         vec![],
         ProtocolLimits::default(),
     )
@@ -634,7 +709,12 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
         first,
         WorkerRun::Complete(frame) if frame.frame_id.get() == 1
     ));
-    sources.replace(None, "B\n\\bye\n".into()).unwrap();
+    sources
+        .replace(
+            None,
+            "Z\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n".into(),
+        )
+        .unwrap();
     let second = processor.compile(
         sources.snapshot(),
         RequestSeq::new(1),
@@ -643,14 +723,44 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
     );
     assert!(matches!(
         second,
-        WorkerRun::Complete(frame) if frame.frame_id.get() == 2
+        WorkerRun::Complete(frame) if frame.frame_id.get() == 2 && frame.tail_pending
+    ));
+    assert!(processor.has_pending_tail());
+    let settled = processor.continue_tail(RequestSeq::new(1), &cancellation);
+    assert!(matches!(
+        settled,
+        WorkerRun::Complete(Some(frame))
+            if frame.frame_id.get() == 3 && !frame.tail_pending
     ));
     processor
         .resync(sources.snapshot(), RequestSeq::new(1))
         .unwrap();
 
     let wire = processor.sink().writer();
-    assert_eq!(wire.iter().filter(|&&byte| byte == b'\n').count(), 3);
+    let events = wire
+        .split(|&byte| byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<ServerEvent>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), 4);
+    assert!(matches!(
+        &events[1],
+        ServerEvent::Update {
+            phase: FramePhase::Foreground,
+            tail_pending: true,
+            page_count: 2,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &events[2],
+        ServerEvent::Update {
+            phase: FramePhase::TailSettle,
+            tail_pending: false,
+            page_count: 4,
+            ..
+        }
+    ));
     processor.shutdown().unwrap();
 }
 

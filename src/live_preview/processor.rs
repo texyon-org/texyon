@@ -25,6 +25,8 @@ pub struct PublishedFrame {
     pub frame_id: FrameId,
     /// Engine outcome represented on the wire.
     pub outcome: UpdateOutcome,
+    /// Whether this foreground frame has deferred tail work.
+    pub tail_pending: bool,
 }
 
 /// Engine, render, publication, or state-consistency failure.
@@ -69,6 +71,7 @@ pub struct ResidentPreviewProcessor<P, B, S> {
     engine: ResidentXeTeX,
     pipeline: PreviewPipeline<P, B>,
     sink: S,
+    tail_revision: Option<SourceRevision>,
 }
 
 impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, B, S> {
@@ -78,6 +81,7 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
             engine,
             pipeline: PreviewPipeline::new(provider, backend),
             sink,
+            tail_revision: None,
         }
     }
 
@@ -109,6 +113,7 @@ where
         viewport: Option<(usize, usize)>,
         cancellation: &EngineCancellation,
     ) -> WorkerRun<Self::Output, Self::Error> {
+        self.tail_revision = None;
         let revision = snapshot.revision();
         let engine_started = Instant::now();
         let engine = match self.engine.compile(snapshot, viewport, cancellation) {
@@ -136,6 +141,8 @@ where
         } else {
             UpdateOutcome::Complete
         };
+        let tail_pending = engine.frame.tail_pending;
+        self.sink.set_tail_pending(tail_pending);
         let fragment =
             engine
                 .frame
@@ -161,7 +168,86 @@ where
             }
             Err(error) => return WorkerRun::Aborted(ResidentPreviewError::Pipeline(error)),
         };
-        WorkerRun::Complete(PublishedFrame { frame_id, outcome })
+        if tail_pending {
+            self.tail_revision = Some(SourceRevision::new(revision.get()));
+        }
+        WorkerRun::Complete(PublishedFrame {
+            frame_id,
+            outcome,
+            tail_pending,
+        })
+    }
+
+    fn has_pending_tail(&self) -> bool {
+        self.tail_revision.is_some() && self.engine.has_pending_tail()
+    }
+
+    fn continue_tail(
+        &mut self,
+        applied_request_seq: RequestSeq,
+        cancellation: &EngineCancellation,
+    ) -> WorkerRun<Option<Self::Output>, Self::Error> {
+        let Some(expected_revision) = self.tail_revision.take() else {
+            return WorkerRun::Complete(None);
+        };
+        let engine_started = Instant::now();
+        let engine = match self.engine.continue_tail(cancellation) {
+            Ok(Some(engine)) => engine,
+            Ok(None) => return WorkerRun::Complete(None),
+            Err(error) => return WorkerRun::Aborted(ResidentPreviewError::Engine(error)),
+        };
+        let engine_ms = engine_started.elapsed().as_secs_f64() * 1000.0;
+        if engine.frame.cancelled {
+            return WorkerRun::Cancelled;
+        }
+        if let Some(message) = engine.frame.aborted {
+            return WorkerRun::Aborted(ResidentPreviewError::Aborted(message));
+        }
+        if engine.frame.source_revision.get() != expected_revision.get() {
+            return WorkerRun::Aborted(ResidentPreviewError::RevisionMismatch {
+                expected: expected_revision.get(),
+                received: engine.frame.source_revision.get(),
+            });
+        }
+        let Some(xdv) = engine.xdv else {
+            return WorkerRun::Aborted(ResidentPreviewError::MissingXdv);
+        };
+        let outcome = if engine.frame.outcome == TexOutcome::Errors {
+            UpdateOutcome::Error
+        } else {
+            UpdateOutcome::Complete
+        };
+        let fragment =
+            engine
+                .frame
+                .splice_at
+                .map_or(DocumentFragment::Complete(&xdv), |prefix_len| {
+                    DocumentFragment::Tail {
+                        prefix_len,
+                        bytes: &xdv,
+                    }
+                });
+        self.sink.set_tail_pending(false);
+        let frame_id = match self.pipeline.process_fragment_with_engine_ms(
+            &mut self.sink,
+            fragment,
+            expected_revision,
+            applied_request_seq,
+            FramePhase::TailSettle,
+            outcome,
+            engine_ms,
+        ) {
+            Ok(frame_id) => frame_id,
+            Err(error) if pipeline_error_is_fatal(&error) => {
+                return WorkerRun::Fatal(ResidentPreviewError::Pipeline(error));
+            }
+            Err(error) => return WorkerRun::Aborted(ResidentPreviewError::Pipeline(error)),
+        };
+        WorkerRun::Complete(Some(PublishedFrame {
+            frame_id,
+            outcome,
+            tail_pending: false,
+        }))
     }
 
     fn resync(
@@ -169,6 +255,8 @@ where
         _snapshot: AcceptedSourceSnapshot,
         applied_request_seq: RequestSeq,
     ) -> Result<Self::Output, Self::Error> {
+        let tail_pending = self.has_pending_tail();
+        self.sink.set_tail_pending(tail_pending);
         let frame_id = self
             .pipeline
             .resync(&mut self.sink, applied_request_seq)
@@ -176,6 +264,7 @@ where
         Ok(PublishedFrame {
             frame_id,
             outcome: UpdateOutcome::Complete,
+            tail_pending,
         })
     }
 

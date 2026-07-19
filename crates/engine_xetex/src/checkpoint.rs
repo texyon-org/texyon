@@ -329,6 +329,10 @@ impl CheckpointLadder<EngineBundle> {
             })
     }
 
+    pub(crate) fn replay_fence(&self, index: usize) -> Option<ReplayFence> {
+        self.rungs.get(index)?.fence.clone()
+    }
+
     pub(crate) fn rewind_engine(&mut self, st: &mut EngineState, target: usize) {
         if let Err(mismatch) = self.rewind_engine_checked(st, target) {
             panic!(

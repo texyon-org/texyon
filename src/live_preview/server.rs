@@ -438,6 +438,7 @@ mod tests {
             PublishedFrame {
                 frame_id: self.next_frame,
                 outcome: UpdateOutcome::Complete,
+                tail_pending: false,
             }
         }
     }

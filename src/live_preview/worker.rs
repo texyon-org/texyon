@@ -19,7 +19,7 @@ use crate::engines::tex::EngineCancellation;
 pub struct PreviewTuning {
     /// Delay before a newer request cancels instrumented stale work.
     pub supersede_grace_ms: u64,
-    /// Reserved tail-settle idle delay.
+    /// Idle delay before resuming a viewport-bounded document tail.
     pub tail_idle_ms: u64,
     /// Soft checkpoint-ladder byte target.
     pub ladder_bytes: usize,
@@ -66,6 +66,20 @@ pub trait PreviewWorkerProcessor {
         viewport: Option<(usize, usize)>,
         cancellation: &EngineCancellation,
     ) -> WorkerRun<Self::Output, Self::Error>;
+
+    /// Whether an accepted foreground frame left resumable tail work.
+    fn has_pending_tail(&self) -> bool {
+        false
+    }
+
+    /// Resume deferred tail work after the foreground idle delay.
+    fn continue_tail(
+        &mut self,
+        _applied_request_seq: RequestSeq,
+        _cancellation: &EngineCancellation,
+    ) -> WorkerRun<Option<Self::Output>, Self::Error> {
+        WorkerRun::Complete(None)
+    }
 
     /// Reconstruct a full retained-state payload without recompiling.
     fn resync(
@@ -290,6 +304,7 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
                     worker_announced,
                     worker_applied,
                     worker_stop,
+                    Duration::from_millis(tuning.tail_idle_ms),
                 );
                 worker_finished.store(true, Ordering::Release);
             })
@@ -328,7 +343,6 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
             worker: Some(worker),
             timer: Some(timer),
         };
-        let _ = tuning.tail_idle_ms;
         let _ = tuning.ladder_bytes;
         let _ = tuning.verify_rewinds;
         Ok((worker, bootstrap))
@@ -491,6 +505,7 @@ fn run_worker<P: PreviewWorkerProcessor>(
     announced: Arc<AtomicU64>,
     applied_atomic: Arc<AtomicU64>,
     durable_stop: Arc<AtomicBool>,
+    tail_idle: Duration,
 ) {
     let mut sources = match sources {
         Some(sources) => sources,
@@ -527,9 +542,29 @@ fn run_worker<P: PreviewWorkerProcessor>(
     }
 
     'worker: loop {
-        let first = match commands.recv() {
-            Ok(command) => command,
-            Err(_) => break,
+        let first = if processor.has_pending_tail() {
+            match commands.recv_timeout(tail_idle) {
+                Ok(command) => command,
+                Err(RecvTimeoutError::Timeout) => {
+                    cancellation.rearm();
+                    if !emit_continue(
+                        &mut processor,
+                        &sources,
+                        &events,
+                        clock.applied(),
+                        &cancellation,
+                    ) {
+                        break;
+                    }
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+        } else {
+            match commands.recv() {
+                Ok(command) => command,
+                Err(_) => break,
+            }
         };
         cancellation.rearm();
         let mut should_compile = false;
@@ -714,6 +749,45 @@ fn emit_compile<P: PreviewWorkerProcessor>(
     true
 }
 
+fn emit_continue<P: PreviewWorkerProcessor>(
+    processor: &mut P,
+    sources: &SourceSet,
+    events: &Sender<WorkerEvent<P::Output>>,
+    applied_request_seq: RequestSeq,
+    cancellation: &EngineCancellation,
+) -> bool {
+    let revision = sources.revision();
+    match processor.continue_tail(applied_request_seq, cancellation) {
+        WorkerRun::Complete(Some(output)) => {
+            let _ = events.send(WorkerEvent::Update {
+                applied_request_seq,
+                source_revision: revision,
+                output,
+                resync: false,
+            });
+        }
+        WorkerRun::Complete(None) => {}
+        WorkerRun::Cancelled => {
+            let _ = events.send(WorkerEvent::Cancelled {
+                applied_request_seq,
+                source_revision: revision,
+            });
+        }
+        WorkerRun::Aborted(error) => {
+            let _ = events.send(WorkerEvent::Aborted {
+                applied_request_seq,
+                source_revision: revision,
+                reason: error.to_string(),
+            });
+        }
+        WorkerRun::Fatal(error) => {
+            let _ = events.send(WorkerEvent::Fatal(error.to_string()));
+            return false;
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
@@ -762,6 +836,53 @@ mod tests {
         }
     }
 
+    struct TailProcessor {
+        last: String,
+        pending: bool,
+    }
+
+    impl PreviewWorkerProcessor for TailProcessor {
+        type Output = String;
+        type Error = Infallible;
+
+        fn compile(
+            &mut self,
+            snapshot: AcceptedSourceSnapshot,
+            _applied_request_seq: RequestSeq,
+            _viewport: Option<(usize, usize)>,
+            _cancellation: &EngineCancellation,
+        ) -> WorkerRun<Self::Output, Self::Error> {
+            self.last = snapshot
+                .files()
+                .get(snapshot.primary())
+                .unwrap()
+                .to_string();
+            self.pending = self.last == "tail";
+            WorkerRun::Complete(format!("foreground:{}", self.last))
+        }
+
+        fn has_pending_tail(&self) -> bool {
+            self.pending
+        }
+
+        fn continue_tail(
+            &mut self,
+            _applied_request_seq: RequestSeq,
+            _cancellation: &EngineCancellation,
+        ) -> WorkerRun<Option<Self::Output>, Self::Error> {
+            let pending = std::mem::take(&mut self.pending);
+            WorkerRun::Complete(pending.then(|| format!("settled:{}", self.last)))
+        }
+
+        fn resync(
+            &mut self,
+            _snapshot: AcceptedSourceSnapshot,
+            _applied_request_seq: RequestSeq,
+        ) -> Result<Self::Output, Self::Error> {
+            Ok(format!("resync:{}", self.last))
+        }
+    }
+
     fn sources() -> (tempfile::TempDir, SourceSet) {
         let temp = tempfile::tempdir().unwrap();
         let root = DocumentRoot::new(temp.path()).unwrap();
@@ -781,6 +902,68 @@ mod tests {
             supersede_grace_ms: 10,
             ..PreviewTuning::default()
         }
+    }
+
+    #[test]
+    fn pending_tail_settles_after_idle_delay() {
+        let (_temp, sources) = sources();
+        let mut worker = LivePreviewWorker::spawn(
+            sources,
+            PreviewTuning {
+                tail_idle_ms: 10,
+                ..tuning()
+            },
+            || TailProcessor {
+                last: String::new(),
+                pending: false,
+            },
+        )
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.replace(None, "tail".into()).unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, .. }) if output == "foreground:tail"
+        ));
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, resync: false, .. }) if output == "settled:tail"
+        ));
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn fresh_edit_supersedes_pending_tail_before_idle() {
+        let (_temp, sources) = sources();
+        let mut worker = LivePreviewWorker::spawn(
+            sources,
+            PreviewTuning {
+                tail_idle_ms: 100,
+                ..tuning()
+            },
+            || TailProcessor {
+                last: String::new(),
+                pending: false,
+            },
+        )
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.replace(None, "tail".into()).unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, .. }) if output == "foreground:tail"
+        ));
+        worker.replace(None, "fresh".into()).unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, source_revision, .. })
+                if output == "foreground:fresh" && source_revision == SourceRevision::new(2)
+        ));
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_millis(150)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        worker.shutdown().unwrap();
     }
 
     #[test]

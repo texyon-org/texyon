@@ -1945,6 +1945,8 @@ impl NewCharacterAbort {
 pub(crate) enum MainControlAbort {
     /// Cooperative resident-operation cancellation.
     Cancelled,
+    /// Viewport horizon reached at a resumable command boundary.
+    Horizoned,
     Scanner(crate::scan::SccAbort),
     NodeRecycle(crate::scan::NodeRecycleAbort),
     PageBuild(crate::pagebuilder::PageBuildAbort),
@@ -2094,6 +2096,7 @@ impl MainControlAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             MainControlAbort::Cancelled => crate::errors::EngineAbort::Cancelled,
+            MainControlAbort::Horizoned => crate::errors::EngineAbort::Horizoned,
             MainControlAbort::Scanner(e) => e.into_engine_abort(),
             MainControlAbort::NodeRecycle(e) => e.into_engine_abort(),
             MainControlAbort::PageBuild(e) => e.into_engine_abort(),
@@ -6280,7 +6283,9 @@ unsafe fn main_control_from_in(
         } else {
             crate::scan::get_x_token_in(st)?;
         }
-        crate::session::capture_command_fence(st);
+        if crate::session::capture_command_fence(st) {
+            return Err(MainControlAbort::Horizoned);
+        }
 
         'reswitch: loop {
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 0 {

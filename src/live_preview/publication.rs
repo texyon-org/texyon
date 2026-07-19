@@ -45,6 +45,9 @@ pub trait FrameSink {
     /// Configure metrics copied into the next atomic frame, when supported.
     fn set_operation_metrics(&mut self, _metrics: OperationMetrics) {}
 
+    /// Configure whether the next atomic frame leaves background tail work.
+    fn set_tail_pending(&mut self, _tail_pending: bool) {}
+
     /// Accept one complete frame for transport.
     fn publish(&mut self, frame: &FramePatch) -> Result<(), Self::Error>;
 }
