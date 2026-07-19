@@ -358,6 +358,8 @@ pub enum ProtocolError {
     EndOfStream,
     /// Line was not valid UTF-8 JSON matching the request schema.
     InvalidJson(serde_json::Error),
+    /// Parsed request violates a semantic protocol constraint.
+    InvalidRequest(String),
     /// Initialization protocol version is incompatible.
     IncompatibleVersion {
         /// Version sent by the client.
@@ -395,6 +397,7 @@ impl fmt::Display for ProtocolError {
             Self::LineTooLong { limit } => write!(f, "JSON line exceeds {limit} bytes"),
             Self::EndOfStream => write!(f, "protocol input ended"),
             Self::InvalidJson(error) => write!(f, "invalid protocol JSON: {error}"),
+            Self::InvalidRequest(error) => write!(f, "invalid protocol request: {error}"),
             Self::IncompatibleVersion {
                 received,
                 supported,
@@ -516,13 +519,15 @@ fn validate_request(request: &ClientRequest, limits: ProtocolLimits) -> Result<(
             }
         }
         ClientRequest::Replace { text, .. } => validate_file(text, limits)?,
+        ClientRequest::Viewport { first, last } if first > last => {
+            return Err(ProtocolError::InvalidRequest(
+                "viewport begins after it ends".into(),
+            ));
+        }
         ClientRequest::Painted { paint_ms, .. } if !paint_ms.is_finite() || *paint_ms < 0.0 => {
-            return Err(ProtocolError::InvalidJson(serde_json::Error::io(
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "paint_ms must be finite and non-negative",
-                ),
-            )));
+            return Err(ProtocolError::InvalidRequest(
+                "paint_ms must be finite and non-negative".into(),
+            ));
         }
         _ => {}
     }
@@ -631,6 +636,22 @@ mod tests {
         assert!(matches!(
             encode_event(&event, limits),
             Err(ProtocolError::FrameTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_nonmutating_telemetry() {
+        let mut viewport = Cursor::new(b"{\"type\":\"viewport\",\"first\":4,\"last\":2}\n");
+        assert!(matches!(
+            read_request(&mut viewport, small_limits()),
+            Err(ProtocolError::InvalidRequest(_))
+        ));
+
+        let mut painted =
+            Cursor::new(b"{\"type\":\"painted\",\"frame_id\":\"1\",\"paint_ms\":-1.0}\n");
+        assert!(matches!(
+            read_request(&mut painted, small_limits()),
+            Err(ProtocolError::InvalidRequest(_))
         ));
     }
 

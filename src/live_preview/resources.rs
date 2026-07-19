@@ -15,22 +15,54 @@ use tectonic_status_base::NoopStatusBackend;
 
 /// Worker-local shared ownership of one frozen, cache-only support bundle.
 #[derive(Clone)]
-pub struct FrozenBundle(Rc<RefCell<Box<dyn Bundle>>>);
+pub struct FrozenBundle {
+    bundle: Rc<RefCell<Box<dyn Bundle>>>,
+    document_root: Rc<RefCell<Option<PathBuf>>>,
+}
 
 impl FrozenBundle {
     /// Freeze ownership of a fully bootstrapped bundle.
     pub fn new(bundle: Box<dyn Bundle>) -> Self {
-        Self(Rc::new(RefCell::new(bundle)))
+        Self {
+            bundle: Rc::new(RefCell::new(bundle)),
+            document_root: Rc::new(RefCell::new(None)),
+        }
     }
 
     pub(crate) fn try_borrow_mut(&self) -> Result<RefMut<'_, Box<dyn Bundle>>, RenderError> {
-        self.0
+        self.bundle
             .try_borrow_mut()
             .map_err(|_| RenderError::Resource("support bundle is already borrowed".into()))
     }
 
     pub(crate) fn borrow_mut_io(&self) -> RefMut<'_, Box<dyn Bundle>> {
-        self.0.borrow_mut()
+        self.bundle.borrow_mut()
+    }
+
+    /// Bind the canonical document root once initialization establishes it.
+    pub fn set_document_root(&self, root: &Path) -> Result<(), RenderError> {
+        let canonical =
+            fs::canonicalize(root).map_err(|error| RenderError::Resource(error.to_string()))?;
+        let mut current = self
+            .document_root
+            .try_borrow_mut()
+            .map_err(|_| RenderError::Resource("document root is already borrowed".into()))?;
+        match current.as_ref() {
+            Some(existing) if existing != &canonical => Err(RenderError::Resource(format!(
+                "document root changed from {} to {}",
+                existing.display(),
+                canonical.display()
+            ))),
+            Some(_) => Ok(()),
+            None => {
+                *current = Some(canonical);
+                Ok(())
+            }
+        }
+    }
+
+    pub(crate) fn document_root(&self) -> Option<PathBuf> {
+        self.document_root.borrow().clone()
     }
 }
 
@@ -44,24 +76,19 @@ impl fmt::Debug for FrozenBundle {
 #[derive(Clone, Debug)]
 pub struct BundleResourceProvider {
     bundle: FrozenBundle,
-    document_root: Option<PathBuf>,
 }
 
 impl BundleResourceProvider {
     /// Construct a provider and canonicalize its optional document root.
     pub fn new(bundle: FrozenBundle, document_root: Option<PathBuf>) -> Result<Self, RenderError> {
-        let document_root = document_root
-            .map(fs::canonicalize)
-            .transpose()
-            .map_err(|error| RenderError::Resource(error.to_string()))?;
-        Ok(Self {
-            bundle,
-            document_root,
-        })
+        if let Some(root) = document_root {
+            bundle.set_document_root(&root)?;
+        }
+        Ok(Self { bundle })
     }
 
     fn document_bytes(&self, name: &str) -> Result<Option<Vec<u8>>, RenderError> {
-        let Some(root) = &self.document_root else {
+        let Some(root) = self.bundle.document_root() else {
             return Ok(None);
         };
         let candidate = root.join(name);
@@ -70,7 +97,7 @@ impl BundleResourceProvider {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(RenderError::Resource(error.to_string())),
         };
-        if !canonical.starts_with(root) || !canonical.is_file() {
+        if !canonical.starts_with(&root) || !canonical.is_file() {
             return Ok(None);
         }
         fs::read(canonical)

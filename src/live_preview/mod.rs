@@ -9,6 +9,7 @@ mod pipeline;
 mod processor;
 mod publication;
 mod resources;
+mod server;
 mod source;
 mod transport;
 mod worker;
@@ -26,6 +27,7 @@ pub use publication::{
     ClientBelief, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher, PublicationError,
 };
 pub use resources::{BundleResourceProvider, FrozenBundle};
+pub use server::{serve_preview_jsonl, PreviewBootstrap, PreviewServerError, SharedJsonlWriter};
 pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
 pub use tectonic_preview_protocol::{
     FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision,

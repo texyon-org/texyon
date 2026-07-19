@@ -33,8 +33,6 @@ pub enum ResidentEngineSupport {
         bundle: FrozenBundle,
         /// Digest-keyed prebuilt format cache.
         format_cache: FormatCache,
-        /// Read-only document directory fallback for clean files.
-        document_dir: Option<PathBuf>,
     },
 }
 
@@ -49,10 +47,7 @@ impl fmt::Debug for ResidentEngineSupport {
                 .field("format_path", format_path)
                 .field("assets_dir", assets_dir)
                 .finish(),
-            Self::Bundle { document_dir, .. } => f
-                .debug_struct("Bundle")
-                .field("document_dir", document_dir)
-                .finish_non_exhaustive(),
+            Self::Bundle { .. } => f.debug_struct("Bundle").finish_non_exhaustive(),
         }
     }
 }
@@ -83,9 +78,9 @@ impl ResidentEngineSupport {
             Self::Bundle {
                 bundle,
                 format_cache,
-                document_dir,
             } => {
-                let mut document = document_dir
+                let document_root = bundle.document_root();
+                let mut document = document_root
                     .as_ref()
                     .map(|path| FilesystemIo::new(path, false, false, HashSet::new()));
                 let mut providers: Vec<&mut dyn IoProvider> = vec![output];
@@ -163,6 +158,11 @@ impl ResidentXeTeX {
         viewport: Option<(usize, usize)>,
         cancellation: &EngineCancellation,
     ) -> Result<ResidentEngineOutput, ResidentEngineError> {
+        if let ResidentEngineSupport::Bundle { bundle, .. } = &self.support {
+            bundle
+                .set_document_root(snapshot.root())
+                .map_err(|error| ResidentEngineError::Source(error.to_string()))?;
+        }
         let engine_snapshot = snapshot
             .engine_snapshot()
             .map_err(|error| ResidentEngineError::Source(error.to_string()))?;

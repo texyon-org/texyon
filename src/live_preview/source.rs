@@ -71,6 +71,11 @@ impl AcceptedSourceSnapshot {
         self.revision
     }
 
+    /// Canonical document root governing this snapshot's authority.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// Canonical primary path.
     pub fn primary(&self) -> &Path {
         &self.primary
