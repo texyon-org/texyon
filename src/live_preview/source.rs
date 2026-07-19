@@ -38,11 +38,14 @@ impl DocumentRoot {
         if logical.is_empty() || logical.as_bytes().contains(&0) {
             return Err(SourceError::InvalidPath(logical.into()));
         }
-        let path = Path::new(logical);
+        let mut path = PathBuf::from(logical);
+        if path.extension().is_none() {
+            path.set_extension("tex");
+        }
         let candidate = if path.is_absolute() {
-            path.to_path_buf()
+            path
         } else {
-            self.canonical.join(path)
+            self.canonical.join(&path)
         };
         let normalized = normalize_absolute(&candidate)?;
         let resolved = resolve_existing_ancestor(&normalized)?;
@@ -424,5 +427,59 @@ mod tests {
             SourceSet::initialize(root, "main.tex", "main".into(), children, limits()),
             Err(SourceError::DuplicatePath(_))
         ));
+    }
+
+    #[test]
+    fn implicit_tex_name_replaces_existing_child_authority() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = DocumentRoot::new(temp.path()).unwrap();
+        let mut sources = SourceSet::initialize(
+            root,
+            "main",
+            "main".into(),
+            vec![SourceFile {
+                path: "child.tex".into(),
+                text: "old".into(),
+            }],
+            limits(),
+        )
+        .unwrap();
+
+        sources.replace(Some("child"), "new".into()).unwrap();
+        let snapshot = sources.snapshot();
+        assert_eq!(snapshot.files().len(), 2);
+        assert_eq!(
+            snapshot
+                .files()
+                .get(&temp.path().join("child.tex"))
+                .unwrap()
+                .as_ref(),
+            "new"
+        );
+    }
+
+    #[test]
+    fn first_valid_replacement_registers_editor_owned_child() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = DocumentRoot::new(temp.path()).unwrap();
+        let mut sources =
+            SourceSet::initialize(root, "main.tex", "main".into(), vec![], limits()).unwrap();
+
+        assert_eq!(
+            sources
+                .replace(Some("later/child"), "child".into())
+                .unwrap(),
+            SourceRevision::new(1)
+        );
+        let snapshot = sources.snapshot();
+        assert_eq!(snapshot.files().len(), 2);
+        assert_eq!(
+            snapshot
+                .files()
+                .get(&temp.path().join("later/child.tex"))
+                .unwrap()
+                .as_ref(),
+            "child"
+        );
     }
 }

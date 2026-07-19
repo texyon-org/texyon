@@ -12,8 +12,9 @@ use tectonic::engines::tex::{
 use tectonic::io::testing::SingleInputFileIo;
 use tectonic::io::{IoProvider, IoStack, MemoryIo};
 use tectonic::live_preview::{
-    DocumentAssembler, DocumentFragment, DocumentRoot, JsonlFrameSink, PreviewWorkerProcessor,
-    ResidentEngineSupport, ResidentPreviewProcessor, ResidentXeTeX, SourceSet, WorkerRun,
+    AssembledDocument, DocumentAssembler, DocumentFragment, DocumentRoot, JsonlFrameSink,
+    PreviewWorkerProcessor, ResidentEngineOutput, ResidentEngineSupport, ResidentPreviewProcessor,
+    ResidentXeTeX, SourceSet, WorkerRun,
 };
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_io_base::stdstreams::BufferedPrimaryIo;
@@ -64,12 +65,19 @@ fn cold_xdv_with_child(bytes: &[u8], child: Option<&[u8]>) -> Vec<u8> {
 }
 
 fn cold_output_with_child(bytes: &[u8], child: Option<&[u8]>, name: &str) -> Vec<u8> {
+    let children = child
+        .map(|bytes| vec![("child.tex", bytes)])
+        .unwrap_or_default();
+    cold_output_with_children(bytes, &children, name)
+}
+
+fn cold_output_with_children(bytes: &[u8], children: &[(&str, &[u8])], name: &str) -> Vec<u8> {
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let mut primary = BufferedPrimaryIo::from_buffer(bytes.to_vec());
     let mut output = MemoryIo::new(true);
-    if let Some(child) = child {
-        output.create_entry("child.tex", child.to_vec());
+    for (path, child) in children {
+        output.create_entry(path, child.to_vec());
     }
     {
         let io = IoStack::new(vec![
@@ -87,6 +95,27 @@ fn cold_output_with_child(bytes: &[u8], child: Option<&[u8]>, name: &str) -> Vec
         assert_eq!(outcome, TexOutcome::Spotless);
     }
     output_bytes(&output, name)
+}
+
+fn assemble_resident_output(
+    assembler: &DocumentAssembler,
+    base: Option<&AssembledDocument>,
+    output: ResidentEngineOutput,
+) -> AssembledDocument {
+    let xdv = output
+        .xdv
+        .expect("successful resident operation omitted XDV");
+    let fragment =
+        output
+            .frame
+            .splice_at
+            .map_or(DocumentFragment::Complete(xdv.as_ref()), |prefix_len| {
+                DocumentFragment::Tail {
+                    prefix_len,
+                    bytes: xdv.as_ref(),
+                }
+            });
+    assembler.assemble(base, fragment).unwrap()
 }
 
 #[test]
@@ -748,12 +777,12 @@ fn cancelled_tail_preserves_its_horizon_fence() {
 }
 
 #[test]
-fn horizon_inside_editor_owned_child_resumes_exactly() {
+fn length_changing_child_horizon_resumes_exactly() {
     let _serial = SESSION_TEST_LOCK.lock().unwrap();
     util::set_test_root();
     let primary = b"\\input child\n\\bye\n";
     let original_child = "A\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
-    let edited_child = "Z\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
+    let edited_child = "Z LONGER EDITED TEXT\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
     let expected = cold_xdv_with_child(primary, Some(edited_child.as_bytes()));
     let temp = tempfile::tempdir().unwrap();
     let root = DocumentRoot::new(temp.path()).unwrap();
@@ -822,6 +851,100 @@ fn horizon_inside_editor_owned_child_resumes_exactly() {
         )
         .unwrap();
     assert_eq!(complete.bytes().as_ref(), expected);
+    runner.finish().unwrap();
+}
+
+#[test]
+fn alternating_editor_children_and_primary_share_one_snapshot_revision() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let original_primary = "\\input one\n\\input two\nPRIMARY\n\\bye\n";
+    let edited_primary = "\\input one\n\\input two\nPRIMARY EDITED\n\\bye\n";
+    let one = "ONE\n";
+    let one_edited = "ONE EDITED\n";
+    let two = "TWO\n";
+    let two_edited = "TWO LONGER EDITED\n";
+    let expected_one = cold_output_with_children(
+        original_primary.as_bytes(),
+        &[
+            ("one.tex", one_edited.as_bytes()),
+            ("two.tex", two.as_bytes()),
+        ],
+        "session.xdv",
+    );
+    let expected_two = cold_output_with_children(
+        original_primary.as_bytes(),
+        &[
+            ("one.tex", one_edited.as_bytes()),
+            ("two.tex", two_edited.as_bytes()),
+        ],
+        "session.xdv",
+    );
+    let expected_primary = cold_output_with_children(
+        edited_primary.as_bytes(),
+        &[
+            ("one.tex", one_edited.as_bytes()),
+            ("two.tex", two_edited.as_bytes()),
+        ],
+        "session.xdv",
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        original_primary.into(),
+        vec![
+            SourceFile {
+                path: "one.tex".into(),
+                text: one.into(),
+            },
+            SourceFile {
+                path: "two.tex".into(),
+                text: two.into(),
+            },
+        ],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    let assembler = DocumentAssembler::new();
+    let mut document = assemble_resident_output(
+        &assembler,
+        None,
+        runner
+            .compile(sources.snapshot(), None, &cancellation)
+            .unwrap(),
+    );
+
+    sources.replace(Some("one"), one_edited.into()).unwrap();
+    let output = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert_eq!(output.frame.source_revision.get(), 1);
+    document = assemble_resident_output(&assembler, Some(&document), output);
+    assert_eq!(document.bytes().as_ref(), expected_one);
+
+    sources.replace(Some("two.tex"), two_edited.into()).unwrap();
+    let output = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert_eq!(output.frame.source_revision.get(), 2);
+    document = assemble_resident_output(&assembler, Some(&document), output);
+    assert_eq!(document.bytes().as_ref(), expected_two);
+
+    sources.replace(None, edited_primary.into()).unwrap();
+    let output = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert_eq!(output.frame.source_revision.get(), 3);
+    document = assemble_resident_output(&assembler, Some(&document), output);
+    assert_eq!(document.bytes().as_ref(), expected_primary);
     runner.finish().unwrap();
 }
 
