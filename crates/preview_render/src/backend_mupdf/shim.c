@@ -119,13 +119,15 @@ int pr_backend_gid_by_name(struct pr_backend *backend, int font_id,
 int pr_backend_glyphs(struct pr_backend *backend, int font_id, float size,
                       const unsigned short *gids, const float *positions,
                       int count, const float *rgba, float extend, float slant,
-                      int vertical)
+                      float embolden, int vertical)
 {
     if (font_id < 0 || font_id >= backend->font_count)
         return 0;
     fz_text *text = NULL;
+    fz_stroke_state *stroke = NULL;
     int ok = 0;
     fz_var(text);
+    fz_var(stroke);
     fz_try(backend->ctx) {
         text = fz_new_text(backend->ctx);
         for (int i = 0; i < count; ++i) {
@@ -138,11 +140,21 @@ int pr_backend_glyphs(struct pr_backend *backend, int font_id, float size,
         }
         fz_fill_text(backend->ctx, backend->device, text, fz_identity,
             fz_device_rgb(backend->ctx), rgba, rgba[3], fz_default_color_params);
+        if (embolden > 0.0f) {
+            stroke = fz_new_stroke_state(backend->ctx);
+            stroke->linewidth = size * embolden;
+            stroke->linejoin = FZ_LINEJOIN_ROUND;
+            fz_stroke_text(backend->ctx, backend->device, text, stroke,
+                fz_identity, fz_device_rgb(backend->ctx), rgba, rgba[3],
+                fz_default_color_params);
+        }
         ok = 1;
     }
     fz_always(backend->ctx) {
         if (text)
             fz_drop_text(backend->ctx, text);
+        if (stroke)
+            fz_drop_stroke_state(backend->ctx, stroke);
     }
     fz_catch(backend->ctx) {
         ok = 0;

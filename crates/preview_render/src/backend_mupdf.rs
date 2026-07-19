@@ -27,6 +27,7 @@ extern "C" {
         rgba: *const f32,
         extend: f32,
         slant: f32,
+        embolden: f32,
         vertical: i32,
     ) -> i32;
     fn pr_backend_rule(
@@ -241,11 +242,6 @@ impl Backend for MupdfBackend {
         color: Color,
         style: FontStyle,
     ) -> Result<(), RenderError> {
-        if style.embolden != 0.0 {
-            return Err(RenderError::Backend(
-                "MuPDF synthetic emboldening is not implemented".into(),
-            ));
-        }
         let gids: Vec<_> = glyphs.iter().map(|glyph| glyph.glyph_id).collect();
         let positions: Vec<_> = glyphs
             .iter()
@@ -264,6 +260,7 @@ impl Backend for MupdfBackend {
                 rgba.as_ptr(),
                 style.extend,
                 style.slant,
+                style.embolden,
                 i32::from(style.vertical),
             )
         };
@@ -439,6 +436,51 @@ mod tests {
             .unwrap();
         let svg = backend.finish_page().unwrap();
         assert!(svg.contains("path"));
+    }
+
+    #[test]
+    fn emits_synthetic_bold_glyph_outlines() {
+        let bytes = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").unwrap();
+        let resource = crate::Resource::from_bytes(bytes);
+        let mut backend = MupdfBackend::new().unwrap();
+        let font = backend
+            .register_font(resource.identity, &resource.bytes, 0)
+            .unwrap();
+        let render = |backend: &mut MupdfBackend, embolden| {
+            backend.begin_page(100.0, 120.0).unwrap();
+            backend
+                .fill_glyphs(
+                    font,
+                    20.0,
+                    &[PositionedGlyph {
+                        glyph_id: 36,
+                        x_bp: 10.0,
+                        y_bp: 30.0,
+                    }],
+                    Color::BLACK,
+                    FontStyle {
+                        extend: 1.0,
+                        slant: 0.0,
+                        embolden,
+                        vertical: false,
+                    },
+                )
+                .unwrap();
+            backend.finish_page().unwrap()
+        };
+        let regular_svg = render(&mut backend, 0.0);
+        let bold_svg = render(&mut backend, 0.1);
+        assert!(bold_svg.contains("path"));
+        let regular = backend.rasterize_svg(regular_svg.as_bytes(), 144.0).unwrap();
+        let bold = backend.rasterize_svg(bold_svg.as_bytes(), 144.0).unwrap();
+        let ink = |pixmap: &Pixmap| {
+            pixmap
+                .samples
+                .chunks_exact(pixmap.components)
+                .filter(|pixel| pixel[..3] != [255, 255, 255])
+                .count()
+        };
+        assert!(ink(&bold) > ink(&regular));
     }
 
     #[test]
