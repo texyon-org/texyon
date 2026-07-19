@@ -228,6 +228,31 @@ mod tests {
         assert_eq!(pipeline.last_document().unwrap().bytes().as_ref(), ONE_PAGE);
     }
 
+    #[cfg(feature = "preview-mupdf")]
+    #[test]
+    fn full_document_publishes_real_path_svg() {
+        let mut pipeline = PreviewPipeline::new(
+            ClassicResources,
+            tectonic_preview_render::MupdfBackend::new().unwrap(),
+        );
+        let mut sink = Sink::default();
+        pipeline
+            .process_complete(
+                &mut sink,
+                ONE_PAGE,
+                SourceRevision::ZERO,
+                RequestSeq::ZERO,
+                FramePhase::Foreground,
+                UpdateOutcome::Complete,
+            )
+            .unwrap();
+
+        assert_eq!(sink.frames.len(), 1);
+        assert_eq!(sink.frames[0].changed, vec![0]);
+        assert_eq!(sink.frames[0].pages_svg.len(), 1);
+        assert!(sink.frames[0].pages_svg[0].svg.contains("<path"));
+    }
+
     #[test]
     fn failures_retain_last_published_document_and_belief() {
         let mut pipeline = PreviewPipeline::new(ClassicResources, NullBackend);
