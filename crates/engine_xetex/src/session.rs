@@ -14,6 +14,7 @@ use tectonic_errors::prelude::*;
 use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, StringWatermark,
 };
+use crate::replay::source::SourcePath;
 use crate::state::{EngineExecutionMode, EngineState};
 use crate::EngineCancellation;
 use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
@@ -21,6 +22,7 @@ use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
 static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 const PERIODIC_FENCE_TOKENS: u64 = 500;
+const MAX_EDIT_FENCES: usize = 16;
 
 struct FenceController {
     ladder: NonNull<CheckpointLadder<EngineBundle>>,
@@ -28,6 +30,7 @@ struct FenceController {
     strings_base: StringWatermark,
     budget: LadderBudget,
     next_clock: u64,
+    pending_fences: Vec<(SourcePath, Vec<usize>)>,
 }
 
 thread_local! {
@@ -50,6 +53,7 @@ fn install_fence_controller(
     strings_base: StringWatermark,
     budget: LadderBudget,
     current_clock: u64,
+    pending_fences: Vec<(SourcePath, Vec<usize>)>,
 ) -> FenceControllerGuard {
     FENCE_CONTROLLER.with(|controller| {
         let previous = controller.borrow_mut().replace(FenceController {
@@ -58,6 +62,7 @@ fn install_fence_controller(
             strings_base,
             budget,
             next_clock: current_clock.saturating_add(PERIODIC_FENCE_TOKENS),
+            pending_fences,
         });
         assert!(previous.is_none(), "nested resident fence controller");
     });
@@ -71,7 +76,20 @@ pub(crate) fn capture_command_fence(state: &mut EngineState) {
         let Some(controller) = controller.as_mut() else {
             return;
         };
-        if state.scanner.logical_clock < controller.next_clock {
+        let mut protected = false;
+        for (path, fences) in &mut controller.pending_fences {
+            let Some(position) = crate::replay::adapter::open_position(path) else {
+                continue;
+            };
+            if fences.first().is_some_and(|offset| position >= *offset) {
+                fences.retain(|offset| *offset > position);
+                protected = true;
+            }
+        }
+        controller
+            .pending_fences
+            .retain(|(_, fences)| !fences.is_empty());
+        if !protected && state.scanner.logical_clock < controller.next_clock {
             return;
         }
         controller.next_clock = state
@@ -90,7 +108,7 @@ pub(crate) fn capture_command_fence(state: &mut EngineState) {
             state,
             controller.strings_base,
             fence,
-            false,
+            protected,
             controller.budget,
         );
     });
@@ -176,6 +194,7 @@ pub struct IncrementalXeTeXSession {
     state: Box<EngineState>,
     ladder: Option<CheckpointLadder<EngineBundle>>,
     strings_base: Option<StringWatermark>,
+    last_sources: Option<SourceSnapshot>,
     opened: bool,
     dead: bool,
     owns_global_lease: bool,
@@ -195,6 +214,7 @@ impl IncrementalXeTeXSession {
             state: Box::new(EngineState::default()),
             ladder: None,
             strings_base: None,
+            last_sources: None,
             opened: false,
             dead: false,
             owns_global_lease: false,
@@ -236,6 +256,7 @@ impl IncrementalXeTeXSession {
         let ladder = &mut self.ladder;
         let strings_base = &mut self.strings_base;
         let revision = sources.revision();
+        let accepted_sources = sources.clone();
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| unsafe {
                 configure(state, &config);
@@ -268,6 +289,7 @@ impl IncrementalXeTeXSession {
                     base,
                     budget,
                     None,
+                    Vec::new(),
                 )
             }))
         });
@@ -279,6 +301,7 @@ impl IncrementalXeTeXSession {
             }
         };
         self.opened = self.ladder.is_some();
+        self.last_sources = Some(accepted_sources);
         self.finish_operation(result, revision)
     }
 
@@ -299,6 +322,12 @@ impl IncrementalXeTeXSession {
         }
         let input = CString::new(sources.primary().as_str())?;
         let revision = sources.revision();
+        let pending_fences = self
+            .last_sources
+            .as_ref()
+            .map(|previous| edit_fence_clusters(&sources, previous))
+            .unwrap_or_default();
+        let accepted_sources = sources.clone();
         let config = self.config.clone();
         let budget = self.budget();
         let strings_base = self
@@ -334,9 +363,11 @@ impl IncrementalXeTeXSession {
                     strings_base,
                     budget,
                     splice_at,
+                    pending_fences,
                 )
             }))
         })?;
+        self.last_sources = Some(accepted_sources);
         self.finish_operation(result, revision)
     }
 
@@ -470,6 +501,7 @@ unsafe fn run_document(
     strings_base: StringWatermark,
     budget: LadderBudget,
     splice_at: Option<usize>,
+    pending_fences: Vec<(SourcePath, Vec<usize>)>,
 ) -> OperationResult {
     let _fences = install_fence_controller(
         ladder,
@@ -477,6 +509,7 @@ unsafe fn run_document(
         strings_base,
         budget,
         state.scanner.logical_clock,
+        pending_fences,
     );
     if splice_at.is_some() {
         let manifest_start = (state.shipout.dvi_offset + state.shipout.dvi_ptr) as u64;
@@ -504,6 +537,45 @@ unsafe fn run_document(
             }
         }
     }
+}
+
+fn edit_fence_clusters(
+    snapshot: &SourceSnapshot,
+    previous: &SourceSnapshot,
+) -> Vec<(SourcePath, Vec<usize>)> {
+    snapshot
+        .changes_from(previous)
+        .into_iter()
+        .filter_map(|(path, offset)| {
+            let fences = edit_fence_offsets(offset);
+            (!fences.is_empty()).then_some((path, fences))
+        })
+        .collect()
+}
+
+/// Sparse exponential cluster immediately before an edit, in source bytes.
+fn edit_fence_offsets(offset: usize) -> Vec<usize> {
+    if offset == 0 {
+        return Vec::new();
+    }
+    let base = offset.saturating_sub(64) & !63;
+    if base == 0 {
+        return Vec::new();
+    }
+    let mut offsets = vec![base];
+    let mut position = base;
+    let mut step = 50usize;
+    while offsets.len() < MAX_EDIT_FENCES {
+        position = position.saturating_sub(step);
+        if position == 0 {
+            break;
+        }
+        offsets.push(position);
+        step = step.saturating_mul(2);
+    }
+    offsets.sort_unstable();
+    offsets.dedup();
+    offsets
 }
 
 fn configure(state: &mut EngineState, config: &EnginePreviewConfig) {
@@ -572,5 +644,20 @@ fn run_locked<R>(
         crate::state::set_engine_state_ptr(state as *mut EngineState);
         let _state = StateGuard;
         operation(state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::edit_fence_offsets;
+
+    #[test]
+    fn edit_fences_are_dense_near_the_change_and_bounded() {
+        assert!(edit_fence_offsets(0).is_empty());
+        assert!(edit_fence_offsets(63).is_empty());
+        let offsets = edit_fence_offsets(10_000);
+        assert!(offsets.len() <= super::MAX_EDIT_FENCES);
+        assert!(offsets.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(offsets.last().copied(), Some(9_920));
     }
 }

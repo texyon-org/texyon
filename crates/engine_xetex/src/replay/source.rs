@@ -244,6 +244,19 @@ impl SourceSnapshot {
             .map(|entry| (Arc::clone(&entry.bytes), entry.identity))
     }
 
+    /// First differing byte for every current buffer changed since `previous`.
+    pub(crate) fn changes_from(&self, previous: &Self) -> Vec<(SourcePath, usize)> {
+        self.entries
+            .iter()
+            .filter_map(|(path, entry)| match previous.entries.get(path) {
+                Some(old) if old.identity == entry.identity => None,
+                Some(old) => first_difference(&old.bytes, &entry.bytes)
+                    .map(|offset| (path.clone(), offset)),
+                None => Some((path.clone(), 0)),
+            })
+            .collect()
+    }
+
     pub(crate) fn absolute_path(&self, path: &SourcePath) -> PathBuf {
         self.root.join(path.as_str())
     }
@@ -337,6 +350,22 @@ mod tests {
         assert!(update.snapshot.revision() > snapshot.revision());
         assert_eq!(&*snapshot.bytes("main").unwrap(), b"abc");
         assert_eq!(&*update.snapshot.bytes("main").unwrap(), b"abXYZ");
+    }
+
+    #[test]
+    fn snapshot_diff_reports_coalesced_changes() {
+        let original = snapshot();
+        let primary = original.replace("main", bytes(b"abXYZ")).unwrap().snapshot;
+        let current = primary
+            .replace("chapters/one", bytes(b"chIld"))
+            .unwrap()
+            .snapshot;
+        let changes = current.changes_from(&original);
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].0.as_str(), "chapters/one.tex");
+        assert_eq!(changes[0].1, 2);
+        assert_eq!(changes[1].0.as_str(), "main.tex");
+        assert_eq!(changes[1].1, 2);
     }
 
     #[test]

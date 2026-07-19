@@ -184,6 +184,20 @@ pub(crate) fn checkpoint_handle_is_open(
         .is_some_and(|checkpoint| !checkpoint.closed)
 }
 
+/// Underlying byte cursor of the newest open channel for `path`.
+pub(crate) fn open_position(path: &SourcePath) -> Option<usize> {
+    ACTIVE.with(|active| {
+        active
+            .borrow()
+            .as_ref()?
+            .inputs
+            .iter()
+            .rev()
+            .find(|input| !input.closed && input.path == *path)
+            .map(|input| input.position)
+    })
+}
+
 pub(crate) fn get_size(handle: usize) -> Option<usize> {
     with_input(handle, |input| input.bytes.len())
 }
