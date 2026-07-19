@@ -461,6 +461,7 @@ mod tests {
                 removed: vec![],
                 pages_svg: vec![],
                 page_sizes: Vec::<PageSize>::new(),
+                unsupported_pages: vec![],
                 metrics: OperationMetrics::default(),
                 tail_pending: false,
             };

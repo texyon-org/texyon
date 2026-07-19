@@ -45,7 +45,8 @@ preview coordinates and page sizes are PostScript big points (`bp`).
 An `update` contains `frame_id`, `source_revision`, `applied_request_seq`,
 `phase`, `outcome`, the complete post-patch `page_count` and `page_sizes`, exact
 sorted `changed`/`removed` sets, SVG payloads corresponding exactly to
-`changed`, operation metrics, and `tail_pending`. `foreground`, `tail_settle`,
+`changed`, complete per-page unsupported-operation telemetry, operation
+metrics, and `tail_pending`. `foreground`, `tail_settle`,
 and `resync` frames all receive distinct increasing frame IDs, even at the same
 source revision and even when no SVG changed.
 

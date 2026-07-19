@@ -499,6 +499,7 @@ mod tests {
                     height_bp: 792.0,
                 })
                 .collect(),
+            unsupported_pages: vec![],
             metrics: OperationMetrics::default(),
             tail_pending: false,
         }

@@ -1,8 +1,8 @@
 use std::{fmt, io::Write};
 
 use tectonic_preview_protocol::{
-    encode_event, OperationMetrics, PageSize, PageSvgPayload, ProtocolError, ProtocolLimits,
-    ServerEvent,
+    encode_event, OperationMetrics, PageSize, PageSvgPayload, PageUnsupportedPayload,
+    ProtocolError, ProtocolLimits, ServerEvent,
 };
 
 use super::{FramePatch, FrameSink};
@@ -111,6 +111,16 @@ impl<W: Write> JsonlFrameSink<W> {
                         height_bp: page.size_bp[1],
                     })
                     .collect(),
+                unsupported_pages: frame
+                    .pages
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, page)| !page.unsupported.is_empty())
+                    .map(|(page_index, page)| PageUnsupportedPayload {
+                        page_index,
+                        operations: page.unsupported.clone(),
+                    })
+                    .collect(),
                 metrics,
                 tail_pending: self.tail_pending,
             };
@@ -162,6 +172,8 @@ mod tests {
     use crate::live_preview::FramePage;
 
     fn patch(svg: &str) -> FramePatch {
+        let mut unsupported = BTreeMap::new();
+        unsupported.insert("missing-image-resource".into(), 1);
         FramePatch {
             frame_id: FrameId::new(9_007_199_254_740_993),
             source_revision: SourceRevision::new(3),
@@ -171,7 +183,7 @@ mod tests {
             pages: vec![PageVisual {
                 fingerprint: PageFingerprint::Stable([1; 32]),
                 size_bp: [612.0, 792.0],
-                unsupported: BTreeMap::new(),
+                unsupported,
             }],
             changed: vec![0],
             removed: vec![],
@@ -194,6 +206,7 @@ mod tests {
             frame_id,
             metrics,
             pages_svg,
+            unsupported_pages,
             ..
         } = event
         else {
@@ -202,6 +215,8 @@ mod tests {
         assert_eq!(frame_id, FrameId::new(9_007_199_254_740_993));
         assert_eq!(metrics.frame_bytes, wire.len() - 1);
         assert!(pages_svg[0].svg.contains('\n'));
+        assert_eq!(unsupported_pages[0].page_index, 0);
+        assert_eq!(unsupported_pages[0].operations["missing-image-resource"], 1);
     }
 
     #[test]

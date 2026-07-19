@@ -217,9 +217,18 @@ test("extension harness initializes dirty children, relays edits, resyncs, and r
   assert.equal(shownEditors.at(-1).document, child);
   assert.equal(shownEditors.at(-1).selection.active.line, 3);
 
-  fakeProcess.event({ type: "update", frame_id: "1", source_revision: "0", outcome: "complete", page_count: 1 });
+  fakeProcess.event({
+    type: "update",
+    frame_id: "1",
+    source_revision: "0",
+    outcome: "complete",
+    page_count: 1,
+    unsupported_pages: [{ page_index: 0, operations: { "missing-image-resource": 1 } }]
+  });
   await tick();
   assert.equal(panels[0].posted.at(-1).event.frame_id, "1");
+  assert.match(status.text, /unsupported content/);
+  assert.match(output.text, /missing-image-resource/);
   panels[0].receive({ type: "ready" });
   assert.equal(fakeProcess.requests.at(-1).type, "resync");
   panels[0].receive({ type: "viewport", first: 0, last: 0 });

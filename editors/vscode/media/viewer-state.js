@@ -30,7 +30,8 @@
       pageSizes: [],
       tailPending: false,
       phase: null,
-      outcome: null
+      outcome: null,
+      unsupportedPages: []
     };
   }
 
@@ -57,6 +58,24 @@
     }
   }
 
+  function validateUnsupported(pages, count) {
+    if (!Array.isArray(pages)) throw new Error("unsupported_pages is not an array");
+    let previous = -1;
+    for (const page of pages) {
+      if (!page || !Number.isSafeInteger(page.page_index) || page.page_index < 0 ||
+          page.page_index >= count || page.page_index <= previous ||
+          !page.operations || typeof page.operations !== "object" || Array.isArray(page.operations)) {
+        throw new Error("invalid unsupported page telemetry");
+      }
+      for (const [name, occurrences] of Object.entries(page.operations)) {
+        if (!name || !Number.isSafeInteger(occurrences) || occurrences <= 0) {
+          throw new Error("invalid unsupported operation telemetry");
+        }
+      }
+      previous = page.page_index;
+    }
+  }
+
   /** Validate and atomically reduce one server update. */
   function applyUpdate(current, event, sanitize) {
     if (!event || event.type !== "update") throw new Error("viewer reducer requires an update");
@@ -71,6 +90,7 @@
     const count = event.page_count;
     if (!Number.isSafeInteger(count) || count < 0) throw new Error("invalid page_count");
     validateSizes(event.page_sizes, count);
+    validateUnsupported(event.unsupported_pages, count);
     validateIndices(event.changed, count, "changed");
     validateIndices(event.removed, current.pages.length, "removed");
     const expectedRemoved = [];
@@ -113,7 +133,11 @@
         pageSizes: event.page_sizes.map((size) => ({ ...size })),
         tailPending: !!event.tail_pending,
         phase: event.phase,
-        outcome: event.outcome
+        outcome: event.outcome,
+        unsupportedPages: event.unsupported_pages.map((page) => ({
+          page_index: page.page_index,
+          operations: { ...page.operations }
+        }))
       },
       acknowledgement: event.frame_id
     };

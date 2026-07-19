@@ -22,6 +22,7 @@ function update(overrides = {}) {
     removed: [],
     pages_svg: [{ page_index: 0, svg: "<svg/>" }],
     page_sizes: [{ width_bp: 100, height_bp: 200 }],
+    unsupported_pages: [],
     metrics: { engine_ms: 1, analysis_ms: 1, render_ms: 1, frame_bytes: 1 },
     tail_pending: false,
     ...overrides
@@ -98,6 +99,24 @@ test("metadata-only updates grow and shrink persistent slots coherently", () => 
   }), sanitize).state;
   assert.equal(shrunk.pages.length, 1);
   assert.equal(shrunk.tailPending, false);
+});
+
+test("unsupported renderer telemetry advances on metadata-only frames", () => {
+  let state = viewer.applyUpdate(viewer.initialState(), update({
+    unsupported_pages: [{ page_index: 0, operations: { "missing-image-resource": 1 } }]
+  }), sanitize).state;
+  assert.deepEqual(state.unsupportedPages[0].operations, { "missing-image-resource": 1 });
+  state = viewer.applyUpdate(state, update({
+    frame_id: "2",
+    changed: [],
+    pages_svg: [],
+    unsupported_pages: []
+  }), sanitize).state;
+  assert.deepEqual(state.unsupportedPages, []);
+  assert.throws(() => viewer.applyUpdate(state, update({
+    frame_id: "3",
+    unsupported_pages: [{ page_index: 1, operations: { bad: 1 } }]
+  }), sanitize), /unsupported page telemetry/);
 });
 
 test("rejects partial patches without changing retained state", () => {

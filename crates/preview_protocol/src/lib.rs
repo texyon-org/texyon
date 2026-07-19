@@ -3,7 +3,7 @@
 //! Sequence counters are encoded as canonical decimal strings so JavaScript
 //! clients never route them through an imprecise JSON number.
 
-use std::{fmt, io::BufRead, str::FromStr};
+use std::{collections::BTreeMap, fmt, io::BufRead, str::FromStr};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -277,6 +277,15 @@ pub struct PageSize {
     pub height_bp: f32,
 }
 
+/// Unsupported renderer operations observed on one page.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct PageUnsupportedPayload {
+    /// Zero-based page index.
+    pub page_index: usize,
+    /// Stable operation name to occurrence count.
+    pub operations: BTreeMap<String, u64>,
+}
+
 /// Per-operation timing and payload metrics.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct OperationMetrics {
@@ -351,6 +360,8 @@ pub enum ServerEvent {
         pages_svg: Vec<PageSvgPayload>,
         /// Complete page sizes in document order.
         page_sizes: Vec<PageSize>,
+        /// Pages whose rendering encountered unsupported operations.
+        unsupported_pages: Vec<PageUnsupportedPayload>,
         /// Operation timing and payload measurements.
         metrics: OperationMetrics,
         /// Whether a later tail-settle operation remains scheduled.
@@ -802,6 +813,7 @@ mod tests {
             removed: vec![],
             pages_svg: vec![],
             page_sizes: vec![],
+            unsupported_pages: vec![],
             metrics: OperationMetrics::default(),
             tail_pending: false,
         };

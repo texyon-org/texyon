@@ -134,8 +134,13 @@ class PreviewSession {
       case "update":
         this.hasFrame = true;
         this.panel.postUpdate(event);
+        if (Array.isArray(event.unsupported_pages) && event.unsupported_pages.length > 0) {
+          this.output.appendLine(`[preview] unsupported renderer operations: ${JSON.stringify(event.unsupported_pages)}`);
+        }
         this.setStatus(event.outcome === "error"
           ? "$(warning) tectonic: source error (kept coherent preview)"
+          : Array.isArray(event.unsupported_pages) && event.unsupported_pages.length > 0
+            ? "$(warning) tectonic: preview may omit unsupported content"
           : `$(check) tectonic: ${event.page_count} page${event.page_count === 1 ? "" : "s"}`);
         break;
       case "cancelled":
