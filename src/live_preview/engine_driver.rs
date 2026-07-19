@@ -6,7 +6,6 @@ use std::{
 };
 
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_bundles::Bundle;
 use tectonic_io_base::filesystem::FilesystemIo;
 use tectonic_status_base::NoopStatusBackend;
 
@@ -17,7 +16,7 @@ use crate::{
     io::{format_cache::FormatCache, testing::SingleInputFileIo, IoProvider, IoStack, MemoryIo},
 };
 
-use super::AcceptedSourceSnapshot;
+use super::{AcceptedSourceSnapshot, FrozenBundle};
 
 /// Frozen support-file universe used by one resident engine.
 pub enum ResidentEngineSupport {
@@ -31,7 +30,7 @@ pub enum ResidentEngineSupport {
     /// Cache-only production bundle resolution chain.
     Bundle {
         /// Frozen support bundle.
-        bundle: Box<dyn Bundle>,
+        bundle: FrozenBundle,
         /// Digest-keyed prebuilt format cache.
         format_cache: FormatCache,
         /// Read-only document directory fallback for clean files.
@@ -93,6 +92,7 @@ impl ResidentEngineSupport {
                 if let Some(document) = &mut document {
                     providers.push(document);
                 }
+                let mut bundle = bundle.borrow_mut_io();
                 providers.push(bundle.as_mut());
                 providers.push(format_cache);
                 let io = IoStack::new(providers);

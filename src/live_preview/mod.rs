@@ -8,6 +8,7 @@ mod engine_driver;
 mod pipeline;
 mod processor;
 mod publication;
+mod resources;
 mod source;
 mod transport;
 mod worker;
@@ -24,6 +25,7 @@ pub use processor::{PublishedFrame, ResidentPreviewError, ResidentPreviewProcess
 pub use publication::{
     ClientBelief, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher, PublicationError,
 };
+pub use resources::{BundleResourceProvider, FrozenBundle};
 pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
 pub use tectonic_preview_protocol::{
     FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision,
