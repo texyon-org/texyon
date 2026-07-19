@@ -57,10 +57,27 @@ button {
   overflow: hidden;
   background: white;
   box-shadow: 0 1px 7px rgb(0 0 0 / 55%);
+  position: relative;
 }
 
 .page > svg {
   display: block;
   height: auto;
   width: 100%;
+}
+
+.sync-highlight {
+  animation: sync-highlight-fade 1.4s ease-out forwards;
+  background: rgb(255 196 0 / 38%);
+  border: 2px solid rgb(255 153 0 / 90%);
+  box-sizing: border-box;
+  min-height: 4px;
+  min-width: 4px;
+  pointer-events: none;
+  position: absolute;
+}
+
+@keyframes sync-highlight-fade {
+  0%, 55% { opacity: 1; }
+  100% { opacity: 0; }
 }

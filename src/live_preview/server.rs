@@ -236,6 +236,27 @@ where
                         break;
                     }
                 }
+                Ok(ClientRequest::ForwardSearch {
+                    query_id,
+                    path,
+                    line,
+                }) => {
+                    if let Err(error) = worker.forward_search(query_id, path, line) {
+                        fatal = Some(PreviewServerError::Worker(error));
+                        break;
+                    }
+                }
+                Ok(ClientRequest::BackwardSearch {
+                    query_id,
+                    page_index,
+                    h_bp,
+                    v_bp,
+                }) => {
+                    if let Err(error) = worker.backward_search(query_id, page_index, h_bp, v_bp) {
+                        fatal = Some(PreviewServerError::Worker(error));
+                        break;
+                    }
+                }
                 Ok(ClientRequest::Resync) => {
                     if let Err(error) = worker.resync() {
                         fatal = Some(PreviewServerError::Worker(error));
@@ -307,6 +328,16 @@ where
                     source_revision,
                     reason,
                 },
+            )?,
+            Ok(WorkerEvent::ForwardSearchResult { query_id, result }) => write_event(
+                &shared,
+                limits,
+                &ServerEvent::ForwardSearchResult { query_id, result },
+            )?,
+            Ok(WorkerEvent::BackwardSearchResult { query_id, result }) => write_event(
+                &shared,
+                limits,
+                &ServerEvent::BackwardSearchResult { query_id, result },
             )?,
             Ok(WorkerEvent::Aborted {
                 applied_request_seq,

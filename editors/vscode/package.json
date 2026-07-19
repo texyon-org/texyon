@@ -29,6 +29,10 @@
       {
         "command": "tectonicPreview.cancel",
         "title": "Tectonic: Cancel In-Flight Preview"
+      },
+      {
+        "command": "tectonicPreview.forwardSearch",
+        "title": "Tectonic: Show Cursor in Live Preview"
       }
     ],
     "configuration": {

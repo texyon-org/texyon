@@ -158,6 +158,11 @@ sequence_type!(
     "Process-local identity assigned to each coherent published frame.",
     "frame"
 );
+sequence_type!(
+    QueryId,
+    "Client-assigned identity for one source-navigation query.",
+    "query"
+);
 
 /// Complete source buffer sent during initialization.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -207,6 +212,26 @@ pub enum ClientRequest {
         frame_id: FrameId,
         /// Measured paint duration in milliseconds.
         paint_ms: f64,
+    },
+    /// Locate preview geometry for one source line.
+    ForwardSearch {
+        /// Client-assigned query identity.
+        query_id: QueryId,
+        /// Primary or child source path.
+        path: String,
+        /// One-based source line.
+        line: usize,
+    },
+    /// Locate the source nearest one preview point.
+    BackwardSearch {
+        /// Client-assigned query identity.
+        query_id: QueryId,
+        /// Zero-based output page.
+        page_index: usize,
+        /// Horizontal page coordinate in PostScript big points.
+        h_bp: f64,
+        /// Vertical page coordinate in PostScript big points.
+        v_bp: f64,
     },
     /// Stop the worker and process cleanly.
     Shutdown,
@@ -263,6 +288,32 @@ pub struct OperationMetrics {
     pub render_ms: f64,
     /// Encoded frame bytes before the JSONL newline.
     pub frame_bytes: usize,
+}
+
+/// Preview rectangle returned by a forward SyncTeX query.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+pub struct SyncRectPayload {
+    /// Zero-based output page.
+    pub page_index: usize,
+    /// Left edge in PostScript big points.
+    pub h_bp: f64,
+    /// Baseline in PostScript big points.
+    pub v_bp: f64,
+    /// Width in PostScript big points.
+    pub width_bp: f64,
+    /// Height above the baseline in PostScript big points.
+    pub height_bp: f64,
+    /// Depth below the baseline in PostScript big points.
+    pub depth_bp: f64,
+}
+
+/// Source location returned by a backward SyncTeX query.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct SourceLocation {
+    /// Primary or child source name.
+    pub path: String,
+    /// One-based source line.
+    pub line: usize,
 }
 
 /// Events emitted on protocol stdout.
@@ -336,6 +387,20 @@ pub enum ServerEvent {
         source_revision: SourceRevision,
         /// Stable human-readable rejection reason.
         reason: String,
+    },
+    /// Result of a forward source-to-preview query.
+    ForwardSearchResult {
+        /// Client-assigned query identity.
+        query_id: QueryId,
+        /// Best geometry in the last published belief, when available.
+        result: Option<SyncRectPayload>,
+    },
+    /// Result of a backward preview-to-source query.
+    BackwardSearchResult {
+        /// Client-assigned query identity.
+        query_id: QueryId,
+        /// Best source location in the last published belief, when available.
+        result: Option<SourceLocation>,
     },
     /// Unrecoverable session or transport failure.
     Fatal {
@@ -529,6 +594,18 @@ fn validate_request(request: &ClientRequest, limits: ProtocolLimits) -> Result<(
                 "paint_ms must be finite and non-negative".into(),
             ));
         }
+        ClientRequest::ForwardSearch { path, line, .. } if path.is_empty() || *line == 0 => {
+            return Err(ProtocolError::InvalidRequest(
+                "forward search requires a path and one-based line".into(),
+            ));
+        }
+        ClientRequest::BackwardSearch { h_bp, v_bp, .. }
+            if !h_bp.is_finite() || !v_bp.is_finite() || *h_bp < 0.0 || *v_bp < 0.0 =>
+        {
+            return Err(ProtocolError::InvalidRequest(
+                "backward search coordinates must be finite and non-negative".into(),
+            ));
+        }
         _ => {}
     }
     Ok(())
@@ -653,6 +730,46 @@ mod tests {
             read_request(&mut painted, small_limits()),
             Err(ProtocolError::InvalidRequest(_))
         ));
+
+        let mut forward = Cursor::new(
+            b"{\"type\":\"forward_search\",\"query_id\":\"1\",\"path\":\"\",\"line\":0}\n",
+        );
+        assert!(matches!(
+            read_request(&mut forward, small_limits()),
+            Err(ProtocolError::InvalidRequest(_))
+        ));
+
+        let mut backward = Cursor::new(
+            b"{\"type\":\"backward_search\",\"query_id\":\"2\",\"page_index\":0,\"h_bp\":-1.0,\"v_bp\":0.0}\n",
+        );
+        assert!(matches!(
+            read_request(&mut backward, small_limits()),
+            Err(ProtocolError::InvalidRequest(_))
+        ));
+    }
+
+    #[test]
+    fn navigation_queries_preserve_exact_query_ids() {
+        let request = ClientRequest::ForwardSearch {
+            query_id: QueryId::new((1_u64 << 53) + 7),
+            path: "chapters/one.tex".into(),
+            line: 42,
+        };
+        let value = serde_json::to_value(request).unwrap();
+        assert_eq!(value["type"], "forward_search");
+        assert_eq!(value["query_id"], "9007199254740999");
+
+        let event = ServerEvent::BackwardSearchResult {
+            query_id: QueryId::new(9),
+            result: Some(SourceLocation {
+                path: "main.tex".into(),
+                line: 3,
+            }),
+        };
+        let value = serde_json::to_value(event).unwrap();
+        assert_eq!(value["type"], "backward_search_result");
+        assert_eq!(value["query_id"], "9");
+        assert_eq!(value["result"]["line"], 3);
     }
 
     #[test]

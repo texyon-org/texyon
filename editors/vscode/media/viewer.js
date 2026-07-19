@@ -12,6 +12,7 @@ let queue = Promise.resolve();
 let zoom = 1;
 let viewportTimer = null;
 let lastViewport = null;
+let highlightTimer = null;
 
 function post(message) {
   vscode.postMessage(message);
@@ -128,6 +129,33 @@ async function applyUpdate(event) {
   });
 }
 
+function showForwardSearch(result) {
+  document.querySelectorAll(".sync-highlight").forEach((node) => node.remove());
+  clearTimeout(highlightTimer);
+  if (!result || !Number.isSafeInteger(result.page_index) || result.page_index < 0 ||
+      result.page_index >= slots.length) return;
+  const values = [result.h_bp, result.v_bp, result.width_bp, result.height_bp, result.depth_bp];
+  if (!values.every(Number.isFinite)) return;
+  const index = result.page_index;
+  if (!state.pages[index].displayedSvg && state.pages[index].pendingSvg) {
+    const indices = [...new Set([...state.prefetch, index])].sort((a, b) => a - b);
+    const reduced = reducer.setPrefetch(state, indices);
+    state = reduced.state;
+    for (const installed of reduced.installed) renderPage(installed);
+  }
+  const size = state.pageSizes[index];
+  if (!size) return;
+  const marker = document.createElement("div");
+  marker.className = "sync-highlight";
+  marker.style.left = `${100 * result.h_bp / size.width_bp}%`;
+  marker.style.top = `${100 * (result.v_bp - result.height_bp) / size.height_bp}%`;
+  marker.style.width = `${100 * Math.max(0, result.width_bp) / size.width_bp}%`;
+  marker.style.height = `${100 * Math.max(0, result.height_bp + result.depth_bp) / size.height_bp}%`;
+  slots[index].appendChild(marker);
+  slots[index].scrollIntoView({ behavior: "smooth", block: "center" });
+  highlightTimer = setTimeout(() => marker.remove(), 1400);
+}
+
 window.addEventListener("message", (message) => {
   const payload = message.data;
   if (payload && payload.type === "update") {
@@ -139,7 +167,26 @@ window.addEventListener("message", (message) => {
   } else if (payload && payload.type === "session_error") {
     errorElement.textContent = payload.message;
     errorElement.hidden = false;
+  } else if (payload && payload.type === "forward_search") {
+    showForwardSearch(payload.result);
   }
+});
+
+pagesElement.addEventListener("click", (event) => {
+  if (!event.ctrlKey && !event.metaKey) return;
+  const page = event.target.closest && event.target.closest(".page");
+  if (!page) return;
+  const pageIndex = Number(page.dataset.pageIndex);
+  const size = state.pageSizes[pageIndex];
+  const bounds = page.getBoundingClientRect();
+  if (!size || bounds.width <= 0 || bounds.height <= 0) return;
+  event.preventDefault();
+  post({
+    type: "backward_search",
+    page_index: pageIndex,
+    h_bp: Math.max(0, (event.clientX - bounds.left) * size.width_bp / bounds.width),
+    v_bp: Math.max(0, (event.clientY - bounds.top) * size.height_bp / bounds.height)
+  });
 });
 
 document.getElementById("zoom-in").addEventListener("click", () => {

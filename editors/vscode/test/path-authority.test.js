@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
-const { childLogicalPath, isWithin, resolveAuthority } = require("../path-authority");
+const { childLogicalPath, isWithin, resolveAuthority, sourceFilePath } = require("../path-authority");
 
 test("accepts normalized TeX children under the canonical primary root", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tectonic-vscode-"));
@@ -19,6 +19,8 @@ test("accepts normalized TeX children under the canonical primary root", (t) => 
   assert.equal(childLogicalPath(primary, child), "chapters/one.tex");
   assert.equal(childLogicalPath(primary, path.join(root, "image.png")), null);
   assert.equal(childLogicalPath(primary, primary), null);
+  assert.equal(sourceFilePath(primary, "chapters/one"), child);
+  assert.equal(sourceFilePath(primary, primary), primary);
 });
 
 test("resolver authority rejects a lexical child symlinked outside the root", (t) => {
@@ -38,6 +40,7 @@ test("resolver authority rejects a lexical child symlinked outside the root", (t
     throw error;
   }
   assert.equal(childLogicalPath(primary, linked), null);
+  assert.throws(() => sourceFilePath(primary, "linked.tex"), /escapes document root/);
 });
 
 test("nearest-existing-ancestor resolution confines unsaved descendants", (t) => {

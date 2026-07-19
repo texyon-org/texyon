@@ -3,6 +3,8 @@ use std::{fmt, sync::Arc, time::Instant};
 use tectonic_preview_protocol::{OperationMetrics, UpdateOutcome};
 use tectonic_preview_render::{Backend, HotRenderer, RenderError, ResourceProvider};
 
+use crate::engines::tex::SyncIndex;
+
 use super::{
     AssembledDocument, DocumentAssembler, DocumentFragment, FrameId, FramePhase, FrameSink,
     PreviewPublisher, PublicationError, RequestSeq, SourceRevision, XdvAssemblyError,
@@ -41,6 +43,7 @@ pub struct PreviewPipeline<P, B> {
     backend: B,
     publisher: PreviewPublisher,
     last_document: Option<AssembledDocument>,
+    sync_index: SyncIndex,
 }
 
 impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
@@ -52,6 +55,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             backend,
             publisher: PreviewPublisher::new(),
             last_document: None,
+            sync_index: SyncIndex::default(),
         }
     }
 
@@ -63,6 +67,11 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
     /// Transactional server-side viewer belief.
     pub fn publisher(&self) -> &PreviewPublisher {
         &self.publisher
+    }
+
+    /// Source geometry committed with the current viewer belief.
+    pub fn sync_index(&self) -> &SyncIndex {
+        &self.sync_index
     }
 
     /// Validate and publish one complete XDV/SPX operation.
@@ -104,6 +113,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             outcome,
             0.0,
             false,
+            SyncIndex::default(),
         )
     }
 
@@ -117,6 +127,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         outcome: UpdateOutcome,
         engine_ms: f64,
         preserve_tail_belief: bool,
+        sync_index: SyncIndex,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
         let document = self
             .assembler
@@ -128,6 +139,12 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             .analyze(Arc::clone(document.bytes()))
             .map_err(PreviewPipelineError::Render)?;
         let analysis_ms = analysis_started.elapsed().as_secs_f64() * 1000.0;
+        let covered_pages = analysis.pages().len();
+        let sync_index = if preserve_tail_belief {
+            sync_index.with_preserved_tail(&self.sync_index, covered_pages)
+        } else {
+            sync_index
+        };
         let mut visuals = analysis.pages().to_vec();
         if preserve_tail_belief && self.publisher.belief().pages().len() > visuals.len() {
             visuals.extend(
@@ -176,6 +193,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             .map_err(PreviewPipelineError::Publication)?;
 
         self.last_document = Some(document);
+        self.sync_index = sync_index;
         Ok(frame_id)
     }
 

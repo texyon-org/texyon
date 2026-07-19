@@ -195,6 +195,8 @@ pub struct EngineFrame {
     pub cancelled: bool,
     /// Page-boundary execution facts for exact XDV suffix comparison.
     pub pages: Vec<PageExecution>,
+    /// In-memory source geometry produced for the operation's coherent coverage.
+    pub sync_index: crate::sync_index::SyncIndex,
     /// Old-document byte prefix retained by a fence-local replay.
     pub splice_at: Option<usize>,
     /// Number of checkpoint rungs retained after this operation.
@@ -517,6 +519,13 @@ impl IncrementalXeTeXSession {
                 aborted: None,
                 cancelled: false,
                 pages: self.state.shipout.page_manifest.take_pages(),
+                sync_index: self
+                    .state
+                    .synctex
+                    .preview_index
+                    .as_ref()
+                    .map(crate::sync_index::PreviewSyncIndex::snapshot)
+                    .unwrap_or_default(),
                 splice_at,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
                 tail_pending: false,
@@ -531,6 +540,13 @@ impl IncrementalXeTeXSession {
                 aborted: None,
                 cancelled: false,
                 pages: self.state.shipout.page_manifest.take_pages(),
+                sync_index: self
+                    .state
+                    .synctex
+                    .preview_index
+                    .as_ref()
+                    .map(crate::sync_index::PreviewSyncIndex::snapshot)
+                    .unwrap_or_default(),
                 splice_at,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
                 tail_pending: true,
@@ -541,6 +557,7 @@ impl IncrementalXeTeXSession {
                 aborted: Some("XeTeX aborted; resident state rewound to rung zero".into()),
                 cancelled: false,
                 pages: Vec::new(),
+                sync_index: Default::default(),
                 splice_at: None,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
                 tail_pending: false,
@@ -551,6 +568,7 @@ impl IncrementalXeTeXSession {
                 aborted: None,
                 cancelled: true,
                 pages: Vec::new(),
+                sync_index: Default::default(),
                 splice_at: None,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
                 tail_pending: false,
@@ -722,7 +740,7 @@ fn edit_fence_offsets(offset: usize) -> Vec<usize> {
 fn configure(state: &mut EngineState, config: &EnginePreviewConfig) {
     state.config.halt_on_error_p = 0;
     state.config.in_initex_mode = false;
-    state.config.synctex_enabled = 0;
+    state.config.synctex_enabled = 1;
     state.config.semantic_pagination_enabled = false;
     state.config.shell_escape_enabled = false;
     state.config.deterministic_mode = config.deterministic;

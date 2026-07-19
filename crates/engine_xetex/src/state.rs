@@ -93,6 +93,7 @@ pub(crate) struct SynctexCtxt {
     pub form_depth: i32,
     pub synctex_tag_counter: u32,
     pub flags: SynctexFlags,
+    pub preview_index: Option<crate::sync_index::PreviewSyncIndex>,
 }
 
 impl Default for SynctexCtxt {
@@ -115,6 +116,7 @@ impl Default for SynctexCtxt {
             form_depth: 0,
             synctex_tag_counter: 0,
             flags: SynctexFlags::default(),
+            preview_index: None,
         }
     }
 }

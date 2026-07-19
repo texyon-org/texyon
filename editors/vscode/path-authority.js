@@ -34,4 +34,17 @@ function childLogicalPath(primaryPath, candidatePath, fileSystem = fs) {
   return path.relative(root, candidate).split(path.sep).join("/");
 }
 
-module.exports = { childLogicalPath, isWithin, resolveAuthority };
+/** Resolve a server-reported source name without escaping the document root. */
+function sourceFilePath(primaryPath, sourceName, fileSystem = fs) {
+  if (typeof sourceName !== "string" || sourceName.length === 0) {
+    throw new Error("source name is empty");
+  }
+  const root = resolveAuthority(path.dirname(primaryPath), fileSystem);
+  let candidate = sourceName.replaceAll("/", path.sep);
+  if (!path.extname(candidate)) candidate += ".tex";
+  candidate = resolveAuthority(path.isAbsolute(candidate) ? candidate : path.join(root, candidate), fileSystem);
+  if (!isWithin(root, candidate)) throw new Error(`source escapes document root: ${sourceName}`);
+  return candidate;
+}
+
+module.exports = { childLogicalPath, isWithin, resolveAuthority, sourceFilePath };

@@ -13,6 +13,7 @@ use super::{
     AcceptedSourceSnapshot, ApplyDisposition, RequestClock, RequestSeq, SourceRevision, SourceSet,
 };
 use crate::engines::tex::EngineCancellation;
+use tectonic_preview_protocol::{QueryId, SourceLocation, SyncRectPayload};
 
 /// Scheduling and checkpoint tuning fixed for one worker lifetime.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,6 +98,21 @@ pub trait PreviewWorkerProcessor {
     fn resync_error_is_fatal(&self, _error: &Self::Error) -> bool {
         false
     }
+
+    /// Locate preview geometry in the last successfully published belief.
+    fn forward_search(&self, _path: &str, _line: usize) -> Option<SyncRectPayload> {
+        None
+    }
+
+    /// Locate source text in the last successfully published belief.
+    fn backward_search(
+        &self,
+        _page_index: usize,
+        _h_bp: f64,
+        _v_bp: f64,
+    ) -> Option<SourceLocation> {
+        None
+    }
 }
 
 /// Observable worker state transition.
@@ -135,6 +151,20 @@ pub enum WorkerEvent<T> {
         source_revision: SourceRevision,
         /// Validation failure.
         reason: String,
+    },
+    /// Result of a source-to-preview query.
+    ForwardSearchResult {
+        /// Client-assigned query identity.
+        query_id: QueryId,
+        /// Best geometry in the last successfully published belief.
+        result: Option<SyncRectPayload>,
+    },
+    /// Result of a preview-to-source query.
+    BackwardSearchResult {
+        /// Client-assigned query identity.
+        query_id: QueryId,
+        /// Best source location in the last successfully published belief.
+        result: Option<SourceLocation>,
     },
     /// Processor operation failed while last-good state was retained.
     Aborted {
@@ -186,6 +216,17 @@ enum Command {
         text: String,
     },
     Viewport(usize, usize),
+    ForwardSearch {
+        query_id: QueryId,
+        path: String,
+        line: usize,
+    },
+    BackwardSearch {
+        query_id: QueryId,
+        page_index: usize,
+        h_bp: f64,
+        v_bp: f64,
+    },
     Resync,
     Cancel,
     Shutdown,
@@ -400,6 +441,40 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
     pub fn viewport(&self, first: usize, last: usize) -> Result<(), WorkerFailure> {
         self.commands
             .send(Command::Viewport(first, last))
+            .map_err(|_| WorkerFailure::Closed)
+    }
+
+    /// Query preview geometry without changing request accounting or scheduling.
+    pub fn forward_search(
+        &self,
+        query_id: QueryId,
+        path: String,
+        line: usize,
+    ) -> Result<(), WorkerFailure> {
+        self.commands
+            .send(Command::ForwardSearch {
+                query_id,
+                path,
+                line,
+            })
+            .map_err(|_| WorkerFailure::Closed)
+    }
+
+    /// Query a source location without changing request accounting or scheduling.
+    pub fn backward_search(
+        &self,
+        query_id: QueryId,
+        page_index: usize,
+        h_bp: f64,
+        v_bp: f64,
+    ) -> Result<(), WorkerFailure> {
+        self.commands
+            .send(Command::BackwardSearch {
+                query_id,
+                page_index,
+                h_bp,
+                v_bp,
+            })
             .map_err(|_| WorkerFailure::Closed)
     }
 
@@ -656,6 +731,27 @@ fn run_worker<P: PreviewWorkerProcessor>(
                     applied_atomic.store(sequence.get(), Ordering::Release);
                 }
                 Command::Viewport(first, last) => viewport = Some((first, last)),
+                Command::ForwardSearch {
+                    query_id,
+                    path,
+                    line,
+                } => {
+                    let _ = events.send(WorkerEvent::ForwardSearchResult {
+                        query_id,
+                        result: processor.forward_search(&path, line),
+                    });
+                }
+                Command::BackwardSearch {
+                    query_id,
+                    page_index,
+                    h_bp,
+                    v_bp,
+                } => {
+                    let _ = events.send(WorkerEvent::BackwardSearchResult {
+                        query_id,
+                        result: processor.backward_search(page_index, h_bp, v_bp),
+                    });
+                }
                 Command::Resync => resync = true,
                 Command::Cancel => {
                     clock.stop();
@@ -860,6 +956,29 @@ mod tests {
             _applied_request_seq: RequestSeq,
         ) -> Result<Self::Output, Self::Error> {
             Ok(self.last.clone())
+        }
+
+        fn forward_search(&self, path: &str, line: usize) -> Option<SyncRectPayload> {
+            (path == "main.tex").then_some(SyncRectPayload {
+                page_index: line.saturating_sub(1),
+                h_bp: 1.0,
+                v_bp: 2.0,
+                width_bp: 3.0,
+                height_bp: 4.0,
+                depth_bp: 5.0,
+            })
+        }
+
+        fn backward_search(
+            &self,
+            page_index: usize,
+            _h_bp: f64,
+            _v_bp: f64,
+        ) -> Option<SourceLocation> {
+            Some(SourceLocation {
+                path: "main.tex".into(),
+                line: page_index + 1,
+            })
         }
     }
 
@@ -1231,6 +1350,40 @@ mod tests {
         assert!(
             matches!(worker.recv_timeout(Duration::from_secs(1)), Ok(WorkerEvent::Update { output, resync: true, source_revision, .. }) if output == "initial" && source_revision == SourceRevision::ZERO)
         );
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn navigation_queries_are_read_only_and_correlated() {
+        let (_temp, sources) = sources();
+        let worker = LivePreviewWorker::spawn(sources, tuning(), || MockProcessor {
+            last: String::new(),
+        })
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        worker
+            .forward_search(QueryId::new(7), "main.tex".into(), 3)
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::ForwardSearchResult {
+                query_id,
+                result: Some(SyncRectPayload { page_index: 2, .. }),
+            }) if query_id == QueryId::new(7)
+        ));
+
+        worker
+            .backward_search(QueryId::new(8), 4, 10.0, 20.0)
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::BackwardSearchResult {
+                query_id,
+                result: Some(SourceLocation { path, line: 5 }),
+            }) if query_id == QueryId::new(8) && path == "main.tex"
+        ));
+        assert_eq!(worker.applied_request_seq(), RequestSeq::ZERO);
         worker.shutdown().unwrap();
     }
 

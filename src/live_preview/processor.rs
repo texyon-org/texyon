@@ -1,6 +1,8 @@
 use std::{fmt, time::Instant};
 
-use tectonic_preview_protocol::{FrameId, FramePhase, RequestSeq, UpdateOutcome};
+use tectonic_preview_protocol::{
+    FrameId, FramePhase, RequestSeq, SourceLocation, SyncRectPayload, UpdateOutcome,
+};
 use tectonic_preview_render::{Backend, ResourceProvider};
 
 use crate::engines::tex::{EngineCancellation, TexOutcome};
@@ -142,6 +144,7 @@ where
             UpdateOutcome::Complete
         };
         let tail_pending = engine.frame.tail_pending;
+        let sync_index = engine.frame.sync_index.clone();
         self.sink.set_tail_pending(tail_pending);
         let fragment =
             engine
@@ -162,6 +165,7 @@ where
             outcome,
             engine_ms,
             tail_pending,
+            sync_index,
         ) {
             Ok(frame_id) => frame_id,
             Err(error) if pipeline_error_is_fatal(&error) => {
@@ -218,6 +222,7 @@ where
         } else {
             UpdateOutcome::Complete
         };
+        let sync_index = engine.frame.sync_index.clone();
         let fragment =
             engine
                 .frame
@@ -238,6 +243,7 @@ where
             outcome,
             engine_ms,
             false,
+            sync_index,
         ) {
             Ok(frame_id) => frame_id,
             Err(error) if pipeline_error_is_fatal(&error) => {
@@ -277,6 +283,42 @@ where
     fn resync_error_is_fatal(&self, error: &Self::Error) -> bool {
         matches!(error, ResidentPreviewError::Pipeline(error) if pipeline_error_is_fatal(error))
     }
+
+    fn forward_search(&self, path: &str, line: usize) -> Option<SyncRectPayload> {
+        self.pipeline
+            .sync_index()
+            .forward(path, line)
+            .map(|rect| SyncRectPayload {
+                page_index: rect.page_index,
+                h_bp: sp_to_bp(rect.h),
+                v_bp: sp_to_bp(rect.v),
+                width_bp: sp_to_bp(rect.width),
+                height_bp: sp_to_bp(rect.height),
+                depth_bp: sp_to_bp(rect.depth),
+            })
+    }
+
+    fn backward_search(&self, page_index: usize, h_bp: f64, v_bp: f64) -> Option<SourceLocation> {
+        self.pipeline
+            .sync_index()
+            .backward(page_index, bp_to_sp(h_bp), bp_to_sp(v_bp))
+            .map(|rect| SourceLocation {
+                path: rect.path.clone(),
+                line: rect.line,
+            })
+    }
+}
+
+const SP_PER_BP: f64 = 65_536.0 * 72.27 / 72.0;
+
+fn sp_to_bp(value: i32) -> f64 {
+    f64::from(value) / SP_PER_BP
+}
+
+fn bp_to_sp(value: f64) -> i32 {
+    (value * SP_PER_BP)
+        .round()
+        .clamp(i32::MIN as f64, i32::MAX as f64) as i32
 }
 
 #[cfg(test)]

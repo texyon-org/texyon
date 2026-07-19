@@ -1007,6 +1007,21 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
         second,
         WorkerRun::Complete(frame) if frame.frame_id.get() == 2 && frame.tail_pending
     ));
+    let fresh = processor
+        .forward_search("main", 1)
+        .expect("foreground source geometry was not published");
+    assert_eq!(fresh.page_index, 0);
+    let preserved = processor
+        .forward_search("main.tex", 4)
+        .expect("old tail source geometry was not preserved");
+    assert_eq!(preserved.page_index, 3);
+    assert_eq!(
+        processor
+            .backward_search(preserved.page_index, preserved.h_bp, preserved.v_bp)
+            .expect("preserved tail geometry was not backward searchable")
+            .line,
+        4
+    );
     assert!(processor.has_pending_tail());
     let settled = processor.continue_tail(RequestSeq::new(1), &cancellation);
     assert!(matches!(
@@ -1014,6 +1029,13 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
         WorkerRun::Complete(Some(frame))
             if frame.frame_id.get() == 3 && !frame.tail_pending
     ));
+    assert_eq!(
+        processor
+            .forward_search("main.tex", 4)
+            .expect("settled source geometry was not published")
+            .page_index,
+        3
+    );
     sources
         .replace(
             None,
@@ -1131,6 +1153,52 @@ fn editor_owned_child_edits_are_read_from_the_snapshot() {
         session.finish(&mut launcher).unwrap();
     }
     assert_eq!(output_bytes(&second_output, "session.xdv"), cold_second);
+}
+
+#[test]
+fn resident_synctex_index_stays_in_memory_and_tracks_children() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let primary = b"\\input child\nMAIN SOURCE LINE\\par\n\\bye\n";
+    let child = b"CHILD SOURCE LINE\\par\n";
+    let sources = snapshot_with_child(primary, Some(child));
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let mut output = MemoryIo::new(true);
+    let frame = {
+        let io = IoStack::new(vec![
+            &mut output as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session.open(&mut launcher, sources).unwrap();
+        session.finish(&mut launcher).unwrap();
+        frame
+    };
+
+    let child_hit = frame
+        .sync_index
+        .forward("child", 1)
+        .expect("child source line was not indexed");
+    assert_eq!(child_hit.page_index, 0);
+    assert_eq!(child_hit.line, 1);
+    assert!(frame.sync_index.forward("session.tex", 2).is_some());
+    let backward = frame
+        .sync_index
+        .backward(child_hit.page_index, child_hit.h, child_hit.v)
+        .expect("indexed child geometry was not searchable");
+    assert!(!backward.path.is_empty());
+    assert!(
+        output
+            .files
+            .borrow()
+            .keys()
+            .all(|name| !name.ends_with(".synctex.gz")),
+        "resident SyncTeX must not create a serialized sidecar"
+    );
 }
 
 #[test]

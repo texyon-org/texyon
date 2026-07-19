@@ -29,6 +29,10 @@ class PreviewPanel {
     if (!this.disposed) this.panel.webview.postMessage({ type: "update", event });
   }
 
+  showForwardSearch(result) {
+    if (!this.disposed) this.panel.webview.postMessage({ type: "forward_search", result });
+  }
+
   showError(message) {
     if (!this.disposed) this.panel.webview.postMessage({ type: "session_error", message });
   }

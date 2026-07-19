@@ -30,7 +30,7 @@ pub use resources::{BundleResourceProvider, FrozenBundle};
 pub use server::{serve_preview_jsonl, PreviewBootstrap, PreviewServerError, SharedJsonlWriter};
 pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
 pub use tectonic_preview_protocol::{
-    FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision,
+    FrameId, FramePhase, QueryId, RequestSeq, SequenceExhausted, SourceRevision,
 };
 pub use transport::{JsonlFrameSink, TransportError};
 pub use worker::{

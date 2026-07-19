@@ -11,6 +11,7 @@ use libc::c_char;
 const INT_PAR_SYNCTEX: i32 = 81;
 
 const SYNCTEX_VERSION: i32 = 1;
+const PREVIEW_HANDLE: usize = usize::MAX;
 
 use crate::bridge::{
     issue_error_cstr, issue_warning_cstr, ttstub_output_close, ttstub_output_open,
@@ -49,6 +50,9 @@ unsafe fn synctex_write(handle: usize, s: &str) -> i32 {
     if bytes.is_empty() {
         return 0;
     }
+    if handle == PREVIEW_HANDLE {
+        return i32::try_from(bytes.len()).unwrap_or(i32::MAX);
+    }
     let written = ttstub_output_write(handle, bytes.as_ptr() as *const c_char, bytes.len());
     if written > 0 {
         written as i32
@@ -58,7 +62,7 @@ unsafe fn synctex_write(handle: usize, s: &str) -> i32 {
 }
 
 unsafe fn synctexabort(synctex: &mut crate::state::SynctexCtxt) {
-    if synctex.file != INVALID_HANDLE {
+    if synctex.file != INVALID_HANDLE && synctex.file != PREVIEW_HANDLE {
         ttstub_output_close(synctex.file);
         synctex.file = INVALID_HANDLE;
     }
@@ -99,6 +103,9 @@ unsafe fn synctex_record_input(
 ) -> i32 {
     let file = synctex.file;
     let name_str = std::ffi::CStr::from_ptr(name).to_string_lossy();
+    if let Some(index) = &mut synctex.preview_index {
+        index.register_name(tag, name_str.to_string());
+    }
     let s = format!("Input:{}:{}\n", tag, name_str);
     let len = synctex_write(file, &s);
     if len > 0 {
@@ -206,6 +213,17 @@ unsafe fn synctex_record_node_vlist(
     p: AnyBox,
 ) {
     synctex.flags.not_void = true;
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            p.sync_tag(mem),
+            p.sync_line(mem),
+            synctex.curh,
+            synctex.curv,
+            p.width(mem).0,
+            p.height(mem).0,
+            p.depth(mem).0,
+        );
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "[{},{}:{},{}:{},{},{}\n",
@@ -243,6 +261,17 @@ unsafe fn synctex_record_node_void_vlist(
     mem: &crate::state::MemState,
     p: NodePtr<VListNode>,
 ) {
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            p.sync_tag(mem),
+            p.sync_line(mem),
+            synctex.curh,
+            synctex.curv,
+            p.width(mem).0,
+            p.height(mem).0,
+            p.depth(mem).0,
+        );
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "v{},{}:{},{}:{},{},{}\n",
@@ -270,6 +299,17 @@ unsafe fn synctex_record_node_hlist(
     p: AnyBox,
 ) {
     synctex.flags.not_void = true;
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            p.sync_tag(mem),
+            p.sync_line(mem),
+            synctex.curh,
+            synctex.curv,
+            p.width(mem).0,
+            p.height(mem).0,
+            p.depth(mem).0,
+        );
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "({},{}:{},{}:{},{},{}\n",
@@ -307,6 +347,17 @@ unsafe fn synctex_record_node_void_hlist(
     mem: &crate::state::MemState,
     p: NodePtr<HListNode>,
 ) {
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            p.sync_tag(mem),
+            p.sync_line(mem),
+            synctex.curh,
+            synctex.curv,
+            p.width(mem).0,
+            p.height(mem).0,
+            p.depth(mem).0,
+        );
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "h{},{}:{},{}:{},{},{}\n",
@@ -333,6 +384,17 @@ unsafe fn synctex_record_node_math(
     mem: &crate::state::MemState,
     p: NodePtr<MathNode>,
 ) {
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            p.sync_tag(mem),
+            p.sync_line(mem),
+            synctex.curh,
+            synctex.curv,
+            0,
+            0,
+            0,
+        );
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "${},{}:{},{}\n",
@@ -356,6 +418,17 @@ unsafe fn synctex_record_node_glue(
     mem: &crate::state::MemState,
     p: NodePtr<crate::node::GlueNode>,
 ) {
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            p.sync_tag(mem),
+            p.sync_line(mem),
+            synctex.curh,
+            synctex.curv,
+            0,
+            0,
+            0,
+        );
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "g{},{}:{},{}\n",
@@ -379,6 +452,17 @@ unsafe fn synctex_record_node_kern(
     mem: &crate::state::MemState,
     p: NodePtr<KernNode>,
 ) {
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            p.sync_tag(mem),
+            p.sync_line(mem),
+            synctex.curh,
+            synctex.curv,
+            p.width(mem).0,
+            0,
+            0,
+        );
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "k{},{}:{},{}:{}\n",
@@ -404,6 +488,17 @@ unsafe fn synctex_record_node_rule(
     shipout: &crate::state::ShipoutState,
     p: NodePtr<crate::node::RuleNode>,
 ) {
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            p.sync_tag(mem),
+            p.sync_line(mem),
+            synctex.curh,
+            synctex.curv,
+            shipout.rule_wd,
+            shipout.rule_ht,
+            shipout.rule_dp,
+        );
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "r{},{}:{},{}:{},{},{}\n",
@@ -436,6 +531,24 @@ unsafe fn synctex_dot_open(
     }
     if synctex.file != INVALID_HANDLE {
         libc::free(tmp as *mut libc::c_void);
+        return synctex.file;
+    }
+
+    if synctex.preview_index.is_some() {
+        libc::free(tmp as *mut libc::c_void);
+        synctex.file = PREVIEW_HANDLE;
+        if synctex_record_preamble(synctex) != 0 {
+            synctexabort(synctex);
+            return INVALID_HANDLE;
+        }
+        if synctex.magnification == 0 {
+            synctex.magnification = 1000;
+        }
+        synctex.unit = 1;
+        if let Some(root_name) = synctex.root_name.take() {
+            synctex_record_input(synctex, 1, root_name.as_ptr());
+        }
+        synctex.count = 0;
         return synctex.file;
     }
 
@@ -531,6 +644,9 @@ pub fn synctex_init_command(st: &mut crate::state::EngineState) {
     synctex.flags.not_void = false;
     synctex.flags.warn = false;
     synctex.flags.output_p = false;
+    synctex.preview_index = (st.config.execution_mode
+        == crate::state::EngineExecutionMode::Resident)
+        .then(Default::default);
 
     let synctex_enabled = st.config.synctex_enabled != 0;
     st.eqtb
@@ -541,7 +657,9 @@ pub unsafe fn synctex_terminate(st: &mut crate::state::EngineState, _log_opened:
     let synctex = &mut st.synctex;
     if synctex.file != INVALID_HANDLE {
         synctex_record_postamble(synctex);
-        ttstub_output_close(synctex.file);
+        if synctex.file != PREVIEW_HANDLE {
+            ttstub_output_close(synctex.file);
+        }
         synctex.file = INVALID_HANDLE;
     }
     synctexabort(synctex);
@@ -563,13 +681,16 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
     let tag = synctex.synctex_tag_counter as i32;
     st.input.cur_input.synctex_tag = tag;
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
+    let current_name = st.input.get_current_name();
+    if let Some(index) = &mut synctex.preview_index {
+        index.register_name(tag, current_name.to_string_lossy().into_owned());
+    }
 
     if synctex.synctex_tag_counter == 1 {
-        let name = st.input.get_current_name();
-        synctex.root_name = Some(if name.is_empty() {
+        synctex.root_name = Some(if current_name.is_empty() {
             c"texput".to_owned()
         } else {
-            name.to_owned()
+            current_name.to_owned()
         });
         libc::free(tmp as *mut libc::c_void);
         return;
@@ -598,6 +719,9 @@ pub unsafe fn synctex_sheet(st: &mut crate::state::EngineState, mag: i32, tmp: *
     }
 
     let synctex = &mut st.synctex;
+    if let Some(index) = &mut synctex.preview_index {
+        index.begin_page(total_pages.max(0) as usize);
+    }
     if total_pages == 0 && mag > 0 {
         synctex.magnification = mag;
     }
@@ -612,6 +736,9 @@ pub unsafe fn synctex_teehs(st: &mut crate::state::EngineState) {
         return;
     }
     synctex_record_teehs(synctex, st.shipout.total_pages);
+    if let Some(index) = &mut synctex.preview_index {
+        index.end_page();
+    }
 }
 
 pub unsafe fn synctex_vlist(st: &mut crate::state::EngineState, this_box: AnyBox) {
@@ -832,6 +959,17 @@ pub unsafe fn synctex_current(st: &mut crate::state::EngineState) {
     let synctex = &mut st.synctex;
     if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
         return;
+    }
+    if let Some(index) = &mut synctex.preview_index {
+        index.record(
+            synctex.tag,
+            synctex.line,
+            synctex_curh(&st.shipout),
+            synctex_curv(&st.shipout),
+            0,
+            0,
+            0,
+        );
     }
     let (file, tag, line, unit) = (synctex.file, synctex.tag, synctex.line, synctex.unit);
     let s = format!(

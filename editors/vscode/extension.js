@@ -5,7 +5,7 @@ const path = require("path");
 const readline = require("readline");
 const vscode = require("vscode");
 
-const { childLogicalPath } = require("./path-authority");
+const { childLogicalPath, sourceFilePath } = require("./path-authority");
 const { PreviewPanel } = require("./panel");
 
 const PROTOCOL_VERSION = 1;
@@ -22,6 +22,8 @@ class PreviewSession {
     this.initialized = false;
     this.hasFrame = false;
     this.disposed = false;
+    this.synctex = false;
+    this.nextQuery = 0n;
 
     const executable = configuration.get("executable", "tectonic");
     const format = configuration.get("format", "latex");
@@ -122,6 +124,7 @@ class PreviewSession {
         return;
       }
       this.ready = true;
+      this.synctex = event.capabilities.includes("synctex");
       this.output.appendLine(`[preview] ready; bundle ${event.bundle_digest}`);
       this.initialize(event.protocol_version);
       return;
@@ -148,6 +151,12 @@ class PreviewSession {
         this.output.appendLine(`[preview] request rejected: ${event.reason}`);
         this.setStatus("$(warning) tectonic: edit rejected");
         break;
+      case "forward_search_result":
+        this.panel.showForwardSearch(event.result || null);
+        break;
+      case "backward_search_result":
+        if (event.result) this.revealSource(event.result);
+        break;
       case "fatal":
         this.fail(`server session failed: ${event.reason}`);
         break;
@@ -164,8 +173,58 @@ class PreviewSession {
       this.send({ type: "viewport", first: message.first, last: message.last });
     } else if (message.type === "painted") {
       this.send({ type: "painted", frame_id: message.frame_id, paint_ms: message.paint_ms });
+    } else if (message.type === "backward_search" && this.synctex) {
+      this.send({
+        type: "backward_search",
+        query_id: this.queryId(),
+        page_index: message.page_index,
+        h_bp: message.h_bp,
+        v_bp: message.v_bp
+      });
     } else if (message.type === "viewer_error") {
       this.fail(`webview rejected a frame: ${message.message}`);
+    }
+  }
+
+  queryId() {
+    this.nextQuery = this.nextQuery === ((1n << 64n) - 1n) ? 1n : this.nextQuery + 1n;
+    return this.nextQuery.toString();
+  }
+
+  forwardSearch(editor) {
+    if (!this.initialized || !this.synctex || !editor) return false;
+    let logical;
+    if (editor.document === this.document) logical = this.document.fileName;
+    else logical = this.childPath(editor.document);
+    if (logical === null) return false;
+    this.send({
+      type: "forward_search",
+      query_id: this.queryId(),
+      path: logical,
+      line: editor.selection.active.line + 1
+    });
+    this.panel.reveal();
+    return true;
+  }
+
+  async revealSource(result) {
+    try {
+      const fileName = sourceFilePath(this.document.fileName, result.path);
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(fileName));
+      const line = Math.max(0, Math.min(document.lineCount - 1, result.line - 1));
+      const position = new vscode.Position(line, 0);
+      const editor = await vscode.window.showTextDocument(document, {
+        viewColumn: vscode.ViewColumn.One,
+        preserveFocus: false,
+        preview: false
+      });
+      editor.selection = new vscode.Selection(position, position);
+      editor.revealRange(
+        new vscode.Range(position, position),
+        vscode.TextEditorRevealType.InCenterIfOutsideViewport
+      );
+    } catch (error) {
+      this.output.appendLine(`[preview] could not reveal source: ${error.message}`);
     }
   }
 
@@ -238,6 +297,12 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.commands.registerCommand("tectonicPreview.cancel", () => {
     if (activeSession) activeSession.cancel();
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand("tectonicPreview.forwardSearch", () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!activeSession || !activeSession.forwardSearch(editor)) {
+      vscode.window.showInformationMessage("Start a SyncTeX-capable preview and place the cursor in one of its TeX sources.");
+    }
   }));
 }
 

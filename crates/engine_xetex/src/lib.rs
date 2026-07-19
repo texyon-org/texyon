@@ -66,6 +66,7 @@ mod shipout;
 mod state;
 #[allow(dead_code)]
 mod string_pool;
+mod sync_index;
 // Typed-memory foundation.
 #[allow(dead_code)]
 mod units;
@@ -81,6 +82,7 @@ pub use replay::source::{
     SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,
 };
 pub use page_manifest::PageExecution;
+pub use sync_index::{SyncIndex, SyncRect};
 pub use cancellation::EngineCancellation;
 pub use session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
 
