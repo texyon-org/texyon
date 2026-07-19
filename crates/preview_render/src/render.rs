@@ -7,13 +7,14 @@ use std::sync::Arc;
 
 use tectonic_xdv::{FileType, XdvError, XdvEvents, XdvParser};
 
-use crate::backend::{Backend, FontStyle, Matrix, PositionedGlyph};
+use crate::backend::{Backend, FontStyle, Matrix, PositionedChar, PositionedGlyph};
 use crate::color::Color;
 use crate::fingerprint::page_digest;
 use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
 use crate::resource::{
     Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest,
 };
+use crate::tfm::Tfm;
 
 const SP_TO_BP: f32 = 72.0 / 72.27 / 65_536.0;
 
@@ -218,7 +219,8 @@ impl<P: ResourceProvider> HotRenderer<P> {
             }
         }
 
-        let mut font_handles = BTreeMap::new();
+        let mut native_handles = BTreeMap::new();
+        let mut classic_handles = BTreeMap::new();
         let mut rendered = Vec::with_capacity(page_indices.len());
         for &page_index in page_indices {
             let page = &analysis.plans[page_index];
@@ -249,7 +251,7 @@ impl<P: ResourceProvider> HotRenderer<P> {
                         embolden,
                         vertical,
                     } => {
-                        let handle = match font_handles.get(identity) {
+                        let handle = match native_handles.get(identity) {
                             Some(handle) => *handle,
                             None => {
                                 let resource =
@@ -263,7 +265,7 @@ impl<P: ResourceProvider> HotRenderer<P> {
                                     &resource.bytes,
                                     *face_index,
                                 )?;
-                                font_handles.insert(*identity, handle);
+                                native_handles.insert(*identity, handle);
                                 handle
                             }
                         };
@@ -307,6 +309,55 @@ impl<P: ResourceProvider> HotRenderer<P> {
                                 backend.draw_pdf(&resource.bytes, *page, *transform)?
                             }
                         }
+                    }
+                    DrawOperation::ClassicChars {
+                        program_identity,
+                        encoding_identity,
+                        scale,
+                        chars,
+                        color,
+                        ..
+                    } => {
+                        let key = (*program_identity, *encoding_identity);
+                        let handle = match classic_handles.get(&key) {
+                            Some(handle) => *handle,
+                            None => {
+                                let program =
+                                    analysis.resources.get(program_identity).ok_or_else(|| {
+                                        RenderError::Resource(
+                                            "analyzed classic font disappeared".into(),
+                                        )
+                                    })?;
+                                let encoding =
+                                    analysis.resources.get(encoding_identity).ok_or_else(|| {
+                                        RenderError::Resource(
+                                            "analyzed font encoding disappeared".into(),
+                                        )
+                                    })?;
+                                let handle = backend.register_classic_font(
+                                    *program_identity,
+                                    &program.bytes,
+                                    *encoding_identity,
+                                    &encoding.bytes,
+                                )?;
+                                classic_handles.insert(key, handle);
+                                handle
+                            }
+                        };
+                        let positioned: Vec<_> = chars
+                            .iter()
+                            .map(|character| PositionedChar {
+                                character: character.character as u32,
+                                x_bp: character.x as f32 * SP_TO_BP,
+                                y_bp: character.y as f32 * SP_TO_BP,
+                            })
+                            .collect();
+                        backend.fill_chars(
+                            handle,
+                            *scale as f32 * SP_TO_BP,
+                            &positioned,
+                            *color,
+                        )?;
                     }
                 }
             }
@@ -364,6 +415,14 @@ pub(crate) enum DrawOperation {
         width: Option<f32>,
         height: Option<f32>,
     },
+    ClassicChars {
+        tfm_identity: ResourceIdentity,
+        program_identity: ResourceIdentity,
+        encoding_identity: ResourceIdentity,
+        scale: u32,
+        chars: Vec<ClassicPosition>,
+        color: Color,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -379,6 +438,13 @@ pub(crate) struct GlyphPosition {
     pub(crate) y: i32,
 }
 
+#[derive(Clone)]
+pub(crate) struct ClassicPosition {
+    pub(crate) character: i32,
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+}
+
 struct NativeFont {
     resource: Option<ResourceIdentity>,
     face_index: u32,
@@ -390,12 +456,21 @@ struct NativeFont {
     vertical: bool,
 }
 
+struct ClassicFont {
+    scale: u32,
+    tfm: Option<Tfm>,
+    tfm_identity: Option<ResourceIdentity>,
+    program_identity: Option<ResourceIdentity>,
+    encoding_identity: Option<ResourceIdentity>,
+}
+
 struct Walker<'a, P> {
     provider: &'a P,
     page: Option<PagePlan>,
     pages: Vec<PagePlan>,
     page_sizes: Vec<[f32; 2]>,
     fonts: BTreeMap<i32, NativeFont>,
+    classic_fonts: BTreeMap<i32, ClassicFont>,
     resources: BTreeMap<ResourceIdentity, Resource>,
     ledger: CoverageLedger,
     color: Color,
@@ -411,6 +486,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             pages: Vec::new(),
             page_sizes,
             fonts: BTreeMap::new(),
+            classic_fonts: BTreeMap::new(),
             resources: BTreeMap::new(),
             ledger: CoverageLedger::default(),
             color: Color::BLACK,
@@ -602,6 +678,107 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         for _ in chars {
             self.unsupported("classic-font-char")?;
         }
+        Ok(())
+    }
+
+    fn handle_char_run_ext(
+        &mut self,
+        font_num: i32,
+        chars: &[i32],
+        x: i32,
+        y: i32,
+    ) -> Result<i32, Self::Error> {
+        let Some(font) = self.classic_fonts.get(&font_num) else {
+            self.unsupported("undefined-classic-font")?;
+            return Ok(0);
+        };
+        let Some(tfm) = font.tfm.as_ref() else {
+            self.unsupported("missing-tfm")?;
+            return Ok(0);
+        };
+        let mut pen = x;
+        let mut positions = Vec::with_capacity(chars.len());
+        for &character in chars {
+            positions.push(ClassicPosition {
+                character,
+                x: pen,
+                y,
+            });
+            pen = pen.wrapping_add(tfm.advance(character, font.scale));
+        }
+        let advance = pen.wrapping_sub(x);
+        let scale = font.scale;
+        let identities = (
+            font.tfm_identity,
+            font.program_identity,
+            font.encoding_identity,
+        );
+        let (Some(tfm_identity), Some(program_identity), Some(encoding_identity)) = identities
+        else {
+            self.unsupported("incomplete-classic-font-resources")?;
+            return Ok(advance);
+        };
+        let color = self.color;
+        self.page_mut()?
+            .operations
+            .push(DrawOperation::ClassicChars {
+                tfm_identity,
+                program_identity,
+                encoding_identity,
+                scale,
+                chars: positions,
+                color,
+            });
+        self.ledger.record_supported("classic-char-run");
+        Ok(advance)
+    }
+
+    fn handle_define_font(
+        &mut self,
+        font_num: i32,
+        _checksum: u32,
+        scale_factor: u32,
+        _design_size: u32,
+        area: &str,
+        name: &str,
+    ) -> Result<(), Self::Error> {
+        let resource_name = format!("{area}{name}");
+        let tfm_resource = self.provider.resolve(&ResourceRequest {
+            kind: ResourceKind::Tfm,
+            name: resource_name.clone(),
+        })?;
+        let program = self.provider.resolve(&ResourceRequest {
+            kind: ResourceKind::FontProgram,
+            name: resource_name.clone(),
+        })?;
+        let encoding = self.provider.resolve(&ResourceRequest {
+            kind: ResourceKind::Encoding,
+            name: resource_name,
+        })?;
+        let tfm = tfm_resource
+            .as_ref()
+            .and_then(|resource| Tfm::parse(&resource.bytes));
+        let tfm_identity = tfm_resource.as_ref().map(|resource| resource.identity);
+        let program_identity = program.as_ref().map(|resource| resource.identity);
+        let encoding_identity = encoding.as_ref().map(|resource| resource.identity);
+        for resource in [tfm_resource, program, encoding].into_iter().flatten() {
+            self.resources.insert(resource.identity, resource);
+        }
+        if tfm.is_some() && program_identity.is_some() && encoding_identity.is_some() {
+            self.ledger.record_supported("classic-font-resource");
+        } else {
+            self.ledger.record_unsupported("classic-font-resource");
+        }
+        self.classic_fonts.insert(
+            font_num,
+            ClassicFont {
+                scale: scale_factor,
+                tfm,
+                tfm_identity,
+                program_identity,
+                encoding_identity,
+            },
+        );
         Ok(())
     }
 
@@ -889,9 +1066,28 @@ mod tests {
 
     struct MutableResources(RefCell<Vec<u8>>);
 
+    struct ClassicResources;
+
     impl ResourceProvider for MutableResources {
         fn resolve(&self, _request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
             Ok(Some(Resource::from_bytes(self.0.borrow().clone())))
+        }
+    }
+
+    impl ResourceProvider for ClassicResources {
+        fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
+            let bytes = match request.kind {
+                ResourceKind::Tfm => {
+                    let mut bytes = crate::tfm::tests::synthetic_tfm();
+                    bytes[4..6].copy_from_slice(&97u16.to_be_bytes());
+                    bytes[6..8].copy_from_slice(&97u16.to_be_bytes());
+                    bytes
+                }
+                ResourceKind::FontProgram => b"font-program".to_vec(),
+                ResourceKind::Encoding => b"/Encoding [ /A ] def".to_vec(),
+                _ => return Ok(None),
+            };
+            Ok(Some(Resource::from_bytes(bytes)))
         }
     }
 
@@ -977,10 +1173,7 @@ mod tests {
             analysis.pages()[0].fingerprint,
             PageFingerprint::Uncertain { page_index: 0, .. }
         ));
-        assert!(analysis
-            .ledger()
-            .unsupported()
-            .contains_key("classic-font-char"));
+        assert!(analysis.ledger().unsupported().contains_key("missing-tfm"));
     }
 
     #[test]
@@ -1091,5 +1284,23 @@ mod tests {
             analysis.pages()[0].fingerprint,
             PageFingerprint::Stable(_)
         ));
+    }
+
+    #[test]
+    fn classic_font_run_uses_tfm_advance_and_frozen_resources() {
+        let mut renderer = HotRenderer::new(ClassicResources);
+        let analysis = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
+        let DrawOperation::ClassicChars { chars, scale, .. } = &analysis.plans[0].operations[0]
+        else {
+            panic!("missing classic character operation");
+        };
+        assert_eq!(*scale, 655_360);
+        assert_eq!(chars.len(), 1);
+        assert_eq!(chars[0].character, 97);
+        assert!(matches!(
+            analysis.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
+        assert_eq!(analysis.resources.len(), 3);
     }
 }

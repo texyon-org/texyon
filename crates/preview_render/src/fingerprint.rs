@@ -80,6 +80,28 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                 digest.update(width.map(f32::to_bits).unwrap_or(u32::MAX).to_be_bytes());
                 digest.update(height.map(f32::to_bits).unwrap_or(u32::MAX).to_be_bytes());
             }
+            DrawOperation::ClassicChars {
+                tfm_identity,
+                program_identity,
+                encoding_identity,
+                scale,
+                chars,
+                color,
+            } => {
+                digest.update([3]);
+                digest.update(tfm_identity.0);
+                digest.update(program_identity.0);
+                digest.update(encoding_identity.0);
+                digest.update(scale.to_be_bytes());
+                for character in chars {
+                    digest.update(character.character.to_be_bytes());
+                    digest.update(character.x.to_be_bytes());
+                    digest.update(character.y.to_be_bytes());
+                }
+                for value in [color.red, color.green, color.blue, color.alpha] {
+                    digest.update(value.to_bits().to_be_bytes());
+                }
+            }
         }
     }
     digest.finalize().into()

@@ -58,6 +58,17 @@ pub struct PositionedGlyph {
     pub y_bp: f32,
 }
 
+/// One classic-font character positioned in big points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PositionedChar {
+    /// TeX character code.
+    pub character: u32,
+    /// Horizontal origin in big points.
+    pub x_bp: f32,
+    /// Vertical origin in big points.
+    pub y_bp: f32,
+}
+
 /// XeTeX native-font transforms and synthetic weight.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FontStyle {
@@ -84,6 +95,15 @@ pub trait Backend {
         face_index: u32,
     ) -> Result<FontId, RenderError>;
 
+    /// Register a classic font program and its frozen encoding vector.
+    fn register_classic_font(
+        &mut self,
+        identity: ResourceIdentity,
+        bytes: &[u8],
+        encoding_identity: ResourceIdentity,
+        encoding_bytes: &[u8],
+    ) -> Result<FontId, RenderError>;
+
     /// Fill an axis-aligned rule in `color`.
     fn fill_rule(
         &mut self,
@@ -102,6 +122,15 @@ pub trait Backend {
         glyphs: &[PositionedGlyph],
         color: Color,
         style: FontStyle,
+    ) -> Result<(), RenderError>;
+
+    /// Fill positioned classic-font characters.
+    fn fill_chars(
+        &mut self,
+        font: FontId,
+        size_bp: f32,
+        chars: &[PositionedChar],
+        color: Color,
     ) -> Result<(), RenderError>;
 
     /// Draw an encoded raster image using its analyzed transform.
@@ -138,6 +167,16 @@ impl Backend for NullBackend {
         Ok(FontId(0))
     }
 
+    fn register_classic_font(
+        &mut self,
+        _identity: ResourceIdentity,
+        _bytes: &[u8],
+        _encoding_identity: ResourceIdentity,
+        _encoding_bytes: &[u8],
+    ) -> Result<FontId, RenderError> {
+        Ok(FontId(0))
+    }
+
     fn fill_rule(
         &mut self,
         _x_bp: f32,
@@ -156,6 +195,16 @@ impl Backend for NullBackend {
         _glyphs: &[PositionedGlyph],
         _color: Color,
         _style: FontStyle,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn fill_chars(
+        &mut self,
+        _font: FontId,
+        _size_bp: f32,
+        _chars: &[PositionedChar],
+        _color: Color,
     ) -> Result<(), RenderError> {
         Ok(())
     }

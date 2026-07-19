@@ -11,8 +11,11 @@ mod fingerprint;
 mod pagesize;
 mod render;
 mod resource;
+mod tfm;
 
-pub use backend::{Backend, FontId, FontStyle, Matrix, NullBackend, PositionedGlyph};
+pub use backend::{
+    Backend, FontId, FontStyle, Matrix, NullBackend, PositionedChar, PositionedGlyph,
+};
 pub use color::Color;
 pub use render::{
     Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, RenderError,
