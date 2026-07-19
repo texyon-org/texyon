@@ -79,6 +79,10 @@ fn build_native_character(
     match src {
         NativeCharSrc::Mapped(len) => {
             let p = new_native_word_node(mem, eqtb, f, len)?;
+            mem.journal_mark_range(
+                p + NATIVE_NODE_SIZE_NN,
+                crate::state::native_text_words(len),
+            );
             let text = mem.as_u16_ptr_mut(p + NATIVE_NODE_SIZE_NN);
             for i in 0..len {
                 // SAFETY: node sized for `len` UTF-16 units; `i < len`. The
@@ -103,6 +107,7 @@ fn build_native_character(
             } else {
                 mem.set_b16s1(p + 4, 1);
             }
+            mem.journal_mark_range(p + NATIVE_NODE_SIZE_NN, 1);
             let text = mem.as_u16_ptr_mut(p + NATIVE_NODE_SIZE_NN);
             // SAFETY: node sized for up to 2 UTF-16 units; arena never moves.
             unsafe {

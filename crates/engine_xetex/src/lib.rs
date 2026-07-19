@@ -42,6 +42,7 @@ mod hyphenation;
 mod input;
 #[allow(dead_code)] // used as the translation progresses
 mod io;
+mod journal;
 mod linebreak;
 mod main_control;
 mod math;

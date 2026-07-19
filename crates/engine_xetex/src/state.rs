@@ -298,6 +298,7 @@ pub(crate) struct EqtbState {
     pub hash_extra: i32,
     pub eqtb_top: i32,
     pub hash_top: i32,
+    pub journal: crate::journal::EqtbJournal,
 }
 
 impl Default for EqtbState {
@@ -319,11 +320,19 @@ impl Default for EqtbState {
             hash_extra: 0,
             eqtb_top: 0,
             hash_top: 0,
+            journal: crate::journal::EqtbJournal::default(),
         }
     }
 }
 
 impl EqtbState {
+    #[inline(always)]
+    fn note(&mut self, index: usize) {
+        if self.journal.words.armed() {
+            self.journal.words.note(index, self.data[index]);
+        }
+    }
+
     /// Read `eqtb[p].b32.s1`.
     #[inline]
     pub fn b32s1(&self, p: i32) -> i32 {
@@ -334,7 +343,16 @@ impl EqtbState {
     /// Write `eqtb[p].b32.s1`.
     #[inline]
     pub fn set_b32s1(&mut self, p: i32, v: i32) {
-        self.data[p as usize].b32.s1 = v;
+        let index = p as usize;
+        self.note(index);
+        self.data[index].b32.s1 = v;
+    }
+
+    #[inline]
+    pub fn set_word(&mut self, p: i32, value: crate::mem_types::MemoryWord) {
+        let index = p as usize;
+        self.note(index);
+        self.data[index] = value;
     }
 
     /// Read `hash[p].s0` (the link half of a hash-table entry).
@@ -346,7 +364,11 @@ impl EqtbState {
     /// Write `hash[p].s0 = v`.
     #[inline]
     pub fn set_hash_s0(&mut self, p: i32, v: i32) {
-        self.hash[(p as usize) - 514].s0 = v;
+        let index = p as usize - 514;
+        if self.journal.hash.armed() {
+            self.journal.hash.note(index, self.hash[index]);
+        }
+        self.hash[index].s0 = v;
     }
 
     /// Read `hash[p].s1` (the "text" half of a hash-table entry).
@@ -358,7 +380,11 @@ impl EqtbState {
     /// Write `hash[p].s1 = v`.
     #[inline]
     pub fn set_hash_s1(&mut self, p: i32, v: i32) {
-        self.hash[(p as usize) - 514].s1 = v;
+        let index = p as usize - 514;
+        if self.journal.hash.armed() {
+            self.journal.hash.note(index, self.hash[index]);
+        }
+        self.hash[index].s1 = v;
     }
 
     /// Read `prim[p].s0` (the link half of a primitive-table entry).
@@ -370,7 +396,11 @@ impl EqtbState {
     /// Write `prim[p].s0 = v`.
     #[inline]
     pub fn set_prim_s0(&mut self, p: i32, v: i32) {
-        self.prim[p as usize].s0 = v;
+        let index = p as usize;
+        if self.journal.prim.armed() {
+            self.journal.prim.note(index, self.prim[index]);
+        }
+        self.prim[index].s0 = v;
     }
 
     /// Read `prim[p].s1` (the "text" half of a primitive-table entry).
@@ -382,7 +412,11 @@ impl EqtbState {
     /// Write `prim[p].s1 = v`.
     #[inline]
     pub fn set_prim_s1(&mut self, p: i32, v: i32) {
-        self.prim[p as usize].s1 = v;
+        let index = p as usize;
+        if self.journal.prim.armed() {
+            self.journal.prim.note(index, self.prim[index]);
+        }
+        self.prim[index].s1 = v;
     }
 
     /// Copy the full `MemoryWord` at `eqtb[p]`.
@@ -401,7 +435,9 @@ impl EqtbState {
     /// Write `eqtb[p].b16.s1`.
     #[inline]
     pub fn set_b16s1(&mut self, p: i32, v: u16) {
-        self.data[p as usize].b16.s1 = v;
+        let index = p as usize;
+        self.note(index);
+        self.data[index].b16.s1 = v;
     }
 
     /// Read `eqtb[p].b16.s0` (the "level" half).
@@ -414,7 +450,9 @@ impl EqtbState {
     /// Write `eqtb[p].b16.s0`.
     #[inline]
     pub fn set_b16s0(&mut self, p: i32, v: u16) {
-        self.data[p as usize].b16.s0 = v;
+        let index = p as usize;
+        self.note(index);
+        self.data[index].b16.s0 = v;
     }
 
     /// Read `XEQ_LEVEL(p)` = `xeq_level[p - INT_BASE]`.
@@ -426,7 +464,11 @@ impl EqtbState {
     /// Write `XEQ_LEVEL(p) = v`.
     #[inline]
     pub fn set_xeq_level_at(&mut self, p: i32, v: u16) {
-        self.xeq_level[(p - crate::consts::INT_BASE) as usize] = v;
+        let index = (p - crate::consts::INT_BASE) as usize;
+        if self.journal.xeq.armed() {
+            self.journal.xeq.note(index, self.xeq_level[index]);
+        }
+        self.xeq_level[index] = v;
     }
 }
 
@@ -446,6 +488,7 @@ pub(crate) struct MemState {
     pub data: Vec<crate::mem_types::MemoryWord>,
     /// Owned shaped-glyph payloads referenced by handles in native nodes.
     pub glyph_blobs: crate::glyph_arena::GlyphBlobArena,
+    pub journal: crate::journal::WordJournal,
     pub lo_mem_max: i32,
     pub hi_mem_min: i32,
     pub avail: i32,
@@ -471,6 +514,13 @@ pub(crate) struct MemState {
 }
 
 impl MemState {
+    #[inline(always)]
+    fn note(&mut self, index: usize) {
+        if self.journal.armed() {
+            self.journal.note(index, self.data[index]);
+        }
+    }
+
     /// Read `mem[p].b32.s0`.
     #[inline]
     pub(crate) fn b32s0(&self, p: impl crate::units::MemAddr) -> i32 {
@@ -525,38 +575,50 @@ impl MemState {
     /// Write `mem[p].b32.s0`. Union writes through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b32s0(&mut self, p: impl crate::units::MemAddr, v: i32) {
-        self.data[p.addr() as usize].b32.s0 = v;
+        let index = p.addr() as usize;
+        self.note(index);
+        self.data[index].b32.s0 = v;
     }
 
     /// Write `mem[p].b32.s1` (the `LLIST_link` field).
     #[inline]
     pub(crate) fn set_b32s1(&mut self, p: impl crate::units::MemAddr, v: i32) {
-        self.data[p.addr() as usize].b32.s1 = v;
+        let index = p.addr() as usize;
+        self.note(index);
+        self.data[index].b32.s1 = v;
     }
 
     /// Write `mem[p].b16.s0` (low 16 bits of the first half-word). Union writes
     /// through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b16s0(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        self.data[p.addr() as usize].b16.s0 = v;
+        let index = p.addr() as usize;
+        self.note(index);
+        self.data[index].b16.s0 = v;
     }
 
     /// Write `mem[p].b16.s1` (high 16 bits of the first half-word).
     #[inline]
     pub(crate) fn set_b16s1(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        self.data[p.addr() as usize].b16.s1 = v;
+        let index = p.addr() as usize;
+        self.note(index);
+        self.data[index].b16.s1 = v;
     }
 
     /// Write `mem[p].b16.s2`.
     #[inline]
     pub(crate) fn set_b16s2(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        self.data[p.addr() as usize].b16.s2 = v;
+        let index = p.addr() as usize;
+        self.note(index);
+        self.data[index].b16.s2 = v;
     }
 
     /// Write `mem[p].b16.s3`.
     #[inline]
     pub(crate) fn set_b16s3(&mut self, p: impl crate::units::MemAddr, v: u16) {
-        self.data[p.addr() as usize].b16.s3 = v;
+        let index = p.addr() as usize;
+        self.note(index);
+        self.data[index].b16.s3 = v;
     }
 
     /// Read the `gr` (f64) field of `mem[p]`.
@@ -569,7 +631,9 @@ impl MemState {
     /// Write the `gr` (f64) field of `mem[p]`.
     #[inline]
     pub(crate) fn set_gr(&mut self, p: impl crate::units::MemAddr, v: f64) {
-        self.data[p.addr() as usize].gr = v;
+        let index = p.addr() as usize;
+        self.note(index);
+        self.data[index].gr = v;
     }
 
     /// Reinterpret the arena from word `p` onward as a `*mut u16`. Valid past
@@ -602,8 +666,32 @@ impl MemState {
     /// Write a full `MemoryWord` to `mem[p]`.
     #[inline]
     pub(crate) fn set_word(&mut self, p: impl crate::units::MemAddr, w: crate::mem_types::MemoryWord) {
-        self.data[p.addr() as usize] = w;
+        let index = p.addr() as usize;
+        self.note(index);
+        self.data[index] = w;
     }
+
+    /// Record a raw pointer writer's destination range before it mutates the
+    /// arena outside the typed setter surface.
+    pub(crate) fn journal_mark_range(
+        &mut self,
+        p: impl crate::units::MemAddr,
+        words: usize,
+    ) {
+        if !self.journal.armed() {
+            return;
+        }
+        let start = p.addr() as usize;
+        for index in start..start + words {
+            self.journal.note(index, self.data[index]);
+        }
+    }
+}
+
+pub(crate) fn native_text_words(units: i32) -> usize {
+    (units.max(0) as usize * std::mem::size_of::<u16>()).div_ceil(
+        std::mem::size_of::<crate::mem_types::MemoryWord>(),
+    )
 }
 
 /// The kind of grouping level on the save stack (`cur_group`,
@@ -1040,6 +1128,9 @@ pub(crate) struct FontState {
     /// `fmem_ptr` is the next-free write pointer into this arena. Serialized
     /// in the format dump. Plain `MemoryWord *`, no newtype debt.
     pub font_info: Vec<crate::mem_types::MemoryWord>,
+    pub font_info_journal: crate::journal::PlainTrail<crate::mem_types::MemoryWord>,
+    /// Font-memory high-water mark at the start of the open journal epoch.
+    pub fmem_epoch_base: i32,
     /// Rust-owned dynamic XDV buffer.
     pub xdv_buffer: Vec<u8>,
     /// Rust-owned dynamic mapped text buffer.
@@ -1098,6 +1189,8 @@ impl Default for FontState {
             hyphen_char: Vec::new(),
             skew_char: Vec::new(),
             font_info: Vec::new(),
+            font_info_journal: crate::journal::PlainTrail::default(),
+            fmem_epoch_base: 0,
             xdv_buffer: Vec::new(),
             mapped_text: Vec::new(),
         }
@@ -1291,11 +1384,19 @@ impl FontState {
     }
     #[inline]
     pub(crate) fn set_font_info_b16(&mut self, k: i32, v: crate::mem_types::B16x4) {
-        self.font_info[k as usize].b16 = v;
+        let index = k as usize;
+        if self.font_info_journal.armed() && k < self.fmem_epoch_base {
+            self.font_info_journal.note(index, self.font_info[index]);
+        }
+        self.font_info[index].b16 = v;
     }
     #[inline]
     pub(crate) fn set_font_info_b32s1(&mut self, k: i32, v: i32) {
-        self.font_info[k as usize].b32.s1 = v;
+        let index = k as usize;
+        if self.font_info_journal.armed() && k < self.fmem_epoch_base {
+            self.font_info_journal.note(index, self.font_info[index]);
+        }
+        self.font_info[index].b32.s1 = v;
     }
     #[inline]
     pub(crate) fn set_font_params(&mut self, f: i32, v: i32) {

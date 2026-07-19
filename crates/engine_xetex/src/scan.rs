@@ -4132,7 +4132,7 @@ pub(crate) fn scan_something_internal_in(
             ASSIGN_FONT_DIMEN => {
                 find_font_dimen_in(st, false)?;
                 let fp = st.fonts.fmem_ptr;
-                st.fonts.font_info[fp as usize].b32.s1 = 0;
+                st.fonts.set_font_info_b32s1(fp, 0);
                 st.scanner.cur_val = unsafe { st.fonts.font_info[st.scanner.cur_val as usize].b32.s1 };
                 st.scanner.cur_val_level = DIMEN_VAL as u8;
             }
@@ -5115,7 +5115,7 @@ pub(crate) fn find_font_dimen_in(
                         }));
                     }
                     let k = st.fonts.fmem_ptr;
-                    st.fonts.font_info[k as usize].b32.s1 = 0;
+                    st.fonts.set_font_info_b32s1(k, 0);
                     st.fonts.fmem_ptr += 1;
                     st.fonts.font_params[f as usize] += 1;
                     if n == st.fonts.font_params[f as usize] {

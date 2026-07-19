@@ -3699,7 +3699,8 @@ pub(crate) unsafe fn new_font_in(
             return Err(MainControlAbort::Save(ab));
         }
     }
-    st.eqtb.data[(FONT_ID_BASE + f) as usize] = st.eqtb.word(u);
+    let word = st.eqtb.word(u);
+    st.eqtb.set_word(FONT_ID_BASE + f, word);
     st.eqtb.set_hash_s1(FONT_ID_BASE + f, t);
     Ok(())
 }
@@ -5203,7 +5204,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                             .as_mut_ptr()
                             .add(st.scanner.native_len() as usize) = *st
                             .mem
-                            .as_u16_ptr_mut(st.mainloop.main_pp.0 + NATIVE_NODE_SIZE)
+                            .as_u16_ptr(st.mainloop.main_pp.0 + NATIVE_NODE_SIZE)
                             .add(i as usize);
                         st.scanner.set_native_len(st.scanner.native_len() + 1);
                     }
@@ -5340,12 +5341,16 @@ pub(crate) unsafe fn main_control_main_loop_in(
                     crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, mk + old_len)?;
                 st.mem.set_b32s1(st.mainloop.main_pp, new_node);
                 st.input.cur_list.tail.0 = st.mem.b32s1(st.mainloop.main_pp);
+                st.mem.journal_mark_range(
+                    st.input.cur_list.tail.0 + NATIVE_NODE_SIZE,
+                    crate::state::native_text_words(mk + old_len),
+                );
                 for i in 0..old_len {
                     *st.mem
                         .as_u16_ptr_mut(st.input.cur_list.tail.0 + NATIVE_NODE_SIZE)
                         .add(i as usize) = *st
                         .mem
-                        .as_u16_ptr_mut(st.mainloop.main_pp.0 + NATIVE_NODE_SIZE)
+                        .as_u16_ptr(st.mainloop.main_pp.0 + NATIVE_NODE_SIZE)
                         .add(i as usize);
                 }
                 for i in 0..mk {
@@ -5375,6 +5380,10 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 let new_node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, mk)?;
                 st.mem.set_b32s1(st.mainloop.main_pp, new_node);
                 st.input.cur_list.tail.0 = st.mem.b32s1(st.mainloop.main_pp);
+                st.mem.journal_mark_range(
+                    st.input.cur_list.tail.0 + NATIVE_NODE_SIZE,
+                    crate::state::native_text_words(mk),
+                );
                 for i in 0..mk {
                     *st.mem
                         .as_u16_ptr_mut(st.input.cur_list.tail.0 + NATIVE_NODE_SIZE)
@@ -5440,12 +5449,16 @@ pub(crate) unsafe fn main_control_main_loop_in(
                             mf,
                             pp_len + 1 + tail_len,
                         )?;
+                        st.mem.journal_mark_range(
+                            tmp + NATIVE_NODE_SIZE,
+                            crate::state::native_text_words(pp_len + 1 + tail_len),
+                        );
                         let mut ki = 0i32;
                         for t in 0..pp_len {
                             *st.mem
                                 .as_u16_ptr_mut(tmp + NATIVE_NODE_SIZE)
                                 .add(ki as usize) =
-                                *st.mem.as_u16_ptr_mut(pp + NATIVE_NODE_SIZE).add(t as usize);
+                                *st.mem.as_u16_ptr(pp + NATIVE_NODE_SIZE).add(t as usize);
                             ki += 1;
                         }
                         *st.mem
@@ -5457,7 +5470,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                                 .as_u16_ptr_mut(tmp + NATIVE_NODE_SIZE)
                                 .add(ki as usize) = *st
                                 .mem
-                                .as_u16_ptr_mut(st.input.cur_list.tail.0 + NATIVE_NODE_SIZE)
+                                .as_u16_ptr(st.input.cur_list.tail.0 + NATIVE_NODE_SIZE)
                                 .add(t as usize);
                             ki += 1;
                         }

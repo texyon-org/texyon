@@ -1559,6 +1559,7 @@ mod deterministic_input_tests {
     }
 }
 pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
+    crate::journal::disarm(st);
     reset_layout_font_caches();
     tt_cleanup_pdf_files_close();
     libc::free(TEX_FORMAT_DEFAULT as *mut _);

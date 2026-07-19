@@ -925,6 +925,7 @@ fn merge_justifiable_native_words(
                 // SAFETY: copying `nlen` UTF-16 codes from the pool tail into the
                 // freshly-allocated native-word node text region.
                 let src = unsafe { strings.str_pool.as_ptr().add(base as usize) };
+                mem.journal_mark_range(q.0 + 6, crate::state::native_text_words(nlen));
                 let dst = mem.as_u16_ptr_mut(q + 6);
                 for j in 0..nlen {
                     // SAFETY: both regions hold at least `nlen` u16 codes.

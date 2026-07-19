@@ -796,6 +796,8 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         st.mem.set_b32s0(tail + 7, D2Fix(t.x));
         st.mem.set_b32s1(tail + 7, D2Fix(t.y));
         // path bytes: mem[p + PIC_NODE_SIZE]
+        st.mem
+            .journal_mark_range(tail + PIC_NODE_SIZE, path_len.div_ceil(8));
         let dst = st.mem.node_addr(tail + PIC_NODE_SIZE) as *mut u8;
         unsafe {
             std::ptr::copy_nonoverlapping(pic_path as *const u8, dst, path_len);

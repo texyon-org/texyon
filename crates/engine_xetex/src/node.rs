@@ -2332,6 +2332,8 @@ impl NodePtr<WhatsitNode> {
     /// `mem[p + NATIVE_NODE_SIZE]` (`NATIVE_NODE_SIZE = 6`).
     #[inline]
     pub fn native_text_ptr_mut(self, mem: &mut MemState) -> *mut u16 {
+        let words = crate::state::native_text_words(self.native_length(mem) as i32);
+        mem.journal_mark_range(self.idx.offset(6).0, words);
         mem.as_u16_ptr_mut(self.idx.offset(6).0)
     }
 }
@@ -2775,6 +2777,7 @@ mod tests {
         MemState {
             data: vec![zero_word(); n],
             glyph_blobs: Default::default(),
+            journal: Default::default(),
             lo_mem_max: 0,
             hi_mem_min: 1_000_000, // every test index is lo-mem
             avail: 0,

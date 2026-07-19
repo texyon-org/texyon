@@ -1460,6 +1460,7 @@ pub unsafe fn measure_native_node(
     p: i32,
     use_glyph_metrics: c_int,
 ) -> Result<(), NativeFontAbort> {
+    mem.journal_mark_range(p, 6);
     let node = mem.data.as_mut_ptr().add(p as usize);
     let txt_len = (*node.add(4)).b16.s1 as i32; // native_length
     let txt_ptr = node.add(6) as *mut u16; // node + NATIVE_NODE_SIZE

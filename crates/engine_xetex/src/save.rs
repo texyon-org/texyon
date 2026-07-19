@@ -755,11 +755,11 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
                             return Err(UnsaveAbort::Save(ab));
                         }
                         let w = st.save_stack.word(sp);
-                        st.eqtb.data[p as usize] = w;
+                        st.eqtb.set_word(p, w);
                     }
                 } else if st.eqtb.xeq_level_at(p) != LEVEL_ONE {
                     let w = st.save_stack.word(sp);
-                    st.eqtb.data[p as usize] = w;
+                    st.eqtb.set_word(p, w);
                     st.eqtb.set_xeq_level_at(p, l);
                 }
             }
