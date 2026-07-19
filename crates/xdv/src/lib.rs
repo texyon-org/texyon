@@ -145,6 +145,36 @@ pub trait XdvEvents {
         Ok(())
     }
 
+    /// Handle classic-font characters at `(x, y)` and return their total DVI
+    /// advance. The parser applies the returned advance before interpreting the
+    /// next positioning command.
+    fn handle_char_run_ext(
+        &mut self,
+        font_num: i32,
+        chars: &[i32],
+        x: i32,
+        y: i32,
+    ) -> Result<i32, Self::Error> {
+        let _ = (x, y);
+        self.handle_char_run(font_num, chars)?;
+        Ok(0)
+    }
+
+    /// Handle a classic DVI font definition.
+    #[allow(clippy::too_many_arguments)]
+    fn handle_define_font(
+        &mut self,
+        font_num: i32,
+        checksum: u32,
+        scale_factor: u32,
+        design_size: u32,
+        area: &str,
+        name: &str,
+    ) -> Result<(), Self::Error> {
+        let _ = (font_num, checksum, scale_factor, design_size, area, name);
+        Ok(())
+    }
+
     /// Handle a sequence of glyphs.
     #[allow(unused)]
     fn handle_glyph_run(
@@ -478,24 +508,25 @@ impl<T: XdvEvents> XdvParser<T> {
 
             // OK, no early exit.
 
+            let is_char = (opcode >= Opcode::SetCharNumber0 as u8
+                && opcode <= Opcode::SetCharNumber127 as u8)
+                || (opcode >= Opcode::SetChar1 as u8 && opcode <= Opcode::SetChar4 as u8);
+            if !is_char && !self.cur_char_run.is_empty() {
+                self.flush_char_run()?;
+            }
+
             cursor.get_u8().unwrap(); // consume the opcode
-            let mut char_run_ended = true; // most commands end runs of characters
 
             let rv = match opcode {
                 // This is the least ugly way I've found to map the u8 to the
                 // symbolic enum values.
-                oc if oc == Opcode::Noop as u8 => {
-                    char_run_ended = false;
-                    Ok(())
-                }
+                oc if oc == Opcode::Noop as u8 => Ok(()),
 
                 oc if oc >= Opcode::DefineFont1 as u8 && oc <= Opcode::DefineFont4 as u8 => {
-                    char_run_ended = false;
                     self.do_define_font(oc, &mut cursor)
                 }
 
                 oc if oc == Opcode::DefineNativeFont as u8 => {
-                    char_run_ended = false;
                     self.do_define_native_font(oc, &mut cursor)
                 }
 
@@ -505,10 +536,7 @@ impl<T: XdvEvents> XdvParser<T> {
 
                 oc if oc == Opcode::EndOfPage as u8 => self.do_end_of_page(oc, &mut cursor),
 
-                oc if oc == Opcode::PushStack as u8 => {
-                    char_run_ended = false;
-                    self.do_push_stack(oc, &mut cursor)
-                }
+                oc if oc == Opcode::PushStack as u8 => self.do_push_stack(oc, &mut cursor),
 
                 oc if oc == Opcode::PopStack as u8 => self.do_pop_stack(oc, &mut cursor),
 
@@ -555,12 +583,10 @@ impl<T: XdvEvents> XdvParser<T> {
                 oc if oc >= Opcode::SetCharNumber0 as u8
                     && oc <= Opcode::SetCharNumber127 as u8 =>
                 {
-                    char_run_ended = false;
                     self.do_set_char_number(oc, &mut cursor)
                 }
 
                 oc if oc >= Opcode::SetChar1 as u8 && oc <= Opcode::SetChar4 as u8 => {
-                    char_run_ended = false;
                     self.do_set_char(oc, &mut cursor)
                 }
 
@@ -602,16 +628,29 @@ impl<T: XdvEvents> XdvParser<T> {
                     return Err(e);
                 }
             }
-
-            if char_run_ended && !self.cur_char_run.is_empty() {
-                self.events
-                    .handle_char_run(self.cur_font_num, &self.cur_char_run)?;
-                self.cur_char_run.clear();
-            }
         }
 
         self.offset += cursor.checkpoint as u64;
         Ok((cursor.checkpoint, keep_going))
+    }
+
+    fn flush_char_run(&mut self) -> Result<(), T::Error> {
+        if self.cur_char_run.is_empty() {
+            return Ok(());
+        }
+        let state = self
+            .stack
+            .last()
+            .ok_or_else(|| XdvError::Malformed(self.offset).into())?;
+        let advance = self.events.handle_char_run_ext(
+            self.cur_font_num,
+            &self.cur_char_run,
+            state.h,
+            state.v,
+        )?;
+        self.stack.last_mut().unwrap().h += advance;
+        self.cur_char_run.clear();
+        Ok(())
     }
 
     fn do_preamble(&mut self, opcode: u8, cursor: &mut Cursor<T>) -> InternalResult<(), T::Error> {
@@ -647,26 +686,29 @@ impl<T: XdvEvents> XdvParser<T> {
             return Err(XdvError::IllegalOpcode(opcode, cursor.global_offset()).into_internal());
         }
 
-        let _font_num = cursor.get_compact_i32_smpos(opcode - Opcode::DefineFont1 as u8)?;
-        let _checksum = cursor.get_u32()?;
-        let _scale_factor = cursor.get_u32()?;
-        let _design_size = cursor.get_u32()?;
+        let font_num = cursor.get_compact_i32_smpos(opcode - Opcode::DefineFont1 as u8)?;
+        let checksum = cursor.get_u32()?;
+        let scale_factor = cursor.get_u32()?;
+        let design_size = cursor.get_u32()?;
         let area_len = cursor.get_u8()?;
         let name_len = cursor.get_u8()?;
 
-        // TODO: figure out what to do with these. In Tectonic's context,
-        // non-"native" font definitions are a bad sign, since they correspond
-        // to fonts that we wouldn't be able to express in HTML. But note that
-        // this crate should support generic XDV decoding, not necessarily
-        // targeting HTML, as best it can.
-
-        use std::str::from_utf8;
-        let _area_str = from_utf8(cursor.get_slice(area_len as usize)?)
-            .unwrap()
+        let area_offset = cursor.global_offset();
+        let area = std::str::from_utf8(cursor.get_slice(area_len as usize)?)
+            .map_err(|_| XdvError::FromUTF8(area_offset).into_internal())?
             .to_owned();
-        let _name_str = from_utf8(cursor.get_slice(name_len as usize)?)
-            .unwrap()
+        let name_offset = cursor.global_offset();
+        let name = std::str::from_utf8(cursor.get_slice(name_len as usize)?)
+            .map_err(|_| XdvError::FromUTF8(name_offset).into_internal())?
             .to_owned();
+        self.events.handle_define_font(
+            font_num,
+            checksum,
+            scale_factor,
+            design_size,
+            &area,
+            &name,
+        )?;
         Ok(())
     }
 
@@ -1494,5 +1536,91 @@ mod tests {
             assert!(keep_going);
             assert_eq!(consumed, file.len());
         }
+    }
+
+    #[test]
+    fn classic_run_advance_precedes_following_positioned_event() {
+        #[derive(Default)]
+        struct Events {
+            defined: bool,
+            rule_x: i32,
+        }
+
+        impl XdvEvents for Events {
+            type Error = XdvError;
+
+            fn handle_define_font(
+                &mut self,
+                font_num: i32,
+                _checksum: u32,
+                _scale_factor: u32,
+                _design_size: u32,
+                _area: &str,
+                name: &str,
+            ) -> Result<(), Self::Error> {
+                self.defined = font_num == 0 && name == "cmr";
+                Ok(())
+            }
+
+            fn handle_char_run_ext(
+                &mut self,
+                font_num: i32,
+                chars: &[i32],
+                x: i32,
+                y: i32,
+            ) -> Result<i32, Self::Error> {
+                assert_eq!((font_num, chars, x, y), (0, &[65][..], 0, 0));
+                Ok(100)
+            }
+
+            fn handle_rule(
+                &mut self,
+                x: i32,
+                _y: i32,
+                _height: i32,
+                _width: i32,
+            ) -> Result<(), Self::Error> {
+                self.rule_x = x;
+                Ok(())
+            }
+        }
+
+        let mut bytes = vec![247, 7];
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.push(0);
+        bytes.push(139);
+        bytes.extend_from_slice(&[0; 40]);
+        bytes.extend_from_slice(&(-1i32).to_be_bytes());
+        bytes.extend_from_slice(&[243, 0]);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.extend_from_slice(&65_536u32.to_be_bytes());
+        bytes.extend_from_slice(&65_536u32.to_be_bytes());
+        bytes.extend_from_slice(&[0, 3]);
+        bytes.extend_from_slice(b"cmr");
+        bytes.extend_from_slice(&[171, 65, 137]);
+        bytes.extend_from_slice(&1i32.to_be_bytes());
+        bytes.extend_from_slice(&1i32.to_be_bytes());
+        bytes.push(140);
+        bytes.push(248);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&2u16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.push(249);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.push(7);
+        bytes.extend_from_slice(&[223; 4]);
+
+        let mut parser = XdvParser::new(Events::default());
+        let (consumed, _) = parser.parse(&bytes).unwrap();
+        assert_eq!(consumed, bytes.len());
+        let events = parser.finish().unwrap();
+        assert!(events.defined);
+        assert_eq!(events.rule_x, 100);
     }
 }
