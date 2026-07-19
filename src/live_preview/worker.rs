@@ -1287,6 +1287,38 @@ mod tests {
     }
 
     #[test]
+    fn supersession_and_shutdown_races_survive_repeated_stress() {
+        for iteration in 0..20 {
+            let (_temp, sources) = sources();
+            let mut worker = LivePreviewWorker::spawn(sources, tuning(), || MockProcessor {
+                last: String::new(),
+            })
+            .unwrap();
+            let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+            worker.replace(None, "hang".into()).unwrap();
+            thread::sleep(Duration::from_millis(12));
+            if iteration % 2 == 0 {
+                worker.replace(None, format!("fixed-{iteration}")).unwrap();
+                let mut completed = false;
+                for _ in 0..3 {
+                    if matches!(
+                        worker.recv_timeout(Duration::from_secs(1)),
+                        Ok(WorkerEvent::Update { output, .. }) if output == format!("fixed-{iteration}")
+                    ) {
+                        completed = true;
+                        break;
+                    }
+                }
+                assert!(
+                    completed,
+                    "iteration {iteration} did not publish latest input"
+                );
+            }
+            worker.shutdown().unwrap();
+        }
+    }
+
+    #[test]
     fn rejection_catches_up_but_cannot_revoke_user_stop() {
         let (_temp, sources) = sources();
         let mut worker = LivePreviewWorker::spawn(sources, tuning(), || MockProcessor {

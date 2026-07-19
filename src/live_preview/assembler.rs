@@ -485,4 +485,41 @@ mod tests {
             Err(XdvAssemblyError::PrefixOutOfBounds { .. })
         ));
     }
+
+    #[test]
+    fn malformed_fragment_mutation_corpus_never_panics() {
+        let assembler = DocumentAssembler::new();
+        let base = assembler
+            .assemble(None, DocumentFragment::Complete(REAL_XDV))
+            .unwrap();
+
+        for length in 0..REAL_XDV.len() {
+            let result = std::panic::catch_unwind(|| {
+                assembler.assemble(None, DocumentFragment::Complete(&REAL_XDV[..length]))
+            });
+            assert!(result.is_ok(), "truncation at {length} panicked");
+        }
+
+        let mut seed = 0x8a5c_d789_635d_2dff_u64;
+        for iteration in 0..4096 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let mut mutated = REAL_XDV.to_vec();
+            let offset = seed as usize % mutated.len();
+            mutated[offset] ^= ((seed >> 32) as u8) | 1;
+            let split = (seed.rotate_left(19) as usize) % (REAL_XDV.len() + 1);
+            let result = std::panic::catch_unwind(|| {
+                let _ = assembler.assemble(None, DocumentFragment::Complete(&mutated));
+                let _ = assembler.assemble(
+                    Some(&base),
+                    DocumentFragment::Tail {
+                        prefix_len: split,
+                        bytes: &mutated[split..],
+                    },
+                );
+            });
+            assert!(result.is_ok(), "mutation {iteration} at {offset} panicked");
+        }
+    }
 }
