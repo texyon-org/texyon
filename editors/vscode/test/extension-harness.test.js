@@ -227,19 +227,27 @@ test("extension harness initializes dirty children, relays edits, resyncs, and r
     type: "update",
     frame_id: "1",
     source_revision: "0",
+    applied_request_seq: "0",
+    phase: "foreground",
     outcome: "complete",
     page_count: 1,
+    tail_pending: false,
     unsupported_pages: [{ page_index: 0, operations: { "missing-image-resource": 1 } }]
   });
   await tick();
   assert.equal(panels[0].posted.at(-1).event.frame_id, "1");
   assert.match(status.text, /unsupported content/);
   assert.match(output.text, /missing-image-resource/);
+  assert.match(output.text, /end-to-end/);
   panels[0].receive({ type: "ready" });
   assert.equal(fakeProcess.requests.at(-1).type, "resync");
   panels[0].receive({ type: "viewport", first: 0, last: 0 });
   panels[0].receive({ type: "painted", frame_id: "1", paint_ms: 4.5 });
   assert.equal(fakeProcess.requests.at(-1).type, "painted");
+  assert.match(output.text, /painted in 4\.50 ms/);
+  const requestCount = fakeProcess.requests.length;
+  panels[0].receive({ type: "painted", frame_id: "1", paint_ms: -1 });
+  assert.equal(fakeProcess.requests.length, requestCount);
 
   changeListener({ document: child, contentChanges: [{}] });
   assert.deepEqual(fakeProcess.requests.at(-1), {

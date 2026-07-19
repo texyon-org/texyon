@@ -24,6 +24,8 @@ class PreviewSession {
     this.disposed = false;
     this.synctex = false;
     this.nextQuery = 0n;
+    this.nextMutation = 0n;
+    this.mutationStarted = new Map();
 
     const executable = configuration.get("executable", "tectonic");
     const format = configuration.get("format", "latex");
@@ -102,7 +104,23 @@ class PreviewSession {
 
   send(message) {
     if (this.disposed || !this.process || this.process.exitCode !== null || !this.process.stdin.writable) return;
+    if (message.type === "initialize") {
+      this.mutationStarted.set("0", performance.now());
+    } else if (message.type === "replace") {
+      this.nextMutation += 1n;
+      this.mutationStarted.set(this.nextMutation.toString(), performance.now());
+    }
     this.process.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  reportFrameTiming(event) {
+    const started = this.mutationStarted.get(event.applied_request_seq);
+    if (started === undefined) return;
+    const elapsed = Math.max(0, performance.now() - started);
+    this.output.appendLine(
+      `[preview] frame ${event.frame_id} ${event.phase} end-to-end ${elapsed.toFixed(2)} ms`
+    );
+    if (!event.tail_pending) this.mutationStarted.delete(event.applied_request_seq);
   }
 
   onServerLine(line) {
@@ -133,6 +151,7 @@ class PreviewSession {
     switch (event.type) {
       case "update":
         this.hasFrame = true;
+        this.reportFrameTiming(event);
         this.panel.postUpdate(event);
         if (Array.isArray(event.unsupported_pages) && event.unsupported_pages.length > 0) {
           this.output.appendLine(`[preview] unsupported renderer operations: ${JSON.stringify(event.unsupported_pages)}`);
@@ -144,15 +163,18 @@ class PreviewSession {
           : `$(check) tectonic: ${event.page_count} page${event.page_count === 1 ? "" : "s"}`);
         break;
       case "cancelled":
+        this.mutationStarted.delete(event.applied_request_seq);
         break;
       case "stopped":
         this.setStatus("$(debug-pause) tectonic: stopped; edit to resume");
         break;
       case "aborted":
+        this.mutationStarted.delete(event.applied_request_seq);
         this.output.appendLine(`[preview] compile aborted:\n${event.log_tail || ""}`);
         this.setStatus("$(warning) tectonic: source error (kept last preview)");
         break;
       case "rejected":
+        this.mutationStarted.delete(event.request_seq);
         this.output.appendLine(`[preview] request rejected: ${event.reason}`);
         this.setStatus("$(warning) tectonic: edit rejected");
         break;
@@ -177,7 +199,13 @@ class PreviewSession {
     } else if (message.type === "viewport") {
       this.send({ type: "viewport", first: message.first, last: message.last });
     } else if (message.type === "painted") {
-      this.send({ type: "painted", frame_id: message.frame_id, paint_ms: message.paint_ms });
+      if (typeof message.frame_id === "string" &&
+          typeof message.paint_ms === "number" && Number.isFinite(message.paint_ms) && message.paint_ms >= 0) {
+        this.output.appendLine(
+          `[preview] frame ${message.frame_id} painted in ${message.paint_ms.toFixed(2)} ms`
+        );
+        this.send({ type: "painted", frame_id: message.frame_id, paint_ms: message.paint_ms });
+      }
     } else if (message.type === "backward_search" && this.synctex) {
       this.send({
         type: "backward_search",
