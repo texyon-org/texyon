@@ -46,9 +46,10 @@ transport around the same XeTeX implementation.
   revision nor viewer belief.
 - Cancellation, abort, renderer failure, or output failure cannot partially
   publish engine, page, SVG, or source-navigation state.
-- A replay fence constrains the strong identity of every consumed editor or
-  root-confined disk source. Open inputs may change only beyond their cursor;
-  closed inputs must remain byte-identical.
+- A replay fence constrains every editor or root-confined disk source through
+  the furthest byte prefix, minimum/exact size, and EOF facts actually
+  observed. Unread or prefix-only probes may tolerate later changes; consumed
+  bytes and observed metadata must remain identical.
 - A viewport foreground compiles through exactly the requested last page. Old
   tail visuals and SyncTeX records remain the client belief until one idle tail
   continuation atomically settles them.
