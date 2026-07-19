@@ -7,6 +7,7 @@ mod assembler;
 mod pipeline;
 mod publication;
 mod source;
+mod worker;
 mod worker_clock;
 
 pub use assembler::{
@@ -19,5 +20,8 @@ pub use publication::{
 pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
 pub use tectonic_preview_protocol::{
     FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision,
+};
+pub use worker::{
+    LivePreviewWorker, PreviewTuning, PreviewWorkerProcessor, WorkerEvent, WorkerFailure, WorkerRun,
 };
 pub use worker_clock::{ApplyDisposition, RequestClock, RequestClockError};
