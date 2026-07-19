@@ -135,6 +135,8 @@ pub enum WorkerFailure {
     Spawn(std::io::Error),
     /// Worker command channel is closed.
     Closed,
+    /// Worker-thread bundle/format/renderer bootstrap failed.
+    Bootstrap(String),
     /// A checked request sequence was exhausted.
     RequestSequenceExhausted,
     /// Worker thread panicked.
@@ -146,6 +148,7 @@ impl fmt::Display for WorkerFailure {
         match self {
             Self::Spawn(error) => write!(f, "could not spawn preview worker: {error}"),
             Self::Closed => write!(f, "preview worker channel is closed"),
+            Self::Bootstrap(error) => write!(f, "preview worker bootstrap failed: {error}"),
             Self::RequestSequenceExhausted => write!(f, "request sequence counter exhausted"),
             Self::Panicked => write!(f, "preview worker panicked"),
         }
@@ -155,6 +158,7 @@ impl fmt::Display for WorkerFailure {
 impl std::error::Error for WorkerFailure {}
 
 enum Command {
+    Initialize(SourceSet),
     Replace {
         sequence: RequestSeq,
         path: Option<String>,
@@ -204,9 +208,45 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         P: PreviewWorkerProcessor<Output = T> + 'static,
         F: FnOnce() -> P + Send + 'static,
     {
+        let (worker, ()) = Self::spawn_inner(tuning, Some(sources), move || {
+            Ok::<_, std::convert::Infallible>((factory(), ()))
+        })?;
+        Ok(worker)
+    }
+
+    /// Bootstrap processor resources on the worker, then wait for initialization.
+    ///
+    /// The returned bootstrap value is available before callers emit `ready`.
+    /// No compile begins until [`initialize`](Self::initialize) supplies the
+    /// complete validated revision-zero source snapshot.
+    pub fn spawn_uninitialized<P, F, E, D>(
+        tuning: PreviewTuning,
+        factory: F,
+    ) -> Result<(Self, D), WorkerFailure>
+    where
+        P: PreviewWorkerProcessor<Output = T> + 'static,
+        F: FnOnce() -> Result<(P, D), E> + Send + 'static,
+        E: fmt::Display,
+        D: Send + 'static,
+    {
+        Self::spawn_inner(tuning, None, factory)
+    }
+
+    fn spawn_inner<P, F, E, D>(
+        tuning: PreviewTuning,
+        sources: Option<SourceSet>,
+        factory: F,
+    ) -> Result<(Self, D), WorkerFailure>
+    where
+        P: PreviewWorkerProcessor<Output = T> + 'static,
+        F: FnOnce() -> Result<(P, D), E> + Send + 'static,
+        E: fmt::Display,
+        D: Send + 'static,
+    {
         let (command_tx, command_rx) = mpsc::channel();
         let (event_tx, event_rx) = mpsc::channel();
         let (timer_tx, timer_rx) = mpsc::channel();
+        let (bootstrap_tx, bootstrap_rx) = mpsc::sync_channel(1);
         let cancellation = EngineCancellation::new();
         let announced = Arc::new(AtomicU64::new(0));
         let applied = Arc::new(AtomicU64::new(0));
@@ -222,7 +262,18 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
             .name("tectonic-preview-engine".into())
             .stack_size(32 * 1024 * 1024)
             .spawn(move || {
-                let processor = factory();
+                let (processor, bootstrap) = match factory() {
+                    Ok(value) => value,
+                    Err(error) => {
+                        let _ = bootstrap_tx.send(Err(error.to_string()));
+                        worker_finished.store(true, Ordering::Release);
+                        return;
+                    }
+                };
+                if bootstrap_tx.send(Ok(bootstrap)).is_err() {
+                    worker_finished.store(true, Ordering::Release);
+                    return;
+                }
                 run_worker(
                     processor,
                     sources,
@@ -236,6 +287,18 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
                 worker_finished.store(true, Ordering::Release);
             })
             .map_err(WorkerFailure::Spawn)?;
+
+        let bootstrap = match bootstrap_rx.recv() {
+            Ok(Ok(bootstrap)) => bootstrap,
+            Ok(Err(error)) => {
+                let _ = worker.join();
+                return Err(WorkerFailure::Bootstrap(error));
+            }
+            Err(_) => {
+                let _ = worker.join();
+                return Err(WorkerFailure::Panicked);
+            }
+        };
 
         let timer_cancellation = cancellation.clone();
         let timer_applied = Arc::clone(&applied);
@@ -261,7 +324,14 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
         let _ = tuning.tail_idle_ms;
         let _ = tuning.ladder_bytes;
         let _ = tuning.verify_rewinds;
-        Ok(worker)
+        Ok((worker, bootstrap))
+    }
+
+    /// Supply the one complete initialization snapshot.
+    pub fn initialize(&self, sources: SourceSet) -> Result<(), WorkerFailure> {
+        self.commands
+            .send(Command::Initialize(sources))
+            .map_err(|_| WorkerFailure::Closed)
     }
 
     /// Receive the next worker event, waiting up to `timeout`.
@@ -407,7 +477,7 @@ fn run_timer(
 #[allow(clippy::too_many_arguments)]
 fn run_worker<P: PreviewWorkerProcessor>(
     mut processor: P,
-    mut sources: SourceSet,
+    sources: Option<SourceSet>,
     commands: Receiver<Command>,
     events: Sender<WorkerEvent<P::Output>>,
     cancellation: EngineCancellation,
@@ -415,6 +485,25 @@ fn run_worker<P: PreviewWorkerProcessor>(
     applied_atomic: Arc<AtomicU64>,
     durable_stop: Arc<AtomicBool>,
 ) {
+    let mut sources = match sources {
+        Some(sources) => sources,
+        None => loop {
+            match commands.recv() {
+                Ok(Command::Initialize(sources)) => break sources,
+                Ok(Command::Shutdown) | Err(_) => {
+                    let _ = processor.shutdown();
+                    return;
+                }
+                Ok(_) => {
+                    let _ = events.send(WorkerEvent::Fatal(
+                        "preview request received before initialization".into(),
+                    ));
+                    let _ = processor.shutdown();
+                    return;
+                }
+            }
+        },
+    };
     let mut clock = RequestClock::new();
     let mut viewport = None;
     cancellation.rearm();
@@ -449,6 +538,12 @@ fn run_worker<P: PreviewWorkerProcessor>(
                 None => break,
             };
             match command {
+                Command::Initialize(_) => {
+                    let _ = events.send(WorkerEvent::Fatal(
+                        "preview session was initialized more than once".into(),
+                    ));
+                    break 'worker;
+                }
                 Command::Replace {
                     sequence,
                     path,
@@ -755,6 +850,37 @@ mod tests {
         assert!(
             matches!(worker.recv_timeout(Duration::from_secs(1)), Ok(WorkerEvent::Update { output, resync: true, source_revision, .. }) if output == "initial" && source_revision == SourceRevision::ZERO)
         );
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn bootstrap_precedes_separate_revision_zero_initialization() {
+        let (_temp, sources) = sources();
+        let (worker, thread_name) = LivePreviewWorker::spawn_uninitialized(tuning(), || {
+            Ok::<_, Infallible>((
+                MockProcessor {
+                    last: String::new(),
+                },
+                thread::current().name().unwrap_or_default().to_owned(),
+            ))
+        })
+        .unwrap();
+
+        assert_eq!(thread_name, "tectonic-preview-engine");
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_millis(10)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        worker.initialize(sources).unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update {
+                applied_request_seq: RequestSeq::ZERO,
+                source_revision: SourceRevision::ZERO,
+                output,
+                ..
+            }) if output == "initial"
+        ));
         worker.shutdown().unwrap();
     }
 }
