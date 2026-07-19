@@ -47,6 +47,8 @@ pub enum WorkerRun<T, E> {
     Cancelled,
     /// Recoverable operation failure retained last-good state.
     Aborted(E),
+    /// Unrecoverable processor or publication failure ends the session.
+    Fatal(E),
 }
 
 /// Worker-local engine/render implementation constructed on the worker thread.
@@ -75,6 +77,11 @@ pub trait PreviewWorkerProcessor {
     /// Release resident processor resources on their owning thread.
     fn shutdown(&mut self) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    /// Classify an error returned by `resync`, whose signature predates `WorkerRun`.
+    fn resync_error_is_fatal(&self, _error: &Self::Error) -> bool {
+        false
     }
 }
 
@@ -507,14 +514,17 @@ fn run_worker<P: PreviewWorkerProcessor>(
     let mut clock = RequestClock::new();
     let mut viewport = None;
     cancellation.rearm();
-    emit_compile(
+    if !emit_compile(
         &mut processor,
         &sources,
         &events,
         RequestSeq::ZERO,
         viewport,
         &cancellation,
-    );
+    ) {
+        let _ = processor.shutdown();
+        return;
+    }
 
     'worker: loop {
         let first = match commands.recv() {
@@ -616,23 +626,30 @@ fn run_worker<P: PreviewWorkerProcessor>(
                     });
                 }
                 Err(error) => {
-                    let _ = events.send(WorkerEvent::Aborted {
-                        applied_request_seq: clock.applied(),
-                        source_revision: sources.revision(),
-                        reason: error.to_string(),
-                    });
+                    if processor.resync_error_is_fatal(&error) {
+                        let _ = events.send(WorkerEvent::Fatal(error.to_string()));
+                        break 'worker;
+                    } else {
+                        let _ = events.send(WorkerEvent::Aborted {
+                            applied_request_seq: clock.applied(),
+                            source_revision: sources.revision(),
+                            reason: error.to_string(),
+                        });
+                    }
                 }
             }
         }
         if should_compile && clock.may_compile() {
-            emit_compile(
+            if !emit_compile(
                 &mut processor,
                 &sources,
                 &events,
                 clock.applied(),
                 viewport,
                 &cancellation,
-            );
+            ) {
+                break 'worker;
+            }
         }
     }
 
@@ -648,7 +665,7 @@ fn emit_compile<P: PreviewWorkerProcessor>(
     applied_request_seq: RequestSeq,
     viewport: Option<(usize, usize)>,
     cancellation: &EngineCancellation,
-) {
+) -> bool {
     let revision = sources.revision();
     match processor.compile(
         sources.snapshot(),
@@ -677,7 +694,12 @@ fn emit_compile<P: PreviewWorkerProcessor>(
                 reason: error.to_string(),
             });
         }
+        WorkerRun::Fatal(error) => {
+            let _ = events.send(WorkerEvent::Fatal(error.to_string()));
+            return false;
+        }
     }
+    true
 }
 
 #[cfg(test)]
@@ -880,6 +902,46 @@ mod tests {
                 output,
                 ..
             }) if output == "initial"
+        ));
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn fatal_processor_result_terminates_worker() {
+        struct FatalProcessor;
+
+        impl PreviewWorkerProcessor for FatalProcessor {
+            type Output = ();
+            type Error = &'static str;
+
+            fn compile(
+                &mut self,
+                _snapshot: AcceptedSourceSnapshot,
+                _applied_request_seq: RequestSeq,
+                _viewport: Option<(usize, usize)>,
+                _cancellation: &EngineCancellation,
+            ) -> WorkerRun<Self::Output, Self::Error> {
+                WorkerRun::Fatal("transport closed")
+            }
+
+            fn resync(
+                &mut self,
+                _snapshot: AcceptedSourceSnapshot,
+                _applied_request_seq: RequestSeq,
+            ) -> Result<Self::Output, Self::Error> {
+                Err("transport closed")
+            }
+        }
+
+        let (_temp, sources) = sources();
+        let worker = LivePreviewWorker::spawn(sources, tuning(), || FatalProcessor).unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Fatal(reason)) if reason == "transport closed"
+        ));
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Err(RecvTimeoutError::Disconnected)
         ));
         worker.shutdown().unwrap();
     }

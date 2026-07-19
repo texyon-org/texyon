@@ -7,8 +7,16 @@ use crate::engines::tex::{EngineCancellation, TexOutcome};
 
 use super::{
     AcceptedSourceSnapshot, FrameSink, PreviewPipeline, PreviewPipelineError,
-    PreviewWorkerProcessor, ResidentEngineError, ResidentXeTeX, SourceRevision, WorkerRun,
+    PreviewWorkerProcessor, PublicationError, ResidentEngineError, ResidentXeTeX, SourceRevision,
+    WorkerRun,
 };
+
+fn pipeline_error_is_fatal<E>(error: &PreviewPipelineError<E>) -> bool {
+    matches!(
+        error,
+        PreviewPipelineError::Publication(PublicationError::Sink(_))
+    )
+}
 
 /// Coherent frame already accepted by the processor's publication sink.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -135,6 +143,9 @@ where
             outcome,
         ) {
             Ok(frame_id) => frame_id,
+            Err(error) if pipeline_error_is_fatal(&error) => {
+                return WorkerRun::Fatal(ResidentPreviewError::Pipeline(error));
+            }
             Err(error) => return WorkerRun::Aborted(ResidentPreviewError::Pipeline(error)),
         };
         WorkerRun::Complete(PublishedFrame { frame_id, outcome })
@@ -157,5 +168,25 @@ where
 
     fn shutdown(&mut self) -> Result<(), Self::Error> {
         self.engine.finish().map_err(ResidentPreviewError::Engine)
+    }
+
+    fn resync_error_is_fatal(&self, error: &Self::Error) -> bool {
+        matches!(error, ResidentPreviewError::Pipeline(error) if pipeline_error_is_fatal(error))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transport_publication_failure_is_fatal() {
+        let closed = PreviewPipelineError::Publication(PublicationError::Sink("closed"));
+        assert!(pipeline_error_is_fatal(&closed));
+
+        let invalid = PreviewPipelineError::<&str>::Publication(
+            PublicationError::InvalidRenderSet("missing page".into()),
+        );
+        assert!(!pipeline_error_is_fatal(&invalid));
     }
 }
