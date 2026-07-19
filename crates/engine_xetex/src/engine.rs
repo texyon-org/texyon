@@ -980,6 +980,30 @@ unsafe fn tt_run_engine_inner(
     crate::state::set_engine_state_ptr(&mut *st as *mut crate::state::EngineState);
     let _ptr_guard = PtrGuard;
 
+    match initialize_engine(&mut *st, dump_name, build_date) {
+        InitOutcome::Ready => {}
+        InitOutcome::Terminate(history) => return history,
+    }
+    run_document_to_end(&mut *st, input_file_name)
+}
+
+/// Result of initializing an engine before any primary document is opened.
+enum InitOutcome {
+    Ready,
+    Terminate(i32),
+}
+
+/// Allocate engine storage, load the format, and initialize configuration.
+///
+/// On success the state is ready to open a primary input, but owns no document
+/// input stack. Keeping this boundary explicit lets batch and future resident
+/// sessions share the same initialization path.
+unsafe fn initialize_engine(
+    st: &mut crate::state::EngineState,
+    dump_name: *const libc::c_char,
+    build_date: libc::time_t,
+) -> InitOutcome {
+
     TEX_FORMAT_DEFAULT = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
     libc::strcpy(TEX_FORMAT_DEFAULT, dump_name);
     FORMAT_DEFAULT_LENGTH = libc::strlen(dump_name) as i32;
@@ -1170,24 +1194,26 @@ unsafe fn tt_run_engine_inner(
             BAD,
         );
         // Consistency check failed: terminate with HISTORY_FATAL_ERROR.
-        return crate::errors::EngineAbort::TtAbort(msg.as_ptr()).into_history(&mut *st);
+        return InitOutcome::Terminate(
+            crate::errors::EngineAbort::TtAbort(msg.as_ptr()).into_history(&mut *st),
+        );
     }
 
     initialize_more_variables_in(&mut *st);
     if st.config.in_initex_mode {
         if let Err(a) = get_strings_started_in(&mut *st) {
-            return a.into_history(&mut *st);
+            return InitOutcome::Terminate(a.into_history(&mut *st));
         }
         let format_ident = match crate::texmfmp::maketexstring_in(&mut st.strings, c" (INITEX)".as_ptr())
             .map_err(|e| e.into_engine_abort())
         {
             Ok(v) => v,
-            Err(a) => return a.into_history(&mut *st),
+            Err(a) => return InitOutcome::Terminate(a.into_history(&mut *st)),
         };
         initialize_more_initex_variables_in(&mut *st, format_ident);
         let result = initialize_primitives(&mut *st);
         if let Err(e) = result {
-            return e.into_engine_abort().into_history(&mut *st);
+            return InitOutcome::Terminate(e.into_engine_abort().into_history(&mut *st));
         }
         {
             let state = &mut *st;
@@ -1263,9 +1289,9 @@ unsafe fn tt_run_engine_inner(
         match load_fmt_file(&mut *st) {
             Ok(true) => {}
             // Graceful load failure: terminate with the current history.
-            Ok(false) => return st.errors.history,
+            Ok(false) => return InitOutcome::Terminate(st.errors.history),
             // Fatal undump abort: HISTORY_FATAL_ERROR.
-            Err(a) => return a.into_history(&mut *st),
+            Err(a) => return InitOutcome::Terminate(a.into_history(&mut *st)),
         }
     }
 
@@ -1370,7 +1396,7 @@ unsafe fn tt_run_engine_inner(
             .map_err(|e| e.into_engine_abort())
         {
             Ok(v) => v,
-            Err(a) => return a.into_history(&mut *st),
+            Err(a) => return InitOutcome::Terminate(a.into_history(&mut *st)),
         };
         {
             let s = &mut *st;
@@ -1435,6 +1461,17 @@ unsafe fn tt_run_engine_inner(
 
     pdf_files_init();
     crate::synctex::synctex_init_command(&mut *st);
+    InitOutcome::Ready
+}
+
+/// Open, execute, finalize, and release one batch document operation.
+///
+/// Fatal paths reach the same terminal cleanup through `into_history`; the
+/// ordinary path finalizes output and then tears down the engine state.
+unsafe fn run_document_to_end(
+    st: &mut crate::state::EngineState,
+    input_file_name: *const libc::c_char,
+) -> i32 {
     if let Err(a) =
         crate::io::start_input_in(&mut *st, input_file_name).map_err(|e| e.into_engine_abort())
     {
