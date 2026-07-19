@@ -9,7 +9,7 @@ use tectonic_xdv::{FileType, XdvError, XdvEvents, XdvParser};
 
 use crate::backend::{Backend, PositionedGlyph};
 use crate::fingerprint::page_digest;
-use crate::pagesize::{parse_special, LETTER_BP};
+use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
 use crate::resource::{
     Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest,
 };
@@ -165,7 +165,8 @@ impl<P: ResourceProvider> HotRenderer<P> {
     pub fn analyze(&mut self, xdv: Arc<[u8]>) -> Result<Analysis, RenderError> {
         let analysis_id = self.next_analysis_id;
         self.next_analysis_id = self.next_analysis_id.wrapping_add(1).max(1);
-        let walker = Walker::new(&self.provider);
+        let page_sizes = scan_page_sizes(&xdv)?;
+        let walker = Walker::new(&self.provider, page_sizes);
         let (mut walker, _) = XdvParser::process(Cursor::new(&xdv), walker)?;
         walker.finish_page();
         let mut pages = Vec::with_capacity(walker.pages.len());
@@ -330,19 +331,19 @@ struct Walker<'a, P> {
     provider: &'a P,
     page: Option<PagePlan>,
     pages: Vec<PagePlan>,
-    page_size: [f32; 2],
+    page_sizes: Vec<[f32; 2]>,
     fonts: BTreeMap<i32, NativeFont>,
     resources: BTreeMap<ResourceIdentity, Resource>,
     ledger: CoverageLedger,
 }
 
 impl<'a, P: ResourceProvider> Walker<'a, P> {
-    fn new(provider: &'a P) -> Self {
+    fn new(provider: &'a P, page_sizes: Vec<[f32; 2]>) -> Self {
         Self {
             provider,
             page: None,
             pages: Vec::new(),
-            page_size: LETTER_BP,
+            page_sizes,
             fonts: BTreeMap::new(),
             resources: BTreeMap::new(),
             ledger: CoverageLedger::default(),
@@ -365,7 +366,6 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
 
     fn finish_page(&mut self) {
         if let Some(page) = self.page.take() {
-            self.page_size = [page.width_bp, page.height_bp];
             self.pages.push(page);
         }
     }
@@ -389,9 +389,14 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         _previous_bop: i32,
     ) -> Result<(), Self::Error> {
         self.finish_page();
+        let size = self
+            .page_sizes
+            .get(self.pages.len())
+            .copied()
+            .unwrap_or(DEFAULT_BP);
         self.page = Some(PagePlan {
-            width_bp: self.page_size[0],
-            height_bp: self.page_size[1],
+            width_bp: size[0],
+            height_bp: size[1],
             operations: Vec::new(),
             unsupported: BTreeMap::new(),
             complete: true,
@@ -400,10 +405,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
     }
 
     fn handle_special(&mut self, _x: i32, _y: i32, contents: &[u8]) -> Result<(), Self::Error> {
-        if let Some(size) = parse_special(contents) {
-            let page = self.page_mut()?;
-            page.width_bp = size[0];
-            page.height_bp = size[1];
+        if is_page_size_special(contents) {
             self.ledger.record_supported("page-size");
             return Ok(());
         }
