@@ -876,6 +876,13 @@ pub(crate) struct ScannerState {
     pub save_native_len: i32,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EngineExecutionMode {
+    #[default]
+    Batch,
+    Resident,
+}
+
 #[derive(Default, Clone, Copy)]
 pub(crate) struct ConfigState {
     pub file_line_error_style_p: i32,
@@ -886,6 +893,9 @@ pub(crate) struct ConfigState {
     pub shell_escape_enabled: bool,
     /// Remove live clock and timezone inputs from engine-visible values.
     pub deterministic_mode: bool,
+    /// Selects operation-lifetime behavior that differs for a resident engine,
+    /// such as guarded picture probes.
+    pub execution_mode: EngineExecutionMode,
     pub max_print_line: i32,
 }
 

@@ -121,6 +121,7 @@ fn main() {
         "pdf_io/dpx-pdfparse.c",
         "pdf_io/dpx-pdfresource.c",
         "pdf_io/dpx-pdfximage.c",
+        "pdf_io/dpx-pic_probe.c",
         "pdf_io/dpx-pkfont.c",
         "pdf_io/dpx-pngimage.c",
         "pdf_io/dpx-pst.c",

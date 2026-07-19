@@ -117,8 +117,31 @@ extern "C" {
 
     // C string utilities
     fn xstrdup(s: *const c_char) -> *mut c_char;
+    // Guarded dpx probes for resident operations. Each wrapper arms and
+    // restores the bridge jump buffer wholly within C.
+    fn tt_pic_probe_pdf_box(
+        ident: *const c_char,
+        handle: usize,
+        page_num: c_int,
+        dpx_options: c_int,
+        bbox: *mut PdfRect,
+        matrix: *mut PdfTMatrix,
+    ) -> c_int;
+    fn tt_pic_probe_image_box(
+        handle: usize,
+        width: *mut c_uint,
+        height: *mut c_uint,
+        xdensity: *mut c_double,
+        ydensity: *mut c_double,
+    ) -> c_int;
+    fn tt_pic_probe_pdf_page_count(
+        ident: *const c_char,
+        handle: usize,
+        pages_out: *mut c_int,
+    ) -> c_int;
 }
 
+const PIC_PROBE_OK: c_int = 0;
 const TTBC_FILE_FORMAT_PICT: c_int = 25; // tectonic_bridge_core_generated.h:74
 
 // pdfbox constants from xetex-ext.h:53–58
@@ -165,12 +188,43 @@ impl PageboxType {
     }
 }
 
+fn dpx_box_option(pdf_box: PageboxType) -> c_int {
+    match pdf_box {
+        PageboxType::Media => 2,
+        PageboxType::Bleed => 5,
+        PageboxType::Trim => 4,
+        PageboxType::Art => 3,
+        PageboxType::Crop | PageboxType::Unset => 1,
+    }
+}
+
+unsafe fn finish_pdf_bbox(bbox: &mut PdfRect, matrix: &PdfTMatrix, box_out: &mut RealRect) {
+    let mut p1 = PdfCoord { x: bbox.llx, y: bbox.lly };
+    let mut p2 = PdfCoord { x: bbox.urx, y: bbox.lly };
+    let mut p3 = PdfCoord { x: bbox.urx, y: bbox.ury };
+    let mut p4 = PdfCoord { x: bbox.llx, y: bbox.ury };
+    pdf_dev_transform(&mut p1, matrix);
+    pdf_dev_transform(&mut p2, matrix);
+    pdf_dev_transform(&mut p3, matrix);
+    pdf_dev_transform(&mut p4, matrix);
+
+    bbox.llx = min4(p1.x, p2.x, p3.x, p4.x);
+    bbox.lly = min4(p1.y, p2.y, p3.y, p4.y);
+    bbox.urx = max4(p1.x, p2.x, p3.x, p4.x);
+    bbox.ury = max4(p1.y, p2.y, p3.y, p4.y);
+
+    box_out.x = (72.27 / 72.0 * bbox.llx) as f32;
+    box_out.y = (72.27 / 72.0 * bbox.lly) as f32;
+    box_out.wd = (72.27 / 72.0 * (bbox.urx - bbox.llx)) as f32;
+    box_out.ht = (72.27 / 72.0 * (bbox.ury - bbox.lly)) as f32;
+}
+
 // translated from xetex-pic.c:99 (pdf_get_rect)
 unsafe fn pdf_get_rect(
     filename: *const c_char,
     handle: usize,
     mut page_num: c_int,
-    pdf_box: PageboxType,
+    dpx_options: c_int,
     box_out: &mut RealRect,
 ) -> c_int {
     let pf = pdf_open(filename, handle);
@@ -188,15 +242,6 @@ unsafe fn pdf_get_rect(
     if page_num < 1 {
         page_num = 1;
     }
-
-    let dpx_options: c_int = match pdf_box {
-        PageboxType::Media => 2,
-        PageboxType::Bleed => 5,
-        PageboxType::Trim => 4,
-        PageboxType::Art => 3,
-        // Crop and the (unreachable here) Unset default → dpx crop-box.
-        PageboxType::Crop | PageboxType::Unset => 1,
-    };
 
     let mut bbox = PdfRect {
         llx: 0.0,
@@ -227,37 +272,31 @@ unsafe fn pdf_get_rect(
     }
     pdf_release_obj(page);
 
-    // Transform all four corners by the page matrix to account for /Rotate.
-    let mut p1 = PdfCoord {
-        x: bbox.llx,
-        y: bbox.lly,
-    };
-    let mut p2 = PdfCoord {
-        x: bbox.urx,
-        y: bbox.lly,
-    };
-    let mut p3 = PdfCoord {
-        x: bbox.urx,
-        y: bbox.ury,
-    };
-    let mut p4 = PdfCoord {
-        x: bbox.llx,
-        y: bbox.ury,
-    };
-    pdf_dev_transform(&mut p1, &matrix);
-    pdf_dev_transform(&mut p2, &matrix);
-    pdf_dev_transform(&mut p3, &matrix);
-    pdf_dev_transform(&mut p4, &matrix);
+    finish_pdf_bbox(&mut bbox, &matrix, box_out);
+    0
+}
 
-    bbox.llx = min4(p1.x, p2.x, p3.x, p4.x);
-    bbox.lly = min4(p1.y, p2.y, p3.y, p4.y);
-    bbox.urx = max4(p1.x, p2.x, p3.x, p4.x);
-    bbox.ury = max4(p1.y, p2.y, p3.y, p4.y);
-
-    box_out.x = (72.27 / 72.0 * bbox.llx) as f32;
-    box_out.y = (72.27 / 72.0 * bbox.lly) as f32;
-    box_out.wd = (72.27 / 72.0 * (bbox.urx - bbox.llx)) as f32;
-    box_out.ht = (72.27 / 72.0 * (bbox.ury - bbox.lly)) as f32;
+unsafe fn pdf_get_rect_resident(
+    filename: *const c_char,
+    handle: usize,
+    page_num: c_int,
+    dpx_options: c_int,
+    box_out: &mut RealRect,
+) -> c_int {
+    let mut bbox = PdfRect { llx: 0.0, lly: 0.0, urx: 0.0, ury: 0.0 };
+    let mut matrix = PdfTMatrix { a: 0.0, b: 0.0, c: 0.0, d: 0.0, e: 0.0, f: 0.0 };
+    if tt_pic_probe_pdf_box(
+        filename,
+        handle,
+        page_num,
+        dpx_options,
+        &mut bbox,
+        &mut matrix,
+    ) != PIC_PROBE_OK
+    {
+        return -1;
+    }
+    finish_pdf_bbox(&mut bbox, &matrix, box_out);
     0
 }
 
@@ -306,6 +345,32 @@ unsafe fn get_image_size_in_inches(handle: usize, width: &mut f64, height: &mut 
     0
 }
 
+unsafe fn get_image_size_in_inches_resident(
+    handle: usize,
+    width: &mut f64,
+    height: &mut f64,
+) -> c_int {
+    let mut width_pix = 0;
+    let mut height_pix = 0;
+    let mut xdensity = 0.0;
+    let mut ydensity = 0.0;
+    let err = tt_pic_probe_image_box(
+        handle,
+        &mut width_pix,
+        &mut height_pix,
+        &mut xdensity,
+        &mut ydensity,
+    );
+    if err != PIC_PROBE_OK {
+        *width = -1.0;
+        *height = -1.0;
+        return err;
+    }
+    *width = width_pix as f64 * xdensity / 72.0;
+    *height = height_pix as f64 * ydensity / 72.0;
+    0
+}
+
 // translated from xetex-pic.c:224 (find_pic_file)
 unsafe fn find_pic_file(
     name_of_file: *const c_char,
@@ -313,6 +378,7 @@ unsafe fn find_pic_file(
     bounds: &mut RealRect,
     pdf_box_type: Option<PageboxType>,
     page: c_int,
+    resident: bool,
 ) -> Result<c_int, MainControlAbort> {
     let handle = ttstub_input_open(name_of_file, TTBC_FILE_FORMAT_PICT, 0);
     bounds.x = 0.0;
@@ -325,11 +391,20 @@ unsafe fn find_pic_file(
     }
 
     let err = if let Some(pdf_box) = pdf_box_type {
-        pdf_get_rect(name_of_file, handle, page, pdf_box, bounds)
+        let dpx_options = dpx_box_option(pdf_box);
+        if resident {
+            pdf_get_rect_resident(name_of_file, handle, page, dpx_options, bounds)
+        } else {
+            pdf_get_rect(name_of_file, handle, page, dpx_options, bounds)
+        }
     } else {
         let mut wd: f64 = 0.0;
         let mut ht: f64 = 0.0;
-        let e = get_image_size_in_inches(handle, &mut wd, &mut ht);
+        let e = if resident {
+            get_image_size_in_inches_resident(handle, &mut wd, &mut ht)
+        } else {
+            get_image_size_in_inches(handle, &mut wd, &mut ht)
+        };
         bounds.wd = (wd * 72.27) as f32;
         bounds.ht = (ht * 72.27) as f32;
         e
@@ -478,7 +553,15 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
             Some(PageboxType::Unset) => Some(PageboxType::Crop),
             other => other,
         };
-        find_pic_file(name_of_file, &mut pic_path, &mut bounds, effective, page)?
+        let resident = st.config.execution_mode == crate::state::EngineExecutionMode::Resident;
+        find_pic_file(
+            name_of_file,
+            &mut pic_path,
+            &mut bounds,
+            effective,
+            page,
+            resident,
+        )?
     };
 
     let mut corners: [RealPoint; 4] = [
@@ -747,20 +830,31 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
 
 pub(crate) unsafe fn count_pdf_file_pages_named(
     name: *const libc::c_char,
+    resident: bool,
 ) -> Result<c_int, crate::scan::SccAbort> {
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_PICT, 0);
     if handle == INVALID_HANDLE {
         return Ok(0);
     }
-    let pf = pdf_open(name, handle);
-    if pf.is_null() {
-        if crate::io::input_close(handle) {
-            return Err(crate::scan::SccAbort::InputClose);
+    let pages = if resident {
+        let mut pages = 0;
+        if tt_pic_probe_pdf_page_count(name, handle, &mut pages) == PIC_PROBE_OK {
+            pages
+        } else {
+            0
         }
-        return Ok(0);
-    }
-    let pages = pdf_doc_get_page_count(pf);
-    pdf_close(pf);
+    } else {
+        let pf = pdf_open(name, handle);
+        if pf.is_null() {
+            if crate::io::input_close(handle) {
+                return Err(crate::scan::SccAbort::InputClose);
+            }
+            return Ok(0);
+        }
+        let pages = pdf_doc_get_page_count(pf);
+        pdf_close(pf);
+        pages
+    };
     if crate::io::input_close(handle) {
         // The C ttstub_input_close wrapper longjmp'd on this serious internal
         // close error; propagate it as a fatal abort.

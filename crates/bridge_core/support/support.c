@@ -140,6 +140,16 @@ ttbc_global_engine_enter(ttbc_state_t *api)
 }
 
 
+/* Allow a C-only nested operation to install a temporary abort handler while
+ * preserving the outer engine handler. Rust callers must never access this
+ * buffer directly. */
+jmp_buf *
+ttbc_global_engine_get_jump_buffer(void)
+{
+    return &jump_buffer;
+}
+
+
 void
 ttbc_global_engine_exit(void)
 {

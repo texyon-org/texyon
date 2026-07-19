@@ -4772,8 +4772,10 @@ pub(crate) fn scan_something_internal_in(
                                 } else {
                                     st.input.name_of_file.as_ptr() as *const libc::c_char
                                 };
+                                let resident = st.config.execution_mode
+                                    == crate::state::EngineExecutionMode::Resident;
                                 st.scanner.cur_val = unsafe {
-                                    crate::pic::count_pdf_file_pages_named(name)
+                                    crate::pic::count_pdf_file_pages_named(name, resident)
                                 }?;
                             }
                             CURRENT_GROUP_LEVEL_CODE => {
