@@ -10,6 +10,7 @@ mod color;
 mod encoding;
 mod fidelity;
 mod fingerprint;
+mod fontmap;
 mod pagesize;
 mod render;
 mod resource;

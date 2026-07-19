@@ -10,6 +10,7 @@ use tectonic_xdv::{FileType, XdvError, XdvEvents, XdvParser};
 use crate::backend::{Backend, FontStyle, Matrix, PositionedChar, PositionedGlyph};
 use crate::color::Color;
 use crate::encoding::type1_builtin;
+use crate::fontmap::FontMap;
 use crate::fingerprint::page_digest;
 use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
 use crate::resource::{
@@ -473,6 +474,7 @@ struct Walker<'a, P> {
     page_sizes: Vec<[f32; 2]>,
     fonts: BTreeMap<i32, NativeFont>,
     classic_fonts: BTreeMap<i32, ClassicFont>,
+    font_map: Option<FontMap>,
     resources: BTreeMap<ResourceIdentity, Resource>,
     ledger: CoverageLedger,
     color: Color,
@@ -489,6 +491,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             page_sizes,
             fonts: BTreeMap::new(),
             classic_fonts: BTreeMap::new(),
+            font_map: None,
             resources: BTreeMap::new(),
             ledger: CoverageLedger::default(),
             color: Color::BLACK,
@@ -745,17 +748,44 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         name: &str,
     ) -> Result<(), Self::Error> {
         let resource_name = format!("{area}{name}");
+        if self.font_map.is_none() {
+            let mut map = FontMap::default();
+            for map_name in ["pdftex.map", "kanjix.map", "ckx.map"] {
+                if let Some(resource) = self.provider.resolve(&ResourceRequest {
+                    kind: ResourceKind::FontMap,
+                    name: map_name.into(),
+                })? {
+                    map.parse_into(&resource.bytes);
+                }
+            }
+            self.font_map = Some(map);
+        }
+        let mapped = self
+            .font_map
+            .as_ref()
+            .and_then(|map| map.get(&resource_name).or_else(|| map.get(name)))
+            .cloned();
+        let program_name = mapped
+            .as_ref()
+            .and_then(|entry| entry.program.as_ref())
+            .cloned()
+            .unwrap_or_else(|| resource_name.clone());
+        let encoding_name = mapped
+            .as_ref()
+            .and_then(|entry| entry.encoding.as_ref())
+            .cloned()
+            .unwrap_or_else(|| resource_name.clone());
         let tfm_resource = self.provider.resolve(&ResourceRequest {
             kind: ResourceKind::Tfm,
             name: resource_name.clone(),
         })?;
         let program = self.provider.resolve(&ResourceRequest {
             kind: ResourceKind::FontProgram,
-            name: resource_name.clone(),
+            name: program_name,
         })?;
         let mut encoding = self.provider.resolve(&ResourceRequest {
             kind: ResourceKind::Encoding,
-            name: resource_name,
+            name: encoding_name,
         })?;
         if encoding.is_none() {
             encoding = program
@@ -1077,6 +1107,7 @@ mod tests {
 
     struct ClassicResources;
     struct BuiltinClassicResources;
+    struct MappedClassicResources;
 
     impl ResourceProvider for MutableResources {
         fn resolve(&self, _request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
@@ -1110,6 +1141,25 @@ mod tests {
                 _ => return Ok(None),
             };
             Ok(Some(Resource::from_bytes(bytes)))
+        }
+    }
+
+    impl ResourceProvider for MappedClassicResources {
+        fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
+            let bytes: Option<&[u8]> = match (request.kind, request.name.as_str()) {
+                (ResourceKind::FontMap, "pdftex.map") => {
+                    Some(b"cmr10 CMR10 \"TeXBase1Encoding ReEncodeFont\" <mapped.enc <mapped.pfb\n")
+                }
+                (ResourceKind::Tfm, "cmr10") => {
+                    Some(include_bytes!("../../../tests/assets/cmr10.tfm"))
+                }
+                (ResourceKind::FontProgram, "mapped.pfb") => {
+                    Some(include_bytes!("../../../tests/assets/cmr10.pfb"))
+                }
+                (ResourceKind::Encoding, "mapped.enc") => Some(b"/Encoding [ /A ] def"),
+                _ => None,
+            };
+            Ok(bytes.map(Resource::from_bytes))
         }
     }
 
@@ -1335,6 +1385,22 @@ mod tests {
             PageFingerprint::Stable(_)
         ));
         assert_eq!(analysis.resources.len(), 3);
+    }
+
+    #[test]
+    fn classic_font_uses_mapped_program_and_external_encoding() {
+        let mut renderer = HotRenderer::new(MappedClassicResources);
+        let analysis = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
+        assert!(matches!(
+            analysis.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
+        assert_eq!(analysis.resources.len(), 3);
+        assert!(analysis
+            .ledger()
+            .unsupported()
+            .get("classic-font-resource")
+            .is_none());
     }
 
     #[cfg(feature = "backend-mupdf")]
