@@ -9,6 +9,8 @@ pub struct Color {
     pub green: f32,
     /// Blue component.
     pub blue: f32,
+    /// Alpha component.
+    pub alpha: f32,
 }
 
 impl Color {
@@ -17,6 +19,7 @@ impl Color {
         red: 0.0,
         green: 0.0,
         blue: 0.0,
+        alpha: 1.0,
     };
 
     pub(crate) fn gray(value: f32) -> Self {
@@ -24,10 +27,15 @@ impl Color {
     }
 
     pub(crate) fn rgb(red: f32, green: f32, blue: f32) -> Self {
+        Self::rgba(red, green, blue, 1.0)
+    }
+
+    pub(crate) fn rgba(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
         Self {
             red: canonical(red),
             green: canonical(green),
             blue: canonical(blue),
+            alpha: canonical(alpha),
         }
     }
 

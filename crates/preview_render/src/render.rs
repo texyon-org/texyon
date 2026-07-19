@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use tectonic_xdv::{FileType, XdvError, XdvEvents, XdvParser};
 
-use crate::backend::{Backend, Matrix, PositionedGlyph};
+use crate::backend::{Backend, FontStyle, Matrix, PositionedGlyph};
 use crate::color::Color;
 use crate::fingerprint::page_digest;
 use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
@@ -244,6 +244,10 @@ impl<P: ResourceProvider> HotRenderer<P> {
                         size,
                         glyphs,
                         color,
+                        extend,
+                        slant,
+                        embolden,
+                        vertical,
                     } => {
                         let handle = match font_handles.get(identity) {
                             Some(handle) => *handle,
@@ -276,6 +280,12 @@ impl<P: ResourceProvider> HotRenderer<P> {
                             *size as f32 * SP_TO_BP,
                             &positioned,
                             *color,
+                            FontStyle {
+                                extend: fixed_16_16(*extend),
+                                slant: fixed_16_16(*slant),
+                                embolden: fixed_16_16(*embolden),
+                                vertical: *vertical,
+                            },
                         )?;
                     }
                     DrawOperation::Image {
@@ -341,6 +351,10 @@ pub(crate) enum DrawOperation {
         size: i32,
         glyphs: Vec<GlyphPosition>,
         color: Color,
+        extend: u32,
+        slant: u32,
+        embolden: u32,
+        vertical: bool,
     },
     Image {
         identity: ResourceIdentity,
@@ -369,7 +383,11 @@ struct NativeFont {
     resource: Option<ResourceIdentity>,
     face_index: u32,
     size: i32,
-    options_supported: bool,
+    color: Option<Color>,
+    extend: u32,
+    slant: u32,
+    embolden: u32,
+    vertical: bool,
 }
 
 struct Walker<'a, P> {
@@ -602,10 +620,11 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         };
         let face_index = font.face_index;
         let size = font.size;
-        let options_supported = font.options_supported;
-        if !options_supported {
-            self.unsupported("native-font-options")?;
-        }
+        let font_color = font.color;
+        let extend = font.extend;
+        let slant = font.slant;
+        let embolden = font.embolden;
+        let vertical = font.vertical;
         debug_assert_eq!(glyphs.len(), x.len());
         debug_assert_eq!(glyphs.len(), y.len());
         let positions = glyphs
@@ -614,7 +633,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             .zip(y)
             .map(|((&glyph_id, &x), &y)| GlyphPosition { glyph_id, x, y })
             .collect();
-        let color = self.color;
+        let color = font_color.unwrap_or(self.color);
         self.page_mut()?
             .operations
             .push(DrawOperation::NativeGlyphs {
@@ -623,6 +642,10 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 size,
                 glyphs: positions,
                 color,
+                extend,
+                slant,
+                embolden,
+                vertical,
             });
         self.ledger.record_supported("native-glyph-run");
         Ok(())
@@ -640,22 +663,26 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         self.handle_glyph_run(font_num, glyphs, x, y)
     }
 
-    fn handle_define_native_font(
+    fn handle_define_native_font_ext(
         &mut self,
         name: &str,
         font_num: i32,
         size: i32,
         face_index: u32,
+        vertical: bool,
         color_rgba: Option<u32>,
         extend: Option<u32>,
         slant: Option<u32>,
         embolden: Option<u32>,
     ) -> Result<(), Self::Error> {
-        let options_supported =
-            color_rgba.is_none() && extend.is_none() && slant.is_none() && embolden.is_none();
-        if !options_supported {
-            self.ledger.record_unsupported("native-font-options");
-        }
+        let color = color_rgba.map(|rgba| {
+            Color::rgba(
+                ((rgba >> 24) & 0xff) as f32 / 255.0,
+                ((rgba >> 16) & 0xff) as f32 / 255.0,
+                ((rgba >> 8) & 0xff) as f32 / 255.0,
+                (rgba & 0xff) as f32 / 255.0,
+            )
+        });
         let request = ResourceRequest {
             kind: ResourceKind::FontProgram,
             name: name.into(),
@@ -674,7 +701,11 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 resource: identity,
                 face_index,
                 size,
-                options_supported,
+                color,
+                extend: extend.unwrap_or(65_536),
+                slant: slant.unwrap_or(0),
+                embolden: embolden.unwrap_or(0),
+                vertical,
             },
         );
         Ok(())
@@ -843,6 +874,10 @@ fn normalize_float(value: f32) -> f32 {
     }
 }
 
+fn fixed_16_16(value: u32) -> f32 {
+    i32::from_be_bytes(value.to_be_bytes()) as f32 / 65_536.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -875,6 +910,48 @@ mod tests {
         bytes.push(132);
         bytes.extend_from_slice(&65_536i32.to_be_bytes());
         bytes.extend_from_slice(&131_072i32.to_be_bytes());
+        bytes.push(140);
+        bytes.push(248);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&2u16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.push(249);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.push(7);
+        bytes.extend_from_slice(&[223; 4]);
+        Arc::from(bytes)
+    }
+
+    fn styled_native_xdv() -> Arc<[u8]> {
+        let mut bytes = vec![247, 7];
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.push(0);
+        bytes.push(139);
+        bytes.extend_from_slice(&[0; 40]);
+        bytes.extend_from_slice(&(-1i32).to_be_bytes());
+        bytes.push(252);
+        bytes.extend_from_slice(&0i32.to_be_bytes());
+        bytes.extend_from_slice(&(10i32 << 16).to_be_bytes());
+        bytes.extend_from_slice(&0x7300u16.to_be_bytes());
+        bytes.push(4);
+        bytes.extend_from_slice(b"font");
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&0xff000080u32.to_be_bytes());
+        bytes.extend_from_slice(&(2u32 << 16).to_be_bytes());
+        bytes.extend_from_slice(&(-16_384i32 as u32).to_be_bytes());
+        bytes.extend_from_slice(&6_554u32.to_be_bytes());
+        bytes.push(253);
+        bytes.extend_from_slice(&(12i32 << 16).to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.extend_from_slice(&0i32.to_be_bytes());
+        bytes.extend_from_slice(&0i32.to_be_bytes());
+        bytes.extend_from_slice(&34u16.to_be_bytes());
         bytes.push(140);
         bytes.push(248);
         bytes.extend_from_slice(&0u32.to_be_bytes());
@@ -988,5 +1065,31 @@ mod tests {
             PageFingerprint::Stable(_)
         ));
         assert_ne!(red.pages()[0].fingerprint, blue.pages()[0].fingerprint);
+    }
+
+    #[test]
+    fn native_font_style_and_rgba_are_preserved_in_the_render_plan() {
+        let mut renderer = HotRenderer::new(MutableResources(RefCell::new(b"font-data".to_vec())));
+        let analysis = renderer.analyze(styled_native_xdv()).unwrap();
+        let DrawOperation::NativeGlyphs {
+            color,
+            extend,
+            slant,
+            embolden,
+            vertical,
+            ..
+        } = &analysis.plans[0].operations[0]
+        else {
+            panic!("missing native glyph operation");
+        };
+        assert_eq!(*color, Color::rgba(1.0, 0.0, 0.0, 128.0 / 255.0));
+        assert_eq!(*extend, 2 << 16);
+        assert_eq!(fixed_16_16(*slant), -0.25);
+        assert!((fixed_16_16(*embolden) - 0.1).abs() < 0.001);
+        assert!(*vertical);
+        assert!(matches!(
+            analysis.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
     }
 }

@@ -22,7 +22,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                 for value in [x, y, height, width] {
                     digest.update(value.to_be_bytes());
                 }
-                for value in [color.red, color.green, color.blue] {
+                for value in [color.red, color.green, color.blue, color.alpha] {
                     digest.update(value.to_bits().to_be_bytes());
                 }
             }
@@ -32,6 +32,10 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                 size,
                 glyphs,
                 color,
+                extend,
+                slant,
+                embolden,
+                vertical,
             } => {
                 digest.update([1]);
                 digest.update(identity.0);
@@ -43,9 +47,13 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                     digest.update(glyph.x.to_be_bytes());
                     digest.update(glyph.y.to_be_bytes());
                 }
-                for value in [color.red, color.green, color.blue] {
+                for value in [color.red, color.green, color.blue, color.alpha] {
                     digest.update(value.to_bits().to_be_bytes());
                 }
+                digest.update(extend.to_be_bytes());
+                digest.update(slant.to_be_bytes());
+                digest.update(embolden.to_be_bytes());
+                digest.update([u8::from(*vertical)]);
             }
             DrawOperation::Image {
                 identity,

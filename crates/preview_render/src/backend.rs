@@ -58,6 +58,19 @@ pub struct PositionedGlyph {
     pub y_bp: f32,
 }
 
+/// XeTeX native-font transforms and synthetic weight.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FontStyle {
+    /// Horizontal scale multiplier.
+    pub extend: f32,
+    /// Horizontal slant/shear.
+    pub slant: f32,
+    /// Synthetic emboldening in font-space units.
+    pub embolden: f32,
+    /// Use vertical native-font layout.
+    pub vertical: bool,
+}
+
 /// Drawing adapter used by the pure XDV core.
 pub trait Backend {
     /// Begin a new page.
@@ -88,6 +101,7 @@ pub trait Backend {
         size_bp: f32,
         glyphs: &[PositionedGlyph],
         color: Color,
+        style: FontStyle,
     ) -> Result<(), RenderError>;
 
     /// Draw an encoded raster image using its analyzed transform.
@@ -141,6 +155,7 @@ impl Backend for NullBackend {
         _size_bp: f32,
         _glyphs: &[PositionedGlyph],
         _color: Color,
+        _style: FontStyle,
     ) -> Result<(), RenderError> {
         Ok(())
     }

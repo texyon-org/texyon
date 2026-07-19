@@ -188,6 +188,30 @@ pub trait XdvEvents {
         Ok(())
     }
 
+    /// Handle a native-font definition including the vertical-layout flag.
+    ///
+    /// The default preserves compatibility with handlers that predate vertical
+    /// flag exposure by forwarding to [`handle_define_native_font`](Self::handle_define_native_font).
+    #[allow(unused)]
+    #[allow(clippy::too_many_arguments)]
+    fn handle_define_native_font_ext(
+        &mut self,
+        name: &str,
+        font_num: i32,
+        size: i32,
+        face_index: u32,
+        vertical: bool,
+        color_rgba: Option<u32>,
+        extend: Option<u32>,
+        slant: Option<u32>,
+        embolden: Option<u32>,
+    ) -> Result<(), Self::Error> {
+        let _ = vertical;
+        self.handle_define_native_font(
+            name, font_num, size, face_index, color_rgba, extend, slant, embolden,
+        )
+    }
+
     /// Handle a rule.
     #[allow(unused)]
     fn handle_rule(&mut self, x: i32, y: i32, height: i32, width: i32) -> Result<(), Self::Error> {
@@ -691,8 +715,16 @@ impl<T: XdvEvents> XdvParser<T> {
             None
         };
 
-        self.events.handle_define_native_font(
-            &name_str, font_num, size, face_index, color_rgba, extend, slant, embolden,
+        self.events.handle_define_native_font_ext(
+            &name_str,
+            font_num,
+            size,
+            face_index,
+            flags & NativeFontFlags::Vertical as u16 != 0,
+            color_rgba,
+            extend,
+            slant,
+            embolden,
         )?;
         Ok(())
     }
