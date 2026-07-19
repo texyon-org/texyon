@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
-use tectonic_preview_protocol::UpdateOutcome;
+use tectonic_preview_protocol::{OperationMetrics, UpdateOutcome};
 use tectonic_preview_render::{PageSvg, PageVisual};
 
 use super::{FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision};
@@ -41,6 +41,9 @@ pub struct FramePatch {
 pub trait FrameSink {
     /// Sink-specific publication failure.
     type Error;
+
+    /// Configure metrics copied into the next atomic frame, when supported.
+    fn set_operation_metrics(&mut self, _metrics: OperationMetrics) {}
 
     /// Accept one complete frame for transport.
     fn publish(&mut self, frame: &FramePatch) -> Result<(), Self::Error>;

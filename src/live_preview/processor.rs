@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, time::Instant};
 
 use tectonic_preview_protocol::{FrameId, FramePhase, RequestSeq, UpdateOutcome};
 use tectonic_preview_render::{Backend, ResourceProvider};
@@ -110,10 +110,12 @@ where
         cancellation: &EngineCancellation,
     ) -> WorkerRun<Self::Output, Self::Error> {
         let revision = snapshot.revision();
+        let engine_started = Instant::now();
         let engine = match self.engine.compile(snapshot, viewport, cancellation) {
             Ok(engine) => engine,
             Err(error) => return WorkerRun::Aborted(ResidentPreviewError::Engine(error)),
         };
+        let engine_ms = engine_started.elapsed().as_secs_f64() * 1000.0;
         if engine.frame.cancelled {
             return WorkerRun::Cancelled;
         }
@@ -144,13 +146,14 @@ where
                         bytes: &xdv,
                     }
                 });
-        let frame_id = match self.pipeline.process_fragment(
+        let frame_id = match self.pipeline.process_fragment_with_engine_ms(
             &mut self.sink,
             fragment,
             SourceRevision::new(revision.get()),
             applied_request_seq,
             FramePhase::Foreground,
             outcome,
+            engine_ms,
         ) {
             Ok(frame_id) => frame_id,
             Err(error) if pipeline_error_is_fatal(&error) => {

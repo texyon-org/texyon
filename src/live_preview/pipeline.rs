@@ -1,6 +1,6 @@
-use std::{fmt, sync::Arc};
+use std::{fmt, sync::Arc, time::Instant};
 
-use tectonic_preview_protocol::UpdateOutcome;
+use tectonic_preview_protocol::{OperationMetrics, UpdateOutcome};
 use tectonic_preview_render::{Backend, HotRenderer, RenderError, ResourceProvider};
 
 use super::{
@@ -95,14 +95,37 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         phase: FramePhase,
         outcome: UpdateOutcome,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
+        self.process_fragment_with_engine_ms(
+            sink,
+            fragment,
+            source_revision,
+            applied_request_seq,
+            phase,
+            outcome,
+            0.0,
+        )
+    }
+
+    pub(crate) fn process_fragment_with_engine_ms<S: FrameSink>(
+        &mut self,
+        sink: &mut S,
+        fragment: DocumentFragment<'_>,
+        source_revision: SourceRevision,
+        applied_request_seq: RequestSeq,
+        phase: FramePhase,
+        outcome: UpdateOutcome,
+        engine_ms: f64,
+    ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
         let document = self
             .assembler
             .assemble(self.last_document.as_ref(), fragment)
             .map_err(PreviewPipelineError::Assembly)?;
+        let analysis_started = Instant::now();
         let analysis = self
             .renderer
             .analyze(Arc::clone(document.bytes()))
             .map_err(PreviewPipelineError::Render)?;
+        let analysis_ms = analysis_started.elapsed().as_secs_f64() * 1000.0;
         let selected = analysis
             .pages()
             .iter()
@@ -118,10 +141,18 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
                 .then_some(page_index)
             })
             .collect::<Vec<_>>();
+        let render_started = Instant::now();
         let rendered = self
             .renderer
             .render_pages(&analysis, &selected, &mut self.backend)
             .map_err(PreviewPipelineError::Render)?;
+        let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
+        sink.set_operation_metrics(OperationMetrics {
+            engine_ms,
+            analysis_ms,
+            render_ms,
+            frame_bytes: 0,
+        });
         let frame_id = self
             .publisher
             .publish(
@@ -145,6 +176,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         sink: &mut S,
         applied_request_seq: RequestSeq,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
+        sink.set_operation_metrics(OperationMetrics::default());
         self.publisher
             .resync(sink, applied_request_seq)
             .map_err(PreviewPipelineError::Publication)
@@ -179,11 +211,16 @@ mod tests {
     #[derive(Default)]
     struct Sink {
         frames: Vec<FramePatch>,
+        metrics: Vec<OperationMetrics>,
         reject: bool,
     }
 
     impl FrameSink for Sink {
         type Error = &'static str;
+
+        fn set_operation_metrics(&mut self, metrics: OperationMetrics) {
+            self.metrics.push(metrics);
+        }
 
         fn publish(&mut self, frame: &FramePatch) -> Result<(), Self::Error> {
             if self.reject {
@@ -251,6 +288,10 @@ mod tests {
         assert_eq!(sink.frames[0].changed, vec![0]);
         assert_eq!(sink.frames[0].pages_svg.len(), 1);
         assert!(sink.frames[0].pages_svg[0].svg.contains("<path"));
+        assert_eq!(sink.metrics.len(), 1);
+        assert_eq!(sink.metrics[0].engine_ms, 0.0);
+        assert!(sink.metrics[0].analysis_ms > 0.0);
+        assert!(sink.metrics[0].render_ms > 0.0);
     }
 
     #[cfg(feature = "preview-mupdf")]

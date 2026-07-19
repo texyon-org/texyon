@@ -132,6 +132,10 @@ impl<W: Write> JsonlFrameSink<W> {
 impl<W: Write> FrameSink for JsonlFrameSink<W> {
     type Error = TransportError;
 
+    fn set_operation_metrics(&mut self, metrics: OperationMetrics) {
+        self.metrics = metrics;
+    }
+
     fn publish(&mut self, frame: &FramePatch) -> Result<(), Self::Error> {
         let encoded = self.encode_frame(frame)?;
         self.writer
