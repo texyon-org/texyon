@@ -40,6 +40,21 @@ pub(crate) unsafe fn set_bridge_state(ptr: *mut libc::c_void) {
     BRIDGE_PTR = ptr;
 }
 
+extern "C" {
+    fn ttbc_global_engine_enter(api: *mut libc::c_void) -> *mut libc::c_void;
+    fn ttbc_global_engine_exit();
+}
+
+/// Register a Rust-direct resident operation with bridge-core's C callbacks.
+pub(crate) unsafe fn enter_global_engine(api: *mut libc::c_void) {
+    let _ = ttbc_global_engine_enter(api);
+}
+
+/// Clear the callback state installed by [`enter_global_engine`].
+pub(crate) unsafe fn exit_global_engine() {
+    ttbc_global_engine_exit();
+}
+
 /// The bridge state for the current run. The engine is single-threaded and
 /// none of the wrappers re-enter, so the exclusive borrow is short-lived and
 /// unique.

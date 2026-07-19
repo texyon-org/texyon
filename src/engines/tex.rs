@@ -6,7 +6,10 @@
 
 use crate::errors::DefinitelySame;
 
-pub use tectonic_engine_xetex::{TexEngine, TexOutcome};
+pub use tectonic_engine_xetex::{
+    EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange, SourceError,
+    SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate, TexEngine, TexOutcome,
+};
 
 // Sigh, have to do this manually because of the Result/PartialEq conflict in errors.rs
 impl DefinitelySame for TexOutcome {

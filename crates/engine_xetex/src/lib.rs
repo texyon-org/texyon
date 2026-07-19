@@ -59,6 +59,7 @@ mod replay;
 mod save;
 mod scaled_math;
 mod scan;
+mod session;
 mod shipout;
 mod state;
 #[allow(dead_code)]
@@ -77,6 +78,7 @@ mod utf8;
 pub use replay::source::{
     SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,
 };
+pub use session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,
@@ -250,6 +252,9 @@ impl TexEngine {
         format_file_name: &str,
         input_file_name: &str,
     ) -> Result<TexOutcome> {
+        if crate::session::resident_active() {
+            bail!("cannot start batch XeTeX while a resident XeTeX session is open");
+        }
         let cformat = CString::new(format_file_name)?;
         let cinput = CString::new(input_file_name)?;
 

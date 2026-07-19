@@ -27,7 +27,6 @@ struct MemInput {
     closed: bool,
 }
 
-#[allow(dead_code)] // Consumed by the synchronous resident session next.
 pub(crate) struct SourceInstallGuard;
 
 impl Drop for SourceInstallGuard {
@@ -38,7 +37,6 @@ impl Drop for SourceInstallGuard {
     }
 }
 
-#[allow(dead_code)] // Consumed by the synchronous resident session next.
 pub(crate) fn install(snapshot: SourceSnapshot) -> SourceInstallGuard {
     ACTIVE.with(|active| {
         let previous = active.borrow_mut().replace(ReplaySources {

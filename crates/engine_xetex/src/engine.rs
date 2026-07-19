@@ -1004,7 +1004,7 @@ unsafe fn tt_run_engine_inner(
 }
 
 /// Result of initializing an engine before any primary document is opened.
-enum InitOutcome {
+pub(crate) enum InitOutcome {
     Ready,
     Terminate(i32),
 }
@@ -1014,7 +1014,7 @@ enum InitOutcome {
 /// On success the state is ready to open a primary input, but owns no document
 /// input stack. Keeping this boundary explicit lets batch and future resident
 /// sessions share the same initialization path.
-unsafe fn initialize_engine(
+pub(crate) unsafe fn initialize_engine(
     st: &mut crate::state::EngineState,
     dump_name: *const libc::c_char,
     build_date: libc::time_t,
@@ -1519,6 +1519,33 @@ unsafe fn run_document_to_end(
     tt_cleanup_in(&mut *st);
 
     st.errors.history
+}
+
+/// Run and finalize one document while retaining the initialized engine arenas.
+/// Unlike [`run_document_to_end`], aborts are returned without terminal cleanup
+/// so a resident session can close operation resources and rewind rung zero.
+pub(crate) unsafe fn run_resident_document(
+    st: &mut crate::state::EngineState,
+    input_file_name: *const libc::c_char,
+) -> Result<i32, crate::errors::EngineAbort> {
+    crate::io::start_input_in(st, input_file_name).map_err(|e| e.into_engine_abort())?;
+    st.errors.history = HISTORY_SPOTLESS;
+    crate::main_control::main_control_in(st).map_err(|e| e.into_engine_abort())?;
+    final_cleanup_in(st)?;
+    crate::io::close_files_and_terminate_in(st)?;
+    Ok(st.errors.history)
+}
+
+/// Close input slots that may remain live after an interrupted resident op.
+pub(crate) unsafe fn release_operation_inputs(st: &mut crate::state::EngineState) {
+    for slot in &mut st.input.input_file {
+        let slot = std::mem::take(slot);
+        let _ = crate::io::u_close(slot);
+    }
+    for slot in &mut st.input.read_file {
+        let slot = std::mem::take(slot);
+        let _ = crate::io::u_close(slot);
+    }
 }
 
 fn initial_random_seed(

@@ -247,6 +247,12 @@ impl CheckpointLadder<EngineBundle> {
         ladder
     }
 
+    pub(crate) fn enable_verification(&mut self, st: &EngineState) {
+        assert_eq!(self.rungs.len(), 1, "oracle enabled after document execution");
+        self.verify_rewinds = true;
+        self.rungs[0].digests = oracle::digest_state(st);
+    }
+
     pub(crate) fn from_engine_with_budget(
         st: &EngineState,
         strings_base: StringWatermark,
