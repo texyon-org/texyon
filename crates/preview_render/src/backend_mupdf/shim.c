@@ -100,6 +100,22 @@ int pr_backend_font(struct pr_backend *backend, const unsigned char *data,
     return result;
 }
 
+int pr_backend_gid_by_name(struct pr_backend *backend, int font_id,
+                           const char *name)
+{
+    if (font_id < 0 || font_id >= backend->font_count)
+        return -1;
+    int gid = -1;
+    fz_try(backend->ctx) {
+        gid = fz_encode_character_by_glyph_name(backend->ctx,
+            backend->fonts[font_id], name);
+    }
+    fz_catch(backend->ctx) {
+        gid = -1;
+    }
+    return gid;
+}
+
 int pr_backend_glyphs(struct pr_backend *backend, int font_id, float size,
                       const unsigned short *gids, const float *positions,
                       int count, const float *rgba, float extend, float slant,

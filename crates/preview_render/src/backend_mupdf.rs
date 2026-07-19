@@ -4,7 +4,7 @@
 //! binary to MuPDF's AGPL-3.0-or-later licensing terms.
 
 use std::collections::BTreeMap;
-use std::ffi::c_void;
+use std::ffi::{c_void, CString};
 
 use crate::{
     Backend, Color, FontId, FontStyle, Matrix, PositionedChar, PositionedGlyph, RenderError,
@@ -16,6 +16,7 @@ extern "C" {
     fn pr_backend_drop(backend: *mut c_void);
     fn pr_backend_begin(backend: *mut c_void, width: f32, height: f32) -> i32;
     fn pr_backend_font(backend: *mut c_void, data: *const u8, length: usize, face: i32) -> i32;
+    fn pr_backend_gid_by_name(backend: *mut c_void, font: i32, name: *const i8) -> i32;
     fn pr_backend_glyphs(
         backend: *mut c_void,
         font: i32,
@@ -59,6 +60,7 @@ extern "C" {
 pub struct MupdfBackend {
     raw: *mut c_void,
     fonts: BTreeMap<(ResourceIdentity, u32), FontId>,
+    classic_encodings: BTreeMap<FontId, Vec<u16>>,
 }
 
 impl MupdfBackend {
@@ -74,6 +76,7 @@ impl MupdfBackend {
         Ok(Self {
             raw,
             fonts: BTreeMap::new(),
+            classic_encodings: BTreeMap::new(),
         })
     }
 }
@@ -119,14 +122,26 @@ impl Backend for MupdfBackend {
 
     fn register_classic_font(
         &mut self,
-        _identity: ResourceIdentity,
-        _bytes: &[u8],
+        identity: ResourceIdentity,
+        bytes: &[u8],
         _encoding_identity: ResourceIdentity,
-        _encoding_bytes: &[u8],
+        encoding_bytes: &[u8],
     ) -> Result<FontId, RenderError> {
-        Err(RenderError::Backend(
-            "MuPDF classic fonts are not implemented".into(),
-        ))
+        let font = self.register_font(identity, bytes, 0)?;
+        if self.classic_encodings.contains_key(&font) {
+            return Ok(font);
+        }
+        let names = parse_encoding(encoding_bytes)?;
+        let mut glyphs = Vec::with_capacity(names.len());
+        for name in names {
+            let name = CString::new(name)
+                .map_err(|_| RenderError::Backend("NUL in font encoding".into()))?;
+            // SAFETY: CString remains live and the shim catches MuPDF exceptions.
+            let glyph = unsafe { pr_backend_gid_by_name(self.raw, font.0 as i32, name.as_ptr()) };
+            glyphs.push(glyph.max(0) as u16);
+        }
+        self.classic_encodings.insert(font, glyphs);
+        Ok(font)
     }
 
     fn fill_rule(
@@ -188,14 +203,38 @@ impl Backend for MupdfBackend {
 
     fn fill_chars(
         &mut self,
-        _font: FontId,
-        _size_bp: f32,
-        _chars: &[PositionedChar],
-        _color: Color,
+        font: FontId,
+        size_bp: f32,
+        chars: &[PositionedChar],
+        color: Color,
     ) -> Result<(), RenderError> {
-        Err(RenderError::Backend(
-            "MuPDF classic text is not implemented".into(),
-        ))
+        let encoding = self
+            .classic_encodings
+            .get(&font)
+            .ok_or_else(|| RenderError::Backend("classic encoding was not registered".into()))?;
+        let glyphs: Vec<_> = chars
+            .iter()
+            .map(|character| PositionedGlyph {
+                glyph_id: encoding
+                    .get(character.character as usize)
+                    .copied()
+                    .unwrap_or(0),
+                x_bp: character.x_bp,
+                y_bp: character.y_bp,
+            })
+            .collect();
+        self.fill_glyphs(
+            font,
+            size_bp,
+            &glyphs,
+            color,
+            FontStyle {
+                extend: 1.0,
+                slant: 0.0,
+                embolden: 0.0,
+                vertical: false,
+            },
+        )
     }
 
     fn draw_image(
@@ -256,6 +295,31 @@ impl Backend for MupdfBackend {
         unsafe { pr_backend_free(data) };
         svg
     }
+}
+
+fn parse_encoding(bytes: &[u8]) -> Result<Vec<String>, RenderError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| RenderError::Backend("font encoding is not UTF-8/ASCII".into()))?;
+    let start = text
+        .find('[')
+        .ok_or_else(|| RenderError::Backend("font encoding has no vector".into()))?;
+    let end = text[start + 1..]
+        .find(']')
+        .map(|offset| start + 1 + offset)
+        .ok_or_else(|| RenderError::Backend("font encoding vector is unterminated".into()))?;
+    let mut names = Vec::new();
+    for token in text[start + 1..end].split_whitespace() {
+        if let Some(name) = token.strip_prefix('/') {
+            names.push(name.to_owned());
+        }
+    }
+    if names.is_empty() || names.len() > 256 {
+        return Err(RenderError::Backend(
+            "font encoding vector has invalid length".into(),
+        ));
+    }
+    names.resize(256, ".notdef".into());
+    Ok(names)
 }
 
 #[cfg(test)]
@@ -327,5 +391,37 @@ mod tests {
         let svg = backend.finish_page().unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("image") || svg.contains("path"));
+    }
+
+    #[test]
+    fn maps_classic_encoding_names_to_outlines() {
+        let bytes = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").unwrap();
+        let resource = crate::Resource::from_bytes(bytes);
+        let mut names = vec!["/.notdef"; 65];
+        names.push("/A");
+        let encoding = crate::Resource::from_bytes(format!("[{}]", names.join(" ")).into_bytes());
+        let mut backend = MupdfBackend::new().unwrap();
+        backend.begin_page(100.0, 120.0).unwrap();
+        let font = backend
+            .register_classic_font(
+                resource.identity,
+                &resource.bytes,
+                encoding.identity,
+                &encoding.bytes,
+            )
+            .unwrap();
+        backend
+            .fill_chars(
+                font,
+                20.0,
+                &[PositionedChar {
+                    character: 65,
+                    x_bp: 10.0,
+                    y_bp: 30.0,
+                }],
+                Color::BLACK,
+            )
+            .unwrap();
+        assert!(backend.finish_page().unwrap().contains("path"));
     }
 }

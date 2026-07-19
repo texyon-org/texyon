@@ -45,7 +45,7 @@ impl Matrix {
 }
 
 /// Backend-owned font handle.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FontId(pub u32);
 
 /// One glyph positioned in PostScript big points, with a y-down origin.
