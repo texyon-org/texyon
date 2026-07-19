@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use sha2::{Digest, Sha256};
 
@@ -61,6 +61,7 @@ pub struct SourceSnapshot {
     revision: SourceRevision,
     primary: SourcePath,
     entries: Arc<BTreeMap<SourcePath, SourceEntry>>,
+    disk_entries: Arc<Mutex<BTreeMap<SourcePath, SourceEntry>>>,
 }
 
 #[derive(Clone)]
@@ -156,6 +157,7 @@ impl SourceSnapshot {
             revision,
             primary,
             entries: Arc::new(entries),
+            disk_entries: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
 
@@ -217,31 +219,69 @@ impl SourceSnapshot {
                 revision: next_revision(),
                 primary: self.primary.clone(),
                 entries: Arc::new(entries),
+                disk_entries: Arc::new(Mutex::new(BTreeMap::new())),
             },
             changed_path: Some(path),
             first_changed,
         })
     }
 
-    pub(crate) fn primary_entry(&self) -> (SourcePath, Arc<[u8]>) {
+    pub(crate) fn primary_entry(&self) -> (SourcePath, Arc<[u8]>, SourceIdentity) {
         let entry = self
             .entries
             .get(&self.primary)
             .expect("validated snapshot without primary");
-        (self.primary.clone(), Arc::clone(&entry.bytes))
+        (
+            self.primary.clone(),
+            Arc::clone(&entry.bytes),
+            entry.identity,
+        )
     }
 
-    pub(crate) fn resolve_entry(&self, path: &Path) -> Option<(SourcePath, Arc<[u8]>)> {
+    pub(crate) fn resolve_entry(
+        &self,
+        path: &Path,
+    ) -> Option<(SourcePath, Arc<[u8]>, SourceIdentity)> {
         let path = normalize(&self.root, path).ok()?;
         self.entries
             .get(&path)
-            .map(|entry| (path, Arc::clone(&entry.bytes)))
+            .map(|entry| (path, Arc::clone(&entry.bytes), entry.identity))
     }
 
-    pub(crate) fn entry(&self, path: &SourcePath) -> Option<(Arc<[u8]>, SourceIdentity)> {
-        self.entries
-            .get(path)
-            .map(|entry| (Arc::clone(&entry.bytes), entry.identity))
+    /// Resolve editor bytes or freeze a root-confined disk source for this operation.
+    pub(crate) fn resolve_replay_entry(
+        &self,
+        path: &Path,
+    ) -> Option<(SourcePath, Arc<[u8]>, SourceIdentity)> {
+        let path = normalize(&self.root, path).ok()?;
+        let (bytes, identity) = self.replay_entry(&path)?;
+        Some((path, bytes, identity))
+    }
+
+    /// Resolve bytes constrained by an existing replay-fence input record.
+    pub(crate) fn replay_entry(&self, path: &SourcePath) -> Option<(Arc<[u8]>, SourceIdentity)> {
+        if let Some(entry) = self.entries.get(path) {
+            return Some((Arc::clone(&entry.bytes), entry.identity));
+        }
+        let mut disk_entries = self.disk_entries.lock().ok()?;
+        if let Some(entry) = disk_entries.get(path) {
+            return Some((Arc::clone(&entry.bytes), entry.identity));
+        }
+        let root = std::fs::canonicalize(self.root.as_ref()).ok()?;
+        let candidate = std::fs::canonicalize(root.join(path.as_str())).ok()?;
+        if !candidate.starts_with(&root) || !candidate.is_file() {
+            return None;
+        }
+        let bytes: Arc<[u8]> = std::fs::read(candidate).ok()?.into();
+        let identity = identity(&bytes);
+        disk_entries.insert(
+            path.clone(),
+            SourceEntry {
+                bytes: Arc::clone(&bytes),
+                identity,
+            },
+        );
+        Some((bytes, identity))
     }
 
     /// First differing byte for every current buffer changed since `previous`.
@@ -250,8 +290,9 @@ impl SourceSnapshot {
             .iter()
             .filter_map(|(path, entry)| match previous.entries.get(path) {
                 Some(old) if old.identity == entry.identity => None,
-                Some(old) => first_difference(&old.bytes, &entry.bytes)
-                    .map(|offset| (path.clone(), offset)),
+                Some(old) => {
+                    first_difference(&old.bytes, &entry.bytes).map(|offset| (path.clone(), offset))
+                }
                 None => Some((path.clone(), 0)),
             })
             .collect()

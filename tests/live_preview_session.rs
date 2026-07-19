@@ -395,6 +395,52 @@ fn changing_a_consumed_child_falls_back_to_rung_zero() {
 }
 
 #[test]
+fn same_size_same_mtime_disk_child_invalidates_replay() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let original_primary = "\\input disk\nPRIMARY\n\\bye\n";
+    let edited_primary = "\\input disk\nPRIMARY EDITED\n\\bye\n";
+    let expected = cold_output_with_children(
+        edited_primary.as_bytes(),
+        &[("disk.tex", &b"B\n"[..])],
+        "session.xdv",
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let disk_path = temp.path().join("disk.tex");
+    std::fs::write(&disk_path, b"A\n").unwrap();
+    let fixed_time = filetime::FileTime::from_unix_time(1_700_000_000, 0);
+    filetime::set_file_mtime(&disk_path, fixed_time).unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        original_primary.into(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+
+    std::fs::write(&disk_path, b"B\n").unwrap();
+    filetime::set_file_mtime(&disk_path, fixed_time).unwrap();
+    sources.replace(None, edited_primary.into()).unwrap();
+    let edited = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert_eq!(edited.frame.splice_at, None);
+    assert_eq!(edited.xdv.unwrap().as_ref(), expected);
+    runner.finish().unwrap();
+}
+
+#[test]
 fn live_write_stream_is_reopened_with_its_checkpointed_prefix() {
     let _serial = SESSION_TEST_LOCK.lock().unwrap();
     util::set_test_root();

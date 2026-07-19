@@ -9,6 +9,7 @@ use super::source::{SourceIdentity, SourcePath, SourceSnapshot};
 
 const MEM_TAG: usize = 1usize << (usize::BITS - 1);
 const INDEX_MASK: usize = !MEM_TAG;
+const TEX_FORMAT: libc::c_int = 26;
 
 thread_local! {
     static ACTIVE: RefCell<Option<ReplaySources>> = const { RefCell::new(None) };
@@ -23,6 +24,7 @@ struct ReplaySources {
 struct MemInput {
     path: SourcePath,
     bytes: Arc<[u8]>,
+    identity: SourceIdentity,
     position: usize,
     pushback: Option<u8>,
     closed: bool,
@@ -73,11 +75,7 @@ pub(crate) fn checkpoint_inputs() -> Option<Vec<MemoryInputCheckpoint>> {
                 .map(|input| MemoryInputCheckpoint {
                     path: input.path.clone(),
                     bytes: Arc::clone(&input.bytes),
-                    identity: sources
-                        .snapshot
-                        .entry(&input.path)
-                        .expect("open memory input disappeared from snapshot")
-                        .1,
+                    identity: input.identity,
                     position: input.position,
                     pushback: input.pushback,
                     closed: input.closed,
@@ -99,7 +97,7 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
         }
         let mut restored = Vec::with_capacity(checkpoints.len());
         for checkpoint in checkpoints {
-            let Some((bytes, _)) = sources.snapshot.entry(&checkpoint.path) else {
+            let Some((bytes, identity)) = sources.snapshot.replay_entry(&checkpoint.path) else {
                 return false;
             };
             if checkpoint.position > bytes.len() {
@@ -108,6 +106,7 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
             restored.push(MemInput {
                 path: checkpoint.path.clone(),
                 bytes,
+                identity,
                 position: checkpoint.position,
                 pushback: checkpoint.pushback,
                 closed: checkpoint.closed,
@@ -122,12 +121,12 @@ pub(crate) fn open_primary() -> Option<usize> {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let sources = active.as_mut()?;
-        let (path, bytes) = sources.snapshot.primary_entry();
-        Some(sources.open(path, bytes))
+        let (path, bytes, identity) = sources.snapshot.primary_entry();
+        Some(sources.open(path, bytes, identity))
     })
 }
 
-pub(crate) unsafe fn open_named(path: *const libc::c_char) -> Option<usize> {
+pub(crate) unsafe fn open_named(path: *const libc::c_char, format: libc::c_int) -> Option<usize> {
     if path.is_null() {
         return None;
     }
@@ -135,8 +134,13 @@ pub(crate) unsafe fn open_named(path: *const libc::c_char) -> Option<usize> {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let sources = active.as_mut()?;
-        let (path, bytes) = sources.snapshot.resolve_entry(Path::new(path.as_ref()))?;
-        Some(sources.open(path, bytes))
+        let requested = Path::new(path.as_ref());
+        let resolved = sources.snapshot.resolve_entry(requested).or_else(|| {
+            (format == TEX_FORMAT)
+                .then(|| sources.snapshot.resolve_replay_entry(requested))
+                .flatten()
+        })?;
+        Some(sources.open(resolved.0, resolved.1, resolved.2))
     })
 }
 
@@ -287,10 +291,11 @@ pub(crate) fn close(handle: usize) -> Option<bool> {
 }
 
 impl ReplaySources {
-    fn open(&mut self, path: SourcePath, bytes: Arc<[u8]>) -> usize {
+    fn open(&mut self, path: SourcePath, bytes: Arc<[u8]>, identity: SourceIdentity) -> usize {
         self.inputs.push(MemInput {
             path: path.clone(),
             bytes,
+            identity,
             position: 0,
             pushback: None,
             closed: false,
@@ -374,7 +379,7 @@ mod tests {
     fn primary_and_child_are_memory_backed_from_the_first_open() {
         let _guard = install(snapshot());
         let primary = open_primary().unwrap();
-        let child = unsafe { open_named(c"child".as_ptr()) }.unwrap();
+        let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
         assert!(is_mem(primary));
         assert!(is_mem(child));
         assert_eq!(getc(primary), Some(b'a'.into()));
@@ -386,7 +391,7 @@ mod tests {
         let checkpoints = {
             let _guard = install(snapshot());
             let primary = open_primary().unwrap();
-            let child = unsafe { open_named(c"child".as_ptr()) }.unwrap();
+            let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
             assert_eq!(getc(primary), Some(b'a'.into()));
             assert_eq!(getc(child), Some(b'x'.into()));
             assert_eq!(ungetc(child, b'Q'.into()), Some(0));

@@ -105,7 +105,7 @@ pub(crate) unsafe fn ttstub_input_open(
     format: libc::c_int,
     is_gz: libc::c_int,
 ) -> usize {
-    if let Some(handle) = crate::replay::adapter::open_named(path) {
+    if let Some(handle) = crate::replay::adapter::open_named(path, format) {
         return handle;
     }
     crate::replay::adapter::clear_last_path();

@@ -31,10 +31,10 @@ impl ReplayFence {
         snapshot: &SourceSnapshot,
     ) -> Option<Self> {
         if state
-                .input
-                .read_file
-                .iter()
-                .any(|slot| matches!(slot, crate::state::InputSlot::Open(_)))
+            .input
+            .read_file
+            .iter()
+            .any(|slot| matches!(slot, crate::state::InputSlot::Open(_)))
         {
             return None;
         }
@@ -151,7 +151,7 @@ impl ReplayFenceInputs {
     /// input was consumed through EOF, so any identity change invalidates it.
     pub(crate) fn is_eligible(&self, snapshot: &SourceSnapshot) -> bool {
         self.inputs.iter().all(|input| {
-            let Some((bytes, identity)) = snapshot.entry(&input.path) else {
+            let Some((bytes, identity)) = snapshot.replay_entry(&input.path) else {
                 return false;
             };
             if identity == input.identity {
@@ -215,7 +215,7 @@ mod tests {
     ) -> MemoryInputCheckpoint {
         let source = snapshot(1, bytes, b"child");
         let normalized = source.primary().clone();
-        let (bytes, identity) = source.entry(&normalized).unwrap();
+        let (bytes, identity) = source.replay_entry(&normalized).unwrap();
         assert_eq!(path, "main.tex");
         MemoryInputCheckpoint {
             path: normalized,
