@@ -1199,11 +1199,16 @@ unsafe fn tt_run_engine_inner(
     crate::math::initialize_math_variables();
     crate::pagebuilder::initialize_pagebuilder_variables(&mut *st);
     crate::shipout::initialize_shipout_variables(&mut *st);
-    let mut epoch = 0;
-    let mut micros = 0;
-    crate::texmfmp::get_seconds_and_micros(&mut epoch, &mut micros);
-    st.shipout.epochseconds = epoch;
-    st.shipout.microseconds = micros;
+    if st.config.deterministic_mode {
+        st.shipout.epochseconds = build_date as i32;
+        st.shipout.microseconds = 0;
+    } else {
+        let mut epoch = 0;
+        let mut micros = 0;
+        crate::texmfmp::get_seconds_and_micros(&mut epoch, &mut micros);
+        st.shipout.epochseconds = epoch;
+        st.shipout.microseconds = micros;
+    }
     crate::texmfmp::init_start_time(&mut *st, build_date);
 
     st.shipout.selector = SELECTOR_TERM_ONLY;
@@ -1282,7 +1287,14 @@ unsafe fn tt_run_engine_inner(
         let mut day = 0;
         let mut month = 0;
         let mut year = 0;
-        crate::texmfmp::get_date_and_time(build_date, &mut time, &mut day, &mut month, &mut year);
+        crate::texmfmp::get_date_and_time(
+            build_date,
+            st.config.deterministic_mode,
+            &mut time,
+            &mut day,
+            &mut month,
+            &mut year,
+        );
         st.eqtb.data[(PC_INT_BASE + INT_PAR_TIME) as usize].b32.s1 = time;
         st.eqtb.data[(PC_INT_BASE + INT_PAR_DAY) as usize].b32.s1 = day;
         st.eqtb.data[(PC_INT_BASE + INT_PAR_MONTH) as usize].b32.s1 = month;
@@ -1400,7 +1412,12 @@ unsafe fn tt_run_engine_inner(
         state.fonts.font_used = vec![false; font_used_len];
     }
 
-    st.errors.random_seed = st.shipout.microseconds * 1000 + (st.shipout.epochseconds % 1_000_000);
+    st.errors.random_seed = initial_random_seed(
+        st.config.deterministic_mode,
+        build_date,
+        st.shipout.epochseconds,
+        st.shipout.microseconds,
+    );
     let random_seed = st.errors.random_seed;
     crate::scaled_math::init_randoms(&mut st.errors, random_seed);
 
@@ -1446,6 +1463,44 @@ unsafe fn tt_run_engine_inner(
     tt_cleanup_in(&mut *st);
 
     st.errors.history
+}
+
+fn initial_random_seed(
+    deterministic_mode: bool,
+    build_date: libc::time_t,
+    epochseconds: i32,
+    microseconds: i32,
+) -> i32 {
+    if deterministic_mode {
+        (build_date.wrapping_mul(1_000_003) & 0x7FFF_FFFF) as i32
+    } else {
+        microseconds * 1000 + (epochseconds % 1_000_000)
+    }
+}
+
+#[cfg(test)]
+mod deterministic_input_tests {
+    use super::initial_random_seed;
+
+    #[test]
+    fn deterministic_seed_depends_only_on_build_date() {
+        let a = initial_random_seed(true, 1_700_000_000, 1, 2);
+        let b = initial_random_seed(true, 1_700_000_000, 999_999, 888_888);
+        let c = initial_random_seed(true, 1_700_000_001, 1, 2);
+
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert!(a >= 0);
+    }
+
+    #[test]
+    fn nondeterministic_seed_preserves_the_live_clock_formula() {
+        assert_eq!(initial_random_seed(false, 0, 1_234_567, 42), 276_567);
+        assert_eq!(
+            initial_random_seed(false, 1_700_000_000, 1_234_567, 42),
+            276_567
+        );
+    }
 }
 pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
     tt_cleanup_pdf_files_close();

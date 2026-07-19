@@ -20,14 +20,19 @@ const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 /// translated from xetex-texmfmp.c:116 (get_date_and_time)
 pub unsafe fn get_date_and_time(
     source_date_epoch: libc::time_t,
+    use_utc: bool,
     minutes: *mut i32,
     day: *mut i32,
     month: *mut i32,
     year: *mut i32,
 ) {
-    // SAFETY: source_date_epoch is a valid time value; localtime returns a
-    // thread-local pointer that is valid until the next call.
-    let tmptr = libc::localtime(&source_date_epoch);
+    // SAFETY: source_date_epoch is a valid time value; localtime/gmtime return
+    // a thread-local pointer that is valid until the next call.
+    let tmptr = if use_utc {
+        libc::gmtime(&source_date_epoch)
+    } else {
+        libc::localtime(&source_date_epoch)
+    };
     *minutes = (*tmptr).tm_hour * 60 + (*tmptr).tm_min;
     *day = (*tmptr).tm_mday;
     *month = (*tmptr).tm_mon + 1;

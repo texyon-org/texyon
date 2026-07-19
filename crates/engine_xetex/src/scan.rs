@@ -4421,7 +4421,11 @@ pub(crate) fn scan_something_internal_in(
                                 st.scanner.cur_val = st.shipout.last_badness;
                             }
                             ELAPSED_TIME_CODE => {
-                                st.scanner.cur_val = unsafe { crate::texmfmp::get_microinterval(&st.shipout) };
+                                st.scanner.cur_val = if st.config.deterministic_mode {
+                                    0
+                                } else {
+                                    unsafe { crate::texmfmp::get_microinterval(&st.shipout) }
+                                };
                             }
                             RANDOM_SEED_CODE => {
                                 st.scanner.cur_val = st.errors.random_seed;

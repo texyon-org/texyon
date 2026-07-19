@@ -136,7 +136,8 @@ pub struct UnstableOptions {
     /// The most significant user-facing difference is a static document build
     /// date, but this is already covered by [`crate::driver::ProcessingSessionBuilder::build_date_from_env`],
     /// which accepts a `deterministic` flag. Additionally, deterministic mode
-    /// spoofs file modification times and hides absolute paths from the engine.
+    /// spoofs file modification times, hides absolute paths, and pins XeTeX's
+    /// calendar, elapsed timer, and initial random seed to the build date.
     ///
     /// There's a few ways to break determinism (shell escape, reading from
     /// `/dev/urandom`), but anything else (especially behaviour in TeXLive

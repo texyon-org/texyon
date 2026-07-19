@@ -1874,6 +1874,7 @@ impl ProcessingSession {
                 .synctex(self.synctex_enabled)
                 .semantic_pagination(self.output_format == OutputFormat::Html)
                 .shell_escape(self.shell_escape_mode != ShellEscapeMode::Disabled)
+                .deterministic_mode(self.unstables.deterministic_mode)
                 .build_date(self.build_date)
                 .process(
                     &mut launcher,

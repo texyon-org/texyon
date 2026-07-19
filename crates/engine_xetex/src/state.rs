@@ -898,6 +898,8 @@ pub(crate) struct ConfigState {
     pub synctex_enabled: i32,
     pub semantic_pagination_enabled: bool,
     pub shell_escape_enabled: bool,
+    /// Remove live clock and timezone inputs from engine-visible values.
+    pub deterministic_mode: bool,
     pub max_print_line: i32,
 }
 

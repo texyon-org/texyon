@@ -130,6 +130,7 @@ pub struct TexEngine {
     synctex_enabled: bool,
     semantic_pagination_enabled: bool,
     shell_escape_enabled: bool,
+    deterministic_mode: bool,
     build_date: SystemTime,
 }
 
@@ -141,6 +142,7 @@ impl Default for TexEngine {
             synctex_enabled: false,
             semantic_pagination_enabled: false,
             shell_escape_enabled: false,
+            deterministic_mode: false,
             build_date: SystemTime::UNIX_EPOCH,
         }
     }
@@ -193,6 +195,16 @@ impl TexEngine {
     /// The default is false.
     pub fn shell_escape(&mut self, shell_escape_enabled: bool) -> &mut Self {
         self.shell_escape_enabled = shell_escape_enabled;
+        self
+    }
+
+    /// Configure deterministic engine-visible clock, timezone, and seed inputs.
+    ///
+    /// When enabled, calendar values and the initial random seed come from the
+    /// configured build date, and the elapsed timer remains fixed at zero.
+    /// The default is false, preserving XeTeX's live-clock behavior.
+    pub fn deterministic_mode(&mut self, enabled: bool) -> &mut Self {
+        self.deterministic_mode = enabled;
         self
     }
 
@@ -250,6 +262,10 @@ impl TexEngine {
                 tt_xetex_set_int_variable(
                     c"semantic_pagination_enabled".as_ptr(),
                     self.semantic_pagination_enabled.into(),
+                );
+                tt_xetex_set_int_variable(
+                    c"deterministic_mode".as_ptr(),
+                    self.deterministic_mode.into(),
                 );
 
                 tt_engine_xetex_main(
