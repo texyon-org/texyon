@@ -175,7 +175,7 @@ pub struct SourceFile {
 
 /// Requests accepted on protocol stdin.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ClientRequest {
     /// Establish the initial immutable source snapshot.
     Initialize {
@@ -203,9 +203,9 @@ pub enum ClientRequest {
         last: usize,
     },
     /// Request a full replay of retained server belief.
-    Resync,
+    Resync {},
     /// Durably stop compilation until an accepted mutation.
-    Cancel,
+    Cancel {},
     /// Report viewer paint telemetry.
     Painted {
         /// Frame retained and painted by the viewer.
@@ -234,7 +234,7 @@ pub enum ClientRequest {
         v_bp: f64,
     },
     /// Stop the worker and process cleanly.
-    Shutdown,
+    Shutdown {},
 }
 
 /// Rendering phase represented by a coherent frame.
@@ -667,7 +667,7 @@ mod tests {
                 text: "a\nb".into()
             }
         );
-        assert_eq!(second, ClientRequest::Shutdown);
+        assert_eq!(second, ClientRequest::Shutdown {});
     }
 
     #[test]
@@ -700,6 +700,23 @@ mod tests {
         assert!(matches!(
             read_request(&mut reader, small_limits()),
             Err(ProtocolError::SourceSnapshotTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_incompatible_versions_and_unknown_schema_fields() {
+        let mut version = Cursor::new(
+            b"{\"type\":\"initialize\",\"protocol_version\":2,\"primary_path\":\"x.tex\",\"primary_text\":\"x\",\"children\":[]}\n",
+        );
+        assert!(matches!(
+            read_request(&mut version, small_limits()),
+            Err(ProtocolError::IncompatibleVersion { .. })
+        ));
+
+        let mut unknown = Cursor::new(b"{\"type\":\"shutdown\",\"surprise\":true}\n");
+        assert!(matches!(
+            read_request(&mut unknown, small_limits()),
+            Err(ProtocolError::InvalidJson(_))
         ));
     }
 

@@ -212,7 +212,7 @@ where
         let request = read_request(&mut reader, limits);
         let stop = matches!(
             request,
-            Ok(ClientRequest::Shutdown) | Err(ProtocolError::EndOfStream)
+            Ok(ClientRequest::Shutdown {}) | Err(ProtocolError::EndOfStream)
         );
         if request_tx.send(request).is_err() || stop {
             break;
@@ -257,20 +257,20 @@ where
                         break;
                     }
                 }
-                Ok(ClientRequest::Resync) => {
+                Ok(ClientRequest::Resync {}) => {
                     if let Err(error) = worker.resync() {
                         fatal = Some(PreviewServerError::Worker(error));
                         break;
                     }
                 }
-                Ok(ClientRequest::Cancel) => {
+                Ok(ClientRequest::Cancel {}) => {
                     if let Err(error) = worker.cancel() {
                         fatal = Some(PreviewServerError::Worker(error));
                         break;
                     }
                 }
                 Ok(ClientRequest::Painted { .. }) => {}
-                Ok(ClientRequest::Shutdown) | Err(ProtocolError::EndOfStream) => {
+                Ok(ClientRequest::Shutdown {}) | Err(ProtocolError::EndOfStream) => {
                     shutdown = true;
                     break;
                 }
