@@ -2130,6 +2130,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
 /// Deferred cold outcomes of the scanner / `expand` cores.
 pub(crate) enum SccAbort {
+    /// Cooperative resident-operation cancellation.
+    Cancelled,
     /// A recoverable `error()`/`int_error()` produced a terminal outcome.
     Error(crate::errors::ErrorOutcome),
     /// An input-stack / tokenizer cold abort.
@@ -2165,6 +2167,7 @@ impl SccAbort {
     /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
+            SccAbort::Cancelled => crate::errors::EngineAbort::Cancelled,
             SccAbort::Error(oc) => oc.into_engine_abort(),
             SccAbort::Input(a) => a.into_engine_abort(),
             SccAbort::NoLegalEnd { open_log } => {
@@ -2326,6 +2329,9 @@ pub(crate) fn x_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAb
 }
 pub(crate) fn get_x_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
     loop {
+        if st.cancellation.at_expansion_token() {
+            return Err(SccAbort::Cancelled);
+        }
         get_next_scc(st)?;
         if st.scanner.cur_cmd <= MAX_COMMAND {
             break;

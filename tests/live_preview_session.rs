@@ -6,13 +6,14 @@ use std::sync::Mutex;
 
 use sha2::{Digest, Sha256};
 use tectonic::engines::tex::{
-    EnginePreviewConfig, IncrementalXeTeXSession, SourceSnapshot, TexEngine, TexOutcome,
+    EngineCancellation, EnginePreviewConfig, IncrementalXeTeXSession, SourceSnapshot, TexEngine,
+    TexOutcome,
 };
 use tectonic::io::testing::SingleInputFileIo;
 use tectonic::io::{IoProvider, IoStack, MemoryIo};
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_status_base::NoopStatusBackend;
 use tectonic_io_base::stdstreams::BufferedPrimaryIo;
+use tectonic_status_base::NoopStatusBackend;
 
 #[path = "util/mod.rs"]
 mod util;
@@ -77,8 +78,7 @@ fn session_open_edit_and_revert_are_byte_stable() {
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let mut open_output = MemoryIo::new(true);
-    let mut session =
-        IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
 
     let original = snapshot(b"A\n\\bye\n");
     {
@@ -95,7 +95,9 @@ fn session_open_edit_and_revert_are_byte_stable() {
     let original_xdv = output_bytes(&open_output, "session.xdv");
     assert_eq!(original_xdv, cold_original);
 
-    let edited = original.replace("session", Arc::from(&b"B\n\\bye\n"[..])).unwrap();
+    let edited = original
+        .replace("session", Arc::from(&b"B\n\\bye\n"[..]))
+        .unwrap();
     let mut edit_output = MemoryIo::new(true);
     {
         let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
@@ -135,8 +137,7 @@ fn fatal_class_edit_abort_rewinds_and_next_edit_recovers() {
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let mut first_output = MemoryIo::new(true);
-    let mut session =
-        IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
     let valid = snapshot(b"A\n\\bye\n");
     {
         let io = IoStack::new(vec![
@@ -177,6 +178,62 @@ fn fatal_class_edit_abort_rewinds_and_next_edit_recovers() {
 }
 
 #[test]
+fn cooperative_cancel_rewinds_and_next_edit_recovers() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let cancellation = EngineCancellation::new();
+    let mut config = EnginePreviewConfig::new("plain.fmt");
+    config.cancellation = cancellation.clone();
+    let mut session = IncrementalXeTeXSession::new(config).unwrap();
+    let source = snapshot(b"A\n\\bye\n");
+
+    let mut first_output = MemoryIo::new(true);
+    {
+        let io = IoStack::new(vec![
+            &mut first_output as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        assert!(
+            !session
+                .open(&mut launcher, source.clone())
+                .unwrap()
+                .cancelled
+        );
+    }
+
+    cancellation.request();
+    let mut cancelled_output = MemoryIo::new(true);
+    {
+        let io = IoStack::new(vec![&mut cancelled_output as &mut dyn IoProvider]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session.edit(&mut launcher, source.clone(), None).unwrap();
+        assert!(frame.cancelled);
+        assert!(frame.aborted.is_none());
+        assert!(!session.is_dead());
+    }
+
+    cancellation.rearm();
+    let mut recovered_output = MemoryIo::new(true);
+    {
+        let io = IoStack::new(vec![&mut recovered_output as &mut dyn IoProvider]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session.edit(&mut launcher, source, None).unwrap();
+        assert!(!frame.cancelled);
+        assert_eq!(frame.outcome, TexOutcome::Spotless);
+        session.finish(&mut launcher).unwrap();
+    }
+}
+
+#[test]
 fn editor_owned_child_edits_are_read_from_the_snapshot() {
     let _serial = SESSION_TEST_LOCK.lock().unwrap();
     util::set_test_root();
@@ -194,8 +251,7 @@ fn editor_owned_child_edits_are_read_from_the_snapshot() {
     .unwrap();
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
-    let mut session =
-        IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
     let mut first_output = MemoryIo::new(true);
     {
         let io = IoStack::new(vec![
@@ -270,8 +326,7 @@ fn page_manifest_matches_final_multi_page_xdv_spans() {
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let mut output = MemoryIo::new(true);
-    let mut session =
-        IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
     let frame;
     {
         let io = IoStack::new(vec![

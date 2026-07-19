@@ -7,9 +7,9 @@
 use crate::errors::DefinitelySame;
 
 pub use tectonic_engine_xetex::{
-    EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageExecution, PageRange,
-    SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate, TexEngine,
-    TexOutcome,
+    EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageExecution,
+    PageRange, SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot,
+    SourceUpdate, TexEngine, TexOutcome,
 };
 
 // Sigh, have to do this manually because of the Result/PartialEq conflict in errors.rs

@@ -182,6 +182,8 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
 /// `_tt_abort` longjmp and returns `HISTORY_FATAL_ERROR`, for `Result` catch
 /// points that propagate the abort up to `tt_run_engine`'s `i32` return.
 pub(crate) enum EngineAbort {
+    /// Cooperative resident-operation cancellation.
+    Cancelled,
     /// `overflow(what, n)` — TeX capacity exceeded.
     Overflow { what: *const libc::c_char, n: i32 },
     /// `overflow("pool size", pool_size - init_pool_ptr)` — string-pool capacity
@@ -255,6 +257,7 @@ impl EngineAbort {
 
     pub(crate) unsafe fn into_history(self, st: &mut EngineState) -> i32 {
         match self {
+            EngineAbort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
             // The print + cleanup half of `overflow` (everything bar `_tt_abort`).
             EngineAbort::Overflow { what, n } => Self::overflow_report(st, what, n),
             EngineAbort::PoolOverflow => {

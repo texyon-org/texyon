@@ -1894,6 +1894,8 @@ impl NewCharacterAbort {
 }
 
 pub(crate) enum MainControlAbort {
+    /// Cooperative resident-operation cancellation.
+    Cancelled,
     Scanner(crate::scan::SccAbort),
     NodeRecycle(crate::scan::NodeRecycleAbort),
     PageBuild(crate::pagebuilder::PageBuildAbort),
@@ -2042,6 +2044,7 @@ impl MainControlAbort {
     /// terminal, delegating to each leaf's `into_engine_abort`.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
+            MainControlAbort::Cancelled => crate::errors::EngineAbort::Cancelled,
             MainControlAbort::Scanner(e) => e.into_engine_abort(),
             MainControlAbort::NodeRecycle(e) => e.into_engine_abort(),
             MainControlAbort::PageBuild(e) => e.into_engine_abort(),
@@ -6131,6 +6134,9 @@ pub(crate) unsafe fn main_control_in(
     }
 
     loop {
+        if st.cancellation.at_command_boundary() {
+            return Err(MainControlAbort::Cancelled);
+        }
         crate::scan::get_x_token_in(st)?;
 
         'reswitch: loop {

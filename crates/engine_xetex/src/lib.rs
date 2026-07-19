@@ -27,6 +27,7 @@ use tectonic_errors::prelude::*;
 // engine.
 mod bridge;
 mod checkpoint;
+mod cancellation;
 mod consts;
 mod engine;
 mod engine_interface;
@@ -80,6 +81,7 @@ pub use replay::source::{
     SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,
 };
 pub use page_manifest::PageExecution;
+pub use cancellation::EngineCancellation;
 pub use session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
 
 /// A serial number describing the detailed binary layout of the TeX "format

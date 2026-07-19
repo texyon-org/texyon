@@ -4,6 +4,7 @@
 #[derive(Default)]
 pub(crate) struct EngineState {
     pub config: ConfigState,
+    pub cancellation: crate::cancellation::CancellationState,
     pub errors: ErrorState,
     pub shipout: ShipoutState,
     pub scanner: ScannerState,

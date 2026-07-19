@@ -12,6 +12,7 @@ use tectonic_errors::prelude::*;
 use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, StringWatermark,
 };
+use crate::EngineCancellation;
 use crate::state::{EngineExecutionMode, EngineState};
 use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
 
@@ -48,6 +49,8 @@ pub struct EnginePreviewConfig {
     pub ladder_hard_bytes: usize,
     /// Recent rung count protected while satisfying the soft target.
     pub min_recent_rungs: usize,
+    /// Cooperative cancellation signal polled by instrumented engine loops.
+    pub cancellation: EngineCancellation,
 }
 
 impl EnginePreviewConfig {
@@ -61,6 +64,7 @@ impl EnginePreviewConfig {
             ladder_target_bytes: 64 * 1024 * 1024,
             ladder_hard_bytes: 96 * 1024 * 1024,
             min_recent_rungs: 8,
+            cancellation: EngineCancellation::new(),
         }
     }
 }
@@ -74,6 +78,8 @@ pub struct EngineFrame {
     pub source_revision: SourceRevision,
     /// Recoverable fatal-class TeX abort; prior good output remains authoritative.
     pub aborted: Option<String>,
+    /// Operation was cooperatively cancelled and rung-zero state was restored.
+    pub cancelled: bool,
     /// Page-boundary execution facts for exact XDV suffix comparison.
     pub pages: Vec<PageExecution>,
 }
@@ -271,12 +277,21 @@ impl IncrementalXeTeXSession {
                 outcome: history_to_outcome(history)?,
                 source_revision: revision,
                 aborted: None,
+                cancelled: false,
                 pages: self.state.shipout.page_manifest.take_pages(),
             }),
             OperationResult::Aborted => Ok(EngineFrame {
                 outcome: TexOutcome::Errors,
                 source_revision: revision,
                 aborted: Some("XeTeX aborted; resident state rewound to rung zero".into()),
+                cancelled: false,
+                pages: Vec::new(),
+            }),
+            OperationResult::Cancelled => Ok(EngineFrame {
+                outcome: TexOutcome::Errors,
+                source_revision: revision,
+                aborted: None,
+                cancelled: true,
                 pages: Vec::new(),
             }),
             OperationResult::Budget(error) => {
@@ -314,6 +329,7 @@ impl Drop for IncrementalXeTeXSession {
 enum OperationResult {
     Complete(i32),
     Aborted,
+    Cancelled,
     Budget(BudgetError),
     Terminal(i32),
     Panicked,
@@ -327,10 +343,14 @@ unsafe fn run_document(
     state.shipout.page_manifest.begin_operation();
     match crate::engine::run_resident_document(state, input) {
         Ok(history) => OperationResult::Complete(history),
-        Err(_) => {
+        Err(error) => {
             crate::engine::release_operation_inputs(state);
             ladder.rewind_engine(state, 0);
-            OperationResult::Aborted
+            if matches!(error, crate::errors::EngineAbort::Cancelled) {
+                OperationResult::Cancelled
+            } else {
+                OperationResult::Aborted
+            }
         }
     }
 }
@@ -343,6 +363,7 @@ fn configure(state: &mut EngineState, config: &EnginePreviewConfig) {
     state.config.shell_escape_enabled = false;
     state.config.deterministic_mode = config.deterministic;
     state.config.execution_mode = EngineExecutionMode::Resident;
+    state.cancellation.install(config.cancellation.clone());
 }
 
 fn history_to_outcome(history: i32) -> Result<TexOutcome> {
