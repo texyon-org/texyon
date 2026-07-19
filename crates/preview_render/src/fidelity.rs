@@ -43,11 +43,9 @@ pub fn compare_rasters(
             expected_count += 1;
             if neighborhood_matches(
                 actual,
-                width,
-                height,
+                (width, height),
                 components,
-                x,
-                y,
+                (x, y),
                 color,
                 max_rgb_distance,
             ) {
@@ -64,11 +62,9 @@ pub fn compare_rasters(
             if participates(color)
                 && !neighborhood_matches(
                     expected,
-                    width,
-                    height,
+                    (width, height),
                     components,
-                    x,
-                    y,
+                    (x, y),
                     color,
                     max_rgb_distance,
                 )
@@ -91,14 +87,14 @@ pub fn compare_rasters(
 
 fn neighborhood_matches(
     samples: &[u8],
-    width: usize,
-    height: usize,
+    size: (usize, usize),
     components: usize,
-    x: usize,
-    y: usize,
+    point: (usize, usize),
     color: [u8; 3],
     max_distance: u16,
 ) -> bool {
+    let (width, height) = size;
+    let (x, y) = point;
     let threshold = u32::from(max_distance).pow(2);
     let x0 = x.saturating_sub(1);
     let y0 = y.saturating_sub(1);

@@ -127,6 +127,7 @@ mod tests {
             x_max: 3.0,
             y_max: 4.0,
         };
+        // SAFETY: `bbox` is a valid readable value for the duration of the call.
         unsafe { cacheGlyphBBox(7, 11, &bbox) };
         set_cp_code(7, 11, LEFT_SIDE, 12);
         set_cp_code(7, 11, RIGHT_SIDE, 13);
@@ -134,6 +135,7 @@ mod tests {
         xetex_layout_reset_font_caches();
 
         let mut out = GlyphBBox::default();
+        // SAFETY: `out` is a valid writable value for the duration of the call.
         assert_eq!(unsafe { getCachedGlyphBBox(7, 11, &mut out) }, 0);
         assert_eq!(get_cp_code(7, 11, LEFT_SIDE), 0);
         assert_eq!(get_cp_code(7, 11, RIGHT_SIDE), 0);

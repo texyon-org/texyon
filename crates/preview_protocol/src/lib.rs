@@ -357,6 +357,9 @@ pub struct SourceLocation {
 /// Events emitted on protocol stdout.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+// `Update` owns one complete atomic viewer patch. Boxing its fields would add
+// public API indirection without reducing the serialized or retained payload.
+#[allow(clippy::large_enum_variant)]
 pub enum ServerEvent {
     /// Bootstrap completed and initialization may begin.
     Ready {

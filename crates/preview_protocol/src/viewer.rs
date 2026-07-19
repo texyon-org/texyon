@@ -438,10 +438,10 @@ fn validate_sorted_indices(indices: &[usize], bound: usize, name: &str) -> Resul
     Ok(())
 }
 
-fn index_payloads<'a>(
-    payloads: &'a [PageSvgPayload],
+fn index_payloads(
+    payloads: &[PageSvgPayload],
     page_count: usize,
-) -> Result<BTreeMap<usize, &'a str>, ViewerError> {
+) -> Result<BTreeMap<usize, &str>, ViewerError> {
     let mut indexed = BTreeMap::new();
     for payload in payloads {
         if payload.page_index >= page_count {

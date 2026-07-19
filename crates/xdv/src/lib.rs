@@ -641,7 +641,7 @@ impl<T: XdvEvents> XdvParser<T> {
         let state = self
             .stack
             .last()
-            .ok_or_else(|| XdvError::Malformed(self.offset).into())?;
+            .ok_or(XdvError::Malformed(self.offset))?;
         let advance = self.events.handle_char_run_ext(
             self.cur_font_num,
             &self.cur_char_run,
