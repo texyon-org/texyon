@@ -39,6 +39,31 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                     digest.update(glyph.y.to_be_bytes());
                 }
             }
+            DrawOperation::Image {
+                identity,
+                kind,
+                transform,
+                page,
+                width,
+                height,
+            } => {
+                digest.update([2]);
+                digest.update(identity.0);
+                digest.update([*kind as u8]);
+                for value in [
+                    transform.a,
+                    transform.b,
+                    transform.c,
+                    transform.d,
+                    transform.e,
+                    transform.f,
+                ] {
+                    digest.update(value.to_bits().to_be_bytes());
+                }
+                digest.update(page.to_be_bytes());
+                digest.update(width.map(f32::to_bits).unwrap_or(u32::MAX).to_be_bytes());
+                digest.update(height.map(f32::to_bits).unwrap_or(u32::MAX).to_be_bytes());
+            }
         }
     }
     digest.finalize().into()

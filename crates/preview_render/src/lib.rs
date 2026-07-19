@@ -11,7 +11,7 @@ mod pagesize;
 mod render;
 mod resource;
 
-pub use backend::{Backend, FontId, NullBackend, PositionedGlyph};
+pub use backend::{Backend, FontId, Matrix, NullBackend, PositionedGlyph};
 pub use render::{
     Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, RenderError,
     UnsupportedSummary,

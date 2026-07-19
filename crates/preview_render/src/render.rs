@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use tectonic_xdv::{FileType, XdvError, XdvEvents, XdvParser};
 
-use crate::backend::{Backend, PositionedGlyph};
+use crate::backend::{Backend, Matrix, PositionedGlyph};
 use crate::fingerprint::page_digest;
 use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
 use crate::resource::{
@@ -269,6 +269,26 @@ impl<P: ResourceProvider> HotRenderer<P> {
                             .collect();
                         backend.fill_glyphs(handle, *size as f32 * SP_TO_BP, &positioned)?;
                     }
+                    DrawOperation::Image {
+                        identity,
+                        kind,
+                        transform,
+                        page,
+                        width,
+                        height,
+                    } => {
+                        let resource = analysis.resources.get(identity).ok_or_else(|| {
+                            RenderError::Resource("analyzed image bytes disappeared".into())
+                        })?;
+                        match kind {
+                            ImageKind::Raster => {
+                                backend.draw_image(&resource.bytes, *transform, *width, *height)?
+                            }
+                            ImageKind::Pdf => {
+                                backend.draw_pdf(&resource.bytes, *page, *transform)?
+                            }
+                        }
+                    }
                 }
             }
             rendered.push(PageSvg {
@@ -311,6 +331,20 @@ pub(crate) enum DrawOperation {
         size: i32,
         glyphs: Vec<GlyphPosition>,
     },
+    Image {
+        identity: ResourceIdentity,
+        kind: ImageKind,
+        transform: Matrix,
+        page: u32,
+        width: Option<f32>,
+        height: Option<f32>,
+    },
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ImageKind {
+    Raster,
+    Pdf,
 }
 
 #[derive(Clone)]
@@ -404,9 +438,36 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         Ok(())
     }
 
-    fn handle_special(&mut self, _x: i32, _y: i32, contents: &[u8]) -> Result<(), Self::Error> {
+    fn handle_special(&mut self, x: i32, y: i32, contents: &[u8]) -> Result<(), Self::Error> {
         if is_page_size_special(contents) {
             self.ledger.record_supported("page-size");
+            return Ok(());
+        }
+        if let Some(image) = parse_image_special(contents, x, y) {
+            let request = ResourceRequest {
+                kind: match image.kind {
+                    ImageKind::Raster => ResourceKind::Image,
+                    ImageKind::Pdf => ResourceKind::Pdf,
+                },
+                name: image.path,
+            };
+            let Some(resource) = self.provider.resolve(&request)? else {
+                return self.unsupported("missing-image-resource");
+            };
+            let identity = resource.identity;
+            self.resources.insert(identity, resource);
+            self.page_mut()?.operations.push(DrawOperation::Image {
+                identity,
+                kind: image.kind,
+                transform: image.transform,
+                page: image.page,
+                width: image.width,
+                height: image.height,
+            });
+            self.ledger.record_supported(match image.kind {
+                ImageKind::Raster => "raster-image",
+                ImageKind::Pdf => "embedded-pdf",
+            });
             return Ok(());
         }
         let name = std::str::from_utf8(contents)
@@ -529,12 +590,135 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
     }
 }
 
+struct ImageSpecial {
+    path: String,
+    kind: ImageKind,
+    transform: Matrix,
+    page: u32,
+    width: Option<f32>,
+    height: Option<f32>,
+}
+
+fn parse_image_special(contents: &[u8], x: i32, y: i32) -> Option<ImageSpecial> {
+    let text = std::str::from_utf8(contents).ok()?.trim();
+    let args = text.strip_prefix("pdf:image")?.trim();
+    let open = args.find('(')?;
+    let close = args[open + 1..]
+        .find(')')
+        .map(|index| open + 1 + index)
+        .unwrap_or(args.len());
+    let path = args[open + 1..close].to_owned();
+    let tokens: Vec<_> = args[..open].split_whitespace().collect();
+    let mut matrix = Matrix {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        e: 0.0,
+        f: 0.0,
+    };
+    let mut page = 0;
+    let mut width = None;
+    let mut height = None;
+    let mut index = 0;
+    while index < tokens.len() {
+        match tokens[index] {
+            "matrix" if index + 6 < tokens.len() => {
+                let values: Option<Vec<f32>> = tokens[index + 1..index + 7]
+                    .iter()
+                    .map(|value| value.parse().ok().map(normalize_float))
+                    .collect();
+                let values = values?;
+                matrix = Matrix {
+                    a: values[0],
+                    b: values[1],
+                    c: values[2],
+                    d: values[3],
+                    e: values[4],
+                    f: values[5],
+                };
+                index += 7;
+            }
+            "page" if index + 1 < tokens.len() => {
+                let raw: i32 = tokens[index + 1].parse().ok()?;
+                page = raw.saturating_sub(1).max(0) as u32;
+                index += 2;
+            }
+            "width" if index + 1 < tokens.len() => {
+                width = parse_image_dimension(tokens[index + 1]);
+                index += 2;
+            }
+            "height" if index + 1 < tokens.len() => {
+                height = parse_image_dimension(tokens[index + 1]);
+                index += 2;
+            }
+            _ => index += 1,
+        }
+    }
+    let kind = if path
+        .rsplit('.')
+        .next()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+    {
+        ImageKind::Pdf
+    } else {
+        ImageKind::Raster
+    };
+    let mut origin = Matrix::dvi_origin(x, y, SP_TO_BP);
+    if matches!(kind, ImageKind::Pdf) {
+        origin.b = -origin.b;
+        origin.d = -origin.d;
+    }
+    Some(ImageSpecial {
+        path,
+        kind,
+        transform: matrix.concat(origin),
+        page,
+        width,
+        height,
+    })
+}
+
+fn parse_image_dimension(value: &str) -> Option<f32> {
+    let split = value
+        .find(|character: char| {
+            !character.is_ascii_digit() && !matches!(character, '.' | '-' | '+')
+        })
+        .unwrap_or(value.len());
+    let number: f32 = value[..split].parse().ok()?;
+    let scale = match &value[split..] {
+        "" | "bp" => 1.0,
+        "pt" => 72.0 / 72.27,
+        "in" => 72.0,
+        _ => return None,
+    };
+    Some(normalize_float(number * scale))
+}
+
+fn normalize_float(value: f32) -> f32 {
+    if value == 0.0 {
+        0.0
+    } else {
+        value
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+    use std::cell::RefCell;
 
     const ONE_PAGE: &[u8] = include_bytes!("../../../tests/tex-outputs/the_letter_a.xdv");
+    const IMAGE_PAGE: &[u8] = include_bytes!("../../../tests/tex-outputs/redbox_png.xdv");
+
+    struct MutableResources(RefCell<Vec<u8>>);
+
+    impl ResourceProvider for MutableResources {
+        fn resolve(&self, _request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
+            Ok(Some(Resource::from_bytes(self.0.borrow().clone())))
+        }
+    }
 
     #[test]
     fn real_xdv_is_analyzed_conservatively_without_classic_font_support() {
@@ -587,5 +771,33 @@ mod tests {
             1
         );
         assert!(renderer.last_completed().is_some());
+    }
+
+    #[test]
+    fn same_name_image_overwrite_changes_the_analyzed_identity() {
+        let mut renderer = HotRenderer::new(MutableResources(RefCell::new(b"first".to_vec())));
+        let first = renderer.analyze(Arc::from(IMAGE_PAGE)).unwrap();
+        let first_identity = first.plans[0]
+            .operations
+            .iter()
+            .find_map(|operation| match operation {
+                DrawOperation::Image { identity, .. } => Some(*identity),
+                _ => None,
+            })
+            .unwrap();
+        renderer.provider.0.replace(b"second".to_vec());
+        let second = renderer.analyze(Arc::from(IMAGE_PAGE)).unwrap();
+        let second_identity = second.plans[0]
+            .operations
+            .iter()
+            .find_map(|operation| match operation {
+                DrawOperation::Image { identity, .. } => Some(*identity),
+                _ => None,
+            })
+            .unwrap();
+
+        assert_ne!(first_identity, second_identity);
+        assert_eq!(&*first.resources[&first_identity].bytes, b"first");
+        assert_eq!(&*second.resources[&second_identity].bytes, b"second");
     }
 }

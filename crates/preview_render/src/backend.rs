@@ -2,6 +2,47 @@
 
 use crate::{RenderError, ResourceIdentity};
 
+/// Affine transform in backend point space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Matrix {
+    /// Horizontal scale/rotation component.
+    pub a: f32,
+    /// Vertical rotation/shear component.
+    pub b: f32,
+    /// Horizontal rotation/shear component.
+    pub c: f32,
+    /// Vertical scale/rotation component.
+    pub d: f32,
+    /// Horizontal translation.
+    pub e: f32,
+    /// Vertical translation.
+    pub f: f32,
+}
+
+impl Matrix {
+    pub(crate) fn dvi_origin(x: i32, y: i32, scale: f32) -> Self {
+        Self {
+            a: scale,
+            b: 0.0,
+            c: 0.0,
+            d: -scale,
+            e: x as f32 * scale,
+            f: y as f32 * scale,
+        }
+    }
+
+    pub(crate) fn concat(self, other: Self) -> Self {
+        Self {
+            a: self.a * other.a + self.b * other.c,
+            b: self.a * other.b + self.b * other.d,
+            c: self.c * other.a + self.d * other.c,
+            d: self.c * other.b + self.d * other.d,
+            e: self.e * other.a + self.f * other.c + other.e,
+            f: self.e * other.b + self.f * other.d + other.f,
+        }
+    }
+}
+
 /// Backend-owned font handle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FontId(pub u32);
@@ -47,6 +88,18 @@ pub trait Backend {
         glyphs: &[PositionedGlyph],
     ) -> Result<(), RenderError>;
 
+    /// Draw an encoded raster image using its analyzed transform.
+    fn draw_image(
+        &mut self,
+        bytes: &[u8],
+        transform: Matrix,
+        width_bp: Option<f32>,
+        height_bp: Option<f32>,
+    ) -> Result<(), RenderError>;
+
+    /// Draw one zero-based page from an embedded PDF.
+    fn draw_pdf(&mut self, bytes: &[u8], page: u32, transform: Matrix) -> Result<(), RenderError>;
+
     /// Finish the page and return one self-contained SVG document.
     fn finish_page(&mut self) -> Result<String, RenderError>;
 }
@@ -84,6 +137,25 @@ impl Backend for NullBackend {
         _font: FontId,
         _size_bp: f32,
         _glyphs: &[PositionedGlyph],
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn draw_image(
+        &mut self,
+        _bytes: &[u8],
+        _transform: Matrix,
+        _width_bp: Option<f32>,
+        _height_bp: Option<f32>,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn draw_pdf(
+        &mut self,
+        _bytes: &[u8],
+        _page: u32,
+        _transform: Matrix,
     ) -> Result<(), RenderError> {
         Ok(())
     }
