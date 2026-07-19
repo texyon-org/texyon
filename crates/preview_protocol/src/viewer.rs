@@ -328,7 +328,21 @@ fn sanitize_start(
     }
     if matches!(
         lower.as_str(),
-        "script" | "style" | "foreignobject" | "iframe" | "object" | "embed" | "audio" | "video"
+        "script"
+            | "style"
+            | "foreignobject"
+            | "iframe"
+            | "object"
+            | "embed"
+            | "audio"
+            | "video"
+            | "a"
+            | "animate"
+            | "animatemotion"
+            | "animatetransform"
+            | "discard"
+            | "mpath"
+            | "set"
     ) {
         return Err(ViewerError::UnsafeSvg(format!(
             "element {qualified} is forbidden"
@@ -615,6 +629,7 @@ mod tests {
             "<svg><script>alert(1)</script></svg>",
             "<svg onload=\"alert(1)\"/>",
             "<svg><foreignObject/></svg>",
+            "<svg><animate attributeName=\"opacity\"/></svg>",
             "<svg><image href=\"https://example.test/x.png\"/></svg>",
             "<!DOCTYPE svg><svg/>",
             "<svg><path style=\"fill:url(https://example.test/x)\"/></svg>",

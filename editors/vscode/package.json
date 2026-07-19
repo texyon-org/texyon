@@ -1,0 +1,50 @@
+{
+  "name": "tectonic-live-preview",
+  "displayName": "Tectonic Live Preview",
+  "description": "SVG live preview backed by a resident Tectonic XeTeX process.",
+  "version": "0.0.1",
+  "publisher": "tectonic-typesetting",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "tectonicPreview.start",
+        "title": "Tectonic: Start Live Preview"
+      },
+      {
+        "command": "tectonicPreview.stop",
+        "title": "Tectonic: Stop Live Preview"
+      },
+      {
+        "command": "tectonicPreview.cancel",
+        "title": "Tectonic: Cancel In-Flight Preview"
+      }
+    ],
+    "configuration": {
+      "title": "Tectonic Live Preview",
+      "properties": {
+        "tectonicPreview.executable": {
+          "type": "string",
+          "default": "tectonic",
+          "description": "Path to a Tectonic executable built with the preview-mupdf feature."
+        },
+        "tectonicPreview.format": {
+          "type": "string",
+          "default": "latex",
+          "description": "Cached XeTeX format to use for preview."
+        }
+      }
+    }
+  }
+}

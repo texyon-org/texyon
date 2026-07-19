@@ -1,0 +1,66 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--vscode-editor-background, #525659);
+  color: var(--vscode-editor-foreground, #eee);
+  font-family: var(--vscode-font-family, sans-serif);
+}
+
+#toolbar {
+  align-items: center;
+  box-sizing: border-box;
+  display: flex;
+  gap: 5px;
+  height: 36px;
+  padding: 5px 9px;
+  background: var(--vscode-sideBar-background, #333);
+}
+
+button {
+  min-width: 30px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  color: var(--vscode-button-foreground, #fff);
+  background: var(--vscode-button-background, #0e639c);
+}
+
+#tail {
+  margin-left: auto;
+  opacity: 0.75;
+  font-size: 11px;
+}
+
+#error {
+  margin-left: auto;
+  color: var(--vscode-errorForeground, #f88);
+  font-size: 12px;
+}
+
+#pages {
+  box-sizing: border-box;
+  height: calc(100% - 36px);
+  overflow: auto;
+  padding: 12px;
+}
+
+#empty {
+  margin-top: 3em;
+  text-align: center;
+  opacity: 0.75;
+}
+
+.page {
+  box-sizing: border-box;
+  margin: 0 auto 12px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 1px 7px rgb(0 0 0 / 55%);
+}
+
+.page > svg {
+  display: block;
+  height: auto;
+  width: 100%;
+}
