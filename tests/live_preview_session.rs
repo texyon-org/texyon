@@ -1146,8 +1146,15 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
             page_count: 4,
             changed,
             removed,
+            metrics,
             ..
-        } if changed == &[0] && removed.is_empty()
+        } if changed == &[0]
+            && removed.is_empty()
+            && metrics.checkpoint_rungs > 0
+            && metrics.checkpoint_bytes > 0
+            && metrics.shipouts == 1
+            && metrics.pages_fingerprinted == 1
+            && metrics.pages_rendered == 1
     ));
     assert!(matches!(
         &events[2],
@@ -1155,8 +1162,11 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
             phase: FramePhase::TailSettle,
             tail_pending: false,
             page_count: 4,
+            metrics,
             ..
-        }
+        } if metrics.reused_prefix
+            && metrics.shipouts == 3
+            && metrics.pages_fingerprinted == 4
     ));
     assert!(matches!(
         &events[3],

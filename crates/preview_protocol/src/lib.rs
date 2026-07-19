@@ -297,6 +297,20 @@ pub struct OperationMetrics {
     pub render_ms: f64,
     /// Encoded frame bytes before the JSONL newline.
     pub frame_bytes: usize,
+    /// Retained checkpoint rungs after the engine operation.
+    pub checkpoint_rungs: usize,
+    /// Accounted retained checkpoint bytes after the engine operation.
+    pub checkpoint_bytes: usize,
+    /// Fresh pages shipped by the engine operation.
+    pub shipouts: usize,
+    /// Whether the operation reused an old XDV prefix from a replay fence.
+    pub reused_prefix: bool,
+    /// Pages fingerprinted during renderer analysis.
+    pub pages_fingerprinted: usize,
+    /// Pages rendered to new SVG payloads.
+    pub pages_rendered: usize,
+    /// Pages reporting one or more unsupported renderer operations.
+    pub unsupported_pages: usize,
 }
 
 /// Preview rectangle returned by a forward SyncTeX query.

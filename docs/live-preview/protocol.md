@@ -50,6 +50,10 @@ metrics, and `tail_pending`. `foreground`, `tail_settle`,
 and `resync` frames all receive distinct increasing frame IDs, even at the same
 source revision and even when no SVG changed.
 
+Metrics include engine/analysis/render durations and encoded frame bytes, plus
+retained checkpoint rungs/bytes, fresh shipouts, prefix reuse, pages
+fingerprinted/rendered, and pages with unsupported operations.
+
 `cancelled`, `stopped`, `aborted`, and `rejected` do not replace the last-good
 viewer belief. Navigation replies echo their query ID and carry either a result
 or `null`; a missing source match is normal. `fatal` ends the session.

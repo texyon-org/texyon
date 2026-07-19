@@ -23,7 +23,19 @@ function update(overrides = {}) {
     pages_svg: [{ page_index: 0, svg: "<svg/>" }],
     page_sizes: [{ width_bp: 100, height_bp: 200 }],
     unsupported_pages: [],
-    metrics: { engine_ms: 1, analysis_ms: 1, render_ms: 1, frame_bytes: 1 },
+    metrics: {
+      engine_ms: 1,
+      analysis_ms: 1,
+      render_ms: 1,
+      frame_bytes: 1,
+      checkpoint_rungs: 1,
+      checkpoint_bytes: 1,
+      shipouts: 1,
+      reused_prefix: false,
+      pages_fingerprinted: 1,
+      pages_rendered: 1,
+      unsupported_pages: 0
+    },
     tail_pending: false,
     ...overrides
   };

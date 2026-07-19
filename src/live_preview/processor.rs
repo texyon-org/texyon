@@ -1,7 +1,8 @@
 use std::{fmt, time::Instant};
 
 use tectonic_preview_protocol::{
-    FrameId, FramePhase, RequestSeq, SourceLocation, SyncRectPayload, UpdateOutcome,
+    FrameId, FramePhase, OperationMetrics, RequestSeq, SourceLocation, SyncRectPayload,
+    UpdateOutcome,
 };
 use tectonic_preview_render::{Backend, ResourceProvider};
 
@@ -145,6 +146,14 @@ where
         };
         let tail_pending = engine.frame.tail_pending;
         let sync_index = engine.frame.sync_index.clone();
+        let metrics = OperationMetrics {
+            engine_ms,
+            checkpoint_rungs: engine.frame.checkpoint_rungs,
+            checkpoint_bytes: engine.frame.checkpoint_bytes,
+            shipouts: engine.frame.pages.len(),
+            reused_prefix: engine.frame.splice_at.is_some(),
+            ..OperationMetrics::default()
+        };
         self.sink.set_tail_pending(tail_pending);
         let fragment =
             engine
@@ -163,7 +172,7 @@ where
             applied_request_seq,
             FramePhase::Foreground,
             outcome,
-            engine_ms,
+            metrics,
             tail_pending,
             sync_index,
         ) {
@@ -223,6 +232,14 @@ where
             UpdateOutcome::Complete
         };
         let sync_index = engine.frame.sync_index.clone();
+        let metrics = OperationMetrics {
+            engine_ms,
+            checkpoint_rungs: engine.frame.checkpoint_rungs,
+            checkpoint_bytes: engine.frame.checkpoint_bytes,
+            shipouts: engine.frame.pages.len(),
+            reused_prefix: engine.frame.splice_at.is_some(),
+            ..OperationMetrics::default()
+        };
         let fragment =
             engine
                 .frame
@@ -241,7 +258,7 @@ where
             applied_request_seq,
             FramePhase::TailSettle,
             outcome,
-            engine_ms,
+            metrics,
             false,
             sync_index,
         ) {

@@ -201,6 +201,8 @@ pub struct EngineFrame {
     pub splice_at: Option<usize>,
     /// Number of checkpoint rungs retained after this operation.
     pub checkpoint_rungs: usize,
+    /// Accounted checkpoint-ladder bytes retained after this operation.
+    pub checkpoint_bytes: usize,
     /// A resumable tail remains after a viewport-bounded foreground edit.
     pub tail_pending: bool,
 }
@@ -528,6 +530,10 @@ impl IncrementalXeTeXSession {
                     .unwrap_or_default(),
                 splice_at,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
+                checkpoint_bytes: self
+                    .ladder
+                    .as_ref()
+                    .map_or(0, CheckpointLadder::accounted_bytes),
                 tail_pending: false,
             }),
             OperationResult::Horizoned {
@@ -549,6 +555,10 @@ impl IncrementalXeTeXSession {
                     .unwrap_or_default(),
                 splice_at,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
+                checkpoint_bytes: self
+                    .ladder
+                    .as_ref()
+                    .map_or(0, CheckpointLadder::accounted_bytes),
                 tail_pending: true,
             }),
             OperationResult::Aborted => Ok(EngineFrame {
@@ -560,6 +570,10 @@ impl IncrementalXeTeXSession {
                 sync_index: Default::default(),
                 splice_at: None,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
+                checkpoint_bytes: self
+                    .ladder
+                    .as_ref()
+                    .map_or(0, CheckpointLadder::accounted_bytes),
                 tail_pending: false,
             }),
             OperationResult::Cancelled => Ok(EngineFrame {
@@ -571,6 +585,10 @@ impl IncrementalXeTeXSession {
                 sync_index: Default::default(),
                 splice_at: None,
                 checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
+                checkpoint_bytes: self
+                    .ladder
+                    .as_ref()
+                    .map_or(0, CheckpointLadder::accounted_bytes),
                 tail_pending: false,
             }),
             OperationResult::Budget(error) => {

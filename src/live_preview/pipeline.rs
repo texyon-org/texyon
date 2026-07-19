@@ -111,7 +111,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             applied_request_seq,
             phase,
             outcome,
-            0.0,
+            OperationMetrics::default(),
             false,
             SyncIndex::default(),
         )
@@ -125,7 +125,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         applied_request_seq: RequestSeq,
         phase: FramePhase,
         outcome: UpdateOutcome,
-        engine_ms: f64,
+        mut metrics: OperationMetrics,
         preserve_tail_belief: bool,
         sync_index: SyncIndex,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
@@ -139,6 +139,13 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             .analyze(Arc::clone(document.bytes()))
             .map_err(PreviewPipelineError::Render)?;
         let analysis_ms = analysis_started.elapsed().as_secs_f64() * 1000.0;
+        metrics.analysis_ms = analysis_ms;
+        metrics.pages_fingerprinted = analysis.pages().len();
+        metrics.unsupported_pages = analysis
+            .pages()
+            .iter()
+            .filter(|page| !page.unsupported.is_empty())
+            .count();
         let covered_pages = analysis.pages().len();
         let sync_index = if preserve_tail_belief {
             sync_index.with_preserved_tail(&self.sync_index, covered_pages)
@@ -173,12 +180,9 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
             .render_pages(&analysis, &selected, &mut self.backend)
             .map_err(PreviewPipelineError::Render)?;
         let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
-        sink.set_operation_metrics(OperationMetrics {
-            engine_ms,
-            analysis_ms,
-            render_ms,
-            frame_bytes: 0,
-        });
+        metrics.render_ms = render_ms;
+        metrics.pages_rendered = rendered.len();
+        sink.set_operation_metrics(metrics);
         let frame_id = self
             .publisher
             .publish(
