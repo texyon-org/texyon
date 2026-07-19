@@ -51,8 +51,10 @@ and `resync` frames all receive distinct increasing frame IDs, even at the same
 source revision and even when no SVG changed.
 
 Metrics include engine/analysis/render durations and encoded frame bytes, plus
-retained checkpoint rungs/bytes, fresh shipouts, prefix reuse, pages
-fingerprinted/rendered, and pages with unsupported operations.
+the exact replay rung and decimal-string command count, checkpoint
+admission/drop/rejection activity, retained checkpoint rungs/bytes, fresh
+shipouts, prefix reuse, pages fingerprinted/rendered, and pages with unsupported
+operations.
 
 `cancelled`, `stopped`, `aborted`, and `rejected` do not replace the last-good
 viewer belief. Navigation replies echo their query ID and carry either a result

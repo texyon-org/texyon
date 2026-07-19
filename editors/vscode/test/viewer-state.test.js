@@ -32,6 +32,11 @@ function update(overrides = {}) {
       checkpoint_bytes: 1,
       shipouts: 1,
       reused_prefix: false,
+      replay_rung: 0,
+      replay_commands: "12",
+      checkpoint_rungs_admitted: 2,
+      checkpoint_rungs_dropped: 0,
+      checkpoint_rungs_rejected: 0,
       pages_fingerprinted: 1,
       pages_rendered: 1,
       unsupported_pages: 0

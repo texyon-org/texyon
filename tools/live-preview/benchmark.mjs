@@ -309,6 +309,14 @@ function summarize(samples) {
   summary.maxima = {
     checkpoint_bytes: Math.max(...metrics.map((item) => item.checkpoint_bytes)),
     checkpoint_rungs: Math.max(...metrics.map((item) => item.checkpoint_rungs)),
+    replay_rung: Math.max(...metrics.map((item) => item.replay_rung)),
+    replay_commands: metrics
+      .map((item) => BigInt(item.replay_commands))
+      .reduce((largest, value) => value > largest ? value : largest, 0n)
+      .toString(),
+    checkpoint_rungs_admitted: Math.max(...metrics.map((item) => item.checkpoint_rungs_admitted)),
+    checkpoint_rungs_dropped: Math.max(...metrics.map((item) => item.checkpoint_rungs_dropped)),
+    checkpoint_rungs_rejected: Math.max(...metrics.map((item) => item.checkpoint_rungs_rejected)),
     shipouts: Math.max(...metrics.map((item) => item.shipouts)),
     pages_rendered: Math.max(...metrics.map((item) => item.pages_rendered))
   };

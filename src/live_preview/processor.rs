@@ -1,8 +1,8 @@
 use std::{fmt, time::Instant};
 
 use tectonic_preview_protocol::{
-    FrameId, FramePhase, OperationMetrics, RequestSeq, SourceLocation, SyncRectPayload,
-    UpdateOutcome,
+    CommandCount, FrameId, FramePhase, OperationMetrics, RequestSeq, SourceLocation,
+    SyncRectPayload, UpdateOutcome,
 };
 use tectonic_preview_render::{Backend, ResourceProvider};
 
@@ -152,6 +152,11 @@ where
             checkpoint_bytes: engine.frame.checkpoint_bytes,
             shipouts: engine.frame.pages.len(),
             reused_prefix: engine.frame.splice_at.is_some(),
+            replay_rung: engine.frame.replay_rung,
+            replay_commands: CommandCount::new(engine.frame.replay_commands),
+            checkpoint_rungs_admitted: engine.frame.checkpoint_rungs_admitted,
+            checkpoint_rungs_dropped: engine.frame.checkpoint_rungs_dropped,
+            checkpoint_rungs_rejected: engine.frame.checkpoint_rungs_rejected,
             ..OperationMetrics::default()
         };
         self.sink.set_tail_pending(tail_pending);
@@ -238,6 +243,11 @@ where
             checkpoint_bytes: engine.frame.checkpoint_bytes,
             shipouts: engine.frame.pages.len(),
             reused_prefix: engine.frame.splice_at.is_some(),
+            replay_rung: engine.frame.replay_rung,
+            replay_commands: CommandCount::new(engine.frame.replay_commands),
+            checkpoint_rungs_admitted: engine.frame.checkpoint_rungs_admitted,
+            checkpoint_rungs_dropped: engine.frame.checkpoint_rungs_dropped,
+            checkpoint_rungs_rejected: engine.frame.checkpoint_rungs_rejected,
             ..OperationMetrics::default()
         };
         let fragment =

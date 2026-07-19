@@ -232,6 +232,9 @@ fn late_edit_uses_a_nonzero_fence_and_assembles_to_cold_output() {
     };
     let splice_at = frame.splice_at.expect("late edit fell back to rung zero");
     assert!(splice_at > 0);
+    assert!(frame.replay_rung > 0);
+    assert!(frame.replay_commands > 0);
+    assert!(frame.checkpoint_rungs_admitted > 0);
     let tail = output_bytes(&edit_output, "session.xdv");
     let assembler = DocumentAssembler::new();
     let base = assembler
@@ -1201,6 +1204,8 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
             && removed.is_empty()
             && metrics.checkpoint_rungs > 0
             && metrics.checkpoint_bytes > 0
+            && metrics.replay_commands.get() > 0
+            && metrics.checkpoint_rungs_admitted > 0
             && metrics.shipouts == 1
             && metrics.pages_fingerprinted == 1
             && metrics.pages_rendered == 1
@@ -1214,6 +1219,8 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
             metrics,
             ..
         } if metrics.reused_prefix
+            && metrics.replay_rung > 0
+            && metrics.replay_commands.get() > 0
             && metrics.shipouts == 3
             && metrics.pages_fingerprinted == 4
     ));

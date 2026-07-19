@@ -163,6 +163,11 @@ sequence_type!(
     "Client-assigned identity for one source-navigation query.",
     "query"
 );
+sequence_type!(
+    CommandCount,
+    "Exact number of engine commands replayed by one operation.",
+    "command count"
+);
 
 /// Complete source buffer sent during initialization.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -305,6 +310,16 @@ pub struct OperationMetrics {
     pub shipouts: usize,
     /// Whether the operation reused an old XDV prefix from a replay fence.
     pub reused_prefix: bool,
+    /// Checkpoint rung selected as the operation's replay origin.
+    pub replay_rung: usize,
+    /// Engine commands executed after the selected replay origin.
+    pub replay_commands: CommandCount,
+    /// Checkpoint candidates admitted during the operation.
+    pub checkpoint_rungs_admitted: usize,
+    /// Older checkpoint rungs dropped during admission.
+    pub checkpoint_rungs_dropped: usize,
+    /// Checkpoint candidates rejected by the hard byte cap.
+    pub checkpoint_rungs_rejected: usize,
     /// Pages fingerprinted during renderer analysis.
     pub pages_fingerprinted: usize,
     /// Pages rendered to new SVG payloads.
@@ -836,5 +851,6 @@ mod tests {
         assert_eq!(value["frame_id"], "3");
         assert_eq!(value["source_revision"], "2");
         assert_eq!(value["applied_request_seq"], "4");
+        assert_eq!(value["metrics"]["replay_commands"], "0");
     }
 }

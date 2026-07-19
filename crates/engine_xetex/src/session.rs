@@ -12,7 +12,7 @@ use tectonic_bridge_core::{CoreBridgeLauncher, CoreBridgeState};
 use tectonic_errors::prelude::*;
 
 use crate::checkpoint::{
-    BudgetError, CheckpointLadder, EngineBundle, LadderBudget, StringWatermark,
+    BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
 };
 use crate::replay::source::SourcePath;
 use crate::state::{EngineExecutionMode, EngineState};
@@ -24,6 +24,13 @@ static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
 const PERIODIC_FENCE_TOKENS: u64 = 500;
 const MAX_EDIT_FENCES: usize = 16;
 
+#[derive(Clone, Copy, Debug, Default)]
+struct CheckpointActivity {
+    admitted: usize,
+    dropped: usize,
+    rejected: usize,
+}
+
 struct FenceController {
     ladder: NonNull<CheckpointLadder<EngineBundle>>,
     snapshot: NonNull<SourceSnapshot>,
@@ -33,6 +40,7 @@ struct FenceController {
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
     horizon_rung: NonNull<Option<usize>>,
+    activity: NonNull<CheckpointActivity>,
 }
 
 thread_local! {
@@ -58,6 +66,7 @@ fn install_fence_controller(
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
     horizon_rung: &mut Option<usize>,
+    activity: &mut CheckpointActivity,
 ) -> FenceControllerGuard {
     FENCE_CONTROLLER.with(|controller| {
         let previous = controller.borrow_mut().replace(FenceController {
@@ -69,6 +78,7 @@ fn install_fence_controller(
             pending_fences,
             horizon_last,
             horizon_rung: NonNull::from(horizon_rung),
+            activity: NonNull::from(activity),
         });
         assert!(previous.is_none(), "nested resident fence controller");
     });
@@ -120,15 +130,27 @@ pub(crate) fn capture_command_fence(state: &mut EngineState) -> bool {
             protected || horizon_due,
             controller.budget,
         );
-        if horizon_due {
-            if let crate::checkpoint::RungAdmission::Admitted { index, .. } = admission {
+        match admission {
+            RungAdmission::Admitted { index, dropped, .. } => {
+                // SAFETY: the pointer targets run_document's local activity
+                // counters and cannot outlive the controller guard.
+                let activity = unsafe { controller.activity.as_mut() };
+                activity.admitted += 1;
+                activity.dropped += dropped;
+                if !horizon_due {
+                    return false;
+                }
                 // SAFETY: the pointer targets run_document's local slot and the
                 // controller cannot outlive its guard.
                 unsafe { *controller.horizon_rung.as_mut() = Some(index) };
-                return true;
+                true
+            }
+            RungAdmission::RungNotAdmitted { .. } => {
+                // SAFETY: see the admitted branch above.
+                unsafe { controller.activity.as_mut() }.rejected += 1;
+                false
             }
         }
-        false
     })
 }
 
@@ -203,6 +225,16 @@ pub struct EngineFrame {
     pub checkpoint_rungs: usize,
     /// Accounted checkpoint-ladder bytes retained after this operation.
     pub checkpoint_bytes: usize,
+    /// Checkpoint rung selected as the operation's replay origin.
+    pub replay_rung: usize,
+    /// Commands executed after the selected replay origin.
+    pub replay_commands: u64,
+    /// Checkpoint candidates admitted during the operation.
+    pub checkpoint_rungs_admitted: usize,
+    /// Older checkpoint rungs dropped while admitting candidates.
+    pub checkpoint_rungs_dropped: usize,
+    /// Checkpoint candidates rejected by the hard byte cap.
+    pub checkpoint_rungs_rejected: usize,
     /// A resumable tail remains after a viewport-bounded foreground edit.
     pub tail_pending: bool,
 }
@@ -282,6 +314,7 @@ impl IncrementalXeTeXSession {
         let strings_base = &mut self.strings_base;
         let revision = sources.revision();
         let accepted_sources = sources.clone();
+        let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| unsafe {
                 configure(state, &config);
@@ -317,6 +350,7 @@ impl IncrementalXeTeXSession {
                     Vec::new(),
                     None,
                     None,
+                    &mut checkpoint_activity,
                 )
             }))
         });
@@ -329,7 +363,7 @@ impl IncrementalXeTeXSession {
         };
         self.opened = self.ladder.is_some();
         self.last_sources = Some(accepted_sources);
-        self.finish_operation(result, revision)
+        self.finish_operation(result, revision, 0, 0, checkpoint_activity)
     }
 
     /// Replace the immutable source set and resume from the deepest safe fence.
@@ -363,9 +397,12 @@ impl IncrementalXeTeXSession {
             .expect("opened session without string watermark");
         let state = &mut *self.state;
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
+        let selection = ladder.select_replay_fence(&sources);
+        let replay_rung = selection.as_ref().map_or(0, |(target, _)| *target);
+        let replay_clock = ladder.rung_clock(replay_rung).unwrap_or(0);
+        let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| unsafe {
-                let selection = ladder.select_replay_fence(&sources);
                 let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
                 let splice_at = if let Some((target, fence)) = selection {
@@ -396,6 +433,7 @@ impl IncrementalXeTeXSession {
                     pending_fences,
                     horizon_last,
                     None,
+                    &mut checkpoint_activity,
                 )
             }))
         })?;
@@ -403,7 +441,13 @@ impl IncrementalXeTeXSession {
             self.pending_continuation = Some((*rung_clock, accepted_sources.clone()));
         }
         self.last_sources = Some(accepted_sources);
-        self.finish_operation(result, revision)
+        self.finish_operation(
+            result,
+            revision,
+            replay_rung,
+            replay_clock,
+            checkpoint_activity,
+        )
     }
 
     /// Resume a viewport-bounded edit from its exact command fence to `\end`.
@@ -431,6 +475,8 @@ impl IncrementalXeTeXSession {
             .ok_or_else(|| anyhow!("pending tail rung is not resumable"))?;
         let splice_at = fence.splice_at();
         let fence_sources = sources.clone();
+        let replay_clock = ladder.rung_clock(target).unwrap_or(rung_clock);
+        let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
             Ok(catch_operation(api, state, |state| unsafe {
                 let _sources = crate::replay::adapter::install(sources);
@@ -455,10 +501,18 @@ impl IncrementalXeTeXSession {
                     Vec::new(),
                     None,
                     Some(rung_clock),
+                    &mut checkpoint_activity,
                 )
             }))
         })?;
-        self.finish_operation(result, revision).map(Some)
+        self.finish_operation(
+            result,
+            revision,
+            target,
+            replay_clock,
+            checkpoint_activity,
+        )
+        .map(Some)
     }
 
     /// Whether a viewport-bounded foreground operation left resumable tail work.
@@ -513,7 +567,15 @@ impl IncrementalXeTeXSession {
         &mut self,
         result: OperationResult,
         revision: SourceRevision,
+        replay_rung: usize,
+        replay_clock: u64,
+        checkpoint_activity: CheckpointActivity,
     ) -> Result<EngineFrame> {
+        let replay_commands = self
+            .state
+            .scanner
+            .logical_clock
+            .saturating_sub(replay_clock);
         match result {
             OperationResult::Complete { history, splice_at } => Ok(EngineFrame {
                 outcome: history_to_outcome(history)?,
@@ -534,6 +596,11 @@ impl IncrementalXeTeXSession {
                     .ladder
                     .as_ref()
                     .map_or(0, CheckpointLadder::accounted_bytes),
+                replay_rung,
+                replay_commands,
+                checkpoint_rungs_admitted: checkpoint_activity.admitted,
+                checkpoint_rungs_dropped: checkpoint_activity.dropped,
+                checkpoint_rungs_rejected: checkpoint_activity.rejected,
                 tail_pending: false,
             }),
             OperationResult::Horizoned {
@@ -559,6 +626,11 @@ impl IncrementalXeTeXSession {
                     .ladder
                     .as_ref()
                     .map_or(0, CheckpointLadder::accounted_bytes),
+                replay_rung,
+                replay_commands,
+                checkpoint_rungs_admitted: checkpoint_activity.admitted,
+                checkpoint_rungs_dropped: checkpoint_activity.dropped,
+                checkpoint_rungs_rejected: checkpoint_activity.rejected,
                 tail_pending: true,
             }),
             OperationResult::Aborted => Ok(EngineFrame {
@@ -574,6 +646,11 @@ impl IncrementalXeTeXSession {
                     .ladder
                     .as_ref()
                     .map_or(0, CheckpointLadder::accounted_bytes),
+                replay_rung,
+                replay_commands,
+                checkpoint_rungs_admitted: checkpoint_activity.admitted,
+                checkpoint_rungs_dropped: checkpoint_activity.dropped,
+                checkpoint_rungs_rejected: checkpoint_activity.rejected,
                 tail_pending: false,
             }),
             OperationResult::Cancelled => Ok(EngineFrame {
@@ -589,6 +666,11 @@ impl IncrementalXeTeXSession {
                     .ladder
                     .as_ref()
                     .map_or(0, CheckpointLadder::accounted_bytes),
+                replay_rung,
+                replay_commands,
+                checkpoint_rungs_admitted: checkpoint_activity.admitted,
+                checkpoint_rungs_dropped: checkpoint_activity.dropped,
+                checkpoint_rungs_rejected: checkpoint_activity.rejected,
                 tail_pending: false,
             }),
             OperationResult::Budget(error) => {
@@ -653,6 +735,7 @@ unsafe fn run_document(
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
     cancellation_rung_clock: Option<u64>,
+    checkpoint_activity: &mut CheckpointActivity,
 ) -> OperationResult {
     let mut horizon_rung = None;
     let _fences = install_fence_controller(
@@ -664,6 +747,7 @@ unsafe fn run_document(
         pending_fences,
         horizon_last,
         &mut horizon_rung,
+        checkpoint_activity,
     );
     if splice_at.is_some() {
         let manifest_start = (state.shipout.dvi_offset + state.shipout.dvi_ptr) as u64;
