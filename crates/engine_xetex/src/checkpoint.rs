@@ -7,6 +7,7 @@ use crate::mem_types::{B32x2, MemoryWord};
 use crate::state::EngineState;
 
 mod bundle;
+mod oracle;
 
 pub(crate) use bundle::{EngineBundle, StringWatermark};
 
@@ -91,10 +92,20 @@ pub(crate) struct Rung<B> {
     pub(crate) clock: u64,
     pub(crate) resumable: bool,
     pub(crate) protected: bool,
+    digests: Vec<oracle::ComponentDigest>,
 }
 
 pub(crate) struct CheckpointLadder<B> {
     rungs: Vec<Rung<B>>,
+    verify_rewinds: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct RestoreMismatch {
+    pub(crate) rung: usize,
+    pub(crate) component: &'static str,
+    pub(crate) expected: u64,
+    pub(crate) actual: u64,
 }
 
 /// Accounted-memory policy for a checkpoint ladder.
@@ -135,7 +146,9 @@ impl<B> CheckpointLadder<B> {
                 clock,
                 resumable: false,
                 protected: true,
+                digests: Vec::new(),
             }],
+            verify_rewinds: false,
         }
     }
 
@@ -157,6 +170,7 @@ impl<B> CheckpointLadder<B> {
             clock,
             resumable,
             protected,
+            digests: Vec::new(),
         });
         self.rungs.len() - 1
     }
@@ -223,6 +237,16 @@ impl CheckpointLadder<EngineBundle> {
         Self::new(EngineBundle::capture(st, strings_base, None), st.scanner.logical_clock)
     }
 
+    pub(crate) fn from_engine_verified(
+        st: &EngineState,
+        strings_base: StringWatermark,
+    ) -> Self {
+        let mut ladder = Self::from_engine(st, strings_base);
+        ladder.verify_rewinds = true;
+        ladder.rungs[0].digests = oracle::digest_state(st);
+        ladder
+    }
+
     pub(crate) fn from_engine_with_budget(
         st: &EngineState,
         strings_base: StringWatermark,
@@ -253,11 +277,67 @@ impl CheckpointLadder<EngineBundle> {
             strings_base,
             self.rungs.last().map(|rung| &rung.bundle),
         );
-        self.push(st, bundle, st.scanner.logical_clock, resumable, protected)
+        let index = self.push(st, bundle, st.scanner.logical_clock, resumable, protected);
+        if self.verify_rewinds {
+            self.rungs[index].digests = oracle::digest_state(st);
+        }
+        index
     }
 
     pub(crate) fn rewind_engine(&mut self, st: &mut EngineState, target: usize) {
+        if let Err(mismatch) = self.rewind_engine_checked(st, target) {
+            panic!(
+                "checkpoint rung {} component `{}` restored to {:016x}, expected {:016x}",
+                mismatch.rung,
+                mismatch.component,
+                mismatch.actual,
+                mismatch.expected
+            );
+        }
+    }
+
+    pub(crate) fn rewind_engine_checked(
+        &mut self,
+        st: &mut EngineState,
+        target: usize,
+    ) -> Result<(), RestoreMismatch> {
         self.rewind_to(st, target, |state, bundle| bundle.restore(state));
+        self.verify_rung(st, target)
+    }
+
+    pub(crate) fn verify_rung(
+        &self,
+        st: &EngineState,
+        target: usize,
+    ) -> Result<(), RestoreMismatch> {
+        if !self.verify_rewinds {
+            return Ok(());
+        }
+        let expected = &self.rungs[target].digests;
+        let actual = oracle::digest_state(st);
+        for (expected, actual) in expected.iter().zip(&actual) {
+            if expected != actual {
+                return Err(RestoreMismatch {
+                    rung: target,
+                    component: expected.name,
+                    expected: expected.value,
+                    actual: actual.value,
+                });
+            }
+        }
+        assert_eq!(expected.len(), actual.len(), "checkpoint digest schema changed");
+        Ok(())
+    }
+
+    /// Destructively verify every surviving rung, newest to oldest.
+    pub(crate) fn verify_all_rewinds(
+        &mut self,
+        st: &mut EngineState,
+    ) -> Result<(), RestoreMismatch> {
+        for target in (0..self.rungs.len()).rev() {
+            self.rewind_engine_checked(st, target)?;
+        }
+        Ok(())
     }
 
     /// Count rung-private allocations and each shared hyphen table exactly
@@ -349,6 +429,10 @@ impl CheckpointLadder<EngineBundle> {
             resumable,
             protected,
         );
+        if self.verify_rewinds {
+            let top = self.rungs.len() - 1;
+            self.rungs[top].digests = oracle::digest_state(st);
+        }
         for index in (1..self.rungs.len() - 1).rev() {
             if !surviving_existing.contains(&index) {
                 // Hard-cap planning is allowed to relax stale protection.
@@ -655,5 +739,67 @@ mod tests {
             assert!(ladder.accounted_bytes() <= budget.hard_bytes);
         }
         assert!(ladder.len() < 10);
+    }
+
+    #[test]
+    fn oracle_names_a_write_that_bypassed_the_mem_journal() {
+        let mut st = state();
+        st.strings.str_pool = vec![0; 4];
+        st.strings.str_start = vec![0; 4];
+        let strings_base = StringWatermark::capture(&st);
+        let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
+
+        st.mem.data[0].b32.s1 = 99;
+        ladder.push_engine(&mut st, strings_base, false, false);
+        let mismatch = ladder
+            .rewind_engine_checked(&mut st, 0)
+            .expect_err("oracle accepted an unjournaled write");
+        assert_eq!(mismatch.component, "mem");
+    }
+
+    #[test]
+    fn oracle_verifies_survivors_after_decimation() {
+        let mut st = state();
+        st.strings.str_pool = vec![0; 4];
+        st.strings.str_start = vec![0; 4];
+        let strings_base = StringWatermark::capture(&st);
+        let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
+        for clock in 1..=4 {
+            st.scanner.logical_clock = clock;
+            st.mem.set_b32s1(0, clock as i32);
+            ladder.push_engine(&mut st, strings_base, false, false);
+        }
+        assert!(ladder.decimate(2));
+        ladder.verify_all_rewinds(&mut st).unwrap();
+        assert_eq!(value(st.mem.data[0]), 0);
+    }
+
+    #[test]
+    fn prefix_detour_and_rewind_reproduce_state_and_output() {
+        fn run_prefix(st: &mut EngineState, value: i32) {
+            st.mem.set_b32s1(0, value);
+            st.shipout.dvi_buf.clear();
+            st.shipout.dvi_buf.extend_from_slice(&value.to_le_bytes());
+            st.shipout.dvi_ptr = 4;
+            st.scanner.logical_clock += 1;
+        }
+
+        let mut st = state();
+        st.strings.str_pool = vec![0; 4];
+        st.strings.str_start = vec![0; 4];
+        let strings_base = StringWatermark::capture(&st);
+        let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
+        run_prefix(&mut st, 17);
+        let expected_output = st.shipout.dvi_buf.clone();
+        let expected_state = oracle::digest_state(&st);
+
+        ladder.rewind_engine(&mut st, 0);
+        run_prefix(&mut st, 23);
+        ladder.push_engine(&mut st, strings_base, false, false);
+        ladder.rewind_engine(&mut st, 0);
+        run_prefix(&mut st, 17);
+
+        assert_eq!(st.shipout.dvi_buf, expected_output);
+        assert_eq!(oracle::digest_state(&st), expected_state);
     }
 }

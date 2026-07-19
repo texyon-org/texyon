@@ -35,6 +35,10 @@ impl GlyphBlobArena {
             + self.free.capacity() * std::mem::size_of::<usize>()
     }
 
+    pub(crate) fn slots(&self) -> impl Iterator<Item = Option<&GlyphBlob>> {
+        self.slots.iter().map(|slot| slot.as_deref())
+    }
+
     pub fn insert(&mut self, blob: GlyphBlob) -> i32 {
         self.adopt(Arc::new(blob))
     }
