@@ -57,13 +57,20 @@ impl WordJournal {
         }
     }
 
+    pub(crate) fn snapshot(&self) -> WordDelta {
+        WordDelta {
+            idx: self.idx.clone(),
+            old: self.old.clone(),
+        }
+    }
+
     #[cfg(test)]
     fn open_len(&self) -> usize {
         self.idx.len()
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct WordDelta {
     idx: Vec<u32>,
     old: Vec<MemoryWord>,
@@ -93,6 +100,11 @@ impl WordDelta {
     pub(crate) fn allocated_bytes(&self) -> usize {
         self.idx.capacity() * std::mem::size_of::<u32>()
             + self.old.capacity() * std::mem::size_of::<MemoryWord>()
+    }
+
+    pub(crate) fn compact(&mut self) {
+        self.idx.shrink_to_fit();
+        self.old.shrink_to_fit();
     }
 
     #[cfg(test)]
@@ -142,8 +154,16 @@ impl<T: Copy> PlainTrail<T> {
             old: std::mem::take(&mut self.old),
         }
     }
+
+    pub(crate) fn snapshot(&self) -> PlainDelta<T> {
+        PlainDelta {
+            idx: self.idx.clone(),
+            old: self.old.clone(),
+        }
+    }
 }
 
+#[derive(Clone)]
 pub(crate) struct PlainDelta<T> {
     idx: Vec<u32>,
     old: Vec<T>,
@@ -187,6 +207,11 @@ impl<T: Copy> PlainDelta<T> {
     pub(crate) fn allocated_bytes(&self) -> usize {
         self.idx.capacity() * std::mem::size_of::<u32>()
             + self.old.capacity() * std::mem::size_of::<T>()
+    }
+
+    pub(crate) fn compact(&mut self) {
+        self.idx.shrink_to_fit();
+        self.old.shrink_to_fit();
     }
 
     #[cfg(test)]

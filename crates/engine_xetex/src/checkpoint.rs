@@ -10,6 +10,7 @@ mod bundle;
 
 pub(crate) use bundle::{EngineBundle, StringWatermark};
 
+#[derive(Clone)]
 pub(crate) struct EngineDelta {
     mem: WordDelta,
     eqtb: WordDelta,
@@ -21,7 +22,7 @@ pub(crate) struct EngineDelta {
 
 impl EngineDelta {
     pub(crate) fn seal(st: &mut EngineState) -> Self {
-        let delta = Self {
+        let mut delta = Self {
             mem: st.mem.journal.seal(),
             eqtb: st.eqtb.journal.words.seal(),
             xeq: st.eqtb.journal.xeq.seal(),
@@ -29,8 +30,20 @@ impl EngineDelta {
             prim: st.eqtb.journal.prim.seal(),
             font_info: st.fonts.font_info_journal.seal(),
         };
+        delta.compact();
         st.fonts.fmem_epoch_base = st.fonts.fmem_ptr;
         delta
+    }
+
+    fn snapshot_open(st: &EngineState) -> Self {
+        Self {
+            mem: st.mem.journal.snapshot(),
+            eqtb: st.eqtb.journal.words.snapshot(),
+            xeq: st.eqtb.journal.xeq.snapshot(),
+            hash: st.eqtb.journal.hash.snapshot(),
+            prim: st.eqtb.journal.prim.snapshot(),
+            font_info: st.fonts.font_info_journal.snapshot(),
+        }
     }
 
     pub(crate) fn apply(&self, st: &mut EngineState) {
@@ -49,6 +62,16 @@ impl EngineDelta {
         self.hash.compose_with_older(older.hash);
         self.prim.compose_with_older(older.prim);
         self.font_info.compose_with_older(older.font_info);
+        self.compact();
+    }
+
+    fn compact(&mut self) {
+        self.mem.compact();
+        self.eqtb.compact();
+        self.xeq.compact();
+        self.hash.compact();
+        self.prim.compact();
+        self.font_info.compact();
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
@@ -73,6 +96,35 @@ pub(crate) struct Rung<B> {
 pub(crate) struct CheckpointLadder<B> {
     rungs: Vec<Rung<B>>,
 }
+
+/// Accounted-memory policy for a checkpoint ladder.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LadderBudget {
+    pub(crate) target_bytes: usize,
+    pub(crate) hard_bytes: usize,
+    pub(crate) min_recent_rungs: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum BudgetError {
+    TargetExceedsHardCap,
+    RungZeroTooLarge { minimum_bytes: usize },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RungAdmission {
+    Admitted {
+        index: usize,
+        dropped: usize,
+        accounted_bytes: usize,
+    },
+    RungNotAdmitted { minimum_bytes: usize },
+}
+
+// Covers Vec/Rung headers, allocator rounding, and small owned strings that
+// are deliberately not individually inspected. This is charged per survivor
+// in addition to all measured capacities.
+const RUNG_CONTAINER_ALLOWANCE: usize = 4096;
 
 impl<B> CheckpointLadder<B> {
     pub(crate) fn new(base: B, clock: u64) -> Self {
@@ -171,6 +223,24 @@ impl CheckpointLadder<EngineBundle> {
         Self::new(EngineBundle::capture(st, strings_base, None), st.scanner.logical_clock)
     }
 
+    pub(crate) fn from_engine_with_budget(
+        st: &EngineState,
+        strings_base: StringWatermark,
+        budget: LadderBudget,
+    ) -> Result<Self, BudgetError> {
+        if budget.target_bytes > budget.hard_bytes {
+            return Err(BudgetError::TargetExceedsHardCap);
+        }
+        let ladder = Self::from_engine(st, strings_base);
+        let minimum = ladder.accounted_bytes();
+        if minimum > budget.hard_bytes {
+            return Err(BudgetError::RungZeroTooLarge {
+                minimum_bytes: minimum,
+            });
+        }
+        Ok(ladder)
+    }
+
     pub(crate) fn push_engine(
         &mut self,
         st: &mut EngineState,
@@ -193,7 +263,7 @@ impl CheckpointLadder<EngineBundle> {
     /// Count rung-private allocations and each shared hyphen table exactly
     /// once, using the Arc allocation address as its stable identity.
     pub(crate) fn accounted_bytes(&self) -> usize {
-        let mut total = self.delta_bytes();
+        let mut total = self.delta_bytes() + self.rungs.len() * RUNG_CONTAINER_ALLOWANCE;
         let mut shared = std::collections::HashSet::new();
         for rung in &self.rungs {
             total += rung.bundle.allocated_bytes();
@@ -204,6 +274,168 @@ impl CheckpointLadder<EngineBundle> {
         }
         total
     }
+
+    pub(crate) fn admit_engine_rung(
+        &mut self,
+        st: &mut EngineState,
+        strings_base: StringWatermark,
+        resumable: bool,
+        protected: bool,
+        budget: LadderBudget,
+    ) -> RungAdmission {
+        assert!(budget.target_bytes <= budget.hard_bytes, "invalid ladder budget");
+        let candidate = EngineBundle::capture(
+            st,
+            strings_base,
+            self.rungs.last().map(|rung| &rung.bundle),
+        );
+        let mut survivors: Vec<Option<usize>> = (0..self.rungs.len()).map(Some).collect();
+        survivors.push(None);
+        let mut clocks: Vec<u64> = self.rungs.iter().map(|rung| rung.clock).collect();
+        clocks.push(st.scanner.logical_clock);
+        let mut protections: Vec<bool> = self.rungs.iter().map(|rung| rung.protected).collect();
+        protections.push(protected);
+        let mut deltas: Vec<Option<EngineDelta>> = self
+            .rungs
+            .iter()
+            .map(|rung| rung.undo.clone())
+            .collect();
+        deltas.push(Some(EngineDelta::snapshot_open(st)));
+
+        let mut dropped = 0;
+        while planned_bytes(self, &candidate, &survivors, &deltas) > budget.target_bytes {
+            let Some(index) = pick_rung_to_drop(
+                &clocks,
+                &protections,
+                budget.min_recent_rungs,
+                false,
+            ) else {
+                break;
+            };
+            drop_planned_rung(
+                index,
+                &mut survivors,
+                &mut clocks,
+                &mut protections,
+                &mut deltas,
+            );
+            dropped += 1;
+        }
+
+        // The soft target never overrides fresh protections or the recent
+        // window. The hard cap does: progressively thin any interior rung.
+        while planned_bytes(self, &candidate, &survivors, &deltas) > budget.hard_bytes {
+            let Some(index) = pick_rung_to_drop(&clocks, &protections, 0, true) else {
+                return RungAdmission::RungNotAdmitted {
+                    minimum_bytes: planned_bytes(self, &candidate, &survivors, &deltas),
+                };
+            };
+            drop_planned_rung(
+                index,
+                &mut survivors,
+                &mut clocks,
+                &mut protections,
+                &mut deltas,
+            );
+            dropped += 1;
+        }
+
+        let surviving_existing: std::collections::HashSet<usize> =
+            survivors.iter().filter_map(|index| *index).collect();
+        self.push(
+            st,
+            candidate,
+            st.scanner.logical_clock,
+            resumable,
+            protected,
+        );
+        for index in (1..self.rungs.len() - 1).rev() {
+            if !surviving_existing.contains(&index) {
+                // Hard-cap planning is allowed to relax stale protection.
+                self.rungs[index].protected = false;
+                assert!(self.decimate(index));
+            }
+        }
+        let accounted_bytes = self.accounted_bytes();
+        assert!(
+            accounted_bytes <= budget.hard_bytes,
+            "published ladder exceeded its staged hard cap"
+        );
+        RungAdmission::Admitted {
+            index: self.rungs.len() - 1,
+            dropped,
+            accounted_bytes,
+        }
+    }
+}
+
+fn planned_bytes(
+    ladder: &CheckpointLadder<EngineBundle>,
+    candidate: &EngineBundle,
+    survivors: &[Option<usize>],
+    deltas: &[Option<EngineDelta>],
+) -> usize {
+    let mut total = survivors.len() * RUNG_CONTAINER_ALLOWANCE
+        + deltas
+            .iter()
+            .filter_map(Option::as_ref)
+            .map(EngineDelta::allocated_bytes)
+            .sum::<usize>();
+    let mut shared = std::collections::HashSet::new();
+    for survivor in survivors {
+        let bundle = survivor.map_or(candidate, |index| &ladder.rungs[index].bundle);
+        total += bundle.allocated_bytes();
+        let (identity, bytes) = bundle.shared_hyph_tables();
+        if shared.insert(identity as usize) {
+            total += bytes;
+        }
+    }
+    total
+}
+
+fn pick_rung_to_drop(
+    clocks: &[u64],
+    protected: &[bool],
+    min_recent_rungs: usize,
+    relax: bool,
+) -> Option<usize> {
+    if clocks.len() <= 2 {
+        return None;
+    }
+    let recent_start = clocks.len().saturating_sub(min_recent_rungs.max(1));
+    let top = clocks[clocks.len() - 1];
+    let mut best: Option<(u64, u64, usize)> = None;
+    for index in 1..clocks.len() - 1 {
+        if !relax && (protected[index] || index >= recent_start) {
+            continue;
+        }
+        let gap = clocks[index + 1].saturating_sub(clocks[index - 1]);
+        let age = top.saturating_sub(clocks[index]).saturating_add(1);
+        if best.is_none_or(|(best_gap, best_age, _)| {
+            u128::from(gap) * u128::from(best_age)
+                < u128::from(best_gap) * u128::from(age)
+        }) {
+            best = Some((gap, age, index));
+        }
+    }
+    best.map(|(_, _, index)| index)
+}
+
+fn drop_planned_rung(
+    index: usize,
+    survivors: &mut Vec<Option<usize>>,
+    clocks: &mut Vec<u64>,
+    protected: &mut Vec<bool>,
+    deltas: &mut Vec<Option<EngineDelta>>,
+) {
+    survivors.remove(index);
+    clocks.remove(index);
+    protected.remove(index);
+    let older = deltas.remove(index).expect("interior planned rung without undo");
+    deltas[index]
+        .as_mut()
+        .expect("planned successor without undo")
+        .compose_with_older(older);
 }
 
 #[cfg(test)]
@@ -327,5 +559,101 @@ mod tests {
         assert_eq!(st.mem.mem_end, 20);
         assert_eq!(value(st.mem.data[0]), 30);
         assert!(ladder.accounted_bytes() > 0);
+    }
+
+    #[test]
+    fn too_small_budget_is_rejected_at_rung_zero() {
+        let st = state();
+        let strings_base = StringWatermark::capture(&st);
+        let minimum = CheckpointLadder::from_engine(&st, strings_base).accounted_bytes();
+        let error = CheckpointLadder::from_engine_with_budget(
+            &st,
+            strings_base,
+            LadderBudget {
+                target_bytes: minimum - 1,
+                hard_bytes: minimum - 1,
+                min_recent_rungs: 2,
+            },
+        )
+        .err()
+        .expect("undersized budget accepted");
+        assert_eq!(
+            error,
+            BudgetError::RungZeroTooLarge {
+                minimum_bytes: minimum
+            }
+        );
+    }
+
+    #[test]
+    fn rejected_candidate_does_not_seal_the_open_epoch() {
+        let mut st = state();
+        let strings_base = StringWatermark::capture(&st);
+        let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
+        let minimum = ladder.accounted_bytes();
+        st.mem.set_b32s1(0, 7);
+        let rejected = ladder.admit_engine_rung(
+            &mut st,
+            strings_base,
+            true,
+            false,
+            LadderBudget {
+                target_bytes: minimum,
+                hard_bytes: minimum,
+                min_recent_rungs: 1,
+            },
+        );
+        assert!(matches!(rejected, RungAdmission::RungNotAdmitted { .. }));
+        assert_eq!(ladder.len(), 1);
+
+        let admitted = ladder.admit_engine_rung(
+            &mut st,
+            strings_base,
+            true,
+            false,
+            LadderBudget {
+                target_bytes: usize::MAX,
+                hard_bytes: usize::MAX,
+                min_recent_rungs: 1,
+            },
+        );
+        assert!(matches!(admitted, RungAdmission::Admitted { .. }));
+        st.mem.set_b32s1(0, 8);
+        ladder.rewind_engine(&mut st, 0);
+        assert_eq!(value(st.mem.data[0]), 0);
+    }
+
+    #[test]
+    fn admission_decimates_to_the_hard_byte_cap() {
+        let mut st = state();
+        let strings_base = StringWatermark::capture(&st);
+        let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
+        let unlimited = LadderBudget {
+            target_bytes: usize::MAX,
+            hard_bytes: usize::MAX,
+            min_recent_rungs: 1,
+        };
+        st.scanner.logical_clock = 1;
+        ladder.admit_engine_rung(&mut st, strings_base, true, true, unlimited);
+        let two_rungs = ladder.accounted_bytes();
+        let one_rung = {
+            let base = CheckpointLadder::from_engine(&st, strings_base);
+            base.accounted_bytes()
+        };
+        let per_rung = two_rungs - one_rung;
+        let budget = LadderBudget {
+            target_bytes: two_rungs + per_rung,
+            hard_bytes: two_rungs + per_rung,
+            min_recent_rungs: 3,
+        };
+        for clock in 2..10 {
+            st.scanner.logical_clock = clock;
+            st.mem.set_b32s1(0, clock as i32);
+            let admission =
+                ladder.admit_engine_rung(&mut st, strings_base, true, true, budget);
+            assert!(matches!(admission, RungAdmission::Admitted { .. }));
+            assert!(ladder.accounted_bytes() <= budget.hard_bytes);
+        }
+        assert!(ladder.len() < 10);
     }
 }
