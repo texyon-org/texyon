@@ -28,16 +28,20 @@ node tools/live-preview/benchmark.mjs \
 ```
 
 The runner uses a multi-page reporting document with editor-owned primary and
-child sources. For each retained sample it:
+child sources. Its early marker is body text immediately after
+`\begin{document}`—preamble edits are intentionally a separate worst case. For
+each retained sample it:
 
 1. start a new preview process and initialize the unchanged document;
 2. discard the initial compile measurement;
 3. apply the same early primary edit and report viewport page 0 only;
 4. wait for its tail-settle frame;
 5. apply the same late child edit and report its visible page;
-6. revert both buffers and confirm byte-for-byte XDV parity with deterministic
+6. make a same-size replacement to that child marker again to measure the newly
+   planted local fence without changing file-size constraints;
+7. revert both buffers and confirm byte-for-byte XDV parity with deterministic
    cold batch output;
-7. run a ten-replacement burst at 120 ms spacing with `tail_idle_ms=200` and
+8. run a ten-replacement burst at 120 ms spacing with `tail_idle_ms=200` and
    confirm that no tail starts between replacements.
 
 Run at least five discarded warmups and thirty retained samples per edit. Store
@@ -48,10 +52,11 @@ p95 using nearest-rank percentiles; never report only the best sample.
 Those warmup/sample counts are the runner defaults. It writes raw `events.jsonl`,
 server stderr, request/observation traces, environment metadata, and a
 nearest-rank `summary.json` under the selected output directory. The headless
-runner measures request-to-frame wall time; paint time remains a viewer metric
-and must be collected from the VS Code client for a user-facing benchmark. The
-extension records both request-to-frame and viewer paint durations in the
-`Tectonic Live Preview` output channel.
+runner measures request-to-frame wall time, foreground-to-tail time, the final
+post-fence typing-burst response, and observed cancellation delay; paint time
+remains a viewer metric and must be collected from the VS Code client for a
+user-facing benchmark. The extension records both request-to-frame and viewer
+paint durations in the `Tectonic Live Preview` output channel.
 
 Also retain maximum checkpoint-accounted bytes, rung count, fresh foreground
 shipouts, changed/rendered SVG counts, cancellation delay, and tail duration.

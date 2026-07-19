@@ -218,11 +218,20 @@ function observation(label, sentAtMs, observed) {
   };
 }
 
+function tailObservation(label, foreground, settle) {
+  assert.ok(settle, `${label} was missing its tail-settle frame`);
+  return {
+    ...observation(label, foreground.receivedAtMs, settle),
+    request_wall_ms: settle.receivedAtMs - foreground.sentAtMs
+  };
+}
+
 async function runSample(options) {
   const primary = fs.readFileSync(PRIMARY_PATH, "utf8");
   const child = fs.readFileSync(CHILD_PATH, "utf8");
   const early = replaceOnce(primary, EARLY_BASELINE, "Early edited");
   const late = replaceOnce(child, LATE_BASELINE, "Late edited");
+  const lateAgain = replaceOnce(child, LATE_BASELINE, "Late change");
   const session = new PreviewSession(options);
   let revision = 0;
   const observations = [];
@@ -241,15 +250,28 @@ async function runSample(options) {
   session.send({ type: "viewport", first: 0, last: 0 });
   const earlyAt = session.send({ type: "replace", text: early });
   const earlyResult = await session.foreground(++revision, earlyAt);
+  earlyResult.foreground.sentAtMs = earlyAt;
   observations.push(observation("early_foreground", earlyAt, earlyResult.foreground));
-  observations.push(observation("early_tail", earlyAt, earlyResult.settle));
+  observations.push(tailObservation("early_tail", earlyResult.foreground, earlyResult.settle));
 
   const lastPage = earlyResult.settle?.event.page_count ?? earlyResult.foreground.event.page_count;
   session.send({ type: "viewport", first: lastPage - 1, last: lastPage - 1 });
   const lateAt = session.send({ type: "replace", path: "chapter.tex", text: late });
   const lateResult = await session.foreground(++revision, lateAt);
+  lateResult.foreground.sentAtMs = lateAt;
   observations.push(observation("late_foreground", lateAt, lateResult.foreground));
-  observations.push(observation("late_tail", lateAt, lateResult.settle));
+  observations.push(tailObservation("late_tail", lateResult.foreground, lateResult.settle));
+
+  const lateAgainAt = session.send({ type: "replace", path: "chapter.tex", text: lateAgain });
+  const lateAgainResult = await session.foreground(++revision, lateAgainAt);
+  lateAgainResult.foreground.sentAtMs = lateAgainAt;
+  observations.push(observation("late_repeat_foreground", lateAgainAt, lateAgainResult.foreground));
+  observations.push(tailObservation("late_repeat_tail", lateAgainResult.foreground, lateAgainResult.settle));
+  assert.ok(
+    BigInt(lateAgainResult.foreground.event.metrics.replay_commands) <
+      BigInt(lateResult.foreground.event.metrics.replay_commands),
+    "repeat late edit did not reduce replay work"
+  );
 
   const revertPrimaryAt = session.send({ type: "replace", text: primary });
   await session.foreground(++revision, revertPrimaryAt);
@@ -259,21 +281,34 @@ async function runSample(options) {
   session.send({ type: "viewport", first: 0, last: 0 });
   const burstStartMs = performance.now();
   let lastBurstAt = burstStartMs;
+  const burstSends = [];
   for (let index = 0; index < 10; index += 1) {
     const burst = replaceOnce(primary, EARLY_BASELINE, `Early burst ${index}`);
     lastBurstAt = session.send({ type: "replace", text: burst });
     revision += 1;
+    burstSends.push({ revision, sentAtMs: lastBurstAt });
     if (index !== 9) await delay(options.burstSpacingMs);
   }
   const burstForeground = await session.updateFor(revision, "foreground", lastBurstAt);
+  observations.push(observation("burst_final_foreground", lastBurstAt, burstForeground));
+  let burstSettle = null;
   if (burstForeground.event.tail_pending) {
-    await session.updateFor(revision, "tail_settle", burstForeground.receivedAtMs);
+    burstSettle = await session.updateFor(revision, "tail_settle", burstForeground.receivedAtMs);
+    burstForeground.sentAtMs = lastBurstAt;
+    observations.push(tailObservation("burst_final_tail", burstForeground, burstSettle));
   }
   const tailDuringBurst = session.events.filter(({ event, receivedAtMs }) =>
     event.type === "update" && event.phase === "tail_settle" &&
     receivedAtMs >= burstStartMs && receivedAtMs < lastBurstAt
   );
   assert.equal(tailDuringBurst.length, 0, "tail work started between burst replacements");
+  const cancellationDelaysMs = session.events
+    .filter(({ event }) => event.type === "cancelled")
+    .map(({ event, receivedAtMs }) => {
+      const sent = burstSends.find((candidate) => String(candidate.revision) === event.source_revision);
+      return sent ? receivedAtMs - sent.sentAtMs : null;
+    })
+    .filter((value) => value !== null);
 
   await session.shutdown();
   return {
@@ -281,7 +316,8 @@ async function runSample(options) {
     rawLines: session.rawLines,
     requests: session.requests,
     stderr: session.stderr,
-    bundleDigest: ready.event.bundle_digest
+    bundleDigest: ready.event.bundle_digest,
+    cancellationDelaysMs
   };
 }
 
@@ -306,6 +342,7 @@ function summarize(samples) {
     }
   }
   const metrics = samples.flatMap((sample) => sample.observations.map((item) => item.metrics));
+  const cancellationDelaysMs = samples.flatMap((sample) => sample.cancellationDelaysMs);
   summary.maxima = {
     checkpoint_bytes: Math.max(...metrics.map((item) => item.checkpoint_bytes)),
     checkpoint_rungs: Math.max(...metrics.map((item) => item.checkpoint_rungs)),
@@ -319,6 +356,12 @@ function summarize(samples) {
     checkpoint_rungs_rejected: Math.max(...metrics.map((item) => item.checkpoint_rungs_rejected)),
     shipouts: Math.max(...metrics.map((item) => item.shipouts)),
     pages_rendered: Math.max(...metrics.map((item) => item.pages_rendered))
+  };
+  summary.cancellation_delay_ms = cancellationDelaysMs.length === 0 ? null : {
+    count: cancellationDelaysMs.length,
+    median: nearestRank(cancellationDelaysMs, 0.5),
+    p95: nearestRank(cancellationDelaysMs, 0.95),
+    max: Math.max(...cancellationDelaysMs)
   };
   return summary;
 }
@@ -356,14 +399,15 @@ async function main() {
     fs.writeFileSync(path.join(options.output, `${stem}.stderr.log`), sample.stderr);
     fs.writeFileSync(path.join(options.output, `${stem}.trace.json`), `${JSON.stringify({
       observations: sample.observations,
-      requests: sample.requests
+      requests: sample.requests,
+      cancellation_delays_ms: sample.cancellationDelaysMs
     }, null, 2)}\n`);
   }
 
   const bundleDigests = [...new Set(samples.map((sample) => sample.bundleDigest))];
   assert.equal(bundleDigests.length, 1, "bundle digest changed during benchmark");
   const report = {
-    schema_version: 1,
+    schema_version: 2,
     generated_at: new Date().toISOString(),
     options: { ...options, bin: path.resolve(options.bin) },
     fixture: {
