@@ -253,6 +253,39 @@ mod tests {
         assert!(sink.frames[0].pages_svg[0].svg.contains("<path"));
     }
 
+    #[cfg(feature = "preview-mupdf")]
+    #[test]
+    fn xdv_fixture_corpus_is_fully_renderable() {
+        crate::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
+        let bundle = crate::live_preview::FrozenBundle::new(Box::new(
+            crate::test_util::TestBundle::default(),
+        ));
+        let provider = crate::live_preview::BundleResourceProvider::new(bundle, None).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tex-outputs");
+        let mut backend = tectonic_preview_render::MupdfBackend::new().unwrap();
+        for entry in std::fs::read_dir(root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("xdv") {
+                continue;
+            }
+            let mut renderer = tectonic_preview_render::HotRenderer::new(provider.clone());
+            let analysis = renderer
+                .analyze(std::sync::Arc::from(std::fs::read(&path).unwrap()))
+                .unwrap();
+            assert!(
+                analysis.ledger().unsupported().is_empty(),
+                "{}: {:?}",
+                path.display(),
+                analysis.ledger().unsupported()
+            );
+            let selected: Vec<_> = (0..analysis.pages().len()).collect();
+            let pages = renderer
+                .render_pages(&analysis, &selected, &mut backend)
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            assert!(pages.iter().all(|page| page.svg.contains("<svg")));
+        }
+    }
+
     #[test]
     fn failures_retain_last_published_document_and_belief() {
         let mut pipeline = PreviewPipeline::new(ClassicResources, NullBackend);

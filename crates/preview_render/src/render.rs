@@ -705,6 +705,10 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             self.ledger.record_supported("landscape");
             return true;
         }
+        if text == "dvipdfmx:config" || text.starts_with("dvipdfmx:config ") {
+            self.ledger.record_supported("dvipdfmx-config");
+            return true;
+        }
         let Some(args) = text.strip_prefix("pdf:") else {
             return false;
         };
@@ -737,6 +741,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
                 | "exobj"
                 | "bform"
                 | "eform"
+                | "fstream"
         ) {
             self.ledger.record_supported("pdf-nonvisual");
             return true;
