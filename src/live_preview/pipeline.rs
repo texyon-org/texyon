@@ -292,7 +292,7 @@ mod tests {
         assert_eq!(pipeline.last_document().unwrap().bytes().as_ref(), ONE_PAGE);
     }
 
-    #[cfg(feature = "preview-mupdf")]
+    #[cfg(all(feature = "preview-mupdf", target_os = "linux"))]
     #[test]
     fn full_document_publishes_real_path_svg() {
         let mut pipeline = PreviewPipeline::new(
@@ -321,7 +321,7 @@ mod tests {
         assert!(sink.metrics[0].render_ms > 0.0);
     }
 
-    #[cfg(feature = "preview-mupdf")]
+    #[cfg(all(feature = "preview-mupdf", target_os = "linux"))]
     #[test]
     fn xdv_fixture_corpus_is_fully_renderable() {
         crate::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));

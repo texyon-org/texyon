@@ -9,7 +9,9 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_BACKEND_MUPDF").is_none() {
         return;
     }
-    assert_eq!(std::env::var("CARGO_CFG_TARGET_OS").as_deref(), Ok("linux"));
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("linux") {
+        return;
+    }
     println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
     println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_INCLUDE");
     println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_LIB");

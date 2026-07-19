@@ -1864,7 +1864,7 @@ mod tests {
             .is_none());
     }
 
-    #[cfg(feature = "backend-mupdf")]
+    #[cfg(all(feature = "backend-mupdf", target_os = "linux"))]
     #[test]
     fn pdf_code_plan_renders_through_mupdf() {
         let mut renderer = HotRenderer::new(());
@@ -1885,7 +1885,7 @@ mod tests {
         assert!(pages[0].svg.contains("#00ff00"));
     }
 
-    #[cfg(feature = "backend-mupdf")]
+    #[cfg(all(feature = "backend-mupdf", target_os = "linux"))]
     #[test]
     fn real_classic_xdv_renders_to_path_svg_transactionally() {
         let mut renderer = HotRenderer::new(BuiltinClassicResources);

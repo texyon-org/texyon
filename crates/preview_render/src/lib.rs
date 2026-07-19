@@ -17,7 +17,7 @@ mod render;
 mod resource;
 mod tfm;
 
-#[cfg(feature = "backend-mupdf")]
+#[cfg(all(feature = "backend-mupdf", target_os = "linux"))]
 mod backend_mupdf;
 
 pub use backend::{
@@ -32,5 +32,5 @@ pub use render::{
 };
 pub use resource::{Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest};
 
-#[cfg(feature = "backend-mupdf")]
+#[cfg(all(feature = "backend-mupdf", target_os = "linux"))]
 pub use backend_mupdf::{MupdfBackend, Pixmap};
