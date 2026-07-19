@@ -14,6 +14,54 @@ struct pr_backend {
     int font_capacity;
 };
 
+struct pr_stroke_style {
+    float width;
+    int join;
+    int cap;
+    float miter_limit;
+    float dash[4];
+    size_t dash_len;
+    float dash_phase;
+};
+
+static fz_path *pr_make_path(fz_context *ctx, const unsigned char *kinds,
+                             const float *coordinates, int count)
+{
+    fz_path *path = fz_new_path(ctx);
+    int coordinate = 0;
+    for (int i = 0; i < count; ++i) {
+        switch (kinds[i]) {
+        case 0:
+            fz_moveto(ctx, path, coordinates[coordinate], coordinates[coordinate + 1]);
+            coordinate += 2;
+            break;
+        case 1:
+            fz_lineto(ctx, path, coordinates[coordinate], coordinates[coordinate + 1]);
+            coordinate += 2;
+            break;
+        case 2:
+            fz_curveto(ctx, path,
+                coordinates[coordinate], coordinates[coordinate + 1],
+                coordinates[coordinate + 2], coordinates[coordinate + 3],
+                coordinates[coordinate + 4], coordinates[coordinate + 5]);
+            coordinate += 6;
+            break;
+        case 3:
+            fz_rectto(ctx, path,
+                coordinates[coordinate], coordinates[coordinate + 1],
+                coordinates[coordinate + 2], coordinates[coordinate + 3]);
+            coordinate += 4;
+            break;
+        case 4:
+            fz_closepath(ctx, path);
+            break;
+        default:
+            fz_throw(ctx, FZ_ERROR_GENERIC, "unknown preview path command");
+        }
+    }
+    return path;
+}
+
 struct pr_backend *pr_backend_new(void)
 {
     struct pr_backend *backend = calloc(1, sizeof(*backend));
@@ -196,6 +244,107 @@ int pr_backend_rule(struct pr_backend *backend, float x, float y,
     fz_always(backend->ctx) {
         if (path)
             fz_drop_path(backend->ctx, path);
+    }
+    fz_catch(backend->ctx) {
+        ok = 0;
+    }
+    return ok;
+}
+
+int pr_backend_fill_path(struct pr_backend *backend,
+                         const unsigned char *kinds, const float *coordinates,
+                         int count, int even_odd, fz_matrix transform,
+                         const float *rgba)
+{
+    fz_path *path = NULL;
+    int ok = 0;
+    fz_var(path);
+    fz_try(backend->ctx) {
+        path = pr_make_path(backend->ctx, kinds, coordinates, count);
+        fz_fill_path(backend->ctx, backend->device, path, even_odd, transform,
+            fz_device_rgb(backend->ctx), rgba, rgba[3], fz_default_color_params);
+        ok = 1;
+    }
+    fz_always(backend->ctx) {
+        if (path)
+            fz_drop_path(backend->ctx, path);
+    }
+    fz_catch(backend->ctx) {
+        ok = 0;
+    }
+    return ok;
+}
+
+int pr_backend_stroke_path(struct pr_backend *backend,
+                           const unsigned char *kinds, const float *coordinates,
+                           int count, struct pr_stroke_style style,
+                           fz_matrix transform, const float *rgba)
+{
+    fz_path *path = NULL;
+    fz_stroke_state *stroke = NULL;
+    int ok = 0;
+    fz_var(path);
+    fz_var(stroke);
+    fz_try(backend->ctx) {
+        path = pr_make_path(backend->ctx, kinds, coordinates, count);
+        stroke = fz_new_stroke_state_with_dash_len(backend->ctx,
+            style.dash_len > 4 ? 4 : style.dash_len);
+        stroke->linewidth = style.width;
+        stroke->linejoin = style.join < 0 ? 0 : (style.join > 2 ? 2 : style.join);
+        int cap = style.cap < 0 ? 0 : (style.cap > 2 ? 2 : style.cap);
+        stroke->start_cap = cap;
+        stroke->dash_cap = cap;
+        stroke->end_cap = cap;
+        stroke->miterlimit = style.miter_limit;
+        stroke->dash_phase = style.dash_phase;
+        stroke->dash_len = style.dash_len > 4 ? 4 : style.dash_len;
+        for (int i = 0; i < stroke->dash_len; ++i)
+            stroke->dash_list[i] = style.dash[i];
+        fz_stroke_path(backend->ctx, backend->device, path, stroke, transform,
+            fz_device_rgb(backend->ctx), rgba, rgba[3], fz_default_color_params);
+        ok = 1;
+    }
+    fz_always(backend->ctx) {
+        if (path)
+            fz_drop_path(backend->ctx, path);
+        if (stroke)
+            fz_drop_stroke_state(backend->ctx, stroke);
+    }
+    fz_catch(backend->ctx) {
+        ok = 0;
+    }
+    return ok;
+}
+
+int pr_backend_clip_path(struct pr_backend *backend,
+                         const unsigned char *kinds, const float *coordinates,
+                         int count, int even_odd, fz_matrix transform)
+{
+    fz_path *path = NULL;
+    int ok = 0;
+    fz_var(path);
+    fz_try(backend->ctx) {
+        path = pr_make_path(backend->ctx, kinds, coordinates, count);
+        fz_clip_path(backend->ctx, backend->device, path, even_odd, transform,
+            fz_infinite_rect);
+        ok = 1;
+    }
+    fz_always(backend->ctx) {
+        if (path)
+            fz_drop_path(backend->ctx, path);
+    }
+    fz_catch(backend->ctx) {
+        ok = 0;
+    }
+    return ok;
+}
+
+int pr_backend_pop_clip(struct pr_backend *backend)
+{
+    int ok = 0;
+    fz_try(backend->ctx) {
+        fz_pop_clip(backend->ctx, backend->device);
+        ok = 1;
     }
     fz_catch(backend->ctx) {
         ok = 0;

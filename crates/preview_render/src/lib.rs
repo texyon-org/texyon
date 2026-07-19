@@ -12,6 +12,7 @@ mod fidelity;
 mod fingerprint;
 mod fontmap;
 mod pagesize;
+mod pdfcode;
 mod render;
 mod resource;
 mod tfm;
@@ -20,7 +21,8 @@ mod tfm;
 mod backend_mupdf;
 
 pub use backend::{
-    Backend, FontId, FontStyle, Matrix, NullBackend, PositionedChar, PositionedGlyph,
+    Backend, FontId, FontStyle, Matrix, NullBackend, Path, PathCommand, PositionedChar,
+    PositionedGlyph, StrokeStyle,
 };
 pub use color::Color;
 pub use fidelity::{compare_rasters, RasterDiff};

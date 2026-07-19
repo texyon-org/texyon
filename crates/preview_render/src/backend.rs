@@ -20,6 +20,48 @@ pub struct Matrix {
     pub f: f32,
 }
 
+/// One PDF path construction command.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PathCommand {
+    /// Begin a subpath.
+    MoveTo(f32, f32),
+    /// Add a straight segment.
+    LineTo(f32, f32),
+    /// Add a cubic Bézier segment.
+    CurveTo(f32, f32, f32, f32, f32, f32),
+    /// Add an axis-aligned rectangle `(x0, y0, x1, y1)`.
+    Rect(f32, f32, f32, f32),
+    /// Close the current subpath.
+    Close,
+}
+
+/// Persistent PDF content-stream path.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Path {
+    /// Path commands in construction order.
+    pub commands: Vec<PathCommand>,
+}
+
+/// PDF line drawing parameters.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StrokeStyle {
+    /// Line width in content-stream units.
+    pub width: f32,
+    /// PDF line join code.
+    pub join: i32,
+    /// PDF line cap code.
+    pub cap: i32,
+    /// Miter limit.
+    pub miter_limit: f32,
+    /// Dash array, bounded to four entries.
+    pub dash: [f32; 4],
+    /// Active entries in `dash`.
+    pub dash_len: usize,
+    /// Dash phase.
+    pub dash_phase: f32,
+}
+
 impl Matrix {
     pub(crate) fn dvi_origin(x: i32, y: i32, scale: f32) -> Self {
         Self {
@@ -115,6 +157,35 @@ pub trait Backend {
         color: Color,
     ) -> Result<(), RenderError>;
 
+    /// Fill a PDF content-stream path.
+    fn fill_path(
+        &mut self,
+        path: &Path,
+        even_odd: bool,
+        transform: Matrix,
+        color: Color,
+    ) -> Result<(), RenderError>;
+
+    /// Stroke a PDF content-stream path.
+    fn stroke_path(
+        &mut self,
+        path: &Path,
+        style: StrokeStyle,
+        transform: Matrix,
+        color: Color,
+    ) -> Result<(), RenderError>;
+
+    /// Intersect the device clip with a PDF path.
+    fn clip_path(
+        &mut self,
+        path: &Path,
+        even_odd: bool,
+        transform: Matrix,
+    ) -> Result<(), RenderError>;
+
+    /// Pop one clip installed by `clip_path`.
+    fn pop_clip(&mut self) -> Result<(), RenderError>;
+
     /// Fill positioned native-font glyph outlines in `color`.
     fn fill_glyphs(
         &mut self,
@@ -186,6 +257,39 @@ impl Backend for NullBackend {
         _height_bp: f32,
         _color: Color,
     ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn fill_path(
+        &mut self,
+        _path: &Path,
+        _even_odd: bool,
+        _transform: Matrix,
+        _color: Color,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn stroke_path(
+        &mut self,
+        _path: &Path,
+        _style: StrokeStyle,
+        _transform: Matrix,
+        _color: Color,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn clip_path(
+        &mut self,
+        _path: &Path,
+        _even_odd: bool,
+        _transform: Matrix,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn pop_clip(&mut self) -> Result<(), RenderError> {
         Ok(())
     }
 

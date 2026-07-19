@@ -2,11 +2,12 @@
 
 use sha2::{Digest, Sha256};
 
+use crate::{Color, Matrix, Path, PathCommand};
 use crate::render::{DrawOperation, PagePlan};
 
 pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
     let mut digest = Sha256::new();
-    digest.update(b"tectonic-page-visual\0v2");
+    digest.update(b"tectonic-page-visual\0v3");
     digest.update(page.width_bp.to_bits().to_be_bytes());
     digest.update(page.height_bp.to_bits().to_be_bytes());
     for operation in &page.operations {
@@ -102,7 +103,92 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                     digest.update(value.to_bits().to_be_bytes());
                 }
             }
+            DrawOperation::PathFill {
+                path,
+                even_odd,
+                transform,
+                color,
+            } => {
+                digest.update([4]);
+                hash_path(&mut digest, path);
+                digest.update([u8::from(*even_odd)]);
+                hash_matrix(&mut digest, *transform);
+                hash_color(&mut digest, *color);
+            }
+            DrawOperation::PathStroke {
+                path,
+                style,
+                transform,
+                color,
+            } => {
+                digest.update([5]);
+                hash_path(&mut digest, path);
+                digest.update(style.width.to_bits().to_be_bytes());
+                digest.update(style.join.to_be_bytes());
+                digest.update(style.cap.to_be_bytes());
+                digest.update(style.miter_limit.to_bits().to_be_bytes());
+                digest.update((style.dash_len as u64).to_be_bytes());
+                for value in &style.dash[..style.dash_len] {
+                    digest.update(value.to_bits().to_be_bytes());
+                }
+                digest.update(style.dash_phase.to_bits().to_be_bytes());
+                hash_matrix(&mut digest, *transform);
+                hash_color(&mut digest, *color);
+            }
+            DrawOperation::ClipPath {
+                path,
+                even_odd,
+                transform,
+            } => {
+                digest.update([6]);
+                hash_path(&mut digest, path);
+                digest.update([u8::from(*even_odd)]);
+                hash_matrix(&mut digest, *transform);
+            }
+            DrawOperation::PopClip => digest.update([7]),
         }
     }
     digest.finalize().into()
+}
+
+fn hash_path(digest: &mut Sha256, path: &Path) {
+    digest.update((path.commands.len() as u64).to_be_bytes());
+    for command in &path.commands {
+        match command {
+            PathCommand::MoveTo(x, y) => {
+                digest.update([0]);
+                hash_floats(digest, &[*x, *y]);
+            }
+            PathCommand::LineTo(x, y) => {
+                digest.update([1]);
+                hash_floats(digest, &[*x, *y]);
+            }
+            PathCommand::CurveTo(x1, y1, x2, y2, x3, y3) => {
+                digest.update([2]);
+                hash_floats(digest, &[*x1, *y1, *x2, *y2, *x3, *y3]);
+            }
+            PathCommand::Rect(x0, y0, x1, y1) => {
+                digest.update([3]);
+                hash_floats(digest, &[*x0, *y0, *x1, *y1]);
+            }
+            PathCommand::Close => digest.update([4]),
+        }
+    }
+}
+
+fn hash_matrix(digest: &mut Sha256, matrix: Matrix) {
+    hash_floats(
+        digest,
+        &[matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f],
+    );
+}
+
+fn hash_color(digest: &mut Sha256, color: Color) {
+    hash_floats(digest, &[color.red, color.green, color.blue, color.alpha]);
+}
+
+fn hash_floats(digest: &mut Sha256, values: &[f32]) {
+    for value in values {
+        digest.update(value.to_bits().to_be_bytes());
+    }
 }

@@ -7,12 +7,15 @@ use std::sync::Arc;
 
 use tectonic_xdv::{FileType, XdvError, XdvEvents, XdvParser};
 
-use crate::backend::{Backend, FontStyle, Matrix, PositionedChar, PositionedGlyph};
+use crate::backend::{
+    Backend, FontStyle, Matrix, Path, PositionedChar, PositionedGlyph, StrokeStyle,
+};
 use crate::color::Color;
 use crate::encoding::type1_builtin;
 use crate::fontmap::FontMap;
 use crate::fingerprint::page_digest;
 use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
+use crate::pdfcode::{PdfGraphics, PdfOperation};
 use crate::resource::{
     Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest,
 };
@@ -362,6 +365,24 @@ impl<P: ResourceProvider> HotRenderer<P> {
                             *color,
                         )?;
                     }
+                    DrawOperation::PathFill {
+                        path,
+                        even_odd,
+                        transform,
+                        color,
+                    } => backend.fill_path(path, *even_odd, *transform, *color)?,
+                    DrawOperation::PathStroke {
+                        path,
+                        style,
+                        transform,
+                        color,
+                    } => backend.stroke_path(path, *style, *transform, *color)?,
+                    DrawOperation::ClipPath {
+                        path,
+                        even_odd,
+                        transform,
+                    } => backend.clip_path(path, *even_odd, *transform)?,
+                    DrawOperation::PopClip => backend.pop_clip()?,
                 }
             }
             rendered.push(PageSvg {
@@ -426,6 +447,24 @@ pub(crate) enum DrawOperation {
         chars: Vec<ClassicPosition>,
         color: Color,
     },
+    PathFill {
+        path: Path,
+        even_odd: bool,
+        transform: Matrix,
+        color: Color,
+    },
+    PathStroke {
+        path: Path,
+        style: StrokeStyle,
+        transform: Matrix,
+        color: Color,
+    },
+    ClipPath {
+        path: Path,
+        even_odd: bool,
+        transform: Matrix,
+    },
+    PopClip,
 }
 
 #[derive(Clone, Copy)]
@@ -480,6 +519,7 @@ struct Walker<'a, P> {
     color: Color,
     color_stack: Vec<Color>,
     pdf_color_stacks: BTreeMap<i32, Vec<Color>>,
+    pdf_graphics: PdfGraphics,
 }
 
 impl<'a, P: ResourceProvider> Walker<'a, P> {
@@ -497,6 +537,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             color: Color::BLACK,
             color_stack: Vec::new(),
             pdf_color_stacks: BTreeMap::new(),
+            pdf_graphics: PdfGraphics::default(),
         }
     }
 
@@ -633,6 +674,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             unsupported: BTreeMap::new(),
             complete: true,
         });
+        self.pdf_graphics.reset_page();
         Ok(())
     }
 
@@ -642,6 +684,61 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             return Ok(());
         }
         if self.apply_color_special(contents)? {
+            self.pdf_graphics.set_color(self.color);
+            return Ok(());
+        }
+        if contents == b"pdf:code" || contents.starts_with(b"pdf:code ") {
+            let payload = &contents[b"pdf:code".len()..];
+            let run = self.pdf_graphics.run(
+                payload.strip_prefix(b" ").unwrap_or(payload),
+                x,
+                y,
+                SP_TO_BP,
+            );
+            self.color = self.pdf_graphics.fill;
+            for operation in run.operations {
+                let operation = match operation {
+                    PdfOperation::Fill {
+                        path,
+                        even_odd,
+                        transform,
+                        color,
+                    } => DrawOperation::PathFill {
+                        path,
+                        even_odd,
+                        transform,
+                        color,
+                    },
+                    PdfOperation::Stroke {
+                        path,
+                        style,
+                        transform,
+                        color,
+                    } => DrawOperation::PathStroke {
+                        path,
+                        style,
+                        transform,
+                        color,
+                    },
+                    PdfOperation::Clip {
+                        path,
+                        even_odd,
+                        transform,
+                    } => DrawOperation::ClipPath {
+                        path,
+                        even_odd,
+                        transform,
+                    },
+                    PdfOperation::PopClip => DrawOperation::PopClip,
+                };
+                self.page_mut()?.operations.push(operation);
+            }
+            for name in run.supported {
+                self.ledger.record_supported(name);
+            }
+            for name in run.unsupported {
+                self.unsupported(&name)?;
+            }
             return Ok(());
         }
         if let Some(image) = parse_image_special(contents, x, y) {
@@ -1194,6 +1291,37 @@ mod tests {
         Arc::from(bytes)
     }
 
+    fn pdf_code_xdv(specials: &[&str]) -> Arc<[u8]> {
+        let mut bytes = vec![247, 7];
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.push(0);
+        bytes.push(139);
+        bytes.extend_from_slice(&[0; 40]);
+        bytes.extend_from_slice(&(-1i32).to_be_bytes());
+        for special in specials {
+            let special = format!("pdf:code {special}");
+            bytes.push(239);
+            bytes.push(special.len() as u8);
+            bytes.extend_from_slice(special.as_bytes());
+        }
+        bytes.push(140);
+        bytes.push(248);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&2u16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.push(249);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.push(7);
+        bytes.extend_from_slice(&[223; 4]);
+        Arc::from(bytes)
+    }
+
     fn styled_native_xdv() -> Arc<[u8]> {
         let mut bytes = vec![247, 7];
         bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
@@ -1333,6 +1461,34 @@ mod tests {
     }
 
     #[test]
+    fn pdf_code_fragments_form_a_stable_clipped_path_plan() {
+        let mut renderer = HotRenderer::new(());
+        let analysis = renderer
+            .analyze(pdf_code_xdv(&[
+                "q",
+                "1 0 0 rg",
+                "0 0 10 10 re",
+                "W n",
+                "0 0 20 20 re f",
+                "Q",
+            ]))
+            .unwrap();
+        assert!(matches!(
+            analysis.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
+        assert!(analysis.pages()[0].unsupported.is_empty());
+        assert!(matches!(
+            analysis.plans[0].operations.as_slice(),
+            [
+                DrawOperation::ClipPath { .. },
+                DrawOperation::PathFill { .. },
+                DrawOperation::PopClip
+            ]
+        ));
+    }
+
+    #[test]
     fn native_font_style_and_rgba_are_preserved_in_the_render_plan() {
         let mut renderer = HotRenderer::new(MutableResources(RefCell::new(b"font-data".to_vec())));
         let analysis = renderer.analyze(styled_native_xdv()).unwrap();
@@ -1401,6 +1557,27 @@ mod tests {
             .unsupported()
             .get("classic-font-resource")
             .is_none());
+    }
+
+    #[cfg(feature = "backend-mupdf")]
+    #[test]
+    fn pdf_code_plan_renders_through_mupdf() {
+        let mut renderer = HotRenderer::new(());
+        let analysis = renderer
+            .analyze(pdf_code_xdv(&[
+                "q",
+                "0 0 20 20 re W n",
+                "0 1 0 rg",
+                "0 0 40 40 re f",
+                "Q",
+            ]))
+            .unwrap();
+        let mut backend = crate::MupdfBackend::new().unwrap();
+        let pages = renderer
+            .render_pages(&analysis, &[0], &mut backend)
+            .unwrap();
+        assert!(pages[0].svg.contains("<clipPath"));
+        assert!(pages[0].svg.contains("#00ff00"));
     }
 
     #[cfg(feature = "backend-mupdf")]

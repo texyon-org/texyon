@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use std::ffi::{c_void, CString};
 
 use crate::{
-    Backend, Color, FontId, FontStyle, Matrix, PositionedChar, PositionedGlyph, RenderError,
-    ResourceIdentity,
+    Backend, Color, FontId, FontStyle, Matrix, Path, PathCommand, PositionedChar,
+    PositionedGlyph, RenderError, ResourceIdentity, StrokeStyle,
 };
 
 extern "C" {
@@ -38,6 +38,33 @@ extern "C" {
         height: f32,
         rgba: *const f32,
     ) -> i32;
+    fn pr_backend_fill_path(
+        backend: *mut c_void,
+        kinds: *const u8,
+        coordinates: *const f32,
+        count: i32,
+        even_odd: i32,
+        transform: Matrix,
+        rgba: *const f32,
+    ) -> i32;
+    fn pr_backend_stroke_path(
+        backend: *mut c_void,
+        kinds: *const u8,
+        coordinates: *const f32,
+        count: i32,
+        style: StrokeStyle,
+        transform: Matrix,
+        rgba: *const f32,
+    ) -> i32;
+    fn pr_backend_clip_path(
+        backend: *mut c_void,
+        kinds: *const u8,
+        coordinates: *const f32,
+        count: i32,
+        even_odd: i32,
+        transform: Matrix,
+    ) -> i32;
+    fn pr_backend_pop_clip(backend: *mut c_void) -> i32;
     fn pr_backend_image(
         backend: *mut c_void,
         data: *const u8,
@@ -154,6 +181,33 @@ impl MupdfBackend {
     }
 }
 
+fn flatten_path(path: &Path) -> (Vec<u8>, Vec<f32>) {
+    let mut kinds = Vec::with_capacity(path.commands.len());
+    let mut coordinates = Vec::new();
+    for command in &path.commands {
+        match command {
+            PathCommand::MoveTo(x, y) => {
+                kinds.push(0);
+                coordinates.extend([x, y]);
+            }
+            PathCommand::LineTo(x, y) => {
+                kinds.push(1);
+                coordinates.extend([x, y]);
+            }
+            PathCommand::CurveTo(x1, y1, x2, y2, x3, y3) => {
+                kinds.push(2);
+                coordinates.extend([x1, y1, x2, y2, x3, y3]);
+            }
+            PathCommand::Rect(x0, y0, x1, y1) => {
+                kinds.push(3);
+                coordinates.extend([x0, y0, x1, y1]);
+            }
+            PathCommand::Close => kinds.push(4),
+        }
+    }
+    (kinds, coordinates)
+}
+
 impl Drop for MupdfBackend {
     fn drop(&mut self) {
         // SAFETY: `raw` is uniquely owned for the lifetime of this backend.
@@ -230,6 +284,92 @@ impl Backend for MupdfBackend {
         if unsafe { pr_backend_rule(self.raw, x_bp, y_bp, width_bp, height_bp, rgba.as_ptr()) } == 0
         {
             return Err(RenderError::Backend("MuPDF rule drawing failed".into()));
+        }
+        Ok(())
+    }
+
+    fn fill_path(
+        &mut self,
+        path: &Path,
+        even_odd: bool,
+        transform: Matrix,
+        color: Color,
+    ) -> Result<(), RenderError> {
+        let (kinds, coordinates) = flatten_path(path);
+        let rgba = [color.red, color.green, color.blue, color.alpha];
+        // SAFETY: the flattened slices and color remain live during the guarded C call.
+        let ok = unsafe {
+            pr_backend_fill_path(
+                self.raw,
+                kinds.as_ptr(),
+                coordinates.as_ptr(),
+                kinds.len() as i32,
+                i32::from(even_odd),
+                transform,
+                rgba.as_ptr(),
+            )
+        };
+        if ok == 0 {
+            return Err(RenderError::Backend("MuPDF path fill failed".into()));
+        }
+        Ok(())
+    }
+
+    fn stroke_path(
+        &mut self,
+        path: &Path,
+        style: StrokeStyle,
+        transform: Matrix,
+        color: Color,
+    ) -> Result<(), RenderError> {
+        let (kinds, coordinates) = flatten_path(path);
+        let rgba = [color.red, color.green, color.blue, color.alpha];
+        // SAFETY: the flattened slices and color remain live during the guarded C call.
+        let ok = unsafe {
+            pr_backend_stroke_path(
+                self.raw,
+                kinds.as_ptr(),
+                coordinates.as_ptr(),
+                kinds.len() as i32,
+                style,
+                transform,
+                rgba.as_ptr(),
+            )
+        };
+        if ok == 0 {
+            return Err(RenderError::Backend("MuPDF path stroke failed".into()));
+        }
+        Ok(())
+    }
+
+    fn clip_path(
+        &mut self,
+        path: &Path,
+        even_odd: bool,
+        transform: Matrix,
+    ) -> Result<(), RenderError> {
+        let (kinds, coordinates) = flatten_path(path);
+        // SAFETY: the flattened slices remain live during the guarded C call.
+        let ok = unsafe {
+            pr_backend_clip_path(
+                self.raw,
+                kinds.as_ptr(),
+                coordinates.as_ptr(),
+                kinds.len() as i32,
+                i32::from(even_odd),
+                transform,
+            )
+        };
+        if ok == 0 {
+            return Err(RenderError::Backend("MuPDF path clipping failed".into()));
+        }
+        Ok(())
+    }
+
+    fn pop_clip(&mut self) -> Result<(), RenderError> {
+        // SAFETY: shim call on a live context; exceptions are caught in C.
+        if unsafe { pr_backend_pop_clip(self.raw) } == 0 {
+            return Err(RenderError::Backend("MuPDF clip pop failed".into()));
         }
         Ok(())
     }
@@ -405,6 +545,61 @@ mod tests {
         let svg = backend.finish_page().unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("path"));
+    }
+
+    #[test]
+    fn emits_balanced_vector_clip_groups() {
+        let identity = Matrix {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        };
+        let rectangle = |x0, y0, x1, y1| Path {
+            commands: vec![PathCommand::Rect(x0, y0, x1, y1)],
+        };
+        let mut backend = MupdfBackend::new().unwrap();
+        backend.begin_page(60.0, 60.0).unwrap();
+        backend
+            .clip_path(&rectangle(10.0, 10.0, 30.0, 30.0), false, identity)
+            .unwrap();
+        backend
+            .fill_path(
+                &rectangle(0.0, 0.0, 50.0, 50.0),
+                false,
+                identity,
+                Color::rgb(1.0, 0.0, 0.0),
+            )
+            .unwrap();
+        backend.pop_clip().unwrap();
+        backend
+            .stroke_path(
+                &Path {
+                    commands: vec![
+                        PathCommand::MoveTo(5.0, 50.0),
+                        PathCommand::LineTo(55.0, 50.0),
+                    ],
+                },
+                StrokeStyle {
+                    width: 2.0,
+                    join: 1,
+                    cap: 1,
+                    miter_limit: 10.0,
+                    dash: [3.0, 2.0, 0.0, 0.0],
+                    dash_len: 2,
+                    dash_phase: 0.0,
+                },
+                identity,
+                Color::BLACK,
+            )
+            .unwrap();
+        let svg = backend.finish_page().unwrap();
+        assert!(svg.contains("<clipPath"));
+        assert!(svg.contains("<g clip-path="));
+        assert!(svg.contains("</g>"));
+        assert!(svg.contains("stroke-dasharray="));
     }
 
     #[test]
