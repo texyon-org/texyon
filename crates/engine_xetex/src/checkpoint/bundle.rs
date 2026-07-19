@@ -694,6 +694,12 @@ impl FontBundle {
         }
         // The ICU iterator points into transient text and is rebuilt lazily.
         unsafe { crate::ext::release_linebreak_state(dst) };
+        // Fonts created after this checkpoint may have emitted definitions in
+        // the abandoned timeline. Reused slots must start unused on replay.
+        let restored_font_count = (self.font_ptr + 1).max(0) as usize;
+        if restored_font_count < dst.font_used.len() {
+            dst.font_used[restored_font_count..].fill(false);
+        }
         dst.loaded_font_mapping
             .clone_from(&self.loaded_font_mapping);
         dst.loaded_font_flags = self.loaded_font_flags;
@@ -1067,6 +1073,25 @@ mod tests {
             st.input.input_file.last(),
             Some(crate::state::InputSlot::Terminal)
         ));
+    }
+
+    #[test]
+    fn font_restore_clears_use_flags_beyond_the_checkpoint() {
+        let mut fonts = crate::state::FontState::default();
+        fonts.font_layout_engine = vec![None; 4];
+        fonts.font_layout_engine_mirror = vec![std::ptr::null_mut(); 4];
+        fonts.font_mapping = vec![None; 4];
+        fonts.font_used = vec![false; 4];
+        fonts.font_ptr = 1;
+        let checkpoint = FontBundle::capture(&fonts);
+
+        fonts.font_ptr = 3;
+        fonts.font_used[2] = true;
+        fonts.font_used[3] = true;
+        checkpoint.restore(&mut fonts);
+
+        assert_eq!(fonts.font_ptr, 1);
+        assert_eq!(fonts.font_used, [false, false, false, false]);
     }
 
     #[test]
