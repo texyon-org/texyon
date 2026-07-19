@@ -13,6 +13,9 @@ mod render;
 mod resource;
 mod tfm;
 
+#[cfg(feature = "backend-mupdf")]
+mod backend_mupdf;
+
 pub use backend::{
     Backend, FontId, FontStyle, Matrix, NullBackend, PositionedChar, PositionedGlyph,
 };
@@ -22,3 +25,6 @@ pub use render::{
     UnsupportedSummary,
 };
 pub use resource::{Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest};
+
+#[cfg(feature = "backend-mupdf")]
+pub use backend_mupdf::MupdfBackend;

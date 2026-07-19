@@ -10,6 +10,13 @@ repository = "https://github.com/tectonic-typesetting/tectonic/"
 license = "MIT"
 edition = "2021"
 
+[features]
+default = []
+backend-mupdf = []
+
 [dependencies]
 sha2 = "^0.10"
 tectonic_xdv = { path = "../xdv", version = "0.0.0-dev.0" }
+
+[build-dependencies]
+cc = "^1.0"
