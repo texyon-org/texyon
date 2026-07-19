@@ -3145,6 +3145,7 @@ version = "0.0.0-dev.0"
 dependencies = [
  "cc",
  "libc",
+ "sha2",
  "tectonic_bridge_core",
  "tectonic_bridge_flate",
  "tectonic_bridge_freetype2",

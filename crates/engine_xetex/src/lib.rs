@@ -55,6 +55,7 @@ mod packaging;
 mod pagebuilder;
 mod pic;
 mod primitives;
+mod replay;
 mod save;
 mod scaled_math;
 mod scan;
@@ -72,6 +73,10 @@ mod synctex;
 #[allow(dead_code)]
 mod texmfmp;
 mod utf8;
+
+pub use replay::source::{
+    SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,
+};
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,
