@@ -7,6 +7,7 @@ mod assembler;
 mod pipeline;
 mod publication;
 mod source;
+mod transport;
 mod worker;
 mod worker_clock;
 
@@ -21,6 +22,7 @@ pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
 pub use tectonic_preview_protocol::{
     FrameId, FramePhase, RequestSeq, SequenceExhausted, SourceRevision,
 };
+pub use transport::{JsonlFrameSink, TransportError};
 pub use worker::{
     LivePreviewWorker, PreviewTuning, PreviewWorkerProcessor, WorkerEvent, WorkerFailure, WorkerRun,
 };
