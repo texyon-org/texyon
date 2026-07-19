@@ -3209,6 +3209,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tectonic_preview_render"
+version = "0.0.0-dev.0"
+dependencies = [
+ "sha2",
+ "tectonic_xdv",
+]
+
+[[package]]
 name = "tectonic_status_base"
 version = "0.0.0-dev.0"
 dependencies = [

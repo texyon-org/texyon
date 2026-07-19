@@ -1,0 +1,15 @@
+lints.workspace = true
+
+[package]
+name = "tectonic_preview_render"
+version = "0.0.0-dev.0"
+authors = ["the Tectonic Project"]
+description = "Portable XDV analysis and rendering core for live preview"
+homepage = "https://tectonic-typesetting.github.io/"
+repository = "https://github.com/tectonic-typesetting/tectonic/"
+license = "MIT"
+edition = "2021"
+
+[dependencies]
+sha2 = "^0.10"
+tectonic_xdv = { path = "../xdv", version = "0.0.0-dev.0" }
