@@ -143,11 +143,10 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
     pub fn resync<S: FrameSink>(
         &mut self,
         sink: &mut S,
-        source_revision: SourceRevision,
         applied_request_seq: RequestSeq,
     ) -> Result<FrameId, PreviewPipelineError<S::Error>> {
         self.publisher
-            .resync(sink, source_revision, applied_request_seq)
+            .resync(sink, applied_request_seq)
             .map_err(PreviewPipelineError::Publication)
     }
 }

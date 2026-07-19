@@ -608,6 +608,9 @@ fn run_worker<P: PreviewWorkerProcessor>(
         }
 
         if durable_stop.load(Ordering::Acquire) || clock.is_stopped() {
+            if resync && !emit_resync(&mut processor, &sources, &events, clock.applied()) {
+                break 'worker;
+            }
             let _ = events.send(WorkerEvent::Stopped {
                 applied_request_seq: clock.applied(),
                 source_revision: sources.revision(),
@@ -615,30 +618,6 @@ fn run_worker<P: PreviewWorkerProcessor>(
             continue;
         }
         cancellation.rearm();
-        if resync {
-            match processor.resync(sources.snapshot(), clock.applied()) {
-                Ok(output) => {
-                    let _ = events.send(WorkerEvent::Update {
-                        applied_request_seq: clock.applied(),
-                        source_revision: sources.revision(),
-                        output,
-                        resync: true,
-                    });
-                }
-                Err(error) => {
-                    if processor.resync_error_is_fatal(&error) {
-                        let _ = events.send(WorkerEvent::Fatal(error.to_string()));
-                        break 'worker;
-                    } else {
-                        let _ = events.send(WorkerEvent::Aborted {
-                            applied_request_seq: clock.applied(),
-                            source_revision: sources.revision(),
-                            reason: error.to_string(),
-                        });
-                    }
-                }
-            }
-        }
         if should_compile && clock.may_compile() {
             if !emit_compile(
                 &mut processor,
@@ -651,11 +630,44 @@ fn run_worker<P: PreviewWorkerProcessor>(
                 break 'worker;
             }
         }
+        if resync && !emit_resync(&mut processor, &sources, &events, clock.applied()) {
+            break 'worker;
+        }
     }
 
     if let Err(error) = processor.shutdown() {
         let _ = events.send(WorkerEvent::Fatal(error.to_string()));
     }
+}
+
+fn emit_resync<P: PreviewWorkerProcessor>(
+    processor: &mut P,
+    sources: &SourceSet,
+    events: &Sender<WorkerEvent<P::Output>>,
+    applied_request_seq: RequestSeq,
+) -> bool {
+    match processor.resync(sources.snapshot(), applied_request_seq) {
+        Ok(output) => {
+            let _ = events.send(WorkerEvent::Update {
+                applied_request_seq,
+                source_revision: sources.revision(),
+                output,
+                resync: true,
+            });
+        }
+        Err(error) if processor.resync_error_is_fatal(&error) => {
+            let _ = events.send(WorkerEvent::Fatal(error.to_string()));
+            return false;
+        }
+        Err(error) => {
+            let _ = events.send(WorkerEvent::Aborted {
+                applied_request_seq,
+                source_revision: sources.revision(),
+                reason: error.to_string(),
+            });
+        }
+    }
+    true
 }
 
 fn emit_compile<P: PreviewWorkerProcessor>(
@@ -872,6 +884,51 @@ mod tests {
         assert!(
             matches!(worker.recv_timeout(Duration::from_secs(1)), Ok(WorkerEvent::Update { output, resync: true, source_revision, .. }) if output == "initial" && source_revision == SourceRevision::ZERO)
         );
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn queued_resync_runs_after_accepted_replacement_compile() {
+        let (_temp, sources) = sources();
+        let mut worker = LivePreviewWorker::spawn(sources, tuning(), || MockProcessor {
+            last: String::new(),
+        })
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.replace(None, "edited".into()).unwrap();
+        worker.resync().unwrap();
+
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, resync: false, .. }) if output == "edited"
+        ));
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, resync: true, .. }) if output == "edited"
+        ));
+        worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn durable_stop_still_allows_viewer_resync() {
+        let (_temp, sources) = sources();
+        let worker = LivePreviewWorker::spawn(sources, tuning(), || MockProcessor {
+            last: String::new(),
+        })
+        .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.cancel().unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.resync().unwrap();
+
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Update { output, resync: true, .. }) if output == "initial"
+        ));
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(1)),
+            Ok(WorkerEvent::Stopped { .. })
+        ));
         worker.shutdown().unwrap();
     }
 

@@ -153,12 +153,12 @@ where
 
     fn resync(
         &mut self,
-        snapshot: AcceptedSourceSnapshot,
+        _snapshot: AcceptedSourceSnapshot,
         applied_request_seq: RequestSeq,
     ) -> Result<Self::Output, Self::Error> {
         let frame_id = self
             .pipeline
-            .resync(&mut self.sink, snapshot.revision(), applied_request_seq)
+            .resync(&mut self.sink, applied_request_seq)
             .map_err(ResidentPreviewError::Pipeline)?;
         Ok(PublishedFrame {
             frame_id,

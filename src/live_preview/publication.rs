@@ -59,12 +59,19 @@ pub struct PageBelief {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ClientBelief {
     pages: Vec<PageBelief>,
+    source_revision: Option<SourceRevision>,
+    outcome: Option<UpdateOutcome>,
 }
 
 impl ClientBelief {
     /// Page beliefs in document order.
     pub fn pages(&self) -> &[PageBelief] {
         &self.pages
+    }
+
+    /// Source revision represented by the retained payloads.
+    pub fn source_revision(&self) -> Option<SourceRevision> {
+        self.source_revision
     }
 }
 
@@ -84,6 +91,8 @@ pub enum PublicationError<E> {
     },
     /// The transport rejected the complete event.
     Sink(E),
+    /// No coherent frame has been published for resynchronization yet.
+    NoBelief,
 }
 
 impl<E: fmt::Display> fmt::Display for PublicationError<E> {
@@ -95,6 +104,7 @@ impl<E: fmt::Display> fmt::Display for PublicationError<E> {
                 write!(f, "invalid metadata for page {page_index}: {reason}")
             }
             Self::Sink(error) => write!(f, "frame publication failed: {error}"),
+            Self::NoBelief => write!(f, "no published viewer belief is available"),
         }
     }
 }
@@ -182,6 +192,8 @@ impl PreviewPublisher {
         sink.publish(&patch).map_err(PublicationError::Sink)?;
 
         self.belief.pages = candidate;
+        self.belief.source_revision = Some(source_revision);
+        self.belief.outcome = Some(outcome);
         self.last_frame_id = frame_id;
         Ok(frame_id)
     }
@@ -190,9 +202,13 @@ impl PreviewPublisher {
     pub fn resync<S: FrameSink>(
         &mut self,
         sink: &mut S,
-        source_revision: SourceRevision,
         applied_request_seq: RequestSeq,
     ) -> Result<FrameId, PublicationError<S::Error>> {
+        let source_revision = self
+            .belief
+            .source_revision
+            .ok_or(PublicationError::NoBelief)?;
+        let outcome = self.belief.outcome.ok_or(PublicationError::NoBelief)?;
         let frame_id = self
             .last_frame_id
             .checked_next()
@@ -202,7 +218,7 @@ impl PreviewPublisher {
             source_revision,
             applied_request_seq,
             phase: FramePhase::Resync,
-            outcome: UpdateOutcome::Complete,
+            outcome,
             pages: self
                 .belief
                 .pages
@@ -446,7 +462,7 @@ mod tests {
         publisher
             .publish(
                 &mut sink,
-                SourceRevision::ZERO,
+                SourceRevision::new(4),
                 RequestSeq::ZERO,
                 FramePhase::Foreground,
                 UpdateOutcome::Complete,
@@ -454,14 +470,25 @@ mod tests {
                 vec![svg(0, "a"), svg(1, "b")],
             )
             .unwrap();
-        publisher
-            .resync(&mut sink, SourceRevision::ZERO, RequestSeq::ZERO)
-            .unwrap();
+        publisher.resync(&mut sink, RequestSeq::new(7)).unwrap();
 
         let patch = sink.frames.last().unwrap();
         assert_eq!(patch.frame_id, FrameId::new(2));
         assert_eq!(patch.phase, FramePhase::Resync);
+        assert_eq!(patch.source_revision, SourceRevision::new(4));
+        assert_eq!(patch.applied_request_seq, RequestSeq::new(7));
         assert_eq!(patch.changed, vec![0, 1]);
         assert_eq!(patch.pages_svg.len(), 2);
+    }
+
+    #[test]
+    fn resync_requires_a_published_belief() {
+        let mut publisher = PreviewPublisher::new();
+        let mut sink = RecordingSink::default();
+        assert!(matches!(
+            publisher.resync(&mut sink, RequestSeq::ZERO),
+            Err(PublicationError::NoBelief)
+        ));
+        assert!(sink.frames.is_empty());
     }
 }
