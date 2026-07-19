@@ -8,6 +8,11 @@ use std::{
 
 use tectonic_preview_protocol::{ProtocolLimits, SourceFile, SourceRevision};
 
+use crate::engines::tex::{
+    SourceError as EngineSourceError, SourceRevision as EngineSourceRevision,
+    SourceSnapshot as EngineSourceSnapshot,
+};
+
 /// Canonical filesystem authority within which preview sources may exist.
 #[derive(Clone, Debug)]
 pub struct DocumentRoot {
@@ -55,6 +60,7 @@ impl DocumentRoot {
 #[derive(Clone, Debug)]
 pub struct AcceptedSourceSnapshot {
     revision: SourceRevision,
+    root: PathBuf,
     primary: PathBuf,
     files: Arc<BTreeMap<PathBuf, Arc<str>>>,
 }
@@ -73,6 +79,21 @@ impl AcceptedSourceSnapshot {
     /// Canonical source paths and complete UTF-8 buffers.
     pub fn files(&self) -> &BTreeMap<PathBuf, Arc<str>> {
         &self.files
+    }
+
+    /// Convert to the engine's immutable source adapter without changing revision identity.
+    pub fn engine_snapshot(&self) -> Result<EngineSourceSnapshot, EngineSourceError> {
+        let sources = self
+            .files
+            .iter()
+            .map(|(path, text)| (path.clone(), Arc::<[u8]>::from(text.as_bytes().to_vec())))
+            .collect();
+        EngineSourceSnapshot::new_with_revision(
+            self.root.clone(),
+            self.primary.clone(),
+            sources,
+            EngineSourceRevision::new(self.revision.get()),
+        )
     }
 }
 
@@ -166,6 +187,7 @@ impl SourceSet {
     pub fn snapshot(&self) -> AcceptedSourceSnapshot {
         AcceptedSourceSnapshot {
             revision: self.revision,
+            root: self.root.canonical.clone(),
             primary: self.primary.clone(),
             files: Arc::new(self.files.clone()),
         }
@@ -340,7 +362,9 @@ mod tests {
             sources.replace(None, "same".into()).unwrap(),
             SourceRevision::new(1)
         );
-        assert_eq!(sources.snapshot().revision(), SourceRevision::new(1));
+        let snapshot = sources.snapshot();
+        assert_eq!(snapshot.revision(), SourceRevision::new(1));
+        assert_eq!(snapshot.engine_snapshot().unwrap().revision().get(), 1);
     }
 
     #[test]

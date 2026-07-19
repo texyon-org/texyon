@@ -15,6 +15,11 @@ static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
 pub struct SourceRevision(u64);
 
 impl SourceRevision {
+    /// Construct a revision assigned by a higher-level request coordinator.
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+
     /// Return the numeric revision for logging and protocol serialization.
     pub fn get(self) -> u64 {
         self.0
@@ -115,6 +120,19 @@ impl SourceSnapshot {
         primary: PathBuf,
         sources: Vec<(PathBuf, Arc<[u8]>)>,
     ) -> Result<Self, SourceError> {
+        Self::new_with_revision(root, primary, sources, next_revision())
+    }
+
+    /// Validate and freeze a complete source set with a caller-assigned revision.
+    ///
+    /// Live-preview request accounting owns its revision clock, so the engine
+    /// must preserve that exact identity instead of allocating a second one.
+    pub fn new_with_revision(
+        root: PathBuf,
+        primary: PathBuf,
+        sources: Vec<(PathBuf, Arc<[u8]>)>,
+        revision: SourceRevision,
+    ) -> Result<Self, SourceError> {
         if !root.is_absolute() {
             return Err(SourceError::RootNotAbsolute);
         }
@@ -135,7 +153,7 @@ impl SourceSnapshot {
         }
         Ok(Self {
             root: Arc::new(root),
-            revision: next_revision(),
+            revision,
             primary,
             entries: Arc::new(entries),
         })
@@ -311,6 +329,19 @@ mod tests {
         assert!(update.snapshot.revision() > snapshot.revision());
         assert_eq!(&*snapshot.bytes("main").unwrap(), b"abc");
         assert_eq!(&*update.snapshot.bytes("main").unwrap(), b"abXYZ");
+    }
+
+    #[test]
+    fn preserves_coordinator_assigned_revision() {
+        let snapshot = SourceSnapshot::new_with_revision(
+            PathBuf::from("/workspace"),
+            PathBuf::from("main.tex"),
+            vec![(PathBuf::from("main.tex"), bytes(b"abc"))],
+            SourceRevision::new(9_007_199_254_740_993),
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.revision().get(), 9_007_199_254_740_993);
     }
 
     #[test]
