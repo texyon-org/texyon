@@ -85,6 +85,7 @@ pub mod driver;
 pub mod engines;
 pub mod errors;
 pub mod io;
+pub mod live_preview;
 pub mod status;
 pub mod unstable_opts;
 
