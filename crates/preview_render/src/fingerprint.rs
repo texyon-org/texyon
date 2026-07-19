@@ -6,7 +6,7 @@ use crate::render::{DrawOperation, PagePlan};
 
 pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
     let mut digest = Sha256::new();
-    digest.update(b"tectonic-page-visual\0v1");
+    digest.update(b"tectonic-page-visual\0v2");
     digest.update(page.width_bp.to_bits().to_be_bytes());
     digest.update(page.height_bp.to_bits().to_be_bytes());
     for operation in &page.operations {

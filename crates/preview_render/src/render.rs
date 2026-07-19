@@ -18,6 +18,7 @@ use crate::resource::{
 use crate::tfm::Tfm;
 
 const SP_TO_BP: f32 = 72.0 / 72.27 / 65_536.0;
+const DVI_ORIGIN_BP: f32 = 72.0;
 
 /// Failure from parsing, resource resolution, or a rendering backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -235,8 +236,8 @@ impl<P: ResourceProvider> HotRenderer<P> {
                         width,
                         color,
                     } => backend.fill_rule(
-                        *x as f32 * SP_TO_BP,
-                        *y as f32 * SP_TO_BP,
+                        *x as f32 * SP_TO_BP + DVI_ORIGIN_BP,
+                        *y as f32 * SP_TO_BP + DVI_ORIGIN_BP,
                         *width as f32 * SP_TO_BP,
                         *height as f32 * SP_TO_BP,
                         *color,
@@ -274,8 +275,8 @@ impl<P: ResourceProvider> HotRenderer<P> {
                             .iter()
                             .map(|glyph| PositionedGlyph {
                                 glyph_id: glyph.glyph_id,
-                                x_bp: glyph.x as f32 * SP_TO_BP,
-                                y_bp: glyph.y as f32 * SP_TO_BP,
+                                x_bp: glyph.x as f32 * SP_TO_BP + DVI_ORIGIN_BP,
+                                y_bp: glyph.y as f32 * SP_TO_BP + DVI_ORIGIN_BP,
                             })
                             .collect();
                         backend.fill_glyphs(
@@ -349,8 +350,8 @@ impl<P: ResourceProvider> HotRenderer<P> {
                             .iter()
                             .map(|character| PositionedChar {
                                 character: character.character as u32,
-                                x_bp: character.x as f32 * SP_TO_BP,
-                                y_bp: character.y as f32 * SP_TO_BP,
+                                x_bp: character.x as f32 * SP_TO_BP + DVI_ORIGIN_BP,
+                                y_bp: character.y as f32 * SP_TO_BP + DVI_ORIGIN_BP,
                             })
                             .collect();
                         backend.fill_chars(
@@ -1019,6 +1020,8 @@ fn parse_image_special(contents: &[u8], x: i32, y: i32) -> Option<ImageSpecial> 
         ImageKind::Raster
     };
     let mut origin = Matrix::dvi_origin(x, y, SP_TO_BP);
+    origin.e += DVI_ORIGIN_BP;
+    origin.f += DVI_ORIGIN_BP;
     if matches!(kind, ImageKind::Pdf) {
         origin.b = -origin.b;
         origin.d = -origin.d;
@@ -1340,9 +1343,45 @@ mod tests {
         let mut renderer = HotRenderer::new(BuiltinClassicResources);
         let analysis = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
         let mut backend = crate::MupdfBackend::new().unwrap();
-        let pages = renderer.render_pages(&analysis, &[0], &mut backend).unwrap();
+        let pages = renderer
+            .render_pages(&analysis, &[0], &mut backend)
+            .unwrap();
         assert_eq!(pages.len(), 1);
         assert!(pages[0].svg.contains("path"));
         assert!(renderer.last_completed().is_some());
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let pdf = std::fs::read(root.join("tests/tex-outputs/the_letter_a.pdf")).unwrap();
+        let preview = backend.rasterize_svg(pages[0].svg.as_bytes(), 72.0).unwrap();
+        let canonical = backend.rasterize_pdf(&pdf, 0, 72.0).unwrap();
+        assert_eq!((preview.width, preview.height), (canonical.width, canonical.height));
+        let diff = crate::compare_rasters(
+            &canonical.samples,
+            &preview.samples,
+            canonical.width,
+            canonical.height,
+            canonical.components,
+            64,
+        );
+        let bounds = |pixmap: &crate::Pixmap| {
+            let mut bounds = (usize::MAX, usize::MAX, 0, 0);
+            for y in 0..pixmap.height {
+                for x in 0..pixmap.width {
+                    let offset = (y * pixmap.width + x) * pixmap.components;
+                    if pixmap.samples[offset..offset + 3] != [255, 255, 255] {
+                        bounds.0 = bounds.0.min(x);
+                        bounds.1 = bounds.1.min(y);
+                        bounds.2 = bounds.2.max(x);
+                        bounds.3 = bounds.3.max(y);
+                    }
+                }
+            }
+            bounds
+        };
+        assert!(
+            diff.agreement > 0.95,
+            "{diff:?}; canonical={:?}, preview={:?}",
+            bounds(&canonical),
+            bounds(&preview)
+        );
     }
 }

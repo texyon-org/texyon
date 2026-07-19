@@ -296,6 +296,59 @@ unsigned char *pr_backend_finish(struct pr_backend *backend, size_t *length)
     return copy;
 }
 
+unsigned char *pr_backend_raster(struct pr_backend *backend,
+        const unsigned char *data, size_t length, const char *mime,
+        int page_number, float dpi, int *width, int *height, int *components,
+        size_t *sample_length)
+{
+    fz_stream *stream = NULL;
+    fz_document *document = NULL;
+    fz_page *page = NULL;
+    fz_pixmap *pixmap = NULL;
+    unsigned char *copy = NULL;
+    fz_var(stream);
+    fz_var(document);
+    fz_var(page);
+    fz_var(pixmap);
+    *sample_length = 0;
+    fz_try(backend->ctx) {
+        stream = fz_open_memory(backend->ctx, data, length);
+        document = fz_open_document_with_stream(backend->ctx, mime, stream);
+        page = fz_load_page(backend->ctx, document, page_number);
+        fz_matrix transform = fz_scale(dpi / 72.0f, dpi / 72.0f);
+        pixmap = fz_new_pixmap_from_page(backend->ctx, page, transform,
+            fz_device_rgb(backend->ctx), 0);
+        *width = fz_pixmap_width(backend->ctx, pixmap);
+        *height = fz_pixmap_height(backend->ctx, pixmap);
+        *components = fz_pixmap_components(backend->ctx, pixmap);
+        int stride = fz_pixmap_stride(backend->ctx, pixmap);
+        size_t row = (size_t)*width * (size_t)*components;
+        *sample_length = row * (size_t)*height;
+        copy = malloc(*sample_length ? *sample_length : 1);
+        if (!copy)
+            fz_throw(backend->ctx, FZ_ERROR_GENERIC, "raster allocation failed");
+        unsigned char *samples = fz_pixmap_samples(backend->ctx, pixmap);
+        for (int y = 0; y < *height; ++y)
+            memcpy(copy + row * y, samples + stride * y, row);
+    }
+    fz_always(backend->ctx) {
+        if (pixmap)
+            fz_drop_pixmap(backend->ctx, pixmap);
+        if (page)
+            fz_drop_page(backend->ctx, page);
+        if (document)
+            fz_drop_document(backend->ctx, document);
+        if (stream)
+            fz_drop_stream(backend->ctx, stream);
+    }
+    fz_catch(backend->ctx) {
+        free(copy);
+        copy = NULL;
+        *sample_length = 0;
+    }
+    return copy;
+}
+
 void pr_backend_free(unsigned char *data)
 {
     free(data);

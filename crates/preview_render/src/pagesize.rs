@@ -6,7 +6,7 @@ use tectonic_xdv::{XdvEvents, XdvParser};
 
 use crate::RenderError;
 
-pub(crate) const DEFAULT_BP: [f32; 2] = [595.276, 841.89];
+pub(crate) const DEFAULT_BP: [f32; 2] = [612.0, 792.0];
 
 pub(crate) fn scan_page_sizes(xdv: &[u8]) -> Result<Vec<[f32; 2]>, RenderError> {
     if xdv.len() < 14 || xdv[0] != 247 {

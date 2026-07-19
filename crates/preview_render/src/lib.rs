@@ -8,6 +8,7 @@
 mod backend;
 mod color;
 mod encoding;
+mod fidelity;
 mod fingerprint;
 mod pagesize;
 mod render;
@@ -21,6 +22,7 @@ pub use backend::{
     Backend, FontId, FontStyle, Matrix, NullBackend, PositionedChar, PositionedGlyph,
 };
 pub use color::Color;
+pub use fidelity::{compare_rasters, RasterDiff};
 pub use render::{
     Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, RenderError,
     UnsupportedSummary,
@@ -28,4 +30,4 @@ pub use render::{
 pub use resource::{Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest};
 
 #[cfg(feature = "backend-mupdf")]
-pub use backend_mupdf::MupdfBackend;
+pub use backend_mupdf::{MupdfBackend, Pixmap};

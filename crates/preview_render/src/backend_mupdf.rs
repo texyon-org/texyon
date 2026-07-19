@@ -53,6 +53,18 @@ extern "C" {
         transform: Matrix,
     ) -> i32;
     fn pr_backend_finish(backend: *mut c_void, length: *mut usize) -> *mut u8;
+    fn pr_backend_raster(
+        backend: *mut c_void,
+        data: *const u8,
+        length: usize,
+        mime: *const i8,
+        page: i32,
+        dpi: f32,
+        width: *mut i32,
+        height: *mut i32,
+        components: *mut i32,
+        sample_length: *mut usize,
+    ) -> *mut u8;
     fn pr_backend_free(data: *mut u8);
 }
 
@@ -61,6 +73,18 @@ pub struct MupdfBackend {
     raw: *mut c_void,
     fonts: BTreeMap<(ResourceIdentity, u32), FontId>,
     classic_encodings: BTreeMap<FontId, Vec<u16>>,
+}
+
+/// Owned RGB/RGBA raster produced by the fidelity oracle.
+pub struct Pixmap {
+    /// Width in pixels.
+    pub width: usize,
+    /// Height in pixels.
+    pub height: usize,
+    /// Components per pixel.
+    pub components: usize,
+    /// Tightly packed row-major samples.
+    pub samples: Vec<u8>,
 }
 
 impl MupdfBackend {
@@ -77,6 +101,54 @@ impl MupdfBackend {
             raw,
             fonts: BTreeMap::new(),
             classic_encodings: BTreeMap::new(),
+        })
+    }
+
+    /// Rasterize one SVG document at `dpi`.
+    pub fn rasterize_svg(&self, svg: &[u8], dpi: f32) -> Result<Pixmap, RenderError> {
+        self.rasterize(svg, c"image/svg+xml", 0, dpi)
+    }
+
+    /// Rasterize one zero-based PDF page at `dpi`.
+    pub fn rasterize_pdf(&self, pdf: &[u8], page: u32, dpi: f32) -> Result<Pixmap, RenderError> {
+        self.rasterize(pdf, c"application/pdf", page, dpi)
+    }
+
+    fn rasterize(
+        &self,
+        bytes: &[u8],
+        mime: &std::ffi::CStr,
+        page: u32,
+        dpi: f32,
+    ) -> Result<Pixmap, RenderError> {
+        let (mut width, mut height, mut components, mut length) = (0, 0, 0, 0);
+        // SAFETY: all inputs remain live; returned allocation is copied and freed.
+        let data = unsafe {
+            pr_backend_raster(
+                self.raw,
+                bytes.as_ptr(),
+                bytes.len(),
+                mime.as_ptr(),
+                page as i32,
+                dpi,
+                &mut width,
+                &mut height,
+                &mut components,
+                &mut length,
+            )
+        };
+        if data.is_null() {
+            return Err(RenderError::Backend("MuPDF rasterization failed".into()));
+        }
+        // SAFETY: shim returned `length` initialized bytes.
+        let samples = unsafe { std::slice::from_raw_parts(data, length) }.to_vec();
+        // SAFETY: buffer is malloc-owned and freed exactly once.
+        unsafe { pr_backend_free(data) };
+        Ok(Pixmap {
+            width: width as usize,
+            height: height as usize,
+            components: components as usize,
+            samples,
         })
     }
 }
