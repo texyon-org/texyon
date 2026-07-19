@@ -1,7 +1,5 @@
 //! Reverse-delta checkpoint ladder.
 
-#![allow(dead_code)] // Wired into the resident session with the rung bundle.
-
 use crate::journal::{PlainDelta, WordDelta};
 use crate::mem_types::{B32x2, MemoryWord};
 use crate::replay::fence::ReplayFence;
@@ -162,6 +160,7 @@ impl<B> CheckpointLadder<B> {
         self.rungs.len()
     }
 
+    #[cfg(test)]
     pub(crate) fn push(
         &mut self,
         st: &mut EngineState,
@@ -275,6 +274,7 @@ impl CheckpointLadder<EngineBundle> {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn from_engine_verified(st: &EngineState, strings_base: StringWatermark) -> Self {
         let mut ladder = Self::from_engine(st, strings_base);
         ladder.verify_rewinds = true;
@@ -310,6 +310,7 @@ impl CheckpointLadder<EngineBundle> {
         Ok(ladder)
     }
 
+    #[cfg(test)]
     pub(crate) fn push_engine(
         &mut self,
         st: &mut EngineState,
@@ -396,6 +397,7 @@ impl CheckpointLadder<EngineBundle> {
     }
 
     /// Destructively verify every surviving rung, newest to oldest.
+    #[cfg(test)]
     pub(crate) fn verify_all_rewinds(
         &mut self,
         st: &mut EngineState,
@@ -422,6 +424,7 @@ impl CheckpointLadder<EngineBundle> {
         total
     }
 
+    #[cfg(test)]
     pub(crate) fn admit_engine_rung(
         &mut self,
         st: &mut EngineState,

@@ -1,7 +1,5 @@
 //! Named state digests used only to verify checkpoint restoration.
 
-use std::time::{Duration, Instant};
-
 use crate::state::EngineState;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -10,21 +8,7 @@ pub(crate) struct ComponentDigest {
     pub(crate) value: u64,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct DigestTiming {
-    pub(crate) name: &'static str,
-    pub(crate) elapsed: Duration,
-}
-
 pub(crate) fn digest_state(st: &EngineState) -> Vec<ComponentDigest> {
-    digest_state_with_timings(st).0
-}
-
-/// Diagnostic timing probe. Its clock values never enter engine state or a
-/// digest; callers may report them as observability data only.
-pub(crate) fn digest_state_with_timings(
-    st: &EngineState,
-) -> (Vec<ComponentDigest>, Vec<DigestTiming>) {
     let groups: [(&'static str, fn(&EngineState) -> u64); 8] = [
         ("mem", digest_mem),
         ("eqtb", digest_eqtb),
@@ -36,17 +20,11 @@ pub(crate) fn digest_state_with_timings(
         ("hyph", digest_hyph),
     ];
     let mut digests = Vec::with_capacity(groups.len());
-    let mut timings = Vec::with_capacity(groups.len());
     for (name, digest) in groups {
-        let started = Instant::now();
         let value = digest(st);
-        timings.push(DigestTiming {
-            name,
-            elapsed: started.elapsed(),
-        });
         digests.push(ComponentDigest { name, value });
     }
-    (digests, timings)
+    digests
 }
 
 #[derive(Clone, Copy)]
