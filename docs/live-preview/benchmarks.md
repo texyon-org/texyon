@@ -19,8 +19,16 @@ provider after bootstrap.
 
 ## Reference sequence
 
-Use one committed multi-page reporting document with editor-owned primary and
-child sources. For each retained sample:
+The committed fixture and dependency-free runner implement this sequence:
+
+```sh
+node tools/live-preview/benchmark.mjs \
+  --bin target/release/tectonic \
+  --output /tmp/tectonic-preview-benchmark
+```
+
+The runner uses a multi-page reporting document with editor-owned primary and
+child sources. For each retained sample it:
 
 1. start a new preview process and initialize the unchanged document;
 2. discard the initial compile measurement;
@@ -36,6 +44,12 @@ Run at least five discarded warmups and thirty retained samples per edit. Store
 raw JSONL events and stderr separately. Derive engine and render durations from
 frame metrics and end-to-end/paint durations at the client. Report median and
 p95 using nearest-rank percentiles; never report only the best sample.
+
+Those warmup/sample counts are the runner defaults. It writes raw `events.jsonl`,
+server stderr, request/observation traces, environment metadata, and a
+nearest-rank `summary.json` under the selected output directory. The headless
+runner measures request-to-frame wall time; paint time remains a viewer metric
+and must be collected from the VS Code client for a user-facing benchmark.
 
 Also retain maximum checkpoint-accounted bytes, rung count, fresh foreground
 shipouts, changed/rendered SVG counts, cancellation delay, and tail duration.
