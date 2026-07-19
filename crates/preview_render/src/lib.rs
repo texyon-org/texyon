@@ -7,6 +7,7 @@
 
 mod backend;
 mod color;
+mod encoding;
 mod fingerprint;
 mod pagesize;
 mod render;

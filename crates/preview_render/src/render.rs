@@ -9,6 +9,7 @@ use tectonic_xdv::{FileType, XdvError, XdvEvents, XdvParser};
 
 use crate::backend::{Backend, FontStyle, Matrix, PositionedChar, PositionedGlyph};
 use crate::color::Color;
+use crate::encoding::type1_builtin;
 use crate::fingerprint::page_digest;
 use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
 use crate::resource::{
@@ -751,10 +752,15 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             kind: ResourceKind::FontProgram,
             name: resource_name.clone(),
         })?;
-        let encoding = self.provider.resolve(&ResourceRequest {
+        let mut encoding = self.provider.resolve(&ResourceRequest {
             kind: ResourceKind::Encoding,
             name: resource_name,
         })?;
+        if encoding.is_none() {
+            encoding = program
+                .as_ref()
+                .and_then(|program| type1_builtin(&program.bytes));
+        }
         let tfm = tfm_resource
             .as_ref()
             .and_then(|resource| Tfm::parse(&resource.bytes));
@@ -1067,6 +1073,7 @@ mod tests {
     struct MutableResources(RefCell<Vec<u8>>);
 
     struct ClassicResources;
+    struct BuiltinClassicResources;
 
     impl ResourceProvider for MutableResources {
         fn resolve(&self, _request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
@@ -1085,6 +1092,18 @@ mod tests {
                 }
                 ResourceKind::FontProgram => b"font-program".to_vec(),
                 ResourceKind::Encoding => b"/Encoding [ /A ] def".to_vec(),
+                _ => return Ok(None),
+            };
+            Ok(Some(Resource::from_bytes(bytes)))
+        }
+    }
+
+    impl ResourceProvider for BuiltinClassicResources {
+        fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
+            let bytes: &[u8] = match request.kind {
+                ResourceKind::Tfm => include_bytes!("../../../tests/assets/cmr10.tfm"),
+                ResourceKind::FontProgram => include_bytes!("../../../tests/assets/cmr10.pfb"),
+                ResourceKind::Encoding => return Ok(None),
                 _ => return Ok(None),
             };
             Ok(Some(Resource::from_bytes(bytes)))
@@ -1302,5 +1321,28 @@ mod tests {
             PageFingerprint::Stable(_)
         ));
         assert_eq!(analysis.resources.len(), 3);
+    }
+
+    #[test]
+    fn classic_type1_font_uses_its_builtin_encoding() {
+        let mut renderer = HotRenderer::new(BuiltinClassicResources);
+        let analysis = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
+        assert!(matches!(
+            analysis.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
+        assert_eq!(analysis.resources.len(), 3);
+    }
+
+    #[cfg(feature = "backend-mupdf")]
+    #[test]
+    fn real_classic_xdv_renders_to_path_svg_transactionally() {
+        let mut renderer = HotRenderer::new(BuiltinClassicResources);
+        let analysis = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
+        let mut backend = crate::MupdfBackend::new().unwrap();
+        let pages = renderer.render_pages(&analysis, &[0], &mut backend).unwrap();
+        assert_eq!(pages.len(), 1);
+        assert!(pages[0].svg.contains("path"));
+        assert!(renderer.last_completed().is_some());
     }
 }
