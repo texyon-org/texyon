@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use sha2::{Digest, Sha256};
 use tectonic::engines::tex::{
     EnginePreviewConfig, IncrementalXeTeXSession, SourceSnapshot, TexEngine, TexOutcome,
 };
@@ -258,5 +259,47 @@ fn bom_crlf_and_utf16_inputs_match_cold_decoding() {
             session.finish(&mut launcher).unwrap();
         }
         assert_eq!(output_bytes(&output, "session.xdv"), expected);
+    }
+}
+
+#[test]
+fn page_manifest_matches_final_multi_page_xdv_spans() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let input = b"A\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let mut output = MemoryIo::new(true);
+    let mut session =
+        IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let frame;
+    {
+        let io = IoStack::new(vec![
+            &mut output as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        frame = session.open(&mut launcher, snapshot(input)).unwrap();
+        session.finish(&mut launcher).unwrap();
+    }
+
+    let xdv = output_bytes(&output, "session.xdv");
+    assert_eq!(frame.pages.len(), 3);
+    let mut expected_start = 0usize;
+    let mut previous_clock = 0;
+    for page in frame.pages {
+        let start = page.span_start as usize;
+        let end = page.span_end as usize;
+        assert_eq!(start, expected_start);
+        assert!(start <= page.bop_offset as usize);
+        assert_eq!(xdv[page.bop_offset as usize], 139);
+        let expected_digest: [u8; 32] = Sha256::digest(&xdv[start..end]).into();
+        assert_eq!(page.byte_digest, expected_digest);
+        assert!(page.logical_clock > previous_clock);
+        assert!(page.synctex_range.is_none());
+        expected_start = end;
+        previous_clock = page.logical_clock;
     }
 }

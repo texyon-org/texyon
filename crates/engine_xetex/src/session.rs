@@ -13,7 +13,7 @@ use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, StringWatermark,
 };
 use crate::state::{EngineExecutionMode, EngineState};
-use crate::{SourceRevision, SourceSnapshot, TexOutcome};
+use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
 
 static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
@@ -74,6 +74,8 @@ pub struct EngineFrame {
     pub source_revision: SourceRevision,
     /// Recoverable fatal-class TeX abort; prior good output remains authoritative.
     pub aborted: Option<String>,
+    /// Page-boundary execution facts for exact XDV suffix comparison.
+    pub pages: Vec<PageExecution>,
 }
 
 /// One initialized XeTeX state repeatedly replayed from rung zero.
@@ -269,11 +271,13 @@ impl IncrementalXeTeXSession {
                 outcome: history_to_outcome(history)?,
                 source_revision: revision,
                 aborted: None,
+                pages: self.state.shipout.page_manifest.take_pages(),
             }),
             OperationResult::Aborted => Ok(EngineFrame {
                 outcome: TexOutcome::Errors,
                 source_revision: revision,
                 aborted: Some("XeTeX aborted; resident state rewound to rung zero".into()),
+                pages: Vec::new(),
             }),
             OperationResult::Budget(error) => {
                 self.dead = true;
@@ -320,6 +324,7 @@ unsafe fn run_document(
     ladder: &mut CheckpointLadder<EngineBundle>,
     input: *const libc::c_char,
 ) -> OperationResult {
+    state.shipout.page_manifest.begin_operation();
     match crate::engine::run_resident_document(state, input) {
         Ok(history) => OperationResult::Complete(history),
         Err(_) => {

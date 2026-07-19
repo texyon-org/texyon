@@ -1488,6 +1488,7 @@ impl FontState {
 
 #[derive(Default, Clone)]
 pub(crate) struct ShipoutState {
+    pub page_manifest: crate::page_manifest::PageManifest,
     pub insert_src_special_every_par: bool,
     pub insert_src_special_every_math: bool,
     pub insert_src_special_every_vbox: bool,

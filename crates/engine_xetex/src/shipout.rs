@@ -470,6 +470,7 @@ fn dvi_swap(shipout: &mut ShipoutState) -> DviFlush {
 // Byte write. Returns the deferred flush action
 // (if the buffer filled).
 fn dvi_out(shipout: &mut ShipoutState, c: u8) -> Option<DviFlush> {
+    shipout.page_manifest.record_byte(c);
     let ptr = shipout.dvi_ptr;
     shipout.dvi_buf[ptr as usize] = c;
     shipout.dvi_ptr += 1;
@@ -630,6 +631,7 @@ pub(crate) unsafe fn ship_out_in(
         }
 
         let page_loc = st.shipout.dvi_offset + st.shipout.dvi_ptr;
+        st.shipout.page_manifest.begin_page(page_loc as u64);
         emit_dvi_out(&mut st.shipout, BOP)?;
         for k in 0..10 {
             emit_dvi_four(&mut st.shipout, st.eqtb.b32s1(COUNT_BASE + k))?;
@@ -682,6 +684,9 @@ pub(crate) unsafe fn ship_out_in(
         }
 
         emit_dvi_out(&mut st.shipout, EOP)?;
+        st.shipout
+            .page_manifest
+            .finish_page(st.scanner.logical_clock);
         st.shipout.total_pages = st.shipout.total_pages + 1;
         st.shipout.cur_s = -1;
     }
@@ -718,6 +723,7 @@ pub(crate) unsafe fn ship_out_in(
 pub fn dvi_pop(shipout: &mut ShipoutState, l: i32) -> bool {
     if l == shipout.dvi_offset + shipout.dvi_ptr && shipout.dvi_ptr > 0 {
         shipout.dvi_ptr -= 1;
+        shipout.page_manifest.pop_byte();
         false
     } else {
         true
@@ -2049,6 +2055,9 @@ pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result
             emit_dvi_out(&mut st.shipout, POP)?;
         } else {
             emit_dvi_out(&mut st.shipout, EOP)?;
+            st.shipout
+                .page_manifest
+                .finish_page(st.scanner.logical_clock);
             st.shipout.total_pages += 1;
         }
         st.shipout.cur_s -= 1;
@@ -2506,6 +2515,9 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
                             k += DVI_BUF_SIZE;
                         }
                         shipout.dvi_buf[k as usize] += 5;
+                        shipout
+                            .page_manifest
+                            .patch_byte(p_node.location(mem) as u64, 5);
                         p_node.set_state(mem, MOV_Y_HERE);
                         break 'search Some(p_node);
                     }
@@ -2519,6 +2531,9 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
                             k += DVI_BUF_SIZE;
                         }
                         shipout.dvi_buf[k as usize] += 10;
+                        shipout
+                            .page_manifest
+                            .patch_byte(p_node.location(mem) as u64, 10);
                         p_node.set_state(mem, MOV_Z_HERE);
                         break 'search Some(p_node);
                     }

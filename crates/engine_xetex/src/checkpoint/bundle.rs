@@ -48,7 +48,13 @@ impl EngineBundle {
         Self {
             config: st.config,
             errors: st.errors.clone(),
-            shipout: st.shipout.clone(),
+            shipout: {
+                let mut shipout = st.shipout.clone();
+                // Published page facts belong to an operation, not replayable
+                // engine state. Output marks will travel separately with rungs.
+                shipout.page_manifest = Default::default();
+                shipout
+            },
             scanner: st.scanner.clone(),
             linebreak: st.linebreak.clone(),
             texmf: st.texmf.clone(),
@@ -101,10 +107,12 @@ impl EngineBundle {
 
 fn restore_shipout(dst: &mut crate::state::ShipoutState, src: &crate::state::ShipoutState) {
     let mut buffer = take(&mut dst.dvi_buf);
+    let manifest = take(&mut dst.page_manifest);
     let captured = &src.dvi_buf;
     *dst = src.clone();
     buffer.clone_from(captured);
     dst.dvi_buf = buffer;
+    dst.page_manifest = manifest;
 }
 
 fn restore_scanner(dst: &mut crate::state::ScannerState, src: &crate::state::ScannerState) {
@@ -1010,6 +1018,9 @@ mod tests {
         st.scanner.native_text[0] = 70;
         st.shipout.total_pages = 20;
         st.shipout.dvi_buf[0] = 40;
+        st.shipout.page_manifest.begin_operation();
+        st.shipout.page_manifest.begin_page(0);
+        st.shipout.page_manifest.record_byte(139);
         st.strings.str_pool[0] = 110;
         st.save_stack.set_b32s1(0, 120);
         st.input.buffer[0] = 130;
@@ -1024,6 +1035,9 @@ mod tests {
         assert_eq!(st.shipout.total_pages, 2);
         assert_eq!(st.shipout.dvi_buf, [4, 5, 6]);
         assert_eq!(st.shipout.dvi_buf.as_ptr(), dvi_ptr);
+        st.shipout.page_manifest.record_byte(140);
+        st.shipout.page_manifest.finish_page(8);
+        assert_eq!(st.shipout.page_manifest.take_pages().len(), 1);
         assert_eq!(st.strings.str_pool[0], 11);
         assert_eq!(st.save_stack.b32s1(0), 12);
         assert_eq!(st.input.buffer[0], 13);

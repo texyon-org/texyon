@@ -51,6 +51,7 @@ mod mem;
 #[allow(dead_code)]
 mod mem_types;
 mod output;
+mod page_manifest;
 mod packaging;
 mod pagebuilder;
 mod pic;
@@ -78,6 +79,7 @@ mod utf8;
 pub use replay::source::{
     SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,
 };
+pub use page_manifest::PageExecution;
 pub use session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
 
 /// A serial number describing the detailed binary layout of the TeX "format
