@@ -24,6 +24,14 @@ struct pr_backend *pr_backend_new(void)
         free(backend);
         return NULL;
     }
+    fz_try(backend->ctx) {
+        fz_register_document_handlers(backend->ctx);
+    }
+    fz_catch(backend->ctx) {
+        fz_drop_context(backend->ctx);
+        free(backend);
+        return NULL;
+    }
     return backend;
 }
 
@@ -160,6 +168,77 @@ int pr_backend_rule(struct pr_backend *backend, float x, float y,
     fz_always(backend->ctx) {
         if (path)
             fz_drop_path(backend->ctx, path);
+    }
+    fz_catch(backend->ctx) {
+        ok = 0;
+    }
+    return ok;
+}
+
+int pr_backend_image(struct pr_backend *backend, const unsigned char *data,
+                     size_t length, fz_matrix base, float width, float height)
+{
+    fz_buffer *buffer = NULL;
+    fz_image *image = NULL;
+    int ok = 0;
+    fz_var(buffer);
+    fz_var(image);
+    fz_try(backend->ctx) {
+        buffer = fz_new_buffer_from_copied_data(backend->ctx, data, length);
+        image = fz_new_image_from_buffer(backend->ctx, buffer);
+        float ratio = (float)image->w / (float)image->h;
+        if (width != width && height != height) {
+            width = (float)image->w;
+            height = (float)image->h;
+        } else if (width != width) {
+            width = height * ratio;
+        } else if (height != height) {
+            height = width / ratio;
+        }
+        fz_matrix transform = fz_pre_scale(fz_pre_translate(base, 0, height),
+            width, -height);
+        fz_fill_image(backend->ctx, backend->device, image, transform, 1.0f,
+            fz_default_color_params);
+        ok = 1;
+    }
+    fz_always(backend->ctx) {
+        if (image)
+            fz_drop_image(backend->ctx, image);
+        if (buffer)
+            fz_drop_buffer(backend->ctx, buffer);
+    }
+    fz_catch(backend->ctx) {
+        ok = 0;
+    }
+    return ok;
+}
+
+int pr_backend_pdf(struct pr_backend *backend, const unsigned char *data,
+                   size_t length, int page_number, fz_matrix base)
+{
+    fz_stream *stream = NULL;
+    fz_document *document = NULL;
+    fz_page *page = NULL;
+    int ok = 0;
+    fz_var(stream);
+    fz_var(document);
+    fz_var(page);
+    fz_try(backend->ctx) {
+        stream = fz_open_memory(backend->ctx, data, length);
+        document = fz_open_document_with_stream(backend->ctx, "application/pdf", stream);
+        page = fz_load_page(backend->ctx, document, page_number);
+        fz_rect box = fz_bound_page(backend->ctx, page);
+        fz_matrix transform = fz_pre_translate(base, 0, box.y0 - box.y1);
+        fz_run_page(backend->ctx, page, backend->device, transform, NULL);
+        ok = 1;
+    }
+    fz_always(backend->ctx) {
+        if (page)
+            fz_drop_page(backend->ctx, page);
+        if (document)
+            fz_drop_document(backend->ctx, document);
+        if (stream)
+            fz_drop_stream(backend->ctx, stream);
     }
     fz_catch(backend->ctx) {
         ok = 0;

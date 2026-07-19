@@ -3,6 +3,7 @@
 use crate::{Color, RenderError, ResourceIdentity};
 
 /// Affine transform in backend point space.
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Matrix {
     /// Horizontal scale/rotation component.

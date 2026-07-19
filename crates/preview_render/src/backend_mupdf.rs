@@ -36,6 +36,21 @@ extern "C" {
         height: f32,
         rgba: *const f32,
     ) -> i32;
+    fn pr_backend_image(
+        backend: *mut c_void,
+        data: *const u8,
+        length: usize,
+        transform: Matrix,
+        width: f32,
+        height: f32,
+    ) -> i32;
+    fn pr_backend_pdf(
+        backend: *mut c_void,
+        data: *const u8,
+        length: usize,
+        page: i32,
+        transform: Matrix,
+    ) -> i32;
     fn pr_backend_finish(backend: *mut c_void, length: *mut usize) -> *mut u8;
     fn pr_backend_free(data: *mut u8);
 }
@@ -185,25 +200,45 @@ impl Backend for MupdfBackend {
 
     fn draw_image(
         &mut self,
-        _bytes: &[u8],
-        _transform: Matrix,
-        _width_bp: Option<f32>,
-        _height_bp: Option<f32>,
+        bytes: &[u8],
+        transform: Matrix,
+        width_bp: Option<f32>,
+        height_bp: Option<f32>,
     ) -> Result<(), RenderError> {
-        Err(RenderError::Backend(
-            "MuPDF raster images are not implemented".into(),
-        ))
+        // SAFETY: bytes remain live and the C shim catches MuPDF exceptions.
+        let ok = unsafe {
+            pr_backend_image(
+                self.raw,
+                bytes.as_ptr(),
+                bytes.len(),
+                transform,
+                width_bp.unwrap_or(f32::NAN),
+                height_bp.unwrap_or(f32::NAN),
+            )
+        };
+        if ok == 0 {
+            return Err(RenderError::Backend("MuPDF image drawing failed".into()));
+        }
+        Ok(())
     }
 
-    fn draw_pdf(
-        &mut self,
-        _bytes: &[u8],
-        _page: u32,
-        _transform: Matrix,
-    ) -> Result<(), RenderError> {
-        Err(RenderError::Backend(
-            "MuPDF embedded PDFs are not implemented".into(),
-        ))
+    fn draw_pdf(&mut self, bytes: &[u8], page: u32, transform: Matrix) -> Result<(), RenderError> {
+        // SAFETY: bytes remain live and the C shim catches MuPDF exceptions.
+        let ok = unsafe {
+            pr_backend_pdf(
+                self.raw,
+                bytes.as_ptr(),
+                bytes.len(),
+                page as i32,
+                transform,
+            )
+        };
+        if ok == 0 {
+            return Err(RenderError::Backend(
+                "MuPDF embedded PDF drawing failed".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn finish_page(&mut self) -> Result<String, RenderError> {
@@ -268,5 +303,29 @@ mod tests {
             .unwrap();
         let svg = backend.finish_page().unwrap();
         assert!(svg.contains("path"));
+    }
+
+    #[test]
+    fn embeds_raster_and_pdf_resources() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let png = std::fs::read(root.join("tests/assets/redbox.png")).unwrap();
+        let pdf = std::fs::read(root.join("tests/tex-outputs/the_letter_a.pdf")).unwrap();
+        let identity = Matrix {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 10.0,
+            f: 20.0,
+        };
+        let mut backend = MupdfBackend::new().unwrap();
+        backend.begin_page(200.0, 240.0).unwrap();
+        backend
+            .draw_image(&png, identity, Some(40.0), Some(30.0))
+            .unwrap();
+        backend.draw_pdf(&pdf, 0, identity).unwrap();
+        let svg = backend.finish_page().unwrap();
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("image") || svg.contains("path"));
     }
 }
