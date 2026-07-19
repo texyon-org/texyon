@@ -41,3 +41,36 @@ Also retain maximum checkpoint-accounted bytes, rung count, fresh foreground
 shipouts, changed/rendered SVG counts, cancellation delay, and tail duration.
 Performance is accepted only while all correctness, security, and byte-parity
 tests remain green.
+
+## Hardening commands
+
+Run the ordinary output corpus serialized because it mutates one fixture mtime:
+
+```sh
+cargo test -p tectonic --test tex-outputs -- --test-threads=1
+```
+
+Run the resident differential matrix under AddressSanitizer with an explicit
+target so Cargo does not instrument host build scripts. Restricted/ptraced
+runners may need leak detection disabled; ASan remains active:
+
+```sh
+CARGO_TARGET_DIR=/tmp/tectonic-preview-asan \
+ASAN_OPTIONS=detect_leaks=0 \
+RUSTFLAGS='-Zsanitizer=address' \
+RUSTDOCFLAGS='-Zsanitizer=address' \
+cargo +nightly test --target x86_64-unknown-linux-gnu \
+  -p tectonic --test live_preview_session -- --test-threads=1
+```
+
+Portable protocol/renderer checks, including accidental activation of the
+Linux-only adapter feature, are:
+
+```sh
+cargo check -p tectonic_preview_protocol --target x86_64-pc-windows-gnu
+cargo check -p tectonic_preview_protocol --target wasm32-unknown-unknown
+cargo check -p tectonic_preview_render --features backend-mupdf \
+  --target x86_64-pc-windows-gnu
+cargo check -p tectonic_preview_render --features backend-mupdf \
+  --target wasm32-unknown-unknown
+```
