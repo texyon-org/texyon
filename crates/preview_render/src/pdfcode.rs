@@ -97,7 +97,7 @@ impl PdfGraphics {
         self.line = color;
     }
 
-    fn current_transform(&self, pen_x: i32, pen_y: i32, scale: f32) -> Matrix {
+    pub(crate) fn current_transform(&self, pen_x: i32, pen_y: i32, scale: f32) -> Matrix {
         Matrix {
             a: 1.0,
             b: 0.0,
@@ -121,6 +121,10 @@ impl PdfGraphics {
         });
     }
 
+    pub(crate) fn save_state(&mut self) {
+        self.save();
+    }
+
     fn restore(&mut self, operations: &mut Vec<PdfOperation>) -> bool {
         let Some(saved) = self.stack.pop() else {
             return false;
@@ -136,6 +140,51 @@ impl PdfGraphics {
         self.style = saved.style;
         self.clip_depth = saved.clip_depth;
         true
+    }
+
+    pub(crate) fn restore_state(&mut self) -> Option<Vec<PdfOperation>> {
+        let mut operations = Vec::new();
+        self.restore(&mut operations).then_some(operations)
+    }
+
+    pub(crate) fn begin_transform(
+        &mut self,
+        transform: Matrix,
+        pen_x: i32,
+        pen_y: i32,
+        scale: f32,
+    ) {
+        self.save();
+        self.ctm = self.current_transform(pen_x, pen_y, scale);
+        self.gh = pen_x;
+        self.gv = pen_y;
+        self.ctm = transform.concat(self.ctm);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn concatenate_about_pen(
+        &mut self,
+        a: f32,
+        b: f32,
+        c: f32,
+        d: f32,
+        e: f32,
+        f: f32,
+        pen_x: i32,
+        pen_y: i32,
+        scale: f32,
+    ) {
+        let user_x = (pen_x - self.gh) as f32 * scale;
+        let user_y = -((pen_y - self.gv) as f32 * scale);
+        let transform = Matrix {
+            a,
+            b,
+            c,
+            d,
+            e: (1.0 - a) * user_x - c * user_y + e,
+            f: (1.0 - d) * user_y - b * user_x + f,
+        };
+        self.ctm = transform.concat(self.ctm);
     }
 
     pub(crate) fn run(&mut self, payload: &[u8], pen_x: i32, pen_y: i32, scale: f32) -> PdfRun {

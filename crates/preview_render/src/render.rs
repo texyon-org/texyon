@@ -561,6 +561,141 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         }
     }
 
+    fn append_pdf_operations(
+        &mut self,
+        operations: Vec<PdfOperation>,
+    ) -> Result<(), RenderError> {
+        for operation in operations {
+            let operation = match operation {
+                PdfOperation::Fill {
+                    path,
+                    even_odd,
+                    transform,
+                    color,
+                } => DrawOperation::PathFill {
+                    path,
+                    even_odd,
+                    transform,
+                    color,
+                },
+                PdfOperation::Stroke {
+                    path,
+                    style,
+                    transform,
+                    color,
+                } => DrawOperation::PathStroke {
+                    path,
+                    style,
+                    transform,
+                    color,
+                },
+                PdfOperation::Clip {
+                    path,
+                    even_odd,
+                    transform,
+                } => DrawOperation::ClipPath {
+                    path,
+                    even_odd,
+                    transform,
+                },
+                PdfOperation::PopClip => DrawOperation::PopClip,
+            };
+            self.page_mut()?.operations.push(operation);
+        }
+        Ok(())
+    }
+
+    fn apply_transform_special(
+        &mut self,
+        x: i32,
+        y: i32,
+        contents: &[u8],
+    ) -> Result<bool, RenderError> {
+        let Ok(text) = std::str::from_utf8(contents) else {
+            return Ok(false);
+        };
+        let text = text.trim();
+        if text == "pdf:btrans" || text.starts_with("pdf:btrans ") {
+            let args = &text["pdf:btrans".len()..];
+            let transform = parse_named_matrix(args).unwrap_or(Matrix {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 0.0,
+                f: 0.0,
+            });
+            self.pdf_graphics
+                .begin_transform(transform, x, y, SP_TO_BP);
+            self.ledger.record_supported("pdf-begin-transform");
+            return Ok(true);
+        }
+        if text == "pdf:etrans" {
+            let Some(operations) = self.pdf_graphics.restore_state() else {
+                self.unsupported("pdf-transform-stack-underflow")?;
+                return Ok(true);
+            };
+            self.color = self.pdf_graphics.fill;
+            self.append_pdf_operations(operations)?;
+            self.ledger.record_supported("pdf-end-transform");
+            return Ok(true);
+        }
+        let Some(args) = text.strip_prefix("x:") else {
+            return Ok(false);
+        };
+        let mut tokens = args.split_whitespace();
+        let Some(command) = tokens.next() else {
+            return Ok(false);
+        };
+        match command {
+            "scale" => {
+                let values: Vec<_> = tokens.filter_map(|value| value.parse::<f32>().ok()).collect();
+                if values.len() < 2 {
+                    self.unsupported("malformed-x-scale")?;
+                } else {
+                    self.pdf_graphics.concatenate_about_pen(
+                        values[0], 0.0, 0.0, values[1], 0.0, 0.0, x, y, SP_TO_BP,
+                    );
+                    self.ledger.record_supported("x-scale");
+                }
+            }
+            "rotate" => {
+                let Some(degrees) = tokens.next().and_then(|value| value.parse::<f32>().ok()) else {
+                    self.unsupported("malformed-x-rotate")?;
+                    return Ok(true);
+                };
+                let radians = degrees.to_radians();
+                self.pdf_graphics.concatenate_about_pen(
+                    radians.cos(),
+                    radians.sin(),
+                    -radians.sin(),
+                    radians.cos(),
+                    0.0,
+                    0.0,
+                    x,
+                    y,
+                    SP_TO_BP,
+                );
+                self.ledger.record_supported("x-rotate");
+            }
+            "gsave" => {
+                self.pdf_graphics.save_state();
+                self.ledger.record_supported("x-save");
+            }
+            "grestore" => {
+                let Some(operations) = self.pdf_graphics.restore_state() else {
+                    self.unsupported("x-transform-stack-underflow")?;
+                    return Ok(true);
+                };
+                self.color = self.pdf_graphics.fill;
+                self.append_pdf_operations(operations)?;
+                self.ledger.record_supported("x-restore");
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
     fn apply_color_special(&mut self, contents: &[u8]) -> Result<bool, RenderError> {
         let Ok(text) = std::str::from_utf8(contents) else {
             return Ok(false);
@@ -687,6 +822,9 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             self.pdf_graphics.set_color(self.color);
             return Ok(());
         }
+        if self.apply_transform_special(x, y, contents)? {
+            return Ok(());
+        }
         if contents == b"pdf:code" || contents.starts_with(b"pdf:code ") {
             let payload = &contents[b"pdf:code".len()..];
             let run = self.pdf_graphics.run(
@@ -696,43 +834,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 SP_TO_BP,
             );
             self.color = self.pdf_graphics.fill;
-            for operation in run.operations {
-                let operation = match operation {
-                    PdfOperation::Fill {
-                        path,
-                        even_odd,
-                        transform,
-                        color,
-                    } => DrawOperation::PathFill {
-                        path,
-                        even_odd,
-                        transform,
-                        color,
-                    },
-                    PdfOperation::Stroke {
-                        path,
-                        style,
-                        transform,
-                        color,
-                    } => DrawOperation::PathStroke {
-                        path,
-                        style,
-                        transform,
-                        color,
-                    },
-                    PdfOperation::Clip {
-                        path,
-                        even_odd,
-                        transform,
-                    } => DrawOperation::ClipPath {
-                        path,
-                        even_odd,
-                        transform,
-                    },
-                    PdfOperation::PopClip => DrawOperation::PopClip,
-                };
-                self.page_mut()?.operations.push(operation);
-            }
+            self.append_pdf_operations(run.operations)?;
             for name in run.supported {
                 self.ledger.record_supported(name);
             }
@@ -741,7 +843,8 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             }
             return Ok(());
         }
-        if let Some(image) = parse_image_special(contents, x, y) {
+        let image_origin = self.pdf_graphics.current_transform(x, y, SP_TO_BP);
+        if let Some(image) = parse_image_special(contents, image_origin) {
             let request = ResourceRequest {
                 kind: match image.kind {
                     ImageKind::Raster => ResourceKind::Image,
@@ -1081,7 +1184,26 @@ fn parse_pdf_color(args: &str) -> Option<Color> {
     }
 }
 
-fn parse_image_special(contents: &[u8], x: i32, y: i32) -> Option<ImageSpecial> {
+fn parse_named_matrix(args: &str) -> Option<Matrix> {
+    let tokens: Vec<_> = args.split_whitespace().collect();
+    let index = tokens.iter().position(|token| *token == "matrix")?;
+    let values: Option<Vec<f32>> = tokens
+        .get(index + 1..index + 7)?
+        .iter()
+        .map(|value| value.parse().ok().map(normalize_float))
+        .collect();
+    let values = values?;
+    Some(Matrix {
+        a: values[0],
+        b: values[1],
+        c: values[2],
+        d: values[3],
+        e: values[4],
+        f: values[5],
+    })
+}
+
+fn parse_image_special(contents: &[u8], mut origin: Matrix) -> Option<ImageSpecial> {
     let text = std::str::from_utf8(contents).ok()?.trim();
     let args = text.strip_prefix("pdf:image")?.trim();
     let open = args.find('(')?;
@@ -1146,9 +1268,6 @@ fn parse_image_special(contents: &[u8], x: i32, y: i32) -> Option<ImageSpecial> 
     } else {
         ImageKind::Raster
     };
-    let mut origin = Matrix::dvi_origin(x, y, SP_TO_BP);
-    origin.e += DVI_ORIGIN_BP;
-    origin.f += DVI_ORIGIN_BP;
     if matches!(kind, ImageKind::Pdf) {
         origin.b = -origin.b;
         origin.d = -origin.d;
@@ -1291,7 +1410,7 @@ mod tests {
         Arc::from(bytes)
     }
 
-    fn pdf_code_xdv(specials: &[&str]) -> Arc<[u8]> {
+    fn special_xdv(specials: &[&str]) -> Arc<[u8]> {
         let mut bytes = vec![247, 7];
         bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
         bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
@@ -1301,7 +1420,6 @@ mod tests {
         bytes.extend_from_slice(&[0; 40]);
         bytes.extend_from_slice(&(-1i32).to_be_bytes());
         for special in specials {
-            let special = format!("pdf:code {special}");
             bytes.push(239);
             bytes.push(special.len() as u8);
             bytes.extend_from_slice(special.as_bytes());
@@ -1320,6 +1438,15 @@ mod tests {
         bytes.push(7);
         bytes.extend_from_slice(&[223; 4]);
         Arc::from(bytes)
+    }
+
+    fn pdf_code_xdv(specials: &[&str]) -> Arc<[u8]> {
+        let owned: Vec<_> = specials
+            .iter()
+            .map(|special| format!("pdf:code {special}"))
+            .collect();
+        let borrowed: Vec<_> = owned.iter().map(String::as_str).collect();
+        special_xdv(&borrowed)
     }
 
     fn styled_native_xdv() -> Arc<[u8]> {
@@ -1486,6 +1613,48 @@ mod tests {
                 DrawOperation::PopClip
             ]
         ));
+    }
+
+    #[test]
+    fn wrapper_transforms_compose_into_images_and_restore() {
+        let mut renderer = HotRenderer::new(MutableResources(RefCell::new(b"image".to_vec())));
+        let analysis = renderer
+            .analyze(special_xdv(&[
+                "pdf:btrans matrix 2 0 0 3 4 5",
+                "x:scale 10 20",
+                "pdf:image (figure.png)",
+                "pdf:etrans",
+                "pdf:image (figure.png)",
+            ]))
+            .unwrap();
+        let transforms: Vec<_> = analysis.plans[0]
+            .operations
+            .iter()
+            .filter_map(|operation| match operation {
+                DrawOperation::Image { transform, .. } => Some(*transform),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(transforms.len(), 2);
+        assert_eq!(
+            (
+                transforms[0].a,
+                transforms[0].d,
+                transforms[0].e,
+                transforms[0].f,
+            ),
+            (20.0, -60.0, 76.0, 67.0)
+        );
+        assert_eq!(
+            (
+                transforms[1].a,
+                transforms[1].d,
+                transforms[1].e,
+                transforms[1].f,
+            ),
+            (1.0, -1.0, 72.0, 72.0)
+        );
+        assert!(analysis.pages()[0].unsupported.is_empty());
     }
 
     #[test]

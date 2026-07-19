@@ -63,17 +63,6 @@ pub struct StrokeStyle {
 }
 
 impl Matrix {
-    pub(crate) fn dvi_origin(x: i32, y: i32, scale: f32) -> Self {
-        Self {
-            a: scale,
-            b: 0.0,
-            c: 0.0,
-            d: -scale,
-            e: x as f32 * scale,
-            f: y as f32 * scale,
-        }
-    }
-
     pub(crate) fn concat(self, other: Self) -> Self {
         Self {
             a: self.a * other.a + self.b * other.c,
