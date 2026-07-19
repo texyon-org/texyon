@@ -1544,6 +1544,7 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
     st.shipout.dvi_buf = Vec::new();
 
     tt_cleanup_destroy_font_manager();
+    crate::ext::release_linebreak_state(&mut st.fonts);
 
     for slot in st.fonts.font_layout_engine.iter_mut() {
         *slot = None;

@@ -61,10 +61,7 @@ const UTF16_NATIVE: u16 = 3;
 const UTF16_NATIVE: u16 = 4;
 const FONT_FLAGS_COLORED: i32 = 0x01;
 
-static mut SAVED_MAPPING_NAME: *mut c_char = ptr::null_mut();
-
 extern "C" {
-    fn xstrdup(s: *const c_char) -> *mut c_char;
     fn TECkit_CreateConverter(
         mapping: *const u8,
         mapping_size: u32,
@@ -262,9 +259,6 @@ const XDV_FLAG_EXTEND: u16 = 0x1000;
 const XDV_FLAG_SLANT: u16 = 0x2000;
 const XDV_FLAG_EMBOLDEN: u16 = 0x4000;
 
-static mut BRK_ITER: *mut c_void = ptr::null_mut();
-static mut BRK_LOCALE_STR_NUM: i32 = 0;
-
 #[repr(C)]
 struct FloatPoint {
     x: f32,
@@ -293,13 +287,6 @@ unsafe fn print_c_string_in(st: &mut EngineState, s: *const c_char) {
         crate::output::print_raw_char_in(st, *p as u8 as u16, true);
         p = p.add(1);
     }
-}
-
-unsafe fn mfree_ptr<T>(ptr: *mut T) -> *mut T {
-    if !ptr.is_null() {
-        libc::free(ptr as *mut c_void);
-    }
-    ptr::null_mut()
 }
 
 unsafe fn peek(ptr: *const c_char) -> u8 {
@@ -649,9 +636,12 @@ unsafe fn load_mapping_file_in(
 }
 
 // translated from xetex-ext.c:236 (check_for_tfm_font_mapping)
-pub(crate) unsafe fn check_for_tfm_font_mapping_in(name_of_file: *mut c_char) {
+pub(crate) unsafe fn check_for_tfm_font_mapping_in(
+    fonts: &mut crate::state::FontState,
+    name_of_file: *mut c_char,
+) {
     let cp = libc::strstr(name_of_file, c":mapping=".as_ptr());
-    SAVED_MAPPING_NAME = mfree_ptr(SAVED_MAPPING_NAME);
+    fonts.saved_mapping_name = None;
     if !cp.is_null() {
         *cp = 0;
         let mut cp = cp.add(9);
@@ -659,7 +649,7 @@ pub(crate) unsafe fn check_for_tfm_font_mapping_in(name_of_file: *mut c_char) {
             cp = cp.add(1);
         }
         if *cp != 0 {
-            SAVED_MAPPING_NAME = xstrdup(cp);
+            fonts.saved_mapping_name = Some(std::ffi::CStr::from_ptr(cp).to_owned());
         }
     }
 }
@@ -668,17 +658,11 @@ pub(crate) unsafe fn check_for_tfm_font_mapping_in(name_of_file: *mut c_char) {
 pub(crate) unsafe fn load_tfm_font_mapping_in(
     st: &mut EngineState,
 ) -> Result<Option<std::sync::Arc<crate::state::FontMappingHandle>>, NativeFontAbort> {
-    let mut rval = None;
-    if !SAVED_MAPPING_NAME.is_null() {
-        rval = load_mapping_file_in(
-            st,
-            SAVED_MAPPING_NAME,
-            SAVED_MAPPING_NAME.add(libc::strlen(SAVED_MAPPING_NAME)),
-            1,
-        )?;
-        SAVED_MAPPING_NAME = mfree_ptr(SAVED_MAPPING_NAME);
-    }
-    Ok(rval)
+    let Some(name) = st.fonts.saved_mapping_name.take() else {
+        return Ok(None);
+    };
+    let start = name.as_ptr();
+    load_mapping_file_in(st, start, start.add(name.as_bytes().len()), 1)
 }
 
 // translated from xetex-ext.c:263 (apply_tfm_font_mapping)
@@ -2064,13 +2048,12 @@ pub(crate) unsafe fn linebreak_start_in(
         }
     }
 
-    if locale_str_num != BRK_LOCALE_STR_NUM && !BRK_ITER.is_null() {
-        ubrk_close(BRK_ITER);
-        BRK_ITER = ptr::null_mut();
+    if locale_str_num != st.fonts.brk_locale_str_num {
+        st.fonts.brk_iter = None;
     }
 
-    if BRK_ITER.is_null() {
-        BRK_ITER = ubrk_open(UBRK_LINE, locale, ptr::null(), 0, &mut status);
+    if st.fonts.brk_iter.is_none() {
+        let mut raw = ubrk_open(UBRK_LINE, locale, ptr::null(), 0, &mut status);
         if status > 0 {
             crate::output::begin_diagnostic_in(st);
             crate::output::print_nl_in(st, b'E' as i32);
@@ -2080,28 +2063,43 @@ pub(crate) unsafe fn linebreak_start_in(
             crate::output::print_cstr_in(st, locale);
             crate::output::print_cstr_in(st, c"'; trying default locale `en_us'.".as_ptr());
             crate::output::end_diagnostic_in(st, true);
-            if !BRK_ITER.is_null() {
-                ubrk_close(BRK_ITER);
+            if !raw.is_null() {
+                ubrk_close(raw);
             }
             status = 0;
-            BRK_ITER = ubrk_open(UBRK_LINE, c"en_us".as_ptr(), ptr::null(), 0, &mut status);
+            raw = ubrk_open(UBRK_LINE, c"en_us".as_ptr(), ptr::null(), 0, &mut status);
         }
         libc::free(locale as *mut c_void);
-        BRK_LOCALE_STR_NUM = locale_str_num;
+        st.fonts.brk_locale_str_num = locale_str_num;
+        if !raw.is_null() {
+            st.fonts.brk_iter = Some(crate::state::LinebreakHandle { raw });
+        }
     }
 
-    if BRK_ITER.is_null() {
+    let iterator = st.fonts.linebreak_iterator_ptr();
+    if iterator.is_null() {
         return Err(NativeFontAbort::LinebreakIterator);
     }
 
-    ubrk_setText(BRK_ITER, text as *const u16, text_length, &mut status);
+    ubrk_setText(iterator, text as *const u16, text_length, &mut status);
     Ok(())
+}
+
+pub(crate) unsafe fn release_linebreak_state(fonts: &mut crate::state::FontState) {
+    fonts.brk_iter = None;
+    fonts.brk_locale_str_num = 0;
+    fonts.saved_mapping_name = None;
+}
+
+pub(crate) unsafe fn close_linebreak_iterator(iterator: *mut c_void) {
+    ubrk_close(iterator);
 }
 
 // translated from xetex-ext.c:116 (linebreak_next)
 pub unsafe fn linebreak_next(fonts: &crate::state::FontState, f: c_int) -> c_int {
-    if !BRK_ITER.is_null() {
-        ubrk_next(BRK_ITER)
+    let iterator = fonts.linebreak_iterator_ptr();
+    if !iterator.is_null() {
+        ubrk_next(iterator)
     } else {
         let engine = fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
         findNextGraphiteBreak(engine)

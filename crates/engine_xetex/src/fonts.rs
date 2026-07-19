@@ -394,7 +394,8 @@ pub(crate) unsafe fn read_font_info_in(
         }
 
         pack_file_name_in(st, nom, aire, EMPTY_STRING);
-        check_for_tfm_font_mapping_in(name_of_file_ptr(st));
+        let name_of_file = name_of_file_ptr(st);
+        check_for_tfm_font_mapping_in(&mut st.fonts, name_of_file);
 
         tfm_file = tt_xetex_open_input_in(st, TTBC_FILE_FORMAT_TFM);
         if tfm_file == INVALID_HANDLE {

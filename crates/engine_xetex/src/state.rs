@@ -921,11 +921,31 @@ impl Drop for FontMappingHandle {
     }
 }
 
+/// Owned ICU line-break iterator cache. Its locale key is a TeX string-pool
+/// index, so the cache belongs to one engine state and must not outlive it.
+pub(crate) struct LinebreakHandle {
+    pub raw: *mut libc::c_void,
+}
+
+impl Drop for LinebreakHandle {
+    fn drop(&mut self) {
+        // SAFETY: `raw` came from a successful `ubrk_open` and this handle is
+        // its sole owner.
+        unsafe { crate::ext::close_linebreak_iterator(self.raw) }
+    }
+}
+
 pub(crate) struct FontState {
     /// Converter staged by a `mapping=` font feature until it is transferred
     /// into a font slot.
     pub loaded_font_mapping: Option<std::sync::Arc<FontMappingHandle>>,
     pub loaded_font_flags: libc::c_char,
+    /// TFM mapping name captured during filename parsing and consumed by the
+    /// subsequent font load.
+    pub saved_mapping_name: Option<std::ffi::CString>,
+    /// Per-engine ICU line-break cache and its string-pool locale key.
+    pub brk_iter: Option<LinebreakHandle>,
+    pub brk_locale_str_num: i32,
     /// Owned per-font native layout engines. Not format-serialized.
     pub font_layout_engine: Vec<Option<std::sync::Arc<FontEngineHandle>>>,
     /// Flat raw mirror used by the borrow-free C++ OpenType-math callback.
@@ -1024,6 +1044,9 @@ impl Default for FontState {
         Self {
             loaded_font_mapping: None,
             loaded_font_flags: 0,
+            saved_mapping_name: None,
+            brk_iter: None,
+            brk_locale_str_num: 0,
             font_layout_engine: Vec::new(),
             font_layout_engine_mirror: Vec::new(),
             font_mapping: Vec::new(),
@@ -1075,6 +1098,13 @@ impl Default for FontState {
 }
 
 impl FontState {
+    #[inline]
+    pub(crate) fn linebreak_iterator_ptr(&self) -> *mut libc::c_void {
+        self.brk_iter
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |handle| handle.raw)
+    }
+
     #[inline]
     pub(crate) fn font_area_entry(&self, f: i32) -> i32 {
         self.font_area[f as usize]
