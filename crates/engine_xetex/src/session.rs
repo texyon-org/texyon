@@ -21,7 +21,9 @@ use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
 
 static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-const PERIODIC_FENCE_TOKENS: u64 = 500;
+// Command-count fallback for documents without edit-protected or page-horizon
+// fences. At typical XeTeX throughput this still bounds replay to milliseconds.
+const PERIODIC_FENCE_TOKENS: u64 = 500_000;
 const MAX_EDIT_FENCES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Default)]
