@@ -1,8 +1,8 @@
 //! Scalar newtypes for the typed memory foundation.
 //!
 //! These are the zero-cost semantic wrappers: a `mem` arena index, a
-//! nullable TeX halfword, a scaled length, a string number, a font number,
-//! and a packed token. Every one is `#[repr(transparent)]` over its C
+//! nullable TeX halfword, a scaled length, and a font number. Every one is
+//! `#[repr(transparent)]` over its C
 //! representation and `Copy`, so it compiles to the same load/store as the
 //! raw integer.
 //!
@@ -42,11 +42,6 @@ impl MemIdx {
         MemIdx(self.0 + delta)
     }
 
-    /// The raw index as a `usize` for slice indexing into `mem.data`.
-    #[inline]
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
 }
 
 /// A nullable TeX halfword: either a real arena index or `TEX_NULL`.
@@ -139,22 +134,11 @@ impl MemPtr {
 #[repr(transparent)]
 pub struct Scaled(pub i32);
 
-/// An index into the string pool (`str_number`).
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-#[repr(transparent)]
-pub struct StrNumber(pub i32);
-
 /// An internal font number (`internal_font_number`, an `int32_t` —
 /// `xetex-xetexd.h:326`; kept `i32`, not narrowed to `u16`).
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(transparent)]
 pub struct FontId(pub i32);
-
-/// A packed `(cmd, chr)` token, as stored in `cur_tok` and on the input
-/// stack.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-#[repr(transparent)]
-pub struct Token(pub i32);
 
 /// The kind of a node, as stored in `mem[p].b16.s1` (the `NODE_type`
 /// field). Codes mirror `xetex/xetex_format.h:380–416` exactly.
@@ -309,9 +293,7 @@ mod tests {
         assert_eq!(size_of::<MemIdx>(), size_of::<i32>());
         assert_eq!(size_of::<MemPtr>(), size_of::<i32>());
         assert_eq!(size_of::<Scaled>(), size_of::<i32>());
-        assert_eq!(size_of::<StrNumber>(), size_of::<i32>());
         assert_eq!(size_of::<FontId>(), size_of::<i32>());
-        assert_eq!(size_of::<Token>(), size_of::<i32>());
         // Option<MemIdx> is *not* niche-optimized (i32 has no niche), but
         // MemPtr carries null in-band, so the classified path stays i32.
         assert_eq!(size_of::<MemPtr>(), size_of::<i32>());
@@ -332,7 +314,7 @@ mod tests {
     fn memidx_offset_walks_node_fields() {
         let p = MemIdx::new(100);
         assert_eq!(p.offset(1), MemIdx(101));
-        assert_eq!(p.offset(5).index(), 105);
+        assert_eq!(p.offset(5).0 as usize, 105);
     }
 
     /// Every discriminant must equal the C `NODE_type` code

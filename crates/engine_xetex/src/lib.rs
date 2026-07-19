@@ -42,14 +42,12 @@ mod hash;
 mod helpers;
 mod hyphenation;
 mod input;
-#[allow(dead_code)] // used as the translation progresses
 mod io;
 mod journal;
 mod linebreak;
 mod main_control;
 mod math;
 mod mem;
-#[allow(dead_code)]
 mod mem_types;
 mod output;
 mod page_manifest;
@@ -64,17 +62,13 @@ mod scan;
 mod session;
 mod shipout;
 mod state;
-#[allow(dead_code)]
 mod string_pool;
 mod sync_index;
 // Typed-memory foundation.
-#[allow(dead_code)]
 mod units;
 // Typed node-handle layer over the arena.
-#[allow(dead_code)]
 mod node;
 mod synctex;
-#[allow(dead_code)]
 mod texmfmp;
 mod utf8;
 
@@ -330,14 +324,10 @@ pub mod c_api {
 /// Import things from our bridge crates to ensure that we actually link with
 /// them.
 mod linkage {
-    #[allow(unused_imports)]
-    use tectonic_pdf_io as clipyrenamehack1;
-
-    #[allow(unused_imports)]
-    use tectonic_xetex_layout as clipyrenamehack2;
-
-    #[allow(unused_imports)]
-    use tectonic_bridge_icu as clipyrenamehack3;
+    // Anonymous imports deliberately make Cargo link these bridge crates.
+    use tectonic_bridge_icu as _;
+    use tectonic_pdf_io as _;
+    use tectonic_xetex_layout as _;
 }
 
 /// Does our resulting executable link correctly?

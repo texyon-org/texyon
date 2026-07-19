@@ -64,7 +64,6 @@ pub(crate) struct SynctexFlags {
     pub off: bool,
     pub not_void: bool,
     pub warn: bool,
-    #[allow(dead_code)]
     pub output_p: bool,
 }
 

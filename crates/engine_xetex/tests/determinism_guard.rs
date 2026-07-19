@@ -22,8 +22,6 @@ const PATTERNS: &[&str] = &[
 
 /// `(relative path, pattern, expected count)` in comment-stripped source.
 const ALLOWED: &[(&str, &str, usize)] = &[
-    // Restore-oracle timing diagnostics; elapsed values never enter state.
-    ("src/checkpoint/oracle.rs", "Instant::now", 1),
     // get_seconds_and_micros; every caller gates on deterministic_mode.
     ("src/texmfmp.rs", "gettimeofday", 1),
     // get_date_and_time's live branch plus makepdftime's unused live branch.

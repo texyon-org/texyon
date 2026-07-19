@@ -518,14 +518,6 @@ impl AnyBox {
     }
 
     #[inline]
-    pub fn link(self, mem: &MemState) -> MemPtr {
-        match self {
-            AnyBox::HList(p) => p.link(mem),
-            AnyBox::VList(p) => p.link(mem),
-        }
-    }
-
-    #[inline]
     pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
         match self {
             AnyBox::HList(p) => p.set_link(mem, q),
@@ -744,15 +736,6 @@ impl MemState {
         })
     }
 
-    /// Classify a known lo-mem node as a rule node.
-    #[inline]
-    pub fn classify_rule(&self, p: MemIdx) -> Result<Option<NodePtr<RuleNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Rule => Some(unsafe { NodePtr::<RuleNode>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
 }
 
 impl NodePtr<RuleNode> {
@@ -882,31 +865,13 @@ impl NodePtr<LigItem> {
         Some(unsafe { NodePtr::<LigItem>::from_idx_unchecked(MemIdx::new(p)) })
     }
 
-    /// Link pointer to the next stack element = `mem[p].b32.s1`.
-    #[inline]
-    pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.0))
-    }
-    #[inline]
-    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.0, q.0);
-    }
-
     /// Ligature item character code = `mem[p].b16.s0`.
-    #[inline]
-    pub fn character(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
     #[inline]
     pub fn set_character(self, mem: &mut MemState, c: u16) {
         mem.set_b16s0(self.idx.0, c);
     }
 
     /// Ligature item component pointer = `mem[p + 1].b32.s1`.
-    #[inline]
-    pub fn component(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
     #[inline]
     pub fn set_component(self, mem: &mut MemState, q: MemPtr) {
         mem.set_b32s1(self.idx.offset(1).0, q.0);
@@ -1119,31 +1084,6 @@ impl NodePtr<ChoiceNode> {
     }
 }
 
-impl MemState {
-    /// Classify a known lo-mem node as a style node.
-    #[inline]
-    pub fn classify_style(&self, p: MemIdx) -> Result<Option<NodePtr<StyleNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Style => Some(unsafe { NodePtr::<StyleNode>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
-
-    /// Classify a known lo-mem node as a choice node.
-    #[inline]
-    pub fn classify_choice(
-        &self,
-        p: MemIdx,
-    ) -> Result<Option<NodePtr<ChoiceNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Choice => Some(unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
-}
-
 // --- the math noad family (NODE_type 16 to 31) ---
 
 /// `Noad` (math noads, `NODE_type` between 16 and 31 inclusive): represents a math noad structure.
@@ -1278,25 +1218,6 @@ impl NodePtr<Noad> {
         mem.set_b32s0(self.idx.offset(2).0, v);
     }
 
-    /// Superscript character = `mem[p + 2].b16.s0`
-    #[inline]
-    pub fn supscr_char(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(2).0)
-    }
-    #[inline]
-    pub fn set_supscr_char(self, mem: &mut MemState, c: u16) {
-        mem.set_b16s0(self.idx.offset(2).0, c);
-    }
-    /// Superscript family = `mem[p + 2].b16.s1`
-    #[inline]
-    pub fn supscr_fam(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(2).0)
-    }
-    #[inline]
-    pub fn set_supscr_fam(self, mem: &mut MemState, f: u16) {
-        mem.set_b16s1(self.idx.offset(2).0, f);
-    }
-
     /// Subscript type = `mem[p + 3].b32.s1`
     #[inline]
     pub fn subscr_type(self, mem: &MemState) -> i32 {
@@ -1314,25 +1235,6 @@ impl NodePtr<Noad> {
     #[inline]
     pub fn set_subscr_field(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self.idx.offset(3).0, v);
-    }
-
-    /// Subscript character = `mem[p + 3].b16.s0`
-    #[inline]
-    pub fn subscr_char(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(3).0)
-    }
-    #[inline]
-    pub fn set_subscr_char(self, mem: &mut MemState, c: u16) {
-        mem.set_b16s0(self.idx.offset(3).0, c);
-    }
-    /// Subscript family = `mem[p + 3].b16.s1`
-    #[inline]
-    pub fn subscr_fam(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(3).0)
-    }
-    #[inline]
-    pub fn set_subscr_fam(self, mem: &mut MemState, f: u16) {
-        mem.set_b16s1(self.idx.offset(3).0, f);
     }
 
     /// Thickness (Fraction only) = `mem[p + 1].b32.s1`
@@ -1353,28 +1255,10 @@ impl NodePtr<Noad> {
 
     /// Accent character type (Accent only) = `mem[p + 4].b32.s1`
     #[inline]
-    pub fn accent_char_type(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(4).0)
-    }
-    #[inline]
     pub fn set_accent_char_type(self, mem: &mut MemState, t: i32) {
         mem.set_b32s1(self.idx.offset(4).0, t);
     }
-    /// Accent character field (Accent only) = `mem[p + 4].b32.s0`
-    #[inline]
-    pub fn accent_char_field(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(4).0)
-    }
-    #[inline]
-    pub fn set_accent_char_field(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(4).0, v);
-    }
-
     /// Accent character code = `mem[p + 4].b16.s0`
-    #[inline]
-    pub fn accent_char_val(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(4).0)
-    }
     #[inline]
     pub fn set_accent_char_val(self, mem: &mut MemState, c: u16) {
         mem.set_b16s0(self.idx.offset(4).0, c);
@@ -2708,17 +2592,6 @@ impl NodePtr<PassiveNode> {
         mem.set_b32s1(self.idx.0, q.0);
     }
 
-    /// `PASSIVE_NODE_serial(p)` = `mem[p].b32.s0` (the "info" word) — the
-    /// 1-based serial number assigned as breakpoints are discovered.
-    #[inline]
-    pub fn serial(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_serial(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.0, v);
-    }
-
     /// `PASSIVE_NODE_cur_break(p)` = `mem[(p) + 1].b32.s1` (the "rlink"
     /// slot) — the node where this breakpoint occurs (nullable).
     #[inline]
@@ -3002,7 +2875,7 @@ mod tests {
         mem.set_b32s1(30, 0);
 
         let r = NodePtr::<RuleNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_rule(r.idx()), Ok(Some(_))));
+        assert!(matches!(mem.classify(r.idx()), Ok(AnyNode::Rule(_))));
         r.set_subtype(&mut mem, 0);
         r.set_width(&mut mem, RuleDimen::Running);
         r.set_height(&mut mem, RuleDimen::Set(Scaled(99)));
@@ -3160,7 +3033,7 @@ mod tests {
         mem.set_b32s1(30, 0);
 
         let style = NodePtr::<StyleNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_style(style.idx()), Ok(Some(_))));
+        assert!(matches!(mem.classify(style.idx()), Ok(AnyNode::Style(_))));
         style.set_subtype(&mut mem, 2);
         style.clear_payload(&mut mem);
         assert_eq!(style.subtype(&mem), 2);
@@ -3204,7 +3077,7 @@ mod tests {
         mem.set_b32s1(30, 0);
 
         let choice = NodePtr::<ChoiceNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_choice(choice.idx()), Ok(Some(_))));
+        assert!(matches!(mem.classify(choice.idx()), Ok(AnyNode::Choice(_))));
         choice.set_display_mlist(&mut mem, MemPtr::NULL);
         choice.set_text_mlist(&mut mem, MemPtr::NULL);
         choice.set_script_mlist(&mut mem, MemPtr::NULL);
@@ -3664,19 +3537,9 @@ mod tests {
         assert_eq!(noad.nucleus_char(&mem), 45);
         assert_eq!(noad.nucleus_fam(&mem), 2);
 
-        noad.set_subscr_char(&mut mem, 46);
-        noad.set_subscr_fam(&mut mem, 3);
-        assert_eq!(noad.subscr_char(&mem), 46);
-        assert_eq!(noad.subscr_fam(&mem), 3);
-
-        noad.set_supscr_char(&mut mem, 47);
-        noad.set_supscr_fam(&mut mem, 4);
-        assert_eq!(noad.supscr_char(&mem), 47);
-        assert_eq!(noad.supscr_fam(&mem), 4);
-
         noad.set_accent_char_val(&mut mem, 48);
         noad.set_accent_char_fam(&mut mem, 5);
-        assert_eq!(noad.accent_char_val(&mem), 48);
+        assert_eq!(mem.b16s0(noad.accent_char_addr()), 48);
         assert_eq!(noad.accent_char_fam(&mem), 5);
 
         noad.set_link(&mut mem, MemPtr::from_raw(1234));
@@ -3712,12 +3575,10 @@ mod tests {
 
         let item = NodePtr::<LigItem>::alloc(&mut mem).expect("arena has room");
         item.set_character(&mut mem, 45);
-        item.set_link(&mut mem, MemPtr::from_raw(12));
         item.set_component(&mut mem, MemPtr::from_raw(34));
 
-        assert_eq!(item.character(&mem), 45);
-        assert_eq!(item.link(&mem), MemPtr::from_raw(12));
-        assert_eq!(item.component(&mem), MemPtr::from_raw(34));
+        assert_eq!(mem.b16s0(item.idx().0), 45);
+        assert_eq!(mem.b32s1(item.idx().offset(1).0), 34);
     }
 
     #[test]
@@ -3827,12 +3688,12 @@ mod tests {
         let pn = unsafe { NodePtr::<PassiveNode>::from_idx_unchecked(p) };
 
         pn.set_link(&mut mem, MemPtr::from_raw(90));
-        pn.set_serial(&mut mem, 5);
+        mem.set_b32s0(p.0, 5);
         pn.set_cur_break(&mut mem, MemPtr::from_raw(150));
         pn.set_prev_break(&mut mem, MemPtr::from_raw(80));
 
         assert_eq!(pn.link(&mem), MemPtr::from_raw(90));
-        assert_eq!(pn.serial(&mem), 5);
+        assert_eq!(mem.b32s0(p.0), 5);
         assert_eq!(pn.cur_break(&mem), MemPtr::from_raw(150));
         assert_eq!(pn.prev_break(&mem), MemPtr::from_raw(80));
         // next_break aliases prev_break (same +1.b32.s0 slot).

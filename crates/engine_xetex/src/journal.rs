@@ -4,8 +4,6 @@
 //! first pre-image of each touched word in an epoch; [`PlainTrail`] records
 //! every write for smaller, colder arrays and relies on reverse replay.
 
-#![allow(dead_code)] // The checkpoint ladder consumes the sealed-delta API next.
-
 use crate::mem_types::MemoryWord;
 
 #[derive(Default)]
