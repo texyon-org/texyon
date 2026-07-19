@@ -265,6 +265,7 @@ fn trie_fix(hyph: &mut HyphState, mut p: i32) {
 }
 
 pub(crate) fn init_trie_in(hyph: &mut HyphState) -> Result<(), TrieAbort> {
+    hyph.tables_gen = hyph.tables_gen.wrapping_add(1);
     hyph.max_hyph_char += 1;
     hyph.op_start[0] = -MIN_TRIE_OP;
 
@@ -525,6 +526,7 @@ fn save_hyph_codes_in(hyph: &mut HyphState, lc_codes: &[i32; 256]) -> Result<(),
 pub(crate) fn new_patterns_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
+    st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
     use crate::main_control::mc_propagate_error;
     const INT_PAR_LANGUAGE: i32 = 50;
     const INT_PAR_SAVING_HYPH_CODES: i32 = 64;
@@ -658,6 +660,7 @@ pub(crate) fn new_patterns_in(
 pub(crate) fn new_hyph_exceptions_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
+    st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
     use crate::main_control::{mc_propagate_error, MainControlAbort};
     const LETTER: u8 = 11;
     const OTHER_CHAR: u8 = 12;

@@ -23,7 +23,7 @@ pub(crate) struct EngineState {
 /// Scratch registers of `main_control`'s character/ligature main loop
 /// (xetex-xetexd.h:672–686). Pure per-iteration scratch (set-before-read
 /// within the loop).
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct MainLoopState {
     /// Scratch glue-spec pointer (xetex-xetexd.h:675).
     pub main_p: crate::units::MemPtr,
@@ -57,7 +57,7 @@ pub(crate) struct MainLoopState {
 
 
 /// SyncTeX boolean flag block (formerly the `synctex_flags_t` bitfield struct).
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct SynctexFlags {
     pub content_ready: bool,
     pub off: bool,
@@ -69,6 +69,7 @@ pub(crate) struct SynctexFlags {
 
 /// The SyncTeX context. `root_name` is owned and consumed by the SyncTeX open
 /// or abort path.
+#[derive(Clone)]
 pub(crate) struct SynctexCtxt {
     pub file: usize,
     pub root_name: Option<std::ffi::CString>,
@@ -122,7 +123,7 @@ impl Default for SynctexCtxt {
 /// `start_time_str`).
 ///
 /// `last_source_name` is the owned name most recently reported to SyncTeX.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct TexmfState {
     pub last_source_name: Option<std::ffi::CString>,
     pub last_lineno: i32,
@@ -130,6 +131,7 @@ pub(crate) struct TexmfState {
     pub start_time_str: [u8; 30],
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct AbsPathBuf(pub [libc::c_char; 1024]);
 impl Default for AbsPathBuf {
     fn default() -> Self {
@@ -825,8 +827,10 @@ impl SaveStackState {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct ScannerState {
+    /// Monotonic token-fetch clock used to order checkpoint fences.
+    pub logical_clock: u64,
     pub cur_name: i32,
     pub cur_area: i32,
     pub cur_ext: i32,
@@ -1482,7 +1486,7 @@ impl FontState {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct ShipoutState {
     pub insert_src_special_every_par: bool,
     pub insert_src_special_every_math: bool,
@@ -1604,6 +1608,7 @@ impl InteractionMode {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ErrorState {
     pub arith_error: bool,
     pub tex_remainder: i32,
@@ -1701,6 +1706,7 @@ pub(crate) struct StringsState {
 /// Newtype debts: the `scaled_t` dimension fields and the `small_number`
 /// fields. The `int32_t` mem-pointer fields (`cur_p`, `passive`, …) are
 /// pointer-taxonomy sweep candidates, not typedef-loss rows.
+#[derive(Clone)]
 pub(crate) struct LinebreakState {
     pub last_leftmost_char: crate::units::MemPtr,
     pub last_rightmost_char: crate::units::MemPtr,
@@ -1819,6 +1825,8 @@ pub(crate) unsafe fn current_engine_state() -> *mut EngineState {
 }
 
 pub(crate) struct HyphState {
+    /// Generation of the rarely-mutated trie and exception tables.
+    pub tables_gen: u64,
     pub is_hyph: bool,
     pub hf: i32,
     pub max_hyph_char: i32,
@@ -1873,6 +1881,7 @@ pub(crate) struct HyphState {
 impl Default for HyphState {
     fn default() -> Self {
         Self {
+            tables_gen: 0,
             is_hyph: false,
             hf: 0,
             max_hyph_char: 0,

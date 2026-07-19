@@ -1420,6 +1420,7 @@ pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::I
 /// The central tokenizer. Cold abort / recoverable-error / no-legal-`\end`
 /// tails ride [`GetNextOutcome`].
 pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome {
+    st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
 
     macro_rules! try_in {
         ($e:expr) => {

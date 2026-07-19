@@ -6,6 +6,10 @@ use crate::journal::{PlainDelta, WordDelta};
 use crate::mem_types::{B32x2, MemoryWord};
 use crate::state::EngineState;
 
+mod bundle;
+
+pub(crate) use bundle::{EngineBundle, StringWatermark};
+
 pub(crate) struct EngineDelta {
     mem: WordDelta,
     eqtb: WordDelta,
@@ -162,6 +166,46 @@ impl<B> CheckpointLadder<B> {
     }
 }
 
+impl CheckpointLadder<EngineBundle> {
+    pub(crate) fn from_engine(st: &EngineState, strings_base: StringWatermark) -> Self {
+        Self::new(EngineBundle::capture(st, strings_base, None), st.scanner.logical_clock)
+    }
+
+    pub(crate) fn push_engine(
+        &mut self,
+        st: &mut EngineState,
+        strings_base: StringWatermark,
+        resumable: bool,
+        protected: bool,
+    ) -> usize {
+        let bundle = EngineBundle::capture(
+            st,
+            strings_base,
+            self.rungs.last().map(|rung| &rung.bundle),
+        );
+        self.push(st, bundle, st.scanner.logical_clock, resumable, protected)
+    }
+
+    pub(crate) fn rewind_engine(&mut self, st: &mut EngineState, target: usize) {
+        self.rewind_to(st, target, |state, bundle| bundle.restore(state));
+    }
+
+    /// Count rung-private allocations and each shared hyphen table exactly
+    /// once, using the Arc allocation address as its stable identity.
+    pub(crate) fn accounted_bytes(&self) -> usize {
+        let mut total = self.delta_bytes();
+        let mut shared = std::collections::HashSet::new();
+        for rung in &self.rungs {
+            total += rung.bundle.allocated_bytes();
+            let (identity, bytes) = rung.bundle.shared_hyph_tables();
+            if shared.insert(identity as usize) {
+                total += bytes;
+            }
+        }
+        total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +304,28 @@ mod tests {
         assert!(!ladder.decimate(2));
         ladder.clear_protections();
         assert!(ladder.decimate(1));
+    }
+
+    #[test]
+    fn engine_bundle_ladder_restores_clock_and_scalar_state() {
+        let mut st = state();
+        st.strings.str_pool = vec![0; 4];
+        st.strings.str_start = vec![0; 4];
+        let strings_base = StringWatermark::capture(&st);
+        let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
+
+        st.scanner.logical_clock = 10;
+        st.mem.mem_end = 20;
+        st.mem.set_b32s1(0, 30);
+        ladder.push_engine(&mut st, strings_base, true, true);
+        st.scanner.logical_clock = 40;
+        st.mem.mem_end = 50;
+        st.mem.set_b32s1(0, 60);
+
+        ladder.rewind_engine(&mut st, 1);
+        assert_eq!(st.scanner.logical_clock, 10);
+        assert_eq!(st.mem.mem_end, 20);
+        assert_eq!(value(st.mem.data[0]), 30);
+        assert!(ladder.accounted_bytes() > 0);
     }
 }

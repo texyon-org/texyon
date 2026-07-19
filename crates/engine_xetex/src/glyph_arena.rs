@@ -18,13 +18,23 @@ pub(crate) struct GlyphBlob {
     pub gids: Vec<u16>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct GlyphBlobArena {
     slots: Vec<Option<Arc<GlyphBlob>>>,
     free: Vec<usize>,
 }
 
 impl GlyphBlobArena {
+    pub(crate) fn restore_from(&mut self, source: &Self) {
+        self.slots.clone_from(&source.slots);
+        self.free.clone_from(&source.free);
+    }
+
+    pub(crate) fn allocated_bytes(&self) -> usize {
+        self.slots.capacity() * std::mem::size_of::<Option<Arc<GlyphBlob>>>()
+            + self.free.capacity() * std::mem::size_of::<usize>()
+    }
+
     pub fn insert(&mut self, blob: GlyphBlob) -> i32 {
         self.adopt(Arc::new(blob))
     }
