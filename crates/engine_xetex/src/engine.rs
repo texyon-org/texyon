@@ -65,6 +65,13 @@ extern "C" {
     fn tt_cleanup_pdf_files_close();
     #[link_name = "destroy_font_manager"]
     fn tt_cleanup_destroy_font_manager();
+    fn xetex_layout_reset_font_caches();
+}
+
+pub(crate) fn reset_layout_font_caches() {
+    // SAFETY: clears mutex-protected process-global maps and does not borrow
+    // engine state.
+    unsafe { xetex_layout_reset_font_caches() };
 }
 
 // translated from xetex-ini.c:3452 (get_strings_started)
@@ -925,6 +932,17 @@ pub unsafe extern "C" fn tt_run_engine(
     input_file_name: *const libc::c_char,
     build_date: libc::time_t,
 ) -> i32 {
+    // Clear slot-keyed state before the operation and on every exit, including
+    // a caught Rust panic.
+    reset_layout_font_caches();
+    struct LayoutCacheGuard;
+    impl Drop for LayoutCacheGuard {
+        fn drop(&mut self) {
+            reset_layout_font_caches();
+        }
+    }
+    let _layout_cache_guard = LayoutCacheGuard;
+
     // Install the bridge-state locator for the run; cleared on every exit
     // path (including panics) so it can't dangle between runs.
     crate::bridge::set_bridge_state(api);
@@ -1541,6 +1559,7 @@ mod deterministic_input_tests {
     }
 }
 pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
+    reset_layout_font_caches();
     tt_cleanup_pdf_files_close();
     libc::free(TEX_FORMAT_DEFAULT as *mut _);
     st.shipout.dvi_buf = Vec::new();

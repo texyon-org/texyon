@@ -86,6 +86,16 @@ pub const RIGHT_SIDE: i32 = 1;
 static LEFT_PROT: Mutex<BTreeMap<(i32, u32), i32>> = Mutex::new(BTreeMap::new());
 static RIGHT_PROT: Mutex<BTreeMap<(i32, u32), i32>> = Mutex::new(BTreeMap::new());
 
+/// Clear process-global tables keyed by XeTeX font slot. Slot numbers are
+/// meaningful only within one document operation, so these values must not
+/// leak into a subsequent resident run.
+#[no_mangle]
+pub extern "C" fn xetex_layout_reset_font_caches() {
+    GLYPH_BOXES.lock().unwrap().clear();
+    LEFT_PROT.lock().unwrap().clear();
+    RIGHT_PROT.lock().unwrap().clear();
+}
+
 #[no_mangle]
 pub extern "C" fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32) {
     match side {
@@ -103,4 +113,29 @@ pub extern "C" fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32 {
         _ => unreachable!(),
     }
     .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_clears_every_font_slot_table() {
+        let bbox = GlyphBBox {
+            x_min: 1.0,
+            y_min: 2.0,
+            x_max: 3.0,
+            y_max: 4.0,
+        };
+        unsafe { cacheGlyphBBox(7, 11, &bbox) };
+        set_cp_code(7, 11, LEFT_SIDE, 12);
+        set_cp_code(7, 11, RIGHT_SIDE, 13);
+
+        xetex_layout_reset_font_caches();
+
+        let mut out = GlyphBBox::default();
+        assert_eq!(unsafe { getCachedGlyphBBox(7, 11, &mut out) }, 0);
+        assert_eq!(get_cp_code(7, 11, LEFT_SIDE), 0);
+        assert_eq!(get_cp_code(7, 11, RIGHT_SIDE), 0);
+    }
 }
