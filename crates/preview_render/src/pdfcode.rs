@@ -92,9 +92,13 @@ impl PdfGraphics {
         *self = Self::default();
     }
 
-    pub(crate) fn set_color(&mut self, color: Color) {
-        self.fill = color;
-        self.line = color;
+    pub(crate) fn set_colors(&mut self, fill: Color, line: Color) {
+        self.fill = fill;
+        self.line = line;
+    }
+
+    pub(crate) fn colors(&self) -> (Color, Color) {
+        (self.fill, self.line)
     }
 
     pub(crate) fn current_transform(&self, pen_x: i32, pen_y: i32, scale: f32) -> Matrix {

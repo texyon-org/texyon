@@ -517,8 +517,8 @@ struct Walker<'a, P> {
     resources: BTreeMap<ResourceIdentity, Resource>,
     ledger: CoverageLedger,
     color: Color,
-    color_stack: Vec<Color>,
-    pdf_color_stacks: BTreeMap<i32, Vec<Color>>,
+    color_stack: Vec<(Color, Color)>,
+    pdf_color_stacks: BTreeMap<i32, Vec<(Color, Color)>>,
     pdf_graphics: PdfGraphics,
 }
 
@@ -696,37 +696,101 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         Ok(true)
     }
 
+    fn apply_nonvisual_special(&mut self, contents: &[u8]) -> bool {
+        let Ok(text) = std::str::from_utf8(contents) else {
+            return false;
+        };
+        let text = text.trim();
+        if text == "landscape" {
+            self.ledger.record_supported("landscape");
+            return true;
+        }
+        let Some(args) = text.strip_prefix("pdf:") else {
+            return false;
+        };
+        let keyword = args
+            .trim_start()
+            .chars()
+            .take_while(|character| character.is_ascii_alphabetic())
+            .collect::<String>();
+        if matches!(
+            keyword.as_str(),
+            "dest"
+                | "out"
+                | "outline"
+                | "bann"
+                | "eann"
+                | "ann"
+                | "obj"
+                | "put"
+                | "close"
+                | "bcolor"
+                | "ecolor"
+                | "docinfo"
+                | "docview"
+                | "pagesize"
+                | "majorversion"
+                | "minorversion"
+                | "bcontent"
+                | "econtent"
+                | "bxobj"
+                | "exobj"
+                | "bform"
+                | "eform"
+        ) {
+            self.ledger.record_supported("pdf-nonvisual");
+            return true;
+        }
+        false
+    }
+
     fn apply_color_special(&mut self, contents: &[u8]) -> Result<bool, RenderError> {
         let Ok(text) = std::str::from_utf8(contents) else {
             return Ok(false);
         };
         let text = text.trim();
-        if let Some(args) = text.strip_prefix("color") {
+        if text == "pdfcolorstackinit" || text.starts_with("pdfcolorstackinit ") {
+            let args = &text["pdfcolorstackinit".len()..];
+            let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors()) else {
+                self.unsupported("malformed-pdfcolorstackinit")?;
+                return Ok(true);
+            };
+            self.pdf_graphics.set_colors(fill, line);
+            self.color = fill;
+            self.ledger.record_supported("pdfcolorstackinit");
+            return Ok(true);
+        }
+        if text == "color" || text.starts_with("color ") {
+            let args = &text["color".len()..];
             let args = args.trim();
             if let Some(spec) = args.strip_prefix("push") {
-                self.color_stack.push(self.color);
                 let Some(color) = parse_color_spec(spec.trim()) else {
                     self.unsupported("malformed-color")?;
                     return Ok(true);
                 };
+                self.color_stack.push(self.pdf_graphics.colors());
                 self.color = color;
+                self.pdf_graphics.set_colors(color, color);
             } else if args == "pop" {
-                let Some(color) = self.color_stack.pop() else {
+                let Some((fill, line)) = self.color_stack.pop() else {
                     self.unsupported("color-stack-underflow")?;
                     return Ok(true);
                 };
-                self.color = color;
+                self.color = fill;
+                self.pdf_graphics.set_colors(fill, line);
             } else {
                 let Some(color) = parse_color_spec(args) else {
                     self.unsupported("malformed-color")?;
                     return Ok(true);
                 };
                 self.color = color;
+                self.pdf_graphics.set_colors(color, color);
             }
             self.ledger.record_supported("color");
             return Ok(true);
         }
-        if let Some(args) = text.strip_prefix("pdfcolorstack") {
+        if text == "pdfcolorstack" || text.starts_with("pdfcolorstack ") {
+            let args = &text["pdfcolorstack".len()..];
             let mut tokens = args.split_whitespace();
             let Some(stack_number) = tokens.next().and_then(|value| value.parse::<i32>().ok())
             else {
@@ -739,34 +803,38 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             };
             match action {
                 "push" => {
+                    let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors()) else {
+                        self.unsupported("malformed-pdfcolorstack")?;
+                        return Ok(true);
+                    };
                     self.pdf_color_stacks
                         .entry(stack_number)
                         .or_default()
-                        .push(self.color);
-                    let Some(color) = parse_pdf_color(args) else {
-                        self.unsupported("malformed-pdfcolorstack")?;
-                        return Ok(true);
-                    };
-                    self.color = color;
+                        .push(self.pdf_graphics.colors());
+                    self.color = fill;
+                    self.pdf_graphics.set_colors(fill, line);
                 }
                 "pop" => {
-                    let color = self
+                    let colors = self
                         .pdf_color_stacks
                         .get_mut(&stack_number)
                         .and_then(Vec::pop);
-                    let Some(color) = color else {
+                    let Some((fill, line)) = colors else {
                         self.unsupported("pdfcolorstack-underflow")?;
                         return Ok(true);
                     };
-                    self.color = color;
+                    self.color = fill;
+                    self.pdf_graphics.set_colors(fill, line);
                 }
                 "set" => {
-                    let Some(color) = parse_pdf_color(args) else {
+                    let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors()) else {
                         self.unsupported("malformed-pdfcolorstack")?;
                         return Ok(true);
                     };
-                    self.color = color;
+                    self.color = fill;
+                    self.pdf_graphics.set_colors(fill, line);
                 }
+                "current" => {}
                 _ => {
                     self.unsupported("unknown-pdfcolorstack-action")?;
                     return Ok(true);
@@ -819,7 +887,6 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             return Ok(());
         }
         if self.apply_color_special(contents)? {
-            self.pdf_graphics.set_color(self.color);
             return Ok(());
         }
         if self.apply_transform_special(x, y, contents)? {
@@ -869,6 +936,9 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 ImageKind::Raster => "raster-image",
                 ImageKind::Pdf => "embedded-pdf",
             });
+            return Ok(());
+        }
+        if self.apply_nonvisual_special(contents) {
             return Ok(());
         }
         let name = std::str::from_utf8(contents)
@@ -1164,24 +1234,46 @@ fn parse_color_spec(spec: &str) -> Option<Color> {
     }
 }
 
-fn parse_pdf_color(args: &str) -> Option<Color> {
+fn parse_pdf_colors(args: &str, current: (Color, Color)) -> Option<(Color, Color)> {
     let open = args.find('(')?;
     let close = args[open + 1..]
         .find(')')
         .map(|index| open + 1 + index)
         .unwrap_or(args.len());
-    let mut tokens: Vec<_> = args[open + 1..close].split_whitespace().collect();
-    let operator = tokens.pop()?;
-    let values: Vec<f32> = tokens
-        .into_iter()
-        .filter_map(|value| value.parse().ok())
-        .collect();
-    match operator {
-        "g" if !values.is_empty() => Some(Color::gray(values[0])),
-        "rg" if values.len() >= 3 => Some(Color::rgb(values[0], values[1], values[2])),
-        "k" if values.len() >= 4 => Some(Color::cmyk(values[0], values[1], values[2], values[3])),
-        _ => None,
+    let (mut fill, mut line) = current;
+    let mut values = Vec::new();
+    let mut recognized = false;
+    for token in args[open + 1..close].split_whitespace() {
+        if let Ok(value) = token.parse::<f32>() {
+            values.push(value);
+            continue;
+        }
+        let tail = |count: usize| values.get(values.len().checked_sub(count)?..);
+        match token {
+            "g" => fill = Color::gray(*tail(1)?.first()?),
+            "G" => line = Color::gray(*tail(1)?.first()?),
+            "rg" => {
+                let values = tail(3)?;
+                fill = Color::rgb(values[0], values[1], values[2]);
+            }
+            "RG" => {
+                let values = tail(3)?;
+                line = Color::rgb(values[0], values[1], values[2]);
+            }
+            "k" => {
+                let values = tail(4)?;
+                fill = Color::cmyk(values[0], values[1], values[2], values[3]);
+            }
+            "K" => {
+                let values = tail(4)?;
+                line = Color::cmyk(values[0], values[1], values[2], values[3]);
+            }
+            _ => return None,
+        }
+        recognized = true;
+        values.clear();
     }
+    recognized.then_some((fill, line))
 }
 
 fn parse_named_matrix(args: &str) -> Option<Matrix> {
@@ -1655,6 +1747,45 @@ mod tests {
             (1.0, -1.0, 72.0, 72.0)
         );
         assert!(analysis.pages()[0].unsupported.is_empty());
+    }
+
+    #[test]
+    fn pdf_color_stack_initializes_fill_and_stroke_independently() {
+        let mut renderer = HotRenderer::new(());
+        let analysis = renderer
+            .analyze(special_xdv(&[
+                "pdfcolorstackinit 0 (1 0 0 rg 0 0 1 RG)",
+                "pdf:code 0 0 10 10 re B",
+            ]))
+            .unwrap();
+        let [DrawOperation::PathFill { color: fill, .. }, DrawOperation::PathStroke { color: line, .. }] =
+            analysis.plans[0].operations.as_slice()
+        else {
+            panic!("expected one fill and one stroke");
+        };
+        assert_eq!(*fill, Color::rgb(1.0, 0.0, 0.0));
+        assert_eq!(*line, Color::rgb(0.0, 0.0, 1.0));
+        assert!(analysis.pages()[0].unsupported.is_empty());
+    }
+
+    #[test]
+    fn nonvisual_pdf_specials_do_not_make_pages_uncertain() {
+        let mut renderer = HotRenderer::new(());
+        let analysis = renderer
+            .analyze(special_xdv(&[
+                "pdf:dest (section.1) [@thispage /XYZ @xpos @ypos null]",
+                "pdf:bann<</Type/Annot/Subtype/Link>>",
+                "pdf:eann",
+                "pdf:docinfo<</Title(Test)>>",
+            ]))
+            .unwrap();
+        assert!(analysis.plans[0].operations.is_empty());
+        assert!(analysis.pages()[0].unsupported.is_empty());
+        assert!(matches!(
+            analysis.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
+        assert_eq!(analysis.ledger().supported().get("pdf-nonvisual"), Some(&4));
     }
 
     #[test]
