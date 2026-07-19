@@ -440,6 +440,55 @@ fn same_size_same_mtime_disk_child_invalidates_replay() {
     runner.finish().unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn disk_source_symlink_escape_is_not_read() {
+    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    util::set_test_root();
+    let root_dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let secret = outside.path().join("secret.tex");
+    std::fs::write(&secret, b"SECRET OUTSIDE CONTENT\n").unwrap();
+    std::os::unix::fs::symlink(&secret, root_dir.path().join("escaped.tex")).unwrap();
+    let root = DocumentRoot::new(root_dir.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        "SAFE OUTPUT\n\\bye\n".into(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    let good = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert!(good.xdv.is_some());
+
+    sources
+        .replace(None, "\\input escaped\n\\bye\n".into())
+        .unwrap();
+    let rejected = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    assert!(rejected.frame.aborted.is_some());
+    assert!(rejected.xdv.is_none());
+    assert!(rejected
+        .frame
+        .sync_index
+        .records()
+        .iter()
+        .all(|record| !record
+            .path
+            .contains(outside.path().to_string_lossy().as_ref())));
+    runner.finish().unwrap();
+}
+
 #[test]
 fn live_write_stream_is_reopened_with_its_checkpointed_prefix() {
     let _serial = SESSION_TEST_LOCK.lock().unwrap();
