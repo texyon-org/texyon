@@ -90,10 +90,18 @@ pub(crate) unsafe fn ttstub_input_open(
     format: libc::c_int,
     is_gz: libc::c_int,
 ) -> usize {
+    if let Some(handle) = crate::replay::adapter::open_named(path) {
+        return handle;
+    }
+    crate::replay::adapter::clear_last_path();
     InputId::to_raw(ttbc_input_open(es(), path, file_format_from_int(format), is_gz))
 }
 
 pub(crate) unsafe fn ttstub_input_open_primary() -> usize {
+    if let Some(handle) = crate::replay::adapter::open_primary() {
+        return handle;
+    }
+    crate::replay::adapter::clear_last_path();
     InputId::to_raw(ttbc_input_open_primary(es()))
 }
 
@@ -101,24 +109,39 @@ pub(crate) unsafe fn ttstub_get_last_input_abspath(
     buffer: *mut libc::c_char,
     len: libc::size_t,
 ) -> libc::ssize_t {
+    if let Some(copied) = crate::replay::adapter::copy_last_abspath(buffer, len) {
+        return copied;
+    }
     ttbc_get_last_input_abspath(es(), buffer as *mut u8, len)
 }
 
 pub(crate) unsafe fn ttstub_input_get_size(handle: usize) -> libc::size_t {
+    if let Some(size) = crate::replay::adapter::get_size(handle) {
+        return size;
+    }
     ttbc_input_get_size(es(), InputId::from_raw(handle))
 }
 
 pub(crate) unsafe fn ttstub_input_get_mtime(handle: usize) -> libc::time_t {
+    if crate::replay::adapter::is_mem(handle) {
+        return 0;
+    }
     // See the C wrapper: time_t cannot be bridged portably, so it carries the
     // i64 across and casts.
     ttbc_input_get_mtime(es(), InputId::from_raw(handle)) as libc::time_t
 }
 
 pub(crate) unsafe fn ttstub_input_getc(handle: usize) -> libc::c_int {
+    if let Some(value) = crate::replay::adapter::getc(handle) {
+        return value;
+    }
     ttbc_input_getc(es(), InputId::from_raw(handle))
 }
 
 pub(crate) unsafe fn ttstub_input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int {
+    if let Some(value) = crate::replay::adapter::ungetc(handle, ch) {
+        return value;
+    }
     ttbc_input_ungetc(es(), InputId::from_raw(handle), ch)
 }
 
@@ -127,6 +150,9 @@ pub(crate) unsafe fn ttstub_input_read(
     data: *mut u8,
     len: libc::size_t,
 ) -> libc::ssize_t {
+    if let Some(value) = crate::replay::adapter::read(handle, data, len) {
+        return value;
+    }
     ttbc_input_read(es(), InputId::from_raw(handle), data, len)
 }
 
@@ -139,6 +165,9 @@ pub(crate) unsafe fn input_seek(
     offset: libc::ssize_t,
     whence: libc::c_int,
 ) -> libc::size_t {
+    if let Some(position) = crate::replay::adapter::seek(handle, offset, whence) {
+        return position;
+    }
     let mut internal_error: libc::c_int = 0;
     let rv = ttbc_input_seek(
         es(),
@@ -160,6 +189,9 @@ pub(crate) unsafe fn input_seek(
 /// bare longjmp ran no cleanup either and left the message undefined).
 #[must_use]
 pub(crate) unsafe fn input_close(handle: usize) -> bool {
+    if let Some(error) = crate::replay::adapter::close(handle) {
+        return error;
+    }
     ttbc_input_close(es(), InputId::from_raw(handle)) != 0
 }
 

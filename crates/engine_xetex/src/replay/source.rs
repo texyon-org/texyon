@@ -202,6 +202,25 @@ impl SourceSnapshot {
             first_changed,
         })
     }
+
+    pub(crate) fn primary_entry(&self) -> (SourcePath, Arc<[u8]>) {
+        let entry = self
+            .entries
+            .get(&self.primary)
+            .expect("validated snapshot without primary");
+        (self.primary.clone(), Arc::clone(&entry.bytes))
+    }
+
+    pub(crate) fn resolve_entry(&self, path: &Path) -> Option<(SourcePath, Arc<[u8]>)> {
+        let path = normalize(&self.root, path).ok()?;
+        self.entries
+            .get(&path)
+            .map(|entry| (path, Arc::clone(&entry.bytes)))
+    }
+
+    pub(crate) fn absolute_path(&self, path: &SourcePath) -> PathBuf {
+        self.root.join(path.as_str())
+    }
 }
 
 fn next_revision() -> SourceRevision {
