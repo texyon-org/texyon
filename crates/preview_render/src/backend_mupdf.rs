@@ -22,7 +22,7 @@ extern "C" {
         font: i32,
         size: f32,
         gids: *const u16,
-        positions: *const f32,
+        transforms: *const Matrix,
         count: i32,
         rgba: *const f32,
         extend: f32,
@@ -32,10 +32,9 @@ extern "C" {
     ) -> i32;
     fn pr_backend_rule(
         backend: *mut c_void,
-        x: f32,
-        y: f32,
         width: f32,
         height: f32,
+        transform: Matrix,
         rgba: *const f32,
     ) -> i32;
     fn pr_backend_fill_path(
@@ -100,6 +99,7 @@ extern "C" {
 pub struct MupdfBackend {
     raw: *mut c_void,
     fonts: BTreeMap<(ResourceIdentity, u32), FontId>,
+    classic_fonts: BTreeMap<(ResourceIdentity, ResourceIdentity), FontId>,
     classic_encodings: BTreeMap<FontId, Vec<u16>>,
 }
 
@@ -128,6 +128,7 @@ impl MupdfBackend {
         Ok(Self {
             raw,
             fonts: BTreeMap::new(),
+            classic_fonts: BTreeMap::new(),
             classic_encodings: BTreeMap::new(),
         })
     }
@@ -178,6 +179,20 @@ impl MupdfBackend {
             components: components as usize,
             samples,
         })
+    }
+
+    fn register_uncached_font(
+        &mut self,
+        bytes: &[u8],
+        face_index: u32,
+    ) -> Result<FontId, RenderError> {
+        // SAFETY: byte slice remains live; the shim copies it and catches exceptions.
+        let raw =
+            unsafe { pr_backend_font(self.raw, bytes.as_ptr(), bytes.len(), face_index as i32) };
+        if raw < 0 {
+            return Err(RenderError::Backend("MuPDF rejected font bytes".into()));
+        }
+        Ok(FontId(raw as u32))
     }
 }
 
@@ -236,13 +251,7 @@ impl Backend for MupdfBackend {
         if let Some(font) = self.fonts.get(&key) {
             return Ok(*font);
         }
-        // SAFETY: byte slice remains live; the shim copies it and catches exceptions.
-        let raw =
-            unsafe { pr_backend_font(self.raw, bytes.as_ptr(), bytes.len(), face_index as i32) };
-        if raw < 0 {
-            return Err(RenderError::Backend("MuPDF rejected font bytes".into()));
-        }
-        let font = FontId(raw as u32);
+        let font = self.register_uncached_font(bytes, face_index)?;
         self.fonts.insert(key, font);
         Ok(font)
     }
@@ -251,13 +260,17 @@ impl Backend for MupdfBackend {
         &mut self,
         identity: ResourceIdentity,
         bytes: &[u8],
-        _encoding_identity: ResourceIdentity,
+        encoding_identity: ResourceIdentity,
         encoding_bytes: &[u8],
     ) -> Result<FontId, RenderError> {
-        let font = self.register_font(identity, bytes, 0)?;
-        if self.classic_encodings.contains_key(&font) {
-            return Ok(font);
+        let key = (identity, encoding_identity);
+        if let Some(font) = self.classic_fonts.get(&key) {
+            return Ok(*font);
         }
+        // MuPDF stores a font's glyph mapping on its font object. The same
+        // Type1 program can therefore only carry one TeX encoding per MuPDF
+        // font instance.
+        let font = self.register_uncached_font(bytes, 0)?;
         let names = parse_encoding(encoding_bytes)?;
         let mut glyphs = Vec::with_capacity(names.len());
         for name in names {
@@ -268,20 +281,20 @@ impl Backend for MupdfBackend {
             glyphs.push(glyph.max(0) as u16);
         }
         self.classic_encodings.insert(font, glyphs);
+        self.classic_fonts.insert(key, font);
         Ok(font)
     }
 
     fn fill_rule(
         &mut self,
-        x_bp: f32,
-        y_bp: f32,
         width_bp: f32,
         height_bp: f32,
+        transform: Matrix,
         color: Color,
     ) -> Result<(), RenderError> {
         let rgba = [color.red, color.green, color.blue, color.alpha];
-        // SAFETY: fixed-size color array remains live for the guarded C call.
-        if unsafe { pr_backend_rule(self.raw, x_bp, y_bp, width_bp, height_bp, rgba.as_ptr()) } == 0
+        // SAFETY: fixed-size transform and color values remain live for the guarded C call.
+        if unsafe { pr_backend_rule(self.raw, width_bp, height_bp, transform, rgba.as_ptr()) } == 0
         {
             return Err(RenderError::Backend("MuPDF rule drawing failed".into()));
         }
@@ -383,10 +396,7 @@ impl Backend for MupdfBackend {
         style: FontStyle,
     ) -> Result<(), RenderError> {
         let gids: Vec<_> = glyphs.iter().map(|glyph| glyph.glyph_id).collect();
-        let positions: Vec<_> = glyphs
-            .iter()
-            .flat_map(|glyph| [glyph.x_bp, glyph.y_bp])
-            .collect();
+        let transforms: Vec<_> = glyphs.iter().map(|glyph| glyph.transform).collect();
         let rgba = [color.red, color.green, color.blue, color.alpha];
         // SAFETY: all slices remain live and the C shim catches MuPDF exceptions.
         let ok = unsafe {
@@ -395,7 +405,7 @@ impl Backend for MupdfBackend {
                 font.0 as i32,
                 size_bp,
                 gids.as_ptr(),
-                positions.as_ptr(),
+                transforms.as_ptr(),
                 gids.len() as i32,
                 rgba.as_ptr(),
                 style.extend,
@@ -428,8 +438,7 @@ impl Backend for MupdfBackend {
                     .get(character.character as usize)
                     .copied()
                     .unwrap_or(0),
-                x_bp: character.x_bp,
-                y_bp: character.y_bp,
+                transform: character.transform,
             })
             .collect();
         self.fill_glyphs(
@@ -535,12 +544,23 @@ fn parse_encoding(bytes: &[u8]) -> Result<Vec<String>, RenderError> {
 mod tests {
     use super::*;
 
+    fn positioned(x: f32, y: f32) -> Matrix {
+        Matrix {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: -1.0,
+            e: x,
+            f: y,
+        }
+    }
+
     #[test]
     fn emits_a_path_svg_for_a_rule() {
         let mut backend = MupdfBackend::new().unwrap();
         backend.begin_page(100.0, 120.0).unwrap();
         backend
-            .fill_rule(10.0, 30.0, 40.0, 20.0, Color::BLACK)
+            .fill_rule(40.0, 20.0, positioned(10.0, 30.0), Color::BLACK)
             .unwrap();
         let svg = backend.finish_page().unwrap();
         assert!(svg.contains("<svg"));
@@ -617,8 +637,7 @@ mod tests {
                 20.0,
                 &[PositionedGlyph {
                     glyph_id: 36,
-                    x_bp: 10.0,
-                    y_bp: 30.0,
+                    transform: positioned(10.0, 30.0),
                 }],
                 Color::BLACK,
                 FontStyle {
@@ -649,8 +668,7 @@ mod tests {
                     20.0,
                     &[PositionedGlyph {
                         glyph_id: 36,
-                        x_bp: 10.0,
-                        y_bp: 30.0,
+                        transform: positioned(10.0, 30.0),
                     }],
                     Color::BLACK,
                     FontStyle {
@@ -725,12 +743,39 @@ mod tests {
                 20.0,
                 &[PositionedChar {
                     character: 65,
-                    x_bp: 10.0,
-                    y_bp: 30.0,
+                    transform: positioned(10.0, 30.0),
                 }],
                 Color::BLACK,
             )
             .unwrap();
         assert!(backend.finish_page().unwrap().contains("path"));
+    }
+
+    #[test]
+    fn same_classic_program_can_use_distinct_encodings() {
+        let bytes = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf").unwrap();
+        let program = crate::Resource::from_bytes(bytes);
+        let encoding_a = crate::Resource::from_bytes(b"[ /A ]".to_vec());
+        let encoding_b = crate::Resource::from_bytes(b"[ /bullet ]".to_vec());
+        let mut backend = MupdfBackend::new().unwrap();
+
+        let font_a = backend
+            .register_classic_font(
+                program.identity,
+                &program.bytes,
+                encoding_a.identity,
+                &encoding_a.bytes,
+            )
+            .unwrap();
+        let font_b = backend
+            .register_classic_font(
+                program.identity,
+                &program.bytes,
+                encoding_b.identity,
+                &encoding_b.bytes,
+            )
+            .unwrap();
+
+        assert_ne!(font_a, font_b);
     }
 }

@@ -29,15 +29,31 @@ mod util;
 
 static SESSION_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+fn session_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    SESSION_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn snapshot(bytes: &[u8]) -> SourceSnapshot {
     snapshot_with_child(bytes, None)
 }
 
 fn snapshot_with_child(bytes: &[u8], child: Option<&[u8]>) -> SourceSnapshot {
-    let mut entries = vec![(PathBuf::from("session.tex"), Arc::from(bytes))];
-    if let Some(child) = child {
-        entries.push((PathBuf::from("child.tex"), Arc::from(child)));
-    }
+    let children = child
+        .map(|bytes| vec![("child.tex", bytes)])
+        .unwrap_or_default();
+    snapshot_with_children(bytes, &children)
+}
+
+fn snapshot_with_children(bytes: &[u8], children: &[(&str, &[u8])]) -> SourceSnapshot {
+    let mut entries = Vec::with_capacity(children.len() + 1);
+    entries.push((PathBuf::from("session.tex"), Arc::from(bytes)));
+    entries.extend(
+        children
+            .iter()
+            .map(|(path, bytes)| (PathBuf::from(path), Arc::from(*bytes))),
+    );
     SourceSnapshot::new(
         PathBuf::from("/workspace"),
         PathBuf::from("session.tex"),
@@ -120,14 +136,16 @@ fn assemble_resident_output(
 
 #[test]
 fn session_open_edit_and_revert_are_byte_stable() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let cold_original = cold_xdv(b"A\n\\bye\n");
     let cold_edited = cold_xdv(b"B\n\\bye\n");
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
     let mut open_output = MemoryIo::new(true);
-    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    let mut config = EnginePreviewConfig::new("plain.fmt");
+    config.verify_rewinds = true;
+    let mut session = IncrementalXeTeXSession::new(config).unwrap();
 
     let original = snapshot(b"A\n\\bye\n");
     {
@@ -180,8 +198,97 @@ fn session_open_edit_and_revert_are_byte_stable() {
 }
 
 #[test]
+fn final_cleanup_eqtb_mutations_are_rewindable() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let mut original = String::from("\\newlinechar=7\n\\hsize=220pt\n");
+    for index in 0..1400 {
+        if index == 1200 {
+            original.push_str("ORIGINAL FINALIZATION MARKER\\par\n");
+        } else {
+            original.push_str(&format!(
+                "line {index} makes source progress before finalization\\par\n"
+            ));
+        }
+    }
+    original.push_str("\\bye\n");
+    let edited = original.replace(
+        "ORIGINAL FINALIZATION MARKER",
+        "REVISED! FINALIZATION MARKER",
+    );
+
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let mut config = EnginePreviewConfig::new("plain.fmt");
+    config.verify_rewinds = true;
+    let mut session = IncrementalXeTeXSession::new(config).unwrap();
+    let source = snapshot(original.as_bytes());
+    let mut first_output = MemoryIo::new(true);
+    let opened = {
+        let io = IoStack::new(vec![
+            &mut first_output as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        session.open(&mut launcher, source.clone()).unwrap()
+    };
+    assert!(opened.checkpoint_rungs > 1);
+
+    let changed = source
+        .replace("session.tex", Arc::from(edited.as_bytes()))
+        .unwrap();
+    let mut edit_output = MemoryIo::new(true);
+    {
+        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session.edit(&mut launcher, changed.snapshot, None).unwrap();
+        assert_eq!(frame.outcome, TexOutcome::Spotless);
+        assert!(frame.replay_rung > 0);
+        session.finish(&mut launcher).unwrap();
+    }
+}
+
+#[test]
+fn resident_pdf_probe_teardown_preserves_the_outer_registry() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let mut output = MemoryIo::new(true);
+    output.create_entry(
+        "issue393_ungetc_trigger.pdf",
+        std::fs::read(util::test_path(&["assets", "issue393_ungetc_trigger.pdf"])).unwrap(),
+    );
+    let mut session = IncrementalXeTeXSession::new(EnginePreviewConfig::new("plain.fmt")).unwrap();
+    {
+        let io = IoStack::new(vec![
+            &mut output as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session
+            .open(
+                &mut launcher,
+                snapshot(b"\\XeTeXpdffile issue393_ungetc_trigger.pdf\\bye\n"),
+            )
+            .unwrap();
+        session.finish(&mut launcher).unwrap();
+        assert!(matches!(
+            frame.outcome,
+            TexOutcome::Spotless | TexOutcome::Warnings
+        ));
+    }
+}
+
+#[test]
 fn late_edit_uses_a_nonzero_fence_and_assembles_to_cold_output() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let mut original = String::from("\\hsize=220pt\n");
     for index in 0..2400 {
@@ -285,7 +392,7 @@ fn late_edit_uses_a_nonzero_fence_and_assembles_to_cold_output() {
 
 #[test]
 fn late_child_edit_resumes_with_the_nested_input_open() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let primary = b"\\input child\nAFTER CHILD\\par\n\\bye\n";
     let mut child = String::new();
@@ -386,8 +493,92 @@ fn late_child_edit_resumes_with_the_nested_input_open() {
 }
 
 #[test]
+fn deep_nested_input_edit_restores_every_open_parent() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let primary = b"\\input level-one\nPRIMARY TAIL\\par\n\\bye\n";
+    let level_one = b"LEVEL ONE\\par\n\\input nested/level-two\nLEVEL ONE TAIL\\par\n";
+    let level_two = b"LEVEL TWO\\par\n\\input nested/deep/leaf\nLEVEL TWO TAIL\\par\n";
+    let mut leaf = String::new();
+    for index in 0..2400 {
+        if index == 2100 {
+            leaf.push_str("ORIGINAL DEEP MARKER\\par\n");
+        } else {
+            leaf.push_str(&format!("deep leaf line {index} has several words\\par\n"));
+        }
+    }
+    let edited_leaf = leaf.replace("ORIGINAL DEEP MARKER", "EDITED DEEP MARKER");
+    let children = [
+        ("level-one.tex", &level_one[..]),
+        ("nested/level-two.tex", &level_two[..]),
+        ("nested/deep/leaf.tex", leaf.as_bytes()),
+    ];
+    let edited_children = [
+        ("level-one.tex", &level_one[..]),
+        ("nested/level-two.tex", &level_two[..]),
+        ("nested/deep/leaf.tex", edited_leaf.as_bytes()),
+    ];
+    let cold_original = cold_output_with_children(primary, &children, "session.xdv");
+    let cold_edited = cold_output_with_children(primary, &edited_children, "session.xdv");
+
+    let mut format =
+        SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
+    let mut config = EnginePreviewConfig::new("plain.fmt");
+    config.verify_rewinds = true;
+    let mut session = IncrementalXeTeXSession::new(config).unwrap();
+    let source = snapshot_with_children(primary, &children);
+    let mut open_output = MemoryIo::new(true);
+    let opened = {
+        let io = IoStack::new(vec![
+            &mut open_output as &mut dyn IoProvider,
+            &mut format as &mut dyn IoProvider,
+        ]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        session.open(&mut launcher, source.clone()).unwrap()
+    };
+    assert!(opened.checkpoint_rungs > 1);
+    assert_eq!(output_bytes(&open_output, "session.xdv"), cold_original);
+
+    let changed = source
+        .replace("nested/deep/leaf.tex", Arc::from(edited_leaf.as_bytes()))
+        .unwrap();
+    let mut edit_output = MemoryIo::new(true);
+    let frame = {
+        let io = IoStack::new(vec![&mut edit_output as &mut dyn IoProvider]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let frame = session.edit(&mut launcher, changed.snapshot, None).unwrap();
+        session.finish(&mut launcher).unwrap();
+        frame
+    };
+    let splice_at = frame
+        .splice_at
+        .expect("deep child edit did not restore its open parent stack");
+    assert!(frame.replay_rung > 0);
+
+    let assembler = DocumentAssembler::new();
+    let base = assembler
+        .assemble(None, DocumentFragment::Complete(&cold_original))
+        .unwrap();
+    let tail = output_bytes(&edit_output, "session.xdv");
+    let assembled = assembler
+        .assemble(
+            Some(&base),
+            DocumentFragment::Tail {
+                prefix_len: splice_at,
+                bytes: &tail,
+            },
+        )
+        .unwrap();
+    assert_eq!(assembled.bytes().as_ref(), cold_edited);
+}
+
+#[test]
 fn changing_a_consumed_child_falls_back_to_rung_zero() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let mut primary = String::from("\\input child\n");
     for index in 0..1200 {
@@ -434,7 +625,7 @@ fn changing_a_consumed_child_falls_back_to_rung_zero() {
 
 #[test]
 fn same_size_same_mtime_disk_child_invalidates_replay() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let original_primary = "\\input disk\nPRIMARY\n\\bye\n";
     let edited_primary = "\\input disk\nPRIMARY EDITED\n\\bye\n";
@@ -481,7 +672,7 @@ fn same_size_same_mtime_disk_child_invalidates_replay() {
 #[cfg(unix)]
 #[test]
 fn disk_source_symlink_escape_is_not_read() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let root_dir = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
@@ -529,7 +720,7 @@ fn disk_source_symlink_escape_is_not_read() {
 
 #[test]
 fn live_write_stream_is_reopened_with_its_checkpointed_prefix() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let mut original = String::from(
         "\\newwrite\\previewaux\n\\immediate\\openout\\previewaux=state.aux\n\\immediate\\write\\previewaux{prefix record}\n",
@@ -602,7 +793,7 @@ fn live_write_stream_is_reopened_with_its_checkpointed_prefix() {
 
 #[test]
 fn fatal_class_edit_abort_rewinds_and_next_edit_recovers() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
@@ -649,7 +840,7 @@ fn fatal_class_edit_abort_rewinds_and_next_edit_recovers() {
 
 #[test]
 fn cooperative_cancel_rewinds_and_next_edit_recovers() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let mut format =
         SingleInputFileIo::new(&util::ensure_plain_format().expect("could not build plain format"));
@@ -705,7 +896,7 @@ fn cooperative_cancel_rewinds_and_next_edit_recovers() {
 
 #[test]
 fn resident_engine_driver_captures_complete_xdv_and_revision() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let expected = cold_xdv(b"A\n\\bye\n");
     let temp = tempfile::tempdir().unwrap();
@@ -755,7 +946,7 @@ fn resident_engine_driver_captures_complete_xdv_and_revision() {
 
 #[test]
 fn viewport_foreground_and_tail_reassemble_to_cold_xdv() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let original = b"A\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n";
     let edited = b"Z\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n";
@@ -830,7 +1021,7 @@ fn viewport_foreground_and_tail_reassemble_to_cold_xdv() {
 
 #[test]
 fn cancelled_tail_preserves_its_horizon_fence() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let original = "A\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n";
     let first_edit = "Z\\vfill\\eject\nB\\vfill\\eject\nC\\vfill\\eject\nD\\bye\n";
@@ -911,7 +1102,7 @@ fn cancelled_tail_preserves_its_horizon_fence() {
 
 #[test]
 fn length_changing_child_horizon_resumes_exactly() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let primary = b"\\input child\n\\bye\n";
     let original_child = "A\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
@@ -1014,7 +1205,7 @@ fn length_changing_child_horizon_resumes_exactly() {
 
 #[test]
 fn alternating_editor_children_and_primary_share_one_snapshot_revision() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let original_primary = "\\input one\n\\input two\nPRIMARY\n\\bye\n";
     let edited_primary = "\\input one\n\\input two\nPRIMARY EDITED\n\\bye\n";
@@ -1123,7 +1314,7 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
         }
     }
 
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let temp = tempfile::tempdir().unwrap();
     let root = DocumentRoot::new(temp.path()).unwrap();
@@ -1284,7 +1475,7 @@ fn resident_processor_publishes_engine_output_as_svg_frame() {
 
 #[test]
 fn editor_owned_child_edits_are_read_from_the_snapshot() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let primary = b"\\input child\n\\bye\n";
     let cold_first = cold_xdv_with_child(primary, Some(b"A\n"));
@@ -1329,7 +1520,7 @@ fn editor_owned_child_edits_are_read_from_the_snapshot() {
 
 #[test]
 fn resident_synctex_index_stays_in_memory_and_tracks_children() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let primary = b"\\input child\nMAIN SOURCE LINE\\par\n\\bye\n";
     let child = b"CHILD SOURCE LINE\\par\n";
@@ -1376,7 +1567,7 @@ fn resident_synctex_index_stays_in_memory_and_tracks_children() {
 
 #[test]
 fn bom_crlf_and_utf16_inputs_match_cold_decoding() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let cases: Vec<Vec<u8>> = vec![
         b"\xEF\xBB\xBFA\r\n\\bye\r\n".to_vec(),
@@ -1416,7 +1607,7 @@ fn bom_crlf_and_utf16_inputs_match_cold_decoding() {
 
 #[test]
 fn page_manifest_matches_final_multi_page_xdv_spans() {
-    let _serial = SESSION_TEST_LOCK.lock().unwrap();
+    let _serial = session_test_lock();
     util::set_test_root();
     let input = b"A\\vfill\\eject\nB\\vfill\\eject\nC\\bye\n";
     let mut format =

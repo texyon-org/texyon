@@ -1,6 +1,6 @@
 //! Tagged byte handles for immutable in-memory TeX sources.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ffi::CStr;
 use std::path::Path;
 use std::sync::Arc;
@@ -13,6 +13,7 @@ const TEX_FORMAT: libc::c_int = 26;
 
 thread_local! {
     static ACTIVE: RefCell<Option<ReplaySources>> = const { RefCell::new(None) };
+    static OBSERVED_BYTES: Cell<usize> = const { Cell::new(0) };
 }
 
 struct ReplaySources {
@@ -54,10 +55,12 @@ impl Drop for SourceInstallGuard {
         ACTIVE.with(|active| {
             active.borrow_mut().take();
         });
+        OBSERVED_BYTES.set(0);
     }
 }
 
 pub(crate) fn install(snapshot: SourceSnapshot) -> SourceInstallGuard {
+    OBSERVED_BYTES.set(0);
     ACTIVE.with(|active| {
         let previous = active.borrow_mut().replace(ReplaySources {
             snapshot,
@@ -125,8 +128,20 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
             });
         }
         sources.inputs = restored;
+        OBSERVED_BYTES.set(checkpoints.iter().fold(0usize, |total, input| {
+            total.saturating_add(input.observed_prefix)
+        }));
         true
     })
+}
+
+/// Cumulative source bytes observed by the installed byte channels.
+///
+/// Unlike the engine token clock, this stays still while TeX expands a loop
+/// from already-read tokens. Keeping the aggregate here also makes cadence
+/// checks O(1) after documents have opened hundreds of inputs.
+pub(crate) fn observed_bytes() -> usize {
+    OBSERVED_BYTES.get()
 }
 
 pub(crate) fn open_primary() -> Option<usize> {
@@ -231,7 +246,7 @@ pub(crate) fn getc(handle: usize) -> Option<libc::c_int> {
             return libc::EOF;
         };
         input.position += 1;
-        input.observed_prefix = input.observed_prefix.max(input.position);
+        observe_through(input, input.position);
         byte.into()
     })
 }
@@ -264,7 +279,7 @@ pub(crate) unsafe fn read(handle: usize, data: *mut u8, len: usize) -> Option<li
             direct,
         );
         input.position += direct;
-        input.observed_prefix = input.observed_prefix.max(input.position);
+        observe_through(input, input.position);
         copied += direct;
         if copied == len {
             len as libc::ssize_t
@@ -273,6 +288,12 @@ pub(crate) unsafe fn read(handle: usize, data: *mut u8, len: usize) -> Option<li
             -1
         }
     })
+}
+
+fn observe_through(input: &mut MemInput, position: usize) {
+    let newly_observed = position.saturating_sub(input.observed_prefix);
+    input.observed_prefix = input.observed_prefix.max(position);
+    OBSERVED_BYTES.set(OBSERVED_BYTES.get().saturating_add(newly_observed));
 }
 
 pub(crate) fn seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) -> Option<usize> {
@@ -415,5 +436,28 @@ mod tests {
         assert_eq!(getc(MEM_TAG | 1), Some(b'b'.into()));
         assert_eq!(getc(MEM_TAG | 2), Some(b'Q'.into()));
         assert_eq!(getc(MEM_TAG | 2), Some(b'y'.into()));
+    }
+
+    #[test]
+    fn observed_byte_clock_advances_only_for_new_source_bytes() {
+        let _guard = install(snapshot());
+        let primary = open_primary().unwrap();
+        assert_eq!(observed_bytes(), 0);
+        assert_eq!(getc(primary), Some(b'a'.into()));
+        assert_eq!(observed_bytes(), 1);
+        assert_eq!(seek(primary, 0, libc::SEEK_SET), Some(0));
+        assert_eq!(getc(primary), Some(b'a'.into()));
+        assert_eq!(observed_bytes(), 1);
+
+        let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
+        let mut buf = [0u8; 2];
+        assert_eq!(unsafe { read(child, buf.as_mut_ptr(), 2) }, Some(2));
+        assert_eq!(observed_bytes(), 3);
+
+        let checkpoints = checkpoint_inputs().unwrap();
+        drop(_guard);
+        let _restored_guard = install(snapshot());
+        assert!(restore_inputs(&checkpoints));
+        assert_eq!(observed_bytes(), 3);
     }
 }

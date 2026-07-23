@@ -24,6 +24,11 @@ static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
 // Command-count fallback for documents without edit-protected or page-horizon
 // fences. At typical XeTeX throughput this still bounds replay to milliseconds.
 const PERIODIC_FENCE_TOKENS: u64 = 500_000;
+// Normal source traversal should retain an early first-edit rung without
+// treating expansion-heavy loops as equivalent progress. Later source fences
+// are deliberately coarser to bound checkpoint capture work on large files.
+const FIRST_PERIODIC_FENCE_SOURCE_BYTES: usize = 32 * 1024;
+const PERIODIC_FENCE_SOURCE_BYTES: usize = 256 * 1024;
 const MAX_EDIT_FENCES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -39,6 +44,7 @@ struct FenceController {
     strings_base: StringWatermark,
     budget: LadderBudget,
     next_clock: u64,
+    next_source_bytes: usize,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
     horizon_rung: NonNull<Option<usize>>,
@@ -77,6 +83,8 @@ fn install_fence_controller(
             strings_base,
             budget,
             next_clock: current_clock.saturating_add(PERIODIC_FENCE_TOKENS),
+            next_source_bytes: crate::replay::adapter::observed_bytes()
+                .saturating_add(FIRST_PERIODIC_FENCE_SOURCE_BYTES),
             pending_fences,
             horizon_last,
             horizon_rung: NonNull::from(horizon_rung),
@@ -127,8 +135,10 @@ fn capture_fence(
         controller
             .pending_fences
             .retain(|(_, fences)| !fences.is_empty());
+        let observed_bytes = crate::replay::adapter::observed_bytes();
         let periodic_due = allow_periodic_or_horizon
-            && state.scanner.logical_clock >= controller.next_clock;
+            && (state.scanner.logical_clock >= controller.next_clock
+                || observed_bytes >= controller.next_source_bytes);
         if !horizon_due && !protected && !periodic_due {
             return false;
         }
@@ -136,6 +146,7 @@ fn capture_fence(
             .scanner
             .logical_clock
             .saturating_add(PERIODIC_FENCE_TOKENS);
+        controller.next_source_bytes = observed_bytes.saturating_add(PERIODIC_FENCE_SOURCE_BYTES);
         // SAFETY: the controller is installed around one synchronous engine
         // call on this thread; both pointees outlive the guard and are not
         // accessed through another reference while this hook runs.

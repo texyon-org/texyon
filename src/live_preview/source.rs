@@ -66,6 +66,7 @@ pub struct AcceptedSourceSnapshot {
     root: PathBuf,
     primary: PathBuf,
     files: Arc<BTreeMap<PathBuf, Arc<str>>>,
+    engine_sources: EngineSourceSnapshot,
 }
 
 impl AcceptedSourceSnapshot {
@@ -91,17 +92,7 @@ impl AcceptedSourceSnapshot {
 
     /// Convert to the engine's immutable source adapter without changing revision identity.
     pub fn engine_snapshot(&self) -> Result<EngineSourceSnapshot, EngineSourceError> {
-        let sources = self
-            .files
-            .iter()
-            .map(|(path, text)| (path.clone(), Arc::<[u8]>::from(text.as_bytes().to_vec())))
-            .collect();
-        EngineSourceSnapshot::new_with_revision(
-            self.root.clone(),
-            self.primary.clone(),
-            sources,
-            EngineSourceRevision::new(self.revision.get()),
-        )
+        Ok(self.engine_sources.clone())
     }
 }
 
@@ -110,7 +101,9 @@ impl AcceptedSourceSnapshot {
 pub struct SourceSet {
     root: DocumentRoot,
     primary: PathBuf,
-    files: BTreeMap<PathBuf, Arc<str>>,
+    files: Arc<BTreeMap<PathBuf, Arc<str>>>,
+    total_bytes: usize,
+    engine_sources: EngineSourceSnapshot,
     revision: SourceRevision,
     limits: ProtocolLimits,
 }
@@ -139,11 +132,23 @@ impl SourceSet {
             total = total.saturating_add(files[&path].len());
         }
         validate_snapshot_size(total, limits)?;
+        let engine_sources = EngineSourceSnapshot::new_with_revision(
+            root.canonical.clone(),
+            primary.clone(),
+            files
+                .iter()
+                .map(|(path, text)| (path.clone(), Arc::<[u8]>::from(text.as_bytes())))
+                .collect(),
+            EngineSourceRevision::new(SourceRevision::ZERO.get()),
+        )
+        .map_err(SourceError::Engine)?;
 
         Ok(Self {
             root,
             primary,
-            files,
+            files: Arc::new(files),
+            total_bytes: total,
+            engine_sources,
             revision: SourceRevision::ZERO,
             limits,
         })
@@ -174,10 +179,7 @@ impl SourceSet {
         };
         let previous_len = self.files.get(&path).map_or(0, |text| text.len());
         let total = self
-            .files
-            .values()
-            .map(|text| text.len())
-            .sum::<usize>()
+            .total_bytes
             .saturating_sub(previous_len)
             .saturating_add(text.len());
         validate_snapshot_size(total, self.limits)?;
@@ -185,8 +187,19 @@ impl SourceSet {
             .revision
             .checked_next()
             .map_err(|_| SourceError::RevisionExhausted)?;
+        let text: Arc<str> = Arc::from(text);
+        let engine_update = self
+            .engine_sources
+            .upsert_with_revision(
+                &path,
+                Arc::<[u8]>::from(text.as_bytes()),
+                EngineSourceRevision::new(revision.get()),
+            )
+            .map_err(SourceError::Engine)?;
 
-        self.files.insert(path, Arc::from(text));
+        Arc::make_mut(&mut self.files).insert(path, text);
+        self.total_bytes = total;
+        self.engine_sources = engine_update.snapshot;
         self.revision = revision;
         Ok(revision)
     }
@@ -197,7 +210,8 @@ impl SourceSet {
             revision: self.revision,
             root: self.root.canonical.clone(),
             primary: self.primary.clone(),
-            files: Arc::new(self.files.clone()),
+            files: Arc::clone(&self.files),
+            engine_sources: self.engine_sources.for_operation(),
         }
     }
 }
@@ -236,6 +250,8 @@ pub enum SourceError {
     },
     /// Accepted source revision space is exhausted.
     RevisionExhausted,
+    /// Engine source normalization rejected a coordinator-validated path.
+    Engine(EngineSourceError),
 }
 
 impl fmt::Display for SourceError {
@@ -261,6 +277,7 @@ impl fmt::Display for SourceError {
                 write!(f, "source snapshot has {bytes} bytes, exceeding {limit}")
             }
             Self::RevisionExhausted => write!(f, "source revision counter exhausted"),
+            Self::Engine(error) => write!(f, "engine source snapshot failed: {error}"),
         }
     }
 }
@@ -269,6 +286,7 @@ impl std::error::Error for SourceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
+            Self::Engine(error) => Some(error),
             _ => None,
         }
     }
@@ -481,5 +499,45 @@ mod tests {
                 .as_ref(),
             "child"
         );
+    }
+
+    #[test]
+    fn large_snapshot_edits_reuse_unmodified_engine_buffers() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = DocumentRoot::new(temp.path()).unwrap();
+        let children = (0..512)
+            .map(|index| SourceFile {
+                path: format!("chapters/{index}.tex"),
+                text: format!("chapter {index}"),
+            })
+            .collect();
+        let mut sources = SourceSet::initialize(
+            root,
+            "main.tex",
+            "main".into(),
+            children,
+            ProtocolLimits::default(),
+        )
+        .unwrap();
+        let before = sources.snapshot().engine_snapshot().unwrap();
+        let untouched_before = before.bytes("chapters/511.tex").unwrap();
+
+        sources
+            .replace(Some("chapters/0.tex"), "edited chapter".into())
+            .unwrap();
+        let accepted = sources.snapshot();
+        let after = accepted.engine_snapshot().unwrap();
+        assert!(Arc::ptr_eq(
+            &untouched_before,
+            &after.bytes("chapters/511.tex").unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            &after.bytes("chapters/511.tex").unwrap(),
+            &accepted
+                .engine_snapshot()
+                .unwrap()
+                .bytes("chapters/511.tex")
+                .unwrap()
+        ));
     }
 }

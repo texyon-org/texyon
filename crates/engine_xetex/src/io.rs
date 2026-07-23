@@ -1283,9 +1283,9 @@ pub(crate) unsafe fn close_files_and_terminate_in(
         }
     }
 
-    st.eqtb.data[(INT_BASE + INT_PAR_NEW_LINE_CHAR_CFT) as usize]
-        .b32
-        .s1 = -1;
+    // Finalization runs while a live-preview journal may be armed. Route this
+    // mutation through the accessor so rewinding can restore `\newlinechar`.
+    st.eqtb.set_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR_CFT, -1);
 
     crate::shipout::finalize_dvi_file_in(st).map_err(|e| e.into_engine_abort())?;
     let log_was_opened = st.errors.log_opened;

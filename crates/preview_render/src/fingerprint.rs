@@ -7,22 +7,22 @@ use crate::render::{DrawOperation, PagePlan};
 
 pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
     let mut digest = Sha256::new();
-    digest.update(b"tectonic-page-visual\0v3");
+    digest.update(b"tectonic-page-visual\0v4");
     digest.update(page.width_bp.to_bits().to_be_bytes());
     digest.update(page.height_bp.to_bits().to_be_bytes());
     for operation in &page.operations {
         match operation {
             DrawOperation::Rule {
-                x,
-                y,
                 height,
                 width,
+                transform,
                 color,
             } => {
                 digest.update([0]);
-                for value in [x, y, height, width] {
+                for value in [height, width] {
                     digest.update(value.to_be_bytes());
                 }
+                hash_matrix(&mut digest, *transform);
                 for value in [color.red, color.green, color.blue, color.alpha] {
                     digest.update(value.to_bits().to_be_bytes());
                 }
@@ -45,8 +45,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                 digest.update((glyphs.len() as u64).to_be_bytes());
                 for glyph in glyphs {
                     digest.update(glyph.glyph_id.to_be_bytes());
-                    digest.update(glyph.x.to_be_bytes());
-                    digest.update(glyph.y.to_be_bytes());
+                    hash_matrix(&mut digest, glyph.transform);
                 }
                 for value in [color.red, color.green, color.blue, color.alpha] {
                     digest.update(value.to_bits().to_be_bytes());
@@ -96,8 +95,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
                 digest.update(scale.to_be_bytes());
                 for character in chars {
                     digest.update(character.character.to_be_bytes());
-                    digest.update(character.x.to_be_bytes());
-                    digest.update(character.y.to_be_bytes());
+                    hash_matrix(&mut digest, character.transform);
                 }
                 for value in [color.red, color.green, color.blue, color.alpha] {
                     digest.update(value.to_bits().to_be_bytes());

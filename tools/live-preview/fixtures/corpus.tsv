@@ -1,0 +1,3 @@
+# id	document root	root-relative primary
+report	report	main.tex
+nested	nested	main.tex

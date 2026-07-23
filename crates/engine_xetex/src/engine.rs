@@ -46,6 +46,7 @@ extern "C" {
 use crate::bridge::ttstub_output_open_stdout;
 extern "C" {
     fn pdf_files_init();
+    fn pdf_files_close_if_open();
 }
 
 // Engine-lifecycle globals formerly defined in xetex-ini.c. Set once per run in
@@ -244,9 +245,8 @@ pub(crate) unsafe fn final_cleanup_in(
     let mut c = st.scanner.cur_chr;
 
     if c != 1 {
-        st.eqtb.data[(INT_BASE + INT_PAR_NEW_LINE_CHAR) as usize]
-            .b32
-            .s1 = -1;
+        // Resident finalization may run with checkpoint journals armed.
+        st.eqtb.set_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, -1);
     }
 
     if st.strings.job_name == 0 {
@@ -980,6 +980,17 @@ unsafe fn tt_run_engine_inner(
     input_file_name: *const libc::c_char,
     build_date: libc::time_t,
 ) -> i32 {
+    // `_tt_abort` historically skipped terminal TeX cleanup. Do not let that
+    // raw-abort behavior leak this process-global registry into the next batch
+    // compilation; ordinary cleanup closes it first, making this a no-op.
+    struct PdfFilesGuard;
+    impl Drop for PdfFilesGuard {
+        fn drop(&mut self) {
+            unsafe { pdf_files_close_if_open() };
+        }
+    }
+    let _pdf_files_guard = PdfFilesGuard;
+
     // Own the engine state here, heap-boxed so the ~KB struct isn't a fresh
     // stack frame. The host set config (halt_on_error_p/in_initex_mode/…) via
     // `tt_xetex_set_int_variable` *before* this call; copy its config into the

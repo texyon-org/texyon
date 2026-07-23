@@ -175,6 +175,9 @@ void      pdf_set_root     (pdf_obj *obj);
 
 void      pdf_files_init    (void);
 void      pdf_files_close   (void);
+void      pdf_files_close_if_open (void);
+void     *pdf_files_suspend (void);
+void      pdf_files_restore (void *state);
 int       check_for_pdf     (rust_input_handle_t handle);
 pdf_file *pdf_open          (const char *ident, rust_input_handle_t handle);
 void      pdf_close         (pdf_file *pf);

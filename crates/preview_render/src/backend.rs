@@ -84,10 +84,8 @@ pub struct FontId(pub u32);
 pub struct PositionedGlyph {
     /// Font glyph identifier.
     pub glyph_id: u16,
-    /// Horizontal origin in big points.
-    pub x_bp: f32,
-    /// Vertical origin in big points.
-    pub y_bp: f32,
+    /// Affine map from glyph-local, y-up big points into page space.
+    pub transform: Matrix,
 }
 
 /// One classic-font character positioned in big points.
@@ -95,10 +93,8 @@ pub struct PositionedGlyph {
 pub struct PositionedChar {
     /// TeX character code.
     pub character: u32,
-    /// Horizontal origin in big points.
-    pub x_bp: f32,
-    /// Vertical origin in big points.
-    pub y_bp: f32,
+    /// Affine map from glyph-local, y-up big points into page space.
+    pub transform: Matrix,
 }
 
 /// XeTeX native-font transforms and synthetic weight.
@@ -136,13 +132,12 @@ pub trait Backend {
         encoding_bytes: &[u8],
     ) -> Result<FontId, RenderError>;
 
-    /// Fill an axis-aligned rule in `color`.
+    /// Fill a rule rectangle mapped into page space by `transform`.
     fn fill_rule(
         &mut self,
-        x_bp: f32,
-        y_bp: f32,
         width_bp: f32,
         height_bp: f32,
+        transform: Matrix,
         color: Color,
     ) -> Result<(), RenderError>;
 
@@ -240,10 +235,9 @@ impl Backend for NullBackend {
 
     fn fill_rule(
         &mut self,
-        _x_bp: f32,
-        _y_bp: f32,
         _width_bp: f32,
         _height_bp: f32,
+        _transform: Matrix,
         _color: Color,
     ) -> Result<(), RenderError> {
         Ok(())

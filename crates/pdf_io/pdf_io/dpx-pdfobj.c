@@ -3964,6 +3964,7 @@ pdf_file_free (pdf_file *pf)
 void
 pdf_files_init (void)
 {
+    assert(!pdf_files);
     pdf_files = NEW(1, struct ht_table);
     ht_init_table(pdf_files, (void (*)(void *)) pdf_file_free);
 }
@@ -4084,6 +4085,29 @@ pdf_files_close (void)
     assert(pdf_files);
     ht_clear_table(pdf_files);
     free(pdf_files);
+    pdf_files = NULL;
+}
+
+void
+pdf_files_close_if_open (void)
+{
+    if (pdf_files)
+        pdf_files_close();
+}
+
+void *
+pdf_files_suspend (void)
+{
+    struct ht_table *saved = pdf_files;
+    pdf_files = NULL;
+    return saved;
+}
+
+void
+pdf_files_restore (void *state)
+{
+    assert(!pdf_files);
+    pdf_files = state;
 }
 
 static int

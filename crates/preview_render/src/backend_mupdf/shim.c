@@ -165,7 +165,7 @@ int pr_backend_gid_by_name(struct pr_backend *backend, int font_id,
 }
 
 int pr_backend_glyphs(struct pr_backend *backend, int font_id, float size,
-                      const unsigned short *gids, const float *positions,
+                      const unsigned short *gids, const fz_matrix *transforms,
                       int count, const float *rgba, float extend, float slant,
                       float embolden, int vertical)
 {
@@ -179,10 +179,10 @@ int pr_backend_glyphs(struct pr_backend *backend, int font_id, float size,
     fz_try(backend->ctx) {
         text = fz_new_text(backend->ctx);
         for (int i = 0; i < count; ++i) {
-            fz_matrix matrix = {
-                size * extend, 0.0f, size * slant, -size,
-                positions[i * 2], positions[i * 2 + 1]
+            fz_matrix glyph = {
+                size * extend, 0.0f, size * slant, size, 0.0f, 0.0f
             };
+            fz_matrix matrix = fz_concat(glyph, transforms[i]);
             fz_show_glyph(backend->ctx, text, backend->fonts[font_id], matrix,
                 gids[i], 0, vertical, 0, FZ_BIDI_LTR, FZ_LANG_UNSET);
         }
@@ -228,16 +228,16 @@ int pr_backend_begin(struct pr_backend *backend, float width, float height)
     return ok;
 }
 
-int pr_backend_rule(struct pr_backend *backend, float x, float y,
-                    float width, float height, const float *rgba)
+int pr_backend_rule(struct pr_backend *backend, float width, float height,
+                    fz_matrix transform, const float *rgba)
 {
     fz_path *path = NULL;
     int ok = 0;
     fz_var(path);
     fz_try(backend->ctx) {
         path = fz_new_path(backend->ctx);
-        fz_rectto(backend->ctx, path, x, y - height, x + width, y);
-        fz_fill_path(backend->ctx, backend->device, path, 0, fz_identity,
+        fz_rectto(backend->ctx, path, 0, 0, width, height);
+        fz_fill_path(backend->ctx, backend->device, path, 0, transform,
             fz_device_rgb(backend->ctx), rgba, rgba[3], fz_default_color_params);
         ok = 1;
     }

@@ -195,10 +195,19 @@ class PreviewSession {
     if (this.child.exitCode === null && this.child.stdin.writable) {
       this.child.stdin.end(`${JSON.stringify({ type: "shutdown" })}\n`);
     }
-    const result = await Promise.race([
-      this.exited,
-      delay(this.timeoutMs).then(() => { throw new Error("timed out waiting for preview shutdown"); })
-    ]);
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("timed out waiting for preview shutdown")),
+        this.timeoutMs
+      );
+    });
+    let result;
+    try {
+      result = await Promise.race([this.exited, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
     this.lines.close();
     if (result.code !== 0) {
       throw new Error(`preview exited ${result.code ?? result.signal}: ${this.stderr}`);

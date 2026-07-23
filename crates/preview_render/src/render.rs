@@ -22,7 +22,6 @@ use crate::resource::{
 use crate::tfm::Tfm;
 
 const SP_TO_BP: f32 = 72.0 / 72.27 / 65_536.0;
-const DVI_ORIGIN_BP: f32 = 72.0;
 
 /// Failure from parsing, resource resolution, or a rendering backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -234,16 +233,14 @@ impl<P: ResourceProvider> HotRenderer<P> {
             for operation in &page.operations {
                 match operation {
                     DrawOperation::Rule {
-                        x,
-                        y,
                         height,
                         width,
+                        transform,
                         color,
                     } => backend.fill_rule(
-                        *x as f32 * SP_TO_BP + DVI_ORIGIN_BP,
-                        *y as f32 * SP_TO_BP + DVI_ORIGIN_BP,
                         *width as f32 * SP_TO_BP,
                         *height as f32 * SP_TO_BP,
+                        *transform,
                         *color,
                     )?,
                     DrawOperation::NativeGlyphs {
@@ -279,8 +276,7 @@ impl<P: ResourceProvider> HotRenderer<P> {
                             .iter()
                             .map(|glyph| PositionedGlyph {
                                 glyph_id: glyph.glyph_id,
-                                x_bp: glyph.x as f32 * SP_TO_BP + DVI_ORIGIN_BP,
-                                y_bp: glyph.y as f32 * SP_TO_BP + DVI_ORIGIN_BP,
+                                transform: glyph.transform,
                             })
                             .collect();
                         backend.fill_glyphs(
@@ -354,8 +350,7 @@ impl<P: ResourceProvider> HotRenderer<P> {
                             .iter()
                             .map(|character| PositionedChar {
                                 character: character.character as u32,
-                                x_bp: character.x as f32 * SP_TO_BP + DVI_ORIGIN_BP,
-                                y_bp: character.y as f32 * SP_TO_BP + DVI_ORIGIN_BP,
+                                transform: character.transform,
                             })
                             .collect();
                         backend.fill_chars(
@@ -414,10 +409,9 @@ pub(crate) struct PagePlan {
 #[derive(Clone)]
 pub(crate) enum DrawOperation {
     Rule {
-        x: i32,
-        y: i32,
         height: i32,
         width: i32,
+        transform: Matrix,
         color: Color,
     },
     NativeGlyphs {
@@ -476,15 +470,13 @@ pub(crate) enum ImageKind {
 #[derive(Clone)]
 pub(crate) struct GlyphPosition {
     pub(crate) glyph_id: u16,
-    pub(crate) x: i32,
-    pub(crate) y: i32,
+    pub(crate) transform: Matrix,
 }
 
 #[derive(Clone)]
 pub(crate) struct ClassicPosition {
     pub(crate) character: i32,
-    pub(crate) x: i32,
-    pub(crate) y: i32,
+    pub(crate) transform: Matrix,
 }
 
 struct NativeFont {
@@ -981,8 +973,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         for &character in chars {
             positions.push(ClassicPosition {
                 character,
-                x: pen,
-                y,
+                transform: self.pdf_graphics.current_transform(pen, y, SP_TO_BP),
             });
             pen = pen.wrapping_add(tfm.advance(character, font.scale));
         }
@@ -1120,7 +1111,10 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             .iter()
             .zip(x)
             .zip(y)
-            .map(|((&glyph_id, &x), &y)| GlyphPosition { glyph_id, x, y })
+            .map(|((&glyph_id, &x), &y)| GlyphPosition {
+                glyph_id,
+                transform: self.pdf_graphics.current_transform(x, y, SP_TO_BP),
+            })
             .collect();
         let color = font_color.unwrap_or(self.color);
         self.page_mut()?
@@ -1203,11 +1197,11 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
     fn handle_rule(&mut self, x: i32, y: i32, height: i32, width: i32) -> Result<(), Self::Error> {
         if height > 0 && width > 0 {
             let color = self.color;
+            let transform = self.pdf_graphics.current_transform(x, y, SP_TO_BP);
             self.page_mut()?.operations.push(DrawOperation::Rule {
-                x,
-                y,
                 height,
                 width,
+                transform,
                 color,
             });
             self.ledger.record_supported("rule");
@@ -1546,6 +1540,32 @@ mod tests {
         special_xdv(&borrowed)
     }
 
+    fn wrap_page_in_transform(xdv: &[u8], matrix: &str) -> Arc<[u8]> {
+        let mut bytes = xdv.to_vec();
+        let bop = bytes.iter().position(|byte| *byte == 139).unwrap();
+        let content = bop + 45;
+        let eop = bytes[content..]
+            .iter()
+            .position(|byte| *byte == 140)
+            .map(|offset| content + offset)
+            .unwrap();
+        let begin = format!("pdf:btrans matrix {matrix}");
+        let special = |text: &str| {
+            let mut encoded = vec![239, text.len() as u8];
+            encoded.extend_from_slice(text.as_bytes());
+            encoded
+        };
+        let begin = special(&begin);
+        let end = special("pdf:etrans");
+        bytes.splice(eop..eop, end);
+        bytes.splice(content..content, begin);
+
+        let post = bytes.iter().position(|byte| *byte == 248).unwrap();
+        let post_post = bytes.iter().position(|byte| *byte == 249).unwrap();
+        bytes[post_post + 1..post_post + 5].copy_from_slice(&(post as u32).to_be_bytes());
+        Arc::from(bytes)
+    }
+
     fn styled_native_xdv() -> Arc<[u8]> {
         let mut bytes = vec![247, 7];
         bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
@@ -1820,6 +1840,42 @@ mod tests {
     }
 
     #[test]
+    fn pdf_wrapper_transform_applies_to_native_text_and_rules() {
+        let matrix = "2 0 0 3 4 5";
+        let mut renderer = HotRenderer::new(MutableResources(RefCell::new(b"font-data".to_vec())));
+        let native = styled_native_xdv();
+        let native = renderer
+            .analyze(wrap_page_in_transform(&native, matrix))
+            .unwrap();
+        let DrawOperation::NativeGlyphs { glyphs, .. } = &native.plans[0].operations[0] else {
+            panic!("missing transformed native glyph");
+        };
+        let rule = renderer
+            .analyze(wrap_page_in_transform(
+                &rule_xdv("color rgb 1 0 0"),
+                matrix,
+            ))
+            .unwrap();
+        let DrawOperation::Rule { transform, .. } = &rule.plans[0].operations[0] else {
+            panic!("missing transformed rule");
+        };
+        let components = |transform: Matrix| {
+            (
+                transform.a,
+                transform.b,
+                transform.c,
+                transform.d,
+                transform.e,
+                transform.f,
+            )
+        };
+
+        let expected = (2.0, 0.0, 0.0, -3.0, 76.0, 67.0);
+        assert_eq!(components(glyphs[0].transform), expected);
+        assert_eq!(components(*transform), expected);
+    }
+
+    #[test]
     fn classic_font_run_uses_tfm_advance_and_frozen_resources() {
         let mut renderer = HotRenderer::new(ClassicResources);
         let analysis = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
@@ -1883,6 +1939,49 @@ mod tests {
             .unwrap();
         assert!(pages[0].svg.contains("<clipPath"));
         assert!(pages[0].svg.contains("#00ff00"));
+    }
+
+    #[cfg(all(feature = "backend-mupdf", target_os = "linux"))]
+    #[test]
+    fn pdf_wrapper_transform_moves_classic_text() {
+        let mut renderer = HotRenderer::new(BuiltinClassicResources);
+        let plain = renderer.analyze(Arc::from(ONE_PAGE)).unwrap();
+        let transformed = renderer
+            .analyze(wrap_page_in_transform(ONE_PAGE, "1 0 0 1 20 0"))
+            .unwrap();
+        assert_ne!(
+            plain.pages()[0].fingerprint,
+            transformed.pages()[0].fingerprint
+        );
+        let mut backend = crate::MupdfBackend::new().unwrap();
+        let plain_svg = renderer
+            .render_pages(&plain, &[0], &mut backend)
+            .unwrap()
+            .pop()
+            .unwrap()
+            .svg;
+        let transformed_svg = renderer
+            .render_pages(&transformed, &[0], &mut backend)
+            .unwrap()
+            .pop()
+            .unwrap()
+            .svg;
+        let plain = backend.rasterize_svg(plain_svg.as_bytes(), 72.0).unwrap();
+        let transformed = backend
+            .rasterize_svg(transformed_svg.as_bytes(), 72.0)
+            .unwrap();
+        let left_edge = |pixmap: &crate::Pixmap| {
+            pixmap
+                .samples
+                .chunks_exact(pixmap.components)
+                .enumerate()
+                .filter(|(_, pixel)| pixel[..3] != [255, 255, 255])
+                .map(|(index, _)| index % pixmap.width)
+                .min()
+                .unwrap()
+        };
+
+        assert_eq!(left_edge(&transformed), left_edge(&plain) + 20);
     }
 
     #[cfg(all(feature = "backend-mupdf", target_os = "linux"))]

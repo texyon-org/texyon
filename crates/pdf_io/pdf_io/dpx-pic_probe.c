@@ -20,6 +20,7 @@ tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
 {
     jmp_buf *jb = ttbc_global_engine_get_jump_buffer();
     jmp_buf saved;
+    void *saved_files = pdf_files_suspend();
     volatile int rc = PIC_PROBE_FAIL;
     volatile int files_inited = 0;
 
@@ -27,6 +28,7 @@ tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
     if (setjmp(*jb)) {
         if (files_inited)
             pdf_files_close();
+        pdf_files_restore(saved_files);
         memcpy(jb, &saved, sizeof(jmp_buf));
         return PIC_PROBE_ABORTED;
     }
@@ -60,6 +62,7 @@ tt_pic_probe_pdf_box(const char *ident, rust_input_handle_t handle,
 
     pdf_files_close();
     files_inited = 0;
+    pdf_files_restore(saved_files);
     memcpy(jb, &saved, sizeof(jmp_buf));
     return rc;
 }
@@ -101,6 +104,7 @@ tt_pic_probe_pdf_page_count(const char *ident, rust_input_handle_t handle,
 {
     jmp_buf *jb = ttbc_global_engine_get_jump_buffer();
     jmp_buf saved;
+    void *saved_files = pdf_files_suspend();
     volatile int rc = PIC_PROBE_FAIL;
     volatile int files_inited = 0;
 
@@ -108,6 +112,7 @@ tt_pic_probe_pdf_page_count(const char *ident, rust_input_handle_t handle,
     if (setjmp(*jb)) {
         if (files_inited)
             pdf_files_close();
+        pdf_files_restore(saved_files);
         memcpy(jb, &saved, sizeof(jmp_buf));
         return PIC_PROBE_ABORTED;
     }
@@ -125,6 +130,7 @@ tt_pic_probe_pdf_page_count(const char *ident, rust_input_handle_t handle,
 
     pdf_files_close();
     files_inited = 0;
+    pdf_files_restore(saved_files);
     memcpy(jb, &saved, sizeof(jmp_buf));
     return rc;
 }

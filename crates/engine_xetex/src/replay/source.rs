@@ -55,7 +55,7 @@ impl SourceIdentity {
 }
 
 /// A validated immutable set of editor-owned source buffers.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SourceSnapshot {
     root: Arc<PathBuf>,
     revision: SourceRevision,
@@ -64,7 +64,7 @@ pub struct SourceSnapshot {
     disk_entries: Arc<Mutex<BTreeMap<SourcePath, SourceEntry>>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct SourceEntry {
     bytes: Arc<[u8]>,
     identity: SourceIdentity,
@@ -224,6 +224,62 @@ impl SourceSnapshot {
             changed_path: Some(path),
             first_changed,
         })
+    }
+
+    /// Insert or replace one editor-owned source at a caller-assigned revision.
+    ///
+    /// Unchanged source buffers and their strong identities remain shared
+    /// instead of being copied and re-hashed when a large editor snapshot
+    /// advances by one file.
+    pub fn upsert_with_revision(
+        &self,
+        path: impl AsRef<Path>,
+        bytes: Arc<[u8]>,
+        revision: SourceRevision,
+    ) -> Result<SourceUpdate, SourceError> {
+        let path = normalize(&self.root, path.as_ref())?;
+        let first_changed = self
+            .entries
+            .get(&path)
+            .map_or(Some(0), |old| first_difference(&old.bytes, &bytes));
+        let entries = if first_changed.is_some() {
+            let mut entries = (*self.entries).clone();
+            entries.insert(
+                path.clone(),
+                SourceEntry {
+                    identity: identity(&bytes),
+                    bytes,
+                },
+            );
+            Arc::new(entries)
+        } else {
+            Arc::clone(&self.entries)
+        };
+        Ok(SourceUpdate {
+            snapshot: Self {
+                root: Arc::clone(&self.root),
+                revision,
+                primary: self.primary.clone(),
+                entries,
+                disk_entries: Arc::new(Mutex::new(BTreeMap::new())),
+            },
+            changed_path: first_changed.map(|_| path),
+            first_changed,
+        })
+    }
+
+    /// Fork the editor buffers for a new engine operation.
+    ///
+    /// Root-confined disk inputs are deliberately not shared: each operation
+    /// must freeze their current bytes independently.
+    pub fn for_operation(&self) -> Self {
+        Self {
+            root: Arc::clone(&self.root),
+            revision: self.revision,
+            primary: self.primary.clone(),
+            entries: Arc::clone(&self.entries),
+            disk_entries: Arc::new(Mutex::new(BTreeMap::new())),
+        }
     }
 
     pub(crate) fn primary_entry(&self) -> (SourcePath, Arc<[u8]>, SourceIdentity) {
@@ -445,5 +501,43 @@ mod tests {
         assert_eq!(update.snapshot.revision(), snapshot.revision());
         assert!(update.changed_path.is_none());
         assert!(update.first_changed.is_none());
+    }
+
+    #[test]
+    fn coordinator_upsert_shares_unchanged_buffers_and_keeps_its_revision() {
+        let original = snapshot();
+        let old_child = original.bytes("chapters/one").unwrap();
+        let update = original
+            .upsert_with_revision("main.tex", bytes(b"changed"), SourceRevision::new(99))
+            .unwrap();
+        assert_eq!(update.snapshot.revision(), SourceRevision::new(99));
+        assert!(Arc::ptr_eq(
+            &old_child,
+            &update.snapshot.bytes("chapters/one").unwrap()
+        ));
+
+        let inserted = update
+            .snapshot
+            .upsert_with_revision(
+                "chapters/two",
+                bytes(b"new child"),
+                SourceRevision::new(100),
+            )
+            .unwrap();
+        assert_eq!(
+            &*inserted.snapshot.bytes("chapters/two.tex").unwrap(),
+            b"new child"
+        );
+        assert_eq!(inserted.first_changed, Some(0));
+    }
+
+    #[test]
+    fn operation_fork_reuses_editor_bytes() {
+        let original = snapshot();
+        let operation = original.for_operation();
+        assert!(Arc::ptr_eq(
+            &original.bytes("main.tex").unwrap(),
+            &operation.bytes("main.tex").unwrap()
+        ));
     }
 }

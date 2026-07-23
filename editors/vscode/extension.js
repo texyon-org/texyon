@@ -7,6 +7,7 @@ const vscode = require("vscode");
 
 const { childLogicalPath, sourceFilePath } = require("./path-authority");
 const { PreviewPanel } = require("./panel");
+const { parseServerLine } = require("./server-line");
 
 const PROTOCOL_VERSION = 1;
 let activeSession = null;
@@ -124,13 +125,12 @@ class PreviewSession {
   }
 
   onServerLine(line) {
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch (error) {
-      this.fail(`server emitted invalid JSON: ${error.message}`);
+    const parsed = parseServerLine(line);
+    if (parsed.error) {
+      this.fail(parsed.error);
       return;
     }
+    const event = parsed.event;
     if (!this.ready) {
       if (event.type !== "ready") {
         this.fail(`expected ready, received ${event.type || "unknown event"}`);

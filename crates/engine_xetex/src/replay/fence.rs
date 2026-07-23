@@ -220,6 +220,20 @@ mod tests {
         .unwrap()
     }
 
+    fn nested_snapshot(revision: u64, leaf: &[u8]) -> SourceSnapshot {
+        SourceSnapshot::new_with_revision(
+            PathBuf::from("/workspace"),
+            PathBuf::from("main.tex"),
+            vec![
+                (PathBuf::from("main.tex"), Arc::from(&b"AB"[..])),
+                (PathBuf::from("chapter.tex"), Arc::from(&b"CD"[..])),
+                (PathBuf::from("parts/leaf.tex"), Arc::from(leaf)),
+            ],
+            SourceRevision::new(revision),
+        )
+        .unwrap()
+    }
+
     fn checkpoint(
         path: &str,
         bytes: &[u8],
@@ -335,5 +349,55 @@ mod tests {
         assert_eq!(file.skip_next_lf, 1);
         assert_eq!(adapter::getc(file.handle), Some(b'c'.into()));
         assert!(fence.resume_pending_command());
+    }
+
+    #[test]
+    fn complete_fence_recreates_a_deep_open_input_stack() {
+        let original = nested_snapshot(1, b"EFgh");
+        let fence = {
+            let _guard = adapter::install(original.clone());
+            let main = adapter::open_primary().unwrap();
+            let chapter = unsafe { adapter::open_named(c"chapter".as_ptr(), 26) }.unwrap();
+            let leaf = unsafe { adapter::open_named(c"parts/leaf".as_ptr(), 26) }.unwrap();
+            assert_eq!(adapter::getc(main), Some(b'A'.into()));
+            assert_eq!(adapter::getc(chapter), Some(b'C'.into()));
+            assert_eq!(adapter::getc(leaf), Some(b'E'.into()));
+            assert_eq!(adapter::getc(leaf), Some(b'F'.into()));
+
+            let mut state = crate::state::EngineState::default();
+            state.input.input_file.resize_with(4, Default::default);
+            for (slot, handle) in [main, chapter, leaf].into_iter().enumerate() {
+                state.input.input_file[slot + 1] =
+                    crate::state::InputSlot::Open(Box::new(crate::io::UFile {
+                        handle,
+                        saved_char: -1,
+                        skip_next_lf: slot as i16,
+                        encoding_mode: 1,
+                        conversion_data: std::ptr::null_mut(),
+                    }));
+            }
+            ReplayFence::capture(&state, &original, true).unwrap()
+        };
+
+        let edited = nested_snapshot(2, b"EFGH");
+        assert!(fence.is_eligible(&edited));
+        let _guard = adapter::install(edited);
+        let mut restored = crate::state::EngineState::default();
+        restored.input.input_file.resize_with(4, Default::default);
+        assert!(fence.restore_inputs(&mut restored));
+
+        let handles = restored
+            .input
+            .input_file
+            .iter()
+            .skip(1)
+            .map(|slot| match slot {
+                crate::state::InputSlot::Open(file) => file.handle,
+                _ => panic!("nested input slot was not restored"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(adapter::getc(handles[0]), Some(b'B'.into()));
+        assert_eq!(adapter::getc(handles[1]), Some(b'D'.into()));
+        assert_eq!(adapter::getc(handles[2]), Some(b'G'.into()));
     }
 }
