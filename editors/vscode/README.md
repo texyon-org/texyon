@@ -11,6 +11,19 @@ From the repository root, build it with:
 cargo build -p tectonic --features preview-mupdf
 ```
 
+On Windows MSVC, install the repository's vcpkg dependencies and Rust archive
+tools first:
+
+```powershell
+cargo vcpkg build
+rustup component add llvm-tools-preview
+$env:VCPKG_ROOT = "$PWD\target\vcpkg"
+$env:VCPKGRS_TRIPLET = "x64-windows-static-release"
+$env:TECTONIC_DEP_BACKEND = "vcpkg"
+$env:RUSTFLAGS = "-Ctarget-feature=+crt-static"
+cargo build --release -p tectonic --features "preview-mupdf,external-harfbuzz"
+```
+
 Configure `tectonicPreview.executable` if `tectonic` is not on `PATH`, open a
 saved TeX document, and run **Tectonic: Start Live Preview**. The extension
 sends the primary buffer and every already-dirty eligible child buffer during

@@ -1,6 +1,7 @@
 //! Feature-gated MuPDF shim compilation and symbol localization.
 
 use std::collections::BTreeSet;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -9,9 +10,17 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_BACKEND_MUPDF").is_none() {
         return;
     }
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("linux") {
-        return;
+    match (
+        std::env::var("CARGO_CFG_TARGET_OS").as_deref(),
+        std::env::var("CARGO_CFG_TARGET_ENV").as_deref(),
+    ) {
+        (Ok("linux"), _) => build_linux(),
+        (Ok("windows"), Ok("msvc")) => build_windows_msvc(),
+        _ => {}
     }
+}
+
+fn build_linux() {
     println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
     println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_INCLUDE");
     println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_LIB");
@@ -33,7 +42,7 @@ fn main() {
     );
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     let localized = out.join("libmupdf_preview.a");
-    localize_pdf_symbols(&archive, &localized, &out);
+    localize_pdf_symbols(&archive, &localized, &out, "nm", "objcopy");
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=mupdf_preview");
     println!("cargo:rustc-link-search=native=/usr/lib");
@@ -49,9 +58,84 @@ fn main() {
     }
 }
 
-fn localize_pdf_symbols(source: &Path, destination: &Path, out: &Path) {
+fn build_windows_msvc() {
+    println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
+    println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_NM");
+    println!("cargo:rerun-if-env-changed=TECTONIC_MUPDF_OBJCOPY");
+
+    let library = vcpkg::Config::new()
+        .cargo_metadata(false)
+        .find_package("libmupdf")
+        .expect("find static MuPDF and its dependencies with vcpkg");
+    cc::Build::new()
+        .file("src/backend_mupdf/shim.c")
+        .includes(&library.include_paths)
+        .compile("preview_render_mupdf_shim");
+
+    let archive = library
+        .found_libs
+        .iter()
+        .find(|path| {
+            path.file_stem()
+                .and_then(OsStr::to_str)
+                .is_some_and(|stem| stem.eq_ignore_ascii_case("libmupdf"))
+        })
+        .expect("vcpkg libmupdf package did not contain libmupdf.lib");
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let localized = out.join("mupdf_preview.lib");
+    localize_pdf_symbols(
+        archive,
+        &localized,
+        &out,
+        llvm_tool("TECTONIC_MUPDF_NM", "llvm-nm"),
+        llvm_tool("TECTONIC_MUPDF_OBJCOPY", "llvm-objcopy"),
+    );
+
+    println!("cargo:rustc-link-search=native={}", out.display());
+    println!("cargo:rustc-link-lib=static=mupdf_preview");
+    for path in &library.link_paths {
+        println!("cargo:rustc-link-search=native={}", path.display());
+    }
+    for name in &library.found_names {
+        if !name.eq_ignore_ascii_case("libmupdf") {
+            println!("cargo:rustc-link-lib={name}");
+        }
+    }
+}
+
+fn llvm_tool(variable: &str, name: &str) -> OsString {
+    if let Some(tool) = std::env::var_os(variable) {
+        return tool;
+    }
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
+    let output = Command::new(rustc)
+        .args(["--print", "sysroot"])
+        .output()
+        .expect("locate the Rust sysroot");
+    if output.status.success() {
+        let sysroot = String::from_utf8_lossy(&output.stdout);
+        let bundled = PathBuf::from(sysroot.trim())
+            .join("lib")
+            .join("rustlib")
+            .join(std::env::var("HOST").unwrap())
+            .join("bin")
+            .join(format!("{name}.exe"));
+        if bundled.exists() {
+            return bundled.into_os_string();
+        }
+    }
+    OsString::from(name)
+}
+
+fn localize_pdf_symbols(
+    source: &Path,
+    destination: &Path,
+    out: &Path,
+    nm: impl AsRef<OsStr>,
+    objcopy: impl AsRef<OsStr>,
+) {
     std::fs::copy(source, destination).unwrap();
-    let output = Command::new("nm")
+    let output = Command::new(nm)
         .args(["-g", "--defined-only"])
         .arg(destination)
         .output()
@@ -59,10 +143,8 @@ fn localize_pdf_symbols(source: &Path, destination: &Path, out: &Path) {
     assert!(output.status.success());
     let mut symbols = BTreeSet::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
-        let mut fields = line.split_whitespace();
-        let name = match (fields.next(), fields.next(), fields.next()) {
-            (Some(_), Some(_), Some(name)) => name,
-            _ => continue,
+        let Some(name) = line.split_whitespace().last() else {
+            continue;
         };
         if name.starts_with("pdf_") {
             symbols.insert(name.to_owned());
@@ -75,7 +157,7 @@ fn localize_pdf_symbols(source: &Path, destination: &Path, out: &Path) {
         .collect::<String>();
     let map_path = out.join("mupdf-symbols.txt");
     std::fs::write(&map_path, map).unwrap();
-    let status = Command::new("objcopy")
+    let status = Command::new(objcopy)
         .arg(format!("--redefine-syms={}", map_path.display()))
         .arg(destination)
         .status()

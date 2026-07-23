@@ -29,9 +29,9 @@ pub unsafe fn get_date_and_time(
     // SAFETY: source_date_epoch is a valid time value; localtime/gmtime return
     // a thread-local pointer that is valid until the next call.
     let tmptr = if use_utc {
-        libc::gmtime(&source_date_epoch)
+        crate::compat::gmtime(&source_date_epoch)
     } else {
-        libc::localtime(&source_date_epoch)
+        crate::compat::localtime(&source_date_epoch)
     };
     *minutes = (*tmptr).tm_hour * 60 + (*tmptr).tm_min;
     *day = (*tmptr).tm_mday;
@@ -65,14 +65,11 @@ pub unsafe fn get_microinterval(shipout: &crate::state::ShipoutState) -> i32 {
 
 /// translated from xetex-texmfmp.c:128 (get_seconds_and_micros)
 pub unsafe fn get_seconds_and_micros(seconds: *mut i32, micros: *mut i32) {
-    // SAFETY: tv is properly initialised; null timezone arg is allowed by POSIX.
-    let mut tv = libc::timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-    libc::gettimeofday(&mut tv, std::ptr::null_mut());
-    *seconds = tv.tv_sec as i32;
-    *micros = tv.tv_usec as i32;
+    let elapsed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    *seconds = elapsed.as_secs() as i32;
+    *micros = elapsed.subsec_micros() as i32;
 }
 
 // ---------------------------------------------------------------------------
@@ -510,11 +507,11 @@ pub(crate) fn remember_source_info_in(
 /// translated from xetex-texmfmp.c:30 (makepdftime, was static)
 unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
     let lt = if utc {
-        *libc::gmtime(&t)
+        *crate::compat::gmtime(&t)
     } else {
-        *libc::localtime(&t)
+        *crate::compat::localtime(&t)
     };
-    let size = libc::strftime(
+    let size = crate::compat::strftime(
         time_str.as_mut_ptr() as *mut libc::c_char,
         30,
         c"D:%Y%m%d%H%M%S".as_ptr(),
@@ -533,7 +530,7 @@ unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
     }
 
     // Compute UTC offset in minutes (method from exim's tod.c).
-    let gmt = *libc::gmtime(&t);
+    let gmt = *crate::compat::gmtime(&t);
     let mut off = 60 * (lt.tm_hour - gmt.tm_hour) + lt.tm_min - gmt.tm_min;
     if lt.tm_year != gmt.tm_year {
         off += if lt.tm_year > gmt.tm_year {

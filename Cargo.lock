@@ -3227,6 +3227,7 @@ dependencies = [
  "cc",
  "sha2",
  "tectonic_xdv",
+ "vcpkg",
 ]
 
 [[package]]

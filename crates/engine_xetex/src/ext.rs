@@ -433,22 +433,22 @@ pub(crate) unsafe fn get_encoding_mode_and_info_in(
 ) -> Result<c_int, crate::texmfmp::MakeTexStringAbort> {
     *info = 0;
 
-    if libc::strcasecmp(name_of_file, c"auto".as_ptr()) == 0 {
+    if crate::compat::strcasecmp(name_of_file, c"auto".as_ptr()) == 0 {
         return Ok(AUTO);
     }
-    if libc::strcasecmp(name_of_file, c"utf8".as_ptr()) == 0 {
+    if crate::compat::strcasecmp(name_of_file, c"utf8".as_ptr()) == 0 {
         return Ok(UTF8);
     }
-    if libc::strcasecmp(name_of_file, c"utf16".as_ptr()) == 0 {
+    if crate::compat::strcasecmp(name_of_file, c"utf16".as_ptr()) == 0 {
         return Ok(US_NATIVE_UTF16);
     }
-    if libc::strcasecmp(name_of_file, c"utf16be".as_ptr()) == 0 {
+    if crate::compat::strcasecmp(name_of_file, c"utf16be".as_ptr()) == 0 {
         return Ok(UTF16BE);
     }
-    if libc::strcasecmp(name_of_file, c"utf16le".as_ptr()) == 0 {
+    if crate::compat::strcasecmp(name_of_file, c"utf16le".as_ptr()) == 0 {
         return Ok(UTF16LE);
     }
-    if libc::strcasecmp(name_of_file, c"bytes".as_ptr()) == 0 {
+    if crate::compat::strcasecmp(name_of_file, c"bytes".as_ptr()) == 0 {
         return Ok(RAW);
     }
 

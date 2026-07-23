@@ -347,7 +347,7 @@ impl EngineAbort {
                 } else {
                     st.input.name_of_file.as_ptr()
                 };
-                libc::snprintf(
+                crate::compat::snprintf(
                     buf.as_mut_ptr() as *mut libc::c_char,
                     buf.len(),
                     c"cannot open output file \"%s\"".as_ptr(),

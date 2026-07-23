@@ -1,6 +1,6 @@
-//! Linux MuPDF SVG backend.
+//! MuPDF SVG backend.
 //!
-//! Enabling this module links MuPDF 1.19 and therefore subjects the resulting
+//! Enabling this module links MuPDF and therefore subjects the resulting
 //! binary to MuPDF's AGPL-3.0-or-later licensing terms.
 
 use std::collections::BTreeMap;
@@ -540,7 +540,7 @@ fn parse_encoding(bytes: &[u8]) -> Result<Vec<String>, RenderError> {
     Ok(names)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 

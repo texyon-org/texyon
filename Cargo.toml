@@ -180,6 +180,7 @@ x86_64-pc-windows-msvc = { triplet = "x64-windows-static-release", install = [
     "freetype",
     "harfbuzz[graphite2]",
     "icu",
+    "libmupdf",
 ] }
 
 [package.metadata.internal_dep_versions]

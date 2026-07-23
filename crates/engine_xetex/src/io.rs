@@ -485,7 +485,7 @@ pub(crate) unsafe fn input_line_in(
             }
         }
 
-        if i == libc::EOF && *libc::__errno_location() != libc::EINTR && bytes_read == 0 {
+        if i == libc::EOF && *crate::compat::errno_location() != libc::EINTR && bytes_read == 0 {
             return Ok(0); // false
         }
 
@@ -577,7 +577,10 @@ pub(crate) unsafe fn input_line_in(
                     }
                 }
 
-                if i == libc::EOF && *libc::__errno_location() != libc::EINTR && tmp_len == 0 {
+                if i == libc::EOF
+                    && *crate::compat::errno_location() != libc::EINTR
+                    && tmp_len == 0
+                {
                     return Ok(0);
                 }
                 if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
@@ -607,7 +610,7 @@ pub(crate) unsafe fn input_line_in(
                 }
 
                 if i == libc::EOF
-                    && *libc::__errno_location() != libc::EINTR
+                    && *crate::compat::errno_location() != libc::EINTR
                     && st.input.last == st.input.first
                 {
                     return Ok(0);
@@ -1532,7 +1535,7 @@ pub(crate) unsafe fn start_input_in(
             st.input.name_of_file.as_ptr()
         };
         let buf = libc::malloc(512) as *mut libc::c_char;
-        libc::snprintf(buf, 512, c"failed to open input file \"%s\"".as_ptr(), name);
+        crate::compat::snprintf(buf, 512, c"failed to open input file \"%s\"".as_ptr(), name);
         return Err(SccAbort::Input(InputAbort::TtAbort(buf)));
     };
     st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);

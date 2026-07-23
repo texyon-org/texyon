@@ -1217,7 +1217,7 @@ pub(crate) unsafe fn initialize_engine(
     }
     if BAD > 0 {
         let mut msg = [0 as libc::c_char; 80];
-        libc::snprintf(
+        crate::compat::snprintf(
             msg.as_mut_ptr(),
             msg.len(),
             c"failed internal consistency check #%d".as_ptr(),

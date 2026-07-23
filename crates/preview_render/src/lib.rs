@@ -2,7 +2,7 @@
 //!
 //! This crate's default build contains no filesystem, native renderer, or
 //! platform integration. Callers provide immutable resource bytes and a drawing
-//! backend. A Linux MuPDF adapter can therefore remain an adapter rather than
+//! backend. A native MuPDF adapter can therefore remain an adapter rather than
 //! becoming part of page semantics.
 
 mod backend;
@@ -17,7 +17,10 @@ mod render;
 mod resource;
 mod tfm;
 
-#[cfg(all(feature = "backend-mupdf", target_os = "linux"))]
+#[cfg(all(
+    feature = "backend-mupdf",
+    any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+))]
 mod backend_mupdf;
 
 pub use backend::{
@@ -32,5 +35,8 @@ pub use render::{
 };
 pub use resource::{Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest};
 
-#[cfg(all(feature = "backend-mupdf", target_os = "linux"))]
+#[cfg(all(
+    feature = "backend-mupdf",
+    any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+))]
 pub use backend_mupdf::{MupdfBackend, Pixmap};
