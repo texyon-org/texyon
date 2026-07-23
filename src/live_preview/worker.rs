@@ -15,17 +15,16 @@ use super::{
 use crate::engines::tex::EngineCancellation;
 use tectonic_preview_protocol::{QueryId, SourceLocation, SyncRectPayload};
 
-/// Scheduling and checkpoint tuning fixed for one worker lifetime.
+/// Worker scheduling tuning fixed for one worker lifetime.
+///
+/// Engine-side knobs (checkpoint budget, rewind verification) are applied to
+/// the engine configuration directly by the CLI and do not pass through here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PreviewTuning {
     /// Delay before a newer request cancels instrumented stale work.
     pub supersede_grace_ms: u64,
     /// Idle delay before resuming a viewport-bounded document tail.
     pub tail_idle_ms: u64,
-    /// Soft checkpoint-ladder byte target.
-    pub ladder_bytes: usize,
-    /// Enable expensive rewind verification.
-    pub verify_rewinds: bool,
 }
 
 impl Default for PreviewTuning {
@@ -33,8 +32,6 @@ impl Default for PreviewTuning {
         Self {
             supersede_grace_ms: 500,
             tail_idle_ms: 200,
-            ladder_bytes: 64 * 1024 * 1024,
-            verify_rewinds: false,
         }
     }
 }
@@ -389,8 +386,6 @@ impl<T: Send + 'static> LivePreviewWorker<T> {
             worker: Some(worker),
             timer: Some(timer),
         };
-        let _ = tuning.ladder_bytes;
-        let _ = tuning.verify_rewinds;
         Ok((worker, bootstrap))
     }
 

@@ -7,10 +7,6 @@ use std::{collections::BTreeMap, fmt, io::BufRead, str::FromStr};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-mod viewer;
-
-pub use viewer::{sanitize_and_namespace_svg, ViewerError, ViewerPage, ViewerState};
-
 /// Initial clean protocol version.
 pub const PROTOCOL_VERSION: u32 = 1;
 

@@ -8,6 +8,7 @@
 mod backend;
 mod color;
 mod encoding;
+#[cfg(test)]
 mod fidelity;
 mod fingerprint;
 mod fontmap;
@@ -28,6 +29,7 @@ pub use backend::{
     PositionedGlyph, StrokeStyle,
 };
 pub use color::Color;
+#[cfg(test)]
 pub use fidelity::{compare_rasters, RasterDiff};
 pub use render::{
     Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, RenderError,
@@ -39,4 +41,10 @@ pub use resource::{Resource, ResourceIdentity, ResourceKind, ResourceProvider, R
     feature = "backend-mupdf",
     any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
 ))]
-pub use backend_mupdf::{MupdfBackend, Pixmap};
+pub use backend_mupdf::MupdfBackend;
+#[cfg(all(
+    test,
+    feature = "backend-mupdf",
+    any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+))]
+pub use backend_mupdf::Pixmap;

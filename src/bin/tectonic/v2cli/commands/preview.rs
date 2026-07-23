@@ -66,8 +66,6 @@ impl TectonicCommand for PreviewCommand {
         let tuning = PreviewTuning {
             supersede_grace_ms: self.supersede_grace_ms,
             tail_idle_ms: self.tail_idle_ms,
-            ladder_bytes,
-            verify_rewinds: self.verify_rewinds,
         };
         let limits = ProtocolLimits::default();
         let format_name = if self.format.ends_with(".fmt") {

@@ -80,6 +80,7 @@ extern "C" {
         transform: Matrix,
     ) -> i32;
     fn pr_backend_finish(backend: *mut c_void, length: *mut usize) -> *mut u8;
+    #[cfg(test)]
     fn pr_backend_raster(
         backend: *mut c_void,
         data: *const u8,
@@ -103,7 +104,8 @@ pub struct MupdfBackend {
     classic_encodings: BTreeMap<FontId, Vec<u16>>,
 }
 
-/// Owned RGB/RGBA raster produced by the fidelity oracle.
+/// Owned RGB/RGBA raster produced by the fidelity oracle (test-only).
+#[cfg(test)]
 pub struct Pixmap {
     /// Width in pixels.
     pub width: usize,
@@ -133,16 +135,19 @@ impl MupdfBackend {
         })
     }
 
-    /// Rasterize one SVG document at `dpi`.
+    /// Rasterize one SVG document at `dpi` (fidelity-oracle tests only).
+    #[cfg(test)]
     pub fn rasterize_svg(&self, svg: &[u8], dpi: f32) -> Result<Pixmap, RenderError> {
         self.rasterize(svg, c"image/svg+xml", 0, dpi)
     }
 
-    /// Rasterize one zero-based PDF page at `dpi`.
+    /// Rasterize one zero-based PDF page at `dpi` (fidelity-oracle tests only).
+    #[cfg(test)]
     pub fn rasterize_pdf(&self, pdf: &[u8], page: u32, dpi: f32) -> Result<Pixmap, RenderError> {
         self.rasterize(pdf, c"application/pdf", page, dpi)
     }
 
+    #[cfg(test)]
     fn rasterize(
         &self,
         bytes: &[u8],

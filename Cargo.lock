@@ -3215,7 +3215,6 @@ dependencies = [
 name = "tectonic_preview_protocol"
 version = "0.0.0-dev.0"
 dependencies = [
- "quick-xml",
  "serde",
  "serde_json",
 ]
