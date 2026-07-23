@@ -13,7 +13,7 @@ use tectonic_preview_render::{
 };
 use tectonic_status_base::NoopStatusBackend;
 
-/// Worker-local shared ownership of one frozen, cache-only support bundle.
+/// Worker-local shared ownership of one support bundle.
 #[derive(Clone)]
 pub struct FrozenBundle {
     bundle: Rc<RefCell<Box<dyn Bundle>>>,
@@ -72,7 +72,7 @@ impl fmt::Debug for FrozenBundle {
     }
 }
 
-/// Exact-byte renderer resource lookup over document root then frozen bundle.
+/// Exact-byte renderer resource lookup over document root then support bundle.
 #[derive(Clone, Debug)]
 pub struct BundleResourceProvider {
     bundle: FrozenBundle,

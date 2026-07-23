@@ -2,8 +2,9 @@
 
 This development extension opens an extension-owned, SVG-only preview backed by
 one resident `tectonic -X preview` process. The executable must be built with
-the opt-in `preview-mupdf` feature, and its support bundle and selected format
-must already be cached. Preview sessions never fetch from the network.
+the opt-in `preview-mupdf` feature. The selected format must already be cached;
+support files and renderer assets are fetched and cached on demand, as in a
+regular compile.
 
 From the repository root, build it with:
 

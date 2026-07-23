@@ -55,9 +55,9 @@ transport around the same XeTeX implementation.
   continuation atomically settles them.
 - Queries read only the last successfully published belief and never cause a
   compile.
-- After `ready`, support resources are cache-only, source disk reads are
-  confined to the canonical document root, shell escape is disabled, and all
-  operation outputs are memory-only.
+- After `ready`, support resources use the normal bundle cache and fetch missing
+  files on demand. Source disk reads are confined to the canonical document
+  root, shell escape is disabled, and all operation outputs are memory-only.
 
 ## Failure model
 

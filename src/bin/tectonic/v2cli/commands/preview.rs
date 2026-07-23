@@ -1,4 +1,4 @@
-//! `preview`: cache-only SVG live preview over JSON Lines stdin/stdout.
+//! `preview`: SVG live preview over JSON Lines stdin/stdout.
 
 use std::{
     io::{BufReader, BufWriter},
@@ -23,12 +23,16 @@ use tectonic_preview_render::MupdfBackend;
 
 use crate::v2cli::{CommandCustomizations, TectonicCommand};
 
-/// Serve one cache-only live-preview process over stdio.
+/// Serve one live-preview process over stdio.
 #[derive(Debug, Eq, PartialEq, Parser)]
 pub struct PreviewCommand {
     /// XeTeX format name, with or without the `.fmt` suffix.
     #[arg(long, default_value = "latex")]
     format: String,
+
+    /// Use only resource files cached locally.
+    #[arg(short = 'C', long)]
+    only_cached: bool,
 
     /// Grace before a newer replacement cancels stale instrumented work.
     #[arg(long, default_value_t = 500)]
@@ -72,6 +76,7 @@ impl TectonicCommand for PreviewCommand {
             format!("{}.fmt", self.format)
         };
         let verify_rewinds = self.verify_rewinds;
+        let only_cached = self.only_cached;
 
         let result = serve_preview_jsonl(
             BufReader::new(std::io::stdin()),
@@ -80,7 +85,7 @@ impl TectonicCommand for PreviewCommand {
             tuning,
             move |writer| -> std::result::Result<_, String> {
                 let mut bundle = config
-                    .default_bundle(true)
+                    .default_bundle(only_cached)
                     .map_err(|error| error.to_string())?;
                 let bundle_digest = bundle.get_digest().map_err(|error| error.to_string())?;
                 let digest_text = bundle_digest.to_string();
