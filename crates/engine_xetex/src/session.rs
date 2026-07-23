@@ -780,7 +780,7 @@ unsafe fn run_document(
     resume_pending_command: Option<bool>,
     pending_fences: Vec<(SourcePath, Vec<usize>)>,
     horizon_last: Option<usize>,
-    cancellation_rung_clock: Option<u64>,
+    recovery_rung_clock: Option<u64>,
     checkpoint_activity: &mut CheckpointActivity,
 ) -> OperationResult {
     let mut horizon_rung = None;
@@ -834,14 +834,19 @@ unsafe fn run_document(
         }
         Err(error) => {
             crate::engine::release_operation_inputs(state);
+            // Cancellation and fatal-class TeX aborts both interrupt the
+            // operation at a journal-coherent point, so both can rewind to
+            // the operation's replay origin. Wiping the ladder to rung zero
+            // here would make every transient syntax error during typing
+            // (an unbalanced brace mid-edit) force the next valid edit to
+            // replay the whole document.
+            let recovery_rung = recovery_rung_clock
+                .and_then(|clock| ladder.rung_at_clock(clock))
+                .unwrap_or(0);
+            ladder.rewind_engine(state, recovery_rung);
             if matches!(error, crate::errors::EngineAbort::Cancelled) {
-                let cancellation_rung = cancellation_rung_clock
-                    .and_then(|clock| ladder.rung_at_clock(clock))
-                    .unwrap_or(0);
-                ladder.rewind_engine(state, cancellation_rung);
                 OperationResult::Cancelled
             } else {
-                ladder.rewind_engine(state, 0);
                 OperationResult::Aborted
             }
         }
