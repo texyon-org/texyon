@@ -1,7 +1,5 @@
 //! Sound byte-span facts recorded at XDV shipout boundaries.
 
-use sha2::{Digest, Sha256};
-
 /// Facts about one page emitted by a resident XeTeX operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PageExecution {
@@ -13,18 +11,17 @@ pub struct PageExecution {
     pub span_start: u64,
     /// Exclusive end of the independently comparable XDV span.
     pub span_end: u64,
-    /// SHA-256 of `xdv[span_start..span_end]` after DVI backpatching.
-    pub byte_digest: [u8; 32],
-    /// Reserved for the in-memory SyncTeX index added by the mapping milestone.
-    pub synctex_range: Option<std::ops::Range<usize>>,
 }
 
 /// Operation-local output observer. Batch runs leave it disabled.
+///
+/// Only byte positions are tracked; the manifest never retains a second copy
+/// of the emitted XDV bytes.
 #[derive(Clone, Default)]
 pub(crate) struct PageManifest {
     enabled: bool,
     span_start: u64,
-    span: Vec<u8>,
+    span_len: u64,
     page_bop: Option<u64>,
     pages: Vec<PageExecution>,
 }
@@ -39,32 +36,34 @@ impl PageManifest {
     pub(crate) fn begin_operation_at(&mut self, span_start: u64) {
         self.enabled = true;
         self.span_start = span_start;
-        self.span.clear();
+        self.span_len = 0;
         self.page_bop = None;
         self.pages.clear();
     }
 
-    pub(crate) fn record_byte(&mut self, byte: u8) {
+    pub(crate) fn record_byte(&mut self, _byte: u8) {
         if self.enabled {
-            self.span.push(byte);
+            self.span_len += 1;
         }
     }
 
     pub(crate) fn pop_byte(&mut self) {
         if self.enabled {
-            self.span.pop().expect("DVI pop before manifest span start");
+            self.span_len = self
+                .span_len
+                .checked_sub(1)
+                .expect("DVI pop before manifest span start");
         }
     }
 
-    pub(crate) fn patch_byte(&mut self, offset: u64, delta: u8) {
+    pub(crate) fn patch_byte(&mut self, offset: u64, _delta: u8) {
         if !self.enabled {
             return;
         }
         let index = offset
             .checked_sub(self.span_start)
-            .and_then(|value| usize::try_from(value).ok())
             .expect("DVI backpatch before manifest span start");
-        self.span[index] = self.span[index].wrapping_add(delta);
+        assert!(index < self.span_len, "DVI backpatch beyond manifest span");
     }
 
     pub(crate) fn begin_page(&mut self, bop_offset: u64) {
@@ -74,7 +73,7 @@ impl PageManifest {
         assert!(self.page_bop.is_none(), "nested XDV page manifest");
         assert_eq!(
             bop_offset,
-            self.span_start + self.span.len() as u64,
+            self.span_start + self.span_len,
             "XDV position diverged from page manifest"
         );
         self.page_bop = Some(bop_offset);
@@ -87,18 +86,15 @@ impl PageManifest {
         let Some(bop_offset) = self.page_bop.take() else {
             return;
         };
-        let span_end = self.span_start + self.span.len() as u64;
-        let byte_digest = Sha256::digest(&self.span).into();
+        let span_end = self.span_start + self.span_len;
         self.pages.push(PageExecution {
             logical_clock,
             bop_offset,
             span_start: self.span_start,
             span_end,
-            byte_digest,
-            synctex_range: None,
         });
         self.span_start = span_end;
-        self.span.clear();
+        self.span_len = 0;
     }
 
     pub(crate) fn take_pages(&mut self) -> Vec<PageExecution> {
@@ -111,7 +107,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn digest_reflects_final_backpatched_bytes() {
+    fn spans_reflect_recorded_and_backpatched_bytes() {
         let mut manifest = PageManifest::default();
         manifest.begin_operation();
         manifest.record_byte(1);
@@ -127,7 +123,5 @@ mod tests {
         assert_eq!(pages[0].bop_offset, 1);
         assert_eq!(pages[0].span_start, 0);
         assert_eq!(pages[0].span_end, 3);
-        let expected: [u8; 32] = Sha256::digest([1, 7, 3]).into();
-        assert_eq!(pages[0].byte_digest, expected);
     }
 }

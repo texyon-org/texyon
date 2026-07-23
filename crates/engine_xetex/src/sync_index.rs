@@ -1,14 +1,14 @@
 //! Checkpoint-safe in-memory source geometry for live preview.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 /// One page-absolute source rectangle in SyncTeX scaled-point coordinates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyncRect {
     /// Zero-based output page.
     pub page_index: usize,
-    /// Engine-reported source name.
-    pub path: String,
+    /// Engine-reported source name, shared across records and snapshots.
+    pub path: Arc<str>,
     /// One-based source line.
     pub line: usize,
     /// Left edge in scaled points, including SyncTeX's one-inch origin.
@@ -114,7 +114,7 @@ fn same_tex_path(left: &str, right: &str) -> bool {
 
 #[derive(Clone, Default)]
 pub(crate) struct PreviewSyncIndex {
-    names: BTreeMap<i32, String>,
+    names: BTreeMap<i32, Arc<str>>,
     page_index: Option<usize>,
     records: Vec<TaggedSyncRect>,
 }
@@ -134,7 +134,7 @@ struct TaggedSyncRect {
 impl PreviewSyncIndex {
     pub(crate) fn register_name(&mut self, tag: i32, path: String) {
         if tag > 0 {
-            self.names.insert(tag, path);
+            self.names.insert(tag, Arc::from(path));
         }
     }
 
@@ -183,7 +183,7 @@ impl PreviewSyncIndex {
                 .filter_map(|record| {
                     Some(SyncRect {
                         page_index: record.page_index,
-                        path: self.names.get(&record.tag)?.clone(),
+                        path: Arc::clone(self.names.get(&record.tag)?),
                         line: record.line,
                         h: record.h,
                         v: record.v,

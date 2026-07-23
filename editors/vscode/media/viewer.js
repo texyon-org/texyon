@@ -121,6 +121,9 @@ async function applyUpdate(event) {
   tailElement.hidden = !state.tailPending;
   errorElement.hidden = true;
   updateVisibility();
+  // A single rAF callback fires *before* the frame containing our DOM
+  // mutations is painted; the second one runs after that frame presented.
+  await new Promise(requestAnimationFrame);
   await new Promise(requestAnimationFrame);
   post({
     type: "painted",

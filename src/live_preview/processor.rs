@@ -6,7 +6,7 @@ use tectonic_preview_protocol::{
 };
 use tectonic_preview_render::{Backend, ResourceProvider};
 
-use crate::engines::tex::{EngineCancellation, TexOutcome};
+use crate::engines::tex::{EngineCancellation, EngineFrame, SyncIndex, TexOutcome};
 
 use super::{
     AcceptedSourceSnapshot, DocumentFragment, FrameSink, PreviewPipeline, PreviewPipelineError,
@@ -19,6 +19,48 @@ fn pipeline_error_is_fatal<E>(error: &PreviewPipelineError<E>) -> bool {
         error,
         PreviewPipelineError::Publication(PublicationError::Sink(_))
     )
+}
+
+/// Wire outcome, operation metrics, document fragment, and sync geometry of a
+/// completed engine frame, shared by the foreground and tail-settle paths.
+fn frame_parts<'a>(
+    frame: &mut EngineFrame,
+    xdv: &'a [u8],
+    engine_ms: f64,
+) -> (
+    UpdateOutcome,
+    OperationMetrics,
+    DocumentFragment<'a>,
+    SyncIndex,
+) {
+    let outcome = if frame.outcome == TexOutcome::Errors {
+        UpdateOutcome::Error
+    } else {
+        UpdateOutcome::Complete
+    };
+    let sync_index = std::mem::take(&mut frame.sync_index);
+    let metrics = OperationMetrics {
+        engine_ms,
+        checkpoint_rungs: frame.checkpoint_rungs,
+        checkpoint_bytes: frame.checkpoint_bytes,
+        shipouts: frame.pages.len(),
+        reused_prefix: frame.splice_at.is_some(),
+        replay_rung: frame.replay_rung,
+        replay_commands: CommandCount::new(frame.replay_commands),
+        checkpoint_rungs_admitted: frame.checkpoint_rungs_admitted,
+        checkpoint_rungs_dropped: frame.checkpoint_rungs_dropped,
+        checkpoint_rungs_rejected: frame.checkpoint_rungs_rejected,
+        ..OperationMetrics::default()
+    };
+    let fragment = frame
+        .splice_at
+        .map_or(DocumentFragment::Complete(xdv), |prefix_len| {
+            DocumentFragment::Tail {
+                prefix_len,
+                bytes: xdv,
+            }
+        });
+    (outcome, metrics, fragment, sync_index)
 }
 
 /// Coherent frame already accepted by the processor's publication sink.
@@ -119,7 +161,7 @@ where
         self.tail_revision = None;
         let revision = snapshot.revision();
         let engine_started = Instant::now();
-        let engine = match self.engine.compile(snapshot, viewport, cancellation) {
+        let mut engine = match self.engine.compile(snapshot, viewport, cancellation) {
             Ok(engine) => engine,
             Err(error) => return WorkerRun::Aborted(ResidentPreviewError::Engine(error)),
         };
@@ -127,7 +169,7 @@ where
         if engine.frame.cancelled {
             return WorkerRun::Cancelled;
         }
-        if let Some(message) = engine.frame.aborted {
+        if let Some(message) = engine.frame.aborted.take() {
             return WorkerRun::Aborted(ResidentPreviewError::Aborted(message));
         }
         if engine.frame.source_revision.get() != revision.get() {
@@ -136,40 +178,25 @@ where
                 received: engine.frame.source_revision.get(),
             });
         }
-        let Some(xdv) = engine.xdv else {
+        let Some(xdv) = engine.xdv.take() else {
             return WorkerRun::Aborted(ResidentPreviewError::MissingXdv);
         };
-        let outcome = if engine.frame.outcome == TexOutcome::Errors {
-            UpdateOutcome::Error
-        } else {
-            UpdateOutcome::Complete
-        };
         let tail_pending = engine.frame.tail_pending;
-        let sync_index = engine.frame.sync_index.clone();
-        let metrics = OperationMetrics {
-            engine_ms,
-            checkpoint_rungs: engine.frame.checkpoint_rungs,
-            checkpoint_bytes: engine.frame.checkpoint_bytes,
-            shipouts: engine.frame.pages.len(),
-            reused_prefix: engine.frame.splice_at.is_some(),
-            replay_rung: engine.frame.replay_rung,
-            replay_commands: CommandCount::new(engine.frame.replay_commands),
-            checkpoint_rungs_admitted: engine.frame.checkpoint_rungs_admitted,
-            checkpoint_rungs_dropped: engine.frame.checkpoint_rungs_dropped,
-            checkpoint_rungs_rejected: engine.frame.checkpoint_rungs_rejected,
-            ..OperationMetrics::default()
-        };
+        let (outcome, metrics, fragment, sync_index) =
+            frame_parts(&mut engine.frame, &xdv, engine_ms);
+        if cancellation.is_requested() {
+            // A newer request superseded this operation while the engine was
+            // finishing. The engine state has advanced, so keep the assembled
+            // document chain coherent, but skip analysis, rendering, and
+            // publication: the fresh snapshot is about to compile anyway.
+            return match self.pipeline.absorb_fragment(fragment) {
+                Ok(()) => WorkerRun::Cancelled,
+                Err(error) => WorkerRun::Aborted(ResidentPreviewError::Pipeline(
+                    PreviewPipelineError::Assembly(error),
+                )),
+            };
+        }
         self.sink.set_tail_pending(tail_pending);
-        let fragment =
-            engine
-                .frame
-                .splice_at
-                .map_or(DocumentFragment::Complete(&xdv), |prefix_len| {
-                    DocumentFragment::Tail {
-                        prefix_len,
-                        bytes: &xdv,
-                    }
-                });
         let frame_id = match self.pipeline.process_fragment_with_engine_ms(
             &mut self.sink,
             fragment,
@@ -210,7 +237,7 @@ where
             return WorkerRun::Complete(None);
         };
         let engine_started = Instant::now();
-        let engine = match self.engine.continue_tail(cancellation) {
+        let mut engine = match self.engine.continue_tail(cancellation) {
             Ok(Some(engine)) => engine,
             Ok(None) => return WorkerRun::Complete(None),
             Err(error) => return WorkerRun::Aborted(ResidentPreviewError::Engine(error)),
@@ -219,7 +246,7 @@ where
         if engine.frame.cancelled {
             return WorkerRun::Cancelled;
         }
-        if let Some(message) = engine.frame.aborted {
+        if let Some(message) = engine.frame.aborted.take() {
             return WorkerRun::Aborted(ResidentPreviewError::Aborted(message));
         }
         if engine.frame.source_revision.get() != expected_revision.get() {
@@ -228,38 +255,22 @@ where
                 received: engine.frame.source_revision.get(),
             });
         }
-        let Some(xdv) = engine.xdv else {
+        let Some(xdv) = engine.xdv.take() else {
             return WorkerRun::Aborted(ResidentPreviewError::MissingXdv);
         };
-        let outcome = if engine.frame.outcome == TexOutcome::Errors {
-            UpdateOutcome::Error
-        } else {
-            UpdateOutcome::Complete
-        };
-        let sync_index = engine.frame.sync_index.clone();
-        let metrics = OperationMetrics {
-            engine_ms,
-            checkpoint_rungs: engine.frame.checkpoint_rungs,
-            checkpoint_bytes: engine.frame.checkpoint_bytes,
-            shipouts: engine.frame.pages.len(),
-            reused_prefix: engine.frame.splice_at.is_some(),
-            replay_rung: engine.frame.replay_rung,
-            replay_commands: CommandCount::new(engine.frame.replay_commands),
-            checkpoint_rungs_admitted: engine.frame.checkpoint_rungs_admitted,
-            checkpoint_rungs_dropped: engine.frame.checkpoint_rungs_dropped,
-            checkpoint_rungs_rejected: engine.frame.checkpoint_rungs_rejected,
-            ..OperationMetrics::default()
-        };
-        let fragment =
-            engine
-                .frame
-                .splice_at
-                .map_or(DocumentFragment::Complete(&xdv), |prefix_len| {
-                    DocumentFragment::Tail {
-                        prefix_len,
-                        bytes: &xdv,
-                    }
-                });
+        let (outcome, metrics, fragment, sync_index) =
+            frame_parts(&mut engine.frame, &xdv, engine_ms);
+        if cancellation.is_requested() {
+            // A newer edit superseded this settled tail; the imminent
+            // foreground compile re-establishes viewer state, so only keep the
+            // assembled document chain coherent.
+            return match self.pipeline.absorb_fragment(fragment) {
+                Ok(()) => WorkerRun::Cancelled,
+                Err(error) => WorkerRun::Aborted(ResidentPreviewError::Pipeline(
+                    PreviewPipelineError::Assembly(error),
+                )),
+            };
+        }
         self.sink.set_tail_pending(false);
         let frame_id = match self.pipeline.process_fragment_with_engine_ms(
             &mut self.sink,
@@ -330,7 +341,7 @@ where
             .sync_index()
             .backward(page_index, bp_to_sp(h_bp), bp_to_sp(v_bp))
             .map(|rect| SourceLocation {
-                path: rect.path.clone(),
+                path: rect.path.to_string(),
                 line: rect.line,
             })
     }

@@ -474,7 +474,7 @@ impl IncrementalXeTeXSession {
                     resume_pending_command,
                     pending_fences,
                     horizon_last,
-                    None,
+                    Some(replay_clock),
                     &mut checkpoint_activity,
                 )
             }))

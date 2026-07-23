@@ -201,6 +201,22 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         Ok(frame_id)
     }
 
+    /// Absorb a completed-but-superseded operation's XDV without analysis,
+    /// rendering, or publication.
+    ///
+    /// The engine has already committed the operation, so the assembled
+    /// document chain must advance for the next fragment's splice to remain
+    /// coherent; the viewer belief and sync index stay untouched, matching the
+    /// protocol's promise that superseded work never replaces client state.
+    pub(crate) fn absorb_fragment(
+        &mut self,
+        fragment: DocumentFragment<'_>,
+    ) -> Result<(), XdvAssemblyError> {
+        let document = self.assembler.assemble(self.last_document.as_ref(), fragment)?;
+        self.last_document = Some(document);
+        Ok(())
+    }
+
     /// Republish the complete retained belief without engine or renderer work.
     pub fn resync<S: FrameSink>(
         &mut self,

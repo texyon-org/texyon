@@ -224,6 +224,10 @@ unsafe fn synctex_record_node_vlist(
             p.depth(mem).0,
         );
     }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex.curv;
+        return;
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "[{},{}:{},{}:{},{},{}\n",
@@ -272,6 +276,10 @@ unsafe fn synctex_record_node_void_vlist(
             p.depth(mem).0,
         );
     }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex.curv;
+        return;
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "v{},{}:{},{}:{},{},{}\n",
@@ -309,6 +317,10 @@ unsafe fn synctex_record_node_hlist(
             p.height(mem).0,
             p.depth(mem).0,
         );
+    }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex.curv;
+        return;
     }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
@@ -358,6 +370,10 @@ unsafe fn synctex_record_node_void_hlist(
             p.depth(mem).0,
         );
     }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex.curv;
+        return;
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "h{},{}:{},{}:{},{},{}\n",
@@ -395,6 +411,10 @@ unsafe fn synctex_record_node_math(
             0,
         );
     }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex.curv;
+        return;
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "${},{}:{},{}\n",
@@ -429,6 +449,10 @@ unsafe fn synctex_record_node_glue(
             0,
         );
     }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex.curv;
+        return;
+    }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
         "g{},{}:{},{}\n",
@@ -462,6 +486,10 @@ unsafe fn synctex_record_node_kern(
             0,
             0,
         );
+    }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex.curv;
+        return;
     }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
@@ -498,6 +526,10 @@ unsafe fn synctex_record_node_rule(
             shipout.rule_ht,
             shipout.rule_dp,
         );
+    }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex.curv;
+        return;
     }
     let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
     let s = format!(
@@ -970,6 +1002,10 @@ pub unsafe fn synctex_current(st: &mut crate::state::EngineState) {
             0,
             0,
         );
+    }
+    if synctex.file == PREVIEW_HANDLE {
+        synctex.lastv = synctex_curv(&st.shipout);
+        return;
     }
     let (file, tag, line, unit) = (synctex.file, synctex.tag, synctex.line, synctex.unit);
     let s = format!(

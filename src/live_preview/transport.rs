@@ -83,60 +83,100 @@ impl<W: Write> JsonlFrameSink<W> {
     }
 
     fn encode_frame(&self, frame: &FramePatch) -> Result<Vec<u8>, TransportError> {
-        let mut metrics = self.metrics;
+        // Build the event (and its SVG payload copies) exactly once; the
+        // convergence loop below only touches the embedded frame_bytes field.
+        let mut event = ServerEvent::Update {
+            frame_id: frame.frame_id,
+            source_revision: frame.source_revision,
+            applied_request_seq: frame.applied_request_seq,
+            phase: frame.phase,
+            outcome: frame.outcome,
+            page_count: frame.pages.len(),
+            changed: frame.changed.clone(),
+            removed: frame.removed.clone(),
+            pages_svg: frame
+                .pages_svg
+                .iter()
+                .map(|page| PageSvgPayload {
+                    page_index: page.page_index,
+                    svg: page.svg.to_string(),
+                })
+                .collect(),
+            page_sizes: frame
+                .pages
+                .iter()
+                .map(|page| PageSize {
+                    width_bp: page.size_bp[0],
+                    height_bp: page.size_bp[1],
+                })
+                .collect(),
+            unsupported_pages: frame
+                .pages
+                .iter()
+                .enumerate()
+                .filter(|(_, page)| !page.unsupported.is_empty())
+                .map(|(page_index, page)| PageUnsupportedPayload {
+                    page_index,
+                    operations: page.unsupported.clone(),
+                })
+                .collect(),
+            metrics: self.metrics,
+            tail_pending: self.tail_pending,
+        };
         let mut previous_size = usize::MAX;
+        let mut first_pass = true;
         for _ in 0..4 {
-            let event = ServerEvent::Update {
-                frame_id: frame.frame_id,
-                source_revision: frame.source_revision,
-                applied_request_seq: frame.applied_request_seq,
-                phase: frame.phase,
-                outcome: frame.outcome,
-                page_count: frame.pages.len(),
-                changed: frame.changed.clone(),
-                removed: frame.removed.clone(),
-                pages_svg: frame
-                    .pages_svg
-                    .iter()
-                    .map(|page| PageSvgPayload {
-                        page_index: page.page_index,
-                        svg: page.svg.to_string(),
-                    })
-                    .collect(),
-                page_sizes: frame
-                    .pages
-                    .iter()
-                    .map(|page| PageSize {
-                        width_bp: page.size_bp[0],
-                        height_bp: page.size_bp[1],
-                    })
-                    .collect(),
-                unsupported_pages: frame
-                    .pages
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, page)| !page.unsupported.is_empty())
-                    .map(|(page_index, page)| PageUnsupportedPayload {
-                        page_index,
-                        operations: page.unsupported.clone(),
-                    })
-                    .collect(),
-                metrics,
-                tail_pending: self.tail_pending,
+            let current = match &event {
+                ServerEvent::Update { metrics, .. } => metrics.frame_bytes,
+                _ => unreachable!(),
             };
             let encoded = encode_event(&event, self.limits).map_err(TransportError::Protocol)?;
             let frame_size = encoded.len() - 1;
-            if frame_size == previous_size || metrics.frame_bytes == frame_size {
+            if frame_size == previous_size || current == frame_size {
                 return Ok(encoded);
             }
             previous_size = frame_size;
-            metrics.frame_bytes = frame_size;
+            // frame_bytes is self-referential: replacing its digits changes the
+            // frame length. Solve the fixed point analytically after the first
+            // measuring pass so the loop converges on the second encode.
+            let next = if first_pass {
+                first_pass = false;
+                let base = frame_size - decimal_digits(current);
+                solve_self_referential_size(base)
+            } else {
+                frame_size
+            };
+            match &mut event {
+                ServerEvent::Update { metrics, .. } => metrics.frame_bytes = next,
+                _ => unreachable!(),
+            }
         }
         Err(TransportError::Protocol(ProtocolError::FrameTooLarge {
             bytes: previous_size,
             limit: self.limits.max_frame_bytes,
         }))
     }
+}
+
+fn decimal_digits(mut value: usize) -> usize {
+    let mut digits = 1;
+    while value >= 10 {
+        value /= 10;
+        digits += 1;
+    }
+    digits
+}
+
+/// Solve `n = base + decimal_digits(n)`: the encoded length of a frame whose
+/// embedded `frame_bytes` field must equal that same encoded length.
+fn solve_self_referential_size(base: usize) -> usize {
+    for digits in 1..=20 {
+        let candidate = base + digits;
+        if decimal_digits(candidate) == digits {
+            return candidate;
+        }
+    }
+    base
 }
 
 impl<W: Write> FrameSink for JsonlFrameSink<W> {

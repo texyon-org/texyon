@@ -6275,17 +6275,22 @@ unsafe fn main_control_from_in(
         }
     }
 
+    // Cancellation and fence hooks are live only for resident sessions; the
+    // batch path must not pay per-command bookkeeping for them.
+    let resident = st.config.execution_mode == crate::state::EngineExecutionMode::Resident;
     loop {
-        if st.cancellation.at_command_boundary() {
+        if resident && st.cancellation.at_command_boundary() {
             return Err(MainControlAbort::Cancelled);
         }
         if resume_pending_command {
             resume_pending_command = false;
         } else {
-            crate::session::capture_prefetch_fence(st);
+            if resident {
+                crate::session::capture_prefetch_fence(st);
+            }
             crate::scan::get_x_token_in(st)?;
         }
-        if crate::session::capture_command_fence(st) {
+        if resident && crate::session::capture_command_fence(st) {
             return Err(MainControlAbort::Horizoned);
         }
 
