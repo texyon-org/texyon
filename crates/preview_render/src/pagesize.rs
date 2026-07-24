@@ -1,23 +1,31 @@
 //! Per-page media sizes with xdvipdfmx-compatible persistence rules.
 
+#[cfg(test)]
 use std::io::Cursor;
 
+#[cfg(test)]
 use tectonic_xdv::{XdvEvents, XdvParser};
 
 use crate::RenderError;
 
 pub(crate) const DEFAULT_BP: [f32; 2] = [612.0, 792.0];
 
-pub(crate) fn scan_page_sizes(xdv: &[u8]) -> Result<Vec<[f32; 2]>, RenderError> {
+/// Magnification declared by an XDV preamble.
+pub(crate) fn preamble_magnification(xdv: &[u8]) -> Result<f32, RenderError> {
     if xdv.len() < 14 || xdv[0] != 247 {
         return Err(RenderError::Xdv("missing XDV preamble".into()));
     }
     let raw_mag = u32::from_be_bytes([xdv[10], xdv[11], xdv[12], xdv[13]]);
-    let mag = if raw_mag == 0 {
+    Ok(if raw_mag == 0 {
         1.0
     } else {
         raw_mag as f32 / 1000.0
-    };
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn scan_page_sizes(xdv: &[u8]) -> Result<Vec<[f32; 2]>, RenderError> {
+    let mag = preamble_magnification(xdv)?;
     let (scanner, _) = XdvParser::process(Cursor::new(xdv), SizeScanner::new(mag))?;
     Ok(scanner.finish())
 }
@@ -28,35 +36,48 @@ pub(crate) fn is_page_size_special(contents: &[u8]) -> bool {
         || keyword == Some(b"papersize".as_slice())
 }
 
-struct SizeScanner {
+/// Forward-only media-size state machine for one XDV walk.
+///
+/// A page's size is whatever the specials inside it leave in effect, so the
+/// value is only final at end of page. Keeping it as a state machine lets the
+/// analysis walk derive page sizes itself instead of paying for a second
+/// complete parse of the document.
+#[derive(Clone, Debug)]
+pub(crate) struct PageSizeState {
     mag: f32,
     default_size: [f32; 2],
     current_size: [f32; 2],
-    page_open: bool,
-    sizes: Vec<[f32; 2]>,
+    completed_pages: usize,
 }
 
-impl SizeScanner {
-    fn new(mag: f32) -> Self {
+impl PageSizeState {
+    pub(crate) fn new(mag: f32) -> Self {
         Self {
             mag,
             default_size: DEFAULT_BP,
             current_size: DEFAULT_BP,
-            page_open: false,
-            sizes: Vec::new(),
+            completed_pages: 0,
         }
     }
 
-    fn finish(mut self) -> Vec<[f32; 2]> {
-        if self.page_open {
-            self.sizes.push(self.current_size);
-        }
-        self.sizes
+    /// Media size in effect for the page being walked.
+    pub(crate) fn current(&self) -> [f32; 2] {
+        self.current_size
     }
 
-    fn apply(&mut self, contents: &[u8]) {
+    /// Start a page from the persistent default.
+    pub(crate) fn begin_page(&mut self) {
+        self.current_size = self.default_size;
+    }
+
+    /// Retire the page whose size was just read.
+    pub(crate) fn finish_page(&mut self) {
+        self.completed_pages += 1;
+    }
+
+    pub(crate) fn apply(&mut self, contents: &[u8]) {
         let (namespace, keyword, rest) = special_head(contents);
-        let first_page = self.sizes.is_empty();
+        let first_page = self.completed_pages == 0;
         if namespace == Some(b"pdf") && keyword == Some(b"pagesize") {
             let mut size = self.current_size;
             let mut input = skip_ws(rest);
@@ -110,6 +131,32 @@ impl SizeScanner {
     }
 }
 
+#[cfg(test)]
+struct SizeScanner {
+    state: PageSizeState,
+    page_open: bool,
+    sizes: Vec<[f32; 2]>,
+}
+
+#[cfg(test)]
+impl SizeScanner {
+    fn new(mag: f32) -> Self {
+        Self {
+            state: PageSizeState::new(mag),
+            page_open: false,
+            sizes: Vec::new(),
+        }
+    }
+
+    fn finish(mut self) -> Vec<[f32; 2]> {
+        if self.page_open {
+            self.sizes.push(self.state.current());
+        }
+        self.sizes
+    }
+}
+
+#[cfg(test)]
 impl XdvEvents for SizeScanner {
     type Error = RenderError;
 
@@ -119,16 +166,17 @@ impl XdvEvents for SizeScanner {
         _previous_bop: i32,
     ) -> Result<(), Self::Error> {
         if self.page_open {
-            self.sizes.push(self.current_size);
+            self.sizes.push(self.state.current());
+            self.state.finish_page();
         }
         self.page_open = true;
-        self.current_size = self.default_size;
+        self.state.begin_page();
         Ok(())
     }
 
     fn handle_special(&mut self, _x: i32, _y: i32, contents: &[u8]) -> Result<(), Self::Error> {
         if self.page_open {
-            self.apply(contents);
+            self.state.apply(contents);
         }
         Ok(())
     }

@@ -1,6 +1,6 @@
 //! Transactional XDV analysis and selected-page rendering.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::io::Cursor;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use crate::color::Color;
 use crate::encoding::type1_builtin;
 use crate::fontmap::FontMap;
 use crate::fingerprint::page_digest;
-use crate::pagesize::{is_page_size_special, scan_page_sizes, DEFAULT_BP};
+use crate::pagesize::{is_page_size_special, preamble_magnification, PageSizeState, DEFAULT_BP};
 use crate::pdfcode::{PdfGraphics, PdfOperation};
 use crate::resource::{
     Resource, ResourceIdentity, ResourceKind, ResourceProvider, ResourceRequest,
@@ -151,11 +151,28 @@ impl Analysis {
     }
 }
 
+/// Font artifacts derived from exact resource bytes, retained across analyses.
+///
+/// Every keystroke re-walks the whole document and therefore re-defines every
+/// font it uses. Parsing the font map, the TFM tables, and the Type1 builtin
+/// encodings each time dominated analysis, so the derived forms are memoized
+/// under the SHA-256 identity of the bytes they came from: an entry can only be
+/// reused when the resolved resource is byte-identical.
+#[derive(Default)]
+struct FontArtifacts {
+    font_map: Option<([Option<ResourceIdentity>; FONT_MAP_NAMES.len()], Arc<FontMap>)>,
+    tfm: HashMap<ResourceIdentity, Option<Arc<Tfm>>>,
+    builtin_encoding: HashMap<ResourceIdentity, Option<Resource>>,
+}
+
+const FONT_MAP_NAMES: [&str; 3] = ["pdftex.map", "kanjix.map", "ckx.map"];
+
 /// Stateful renderer that retains only immutable resources and completed facts.
 pub struct HotRenderer<P> {
     provider: P,
     next_analysis_id: u64,
     last_completed: Option<(Vec<PageVisual>, CoverageLedger)>,
+    fonts: FontArtifacts,
 }
 
 impl<P: ResourceProvider> HotRenderer<P> {
@@ -165,6 +182,7 @@ impl<P: ResourceProvider> HotRenderer<P> {
             provider,
             next_analysis_id: 1,
             last_completed: None,
+            fonts: FontArtifacts::default(),
         }
     }
 
@@ -172,8 +190,8 @@ impl<P: ResourceProvider> HotRenderer<P> {
     pub fn analyze(&mut self, xdv: Arc<[u8]>) -> Result<Analysis, RenderError> {
         let analysis_id = self.next_analysis_id;
         self.next_analysis_id = self.next_analysis_id.wrapping_add(1).max(1);
-        let page_sizes = scan_page_sizes(&xdv)?;
-        let walker = Walker::new(&self.provider, page_sizes);
+        let magnification = preamble_magnification(&xdv)?;
+        let walker = Walker::new(&self.provider, &mut self.fonts, magnification);
         let (mut walker, _) = XdvParser::process(Cursor::new(&xdv), walker)?;
         walker.finish_page();
         let mut pages = Vec::with_capacity(walker.pages.len());
@@ -492,7 +510,7 @@ struct NativeFont {
 
 struct ClassicFont {
     scale: u32,
-    tfm: Option<Tfm>,
+    tfm: Option<Arc<Tfm>>,
     tfm_identity: Option<ResourceIdentity>,
     program_identity: Option<ResourceIdentity>,
     encoding_identity: Option<ResourceIdentity>,
@@ -500,12 +518,12 @@ struct ClassicFont {
 
 struct Walker<'a, P> {
     provider: &'a P,
+    artifacts: &'a mut FontArtifacts,
     page: Option<PagePlan>,
     pages: Vec<PagePlan>,
-    page_sizes: Vec<[f32; 2]>,
+    page_size: PageSizeState,
     fonts: BTreeMap<i32, NativeFont>,
     classic_fonts: BTreeMap<i32, ClassicFont>,
-    font_map: Option<FontMap>,
     resources: BTreeMap<ResourceIdentity, Resource>,
     ledger: CoverageLedger,
     color: Color,
@@ -515,15 +533,15 @@ struct Walker<'a, P> {
 }
 
 impl<'a, P: ResourceProvider> Walker<'a, P> {
-    fn new(provider: &'a P, page_sizes: Vec<[f32; 2]>) -> Self {
+    fn new(provider: &'a P, artifacts: &'a mut FontArtifacts, magnification: f32) -> Self {
         Self {
             provider,
+            artifacts,
             page: None,
             pages: Vec::new(),
-            page_sizes,
+            page_size: PageSizeState::new(magnification),
             fonts: BTreeMap::new(),
             classic_fonts: BTreeMap::new(),
-            font_map: None,
             resources: BTreeMap::new(),
             ledger: CoverageLedger::default(),
             color: Color::BLACK,
@@ -531,6 +549,33 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             pdf_color_stacks: BTreeMap::new(),
             pdf_graphics: PdfGraphics::default(),
         }
+    }
+
+    /// Font map parsed from the exact current map bytes, reused across analyses
+    /// while every contributing resource keeps the same identity.
+    fn font_map(&mut self) -> Result<Arc<FontMap>, RenderError> {
+        let mut identities = [None; FONT_MAP_NAMES.len()];
+        let mut resources = Vec::with_capacity(FONT_MAP_NAMES.len());
+        for (slot, map_name) in identities.iter_mut().zip(FONT_MAP_NAMES) {
+            let resource = self.provider.resolve(&ResourceRequest {
+                kind: ResourceKind::FontMap,
+                name: map_name.into(),
+            })?;
+            *slot = resource.as_ref().map(|resource| resource.identity);
+            resources.extend(resource);
+        }
+        if let Some((cached, map)) = self.artifacts.font_map.as_ref() {
+            if *cached == identities {
+                return Ok(Arc::clone(map));
+            }
+        }
+        let mut map = FontMap::default();
+        for resource in resources {
+            map.parse_into(&resource.bytes);
+        }
+        let map = Arc::new(map);
+        self.artifacts.font_map = Some((identities, Arc::clone(&map)));
+        Ok(map)
     }
 
     fn page_mut(&mut self) -> Result<&mut PagePlan, RenderError> {
@@ -548,8 +593,14 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
     }
 
     fn finish_page(&mut self) {
-        if let Some(page) = self.page.take() {
+        if let Some(mut page) = self.page.take() {
+            // The media size is only final once the page's specials have all
+            // been seen, so commit it here rather than at the page's start.
+            let size = self.page_size.current();
+            page.width_bp = size[0];
+            page.height_bp = size[1];
             self.pages.push(page);
+            self.page_size.finish_page();
         }
     }
 
@@ -862,14 +913,10 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         _previous_bop: i32,
     ) -> Result<(), Self::Error> {
         self.finish_page();
-        let size = self
-            .page_sizes
-            .get(self.pages.len())
-            .copied()
-            .unwrap_or(DEFAULT_BP);
+        self.page_size.begin_page();
         self.page = Some(PagePlan {
-            width_bp: size[0],
-            height_bp: size[1],
+            width_bp: DEFAULT_BP[0],
+            height_bp: DEFAULT_BP[1],
             operations: Vec::new(),
             unsupported: BTreeMap::new(),
             complete: true,
@@ -880,6 +927,11 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
 
     fn handle_special(&mut self, x: i32, y: i32, contents: &[u8]) -> Result<(), Self::Error> {
         if is_page_size_special(contents) {
+            // Matches the previous dedicated size pass, which only tracked
+            // media-size specials appearing inside a page.
+            if self.page.is_some() {
+                self.page_size.apply(contents);
+            }
             self.ledger.record_supported("page-size");
             return Ok(());
         }
@@ -1014,22 +1066,10 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         name: &str,
     ) -> Result<(), Self::Error> {
         let resource_name = format!("{area}{name}");
-        if self.font_map.is_none() {
-            let mut map = FontMap::default();
-            for map_name in ["pdftex.map", "kanjix.map", "ckx.map"] {
-                if let Some(resource) = self.provider.resolve(&ResourceRequest {
-                    kind: ResourceKind::FontMap,
-                    name: map_name.into(),
-                })? {
-                    map.parse_into(&resource.bytes);
-                }
-            }
-            self.font_map = Some(map);
-        }
-        let mapped = self
-            .font_map
-            .as_ref()
-            .and_then(|map| map.get(&resource_name).or_else(|| map.get(name)))
+        let font_map = self.font_map()?;
+        let mapped = font_map
+            .get(&resource_name)
+            .or_else(|| font_map.get(name))
             .cloned();
         let program_name = mapped
             .as_ref()
@@ -1054,13 +1094,21 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             name: encoding_name,
         })?;
         if encoding.is_none() {
-            encoding = program
-                .as_ref()
-                .and_then(|program| type1_builtin(&program.bytes));
+            encoding = program.as_ref().and_then(|program| {
+                self.artifacts
+                    .builtin_encoding
+                    .entry(program.identity)
+                    .or_insert_with(|| type1_builtin(&program.bytes))
+                    .clone()
+            });
         }
-        let tfm = tfm_resource
-            .as_ref()
-            .and_then(|resource| Tfm::parse(&resource.bytes));
+        let tfm = tfm_resource.as_ref().and_then(|resource| {
+            self.artifacts
+                .tfm
+                .entry(resource.identity)
+                .or_insert_with(|| Tfm::parse(&resource.bytes).map(Arc::new))
+                .clone()
+        });
         let tfm_identity = tfm_resource.as_ref().map(|resource| resource.identity);
         let program_identity = program.as_ref().map(|resource| resource.identity);
         let encoding_identity = encoding.as_ref().map(|resource| resource.identity);

@@ -1,9 +1,11 @@
 use std::{
     cell::{RefCell, RefMut},
+    collections::HashMap,
     fmt, fs,
     io::Read,
     path::{Path, PathBuf},
     rc::Rc,
+    time::SystemTime,
 };
 
 use tectonic_bundles::Bundle;
@@ -72,10 +74,31 @@ impl fmt::Debug for FrozenBundle {
     }
 }
 
+/// Disk identity of one document-root resource, used to reuse frozen bytes
+/// only while the file behind them is unchanged.
+type DiskStamp = (SystemTime, u64);
+
+/// Memoized resolution of one candidate name.
+///
+/// Support-bundle bytes are immutable for the session, so a bundle hit or miss
+/// is reusable forever. Document-root bytes are editable on disk, so they are
+/// reusable only while the file's modification time and length are unchanged,
+/// and a bundle answer is reusable only while no document-root file shadows it.
+#[derive(Debug)]
+enum CachedCandidate {
+    Document { stamp: DiskStamp, resource: Resource },
+    Bundle(Option<Resource>),
+}
+
 /// Exact-byte renderer resource lookup over document root then support bundle.
+///
+/// Resolution is memoized because analysis re-resolves every font of the whole
+/// document on every keystroke, and each miss otherwise costs a bundle read
+/// plus a SHA-256 over the complete resource bytes.
 #[derive(Clone, Debug)]
 pub struct BundleResourceProvider {
     bundle: FrozenBundle,
+    cache: Rc<RefCell<HashMap<String, CachedCandidate>>>,
 }
 
 impl BundleResourceProvider {
@@ -84,25 +107,41 @@ impl BundleResourceProvider {
         if let Some(root) = document_root {
             bundle.set_document_root(&root)?;
         }
-        Ok(Self { bundle })
+        Ok(Self {
+            bundle,
+            cache: Rc::new(RefCell::new(HashMap::new())),
+        })
     }
 
-    fn document_bytes(&self, name: &str) -> Result<Option<Vec<u8>>, RenderError> {
+    /// Canonical path and disk stamp of a document-root candidate, if it is a
+    /// regular file confined to the root.
+    fn document_stamp(&self, name: &str) -> Result<Option<(PathBuf, DiskStamp)>, RenderError> {
         let Some(root) = self.bundle.document_root() else {
             return Ok(None);
         };
         let candidate = root.join(name);
+        // Most candidate names never exist in the document root, so take the
+        // cheapest possible negative before paying for canonicalization.
+        let metadata = match fs::metadata(&candidate) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(RenderError::Resource(error.to_string())),
+        };
+        if !metadata.is_file() {
+            return Ok(None);
+        }
         let canonical = match fs::canonicalize(&candidate) {
             Ok(path) => path,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(RenderError::Resource(error.to_string())),
         };
-        if !canonical.starts_with(&root) || !canonical.is_file() {
+        if !canonical.starts_with(&root) {
             return Ok(None);
         }
-        fs::read(canonical)
-            .map(Some)
-            .map_err(|error| RenderError::Resource(error.to_string()))
+        let modified = metadata
+            .modified()
+            .map_err(|error| RenderError::Resource(error.to_string()))?;
+        Ok(Some((canonical, (modified, metadata.len()))))
     }
 
     fn bundle_bytes(&self, name: &str) -> Result<Option<Vec<u8>>, RenderError> {
@@ -124,11 +163,44 @@ impl BundleResourceProvider {
 impl ResourceProvider for BundleResourceProvider {
     fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
         for candidate in candidates(request) {
-            if let Some(bytes) = self.document_bytes(&candidate)? {
-                return Ok(Some(Resource::from_bytes(bytes)));
+            // Stat the document root first on every call: it decides both which
+            // source wins and whether a cached answer is still current.
+            let stamp = self.document_stamp(&candidate)?;
+            if let Some(cached) = self.cache.borrow().get(&candidate) {
+                match (cached, &stamp) {
+                    (CachedCandidate::Document { stamp: seen, resource }, Some((_, now)))
+                        if seen == now =>
+                    {
+                        return Ok(Some(resource.clone()));
+                    }
+                    (CachedCandidate::Bundle(resource), None) => {
+                        if let Some(resource) = resource {
+                            return Ok(Some(resource.clone()));
+                        }
+                        continue;
+                    }
+                    _ => {}
+                }
             }
-            if let Some(bytes) = self.bundle_bytes(&candidate)? {
-                return Ok(Some(Resource::from_bytes(bytes)));
+            if let Some((path, stamp)) = stamp {
+                let bytes =
+                    fs::read(path).map_err(|error| RenderError::Resource(error.to_string()))?;
+                let resource = Resource::from_bytes(bytes);
+                self.cache.borrow_mut().insert(
+                    candidate,
+                    CachedCandidate::Document {
+                        stamp,
+                        resource: resource.clone(),
+                    },
+                );
+                return Ok(Some(resource));
+            }
+            let resource = self.bundle_bytes(&candidate)?.map(Resource::from_bytes);
+            self.cache
+                .borrow_mut()
+                .insert(candidate, CachedCandidate::Bundle(resource.clone()));
+            if let Some(resource) = resource {
+                return Ok(Some(resource));
             }
         }
         Ok(None)
