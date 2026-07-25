@@ -180,11 +180,31 @@ export interface EngineOptions {
   onLog?: (line: LogLine) => void;
 }
 
+/** What an export produced. */
+export interface ExportResult {
+  /** The complete PDF. */
+  pdf: Uint8Array<ArrayBuffer>;
+  /**
+   * Frames produced while settling the document before exporting.
+   *
+   * A viewport-bounded compile stops at the last visible page, and exporting
+   * that would give you a PDF missing its tail — so {@link
+   * TectonicEngine.exportPdf} finishes the document first. These are the frames
+   * that produced, in order, and a viewer that wants to stay in step with the
+   * engine should apply them exactly as it applies a compile result. Empty when
+   * the document was already settled, which is the usual case.
+   */
+  tail: CompileResult[];
+  /** Milliseconds spent in xdvipdfmx, measured in the Worker. */
+  elapsedMs: number;
+}
+
 /** A request sent to the Worker. */
 export type WorkerRequest =
   | { id: number; kind: "init"; options: SerializableEngineOptions }
   | { id: number; kind: "compile"; text: string; viewport?: [number, number] }
   | { id: number; kind: "continueTail" }
+  | { id: number; kind: "export" }
   | { id: number; kind: "cancel" }
   | { id: number; kind: "shutdown" };
 
@@ -201,6 +221,7 @@ export interface SerializableEngineOptions {
 export type WorkerResponse =
   | { id: number; kind: "ok" }
   | { id: number; kind: "compiled"; result: CompileResult }
+  | { id: number; kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
   | { id: number; kind: "idle" }
   | { id: number; kind: "error"; message: string }
   | { id: 0; kind: "progress"; progress: LoadProgress }

@@ -14,7 +14,7 @@ function bytes(count: number): string {
 export function App() {
   const [source, setSource] = useState(SAMPLE);
   const [showLog, setShowLog] = useState(false);
-  const { progress, startupError, result, compiling, latencyMs, log, markPainted } =
+  const { progress, startupError, result, compiling, latencyMs, log, markPainted, exportPdf } =
     usePreview(source);
 
   const onChange = useCallback((value: string) => setSource(value), []);
@@ -64,6 +64,14 @@ export function App() {
             <span className={`metric outcome-${result.outcome}`}>{result.outcome}</span>
           )}
           <span className={`dot ${compiling ? "busy" : "idle"}`} />
+          <button
+            className="log-toggle"
+            disabled={!result}
+            title="The preview's own output, run through xdvipdfmx"
+            onClick={() => void exportPdf()}
+          >
+            PDF
+          </button>
           <button className="log-toggle" onClick={() => setShowLog((v) => !v)}>
             {showLog ? "Hide log" : "Log"}
           </button>

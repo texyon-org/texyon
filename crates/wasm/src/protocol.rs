@@ -51,6 +51,13 @@ pub enum Request {
     /// Finish a viewport-bounded compile through the end of the document.
     ContinueTail,
 
+    /// Convert the current document to PDF.
+    ///
+    /// The bytes are left in linear memory and reported by
+    /// [`Response::Exported`]; the host must release them with
+    /// `tectonic_wasm_free`.
+    Export,
+
     /// Ask the running operation to stop at its next cancellation point.
     Cancel,
 
@@ -131,6 +138,19 @@ pub enum Response {
     Ok,
     /// A compile finished.
     Compiled(Box<CompileReport>),
+    /// A PDF was produced and left in linear memory.
+    ///
+    /// Deliberately not carried in the JSON: a fifty-page document is megabytes
+    /// of PDF, and base64 through a JSON string would cost a copy, a third again
+    /// in size, and a parse. The host copies the bytes out and frees them with
+    /// `tectonic_wasm_free`.
+    #[serde(rename_all = "camelCase")]
+    Exported {
+        /// Offset of the PDF in linear memory.
+        ptr: u32,
+        /// Its length in bytes.
+        len: u32,
+    },
     /// Nothing was pending.
     Idle,
     /// The request failed.

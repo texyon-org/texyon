@@ -1,8 +1,13 @@
 //! Tectonic's live-preview engine, compiled for the browser.
 //!
 //! This crate is the WebAssembly face of the resident XeTeX session: it holds
-//! one document, applies whole-buffer edits to it, and returns a PDF. The point
-//! is latency. A cold LaTeX compile spends most of its time before your cursor
+//! one document, applies whole-buffer edits to it, and returns SVG for the
+//! pages whose appearance moved — or, on request, the whole thing as a PDF
+//! through xdvipdfmx, which is the same typesetting written out differently
+//! rather than a second compile.
+//!
+//! The point is latency. A cold LaTeX compile spends most of its time before
+//! your cursor
 //! — loading a 20 MB format dump, the document class, its packages — and
 //! [`IncrementalXeTeXSession`] makes that cost payable once, rewinding to a
 //! checkpoint just before the edit instead of starting over.
@@ -135,6 +140,26 @@ fn dispatch(text: &str) -> Response {
             match session.continue_tail() {
                 Ok(Some(output)) => Response::Compiled(Box::new(report(session, output))),
                 Ok(None) => Response::Idle,
+                Err(error) => Response::error(error),
+            }
+        }),
+
+        Request::Export => SESSION.with_borrow_mut(|slot| {
+            let Some(session) = slot.as_mut() else {
+                return Response::error("no session is open");
+            };
+            match session.export_pdf() {
+                Ok(pdf) => {
+                    let len = pdf.len();
+                    // Hand the bytes to the host rather than serializing them.
+                    // Freed with tectonic_wasm_free once they have been copied
+                    // out, exactly like the response buffer itself.
+                    let ptr = Box::into_raw(pdf.into_boxed_slice()) as *mut u8;
+                    Response::Exported {
+                        ptr: ptr as u32,
+                        len: len as u32,
+                    }
+                }
                 Err(error) => Response::error(error),
             }
         }),

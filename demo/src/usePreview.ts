@@ -43,7 +43,9 @@ export interface PreviewState {
  * returns. Latency is measured from the keystroke that triggered the compile,
  * not from when the compile started, because that is what the user feels.
  */
-export function usePreview(source: string): PreviewState & { markPainted: () => void } {
+export function usePreview(
+  source: string,
+): PreviewState & { markPainted: () => void; exportPdf: () => Promise<void> } {
   const [engine, setEngine] = useState<TectonicEngine | null>(null);
   const [progress, setProgress] = useState<LoadProgress | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
@@ -164,6 +166,49 @@ export function usePreview(source: string): PreviewState & { markPainted: () => 
     paintingFrom.current = null;
   }, []);
 
+  /** Download the current document as a PDF. */
+  const exportPdf = useCallback(async () => {
+    if (!engine) return;
+
+    try {
+      const { pdf, tail, elapsedMs } = await engine.exportPdf();
+
+      // This demo compiles the whole document on every keystroke, so there is
+      // never a viewport tail to settle. A viewer that bounds its compiles has
+      // to apply these frames, or its pages fall behind the PDF it just got.
+      if (tail.length > 0) {
+        console.warn(`export settled ${tail.length} tail frame(s) the viewer did not apply`);
+      }
+
+      const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "main.pdf";
+      link.click();
+      URL.revokeObjectURL(url);
+
+      setLog((prior) =>
+        [
+          ...prior,
+          {
+            level: "note" as const,
+            message: `exported ${(pdf.length / 1024).toFixed(0)} KB in ${elapsedMs.toFixed(0)} ms`,
+          },
+        ].slice(-200),
+      );
+    } catch (error) {
+      setLog((prior) =>
+        [
+          ...prior,
+          {
+            level: "error" as const,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        ].slice(-200),
+      );
+    }
+  }, [engine]);
+
   return {
     engine,
     progress,
@@ -173,5 +218,6 @@ export function usePreview(source: string): PreviewState & { markPainted: () => 
     latencyMs,
     log,
     markPainted,
+    exportPdf,
   };
 }

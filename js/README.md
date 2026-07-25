@@ -16,6 +16,9 @@ const result = await engine.compile(source);
 for (const page of result.pages) {
   slots[page.index].innerHTML = page.svg;
 }
+
+// The same typesetting, as a PDF, when someone wants to keep it.
+const { pdf } = await engine.exportPdf();
 ```
 
 ## The idea
@@ -101,6 +104,20 @@ the same characters and that is exactly what you get.
 
 Finishes a viewport-bounded compile through the end of the document. Returns
 `null` if nothing was pending. Worth calling when the user pauses.
+
+### `engine.exportPdf()`
+
+Returns the document as a PDF, in `pdf`.
+
+This is not a second compile. It is the preview's own assembled XDV run through
+xdvipdfmx, so a download cannot disagree with what the viewer was showing — the
+same typesetting, written out differently.
+
+A viewport-bounded compile stops at the last visible page, so this settles the
+document first and returns the frames that took in `tail`. Apply them as you
+would a compile result, or the viewer's pages fall behind the PDF the user just
+got. `tail` is empty when the document was already finished, which is the
+common case.
 
 ### `engine.cancel()`
 

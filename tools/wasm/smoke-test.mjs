@@ -232,6 +232,40 @@ console.log(
     `(expected 0 — the fingerprints did not move)`,
 );
 
+// Export: the same assembled XDV the viewer is showing, run through xdvipdfmx.
+// A download therefore cannot disagree with what was on screen.
+started = performance.now();
+reply = call({ op: "export" });
+const exportMs = performance.now() - started;
+if (reply.status !== "exported") throw new Error(JSON.stringify(reply).slice(0, 400));
+
+// The bytes are in linear memory, not in the JSON. Copy them out before the
+// next allocation can move the heap, then hand them back.
+const pdf = new Uint8Array(engine.memory.buffer, reply.ptr, reply.len).slice();
+engine.tectonic_wasm_free(reply.ptr, reply.len);
+
+if (decoder.decode(pdf.subarray(0, 5)) !== "%PDF-") {
+  throw new Error("the export does not start with a PDF header");
+}
+if (!decoder.decode(pdf.subarray(-32)).includes("%%EOF")) {
+  throw new Error("the exported PDF has no trailer, so it was truncated");
+}
+
+writeFileSync(join(repo, "target", "smoke.pdf"), pdf);
+console.log(
+  `export: ${exportMs.toFixed(0)} ms, ${(pdf.length / 1024).toFixed(0)} KB PDF`,
+);
+
+// Editing after an export is the real test of the loan xdvipdfmx takes on
+// pdf_io's open-file registry: TeX owns that registry for the life of a
+// resident session, and a run that failed to hand it back would abort here.
+reply = call({ op: "compile", text: DOC(" Edited again.") });
+if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
+console.log(
+  `post-export edit: ${reply.changed.length}/${reply.pageCount} pages redrawn, ` +
+    `outcome=${reply.outcome}`,
+);
+
 const misses = reads.filter((r) => !r.found).length;
 console.log(
   `support: ${reply.supportFiles} files resident ` +

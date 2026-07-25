@@ -3333,6 +3333,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tectonic_bridge_core",
+ "tectonic_engine_xdvipdfmx",
  "tectonic_engine_xetex",
  "tectonic_errors",
  "tectonic_io_base",

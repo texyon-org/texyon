@@ -6,10 +6,12 @@
  *   onProgress: (p) => console.log(p.phase),
  * });
  *
- * const first = await engine.compile(source);
- * document.querySelector("embed")!.src = URL.createObjectURL(
- *   new Blob([first.pdf!], { type: "application/pdf" }),
- * );
+ * // A patch: SVG for the pages whose appearance actually moved.
+ * const result = await engine.compile(source);
+ * for (const page of result.pages) slots[page.index].innerHTML = page.svg;
+ *
+ * // And the same typesetting as a PDF, when someone wants to keep it.
+ * const { pdf } = await engine.exportPdf();
  * ```
  *
  * The engine is *resident*: it keeps one document open and applies each new
@@ -28,6 +30,7 @@ export type {
   CompileResult,
   CompileStats,
   EngineOptions,
+  ExportResult,
   LoadProgress,
   LogLevel,
   LogLine,
@@ -37,6 +40,7 @@ export type {
 import type {
   CompileResult,
   EngineOptions,
+  ExportResult,
   LoadProgress,
   LogLine,
   WorkerRequest,
@@ -92,6 +96,11 @@ export class TectonicEngine {
         pending.reject(new TectonicError(message.message));
       } else if (message.kind === "compiled") {
         (pending.resolve as (value: CompileResult) => void)(message.result);
+      } else if (message.kind === "exported") {
+        (pending.resolve as (value: { pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }) => void)({
+          pdf: message.pdf,
+          elapsedMs: message.elapsedMs,
+        });
       } else if (message.kind === "idle") {
         (pending.resolve as (value: null) => void)(null);
       } else {
@@ -172,6 +181,45 @@ export class TectonicEngine {
    */
   async continueTail(): Promise<CompileResult | null> {
     return this.#queue(() => this.#send<CompileResult | null>({ id: 0, kind: "continueTail" }));
+  }
+
+  /**
+   * Produce a PDF of the current document.
+   *
+   * This is the preview's own output run through xdvipdfmx — the same XDV the
+   * viewer is showing, not a second compile — so a download cannot disagree
+   * with what was on screen.
+   *
+   * A viewport-bounded compile stops at the last visible page, and exporting
+   * that would silently drop the tail. So this settles the document first and
+   * hands back the frames that took, in {@link ExportResult.tail}; apply them
+   * as you would a compile result to keep the viewer in step. Usually it is
+   * empty, because the document was already finished.
+   */
+  async exportPdf(): Promise<ExportResult> {
+    return this.#queue(async () => {
+      const tail: CompileResult[] = [];
+
+      // Settle through the end of the document. Each continuation reports
+      // whether more is pending, so this terminates on the engine's own
+      // account rather than a fixed bound.
+      for (;;) {
+        const frame = await this.#send<CompileResult | null>({
+          id: 0,
+          kind: "continueTail",
+        });
+        if (!frame) break;
+        tail.push(frame);
+        if (!frame.tailPending) break;
+      }
+
+      const { pdf, elapsedMs } = await this.#send<{
+        pdf: Uint8Array<ArrayBuffer>;
+        elapsedMs: number;
+      }>({ id: 0, kind: "export" });
+
+      return { pdf, tail, elapsedMs };
+    });
   }
 
   /**

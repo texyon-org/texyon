@@ -72,6 +72,7 @@ interface RawCompileReport {
 type RawResponse =
   | { status: "ok" }
   | ({ status: "compiled" } & RawCompileReport)
+  | { status: "exported"; ptr: number; len: number }
   | { status: "idle" }
   | { status: "error"; message: string };
 
@@ -567,6 +568,37 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           post({ id: request.id, kind: "compiled", result });
         } else {
           post({ id: request.id, kind: "ok" });
+        }
+        break;
+      }
+
+      case "export": {
+        const started = performance.now();
+        const reply = call({ op: "export" });
+
+        if (reply.status === "error") {
+          post({ id: request.id, kind: "error", message: reply.message });
+        } else if (reply.status === "exported") {
+          const engine = exports!;
+          // The PDF is in linear memory rather than in the JSON. Copy it out
+          // before anything else can allocate — a growing heap detaches the
+          // buffer this view is over — then give the module its bytes back.
+          const pdf = new Uint8Array(engine.memory.buffer, reply.ptr, reply.len).slice();
+          engine.tectonic_wasm_free(reply.ptr, reply.len);
+
+          // Transferred, not copied, so a fifty-page document does not cross
+          // the Worker boundary twice.
+          post(
+            {
+              id: request.id,
+              kind: "exported",
+              pdf,
+              elapsedMs: performance.now() - started,
+            },
+            [pdf.buffer],
+          );
+        } else {
+          post({ id: request.id, kind: "error", message: "the engine did not return a PDF" });
         }
         break;
       }

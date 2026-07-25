@@ -21,10 +21,11 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::Arc,
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use tectonic_engine_xdvipdfmx::XdvipdfmxEngine;
 use tectonic_engine_xetex::{
     EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
     SourceRevision, SourceSnapshot, TexOutcome,
@@ -237,6 +238,71 @@ impl Session {
         self.engine.has_pending_tail()
     }
 
+    /// Convert the assembled document to PDF.
+    ///
+    /// This is the preview's XDV run through xdvipdfmx, so it is the same
+    /// typesetting the viewer is showing rather than a second compile — an
+    /// export cannot disagree with what is on screen.
+    ///
+    /// Refuses while a viewport-bounded compile still has a tail: the document
+    /// stops at the last page the engine was asked for, and exporting it would
+    /// silently produce a truncated PDF. Settle it with
+    /// [`continue_tail`](Self::continue_tail) first.
+    pub fn export_pdf(&mut self) -> Result<Vec<u8>> {
+        if self.document.is_empty() {
+            bail!("nothing has been typeset yet");
+        }
+
+        if self.engine.has_pending_tail() {
+            bail!("the document has pages left to typeset; settle the tail before exporting");
+        }
+
+        let stem = self
+            .primary_name
+            .strip_suffix(".tex")
+            .unwrap_or(&self.primary_name);
+        let pdf_name = format!("{stem}.pdf");
+
+        // xdvipdfmx reads its input by name through the I/O stack, so the
+        // assembled XDV is installed as though it had been written to disk. The
+        // support layer sits underneath it, which is where the fonts it has to
+        // embed come from.
+        let files = MemoryIo::new();
+        files.insert(self.xdv_name.clone(), self.document.bytes().to_vec());
+
+        let mut files_io = files.clone();
+        let mut status = HostStatus::new();
+
+        {
+            // xdvipdfmx opens its own registry of the PDFs it embeds, and so
+            // does XeTeX — but a *resident* XeTeX session holds that registry
+            // open for its whole life, since only terminal cleanup closes it.
+            // Letting xdvipdfmx initialize it a second time trips an assertion
+            // inside pdf_files_init, so lend it the slot and take it back after,
+            // exactly as pic_probe does when TeX itself has to measure a PDF.
+            let _registry = PdfFileRegistryLoan::take();
+
+            let io = IoStack::new(vec![
+                &mut files_io as &mut dyn IoProvider,
+                &mut self.support as &mut dyn IoProvider,
+            ]);
+            let mut hooks = MinimalDriver::new(io);
+            let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+
+            let mut engine = XdvipdfmxEngine::default();
+            // The default is the Unix epoch, which would date every exported
+            // document to 1970. The WASI shim answers the clock for real.
+            engine.build_date(SystemTime::now());
+            engine
+                .process(&mut launcher, &self.xdv_name, &pdf_name)
+                .map_err(|error| anyhow!("could not write the PDF: {error}"))?;
+        }
+
+        files
+            .take(&pdf_name)
+            .ok_or_else(|| anyhow!("xdvipdfmx finished without writing {pdf_name}"))
+    }
+
     /// Ask the engine to stop at its next cooperative cancellation point.
     pub fn cancel(&self) {
         self.cancellation.request();
@@ -412,6 +478,44 @@ impl Session {
             render_ms,
             reused_pages,
         })
+    }
+}
+
+extern "C" {
+    /// Detach the process-global open-PDF registry, yielding the old one.
+    fn pdf_files_suspend() -> *mut std::ffi::c_void;
+    /// Reinstall a registry taken by [`pdf_files_suspend`].
+    fn pdf_files_restore(state: *mut std::ffi::c_void);
+    /// Close the current registry if one is installed.
+    fn pdf_files_close_if_open();
+}
+
+/// Borrows `pdf_io`'s open-PDF registry for the length of one xdvipdfmx run.
+///
+/// The registry is process-global, `pdf_files_init` asserts that it is vacant,
+/// and a resident XeTeX session leaves its own installed from engine startup
+/// until terminal cleanup — so the two cannot both hold it. Restoring on drop
+/// keeps that true even when the run aborts through the bridge's longjmp.
+struct PdfFileRegistryLoan(*mut std::ffi::c_void);
+
+impl PdfFileRegistryLoan {
+    /// Set the registry aside, leaving the slot vacant for a new owner.
+    fn take() -> Self {
+        // SAFETY: pdf_io's registry accessors take no arguments and are safe to
+        // call from the single thread the engines run on.
+        Self(unsafe { pdf_files_suspend() })
+    }
+}
+
+impl Drop for PdfFileRegistryLoan {
+    fn drop(&mut self) {
+        // SAFETY: as above. A completed run has already closed its own
+        // registry, making the first call a no-op; an aborted one has not, and
+        // discarding what it left is what makes the slot free to give back.
+        unsafe {
+            pdf_files_close_if_open();
+            pdf_files_restore(self.0);
+        }
     }
 }
 
