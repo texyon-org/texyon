@@ -296,6 +296,16 @@ impl ResidentXeTeX {
         Ok(Some(ResidentEngineOutput { frame, xdv }))
     }
 
+    /// Every control sequence the engine currently has defined.
+    ///
+    /// Empty before the first compile, when there is no session to ask.
+    pub fn defined_commands(&self) -> Vec<tectonic_engine_xetex::introspect::DefinedCommand> {
+        self.session
+            .as_ref()
+            .map(IncrementalXeTeXSession::defined_commands)
+            .unwrap_or_default()
+    }
+
     /// Whether this resident engine retains a viewport tail continuation.
     pub fn has_pending_tail(&self) -> bool {
         self.session

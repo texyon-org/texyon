@@ -45,6 +45,36 @@ impl From<SyncRectPayload> for SyncRect {
     }
 }
 
+/// One command the engine has defined.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Command {
+    /// The name, without its leading backslash.
+    pub name: String,
+    /// How many arguments it takes, including an optional one if it has it.
+    pub arity: u8,
+    /// Whether the first argument is optional.
+    pub optional: bool,
+    /// `macro`, `protected` or `builtin`.
+    pub kind: &'static str,
+}
+
+impl From<tectonic_engine_xetex::introspect::DefinedCommand> for Command {
+    fn from(found: tectonic_engine_xetex::introspect::DefinedCommand) -> Self {
+        use tectonic_engine_xetex::introspect::CommandKind;
+        Self {
+            name: found.name,
+            arity: found.arity,
+            optional: found.optional,
+            kind: match found.kind {
+                CommandKind::Macro => "macro",
+                CommandKind::ProtectedMacro => "protected",
+                CommandKind::Builtin => "builtin",
+            },
+        }
+    }
+}
+
 /// A clickable region of a page.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -241,6 +271,9 @@ pub enum Request {
         v_bp: f64,
     },
 
+    /// List every command the document currently has defined.
+    Commands,
+
     /// Ask the running operation to stop at its next cancellation point.
     Cancel,
 
@@ -352,6 +385,12 @@ pub enum Response {
         rect: Option<SyncRect>,
         /// Which source line produced the point, for a backward search.
         source: Option<SourceSpot>,
+    },
+    /// The commands the document has defined.
+    #[serde(rename_all = "camelCase")]
+    Commands {
+        /// Every command, in the order the engine's table holds them.
+        commands: Vec<Command>,
     },
     /// Nothing was pending.
     Idle,

@@ -224,6 +224,11 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
         &self.sink
     }
 
+    /// Every control sequence the engine currently has defined.
+    pub fn defined_commands(&self) -> Vec<tectonic_engine_xetex::introspect::DefinedCommand> {
+        self.engine.defined_commands()
+    }
+
     /// Reach the publication sink mutably.
     ///
     /// A sink that transports frames onward has nothing to offer here, but one

@@ -564,6 +564,16 @@ impl IncrementalXeTeXSession {
         .map(Some)
     }
 
+    /// Every control sequence the engine currently has defined.
+    ///
+    /// Meaningful once a document has been opened: before that the table holds
+    /// only the format's own definitions, and after a compile it holds those
+    /// plus everything the preamble and the document added. Reading it changes
+    /// nothing, so it is safe to call between operations.
+    pub fn defined_commands(&self) -> Vec<crate::introspect::DefinedCommand> {
+        crate::introspect::defined_commands(&self.state)
+    }
+
     /// Whether a viewport-bounded foreground operation left resumable tail work.
     pub fn has_pending_tail(&self) -> bool {
         self.pending_continuation.is_some()

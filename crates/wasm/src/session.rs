@@ -25,7 +25,9 @@ use std::{
 
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_engine_xdvipdfmx::XdvipdfmxEngine;
-use tectonic_engine_xetex::{EngineCancellation, EnginePreviewConfig, TexOutcome};
+use tectonic_engine_xetex::{
+    introspect::DefinedCommand, EngineCancellation, EnginePreviewConfig, TexOutcome,
+};
 use tectonic_errors::{
     anyhow::{anyhow, bail},
     Result,
@@ -289,6 +291,15 @@ impl Session {
     /// Ask the engine to stop at its next cooperative cancellation point.
     pub fn cancel(&self) {
         self.cancellation.request();
+    }
+
+    /// Every command the document currently has defined.
+    ///
+    /// The engine's own answer, so it covers what the preamble defined, what
+    /// each package defined under the options it was given, and anything built
+    /// at run time that no scan of a `.sty` file could have seen.
+    pub fn defined_commands(&self) -> Vec<DefinedCommand> {
+        self.processor.defined_commands()
     }
 
     /// Find where a source line landed on the page.

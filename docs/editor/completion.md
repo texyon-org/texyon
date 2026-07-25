@@ -86,6 +86,78 @@ improvement. The rest is ordinary editor work — ranking, placeholder insertion
 key-to-command mapping — and it is easier to build once there is a real set to
 rank.
 
+## What the field actually does
+
+Surveyed 2026-07. Four approaches are in use, and they divide along one line:
+whether the data comes from outside the engine or from inside it. Everyone is
+currently outside.
+
+### The CWL corpus, and why it cannot be used here
+
+**TeXstudio** maintains the only comprehensive machine-readable description of
+LaTeX commands that exists: 4,449 `.cwl` files, 10.3 MB, in its `completion/`
+directory. The format began in Kile and TeXstudio extended it. It carries
+considerably more than command names:
+
+    \begin{alignat}[alignment]{ncols}#\math,array
+    \AmSfont#*
+    width=##L
+    keepaspectratio#true,false
+    scale=%<factor%>
+    page=%<page number%>
+
+That is: named arguments (`alignment`, `ncols`), key names with value *types*
+(`##L` is a length), enumerated values, human-readable placeholders
+(`%<factor%>`), a "rarely used" marker (`#*`), and context classification
+(`#\math,array` means valid only in maths or an array). It answers the argument-
+name question that the engine cannot.
+
+**It is GPL-3.0**, because TeXstudio is. This project is MIT. The corpus cannot
+be vendored, converted, or derived from without relicensing.
+
+**LaTeX Workshop is MIT and vendors it anyway** — `dev/getcwl.sh` downloads
+TeXstudio's `completion/` directory and `dev/parse-cwl.ts` converts it into
+`data/packages/*.json`. Whether that is defensible is their problem; it is not
+a precedent to copy.
+
+### The others
+
+- **TeXLab** indexes the `.sty` files of the packages a document actually uses,
+  as it types — dynamic, no bundled corpus.
+- **TeXstudio**, when it has no `.cwl` for a package, generates one by parsing
+  the `.sty`. So static extraction is a proven fallback, not a theory.
+- **LaTeX Workshop** also mines the TeX Live package database
+  (`texlive.tlpdb`) and CTAN for package and class *names and descriptions* —
+  a clean, permissively-licensed source for that narrower question.
+
+Nothing found reads the engine's macro table. The approach above appears to be
+unexplored, for the ordinary reason that no other editor ships a TeX.
+
+## Ranking is the real problem, and Overleaf measured it
+
+Overleaf published what happened when they took autocomplete seriously
+(*A Data-Driven Approach to LaTeX Autocomplete*). They started with fuzzy
+matching, found it insufficient because it ignores how common a command is, and
+mined roughly 8,000 documents from their gallery — about 15,000 distinct
+commands over 900,000 uses. What they learned is directly reusable:
+
+- **Weight by the number of documents a command appears in, not by raw count.**
+  Raw counts are dominated by a few documents that use one command a thousand
+  times.
+- **Track median uses per document**, so single-use commands like
+  `\begin{document}` stop being suggested after the once they are wanted.
+- **Context dominates.** `\section` and `\chapter` essentially never appear
+  before `\begin{document}`; `\item` belongs to list environments;
+  `\includegraphics` to figures. Suggesting by position is worth more than
+  suggesting more.
+- What they shipped: the **top hundred** commands plus whatever the document
+  already uses.
+
+The corpus is the part not reproducible here — but note the second half of that
+sentence. Commands the document already uses need no corpus at all, and an
+editor that keeps a user's projects can rank by *their* usage, which beats a
+global average for anyone past their first document.
+
 ## Suggested order
 
 1. An engine entry point that walks the table and returns user-facing entries

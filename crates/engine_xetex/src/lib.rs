@@ -43,6 +43,7 @@ mod hash;
 mod helpers;
 mod hyphenation;
 mod input;
+pub mod introspect;
 mod io;
 mod journal;
 mod linebreak;

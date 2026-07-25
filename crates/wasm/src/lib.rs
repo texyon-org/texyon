@@ -190,6 +190,19 @@ fn dispatch(text: &str) -> Response {
             }
         }),
 
+        Request::Commands => SESSION.with_borrow(|slot| {
+            let Some(session) = slot.as_ref() else {
+                return Response::error("no session is open");
+            };
+            Response::Commands {
+                commands: session
+                    .defined_commands()
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            }
+        }),
+
         Request::Cancel => SESSION.with_borrow(|slot| match slot.as_ref() {
             Some(session) => {
                 session.cancel();

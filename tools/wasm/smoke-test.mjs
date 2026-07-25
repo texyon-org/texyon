@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..", "..");
-const support = process.argv[2] ?? join(repo, "demo", "public", "tectonic");
+const support = process.argv[2] ?? join(repo, "client", "public", "tectonic");
 const modulePath = join(support, "tectonic_wasm.wasm");
 
 for (const path of [modulePath, join(support, "manifest.json")]) {
@@ -374,10 +374,60 @@ console.log(
     `external -> ${external.uri}, internal -> #${internal.destination}`,
 );
 
+// The engine's own account of what the document can use. This is what an
+// editor completes against, so the two things worth asserting are that a
+// command the document defined is there with its real arity, and that one
+// LaTeX wrapped in robust-command machinery is resolved through it.
+reply = call({
+  op: "compile",
+  files: {
+    "main.tex": String.raw`\documentclass{article}
+\usepackage{amsmath}
+\newcommand{\vect}[1]{\mathbf{#1}}
+\begin{document}
+$\vect{x}$
+\end{document}
+`,
+  },
+});
+if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 300));
+
+// Captured before the next request overwrites `reply`; the support summary
+// below reports on the last compile, not on the command walk.
+const supportFiles = reply.supportFiles;
+const supportBytes = reply.supportBytes;
+
+reply = call({ op: "commands" });
+if (reply.status !== "commands") throw new Error(JSON.stringify(reply).slice(0, 300));
+
+const defined = new Map(reply.commands.map((c) => [c.name, c]));
+
+const own = defined.get("vect");
+if (own === undefined || own.arity !== 1) {
+  throw new Error(`the document's own \\vect came back as ${JSON.stringify(own)}`);
+}
+
+// \frac is \DeclareRobustCommand'd, so its parameter text lives in a name with
+// a trailing space. Reporting 0 here would mean the wrapper was not followed.
+const frac = defined.get("frac");
+if (frac === undefined || frac.arity !== 2) {
+  throw new Error(`\\frac came back as ${JSON.stringify(frac)}, expected arity 2`);
+}
+
+// Those companion names are artifacts of the wrapping and must not be offered.
+if (reply.commands.some((c) => c.name.endsWith(" ") || c.name.startsWith("\\"))) {
+  throw new Error("wrapper companion names leaked into the command list");
+}
+
+console.log(
+  `commands: ${reply.commands.length} defined, ` +
+    `\\vect{} arity ${own.arity}, \\frac{}{} arity ${frac.arity}`,
+);
+
 const misses = reads.filter((r) => !r.found).length;
 console.log(
-  `support: ${reply.supportFiles} files resident ` +
-    `(${(reply.supportBytes / 1e6).toFixed(1)} MB), ` +
+  `support: ${supportFiles} files resident ` +
+    `(${(supportBytes / 1e6).toFixed(1)} MB), ` +
     `${reads.length} host reads, ${misses} misses`,
 );
 
