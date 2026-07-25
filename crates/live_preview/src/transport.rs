@@ -223,6 +223,8 @@ mod tests {
             pages: vec![PageVisual {
                 fingerprint: PageFingerprint::Stable([1; 32]),
                 size_bp: [612.0, 792.0],
+                links: Vec::new(),
+                destinations: Vec::new(),
                 unsupported,
             }],
             changed: vec![0],

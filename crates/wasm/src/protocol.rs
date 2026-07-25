@@ -45,6 +45,82 @@ impl From<SyncRectPayload> for SyncRect {
     }
 }
 
+/// A clickable region of a page.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Link {
+    /// Left edge in big points from the page's left.
+    pub left: f32,
+    /// Top edge in big points from the page's top.
+    pub top: f32,
+    /// Right edge.
+    pub right: f32,
+    /// Bottom edge.
+    pub bottom: f32,
+    /// An absolute URL, for a link that leaves the document.
+    pub uri: Option<String>,
+    /// A named destination in this document, for one that does not.
+    pub destination: Option<String>,
+}
+
+impl From<tectonic_preview_render::Link> for Link {
+    fn from(link: tectonic_preview_render::Link) -> Self {
+        let (uri, destination) = match link.action {
+            tectonic_preview_render::LinkAction::Uri(uri) => (Some(uri), None),
+            tectonic_preview_render::LinkAction::Destination(name) => (None, Some(name)),
+        };
+        Self {
+            left: link.rect.left,
+            top: link.rect.top,
+            right: link.rect.right,
+            bottom: link.rect.bottom,
+            uri,
+            destination,
+        }
+    }
+}
+
+/// A named spot on a page that a link can reach.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Destination {
+    /// The name `\label` and its kin produced.
+    pub name: String,
+    /// Horizontal position in big points from the page's left edge.
+    pub x_bp: f32,
+    /// Vertical position in big points from the page's top edge.
+    pub y_bp: f32,
+}
+
+impl From<tectonic_preview_render::Destination> for Destination {
+    fn from(destination: tectonic_preview_render::Destination) -> Self {
+        Self {
+            name: destination.name,
+            x_bp: destination.x_bp,
+            y_bp: destination.y_bp,
+        }
+    }
+}
+
+/// What one page offers beyond its pixels.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageOverlay {
+    /// Clickable regions.
+    pub links: Vec<Link>,
+    /// Named spots a link can reach.
+    pub destinations: Vec<Destination>,
+}
+
+impl From<crate::session::PageOverlay> for PageOverlay {
+    fn from(overlay: crate::session::PageOverlay) -> Self {
+        Self {
+            links: overlay.links.into_iter().map(Into::into).collect(),
+            destinations: overlay.destinations.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 /// One thing the engine said about one place in the source.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -200,6 +276,8 @@ pub struct CompileReport {
     /// Every page's size in PostScript big points, so the viewer can lay out
     /// pages it has not been sent.
     pub page_sizes: Vec<[f32; 2]>,
+    /// Every page's clickable regions and cross-reference targets.
+    pub page_overlays: Vec<PageOverlay>,
     /// Pages in the document.
     pub page_count: usize,
     /// TeX's `.log` transcript.

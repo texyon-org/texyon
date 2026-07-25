@@ -12,8 +12,11 @@ use crate::backend::{
 };
 use crate::color::Color;
 use crate::encoding::type1_builtin;
-use crate::fontmap::FontMap;
 use crate::fingerprint::page_digest;
+use crate::fontmap::FontMap;
+use crate::links::{
+    parse_destination_name, parse_link_action, Destination, Link, LinkAction, RectBp,
+};
 use crate::pagesize::{is_page_size_special, preamble_magnification, PageSizeState, DEFAULT_BP};
 use crate::pdfcode::{PdfGraphics, PdfOperation};
 use crate::resource::{
@@ -22,6 +25,23 @@ use crate::resource::{
 use crate::tfm::Tfm;
 
 const SP_TO_BP: f32 = 72.0 / 72.27 / 65_536.0;
+
+/// How far above its baseline a link's box is taken to reach, as a fraction of
+/// the font size. Roughly a capital's height plus the room an ascender needs.
+const LINK_ASCENT: f32 = 0.75;
+
+/// How far below the baseline, which is a descender's depth.
+const LINK_DESCENT: f32 = 0.25;
+
+/// Extent above the baseline for text of this size, in DVI units.
+fn ascent(size: i32) -> i32 {
+    (size as f32 * LINK_ASCENT) as i32
+}
+
+/// Extent below the baseline for text of this size, in DVI units.
+fn descent(size: i32) -> i32 {
+    (size as f32 * LINK_DESCENT) as i32
+}
 
 /// Failure from parsing, resource resolution, or a rendering backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -112,6 +132,10 @@ pub struct PageVisual {
     pub fingerprint: PageFingerprint,
     /// Page size in PostScript big points.
     pub size_bp: [f32; 2],
+    /// Clickable regions, in page coordinates.
+    pub links: Vec<Link>,
+    /// Named spots on this page that a link can reach.
+    pub destinations: Vec<Destination>,
     /// Unsupported constructs that made this page conservative.
     pub unsupported: UnsupportedSummary,
 }
@@ -166,7 +190,10 @@ impl Analysis {
 /// reused when the resolved resource is byte-identical.
 #[derive(Default)]
 struct FontArtifacts {
-    font_map: Option<([Option<ResourceIdentity>; FONT_MAP_NAMES.len()], Arc<FontMap>)>,
+    font_map: Option<(
+        [Option<ResourceIdentity>; FONT_MAP_NAMES.len()],
+        Arc<FontMap>,
+    )>,
     tfm: HashMap<ResourceIdentity, Option<Arc<Tfm>>>,
     builtin_encoding: HashMap<ResourceIdentity, Option<Resource>>,
 }
@@ -309,6 +336,8 @@ impl<P: ResourceProvider> HotRenderer<P> {
             pages.push(PageVisual {
                 fingerprint,
                 size_bp: [plan.width_bp, plan.height_bp],
+                links: plan.links.clone(),
+                destinations: plan.destinations.clone(),
                 unsupported: plan.unsupported.clone(),
             });
             plans.push(Arc::new(plan));
@@ -557,6 +586,8 @@ pub(crate) struct PagePlan {
     pub(crate) width_bp: f32,
     pub(crate) height_bp: f32,
     pub(crate) operations: Vec<DrawOperation>,
+    pub(crate) links: Vec<Link>,
+    pub(crate) destinations: Vec<Destination>,
     pub(crate) unsupported: UnsupportedSummary,
     pub(crate) complete: bool,
 }
@@ -674,6 +705,34 @@ struct Walker<'a, P> {
     color_stack: Vec<(Color, Color)>,
     pdf_color_stacks: BTreeMap<i32, Vec<(Color, Color)>>,
     pdf_graphics: PdfGraphics,
+    /// The annotation between a `pdf:bann` and its `pdf:eann`, if inside one.
+    open_link: Option<OpenLink>,
+}
+
+/// An annotation whose extent is still being discovered.
+///
+/// A link's rectangle is stated nowhere: it is whatever was typeset between
+/// `pdf:bann` and `pdf:eann`, so it has to be accumulated as the page is
+/// walked. Deliberately not part of [`WalkResume`] — an annotation cannot
+/// cross a page boundary, and one left open at the end of a page is closed
+/// there rather than carried into the next.
+struct OpenLink {
+    action: LinkAction,
+    /// Rectangles closed so far, one per line the link was broken across.
+    closed: Vec<RectSp>,
+    /// The rectangle still growing.
+    current: Option<RectSp>,
+}
+
+/// A rectangle in DVI units, before it becomes a page coordinate.
+#[derive(Clone, Copy)]
+struct RectSp {
+    left: i32,
+    right: i32,
+    top: i32,
+    bottom: i32,
+    /// Baseline it sits on, for telling a new line from a wider one.
+    baseline: i32,
 }
 
 impl<'a, P: ResourceProvider> Walker<'a, P> {
@@ -695,6 +754,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             color_stack: Vec::new(),
             pdf_color_stacks: BTreeMap::new(),
             pdf_graphics: PdfGraphics::default(),
+            open_link: None,
         }
     }
 
@@ -724,6 +784,9 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             color_stack: resume.color_stack,
             pdf_color_stacks: resume.pdf_color_stacks,
             pdf_graphics: resume.pdf_graphics,
+            // A resume begins at a page boundary, and an annotation cannot
+            // cross one, so there is never one to restore.
+            open_link: None,
         }
     }
 
@@ -796,7 +859,116 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         Ok(())
     }
 
+    /// Grow the open annotation to cover something typeset inside it.
+    ///
+    /// `above` and `below` are the extent either side of the baseline. They are
+    /// taken from the font size rather than from glyph metrics: an overlay
+    /// wants a box a cursor can hit, and reading real ascents would mean
+    /// loading every face at analysis time to place a rectangle nobody sees.
+    fn extend_link(&mut self, left: i32, right: i32, baseline: i32, above: i32, below: i32) {
+        let Some(open) = self.open_link.as_mut() else {
+            return;
+        };
+
+        let (left, right) = (left.min(right), left.max(right));
+        let top = baseline - above;
+        let bottom = baseline + below;
+
+        match open.current.as_mut() {
+            // A baseline more than a line away is a line break, and a link
+            // broken across one wants a box per line rather than one box
+            // swallowing the text between them.
+            Some(rect) if (baseline - rect.baseline).abs() > above.max(1) => {
+                open.closed.push(*rect);
+                open.current = Some(RectSp {
+                    left,
+                    right,
+                    top,
+                    bottom,
+                    baseline,
+                });
+            }
+            Some(rect) => {
+                rect.left = rect.left.min(left);
+                rect.right = rect.right.max(right);
+                rect.top = rect.top.min(top);
+                rect.bottom = rect.bottom.max(bottom);
+            }
+            None => {
+                open.current = Some(RectSp {
+                    left,
+                    right,
+                    top,
+                    bottom,
+                    baseline,
+                });
+            }
+        }
+    }
+
+    /// Begin an annotation, if this dictionary describes a link that goes
+    /// somewhere.
+    fn begin_link(&mut self, args: &str, x: i32, y: i32) {
+        // A dangling `pdf:bann` would otherwise absorb the rest of the page.
+        self.close_link();
+
+        let Some(action) = parse_link_action(args) else {
+            return;
+        };
+
+        self.open_link = Some(OpenLink {
+            action,
+            closed: Vec::new(),
+            // Seeded with the special's own position: it sits exactly at the
+            // left edge of what it introduces, which glyph positions alone
+            // would only approximate.
+            current: Some(RectSp {
+                left: x,
+                right: x,
+                top: y,
+                bottom: y,
+                baseline: y,
+            }),
+        });
+    }
+
+    /// Close the open annotation, committing its rectangles to the page.
+    fn close_link(&mut self) {
+        let Some(mut open) = self.open_link.take() else {
+            return;
+        };
+
+        if let Some(rect) = open.current.take() {
+            open.closed.push(rect);
+        }
+
+        let Ok(page) = self.page_mut() else {
+            return;
+        };
+
+        for rect in open.closed {
+            // A rectangle with no area is a link around something that was
+            // never typeset, and nothing can click on it.
+            if rect.right <= rect.left || rect.bottom <= rect.top {
+                continue;
+            }
+            page.links.push(Link {
+                rect: RectBp {
+                    left: rect.left as f32 * SP_TO_BP,
+                    top: rect.top as f32 * SP_TO_BP,
+                    right: rect.right as f32 * SP_TO_BP,
+                    bottom: rect.bottom as f32 * SP_TO_BP,
+                },
+                action: open.action.clone(),
+            });
+        }
+    }
+
     fn finish_page(&mut self) {
+        // An annotation cannot cross a page boundary, so one still open when
+        // the page ends is closed against what it has covered so far.
+        self.close_link();
+
         if let Some(mut page) = self.page.take() {
             // The media size is only final once the page's specials have all
             // been seen, so commit it here rather than at the page's start.
@@ -808,10 +980,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         }
     }
 
-    fn append_pdf_operations(
-        &mut self,
-        operations: Vec<PdfOperation>,
-    ) -> Result<(), RenderError> {
+    fn append_pdf_operations(&mut self, operations: Vec<PdfOperation>) -> Result<(), RenderError> {
         for operation in operations {
             let operation = match operation {
                 PdfOperation::Fill {
@@ -872,8 +1041,7 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
                 e: 0.0,
                 f: 0.0,
             });
-            self.pdf_graphics
-                .begin_transform(transform, x, y, SP_TO_BP);
+            self.pdf_graphics.begin_transform(transform, x, y, SP_TO_BP);
             self.ledger.record_supported("pdf-begin-transform");
             return Ok(true);
         }
@@ -896,7 +1064,9 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
         };
         match command {
             "scale" => {
-                let values: Vec<_> = tokens.filter_map(|value| value.parse::<f32>().ok()).collect();
+                let values: Vec<_> = tokens
+                    .filter_map(|value| value.parse::<f32>().ok())
+                    .collect();
                 if values.len() < 2 {
                     self.unsupported("malformed-x-scale")?;
                 } else {
@@ -907,7 +1077,8 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
                 }
             }
             "rotate" => {
-                let Some(degrees) = tokens.next().and_then(|value| value.parse::<f32>().ok()) else {
+                let Some(degrees) = tokens.next().and_then(|value| value.parse::<f32>().ok())
+                else {
                     self.unsupported("malformed-x-rotate")?;
                     return Ok(true);
                 };
@@ -966,11 +1137,8 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             .collect::<String>();
         if matches!(
             keyword.as_str(),
-            "dest"
-                | "out"
+            "out"
                 | "outline"
-                | "bann"
-                | "eann"
                 | "ann"
                 | "obj"
                 | "put"
@@ -994,6 +1162,58 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             return true;
         }
         false
+    }
+
+    /// Handle the specials that describe the page's overlay.
+    ///
+    /// These draw nothing. They say which region of the page is clickable and
+    /// where a cross-reference lands, and a viewer that ignored them would show
+    /// `\ref`, `\cite` and `\url` as ordinary text.
+    fn apply_link_special(&mut self, x: i32, y: i32, contents: &[u8]) -> Result<bool, RenderError> {
+        let Ok(text) = std::str::from_utf8(contents) else {
+            return Ok(false);
+        };
+        let Some(args) = text.trim().strip_prefix("pdf:") else {
+            return Ok(false);
+        };
+        let args = args.trim_start();
+
+        if args.starts_with("dest") {
+            if let Some(name) = parse_destination_name(args) {
+                self.page_mut()?.destinations.push(Destination {
+                    name,
+                    x_bp: x as f32 * SP_TO_BP,
+                    y_bp: y as f32 * SP_TO_BP,
+                });
+                self.ledger.record_supported("pdf-destination");
+            } else {
+                // A destination whose name cannot be read is still not a
+                // drawing operation, so the page stays certain.
+                self.ledger.record_supported("pdf-nonvisual");
+            }
+            return Ok(true);
+        }
+
+        if args.starts_with("bann") {
+            self.begin_link(args, x, y);
+            self.ledger.record_supported(if self.open_link.is_some() {
+                "pdf-link"
+            } else {
+                "pdf-nonvisual"
+            });
+            return Ok(true);
+        }
+
+        if args.starts_with("eann") {
+            // The closing special sits at the right edge of what it ends, which
+            // is the one measurement glyph positions cannot supply.
+            self.extend_link(x, x, y, 0, 0);
+            self.close_link();
+            self.ledger.record_supported("pdf-nonvisual");
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     fn apply_color_special(&mut self, contents: &[u8]) -> Result<bool, RenderError> {
@@ -1055,7 +1275,8 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             };
             match action {
                 "push" => {
-                    let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors()) else {
+                    let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors())
+                    else {
                         self.unsupported("malformed-pdfcolorstack")?;
                         return Ok(true);
                     };
@@ -1079,7 +1300,8 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
                     self.pdf_graphics.set_colors(fill, line);
                 }
                 "set" => {
-                    let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors()) else {
+                    let Some((fill, line)) = parse_pdf_colors(args, self.pdf_graphics.colors())
+                    else {
                         self.unsupported("malformed-pdfcolorstack")?;
                         return Ok(true);
                     };
@@ -1124,6 +1346,8 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
             width_bp: DEFAULT_BP[0],
             height_bp: DEFAULT_BP[1],
             operations: Vec::new(),
+            links: Vec::new(),
+            destinations: Vec::new(),
             unsupported: BTreeMap::new(),
             complete: true,
         });
@@ -1191,6 +1415,9 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 ImageKind::Raster => "raster-image",
                 ImageKind::Pdf => "embedded-pdf",
             });
+            return Ok(());
+        }
+        if self.apply_link_special(x, y, contents)? {
             return Ok(());
         }
         if self.apply_nonvisual_special(contents) {
@@ -1370,6 +1597,12 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 transform: self.pdf_graphics.current_transform(x, y, SP_TO_BP),
             })
             .collect();
+        if self.open_link.is_some() {
+            if let (Some(&first), Some(&last)) = (x.first(), x.last()) {
+                let baseline = y.first().copied().unwrap_or(0);
+                self.extend_link(first, last, baseline, ascent(size), descent(size));
+            }
+        }
         let color = font_color.unwrap_or(self.color);
         self.page_mut()?
             .operations
@@ -1450,6 +1683,9 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
 
     fn handle_rule(&mut self, x: i32, y: i32, height: i32, width: i32) -> Result<(), Self::Error> {
         if height > 0 && width > 0 {
+            // A rule states its own box, so no estimate is needed: it runs from
+            // the baseline up by its height.
+            self.extend_link(x, x + width, y, height, 0);
             let color = self.color;
             let transform = self.pdf_graphics.current_transform(x, y, SP_TO_BP);
             self.page_mut()?.operations.push(DrawOperation::Rule {
@@ -1823,15 +2059,24 @@ mod tests {
         }
         let (before, before_offsets) = paged_xdv(&first);
         let (after, after_offsets) = paged_xdv(&second);
-        assert_eq!(before_offsets, after_offsets, "page geometry must be stable");
+        assert_eq!(
+            before_offsets, after_offsets,
+            "page geometry must be stable"
+        );
 
         let mut warm = HotRenderer::new(ClassicResources);
-        let baseline = warm.analyze_from(Arc::clone(&before), &before_offsets).unwrap();
+        let baseline = warm
+            .analyze_from(Arc::clone(&before), &before_offsets)
+            .unwrap();
         assert_eq!(baseline.reused_pages(), 0);
-        let resumed = warm.analyze_from(Arc::clone(&after), &after_offsets).unwrap();
+        let resumed = warm
+            .analyze_from(Arc::clone(&after), &after_offsets)
+            .unwrap();
 
         let mut cold = HotRenderer::new(ClassicResources);
-        let complete = cold.analyze_from(Arc::clone(&after), &after_offsets).unwrap();
+        let complete = cold
+            .analyze_from(Arc::clone(&after), &after_offsets)
+            .unwrap();
         assert_eq!(complete.reused_pages(), 0);
 
         assert!(
@@ -1843,7 +2088,11 @@ mod tests {
         assert_eq!(resumed.ledger(), complete.ledger());
         assert_eq!(resumed.plans.len(), complete.plans.len());
         for (index, (left, right)) in resumed.plans.iter().zip(&complete.plans).enumerate() {
-            assert_eq!(page_digest(left), page_digest(right), "page {index} differs");
+            assert_eq!(
+                page_digest(left),
+                page_digest(right),
+                "page {index} differs"
+            );
         }
     }
 
@@ -1864,7 +2113,9 @@ mod tests {
         warm.analyze_from(first, &first_offsets).unwrap();
         let deep_walk = warm.analyze_from(second, &second_offsets).unwrap();
         assert!(deep_walk.reused_pages() >= 24);
-        let shallow_walk = warm.analyze_from(Arc::clone(&third), &third_offsets).unwrap();
+        let shallow_walk = warm
+            .analyze_from(Arc::clone(&third), &third_offsets)
+            .unwrap();
         assert!(
             shallow_walk.reused_pages() >= 8,
             "an edit above the last resume point lost all reuse: {}",
@@ -1888,12 +2139,59 @@ mod tests {
 
         let mut warm = HotRenderer::new(ClassicResources);
         warm.analyze_from(before, &offsets).unwrap();
-        let resumed = warm.analyze_from(Arc::clone(&after), &after_offsets).unwrap();
+        let resumed = warm
+            .analyze_from(Arc::clone(&after), &after_offsets)
+            .unwrap();
         assert_eq!(resumed.reused_pages(), 0);
 
         let mut cold = HotRenderer::new(ClassicResources);
         let complete = cold.analyze_from(after, &after_offsets).unwrap();
         assert_eq!(resumed.pages(), complete.pages());
+    }
+
+    /// A page holding one special, a rule, and a second special after it.
+    ///
+    /// The rule both gives the page something to draw and moves the cursor, so
+    /// the two specials sit at different horizontal positions — which is what
+    /// gives an annotation between them any width at all.
+    fn bracketed_link_xdv(open: &str, close: &str) -> Arc<[u8]> {
+        let mut bytes = vec![247, 7];
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.push(0);
+        bytes.push(139);
+        bytes.extend_from_slice(&[0; 40]);
+        bytes.extend_from_slice(&(-1i32).to_be_bytes());
+
+        bytes.push(239);
+        bytes.push(open.len() as u8);
+        bytes.extend_from_slice(open.as_bytes());
+
+        // set_rule: ten points tall, twenty wide, advancing the cursor by its
+        // width so the closing special lands to the right of it.
+        bytes.push(132);
+        bytes.extend_from_slice(&655_360i32.to_be_bytes());
+        bytes.extend_from_slice(&1_310_720i32.to_be_bytes());
+
+        bytes.push(239);
+        bytes.push(close.len() as u8);
+        bytes.extend_from_slice(close.as_bytes());
+
+        bytes.push(140);
+        bytes.push(248);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&2u16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.push(249);
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.push(7);
+        bytes.extend_from_slice(&[223; 4]);
+        Arc::from(bytes)
     }
 
     fn special_xdv(specials: &[&str]) -> Arc<[u8]> {
@@ -2193,7 +2491,6 @@ mod tests {
         let mut renderer = HotRenderer::new(());
         let analysis = renderer
             .analyze(special_xdv(&[
-                "pdf:dest (section.1) [@thispage /XYZ @xpos @ypos null]",
                 "pdf:bann<</Type/Annot/Subtype/Link>>",
                 "pdf:eann",
                 "pdf:docinfo<</Title(Test)>>",
@@ -2205,7 +2502,106 @@ mod tests {
             analysis.pages()[0].fingerprint,
             PageFingerprint::Stable(_)
         ));
-        assert_eq!(analysis.ledger().supported().get("pdf-nonvisual"), Some(&4));
+        // An annotation that goes nowhere is still not a drawing operation.
+        assert!(analysis.pages()[0].links.is_empty());
+        assert_eq!(analysis.ledger().supported().get("pdf-nonvisual"), Some(&3));
+    }
+
+    #[test]
+    fn a_destination_is_recorded_where_its_special_sits() {
+        let mut renderer = HotRenderer::new(());
+        let analysis = renderer
+            .analyze(special_xdv(&[
+                "pdf:dest (section.1) [@thispage /XYZ @xpos @ypos null]",
+            ]))
+            .unwrap();
+
+        let [destination] = analysis.pages()[0].destinations.as_slice() else {
+            panic!("expected exactly one destination");
+        };
+        assert_eq!(destination.name, "section.1");
+        // Nothing was drawn for it, so the page stays certain.
+        assert!(analysis.plans[0].operations.is_empty());
+        assert!(matches!(
+            analysis.pages()[0].fingerprint,
+            PageFingerprint::Stable(_)
+        ));
+    }
+
+    #[test]
+    fn a_link_takes_its_width_from_the_specials_that_bracket_it() {
+        // The two specials sit at the left and right edges of what they
+        // enclose, which is the measurement nothing else supplies.
+        let mut renderer = HotRenderer::new(());
+        let analysis = renderer
+            .analyze(bracketed_link_xdv(
+                "pdf:bann<</Type/Annot/Subtype/Link/A<</S/URI/URI(https://x.test)>>>>",
+                "pdf:eann",
+            ))
+            .unwrap();
+
+        let [link] = analysis.pages()[0].links.as_slice() else {
+            panic!(
+                "expected exactly one link, got {:?}",
+                analysis.pages()[0].links
+            );
+        };
+        assert_eq!(link.action, LinkAction::Uri("https://x.test".into()));
+        assert!(
+            link.rect.right > link.rect.left,
+            "link has no width: {:?}",
+            link.rect
+        );
+        assert!(
+            link.rect.bottom > link.rect.top,
+            "link has no height: {:?}",
+            link.rect
+        );
+    }
+
+    #[test]
+    fn an_annotation_left_open_is_closed_by_the_page() {
+        // A `pdf:bann` whose `pdf:eann` never arrives would otherwise swallow
+        // the rest of the document.
+        let mut renderer = HotRenderer::new(());
+        let analysis = renderer
+            .analyze(bracketed_link_xdv(
+                "pdf:bann<</A<</S/GoTo/D(section.1)>>>>",
+                "pdf:docinfo<</Title(Test)>>",
+            ))
+            .unwrap();
+
+        let [link] = analysis.pages()[0].links.as_slice() else {
+            panic!("expected the dangling annotation to be closed at the page end");
+        };
+        assert_eq!(link.action, LinkAction::Destination("section.1".into()));
+    }
+
+    #[test]
+    fn a_link_changes_a_page_that_looks_otherwise_identical() {
+        // Links are shipped with the pages that changed, so a page whose only
+        // difference is where it points has to count as changed.
+        let mut renderer = HotRenderer::new(());
+        let first = renderer
+            .analyze(bracketed_link_xdv(
+                "pdf:bann<</A<</S/URI/URI(https://one.test)>>>>",
+                "pdf:eann",
+            ))
+            .unwrap()
+            .pages()[0]
+            .fingerprint
+            .clone();
+        let second = renderer
+            .analyze(bracketed_link_xdv(
+                "pdf:bann<</A<</S/URI/URI(https://two.test)>>>>",
+                "pdf:eann",
+            ))
+            .unwrap()
+            .pages()[0]
+            .fingerprint
+            .clone();
+
+        assert_ne!(first, second);
     }
 
     #[test]
@@ -2246,10 +2642,7 @@ mod tests {
             panic!("missing transformed native glyph");
         };
         let rule = renderer
-            .analyze(wrap_page_in_transform(
-                &rule_xdv("color rgb 1 0 0"),
-                matrix,
-            ))
+            .analyze(wrap_page_in_transform(&rule_xdv("color rgb 1 0 0"), matrix))
             .unwrap();
         let DrawOperation::Rule { transform, .. } = &rule.plans[0].operations[0] else {
             panic!("missing transformed rule");
@@ -2393,9 +2786,14 @@ mod tests {
         assert!(renderer.last_completed().is_some());
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let pdf = std::fs::read(root.join("tests/tex-outputs/the_letter_a.pdf")).unwrap();
-        let preview = backend.rasterize_svg(pages[0].svg.as_bytes(), 72.0).unwrap();
+        let preview = backend
+            .rasterize_svg(pages[0].svg.as_bytes(), 72.0)
+            .unwrap();
         let canonical = backend.rasterize_pdf(&pdf, 0, 72.0).unwrap();
-        assert_eq!((preview.width, preview.height), (canonical.width, canonical.height));
+        assert_eq!(
+            (preview.width, preview.height),
+            (canonical.width, canonical.height)
+        );
         let diff = crate::compare_rasters(
             &canonical.samples,
             &preview.samples,

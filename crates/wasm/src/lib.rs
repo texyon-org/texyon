@@ -239,6 +239,7 @@ fn report(session: &Session, output: session::CompileOutput) -> CompileReport {
         changed: output.changed,
         removed: output.removed,
         page_sizes: output.page_sizes,
+        page_overlays: output.page_overlays.into_iter().map(Into::into).collect(),
         page_count: output.page_count,
         log: String::from_utf8_lossy(&output.log).into_owned(),
         outcome: output.outcome.to_owned(),

@@ -40,6 +40,40 @@ export interface LogLine {
   message: string;
 }
 
+/** A clickable region of a page, in big points from its top-left corner. */
+export interface Link {
+  /** Left edge. */
+  left: number;
+  /** Top edge. */
+  top: number;
+  /** Right edge. */
+  right: number;
+  /** Bottom edge. */
+  bottom: number;
+  /** An absolute URL, for a link that leaves the document. */
+  uri: string | null;
+  /** A named destination in this document, for one that does not. */
+  destination: string | null;
+}
+
+/** A named spot on a page that a link can reach. */
+export interface Destination {
+  /** The name `\label` and its kin produced. */
+  name: string;
+  /** Horizontal position in big points from the page's left edge. */
+  xBp: number;
+  /** Vertical position in big points from the page's top edge. */
+  yBp: number;
+}
+
+/** What one page offers beyond its pixels. */
+export interface PageOverlay {
+  /** Clickable regions. */
+  links: Link[];
+  /** Named spots a link can reach. */
+  destinations: Destination[];
+}
+
 /** One page of the rendered document. */
 export interface RenderedPage {
   /** Zero-based page index. */
@@ -70,6 +104,14 @@ export interface CompileResult {
    * out a page slot before it has the page.
    */
   pageSizes: [number, number][];
+  /**
+   * Every page's links and destinations.
+   *
+   * Covers the whole document rather than only the changed pages, like {@link
+   * pageSizes} — an overlay is small, and one that arrived for only some pages
+   * would be an overlay whose links sometimes work.
+   */
+  pageOverlays: PageOverlay[];
   /** Pages in the document. */
   pageCount: number;
   /** TeX's `.log` transcript, in full. */

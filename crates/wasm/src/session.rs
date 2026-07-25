@@ -38,7 +38,7 @@ use tectonic_live_preview::{
 use tectonic_preview_protocol::{
     ProtocolLimits, RequestSeq, SourceFile, SourceLocation, SyncRectPayload,
 };
-use tectonic_preview_render::{MupdfBackend, PageVisual};
+use tectonic_preview_render::{Destination, Link, MupdfBackend, PageVisual};
 
 use crate::{
     io::{HostIo, HostStatus},
@@ -66,6 +66,14 @@ fn normalize(
     }
 }
 
+/// What one page offers beyond its pixels.
+pub struct PageOverlay {
+    /// Clickable regions, in page coordinates.
+    pub links: Vec<Link>,
+    /// Named spots a link can reach.
+    pub destinations: Vec<Destination>,
+}
+
 /// One page of the rendered document.
 pub struct RenderedPage {
     /// Zero-based page index.
@@ -84,6 +92,12 @@ pub struct CompileOutput {
     pub removed: Vec<usize>,
     /// Size of every page in the document, in PostScript big points.
     pub page_sizes: Vec<[f32; 2]>,
+    /// Clickable regions and cross-reference targets, per page.
+    ///
+    /// Covers the whole document rather than only the changed pages, like
+    /// `page_sizes`: an overlay is cheap to carry and a viewer that had it for
+    /// only some pages would be a viewer with links that sometimes work.
+    pub page_overlays: Vec<PageOverlay>,
     /// Pages in the document.
     pub page_count: usize,
     /// TeX's `.log` transcript.
@@ -486,6 +500,13 @@ impl Session {
         };
 
         let page_sizes: Vec<[f32; 2]> = visuals.iter().map(|page| page.size_bp).collect();
+        let page_overlays: Vec<PageOverlay> = visuals
+            .iter()
+            .map(|page| PageOverlay {
+                links: page.links.clone(),
+                destinations: page.destinations.clone(),
+            })
+            .collect();
         let mut messages = messages;
         let approximated = unsupported_summary(&visuals);
         if !approximated.is_empty() {
@@ -501,6 +522,7 @@ impl Session {
             removed,
             page_count: page_sizes.len(),
             page_sizes,
+            page_overlays,
             log,
             outcome,
             aborted,

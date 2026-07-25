@@ -331,6 +331,8 @@ mod tests {
         PageVisual {
             fingerprint: PageFingerprint::Stable([byte; 32]),
             size_bp: [612.0, 792.0],
+            links: Vec::new(),
+            destinations: Vec::new(),
             unsupported: BTreeMap::new(),
         }
     }

@@ -61,6 +61,48 @@ export function Preview({ result, onPainted }: PreviewProps) {
       slot.replaceChildren(svg);
     }
 
+    // Links are not drawn — they arrive beside the page as regions — so they go
+    // on as a layer of anchors above the SVG. Every page's overlay is rebuilt,
+    // not just the changed ones: a page whose text did not move can still have
+    // had its link renumbered by an edit above it.
+    result.pageOverlays.forEach((overlay, index) => {
+      const slot = slots.current[index];
+      if (!slot) return;
+
+      slot.querySelector(".links")?.remove();
+      if (overlay.links.length === 0) return;
+
+      const layer = document.createElement("div");
+      layer.className = "links";
+
+      for (const link of overlay.links) {
+        const anchor = document.createElement("a");
+        anchor.style.left = `${link.left * SCALE}px`;
+        anchor.style.top = `${link.top * SCALE}px`;
+        anchor.style.width = `${(link.right - link.left) * SCALE}px`;
+        anchor.style.height = `${(link.bottom - link.top) * SCALE}px`;
+
+        if (link.uri) {
+          anchor.href = link.uri;
+          anchor.target = "_blank";
+          // The document is untrusted input; an opened tab must not reach back.
+          anchor.rel = "noreferrer noopener";
+          anchor.title = link.uri;
+        } else if (link.destination) {
+          anchor.href = `#${link.destination}`;
+          anchor.title = link.destination;
+          anchor.onclick = (event) => {
+            event.preventDefault();
+            jumpTo(link.destination!, result, slots.current);
+          };
+        }
+
+        layer.appendChild(anchor);
+      }
+
+      slot.appendChild(layer);
+    });
+
     setPageCount(result.pageCount);
 
     if (result.pages.length > 0) {
@@ -83,6 +125,28 @@ export function Preview({ result, onPainted }: PreviewProps) {
       )}
     </div>
   );
+}
+
+/**
+ * Scroll to a named destination, wherever in the document it landed.
+ *
+ * Destinations are per page, so following one means finding which page declared
+ * the name before anything can be scrolled to.
+ */
+function jumpTo(name: string, result: CompileResult, slots: HTMLElement[]): void {
+  for (const [index, overlay] of result.pageOverlays.entries()) {
+    const target = overlay.destinations.find((d) => d.name === name);
+    if (!target) continue;
+
+    const slot = slots[index];
+    if (!slot) return;
+
+    // The destination is a point on the page, so scroll the page into view and
+    // then offset by where on it the target sits.
+    const top = slot.offsetTop + target.yBp * SCALE;
+    slot.parentElement?.parentElement?.scrollTo({ top: top - 40, behavior: "smooth" });
+    return;
+  }
 }
 
 /**

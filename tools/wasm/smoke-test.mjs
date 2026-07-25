@@ -330,6 +330,50 @@ console.log(
     `error at ${failure.path}:${failure.line} — ${failure.message}`,
 );
 
+// Links and destinations. hyperref emits both kinds through the same pair of
+// specials, so a document with one of each proves the whole path.
+reply = call({
+  op: "compile",
+  files: {
+    "main.tex": String.raw`\documentclass{article}
+\usepackage{hyperref}
+\begin{document}
+\hypertarget{spot}{Here}. Jump \hyperlink{spot}{back} or visit
+\url{https://example.com/a(b)}.
+\end{document}
+`,
+  },
+});
+if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 300));
+
+const overlay = reply.pageOverlays[0];
+const external = overlay.links.find((l) => l.uri);
+const internal = overlay.links.find((l) => l.destination);
+
+if (!external) throw new Error("no external link was captured");
+// The parenthesis is the point: a PDF string reader that stopped at the first
+// `)` would truncate the URL here and silently link somewhere else.
+if (external.uri !== "https://example.com/a(b)") {
+  throw new Error(`external link is ${external.uri}`);
+}
+if (external.right <= external.left || external.bottom <= external.top) {
+  throw new Error(`external link has no area: ${JSON.stringify(external)}`);
+}
+
+if (!internal) throw new Error("no internal link was captured");
+if (internal.destination !== "spot") {
+  throw new Error(`internal link points at ${internal.destination}`);
+}
+if (!overlay.destinations.some((d) => d.name === "spot")) {
+  throw new Error("the destination the internal link points at was not recorded");
+}
+
+console.log(
+  `links: ${overlay.links.length} on page 1, ` +
+    `${overlay.destinations.length} destination(s); ` +
+    `external -> ${external.uri}, internal -> #${internal.destination}`,
+);
+
 const misses = reads.filter((r) => !r.found).length;
 console.log(
   `support: ${reply.supportFiles} files resident ` +

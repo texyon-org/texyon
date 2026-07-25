@@ -102,6 +102,16 @@ a file the map does not contain is a file the document does not have.
 bounds the foreground work to the visible pages and leaves the rest for
 `continueTail()` — which is what keeps latency flat as a document grows.
 
+`pageOverlays` carries what is not drawn: each page's clickable regions and the
+named spots they can reach. A link is a rectangle in big points plus either a
+`uri` or a `destination`, which is what makes `\url`, `\href` and `\hyperlink`
+work in a viewer — render them as positioned anchors over the page. Like
+`pageSizes` it covers the whole document, not just the changed pages.
+
+An unresolved `\ref` produces no link, because hyperref has nothing to point it
+at. That is the normal state of a first compile in the browser, where no `.aux`
+survives from a previous run.
+
 `diagnostics` is what the engine said and where — `(severity, path, line,
 message)`, recovered from the transcript and attributed to the file that
 actually caused each one, which for a multi-file project is the whole problem.

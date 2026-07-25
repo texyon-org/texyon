@@ -18,6 +18,7 @@
 import type {
   CompileResult,
   Diagnostic,
+  PageOverlay,
   LogLevel,
   SerializableEngineOptions,
   SourceSpot,
@@ -47,6 +48,7 @@ interface RawCompileReport {
   changed: number[];
   removed: number[];
   pageSizes: [number, number][];
+  pageOverlays: PageOverlay[];
   pageCount: number;
   log: string;
   outcome: CompileResult["outcome"];
@@ -525,6 +527,7 @@ function collect(report: RawCompileReport, elapsedMs: number): CompileResult {
     changed: report.changed,
     removed: report.removed,
     pageSizes: report.pageSizes,
+    pageOverlays: report.pageOverlays,
     pageCount: report.pageCount,
     log: report.log,
     outcome: report.outcome,

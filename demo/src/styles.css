@@ -324,3 +324,26 @@ code {
   opacity: 0.65;
   font-variant-numeric: tabular-nums;
 }
+
+/* The link layer sits over the page, invisible until hovered — the document
+   already shows hyperref's own colouring, so a second highlight would be a
+   second opinion about the same thing. */
+.page {
+  position: relative;
+}
+
+.page .links {
+  position: absolute;
+  inset: 0;
+}
+
+.page .links a {
+  position: absolute;
+  border-radius: 2px;
+  transition: background 120ms ease;
+}
+
+.page .links a:hover {
+  background: rgba(64, 132, 255, 0.22);
+  outline: 1px solid rgba(64, 132, 255, 0.5);
+}

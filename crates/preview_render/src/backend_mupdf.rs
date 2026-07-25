@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use std::ffi::{c_void, CString};
 
 use crate::{
-    Backend, Color, FontId, FontStyle, Matrix, Path, PathCommand, PositionedChar,
-    PositionedGlyph, RenderError, ResourceIdentity, StrokeStyle,
+    Backend, Color, FontId, FontStyle, Matrix, Path, PathCommand, PositionedChar, PositionedGlyph,
+    RenderError, ResourceIdentity, StrokeStyle,
 };
 
 extern "C" {
@@ -689,7 +689,9 @@ mod tests {
         let regular_svg = render(&mut backend, 0.0);
         let bold_svg = render(&mut backend, 0.1);
         assert!(bold_svg.contains("path"));
-        let regular = backend.rasterize_svg(regular_svg.as_bytes(), 144.0).unwrap();
+        let regular = backend
+            .rasterize_svg(regular_svg.as_bytes(), 144.0)
+            .unwrap();
         let bold = backend.rasterize_svg(bold_svg.as_bytes(), 144.0).unwrap();
         let ink = |pixmap: &Pixmap| {
             pixmap

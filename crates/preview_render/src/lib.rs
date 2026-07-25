@@ -12,6 +12,7 @@ mod encoding;
 mod fidelity;
 mod fingerprint;
 mod fontmap;
+mod links;
 mod pagesize;
 mod pdfcode;
 mod render;
@@ -35,6 +36,7 @@ pub use backend::{
 pub use color::Color;
 #[cfg(test)]
 pub use fidelity::{compare_rasters, RasterDiff};
+pub use links::{Destination, Link, LinkAction, RectBp};
 pub use render::{
     Analysis, CoverageLedger, HotRenderer, PageFingerprint, PageSvg, PageVisual, RenderError,
     UnsupportedSummary,

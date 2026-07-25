@@ -2,12 +2,13 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::{Color, Matrix, Path, PathCommand};
 use crate::render::{DrawOperation, PagePlan};
+use crate::{Color, LinkAction, Matrix, Path, PathCommand};
 
 pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
     let mut digest = Sha256::new();
-    digest.update(b"tectonic-page-visual\0v4");
+    // Bumped from v4 when links and destinations joined a page's identity.
+    digest.update(b"tectonic-page-visual\0v5");
     digest.update(page.width_bp.to_bits().to_be_bytes());
     digest.update(page.height_bp.to_bits().to_be_bytes());
     for operation in &page.operations {
@@ -146,6 +147,7 @@ pub(crate) fn page_digest(page: &PagePlan) -> [u8; 32] {
             DrawOperation::PopClip => digest.update([7]),
         }
     }
+    hash_overlay(&mut digest, page);
     digest.finalize().into()
 }
 
@@ -171,6 +173,48 @@ fn hash_path(digest: &mut Sha256, path: &Path) {
             }
             PathCommand::Close => digest.update([4]),
         }
+    }
+}
+
+/// Fold a page's overlay into its identity.
+///
+/// Links and destinations are shipped with the pages a frame says changed, so a
+/// page whose drawing is identical but whose links now point elsewhere has to
+/// count as changed — otherwise the viewer keeps an overlay that silently goes
+/// to the wrong place.
+fn hash_overlay(digest: &mut Sha256, page: &PagePlan) {
+    digest.update(b"links");
+    digest.update((page.links.len() as u64).to_be_bytes());
+    for link in &page.links {
+        hash_floats(
+            digest,
+            &[
+                link.rect.left,
+                link.rect.top,
+                link.rect.right,
+                link.rect.bottom,
+            ],
+        );
+        match &link.action {
+            LinkAction::Uri(uri) => {
+                digest.update([0]);
+                digest.update((uri.len() as u64).to_be_bytes());
+                digest.update(uri.as_bytes());
+            }
+            LinkAction::Destination(name) => {
+                digest.update([1]);
+                digest.update((name.len() as u64).to_be_bytes());
+                digest.update(name.as_bytes());
+            }
+        }
+    }
+
+    digest.update(b"destinations");
+    digest.update((page.destinations.len() as u64).to_be_bytes());
+    for destination in &page.destinations {
+        digest.update((destination.name.len() as u64).to_be_bytes());
+        digest.update(destination.name.as_bytes());
+        hash_floats(digest, &[destination.x_bp, destination.y_bp]);
     }
 }
 
