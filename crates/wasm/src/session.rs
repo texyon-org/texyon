@@ -32,8 +32,8 @@ use tectonic_errors::{
 };
 use tectonic_io_base::{stack::IoStack, IoProvider, MemoryIo};
 use tectonic_live_preview::{
-    DocumentRoot, PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError,
-    ResidentPreviewProcessor, ResidentXeTeX, SourceSet, WorkerRun,
+    parse_diagnostics, Diagnostic, DocumentRoot, PreviewWorkerProcessor, PublishedFrame,
+    ResidentPreviewError, ResidentPreviewProcessor, ResidentXeTeX, SourceSet, WorkerRun,
 };
 use tectonic_preview_protocol::{
     ProtocolLimits, RequestSeq, SourceFile, SourceLocation, SyncRectPayload,
@@ -96,6 +96,8 @@ pub struct CompileOutput {
     pub tail_pending: bool,
     /// Diagnostics gathered during the run.
     pub messages: Vec<String>,
+    /// What the engine said, and where, recovered from the transcript.
+    pub diagnostics: Vec<Diagnostic>,
     /// Checkpoint rungs retained after the operation.
     pub checkpoint_rungs: usize,
     /// Bytes of engine state held in the checkpoint ladder.
@@ -443,6 +445,7 @@ impl Session {
     fn collect(&mut self, run: PipelineRun) -> Result<CompileOutput> {
         let messages = std::mem::take(&mut *self.messages.borrow_mut());
         let log = self.written.get(&self.log_name).unwrap_or_default();
+        let diagnostics = parse_diagnostics(&String::from_utf8_lossy(&log));
 
         let mut outcome = "warnings";
         let aborted = match run {
@@ -503,6 +506,7 @@ impl Session {
             aborted,
             tail_pending,
             messages,
+            diagnostics,
             checkpoint_rungs: metrics.checkpoint_rungs,
             checkpoint_bytes: metrics.checkpoint_bytes,
             reused_prefix: metrics.reused_prefix,

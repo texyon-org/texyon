@@ -17,6 +17,7 @@
 
 import type {
   CompileResult,
+  Diagnostic,
   LogLevel,
   SerializableEngineOptions,
   SourceSpot,
@@ -52,6 +53,7 @@ interface RawCompileReport {
   aborted?: string;
   tailPending: boolean;
   messages: string[];
+  diagnostics: Diagnostic[];
   checkpointRungs: number;
   checkpointBytes: number;
   reusedPrefix: boolean;
@@ -529,6 +531,7 @@ function collect(report: RawCompileReport, elapsedMs: number): CompileResult {
     aborted: report.aborted,
     tailPending: report.tailPending,
     messages: report.messages,
+    diagnostics: report.diagnostics,
     stats: {
       elapsedMs,
       texMs: report.texMs,

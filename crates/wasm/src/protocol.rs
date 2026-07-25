@@ -45,6 +45,31 @@ impl From<SyncRectPayload> for SyncRect {
     }
 }
 
+/// One thing the engine said about one place in the source.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Diagnostic {
+    /// `error`, `warning` or `info`.
+    pub severity: String,
+    /// The file it belongs to, as the transcript named it.
+    pub path: Option<String>,
+    /// One-based source line, when the engine named one.
+    pub line: Option<usize>,
+    /// What it said.
+    pub message: String,
+}
+
+impl From<tectonic_live_preview::Diagnostic> for Diagnostic {
+    fn from(found: tectonic_live_preview::Diagnostic) -> Self {
+        Self {
+            severity: found.severity.to_string(),
+            path: found.path,
+            line: found.line,
+            message: found.message,
+        }
+    }
+}
+
 /// Which source line produced a point on a page.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -187,6 +212,8 @@ pub struct CompileReport {
     pub tail_pending: bool,
     /// Diagnostics gathered during the run.
     pub messages: Vec<String>,
+    /// What the engine said, and where, recovered from the transcript.
+    pub diagnostics: Vec<Diagnostic>,
     /// Checkpoint rungs retained.
     pub checkpoint_rungs: usize,
     /// Bytes held in the checkpoint ladder.

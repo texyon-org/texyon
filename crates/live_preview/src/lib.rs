@@ -4,6 +4,7 @@
 //! the document-level state and publication rules that connect them.
 
 mod assembler;
+mod diagnostics;
 mod engine_driver;
 mod pipeline;
 mod processor;
@@ -25,6 +26,7 @@ mod test_support;
 pub use assembler::{
     AssembledDocument, DocumentAssembler, DocumentFragment, XdvAssemblyError, XdvFileType,
 };
+pub use diagnostics::{parse as parse_diagnostics, Diagnostic, Severity, WRAP_WIDTH};
 pub use engine_driver::{
     EngineSupport, ResidentEngineError, ResidentEngineOutput, ResidentEngineSupport, ResidentXeTeX,
 };

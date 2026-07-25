@@ -112,6 +112,21 @@ export function App() {
       {showLog && (
         <aside className="log">
           {result?.aborted && <div className="line error">aborted: {result.aborted}</div>}
+
+          {/* Errors and warnings, attributed to a file and a line. `info` is
+              LaTeX narrating its font substitutions and is left out. */}
+          {result?.diagnostics
+            .filter((d) => d.severity !== "info")
+            .map((d, index) => (
+              <div key={`d${index}`} className={`line ${d.severity}`}>
+                <span className="where">
+                  {d.path ?? "?"}
+                  {d.line !== null && `:${d.line}`}
+                </span>{" "}
+                {d.message}
+              </div>
+            ))}
+
           {log.length === 0 && <div className="line note">No output yet.</div>}
           {log.map((line, index) => (
             <div key={index} className={`line ${line.level}`}>

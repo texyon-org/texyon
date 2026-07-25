@@ -305,6 +305,31 @@ if (backward.source.path !== "chapters/one.tex") {
   throw new Error(`backward search did not round-trip the path: ${backward.source.path}`);
 }
 
+// A deliberately broken project, to prove the transcript parser attributes a
+// fault to the file that caused it rather than to whichever was open last.
+reply = call({
+  op: "compile",
+  files: {
+    "main.tex": MAIN,
+    "chapters/one.tex": "Fine.\n\n\\undefinedcommandhere\n",
+  },
+});
+if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 300));
+
+const failure = reply.diagnostics.find((d) => d.severity === "error");
+if (!failure) {
+  throw new Error(`no error diagnostic for a broken document; outcome=${reply.outcome}`);
+}
+if (failure.path !== "chapters/one.tex" || failure.line !== 3) {
+  throw new Error(
+    `error attributed to ${failure.path}:${failure.line}, not chapters/one.tex:3`,
+  );
+}
+console.log(
+  `diagnostics: ${reply.diagnostics.length} total, ` +
+    `error at ${failure.path}:${failure.line} — ${failure.message}`,
+);
+
 const misses = reads.filter((r) => !r.found).length;
 console.log(
   `support: ${reply.supportFiles} files resident ` +

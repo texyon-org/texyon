@@ -102,6 +102,12 @@ a file the map does not contain is a file the document does not have.
 bounds the foreground work to the visible pages and leaves the rest for
 `continueTail()` — which is what keeps latency flat as a document grows.
 
+`diagnostics` is what the engine said and where — `(severity, path, line,
+message)`, recovered from the transcript and attributed to the file that
+actually caused each one, which for a multi-file project is the whole problem.
+It is the natural source for a lint gutter. `info` is chatty, since LaTeX
+narrates its font substitutions, so most callers filter to errors and warnings.
+
 Returns a `CompileResult`, which is a **patch**: `pages` holds SVG for the
 changed pages only, `changed` their indices, `removed` the indices the document
 no longer has, and `pageSizes` every page's size so a viewer can lay out a slot

@@ -245,6 +245,7 @@ fn report(session: &Session, output: session::CompileOutput) -> CompileReport {
         aborted: output.aborted,
         tail_pending: output.tail_pending,
         messages: output.messages,
+        diagnostics: output.diagnostics.into_iter().map(Into::into).collect(),
         checkpoint_rungs: output.checkpoint_rungs,
         checkpoint_bytes: output.checkpoint_bytes,
         reused_prefix: output.reused_prefix,

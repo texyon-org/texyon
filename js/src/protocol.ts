@@ -11,6 +11,27 @@ export type Outcome = "spotless" | "warnings" | "errors";
 /** Severity of a line the engine logged. */
 export type LogLevel = "note" | "warning" | "error";
 
+/** How much a diagnostic matters. */
+export type Severity = "error" | "warning" | "info";
+
+/** One thing the engine said about one place in the source. */
+export interface Diagnostic {
+  /** How much it matters. */
+  severity: Severity;
+  /**
+   * The file it belongs to, as the transcript named it.
+   *
+   * Usually one of the paths you passed to {@link TectonicEngine.compile}, but
+   * it can name a class or package file when the trouble is inside one. Null
+   * when the engine spoke outside any file at all.
+   */
+  path: string | null;
+  /** One-based source line, when the engine named one. */
+  line: number | null;
+  /** What it said. */
+  message: string;
+}
+
 /** One diagnostic from the engine. */
 export interface LogLine {
   /** How bad it is. */
@@ -61,6 +82,13 @@ export interface CompileResult {
   tailPending: boolean;
   /** Diagnostics gathered during the run. */
   messages: string[];
+  /**
+   * What the engine said, and where, recovered from the transcript.
+   *
+   * The natural source for a lint gutter. `info` is chatty — LaTeX narrates its
+   * font substitutions — so most callers want the errors and warnings only.
+   */
+  diagnostics: Diagnostic[];
   /** Timings and incremental-engine statistics. */
   stats: CompileStats;
 }

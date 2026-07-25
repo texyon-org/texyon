@@ -29,6 +29,7 @@
 export type {
   CompileResult,
   CompileStats,
+  Diagnostic,
   EngineOptions,
   ExportResult,
   LoadProgress,
@@ -36,6 +37,7 @@ export type {
   LogLine,
   Outcome,
   ProjectFiles,
+  Severity,
   SourceSpot,
   SyncRect,
 } from "./protocol";
