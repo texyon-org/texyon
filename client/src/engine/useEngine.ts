@@ -20,11 +20,15 @@ export interface EngineState {
   latencyMs: number | null;
   log: LogLine[];
   /**
-   * Every command the document has defined, as of the last compile.
+   * Every command the document has defined.
    *
-   * Refreshed after each one rather than on demand: it is what completion is
-   * offered from, and asking for it at the moment someone types would put a
-   * round trip on the keystroke path.
+   * Not refreshed per compile. Walking the hash table costs about as much as a
+   * warm compile does and yields around twenty-five thousand entries — nearly
+   * two megabytes of JSON to post, parse and re-derive from. Doing that on the
+   * keystroke path doubled the cost of an edit for a list that had not
+   * changed.
+   *
+   * It is refreshed when `commandsKey` moves instead: see the parameter.
    */
   commands: readonly EngineCommand[];
 }
@@ -36,10 +40,18 @@ export interface EngineState {
  * hands the engine the whole project whenever it moves. Passing everything each
  * time is the cheap path, not a concession — the engine diffs each file against
  * what it last saw, so untouched files cost nothing.
+ *
+ * `commandsKey` decides when the command list is worth re-reading: whenever it
+ * differs from the key the current list was read at, the next compile is
+ * followed by a fresh walk. The caller derives it from what actually changes
+ * which commands exist — the class and packages the document loads — so typing
+ * prose never triggers one. Commands the document declares itself are already
+ * offered from the source index, which does keep up with every keystroke.
  */
 export function useEngine(
   workspace: Workspace,
   primary: string,
+  commandsKey: string,
 ): EngineState & {
   markPainted: () => void;
   exportPdf: () => Promise<void>;
@@ -60,6 +72,11 @@ export function useEngine(
   const running = useRef(false);
   /** The workspace revision the last compile was of. */
   const compiledRevision = useRef(-1);
+  /** The key the command list was read at, or null when it never has been. */
+  const commandsAt = useRef<string | null>(null);
+  /** Read inside the compile loop, which must not be rebuilt when it moves. */
+  const wantedKey = useRef(commandsKey);
+  wantedKey.current = commandsKey;
 
   useEffect(() => {
     let disposed = false;
@@ -116,8 +133,16 @@ export function useEngine(
       paintingFrom.current = requestedAt;
       setResult(compiled);
 
-      // After the frame, so the preview is never waiting on the command list.
-      void engine.commands().then(setCommands, () => undefined);
+      // After the frame, so the preview is never waiting on the command list,
+      // and only when the document could plausibly have a different one.
+      const wanted = wantedKey.current;
+      if (commandsAt.current !== wanted) {
+        commandsAt.current = wanted;
+        void engine.commands().then(setCommands, () => {
+          // Leave the previous list in place, and let the next compile retry.
+          commandsAt.current = null;
+        });
+      }
     } catch (error) {
       setLog((prior) =>
         [

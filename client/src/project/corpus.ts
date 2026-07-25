@@ -45,7 +45,18 @@ async function loadPackage(name: string): Promise<CwlPackage | null> {
  * first compile, when there is no macro table to consult.
  */
 export async function corpusFor(source: string): Promise<CwlPackage[]> {
-  return resolvePackages(packagesUsed(source), loadPackage);
+  return corpusOf(packagesUsed(source));
+}
+
+/**
+ * The corpus entries for an already-determined package list.
+ *
+ * Taking the list rather than the source is what lets a caller notice that
+ * typing a sentence did not change which packages are loaded, and skip the
+ * whole resolution.
+ */
+export async function corpusOf(packages: readonly string[]): Promise<CwlPackage[]> {
+  return resolvePackages(packages, loadPackage);
 }
 
 /**

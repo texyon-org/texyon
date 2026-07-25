@@ -4,8 +4,8 @@ import type { CwlPackage } from "./project/cwl";
 import { Editor } from "./editor/Editor";
 import { useEngine } from "./engine/useEngine";
 import { FileTree } from "./files/FileTree";
-import { mergeCommands } from "./project/commands";
-import { corpusFor, providers } from "./project/corpus";
+import { mergeCommands, packagesUsed } from "./project/commands";
+import { corpusOf, providers } from "./project/corpus";
 import { indexProject } from "./project/symbols";
 import { Viewer } from "./viewer/Viewer";
 import { Workspace } from "./workspace/Workspace";
@@ -19,6 +19,14 @@ function bytes(count: number): string {
 }
 
 const PRIMARY = "main.tex";
+
+/**
+ * How long the set of loaded packages must hold still before it is believed.
+ *
+ * Long enough to cover typing a package name out, short enough that adding one
+ * and looking for its commands does not feel like waiting.
+ */
+const PACKAGE_SETTLE_MS = 500;
 
 export function App() {
   // One workspace for the life of the app: it is the authority on the text, and
@@ -34,6 +42,36 @@ export function App() {
   // its changes into renders.
   useEffect(() => workspace.subscribe((change) => setRevision(change.revision)), [workspace]);
 
+  const preamble = workspace.read(PRIMARY)?.slice(0, 4000) ?? "";
+
+  // Everything downstream of "what does this document load" hangs off this
+  // one string, and it is deliberately not the preamble text: that changes on
+  // every keystroke, and re-resolving the corpus and re-walking the engine's
+  // hash table for each of them was most of what an edit cost.
+  const typedKey = useMemo(() => packagesUsed(preamble).join(" "), [preamble]);
+
+  // Let it settle before acting on it. Half of `\usepackage{booktabs}` reads
+  // as a package named `boo`, so typing one out moves the key on every
+  // keystroke and each of those would otherwise cost a hash-table walk and a
+  // corpus resolution for a package that does not exist.
+  //
+  // This is a timer on the completion data, not on the edit path — the compile
+  // still starts on the keystroke. The cost of being late is that a package
+  // you just added takes a moment to offer its commands.
+  const [packageKey, setPackageKey] = useState(typedKey);
+  useEffect(() => {
+    if (typedKey === packageKey) return;
+    const timer = setTimeout(() => setPackageKey(typedKey), PACKAGE_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [typedKey, packageKey]);
+
+  // Same list, but with an identity that only moves when the list does, so
+  // everything hanging off it can be a plain dependency.
+  const packages = useMemo(
+    () => (packageKey === "" ? [] : packageKey.split(" ")),
+    [packageKey],
+  );
+
   const {
     progress,
     startupError,
@@ -46,24 +84,22 @@ export function App() {
     exportPdf,
     forwardSearch,
     backwardSearch,
-  } = useEngine(workspace, PRIMARY);
+  } = useEngine(workspace, PRIMARY, packageKey);
 
   // What the corpus says about the packages this document loads. Fetched from
   // the source text rather than from the engine, because the engine does not
   // record which package defined what — and because this has to work before the
   // first compile.
   const [corpus, setCorpus] = useState<CwlPackage[]>([]);
-  const preamble = workspace.read(PRIMARY)?.slice(0, 4000) ?? "";
-
   useEffect(() => {
     let current = true;
-    void corpusFor(preamble).then((loaded) => {
+    void corpusOf(packages).then((loaded) => {
       if (current) setCorpus(loaded);
     });
     return () => {
       current = false;
     };
-  }, [preamble]);
+  }, [packages]);
 
   const merged = useMemo(() => mergeCommands(commands, corpus), [commands, corpus]);
 
