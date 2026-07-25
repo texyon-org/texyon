@@ -10,9 +10,84 @@ use tectonic_engine_xetex::{EngineCancellation, EngineFrame, SyncIndex, TexOutco
 
 use super::{
     AcceptedSourceSnapshot, DocumentFragment, FrameSink, PreviewPipeline, PreviewPipelineError,
-    PreviewWorkerProcessor, PublicationError, ResidentEngineError, ResidentXeTeX, SourceRevision,
-    WorkerRun,
+    PublicationError, ResidentEngineError, ResidentXeTeX, SourceRevision,
 };
+
+/// Result of one processor operation.
+#[derive(Debug)]
+pub enum WorkerRun<T, E> {
+    /// Coherent output completed.
+    Complete(T),
+    /// Cooperative cancellation restored processor state.
+    Cancelled,
+    /// Recoverable operation failure retained last-good state.
+    Aborted(E),
+    /// Unrecoverable processor or publication failure ends the session.
+    Fatal(E),
+}
+
+/// Worker-local engine/render implementation constructed on the worker thread.
+pub trait PreviewWorkerProcessor {
+    /// Complete coherent output sent to the transport side.
+    type Output: Send + 'static;
+    /// Recoverable or fatal processor error.
+    type Error: fmt::Display;
+
+    /// Compile one immutable accepted snapshot.
+    fn compile(
+        &mut self,
+        snapshot: AcceptedSourceSnapshot,
+        applied_request_seq: RequestSeq,
+        viewport: Option<(usize, usize)>,
+        cancellation: &EngineCancellation,
+    ) -> WorkerRun<Self::Output, Self::Error>;
+
+    /// Whether an accepted foreground frame left resumable tail work.
+    fn has_pending_tail(&self) -> bool {
+        false
+    }
+
+    /// Resume deferred tail work after the foreground idle delay.
+    fn continue_tail(
+        &mut self,
+        _applied_request_seq: RequestSeq,
+        _cancellation: &EngineCancellation,
+    ) -> WorkerRun<Option<Self::Output>, Self::Error> {
+        WorkerRun::Complete(None)
+    }
+
+    /// Reconstruct a full retained-state payload without recompiling.
+    fn resync(
+        &mut self,
+        snapshot: AcceptedSourceSnapshot,
+        applied_request_seq: RequestSeq,
+    ) -> Result<Self::Output, Self::Error>;
+
+    /// Release resident processor resources on their owning thread.
+    fn shutdown(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    /// Classify an error returned by `resync`, whose signature predates `WorkerRun`.
+    fn resync_error_is_fatal(&self, _error: &Self::Error) -> bool {
+        false
+    }
+
+    /// Locate preview geometry in the last successfully published belief.
+    fn forward_search(&self, _path: &str, _line: usize) -> Option<SyncRectPayload> {
+        None
+    }
+
+    /// Locate source text in the last successfully published belief.
+    fn backward_search(
+        &self,
+        _page_index: usize,
+        _h_bp: f64,
+        _v_bp: f64,
+    ) -> Option<SourceLocation> {
+        None
+    }
+}
 
 fn pipeline_error_is_fatal<E>(error: &PreviewPipelineError<E>) -> bool {
     matches!(

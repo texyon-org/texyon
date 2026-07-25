@@ -86,7 +86,10 @@ type DiskStamp = (SystemTime, u64);
 /// and a bundle answer is reusable only while no document-root file shadows it.
 #[derive(Debug)]
 enum CachedCandidate {
-    Document { stamp: DiskStamp, resource: Resource },
+    Document {
+        stamp: DiskStamp,
+        resource: Resource,
+    },
     Bundle(Option<Resource>),
 }
 
@@ -168,9 +171,13 @@ impl ResourceProvider for BundleResourceProvider {
             let stamp = self.document_stamp(&candidate)?;
             if let Some(cached) = self.cache.borrow().get(&candidate) {
                 match (cached, &stamp) {
-                    (CachedCandidate::Document { stamp: seen, resource }, Some((_, now)))
-                        if seen == now =>
-                    {
+                    (
+                        CachedCandidate::Document {
+                            stamp: seen,
+                            resource,
+                        },
+                        Some((_, now)),
+                    ) if seen == now => {
                         return Ok(Some(resource.clone()));
                     }
                     (CachedCandidate::Bundle(resource), None) => {

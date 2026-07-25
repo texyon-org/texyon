@@ -420,8 +420,8 @@ mod tests {
     };
 
     use super::*;
-    use tectonic_engine_xetex::EngineCancellation;
     use crate::{AcceptedSourceSnapshot, WorkerRun};
+    use tectonic_engine_xetex::EngineCancellation;
 
     struct WireProcessor<W> {
         writer: SharedJsonlWriter<W>,

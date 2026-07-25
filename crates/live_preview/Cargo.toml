@@ -17,7 +17,7 @@ edition = "2021"
 
 [dependencies]
 tectonic_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }
-tectonic_bundles = { path = "../bundles", version = "0.0.0-dev.0" }
+tectonic_bundles = { path = "../bundles", version = "0.0.0-dev.0", optional = true }
 tectonic_engine_xetex = { path = "../engine_xetex", version = "0.0.0-dev.0" }
 tectonic_errors = { path = "../errors", version = "0.0.0-dev.0" }
 tectonic_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
@@ -36,6 +36,15 @@ tectonic_preview_render = "thiscommit:2026-07-25:live-preview-extraction"
 tectonic_status_base = "thiscommit:2026-07-25:live-preview-extraction"
 
 [features]
+default = ["native"]
+
+# Everything that assumes a host operating system: the support-bundle resource
+# provider, the worker thread that owns the non-Send engine, and the JSON Lines
+# server over stdio. Turning it off leaves the portable core — source authority,
+# assembly, publication, the request clock — which is what the WebAssembly build
+# links, since it has no threads, no filesystem and no sockets.
+native = ["dep:tectonic_bundles"]
+
 # The native SVG backend links MuPDF, whose distribution terms are AGPL. Keep
 # it opt-in so the portable/MIT library build remains unchanged.
 preview-mupdf = ["tectonic_preview_render/backend-mupdf"]

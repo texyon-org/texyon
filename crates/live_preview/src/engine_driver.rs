@@ -9,13 +9,16 @@ use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_engine_xetex::{
     EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
 };
+#[cfg(feature = "native")]
+use tectonic_io_base::format_cache::FormatCache;
 use tectonic_io_base::{
-    filesystem::FilesystemIo, format_cache::FormatCache, stack::IoStack,
-    testing::SingleInputFileIo, IoProvider, MemoryIo,
+    filesystem::FilesystemIo, stack::IoStack, testing::SingleInputFileIo, IoProvider, MemoryIo,
 };
 use tectonic_status_base::NoopStatusBackend;
 
-use super::{AcceptedSourceSnapshot, FrozenBundle};
+use super::AcceptedSourceSnapshot;
+#[cfg(feature = "native")]
+use super::FrozenBundle;
 
 /// Frozen support-file universe used by one resident engine.
 pub enum ResidentEngineSupport {
@@ -27,6 +30,7 @@ pub enum ResidentEngineSupport {
         assets_dir: PathBuf,
     },
     /// Cache-only production bundle resolution chain.
+    #[cfg(feature = "native")]
     Bundle {
         /// Frozen support bundle.
         bundle: FrozenBundle,
@@ -46,6 +50,7 @@ impl fmt::Debug for ResidentEngineSupport {
                 .field("format_path", format_path)
                 .field("assets_dir", assets_dir)
                 .finish(),
+            #[cfg(feature = "native")]
             Self::Bundle { .. } => f.debug_struct("Bundle").finish_non_exhaustive(),
         }
     }
@@ -74,6 +79,7 @@ impl ResidentEngineSupport {
                 let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
                 operation(&mut launcher)
             }
+            #[cfg(feature = "native")]
             Self::Bundle {
                 bundle,
                 format_cache,
@@ -159,6 +165,7 @@ impl ResidentXeTeX {
         viewport: Option<(usize, usize)>,
         cancellation: &EngineCancellation,
     ) -> Result<ResidentEngineOutput, ResidentEngineError> {
+        #[cfg(feature = "native")]
         if let ResidentEngineSupport::Bundle { bundle, .. } = &self.support {
             bundle
                 .set_document_root(snapshot.root())

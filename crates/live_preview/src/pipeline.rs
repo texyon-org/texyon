@@ -212,7 +212,9 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         &mut self,
         fragment: DocumentFragment<'_>,
     ) -> Result<(), XdvAssemblyError> {
-        let document = self.assembler.assemble(self.last_document.as_ref(), fragment)?;
+        let document = self
+            .assembler
+            .assemble(self.last_document.as_ref(), fragment)?;
         self.last_document = Some(document);
         Ok(())
     }

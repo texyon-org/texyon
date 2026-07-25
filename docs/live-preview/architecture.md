@@ -12,6 +12,16 @@ library rather than part of the `tectonic` binary so that the CLI and the
 browser build can serve the same pipeline; the CLI is one caller of it, not its
 owner.
 
+Its `native` feature, on by default, is the line between the two. Without it the
+crate drops the support-bundle resource provider, the worker thread, and the
+JSON Lines server — the three things that need a filesystem, threads, and
+stdio — and what remains compiles for `wasm32-wasip1`: source authority, the
+engine driver, assembly, publication, the request clock, and both SyncTeX
+searches. A document root is `Filesystem`-backed or `Detached`; the first
+resolves paths through the real filesystem so that a symlink cannot leave the
+root, and the second has no filesystem to resolve through, which is also why it
+has no symlinks to guard against.
+
 1. **Source authority** (`source.rs`) owns one canonical document root,
    immutable UTF-8 primary/child buffers, accepted revisions, and whole-buffer
    replacement validation.

@@ -8,12 +8,16 @@ mod engine_driver;
 mod pipeline;
 mod processor;
 mod publication;
-mod resources;
-mod server;
 mod source;
 mod transport;
-mod worker;
 mod worker_clock;
+
+#[cfg(feature = "native")]
+mod resources;
+#[cfg(feature = "native")]
+mod server;
+#[cfg(feature = "native")]
+mod worker;
 
 #[cfg(test)]
 mod test_support;
@@ -25,18 +29,23 @@ pub use engine_driver::{
     ResidentEngineError, ResidentEngineOutput, ResidentEngineSupport, ResidentXeTeX,
 };
 pub use pipeline::{PreviewPipeline, PreviewPipelineError};
-pub use processor::{PublishedFrame, ResidentPreviewError, ResidentPreviewProcessor};
+pub use processor::{
+    PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError, ResidentPreviewProcessor,
+    WorkerRun,
+};
 pub use publication::{
     ClientBelief, FramePage, FramePatch, FrameSink, PageBelief, PreviewPublisher, PublicationError,
 };
-pub use resources::{BundleResourceProvider, FrozenBundle};
-pub use server::{serve_preview_jsonl, PreviewBootstrap, PreviewServerError, SharedJsonlWriter};
 pub use source::{AcceptedSourceSnapshot, DocumentRoot, SourceError, SourceSet};
 pub use tectonic_preview_protocol::{
     FrameId, FramePhase, QueryId, RequestSeq, SequenceExhausted, SourceRevision,
 };
 pub use transport::{JsonlFrameSink, TransportError};
-pub use worker::{
-    LivePreviewWorker, PreviewTuning, PreviewWorkerProcessor, WorkerEvent, WorkerFailure, WorkerRun,
-};
 pub use worker_clock::{ApplyDisposition, RequestClock, RequestClockError};
+
+#[cfg(feature = "native")]
+pub use resources::{BundleResourceProvider, FrozenBundle};
+#[cfg(feature = "native")]
+pub use server::{serve_preview_jsonl, PreviewBootstrap, PreviewServerError, SharedJsonlWriter};
+#[cfg(feature = "native")]
+pub use worker::{LivePreviewWorker, PreviewTuning, WorkerEvent, WorkerFailure};
