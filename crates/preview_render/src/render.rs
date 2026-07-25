@@ -128,16 +128,22 @@ pub struct PageSvg {
 /// Immutable result of one XDV analysis.
 pub struct Analysis {
     xdv: Arc<[u8]>,
-    plans: Vec<PagePlan>,
+    plans: Vec<Arc<PagePlan>>,
     resources: BTreeMap<ResourceIdentity, Resource>,
     pages: Vec<PageVisual>,
     ledger: CoverageLedger,
+    reused_pages: usize,
 }
 
 impl Analysis {
     /// Exact XDV bytes against which this operation was analyzed.
     pub fn xdv(&self) -> &Arc<[u8]> {
         &self.xdv
+    }
+
+    /// Leading pages taken unchanged from the previous analysis.
+    pub fn reused_pages(&self) -> usize {
+        self.reused_pages
     }
 
     /// Page visual facts in document order.
@@ -167,12 +173,49 @@ struct FontArtifacts {
 
 const FONT_MAP_NAMES: [&str; 3] = ["pdftex.map", "kanjix.map", "ckx.map"];
 
+/// Page interval between retained walk-resume points.
+///
+/// Every retained point costs one clone of the walker's carried state, and a
+/// coarser stride only ever costs a few extra re-walked pages, so this stays
+/// small enough to be free and large enough to bound capture work.
+const RESUME_STRIDE: usize = 8;
+
+/// Complete walker state entering a page boundary.
+///
+/// Everything an XDV walk carries across a page break lives here, so restoring
+/// one of these and parsing from the matching begin-page opcode produces
+/// exactly what a walk from byte zero would have produced.
+#[derive(Clone)]
+struct WalkResume {
+    page_index: usize,
+    page_size: PageSizeState,
+    fonts: BTreeMap<i32, NativeFont>,
+    classic_fonts: BTreeMap<i32, ClassicFont>,
+    resources: BTreeMap<ResourceIdentity, Resource>,
+    ledger: CoverageLedger,
+    color: Color,
+    color_stack: Vec<(Color, Color)>,
+    pdf_color_stacks: BTreeMap<i32, Vec<(Color, Color)>>,
+    pdf_graphics: PdfGraphics,
+}
+
+/// Result of the last completed walk, reusable while a document keeps its
+/// leading bytes.
+struct WalkCache {
+    xdv: Arc<[u8]>,
+    filetype: FileType,
+    plans: Vec<Arc<PagePlan>>,
+    pages: Vec<PageVisual>,
+    resumes: Vec<WalkResume>,
+}
+
 /// Stateful renderer that retains only immutable resources and completed facts.
 pub struct HotRenderer<P> {
     provider: P,
     next_analysis_id: u64,
     last_completed: Option<(Vec<PageVisual>, CoverageLedger)>,
     fonts: FontArtifacts,
+    cache: Option<WalkCache>,
 }
 
 impl<P: ResourceProvider> HotRenderer<P> {
@@ -183,21 +226,80 @@ impl<P: ResourceProvider> HotRenderer<P> {
             next_analysis_id: 1,
             last_completed: None,
             fonts: FontArtifacts::default(),
+            cache: None,
         }
     }
 
     /// Analyze every page, resolving and freezing all resources used by the walk.
+    ///
+    /// Equivalent to [`analyze_from`](Self::analyze_from) with no page layout,
+    /// which always walks the complete document.
     pub fn analyze(&mut self, xdv: Arc<[u8]>) -> Result<Analysis, RenderError> {
+        self.analyze_from(xdv, &[])
+    }
+
+    /// Analyze every page, reusing the leading pages of the previous analysis
+    /// whose exact bytes are unchanged.
+    ///
+    /// `page_offsets` are the document's absolute begin-page offsets in page
+    /// order, as already established by structural validation. A page whose
+    /// bytes lie entirely inside the prefix shared with the previous analysis
+    /// has, by construction, the same plan and the same visual identity, so the
+    /// walk restarts from the last retained resume point inside that prefix
+    /// instead of from byte zero. Supplying no offsets, or offsets that do not
+    /// match a retained resume point, simply walks everything.
+    pub fn analyze_from(
+        &mut self,
+        xdv: Arc<[u8]>,
+        page_offsets: &[u32],
+    ) -> Result<Analysis, RenderError> {
         let analysis_id = self.next_analysis_id;
         self.next_analysis_id = self.next_analysis_id.wrapping_add(1).max(1);
         let magnification = preamble_magnification(&xdv)?;
-        let walker = Walker::new(&self.provider, &mut self.fonts, magnification);
-        let (mut walker, _) = XdvParser::process(Cursor::new(&xdv), walker)?;
-        walker.finish_page();
-        let mut pages = Vec::with_capacity(walker.pages.len());
-        for (page_index, plan) in walker.pages.iter().enumerate() {
+        let resumption = self.resumption(&xdv, page_offsets);
+        let (reused_plans, reused_pages, walker) = match resumption {
+            Some((resume, offset)) => {
+                let cache = self.cache.as_ref().expect("resumption without a cache");
+                let filetype = cache.filetype;
+                let plans = cache.plans[..resume.page_index].to_vec();
+                let pages = cache.pages[..resume.page_index].to_vec();
+                // Resume points above the shared prefix are gone, but the ones
+                // below it describe bytes this document still has, so keep them
+                // and stay resumable for a later edit further up the document.
+                let earlier = cache
+                    .resumes
+                    .iter()
+                    .filter(|earlier| earlier.page_index < resume.page_index)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let walker =
+                    Walker::resume(&self.provider, &mut self.fonts, resume, filetype, earlier);
+                let (mut walker, _) = XdvParser::process_from_page(
+                    Cursor::new(&xdv[offset..]),
+                    walker,
+                    filetype,
+                    offset as u64,
+                )?;
+                walker.finish_page();
+                (plans, pages, walker)
+            }
+            None => {
+                let walker = Walker::new(&self.provider, &mut self.fonts, magnification);
+                let (mut walker, _) = XdvParser::process(Cursor::new(&xdv), walker)?;
+                walker.finish_page();
+                (Vec::new(), Vec::new(), walker)
+            }
+        };
+
+        let first_fresh = reused_plans.len();
+        let mut plans = reused_plans;
+        let mut pages = reused_pages;
+        plans.reserve(walker.pages.len());
+        pages.reserve(walker.pages.len());
+        for (offset, plan) in walker.pages.into_iter().enumerate() {
+            let page_index = first_fresh + offset;
             let fingerprint = if plan.complete {
-                PageFingerprint::Stable(page_digest(plan))
+                PageFingerprint::Stable(page_digest(&plan))
             } else {
                 PageFingerprint::Uncertain {
                     analysis_id,
@@ -209,14 +311,49 @@ impl<P: ResourceProvider> HotRenderer<P> {
                 size_bp: [plan.width_bp, plan.height_bp],
                 unsupported: plan.unsupported.clone(),
             });
+            plans.push(Arc::new(plan));
         }
+
+        self.cache = Some(WalkCache {
+            xdv: Arc::clone(&xdv),
+            filetype: walker.filetype,
+            plans: plans.clone(),
+            pages: pages.clone(),
+            resumes: walker.resumes,
+        });
         Ok(Analysis {
             xdv,
-            plans: walker.pages,
+            plans,
             resources: walker.resources,
             pages,
             ledger: walker.ledger,
+            reused_pages: first_fresh,
         })
+    }
+
+    /// Deepest retained resume point that the new document provably reaches
+    /// with unchanged bytes, paired with its begin-page offset.
+    fn resumption(&self, xdv: &[u8], page_offsets: &[u32]) -> Option<(WalkResume, usize)> {
+        let cache = self.cache.as_ref()?;
+        // The engine reports which prefix it retained, but the renderer proves
+        // it: only bytes it has actually compared may be treated as unchanged.
+        let shared = shared_prefix(xdv, &cache.xdv);
+        let resume = cache
+            .resumes
+            .iter()
+            .rev()
+            .find(|resume| {
+                resume.page_index <= cache.plans.len()
+                    && page_offsets
+                        .get(resume.page_index)
+                        .is_some_and(|offset| *offset as usize <= shared)
+            })?
+            .clone();
+        if resume.page_index == 0 {
+            return None;
+        }
+        let offset = page_offsets[resume.page_index] as usize;
+        Some((resume, offset))
     }
 
     /// Render exactly the selected pages and commit completed analysis facts only
@@ -497,6 +634,7 @@ pub(crate) struct ClassicPosition {
     pub(crate) transform: Matrix,
 }
 
+#[derive(Clone)]
 struct NativeFont {
     resource: Option<ResourceIdentity>,
     face_index: u32,
@@ -508,6 +646,7 @@ struct NativeFont {
     vertical: bool,
 }
 
+#[derive(Clone)]
 struct ClassicFont {
     scale: u32,
     tfm: Option<Arc<Tfm>>,
@@ -521,6 +660,11 @@ struct Walker<'a, P> {
     artifacts: &'a mut FontArtifacts,
     page: Option<PagePlan>,
     pages: Vec<PagePlan>,
+    /// Document page index of `pages[0]`, nonzero for a resumed walk.
+    first_page_index: usize,
+    /// Stream type, from the preamble or carried across a resume.
+    filetype: FileType,
+    resumes: Vec<WalkResume>,
     page_size: PageSizeState,
     fonts: BTreeMap<i32, NativeFont>,
     classic_fonts: BTreeMap<i32, ClassicFont>,
@@ -539,6 +683,9 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             artifacts,
             page: None,
             pages: Vec::new(),
+            first_page_index: 0,
+            filetype: FileType::Xdv,
+            resumes: Vec::new(),
             page_size: PageSizeState::new(magnification),
             fonts: BTreeMap::new(),
             classic_fonts: BTreeMap::new(),
@@ -549,6 +696,63 @@ impl<'a, P: ResourceProvider> Walker<'a, P> {
             pdf_color_stacks: BTreeMap::new(),
             pdf_graphics: PdfGraphics::default(),
         }
+    }
+
+    /// Restore the carried state of a previous walk at a page boundary.
+    fn resume(
+        provider: &'a P,
+        artifacts: &'a mut FontArtifacts,
+        resume: WalkResume,
+        filetype: FileType,
+        mut earlier: Vec<WalkResume>,
+    ) -> Self {
+        earlier.push(resume.clone());
+        Self {
+            provider,
+            artifacts,
+            page: None,
+            pages: Vec::new(),
+            first_page_index: resume.page_index,
+            filetype,
+            resumes: earlier,
+            page_size: resume.page_size,
+            fonts: resume.fonts,
+            classic_fonts: resume.classic_fonts,
+            resources: resume.resources,
+            ledger: resume.ledger,
+            color: resume.color,
+            color_stack: resume.color_stack,
+            pdf_color_stacks: resume.pdf_color_stacks,
+            pdf_graphics: resume.pdf_graphics,
+        }
+    }
+
+    /// Retain the state entering the page that is about to start, on the
+    /// stride that bounds how much a later walk must redo.
+    fn capture_resume(&mut self) {
+        let page_index = self.first_page_index + self.pages.len();
+        if page_index % RESUME_STRIDE != 0 {
+            return;
+        }
+        if self
+            .resumes
+            .last()
+            .is_some_and(|last| last.page_index >= page_index)
+        {
+            return;
+        }
+        self.resumes.push(WalkResume {
+            page_index,
+            page_size: self.page_size.clone(),
+            fonts: self.fonts.clone(),
+            classic_fonts: self.classic_fonts.clone(),
+            resources: self.resources.clone(),
+            ledger: self.ledger.clone(),
+            color: self.color,
+            color_stack: self.color_stack.clone(),
+            pdf_color_stacks: self.pdf_color_stacks.clone(),
+            pdf_graphics: self.pdf_graphics.clone(),
+        });
     }
 
     /// Font map parsed from the exact current map bytes, reused across analyses
@@ -904,6 +1108,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
                 "SPX is not a paginated preview document".into(),
             ));
         }
+        self.filetype = filetype;
         Ok(())
     }
 
@@ -913,6 +1118,7 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
         _previous_bop: i32,
     ) -> Result<(), Self::Error> {
         self.finish_page();
+        self.capture_resume();
         self.page_size.begin_page();
         self.page = Some(PagePlan {
             width_bp: DEFAULT_BP[0],
@@ -1258,6 +1464,23 @@ impl<P: ResourceProvider> XdvEvents for Walker<'_, P> {
     }
 }
 
+/// Length of the longest common leading run of two documents.
+fn shared_prefix(left: &[u8], right: &[u8]) -> usize {
+    const WORD: usize = std::mem::size_of::<usize>();
+    let limit = left.len().min(right.len());
+    let mut index = 0;
+    while index + WORD <= limit {
+        if left[index..index + WORD] != right[index..index + WORD] {
+            break;
+        }
+        index += WORD;
+    }
+    while index < limit && left[index] == right[index] {
+        index += 1;
+    }
+    index
+}
+
 struct ImageSpecial {
     path: String,
     kind: ImageKind,
@@ -1547,6 +1770,130 @@ mod tests {
         bytes.push(7);
         bytes.extend_from_slice(&[223; 4]);
         Arc::from(bytes)
+    }
+
+    /// Multi-page rule-only document plus its absolute begin-page offsets.
+    ///
+    /// `widths` supplies one rule width per page, so two documents can be built
+    /// that agree byte-for-byte up to a chosen page and differ after it.
+    fn paged_xdv(widths: &[i32]) -> (Arc<[u8]>, Vec<u32>) {
+        let mut bytes = vec![247, 7];
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.push(0);
+        let mut offsets = Vec::with_capacity(widths.len());
+        let mut previous = -1i32;
+        for width in widths {
+            let start = bytes.len() as u32;
+            offsets.push(start);
+            bytes.push(139);
+            bytes.extend_from_slice(&[0; 40]);
+            bytes.extend_from_slice(&previous.to_be_bytes());
+            bytes.push(132);
+            bytes.extend_from_slice(&65_536i32.to_be_bytes());
+            bytes.extend_from_slice(&width.to_be_bytes());
+            bytes.push(140);
+            previous = start as i32;
+        }
+        let postamble = bytes.len() as u32;
+        bytes.push(248);
+        bytes.extend_from_slice(&(previous.max(0) as u32).to_be_bytes());
+        bytes.extend_from_slice(&25_400_000u32.to_be_bytes());
+        bytes.extend_from_slice(&473_628_672u32.to_be_bytes());
+        bytes.extend_from_slice(&1000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&2u16.to_be_bytes());
+        bytes.extend_from_slice(&(widths.len() as u16).to_be_bytes());
+        bytes.push(249);
+        bytes.extend_from_slice(&postamble.to_be_bytes());
+        bytes.push(7);
+        bytes.extend_from_slice(&[223; 4]);
+        (Arc::from(bytes), offsets)
+    }
+
+    #[test]
+    fn resumed_analysis_matches_a_complete_walk_of_the_same_document() {
+        let pages = 40;
+        let first: Vec<i32> = (0..pages).map(|index| 1_000 + index).collect();
+        let mut second = first.clone();
+        // Change only the tail, exactly as an edit deep in a document does.
+        for width in second.iter_mut().skip(33) {
+            *width += 7;
+        }
+        let (before, before_offsets) = paged_xdv(&first);
+        let (after, after_offsets) = paged_xdv(&second);
+        assert_eq!(before_offsets, after_offsets, "page geometry must be stable");
+
+        let mut warm = HotRenderer::new(ClassicResources);
+        let baseline = warm.analyze_from(Arc::clone(&before), &before_offsets).unwrap();
+        assert_eq!(baseline.reused_pages(), 0);
+        let resumed = warm.analyze_from(Arc::clone(&after), &after_offsets).unwrap();
+
+        let mut cold = HotRenderer::new(ClassicResources);
+        let complete = cold.analyze_from(Arc::clone(&after), &after_offsets).unwrap();
+        assert_eq!(complete.reused_pages(), 0);
+
+        assert!(
+            resumed.reused_pages() >= 24,
+            "expected substantial reuse, got {}",
+            resumed.reused_pages()
+        );
+        assert_eq!(resumed.pages(), complete.pages());
+        assert_eq!(resumed.ledger(), complete.ledger());
+        assert_eq!(resumed.plans.len(), complete.plans.len());
+        for (index, (left, right)) in resumed.plans.iter().zip(&complete.plans).enumerate() {
+            assert_eq!(page_digest(left), page_digest(right), "page {index} differs");
+        }
+    }
+
+    #[test]
+    fn reuse_survives_an_edit_that_moves_back_up_the_document() {
+        let pages = 40;
+        let base: Vec<i32> = (0..pages).map(|index| 1_000 + index).collect();
+        let mut deep = base.clone();
+        deep[35] += 7;
+        let mut shallow = base.clone();
+        shallow[12] += 9;
+
+        let (first, first_offsets) = paged_xdv(&base);
+        let (second, second_offsets) = paged_xdv(&deep);
+        let (third, third_offsets) = paged_xdv(&shallow);
+
+        let mut warm = HotRenderer::new(ClassicResources);
+        warm.analyze_from(first, &first_offsets).unwrap();
+        let deep_walk = warm.analyze_from(second, &second_offsets).unwrap();
+        assert!(deep_walk.reused_pages() >= 24);
+        let shallow_walk = warm.analyze_from(Arc::clone(&third), &third_offsets).unwrap();
+        assert!(
+            shallow_walk.reused_pages() >= 8,
+            "an edit above the last resume point lost all reuse: {}",
+            shallow_walk.reused_pages()
+        );
+
+        let mut cold = HotRenderer::new(ClassicResources);
+        let complete = cold.analyze_from(third, &third_offsets).unwrap();
+        assert_eq!(shallow_walk.pages(), complete.pages());
+        assert_eq!(shallow_walk.ledger(), complete.ledger());
+    }
+
+    #[test]
+    fn a_changed_leading_page_defeats_reuse() {
+        let pages = 40;
+        let first: Vec<i32> = (0..pages).map(|index| 1_000 + index).collect();
+        let mut second = first.clone();
+        second[0] += 3;
+        let (before, offsets) = paged_xdv(&first);
+        let (after, after_offsets) = paged_xdv(&second);
+
+        let mut warm = HotRenderer::new(ClassicResources);
+        warm.analyze_from(before, &offsets).unwrap();
+        let resumed = warm.analyze_from(Arc::clone(&after), &after_offsets).unwrap();
+        assert_eq!(resumed.reused_pages(), 0);
+
+        let mut cold = HotRenderer::new(ClassicResources);
+        let complete = cold.analyze_from(after, &after_offsets).unwrap();
+        assert_eq!(resumed.pages(), complete.pages());
     }
 
     fn special_xdv(specials: &[&str]) -> Arc<[u8]> {

@@ -38,6 +38,7 @@ struct SavedState {
 }
 
 /// Persistent PDF graphics state. XeTeX commonly splits one path over many specials.
+#[derive(Clone)]
 pub(crate) struct PdfGraphics {
     ctm: Matrix,
     gh: i32,

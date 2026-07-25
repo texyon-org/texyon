@@ -136,7 +136,7 @@ impl<P: ResourceProvider, B: Backend> PreviewPipeline<P, B> {
         let analysis_started = Instant::now();
         let analysis = self
             .renderer
-            .analyze(Arc::clone(document.bytes()))
+            .analyze_from(Arc::clone(document.bytes()), document.page_offsets())
             .map_err(PreviewPipelineError::Render)?;
         let analysis_ms = analysis_started.elapsed().as_secs_f64() * 1000.0;
         metrics.analysis_ms = analysis_ms;

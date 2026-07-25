@@ -347,6 +347,33 @@ impl<T: XdvEvents> XdvParser<T> {
         Ok((parser.finish()?, n_bytes))
     }
 
+    /// Parse an XDV/SPX stream that begins at a page boundary.
+    ///
+    /// `stream` must start exactly at `offset`, which must be the position of a
+    /// begin-page opcode, and `filetype` must be the type declared by the
+    /// preamble that `offset` belongs to. No header event is emitted, so the
+    /// caller is responsible for supplying event state consistent with
+    /// everything the skipped prefix would have produced.
+    ///
+    /// Returns the input "events" variable and the stream position reached.
+    pub fn process_from_page<R: Read>(
+        mut stream: R,
+        events: T,
+        filetype: FileType,
+        offset: u64,
+    ) -> Result<(T, u64), T::Error>
+    where
+        T::Error: From<IoError>,
+    {
+        let mut parser = Self::new(events);
+        parser.filetype = filetype;
+        parser.state = ParserState::BetweenPages;
+        parser.offset = offset;
+        parser.process_part(&mut stream)?;
+        let n_bytes = parser.current_offset();
+        Ok((parser.finish()?, n_bytes))
+    }
+
     /// Parse a XDV/SPX stream looking at the postamble first.
     ///
     /// Unlike [`Self::process`], this method relies on the input being
