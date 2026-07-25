@@ -28,6 +28,11 @@ export default defineConfig({
   },
 
   server: {
+    // The engine package lives one level up in this repository rather than in
+    // node_modules, and its Worker is fetched by URL — so the dev server has to
+    // be willing to serve from outside the client's own root.
+    fs: { allow: [fileURLToPath(new URL("..", import.meta.url))] },
+
     proxy: {
       // The API and Fortify's session endpoints belong to the server. In
       // production Caddy routes these; in development they are proxied so the

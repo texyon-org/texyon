@@ -17,6 +17,7 @@ import { useEffect, useRef } from "react";
 import type { SymbolIndex } from "../project/symbols";
 import { latexCompletions } from "./completion";
 import { toLintDiagnostics } from "./diagnostics";
+import { latexHighlighting } from "./highlight";
 import { latex } from "./latex";
 
 export interface EditorProps {
@@ -74,6 +75,8 @@ export function Editor({
       closeBrackets(),
       lintGutter(),
       latex,
+      // The mode assigns tags; this is what draws them.
+      latexHighlighting,
       autocompletion({
         override: [latexCompletions(() => latest.current.symbols)],
         // TeX is punctuation-heavy; completing on every character would fire
