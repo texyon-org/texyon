@@ -529,9 +529,13 @@ impl IncrementalXeTeXSession {
                     ladder.rewind_engine(state, 0);
                     return OperationResult::Aborted;
                 }
-                // Keep this edit's local fences pinned while the tail plants
-                // periodic rungs. The next edit clears all stale protections.
-                assert!(ladder.protect_rung(target));
+                // Keep the whole foreground ladder pinned while the tail plants
+                // periodic rungs beyond the viewport horizon. Without this the
+                // tail's own rungs evict the fences the next edit needs, and a
+                // pause long enough to settle the tail costs the following
+                // keystroke a replay from rung zero. The next edit clears all
+                // stale protections.
+                assert!(ladder.protect_rungs_through(target));
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
                 run_document(

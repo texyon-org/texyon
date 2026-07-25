@@ -241,11 +241,20 @@ impl<B> CheckpointLadder<B> {
         }
     }
 
-    pub(crate) fn protect_rung(&mut self, index: usize) -> bool {
-        let Some(rung) = self.rungs.get_mut(index) else {
+    /// Protect every rung through `index` against budget-driven eviction.
+    ///
+    /// Background continuation work advances the clock far past the edit that
+    /// produced these rungs, which makes them the oldest and therefore the
+    /// cheapest to drop — exactly backwards, because the next edit replays from
+    /// one of them. Protecting the whole prefix leaves the continuation's own
+    /// rungs as the only eviction candidates under the soft budget.
+    pub(crate) fn protect_rungs_through(&mut self, index: usize) -> bool {
+        if index >= self.rungs.len() {
             return false;
-        };
-        rung.protected = true;
+        }
+        for rung in self.rungs.iter_mut().take(index + 1) {
+            rung.protected = true;
+        }
         true
     }
 
@@ -848,6 +857,50 @@ mod tests {
             assert!(ladder.accounted_bytes() <= budget.hard_bytes);
         }
         assert!(ladder.len() < 10);
+    }
+
+    #[test]
+    fn a_protected_prefix_outlives_later_rungs_under_budget_pressure() {
+        let mut st = state();
+        let strings_base = StringWatermark::capture(&st);
+        let mut ladder = CheckpointLadder::from_engine(&st, strings_base);
+        let unlimited = LadderBudget {
+            target_bytes: usize::MAX,
+            hard_bytes: usize::MAX,
+            min_recent_rungs: 1,
+        };
+        for clock in 1..=4 {
+            st.scanner.logical_clock = clock;
+            st.mem.set_b32s1(0, clock as i32);
+            ladder.admit_engine_rung(&mut st, strings_base, true, false, unlimited);
+        }
+        let horizon = ladder.len() - 1;
+        assert!(ladder.protect_rungs_through(horizon));
+        let clocks: Vec<u64> = (0..=horizon)
+            .map(|index| ladder.rung_clock(index).unwrap())
+            .collect();
+
+        // Continuation work advances the clock far past the protected prefix
+        // and must stay under a budget that cannot hold every rung.
+        let budget = LadderBudget {
+            target_bytes: ladder.accounted_bytes(),
+            hard_bytes: usize::MAX,
+            min_recent_rungs: 1,
+        };
+        for clock in 100..120 {
+            st.scanner.logical_clock = clock;
+            st.mem.set_b32s1(0, clock as i32);
+            let admission = ladder.admit_engine_rung(&mut st, strings_base, true, false, budget);
+            assert!(matches!(admission, RungAdmission::Admitted { .. }));
+        }
+
+        for (index, clock) in clocks.iter().enumerate() {
+            assert_eq!(
+                ladder.rung_clock(index),
+                Some(*clock),
+                "protected rung {index} was evicted by continuation work"
+            );
+        }
     }
 
     #[test]

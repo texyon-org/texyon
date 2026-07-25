@@ -36,6 +36,42 @@ impl Default for PreviewTuning {
     }
 }
 
+/// Running estimate of what one tail continuation costs.
+///
+/// Rises immediately to any larger observation so one expensive settle backs
+/// the tail off at once, and decays slowly so a single cancelled continuation
+/// does not make it eager again.
+#[derive(Clone, Copy, Debug, Default)]
+struct TailCost {
+    estimate: Duration,
+}
+
+impl TailCost {
+    /// Multiple of the measured tail cost to stay idle before settling again.
+    const IDLE_FACTOR: u32 = 2;
+    /// Ceiling on the derived delay, so a very slow document still settles.
+    const MAX_IDLE: Duration = Duration::from_secs(3);
+
+    fn observe(&mut self, elapsed: Duration) {
+        self.estimate = if elapsed > self.estimate {
+            elapsed
+        } else {
+            (self.estimate * 3 + elapsed) / 4
+        };
+    }
+
+    /// Idle delay to use, never shorter than the configured floor.
+    ///
+    /// A zero floor is an explicit request to settle immediately and is never
+    /// stretched.
+    fn idle(&self, configured: Duration) -> Duration {
+        if configured.is_zero() {
+            return configured;
+        }
+        configured.max((self.estimate * Self::IDLE_FACTOR).min(Self::MAX_IDLE))
+    }
+}
+
 /// Result of one processor operation.
 #[derive(Debug)]
 pub enum WorkerRun<T, E> {
@@ -619,16 +655,23 @@ fn run_worker<P: PreviewWorkerProcessor>(
         let _ = processor.shutdown();
         return;
     }
+    // Settling the tail of a long document can cost far more than one edit, and
+    // every keystroke arriving during it is wasted work on both sides. Wait
+    // proportionally longer on documents where it is expensive, so the tail
+    // only runs once the author has genuinely stopped, while cheap documents
+    // keep settling at the configured delay.
+    let mut tail_cost = TailCost::default();
     let mut tail_deadline = processor
         .has_pending_tail()
-        .then(|| Instant::now() + tail_idle);
+        .then(|| Instant::now() + tail_cost.idle(tail_idle));
 
     'worker: loop {
         let first = if processor.has_pending_tail()
             && !durable_stop.load(Ordering::Acquire)
             && !clock.is_stopped()
         {
-            let deadline = *tail_deadline.get_or_insert_with(|| Instant::now() + tail_idle);
+            let deadline =
+                *tail_deadline.get_or_insert_with(|| Instant::now() + tail_cost.idle(tail_idle));
             match commands.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                 Ok(command) => command,
                 Err(RecvTimeoutError::Timeout) => {
@@ -638,6 +681,7 @@ fn run_worker<P: PreviewWorkerProcessor>(
                     if announced.load(Ordering::Acquire) > clock.applied().get() {
                         cancellation.request();
                     }
+                    let started = Instant::now();
                     let keep_running = emit_continue(
                         &mut processor,
                         &sources,
@@ -645,6 +689,7 @@ fn run_worker<P: PreviewWorkerProcessor>(
                         clock.applied(),
                         &cancellation,
                     );
+                    tail_cost.observe(started.elapsed());
                     tail_running.store(false, Ordering::Release);
                     if !keep_running {
                         break;
@@ -781,7 +826,7 @@ fn run_worker<P: PreviewWorkerProcessor>(
             }
             tail_deadline = processor
                 .has_pending_tail()
-                .then(|| Instant::now() + tail_idle);
+                .then(|| Instant::now() + tail_cost.idle(tail_idle));
         }
         if resync && !emit_resync(&mut processor, &sources, &events, clock.applied()) {
             break 'worker;
@@ -1111,6 +1156,32 @@ mod tests {
             Err(RecvTimeoutError::Timeout)
         ));
         worker.shutdown().unwrap();
+    }
+
+    #[test]
+    fn tail_idle_scales_with_measured_cost_and_never_shrinks_below_the_floor() {
+        let floor = Duration::from_millis(200);
+        let mut cost = TailCost::default();
+        assert_eq!(cost.idle(floor), floor, "a cheap tail keeps the floor");
+
+        cost.observe(Duration::from_millis(500));
+        assert_eq!(
+            cost.idle(floor),
+            Duration::from_secs(1),
+            "an expensive tail backs off proportionally"
+        );
+
+        // One cancelled continuation must not make the tail eager again.
+        cost.observe(Duration::from_millis(1));
+        assert!(cost.idle(floor) > Duration::from_millis(700));
+
+        cost.observe(Duration::from_secs(30));
+        assert_eq!(cost.idle(floor), TailCost::MAX_IDLE, "the delay is capped");
+
+        assert!(
+            cost.idle(Duration::ZERO).is_zero(),
+            "an explicit zero delay is never stretched"
+        );
     }
 
     #[test]
