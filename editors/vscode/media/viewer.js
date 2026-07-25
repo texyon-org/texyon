@@ -54,10 +54,11 @@ function ensureSlots() {
 }
 
 function renderPage(index) {
-  const markup = state.pages[index] && state.pages[index].displayedSvg;
-  if (!markup) return;
-  const parsed = new DOMParser().parseFromString(markup, "image/svg+xml");
-  const node = document.importNode(parsed.documentElement, true);
+  const sanitized = state.pages[index] && state.pages[index].displayedSvg;
+  if (!sanitized) return;
+  // The sanitizer already produced this tree; import a copy so the stored one
+  // stays reusable if the page leaves and re-enters the prefetch band.
+  const node = document.importNode(sanitized, true);
   slots[index].replaceChildren(node);
   slots[index].style.minHeight = "";
 }
@@ -104,7 +105,7 @@ const observer = new IntersectionObserver((entries) => {
 }, { root: pagesElement, rootMargin: "100% 0px 100% 0px" });
 
 function sanitize(svg, prefix) {
-  return reducer.sanitizeSvg(svg, prefix, DOMParser, XMLSerializer);
+  return reducer.sanitizeSvg(svg, prefix, DOMParser);
 }
 
 async function applyUpdate(event) {

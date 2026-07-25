@@ -6,6 +6,8 @@
   "use strict";
 
   const MAX_U64 = (1n << 64n) - 1n;
+  // Non-global on purpose: `test` on a global regex carries `lastIndex`.
+  const URL_FUNCTION = /url\(/i;
   const BLOCKED_ELEMENTS = new Set([
     "script", "style", "foreignobject", "iframe", "object", "embed", "audio", "video",
     "a", "animate", "animatemotion", "animatetransform", "discard", "mpath", "set"
@@ -196,8 +198,18 @@
     throw new Error("external href is forbidden");
   }
 
-  /** Browser sanitizer: reject active content, namespace IDs, and import one SVG. */
-  function sanitizeSvg(svg, prefix, DOMParserType, XMLSerializerType) {
+  /** Browser sanitizer: reject active content, namespace IDs, and import one SVG.
+   *
+   * Returns the sanitized root element, not markup. A page of body text is
+   * thousands of elements, and serializing the tree here only to have the
+   * viewer parse it back was the single largest cost of showing a frame.
+   *
+   * Every attribute is still inspected; only attributes whose value the
+   * namespacing rules actually change are written back, because
+   * `setAttributeNS` on each of several thousand untouched attributes cost more
+   * than the checks themselves.
+   */
+  function sanitizeSvg(svg, prefix, DOMParserType) {
     preflightSvg(svg);
     if (!/^[A-Za-z0-9_-]+$/.test(prefix)) throw new Error("invalid SVG namespace");
     const documentNode = new DOMParserType().parseFromString(svg, "image/svg+xml");
@@ -206,26 +218,39 @@
     }
     const root = documentNode.documentElement;
     if (!root || root.localName.toLowerCase() !== "svg") throw new Error("root element is not SVG");
+    // Both collections are iterated live. Writing an attribute back uses its
+    // own namespace and name, so it replaces in place and cannot resize or
+    // reorder the map, and no element is ever added or removed.
     const visit = (element) => {
       if (BLOCKED_ELEMENTS.has(element.localName.toLowerCase())) throw new Error("active SVG element is forbidden");
-      for (const attribute of Array.from(element.attributes)) {
+      const attributes = element.attributes;
+      for (let index = 0; index < attributes.length; index += 1) {
+        const attribute = attributes[index];
         const name = attribute.name.toLowerCase();
-        let value = attribute.value;
+        const value = attribute.value;
         if (name.startsWith("on")) throw new Error("event attribute is forbidden");
+        let rewritten;
         if (name === "id") {
           if (value.length === 0) throw new Error("empty SVG id");
-          value = `${prefix}__${value}`;
+          rewritten = `${prefix}__${value}`;
         } else if (name === "href" || name.endsWith(":href")) {
-          value = rewriteHref(value, prefix);
+          rewritten = rewriteHref(value, prefix);
+        } else if (URL_FUNCTION.test(value)) {
+          rewritten = rewriteUrlFunctions(value, prefix);
         } else {
-          value = rewriteUrlFunctions(value, prefix);
+          // No `url(` anywhere, so the rewrite is provably the identity and
+          // cannot reject: inspecting it was the whole obligation.
+          continue;
         }
-        element.setAttributeNS(attribute.namespaceURI, attribute.name, value);
+        if (rewritten !== value) {
+          element.setAttributeNS(attribute.namespaceURI, attribute.name, rewritten);
+        }
       }
-      for (const child of Array.from(element.children)) visit(child);
+      const children = element.children;
+      for (let index = 0; index < children.length; index += 1) visit(children[index]);
     };
     visit(root);
-    return new XMLSerializerType().serializeToString(root);
+    return root;
   }
 
   return {
