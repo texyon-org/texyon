@@ -154,10 +154,21 @@ impl ReplayFenceInputs {
 
     /// Whether all consumed source constraints remain sound in `snapshot`.
     ///
-    /// An input may differ only after the source prefix that was observed or
-    /// lies before its resumable byte cursor. Size and EOF observations also
-    /// constrain length, except for a probe that consumed nothing, which is
-    /// held only to the existence and emptiness it actually distinguished.
+    /// Every input carries one number: the furthest byte the engine reached on
+    /// it, by reading or by seeking. A source may change at or beyond that
+    /// point, because the engine has not looked there yet.
+    ///
+    /// Whether the watermark sits at end of file is derived, not recorded. A
+    /// channel whose watermark reached the file's end was consumed entirely and
+    /// the engine acted on the file ending there, so any change at all
+    /// invalidates it — appending included. A channel that stopped short has
+    /// simply not read the rest yet.
+    ///
+    /// A query that read nothing therefore constrains nothing: resolving an
+    /// `\input` or graphics path asks for a size without moving the cursor, and
+    /// leaves no watermark to violate. Existence and emptiness still hold,
+    /// since a source that disappeared has no entry and one that gained or lost
+    /// all of its bytes is checked directly.
     pub(crate) fn is_eligible(&self, snapshot: &SourceSnapshot) -> bool {
         self.inputs.iter().all(|input| {
             let Some((bytes, identity)) = snapshot.replay_entry(&input.path) else {
@@ -166,18 +177,13 @@ impl ReplayFenceInputs {
             if identity == input.identity {
                 return true;
             }
-            if bytes.len() < input.minimum_size {
+            if bytes.is_empty() != input.bytes.is_empty() {
                 return false;
             }
-            if input.exact_size_observed
-                && input.bytes.len() != bytes.len()
-                && !probe_survives_resize(input, &bytes)
-            {
+            if input.seen >= input.bytes.len() {
                 return false;
             }
-            let constrained_prefix = input.position.max(input.observed_prefix);
-            first_difference(&input.bytes, &bytes)
-                .is_some_and(|offset| offset >= constrained_prefix)
+            first_difference(&input.bytes, &bytes).is_some_and(|offset| offset >= input.seen)
         })
     }
 
@@ -193,27 +199,6 @@ impl ReplayFenceInputs {
     pub(crate) fn allocated_bytes(&self) -> usize {
         self.inputs.capacity() * std::mem::size_of::<MemoryInputCheckpoint>()
     }
-}
-
-/// Whether a size observation that consumed no bytes still holds after a
-/// length change.
-///
-/// LaTeX resolves `\input` and graphics paths by asking for a file's size and
-/// closing it again without reading it, and branches only on whether the answer
-/// is empty. Holding such a probe to an exact length makes every fence planted
-/// after it useless the moment the author's next keystroke changes that file's
-/// length, which forces each edit inside an included file to replay from before
-/// the file was opened. Constraining these probes to the existence and
-/// emptiness they discriminate keeps the fences that sit next to the edit.
-///
-/// A probe that read, sought, or pushed back any byte is not covered: those
-/// observations still constrain the exact length.
-fn probe_survives_resize(input: &MemoryInputCheckpoint, bytes: &[u8]) -> bool {
-    let consumed_nothing = input.position == 0
-        && input.observed_prefix == 0
-        && input.minimum_size == 0
-        && input.pushback.is_none();
-    consumed_nothing && input.bytes.is_empty() == bytes.is_empty()
 }
 
 fn first_difference(left: &[u8], right: &[u8]) -> Option<usize> {
@@ -269,16 +254,13 @@ mod tests {
         let normalized = source.primary().clone();
         let (bytes, identity) = source.replay_entry(&normalized).unwrap();
         assert_eq!(path, "main.tex");
-        let exact_size_observed = closed && position == bytes.len();
         MemoryInputCheckpoint {
             path: normalized,
             bytes,
             identity,
             position,
             pushback: None,
-            observed_prefix: position,
-            minimum_size: position,
-            exact_size_observed,
+            seen: position,
             closed,
         }
     }
@@ -316,57 +298,47 @@ mod tests {
     }
 
     #[test]
-    fn a_size_probe_that_read_nothing_survives_a_resize() {
+    fn a_query_that_read_nothing_constrains_nothing() {
         let original = b"same length";
-        let mut input = checkpoint("main.tex", original, 0, true);
-        input.exact_size_observed = true;
         let fence = ReplayFenceInputs {
             revision: SourceRevision::new(1),
-            inputs: vec![input],
+            inputs: vec![checkpoint("main.tex", original, 0, true)],
         };
-        assert!(fence.is_eligible(&snapshot(2, b"SAME LENGTH", b"child")));
-        assert!(fence.is_eligible(&snapshot(2, b"different length", b"child")));
+        assert!(fence.is_eligible(&snapshot(2, b"sAME LENGTH", b"child")));
+        assert!(fence.is_eligible(&snapshot(2, b"a completely different length", b"child")));
     }
 
     #[test]
-    fn a_size_probe_still_discriminates_an_empty_file() {
-        let original = b"present";
-        let mut input = checkpoint("main.tex", original, 0, true);
-        input.exact_size_observed = true;
+    fn appending_to_a_fully_read_input_invalidates_the_fence() {
+        let original = b"prefix\nlate text\n";
         let fence = ReplayFenceInputs {
             revision: SourceRevision::new(1),
-            inputs: vec![input],
+            inputs: vec![checkpoint("main.tex", original, original.len(), true)],
         };
-        assert!(!fence.is_eligible(&snapshot(2, b"", b"child")));
-
-        let mut empty = checkpoint("main.tex", b"", 0, true);
-        empty.exact_size_observed = true;
-        let from_empty = ReplayFenceInputs {
-            revision: SourceRevision::new(1),
-            inputs: vec![empty],
-        };
-        assert!(!from_empty.is_eligible(&snapshot(2, b"now present", b"child")));
+        assert!(!fence.is_eligible(&snapshot(2, b"prefix\nlate text\nmore\n", b"child")));
+        assert!(!fence.is_eligible(&snapshot(2, b"prefix\nlate", b"child")));
     }
 
     #[test]
-    fn a_size_observation_after_reading_still_pins_the_length() {
+    fn emptiness_cannot_survive_any_watermark() {
+        let present = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![checkpoint("main.tex", b"present", 0, true)],
+        };
+        assert!(!present.is_eligible(&snapshot(2, b"", b"child")));
+
+        let absent = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![checkpoint("main.tex", b"", 0, true)],
+        };
+        assert!(!absent.is_eligible(&snapshot(2, b"now present", b"child")));
+    }
+
+    #[test]
+    fn a_rewound_channel_stays_constrained_by_its_watermark() {
         let original = b"prefix late text";
         let mut input = checkpoint("main.tex", original, 0, true);
-        input.exact_size_observed = true;
-        input.observed_prefix = 6;
-        let fence = ReplayFenceInputs {
-            revision: SourceRevision::new(1),
-            inputs: vec![input],
-        };
-        assert!(!fence.is_eligible(&snapshot(2, b"prefix late text!", b"child")));
-    }
-
-    #[test]
-    fn rewound_prefix_probe_constrains_only_observed_bytes() {
-        let original = b"prefix late text";
-        let mut input = checkpoint("main.tex", original, 0, true);
-        input.observed_prefix = 6;
-        input.minimum_size = 6;
+        input.seen = 6;
         let fence = ReplayFenceInputs {
             revision: SourceRevision::new(1),
             inputs: vec![input],

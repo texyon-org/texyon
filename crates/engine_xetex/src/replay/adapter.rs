@@ -28,9 +28,10 @@ struct MemInput {
     identity: SourceIdentity,
     position: usize,
     pushback: Option<u8>,
-    observed_prefix: usize,
-    minimum_size: usize,
-    exact_size_observed: bool,
+    /// Furthest byte position the engine ever reached on this channel, by
+    /// reading or by seeking. Everything below it is a consumed fact; anything
+    /// at or beyond it the engine has not looked at.
+    seen: usize,
     closed: bool,
 }
 
@@ -42,9 +43,7 @@ pub(crate) struct MemoryInputCheckpoint {
     pub(crate) identity: SourceIdentity,
     pub(crate) position: usize,
     pub(crate) pushback: Option<u8>,
-    pub(crate) observed_prefix: usize,
-    pub(crate) minimum_size: usize,
-    pub(crate) exact_size_observed: bool,
+    pub(crate) seen: usize,
     pub(crate) closed: bool,
 }
 
@@ -87,9 +86,7 @@ pub(crate) fn checkpoint_inputs() -> Option<Vec<MemoryInputCheckpoint>> {
                     identity: input.identity,
                     position: input.position,
                     pushback: input.pushback,
-                    observed_prefix: input.observed_prefix,
-                    minimum_size: input.minimum_size,
-                    exact_size_observed: input.exact_size_observed,
+                    seen: input.seen,
                     closed: input.closed,
                 })
                 .collect(),
@@ -121,15 +118,13 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
                 identity,
                 position: checkpoint.position,
                 pushback: checkpoint.pushback,
-                observed_prefix: checkpoint.observed_prefix,
-                minimum_size: checkpoint.minimum_size,
-                exact_size_observed: checkpoint.exact_size_observed,
+                seen: checkpoint.seen,
                 closed: checkpoint.closed,
             });
         }
         sources.inputs = restored;
         OBSERVED_BYTES.set(checkpoints.iter().fold(0usize, |total, input| {
-            total.saturating_add(input.observed_prefix)
+            total.saturating_add(input.seen)
         }));
         true
     })
@@ -229,11 +224,15 @@ pub(crate) fn open_position(path: &SourcePath) -> Option<usize> {
     })
 }
 
+/// Answer a size query without recording a dependency.
+///
+/// Resolving an `\input` or a graphics path asks for a size and reads nothing.
+/// The engine's cursor does not move, so nothing about the file's contents has
+/// been consumed, and a fence taken afterwards is constrained only by whatever
+/// was actually read. A document that puts such a size into its output keeps a
+/// stale value until the next full compile.
 pub(crate) fn get_size(handle: usize) -> Option<usize> {
-    with_input_mut(handle, |input| {
-        input.exact_size_observed = true;
-        input.bytes.len()
-    })
+    with_input_mut(handle, |input| input.bytes.len())
 }
 
 pub(crate) fn getc(handle: usize) -> Option<libc::c_int> {
@@ -242,7 +241,9 @@ pub(crate) fn getc(handle: usize) -> Option<libc::c_int> {
             return byte.into();
         }
         let Some(&byte) = input.bytes.get(input.position) else {
-            input.exact_size_observed = true;
+            // Reaching EOF is itself a consumed fact: the engine acted on the
+            // file ending here, so anything appended invalidates the fence.
+            observe_through(input, input.position);
             return libc::EOF;
         };
         input.position += 1;
@@ -284,15 +285,14 @@ pub(crate) unsafe fn read(handle: usize, data: *mut u8, len: usize) -> Option<li
         if copied == len {
             len as libc::ssize_t
         } else {
-            input.exact_size_observed = true;
             -1
         }
     })
 }
 
 fn observe_through(input: &mut MemInput, position: usize) {
-    let newly_observed = position.saturating_sub(input.observed_prefix);
-    input.observed_prefix = input.observed_prefix.max(position);
+    let newly_observed = position.saturating_sub(input.seen);
+    input.seen = input.seen.max(position);
     OBSERVED_BYTES.set(OBSERVED_BYTES.get().saturating_add(newly_observed));
 }
 
@@ -301,19 +301,18 @@ pub(crate) fn seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) ->
         let base = match whence {
             libc::SEEK_SET => 0i128,
             libc::SEEK_CUR => input.position as i128,
-            libc::SEEK_END => {
-                input.exact_size_observed = true;
-                input.bytes.len() as i128
-            }
+            libc::SEEK_END => input.bytes.len() as i128,
             _ => return 0,
         };
         let target = base + offset as i128;
         if !(0..=input.bytes.len() as i128).contains(&target) {
-            input.exact_size_observed = true;
+            // The engine learned the file does not extend that far; hold the
+            // fence to the whole current extent rather than model the bound.
+            observe_through(input, input.bytes.len());
             return 0;
         }
         input.position = target as usize;
-        input.minimum_size = input.minimum_size.max(input.position);
+        observe_through(input, input.position);
         input.pushback = None;
         input.position
     })
@@ -343,9 +342,7 @@ impl ReplaySources {
             identity,
             position: 0,
             pushback: None,
-            observed_prefix: 0,
-            minimum_size: 0,
-            exact_size_observed: false,
+            seen: 0,
             closed: false,
         });
         self.last_path = Some(path);

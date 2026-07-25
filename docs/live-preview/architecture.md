@@ -46,18 +46,21 @@ transport around the same XeTeX implementation.
   revision nor viewer belief.
 - Cancellation, abort, renderer failure, or output failure cannot partially
   publish engine, page, SVG, or source-navigation state.
-- A replay fence constrains every editor or root-confined disk source through
-  the furthest byte prefix, minimum/exact size, and EOF facts actually
-  observed. Unread or prefix-only probes may tolerate later changes; consumed
-  bytes and observed metadata must remain identical.
-- A size observation from a source the operation opened and closed without
-  consuming a byte constrains only that source's existence and emptiness.
-  Resolving `\input` and graphics paths asks for a size and reads nothing, and
-  pinning the exact length there would invalidate every fence planted after an
-  included file was opened as soon as the author's next keystroke changed its
-  length. A document that instead typesets or compares such a size keeps a
-  stale value in the preview until the next full compile; the corpus runner's
-  cold-session oracle is what proves a document is unaffected.
+- A replay fence constrains every editor or root-confined disk source it opened
+  by exactly one number: the furthest byte the engine reached on that channel,
+  by reading or by seeking. A source may change at or beyond its watermark,
+  because nothing there has been looked at. A channel whose watermark reached
+  the end of the file was consumed entirely and the engine acted on the file
+  ending there, so any change to it invalidates the fence, appending included.
+  A source that disappeared, or that gained or lost all of its bytes, never
+  survives.
+- A query answered without moving a cursor therefore constrains nothing.
+  Resolving `\input` and graphics paths asks for a size and reads no byte; the
+  branch taken on the answer is the only thing that mattered, and existence and
+  emptiness still hold. A document that instead typesets or numerically
+  compares such a size keeps a stale value in the preview until the next full
+  compile; the corpus runner's cold-session oracle is what proves a document is
+  unaffected.
 - A viewport foreground compiles through exactly the requested last page. Old
   tail visuals and SyncTeX records remain the client belief until one idle tail
   continuation atomically settles them.
