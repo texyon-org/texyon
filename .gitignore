@@ -32,6 +32,12 @@ crates/engine_xetex/tests/corpus/goldens/*.tmp
 node_modules/
 /js/dist/
 /client/dist/
+
+# TeXstudio's completion word lists, and what is built from them. Fetched by
+# tools/cwl/fetch.sh rather than vendored: the corpus is GPL-3.0 and this tree
+# is MIT, so the dependency is kept at arm's length until that is settled.
+/tools/cwl/texstudio/
+/client/public/cwl/
 *.tsbuildinfo
 
 # Scratch documents for trying the editor out. sample.tex is the one that ships
