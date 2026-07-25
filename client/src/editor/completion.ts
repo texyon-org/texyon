@@ -1,85 +1,55 @@
 /**
  * What to offer when someone is halfway through typing.
  *
- * Two sources, and the project's own is the one that earns its place. A list of
- * LaTeX's built-in commands is mildly useful; the label you wrote two files ago
- * is what you actually cannot remember.
+ * Three things know something, and each answers a different question. The
+ * project's own files know its labels, citation keys and `\newcommand`s. The
+ * engine knows every command this document actually has, and how many arguments
+ * each takes. The corpus knows what those arguments are called, where a command
+ * is legal, and — for a command the document does *not* have — which package
+ * would provide it.
+ *
+ * Everything offered here is a snippet rather than a word, so accepting a
+ * completion leaves the cursor in the first argument rather than after the
+ * name.
  */
 
-import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
+import { snippetCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 
+import type { MergedCommand } from "../project/commands";
 import type { SymbolIndex } from "../project/symbols";
+import { commandSnippet, describeSignature, environmentSnippet } from "./snippets";
+
+/** Everything the completion source reads, fetched fresh on each request. */
+export interface CompletionSources {
+  symbols: SymbolIndex;
+  /** The merged command set: what exists, what it means, what could exist. */
+  commands: readonly MergedCommand[];
+  /** Add `\usepackage{name}` to the preamble. */
+  addPackage: (name: string) => void;
+}
 
 /**
- * Commands worth offering that no project declares.
+ * Environments worth offering before a document has been compiled.
  *
- * Deliberately short. This is not a LaTeX reference — offering three thousand
- * commands buries the handful that matter under an alphabet — it is the set
- * someone types often enough to want completed.
+ * Once it has, the corpus supplies these and more; this is only so a fresh
+ * project is not inert.
  */
-const BUILTIN: readonly { name: string; detail: string }[] = [
-  { name: "section", detail: "sectioning" },
-  { name: "subsection", detail: "sectioning" },
-  { name: "subsubsection", detail: "sectioning" },
-  { name: "paragraph", detail: "sectioning" },
-  { name: "chapter", detail: "sectioning" },
-  { name: "textbf", detail: "bold" },
-  { name: "textit", detail: "italic" },
-  { name: "texttt", detail: "monospace" },
-  { name: "emph", detail: "emphasis" },
-  { name: "footnote", detail: "note" },
-  { name: "begin", detail: "environment" },
-  { name: "end", detail: "environment" },
-  { name: "item", detail: "list" },
-  { name: "caption", detail: "float" },
-  { name: "includegraphics", detail: "graphics" },
-  { name: "label", detail: "cross-reference" },
-  { name: "ref", detail: "cross-reference" },
-  { name: "eqref", detail: "cross-reference" },
-  { name: "pageref", detail: "cross-reference" },
-  { name: "cite", detail: "bibliography" },
-  { name: "usepackage", detail: "preamble" },
-  { name: "documentclass", detail: "preamble" },
-  { name: "input", detail: "include" },
-  { name: "include", detail: "include" },
-  { name: "frac", detail: "maths" },
-  { name: "sqrt", detail: "maths" },
-  { name: "sum", detail: "maths" },
-  { name: "int", detail: "maths" },
-];
+const FALLBACK_ENVIRONMENTS = [
+  "document", "itemize", "enumerate", "description", "figure", "table",
+  "tabular", "equation", "align", "gather", "quote", "verbatim", "abstract",
+] as const;
 
-/** Environments worth offering inside `\begin{…}`. */
-const BUILTIN_ENVIRONMENTS: readonly string[] = [
-  "document",
-  "itemize",
-  "enumerate",
-  "description",
-  "figure",
-  "table",
-  "tabular",
-  "equation",
-  "align",
-  "gather",
-  "quote",
-  "verbatim",
-  "abstract",
-];
-
-/**
- * Completions for LaTeX, aware of what this project declares.
- *
- * `symbols` is read through a function rather than captured, because the index
- * is rebuilt as the project changes and a completion source installed once must
- * see the current one.
- */
-export function latexCompletions(symbols: () => SymbolIndex) {
+/** Completions for LaTeX, aware of what this document actually has. */
+export function latexCompletions(sources: () => CompletionSources) {
   return (context: CompletionContext): CompletionResult | null => {
+    const at = sources();
+
     // `\ref{sec:` and friends: what belongs here is a label, and nothing else.
     const reference = context.matchBefore(/\\(?:eq|page|auto|c|name)?ref\s*\{[^}]*/);
     if (reference !== null) {
       return {
         from: reference.from + reference.text.indexOf("{") + 1,
-        options: symbols().labels.map((label) => ({
+        options: at.symbols.labels.map((label) => ({
           label: label.name,
           type: "constant",
           detail: `${label.path}:${label.line}`,
@@ -92,7 +62,7 @@ export function latexCompletions(symbols: () => SymbolIndex) {
     if (citation !== null) {
       return {
         from: citation.from + citation.text.indexOf("{") + 1,
-        options: symbols().citations.map((entry) => ({
+        options: at.symbols.citations.map((entry) => ({
           label: entry.name,
           type: "constant",
           detail: entry.path,
@@ -101,58 +71,138 @@ export function latexCompletions(symbols: () => SymbolIndex) {
       };
     }
 
-    const environment = context.matchBefore(/\\(?:begin|end)\s*\{[^}]*/);
-    if (environment !== null) {
-      const declared = symbols().environments.map(
-        (found): Completion => ({
-          label: found.name,
-          type: "class",
-          detail: found.path,
-        }),
-      );
-      const builtin = BUILTIN_ENVIRONMENTS.map(
-        (name): Completion => ({ label: name, type: "class" }),
-      );
-
+    // Inside `\begin{`: choosing an environment also writes its `\end`.
+    const begin = context.matchBefore(/\\begin\s*\{[^}]*/);
+    if (begin !== null) {
       return {
-        from: environment.from + environment.text.indexOf("{") + 1,
-        options: [...declared, ...builtin],
+        from: begin.from + begin.text.indexOf("{") + 1,
+        options: environmentOptions(at),
         validFor: /^[^}]*$/,
       };
     }
 
-    // A bare command. Only when the user has typed the backslash: offering
-    // every command against an empty prefix is noise.
+    // `\end{` closes whatever is open, so it needs no snippet.
+    const end = context.matchBefore(/\\end\s*\{[^}]*/);
+    if (end !== null) {
+      return {
+        from: end.from + end.text.indexOf("{") + 1,
+        options: environmentNames(at).map((name) => ({ label: name, type: "class" })),
+        validFor: /^[^}]*$/,
+      };
+    }
+
+    // A bare command. Only once the backslash is typed: offering every command
+    // against an empty prefix is noise.
     const command = context.matchBefore(/\\[a-zA-Z@]*/);
     if (command === null || (command.from === command.to && !context.explicit)) {
       return null;
     }
 
-    const declared = symbols().commands.map(
-      (found): Completion => ({
-        label: found.name,
-        type: "function",
-        detail:
-          found.arity === undefined
-            ? found.path
-            : `${found.path} · ${found.arity} arg${found.arity === 1 ? "" : "s"}`,
-        // Declared in this project, so it outranks anything built in.
-        boost: 1,
-      }),
-    );
-
     return {
       // After the backslash, which stays.
       from: command.from + 1,
-      options: [
-        ...declared,
-        ...BUILTIN.map((entry): Completion => ({
-          label: entry.name,
-          type: "keyword",
-          detail: entry.detail,
-        })),
-      ],
+      options: commandOptions(at),
       validFor: /^[a-zA-Z@]*$/,
     };
   };
+}
+
+/** One completion per command, ranked by how much is known about it. */
+function commandOptions(at: CompletionSources): Completion[] {
+  const options: Completion[] = [];
+
+  // The project's own definitions first: they are the ones you cannot look up.
+  for (const declared of at.symbols.commands) {
+    options.push({
+      label: declared.name,
+      type: "function",
+      detail: `${declared.path}:${declared.line}`,
+      boost: 2,
+    });
+  }
+
+  const own = new Set(at.symbols.commands.map((c) => c.name));
+
+  for (const command of at.commands) {
+    if (own.has(command.name)) continue;
+
+    if (command.tier === "available") {
+      options.push(availableOption(command, at));
+      continue;
+    }
+
+    // Rarely-used commands exist and are worth completing if asked for by
+    // name, but should not crowd out the ones people mean.
+    const rare = command.classification?.unusual === true;
+    const template = commandSnippet(command);
+    const detail = describeSignature(command);
+
+    const option: Completion = {
+      label: command.name,
+      type: command.tier === "described" ? "function" : "keyword",
+      detail: detail === "" ? undefined : detail,
+      boost: rare ? -2 : command.tier === "described" ? 1 : 0,
+    };
+
+    options.push(template === null ? option : snippetCompletion(template, option));
+  }
+
+  return options;
+}
+
+/**
+ * A command this document does not have, offered together with the package
+ * that would give it.
+ *
+ * Accepting one writes the `\usepackage` as well, because a completion that
+ * inserts a command the document cannot run is not help.
+ */
+function availableOption(command: MergedCommand, at: CompletionSources): Completion {
+  const from = command.from;
+
+  return {
+    label: command.name,
+    type: "interface",
+    detail: from === null ? undefined : `\\usepackage{${from}}`,
+    // Below everything that actually exists. These are a rescue for a command
+    // someone knows they want, not a suggestion.
+    boost: -50,
+    apply: (view, _completion, start, end) => {
+      view.dispatch({ changes: { from: start, to: end, insert: command.name } });
+      if (from !== null) at.addPackage(from);
+    },
+  };
+}
+
+/** Environment names, from the corpus where there is one. */
+function environmentNames(at: CompletionSources): string[] {
+  const names = new Set<string>(at.symbols.environments.map((e) => e.name));
+  for (const name of FALLBACK_ENVIRONMENTS) names.add(name);
+  return [...names];
+}
+
+/** Environments, each writing its own `\end`. */
+function environmentOptions(at: CompletionSources): Completion[] {
+  const options: Completion[] = [];
+
+  for (const declared of at.symbols.environments) {
+    options.push(
+      snippetCompletion(environmentSnippet(declared.name), {
+        label: declared.name,
+        type: "class",
+        detail: declared.path,
+        boost: 2,
+      }),
+    );
+  }
+
+  const own = new Set(at.symbols.environments.map((e) => e.name));
+  for (const name of FALLBACK_ENVIRONMENTS) {
+    if (own.has(name)) continue;
+    options.push(
+      snippetCompletion(environmentSnippet(name), { label: name, type: "class" }),
+    );
+  }
+
+  return options;
 }

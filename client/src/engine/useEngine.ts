@@ -1,4 +1,11 @@
-import type { CompileResult, LoadProgress, LogLine, SourceSpot, SyncRect } from "@tectonic/wasm";
+import type {
+  CompileResult,
+  EngineCommand,
+  LoadProgress,
+  LogLine,
+  SourceSpot,
+  SyncRect,
+} from "@tectonic/wasm";
 import { TectonicEngine } from "@tectonic/wasm";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -12,6 +19,14 @@ export interface EngineState {
   /** Milliseconds from the last keystroke to the pixels. */
   latencyMs: number | null;
   log: LogLine[];
+  /**
+   * Every command the document has defined, as of the last compile.
+   *
+   * Refreshed after each one rather than on demand: it is what completion is
+   * offered from, and asking for it at the moment someone types would put a
+   * round trip on the keystroke path.
+   */
+  commands: readonly EngineCommand[];
 }
 
 /**
@@ -38,6 +53,7 @@ export function useEngine(
   const [compiling, setCompiling] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
+  const [commands, setCommands] = useState<readonly EngineCommand[]>([]);
 
   const typedAt = useRef<number | null>(null);
   const paintingFrom = useRef<number | null>(null);
@@ -99,6 +115,9 @@ export function useEngine(
       compiledRevision.current = revision;
       paintingFrom.current = requestedAt;
       setResult(compiled);
+
+      // After the frame, so the preview is never waiting on the command list.
+      void engine.commands().then(setCommands, () => undefined);
     } catch (error) {
       setLog((prior) =>
         [
@@ -196,6 +215,7 @@ export function useEngine(
     compiling,
     latencyMs,
     log,
+    commands,
     markPainted,
     exportPdf,
     forwardSearch,

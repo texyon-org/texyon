@@ -40,6 +40,18 @@ export interface LogLine {
   message: string;
 }
 
+/** One command the engine currently has defined. */
+export interface EngineCommand {
+  /** Without the leading backslash. */
+  name: string;
+  /** Arguments it takes, including an optional one if it has it. */
+  arity: number;
+  /** Whether the first argument is optional. */
+  optional: boolean;
+  /** `macro`, `protected` or `builtin`. */
+  kind: "macro" | "protected" | "builtin";
+}
+
 /** A clickable region of a page, in big points from its top-left corner. */
 export interface Link {
   /** Left edge. */
@@ -306,6 +318,7 @@ export type WorkerRequest =
       files: ProjectFiles;
       viewport?: [number, number];
     }
+  | { id: number; kind: "commands" }
   | { id: number; kind: "forwardSearch"; path: string; line: number }
   | {
       id: number;
@@ -334,6 +347,7 @@ export type WorkerResponse =
   | { id: number; kind: "compiled"; result: CompileResult }
   | { id: number; kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
   | { id: number; kind: "located"; rect: SyncRect | null; source: SourceSpot | null }
+  | { id: number; kind: "commands"; commands: EngineCommand[] }
   | { id: number; kind: "idle" }
   | { id: number; kind: "error"; message: string }
   | { id: 0; kind: "progress"; progress: LoadProgress }

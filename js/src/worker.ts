@@ -18,6 +18,7 @@
 import type {
   CompileResult,
   Diagnostic,
+  EngineCommand,
   PageOverlay,
   LogLevel,
   SerializableEngineOptions,
@@ -87,6 +88,7 @@ interface RawCompileReport {
 type RawResponse =
   | { status: "ok" }
   | { status: "located"; rect: SyncRect | null; source: SourceSpot | null }
+  | { status: "commands"; commands: EngineCommand[] }
   | ({ status: "compiled" } & RawCompileReport)
   | { status: "exported"; ptr: number; len: number }
   | { status: "idle" }
@@ -693,6 +695,18 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           );
         } else {
           post({ id: request.id, kind: "error", message: "the engine did not return a PDF" });
+        }
+        break;
+      }
+
+      case "commands": {
+        const reply = call({ op: "commands" });
+        if (reply.status === "error") {
+          post({ id: request.id, kind: "error", message: reply.message });
+        } else if (reply.status === "commands") {
+          post({ id: request.id, kind: "commands", commands: reply.commands });
+        } else {
+          post({ id: request.id, kind: "error", message: "the engine did not list its commands" });
         }
         break;
       }

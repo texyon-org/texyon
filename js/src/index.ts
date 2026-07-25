@@ -31,6 +31,7 @@ export type {
   CompileStats,
   Destination,
   Diagnostic,
+  EngineCommand,
   EngineOptions,
   ExportResult,
   LoadProgress,
@@ -47,6 +48,7 @@ export type {
 
 import type {
   CompileResult,
+  EngineCommand,
   EngineOptions,
   ExportResult,
   LoadProgress,
@@ -113,6 +115,10 @@ export class TectonicEngine {
         (pending.resolve as (value: { pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }) => void)({
           pdf: message.pdf,
           elapsedMs: message.elapsedMs,
+        });
+      } else if (message.kind === "commands") {
+        (pending.resolve as (value: { commands: EngineCommand[] }) => void)({
+          commands: message.commands,
         });
       } else if (message.kind === "located") {
         (
@@ -201,6 +207,26 @@ export class TectonicEngine {
     return this.#queue(() =>
       this.#send<CompileResult>({ id: 0, kind: "compile", files: project, viewport }),
     );
+  }
+
+  /**
+   * Every command the document currently has defined.
+   *
+   * The engine's own account, so it covers what the preamble defined, what each
+   * package defined under the options it was given, and anything built at run
+   * time that no scan of a `.sty` file could have seen. Empty before the first
+   * compile, when there is no document open to ask about.
+   *
+   * What it cannot say is what a command's arguments are *called* — TeX stores
+   * `#1`, not a name — so an editor wanting that has to pair this with a
+   * description from somewhere else.
+   */
+  async commands(): Promise<EngineCommand[]> {
+    const { commands } = await this.#send<{ commands: EngineCommand[] }>({
+      id: 0,
+      kind: "commands",
+    });
+    return commands;
   }
 
   /**

@@ -14,7 +14,7 @@ import {
 import type { Diagnostic } from "@tectonic/wasm";
 import { useEffect, useRef } from "react";
 
-import type { SymbolIndex } from "../project/symbols";
+import type { CompletionSources } from "./completion";
 import { latexCompletions } from "./completion";
 import { toLintDiagnostics } from "./diagnostics";
 import { latexHighlighting } from "./highlight";
@@ -25,8 +25,8 @@ export interface EditorProps {
   path: string;
   /** Its text as the workspace has it. */
   text: string;
-  /** Everything the project declares, for completion. */
-  symbols: SymbolIndex;
+  /** Everything completion reads: the project, the engine and the corpus. */
+  sources: CompletionSources;
   /** The engine's latest diagnostics, for the whole project. */
   diagnostics: readonly Diagnostic[];
   /** Where to put the cursor, when a backward search asked for one. */
@@ -47,7 +47,7 @@ export interface EditorProps {
 export function Editor({
   path,
   text,
-  symbols,
+  sources,
   diagnostics,
   jumpToLine,
   onChange,
@@ -58,8 +58,8 @@ export function Editor({
 
   // Read through refs so the extensions below can be built once and still see
   // current values; rebuilding them would discard the undo history.
-  const latest = useRef({ symbols, onChange, onCursorLine });
-  latest.current = { symbols, onChange, onCursorLine };
+  const latest = useRef({ sources, onChange, onCursorLine });
+  latest.current = { sources, onChange, onCursorLine };
 
   useEffect(() => {
     const parent = host.current;
@@ -78,7 +78,7 @@ export function Editor({
       // The mode assigns tags; this is what draws them.
       latexHighlighting,
       autocompletion({
-        override: [latexCompletions(() => latest.current.symbols)],
+        override: [latexCompletions(() => latest.current.sources)],
         // TeX is punctuation-heavy; completing on every character would fire
         // constantly inside maths.
         activateOnTyping: true,

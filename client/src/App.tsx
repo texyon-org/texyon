@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import type { CwlPackage } from "./project/cwl";
 import { Editor } from "./editor/Editor";
 import { useEngine } from "./engine/useEngine";
 import { FileTree } from "./files/FileTree";
+import { mergeCommands } from "./project/commands";
+import { corpusFor, providers } from "./project/corpus";
 import { indexProject } from "./project/symbols";
 import { Viewer } from "./viewer/Viewer";
 import { Workspace } from "./workspace/Workspace";
@@ -38,11 +41,34 @@ export function App() {
     compiling,
     latencyMs,
     log,
+    commands,
     markPainted,
     exportPdf,
     forwardSearch,
     backwardSearch,
   } = useEngine(workspace, PRIMARY);
+
+  // What the corpus says about the packages this document loads. Fetched from
+  // the source text rather than from the engine, because the engine does not
+  // record which package defined what — and because this has to work before the
+  // first compile.
+  const [corpus, setCorpus] = useState<CwlPackage[]>([]);
+  const preamble = workspace.read(PRIMARY)?.slice(0, 4000) ?? "";
+
+  useEffect(() => {
+    let current = true;
+    void corpusFor(preamble).then((loaded) => {
+      if (current) setCorpus(loaded);
+    });
+    return () => {
+      current = false;
+    };
+  }, [preamble]);
+
+  const merged = useMemo(
+    () => mergeCommands(commands, corpus, providers()),
+    [commands, corpus],
+  );
 
   // Rebuilt when the text changes, which is what makes completion know about
   // the label you wrote a moment ago.
@@ -193,7 +219,25 @@ export function App() {
           <Editor
             path={openPath}
             text={text}
-            symbols={symbols}
+            sources={{
+              symbols,
+              commands: merged,
+              addPackage: (name) => {
+                const main = workspace.read(PRIMARY);
+                if (main === null || main.includes(`{${name}}`)) return;
+                // After the last \usepackage if there is one, and after the
+                // \documentclass otherwise — either way, still in the preamble.
+                const anchor = /^.*\\(?:usepackage|documentclass)\b.*$/gm;
+                let last: RegExpExecArray | null = null;
+                for (let m = anchor.exec(main); m !== null; m = anchor.exec(main)) last = m;
+                if (last === null) return;
+                const at = last.index + last[0].length;
+                workspace.write(
+                  PRIMARY,
+                  `${main.slice(0, at)}\n\\usepackage{${name}}${main.slice(at)}`,
+                );
+              },
+            }}
             diagnostics={result?.diagnostics ?? []}
             jumpToLine={jumpToLine}
             onChange={onChange}
