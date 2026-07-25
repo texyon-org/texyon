@@ -1,0 +1,49 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb}
+\usepackage[margin=1in]{geometry}
+
+\title{LaTeX in the Browser}
+\author{Tectonic, compiled to WebAssembly}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{What this is}
+
+The whole XeTeX engine is running in a Web Worker next to this editor.
+Type in the pane on the left and the PDF on the right is rebuilt.
+
+The interesting part is not that it compiles --- it is that it does not
+recompile. The engine stays resident and keeps a ladder of checkpoints of
+its own state. When you edit, it rewinds to the deepest checkpoint whose
+inputs are still valid and resumes from there, so the preamble, the class
+file and everything above your cursor are not touched.
+
+\section{Mathematics}
+
+Inline math like $e^{i\pi} + 1 = 0$ works, and so do displays:
+
+\begin{equation}
+  \int_{-\infty}^{\infty} e^{-x^{2}}\,dx = \sqrt{\pi}
+\end{equation}
+
+\begin{align}
+  \nabla \times \mathbf{E} &= -\frac{\partial \mathbf{B}}{\partial t} \\
+  \nabla \times \mathbf{B} &= \mu_0 \mathbf{J}
+      + \mu_0 \varepsilon_0 \frac{\partial \mathbf{E}}{\partial t}
+\end{align}
+
+\section{Try it}
+
+\begin{itemize}
+  \item Edit this sentence and watch the latency counter above.
+  \item Add a \verb|\section{}| and see the page reflow.
+  \item Break something --- write \verb|\frac{1}| --- and read the log.
+\end{itemize}
+
+Edits near the end of the document are the cheapest, because there is more
+above them to reuse. That is the number reported as \emph{reused} in the
+toolbar.
+
+\end{document}

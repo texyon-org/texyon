@@ -32,3 +32,8 @@ crates/engine_xetex/tests/corpus/goldens/*.tmp
 node_modules/
 /js/dist/
 *.tsbuildinfo
+
+# Scratch documents for trying the demo out. sample.tex is the one that ships;
+# anything else here is the author's own and stays local.
+/demo/sample*.tex
+!/demo/sample.tex
