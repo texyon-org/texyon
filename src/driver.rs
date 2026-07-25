@@ -667,6 +667,23 @@ impl DriverHooks for BridgeState {
         }
     }
 
+    /// A wasm target has no subprocesses to escape to, so the request can only
+    /// be refused — and refusing before writing anything is better than the
+    /// native path's "stage the files, then fail to spawn".
+    #[cfg(target_family = "wasm")]
+    fn sysrq_shell_escape(
+        &mut self,
+        _command: &str,
+        status: &mut dyn StatusBackend,
+    ) -> StdResult<(), SystemRequestError> {
+        tt_error!(
+            status,
+            "the engine requested a shell-escape invocation, which this build cannot provide"
+        );
+        Err(SystemRequestError::NotImplemented)
+    }
+
+    #[cfg(not(target_family = "wasm"))]
     fn sysrq_shell_escape(
         &mut self,
         command: &str,

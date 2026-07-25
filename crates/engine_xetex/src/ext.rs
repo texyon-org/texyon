@@ -62,6 +62,10 @@ const UTF16_NATIVE: u16 = 4;
 const FONT_FLAGS_COLORED: i32 = 0x01;
 
 extern "C" {
+    // TECkit_Status is `long` (teckit-Common.h:50), which is 64-bit on LP64
+    // targets and 32-bit on wasm32 and Windows. `c_long` is the spelling that
+    // is right everywhere; wasm validates call signatures, so getting this
+    // wrong traps rather than quietly working.
     fn TECkit_CreateConverter(
         mapping: *const u8,
         mapping_size: u32,
@@ -69,7 +73,7 @@ extern "C" {
         source_form: u16,
         target_form: u16,
         converter: *mut *mut c_void,
-    ) -> i64;
+    ) -> libc::c_long;
     fn TECkit_ConvertBuffer(
         converter: *mut c_void,
         in_buffer: *const u8,
@@ -79,9 +83,9 @@ extern "C" {
         out_length: u32,
         out_used: *mut u32,
         input_is_complete: u8,
-    ) -> i64;
-    fn TECkit_ResetConverter(converter: *mut c_void) -> i64;
-    fn TECkit_DisposeConverter(converter: *mut c_void) -> i64;
+    ) -> libc::c_long;
+    fn TECkit_ResetConverter(converter: *mut c_void) -> libc::c_long;
+    fn TECkit_DisposeConverter(converter: *mut c_void) -> libc::c_long;
     fn hb_tag_from_string(str_: *const c_char, len: c_int) -> u32;
 
     fn deleteLayoutEngine(engine: XeTeXLayoutEngine);
@@ -2218,8 +2222,8 @@ pub unsafe fn apply_mapping(
     txt_ptr: *mut u16,
     txt_len: c_int,
 ) -> c_int {
-    const K_STATUS_NO_ERROR: i64 = 0;
-    const K_STATUS_OUTPUT_BUFFER_FULL: i64 = 1;
+    const K_STATUS_NO_ERROR: libc::c_long = 0;
+    const K_STATUS_OUTPUT_BUFFER_FULL: libc::c_long = 1;
     let txt_bytes = txt_len as u32 * 2; // sizeof(UniChar) == 2
 
     let mut needed = (txt_bytes + 32) as usize;

@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::source::{SourceIdentity, SourcePath, SourceSnapshot};
+use tectonic_bridge_core::EOF;
 
 const MEM_TAG: usize = 1usize << (usize::BITS - 1);
 const INDEX_MASK: usize = !MEM_TAG;
@@ -244,7 +245,7 @@ pub(crate) fn getc(handle: usize) -> Option<libc::c_int> {
             // Reaching EOF is itself a consumed fact: the engine acted on the
             // file ending here, so anything appended invalidates the fence.
             observe_through(input, input.position);
-            return libc::EOF;
+            return EOF;
         };
         input.position += 1;
         observe_through(input, input.position);
@@ -401,7 +402,7 @@ mod tests {
         let mut buf = [0u8; 2];
         assert_eq!(unsafe { read(handle, buf.as_mut_ptr(), 2) }, Some(2));
         assert_eq!(&buf, b"bc");
-        assert_eq!(getc(handle), Some(libc::EOF));
+        assert_eq!(getc(handle), Some(EOF));
         assert_eq!(close(handle), Some(false));
     }
 

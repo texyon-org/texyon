@@ -302,6 +302,12 @@ dpx_get_tmpdir (void)
 char *
 dpx_create_temp_file (void)
 {
+#ifdef __wasi__
+    /* WASI has no mkstemp. The only thing temp files are for here is handing a
+     * path to an external converter, and there are no subprocesses under wasm
+     * either, so report failure the same way an unwritable tmpdir would. */
+    return NULL;
+#else
     char *tmpdir;
     size_t n;
     char  *tmp = NULL;
@@ -334,6 +340,7 @@ dpx_create_temp_file (void)
 #endif
 
     return tmp;
+#endif /* __wasi__ */
 }
 
 void

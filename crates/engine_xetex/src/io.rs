@@ -7,6 +7,7 @@ use crate::consts::{
 };
 use crate::input::InputAbort;
 use crate::mem::{xcalloc, xmalloc};
+use tectonic_bridge_core::EOF;
 
 // ---------------------------------------------------------------------------
 // UFILE — Rust mirror of the C `UFILE` struct (xetex-io.h:12–18)
@@ -40,6 +41,12 @@ pub(crate) struct UFile {
     pub conversion_data: *mut libc::c_void,
 }
 
+// The C `UFILE` is gone — nothing outside this crate names the type any more —
+// but the layout above is still the one the C struct had, and staying
+// bit-compatible with it keeps the checkpoint format readable. The documented
+// offsets assume 64-bit pointers, so only assert them there; on wasm32 the same
+// field order packs down to 24 bytes.
+#[cfg(target_pointer_width = "64")]
 const _: () = assert!(
     std::mem::size_of::<UFile>() == 32,
     "UFile size mismatch with C UFILE"
@@ -77,7 +84,7 @@ const K_FORM_NFC: u16 = 0x0100;
 const K_FORM_NFD: u16 = 0x0200;
 
 // TECkit status constants (teckit-Common.h:55).
-const K_STATUS_NO_ERROR: i64 = 0;
+const K_STATUS_NO_ERROR: libc::c_long = 0;
 
 // File format constants (tectonic_bridge_core_generated.h).
 const TTBC_FILE_FORMAT_TECTONIC_PRIMARY: libc::c_int = 59;
@@ -103,7 +110,9 @@ use crate::bridge::{
 
 extern "C" {
     // TECkit functions (C++ engine with C API — extern "C" ABI).
-    // TECkit_Status is `long` = i64 on Linux 64-bit; TECkit_Converter is opaque ptr (*mut c_void).
+    // TECkit_Status is `long` (teckit-Common.h:50): 64-bit on LP64, 32-bit on
+    // wasm32 and Windows, so it has to be spelled `c_long`. wasm validates call
+    // signatures, so a mismatch here traps instead of quietly working.
     fn TECkit_CreateConverter(
         mapping: *const u8,
         mapping_size: u32,
@@ -111,7 +120,7 @@ extern "C" {
         source_form: u16,
         target_form: u16,
         converter: *mut *mut libc::c_void,
-    ) -> i64;
+    ) -> libc::c_long;
     fn TECkit_ConvertBuffer(
         converter: *mut libc::c_void,
         in_buffer: *const u8,
@@ -121,8 +130,8 @@ extern "C" {
         out_length: u32,
         out_used: *mut u32,
         input_is_complete: u8,
-    ) -> i64;
-    fn TECkit_ResetConverter(converter: *mut libc::c_void) -> i64;
+    ) -> libc::c_long;
+    fn TECkit_ResetConverter(converter: *mut libc::c_void) -> libc::c_long;
 
     // bad_utf8_warning remains in C (xetex-xetexd.h:912).
 
@@ -472,12 +481,12 @@ pub(crate) unsafe fn input_line_in(
             }
         }
 
-        if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+        if i != EOF && i != b'\n' as i32 && i != b'\r' as i32 {
             *BYTE_BUFFER.add(bytes_read as usize) = i as libc::c_char;
             bytes_read += 1;
             while bytes_read < st.input.buf_size as u32 {
                 i = ttstub_input_getc((*f).handle);
-                if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
+                if i == EOF || i == b'\n' as i32 || i == b'\r' as i32 {
                     break;
                 }
                 *BYTE_BUFFER.add(bytes_read as usize) = i as libc::c_char;
@@ -485,11 +494,11 @@ pub(crate) unsafe fn input_line_in(
             }
         }
 
-        if i == libc::EOF && *crate::compat::errno_location() != libc::EINTR && bytes_read == 0 {
+        if i == EOF && *crate::compat::errno_location() != libc::EINTR && bytes_read == 0 {
             return Ok(0); // false
         }
 
-        if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+        if i != EOF && i != b'\n' as i32 && i != b'\r' as i32 {
             return Err(InputAbort::TtAbort(
                 c"unable to read an entire line (buffer too small)".as_ptr(),
             ));
@@ -564,12 +573,12 @@ pub(crate) unsafe fn input_line_in(
                     ) as *mut u32;
                 }
                 let mut tmp_len: i32 = 0;
-                if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+                if i != EOF && i != b'\n' as i32 && i != b'\r' as i32 {
                     *UTF32_BUF.add(tmp_len as usize) = i as u32;
                     tmp_len += 1;
                     while tmp_len < st.input.buf_size {
                         i = get_uni_c_in(st, f)?;
-                        if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
+                        if i == EOF || i == b'\n' as i32 || i == b'\r' as i32 {
                             break;
                         }
                         *UTF32_BUF.add(tmp_len as usize) = i as u32;
@@ -577,13 +586,13 @@ pub(crate) unsafe fn input_line_in(
                     }
                 }
 
-                if i == libc::EOF
+                if i == EOF
                     && *crate::compat::errno_location() != libc::EINTR
                     && tmp_len == 0
                 {
                     return Ok(0);
                 }
-                if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+                if i != EOF && i != b'\n' as i32 && i != b'\r' as i32 {
                     return Err(InputAbort::TtAbort(
                         c"unable to read an entire line (buffer too small)".as_ptr(),
                     ));
@@ -593,7 +602,7 @@ pub(crate) unsafe fn input_line_in(
             _ => {
                 // No normalization: store directly into buffer[last..].
                 if st.input.last < st.input.buf_size
-                    && i != libc::EOF
+                    && i != EOF
                     && i != b'\n' as i32
                     && i != b'\r' as i32
                 {
@@ -601,7 +610,7 @@ pub(crate) unsafe fn input_line_in(
                     st.input.last += 1;
                     while st.input.last < st.input.buf_size {
                         i = get_uni_c_in(st, f)?;
-                        if i == libc::EOF || i == b'\n' as i32 || i == b'\r' as i32 {
+                        if i == EOF || i == b'\n' as i32 || i == b'\r' as i32 {
                             break;
                         }
                         st.input.buffer[st.input.last as usize] = i;
@@ -609,13 +618,13 @@ pub(crate) unsafe fn input_line_in(
                     }
                 }
 
-                if i == libc::EOF
+                if i == EOF
                     && *crate::compat::errno_location() != libc::EINTR
                     && st.input.last == st.input.first
                 {
                     return Ok(0);
                 }
-                if i != libc::EOF && i != b'\n' as i32 && i != b'\r' as i32 {
+                if i != EOF && i != b'\n' as i32 && i != b'\r' as i32 {
                     return Err(InputAbort::TtAbort(
                         c"unable to read an entire line (buffer too small)".as_ptr(),
                     ));
@@ -735,7 +744,7 @@ pub(crate) unsafe fn get_uni_c_in(
         UTF8 => {
             let mut c = ttstub_input_getc((*f).handle);
             rval = c;
-            if rval != libc::EOF {
+            if rval != EOF {
                 let extra_bytes = crate::utf8::BYTES_FROM_UTF8[rval as usize] as usize;
                 if extra_bytes >= 4 {
                     // case 5 and 4 in C: invalid leading bytes
@@ -747,7 +756,7 @@ pub(crate) unsafe fn get_uni_c_in(
                 for _ in 0..extra_bytes {
                     c = ttstub_input_getc((*f).handle);
                     if !(0x80..0xC0).contains(&c) {
-                        if c != libc::EOF {
+                        if c != EOF {
                             ttstub_input_ungetc((*f).handle, c);
                         }
                         crate::output::bad_utf8_warning_in(st);
@@ -767,7 +776,7 @@ pub(crate) unsafe fn get_uni_c_in(
 
         UTF16BE => {
             rval = ttstub_input_getc((*f).handle);
-            if rval != libc::EOF {
+            if rval != EOF {
                 rval <<= 8;
                 rval += ttstub_input_getc((*f).handle);
                 if (0xd800..=0xdbff).contains(&rval) {
@@ -788,7 +797,7 @@ pub(crate) unsafe fn get_uni_c_in(
 
         UTF16LE => {
             rval = ttstub_input_getc((*f).handle);
-            if rval != libc::EOF {
+            if rval != EOF {
                 rval += ttstub_input_getc((*f).handle) << 8;
                 if (0xd800..=0xdbff).contains(&rval) {
                     let mut lo = ttstub_input_getc((*f).handle);

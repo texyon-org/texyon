@@ -52,6 +52,13 @@ use tectonic_io_base::{
 };
 use tectonic_status_base::{tt_error, tt_warning, MessageKind, StatusBackend};
 
+/// The C `EOF` sentinel.
+///
+/// The `libc` crate only defines `EOF` for platforms with a stdio, which
+/// excludes the WASI targets, but the value is universal — and the engines
+/// exchange it with this crate's `getc`-alikes on every target.
+pub const EOF: libc::c_int = -1;
+
 /// The ID of an InputHandle, used for Rust core state
 #[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
@@ -984,7 +991,7 @@ pub extern "C" fn ttbc_output_putc(
     let rc = c as u8;
 
     if es.output_write(handle.expect("valid handle"), &[rc]) {
-        libc::EOF
+        EOF
     } else {
         c
     }
@@ -1174,7 +1181,7 @@ pub extern "C" fn ttbc_input_getc(
         Err(e) => {
             if let Some(ioe) = e.downcast_ref::<io::Error>() {
                 if ioe.kind() == io::ErrorKind::UnexpectedEof {
-                    return libc::EOF;
+                    return EOF;
                 }
             }
 
