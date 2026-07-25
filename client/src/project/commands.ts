@@ -60,14 +60,17 @@ export interface MergedCommand {
 /**
  * Merge what the engine has with what the corpus describes.
  *
- * `packages` are those the document loads, already fetched. `available` maps a
- * command name to a package that provides it, for the third tier — pass an
- * empty map to leave that out.
+ * `packages` are those the document loads, already fetched.
+ *
+ * The third tier — commands no package here provides — is deliberately *not*
+ * built. There are sixty thousand of them against twenty-five thousand that
+ * exist, and materialising an object for each on every compile was most of the
+ * work this function did. They are a lookup by name, so
+ * {@link availableCommand} answers for one at the moment something asks.
  */
 export function mergeCommands(
   engine: readonly EngineCommand[],
   packages: readonly CwlPackage[],
-  available: ReadonlyMap<string, string> = new Map(),
 ): MergedCommand[] {
   const described = new Map<
     string,
@@ -94,10 +97,8 @@ export function mergeCommands(
   }
 
   const merged: MergedCommand[] = [];
-  const defined = new Set<string>();
 
   for (const command of engine) {
-    defined.add(command.name);
     const corpus = described.get(command.name);
 
     if (corpus === undefined) {
@@ -134,23 +135,40 @@ export function mergeCommands(
     });
   }
 
-  // Anything the corpus knows of that this document does not have. Offering it
-  // as a completion would be wrong — it does not exist — but knowing which
-  // package provides it is what lets the editor suggest loading one.
-  for (const [name, from] of available) {
-    if (defined.has(name)) continue;
-    merged.push({
-      name,
-      tier: "available",
-      signatures: null,
-      arity: 0,
-      optional: false,
-      classification: null,
-      from,
-    });
-  }
-
   return merged;
+}
+
+/** Whatever the caller already keeps its defined names in. */
+export interface HasName {
+  has(name: string): boolean;
+}
+
+/**
+ * A command this document does not have, described by the package that would
+ * provide it.
+ *
+ * Returns null when the corpus does not know the name, or when the document
+ * already has it — a command that exists is not something to go and load.
+ */
+export function availableCommand(
+  name: string,
+  providers: ReadonlyMap<string, string>,
+  defined: HasName,
+): MergedCommand | null {
+  if (defined.has(name)) return null;
+
+  const from = providers.get(name);
+  if (from === undefined) return null;
+
+  return {
+    name,
+    tier: "available",
+    signatures: null,
+    arity: 0,
+    optional: false,
+    classification: null,
+    from,
+  };
 }
 
 /**

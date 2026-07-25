@@ -65,10 +65,7 @@ export function App() {
     };
   }, [preamble]);
 
-  const merged = useMemo(
-    () => mergeCommands(commands, corpus, providers()),
-    [commands, corpus],
-  );
+  const merged = useMemo(() => mergeCommands(commands, corpus), [commands, corpus]);
 
   // Rebuilt when the text changes, which is what makes completion know about
   // the label you wrote a moment ago.
@@ -222,6 +219,7 @@ export function App() {
             sources={{
               symbols,
               commands: merged,
+              providers: providers(),
               addPackage: (name) => {
                 const main = workspace.read(PRIMARY);
                 if (main === null || main.includes(`{${name}}`)) return;

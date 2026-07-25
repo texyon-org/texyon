@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { CwlPackage } from "./cwl.ts";
-import { mergeCommands, packagesUsed, resolvePackages } from "./commands.ts";
+import { availableCommand, mergeCommands, packagesUsed, resolvePackages } from "./commands.ts";
 import type { EngineCommand } from "./commands.ts";
 
 const engine = (name: string, arity = 0, optional = false): EngineCommand => ({
@@ -111,16 +111,30 @@ test("a command the corpus never heard of is still offered", () => {
 });
 
 test("a command the document does not have is offered as a package to load", () => {
-  const merged = mergeCommands(
-    [engine("frac", 2)],
-    [],
-    new Map([["SI", "siunitx"], ["frac", "latex-document"]]),
-  );
+  const providers = new Map([["SI", "siunitx"], ["frac", "latex-document"]]);
+  const defined = new Set(["frac"]);
 
-  const available = merged.filter((c) => c.tier === "available");
-  assert.deepEqual(available.map((c) => [c.name, c.from]), [["SI", "siunitx"]]);
-  // \frac is defined here, so it is not something to go and load.
-  assert.equal(merged.filter((c) => c.name === "frac").length, 1);
+  const suggestion = availableCommand("SI", providers, defined);
+  assert.equal(suggestion?.tier, "available");
+  assert.equal(suggestion?.from, "siunitx");
+});
+
+test("a command that already exists is not something to go and load", () => {
+  const providers = new Map([["frac", "latex-document"]]);
+
+  assert.equal(availableCommand("frac", providers, new Set(["frac"])), null);
+});
+
+test("a command no package here provides has nothing to suggest", () => {
+  assert.equal(availableCommand("nope", new Map(), new Set()), null);
+});
+
+test("the merged set holds only what the document has", () => {
+  // The sixty thousand commands nobody loaded are a lookup, not a list: they
+  // must not turn up in the merge, which is rebuilt on every compile.
+  const merged = mergeCommands([engine("frac", 2)], []);
+
+  assert.deepEqual(merged.map((c) => c.name), ["frac"]);
 });
 
 test("packages are read from the source, class included", () => {

@@ -470,7 +470,10 @@ impl Session {
     fn collect(&mut self, run: PipelineRun) -> Result<CompileOutput> {
         let messages = std::mem::take(&mut *self.messages.borrow_mut());
         let log = self.written.get(&self.log_name).unwrap_or_default();
-        let diagnostics = parse_diagnostics(&String::from_utf8_lossy(&log));
+        let diagnostics = parse_diagnostics(
+            &String::from_utf8_lossy(&log),
+            Some(self.primary_name.as_str()),
+        );
 
         let mut outcome = "warnings";
         let aborted = match run {

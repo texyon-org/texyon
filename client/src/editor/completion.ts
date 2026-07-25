@@ -15,15 +15,17 @@
 
 import { snippetCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 
-import type { MergedCommand } from "../project/commands";
+import { availableCommand, type MergedCommand } from "../project/commands";
 import type { SymbolIndex } from "../project/symbols";
 import { commandSnippet, describeSignature, environmentSnippet } from "./snippets";
 
 /** Everything the completion source reads, fetched fresh on each request. */
 export interface CompletionSources {
   symbols: SymbolIndex;
-  /** The merged command set: what exists, what it means, what could exist. */
+  /** The merged command set: everything this document actually has. */
   commands: readonly MergedCommand[];
+  /** Every command the corpus knows of, mapped to a package providing it. */
+  providers: ReadonlyMap<string, string>;
   /** Add `\usepackage{name}` to the preamble. */
   addPackage: (name: string) => void;
 }
@@ -166,19 +168,8 @@ function commandOptions(at: CompletionSources, prefix: string): Completion[] {
     options.push(template === null ? option : snippetCompletion(template, option));
   }
 
-  let available = 0;
-
   for (const command of at.commands) {
     if (own.has(command.name) || !matches(command.name)) continue;
-
-    if (command.tier === "available") {
-      // Capped rather than sorted: they are all equally distant from what is
-      // actually loaded, and sixty thousand of anything is not a suggestion.
-      if (available >= AVAILABLE_LIMIT) continue;
-      available++;
-      options.push(availableOption(command, at));
-      continue;
-    }
 
     // Rarely-used commands exist and are worth completing if asked for by
     // name, but should not crowd out the ones people mean.
@@ -194,6 +185,25 @@ function commandOptions(at: CompletionSources, prefix: string): Completion[] {
     };
 
     options.push(template === null ? option : snippetCompletion(template, option));
+  }
+
+  // Only now, over names rather than objects: the corpus knows of sixty
+  // thousand commands nobody here has loaded, and the prefix rules out
+  // essentially all of them. Stopping at the cap means the usual case walks a
+  // few entries rather than the whole index.
+  if (wanted !== "") {
+    let available = 0;
+
+    for (const name of at.providers.keys()) {
+      if (available >= AVAILABLE_LIMIT) break;
+      if (own.has(name) || defined.has(name) || !matches(name)) continue;
+
+      const command = availableCommand(name, at.providers, defined);
+      if (command === null) continue;
+
+      available++;
+      options.push(availableOption(command, at));
+    }
   }
 
   return options;

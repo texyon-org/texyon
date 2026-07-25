@@ -60,6 +60,14 @@ pub struct Diagnostic {
 
 /// Recover the diagnostics from a TeX transcript.
 ///
+/// `root` is the file the transcript begins inside — the primary input. It is
+/// needed rather than merely convenient: an incremental replay resumes from a
+/// checkpoint partway through the run, so its transcript starts in the middle
+/// of the primary file and the `(main.tex` that opened it was printed long
+/// before. Without a floor to fall back to, the stack is empty at the point
+/// most errors are reported and every one of them comes out with no file —
+/// which, for an editor, means nothing appears in the gutter at all.
+///
 /// # What this cannot do
 ///
 /// Two ambiguities are inherent to the format rather than to this
@@ -73,8 +81,13 @@ pub struct Diagnostic {
 /// parentheses are balanced within the prose, so tracking every `(` and `)` —
 /// and remembering which ones named a plausible path — keeps the file stack
 /// aligned even though it briefly contains nonsense.
-pub fn parse(log: &str) -> Vec<Diagnostic> {
+pub fn parse(log: &str, root: Option<&str>) -> Vec<Diagnostic> {
     let lines = unwrap_lines(log);
+
+    // The floor. A `)` closing a file opened before the transcript began pops
+    // it, so it is restored rather than merely pushed once — otherwise the
+    // first stray close would lose the root for the rest of the run.
+    let root = root.map(normalize);
     let mut stack: Vec<Option<String>> = Vec::new();
     let mut found = Vec::new();
     let mut index = 0;
@@ -82,25 +95,31 @@ pub fn parse(log: &str) -> Vec<Diagnostic> {
     while index < lines.len() {
         let line = &lines[index];
 
-        // The engine reports an error, then the line it was on, then several
-        // lines of advice. The advice is not a diagnostic.
+        // The engine reports an error, then several lines of advice, then the
+        // line it was on, then more advice. The advice is not a diagnostic, and
+        // the `l.<n>` marker is further down than it looks: LaTeX puts its
+        // "See the LaTeX manual" and "Type H <return>" between them, so a
+        // lookahead of a few lines finds nothing and reports no line at all.
         if let Some(message) = line.strip_prefix("! ") {
             let message = strip_error_prefix(message.trim_end());
             let line_number = lines[index + 1..]
                 .iter()
-                .take(3)
+                // Bounded, and stopping at the next error so one cannot take
+                // the line belonging to another.
+                .take(20)
+                .take_while(|candidate| !candidate.starts_with("! "))
                 .find_map(|candidate| source_line_marker(candidate));
 
             found.push(Diagnostic {
                 severity: Severity::Error,
-                path: current_file(&stack),
+                path: current_file(&stack).or_else(|| root.clone()),
                 line: line_number,
                 message: trim_sentence(message).to_owned(),
             });
         } else if let Some((severity, message)) = classify(line) {
             found.push(Diagnostic {
                 severity,
-                path: current_file(&stack),
+                path: current_file(&stack).or_else(|| root.clone()),
                 line: reported_line(line),
                 message: trim_sentence(message).to_owned(),
             });
@@ -353,9 +372,49 @@ LaTeX Warning: There were undefined references.\n\
  )\n\
 Output written on main.xdv (1 page, 2280 bytes).\n";
 
+    /// A LaTeX error, spelled the way LaTeX actually spells one.
+    ///
+    /// The `l.15` is six lines below the `!`, with the standard advice in
+    /// between. Anything looking only at the next line or two finds no line
+    /// number and reports the error against the whole file.
+    const LATEX_ERROR: &str = "(main.tex\n\
+! LaTeX Error: \\mathbf allowed only in math mode.\n\
+\n\
+See the LaTeX manual or LaTeX Companion for explanation.\n\
+Type  H <return>  for immediate help.\n\
+ ...                                              \n\
+                                                  \n\
+l.15 \\vect{x}\n\
+             \n\
+You're in trouble here.  Try typing  <return>  to proceed.\n";
+
+    #[test]
+    fn a_latex_error_finds_the_line_below_its_advice() {
+        let found = parse(LATEX_ERROR, None);
+        let error = found
+            .iter()
+            .find(|d| d.severity == Severity::Error)
+            .expect("the transcript contains one error");
+
+        assert_eq!(error.message, "\\mathbf allowed only in math mode");
+        assert_eq!(error.line, Some(15));
+        assert_eq!(error.path.as_deref(), Some("main.tex"));
+    }
+
+    #[test]
+    fn one_error_does_not_take_the_line_belonging_to_the_next() {
+        let found = parse(
+            "(main.tex\n! First problem.\n! Second problem.\nl.9 \\foo\n",
+            None,
+        );
+
+        let lines: Vec<_> = found.iter().map(|d| d.line).collect();
+        assert_eq!(lines, vec![None, Some(9)]);
+    }
+
     #[test]
     fn an_error_is_attributed_to_the_child_that_raised_it() {
-        let found = parse(REAL_LOG);
+        let found = parse(REAL_LOG, None);
         let error = found
             .iter()
             .find(|d| d.severity == Severity::Error)
@@ -369,7 +428,7 @@ Output written on main.xdv (1 page, 2280 bytes).\n";
 
     #[test]
     fn a_reference_warning_keeps_its_input_line() {
-        let found = parse(REAL_LOG);
+        let found = parse(REAL_LOG, None);
         let warning = found
             .iter()
             .find(|d| d.message.starts_with("Reference"))
@@ -383,7 +442,7 @@ Output written on main.xdv (1 page, 2280 bytes).\n";
 
     #[test]
     fn an_overfull_box_reports_the_first_line_of_its_range() {
-        let found = parse(REAL_LOG);
+        let found = parse(REAL_LOG, None);
         let box_warning = found
             .iter()
             .find(|d| d.message.starts_with("Overfull"))
@@ -398,7 +457,7 @@ Output written on main.xdv (1 page, 2280 bytes).\n";
         // "(e.g., `\hobx')" and its twin sit between the error and the `)` that
         // closes the child. If either were taken for a file, everything after
         // would be attributed one level too deep.
-        let found = parse(REAL_LOG);
+        let found = parse(REAL_LOG, None);
         let last = found.last().expect("the transcript ends with a warning");
         assert_eq!(last.message, "There were undefined references");
         assert_eq!(last.path.as_deref(), Some("main.tex"));
@@ -406,7 +465,7 @@ Output written on main.xdv (1 page, 2280 bytes).\n";
 
     #[test]
     fn a_wrapped_line_is_rejoined_before_it_is_read() {
-        let found = parse(REAL_LOG);
+        let found = parse(REAL_LOG, None);
         let info = found
             .iter()
             .find(|d| d.message.starts_with("Trying to load"))
@@ -420,7 +479,7 @@ Output written on main.xdv (1 page, 2280 bytes).\n";
 
     #[test]
     fn a_missing_file_is_a_warning() {
-        let found = parse(REAL_LOG);
+        let found = parse(REAL_LOG, None);
         assert!(found
             .iter()
             .any(|d| d.severity == Severity::Warning && d.message == "No file main.aux"));
@@ -430,6 +489,7 @@ Output written on main.xdv (1 page, 2280 bytes).\n";
     fn a_latex_error_is_not_labelled_twice() {
         let found = parse(
             "(main.tex\n! LaTeX Error: \\begin{document} ended by \\end{foo}.\nl.9 \\end{foo}\n",
+            None,
         );
         assert_eq!(found[0].message, "\\begin{document} ended by \\end{foo}");
         assert_eq!(found[0].line, Some(9));
@@ -437,8 +497,10 @@ Output written on main.xdv (1 page, 2280 bytes).\n";
 
     #[test]
     fn a_package_warning_is_classified_without_knowing_the_package() {
-        let found =
-            parse("(main.tex\nPackage inventedbyme Warning: Something is off on input line 12.\n");
+        let found = parse(
+            "(main.tex\nPackage inventedbyme Warning: Something is off on input line 12.\n",
+            None,
+        );
         assert_eq!(found[0].severity, Severity::Warning);
         assert_eq!(found[0].message, "Something is off on input line 12");
         assert_eq!(found[0].line, Some(12));
@@ -448,13 +510,47 @@ Output written on main.xdv (1 page, 2280 bytes).\n";
     fn quoted_prose_is_not_mistaken_for_a_label() {
         // The word appears mid-sentence rather than as a label, so this line is
         // prose about a warning, not a warning.
-        let found = parse("(main.tex\nThis text mentions a Warning: but is not one.\n");
+        let found = parse(
+            "(main.tex\nThis text mentions a Warning: but is not one.\n",
+            None,
+        );
         assert!(found.is_empty(), "{found:?}");
     }
 
     #[test]
     fn a_transcript_with_nothing_to_say_yields_nothing() {
-        assert!(parse("").is_empty());
-        assert!(parse("**\n(main.tex\n)\n").is_empty());
+        assert!(parse("", None).is_empty());
+        assert!(parse("**\n(main.tex\n)\n", None).is_empty());
+    }
+
+    #[test]
+    fn a_replay_starting_mid_file_still_names_the_file() {
+        // What an incremental replay actually hands over: it resumes from a
+        // checkpoint, so the `(main.tex` that opened the primary was printed
+        // before any of this and the stack is empty by the time it matters.
+        let found = parse(
+            "(l3backend-xetex.def\nFile: l3backend-xetex.def\n)\n\
+             ! LaTeX Error: \\mathbf allowed only in math mode.\n\
+             \n\
+             See the LaTeX manual or LaTeX Companion for explanation.\n\
+             Type  H <return>  for immediate help.\n\
+              ...                                              \n\
+                                                               \n\
+             l.12 Here is \\vect{x}\n",
+            Some("main.tex"),
+        );
+
+        assert_eq!(found[0].path.as_deref(), Some("main.tex"));
+        assert_eq!(found[0].line, Some(12));
+    }
+
+    #[test]
+    fn a_file_opened_inside_the_replay_still_wins_over_the_root() {
+        let found = parse(
+            "(chapters/method.tex\nOverfull \\hbox (1.0pt too wide) in paragraph at lines 9--9\n",
+            Some("main.tex"),
+        );
+
+        assert_eq!(found[0].path.as_deref(), Some("chapters/method.tex"));
     }
 }
