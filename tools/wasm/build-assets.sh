@@ -8,12 +8,12 @@
 # ship it as one pack that the Worker loads once at startup.
 #
 # Usage: tools/wasm/build-assets.sh [output-dir]
-#        defaults to demo/public/tectonic
+#        defaults to client/public/tectonic
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-OUT="${1:-$REPO/demo/public/tectonic}"
+OUT="${1:-$REPO/client/public/tectonic}"
 
 TECTONIC="$REPO/target/release/tectonic"
 if [ ! -x "$TECTONIC" ]; then
@@ -29,7 +29,7 @@ trap 'rm -rf "$WORK"' EXIT
 export TECTONIC_CACHE_DIR="$WORK/cache"
 
 # Seed documents. Between them these pull in the format dump plus the classes,
-# packages, fonts and metrics that a general-purpose editor demo can reach
+# packages, fonts and metrics that a general-purpose editor can reach
 # without the user hitting the network. Add to this list to widen the pack.
 mkdir -p "$WORK/seeds"
 
@@ -99,7 +99,7 @@ TEX
 # core.tex loads lmodern, which substitutes Latin Modern for every Computer
 # Modern face — so on its own it would never pull cmex/cmsy/cmmi in. This seed
 # is deliberately stock: no fontenc, no lmodern, which is what a document gets
-# by default and therefore what the demo must be able to typeset offline.
+# by default and therefore what the editor must be able to typeset offline.
 cat > "$WORK/seeds/stock.tex" <<'TEX'
 \documentclass{article}
 \usepackage{amsmath,amssymb}
@@ -128,11 +128,11 @@ cat > "$WORK/seeds/book.tex" <<'TEX'
 \begin{document}\chapter{One}Text.\end{document}
 TEX
 
-# The demo's own starting document, so the pack is guaranteed to cover what the
-# editor shows on first load. Keeping it as a real .tex file means the demo and
+# The editor's own starting document, so the pack is guaranteed to cover what
+# it shows on first load. Keeping it as a real .tex file means the client and
 # the pack cannot drift apart.
-if [ -f "$REPO/demo/sample.tex" ]; then
-    cp "$REPO/demo/sample.tex" "$WORK/seeds/demo-sample.tex"
+if [ -f "$REPO/client/sample.tex" ]; then
+    cp "$REPO/client/sample.tex" "$WORK/seeds/client-sample.tex"
 fi
 
 # The Computer Modern families are size-specific: an 11pt document loads cmex8

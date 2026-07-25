@@ -25,9 +25,14 @@ import type {
   SyncRect,
   WorkerRequest,
   WorkerResponse,
-} from "./protocol";
-import { AssetCache, digest } from "./cache";
-import { Wasi, WasiExit } from "./wasi";
+} from "./protocol.js";
+// Relative imports carry their extension because this file is emitted as an ES
+// module and loaded by the browser directly — the engine starts it with
+// `new URL("./worker.js", import.meta.url)`, so no bundler is in the way to
+// resolve a bare "./cache". Without the extension the worker fails to load, and
+// a module worker that fails to load reports nothing at all.
+import { AssetCache, digest } from "./cache.js";
+import { Wasi, WasiExit } from "./wasi.js";
 
 /** The engine's exported ABI. See `crates/wasm/src/lib.rs`. */
 interface Exports {

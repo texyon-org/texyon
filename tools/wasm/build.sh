@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build the Tectonic WebAssembly module and drop it where the demo expects it.
+# Build the Tectonic WebAssembly module and drop it where the client expects it.
 #
 # Usage: tools/wasm/build.sh [--debug] [output-dir]
-#        output-dir defaults to demo/public/tectonic
+#        output-dir defaults to client/public/tectonic
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +16,7 @@ if [ "${1:-}" = "--debug" ]; then
     shift
 fi
 
-OUT="${1:-$REPO/demo/public/tectonic}"
+OUT="${1:-$REPO/client/public/tectonic}"
 
 # shellcheck source=/dev/null
 source "$HERE/env.sh"

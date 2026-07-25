@@ -26,14 +26,15 @@ crates/engine_xetex/tests/corpus/goldens/*.tmp
 /tools/wasm/wasi-sdk-*
 /tools/wasm/*.tar.gz
 /tools/wasm/vendor/
-/demo/public/tectonic/files/
-/demo/public/tectonic/manifest.json
-/demo/public/tectonic/*.wasm
+/client/public/tectonic/files/
+/client/public/tectonic/manifest.json
+/client/public/tectonic/*.wasm
 node_modules/
 /js/dist/
+/client/dist/
 *.tsbuildinfo
 
-# Scratch documents for trying the demo out. sample.tex is the one that ships;
-# anything else here is the author's own and stays local.
-/demo/sample*.tex
-!/demo/sample.tex
+# Scratch documents for trying the editor out. sample.tex is the one that ships
+# and seeds the support pack; anything else here is the author's own.
+/client/sample*.tex
+!/client/sample.tex

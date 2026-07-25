@@ -43,7 +43,7 @@ export type {
   Severity,
   SourceSpot,
   SyncRect,
-} from "./protocol";
+} from "./protocol.js";
 
 import type {
   CompileResult,
@@ -56,7 +56,7 @@ import type {
   SyncRect,
   WorkerRequest,
   WorkerResponse,
-} from "./protocol";
+} from "./protocol.js";
 
 /** Thrown when the engine could not do what was asked. */
 export class TectonicError extends Error {
