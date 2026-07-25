@@ -70,6 +70,32 @@ otherwise hand the engine a web page and tell it that it is `pdftex.map`. The
 Worker checks each file's length against the manifest and reports a clear error
 if this happens, but the fix is on the server.
 
+## Caching
+
+A cold start costs about sixty megabytes — the module, the format dump, and a
+few hundred support files — and none of it changes between page loads. All of it
+is kept in Cache Storage, so a reload fetches the manifest and, at most, one
+conditional request for the module.
+
+The three kinds of asset are invalidated differently, because they change
+differently. The module is revalidated against the server's own `ETag` or
+`Last-Modified`, so a rebuilt engine is picked up on the next load and nobody
+has to bump a version. Pack files are keyed by a digest of the manifest that
+lists them — the manifest names every file and its length, so any change to the
+pack changes the digest, and several hundred files are validated by the one
+small request that had to happen anyway. Files read out of a bundle are keyed by
+the bundle's URL, since a bundle tar does not change under its own name.
+
+Two consequences worth knowing:
+
+- **Your server should send `ETag` or `Last-Modified` for the `.wasm`.** Without
+  a validator there is no way to show a stored copy is still current, so it is
+  re-downloaded every load rather than risk running a stale engine. Every
+  ordinary static host sends one.
+- **Caching fails soft, always.** Private windows, denied storage, exhausted
+  quota, a runtime with no Cache API — each of those means a cold start, never
+  an error.
+
 ## API
 
 ### `TectonicEngine.create(options?)`

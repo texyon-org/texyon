@@ -26,6 +26,7 @@ import type {
   WorkerRequest,
   WorkerResponse,
 } from "./protocol";
+import { AssetCache, digest } from "./cache";
 import { Wasi, WasiExit } from "./wasi";
 
 /** The engine's exported ABI. See `crates/wasm/src/lib.rs`. */
@@ -108,6 +109,32 @@ let bundle = new Map<string, [offset: number, length: number]>();
 
 /** Nanosecond-ish timing for the stats the UI shows. */
 let engineStart = 0;
+
+/** Assets held across page loads, or null where storage is unavailable. */
+let assets: AssetCache | null = null;
+/** Identifies the pack build, so a rebuild is not answered from the old one. */
+let packGeneration = "";
+/** Identifies the bundle, which is immutable under its own URL. */
+let bundleGeneration = "";
+/** Bundle files fetched this session that are not yet persisted. */
+const unsaved = new Map<string, Uint8Array>();
+
+/**
+ * Persist what the blocking path fetched.
+ *
+ * Bundle reads happen synchronously from inside the typesetting loop, where
+ * nothing asynchronous can be awaited, so they are queued here and written out
+ * once the engine hands control back.
+ */
+async function flushUnsaved(): Promise<void> {
+  if (!assets || !bundleGeneration || unsaved.size === 0) return;
+
+  const pending = [...unsaved];
+  unsaved.clear();
+  for (const [name, bytes] of pending) {
+    await assets.remember(bundleGeneration, name, bytes);
+  }
+}
 
 function post(message: WorkerResponse, transfer: Transferable[] = []): void {
   (self as DedicatedWorkerGlobalScope).postMessage(message, transfer);
@@ -234,7 +261,12 @@ function fromBundle(name: string, [offset, length]: [number, number]): Uint8Arra
   // as a missing file.
   for (let attempt = 0; attempt < 3; attempt++) {
     const bytes = fetchSync(url, [offset, length]);
-    if (bytes && bytes.length === length) return bytes;
+    if (bytes && bytes.length === length) {
+      // A bundle range request is the most expensive read there is, and the
+      // same document asks for the same files on every cold start.
+      unsaved.set(name, bytes);
+      return bytes;
+    }
   }
 
   post({
@@ -316,6 +348,26 @@ async function indexBundle(url: string): Promise<void> {
   post({ id: 0, kind: "progress", progress: { phase: "ready" } });
 }
 
+/**
+ * One support file, from the cache when this build has already fetched it.
+ *
+ * Verified against the manifest either way: a cached response is only as
+ * trustworthy as what was stored, and a single-page-app host that answered a
+ * missing file with its index page would otherwise persist that mistake.
+ */
+async function packFile(name: string): Promise<Uint8Array | null> {
+  const download = async (): Promise<Uint8Array | null> => {
+    const response = await fetch(fileUrl(name));
+    if (!response.ok) return null;
+    return verify(name, new Uint8Array(await response.arrayBuffer()));
+  };
+
+  if (!assets || !packGeneration) return download();
+
+  const bytes = await assets.generational(packGeneration, name, download);
+  return bytes ? verify(name, bytes) : null;
+}
+
 /** Load the whole pack in the background so the blocking path stops firing. */
 async function prefetch(): Promise<void> {
   const names = [...manifest.keys()].filter((name) => !resident.has(name));
@@ -335,13 +387,10 @@ async function prefetch(): Promise<void> {
       const name = names[index];
 
       try {
-        const response = await fetch(fileUrl(name));
-        if (response.ok) {
-          const bytes = verify(name, new Uint8Array(await response.arrayBuffer()));
-          // A synchronous read may have landed the same file meanwhile; first
-          // one wins, they are identical.
-          if (bytes && !resident.has(name)) resident.set(name, bytes);
-        }
+        const bytes = await packFile(name);
+        // A synchronous read may have landed the same file meanwhile; first
+        // one wins, they are identical.
+        if (bytes && !resident.has(name)) resident.set(name, bytes);
       } catch {
         // A file that fails to prefetch is simply left to the blocking path.
       }
@@ -401,6 +450,11 @@ function call(request: unknown): RawResponse {
 async function init(opts: SerializableEngineOptions): Promise<void> {
   options = opts;
 
+  // Absent in a runtime without the Cache API, and refused in some private
+  // windows. Either way the engine still starts; it just starts cold.
+  assets = await AssetCache.open(typeof caches === "undefined" ? undefined : caches);
+  bundleGeneration = opts.bundleUrl ? await digest(encoder.encode(opts.bundleUrl)) : "";
+
   post({ id: 0, kind: "progress", progress: { phase: "fetching-module" } });
 
   const wasi = new Wasi({
@@ -452,7 +506,9 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
     },
   };
 
-  const source = await fetch(opts.moduleUrl);
+  const source = assets
+    ? await assets.revalidating(opts.moduleUrl)
+    : await fetch(opts.moduleUrl);
   if (!source.ok) {
     throw new Error(`could not fetch ${opts.moduleUrl}: HTTP ${source.status}`);
   }
@@ -482,11 +538,25 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
         "run tools/wasm/build-assets.sh",
     );
   }
-  const parsed = (await manifestResponse.json()) as {
+  // Read as bytes first: the manifest names every file in the pack and how long
+  // it is, so its digest is an identity for the whole pack. That turns several
+  // hundred cache validations into this one small request, which had to happen
+  // anyway.
+  const manifestBytes = new Uint8Array(await manifestResponse.arrayBuffer());
+  packGeneration = assets ? await digest(manifestBytes) : "";
+  const parsed = JSON.parse(decoder.decode(manifestBytes)) as {
     format: string;
     files: Record<string, number>;
   };
   manifest = new Map(Object.entries(parsed.files));
+
+  // Put back what earlier sessions pulled out of the bundle, before the
+  // blocking path can ask for any of it again.
+  if (assets && bundleGeneration) {
+    for (const [name, bytes] of await assets.restore(bundleGeneration)) {
+      if (!resident.has(name)) resident.set(name, bytes);
+    }
+  }
 
   // The format dump is 24 MB and nothing can start without it, so it is fetched
   // up front rather than through the blocking path.
@@ -496,11 +566,11 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
     progress: { phase: "fetching-format", total: manifest.get(parsed.format) },
   });
 
-  const format = await fetch(fileUrl(parsed.format));
-  if (!format.ok) {
+  const formatBytes = await packFile(parsed.format);
+  if (!formatBytes) {
     throw new Error(`could not fetch the format dump ${parsed.format}`);
   }
-  resident.set(parsed.format, new Uint8Array(await format.arrayBuffer()));
+  resident.set(parsed.format, formatBytes);
 
   const opened = call({ op: "open", format: parsed.format, primary: opts.primary });
   if (opened.status === "error") throw new Error(opened.message);
@@ -581,6 +651,10 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         } else if (reply.status === "compiled") {
           const result = collect(reply, elapsed);
           post({ id: request.id, kind: "compiled", result });
+          // Deliberately not awaited: the frame is already on its way, and
+          // persisting what this compile pulled from the bundle can happen
+          // while the user reads it.
+          void flushUnsaved();
         } else {
           post({ id: request.id, kind: "ok" });
         }
