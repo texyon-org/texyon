@@ -156,7 +156,8 @@ impl ReplayFenceInputs {
     ///
     /// An input may differ only after the source prefix that was observed or
     /// lies before its resumable byte cursor. Size and EOF observations also
-    /// constrain length, including for closed existence/encoding probes.
+    /// constrain length, except for a probe that consumed nothing, which is
+    /// held only to the existence and emptiness it actually distinguished.
     pub(crate) fn is_eligible(&self, snapshot: &SourceSnapshot) -> bool {
         self.inputs.iter().all(|input| {
             let Some((bytes, identity)) = snapshot.replay_entry(&input.path) else {
@@ -168,7 +169,10 @@ impl ReplayFenceInputs {
             if bytes.len() < input.minimum_size {
                 return false;
             }
-            if input.exact_size_observed && input.bytes.len() != bytes.len() {
+            if input.exact_size_observed
+                && input.bytes.len() != bytes.len()
+                && !probe_survives_resize(input, &bytes)
+            {
                 return false;
             }
             let constrained_prefix = input.position.max(input.observed_prefix);
@@ -189,6 +193,27 @@ impl ReplayFenceInputs {
     pub(crate) fn allocated_bytes(&self) -> usize {
         self.inputs.capacity() * std::mem::size_of::<MemoryInputCheckpoint>()
     }
+}
+
+/// Whether a size observation that consumed no bytes still holds after a
+/// length change.
+///
+/// LaTeX resolves `\input` and graphics paths by asking for a file's size and
+/// closing it again without reading it, and branches only on whether the answer
+/// is empty. Holding such a probe to an exact length makes every fence planted
+/// after it useless the moment the author's next keystroke changes that file's
+/// length, which forces each edit inside an included file to replay from before
+/// the file was opened. Constraining these probes to the existence and
+/// emptiness they discriminate keeps the fences that sit next to the edit.
+///
+/// A probe that read, sought, or pushed back any byte is not covered: those
+/// observations still constrain the exact length.
+fn probe_survives_resize(input: &MemoryInputCheckpoint, bytes: &[u8]) -> bool {
+    let consumed_nothing = input.position == 0
+        && input.observed_prefix == 0
+        && input.minimum_size == 0
+        && input.pushback.is_none();
+    consumed_nothing && input.bytes.is_empty() == bytes.is_empty()
 }
 
 fn first_difference(left: &[u8], right: &[u8]) -> Option<usize> {
@@ -291,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn size_probe_requires_only_the_same_length() {
+    fn a_size_probe_that_read_nothing_survives_a_resize() {
         let original = b"same length";
         let mut input = checkpoint("main.tex", original, 0, true);
         input.exact_size_observed = true;
@@ -300,7 +325,40 @@ mod tests {
             inputs: vec![input],
         };
         assert!(fence.is_eligible(&snapshot(2, b"SAME LENGTH", b"child")));
-        assert!(!fence.is_eligible(&snapshot(2, b"different length", b"child")));
+        assert!(fence.is_eligible(&snapshot(2, b"different length", b"child")));
+    }
+
+    #[test]
+    fn a_size_probe_still_discriminates_an_empty_file() {
+        let original = b"present";
+        let mut input = checkpoint("main.tex", original, 0, true);
+        input.exact_size_observed = true;
+        let fence = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![input],
+        };
+        assert!(!fence.is_eligible(&snapshot(2, b"", b"child")));
+
+        let mut empty = checkpoint("main.tex", b"", 0, true);
+        empty.exact_size_observed = true;
+        let from_empty = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![empty],
+        };
+        assert!(!from_empty.is_eligible(&snapshot(2, b"now present", b"child")));
+    }
+
+    #[test]
+    fn a_size_observation_after_reading_still_pins_the_length() {
+        let original = b"prefix late text";
+        let mut input = checkpoint("main.tex", original, 0, true);
+        input.exact_size_observed = true;
+        input.observed_prefix = 6;
+        let fence = ReplayFenceInputs {
+            revision: SourceRevision::new(1),
+            inputs: vec![input],
+        };
+        assert!(!fence.is_eligible(&snapshot(2, b"prefix late text!", b"child")));
     }
 
     #[test]

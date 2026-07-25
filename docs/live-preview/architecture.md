@@ -50,6 +50,14 @@ transport around the same XeTeX implementation.
   the furthest byte prefix, minimum/exact size, and EOF facts actually
   observed. Unread or prefix-only probes may tolerate later changes; consumed
   bytes and observed metadata must remain identical.
+- A size observation from a source the operation opened and closed without
+  consuming a byte constrains only that source's existence and emptiness.
+  Resolving `\input` and graphics paths asks for a size and reads nothing, and
+  pinning the exact length there would invalidate every fence planted after an
+  included file was opened as soon as the author's next keystroke changed its
+  length. A document that instead typesets or compares such a size keeps a
+  stale value in the preview until the next full compile; the corpus runner's
+  cold-session oracle is what proves a document is unaffected.
 - A viewport foreground compiles through exactly the requested last page. Old
   tail visuals and SyncTeX records remain the client belief until one idle tail
   continuation atomically settles them.
