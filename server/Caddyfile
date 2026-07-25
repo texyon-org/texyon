@@ -1,0 +1,94 @@
+{
+	frankenphp
+	order php_server before file_server
+}
+
+:80 {
+	root * /app/public
+
+	# ---------------------------------------------------------------------
+	# The TeX Live bundle.
+	#
+	# The browser reads individual files out of this tar with one range request
+	# each, and rejects a 200 where it asked for a 206 — deliberately, since a
+	# server that ignored the Range header would otherwise hand it several
+	# gigabytes. Compression must stay off: encoding the response makes the
+	# byte offsets the client computed meaningless.
+	# ---------------------------------------------------------------------
+	handle_path /bundle/* {
+		root * /srv/bundle
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server {
+			precompressed
+		}
+	}
+
+	# ---------------------------------------------------------------------
+	# The engine and its support pack.
+	#
+	# Answering a missing file with the app's index page is the failure this
+	# guards against: the engine would be handed an HTML document and told it
+	# was pdftex.map. `file_server` 404s, and the SPA fallback below is scoped
+	# so it can never reach here.
+	#
+	# The module is revalidated by the client against ETag or Last-Modified,
+	# both of which Caddy sets, so a rebuilt engine is picked up on the next
+	# load and an unchanged one costs a 304.
+	# ---------------------------------------------------------------------
+	handle /tectonic/* {
+		header Cache-Control "public, max-age=300, must-revalidate"
+		file_server
+	}
+
+	handle /api/* {
+		php_server
+	}
+
+	# Fortify's session endpoints.
+	handle /login* {
+		php_server
+	}
+	handle /logout* {
+		php_server
+	}
+	handle /register* {
+		php_server
+	}
+	handle /forgot-password* {
+		php_server
+	}
+	handle /reset-password* {
+		php_server
+	}
+	handle /user/* {
+		php_server
+	}
+	handle /passkeys/* {
+		php_server
+	}
+	handle /two-factor* {
+		php_server
+	}
+	handle /sanctum/* {
+		php_server
+	}
+	handle /up {
+		php_server
+	}
+
+	# Everything else is the single-page app: a real file if there is one, and
+	# its entry point otherwise, so client-side routes survive a reload.
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Compression for what benefits from it. The bundle is handled above and
+	# never reaches this, which is the point.
+	encode zstd gzip
+
+	log {
+		output stdout
+		format console
+	}
+}

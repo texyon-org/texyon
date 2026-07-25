@@ -1,0 +1,27 @@
+# Dependencies are installed inside the image against composer.lock, so copying
+# the host's tree in would both bloat the context and, worse, carry a
+# bootstrap/cache built with dev packages that the production install does not
+# have.
+vendor
+node_modules
+bootstrap/cache/*
+!bootstrap/cache/.gitignore
+
+# State, not source.
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/framework/testing
+storage/logs/*
+database/*.sqlite
+
+# Secrets and local-only things.
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+.phpunit.cache
+phpstan.neon
+tests
