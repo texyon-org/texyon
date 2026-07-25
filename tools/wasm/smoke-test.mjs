@@ -158,16 +158,25 @@ function call(request) {
   }
 }
 
-const DOC = (extra) => String.raw`\documentclass{article}
+// A two-file project, because a single buffer would not exercise the source
+// authority the engine now runs on.
+const MAIN = String.raw`\documentclass{article}
 \usepackage{amsmath}
 \begin{document}
 \section{Smoke}
-Hello from WebAssembly.${extra}
+\input{chapters/one}
 \begin{equation}
   \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}
 \end{equation}
 \end{document}
 `;
+
+const CHILD = (extra) => `Hello from WebAssembly.${extra}\n`;
+
+const PROJECT = (extra) => ({
+  "main.tex": MAIN,
+  "chapters/one.tex": CHILD(extra),
+});
 
 const { instance } = await WebAssembly.instantiate(readFileSync(modulePath), imports);
 engine = instance.exports;
@@ -180,7 +189,7 @@ console.log("session opened");
 
 // First compile: cold, reads the format dump and the whole class hierarchy.
 let started = performance.now();
-reply = call({ op: "compile", text: DOC("") });
+reply = call({ op: "compile", files: PROJECT("") });
 const cold = performance.now() - started;
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
 
@@ -206,7 +215,7 @@ writeFileSync(join(repo, "target", "smoke-cold.svg"), reply.pages[0].svg);
 // Second compile: one word changed near the end, which is what the incremental
 // path exists for.
 started = performance.now();
-reply = call({ op: "compile", text: DOC(" Edited.") });
+reply = call({ op: "compile", files: PROJECT(" Edited.") });
 const warm = performance.now() - started;
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
 
@@ -216,7 +225,7 @@ console.log(
     `render ${reply.renderMs.toFixed(0)}), ` +
     `rung ${reply.replayRung}, ${reply.replayCommands} commands, ` +
     `${reply.changed.length}/${reply.pageCount} pages redrawn, ` +
-    `${reply.reusedPages} reused`,
+    `${reply.pagesRendered}/${reply.pagesFingerprinted} drawn of fingerprinted`,
 );
 
 if (reply.pages.length > 0) {
@@ -225,7 +234,7 @@ if (reply.pages.length > 0) {
 
 // Third compile: identical text. Nothing about the document changed, so the
 // renderer should draw nothing at all.
-reply = call({ op: "compile", text: DOC(" Edited.") });
+reply = call({ op: "compile", files: PROJECT(" Edited.") });
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
 console.log(
   `no-op edit: ${reply.changed.length} pages redrawn ` +
@@ -259,12 +268,42 @@ console.log(
 // Editing after an export is the real test of the loan xdvipdfmx takes on
 // pdf_io's open-file registry: TeX owns that registry for the life of a
 // resident session, and a run that failed to hand it back would abort here.
-reply = call({ op: "compile", text: DOC(" Edited again.") });
+reply = call({ op: "compile", files: PROJECT(" Edited again.") });
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
 console.log(
   `post-export edit: ${reply.changed.length}/${reply.pageCount} pages redrawn, ` +
     `outcome=${reply.outcome}`,
 );
+
+// SyncTeX, both ways. The child file is the interesting one: a forward search
+// that only knew about the primary would find nothing here.
+const forward = call({ op: "forwardSearch", path: "chapters/one.tex", line: 1 });
+if (forward.status !== "located") throw new Error(JSON.stringify(forward).slice(0, 200));
+if (!forward.rect) {
+  throw new Error("forward search found nothing for the child file's first line");
+}
+console.log(
+  `forward: chapters/one.tex:1 -> page ${forward.rect.pageIndex} ` +
+    `at (${forward.rect.hBp.toFixed(0)}, ${forward.rect.vBp.toFixed(0)}) bp`,
+);
+
+const backward = call({
+  op: "backwardSearch",
+  pageIndex: forward.rect.pageIndex,
+  hBp: forward.rect.hBp,
+  vBp: forward.rect.vBp,
+});
+if (backward.status !== "located") throw new Error(JSON.stringify(backward).slice(0, 200));
+if (!backward.source) throw new Error("backward search found nothing where forward search pointed");
+console.log(`backward: that point -> ${backward.source.path}:${backward.source.line}`);
+
+// Round-tripping has to land back in the file we started from, or the index is
+// keyed by something other than what the caller asked about.
+// And it comes back spelled the way it went in, not anchored under the
+// engine's virtual root.
+if (backward.source.path !== "chapters/one.tex") {
+  throw new Error(`backward search did not round-trip the path: ${backward.source.path}`);
+}
 
 const misses = reads.filter((r) => !r.found).length;
 console.log(

@@ -10,7 +10,10 @@ const engine = await TectonicEngine.create({
   onProgress: (p) => console.log(p.phase),
 });
 
-const result = await engine.compile(source);
+const result = await engine.compile({
+  "main.tex": source,
+  "chapters/one.tex": chapter,
+});
 
 // A patch: only the pages that changed.
 for (const page of result.pages) {
@@ -81,11 +84,19 @@ Options: `moduleUrl`, `supportUrl`, `workerUrl`, `primary`, `prefetch`,
 engine is up. Keep it on. Without it the first compile blocks on a few hundred
 synchronous requests, taken from inside the typesetting loop.
 
-### `engine.compile(text, viewport?)`
+### `engine.compile(files, viewport?)`
 
-Typesets `text`, which is the document's complete current contents. The engine
-diffs it against what it last saw, so sending the whole buffer is both the
-intended usage and the cheap one.
+Typesets a project. `files` maps each path — relative to the project root — to
+that file's complete current text, and must contain the primary. A bare string
+is shorthand for a project that is only its primary.
+
+Handing over everything every time is the intended usage and the cheap one: the
+engine diffs each file against what it last saw, so untouched files cost
+nothing and the one you edited replays only from the point that changed.
+
+Children resolve the way TeX resolves them, so `\input{chapters/one}` finds
+`chapters/one.tex` in the map. Nothing is read from a disk that does not exist:
+a file the map does not contain is a file the document does not have.
 
 `viewport` is an inclusive, zero-based `[first, last]` page range. Passing it
 bounds the foreground work to the visible pages and leaves the rest for
@@ -104,6 +115,18 @@ the same characters and that is exactly what you get.
 
 Finishes a viewport-bounded compile through the end of the document. Returns
 `null` if nothing was pending. Worth calling when the user pauses.
+
+### `engine.forwardSearch(path, line)` and `engine.backwardSearch(page, hBp, vBp)`
+
+SyncTeX, both ways, answered from an in-memory index — no `.synctex.gz` is ever
+written or parsed.
+
+Forward takes a path spelled the way you spell it in `compile` and returns the
+rectangle that line produced, or `null` when it produced nothing on the page,
+which is normal for a comment or a preamble line. Backward takes a point in
+PostScript big points from the page's top-left corner and returns the path and
+line that put something there. Paths round-trip: what you give is what you get
+back.
 
 ### `engine.exportPdf()`
 
@@ -130,9 +153,11 @@ Shuts the engine down and terminates its Worker.
 
 ## Limits
 
-- **One document per engine.** XeTeX keeps process-global state, so a module
-  instance hosts a single session. A second document means a second engine, and
+- **One project per engine.** XeTeX keeps process-global state, so a module
+  instance hosts a single session. A second project means a second engine, and
   therefore a second Worker and a second copy of the format dump.
+- **Files can be added and changed, not removed.** Dropping a path from the map
+  leaves the engine still holding it.
 - **No shell-escape and no subprocesses**, so `minted` and friends cannot work.
 - **Fonts are found by filename, not by system name.** `\setmainfont{Palatino}`
   will not resolve; `\setmainfont{...}[Path=...]` and

@@ -9,6 +9,7 @@ use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_engine_xetex::{
     EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
 };
+use tectonic_errors::Result;
 #[cfg(feature = "native")]
 use tectonic_io_base::format_cache::FormatCache;
 use tectonic_io_base::{
@@ -19,6 +20,38 @@ use tectonic_status_base::NoopStatusBackend;
 use super::AcceptedSourceSnapshot;
 #[cfg(feature = "native")]
 use super::FrozenBundle;
+
+/// The I/O environment that one resident engine operation runs in.
+///
+/// The engine has to be handed a fresh [`CoreBridgeLauncher`] per operation,
+/// and what goes underneath it differs completely by host: a bundle and a
+/// format cache on a workstation, a flat fixture directory in the differential
+/// tests, a blocking call back into JavaScript in a browser. This is the seam
+/// between the pipeline and all of that.
+///
+/// Every operation is funnelled through one signature. The three the engine
+/// offers — open/edit, tail continuation, teardown — differ only in whether
+/// they yield a frame, so `Option<EngineFrame>` covers all three and spares
+/// implementors a generic method they could not put behind a trait object.
+pub trait EngineSupport {
+    /// Run one engine operation against a freshly stacked I/O environment.
+    ///
+    /// `operation` is invoked exactly once.
+    fn with_launcher(
+        &mut self,
+        output: &mut MemoryIo,
+        operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<Option<EngineFrame>>,
+    ) -> Result<Option<EngineFrame>>;
+
+    /// Tell the support layer which directory the document lives in.
+    ///
+    /// Only meaningful where support resolution can reach the document's own
+    /// files — a graphic beside `main.tex`. A host that owns every source
+    /// itself has nothing to point at, so this does nothing by default.
+    fn set_document_root(&mut self, _root: &Path) -> Result<()> {
+        Ok(())
+    }
+}
 
 /// Frozen support-file universe used by one resident engine.
 pub enum ResidentEngineSupport {
@@ -56,12 +89,12 @@ impl fmt::Debug for ResidentEngineSupport {
     }
 }
 
-impl ResidentEngineSupport {
-    fn with_launcher<R, E>(
+impl EngineSupport for ResidentEngineSupport {
+    fn with_launcher(
         &mut self,
         output: &mut MemoryIo,
-        operation: impl FnOnce(&mut CoreBridgeLauncher<'_>) -> Result<R, E>,
-    ) -> Result<R, E> {
+        operation: &mut dyn FnMut(&mut CoreBridgeLauncher<'_>) -> Result<Option<EngineFrame>>,
+    ) -> Result<Option<EngineFrame>> {
         match self {
             Self::Fixture {
                 format_path,
@@ -103,6 +136,15 @@ impl ResidentEngineSupport {
             }
         }
     }
+
+    fn set_document_root(&mut self, root: &Path) -> Result<()> {
+        #[cfg(feature = "native")]
+        if let Self::Bundle { bundle, .. } = self {
+            bundle.set_document_root(root)?;
+        }
+        let _ = root;
+        Ok(())
+    }
 }
 
 /// Complete result of one resident engine operation.
@@ -139,7 +181,7 @@ impl std::error::Error for ResidentEngineError {}
 
 /// Worker-thread owner of a synchronous resident XeTeX session.
 pub struct ResidentXeTeX {
-    support: ResidentEngineSupport,
+    support: Box<dyn EngineSupport>,
     config: EnginePreviewConfig,
     session: Option<IncrementalXeTeXSession>,
     opened: bool,
@@ -148,9 +190,9 @@ pub struct ResidentXeTeX {
 
 impl ResidentXeTeX {
     /// Construct an unopened resident engine around frozen support I/O.
-    pub fn new(support: ResidentEngineSupport, config: EnginePreviewConfig) -> Self {
+    pub fn new(support: impl EngineSupport + 'static, config: EnginePreviewConfig) -> Self {
         Self {
-            support,
+            support: Box::new(support),
             config,
             session: None,
             opened: false,
@@ -165,12 +207,9 @@ impl ResidentXeTeX {
         viewport: Option<(usize, usize)>,
         cancellation: &EngineCancellation,
     ) -> Result<ResidentEngineOutput, ResidentEngineError> {
-        #[cfg(feature = "native")]
-        if let ResidentEngineSupport::Bundle { bundle, .. } = &self.support {
-            bundle
-                .set_document_root(snapshot.root())
-                .map_err(|error| ResidentEngineError::Source(error.to_string()))?;
-        }
+        self.support
+            .set_document_root(snapshot.root())
+            .map_err(|error| ResidentEngineError::Source(error.to_string()))?;
         let engine_snapshot = snapshot
             .engine_snapshot()
             .map_err(|error| ResidentEngineError::Source(error.to_string()))?;
@@ -188,16 +227,21 @@ impl ResidentXeTeX {
         let session = self.session.as_mut().expect("session was just initialized");
         let page_range = viewport.map(|(first, last)| PageRange { first, last });
         let was_open = self.opened;
+        // The snapshot is consumed by the operation, but a trait object can
+        // only take FnMut, so it is handed over on the single call that happens.
+        let mut pending = Some(engine_snapshot);
         let frame = self
             .support
-            .with_launcher(&mut output, |launcher| {
+            .with_launcher(&mut output, &mut |launcher| {
+                let sources = pending.take().expect("the operation runs exactly once");
                 if was_open {
-                    session.edit(launcher, engine_snapshot, page_range)
+                    session.edit(launcher, sources, page_range).map(Some)
                 } else {
-                    session.open(launcher, engine_snapshot)
+                    session.open(launcher, sources).map(Some)
                 }
             })
-            .map_err(|error| ResidentEngineError::Engine(error.to_string()))?;
+            .map_err(|error| ResidentEngineError::Engine(error.to_string()))?
+            .expect("opening and editing always produce a frame");
         self.opened = true;
 
         let xdv = if frame.cancelled || frame.aborted.is_some() {
@@ -233,7 +277,7 @@ impl ResidentXeTeX {
         let mut output = MemoryIo::new(true);
         let frame = self
             .support
-            .with_launcher(&mut output, |launcher| session.continue_tail(launcher))
+            .with_launcher(&mut output, &mut |launcher| session.continue_tail(launcher))
             .map_err(|error| ResidentEngineError::Engine(error.to_string()))?;
         let Some(frame) = frame else {
             return Ok(None);
@@ -266,7 +310,10 @@ impl ResidentXeTeX {
         };
         let mut output = MemoryIo::new(true);
         self.support
-            .with_launcher(&mut output, |launcher| session.finish(launcher))
+            .with_launcher(&mut output, &mut |launcher| {
+                session.finish(launcher).map(|()| None)
+            })
+            .map(|_| ())
             .map_err(|error| ResidentEngineError::Engine(error.to_string()))
     }
 }

@@ -163,21 +163,20 @@ impl IoProvider for HostIo {
 }
 
 /// A [`StatusBackend`] that forwards the engine's diagnostics to the host and
-/// keeps a transcript for the current operation.
-#[derive(Default)]
+/// appends them to a transcript shared with whoever will report them.
+///
+/// The transcript is shared rather than owned because a status backend lives
+/// only as long as one engine operation, and the operation is nested inside the
+/// pipeline by the time it runs — there is nowhere to hand a return value back
+/// from.
 pub struct HostStatus {
-    lines: Vec<String>,
+    lines: Rc<RefCell<Vec<String>>>,
 }
 
 impl HostStatus {
-    /// Construct a status backend with an empty transcript.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Take the messages recorded since the last call.
-    pub fn take_lines(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.lines)
+    /// Construct a status backend appending to a shared transcript.
+    pub fn new(lines: Rc<RefCell<Vec<String>>>) -> Self {
+        Self { lines }
     }
 }
 
@@ -206,12 +205,12 @@ impl StatusBackend for HostStatus {
             &message,
         );
 
-        self.lines.push(message);
+        self.lines.borrow_mut().push(message);
     }
 
     fn dump_error_logs(&mut self, output: &[u8]) {
         let text = String::from_utf8_lossy(output).into_owned();
         host::log(LogKind::Error, &text);
-        self.lines.push(text);
+        self.lines.borrow_mut().push(text);
     }
 }

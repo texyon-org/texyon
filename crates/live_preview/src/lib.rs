@@ -26,7 +26,7 @@ pub use assembler::{
     AssembledDocument, DocumentAssembler, DocumentFragment, XdvAssemblyError, XdvFileType,
 };
 pub use engine_driver::{
-    ResidentEngineError, ResidentEngineOutput, ResidentEngineSupport, ResidentXeTeX,
+    EngineSupport, ResidentEngineError, ResidentEngineOutput, ResidentEngineSupport, ResidentXeTeX,
 };
 pub use pipeline::{PreviewPipeline, PreviewPipelineError};
 pub use processor::{

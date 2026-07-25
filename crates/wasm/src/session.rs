@@ -1,60 +1,70 @@
-//! One resident LaTeX document: open once, then edit per keystroke.
+//! One resident LaTeX project: open once, then edit per keystroke.
 //!
-//! Two things make an edit cheap, and they are independent.
+//! This is a thin browser-shaped face over [`tectonic_live_preview`], which is
+//! the same pipeline the command-line preview server runs. What it adds is a
+//! host: support files that arrive by a blocking call into JavaScript, a
+//! document root with no filesystem under it, and a sink that hands each frame
+//! back to the caller instead of writing it to a pipe.
 //!
-//! On the engine side, [`IncrementalXeTeXSession`] journals TeX's arrays into a
-//! ladder of checkpoints and, on each edit, rewinds to the deepest checkpoint
-//! whose inputs are still byte-valid rather than starting over. The preamble,
-//! the document class and every page above the cursor are simply not
-//! re-executed — around 42,000 TeX commands instead of 1.4 million.
-//!
-//! On the rendering side, the same logic applies to pixels. The renderer walks
-//! the XDV, fingerprints what each page *means*, and only the pages whose
-//! fingerprint moved are drawn again. An edit in the last paragraph of a
-//! twenty-page document redraws one page.
+//! Two things make an edit cheap, and they are independent. On the engine side
+//! the session rewinds to the deepest checkpoint whose inputs are still
+//! byte-valid rather than starting over, so the preamble, the document class
+//! and every page above the cursor are not re-executed. On the rendering side
+//! the pipeline fingerprints what each page *means* and draws only the pages
+//! whose fingerprint moved.
 //!
 //! Exactly one session may exist per module instance: XeTeX keeps process-wide
 //! state, which the engine enforces with a global lease.
 
 use std::{
-    collections::HashMap,
-    path::PathBuf,
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
     rc::Rc,
-    sync::Arc,
-    time::{Instant, SystemTime},
+    time::SystemTime,
 };
 
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
 use tectonic_engine_xdvipdfmx::XdvipdfmxEngine;
-use tectonic_engine_xetex::{
-    EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
-    SourceRevision, SourceSnapshot, TexOutcome,
-};
+use tectonic_engine_xetex::{EngineCancellation, EnginePreviewConfig, TexOutcome};
 use tectonic_errors::{
     anyhow::{anyhow, bail},
     Result,
 };
-use tectonic_io_base::{stack::IoStack, IoProvider};
-use tectonic_preview_render::{HotRenderer, MupdfBackend, PageFingerprint, PageVisual};
+use tectonic_io_base::{stack::IoStack, IoProvider, MemoryIo};
+use tectonic_live_preview::{
+    DocumentRoot, PreviewWorkerProcessor, PublishedFrame, ResidentPreviewError,
+    ResidentPreviewProcessor, ResidentXeTeX, SourceSet, WorkerRun,
+};
+use tectonic_preview_protocol::{
+    ProtocolLimits, RequestSeq, SourceFile, SourceLocation, SyncRectPayload,
+};
+use tectonic_preview_render::{MupdfBackend, PageVisual};
 
 use crate::{
-    document::Document,
     io::{HostIo, HostStatus},
-    memory_io::MemoryIo,
     resources::HostResources,
+    sink::CollectingSink,
+    support::{HostEngineSupport, WrittenFiles},
 };
 
-/// Milliseconds elapsed since `started`.
-fn millis(started: Instant) -> f64 {
-    started.elapsed().as_secs_f64() * 1000.0
-}
-
-/// The virtual directory the document lives in.
+/// The virtual directory the project lives in.
 ///
-/// The engine requires an absolute root to resolve `\input` paths against, but
-/// nothing here ever touches a filesystem — sources come from the host as
-/// strings and are matched by this path.
+/// The engine needs an absolute root to resolve `\input` paths against, but
+/// nothing here ever touches a filesystem — every source comes from the host as
+/// a string and is matched by this path.
 const DOCUMENT_ROOT: &str = "/doc";
+
+/// Present a foreground run in the same shape a tail continuation returns.
+fn normalize(
+    run: WorkerRun<PublishedFrame, ResidentPreviewError<std::convert::Infallible>>,
+) -> PipelineRun {
+    match run {
+        WorkerRun::Complete(frame) => WorkerRun::Complete(Some(frame)),
+        WorkerRun::Cancelled => WorkerRun::Cancelled,
+        WorkerRun::Aborted(error) => WorkerRun::Aborted(error),
+        WorkerRun::Fatal(error) => WorkerRun::Fatal(error),
+    }
+}
 
 /// One page of the rendered document.
 pub struct RenderedPage {
@@ -90,16 +100,13 @@ pub struct CompileOutput {
     pub checkpoint_rungs: usize,
     /// Bytes of engine state held in the checkpoint ladder.
     pub checkpoint_bytes: usize,
-    /// Byte prefix of the previous XDV a fence-local replay reused.
-    ///
-    /// Only advances at a page boundary, so it stays zero on a one-page
-    /// document even when the run was fully incremental.
-    pub splice_at: Option<usize>,
+    /// Whether the run reused a prefix of the previous XDV.
+    pub reused_prefix: bool,
     /// Checkpoint rung the run resumed from.
     ///
-    /// This, not `splice_at`, is what says whether the preamble was skipped:
-    /// rung 0 is the start of the document, so anything above it means the
-    /// class file and packages were not re-read.
+    /// This is what says whether the preamble was skipped: rung 0 is the start
+    /// of the document, so anything above it means the class file and packages
+    /// were not re-read.
     pub replay_rung: usize,
     /// TeX commands executed after the replay origin.
     pub replay_commands: u64,
@@ -109,25 +116,34 @@ pub struct CompileOutput {
     pub analyze_ms: f64,
     /// Milliseconds spent drawing the changed pages.
     pub render_ms: f64,
-    /// Pages the analysis reused from the previous run without re-walking.
-    pub reused_pages: usize,
+    /// Fresh pages the engine shipped out.
+    pub shipouts: usize,
+    /// Pages the analysis fingerprinted.
+    pub pages_fingerprinted: usize,
+    /// Pages drawn again, of those fingerprinted.
+    pub pages_rendered: usize,
+    /// Pages the renderer had to approximate.
+    pub unsupported_pages: usize,
 }
 
-/// A resident document.
+/// A resident project.
 pub struct Session {
-    engine: IncrementalXeTeXSession,
+    processor: ResidentPreviewProcessor<HostResources, MupdfBackend, CollectingSink>,
+    /// Accepted source authority, once the first compile has established it.
+    sources: Option<SourceSet>,
+    /// Every file's text as last staged, by the caller's own path spelling.
+    staged: BTreeMap<String, String>,
+    /// Where operation output is published, so the `.log` outlives the run.
+    written: WrittenFiles,
+    /// Diagnostics accumulated across the current operation.
+    messages: Rc<RefCell<Vec<String>>>,
     support: HostIo,
-    renderer: HotRenderer<HostResources>,
-    backend: MupdfBackend,
-    /// The assembled XDV, of which an incremental run replaces only the tail.
-    document: Document,
-    /// Per-page visual identity as last published, for diffing.
-    fingerprints: Vec<PageFingerprint>,
     cancellation: EngineCancellation,
+    request_seq: RequestSeq,
     primary_name: String,
+    log_name: String,
     xdv_name: String,
-    revision: u64,
-    opened: bool,
+    limits: ProtocolLimits,
 }
 
 impl Session {
@@ -146,20 +162,34 @@ impl Session {
 
         let stem = primary_name.strip_suffix(".tex").unwrap_or(primary_name);
         let support = HostIo::new();
+        let messages = Rc::new(RefCell::new(Vec::new()));
+        let written = WrittenFiles::default();
+
+        let engine = ResidentXeTeX::new(
+            HostEngineSupport::new(support.clone(), Rc::clone(&messages), written.clone()),
+            config,
+        );
+        let backend = MupdfBackend::new()
+            .map_err(|error| anyhow!("could not start the renderer: {error}"))?;
 
         Ok(Self {
-            engine: IncrementalXeTeXSession::new(config)?,
-            renderer: HotRenderer::new(HostResources::new(support.clone())),
-            backend: MupdfBackend::new()
-                .map_err(|error| anyhow!("could not start the renderer: {error}"))?,
+            processor: ResidentPreviewProcessor::new(
+                engine,
+                HostResources::new(support.clone()),
+                backend,
+                CollectingSink::new(),
+            ),
+            sources: None,
+            staged: BTreeMap::new(),
+            written,
+            messages,
             support,
-            document: Document::default(),
-            fingerprints: Vec::new(),
             cancellation,
+            request_seq: RequestSeq::ZERO,
             primary_name: primary_name.to_owned(),
+            log_name: format!("{stem}.log"),
             xdv_name: format!("{stem}.xdv"),
-            revision: 0,
-            opened: false,
+            limits: ProtocolLimits::default(),
         })
     }
 
@@ -171,76 +201,120 @@ impl Session {
         self.support.preload(name, Rc::<[u8]>::from(bytes));
     }
 
-    /// Replace the document's text, typeset it, and draw what changed.
+    /// Typeset the project at these file contents.
     ///
-    /// The first call opens the engine; later ones take the incremental path.
+    /// `files` is the project's complete current state, keyed by path relative
+    /// to the document root; the primary named at construction must be among
+    /// them. Files whose text is unchanged cost nothing, so handing over the
+    /// whole project on every keystroke is both the intended usage and the
+    /// cheap one.
+    ///
     /// `viewport` bounds the foreground work to a page range, leaving the rest
     /// for [`continue_tail`](Self::continue_tail).
     pub fn compile(
         &mut self,
-        text: String,
+        files: BTreeMap<String, String>,
         viewport: Option<(usize, usize)>,
     ) -> Result<CompileOutput> {
-        let root = PathBuf::from(DOCUMENT_ROOT);
-        let primary = root.join(&self.primary_name);
+        if !files.contains_key(&self.primary_name) {
+            bail!(
+                "the project does not contain its primary file {}",
+                self.primary_name
+            );
+        }
 
-        let snapshot = SourceSnapshot::new_with_revision(
-            root,
-            primary.clone(),
-            vec![(primary, Arc::<[u8]>::from(text.into_bytes()))],
-            SourceRevision::new(self.revision),
-        )
-        .map_err(|error| anyhow!("invalid sources: {error}"))?;
+        self.apply(files)?;
 
-        self.revision += 1;
+        let snapshot = self
+            .sources
+            .as_ref()
+            .expect("apply establishes the source set")
+            .snapshot();
 
-        let page_range = viewport.map(|(first, last)| PageRange { first, last });
-        let opened = self.opened;
+        self.request_seq = self
+            .request_seq
+            .checked_next()
+            .map_err(|_| anyhow!("request sequence exhausted"))?;
 
-        let started = Instant::now();
-        let (frame, xdv, log, messages) = self.with_launcher(|engine, launcher| {
-            if opened {
-                engine.edit(launcher, snapshot, page_range)
-            } else {
-                engine.open(launcher, snapshot)
-            }
-        })?;
-        let tex_ms = millis(started);
-
-        self.opened = true;
-        self.publish(frame, xdv, log, messages, tex_ms)
+        let run = self
+            .processor
+            .compile(snapshot, self.request_seq, viewport, &self.cancellation);
+        self.collect(normalize(run))
     }
 
     /// Finish a viewport-bounded compile through the end of the document.
     ///
     /// Returns `None` when nothing is pending.
     pub fn continue_tail(&mut self) -> Result<Option<CompileOutput>> {
-        if !self.engine.has_pending_tail() {
+        if !self.processor.has_pending_tail() {
             return Ok(None);
         }
 
-        let started = Instant::now();
-        let (frame, xdv, log, messages) =
-            self.with_launcher(|engine, launcher| match engine.continue_tail(launcher) {
-                // A settled tail reports no frame; the caller already has the
-                // last one.
-                Ok(None) => bail!("__tail_already_settled__"),
-                Ok(Some(frame)) => Ok(frame),
-                Err(error) => Err(error),
-            })?;
-        let tex_ms = millis(started);
+        self.request_seq = self
+            .request_seq
+            .checked_next()
+            .map_err(|_| anyhow!("request sequence exhausted"))?;
 
-        Ok(Some(self.publish(frame, xdv, log, messages, tex_ms)?))
+        let run = self
+            .processor
+            .continue_tail(self.request_seq, &self.cancellation);
+
+        if let WorkerRun::Complete(None) = run {
+            return Ok(None);
+        }
+        Ok(Some(self.collect(run)?))
     }
 
     /// Whether a viewport-bounded edit left work for [`continue_tail`](Self::continue_tail).
     pub fn has_pending_tail(&self) -> bool {
-        self.engine.has_pending_tail()
+        self.processor.has_pending_tail()
+    }
+
+    /// Ask the engine to stop at its next cooperative cancellation point.
+    pub fn cancel(&self) {
+        self.cancellation.request();
+    }
+
+    /// Find where a source line landed on the page.
+    pub fn forward_search(&self, path: &str, line: usize) -> Option<SyncRectPayload> {
+        self.processor.forward_search(path, line)
+    }
+
+    /// Find which source line produced a point on a page.
+    ///
+    /// The path comes back spelled the way the caller spells it. Internally
+    /// every source is anchored under the virtual root, but a host that handed
+    /// us `chapters/one.tex` should not be told about `/doc`.
+    pub fn backward_search(
+        &self,
+        page_index: usize,
+        h_bp: f64,
+        v_bp: f64,
+    ) -> Option<SourceLocation> {
+        let mut found = self.processor.backward_search(page_index, h_bp, v_bp)?;
+        if let Some(relative) = found
+            .path
+            .strip_prefix(DOCUMENT_ROOT)
+            .and_then(|path| path.strip_prefix('/'))
+        {
+            found.path = relative.to_owned();
+        }
+        Some(found)
+    }
+
+    /// How many support files are resident, and how many bytes they hold.
+    pub fn support_stats(&self) -> (usize, usize) {
+        (self.support.cached_count(), self.support.cached_bytes())
+    }
+
+    /// Every support-file name the engine has asked the host for.
+    pub fn requested_names(&self) -> Vec<String> {
+        self.support.requested_names()
     }
 
     /// Convert the assembled document to PDF.
     ///
-    /// This is the preview's XDV run through xdvipdfmx, so it is the same
+    /// This is the preview's own XDV run through xdvipdfmx, so it is the same
     /// typesetting the viewer is showing rather than a second compile — an
     /// export cannot disagree with what is on screen.
     ///
@@ -249,11 +323,11 @@ impl Session {
     /// silently produce a truncated PDF. Settle it with
     /// [`continue_tail`](Self::continue_tail) first.
     pub fn export_pdf(&mut self) -> Result<Vec<u8>> {
-        if self.document.is_empty() {
+        let Some(document) = self.processor.pipeline().last_document() else {
             bail!("nothing has been typeset yet");
-        }
+        };
 
-        if self.engine.has_pending_tail() {
+        if self.processor.has_pending_tail() {
             bail!("the document has pages left to typeset; settle the tail before exporting");
         }
 
@@ -267,11 +341,14 @@ impl Session {
         // assembled XDV is installed as though it had been written to disk. The
         // support layer sits underneath it, which is where the fonts it has to
         // embed come from.
-        let files = MemoryIo::new();
-        files.insert(self.xdv_name.clone(), self.document.bytes().to_vec());
+        // xdvipdfmx opens the terminal to log to and does not check the
+        // handle it gets, so the sink has to be real even though nothing reads
+        // it back.
+        let mut files = MemoryIo::new(true);
+        files.create_entry(&self.xdv_name, document.bytes().to_vec());
 
-        let mut files_io = files.clone();
-        let mut status = HostStatus::new();
+        let mut support = self.support.clone();
+        let mut status = HostStatus::new(Rc::clone(&self.messages));
 
         {
             // xdvipdfmx opens its own registry of the PDFs it embeds, and so
@@ -283,8 +360,8 @@ impl Session {
             let _registry = PdfFileRegistryLoan::take();
 
             let io = IoStack::new(vec![
-                &mut files_io as &mut dyn IoProvider,
-                &mut self.support as &mut dyn IoProvider,
+                &mut files as &mut dyn IoProvider,
+                &mut support as &mut dyn IoProvider,
             ]);
             let mut hooks = MinimalDriver::new(io);
             let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
@@ -298,159 +375,121 @@ impl Session {
                 .map_err(|error| anyhow!("could not write the PDF: {error}"))?;
         }
 
-        files
-            .take(&pdf_name)
-            .ok_or_else(|| anyhow!("xdvipdfmx finished without writing {pdf_name}"))
-    }
-
-    /// Ask the engine to stop at its next cooperative cancellation point.
-    pub fn cancel(&self) {
-        self.cancellation.request();
-    }
-
-    /// How many support files are resident, and how many bytes they hold.
-    pub fn support_stats(&self) -> (usize, usize) {
-        (self.support.cached_count(), self.support.cached_bytes())
-    }
-
-    /// Every support-file name the engine has asked the host for.
-    pub fn requested_names(&self) -> Vec<String> {
-        self.support.requested_names()
+        let pdf = files
+            .files
+            .borrow_mut()
+            .remove(&pdf_name)
+            .ok_or_else(|| anyhow!("xdvipdfmx finished without writing {pdf_name}"))?;
+        Ok(pdf.data)
     }
 
     /// Release the engine's process-global resources.
     pub fn finish(&mut self) -> Result<()> {
-        if !self.opened {
+        self.processor
+            .shutdown()
+            .map_err(|error| anyhow!("{error}"))
+    }
+
+    /// Stage this file set, establishing or updating the source authority.
+    fn apply(&mut self, files: BTreeMap<String, String>) -> Result<()> {
+        let Some(sources) = self.sources.as_mut() else {
+            let mut files = files;
+            let primary_text = files
+                .remove(&self.primary_name)
+                .expect("the caller checked the primary is present");
+            let children = files
+                .iter()
+                .map(|(path, text)| SourceFile {
+                    path: path.clone(),
+                    text: text.clone(),
+                })
+                .collect();
+
+            let root = DocumentRoot::detached(DOCUMENT_ROOT)
+                .map_err(|error| anyhow!("invalid document root: {error}"))?;
+            let set = SourceSet::initialize(
+                root,
+                &self.primary_name,
+                primary_text.clone(),
+                children,
+                self.limits,
+            )
+            .map_err(|error| anyhow!("invalid sources: {error}"))?;
+
+            self.staged = files;
+            self.staged.insert(self.primary_name.clone(), primary_text);
+            self.sources = Some(set);
             return Ok(());
+        };
+
+        // Only what actually changed goes to the source authority: an accepted
+        // replacement advances the revision even when the bytes are identical,
+        // and a project of twenty files should not look like twenty edits
+        // because one of them was typed in.
+        for (path, text) in &files {
+            if self.staged.get(path).is_some_and(|staged| staged == text) {
+                continue;
+            }
+            sources
+                .replace(Some(path), text.clone())
+                .map_err(|error| anyhow!("invalid source {path}: {error}"))?;
         }
 
-        let output = MemoryIo::new();
-        let mut output_io = output.clone();
-        let mut status = HostStatus::new();
-
-        let io = IoStack::new(vec![
-            &mut output_io as &mut dyn IoProvider,
-            &mut self.support as &mut dyn IoProvider,
-        ]);
-        let mut hooks = MinimalDriver::new(io);
-        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-
-        self.engine.finish(&mut launcher)?;
-        self.opened = false;
+        self.staged = files;
         Ok(())
     }
 
-    /// Run one engine operation against a freshly stacked I/O environment.
-    fn with_launcher(
-        &mut self,
-        operation: impl FnOnce(
-            &mut IncrementalXeTeXSession,
-            &mut CoreBridgeLauncher<'_>,
-        ) -> Result<EngineFrame>,
-    ) -> Result<(EngineFrame, Option<Vec<u8>>, Vec<u8>, Vec<String>)> {
-        let output = MemoryIo::new();
-        let mut output_io = output.clone();
-        let mut status = HostStatus::new();
+    /// Turn one pipeline run into the report the host receives.
+    fn collect(&mut self, run: PipelineRun) -> Result<CompileOutput> {
+        let messages = std::mem::take(&mut *self.messages.borrow_mut());
+        let log = self.written.get(&self.log_name).unwrap_or_default();
 
-        let frame = {
-            let io = IoStack::new(vec![
-                &mut output_io as &mut dyn IoProvider,
-                &mut self.support as &mut dyn IoProvider,
-            ]);
-            let mut hooks = MinimalDriver::new(io);
-            let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
-            operation(&mut self.engine, &mut launcher)?
+        let mut outcome = "warnings";
+        let aborted = match run {
+            WorkerRun::Complete(published) => {
+                if let Some(published) = published {
+                    outcome = outcome_name(published.tex_outcome);
+                }
+                None
+            }
+            WorkerRun::Cancelled => None,
+            WorkerRun::Aborted(error) => Some(error.to_string()),
+            // A fatal error poisons the session; the host has to start a new
+            // one, and saying so is the whole of what we can do about it.
+            WorkerRun::Fatal(error) => bail!("the preview session failed: {error}"),
         };
 
-        let stem = self
-            .primary_name
-            .strip_suffix(".tex")
-            .unwrap_or(&self.primary_name);
+        let metrics = self.processor.sink().metrics().clone();
+        let tail_pending = self.processor.sink().tail_pending();
+        let frame = self.processor.sink_mut().take();
 
-        let xdv = output.take(&self.xdv_name);
-        let log = output.get(&format!("{stem}.log")).unwrap_or_default();
+        let (pages, changed, removed, visuals) = match frame {
+            Some(frame) => (
+                frame
+                    .pages_svg
+                    .iter()
+                    .map(|page| RenderedPage {
+                        index: page.page_index,
+                        svg: page.svg.to_string(),
+                    })
+                    .collect(),
+                frame.changed.clone(),
+                frame.removed.clone(),
+                frame.pages.clone(),
+            ),
+            // Cancelled and aborted runs publish nothing, which is what keeps
+            // the last good preview on screen.
+            None => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+        };
 
-        Ok((frame, xdv, log, status.take_lines()))
-    }
-
-    /// Assemble the document, work out what changed, and draw it.
-    fn publish(
-        &mut self,
-        frame: EngineFrame,
-        xdv: Option<Vec<u8>>,
-        log: Vec<u8>,
-        mut messages: Vec<String>,
-        tex_ms: f64,
-    ) -> Result<CompileOutput> {
-        let mut pages = Vec::new();
-        let mut changed = Vec::new();
-        let mut removed = Vec::new();
-        let mut page_sizes = Vec::new();
-        let mut analyze_ms = 0.0;
-        let mut render_ms = 0.0;
-        let mut reused_pages = 0;
-
-        // A cancelled or aborted run has no coherent XDV, and the last good
-        // document stays on screen.
-        if let Some(written) = xdv {
-            match self.document.apply(&written, frame.splice_at) {
-                Err(error) => messages.push(format!("could not assemble the document: {error}")),
-                Ok(()) => {
-                    let started = Instant::now();
-                    let analysis = self
-                        .renderer
-                        .analyze_from(self.document.bytes(), self.document.page_offsets())
-                        .map_err(|error| anyhow!("could not analyze the document: {error}"))?;
-                    analyze_ms = millis(started);
-                    reused_pages = analysis.reused_pages();
-
-                    let visuals = analysis.pages().to_vec();
-                    page_sizes = visuals.iter().map(|page| page.size_bp).collect();
-
-                    // A page is worth redrawing exactly when what it means has
-                    // moved. Pages past the end of the previous document are
-                    // new, so they all count as changed.
-                    changed = visuals
-                        .iter()
-                        .enumerate()
-                        .filter(|(index, page)| {
-                            self.fingerprints
-                                .get(*index)
-                                .is_none_or(|seen| *seen != page.fingerprint)
-                        })
-                        .map(|(index, _)| index)
-                        .collect();
-
-                    removed = (visuals.len()..self.fingerprints.len()).collect();
-
-                    let started = Instant::now();
-                    let rendered = self
-                        .renderer
-                        .render_pages(&analysis, &changed, &mut self.backend)
-                        .map_err(|error| anyhow!("could not draw the document: {error}"))?;
-                    render_ms = millis(started);
-
-                    pages = rendered
-                        .into_iter()
-                        .map(|page| RenderedPage {
-                            index: page.page_index,
-                            svg: page.svg,
-                        })
-                        .collect();
-
-                    // Commit the belief only once every selected page has been
-                    // drawn, so a failure leaves them to be redrawn next time.
-                    self.fingerprints = visuals.iter().map(|page| page.fingerprint.clone()).collect();
-
-                    let unsupported = unsupported_summary(&visuals);
-                    if !unsupported.is_empty() {
-                        messages.push(format!(
-                            "the renderer approximated: {}",
-                            unsupported.join(", ")
-                        ));
-                    }
-                }
-            }
+        let page_sizes: Vec<[f32; 2]> = visuals.iter().map(|page| page.size_bp).collect();
+        let mut messages = messages;
+        let approximated = unsupported_summary(&visuals);
+        if !approximated.is_empty() {
+            messages.push(format!(
+                "the renderer approximated: {}",
+                approximated.join(", ")
+            ));
         }
 
         Ok(CompileOutput {
@@ -460,26 +499,41 @@ impl Session {
             page_count: page_sizes.len(),
             page_sizes,
             log,
-            outcome: match frame.outcome {
-                TexOutcome::Spotless => "spotless",
-                TexOutcome::Warnings => "warnings",
-                TexOutcome::Errors => "errors",
-            },
-            aborted: frame.aborted,
-            tail_pending: frame.tail_pending,
+            outcome,
+            aborted,
+            tail_pending,
             messages,
-            checkpoint_rungs: frame.checkpoint_rungs,
-            checkpoint_bytes: frame.checkpoint_bytes,
-            splice_at: frame.splice_at,
-            replay_rung: frame.replay_rung,
-            replay_commands: frame.replay_commands,
-            tex_ms,
-            analyze_ms,
-            render_ms,
-            reused_pages,
+            checkpoint_rungs: metrics.checkpoint_rungs,
+            checkpoint_bytes: metrics.checkpoint_bytes,
+            reused_prefix: metrics.reused_prefix,
+            replay_rung: metrics.replay_rung,
+            replay_commands: metrics.replay_commands.get(),
+            tex_ms: metrics.engine_ms,
+            analyze_ms: metrics.analysis_ms,
+            render_ms: metrics.render_ms,
+            shipouts: metrics.shipouts,
+            pages_fingerprinted: metrics.pages_fingerprinted,
+            pages_rendered: metrics.pages_rendered,
+            unsupported_pages: metrics.unsupported_pages,
         })
     }
 }
+
+/// One engine grading, as the host's API spells it.
+fn outcome_name(outcome: TexOutcome) -> &'static str {
+    match outcome {
+        TexOutcome::Spotless => "spotless",
+        TexOutcome::Warnings => "warnings",
+        TexOutcome::Errors => "errors",
+    }
+}
+
+/// What one pipeline operation returned.
+///
+/// The sink keeps frames rather than transporting them, so publication cannot
+/// fail and the processor's error type collapses to the engine's own.
+type PipelineRun =
+    WorkerRun<Option<PublishedFrame>, ResidentPreviewError<std::convert::Infallible>>;
 
 extern "C" {
     /// Detach the process-global open-PDF registry, yielding the old one.

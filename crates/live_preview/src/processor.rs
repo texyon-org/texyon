@@ -145,6 +145,12 @@ pub struct PublishedFrame {
     pub frame_id: FrameId,
     /// Engine outcome represented on the wire.
     pub outcome: UpdateOutcome,
+    /// How TeX itself graded the run.
+    ///
+    /// Finer than [`outcome`](Self::outcome), which only has to say whether a
+    /// frame is coherent: a run with warnings and a spotless one are both
+    /// `Complete` on the wire, and an editor wants to tell them apart.
+    pub tex_outcome: TexOutcome,
     /// Whether this foreground frame has deferred tail work.
     pub tail_pending: bool,
 }
@@ -192,6 +198,8 @@ pub struct ResidentPreviewProcessor<P, B, S> {
     pipeline: PreviewPipeline<P, B>,
     sink: S,
     tail_revision: Option<SourceRevision>,
+    /// How TeX graded the last run, for frames that do not run it again.
+    tex_outcome: TexOutcome,
 }
 
 impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, B, S> {
@@ -202,6 +210,7 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
             pipeline: PreviewPipeline::new(provider, backend),
             sink,
             tail_revision: None,
+            tex_outcome: TexOutcome::Spotless,
         }
     }
 
@@ -213,6 +222,14 @@ impl<P: ResourceProvider, B: Backend, S: FrameSink> ResidentPreviewProcessor<P, 
     /// Inspect the publication sink.
     pub fn sink(&self) -> &S {
         &self.sink
+    }
+
+    /// Reach the publication sink mutably.
+    ///
+    /// A sink that transports frames onward has nothing to offer here, but one
+    /// that retains them for a caller to collect needs to be emptied.
+    pub fn sink_mut(&mut self) -> &mut S {
+        &mut self.sink
     }
 }
 
@@ -257,6 +274,8 @@ where
             return WorkerRun::Aborted(ResidentPreviewError::MissingXdv);
         };
         let tail_pending = engine.frame.tail_pending;
+        let tex_outcome = engine.frame.outcome;
+        self.tex_outcome = tex_outcome;
         let (outcome, metrics, fragment, sync_index) =
             frame_parts(&mut engine.frame, &xdv, engine_ms);
         if cancellation.is_requested() {
@@ -295,6 +314,7 @@ where
         WorkerRun::Complete(PublishedFrame {
             frame_id,
             outcome,
+            tex_outcome,
             tail_pending,
         })
     }
@@ -333,6 +353,8 @@ where
         let Some(xdv) = engine.xdv.take() else {
             return WorkerRun::Aborted(ResidentPreviewError::MissingXdv);
         };
+        let tex_outcome = engine.frame.outcome;
+        self.tex_outcome = tex_outcome;
         let (outcome, metrics, fragment, sync_index) =
             frame_parts(&mut engine.frame, &xdv, engine_ms);
         if cancellation.is_requested() {
@@ -367,6 +389,7 @@ where
         WorkerRun::Complete(Some(PublishedFrame {
             frame_id,
             outcome,
+            tex_outcome,
             tail_pending: false,
         }))
     }
@@ -385,6 +408,9 @@ where
         Ok(PublishedFrame {
             frame_id,
             outcome: UpdateOutcome::Complete,
+            // A resync republishes retained state without running the engine,
+            // so the grading is the one the last real compile earned.
+            tex_outcome: self.tex_outcome,
             tail_pending,
         })
     }

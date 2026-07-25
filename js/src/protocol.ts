@@ -75,8 +75,6 @@ export interface CompileStats {
   analyzeMs: number;
   /** Milliseconds spent drawing the changed pages. */
   renderMs: number;
-  /** Pages the analysis reused without re-walking them. */
-  reusedPages: number;
   /** Checkpoint rungs the engine is holding. */
   checkpointRungs: number;
   /** Bytes of engine state in the checkpoint ladder. */
@@ -85,23 +83,53 @@ export interface CompileStats {
    * Checkpoint rung the run resumed from.
    *
    * Anything above zero means the preamble, the document class and everything
-   * above the edit were not re-executed. This — not {@link spliceAt} — is what
-   * says the run was incremental.
+   * above the edit were not re-executed. This is what says the run was
+   * incremental.
    */
   replayRung: number;
   /** TeX commands executed after the replay origin. */
   replayCommands: number;
-  /**
-   * Bytes of the previous XDV the replay reused.
-   *
-   * Only advances at a page boundary, so it stays zero on a one-page document
-   * even when the run was fully incremental.
-   */
-  spliceAt?: number;
+  /** Whether the run reused a prefix of the previous run's output. */
+  reusedPrefix: boolean;
+  /** Fresh pages the engine shipped out. */
+  shipouts: number;
+  /** Pages the analysis fingerprinted. */
+  pagesFingerprinted: number;
+  /** Pages drawn again, of those fingerprinted. */
+  pagesRendered: number;
+  /** Pages the renderer had to approximate. */
+  unsupportedPages: number;
   /** Support files resident in the module. */
   supportFiles: number;
   /** Bytes of support files resident in the module. */
   supportBytes: number;
+}
+
+/** A project's complete current state, by path relative to its root. */
+export type ProjectFiles = Record<string, string>;
+
+/** Where a source line landed on the page. */
+export interface SyncRect {
+  /** Zero-based output page. */
+  pageIndex: number;
+  /** Left edge in PostScript big points. */
+  hBp: number;
+  /** Baseline in PostScript big points. */
+  vBp: number;
+  /** Width in PostScript big points. */
+  widthBp: number;
+  /** Height above the baseline in PostScript big points. */
+  heightBp: number;
+  /** Depth below the baseline in PostScript big points. */
+  depthBp: number;
+}
+
+/** Which source line produced a point on a page. */
+export interface SourceSpot {
+  /** Source path, spelled the way you spelled it. */
+  path: string;
+  /** One-based source line. */
+  line: number;
 }
 
 /** How far along loading is. */
@@ -202,7 +230,20 @@ export interface ExportResult {
 /** A request sent to the Worker. */
 export type WorkerRequest =
   | { id: number; kind: "init"; options: SerializableEngineOptions }
-  | { id: number; kind: "compile"; text: string; viewport?: [number, number] }
+  | {
+      id: number;
+      kind: "compile";
+      files: ProjectFiles;
+      viewport?: [number, number];
+    }
+  | { id: number; kind: "forwardSearch"; path: string; line: number }
+  | {
+      id: number;
+      kind: "backwardSearch";
+      pageIndex: number;
+      hBp: number;
+      vBp: number;
+    }
   | { id: number; kind: "continueTail" }
   | { id: number; kind: "export" }
   | { id: number; kind: "cancel" }
@@ -222,6 +263,7 @@ export type WorkerResponse =
   | { id: number; kind: "ok" }
   | { id: number; kind: "compiled"; result: CompileResult }
   | { id: number; kind: "exported"; pdf: Uint8Array<ArrayBuffer>; elapsedMs: number }
+  | { id: number; kind: "located"; rect: SyncRect | null; source: SourceSpot | null }
   | { id: number; kind: "idle" }
   | { id: number; kind: "error"; message: string }
   | { id: 0; kind: "progress"; progress: LoadProgress }

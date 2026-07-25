@@ -32,6 +32,9 @@ tectonic_engine_xdvipdfmx = { path = "../engine_xdvipdfmx", version = "0.0.0-dev
 tectonic_engine_xetex = { path = "../engine_xetex", version = "0.0.0-dev.0" }
 tectonic_errors = { path = "../errors", version = "0.0.0-dev.0" }
 tectonic_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
+# The preview pipeline, minus everything that assumes a host operating system.
+tectonic_live_preview = { path = "../live_preview", version = "0.0.0-dev.0", default-features = false }
+tectonic_preview_protocol = { path = "../preview_protocol", version = "0.0.0-dev.0" }
 tectonic_preview_render = { path = "../preview_render", version = "0.0.0-dev.0", features = [
     "backend-mupdf",
 ] }

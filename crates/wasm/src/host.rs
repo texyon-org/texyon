@@ -97,14 +97,8 @@ pub fn read_file(name: &str) -> Result<Option<Vec<u8>>, String> {
     let mut out_len: usize = 0;
 
     // SAFETY: we pass a live UTF-8 slice and two writable out-parameters.
-    let rc = unsafe {
-        tectonic_host_read_file(
-            name.as_ptr(),
-            name.len(),
-            &mut out_ptr,
-            &mut out_len,
-        )
-    };
+    let rc =
+        unsafe { tectonic_host_read_file(name.as_ptr(), name.len(), &mut out_ptr, &mut out_len) };
 
     match rc {
         status::OK => {

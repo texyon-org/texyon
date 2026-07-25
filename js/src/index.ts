@@ -19,8 +19,8 @@
  * A cold LaTeX run spends almost all of its time before your cursor — reading a
  * 24 MB format dump, loading the class, running the preamble — and a resident
  * session pays that once, then rewinds to a checkpoint just before your edit
- * instead of starting over. {@link CompileStats.spliceAt} reports how many
- * bytes of the previous run it managed to keep.
+ * instead of starting over. {@link CompileStats.replayRung} reports how deep
+ * that was; anything above zero means the preamble was not re-run.
  *
  * Everything runs in a Worker, so the page stays responsive even while TeX is
  * blocked on a support file.
@@ -35,6 +35,9 @@ export type {
   LogLevel,
   LogLine,
   Outcome,
+  ProjectFiles,
+  SourceSpot,
+  SyncRect,
 } from "./protocol";
 
 import type {
@@ -43,6 +46,9 @@ import type {
   ExportResult,
   LoadProgress,
   LogLine,
+  ProjectFiles,
+  SourceSpot,
+  SyncRect,
   WorkerRequest,
   WorkerResponse,
 } from "./protocol";
@@ -65,6 +71,7 @@ export class TectonicEngine {
   #nextId = 1;
   #onProgress?: (progress: LoadProgress) => void;
   #onLog?: (line: LogLine) => void;
+  #primary: string;
   #closed = false;
 
   /** In-flight compile, so a new one can supersede it. */
@@ -74,6 +81,7 @@ export class TectonicEngine {
     this.#worker = worker;
     this.#onProgress = options.onProgress;
     this.#onLog = options.onLog;
+    this.#primary = options.primary ?? "main.tex";
 
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const message = event.data;
@@ -101,6 +109,13 @@ export class TectonicEngine {
           pdf: message.pdf,
           elapsedMs: message.elapsedMs,
         });
+      } else if (message.kind === "located") {
+        (
+          pending.resolve as (value: {
+            rect: SyncRect | null;
+            source: SourceSpot | null;
+          }) => void
+        )({ rect: message.rect, source: message.source });
       } else if (message.kind === "idle") {
         (pending.resolve as (value: null) => void)(null);
       } else {
@@ -153,11 +168,16 @@ export class TectonicEngine {
   }
 
   /**
-   * Typeset this text.
+   * Typeset a project.
    *
-   * The text is the document's complete current contents — the engine diffs it
-   * against what it last saw and replays only from the point that changed, so
-   * sending the whole buffer is both the intended usage and the cheap one.
+   * `files` is the project's complete current state, keyed by path relative to
+   * its root, and must contain the primary named in {@link
+   * EngineOptions.primary}. A bare string is shorthand for a project that is
+   * only its primary.
+   *
+   * Passing everything every time is the intended usage and the cheap one: the
+   * engine diffs each file against what it last saw, so untouched files cost
+   * nothing and the one you edited replays only from the point that changed.
    *
    * `viewport` names the visible page range, zero-based and inclusive. Passing
    * it bounds the foreground work to those pages and leaves the rest for
@@ -166,10 +186,55 @@ export class TectonicEngine {
    * Calls are serialized: a compile issued while another is running waits for
    * it. To abandon the running one instead, call {@link cancel} first.
    */
-  async compile(text: string, viewport?: [number, number]): Promise<CompileResult> {
+  async compile(
+    files: string | ProjectFiles,
+    viewport?: [number, number],
+  ): Promise<CompileResult> {
+    const project =
+      typeof files === "string" ? { [this.#primary]: files } : files;
+
     return this.#queue(() =>
-      this.#send<CompileResult>({ id: 0, kind: "compile", text, viewport }),
+      this.#send<CompileResult>({ id: 0, kind: "compile", files: project, viewport }),
     );
+  }
+
+  /**
+   * Find where a source line landed on the page.
+   *
+   * `path` is spelled the way you spell it in {@link compile}. Resolves to
+   * `null` when the line produced nothing on the page, which is normal — a
+   * comment, a blank line, or a line inside a preamble all do.
+   */
+  async forwardSearch(path: string, line: number): Promise<SyncRect | null> {
+    const { rect } = await this.#send<{ rect: SyncRect | null }>({
+      id: 0,
+      kind: "forwardSearch",
+      path,
+      line,
+    });
+    return rect;
+  }
+
+  /**
+   * Find which source line produced a point on a page.
+   *
+   * The point is in PostScript big points from the page's top-left corner —
+   * the same units {@link CompileResult.pageSizes} reports. The path comes back
+   * spelled the way you spelled it.
+   */
+  async backwardSearch(
+    pageIndex: number,
+    hBp: number,
+    vBp: number,
+  ): Promise<SourceSpot | null> {
+    const { source } = await this.#send<{ source: SourceSpot | null }>({
+      id: 0,
+      kind: "backwardSearch",
+      pageIndex,
+      hBp,
+      vBp,
+    });
+    return source;
   }
 
   /**

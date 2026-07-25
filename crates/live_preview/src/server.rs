@@ -470,6 +470,7 @@ mod tests {
             PublishedFrame {
                 frame_id: self.next_frame,
                 outcome: UpdateOutcome::Complete,
+                tex_outcome: tectonic_engine_xetex::TexOutcome::Spotless,
                 tail_pending: false,
             }
         }

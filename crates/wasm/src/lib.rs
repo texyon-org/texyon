@@ -30,13 +30,13 @@
 #[cfg(target_family = "wasm")]
 mod alloc_shim;
 
-pub mod document;
 pub mod host;
 pub mod io;
-pub mod memory_io;
 pub mod protocol;
 pub mod resources;
 pub mod session;
+pub mod sink;
+pub mod support;
 
 use std::cell::RefCell;
 
@@ -123,11 +123,11 @@ fn dispatch(text: &str) -> Response {
             Response::Ok
         }),
 
-        Request::Compile { text, viewport } => SESSION.with_borrow_mut(|slot| {
+        Request::Compile { files, viewport } => SESSION.with_borrow_mut(|slot| {
             let Some(session) = slot.as_mut() else {
                 return Response::error("no session is open");
             };
-            match session.compile(text, viewport) {
+            match session.compile(files, viewport) {
                 Ok(output) => Response::Compiled(Box::new(report(session, output))),
                 Err(error) => Response::error(error),
             }
@@ -161,6 +161,32 @@ fn dispatch(text: &str) -> Response {
                     }
                 }
                 Err(error) => Response::error(error),
+            }
+        }),
+
+        Request::ForwardSearch { path, line } => SESSION.with_borrow(|slot| {
+            let Some(session) = slot.as_ref() else {
+                return Response::error("no session is open");
+            };
+            Response::Located {
+                rect: session.forward_search(&path, line).map(Into::into),
+                source: None,
+            }
+        }),
+
+        Request::BackwardSearch {
+            page_index,
+            h_bp,
+            v_bp,
+        } => SESSION.with_borrow(|slot| {
+            let Some(session) = slot.as_ref() else {
+                return Response::error("no session is open");
+            };
+            Response::Located {
+                rect: None,
+                source: session
+                    .backward_search(page_index, h_bp, v_bp)
+                    .map(Into::into),
             }
         }),
 
@@ -221,13 +247,16 @@ fn report(session: &Session, output: session::CompileOutput) -> CompileReport {
         messages: output.messages,
         checkpoint_rungs: output.checkpoint_rungs,
         checkpoint_bytes: output.checkpoint_bytes,
-        splice_at: output.splice_at,
+        reused_prefix: output.reused_prefix,
         replay_rung: output.replay_rung,
         replay_commands: output.replay_commands,
         tex_ms: output.tex_ms,
         analyze_ms: output.analyze_ms,
         render_ms: output.render_ms,
-        reused_pages: output.reused_pages,
+        shipouts: output.shipouts,
+        pages_fingerprinted: output.pages_fingerprinted,
+        pages_rendered: output.pages_rendered,
+        unsupported_pages: output.unsupported_pages,
         support_files,
         support_bytes,
     }

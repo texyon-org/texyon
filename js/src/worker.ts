@@ -19,6 +19,8 @@ import type {
   CompileResult,
   LogLevel,
   SerializableEngineOptions,
+  SourceSpot,
+  SyncRect,
   WorkerRequest,
   WorkerResponse,
 } from "./protocol";
@@ -52,13 +54,16 @@ interface RawCompileReport {
   messages: string[];
   checkpointRungs: number;
   checkpointBytes: number;
-  spliceAt?: number;
+  reusedPrefix: boolean;
+  shipouts: number;
+  pagesFingerprinted: number;
+  pagesRendered: number;
+  unsupportedPages: number;
   replayRung: number;
   replayCommands: number;
   texMs: number;
   analyzeMs: number;
   renderMs: number;
-  reusedPages: number;
   supportFiles: number;
   supportBytes: number;
 }
@@ -71,6 +76,7 @@ interface RawCompileReport {
  */
 type RawResponse =
   | { status: "ok" }
+  | { status: "located"; rect: SyncRect | null; source: SourceSpot | null }
   | ({ status: "compiled" } & RawCompileReport)
   | { status: "exported"; ptr: number; len: number }
   | { status: "idle" }
@@ -528,12 +534,15 @@ function collect(report: RawCompileReport, elapsedMs: number): CompileResult {
       texMs: report.texMs,
       analyzeMs: report.analyzeMs,
       renderMs: report.renderMs,
-      reusedPages: report.reusedPages,
       checkpointRungs: report.checkpointRungs,
       checkpointBytes: report.checkpointBytes,
       replayRung: report.replayRung,
       replayCommands: report.replayCommands,
-      spliceAt: report.spliceAt ?? undefined,
+      reusedPrefix: report.reusedPrefix,
+      shipouts: report.shipouts,
+      pagesFingerprinted: report.pagesFingerprinted,
+      pagesRendered: report.pagesRendered,
+      unsupportedPages: report.unsupportedPages,
       supportFiles: report.supportFiles,
       supportBytes: report.supportBytes,
     },
@@ -555,7 +564,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         engineStart = performance.now();
         const reply =
           request.kind === "compile"
-            ? call({ op: "compile", text: request.text, viewport: request.viewport })
+            ? call({ op: "compile", files: request.files, viewport: request.viewport })
             : call({ op: "continueTail" });
         const elapsed = performance.now() - engineStart;
 
@@ -599,6 +608,28 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           );
         } else {
           post({ id: request.id, kind: "error", message: "the engine did not return a PDF" });
+        }
+        break;
+      }
+
+      case "forwardSearch":
+      case "backwardSearch": {
+        const reply =
+          request.kind === "forwardSearch"
+            ? call({ op: "forwardSearch", path: request.path, line: request.line })
+            : call({
+                op: "backwardSearch",
+                pageIndex: request.pageIndex,
+                hBp: request.hBp,
+                vBp: request.vBp,
+              });
+
+        if (reply.status === "error") {
+          post({ id: request.id, kind: "error", message: reply.message });
+        } else if (reply.status === "located") {
+          post({ id: request.id, kind: "located", rect: reply.rect, source: reply.source });
+        } else {
+          post({ id: request.id, kind: "error", message: "the engine did not answer the query" });
         }
         break;
       }
