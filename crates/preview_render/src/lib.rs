@@ -20,7 +20,11 @@ mod tfm;
 
 #[cfg(all(
     feature = "backend-mupdf",
-    any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+    any(
+        target_os = "linux",
+        all(target_os = "windows", target_env = "msvc"),
+        target_family = "wasm"
+    )
 ))]
 mod backend_mupdf;
 
@@ -39,7 +43,11 @@ pub use resource::{Resource, ResourceIdentity, ResourceKind, ResourceProvider, R
 
 #[cfg(all(
     feature = "backend-mupdf",
-    any(target_os = "linux", all(target_os = "windows", target_env = "msvc"))
+    any(
+        target_os = "linux",
+        all(target_os = "windows", target_env = "msvc"),
+        target_family = "wasm"
+    )
 ))]
 pub use backend_mupdf::MupdfBackend;
 #[cfg(all(

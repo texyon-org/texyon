@@ -10,6 +10,11 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_BACKEND_MUPDF").is_none() {
         return;
     }
+    if tectonic_dep_support::target_is_wasm() {
+        build_wasm();
+        return;
+    }
+
     match (
         std::env::var("CARGO_CFG_TARGET_OS").as_deref(),
         std::env::var("CARGO_CFG_TARGET_ENV").as_deref(),
@@ -18,6 +23,57 @@ fn main() {
         (Ok("windows"), Ok("msvc")) => build_windows_msvc(),
         _ => {}
     }
+}
+
+/// Link the MuPDF that `tools/wasm/fetch-deps.sh --with-mupdf` built.
+///
+/// Nothing is renamed here, unlike the other targets: `llvm-objcopy` does not
+/// implement `--redefine-syms` for wasm objects, so the separation MuPDF needs
+/// from Tectonic happens while MuPDF itself is compiled. `fetch-deps.sh` builds
+/// it against Tectonic's FreeType and zlib rather than its bundled copies, and
+/// force-includes a generated header that moves its whole `pdf_*` API out of the
+/// way of Tectonic's pdf_io. All this script has to do is compile the shim with
+/// that same header and name the archives.
+fn build_wasm() {
+    println!("cargo:rerun-if-changed=src/backend_mupdf/shim.c");
+
+    let mupdf = tectonic_dep_support::wasm_vendor_dir("mupdf");
+    let build = mupdf.join("build/release");
+    let renames = mupdf.join("tectonic-pdf-rename.h");
+
+    for path in [
+        &build.join("libmupdf.a"),
+        &build.join("libmupdf-third.a"),
+        &renames,
+    ] {
+        assert!(
+            path.exists(),
+            "no MuPDF build at {}\n\
+             The wasm SVG backend needs it; run: tools/wasm/fetch-deps.sh --with-mupdf",
+            path.display()
+        );
+    }
+
+    // Without these, rebuilding MuPDF does not relink this crate: cargo would
+    // keep the previous link, MuPDF's own HarfBuzz and all. That failure is
+    // invisible at build time and shows up as a trap deep inside font setup.
+    for path in [&build.join("libmupdf.a"), &build.join("libmupdf-third.a")] {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+    println!("cargo:rerun-if-changed={}", renames.display());
+
+    cc::Build::new()
+        .file("src/backend_mupdf/shim.c")
+        .include(mupdf.join("include"))
+        // The shim calls into MuPDF, so it has to see the same renaming its
+        // headers were compiled under.
+        .flag(format!("-include{}", renames.display()))
+        .warnings(false)
+        .compile("preview_render_mupdf_shim");
+
+    println!("cargo:rustc-link-search=native={}", build.display());
+    println!("cargo:rustc-link-lib=static=mupdf");
+    println!("cargo:rustc-link-lib=static=mupdf-third");
 }
 
 fn build_linux() {

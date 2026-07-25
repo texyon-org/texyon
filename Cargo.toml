@@ -58,6 +58,7 @@ members = [
     "crates/preview_protocol",
     "crates/preview_render",
     "crates/status_base",
+    "crates/wasm",
     "crates/xdv",
     "crates/xetex_format",
     "crates/xetex_layout",
@@ -81,7 +82,6 @@ cfg-if = "1.0"
 error-chain = "^0.12"
 flate2 = { version = "^1.0.19", default-features = false, features = ["zlib"] }
 lazy_static = "^1.4"
-open = "^5.0"
 quick-xml = "0.37"
 serde = { version = "^1.0", features = ["derive"], optional = true }
 sha2 = "^0.10"
@@ -103,12 +103,7 @@ tectonic_xdv = { path = "crates/xdv", version = "0.0.0-dev.0" }
 tectonic_xetex_layout = { path = "crates/xetex_layout", version = "0.0.0-dev.0" }
 tempfile = "^3.1"
 termcolor = "^1.1"
-tokio = "^1.0"
 toml = { version = "^0.8", optional = true }
-watchexec = "8.0"
-watchexec-filterer-globset = "8.0"
-watchexec-signals = "5.0"
-watchexec-supervisor = "5.0"
 which = "8.0"
 zip = { version = "4.0", default-features = false, features = ["deflate"] }
 clap_complete = "4.5.1"
@@ -119,8 +114,33 @@ tar = "0.4.40"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Dependencies of the `tectonic` CLI that have no WebAssembly port: `open`
+# shells out to a desktop file handler, and watchexec's filesystem watcher (and
+# with it tokio's net/process features) needs a real OS. `cargo build --lib`
+# compiles every entry in [dependencies] regardless of who uses it, so these
+# have to be target-gated rather than merely feature-gated for the library to
+# build for wasm. Native builds are unaffected.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+open = "^5.0"
+tokio = "^1.0"
+watchexec = "8.0"
+watchexec-filterer-globset = "8.0"
+watchexec-signals = "5.0"
+watchexec-supervisor = "5.0"
+
+# The CLI itself is likewise native-only. Making it require a feature that is on
+# by default keeps `cargo build` behaving exactly as before while letting a
+# --no-default-features wasm build skip the binary instead of failing on it.
+[[bin]]
+name = "tectonic"
+path = "src/bin/tectonic/main.rs"
+required-features = ["cli"]
+
 [features]
-default = ["geturl-reqwest", "serialization"]
+default = ["cli", "geturl-reqwest", "serialization"]
+
+# The command-line program, and the native-only dependencies it needs.
+cli = []
 
 # The main motivation for this feature was to be able to compile without
 # proc-macros (via serde-derive), for statically-linked targets which can't use
@@ -134,6 +154,10 @@ external-harfbuzz = ["tectonic_engine_xetex/external-harfbuzz"]
 
 geturl-curl = ["tectonic_bundles/geturl-curl", "tectonic_geturl/curl"]
 geturl-reqwest = ["tectonic_bundles/geturl-reqwest", "tectonic_geturl/reqwest"]
+geturl-wasm-fetch = [
+    "tectonic_bundles/geturl-wasm-fetch",
+    "tectonic_geturl/wasm-fetch",
+]
 
 native-tls-vendored = [
     "tectonic_bundles/native-tls-vendored",

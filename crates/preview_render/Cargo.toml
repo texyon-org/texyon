@@ -20,4 +20,5 @@ tectonic_xdv = { path = "../xdv", version = "0.0.0-dev.0" }
 
 [build-dependencies]
 cc = "^1.0"
+tectonic_dep_support = { path = "../dep_support", version = "0.0.0-dev.0" }
 vcpkg = "^0.2.15"

@@ -62,8 +62,13 @@ pub mod curl;
 #[cfg(feature = "reqwest")]
 pub mod reqwest;
 
+#[cfg(feature = "wasm-fetch")]
+pub mod wasm_fetch;
+
 cfg_if! {
-    if #[cfg(feature = "reqwest")] {
+    if #[cfg(feature = "wasm-fetch")] {
+        pub use crate::wasm_fetch::WasmFetchBackend as DefaultBackend;
+    } else if #[cfg(feature = "reqwest")] {
         pub use crate::reqwest::ReqwestBackend as DefaultBackend;
     } else if #[cfg(feature = "curl")] {
         pub use crate::curl::CurlBackend as DefaultBackend;

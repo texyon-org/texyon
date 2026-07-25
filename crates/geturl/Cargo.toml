@@ -28,6 +28,10 @@ tectonic_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
 default = ["reqwest"]
 native-tls-vendored = ["reqwest/native-tls-vendored"]
 
+# A backend that hands every request to the JavaScript host. Selected over
+# reqwest and curl when enabled, since a wasm build cannot have those anyway.
+wasm-fetch = []
+
 [package.metadata.internal_dep_versions]
 tectonic_errors = "e04798bcd9b1c1d68cc0a318a710bb30230a0300"
 tectonic_status_base = "401387acfd98113133db6981c301426431f55ea3"
