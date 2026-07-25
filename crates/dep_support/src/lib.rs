@@ -250,3 +250,51 @@ impl<'a, T: Spec> Dependency<'a, T> {
         }
     }
 }
+
+/// Whether the crate being built is targeting WebAssembly.
+///
+/// A wasm target has no system libraries to probe, so the bridge crates that
+/// normally find libpng, FreeType and Graphite2 through pkg-config compile them
+/// from vendored sources instead.
+pub fn target_is_wasm() -> bool {
+    env::var("CARGO_CFG_TARGET_FAMILY")
+        .map(|f| f.split(',').any(|p| p == "wasm"))
+        .unwrap_or(false)
+}
+
+/// Locate the vendored sources of a third-party C library.
+///
+/// Sources are placed by `tools/wasm/fetch-deps.sh`, which defaults to
+/// `tools/wasm/vendor/` in the repository. `$TECTONIC_WASM_VENDOR` overrides
+/// that, so an out-of-tree build can point somewhere else.
+pub fn wasm_vendor_dir(name: &str) -> PathBuf {
+    println!("cargo:rerun-if-env-changed=TECTONIC_WASM_VENDOR");
+
+    let root = match env::var_os("TECTONIC_WASM_VENDOR") {
+        Some(p) => PathBuf::from(p),
+        None => {
+            let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+            // crates/<crate>/ -> repository root
+            manifest
+                .parent()
+                .and_then(Path::parent)
+                .expect("crate is not inside the Tectonic workspace")
+                .join("tools")
+                .join("wasm")
+                .join("vendor")
+        }
+    };
+
+    let dir = root.join(name);
+
+    if !dir.is_dir() {
+        panic!(
+            "no vendored sources for {name} at {}\n\
+             The wasm build compiles this library from source; run \
+             tools/wasm/fetch-deps.sh to download it.",
+            dir.display()
+        );
+    }
+
+    dir
+}

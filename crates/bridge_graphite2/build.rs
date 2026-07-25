@@ -1,11 +1,11 @@
 // Copyright 2020 the Tectonic Project
 // Licensed under the MIT License.
 
-//! graphite2 build script. For now, we always find it externally. One day, we'd
-//! like to be able to vendor it.
+//! graphite2 build script. On normal targets we find it externally. WebAssembly
+//! has no system libraries, so there we compile the vendored sources.
 
-use std::env;
-use tectonic_dep_support::{Configuration, Dependency, Spec};
+use std::{env, fs, path::PathBuf};
+use tectonic_dep_support::{target_is_wasm, wasm_vendor_dir, Configuration, Dependency, Spec};
 
 struct Graphite2Spec;
 
@@ -19,7 +19,87 @@ impl Spec for Graphite2Spec {
     }
 }
 
+/// Graphite2's translation units, mirroring `src/CMakeLists.txt`.
+///
+/// `call_machine.cpp` is the portable interpreter; `direct_machine.cpp` is the
+/// computed-goto variant, which does not build for wasm. `FileFace.cpp` is
+/// omitted along with `GRAPHITE2_NFILEFACE` since fonts arrive as bytes, and
+/// `json.cpp` along with `GRAPHITE2_NTRACING`.
+const GRAPHITE2_SOURCES: &[&str] = &[
+    "call_machine.cpp",
+    "gr_char_info.cpp",
+    "gr_features.cpp",
+    "gr_face.cpp",
+    "gr_font.cpp",
+    "gr_logging.cpp",
+    "gr_segment.cpp",
+    "gr_slot.cpp",
+    "CmapCache.cpp",
+    "Code.cpp",
+    "Collider.cpp",
+    "Decompressor.cpp",
+    "Face.cpp",
+    "FeatureMap.cpp",
+    "Font.cpp",
+    "GlyphFace.cpp",
+    "GlyphCache.cpp",
+    "Intervals.cpp",
+    "Justifier.cpp",
+    "NameTable.cpp",
+    "Pass.cpp",
+    "Position.cpp",
+    "Segment.cpp",
+    "Silf.cpp",
+    "Slot.cpp",
+    "Sparse.cpp",
+    "TtfUtil.cpp",
+    "UtfCodec.cpp",
+];
+
+fn build_vendored() {
+    let src = wasm_vendor_dir("graphite2");
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+
+    let mut cfg = cc::Build::new();
+    cfg.cpp(true)
+        .warnings(false)
+        .flag("-std=c++11")
+        .include(src.join("include"))
+        .include(src.join("src"))
+        .include(src.join("src/inc"))
+        .define("GRAPHITE2_STATIC", "1")
+        .define("GRAPHITE2_NTRACING", "1")
+        .define("GRAPHITE2_NFILEFACE", "1");
+
+    for file in GRAPHITE2_SOURCES {
+        cfg.file(src.join("src").join(file));
+    }
+
+    cfg.compile("graphite2");
+
+    // Present the headers the way a system install would: consumers include
+    // <graphite2/Font.h>, so the directory above `graphite2/` is what goes on
+    // the include path.
+    let include_dir = out_dir.join("include");
+    let dest = include_dir.join("graphite2");
+    fs::create_dir_all(&dest).expect("failed to create include dir");
+
+    for entry in fs::read_dir(src.join("include/graphite2")).expect("failed to read header dir") {
+        let entry = entry.expect("failed to read dir entry");
+        fs::copy(entry.path(), dest.join(entry.file_name())).expect("failed to copy header");
+    }
+
+    println!("cargo:include-path={}", include_dir.display());
+    println!("cargo:define_static=1");
+    println!("cargo:rerun-if-changed={}", src.display());
+}
+
 fn main() {
+    if target_is_wasm() {
+        build_vendored();
+        return;
+    }
+
     let cfg = Configuration::default();
     let dep = Dependency::probe(Graphite2Spec, &cfg);
 

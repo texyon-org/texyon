@@ -1,0 +1,14 @@
+--- a/source/fitz/document.c
++++ b/source/fitz/document.c
+@@ -77,6 +77,11 @@
+ 		}
+ 	}
+ 	while (out == NULL);
++#elif defined(__wasi__)
++	/* WASI has no mkstemp, and a wasm module has no temp directory to put a
++	 * file in either. Every caller of this is an output path that can report
++	 * failure, so say so rather than pretending. */
++	fz_throw(ctx, FZ_ERROR_UNSUPPORTED, "no temporary files under WASI");
+ #else
+ 	{
+ 		FILE *file;

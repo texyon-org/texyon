@@ -20,6 +20,15 @@ license = "MIT"
 edition = "2021"
 links = "icuuc"
 
+# wasm has no system ICU, so the subset XeTeX uses is reimplemented in Rust.
+# unicode-bidi is UAX #9, icu_segmenter is ICU4X with its data compiled in, and
+# encoding_rs covers the legacy input encodings.
+[target.'cfg(target_family = "wasm")'.dependencies]
+encoding_rs = "^0.8"
+icu_segmenter = "^2"
+libc = "^0.2"
+unicode-bidi = "^0.3.18"
+
 [build-dependencies]
 tectonic_dep_support = { path = "../dep_support", version = "0.0.0-dev.0" }
 

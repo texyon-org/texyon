@@ -14,7 +14,13 @@ documentation = "https://docs.rs/tectonic_bridge_png"
 repository = "https://github.com/tectonic-typesetting/tectonic/"
 readme = "README.md"
 
+# On wasm there is no system libpng, so we compile the vendored sources and
+# need zlib's headers. libz-sys is already in the tree by way of flate2.
+[target.'cfg(target_family = "wasm")'.dependencies]
+libz-sys = "^1.1"
+
 [build-dependencies]
+cc = "^1.0.66"
 tectonic_dep_support = { path = "../dep_support", version = "0.0.0-dev.0" }
 
 [package.metadata.internal_dep_versions]

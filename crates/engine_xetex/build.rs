@@ -25,25 +25,36 @@ fn main() {
     let icu_include_path = env::var("DEP_ICUUC_INCLUDE_PATH").unwrap();
 
     // Detect ICU version suffix (e.g. "_74") so Rust FFI can use #[link_name] with versioned names.
-    let icu_major = icu_include_path
-        .split(';')
-        .find_map(|dir| {
-            let uvernum = PathBuf::from(dir).join("unicode/uvernum.h");
-            let f = fs::File::open(&uvernum).ok()?;
-            std::io::BufReader::new(f).lines().find_map(|line| {
-                let line = line.ok()?;
-                let line = line.trim();
-                if line.starts_with("#define U_ICU_VERSION_MAJOR_NUM") {
-                    line.split_whitespace()
-                        .nth(2)
-                        .and_then(|v| v.parse::<u32>().ok())
-                } else {
-                    None
-                }
-            })
-        })
-        .expect("could not detect ICU major version from uvernum.h");
-    println!("cargo:rustc-env=ICU_VERSION_SUFFIX=_{}", icu_major);
+    //
+    // A system ICU renames every symbol with its major version. The wasm build
+    // has no system ICU and gets these entry points from Rust instead
+    // (tectonic_bridge_icu::wasm_shim), whose symbols are unsuffixed; that
+    // bridge announces the suffix to use, so honour it when it is set.
+    let icu_suffix = match env::var("DEP_ICUUC_VERSION_SUFFIX") {
+        Ok(suffix) => suffix,
+        Err(_) => {
+            let icu_major = icu_include_path
+                .split(';')
+                .find_map(|dir| {
+                    let uvernum = PathBuf::from(dir).join("unicode/uvernum.h");
+                    let f = fs::File::open(&uvernum).ok()?;
+                    std::io::BufReader::new(f).lines().find_map(|line| {
+                        let line = line.ok()?;
+                        let line = line.trim();
+                        if line.starts_with("#define U_ICU_VERSION_MAJOR_NUM") {
+                            line.split_whitespace()
+                                .nth(2)
+                                .and_then(|v| v.parse::<u32>().ok())
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .expect("could not detect ICU major version from uvernum.h");
+            format!("_{icu_major}")
+        }
+    };
+    println!("cargo:rustc-env=ICU_VERSION_SUFFIX={icu_suffix}");
 
     // If we want to profile, the default assumption is that we must force the
     // compiler to include frame pointers. We whitelist platforms that are

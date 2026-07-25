@@ -11,6 +11,10 @@ mod object_set;
 pub mod pat;
 pub mod sys;
 
+// wasm has no system fontconfig to link against; supply the API ourselves.
+#[cfg(target_family = "wasm")]
+mod wasm_stub;
+
 pub use font_set::{FontSet, FontSetRef};
 pub use object_set::{ObjectSet, ObjectSetRef};
 pub use pat::{Pattern, PatternRef};

@@ -33,6 +33,12 @@ tectonic_errors = { path = "../errors", version = "0.0.0-dev.0" }
 tectonic_pdf_io = { path = "../pdf_io", version = "0.0.0-dev.0" }
 tectonic_xetex_layout = { path = "../xetex_layout", version = "0.0.0-dev.0" }
 
+# xetex-core.h includes <fontconfig/fontconfig.h>, which is a system header
+# everywhere except wasm — there the bridge crate generates it, and we have to
+# depend on it directly to be told where it landed.
+[target.'cfg(target_family = "wasm")'.dependencies]
+tectonic_bridge_fontconfig = { path = "../bridge_fontconfig", version = "0.0.0-dev.0" }
+
 [build-dependencies]
 cc = "^1.0.66"
 tectonic_cfg_support = { path = "../cfg_support", version = "0.0.0-dev.0" }

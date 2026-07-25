@@ -19,3 +19,16 @@
 *.ignore
 # Corpus harness temp files
 crates/engine_xetex/tests/corpus/goldens/*.tmp
+
+# WebAssembly build
+# The toolchain and the C libraries it compiles are fetched by
+# tools/wasm/fetch-deps.sh; the support pack and the module are built artifacts.
+/tools/wasm/wasi-sdk-*
+/tools/wasm/*.tar.gz
+/tools/wasm/vendor/
+/demo/public/tectonic/files/
+/demo/public/tectonic/manifest.json
+/demo/public/tectonic/*.wasm
+node_modules/
+/js/dist/
+*.tsbuildinfo

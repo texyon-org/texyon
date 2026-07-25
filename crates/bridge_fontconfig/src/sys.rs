@@ -27,6 +27,18 @@ pub struct FcFontSet {
     pub fonts: *const *mut FcPattern,
 }
 
+impl FcFontSet {
+    /// A font set holding nothing, for the wasm stub to hand back.
+    #[cfg(target_family = "wasm")]
+    pub(crate) fn empty() -> FcFontSet {
+        FcFontSet {
+            nfont: 0,
+            sfont: 0,
+            fonts: std::ptr::null(),
+        }
+    }
+}
+
 #[repr(C)]
 pub struct FcObjectSet(());
 
