@@ -6,7 +6,7 @@ use tectonic_preview_protocol::{
 };
 use tectonic_preview_render::{Backend, ResourceProvider};
 
-use crate::engines::tex::{EngineCancellation, EngineFrame, SyncIndex, TexOutcome};
+use tectonic_engine_xetex::{EngineCancellation, EngineFrame, SyncIndex, TexOutcome};
 
 use super::{
     AcceptedSourceSnapshot, DocumentFragment, FrameSink, PreviewPipeline, PreviewPipelineError,

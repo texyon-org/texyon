@@ -1,0 +1,45 @@
+lints.workspace = true
+
+[package]
+name = "tectonic_live_preview"
+version = "0.0.0-dev.0"  # assigned with cranko (see README)
+authors = ["the Tectonic Project"]
+description = """
+Document-level orchestration for Tectonic's realtime LaTeX preview: source
+authority, a resident engine driver, selective publication, and a JSON Lines
+server.
+"""
+homepage = "https://tectonic-typesetting.github.io/"
+documentation = "https://docs.rs/tectonic_live_preview"
+repository = "https://github.com/tectonic-typesetting/tectonic/"
+license = "MIT"
+edition = "2021"
+
+[dependencies]
+tectonic_bridge_core = { path = "../bridge_core", version = "0.0.0-dev.0" }
+tectonic_bundles = { path = "../bundles", version = "0.0.0-dev.0" }
+tectonic_engine_xetex = { path = "../engine_xetex", version = "0.0.0-dev.0" }
+tectonic_errors = { path = "../errors", version = "0.0.0-dev.0" }
+tectonic_io_base = { path = "../io_base", version = "0.0.0-dev.0" }
+tectonic_preview_protocol = { path = "../preview_protocol", version = "0.0.0-dev.0" }
+tectonic_preview_render = { path = "../preview_render", version = "0.0.0-dev.0" }
+tectonic_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
+
+[package.metadata.internal_dep_versions]
+tectonic_bridge_core = "thiscommit:2026-07-25:live-preview-extraction"
+tectonic_bundles = "thiscommit:2026-07-25:live-preview-extraction"
+tectonic_engine_xetex = "thiscommit:2026-07-25:live-preview-extraction"
+tectonic_errors = "thiscommit:2026-07-25:live-preview-extraction"
+tectonic_io_base = "thiscommit:2026-07-25:live-preview-extraction"
+tectonic_preview_protocol = "thiscommit:2026-07-25:live-preview-extraction"
+tectonic_preview_render = "thiscommit:2026-07-25:live-preview-extraction"
+tectonic_status_base = "thiscommit:2026-07-25:live-preview-extraction"
+
+[features]
+# The native SVG backend links MuPDF, whose distribution terms are AGPL. Keep
+# it opt-in so the portable/MIT library build remains unchanged.
+preview-mupdf = ["tectonic_preview_render/backend-mupdf"]
+
+[dev-dependencies]
+serde_json = "1.0"
+tempfile = "^3.1"

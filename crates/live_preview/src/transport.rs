@@ -209,7 +209,7 @@ mod tests {
     use tectonic_preview_render::{PageFingerprint, PageVisual};
 
     use super::*;
-    use crate::live_preview::FramePage;
+    use crate::FramePage;
 
     fn patch(svg: &str) -> FramePatch {
         let mut unsupported = BTreeMap::new();

@@ -9,8 +9,9 @@ use std::{
 };
 use tectonic_errors::{anyhow::bail, Result};
 
-use super::{InputHandle, InputOrigin, IoProvider, OpenResult};
-use crate::{digest::DigestData, status::StatusBackend};
+use tectonic_status_base::StatusBackend;
+
+use crate::{digest::DigestData, InputHandle, InputOrigin, IoProvider, OpenResult};
 
 /// A local cache for compiled format files.
 ///
@@ -21,6 +22,7 @@ use crate::{digest::DigestData, status::StatusBackend};
 pub struct FormatCache {
     bundle_digest: DigestData,
     formats_base: PathBuf,
+    format_serial: u32,
 }
 
 impl FormatCache {
@@ -29,10 +31,20 @@ impl FormatCache {
     /// The `bundle_digest` should be the result of the `Bundle::get_digest()`
     /// call for whichever bundle is active. The `formats_base` path should be
     /// a local cache directory.
-    pub fn new(bundle_digest: DigestData, formats_base: PathBuf) -> FormatCache {
+    ///
+    /// The `format_serial` distinguishes dumps that the same bundle produced
+    /// under incompatible engine versions; it is
+    /// [`tectonic_engine_xetex::FORMAT_SERIAL`], passed in rather than read
+    /// directly because the engine crate is built on top of this one.
+    pub fn new(
+        bundle_digest: DigestData,
+        formats_base: PathBuf,
+        format_serial: u32,
+    ) -> FormatCache {
         FormatCache {
             bundle_digest,
             formats_base,
+            format_serial,
         }
     }
 
@@ -53,9 +65,7 @@ impl FormatCache {
         let mut p = self.formats_base.clone();
         p.push(format!(
             "{}-{}-{}.fmt",
-            self.bundle_digest,
-            stem,
-            crate::FORMAT_SERIAL
+            self.bundle_digest, stem, self.format_serial
         ));
         Ok(p)
     }

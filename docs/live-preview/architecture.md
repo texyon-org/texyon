@@ -7,9 +7,14 @@ transport around the same XeTeX implementation.
 
 ## Modules
 
-1. **Source authority** (`src/live_preview/source.rs`) owns one canonical
-   document root, immutable UTF-8 primary/child buffers, accepted revisions,
-   and whole-buffer replacement validation.
+Everything from here to the renderer lives in `crates/live_preview`. It is a
+library rather than part of the `tectonic` binary so that the CLI and the
+browser build can serve the same pipeline; the CLI is one caller of it, not its
+owner.
+
+1. **Source authority** (`source.rs`) owns one canonical document root,
+   immutable UTF-8 primary/child buffers, accepted revisions, and whole-buffer
+   replacement validation.
 2. **Worker and request clock** (`worker.rs`, `worker_clock.rs`) serialize all
    engine access, keep request/source/frame counters separate, debounce tail
    work, and cooperatively supersede stale work.

@@ -3045,6 +3045,7 @@ dependencies = [
  "tectonic_errors",
  "tectonic_geturl",
  "tectonic_io_base",
+ "tectonic_live_preview",
  "tectonic_preview_protocol",
  "tectonic_preview_render",
  "tectonic_status_base",
@@ -3276,7 +3277,24 @@ dependencies = [
  "sha2",
  "tectonic_errors",
  "tectonic_status_base",
+ "tempfile",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "tectonic_live_preview"
+version = "0.0.0-dev.0"
+dependencies = [
+ "serde_json",
+ "tectonic_bridge_core",
+ "tectonic_bundles",
+ "tectonic_engine_xetex",
+ "tectonic_errors",
+ "tectonic_io_base",
+ "tectonic_preview_protocol",
+ "tectonic_preview_render",
+ "tectonic_status_base",
+ "tempfile",
 ]
 
 [[package]]

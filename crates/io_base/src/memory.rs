@@ -14,7 +14,7 @@ use std::{
 use tectonic_errors::Result;
 use tectonic_status_base::StatusBackend;
 
-use super::{
+use crate::{
     normalize_tex_path, InputFeatures, InputHandle, InputOrigin, IoProvider, OpenResult,
     OutputHandle,
 };
@@ -243,8 +243,8 @@ impl IoProvider for MemoryIo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::status::NoopStatusBackend;
     use std::io::{BufRead, BufReader};
+    use tectonic_status_base::NoopStatusBackend;
 
     /// Early versions had a bug where files were not truncated when opened
     /// for writing, which led to junk after the intended EOF when the engine

@@ -53,6 +53,7 @@ members = [
     "crates/errors",
     "crates/geturl",
     "crates/io_base",
+    "crates/live_preview",
     "crates/mac_core",
     "crates/pdf_io",
     "crates/preview_protocol",
@@ -96,6 +97,7 @@ tectonic_engine_xetex = { path = "crates/engine_xetex", version = "0.0.0-dev.0" 
 tectonic_errors = { path = "crates/errors", version = "0.0.0-dev.0" }
 tectonic_geturl = { path = "crates/geturl", version = "0.0.0-dev.0", default-features = false }
 tectonic_io_base = { path = "crates/io_base", version = "0.0.0-dev.0" }
+tectonic_live_preview = { path = "crates/live_preview", version = "0.0.0-dev.0" }
 tectonic_preview_protocol = { path = "crates/preview_protocol", version = "0.0.0-dev.0" }
 tectonic_preview_render = { path = "crates/preview_render", version = "0.0.0-dev.0" }
 tectonic_status_base = { path = "crates/status_base", version = "0.0.0-dev.0" }
@@ -169,7 +171,10 @@ profile = []
 
 # The native SVG backend links MuPDF, whose distribution terms are AGPL.
 # Keep it opt-in so the portable/MIT library build remains unchanged.
-preview-mupdf = ["tectonic_preview_render/backend-mupdf"]
+preview-mupdf = [
+    "tectonic_live_preview/preview-mupdf",
+    "tectonic_preview_render/backend-mupdf",
+]
 
 [dev-dependencies]
 filetime = "^0.2"
@@ -223,7 +228,8 @@ tectonic_engine_xdvipdfmx = "8a003834b1f6d967d33cc07de4cc025af14560da"
 tectonic_engine_xetex = "c135e6a4a5a2e8c2dc4edcbcfd93f7d466ff8f88"
 tectonic_errors = "317ae79ceaa2593fb56090e37bf1f5cc24213dd9"
 tectonic_geturl = "68c5fc525c5fead75913bd90380043761bde9f61"
-tectonic_io_base = "thiscommit:2021-06-13:XFjtSsZ"
+tectonic_io_base = "thiscommit:2026-07-25:live-preview-extraction"
+tectonic_live_preview = "thiscommit:2026-07-25:live-preview-extraction"
 tectonic_status_base = "317ae79ceaa2593fb56090e37bf1f5cc24213dd9"
 tectonic_xdv = "c91f2ef37858d1a0a724a5c3ddc2f7ea46373c77"
 tectonic_xetex_layout = "2c1ffcd702a662c003bd3d7d0ca4d169784cb6ad"

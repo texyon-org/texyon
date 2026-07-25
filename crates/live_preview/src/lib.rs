@@ -15,6 +15,9 @@ mod transport;
 mod worker;
 mod worker_clock;
 
+#[cfg(test)]
+mod test_support;
+
 pub use assembler::{
     AssembledDocument, DocumentAssembler, DocumentFragment, XdvAssemblyError, XdvFileType,
 };

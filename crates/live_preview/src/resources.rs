@@ -253,8 +253,7 @@ mod tests {
 
     #[test]
     fn bundle_provider_returns_exact_resource_bytes() {
-        crate::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
-        let bundle = FrozenBundle::new(Box::new(crate::test_util::TestBundle::default()));
+        let bundle = FrozenBundle::new(Box::new(crate::test_support::AssetBundle::default()));
         let provider = BundleResourceProvider::new(bundle, None).unwrap();
         let resource = provider
             .resolve(&ResourceRequest {
@@ -266,7 +265,7 @@ mod tests {
 
         assert_eq!(
             resource.bytes.as_ref(),
-            include_bytes!("../../tests/assets/cmr10.tfm")
+            include_bytes!("../../../tests/assets/cmr10.tfm")
         );
     }
 }

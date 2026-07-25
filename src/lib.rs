@@ -85,7 +85,6 @@ pub mod driver;
 pub mod engines;
 pub mod errors;
 pub mod io;
-pub mod live_preview;
 pub mod status;
 pub mod unstable_opts;
 
@@ -102,6 +101,12 @@ pub use crate::errors::{Error, ErrorKind, Result};
 
 // Convenienece re-exports for migration into our multi-crate setup
 pub use tectonic_engine_xetex::FORMAT_SERIAL;
+/// Document-level orchestration for realtime preview.
+///
+/// This lives in its own crate so that targets without this one's
+/// filesystem and process assumptions — the browser build, above all — can
+/// link the same preview pipeline the CLI serves.
+pub use tectonic_live_preview as live_preview;
 pub use tectonic_status_base::{tt_error, tt_note, tt_warning};
 
 /// Compile LaTeX text to a PDF.

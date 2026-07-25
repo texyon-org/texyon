@@ -3,7 +3,7 @@ use std::{fmt, sync::Arc, time::Instant};
 use tectonic_preview_protocol::{OperationMetrics, UpdateOutcome};
 use tectonic_preview_render::{Backend, HotRenderer, RenderError, ResourceProvider};
 
-use crate::engines::tex::SyncIndex;
+use tectonic_engine_xetex::SyncIndex;
 
 use super::{
     AssembledDocument, DocumentAssembler, DocumentFragment, FrameId, FramePhase, FrameSink,
@@ -237,17 +237,17 @@ mod tests {
     };
 
     use super::*;
-    use crate::live_preview::FramePatch;
+    use crate::FramePatch;
 
-    const ONE_PAGE: &[u8] = include_bytes!("../../tests/tex-outputs/the_letter_a.xdv");
+    const ONE_PAGE: &[u8] = include_bytes!("../../../tests/tex-outputs/the_letter_a.xdv");
 
     struct ClassicResources;
 
     impl ResourceProvider for ClassicResources {
         fn resolve(&self, request: &ResourceRequest) -> Result<Option<Resource>, RenderError> {
             let bytes: &[u8] = match request.kind {
-                ResourceKind::Tfm => include_bytes!("../../tests/assets/cmr10.tfm"),
-                ResourceKind::FontProgram => include_bytes!("../../tests/assets/cmr10.pfb"),
+                ResourceKind::Tfm => include_bytes!("../../../tests/assets/cmr10.tfm"),
+                ResourceKind::FontProgram => include_bytes!("../../../tests/assets/cmr10.pfb"),
                 ResourceKind::Encoding => return Ok(None),
                 _ => return Ok(None),
             };
@@ -344,12 +344,10 @@ mod tests {
     #[cfg(all(feature = "preview-mupdf", target_os = "linux"))]
     #[test]
     fn xdv_fixture_corpus_is_fully_renderable() {
-        crate::test_util::activate_test_mode_augmented(env!("CARGO_MANIFEST_DIR"));
-        let bundle = crate::live_preview::FrozenBundle::new(Box::new(
-            crate::test_util::TestBundle::default(),
-        ));
-        let provider = crate::live_preview::BundleResourceProvider::new(bundle, None).unwrap();
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tex-outputs");
+        let bundle =
+            crate::FrozenBundle::new(Box::new(crate::test_support::AssetBundle::default()));
+        let provider = crate::BundleResourceProvider::new(bundle, None).unwrap();
+        let root = crate::test_support::asset_path(&["tex-outputs"]);
         let mut backend = tectonic_preview_render::MupdfBackend::new().unwrap();
         for entry in std::fs::read_dir(root).unwrap() {
             let path = entry.unwrap().path();

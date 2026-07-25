@@ -8,7 +8,7 @@ use std::{
 
 use tectonic_preview_protocol::{ProtocolLimits, SourceFile, SourceRevision};
 
-use crate::engines::tex::{
+use tectonic_engine_xetex::{
     SourceError as EngineSourceError, SourceRevision as EngineSourceRevision,
     SourceSnapshot as EngineSourceSnapshot,
 };

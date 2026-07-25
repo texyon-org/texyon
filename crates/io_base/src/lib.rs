@@ -30,8 +30,13 @@ pub mod app_dirs;
 pub mod digest;
 pub mod filesystem;
 pub mod flate2;
+pub mod format_cache;
+pub mod memory;
 pub mod stack;
 pub mod stdstreams;
+pub mod testing;
+
+pub use crate::memory::MemoryIo;
 
 /// Errors that are generic to Tectonic's framework, but not capturable as
 /// IoErrors.

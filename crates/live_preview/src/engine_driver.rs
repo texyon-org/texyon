@@ -6,15 +6,14 @@ use std::{
 };
 
 use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
-use tectonic_io_base::filesystem::FilesystemIo;
-use tectonic_status_base::NoopStatusBackend;
-
-use crate::{
-    engines::tex::{
-        EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
-    },
-    io::{format_cache::FormatCache, testing::SingleInputFileIo, IoProvider, IoStack, MemoryIo},
+use tectonic_engine_xetex::{
+    EngineCancellation, EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange,
 };
+use tectonic_io_base::{
+    filesystem::FilesystemIo, format_cache::FormatCache, stack::IoStack,
+    testing::SingleInputFileIo, IoProvider, MemoryIo,
+};
+use tectonic_status_base::NoopStatusBackend;
 
 use super::{AcceptedSourceSnapshot, FrozenBundle};
 

@@ -374,7 +374,7 @@ fn read_u32(bytes: &[u8], offset: usize, field: &'static str) -> Result<u32, Xdv
 mod tests {
     use super::*;
 
-    const REAL_XDV: &[u8] = include_bytes!("../../tests/tex-outputs/the_letter_a.xdv");
+    const REAL_XDV: &[u8] = include_bytes!("../../../tests/tex-outputs/the_letter_a.xdv");
 
     #[test]
     fn validates_real_document_and_page_chain() {

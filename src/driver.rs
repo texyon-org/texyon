@@ -48,7 +48,7 @@ use crate::{
     status::StatusBackend,
     tt_error, tt_note, tt_warning,
     unstable_opts::UnstableOptions,
-    BibtexEngine, Spx2HtmlEngine, TexEngine, TexOutcome, XdvipdfmxEngine,
+    BibtexEngine, Spx2HtmlEngine, TexEngine, TexOutcome, XdvipdfmxEngine, FORMAT_SERIAL,
 };
 
 /// Different patterns with which files may have been accessed by the
@@ -1177,7 +1177,8 @@ impl ProcessingSessionBuilder {
         let format_cache_path = self
             .format_cache_path
             .unwrap_or_else(|| filesystem_root.clone());
-        let format_cache = FormatCache::new(bundle.get_digest()?, format_cache_path);
+        let format_cache =
+            FormatCache::new(bundle.get_digest()?, format_cache_path, FORMAT_SERIAL);
 
         let genuine_stdout = if self.print_stdout {
             Some(GenuineStdoutIo::new())

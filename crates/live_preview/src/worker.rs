@@ -12,7 +12,7 @@ use std::{
 use super::{
     AcceptedSourceSnapshot, ApplyDisposition, RequestClock, RequestSeq, SourceRevision, SourceSet,
 };
-use crate::engines::tex::EngineCancellation;
+use tectonic_engine_xetex::EngineCancellation;
 use tectonic_preview_protocol::{QueryId, SourceLocation, SyncRectPayload};
 
 /// Worker scheduling tuning fixed for one worker lifetime.
@@ -958,7 +958,7 @@ mod tests {
     use tectonic_preview_protocol::ProtocolLimits;
 
     use super::*;
-    use crate::live_preview::DocumentRoot;
+    use crate::DocumentRoot;
 
     struct MockProcessor {
         last: String,

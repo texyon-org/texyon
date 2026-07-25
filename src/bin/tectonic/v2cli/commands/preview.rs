@@ -17,6 +17,7 @@ use tectonic::{
         ResidentXeTeX,
     },
     status::{NoopStatusBackend, StatusBackend},
+    FORMAT_SERIAL,
 };
 use tectonic_preview_protocol::ProtocolLimits;
 use tectonic_preview_render::MupdfBackend;
@@ -92,6 +93,7 @@ impl TectonicCommand for PreviewCommand {
                     config
                         .format_cache_path()
                         .map_err(|error| error.to_string())?,
+                    FORMAT_SERIAL,
                 );
                 let mut status = NoopStatusBackend::default();
                 match format_cache.input_open_format(&format_name, &mut status) {
