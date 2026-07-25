@@ -71,10 +71,16 @@ function literalField(name: string): string {
 /**
  * The template for opening an environment.
  *
- * Written for the moment someone is completing inside `\begin{`, so it closes
- * that brace, leaves a line for the body, and writes the matching `\end`. The
- * environment name appears as the same field twice, which is what makes
- * editing one edit the other.
+ * Written for the moment someone is completing inside `\begin{`, so it leaves a
+ * line for the body and writes the matching `\end`. The environment name
+ * appears as the same field twice, which is what makes editing one edit the
+ * other.
+ *
+ * It always closes its own brace. Typing `\begin{` makes the editor's bracket
+ * closing supply one too, but that one sits *after* the whole insertion — the
+ * newline and the `\end` go in front of it — so omitting ours would give
+ * `\begin{itemize` open and `\end{itemize}}` closed twice. The stray brace is
+ * swallowed by the completion instead; see `consumingBrace`.
  */
 export function environmentSnippet(
   name: string,

@@ -101,32 +101,81 @@ export function latexCompletions(sources: () => CompletionSources) {
     return {
       // After the backslash, which stays.
       from: command.from + 1,
-      options: commandOptions(at),
+      options: commandOptions(at, command.text.slice(1)),
       validFor: /^[a-zA-Z@]*$/,
     };
   };
 }
 
-/** One completion per command, ranked by how much is known about it. */
-function commandOptions(at: CompletionSources): Completion[] {
+/**
+ * How many of the commands nobody has loaded to offer.
+ *
+ * There are sixty thousand of them. They are a rescue for a command someone
+ * knows they want and has forgotten the package for, so a handful of the
+ * closest matches is the whole of their usefulness.
+ */
+const AVAILABLE_LIMIT = 5;
+
+/**
+ * Commands, filtered to what the typed prefix could still become.
+ *
+ * The filtering is the point. A document has around twenty-five thousand
+ * commands defined and the corpus knows of sixty thousand more, and building a
+ * completion object for every one of them on every keystroke is enough work to
+ * feel it. Narrowing to the prefix first turns that into a few dozen.
+ *
+ * Returning a prefix-filtered set is sound because typing only ever adds
+ * characters: everything matching a longer prefix already matches this one, so
+ * `validFor` lets CodeMirror keep filtering without asking again.
+ */
+function commandOptions(at: CompletionSources, prefix: string): Completion[] {
+  const wanted = prefix.toLowerCase();
+  const matches = (name: string): boolean =>
+    wanted === "" || name.toLowerCase().startsWith(wanted);
+
   const options: Completion[] = [];
 
-  // The project's own definitions first: they are the ones you cannot look up.
-  for (const declared of at.symbols.commands) {
-    options.push({
-      label: declared.name,
+  // The project's own definitions rank above everything: they are the ones
+  // that cannot be looked up anywhere.
+  const own = new Map(at.symbols.commands.map((command) => [command.name, command]));
+  const defined = new Map(at.commands.map((command) => [command.name, command]));
+
+  for (const [name, declared] of own) {
+    if (!matches(name)) continue;
+
+    // The engine knows the real arity once the document has compiled; before
+    // that, what the declaration itself said is the best available answer.
+    const merged = defined.get(name);
+    const arity = merged?.arity ?? declared.arity ?? 0;
+    const template = commandSnippet({
+      name,
+      tier: "bare",
+      signatures: merged?.signatures ?? null,
+      arity,
+      optional: merged?.optional ?? false,
+      classification: null,
+      from: null,
+    });
+
+    const option: Completion = {
+      label: name,
       type: "function",
       detail: `${declared.path}:${declared.line}`,
       boost: 2,
-    });
+    };
+    options.push(template === null ? option : snippetCompletion(template, option));
   }
 
-  const own = new Set(at.symbols.commands.map((c) => c.name));
+  let available = 0;
 
   for (const command of at.commands) {
-    if (own.has(command.name)) continue;
+    if (own.has(command.name) || !matches(command.name)) continue;
 
     if (command.tier === "available") {
+      // Capped rather than sorted: they are all equally distant from what is
+      // actually loaded, and sixty thousand of anything is not a suggestion.
+      if (available >= AVAILABLE_LIMIT) continue;
+      available++;
       options.push(availableOption(command, at));
       continue;
     }
@@ -181,18 +230,42 @@ function environmentNames(at: CompletionSources): string[] {
   return [...names];
 }
 
+/**
+ * Take the `}` that bracket-closing already supplied, if it is there.
+ *
+ * An environment snippet writes its own closing brace, a newline, a body and an
+ * `\end`. Whatever was after the cursor ends up after all of that — so the `}`
+ * the editor helpfully added when `\begin{` was typed would come out as a
+ * second one on the `\end` line. Extending the replaced range over it is what
+ * makes accepting a completion leave one brace where there should be one.
+ */
+function consumingBrace(completion: Completion): Completion {
+  const apply = completion.apply;
+  if (typeof apply !== "function") return completion;
+
+  return {
+    ...completion,
+    apply: (view, described, from, to) => {
+      const following = view.state.sliceDoc(to, to + 1) === "}" ? to + 1 : to;
+      apply(view, described, from, following);
+    },
+  };
+}
+
 /** Environments, each writing its own `\end`. */
 function environmentOptions(at: CompletionSources): Completion[] {
   const options: Completion[] = [];
 
   for (const declared of at.symbols.environments) {
     options.push(
-      snippetCompletion(environmentSnippet(declared.name), {
-        label: declared.name,
-        type: "class",
-        detail: declared.path,
-        boost: 2,
-      }),
+      consumingBrace(
+        snippetCompletion(environmentSnippet(declared.name), {
+          label: declared.name,
+          type: "class",
+          detail: declared.path,
+          boost: 2,
+        }),
+      ),
     );
   }
 
@@ -200,7 +273,9 @@ function environmentOptions(at: CompletionSources): Completion[] {
   for (const name of FALLBACK_ENVIRONMENTS) {
     if (own.has(name)) continue;
     options.push(
-      snippetCompletion(environmentSnippet(name), { label: name, type: "class" }),
+      consumingBrace(
+        snippetCompletion(environmentSnippet(name), { label: name, type: "class" }),
+      ),
     );
   }
 
