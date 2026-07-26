@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { CwlPackage } from "./cwl.ts";
-import { availableCommand, mergeCommands, packagesUsed, resolvePackages } from "./commands.ts";
+import { availableCommand, mergeCommands, mergeEnvironments, packagesUsed, resolvePackages } from "./commands.ts";
 import type { EngineCommand } from "./commands.ts";
 
 const engine = (name: string, arity = 0, optional = false): EngineCommand => ({
@@ -170,4 +170,40 @@ test("a package the corpus does not describe is skipped, not fatal", async () =>
   );
 
   assert.deepEqual(resolved.map((p) => p.name), ["amsmath"]);
+});
+
+const BARE = {
+  unusual: false,
+  hidden: false,
+  mathOnly: false,
+  textOnly: false,
+  tabularOnly: false,
+  role: null,
+  environments: [],
+} as const;
+
+test("environments come from the packages the document loads", () => {
+  // Nothing offered these before: \begin{ knew only what the project declared
+  // and a short hardcoded list, so no package environment was ever reachable.
+  const merged = mergeEnvironments([
+    {
+      name: "tikz",
+      includes: [],
+      commands: [],
+      environments: [
+        { name: "tikzpicture", arguments: [], classification: BARE },
+        {
+          name: "tikzpicture",
+          arguments: [{ optional: true, name: "options", hint: null, keyvals: true }],
+          classification: BARE,
+        },
+      ],
+      keys: {},
+    },
+  ]);
+
+  assert.deepEqual(merged.map((e) => e.name), ["tikzpicture"]);
+  // The richest description wins, so accepting it leaves you in the options.
+  assert.deepEqual(merged[0]?.arguments.map((a) => a.name), ["options"]);
+  assert.equal(merged[0]?.from, "tikz");
 });

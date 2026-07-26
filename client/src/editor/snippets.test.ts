@@ -70,6 +70,18 @@ test("an environment's own arguments come before its body", () => {
   assert.equal(template, "${alignat}\\}\\{${ncols}\\}\n\t${0}\n\\end\\{${alignat}\\}");
 });
 
+test("an environment's optional arguments are not written for it", () => {
+  // `\begin{tikzpicture}[options]` is not a document that compiles: tikz reads
+  // `options` as a key. A mandatory argument has to be filled in either way,
+  // so it still gets a field.
+  const template = environmentSnippet("tikzpicture", [arg("options", true)]);
+  assert.equal(template, "${tikzpicture}\\}\n\t${0}\n\\end\\{${tikzpicture}\\}");
+
+  const mixed = environmentSnippet("minipage", [arg("pos", true), arg("width")]);
+  assert.ok(mixed.includes("${width}"), mixed);
+  assert.ok(!mixed.includes("${pos}"), mixed);
+});
+
 test("a signature reads as it would be written", () => {
   assert.equal(
     describeSignature(command({ signatures: [[arg("num"), arg("den")]] })),

@@ -236,3 +236,50 @@ export async function resolvePackages(
 
   return resolved;
 }
+
+/** One environment the corpus describes, ready to offer. */
+export interface MergedEnvironment {
+  name: string;
+  /**
+   * What goes after `\begin{name}`, from the richest description found.
+   *
+   * The corpus lists an environment once per way of writing it — tikz declares
+   * `tikzpicture` both bare and with `[options]` — so keeping the longest is
+   * what makes accepting the completion leave you somewhere useful.
+   */
+  arguments: readonly CwlArgument[];
+  classification: CwlClassification | null;
+  /** The package that describes it. */
+  from: string;
+}
+
+/**
+ * Every environment the packages this document loads contribute.
+ *
+ * The corpus has always carried these — `parseCwl` reads every `\begin{…}`
+ * line and the build ships them — but nothing offered them, so `\begin{`
+ * knew only what the project declared itself and a short hardcoded list.
+ * `tikzpicture`, beamer's `frame` and `tabularx` were all missing for that
+ * reason rather than any deeper one.
+ */
+export function mergeEnvironments(packages: readonly CwlPackage[]): MergedEnvironment[] {
+  const best = new Map<string, MergedEnvironment>();
+
+  for (const pkg of packages) {
+    for (const entry of pkg.environments) {
+      const existing = best.get(entry.name);
+      if (existing !== undefined && existing.arguments.length >= entry.arguments.length) {
+        continue;
+      }
+
+      best.set(entry.name, {
+        name: entry.name,
+        arguments: entry.arguments,
+        classification: entry.classification,
+        from: pkg.name,
+      });
+    }
+  }
+
+  return [...best.values()];
+}

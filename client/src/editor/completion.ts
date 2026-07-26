@@ -15,7 +15,7 @@
 
 import { snippetCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 
-import { availableCommand, type MergedCommand } from "../project/commands";
+import { availableCommand, type MergedCommand, type MergedEnvironment } from "../project/commands";
 import { catalogueOfPackages, packageEntry } from "../project/corpus";
 import type { CwlKey } from "../project/cwl";
 import type { SymbolIndex } from "../project/symbols";
@@ -26,6 +26,8 @@ export interface CompletionSources {
   symbols: SymbolIndex;
   /** The merged command set: everything this document actually has. */
   commands: readonly MergedCommand[];
+  /** Environments the loaded packages contribute, with their arguments. */
+  environments: readonly MergedEnvironment[];
   /** Every command the corpus knows of, mapped to a package providing it. */
   providers: ReadonlyMap<string, string>;
   /** Add `\usepackage{name}` to the preamble. */
@@ -338,9 +340,10 @@ function availableOption(command: MergedCommand, at: CompletionSources): Complet
   };
 }
 
-/** Environment names, from the corpus where there is one. */
+/** Every environment worth offering, whatever knows about it. */
 function environmentNames(at: CompletionSources): string[] {
   const names = new Set<string>(at.symbols.environments.map((e) => e.name));
+  for (const environment of at.environments) names.add(environment.name);
   for (const name of FALLBACK_ENVIRONMENTS) names.add(name);
   return [...names];
 }
@@ -370,8 +373,11 @@ function consumingBrace(completion: Completion): Completion {
 /** Environments, each writing its own `\end`. */
 function environmentOptions(at: CompletionSources): Completion[] {
   const options: Completion[] = [];
+  const seen = new Set<string>();
 
+  // The project's own come first: they are the ones that cannot be looked up.
   for (const declared of at.symbols.environments) {
+    seen.add(declared.name);
     options.push(
       consumingBrace(
         snippetCompletion(environmentSnippet(declared.name), {
@@ -384,9 +390,29 @@ function environmentOptions(at: CompletionSources): Completion[] {
     );
   }
 
-  const own = new Set(at.symbols.environments.map((e) => e.name));
+  // Then whatever the loaded packages contribute, written with the arguments
+  // the corpus describes — `tikzpicture` takes `[options]`.
+  for (const environment of at.environments) {
+    if (seen.has(environment.name)) continue;
+    seen.add(environment.name);
+
+    options.push(
+      consumingBrace(
+        snippetCompletion(environmentSnippet(environment.name, environment.arguments), {
+          label: environment.name,
+          type: "class",
+          detail: environment.from,
+          boost: environment.classification?.unusual === true ? -2 : 1,
+        }),
+      ),
+    );
+  }
+
+  // And the handful worth offering before anything has been compiled or
+  // fetched, so a fresh project is not inert.
   for (const name of FALLBACK_ENVIRONMENTS) {
-    if (own.has(name)) continue;
+    if (seen.has(name)) continue;
+    seen.add(name);
     options.push(
       consumingBrace(
         snippetCompletion(environmentSnippet(name), { label: name, type: "class" }),

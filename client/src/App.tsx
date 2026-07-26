@@ -4,7 +4,7 @@ import type { CwlPackage } from "./project/cwl";
 import { Editor } from "./editor/Editor";
 import { useEngine } from "./engine/useEngine";
 import { FileTree } from "./files/FileTree";
-import { mergeCommands, packagesUsed } from "./project/commands";
+import { mergeCommands, mergeEnvironments, packagesUsed } from "./project/commands";
 import { corpusOf, providers } from "./project/corpus";
 import { indexProject } from "./project/symbols";
 import { Viewer } from "./viewer/Viewer";
@@ -102,6 +102,7 @@ export function App() {
   }, [packages]);
 
   const merged = useMemo(() => mergeCommands(commands, corpus), [commands, corpus]);
+  const environments = useMemo(() => mergeEnvironments(corpus), [corpus]);
 
   // Rebuilt when the text changes, which is what makes completion know about
   // the label you wrote a moment ago.
@@ -255,6 +256,7 @@ export function App() {
             sources={{
               symbols,
               commands: merged,
+              environments,
               providers: providers(),
               addPackage: (name) => {
                 const main = workspace.read(PRIMARY);

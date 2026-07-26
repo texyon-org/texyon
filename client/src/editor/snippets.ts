@@ -81,13 +81,20 @@ function literalField(name: string): string {
  * newline and the `\end` go in front of it — so omitting ours would give
  * `\begin{itemize` open and `\end{itemize}}` closed twice. The stray brace is
  * swallowed by the completion instead; see `consumingBrace`.
+ *
+ * Optional arguments are left out. A field pre-filled with the argument's own
+ * name is right for a mandatory one — `\frac{num}{den}` has to be filled in
+ * either way — but an optional one that is never touched stays in the
+ * document, and `\begin{tikzpicture}[options]` does not compile: tikz reads
+ * `options` as a key it does not have. Someone who wants them types `[`.
  */
 export function environmentSnippet(
   name: string,
   args: readonly CwlArgument[] = [],
 ): string {
   const field = `\${${literal(name)}}`;
-  const opening = args.length > 0 ? writeArguments(args) : "";
+  const required = args.filter((argument) => !argument.optional);
+  const opening = required.length > 0 ? writeArguments(required) : "";
 
   // The tab indents the body by one unit; the newline before \end puts the
   // closing tag back at the outer level.
