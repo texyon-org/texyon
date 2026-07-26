@@ -21,8 +21,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const source = join(here, "texstudio", "completion");
 const out = join(here, "..", "..", "client", "public", "cwl");
 
-rmSync(out, { recursive: true, force: true });
+// Empty it rather than remove it. A dev server watching public/ keeps a
+// handle on this directory, and replacing it with a new one of the same name
+// leaves that server serving its index.html fallback for every file in here
+// until it is restarted — which looks exactly like a corpus that was never
+// built.
 mkdirSync(out, { recursive: true });
+for (const entry of readdirSync(out)) {
+  rmSync(join(out, entry), { recursive: true, force: true });
+}
 
 /** command name -> packages that provide it */
 const provides = new Map();
