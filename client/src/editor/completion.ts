@@ -28,6 +28,11 @@ export interface CompletionSources {
   commands: readonly MergedCommand[];
   /** Environments the loaded packages contribute, with their arguments. */
   environments: readonly MergedEnvironment[];
+  /**
+   * Key-value options the loaded packages describe, by what accepts them —
+   * `draw`, `includegraphics`, `begin{tikzpicture}`.
+   */
+  keys: ReadonlyMap<string, CwlKey[]>;
   /** Every command the corpus knows of, mapped to a package providing it. */
   providers: ReadonlyMap<string, string>;
   /** Add `\usepackage{name}` to the preamble. */
@@ -39,6 +44,15 @@ const LOADING = /\\(?:usepackage|RequirePackage|documentclass)\s*(?:\[[^\]]*\])?
 
 /** `\usepackage[` and `\documentclass[`, mid-option. */
 const OPTIONS = /\\(?:usepackage|RequirePackage|documentclass)\s*\[[^\]]*/;
+
+/**
+ * `\begin{env}[` or `\command[`, mid-option.
+ *
+ * `[^\]]*` at the end is what keeps this to the option list the cursor is
+ * actually in: a list already closed cannot match, because the `]` that closed
+ * it would have to be consumed.
+ */
+const ACCEPTS_OPTIONS = /\\(?:begin\s*\{[^}]+\}|[a-zA-Z@]+)\s*\[[^\]]*/;
 
 /**
  * The options one package or class accepts.
@@ -128,6 +142,35 @@ export function latexCompletions(sources: () => CompletionSources) {
           validFor: /^[^{},\s]*$/,
         };
       });
+    }
+
+    // `\begin{tikzpicture}[dra` and `\includegraphics[wid` — options for
+    // something the document has already loaded, so the corpus entry is in
+    // memory and this answers without fetching anything.
+    //
+    // Deliberately not a list of known commands: whether something takes
+    // key-value options is what the corpus records, so having an entry under
+    // its own name is the whole test.
+    const accepting = context.matchBefore(ACCEPTS_OPTIONS);
+    if (accepting !== null) {
+      const environment = accepting.text.match(/^\\begin\s*\{([^}]+)\}/);
+      const command = accepting.text.match(/^\\([a-zA-Z@]+)/);
+      const owner =
+        environment?.[1] !== undefined
+          ? `begin{${environment[1].trim()}}`
+          : (command?.[1] ?? "");
+
+      const keys = at.keys.get(owner);
+      if (keys !== undefined && keys.length > 0) {
+        const opened = accepting.text.lastIndexOf("[");
+        const comma = accepting.text.lastIndexOf(",");
+
+        return {
+          from: accepting.from + Math.max(opened, comma) + 1,
+          options: keys.map(optionCompletion),
+          validFor: /^[^\][,=\s]*$/,
+        };
+      }
     }
 
     // `\usepackage[colorl` — the options a package accepts. The package is

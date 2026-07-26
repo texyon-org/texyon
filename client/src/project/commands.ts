@@ -13,7 +13,7 @@
  * decides what exists, the corpus decides what it means.
  */
 
-import type { CwlArgument, CwlClassification, CwlPackage } from "./cwl";
+import type { CwlArgument, CwlClassification, CwlKey, CwlPackage } from "./cwl";
 
 /** One command the engine reports as defined. */
 export interface EngineCommand {
@@ -282,4 +282,46 @@ export function mergeEnvironments(packages: readonly CwlPackage[]): MergedEnviro
   }
 
   return [...best.values()];
+}
+
+/**
+ * Every key-value option the loaded packages describe, by what accepts it.
+ *
+ * The owner is the corpus's own spelling: a command by bare name (`draw`,
+ * `includegraphics`), an environment as `begin{name}`, and a package's own
+ * load-time options as `usepackage/name`.
+ *
+ * These come from packages already in memory, so looking one up costs nothing
+ * — unlike `\usepackage[…]{name}`, where the package being configured is by
+ * definition not loaded yet and has to be fetched.
+ */
+export function mergeKeys(packages: readonly CwlPackage[]): Map<string, CwlKey[]> {
+  const merged = new Map<string, CwlKey[]>();
+
+  for (const pkg of packages) {
+    for (const [owner, keys] of Object.entries(pkg.keys)) {
+      let list = merged.get(owner);
+      if (list === undefined) merged.set(owner, (list = []));
+
+      // The corpus repeats a key once per way of writing its value — tikz
+      // lists `baseline` bare and `baseline=`. Keep the one that says most.
+      for (const key of keys) {
+        const at = list.findIndex((existing) => existing.name === key.name);
+        if (at === -1) {
+          list.push(key);
+        } else if (describes(key) > describes(list[at]!)) {
+          list[at] = key;
+        }
+      }
+    }
+  }
+
+  return merged;
+}
+
+/** How much a key says about its value, for choosing between duplicates. */
+function describes(key: CwlKey): number {
+  if (key.values.length > 0) return 2;
+  if (key.hint !== null) return 1;
+  return 0;
 }

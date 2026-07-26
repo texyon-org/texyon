@@ -106,18 +106,28 @@ export function parseCwl(name: string, source: string): CwlPackage {
     keys: {},
   };
 
-  /** The command whose keys are currently being collected, if inside a block. */
-  let keysFor: string | null = null;
+  /**
+   * The commands whose keys are currently being collected, if inside a block.
+   *
+   * Plural, and that is the whole point: one block routinely serves many. TikZ
+   * declares a block for twenty-two of them at once — `\begin{tikzpicture}`,
+   * `\draw`, `\node` and the rest — and blocks in the corpus reach 199
+   * owners. Keeping one meant keeping whichever happened to be written last.
+   */
+  let keysFor: string[] = [];
 
   for (const raw of source.split("\n")) {
     const line = raw.trim();
     if (line === "") continue;
 
-    if (keysFor !== null) {
+    if (keysFor.length > 0) {
       if (line === "#endkeyvals") {
-        keysFor = null;
+        keysFor = [];
       } else if (!line.startsWith("#")) {
-        (pkg.keys[keysFor] ??= []).push(parseKey(line));
+        const key = parseKey(line);
+        if (key !== null) {
+          for (const owner of keysFor) (pkg.keys[owner] ??= []).push(key);
+        }
       }
       continue;
     }
@@ -132,11 +142,12 @@ export function parseCwl(name: string, source: string): CwlPackage {
       const keyvals = line.match(/^#keyvals:(.+)$/);
       if (keyvals?.[1] !== undefined) {
         // A block may serve several commands at once, comma-separated, and
-        // each name may carry its own classification suffix.
-        for (const owner of keyvals[1].split(",")) {
-          const command = owner.trim().replace(/#.*$/, "").replace(/^\\/, "");
-          if (command !== "") keysFor = command;
-        }
+        // each name may carry its own classification suffix. An environment
+        // appears as `\begin{name}` and is filed under `begin{name}`.
+        keysFor = keyvals[1]
+          .split(",")
+          .map((owner) => owner.trim().replace(/#.*$/, "").replace(/^\\/, ""))
+          .filter((owner) => owner !== "");
         // `#ifOption` blocks are taken unconditionally: which options a
         // document passed is not known here, and a key that turns out not to
         // apply is a worse suggestion than no suggestion but not a wrong one.
@@ -299,14 +310,23 @@ const LENGTH_CODES = new Set(["L", "l"]);
  *   placeholder syntax used everywhere else in the corpus.
  *
  * A line with no value notation at all — a bare `draft` — is a flag.
+ *
+ * Returns null for a line that is not a key. A block may contain a bare
+ * `%color` or `%tikzstyle`, which names a whole *class* of value that is legal
+ * here — every colour, every defined style — rather than a key called
+ * "%color". Offering it as one puts a stray `%` in the list.
  */
-function parseKey(line: string): CwlKey {
+function parseKey(line: string): CwlKey | null {
+  // A type reference, not a key. `color=#%color` says what `color` accepts;
+  // the bare `%color` on its own line says the same of the block at large.
+  if (line.startsWith("%")) return null;
+
   // Deliberately `[^#]`, not `[^#=]`. Excluding the `=` made this miss every
   // `key=#a,b,c` in the corpus — 5,601 of them — and fall through to the
   // branch below, which kept the name and dropped the values.
   const described = line.match(/^([^#]+)#(.+)$/);
   if (described?.[1] !== undefined && described[2] !== undefined) {
-    const name = described[1].replace(/=$/, "").trim();
+    const name = readable(described[1].replace(/=$/, ""));
     const value = described[2].trim();
 
     // `##L` is a length and `#%color` is a colour: kinds, not choices.
@@ -314,7 +334,7 @@ function parseKey(line: string): CwlKey {
       return { name, values: [], takesValue: true, hint: LENGTH_CODES.has(value.slice(1)) ? "length" : null };
     }
     if (value.startsWith("%")) {
-      return { name, values: [], takesValue: true, hint: value.slice(1) || null };
+      return { name, values: [], takesValue: true, hint: readable(value.slice(1)) || null };
     }
 
     return {
@@ -327,14 +347,26 @@ function parseKey(line: string): CwlKey {
 
   const assigned = line.match(/^([^=]+)=(.*)$/);
   if (assigned?.[1] !== undefined) {
-    return { name: assigned[1].trim(), values: [], takesValue: true, hint: placeholder(assigned[2]) };
+    return {
+      name: readable(assigned[1]),
+      values: [],
+      takesValue: true,
+      hint: assigned[2].includes("%<") ? readable(assigned[2]) || null : null,
+    };
   }
 
-  return { name: line.trim(), values: [], takesValue: false, hint: null };
+  return { name: readable(line), values: [], takesValue: false, hint: null };
 }
 
-/** The name inside a `%<…%>` placeholder, if that is all the value is. */
-function placeholder(value: string): string | null {
-  const found = value.trim().match(/^%<(.+)%>$/);
-  return found?.[1] ?? null;
+/**
+ * Drop the corpus's placeholder markers, keeping what they wrapped.
+ *
+ * `%<` and `%>` bracket a placeholder, and a single value may hold several
+ * with literal text between them: `domain=%<start%>:%<end%>` is two
+ * placeholders and a colon, which a regex anchored to the first `%<` and the
+ * last `%>` reads as one placeholder named `start%>:%<end`. Key *names* carry
+ * them too — `level %<n%>/.style` — so this applies to both.
+ */
+function readable(text: string): string {
+  return text.replace(/%[<>]/g, "").trim();
 }

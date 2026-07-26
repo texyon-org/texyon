@@ -116,6 +116,44 @@ test("keys carry their types and their enumerated values", () => {
   ]);
 });
 
+test("placeholder markers do not leak into keys", () => {
+  const pkg = parseCwl("tikz", [
+    "#keyvals:\\begin{tikzpicture}",
+    // Two placeholders with a literal colon, not one placeholder oddly named.
+    "domain=%<start%>:%<end%>",
+    // A key name with a variable part in it.
+    "level %<n%>/.style={%<options%>}",
+    // Not a key at all: the block accepts any colour here.
+    "%color",
+    "#endkeyvals",
+  ].join("\n"));
+
+  const keys = pkg.keys["begin{tikzpicture}"] ?? [];
+  assert.deepEqual(keys.map((k) => k.name), ["domain", "level n/.style"]);
+  assert.equal(keys[0]?.hint, "start:end");
+  assert.ok(!keys.some((k) => k.name.includes("%")), JSON.stringify(keys));
+});
+
+test("a block serving several commands files its keys under every one", () => {
+  // TikZ declares one block for twenty-two owners at once. Keeping only the
+  // last discarded 10,341 owner associations across the corpus, which is why
+  // \begin{tikzpicture}[ had no options: they were filed under \arrowreversed.
+  const pkg = parseCwl("tikz", [
+    "#keyvals:\\begin{tikzpicture}#c,\\tikz#c,\\draw#c,\\node#c",
+    "scale=%<factor%>",
+    "thick",
+    "#endkeyvals",
+  ].join("\n"));
+
+  assert.deepEqual(
+    Object.keys(pkg.keys).sort(),
+    ["begin{tikzpicture}", "draw", "node", "tikz"],
+  );
+  for (const owner of Object.keys(pkg.keys)) {
+    assert.deepEqual(pkg.keys[owner]?.map((k) => k.name), ["scale", "thick"], owner);
+  }
+});
+
 test("an enumeration written with an equals keeps its values", () => {
   // The `=` says the value is written with one. It does not mean there is no
   // list — five and a half thousand lines in the corpus are spelled this way,
