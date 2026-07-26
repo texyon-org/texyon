@@ -3,6 +3,15 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+/**
+ * Where the support bundle actually lives.
+ *
+ * `relay.fullyjustified.net/default_bundle_v33.tar` is the redirecting alias
+ * the CLI uses; this is what it resolves to. Pinned rather than followed so a
+ * dev server does not silently change bundles underneath a project.
+ */
+const BUNDLE_HOST = "https://data1.fullyjustified.net";
+
 export default defineConfig({
   plugins: [react()],
 
@@ -34,6 +43,21 @@ export default defineConfig({
     fs: { allow: [fileURLToPath(new URL("..", import.meta.url))] },
 
     proxy: {
+      // The support bundle — every package, font and graphic in TeX Live that
+      // is not in the local pack. The engine asks for byte ranges of it, so it
+      // has to be same-origin: the host serves Range requests and an index
+      // sidecar but no Access-Control-Allow-Origin, which makes fetching it
+      // cross-origin impossible rather than merely slow.
+      //
+      // Without this, every \usepackage outside the 423-file pack fails with
+      // "File `x.sty' not found" and the only clue is one line in the log
+      // saying the bundle index could not be loaded.
+      "/bundle": {
+        target: BUNDLE_HOST,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/bundle/, ""),
+      },
+
       // The API and Fortify's session endpoints belong to the server. In
       // production Caddy routes these; in development they are proxied so the
       // session cookie is same-origin either way.
