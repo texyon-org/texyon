@@ -68,6 +68,11 @@ export interface CwlKey {
   values: string[];
   /** Whether it takes a value at all — `draft` does not. */
   takesValue: boolean;
+  /**
+   * What kind of value it wants, where the corpus says so rather than listing
+   * them — `%color`, `%length`. A hint to show, not a value to insert.
+   */
+  hint: string | null;
 }
 
 /** Everything one package contributes. */
@@ -276,25 +281,60 @@ function parseClassification(suffix: string): CwlClassification {
 }
 
 /**
+ * The `##` codes that stand for a length. Both spellings occur.
+ */
+const LENGTH_CODES = new Set(["L", "l"]);
+
+/**
  * Read one line of a `#keyvals:` block.
  *
- * `width=##L` takes a length, `clip#true,false` takes one of two words, and a
- * bare `draft` takes nothing at all.
+ * Everything after the first `#` describes the value, in one of three ways:
+ *
+ * - `clip#true,false` and `backref=#section,page,none` enumerate it. The `=`
+ *   is notation — both are written `key=value` — and is not the difference
+ *   between a flag and a key.
+ * - `width=##L` and `citecolor=#%color` name a *kind* of value instead. A
+ *   hint to show, never a value to insert.
+ * - `baseurl=%<URL%>` has no `#` at all and names its value in the
+ *   placeholder syntax used everywhere else in the corpus.
+ *
+ * A line with no value notation at all — a bare `draft` — is a flag.
  */
 function parseKey(line: string): CwlKey {
-  const enumerated = line.match(/^([^#=]+)#(.+)$/);
-  if (enumerated?.[1] !== undefined && enumerated[2] !== undefined) {
+  // Deliberately `[^#]`, not `[^#=]`. Excluding the `=` made this miss every
+  // `key=#a,b,c` in the corpus — 5,601 of them — and fall through to the
+  // branch below, which kept the name and dropped the values.
+  const described = line.match(/^([^#]+)#(.+)$/);
+  if (described?.[1] !== undefined && described[2] !== undefined) {
+    const name = described[1].replace(/=$/, "").trim();
+    const value = described[2].trim();
+
+    // `##L` is a length and `#%color` is a colour: kinds, not choices.
+    if (value.startsWith("#")) {
+      return { name, values: [], takesValue: true, hint: LENGTH_CODES.has(value.slice(1)) ? "length" : null };
+    }
+    if (value.startsWith("%")) {
+      return { name, values: [], takesValue: true, hint: value.slice(1) || null };
+    }
+
     return {
-      name: enumerated[1].replace(/=$/, "").trim(),
-      values: enumerated[2].split(",").map((value) => value.trim()),
+      name,
+      values: value.split(",").map((one) => one.trim()),
       takesValue: true,
+      hint: null,
     };
   }
 
   const assigned = line.match(/^([^=]+)=(.*)$/);
   if (assigned?.[1] !== undefined) {
-    return { name: assigned[1].trim(), values: [], takesValue: true };
+    return { name: assigned[1].trim(), values: [], takesValue: true, hint: placeholder(assigned[2]) };
   }
 
-  return { name: line.trim(), values: [], takesValue: false };
+  return { name: line.trim(), values: [], takesValue: false, hint: null };
+}
+
+/** The name inside a `%<…%>` placeholder, if that is all the value is. */
+function placeholder(value: string): string | null {
+  const found = value.trim().match(/^%<(.+)%>$/);
+  return found?.[1] ?? null;
 }

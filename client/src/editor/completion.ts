@@ -16,6 +16,8 @@
 import { snippetCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 
 import { availableCommand, type MergedCommand } from "../project/commands";
+import { catalogueOfPackages, packageEntry } from "../project/corpus";
+import type { CwlKey } from "../project/cwl";
 import type { SymbolIndex } from "../project/symbols";
 import { commandSnippet, describeSignature, environmentSnippet } from "./snippets";
 
@@ -28,6 +30,54 @@ export interface CompletionSources {
   providers: ReadonlyMap<string, string>;
   /** Add `\usepackage{name}` to the preamble. */
   addPackage: (name: string) => void;
+}
+
+/** `\usepackage{`, `\RequirePackage{` and `\documentclass{`, mid-name. */
+const LOADING = /\\(?:usepackage|RequirePackage|documentclass)\s*(?:\[[^\]]*\])?\s*\{[^}]*/;
+
+/** `\usepackage[` and `\documentclass[`, mid-option. */
+const OPTIONS = /\\(?:usepackage|RequirePackage|documentclass)\s*\[[^\]]*/;
+
+/**
+ * The options one package or class accepts.
+ *
+ * These are the one thing the corpus knows that the engine cannot: options are
+ * consumed by `\ProcessOptions` while the package loads and leave nothing in
+ * the macro table to introspect afterwards.
+ */
+async function packageOptions(name: string, documentclass: boolean): Promise<CwlKey[]> {
+  const file = documentclass ? `class-${name}` : name;
+  const entry = await packageEntry(file);
+  if (entry === null) return [];
+
+  const owner = documentclass ? `documentclass/${name}` : `usepackage/${name}`;
+  return entry.keys[owner] ?? [];
+}
+
+/** One option, offered with whatever the corpus says about its value. */
+function optionCompletion(key: CwlKey): Completion {
+  if (!key.takesValue) {
+    return { label: key.name, type: "property", detail: "flag" };
+  }
+
+  // Where the values are enumerated, the completion writes the `=` and seeds
+  // the first one as a selected field, so accepting it and typing replaces it.
+  // CodeMirror snippets have no choice syntax, so the rest go in the detail
+  // where they can at least be read.
+  const first = key.values[0];
+  if (first !== undefined) {
+    return snippetCompletion(`${key.name}=\${${first}}`, {
+      label: key.name,
+      type: "property",
+      detail: key.values.slice(0, 5).join(", ") + (key.values.length > 5 ? ", …" : ""),
+    });
+  }
+
+  return snippetCompletion(`${key.name}=\${${key.hint ?? "value"}}`, {
+    label: key.name,
+    type: "property",
+    detail: key.hint ?? undefined,
+  });
 }
 
 /**
@@ -43,8 +93,63 @@ const FALLBACK_ENVIRONMENTS = [
 
 /** Completions for LaTeX, aware of what this document actually has. */
 export function latexCompletions(sources: () => CompletionSources) {
-  return (context: CompletionContext): CompletionResult | null => {
+  return (
+    context: CompletionContext,
+  ): CompletionResult | Promise<CompletionResult | null> | null => {
     const at = sources();
+
+    // `\usepackage{gra` and `\documentclass{art`: a package to load, which is
+    // not a command and has nothing to do with what the document has now.
+    const loading = context.matchBefore(LOADING);
+    if (loading !== null) {
+      const classes = loading.text.startsWith("\\documentclass");
+      // `\usepackage{a,b}` loads two, so what is being completed starts after
+      // the last comma rather than after the brace.
+      const opened = loading.text.lastIndexOf("{");
+      const comma = loading.text.lastIndexOf(",");
+      const from = loading.from + Math.max(opened, comma) + 1;
+
+      return catalogueOfPackages().then((catalogue) => {
+        const names = classes ? catalogue.classes : catalogue.packages;
+        if (names.length === 0) return null;
+
+        return {
+          from,
+          options: names.map((name, rank) => ({
+            label: name,
+            type: classes ? "class" : "namespace",
+            // The catalogue is already in the order worth offering — most
+            // depended-upon first — and a boost is how that order survives
+            // CodeMirror's own ranking.
+            boost: rank < 200 ? 1 : 0,
+          })),
+          validFor: /^[^{},\s]*$/,
+        };
+      });
+    }
+
+    // `\usepackage[colorl` — the options a package accepts. The package is
+    // named to the *right* of the cursor, so this is the one completion here
+    // that has to read ahead.
+    const optioned = context.matchBefore(OPTIONS);
+    if (optioned !== null) {
+      const named = context.state
+        .sliceDoc(context.pos, context.pos + 200)
+        .match(/^[^\]]*\]\s*\{([^}]+)\}/);
+      const first = named?.[1]?.split(",")[0]?.trim();
+      if (first === undefined || first === "") return null;
+
+      const opened = optioned.text.lastIndexOf("[");
+      const comma = optioned.text.lastIndexOf(",");
+      const from = optioned.from + Math.max(opened, comma) + 1;
+      const documentclass = optioned.text.startsWith("\\documentclass");
+
+      return packageOptions(first, documentclass).then((keys) =>
+        keys.length === 0
+          ? null
+          : { from, options: keys.map(optionCompletion), validFor: /^[^\][,=\s]*$/ },
+      );
+    }
 
     // `\ref{sec:` and friends: what belongs here is a label, and nothing else.
     const reference = context.matchBefore(/\\(?:eq|page|auto|c|name)?ref\s*\{[^}]*/);

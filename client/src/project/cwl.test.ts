@@ -109,10 +109,31 @@ test("keys carry their types and their enumerated values", () => {
   ].join("\n"));
 
   assert.deepEqual(pkg.keys["includegraphics"], [
-    { name: "width", values: [], takesValue: true },
-    { name: "keepaspectratio", values: ["true", "false"], takesValue: true },
+    { name: "width", values: [], takesValue: true, hint: "length" },
+    { name: "keepaspectratio", values: ["true", "false"], takesValue: true, hint: null },
     // A bare key is a flag, and offering it an `=` would be wrong.
-    { name: "draft", values: [], takesValue: false },
+    { name: "draft", values: [], takesValue: false, hint: null },
+  ]);
+});
+
+test("an enumeration written with an equals keeps its values", () => {
+  // The `=` says the value is written with one. It does not mean there is no
+  // list — five and a half thousand lines in the corpus are spelled this way,
+  // and reading them as valueless threw all of it away.
+  const pkg = parseCwl("hyperref", [
+    "#keyvals:\\hypersetup,\\usepackage/hyperref#c",
+    "backref=#section,slide,page,none,false",
+    "citecolor=#%color",
+    "baseurl=%<URL%>",
+    "bookmarkstype=",
+    "#endkeyvals",
+  ].join("\n"));
+
+  assert.deepEqual(pkg.keys["usepackage/hyperref"], [
+    { name: "backref", values: ["section", "slide", "page", "none", "false"], takesValue: true, hint: null },
+    { name: "citecolor", values: [], takesValue: true, hint: "color" },
+    { name: "baseurl", values: [], takesValue: true, hint: "URL" },
+    { name: "bookmarkstype", values: [], takesValue: true, hint: null },
   ]);
 });
 

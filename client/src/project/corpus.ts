@@ -20,6 +20,19 @@ const packages = new Map<string, CwlPackage | null>();
 let index: Map<string, string> | null = null;
 let indexPending: Promise<void> | null = null;
 
+/** Every package and class there is, once something has asked for the list. */
+let catalogue: Promise<PackageCatalogue> | null = null;
+
+/** What there is to load, ranked with the most depended-upon first. */
+export interface PackageCatalogue {
+  /** Names for `\usepackage{…}`. */
+  packages: readonly string[];
+  /** Names for `\documentclass{…}`, with the corpus's `class-` prefix gone. */
+  classes: readonly string[];
+}
+
+const NOTHING: PackageCatalogue = { packages: [], classes: [] };
+
 async function loadPackage(name: string): Promise<CwlPackage | null> {
   const known = packages.get(name);
   if (known !== undefined) return known;
@@ -57,6 +70,41 @@ export async function corpusFor(source: string): Promise<CwlPackage[]> {
  */
 export async function corpusOf(packages: readonly string[]): Promise<CwlPackage[]> {
   return resolvePackages(packages, loadPackage);
+}
+
+/**
+ * One package's entry, fetched if it has not been already.
+ *
+ * Unlike {@link corpusOf} this does not resolve what the package itself loads:
+ * the caller wants what this one file says — its options — rather than
+ * everything reachable from it.
+ */
+export async function packageEntry(name: string): Promise<CwlPackage | null> {
+  return loadPackage(name);
+}
+
+/**
+ * Every package and class there is, for completing `\usepackage{`.
+ *
+ * Fifty-six kilobytes, so it is fetched when someone first opens a brace after
+ * `\usepackage` and not as part of starting the editor. Awaited rather than
+ * answered emptily: a completion source that returns nothing has told
+ * CodeMirror there is nothing to offer, and with a `validFor` it will go on
+ * filtering that nothing rather than asking again.
+ */
+export async function catalogueOfPackages(): Promise<PackageCatalogue> {
+  catalogue ??= (async () => {
+    try {
+      const response = await fetch(`${ROOT}packages.json`);
+      if (!response.ok) return NOTHING;
+      return (await response.json()) as PackageCatalogue;
+    } catch {
+      // No catalogue means no package-name completion; the rest still works.
+      return NOTHING;
+    }
+  })();
+
+  return catalogue;
 }
 
 /**

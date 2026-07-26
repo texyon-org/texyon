@@ -5,10 +5,11 @@
  * licence is unresolved, so nothing derived from it is committed either. This
  * writes into client/public/cwl/, which is gitignored.
  *
- * Two kinds of output. One file per package, loaded when a document says
- * \usepackage{that}; and one index from command name to the packages that
- * provide it, which is what lets the editor say "this needs \usepackage{siunitx}"
- * about a command that does not exist yet.
+ * Three kinds of output. One file per package, loaded when a document says
+ * \usepackage{that}; one index from command name to the packages that provide
+ * it, which is what lets the editor say "this needs \usepackage{siunitx}"
+ * about a command that does not exist yet; and one list of every package there
+ * is, which is what \usepackage{…} completes against.
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -86,10 +87,34 @@ for (const owners of provides.values()) {
 
 writeFileSync(join(out, "index.json"), JSON.stringify(Object.fromEntries(provides)));
 
+// Every package there is, most-depended-upon first, so that completing
+// `\usepackage{` offers amsmath before amsmath-ish obscurities. Classes are
+// listed separately: `\documentclass{` and `\usepackage{` do not take the
+// same names, and the corpus keeps classes under a `class-` prefix.
+const listed = (names) =>
+  names
+    .slice()
+    .sort((left, right) => {
+      const weight = (dependedOn.get(right) ?? 0) - (dependedOn.get(left) ?? 0);
+      return weight !== 0 ? weight : left.localeCompare(right);
+    });
+
+const all = files.map((file) => file.replace(/\.cwl$/, ""));
+writeFileSync(
+  join(out, "packages.json"),
+  JSON.stringify({
+    packages: listed(all.filter((name) => !name.startsWith("class-"))),
+    classes: listed(all.filter((name) => name.startsWith("class-"))).map((name) =>
+      name.slice("class-".length),
+    ),
+  }),
+);
+
 const size = (path) => readdirSync(out).reduce((n, f) => n + readFileSync(join(out, f)).length, 0);
 console.log(`packages     ${files.length}`);
 console.log(`commands     ${commands}`);
 console.log(`environments ${environments}`);
 console.log(`keys         ${keys}`);
 console.log(`index        ${provides.size} names, ${(readFileSync(join(out, "index.json")).length / 1e6).toFixed(1)} MB`);
+console.log(`packages.json ${(readFileSync(join(out, "packages.json")).length / 1024).toFixed(0)} KB`);
 console.log(`total        ${(size() / 1e6).toFixed(1)} MB in ${readdirSync(out).length} files`);
