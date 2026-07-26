@@ -296,27 +296,29 @@ export function mergeEnvironments(packages: readonly CwlPackage[]): MergedEnviro
  * definition not loaded yet and has to be fetched.
  */
 export function mergeKeys(packages: readonly CwlPackage[]): Map<string, CwlKey[]> {
-  const merged = new Map<string, CwlKey[]>();
+  // Indexed by name rather than searched. The corpus repeats a key once per
+  // way of writing its value — tikz lists `baseline` bare and `baseline=` —
+  // so this deduplicates, and scanning the list for each of pgfplots' 7,187
+  // keys to do it is quadratic: 12.8 ms for one document's worth, and worse
+  // the more it knows.
+  const merged = new Map<string, Map<string, CwlKey>>();
 
   for (const pkg of packages) {
     for (const [owner, keys] of Object.entries(pkg.keys)) {
-      let list = merged.get(owner);
-      if (list === undefined) merged.set(owner, (list = []));
+      let byName = merged.get(owner);
+      if (byName === undefined) merged.set(owner, (byName = new Map()));
 
-      // The corpus repeats a key once per way of writing its value — tikz
-      // lists `baseline` bare and `baseline=`. Keep the one that says most.
       for (const key of keys) {
-        const at = list.findIndex((existing) => existing.name === key.name);
-        if (at === -1) {
-          list.push(key);
-        } else if (describes(key) > describes(list[at]!)) {
-          list[at] = key;
+        const existing = byName.get(key.name);
+        // Keep whichever says most about its value.
+        if (existing === undefined || describes(key) > describes(existing)) {
+          byName.set(key.name, key);
         }
       }
     }
   }
 
-  return merged;
+  return new Map([...merged].map(([owner, byName]) => [owner, [...byName.values()]]));
 }
 
 /** How much a key says about its value, for choosing between duplicates. */
