@@ -260,6 +260,8 @@ export function App() {
               environments,
               keys,
               providers: providers(),
+              paths,
+              openPath,
               addPackage: (name) => {
                 const main = workspace.read(PRIMARY);
                 if (main === null || main.includes(`{${name}}`)) return;

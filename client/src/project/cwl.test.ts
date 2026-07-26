@@ -116,6 +116,21 @@ test("keys carry their types and their enumerated values", () => {
   ]);
 });
 
+test("a braced value keeps its braces", () => {
+  // `alt={%<alt text%>}` means you write `alt={something}`: the braces are
+  // literal. They are not part of what to fill in, and a snippet field cannot
+  // contain one — `alt=${{alt text}}` ends the field at the first brace.
+  const pkg = parseCwl("graphicx", [
+    "#keyvals:\\includegraphics",
+    "alt={%<alt text%>}",
+    "#endkeyvals",
+  ].join("\n"));
+
+  assert.deepEqual(pkg.keys["includegraphics"], [
+    { name: "alt", values: [], takesValue: true, hint: "{alt text}" },
+  ]);
+});
+
 test("placeholder markers do not leak into keys", () => {
   const pkg = parseCwl("tikz", [
     "#keyvals:\\begin{tikzpicture}",

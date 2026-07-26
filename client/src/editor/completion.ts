@@ -35,6 +35,10 @@ export interface CompletionSources {
   keys: ReadonlyMap<string, CwlKey[]>;
   /** Every command the corpus knows of, mapped to a package providing it. */
   providers: ReadonlyMap<string, string>;
+  /** Every file in the project, for the commands that name one. */
+  paths: readonly string[];
+  /** The file being edited, which must not be offered as its own input. */
+  openPath: string;
   /** Add `\usepackage{name}` to the preamble. */
   addPackage: (name: string) => void;
 }
@@ -53,6 +57,60 @@ const OPTIONS = /\\(?:usepackage|RequirePackage|documentclass)\s*\[[^\]]*/;
  * it would have to be consumed.
  */
 const ACCEPTS_OPTIONS = /\\(?:begin\s*\{[^}]+\}|[a-zA-Z@]+)\s*\[[^\]]*/;
+
+/** A command whose braced argument names a file, mid-name. */
+const NAMES_A_FILE = /\\[a-zA-Z@]+\s*(?:\[[^\]]*\])?\s*\{[^}]*/;
+
+/**
+ * Which files each of them means, and whether the extension is written.
+ *
+ * `\input{chapters/method}` names a `.tex` file without saying so, while
+ * `\addbibresource{refs.bib}` insists on it — the difference is the command's,
+ * not the file's, so it is recorded per command rather than guessed.
+ */
+const FILE_ARGUMENTS: Record<string, { extensions: readonly string[]; keep: boolean }> = {
+  input: { extensions: [".tex"], keep: false },
+  include: { extensions: [".tex"], keep: false },
+  subfile: { extensions: [".tex"], keep: false },
+  includeonly: { extensions: [".tex"], keep: false },
+  subfileinclude: { extensions: [".tex"], keep: false },
+  bibliography: { extensions: [".bib"], keep: false },
+  addbibresource: { extensions: [".bib"], keep: true },
+  addglobalbib: { extensions: [".bib"], keep: true },
+  includegraphics: {
+    extensions: [".pdf", ".png", ".jpg", ".jpeg", ".eps", ".svg"],
+    keep: true,
+  },
+  graphicspath: { extensions: [], keep: true },
+  lstinputlisting: { extensions: [], keep: true },
+  verbatiminput: { extensions: [], keep: true },
+};
+
+/** The project's files that suit one of those arguments. */
+function fileOptions(
+  paths: readonly string[],
+  wanted: { extensions: readonly string[]; keep: boolean },
+  openPath: string,
+): Completion[] {
+  const options: Completion[] = [];
+
+  for (const path of paths) {
+    // `\input{main}` inside main.tex is a loop, not a completion.
+    if (path === openPath) continue;
+
+    const extension = wanted.extensions.find((one) => path.toLowerCase().endsWith(one));
+    // An empty extension list means anything goes — `\lstinputlisting` will
+    // read whatever it is handed.
+    if (wanted.extensions.length > 0 && extension === undefined) continue;
+
+    const label =
+      wanted.keep || extension === undefined ? path : path.slice(0, -extension.length);
+
+    options.push({ label, type: "text", detail: wanted.keep ? undefined : path });
+  }
+
+  return options;
+}
 
 /**
  * The options one package or class accepts.
@@ -82,18 +140,38 @@ function optionCompletion(key: CwlKey): Completion {
   // where they can at least be read.
   const first = key.values[0];
   if (first !== undefined) {
-    return snippetCompletion(`${key.name}=\${${first}}`, {
+    return snippetCompletion(`${key.name}=${valueTemplate(first)}`, {
       label: key.name,
       type: "property",
       detail: key.values.slice(0, 5).join(", ") + (key.values.length > 5 ? ", …" : ""),
     });
   }
 
-  return snippetCompletion(`${key.name}=\${${key.hint ?? "value"}}`, {
+  return snippetCompletion(`${key.name}=${valueTemplate(key.hint ?? "value")}`, {
     label: key.name,
     type: "property",
     detail: key.hint ?? undefined,
   });
+}
+
+/**
+ * One described value, as a snippet fragment.
+ *
+ * A brace in a value is part of what you write — `alt={⟨alt text⟩}` — not part
+ * of the name of the thing to fill in, and a snippet field cannot contain one
+ * anyway: `alt=${{alt text}}` ends the field at the first `{` and inserts the
+ * rest as text. So braces are emitted as literals and what sits between them
+ * becomes the field. 63,790 keys in the corpus describe a value this way.
+ */
+function valueTemplate(value: string): string {
+  let template = "";
+
+  for (const piece of value.split(/([{}])/)) {
+    if (piece === "") continue;
+    template += piece === "{" || piece === "}" ? `\\${piece}` : `\${${piece}}`;
+  }
+
+  return template;
 }
 
 /**
@@ -194,6 +272,26 @@ export function latexCompletions(sources: () => CompletionSources) {
           ? null
           : { from, options: keys.map(optionCompletion), validFor: /^[^\][,=\s]*$/ },
       );
+    }
+
+    // `\input{chap`, `\includegraphics{fig`: what belongs here is a file this
+    // project has. Checked before the package branches would see a `{`,
+    // because `\usepackage` is not one of these and must not be.
+    const naming = context.matchBefore(NAMES_A_FILE);
+    if (naming !== null) {
+      const command = naming.text.match(/^\\([a-zA-Z@]+)/)?.[1] ?? "";
+      const wanted = FILE_ARGUMENTS[command];
+
+      if (wanted !== undefined) {
+        const opened = naming.text.lastIndexOf("{");
+        const comma = naming.text.lastIndexOf(",");
+
+        return {
+          from: naming.from + Math.max(opened, comma) + 1,
+          options: fileOptions(at.paths, wanted, at.openPath),
+          validFor: /^[^{},]*$/,
+        };
+      }
     }
 
     // `\ref{sec:` and friends: what belongs here is a label, and nothing else.
