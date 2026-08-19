@@ -28,7 +28,7 @@ services:
 
       # Where project content goes. Swap to s3 and fill in the AWS_* variables
       # to put it in a bucket instead; nothing above the blob store notices.
-      BLOB_DISK: "${BLOB_DISK:-local}"
+      BLOB_DISK: "${BLOB_DISK:-blobs}"
       FILESYSTEM_DISK: local
 
       # Sanctum has to be told which origins may hold a session, or a
