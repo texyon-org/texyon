@@ -98,6 +98,41 @@ export async function primeSession(): Promise<void> {
   await request("/sanctum/csrf-cookie");
 }
 
+/**
+ * Sign in, establishing the session cookie everything else rides on.
+ *
+ * Primes the CSRF cookie first, because on a fresh browser there is nothing to
+ * echo back yet and Fortify would refuse the attempt for it.
+ */
+export async function login(email: string, password: string): Promise<void> {
+  await primeSession();
+  const body = await json<{ two_factor?: boolean }>("/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (body.two_factor === true) {
+    // The server supports it; this client does not challenge for it yet.
+    throw new ApiError(501, "this account uses two-factor authentication, which the editor cannot complete yet");
+  }
+}
+
+/** Create an account. Signs the new user in as a side effect. */
+export async function register(name: string, email: string, password: string): Promise<void> {
+  await primeSession();
+  await request("/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // The confirmation is the same string because the form asks once; typing a
+    // password twice guards transcription on paper, not in a password manager.
+    body: JSON.stringify({ name, email, password, password_confirmation: password }),
+  });
+}
+
+export async function logout(): Promise<void> {
+  await request("/logout", { method: "POST" });
+}
+
 export async function listProjects(): Promise<Project[]> {
   return (await json<{ projects: Project[] }>("/api/projects")).projects;
 }
