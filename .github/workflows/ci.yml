@@ -1,12 +1,43 @@
-name: "PR CI"
+# The routine checks: formatting and a native Linux build-and-test. The full
+# release matrix and the cranko machinery live in release.yml, which runs on
+# the rc branch, not here.
+
+name: "CI"
 
 on:
   pull_request:
+  push:
+    branches: [ master ]
 
 jobs:
-  prep:
-    uses: ./.github/workflows/prep.yml
-  build_and_test:
-    needs: prep
-    uses: ./.github/workflows/build_and_test.yml
-    secrets: inherit
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: "Install rustfmt"
+        run: rustup component add rustfmt
+      - name: "cargo fmt"
+        run: cargo fmt --all -- --check
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+      - name: "Generic Setup"
+        uses: ./.github/actions/build-setup
+      - name: "Install pkg-config dependencies"
+        uses: ./.github/actions/pkgconfig-deps
+      - name: "Setup build variables"
+        shell: bash
+        run: |
+          echo "TECTONIC_DEP_BACKEND=pkg-config" >> "$GITHUB_ENV"
+      - name: "Build and Test"
+        uses: ./.github/actions/build-and-test
+        with:
+          target: x86_64-unknown-linux-gnu
