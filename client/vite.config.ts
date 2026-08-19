@@ -4,13 +4,16 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 /**
- * Where the support bundle actually lives.
- *
- * `relay.fullyjustified.net/default_bundle_v33.tar` is the redirecting alias
- * the CLI uses; this is what it resolves to. Pinned rather than followed so a
- * dev server does not silently change bundles underneath a project.
+ * Where the support bundle actually lives: this project's own TeX Live 2026
+ * ttb. Pinned to an exact object so a dev server does not silently change
+ * bundles underneath a project. Override with BUNDLE_HOST to develop against
+ * another bundle server — pair it with VITE_BUNDLE_URL naming the file the
+ * engine should ask that host for (the 2022 tar era of this default was
+ * `https://data1.fullyjustified.net` + `/bundle/tlextras-2022.0r0.tar`).
  */
-const BUNDLE_HOST = "https://data1.fullyjustified.net";
+const BUNDLE_HOST =
+  process.env.BUNDLE_HOST ??
+  "https://s3.de-1.yendric.be/uploads/01a0117b-2294-7203-bb52-edb7070f93fb";
 
 export default defineConfig({
   plugins: [react()],

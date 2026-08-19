@@ -86,7 +86,9 @@ export function useEngine(
       try {
         const instance = await TectonicEngine.create({
           primary,
-          bundleUrl: "/bundle/tlextras-2022.0r0.tar",
+          // `||` rather than `??`: a build arg that was never given arrives as
+          // an empty string, and an empty bundle URL means the default one.
+          bundleUrl: import.meta.env.VITE_BUNDLE_URL || "/bundle/texlive2026.ttb",
           onProgress: (update) => {
             if (!disposed) setProgress(update.phase === "ready" ? null : update);
           },
