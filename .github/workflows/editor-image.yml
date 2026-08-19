@@ -1,0 +1,132 @@
+# Build and publish the editor's container image.
+#
+# Two jobs, because the inputs live in different worlds. The engine module and
+# support pack are a Rust cross-compile with a wasi toolchain — slow, cached
+# aggressively, and pointless to run inside a Dockerfile where every cache miss
+# starts from nothing. The image itself is then an ordinary docker build that
+# receives those assets through the context.
+
+name: "Editor Image"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/yendric/tectonic-editor
+  WASI_SDK_URL: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz
+
+jobs:
+  engine-assets:
+    name: "Engine module and support pack"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The wasm build compiles HarfBuzz from the vendored submodule.
+          submodules: true
+
+      - name: "Install system dependencies"
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            libgraphite2-dev \
+            libfontconfig1-dev \
+            libharfbuzz-dev \
+            libicu-dev \
+            libssl-dev \
+            zlib1g-dev \
+            binaryen
+
+      - name: "Set up Rust"
+        run: |
+          rustup set profile minimal
+          rustup update --no-self-update stable
+          rustup default stable
+          rustup target add wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+
+      # wasi-sdk and the vendored C sources change only when the fetch script
+      # says so, which is what the cache key hashes.
+      - name: "Cache the wasm toolchain and vendored sources"
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/wasm/wasi-sdk-33.0-x86_64-linux
+            tools/wasm/vendor
+          key: wasm-deps-${{ hashFiles('tools/wasm/fetch-deps.sh', 'tools/wasm/env.sh') }}
+
+      - name: "Fetch the wasm toolchain and vendored sources"
+        run: |
+          if [ ! -d tools/wasm/wasi-sdk-33.0-x86_64-linux ]; then
+            curl -sSL --retry 3 "$WASI_SDK_URL" | tar xz -C tools/wasm
+          fi
+          tools/wasm/fetch-deps.sh --with-mupdf
+
+      # The support pack is produced by compiling seed documents with a native
+      # tectonic, so one has to exist before the packer runs.
+      - name: "Build the native tectonic"
+        run: cargo build --release
+
+      - name: "Build the wasm module"
+        run: tools/wasm/build.sh
+
+      - name: "Build the support pack"
+        run: tools/wasm/build-assets.sh
+
+      # Typeset a document under Node before anything is published. If this
+      # passes, whatever is still broken is in the page, not the engine.
+      - name: "Smoke-test the module"
+        run: node tools/wasm/smoke-test.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-assets
+          path: client/public/tectonic
+          if-no-files-found: error
+
+  image:
+    name: "Build and push"
+    needs: engine-assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-assets
+          path: client/public/tectonic
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # A branch tag to deploy from, a sha tag to pin to, and `latest`
+          # following the default branch.
+          tags: |
+            type=ref,event=branch
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

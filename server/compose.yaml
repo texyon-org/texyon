@@ -7,7 +7,13 @@
 
 services:
   server:
-    build: .
+    # The published image; `docker compose build` rebuilds it from the
+    # repository root instead (the client is part of the image, so the context
+    # is the whole repo, not this directory).
+    image: "${IMAGE:-ghcr.io/yendric/tectonic-editor:latest}"
+    build:
+      context: ..
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:80"
@@ -33,9 +39,9 @@ services:
       - database:/app/database
       - storage:/app/storage
       - blobs:/srv/blobs
-      # The TeX Live bundle: gigabytes, immutable, and deliberately not in the
-      # image. Point this at a mirror you fetched once.
-      - "${BUNDLE_PATH:-./bundle}:/srv/bundle:ro"
+      # The TeX Live bundle is currently relayed from an object store (see the
+      # Caddyfile), so no volume holds it. To self-host it instead, restore:
+      # - "${BUNDLE_PATH:-./bundle}:/srv/bundle:ro"
 
 volumes:
   database:

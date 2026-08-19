@@ -77,14 +77,30 @@ picture.
 
 ## Running it
 
+The image is the whole editor — this API, the built client, the WebAssembly
+engine and its support pack — and CI publishes it to
+`ghcr.io/yendric/tectonic-editor` on every push to `master` (or on demand via
+the *Editor Image* workflow). Deploying is pulling it:
+
 ```
-cp .env.example .env
-php artisan key:generate
+cp .env.example .env          # set APP_KEY: php artisan key:generate --show
+docker compose up
+```
+
+To build the image yourself instead, the engine assets have to exist first —
+they are a Rust cross-compile that lives outside the Dockerfile:
+
+```
+tools/wasm/build.sh && tools/wasm/build-assets.sh   # once, from the repo root
 docker compose up --build
 ```
 
 The bundle is deliberately not in the image: it is measured in gigabytes and is
-the same for everyone. Point `BUNDLE_PATH` at a copy you fetched once.
+the same for everyone. It is not even in a volume, for now — the Caddyfile
+relays `/bundle/*` to the object store holding `texlive2026.ttb`, so a deploy
+needs nothing beyond the image itself. To self-host the bundle instead, swap
+the commented block in the Caddyfile, restore the `/srv/bundle` mount in
+`compose.yaml`, and put the file there.
 
 SQLite is the default because for a single tenant it is the right answer — a
 file, no second process, and WAL handles the concurrency of a few people editing
