@@ -9,9 +9,16 @@ on:
   push:
     branches: [ master ]
 
+# A push during a run supersedes it; finishing the old run would waste the
+# minutes it has left. PRs get their own group per ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rustfmt:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,6 +30,8 @@ jobs:
         run: cargo fmt --all -- --check
   test:
     runs-on: ubuntu-latest
+    # A stuck job burns paid minutes for six hours by default.
+    timeout-minutes: 75
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,6 +43,7 @@ jobs:
         with:
           # No cranko prep job here; build and test the tree as pushed.
           release-bundle: 'false'
+      - uses: Swatinem/rust-cache@v2
       - name: "Install pkg-config dependencies"
         uses: ./.github/actions/pkgconfig-deps
       - name: "Setup build variables"

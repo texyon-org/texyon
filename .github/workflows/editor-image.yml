@@ -21,10 +21,18 @@ env:
   IMAGE: ghcr.io/yendric/tectonic-editor
   WASI_SDK_URL: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz
 
+# A push during a build supersedes it; finishing the old image would waste
+# the minutes it has left.
+concurrency:
+  group: editor-image-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   engine-assets:
     name: "Engine module and support pack"
     runs-on: ubuntu-latest
+    # A stuck job burns paid minutes for six hours by default.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,7 +41,11 @@ jobs:
 
       - name: "Install system dependencies"
         run: |
-          sudo apt-get update
+          # The runners' default azure apt mirror periodically stops
+          # responding, and apt will quietly wait on it for the rest of the
+          # job. Pin the canonical mirror and make apt fail fast instead.
+          printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\n' | sudo tee /etc/apt/apt-mirrors.txt
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
             libgraphite2-dev \
             libfontconfig1-dev \
@@ -95,6 +107,7 @@ jobs:
     name: "Build and push"
     needs: engine-assets
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

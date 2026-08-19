@@ -26,7 +26,11 @@ runs:
           pkgs="$pkgs libharfbuzz-dev"
         fi
 
-        sudo apt-get update
+        # The runners' default azure apt mirror periodically stops responding,
+        # and apt will quietly wait on it for the rest of the job. Pin the
+        # canonical mirror and make apt fail fast instead.
+        printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\n' | sudo tee /etc/apt/apt-mirrors.txt
+        sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
         sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y $pkgs
     - name: "Install pkg-config dependencies (macOS)"
       if: ${{ runner.os == 'macOS' }}
