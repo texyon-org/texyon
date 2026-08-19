@@ -32,7 +32,11 @@ import type {
 // `new URL("./worker.js", import.meta.url)`, so no bundler is in the way to
 // resolve a bare "./cache". Without the extension the worker fails to load, and
 // a module worker that fails to load reports nothing at all.
+import { gunzipSync } from "fflate";
+
 import { AssetCache, digest } from "./cache.js";
+import { parseTtbHeader, TtbIndex, TTB_HEADER_BYTES } from "./ttb.js";
+import type { TtbLocation } from "./ttb.js";
 import { Wasi, WasiExit } from "./wasi.js";
 
 /** The engine's exported ABI. See `crates/wasm/src/lib.rs`. */
@@ -113,6 +117,14 @@ const missing = new Set<string>();
  * and graphic in TeX Live, addressed by a byte range.
  */
 let bundle = new Map<string, [offset: number, length: number]>();
+/**
+ * The same long tail, when the bundle is a `.ttb` rather than a tar.
+ *
+ * A ttb brings its own index and search rules, so names are resolved through
+ * it instead of a flat map — and its blobs are gzipped, so a read is a range
+ * request plus an inflate rather than a plain copy.
+ */
+let ttb: TtbIndex | null = null;
 
 /** Nanosecond-ish timing for the stats the UI shows. */
 let engineStart = 0;
@@ -225,17 +237,18 @@ function readFile(name: string): Uint8Array | null {
   }
 
   const at = bundle.get(name);
+  const inTtb = at ? null : (ttb?.resolve(name) ?? null);
 
-  if (!at) {
+  if (!at && !inTtb) {
     // Genuinely absent. TeX probes many candidate names per lookup, so
     // remembering that is what keeps a lookup from being a round trip each
     // time. Note this is only reached once the index has arrived; until then
-    // `bundle` is empty and indexBundle() clears these on arrival.
+    // neither lookup answers and indexBundle() clears these on arrival.
     missing.add(name);
     return null;
   }
 
-  const bytes = fromBundle(name, at);
+  const bytes = at ? fromBundle(name, at) : fromTtb(name, inTtb!);
   if (bytes) {
     resident.set(name, bytes);
     return bytes;
@@ -291,41 +304,116 @@ function fromBundle(name: string, [offset, length]: [number, number]): Uint8Arra
 }
 
 /**
+ * Read one file out of a ttb: one range request, then an inflate.
+ *
+ * The inflate has to be synchronous — this runs inside the typesetting loop,
+ * where nothing can be awaited — which is what fflate is here for. What goes
+ * into the cache is the decompressed bytes, so a warm start needs neither the
+ * request nor the inflate.
+ */
+function fromTtb(name: string, { offset, gzLength, realLength }: TtbLocation): Uint8Array | null {
+  const url = options?.bundleUrl;
+  if (!url) return null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const compressed = fetchSync(url, [offset, gzLength]);
+    if (!compressed || compressed.length !== gzLength) continue;
+
+    try {
+      const bytes = gunzipSync(compressed);
+      // The index promised this length; anything else means the range and the
+      // index disagree, and bad bytes are worse than a missing file.
+      if (bytes.length === realLength) {
+        unsaved.set(name, bytes);
+        return bytes;
+      }
+    } catch {
+      // Damaged in transit; the next attempt refetches.
+    }
+  }
+
+  post({
+    id: 0,
+    kind: "log",
+    line: {
+      level: "error",
+      message:
+        `could not read ${name} from the bundle after 3 attempts ` +
+        `(${gzLength} bytes at ${offset}) — it will be retried`,
+    },
+  });
+
+  return null;
+}
+
+/**
+ * Fetch an exact byte range, insisting the server honoured it.
+ *
+ * A 200 means the Range header was ignored and the whole multi-gigabyte
+ * bundle is on its way; cancelling and failing is the only sane response.
+ */
+async function fetchRange(url: string, offset: number, length: number): Promise<Uint8Array> {
+  const response = await fetch(url, {
+    headers: { Range: `bytes=${offset}-${offset + length - 1}` },
+  });
+
+  if (response.status !== 206) {
+    await response.body?.cancel();
+    throw new Error(`expected 206 for a range request, got HTTP ${response.status}`);
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+/**
  * Fetch and parse the bundle index.
  *
- * One gzipped file of `name offset length` lines — about 135,000 of them. It is
- * pulled in the background so that no compile ever waits for it; until it
- * lands, the pack answers on its own.
+ * Two dialects. A tar bundle keeps a gzipped sidecar of `name offset length`
+ * lines next to itself; a `.ttb` carries its index inside, at an offset its
+ * header states. Either way this is pulled in the background so that no
+ * compile ever waits for it; until it lands, the pack answers on its own.
  */
 async function indexBundle(url: string): Promise<void> {
   post({ id: 0, kind: "progress", progress: { phase: "indexing-bundle" } });
 
+  const isTtb = url.endsWith(".ttb");
+
   try {
-    const response = await fetch(`${url}.index.gz`);
-    if (!response.ok || !response.body) {
-      throw new Error(`HTTP ${response.status}`);
+    let count: number;
+
+    if (isTtb) {
+      const header = parseTtbHeader(await fetchRange(url, 0, TTB_HEADER_BYTES));
+      const compressed = await fetchRange(url, header.indexOffset, header.indexGzLength);
+      ttb = TtbIndex.parse(new TextDecoder().decode(gunzipSync(compressed)));
+      count = ttb.size;
+    } else {
+      const response = await fetch(`${url}.index.gz`);
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      // The file is gzip *content*, not a gzip content-encoding, so the browser
+      // hands it over compressed and we undo that ourselves.
+      const stream = response.body.pipeThrough(new DecompressionStream("gzip"));
+      const text = await new Response(stream).text();
+
+      const parsed = new Map<string, [number, number]>();
+
+      for (const line of text.split("\n")) {
+        if (!line) continue;
+        const first = line.indexOf(" ");
+        const second = line.indexOf(" ", first + 1);
+        if (first < 0 || second < 0) continue;
+
+        parsed.set(line.slice(0, first), [
+          Number(line.slice(first + 1, second)),
+          Number(line.slice(second + 1)),
+        ]);
+      }
+
+      bundle = parsed;
+      count = bundle.size;
     }
-
-    // The file is gzip *content*, not a gzip content-encoding, so the browser
-    // hands it over compressed and we undo that ourselves.
-    const stream = response.body.pipeThrough(new DecompressionStream("gzip"));
-    const text = await new Response(stream).text();
-
-    const parsed = new Map<string, [number, number]>();
-
-    for (const line of text.split("\n")) {
-      if (!line) continue;
-      const first = line.indexOf(" ");
-      const second = line.indexOf(" ", first + 1);
-      if (first < 0 || second < 0) continue;
-
-      parsed.set(line.slice(0, first), [
-        Number(line.slice(first + 1, second)),
-        Number(line.slice(second + 1)),
-      ]);
-    }
-
-    bundle = parsed;
 
     // Names ruled out before the index arrived deserve another chance.
     missing.clear();
@@ -335,7 +423,7 @@ async function indexBundle(url: string): Promise<void> {
       kind: "log",
       line: {
         level: "note",
-        message: `bundle ready: ${bundle.size.toLocaleString()} files available on demand`,
+        message: `bundle ready: ${count.toLocaleString()} files available on demand`,
       },
     });
   } catch (error) {
@@ -345,7 +433,7 @@ async function indexBundle(url: string): Promise<void> {
       line: {
         level: "error",
         message:
-          `could not load the bundle index from ${url}.index.gz ` +
+          `could not load the bundle index from ${isTtb ? url : `${url}.index.gz`} ` +
           `(${error instanceof Error ? error.message : String(error)}) — ` +
           "only files in the local pack will be available",
       },
