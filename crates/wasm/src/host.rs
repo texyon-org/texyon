@@ -17,6 +17,10 @@ mod status {
     pub const NOT_FOUND: i32 = 1;
 }
 
+// The explicit import module keeps rust-lld from treating these as undefined
+// symbols: only symbols carrying import metadata may be unresolved at link
+// time, and the runtime supplies them under `env`.
+#[link(wasm_import_module = "env")]
 extern "C" {
     /// Resolve a support file by TeX name, blocking until it is available.
     ///
