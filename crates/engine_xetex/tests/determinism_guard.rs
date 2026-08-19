@@ -23,11 +23,15 @@ const PATTERNS: &[&str] = &[
 /// `(relative path, pattern, expected count)` in comment-stripped source.
 const ALLOWED: &[(&str, &str, usize)] = &[
     // get_seconds_and_micros; every caller gates on deterministic_mode.
-    ("src/texmfmp.rs", "gettimeofday", 1),
+    ("src/texmfmp.rs", "SystemTime::now", 1),
     // get_date_and_time's live branch plus makepdftime's unused live branch.
     ("src/texmfmp.rs", "localtime", 2),
     // get_date_and_time's deterministic branch plus makepdftime's UTC work.
     ("src/texmfmp.rs", "gmtime", 3),
+    // Declarations only: the libc re-export and the Windows _gmtime64 /
+    // _localtime64 aliases. The call sites live in texmfmp.rs, above.
+    ("src/compat.rs", "gmtime", 3),
+    ("src/compat.rs", "localtime", 3),
 ];
 
 fn collect_text_hits(
