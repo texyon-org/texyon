@@ -553,12 +553,17 @@ pub(crate) fn new_patterns_in(
                 crate::scan::get_x_token_in(st)?;
                 match st.scanner.cur_cmd {
                     LETTER | OTHER_CHAR => {
-                        if digit_sensed || st.scanner.cur_chr < b'0' as i32 || st.scanner.cur_chr > b'9' as i32 {
+                        if digit_sensed
+                            || st.scanner.cur_chr < b'0' as i32
+                            || st.scanner.cur_chr > b'9' as i32
+                        {
                             if st.scanner.cur_chr == b'.' as i32 {
                                 st.scanner.cur_chr = 0;
                             } else {
                                 st.scanner.cur_chr = unsafe {
-                                    st.eqtb.data[(LC_CODE_BASE + st.scanner.cur_chr) as usize].b32.s1
+                                    st.eqtb.data[(LC_CODE_BASE + st.scanner.cur_chr) as usize]
+                                        .b32
+                                        .s1
                                 };
                                 if st.scanner.cur_chr == 0 {
                                     crate::output::error_here_with_diagnostic_in(
@@ -711,8 +716,13 @@ pub(crate) fn new_hyph_exceptions_in(
                         }
                     } else {
                         let hc0 = if st.hyph.hyph_index == 0 || st.scanner.cur_chr > 255 {
-                            unsafe { st.eqtb.data[(LC_CODE_BASE + st.scanner.cur_chr) as usize].b32.s1 }
-                        } else if st.hyph.trie_trc[(st.hyph.hyph_index + st.scanner.cur_chr) as usize]
+                            unsafe {
+                                st.eqtb.data[(LC_CODE_BASE + st.scanner.cur_chr) as usize]
+                                    .b32
+                                    .s1
+                            }
+                        } else if st.hyph.trie_trc
+                            [(st.hyph.hyph_index + st.scanner.cur_chr) as usize]
                             != st.scanner.cur_chr as u16
                         {
                             0

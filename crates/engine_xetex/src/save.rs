@@ -1,9 +1,9 @@
 //! Save-stack management functions translated from `xetex/xetex-xetex0.c`.
+use crate::bridge::diag_append_str;
 use crate::consts::{
     EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, TEX_NULL,
     UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::bridge::diag_append_str;
 use crate::state::{EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 
 use crate::mem_types::MemoryWord;
@@ -65,7 +65,10 @@ pub(crate) fn new_save_level(
     if save_stack.save_ptr > save_stack.max_save_stack {
         save_stack.max_save_stack = save_stack.save_ptr;
         if save_stack.max_save_stack > save_stack.save_size - 7 {
-            return Some(SaveAbort::Overflow(c"semantic nest size", save_stack.save_size));
+            return Some(SaveAbort::Overflow(
+                c"semantic nest size",
+                save_stack.save_size,
+            ));
         }
     }
     // `line` is passed in by the caller; it is stamped into
@@ -257,7 +260,11 @@ pub(crate) fn eq_destroy(
         119 => crate::mem::delete_glue_ref(mem, val),
         120 => {
             if val != TEX_NULL {
-                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(val), mem.b32s0(val) + mem.b32s0(val) + 1);
+                crate::mem::free_node(
+                    mem,
+                    crate::units::MemPtr::from_raw(val),
+                    mem.b32s0(val) + mem.b32s0(val) + 1,
+                );
             }
         }
         121 => {
@@ -375,7 +382,11 @@ fn delete_token_ref_threaded(mem: &mut MemState, p: impl crate::units::MemAddr) 
 }
 
 // translated from xetex-xetex0.c:2789 (delete_sa_ref)
-pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: impl crate::units::MemAddr) {
+pub fn delete_sa_ref(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    q: impl crate::units::MemAddr,
+) {
     let q = q.addr();
     mem.set_b32s0(q + 1, mem.b32s0(q + 1) - 1);
     if mem.b32s0(q + 1) != TEX_NULL {
@@ -543,7 +554,11 @@ pub(crate) fn sa_w_def(
 }
 
 // translated from xetex-xetex0.c:2923 (gsa_def)
-pub(crate) fn gsa_def(mem: &mut MemState, p: impl crate::units::MemAddr, e: i32) -> SaMutationResult {
+pub(crate) fn gsa_def(
+    mem: &mut MemState,
+    p: impl crate::units::MemAddr,
+    e: i32,
+) -> SaMutationResult {
     let p = p.addr();
     mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
     let flush_list = sa_destroy(mem, p);
@@ -553,7 +568,11 @@ pub(crate) fn gsa_def(mem: &mut MemState, p: impl crate::units::MemAddr, e: i32)
 }
 
 // translated from xetex-xetex0.c:2933 (gsa_w_def)
-pub(crate) fn gsa_w_def(mem: &mut MemState, p: impl crate::units::MemAddr, w: i32) -> SaMutationResult {
+pub(crate) fn gsa_w_def(
+    mem: &mut MemState,
+    p: impl crate::units::MemAddr,
+    w: i32,
+) -> SaMutationResult {
     let p = p.addr();
     mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
     mem.set_b16s0(p, LEVEL_ONE);
@@ -676,9 +695,17 @@ fn sa_restore_in(st: &mut crate::state::EngineState) -> Result<(), &'static std:
         delete_sa_ref(&mut st.mem, &mut st.scanner, step.p);
         st.scanner.sa_chain.0 = st.mem.b32s1(step.chain);
         if st.mem.b16s1(step.chain) < DIMEN_VAL_LIMIT {
-            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(step.chain), WORD_NODE_SIZE);
+            crate::mem::free_node(
+                &mut st.mem,
+                crate::units::MemPtr::from_raw(step.chain),
+                WORD_NODE_SIZE,
+            );
         } else {
-            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(step.chain), POINTER_NODE_SIZE);
+            crate::mem::free_node(
+                &mut st.mem,
+                crate::units::MemPtr::from_raw(step.chain),
+                POINTER_NODE_SIZE,
+            );
         }
         if st.scanner.sa_chain.0 == TEX_NULL {
             break;
@@ -706,8 +733,7 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = p;
                 if a {
-                    let pn = crate::mem::get_avail(&mut st.mem)
-                        .ok_or(UnsaveAbort::MainMemory)?;
+                    let pn = crate::mem::get_avail(&mut st.mem).ok_or(UnsaveAbort::MainMemory)?;
                     pn.set_info(&mut st.mem, st.scanner.cur_tok);
                     st.mem.set_b32s1(pn, st.input.cur_input.loc);
                     st.input.cur_input.loc = pn.0;
@@ -820,7 +846,12 @@ fn sa_get_child(mem: &MemState, q: impl crate::units::MemAddr, i: i32) -> i32 {
 
 /// Helper: write the child pointer and increment the ref-count in node `q`.
 #[inline]
-fn sa_set_child(mem: &mut MemState, q: impl crate::units::MemAddr, i: i32, p: impl crate::units::MemAddr) {
+fn sa_set_child(
+    mem: &mut MemState,
+    q: impl crate::units::MemAddr,
+    i: i32,
+    p: impl crate::units::MemAddr,
+) {
     let q = q.addr();
     let p = p.addr();
     if i & 1 != 0 {

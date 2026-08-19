@@ -1,10 +1,8 @@
 //! Error-handling functions translated from `xetex/xetex-errors.c`.
 
 use crate::bridge::ttstub_output_flush;
+use crate::consts::{BOX_BASE, HISTORY_FATAL_ERROR, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY};
 use crate::state::GroupCode;
-use crate::consts::{
-    BOX_BASE, HISTORY_FATAL_ERROR, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
-};
 
 // Interaction-mode constants (xetex_format.h:644–647).
 

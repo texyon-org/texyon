@@ -124,9 +124,11 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
             });
         }
         sources.inputs = restored;
-        OBSERVED_BYTES.set(checkpoints.iter().fold(0usize, |total, input| {
-            total.saturating_add(input.seen)
-        }));
+        OBSERVED_BYTES.set(
+            checkpoints
+                .iter()
+                .fold(0usize, |total, input| total.saturating_add(input.seen)),
+        );
         true
     })
 }

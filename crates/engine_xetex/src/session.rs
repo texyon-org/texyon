@@ -151,11 +151,9 @@ fn capture_fence(
         // call on this thread; both pointees outlive the guard and are not
         // accessed through another reference while this hook runs.
         let snapshot = unsafe { controller.snapshot.as_ref() };
-        let Some(fence) = crate::replay::fence::ReplayFence::capture(
-            state,
-            snapshot,
-            resume_pending_command,
-        ) else {
+        let Some(fence) =
+            crate::replay::fence::ReplayFence::capture(state, snapshot, resume_pending_command)
+        else {
             return false;
         };
         let ladder = unsafe { controller.ladder.as_mut() };
@@ -442,22 +440,21 @@ impl IncrementalXeTeXSession {
             Ok(catch_operation(api, state, |state| unsafe {
                 let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
-                let (splice_at, resume_pending_command) =
-                    if let Some((target, fence)) = selection {
-                        crate::engine::release_operation_inputs(state);
-                        ladder.rewind_engine(state, target);
-                        assert!(
-                            fence.restore_inputs(state),
-                            "eligible replay fence failed input reconstruction"
-                        );
-                        (
-                            Some(fence.splice_at()),
-                            Some(fence.resume_pending_command()),
-                        )
-                    } else {
-                        ladder.rewind_engine(state, 0);
-                        (None, None)
-                    };
+                let (splice_at, resume_pending_command) = if let Some((target, fence)) = selection {
+                    crate::engine::release_operation_inputs(state);
+                    ladder.rewind_engine(state, target);
+                    assert!(
+                        fence.restore_inputs(state),
+                        "eligible replay fence failed input reconstruction"
+                    );
+                    (
+                        Some(fence.splice_at()),
+                        Some(fence.resume_pending_command()),
+                    )
+                } else {
+                    ladder.rewind_engine(state, 0);
+                    (None, None)
+                };
                 let first_shipped = state.shipout.total_pages.max(0) as usize;
                 let horizon_last = viewport.map(|range| range.last.max(first_shipped));
                 ladder.clear_protections();
@@ -554,14 +551,8 @@ impl IncrementalXeTeXSession {
                 )
             }))
         })?;
-        self.finish_operation(
-            result,
-            revision,
-            target,
-            replay_clock,
-            checkpoint_activity,
-        )
-        .map(Some)
+        self.finish_operation(result, revision, target, replay_clock, checkpoint_activity)
+            .map(Some)
     }
 
     /// Every control sequence the engine currently has defined.

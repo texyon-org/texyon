@@ -19,12 +19,10 @@
 use tectonic_bridge_core::{
     ttbc_diag_begin_error, ttbc_diag_begin_warning, ttbc_diag_finish, ttbc_get_file_md5,
     ttbc_get_last_input_abspath, ttbc_input_close, ttbc_input_get_mtime, ttbc_input_get_size,
-    ttbc_input_getc,
-    ttbc_input_open, ttbc_input_open_primary, ttbc_input_read, ttbc_input_seek,
-    ttbc_input_ungetc, ttbc_issue_error, ttbc_issue_warning, ttbc_output_close,
-    ttbc_output_flush, ttbc_output_open, ttbc_output_open_stdout, ttbc_output_putc,
-    ttbc_output_write, ttbc_shell_escape, CoreBridgeState, Diagnostic, FileFormat, InputId,
-    OutputId,
+    ttbc_input_getc, ttbc_input_open, ttbc_input_open_primary, ttbc_input_read, ttbc_input_seek,
+    ttbc_input_ungetc, ttbc_issue_error, ttbc_issue_warning, ttbc_output_close, ttbc_output_flush,
+    ttbc_output_open, ttbc_output_open_stdout, ttbc_output_putc, ttbc_output_write,
+    ttbc_shell_escape, CoreBridgeState, Diagnostic, FileFormat, InputId, OutputId,
 };
 
 // ---------------------------------------------------------------------------
@@ -109,7 +107,12 @@ pub(crate) unsafe fn ttstub_input_open(
         return handle;
     }
     crate::replay::adapter::clear_last_path();
-    InputId::to_raw(ttbc_input_open(es(), path, file_format_from_int(format), is_gz))
+    InputId::to_raw(ttbc_input_open(
+        es(),
+        path,
+        file_format_from_int(format),
+        is_gz,
+    ))
 }
 
 pub(crate) unsafe fn ttstub_input_open_primary() -> usize {

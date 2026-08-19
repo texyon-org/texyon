@@ -49,9 +49,7 @@ pub extern "C" fn FcConfigGetCurrent() -> *mut crate::sys::FcConfig {
 
 #[no_mangle]
 pub extern "C" fn FcNameParse(_name: *const libc::c_char) -> *mut FcPattern {
-    let pat = Box::new(StubPattern {
-        refs: Cell::new(1),
-    });
+    let pat = Box::new(StubPattern { refs: Cell::new(1) });
     Box::into_raw(pat) as *mut FcPattern
 }
 

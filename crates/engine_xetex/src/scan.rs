@@ -1,18 +1,18 @@
 //! Scanner range-validation helpers and mu_error.
 //!
 //! Translated from xetex-xetex0.c.
-use crate::state::GroupCode;
 use crate::consts::{
     ACTIVE_BASE, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, BACKED_UP, BACKUP_HEAD, BIGGEST_CHAR,
     BOX_BASE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, CLOSED, COUNT_BASE, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, END_TEMPLATE, ENDV, EQTB_SIZE, FI_CODE, FI_OR_ELSE,
-    FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_NODE, GLUE_VAL, INT_BASE,
-    INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, JUST_OPEN, KERN_NODE,
-    LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_NODE, MAX_COMMAND,
-    MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN, NEW_LINE, NORMAL_SCANNER, NUMBER_MATH_FAMILIES,
-    OR_CODE, PENALTY_NODE, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE,
-    SELECTOR_NEW_STRING, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACER, SPACE_CODE, TEX_NULL,
-    TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE, XETEX_INT,
+    CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, ENDV, END_TEMPLATE, EQTB_SIZE, FI_CODE, FI_OR_ELSE,
+    FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_NODE, GLUE_VAL,
+    INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, JUST_OPEN,
+    KERN_NODE, LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_NODE,
+    MAX_COMMAND, MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN, NEW_LINE, NORMAL_SCANNER,
+    NUMBER_MATH_FAMILIES, OR_CODE, PENALTY_NODE, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE,
+    RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
+    SPACER, SPACE_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    XETEX_INT,
 };
 use crate::ext::aat_font_get;
 use crate::ext::aat_font_get_1;
@@ -25,6 +25,7 @@ use crate::ext::ot_font_get;
 use crate::ext::ot_font_get_1;
 use crate::ext::ot_font_get_2;
 use crate::ext::ot_font_get_3;
+use crate::state::GroupCode;
 
 use crate::errors::int_error_in;
 use crate::expand::{expand_in, macro_call_in};
@@ -100,7 +101,7 @@ const INTER_CHAR_VAL: i16 = 6;
 const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
 const HASH_BASE: i32 = 2_228_226;
 const FROZEN_RELAX: i32 = 2_243_233; // FROZEN_CONTROL_SEQUENCE + 7
-// LOCAL__ offsets (xetex_format.h:172,183).
+                                     // LOCAL__ offsets (xetex_format.h:172,183).
 const LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
 // Font flags (xetex-ext.h:47–48).
 const AAT_FONT_FLAG: i32 = 0xFFFF;
@@ -1162,7 +1163,8 @@ pub(crate) fn set_math_char_in(
         } else {
             nd.set_noad_type(
                 &mut st.mem,
-                NodeType::from_raw(NodeType::OrdNoad.as_raw() + math_class_fn(c) as u16).expect("valid noad type"),
+                NodeType::from_raw(NodeType::OrdNoad.as_raw() + math_class_fn(c) as u16)
+                    .expect("valid noad type"),
             );
         }
         let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;
@@ -1517,7 +1519,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                         let first_cat =
                                             st.eqtb.b32s1(CAT_CODE_BASE + first_chr) as u8;
                                         let mut k = cs_start + 1;
-                                        st.input.cur_input.state = if first_cat == LETTER || first_cat == SPACER {
+                                        st.input.cur_input.state =
+                                            if first_cat == LETTER || first_cat == SPACER {
                                                 SKIP_BLANKS
                                             } else {
                                                 MID_LINE
@@ -1541,7 +1544,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                             {
                                                 let mut sup_count: i32 = 2;
                                                 while sup_count < 6
-                                                    && k + 2 * sup_count - 2 <= st.input.cur_input.limit
+                                                    && k + 2 * sup_count - 2
+                                                        <= st.input.cur_input.limit
                                                     && st.input.buffer[(k + sup_count - 1) as usize]
                                                         == chr
                                                 {
@@ -1563,7 +1567,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                             };
                                                             st.input.buffer[(k - 1) as usize] =
                                                                 new_val;
-                                                            st.input.cur_input.limit = st.input.cur_input.limit - 2;
+                                                            st.input.cur_input.limit =
+                                                                st.input.cur_input.limit - 2;
                                                             let mut kk = k;
                                                             while kk <= st.input.cur_input.limit {
                                                                 st.input.buffer[(kk) as usize] =
@@ -1594,7 +1599,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                     if new_chr <= BIGGEST_USV_GN {
                                                         st.input.buffer[(k - 1) as usize] = new_chr;
                                                         let shift = 2 * sup_count - 1;
-                                                        st.input.cur_input.limit = st.input.cur_input.limit - shift;
+                                                        st.input.cur_input.limit =
+                                                            st.input.cur_input.limit - shift;
                                                         let mut kk = k;
                                                         while kk <= st.input.cur_input.limit {
                                                             st.input.buffer[(kk) as usize] =
@@ -1613,19 +1619,19 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                             }
                                             if k > st.input.cur_input.loc + 1 {
                                                 st.scanner.cur_cs = match crate::hash::id_lookup(
-                                                        &mut st.eqtb,
-                                                        &mut st.strings,
-                                                        &st.input.buffer,
-                                                        st.input.cur_input.loc,
-                                                        k - st.input.cur_input.loc,
-                                                    ) {
-                                                        Ok(p) => p,
-                                                        Err(e) => {
-                                                            return GetNextOutcome::Abort(
-                                                                hash_err_abort(e),
-                                                            )
-                                                        }
-                                                    };
+                                                    &mut st.eqtb,
+                                                    &mut st.strings,
+                                                    &st.input.buffer,
+                                                    st.input.cur_input.loc,
+                                                    k - st.input.cur_input.loc,
+                                                ) {
+                                                    Ok(p) => p,
+                                                    Err(e) => {
+                                                        return GetNextOutcome::Abort(
+                                                            hash_err_abort(e),
+                                                        )
+                                                    }
+                                                };
                                                 st.input.cur_input.loc = k;
                                                 break 'start_cs; // goto found
                                             }
@@ -1638,7 +1644,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                             {
                                                 let mut sup_count: i32 = 2;
                                                 while sup_count < 6
-                                                    && k + 2 * sup_count - 2 <= st.input.cur_input.limit
+                                                    && k + 2 * sup_count - 2
+                                                        <= st.input.cur_input.limit
                                                     && st.input.buffer[(k + sup_count - 1) as usize]
                                                         == first_chr
                                                 {
@@ -1660,7 +1667,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                             };
                                                             st.input.buffer[(k - 1) as usize] =
                                                                 new_val;
-                                                            st.input.cur_input.limit = st.input.cur_input.limit - 2;
+                                                            st.input.cur_input.limit =
+                                                                st.input.cur_input.limit - 2;
                                                             let mut kk = k;
                                                             while kk <= st.input.cur_input.limit {
                                                                 st.input.buffer[(kk) as usize] =
@@ -1691,7 +1699,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                     if new_chr <= BIGGEST_USV_GN {
                                                         st.input.buffer[(k - 1) as usize] = new_chr;
                                                         let shift = 2 * sup_count - 1;
-                                                        st.input.cur_input.limit = st.input.cur_input.limit - shift;
+                                                        st.input.cur_input.limit =
+                                                            st.input.cur_input.limit - shift;
                                                         let mut kk = k;
                                                         while kk <= st.input.cur_input.limit {
                                                             st.input.buffer[(kk) as usize] =
@@ -1707,26 +1716,26 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                         }
 
                                         // Single-char CS: either buffer > 65535 uses id_lookup(1), else SINGLE_BASE
-                                        if st.input.buffer[(st.input.cur_input.loc) as usize] > 65535 {
+                                        if st.input.buffer[(st.input.cur_input.loc) as usize]
+                                            > 65535
+                                        {
                                             st.scanner.cur_cs = match crate::hash::id_lookup(
-                                                    &mut st.eqtb,
-                                                    &mut st.strings,
-                                                    &st.input.buffer,
-                                                    st.input.cur_input.loc,
-                                                    1,
-                                                ) {
-                                                    Ok(p) => p,
-                                                    Err(e) => {
-                                                        return GetNextOutcome::Abort(
-                                                            hash_err_abort(e),
-                                                        )
-                                                    }
-                                                };
+                                                &mut st.eqtb,
+                                                &mut st.strings,
+                                                &st.input.buffer,
+                                                st.input.cur_input.loc,
+                                                1,
+                                            ) {
+                                                Ok(p) => p,
+                                                Err(e) => {
+                                                    return GetNextOutcome::Abort(hash_err_abort(e))
+                                                }
+                                            };
                                             st.input.cur_input.loc = st.input.cur_input.loc + 1;
                                             break 'start_cs; // goto found
                                         }
                                         st.scanner.cur_cs = SINGLE_BASE
-                                                + st.input.buffer[(st.input.cur_input.loc) as usize];
+                                            + st.input.buffer[(st.input.cur_input.loc) as usize];
                                         st.input.cur_input.loc = st.input.cur_input.loc + 1;
                                         break 'start_cs;
                                     }
@@ -1760,12 +1769,14 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                             // ANY_STATE_PLUS(SUP_MARK): caret (^^) expansion
                             8 | 24 | 40 => {
-                                if st.scanner.cur_chr == st.input.buffer[(st.input.cur_input.loc) as usize]
+                                if st.scanner.cur_chr
+                                    == st.input.buffer[(st.input.cur_input.loc) as usize]
                                     && st.input.cur_input.loc < st.input.cur_input.limit
                                 {
                                     let mut sup_count: i32 = 2;
                                     while sup_count < 6
-                                        && st.input.cur_input.loc + 2 * sup_count - 2 <= st.input.cur_input.limit
+                                        && st.input.cur_input.loc + 2 * sup_count - 2
+                                            <= st.input.cur_input.limit
                                         && st.scanner.cur_chr
                                             == st.input.buffer
                                                 [(st.input.cur_input.loc + sup_count - 1) as usize]
@@ -1776,13 +1787,16 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                     let mut hex_ok = true;
                                     for d in 1..=sup_count_save {
                                         if !is_lc_hex(
-                                            st.input.buffer
-                                                [(st.input.cur_input.loc + sup_count - 2 + d) as usize],
+                                            st.input.buffer[(st.input.cur_input.loc + sup_count - 2
+                                                + d)
+                                                as usize],
                                         ) {
-                                            let c = st.input.buffer[(st.input.cur_input.loc + 1) as usize];
+                                            let c = st.input.buffer
+                                                [(st.input.cur_input.loc + 1) as usize];
                                             if c < 128 {
                                                 st.input.cur_input.loc = st.input.cur_input.loc + 2;
-                                                st.scanner.cur_chr = if c < 64 { c + 64 } else { c - 64 };
+                                                st.scanner.cur_chr =
+                                                    if c < 64 { c + 64 } else { c - 64 };
                                                 continue 'reswitch;
                                             }
                                             hex_ok = false;
@@ -1792,8 +1806,11 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                     if hex_ok {
                                         let mut new_chr: i32 = 0;
                                         for d in 1..=sup_count {
-                                            let c = st.input.buffer
-                                                [(st.input.cur_input.loc + sup_count - 2 + d) as usize];
+                                            let c = st.input.buffer[(st.input.cur_input.loc
+                                                + sup_count
+                                                - 2
+                                                + d)
+                                                as usize];
                                             new_chr = 16 * new_chr
                                                 + if c <= b'9' as i32 {
                                                     c - b'0' as i32
@@ -1807,7 +1824,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                             // fall to not_exp
                                         } else {
                                             st.scanner.cur_chr = new_chr;
-                                            st.input.cur_input.loc = st.input.cur_input.loc + 2 * sup_count - 1;
+                                            st.input.cur_input.loc =
+                                                st.input.cur_input.loc + 2 * sup_count - 1;
                                             continue 'reswitch;
                                         }
                                     }
@@ -1922,10 +1940,12 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 if try_in!(crate::input::pseudo_input_in(st)) {
                                     st.input.cur_input.limit = st.input.last;
                                 } else if st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF) != TEX_NULL
-                                    && !st.input.eof_seen[(st.input.cur_input.index as i32) as usize]
+                                    && !st.input.eof_seen
+                                        [(st.input.cur_input.index as i32) as usize]
                                 {
                                     st.input.cur_input.limit = st.input.first - 1;
-                                    st.input.eof_seen[(st.input.cur_input.index as i32) as usize] = true;
+                                    st.input.eof_seen[(st.input.cur_input.index as i32) as usize] =
+                                        true;
                                     {
                                         let __p = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF);
                                         try_in!(crate::input::begin_token_list_in(
@@ -1948,7 +1968,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 && !st.input.eof_seen[(st.input.cur_input.index as i32) as usize]
                             {
                                 st.input.cur_input.limit = st.input.first - 1;
-                                st.input.eof_seen[(st.input.cur_input.index as i32) as usize] = true;
+                                st.input.eof_seen[(st.input.cur_input.index as i32) as usize] =
+                                    true;
                                 {
                                     let __p = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF);
                                     try_in!(crate::input::begin_token_list_in(
@@ -2069,8 +2090,8 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     }
                     x if x == OUT_PARAM_GN => {
                         {
-                            let __p =
-                                st.input.param_stack[(st.input.cur_input.limit + st.scanner.cur_chr - 1) as usize];
+                            let __p = st.input.param_stack
+                                [(st.input.cur_input.limit + st.scanner.cur_chr - 1) as usize];
                             try_in!(crate::input::begin_token_list_in(st, __p, PARAMETER_GN))
                         };
                         continue 'restart;
@@ -2085,14 +2106,18 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
         }
 
         // Alignment preamble check (§818)
-        if st.scanner.cur_cmd <= CAR_RET && st.scanner.cur_cmd >= TAB_MARK_CAT && st.scanner.align_state == 0 {
+        if st.scanner.cur_cmd <= CAR_RET
+            && st.scanner.cur_cmd >= TAB_MARK_CAT
+            && st.scanner.align_state == 0
+        {
             if st.scanner.scanner_status == ALIGNING_GN || st.scanner.cur_align.0 == TEX_NULL {
                 return GetNextOutcome::Abort(crate::input::InputAbort::Fatal(
                     c"(interwoven alignment preambles are not allowed)".as_ptr(),
                 ));
             }
             let saved_cmd = st.mem.b32s0(st.scanner.cur_align + 5);
-            st.mem.set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_chr);
+            st.mem
+                .set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_chr);
             if saved_cmd as u8 == OMIT_GN {
                 {
                     let __p = OMIT_TEMPLATE_GN;
@@ -2260,8 +2285,7 @@ pub(crate) fn get_node_scc(
 pub(crate) fn get_avail_scc(
     st: &mut crate::state::EngineState,
 ) -> Result<crate::units::MemPtr, SccAbort> {
-    crate::mem::get_avail(&mut st.mem)
-        .ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
+    crate::mem::get_avail(&mut st.mem).ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
 }
 
 /// [`crate::mem::alloc_spec`] with arena exhaustion lifted into [`SccAbort`].
@@ -2541,7 +2565,8 @@ pub(crate) fn scan_toks_in(
                 // §497: expand, but handle \the specially
                 loop {
                     get_next_scc(st)?;
-                    if st.scanner.cur_cmd >= CALL && st.mem.b32s0(st.mem.b32s1(st.scanner.cur_chr)) == PROTECTED_TOKEN
+                    if st.scanner.cur_cmd >= CALL
+                        && st.mem.b32s0(st.mem.b32s1(st.scanner.cur_chr)) == PROTECTED_TOKEN
                     {
                         st.scanner.cur_cmd = RELAX;
                         st.scanner.cur_chr = NO_EXPAND_FLAG;
@@ -2828,9 +2853,12 @@ pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccA
         } else if st.scanner.cur_tok == FROZEN_PRIM_TOKEN {
             get_token_in(st)?;
             if st.scanner.cur_cs < HASH_BASE {
-                let v =
-                    crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, st.scanner.cur_cs - SINGLE_BASE)
-                        .map_err(|e| SccAbort::Input(hash_err_abort(e)))?;
+                let v = crate::hash::prim_lookup(
+                    &mut st.eqtb,
+                    &mut st.strings,
+                    st.scanner.cur_cs - SINGLE_BASE,
+                )
+                .map_err(|e| SccAbort::Input(hash_err_abort(e)))?;
                 st.scanner.cur_cs = v;
             } else {
                 let s = st.eqtb.hash[(st.scanner.cur_cs as usize) - 514].s1;
@@ -2876,7 +2904,9 @@ pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccA
                 } else if radix_val == 16 {
                     if st.scanner.cur_tok <= A_TOKEN + 5 && st.scanner.cur_tok >= A_TOKEN {
                         d = st.scanner.cur_tok - A_TOKEN + 10;
-                    } else if st.scanner.cur_tok <= OTHER_A_TOKEN + 5 && st.scanner.cur_tok >= OTHER_A_TOKEN {
+                    } else if st.scanner.cur_tok <= OTHER_A_TOKEN + 5
+                        && st.scanner.cur_tok >= OTHER_A_TOKEN
+                    {
                         d = st.scanner.cur_tok - OTHER_A_TOKEN + 10;
                     } else {
                         break;
@@ -3680,7 +3710,11 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 r = (st.mem.b16s0(q) % 4) as i16;
                 l = st.mem.b16s1(q) as i16;
                 p = st.mem.b32s1(q);
-                crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(q), EXPR_NODE_SIZE);
+                crate::mem::free_node(
+                    &mut st.mem,
+                    crate::units::MemPtr::from_raw(q),
+                    EXPR_NODE_SIZE,
+                );
                 skip_scan = true;
                 continue; // goto found
             }
@@ -3848,9 +3882,7 @@ pub(crate) fn scan_something_internal_in(
                             st,
                             c"Extended mathchar used as mathchar".as_ptr(),
                         );
-                        unsafe {
-                            diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val1))
-                        };
+                        unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val1)) };
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
                         st.errors.help_ptr = 2;
                         st.errors.help_line[1] =
@@ -4140,7 +4172,8 @@ pub(crate) fn scan_something_internal_in(
                 find_font_dimen_in(st, false)?;
                 let fp = st.fonts.fmem_ptr;
                 st.fonts.set_font_info_b32s1(fp, 0);
-                st.scanner.cur_val = unsafe { st.fonts.font_info[st.scanner.cur_val as usize].b32.s1 };
+                st.scanner.cur_val =
+                    unsafe { st.fonts.font_info[st.scanner.cur_val as usize].b32.s1 };
                 st.scanner.cur_val_level = DIMEN_VAL as u8;
             }
             ASSIGN_FONT_INT => {
@@ -4203,10 +4236,19 @@ pub(crate) fn scan_something_internal_in(
                         }
                     } else {
                         match st.scanner.cur_val_level as i16 {
-                            INT_VAL => st.scanner.cur_val = st.eqtb.b32s1(COUNT_BASE + st.scanner.cur_val),
-                            DIMEN_VAL => st.scanner.cur_val = st.eqtb.b32s1(SCALED_BASE + st.scanner.cur_val),
-                            GLUE_VAL => st.scanner.cur_val = st.eqtb.b32s1(SKIP_BASE + st.scanner.cur_val),
-                            MU_VAL => st.scanner.cur_val = st.eqtb.b32s1(MU_SKIP_BASE + st.scanner.cur_val),
+                            INT_VAL => {
+                                st.scanner.cur_val = st.eqtb.b32s1(COUNT_BASE + st.scanner.cur_val)
+                            }
+                            DIMEN_VAL => {
+                                st.scanner.cur_val = st.eqtb.b32s1(SCALED_BASE + st.scanner.cur_val)
+                            }
+                            GLUE_VAL => {
+                                st.scanner.cur_val = st.eqtb.b32s1(SKIP_BASE + st.scanner.cur_val)
+                            }
+                            MU_VAL => {
+                                st.scanner.cur_val =
+                                    st.eqtb.b32s1(MU_SKIP_BASE + st.scanner.cur_val)
+                            }
                             _ => {}
                         }
                     }
@@ -4310,18 +4352,26 @@ pub(crate) fn scan_something_internal_in(
                                 if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                                     let v = unsafe {
                                         match m {
-                                            FONT_CHAR_WD_CODE => {
-                                                crate::ext::getnativecharwd(&st.fonts, q, st.scanner.cur_val)
-                                            }
-                                            FONT_CHAR_HT_CODE => {
-                                                crate::ext::getnativecharht(&st.fonts, q, st.scanner.cur_val)
-                                            }
-                                            FONT_CHAR_DP_CODE => {
-                                                crate::ext::getnativechardp(&st.fonts, q, st.scanner.cur_val)
-                                            }
-                                            _ => {
-                                                crate::ext::getnativecharic(&st.fonts, q, st.scanner.cur_val)
-                                            }
+                                            FONT_CHAR_WD_CODE => crate::ext::getnativecharwd(
+                                                &st.fonts,
+                                                q,
+                                                st.scanner.cur_val,
+                                            ),
+                                            FONT_CHAR_HT_CODE => crate::ext::getnativecharht(
+                                                &st.fonts,
+                                                q,
+                                                st.scanner.cur_val,
+                                            ),
+                                            FONT_CHAR_DP_CODE => crate::ext::getnativechardp(
+                                                &st.fonts,
+                                                q,
+                                                st.scanner.cur_val,
+                                            ),
+                                            _ => crate::ext::getnativecharic(
+                                                &st.fonts,
+                                                q,
+                                                st.scanner.cur_val,
+                                            ),
                                         }
                                     }?;
                                     st.scanner.cur_val = v;
@@ -4400,7 +4450,8 @@ pub(crate) fn scan_something_internal_in(
                                     if st.scanner.cur_val > cnt {
                                         st.scanner.cur_val = cnt;
                                     }
-                                    st.scanner.cur_val = st.mem.b32s1(par_shape + 2 * st.scanner.cur_val - q);
+                                    st.scanner.cur_val =
+                                        st.mem.b32s1(par_shape + 2 * st.scanner.cur_val - q);
                                 }
                                 st.scanner.cur_val_level = DIMEN_VAL as u8;
                             }
@@ -4440,7 +4491,8 @@ pub(crate) fn scan_something_internal_in(
                                 st.scanner.cur_val = st.errors.random_seed;
                             }
                             PDF_SHELL_ESCAPE_CODE => {
-                                st.scanner.cur_val = if st.config.shell_escape_enabled { 1 } else { 0 };
+                                st.scanner.cur_val =
+                                    if st.config.shell_escape_enabled { 1 } else { 0 };
                             }
                             ETEX_VERSION_CODE => {
                                 st.scanner.cur_val = ETEX_VERSION;
@@ -4496,7 +4548,8 @@ pub(crate) fn scan_something_internal_in(
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
-                                    st.scanner.cur_val = unsafe { ot_font_get_1(m - XETEX_INT, engine, k) };
+                                    st.scanner.cur_val =
+                                        unsafe { ot_font_get_1(m - XETEX_INT, engine, k) };
                                 } else {
                                     scc_err(crate::errors::not_font_error_common_in(
                                         st,
@@ -4517,7 +4570,12 @@ pub(crate) fn scan_something_internal_in(
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
                                     scan_int_in(st)?;
-                                    st.scanner.cur_val = aat_font_get_2(m - XETEX_INT, engine, k, st.scanner.cur_val);
+                                    st.scanner.cur_val = aat_font_get_2(
+                                        m - XETEX_INT,
+                                        engine,
+                                        k,
+                                        st.scanner.cur_val,
+                                    );
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
@@ -4565,9 +4623,8 @@ pub(crate) fn scan_something_internal_in(
                                     st.scanner.cur_val = aat_font_get_named(m - XETEX_INT, engine);
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     crate::io::scan_and_pack_name_in(st)?;
-                                    st.scanner.cur_val = unsafe {
-                                        gr_font_get_named(st, m - XETEX_INT, engine)
-                                    };
+                                    st.scanner.cur_val =
+                                        unsafe { gr_font_get_named(st, m - XETEX_INT, engine) };
                                 } else {
                                     scc_err(crate::errors::not_font_error_common_in(
                                         st,
@@ -4588,7 +4645,8 @@ pub(crate) fn scan_something_internal_in(
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
                                     crate::io::scan_and_pack_name_in(st)?;
-                                    st.scanner.cur_val = aat_font_get_named_1(m - XETEX_INT, engine, k);
+                                    st.scanner.cur_val =
+                                        aat_font_get_named_1(m - XETEX_INT, engine, k);
                                 } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
                                     scan_int_in(st)?;
                                     k = st.scanner.cur_val;
@@ -4612,7 +4670,8 @@ pub(crate) fn scan_something_internal_in(
                                 n = st.scanner.cur_val;
                                 let engine = st.fonts.font_layout_engine_ptr(n);
                                 let fa = st.fonts.font_area[n as usize];
-                                st.scanner.cur_val = if fa == OTGR_FONT_FLAG && unsafe { usingOpenType(engine) } {
+                                st.scanner.cur_val =
+                                    if fa == OTGR_FONT_FLAG && unsafe { usingOpenType(engine) } {
                                         unsafe { ot_font_get(m - XETEX_INT, engine) }
                                     } else {
                                         0
@@ -4674,7 +4733,13 @@ pub(crate) fn scan_something_internal_in(
                                     kk = st.scanner.cur_val;
                                     scan_int_in(st)?;
                                     st.scanner.cur_val = unsafe {
-                                        ot_font_get_3(m - XETEX_INT, engine, k, kk, st.scanner.cur_val)
+                                        ot_font_get_3(
+                                            m - XETEX_INT,
+                                            engine,
+                                            k,
+                                            kk,
+                                            st.scanner.cur_val,
+                                        )
                                     };
                                 } else {
                                     scc_err(crate::errors::not_font_error_common_in(
@@ -4910,7 +4975,9 @@ pub(crate) fn scan_something_internal_in(
                         }
                     } else if st.input.cur_list.mode == VMODE && tx == st.input.cur_list.head.0 {
                         match st.scanner.cur_chr {
-                            x if x == INT_VAL as i32 => st.scanner.cur_val = st.shipout.last_penalty,
+                            x if x == INT_VAL as i32 => {
+                                st.scanner.cur_val = st.shipout.last_penalty
+                            }
                             x if x == DIMEN_VAL as i32 => st.scanner.cur_val = st.shipout.last_kern,
                             x if x == GLUE_VAL as i32 => {
                                 if st.shipout.last_glue.0 != MAX_HALFWORD {
@@ -4943,7 +5010,8 @@ pub(crate) fn scan_something_internal_in(
                         st.scanner.cur_cs = v;
                     }
                     if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
-                        st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + st.scanner.cur_cs) as u8;
+                        st.scanner.cur_cmd =
+                            st.eqtb.b16s1(PRIM_EQTB_BASE + st.scanner.cur_cs) as u8;
                         st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + st.scanner.cur_cs);
                         st.scanner.cur_cs = PRIM_EQTB_BASE + st.scanner.cur_cs;
                         st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;

@@ -194,8 +194,7 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
     }
     st.input.nest[st.input.nest_ptr as usize] = st.input.cur_list;
     st.input.nest_ptr += 1;
-    let h = crate::mem::get_avail(&mut st.mem)
-        .ok_or(PageBuildAbort::MainMemoryOverflowRunaway)?;
+    let h = crate::mem::get_avail(&mut st.mem).ok_or(PageBuildAbort::MainMemoryOverflowRunaway)?;
     st.input.cur_list.head = h;
     st.input.cur_list.tail = h;
     st.input.cur_list.prev_graf = 0;
@@ -375,7 +374,11 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                             let height_plus_depth =
                                 tmp_box.height(&st.mem).0 + tmp_box.depth(&st.mem).0;
                             ins.set_height(&mut st.mem, Scaled(height_plus_depth));
-                            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_idx(tmp_box.idx()), BOX_NODE_SIZE);
+                            crate::mem::free_node(
+                                &mut st.mem,
+                                crate::units::MemPtr::from_idx(tmp_box.idx()),
+                                BOX_NODE_SIZE,
+                            );
                             inner_wait = true;
                         }
                     }
@@ -388,7 +391,11 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                         .expect("valid insertion box")
                         .expect("insertion box")
                         .list_ptr(&st.mem);
-                    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(box_n), BOX_NODE_SIZE);
+                    crate::mem::free_node(
+                        &mut st.mem,
+                        crate::units::MemPtr::from_raw(box_n),
+                        BOX_NODE_SIZE,
+                    );
                     let packed =
                         crate::packaging::vpackage_emit_in(st, box_lp, 0, ADDITIONAL, MAX_HALFWORD);
                     st.eqtb.set_b32s1(BOX_BASE + n2 as i32, packed?.idx().0);
@@ -413,7 +420,11 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
             } else {
                 let split_top_ptr = ins.split_top_ptr(&st.mem).0;
                 crate::mem::delete_glue_ref(&mut st.mem, split_top_ptr); // INSERTION_NODE_split_top_ptr
-                crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), INS_NODE_SIZE);
+                crate::mem::free_node(
+                    &mut st.mem,
+                    crate::units::MemPtr::from_raw(p),
+                    INS_NODE_SIZE,
+                );
             }
             true // reset p to prev_p
         } else {
@@ -428,7 +439,8 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                         MARK_VAL as u16,
                         mark_class,
                         true,
-                    ).ok_or(PageBuildAbort::MainMemoryOverflow)?;
+                    )
+                    .ok_or(PageBuildAbort::MainMemoryOverflow)?;
                     let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(st.scanner.cur_ptr.0))
                         .expect("find_sa_element returned a mark-class element");
                     if sa.child(&st.mem, 1).is_null() {

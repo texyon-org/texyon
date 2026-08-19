@@ -21,7 +21,10 @@ impl WordJournal {
     }
 
     pub(crate) fn arm(&mut self, arena_len: usize) {
-        assert!(u32::try_from(arena_len).is_ok(), "journal arena exceeds u32 indices");
+        assert!(
+            u32::try_from(arena_len).is_ok(),
+            "journal arena exceeds u32 indices"
+        );
         self.touched.clear();
         self.touched.resize(arena_len.div_ceil(64), 0);
         self.idx.clear();
@@ -119,7 +122,11 @@ pub(crate) struct PlainTrail<T> {
 
 impl<T> Default for PlainTrail<T> {
     fn default() -> Self {
-        Self { armed: false, idx: Vec::new(), old: Vec::new() }
+        Self {
+            armed: false,
+            idx: Vec::new(),
+            old: Vec::new(),
+        }
     }
 }
 
@@ -169,7 +176,10 @@ pub(crate) struct PlainDelta<T> {
 
 impl<T> Default for PlainDelta<T> {
     fn default() -> Self {
-        Self { idx: Vec::new(), old: Vec::new() }
+        Self {
+            idx: Vec::new(),
+            old: Vec::new(),
+        }
     }
 }
 
@@ -258,7 +268,12 @@ mod tests {
     use crate::mem_types::B32x2;
 
     fn word(value: i32) -> MemoryWord {
-        MemoryWord { b32: B32x2 { s0: value, s1: value } }
+        MemoryWord {
+            b32: B32x2 {
+                s0: value,
+                s1: value,
+            },
+        }
     }
 
     fn bits(value: MemoryWord) -> u64 {
@@ -338,7 +353,10 @@ mod tests {
 
         newer.compose_with_older(older);
         newer.apply_to(&mut data);
-        assert_eq!(data.iter().map(|v| bits(*v)).collect::<Vec<_>>(), vec![0, 0, 0]);
+        assert_eq!(
+            data.iter().map(|v| bits(*v)).collect::<Vec<_>>(),
+            vec![0, 0, 0]
+        );
     }
 
     #[test]

@@ -1,13 +1,13 @@
 //! Math-mode command helpers translated from `xetex/xetex-math.c`.
 use crate::consts::{
-    A_LEADERS, ACCENT_NOAD_SIZE, ADJUST_HEAD, BEFORE, BIGGEST_LANG, BOX_NODE_SIZE, CUR_FONT_LOC,
+    ACCENT_NOAD_SIZE, ADJUST_HEAD, A_LEADERS, BEFORE, BIGGEST_LANG, BOX_NODE_SIZE, CUR_FONT_LOC,
     DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, EXPLICIT, FONT_BASE,
     FRACTION_NOAD_SIZE, GLUE_BASE, GLUE_NODE, HLIST_NODE, HMODE, INT_BASE, INT_PAR_HANG_AFTER,
     INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, KERN_NODE,
     LEFT_TO_RIGHT, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_FONT_BASE, MAX_HALFWORD,
     MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NUMBER_MATH_FAMILIES, OTHER_CHAR, PENALTY_NODE,
-    RADICAL_NOAD_SIZE, RELAX, RIGHT_TO_LEFT, SCRIPT_SIZE, SPACE_CODE, SPACER,
-    STYLE_NODE_SIZE, SUB_BOX, TEXT_SIZE,
+    RADICAL_NOAD_SIZE, RELAX, RIGHT_TO_LEFT, SCRIPT_SIZE, SPACER, SPACE_CODE, STYLE_NODE_SIZE,
+    SUB_BOX, TEXT_SIZE,
 };
 use crate::ext::real_get_native_glyph;
 use crate::mem::{
@@ -19,7 +19,9 @@ use crate::node::{
     RuleDimen, RuleNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::NodeRecycleAbort;
-use crate::state::{EngineState, EqtbState, FontState, GroupCode, MemState, SaveStackState, ScannerState};
+use crate::state::{
+    EngineState, EqtbState, FontState, GroupCode, MemState, SaveStackState, ScannerState,
+};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
 const INT_PAR_CUR_FAM: i32 = 44;
@@ -417,7 +419,10 @@ fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scal
 /// Recycles the two current-list chains via
 /// [`crate::packaging::flush_node_list`]. The two impossible corrupt-node
 /// `confusion` arms propagate out as `Err`.
-pub fn flush_math(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
+pub fn flush_math(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+) -> Result<(), &'static std::ffi::CStr> {
     let head = cl.head.0;
     let p1 = mem.b32s1(head);
     crate::packaging::flush_node_list(mem, p1)?;
@@ -432,7 +437,11 @@ pub fn flush_math(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState
 /// translated from xetex-math.c:91 (clean_box). Builds the
 /// cleaned hbox for math field `p` at style `s`,
 /// recursing into [`mlist_to_hlist_in`].
-unsafe fn clean_box_in(st: &mut EngineState, p: impl crate::units::MemAddr, s: i16) -> Result<AnyBox, MathBuildAbort> {
+unsafe fn clean_box_in(
+    st: &mut EngineState,
+    p: impl crate::units::MemAddr,
+    s: i16,
+) -> Result<AnyBox, MathBuildAbort> {
     let p = p.addr();
     let q;
     match st.mem.b32s1(p) {
@@ -494,7 +503,11 @@ unsafe fn clean_box_in(st: &mut EngineState, p: impl crate::units::MemAddr, s: i
             && !crate::mem::is_char_node(&st.mem, r)
             && st.mem.b16s1(r) == KERN_NODE
         {
-            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(r), MEDIUM_NODE_SIZE);
+            crate::mem::free_node(
+                &mut st.mem,
+                crate::units::MemPtr::from_raw(r),
+                MEDIUM_NODE_SIZE,
+            );
             st.mem.set_b32s1(qq, TEX_NULL);
         }
     }
@@ -736,14 +749,8 @@ unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), 
 
     let delimiter_height = x.height(&st.mem).0 + x.depth(&st.mem).0 + clr + rule_thickness;
     let y = var_delimiter_in(st, q.delimiter_addr(), cur_size, delimiter_height)?;
-    let (delta, x_height, rule_height) = make_radical_prepare_delimiter(
-        &mut st.mem,
-        y,
-        x,
-        clr,
-        rule_thickness,
-        is_ot_math,
-    );
+    let (delta, x_height, rule_height) =
+        make_radical_prepare_delimiter(&mut st.mem, y, x, clr, rule_thickness, is_ot_math);
     if delta > 0 {
         clr += crate::scaled_math::half(delta);
     }
@@ -1070,8 +1077,18 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
         delim2(&st.fonts, &st.eqtb, cur_size)
     };
 
-    let left_delim = var_delimiter_in(st, q.fraction_left_delimiter_addr(), cur_size, delimiter_size)?;
-    let right_delim = var_delimiter_in(st, q.fraction_right_delimiter_addr(), cur_size, delimiter_size)?;
+    let left_delim = var_delimiter_in(
+        st,
+        q.fraction_left_delimiter_addr(),
+        cur_size,
+        delimiter_size,
+    )?;
+    let right_delim = var_delimiter_in(
+        st,
+        q.fraction_right_delimiter_addr(),
+        cur_size,
+        delimiter_size,
+    )?;
     make_fraction_link_delimiters(&mut st.mem, left_delim, v, right_delim);
     let hbox = crate::packaging::hpack_emit_in(st, left_delim.ptr(), 0, ADDITIONAL)?;
     make_fraction_finish(&mut st.mem, q, hbox);
@@ -1160,7 +1177,11 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                             let assembly_ptr = get_ot_assembly_ptr(cur_f, c_glyph as i32, 0);
                             if !assembly_ptr.is_null() {
                                 ot_assembly_ptr = assembly_ptr;
-                                crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), GLYPH_NODE_SIZE);
+                                crate::mem::free_node(
+                                    &mut st.mem,
+                                    crate::units::MemPtr::from_raw(p),
+                                    GLYPH_NODE_SIZE,
+                                );
                                 p = build_opentype_assembly_in(
                                     st,
                                     cur_f,
@@ -1495,11 +1516,20 @@ fn finish_native_accent_glyph_start(mem: &mut MemState, y: AnyBox, glyph: Native
     if handle != 0 {
         mem.glyph_blobs.release(handle);
     }
-    free_node(mem, crate::units::MemPtr::from_raw(glyph.old_node), mem.b16s3(glyph.old_node + 4) as i32);
+    free_node(
+        mem,
+        crate::units::MemPtr::from_raw(glyph.old_node),
+        mem.b16s3(glyph.old_node + 4) as i32,
+    );
     y.set_list_ptr(mem, MemPtr::from_raw(glyph.p));
 }
 
-fn sync_accent_box_to_glyph(mem: &mut MemState, y: AnyBox, p: impl crate::units::MemAddr, bottom: bool) {
+fn sync_accent_box_to_glyph(
+    mem: &mut MemState,
+    y: AnyBox,
+    p: impl crate::units::MemAddr,
+    bottom: bool,
+) {
     let p = p.addr();
     y.set_width(mem, Scaled(mem.b32s1(p + 1)));
     y.set_height(mem, Scaled(mem.b32s1(p + 3)));
@@ -1722,7 +1752,11 @@ unsafe fn make_math_accent_in(
                     let assembly_ptr = get_ot_assembly_ptr(f, c_glyph, 1);
                     if !assembly_ptr.is_null() {
                         ot_assembly_ptr = assembly_ptr;
-                        crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), GLYPH_NODE_SIZE);
+                        crate::mem::free_node(
+                            &mut st.mem,
+                            crate::units::MemPtr::from_raw(p),
+                            GLYPH_NODE_SIZE,
+                        );
                         p = build_opentype_assembly_in(st, f, ot_assembly_ptr, w, true)?
                             .idx()
                             .0;
@@ -1968,7 +2002,11 @@ unsafe fn initial_script_shifts_in(
             up: zb.height(&st.mem).0 - sup_drop(&st.fonts, &st.eqtb, t),
             down: zb.depth(&st.mem).0 + sub_drop(&st.fonts, &st.eqtb, t),
         };
-        free_node(&mut st.mem, crate::units::MemPtr::from_idx(zb.idx()), BOX_NODE_SIZE);
+        free_node(
+            &mut st.mem,
+            crate::units::MemPtr::from_idx(zb.idx()),
+            BOX_NODE_SIZE,
+        );
         Ok(shifts)
     }
 }
@@ -2535,7 +2573,11 @@ fn mlist_cond_math_glue(
     Ok(())
 }
 
-fn mlist_move_output_node(mem: &mut MemState, tail: impl crate::units::MemAddr, node: AnyNode) -> (i32, i32) {
+fn mlist_move_output_node(
+    mem: &mut MemState,
+    tail: impl crate::units::MemAddr,
+    node: AnyNode,
+) -> (i32, i32) {
     let tail = tail.addr();
     let q = node.idx().0;
     mem.set_b32s1(tail, q);
@@ -2738,7 +2780,11 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                             if z_handle != 0 {
                                 st.mem.glyph_blobs.release(z_handle);
                             }
-                            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(z), zsize);
+                            crate::mem::free_node(
+                                &mut st.mem,
+                                crate::units::MemPtr::from_raw(z),
+                                zsize,
+                            );
                             delta = get_ot_math_ital_corr(cur_f, p_w.native_glyph(&st.mem) as i32);
                             if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR
                                 && !font_is_ot_math(&st.fonts, cur_f)
@@ -3406,7 +3452,9 @@ pub(crate) fn scan_delimiter_in(
         }
 
         match st.scanner.cur_cmd {
-            LETTER | OTHER_CHAR => st.scanner.cur_val = st.eqtb.b32s1(DEL_CODE_BASE + st.scanner.cur_chr),
+            LETTER | OTHER_CHAR => {
+                st.scanner.cur_val = st.eqtb.b32s1(DEL_CODE_BASE + st.scanner.cur_chr)
+            }
             DELIM_NUM => {
                 if st.scanner.cur_chr == 1 {
                     st.scanner.cur_val1 = 0x4000_0000;
@@ -3448,15 +3496,19 @@ pub(crate) fn scan_delimiter_in(
     if st.scanner.cur_val >= 0x4000_0000 {
         st.mem.set_b16s3(
             p,
-            (((st.scanner.cur_val % 0x20_0000) / 0x1_0000) * 0x100 + (st.scanner.cur_val / 0x20_0000) % 0x100) as u16,
+            (((st.scanner.cur_val % 0x20_0000) / 0x1_0000) * 0x100
+                + (st.scanner.cur_val / 0x20_0000) % 0x100) as u16,
         );
         st.mem.set_b16s2(p, (st.scanner.cur_val % 0x1_0000) as u16);
         st.mem.set_b16s1(p, 0);
         st.mem.set_b16s0(p, 0);
     } else {
-        st.mem.set_b16s3(p, ((st.scanner.cur_val / 0x10_0000) % 16) as u16);
-        st.mem.set_b16s2(p, ((st.scanner.cur_val / 0x1000) % 0x100) as u16);
-        st.mem.set_b16s1(p, ((st.scanner.cur_val / 0x100) % 16) as u16);
+        st.mem
+            .set_b16s3(p, ((st.scanner.cur_val / 0x10_0000) % 16) as u16);
+        st.mem
+            .set_b16s2(p, ((st.scanner.cur_val / 0x1000) % 0x100) as u16);
+        st.mem
+            .set_b16s1(p, ((st.scanner.cur_val / 0x100) % 16) as u16);
         st.mem.set_b16s0(p, (st.scanner.cur_val % 0x100) as u16);
     }
     Ok(())
@@ -3466,7 +3518,8 @@ pub(crate) fn start_eq_no_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::main_control::MainControlAbort;
-    st.save_stack.set_b32s1(st.save_stack.save_ptr, st.scanner.cur_chr);
+    st.save_stack
+        .set_b32s1(st.save_stack.save_ptr, st.scanner.cur_chr);
     st.save_stack.save_ptr += 1;
 
     crate::main_control::push_math_in(st, GroupCode::MathShift)?;
@@ -3489,7 +3542,11 @@ pub(crate) fn start_eq_no_in(
 }
 
 /// translated from xetex-math.c:368 (math_limit_switch)
-fn apply_math_limit_switch(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, limit: u16) -> bool {
+fn apply_math_limit_switch(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+    limit: u16,
+) -> bool {
     let tail = cl.tail.0;
     if cl.head.0 == tail {
         return false;
@@ -3506,7 +3563,11 @@ fn apply_math_limit_switch(cl: &mut crate::mem_types::ListStateRecord, mem: &mut
 pub(crate) fn math_limit_switch_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    if apply_math_limit_switch(&mut st.input.cur_list, &mut st.mem, st.scanner.cur_chr as u16) {
+    if apply_math_limit_switch(
+        &mut st.input.cur_list,
+        &mut st.mem,
+        st.scanner.cur_chr as u16,
+    ) {
         return Ok(());
     }
     crate::output::error_here_with_diagnostic_in(
@@ -3521,7 +3582,10 @@ pub(crate) fn math_limit_switch_in(
 }
 
 /// translated from xetex-math.c:461 (math_radical)
-fn append_radical_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+fn append_radical_noad(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let Some(node) = NodePtr::<Noad>::alloc_radical(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
@@ -3546,7 +3610,8 @@ pub(crate) fn math_radical_in(
 }
 
 /// translated from xetex-math.c:533 (append_choices)
-fn append_choices_core(cl: &mut crate::mem_types::ListStateRecord, 
+fn append_choices_core(
+    cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
     save_stack: &mut SaveStackState,
 ) -> Result<(), NodeRecycleAbort> {
@@ -3571,7 +3636,11 @@ pub(crate) fn append_choices_in(
 ///
 /// The impossible corrupt-node `confusion`
 /// (`q` not a `LEFT_NOAD`) propagates out as `Err`.
-fn fin_mlist(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: impl crate::units::MemAddr) -> Result<i32, &'static std::ffi::CStr> {
+fn fin_mlist(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+    p: impl crate::units::MemAddr,
+) -> Result<i32, &'static std::ffi::CStr> {
     let p = p.addr();
     let q;
     let aux = cl.aux_s1();
@@ -3611,13 +3680,19 @@ pub(crate) fn fin_mlist_in(
     st: &mut crate::state::EngineState,
     p: i32,
 ) -> Result<i32, crate::main_control::MainControlAbort> {
-    let q = fin_mlist(&mut st.input.cur_list, &mut st.mem, p).map_err(crate::main_control::MainControlAbort::Confusion)?;
+    let q = fin_mlist(&mut st.input.cur_list, &mut st.mem, p)
+        .map_err(crate::main_control::MainControlAbort::Confusion)?;
     crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
     Ok(q)
 }
 
 /// translated from xetex-math.c:571 (build_choices)
-fn build_choices_finish(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, save_stack: &mut SaveStackState, p: impl crate::units::MemAddr) -> bool {
+fn build_choices_finish(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+    save_stack: &mut SaveStackState,
+    p: impl crate::units::MemAddr,
+) -> bool {
     let p = p.addr();
     let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cl.tail.0)) };
     let p_ptr = MemPtr::from_raw(p);
@@ -3664,7 +3739,8 @@ enum ScriptDuplication {
     Subscript,
 }
 
-fn prepare_sub_sup(cl: &mut crate::mem_types::ListStateRecord, 
+fn prepare_sub_sup(
+    cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
     cmd: u8,
 ) -> Result<(i32, Option<ScriptDuplication>), NodeRecycleAbort> {
@@ -3720,7 +3796,10 @@ pub(crate) fn sub_sup_in(
 }
 
 /// translated from xetex-math.c:644 (math_fraction)
-fn start_fraction_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+fn start_fraction_noad(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let Some(fraction) = NodePtr::<Noad>::alloc_fraction(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
@@ -3748,7 +3827,12 @@ fn start_fraction_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut Mem
     Ok(fraction)
 }
 
-fn finish_fraction_rule(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, c: i32, rule_thickness: i32) {
+fn finish_fraction_rule(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+    c: i32,
+    rule_thickness: i32,
+) {
     if let Some(aux) = MemPtr(cl.aux_s1()).as_idx() {
         if let Ok(Some(fraction)) = mem.classify_noad(aux) {
             match c % DELIMITED_CODE {
@@ -3808,7 +3892,10 @@ pub(crate) fn math_fraction_in(
     Ok(())
 }
 
-fn append_accent_noad(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+fn append_accent_noad(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let Some(accent) = NodePtr::<Noad>::alloc_accent(mem) else {
         return Err(NodeRecycleAbort::Overflow);
     };
@@ -3870,7 +3957,12 @@ fn mark_middle_noad(mem: &mut MemState, p: NodePtr<Noad>) {
     p.set_subtype(mem, 1);
 }
 
-fn finish_left_right_group(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: impl crate::units::MemAddr, p: impl crate::units::MemAddr) {
+fn finish_left_right_group(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+    q: impl crate::units::MemAddr,
+    p: impl crate::units::MemAddr,
+) {
     let q = q.addr();
     let p = p.addr();
     mem.set_b32s1(cl.head, q);
@@ -3878,7 +3970,11 @@ fn finish_left_right_group(cl: &mut crate::mem_types::ListStateRecord, mem: &mut
     cl.e_tex_aux = crate::units::MemPtr::from_raw(p);
 }
 
-fn append_inner_noad_for_right(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, q: impl crate::units::MemAddr) -> Result<(), NodeRecycleAbort> {
+fn append_inner_noad_for_right(
+    cl: &mut crate::mem_types::ListStateRecord,
+    mem: &mut MemState,
+    q: impl crate::units::MemAddr,
+) -> Result<(), NodeRecycleAbort> {
     let q = q.addr();
     let Some(inner) = NodePtr::<Noad>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
@@ -4005,8 +4101,8 @@ pub(crate) fn math_ac_in(
     } else {
         crate::scan::scan_fifteen_bit_int_in(st)?;
         st.scanner.cur_val = set_class_bits(st.scanner.cur_val / 4096)
-                + set_family_bits((st.scanner.cur_val % 4096) / 256)
-                + (st.scanner.cur_val % 256);
+            + set_family_bits((st.scanner.cur_val % 4096) / 256)
+            + (st.scanner.cur_val % 256);
     }
 
     let value = st.scanner.cur_val;
@@ -4107,7 +4203,11 @@ fn app_display_in(
             p = p_orig;
         } else {
             let r0 = p_orig_box.list_ptr(&st.mem).0;
-            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p_orig), BOX_NODE_SIZE);
+            crate::mem::free_node(
+                &mut st.mem,
+                crate::units::MemPtr::from_raw(p_orig),
+                BOX_NODE_SIZE,
+            );
             if r0 == TEX_NULL {
                 return Err(MainControlAbort::Confusion(c"LR4"));
             }
@@ -4154,10 +4254,11 @@ fn app_display_in(
             .ptr()
             .0;
         if st.mem.b16s1(t) == GLUE_NODE {
-            let jj = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16)
-                .ok_or(NodeRecycleAbort::Overflow)?
-                .ptr()
-                .0;
+            let jj =
+                crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP as i16)
+                    .ok_or(NodeRecycleAbort::Overflow)?
+                    .ptr()
+                    .0;
             st.mem.set_b32s1(q, jj);
             st.mem.set_b32s1(jj, u);
             let jspec = st.mem.b32s0(t + 1);
@@ -4165,8 +4266,10 @@ fn app_display_in(
             st.mem.set_b16s0(st.mem.temp_ptr, st.mem.b16s0(jspec));
             st.mem
                 .set_b32s1(st.mem.temp_ptr.0 + 1, e - st.mem.b32s1(jspec + 1));
-            st.mem.set_b32s1(st.mem.temp_ptr + 2, -st.mem.b32s1(jspec + 2));
-            st.mem.set_b32s1(st.mem.temp_ptr + 3, -st.mem.b32s1(jspec + 3));
+            st.mem
+                .set_b32s1(st.mem.temp_ptr + 2, -st.mem.b32s1(jspec + 2));
+            st.mem
+                .set_b32s1(st.mem.temp_ptr + 3, -st.mem.b32s1(jspec + 3));
             st.mem.set_b32s1(u, t);
         } else {
             st.mem.set_b32s1(t + 1, e);
@@ -4189,8 +4292,10 @@ fn app_display_in(
             st.mem.set_b16s0(st.mem.temp_ptr, st.mem.b16s0(jspec));
             st.mem
                 .set_b32s1(st.mem.temp_ptr.0 + 1, d - st.mem.b32s1(jspec + 1));
-            st.mem.set_b32s1(st.mem.temp_ptr + 2, -st.mem.b32s1(jspec + 2));
-            st.mem.set_b32s1(st.mem.temp_ptr + 3, -st.mem.b32s1(jspec + 3));
+            st.mem
+                .set_b32s1(st.mem.temp_ptr + 2, -st.mem.b32s1(jspec + 2));
+            st.mem
+                .set_b32s1(st.mem.temp_ptr + 3, -st.mem.b32s1(jspec + 3));
             st.mem.set_b32s1(r, u2);
         } else {
             st.mem.set_b32s1(r + 1, d);
@@ -4328,7 +4433,8 @@ pub(crate) fn after_math_in(
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
         unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
-        st.mem.set_b32s1(st.input.cur_list.tail, st.mem.b32s1(TEMP_HEAD));
+        st.mem
+            .set_b32s1(st.input.cur_list.tail, st.mem.b32s1(TEMP_HEAD));
         while st.mem.b32s1(st.input.cur_list.tail) != TEX_NULL {
             st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         }
@@ -4395,12 +4501,20 @@ pub(crate) fn after_math_in(
                     || st.scanner.total_shrink[FILL] != 0
                     || st.scanner.total_shrink[FILLL] != 0)
             {
-                crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_idx(b.idx()), BOX_NODE_SIZE);
+                crate::mem::free_node(
+                    &mut st.mem,
+                    crate::units::MemPtr::from_idx(b.idx()),
+                    BOX_NODE_SIZE,
+                );
                 b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?;
             } else {
                 e = 0;
                 if w > z {
-                    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_idx(b.idx()), BOX_NODE_SIZE);
+                    crate::mem::free_node(
+                        &mut st.mem,
+                        crate::units::MemPtr::from_idx(b.idx()),
+                        BOX_NODE_SIZE,
+                    );
                     b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?;
                 }
             }
@@ -4420,7 +4534,10 @@ pub(crate) fn after_math_in(
             st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY),
         )
         .ok_or(NodeRecycleAbort::Overflow)?;
-        st.input.cur_list.tail.set_link(&mut st.mem, penalty_node.ptr());
+        st.input
+            .cur_list
+            .tail
+            .set_link(&mut st.mem, penalty_node.ptr());
         st.input.cur_list.tail = penalty_node.ptr();
 
         let pre_display_size = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
@@ -4468,7 +4585,10 @@ pub(crate) fn after_math_in(
         if a != TEX_NULL && e == 0 && !l {
             let inf_node2 = crate::mem::alloc_penalty(&mut st.mem, INF_PENALTY)
                 .ok_or(NodeRecycleAbort::Overflow)?;
-            st.input.cur_list.tail.set_link(&mut st.mem, inf_node2.ptr());
+            st.input
+                .cur_list
+                .tail
+                .set_link(&mut st.mem, inf_node2.ptr());
             st.input.cur_list.tail = inf_node2.ptr();
             let a_width = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
             app_display_in(st, j, a, z - a_width)?;
@@ -4476,7 +4596,8 @@ pub(crate) fn after_math_in(
         }
 
         if t != ADJUST_HEAD {
-            st.mem.set_b32s1(st.input.cur_list.tail, st.mem.b32s1(ADJUST_HEAD));
+            st.mem
+                .set_b32s1(st.input.cur_list.tail, st.mem.b32s1(ADJUST_HEAD));
             st.input.cur_list.tail.0 = t;
         }
         if pre_t != PRE_ADJUST_HEAD {
@@ -4619,8 +4740,7 @@ pub(crate) fn init_math_in(
                 .font_info_b32s1(QUAD_CODE + st.fonts.param_base(cur_font));
 
             if st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0 {
-                let tp = crate::mem::get_avail(&mut st.mem)
-                    .ok_or(NodeRecycleAbort::Overflow)?;
+                let tp = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
                 st.mem.temp_ptr = tp;
                 tp.set_info(&mut st.mem, BEFORE);
                 tp.set_link(&mut st.mem, st.scanner.lr_ptr);

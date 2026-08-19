@@ -137,7 +137,8 @@ pub unsafe extern "C" fn ubidi_setPara(
         return;
     };
 
-    let para = if para_level == UBIDI_DEFAULT_RTL && para.level.is_ltr() && !has_strong(&bidi.text) {
+    let para = if para_level == UBIDI_DEFAULT_RTL && para.level.is_ltr() && !has_strong(&bidi.text)
+    {
         let mut para = para.clone();
         para.level = Level::rtl();
         para

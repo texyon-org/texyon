@@ -1,7 +1,5 @@
 // translated from xetex-ext.c
-use crate::bridge::{
-    diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read,
-};
+use crate::bridge::{diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read};
 use crate::mem::{xcalloc, xmalloc, xrealloc};
 use crate::state::EngineState;
 
@@ -634,9 +632,7 @@ unsafe fn load_mapping_file_in(
     }
 
     libc::free(buffer as *mut c_void);
-    Ok((!cnv.is_null()).then(|| {
-        std::sync::Arc::new(crate::state::FontMappingHandle { raw: cnv })
-    }))
+    Ok((!cnv.is_null()).then(|| std::sync::Arc::new(crate::state::FontMappingHandle { raw: cnv })))
 }
 
 // translated from xetex-ext.c:236 (check_for_tfm_font_mapping)
@@ -1774,7 +1770,10 @@ pub unsafe fn measure_native_glyph(
         let engine = fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
         let font_inst = getFont(engine);
         // node_width(node) = node[1].b32.s1
-        mem.set_b32s1(p + 1, D2Fix(getGlyphWidth(font_inst, gid as u32) as c_double));
+        mem.set_b32s1(
+            p + 1,
+            D2Fix(getGlyphWidth(font_inst, gid as u32) as c_double),
+        );
         if use_glyph_metrics != 0 {
             getGlyphHeightDepth(engine, gid as u32, &mut ht, &mut dp);
         }
@@ -1795,11 +1794,7 @@ pub unsafe fn measure_native_glyph(
 }
 
 // translated from xetex-ext.c:1559 (real_get_native_word_cp)
-pub unsafe fn real_get_native_word_cp(
-    mem: &crate::state::MemState,
-    p: i32,
-    side: c_int,
-) -> i32 {
+pub unsafe fn real_get_native_word_cp(mem: &crate::state::MemState, p: i32, side: c_int) -> i32 {
     let glyph_count = mem.b16s0(p + 4) as usize;
     let f = mem.b16s2(p + 4) as i32; // native_font
 
@@ -2494,7 +2489,6 @@ mod tests {
     }
 }
 
-
 // translated from xetex-xetex0.c:11376 (append_src_special)
 pub(crate) fn append_src_special_in(
     st: &mut crate::state::EngineState,
@@ -2546,8 +2540,13 @@ pub(crate) fn new_write_whatsit_in(
     st: &mut EngineState,
     w: i16,
 ) -> Result<(), NewWriteWhatsitAbort> {
-    crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, st.scanner.cur_chr as i16, w)
-        .ok_or(NewWriteWhatsitAbort::MainMemory)?;
+    crate::mem::new_whatsit(
+        &mut st.input.cur_list,
+        &mut st.mem,
+        st.scanner.cur_chr as i16,
+        w,
+    )
+    .ok_or(NewWriteWhatsitAbort::MainMemory)?;
     if w != WRITE_NODE_SIZE {
         crate::scan::scan_four_bit_int_in(st)?;
     } else {
@@ -2657,8 +2656,8 @@ pub(crate) unsafe fn tt_insert_special_in(
         st.strings.pool_ptr += 1;
     }
 
-    let toklist_start = crate::mem::get_avail(&mut st.mem)
-        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    let toklist_start =
+        crate::mem::get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     toklist_start.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
     let q = crate::mem::get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'{' as i32);
@@ -2702,14 +2701,16 @@ pub(crate) fn do_extension_in(
 
         CLOSE_NODE_DE => {
             do_new_write_whatsit_in(st, WRITE_NODE_SIZE_DE)?;
-            st.mem
-                .set_b32s1(st.input.cur_list.tail.0 + 1, TEX_NULL);
+            st.mem.set_b32s1(st.input.cur_list.tail.0 + 1, TEX_NULL);
         }
 
         SPECIAL_NODE_DE => {
-            do_new_whatsit_in(st, crate::node::WhatsitSubtype::Special as i16, WRITE_NODE_SIZE_DE)?;
-            st.mem
-                .set_b32s0(st.input.cur_list.tail.0 + 1, TEX_NULL);
+            do_new_whatsit_in(
+                st,
+                crate::node::WhatsitSubtype::Special as i16,
+                WRITE_NODE_SIZE_DE,
+            )?;
+            st.mem.set_b32s0(st.input.cur_list.tail.0 + 1, TEX_NULL);
             crate::scan::scan_toks_in(st, false, true)?;
             st.mem
                 .set_b32s1(st.input.cur_list.tail.0 + 1, st.scanner.def_ref.0);
@@ -2734,7 +2735,11 @@ pub(crate) fn do_extension_in(
             if (st.input.cur_list.mode as i32).abs() != HMODE_DE as i32 {
                 mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
             } else {
-                do_new_whatsit_in(st, crate::node::WhatsitSubtype::Language as i16, SMALL_NODE_SIZE_DE)?;
+                do_new_whatsit_in(
+                    st,
+                    crate::node::WhatsitSubtype::Language as i16,
+                    SMALL_NODE_SIZE_DE,
+                )?;
                 scan_int_in(st)?;
                 let lang = if st.scanner.cur_val <= 0 || st.scanner.cur_val > 255 {
                     0
@@ -2757,7 +2762,11 @@ pub(crate) fn do_extension_in(
         }
 
         PDF_SAVE_POS_NODE_DE => {
-            do_new_whatsit_in(st, crate::node::WhatsitSubtype::PdfSavePos as i16, SMALL_NODE_SIZE_DE)?;
+            do_new_whatsit_in(
+                st,
+                crate::node::WhatsitSubtype::PdfSavePos as i16,
+                SMALL_NODE_SIZE_DE,
+            )?;
         }
 
         RESET_TIMER_CODE_DE => {
@@ -2806,7 +2815,11 @@ pub(crate) fn do_extension_in(
                 let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
                 let fa = st.fonts.font_area_entry(cur_font);
                 if fa == AAT_FONT_FLAG_DE || fa == OTGR_FONT_FLAG_DE {
-                    do_new_whatsit_in(st, crate::node::WhatsitSubtype::Glyph as i16, GLYPH_NODE_SIZE_DE)?;
+                    do_new_whatsit_in(
+                        st,
+                        crate::node::WhatsitSubtype::Glyph as i16,
+                        GLYPH_NODE_SIZE_DE,
+                    )?;
                     scan_int_in(st)?;
                     if st.scanner.cur_val < 0 || st.scanner.cur_val > 65535 {
                         let errmsg =

@@ -735,7 +735,6 @@ impl MemState {
             _ => None,
         })
     }
-
 }
 
 impl NodePtr<RuleNode> {
@@ -2045,7 +2044,10 @@ impl WhatsitSubtype {
     /// A native-word whatsit (`NativeWord` or `NativeWordAt`) — the very common
     /// `sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT` predicate.
     pub fn is_native_word(self) -> bool {
-        matches!(self, WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt)
+        matches!(
+            self,
+            WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt
+        )
     }
 
     /// The classic dimensionless I/O whatsits (`Open`..`Language`, 0–4) — the old
@@ -2313,7 +2315,11 @@ impl NodePtr<MovementNode> {
     /// Free this movement record back to the node arena.
     #[inline]
     pub fn free(self, mem: &mut MemState) {
-        free_node(mem, crate::units::MemPtr::from_raw(self.idx.0), MOVEMENT_NODE_SIZE);
+        free_node(
+            mem,
+            crate::units::MemPtr::from_raw(self.idx.0),
+            MOVEMENT_NODE_SIZE,
+        );
     }
 
     /// Movement-list successor = `mem[p].b32.s1`.
@@ -2680,9 +2686,18 @@ mod tests {
         assert_eq!(<HListNode as HasSyncFields>::SYNC_OFFSET, BOX_NODE_SIZE - 1);
         assert_eq!(<VListNode as HasSyncFields>::SYNC_OFFSET, BOX_NODE_SIZE - 1);
         assert_eq!(<RuleNode as HasSyncFields>::SYNC_OFFSET, RULE_NODE_SIZE - 1);
-        assert_eq!(<GlueNode as HasSyncFields>::SYNC_OFFSET, MEDIUM_NODE_SIZE - 1);
-        assert_eq!(<KernNode as HasSyncFields>::SYNC_OFFSET, MEDIUM_NODE_SIZE - 1);
-        assert_eq!(<MathNode as HasSyncFields>::SYNC_OFFSET, MEDIUM_NODE_SIZE - 1);
+        assert_eq!(
+            <GlueNode as HasSyncFields>::SYNC_OFFSET,
+            MEDIUM_NODE_SIZE - 1
+        );
+        assert_eq!(
+            <KernNode as HasSyncFields>::SYNC_OFFSET,
+            MEDIUM_NODE_SIZE - 1
+        );
+        assert_eq!(
+            <MathNode as HasSyncFields>::SYNC_OFFSET,
+            MEDIUM_NODE_SIZE - 1
+        );
 
         mem.set_b16s1(p.0, NodeType::HList.as_raw());
         let b = unsafe { NodePtr::<HListNode>::from_idx_unchecked(p) };

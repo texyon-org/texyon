@@ -1,5 +1,4 @@
 //! Printing helpers translated from `xetex/xetex-output.c`.
-use crate::state::GroupCode;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CS_TOKEN_FLAG, EQTB_SIZE, FI_CODE,
     FI_OR_ELSE, HISTORY_SPOTLESS, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
@@ -11,9 +10,9 @@ use crate::consts::{
 use crate::errors::{error_in, ErrorOutcome};
 use crate::node::{AnyBox, AnyNode, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::state::EngineState;
+use crate::state::GroupCode;
 use crate::state::InteractionMode;
 use crate::units::{GlueSign, MemIdx, NodeType};
-
 
 // Consts used by the show_* group.
 const TEMP_HEAD: i32 = 4_999_999 - 3;
@@ -1050,7 +1049,11 @@ pub(crate) fn token_show_in(st: &mut EngineState, p: impl crate::units::MemAddr)
 // print_spec
 // ---------------------------------------------------------------------------
 
-pub(crate) fn print_spec_in(st: &mut EngineState, p: impl crate::units::MemAddr, s: *const libc::c_char) {
+pub(crate) fn print_spec_in(
+    st: &mut EngineState,
+    p: impl crate::units::MemAddr,
+    s: *const libc::c_char,
+) {
     let p = p.addr();
     if p < 0 || p >= st.mem.lo_mem_max {
         print_char_in(st, '*' as i32);
@@ -2830,7 +2833,11 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
 // change_if_limit
 // ---------------------------------------------------------------------------
 
-pub(crate) fn change_if_limit_in(st: &mut EngineState, l: i16, p: impl crate::units::MemAddr) -> ErrorOutcome {
+pub(crate) fn change_if_limit_in(
+    st: &mut EngineState,
+    l: i16,
+    p: impl crate::units::MemAddr,
+) -> ErrorOutcome {
     let p = p.addr();
     if p == st.scanner.cond_ptr.0 {
         st.scanner.if_limit = l as u8;
@@ -2976,7 +2983,12 @@ const OTHER_CHAR_STL: i32 = 12;
 const MATCH_STL: i32 = 13;
 const END_MATCH_STL: i32 = 14;
 
-pub(crate) fn show_token_list_in(st: &mut EngineState, p: impl crate::units::MemAddr, q: i32, l: i32) {
+pub(crate) fn show_token_list_in(
+    st: &mut EngineState,
+    p: impl crate::units::MemAddr,
+    q: i32,
+    l: i32,
+) {
     let mut p = p.addr();
     let mut match_chr: i32 = '#' as i32;
     let mut n: i32 = '0' as i32;
@@ -3326,7 +3338,9 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 After::Found
             }
             GroupCode::MathLeft => {
-                if st.mem.b16s1(st.input.nest[(p + 1) as usize].e_tex_aux.0) == NodeType::LeftNoad.as_raw() {
+                if st.mem.b16s1(st.input.nest[(p + 1) as usize].e_tex_aux.0)
+                    == NodeType::LeftNoad.as_raw()
+                {
                     crate::output::print_esc_cstr_in(st, c"left".as_ptr());
                 } else {
                     crate::output::print_esc_cstr_in(st, c"middle".as_ptr());
@@ -4458,7 +4472,6 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
 }
 // translated from xetex-xetex0.c:2764 (show_context)
 pub(crate) fn show_context_in(st: &mut EngineState) {
-
     const TOKEN_LIST: u16 = 0;
     const BACKED_UP: u16 = 3;
     const BACKED_UP_CHAR: u16 = 4;
@@ -4735,10 +4748,10 @@ const R_CODE_SNL: u16 = 8; // xetex-constants.h:143
 const ACC_KERN_SNL: u16 = 2; // xetex_format.h:429
 const SPACE_ADJUSTMENT_SNL: u16 = 3; // xetex_format.h:430
 const LIMITS_SNL: u16 = 1; // xetex_format.h:452
-// Noad types are matched via the `NodeType` enum (OrdNoad..RightNoad).
-// Whatsit subtypes.
-// Whatsit subtypes are matched via the `WhatsitSubtype` enum (node.rs).
-// print_subsidiary_data: mem[p].b32.s1 cases.
+                           // Noad types are matched via the `NodeType` enum (OrdNoad..RightNoad).
+                           // Whatsit subtypes.
+                           // Whatsit subtypes are matched via the `WhatsitSubtype` enum (node.rs).
+                           // print_subsidiary_data: mem[p].b32.s1 cases.
 const MATH_CHAR_SNL: i32 = 1; // xetex-constants.h:269
 const SUB_BOX_SNL: i32 = 2; // xetex-constants.h:283
 const SUB_MLIST_SNL: i32 = 3; // xetex-constants.h:287

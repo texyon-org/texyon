@@ -8,8 +8,8 @@ use crate::consts::{
     SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{sort_avail_in, TRE_MAX_STRINGS, TRE_POOL_SIZE};
-use crate::state::InteractionMode;
 use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
+use crate::state::InteractionMode;
 
 use crate::bridge::{
     ttstub_input_open, ttstub_input_read, ttstub_output_close, ttstub_output_flush,
@@ -788,7 +788,9 @@ pub(crate) unsafe fn store_fmt_file_in(
     }
 
     dump_int(fmt_out, FORMAT_FOOTER_MAGIC)?;
-    st.eqtb.data[(PC_INT_BASE + INT_PAR_TRACING_STATS) as usize].b32.s1 = 0;
+    st.eqtb.data[(PC_INT_BASE + INT_PAR_TRACING_STATS) as usize]
+        .b32
+        .s1 = 0;
     ttstub_output_close(fmt_out);
     Ok(())
 }

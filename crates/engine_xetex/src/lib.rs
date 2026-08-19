@@ -26,9 +26,9 @@ use tectonic_errors::prelude::*;
 // Internal modules holding the growing Rust translation of the XeTeX
 // engine.
 mod bridge;
+mod cancellation;
 mod checkpoint;
 mod compat;
-mod cancellation;
 mod consts;
 mod engine;
 mod engine_interface;
@@ -52,8 +52,8 @@ mod math;
 mod mem;
 mod mem_types;
 mod output;
-mod page_manifest;
 mod packaging;
+mod page_manifest;
 mod pagebuilder;
 mod pic;
 mod primitives;
@@ -74,13 +74,13 @@ mod synctex;
 mod texmfmp;
 mod utf8;
 
+pub use cancellation::EngineCancellation;
+pub use page_manifest::PageExecution;
 pub use replay::source::{
     SourceError, SourceIdentity, SourcePath, SourceRevision, SourceSnapshot, SourceUpdate,
 };
-pub use page_manifest::PageExecution;
-pub use sync_index::{SyncIndex, SyncRect};
-pub use cancellation::EngineCancellation;
 pub use session::{EngineFrame, EnginePreviewConfig, IncrementalXeTeXSession, PageRange};
+pub use sync_index::{SyncIndex, SyncRect};
 
 /// A serial number describing the detailed binary layout of the TeX "format
 /// files" used by this crate. This number will occasionally increment,

@@ -4,16 +4,14 @@ use crate::consts::{
 };
 use crate::io::u_close;
 
-
-extern "C" {
-}
+extern "C" {}
 
 // Input-state discriminant constants (xetex-constants.h:200–206, 261).
 const U_TEMPLATE: u16 = 1;
 const V_TEMPLATE: u16 = 2;
 const MACRO: u16 = 6;
 const MARK_TEXT: u16 = 15; // xetex-constants.h:214
-// Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
+                           // Token encoding (xetex-constants.h:348, xetex_format.h:201, xetex-constants.h:62).
 const FROZEN_RELAX: i32 = 2_243_226 + 7; // FROZEN_CONTROL_SEQUENCE + 7
                                          // Scanner-state constants (xetex-constants.h:221).
 const MID_LINE: u16 = 1;
@@ -311,7 +309,9 @@ pub(crate) fn pseudo_input_in(st: &mut crate::state::EngineState) -> Result<bool
     if st.input.last >= st.input.max_buf_stack {
         st.input.max_buf_stack = st.input.last + 1;
     }
-    while st.input.last > st.input.first && st.input.buffer[(st.input.last - 1) as usize] == ' ' as i32 {
+    while st.input.last > st.input.first
+        && st.input.buffer[(st.input.last - 1) as usize] == ' ' as i32
+    {
         st.input.last -= 1;
     }
     crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), sz);

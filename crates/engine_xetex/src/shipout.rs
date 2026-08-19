@@ -5,19 +5,19 @@ use crate::consts::{
     INVALID_HANDLE, KERN_NODE, LEFT_TO_RIGHT, LIGATURE_NODE, MATH_NODE, MAX_HALFWORD,
     MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NULL_FLAG, PENALTY_NODE,
     PIC_NODE_SIZE, RIGHT_TO_LEFT, RULE_NODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
-    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
-    TEX_NULL, TOO_BIG_CHAR, WRITE_TEXT,
+    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL,
+    TOO_BIG_CHAR, WRITE_TEXT,
 };
 use crate::ext::apply_tfm_font_mapping;
 
-use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode, WhatsitSubtype};
-use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
-use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
 use crate::bridge::{
     ttstub_output_close, ttstub_output_flush, ttstub_output_open, ttstub_output_write,
     ttstub_shell_escape,
 };
 use crate::engine::OUTPUT_FILE_EXTENSION;
+use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
+use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
 
 // xetex-shipout.c:11–12
 const DVI_BUF_SIZE: i32 = 16384;
@@ -782,7 +782,7 @@ fn is_ignorable_interword_node(mem: &MemState, p: impl crate::units::MemAddr) ->
             || mem.b16s1(p) == MARK_NODE
             || mem.b16s1(p) == ADJUST_NODE
             || (mem.b16s1(p) == WHATSIT_NODE
-            && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_io())))
+                && WhatsitSubtype::from_raw(mem.b16s0(p)).is_some_and(|s| s.is_io())))
 }
 
 fn skip_ignorable_interword_nodes(mem: &MemState, q: impl crate::units::MemAddr) -> MemPtr {
@@ -827,7 +827,8 @@ fn merge_justifiable_native_words(
                             if !q.is_null()
                                 && !crate::mem::is_char_node(mem, q)
                                 && mem.b16s1(q) == WHATSIT_NODE
-                                && WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word())
+                                && WhatsitSubtype::from_raw(mem.b16s0(q))
+                                    .is_some_and(|s| s.is_native_word())
                                 && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                             {
                                 p = q;
@@ -849,7 +850,8 @@ fn merge_justifiable_native_words(
                             if !q.is_null()
                                 && !crate::mem::is_char_node(mem, q)
                                 && mem.b16s1(q) == WHATSIT_NODE
-                                && WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word())
+                                && WhatsitSubtype::from_raw(mem.b16s0(q))
+                                    .is_some_and(|s| s.is_native_word())
                                 && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                             {
                                 p = q;
@@ -859,7 +861,8 @@ fn merge_justifiable_native_words(
                             }
                         }
                     } else if mem.b16s1(q) == WHATSIT_NODE
-                        && WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word())
+                        && WhatsitSubtype::from_raw(mem.b16s0(q))
+                            .is_some_and(|s| s.is_native_word())
                         && mem.b16s2(q + 4) == mem.b16s2(r + 4)
                     {
                         p = q;
@@ -880,7 +883,9 @@ fn merge_justifiable_native_words(
                 q = r;
                 loop {
                     if mem.b16s1(q) == WHATSIT_NODE {
-                        if WhatsitSubtype::from_raw(mem.b16s0(q)).is_some_and(|s| s.is_native_word()) {
+                        if WhatsitSubtype::from_raw(mem.b16s0(q))
+                            .is_some_and(|s| s.is_native_word())
+                        {
                             let text = mem.as_u16_ptr(q + 6);
                             for j in 0..(mem.b16s1(q + 4) as i32) {
                                 // SAFETY: native-word text spans `mem[q+6..]`, length b16s1(q+4).
@@ -1090,7 +1095,11 @@ unsafe fn output_hlist_glue_in(
         || (g_sign == GlueSign::Shrinking && st.mem.b16s0(g) == g_order)
     {
         if st.mem.b32s1(g) == TEX_NULL {
-            crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(g), GLUE_SPEC_SIZE);
+            crate::mem::free_node(
+                &mut st.mem,
+                crate::units::MemPtr::from_raw(g),
+                GLUE_SPEC_SIZE,
+            );
         } else {
             st.mem.set_b32s1(g, st.mem.b32s1(g) - 1);
         }
@@ -1421,8 +1430,7 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                                     )?;
                                                 }
                                             }
-                                        } else if whatsit.native_glyph_info_handle(&st.mem) != 0
-                                        {
+                                        } else if whatsit.native_glyph_info_handle(&st.mem) != 0 {
                                             emit_dvi_out(&mut st.shipout, SET_GLYPHS)?;
                                             let len = make_xdv_glyph_array_data_in(st, whatsit);
                                             for k in 0..len {
@@ -1501,12 +1509,20 @@ unsafe fn hlist_out_in(st: &mut crate::state::EngineState) -> Result<(), Shipout
                                     let save_h = st.shipout.cur_h;
                                     st.mem.temp_ptr.0 = math.link(&st.mem).0;
                                     st.shipout.rule_wd = math_width;
-                                    crate::mem::free_node(&mut st.mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
+                                    crate::mem::free_node(
+                                        &mut st.mem,
+                                        crate::units::MemPtr::from_raw(p),
+                                        MEDIUM_NODE_SIZE,
+                                    );
                                     st.scanner.cur_dir = 1 - st.scanner.cur_dir;
-                                    p = new_edge(&mut st.mem, st.scanner.cur_dir, st.shipout.rule_wd)
-                                        .ok_or(ShipoutAbort::MainMemoryOverflow)?
-                                        .ptr()
-                                        .0;
+                                    p = new_edge(
+                                        &mut st.mem,
+                                        st.scanner.cur_dir,
+                                        st.shipout.rule_wd,
+                                    )
+                                    .ok_or(ShipoutAbort::MainMemoryOverflow)?
+                                    .ptr()
+                                    .0;
                                     st.mem.set_b32s1(prev_p, p);
                                     st.shipout.cur_h =
                                         st.shipout.cur_h - left_edge + st.shipout.rule_wd;
@@ -2187,10 +2203,7 @@ unsafe fn make_xdv_glyph_array_data_in(
         st.fonts.xdv_buffer.resize(needed, 0);
     }
 
-    let glyphs = st
-        .mem
-        .glyph_blobs
-        .get(p.native_glyph_info_handle(&st.mem));
+    let glyphs = st.mem.glyph_blobs.get(p.native_glyph_info_handle(&st.mem));
 
     let xdv_ptr = st.fonts.xdv_buffer.as_mut_ptr();
     let mut cp = xdv_ptr;
@@ -2327,7 +2340,11 @@ pub fn reverse(
                             || (g_sign == GlueSign::Shrinking && mem.b16s0(g) == g_order)
                         {
                             if mem.b32s1(g) == TEX_NULL {
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(g), GLUE_SPEC_SIZE);
+                                crate::mem::free_node(
+                                    mem,
+                                    crate::units::MemPtr::from_raw(g),
+                                    GLUE_SPEC_SIZE,
+                                );
                             } else {
                                 mem.set_b32s1(g, mem.b32s1(g) - 1);
                             }
@@ -2347,7 +2364,10 @@ pub fn reverse(
                         }
                     }
                     LIGATURE_NODE => {
-                        crate::mem::flush_list(mem, crate::units::MemPtr::from_raw(mem.b32s1(p + 1)));
+                        crate::mem::flush_list(
+                            mem,
+                            crate::units::MemPtr::from_raw(mem.b32s1(p + 1)),
+                        );
                         mem.temp_ptr.0 = p;
                         p = get_avail_ship(mem)?.0;
                         mem.set_word(p, mem.word(mem.temp_ptr + 1));
@@ -2377,7 +2397,11 @@ pub fn reverse(
                                     if m > MIN_HALFWORD {
                                         m -= 1;
                                     } else {
-                                        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
+                                        crate::mem::free_node(
+                                            mem,
+                                            crate::units::MemPtr::from_raw(p),
+                                            MEDIUM_NODE_SIZE,
+                                        );
                                         mem.set_b32s1(t, q);
                                         mem.set_b32s1(t + 1, shipout.rule_wd);
                                         mem.set_b32s1(t + 2, -shipout.cur_h - shipout.rule_wd);
@@ -2593,7 +2617,10 @@ pub fn movement(mem: &mut MemState, shipout: &mut ShipoutState, w: i32, o: u8) -
 }
 
 // translated from xetex-shipout.c:1930 (special_out)
-fn special_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
+fn special_out_in(
+    st: &mut crate::state::EngineState,
+    p: impl crate::units::MemAddr,
+) -> Result<(), ShipoutAbort> {
     let p = p.addr();
     if st.shipout.cur_h != st.shipout.dvi_h {
         let d = st.shipout.cur_h - st.shipout.dvi_h;
@@ -2645,7 +2672,10 @@ fn special_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemA
 }
 
 // translated from xetex-shipout.c:1976 (write_out)
-fn write_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
+fn write_out_in(
+    st: &mut crate::state::EngineState,
+    p: impl crate::units::MemAddr,
+) -> Result<(), ShipoutAbort> {
     let p = p.addr();
     let q = get_avail_ship(&mut st.mem)?;
     q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
@@ -2757,7 +2787,10 @@ fn write_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAdd
 }
 
 // translated from xetex-shipout.c:2071 (pic_out)
-pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
+pub(crate) fn pic_out_in(
+    st: &mut crate::state::EngineState,
+    p: impl crate::units::MemAddr,
+) -> Result<(), ShipoutAbort> {
     let p = p.addr();
     if st.shipout.cur_h != st.shipout.dvi_h {
         let d = st.shipout.cur_h - st.shipout.dvi_h;
@@ -2829,7 +2862,10 @@ pub(crate) fn pic_out_in(st: &mut crate::state::EngineState, p: impl crate::unit
 }
 
 // translated from xetex-shipout.c:1682 (out_what)
-pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: impl crate::units::MemAddr) -> Result<(), ShipoutAbort> {
+pub(crate) fn out_what_in(
+    st: &mut crate::state::EngineState,
+    p: impl crate::units::MemAddr,
+) -> Result<(), ShipoutAbort> {
     let p = p.addr();
     let sub = WhatsitSubtype::from_raw(st.mem.b16s0(p));
     match sub {

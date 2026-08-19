@@ -529,8 +529,7 @@ pub unsafe fn m_log(st: &mut crate::state::EngineState, mut x: i32) -> i32 {
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 2;
         st.errors.help_line[1] = c"Since I don't take logs of non-positive numbers,".as_ptr();
-        st.errors.help_line[0] =
-            c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr();
+        st.errors.help_line[0] = c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr();
         // Dead branch: m_log's only caller (norm_rand) always passes x >= 1.
         let _ = crate::errors::error_in(st);
         return 0;

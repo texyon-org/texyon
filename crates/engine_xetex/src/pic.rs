@@ -16,9 +16,9 @@ pub struct PdfFile {
 
 // dpx layout types — must match C struct layout exactly (dpx-pdfdev.h)
 use crate::bridge::ttstub_input_open;
+use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
 use crate::ext::D2Fix;
 use crate::ext::Fix2D;
-use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
 use crate::main_control::{mc_propagate_error, MainControlAbort};
 use crate::state::EngineState;
 
@@ -199,10 +199,22 @@ fn dpx_box_option(pdf_box: PageboxType) -> c_int {
 }
 
 unsafe fn finish_pdf_bbox(bbox: &mut PdfRect, matrix: &PdfTMatrix, box_out: &mut RealRect) {
-    let mut p1 = PdfCoord { x: bbox.llx, y: bbox.lly };
-    let mut p2 = PdfCoord { x: bbox.urx, y: bbox.lly };
-    let mut p3 = PdfCoord { x: bbox.urx, y: bbox.ury };
-    let mut p4 = PdfCoord { x: bbox.llx, y: bbox.ury };
+    let mut p1 = PdfCoord {
+        x: bbox.llx,
+        y: bbox.lly,
+    };
+    let mut p2 = PdfCoord {
+        x: bbox.urx,
+        y: bbox.lly,
+    };
+    let mut p3 = PdfCoord {
+        x: bbox.urx,
+        y: bbox.ury,
+    };
+    let mut p4 = PdfCoord {
+        x: bbox.llx,
+        y: bbox.ury,
+    };
     pdf_dev_transform(&mut p1, matrix);
     pdf_dev_transform(&mut p2, matrix);
     pdf_dev_transform(&mut p3, matrix);
@@ -283,8 +295,20 @@ unsafe fn pdf_get_rect_resident(
     dpx_options: c_int,
     box_out: &mut RealRect,
 ) -> c_int {
-    let mut bbox = PdfRect { llx: 0.0, lly: 0.0, urx: 0.0, ury: 0.0 };
-    let mut matrix = PdfTMatrix { a: 0.0, b: 0.0, c: 0.0, d: 0.0, e: 0.0, f: 0.0 };
+    let mut bbox = PdfRect {
+        llx: 0.0,
+        lly: 0.0,
+        urx: 0.0,
+        ury: 0.0,
+    };
+    let mut matrix = PdfTMatrix {
+        a: 0.0,
+        b: 0.0,
+        c: 0.0,
+        d: 0.0,
+        e: 0.0,
+        f: 0.0,
+    };
     if tt_pic_probe_pdf_box(
         filename,
         handle,
@@ -686,7 +710,10 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
                 y_size_req = 0.0;
                 transform_concat(&mut t, &t2);
             }
-            make_rotation(&mut t2, Fix2D(st.scanner.cur_val) * std::f64::consts::PI / 180.0);
+            make_rotation(
+                &mut t2,
+                Fix2D(st.scanner.cur_val) * std::f64::consts::PI / 180.0,
+            );
             for c in corners.iter_mut() {
                 transform_point(c, &t2);
             }
@@ -774,14 +801,16 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
 
         let tail = st.input.cur_list.tail.0;
         if is_pdf {
-            st.mem.set_b16s0(tail, crate::node::WhatsitSubtype::Pdf as u16);
+            st.mem
+                .set_b16s0(tail, crate::node::WhatsitSubtype::Pdf as u16);
         }
         // PIC_NODE_path_len: mem[p+4].b16.s1
         st.mem.set_b16s1(tail + 4, path_len as u16);
         // page: mem[p+4].b16.s0
         st.mem.set_b16s0(tail + 4, page as u16);
         // pdf_box_type: mem[p+8].b16.s1
-        st.mem.set_b16s1(tail + 8, pdf_box_type.map_or(0, |pb| pb as u16));
+        st.mem
+            .set_b16s1(tail + 8, pdf_box_type.map_or(0, |pb| pb as u16));
         // width: mem[p+1].b32.s1
         st.mem.set_b32s1(tail + 1, D2Fix(xmax - xmin));
         // height: mem[p+3].b32.s1

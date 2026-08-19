@@ -6,7 +6,6 @@ use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VList
 use crate::units::{MemIdx, MemPtr};
 use libc::c_char;
 
-
 // INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
 const INT_PAR_SYNCTEX: i32 = 81;
 

@@ -41,7 +41,6 @@ impl MemIdx {
     pub fn offset(self, delta: i32) -> MemIdx {
         MemIdx(self.0 + delta)
     }
-
 }
 
 /// A nullable TeX halfword: either a real arena index or `TEX_NULL`.

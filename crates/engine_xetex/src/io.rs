@@ -586,10 +586,7 @@ pub(crate) unsafe fn input_line_in(
                     }
                 }
 
-                if i == EOF
-                    && *crate::compat::errno_location() != libc::EINTR
-                    && tmp_len == 0
-                {
+                if i == EOF && *crate::compat::errno_location() != libc::EINTR && tmp_len == 0 {
                     return Ok(0);
                 }
                 if i != EOF && i != b'\n' as i32 && i != b'\r' as i32 {

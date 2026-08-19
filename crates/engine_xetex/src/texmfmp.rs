@@ -4,8 +4,8 @@ use crate::bridge::{
     ttstub_get_file_md5, ttstub_input_get_mtime, ttstub_input_get_size, ttstub_input_open,
     ttstub_input_read,
 };
-use crate::mem::{xmalloc};
 use crate::consts::INVALID_HANDLE;
+use crate::mem::xmalloc;
 
 // TTBC_FILE_FORMAT_TEX = 26 (tectonic_bridge_core_generated.h:94).
 const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;

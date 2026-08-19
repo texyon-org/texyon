@@ -110,7 +110,10 @@ const INT_PAR_HBADNESS_HP: i32 = 26;
 const DIMEN_PAR_HFUZZ_HP: i32 = 8;
 const DIMEN_PAR_OVERFULL_RULE_HP: i32 = 16;
 
-fn classify_native_word_hp(mem: &MemState, p: impl crate::units::MemAddr) -> Option<NodePtr<WhatsitNode>> {
+fn classify_native_word_hp(
+    mem: &MemState,
+    p: impl crate::units::MemAddr,
+) -> Option<NodePtr<WhatsitNode>> {
     let p = p.addr();
     if p == crate::mem::TEX_NULL || p >= mem.hi_mem_min {
         return None;
@@ -226,7 +229,11 @@ pub fn just_copy(
         // Determine r and words for this node. None = skip linking (goto not_found).
         let r_opt: Option<i32> = if p >= mem.hi_mem_min {
             // char node
-            Some(crate::mem::get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?.0)
+            Some(
+                crate::mem::get_avail(mem)
+                    .ok_or(NodeRecycleAbort::OverflowRunaway)?
+                    .0,
+            )
         } else {
             match mem.classify(MemIdx::new(p)).ok() {
                 Some(AnyNode::HList(_)) | Some(AnyNode::VList(_)) => {
@@ -323,7 +330,9 @@ pub fn just_copy(
                                 PIC_NODE_SIZE + (path_len + MEM_WORD_BYTES - 1) / MEM_WORD_BYTES;
                             Some(cnl_get_node!(mem, words))
                         }
-                        Some(WhatsitSubtype::PdfSavePos) => Some(cnl_get_node!(mem, SMALL_NODE_SIZE)),
+                        Some(WhatsitSubtype::PdfSavePos) => {
+                            Some(cnl_get_node!(mem, SMALL_NODE_SIZE))
+                        }
                         _ => {
                             return Err(NodeRecycleAbort::Confusion(c"ext2"));
                         }
@@ -359,7 +368,7 @@ pub fn just_reverse(
     scanner: &mut crate::state::ScannerState,
     p: i32,
 ) -> Result<(), NodeRecycleAbort> {
-        use crate::mem::TEX_NULL;
+    use crate::mem::TEX_NULL;
 
     const TEMP_HEAD: i32 = 4_999_996; // MEM_TOP - 3
     const L_CODE: i32 = 4; // xetex-constants.h:142
@@ -430,15 +439,19 @@ pub fn just_reverse(
                                 // found edge end: set t's link and free p
                                 mem.set_b32s1(t + 1, mem.b32s1(p + 1));
                                 mem.set_b32s1(t, q);
-                                crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), MEDIUM_NODE_SIZE);
+                                crate::mem::free_node(
+                                    mem,
+                                    crate::units::MemPtr::from_raw(p),
+                                    MEDIUM_NODE_SIZE,
+                                );
                                 break 'done;
                             }
                         }
                     } else {
                         // even subtype = begin math node
                         // push lr_ptr
-                        let tp = crate::mem::get_avail(mem)
-                            .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                        let tp =
+                            crate::mem::get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
                         mem.temp_ptr = tp;
                         tp.set_info(mem, L_CODE * (subtype / L_CODE) + 3);
                         tp.set_link(mem, scanner.lr_ptr);
@@ -526,7 +539,8 @@ pub fn flush_node_list(
                             Some(WhatsitSubtype::Close) | Some(WhatsitSubtype::Language) => {
                                 crate::mem::free_node(mem, p, SMALL_NODE_SIZE);
                             }
-                            Some(WhatsitSubtype::NativeWord) | Some(WhatsitSubtype::NativeWordAt) => {
+                            Some(WhatsitSubtype::NativeWord)
+                            | Some(WhatsitSubtype::NativeWordAt) => {
                                 let glyph_handle = w.native_glyph_info_handle(mem);
                                 if glyph_handle != 0 {
                                     mem.glyph_blobs.release(glyph_handle);
@@ -557,7 +571,11 @@ pub fn flush_node_list(
                     AnyNode::Glue(glue) => {
                         let spec = glue.glue_spec(mem).expect("glue node has a glue_spec");
                         if spec.ref_count(mem) == crate::mem::TEX_NULL {
-                            crate::mem::free_node(mem, crate::units::MemPtr::from_idx(spec.idx()), GLUE_SPEC_SIZE);
+                            crate::mem::free_node(
+                                mem,
+                                crate::units::MemPtr::from_idx(spec.idx()),
+                                GLUE_SPEC_SIZE,
+                            );
                         } else {
                             spec.set_ref_count(mem, spec.ref_count(mem) - 1);
                         }
@@ -871,7 +889,8 @@ pub fn copy_node_list(
     Ok(result)
 }
 // translated from xetex-xetex0.c:8020 (append_to_vlist)
-pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord, 
+pub fn append_to_vlist(
+    cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut crate::state::MemState,
     eqtb: &crate::state::EqtbState,
     b: AnyBox,
@@ -903,10 +922,8 @@ pub fn append_to_vlist(cl: &mut crate::mem_types::ListStateRecord,
         } else {
             let p = crate::mem::alloc_skip_param(mem, eqtb, GLUE_PAR_BASELINE_SKIP as i16)
                 .ok_or(NodeRecycleAbort::Overflow)?;
-            let bsl_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(
-                mem.temp_ptr.0,
-            ))
-            .expect("alloc_skip_param sets temp_ptr to a glue spec");
+            let bsl_spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(mem.temp_ptr.0))
+                .expect("alloc_skip_param sets temp_ptr to a glue spec");
             bsl_spec.set_width(mem, Scaled(d));
             p.ptr().0
         };
@@ -1364,7 +1381,8 @@ fn find_box_register(
     if scanner.cur_val < 256 {
         Ok(eqtb.b32s1(BOX_BASE + scanner.cur_val))
     } else {
-        crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false).ok_or(NodeRecycleAbort::Overflow)?;
+        crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         if scanner.cur_ptr.0 == TEX_NULL {
             Ok(TEX_NULL)
         } else {
@@ -1443,7 +1461,8 @@ fn collect_split_mark(
     let mark_class = mark.mark_class(mem);
     let mark_ptr = mark.mark_ptr(mem);
     if mark_class != 0 {
-        crate::save::find_sa_element(mem, scanner, MARK_VAL_VS as u16, mark_class, true).ok_or(NodeRecycleAbort::Overflow)?;
+        crate::save::find_sa_element(mem, scanner, MARK_VAL_VS as u16, mark_class, true)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         if mem.b32s1(scanner.cur_ptr + 2) == TEX_NULL {
             mem.set_b32s1(scanner.cur_ptr + 2, mark_ptr.0);
             mem.set_b32s0(mark_ptr, mem.b32s0(mark_ptr) + 1);
@@ -1507,7 +1526,8 @@ fn store_split_remainder(
     if scanner.cur_val < 256 {
         eqtb.set_b32s1(BOX_BASE + scanner.cur_val, q);
     } else {
-        crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false).ok_or(NodeRecycleAbort::Overflow)?;
+        crate::save::find_sa_element(mem, scanner, 4, scanner.cur_val, false)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         if scanner.cur_ptr.0 != TEX_NULL {
             mem.set_b32s1(scanner.cur_ptr + 1, q);
             mem.set_b32s0(scanner.cur_ptr + 1, mem.b32s0(scanner.cur_ptr + 1) + 1);
@@ -1530,7 +1550,11 @@ fn finish_vsplit_after_break(
     let save_discards = eqtb.b32s1(INT_BASE + INT_PAR_SAVING_VDISCARDS_VS) > 0;
     let mut q = prune_page_top(mem, scanner, eqtb, q, save_discards)?;
 
-    crate::mem::free_node(mem, crate::units::MemPtr::from_idx(state.v.idx()), BOX_NODE_SIZE);
+    crate::mem::free_node(
+        mem,
+        crate::units::MemPtr::from_idx(state.v.idx()),
+        BOX_NODE_SIZE,
+    );
     if !q.is_null() {
         let packed = vpackage_in(
             mem,
@@ -2066,7 +2090,11 @@ fn hpack_in(
                     }
                     let removed = p;
                     p = adjust.link(mem).0;
-                    crate::mem::free_node(mem, crate::units::MemPtr::from_raw(removed), SMALL_NODE_SIZE);
+                    crate::mem::free_node(
+                        mem,
+                        crate::units::MemPtr::from_raw(removed),
+                        SMALL_NODE_SIZE,
+                    );
                     mem.set_b32s1(q, p);
                     p = q;
                 }
@@ -2280,7 +2308,10 @@ fn hpack_in(
                         }
                     } else {
                         let t = get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
-                        t.set_info(mem, (L_CODE_HP as i32) * (sub as i32 / L_CODE_HP as i32) + 3);
+                        t.set_info(
+                            mem,
+                            (L_CODE_HP as i32) * (sub as i32 / L_CODE_HP as i32) + 3,
+                        );
                         t.set_link(mem, scanner.lr_ptr);
                         scanner.lr_ptr = t;
                     }

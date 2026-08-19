@@ -665,10 +665,7 @@ impl<T: XdvEvents> XdvParser<T> {
         if self.cur_char_run.is_empty() {
             return Ok(());
         }
-        let state = self
-            .stack
-            .last()
-            .ok_or(XdvError::Malformed(self.offset))?;
+        let state = self.stack.last().ok_or(XdvError::Malformed(self.offset))?;
         let advance = self.events.handle_char_run_ext(
             self.cur_font_num,
             &self.cur_char_run,

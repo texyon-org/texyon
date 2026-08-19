@@ -1,6 +1,5 @@
 //! Rust-owned engine state.
 
-
 #[derive(Default)]
 pub(crate) struct EngineState {
     pub config: ConfigState,
@@ -55,7 +54,6 @@ pub(crate) struct MainLoopState {
     pub cancel_boundary: bool,
     pub ins_disc: bool,
 }
-
 
 /// SyncTeX boolean flag block (formerly the `synctex_flags_t` bitfield struct).
 #[derive(Default, Clone)]
@@ -669,7 +667,11 @@ impl MemState {
 
     /// Write a full `MemoryWord` to `mem[p]`.
     #[inline]
-    pub(crate) fn set_word(&mut self, p: impl crate::units::MemAddr, w: crate::mem_types::MemoryWord) {
+    pub(crate) fn set_word(
+        &mut self,
+        p: impl crate::units::MemAddr,
+        w: crate::mem_types::MemoryWord,
+    ) {
         let index = p.addr() as usize;
         self.note(index);
         self.data[index] = w;
@@ -677,11 +679,7 @@ impl MemState {
 
     /// Record a raw pointer writer's destination range before it mutates the
     /// arena outside the typed setter surface.
-    pub(crate) fn journal_mark_range(
-        &mut self,
-        p: impl crate::units::MemAddr,
-        words: usize,
-    ) {
+    pub(crate) fn journal_mark_range(&mut self, p: impl crate::units::MemAddr, words: usize) {
         if !self.journal.armed() {
             return;
         }
@@ -693,9 +691,8 @@ impl MemState {
 }
 
 pub(crate) fn native_text_words(units: i32) -> usize {
-    (units.max(0) as usize * std::mem::size_of::<u16>()).div_ceil(
-        std::mem::size_of::<crate::mem_types::MemoryWord>(),
-    )
+    (units.max(0) as usize * std::mem::size_of::<u16>())
+        .div_ceil(std::mem::size_of::<crate::mem_types::MemoryWord>())
 }
 
 /// The kind of grouping level on the save stack (`cur_group`,

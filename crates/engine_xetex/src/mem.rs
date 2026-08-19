@@ -1,16 +1,13 @@
 //! Memory arena types and allocator functions translated from
 //! `xetex/xetex-xetex0.c`.
-use crate::consts::{
-    GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP,
-};
 pub(crate) use crate::consts::TEX_NULL;
+use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP};
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
     MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
-
 
 // TeX constants (xetex-constants.h / xetex_format.h)
 const NORMAL: u16 = 0;
@@ -19,7 +16,6 @@ const NORMAL: u16 = 0;
 
 // empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
 const EMPTY: i32 = 0; // xetex-constants.h:230
-
 
 // C functions not yet translated — still live in xetex-xetex0.c.
 /// Non-longjmp replacements for bridge_core's `xmalloc`/`xcalloc`/`xrealloc`,
@@ -40,8 +36,14 @@ pub(crate) unsafe fn xmalloc(size: libc::size_t) -> *mut libc::c_void {
 }
 
 pub(crate) unsafe fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut libc::c_void {
-    let p = libc::calloc(if nelem == 0 { 1 } else { nelem }, if elsize == 0 { 1 } else { elsize });
-    assert!(!p.is_null(), "out of memory: calloc({nelem}, {elsize}) failed");
+    let p = libc::calloc(
+        if nelem == 0 { 1 } else { nelem },
+        if elsize == 0 { 1 } else { elsize },
+    );
+    assert!(
+        !p.is_null(),
+        "out of memory: calloc({nelem}, {elsize}) failed"
+    );
     p
 }
 
@@ -294,7 +296,6 @@ pub fn alloc_rule(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
     Some(p)
 }
 
-
 // ---------------------------------------------------------------------------
 // new_ligature
 // ---------------------------------------------------------------------------
@@ -529,7 +530,11 @@ pub fn free_node(mem: &mut MemState, p: MemPtr, s: i32) {
 /// `NATIVE_NODE_glyph_count(p)`    = `mem[p+4].b16.s0`
 ///
 /// translated from xetex-xetex0.c:146 (copy_native_glyph_info)
-pub fn copy_native_glyph_info(mem: &mut MemState, src: impl crate::units::MemAddr, dest: impl crate::units::MemAddr) {
+pub fn copy_native_glyph_info(
+    mem: &mut MemState,
+    src: impl crate::units::MemAddr,
+    dest: impl crate::units::MemAddr,
+) {
     let src = src.addr();
     let dest = dest.addr();
     let src_handle = mem.b32s0(src + 5);
@@ -565,7 +570,11 @@ pub fn delete_glue_ref(mem: &mut MemState, p: impl crate::units::MemAddr) {
     let p = p.addr();
     if let Some(spec) = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(p)) {
         if spec.ref_count(mem) == TEX_NULL {
-            free_node(mem, crate::units::MemPtr::from_idx(spec.idx()), GLUE_SPEC_SIZE);
+            free_node(
+                mem,
+                crate::units::MemPtr::from_idx(spec.idx()),
+                GLUE_SPEC_SIZE,
+            );
         } else {
             spec.set_ref_count(mem, spec.ref_count(mem) - 1);
         }
@@ -630,7 +639,11 @@ pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterSta
 // prev_rightmost
 // ---------------------------------------------------------------------------
 
-pub fn prev_rightmost(mem: &MemState, s: impl crate::units::MemAddr, e: impl crate::units::MemAddr) -> MemPtr {
+pub fn prev_rightmost(
+    mem: &MemState,
+    s: impl crate::units::MemAddr,
+    e: impl crate::units::MemAddr,
+) -> MemPtr {
     let e = e.addr();
     let mut p = MemPtr::from_raw(s.addr());
     if p.is_null() {

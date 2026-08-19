@@ -147,9 +147,7 @@ impl NativeCharAbort {
     /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            NativeCharAbort::PoolOverflow => {
-                crate::errors::EngineAbort::PoolOverflow
-            }
+            NativeCharAbort::PoolOverflow => crate::errors::EngineAbort::PoolOverflow,
             NativeCharAbort::Recycle(e) => e.into_engine_abort(),
             NativeCharAbort::Error(outcome) => outcome.into_engine_abort(),
             NativeCharAbort::NativeFont(e) => e.into_engine_abort(),
@@ -1014,9 +1012,7 @@ impl LoadNativeFontAbort {
     /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            LoadNativeFontAbort::PoolOverflow => {
-                crate::errors::EngineAbort::PoolOverflow
-            }
+            LoadNativeFontAbort::PoolOverflow => crate::errors::EngineAbort::PoolOverflow,
             LoadNativeFontAbort::StringOverflow(e) => e.into_engine_abort(),
             LoadNativeFontAbort::NativeChar(e) => e.into_engine_abort(),
             LoadNativeFontAbort::Error(outcome) => outcome.into_engine_abort(),
@@ -1090,14 +1086,13 @@ pub(crate) unsafe fn load_native_font_in(
         f += 1;
     }
 
-    let num_font_dimens =
-        if st.fonts.native_font_type_flag == OTGR_FONT_FLAG
-            && isOpenTypeMathFont(font_engine.raw)
-        {
-            65
-        } else {
-            8
-        };
+    let num_font_dimens = if st.fonts.native_font_type_flag == OTGR_FONT_FLAG
+        && isOpenTypeMathFont(font_engine.raw)
+    {
+        65
+    } else {
+        8
+    };
 
     if st.fonts.font_ptr == st.fonts.font_max
         || st.fonts.fmem_ptr + num_font_dimens > st.fonts.font_mem_size

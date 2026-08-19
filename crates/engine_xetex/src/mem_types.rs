@@ -137,14 +137,22 @@ const _: () = assert!(size_of::<ListStateRecord>() == 32);
 impl ListStateRecord {
     /// Read `aux.b32.s0`. Reading a union field is `unsafe`; localized here.
     #[inline]
-    pub fn aux_s0(&self) -> i32 { unsafe { self.aux.b32.s0 } }
+    pub fn aux_s0(&self) -> i32 {
+        unsafe { self.aux.b32.s0 }
+    }
     /// Read `aux.b32.s1`.
     #[inline]
-    pub fn aux_s1(&self) -> i32 { unsafe { self.aux.b32.s1 } }
+    pub fn aux_s1(&self) -> i32 {
+        unsafe { self.aux.b32.s1 }
+    }
     /// Write `aux.b32.s0` (writing a Copy union field is safe).
     #[inline]
-    pub fn set_aux_s0(&mut self, v: i32) { self.aux.b32.s0 = v; }
+    pub fn set_aux_s0(&mut self, v: i32) {
+        self.aux.b32.s0 = v;
+    }
     /// Write `aux.b32.s1`.
     #[inline]
-    pub fn set_aux_s1(&mut self, v: i32) { self.aux.b32.s1 = v; }
+    pub fn set_aux_s1(&mut self, v: i32) {
+        self.aux.b32.s1 = v;
+    }
 }
