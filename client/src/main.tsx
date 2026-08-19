@@ -1,7 +1,10 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { App } from "./App";
+import { queryClient } from "./queryClient";
+import { router } from "./router";
 import "./styles.css";
 
 const host = document.getElementById("root");
@@ -9,6 +12,8 @@ if (host === null) throw new Error("no #root to mount into");
 
 createRoot(host).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   </StrictMode>,
 );

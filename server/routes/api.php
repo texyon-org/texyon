@@ -2,21 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\BlobController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectFileController;
 use Illuminate\Support\Facades\Route;
 
-/*
-| The editor's API.
-|
-| Everything is behind a session: the client is a single-page app on this same
-| origin, so Sanctum's cookie guard applies rather than a bearer token.
-|
-| File paths are matched with `.*` because they contain slashes — `chapters/one.tex`
-| is one path parameter, not two — and are confined by ProjectPath before they
-| reach anything that stores them.
-*/
-
+// The editor's API, behind Sanctum's cookie guard. Exported to openapi.json,
+// which the client's bindings are generated from. CI fails on drift.
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/projects', [ProjectController::class, 'index']);
     Route::post('/projects', [ProjectController::class, 'store']);
@@ -24,10 +16,13 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
 
     Route::get('/projects/{project}/files', [ProjectFileController::class, 'index']);
-    Route::get('/projects/{project}/files/{path}', [ProjectFileController::class, 'show'])
-        ->where('path', '.*');
-    Route::put('/projects/{project}/files/{path}', [ProjectFileController::class, 'put'])
-        ->where('path', '.*');
-    Route::delete('/projects/{project}/files/{path}', [ProjectFileController::class, 'destroy'])
-        ->where('path', '.*');
+    Route::get('/projects/{project}/file', [ProjectFileController::class, 'show']);
+    Route::put('/projects/{project}/file', [ProjectFileController::class, 'put']);
+    Route::delete('/projects/{project}/file', [ProjectFileController::class, 'destroy']);
 });
+
+// Not behind the session. The signature is the authorization, like an object
+// store's temporary URL.
+Route::get('/blobs/{digest}', [BlobController::class, 'read'])
+    ->middleware('signed:relative')
+    ->name('blobs.read');

@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { deleteFile, writeFile } from "../api/client";
+import { projectFileDestroy, projectFilePut } from "../api/generated";
 import type { Workspace } from "../workspace/Workspace";
 import { ProjectSync } from "./sync";
 import type { SyncStatus } from "./sync";
@@ -27,8 +27,8 @@ export function useSync(
     const sync = new ProjectSync(
       workspace,
       {
-        writeFile: (path, text) => writeFile(projectId, path, text),
-        deleteFile: (path) => deleteFile(projectId, path),
+        writeFile: (path, text) => projectFilePut(projectId, { text }, { path }),
+        deleteFile: (path) => projectFileDestroy(projectId, { path }),
       },
       setStatus,
     );

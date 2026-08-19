@@ -6,8 +6,9 @@
  * file too — there is no moment where holding back a file would have paid.
  */
 
-import { listFiles, readFile } from "../api/client";
-import type { Project } from "../api/client";
+import { readFile } from "../api/files";
+import { projectFileIndex } from "../api/generated";
+import type { Project } from "../api/types";
 import { Workspace } from "../workspace/Workspace";
 
 /** What a project starts as, when it starts empty. */
@@ -21,7 +22,7 @@ Hello.
 `;
 
 export async function openProject(project: Project): Promise<Workspace> {
-  const infos = await listFiles(project.id);
+  const { files: infos } = await projectFileIndex(project.id);
   const texts = await Promise.all(infos.map((info) => readFile(project.id, info.path)));
 
   const workspace = new Workspace(

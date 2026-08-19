@@ -8,17 +8,19 @@ use App\Domain\Project\Project;
 use App\Domain\Project\Projects;
 use App\Http\Authenticated;
 use App\Http\Requests\StoreProjectRequest;
+use Dedoc\Scramble\Attributes\Response as ResponseShape;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /** The projects a signed-in person owns. */
 final readonly class ProjectController
 {
-    public function __construct(private Projects $projects)
-    {
-    }
+    public function __construct(private Projects $projects) {}
 
+    // Must match present(). Scramble cannot see through array_map.
+    #[ResponseShape(200, type: 'array{projects: list<array{id: int, name: string, primary: string, createdAt: string, updatedAt: string}>}')]
     public function index(Request $request): JsonResponse
     {
         $projects = $this->projects->ownedBy(Authenticated::id($request));
@@ -44,11 +46,11 @@ final readonly class ProjectController
         return new JsonResponse(['project' => self::present($this->owned($request, $project))]);
     }
 
-    public function destroy(Request $request, int $project): JsonResponse
+    public function destroy(Request $request, int $project): Response
     {
         $this->projects->delete($this->owned($request, $project));
 
-        return new JsonResponse(status: 204);
+        return response()->noContent();
     }
 
     /**
@@ -67,7 +69,7 @@ final readonly class ProjectController
         return $project;
     }
 
-    /** @return array<string, string|int> */
+    /** @return array{id: int, name: string, primary: string, createdAt: string, updatedAt: string} */
     private static function present(Project $project): array
     {
         return [

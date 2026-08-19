@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "dedoc/scramble": "^0.13.41",
         "laravel/fortify": "^1.37",
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.3",
@@ -77,6 +78,7 @@
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
         ],
         "analyse": "phpstan analyse --memory-limit=1G",
+        "openapi": "@php artisan scramble:export",
         "check": [
             "@analyse",
             "@php artisan test"

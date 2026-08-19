@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { login, register } from "../api/client";
+import { login, register } from "../api/auth";
 
 export interface SignInProps {
   /** Something worth saying before the form — "the server could not be reached". */

@@ -55,7 +55,7 @@ final class ProjectApiTest extends TestCase
         $this->actingAs($stranger)->getJson("/api/projects/{$id}")->assertNotFound();
         $this->actingAs($stranger)->deleteJson("/api/projects/{$id}")->assertNotFound();
         $this->actingAs($stranger)
-            ->putJson("/api/projects/{$id}/files/main.tex", ['text' => 'mine now'])
+            ->putJson("/api/projects/{$id}/file?path=main.tex", ['text' => 'mine now'])
             ->assertNotFound();
     }
 
@@ -72,25 +72,49 @@ final class ProjectApiTest extends TestCase
         $body = '\documentclass{article}\begin{document}Hi\end{document}';
 
         $written = $this->actingAs($user)
-            ->putJson("/api/projects/{$id}/files/chapters/one.tex", ['text' => $body])
+            ->putJson("/api/projects/{$id}/file?path=chapters/one.tex", ['text' => $body])
             ->assertOk()
             ->json('file');
 
         self::assertIsArray($written);
-        // A path with a slash in it is one path, not two route segments.
         self::assertSame('chapters/one.tex', $written['path']);
         self::assertSame(Digest::of($body)->value, $written['digest']);
         self::assertSame(strlen($body), $written['size']);
 
-        $this->actingAs($user)
-            ->get("/api/projects/{$id}/files/chapters/one.tex")
-            ->assertOk()
-            ->assertSee($body);
+        self::assertSame($body, $this->readBack($user, $id, 'chapters/one.tex'));
 
         $this->actingAs($user)
             ->getJson("/api/projects/{$id}/files")
             ->assertOk()
             ->assertJsonPath('files.0.path', 'chapters/one.tex');
+    }
+
+    public function test_a_blob_url_without_its_signature_is_refused(): void
+    {
+        $user = User::factory()->create();
+        $id = $this->createProject($user);
+
+        $this->actingAs($user)
+            ->putJson("/api/projects/{$id}/file?path=main.tex", ['text' => 'secret'])
+            ->assertOk();
+
+        $url = $this->actingAs($user)
+            ->getJson("/api/projects/{$id}/file?path=main.tex")
+            ->assertOk()
+            ->json('url');
+        self::assertIsString($url);
+
+        $bare = strtok($url, '?');
+        self::assertIsString($bare);
+        $this->get($bare)->assertForbidden();
+    }
+
+    public function test_a_file_request_without_a_path_is_refused(): void
+    {
+        $user = User::factory()->create();
+        $id = $this->createProject($user);
+
+        $this->actingAs($user)->getJson("/api/projects/{$id}/file")->assertBadRequest();
     }
 
     public function test_writing_a_path_twice_replaces_it_rather_than_adding_one(): void
@@ -100,7 +124,7 @@ final class ProjectApiTest extends TestCase
 
         foreach (['first', 'second'] as $body) {
             $this->actingAs($user)
-                ->putJson("/api/projects/{$id}/files/main.tex", ['text' => $body])
+                ->putJson("/api/projects/{$id}/file?path=main.tex", ['text' => $body])
                 ->assertOk();
         }
 
@@ -108,9 +132,7 @@ final class ProjectApiTest extends TestCase
         self::assertIsArray($files);
         self::assertCount(1, $files);
 
-        $this->actingAs($user)
-            ->get("/api/projects/{$id}/files/main.tex")
-            ->assertSee('second');
+        self::assertSame('second', $this->readBack($user, $id, 'main.tex'));
     }
 
     public function test_identical_content_in_two_places_is_stored_once(): void
@@ -121,7 +143,7 @@ final class ProjectApiTest extends TestCase
         $shared = 'the same figure caption';
         foreach (['a.tex', 'b.tex'] as $path) {
             $this->actingAs($user)
-                ->putJson("/api/projects/{$id}/files/{$path}", ['text' => $shared])
+                ->putJson("/api/projects/{$id}/file?path={$path}", ['text' => $shared])
                 ->assertOk()
                 // Content addressing is what makes this true, and the API
                 // reports the address rather than hiding it.
@@ -158,7 +180,22 @@ final class ProjectApiTest extends TestCase
         $id = $this->createProject($user);
 
         $this->actingAs($user)
-            ->putJson("/api/projects/{$id}/files/../escaped.tex", ['text' => 'no'])
+            ->putJson("/api/projects/{$id}/file?path=../escaped.tex", ['text' => 'no'])
             ->assertBadRequest();
+    }
+
+    /** Ask where the bytes are, then fetch them from there. */
+    private function readBack(User $user, int $projectId, string $path): string
+    {
+        $url = $this->actingAs($user)
+            ->getJson("/api/projects/{$projectId}/file?path={$path}")
+            ->assertOk()
+            ->json('url');
+
+        self::assertIsString($url);
+
+        $content = $this->get($url)->assertOk()->getContent();
+
+        return $content === false ? '' : $content;
     }
 }

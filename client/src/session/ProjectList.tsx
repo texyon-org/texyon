@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { Project } from "../api/client";
+import type { Project } from "../api/types";
 
 export interface ProjectListProps {
   projects: Project[];
