@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { CwlPackage } from "./cwl.ts";
+import type { CwlClassification, CwlPackage } from "./cwl.ts";
 import { availableCommand, mergeCommands, mergeEnvironments, packagesUsed, resolvePackages } from "./commands.ts";
 import type { EngineCommand } from "./commands.ts";
 
@@ -172,7 +172,7 @@ test("a package the corpus does not describe is skipped, not fatal", async () =>
   assert.deepEqual(resolved.map((p) => p.name), ["amsmath"]);
 });
 
-const BARE = {
+const BARE: CwlClassification = {
   unusual: false,
   hidden: false,
   mathOnly: false,
@@ -180,7 +180,7 @@ const BARE = {
   tabularOnly: false,
   role: null,
   environments: [],
-} as const;
+};
 
 test("environments come from the packages the document loads", () => {
   // Nothing offered these before: \begin{ knew only what the project declared
