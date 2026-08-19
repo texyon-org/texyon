@@ -115,6 +115,38 @@ function wasiImports() {
     },
     sched_yield: ok,
     poll_oneoff: () => 52,
+    // Present so instantiation cannot fail on a call we did not predict —
+    // which imports std emits varies with the Rust toolchain. Mirrors
+    // js/src/wasi.ts.
+    args_get: ok,
+    args_sizes_get(count, size) {
+      const v = view();
+      v.setUint32(count, 0, true);
+      v.setUint32(size, 0, true);
+      return 0;
+    },
+    fd_datasync: badf,
+    fd_sync: badf,
+    fd_tell: badf,
+    path_create_directory: notcapable,
+    path_rename: notcapable,
+    fd_readdir: badf,
+    fd_pread: badf,
+    fd_pwrite: badf,
+    fd_advise: ok,
+    fd_allocate: badf,
+    fd_renumber: badf,
+    path_link: notcapable,
+    path_readlink: notcapable,
+    path_symlink: notcapable,
+    path_filestat_set_times: notcapable,
+    fd_filestat_set_size: badf,
+    fd_filestat_set_times: badf,
+    clock_res_get: (_id, out) => (view().setBigUint64(out, 1_000_000n, true), 0),
+    sock_accept: badf,
+    sock_recv: badf,
+    sock_send: badf,
+    sock_shutdown: badf,
   };
 }
 
