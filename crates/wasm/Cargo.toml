@@ -40,3 +40,15 @@ tectonic_preview_render = { path = "../preview_render", version = "0.0.0-dev.0",
 ] }
 tectonic_status_base = { path = "../status_base", version = "0.0.0-dev.0" }
 tectonic_xdv = { path = "../xdv", version = "0.0.0-dev.0" }
+
+[package.metadata.internal_dep_versions]
+tectonic_bridge_core = "thiscommit:2026-08-19:wasm-engine"
+tectonic_engine_xdvipdfmx = "thiscommit:2026-08-19:wasm-engine"
+tectonic_engine_xetex = "thiscommit:2026-08-19:wasm-engine"
+tectonic_errors = "thiscommit:2026-08-19:wasm-engine"
+tectonic_io_base = "thiscommit:2026-08-19:wasm-engine"
+tectonic_live_preview = "thiscommit:2026-08-19:wasm-engine"
+tectonic_preview_protocol = "thiscommit:2026-08-19:wasm-engine"
+tectonic_preview_render = "thiscommit:2026-08-19:wasm-engine"
+tectonic_status_base = "thiscommit:2026-08-19:wasm-engine"
+tectonic_xdv = "thiscommit:2026-08-19:wasm-engine"
