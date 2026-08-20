@@ -11,6 +11,7 @@ use App\Domain\Project\ProjectPath;
 use App\Domain\Project\Projects;
 use App\Http\Authenticated;
 use App\Http\Requests\PutFileRequest;
+use Dedoc\Scramble\Attributes\ExcludeRouteFromDocs;
 use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response as ResponseShape;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\URL;
 use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /** The files inside one project. `path` is a query parameter because file names contain slashes. */
@@ -71,6 +73,24 @@ final readonly class ProjectFileController
         $contents = $request->contents();
 
         // Store the bytes before pointing the path at them.
+        $digest = $this->blobs->put($contents);
+        $file = $this->projects->putFile($owned, self::path($request), $digest, strlen($contents));
+
+        return new JsonResponse(['file' => self::present($file)]);
+    }
+
+    /** Replace one file with the raw request body. Not in the OpenAPI export, the client binding is hand written. */
+    #[ExcludeRouteFromDocs]
+    public function putBytes(Request $request, int $project): JsonResponse
+    {
+        $owned = $this->owned($request, $project);
+        $contents = $request->getContent();
+
+        // raw bodies bypass FormRequest validation, enforce the cap here
+        if (strlen($contents) > Config::integer('blobs.max_file_bytes')) {
+            throw new HttpException(413, 'the file is larger than the server accepts');
+        }
+
         $digest = $this->blobs->put($contents);
         $file = $this->projects->putFile($owned, self::path($request), $digest, strlen($contents));
 

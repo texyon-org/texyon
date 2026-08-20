@@ -23,6 +23,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/projects/{project}/files', [ProjectFileController::class, 'index']);
     Route::get('/projects/{project}/file', [ProjectFileController::class, 'show']);
     Route::put('/projects/{project}/file', [ProjectFileController::class, 'put']);
+    Route::put('/projects/{project}/file/bytes', [ProjectFileController::class, 'putBytes']);
     Route::delete('/projects/{project}/file', [ProjectFileController::class, 'destroy']);
 });
 

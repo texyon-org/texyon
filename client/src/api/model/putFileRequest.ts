@@ -6,7 +6,7 @@
  */
 
 /**
- * JSON text only. PHP does not parse multipart PUT bodies, so binary uploads would need their own endpoint.
+ * JSON text only. Binary files go through putBytes(), which reads the raw body.
  */
 export interface PutFileRequest {
   /** @maxLength 33554432 */

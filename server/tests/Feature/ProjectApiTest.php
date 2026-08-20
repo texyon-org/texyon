@@ -174,6 +174,64 @@ final class ProjectApiTest extends TestCase
         return $id;
     }
 
+    public function test_a_binary_file_round_trips_byte_for_byte(): void
+    {
+        $user = User::factory()->create();
+        $id = $this->createProject($user);
+
+        $bytes = "\x89PNG\r\n\x1a\n".random_bytes(64);
+
+        $written = $this->actingAs($user)
+            ->call(
+                'PUT',
+                "/api/projects/{$id}/file/bytes?path=figures/plot.png",
+                server: ['CONTENT_TYPE' => 'application/octet-stream'],
+                content: $bytes,
+            )
+            ->assertOk()
+            ->json('file');
+
+        self::assertIsArray($written);
+        self::assertSame('figures/plot.png', $written['path']);
+        self::assertSame(Digest::of($bytes)->value, $written['digest']);
+        self::assertSame(strlen($bytes), $written['size']);
+
+        self::assertSame($bytes, $this->readBack($user, $id, 'figures/plot.png'));
+    }
+
+    public function test_a_binary_file_larger_than_the_cap_is_refused(): void
+    {
+        config(['blobs.max_file_bytes' => 8]);
+
+        $user = User::factory()->create();
+        $id = $this->createProject($user);
+
+        $this->actingAs($user)
+            ->call(
+                'PUT',
+                "/api/projects/{$id}/file/bytes?path=big.bin",
+                server: ['CONTENT_TYPE' => 'application/octet-stream'],
+                content: str_repeat('x', 9),
+            )
+            ->assertStatus(413);
+    }
+
+    public function test_a_binary_write_to_a_strangers_project_is_refused(): void
+    {
+        $owner = User::factory()->create();
+        $stranger = User::factory()->create();
+        $id = $this->createProject($owner);
+
+        $this->actingAs($stranger)
+            ->call(
+                'PUT',
+                "/api/projects/{$id}/file/bytes?path=figures/plot.png",
+                server: ['CONTENT_TYPE' => 'application/octet-stream'],
+                content: 'bytes',
+            )
+            ->assertNotFound();
+    }
+
     public function test_a_path_that_climbs_out_of_the_project_is_refused(): void
     {
         $user = User::factory()->create();

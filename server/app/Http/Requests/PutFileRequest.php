@@ -7,7 +7,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Config;
 
-/** JSON text only. PHP does not parse multipart PUT bodies, so binary uploads would need their own endpoint. */
+/** JSON text only. Binary files go through putBytes(), which reads the raw body. */
 final class PutFileRequest extends FormRequest
 {
     /** @return array<string, list<string>> */
