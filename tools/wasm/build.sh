@@ -30,7 +30,7 @@ echo "== building tectonic_wasm ($PROFILE)"
 cd "$REPO"
 cargo build --profile "$PROFILE" --target wasm32-wasip1 -p tectonic_wasm
 
-MODULE="$REPO/target/wasm32-wasip1/$PROFILE_DIR/tectonic_wasm.wasm"
+MODULE="${CARGO_TARGET_DIR:-$REPO/target}/wasm32-wasip1/$PROFILE_DIR/tectonic_wasm.wasm"
 
 # The linker turns an unresolved __wasm_setjmp / __c_longjmp into an *import*
 # rather than an error, and an imported tag is something no host can supply — so

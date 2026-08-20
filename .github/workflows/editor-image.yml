@@ -101,7 +101,13 @@ jobs:
       - name: "Build the native tectonic"
         run: cargo build --release
 
+      # Its own target dir, outside the rust cache: a module linked from
+      # cache-restored rlibs came out missing pdf_io objects and failed the
+      # allocator's integrity assert during export. Fresh every run until the
+      # cargo-side cause is understood.
       - name: "Build the wasm module"
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target-wasm
         run: tools/wasm/build.sh
 
       - name: "Build the support pack"
