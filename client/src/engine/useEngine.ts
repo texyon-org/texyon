@@ -86,6 +86,10 @@ export function useEngine(
       try {
         const instance = await TectonicEngine.create({
           primary,
+          // Root-anchored: the defaults are relative to the page, which breaks
+          // on nested routes like /projects/$projectId.
+          moduleUrl: "/tectonic/tectonic_wasm.wasm",
+          supportUrl: "/tectonic/",
           // `||` rather than `??`: a build arg that was never given arrives as
           // an empty string, and an empty bundle URL means the default one.
           bundleUrl: import.meta.env.VITE_BUNDLE_URL || "/bundle/texlive2026.ttb",
