@@ -174,6 +174,19 @@ final class ProjectApiTest extends TestCase
         return $id;
     }
 
+    public function test_an_empty_file_can_be_written(): void
+    {
+        $user = User::factory()->create();
+        $id = $this->createProject($user);
+
+        $this->actingAs($user)
+            ->putJson("/api/projects/{$id}/file?path=chapters/.gitkeep", ['text' => ''])
+            ->assertOk()
+            ->assertJsonPath('file.size', 0);
+
+        self::assertSame('', $this->readBack($user, $id, 'chapters/.gitkeep'));
+    }
+
     public function test_a_binary_file_round_trips_byte_for_byte(): void
     {
         $user = User::factory()->create();

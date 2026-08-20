@@ -525,7 +525,10 @@
                 "description": "JSON text only. Binary files go through putBytes(), which reads the raw body.",
                 "properties": {
                     "text": {
-                        "type": "string",
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "maxLength": 33554432
                     }
                 },

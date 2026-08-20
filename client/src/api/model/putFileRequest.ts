@@ -9,6 +9,9 @@
  * JSON text only. Binary files go through putBytes(), which reads the raw body.
  */
 export interface PutFileRequest {
-  /** @maxLength 33554432 */
-  text: string;
+  /**
+     * @maxLength 33554432
+     * @nullable
+     */
+  text: string | null;
 }

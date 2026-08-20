@@ -13,8 +13,10 @@ final class PutFileRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
+        // present and nullable rather than required, an empty file is a valid
+        // file and middleware turns "" into null
         return [
-            'text' => ['required', 'string', 'max:'.Config::integer('blobs.max_file_bytes')],
+            'text' => ['present', 'nullable', 'string', 'max:'.Config::integer('blobs.max_file_bytes')],
         ];
     }
 
