@@ -71,6 +71,8 @@ jobs:
 
       - name: "The spec and bindings match the code"
         run: |
+          # Scramble reads model column types from a real schema.
+          (cd server && touch database/database.sqlite && php artisan migrate --force)
           (cd server && composer openapi)
           (cd client && npm run generate:api)
           git diff --exit-code -- server/openapi.json client/src/api
