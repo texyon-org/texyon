@@ -187,8 +187,12 @@ export interface CompileStats {
   supportBytes: number;
 }
 
-/** A project's complete current state, by path relative to its root. */
-export type ProjectFiles = Record<string, string>;
+/**
+ * A project's complete current state, by path relative to its root.
+ *
+ * Binary files reach the engine as resources, a change to one restarts the session.
+ */
+export type ProjectFiles = Record<string, string | Uint8Array>;
 
 /** Where a source line landed on the page. */
 export interface SyncRect {
@@ -315,8 +319,14 @@ export type WorkerRequest =
   | {
       id: number;
       kind: "compile";
-      files: ProjectFiles;
+      files: Record<string, string>;
       viewport?: [number, number];
+    }
+  | {
+      id: number;
+      kind: "resources";
+      upserts: Record<string, Uint8Array>;
+      removed: string[];
     }
   | { id: number; kind: "commands" }
   | { id: number; kind: "forwardSearch"; path: string; line: number }

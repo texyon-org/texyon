@@ -106,6 +106,13 @@ let options: SerializableEngineOptions | null = null;
 
 /** Support files already in memory, by TeX name. */
 const resident = new Map<string, Uint8Array>();
+/** Project binary files by path, consulted before the support pack. */
+const projectResources = new Map<string, Uint8Array>();
+/** Engine caches and checkpoints assume immutable files, a binary change forces a reopen. */
+let restartPending = false;
+let compiledSinceOpen = false;
+/** Kept so a restart can reopen the session. */
+let formatName = "";
 /** Names the pack claims to have, with their sizes. */
 let manifest = new Map<string, number>();
 /** Names known not to exist, so a miss is not re-fetched on every keystroke. */
@@ -224,8 +231,19 @@ function verify(name: string, bytes: Uint8Array): Uint8Array | null {
   return null;
 }
 
+/** The engine may spell a project path as /doc/x or ./x. */
+function projectResource(name: string): Uint8Array | null {
+  let path = name;
+  if (path.startsWith("/doc/")) path = path.slice("/doc/".length);
+  while (path.startsWith("./")) path = path.slice(2);
+  return projectResources.get(path) ?? null;
+}
+
 /** Answer the engine's request for a support file. */
 function readFile(name: string): Uint8Array | null {
+  const fromProject = projectResource(name);
+  if (fromProject) return fromProject;
+
   const hit = resident.get(name);
   if (hit) return hit;
   if (missing.has(name)) return null;
@@ -667,6 +685,7 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
   }
   resident.set(parsed.format, formatBytes);
 
+  formatName = parsed.format;
   const opened = call({ op: "open", format: parsed.format, primary: opts.primary });
   if (opened.status === "error") throw new Error(opened.message);
 
@@ -730,8 +749,31 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         post({ id: request.id, kind: "ok" });
         break;
 
+      case "resources": {
+        for (const [path, bytes] of Object.entries(request.upserts)) {
+          projectResources.set(path, bytes);
+        }
+        for (const path of request.removed) projectResources.delete(path);
+
+        // a previous miss may exist now
+        missing.clear();
+        if (compiledSinceOpen) restartPending = true;
+
+        post({ id: request.id, kind: "ok" });
+        break;
+      }
+
       case "compile":
       case "continueTail": {
+        if (restartPending && request.kind === "compile") {
+          // caches and checkpoints predate the new bytes
+          call({ op: "shutdown" });
+          const reopened = call({ op: "open", format: formatName, primary: options!.primary });
+          if (reopened.status === "error") throw new Error(reopened.message);
+          restartPending = false;
+          compiledSinceOpen = false;
+        }
+
         engineStart = performance.now();
         const reply =
           request.kind === "compile"
@@ -744,6 +786,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         } else if (reply.status === "idle") {
           post({ id: request.id, kind: "idle" });
         } else if (reply.status === "compiled") {
+          compiledSinceOpen = true;
           const result = collect(reply, elapsed);
           post({ id: request.id, kind: "compiled", result });
           // Deliberately not awaited: the frame is already on its way, and

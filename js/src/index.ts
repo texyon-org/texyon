@@ -84,6 +84,9 @@ export class TectonicEngine {
   /** In-flight compile, so a new one can supersede it. */
   #inFlight: Promise<unknown> = Promise.resolve();
 
+  /** Binaries as last sent to the Worker, diffed by identity. */
+  #sentResources = new Map<string, Uint8Array>();
+
   private constructor(worker: Worker, options: EngineOptions) {
     this.#worker = worker;
     this.#onProgress = options.onProgress;
@@ -204,9 +207,30 @@ export class TectonicEngine {
     const project =
       typeof files === "string" ? { [this.#primary]: files } : files;
 
-    return this.#queue(() =>
-      this.#send<CompileResult>({ id: 0, kind: "compile", files: project, viewport }),
-    );
+    const sources: Record<string, string> = {};
+    const binaries = new Map<string, Uint8Array>();
+    for (const [path, content] of Object.entries(project)) {
+      if (typeof content === "string") sources[path] = content;
+      else binaries.set(path, content);
+    }
+
+    const upserts: Record<string, Uint8Array> = {};
+    for (const [path, bytes] of binaries) {
+      if (this.#sentResources.get(path) !== bytes) upserts[path] = bytes;
+    }
+    const removed = [...this.#sentResources.keys()].filter((path) => !binaries.has(path));
+
+    return this.#queue(async () => {
+      if (Object.keys(upserts).length > 0 || removed.length > 0) {
+        await this.#send<void>({ id: 0, kind: "resources", upserts, removed });
+        for (const [path, bytes] of Object.entries(upserts)) {
+          this.#sentResources.set(path, bytes);
+        }
+        for (const path of removed) this.#sentResources.delete(path);
+      }
+
+      return this.#send<CompileResult>({ id: 0, kind: "compile", files: sources, viewport });
+    });
   }
 
   /**
