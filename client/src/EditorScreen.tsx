@@ -145,10 +145,19 @@ export function EditorScreen({
     [packageKey],
   );
 
+  // What the user can currently see, read by each compile as it starts. A ref
+  // rather than state: scrolling must not re-render the editor, and the value
+  // only matters at the moment a compile is issued.
+  const viewport = useRef<[number, number]>([0, 0]);
+  const onViewport = useCallback((first: number, last: number) => {
+    viewport.current = [first, last];
+  }, []);
+
   const {
     progress,
     startupError,
     result,
+    stats,
     compiling,
     latencyMs,
     log,
@@ -157,7 +166,7 @@ export function EditorScreen({
     exportPdf,
     forwardSearch,
     backwardSearch,
-  } = useEngine(workspace, primary, packageKey);
+  } = useEngine(workspace, primary, packageKey, viewport);
 
   // What the corpus says about the packages this document loads. Fetched from
   // the source text rather than from the engine, because the engine does not
@@ -231,7 +240,6 @@ export function EditorScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [locate]);
 
-  const stats = result?.stats;
   const problems = result?.diagnostics.filter((d) => d.severity !== "info") ?? [];
 
   return (
@@ -409,6 +417,7 @@ export function EditorScreen({
             onPainted={markPainted}
             onBackwardSearch={onBackwardSearch}
             scrollTo={scrollTo}
+            onViewport={onViewport}
           />
         </section>
       </main>

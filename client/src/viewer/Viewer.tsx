@@ -13,6 +13,14 @@ export interface ViewerProps {
   onBackwardSearch: (pageIndex: number, hBp: number, vBp: number) => void;
   /** Where a forward search says the cursor's line landed. */
   scrollTo: { pageIndex: number; vBp: number } | null;
+  /**
+   * The visible page range moved, zero-based and inclusive.
+   *
+   * This is what lets a compile stop at the last page the user can see and
+   * leave the rest for idle time, so it is reported on every scroll, zoom and
+   * layout change.
+   */
+  onViewport: (first: number, last: number) => void;
 }
 
 /**
@@ -25,7 +33,7 @@ export interface ViewerProps {
  * reason the preview stays cheap, and it is why this component manipulates DOM
  * directly instead of rendering pages as React children.
  */
-export function Viewer({ result, onPainted, onBackwardSearch, scrollTo }: ViewerProps) {
+export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewport }: ViewerProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const slots = useRef<HTMLElement[]>([]);
@@ -39,6 +47,49 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo }: Viewer
 
   const backward = useRef(onBackwardSearch);
   backward.current = onBackwardSearch;
+
+  const reportViewport = useRef(onViewport);
+  reportViewport.current = onViewport;
+
+  /** Say which pages currently intersect the scroller. */
+  const measureViewport = useCallback(() => {
+    const view = scroller.current;
+    if (view === null || slots.current.length === 0) return;
+
+    // Client rects rather than offsetTop, which depends on which ancestor
+    // happens to be positioned.
+    const box = view.getBoundingClientRect();
+    let first: number | null = null;
+    let last: number | null = null;
+    for (const [index, slot] of slots.current.entries()) {
+      const page = slot.getBoundingClientRect();
+      if (page.bottom <= box.top) continue;
+      if (page.top >= box.bottom) break;
+      first ??= index;
+      last = index;
+    }
+    if (first !== null && last !== null) reportViewport.current(first, last);
+  }, []);
+
+  useEffect(() => {
+    const view = scroller.current;
+    if (view === null) return;
+
+    // One measurement per frame, however fast the scroll events come.
+    let frame = 0;
+    const onScroll = (): void => {
+      if (frame !== 0) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measureViewport();
+      });
+    };
+    view.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      view.removeEventListener("scroll", onScroll);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [measureViewport]);
 
   /** Where on the page, in big points, a click landed. */
   const pointOf = useCallback((event: MouseEvent, slot: HTMLElement): [number, number] => {
@@ -108,12 +159,16 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo }: Viewer
 
     setPageCount(result.pageCount);
 
+    // The document may have grown, shrunk or been rescaled under a still
+    // scrollbar, all of which change which pages are visible.
+    measureViewport();
+
     if (result.pages.length > 0) {
       // Two frames: one to let the browser lay the new page out, one to be sure
       // it has painted it.
       requestAnimationFrame(() => requestAnimationFrame(onPainted));
     }
-  }, [result, zoom, onPainted, pointOf]);
+  }, [result, zoom, onPainted, pointOf, measureViewport]);
 
   // A forward search: the cursor's line landed here.
   useEffect(() => {

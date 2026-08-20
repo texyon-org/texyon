@@ -1,5 +1,6 @@
 import type {
   CompileResult,
+  CompileStats,
   EngineCommand,
   LoadProgress,
   LogLine,
@@ -15,6 +16,13 @@ export interface EngineState {
   progress: LoadProgress | null;
   startupError: string | null;
   result: CompileResult | null;
+  /**
+   * What the last keystroke's own compile cost.
+   *
+   * Not `result.stats`: a tail settle also produces a result, and its cost is
+   * background work that would otherwise be read as the price of an edit.
+   */
+  stats: CompileStats | null;
   compiling: boolean;
   /** Milliseconds from the last keystroke to the pixels. */
   latencyMs: number | null;
@@ -34,12 +42,36 @@ export interface EngineState {
 }
 
 /**
+ * How long the document must hold still before the pages below the fold are
+ * finished, at the least. The same base idle the native preview server uses.
+ */
+const TAIL_IDLE_MS = 200;
+
+/**
+ * The idle grows with what settling actually costs, up to this.
+ *
+ * The engine runs synchronously in its Worker, so a settle cannot be
+ * interrupted: a keystroke that arrives mid-settle waits for the whole thing.
+ * On a document whose tail is expensive, settling after every 200 ms pause
+ * would hand that wait to half the keystrokes. Waiting a couple of tail-costs
+ * means the settle only starts once the author has genuinely stopped.
+ */
+const TAIL_IDLE_MAX_MS = 2000;
+
+/**
  * Own a resident engine and keep it fed with the workspace.
  *
  * The workspace is the authority on what the files say; this watches it and
  * hands the engine the whole project whenever it moves. Passing everything each
  * time is the cheap path, not a concession — the engine diffs each file against
  * what it last saw, so untouched files cost nothing.
+ *
+ * `viewport` is the visible page range, read at the moment each compile starts.
+ * It bounds the foreground run to the pages the user can see: the engine stops
+ * at the last visible page and leaves the rest as a tail, which is settled here
+ * once the document has been still for {@link TAIL_IDLE_MS}. Without it every
+ * keystroke retypesets the whole document below the edit before the user sees
+ * anything, which on a long document is most of what an edit costs.
  *
  * `commandsKey` decides when the command list is worth re-reading: whenever it
  * differs from the key the current list was read at, the next compile is
@@ -52,6 +84,7 @@ export function useEngine(
   workspace: Workspace,
   primary: string,
   commandsKey: string,
+  viewport: { readonly current: [number, number] },
 ): EngineState & {
   markPainted: () => void;
   exportPdf: () => Promise<void>;
@@ -62,6 +95,7 @@ export function useEngine(
   const [progress, setProgress] = useState<LoadProgress | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [result, setResult] = useState<CompileResult | null>(null);
+  const [stats, setStats] = useState<CompileStats | null>(null);
   const [compiling, setCompiling] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
@@ -79,6 +113,12 @@ export function useEngine(
   wantedKey.current = commandsKey;
   /** Set below once run() exists, called from the engine's own callback. */
   const recompile = useRef<() => void>(() => {});
+  /** Pending idle timer for the document's unsettled tail. */
+  const tailTimer = useRef<number | null>(null);
+  /** What the last settle cost, which is what the next idle is scaled by. */
+  const tailCostMs = useRef(0);
+  /** Set below once run() exists; finishes the document below the fold. */
+  const settle = useRef<() => void>(() => {});
 
   useEffect(() => {
     let disposed = false;
@@ -134,15 +174,29 @@ export function useEngine(
     if (revision === compiledRevision.current) return;
     const files = workspace.snapshot();
 
+    // This compile leaves its own tail; a settle scheduled by the last one
+    // would only race it for the engine.
+    if (tailTimer.current !== null) {
+      window.clearTimeout(tailTimer.current);
+      tailTimer.current = null;
+    }
     running.current = true;
     setCompiling(true);
     const requestedAt = typedAt.current ?? performance.now();
 
     try {
-      const compiled = await engine.compile(files);
+      const compiled = await engine.compile(files, viewport.current);
       compiledRevision.current = revision;
       paintingFrom.current = requestedAt;
       setResult(compiled);
+      setStats(compiled.stats);
+      if (compiled.tailPending) {
+        const idle = Math.min(TAIL_IDLE_MAX_MS, Math.max(TAIL_IDLE_MS, 2 * tailCostMs.current));
+        tailTimer.current = window.setTimeout(() => {
+          tailTimer.current = null;
+          settle.current();
+        }, idle);
+      }
 
       // After the frame, so the preview is never waiting on the command list,
       // and only when the document could plausibly have a different one.
@@ -175,6 +229,42 @@ export function useEngine(
     void run();
   };
 
+  settle.current = () => {
+    void (async () => {
+      if (engine === null || running.current) return;
+      // An edit got there first; its own compile reschedules the settle.
+      if (workspace.revision !== compiledRevision.current) return;
+
+      running.current = true;
+      const startedAt = performance.now();
+      try {
+        // A continuation can itself stop at a horizon, so settle until the
+        // engine says the document is finished.
+        for (;;) {
+          const frame = await engine.continueTail();
+          if (frame === null) break;
+          // Background work: its paint must not be measured as latency.
+          paintingFrom.current = null;
+          setResult(frame);
+          if (!frame.tailPending || workspace.revision !== compiledRevision.current) break;
+        }
+        tailCostMs.current = performance.now() - startedAt;
+      } catch (error) {
+        setLog((prior) =>
+          [
+            ...prior,
+            { level: "error" as const, message: error instanceof Error ? error.message : String(error) },
+          ].slice(-200),
+        );
+      } finally {
+        running.current = false;
+
+        // The workspace moved while the tail was settling: compile it now.
+        if (workspace.revision !== compiledRevision.current) void run();
+      }
+    })();
+  };
+
   // Compile when the workspace moves, and once when the engine arrives.
   //
   // No debounce. There is nothing for one to do here that the engine does not
@@ -195,6 +285,13 @@ export function useEngine(
     onChange();
     return workspace.subscribe(onChange);
   }, [engine, workspace, run]);
+
+  useEffect(
+    () => () => {
+      if (tailTimer.current !== null) window.clearTimeout(tailTimer.current);
+    },
+    [],
+  );
 
   const markPainted = useCallback(() => {
     if (paintingFrom.current === null) return;
@@ -253,6 +350,7 @@ export function useEngine(
     progress,
     startupError,
     result,
+    stats,
     compiling,
     latencyMs,
     log,
