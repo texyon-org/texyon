@@ -24,6 +24,11 @@ if [ ! -x "$TECTONIC" ]; then
     exit 1
 fi
 
+# The same bundle the browser reads at runtime. Seeding from the default
+# bundle instead bakes an older LaTeX kernel into the format, and any package
+# fetched on demand then fails with mismatched L3 support files.
+BUNDLE_URL="${BUNDLE_URL:-https://s3.de-1.yendric.be/uploads/01a0117b-2294-7203-bb52-edb7070f93fb/texlive2026.ttb}"
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 export TECTONIC_CACHE_DIR="$WORK/cache"
@@ -161,7 +166,7 @@ for seed in "$WORK"/seeds/*.tex; do
     echo "   $(basename "$seed")"
     # Seeds are allowed to report TeX errors; what matters is which support
     # files they touched on the way.
-    (cd "$WORK/seeds" && "$TECTONIC" -X compile "$seed" --outfmt pdf --print >/dev/null 2>&1) || true
+    (cd "$WORK/seeds" && "$TECTONIC" -X compile "$seed" --bundle "$BUNDLE_URL" --outfmt pdf --print >/dev/null 2>&1) || true
 done
 
 FORMAT="$(find "$TECTONIC_CACHE_DIR/formats" -name '*.fmt' | head -1)"
@@ -184,11 +189,28 @@ mkdir -p "$OUT/files"
 # be present before the engine can start at all, so it gets its own entry.
 cp "$FORMAT" "$OUT/files/latex.fmt"
 
+# The ttb cache mirrors the TeX tree, but the engine asks for bare names, so
+# the pack flattens to basenames.
 count=0
-for file in "$DATA_DIR"/*; do
-    [ -f "$file" ] || continue
-    cp "$file" "$OUT/files/$(basename "$file")"
+while IFS= read -r -d '' file; do
+    name="$(basename "$file")"
+    if [ -e "$OUT/files/$name" ]; then
+        if ! cmp -s "$file" "$OUT/files/$name"; then
+            echo "   warning: duplicate name $name with different content, keeping the first" >&2
+        fi
+        continue
+    fi
+    cp "$file" "$OUT/files/$name"
     count=$((count + 1))
+done < <(find "$DATA_DIR" -type f -print0)
+
+# Seed compiles swallow errors, so a network flake would otherwise ship a
+# silently incomplete pack that only fails at the smoke test or later.
+for must in article.cls amsmath.sty cmr5.pfb cmr10.tfm; do
+    if [ ! -f "$OUT/files/$must" ]; then
+        echo "pack is missing $must, a seed compile probably failed" >&2
+        exit 1
+    fi
 done
 
 # One manifest so the Worker knows the whole set up front and can fetch it in
