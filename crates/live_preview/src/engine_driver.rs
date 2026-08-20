@@ -186,6 +186,13 @@ pub struct ResidentXeTeX {
     session: Option<IncrementalXeTeXSession>,
     opened: bool,
     output_name: Option<String>,
+    /// Session-lifetime working directory for engine-written files.
+    ///
+    /// A tail continuation or a fence replay re-reads files an earlier
+    /// operation wrote (beamer's `\jobname.vrb`, aux-style files), so written
+    /// files must outlive one operation. Reopening truncates an entry, so the
+    /// per-operation XDV suffix and log are unaffected.
+    output: MemoryIo,
 }
 
 impl ResidentXeTeX {
@@ -197,6 +204,7 @@ impl ResidentXeTeX {
             session: None,
             opened: false,
             output_name: None,
+            output: MemoryIo::new(true),
         }
     }
 
@@ -215,7 +223,6 @@ impl ResidentXeTeX {
             .map_err(|error| ResidentEngineError::Source(error.to_string()))?;
         let output_name = output_name(engine_snapshot.primary().as_str());
         self.output_name = Some(output_name.clone());
-        let mut output = MemoryIo::new(true);
 
         if self.session.is_none() {
             self.config.cancellation = cancellation.clone();
@@ -232,7 +239,7 @@ impl ResidentXeTeX {
         let mut pending = Some(engine_snapshot);
         let frame = self
             .support
-            .with_launcher(&mut output, &mut |launcher| {
+            .with_launcher(&mut self.output, &mut |launcher| {
                 let sources = pending.take().expect("the operation runs exactly once");
                 if was_open {
                     session.edit(launcher, sources, page_range).map(Some)
@@ -247,7 +254,7 @@ impl ResidentXeTeX {
         let xdv = if frame.cancelled || frame.aborted.is_some() {
             None
         } else {
-            let files = output.files.borrow();
+            let files = self.output.files.borrow();
             let data = files
                 .get(&output_name)
                 .ok_or_else(|| ResidentEngineError::MissingOutput(output_name.clone()))?
@@ -274,10 +281,11 @@ impl ResidentXeTeX {
             .output_name
             .clone()
             .ok_or_else(|| ResidentEngineError::MissingOutput("pending XDV name".into()))?;
-        let mut output = MemoryIo::new(true);
         let frame = self
             .support
-            .with_launcher(&mut output, &mut |launcher| session.continue_tail(launcher))
+            .with_launcher(&mut self.output, &mut |launcher| {
+                session.continue_tail(launcher)
+            })
             .map_err(|error| ResidentEngineError::Engine(error.to_string()))?;
         let Some(frame) = frame else {
             return Ok(None);
@@ -285,7 +293,7 @@ impl ResidentXeTeX {
         let xdv = if frame.cancelled || frame.aborted.is_some() {
             None
         } else {
-            let files = output.files.borrow();
+            let files = self.output.files.borrow();
             let data = files
                 .get(&output_name)
                 .ok_or_else(|| ResidentEngineError::MissingOutput(output_name.clone()))?
@@ -318,9 +326,8 @@ impl ResidentXeTeX {
         let Some(session) = &mut self.session else {
             return Ok(());
         };
-        let mut output = MemoryIo::new(true);
         self.support
-            .with_launcher(&mut output, &mut |launcher| {
+            .with_launcher(&mut self.output, &mut |launcher| {
                 session.finish(launcher).map(|()| None)
             })
             .map(|_| ())

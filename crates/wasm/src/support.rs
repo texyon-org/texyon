@@ -15,12 +15,12 @@ use tectonic_live_preview::EngineSupport;
 
 use crate::io::{HostIo, HostStatus};
 
-/// A view of what the most recent engine operation wrote.
+/// A view of what the engine has written.
 ///
-/// The pipeline builds an output provider per operation and keeps only the XDV
-/// from it, but a browser editor wants the whole `.log` as well. The provider's
-/// file map is reference-counted, so retaining it here costs a pointer rather
-/// than a copy of the transcript.
+/// The pipeline keeps one output provider for the session and reads only the
+/// XDV from it, but a browser editor wants the whole `.log` as well. The
+/// provider's file map is reference-counted, so retaining it here costs a
+/// pointer rather than a copy of the transcript.
 #[derive(Clone, Default)]
 pub struct WrittenFiles(Rc<RefCell<Option<Rc<RefCell<MemoryFileCollection>>>>>);
 

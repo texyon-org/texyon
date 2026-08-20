@@ -1022,6 +1022,91 @@ fn viewport_foreground_and_tail_reassemble_to_cold_xdv() {
     runner.finish().unwrap();
 }
 
+/// Beamer's fragile frames write the frame body to `\jobname.vrb` once and
+/// `\input` it again on every overlay slide. A viewport horizon can land
+/// between two of those reads, putting the write and the re-read in different
+/// engine operations, so files the engine writes must outlive one operation.
+#[test]
+fn written_file_survives_into_the_tail_continuation() {
+    let _serial = session_test_lock();
+    util::set_test_root();
+    let original = "A\\vfill\\eject\n\
+        \\newwrite\\vrbfile\n\
+        \\immediate\\openout\\vrbfile=frame.vrb\n\
+        \\immediate\\write\\vrbfile{FRAGILE BODY}\n\
+        \\immediate\\closeout\\vrbfile\n\
+        \\input frame.vrb \\vfill\\eject\n\
+        \\input frame.vrb \\vfill\\eject\n\
+        D\\bye\n";
+    let edited = original.replacen('A', "Z", 1);
+    let expected = cold_xdv(edited.as_bytes());
+    let temp = tempfile::tempdir().unwrap();
+    let root = DocumentRoot::new(temp.path()).unwrap();
+    let mut sources = SourceSet::initialize(
+        root,
+        "main.tex",
+        original.into(),
+        vec![],
+        ProtocolLimits::default(),
+    )
+    .unwrap();
+    let support = ResidentEngineSupport::Fixture {
+        format_path: util::ensure_plain_format().unwrap(),
+        assets_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets"),
+    };
+    let cancellation = EngineCancellation::new();
+    let mut runner = ResidentXeTeX::new(support, EnginePreviewConfig::new("plain.fmt"));
+    let assembler = DocumentAssembler::new();
+
+    let initial = runner
+        .compile(sources.snapshot(), None, &cancellation)
+        .unwrap();
+    let initial_xdv = initial.xdv.unwrap();
+    let initial_document = assembler
+        .assemble(None, DocumentFragment::Complete(&initial_xdv))
+        .unwrap();
+
+    // The horizon after page two sits between the `\openout` and the second
+    // `\input frame.vrb`, so the tail re-reads a file the foreground wrote.
+    sources.replace(None, edited).unwrap();
+    let foreground = runner
+        .compile(sources.snapshot(), Some((0, 1)), &cancellation)
+        .unwrap();
+    assert!(foreground.frame.aborted.is_none());
+    assert!(foreground.frame.tail_pending);
+    let foreground_xdv = foreground.xdv.unwrap();
+    let foreground_fragment = foreground.frame.splice_at.map_or(
+        DocumentFragment::Complete(foreground_xdv.as_ref()),
+        |prefix_len| DocumentFragment::Tail {
+            prefix_len,
+            bytes: foreground_xdv.as_ref(),
+        },
+    );
+    let foreground_document = assembler
+        .assemble(Some(&initial_document), foreground_fragment)
+        .unwrap();
+
+    let tail = runner
+        .continue_tail(&cancellation)
+        .unwrap()
+        .expect("foreground advertised a pending tail");
+    assert!(tail.frame.aborted.is_none());
+    assert!(!tail.frame.tail_pending);
+    let tail_xdv = tail.xdv.unwrap();
+    let tail_fragment = tail.frame.splice_at.map_or(
+        DocumentFragment::Complete(tail_xdv.as_ref()),
+        |prefix_len| DocumentFragment::Tail {
+            prefix_len,
+            bytes: tail_xdv.as_ref(),
+        },
+    );
+    let complete = assembler
+        .assemble(Some(&foreground_document), tail_fragment)
+        .unwrap();
+    assert_eq!(complete.bytes().as_ref(), expected);
+    runner.finish().unwrap();
+}
+
 #[test]
 fn cancelled_tail_preserves_its_horizon_fence() {
     let _serial = session_test_lock();
