@@ -97,7 +97,9 @@ jobs:
       - name: "Smoke-test the module"
         run: node tools/wasm/smoke-test.mjs
 
+      # A smoke failure without the inputs is undebuggable, so ship them too.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: engine-assets
           path: client/public/tectonic
