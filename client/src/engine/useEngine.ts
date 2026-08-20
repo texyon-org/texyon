@@ -77,6 +77,8 @@ export function useEngine(
   /** Read inside the compile loop, which must not be rebuilt when it moves. */
   const wantedKey = useRef(commandsKey);
   wantedKey.current = commandsKey;
+  /** Set below once run() exists, called from the engine's own callback. */
+  const recompile = useRef<() => void>(() => {});
 
   useEffect(() => {
     let disposed = false;
@@ -100,6 +102,9 @@ export function useEngine(
             if (disposed) return;
             // The transcript is unbounded and mostly noise; keep a tail.
             setLog((prior) => [...prior, line].slice(-200));
+          },
+          onRecompileNeeded: () => {
+            if (!disposed) recompile.current();
           },
         });
 
@@ -164,6 +169,11 @@ export function useEngine(
       if (workspace.revision !== compiledRevision.current) void run();
     }
   }, [engine, workspace]);
+
+  recompile.current = () => {
+    compiledRevision.current = -1;
+    void run();
+  };
 
   // Compile when the workspace moves, and once when the engine arrives.
   //

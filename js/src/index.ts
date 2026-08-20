@@ -78,6 +78,7 @@ export class TectonicEngine {
   #nextId = 1;
   #onProgress?: (progress: LoadProgress) => void;
   #onLog?: (line: LogLine) => void;
+  #onRecompileNeeded?: () => void;
   #primary: string;
   #closed = false;
 
@@ -91,6 +92,7 @@ export class TectonicEngine {
     this.#worker = worker;
     this.#onProgress = options.onProgress;
     this.#onLog = options.onLog;
+    this.#onRecompileNeeded = options.onRecompileNeeded;
     this.#primary = options.primary ?? "main.tex";
 
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
@@ -103,6 +105,11 @@ export class TectonicEngine {
 
       if (message.kind === "log") {
         this.#onLog?.(message.line);
+        return;
+      }
+
+      if (message.kind === "recompile") {
+        this.#onRecompileNeeded?.();
         return;
       }
 

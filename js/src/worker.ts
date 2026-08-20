@@ -117,6 +117,10 @@ let formatName = "";
 let manifest = new Map<string, number>();
 /** Names known not to exist, so a miss is not re-fetched on every keystroke. */
 const missing = new Set<string>();
+/** null until the bundle index arrives, then how that ended. */
+let indexOutcome: "ready" | "failed" | null = null;
+/** A lookup failed only because the index was not there yet. */
+let missedAwaitingIndex = false;
 /**
  * Where each file lives in the bundle tar, once its index has arrived.
  *
@@ -260,8 +264,9 @@ function readFile(name: string): Uint8Array | null {
   if (!at && !inTtb) {
     // Genuinely absent. TeX probes many candidate names per lookup, so
     // remembering that is what keeps a lookup from being a round trip each
-    // time. Note this is only reached once the index has arrived; until then
-    // neither lookup answers and indexBundle() clears these on arrival.
+    // time. A miss before the index has arrived is provisional and asks for a
+    // recompile once it has.
+    if (options?.bundleUrl !== undefined && indexOutcome === null) missedAwaitingIndex = true;
     missing.add(name);
     return null;
   }
@@ -433,8 +438,16 @@ async function indexBundle(url: string): Promise<void> {
       count = bundle.size;
     }
 
-    // Names ruled out before the index arrived deserve another chance.
+    // Names ruled out before the index arrived deserve another chance. The
+    // session cached those misses too and diffs sources by content, so only
+    // a reopen makes a recompile actually look again.
+    indexOutcome = "ready";
     missing.clear();
+    if (missedAwaitingIndex) {
+      missedAwaitingIndex = false;
+      if (compiledSinceOpen) restartPending = true;
+      post({ id: 0, kind: "recompile" });
+    }
 
     post({
       id: 0,
@@ -445,6 +458,7 @@ async function indexBundle(url: string): Promise<void> {
       },
     });
   } catch (error) {
+    indexOutcome = "failed";
     post({
       id: 0,
       kind: "log",

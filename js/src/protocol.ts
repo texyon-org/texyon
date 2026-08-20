@@ -292,6 +292,12 @@ export interface EngineOptions {
   onProgress?: (progress: LoadProgress) => void;
   /** Called for each diagnostic the engine emits, as it emits it. */
   onLog?: (line: LogLine) => void;
+  /**
+   * Called when a compile that already ran may now resolve files it could
+   * not, because the bundle index arrived after it started. Compile again to
+   * recover.
+   */
+  onRecompileNeeded?: () => void;
 }
 
 /** What an export produced. */
@@ -361,4 +367,5 @@ export type WorkerResponse =
   | { id: number; kind: "idle" }
   | { id: number; kind: "error"; message: string }
   | { id: 0; kind: "progress"; progress: LoadProgress }
-  | { id: 0; kind: "log"; line: LogLine };
+  | { id: 0; kind: "log"; line: LogLine }
+  | { id: 0; kind: "recompile" };
