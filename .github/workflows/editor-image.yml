@@ -77,10 +77,22 @@ jobs:
             tools/wasm/vendor
           key: wasm-deps-v1-${{ hashFiles('tools/wasm/fetch-deps.sh', 'tools/wasm/env.sh') }}
 
+      # mupdf.com periodically refuses Azure's address space, so cold runs
+      # seed the source from this repo's vendor-deps release instead.
+      - name: "Seed mupdf from the vendor-deps release"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -d tools/wasm/vendor/mupdf ]; then
+            mkdir -p tools/wasm/vendor/mupdf
+            gh release download vendor-deps --pattern 'mupdf-1.24.9-source.tar.gz' --output - \
+              | tar xz -C tools/wasm/vendor/mupdf --strip-components=1
+          fi
+
       - name: "Fetch the wasm toolchain and vendored sources"
         run: |
           if [ ! -d tools/wasm/wasi-sdk-33.0-x86_64-linux ]; then
-            curl -sSL --retry 3 "$WASI_SDK_URL" | tar xz -C tools/wasm
+            curl -fsSL --retry 3 "$WASI_SDK_URL" | tar xz -C tools/wasm
           fi
           tools/wasm/fetch-deps.sh --with-mupdf
 
