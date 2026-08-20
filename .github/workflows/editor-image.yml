@@ -63,6 +63,9 @@ jobs:
           rustup target add wasm32-wasip1
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          # v1: the v0 target cache produced a module missing pdf_io code
+          prefix-key: v1-rust
 
       # wasi-sdk and the vendored C sources change only when the fetch script
       # says so, which is what the cache key hashes.
@@ -72,7 +75,7 @@ jobs:
           path: |
             tools/wasm/wasi-sdk-33.0-x86_64-linux
             tools/wasm/vendor
-          key: wasm-deps-${{ hashFiles('tools/wasm/fetch-deps.sh', 'tools/wasm/env.sh') }}
+          key: wasm-deps-v1-${{ hashFiles('tools/wasm/fetch-deps.sh', 'tools/wasm/env.sh') }}
 
       - name: "Fetch the wasm toolchain and vendored sources"
         run: |
