@@ -25,7 +25,7 @@ fetch() {
     echo "== $name: fetching $url"
     local tmp
     tmp="$(mktemp -d)"
-    curl -sSL --retry 3 -o "$tmp/src.tar.gz" "$url"
+    curl -fsSL --retry 3 -o "$tmp/src.tar.gz" "$url"
     mkdir -p "$VENDOR/$name"
     tar xzf "$tmp/src.tar.gz" -C "$VENDOR/$name" --strip-components="$strip_dir"
     rm -rf "$tmp"
@@ -34,8 +34,10 @@ fetch() {
 
 fetch libpng \
     "https://github.com/pnggroup/libpng/archive/refs/tags/v${LIBPNG_VERSION}.tar.gz" 1
+# The GitHub mirror, because savannah's mirror redirector periodically hands
+# out HTML with status 200. Only include/ is consumed, which the tag carries.
 fetch freetype \
-    "https://download.savannah.gnu.org/releases/freetype/freetype-${FREETYPE_VERSION}.tar.gz" 1
+    "https://github.com/freetype/freetype/archive/refs/tags/VER-$(echo "$FREETYPE_VERSION" | tr . -).tar.gz" 1
 fetch graphite2 \
     "https://github.com/silnrsi/graphite/archive/refs/tags/${GRAPHITE2_VERSION}.tar.gz" 1
 
