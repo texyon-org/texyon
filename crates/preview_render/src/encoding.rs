@@ -17,6 +17,9 @@ pub(crate) fn type1_builtin(bytes: &[u8]) -> Option<Resource> {
     }
     let mut names = vec![".notdef".to_owned(); 256];
     let mut found = false;
+    // A `/` starts a PostScript name token even without whitespace before it:
+    // the hfbright fonts write `dup 0/Gamma put`.
+    let body = body.replace('/', " /");
     let mut tokens = body.split_whitespace();
     while let Some(token) = tokens.next() {
         if token != "dup" {
@@ -40,6 +43,19 @@ pub(crate) fn type1_builtin(bytes: &[u8]) -> Option<Resource> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extracts_vector_with_glued_name_tokens() {
+        // hfbright (cmbright's Type1 math fonts) writes no space before the
+        // glyph name.
+        let resource = type1_builtin(
+            b"/Encoding 256 array\n 0 1 255 { 1 index exch /.notdef put} for\ndup 0/Gamma put\ndup 1/Delta put\nreadonly def",
+        )
+        .unwrap();
+        let text = std::str::from_utf8(&resource.bytes).unwrap();
+        assert_eq!(text.split_whitespace().nth(1), Some("/Gamma"));
+        assert_eq!(text.split_whitespace().nth(2), Some("/Delta"));
+    }
 
     #[test]
     fn extracts_custom_type1_vector() {

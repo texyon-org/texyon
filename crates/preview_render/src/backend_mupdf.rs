@@ -523,6 +523,15 @@ impl Backend for MupdfBackend {
 fn parse_encoding(bytes: &[u8]) -> Result<Vec<String>, RenderError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| RenderError::Backend("font encoding is not UTF-8/ASCII".into()))?;
+    // PostScript comments run to end of line and may contain anything,
+    // including brackets and slash-names: cm-super-t1.enc ends its vector
+    // with "/germandbls % or /germandbls.alt".
+    let text = text
+        .lines()
+        .map(|line| line.split('%').next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let text = text.as_str();
     let start = text
         .find('[')
         .ok_or_else(|| RenderError::Backend("font encoding has no vector".into()))?;
@@ -558,6 +567,23 @@ mod tests {
             e: x,
             f: y,
         }
+    }
+
+    #[test]
+    fn encoding_comments_hide_names_and_brackets() {
+        let names = parse_encoding(
+            b"% header with a stray ] bracket\n\
+              /T1Encoding [\n\
+              % 0x00\n\
+              /grave\n\
+              /germandbls % or /germandbls.alt\n\
+              ] def\n",
+        )
+        .unwrap();
+        assert_eq!(names[0], "grave");
+        assert_eq!(names[1], "germandbls");
+        assert_eq!(names[2], ".notdef");
+        assert_eq!(names.len(), 256);
     }
 
     #[test]
