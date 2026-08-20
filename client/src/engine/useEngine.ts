@@ -10,6 +10,7 @@ import type {
 import { TectonicEngine } from "@tectonic/wasm";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { measure } from "../perf";
 import type { Workspace } from "../workspace/Workspace";
 
 export interface EngineState {
@@ -185,7 +186,11 @@ export function useEngine(
     const requestedAt = typedAt.current ?? performance.now();
 
     try {
+      performance.mark("tex:compile-call");
+      measure("tex:queue", "tex:edit", "tex:compile-call");
       const compiled = await engine.compile(files, viewport.current);
+      performance.mark("tex:frame-received");
+      measure("tex:worker", "tex:compile-call", "tex:frame-received");
       compiledRevision.current = revision;
       paintingFrom.current = requestedAt;
       setResult(compiled);
@@ -243,6 +248,7 @@ export function useEngine(
         for (;;) {
           const frame = await engine.continueTail();
           if (frame === null) break;
+          performance.mark("tex:frame-received");
           // Background work: its paint must not be measured as latency.
           paintingFrom.current = null;
           setResult(frame);
@@ -279,6 +285,7 @@ export function useEngine(
 
     const onChange = (): void => {
       typedAt.current = performance.now();
+      performance.mark("tex:edit");
       void run();
     };
 
@@ -295,6 +302,7 @@ export function useEngine(
 
   const markPainted = useCallback(() => {
     if (paintingFrom.current === null) return;
+    measure("tex:latency", "tex:edit", "tex:painted");
     setLatencyMs(performance.now() - paintingFrom.current);
     paintingFrom.current = null;
   }, []);
