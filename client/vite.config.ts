@@ -69,6 +69,8 @@ export default defineConfig({
       "/logout": { target: "http://localhost:8080", changeOrigin: false },
       "/register": { target: "http://localhost:8080", changeOrigin: false },
       "/sanctum": { target: "http://localhost:8080", changeOrigin: false },
+      "/two-factor-challenge": { target: "http://localhost:8080", changeOrigin: false },
+      "/user": { target: "http://localhost:8080", changeOrigin: false },
     },
   },
 });

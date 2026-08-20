@@ -29,7 +29,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->remove(AddLinkHeadersForPreloadedAssets::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Fortify's session routes live outside api/*, the SPA still expects
+        // JSON errors there rather than a redirect back.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request): bool => $request->is('api/*'),
+            fn (Request $request): bool => $request->is('api/*') || $request->expectsJson(),
         );
     })->create();

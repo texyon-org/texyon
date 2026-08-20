@@ -7,8 +7,10 @@ import { FileTree } from "./files/FileTree";
 import { mergeCommands, mergeEnvironments, mergeKeys, packagesUsed } from "./project/commands";
 import { corpusOf, providers } from "./project/corpus";
 import { indexProject } from "./project/symbols";
+import type { Account } from "./api/types";
 import { SignIn } from "./session/SignIn";
 import { useSync } from "./session/useSync";
+import { TopBar } from "./ui/TopBar";
 import { Viewer } from "./viewer/Viewer";
 import type { Workspace } from "./workspace/Workspace";
 
@@ -46,10 +48,23 @@ export interface EditorScreenProps {
   /** The server-side project being kept up to date, or null for the sample. */
   projectId: number | null;
   onBack: () => void;
+  /** The signed-in account for the bar's menu, or null for the sample. */
+  account?: Account | null;
+  onAccount?: (() => void) | null;
+  onSignOut?: () => void;
 }
 
 /** The editor proper: files, text, preview — around one project. */
-export function EditorScreen({ workspace, primary, title, projectId, onBack }: EditorScreenProps) {
+export function EditorScreen({
+  workspace,
+  primary,
+  title,
+  projectId,
+  onBack,
+  account = null,
+  onAccount = null,
+  onSignOut = () => {},
+}: EditorScreenProps) {
   const [openPath, setOpenPath] = useState(primary);
   const [revision, setRevision] = useState(0);
   const [showLog, setShowLog] = useState(false);
@@ -182,16 +197,19 @@ export function EditorScreen({ workspace, primary, title, projectId, onBack }: E
 
   return (
     <div className="app">
-      <header className="bar">
-        <div className="title">
-          <button onClick={onBack} title="Back to projects">
-            ‹
-          </button>
-          <strong>{title}</strong>
-          <span className="subtitle">{openPath}</span>
-        </div>
-
-        <div className="metrics">
+      <TopBar
+        account={account}
+        onBack={onBack}
+        onAccount={onAccount}
+        onSignOut={onSignOut}
+        context={
+          <>
+            <strong>{title}</strong>
+            <span className="subtitle">{openPath}</span>
+          </>
+        }
+        actions={
+          <div className="metrics">
           {latencyMs !== null && (
             <span className="metric primary" title="From the keystroke to the pixels">
               {latencyMs.toFixed(0)} ms
@@ -221,7 +239,7 @@ export function EditorScreen({ workspace, primary, title, projectId, onBack }: E
           {result && <span className={`metric outcome-${result.outcome}`}>{result.outcome}</span>}
 
           {sync.status === "failed" ? (
-            <button onClick={sync.retry} title="Saving to the server failed — try again">
+            <button onClick={sync.retry} title="Saving to the server failed, try again">
               retry save
             </button>
           ) : (
@@ -243,11 +261,12 @@ export function EditorScreen({ workspace, primary, title, projectId, onBack }: E
           <button disabled={!result} onClick={() => void exportPdf()} title="The preview's own output, as a PDF">
             PDF
           </button>
-          <button onClick={() => setShowLog((was) => !was)}>
-            {showLog ? "Hide log" : `Log${problems.length > 0 ? ` (${problems.length})` : ""}`}
-          </button>
-        </div>
-      </header>
+            <button onClick={() => setShowLog((was) => !was)}>
+              {showLog ? "Hide log" : `Log${problems.length > 0 ? ` (${problems.length})` : ""}`}
+            </button>
+          </div>
+        }
+      />
 
       {startupError !== null && (
         <div className="banner error">
@@ -378,7 +397,8 @@ export function EditorScreen({ workspace, primary, title, projectId, onBack }: E
       {sync.status === "signed-out" && (
         <div className="overlay">
           <SignIn
-            notice="Your session expired. Sign back in and your changes will be saved — closing this tab would lose them."
+            variant="card"
+            notice="Your session expired. Sign back in and your changes will be saved. Closing this tab would lose them."
             onSignedIn={sync.retry}
             onSample={null}
           />

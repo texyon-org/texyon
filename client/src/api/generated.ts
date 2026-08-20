@@ -24,6 +24,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AccountShow200,
   AuthenticationExceptionResponse,
   NotFoundHttpExceptionResponse,
   ProjectFileDestroyParams,
@@ -61,6 +62,166 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getAccountShowUrl = () => {
+
+
+
+
+  return `/account`
+}
+
+export const accountShow = async ( options?: Parameters<typeof apiFetch>[1]): Promise<AccountShow200> => {
+
+  return apiFetch<AccountShow200>(getAccountShowUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAccountShowQueryKey = () => {
+    return [
+    `/account`
+    ] as const;
+    }
+
+
+export const getAccountShowQueryOptions = <TData = Awaited<ReturnType<typeof accountShow>>, TError = AuthenticationExceptionResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof accountShow>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAccountShowQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof accountShow>>> = ({ signal }) => accountShow({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof accountShow>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AccountShowQueryResult = NonNullable<Awaited<ReturnType<typeof accountShow>>>
+export type AccountShowQueryError = AuthenticationExceptionResponse
+
+
+export function useAccountShow<TData = Awaited<ReturnType<typeof accountShow>>, TError = AuthenticationExceptionResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof accountShow>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof accountShow>>,
+          TError,
+          Awaited<ReturnType<typeof accountShow>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAccountShow<TData = Awaited<ReturnType<typeof accountShow>>, TError = AuthenticationExceptionResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof accountShow>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof accountShow>>,
+          TError,
+          Awaited<ReturnType<typeof accountShow>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAccountShow<TData = Awaited<ReturnType<typeof accountShow>>, TError = AuthenticationExceptionResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof accountShow>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useAccountShow<TData = Awaited<ReturnType<typeof accountShow>>, TError = AuthenticationExceptionResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof accountShow>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAccountShowQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAccountDestroyUrl = () => {
+
+
+
+
+  return `/account`
+}
+
+export const accountDestroy = async ( options?: Parameters<typeof apiFetch>[1]): Promise<void> => {
+
+  return apiFetch<void>(getAccountDestroyUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getAccountDestroyMutationOptions = <TError = AuthenticationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof accountDestroy>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof accountDestroy>>, TError,void, TContext> => {
+
+const mutationKey = ['accountDestroy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof accountDestroy>>, void> = () => {
+
+
+          return  accountDestroy(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AccountDestroyMutationResult = NonNullable<Awaited<ReturnType<typeof accountDestroy>>>
+
+    export type AccountDestroyMutationError = AuthenticationExceptionResponse
+
+    export const useAccountDestroy = <TError = AuthenticationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof accountDestroy>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof accountDestroy>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getAccountDestroyMutationOptions(options), queryClient);
+    }
 
 export const getProjectIndexUrl = () => {
 

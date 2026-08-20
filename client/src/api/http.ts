@@ -11,6 +11,11 @@ export class ApiError extends Error {
   get isUnauthenticated(): boolean {
     return this.status === 401 || this.status === 419;
   }
+
+  /** 423 means the password must be re-confirmed before this action. */
+  get needsPasswordConfirmation(): boolean {
+    return this.status === 423;
+  }
 }
 
 /** Laravel's XSRF cookie, echoed back on every write. */

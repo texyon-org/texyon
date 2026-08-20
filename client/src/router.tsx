@@ -7,14 +7,16 @@ import {
 } from "@tanstack/react-router";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 
-import { getProjectIndexQueryOptions, projectShow } from "./api/generated";
+import { getAccountShowQueryOptions, getProjectIndexQueryOptions, projectShow } from "./api/generated";
 import { ApiError } from "./api/http";
 import { queryClient } from "./queryClient";
+import { AccountScreen } from "./session/AccountScreen";
 import { openProject } from "./session/load";
 import { ProjectEditorScreen } from "./session/ProjectEditorScreen";
 import { ProjectsScreen } from "./session/ProjectsScreen";
 import { SampleScreen } from "./session/SampleScreen";
 import { SignInScreen } from "./session/SignInScreen";
+import { AccountSkeleton, EditorSkeleton, ProjectsSkeleton } from "./ui/skeletons";
 
 /** 401 means go sign in. */
 function gate(failure: unknown): never {
@@ -32,7 +34,7 @@ const projectsRoute = createRoute({
   // Listing projects is also the signed-in check.
   loader: () => queryClient.ensureQueryData(getProjectIndexQueryOptions()).catch(gate),
   pendingMs: 0,
-  pendingComponent: () => <div className="gate">Loading…</div>,
+  pendingComponent: ProjectsSkeleton,
   errorComponent: ({ error }: ErrorComponentProps) => (
     <SignInScreen
       notice={`The server could not be reached (${error.message}). You can still try the sample.`}
@@ -64,7 +66,7 @@ const editorRoute = createRoute({
     }
   },
   pendingMs: 0,
-  pendingComponent: () => <div className="gate">Opening project…</div>,
+  pendingComponent: EditorSkeleton,
   errorComponent: ({ error }: ErrorComponentProps) => (
     <div className="gate">
       <div className="card">
@@ -79,6 +81,15 @@ const editorRoute = createRoute({
   component: ProjectEditorScreen,
 });
 
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account",
+  loader: () => queryClient.ensureQueryData(getAccountShowQueryOptions()).catch(gate),
+  pendingMs: 0,
+  pendingComponent: AccountSkeleton,
+  component: AccountScreen,
+});
+
 const sampleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sample",
@@ -91,7 +102,13 @@ const signInRoute = createRoute({
   component: SignInScreen,
 });
 
-const routeTree = rootRoute.addChildren([projectsRoute, editorRoute, sampleRoute, signInRoute]);
+const routeTree = rootRoute.addChildren([
+  projectsRoute,
+  editorRoute,
+  accountRoute,
+  sampleRoute,
+  signInRoute,
+]);
 
 export const router = createRouter({
   routeTree,

@@ -2,21 +2,24 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-import { logout } from "../api/auth";
 import {
   getProjectIndexQueryKey,
+  useAccountShow,
   useProjectDestroy,
   useProjectIndex,
   useProjectStore,
 } from "../api/generated";
 import { ApiError } from "../api/http";
 import { ProjectList } from "./ProjectList";
+import { useSignOut } from "./useSignOut";
 
 export function ProjectsScreen() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const signOut = useSignOut();
 
   const index = useProjectIndex();
+  const account = useAccountShow();
   const create = useProjectStore();
   const destroy = useProjectDestroy();
 
@@ -30,6 +33,7 @@ export function ProjectsScreen() {
   return (
     <ProjectList
       projects={index.data?.projects ?? []}
+      account={account.data?.user ?? null}
       notice={null}
       onOpen={(project) =>
         void navigate({ to: "/projects/$projectId", params: { projectId: project.id } })
@@ -43,17 +47,8 @@ export function ProjectsScreen() {
         await destroy.mutateAsync({ project: project.id });
         await queryClient.invalidateQueries({ queryKey: getProjectIndexQueryKey() });
       }}
-      onSignOut={() => {
-        void (async () => {
-          try {
-            await logout();
-          } catch {
-            // Failing still means leaving.
-          }
-          queryClient.clear();
-          void navigate({ to: "/sign-in" });
-        })();
-      }}
+      onAccount={() => void navigate({ to: "/account" })}
+      onSignOut={signOut}
     />
   );
 }

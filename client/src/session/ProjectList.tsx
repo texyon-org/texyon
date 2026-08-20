@@ -1,31 +1,39 @@
 import { useState } from "react";
 
-import type { Project } from "../api/types";
+import type { Account, Project } from "../api/types";
+import { CrossIcon, FileIcon } from "../ui/icons";
+import { TopBar } from "../ui/TopBar";
 
 export interface ProjectListProps {
   projects: Project[];
-  /** Something that went wrong on the way here — a project that would not open. */
+  /** The signed-in account, or null while it loads. */
+  account: Account | null;
+  /** Something that went wrong on the way here, like a project that would not open. */
   notice: string | null;
   onOpen: (project: Project) => void;
   /** Create a project with this name, then open it. */
   onCreate: (name: string) => Promise<void>;
   onDelete: (project: Project) => Promise<void>;
+  onAccount: () => void;
   onSignOut: () => void;
 }
 
 /** When it was, said the way a person would scan a list: date, not time-ago. */
 function when(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString();
+  if (Number.isNaN(date.getTime())) return "";
+  return `Edited ${date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
 }
 
 /** The projects an account has, and the way to another one. */
 export function ProjectList({
   projects,
+  account,
   notice,
   onOpen,
   onCreate,
   onDelete,
+  onAccount,
   onSignOut,
 }: ProjectListProps) {
   const [draft, setDraft] = useState("");
@@ -49,65 +57,73 @@ export function ProjectList({
   };
 
   return (
-    <div className="gate">
-      <div className="card card-wide">
-        <div className="card-head">
-          <h1>Projects</h1>
-          <button className="card-link" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
+    <div className="screen">
+      <TopBar account={account} onBack={null} onAccount={onAccount} onSignOut={onSignOut} />
 
-        {notice !== null && <div className="card-error">{notice}</div>}
-        {error !== null && <div className="card-error">{error}</div>}
+      <main className="screen-main">
+        <div className="screen-column">
+          <div className="screen-head">
+            <div className="screen-title">
+              <h1>Projects</h1>
+              <span className="screen-count">{recentFirst.length}</span>
+            </div>
 
-        <ul className="project-list">
-          {recentFirst.map((project) => (
-            <li key={project.id}>
-              <button className="project-open" disabled={busy} onClick={() => onOpen(project)}>
-                <span className="project-name">{project.name}</span>
-                <span className="project-when">{when(project.updatedAt)}</span>
-              </button>
-              <button
-                className="project-delete"
-                title="Delete this project and its files"
+            <form
+              className="project-new"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const name = draft.trim();
+                if (name === "") return;
+                act(async () => {
+                  await onCreate(name);
+                  setDraft("");
+                });
+              }}
+            >
+              <input
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="A new project's name"
                 disabled={busy}
-                onClick={() => {
-                  if (window.confirm(`Delete “${project.name}” and its files?`)) {
-                    act(() => onDelete(project));
-                  }
-                }}
-              >
-                ×
+              />
+              <button type="submit" className="btn-primary" disabled={busy || draft.trim() === ""}>
+                Create
               </button>
-            </li>
-          ))}
-          {recentFirst.length === 0 && <li className="project-none">No projects yet.</li>}
-        </ul>
+            </form>
+          </div>
 
-        <form
-          className="project-new"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const name = draft.trim();
-            if (name === "") return;
-            act(async () => {
-              await onCreate(name);
-              setDraft("");
-            });
-          }}
-        >
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="A new project's name"
-            disabled={busy}
-          />
-          <button type="submit" className="card-primary" disabled={busy || draft.trim() === ""}>
-            Create
-          </button>
-        </form>
-      </div>
+          {notice !== null && <div className="notice error">{notice}</div>}
+          {error !== null && <div className="notice error">{error}</div>}
+
+          <ul className="project-rows">
+            {recentFirst.map((project) => (
+              <li key={project.id}>
+                <button className="project-open" disabled={busy} onClick={() => onOpen(project)}>
+                  <FileIcon />
+                  <span className="project-info">
+                    <span className="project-name">{project.name}</span>
+                    <span className="project-primary">{project.primary}</span>
+                  </span>
+                  <span className="project-when">{when(project.updatedAt)}</span>
+                </button>
+                <button
+                  className="project-delete"
+                  title="Delete this project and its files"
+                  disabled={busy}
+                  onClick={() => {
+                    if (window.confirm(`Delete “${project.name}” and its files?`)) {
+                      act(() => onDelete(project));
+                    }
+                  }}
+                >
+                  <CrossIcon size={14} />
+                </button>
+              </li>
+            ))}
+            {recentFirst.length === 0 && <li className="project-none">No projects yet.</li>}
+          </ul>
+        </div>
+      </main>
     </div>
   );
 }

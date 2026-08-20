@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 
+import { CaretIcon, CrossIcon, PencilIcon, PlusIcon } from "../ui/icons";
+
 export interface FileTreeProps {
   paths: readonly string[];
   /** The file currently open. */
@@ -56,7 +58,7 @@ export function FileTree({
       <header className="files-bar">
         <span>Files</span>
         <button onClick={() => setAdding(true)} title="New file">
-          +
+          <PlusIcon />
         </button>
       </header>
 
@@ -126,7 +128,7 @@ function TreeNode({
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
           onClick={() => setExpanded((was) => !was)}
         >
-          <span className="files-caret">{expanded ? "▾" : "▸"}</span>
+          <CaretIcon open={expanded} />
           {node.name}
         </button>
         {expanded && (
@@ -174,7 +176,7 @@ function TreeNode({
             if (to !== null && to.trim() !== "") onRename(node.path, to.trim());
           }}
         >
-          ✎
+          <PencilIcon />
         </button>
 
         {/* The primary is what TeX is pointed at; a project without one cannot
@@ -187,7 +189,7 @@ function TreeNode({
               if (window.confirm(`Delete ${node.path}?`)) onRemove(node.path);
             }}
           >
-            ×
+            <CrossIcon size={12} />
           </button>
         )}
       </div>
