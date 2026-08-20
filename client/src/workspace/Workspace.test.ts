@@ -22,6 +22,27 @@ test("writing the same text again is not a change", () => {
   assert.deepEqual(workspace.dirty(), ["main.tex"]);
 });
 
+test("rewriting a binary file with equal bytes is not a change", () => {
+  const workspace = new Workspace({ "plot.png": new Uint8Array([1, 2, 3]) });
+  const seen: number[] = [];
+  workspace.subscribe((change) => seen.push(change.revision));
+
+  assert.equal(workspace.write("plot.png", new Uint8Array([1, 2, 3])), false);
+  assert.deepEqual(seen, []);
+  assert.deepEqual(workspace.dirty(), []);
+
+  assert.equal(workspace.write("plot.png", new Uint8Array([9, 2, 3])), true);
+  assert.deepEqual(seen, [1]);
+  assert.deepEqual(workspace.dirty(), ["plot.png"]);
+});
+
+test("a file can change kinds, text to bytes and back", () => {
+  const workspace = new Workspace({ "notes.txt": "text" });
+
+  assert.equal(workspace.write("notes.txt", new Uint8Array([0, 1])), true);
+  assert.equal(workspace.write("notes.txt", "text again"), true);
+});
+
 test("a snapshot is what the engine's compile takes", () => {
   const workspace = new Workspace({ "main.tex": "a" });
   workspace.create("chapters/one.tex", "b");

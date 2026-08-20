@@ -1,6 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 
-import { CaretIcon, CrossIcon, PencilIcon, PlusIcon } from "../ui/icons";
+import { CaretIcon, CrossIcon, FolderUpIcon, PencilIcon, PlusIcon, UploadIcon } from "../ui/icons";
+import { uploadsFromDataTransfer, uploadsFromInput } from "./upload";
+import type { UploadFile } from "./upload";
 
 export interface FileTreeProps {
   paths: readonly string[];
@@ -14,6 +17,7 @@ export interface FileTreeProps {
   onCreate: (path: string) => void;
   onRemove: (path: string) => void;
   onRename: (from: string, to: string) => void;
+  onUpload: (uploads: UploadFile[]) => void;
 }
 
 /** A directory, or a file, in the tree that paths imply. */
@@ -40,9 +44,15 @@ export function FileTree({
   onCreate,
   onRemove,
   onRename,
+  onUpload,
 }: FileTreeProps) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const [dropping, setDropping] = useState(false);
+  // drag events fire per child crossed, only a balanced count means the pointer left
+  const dragDepth = useRef(0);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
 
   const tree = useMemo(() => build(paths), [paths]);
 
@@ -53,14 +63,61 @@ export function FileTree({
     if (path !== "") onCreate(path);
   };
 
+  const pick = (event: ChangeEvent<HTMLInputElement>): void => {
+    const uploads = uploadsFromInput(event.target.files);
+    event.target.value = "";
+    if (uploads.length > 0) onUpload(uploads);
+  };
+
   return (
-    <nav className="files">
+    <nav
+      className={`files ${dropping ? "dropping" : ""}`}
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        dragDepth.current++;
+        setDropping(true);
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+      }}
+      onDragLeave={() => {
+        if (dragDepth.current > 0 && --dragDepth.current === 0) setDropping(false);
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        dragDepth.current = 0;
+        setDropping(false);
+        void uploadsFromDataTransfer(event.dataTransfer).then((uploads) => {
+          if (uploads.length > 0) onUpload(uploads);
+        });
+      }}
+    >
       <header className="files-bar">
         <span>Files</span>
-        <button onClick={() => setAdding(true)} title="New file">
-          <PlusIcon />
-        </button>
+        <span className="files-actions">
+          <button onClick={() => folderInput.current?.click()} title="Upload a folder">
+            <FolderUpIcon />
+          </button>
+          <button onClick={() => fileInput.current?.click()} title="Upload files or a zip">
+            <UploadIcon />
+          </button>
+          <button onClick={() => setAdding(true)} title="New file">
+            <PlusIcon />
+          </button>
+        </span>
       </header>
+
+      <input ref={fileInput} type="file" multiple hidden onChange={pick} />
+      <input
+        ref={folderInput}
+        type="file"
+        hidden
+        onChange={pick}
+        // not in React's prop types, makes the picker take a folder
+        {...{ webkitdirectory: "" }}
+      />
 
       {adding && (
         <input

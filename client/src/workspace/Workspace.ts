@@ -15,8 +15,16 @@
  * is stale.
  */
 
-/** Every file's complete current text, by path relative to the project root. */
-export type ProjectFiles = Record<string, string>;
+/** Text for sources, bytes for binaries. Decided by UTF-8 validity where content enters. */
+export type FileContent = string | Uint8Array;
+
+/** Every file's complete current content, by path relative to the project root. */
+export type ProjectFiles = Record<string, FileContent>;
+
+function same(left: FileContent, right: FileContent): boolean {
+  if (typeof left === "string" || typeof right === "string") return left === right;
+  return left === right || (left.length === right.length && left.every((b, i) => b === right[i]));
+}
 
 /** What changed, for a listener that wants to know more than "something". */
 export interface WorkspaceChange {
@@ -33,14 +41,14 @@ export type WorkspaceListener = (change: WorkspaceChange) => void;
 
 /** The files of one project, and who is allowed to say what they contain. */
 export class Workspace {
-  #files = new Map<string, string>();
+  #files = new Map<string, FileContent>();
   #revision = 0;
   #listeners = new Set<WorkspaceListener>();
   #dirty = new Set<string>();
 
   constructor(files: ProjectFiles = {}) {
-    for (const [path, text] of Object.entries(files)) {
-      this.#files.set(path, text);
+    for (const [path, content] of Object.entries(files)) {
+      this.#files.set(path, content);
     }
   }
 
@@ -58,8 +66,8 @@ export class Workspace {
     return this.#files.has(path);
   }
 
-  /** One file's text, or null if the project does not have it. */
-  read(path: string): string | null {
+  /** One file's content, or null if the project does not have it. */
+  read(path: string): FileContent | null {
     return this.#files.get(path) ?? null;
   }
 
@@ -92,19 +100,20 @@ export class Workspace {
    * echoes its own value back — which every editor does — would otherwise
    * recompile the document on every keystroke that changed nothing.
    */
-  write(path: string, text: string): boolean {
-    if (this.#files.get(path) === text) return false;
+  write(path: string, content: FileContent): boolean {
+    const current = this.#files.get(path);
+    if (current !== undefined && same(current, content)) return false;
 
-    this.#files.set(path, text);
+    this.#files.set(path, content);
     this.#dirty.add(path);
     this.#advance({ changed: [path], removed: [] });
     return true;
   }
 
   /** Add a file the project did not have. */
-  create(path: string, text = ""): boolean {
+  create(path: string, content: FileContent = ""): boolean {
     if (this.#files.has(path)) return false;
-    return this.write(path, text);
+    return this.write(path, content);
   }
 
   remove(path: string): boolean {
@@ -122,11 +131,11 @@ export class Workspace {
    * moment where the project has neither.
    */
   rename(from: string, to: string): boolean {
-    const text = this.#files.get(from);
-    if (text === undefined || from === to || this.#files.has(to)) return false;
+    const content = this.#files.get(from);
+    if (content === undefined || from === to || this.#files.has(to)) return false;
 
     this.#files.delete(from);
-    this.#files.set(to, text);
+    this.#files.set(to, content);
     this.#dirty.delete(from);
     this.#dirty.add(to);
     this.#advance({ changed: [to], removed: [from] });

@@ -12,11 +12,11 @@
  * server — delete one path, write the other — is what a rename is there too.
  */
 
-import type { Workspace } from "../workspace/Workspace";
+import type { FileContent, Workspace } from "../workspace/Workspace";
 
 /** The two writes a sync can make, already bound to a project. */
 export interface SyncApi {
-  writeFile(path: string, text: string): Promise<unknown>;
+  writeFile(path: string, content: FileContent): Promise<unknown>;
   deleteFile(path: string): Promise<void>;
 }
 
@@ -128,12 +128,11 @@ export class ProjectSync {
         }
 
         for (const path of this.#workspace.dirty()) {
-          const text = this.#workspace.read(path);
-          if (text === null) continue;
-          await this.#api.writeFile(path, text);
-          // Only if the workspace still says what was sent: a keystroke during
-          // the request means the path is dirty again, not saved.
-          if (this.#workspace.read(path) === text) this.#workspace.markSaved([path]);
+          const content = this.#workspace.read(path);
+          if (content === null) continue;
+          await this.#api.writeFile(path, content);
+          // saved only if unchanged since the send, identity also covers bytes
+          if (this.#workspace.read(path) === content) this.#workspace.markSaved([path]);
         }
       } while (this.#again && !this.#stopped);
 

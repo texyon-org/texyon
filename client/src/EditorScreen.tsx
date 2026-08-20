@@ -3,7 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CwlPackage } from "./project/cwl";
 import { Editor } from "./editor/Editor";
 import { useEngine } from "./engine/useEngine";
+import { BinaryFileView } from "./files/BinaryFileView";
 import { FileTree } from "./files/FileTree";
+import { planImport } from "./files/import";
+import { entriesFromUploads } from "./files/upload";
+import type { UploadFile } from "./files/upload";
 import { mergeCommands, mergeEnvironments, mergeKeys, packagesUsed } from "./project/commands";
 import { corpusOf, providers } from "./project/corpus";
 import { indexProject } from "./project/symbols";
@@ -70,6 +74,39 @@ export function EditorScreen({
   const [showLog, setShowLog] = useState(false);
   const [jumpToLine, setJumpToLine] = useState<number | null>(null);
   const [scrollTo, setScrollTo] = useState<{ pageIndex: number; vBp: number } | null>(null);
+  const [importReport, setImportReport] = useState<{
+    imported: number;
+    replaced: number;
+    problems: string[];
+  } | null>(null);
+
+  const onUpload = useCallback(
+    (uploads: UploadFile[]) => {
+      void (async () => {
+        const { entries, errors } = await entriesFromUploads(uploads);
+        const plan = planImport(entries);
+
+        let replaced = 0;
+        for (const file of plan.files) {
+          if (workspace.has(file.path)) replaced++;
+          workspace.write(file.path, file.content);
+        }
+
+        const first = plan.files.find((file) => file.path.endsWith(".tex")) ?? plan.files[0];
+        if (first !== undefined) setOpenPath(first.path);
+
+        setImportReport({
+          imported: plan.files.length,
+          replaced,
+          problems: [
+            ...errors,
+            ...plan.skipped.map((skip) => `${skip.path} (${skip.reason})`),
+          ],
+        });
+      })();
+    },
+    [workspace],
+  );
 
   // The workspace is mutable and outside React, so a subscription is what turns
   // its changes into renders.
@@ -77,7 +114,8 @@ export function EditorScreen({
 
   const sync = useSync(workspace, projectId);
 
-  const preamble = workspace.read(primary)?.slice(0, 4000) ?? "";
+  const primaryContent = workspace.read(primary);
+  const preamble = typeof primaryContent === "string" ? primaryContent.slice(0, 4000) : "";
 
   // Everything downstream of "what does this document load" hangs off this
   // one string, and it is deliberately not the preamble text: that changes on
@@ -145,7 +183,8 @@ export function EditorScreen({
   const symbols = useMemo(() => indexProject(workspace.snapshot()), [workspace, revision]);
   const paths = useMemo(() => workspace.paths(), [workspace, revision]);
   const dirty = useMemo(() => new Set(workspace.dirty()), [workspace, revision]);
-  const text = workspace.read(openPath) ?? "";
+  const content = workspace.read(openPath) ?? "";
+  const text = typeof content === "string" ? content : "";
 
   const cursorLine = useRef(1);
 
@@ -288,6 +327,21 @@ export function EditorScreen({
         </div>
       )}
 
+      {importReport && (
+        <div className={`banner ${importReport.imported === 0 ? "error" : ""}`}>
+          <button className="dismiss" title="Dismiss" onClick={() => setImportReport(null)}>
+            ✕
+          </button>
+          {importReport.imported === 0
+            ? "Nothing was imported."
+            : `Imported ${importReport.imported} file${importReport.imported === 1 ? "" : "s"}` +
+              (importReport.replaced > 0 ? `, replacing ${importReport.replaced}.` : ".")}
+          {importReport.problems.length > 0 && (
+            <div className="hint">Skipped: {importReport.problems.join(", ")}.</div>
+          )}
+        </div>
+      )}
+
       <main className="panes">
         <FileTree
           paths={paths}
@@ -306,43 +360,47 @@ export function EditorScreen({
           onRename={(from, to) => {
             if (workspace.rename(from, to) && openPath === from) setOpenPath(to);
           }}
+          onUpload={onUpload}
         />
 
         <section className="pane">
-          <Editor
-            path={openPath}
-            text={text}
-            sources={{
-              symbols,
-              commands: merged,
-              environments,
-              keys,
-              providers: providers(),
-              paths,
-              openPath,
-              addPackage: (name) => {
-                const main = workspace.read(primary);
-                if (main === null || main.includes(`{${name}}`)) return;
-                // After the last \usepackage if there is one, and after the
-                // \documentclass otherwise — either way, still in the preamble.
-                const anchor = /^.*\\(?:usepackage|documentclass)\b.*$/gm;
-                let last: RegExpExecArray | null = null;
-                for (let m = anchor.exec(main); m !== null; m = anchor.exec(main)) last = m;
-                if (last === null) return;
-                const at = last.index + last[0].length;
-                workspace.write(
-                  primary,
-                  `${main.slice(0, at)}\n\\usepackage{${name}}${main.slice(at)}`,
-                );
-              },
-            }}
-            diagnostics={result?.diagnostics ?? []}
-            jumpToLine={jumpToLine}
-            onChange={onChange}
-            onCursorLine={(line) => {
-              cursorLine.current = line;
-            }}
-          />
+          {typeof content !== "string" ? (
+            <BinaryFileView path={openPath} content={content} />
+          ) : (
+            <Editor
+              path={openPath}
+              text={text}
+              sources={{
+                symbols,
+                commands: merged,
+                environments,
+                keys,
+                providers: providers(),
+                paths,
+                openPath,
+                addPackage: (name) => {
+                  const main = workspace.read(primary);
+                  if (typeof main !== "string" || main.includes(`{${name}}`)) return;
+                  // after the last \usepackage, else after the \documentclass
+                  const anchor = /^.*\\(?:usepackage|documentclass)\b.*$/gm;
+                  let last: RegExpExecArray | null = null;
+                  for (let m = anchor.exec(main); m !== null; m = anchor.exec(main)) last = m;
+                  if (last === null) return;
+                  const at = last.index + last[0].length;
+                  workspace.write(
+                    primary,
+                    `${main.slice(0, at)}\n\\usepackage{${name}}${main.slice(at)}`,
+                  );
+                },
+              }}
+              diagnostics={result?.diagnostics ?? []}
+              jumpToLine={jumpToLine}
+              onChange={onChange}
+              onCursorLine={(line) => {
+                cursorLine.current = line;
+              }}
+            />
+          )}
         </section>
 
         <section className="pane">

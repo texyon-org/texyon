@@ -70,7 +70,7 @@ const DECLARE_MATH = /\\DeclareMathOperator\*?\s*\{?\\([A-Za-z@]+)\}?/g;
 const BIB_ENTRY = /^\s*@(\w+)\s*\{\s*([^,\s}]+)\s*,/;
 
 /** Build the index for a project's files. */
-export function indexProject(files: Record<string, string>): SymbolIndex {
+export function indexProject(files: Record<string, string | Uint8Array>): SymbolIndex {
   const index: SymbolIndex = {
     labels: [],
     citations: [],
@@ -79,6 +79,7 @@ export function indexProject(files: Record<string, string>): SymbolIndex {
   };
 
   for (const [path, text] of Object.entries(files)) {
+    if (typeof text !== "string") continue;
     const lower = path.toLowerCase();
     if (lower.endsWith(".bib")) {
       collectCitations(path, text, index);

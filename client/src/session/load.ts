@@ -23,10 +23,10 @@ Hello.
 
 export async function openProject(project: Project): Promise<Workspace> {
   const { files: infos } = await projectFileIndex(project.id);
-  const texts = await Promise.all(infos.map((info) => readFile(project.id, info.path)));
+  const contents = await Promise.all(infos.map((info) => readFile(project.id, info.path)));
 
   const workspace = new Workspace(
-    Object.fromEntries(infos.map((info, index) => [info.path, texts[index]])),
+    Object.fromEntries(infos.map((info, index) => [info.path, contents[index]])),
   );
 
   // A brand-new project has no files yet. Created through the workspace rather
