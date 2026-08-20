@@ -103,6 +103,14 @@ export interface RenderedPage {
  * last paragraph of a twenty-page document redraws one page.
  */
 export interface CompileResult {
+  /**
+   * Whether the run published a frame.
+   *
+   * A cancelled or aborted run publishes nothing: its page fields are empty
+   * and mean "keep what you have", not "the document has no pages". The log,
+   * diagnostics and {@link aborted} are still meaningful.
+   */
+  published: boolean;
   /** SVG for the changed pages. Its indices are exactly {@link changed}. */
   pages: RenderedPage[];
   /** Indices of the pages that changed. */

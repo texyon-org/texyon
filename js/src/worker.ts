@@ -55,6 +55,7 @@ interface Exports {
 
 /** What the Rust side reports for one compile. */
 interface RawCompileReport {
+  published: boolean;
   /** The SVG itself stays in linear memory; see `collect`. */
   pages: { index: number; ptr: number; len: number }[];
   changed: number[];
@@ -763,6 +764,7 @@ function collect(report: RawCompileReport, elapsedMs: number): CompileResult {
   });
 
   return {
+    published: report.published,
     pages,
     changed: report.changed,
     removed: report.removed,

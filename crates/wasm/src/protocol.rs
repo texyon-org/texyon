@@ -311,6 +311,12 @@ pub struct RenderedPage {
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompileReport {
+    /// Whether the run published a frame.
+    ///
+    /// A cancelled or aborted run publishes nothing; its page fields are empty
+    /// and the viewer must keep what it already shows rather than treat the
+    /// report as a zero-page document.
+    pub published: bool,
     /// SVG for the changed pages. Its indices are exactly `changed`.
     pub pages: Vec<RenderedPage>,
     /// Indices of the pages that changed.

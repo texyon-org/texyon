@@ -241,6 +241,7 @@ fn report(session: &Session, output: session::CompileOutput) -> CompileReport {
     let (support_files, support_bytes) = session.support_stats();
 
     CompileReport {
+        published: output.published,
         pages: output
             .pages
             .into_iter()

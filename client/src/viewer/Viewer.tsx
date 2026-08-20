@@ -56,6 +56,15 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewpo
   /** The effect below also reruns on zoom; only a new frame is instrumented. */
   const lastApplied = useRef<CompileResult | null>(null);
 
+  /**
+   * The last result that actually published a frame.
+   *
+   * An aborted or cancelled run reports empty page fields that mean "keep what
+   * you have"; applying them would wipe every page slot. The viewer keeps
+   * showing this frame instead until a published one replaces it.
+   */
+  const lastPublished = useRef<CompileResult | null>(null);
+
   /** Say which pages currently intersect the scroller. */
   const measureViewport = useCallback(() => {
     const view = scroller.current;
@@ -103,17 +112,19 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewpo
   }, []);
 
   useEffect(() => {
+    if (result !== null && result.published) lastPublished.current = result;
+    const frame = lastPublished.current;
     const host = container.current;
-    if (result === null || host === null) return;
+    if (frame === null || host === null) return;
 
-    const fresh = result !== lastApplied.current;
-    lastApplied.current = result;
+    const fresh = frame !== lastApplied.current;
+    lastApplied.current = frame;
     if (fresh) {
       performance.mark("tex:apply-start");
       measure("tex:react-commit", "tex:frame-received", "tex:apply-start");
     }
 
-    while (slots.current.length < result.pageCount) {
+    while (slots.current.length < frame.pageCount) {
       const slot = document.createElement("section");
       slot.className = "page";
       slot.addEventListener("dblclick", (event) => {
@@ -125,20 +136,20 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewpo
       host.appendChild(slot);
       slots.current.push(slot);
     }
-    while (slots.current.length > result.pageCount) {
+    while (slots.current.length > frame.pageCount) {
       slots.current.pop()?.remove();
     }
 
     // Size every slot, including ones we were not sent, so the scroll height is
     // right before their pages arrive.
-    result.pageSizes.forEach(([width, height], index) => {
+    frame.pageSizes.forEach(([width, height], index) => {
       const slot = slots.current[index];
       if (slot === undefined) return;
       slot.style.width = `${width * zoom}px`;
       slot.style.height = `${height * zoom}px`;
     });
 
-    for (const page of result.pages) {
+    for (const page of frame.pages) {
       const slot = slots.current[page.index];
       if (slot === undefined) continue;
 
@@ -164,7 +175,7 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewpo
     // on as a layer of anchors above the SVG. Every page's overlay is rebuilt,
     // because a page whose text did not move can still have had its link
     // renumbered by an edit above it, and because the zoom may have changed.
-    result.pageOverlays.forEach((overlay, index) => {
+    frame.pageOverlays.forEach((overlay, index) => {
       const slot = slots.current[index];
       if (slot === undefined) return;
 
@@ -174,7 +185,7 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewpo
       const layer = document.createElement("div");
       layer.className = "links";
       for (const link of overlay.links) {
-        layer.appendChild(anchorFor(link, zoom, result, slots.current, scroller.current));
+        layer.appendChild(anchorFor(link, zoom, frame, slots.current, scroller.current));
       }
       slot.appendChild(layer);
     });
@@ -184,13 +195,13 @@ export function Viewer({ result, onPainted, onBackwardSearch, scrollTo, onViewpo
       measure("tex:overlays", "tex:pages-applied", "tex:overlays-applied");
     }
 
-    setPageCount(result.pageCount);
+    setPageCount(frame.pageCount);
 
     // The document may have grown, shrunk or been rescaled under a still
     // scrollbar, all of which change which pages are visible.
     measureViewport();
 
-    if (result.pages.length > 0) {
+    if (frame.pages.length > 0) {
       // The rAF callback runs just before the frame that shows the new page is
       // rendered, and a task queued from it runs just after that frame is
       // presented. A second rAF here would wait a whole extra frame.

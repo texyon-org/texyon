@@ -87,6 +87,11 @@ pub struct RenderedPage {
 
 /// What one compile produced.
 pub struct CompileOutput {
+    /// Whether the run published a frame.
+    ///
+    /// A cancelled or aborted run publishes nothing, and its empty page fields
+    /// mean "keep what you have", not "the document has no pages".
+    pub published: bool,
     /// SVG for the pages whose appearance changed. Empty when nothing moved.
     pub pages: Vec<RenderedPage>,
     /// Indices of every page that changed, matching `pages`.
@@ -530,6 +535,7 @@ impl Session {
         let metrics = self.processor.sink().metrics().clone();
         let tail_pending = self.processor.sink().tail_pending();
         let frame = self.processor.sink_mut().take();
+        let published = frame.is_some();
 
         let (pages, changed, removed, visuals) = match frame {
             Some(frame) => (
@@ -568,6 +574,7 @@ impl Session {
         }
 
         Ok(CompileOutput {
+            published,
             pages,
             changed,
             removed,
