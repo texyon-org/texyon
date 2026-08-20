@@ -1,6 +1,6 @@
 // End-to-end check that the wasm module typesets a document.
 //
-// Node stands in for the browser here: the host imports are the same two the
+// Node stands in for the browser here: the host imports are the same ones the
 // Worker provides, but backed by synchronous filesystem reads instead of
 // synchronous XHR. If this passes, everything on the Rust side of the boundary
 // works and anything still broken is in the page.
@@ -164,6 +164,16 @@ const imports = {
       v.setUint32(outLen, buffer.len, true);
       return 0;
     },
+    tectonic_host_read_source(namePtr, nameLen, outPtr, outLen) {
+      const name = decoder.decode(new Uint8Array(engine.memory.buffer, namePtr, nameLen));
+      const held = sources.get(name);
+      if (!held) return 1;
+      const buffer = intoModule(encoder.encode(held.text));
+      const v = new DataView(engine.memory.buffer);
+      v.setUint32(outPtr, buffer.ptr, true);
+      v.setUint32(outLen, buffer.len, true);
+      return 0;
+    },
     tectonic_host_log(kind, msgPtr, msgLen) {
       const message = decoder.decode(new Uint8Array(engine.memory.buffer, msgPtr, msgLen));
       const label = kind === 2 ? "error" : kind === 1 ? "warning" : "note";
@@ -183,11 +193,40 @@ function call(request) {
     const len = v.getUint32(out + 4, true);
     const text = decoder.decode(new Uint8Array(engine.memory.buffer, ptr, len).slice());
     engine.tectonic_wasm_free(ptr, len);
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    if (parsed.status === "compiled") {
+      // The SVG is in linear memory, not in the JSON, like the exported PDF.
+      parsed.pages = parsed.pages.map(({ index, ptr: svgPtr, len: svgLen }) => {
+        const svg =
+          svgLen > 0 ? decoder.decode(new Uint8Array(engine.memory.buffer, svgPtr, svgLen)) : "";
+        engine.tectonic_wasm_free(svgPtr, svgLen);
+        return { index, svg };
+      });
+    }
+    return parsed;
   } finally {
     engine.tectonic_wasm_free(out, 8);
     engine.tectonic_wasm_free(input.ptr, input.len);
   }
+}
+
+// The request carries only {path: revision}; the module pulls the text of any
+// revision it does not hold back out through tectonic_host_read_source, the
+// same way the Worker serves it.
+const sources = new Map();
+let nextRevision = 1;
+
+function compile(project) {
+  for (const [path, text] of Object.entries(project)) {
+    const held = sources.get(path);
+    if (!held || held.text !== text) sources.set(path, { text, revision: nextRevision++ });
+  }
+  for (const path of [...sources.keys()]) {
+    if (!(path in project)) sources.delete(path);
+  }
+  const files = {};
+  for (const [path, { revision }] of sources) files[path] = revision;
+  return call({ op: "compile", files });
 }
 
 // A two-file project, because a single buffer would not exercise the source
@@ -221,7 +260,7 @@ console.log("session opened");
 
 // First compile: cold, reads the format dump and the whole class hierarchy.
 let started = performance.now();
-reply = call({ op: "compile", files: PROJECT("") });
+reply = compile(PROJECT(""));
 const cold = performance.now() - started;
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
 
@@ -247,7 +286,7 @@ writeFileSync(join(repo, "target", "smoke-cold.svg"), reply.pages[0].svg);
 // Second compile: one word changed near the end, which is what the incremental
 // path exists for.
 started = performance.now();
-reply = call({ op: "compile", files: PROJECT(" Edited.") });
+reply = compile(PROJECT(" Edited."));
 const warm = performance.now() - started;
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
 
@@ -266,7 +305,7 @@ if (reply.pages.length > 0) {
 
 // Third compile: identical text. Nothing about the document changed, so the
 // renderer should draw nothing at all.
-reply = call({ op: "compile", files: PROJECT(" Edited.") });
+reply = compile(PROJECT(" Edited."));
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
 console.log(
   `no-op edit: ${reply.changed.length} pages redrawn ` +
@@ -300,7 +339,7 @@ console.log(
 // Editing after an export is the real test of the loan xdvipdfmx takes on
 // pdf_io's open-file registry: TeX owns that registry for the life of a
 // resident session, and a run that failed to hand it back would abort here.
-reply = call({ op: "compile", files: PROJECT(" Edited again.") });
+reply = compile(PROJECT(" Edited again."));
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 400));
 console.log(
   `post-export edit: ${reply.changed.length}/${reply.pageCount} pages redrawn, ` +
@@ -339,12 +378,9 @@ if (backward.source.path !== "chapters/one.tex") {
 
 // A deliberately broken project, to prove the transcript parser attributes a
 // fault to the file that caused it rather than to whichever was open last.
-reply = call({
-  op: "compile",
-  files: {
-    "main.tex": MAIN,
-    "chapters/one.tex": "Fine.\n\n\\undefinedcommandhere\n",
-  },
+reply = compile({
+  "main.tex": MAIN,
+  "chapters/one.tex": "Fine.\n\n\\undefinedcommandhere\n",
 });
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 300));
 
@@ -364,17 +400,14 @@ console.log(
 
 // Links and destinations. hyperref emits both kinds through the same pair of
 // specials, so a document with one of each proves the whole path.
-reply = call({
-  op: "compile",
-  files: {
-    "main.tex": String.raw`\documentclass{article}
+reply = compile({
+  "main.tex": String.raw`\documentclass{article}
 \usepackage{hyperref}
 \begin{document}
 \hypertarget{spot}{Here}. Jump \hyperlink{spot}{back} or visit
 \url{https://example.com/a(b)}.
 \end{document}
 `,
-  },
 });
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 300));
 
@@ -410,17 +443,14 @@ console.log(
 // editor completes against, so the two things worth asserting are that a
 // command the document defined is there with its real arity, and that one
 // LaTeX wrapped in robust-command machinery is resolved through it.
-reply = call({
-  op: "compile",
-  files: {
-    "main.tex": String.raw`\documentclass{article}
+reply = compile({
+  "main.tex": String.raw`\documentclass{article}
 \usepackage{amsmath}
 \newcommand{\vect}[1]{\mathbf{#1}}
 \begin{document}
 $\vect{x}$
 \end{document}
 `,
-  },
 });
 if (reply.status !== "compiled") throw new Error(JSON.stringify(reply).slice(0, 300));
 

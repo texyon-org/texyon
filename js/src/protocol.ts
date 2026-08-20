@@ -325,7 +325,10 @@ export type WorkerRequest =
   | {
       id: number;
       kind: "compile";
-      files: Record<string, string>;
+      /** Sources whose text changed since the last compile message. */
+      upserts: Record<string, string>;
+      /** Sources the project no longer has. */
+      removed: string[];
       viewport?: [number, number];
     }
   | {

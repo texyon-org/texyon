@@ -34,6 +34,17 @@ extern "C" {
         out_len: *mut usize,
     ) -> i32;
 
+    /// Resolve a project source file by the caller's own path spelling.
+    ///
+    /// Same contract as [`tectonic_host_read_file`], but answered from the
+    /// host's resident copy of the project text rather than the support pack.
+    fn tectonic_host_read_source(
+        name_ptr: *const u8,
+        name_len: usize,
+        out_ptr: *mut *mut u8,
+        out_len: *mut usize,
+    ) -> i32;
+
     /// Report a diagnostic line from the engine to the host.
     fn tectonic_host_log(kind: i32, msg_ptr: *const u8, msg_len: usize);
 }
@@ -112,6 +123,30 @@ pub fn read_file(name: &str) -> Result<Option<Vec<u8>>, String> {
         }
         status::NOT_FOUND => Ok(None),
         other => Err(format!("the host failed to read {name} (code {other})")),
+    }
+}
+
+/// Ask the host for a project source file.
+///
+/// `Ok(None)` means the host holds no source under that path.
+pub fn read_source(name: &str) -> Result<Option<Vec<u8>>, String> {
+    let mut out_ptr: *mut u8 = std::ptr::null_mut();
+    let mut out_len: usize = 0;
+
+    // SAFETY: we pass a live UTF-8 slice and two writable out-parameters.
+    let rc =
+        unsafe { tectonic_host_read_source(name.as_ptr(), name.len(), &mut out_ptr, &mut out_len) };
+
+    match rc {
+        status::OK => {
+            // SAFETY: a zero return is the host promising it filled the
+            // out-parameters with a buffer it has given up.
+            Ok(Some(unsafe { adopt(out_ptr, out_len) }))
+        }
+        status::NOT_FOUND => Ok(None),
+        other => Err(format!(
+            "the host failed to read the source {name} (code {other})"
+        )),
     }
 }
 

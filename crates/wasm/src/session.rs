@@ -43,6 +43,7 @@ use tectonic_preview_protocol::{
 use tectonic_preview_render::{Destination, Link, MupdfBackend, PageVisual};
 
 use crate::{
+    host,
     io::{HostIo, HostStatus},
     resources::HostResources,
     sink::CollectingSink,
@@ -151,6 +152,8 @@ pub struct Session {
     sources: Option<SourceSet>,
     /// Every file's text as last staged, by the caller's own path spelling.
     staged: BTreeMap<String, String>,
+    /// The host revision each staged file was pulled at.
+    revisions: BTreeMap<String, u64>,
     /// Where operation output is published, so the `.log` outlives the run.
     written: WrittenFiles,
     /// Diagnostics accumulated across the current operation.
@@ -199,6 +202,7 @@ impl Session {
             ),
             sources: None,
             staged: BTreeMap::new(),
+            revisions: BTreeMap::new(),
             written,
             messages,
             support,
@@ -219,19 +223,19 @@ impl Session {
         self.support.preload(name, Rc::<[u8]>::from(bytes));
     }
 
-    /// Typeset the project at these file contents.
+    /// Typeset the project at its current state.
     ///
-    /// `files` is the project's complete current state, keyed by path relative
-    /// to the document root; the primary named at construction must be among
-    /// them. Files whose text is unchanged cost nothing, so handing over the
-    /// whole project on every keystroke is both the intended usage and the
-    /// cheap one.
+    /// `files` is the complete file set by path, each carrying the host's
+    /// revision counter for it; the primary named at construction must be
+    /// among them. The text of any revision not already held is pulled from
+    /// the host, so an unchanged file costs a map lookup and a changed one a
+    /// raw copy, with no serialization in between.
     ///
     /// `viewport` bounds the foreground work to a page range, leaving the rest
     /// for [`continue_tail`](Self::continue_tail).
     pub fn compile(
         &mut self,
-        files: BTreeMap<String, String>,
+        files: BTreeMap<String, u64>,
         viewport: Option<(usize, usize)>,
     ) -> Result<CompileOutput> {
         if !files.contains_key(&self.primary_name) {
@@ -241,7 +245,9 @@ impl Session {
             );
         }
 
-        self.apply(files)?;
+        let assembled = self.assemble(&files)?;
+        self.apply(assembled)?;
+        self.revisions = files;
 
         let snapshot = self
             .sources
@@ -254,6 +260,10 @@ impl Session {
             .checked_next()
             .map_err(|_| anyhow!("request sequence exhausted"))?;
 
+        // A cancel stops the operation it found, not this one. The native
+        // worker re-arms on every accepted command; without this a single
+        // cancel leaves the flag set and every later compile dies instantly.
+        self.cancellation.rearm();
         let run = self
             .processor
             .compile(snapshot, self.request_seq, viewport, &self.cancellation);
@@ -273,6 +283,7 @@ impl Session {
             .checked_next()
             .map_err(|_| anyhow!("request sequence exhausted"))?;
 
+        self.cancellation.rearm();
         let run = self
             .processor
             .continue_tail(self.request_seq, &self.cancellation);
@@ -415,6 +426,32 @@ impl Session {
         self.processor
             .shutdown()
             .map_err(|error| anyhow!("{error}"))
+    }
+
+    /// Resolve a revision manifest into the full file texts.
+    ///
+    /// Unchanged revisions reuse the staged text; anything else is pulled from
+    /// the host. The caller commits `files` into `revisions` only once the
+    /// texts are also staged, so a failure between the two cannot leave the
+    /// session claiming text it never took.
+    fn assemble(&self, files: &BTreeMap<String, u64>) -> Result<BTreeMap<String, String>> {
+        let mut assembled = BTreeMap::new();
+        for (path, revision) in files {
+            let text = if self.revisions.get(path) == Some(revision) {
+                self.staged
+                    .get(path)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("revision held for {path} but no text staged"))?
+            } else {
+                let bytes = host::read_source(path)
+                    .map_err(|error| anyhow!("{error}"))?
+                    .ok_or_else(|| anyhow!("the host has no source for {path}"))?;
+                String::from_utf8(bytes)
+                    .map_err(|error| anyhow!("the source {path} is not UTF-8: {error}"))?
+            };
+            assembled.insert(path.clone(), text);
+        }
+        Ok(assembled)
     }
 
     /// Stage this file set, establishing or updating the source authority.

@@ -88,6 +88,15 @@ export class TectonicEngine {
   /** Binaries as last sent to the Worker, diffed by identity. */
   #sentResources = new Map<string, Uint8Array>();
 
+  /**
+   * Text sources as last sent to the Worker, diffed by identity.
+   *
+   * Sound, not just probable: strings are immutable, so changed content is
+   * always a changed reference. A rebuilt-but-identical string only costs a
+   * harmless resend, which the Worker recognizes and ignores.
+   */
+  #sentSources = new Map<string, string>();
+
   private constructor(worker: Worker, options: EngineOptions) {
     this.#worker = worker;
     this.#onProgress = options.onProgress;
@@ -227,6 +236,19 @@ export class TectonicEngine {
     }
     const removed = [...this.#sentResources.keys()].filter((path) => !binaries.has(path));
 
+    // Only what moved crosses the boundary; the Worker holds the rest. Updated
+    // here rather than after the send so a second compile computed before the
+    // first is posted diffs against what will already be on the wire.
+    const sourceUpserts: Record<string, string> = {};
+    for (const [path, text] of Object.entries(sources)) {
+      if (this.#sentSources.get(path) !== text) {
+        sourceUpserts[path] = text;
+        this.#sentSources.set(path, text);
+      }
+    }
+    const sourceRemoved = [...this.#sentSources.keys()].filter((path) => !(path in sources));
+    for (const path of sourceRemoved) this.#sentSources.delete(path);
+
     return this.#queue(async () => {
       if (Object.keys(upserts).length > 0 || removed.length > 0) {
         await this.#send<void>({ id: 0, kind: "resources", upserts, removed });
@@ -236,7 +258,13 @@ export class TectonicEngine {
         for (const path of removed) this.#sentResources.delete(path);
       }
 
-      return this.#send<CompileResult>({ id: 0, kind: "compile", files: sources, viewport });
+      return this.#send<CompileResult>({
+        id: 0,
+        kind: "compile",
+        upserts: sourceUpserts,
+        removed: sourceRemoved,
+        viewport,
+      });
     });
   }
 

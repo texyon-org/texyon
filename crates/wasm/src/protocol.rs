@@ -224,19 +224,22 @@ pub enum Request {
         len: u32,
     },
 
-    /// Typeset the project at these file contents.
+    /// Typeset the project at its current state.
     ///
-    /// `files` is the project's complete current state, keyed by path relative
-    /// to the document root, and must contain the primary named at `open`.
-    /// Files whose text is unchanged cost nothing, so sending the whole project
-    /// on every keystroke is both the intended usage and the cheap one.
+    /// `files` is the complete file set, keyed by path relative to the document
+    /// root, and must contain the primary named at `open`. The text itself does
+    /// not travel in the JSON: each path carries the host's revision counter
+    /// for it, and the session pulls the content of any revision it does not
+    /// already hold through `tectonic_host_read_source`. A fresh session holds
+    /// nothing, so it pulls everything, which is what makes a reopen need no
+    /// resend protocol.
     ///
     /// `viewport` bounds the foreground work to a visible page range; the rest
     /// is left for `ContinueTail`.
     #[serde(rename_all = "camelCase")]
     Compile {
-        /// Every source file's complete current text, by logical path.
-        files: BTreeMap<String, String>,
+        /// The host's revision counter for every source file, by logical path.
+        files: BTreeMap<String, u64>,
         /// Zero-based inclusive first and last visible page.
         viewport: Option<(usize, usize)>,
     },
@@ -282,13 +285,21 @@ pub enum Request {
 }
 
 /// One page of the rendered document.
+///
+/// The SVG is left in linear memory rather than carried in the JSON, exactly
+/// like [`Response::Exported`]: a dense page is hundreds of kilobytes of
+/// markup, and a JSON string would cost an escape, a copy and a parse for
+/// bytes nothing ever reads as JSON. The host decodes them out and frees each
+/// with `tectonic_wasm_free`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderedPage {
     /// Zero-based page index.
     pub index: usize,
-    /// Self-contained SVG markup.
-    pub svg: String,
+    /// Offset of the UTF-8 SVG markup in linear memory.
+    pub ptr: u32,
+    /// Its length in bytes.
+    pub len: u32,
 }
 
 /// The result of one compile.

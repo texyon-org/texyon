@@ -236,7 +236,7 @@ unsafe fn take_host_bytes(ptr: u32, len: u32) -> Vec<u8> {
     std::slice::from_raw_parts(ptr as *const u8, len as usize).to_vec()
 }
 
-/// Package one compile for the host, moving the PDF into linear memory.
+/// Package one compile for the host, moving the SVG into linear memory.
 fn report(session: &Session, output: session::CompileOutput) -> CompileReport {
     let (support_files, support_bytes) = session.support_stats();
 
@@ -244,9 +244,17 @@ fn report(session: &Session, output: session::CompileOutput) -> CompileReport {
         pages: output
             .pages
             .into_iter()
-            .map(|page| RenderedPage {
-                index: page.index,
-                svg: page.svg,
+            .map(|page| {
+                // Handed over like the PDF: the host decodes the bytes out and
+                // frees them with tectonic_wasm_free.
+                let bytes = page.svg.into_bytes().into_boxed_slice();
+                let len = bytes.len();
+                let ptr = Box::into_raw(bytes) as *mut u8;
+                RenderedPage {
+                    index: page.index,
+                    ptr: ptr as u32,
+                    len: len as u32,
+                }
             })
             .collect(),
         changed: output.changed,

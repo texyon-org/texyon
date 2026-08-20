@@ -55,7 +55,8 @@ interface Exports {
 
 /** What the Rust side reports for one compile. */
 interface RawCompileReport {
-  pages: { index: number; svg: string }[];
+  /** The SVG itself stays in linear memory; see `collect`. */
+  pages: { index: number; ptr: number; len: number }[];
   changed: number[];
   removed: number[];
   pageSizes: [number, number][];
@@ -108,6 +109,16 @@ let options: SerializableEngineOptions | null = null;
 const resident = new Map<string, Uint8Array>();
 /** Project binary files by path, consulted before the support pack. */
 const projectResources = new Map<string, Uint8Array>();
+/**
+ * Project text files by path, with a revision that moves when the text does.
+ *
+ * The compile request into the module carries only `{path: revision}`; the
+ * session pulls the text of any revision it does not hold back out through
+ * `tectonic_host_read_source`. A reopened session holds nothing and simply
+ * pulls everything, which is why no resend bookkeeping exists anywhere.
+ */
+const projectSources = new Map<string, { text: string; revision: number }>();
+let nextSourceRevision = 1;
 /** Engine caches and checkpoints assume immutable files, a binary change forces a reopen. */
 let restartPending = false;
 let compiledSinceOpen = false;
@@ -622,6 +633,27 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
         return 0;
       },
 
+      tectonic_host_read_source(
+        namePtr: number,
+        nameLen: number,
+        outPtr: number,
+        outLen: number,
+      ): number {
+        const engine = exports!;
+        const name = decoder.decode(
+          new Uint8Array(engine.memory.buffer, namePtr, nameLen),
+        );
+
+        const source = projectSources.get(name);
+        if (source === undefined) return 1; // not found
+
+        const buffer = intoModule(encoder.encode(source.text));
+        const view = new DataView(engine.memory.buffer);
+        view.setUint32(outPtr, buffer.ptr, true);
+        view.setUint32(outLen, buffer.len, true);
+        return 0;
+      },
+
       tectonic_host_log(kind: number, msgPtr: number, msgLen: number): void {
         const engine = exports!;
         const message = decoder.decode(
@@ -720,8 +752,18 @@ async function init(opts: SerializableEngineOptions): Promise<void> {
 
 /** Turn the module's compile report into the public result. */
 function collect(report: RawCompileReport, elapsedMs: number): CompileResult {
+  const engine = exports!;
+
+  // The SVG travels as raw bytes in linear memory rather than inside the JSON,
+  // like the PDF: decode each page out and give the module its bytes back.
+  const pages = report.pages.map(({ index, ptr, len }) => {
+    const svg = len > 0 ? decoder.decode(new Uint8Array(engine.memory.buffer, ptr, len)) : "";
+    engine.tectonic_wasm_free(ptr, len);
+    return { index, svg };
+  });
+
   return {
-    pages: report.pages,
+    pages,
     changed: report.changed,
     removed: report.removed,
     pageSizes: report.pageSizes,
@@ -788,11 +830,27 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           compiledSinceOpen = false;
         }
 
+        if (request.kind === "compile") {
+          for (const [path, text] of Object.entries(request.upserts)) {
+            const held = projectSources.get(path);
+            // The revision moves only when the text does, so a re-sent
+            // identical file does not read as an edit.
+            if (held === undefined || held.text !== text) {
+              projectSources.set(path, { text, revision: nextSourceRevision++ });
+            }
+          }
+          for (const path of request.removed) projectSources.delete(path);
+        }
+
         engineStart = performance.now();
-        const reply =
-          request.kind === "compile"
-            ? call({ op: "compile", files: request.files, viewport: request.viewport })
-            : call({ op: "continueTail" });
+        let reply: RawResponse;
+        if (request.kind === "compile") {
+          const files: Record<string, number> = {};
+          for (const [path, { revision }] of projectSources) files[path] = revision;
+          reply = call({ op: "compile", files, viewport: request.viewport });
+        } else {
+          reply = call({ op: "continueTail" });
+        }
         const elapsed = performance.now() - engineStart;
 
         if (reply.status === "error") {
