@@ -40,7 +40,8 @@ export function isJunk(path: string): boolean {
         segment === "__MACOSX" ||
         segment === ".DS_Store" ||
         segment === "Thumbs.db" ||
-        segment.startsWith("._"),
+        segment.startsWith("._") ||
+        segment.endsWith(":Zone.Identifier"),
     );
 }
 

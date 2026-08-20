@@ -33,6 +33,7 @@ test("junk that zips and folders carry is recognized", () => {
   assert.ok(isJunk("figures/.DS_Store"));
   assert.ok(isJunk("figures/._plot.pdf"));
   assert.ok(isJunk("Thumbs.db"));
+  assert.ok(isJunk("main.tex:Zone.Identifier"));
   assert.ok(!isJunk("chapters/one.tex"));
 });
 
