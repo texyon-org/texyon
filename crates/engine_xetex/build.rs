@@ -162,15 +162,14 @@ fn main() {
 
     // OK, back to generic build rules.
 
-    for file in C_FILES {
-        c_cfg.file(file);
-    }
-
     for file in CXX_FILES {
         cxx_cfg.file(file);
     }
 
-    c_cfg.compile("libtectonic_engine_xetex_c.a");
+    // The only C left is the macOS platform glue.
+    if is_mac_os {
+        c_cfg.compile("libtectonic_engine_xetex_c.a");
+    }
     cxx_cfg.compile("libtectonic_engine_xetex_cxx.a");
 
     // Rebuild if C/C++ files have changed. We scan the whole directory to get
@@ -220,8 +219,6 @@ const C_FLAGS: &[&str] = &[
     "-Wno-sign-compare",
     "-std=gnu11",
 ];
-
-const C_FILES: &[&str] = &["xetex/xetex-engine-interface.c"];
 
 const CXX_FLAGS: &[&str] = &[
     "-std=c++14",

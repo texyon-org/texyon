@@ -918,17 +918,16 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
     Ok(())
 }
 // translated from xetex-ini.c:1474 (tt_run_engine)
-#[no_mangle]
-/// Engine entry point (called from the C bridge `tt_engine_xetex_main`).
+/// Engine entry point (called from `tt_engine_xetex_main`).
 ///
 /// Wraps the run in [`catch_unwind`] so a Rust panic — out-of-memory from the
 /// allocators, or an internal invariant violation — is turned into a
 /// `HISTORY_FATAL_ERROR` return with a surfaced message, instead of unwinding
-/// across the `extern "C"` boundary (which is UB). This is the Rust-native
-/// replacement for the C bridge's setjmp/longjmp fatal bailout.
+/// into the host. This is the Rust-native replacement for the C bridge's
+/// setjmp/longjmp fatal bailout.
 ///
 /// [`catch_unwind`]: std::panic::catch_unwind
-pub unsafe extern "C" fn tt_run_engine(
+pub(crate) unsafe fn tt_run_engine(
     api: *mut libc::c_void,
     dump_name: *const libc::c_char,
     input_file_name: *const libc::c_char,

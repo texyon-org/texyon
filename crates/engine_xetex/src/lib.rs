@@ -17,7 +17,7 @@
 
 // TODO: the internal interface we're using here is pretty janky. The bibtex
 // engine has a nicer approach that we should probably start using.
-use crate::engine_interface::tt_xetex_set_int_variable;
+use crate::engine_interface::{tt_engine_xetex_main, tt_xetex_set_int_variable};
 
 use std::{ffi::CString, time::SystemTime};
 use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
@@ -267,7 +267,6 @@ impl TexEngine {
 
             // SAFETY: All methods are called with valid C-strings and while the global lock is held.
             let r = unsafe {
-                use c_api::*;
                 tt_xetex_set_int_variable(
                     c"shell_escape_enabled".as_ptr(),
                     self.shell_escape_enabled.into(),
@@ -303,24 +302,6 @@ impl TexEngine {
                 x => Err(anyhow!("internal error: unexpected 'history' value {}", x)),
             }
         })
-    }
-}
-
-#[doc(hidden)]
-pub mod c_api {
-    // If you change the interfaces here, rerun cbindgen as described in the README!
-
-    use tectonic_bridge_core::CoreBridgeState;
-
-    #[allow(improper_ctypes)] // for CoreBridgeState
-    extern "C" {
-
-        pub fn tt_engine_xetex_main(
-            api: &mut CoreBridgeState,
-            dump_name: *const libc::c_char,
-            input_file_name: *const libc::c_char,
-            build_date: u64,
-        ) -> libc::c_int;
     }
 }
 

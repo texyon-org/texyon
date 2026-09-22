@@ -4844,11 +4844,8 @@ pub(crate) fn scan_something_internal_in(
                                 } else {
                                     st.input.name_of_file.as_ptr() as *const libc::c_char
                                 };
-                                let resident = st.config.execution_mode
-                                    == crate::state::EngineExecutionMode::Resident;
-                                st.scanner.cur_val = unsafe {
-                                    crate::pic::count_pdf_file_pages_named(name, resident)
-                                }?;
+                                st.scanner.cur_val =
+                                    unsafe { crate::pic::count_pdf_file_pages_named(name) }?;
                             }
                             CURRENT_GROUP_LEVEL_CODE => {
                                 st.scanner.cur_val = st.save_stack.cur_level as i32 - 1;

@@ -1,9 +1,6 @@
-//! Programmatic interface for configuring the XeTeX engine before launch.
+//! Programmatic interface for configuring and launching the XeTeX engine.
 //!
-//! Translates `tt_xetex_set_int_variable` and `tt_xetex_set_string_variable`
-//! from `xetex-engine-interface.c`.  The remaining two functions in that file
-//! (`tt_engine_xetex_main` and the aarch64 linker hack) use `setjmp`/`longjmp`
-//! and must stay in C.
+//! Translated from `xetex-engine-interface.c`.
 
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
@@ -62,4 +59,21 @@ pub extern "C" fn tt_xetex_set_string_variable(
 ) -> libc::c_int {
     // Currently unused; see Git history for how we used to set output_comment.
     1
+}
+
+// translated from xetex-engine-interface.c:26 (tt_engine_xetex_main)
+/// Batch entry point. No `setjmp` is armed: every dpx call that can `_tt_abort`
+/// goes through a guarded probe in pdf_io that catches its own `longjmp`.
+pub(crate) unsafe fn tt_engine_xetex_main(
+    api: &mut tectonic_bridge_core::CoreBridgeState,
+    dump_name: *const libc::c_char,
+    input_file_name: *const libc::c_char,
+    build_date: u64,
+) -> libc::c_int {
+    let api = api as *mut tectonic_bridge_core::CoreBridgeState as *mut libc::c_void;
+    crate::bridge::enter_global_engine(api);
+    let rv =
+        crate::engine::tt_run_engine(api, dump_name, input_file_name, build_date as libc::time_t);
+    crate::bridge::exit_global_engine();
+    rv
 }

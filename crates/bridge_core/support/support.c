@@ -357,3 +357,22 @@ ttstub_shell_escape(const unsigned short *cmd, size_t len)
 {
     return ttbc_shell_escape(tectonic_global_bridge_core, cmd, len);
 }
+
+
+/* musl's aarch64 sigsetjmp() reaches setjmp() with a short branch that the
+ * linker can fail to resolve when the two land far apart in a static binary.
+ * Referencing both from one function keeps them close. Moved here from the
+ * XeTeX engine, which no longer calls setjmp itself. Windows lacks sigsetjmp. */
+#ifndef _WIN32
+void __terrible_aarch64_musl_linker_hack_never_call_me(void);
+
+void
+__terrible_aarch64_musl_linker_hack_never_call_me(void)
+{
+    jmp_buf buf1;
+    sigjmp_buf buf2;
+
+    setjmp(buf1);
+    sigsetjmp(buf2, 0);
+}
+#endif
