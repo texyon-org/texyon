@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Collab\CollabServer;
 use App\Domain\Project\Sharing;
 use App\Http\Authenticated;
 use App\Http\Presenters\ProjectPresenter;
@@ -23,6 +24,7 @@ final readonly class ProjectMemberController
     public function __construct(
         private Sharing $sharing,
         private ProjectGate $gate,
+        private CollabServer $collab,
     ) {}
 
     /** The owner, everyone else with access, and for the owner the open invite links. */
@@ -62,6 +64,8 @@ final readonly class ProjectMemberController
         if ($member === null) {
             throw new NotFoundHttpException('no such member');
         }
+        // Their open editor reconnects and picks the new role up from a fresh token.
+        $this->collab->kickUser($user, $project);
 
         return new JsonResponse(['member' => ProjectPresenter::member($member)]);
     }
@@ -76,6 +80,7 @@ final readonly class ProjectMemberController
         if (! $this->sharing->unshare($access->project, $user)) {
             throw new NotFoundHttpException('no such member');
         }
+        $this->collab->kickUser($user, $project);
 
         return response()->noContent();
     }

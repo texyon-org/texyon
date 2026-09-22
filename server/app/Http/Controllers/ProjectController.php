@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Collab\CollabServer;
 use App\Domain\Blob\BlobStore;
 use App\Domain\Project\ProjectAccess;
 use App\Domain\Project\Projects;
@@ -27,6 +28,7 @@ final readonly class ProjectController
         private Projects $projects,
         private ProjectGate $gate,
         private BlobStore $blobs,
+        private CollabServer $collab,
     ) {}
 
     // Scramble cannot see through array_map.
@@ -60,6 +62,7 @@ final readonly class ProjectController
     public function destroy(Request $request, int $project): Response
     {
         $this->projects->delete($this->gate->manage($request, $project)->project);
+        $this->collab->kickProject($project);
 
         return response()->noContent();
     }

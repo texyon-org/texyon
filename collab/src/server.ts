@@ -131,10 +131,12 @@ export function createCollabServer(options: CollabOptions): Server<Claims> {
       if (project !== null && document.name !== `project.${project}`) continue;
       for (const connection of [...document.connections.keys()] as Connection<Claims>[]) {
         if (user !== null && connection.context?.uid !== user) continue;
-        connection.close();
+        // The whole socket, not just this document: the provider then reconnects and asks for a fresh token.
+        connection.webSocket.close(4205, "Reset Connection");
         closed++;
       }
     }
+    console.log(`kick project=${project ?? "any"} user=${user ?? "any"}: closed ${closed}`);
     response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ closed }));
   }
 

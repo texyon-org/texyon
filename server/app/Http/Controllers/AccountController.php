@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Collab\CollabServer;
 use App\Domain\Project\Projects;
 use App\Http\Authenticated;
 use App\Models\User;
@@ -17,7 +18,10 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 /** The signed-in account itself. */
 final readonly class AccountController
 {
-    public function __construct(private Projects $projects) {}
+    public function __construct(
+        private Projects $projects,
+        private CollabServer $collab,
+    ) {}
 
     #[ResponseShape(200, type: 'array{user: array{name: string, email: string, twoFactorEnabled: bool}}')]
     public function show(Request $request): JsonResponse
@@ -49,6 +53,7 @@ final readonly class AccountController
             $request->session()->regenerateToken();
         }
         $user->delete();
+        $this->collab->kickUser($user->id);
 
         return response()->noContent();
     }
