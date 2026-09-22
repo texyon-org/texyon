@@ -36,6 +36,9 @@ interface Projects
      */
     public function findForMember(int $projectId, int $userId): ?ProjectAccess;
 
+    /** One project regardless of who asks. Only for callers that are not a user, like the collaboration server. */
+    public function find(int $projectId): ?Project;
+
     public function create(int $ownerId, string $name, ProjectPath $primary): Project;
 
     public function rename(Project $project, string $name): Project;

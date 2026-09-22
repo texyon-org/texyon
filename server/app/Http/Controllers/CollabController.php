@@ -1,0 +1,57 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers;
+
+use App\Collab\CollabToken;
+use App\Domain\Blob\BlobStore;
+use App\Domain\Collab\Documents;
+use App\Http\Authenticated;
+use App\Http\ProjectGate;
+use App\Models\User;
+use Dedoc\Scramble\Attributes\ExcludeRouteFromDocs;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Config;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+
+/** What the editor needs to join a project's shared document. */
+final readonly class CollabController
+{
+    public function __construct(
+        private ProjectGate $gate,
+        private BlobStore $blobs,
+        private Documents $documents,
+    ) {}
+
+    /** A pass to the project's document, good for about a minute. Fetched again on every reconnect. */
+    public function token(Request $request, int $project): JsonResponse
+    {
+        $access = $this->gate->read($request, $project);
+        $user = $request->user();
+        $name = $user instanceof User ? $user->name : '';
+
+        return new JsonResponse(CollabToken::issue($access, Authenticated::id($request), $name));
+    }
+
+    /**
+     * Upload bytes the document can then name, as a binary file. Returns the digest and size.
+     * Not in the OpenAPI export, the client binding is hand written.
+     */
+    #[ExcludeRouteFromDocs]
+    public function blob(Request $request, int $project): JsonResponse
+    {
+        $access = $this->gate->write($request, $project);
+        $contents = $request->getContent();
+
+        if (strlen($contents) > Config::integer('blobs.max_file_bytes')) {
+            throw new HttpException(413, 'the file is larger than the server accepts');
+        }
+
+        $digest = $this->blobs->put($contents);
+        $this->documents->recordBlob($access->project, $digest);
+
+        return new JsonResponse(['digest' => $digest->value, 'size' => strlen($contents)]);
+    }
+}

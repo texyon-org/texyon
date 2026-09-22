@@ -71,6 +71,52 @@
                 }
             }
         },
+        "/projects/{project}/collab-token": {
+            "post": {
+                "operationId": "collab.token",
+                "summary": "A pass to the project's document, good for about a minute. Fetched again on every reconnect",
+                "tags": [
+                    "Collab"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "token": {
+                                            "type": "string"
+                                        },
+                                        "expiresAt": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "token",
+                                        "expiresAt"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/invites/{token}": {
             "get": {
                 "operationId": "invite.show",

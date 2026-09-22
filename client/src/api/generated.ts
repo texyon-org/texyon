@@ -26,6 +26,7 @@ import type {
 import type {
   AccountShow200,
   AuthenticationExceptionResponse,
+  CollabToken200,
   InviteAccept200,
   InviteShow200,
   NotFoundHttpExceptionResponse,
@@ -229,6 +230,77 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getAccountDestroyMutationOptions(options), queryClient);
+    }
+
+export const getCollabTokenUrl = (project: number,) => {
+
+
+
+
+  return `/projects/${project}/collab-token`
+}
+
+/**
+ * @summary A pass to the project's document, good for about a minute. Fetched again on every reconnect
+ */
+export const collabToken = async (project: number, options?: Parameters<typeof apiFetch>[1]): Promise<CollabToken200> => {
+
+  return apiFetch<CollabToken200>(getCollabTokenUrl(project),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCollabTokenMutationOptions = <TError = AuthenticationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collabToken>>, TError,{project: number}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collabToken>>, TError,{project: number}, TContext> => {
+
+const mutationKey = ['collabToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collabToken>>, {project: number}> = (props) => {
+          const {project} = props ?? {};
+
+          return  collabToken(project,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollabTokenMutationResult = NonNullable<Awaited<ReturnType<typeof collabToken>>>
+
+    export type CollabTokenMutationError = AuthenticationExceptionResponse
+
+    /**
+ * @summary A pass to the project's document, good for about a minute. Fetched again on every reconnect
+ */
+export const useCollabToken = <TError = AuthenticationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collabToken>>, TError,{project: number}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof collabToken>>,
+        TError,
+        {project: number},
+        TContext
+      > => {
+      return useMutation(getCollabTokenMutationOptions(options), queryClient);
     }
 
 export const getInviteShowUrl = (token: string,) => {

@@ -82,6 +82,13 @@ final readonly class EloquentProjects implements Projects
         return is_string($role) ? new ProjectAccess(self::toProject($row), Role::from($role)) : null;
     }
 
+    public function find(int $projectId): ?Project
+    {
+        $row = ProjectRow::query()->with('owner')->find($projectId);
+
+        return $row instanceof ProjectRow ? self::toProject($row) : null;
+    }
+
     public function create(int $ownerId, string $name, ProjectPath $primary): Project
     {
         $row = new ProjectRow();

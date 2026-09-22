@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\BlobController;
+use App\Http\Controllers\CollabController;
+use App\Http\Controllers\Internal\CollabDocumentController;
 use App\Http\Controllers\InviteController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectFileController;
 use App\Http\Controllers\ProjectInviteController;
 use App\Http\Controllers\ProjectMemberController;
+use App\Http\Middleware\VerifyCollabSecret;
 use Illuminate\Support\Facades\Route;
 
 // The editor's API, behind Sanctum's cookie guard. Exported to openapi.json,
@@ -36,8 +39,17 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/projects/{project}/invites', [ProjectInviteController::class, 'store']);
     Route::delete('/projects/{project}/invites/{invite}', [ProjectInviteController::class, 'destroy']);
 
+    Route::post('/projects/{project}/collab-token', [CollabController::class, 'token']);
+    Route::put('/projects/{project}/blobs', [CollabController::class, 'blob']);
+
     Route::get('/invites/{token}', [InviteController::class, 'show']);
     Route::post('/invites/{token}/accept', [InviteController::class, 'accept']);
+});
+
+// The collaboration server's own door, keyed by a secret derived from APP_KEY.
+Route::middleware(VerifyCollabSecret::class)->prefix('internal/collab')->group(function (): void {
+    Route::get('/projects/{project}', [CollabDocumentController::class, 'show']);
+    Route::put('/projects/{project}', [CollabDocumentController::class, 'put']);
 });
 
 // Not behind the session. The signature is the authorization, like an object

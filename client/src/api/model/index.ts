@@ -8,6 +8,7 @@
 export * from './accountShow200';
 export * from './accountShow200User';
 export * from './authenticationExceptionResponse';
+export * from './collabToken200';
 export * from './inviteAccept200';
 export * from './inviteAccept200Project';
 export * from './inviteAccept200ProjectOwner';

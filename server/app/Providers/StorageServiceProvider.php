@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Blob\BlobStore;
+use App\Domain\Collab\Documents;
 use App\Domain\Project\Projects;
 use App\Domain\Project\Sharing;
+use App\Persistence\EloquentDocuments;
 use App\Persistence\EloquentProjects;
 use App\Persistence\EloquentSharing;
 use App\Persistence\FlysystemBlobStore;
@@ -33,5 +35,6 @@ final class StorageServiceProvider extends ServiceProvider
 
         $this->app->singleton(Projects::class, EloquentProjects::class);
         $this->app->singleton(Sharing::class, EloquentSharing::class);
+        $this->app->singleton(Documents::class, EloquentDocuments::class);
     }
 }

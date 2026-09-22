@@ -24,6 +24,15 @@ return Application::configure(basePath: dirname(__DIR__))
             EnsureFrontendRequestsAreStateful::class,
         ]);
 
+        // File contents travel as JSON strings, and whitespace is part of a file.
+        $middleware->trimStrings(except: [
+            'text',
+            fn (Request $request): bool => $request->is('api/internal/*'),
+        ]);
+        $middleware->convertEmptyStringsToNull(except: [
+            fn (Request $request): bool => $request->is('api/internal/*'),
+        ]);
+
         // Nothing here serves Blade with preloaded assets, and the header costs
         // a pass over every response.
         $middleware->remove(AddLinkHeadersForPreloadedAssets::class);
