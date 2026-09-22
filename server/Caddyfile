@@ -53,8 +53,24 @@
 		file_server
 	}
 
+	# The collaboration server's own endpoints in Laravel. The secret guards
+	# them too, but nothing outside this container has a reason to reach them.
+	handle /api/internal/* {
+		@outside not remote_ip 127.0.0.1 ::1
+		# route keeps the written order, respond would otherwise sort after php_server
+		route {
+			respond @outside 404
+			php_server
+		}
+	}
+
 	handle /api/* {
 		php_server
+	}
+
+	# Live editing: a websocket to the Node server started beside FrankenPHP.
+	handle /collab* {
+		reverse_proxy 127.0.0.1:1234
 	}
 
 	# Fortify's session endpoints.

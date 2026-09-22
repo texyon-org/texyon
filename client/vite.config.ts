@@ -71,6 +71,9 @@ export default defineConfig({
       "/sanctum": { target: "http://localhost:8080", changeOrigin: false },
       "/two-factor-challenge": { target: "http://localhost:8080", changeOrigin: false },
       "/user": { target: "http://localhost:8080", changeOrigin: false },
+
+      // The collaboration server, run from collab/ with `npm run dev`.
+      "/collab": { target: "http://localhost:1234", ws: true },
     },
   },
 });

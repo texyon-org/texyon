@@ -1,10 +1,11 @@
-# The image is built from three trees — js/, client/, server/ — and nothing
-# else. Everything below the first three lines is carving state, secrets and
-# build outputs back out of those trees; last match wins.
+# The image is built from four trees (js/, client/, server/, collab/) and nothing
+# else. Everything below the whitelist carves state, secrets and build outputs
+# back out of those trees. Last match wins.
 *
 !js
 !client
 !server
+!collab
 
 # Dependencies and build outputs are produced inside the image, against the
 # lockfiles. The one exception is client/public/tectonic — the engine module
@@ -15,6 +16,8 @@ js/dist
 client/node_modules
 client/dist
 client/tsconfig.tsbuildinfo
+collab/node_modules
+collab/dist
 
 server/vendor
 server/node_modules
