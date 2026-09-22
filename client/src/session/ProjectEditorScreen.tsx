@@ -1,6 +1,7 @@
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 
 import { useAccountShow } from "../api/generated";
+import type { Role } from "../api/types";
 import { EditorScreen } from "../EditorScreen";
 import { useSignOut } from "./useSignOut";
 
@@ -24,6 +25,8 @@ export function ProjectEditorScreen() {
       account={account.data?.user ?? null}
       onAccount={() => void navigate({ to: "/account" })}
       onSignOut={signOut}
+      role={project.role as Role}
+      onLeft={() => void navigate({ to: "/" })}
     />
   );
 }

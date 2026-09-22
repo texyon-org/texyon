@@ -41,6 +41,8 @@ export function ProjectList({
   const [error, setError] = useState<string | null>(null);
 
   const recentFirst = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const owned = recentFirst.filter((project) => project.role === "owner");
+  const shared = recentFirst.filter((project) => project.role !== "owner");
 
   const act = (work: () => Promise<void>): void => {
     void (async () => {
@@ -65,7 +67,7 @@ export function ProjectList({
           <div className="screen-head">
             <div className="screen-title">
               <h1>Projects</h1>
-              <span className="screen-count">{recentFirst.length}</span>
+              <span className="screen-count">{owned.length}</span>
             </div>
 
             <form
@@ -96,7 +98,7 @@ export function ProjectList({
           {error !== null && <div className="notice error">{error}</div>}
 
           <ul className="project-rows">
-            {recentFirst.map((project) => (
+            {owned.map((project) => (
               <li key={project.id}>
                 <button className="project-open" disabled={busy} onClick={() => onOpen(project)}>
                   <FileIcon />
@@ -120,8 +122,33 @@ export function ProjectList({
                 </button>
               </li>
             ))}
-            {recentFirst.length === 0 && <li className="project-none">No projects yet.</li>}
+            {owned.length === 0 && <li className="project-none">No projects yet.</li>}
           </ul>
+
+          {shared.length > 0 && (
+            <>
+              <div className="screen-title">
+                <h2>Shared with me</h2>
+                <span className="screen-count">{shared.length}</span>
+              </div>
+              <ul className="project-rows">
+                {shared.map((project) => (
+                  <li key={project.id}>
+                    <button className="project-open" disabled={busy} onClick={() => onOpen(project)}>
+                      <FileIcon />
+                      <span className="project-info">
+                        <span className="project-name">{project.name}</span>
+                        <span className="project-primary">
+                          {project.owner.name} · {project.role === "viewer" ? "can view" : "can edit"}
+                        </span>
+                      </span>
+                      <span className="project-when">{when(project.updatedAt)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       </main>
     </div>

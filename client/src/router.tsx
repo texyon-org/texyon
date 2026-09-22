@@ -7,10 +7,16 @@ import {
 } from "@tanstack/react-router";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 
-import { getAccountShowQueryOptions, getProjectIndexQueryOptions, projectShow } from "./api/generated";
+import {
+  getAccountShowQueryOptions,
+  getProjectIndexQueryOptions,
+  inviteShow,
+  projectShow,
+} from "./api/generated";
 import { ApiError } from "./api/http";
 import { queryClient } from "./queryClient";
 import { AccountScreen } from "./session/AccountScreen";
+import { InviteScreen } from "./session/InviteScreen";
 import { openProject } from "./session/load";
 import { ProjectEditorScreen } from "./session/ProjectEditorScreen";
 import { ProjectsScreen } from "./session/ProjectsScreen";
@@ -18,10 +24,10 @@ import { SampleScreen } from "./session/SampleScreen";
 import { SignInScreen } from "./session/SignInScreen";
 import { AccountSkeleton, EditorSkeleton, ProjectsSkeleton } from "./ui/skeletons";
 
-/** 401 means go sign in. */
-function gate(failure: unknown): never {
+/** 401 means go sign in, and come back here afterwards when `back` says where here is. */
+function gate(failure: unknown, back?: string): never {
   if (failure instanceof ApiError && failure.isUnauthenticated) {
-    throw redirect({ to: "/sign-in" });
+    throw redirect({ to: "/sign-in", search: back === undefined ? {} : { back } });
   }
   throw failure;
 }
@@ -96,9 +102,36 @@ const sampleRoute = createRoute({
   component: SampleScreen,
 });
 
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invite/$token",
+  loader: ({ params }) =>
+    inviteShow(params.token).catch((failure: unknown) => gate(failure, `/invite/${params.token}`)),
+  pendingMs: 0,
+  pendingComponent: ProjectsSkeleton,
+  errorComponent: ({ error }: ErrorComponentProps) => (
+    <div className="gate">
+      <div className="card">
+        <h1>This invite does not work</h1>
+        <div className="card-error">{error.message}</div>
+        <p className="card-sub">It may have been revoked. Ask whoever sent it for a new one.</p>
+        <Link className="card-link" to="/">
+          Back to projects
+        </Link>
+      </div>
+    </div>
+  ),
+  component: InviteScreen,
+});
+
 const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign-in",
+  // Only a path on this site, so a crafted link cannot bounce someone elsewhere.
+  validateSearch: (search: Record<string, unknown>): { back?: string } =>
+    typeof search.back === "string" && search.back.startsWith("/") && !search.back.startsWith("//")
+      ? { back: search.back }
+      : {},
   component: SignInScreen,
 });
 
@@ -107,6 +140,7 @@ const routeTree = rootRoute.addChildren([
   editorRoute,
   accountRoute,
   sampleRoute,
+  inviteRoute,
   signInRoute,
 ]);
 

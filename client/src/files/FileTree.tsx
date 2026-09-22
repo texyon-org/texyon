@@ -18,6 +18,8 @@ export interface FileTreeProps {
   onRemove: (path: string) => void;
   onRename: (from: string, to: string) => void;
   onUpload: (uploads: UploadFile[]) => void;
+  /** Browse only, for someone the project is shared with read-only. */
+  readOnly?: boolean;
 }
 
 /** A directory, or a file, in the tree that paths imply. */
@@ -45,6 +47,7 @@ export function FileTree({
   onRemove,
   onRename,
   onUpload,
+  readOnly = false,
 }: FileTreeProps) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -73,19 +76,19 @@ export function FileTree({
     <nav
       className={`files ${dropping ? "dropping" : ""}`}
       onDragEnter={(event) => {
-        if (!event.dataTransfer.types.includes("Files")) return;
+        if (readOnly || !event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
         dragDepth.current++;
         setDropping(true);
       }}
       onDragOver={(event) => {
-        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+        if (!readOnly && event.dataTransfer.types.includes("Files")) event.preventDefault();
       }}
       onDragLeave={() => {
         if (dragDepth.current > 0 && --dragDepth.current === 0) setDropping(false);
       }}
       onDrop={(event) => {
-        if (!event.dataTransfer.types.includes("Files")) return;
+        if (readOnly || !event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
         dragDepth.current = 0;
         setDropping(false);
@@ -96,7 +99,7 @@ export function FileTree({
     >
       <header className="files-bar">
         <span>Files</span>
-        <span className="files-actions">
+        {!readOnly && <span className="files-actions">
           <button onClick={() => folderInput.current?.click()} title="Upload a folder">
             <FolderUpIcon />
           </button>
@@ -106,7 +109,7 @@ export function FileTree({
           <button onClick={() => setAdding(true)} title="New file">
             <PlusIcon />
           </button>
-        </span>
+        </span>}
       </header>
 
       <input ref={fileInput} type="file" multiple hidden onChange={pick} />
@@ -149,6 +152,7 @@ export function FileTree({
             onOpen={onOpen}
             onRemove={onRemove}
             onRename={onRename}
+            readOnly={readOnly}
           />
         ))}
       </ul>
@@ -165,6 +169,7 @@ function TreeNode({
   onOpen,
   onRemove,
   onRename,
+  readOnly,
 }: {
   node: Node;
   depth: number;
@@ -174,6 +179,7 @@ function TreeNode({
   onOpen: (path: string) => void;
   onRemove: (path: string) => void;
   onRename: (from: string, to: string) => void;
+  readOnly: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -201,6 +207,7 @@ function TreeNode({
                 onOpen={onOpen}
                 onRemove={onRemove}
                 onRename={onRename}
+                readOnly={readOnly}
               />
             ))}
           </ul>
@@ -225,7 +232,7 @@ function TreeNode({
           {isPrimary && <span className="files-primary" title="The file TeX is pointed at">main</span>}
         </button>
 
-        <button
+        {!readOnly && <button
           className="files-action"
           title="Rename"
           onClick={() => {
@@ -234,11 +241,11 @@ function TreeNode({
           }}
         >
           <PencilIcon />
-        </button>
+        </button>}
 
         {/* The primary is what TeX is pointed at; a project without one cannot
             compile, so it is not offered for deletion. */}
-        {!isPrimary && (
+        {!isPrimary && !readOnly && (
           <button
             className="files-action"
             title="Delete"

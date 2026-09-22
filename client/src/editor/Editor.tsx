@@ -34,6 +34,8 @@ export interface EditorProps {
   onChange: (text: string) => void;
   /** The cursor moved to this line, for a forward search. */
   onCursorLine: (line: number) => void;
+  /** For someone the project is shared with read-only. */
+  readOnly?: boolean;
 }
 
 /**
@@ -52,6 +54,7 @@ export function Editor({
   jumpToLine,
   onChange,
   onCursorLine,
+  readOnly = false,
 }: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -66,6 +69,8 @@ export function Editor({
     if (parent === null) return;
 
     const extensions: Extension[] = [
+      EditorState.readOnly.of(readOnly),
+      EditorView.editable.of(!readOnly),
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightActiveLine(),
@@ -116,7 +121,7 @@ export function Editor({
     // Built once per file. `text` is read at creation and thereafter through
     // transactions, so it is deliberately not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path]);
+  }, [path, readOnly]);
 
   // The workspace changed this file from somewhere other than this editor —
   // another pane, a file being loaded. Replacing a document that already

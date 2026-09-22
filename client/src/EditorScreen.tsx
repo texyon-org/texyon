@@ -11,7 +11,8 @@ import type { UploadFile } from "./files/upload";
 import { mergeCommands, mergeEnvironments, mergeKeys, packagesUsed } from "./project/commands";
 import { corpusOf, providers } from "./project/corpus";
 import { indexProject } from "./project/symbols";
-import type { Account } from "./api/types";
+import type { Account, Role } from "./api/types";
+import { ShareDialog } from "./session/ShareDialog";
 import { SignIn } from "./session/SignIn";
 import { useSync } from "./session/useSync";
 import { TopBar } from "./ui/TopBar";
@@ -56,6 +57,10 @@ export interface EditorScreenProps {
   account?: Account | null;
   onAccount?: (() => void) | null;
   onSignOut?: () => void;
+  /** What the signed-in user may do here. The sample is always the owner's. */
+  role?: Role;
+  /** After the signed-in user left a project shared with them. */
+  onLeft?: () => void;
 }
 
 /** The editor proper: files, text, preview — around one project. */
@@ -68,7 +73,11 @@ export function EditorScreen({
   account = null,
   onAccount = null,
   onSignOut = () => {},
+  role = "owner",
+  onLeft = () => {},
 }: EditorScreenProps) {
+  const readOnly = role === "viewer";
+  const [sharing, setSharing] = useState(false);
   const [openPath, setOpenPath] = useState(primary);
   const [revision, setRevision] = useState(0);
   const [showLog, setShowLog] = useState(false);
@@ -112,7 +121,8 @@ export function EditorScreen({
   // its changes into renders.
   useEffect(() => workspace.subscribe((change) => setRevision(change.revision)), [workspace]);
 
-  const sync = useSync(workspace, projectId);
+  // Nothing a viewer does is saved, the server would refuse it.
+  const sync = useSync(workspace, readOnly ? null : projectId);
 
   const primaryContent = workspace.read(primary);
   const preamble = typeof primaryContent === "string" ? primaryContent.slice(0, 4000) : "";
@@ -302,6 +312,17 @@ export function EditorScreen({
 
           <span className={`dot ${compiling ? "busy" : "idle"}`} />
 
+          {readOnly && (
+            <span className="metric" title="The owner shared this project with you read-only">
+              view only
+            </span>
+          )}
+          {projectId !== null && (
+            <button onClick={() => setSharing(true)} title="Who this project is shared with">
+              Share
+            </button>
+          )}
+
           <button onClick={() => void locate()} title="Show this line in the preview (Ctrl-J)">
             Locate
           </button>
@@ -369,6 +390,7 @@ export function EditorScreen({
             if (workspace.rename(from, to) && openPath === from) setOpenPath(to);
           }}
           onUpload={onUpload}
+          readOnly={readOnly}
         />
 
         <section className="pane">
@@ -378,6 +400,7 @@ export function EditorScreen({
             <Editor
               path={openPath}
               text={text}
+              readOnly={readOnly}
               sources={{
                 symbols,
                 commands: merged,
@@ -457,6 +480,17 @@ export function EditorScreen({
             </details>
           )}
         </aside>
+      )}
+
+      {sharing && projectId !== null && (
+        <ShareDialog
+          projectId={projectId}
+          projectName={title}
+          role={role}
+          selfEmail={account?.email ?? null}
+          onClose={() => setSharing(false)}
+          onLeft={onLeft}
+        />
       )}
 
       {/* The session lapsed under an open editor. Sign back in over it, so the
