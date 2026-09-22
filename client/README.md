@@ -25,12 +25,13 @@ them is a first-visit cost rather than a per-reload one.
 
 ## How it is put together
 
-**`Workspace` owns the text.** One object is the authority on what every file
-says; the editor, the compiler and the thing that saves all read from it and are
-told when it moves. That is the seam collaborative editing would replace — today
-it is a map of strings with one writer, and its internals could become a CRDT
-with several without anything outside it changing, because what leaves it is
-already what the compiler wants: every file's complete text, at a revision.
+**A shared document owns a project's text, and `Workspace` mirrors it.** Each
+project is one Yjs document (`src/collab/`), edited live by everyone it is shared
+with. `CollabBinding` keeps a `Workspace` in step with it, so the compiler,
+completion and the file tree read plain files at a revision and never see Yjs.
+Local and remote edits reach the engine the same way: the editor changes the
+document, the document changes the workspace. The sample, with no server
+behind it, edits the workspace directly.
 
 **The engine is fed the whole project on every change.** Not a concession — the
 intended usage. It diffs each file against what it last saw, so untouched files

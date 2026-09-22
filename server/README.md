@@ -107,11 +107,41 @@ file, no second process, and WAL handles the concurrency of a few people editing
 their own documents. The queries are portable; `DB_CONNECTION=pgsql` is the
 whole change for an installation that outgrows it.
 
-## Collaborative editing
+## Sharing and live editing
 
-Not implemented, and the shape is reserved rather than guessed at.
-`document_operations` exists and nothing writes to it. The editor ships with one
-writer per file; what replaces that — a CRDT, an operation log — decides whether
-a file row can stay the single source of truth. Reserving the table costs one
-migration. Discovering later that `project_files` was the wrong place for
-authority would cost a rewrite of everything that reads it.
+An owner shares a project with an existing account by email, or with an invite
+link anyone signed in can open, as an editor or a viewer. Members, roles and
+links live in `project_members` and `project_invites`, and every project
+endpoint resolves access through `ProjectGate`: no access is a 404, too little
+access a 403.
+
+Editing is live. Each project has one Yjs document, served by the Node server in
+`collab/` (Hocuspocus) and stored here in `project_documents`:
+
+- The editor asks `POST /api/projects/{id}/collab-token` for a signed pass,
+  valid for a minute and fetched again on every reconnect, then opens a
+  websocket to `/collab`. Viewers get a read-only connection, and the server
+  drops their edits.
+- The collaboration server loads and stores documents through
+  `/api/internal/collab/*`, which Caddy only answers from inside the container.
+  Both sides derive the shared secret from `APP_KEY`, so there is nothing extra
+  to configure.
+- A first load seeds the document from `project_files`. Every store writes the
+  files back, so `project_files` stays a plain copy of the document and nothing
+  else has to understand Yjs. Once a project has a document, the whole-file
+  write endpoints answer 409.
+- Images and other binaries are uploaded to `PUT /api/projects/{id}/blobs` and
+  named in the document by digest. A document can only name blobs its own
+  project uploaded.
+- Changing someone's role, removing them, deleting the project, deleting an
+  account and signing out all disconnect the affected editors. They reconnect
+  with a fresh token, or learn they no longer have access.
+
+In the image, `start.sh` runs the collaboration server beside FrankenPHP and
+stops the container if either exits. In development, run it next to
+`php artisan serve` and Vite:
+
+```
+cd collab && npm ci
+LARAVEL_URL=http://127.0.0.1:8080 LARAVEL_ENV_FILE=../server/.env npm run dev
+```
