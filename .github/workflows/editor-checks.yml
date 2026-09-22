@@ -10,6 +10,7 @@ on:
       - "server/**"
       - "client/**"
       - "js/**"
+      - "collab/**"
       - ".github/workflows/editor-checks.yml"
   push:
     branches: [master]
@@ -17,6 +18,7 @@ on:
       - "server/**"
       - "client/**"
       - "js/**"
+      - "collab/**"
       - ".github/workflows/editor-checks.yml"
 
 concurrency:
@@ -57,6 +59,7 @@ jobs:
           cache-dependency-path: |
             client/package-lock.json
             js/package-lock.json
+            collab/package-lock.json
 
       # The client's typecheck resolves @tectonic/wasm against this build output.
       - name: "Build the engine package's types"
@@ -82,3 +85,11 @@ jobs:
         run: |
           npm run typecheck
           npm test
+
+      - name: "Collab server: typecheck, tests and bundle"
+        working-directory: collab
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
