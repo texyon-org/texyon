@@ -4,6 +4,11 @@ The authoritative tracker for Stage 2. Two sections: **plan
 construction** (are the workstream plans written and ready?) and
 **execution** (are the refactors done?). Update at every session end.
 
+Last updated: 2026-09-22 (session 253). **The engine owns no C.** OTMath is
+`src/ot_math.rs` and `tt_engine_xetex_main` is Rust with no `setjmp`. The FONT_* FFI
+mirrors are gone. Left in `xetex/`: teckit (third-party) and `xetex-macos.c`, which no
+longer links (see SESSION_LOG session 253).
+
 Last updated: 2026-07-03 (sessions 249–252, **execution — typing/enums/state DONE +
 clean-engine pass**). (1) **Zero global mutable state** (01e): mod-raw 31→3 (the 3 are
 FONT_* FFI locators), with_state/ENGINE_STATE_FALLBACK drained to 0. (2) **Constants→enums**

@@ -48,7 +48,8 @@ Last updated: session 132.
 | xetex-ext.c                  |    97 |      0 | `src/ext.rs`                      | DONE |
 | xetex-pic.c                  |    48 |      0 | `src/pic.rs`                      | DONE         |
 | xetex-texmfmp.c              |    45 |      0 | `src/texmfmp.rs`                  | DONE              |
-| xetex-engine-interface.c     |    85 |       2 | `src/engine_interface.rs`        | IN PROGRESS — 50% (2 fns stay in C: setjmp + platform hack) |
+| xetex-engine-interface.c     |     0 |       0 | `src/engine_interface.rs`        | DONE (deleted, session 253) |
+| xetex-XeTeXOTMath.cpp        |     0 |      0 | `src/ot_math.rs`                  | DONE (deleted, session 253) |
 
 ## Files NOT to translate
 
@@ -56,8 +57,7 @@ Last updated: session 132.
 |-----------------------------------|----------------------------------------------|
 | teckit-Engine.cpp                 | third-party TECkit, retain as C++            |
 | teckit-NormalizationData.c        | third-party TECkit                           |
-| xetex-XeTeXOTMath.cpp             | OpenType math — C++ binding to HarfBuzz      |
-| xetex-macos.c                     | platform glue; not present on Linux          |
+| xetex-macos.c                     | platform glue; not present on Linux. Does not link since the state consolidation |
 
 ## Function-level tracker for xetex-xetex0.c (the big one)
 

@@ -8,6 +8,35 @@ Archives:
 - `session-log/sessions-050-099.md`
 - `session-log/sessions-001-049.md`
 
+## Idiom session 253 (2026-09-22): the engine owns no C, OTMath and the entry point move to Rust
+
+**Commits:** `05b8f136` (OTMath), `dd20323e` (entry point). Dashboard 29/2/7/4 on both,
+crate unit tests 134, live_preview 66, wasm debug build clean.
+
+- `xetex-XeTeXOTMath.cpp` is now `src/ot_math.rs`, calling HarfBuzz through new
+  `hb_ot_math_*` bindings in `bridge_harfbuzz::sys`. `GlyphAssembly` is an owned
+  `Vec` (`Option<GlyphAssembly>` replaces the malloc'd pointer and `free_ot_assembly`).
+  With no C++ reading font arrays, the `font_ffi_mirror` raw pointers,
+  `refresh_font_ffi_mirrors`, `font_layout_engine_mirror` and the
+  `tt_get_font_*_entry` exports are gone.
+- `tt_engine_xetex_main` is Rust (`engine_interface.rs`) and arms no `setjmp`. The one
+  Linux longjmp source left, dpx image probing, now always goes through the guarded
+  `tt_pic_probe_*` wrappers in pdf_io (previously resident-only), so a dpx abort
+  becomes a picture load failure instead of killing the run. The musl/aarch64 linker
+  hack moved to bridge_core `support.c`. `xetex-engine-interface.c` is deleted.
+- Only C/C++ left in `xetex/`: teckit (third-party) and `xetex-macos.c`.
+
+**Validation:** the repo goldens have drifted (`corpus.sh check` on the pre-change
+binary gives 626/13, not the 637/2 recorded in July), so parity was checked A/B: goldens
+blessed from the pre-change release binary into a scratch dir, then each commit's binary
+checked against them. Both 639/639 byte-identical.
+
+**Open:**
+- `xetex-macos.c` does not link: it reads C globals (`font_area`, `font_layout_engine`)
+  that the state consolidation removed from Rust. CI only builds Linux. Its
+  `DoAATLayout` `_tt_abort` would also have no `setjmp` to land on now.
+- Re-bless `tests/corpus/goldens` with the oracle once the 13-item drift is explained.
+
 ## Idiom session 251 — 2026-07-02 — Execute the §6 flip via a pointer bridge (01d §6.2); with_state 142→15
 
 **Update (cont.):** after the boundary-layer flip (below), the drain continued through the
