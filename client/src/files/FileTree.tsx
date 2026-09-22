@@ -20,7 +20,11 @@ export interface FileTreeProps {
   onUpload: (uploads: UploadFile[]) => void;
   /** Browse only, for someone the project is shared with read-only. */
   readOnly?: boolean;
+  /** Who else has each file open. */
+  presence?: ReadonlyMap<string, readonly { name: string; color: string }[]>;
 }
+
+const NO_PRESENCE: ReadonlyMap<string, readonly { name: string; color: string }[]> = new Map();
 
 /** A directory, or a file, in the tree that paths imply. */
 interface Node {
@@ -48,6 +52,7 @@ export function FileTree({
   onRename,
   onUpload,
   readOnly = false,
+  presence = NO_PRESENCE,
 }: FileTreeProps) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -153,6 +158,7 @@ export function FileTree({
             onRemove={onRemove}
             onRename={onRename}
             readOnly={readOnly}
+            presence={presence}
           />
         ))}
       </ul>
@@ -170,6 +176,7 @@ function TreeNode({
   onRemove,
   onRename,
   readOnly,
+  presence,
 }: {
   node: Node;
   depth: number;
@@ -180,6 +187,7 @@ function TreeNode({
   onRemove: (path: string) => void;
   onRename: (from: string, to: string) => void;
   readOnly: boolean;
+  presence: ReadonlyMap<string, readonly { name: string; color: string }[]>;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -208,6 +216,7 @@ function TreeNode({
                 onRemove={onRemove}
                 onRename={onRename}
                 readOnly={readOnly}
+                presence={presence}
               />
             ))}
           </ul>
@@ -229,6 +238,9 @@ function TreeNode({
         >
           {node.name}
           {dirty.has(node.path) && <span className="files-dirty" title="Unsaved">•</span>}
+          {(presence.get(node.path) ?? []).map((peer) => (
+            <span key={peer.name} className="files-peer" style={{ background: peer.color }} title={`${peer.name} is here`} />
+          ))}
           {isPrimary && <span className="files-primary" title="The file TeX is pointed at">main</span>}
         </button>
 

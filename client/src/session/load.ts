@@ -12,7 +12,7 @@ import type { Project } from "../api/types";
 import { Workspace } from "../workspace/Workspace";
 
 /** What a project starts as, when it starts empty. */
-const SKELETON = String.raw`\documentclass{article}
+export const SKELETON = String.raw`\documentclass{article}
 
 \begin{document}
 
@@ -29,8 +29,8 @@ export async function openProject(project: Project): Promise<Workspace> {
     Object.fromEntries(infos.map((info, index) => [info.path, contents[index]])),
   );
 
-  // A brand-new project has no files yet. Created through the workspace rather
-  // than the constructor so it arrives dirty, and the first save writes it.
+  // The server writes this file when it creates a project. Projects made
+  // before that did not get one, so the editor can still start from something.
   if (!workspace.has(project.primary)) {
     workspace.create(project.primary, SKELETON);
   }

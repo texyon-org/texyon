@@ -13,6 +13,9 @@ import {
 } from "@codemirror/view";
 import type { Diagnostic } from "@tectonic/wasm";
 import { useEffect, useRef } from "react";
+import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
+import type { Awareness } from "y-protocols/awareness";
+import * as Y from "yjs";
 
 import type { CompletionSources } from "./completion";
 import { latexCompletions } from "./completion";
@@ -36,6 +39,8 @@ export interface EditorProps {
   onCursorLine: (line: number) => void;
   /** For someone the project is shared with read-only. */
   readOnly?: boolean;
+  /** Edit a shared text instead: changes go to it, and other people's cursors show. */
+  shared?: { text: Y.Text; awareness: Awareness | null } | null;
 }
 
 /**
@@ -55,6 +60,7 @@ export function Editor({
   onChange,
   onCursorLine,
   readOnly = false,
+  shared = null,
 }: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -68,13 +74,17 @@ export function Editor({
     const parent = host.current;
     if (parent === null) return;
 
+    const sharedText = shared?.text ?? null;
     const extensions: Extension[] = [
+      // Undo in a shared text reverts only your own edits, never someone else's.
+      sharedText === null
+        ? history()
+        : yCollab(sharedText, shared?.awareness ?? null, { undoManager: new Y.UndoManager(sharedText) }),
       EditorState.readOnly.of(readOnly),
       EditorView.editable.of(!readOnly),
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightActiveLine(),
-      history(),
       indentOnInput(),
       bracketMatching(),
       closeBrackets(),
@@ -93,12 +103,13 @@ export function Editor({
         ...closeBracketsKeymap,
         ...defaultKeymap,
         ...searchKeymap,
-        ...historyKeymap,
+        ...(sharedText === null ? historyKeymap : yUndoManagerKeymap),
         indentWithTab,
       ]),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
+        // A shared text reaches the workspace through the document instead.
+        if (update.docChanged && sharedText === null) {
           latest.current.onChange(update.state.doc.toString());
         }
         if (update.selectionSet) {
@@ -109,7 +120,7 @@ export function Editor({
     ];
 
     const created = new EditorView({
-      state: EditorState.create({ doc: text, extensions }),
+      state: EditorState.create({ doc: sharedText?.toString() ?? text, extensions }),
       parent,
     });
     view.current = created;
@@ -117,23 +128,27 @@ export function Editor({
     return () => {
       created.destroy();
       view.current = null;
+      // Otherwise the others keep seeing a cursor in a file this editor left.
+      shared?.awareness?.setLocalStateField("cursor", null);
     };
     // Built once per file. `text` is read at creation and thereafter through
     // transactions, so it is deliberately not a dependency.
+    // A shared text keeps its view through a rename, so whoever is typing keeps focus.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, readOnly]);
+  }, [shared?.text ?? path, readOnly]);
 
   // The workspace changed this file from somewhere other than this editor —
   // another pane, a file being loaded. Replacing a document that already
   // matches would move the cursor to the start on every keystroke.
   useEffect(() => {
     const current = view.current;
-    if (current === null) return;
+    if (current === null || shared !== null) return;
     if (current.state.doc.toString() === text) return;
 
     current.dispatch({
       changes: { from: 0, to: current.state.doc.length, insert: text },
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
 
   useEffect(() => {

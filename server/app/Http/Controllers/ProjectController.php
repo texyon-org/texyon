@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domain\Blob\BlobStore;
 use App\Domain\Project\ProjectAccess;
 use App\Domain\Project\Projects;
 use App\Domain\Project\Role;
@@ -19,9 +20,13 @@ use Illuminate\Http\Response;
 /** The projects a signed-in person owns or has been given. */
 final readonly class ProjectController
 {
+    /** What a project starts as, so there is something to compile from the first moment. */
+    private const SKELETON = "\\documentclass{article}\n\n\\begin{document}\n\nHello.\n\n\\end{document}\n";
+
     public function __construct(
         private Projects $projects,
         private ProjectGate $gate,
+        private BlobStore $blobs,
     ) {}
 
     // Scramble cannot see through array_map.
@@ -42,6 +47,7 @@ final readonly class ProjectController
             $request->name(),
             $request->primary(),
         );
+        $this->projects->putFile($project, $project->primary, $this->blobs->put(self::SKELETON), strlen(self::SKELETON));
 
         return new JsonResponse(['project' => ProjectPresenter::project(new ProjectAccess($project, Role::Owner))], 201);
     }

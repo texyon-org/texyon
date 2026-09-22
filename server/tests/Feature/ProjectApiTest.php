@@ -30,6 +30,7 @@ final class ProjectApiTest extends TestCase
         // The primary defaults rather than being required, because a new
         // project has nothing to point at yet.
         self::assertSame('main.tex', $created['primary']);
+        self::assertStringContainsString('\\begin{document}', $this->readBack($user, $id, 'main.tex'));
 
         $this->actingAs($user)
             ->getJson('/api/projects')

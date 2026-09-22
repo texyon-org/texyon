@@ -13,8 +13,11 @@ import { corpusOf, providers } from "./project/corpus";
 import { indexProject } from "./project/symbols";
 import type { Account, Role } from "./api/types";
 import { ShareDialog } from "./session/ShareDialog";
+import { SKELETON } from "./session/load";
 import { SignIn } from "./session/SignIn";
-import { useSync } from "./session/useSync";
+import { uploadBlob } from "./api/files";
+import { useCollab } from "./collab/useCollab";
+import type { CollabStatus } from "./collab/useCollab";
 import { TopBar } from "./ui/TopBar";
 import { Viewer } from "./viewer/Viewer";
 import type { Workspace } from "./workspace/Workspace";
@@ -34,14 +37,21 @@ function bytes(count: number): string {
  */
 const PACKAGE_SETTLE_MS = 500;
 
-/** What the save indicator says, per state the sync can be in. */
-const SYNC_LABEL = {
+/** What the save indicator says, per state the shared document can be in. */
+const COLLAB_LABEL: Record<CollabStatus, string> = {
+  connecting: "connecting…",
   synced: "saved",
-  dirty: "unsaved",
   saving: "saving…",
-  failed: "save failed",
+  offline: "offline",
   "signed-out": "signed out",
-} as const;
+  removed: "no access",
+};
+
+/** Two letters for a presence chip. */
+function initials(name: string): string {
+  const letters = name.trim().split(/\s+/).slice(0, 2).map((part) => part[0] ?? "");
+  return letters.join("").toUpperCase() || "?";
+}
 
 export interface EditorScreenProps {
   /** The authority on the text, for this screen's whole lifetime. */
@@ -76,9 +86,54 @@ export function EditorScreen({
   role = "owner",
   onLeft = () => {},
 }: EditorScreenProps) {
-  const readOnly = role === "viewer";
   const [sharing, setSharing] = useState(false);
   const [openPath, setOpenPath] = useState(primary);
+  const collab = useCollab(projectId, workspace);
+  const binding = collab?.binding ?? null;
+  const effectiveRole = collab?.role ?? role;
+  // Until the shared document has synced there is nothing safe to type into.
+  const readOnly = effectiveRole === "viewer" || (collab !== null && binding === null);
+
+  /** Every change to the file list goes through here: the shared document for a project, the workspace for the sample. */
+  const files = useMemo(
+    () =>
+      binding !== null && projectId !== null
+        ? {
+            create: (path: string, text: string) => binding.create(path, text),
+            remove: (path: string) => binding.remove(path),
+            rename: (from: string, to: string) => binding.rename(from, to),
+            writeText: (path: string, text: string) => binding.writeText(path, text),
+            writeBinary: async (path: string, bytes: Uint8Array) => {
+              const blob = await uploadBlob(projectId, bytes);
+              binding.setBinary(path, blob, bytes);
+            },
+          }
+        : {
+            create: (path: string, text: string) => workspace.create(path, text),
+            remove: (path: string) => workspace.remove(path),
+            rename: (from: string, to: string) => workspace.rename(from, to),
+            writeText: (path: string, text: string) => void workspace.write(path, text),
+            writeBinary: async (path: string, bytes: Uint8Array) => void workspace.write(path, bytes),
+          },
+    [binding, projectId, workspace],
+  );
+
+  // Someone else renamed or deleted the file open here.
+  useEffect(
+    () =>
+      binding?.onMoves(({ renamed, removed }) => {
+        setOpenPath((open) => renamed.get(open) ?? (removed.includes(open) ? primary : open));
+      }),
+    [binding, primary],
+  );
+
+  // A project from before the server wrote a skeleton can arrive without its primary file.
+  useEffect(() => {
+    if (binding !== null && effectiveRole !== "viewer" && !binding.has(primary)) binding.create(primary, SKELETON);
+  }, [binding, effectiveRole, primary]);
+
+  const setOpenFile = collab?.setOpenFile;
+  useEffect(() => setOpenFile?.(openPath), [setOpenFile, openPath]);
   const [revision, setRevision] = useState(0);
   const [showLog, setShowLog] = useState(false);
   const [jumpToLine, setJumpToLine] = useState<number | null>(null);
@@ -96,9 +151,15 @@ export function EditorScreen({
         const plan = planImport(entries);
 
         let replaced = 0;
+        const problems: string[] = [];
         for (const file of plan.files) {
           if (workspace.has(file.path)) replaced++;
-          workspace.write(file.path, file.content);
+          try {
+            if (typeof file.content === "string") files.writeText(file.path, file.content);
+            else await files.writeBinary(file.path, file.content);
+          } catch (failure) {
+            problems.push(`${file.path} (${failure instanceof Error ? failure.message : String(failure)})`);
+          }
         }
 
         const first = plan.files.find((file) => file.path.endsWith(".tex")) ?? plan.files[0];
@@ -109,20 +170,19 @@ export function EditorScreen({
           replaced,
           problems: [
             ...errors,
+            ...problems,
             ...plan.skipped.map((skip) => `${skip.path} (${skip.reason})`),
           ],
         });
       })();
     },
-    [workspace],
+    [workspace, files],
   );
 
   // The workspace is mutable and outside React, so a subscription is what turns
   // its changes into renders.
   useEffect(() => workspace.subscribe((change) => setRevision(change.revision)), [workspace]);
 
-  // Nothing a viewer does is saved, the server would refuse it.
-  const sync = useSync(workspace, readOnly ? null : projectId);
 
   const primaryContent = workspace.read(primary);
   const preamble = typeof primaryContent === "string" ? primaryContent.slice(0, 4000) : "";
@@ -204,6 +264,18 @@ export function EditorScreen({
   const dirty = useMemo(() => new Set(workspace.dirty()), [workspace, revision]);
   const content = workspace.read(openPath) ?? "";
   const text = typeof content === "string" ? content : "";
+  // The shared text behind the open file, once the document has it.
+  const sharedText = useMemo(() => binding?.textAt(openPath) ?? null, [binding, openPath, revision]);
+
+  /** Who is in which file, for the tree. */
+  const presence = useMemo(() => {
+    const byFile = new Map<string, { name: string; color: string }[]>();
+    for (const peer of collab?.peers ?? []) {
+      if (peer.file === null) continue;
+      byFile.set(peer.file, [...(byFile.get(peer.file) ?? []), { name: peer.name, color: peer.color }]);
+    }
+    return byFile;
+  }, [collab?.peers]);
 
   const cursorLine = useRef(1);
 
@@ -295,24 +367,29 @@ export function EditorScreen({
           )}
           {result && <span className={`metric outcome-${result.outcome}`}>{result.outcome}</span>}
 
-          {sync.status === "failed" ? (
-            <button onClick={sync.retry} title="Saving to the server failed, try again">
-              retry save
-            </button>
-          ) : (
-            sync.status !== null && (
-              <span
-                className={`metric sync-${sync.status}`}
-                title="Whether the server has what you see"
-              >
-                {SYNC_LABEL[sync.status]}
-              </span>
-            )
+          {collab !== null && (
+            <span className={`metric sync-${collab.status}`} title="Whether the server has what you see">
+              {COLLAB_LABEL[collab.status]}
+            </span>
           )}
 
           <span className={`dot ${compiling ? "busy" : "idle"}`} />
 
-          {readOnly && (
+          {collab !== null && collab.peers.length > 0 && (
+            <span className="peers">
+              {collab.peers.map((peer) => (
+                <span
+                  key={peer.clientId}
+                  className="peer"
+                  style={{ background: peer.color }}
+                  title={peer.file === null ? peer.name : `${peer.name}, in ${peer.file}`}
+                >
+                  {initials(peer.name)}
+                </span>
+              ))}
+            </span>
+          )}
+          {effectiveRole === "viewer" && (
             <span className="metric" title="The owner shared this project with you read-only">
               view only
             </span>
@@ -379,16 +456,17 @@ export function EditorScreen({
           dirty={dirty}
           onOpen={setOpenPath}
           onCreate={(path) => {
-            workspace.create(path, "");
+            files.create(path, "");
             setOpenPath(path);
           }}
           onRemove={(path) => {
-            workspace.remove(path);
+            files.remove(path);
             if (path === openPath) setOpenPath(primary);
           }}
           onRename={(from, to) => {
-            if (workspace.rename(from, to) && openPath === from) setOpenPath(to);
+            if (files.rename(from, to) && openPath === from) setOpenPath(to);
           }}
+          presence={presence}
           onUpload={onUpload}
           readOnly={readOnly}
         />
@@ -401,6 +479,7 @@ export function EditorScreen({
               path={openPath}
               text={text}
               readOnly={readOnly}
+              shared={sharedText === null ? null : { text: sharedText, awareness: collab?.awareness ?? null }}
               sources={{
                 symbols,
                 commands: merged,
@@ -418,10 +497,10 @@ export function EditorScreen({
                   for (let m = anchor.exec(main); m !== null; m = anchor.exec(main)) last = m;
                   if (last === null) return;
                   const at = last.index + last[0].length;
-                  workspace.write(
-                    primary,
-                    `${main.slice(0, at)}\n\\usepackage{${name}}${main.slice(at)}`,
-                  );
+                  const line = `\n\\usepackage{${name}}`;
+                  const shared = binding?.textAt(primary) ?? null;
+                  if (shared !== null) shared.insert(at, line);
+                  else workspace.write(primary, `${main.slice(0, at)}${line}${main.slice(at)}`);
                 },
               }}
               diagnostics={result?.diagnostics ?? []}
@@ -494,15 +573,29 @@ export function EditorScreen({
       )}
 
       {/* The session lapsed under an open editor. Sign back in over it, so the
-          workspace — which holds the unsaved text — is never torn down. */}
-      {sync.status === "signed-out" && (
+          document, which may hold changes the server has not seen, is kept. */}
+      {collab?.status === "signed-out" && (
         <div className="overlay">
           <SignIn
             variant="card"
             notice="Your session expired. Sign back in and your changes will be saved. Closing this tab would lose them."
-            onSignedIn={sync.retry}
+            onSignedIn={collab.reconnect}
             onSample={null}
           />
+        </div>
+      )}
+
+      {collab?.status === "removed" && (
+        <div className="overlay">
+          <div className="gate">
+            <div className="card">
+              <h1>No longer shared with you</h1>
+              <p className="card-sub">The owner removed your access to this project, or deleted it.</p>
+              <button className="btn-primary" onClick={onBack}>
+                Back to projects
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

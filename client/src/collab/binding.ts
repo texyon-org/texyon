@@ -41,7 +41,7 @@ export class CollabBinding {
     this.#onFiles = (events) => {
       if (!this.#started) return;
       const structural = events.some(
-        (event) => event.target === filesOf(doc) || (event.target instanceof Y.Map && event.keysChanged.has("path")),
+        (event) => event.target === filesOf(doc) || (event instanceof Y.YMapEvent && event.keysChanged.has("path")),
       );
       if (structural) {
         this.#reconcile();

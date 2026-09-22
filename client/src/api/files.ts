@@ -1,6 +1,6 @@
 import { decodeText } from "../files/import";
 import type { FileContent } from "../workspace/Workspace";
-import { projectFileShow } from "./generated";
+import { collabBlobUrl, projectFileShow } from "./generated";
 import { ApiError, apiFetch } from "./http";
 
 /** Fetched bare via the signed URL. UTF-8 becomes text, the rest stays bytes. */
@@ -14,15 +14,19 @@ export async function readFile(projectId: number, path: string): Promise<FileCon
   return decodeText(bytes) ?? bytes;
 }
 
-/** Hand-written, the raw-body endpoint is not in the OpenAPI export. */
-export async function writeFileBytes(
-  projectId: number,
-  path: string,
-  bytes: Uint8Array,
-): Promise<void> {
-  await apiFetch(`/projects/${projectId}/file/bytes?path=${encodeURIComponent(path)}`, {
+/** Upload bytes a project's document can then name. Hand-written, raw bodies are not in the OpenAPI export. */
+export async function uploadBlob(projectId: number, bytes: Uint8Array): Promise<{ digest: string; size: number }> {
+  return apiFetch(`/projects/${projectId}/blobs`, {
     method: "PUT",
     headers: { "Content-Type": "application/octet-stream" },
     body: bytes as BodyInit,
   });
+}
+
+/** Bytes the project's document names, by their digest. */
+export async function readBlob(projectId: number, digest: string): Promise<Uint8Array> {
+  const { url } = await collabBlobUrl(projectId, digest);
+  const response = await fetch(url);
+  if (!response.ok) throw new ApiError(response.status, `could not fetch blob ${digest}`);
+  return new Uint8Array(await response.arrayBuffer());
 }
