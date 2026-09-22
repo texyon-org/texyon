@@ -23,7 +23,6 @@ use crate::bridge::ttstub_input_getc;
 extern "C" {
     fn get_loaded_font_design_size() -> i32;
     fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
-    fn get_ot_math_constant(f: i32, n: i32) -> i32;
 }
 
 /// translated from xetex-xetex0.c:4457 (effective_char)
@@ -1166,7 +1165,10 @@ pub(crate) unsafe fn load_native_font_in(
     if num_font_dimens == 65 {
         push_font_info_b32s1_in(st, num_font_dimens);
         for k in 0..=55 {
-            push_font_info_b32s1_in(st, get_ot_math_constant(font_ptr, k));
+            push_font_info_b32s1_in(
+                st,
+                crate::ot_math::get_ot_math_constant(&st.fonts, font_ptr, k),
+            );
         }
     }
 

@@ -1046,9 +1046,6 @@ pub(crate) struct FontState {
     pub brk_locale_str_num: i32,
     /// Owned per-font native layout engines. Not format-serialized.
     pub font_layout_engine: Vec<Option<std::sync::Arc<FontEngineHandle>>>,
-    /// Flat raw mirror used by the borrow-free C++ OpenType-math callback.
-    /// Kept in lockstep by `set_font_layout_engine`.
-    pub font_layout_engine_mirror: Vec<*mut libc::c_void>,
     /// Owned per-font TECkit mappings. Not format-serialized.
     pub font_mapping: Vec<Option<std::sync::Arc<FontMappingHandle>>>,
     pub loaded_font_letter_space: i32,
@@ -1149,7 +1146,6 @@ impl Default for FontState {
             brk_iter: None,
             brk_locale_str_num: 0,
             font_layout_engine: Vec::new(),
-            font_layout_engine_mirror: Vec::new(),
             font_mapping: Vec::new(),
             loaded_font_letter_space: 0,
             xtx_ligature_present: false,
@@ -1467,8 +1463,6 @@ impl FontState {
         f: i32,
         v: Option<std::sync::Arc<FontEngineHandle>>,
     ) {
-        self.font_layout_engine_mirror[f as usize] =
-            v.as_ref().map_or(std::ptr::null_mut(), |handle| handle.raw);
         self.font_layout_engine[f as usize] = v;
     }
     #[inline]
@@ -1800,8 +1794,8 @@ impl Default for LinebreakState {
 // mid-`loadAATfont` deep inside Core Text (xetex-macos.c, built only on macOS)
 // with no Rust frame in between to carry a borrow. For it alone, `tt_run_engine`
 // installs a raw pointer to its owned state here; the callback reads it via
-// `current_engine_state()`. This is a LOCATOR (re-established at each run entry,
-// like the `FONT_*` FFI mirrors), NOT engine state — a clone captures the state,
+// `current_engine_state()`. This is a LOCATOR (re-established at each run entry),
+// NOT engine state — a clone captures the state,
 // not this pointer. Never used on the Linux build.
 thread_local! {
     static ENGINE_STATE_PTR: std::cell::Cell<*mut EngineState> =

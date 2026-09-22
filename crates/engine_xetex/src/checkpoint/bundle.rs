@@ -586,7 +586,6 @@ impl FontBundle {
             brk_iter: _,
             brk_locale_str_num: _,
             font_layout_engine,
-            font_layout_engine_mirror: _,
             font_mapping,
             loaded_font_letter_space,
             xtx_ligature_present,
@@ -1079,7 +1078,6 @@ mod tests {
     fn font_restore_clears_use_flags_beyond_the_checkpoint() {
         let mut fonts = crate::state::FontState::default();
         fonts.font_layout_engine = vec![None; 4];
-        fonts.font_layout_engine_mirror = vec![std::ptr::null_mut(); 4];
         fonts.font_mapping = vec![None; 4];
         fonts.font_used = vec![false; 4];
         fonts.font_ptr = 1;

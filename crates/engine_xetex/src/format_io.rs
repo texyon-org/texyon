@@ -1191,7 +1191,6 @@ unsafe fn load_fmt_file_in(
 
     let font_check_len = (st.fonts.font_max as usize) + 1;
     st.fonts.font_layout_engine = vec![None; font_check_len];
-    st.fonts.font_layout_engine_mirror = vec![std::ptr::null_mut(); font_check_len];
     st.fonts.font_mapping = vec![None; font_check_len];
     st.fonts.font_flags = vec![0i8; font_check_len];
     st.fonts.font_letter_space = vec![0i32; font_check_len];
@@ -1215,7 +1214,6 @@ unsafe fn load_fmt_file_in(
     st.fonts.font_bchar = vec![0i32; font_check_len];
     st.fonts.font_false_bchar = vec![0i32; font_check_len];
     st.fonts.font_glue = vec![0i32; font_check_len];
-    crate::globals::refresh_font_ffi_mirrors(&st.fonts);
 
     let base_arr_len = (st.fonts.font_max as usize) + 1;
     st.fonts.hyphen_char = vec![0i32; base_arr_len];

@@ -1387,7 +1387,6 @@ pub(crate) unsafe fn initialize_engine(
         {
             let state = &mut *st;
             state.fonts.font_layout_engine = vec![None; font_check_len];
-            state.fonts.font_layout_engine_mirror = vec![std::ptr::null_mut(); font_check_len];
             state.fonts.font_mapping = vec![None; font_check_len];
             state.fonts.font_flags = vec![0i8; font_check_len];
             state.fonts.font_letter_space = vec![0i32; font_check_len];
@@ -1423,7 +1422,6 @@ pub(crate) unsafe fn initialize_engine(
             state.fonts.kern_base = vec![0i32; base_fmt_len];
             state.fonts.exten_base = vec![0i32; base_fmt_len];
             state.fonts.param_base = vec![0i32; base_fmt_len];
-            crate::globals::refresh_font_ffi_mirrors(&state.fonts);
         }
 
         // The nullfont (FONT_BASE) bootstrap is a contiguous run of font-table
@@ -1630,9 +1628,6 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
     for slot in st.fonts.font_layout_engine.iter_mut() {
         *slot = None;
     }
-    for raw in st.fonts.font_layout_engine_mirror.iter_mut() {
-        *raw = std::ptr::null_mut();
-    }
     for slot in st.fonts.font_mapping.iter_mut() {
         *slot = None;
     }
@@ -1704,7 +1699,6 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
 
         s.fonts.font_info = Vec::new();
         s.fonts.font_layout_engine = Vec::new();
-        s.fonts.font_layout_engine_mirror = Vec::new();
         s.fonts.font_mapping = Vec::new();
         s.fonts.font_flags = Vec::new();
         s.fonts.font_letter_space = Vec::new();
@@ -1721,7 +1715,6 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut crate::state::EngineState) {
         s.fonts.param_base = Vec::new();
         s.fonts.xdv_buffer = Vec::new();
         s.fonts.mapped_text = Vec::new();
-        crate::globals::refresh_font_ffi_mirrors(&s.fonts);
 
         s.hyph.trie_trl = Vec::new();
         s.hyph.trie_tro = Vec::new();

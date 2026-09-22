@@ -21,6 +21,15 @@ pub type hb_tag_t = u32;
 pub type hb_mask_t = u32;
 pub type hb_language_t = *mut hb_language_impl_t;
 pub type hb_ot_name_id_t = libc::c_uint;
+pub type hb_ot_math_constant_t = libc::c_int;
+pub type hb_ot_math_kern_t = libc::c_int;
+pub type hb_ot_math_glyph_part_flags_t = libc::c_uint;
+
+pub const HB_OT_MATH_KERN_TOP_RIGHT: hb_ot_math_kern_t = 0;
+pub const HB_OT_MATH_KERN_TOP_LEFT: hb_ot_math_kern_t = 1;
+pub const HB_OT_MATH_KERN_BOTTOM_RIGHT: hb_ot_math_kern_t = 2;
+pub const HB_OT_MATH_KERN_BOTTOM_LEFT: hb_ot_math_kern_t = 3;
+pub const HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER: hb_ot_math_glyph_part_flags_t = 1;
 
 #[repr(C)]
 pub struct hb_language_impl_t(());
@@ -204,6 +213,23 @@ pub union hb_var_int_t {
     i8: [i8; 4],
 }
 
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct hb_ot_math_glyph_variant_t {
+    pub glyph: hb_codepoint_t,
+    pub advance: hb_position_t,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct hb_ot_math_glyph_part_t {
+    pub glyph: hb_codepoint_t,
+    pub start_connector_length: hb_position_t,
+    pub end_connector_length: hb_position_t,
+    pub full_advance: hb_position_t,
+    pub flags: hb_ot_math_glyph_part_flags_t,
+}
+
 #[derive(Default, Debug, PartialEq)]
 #[repr(C)]
 pub enum hb_direction_t {
@@ -366,6 +392,45 @@ extern "C" {
     pub fn hb_buffer_get_script(buffer: *const hb_buffer_t) -> hb_script_t;
     pub fn hb_script_get_horizontal_direction(script: hb_script_t) -> hb_direction_t;
     pub fn hb_ot_math_has_data(face: *mut hb_face_t) -> hb_bool_t;
+    pub fn hb_ot_math_get_constant(
+        font: *mut hb_font_t,
+        constant: hb_ot_math_constant_t,
+    ) -> hb_position_t;
+    pub fn hb_ot_math_get_glyph_italics_correction(
+        font: *mut hb_font_t,
+        glyph: hb_codepoint_t,
+    ) -> hb_position_t;
+    pub fn hb_ot_math_get_glyph_top_accent_attachment(
+        font: *mut hb_font_t,
+        glyph: hb_codepoint_t,
+    ) -> hb_position_t;
+    pub fn hb_ot_math_get_glyph_kerning(
+        font: *mut hb_font_t,
+        glyph: hb_codepoint_t,
+        kern: hb_ot_math_kern_t,
+        correction_height: hb_position_t,
+    ) -> hb_position_t;
+    pub fn hb_ot_math_get_glyph_variants(
+        font: *mut hb_font_t,
+        glyph: hb_codepoint_t,
+        direction: hb_direction_t,
+        start_offset: libc::c_uint,
+        variants_count: *mut libc::c_uint,
+        variants: *mut hb_ot_math_glyph_variant_t,
+    ) -> libc::c_uint;
+    pub fn hb_ot_math_get_min_connector_overlap(
+        font: *mut hb_font_t,
+        direction: hb_direction_t,
+    ) -> hb_position_t;
+    pub fn hb_ot_math_get_glyph_assembly(
+        font: *mut hb_font_t,
+        glyph: hb_codepoint_t,
+        direction: hb_direction_t,
+        start_offset: libc::c_uint,
+        parts_count: *mut libc::c_uint,
+        parts: *mut hb_ot_math_glyph_part_t,
+        italics_correction: *mut hb_position_t,
+    ) -> libc::c_uint;
     pub fn hb_ot_tag_to_script(tag: hb_tag_t) -> hb_script_t;
     pub fn hb_buffer_reset(buffer: *mut hb_buffer_t);
     pub fn hb_buffer_add_utf16(

@@ -255,4 +255,4 @@ const CXX_FLAGS: &[&str] = &[
     "-fno-rtti",
 ];
 
-const CXX_FILES: &[&str] = &["xetex/teckit-Engine.cpp", "xetex/xetex-XeTeXOTMath.cpp"];
+const CXX_FILES: &[&str] = &["xetex/teckit-Engine.cpp"];

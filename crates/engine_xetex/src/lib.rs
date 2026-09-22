@@ -51,6 +51,7 @@ mod main_control;
 mod math;
 mod mem;
 mod mem_types;
+mod ot_math;
 mod output;
 mod packaging;
 mod page_manifest;
