@@ -8,6 +8,8 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
+    // Lets modules with runtime imports run under node's test runner as well as Vite.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
