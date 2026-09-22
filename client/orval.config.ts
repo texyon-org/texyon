@@ -11,6 +11,8 @@ export default defineConfig({
       client: "react-query",
       httpClient: "fetch",
       mode: "split",
+      // Not tsconfig.json: its allowImportingTsExtensions would put .ts on every generated import.
+      tsconfig: { compilerOptions: { target: "ES2022", verbatimModuleSyntax: true } },
       override: {
         mutator: {
           path: "src/api/http.ts",
