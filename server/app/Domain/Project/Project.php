@@ -18,6 +18,7 @@ final readonly class Project
     public function __construct(
         public int $id,
         public int $ownerId,
+        public string $ownerName,
         public string $name,
         /** The file TeX is pointed at. */
         public ProjectPath $primary,

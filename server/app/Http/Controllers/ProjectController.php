@@ -4,29 +4,34 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Domain\Project\Project;
+use App\Domain\Project\ProjectAccess;
 use App\Domain\Project\Projects;
+use App\Domain\Project\Role;
 use App\Http\Authenticated;
+use App\Http\Presenters\ProjectPresenter;
+use App\Http\ProjectGate;
 use App\Http\Requests\StoreProjectRequest;
 use Dedoc\Scramble\Attributes\Response as ResponseShape;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-/** The projects a signed-in person owns. */
+/** The projects a signed-in person owns or has been given. */
 final readonly class ProjectController
 {
-    public function __construct(private Projects $projects) {}
+    public function __construct(
+        private Projects $projects,
+        private ProjectGate $gate,
+    ) {}
 
-    // Must match present(). Scramble cannot see through array_map.
-    #[ResponseShape(200, type: 'array{projects: list<array{id: int, name: string, primary: string, createdAt: string, updatedAt: string}>}')]
+    // Scramble cannot see through array_map.
+    #[ResponseShape(200, type: 'array{projects: list<'.ProjectPresenter::PROJECT.'>}')]
     public function index(Request $request): JsonResponse
     {
-        $projects = $this->projects->ownedBy(Authenticated::id($request));
+        $projects = $this->projects->visibleTo(Authenticated::id($request));
 
         return new JsonResponse([
-            'projects' => array_map(self::present(...), $projects),
+            'projects' => array_map(ProjectPresenter::project(...), $projects),
         ]);
     }
 
@@ -38,46 +43,18 @@ final readonly class ProjectController
             $request->primary(),
         );
 
-        return new JsonResponse(['project' => self::present($project)], 201);
+        return new JsonResponse(['project' => ProjectPresenter::project(new ProjectAccess($project, Role::Owner))], 201);
     }
 
     public function show(Request $request, int $project): JsonResponse
     {
-        return new JsonResponse(['project' => self::present($this->owned($request, $project))]);
+        return new JsonResponse(['project' => ProjectPresenter::project($this->gate->read($request, $project))]);
     }
 
     public function destroy(Request $request, int $project): Response
     {
-        $this->projects->delete($this->owned($request, $project));
+        $this->projects->delete($this->gate->manage($request, $project)->project);
 
         return response()->noContent();
-    }
-
-    /**
-     * Fetch a project the requester owns, or stop.
-     *
-     * Not found rather than forbidden: whether a project exists is itself
-     * something only its owner should be able to learn.
-     */
-    private function owned(Request $request, int $projectId): Project
-    {
-        $project = $this->projects->findForOwner($projectId, Authenticated::id($request));
-        if ($project === null) {
-            throw new NotFoundHttpException('no such project');
-        }
-
-        return $project;
-    }
-
-    /** @return array{id: int, name: string, primary: string, createdAt: string, updatedAt: string} */
-    private static function present(Project $project): array
-    {
-        return [
-            'id' => $project->id,
-            'name' => $project->name,
-            'primary' => $project->primary->value,
-            'createdAt' => $project->createdAt->format(DATE_ATOM),
-            'updatedAt' => $project->updatedAt->format(DATE_ATOM),
-        ];
     }
 }

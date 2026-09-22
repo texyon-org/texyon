@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domain\Blob\BlobStore;
-use App\Domain\Project\Project;
 use App\Domain\Project\ProjectFile;
 use App\Domain\Project\ProjectPath;
 use App\Domain\Project\Projects;
-use App\Http\Authenticated;
+use App\Http\ProjectGate;
 use App\Http\Requests\PutFileRequest;
 use Dedoc\Scramble\Attributes\ExcludeRouteFromDocs;
 use Dedoc\Scramble\Attributes\QueryParameter;
@@ -30,13 +29,14 @@ final readonly class ProjectFileController
     public function __construct(
         private Projects $projects,
         private BlobStore $blobs,
+        private ProjectGate $gate,
     ) {}
 
     // Must match present(). Scramble cannot see through array_map.
     #[ResponseShape(200, type: 'array{files: list<array{path: string, digest: string, size: int, updatedAt: string}>}')]
     public function index(Request $request, int $project): JsonResponse
     {
-        $files = $this->projects->files($this->owned($request, $project));
+        $files = $this->projects->files($this->gate->read($request, $project)->project);
 
         return new JsonResponse(['files' => array_map(self::present(...), $files)]);
     }
@@ -45,8 +45,8 @@ final readonly class ProjectFileController
     #[QueryParameter('path', description: 'The file inside the project, e.g. `chapters/one.tex`.', required: true, type: 'string')]
     public function show(Request $request, int $project): JsonResponse
     {
-        $owned = $this->owned($request, $project);
-        $file = $this->projects->file($owned, self::path($request));
+        $target = $this->gate->read($request, $project)->project;
+        $file = $this->projects->file($target, self::path($request));
         if ($file === null) {
             throw new NotFoundHttpException('no such file');
         }
@@ -69,12 +69,12 @@ final readonly class ProjectFileController
     #[QueryParameter('path', description: 'The file inside the project, e.g. `chapters/one.tex`.', required: true, type: 'string')]
     public function put(PutFileRequest $request, int $project): JsonResponse
     {
-        $owned = $this->owned($request, $project);
+        $target = $this->gate->write($request, $project)->project;
         $contents = $request->contents();
 
         // Store the bytes before pointing the path at them.
         $digest = $this->blobs->put($contents);
-        $file = $this->projects->putFile($owned, self::path($request), $digest, strlen($contents));
+        $file = $this->projects->putFile($target, self::path($request), $digest, strlen($contents));
 
         return new JsonResponse(['file' => self::present($file)]);
     }
@@ -83,7 +83,7 @@ final readonly class ProjectFileController
     #[ExcludeRouteFromDocs]
     public function putBytes(Request $request, int $project): JsonResponse
     {
-        $owned = $this->owned($request, $project);
+        $target = $this->gate->write($request, $project)->project;
         $contents = $request->getContent();
 
         // raw bodies bypass FormRequest validation, enforce the cap here
@@ -92,7 +92,7 @@ final readonly class ProjectFileController
         }
 
         $digest = $this->blobs->put($contents);
-        $file = $this->projects->putFile($owned, self::path($request), $digest, strlen($contents));
+        $file = $this->projects->putFile($target, self::path($request), $digest, strlen($contents));
 
         return new JsonResponse(['file' => self::present($file)]);
     }
@@ -100,20 +100,10 @@ final readonly class ProjectFileController
     #[QueryParameter('path', description: 'The file inside the project, e.g. `chapters/one.tex`.', required: true, type: 'string')]
     public function destroy(Request $request, int $project): Response
     {
-        $this->projects->deleteFile($this->owned($request, $project), self::path($request));
+        $this->projects->deleteFile($this->gate->write($request, $project)->project, self::path($request));
 
         // The blob stays, other files may share the same bytes.
         return response()->noContent();
-    }
-
-    private function owned(Request $request, int $projectId): Project
-    {
-        $project = $this->projects->findForOwner($projectId, Authenticated::id($request));
-        if ($project === null) {
-            throw new NotFoundHttpException('no such project');
-        }
-
-        return $project;
     }
 
     private static function path(Request $request): ProjectPath

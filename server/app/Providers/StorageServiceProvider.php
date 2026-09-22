@@ -6,7 +6,9 @@ namespace App\Providers;
 
 use App\Domain\Blob\BlobStore;
 use App\Domain\Project\Projects;
+use App\Domain\Project\Sharing;
 use App\Persistence\EloquentProjects;
+use App\Persistence\EloquentSharing;
 use App\Persistence\FlysystemBlobStore;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
@@ -30,5 +32,6 @@ final class StorageServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(Projects::class, EloquentProjects::class);
+        $this->app->singleton(Sharing::class, EloquentSharing::class);
     }
 }

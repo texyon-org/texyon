@@ -26,6 +26,8 @@ import type {
 import type {
   AccountShow200,
   AuthenticationExceptionResponse,
+  InviteAccept200,
+  InviteShow200,
   NotFoundHttpExceptionResponse,
   ProjectFileDestroyParams,
   ProjectFileIndex200,
@@ -34,9 +36,15 @@ import type {
   ProjectFileShow200,
   ProjectFileShowParams,
   ProjectIndex200,
+  ProjectInviteStore201,
+  ProjectMemberIndex200,
+  ProjectMemberStore201,
+  ProjectMemberUpdate200,
   ProjectShow200,
   ProjectStore201,
   PutFileRequest,
+  RoleRequest,
+  ShareProjectRequest,
   StoreProjectRequest,
   ValidationExceptionResponse
 } from './model';
@@ -221,6 +229,178 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getAccountDestroyMutationOptions(options), queryClient);
+    }
+
+export const getInviteShowUrl = (token: string,) => {
+
+
+
+
+  return `/invites/${token}`
+}
+
+/**
+ * @summary What joining would give: which project, whose, and in which role
+ */
+export const inviteShow = async (token: string, options?: Parameters<typeof apiFetch>[1]): Promise<InviteShow200> => {
+
+  return apiFetch<InviteShow200>(getInviteShowUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getInviteShowQueryKey = (token: string,) => {
+    return [
+    `/invites/${token}`
+    ] as const;
+    }
+
+
+export const getInviteShowQueryOptions = <TData = Awaited<ReturnType<typeof inviteShow>>, TError = AuthenticationExceptionResponse>(token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof inviteShow>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getInviteShowQueryKey(token);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof inviteShow>>> = ({ signal }) => inviteShow(token, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof inviteShow>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type InviteShowQueryResult = NonNullable<Awaited<ReturnType<typeof inviteShow>>>
+export type InviteShowQueryError = AuthenticationExceptionResponse
+
+
+export function useInviteShow<TData = Awaited<ReturnType<typeof inviteShow>>, TError = AuthenticationExceptionResponse>(
+ token: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof inviteShow>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof inviteShow>>,
+          TError,
+          Awaited<ReturnType<typeof inviteShow>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useInviteShow<TData = Awaited<ReturnType<typeof inviteShow>>, TError = AuthenticationExceptionResponse>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof inviteShow>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof inviteShow>>,
+          TError,
+          Awaited<ReturnType<typeof inviteShow>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useInviteShow<TData = Awaited<ReturnType<typeof inviteShow>>, TError = AuthenticationExceptionResponse>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof inviteShow>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary What joining would give: which project, whose, and in which role
+ */
+
+export function useInviteShow<TData = Awaited<ReturnType<typeof inviteShow>>, TError = AuthenticationExceptionResponse>(
+ token: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof inviteShow>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getInviteShowQueryOptions(token,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getInviteAcceptUrl = (token: string,) => {
+
+
+
+
+  return `/invites/${token}/accept`
+}
+
+/**
+ * @summary Join. Opening a link again, or one for a lesser role, changes nothing
+ */
+export const inviteAccept = async (token: string, options?: Parameters<typeof apiFetch>[1]): Promise<InviteAccept200> => {
+
+  return apiFetch<InviteAccept200>(getInviteAcceptUrl(token),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getInviteAcceptMutationOptions = <TError = AuthenticationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteAccept>>, TError,{token: string}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof inviteAccept>>, TError,{token: string}, TContext> => {
+
+const mutationKey = ['inviteAccept'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof inviteAccept>>, {token: string}> = (props) => {
+          const {token} = props ?? {};
+
+          return  inviteAccept(token,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InviteAcceptMutationResult = NonNullable<Awaited<ReturnType<typeof inviteAccept>>>
+
+    export type InviteAcceptMutationError = AuthenticationExceptionResponse
+
+    /**
+ * @summary Join. Opening a link again, or one for a lesser role, changes nothing
+ */
+export const useInviteAccept = <TError = AuthenticationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteAccept>>, TError,{token: string}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof inviteAccept>>,
+        TError,
+        {token: string},
+        TContext
+      > => {
+      return useMutation(getInviteAcceptMutationOptions(options), queryClient);
     }
 
 export const getProjectIndexUrl = () => {
@@ -907,5 +1087,464 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getProjectFileDestroyMutationOptions(options), queryClient);
+    }
+
+export const getProjectInviteStoreUrl = (project: number,) => {
+
+
+
+
+  return `/projects/${project}/invites`
+}
+
+/**
+ * @summary Create a link. The token is returned this once and never again
+ */
+export const projectInviteStore = async (project: number,
+    roleRequest: RoleRequest, options?: Parameters<typeof apiFetch>[1]): Promise<ProjectInviteStore201> => {
+
+  return apiFetch<ProjectInviteStore201>(getProjectInviteStoreUrl(project),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(roleRequest)
+  }
+);}
+
+
+
+
+
+export const getProjectInviteStoreMutationOptions = <TError = AuthenticationExceptionResponse | ValidationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectInviteStore>>, TError,{project: number;data: RoleRequest}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof projectInviteStore>>, TError,{project: number;data: RoleRequest}, TContext> => {
+
+const mutationKey = ['projectInviteStore'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof projectInviteStore>>, {project: number;data: RoleRequest}> = (props) => {
+          const {project,data} = props ?? {};
+
+          return  projectInviteStore(project,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProjectInviteStoreMutationResult = NonNullable<Awaited<ReturnType<typeof projectInviteStore>>>
+    export type ProjectInviteStoreMutationBody = RoleRequest
+    export type ProjectInviteStoreMutationError = AuthenticationExceptionResponse | ValidationExceptionResponse
+
+    /**
+ * @summary Create a link. The token is returned this once and never again
+ */
+export const useProjectInviteStore = <TError = AuthenticationExceptionResponse | ValidationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectInviteStore>>, TError,{project: number;data: RoleRequest}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof projectInviteStore>>,
+        TError,
+        {project: number;data: RoleRequest},
+        TContext
+      > => {
+      return useMutation(getProjectInviteStoreMutationOptions(options), queryClient);
+    }
+
+export const getProjectInviteDestroyUrl = (project: number,
+    invite: number,) => {
+
+
+
+
+  return `/projects/${project}/invites/${invite}`
+}
+
+/**
+ * @summary Revoke a link. People who already joined through it keep their access
+ */
+export const projectInviteDestroy = async (project: number,
+    invite: number, options?: Parameters<typeof apiFetch>[1]): Promise<void> => {
+
+  return apiFetch<void>(getProjectInviteDestroyUrl(project,invite),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getProjectInviteDestroyMutationOptions = <TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectInviteDestroy>>, TError,{project: number;invite: number}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof projectInviteDestroy>>, TError,{project: number;invite: number}, TContext> => {
+
+const mutationKey = ['projectInviteDestroy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof projectInviteDestroy>>, {project: number;invite: number}> = (props) => {
+          const {project,invite} = props ?? {};
+
+          return  projectInviteDestroy(project,invite,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProjectInviteDestroyMutationResult = NonNullable<Awaited<ReturnType<typeof projectInviteDestroy>>>
+
+    export type ProjectInviteDestroyMutationError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse
+
+    /**
+ * @summary Revoke a link. People who already joined through it keep their access
+ */
+export const useProjectInviteDestroy = <TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectInviteDestroy>>, TError,{project: number;invite: number}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof projectInviteDestroy>>,
+        TError,
+        {project: number;invite: number},
+        TContext
+      > => {
+      return useMutation(getProjectInviteDestroyMutationOptions(options), queryClient);
+    }
+
+export const getProjectMemberIndexUrl = (project: number,) => {
+
+
+
+
+  return `/projects/${project}/members`
+}
+
+/**
+ * @summary The owner, everyone else with access, and for the owner the open invite links
+ */
+export const projectMemberIndex = async (project: number, options?: Parameters<typeof apiFetch>[1]): Promise<ProjectMemberIndex200> => {
+
+  return apiFetch<ProjectMemberIndex200>(getProjectMemberIndexUrl(project),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getProjectMemberIndexQueryKey = (project: number,) => {
+    return [
+    `/projects/${project}/members`
+    ] as const;
+    }
+
+
+export const getProjectMemberIndexQueryOptions = <TData = Awaited<ReturnType<typeof projectMemberIndex>>, TError = AuthenticationExceptionResponse>(project: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof projectMemberIndex>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getProjectMemberIndexQueryKey(project);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof projectMemberIndex>>> = ({ signal }) => projectMemberIndex(project, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: project !== null && project !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof projectMemberIndex>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ProjectMemberIndexQueryResult = NonNullable<Awaited<ReturnType<typeof projectMemberIndex>>>
+export type ProjectMemberIndexQueryError = AuthenticationExceptionResponse
+
+
+export function useProjectMemberIndex<TData = Awaited<ReturnType<typeof projectMemberIndex>>, TError = AuthenticationExceptionResponse>(
+ project: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof projectMemberIndex>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectMemberIndex>>,
+          TError,
+          Awaited<ReturnType<typeof projectMemberIndex>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useProjectMemberIndex<TData = Awaited<ReturnType<typeof projectMemberIndex>>, TError = AuthenticationExceptionResponse>(
+ project: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof projectMemberIndex>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectMemberIndex>>,
+          TError,
+          Awaited<ReturnType<typeof projectMemberIndex>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useProjectMemberIndex<TData = Awaited<ReturnType<typeof projectMemberIndex>>, TError = AuthenticationExceptionResponse>(
+ project: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof projectMemberIndex>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary The owner, everyone else with access, and for the owner the open invite links
+ */
+
+export function useProjectMemberIndex<TData = Awaited<ReturnType<typeof projectMemberIndex>>, TError = AuthenticationExceptionResponse>(
+ project: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof projectMemberIndex>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getProjectMemberIndexQueryOptions(project,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getProjectMemberStoreUrl = (project: number,) => {
+
+
+
+
+  return `/projects/${project}/members`
+}
+
+/**
+ * @summary Share with an existing account by email address, or change the role of someone already in
+ */
+export const projectMemberStore = async (project: number,
+    shareProjectRequest: ShareProjectRequest, options?: Parameters<typeof apiFetch>[1]): Promise<ProjectMemberStore201> => {
+
+  return apiFetch<ProjectMemberStore201>(getProjectMemberStoreUrl(project),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(shareProjectRequest)
+  }
+);}
+
+
+
+
+
+export const getProjectMemberStoreMutationOptions = <TError = AuthenticationExceptionResponse | ValidationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectMemberStore>>, TError,{project: number;data: ShareProjectRequest}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof projectMemberStore>>, TError,{project: number;data: ShareProjectRequest}, TContext> => {
+
+const mutationKey = ['projectMemberStore'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof projectMemberStore>>, {project: number;data: ShareProjectRequest}> = (props) => {
+          const {project,data} = props ?? {};
+
+          return  projectMemberStore(project,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProjectMemberStoreMutationResult = NonNullable<Awaited<ReturnType<typeof projectMemberStore>>>
+    export type ProjectMemberStoreMutationBody = ShareProjectRequest
+    export type ProjectMemberStoreMutationError = AuthenticationExceptionResponse | ValidationExceptionResponse
+
+    /**
+ * @summary Share with an existing account by email address, or change the role of someone already in
+ */
+export const useProjectMemberStore = <TError = AuthenticationExceptionResponse | ValidationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectMemberStore>>, TError,{project: number;data: ShareProjectRequest}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof projectMemberStore>>,
+        TError,
+        {project: number;data: ShareProjectRequest},
+        TContext
+      > => {
+      return useMutation(getProjectMemberStoreMutationOptions(options), queryClient);
+    }
+
+export const getProjectMemberUpdateUrl = (project: number,
+    user: number,) => {
+
+
+
+
+  return `/projects/${project}/members/${user}`
+}
+
+export const projectMemberUpdate = async (project: number,
+    user: number,
+    roleRequest: RoleRequest, options?: Parameters<typeof apiFetch>[1]): Promise<ProjectMemberUpdate200> => {
+
+  return apiFetch<ProjectMemberUpdate200>(getProjectMemberUpdateUrl(project,user),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(roleRequest)
+  }
+);}
+
+
+
+
+
+export const getProjectMemberUpdateMutationOptions = <TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse | ValidationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectMemberUpdate>>, TError,{project: number;user: number;data: RoleRequest}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof projectMemberUpdate>>, TError,{project: number;user: number;data: RoleRequest}, TContext> => {
+
+const mutationKey = ['projectMemberUpdate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof projectMemberUpdate>>, {project: number;user: number;data: RoleRequest}> = (props) => {
+          const {project,user,data} = props ?? {};
+
+          return  projectMemberUpdate(project,user,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProjectMemberUpdateMutationResult = NonNullable<Awaited<ReturnType<typeof projectMemberUpdate>>>
+    export type ProjectMemberUpdateMutationBody = RoleRequest
+    export type ProjectMemberUpdateMutationError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse | ValidationExceptionResponse
+
+    export const useProjectMemberUpdate = <TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse | ValidationExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectMemberUpdate>>, TError,{project: number;user: number;data: RoleRequest}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof projectMemberUpdate>>,
+        TError,
+        {project: number;user: number;data: RoleRequest},
+        TContext
+      > => {
+      return useMutation(getProjectMemberUpdateMutationOptions(options), queryClient);
+    }
+
+export const getProjectMemberDestroyUrl = (project: number,
+    user: number,) => {
+
+
+
+
+  return `/projects/${project}/members/${user}`
+}
+
+/**
+ * @summary Take someone out of a project. Members may also remove themselves
+ */
+export const projectMemberDestroy = async (project: number,
+    user: number, options?: Parameters<typeof apiFetch>[1]): Promise<void> => {
+
+  return apiFetch<void>(getProjectMemberDestroyUrl(project,user),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getProjectMemberDestroyMutationOptions = <TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectMemberDestroy>>, TError,{project: number;user: number}, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof projectMemberDestroy>>, TError,{project: number;user: number}, TContext> => {
+
+const mutationKey = ['projectMemberDestroy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof projectMemberDestroy>>, {project: number;user: number}> = (props) => {
+          const {project,user} = props ?? {};
+
+          return  projectMemberDestroy(project,user,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProjectMemberDestroyMutationResult = NonNullable<Awaited<ReturnType<typeof projectMemberDestroy>>>
+
+    export type ProjectMemberDestroyMutationError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse
+
+    /**
+ * @summary Take someone out of a project. Members may also remove themselves
+ */
+export const useProjectMemberDestroy = <TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof projectMemberDestroy>>, TError,{project: number;user: number}, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof projectMemberDestroy>>,
+        TError,
+        {project: number;user: number},
+        TContext
+      > => {
+      return useMutation(getProjectMemberDestroyMutationOptions(options), queryClient);
     }
 

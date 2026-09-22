@@ -4,11 +4,14 @@
  * Tectonic Editor API
  * OpenAPI spec version: 1.0.0
  */
+import type { ProjectIndex200ProjectsItemOwner } from './projectIndex200ProjectsItemOwner';
 
 export type ProjectIndex200ProjectsItem = {
   id: number;
   name: string;
   primary: string;
+  role: string;
+  owner: ProjectIndex200ProjectsItemOwner;
   createdAt: string;
   updatedAt: string;
 };
