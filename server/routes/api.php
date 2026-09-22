@@ -41,6 +41,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::post('/projects/{project}/collab-token', [CollabController::class, 'token']);
     Route::put('/projects/{project}/blobs', [CollabController::class, 'blob']);
+    Route::get('/projects/{project}/blobs/{digest}', [CollabController::class, 'blobUrl']);
 
     Route::get('/invites/{token}', [InviteController::class, 'show']);
     Route::post('/invites/{token}/accept', [InviteController::class, 'accept']);

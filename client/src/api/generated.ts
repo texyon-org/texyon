@@ -26,6 +26,7 @@ import type {
 import type {
   AccountShow200,
   AuthenticationExceptionResponse,
+  CollabBlobUrl200,
   CollabToken200,
   InviteAccept200,
   InviteShow200,
@@ -302,6 +303,115 @@ export const useCollabToken = <TError = AuthenticationExceptionResponse,
       > => {
       return useMutation(getCollabTokenMutationOptions(options), queryClient);
     }
+
+export const getCollabBlobUrlUrl = (project: number,
+    digest: string,) => {
+
+
+
+
+  return `/projects/${project}/blobs/${digest}`
+}
+
+/**
+ * @summary Where to fetch bytes the project's document names, before or after they became a file
+ */
+export const collabBlobUrl = async (project: number,
+    digest: string, options?: Parameters<typeof apiFetch>[1]): Promise<CollabBlobUrl200> => {
+
+  return apiFetch<CollabBlobUrl200>(getCollabBlobUrlUrl(project,digest),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getCollabBlobUrlQueryKey = (project: number,
+    digest: string,) => {
+    return [
+    `/projects/${project}/blobs/${digest}`
+    ] as const;
+    }
+
+
+export const getCollabBlobUrlQueryOptions = <TData = Awaited<ReturnType<typeof collabBlobUrl>>, TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse>(project: number,
+    digest: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof collabBlobUrl>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCollabBlobUrlQueryKey(project,digest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof collabBlobUrl>>> = ({ signal }) => collabBlobUrl(project,digest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: project !== null && project !== undefined && digest !== null && digest !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof collabBlobUrl>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CollabBlobUrlQueryResult = NonNullable<Awaited<ReturnType<typeof collabBlobUrl>>>
+export type CollabBlobUrlQueryError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse
+
+
+export function useCollabBlobUrl<TData = Awaited<ReturnType<typeof collabBlobUrl>>, TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse>(
+ project: number,
+    digest: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof collabBlobUrl>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof collabBlobUrl>>,
+          TError,
+          Awaited<ReturnType<typeof collabBlobUrl>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCollabBlobUrl<TData = Awaited<ReturnType<typeof collabBlobUrl>>, TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse>(
+ project: number,
+    digest: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof collabBlobUrl>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof collabBlobUrl>>,
+          TError,
+          Awaited<ReturnType<typeof collabBlobUrl>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCollabBlobUrl<TData = Awaited<ReturnType<typeof collabBlobUrl>>, TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse>(
+ project: number,
+    digest: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof collabBlobUrl>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Where to fetch bytes the project's document names, before or after they became a file
+ */
+
+export function useCollabBlobUrl<TData = Awaited<ReturnType<typeof collabBlobUrl>>, TError = AuthenticationExceptionResponse | NotFoundHttpExceptionResponse>(
+ project: number,
+    digest: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof collabBlobUrl>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getCollabBlobUrlQueryOptions(project,digest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getInviteShowUrl = (token: string,) => {
 

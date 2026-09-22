@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Collab\CollabToken;
 use App\Domain\Blob\BlobStore;
+use App\Domain\Blob\Digest;
 use App\Domain\Collab\Documents;
 use App\Http\Authenticated;
 use App\Http\ProjectGate;
@@ -14,7 +15,10 @@ use Dedoc\Scramble\Attributes\ExcludeRouteFromDocs;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\URL;
+use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /** What the editor needs to join a project's shared document. */
 final readonly class CollabController
@@ -33,6 +37,26 @@ final readonly class CollabController
         $name = $user instanceof User ? $user->name : '';
 
         return new JsonResponse(CollabToken::issue($access, Authenticated::id($request), $name));
+    }
+
+    /** Where to fetch bytes the project's document names, before or after they became a file. */
+    public function blobUrl(Request $request, int $project, string $digest): JsonResponse
+    {
+        $access = $this->gate->read($request, $project);
+        try {
+            $parsed = Digest::parse($digest);
+        } catch (InvalidArgumentException) {
+            throw new NotFoundHttpException('no such blob');
+        }
+        if (! $this->documents->ownsBlob($access->project, $parsed)) {
+            throw new NotFoundHttpException('no such blob');
+        }
+
+        $lifetime = Config::integer('blobs.url_lifetime');
+        $url = $this->blobs->temporaryUrl($parsed, $lifetime)
+            ?? URL::temporarySignedRoute('blobs.read', now()->addSeconds($lifetime), ['digest' => $parsed->value], absolute: false);
+
+        return new JsonResponse(['url' => $url]);
     }
 
     /**

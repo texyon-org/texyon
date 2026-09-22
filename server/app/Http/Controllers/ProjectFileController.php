@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domain\Blob\BlobStore;
+use App\Domain\Collab\Documents;
+use App\Domain\Project\Project;
 use App\Domain\Project\ProjectFile;
 use App\Domain\Project\ProjectPath;
 use App\Domain\Project\Projects;
@@ -20,6 +22,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\URL;
 use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -30,6 +33,7 @@ final readonly class ProjectFileController
         private Projects $projects,
         private BlobStore $blobs,
         private ProjectGate $gate,
+        private Documents $documents,
     ) {}
 
     // Must match present(). Scramble cannot see through array_map.
@@ -70,6 +74,7 @@ final readonly class ProjectFileController
     public function put(PutFileRequest $request, int $project): JsonResponse
     {
         $target = $this->gate->write($request, $project)->project;
+        $this->refuseWhenLive($target);
         $contents = $request->contents();
 
         // Store the bytes before pointing the path at them.
@@ -84,6 +89,7 @@ final readonly class ProjectFileController
     public function putBytes(Request $request, int $project): JsonResponse
     {
         $target = $this->gate->write($request, $project)->project;
+        $this->refuseWhenLive($target);
         $contents = $request->getContent();
 
         // raw bodies bypass FormRequest validation, enforce the cap here
@@ -100,10 +106,20 @@ final readonly class ProjectFileController
     #[QueryParameter('path', description: 'The file inside the project, e.g. `chapters/one.tex`.', required: true, type: 'string')]
     public function destroy(Request $request, int $project): Response
     {
-        $this->projects->deleteFile($this->gate->write($request, $project)->project, self::path($request));
+        $target = $this->gate->write($request, $project)->project;
+        $this->refuseWhenLive($target);
+        $this->projects->deleteFile($target, self::path($request));
 
         // The blob stays, other files may share the same bytes.
         return response()->noContent();
+    }
+
+    /** Once a project has a shared document, that document is what files are written through. */
+    private function refuseWhenLive(Project $project): void
+    {
+        if ($this->documents->find($project) !== null) {
+            throw new ConflictHttpException('this project is edited live, write to it through the editor');
+        }
     }
 
     private static function path(Request $request): ProjectPath

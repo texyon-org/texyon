@@ -117,6 +117,17 @@ final class CollabApiTest extends TestCase
         self::assertSame('', $this->readBack($owner, $id, 'ch/new.tex'));
     }
 
+    public function test_files_are_not_written_directly_once_a_project_is_live(): void
+    {
+        $owner = User::factory()->create();
+        $id = $this->createProject($owner);
+        $this->internal('PUT', $id, $this->document('s', [['path' => 'main.tex', 'text' => 'live']]), '?create=1')->assertOk();
+
+        $this->actingAs($owner)->putJson("/api/projects/{$id}/file?path=main.tex", ['text' => 'stale'])->assertStatus(409);
+        $this->actingAs($owner)->deleteJson("/api/projects/{$id}/file?path=main.tex")->assertStatus(409);
+        self::assertSame('live', $this->readBack($owner, $id, 'main.tex'));
+    }
+
     public function test_a_deleted_project_cannot_be_stored_to(): void
     {
         $owner = User::factory()->create();
@@ -138,6 +149,26 @@ final class CollabApiTest extends TestCase
         $this->actingAs($viewer)
             ->call('PUT', "/api/projects/{$id}/blobs", server: ['CONTENT_TYPE' => 'application/octet-stream'], content: 'x')
             ->assertForbidden();
+    }
+
+    public function test_an_uploaded_blob_is_readable_by_members_only(): void
+    {
+        $owner = User::factory()->create();
+        $id = $this->createProject($owner);
+        $bytes = "\x89PNG figure";
+        $this->actingAs($owner)
+            ->call('PUT', "/api/projects/{$id}/blobs", server: ['CONTENT_TYPE' => 'application/octet-stream'], content: $bytes)
+            ->assertOk();
+        $digest = Digest::of($bytes)->value;
+
+        $url = $this->actingAs($owner)->getJson("/api/projects/{$id}/blobs/{$digest}")->assertOk()->json('url');
+        self::assertIsString($url);
+        self::assertSame($bytes, $this->get($url)->assertOk()->getContent());
+
+        $other = $this->createProject($owner);
+        $this->actingAs($owner)->getJson("/api/projects/{$other}/blobs/{$digest}")->assertNotFound();
+        $this->actingAs(User::factory()->create())->getJson("/api/projects/{$id}/blobs/{$digest}")->assertNotFound();
+        $this->actingAs($owner)->getJson("/api/projects/{$id}/blobs/nothex")->assertNotFound();
     }
 
     public function test_whitespace_around_a_file_survives_the_text_endpoint(): void
