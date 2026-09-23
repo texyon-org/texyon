@@ -121,6 +121,9 @@ COPY --from=client /src/client/dist /app/public
 COPY --from=collab /usr/local/bin/node /usr/local/bin/node
 COPY --from=collab /src/collab/dist/server.mjs /app/collab/server.mjs
 COPY server/start.sh /app/start.sh
+# The database volume covers /app/database and would hide this image's migrations
+# behind the copy made on first deploy, so start.sh migrates from here instead.
+RUN cp -r /app/database/migrations /app/migrations
 # Fails the build here, not on start, if the base image lacks a library node links against.
 RUN node --version
 

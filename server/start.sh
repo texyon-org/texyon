@@ -4,7 +4,7 @@
 # restart policy brings both back instead of leaving half an editor running.
 set -euo pipefail
 
-php artisan migrate --force
+php artisan migrate --force --path=migrations
 
 # The browser origin the collaboration server accepts, unless set explicitly.
 export COLLAB_ALLOWED_ORIGINS="${COLLAB_ALLOWED_ORIGINS:-${APP_URL:-}}"
