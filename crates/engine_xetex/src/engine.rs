@@ -611,9 +611,8 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
         LEVEL_ONE,
     );
     let par_shape_entry = eqtb.word(LOCAL_BASE + LOCAL_PAR_SHAPE);
-    for k in ETEX_PEN_BASE..=(NUM_ETEX_PENALTIES - 1) {
-        eqtb.data[k as usize] = par_shape_entry;
-    }
+    eqtb.data[ETEX_PEN_BASE as usize..(ETEX_PEN_BASE + NUM_ETEX_PENALTIES) as usize]
+        .fill(par_shape_entry);
 
     let toks_end = TOKS_BASE + NUMBER_REGS;
     eqtb.data[(LOCAL_BASE + LOCAL_OUTPUT_ROUTINE) as usize..toks_end as usize]
