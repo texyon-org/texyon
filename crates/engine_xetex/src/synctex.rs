@@ -72,8 +72,7 @@ fn record(synctex: &mut SynctexCtxt, s: &str) -> bool {
     }
 }
 
-/// Like [`record`] but restarting the running length, as the C does for
-/// anchors and the preamble.
+/// Like [`record`] but restarting the running length (anchors and the preamble).
 fn record_restart(synctex: &mut SynctexCtxt, s: &str) -> bool {
     let len = synctex_write(synctex.file, s);
     if len > 0 {
@@ -470,7 +469,7 @@ pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
         return;
     }
     let (tag, line) = (p.sync_tag(&st.mem), p.sync_line(&st.mem));
-    // A kern deferred in an unchanged context is dropped, as in the C.
+    // A kern deferred in an unchanged context is dropped.
     if context_changed(&st.synctex, tag, line) {
         flush_deferred_kern(st);
     }
