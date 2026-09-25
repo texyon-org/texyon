@@ -1855,8 +1855,7 @@ pub(crate) fn new_character_in(
     f: i32,
     c: u16,
 ) -> Result<i32, NewCharacterAbort> {
-    let area = st.fonts.font_area_entry(f);
-    if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
+    if is_native_font(&st.fonts, f) {
         return crate::fonts::new_native_character_in(st, f, c as u32)
             .map_err(NewCharacterAbort::Native);
     }
@@ -2811,19 +2810,18 @@ pub(crate) fn append_italic_correction_in(st: &mut EngineState) -> Result<(), Ma
     Ok(())
 }
 
+fn is_native_font(fonts: &crate::state::FontState, f: i32) -> bool {
+    let area = fonts.font_area_entry(f);
+    area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
+}
+
 pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    fn is_native(fonts: &crate::state::FontState, fnt: i32) -> bool {
-        fonts.font_area_entry(fnt) == AAT_FONT_FLAG || fonts.font_area_entry(fnt) == OTGR_FONT_FLAG
-    }
-
     crate::scan::scan_char_num_in(st)?;
-    let mut f = st.eqtb.b32s1(CUR_FONT_LOC);
+    let f = st.eqtb.b32s1(CUR_FONT_LOC);
     let p = new_character_in(st, f, st.scanner.cur_val as u16)?;
-
     if p == TEX_NULL {
         return Ok(());
     }
-
     let x = st
         .fonts
         .font_info_b32s1(X_HEIGHT_CODE + st.fonts.param_base(f));
@@ -2833,9 +2831,9 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
         / 65536.0;
     let mut lsb: i32 = 0;
     let mut rsb: i32 = 0;
-    let a = if is_native(&st.fonts, f) {
-        let av = st.mem.b32s1(p + 1);
-        if av == 0 {
+    let a = if is_native_font(&st.fonts, f) {
+        let a = st.mem.b32s1(p + 1);
+        if a == 0 {
             unsafe {
                 crate::ext::get_native_char_sidebearings(
                     &st.fonts,
@@ -2846,102 +2844,126 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
                 )?;
             }
         }
-        av
+        a
     } else {
-        let ch = st.mem.b16s0(p);
-        let c = crate::fonts::effective_char(&mut st.fonts, true, f, ch);
+        let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
         let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
         st.fonts
             .font_info_b32s1(st.fonts.width_base_entry(f) + info.s3 as i32)
     };
 
     do_assignments_in(st)?;
-    let mut q = TEX_NULL;
-    f = st.eqtb.b32s1(CUR_FONT_LOC);
-    if st.scanner.cur_cmd == LETTER
-        || st.scanner.cur_cmd == OTHER_CHAR
-        || st.scanner.cur_cmd == CHAR_GIVEN
-    {
-        q = new_character_in(st, f, st.scanner.cur_chr as u16)?;
-        st.scanner.cur_val = st.scanner.cur_chr;
-    } else if st.scanner.cur_cmd == CHAR_NUM {
-        crate::scan::scan_char_num_in(st)?;
-        q = new_character_in(st, f, st.scanner.cur_val as u16)?;
-    } else {
-        crate::input::back_input_in(st)?;
-    }
-
-    if q != TEX_NULL {
-        let t = st
-            .fonts
-            .font_info_b32s1(SLANT_CODE + st.fonts.param_base(f)) as f64
-            / 65536.0;
-        let (w, h) = if is_native(&st.fonts, f) {
-            let wv = st.mem.b32s1(q + 1);
-            let mut hv: i32 = 0;
-            let mut dv: i32 = 0;
-            unsafe {
-                crate::ext::get_native_char_height_depth(
-                    &st.fonts,
-                    f,
-                    st.scanner.cur_val,
-                    &mut hv,
-                    &mut dv,
-                )?;
-            }
-            (wv, hv)
-        } else {
-            let ch = st.mem.b16s0(q);
-            let c = crate::fonts::effective_char(&mut st.fonts, true, f, ch);
-            let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
-            let wv = st
-                .fonts
-                .font_info_b32s1(st.fonts.width_base_entry(f) + info.s3 as i32);
-            let hv = st
-                .fonts
-                .font_info_b32s1(st.fonts.height_base_entry(f) + (info.s2 / 16) as i32);
-            (wv, hv)
-        };
-        let mut pa = p;
-        if h != x {
-            pa = crate::packaging::hpack_emit_in(st, MemPtr::from_raw(p), 0, ADDITIONAL)?
-                .idx()
-                .0;
-            st.mem.set_b32s1(pa + 4, x - h);
+    let f = st.eqtb.b32s1(CUR_FONT_LOC);
+    let q = match st.scanner.cur_cmd {
+        LETTER | OTHER_CHAR | CHAR_GIVEN => {
+            let q = new_character_in(st, f, st.scanner.cur_chr as u16)?;
+            st.scanner.cur_val = st.scanner.cur_chr;
+            q
         }
-        let delta = if is_native(&st.fonts, f) && a == 0 {
-            crate::scaled_math::tex_round(
-                (w - lsb + rsb) as f64 / 2.0 + h as f64 * t - x as f64 * s,
-            )
-        } else {
-            crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
-        };
-        let Some(r) = crate::mem::alloc_kern(&mut st.mem, delta) else {
-            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        };
-        r.set_subtype(&mut st.mem, ACC_KERN);
-        st.mem.set_b32s1(st.input.cur_list.tail, r.idx().0);
-        r.set_link(&mut st.mem, MemPtr::from_raw(pa));
-        let Some(new_tail) = crate::mem::alloc_kern(&mut st.mem, -a - delta) else {
-            return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-        };
-        st.input.cur_list.tail.0 = new_tail.idx().0;
-        new_tail.set_subtype(&mut st.mem, ACC_KERN);
-        st.mem.set_b32s1(pa, new_tail.idx().0);
-        // p = q (in C); we use q directly below
+        CHAR_NUM => {
+            crate::scan::scan_char_num_in(st)?;
+            new_character_in(st, f, st.scanner.cur_val as u16)?
+        }
+        _ => {
+            crate::input::back_input_in(st)?;
+            TEX_NULL
+        }
+    };
+    if q == TEX_NULL {
+        tail_append(st, MemPtr::from_raw(p));
+        st.input.cur_list.set_aux_s0(1000);
+        return Ok(());
     }
 
-    // Append p (q if base was found, else accent) to hlist.
-    let p_final = if q != TEX_NULL { q } else { p };
-    tail_append(st, MemPtr::from_raw(p_final));
+    let t = st
+        .fonts
+        .font_info_b32s1(SLANT_CODE + st.fonts.param_base(f)) as f64
+        / 65536.0;
+    let (w, h) = if is_native_font(&st.fonts, f) {
+        let w = st.mem.b32s1(q + 1);
+        let mut h: i32 = 0;
+        let mut d: i32 = 0;
+        unsafe {
+            crate::ext::get_native_char_height_depth(
+                &st.fonts,
+                f,
+                st.scanner.cur_val,
+                &mut h,
+                &mut d,
+            )?;
+        }
+        (w, h)
+    } else {
+        let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(q));
+        let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
+        let w = st
+            .fonts
+            .font_info_b32s1(st.fonts.width_base_entry(f) + info.s3 as i32);
+        let h = st
+            .fonts
+            .font_info_b32s1(st.fonts.height_base_entry(f) + (info.s2 / 16) as i32);
+        (w, h)
+    };
+    let accent = if h == x {
+        MemPtr::from_raw(p)
+    } else {
+        let b = crate::packaging::hpack_emit_in(st, MemPtr::from_raw(p), 0, ADDITIONAL)?;
+        b.set_shift_amount(&mut st.mem, Scaled(x - h));
+        b.ptr()
+    };
+    let delta = if is_native_font(&st.fonts, f) && a == 0 {
+        crate::scaled_math::tex_round((w - lsb + rsb) as f64 / 2.0 + h as f64 * t - x as f64 * s)
+    } else {
+        crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
+    };
+    let r = crate::mem::alloc_kern(&mut st.mem, delta)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    r.set_subtype(&mut st.mem, ACC_KERN);
+    st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());
+    r.set_link(&mut st.mem, accent);
+    let back = crate::mem::alloc_kern(&mut st.mem, -a - delta)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    st.input.cur_list.tail = back.ptr();
+    back.set_subtype(&mut st.mem, ACC_KERN);
+    accent.set_link(&mut st.mem, back.ptr());
+    tail_append(st, MemPtr::from_raw(q));
     st.input.cur_list.set_aux_s0(1000);
     Ok(())
 }
+
+fn string_overflow(st: &EngineState, e: crate::scan::NodeRecycleAbort) -> MainControlAbort {
+    match e {
+        crate::scan::NodeRecycleAbort::Overflow => {
+            MainControlAbort::Input(crate::input::InputAbort::Overflow {
+                what: c"pool size".as_ptr(),
+                n: st.strings.pool_size - st.strings.init_pool_ptr,
+            })
+        }
+        e => MainControlAbort::NodeRecycle(e),
+    }
+}
+
+fn make_string_in(st: &mut EngineState) -> Result<i32, MainControlAbort> {
+    crate::string_pool::make_string(&mut st.strings).map_err(|e| match e {
+        crate::scan::NodeRecycleAbort::Overflow => {
+            MainControlAbort::Input(crate::input::InputAbort::Overflow {
+                what: c"number of strings".as_ptr(),
+                n: st.strings.max_strings - st.strings.init_str_ptr,
+            })
+        }
+        e => MainControlAbort::NodeRecycle(e),
+    })
+}
+
+fn flush_last_string(st: &mut EngineState) {
+    st.strings.str_ptr -= 1;
+    st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+}
+
 pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), MainControlAbort> {
     if st.strings.job_name == 0 {
         crate::io::open_log_file_in(st)?;
     }
-
     crate::scan::get_r_token_in(st)?;
     let u = st.scanner.cur_cs;
     let t = if u >= HASH_BASE {
@@ -2966,50 +2988,20 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
                 },
             ));
         }
-        match crate::string_pool::make_string(&mut st.strings) {
-            Ok(s) => s,
-            Err(crate::scan::NodeRecycleAbort::Overflow) => {
-                return Err(MainControlAbort::Input(
-                    crate::input::InputAbort::Overflow {
-                        what: c"number of strings".as_ptr(),
-                        n: st.strings.max_strings - st.strings.init_str_ptr,
-                    },
-                ));
-            }
-            Err(e) => return Err(MainControlAbort::NodeRecycle(e)),
-        }
+        make_string_in(st)?
     };
 
-    if a >= 4 {
-        crate::save::geq_define(
-            &mut st.eqtb,
-            &mut st.mem,
-            &mut st.scanner,
-            u,
-            SET_FONT as u16,
-            FONT_BASE,
-        )?;
-    } else {
-        crate::save::eq_define(
-            &mut st.eqtb,
-            &mut st.save_stack,
-            &mut st.mem,
-            &mut st.scanner,
-            u,
-            SET_FONT as u16,
-            FONT_BASE,
-        )?;
-    }
+    let global = a >= 4;
+    define(st, global, u, SET_FONT as u16, FONT_BASE)?;
     crate::scan::scan_optional_equals_in(st)?;
     crate::io::scan_file_name_in(st)?;
     st.scanner.name_in_progress = true;
-
     let s = if crate::scan::scan_keyword_in(st, c"at".as_ptr())? {
         crate::scan::scan_dimen_in(st, false, false, false)?;
-        let sv = st.scanner.cur_val;
-        if sv <= 0 || sv >= 0x800_0000 {
+        let size = st.scanner.cur_val;
+        if size <= 0 || size >= 0x800_0000 {
             crate::output::error_here_with_diagnostic_in(st, c"Improper `at' size (".as_ptr());
-            crate::output::print_scaled_in(st, sv);
+            crate::output::print_scaled_in(st, size);
             crate::output::print_cstr_in(st, c"pt), replaced by 10pt".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             help(
@@ -3020,180 +3012,97 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
                 ],
             );
             mc_propagate_error(crate::errors::error_in(st))?;
-            10 * 65536_i32
+            10 * 65536
         } else {
-            sv
+            size
         }
     } else if crate::scan::scan_keyword_in(st, c"scaled".as_ptr())? {
         crate::scan::scan_int_in(st)?;
-        let sv = st.scanner.cur_val;
-        if sv <= 0 || sv > 32768 {
+        let mag = st.scanner.cur_val;
+        if mag <= 0 || mag > 32768 {
             let errmsg = crate::output::error_here_with_diagnostic_in(
                 st,
                 c"Illegal magnification has been changed to 1000".as_ptr(),
             );
-            diag_append_str(errmsg, &format!(" ({})", sv));
+            diag_append_str(errmsg, &format!(" ({})", mag));
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             help(
                 &mut st.errors,
                 &[c"The magnification ratio must be between 1 and 32768."],
             );
-            mc_propagate_error(crate::errors::int_error_in(st, sv))?;
-            -1000_i32
+            mc_propagate_error(crate::errors::int_error_in(st, mag))?;
+            -1000
         } else {
-            -sv
+            -mag
         }
     } else {
-        -1000_i32
+        -1000
     };
-
     st.scanner.name_in_progress = false;
 
+    let size_matches = |st: &mut EngineState, f: usize| -> bool {
+        if s > 0 {
+            s == st.fonts.font_size[f]
+        } else {
+            st.fonts.font_size[f]
+                == crate::scaled_math::xn_over_d_in(
+                    &mut st.errors,
+                    st.fonts.font_dsize[f],
+                    -s,
+                    1000,
+                )
+        }
+    };
     let f = 'search: {
-        let mut fi = FONT_BASE + 1;
-        while fi <= st.fonts.font_ptr {
-            if crate::string_pool::str_eq_str(
-                &st.strings,
-                st.fonts.font_name[fi as usize],
-                st.scanner.cur_name,
-            ) && ((crate::string_pool::length(&st.strings, st.scanner.cur_area) == 0
-                && (st.fonts.font_area[fi as usize] == AAT_FONT_FLAG
-                    || st.fonts.font_area[fi as usize] == OTGR_FONT_FLAG))
+        for f in FONT_BASE + 1..=st.fonts.font_ptr {
+            let fi = f as usize;
+            let area_matches = (crate::string_pool::length(&st.strings, st.scanner.cur_area) == 0
+                && is_native_font(&st.fonts, f))
                 || crate::string_pool::str_eq_str(
                     &st.strings,
-                    st.fonts.font_area[fi as usize],
+                    st.fonts.font_area[fi],
                     st.scanner.cur_area,
-                ))
+                );
+            if crate::string_pool::str_eq_str(
+                &st.strings,
+                st.fonts.font_name[fi],
+                st.scanner.cur_name,
+            ) && area_matches
+                && size_matches(st, fi)
             {
-                if s > 0 {
-                    if s == st.fonts.font_size[fi as usize] {
-                        break 'search fi;
-                    }
-                } else if st.fonts.font_size[fi as usize]
-                    == crate::scaled_math::xn_over_d_in(
-                        &mut st.errors,
-                        st.fonts.font_dsize[fi as usize],
-                        -s,
-                        1000,
-                    )
-                {
-                    break 'search fi;
-                }
+                break 'search f;
             }
-            crate::string_pool::append_str(&mut st.strings, st.scanner.cur_area).map_err(|e| {
-                match e {
-                    crate::scan::NodeRecycleAbort::Overflow => {
-                        MainControlAbort::Input(crate::input::InputAbort::Overflow {
-                            what: c"pool size".as_ptr(),
-                            n: st.strings.pool_size - st.strings.init_pool_ptr,
-                        })
-                    }
-                    e => MainControlAbort::NodeRecycle(e),
-                }
-            })?;
-            crate::string_pool::append_str(&mut st.strings, st.scanner.cur_name).map_err(|e| {
-                match e {
-                    crate::scan::NodeRecycleAbort::Overflow => {
-                        MainControlAbort::Input(crate::input::InputAbort::Overflow {
-                            what: c"pool size".as_ptr(),
-                            n: st.strings.pool_size - st.strings.init_pool_ptr,
-                        })
-                    }
-                    e => MainControlAbort::NodeRecycle(e),
-                }
-            })?;
-            crate::string_pool::append_str(&mut st.strings, st.scanner.cur_ext).map_err(
-                |e| match e {
-                    crate::scan::NodeRecycleAbort::Overflow => {
-                        MainControlAbort::Input(crate::input::InputAbort::Overflow {
-                            what: c"pool size".as_ptr(),
-                            n: st.strings.pool_size - st.strings.init_pool_ptr,
-                        })
-                    }
-                    e => MainControlAbort::NodeRecycle(e),
-                },
-            )?;
-            let ms = match crate::string_pool::make_string(&mut st.strings) {
-                Ok(ms) => ms,
-                Err(crate::scan::NodeRecycleAbort::Overflow) => {
-                    return Err(MainControlAbort::Input(
-                        crate::input::InputAbort::Overflow {
-                            what: c"number of strings".as_ptr(),
-                            n: st.strings.max_strings - st.strings.init_str_ptr,
-                        },
-                    ));
-                }
-                Err(e) => return Err(MainControlAbort::NodeRecycle(e)),
-            };
-            if crate::string_pool::str_eq_str(&st.strings, st.fonts.font_name[fi as usize], ms) {
-                st.strings.str_ptr -= 1;
-                st.strings.pool_ptr =
-                    st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
-                if st.fonts.font_area[fi as usize] == AAT_FONT_FLAG
-                    || st.fonts.font_area[fi as usize] == OTGR_FONT_FLAG
-                {
-                    if s > 0 {
-                        if s == st.fonts.font_size[fi as usize] {
-                            break 'search fi;
-                        }
-                    } else if st.fonts.font_size[fi as usize]
-                        == crate::scaled_math::xn_over_d_in(
-                            &mut st.errors,
-                            st.fonts.font_dsize[fi as usize],
-                            -s,
-                            1000,
-                        )
-                    {
-                        break 'search fi;
-                    }
-                }
-            } else {
-                st.strings.str_ptr -= 1;
-                st.strings.pool_ptr =
-                    st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            for part in [st.scanner.cur_area, st.scanner.cur_name, st.scanner.cur_ext] {
+                crate::string_pool::append_str(&mut st.strings, part)
+                    .map_err(|e| string_overflow(st, e))?;
             }
-            fi += 1;
+            let full_name = make_string_in(st)?;
+            let same_name =
+                crate::string_pool::str_eq_str(&st.strings, st.fonts.font_name[fi], full_name);
+            flush_last_string(st);
+            if same_name && is_native_font(&st.fonts, f) && size_matches(st, fi) {
+                break 'search f;
+            }
         }
         read_font_info_in(st, u, st.scanner.cur_name, st.scanner.cur_area, s)?
     };
 
-    // common_ending:
-    if a >= 4 {
-        crate::save::geq_define(
-            &mut st.eqtb,
-            &mut st.mem,
-            &mut st.scanner,
-            u,
-            SET_FONT as u16,
-            f,
-        )?;
-    } else {
-        crate::save::eq_define(
-            &mut st.eqtb,
-            &mut st.save_stack,
-            &mut st.mem,
-            &mut st.scanner,
-            u,
-            SET_FONT as u16,
-            f,
-        )?;
-    }
+    define(st, global, u, SET_FONT as u16, f)?;
     let word = st.eqtb.word(u);
     st.eqtb.set_word(FONT_ID_BASE + f, word);
     st.eqtb.set_hash_s1(FONT_ID_BASE + f, t);
     Ok(())
 }
-pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(), MainControlAbort> {
-    let q = st.scanner.cur_cmd;
-    let mut w: i32 = 0;
-    let mut s: i32 = TEX_NULL;
 
-    // Determine (l, p, e): register address, value type, is_extended_SA
-    let (l, p, e) = 'determine: {
+pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(), MainControlAbort> {
+    use crate::scaled_math::{mult_and_add_in, x_over_n_in};
+
+    let q = st.scanner.cur_cmd;
+    let (l, p, e) = 'found: {
         if q != REGISTER {
             crate::scan::get_x_token_in(st)?;
-            if st.scanner.cur_cmd >= ASSIGN_INT && st.scanner.cur_cmd <= ASSIGN_MU_GLUE {
-                break 'determine (
+            if (ASSIGN_INT..=ASSIGN_MU_GLUE).contains(&st.scanner.cur_cmd) {
+                break 'found (
                     st.scanner.cur_chr,
                     (st.scanner.cur_cmd - ASSIGN_INT) as i16,
                     false,
@@ -3212,49 +3121,39 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
                 return mc_propagate_error(crate::errors::error_in(st));
             }
         }
-        if st.scanner.cur_chr < 0 || st.scanner.cur_chr > 19 {
+        if !(0..=19).contains(&st.scanner.cur_chr) {
             let l = st.scanner.cur_chr;
-            let p = (st.mem.b16s1(l) / 64) as i16;
-            (l, p, true)
-        } else {
-            let p = st.scanner.cur_chr as i16;
-            crate::scan::scan_register_num_in(st)?;
-            if st.scanner.cur_val > 255 {
-                let __cv12 = st.scanner.cur_val;
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, p as u16, __cv12, true);
-                (st.scanner.cur_ptr.0, p, true)
-            } else {
-                let l = match p {
-                    INT_VAL => st.scanner.cur_val + COUNT_BASE,
-                    DIMEN_VAL => st.scanner.cur_val + SCALED_BASE,
-                    GLUE_VAL => st.scanner.cur_val + SKIP_BASE,
-                    MU_VAL => st.scanner.cur_val + MU_SKIP_BASE,
-                    _ => unreachable!(),
-                };
-                (l, p, false)
-            }
+            break 'found (l, (st.mem.b16s1(l) / 64) as i16, true);
         }
+        let p = st.scanner.cur_chr as i16;
+        crate::scan::scan_register_num_in(st)?;
+        let n = st.scanner.cur_val;
+        if n > 255 {
+            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, p as u16, n, true);
+            break 'found (st.scanner.cur_ptr.0, p, true);
+        }
+        let base = match p {
+            INT_VAL => COUNT_BASE,
+            DIMEN_VAL => SCALED_BASE,
+            GLUE_VAL => SKIP_BASE,
+            MU_VAL => MU_SKIP_BASE,
+            _ => unreachable!("register value level"),
+        };
+        (n + base, p, false)
     };
 
-    // found: read current value into w (int/dimen) or s (glue/mu)
-    if p < GLUE_VAL {
-        w = if e {
-            st.mem.b32s1(l + 2)
-        } else {
-            unsafe { st.eqtb.data[l as usize].b32.s1 }
-        };
-    } else if e {
-        s = st.mem.b32s1(l + 1);
-    } else {
-        s = unsafe { st.eqtb.data[l as usize].b32.s1 };
-    }
+    let (w, s) = match (p < GLUE_VAL, e) {
+        (true, true) => (st.mem.b32s1(l + 2), TEX_NULL),
+        (true, false) => (st.eqtb.b32s1(l), TEX_NULL),
+        (false, true) => (0, st.mem.b32s1(l + 1)),
+        (false, false) => (0, st.eqtb.b32s1(l)),
+    };
 
     if q == REGISTER {
         crate::scan::scan_optional_equals_in(st)?;
     } else {
         crate::scan::scan_keyword_in(st, c"by".as_ptr())?;
     }
-
     st.errors.arith_error = false;
 
     if q < MULTIPLY {
@@ -3265,117 +3164,81 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
                 crate::scan::scan_dimen_in(st, false, false, false)?;
             }
             if q == ADVANCE {
-                st.scanner.cur_val = st.scanner.cur_val + w;
+                st.scanner.cur_val += w;
             }
         } else {
             crate::scan::scan_glue_in(st, p)?;
             if q == ADVANCE {
-                let qs_p = crate::mem::alloc_spec(&mut st.mem, st.scanner.cur_val)
+                let sum = crate::mem::alloc_spec(&mut st.mem, st.scanner.cur_val)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                let r = s;
                 crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
-                let r_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(r))
+                let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s))
                     .expect("non-null glue spec");
-                let w = qs_p.width(&st.mem).0 + r_p.width(&st.mem).0;
-                qs_p.set_width(&mut st.mem, Scaled(w));
-                if qs_p.stretch(&st.mem).0 == 0 {
-                    qs_p.set_stretch_order(&mut st.mem, NORMAL);
+                let width = sum.width(&st.mem).0 + old.width(&st.mem).0;
+                sum.set_width(&mut st.mem, Scaled(width));
+                if sum.stretch(&st.mem).0 == 0 {
+                    sum.set_stretch_order(&mut st.mem, NORMAL);
                 }
-                if qs_p.stretch_order(&st.mem) == r_p.stretch_order(&st.mem) {
-                    let v = qs_p.stretch(&st.mem).0 + r_p.stretch(&st.mem).0;
-                    qs_p.set_stretch(&mut st.mem, Scaled(v));
-                } else if qs_p.stretch_order(&st.mem) < r_p.stretch_order(&st.mem)
-                    && r_p.stretch(&st.mem).0 != 0
+                if sum.stretch_order(&st.mem) == old.stretch_order(&st.mem) {
+                    let v = sum.stretch(&st.mem).0 + old.stretch(&st.mem).0;
+                    sum.set_stretch(&mut st.mem, Scaled(v));
+                } else if sum.stretch_order(&st.mem) < old.stretch_order(&st.mem)
+                    && old.stretch(&st.mem).0 != 0
                 {
-                    let (rs, ro) = (r_p.stretch(&st.mem), r_p.stretch_order(&st.mem));
-                    qs_p.set_stretch(&mut st.mem, rs);
-                    qs_p.set_stretch_order(&mut st.mem, ro);
+                    let (v, order) = (old.stretch(&st.mem), old.stretch_order(&st.mem));
+                    sum.set_stretch(&mut st.mem, v);
+                    sum.set_stretch_order(&mut st.mem, order);
                 }
-                if qs_p.shrink(&st.mem).0 == 0 {
-                    qs_p.set_shrink_order(&mut st.mem, NORMAL);
+                if sum.shrink(&st.mem).0 == 0 {
+                    sum.set_shrink_order(&mut st.mem, NORMAL);
                 }
-                if qs_p.shrink_order(&st.mem) == r_p.shrink_order(&st.mem) {
-                    let v = qs_p.shrink(&st.mem).0 + r_p.shrink(&st.mem).0;
-                    qs_p.set_shrink(&mut st.mem, Scaled(v));
-                } else if qs_p.shrink_order(&st.mem) < r_p.shrink_order(&st.mem)
-                    && r_p.shrink(&st.mem).0 != 0
+                if sum.shrink_order(&st.mem) == old.shrink_order(&st.mem) {
+                    let v = sum.shrink(&st.mem).0 + old.shrink(&st.mem).0;
+                    sum.set_shrink(&mut st.mem, Scaled(v));
+                } else if sum.shrink_order(&st.mem) < old.shrink_order(&st.mem)
+                    && old.shrink(&st.mem).0 != 0
                 {
-                    let (rs, ro) = (r_p.shrink(&st.mem), r_p.shrink_order(&st.mem));
-                    qs_p.set_shrink(&mut st.mem, rs);
-                    qs_p.set_shrink_order(&mut st.mem, ro);
+                    let (v, order) = (old.shrink(&st.mem), old.shrink_order(&st.mem));
+                    sum.set_shrink(&mut st.mem, v);
+                    sum.set_shrink_order(&mut st.mem, order);
                 }
-                st.scanner.cur_val = qs_p.ptr().0;
+                st.scanner.cur_val = sum.ptr().0;
             }
         }
     } else {
         crate::scan::scan_int_in(st)?;
+        let n = st.scanner.cur_val;
+        let scale = |errors: &mut crate::state::ErrorState, x: i32, max_answer: i32| {
+            if q == MULTIPLY {
+                mult_and_add_in(errors, x, n, 0, max_answer)
+            } else {
+                x_over_n_in(errors, x, n)
+            }
+        };
         if p < GLUE_VAL {
-            if q == MULTIPLY {
-                if p == INT_VAL {
-                    st.scanner.cur_val = crate::scaled_math::mult_and_add_in(
-                        &mut st.errors,
-                        w,
-                        st.scanner.cur_val,
-                        0,
-                        TEX_INFINITY,
-                    );
-                } else {
-                    st.scanner.cur_val = crate::scaled_math::mult_and_add_in(
-                        &mut st.errors,
-                        w,
-                        st.scanner.cur_val,
-                        0,
-                        MAX_HALFWORD,
-                    );
-                }
+            let max_answer = if p == INT_VAL {
+                TEX_INFINITY
             } else {
-                st.scanner.cur_val =
-                    crate::scaled_math::x_over_n_in(&mut st.errors, w, st.scanner.cur_val);
-            }
+                MAX_HALFWORD
+            };
+            st.scanner.cur_val = scale(&mut st.errors, w, max_answer);
         } else {
-            let r_p = crate::mem::alloc_spec(&mut st.mem, s)
+            let r = crate::mem::alloc_spec(&mut st.mem, s)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-            let s_p = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s))
+            let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(s))
                 .expect("non-null glue spec");
-            let (sw, sst, ssh) = (
-                s_p.width(&st.mem),
-                s_p.stretch(&st.mem),
-                s_p.shrink(&st.mem),
+            let (width, stretch, shrink) = (
+                old.width(&st.mem).0,
+                old.stretch(&st.mem).0,
+                old.shrink(&st.mem).0,
             );
-            if q == MULTIPLY {
-                let v = crate::scaled_math::mult_and_add_in(
-                    &mut st.errors,
-                    sw.0,
-                    st.scanner.cur_val,
-                    0,
-                    MAX_HALFWORD,
-                );
-                r_p.set_width(&mut st.mem, Scaled(v));
-                let v = crate::scaled_math::mult_and_add_in(
-                    &mut st.errors,
-                    sst.0,
-                    st.scanner.cur_val,
-                    0,
-                    MAX_HALFWORD,
-                );
-                r_p.set_stretch(&mut st.mem, Scaled(v));
-                let v = crate::scaled_math::mult_and_add_in(
-                    &mut st.errors,
-                    ssh.0,
-                    st.scanner.cur_val,
-                    0,
-                    MAX_HALFWORD,
-                );
-                r_p.set_shrink(&mut st.mem, Scaled(v));
-            } else {
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, sw.0, st.scanner.cur_val);
-                r_p.set_width(&mut st.mem, Scaled(v));
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, sst.0, st.scanner.cur_val);
-                r_p.set_stretch(&mut st.mem, Scaled(v));
-                let v = crate::scaled_math::x_over_n_in(&mut st.errors, ssh.0, st.scanner.cur_val);
-                r_p.set_shrink(&mut st.mem, Scaled(v));
-            }
-            st.scanner.cur_val = r_p.ptr().0;
+            let v = scale(&mut st.errors, width, MAX_HALFWORD);
+            r.set_width(&mut st.mem, Scaled(v));
+            let v = scale(&mut st.errors, stretch, MAX_HALFWORD);
+            r.set_stretch(&mut st.mem, Scaled(v));
+            let v = scale(&mut st.errors, shrink, MAX_HALFWORD);
+            r.set_shrink(&mut st.mem, Scaled(v));
+            st.scanner.cur_val = r.ptr().0;
         }
     }
 
@@ -3396,8 +3259,8 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
     }
 
     let global = a >= 4;
-    let value = st.scanner.cur_val;
     if p < GLUE_VAL {
+        let value = st.scanner.cur_val;
         if e {
             sa_word_define(st, global, l, value)?;
         } else {
@@ -3417,12 +3280,7 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
 
 pub(crate) fn do_assignments_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     loop {
-        loop {
-            crate::scan::get_x_token_in(st)?;
-            if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
-                break;
-            }
-        }
+        get_x_non_blank_non_relax(st)?;
         if st.scanner.cur_cmd <= MAX_NON_PREFIXED_COMMAND {
             return Ok(());
         }
@@ -6385,9 +6243,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                         st.fonts.set_skew_char_entry(f, st.scanner.cur_val);
                     }
                 } else {
-                    if st.fonts.font_area_entry(f) == AAT_FONT_FLAG
-                        || st.fonts.font_area_entry(f) == OTGR_FONT_FLAG
-                    {
+                    if is_native_font(&st.fonts, f) {
                         crate::scan::scan_glyph_number_in(st, f)?;
                     } else {
                         crate::scan::scan_char_num_in(st)?;
