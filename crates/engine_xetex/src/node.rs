@@ -1006,6 +1006,19 @@ impl NodePtr<StyleNode> {
     }
 }
 
+impl NodePtr<ChoiceNode> {
+    /// Retype this choice node in place as a style node for `style`.
+    #[inline]
+    pub fn into_style(self, mem: &mut MemState, style: u16) -> NodePtr<StyleNode> {
+        mem.set_b16s1(self.idx.0, NodeType::Style.as_raw());
+        mem.set_b16s0(self.idx.0, style);
+        // SAFETY: the node was just stamped STYLE_NODE (same size as a choice node).
+        let p = unsafe { NodePtr::<StyleNode>::from_idx_unchecked(self.idx) };
+        p.clear_payload(mem);
+        p
+    }
+}
+
 impl NodePtr<EdgeNode> {
     /// Allocate a fresh edge node (`STYLE_NODE_SIZE` words), type-stamped with
     /// `NODE_type = STYLE_NODE` because XeTeX aliases `EDGE_NODE` to code 14.
