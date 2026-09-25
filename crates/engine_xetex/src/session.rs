@@ -21,12 +21,9 @@ use crate::{PageExecution, SourceRevision, SourceSnapshot, TexOutcome};
 
 static RESIDENT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-// Command-count fallback for documents without edit-protected or page-horizon
-// fences. At typical XeTeX throughput this still bounds replay to milliseconds.
+// Command-count fallback for documents without edit or page-horizon fences.
 const PERIODIC_FENCE_TOKENS: u64 = 500_000;
-// Normal source traversal should retain an early first-edit rung without
-// treating expansion-heavy loops as equivalent progress. Later source fences
-// are deliberately coarser to bound checkpoint capture work on large files.
+// An early first rung by source progress, then coarser ones to bound capture work.
 const FIRST_PERIODIC_FENCE_SOURCE_BYTES: usize = 32 * 1024;
 const PERIODIC_FENCE_SOURCE_BYTES: usize = 256 * 1024;
 const MAX_EDIT_FENCES: usize = 16;
@@ -526,12 +523,8 @@ impl IncrementalXeTeXSession {
                     ladder.rewind_engine(state, 0);
                     return OperationResult::Aborted;
                 }
-                // Keep the whole foreground ladder pinned while the tail plants
-                // periodic rungs beyond the viewport horizon. Without this the
-                // tail's own rungs evict the fences the next edit needs, and a
-                // pause long enough to settle the tail costs the following
-                // keystroke a replay from rung zero. The next edit clears all
-                // stale protections.
+                // Pin the foreground ladder so the tail's own rungs cannot evict
+                // the fences the next edit needs.
                 assert!(ladder.protect_rungs_through(target));
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
@@ -621,126 +614,74 @@ impl IncrementalXeTeXSession {
         replay_clock: u64,
         checkpoint_activity: CheckpointActivity,
     ) -> Result<EngineFrame> {
-        let replay_commands = self
-            .state
-            .scanner
-            .logical_clock
-            .saturating_sub(replay_clock);
-        match result {
-            OperationResult::Complete { history, splice_at } => Ok(EngineFrame {
-                outcome: history_to_outcome(history)?,
-                source_revision: revision,
-                aborted: None,
-                cancelled: false,
-                pages: self.state.shipout.page_manifest.take_pages(),
-                sync_index: self
-                    .state
-                    .synctex
-                    .preview_index
-                    .as_ref()
-                    .map(crate::sync_index::PreviewSyncIndex::snapshot)
-                    .unwrap_or_default(),
-                splice_at,
-                checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
-                checkpoint_bytes: self
-                    .ladder
-                    .as_ref()
-                    .map_or(0, CheckpointLadder::accounted_bytes),
-                replay_rung,
-                replay_commands,
-                checkpoint_rungs_admitted: checkpoint_activity.admitted,
-                checkpoint_rungs_dropped: checkpoint_activity.dropped,
-                checkpoint_rungs_rejected: checkpoint_activity.rejected,
-                tail_pending: false,
-            }),
+        let mut frame = EngineFrame {
+            outcome: TexOutcome::Errors,
+            source_revision: revision,
+            aborted: None,
+            cancelled: false,
+            pages: Vec::new(),
+            sync_index: Default::default(),
+            splice_at: None,
+            checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
+            checkpoint_bytes: self
+                .ladder
+                .as_ref()
+                .map_or(0, CheckpointLadder::accounted_bytes),
+            replay_rung,
+            replay_commands: self
+                .state
+                .scanner
+                .logical_clock
+                .saturating_sub(replay_clock),
+            checkpoint_rungs_admitted: checkpoint_activity.admitted,
+            checkpoint_rungs_dropped: checkpoint_activity.dropped,
+            checkpoint_rungs_rejected: checkpoint_activity.rejected,
+            tail_pending: false,
+        };
+        let (history, splice_at, tail_pending) = match result {
+            OperationResult::Complete { history, splice_at } => (history, splice_at, false),
             OperationResult::Horizoned {
-                history,
-                splice_at,
-                rung_clock: _,
-            } => Ok(EngineFrame {
-                outcome: history_to_outcome(history)?,
-                source_revision: revision,
-                aborted: None,
-                cancelled: false,
-                pages: self.state.shipout.page_manifest.take_pages(),
-                sync_index: self
-                    .state
-                    .synctex
-                    .preview_index
-                    .as_ref()
-                    .map(crate::sync_index::PreviewSyncIndex::snapshot)
-                    .unwrap_or_default(),
-                splice_at,
-                checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
-                checkpoint_bytes: self
-                    .ladder
-                    .as_ref()
-                    .map_or(0, CheckpointLadder::accounted_bytes),
-                replay_rung,
-                replay_commands,
-                checkpoint_rungs_admitted: checkpoint_activity.admitted,
-                checkpoint_rungs_dropped: checkpoint_activity.dropped,
-                checkpoint_rungs_rejected: checkpoint_activity.rejected,
-                tail_pending: true,
-            }),
-            OperationResult::Aborted => Ok(EngineFrame {
-                outcome: TexOutcome::Errors,
-                source_revision: revision,
-                aborted: Some("XeTeX aborted; resident state rewound to rung zero".into()),
-                cancelled: false,
-                pages: Vec::new(),
-                sync_index: Default::default(),
-                splice_at: None,
-                checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
-                checkpoint_bytes: self
-                    .ladder
-                    .as_ref()
-                    .map_or(0, CheckpointLadder::accounted_bytes),
-                replay_rung,
-                replay_commands,
-                checkpoint_rungs_admitted: checkpoint_activity.admitted,
-                checkpoint_rungs_dropped: checkpoint_activity.dropped,
-                checkpoint_rungs_rejected: checkpoint_activity.rejected,
-                tail_pending: false,
-            }),
-            OperationResult::Cancelled => Ok(EngineFrame {
-                outcome: TexOutcome::Errors,
-                source_revision: revision,
-                aborted: None,
-                cancelled: true,
-                pages: Vec::new(),
-                sync_index: Default::default(),
-                splice_at: None,
-                checkpoint_rungs: self.ladder.as_ref().map_or(0, CheckpointLadder::len),
-                checkpoint_bytes: self
-                    .ladder
-                    .as_ref()
-                    .map_or(0, CheckpointLadder::accounted_bytes),
-                replay_rung,
-                replay_commands,
-                checkpoint_rungs_admitted: checkpoint_activity.admitted,
-                checkpoint_rungs_dropped: checkpoint_activity.dropped,
-                checkpoint_rungs_rejected: checkpoint_activity.rejected,
-                tail_pending: false,
-            }),
+                history, splice_at, ..
+            } => (history, splice_at, true),
+            OperationResult::Aborted => {
+                frame.aborted = Some("XeTeX aborted; resident state rewound to rung zero".into());
+                return Ok(frame);
+            }
+            OperationResult::Cancelled => {
+                frame.cancelled = true;
+                return Ok(frame);
+            }
             OperationResult::Budget(error) => {
-                self.dead = true;
-                self.release_global_lease();
-                Err(anyhow!("invalid checkpoint budget: {error:?}"))
+                return Err(self.kill(anyhow!("invalid checkpoint budget: {error:?}")))
             }
             OperationResult::Terminal(history) => {
-                self.dead = true;
-                self.release_global_lease();
-                Err(anyhow!(
+                return Err(self.kill(anyhow!(
                     "XeTeX initialization terminated with history {history}"
-                ))
+                )))
             }
             OperationResult::Panicked => {
-                self.dead = true;
-                self.release_global_lease();
-                Err(anyhow!("resident XeTeX operation panicked"))
+                return Err(self.kill(anyhow!("resident XeTeX operation panicked")))
             }
-        }
+        };
+        frame.outcome = history_to_outcome(history)?;
+        frame.pages = self.state.shipout.page_manifest.take_pages();
+        frame.sync_index = self
+            .state
+            .synctex
+            .preview_index
+            .as_ref()
+            .map(crate::sync_index::PreviewSyncIndex::snapshot)
+            .unwrap_or_default();
+        frame.splice_at = splice_at;
+        frame.tail_pending = tail_pending;
+        Ok(frame)
+    }
+
+    /// Marks the session unusable and returns `error`.
+    fn kill(&mut self, error: Error) -> Error {
+        self.dead = true;
+        self.release_global_lease();
+        error
     }
 
     fn release_global_lease(&mut self) {
@@ -839,12 +780,8 @@ unsafe fn run_document(
         }
         Err(error) => {
             crate::engine::release_operation_inputs(state);
-            // Cancellation and fatal-class TeX aborts both interrupt the
-            // operation at a journal-coherent point, so both can rewind to
-            // the operation's replay origin. Wiping the ladder to rung zero
-            // here would make every transient syntax error during typing
-            // (an unbalanced brace mid-edit) force the next valid edit to
-            // replay the whole document.
+            // Both cancellation and fatal aborts stop at a journal-coherent
+            // point, so rewind to the replay origin rather than rung zero.
             let recovery_rung = recovery_rung_clock
                 .and_then(|clock| ladder.rung_at_clock(clock))
                 .unwrap_or(0);

@@ -373,10 +373,7 @@ fn scan_scale_factor(st: &mut EngineState) -> Result<f64, MainControlAbort> {
 }
 
 pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), MainControlAbort> {
-    crate::io::scan_file_name_in(st)?;
-    let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
-    // SAFETY: packs the scanned name into the shared name buffer.
-    unsafe { crate::io::pack_file_name_in(st, n, a, e) };
+    crate::io::scan_and_pack_name_in(st)?;
 
     let mut pdf_box_type = None;
     let mut page = 0;

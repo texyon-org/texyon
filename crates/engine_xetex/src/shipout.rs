@@ -13,7 +13,6 @@ use crate::bridge::{
     ttstub_output_close, ttstub_output_flush, ttstub_output_open, ttstub_output_write,
     ttstub_shell_escape,
 };
-use crate::engine::OUTPUT_FILE_EXTENSION;
 use crate::node::{
     AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
     WhatsitNode, WhatsitSubtype,
@@ -516,7 +515,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
         if st.strings.job_name == 0 {
             crate::io::open_log_file_in(st)?;
         }
-        crate::io::pack_job_name_in(st, OUTPUT_FILE_EXTENSION)?;
+        crate::io::pack_job_name_in(st, crate::engine::output_file_extension(st))?;
         st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
         if st.shipout.dvi_file == INVALID_HANDLE {
             return Err(ShipoutAbort::CannotOpenOutput);
@@ -2262,8 +2261,7 @@ fn out_write_stream(
             unsafe { crate::texmfmp::maketexstring_in(&mut st.strings, c".tex".as_ptr()) }?;
     }
     let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
-    // SAFETY: packs the file name into the shared name buffer.
-    unsafe { crate::io::pack_file_name_in(st, n, a, e) };
+    crate::io::pack_file_name_in(st, n, a, e);
     // SAFETY: FFI open with the packed name buffer.
     let handle = unsafe { ttstub_output_open(st.input.name_of_file.as_ptr(), 0) };
     if handle == INVALID_HANDLE {
