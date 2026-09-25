@@ -963,7 +963,7 @@ impl NodePtr<MathNode> {
 
 impl MemState {
     /// Classify a known lo-mem node as a math node.
-    #[inline]
+    #[cfg(test)]
     pub fn classify_math(&self, p: MemIdx) -> Result<Option<NodePtr<MathNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
