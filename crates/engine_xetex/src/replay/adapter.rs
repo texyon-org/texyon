@@ -5,7 +5,7 @@ use std::ffi::CStr;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::source::{SourceIdentity, SourcePath, SourceSnapshot};
+use super::source::{ResolvedSource, SourceIdentity, SourcePath, SourceSnapshot};
 use tectonic_bridge_core::EOF;
 
 const MEM_TAG: usize = 1usize << (usize::BITS - 1);
@@ -19,31 +19,20 @@ thread_local! {
 
 struct ReplaySources {
     snapshot: SourceSnapshot,
-    inputs: Vec<MemInput>,
+    inputs: Vec<MemoryInput>,
     last_path: Option<SourcePath>,
 }
 
-struct MemInput {
-    path: SourcePath,
-    bytes: Arc<[u8]>,
-    identity: SourceIdentity,
-    position: usize,
-    pushback: Option<u8>,
-    /// Furthest byte position the engine ever reached on this channel, by
-    /// reading or by seeking. Everything below it is a consumed fact; anything
-    /// at or beyond it the engine has not looked at.
-    seen: usize,
-    closed: bool,
-}
-
-/// Replayable byte-channel state captured atomically at a command fence.
+/// One byte channel. Fences capture the whole table by cloning it.
 #[derive(Clone)]
-pub(crate) struct MemoryInputCheckpoint {
+pub(crate) struct MemoryInput {
     pub(crate) path: SourcePath,
     pub(crate) bytes: Arc<[u8]>,
     pub(crate) identity: SourceIdentity,
     pub(crate) position: usize,
     pub(crate) pushback: Option<u8>,
+    /// Furthest position ever reached by reading or seeking. Bytes below it
+    /// are consumed facts.
     pub(crate) seen: usize,
     pub(crate) closed: bool,
 }
@@ -72,31 +61,13 @@ pub(crate) fn install(snapshot: SourceSnapshot) -> SourceInstallGuard {
     SourceInstallGuard
 }
 
-/// Capture every opened or previously consumed editor byte channel in handle order.
-pub(crate) fn checkpoint_inputs() -> Option<Vec<MemoryInputCheckpoint>> {
-    ACTIVE.with(|active| {
-        let active = active.borrow();
-        let sources = active.as_ref()?;
-        Some(
-            sources
-                .inputs
-                .iter()
-                .map(|input| MemoryInputCheckpoint {
-                    path: input.path.clone(),
-                    bytes: Arc::clone(&input.bytes),
-                    identity: input.identity,
-                    position: input.position,
-                    pushback: input.pushback,
-                    seen: input.seen,
-                    closed: input.closed,
-                })
-                .collect(),
-        )
-    })
+/// Every opened or previously consumed editor byte channel, in handle order.
+pub(crate) fn checkpoint_inputs() -> Option<Vec<MemoryInput>> {
+    ACTIVE.with(|active| Some(active.borrow().as_ref()?.inputs.clone()))
 }
 
 /// Recreate a captured handle table against the currently installed snapshot.
-pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
+pub(crate) fn restore_inputs(checkpoints: &[MemoryInput]) -> bool {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let Some(sources) = active.as_mut() else {
@@ -113,7 +84,7 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
             if checkpoint.position > bytes.len() {
                 return false;
             }
-            restored.push(MemInput {
+            restored.push(MemoryInput {
                 path: checkpoint.path.clone(),
                 bytes,
                 identity,
@@ -135,9 +106,8 @@ pub(crate) fn restore_inputs(checkpoints: &[MemoryInputCheckpoint]) -> bool {
 
 /// Cumulative source bytes observed by the installed byte channels.
 ///
-/// Unlike the engine token clock, this stays still while TeX expands a loop
-/// from already-read tokens. Keeping the aggregate here also makes cadence
-/// checks O(1) after documents have opened hundreds of inputs.
+/// Unlike the token clock, this stays still while TeX expands already-read
+/// tokens.
 pub(crate) fn observed_bytes() -> usize {
     OBSERVED_BYTES.get()
 }
@@ -146,8 +116,8 @@ pub(crate) fn open_primary() -> Option<usize> {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let sources = active.as_mut()?;
-        let (path, bytes, identity) = sources.snapshot.primary_entry();
-        Some(sources.open(path, bytes, identity))
+        let primary = sources.snapshot.primary_entry();
+        Some(sources.open(primary))
     })
 }
 
@@ -165,7 +135,7 @@ pub(crate) unsafe fn open_named(path: *const libc::c_char, format: libc::c_int) 
                 .then(|| sources.snapshot.resolve_replay_entry(requested))
                 .flatten()
         })?;
-        Some(sources.open(resolved.0, resolved.1, resolved.2))
+        Some(sources.open(resolved))
     })
 }
 
@@ -185,11 +155,11 @@ pub(crate) unsafe fn copy_last_abspath(
         let active = active.borrow();
         let sources = active.as_ref()?;
         let path = sources.last_path.as_ref()?;
-        let path = sources.snapshot.absolute_path(path);
-        let bytes = path.to_string_lossy();
         if len == 0 {
             return Some(0);
         }
+        let path = sources.snapshot.absolute_path(path);
+        let bytes = path.to_string_lossy();
         let copied = bytes.len().min(len - 1);
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.cast::<u8>(), copied);
         *buffer.add(copied) = 0;
@@ -201,16 +171,11 @@ pub(crate) fn is_mem(handle: usize) -> bool {
     handle & MEM_TAG != 0
 }
 
-pub(crate) fn checkpoint_handle_is_open(
-    checkpoints: &[MemoryInputCheckpoint],
-    handle: usize,
-) -> bool {
-    if !is_mem(handle) {
-        return false;
-    }
-    checkpoints
-        .get(index(handle))
-        .is_some_and(|checkpoint| !checkpoint.closed)
+pub(crate) fn checkpoint_handle_is_open(checkpoints: &[MemoryInput], handle: usize) -> bool {
+    is_mem(handle)
+        && checkpoints
+            .get(index(handle))
+            .is_some_and(|checkpoint| !checkpoint.closed)
 }
 
 /// Underlying byte cursor of the newest open channel for `path`.
@@ -227,25 +192,21 @@ pub(crate) fn open_position(path: &SourcePath) -> Option<usize> {
     })
 }
 
-/// Answer a size query without recording a dependency.
-///
-/// Resolving an `\input` or a graphics path asks for a size and reads nothing.
-/// The engine's cursor does not move, so nothing about the file's contents has
-/// been consumed, and a fence taken afterwards is constrained only by whatever
-/// was actually read. A document that puts such a size into its output keeps a
-/// stale value until the next full compile.
+/// Answer a size query without recording a dependency, since the cursor does
+/// not move. A document that typesets such a size keeps a stale value until
+/// the next full compile.
 pub(crate) fn get_size(handle: usize) -> Option<usize> {
-    with_input_mut(handle, |input| input.bytes.len())
+    with_open_input(handle, |input| input.bytes.len())
 }
 
 pub(crate) fn getc(handle: usize) -> Option<libc::c_int> {
-    with_input_mut(handle, |input| {
+    with_open_input(handle, |input| {
         if let Some(byte) = input.pushback.take() {
             return byte.into();
         }
         let Some(&byte) = input.bytes.get(input.position) else {
-            // Reaching EOF is itself a consumed fact: the engine acted on the
-            // file ending here, so anything appended invalidates the fence.
+            // The engine acted on the file ending here, so appending
+            // invalidates the fence.
             observe_through(input, input.position);
             return EOF;
         };
@@ -256,7 +217,7 @@ pub(crate) fn getc(handle: usize) -> Option<libc::c_int> {
 }
 
 pub(crate) fn ungetc(handle: usize, ch: libc::c_int) -> Option<libc::c_int> {
-    with_input_mut(handle, |input| {
+    with_open_input(handle, |input| {
         if input.pushback.replace(ch as u8).is_some() {
             -1
         } else {
@@ -266,7 +227,7 @@ pub(crate) fn ungetc(handle: usize, ch: libc::c_int) -> Option<libc::c_int> {
 }
 
 pub(crate) unsafe fn read(handle: usize, data: *mut u8, len: usize) -> Option<libc::ssize_t> {
-    with_input_mut(handle, |input| {
+    with_open_input(handle, |input| {
         let mut copied = 0;
         if len > 0 {
             if let Some(byte) = input.pushback.take() {
@@ -275,8 +236,7 @@ pub(crate) unsafe fn read(handle: usize, data: *mut u8, len: usize) -> Option<li
             }
         }
         let available = input.bytes.len().saturating_sub(input.position);
-        let wanted = len - copied;
-        let direct = wanted.min(available);
+        let direct = (len - copied).min(available);
         std::ptr::copy_nonoverlapping(
             input.bytes.as_ptr().add(input.position),
             data.add(copied),
@@ -293,14 +253,14 @@ pub(crate) unsafe fn read(handle: usize, data: *mut u8, len: usize) -> Option<li
     })
 }
 
-fn observe_through(input: &mut MemInput, position: usize) {
+fn observe_through(input: &mut MemoryInput, position: usize) {
     let newly_observed = position.saturating_sub(input.seen);
     input.seen = input.seen.max(position);
     OBSERVED_BYTES.set(OBSERVED_BYTES.get().saturating_add(newly_observed));
 }
 
 pub(crate) fn seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) -> Option<usize> {
-    with_input_mut(handle, |input| {
+    with_open_input(handle, |input| {
         let base = match whence {
             libc::SEEK_SET => 0i128,
             libc::SEEK_CUR => input.position as i128,
@@ -309,8 +269,7 @@ pub(crate) fn seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) ->
         };
         let target = base + offset as i128;
         if !(0..=input.bytes.len() as i128).contains(&target) {
-            // The engine learned the file does not extend that far; hold the
-            // fence to the whole current extent rather than model the bound.
+            // The engine learned the file's extent, so hold the fence to all of it.
             observe_through(input, input.bytes.len());
             return 0;
         }
@@ -321,25 +280,14 @@ pub(crate) fn seek(handle: usize, offset: libc::ssize_t, whence: libc::c_int) ->
     })
 }
 
+/// Returns whether the channel was already closed.
 pub(crate) fn close(handle: usize) -> Option<bool> {
-    if !is_mem(handle) {
-        return None;
-    }
-    ACTIVE.with(|active| {
-        let mut active = active.borrow_mut();
-        let sources = active
-            .as_mut()
-            .expect("memory handle without installed snapshot");
-        let input = &mut sources.inputs[index(handle)];
-        let was_closed = input.closed;
-        input.closed = true;
-        Some(was_closed)
-    })
+    with_input(handle, |input| std::mem::replace(&mut input.closed, true))
 }
 
 impl ReplaySources {
-    fn open(&mut self, path: SourcePath, bytes: Arc<[u8]>, identity: SourceIdentity) -> usize {
-        self.inputs.push(MemInput {
+    fn open(&mut self, (path, bytes, identity): ResolvedSource) -> usize {
+        self.inputs.push(MemoryInput {
             path: path.clone(),
             bytes,
             identity,
@@ -353,7 +301,7 @@ impl ReplaySources {
     }
 }
 
-fn with_input_mut<T>(handle: usize, f: impl FnOnce(&mut MemInput) -> T) -> Option<T> {
+fn with_input<T>(handle: usize, f: impl FnOnce(&mut MemoryInput) -> T) -> Option<T> {
     if !is_mem(handle) {
         return None;
     }
@@ -362,9 +310,14 @@ fn with_input_mut<T>(handle: usize, f: impl FnOnce(&mut MemInput) -> T) -> Optio
         let sources = active
             .as_mut()
             .expect("memory handle without installed snapshot");
-        let input = &mut sources.inputs[index(handle)];
+        Some(f(&mut sources.inputs[index(handle)]))
+    })
+}
+
+fn with_open_input<T>(handle: usize, f: impl FnOnce(&mut MemoryInput) -> T) -> Option<T> {
+    with_input(handle, |input| {
         assert!(!input.closed, "use of closed memory input");
-        Some(f(input))
+        f(input)
     })
 }
 
@@ -402,6 +355,7 @@ mod tests {
         assert_eq!(getc(handle), Some(b'Q'.into()));
         assert_eq!(seek(handle, 1, libc::SEEK_SET), Some(1));
         let mut buf = [0u8; 2];
+        // SAFETY: valid C string or buffer for the call.
         assert_eq!(unsafe { read(handle, buf.as_mut_ptr(), 2) }, Some(2));
         assert_eq!(&buf, b"bc");
         assert_eq!(getc(handle), Some(EOF));
@@ -412,6 +366,7 @@ mod tests {
     fn primary_and_child_are_memory_backed_from_the_first_open() {
         let _guard = install(snapshot());
         let primary = open_primary().unwrap();
+        // SAFETY: valid C string or buffer for the call.
         let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
         assert!(is_mem(primary));
         assert!(is_mem(child));
@@ -424,6 +379,7 @@ mod tests {
         let checkpoints = {
             let _guard = install(snapshot());
             let primary = open_primary().unwrap();
+            // SAFETY: valid C string or buffer for the call.
             let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
             assert_eq!(getc(primary), Some(b'a'.into()));
             assert_eq!(getc(child), Some(b'x'.into()));
@@ -449,8 +405,10 @@ mod tests {
         assert_eq!(getc(primary), Some(b'a'.into()));
         assert_eq!(observed_bytes(), 1);
 
+        // SAFETY: valid C string or buffer for the call.
         let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
         let mut buf = [0u8; 2];
+        // SAFETY: valid C string or buffer for the call.
         assert_eq!(unsafe { read(child, buf.as_mut_ptr(), 2) }, Some(2));
         assert_eq!(observed_bytes(), 3);
 
