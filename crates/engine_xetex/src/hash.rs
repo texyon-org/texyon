@@ -1,25 +1,17 @@
-//! Control-sequence hash table lookups (id_lookup, prim_lookup).
-//!
-//! Translated from xetex-xetex0.c.
+//! Control-sequence hash table lookups.
+
 use crate::consts::{
     BIGGEST_CHAR, EQTB_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_PRIMITIVE,
 };
 use crate::state::{EqtbState, StringsState};
+use crate::string_pool::{length, make_string, str_eq_buf, str_eq_str};
 
-// xetex-constants.h:25
-// xetex-constants.h:340
-// xetex_format.h:15
+pub(crate) const HASH_BASE: i32 = 2_228_226;
 const HASH_SIZE: i32 = 15000;
-// xetex_format.h:18
 const HASH_PRIME: i32 = 8501;
-// xetex_format.h:27
 const PRIM_SIZE: i32 = 2100;
-// xetex_format.h:28
 const PRIM_PRIME: i32 = 1777;
-// xetex-constants.h:270
 const PRIM_BASE: i32 = 1;
-// xetex_format.h:200
-const HASH_BASE: i32 = 2_228_226;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum HashLookupError {
@@ -29,24 +21,18 @@ pub(crate) enum HashLookupError {
     PrimitiveSizeOverflow(i32),
 }
 
-/// Inline equivalent of `cur_length()` (xetex-xetexd.h:1175).
 #[inline]
 pub(crate) fn cur_length(strings: &StringsState) -> i32 {
     strings.pool_ptr - strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize]
 }
 
-/// Out-of-line residue reduction for `id_lookup`'s hash loop; the result is
-/// identical to repeatedly subtracting `HASH_PRIME` until `h < HASH_PRIME`.
-/// `#[cold]`/`#[inline(never)]` keep LLVM from speculating the modulo back
-/// onto the hot path (which would recreate the imul chain the peeling in
-/// `id_lookup` avoids).
+/// Kept out of line so LLVM cannot hoist the modulo back into `id_lookup`'s loop.
 #[cold]
 #[inline(never)]
 fn hash_mod_rare(h: i32) -> i32 {
     h % HASH_PRIME
 }
 
-// translated from xetex-xetex0.c:2713 (id_lookup)
 pub fn id_lookup(
     eqtb: &mut EqtbState,
     strings: &mut StringsState,
@@ -57,13 +43,7 @@ pub fn id_lookup(
     let mut h: i32 = 0;
     for k in j..=(j + l - 1) {
         h = h + h + buffer[k as usize];
-        // Faithful to C's `while (h >= HASH_PRIME) h -= 8501;`, but with the
-        // (at most) two subtractions ASCII names ever need peeled by hand:
-        // written as a plain while loop, LLVM strength-reduces it into a
-        // hardware modulo (imul/shr/imul) on the loop-carried `h` dependency
-        // chain, ~3x slower here than gcc's predictable compare-and-subtract
-        // code. The residue call is only reachable for buffer values >= 8503
-        // (2*h + c >= 3*HASH_PRIME with h < HASH_PRIME), i.e. non-Latin text.
+        // Peeled subtractions: a plain while loop becomes a slow imul modulo chain.
         if h >= HASH_PRIME {
             h -= HASH_PRIME;
             if h >= HASH_PRIME {
@@ -77,29 +57,24 @@ pub fn id_lookup(
 
     let mut p = h + HASH_BASE;
 
-    // Count ll = UTF-16 code units (surrogate pairs expand buffer scalars >= 65536)
-    let mut ll = l;
-    for d in 0..=(l - 1) {
-        if buffer[(j + d) as usize] >= TOO_BIG_CHAR {
-            ll += 1;
+    let mut utf16_len = l;
+    for k in j..j + l {
+        if buffer[k as usize] >= TOO_BIG_CHAR {
+            utf16_len += 1;
         }
     }
 
     loop {
-        if eqtb.hash_s1(p) > 0
-            && crate::string_pool::length(strings, eqtb.hash_s1(p)) == ll
-            && crate::string_pool::str_eq_buf(strings, buffer, eqtb.hash_s1(p), j)
-        {
-            return Ok(p); // found
+        let text = eqtb.hash_s1(p);
+        if text > 0 && length(strings, text) == utf16_len && str_eq_buf(strings, buffer, text, j) {
+            return Ok(p);
         }
 
         if eqtb.hash_s0(p) == 0 {
             if eqtb.no_new_control_sequence {
                 p = UNDEFINED_CONTROL_SEQUENCE;
             } else {
-                // new entry — allocate a slot
-                if eqtb.hash_s1(p) > 0 {
-                    // current slot occupied: find a free slot
+                if text > 0 {
                     if eqtb.hash_high < eqtb.hash_extra {
                         eqtb.hash_high += 1;
                         eqtb.set_hash_s0(p, eqtb.hash_high + EQTB_SIZE);
@@ -121,16 +96,13 @@ pub fn id_lookup(
                     }
                 }
 
-                // copy buffer[j..j+l-1] into the string pool, making room
-                if strings.pool_ptr + ll > strings.pool_size {
+                if strings.pool_ptr + utf16_len > strings.pool_size {
                     return Err(HashLookupError::PoolSizeOverflow(
                         strings.pool_size - strings.init_pool_ptr,
                     ));
                 }
 
                 let d = cur_length(strings);
-
-                // shift current partial string up by l positions
                 while strings.pool_ptr
                     > strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize]
                 {
@@ -139,8 +111,7 @@ pub fn id_lookup(
                         strings.str_pool[strings.pool_ptr as usize];
                 }
 
-                // encode buffer[j..j+l-1] as UTF-16 (surrogate pairs if needed)
-                for k in j..=(j + l - 1) {
+                for k in j..j + l {
                     let bk = buffer[k as usize];
                     if bk < TOO_BIG_CHAR {
                         strings.str_pool[strings.pool_ptr as usize] = bk as u16;
@@ -155,68 +126,58 @@ pub fn id_lookup(
                     }
                 }
 
-                let s_idx = match crate::string_pool::make_string(strings) {
-                    Ok(val) => val,
-                    Err(_) => {
-                        return Err(HashLookupError::StringNumberOverflow(
-                            strings.max_strings - strings.init_str_ptr,
-                        ));
-                    }
-                };
+                let s_idx = make_string(strings).map_err(|_| {
+                    HashLookupError::StringNumberOverflow(
+                        strings.max_strings - strings.init_str_ptr,
+                    )
+                })?;
                 eqtb.set_hash_s1(p, s_idx);
                 strings.pool_ptr += d;
             }
-            return Ok(p); // found (new or undefined)
+            return Ok(p);
         }
 
         p = eqtb.hash_s0(p);
     }
 }
 
-// translated from xetex-xetex0.c:2803 (prim_lookup)
 pub fn prim_lookup(
     eqtb: &mut EqtbState,
     strings: &mut StringsState,
     s: i32,
 ) -> Result<i32, HashLookupError> {
-    let mut p: i32;
-    // l mirrors the C local: 0 for single-char s, pool-length for pooled s.
-    let l: i32;
-
+    let mut p;
+    let l;
     if s <= BIGGEST_CHAR {
         if s < 0 {
             return Ok(UNDEFINED_PRIMITIVE);
         }
-        p = (s % PRIM_PRIME) + 1;
-        l = 0; // not used in the BIGGEST_CHAR path
+        p = s % PRIM_PRIME + 1;
+        l = 0;
     } else {
         let j = strings.str_start[(s - TOO_BIG_CHAR) as usize];
         l = if s == strings.str_ptr {
             cur_length(strings)
         } else {
-            crate::string_pool::length(strings, s)
+            length(strings, s)
         };
         let mut h = strings.str_pool[j as usize] as i32;
-        let for_end = j + l - 1;
-        let mut k = j + 1;
-        while k <= for_end {
+        for k in j + 1..j + l {
             h = h + h + strings.str_pool[k as usize] as i32;
             while h >= PRIM_PRIME {
                 h -= PRIM_PRIME;
             }
-            k += 1;
         }
         p = h + 1;
     }
 
     loop {
-        if eqtb.prim_s1(p) > TOO_BIG_CHAR {
-            if crate::string_pool::length(strings, eqtb.prim_s1(p)) - 1 == l
-                && crate::string_pool::str_eq_str(strings, eqtb.prim_s1(p) - 1, s)
-            {
+        let text = eqtb.prim_s1(p);
+        if text > TOO_BIG_CHAR {
+            if length(strings, text) - 1 == l && str_eq_str(strings, text - 1, s) {
                 return Ok(p);
             }
-        } else if eqtb.prim_s1(p) == 1 + s {
+        } else if text == 1 + s {
             return Ok(p);
         }
 
@@ -224,7 +185,7 @@ pub fn prim_lookup(
             if eqtb.no_new_control_sequence {
                 p = UNDEFINED_PRIMITIVE;
             } else {
-                if eqtb.prim_s1(p) > 0 {
+                if text > 0 {
                     loop {
                         if eqtb.prim_used == PRIM_BASE {
                             return Err(HashLookupError::PrimitiveSizeOverflow(PRIM_SIZE));
