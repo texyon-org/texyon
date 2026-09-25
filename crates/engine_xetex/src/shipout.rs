@@ -2905,8 +2905,7 @@ pub(crate) fn out_what_in(
                         .map_err(|e| ShipoutAbort::Scc(crate::scan::SccAbort::MakeTexString(e)))?;
                     }
                     let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
-                    // SAFETY: packs the file name into the shared name buffer.
-                    unsafe { crate::io::pack_file_name_in(st, n, a, e) };
+                    crate::io::pack_file_name_in(st, n, a, e);
                     // SAFETY: FFI open with the packed name buffer.
                     let handle = unsafe { ttstub_output_open(st.input.name_of_file.as_ptr(), 0) };
                     if handle == INVALID_HANDLE {

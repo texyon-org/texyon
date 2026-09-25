@@ -660,7 +660,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
         }
         PDF_CREATION_DATE_CODE => {
             let b = st.strings.pool_ptr;
-            unsafe { crate::texmfmp::getcreationdate_in(&st.texmf, &mut st.strings) };
+            crate::texmfmp::getcreationdate_in(&st.texmf, &mut st.strings);
             let tail = str_toks_scc(st, b, 0)?;
             ins_temp_head_list(st, tail)?;
         }

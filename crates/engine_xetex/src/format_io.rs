@@ -23,6 +23,7 @@ use crate::engine::{
 use crate::errors::EngineAbort;
 use crate::hash::{HASH_BASE, HASH_OFFSET, HASH_PRIME, PRIM_SIZE};
 use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
+use crate::io::name_of_file_ptr;
 use crate::state::{EngineState, EqtbState, InteractionMode};
 
 const INT_PAR_TRACING_STATS: i32 = 31;
@@ -197,14 +198,6 @@ unsafe fn dump_eqtb_runs(
         if k > last {
             return Ok(k);
         }
-    }
-}
-
-fn name_of_file_ptr(st: &EngineState) -> *const libc::c_char {
-    if st.input.name_of_file.is_empty() {
-        std::ptr::null()
-    } else {
-        st.input.name_of_file.as_ptr()
     }
 }
 

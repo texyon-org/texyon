@@ -366,15 +366,7 @@ fn corners_bbox(corners: &[RealPoint; 4]) -> (f64, f64, f64, f64) {
 }
 
 pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), MainControlAbort> {
-    crate::io::scan_file_name_in(st)?;
-    unsafe {
-        crate::io::pack_file_name_in(
-            st,
-            st.scanner.cur_name,
-            st.scanner.cur_area,
-            st.scanner.cur_ext,
-        );
-    }
+    crate::io::scan_and_pack_name_in(st)?;
 
     // `None` = non-PDF image (no page box); `Some(..)` once we know it is a PDF.
     let mut pdf_box_type: Option<PageboxType> = None;
