@@ -6,16 +6,16 @@ use crate::bridge::{
     ttstub_output_flush, ttstub_output_putc,
 };
 use crate::consts::{
-    ACTIVE_BASE, A_LEADERS, BACKED_UP, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CONTRIB_HEAD,
-    COUNT_BASE, CS_TOKEN_FLAG, DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FI_CODE,
-    FI_OR_ELSE, GLUE_BASE, HISTORY_SPOTLESS, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE,
-    INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, INT_PAR_TRACING_ONLINE,
-    LC_CODE_BASE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_COMMAND,
-    MEM_TOP, MMODE, MU_GLUE, MU_SKIP_BASE, NULL_CS, NULL_FLAG, OR_CODE, OUTPUT_TEXT,
-    PRIM_EQTB_BASE, SCALED_BASE, SCRIPT_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
-    SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
-    SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, TEXT_SIZE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
-    UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, UNLESS_CODE, VMODE, WRITE_TEXT,
+    ACTIVE_BASE, A_LEADERS, BACKED_UP, BIGGEST_CHAR, CAT_CODE_BASE, CONTRIB_HEAD, COUNT_BASE,
+    CS_TOKEN_FLAG, DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FI_CODE, FI_OR_ELSE,
+    GLUE_BASE, HISTORY_SPOTLESS, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_END_LINE_CHAR,
+    INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, INT_PAR_TRACING_ONLINE, LC_CODE_BASE, LOCAL_BASE,
+    LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_COMMAND, MEM_TOP, MMODE, MU_GLUE,
+    MU_SKIP_BASE, NULL_CS, NULL_FLAG, OR_CODE, OUTPUT_TEXT, PRIM_EQTB_BASE, SCALED_BASE,
+    SCRIPT_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
+    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, TEXT_SIZE,
+    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
+    UNLESS_CODE, VMODE, WRITE_TEXT,
 };
 use crate::errors::{error_in, ErrorOutcome, ERR_HELP_LOC};
 use crate::hash::HASH_BASE;
@@ -39,6 +39,14 @@ const FROZEN_NULL_FONT: i32 = 2_245_338;
 const FONT_ID_BASE: i32 = FROZEN_NULL_FONT;
 const LETTER: i32 = 11;
 const DIMEN_VAL_LIMIT: u16 = 128;
+
+fn int_par(st: &EngineState, n: i32) -> i32 {
+    st.eqtb.b32s1(INT_BASE + n)
+}
+
+fn set_int_par(st: &mut EngineState, n: i32, v: i32) {
+    st.eqtb.set_b32s1(INT_BASE + n, v);
+}
 
 fn print_the_digs_in(st: &mut EngineState, mut k: u8) {
     while k > 0 {
@@ -132,7 +140,7 @@ pub(crate) fn print_nl_in(st: &mut EngineState, s: i32) {
 }
 
 fn print_escape_char_in(st: &mut EngineState) {
-    let c = st.eqtb.b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR);
+    let c = int_par(st, INT_PAR_ESCAPE_CHAR);
     if (0..=BIGGEST_USV).contains(&c) {
         print_char_in(st, c);
     }
@@ -299,8 +307,7 @@ pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
         return;
     }
 
-    if s == st.eqtb.b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR) && st.shipout.selector < SELECTOR_PSEUDO
-    {
+    if s == int_par(st, INT_PAR_NEW_LINE_CHAR) && st.shipout.selector < SELECTOR_PSEUDO {
         print_ln_in(st);
         return;
     }
@@ -363,16 +370,14 @@ pub(crate) fn print_in(st: &mut EngineState, s: i32) {
             print_char_in(st, s);
             return;
         }
-        if s == st.eqtb.b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR)
-            && st.shipout.selector < SELECTOR_PSEUDO
-        {
+        if s == int_par(st, INT_PAR_NEW_LINE_CHAR) && st.shipout.selector < SELECTOR_PSEUDO {
             print_ln_in(st);
             return;
         }
-        let nl = st.eqtb.b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR);
-        st.eqtb.set_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, -1);
+        let nl = int_par(st, INT_PAR_NEW_LINE_CHAR);
+        set_int_par(st, INT_PAR_NEW_LINE_CHAR, -1);
         print_char_in(st, s);
-        st.eqtb.set_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, nl);
+        set_int_par(st, INT_PAR_NEW_LINE_CHAR, nl);
         return;
     }
 
@@ -659,9 +664,7 @@ fn print_sa_num_in(st: &mut EngineState, q: NodePtr<SaNode>) {
 
 pub(crate) fn begin_diagnostic_in(st: &mut EngineState) {
     st.shipout.old_setting = st.shipout.selector as u8;
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_ONLINE) <= 0
-        && st.shipout.selector == SELECTOR_TERM_AND_LOG
-    {
+    if int_par(st, INT_PAR_TRACING_ONLINE) <= 0 && st.shipout.selector == SELECTOR_TERM_AND_LOG {
         st.shipout.selector -= 1;
         note_warning_issued(st);
     }
@@ -2107,10 +2110,6 @@ fn print_font_select_in(st: &mut EngineState, f: usize) {
     }
 }
 
-fn int_par(st: &EngineState, n: i32) -> i32 {
-    st.eqtb.b32s1(INT_BASE + n)
-}
-
 pub(crate) fn print_meaning_in(st: &mut EngineState) {
     let cmd = st.scanner.cur_cmd as u16;
     let chr = st.scanner.cur_chr;
@@ -2738,8 +2737,8 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 Entry::Found
             }
             GroupCode::MathLeft => {
-                let delim = st.input.nest[(p + 1) as usize].e_tex_aux;
-                if st.mem.b16s1(delim) == NodeType::LeftNoad.as_raw() {
+                let delim = MemIdx::new(st.input.nest[(p + 1) as usize].e_tex_aux);
+                if st.mem.node_type(delim) == Ok(NodeType::LeftNoad) {
                     esc(st, c"left");
                 } else {
                     esc(st, c"middle");
@@ -2808,19 +2807,13 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
 pub(crate) enum ShowWhateverAbort {
     Scanner(crate::scan::SccAbort),
     Error(ErrorOutcome),
-    MainMemoryOverflow,
 }
 
 impl ShowWhateverAbort {
-    /// `MainMemoryOverflow` here is a plain overflow, without `runaway`.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             ShowWhateverAbort::Scanner(e) => e.into_engine_abort(),
             ShowWhateverAbort::Error(o) => o.into_engine_abort(),
-            ShowWhateverAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
-                what: c"main memory size".as_ptr(),
-                n: MEM_TOP + 1,
-            },
         }
     }
 }
@@ -2845,22 +2838,14 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
         SHOW_BOX_CODE => {
             crate::scan::scan_register_num_in(st)?;
             let n = st.scanner.cur_val;
-            let p = if n < 256 {
-                st.eqtb.b32s1(BOX_BASE + n)
-            } else {
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, n, false)
-                    .ok_or(ShowWhateverAbort::MainMemoryOverflow)?;
-                NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)
-                    .map_or(TEX_NULL, |q| q.sa_ptr(&st.mem).0)
-            };
+            let contents = crate::scan::fetch_box(st, n);
             begin_diagnostic_in(st);
             print_nl_cstr_in(st, c"> \\box".as_ptr());
             print_int_in(st, n);
             print_char_in(st, b'=' as i32);
-            if p == TEX_NULL {
-                print_cstr_in(st, c"void".as_ptr());
-            } else {
-                show_box_in(st, p);
+            match contents {
+                Some(b) => show_box_in(st, b.ptr()),
+                None => print_cstr_in(st, c"void".as_ptr()),
             }
         }
         SHOW_CODE => {
@@ -2963,7 +2948,7 @@ pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutc
     if tracing_lost > 0 {
         let old_setting = int_par(st, INT_PAR_TRACING_ONLINE);
         if tracing_lost > 1 {
-            st.eqtb.set_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE, 1);
+            set_int_par(st, INT_PAR_TRACING_ONLINE, 1);
         }
         if tracing_lost > 2 {
             print_error_prefix_in(st);
@@ -2987,8 +2972,7 @@ pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutc
         if tracing_lost < 3 {
             print_char_in(st, b'!' as i32);
         }
-        st.eqtb
-            .set_b32s1(INT_BASE + INT_PAR_TRACING_ONLINE, old_setting);
+        set_int_par(st, INT_PAR_TRACING_ONLINE, old_setting);
         if tracing_lost > 2 {
             st.errors.help_ptr = 0;
             let outcome = error_in(st);
