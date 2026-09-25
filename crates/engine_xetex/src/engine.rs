@@ -840,33 +840,27 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
     const MEM_TOP: i32 = 4_999_999;
     const NULL_LIST: i32 = MEM_TOP - 11;
 
-    const XF_PRIM_INIT_NONE: i32 = 0;
-    const XF_PRIM_INIT_PAR: i32 = 1;
-    const XF_PRIM_INIT_WRITE: i32 = 2;
-
     st.eqtb.no_new_control_sequence = false;
     st.input.first = 0;
 
-    for prim in crate::primitives::XETEX_PRIMITIVES.iter() {
-        if let Some(name) = prim.name {
-            primitive(st, name.as_ptr(), prim.cmd as u16, prim.chr)?;
-
-            match prim.extra_init {
-                XF_PRIM_INIT_NONE => {}
-                XF_PRIM_INIT_PAR => {
-                    st.input.par_loc = st.scanner.cur_val;
-                    st.input.par_token = CS_TOKEN_FLAG + st.input.par_loc;
-                }
-                XF_PRIM_INIT_WRITE => {
-                    st.shipout.write_loc = st.scanner.cur_val;
-                }
-                frozen => {
-                    st.eqtb.set_hash_s1(
-                        frozen,
-                        crate::texmfmp::maketexstring_in(&mut st.strings, name.as_ptr())?,
-                    );
-                    st.eqtb.data[frozen as usize] = st.eqtb.word(st.scanner.cur_val);
-                }
+    use crate::primitives::PrimInit;
+    for prim in crate::primitives::PRIMITIVES {
+        primitive(st, prim.name.as_ptr(), prim.cmd as u16, prim.chr)?;
+        match prim.init {
+            PrimInit::None => {}
+            PrimInit::Par => {
+                st.input.par_loc = st.scanner.cur_val;
+                st.input.par_token = CS_TOKEN_FLAG + st.input.par_loc;
+            }
+            PrimInit::Write => {
+                st.shipout.write_loc = st.scanner.cur_val;
+            }
+            PrimInit::Frozen(frozen) => {
+                st.eqtb.set_hash_s1(
+                    frozen,
+                    crate::texmfmp::maketexstring_in(&mut st.strings, prim.name.as_ptr())?,
+                );
+                st.eqtb.data[frozen as usize] = st.eqtb.word(st.scanner.cur_val);
             }
         }
     }
