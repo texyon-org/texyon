@@ -11,18 +11,18 @@ use crate::consts::{
     INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, KERN_NODE, LEFT_BRACE, LEFT_SIDE, LIGATURE_NODE,
     LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE,
     MATH_NODE, MAX_COMMAND, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN, NOAD_SIZE,
-    NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OTHER_CHAR, OUTPUT_TEXT, PENALTY_NODE,
-    PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, RULE_NODE, SCALED_BASE,
-    SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE,
-    SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACER, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX,
-    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
+    NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OTHER_CHAR, OUTPUT_TEXT, PRIM_EQTB_BASE,
+    REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, RULE_NODE, SCALED_BASE, SELECTOR_NEW_STRING,
+    SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
+    SMALL_NODE_SIZE, SPACER, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX, TEX_NULL, TOKEN_LIST,
+    TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
 use crate::mem::is_char_node;
-use crate::node::{AnyNode, GlueSpecNode, NodePtr, RuleDimen, SaNode};
+use crate::node::{AnyNode, GlueSpecNode, NodePtr, RuleDimen, SaNode, WhatsitNode};
 use crate::scan::{set_class_fn, set_family_fn};
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
@@ -3295,7 +3295,7 @@ pub(crate) fn main_control_append_normal_space_in(
 ) -> Result<(), MainControlAbort> {
     use crate::scan::NodeRecycleAbort;
 
-    if inter_char_boundary_after_space_action(st, CHAR_NUM).execute_in(st)? {
+    if insert_boundary_inter_char_toks(st)? {
         return Ok(());
     }
     let glue = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32) == ZERO_GLUE {
@@ -3736,191 +3736,124 @@ pub(crate) fn main_control_ignore_spaces_in(st: &mut EngineState) -> Result<(), 
     Ok(())
 }
 
-enum InterCharInputAction {
-    None,
-    BackInputThenBeginTokenList {
-        token_list: i32,
-        force_cur_input_index: Option<u16>,
-    },
+fn inter_char_tokens_enabled(st: &EngineState) -> bool {
+    st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0
 }
 
-impl InterCharInputAction {
-    #[inline]
-    fn execute_in(self, st: &mut EngineState) -> Result<bool, MainControlAbort> {
-        match self {
-            InterCharInputAction::None => Ok(false),
-            InterCharInputAction::BackInputThenBeginTokenList {
-                token_list,
-                force_cur_input_index,
-            } => {
-                crate::input::back_input_in(st)?;
-                if let Some(index) = force_cur_input_index {
-                    st.input.cur_input.index = index;
-                }
-                crate::input::begin_token_list_in(st, token_list, INTER_CHAR_TEXT)?;
-                Ok(true)
-            }
-        }
+/// The `\XeTeXinterchartoks` list for class pair `n`, if set. Leaves the
+/// pair's trie record, possibly null, in `cur_ptr`.
+fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<i32> {
+    crate::save::find_sa_element(
+        &mut st.mem,
+        &mut st.scanner,
+        INTER_CHAR_VAL as u16,
+        n,
+        false,
+    );
+    let list = NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)?.sa_ptr(&st.mem);
+    (!list.is_null()).then_some(list.0)
+}
+
+/// Inserts the inter-character tokens between the last character's class and
+/// the boundary class, ahead of the current token. Returns whether it did.
+fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bool, MainControlAbort> {
+    if !inter_char_tokens_enabled(st) {
+        return Ok(false);
     }
-}
-
-fn set_current_token_for_inter_char_boundary(st: &mut EngineState, char_num_cmd: u8) {
+    let sc = st.mainloop.space_class;
+    if sc == CHAR_CLASS_LIMIT || st.mainloop.prev_class == CHAR_CLASS_LIMIT - 1 {
+        return Ok(false);
+    }
+    st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
+    let Some(list) = inter_char_toks(st, sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1) else {
+        return Ok(false);
+    };
     if st.scanner.cur_cs == 0 {
-        if st.scanner.cur_cmd == char_num_cmd {
+        if st.scanner.cur_cmd == CHAR_NUM {
             st.scanner.cur_cmd = OTHER_CHAR;
         }
         st.scanner.cur_tok = st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
     } else {
         st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
     }
+    crate::input::back_input_in(st)?;
+    crate::input::begin_token_list_in(st, list, INTER_CHAR_TEXT)?;
+    Ok(true)
 }
 
-/// Probe `\XeTeXinterchartoks` for the current space-class followed by the
-/// boundary class. The input-stack mutation is returned as an action so callers
-/// can run `back_input`/`begin_token_list` after the state borrow drops.
-fn inter_char_boundary_after_space_action(
-    st: &mut EngineState,
-    char_num_cmd: u8,
-) -> InterCharInputAction {
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) <= 0 {
-        return InterCharInputAction::None;
+/// Inserts the inter-character tokens between the previous character's class
+/// and class `sc` of the current character. Returns whether it did.
+fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32) -> Result<bool, MainControlAbort> {
+    if !inter_char_tokens_enabled(st) || sc == CHAR_CLASS_LIMIT {
+        return Ok(false);
     }
-    let sc = st.mainloop.space_class;
-    if sc == CHAR_CLASS_LIMIT || st.mainloop.prev_class == CHAR_CLASS_LIMIT - 1 {
-        return InterCharInputAction::None;
-    }
-
-    st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
-    crate::save::find_sa_element(
-        &mut st.mem,
-        &mut st.scanner,
-        INTER_CHAR_VAL as u16,
-        sc * CHAR_CLASS_LIMIT + CHAR_CLASS_LIMIT - 1,
-        false,
-    );
-    let cur_ptr = st.scanner.cur_ptr.0;
-    if cur_ptr == TEX_NULL {
-        return InterCharInputAction::None;
-    }
-    let token_list = st.mem.b32s1(cur_ptr + 1);
-    if token_list == TEX_NULL {
-        return InterCharInputAction::None;
-    }
-
-    set_current_token_for_inter_char_boundary(st, char_num_cmd);
-    InterCharInputAction::BackInputThenBeginTokenList {
-        token_list,
-        force_cur_input_index: None,
-    }
-}
-
-fn inter_char_before_current_char_action(
-    st: &mut EngineState,
-    sc: i32,
-    letter_cmd: u8,
-    other_cmd: u8,
-) -> InterCharInputAction {
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) <= 0 || sc == CHAR_CLASS_LIMIT {
-        return InterCharInputAction::None;
-    }
-
     let prev = st.mainloop.prev_class;
-    if prev == CHAR_CLASS_LIMIT - 1 {
-        let cur_input = st.input.cur_input;
-        if cur_input.state == TOKEN_LIST && cur_input.index == BACKED_UP_CHAR {
-            return InterCharInputAction::None;
-        }
-        crate::save::find_sa_element(
-            &mut st.mem,
-            &mut st.scanner,
-            INTER_CHAR_VAL as u16,
-            (CHAR_CLASS_LIMIT - 1) * CHAR_CLASS_LIMIT + sc,
-            false,
-        );
-    } else {
-        crate::save::find_sa_element(
-            &mut st.mem,
-            &mut st.scanner,
-            INTER_CHAR_VAL as u16,
-            prev * CHAR_CLASS_LIMIT + sc,
-            false,
-        );
+    if prev == CHAR_CLASS_LIMIT - 1
+        && st.input.cur_input.state == TOKEN_LIST
+        && st.input.cur_input.index == BACKED_UP_CHAR
+    {
+        return Ok(false);
     }
-
-    let cur_ptr = st.scanner.cur_ptr.0;
-    if cur_ptr == TEX_NULL {
-        return InterCharInputAction::None;
-    }
-    let token_list = st.mem.b32s1(cur_ptr + 1);
-    if token_list == TEX_NULL {
-        return InterCharInputAction::None;
-    }
-
-    if st.scanner.cur_cmd != letter_cmd {
-        st.scanner.cur_cmd = other_cmd;
+    let Some(list) = inter_char_toks(st, prev * CHAR_CLASS_LIMIT + sc) else {
+        return Ok(false);
+    };
+    if st.scanner.cur_cmd != LETTER {
+        st.scanner.cur_cmd = OTHER_CHAR;
     }
     st.scanner.cur_tok = st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
-    InterCharInputAction::BackInputThenBeginTokenList {
-        token_list,
-        force_cur_input_index: Some(BACKED_UP_CHAR),
+    crate::input::back_input_in(st)?;
+    st.input.cur_input.index = BACKED_UP_CHAR;
+    crate::input::begin_token_list_in(st, list, INTER_CHAR_TEXT)?;
+    Ok(true)
+}
+
+fn note_char_class(st: &mut EngineState, sc: i32) {
+    if inter_char_tokens_enabled(st) && sc != CHAR_CLASS_LIMIT {
+        st.mainloop.prev_class = sc;
     }
 }
 
-// `is_char_node`: reads `hi_mem_min` directly (it can shrink on the get_avail
-// hi-mem-exhaustion path, so it must be read fresh, not captured).
+/// TeX's `adjust_space_factor` for `cur_chr`. Also resets `cur_ptr` and
+/// records and returns the character's space class.
 #[inline(always)]
-fn mc_is_char_node(st: &EngineState, p: impl crate::units::MemAddr) -> bool {
-    p.addr() >= st.mem.hi_mem_min
+fn adjust_space_factor(st: &mut EngineState) -> i32 {
+    let sf_code = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_chr);
+    let s = sf_code % 65536;
+    if s == 1000 {
+        st.input.cur_list.set_aux_s0(1000);
+    } else if s < 1000 {
+        if s > 0 {
+            st.input.cur_list.set_aux_s0(s);
+        }
+    } else if st.input.cur_list.aux_s0() < 1000 {
+        st.input.cur_list.set_aux_s0(1000);
+    } else {
+        st.input.cur_list.set_aux_s0(s);
+    }
+    st.scanner.cur_ptr = MemPtr::NULL;
+    st.mainloop.space_class = sf_code / 65536;
+    st.mainloop.space_class
 }
 
-// Node-allocation helpers: allocate and lift the cold arena-exhaustion `None`
-// into `MainControlAbort`.
-#[inline]
-fn mc_get_avail(st: &mut EngineState) -> Result<MemPtr, MainControlAbort> {
-    crate::mem::get_avail(&mut st.mem).ok_or_else(|| crate::scan::NodeRecycleAbort::Overflow.into())
-}
-#[inline]
-fn mc_new_disc(
-    st: &mut EngineState,
-) -> Result<crate::node::NodePtr<crate::node::DiscNode>, MainControlAbort> {
-    Ok(crate::mem::alloc_disc(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?)
-}
-#[inline]
-fn mc_new_kern(
-    st: &mut EngineState,
-    w: i32,
-) -> Result<crate::node::NodePtr<crate::node::KernNode>, MainControlAbort> {
-    Ok(crate::mem::alloc_kern(&mut st.mem, w).ok_or(crate::scan::NodeRecycleAbort::Overflow)?)
-}
-#[inline]
-fn mc_new_ligature(
-    st: &mut EngineState,
-    f: i32,
-    c: u16,
-    q: i32,
-) -> Result<crate::node::NodePtr<crate::node::LigatureNode>, MainControlAbort> {
-    Ok(crate::mem::alloc_ligature(&mut st.mem, f, c, q)
-        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?)
-}
-#[inline]
-fn mc_new_lig_item(
-    st: &mut EngineState,
-    c: u16,
-) -> Result<crate::node::NodePtr<crate::node::LigItem>, MainControlAbort> {
-    Ok(
-        crate::mem::alloc_lig_item(&mut st.mem, c)
-            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?,
-    )
+fn is_char_cmd(cmd: u8) -> bool {
+    matches!(cmd, LETTER | OTHER_CHAR | CHAR_GIVEN)
 }
 
-// Returns true if the caller should goto big_switch (inter-char token was injected).
+#[inline]
+fn overflow_err<T>(p: Option<T>) -> Result<T, MainControlAbort> {
+    p.ok_or(MainControlAbort::NodeRecycle(
+        crate::scan::NodeRecycleAbort::Overflow,
+    ))
+}
+
+/// Returns whether an inter-character token was inserted.
 pub(crate) fn main_control_hmode_inter_char_check_in(
     st: &mut EngineState,
 ) -> Result<bool, MainControlAbort> {
     if st.input.cur_list.mode.abs() != HMODE {
         return Ok(false);
     }
-    inter_char_boundary_after_space_action(st, CHAR_NUM).execute_in(st)
+    insert_boundary_inter_char_toks(st)
 }
 
 pub(crate) fn main_control_spacer_cases_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -3932,20 +3865,456 @@ pub(crate) fn main_control_spacer_cases_in(st: &mut EngineState) -> Result<(), M
                 app_space_in(st)?;
             }
         }
-        (HMODE, EX_SPACE) | (MMODE, EX_SPACE) => {
-            main_control_append_normal_space_in(st)?;
-        }
+        (HMODE, EX_SPACE) | (MMODE, EX_SPACE) => main_control_append_normal_space_in(st)?,
         _ => {}
     }
     Ok(())
 }
-// Returns true → caller must goto big_switch; false → caller must goto reswitch.
-#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+
+/// Grows the native text buffer until `extra` more units fit.
+#[inline(always)]
+fn native_text_reserve(scanner: &mut crate::state::ScannerState, extra: i32) {
+    while scanner.native_text_size() <= scanner.native_len() + extra {
+        scanner.native_text_size += 128;
+        scanner
+            .native_text
+            .resize(scanner.native_text_size as usize, 0);
+    }
+}
+
+#[inline(always)]
+fn native_text_push(scanner: &mut crate::state::ScannerState, c: u16) {
+    let len = scanner.native_len();
+    scanner.native_text[len as usize] = c;
+    scanner.set_native_len(len + 1);
+}
+
+fn is_hyphen_unit(st: &EngineState, c: i32, hyphen: i32) -> bool {
+    c == hyphen
+        || (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) > 0 && (c == 8212 || c == 8211))
+}
+
+/// Advances `main_h` just past the next hyphen in `len` units of native text at `start`.
+fn advance_past_hyphen(st: &mut EngineState, start: i32, len: i32) {
+    let hyphen = st.fonts.hyphen_char_entry(st.mainloop.main_f);
+    while st.mainloop.main_h < len
+        && !is_hyphen_unit(
+            st,
+            st.scanner.native_text[(start + st.mainloop.main_h) as usize] as i32,
+            hyphen,
+        )
+    {
+        st.mainloop.main_h += 1;
+    }
+    if st.mainloop.main_h < len {
+        st.mainloop.main_h += 1;
+    }
+}
+
+/// Points `main_ppp` at the node before `main_pp`, skipping discretionary replacement lists.
+fn find_main_ppp(st: &mut EngineState) {
+    let pp = st.mainloop.main_pp;
+    let mut ppp = st.input.cur_list.head;
+    while ppp != pp && ppp.link(&st.mem) != pp {
+        if !is_char_node(&st.mem, ppp) {
+            if let Ok(AnyNode::Disc(disc)) = st.mem.classify(MemIdx(ppp.0)) {
+                for _ in 0..disc.subtype(&st.mem) {
+                    ppp = ppp.link(&st.mem);
+                }
+            }
+        }
+        if ppp != pp {
+            ppp = ppp.link(&st.mem);
+        }
+    }
+    st.mainloop.main_ppp = ppp;
+}
+
+/// `p` as a native-word whatsit, if it is one.
+fn as_native_word(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
+    if is_char_node(mem, p) {
+        return None;
+    }
+    match mem.classify(MemIdx(p.0)) {
+        Ok(AnyNode::Whatsit(w)) if w.whatsit_subtype(mem).is_some_and(|s| s.is_native_word()) => {
+            Some(w)
+        }
+        _ => None,
+    }
+}
+
+/// The native word `main_pp` if new text in font `f` can extend it.
+fn extendable_native_word(st: &EngineState, f: i32) -> Option<NodePtr<WhatsitNode>> {
+    let (pp, ppp) = (st.mainloop.main_pp, st.mainloop.main_ppp);
+    if pp.is_null() {
+        return None;
+    }
+    let word = as_native_word(&st.mem, pp)?;
+    let extendable = word.native_font(&st.mem).0 == f
+        && ppp != pp
+        && !is_char_node(&st.mem, ppp)
+        && !matches!(st.mem.classify(MemIdx(ppp.0)), Ok(AnyNode::Disc(_)));
+    extendable.then_some(word)
+}
+
+/// Copies `len` UTF-16 units from `src` into the text of native word `node` at unit `at`.
+///
+/// # Safety
+/// `src` must hold `len` units and `node` must have room for `at + len`.
+unsafe fn copy_to_native_node(
+    mem: &mut MemState,
+    node: NodePtr<WhatsitNode>,
+    at: i32,
+    src: *const u16,
+    len: i32,
+) {
+    let dst = mem
+        .as_u16_ptr_mut(node.idx().offset(NATIVE_NODE_SIZE))
+        .add(at as usize);
+    std::ptr::copy_nonoverlapping(src, dst, len.max(0) as usize);
+}
+
+fn use_glyph_metrics(st: &EngineState) -> libc::c_int {
+    (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int
+}
+
+/// Skips the nodes allowed between two words of an interword space.
+fn skip_interword_items(mem: &MemState, mut p: MemPtr) -> MemPtr {
+    while !is_char_node(mem, p)
+        && match mem.classify(MemIdx(p.0)) {
+            Ok(AnyNode::Penalty(_) | AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_)) => {
+                true
+            }
+            Ok(AnyNode::Whatsit(w)) => w.whatsit_subtype(mem).is_some_and(|s| s.is_io()),
+            _ => false,
+        }
+    {
+        p = p.link(mem);
+    }
+    p
+}
+
+/// The main loop for an AAT or OpenType font: collects a run of characters
+/// into native word nodes. Returns whether to go to `big_switch`.
+unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, MainControlAbort> {
+    if st.input.cur_list.mode > 0
+        && st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
+    {
+        fix_language(&mut st.input.cur_list, &mut st.mem, &st.eqtb)?;
+    }
+    st.mainloop.main_h = 0;
+    st.mainloop.main_f = mf;
+    st.scanner.set_native_len(0);
+
+    loop {
+        let sc = adjust_space_factor(st);
+        let was_boundary = st.mainloop.prev_class == CHAR_CLASS_LIMIT - 1;
+        if insert_inter_char_toks_before(st, sc)? {
+            if was_boundary {
+                return Ok(true);
+            }
+            st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
+            break;
+        }
+        note_char_class(st, sc);
+
+        let ch = st.scanner.cur_chr;
+        if ch > 65535 {
+            native_text_reserve(&mut st.scanner, 2);
+            native_text_push(&mut st.scanner, ((ch - 65536) / 1024 + 0xD800) as u16);
+            native_text_push(&mut st.scanner, ((ch - 65536) % 1024 + 0xDC00) as u16);
+        } else {
+            native_text_reserve(&mut st.scanner, 1);
+            native_text_push(&mut st.scanner, ch as u16);
+        }
+        let is_hyph = is_hyphen_unit(st, ch, st.fonts.hyphen_char_entry(mf));
+        st.hyph.set_is_hyph(is_hyph);
+        if st.mainloop.main_h == 0 && is_hyph {
+            st.mainloop.main_h = st.scanner.native_len();
+        }
+
+        crate::scan::get_next_scc(st)?;
+        if is_char_cmd(st.scanner.cur_cmd) {
+            continue;
+        }
+        crate::scan::x_token_in(st)?;
+        if is_char_cmd(st.scanner.cur_cmd) {
+            continue;
+        }
+        if st.scanner.cur_cmd == CHAR_NUM {
+            crate::scan::scan_usv_num_in(st)?;
+            st.scanner.cur_chr = st.scanner.cur_val;
+            continue;
+        }
+        insert_boundary_inter_char_toks(st)?;
+        break;
+    }
+
+    let mapping = st.fonts.font_mapping_ptr(mf);
+    if !mapping.is_null() {
+        let text = st.scanner.native_text.as_mut_ptr();
+        let len = st.scanner.native_len();
+        let mapped_len = apply_mapping(&mut st.fonts, mapping, text, len);
+        st.scanner.set_native_len(0);
+        native_text_reserve(&mut st.scanner, mapped_len);
+        st.mainloop.main_h = 0;
+        let hyphen = st.fonts.hyphen_char_entry(mf) as u16 as i32;
+        for i in 0..mapped_len {
+            let c = st.fonts.mapped_text_entry(i);
+            native_text_push(&mut st.scanner, c);
+            if st.mainloop.main_h == 0 && is_hyphen_unit(st, c as i32, hyphen) {
+                st.mainloop.main_h = st.scanner.native_len();
+            }
+        }
+    }
+
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS) > 0 {
+        let mut i = 0;
+        while i < st.scanner.native_len() {
+            let mut c = st.scanner.native_text[i as usize] as i32;
+            i += 1;
+            if (0xD800..0xDC00).contains(&c) {
+                c = 65536 + (c - 0xD800) * 1024 + st.scanner.native_text[i as usize] as i32
+                    - 0xDC00;
+                i += 1;
+            }
+            if crate::ext::map_char_to_glyph(&st.fonts, mf, c)? == 0 {
+                mc_propagate_error(crate::output::char_warning_in(st, mf, c))?;
+            }
+        }
+    }
+
+    let len = st.scanner.native_len();
+    st.mainloop.main_pp = st.input.cur_list.tail;
+    find_main_ppp(st);
+    if st.input.cur_list.mode == HMODE {
+        let mut start = 0;
+        let mut remaining = len;
+        loop {
+            if st.mainloop.main_h == 0 {
+                st.mainloop.main_h = remaining;
+            }
+            if let Some(word) = extendable_native_word(st, mf) {
+                let old_len = word.native_length(&st.mem) as i32;
+                remaining = st.mainloop.main_h + old_len;
+                native_text_reserve(&mut st.scanner, remaining);
+                st.scanner.set_save_native_len(st.scanner.native_len());
+                // SAFETY: a native word stores `native_length` text units after its header.
+                let old_text =
+                    std::slice::from_raw_parts(word.native_text_ptr(&st.mem), old_len as usize);
+                for &c in old_text {
+                    native_text_push(&mut st.scanner, c);
+                }
+                for i in 0..st.mainloop.main_h {
+                    let c = st.scanner.native_text[(start + i) as usize];
+                    native_text_push(&mut st.scanner, c);
+                }
+                crate::linebreak::do_locale_linebreaks_in(
+                    st,
+                    st.scanner.save_native_len(),
+                    remaining,
+                )?;
+                st.scanner.set_native_len(st.scanner.save_native_len());
+                remaining = st.scanner.native_len() - st.mainloop.main_h - start;
+                start = st.mainloop.main_h;
+                st.mainloop.main_h = 0;
+                advance_past_hyphen(st, start, remaining);
+                let next = word.link(&st.mem);
+                st.mainloop.main_ppp.set_link(&mut st.mem, next);
+                word.set_link(&mut st.mem, MemPtr::NULL);
+                crate::packaging::flush_node_list(&mut st.mem, word.idx().0)
+                    .map_err(MainControlAbort::Confusion)?;
+                st.mainloop.main_pp = st.input.cur_list.tail;
+                while st.mainloop.main_ppp.link(&st.mem) != st.mainloop.main_pp {
+                    st.mainloop.main_ppp = st.mainloop.main_ppp.link(&st.mem);
+                }
+            } else {
+                crate::linebreak::do_locale_linebreaks_in(st, start, st.mainloop.main_h)?;
+                start += st.mainloop.main_h;
+                remaining -= st.mainloop.main_h;
+                st.mainloop.main_h = 0;
+                advance_past_hyphen(st, start, remaining);
+            }
+            if remaining > 0 || st.hyph.is_hyph() {
+                let disc = overflow_err(crate::mem::alloc_disc(&mut st.mem))?;
+                tail_append(st, disc.ptr());
+                st.mainloop.main_pp = st.input.cur_list.tail;
+            }
+            if remaining == 0 {
+                break;
+            }
+        }
+    } else {
+        let pp = st.mainloop.main_pp;
+        let old = extendable_native_word(st, mf);
+        let old_len = old.map_or(0, |w| w.native_length(&st.mem) as i32);
+        let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, len + old_len)?;
+        pp.set_link(&mut st.mem, node.ptr());
+        st.input.cur_list.tail = node.ptr();
+        st.mem.journal_mark_range(
+            node.idx().offset(NATIVE_NODE_SIZE),
+            crate::state::native_text_words(len + old_len),
+        );
+        if let Some(word) = old {
+            let old_text = word.native_text_ptr(&st.mem);
+            copy_to_native_node(&mut st.mem, node, 0, old_text, old_len);
+        }
+        let text = st.scanner.native_text.as_ptr();
+        copy_to_native_node(&mut st.mem, node, old_len, text, len);
+        let metrics = use_glyph_metrics(st);
+        crate::ext::measure_native_node(&st.fonts, &mut st.mem, node.idx().0, metrics)?;
+        if let Some(word) = old {
+            let mut prev = st.input.cur_list.head;
+            if prev != word.ptr() {
+                while prev.link(&st.mem) != word.ptr() {
+                    prev = prev.link(&st.mem);
+                }
+            }
+            let next = word.link(&st.mem);
+            prev.set_link(&mut st.mem, next);
+            word.set_link(&mut st.mem, MemPtr::NULL);
+            crate::packaging::flush_node_list(&mut st.mem, word.idx().0)
+                .map_err(MainControlAbort::Confusion)?;
+        }
+    }
+
+    if st
+        .eqtb
+        .b32s1(INT_BASE + INT_PAR_XETEX_INTERWORD_SPACE_SHAPING)
+        > 0
+    {
+        shape_interword_space(st, mf)?;
+    }
+    Ok(!st.scanner.cur_ptr.is_null())
+}
+
+/// Kerns the interword glue before the current word by what the font's shaping
+/// of `word space word` implies.
+unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), MainControlAbort> {
+    let tail = st.input.cur_list.tail;
+    let mut p = st.input.cur_list.head;
+    let mut prev_word = None;
+    while p != tail {
+        if !p.is_null() {
+            prev_word = as_native_word(&st.mem, p).or(prev_word);
+        }
+        p = p.link(&st.mem);
+    }
+    let Some(prev_word) = prev_word.filter(|w| w.native_font(&st.mem).0 == mf) else {
+        return Ok(());
+    };
+    let glue = skip_interword_items(&st.mem, prev_word.link(&st.mem));
+    if is_char_node(&st.mem, glue) {
+        return Ok(());
+    }
+    let Ok(AnyNode::Glue(glue)) = st.mem.classify(MemIdx(glue.0)) else {
+        return Ok(());
+    };
+    if skip_interword_items(&st.mem, glue.link(&st.mem)) != tail {
+        return Ok(());
+    }
+    // The tail is normally the new native word but is read unchecked, as in TeX.
+    let prev_len = prev_word.native_length(&st.mem) as i32;
+    let tail_len = st.mem.b16s1(tail + 4) as i32;
+    let len = prev_len + 1 + tail_len;
+    let joined = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, len)?;
+    st.mem.journal_mark_range(
+        joined.idx().offset(NATIVE_NODE_SIZE),
+        crate::state::native_text_words(len),
+    );
+    let prev_text = prev_word.native_text_ptr(&st.mem);
+    copy_to_native_node(&mut st.mem, joined, 0, prev_text, prev_len);
+    copy_to_native_node(&mut st.mem, joined, prev_len, &(b' ' as u16), 1);
+    let tail_text = st.mem.as_u16_ptr(tail + NATIVE_NODE_SIZE);
+    copy_to_native_node(&mut st.mem, joined, prev_len + 1, tail_text, tail_len);
+    let metrics = use_glyph_metrics(st);
+    crate::ext::measure_native_node(&st.fonts, &mut st.mem, joined.idx().0, metrics)?;
+    let t = joined.width(&st.mem).0 - prev_word.width(&st.mem).0 - st.mem.b32s1(tail + 1);
+    let handle = joined.native_glyph_info_handle(&st.mem);
+    if handle != 0 {
+        st.mem.glyph_blobs.release(handle);
+    }
+    let size = joined.native_size(&st.mem);
+    crate::mem::free_node(&mut st.mem, joined.ptr(), size);
+    let space = st.mem.b32s1(st.fonts.font_glue(mf) + 1);
+    if t != space {
+        let kern = overflow_err(crate::mem::alloc_kern(&mut st.mem, t - space))?;
+        kern.set_subtype(&mut st.mem, SPACE_ADJUSTMENT);
+        let next = glue.link(&st.mem);
+        kern.set_link(&mut st.mem, next);
+        glue.set_link(&mut st.mem, kern.ptr());
+    }
+    Ok(())
+}
+
+/// Where the ligature/kern program scan ended.
+enum LigExit {
+    /// `main_loop_wrapup`.
+    Wrapup,
+    /// `main_loop_move`, skipping the wrapup.
+    Move,
+    /// `main_loop_move+1`.
+    Move1,
+    /// Back to `main_lig_loop` with a new `cur_l`.
+    Restart,
+}
+
+/// TeX's `wrapup`: packs a pending ligature and inserts a pending
+/// discretionary. `rt_hit` says whether a right boundary hit may count.
+#[inline(always)]
+fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
+    if st.mainloop.cur_l >= TOO_BIG_CHAR {
+        return Ok(());
+    }
+    let main_f = st.mainloop.main_f;
+    if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
+        && st.mem.b16s0(st.input.cur_list.tail) == st.fonts.hyphen_char_entry(main_f) as u16
+    {
+        st.mainloop.ins_disc = true;
+    }
+    if st.mainloop.ligature_present {
+        let lig_list = st.mem.b32s1(st.mainloop.cur_q);
+        let lig = overflow_err(crate::mem::alloc_ligature(
+            &mut st.mem,
+            main_f,
+            st.mainloop.cur_l as u16,
+            lig_list,
+        ))?;
+        if st.mainloop.lft_hit {
+            lig.set_subtype(&mut st.mem, 2);
+            st.mainloop.lft_hit = false;
+        }
+        if rt_hit && st.mainloop.rt_hit && st.mainloop.lig_stack.is_null() {
+            let s = lig.subtype(&st.mem);
+            lig.set_subtype(&mut st.mem, s + 1);
+            st.mainloop.rt_hit = false;
+        }
+        st.mainloop.cur_q.set_link(&mut st.mem, lig.ptr());
+        st.input.cur_list.tail = lig.ptr();
+        st.mainloop.ligature_present = false;
+    }
+    if st.mainloop.ins_disc {
+        st.mainloop.ins_disc = false;
+        if st.input.cur_list.mode > 0 {
+            let disc = overflow_err(crate::mem::alloc_disc(&mut st.mem))?;
+            tail_append(st, disc.ptr());
+        }
+    }
+    Ok(())
+}
+
+/// Sets `main_i` to the character info of `cur_l`.
+#[inline(always)]
+fn cur_l_info(st: &mut EngineState) -> crate::mem_types::B16x4 {
+    let main_f = st.mainloop.main_f;
+    let c = crate::fonts::effective_char(&mut st.fonts, true, main_f, st.mainloop.cur_l as u16);
+    st.fonts.font_info_b16(st.fonts.char_base_entry(main_f) + c)
+}
+
+/// Returns true to go to `big_switch`, false to go to `reswitch`.
 pub(crate) unsafe fn main_control_main_loop_in(
     st: &mut EngineState,
 ) -> Result<bool, MainControlAbort> {
-    // === main_loop: entry point ===
-    // SyncTeX: append special at start of new paragraph
     if st.input.cur_list.head == st.input.cur_list.tail
         && st.input.cur_list.mode > 0
         && st.shipout.insert_src_special_auto()
@@ -3955,1065 +4324,263 @@ pub(crate) unsafe fn main_control_main_loop_in(
     st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
 
     let mf = st.eqtb.b32s1(CUR_FONT_LOC);
-    let fa = st.fonts.font_area_entry(mf);
-
-    // =========================================================================
-    // AAT / OTGR native font path (collect_native loop)
-    // =========================================================================
-    if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-        if st.input.cur_list.mode > 0
-            && st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
-        {
-            fix_language(&mut st.input.cur_list, &mut st.mem, &st.eqtb)?;
-        }
-        st.mainloop.main_h = 0;
-        st.mainloop.main_f = mf;
-        st.scanner.set_native_len(0);
-
-        // collect_native loop: accumulate consecutive chars into native_text buffer
-        'collect: loop {
-            // Update space factor from SF_CODE(cur_chr)
-            let sf = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_chr);
-            let ms = sf % 65536;
-            st.mainloop.main_s = ms;
-            if ms == 1000 {
-                st.input.cur_list.set_aux_s0(1000);
-            } else if ms < 1000 {
-                if ms > 0 {
-                    st.input.cur_list.set_aux_s0(ms);
-                }
-            } else if st.input.cur_list.aux_s0() < 1000 {
-                st.input.cur_list.set_aux_s0(1000);
-            } else {
-                st.input.cur_list.set_aux_s0(ms);
-            }
-
-            st.scanner.cur_ptr.0 = TEX_NULL;
-            st.mainloop.space_class = sf / 65536;
-            let sc = st.mainloop.space_class;
-
-            let was_boundary = st.mainloop.prev_class == CHAR_CLASS_LIMIT - 1;
-            if inter_char_before_current_char_action(st, sc, LETTER, OTHER_CHAR).execute_in(st)? {
-                if was_boundary {
-                    return Ok(true); // goto big_switch
-                }
-                st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
-                break 'collect; // goto collected
-            }
-            if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0
-                && sc != CHAR_CLASS_LIMIT
-            {
-                st.mainloop.prev_class = sc;
-            }
-
-            // Append cur_chr to native_text buffer
-            let ch = st.scanner.cur_chr;
-            if ch > 65535 {
-                while st.scanner.native_text_size() <= st.scanner.native_len() + 2 {
-                    let size = st.scanner.native_text_size + 128;
-                    st.scanner.native_text_size = size;
-                    st.scanner.native_text.resize(size as usize, 0);
-                }
-                *st.scanner
-                    .native_text
-                    .as_mut_ptr()
-                    .add(st.scanner.native_len() as usize) = ((ch - 65536) / 1024 + 0xD800) as u16;
-                st.scanner.set_native_len(st.scanner.native_len() + 1);
-                *st.scanner
-                    .native_text
-                    .as_mut_ptr()
-                    .add(st.scanner.native_len() as usize) = ((ch - 65536) % 1024 + 0xDC00) as u16;
-                st.scanner.set_native_len(st.scanner.native_len() + 1);
-            } else {
-                while st.scanner.native_text_size() <= st.scanner.native_len() + 1 {
-                    let size = st.scanner.native_text_size + 128;
-                    st.scanner.native_text_size = size;
-                    st.scanner.native_text.resize(size as usize, 0);
-                }
-                *st.scanner
-                    .native_text
-                    .as_mut_ptr()
-                    .add(st.scanner.native_len() as usize) = ch as u16;
-                st.scanner.set_native_len(st.scanner.native_len() + 1);
-            }
-
-            // Check if this char is a hyphen/dash
-            let is_h = ch == st.fonts.hyphen_char_entry(st.mainloop.main_f)
-                || (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) > 0
-                    && (ch == 8212 || ch == 8211));
-            st.hyph.set_is_hyph(is_h);
-            if st.mainloop.main_h == 0 && is_h {
-                st.mainloop.main_h = st.scanner.native_len();
-            }
-
-            // Look ahead for more chars (same font)
-            crate::scan::get_next_scc(st)?;
-            if st.scanner.cur_cmd == LETTER
-                || st.scanner.cur_cmd == OTHER_CHAR
-                || st.scanner.cur_cmd == CHAR_GIVEN
-            {
-                continue 'collect;
-            }
-            crate::scan::x_token_in(st)?;
-            if st.scanner.cur_cmd == LETTER
-                || st.scanner.cur_cmd == OTHER_CHAR
-                || st.scanner.cur_cmd == CHAR_GIVEN
-            {
-                continue 'collect;
-            }
-            if st.scanner.cur_cmd == CHAR_NUM {
-                crate::scan::scan_usv_num_in(st)?;
-                st.scanner.cur_chr = st.scanner.cur_val;
-                continue 'collect;
-            }
-
-            // End of char run: inter-char suffix check
-            if inter_char_boundary_after_space_action(st, CHAR_NUM).execute_in(st)? {
-                break 'collect; // goto collected (then process mapping)
-            }
-            break 'collect; // natural end of collect_native
-        } // end 'collect
-
-        // collected:
-        // Apply font mapping if present
-        let fm = st.fonts.font_mapping_ptr(st.mainloop.main_f);
-        if !fm.is_null() {
-            let nt = st.scanner.native_text.as_mut_ptr();
-            let nl = st.scanner.native_len();
-            let mk = apply_mapping(&mut st.fonts, fm, nt, nl);
-            st.scanner.set_native_len(0);
-            while st.scanner.native_text_size() <= st.scanner.native_len() + mk {
-                let size = st.scanner.native_text_size + 128;
-                st.scanner.native_text_size = size;
-                st.scanner.native_text.resize(size as usize, 0);
-            }
-            st.mainloop.main_h = 0;
-            for mp in 0..mk {
-                let c = st.fonts.mapped_text_entry(mp);
-                *st.scanner
-                    .native_text
-                    .as_mut_ptr()
-                    .add(st.scanner.native_len() as usize) = c;
-                st.scanner.set_native_len(st.scanner.native_len() + 1);
-                if st.mainloop.main_h == 0
-                    && (c == st.fonts.hyphen_char_entry(st.mainloop.main_f) as u16
-                        || (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) > 0
-                            && (c == 8212 || c == 8211)))
-                {
-                    st.mainloop.main_h = st.scanner.native_len();
-                }
-            }
-        }
-
-        // Tracing lost chars
-        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS) > 0 {
-            let mut tp = 0i32;
-            while tp < st.scanner.native_len() {
-                let mut mc = *st.scanner.native_text.as_mut_ptr().add(tp as usize) as i32;
-                tp += 1;
-                if (0xD800..0xDC00).contains(&mc) {
-                    mc = 65536 + (mc - 0xD800) * 1024;
-                    mc += *st.scanner.native_text.as_mut_ptr().add(tp as usize) as i32 - 0xDC00;
-                    tp += 1;
-                }
-                if crate::ext::map_char_to_glyph(&st.fonts, st.mainloop.main_f, mc)? == 0 {
-                    mc_propagate_error(crate::output::char_warning_in(st, st.mainloop.main_f, mc))?;
-                }
-            }
-        }
-
-        st.mainloop.main_p.0 = st.input.cur_list.tail.0;
-        let mk = st.scanner.native_len();
-        st.mainloop.main_pp.0 = st.input.cur_list.tail.0;
-
-        if st.input.cur_list.mode == 104
-        /* HMODE */
-        {
-            st.mainloop.main_ppp.0 = st.input.cur_list.head.0;
-            // Advance main_ppp to find node just before main_pp
-            while st.mainloop.main_ppp.0 != st.mainloop.main_pp.0
-                && st.mem.b32s1(st.mainloop.main_ppp) != st.mainloop.main_pp.0
-            {
-                if !mc_is_char_node(st, st.mainloop.main_ppp.0)
-                    && st.mem.b16s1(st.mainloop.main_ppp) == DISC_NODE
-                {
-                    let tp = st.mainloop.main_ppp.0;
-                    for _ in 1..=st.mem.b16s0(tp) as i32 {
-                        st.mainloop.main_ppp.0 = st.mem.b32s1(st.mainloop.main_ppp);
-                    }
-                }
-                if st.mainloop.main_ppp.0 != st.mainloop.main_pp.0 {
-                    st.mainloop.main_ppp.0 = st.mem.b32s1(st.mainloop.main_ppp);
-                }
-            }
-
-            // C uses `main_k` as the running remaining-length and `temp_ptr` as
-            // the offset into native_text of the current segment; both mutate
-            // across the do-while. `main_h` (global) is the next hyphen offset.
-            let mut temp_ptr = 0i32;
-            let mut main_k = mk;
-            loop {
-                if st.mainloop.main_h == 0 {
-                    st.mainloop.main_h = main_k;
-                }
-
-                let tail_is_native = st.mainloop.main_pp.0 != TEX_NULL
-                    && !mc_is_char_node(st, st.mainloop.main_pp.0)
-                    && st.mem.b16s1(st.mainloop.main_pp) == WHATSIT_NODE
-                    && crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(st.mainloop.main_pp))
-                        .is_some_and(|s| s.is_native_word())
-                    && st.mem.b16s2(st.mainloop.main_pp + 4) == st.mainloop.main_f as u16
-                    && st.mainloop.main_ppp.0 != st.mainloop.main_pp.0
-                    && !mc_is_char_node(st, st.mainloop.main_ppp.0)
-                    && st.mem.b16s1(st.mainloop.main_ppp) != DISC_NODE;
-
-                if tail_is_native {
-                    let old_len = st.mem.b16s1(st.mainloop.main_pp + 4) as i32;
-                    main_k = st.mainloop.main_h + old_len;
-                    while st.scanner.native_text_size() <= st.scanner.native_len() + main_k {
-                        let size = st.scanner.native_text_size + 128;
-                        st.scanner.native_text_size = size;
-                        st.scanner.native_text.resize(size as usize, 0);
-                    }
-                    st.scanner.set_save_native_len(st.scanner.native_len());
-                    for i in 0..old_len {
-                        *st.scanner
-                            .native_text
-                            .as_mut_ptr()
-                            .add(st.scanner.native_len() as usize) = *st
-                            .mem
-                            .as_u16_ptr(st.mainloop.main_pp.0 + NATIVE_NODE_SIZE)
-                            .add(i as usize);
-                        st.scanner.set_native_len(st.scanner.native_len() + 1);
-                    }
-                    for i in 0..st.mainloop.main_h {
-                        *st.scanner
-                            .native_text
-                            .as_mut_ptr()
-                            .add(st.scanner.native_len() as usize) = *st
-                            .scanner
-                            .native_text
-                            .as_mut_ptr()
-                            .add((temp_ptr + i) as usize);
-                        st.scanner.set_native_len(st.scanner.native_len() + 1);
-                    }
-                    crate::linebreak::do_locale_linebreaks_in(
-                        st,
-                        st.scanner.save_native_len(),
-                        main_k,
-                    )?;
-                    st.scanner.set_native_len(st.scanner.save_native_len());
-                    main_k = st.scanner.native_len() - st.mainloop.main_h - temp_ptr;
-                    temp_ptr = st.mainloop.main_h;
-                    st.mainloop.main_h = 0;
-                    while st.mainloop.main_h < main_k
-                        && (*st
-                            .scanner
-                            .native_text
-                            .as_mut_ptr()
-                            .add((temp_ptr + st.mainloop.main_h) as usize)
-                            as i32)
-                            != st.fonts.hyphen_char_entry(st.mainloop.main_f)
-                        && (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) <= 0
-                            || ((*st
-                                .scanner
-                                .native_text
-                                .as_mut_ptr()
-                                .add((temp_ptr + st.mainloop.main_h) as usize)
-                                as i32)
-                                != 8212
-                                && (*st
-                                    .scanner
-                                    .native_text
-                                    .as_mut_ptr()
-                                    .add((temp_ptr + st.mainloop.main_h) as usize)
-                                    as i32)
-                                    != 8211))
-                    {
-                        st.mainloop.main_h = st.mainloop.main_h + 1;
-                    }
-                    if st.mainloop.main_h < main_k {
-                        st.mainloop.main_h = st.mainloop.main_h + 1;
-                    }
-                    st.mem
-                        .set_b32s1(st.mainloop.main_ppp, st.mem.b32s1(st.mainloop.main_pp));
-                    st.mem.set_b32s1(st.mainloop.main_pp, TEX_NULL);
-                    crate::packaging::flush_node_list(&mut st.mem, st.mainloop.main_pp.0)
-                        .map_err(MainControlAbort::Confusion)?;
-                    st.mainloop.main_pp.0 = st.input.cur_list.tail.0;
-                    while st.mem.b32s1(st.mainloop.main_ppp) != st.mainloop.main_pp.0 {
-                        st.mainloop.main_ppp.0 = st.mem.b32s1(st.mainloop.main_ppp);
-                    }
-                } else {
-                    crate::linebreak::do_locale_linebreaks_in(st, temp_ptr, st.mainloop.main_h)?;
-                    temp_ptr += st.mainloop.main_h;
-                    main_k -= st.mainloop.main_h;
-                    st.mainloop.main_h = 0;
-                    while st.mainloop.main_h < main_k
-                        && (*st
-                            .scanner
-                            .native_text
-                            .as_mut_ptr()
-                            .add((temp_ptr + st.mainloop.main_h) as usize)
-                            as i32)
-                            != st.fonts.hyphen_char_entry(st.mainloop.main_f)
-                        && (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DASH_BREAK) <= 0
-                            || ((*st
-                                .scanner
-                                .native_text
-                                .as_mut_ptr()
-                                .add((temp_ptr + st.mainloop.main_h) as usize)
-                                as i32)
-                                != 8212
-                                && (*st
-                                    .scanner
-                                    .native_text
-                                    .as_mut_ptr()
-                                    .add((temp_ptr + st.mainloop.main_h) as usize)
-                                    as i32)
-                                    != 8211))
-                    {
-                        st.mainloop.main_h = st.mainloop.main_h + 1;
-                    }
-                    if st.mainloop.main_h < main_k {
-                        st.mainloop.main_h = st.mainloop.main_h + 1;
-                    }
-                }
-
-                if main_k > 0 || st.hyph.is_hyph() {
-                    let nd = mc_new_disc(st)?;
-                    tail_append(st, nd.ptr());
-                    st.mainloop.main_pp.0 = st.input.cur_list.tail.0;
-                }
-
-                if main_k == 0 {
-                    break;
-                }
-            }
-        } else {
-            // MMODE (or not HMODE): simple native word node creation
-            st.mainloop.main_ppp.0 = st.input.cur_list.head.0;
-            while st.mainloop.main_ppp.0 != st.mainloop.main_pp.0
-                && st.mem.b32s1(st.mainloop.main_ppp) != st.mainloop.main_pp.0
-            {
-                if !mc_is_char_node(st, st.mainloop.main_ppp.0)
-                    && st.mem.b16s1(st.mainloop.main_ppp) == DISC_NODE
-                {
-                    let tp = st.mainloop.main_ppp.0;
-                    for _ in 1..=st.mem.b16s0(tp) as i32 {
-                        st.mainloop.main_ppp.0 = st.mem.b32s1(st.mainloop.main_ppp);
-                    }
-                }
-                if st.mainloop.main_ppp.0 != st.mainloop.main_pp.0 {
-                    st.mainloop.main_ppp.0 = st.mem.b32s1(st.mainloop.main_ppp);
-                }
-            }
-
-            let tail_is_native = st.mainloop.main_pp.0 != TEX_NULL
-                && !mc_is_char_node(st, st.mainloop.main_pp.0)
-                && st.mem.b16s1(st.mainloop.main_pp) == WHATSIT_NODE
-                && crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(st.mainloop.main_pp))
-                    .is_some_and(|s| s.is_native_word())
-                && st.mem.b16s2(st.mainloop.main_pp + 4) == mf as u16
-                && st.mainloop.main_ppp.0 != st.mainloop.main_pp.0
-                && !mc_is_char_node(st, st.mainloop.main_ppp.0)
-                && st.mem.b16s1(st.mainloop.main_ppp) != DISC_NODE;
-
-            if tail_is_native {
-                let old_len = st.mem.b16s1(st.mainloop.main_pp + 4) as i32;
-                let new_node =
-                    crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, mk + old_len)?;
-                st.mem.set_b32s1(st.mainloop.main_pp, new_node);
-                st.input.cur_list.tail.0 = st.mem.b32s1(st.mainloop.main_pp);
-                st.mem.journal_mark_range(
-                    st.input.cur_list.tail.0 + NATIVE_NODE_SIZE,
-                    crate::state::native_text_words(mk + old_len),
-                );
-                for i in 0..old_len {
-                    *st.mem
-                        .as_u16_ptr_mut(st.input.cur_list.tail.0 + NATIVE_NODE_SIZE)
-                        .add(i as usize) = *st
-                        .mem
-                        .as_u16_ptr(st.mainloop.main_pp.0 + NATIVE_NODE_SIZE)
-                        .add(i as usize);
-                }
-                for i in 0..mk {
-                    *st.mem
-                        .as_u16_ptr_mut(st.input.cur_list.tail.0 + NATIVE_NODE_SIZE)
-                        .add((i + old_len) as usize) =
-                        *st.scanner.native_text.as_mut_ptr().add(i as usize);
-                }
-                crate::ext::measure_native_node(
-                    &st.fonts,
-                    &mut st.mem,
-                    st.input.cur_list.tail.0,
-                    (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
-                )?;
-                let mut prev = st.input.cur_list.head;
-                if prev != st.mainloop.main_pp {
-                    while prev.link(&st.mem) != st.mainloop.main_pp {
-                        prev = prev.link(&st.mem);
-                    }
-                }
-                let main_pp_link = st.mainloop.main_pp.link(&st.mem);
-                prev.set_link(&mut st.mem, main_pp_link);
-                st.mem.set_b32s1(st.mainloop.main_pp, TEX_NULL);
-                crate::packaging::flush_node_list(&mut st.mem, st.mainloop.main_pp.0)
-                    .map_err(MainControlAbort::Confusion)?;
-            } else {
-                let new_node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, mk)?;
-                st.mem.set_b32s1(st.mainloop.main_pp, new_node);
-                st.input.cur_list.tail.0 = st.mem.b32s1(st.mainloop.main_pp);
-                st.mem.journal_mark_range(
-                    st.input.cur_list.tail.0 + NATIVE_NODE_SIZE,
-                    crate::state::native_text_words(mk),
-                );
-                for i in 0..mk {
-                    *st.mem
-                        .as_u16_ptr_mut(st.input.cur_list.tail.0 + NATIVE_NODE_SIZE)
-                        .add(i as usize) = *st.scanner.native_text.as_mut_ptr().add(i as usize);
-                }
-                crate::ext::measure_native_node(
-                    &st.fonts,
-                    &mut st.mem,
-                    st.input.cur_list.tail.0,
-                    (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int,
-                )?;
-            }
-        }
-
-        // Interword space shaping (both HMODE and MMODE)
-        if st
-            .eqtb
-            .b32s1(INT_BASE + INT_PAR_XETEX_INTERWORD_SPACE_SHAPING)
-            > 0
-        {
-            let mut p = st.input.cur_list.head;
-            let mut pp = MemPtr::NULL;
-            while p != st.input.cur_list.tail {
-                if !p.is_null()
-                    && !mc_is_char_node(st, p)
-                    && st.mem.b16s1(p) == WHATSIT_NODE
-                    && crate::node::WhatsitSubtype::from_raw(st.mem.b16s0(p))
-                        .is_some_and(|s| s.is_native_word())
-                {
-                    pp = p;
-                }
-                p = p.link(&st.mem);
-            }
-            if !pp.is_null() && st.mem.b16s2(pp + 4) == mf as u16 {
-                let mut p2 = pp.link(&st.mem);
-                while !mc_is_char_node(st, p2)
-                    && (st.mem.b16s1(p2) == PENALTY_NODE
-                        || st.mem.b16s1(p2) == INS_NODE
-                        || st.mem.b16s1(p2) == MARK_NODE
-                        || st.mem.b16s1(p2) == ADJUST_NODE
-                        || (st.mem.b16s1(p2) == WHATSIT_NODE && st.mem.b16s0(p2) <= 4))
-                {
-                    p2 = p2.link(&st.mem);
-                }
-                if !mc_is_char_node(st, p2) && st.mem.b16s1(p2) == GLUE_NODE {
-                    let p3 = p2.link(&st.mem);
-                    let mut p3m = p3;
-                    while !mc_is_char_node(st, p3m)
-                        && (st.mem.b16s1(p3m) == PENALTY_NODE
-                            || st.mem.b16s1(p3m) == INS_NODE
-                            || st.mem.b16s1(p3m) == MARK_NODE
-                            || st.mem.b16s1(p3m) == ADJUST_NODE
-                            || (st.mem.b16s1(p3m) == WHATSIT_NODE && st.mem.b16s0(p3m) <= 4))
-                    {
-                        p3m = p3m.link(&st.mem);
-                    }
-                    if p3m == st.input.cur_list.tail {
-                        let pp_len = st.mem.b16s1(pp + 4) as i32;
-                        let tail_len = st.mem.b16s1(st.input.cur_list.tail + 4) as i32;
-                        let tmp = crate::fonts::new_native_word_node(
-                            &mut st.mem,
-                            &st.eqtb,
-                            mf,
-                            pp_len + 1 + tail_len,
-                        )?;
-                        st.mem.journal_mark_range(
-                            tmp + NATIVE_NODE_SIZE,
-                            crate::state::native_text_words(pp_len + 1 + tail_len),
-                        );
-                        let mut ki = 0i32;
-                        for t in 0..pp_len {
-                            *st.mem
-                                .as_u16_ptr_mut(tmp + NATIVE_NODE_SIZE)
-                                .add(ki as usize) =
-                                *st.mem.as_u16_ptr(pp + NATIVE_NODE_SIZE).add(t as usize);
-                            ki += 1;
-                        }
-                        *st.mem
-                            .as_u16_ptr_mut(tmp + NATIVE_NODE_SIZE)
-                            .add(ki as usize) = b' ' as u16;
-                        ki += 1;
-                        for t in 0..tail_len {
-                            *st.mem
-                                .as_u16_ptr_mut(tmp + NATIVE_NODE_SIZE)
-                                .add(ki as usize) = *st
-                                .mem
-                                .as_u16_ptr(st.input.cur_list.tail.0 + NATIVE_NODE_SIZE)
-                                .add(t as usize);
-                            ki += 1;
-                        }
-                        crate::ext::measure_native_node(
-                            &st.fonts,
-                            &mut st.mem,
-                            tmp,
-                            (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0)
-                                as libc::c_int,
-                        )?;
-                        let t_val = st.mem.b32s1(tmp + 1)
-                            - st.mem.b32s1(pp + 1)
-                            - st.mem.b32s1(st.input.cur_list.tail + 1);
-                        let tmp_handle = st.mem.b32s0(tmp + 5);
-                        if tmp_handle != 0 {
-                            st.mem.glyph_blobs.release(tmp_handle);
-                        }
-                        let fnsz = st.mem.b16s3(tmp + 4) as i32;
-                        crate::mem::free_node(&mut st.mem, MemPtr::from_raw(tmp), fnsz);
-                        if t_val != st.mem.b32s1(st.fonts.font_glue(mf) + 1) {
-                            let kw = t_val - st.mem.b32s1(st.fonts.font_glue(mf) + 1);
-                            let kn = mc_new_kern(st, kw)?;
-                            kn.set_subtype(&mut st.mem, SPACE_ADJUSTMENT);
-                            let p2_link = st.mem.b32s1(p2);
-                            kn.set_link(&mut st.mem, MemPtr::from_raw(p2_link));
-                            st.mem.set_b32s1(p2, kn.ptr().0);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Exit: cur_ptr set iff inter-char token injected
-        return Ok(st.scanner.cur_ptr.0 != TEX_NULL);
+    if is_native_font(&st.fonts, mf) {
+        return main_loop_native_in(st, mf);
     }
 
-    // =========================================================================
-    // Regular TFM font path
-    // =========================================================================
-
-    // Update space factor from SF_CODE(cur_chr)
-    let sf = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_chr);
-    let ms = sf % 65536;
-    st.mainloop.main_s = ms;
-    if ms == 1000 {
-        st.input.cur_list.set_aux_s0(1000);
-    } else if ms < 1000 {
-        if ms > 0 {
-            st.input.cur_list.set_aux_s0(ms);
-        }
-    } else if st.input.cur_list.aux_s0() < 1000 {
-        st.input.cur_list.set_aux_s0(1000);
-    } else {
-        st.input.cur_list.set_aux_s0(ms);
+    let sc = adjust_space_factor(st);
+    if insert_inter_char_toks_before(st, sc)? {
+        return Ok(true);
     }
+    note_char_class(st, sc);
 
-    st.scanner.cur_ptr.0 = TEX_NULL;
-    st.mainloop.space_class = sf / 65536;
-    let sc = st.mainloop.space_class;
-
-    if inter_char_before_current_char_action(st, sc, LETTER, OTHER_CHAR).execute_in(st)? {
-        return Ok(true); // goto big_switch
-    }
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0 && sc != CHAR_CLASS_LIMIT {
-        st.mainloop.prev_class = sc;
-    }
-
-    // Set up font state
     st.mainloop.main_f = mf;
     st.mainloop.bchar = st.fonts.font_bchar_entry(mf);
     st.mainloop.false_bchar = st.fonts.font_false_bchar_entry(mf);
-
     if st.input.cur_list.mode > 0
         && st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
     {
         fix_language(&mut st.input.cur_list, &mut st.mem, &st.eqtb)?;
     }
-
-    // Allocate lig_stack node from avail list
-    let ls = mc_get_avail(st)?;
+    let ls = overflow_err(crate::mem::get_avail(&mut st.mem))?;
     st.mainloop.lig_stack = ls;
     st.mem.set_b16s1(ls, mf as u16);
     st.mainloop.cur_l = st.scanner.cur_chr;
     st.mem.set_b16s0(ls, st.mainloop.cur_l as u16);
-    st.mainloop.cur_q.0 = st.input.cur_list.tail.0;
+    st.mainloop.cur_q = st.input.cur_list.tail;
 
-    // Determine entry point: NON_ADDRESS → move_2; else → lig_loop_1 (bchar)
-    let bchar_lbl = if st.mainloop.cancel_boundary {
+    let bchar_label = if st.mainloop.cancel_boundary {
         st.mainloop.cancel_boundary = false;
         NON_ADDRESS
     } else {
         st.fonts.bchar_label_entry(mf)
     };
-
-    // `enter_lig1_k`: if Some(k), enter lig loop at _1 with that k; else enter at move_2
-    let mut enter_lig1_k: Option<i32> = if bchar_lbl != NON_ADDRESS {
+    let mut lig_loop_1_k = if bchar_label != NON_ADDRESS {
         st.mainloop.cur_r = st.mainloop.cur_l;
         st.mainloop.cur_l = TOO_BIG_CHAR;
-        Some(bchar_lbl)
+        Some(bchar_label)
     } else {
         None
     };
+    let mut main_i = crate::mem_types::B16x4::default();
 
-    // main_i: char info for cur_l (set at move_2 or when cur_l changes in lig loop)
-    let mut main_i = crate::mem_types::B16x4 {
-        s0: 0,
-        s1: 0,
-        s2: 0,
-        s3: 0,
-    };
-
-    // -------------------------------------------------------------------------
-    // Outer char-processing loop.
-    // Each iteration: run the lig/kern table, then advance to the next char.
-    // -------------------------------------------------------------------------
-    'char_proc: loop {
-        // Determine how to enter the lig/kern loop this iteration:
-        // - enter_lig1_k = Some(k): start at lig_loop_1 (skips the precondition check)
-        // - enter_lig1_k = None: start at lig_loop top (checks LIG_TAG and cur_r)
-
-        // "lig_result": 0=wrapup, 1=goto_move (skip wrapup), 2=goto_move1 (skip wrapup+move-check)
-        let lig_result: u8;
-
-        if let Some(init_k) = enter_lig1_k.take() {
-            // Enter at main_lig_loop_1 directly (bchar case or after lig advance)
-            lig_result = lig_inner_loop(st, init_k, &mut main_i, &mut enter_lig1_k)?;
+    loop {
+        let exit = if let Some(k) = lig_loop_1_k.take() {
+            lig_kern_program(st, k, &mut main_i)?
+        } else if main_i.s1 % 4 != LIG_TAG || st.mainloop.cur_r == TOO_BIG_CHAR {
+            LigExit::Wrapup
         } else {
-            // Enter at main_lig_loop top: check preconditions
-            if (main_i.s1 % 4) as u8 != LIG_TAG as u8 || st.mainloop.cur_r == TOO_BIG_CHAR {
-                lig_result = 0; // goto main_loop_wrapup
+            let base = st.fonts.lig_kern_base_entry(st.mainloop.main_f);
+            let first = st.fonts.font_info_b16(base + main_i.s0 as i32);
+            let k = if first.s3 > 128 {
+                base + 256 * first.s1 as i32 + first.s0 as i32 + 32768 - 256 * 128
             } else {
-                let init_k = st.fonts.lig_kern_base_entry(st.mainloop.main_f) + main_i.s0 as i32;
-                let init_j = st.fonts.font_info_b16(init_k);
-                let real_k = if init_j.s3 > 128 {
-                    st.fonts.lig_kern_base_entry(st.mainloop.main_f)
-                        + 256 * init_j.s1 as i32
-                        + init_j.s0 as i32
-                        + 32768
-                        - 256 * 128
-                } else {
-                    init_k
-                };
-                lig_result = lig_inner_loop(st, real_k, &mut main_i, &mut enter_lig1_k)?;
-            }
+                base + main_i.s0 as i32
+            };
+            lig_kern_program(st, k, &mut main_i)?
+        };
+        match exit {
+            LigExit::Restart => continue,
+            LigExit::Wrapup => wrapup(st, true)?,
+            LigExit::Move | LigExit::Move1 => {}
         }
-
-        // -----------------------------------------------------------------------
-        // Handle lig_result: wrapup, move, or move1
-        // -----------------------------------------------------------------------
-        // 0xFF: lig type 1/2/3/7 advanced cur_l; re-enter lig_loop top (no wrapup/move)
-        if lig_result == 0xFF {
-            continue 'char_proc;
-        }
-
-        if lig_result == 0 {
-            // main_loop_wrapup: only when lig_result==0 (result 1=goto_move, 2=goto_move1 both skip wrapup)
-            if st.mainloop.cur_l < TOO_BIG_CHAR {
-                if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
-                    && st.mem.b16s0(st.input.cur_list.tail)
-                        == st.fonts.hyphen_char_entry(st.mainloop.main_f) as u16
-                {
-                    st.mainloop.ins_disc = true;
-                }
-                if st.mainloop.ligature_present {
-                    let lq = st.mem.b32s1(st.mainloop.cur_q);
-                    let mp = mc_new_ligature(st, st.mainloop.main_f, st.mainloop.cur_l as u16, lq)?;
-                    if st.mainloop.lft_hit {
-                        mp.set_subtype(&mut st.mem, 2);
-                        st.mainloop.lft_hit = false;
-                    }
-                    if st.mainloop.rt_hit && st.mainloop.lig_stack.0 == TEX_NULL {
-                        let s = mp.subtype(&st.mem);
-                        mp.set_subtype(&mut st.mem, s + 1);
-                        st.mainloop.rt_hit = false;
-                    }
-                    st.mem.set_b32s1(st.mainloop.cur_q, mp.ptr().0);
-                    st.input.cur_list.tail = mp.ptr();
-                    st.mainloop.ligature_present = false;
-                }
-                if st.mainloop.ins_disc {
-                    st.mainloop.ins_disc = false;
-                    if st.input.cur_list.mode > 0 {
-                        let nd = mc_new_disc(st)?;
-                        tail_append(st, nd.ptr());
-                    }
-                }
+        if !matches!(exit, LigExit::Move1) {
+            if st.mainloop.lig_stack.is_null() {
+                return Ok(false);
             }
-        }
-        // If lig_result == 1: skip wrapup, go directly to move
-
-        // main_loop_move: check if lig_stack is exhausted
-        // (for lig_result==2 / move1: skip this check, cur_l already set)
-        if lig_result != 2 {
-            if st.mainloop.lig_stack.0 == TEX_NULL {
-                return Ok(false); // goto reswitch
-            }
-            st.mainloop.cur_q.0 = st.input.cur_list.tail.0;
+            st.mainloop.cur_q = st.input.cur_list.tail;
             st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
         }
 
-        // main_loop_move_1: is lig_stack a char node or a lig item?
-        if !mc_is_char_node(st, st.mainloop.lig_stack.0) {
-            // main_loop_move_lig: handle lig item in lig_stack
-            st.mainloop.main_p.0 = st.mem.b32s1(st.mainloop.lig_stack + 1);
-            if st.mainloop.main_p.0 > TEX_NULL {
-                tail_append(st, st.mainloop.main_p);
+        if !is_char_node(&st.mem, st.mainloop.lig_stack) {
+            let item = st.mainloop.lig_stack;
+            let lig_ptr = st.mem.link_ptr(item + 1);
+            if lig_ptr.0 > TEX_NULL {
+                tail_append(st, lig_ptr);
             }
-            let temp = st.mainloop.lig_stack.0;
-            st.mainloop.lig_stack.0 = st.mem.b32s1(temp);
-            crate::mem::free_node(&mut st.mem, MemPtr::from_raw(temp), SMALL_NODE_SIZE);
-            let ec = crate::fonts::effective_char(
-                &mut st.fonts,
-                true,
-                st.mainloop.main_f,
-                st.mainloop.cur_l as u16,
-            );
-            main_i = st
-                .fonts
-                .font_info_b16(st.fonts.char_base_entry(st.mainloop.main_f) + ec);
+            st.mainloop.lig_stack = item.link(&st.mem);
+            crate::mem::free_node(&mut st.mem, item, SMALL_NODE_SIZE);
+            main_i = cur_l_info(st);
             st.mainloop.ligature_present = true;
-
-            if st.mainloop.lig_stack.0 == TEX_NULL {
-                if st.mainloop.main_p.0 > TEX_NULL {
-                    // goto main_loop_lookahead (enter with main_i set, skip move_2)
-                    // We do the lookahead inline here:
-                    if !do_lookahead(st, &mut main_i, &mut enter_lig1_k, mf)? {
-                        return Ok(true); // inter-char token injected → big_switch
+            if st.mainloop.lig_stack.is_null() {
+                if lig_ptr.0 > TEX_NULL {
+                    if !lookahead(st)? {
+                        return Ok(true);
                     }
-                    continue 'char_proc;
-                } else {
-                    st.mainloop.cur_r = st.mainloop.bchar;
+                    continue;
                 }
+                st.mainloop.cur_r = st.mainloop.bchar;
             } else {
                 st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
             }
-            // goto main_lig_loop (outer top) — continue 'char_proc
-            continue 'char_proc;
+            continue;
         }
 
-        // main_loop_move_2: validate and append the char node (lig_stack is char)
-        let eff = crate::fonts::effective_char(
-            &mut st.fonts,
-            false,
-            st.mainloop.main_f,
-            st.scanner.cur_chr as u16,
-        );
-        if eff > st.fonts.font_ec_entry(st.mainloop.main_f) as i32
-            || eff < st.fonts.font_bc_entry(st.mainloop.main_f) as i32
+        let main_f = st.mainloop.main_f;
+        let c =
+            crate::fonts::effective_char(&mut st.fonts, false, main_f, st.scanner.cur_chr as u16);
+        let exists = if c > st.fonts.font_ec_entry(main_f) as i32
+            || c < st.fonts.font_bc_entry(main_f) as i32
         {
+            false
+        } else {
+            main_i =
+                crate::fonts::effective_char_info(&mut st.fonts, main_f, st.mainloop.cur_l as u16);
+            main_i.s3 > 0
+        };
+        if !exists {
             mc_propagate_error(crate::output::char_warning_in(
                 st,
-                st.mainloop.main_f,
+                main_f,
                 st.scanner.cur_chr,
             ))?;
-            st.mem.set_b32s1(st.mainloop.lig_stack, st.mem.avail());
-            st.mem.set_avail(st.mainloop.lig_stack.0);
-            return Ok(true); // goto big_switch
-        }
-        main_i = crate::fonts::effective_char_info(
-            &mut st.fonts,
-            st.mainloop.main_f,
-            st.mainloop.cur_l as u16,
-        );
-        if main_i.s3 == 0 {
-            mc_propagate_error(crate::output::char_warning_in(
-                st,
-                st.mainloop.main_f,
-                st.scanner.cur_chr,
-            ))?;
-            st.mem.set_b32s1(st.mainloop.lig_stack, st.mem.avail());
-            st.mem.set_avail(st.mainloop.lig_stack.0);
-            return Ok(true); // goto big_switch
+            crate::mem::free_avail(&mut st.mem, st.mainloop.lig_stack);
+            return Ok(true);
         }
         tail_append(st, st.mainloop.lig_stack);
-
-        // main_loop_lookahead: get next token, set up lig_stack for it
-        if !do_lookahead(st, &mut main_i, &mut enter_lig1_k, mf)? {
-            return Ok(true); // inter-char token injected → big_switch
-        }
-        // continue 'char_proc → back to top of lig loop
-    } // end 'char_proc
-}
-// Inner lig/kern table scan (main_lig_loop_1 / main_lig_loop_2).
-// Returns: 0=wrapup, 1=goto_move (skip wrapup), 2=goto_move1 (lig type 0/4 with stack)
-// Also sets enter_lig1_k if we need to re-enter lig_loop_1 (bchar advance).
-#[inline(always)]
-unsafe fn lig_inner_loop(
-    st: &mut EngineState,
-    init_k: i32,
-    main_i: &mut crate::mem_types::B16x4,
-    _enter_lig1_k: &mut Option<i32>,
-) -> Result<u8, MainControlAbort> {
-    let mut mk = init_k;
-
-    loop {
-        // main_lig_loop_1 / main_lig_loop_2
-        let mj = st.fonts.font_info_b16(mk);
-
-        if mj.s2 as i32 == st.mainloop.cur_r {
-            if mj.s3 <= 128 {
-                if mj.s1 >= 128 {
-                    // Kern case: partial wrapup + append kern
-                    if st.mainloop.cur_l < TOO_BIG_CHAR {
-                        if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
-                            && st.mem.b16s0(st.input.cur_list.tail)
-                                == st.fonts.hyphen_char_entry(st.mainloop.main_f) as u16
-                        {
-                            st.mainloop.ins_disc = true;
-                        }
-                        if st.mainloop.ligature_present {
-                            let lq = st.mem.b32s1(st.mainloop.cur_q);
-                            let mp = mc_new_ligature(
-                                st,
-                                st.mainloop.main_f,
-                                st.mainloop.cur_l as u16,
-                                lq,
-                            )?;
-                            if st.mainloop.lft_hit {
-                                mp.set_subtype(&mut st.mem, 2);
-                                st.mainloop.lft_hit = false;
-                            }
-                            // rt_hit: only if lig_stack == NULL (not applicable here since we have kern)
-                            st.mem.set_b32s1(st.mainloop.cur_q, mp.ptr().0);
-                            st.input.cur_list.tail = mp.ptr();
-                            st.mainloop.ligature_present = false;
-                        }
-                        if st.mainloop.ins_disc {
-                            st.mainloop.ins_disc = false;
-                            if st.input.cur_list.mode > 0 {
-                                let nd = mc_new_disc(st)?;
-                                tail_append(st, nd.ptr());
-                            }
-                        }
-                    }
-                    let kval = st.fonts.font_info_b32s1(
-                        st.fonts.kern_base_entry(st.mainloop.main_f)
-                            + 256 * mj.s1 as i32
-                            + mj.s0 as i32,
-                    );
-                    let kn = mc_new_kern(st, kval)?;
-                    tail_append(st, kn.ptr());
-                    return Ok(1); // goto main_loop_move (skip wrapup)
-                }
-
-                // Ligature case
-                if st.mainloop.cur_l == TOO_BIG_CHAR {
-                    st.mainloop.lft_hit = true;
-                } else if st.mainloop.lig_stack.0 == TEX_NULL {
-                    st.mainloop.rt_hit = true;
-                }
-
-                match mj.s1 {
-                    1 | 5 => {
-                        st.mainloop.cur_l = mj.s0 as i32;
-                        let ec = crate::fonts::effective_char(
-                            &mut st.fonts,
-                            true,
-                            st.mainloop.main_f,
-                            st.mainloop.cur_l as u16,
-                        );
-                        *main_i = st
-                            .fonts
-                            .font_info_b16(st.fonts.char_base_entry(st.mainloop.main_f) + ec);
-                        st.mainloop.ligature_present = true;
-                    }
-                    2 | 6 => {
-                        st.mainloop.cur_r = mj.s0 as i32;
-                        if st.mainloop.lig_stack.0 == TEX_NULL {
-                            st.mainloop.lig_stack =
-                                mc_new_lig_item(st, st.mainloop.cur_r as u16)?.ptr();
-                            st.mainloop.bchar = TOO_BIG_CHAR;
-                        } else if mc_is_char_node(st, st.mainloop.lig_stack.0) {
-                            let prev = st.mainloop.lig_stack.0;
-                            st.mainloop.lig_stack =
-                                mc_new_lig_item(st, st.mainloop.cur_r as u16)?.ptr();
-                            st.mem.set_b32s1(st.mainloop.lig_stack + 1, prev);
-                        } else {
-                            st.mem
-                                .set_b16s0(st.mainloop.lig_stack, st.mainloop.cur_r as u16);
-                        }
-                    }
-                    3 => {
-                        st.mainloop.cur_r = mj.s0 as i32;
-                        let prev = st.mainloop.lig_stack.0;
-                        st.mainloop.lig_stack =
-                            mc_new_lig_item(st, st.mainloop.cur_r as u16)?.ptr();
-                        st.mem.set_b32s1(st.mainloop.lig_stack, prev);
-                    }
-                    7 | 11 => {
-                        // Partial wrapup
-                        if st.mainloop.cur_l < TOO_BIG_CHAR {
-                            if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
-                                && st.mem.b16s0(st.input.cur_list.tail)
-                                    == st.fonts.hyphen_char_entry(st.mainloop.main_f) as u16
-                            {
-                                st.mainloop.ins_disc = true;
-                            }
-                            if st.mainloop.ligature_present {
-                                let lq = st.mem.b32s1(st.mainloop.cur_q);
-                                let mp = mc_new_ligature(
-                                    st,
-                                    st.mainloop.main_f,
-                                    st.mainloop.cur_l as u16,
-                                    lq,
-                                )?;
-                                if st.mainloop.lft_hit {
-                                    mp.set_subtype(&mut st.mem, 2);
-                                    st.mainloop.lft_hit = false;
-                                }
-                                // no rt_hit for type 7/11
-                                st.mem.set_b32s1(st.mainloop.cur_q, mp.ptr().0);
-                                st.input.cur_list.tail = mp.ptr();
-                                st.mainloop.ligature_present = false;
-                            }
-                            if st.mainloop.ins_disc {
-                                st.mainloop.ins_disc = false;
-                                if st.input.cur_list.mode > 0 {
-                                    let nd = mc_new_disc(st)?;
-                                    tail_append(st, nd.ptr());
-                                }
-                            }
-                        }
-                        st.mainloop.cur_q.0 = st.input.cur_list.tail.0;
-                        st.mainloop.cur_l = mj.s0 as i32;
-                        let ec = crate::fonts::effective_char(
-                            &mut st.fonts,
-                            true,
-                            st.mainloop.main_f,
-                            st.mainloop.cur_l as u16,
-                        );
-                        *main_i = st
-                            .fonts
-                            .font_info_b16(st.fonts.char_base_entry(st.mainloop.main_f) + ec);
-                        st.mainloop.ligature_present = true;
-                    }
-                    _ => {
-                        // Type 0 or 4 (default): =: or |=:|
-                        st.mainloop.cur_l = mj.s0 as i32;
-                        st.mainloop.ligature_present = true;
-                        if st.mainloop.lig_stack.0 == TEX_NULL {
-                            return Ok(0); // goto main_loop_wrapup
-                        } else {
-                            return Ok(2); // goto main_loop_move_1
-                        }
-                    }
-                }
-
-                // Post-switch tail for types 1,2,3,5,6,7,11:
-                if mj.s1 > 4 && mj.s1 != 7 {
-                    return Ok(0); // types 5,6,11 → wrapup
-                }
-                // Types 1,2,3,7: re-enter lig loop
-                if st.mainloop.cur_l < TOO_BIG_CHAR {
-                    // re-enter main_lig_loop (outer): signal caller via enter_lig1_k = None
-                    // The outer loop will re-enter at top (checking LIG_TAG)
-                    // We need to break out and let caller restart 'char_proc at lig_loop top
-                    return Ok(0xFF); // sentinel: re-enter lig_loop (not wrapup!)
-                }
-                // cur_l == TOO_BIG_CHAR: re-enter at lig_loop_1 with bchar_label
-                mk = st.fonts.bchar_label_entry(st.mainloop.main_f);
-                // continue inner loop (main_lig_loop_1)
-            }
-            // mj.s3 > 128: this entry's match byte > 128 means we skip (it's a stop/redirect)
-            // but we already handled the redirect at the top. If we reach here with s3 > 128
-            // in the inner loop, it means no match → go to wrapup.
-            // Actually: if s3 > 128 when s2 == cur_r, that would be a redirect, but redirects
-            // are only in the first entry and we've already computed the real index.
-            // So s3 > 128 here when s2 == cur_r can't happen after the first entry redirect.
-            // The s3 > 128 at line 7722 means "first entry has large byte → use redirect".
-            // After redirect, s3 values in subsequent entries are normal (0-128).
-        } else {
-            // No match for this lig/kern table entry: advance
-            if mj.s3 == 0 {
-                mk += 1;
-            } else if mj.s3 >= 128 {
-                return Ok(0); // no more entries → wrapup
-            } else {
-                mk += mj.s3 as i32 + 1;
-            }
-            // continue inner loop (main_lig_loop_1)
+        if !lookahead(st)? {
+            return Ok(true);
         }
     }
 }
-// Lookahead: get next token and set up lig_stack for it.
-// Returns false if an inter-char token was injected (caller should return true = big_switch).
-// On normal return, cur_r and lig_stack are set for the next lig/kern iteration.
+
+/// Runs the font's ligature/kern program for `cur_l` and `cur_r` from index `k`.
 #[inline(always)]
-unsafe fn do_lookahead(
+fn lig_kern_program(
     st: &mut EngineState,
-    _main_i: &mut crate::mem_types::B16x4,
-    _enter_lig1_k: &mut Option<i32>,
-    _mf: i32,
-) -> Result<bool, MainControlAbort> {
+    mut k: i32,
+    main_i: &mut crate::mem_types::B16x4,
+) -> Result<LigExit, MainControlAbort> {
+    loop {
+        let step = st.fonts.font_info_b16(k);
+        if step.s2 as i32 != st.mainloop.cur_r || step.s3 > 128 {
+            if step.s3 == 0 {
+                k += 1;
+            } else if step.s3 >= 128 {
+                return Ok(LigExit::Wrapup);
+            } else {
+                k += step.s3 as i32 + 1;
+            }
+            continue;
+        }
+        if step.s1 >= 128 {
+            wrapup(st, false)?;
+            let main_f = st.mainloop.main_f;
+            let kern = st.fonts.font_info_b32s1(
+                st.fonts.kern_base_entry(main_f) + 256 * step.s1 as i32 + step.s0 as i32,
+            );
+            let kern = overflow_err(crate::mem::alloc_kern(&mut st.mem, kern))?;
+            tail_append(st, kern.ptr());
+            return Ok(LigExit::Move);
+        }
+        if st.mainloop.cur_l == TOO_BIG_CHAR {
+            st.mainloop.lft_hit = true;
+        } else if st.mainloop.lig_stack.is_null() {
+            st.mainloop.rt_hit = true;
+        }
+        match step.s1 {
+            1 | 5 => {
+                st.mainloop.cur_l = step.s0 as i32;
+                *main_i = cur_l_info(st);
+                st.mainloop.ligature_present = true;
+            }
+            2 | 6 => {
+                st.mainloop.cur_r = step.s0 as i32;
+                let c = st.mainloop.cur_r as u16;
+                if st.mainloop.lig_stack.is_null() {
+                    st.mainloop.lig_stack =
+                        overflow_err(crate::mem::alloc_lig_item(&mut st.mem, c))?.ptr();
+                    st.mainloop.bchar = TOO_BIG_CHAR;
+                } else if is_char_node(&st.mem, st.mainloop.lig_stack) {
+                    let prev = st.mainloop.lig_stack;
+                    let item = overflow_err(crate::mem::alloc_lig_item(&mut st.mem, c))?;
+                    st.mainloop.lig_stack = item.ptr();
+                    st.mem.set_b32s1(item.idx().offset(1), prev.0);
+                } else {
+                    st.mem.set_b16s0(st.mainloop.lig_stack, c);
+                }
+            }
+            3 => {
+                st.mainloop.cur_r = step.s0 as i32;
+                let prev = st.mainloop.lig_stack;
+                let item = overflow_err(crate::mem::alloc_lig_item(
+                    &mut st.mem,
+                    st.mainloop.cur_r as u16,
+                ))?;
+                st.mainloop.lig_stack = item.ptr();
+                item.ptr().set_link(&mut st.mem, prev);
+            }
+            7 | 11 => {
+                wrapup(st, false)?;
+                st.mainloop.cur_q = st.input.cur_list.tail;
+                st.mainloop.cur_l = step.s0 as i32;
+                *main_i = cur_l_info(st);
+                st.mainloop.ligature_present = true;
+            }
+            _ => {
+                st.mainloop.cur_l = step.s0 as i32;
+                st.mainloop.ligature_present = true;
+                return Ok(if st.mainloop.lig_stack.is_null() {
+                    LigExit::Wrapup
+                } else {
+                    LigExit::Move1
+                });
+            }
+        }
+        if step.s1 > 4 && step.s1 != 7 {
+            return Ok(LigExit::Wrapup);
+        }
+        if st.mainloop.cur_l < TOO_BIG_CHAR {
+            return Ok(LigExit::Restart);
+        }
+        k = st.fonts.bchar_label_entry(st.mainloop.main_f);
+    }
+}
+
+/// TeX's `main_loop_lookahead`: fetches the next character into a new
+/// `lig_stack` and `cur_r`. Returns false when inter-character tokens were
+/// inserted instead.
+#[inline(always)]
+fn lookahead(st: &mut EngineState) -> Result<bool, MainControlAbort> {
     crate::scan::get_next_scc(st)?;
-
-    let is_char_cmd = |cmd: u8| cmd == LETTER || cmd == OTHER_CHAR || cmd == CHAR_GIVEN;
-
     if !is_char_cmd(st.scanner.cur_cmd) {
         crate::scan::x_token_in(st)?;
     }
     if !is_char_cmd(st.scanner.cur_cmd) {
-        if st.scanner.cur_cmd == CHAR_NUM {
-            crate::scan::scan_char_num_in(st)?;
-            st.scanner.cur_chr = st.scanner.cur_val;
-            // fall through to is_char_cmd path
-        } else {
-            // Not a char: set cur_r = bchar, lig_stack = NULL
+        if st.scanner.cur_cmd != CHAR_NUM {
             if st.scanner.cur_cmd == NO_BOUNDARY {
                 st.mainloop.bchar = TOO_BIG_CHAR;
             }
             st.mainloop.cur_r = st.mainloop.bchar;
-            st.mainloop.lig_stack.0 = TEX_NULL;
-            return Ok(true); // normal: re-enter lig loop at top
+            st.mainloop.lig_stack = MemPtr::NULL;
+            return Ok(true);
         }
+        crate::scan::scan_char_num_in(st)?;
+        st.scanner.cur_chr = st.scanner.cur_val;
     }
 
-    // main_loop_lookahead_1: we have a char in cur_chr
-    let sf = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_chr);
-    let ms = sf % 65536;
-    if ms == 1000 {
-        st.input.cur_list.set_aux_s0(1000);
-    } else if ms < 1000 {
-        if ms > 0 {
-            st.input.cur_list.set_aux_s0(ms);
-        }
-    } else if st.input.cur_list.aux_s0() < 1000 {
-        st.input.cur_list.set_aux_s0(1000);
-    } else {
-        st.input.cur_list.set_aux_s0(ms);
-    }
-    st.scanner.cur_ptr.0 = TEX_NULL;
-    st.mainloop.space_class = sf / 65536;
-    let sc = st.mainloop.space_class;
-
-    // Inter-char check (lookahead_1 variant)
+    let sc = adjust_space_factor(st);
     let was_boundary = st.mainloop.prev_class == CHAR_CLASS_LIMIT - 1;
-    if inter_char_before_current_char_action(st, sc, LETTER, OTHER_CHAR).execute_in(st)? {
+    if insert_inter_char_toks_before(st, sc)? {
         if !was_boundary {
             st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
         }
-        return Ok(false); // inter-char injected → caller returns true (big_switch)
+        return Ok(false);
     }
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INTER_CHAR_TOKENS) > 0 && sc != CHAR_CLASS_LIMIT {
-        st.mainloop.prev_class = sc;
-    }
+    note_char_class(st, sc);
 
-    // Allocate lig_stack for the new char
-    let ls = mc_get_avail(st)?;
+    let ls = overflow_err(crate::mem::get_avail(&mut st.mem))?;
     st.mainloop.lig_stack = ls;
     st.mem.set_b16s1(ls, st.mainloop.main_f as u16);
-    let cr = st.scanner.cur_chr;
-    st.mainloop.cur_r = cr;
-    st.mem.set_b16s0(ls, cr as u16);
-    if cr == st.mainloop.false_bchar {
+    let c = st.scanner.cur_chr;
+    st.mainloop.cur_r = c;
+    st.mem.set_b16s0(ls, c as u16);
+    if c == st.mainloop.false_bchar {
         st.mainloop.cur_r = TOO_BIG_CHAR;
     }
-
-    Ok(true) // normal lookahead complete, continue lig loop
+    Ok(true)
 }
+
 // Top-level TeX command dispatcher: big_switch / reswitch loop.
 unsafe fn main_control_from_in(
     st: &mut EngineState,

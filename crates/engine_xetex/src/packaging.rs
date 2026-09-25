@@ -2177,16 +2177,13 @@ fn hpack_in(
                             let scan_p = mem.b32s1(q);
                             let scan_w = classify_native_word_hp(mem, scan_p)
                                 .expect("native merge starts at a native-word node");
-                            let merged = new_native_word_node(
+                            let merged_w = new_native_word_node(
                                 mem,
                                 eqtb,
                                 scan_w.native_font(mem).0,
                                 total_chars,
                             )?;
-                            let merged_w = mem
-                                .classify_whatsit(MemIdx::new(merged))
-                                .map_err(|_| NodeRecycleAbort::Confusion(c"hpack"))?
-                                .expect("new_native_word_node returns a whatsit");
+                            let merged = merged_w.idx().0;
                             merged_w.set_subtype(mem, scan_w.subtype(mem));
                             mem.set_b32s1(q, merged);
                             let mut last_before_pp = scan_p;

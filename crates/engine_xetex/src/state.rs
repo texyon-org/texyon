@@ -34,7 +34,6 @@ pub(crate) struct MainLoopState {
     pub main_h: i32,
     pub main_pp: crate::units::MemPtr,
     pub main_ppp: crate::units::MemPtr,
-    pub main_s: i32,
     /// Boundary char of the current font (xetex-xetexd.h:684).
     pub bchar: i32,
     /// Non-existent boundary-char sentinel (xetex-xetexd.h:685).
@@ -1953,17 +1952,6 @@ impl InputClusterState {
             InputSlot::Terminal => crate::io::stdin_ufile_ptr(),
             InputSlot::Open(file) => &mut **file,
         }
-    }
-}
-
-impl MemState {
-    #[inline]
-    pub(crate) fn avail(&self) -> i32 {
-        self.avail
-    }
-    #[inline]
-    pub(crate) fn set_avail(&mut self, v: i32) {
-        self.avail = v;
     }
 }
 

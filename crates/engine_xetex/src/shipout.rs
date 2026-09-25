@@ -926,10 +926,9 @@ fn merge_justifiable_native_words(
                 }
 
                 let nlen = crate::hash::cur_length(strings);
-                q = MemPtr::from_raw(
-                    crate::fonts::new_native_word_node(mem, eqtb, mem.b16s2(r + 4) as i32, nlen)
-                        .map_err(ShipoutAbort::NodeRecycle)?,
-                );
+                q = crate::fonts::new_native_word_node(mem, eqtb, mem.b16s2(r + 4) as i32, nlen)
+                    .map_err(ShipoutAbort::NodeRecycle)?
+                    .ptr();
                 mem.set_b16s0(q, mem.b16s0(r));
 
                 let base = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];

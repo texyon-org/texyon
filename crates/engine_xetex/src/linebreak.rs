@@ -292,7 +292,9 @@ fn split_native_tail_for_linebreak(
 ) -> Result<(), NodeRecycleAbort> {
     let ha = st.linebreak.ha.0;
     let len = native_node_len_in(&st.mem, ha);
-    let q = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, st.hyph.hf, len - start)?;
+    let q = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, st.hyph.hf, len - start)?
+        .idx()
+        .0;
     st.mem.set_b16s0(q, st.mem.b16s0(ha));
     unsafe {
         copy_native_tail(&mut st.mem, q, ha, start);
@@ -3391,7 +3393,9 @@ fn hyphenate_native_word_if_needed(
         if odd(st.hyph.hyf[j as usize]) {
             let hp = st.hyph.hyphen_passed;
             let q = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, hf, (j - hp) as i32)
-                .map_err(HyphNativeAbort::Recycle)?;
+                .map_err(HyphNativeAbort::Recycle)?
+                .idx()
+                .0;
             let subtype = st.mem.b16s0(ha);
             st.mem.set_b16s0(q, subtype);
             // SAFETY: both nodes are sized for the copied UTF-16 range;
@@ -3425,7 +3429,9 @@ fn hyphenate_native_word_if_needed(
     st.linebreak.hn = new_hn;
     let hp = st.hyph.hyphen_passed;
     let q = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, hf, (new_hn - hp) as i32)
-        .map_err(HyphNativeAbort::Recycle)?;
+        .map_err(HyphNativeAbort::Recycle)?
+        .idx()
+        .0;
     let subtype = st.mem.b16s0(ha);
     st.mem.set_b16s0(q, subtype);
     // SAFETY: see above.
@@ -3896,7 +3902,9 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
     let use_glyph = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
 
     if locale == 0 || len == 1 {
-        let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, main_f, len)?;
+        let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, main_f, len)?
+            .idx()
+            .0;
         st.mem.set_b32s1(st.input.cur_list.tail, node);
         st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
         let t = st.input.cur_list.tail.0;
@@ -3939,7 +3947,9 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                     &st.eqtb,
                     main_f,
                     offs - prev_offs,
-                )?;
+                )?
+                .idx()
+                .0;
                 st.mem.set_b32s1(st.input.cur_list.tail, node);
                 st.input.cur_list.tail.0 = st.mem.b32s1(st.input.cur_list.tail);
                 let t = st.input.cur_list.tail.0;

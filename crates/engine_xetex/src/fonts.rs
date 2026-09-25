@@ -49,7 +49,7 @@ pub(crate) fn new_native_word_node(
     eqtb: &crate::state::EqtbState,
     f: i32,
     n: i32,
-) -> Result<i32, NodeRecycleAbort> {
+) -> Result<crate::node::NodePtr<crate::node::WhatsitNode>, NodeRecycleAbort> {
     // sizeof(UTF16_code) = 2, sizeof(memory_word) = 8
     let l = NATIVE_NODE_SIZE_NN + (n * 2 + 7) / 8;
     let q = cnl_get_node!(mem, l);
@@ -65,7 +65,8 @@ pub(crate) fn new_native_word_node(
     mem.set_b16s0(q + 4, 0);
     mem.set_b32s0(q + 5, 0);
     mem.set_b32s1(q + 5, 0);
-    Ok(q)
+    // SAFETY: `q` was just allocated and stamped as a native-word whatsit.
+    Ok(unsafe { crate::node::NodePtr::from_idx_unchecked(crate::units::MemIdx::new(q)) })
 }
 /// Allocate the native node and fill its UTF-16 payload.
 fn build_native_character(
@@ -77,7 +78,7 @@ fn build_native_character(
 ) -> Result<i32, NodeRecycleAbort> {
     match src {
         NativeCharSrc::Mapped(len) => {
-            let p = new_native_word_node(mem, eqtb, f, len)?;
+            let p = new_native_word_node(mem, eqtb, f, len)?.idx().0;
             mem.journal_mark_range(
                 p + NATIVE_NODE_SIZE_NN,
                 crate::state::native_text_words(len),
