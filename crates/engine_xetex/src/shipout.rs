@@ -2279,7 +2279,7 @@ pub fn reverse(
     let mut n = MIN_HALFWORD;
 
     loop {
-        while p != TEX_NULL {
+        'nodes: while p != TEX_NULL {
             if crate::mem::is_char_node(mem, p) {
                 loop {
                     let f = mem.b16s1(p) as i32;
@@ -2300,7 +2300,7 @@ pub fn reverse(
             let q = mem.b32s1(p);
             let mut add_width = true;
 
-            'reswitch: loop {
+            loop {
                 match mem.b16s1(p) {
                     HLIST_NODE | VLIST_NODE | RULE_NODE | KERN_NODE => {
                         shipout.rule_wd = mem.b32s1(p + 1);
@@ -2373,7 +2373,7 @@ pub fn reverse(
                         mem.set_word(p, mem.word(mem.temp_ptr + 1));
                         mem.set_b32s1(p, q);
                         crate::mem::free_node(mem, mem.temp_ptr, SMALL_NODE_SIZE);
-                        continue 'reswitch;
+                        continue 'nodes;
                     }
                     MATH_NODE => {
                         shipout.rule_wd = mem.b32s1(p + 1);
