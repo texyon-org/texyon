@@ -1,4 +1,4 @@
-//! Math-mode command helpers translated from `xetex/xetex-math.c`.
+//! Math mode: noad construction and `mlist_to_hlist`, from `xetex/xetex-math.c`.
 use crate::consts::{
     ACCENT_NOAD_SIZE, ADJUST_HEAD, A_LEADERS, BEFORE, BIGGEST_LANG, BOX_NODE_SIZE, CUR_FONT_LOC,
     DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, EXPLICIT, FONT_BASE,
@@ -166,122 +166,98 @@ fn math_ext_param(fonts: &FontState, eqtb: &EqtbState, cur_size: i32, param: i32
     }
 }
 
-/// translated from xetex-math.c:86 (math_x_height)
 pub fn math_x_height(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 5)
 }
 
-/// translated from xetex-math.c:101 (math_quad)
 pub fn math_quad(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 6)
 }
 
-/// translated from xetex-math.c:115 (num1)
 pub fn num1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 8)
 }
 
-/// translated from xetex-math.c:130 (num2)
 pub fn num2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 9)
 }
 
-/// translated from xetex-math.c:145 (num3)
 pub fn num3(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 10)
 }
 
-/// translated from xetex-math.c:160 (denom1)
 pub fn denom1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 11)
 }
 
-/// translated from xetex-math.c:175 (denom2)
 pub fn denom2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 12)
 }
 
-/// translated from xetex-math.c:190 (sup1)
 pub fn sup1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 13)
 }
 
-/// translated from xetex-math.c:205 (sup2)
 pub fn sup2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 14)
 }
 
-/// translated from xetex-math.c:219 (sup3)
 pub fn sup3(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 15)
 }
 
-/// translated from xetex-math.c:233 (sub1)
 pub fn sub1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 16)
 }
 
-/// translated from xetex-math.c:247 (sub2)
 pub fn sub2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 17)
 }
 
-/// translated from xetex-math.c:261 (sup_drop)
 pub fn sup_drop(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 18)
 }
 
-/// translated from xetex-math.c:275 (sub_drop)
 pub fn sub_drop(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 19)
 }
 
-/// translated from xetex-math.c:289 (delim1)
 pub fn delim1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 20)
 }
 
-/// translated from xetex-math.c:303 (delim2)
 pub fn delim2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 21)
 }
 
-/// translated from xetex-math.c:317 (axis_height)
 pub fn axis_height(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
     math_sy_param(fonts, eqtb, size_code, 22)
 }
 
-/// translated from xetex-math.c:88 (default_rule_thickness)
 pub fn default_rule_thickness(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 8)
 }
 
-/// translated from xetex-math.c:102 (big_op_spacing1)
 pub fn big_op_spacing1(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 9)
 }
 
-/// translated from xetex-math.c:116 (big_op_spacing2)
 pub fn big_op_spacing2(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 10)
 }
 
-/// translated from xetex-math.c:130 (big_op_spacing3)
 pub fn big_op_spacing3(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 11)
 }
 
-/// translated from xetex-math.c:144 (big_op_spacing4)
 pub fn big_op_spacing4(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 12)
 }
 
-/// translated from xetex-math.c:158 (big_op_spacing5)
 pub fn big_op_spacing5(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
     math_ext_param(fonts, eqtb, cur_size, 13)
 }
 
-/// translated from xetex-math.c:170 (fraction_rule)
 pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<NodePtr<RuleNode>, NodeRecycleAbort> {
     let Some(p) = NodePtr::<RuleNode>::alloc(mem) else {
         return Err(NodeRecycleAbort::Overflow);
@@ -293,11 +269,6 @@ pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<NodePtr<RuleNode>, No
     Ok(p)
 }
 
-/// translated from xetex-math.c:181 (overbar)
-///
-/// Builds the kern/rule/kern chain
-/// directly through the typed [`alloc_kern_node`]/[`fraction_rule`] handles and
-/// returns its head.
 pub fn overbar(mem: &mut MemState, b: AnyBox, k: i32, t: i32) -> Result<MemPtr, NodeRecycleAbort> {
     let p = alloc_kern_node(mem, k)?;
     p.set_link(mem, MemPtr::from_idx(b.idx()));
@@ -308,7 +279,6 @@ pub fn overbar(mem: &mut MemState, b: AnyBox, k: i32, t: i32) -> Result<MemPtr, 
     Ok(r.ptr())
 }
 
-/// translated from xetex-math.c:195 (math_glue)
 struct MathGlueInput {
     width: i32,
     stretch_order: u16,
@@ -328,7 +298,6 @@ fn scaled_mu_value_in(errors: &mut crate::state::ErrorState, v: i32, m: i32) -> 
     crate::scaled_math::mult_and_add_in(errors, n, v, xnd, MAX_HALFWORD)
 }
 
-/// Builds the scaled glue spec for math glue `g` at `mu` `m`.
 fn math_glue_in(st: &mut EngineState, g: i32, m: i32) -> Result<i32, NodeRecycleAbort> {
     let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(g))
         .expect("non-null math glue spec");
@@ -360,7 +329,6 @@ fn math_glue_in(st: &mut EngineState, g: i32, m: i32) -> Result<i32, NodeRecycle
     )
 }
 
-/// Scales an explicit math kern.
 fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
     let is_mu_glue = p.subtype(&st.mem) == MU_GLUE;
     let width_val = p.width(&st.mem).0;
@@ -373,9 +341,6 @@ fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
 }
 
 fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycleAbort> {
-    // Typesafe allocation: `alloc` confines the `from_idx_unchecked` to one
-    // audited site and yields the typed handle directly. `None`
-    // is the arena-exhaustion sentinel, mapped to the abort here.
     let spec = NodePtr::<GlueSpecNode>::alloc(mem).ok_or(NodeRecycleAbort::Overflow)?;
     spec.set_width(mem, Scaled(input.width));
     spec.set_stretch_order(mem, input.stretch_order);
@@ -385,7 +350,6 @@ fn math_glue(mem: &mut MemState, input: MathGlueInput) -> Result<i32, NodeRecycl
     Ok(spec.idx().0)
 }
 
-/// translated from xetex-math.c:223 (math_kern)
 fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scaled>) {
     if let Some(width) = scaled_width {
         p.set_width(mem, width);
@@ -393,11 +357,6 @@ fn math_kern(mem: &mut MemState, p: NodePtr<KernNode>, scaled_width: Option<Scal
     }
 }
 
-/// translated from xetex-math.c:80 (flush_math)
-///
-/// Recycles the two current-list chains via
-/// [`crate::packaging::flush_node_list`]. The two impossible corrupt-node
-/// `confusion` arms propagate out as `Err`.
 pub fn flush_math(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
@@ -413,9 +372,6 @@ pub fn flush_math(
     Ok(())
 }
 
-/// translated from xetex-math.c:91 (clean_box). Builds the
-/// cleaned hbox for math field `p` at style `s`,
-/// recursing into [`mlist_to_hlist_in`].
 unsafe fn clean_box_in(
     st: &mut EngineState,
     p: impl crate::units::MemAddr,
@@ -493,7 +449,6 @@ unsafe fn clean_box_in(
     Ok(x_box)
 }
 
-/// The shared `cur_size`/`cur_mu` reset after a `clean_box` sub-list conversion.
 #[inline]
 fn clean_box_reset_mu(st: &mut EngineState) {
     if st.scanner.cur_style < SCRIPT_STYLE {
@@ -505,24 +460,12 @@ fn clean_box_reset_mu(st: &mut EngineState) {
     st.scanner.cur_mu = crate::scaled_math::x_over_n_in(&mut st.errors, mq, 18);
 }
 
-/// translated from xetex-math.c:115 (fetch)
-/// `fetch_core` sets the `cur_*` fields directly and returns the cold
-/// diagnostic / warning that the caller must emit.
 enum FetchOutcome {
-    /// Normal: nothing to emit.
     Ok,
-    /// The math font family is undefined — emit the diagnostic + recoverable
-    /// `error()`. Carries the values the message prints (`cur_*` already set).
     UndefinedFont { size: i32, fam: i32, c: i32 },
-    /// The requested character is missing from the font — emit
-    /// `char_warning(f, c)`.
     CharMissing { f: i32, c: i32 },
 }
 
-/// Sets `cur_c` / `cur_f` / `cur_i` for math char `a`
-/// from `mem` / `fonts` / `eqtb` / `scanner`. The
-/// diagnostic and `char_warning` paths are deferred via
-/// [`FetchOutcome`].
 fn fetch_core(
     mem: &mut MemState,
     fonts: &FontState,
@@ -566,9 +509,6 @@ fn fetch_core(
     FetchOutcome::Ok
 }
 
-/// Runs [`fetch_core`] and emits its deferred
-/// diagnostic / warning, returning the recoverable
-/// [`ErrorOutcome`](crate::errors::ErrorOutcome).
 fn fetch_in(st: &mut EngineState, a: impl crate::units::MemAddr) -> crate::errors::ErrorOutcome {
     let a = a.addr();
     use crate::errors::ErrorOutcome;
@@ -598,7 +538,6 @@ fn fetch_in(st: &mut EngineState, a: impl crate::units::MemAddr) -> crate::error
     }
 }
 
-/// translated from xetex-math.c:198 (make_over)
 fn make_over(mem: &mut MemState, q: NodePtr<Noad>, x: AnyBox) {
     q.set_nucleus_field(mem, x.idx().0);
     q.set_nucleus_type(mem, SUB_BOX);
@@ -613,7 +552,6 @@ unsafe fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     Ok(())
 }
 
-/// translated from xetex-math.c:207 (make_under)
 fn make_under_prepare(
     mem: &mut MemState,
     x: AnyBox,
@@ -649,7 +587,6 @@ unsafe fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Ma
     Ok(())
 }
 
-/// translated from xetex-math.c:225 (make_vcenter)
 fn make_vcenter(
     mem: &mut MemState,
     q: NodePtr<Noad>,
@@ -697,7 +634,6 @@ fn make_radical_prepare_delimiter(
     (delta.0, x_height, rule_height)
 }
 
-/// translated from xetex-math.c:80 (make_radical).
 unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let f = math_font(
         &st.eqtb,
@@ -864,13 +800,10 @@ fn alloc_kern_node(mem: &mut MemState, width: i32) -> Result<NodePtr<KernNode>, 
     Ok(p)
 }
 
-/// HLIST twin of [`crate::mem::alloc_null_box`] with this module's abort type.
 fn alloc_null_box(mem: &mut MemState) -> Result<NodePtr<HListNode>, NodeRecycleAbort> {
     crate::mem::alloc_null_box(mem).ok_or(NodeRecycleAbort::Overflow)
 }
 
-/// VLIST twin of [`alloc_null_box`]: allocates the null box, re-stamps it
-/// `VLIST_NODE`, and returns the typed handle.
 fn alloc_null_vbox(mem: &mut MemState) -> Result<NodePtr<VListNode>, NodeRecycleAbort> {
     let b = crate::mem::alloc_null_box(mem).ok_or(NodeRecycleAbort::Overflow)?;
     mem.set_b16s1(b.ptr().0, VLIST_NODE);
@@ -936,7 +869,6 @@ fn make_op_finish_limits(
     Ok(())
 }
 
-/// translated from xetex-math.c:313 (make_fraction).
 unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     if q.thickness(&st.mem) == DEFAULT_CODE {
         let drt = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
@@ -1074,13 +1006,11 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
     Ok(())
 }
 
-/// translated from xetex-math.c:270 (make_op). Returns the math `delta` italic
-/// correction.
+/// Returns the italic correction `delta`.
 unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAbort> {
     use crate::errors::ErrorOutcome;
     let mut delta: i32 = 0;
 
-    // NORMAL -> LIMITS latch.
     make_op_latch_limits(&mut st.mem, &st.scanner, q);
 
     if q.nucleus_type(&st.mem) == MATH_CHAR {
@@ -1089,7 +1019,6 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
             other => return Err(MathBuildAbort::Error(other)),
         }
 
-        // Non-OpenType italic-correction / list-tag bump.
         let f = st.scanner.cur_f;
         let is_ot = st.fonts.font_area_entry(f) == OTGR_FONT_FLAG
             && usingOpenType(st.fonts.font_layout_engine_ptr(f));
@@ -1113,7 +1042,6 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
         let x = clean_box_in(st, q.nucleus_addr(), st.scanner.cur_style)?;
         let x_box = x;
 
-        // OT-math glyph variant / assembly selection.
         let cur_f = st.scanner.cur_f;
         if st.fonts.font_area_entry(cur_f) == OTGR_FONT_FLAG
             && isOpenTypeMathFont(st.fonts.font_layout_engine_ptr(cur_f))
@@ -1182,7 +1110,6 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                     delta =
                         get_ot_math_ital_corr(&st.fonts, cur_f, p_w.native_glyph(&st.mem) as i32);
                 }
-                // found:
                 let p1 = st.mem.b32s1(p + 1);
                 let p3 = st.mem.b32s1(p + 3);
                 let p2 = st.mem.b32s1(p + 2);
@@ -1192,7 +1119,6 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
             }
         }
 
-        // Finish the MATH_CHAR box.
         let size = st.scanner.cur_size;
         let ah = axis_height(&st.fonts, &st.eqtb, size);
         make_op_finish_math_char(&mut st.mem, q, x_box, delta, ah);
@@ -1205,8 +1131,6 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
         let mut y = clean_box_in(st, q.nucleus_addr(), st.scanner.cur_style)?;
         let mut z = clean_box_in(st, q.subscr_addr(), (2 * (cs / 4) + 5) as i16)?;
 
-        // Allocate the wrapper vbox directly as a typed handle (`Copy`, holds no
-        // borrow, so it stays valid across the `rebox_in` calls below).
         let v_box = AnyBox::VList(alloc_null_vbox(&mut st.mem)?);
         let w = make_op_prepare_limits_box(&mut st.mem, v_box, x, y, z);
 
@@ -1239,18 +1163,12 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
     Ok(delta)
 }
 
-/// Outcome of one [`make_ord_body`] pass.
 enum MakeOrdStep {
-    /// Done — return from `make_ord`.
     Return,
-    /// A ligature replaced the nucleus — re-run the `\restart` loop.
     Restart,
-    /// `new_kern` / `new_noad` exhausted the arena.
     Overflow,
 }
 
-/// The ligature/kern body of `make_ord`. `cur_f` / `cur_i` were already set by
-/// the preceding `fetch`. Allocator exhaustion returns `Overflow`.
 fn make_ord_body(
     mem: &mut MemState,
     fonts: &FontState,
@@ -1332,9 +1250,6 @@ fn make_ord_body(
     }
 }
 
-/// translated from xetex-math.c:272 (make_ord).
-/// Abort from [`make_ord_in`]: an allocator overflow or a recoverable `fetch`
-/// error.
 enum MakeOrdAbort {
     Overflow,
     Error(crate::errors::ErrorOutcome),
@@ -1356,7 +1271,6 @@ fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbor
         let Some(p) = p.as_idx() else {
             return Ok(());
         };
-        // Only an ORD..PUNCT noad following `q` can fuse with it.
         let p_node = match st.mem.classify_noad(p) {
             Ok(Some(pn))
                 if (NodeType::OrdNoad.as_raw()..=NodeType::PunctNoad.as_raw())
@@ -1567,7 +1481,6 @@ fn finish_accent_nucleus(mem: &mut MemState, q: NodePtr<Noad>, x: AnyBox, y: Any
     q.set_nucleus_type(mem, SUB_BOX);
 }
 
-/// translated from xetex-math.c:79 (make_math_accent).
 unsafe fn make_math_accent_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
@@ -1663,7 +1576,6 @@ unsafe fn make_math_accent_in(
             }
             c = y_tmp;
         }
-        // done:
     } else {
         return Ok(());
     }
@@ -1743,7 +1655,6 @@ unsafe fn make_math_accent_in(
                     crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p, 1)?;
                 }
             }
-            // found:
         }
         let y_box = y;
         sync_accent_box_to_glyph(&mut st.mem, y_box, p, bottom_accent);
@@ -1776,8 +1687,6 @@ unsafe fn make_math_accent_in(
     }
     let _ = p;
 
-    // `x` was proven non-null at the top guard; classify it once here and reuse
-    // the handle across both accent-stacking branches.
     let x_box = x;
     zero_box_width(&mut st.mem, y);
     if bottom_accent {
@@ -1796,10 +1705,6 @@ unsafe fn make_math_accent_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:275 (attach_hkern_to_new_hlist)
-/// Builds a kern and appends it to the
-/// `new_hlist` of noad `q`. `new_kern` exhaustion propagates the
-/// [`NodeRecycleAbort::Overflow`] sentinel.
 fn attach_hkern_to_new_hlist(
     mem: &mut MemState,
     q: NodePtr<Noad>,
@@ -2273,7 +2178,6 @@ unsafe fn finish_superscript_branch_in(
     Ok(())
 }
 
-// translated from xetex-math.c:805 (repeated script glyph discovery block)
 fn first_script_glyph_step(
     mem: &MemState,
     script_head: i32,
@@ -2386,7 +2290,6 @@ unsafe fn first_script_glyph_in(
     Ok((script_g, script_f))
 }
 
-/// translated from xetex-math.c:84 (make_scripts)
 unsafe fn make_scripts_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
@@ -2404,7 +2307,6 @@ unsafe fn make_scripts_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:759 (make_left_right)
 unsafe fn make_left_right_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
@@ -2452,17 +2354,12 @@ fn update_math_style_params_in(st: &mut EngineState) {
     st.scanner.cur_mu = crate::scaled_math::x_over_n_in(&mut st.errors, mq, 18);
 }
 
-/// First-pass `CHOICE_NODE` handling for [`mlist_to_hlist`]: keep the branch
-/// matching the current style, flush the other three, then stamp the node down
-/// to a style node and splice the kept branch into the main list after it.
-/// Returns any `flush_node_list` confusion message for the caller to raise.
 fn mlist_choice_node(
     mem: &mut MemState,
     choice: NodePtr<ChoiceNode>,
     cur_style: i16,
 ) -> Result<(), &'static std::ffi::CStr> {
     let q = choice.idx().0;
-    // Detach the branch for the current style; the other three are flushed.
     let kept = match cur_style / 2 {
         0 => {
             let p = choice.display_mlist(mem);
@@ -2490,7 +2387,6 @@ fn mlist_choice_node(
     crate::packaging::flush_node_list(mem, choice.text_mlist(mem).0)?;
     crate::packaging::flush_node_list(mem, choice.script_mlist(mem).0)?;
     crate::packaging::flush_node_list(mem, choice.script_script_mlist(mem).0)?;
-    // Rewrite the node as a style node carrying the current style.
     mem.set_b16s1(q, NodeType::Style.as_raw());
     mem.set_b16s0(q, cur_style as u16);
     mem.set_b32s1(q + 1, 0);
@@ -2518,8 +2414,6 @@ fn mlist_track_rule(mem: &MemState, rule: NodePtr<RuleNode>, max_h: &mut i32, ma
     }
 }
 
-/// Record the hpacked box `z`'s height/depth into the running maxima and
-/// recycle it.
 fn mlist_track_box(mem: &mut MemState, z: AnyBox, max_h: &mut i32, max_d: &mut i32) {
     let h = z.height(mem).0;
     let d = z.depth(mem).0;
@@ -2569,11 +2463,6 @@ fn mlist_move_output_node(
     (q, next)
 }
 
-/// First-pass noad advance: compute the running `r_type` for noad `qn` (with a
-/// Right→Left rewrite that also resets the style to the outer `style`) and the
-/// link to the next node. The caller records `qn` itself as the new `r`.
-/// (`r_type` and the link are read together; the intervening style reset does
-/// not touch `mem[qn].link`.)
 fn mlist_advance_in(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16, i32) {
     let mut r_type = qn.noad_type(&st.mem).as_raw();
     let next = qn.link(&st.mem).0;
@@ -2585,17 +2474,12 @@ fn mlist_advance_in(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16
     (r_type, next)
 }
 
-/// translated from xetex-math.c:84 (mlist_to_hlist)
-/// Converts `cur_mlist` to an hlist on `TEMP_HEAD`,
-/// recursing through `clean_box_in`/`make_*_in`.
 unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
     use crate::errors::ErrorOutcome;
     let mlist = st.scanner.cur_mlist.0;
     let penalties = st.scanner.mlist_penalties;
     let style = st.scanner.cur_style;
     let mut q = mlist;
-    // The previous noad in the first pass (a Bin noad gets retroactively
-    // downgraded to Ord); `None` until the first noad is processed.
     let mut r: Option<NodePtr<Noad>> = None;
     let mut r_type = NodeType::OpNoad.as_raw();
     let mut max_h = 0;
@@ -2866,10 +2750,6 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
     st.scanner.cur_style = style;
     update_math_style_params_in(st);
 
-    // Per-node outcome of the second-pass classification: either the node is a
-    // noad whose translated hlist gets spliced onto the output list (then the
-    // noad recycled), a style node (recycled, no spacing), or a non-noad that
-    // has already been moved onto the output list and detached.
     enum SecondPass {
         Splice(NodePtr<Noad>),
         StyleNode,
@@ -2929,7 +2809,6 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                 | AnyNode::Glue(_)
                 | AnyNode::Kern(_)),
             ) => {
-                // Move this node onto the output list and detach it.
                 let (np, nq) = mlist_move_output_node(&mut st.mem, p, node);
                 p = np;
                 q = nq;
@@ -2938,8 +2817,6 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
             _ => return Err(NodeRecycleAbort::Confusion(c"mlist3").into()),
         };
 
-        // Only noads contribute inter-noad spacing and an hlist to splice;
-        // style nodes fall straight through to recycling, moved nodes skip it.
         let qn = match step {
             SecondPass::Moved => continue,
             SecondPass::StyleNode => None,
@@ -2958,8 +2835,6 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
                     b"11*11111",
                     b"12341011",
                 ];
-                // The 8×8 inter-noad spacing table is indexed by (noad type − ORD),
-                // so this stays deliberate ORD-relative offset arithmetic.
                 let ord = NodeType::OrdNoad.as_raw();
                 let spacing = offset_table[(r_type - ord) as usize][(t - ord) as usize];
                 let x = match spacing {
@@ -3006,7 +2881,6 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
             {
                 let head = qn.new_hlist(&st.mem);
                 if head != TEX_NULL {
-                    // Splice this noad's new hlist in after `p` and walk to its tail.
                     st.mem.set_b32s1(p, head);
                     let mut tail = head;
                     while st.mem.b32s1(tail) != TEX_NULL {
@@ -3042,11 +2916,10 @@ unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> 
     Ok(())
 }
 
-/// Inputs for [`char_box`].
 enum CharBoxInput {
-    /// Native (AAT/OTGR) font: `p` is the `new_native_character` node.
-    Native { p: i32 },
-    /// TFM font: precomputed width/height/depth and the (char, font) pair.
+    Native {
+        p: i32,
+    },
     Tfm {
         width: i32,
         height: i32,
@@ -3056,12 +2929,6 @@ enum CharBoxInput {
     },
 }
 
-/// translated from xetex-math.c:1432 (char_box)
-///
-/// Note: on the native branch the `new_native_character` node is allocated
-/// *before* the box, the reverse of the C order; only absolute `mem` addresses
-/// differ, which no output (`.xdv`/`.log`) or `mem`-image (TRIP uses TFM fonts
-/// only) path observes.
 fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<AnyBox, NodeRecycleAbort> {
     let bb = AnyBox::HList(alloc_null_box(mem)?);
     let p = match input {
@@ -3098,15 +2965,10 @@ fn char_box(mem: &mut MemState, input: CharBoxInput) -> Result<AnyBox, NodeRecyc
     Ok(bb)
 }
 
-/// Abort from a math builder: either an arena-recycle overflow
-/// ([`NodeRecycleAbort`]) or the native-character build path
-/// ([`NativeCharAbort`]).
 pub(crate) enum MathBuildAbort {
     Recycle(NodeRecycleAbort),
     NativeChar(crate::fonts::NativeCharAbort),
-    /// A recoverable `error()` (from `fetch_in`) went terminal.
     Error(crate::errors::ErrorOutcome),
-    /// A native-font measurement cold abort.
     NativeFont(crate::ext::NativeFontAbort),
 }
 
@@ -3159,12 +3021,8 @@ fn math_build_abort_main(a: MathBuildAbort) -> crate::main_control::MainControlA
     }
 }
 
-/// Build the char box for `f`/`c`.
 fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuildAbort> {
     let area = st.fonts.font_area_entry(f);
-    // `char_box`/`char_box_tfm` classify the freshly-built box at their creation
-    // boundary and return the typed `AnyBox`, so the delimiter/accent callers
-    // carry the handle without re-classifying.
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
         let p = crate::fonts::new_native_character_in(st, f, c as u32)?;
         let input = CharBoxInput::Native { p };
@@ -3174,9 +3032,6 @@ fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuild
     }
 }
 
-/// Build a TFM character box. The metric reads are `effective_char` plus the
-/// width/italic/height/depth table lookups. Used by
-/// [`build_ext_delimiter_box`].
 fn char_box_tfm(
     mem: &mut MemState,
     fonts: &mut FontState,
@@ -3196,10 +3051,6 @@ fn char_box_tfm(
     char_box(mem, input)
 }
 
-/// translated from xetex-math.c:1463 (stack_into_box)
-///
-/// Takes the character box `p` already
-/// built by [`char_box_tfm`] (in [`build_ext_delimiter_box`]) and links it.
 fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
     let link = b_box.list_ptr(mem);
     p.set_link(mem, link);
@@ -3208,7 +3059,6 @@ fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
     b_box.set_height(mem, Scaled(h));
 }
 
-/// translated from xetex-math.c:1474 (height_plus_depth)
 pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
     let c = crate::fonts::effective_char(fonts, true, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c);
@@ -3216,11 +3066,6 @@ pub fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
         + fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16)
 }
 
-/// Allocate + type-stamp a fresh `GLYPH_NODE` whatsit and hand back its typed
-/// handle. This is the single audited `from_idx_unchecked` construction site for
-/// glyph whatsits: callers receive a `NodePtr<WhatsitNode>` directly
-/// instead of re-deriving one from a raw index via
-/// `classify_whatsit().expect().expect()`.
 fn alloc_glyph_whatsit(mem: &mut MemState) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
     let p = get_node(mem, GLYPH_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
     mem.set_b16s1(p, WHATSIT_NODE);
@@ -3239,10 +3084,6 @@ fn new_stack_glyph(
     Ok(pw)
 }
 
-/// translated from xetex-math.c:1482 (stack_glyph_into_box)
-///
-/// The measured glyph node `p` (a typed `GLYPH_NODE` whatsit handle)
-/// is spliced into `b_box`.
 pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: NodePtr<WhatsitNode>) {
     if matches!(b_box, AnyBox::HList(_)) {
         let mut q = b_box.list_ptr(mem);
@@ -3274,8 +3115,6 @@ pub fn stack_glyph_into_box(mem: &mut MemState, b_box: AnyBox, p: NodePtr<Whatsi
     }
 }
 
-/// Allocate the glyph node, measure it via
-/// `measure_native_glyph`, and splice it.
 fn stack_glyph_into_box_in(
     st: &mut EngineState,
     b: AnyBox,
@@ -3308,7 +3147,6 @@ fn native_glyph_vbox_finish(mem: &mut MemState, b_box: AnyBox, p: NodePtr<Whatsi
     b_box.set_depth(mem, Scaled(d));
 }
 
-/// Build the single-glyph vbox.
 fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, NodeRecycleAbort> {
     let (b, p) = native_glyph_vbox_start(&mut st.mem, f, g)?;
     unsafe { crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p.idx().0, 1) }?;
@@ -3316,7 +3154,6 @@ fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, 
     Ok(b)
 }
 
-/// translated from xetex-math.c:1517 (stack_glue_into_box)
 fn stack_glue_into_box(
     mem: &mut MemState,
     b_box: AnyBox,
@@ -3352,7 +3189,6 @@ fn stack_glue_into_box(
     Ok(())
 }
 
-/// Classify `b` and splice the glue.
 fn stack_glue_into_box_in(
     st: &mut EngineState,
     b: AnyBox,
@@ -3384,7 +3220,6 @@ fn compute_ot_math_accent_pos_step(mem: &MemState, p: NodePtr<Noad>) -> OtMathAc
     }
 }
 
-/// translated from xetex-math.c:199 (compute_ot_math_accent_pos).
 unsafe fn compute_ot_math_accent_pos_in(
     st: &mut EngineState,
     mut p: NodePtr<Noad>,
@@ -3411,10 +3246,6 @@ unsafe fn compute_ot_math_accent_pos_in(
     }
 }
 
-/// translated from xetex-math.c:388 (scan_delimiter)
-/// The recoverable
-/// "Missing delimiter" `back_error` is printed in order then deferred via
-/// [`mc_propagate_error`](crate::main_control::mc_propagate_error).
 pub(crate) fn scan_delimiter_in(
     st: &mut EngineState,
     p: i32,
@@ -3528,7 +3359,6 @@ pub(crate) fn start_eq_no_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:368 (math_limit_switch)
 fn apply_math_limit_switch(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
@@ -3568,7 +3398,6 @@ pub(crate) fn math_limit_switch_in(
     crate::main_control::mc_propagate_error(crate::errors::error_in(st))
 }
 
-/// translated from xetex-math.c:461 (math_radical)
 fn append_radical_noad(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
@@ -3596,7 +3425,6 @@ pub(crate) fn math_radical_in(
     crate::scan::scan_math_in(st, tail.idx().0 + 1)
 }
 
-/// translated from xetex-math.c:533 (append_choices)
 fn append_choices_core(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
@@ -3619,10 +3447,6 @@ pub(crate) fn append_choices_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:545 (fin_mlist)
-///
-/// The impossible corrupt-node `confusion`
-/// (`q` not a `LEFT_NOAD`) propagates out as `Err`.
 fn fin_mlist(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
@@ -3660,9 +3484,6 @@ fn fin_mlist(
     Ok(q)
 }
 
-/// Runs [`fin_mlist`] then `pop_nest_in`,
-/// deferring the corrupt-node `confusion` via
-/// [`MainControlAbort::Confusion`].
 pub(crate) fn fin_mlist_in(
     st: &mut crate::state::EngineState,
     p: i32,
@@ -3673,7 +3494,6 @@ pub(crate) fn fin_mlist_in(
     Ok(q)
 }
 
-/// translated from xetex-math.c:571 (build_choices)
 fn build_choices_finish(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
@@ -3699,11 +3519,6 @@ fn build_choices_finish(
     false
 }
 
-/// Closes one math-choice sublist (`\mathchoice`).
-/// Mirrors `fin_mlist_in`'s fin_mlist+pop_nest, then either
-/// completes or pushes the next choice group.
-///
-/// translated from xetex-math.c:571 (build_choices)
 pub(crate) fn build_choices_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -3720,7 +3535,6 @@ pub(crate) fn build_choices_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:599 (sub_sup)
 enum ScriptDuplication {
     Superscript,
     Subscript,
@@ -3782,7 +3596,6 @@ pub(crate) fn sub_sup_in(
     crate::scan::scan_math_in(st, p)
 }
 
-/// translated from xetex-math.c:644 (math_fraction)
 fn start_fraction_noad(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
@@ -3918,7 +3731,6 @@ fn set_accent_kind(mem: &mut MemState, tail: NodePtr<Noad>, kind: u16) {
     tail.set_subtype(mem, kind);
 }
 
-/// translated from xetex-math.c:703 (math_left_right)
 fn append_left_right_noad(
     mem: &mut MemState,
     node_type: u16,
@@ -4029,7 +3841,6 @@ pub(crate) fn math_left_right_in(
     Ok(())
 }
 
-// Inline helpers for the C bitfield macros in xetex-xetexd.h.
 #[inline]
 fn math_class_field(x: i32) -> i32 {
     (((x as u32) >> 21) & 7) as i32
@@ -4147,7 +3958,6 @@ fn ext_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
     fonts.font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(fonts, f)
 }
 
-/// translated from xetex-math.c:82 (app_display)
 fn app_display_in(
     st: &mut EngineState,
     j: i32,
@@ -4302,7 +4112,6 @@ fn app_display_in(
     Ok(())
 }
 
-/// Emit error for insufficient math fonts, flush the math list, set danger.
 fn check_math_font_params_in(
     st: &mut EngineState,
     danger: &mut bool,
@@ -4344,7 +4153,6 @@ fn check_math_font_params_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:194 (after_math)
 pub(crate) fn after_math_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -4366,7 +4174,6 @@ pub(crate) fn after_math_in(
 
     let a;
     if st.input.cur_list.mode as i32 == -m {
-        // eTeX display math: second `$$` ends an inner display
         crate::scan::get_x_token_in(st)?;
         if st.scanner.cur_cmd != MATH_SHIFT {
             crate::output::error_here_with_diagnostic_in(
@@ -4410,7 +4217,6 @@ pub(crate) fn after_math_in(
     }
 
     if m < 0 {
-        // inline math (or inner/restricted hmode)
         let math_surround = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
         let node = crate::mem::alloc_math(&mut st.mem, math_surround, BEFORE as i16)
             .ok_or(NodeRecycleAbort::Overflow)?;
@@ -4437,7 +4243,6 @@ pub(crate) fn after_math_in(
 
         crate::save::unsave_in(st)?;
     } else {
-        // display math
         if a == TEX_NULL {
             crate::scan::get_x_token_in(st)?;
             if st.scanner.cur_cmd != MATH_SHIFT {
@@ -4557,7 +4362,6 @@ pub(crate) fn after_math_in(
             if l {
                 st.mem.set_b32s1(a, r.idx().0);
                 r.set_link(&mut st.mem, MemPtr::from_idx(b.idx()));
-                // `a` is a real box in this `e != 0` branch (`e` is its width).
                 b = classify_box_or_panic(&st.mem, a);
                 d = 0;
             } else {
@@ -4621,7 +4425,6 @@ pub(crate) fn after_math_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:81 (init_math)
 pub(crate) fn init_math_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
@@ -5018,18 +4821,8 @@ pub(crate) fn init_math_in(
     Ok(())
 }
 
-/// translated from xetex-math.c:71 (initialize_math_variables)
-pub fn initialize_math_variables() {
-    // null_delimiter is a file-static b16x4 that is never read outside this
-    // function; zeroing it is redundant (C zero-initializes statics) and a no-op.
-}
-
-/// translated from xetex-math.c:1356 (rebox)
 enum ReboxResult {
-    /// The box was repacked in place (width set); the typed handle is returned.
     Done(AnyBox),
-    /// The box was dissolved into a glue-wrapped list; the list head must be
-    /// hpacked by the caller.
     Hpack(MemPtr),
 }
 
@@ -5062,9 +4855,6 @@ fn rebox(
     }
 }
 
-/// Repack box `b` to width `w`. The
-/// re-pack and final pack go through [`crate::packaging::hpack_emit_in`] (which
-/// prints any over/underfull diagnostic in-order).
 fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecycleAbort> {
     let mut bb = b;
     if bb.width(&st.mem).0 != w && !bb.list_ptr(&st.mem).is_null() && matches!(bb, AnyBox::VList(_))
@@ -5096,7 +4886,6 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
     }
 }
 
-/// translated from xetex-math.c:1206 (build_opentype_assembly)
 unsafe fn build_opentype_assembly_in(
     st: &mut EngineState,
     f: i32,
@@ -5108,15 +4897,12 @@ unsafe fn build_opentype_assembly_in(
         .ok_or(NodeRecycleAbort::Overflow)?
         .ptr()
         .0;
-    // The null box is stamped hlist; retype to the requested axis, then classify
-    // once — `b` is the typed handle used for all stacking + measurement below.
     st.mem
         .set_b16s1(b_idx, if horiz { HLIST_NODE } else { VLIST_NODE });
     let b = classify_box_or_panic(&st.mem, b_idx);
     let mut n: i32 = -1;
     let mut no_extenders = true;
     let min_o = ot_min_connector_overlap(&st.fonts, f);
-    // Find minimum repeat count n such that the assembly reaches size s.
     loop {
         n += 1;
         let mut s_max: i32 = 0;
@@ -5151,7 +4937,6 @@ unsafe fn build_opentype_assembly_in(
             break;
         }
     }
-    // Build the node list.
     let mut prev_o: i32 = 0;
     for i in 0..a.count() {
         if a.is_extender(i) {
@@ -5186,7 +4971,6 @@ unsafe fn build_opentype_assembly_in(
             prev_o = a.end_connector(&st.fonts, f, i);
         }
     }
-    // Measure natural size and total stretch.
     let mut p = b.list_ptr(&st.mem).0;
     let mut nat: i32 = 0;
     let mut str: i32 = 0;
@@ -5208,13 +4992,10 @@ unsafe fn build_opentype_assembly_in(
         }
         p = st.mem.b32s1(p);
     }
-    // Write the resolved dimensions.
     if s > nat && str > 0 {
         let o = if s - nat > str { str } else { s - nat };
         b.set_glue_order(&mut st.mem, NORMAL);
         b.set_glue_sign(&mut st.mem, GlueSign::Stretching);
-        // The C reads MEM[b+6].gr back after storing it; an f64 round-trips
-        // exactly, so the stored `ratio` is byte-identical to the re-read.
         let ratio = o as f64 / str as f64;
         b.set_glue_set(&mut st.mem, ratio);
         let set_dim = Scaled(nat + crate::scaled_math::tex_round(str as f64 * ratio));
@@ -5231,12 +5012,6 @@ unsafe fn build_opentype_assembly_in(
     Ok(b)
 }
 
-/// Build the extensible (`EXT_TAG`) delimiter box.
-///
-/// Extensible delimiters are a pure-TFM math-font path: every font read is a
-/// `FontState` table lookup and every char box is built with [`char_box_tfm`].
-/// Allocation order is preserved (the vlist box first, then each stacked char
-/// box), so the mem image is byte-identical to the inline version.
 fn build_ext_delimiter_box(
     mem: &mut MemState,
     fonts: &mut FontState,
@@ -5246,7 +5021,6 @@ fn build_ext_delimiter_box(
 ) -> Result<AnyBox, NodeRecycleAbort> {
     let vb = alloc_null_vbox(mem)?;
     let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
-    // The repeatable (s0) piece sets the box width and the per-step height.
     let u = height_plus_depth(fonts, f, r.s0);
     let effective_c = crate::fonts::effective_char(fonts, true, f, r.s0);
     let qq = fonts.font_info_b16(fonts.char_base_entry(f) + effective_c);
@@ -5299,8 +5073,6 @@ fn build_ext_delimiter_box(
     Ok(AnyBox::VList(vb))
 }
 
-/// translated from xetex-math.c:1017 (var_delimiter)
-/// Pick and build the variable-size delimiter.
 unsafe fn var_delimiter_in(
     st: &mut EngineState,
     d: i32,
@@ -5321,13 +5093,10 @@ unsafe fn var_delimiter_in(
     let d_s3 = st.mem.b16s3(d) as i32;
     let mut z = d_s3 % 256;
     let mut x = st.mem.b16s2(d) as i32 + (d_s3 / 256) * 65536;
-    // Outer loop: try small delimiter family first, then large.
-    // All exits break to 'found.
     'found: {
         loop {
             if z != 0 || x != 0 {
                 z = z + s + 256;
-                // Scan font sizes from s down to SCRIPT_SCRIPT_SIZE.
                 loop {
                     z -= 256;
                     let g = math_font(&st.eqtb, z);
@@ -5343,7 +5112,6 @@ unsafe fn var_delimiter_in(
                             w = 0;
                             let mut n: i32 = 0;
                             let mut u: i32 = 0;
-                            // Scan OT math variants.
                             loop {
                                 let yv =
                                     get_ot_math_variant(&st.fonts, g, x, n, &mut u, false) as u16;
@@ -5370,7 +5138,6 @@ unsafe fn var_delimiter_in(
                                 if y < fonts.font_bc_entry(g) || y > fonts.font_ec_entry(g) {
                                     break 'scan None;
                                 }
-                                // Follow character list chain, looking for tallest glyph.
                                 loop {
                                     let q_tmp =
                                         fonts.font_info_b16(fonts.char_base_entry(g) + y as i32);
@@ -5425,7 +5192,6 @@ unsafe fn var_delimiter_in(
             x = st.mem.b16s0(d) as i32 + (st.mem.b16s1(d) as i32 / 256) * 65536;
         }
     }
-    // found:
     let b;
     if f != FONT_BASE {
         let font_area = st.fonts.font_area_entry(f);
@@ -5442,7 +5208,6 @@ unsafe fn var_delimiter_in(
             b = native_glyph_vbox_in(st, f, c)?;
         }
     } else {
-        // Null delimiter: an empty box of \nulldelimiterspace width.
         let Some(bb) = crate::mem::alloc_null_box(&mut st.mem) else {
             return Err(NodeRecycleAbort::Overflow.into());
         };
