@@ -1206,16 +1206,16 @@ fn pdf_save_pos(shipout: &mut ShipoutState) {
 /// node and the matching advance of `prev_p`.
 fn chars_out(
     st: &mut crate::state::EngineState,
-    mut p: i32,
+    mut p: MemPtr,
     mut prev_p: MemPtr,
-) -> Result<(i32, MemPtr), ShipoutAbort> {
+) -> Result<(MemPtr, MemPtr), ShipoutAbort> {
     synch_h(st)?;
     synch_v(st)?;
     while crate::mem::is_char_node(&st.mem, p) {
-        let f = st.mem.b16s1(p) as i32;
-        let mut c = st.mem.b16s0(p);
+        let f = st.mem.b16s1(p.0) as i32;
+        let mut c = st.mem.b16s0(p.0);
         let mapping = st.fonts.font_mapping_ptr(f);
-        if p != LIG_TRICK && !mapping.is_null() {
+        if p.0 != LIG_TRICK && !mapping.is_null() {
             // SAFETY: `mapping` is the font's live TECkit converter.
             c = unsafe { apply_tfm_font_mapping(mapping, c as libc::c_int) } as u16;
         }
@@ -1235,7 +1235,7 @@ fn chars_out(
             st.shipout.cur_h += font_character_width(&st.fonts, f, c as i32);
         }
         prev_p = prev_p.link(&st.mem);
-        p = st.mem.b32s1(p);
+        p = p.link(&st.mem);
     }
     crate::synctex::synctex_current(st);
     st.shipout.dvi_h = st.shipout.cur_h;
@@ -1256,7 +1256,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     }
 
     // A raw cursor: it can be LIG_TRICK, and nodes get retyped in place.
-    let mut p = this_box.list_ptr(&st.mem).0;
+    let mut p = this_box.list_ptr(&st.mem);
     let save_loc = push_dvi_level(&mut st.shipout)?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
@@ -1273,7 +1273,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 
     if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
-        st.mem.temp_ptr.0 = p;
+        st.mem.temp_ptr = p;
         let kern =
             crate::mem::alloc_kern(&mut st.mem, 0).ok_or(ShipoutAbort::MainMemoryOverflow)?;
         kern.set_sync_tag(&mut st.mem, 0);
@@ -1291,20 +1291,20 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
         kern.set_width(&mut st.mem, Scaled(-st.shipout.cur_h));
         st.shipout.cur_h = save_h;
         this_box.set_subtype(&mut st.mem, REVERSED);
-        p = kern.idx().0;
+        p = kern.ptr();
     }
 
     let mut left_edge = st.shipout.cur_h;
     crate::synctex::synctex_hlist(st, this_box);
 
-    while p != TEX_NULL {
+    while !p.is_null() {
         if crate::mem::is_char_node(&st.mem, p) {
             (p, prev_p) = chars_out(st, p, prev_p)?;
             continue;
         }
         match st
             .mem
-            .classify(MemIdx::new(p))
+            .classify(MemIdx::new(p.0))
             .expect("valid node type in hlist_out")
         {
             AnyNode::HList(h) => hlist_box_out(st, AnyBox::HList(h), base_line)?,
@@ -1364,7 +1364,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                             math_width,
                             &mut rounding,
                         )?;
-                        p = edge.idx().0;
+                        p = edge.ptr();
                         continue;
                     }
                 }
@@ -1374,8 +1374,9 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             AnyNode::Ligature(ligature) => {
                 st.mem
                     .set_word(LIG_TRICK, st.mem.word(ligature.idx().offset(1).0));
-                st.mem.set_b32s1(LIG_TRICK, ligature.link(&st.mem).0);
-                p = LIG_TRICK;
+                let next = ligature.link(&st.mem);
+                p = MemPtr::from_raw(LIG_TRICK);
+                p.set_link(&mut st.mem, next);
                 st.fonts.set_xtx_ligature_present(true);
                 continue;
             }
@@ -1387,8 +1388,8 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
             }
             _ => {}
         }
-        prev_p = MemPtr::from_raw(p);
-        p = st.mem.b32s1(p);
+        prev_p = p;
+        p = p.link(&st.mem);
     }
 
     crate::synctex::synctex_tsilh(st, this_box);
