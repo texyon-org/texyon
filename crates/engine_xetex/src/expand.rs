@@ -24,7 +24,7 @@ use crate::scan::{
     get_x_token_in, scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, AAT_FONT_FLAG,
     ACTIVE_CHAR, BIGGEST_USV, CALL, END_MATCH_TOKEN, GARBAGE, IF_TEST, LONG_CALL, MATCHING,
     MATCH_TOKEN, MAX_CHAR_VAL, NO_EXPAND_FLAG, OTGR_FONT_FLAG, OTHER_TOKEN, OUTER_CALL,
-    PROTECTED_TOKEN, SPACE_TOKEN, TEMP_HEAD, THE,
+    SPACE_TOKEN, TEMP_HEAD, THE,
 };
 use crate::state::EngineState;
 use crate::units::{MemIdx, MemPtr};
@@ -1237,7 +1237,7 @@ pub(crate) fn macro_call_in(st: &mut EngineState) -> Result<(), SccAbort> {
         trace_macro_call_in(st, ref_count);
     }
 
-    if st.mem.b32s0(r) == PROTECTED_TOKEN {
+    if crate::scan::is_protected_macro(&st.mem, ref_count) {
         r = st.mem.b32s1(r);
     }
 
