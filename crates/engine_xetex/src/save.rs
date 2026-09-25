@@ -675,8 +675,7 @@ fn sa_alloc_chain(
         scanner.cur_ptr = p.ptr();
         if t <= MU_VAL as u16 {
             p.set_sa_ptr(mem, MemPtr::from_raw(0));
-            // add_glue_ref(zero_glue)
-            mem.set_b32s1(0, mem.b32s1(0) + 1);
+            crate::mem::add_glue_ref(mem, 0);
         } else {
             p.set_sa_ptr(mem, MemPtr::NULL);
         }

@@ -570,6 +570,13 @@ pub fn delete_token_ref(mem: &mut MemState, p: impl crate::units::MemAddr) {
     }
 }
 
+/// Increment the reference count of glue spec `p` (`add_glue_ref`).
+#[inline]
+pub fn add_glue_ref(mem: &mut MemState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
+    mem.set_b32s1(p, mem.b32s1(p) + 1);
+}
+
 /// Decrement the reference count of a glue spec; free if it reaches TEX_NULL.
 ///
 /// translated from xetex-xetex0.c:984 (delete_glue_ref)
