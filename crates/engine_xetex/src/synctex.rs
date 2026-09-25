@@ -967,11 +967,11 @@ pub unsafe fn synctex_kern(
         if let Some(kern) = synctex.deferred_kern {
             synctex_record_node_kern(synctex, &st.mem, kern);
         }
+        let first_in_list = synctex.node == this_box.ptr();
         synctex.node = p.ptr();
         synctex.tag = tag;
         synctex.line = line;
-        if synctex.node == this_box.ptr() {
-            // First node in hlist.
+        if first_in_list {
             synctex.deferred_kern = Some(p);
         } else {
             synctex.deferred_kern = None;
