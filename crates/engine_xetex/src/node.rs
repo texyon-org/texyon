@@ -2281,6 +2281,18 @@ impl NodePtr<SaNode> {
     pub fn sa_ptr(self, mem: &MemState) -> MemPtr {
         MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
     }
+
+    /// Count or dimension value = `mem[p + 2].b32.s1` (`ETEX_SA_int`).
+    #[inline]
+    pub fn sa_int(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(2).0)
+    }
+
+    /// Register type = `mem[p].b16.s1 / 64` (`ETEX_SA_type`).
+    #[inline]
+    pub fn sa_type(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.0) / 64
+    }
 }
 
 // --- shipout movement records ---
