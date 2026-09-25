@@ -213,6 +213,7 @@ fn dvi_swap(shipout: &mut ShipoutState) -> Result<(), ShipoutAbort> {
     Ok(())
 }
 
+#[inline]
 fn dvi_out(shipout: &mut ShipoutState, c: u8) -> Result<(), ShipoutAbort> {
     shipout.page_manifest.record_byte(c);
     shipout.dvi_buf[shipout.dvi_ptr as usize] = c;
@@ -223,9 +224,17 @@ fn dvi_out(shipout: &mut ShipoutState, c: u8) -> Result<(), ShipoutAbort> {
     Ok(())
 }
 
-fn dvi_bytes(shipout: &mut ShipoutState, bytes: &[u8]) -> Result<(), ShipoutAbort> {
-    for &byte in bytes {
-        dvi_out(shipout, byte)?;
+fn dvi_bytes(shipout: &mut ShipoutState, mut bytes: &[u8]) -> Result<(), ShipoutAbort> {
+    while !bytes.is_empty() {
+        let ptr = shipout.dvi_ptr as usize;
+        let n = bytes.len().min(shipout.dvi_limit as usize - ptr);
+        shipout.dvi_buf[ptr..ptr + n].copy_from_slice(&bytes[..n]);
+        shipout.page_manifest.record_bytes(n);
+        shipout.dvi_ptr += n as i32;
+        bytes = &bytes[n..];
+        if shipout.dvi_ptr == shipout.dvi_limit {
+            dvi_swap(shipout)?;
+        }
     }
     Ok(())
 }
