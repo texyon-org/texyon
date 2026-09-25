@@ -154,9 +154,9 @@ const ALIGNING: u8 = 4;
 const PRE_ADJUST_HEAD: i32 = 4_999_985;
 const END_SPAN: i32 = 4_999_990;
 const ALIGN_HEAD: i32 = 4_999_991;
-const HOLD_HEAD: i32 = 4_999_995;
+pub(crate) const HOLD_HEAD: i32 = 4_999_995;
 const TEMP_HEAD: i32 = 4_999_996;
-const PAGE_HEAD: i32 = 4_999_997;
+pub(crate) const PAGE_HEAD: i32 = 4_999_997;
 
 const VLIST_NODE: u16 = 1;
 const UNSET_NODE: u16 = 13;
@@ -165,8 +165,8 @@ const ALIGN_STACK_NODE_SIZE: i32 = 6;
 const NATIVE_NODE_SIZE: i32 = 6;
 const SPAN_NODE_SIZE: i32 = 2;
 
-const NORMAL: u16 = 0;
-const ADDITIONAL: i16 = 1;
+pub(crate) const NORMAL: u16 = 0;
+pub(crate) const ADDITIONAL: i16 = 1;
 const ACC_KERN: u16 = 2;
 const ZERO_GLUE: i32 = 0;
 const FIL_GLUE: i32 = 4;
@@ -206,7 +206,7 @@ const FROZEN_RIGHT: i32 = 2_243_226 + 3;
 const FROZEN_END_TEMPLATE: i32 = 2_243_226 + 5;
 const FONT_ID_BASE: i32 = 2_245_338;
 
-const LOCAL_OUTPUT_ROUTINE: i32 = 1;
+pub(crate) const LOCAL_OUTPUT_ROUTINE: i32 = 1;
 const LOCAL_EVERY_PAR: i32 = 2;
 const LOCAL_EVERY_HBOX: i32 = 5;
 const LOCAL_EVERY_VBOX: i32 = 6;
@@ -217,7 +217,7 @@ const LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
 const GLUE_PAR_PAR_SKIP: i16 = 2;
 const GLUE_PAR_ABOVE_DISPLAY: i16 = 3;
 const GLUE_PAR_BELOW_DISPLAY: i16 = 4;
-const GLUE_PAR_SPLIT_TOP_SKIP: i32 = 10;
+pub(crate) const GLUE_PAR_SPLIT_TOP_SKIP: i32 = 10;
 const GLUE_PAR_TAB_SKIP: i16 = 11;
 const GLUE_PAR_SPACE_SKIP: i16 = 12;
 const GLUE_PAR_XSPACE_SKIP: i16 = 13;
@@ -243,8 +243,8 @@ const DIMEN_PAR_OVERFULL_RULE: i32 = 16;
 
 // `cur_chr` modifiers.
 const BOX_CODE: i32 = 0;
-const COPY_CODE: i32 = 1;
-const LAST_BOX_CODE: i32 = 2;
+pub(crate) const COPY_CODE: i32 = 1;
+pub(crate) const LAST_BOX_CODE: i32 = 2;
 const VSPLIT_CODE: i32 = 3;
 const VTOP_CODE: i16 = 4;
 const SKIP_CODE: i16 = 4;
@@ -1394,7 +1394,7 @@ pub(crate) fn do_endv_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
 }
 
 /// TeX's `fetch_box`: the contents of box register `n`, if any.
-fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
+pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
     let p = if n < 256 {
         MemPtr::from_raw(st.eqtb.b32s1(BOX_BASE + n))
     } else {
@@ -4604,7 +4604,8 @@ fn sa_word_define(
     Ok(())
 }
 
-fn add_token_ref(mem: &mut MemState, p: i32) {
+pub(crate) fn add_token_ref(mem: &mut MemState, p: impl crate::units::MemAddr) {
+    let p = p.addr();
     mem.set_b32s0(p, mem.b32s0(p) + 1);
 }
 

@@ -2367,6 +2367,76 @@ impl NodePtr<SaNode> {
     }
 }
 
+/// A record on the `page_ins_head` ring of the page builder: `NODE_type` is
+/// `inserting` (0) or `split_up` (1), the subtype is the insertion's box number.
+/// Reached only through the ring, so it has no `classify` entry.
+pub enum PageInsNode {}
+
+impl NodeKind for PageInsNode {}
+impl HasNodeHeader for PageInsNode {}
+
+impl NodePtr<PageInsNode> {
+    /// Whether the insertion was split = `mem[p].b16.s1 == split_up`.
+    #[inline]
+    pub fn is_split_up(self, mem: &MemState) -> bool {
+        mem.b16s1(self.idx.0) == 1
+    }
+    #[inline]
+    pub fn set_split_up(self, mem: &mut MemState, split: bool) {
+        mem.set_b16s1(self.idx.0, split as u16);
+    }
+
+    /// Height of the box so far = `mem[p + 3].b32.s1`.
+    #[inline]
+    pub fn height(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+    #[inline]
+    pub fn set_height(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, v.0);
+    }
+
+    /// Where a split insertion breaks = `mem[p + 1].b32.s1` (`broken_ptr`).
+    #[inline]
+    pub fn broken_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_broken_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+
+    /// The insertion node that was split = `mem[p + 1].b32.s0` (`broken_ins`).
+    #[inline]
+    pub fn broken_ins(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_broken_ins(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s0(self.idx.offset(1).0, v.0);
+    }
+
+    /// The last insertion node of this class = `mem[p + 2].b32.s1` (`last_ins_ptr`).
+    #[inline]
+    pub fn last_ins_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(2).0))
+    }
+    #[inline]
+    pub fn set_last_ins_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(2).0, v.0);
+    }
+
+    /// The last insertion on the best page = `mem[p + 2].b32.s0` (`best_ins_ptr`).
+    #[inline]
+    pub fn best_ins_ptr(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s0(self.idx.offset(2).0))
+    }
+    #[inline]
+    pub fn set_best_ins_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s0(self.idx.offset(2).0, v.0);
+    }
+}
+
 // --- shipout movement records ---
 
 const MOVEMENT_NODE_SIZE: i32 = 3;

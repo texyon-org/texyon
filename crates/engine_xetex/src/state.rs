@@ -1552,32 +1552,6 @@ pub(crate) struct ShipoutState {
     pub dvi_f: i32,
 }
 
-impl ShipoutState {
-    /// Set `page_contents`.
-    #[inline]
-    pub(crate) fn set_page_contents(&mut self, v: u8) {
-        self.page_contents = v;
-    }
-
-    /// Set `page_so_far[k]`.
-    #[inline]
-    pub(crate) fn set_page_so_far(&mut self, k: usize, v: i32) {
-        self.page_so_far[k] = v;
-    }
-
-    /// Set `page_max_depth`.
-    #[inline]
-    pub(crate) fn set_page_max_depth(&mut self, v: i32) {
-        self.page_max_depth = v;
-    }
-
-    /// Set `least_page_cost`.
-    #[inline]
-    pub(crate) fn set_least_page_cost(&mut self, v: i32) {
-        self.least_page_cost = v;
-    }
-}
-
 /// TeX's error-interaction mode (`\batchmode`/`\nonstopmode`/`\scrollmode`/
 /// `\errorstopmode`, xetex-constants.h). Ordered Batch < Nonstop < Scroll <
 /// ErrorStop (the numeric encoding), matching the `interaction < ERROR_STOP_MODE`
