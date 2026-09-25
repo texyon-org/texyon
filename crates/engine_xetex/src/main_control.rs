@@ -4151,7 +4151,7 @@ fn lig_kern_program(
             continue;
         }
         if step.s1 >= 128 {
-            wrapup(st, false)?;
+            wrapup(st, true)?;
             let main_f = st.mainloop.main_f;
             let kern = st.fonts.font_info_b32s1(
                 st.fonts.kern_base_entry(main_f) + 256 * step.s1 as i32 + step.s0 as i32,
