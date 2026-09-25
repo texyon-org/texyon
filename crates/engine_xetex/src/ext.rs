@@ -2085,7 +2085,7 @@ pub(crate) unsafe fn linebreak_start_in(
     Ok(())
 }
 
-pub(crate) unsafe fn release_linebreak_state(fonts: &mut crate::state::FontState) {
+pub(crate) fn release_linebreak_state(fonts: &mut crate::state::FontState) {
     fonts.brk_iter = None;
     fonts.brk_locale_str_num = 0;
     fonts.saved_mapping_name = None;
