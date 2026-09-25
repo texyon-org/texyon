@@ -83,6 +83,13 @@ pub fn get_avail(mem: &mut MemState) -> Option<MemPtr> {
     }
 }
 
+/// Push one-word node `p` back onto the avail list (`free_avail`).
+#[inline]
+pub fn free_avail(mem: &mut MemState, p: MemPtr) {
+    mem.set_b32s1(p, mem.avail);
+    mem.avail = p.0;
+}
+
 /// The `avail == TEX_NULL` tail of [`get_avail`]: grow `mem_end` upward or
 /// `hi_mem_min` downward, or report arena exhaustion as `None`.
 #[cold]

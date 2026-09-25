@@ -714,33 +714,37 @@ fn set_unset_glue(mem: &mut MemState, r: i32, t: i32, natural: i32) {
 pub(crate) fn align_peek_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     loop {
         st.scanner.align_state = 1_000_000;
-        loop {
-            crate::scan::get_x_or_protected_in(st)?;
-            if st.scanner.cur_cmd != SPACER {
-                break;
+        get_x_non_blank_or_protected(st)?;
+        match st.scanner.cur_cmd {
+            NO_ALIGN => {
+                crate::scan::scan_left_brace_in(st)?;
+                crate::save::new_save_level(&mut st.save_stack, GroupCode::NoAlign, st.mem.line)?;
+                if st.input.cur_list.mode == INNER_VMODE {
+                    normal_paragraph(st)?;
+                }
+                return Ok(());
+            }
+            RIGHT_BRACE => return fin_align_in(st),
+            CAR_RET if st.scanner.cur_chr == CR_CR_CODE => {}
+            _ => {
+                init_row_in(st)?;
+                return init_col_in(st);
             }
         }
-        if st.scanner.cur_cmd == NO_ALIGN {
-            crate::scan::scan_left_brace_in(st)?;
-            crate::save::new_save_level(&mut st.save_stack, GroupCode::NoAlign, st.mem.line)?;
-            if st.input.cur_list.mode == -1 {
-                normal_paragraph(st)?;
-            }
-            return Ok(());
-        } else if st.scanner.cur_cmd == RIGHT_BRACE {
-            fin_align_in(st)?;
-            return Ok(());
-        } else if st.scanner.cur_cmd == CAR_RET && st.scanner.cur_chr == CR_CR_CODE {
-            continue;
-        } else {
-            init_row_in(st)?;
-            init_col_in(st)?;
+    }
+}
+
+fn get_x_non_blank_or_protected(st: &mut EngineState) -> Result<(), MainControlAbort> {
+    loop {
+        crate::scan::get_x_or_protected_in(st)?;
+        if st.scanner.cur_cmd != SPACER {
             return Ok(());
         }
     }
 }
+
 pub(crate) fn get_preamble_token_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    'restart: loop {
+    loop {
         crate::scan::get_token_in(st)?;
         while st.scanner.cur_chr == SPAN_CODE && st.scanner.cur_cmd == TAB_MARK {
             crate::scan::get_token_in(st)?;
@@ -750,43 +754,20 @@ pub(crate) fn get_preamble_token_in(st: &mut EngineState) -> Result<(), MainCont
             }
         }
         if st.scanner.cur_cmd == ENDV {
-            // Interwoven alignment preamble: a fatal error (prints "Emergency
-            // stop" plus the message and returns 3).
             return Err(MainControlAbort::Input(crate::input::InputAbort::Fatal(
                 c"(interwoven alignment preambles are not allowed)".as_ptr(),
             )));
         }
-        if st.scanner.cur_cmd == ASSIGN_GLUE && st.scanner.cur_chr == GLUE_BASE_TAB_SKIP {
-            crate::scan::scan_optional_equals_in(st)?;
-            crate::scan::scan_glue_in(st, GLUE_VAL)?;
-            if st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) > 0 {
-                let __cv20 = st.scanner.cur_val;
-                crate::save::geq_define(
-                    &mut st.eqtb,
-                    &mut st.mem,
-                    &mut st.scanner,
-                    GLUE_BASE_TAB_SKIP,
-                    GLUE_REF,
-                    __cv20,
-                )?;
-            } else {
-                let __cv19 = st.scanner.cur_val;
-                crate::save::eq_define(
-                    &mut st.eqtb,
-                    &mut st.save_stack,
-                    &mut st.mem,
-                    &mut st.scanner,
-                    GLUE_BASE_TAB_SKIP,
-                    GLUE_REF,
-                    __cv19,
-                )?;
-            }
-            continue 'restart;
+        if st.scanner.cur_cmd != ASSIGN_GLUE || st.scanner.cur_chr != GLUE_BASE_TAB_SKIP {
+            return Ok(());
         }
-        break;
+        crate::scan::scan_optional_equals_in(st)?;
+        crate::scan::scan_glue_in(st, GLUE_VAL)?;
+        let global = st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) > 0;
+        define(st, global, GLUE_BASE_TAB_SKIP, GLUE_REF, st.scanner.cur_val)?;
     }
-    Ok(())
 }
+
 pub(crate) fn init_span_in(st: &mut EngineState, p: MemPtr) -> Result<(), MainControlAbort> {
     crate::mem::push_nest_in(st)?;
     if st.input.cur_list.mode == INNER_HMODE {
@@ -798,28 +779,27 @@ pub(crate) fn init_span_in(st: &mut EngineState, p: MemPtr) -> Result<(), MainCo
     st.scanner.cur_span = p;
     Ok(())
 }
+
 pub(crate) fn init_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     crate::mem::push_nest_in(st)?;
-    let new_mode = -105 - st.input.cur_list.mode as i32;
-    st.input.cur_list.mode = new_mode as i16;
-    if new_mode == -104 {
+    st.input.cur_list.mode = -HMODE - VMODE - st.input.cur_list.mode;
+    if st.input.cur_list.mode == INNER_HMODE {
         st.input.cur_list.set_aux_s0(0);
     } else {
         st.input.cur_list.set_aux_s1(0);
     }
-    let align_head_link = st.mem.b32s1(ALIGN_HEAD);
-    let glue_spec = st.mem.b32s0(align_head_link + 1);
-    let Some(glue) = crate::mem::alloc_glue(&mut st.mem, glue_spec) else {
-        return Err(crate::scan::NodeRecycleAbort::Overflow.into());
-    };
+    let tab_skip = st.mem.link_ptr(ALIGN_HEAD);
+    let spec = st.mem.b32s0(tab_skip + 1);
+    let glue =
+        crate::mem::alloc_glue(&mut st.mem, spec).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     tail_append(st, glue.ptr());
     glue.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
-    st.scanner.cur_align.0 = st.mem.b32s1(align_head_link);
-    st.scanner.cur_tail.0 = st.scanner.cur_head.0;
-    st.scanner.cur_pre_tail.0 = st.scanner.cur_pre_head.0;
-    init_span_in(st, st.scanner.cur_align)?;
-    Ok(())
+    st.scanner.cur_align = tab_skip.link(&st.mem);
+    st.scanner.cur_tail = st.scanner.cur_head;
+    st.scanner.cur_pre_tail = st.scanner.cur_pre_head;
+    init_span_in(st, st.scanner.cur_align)
 }
+
 pub(crate) fn init_col_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     st.mem
         .set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_cmd as i32);
@@ -831,6 +811,7 @@ pub(crate) fn init_col_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
     }
     Ok(())
 }
+
 pub(crate) fn push_alignment_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let p = crate::scan::get_node_scc(st, ALIGN_STACK_NODE_SIZE)?;
     st.mem.set_b32s1(p, st.scanner.align_ptr.0);
@@ -848,14 +829,10 @@ pub(crate) fn push_alignment_in(st: &mut EngineState) -> Result<(), MainControlA
     st.scanner.cur_pre_head = crate::scan::get_avail_scc(st)?;
     Ok(())
 }
-pub(crate) fn pop_alignment_in(st: &mut EngineState) {
-    // free_avail(cur_head): mem[cur_head].b32.s1 = avail; avail = cur_head
-    st.mem.set_b32s1(st.scanner.cur_head, st.mem.avail);
-    st.mem.avail = st.scanner.cur_head.0;
-    // free_avail(cur_pre_head)
-    st.mem.set_b32s1(st.scanner.cur_pre_head, st.mem.avail);
-    st.mem.avail = st.scanner.cur_pre_head.0;
 
+pub(crate) fn pop_alignment_in(st: &mut EngineState) {
+    crate::mem::free_avail(&mut st.mem, st.scanner.cur_head);
+    crate::mem::free_avail(&mut st.mem, st.scanner.cur_pre_head);
     let p = st.scanner.align_ptr;
     st.scanner.cur_tail.0 = st.mem.b32s1(p + 4);
     st.scanner.cur_head.0 = st.mem.b32s0(p + 4);
@@ -869,10 +846,46 @@ pub(crate) fn pop_alignment_in(st: &mut EngineState) {
     st.scanner.align_ptr.0 = st.mem.b32s1(p);
     crate::mem::free_node(&mut st.mem, p, ALIGN_STACK_NODE_SIZE);
 }
-pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort> {
-    use crate::mem::{alloc_glue, alloc_null_box, get_avail, TEX_NULL};
 
-    if st.scanner.cur_align.0 == TEX_NULL {
+/// TeX's `store_new_token`: appends `tok` after `p` and returns the new tail.
+fn store_new_token(
+    mem: &mut MemState,
+    p: i32,
+    tok: i32,
+) -> Result<i32, crate::scan::NodeRecycleAbort> {
+    let q = crate::mem::get_avail(mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    mem.set_b32s1(p, q.0);
+    q.set_info(mem, tok);
+    Ok(q.0)
+}
+
+/// Copies token list `r` through `HOLD_HEAD` and returns the copy.
+fn copy_token_list(mem: &mut MemState, mut r: i32) -> Result<i32, crate::scan::NodeRecycleAbort> {
+    let mut q = HOLD_HEAD;
+    while r != TEX_NULL {
+        q = store_new_token(mem, q, mem.b32s0(r))?;
+        r = mem.b32s1(r);
+    }
+    mem.set_b32s1(q, TEX_NULL);
+    Ok(mem.b32s1(HOLD_HEAD))
+}
+
+fn highest_order(totals: &[i32]) -> usize {
+    if totals[FILLL] != 0 {
+        FILLL
+    } else if totals[FILL] != 0 {
+        FILL
+    } else if totals[FIL] != 0 {
+        FIL
+    } else {
+        0
+    }
+}
+
+pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort> {
+    use crate::scan::NodeRecycleAbort;
+
+    if st.scanner.cur_align.is_null() {
         return Err(MainControlAbort::Confusion(c"endv"));
     }
     let q = st.mem.b32s1(st.scanner.cur_align);
@@ -886,49 +899,24 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
     }
     let mut p = st.mem.b32s1(q);
     if p == TEX_NULL && st.mem.b32s0(st.scanner.cur_align + 5) < CR_CODE {
-        if st.scanner.cur_loop.0 != TEX_NULL {
-            // §822: extend preamble by duplicating the loop template
-            let nb = alloc_null_box(&mut st.mem)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-                .ptr()
-                .0;
-            st.mem.set_b32s1(q, nb);
-            p = nb;
+        if !st.scanner.cur_loop.is_null() {
+            let nb = crate::mem::alloc_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+            MemPtr(q).set_link(&mut st.mem, nb.ptr());
+            p = nb.idx().0;
             st.mem.set_b32s0(p, END_SPAN);
-            st.mem.set_b32s1(p + 1, NULL_FLAG);
-            st.scanner.cur_loop.0 = st.mem.b32s1(st.scanner.cur_loop);
-            // copy u-template from cur_loop+3 into HOLD_HEAD list → p+3
-            let mut wq = HOLD_HEAD;
-            let mut r = st.mem.b32s1(st.scanner.cur_loop + 3);
-            while r != TEX_NULL {
-                let av = get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                st.mem.set_b32s1(wq, av.0);
-                wq = av.0;
-                st.mem.set_b32s0(wq, st.mem.b32s0(r));
-                r = st.mem.b32s1(r);
-            }
-            st.mem.set_b32s1(wq, TEX_NULL);
-            st.mem.set_b32s1(p + 3, st.mem.b32s1(HOLD_HEAD));
-            // copy v-template from cur_loop+2 into HOLD_HEAD list → p+2
-            wq = HOLD_HEAD;
-            r = st.mem.b32s1(st.scanner.cur_loop + 2);
-            while r != TEX_NULL {
-                let av = get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                st.mem.set_b32s1(wq, av.0);
-                wq = av.0;
-                st.mem.set_b32s0(wq, st.mem.b32s0(r));
-                r = st.mem.b32s1(r);
-            }
-            st.mem.set_b32s1(wq, TEX_NULL);
-            st.mem.set_b32s1(p + 2, st.mem.b32s1(HOLD_HEAD));
-            st.scanner.cur_loop.0 = st.mem.b32s1(st.scanner.cur_loop);
-            let gv = st.mem.b32s0(st.scanner.cur_loop + 1);
-            let g = alloc_glue(&mut st.mem, gv)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-                .ptr()
-                .0;
-            st.mem.set_b32s1(p, g);
-            st.mem.set_b16s0(g, TAB_SKIP_SUBTYPE);
+            nb.set_width(&mut st.mem, Scaled(NULL_FLAG));
+            st.scanner.cur_loop = st.scanner.cur_loop.link(&st.mem);
+            let u_template = st.mem.b32s1(st.scanner.cur_loop + 3);
+            let u_part = copy_token_list(&mut st.mem, u_template)?;
+            st.mem.set_b32s1(p + 3, u_part);
+            let v_template = st.mem.b32s1(st.scanner.cur_loop + 2);
+            let v_part = copy_token_list(&mut st.mem, v_template)?;
+            st.mem.set_b32s1(p + 2, v_part);
+            st.scanner.cur_loop = st.scanner.cur_loop.link(&st.mem);
+            let spec = st.mem.b32s0(st.scanner.cur_loop + 1);
+            let g = crate::mem::alloc_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
+            nb.set_link(&mut st.mem, g.ptr());
+            g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
         } else {
             crate::output::error_here_with_diagnostic_in(
                 st,
@@ -951,146 +939,124 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
     if st.mem.b32s0(st.scanner.cur_align + 5) != SPAN_CODE {
         crate::save::unsave_in(st)?;
         crate::save::new_save_level(&mut st.save_stack, GroupCode::Align, st.mem.line)?;
+        let head = st.mem.link_ptr(st.input.cur_list.head);
         let (u, w) = if st.input.cur_list.mode == INNER_HMODE {
-            st.scanner.adjust_tail.0 = st.scanner.cur_tail.0;
-            st.scanner.pre_adjust_tail.0 = st.scanner.cur_pre_tail.0;
-            let head = st.mem.link_ptr(st.input.cur_list.head);
-            let u = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?
-                .idx()
-                .0;
-            let w = st.mem.b32s1(u + 1);
-            st.scanner.cur_tail.0 = st.scanner.adjust_tail.0;
-            st.scanner.adjust_tail.0 = TEX_NULL;
-            st.scanner.cur_pre_tail.0 = st.scanner.pre_adjust_tail.0;
-            st.scanner.pre_adjust_tail.0 = TEX_NULL;
-            (u, w)
+            st.scanner.adjust_tail = st.scanner.cur_tail;
+            st.scanner.pre_adjust_tail = st.scanner.cur_pre_tail;
+            let u = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?;
+            st.scanner.cur_tail = st.scanner.adjust_tail;
+            st.scanner.adjust_tail = MemPtr::NULL;
+            st.scanner.cur_pre_tail = st.scanner.pre_adjust_tail;
+            st.scanner.pre_adjust_tail = MemPtr::NULL;
+            (u, u.width(&st.mem).0)
         } else {
-            let head = st.mem.link_ptr(st.input.cur_list.head);
-            let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, 0)?
-                .idx()
-                .0;
-            let w = st.mem.b32s1(u + 3);
-            (u, w)
+            let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, 0)?;
+            (u, u.height(&st.mem).0)
         };
         let mut n: i32 = 0;
         if st.scanner.cur_span != st.scanner.cur_align {
-            // §827: compare accumulated span width with recorded widths
-            let mut sq = st.scanner.cur_span.0;
+            let mut q = st.scanner.cur_span.0;
             loop {
                 n += 1;
-                sq = st.mem.b32s1(st.mem.b32s1(sq));
-                if sq == st.scanner.cur_align.0 {
+                q = st.mem.b32s1(st.mem.b32s1(q));
+                if q == st.scanner.cur_align.0 {
                     break;
                 }
             }
             if n > u16::MAX as i32 {
                 return Err(MainControlAbort::Confusion(c"too many spans"));
             }
-            sq = st.scanner.cur_span.0;
-            while st.mem.b32s1(st.mem.b32s0(sq)) < n {
-                sq = st.mem.b32s0(sq);
+            q = st.scanner.cur_span.0;
+            while st.mem.b32s1(st.mem.b32s0(q)) < n {
+                q = st.mem.b32s0(q);
             }
-            if st.mem.b32s1(st.mem.b32s0(sq)) > n {
+            if st.mem.b32s1(st.mem.b32s0(q)) > n {
                 let s = crate::mem::get_node(&mut st.mem, SPAN_NODE_SIZE)
-                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                let sq0 = st.mem.b32s0(sq);
-                s.set_info(&mut st.mem, sq0);
-                st.mem.set_b32s1(s, n);
-                st.mem.set_b32s0(sq, s.0);
+                    .ok_or(NodeRecycleAbort::Overflow)?;
+                let next = st.mem.b32s0(q);
+                s.set_info(&mut st.mem, next);
+                s.set_link(&mut st.mem, MemPtr(n));
+                st.mem.set_b32s0(q, s.0);
                 st.mem.set_b32s1(s + 1, w);
-            } else if st.mem.b32s1(st.mem.b32s0(sq) + 1) < w {
-                st.mem.set_b32s1(st.mem.b32s0(sq) + 1, w);
+            } else if st.mem.b32s1(st.mem.b32s0(q) + 1) < w {
+                st.mem.set_b32s1(st.mem.b32s0(q) + 1, w);
             }
         } else if w > st.mem.b32s1(st.scanner.cur_align + 1) {
             st.mem.set_b32s1(st.scanner.cur_align + 1, w);
         }
+        let u = u.idx().0;
         st.mem.set_b16s1(u, UNSET_NODE);
         st.mem.set_b16s0(u, n as u16);
-        let o_str: usize = if st.scanner.total_stretch[FILLL] != 0 {
-            FILLL
-        } else if st.scanner.total_stretch[FILL] != 0 {
-            FILL
-        } else if st.scanner.total_stretch[FIL] != 0 {
-            FIL
-        } else {
-            0
-        };
-        st.mem.set_b16s0(u + 5, o_str as u16);
-        st.mem.set_b32s1(u + 6, st.scanner.total_stretch[o_str]);
-        let o_shr: usize = if st.scanner.total_shrink[FILLL] != 0 {
-            FILLL
-        } else if st.scanner.total_shrink[FILL] != 0 {
-            FILL
-        } else if st.scanner.total_shrink[FIL] != 0 {
-            FIL
-        } else {
-            0
-        };
-        st.mem.set_b16s1(u + 5, o_shr as u16);
-        st.mem.set_b32s1(u + 4, st.scanner.total_shrink[o_shr]);
+        let o = highest_order(&st.scanner.total_stretch);
+        st.mem.set_b16s0(u + 5, o as u16);
+        st.mem.set_b32s1(u + 6, st.scanner.total_stretch[o]);
+        let o = highest_order(&st.scanner.total_shrink);
+        st.mem.set_b16s1(u + 5, o as u16);
+        st.mem.set_b32s1(u + 4, st.scanner.total_shrink[o]);
         crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
-        tail_append(st, MemPtr::from_raw(u));
-        let gv = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1);
-        let g = alloc_glue(&mut st.mem, gv).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        tail_append(st, MemPtr(u));
+        let spec = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1);
+        let g = crate::mem::alloc_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
         tail_append(st, g.ptr());
-        st.mem.set_b16s0(st.input.cur_list.tail, TAB_SKIP_SUBTYPE);
+        g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
         if st.mem.b32s0(st.scanner.cur_align + 5) >= CR_CODE {
             return Ok(true);
         }
-        init_span_in(st, MemPtr::from_raw(p))?;
+        init_span_in(st, MemPtr(p))?;
     }
     st.scanner.align_state = 1_000_000;
-    loop {
-        crate::scan::get_x_or_protected_in(st)?;
-        if st.scanner.cur_cmd != SPACER {
-            break;
-        }
-    }
-    st.scanner.cur_align.0 = p;
+    get_x_non_blank_or_protected(st)?;
+    st.scanner.cur_align = MemPtr(p);
     init_col_in(st)?;
     Ok(false)
 }
-pub(crate) fn fin_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    use crate::mem::{pop_nest_in, TEX_NULL};
 
-    let p = if st.input.cur_list.mode == INNER_HMODE {
-        let head = st.mem.link_ptr(st.input.cur_list.head);
-        let u = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?;
-        pop_nest_in(&mut st.mem, &mut st.input);
-        if st.scanner.cur_pre_head.0 != st.scanner.cur_pre_tail.0 {
-            let v = st.mem.b32s1(st.scanner.cur_pre_head);
-            st.mem.set_b32s1(st.input.cur_list.tail, v);
-            st.input.cur_list.tail.0 = st.scanner.cur_pre_tail.0;
-        }
-        crate::packaging::append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, u)?;
-        if st.scanner.cur_head.0 != st.scanner.cur_tail.0 {
-            let v = st.mem.b32s1(st.scanner.cur_head);
-            st.mem.set_b32s1(st.input.cur_list.tail, v);
-            st.input.cur_list.tail.0 = st.scanner.cur_tail.0;
-        }
-        // `u` is re-stamped as an UNSET_NODE below, so drop to the raw index here.
-        u.idx().0
-    } else {
-        let head = st.mem.link_ptr(st.input.cur_list.head);
-        let u = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?
-            .idx()
-            .0;
-        pop_nest_in(&mut st.mem, &mut st.input);
-        tail_append(st, MemPtr::from_raw(u));
-        st.input.cur_list.set_aux_s0(1000);
-        u
-    };
-    st.mem.set_b16s1(p, UNSET_NODE);
-    st.mem.set_b32s1(p + 6, 0);
-    let every_cr = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_CR);
-    if every_cr != TEX_NULL {
-        crate::input::begin_token_list_in(st, every_cr, EVERY_CR_TEXT)?;
+fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) {
+    let first = head.link(&st.mem);
+    st.input.cur_list.tail.set_link(&mut st.mem, first);
+    st.input.cur_list.tail = tail;
+}
+
+/// Inserts the `\every...` token list at `LOCAL_BASE + local`, if set.
+fn begin_every(st: &mut EngineState, local: i32, kind: u16) -> Result<(), MainControlAbort> {
+    let list = st.eqtb.b32s1(LOCAL_BASE + local);
+    if list != TEX_NULL {
+        crate::input::begin_token_list_in(st, list, kind)?;
     }
-    align_peek_in(st)?;
     Ok(())
 }
+
+pub(crate) fn fin_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+    use crate::mem::pop_nest_in;
+
+    let head = st.mem.link_ptr(st.input.cur_list.head);
+    let p = if st.input.cur_list.mode == INNER_HMODE {
+        let row = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?;
+        pop_nest_in(&mut st.mem, &mut st.input);
+        if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
+            append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail);
+        }
+        crate::packaging::append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, row)?;
+        if st.scanner.cur_head != st.scanner.cur_tail {
+            append_list(st, st.scanner.cur_head, st.scanner.cur_tail);
+        }
+        row
+    } else {
+        let row = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
+        pop_nest_in(&mut st.mem, &mut st.input);
+        tail_append(st, row.ptr());
+        st.input.cur_list.set_aux_s0(1000);
+        row
+    };
+    let p = p.idx().0;
+    st.mem.set_b16s1(p, UNSET_NODE);
+    st.mem.set_b32s1(p + 6, 0);
+    begin_every(st, LOCAL_EVERY_CR, EVERY_CR_TEXT)?;
+    align_peek_in(st)
+}
+
 pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    use crate::mem::{alloc_null_box, alloc_param_glue, get_avail, TEX_NULL};
+    use crate::mem::{alloc_null_box, alloc_param_glue};
     use crate::scan::NodeRecycleAbort;
 
     let save_cs_ptr = st.scanner.cur_cs;
@@ -1098,7 +1064,7 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
     st.scanner.align_state = -1_000_000;
 
     if st.input.cur_list.mode == MMODE
-        && (st.input.cur_list.tail.0 != st.input.cur_list.head.0
+        && (st.input.cur_list.tail != st.input.cur_list.head
             || st.input.cur_list.aux_s1() != TEX_NULL)
     {
         crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
@@ -1119,51 +1085,45 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
     }
 
     crate::mem::push_nest_in(st)?;
-
     if st.input.cur_list.mode == MMODE {
-        st.input.cur_list.mode = -1;
-        let aux = unsafe { st.input.nest[(st.input.nest_ptr - 2) as usize].aux.b32.s1 };
-        st.input.cur_list.set_aux_s1(aux);
+        st.input.cur_list.mode = INNER_VMODE;
+        let prev_depth = st.input.nest[(st.input.nest_ptr - 2) as usize].aux_s1();
+        st.input.cur_list.set_aux_s1(prev_depth);
     } else if st.input.cur_list.mode > 0 {
-        st.input.cur_list.mode = -(st.input.cur_list.mode as i32) as i16;
+        st.input.cur_list.mode = -st.input.cur_list.mode;
     }
 
     crate::scan::scan_spec_in(st, GroupCode::Align, false)?;
     st.mem.set_b32s1(ALIGN_HEAD, TEX_NULL);
-    st.scanner.cur_align.0 = ALIGN_HEAD;
-    st.scanner.cur_loop.0 = TEX_NULL;
+    st.scanner.cur_align = MemPtr(ALIGN_HEAD);
+    st.scanner.cur_loop = MemPtr::NULL;
     st.scanner.scanner_status = ALIGNING;
     st.scanner.warning_index = save_cs_ptr;
     st.scanner.align_state = -1_000_000;
 
-    'outer: loop {
+    loop {
         let g = alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_TAB_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?
             .ptr();
         st.scanner.cur_align.set_link(&mut st.mem, g);
         st.scanner.cur_align = g;
         if st.scanner.cur_cmd == CAR_RET {
-            break 'outer;
+            break;
         }
 
         let mut p = HOLD_HEAD;
         st.mem.set_b32s1(p, TEX_NULL);
-
-        // scan u-template up to first #
         loop {
             get_preamble_token_in(st)?;
             if st.scanner.cur_cmd == MAC_PARAM {
-                break; // done1
+                break;
             }
-            if st.scanner.cur_cmd <= CAR_RET
-                && st.scanner.cur_cmd >= TAB_MARK
+            if (TAB_MARK..=CAR_RET).contains(&st.scanner.cur_cmd)
                 && st.scanner.align_state == -1_000_000
             {
-                if p == HOLD_HEAD
-                    && st.scanner.cur_loop.0 == TEX_NULL
-                    && st.scanner.cur_cmd == TAB_MARK
+                if p == HOLD_HEAD && st.scanner.cur_loop.is_null() && st.scanner.cur_cmd == TAB_MARK
                 {
-                    st.scanner.cur_loop.0 = st.scanner.cur_align.0;
+                    st.scanner.cur_loop = st.scanner.cur_align;
                 } else {
                     crate::output::error_here_with_diagnostic_in(
                         st,
@@ -1179,38 +1139,29 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                         ],
                     );
                     mc_propagate_error(crate::input::back_error_in(st)?)?;
-                    break; // done1
+                    break;
                 }
             } else if st.scanner.cur_cmd != SPACER || p != HOLD_HEAD {
-                let av = get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
-                st.mem.set_b32s1(p, av.0);
-                p = av.0;
-                st.mem.set_b32s0(p, st.scanner.cur_tok);
+                p = store_new_token(&mut st.mem, p, st.scanner.cur_tok)?;
             }
         }
 
-        // done1: set up the column preamble node
-        let nb = alloc_null_box(&mut st.mem)
-            .ok_or(NodeRecycleAbort::Overflow)?
-            .ptr();
-        st.scanner.cur_align.set_link(&mut st.mem, nb);
-        st.scanner.cur_align = nb;
-        let ca = st.scanner.cur_align.0;
-        st.mem.set_b32s0(ca, END_SPAN);
-        st.mem.set_b32s1(ca + 1, NULL_FLAG);
-        let hh = st.mem.b32s1(HOLD_HEAD);
-        st.mem.set_b32s1(ca + 3, hh);
+        let nb = alloc_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+        st.scanner.cur_align.set_link(&mut st.mem, nb.ptr());
+        st.scanner.cur_align = nb.ptr();
+        st.mem.set_b32s0(nb.idx(), END_SPAN);
+        nb.set_width(&mut st.mem, Scaled(NULL_FLAG));
+        st.mem
+            .set_b32s1(nb.idx().offset(3), st.mem.b32s1(HOLD_HEAD));
+
         p = HOLD_HEAD;
         st.mem.set_b32s1(p, TEX_NULL);
-
-        // scan v-template after #
         loop {
             get_preamble_token_in(st)?;
-            if st.scanner.cur_cmd <= CAR_RET
-                && st.scanner.cur_cmd >= TAB_MARK
+            if (TAB_MARK..=CAR_RET).contains(&st.scanner.cur_cmd)
                 && st.scanner.align_state == -1_000_000
             {
-                break; // done2
+                break;
             }
             if st.scanner.cur_cmd == MAC_PARAM {
                 crate::output::error_here_with_diagnostic_in(
@@ -1227,40 +1178,26 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                     ],
                 );
                 mc_propagate_error(crate::errors::error_in(st))?;
-                continue; // goto continue_: restart this inner loop
+                continue;
             }
-            let av = get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
-            st.mem.set_b32s1(p, av.0);
-            p = av.0;
-            st.mem.set_b32s0(p, st.scanner.cur_tok);
+            p = store_new_token(&mut st.mem, p, st.scanner.cur_tok)?;
         }
-
-        // done2: append FROZEN_END_TEMPLATE and store v-template
-        let av = get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
-        st.mem.set_b32s1(p, av.0);
-        p = av.0;
-        st.mem.set_b32s0(p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
-        let ca = st.scanner.cur_align.0;
-        let hh = st.mem.b32s1(HOLD_HEAD);
-        st.mem.set_b32s1(ca + 2, hh);
+        store_new_token(&mut st.mem, p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE)?;
+        st.mem
+            .set_b32s1(st.scanner.cur_align + 2, st.mem.b32s1(HOLD_HEAD));
     }
 
-    // done:
     st.scanner.scanner_status = NORMAL_SCANNER;
     crate::save::new_save_level(&mut st.save_stack, GroupCode::Align, st.mem.line)?;
-    let every_cr = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_CR);
-    if every_cr != TEX_NULL {
-        crate::input::begin_token_list_in(st, every_cr, EVERY_CR_TEXT)?;
-    }
-    align_peek_in(st)?;
-    Ok(())
+    begin_every(st, LOCAL_EVERY_CR, EVERY_CR_TEXT)?;
+    align_peek_in(st)
 }
 
 /// Enters math mode.
 pub(crate) fn push_math_in(st: &mut EngineState, c: GroupCode) -> Result<(), MainControlAbort> {
     crate::mem::push_nest_in(st)?;
     st.input.cur_list.mode = -207; // -MMODE (xetex_format.h:370)
-    st.input.cur_list.set_aux_s1(crate::mem::TEX_NULL);
+    st.input.cur_list.set_aux_s1(TEX_NULL);
     crate::save::new_save_level(&mut st.save_stack, c, st.mem.line)?;
     Ok(())
 }
@@ -1275,7 +1212,7 @@ pub(crate) fn end_graf_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
             }
         }
         let aux = st.input.cur_list.e_tex_aux.0;
-        if aux != crate::mem::TEX_NULL {
+        if aux != TEX_NULL {
             crate::mem::flush_list(&mut st.mem, MemPtr::from_raw(aux));
             st.input.cur_list.e_tex_aux = MemPtr::NULL;
         }
@@ -1447,13 +1384,13 @@ pub(crate) fn do_endv_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     while st.input.input_stack[st.input.base_ptr as usize].index != V_TEMPLATE
-        && st.input.input_stack[st.input.base_ptr as usize].loc == crate::mem::TEX_NULL
+        && st.input.input_stack[st.input.base_ptr as usize].loc == TEX_NULL
         && st.input.input_stack[st.input.base_ptr as usize].state == TOKEN_LIST
     {
         st.input.base_ptr -= 1;
     }
     if st.input.input_stack[st.input.base_ptr as usize].index != V_TEMPLATE
-        || st.input.input_stack[st.input.base_ptr as usize].loc != crate::mem::TEX_NULL
+        || st.input.input_stack[st.input.base_ptr as usize].loc != TEX_NULL
         || st.input.input_stack[st.input.base_ptr as usize].state != TOKEN_LIST
     {
         return Err(MainControlAbort::Input(crate::input::InputAbort::Fatal(
@@ -1485,14 +1422,14 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         } else {
             let __cv18 = st.scanner.cur_val;
             crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv18, false);
-            if st.scanner.cur_ptr.0 == crate::mem::TEX_NULL {
-                crate::mem::TEX_NULL
+            if st.scanner.cur_ptr.0 == TEX_NULL {
+                TEX_NULL
             } else {
                 st.mem.b32s1(st.scanner.cur_ptr + 1)
             }
         };
 
-        if p == crate::mem::TEX_NULL {
+        if p == TEX_NULL {
             return Ok(());
         }
 
@@ -1526,14 +1463,13 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         } else {
             st.mem.set_b32s1(tail, list_head);
             if st.scanner.cur_val < 256 {
-                st.eqtb
-                    .set_b32s1(BOX_BASE + st.scanner.cur_val, crate::mem::TEX_NULL);
+                st.eqtb.set_b32s1(BOX_BASE + st.scanner.cur_val, TEX_NULL);
             } else {
                 let __cv17 = st.scanner.cur_val;
                 crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv17, false);
                 let cp = st.scanner.cur_ptr.0;
-                if cp != crate::mem::TEX_NULL {
-                    st.mem.set_b32s1(cp + 1, crate::mem::TEX_NULL);
+                if cp != TEX_NULL {
+                    st.mem.set_b32s1(cp + 1, TEX_NULL);
                     let rc = st.mem.b32s0(cp + 1) + 1;
                     st.mem.set_b32s0(cp + 1, rc);
                     crate::save::delete_sa_ref(&mut st.mem, &mut st.scanner, cp);
@@ -1544,7 +1480,7 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
     }
 
     // done: advance cur_list.tail.0 past any MARGIN_KERN_NODEs
-    while st.mem.b32s1(st.input.cur_list.tail) != crate::mem::TEX_NULL {
+    while st.mem.b32s1(st.input.cur_list.tail) != TEX_NULL {
         let r = st.mem.b32s1(st.input.cur_list.tail);
         if r < st.mem.hi_mem_min && st.mem.b16s1(r) == MARGIN_KERN_NODE {
             let tail = st.input.cur_list.tail.0;
@@ -1599,7 +1535,7 @@ pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbor
 
     // Walk the list to find the node before tx
     let mut q = st.input.cur_list.head.0;
-    let mut p = crate::mem::TEX_NULL;
+    let mut p = TEX_NULL;
     let mut r_save;
     let mut fm;
     loop {
@@ -1628,8 +1564,8 @@ pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbor
     // q == tx; p is the node just before tx; r_save is the one before p
     let q_next = st.mem.b32s1(tx);
     st.mem.set_b32s1(p, q_next);
-    st.mem.set_b32s1(tx, crate::mem::TEX_NULL);
-    if q_next == crate::mem::TEX_NULL {
+    st.mem.set_b32s1(tx, TEX_NULL);
+    if q_next == TEX_NULL {
         if fm {
             return Err(MainControlAbort::Confusion(c"tail1"));
         } else {
@@ -1637,7 +1573,7 @@ pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbor
         }
     } else if fm {
         st.input.cur_list.tail.0 = r_save;
-        st.mem.set_b32s1(r_save, crate::mem::TEX_NULL);
+        st.mem.set_b32s1(r_save, TEX_NULL);
         crate::packaging::flush_node_list(&mut st.mem, p).map_err(MainControlAbort::Confusion)?;
     }
     crate::packaging::flush_node_list(&mut st.mem, tx).map_err(MainControlAbort::Confusion)?;
@@ -1663,7 +1599,7 @@ pub(crate) fn app_space(
             st.mainloop.main_p.0 = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32);
         } else {
             st.mainloop.main_p.0 = st.fonts.font_glue(cf);
-            if st.mainloop.main_p.0 == crate::mem::TEX_NULL {
+            if st.mainloop.main_p.0 == TEX_NULL {
                 st.mainloop.main_p = crate::mem::alloc_spec(&mut st.mem, 0)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
                     .ptr();
@@ -1718,7 +1654,7 @@ pub(crate) fn app_space(
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
             .ptr()
             .0;
-        st.mem.set_b32s1(st.mainloop.main_p, crate::mem::TEX_NULL);
+        st.mem.set_b32s1(st.mainloop.main_p, TEX_NULL);
     }
     tail_append(st, MemPtr::from_raw(q));
     Ok(side_effects)
@@ -1770,8 +1706,6 @@ pub(crate) fn scan_box_in(st: &mut EngineState, box_context: i32) -> Result<(), 
 }
 /// Closes a box group, packs the inner list, and dispatches via [`box_end_in`].
 pub(crate) fn package_in(st: &mut EngineState, c: i16) -> Result<(), MainControlAbort> {
-    use crate::mem::TEX_NULL;
-
     let d = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_BOX_MAX_DEPTH);
     let u = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
     crate::save::unsave_in(st)?;
@@ -1811,8 +1745,6 @@ pub(crate) fn package_in(st: &mut EngineState, c: i16) -> Result<(), MainControl
 /// Starts a new paragraph (par-skip glue, nest push, hyphenation/language
 /// setup, optional indent box + src-special, `\everypar`, page build).
 pub(crate) fn new_graf_in(st: &mut EngineState, indented: bool) -> Result<(), MainControlAbort> {
-    use crate::mem::TEX_NULL;
-
     st.input.cur_list.prev_graf = 0;
 
     if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
@@ -1849,10 +1781,7 @@ pub(crate) fn new_graf_in(st: &mut EngineState, indented: bool) -> Result<(), Ma
         }
     }
 
-    let every_par = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_PAR);
-    if every_par != TEX_NULL {
-        crate::input::begin_token_list_in(st, every_par, EVERY_PAR_TEXT)?;
-    }
+    begin_every(st, LOCAL_EVERY_PAR, EVERY_PAR_TEXT)?;
 
     if st.input.nest_ptr == 1 {
         crate::pagebuilder::build_page_in(st)?;
@@ -2121,12 +2050,10 @@ pub(crate) fn new_character_in(
     if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
         return Err(NewCharacterAbort::Error(outcome));
     }
-    Ok(crate::mem::TEX_NULL)
+    Ok(TEX_NULL)
 }
 
 pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), MainControlAbort> {
-    use crate::mem::TEX_NULL;
-
     if box_context < BOX_FLAG {
         let cb = st.scanner.cur_box.0;
         if cb != TEX_NULL {
@@ -2282,8 +2209,6 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
     Ok(())
 }
 pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(), MainControlAbort> {
-    use crate::mem::TEX_NULL;
-
     match st.scanner.cur_chr {
         BOX_CODE => {
             crate::scan::scan_register_num_in(st)?;
@@ -2479,16 +2404,10 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
             st.input.cur_list.mode = -(k_mode as i16);
             if k_mode == VMODE as i32 {
                 st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
-                let every_vbox = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_VBOX);
-                if every_vbox != TEX_NULL {
-                    crate::input::begin_token_list_in(st, every_vbox, EVERY_VBOX_TEXT)?;
-                }
+                begin_every(st, LOCAL_EVERY_VBOX, EVERY_VBOX_TEXT)?;
             } else {
                 st.input.cur_list.set_aux_s0(1000);
-                let every_hbox = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_HBOX);
-                if every_hbox != TEX_NULL {
-                    crate::input::begin_token_list_in(st, every_hbox, EVERY_HBOX_TEXT)?;
-                }
+                begin_every(st, LOCAL_EVERY_HBOX, EVERY_HBOX_TEXT)?;
             }
             return Ok(()); // no box_end call for new-group cases
         }
@@ -2932,15 +2851,15 @@ pub(crate) fn alter_box_dimen_in(st: &mut EngineState) -> Result<(), MainControl
     } else {
         let __cv13 = st.scanner.cur_val;
         crate::save::find_sa_element(&mut st.mem, &mut st.scanner, 4, __cv13, false);
-        if st.scanner.cur_ptr.0 == crate::mem::TEX_NULL {
-            crate::mem::TEX_NULL
+        if st.scanner.cur_ptr.0 == TEX_NULL {
+            TEX_NULL
         } else {
             st.mem.b32s1(st.scanner.cur_ptr + 1)
         }
     };
     crate::scan::scan_optional_equals_in(st)?;
     crate::scan::scan_dimen_in(st, false, false, false)?;
-    if b != crate::mem::TEX_NULL {
+    if b != TEX_NULL {
         st.mem.set_b32s1(b + c, st.scanner.cur_val);
     }
     Ok(())
@@ -3062,7 +2981,7 @@ pub(crate) fn shift_case_in(st: &mut EngineState) -> Result<(), MainControlAbort
     let b = st.scanner.cur_chr;
     crate::scan::scan_toks_in(st, false, false)?;
     let mut p = st.mem.b32s1(st.scanner.def_ref);
-    while p != crate::mem::TEX_NULL {
+    while p != TEX_NULL {
         let t = st.mem.b32s0(p);
         if t < CS_TOKEN_FLAG + SINGLE_BASE {
             let c = t % MAX_CHAR_VAL;
@@ -3074,14 +2993,11 @@ pub(crate) fn shift_case_in(st: &mut EngineState) -> Result<(), MainControlAbort
     }
     let def_ref = st.scanner.def_ref.0;
     crate::input::begin_token_list_in(st, st.mem.b32s1(def_ref), BACKED_UP)?;
-    st.mem.set_b32s1(def_ref, st.mem.avail);
-    st.mem.avail = def_ref;
+    crate::mem::free_avail(&mut st.mem, MemPtr::from_raw(def_ref));
     Ok(())
 }
 /// Validates and stitches the three discretionary sublists.
 pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    use crate::mem::TEX_NULL;
-
     crate::save::unsave_in(st)?;
     let q_head = st.input.cur_list.head.0;
     let mut q = q_head;
@@ -3278,7 +3194,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
     let mut f = st.eqtb.b32s1(CUR_FONT_LOC);
     let p = new_character_in(st, f, st.scanner.cur_val as u16)?;
 
-    if p == crate::mem::TEX_NULL {
+    if p == TEX_NULL {
         return Ok(());
     }
 
@@ -3314,7 +3230,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
     };
 
     do_assignments_in(st)?;
-    let mut q = crate::mem::TEX_NULL;
+    let mut q = TEX_NULL;
     f = st.eqtb.b32s1(CUR_FONT_LOC);
     if st.scanner.cur_cmd == LETTER
         || st.scanner.cur_cmd == OTHER_CHAR
@@ -3329,7 +3245,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
         crate::input::back_input_in(st)?;
     }
 
-    if q != crate::mem::TEX_NULL {
+    if q != TEX_NULL {
         let t = st
             .fonts
             .font_info_b32s1(SLANT_CODE + st.fonts.param_base(f)) as f64
@@ -3390,7 +3306,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
     }
 
     // Append p (q if base was found, else accent) to hlist.
-    let p_final = if q != crate::mem::TEX_NULL { q } else { p };
+    let p_final = if q != TEX_NULL { q } else { p };
     tail_append(st, MemPtr::from_raw(p_final));
     st.input.cur_list.set_aux_s0(1000);
     Ok(())
@@ -3644,7 +3560,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
 pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(), MainControlAbort> {
     let q = st.scanner.cur_cmd;
     let mut w: i32 = 0;
-    let mut s: i32 = crate::mem::TEX_NULL;
+    let mut s: i32 = TEX_NULL;
 
     // Determine (l, p, e): register address, value type, is_extended_SA
     let (l, p, e) = 'determine: {
@@ -3900,7 +3816,7 @@ pub(crate) fn main_control_append_normal_space_in(
     let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
     if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32) == 0 {
         st.mainloop.main_p.0 = st.fonts.font_glue(cur_font);
-        if st.mainloop.main_p.0 == crate::mem::TEX_NULL {
+        if st.mainloop.main_p.0 == TEX_NULL {
             st.mainloop.main_p = crate::mem::alloc_spec(&mut st.mem, 0)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
                 .ptr();
@@ -4303,10 +4219,7 @@ pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), Mai
             if st.shipout.insert_src_special_every_vbox {
                 crate::ext::insert_src_special_in(st)?;
             }
-            let every_vbox = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_VBOX);
-            if every_vbox != TEX_NULL {
-                crate::input::begin_token_list_in(st, every_vbox, EVERY_VBOX_TEXT)?;
-            }
+            begin_every(st, LOCAL_EVERY_VBOX, EVERY_VBOX_TEXT)?;
         }
 
         (MMODE, MATH_STYLE) => {
@@ -4444,11 +4357,11 @@ fn inter_char_boundary_after_space_action(
         false,
     );
     let cur_ptr = st.scanner.cur_ptr.0;
-    if cur_ptr == crate::mem::TEX_NULL {
+    if cur_ptr == TEX_NULL {
         return InterCharInputAction::None;
     }
     let token_list = st.mem.b32s1(cur_ptr + 1);
-    if token_list == crate::mem::TEX_NULL {
+    if token_list == TEX_NULL {
         return InterCharInputAction::None;
     }
 
@@ -4493,11 +4406,11 @@ fn inter_char_before_current_char_action(
     }
 
     let cur_ptr = st.scanner.cur_ptr.0;
-    if cur_ptr == crate::mem::TEX_NULL {
+    if cur_ptr == TEX_NULL {
         return InterCharInputAction::None;
     }
     let token_list = st.mem.b32s1(cur_ptr + 1);
-    if token_list == crate::mem::TEX_NULL {
+    if token_list == TEX_NULL {
         return InterCharInputAction::None;
     }
 
@@ -4589,8 +4502,6 @@ pub(crate) fn main_control_spacer_cases_in(st: &mut EngineState) -> Result<(), M
 pub(crate) unsafe fn main_control_main_loop_in(
     st: &mut EngineState,
 ) -> Result<bool, MainControlAbort> {
-    use crate::mem::TEX_NULL;
-
     // === main_loop: entry point ===
     // SyncTeX: append special at start of new paragraph
     if st.input.cur_list.head == st.input.cur_list.tail
@@ -5613,7 +5524,7 @@ unsafe fn do_lookahead(
                 st.mainloop.bchar = TOO_BIG_CHAR;
             }
             st.mainloop.cur_r = st.mainloop.bchar;
-            st.mainloop.lig_stack.0 = crate::mem::TEX_NULL;
+            st.mainloop.lig_stack.0 = TEX_NULL;
             return Ok(true); // normal: re-enter lig loop at top
         }
     }
@@ -5632,7 +5543,7 @@ unsafe fn do_lookahead(
     } else {
         st.input.cur_list.set_aux_s0(ms);
     }
-    st.scanner.cur_ptr.0 = crate::mem::TEX_NULL;
+    st.scanner.cur_ptr.0 = TEX_NULL;
     st.mainloop.space_class = sf / 65536;
     let sc = st.mainloop.space_class;
 
@@ -5667,13 +5578,8 @@ unsafe fn main_control_from_in(
     run_every_job: bool,
     mut resume_pending_command: bool,
 ) -> Result<(), MainControlAbort> {
-    use crate::mem::TEX_NULL;
-
     if run_every_job {
-        let every_job = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_JOB);
-        if every_job != TEX_NULL {
-            crate::input::begin_token_list_in(st, every_job, EVERY_JOB_TEXT)?;
-        }
+        begin_every(st, LOCAL_EVERY_JOB, EVERY_JOB_TEXT)?;
     }
 
     // Cancellation and fence hooks are live only for resident sessions; the
@@ -6532,8 +6438,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                         define(st, false, p, UNDEFINED_CS as u16, TEX_NULL)?;
                     }
 
-                    st.mem.set_b32s1(st.scanner.def_ref, st.mem.avail);
-                    st.mem.avail = st.scanner.def_ref.0;
+                    crate::mem::free_avail(&mut st.mem, st.scanner.def_ref);
                 } else {
                     if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
                         let new_avail = crate::mem::get_avail(&mut st.mem)
