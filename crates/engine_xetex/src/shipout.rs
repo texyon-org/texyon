@@ -992,7 +992,7 @@ fn pop_dvi_level(
     Ok(())
 }
 
-unsafe fn ship_box(st: &mut crate::state::EngineState, b: AnyBox) -> Result<(), ShipoutAbort> {
+fn ship_box(st: &mut crate::state::EngineState, b: AnyBox) -> Result<(), ShipoutAbort> {
     match b {
         AnyBox::HList(_) => hlist_out(st, b),
         AnyBox::VList(_) => vlist_out(st, b),
@@ -1000,10 +1000,7 @@ unsafe fn ship_box(st: &mut crate::state::EngineState, b: AnyBox) -> Result<(), 
 }
 
 /// Ship one copy of a leader box with `doing_leaders` set.
-unsafe fn ship_leader_box(
-    st: &mut crate::state::EngineState,
-    leader: AnyBox,
-) -> Result<(), ShipoutAbort> {
+fn ship_leader_box(st: &mut crate::state::EngineState, leader: AnyBox) -> Result<(), ShipoutAbort> {
     let outer_doing_leaders = st.shipout.doing_leaders;
     st.shipout.doing_leaders = true;
     ship_box(st, leader)?;
@@ -1011,7 +1008,7 @@ unsafe fn ship_leader_box(
     Ok(())
 }
 
-unsafe fn hlist_rule_out(
+fn hlist_rule_out(
     st: &mut crate::state::EngineState,
     this_box: AnyBox,
     base_line: i32,
@@ -1076,7 +1073,7 @@ fn move_past_vlist_rule(shipout: &mut ShipoutState, upwards: bool) {
 }
 
 /// Move right past glue `glue` or output its leaders.
-unsafe fn hlist_glue_out(
+fn hlist_glue_out(
     st: &mut crate::state::EngineState,
     this_box: AnyBox,
     base_line: i32,
@@ -1160,7 +1157,7 @@ fn dvi_xdv_buffer(st: &mut crate::state::EngineState, len: usize) -> Result<(), 
     dvi_bytes(&mut st.shipout, &st.fonts.xdv_buffer[..len])
 }
 
-unsafe fn native_word_out(
+fn native_word_out(
     st: &mut crate::state::EngineState,
     word: NodePtr<WhatsitNode>,
     subtype: WhatsitSubtype,
@@ -1185,7 +1182,7 @@ unsafe fn native_word_out(
                 let text = word.native_text_ptr(&st.mem);
                 for k in 0..len as usize {
                     // SAFETY: the node holds `native_length` UTF-16 units inline.
-                    dvi_two(&mut st.shipout, *text.add(k))?;
+                    dvi_two(&mut st.shipout, unsafe { *text.add(k) })?;
                 }
                 let len = make_xdv_glyph_array_data(st, word);
                 dvi_xdv_buffer(st, len)?;
@@ -1211,7 +1208,7 @@ fn pdf_save_pos(shipout: &mut ShipoutState) {
 
 /// Output the characters starting at `p`, returning the first non-character
 /// node and the matching advance of `prev_p`.
-unsafe fn chars_out(
+fn chars_out(
     st: &mut crate::state::EngineState,
     mut p: i32,
     mut prev_p: MemPtr,
@@ -1223,7 +1220,8 @@ unsafe fn chars_out(
         let mut c = st.mem.b16s0(p);
         let mapping = st.fonts.font_mapping_ptr(f);
         if p != LIG_TRICK && !mapping.is_null() {
-            c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
+            // SAFETY: `mapping` is the font's live TECkit converter.
+            c = unsafe { apply_tfm_font_mapping(mapping, c as libc::c_int) } as u16;
         }
         dvi_font_select(st, f)?;
         if st.fonts.font_ec_entry(f) >= c
@@ -1248,10 +1246,7 @@ unsafe fn chars_out(
     Ok((p, prev_p))
 }
 
-unsafe fn hlist_out(
-    st: &mut crate::state::EngineState,
-    this_box: AnyBox,
-) -> Result<(), ShipoutAbort> {
+fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), ShipoutAbort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     if int_par(&st.eqtb, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
@@ -1415,7 +1410,7 @@ unsafe fn hlist_out(
     pop_dvi_level(&mut st.mem, &mut st.shipout, save_loc)
 }
 
-unsafe fn hlist_box_out(
+fn hlist_box_out(
     st: &mut crate::state::EngineState,
     b: AnyBox,
     base_line: i32,
@@ -1479,10 +1474,7 @@ fn reverse_segment(
     Ok(edge)
 }
 
-unsafe fn vlist_out(
-    st: &mut crate::state::EngineState,
-    this_box: AnyBox,
-) -> Result<(), ShipoutAbort> {
+fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), ShipoutAbort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     let mut p = this_box.list_ptr(&st.mem);
@@ -1578,7 +1570,7 @@ unsafe fn vlist_out(
     pop_dvi_level(&mut st.mem, &mut st.shipout, save_loc)
 }
 
-unsafe fn vlist_box_out(
+fn vlist_box_out(
     st: &mut crate::state::EngineState,
     b: AnyBox,
     left_edge: i32,
@@ -1623,7 +1615,7 @@ unsafe fn vlist_box_out(
     Ok(())
 }
 
-unsafe fn vlist_leaders_out(
+fn vlist_leaders_out(
     st: &mut crate::state::EngineState,
     leader: AnyBox,
     subtype: u16,
