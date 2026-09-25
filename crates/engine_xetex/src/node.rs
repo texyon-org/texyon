@@ -654,6 +654,24 @@ impl AnyNode {
         }
     }
 
+    /// TeX's `precedes_break`: a node type below `math_node`, after which glue
+    /// is a legal breakpoint.
+    #[inline]
+    pub fn precedes_break(self) -> bool {
+        matches!(
+            self,
+            AnyNode::HList(_)
+                | AnyNode::VList(_)
+                | AnyNode::Rule(_)
+                | AnyNode::Ins(_)
+                | AnyNode::Mark(_)
+                | AnyNode::Adjust(_)
+                | AnyNode::Ligature(_)
+                | AnyNode::Disc(_)
+                | AnyNode::Whatsit(_)
+        )
+    }
+
     /// The horizontal-list width contribution — the `+1` width word, shared by
     /// boxes, rules, kerns, math nodes, and box-dimensioned whatsits (the node
     /// kinds that add their width to the running line total in the line-breaker).
@@ -834,6 +852,7 @@ impl NodePtr<LigatureNode> {
 
 impl MemState {
     /// Classify a known lo-mem node as a ligature node.
+    #[cfg(test)]
     #[inline]
     pub fn classify_ligature(
         &self,
@@ -970,6 +989,14 @@ impl NodePtr<MathNode> {
     #[inline]
     pub fn set_width(self, mem: &mut MemState, w: Scaled) {
         mem.set_b32s1(self.idx.offset(1).0, w.0);
+    }
+
+    /// Turn this math node into a kern of the same width, in place.
+    #[inline]
+    pub fn retype_as_kern(self, mem: &mut MemState) -> NodePtr<KernNode> {
+        mem.set_b16s1(self.idx.0, KERN_NODE);
+        // SAFETY: the node was just stamped KERN_NODE.
+        unsafe { NodePtr::from_idx_unchecked(self.idx) }
     }
 }
 
@@ -1461,6 +1488,14 @@ impl NodePtr<GlueNode> {
     #[inline]
     pub fn set_leader_ptr(self, mem: &mut MemState, q: MemPtr) {
         mem.set_b32s1(self.idx.offset(1).0, q.0);
+    }
+
+    /// Turn this glue node into a penalty node in place (both are medium nodes).
+    #[inline]
+    pub fn retype_as_penalty(self, mem: &mut MemState) -> NodePtr<PenaltyNode> {
+        mem.set_b16s1(self.idx.0, PENALTY_NODE);
+        // SAFETY: the node was just stamped PENALTY_NODE.
+        unsafe { NodePtr::from_idx_unchecked(self.idx) }
     }
 
     /// Classify this glue node's `glue_ptr` as a [`GlueSpecNode`] handle, or
@@ -2292,6 +2327,20 @@ impl NodePtr<SaNode> {
     #[inline]
     pub fn sa_ptr(self, mem: &MemState) -> MemPtr {
         MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_sa_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+
+    /// Element reference count = `mem[p + 1].b32.s0` (`ETEX_SA_ref`).
+    #[inline]
+    pub fn sa_ref(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_sa_ref(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(1).0, v);
     }
 }
 

@@ -2526,7 +2526,7 @@ pub(crate) fn begin_box_in(
                 }
             }
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            st.scanner.cur_box.0 = crate::packaging::vsplit_in(st, n, st.scanner.cur_val)?;
+            st.scanner.cur_box = crate::packaging::vsplit_in(st, n, st.scanner.cur_val)?;
         }
 
         _ => {
@@ -5431,7 +5431,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 let old_len = st.mem.b16s1(st.mainloop.main_pp + 4) as i32;
                 let new_node =
                     crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, mk + old_len)?;
-                st.mem.set_b32s1(st.mainloop.main_pp, new_node);
+                st.mem.set_b32s1(st.mainloop.main_pp, new_node.idx().0);
                 st.input.cur_list.tail.0 = st.mem.b32s1(st.mainloop.main_pp);
                 st.mem.journal_mark_range(
                     st.input.cur_list.tail.0 + NATIVE_NODE_SIZE,
@@ -5470,7 +5470,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                     .map_err(MainControlAbort::Confusion)?;
             } else {
                 let new_node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, mk)?;
-                st.mem.set_b32s1(st.mainloop.main_pp, new_node);
+                st.mem.set_b32s1(st.mainloop.main_pp, new_node.idx().0);
                 st.input.cur_list.tail.0 = st.mem.b32s1(st.mainloop.main_pp);
                 st.mem.journal_mark_range(
                     st.input.cur_list.tail.0 + NATIVE_NODE_SIZE,
@@ -5540,7 +5540,9 @@ pub(crate) unsafe fn main_control_main_loop_in(
                             &st.eqtb,
                             mf,
                             pp_len + 1 + tail_len,
-                        )?;
+                        )?
+                        .idx()
+                        .0;
                         st.mem.journal_mark_range(
                             tmp + NATIVE_NODE_SIZE,
                             crate::state::native_text_words(pp_len + 1 + tail_len),

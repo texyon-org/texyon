@@ -2,11 +2,10 @@
 //! character protrusion.
 
 use crate::consts::{
-    ADJUST_HEAD, AWFUL_BAD, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, EJECT_PENALTY,
-    ETEX_PEN_BASE, EXPLICIT, GLUE_BASE, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LOOSENESS,
-    INT_PAR_TEXXET, LC_CODE_BASE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_NODE, MAX_HALFWORD,
-    MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, RULE_NODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL,
-    TOO_BIG_CHAR,
+    ADJUST_HEAD, AWFUL_BAD, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, EJECT_PENALTY, ETEX_PEN_BASE,
+    EXPLICIT, GLUE_BASE, INT_PAR_HANG_AFTER, INT_PAR_LOOSENESS, INT_PAR_TEXXET, LC_CODE_BASE,
+    LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS,
+    RULE_NODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::{linebreak_next, linebreak_start_in, measure_native_node};
 use crate::hyphenation::{hyph_code, set_hyph_index, HYPH_PRIME};
@@ -15,12 +14,13 @@ use crate::node::{
     ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, HListNode, LigItem,
     MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
 };
+use crate::packaging::{as_native_word, dimen_par, int_par, list_tail, predecessor};
 use crate::scan::NodeRecycleAbort;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{MemAddr, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{MemAddr, MemIdx, MemPtr, Scaled};
 
 const GLUE_PAR_LEFT_SKIP: i16 = 7;
 const GLUE_PAR_RIGHT_SKIP: i16 = 8;
@@ -87,16 +87,6 @@ extern "C" {
 #[inline]
 fn odd(v: u8) -> bool {
     v % 2 == 1
-}
-
-#[inline]
-fn int_par(eqtb: &EqtbState, n: i32) -> i32 {
-    eqtb.b32s1(INT_BASE + n)
-}
-
-#[inline]
-fn dimen_par(eqtb: &EqtbState, n: i32) -> i32 {
-    eqtb.b32s1(DIMEN_BASE + n)
 }
 
 /// The spec of glue parameter `n` (never null).
@@ -220,15 +210,6 @@ fn alloc_passive_node(mem: &mut MemState) -> Result<NodePtr<PassiveNode>, NodeRe
     Ok(passive_node(p))
 }
 
-/// `p` as a native-word whatsit, for a node known to be one by construction.
-#[inline]
-fn native_word(mem: &MemState, p: impl MemAddr) -> NodePtr<WhatsitNode> {
-    mem.classify_whatsit(MemIdx::new(p.addr()))
-        .ok()
-        .flatten()
-        .expect("native word node")
-}
-
 /// The Unicode scalar at UTF-16 offset `i` of `w`'s text.
 fn get_native_usv(mem: &MemState, w: NodePtr<WhatsitNode>, i: i32) -> i32 {
     let text = w.native_text_ptr(mem);
@@ -262,7 +243,7 @@ fn copy_native_text(
     unsafe { std::ptr::copy_nonoverlapping(src.add(start as usize), dst, len as usize) };
 }
 
-fn set_native_metrics(
+pub(crate) fn set_native_metrics(
     mem: &mut MemState,
     eqtb: &EqtbState,
     fonts: &FontState,
@@ -282,45 +263,46 @@ fn native_word_fragment(
     src: NodePtr<WhatsitNode>,
     start: i32,
     len: i32,
-) -> Result<NodePtr<WhatsitNode>, HyphNativeAbort> {
-    let q =
-        crate::fonts::new_native_word_node(mem, eqtb, f, len).map_err(HyphNativeAbort::Recycle)?;
-    let q = native_word(mem, q);
+) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+    let q = crate::fonts::new_native_word_node(mem, eqtb, f, len)?;
     q.set_subtype(mem, src.subtype(mem));
     copy_native_text(mem, q, src, start, len);
     set_native_metrics(mem, eqtb, fonts, q)?;
     Ok(q)
 }
 
-/// Split the native word `ha` at UTF-16 offset `start`, linking the tail after it.
-fn split_native_tail_for_linebreak(
+/// Split the native word `ha` at UTF-16 offset `start`, returning the tail
+/// linked after it.
+fn split_native_word(
     st: &mut EngineState,
+    ha: NodePtr<WhatsitNode>,
     start: i32,
-    advance_ha: bool,
-) -> Result<(), NodeRecycleAbort> {
-    let ha = native_word(&st.mem, st.linebreak.ha);
+) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
     let len = ha.native_length(&st.mem) as i32;
-    let tail = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, st.hyph.hf, len - start)?;
-    let tail = native_word(&st.mem, tail);
-    let subtype = ha.subtype(&st.mem);
-    tail.set_subtype(&mut st.mem, subtype);
-    copy_native_text(&mut st.mem, tail, ha, start, len - start);
-    set_native_metrics(&mut st.mem, &st.eqtb, &st.fonts, tail)?;
+    let tail = native_word_fragment(
+        &mut st.mem,
+        &st.eqtb,
+        &st.fonts,
+        st.hyph.hf,
+        ha,
+        start,
+        len - start,
+    )?;
     let next = ha.link(&st.mem);
     tail.set_link(&mut st.mem, next);
     ha.set_link(&mut st.mem, tail.ptr());
     ha.set_native_length(&mut st.mem, start as u16);
     set_native_metrics(&mut st.mem, &st.eqtb, &st.fonts, ha)?;
-    if advance_ha {
-        st.linebreak.ha = ha.link(&st.mem);
-    }
-    Ok(())
+    Ok(tail)
 }
 
-/// TeX's `precedes_break`: a node before which glue is a legal breakpoint.
+/// Whether `p` is a char node or a node that glue may break after.
 #[inline]
-fn precedes_break(mem: &MemState, p: impl MemAddr) -> bool {
-    mem.b16s1(p.addr()) < MATH_NODE
+fn is_non_discardable(mem: &MemState, p: MemPtr) -> bool {
+    is_char_node(mem, p)
+        || mem
+            .classify(MemIdx::new(p))
+            .is_ok_and(|n| n.precedes_break())
 }
 
 #[inline]
@@ -383,22 +365,15 @@ fn pop_node(linebreak: &mut LinebreakState) -> Option<MemPtr> {
     Some(linebreak.hlist_stack[level as usize])
 }
 
-#[inline]
-fn list_tail(mem: &MemState, mut p: MemPtr) -> MemPtr {
-    while !p.link(mem).is_null() {
-        p = p.link(mem);
-    }
-    p
-}
-
-/// Total protrusion of the line from `q`'s break to `p`.
+/// Total protrusion of the line from `q`'s break to `cur_p`, which is `p_disc`
+/// for a hyphenated break.
 fn total_pw(
     errors: &mut ErrorState,
     mem: &MemState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
     q: NodePtr<ActiveNode>,
-    p: MemPtr,
+    p_disc: Option<NodePtr<DiscNode>>,
 ) -> Option<i32> {
     let break_node = q.break_node(mem);
     let mut l = if break_node.is_null() {
@@ -407,12 +382,7 @@ fn total_pw(
         passive_node(break_node).cur_break(mem)
     };
 
-    let r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p, p);
-    let p_disc = if p.is_null() {
-        None
-    } else {
-        mem.classify_disc(MemIdx::new(p)).ok().flatten()
-    };
+    let r = crate::mem::prev_rightmost(mem, linebreak.global_prev_p, linebreak.cur_p);
     let r = match p_disc {
         Some(d) if !d.pre_break(mem).is_null() => list_tail(mem, d.pre_break(mem)),
         _ => find_protchar_right(mem, linebreak, l, r)?,
@@ -451,7 +421,7 @@ fn find_protchar_left(
     if is_empty_box(mem, l) {
         l = l.link(mem);
     } else if d {
-        while !l.link(mem).is_null() && !(is_char_node(mem, l) || precedes_break(mem, l)) {
+        while !l.link(mem).is_null() && !is_non_discardable(mem, l) {
             l = l.link(mem);
         }
     }
@@ -601,17 +571,17 @@ pub(crate) enum MarginKernAbort {
     PdfError,
 }
 
+/// Insert the right margin kern of the line ending at `q`, which is the last
+/// node of a discretionary's pre-break list when `pre_break_tail` is set.
 fn insert_right_margin_kern(
     errors: &mut ErrorState,
     mem: &mut MemState,
     fonts: &FontState,
     linebreak: &mut LinebreakState,
     q: MemPtr,
-    disc_break: bool,
+    pre_break_tail: bool,
 ) -> Result<MemPtr, MarginKernAbort> {
-    let (p, ptmp) = if disc_break
-        && (is_char_node(mem, q) || mem.b16s1(q) != crate::consts::DISC_NODE)
-    {
+    let (p, ptmp) = if pre_break_tail {
         (q, q)
     } else {
         let head = mem.link_ptr(TEMP_HEAD);
@@ -969,7 +939,7 @@ fn start_linebreak_pass(
     linebreak: &mut LinebreakState,
     errors: &mut ErrorState,
     prev_graf: i32,
-) -> Result<MemPtr, NodeRecycleAbort> {
+) -> Result<(), NodeRecycleAbort> {
     let q = alloc_active_node(mem, linebreak.active_node_size as i32, LAST_ACTIVE)?;
     q.set_break_type(mem, UNHYPHENATED as u16);
     q.set_fitness(mem, DECENT_FIT as u16);
@@ -988,7 +958,7 @@ fn start_linebreak_pass(
     linebreak.cur_p = mem.link_ptr(TEMP_HEAD);
     linebreak.global_prev_p = linebreak.cur_p;
     linebreak.first_p = linebreak.cur_p;
-    Ok(linebreak.cur_p)
+    Ok(())
 }
 
 fn free_break_lists(mem: &mut MemState, linebreak: &LinebreakState) {
@@ -1188,6 +1158,7 @@ fn line_break_try_break(
     st: &mut EngineState,
     pi: i32,
     break_type: i16,
+    disc: Option<NodePtr<DiscNode>>,
 ) -> Result<(), TryBreakAbort> {
     let s = &mut *st;
     try_break(
@@ -1200,6 +1171,7 @@ fn line_break_try_break(
         &mut s.errors,
         pi,
         break_type,
+        disc,
     )
 }
 
@@ -1212,9 +1184,9 @@ fn kern_break(
 ) -> Result<(), TryBreakAbort> {
     if !is_char_node(&st.mem, next)
         && auto_breaking
-        && st.mem.node_type(MemIdx::new(next)) == Ok(NodeType::Glue)
+        && matches!(st.mem.classify(MemIdx::new(next)), Ok(AnyNode::Glue(_)))
     {
-        line_break_try_break(st, 0, UNHYPHENATED)?;
+        line_break_try_break(st, 0, UNHYPHENATED, None)?;
     }
     Ok(())
 }
@@ -1290,13 +1262,10 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
             // The trailing glue becomes the infinite penalty in place.
             let spec = tail_glue.glue_ptr(&st.mem);
             let leaders = tail_glue.leader_ptr(&st.mem);
-            st.mem.set_b16s1(tail, crate::consts::PENALTY_NODE);
+            let tail_penalty = tail_glue.retype_as_penalty(&mut st.mem);
             crate::mem::delete_glue_ref(&mut st.mem, spec);
             crate::packaging::flush_node_list(&mut st.mem, leaders)
                 .map_err(LineBreakOutcome::Confusion)?;
-            let Ok(AnyNode::Penalty(tail_penalty)) = st.mem.classify(MemIdx::new(tail)) else {
-                return Err(LineBreakOutcome::Confusion(c"rightskip"));
-            };
             tail_penalty.set_penalty(&mut st.mem, INF_PENALTY);
         }
     }
@@ -1412,7 +1381,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
             set_hyph_index(&mut st.hyph);
         }
 
-        let mut prev_p = start_linebreak_pass(
+        start_linebreak_pass(
             &mut st.mem,
             &mut st.scanner,
             &mut st.linebreak,
@@ -1420,12 +1389,14 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
             st.input.cur_list.prev_graf,
         )?;
         let mut auto_breaking = true;
+        // Whether glue after the previous node is a legal breakpoint.
+        let mut prev_breakable = false;
 
         while !st.linebreak.cur_p.is_null() && ACTIVE_LIST.link(&st.mem) != LAST_ACTIVE {
             let mut cur = st.linebreak.cur_p;
 
             if is_char_node(&st.mem, cur) {
-                prev_p = cur;
+                prev_breakable = true;
                 st.linebreak.global_prev_p = cur;
                 loop {
                     let f = st.mem.b16s1(cur) as i32;
@@ -1439,11 +1410,14 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                 st.linebreak.cur_p = cur;
             }
 
-            match st.mem.classify(MemIdx::new(cur)) {
-                Ok(node @ (AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_))) => {
+            let Ok(node) = st.mem.classify(MemIdx::new(cur)) else {
+                return Err(LineBreakOutcome::Confusion(c"paragraph"));
+            };
+            match node {
+                AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
                     st.scanner.active_width[1] += node.hlist_width(&st.mem);
                 }
-                Ok(AnyNode::Whatsit(w)) => {
+                AnyNode::Whatsit(w) => {
                     let subtype = w.whatsit_subtype(&st.mem);
                     if subtype == Some(WhatsitSubtype::Language) {
                         set_language(st, w);
@@ -1451,16 +1425,9 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                         st.scanner.active_width[1] += w.width(&st.mem).0;
                     }
                 }
-                Ok(AnyNode::Glue(cur_glue)) => {
-                    if auto_breaking
-                        && (is_char_node(&st.mem, prev_p)
-                            || precedes_break(&st.mem, prev_p)
-                            || matches!(
-                                st.mem.classify(MemIdx::new(prev_p)),
-                                Ok(AnyNode::Kern(k)) if k.subtype(&st.mem) != EXPLICIT
-                            ))
-                    {
-                        line_break_try_break(st, 0, UNHYPHENATED)?;
+                AnyNode::Glue(cur_glue) => {
+                    if auto_breaking && prev_breakable {
+                        line_break_try_break(st, 0, UNHYPHENATED, None)?;
                     }
 
                     let mut spec = glue_spec(cur_glue.glue_ptr(&st.mem));
@@ -1477,24 +1444,24 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                         try_hyphenate(st, cur)?;
                     }
                 }
-                Ok(AnyNode::Kern(k)) => {
+                AnyNode::Kern(k) => {
                     if k.subtype(&st.mem) == EXPLICIT {
                         kern_break(st, k.link(&st.mem), auto_breaking)?;
                     }
                     st.scanner.active_width[1] += k.width(&st.mem).0;
                 }
-                Ok(AnyNode::Ligature(lig)) => {
+                AnyNode::Ligature(lig) => {
                     let f = lig.font(&st.mem).0;
                     st.fonts.set_xtx_ligature_present(true);
                     let c = lig.character(&st.mem);
                     st.scanner.active_width[1] += font_character_width(&mut st.fonts, f, c);
                 }
-                Ok(AnyNode::Disc(d)) => {
+                AnyNode::Disc(d) => {
                     let pre_break = d.pre_break(&st.mem);
                     st.linebreak.disc_width = 0;
                     if pre_break.is_null() {
                         let pi = int_par(&st.eqtb, INT_PAR_EX_HYPHEN_PENALTY);
-                        line_break_try_break(st, pi, HYPHENATED)?;
+                        line_break_try_break(st, pi, HYPHENATED, Some(d))?;
                     } else {
                         let mut s = pre_break;
                         while !s.is_null() {
@@ -1505,7 +1472,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                         }
                         st.scanner.active_width[1] += st.linebreak.disc_width;
                         let pi = int_par(&st.eqtb, INT_PAR_HYPHEN_PENALTY);
-                        line_break_try_break(st, pi, HYPHENATED)?;
+                        line_break_try_break(st, pi, HYPHENATED, Some(d))?;
                         st.scanner.active_width[1] -= st.linebreak.disc_width;
                     }
 
@@ -1516,32 +1483,33 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                         s = s.link(&st.mem);
                     }
 
-                    prev_p = cur;
+                    prev_breakable = true;
                     st.linebreak.global_prev_p = cur;
                     st.linebreak.cur_p = s;
                     continue;
                 }
-                Ok(AnyNode::Math(m)) => {
+                AnyNode::Math(m) => {
                     if m.subtype(&st.mem) < L_CODE {
                         auto_breaking = odd(m.subtype(&st.mem) as u8);
                     }
                     kern_break(st, m.link(&st.mem), auto_breaking)?;
                     st.scanner.active_width[1] += m.width(&st.mem).0;
                 }
-                Ok(AnyNode::Penalty(pen)) => {
-                    line_break_try_break(st, pen.penalty(&st.mem), UNHYPHENATED)?;
+                AnyNode::Penalty(pen) => {
+                    line_break_try_break(st, pen.penalty(&st.mem), UNHYPHENATED, None)?;
                 }
-                Ok(AnyNode::Mark(_)) | Ok(AnyNode::Ins(_)) | Ok(AnyNode::Adjust(_)) => {}
+                AnyNode::Mark(_) | AnyNode::Ins(_) | AnyNode::Adjust(_) => {}
                 _ => return Err(LineBreakOutcome::Confusion(c"paragraph")),
             }
 
-            prev_p = cur;
+            prev_breakable = node.precedes_break()
+                || matches!(node, AnyNode::Kern(k) if k.subtype(&st.mem) != EXPLICIT);
             st.linebreak.global_prev_p = cur;
             st.linebreak.cur_p = cur.link(&st.mem);
         }
 
         if st.linebreak.cur_p.is_null() {
-            line_break_try_break(st, EJECT_PENALTY, HYPHENATED)?;
+            line_break_try_break(st, EJECT_PENALTY, HYPHENATED, None)?;
             if choose_best_break(&st.mem, &mut st.linebreak, &st.eqtb) {
                 break;
             }
@@ -1583,17 +1551,6 @@ fn set_language(st: &mut EngineState, w: NodePtr<WhatsitNode>) {
 #[inline]
 fn lc_code(eqtb: &EqtbState, c: i32) -> i32 {
     eqtb.b32s1(LC_CODE_BASE + c)
-}
-
-/// `p` as a native-word whatsit, if it is one.
-fn as_native_word(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
-    if p.is_null() || is_char_node(mem, p) {
-        return None;
-    }
-    mem.classify_whatsit(MemIdx::new(p))
-        .ok()
-        .flatten()
-        .filter(|w| w.whatsit_subtype(mem).is_some_and(|s| s.is_native_word()))
 }
 
 /// Scan from `s` to the end of the word, returning the node that ends it, or
@@ -1721,15 +1678,19 @@ fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), LineBreakOutco
         return Ok(());
     }
 
-    if let Some(ha) = as_native_word(&st.mem, st.linebreak.ha) {
-        let Some(end) = find_word_end(&st.mem, ha.link(&st.mem), false) else {
-            return Ok(());
-        };
-        s = end;
-        collect_native_word(st, max_len)?;
-    } else {
-        s = collect_word(st, s, max_len);
-    }
+    let native_ha = match as_native_word(&st.mem, st.linebreak.ha) {
+        Some(ha) => {
+            let Some(end) = find_word_end(&st.mem, ha.link(&st.mem), false) else {
+                return Ok(());
+            };
+            s = end;
+            Some(collect_native_word(st, ha, max_len)?)
+        }
+        None => {
+            s = collect_word(st, s, max_len);
+            None
+        }
+    };
 
     if (st.linebreak.hn as i32) < st.hyph.l_hyf + st.hyph.r_hyf
         || find_word_end(&st.mem, s, true).is_none()
@@ -1737,15 +1698,18 @@ fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), LineBreakOutco
         return Ok(());
     }
 
-    Ok(hyphenate(st)?)
+    Ok(hyphenate(st, native_ha)?)
 }
 
 /// Collect the letters of the native word `ha` into `hu`/`hc`, splitting it
-/// where the hyphenatable part begins or ends.
-fn collect_native_word(st: &mut EngineState, max_len: i32) -> Result<(), NodeRecycleAbort> {
+/// where the hyphenatable part begins or ends. Returns the word's final node.
+fn collect_native_word(
+    st: &mut EngineState,
+    mut ha: NodePtr<WhatsitNode>,
+    max_len: i32,
+) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
     st.linebreak.hn = 0;
     'restart: loop {
-        let ha = native_word(&st.mem, st.linebreak.ha);
         let len = ha.native_length(&st.mem) as i32;
         let mut l = 0;
         while l < len {
@@ -1755,13 +1719,15 @@ fn collect_native_word(st: &mut EngineState, max_len: i32) -> Result<(), NodeRec
 
             if hc0 == 0 {
                 if st.linebreak.hn > 0 {
-                    return split_native_tail_for_linebreak(st, l, false);
+                    split_native_word(st, ha, l)?;
+                    return Ok(ha);
                 }
             } else if st.linebreak.hn == 0 && l > 0 {
-                split_native_tail_for_linebreak(st, l, true)?;
+                ha = split_native_word(st, ha, l)?;
+                st.linebreak.ha = ha.ptr();
                 continue 'restart;
             } else if st.linebreak.hn as i32 == max_len {
-                return Ok(());
+                return Ok(ha);
             } else {
                 st.linebreak.hn += 1;
                 let hn = st.linebreak.hn as usize;
@@ -1780,7 +1746,7 @@ fn collect_native_word(st: &mut EngineState, max_len: i32) -> Result<(), NodeRec
             }
             l += 1;
         }
-        return Ok(());
+        return Ok(ha);
     }
 }
 
@@ -1957,12 +1923,13 @@ fn post_line_break_prefix(
     let mut disc_break = false;
     let mut post_disc_break = false;
     let mut glue_break = false;
+    let mut pre_break_tail = false;
 
     if q.is_null() {
         q = list_tail(mem, TEMP_HEAD);
     } else {
-        match mem.classify(MemIdx::new(q)).expect("valid break node") {
-            AnyNode::Glue(g) => {
+        match mem.classify(MemIdx::new(q)) {
+            Ok(AnyNode::Glue(g)) => {
                 let old_spec = g.glue_ptr(mem);
                 crate::mem::delete_glue_ref(mem, old_spec);
                 let right_skip = glue_par(eqtb, GLUE_PAR_RIGHT_SKIP);
@@ -1971,7 +1938,7 @@ fn post_line_break_prefix(
                 right_skip.set_ref_count(mem, right_skip.ref_count(mem) + 1);
                 glue_break = true;
             }
-            AnyNode::Disc(d) => {
+            Ok(AnyNode::Disc(d)) => {
                 let mut r;
                 let t = d.subtype(mem);
                 if t == 0 {
@@ -2002,13 +1969,14 @@ fn post_line_break_prefix(
                     d.set_link(mem, pre_break);
                     q = list_tail(mem, pre_break);
                     d.set_pre_break(mem, MemPtr::NULL);
+                    pre_break_tail = true;
                 }
 
                 q.set_link(mem, r);
                 disc_break = true;
             }
-            AnyNode::Kern(k) => k.set_width(mem, Scaled(0)),
-            AnyNode::Math(m) => {
+            Ok(AnyNode::Kern(k)) => k.set_width(mem, Scaled(0)),
+            Ok(AnyNode::Math(m)) => {
                 m.set_width(mem, Scaled(0));
                 if texxet {
                     update_lr_stack(mem, m, lr_ptr)?;
@@ -2019,7 +1987,7 @@ fn post_line_break_prefix(
     }
 
     if protrude {
-        q = insert_right_margin_kern(errors, mem, fonts, linebreak, q, disc_break)?;
+        q = insert_right_margin_kern(errors, mem, fonts, linebreak, q, pre_break_tail)?;
     }
 
     if !glue_break {
@@ -2186,21 +2154,23 @@ fn post_line_break_suffix(
         let mut q;
         loop {
             q = r.link(mem);
-            if q == cur_break
-                || is_char_node(mem, q)
-                || precedes_break(mem, q)
-                || matches!(
-                    mem.classify(MemIdx::new(q)),
-                    Ok(AnyNode::Kern(k))
-                        if k.subtype(mem) != EXPLICIT && k.subtype(mem) != SPACE_ADJUSTMENT
-                )
-            {
+            if q == cur_break || is_char_node(mem, q) {
                 break;
+            }
+            let node = mem.classify(MemIdx::new(q));
+            match node {
+                Ok(node) if node.precedes_break() => break,
+                Ok(AnyNode::Kern(k))
+                    if k.subtype(mem) != EXPLICIT && k.subtype(mem) != SPACE_ADJUSTMENT =>
+                {
+                    break
+                }
+                _ => {}
             }
 
             r = q;
             if texxet {
-                if let Ok(AnyNode::Math(m)) = mem.classify(MemIdx::new(q)) {
+                if let Ok(AnyNode::Math(m)) = node {
                     update_lr_stack(mem, m, lr_ptr)?;
                 }
             }
@@ -2368,23 +2338,19 @@ fn stretch_badness(shortfall: i32, stretch: i32) -> (i32, usize) {
     }
 }
 
-/// Set `break_width` to the width of the line material after a break at `cur_p`.
+/// Set `break_width` to the width of the line material after a break at
+/// `cur_p`, which is `disc` for a hyphenated break.
 fn compute_break_width(
     mem: &MemState,
     fonts: &mut FontState,
     linebreak: &mut LinebreakState,
-    break_type: i16,
+    disc: Option<NodePtr<DiscNode>>,
 ) -> Result<(), TryBreakAbort> {
     linebreak.break_width[1..].copy_from_slice(&linebreak.background[1..]);
     let mut s = linebreak.cur_p;
 
-    if break_type > UNHYPHENATED && !linebreak.cur_p.is_null() {
-        let cur_disc = mem
-            .classify_disc(MemIdx::new(linebreak.cur_p))
-            .ok()
-            .flatten()
-            .expect("hyphenated break node is a disc");
-        let mut v = linebreak.cur_p;
+    if let Some(cur_disc) = disc {
+        let mut v = cur_disc.ptr();
         s = cur_disc.post_break(mem);
 
         for _ in 0..cur_disc.subtype(mem) {
@@ -2511,6 +2477,7 @@ fn try_break(
     errors: &mut ErrorState,
     mut pi: i32,
     break_type: i16,
+    disc: Option<NodePtr<DiscNode>>,
 ) -> Result<(), TryBreakAbort> {
     if config.semantic_pagination_enabled && !linebreak.cur_p.is_null() {
         return Ok(());
@@ -2553,7 +2520,7 @@ fn try_break(
             {
                 if no_break_yet {
                     no_break_yet = false;
-                    compute_break_width(mem, fonts, linebreak, break_type)?;
+                    compute_break_width(mem, fonts, linebreak, disc)?;
                 }
                 insert_new_active_nodes(
                     mem,
@@ -2598,7 +2565,7 @@ fn try_break(
             artificial_demerits = false;
             shortfall = line_width - caw[1];
             if int_par(eqtb, INT_PAR_XETEX_PROTRUDE_CHARS) > 1 {
-                shortfall += total_pw(errors, mem, fonts, linebreak, r_active, linebreak.cur_p)
+                shortfall += total_pw(errors, mem, fonts, linebreak, r_active, disc)
                     .ok_or(TryBreakAbort::HlistStackFailure)?;
             }
         }
@@ -2812,13 +2779,6 @@ pub(crate) enum HyphNativeAbort {
     Recycle(NodeRecycleAbort),
     NativeChar(crate::fonts::NativeCharAbort),
     Confusion(&'static std::ffi::CStr),
-    NativeFont(crate::ext::NativeFontAbort),
-}
-
-impl From<crate::ext::NativeFontAbort> for HyphNativeAbort {
-    fn from(e: crate::ext::NativeFontAbort) -> Self {
-        HyphNativeAbort::NativeFont(e)
-    }
 }
 
 impl HyphNativeAbort {
@@ -2827,7 +2787,6 @@ impl HyphNativeAbort {
             HyphNativeAbort::Recycle(e) => e.into_engine_abort(),
             HyphNativeAbort::NativeChar(nc) => nc.into_engine_abort(),
             HyphNativeAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
-            HyphNativeAbort::NativeFont(e) => e.into_engine_abort(),
         }
     }
 }
@@ -2861,22 +2820,13 @@ impl From<NodeRecycleAbort> for HyphenateAbort {
     }
 }
 
-/// The node whose link is `target`, searching forward from `p`.
-#[inline]
-fn predecessor(mem: &MemState, mut p: MemPtr, target: MemPtr) -> MemPtr {
-    while p.link(mem) != target {
-        p = p.link(mem);
-    }
-    p
-}
-
 /// Hyphenate the native word `ha` by splitting it into fragments separated by
-/// discretionaries. Returns false if `ha` is not a native word.
-fn hyphenate_native_word(st: &mut EngineState, hn: i16) -> Result<bool, HyphNativeAbort> {
-    let Some(ha) = as_native_word(&st.mem, st.linebreak.ha) else {
-        return Ok(false);
-    };
-
+/// discretionaries.
+fn hyphenate_native_word(
+    st: &mut EngineState,
+    ha: NodePtr<WhatsitNode>,
+    hn: i16,
+) -> Result<(), HyphNativeAbort> {
     let hf = st.hyph.hf;
     let hyf_char = st.hyph.hyf_char;
     let mut s = predecessor(&st.mem, st.linebreak.cur_p, ha.ptr());
@@ -2893,7 +2843,8 @@ fn hyphenate_native_word(st: &mut EngineState, hn: i16) -> Result<bool, HyphNati
                 ha,
                 hp as i32,
                 (j - hp) as i32,
-            )?;
+            )
+            .map_err(HyphNativeAbort::Recycle)?;
             s.set_link(&mut st.mem, q.ptr());
 
             let disc = crate::mem::alloc_disc(&mut st.mem)
@@ -2918,18 +2869,22 @@ fn hyphenate_native_word(st: &mut EngineState, hn: i16) -> Result<bool, HyphNati
         ha,
         hp as i32,
         (hn - hp) as i32,
-    )?;
+    )
+    .map_err(HyphNativeAbort::Recycle)?;
     s.set_link(&mut st.mem, q.ptr());
     let next = ha.link(&st.mem);
     q.set_link(&mut st.mem, next);
     ha.set_link(&mut st.mem, MemPtr::NULL);
-    crate::packaging::flush_node_list(&mut st.mem, ha.ptr()).map_err(HyphNativeAbort::Confusion)?;
-    Ok(true)
+    crate::packaging::flush_node_list(&mut st.mem, ha.ptr()).map_err(HyphNativeAbort::Confusion)
 }
 
 /// Find the hyphen positions of the word in `hc[1..=hn]` (from the exception
-/// dictionary or the patterns) and insert the discretionaries.
-fn hyphenate(st: &mut EngineState) -> Result<(), HyphenateAbort> {
+/// dictionary or the patterns) and insert the discretionaries. `native_ha` is
+/// the word's node when it is a native word.
+fn hyphenate(
+    st: &mut EngineState,
+    native_ha: Option<NodePtr<WhatsitNode>>,
+) -> Result<(), HyphenateAbort> {
     let mut hn = st.linebreak.hn;
     st.hyph.hyf[..=hn as usize].fill(0);
 
@@ -2961,7 +2916,7 @@ fn hyphenate(st: &mut EngineState) -> Result<(), HyphenateAbort> {
                 }
                 hn -= 1;
                 st.linebreak.hn = hn;
-                return insert_hyphens(st, hn);
+                return insert_hyphens(st, hn, native_ha);
             }
         }
 
@@ -3007,7 +2962,7 @@ fn hyphenate(st: &mut EngineState) -> Result<(), HyphenateAbort> {
         }
     }
 
-    insert_hyphens(st, hn)
+    insert_hyphens(st, hn, native_ha)
 }
 
 /// Append the list after `HOLD_HEAD` to `disc`'s pre- or post-break list,
@@ -3034,7 +2989,11 @@ fn append_to_disc_list(
 
 /// Replace the word `ha..hb` by a reconstituted list with a discretionary at
 /// every odd `hyf` position.
-fn insert_hyphens(st: &mut EngineState, hn: i16) -> Result<(), HyphenateAbort> {
+fn insert_hyphens(
+    st: &mut EngineState,
+    hn: i16,
+    native_ha: Option<NodePtr<WhatsitNode>>,
+) -> Result<(), HyphenateAbort> {
     let l_hyf = st.hyph.l_hyf as i16;
     let r_hyf = st.hyph.r_hyf as i16;
     for j in 0..l_hyf {
@@ -3048,8 +3007,8 @@ fn insert_hyphens(st: &mut EngineState, hn: i16) -> Result<(), HyphenateAbort> {
         return Ok(());
     }
 
-    if hyphenate_native_word(st, hn).map_err(HyphenateAbort::Native)? {
-        return Ok(());
+    if let Some(ha) = native_ha {
+        return hyphenate_native_word(st, ha, hn).map_err(HyphenateAbort::Native);
     }
 
     let hb = st.linebreak.hb;
@@ -3075,7 +3034,7 @@ fn insert_hyphens(st: &mut EngineState, hn: i16) -> Result<(), HyphenateAbort> {
             st.hyph.hu[0] = st.mem.b16s0(ha) as i32;
             (predecessor(&st.mem, st.linebreak.cur_p, ha), 0)
         }
-    } else if let Ok(Some(ha_lig)) = st.mem.classify_ligature(MemIdx::new(ha)) {
+    } else if let Ok(AnyNode::Ligature(ha_lig)) = st.mem.classify(MemIdx::new(ha)) {
         if ha_lig.font(&st.mem).0 != st.hyph.hf {
             found2(st)
         } else {
@@ -3092,8 +3051,8 @@ fn insert_hyphens(st: &mut EngineState, hn: i16) -> Result<(), HyphenateAbort> {
         }
     } else if !is_char_node(&st.mem, r)
         && matches!(
-            st.mem.classify_ligature(MemIdx::new(r)),
-            Ok(Some(lig)) if lig.subtype(&st.mem) > 1
+            st.mem.classify(MemIdx::new(r)),
+            Ok(AnyNode::Ligature(lig)) if lig.subtype(&st.mem) > 1
         )
     {
         found2(st)
@@ -3232,8 +3191,7 @@ unsafe fn append_native_word(
     text: *const u16,
     len: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, f, len)?;
-    let w = native_word(&st.mem, node);
+    let w = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, f, len)?;
     st.input.cur_list.tail.set_link(&mut st.mem, w.ptr());
     st.input.cur_list.tail = w.ptr();
     if len > 0 {
