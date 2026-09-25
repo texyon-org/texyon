@@ -4,9 +4,8 @@ use libc::c_void;
 use tectonic_bridge_harfbuzz::sys as hb;
 
 use crate::ext::{D2Fix, Fix2D};
+use crate::math::OTGR_FONT_FLAG;
 use crate::state::FontState;
-
-const OTGR_FONT_FLAG: i32 = 0xFFFE;
 
 type XeTeXFont = *mut c_void;
 type XeTeXLayoutEngine = *mut c_void;
@@ -95,7 +94,6 @@ fn direction(horiz: bool) -> hb::hb_direction_t {
     }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:47 (get_ot_math_constant)
 pub(crate) fn get_ot_math_constant(fonts: &FontState, f: i32, n: i32) -> i32 {
     let Some(engine) = ot_engine(fonts, f) else {
         return 0;
@@ -119,7 +117,6 @@ fn mapped_constant(fonts: &FontState, f: i32, map: &[Option<i32>], n: i32) -> i3
     }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:120 (get_native_mathsy_param)
 pub(crate) fn get_native_mathsy_param(fonts: &FontState, f: i32, n: i32) -> i32 {
     if n == MATH_QUAD {
         fonts.font_size[f as usize]
@@ -132,7 +129,6 @@ pub(crate) fn get_native_mathsy_param(fonts: &FontState, f: i32, n: i32) -> i32 
     }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:169 (get_native_mathex_param)
 pub(crate) fn get_native_mathex_param(fonts: &FontState, f: i32, n: i32) -> i32 {
     if n == MATH_QUAD {
         fonts.font_size[f as usize]
@@ -141,7 +137,6 @@ pub(crate) fn get_native_mathex_param(fonts: &FontState, f: i32, n: i32) -> i32 
     }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:188 (get_ot_math_variant)
 pub(crate) fn get_ot_math_variant(
     fonts: &FontState,
     f: i32,
@@ -181,7 +176,6 @@ pub(crate) struct GlyphAssembly {
     parts: Vec<hb::hb_ot_math_glyph_part_t>,
 }
 
-// translated from xetex-XeTeXOTMath.cpp:211 (get_ot_assembly_ptr)
 pub(crate) fn get_ot_assembly(
     fonts: &FontState,
     f: i32,
@@ -220,17 +214,14 @@ pub(crate) fn get_ot_assembly(
 }
 
 impl GlyphAssembly {
-    // translated from xetex-XeTeXOTMath.cpp:472 (ot_part_count)
     pub(crate) fn count(&self) -> i32 {
         self.parts.len() as i32
     }
 
-    // translated from xetex-XeTeXOTMath.cpp:478 (ot_part_glyph)
     pub(crate) fn glyph(&self, i: i32) -> i32 {
         self.parts[i as usize].glyph as i32
     }
 
-    // translated from xetex-XeTeXOTMath.cpp:484 (ot_part_is_extender)
     pub(crate) fn is_extender(&self, i: i32) -> bool {
         self.parts[i as usize].flags & hb::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER != 0
     }
@@ -242,23 +233,19 @@ impl GlyphAssembly {
         }
     }
 
-    // translated from xetex-XeTeXOTMath.cpp:490 (ot_part_start_connector)
     pub(crate) fn start_connector(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
         self.part_length(fonts, f, self.parts[i as usize].start_connector_length)
     }
 
-    // translated from xetex-XeTeXOTMath.cpp:503 (ot_part_end_connector)
     pub(crate) fn end_connector(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
         self.part_length(fonts, f, self.parts[i as usize].end_connector_length)
     }
 
-    // translated from xetex-XeTeXOTMath.cpp:516 (ot_part_full_advance)
     pub(crate) fn full_advance(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
         self.part_length(fonts, f, self.parts[i as usize].full_advance)
     }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:248 (get_ot_math_ital_corr)
 pub(crate) fn get_ot_math_ital_corr(fonts: &FontState, f: i32, g: i32) -> i32 {
     let Some(engine) = ot_engine(fonts, f) else {
         return 0;
@@ -269,10 +256,9 @@ pub(crate) fn get_ot_math_ital_corr(fonts: &FontState, f: i32, g: i32) -> i32 {
     }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:263 (get_ot_math_accent_pos)
 pub(crate) fn get_ot_math_accent_pos(fonts: &FontState, f: i32, g: i32) -> i32 {
     let Some(engine) = ot_engine(fonts, f) else {
-        return 0x7fff_ffff;
+        return i32::MAX;
     };
     unsafe {
         let rval =
@@ -281,7 +267,6 @@ pub(crate) fn get_ot_math_accent_pos(fonts: &FontState, f: i32, g: i32) -> i32 {
     }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:278 (ot_min_connector_overlap)
 pub(crate) fn ot_min_connector_overlap(fonts: &FontState, f: i32) -> i32 {
     let Some(engine) = ot_engine(fonts, f) else {
         return 0;
@@ -295,7 +280,6 @@ pub(crate) fn ot_min_connector_overlap(fonts: &FontState, f: i32) -> i32 {
     }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:293 (getMathKernAt)
 fn math_kern_at(
     fonts: &FontState,
     f: i32,
@@ -309,7 +293,6 @@ fn math_kern_at(
     unsafe { hb::hb_ot_math_get_glyph_kerning(ttxl_get_hb_font(engine), g as u32, side, height) }
 }
 
-// translated from xetex-XeTeXOTMath.cpp:306 (glyph_height) and :319 (glyph_depth)
 fn glyph_height_depth(fonts: &FontState, f: i32, g: i32) -> (f32, f32) {
     let (mut height, mut depth) = (0.0, 0.0);
     if let Some(engine) = ot_engine(fonts, f) {
@@ -318,17 +301,19 @@ fn glyph_height_depth(fonts: &FontState, f: i32, g: i32) -> (f32, f32) {
     (height, depth)
 }
 
-pub(crate) const SUP_CMD: i32 = 0;
-pub(crate) const SUB_CMD: i32 = 1;
+#[derive(Clone, Copy)]
+pub(crate) enum ScriptKind {
+    Sup,
+    Sub,
+}
 
-// translated from xetex-XeTeXOTMath.cpp:336 (get_ot_math_kern)
 pub(crate) fn get_ot_math_kern(
     fonts: &FontState,
     f: i32,
     g: i32,
     sf: i32,
     sg: i32,
-    cmd: i32,
+    kind: ScriptKind,
     shift_scaled: i32,
 ) -> i32 {
     let (Some(engine), Some(sengine)) = (ot_engine(fonts, f), ot_engine(fonts, sf)) else {
@@ -355,8 +340,8 @@ pub(crate) fn get_ot_math_kern(
 
         let scaled_sum = |kern: i32, skern: i32| (kern as f32 + scale * skern as f32) as i32;
 
-        let rval = match cmd {
-            SUP_CMD => {
+        let rval = match kind {
+            ScriptKind::Sup => {
                 let kern = math_kern_at(
                     fonts,
                     f,
@@ -380,7 +365,7 @@ pub(crate) fn get_ot_math_kern(
                 // The spec says minimum, but the maximum gives the greater separation.
                 top_kern.max(bot_kern)
             }
-            SUB_CMD => {
+            ScriptKind::Sub => {
                 let kern = math_kern_at(
                     fonts,
                     f,
@@ -403,7 +388,6 @@ pub(crate) fn get_ot_math_kern(
 
                 top_kern.max(bot_kern)
             }
-            _ => unreachable!("get_ot_math_kern: cmd is neither sup nor sub"),
         };
 
         units_to_fix(font, rval)

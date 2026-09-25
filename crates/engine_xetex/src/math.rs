@@ -82,7 +82,7 @@ const SCRIPT_SCRIPT_SIZE: i32 = 512;
 const TOTAL_MATHSY_PARAMS: i32 = 22;
 const TOTAL_MATHEX_PARAMS: i32 = 13;
 const AAT_FONT_FLAG: i32 = 0xFFFF;
-const OTGR_FONT_FLAG: i32 = 0xFFFE;
+pub(crate) const OTGR_FONT_FLAG: i32 = 0xFFFE;
 const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 const STACKGAPMIN: i32 = 26;
 const STACKDISPLAYSTYLEGAPMIN: i32 = 27;
@@ -93,8 +93,6 @@ const FRACTIONDENOMDISPLAYSTYLEGAPMIN: i32 = 40;
 const RADICALVERTICALGAP: i32 = 49;
 const RADICALDISPLAYSTYLEVERTICALGAP: i32 = 50;
 const RADICALRULETHICKNESS: i32 = 51;
-const SUB_CMD: i32 = 1;
-const SUP_CMD: i32 = 0;
 const SUBSCRIPTTOPMAX: i32 = 9;
 const SUPERSCRIPTBOTTOMMIN: i32 = 13;
 const SUBSUPERSCRIPTGAPMIN: i32 = 15;
@@ -129,7 +127,7 @@ const COND_MATH_GLUE: u16 = 98;
 use crate::ot_math::{
     get_native_mathex_param, get_native_mathsy_param, get_ot_assembly, get_ot_math_accent_pos,
     get_ot_math_constant, get_ot_math_ital_corr, get_ot_math_kern, get_ot_math_variant,
-    ot_min_connector_overlap, GlyphAssembly,
+    ot_min_connector_overlap, GlyphAssembly, ScriptKind,
 };
 
 extern "C" {
@@ -1872,7 +1870,7 @@ unsafe fn maybe_attach_script_kern_in(
     p: i32,
     script_f: i32,
     script_g: u16,
-    cmd: i32,
+    kind: ScriptKind,
     shift: i32,
 ) -> Result<ScriptKernAttachment, MathBuildAbort> {
     let cur_f = st.scanner.cur_f;
@@ -1900,7 +1898,7 @@ unsafe fn maybe_attach_script_kern_in(
         nucleus.glyph as i32,
         script_f,
         script_g as i32,
-        cmd,
+        kind,
         shift,
     );
     Ok(ScriptKernAttachment {
@@ -2040,7 +2038,7 @@ unsafe fn finish_subsup_stack_in(
         p,
         input.sub_f,
         input.sub_g,
-        SUB_CMD,
+        ScriptKind::Sub,
         input.shift_down,
     )?;
     p = attachment.p;
@@ -2054,7 +2052,7 @@ unsafe fn finish_subsup_stack_in(
                 p,
                 input.sup_f,
                 input.sup_g,
-                SUP_CMD,
+                ScriptKind::Sup,
                 input.shift_up,
             )?;
             sup_kern = attachment.kern;
@@ -2147,7 +2145,7 @@ unsafe fn finish_subscript_only_in(
 
     x.set_shift_amount(&mut st.mem, Scaled(shift_down));
 
-    let _ = maybe_attach_script_kern_in(st, q, p, sub_f, sub_g, SUB_CMD, shift_down)?;
+    let _ = maybe_attach_script_kern_in(st, q, p, sub_f, sub_g, ScriptKind::Sub, shift_down)?;
     append_script_box_in(st, q, x);
     Ok(())
 }
@@ -2210,7 +2208,7 @@ unsafe fn finish_superscript_branch_in(
             p,
             superscript.font,
             superscript.glyph,
-            SUP_CMD,
+            ScriptKind::Sup,
             shift_up,
         )?;
         x.set_shift_amount(&mut st.mem, Scaled(-shift_up));
