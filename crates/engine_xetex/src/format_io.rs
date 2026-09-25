@@ -7,7 +7,7 @@ use crate::consts::{
     MAX_HALFWORD, MEM_TOP, MIN_HALFWORD, PC_INT_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
     SELECTOR_TERM_AND_LOG, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::engine::{sort_avail_in, TRE_MAX_STRINGS, TRE_POOL_SIZE};
+use crate::engine::sort_avail_in;
 use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::state::InteractionMode;
 
@@ -942,10 +942,7 @@ unsafe fn load_fmt_file_in(
         ));
     }
     st.strings.pool_ptr = x;
-    if TRE_POOL_SIZE < st.strings.pool_ptr + POOL_FREE {
-        TRE_POOL_SIZE = st.strings.pool_ptr + POOL_FREE;
-    }
-    st.strings.pool_size = TRE_POOL_SIZE;
+    st.strings.pool_size = st.strings.pool_size.max(x + POOL_FREE);
 
     x = undump_int(fmt_in)?;
     if x < 0 {
@@ -959,12 +956,9 @@ unsafe fn load_fmt_file_in(
         ));
     }
     st.strings.str_ptr = x;
-    if TRE_MAX_STRINGS < st.strings.str_ptr + STRINGS_FREE {
-        TRE_MAX_STRINGS = st.strings.str_ptr + STRINGS_FREE;
-    }
-    st.strings.max_strings = TRE_MAX_STRINGS;
+    st.strings.max_strings = st.strings.max_strings.max(x + STRINGS_FREE);
 
-    st.strings.str_start = vec![0i32; (TRE_MAX_STRINGS as usize) + 1];
+    st.strings.str_start = vec![0i32; (st.strings.max_strings as usize) + 1];
     let n = st.strings.str_ptr - TOO_BIG_CHAR + 1;
     let limit = st.strings.pool_ptr;
     if !undump_checked_i32(fmt_in, st.strings.str_start.as_mut_ptr(), n, 0, limit)? {
@@ -972,7 +966,7 @@ unsafe fn load_fmt_file_in(
             c"fatal format file error".as_ptr(),
         ));
     }
-    st.strings.str_pool = vec![0u16; (TRE_POOL_SIZE as usize) + 1];
+    st.strings.str_pool = vec![0u16; (st.strings.pool_size as usize) + 1];
     let limit = st.strings.pool_ptr;
     undump_slice(fmt_in, st.strings.str_pool.as_mut_ptr(), limit)?;
 

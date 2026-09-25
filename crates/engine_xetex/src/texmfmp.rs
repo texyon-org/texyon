@@ -17,26 +17,22 @@ const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 // get_date_and_time / get_seconds_and_micros
 // ---------------------------------------------------------------------------
 
-/// translated from xetex-texmfmp.c:116 (get_date_and_time)
-pub unsafe fn get_date_and_time(
-    source_date_epoch: libc::time_t,
-    use_utc: bool,
-    minutes: *mut i32,
-    day: *mut i32,
-    month: *mut i32,
-    year: *mut i32,
-) {
-    // SAFETY: source_date_epoch is a valid time value; localtime/gmtime return
-    // a thread-local pointer that is valid until the next call.
-    let tmptr = if use_utc {
-        crate::compat::gmtime(&source_date_epoch)
-    } else {
-        crate::compat::localtime(&source_date_epoch)
+/// Returns `(minutes, day, month, year)` for `source_date_epoch`.
+pub fn get_date_and_time(source_date_epoch: libc::time_t, use_utc: bool) -> (i32, i32, i32, i32) {
+    // SAFETY: gmtime/localtime return a pointer valid until the next call.
+    let tm = unsafe {
+        *if use_utc {
+            crate::compat::gmtime(&source_date_epoch)
+        } else {
+            crate::compat::localtime(&source_date_epoch)
+        }
     };
-    *minutes = (*tmptr).tm_hour * 60 + (*tmptr).tm_min;
-    *day = (*tmptr).tm_mday;
-    *month = (*tmptr).tm_mon + 1;
-    *year = (*tmptr).tm_year + 1900;
+    (
+        tm.tm_hour * 60 + tm.tm_min,
+        tm.tm_mday,
+        tm.tm_mon + 1,
+        tm.tm_year + 1900,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -46,10 +42,8 @@ pub unsafe fn get_date_and_time(
 /// Return a fixed-point scaled representation of (now - epoch) in 1/65536 sec.
 ///
 /// translated from xetex-xetex0.c:155 (get_microinterval)
-pub unsafe fn get_microinterval(shipout: &crate::state::ShipoutState) -> i32 {
-    let mut s = 0i32;
-    let mut m = 0i32;
-    get_seconds_and_micros(&mut s, &mut m);
+pub fn get_microinterval(shipout: &crate::state::ShipoutState) -> i32 {
+    let (s, m) = get_seconds_and_micros();
     if (s - shipout.epochseconds) > 0x7FFF {
         -1
     } else if shipout.microseconds > m {
@@ -63,13 +57,11 @@ pub unsafe fn get_microinterval(shipout: &crate::state::ShipoutState) -> i32 {
     }
 }
 
-/// translated from xetex-texmfmp.c:128 (get_seconds_and_micros)
-pub unsafe fn get_seconds_and_micros(seconds: *mut i32, micros: *mut i32) {
+pub fn get_seconds_and_micros() -> (i32, i32) {
     let elapsed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
-    *seconds = elapsed.as_secs() as i32;
-    *micros = elapsed.subsec_micros() as i32;
+    (elapsed.as_secs() as i32, elapsed.subsec_micros() as i32)
 }
 
 // ---------------------------------------------------------------------------

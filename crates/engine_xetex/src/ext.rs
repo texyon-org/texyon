@@ -2771,11 +2771,8 @@ pub(crate) fn do_extension_in(
 
         RESET_TIMER_CODE_DE => {
             if !st.config.deterministic_mode {
-                let mut s = st.shipout.epochseconds;
-                let mut m = st.shipout.microseconds;
-                unsafe { crate::texmfmp::get_seconds_and_micros(&mut s, &mut m) };
-                st.shipout.epochseconds = s;
-                st.shipout.microseconds = m;
+                (st.shipout.epochseconds, st.shipout.microseconds) =
+                    crate::texmfmp::get_seconds_and_micros();
             }
         }
 

@@ -1234,7 +1234,7 @@ pub(crate) unsafe fn reopen_resident_outputs_in(
     }
 
     if st.shipout.output_file_name != 0 {
-        pack_job_name_in(st, crate::engine::OUTPUT_FILE_EXTENSION)
+        pack_job_name_in(st, crate::engine::output_file_extension(st))
             .map_err(|e| e.into_engine_abort())?;
         let handle = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
         if handle == INVALID_HANDLE {

@@ -14,7 +14,6 @@ use crate::bridge::{
     ttstub_output_close, ttstub_output_flush, ttstub_output_open, ttstub_output_write,
     ttstub_shell_escape,
 };
-use crate::engine::OUTPUT_FILE_EXTENSION;
 use crate::node::{AnyBox, AnyNode, EdgeNode, MovementNode, NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
@@ -599,7 +598,7 @@ pub(crate) unsafe fn ship_out_in(
             if st.strings.job_name == 0 {
                 crate::io::open_log_file_in(st)?;
             }
-            crate::io::pack_job_name_in(st, OUTPUT_FILE_EXTENSION)?;
+            crate::io::pack_job_name_in(st, crate::engine::output_file_extension(st))?;
             st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
             if st.shipout.dvi_file == INVALID_HANDLE {
                 return Err(ShipoutAbort::CannotOpenOutput);

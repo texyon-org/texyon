@@ -10,7 +10,7 @@ pub(crate) const HASH_OFFSET: i32 = 514;
 pub(crate) const HASH_BASE: i32 = 2_228_226;
 pub(crate) const HASH_SIZE: i32 = 15000;
 pub(crate) const HASH_PRIME: i32 = 8501;
-const PRIM_SIZE: i32 = 2100;
+pub(crate) const PRIM_SIZE: i32 = 2100;
 const PRIM_PRIME: i32 = 1777;
 const PRIM_BASE: i32 = 1;
 
