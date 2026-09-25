@@ -36,7 +36,7 @@ const MU_VAL_LIMIT: u16 = 256;
 const BOX_VAL_LIMIT: u16 = 320;
 const TOK_VAL_LIMIT: u16 = 384;
 
-/// A save-stack abort; both variants end the run.
+/// A save-stack abort, which ends the run.
 pub(crate) enum SaveAbort {
     Overflow(&'static std::ffi::CStr, i32),
     Confusion(&'static std::ffi::CStr),
@@ -268,7 +268,7 @@ pub(crate) fn geq_define(
     Ok(())
 }
 
-/// A sparse-array record; these carry no type tag and are reached only
+/// A sparse-array record. These carry no type tag and are reached only
 /// through the trie or a register's `eqtb` entry.
 #[inline]
 fn sa(p: impl MemAddr) -> NodePtr<SaNode> {

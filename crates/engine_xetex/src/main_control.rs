@@ -671,7 +671,6 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
     Ok(())
 }
 
-/// Moves word `from` of every preamble record into word `to`, zeroing `from`.
 fn move_preamble_dimen(mem: &mut MemState, from: i32, to: i32) {
     let mut q = mem.b32s1(mem.b32s1(ALIGN_HEAD));
     loop {
@@ -1020,7 +1019,6 @@ fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) {
     st.input.cur_list.tail = tail;
 }
 
-/// Inserts the `\every...` token list at `LOCAL_BASE + local`, if set.
 fn begin_every(st: &mut EngineState, local: i32, kind: u16) -> Result<(), MainControlAbort> {
     let list = st.eqtb.b32s1(LOCAL_BASE + local);
     if list != TEX_NULL {
@@ -1196,7 +1194,6 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
     align_peek_in(st)
 }
 
-/// Enters math mode.
 pub(crate) fn push_math_in(st: &mut EngineState, c: GroupCode) -> Result<(), MainControlAbort> {
     crate::mem::push_nest_in(st)?;
     st.input.cur_list.mode = -MMODE;
@@ -1393,7 +1390,6 @@ pub(crate) fn do_endv_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     }
 }
 
-/// TeX's `fetch_box`: the contents of box register `n`, if any.
 pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
     let p = if n < 256 {
         MemPtr::from_raw(st.eqtb.b32s1(BOX_BASE + n))
@@ -2609,7 +2605,6 @@ pub(crate) fn off_save_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
     mc_propagate_error(crate::errors::error_in(st))
 }
 
-/// Opens the next discretionary sublist group in restricted horizontal mode.
 fn begin_disc_group(st: &mut EngineState) -> Result<(), MainControlAbort> {
     crate::save::new_save_level(&mut st.save_stack, GroupCode::Disc, st.mem.line)?;
     crate::scan::scan_left_brace_in(st)?;
@@ -3555,7 +3550,6 @@ fn overflow_err<T>(p: Option<T>) -> Result<T, MainControlAbort> {
     ))
 }
 
-/// Grows the native text buffer until `extra` more units fit.
 #[inline(always)]
 fn native_text_reserve(scanner: &mut crate::state::ScannerState, extra: i32) {
     while scanner.native_text_size() <= scanner.native_len() + extra {
@@ -3614,7 +3608,6 @@ fn find_main_ppp(st: &mut EngineState) {
     st.mainloop.main_ppp = ppp;
 }
 
-/// `p` as a native-word whatsit, if it is one.
 fn as_native_word(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
     if is_char_node(mem, p) {
         return None;
@@ -3641,8 +3634,6 @@ fn extendable_native_word(st: &EngineState, f: i32) -> Option<NodePtr<WhatsitNod
     extendable.then_some(word)
 }
 
-/// Copies `len` UTF-16 units from `src` into the text of native word `node` at unit `at`.
-///
 /// # Safety
 /// `src` must hold `len` units and `node` must have room for `at + len`.
 unsafe fn copy_to_native_node(
@@ -3987,7 +3978,6 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
     Ok(())
 }
 
-/// Sets `main_i` to the character info of `cur_l`.
 #[inline(always)]
 fn cur_l_info(st: &mut EngineState) -> crate::mem_types::B16x4 {
     let main_f = st.mainloop.main_f;
@@ -4502,7 +4492,7 @@ unsafe fn main_control_from_in(
     if run_every_job {
         begin_every(st, LOCAL_EVERY_JOB, EVERY_JOB_TEXT)?;
     }
-    // Cancellation and fence hooks are for resident sessions only; batch runs
+    // Cancellation and fence hooks are for resident sessions only, batch runs
     // must not pay for them per command.
     let resident = st.config.execution_mode == crate::state::EngineExecutionMode::Resident;
     loop {

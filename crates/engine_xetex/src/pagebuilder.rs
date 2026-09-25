@@ -24,7 +24,7 @@ const EMPTY: u8 = 0;
 const INSERTS_ONLY: u8 = 1;
 const BOX_THERE: u8 = 2;
 
-// Indices into `page_so_far`; entries 2 to 5 hold the stretch of each order.
+// Indices into `page_so_far`, whose entries 2 to 5 hold the stretch of each order.
 const PAGE_GOAL: usize = 0;
 const PAGE_TOTAL: usize = 1;
 const PAGE_SHRINK: usize = 6;
