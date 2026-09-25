@@ -2,17 +2,20 @@
 //! alignment family (= xetex0.c's main_control group).
 
 use crate::consts::{
-    ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, BACKED_UP, BIGGEST_CHAR, BOX_BASE, BOX_NODE_SIZE,
-    CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
-    DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DISC_NODE, ENDV,
-    ETEX_PEN_BASE, FONT_BASE, GLUE_BASE, GLUE_NODE, GLUE_VAL, HLIST_NODE, HMODE, IGNORE_DEPTH,
-    INSERTED, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN,
-    INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN, KERN_NODE, LIGATURE_NODE, LOCAL_BASE,
-    MATH_CODE_BASE, MATH_NODE, MAX_COMMAND, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE,
-    MU_VAL_SCAN, NULL_CS, NULL_FLAG, OTHER_CHAR, PENALTY_NODE, PRIM_EQTB_BASE, REGISTER, RELAX,
-    RIGHT_BRACE, RULE_NODE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT,
-    SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACER,
-    SUB_BOX, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
+    ADJUST_HEAD, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, A_LEADERS, BACKED_UP, BIGGEST_CHAR,
+    BIGGEST_LANG, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN,
+    CONTRIB_HEAD, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
+    DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DISC_NODE, DLIST, ENDV, ETEX_PEN_BASE, EXPLICIT,
+    FONT_BASE, GLUE_BASE, GLUE_NODE, GLUE_VAL, HLIST_NODE, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE,
+    INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS,
+    INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, KERN_NODE, LEFT_BRACE, LEFT_SIDE, LIGATURE_NODE,
+    LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE,
+    MATH_NODE, MAX_COMMAND, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN, NOAD_SIZE,
+    NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OTHER_CHAR, OUTPUT_TEXT, PENALTY_NODE,
+    PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, RULE_NODE, SCALED_BASE,
+    SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE,
+    SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACER, SPACE_ADJUSTMENT, SUB_BOX, TEX_NULL,
+    TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
@@ -29,40 +32,251 @@ extern "C" {
     fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
 }
 
-// Command/token/code consts that live module-private in scan.rs (duplicated
-// here, same values — referenced bare by the moved alignment functions).
-const RIGHT_BRACE_TOKEN: i32 = 0x40_0000; // xetex-constants.h:351
-const LEFT_BRACE_TOKEN: i32 = 0x200000;
-const TAB_TOKEN: i32 = 0x80_0000; // xetex-constants.h:354
-const AAT_FONT_FLAG: i32 = 0xFFFF;
-const END_M_CODE: u16 = 3;
-const HMODE_I: i16 = 104; // xetex_format.h:369
-const HRULE: u8 = 36; // xetex_format.h:274
-const OTGR_FONT_FLAG: i32 = 0xFFFE;
-const PAGE_HEAD: i32 = 4_999_997; // MEM_TOP - 2 (xetex_format.h:30)
-const SHAPE_REF: u16 = 120; // xetex_format.h:362
-const VADJUST: u8 = 38; // xetex_format.h:276
-const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
-const FROZEN_END_GROUP: i32 = 2_243_226 + 2; // xetex_format.h:201 + xetex-constants.h:57
-const FROZEN_RIGHT: i32 = 2_243_226 + 3; // xetex_format.h:201 + xetex-constants.h:58
-const HASH_BASE: i32 = 2_228_226;
+// Command codes (`cur_cmd`).
+const MATH_SHIFT: u8 = 3;
+const TAB_MARK: u8 = 4;
+const CAR_RET: u8 = 5;
+const MAC_PARAM: u8 = 6;
+const SUP_MARK: u8 = 7;
+const SUB_MARK: u8 = 8;
+const LETTER: u8 = 11;
+const PAR_END: u8 = 13;
+const STOP: u8 = 14;
+const DELIM_NUM: u8 = 15;
+const CHAR_NUM: u8 = 16;
+const MATH_CHAR_NUM: u8 = 17;
+const MARK: u8 = 18;
+const XRAY: u8 = 19;
+const MAKE_BOX: u8 = 20;
+const HMOVE: u8 = 21;
+const VMOVE: u8 = 22;
+const UN_HBOX: u8 = 23;
+const UN_VBOX: u8 = 24;
+const REMOVE_ITEM: u8 = 25;
+const HSKIP: u8 = 26;
+const VSKIP: u8 = 27;
+const MSKIP: u8 = 28;
+const KERN: u8 = 29;
+const MKERN: u8 = 30;
+const LEADER_SHIP: u8 = 31;
+const HALIGN: u8 = 32;
+const VALIGN: u8 = 33;
+const NO_ALIGN: u8 = 34;
+const VRULE: u8 = 35;
+const HRULE: u8 = 36;
+const INSERT: u8 = 37;
+const VADJUST: u8 = 38;
+const IGNORE_SPACES: u8 = 39;
+const AFTER_ASSIGNMENT: u8 = 40;
+const AFTER_GROUP: u8 = 41;
+const BREAK_PENALTY: u8 = 42;
+const START_PAR: u8 = 43;
+const ITAL_CORR: u8 = 44;
+const ACCENT: u8 = 45;
+const MATH_ACCENT: u8 = 46;
+const DISCRETIONARY: u8 = 47;
+const EQ_NO: u8 = 48;
+const LEFT_RIGHT: u8 = 49;
+const MATH_COMP: u8 = 50;
+const LIMIT_SWITCH: u8 = 51;
+const ABOVE: u8 = 52;
+const MATH_STYLE: u8 = 53;
+const MATH_CHOICE: u8 = 54;
+const NON_SCRIPT: u8 = 55;
+const VCENTER: u8 = 56;
+const CASE_SHIFT: u8 = 57;
+const MESSAGE: u8 = 58;
+const EXTENSION: u8 = 59;
+const IN_STREAM: u8 = 60;
+const BEGIN_GROUP: u8 = 61;
+const END_GROUP: u8 = 62;
+const OMIT: u8 = 63;
+const EX_SPACE: u8 = 64;
+const NO_BOUNDARY: u8 = 65;
+const RADICAL: u8 = 66;
+const END_CS_NAME: u8 = 67;
+const MATH_GIVEN: u8 = 69;
+const XETEX_MATH_GIVEN: u8 = 70;
+const LAST_ITEM: u8 = 71;
+const MAX_NON_PREFIXED_COMMAND: u8 = 71;
+const TOKS_REGISTER: u8 = 72;
+const ASSIGN_TOKS: u8 = 73;
+const ASSIGN_DIMEN: u8 = 75;
+const ASSIGN_FONT_DIMEN: u8 = 78;
+const ASSIGN_FONT_INT: u8 = 79;
+const SET_AUX: u8 = 80;
+const SET_PREV_GRAF: u8 = 81;
+const SET_PAGE_DIMEN: u8 = 82;
+const SET_PAGE_INT: u8 = 83;
+const SET_BOX_DIMEN: u8 = 84;
+const SET_SHAPE: u8 = 85;
+const DEF_CODE: u8 = 86;
+const XETEX_DEF_CODE: u8 = 87;
+const DEF_FAMILY: u8 = 88;
+const DEF_FONT: u8 = 90;
+const ADVANCE: u8 = 92;
+const MULTIPLY: u8 = 93;
+const DIVIDE: u8 = 94;
+const PREFIX: u8 = 95;
+const LET: u8 = 96;
+const SHORTHAND_DEF: u8 = 97;
+const READ_TO_CS: u8 = 98;
+const DEF: u8 = 99;
+const SET_BOX: u8 = 100;
+const HYPH_DATA: u8 = 101;
+const SET_INTERACTION: u8 = 102;
+
+// Equivalent types beyond `MAX_COMMAND`.
+const UNDEFINED_CS: u16 = 103;
+const CALL: u16 = 113;
+const GLUE_REF: u16 = 119;
+const SHAPE_REF: u16 = 120;
+const BOX_REF: u16 = 121;
+const DATA: u16 = 122;
+
+// Value levels (`cur_val_level`).
 const INT_VAL: i16 = 0;
-const LANGUAGE_NODE_SUBTYPE: i16 = 4; // xetex_format.h:461 (whatsit subtype)
-const MARK_NODE: u16 = 4; // xetex_format.h:384
-const MATH_SHIFT_TOKEN: i32 = 0x600000;
-const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
-const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
-const SKIP_CODE: i16 = 4; // xetex_format.h:674
-const TEMP_HEAD: i32 = 4_999_999 - 3;
-const TEX_INFINITY: i32 = 0x7FFF_FFFF;
-const WHATSIT_NODE: u16 = 8; // xetex_format.h:388
 const DIMEN_VAL: i16 = 1;
 const MU_VAL: i16 = 3;
+const TOK_VAL: i16 = 5;
 const INTER_CHAR_VAL: i16 = 6;
-const INTER_CHAR_TEXT: u16 = 17; // xetex-constants.h:216
+
+const INNER_VMODE: i16 = -VMODE;
+const INNER_HMODE: i16 = -HMODE;
+
+const ALIGNING: u8 = 4;
+
+const PRE_ADJUST_HEAD: i32 = 4_999_985;
+const END_SPAN: i32 = 4_999_990;
+const ALIGN_HEAD: i32 = 4_999_991;
+const HOLD_HEAD: i32 = 4_999_995;
+const TEMP_HEAD: i32 = 4_999_996;
+const PAGE_HEAD: i32 = 4_999_997;
+
+const VLIST_NODE: u16 = 1;
+const INS_NODE: u16 = 3;
+const MARK_NODE: u16 = 4;
+const ADJUST_NODE: u16 = 5;
+const WHATSIT_NODE: u16 = 8;
+const UNSET_NODE: u16 = 13;
+const LANGUAGE_NODE_SUBTYPE: i16 = 4;
+
+const ALIGN_STACK_NODE_SIZE: i32 = 6;
+const INS_NODE_SIZE: i32 = 5;
+const NATIVE_NODE_SIZE: i32 = 6;
+const SPAN_NODE_SIZE: i32 = 2;
+
+const NORMAL: u16 = 0;
+const ADDITIONAL: i16 = 1;
+const ACC_KERN: u16 = 2;
+const TAB_SKIP_SUBTYPE: u16 = GLUE_PAR_TAB_SKIP as u16 + 1;
+const COND_MATH_GLUE: u16 = 98;
+const FIL: usize = 1;
+const FILL: usize = 2;
+const FILLL: usize = 3;
+const BEGIN_M_CODE: u16 = 2;
+const END_M_CODE: u16 = 3;
+
+// Token-list types.
+const U_TEMPLATE: u16 = 1;
+const V_TEMPLATE: u16 = 2;
 const BACKED_UP_CHAR: u16 = 4;
-const TOKEN_LIST_INPUT: u16 = 0;
-const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73; // xetex_format.h:108
+const EVERY_PAR_TEXT: u16 = 8;
+const EVERY_HBOX_TEXT: u16 = 11;
+const EVERY_VBOX_TEXT: u16 = 12;
+const EVERY_JOB_TEXT: u16 = 13;
+const EVERY_CR_TEXT: u16 = 14;
+const INTER_CHAR_TEXT: u16 = 17;
+
+const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
+const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
+const MATH_SHIFT_TOKEN: i32 = 0x60_0000;
+const TAB_TOKEN: i32 = 0x80_0000;
+const OTHER_TOKEN: i32 = 0x180_0000;
+const PROTECTED_TOKEN: i32 = 0x1C0_0000 + 1;
+
+const HASH_BASE: i32 = 2_228_226;
+const FROZEN_CR: i32 = 2_243_226 + 1;
+const FROZEN_END_GROUP: i32 = 2_243_226 + 2;
+const FROZEN_RIGHT: i32 = 2_243_226 + 3;
+const FROZEN_END_TEMPLATE: i32 = 2_243_226 + 5;
+const FONT_ID_BASE: i32 = 2_245_338;
+
+const LOCAL_OUTPUT_ROUTINE: i32 = 1;
+const LOCAL_EVERY_PAR: i32 = 2;
+const LOCAL_EVERY_HBOX: i32 = 5;
+const LOCAL_EVERY_VBOX: i32 = 6;
+const LOCAL_EVERY_JOB: i32 = 7;
+const LOCAL_EVERY_CR: i32 = 8;
+const LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
+
+const GLUE_PAR_PAR_SKIP: i16 = 2;
+const GLUE_PAR_ABOVE_DISPLAY: i16 = 3;
+const GLUE_PAR_BELOW_DISPLAY: i16 = 4;
+const GLUE_PAR_SPLIT_TOP_SKIP: i32 = 10;
+const GLUE_PAR_TAB_SKIP: i16 = 11;
+const GLUE_PAR_SPACE_SKIP: i16 = 12;
+const GLUE_PAR_XSPACE_SKIP: i32 = 13;
+const GLUE_BASE_TAB_SKIP: i32 = GLUE_BASE + GLUE_PAR_TAB_SKIP as i32;
+
+const INT_PAR_PRE_DISPLAY_PENALTY: i32 = 11;
+const INT_PAR_POST_DISPLAY_PENALTY: i32 = 12;
+const INT_PAR_TRACING_LOST_CHARS: i32 = 35;
+const INT_PAR_TRACING_COMMANDS: i32 = 36;
+const INT_PAR_FLOATING_PENALTY: i32 = 42;
+const INT_PAR_GLOBAL_DEFS: i32 = 43;
+const INT_PAR_XETEX_DASH_BREAK: i32 = 70;
+const INT_PAR_XETEX_UPWARDS: i32 = 71;
+const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
+const INT_PAR_XETEX_INTER_CHAR_TOKENS: i32 = 73;
+const INT_PAR_XETEX_INTERWORD_SPACE_SHAPING: i32 = 78;
+
+const DIMEN_PAR_SPLIT_MAX_DEPTH: i32 = 6;
+const DIMEN_PAR_BOX_MAX_DEPTH: i32 = 7;
+const DIMEN_PAR_DISPLAY_INDENT: i32 = 15;
+const DIMEN_PAR_OVERFULL_RULE: i32 = 16;
+
+// `cur_chr` modifiers.
+const BOX_CODE: i32 = 0;
+const COPY_CODE: i32 = 1;
+const LAST_BOX_CODE: i32 = 2;
+const VSPLIT_CODE: i32 = 3;
+const VTOP_CODE: i16 = 4;
+const SKIP_CODE: i16 = 4;
+const CHAR_DEF_CODE: i32 = 0;
+const MATH_CHAR_DEF_CODE: i32 = 1;
+const COUNT_DEF_CODE: i32 = 2;
+const DIMEN_DEF_CODE: i32 = 3;
+const SKIP_DEF_CODE: i32 = 4;
+const MU_SKIP_DEF_CODE: i32 = 5;
+const TOKS_DEF_CODE: i32 = 6;
+const CHAR_SUB_DEF_CODE: i32 = 7;
+const XETEX_MATH_CHAR_NUM_DEF_CODE: i32 = 8;
+const XETEX_MATH_CHAR_DEF_CODE: i32 = 9;
+const SLANT_CODE: i32 = 1;
+const X_HEIGHT_CODE: i32 = 5;
+const EXTRA_SPACE_CODE: i32 = 7;
+const LP_CODE_BASE: i32 = 2;
+const RP_CODE_BASE: i32 = 3;
+const SPAN_CODE: i32 = 1_114_113;
+const CR_CODE: i32 = 1_114_114;
+const CR_CR_CODE: i32 = 1_114_115;
+
+const BOX_FLAG: i32 = 0x4000_0000;
+const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;
+const SHIP_OUT_FLAG: i32 = 0x4001_0000;
+const LEADER_FLAG: i32 = 0x4001_0001;
+
+const EMPTY: i32 = 0;
+const SUB_MLIST: i32 = 3;
+const MAX_CHAR_CODE: i32 = 15;
+const MAX_CHAR_VAL: i32 = 0x20_0000;
+const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
+const BIGGEST_USV: i32 = 0x10_FFFF;
+const TOO_BIG_USV: i32 = 1_114_112;
+const TEX_INFINITY: i32 = 0x7FFF_FFFF;
+const AAT_FONT_FLAG: i32 = 0xFFFF;
+const OTGR_FONT_FLAG: i32 = 0xFFFE;
 
 // translated from xetex-xetex0.c:10390 (align_error)
 pub(crate) fn align_error_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
@@ -148,28 +362,6 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     };
     use crate::packaging::flush_node_list;
     use crate::scan::NodeRecycleAbort;
-
-    const ALIGN_HEAD: i32 = 4_999_991; // MEM_TOP - 8
-    const END_SPAN: i32 = 4_999_990; // MEM_TOP - 9
-    const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
-    const MMODE: i16 = 207;
-    const INNER_VMODE: i16 = -1; // -VMODE
-    const VMODE: i16 = 1;
-    const VLIST_NODE: u16 = 1; // xetex_format.h:381
-    const UNSET_NODE: u16 = 13;
-    const SPAN_NODE_SIZE: i32 = 2;
-    const ADDITIONAL: i16 = 1;
-    const DLIST: u16 = 2; // xetex-constants.h:278
-    const NORMAL: u16 = 0;
-    // GLUE_PAR__above_display_skip = 3, GLUE_PAR__below_display_skip = 4
-    const GLUE_PAR_ABOVE_DISPLAY: i16 = 3;
-    const GLUE_PAR_BELOW_DISPLAY: i16 = 4;
-    const DIMEN_PAR_DISPLAY_INDENT: i32 = 15;
-    const DIMEN_PAR_OVERFULL_RULE: i32 = 16;
-    const INT_PAR_PRE_DISPLAY_PENALTY: i32 = 11;
-    const INT_PAR_POST_DISPLAY_PENALTY: i32 = 12;
-    const MATH_SHIFT: u8 = 3; // xetex_format.h:233
-    const GLUE_PAR_TAB_SKIP: u16 = 12; // GLUE_PAR__tab_skip + 1
 
     if st.save_stack.cur_group != GroupCode::Align {
         return Err(MainControlAbort::Confusion(c"align1"));
@@ -343,7 +535,7 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
                             .0;
                         st.mem.set_b32s1(u, g);
                         u = g;
-                        st.mem.set_b16s0(u, GLUE_PAR_TAB_SKIP);
+                        st.mem.set_b16s0(u, TAB_SKIP_SUBTYPE);
                         t += v_p.width(&st.mem).0;
                         if p.glue_sign(&st.mem) == GlueSign::Stretching {
                             if v_p.stretch_order(&st.mem) == p.glue_order(&st.mem) {
@@ -576,10 +768,6 @@ pub(crate) fn fin_align_in(st: &mut crate::state::EngineState) -> Result<(), Mai
 }
 // translated from xetex-xetex0.c:8785 (align_peek)
 pub(crate) fn align_peek_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    const NO_ALIGN: u8 = 34; // xetex_format.h:272
-    const CAR_RET: u8 = 5; // xetex_format.h:235
-    const CR_CR_CODE: i32 = 1_114_115; // xetex-constants.h:681
-
     loop {
         st.scanner.align_state = 1_000_000;
         loop {
@@ -621,15 +809,9 @@ pub(crate) fn align_peek_in(st: &mut crate::state::EngineState) -> Result<(), Ma
 pub(crate) fn get_preamble_token_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const TAB_MARK: u8 = 4; // xetex_format.h:234
-    const SPAN_CODE_GPT: i32 = 1_114_113; // xetex_format.h:679
-    const GLUE_REF_GPT: u16 = 119; // xetex_format.h:361
-    const INT_PAR_GLOBAL_DEFS: i32 = 43; // xetex_format.h:78
-    const GLUE_BASE_TAB_SKIP: i32 = GLUE_BASE + 11;
-
     'restart: loop {
         crate::scan::get_token_in(st)?;
-        while st.scanner.cur_chr == SPAN_CODE_GPT && st.scanner.cur_cmd == TAB_MARK {
+        while st.scanner.cur_chr == SPAN_CODE && st.scanner.cur_cmd == TAB_MARK {
             crate::scan::get_token_in(st)?;
             if st.scanner.cur_cmd > MAX_COMMAND {
                 crate::expand::expand_in(st)?;
@@ -653,7 +835,7 @@ pub(crate) fn get_preamble_token_in(
                     &mut st.mem,
                     &mut st.scanner,
                     GLUE_BASE_TAB_SKIP,
-                    GLUE_REF_GPT,
+                    GLUE_REF,
                     __cv20,
                 ) {
                     return Err(MainControlAbort::Save(a));
@@ -666,7 +848,7 @@ pub(crate) fn get_preamble_token_in(
                     &mut st.mem,
                     &mut st.scanner,
                     GLUE_BASE_TAB_SKIP,
-                    GLUE_REF_GPT,
+                    GLUE_REF,
                     __cv19,
                 ) {
                     return Err(MainControlAbort::Save(a));
@@ -682,8 +864,6 @@ pub(crate) fn init_span_in(
     st: &mut crate::state::EngineState,
     p: crate::units::MemPtr,
 ) -> Result<(), MainControlAbort> {
-    const INNER_HMODE: i16 = -104;
-
     crate::mem::push_nest_in(st)?;
     if st.input.cur_list.mode == INNER_HMODE {
         st.input.cur_list.set_aux_s0(1000);
@@ -702,9 +882,6 @@ pub(crate) fn init_span_in(
     Ok(())
 }
 pub(crate) fn init_row_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    const ALIGN_HEAD_IR: i32 = 4_999_991;
-    const GLUE_PAR_TAB_SKIP: u16 = 11 + 1; // GLUE_PAR__tab_skip + 1
-
     crate::mem::push_nest_in(st)?;
     let new_mode = -105 - st.input.cur_list.mode as i32;
     st.input.cur_list.mode = new_mode as i16;
@@ -713,14 +890,14 @@ pub(crate) fn init_row_in(st: &mut crate::state::EngineState) -> Result<(), Main
     } else {
         st.input.cur_list.set_aux_s1(0);
     }
-    let align_head_link = st.mem.b32s1(ALIGN_HEAD_IR);
+    let align_head_link = st.mem.b32s1(ALIGN_HEAD);
     let glue_spec = st.mem.b32s0(align_head_link + 1);
     let Some(glue) = crate::mem::alloc_glue(&mut st.mem, glue_spec) else {
         return Err(crate::scan::NodeRecycleAbort::Overflow.into());
     };
     st.mem.set_b32s1(st.input.cur_list.tail, glue.idx().0);
     st.input.cur_list.tail.0 = glue.idx().0;
-    glue.set_subtype(&mut st.mem, GLUE_PAR_TAB_SKIP);
+    glue.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
     st.scanner.cur_align.0 = st.mem.b32s1(align_head_link);
     st.scanner.cur_tail.0 = st.scanner.cur_head.0;
     st.scanner.cur_pre_tail.0 = st.scanner.cur_pre_head.0;
@@ -728,12 +905,9 @@ pub(crate) fn init_row_in(st: &mut crate::state::EngineState) -> Result<(), Main
     Ok(())
 }
 pub(crate) fn init_col_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    const OMIT_CMD: u8 = 63; // xetex_format.h:301
-    const U_TEMPLATE: u16 = 1; // xetex-constants.h:200
-
     st.mem
         .set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_cmd as i32);
-    if st.scanner.cur_cmd == OMIT_CMD {
+    if st.scanner.cur_cmd == OMIT {
         st.scanner.align_state = 0;
     } else {
         crate::input::back_input_in(st)?;
@@ -744,9 +918,6 @@ pub(crate) fn init_col_in(st: &mut crate::state::EngineState) -> Result<(), Main
 pub(crate) fn push_alignment_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const ALIGN_HEAD: i32 = 4_999_991; // MEM_TOP - 8
-    const ALIGN_STACK_NODE_SIZE: i32 = 6; // xetex-constants.h:129
-
     let p = crate::scan::get_node_scc(st, ALIGN_STACK_NODE_SIZE)?;
     st.mem.set_b32s1(p, st.scanner.align_ptr.0);
     st.mem.set_b32s0(p, st.scanner.cur_align.0);
@@ -764,9 +935,6 @@ pub(crate) fn push_alignment_in(
     Ok(())
 }
 pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
-    const ALIGN_HEAD: i32 = 4_999_991;
-    const ALIGN_STACK_NODE_SIZE: i32 = 6;
-
     // free_avail(cur_head): mem[cur_head].b32.s1 = avail; avail = cur_head
     st.mem.set_b32s1(st.scanner.cur_head, st.mem.avail);
     st.mem.avail = st.scanner.cur_head.0;
@@ -790,19 +958,6 @@ pub(crate) fn pop_alignment_in(st: &mut crate::state::EngineState) {
 // translated from xetex-xetex0.c:7859 (fin_col)
 pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, MainControlAbort> {
     use crate::mem::{alloc_glue, alloc_null_box, get_avail, TEX_NULL};
-
-    const ADDITIONAL: i16 = 1;
-    const SPAN_CODE: i32 = 1_114_113; // xetex_format.h:679
-    const CR_CODE: i32 = 1_114_114; // xetex_format.h:680
-    const SPAN_NODE_SIZE: i32 = 2; // xetex-constants.h:111
-    const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
-    const END_SPAN: i32 = 4_999_990; // MEM_TOP - 9
-    const GLUE_PAR_TAB_SKIP: u16 = 12; // GLUE_PAR__tab_skip + 1
-    const INNER_HMODE: i16 = -104;
-    const FIL: usize = 1;
-    const FILL: usize = 2;
-    const FILLL: usize = 3;
-    const UNSET_NODE: u16 = 13; // xetex_format.h
 
     if st.scanner.cur_align.0 == TEX_NULL {
         return Err(MainControlAbort::Confusion(c"endv"));
@@ -860,7 +1015,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
                 .ptr()
                 .0;
             st.mem.set_b32s1(p, g);
-            st.mem.set_b16s0(g, GLUE_PAR_TAB_SKIP);
+            st.mem.set_b16s0(g, TAB_SKIP_SUBTYPE);
         } else {
             crate::output::error_here_with_diagnostic_in(
                 st,
@@ -970,7 +1125,7 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
         let g = alloc_glue(&mut st.mem, gv).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail.set_link(&mut st.mem, g.ptr());
         st.input.cur_list.tail = g.ptr();
-        st.mem.set_b16s0(st.input.cur_list.tail, GLUE_PAR_TAB_SKIP);
+        st.mem.set_b16s0(st.input.cur_list.tail, TAB_SKIP_SUBTYPE);
         if st.mem.b32s0(st.scanner.cur_align + 5) >= CR_CODE {
             return Ok(true);
         }
@@ -990,12 +1145,6 @@ pub(crate) fn fin_col_in(st: &mut crate::state::EngineState) -> Result<bool, Mai
 // translated from xetex-xetex0.c:8009 (fin_row)
 pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     use crate::mem::{pop_nest_in, TEX_NULL};
-
-    const ADDITIONAL: i16 = 1;
-    const UNSET_NODE: u16 = 13;
-    const INNER_HMODE: i16 = -104;
-    const EVERY_CR_TEXT: u16 = 14; // xetex-constants.h:213
-    const LOCAL__EVERY_CR: i32 = 8; // xetex_format.h:180
 
     let p = if st.input.cur_list.mode == INNER_HMODE {
         let head = st.mem.link_ptr(st.input.cur_list.head);
@@ -1027,7 +1176,7 @@ pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainC
     };
     st.mem.set_b16s1(p, UNSET_NODE);
     st.mem.set_b32s1(p + 6, 0);
-    let every_cr = st.eqtb.b32s1(LOCAL_BASE + LOCAL__EVERY_CR);
+    let every_cr = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_CR);
     if every_cr != TEX_NULL {
         crate::input::begin_token_list_in(st, every_cr, EVERY_CR_TEXT)?;
     }
@@ -1038,21 +1187,6 @@ pub(crate) fn fin_row_in(st: &mut crate::state::EngineState) -> Result<(), MainC
 pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
     use crate::mem::{alloc_null_box, alloc_param_glue, get_avail, TEX_NULL};
     use crate::scan::NodeRecycleAbort;
-
-    const ALIGN_HEAD: i32 = 4_999_991; // MEM_TOP - 8
-    const END_SPAN: i32 = 4_999_990; // MEM_TOP - 9
-    const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
-    const FROZEN_END_TEMPLATE: i32 = 2_243_226 + 5; // FROZEN_CONTROL_SEQUENCE + 5
-    const EVERY_CR_TEXT: u16 = 14;
-    const LOCAL__EVERY_CR: i32 = 8;
-    const GLUE_PAR_TAB_SKIP: i16 = 11; // GLUE_PAR__tab_skip
-    const MMODE: i16 = 207;
-    const ALIGNING: u8 = 4;
-    const NORMAL_SCANNER: u8 = 0;
-    const TAB_MARK: u8 = 4;
-    const CAR_RET: u8 = 5;
-    const MAC_PARAM: u8 = 6;
-    const SPACER: u8 = 10;
 
     let save_cs_ptr = st.scanner.cur_cs;
     push_alignment_in(st)?;
@@ -1208,7 +1342,7 @@ pub(crate) fn init_align_in(st: &mut crate::state::EngineState) -> Result<(), Ma
     {
         return Err(MainControlAbort::Save(a));
     }
-    let every_cr = st.eqtb.b32s1(LOCAL_BASE + LOCAL__EVERY_CR);
+    let every_cr = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_CR);
     if every_cr != TEX_NULL {
         crate::input::begin_token_list_in(st, every_cr, EVERY_CR_TEXT)?;
     }
@@ -1369,7 +1503,7 @@ pub(crate) fn indent_in_hmode(
             .0;
         let dimen = st.eqtb.b32s1(DIMEN_BASE);
         st.mem.set_b32s1(p + 1, dimen);
-        let p = if st.input.cur_list.mode.abs() == HMODE_I {
+        let p = if st.input.cur_list.mode.abs() == HMODE {
             st.input.cur_list.set_aux_s0(1000);
             p
         } else {
@@ -1462,9 +1596,6 @@ pub(crate) fn begin_insert_or_adjust_in(
 }
 // translated from xetex-xetex0.c:10161 (do_endv)
 pub(crate) fn do_endv_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    const V_TEMPLATE: u16 = 2; // xetex-constants.h:201
-    const TOKEN_LIST: u16 = 0; // xetex-constants.h:261
-
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     while st.input.input_stack[st.input.base_ptr as usize].index != V_TEMPLATE
@@ -1492,13 +1623,6 @@ pub(crate) fn do_endv_in(st: &mut crate::state::EngineState) -> Result<(), MainC
     Ok(())
 }
 pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    const COPY_CODE: i32 = 1; // xetex_format.h:481
-    const VLIST_NODE: u16 = 1; // xetex_format.h:381
-    const MARGIN_KERN_NODE: u16 = 40; // xetex_format.h:396
-    const MARGIN_KERN_NODE_SIZE: i32 = 3; // xetex-constants.h:115
-    const HMODE: i16 = 104; // xetex_format.h:369
-    const MMODE: i16 = 207; // xetex_format.h:370
-
     if st.scanner.cur_chr > COPY_CODE {
         let tail = st.input.cur_list.tail.0;
         st.mem
@@ -1590,8 +1714,6 @@ pub(crate) fn unpackage_in(st: &mut crate::state::EngineState) -> Result<(), Mai
     Ok(())
 }
 pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    const BEGIN_M_CODE: u16 = 2; // xetex_format.h:436
-
     if st.input.cur_list.mode == VMODE && st.input.cur_list.tail.0 == st.input.cur_list.head.0 {
         // On page: only allowed for \lastskip when last_glue != MAX_HALFWORD
         if st.scanner.cur_chr as u16 != GLUE_NODE || st.shipout.last_glue.0 != MAX_HALFWORD {
@@ -1682,10 +1804,6 @@ pub(crate) fn delete_last_in(st: &mut crate::state::EngineState) -> Result<(), M
 pub(crate) fn app_space(
     st: &mut crate::state::EngineState,
 ) -> Result<Option<(i32, bool)>, crate::scan::NodeRecycleAbort> {
-    const GLUE_PAR_SPACE_SKIP: i32 = 12; // xetex_format.h:161
-    const GLUE_PAR_XSPACE_SKIP: i32 = 13; // xetex_format.h:162
-    const EXTRA_SPACE_CODE: i32 = 7; // xetex-constants.h:299
-
     let space_factor = st.input.cur_list.aux_s0();
     let cf = st.eqtb.b32s1(CUR_FONT_LOC);
     let q;
@@ -1696,8 +1814,8 @@ pub(crate) fn app_space(
             .ptr()
             .0;
     } else {
-        if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP) != 0 {
-            st.mainloop.main_p.0 = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP);
+        if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32) != 0 {
+            st.mainloop.main_p.0 = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32);
         } else {
             st.mainloop.main_p.0 = st.fonts.font_glue(cf);
             if st.mainloop.main_p.0 == crate::mem::TEX_NULL {
@@ -1775,10 +1893,6 @@ pub(crate) fn scan_box_in(
     st: &mut crate::state::EngineState,
     box_context: i32,
 ) -> Result<(), MainControlAbort> {
-    const MAKE_BOX: u8 = 20; // xetex_format.h:258
-    const HRULE: u8 = 36; // xetex_format.h:274
-    const VRULE: u8 = 35; // xetex_format.h:273
-    const LEADER_FLAG: i32 = 0x40010001; // xetex-constants.h:375
     loop {
         crate::scan::get_x_token_in(st)?;
         if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
@@ -1820,10 +1934,6 @@ pub(crate) fn package_in(
     c: i16,
 ) -> Result<(), MainControlAbort> {
     use crate::mem::TEX_NULL;
-    const DIMEN_PAR_BOX_MAX_DEPTH: i32 = 7; // xetex_format.h:129
-    const INT_PAR_XETEX_UPWARDS: i32 = 71; // xetex_format.h:106
-    const VTOP_CODE: i16 = 4; // xetex_format.h:484
-    const INNER_HMODE: i16 = -104; // xetex_format.h:369 negated
 
     let d = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_BOX_MAX_DEPTH);
     let u = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
@@ -1870,16 +1980,10 @@ pub(crate) fn new_graf_in(
     indented: bool,
 ) -> Result<(), MainControlAbort> {
     use crate::mem::TEX_NULL;
-    const GLUE_PAR_PAR_SKIP: i16 = 2; // xetex_format.h:151
-    const VMODE_I16: i16 = 1; // xetex_format.h:369
-    const HMODE_I16: i16 = 104; // xetex_format.h:369
-    const BIGGEST_LANG: i32 = 255; // xetex-constants.h:327
-    const LOCAL__EVERY_PAR: i32 = 2; // xetex_format.h:174
-    const EVERY_PAR_TEXT: u16 = 8; // xetex-constants.h:207
 
     st.input.cur_list.prev_graf = 0;
 
-    if st.input.cur_list.mode == VMODE_I16 || st.input.cur_list.head != st.input.cur_list.tail {
+    if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
         let pg = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_PAR_SKIP)
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail.set_link(&mut st.mem, pg.ptr());
@@ -1887,7 +1991,7 @@ pub(crate) fn new_graf_in(
     }
 
     crate::mem::push_nest_in(st)?;
-    st.input.cur_list.mode = HMODE_I16;
+    st.input.cur_list.mode = HMODE;
     st.input.cur_list.set_aux_s0(1000);
 
     let lang_val = st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE);
@@ -1914,7 +2018,7 @@ pub(crate) fn new_graf_in(
         }
     }
 
-    let every_par = st.eqtb.b32s1(LOCAL_BASE + LOCAL__EVERY_PAR);
+    let every_par = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_PAR);
     if every_par != TEX_NULL {
         crate::input::begin_token_list_in(st, every_par, EVERY_PAR_TEXT)?;
     }
@@ -2177,22 +2281,6 @@ pub(crate) fn box_end_in(
 ) -> Result<(), MainControlAbort> {
     use crate::mem::TEX_NULL;
 
-    const VMODE: i16 = 1;
-    const HMODE: i16 = 104;
-    const BOX_FLAG: i32 = 0x4000_0000; // xetex-constants.h:372
-    const GLOBAL_BOX_FLAG: i32 = 0x4000_8000; // xetex-constants.h:373
-    const SHIP_OUT_FLAG: i32 = 0x4001_0000; // xetex-constants.h:374
-    const LEADER_FLAG: i32 = 0x4001_0001; // xetex-constants.h:375
-    const A_LEADERS: i32 = 100; // xetex_format.h:422
-    const ADJUST_HEAD: i32 = 4_999_994; // MEM_TOP - 5 (xetex-constants.h:42)
-    const PRE_ADJUST_HEAD: i32 = 4_999_985; // MEM_TOP - 14 (xetex-constants.h:51)
-    const SUB_BOX: i32 = 2; // xetex-constants.h:283
-    const BOX_REF: u16 = 121; // xetex_format.h:363
-    const SPACER: u8 = 10; // xetex_format.h:242
-    const RELAX: u8 = 0; // xetex_format.h:229
-    const HSKIP: u8 = 26; // xetex_format.h:264
-    const VSKIP: u8 = 27; // xetex_format.h:265
-
     if box_context < BOX_FLAG {
         let cb = st.scanner.cur_box.0;
         if cb != TEX_NULL {
@@ -2312,8 +2400,10 @@ pub(crate) fn box_end_in(
             {
                 append_glue_in(st)?;
                 let tail = st.input.cur_list.tail.0;
-                st.mem
-                    .set_b16s0(tail, (box_context - (LEADER_FLAG - A_LEADERS)) as u16);
+                st.mem.set_b16s0(
+                    tail,
+                    (box_context - (LEADER_FLAG - A_LEADERS as i32)) as u16,
+                );
                 let cb = st.scanner.cur_box.0;
                 st.mem.set_b32s1(tail + 1, cb);
             } else {
@@ -2351,23 +2441,6 @@ pub(crate) fn begin_box_in(
     box_context: i32,
 ) -> Result<(), MainControlAbort> {
     use crate::mem::TEX_NULL;
-
-    const BOX_CODE: i32 = 0; // xetex_format.h:480
-    const COPY_CODE: i32 = 1; // xetex_format.h:481
-    const LAST_BOX_CODE: i32 = 2; // xetex_format.h:482
-    const VSPLIT_CODE_I: i32 = 3; // xetex_format.h:483
-    const BOX_FLAG: i32 = 0x4000_0000; // xetex-constants.h:372
-    const VLIST_NODE: u16 = 1; // xetex_format.h:381
-    const MMODE: i16 = 207; // xetex_format.h:370
-    const VMODE: i16 = 1; // xetex_format.h:368
-    const HMODE: i16 = 104; // xetex_format.h:369
-    const BEGIN_M_CODE: u16 = 2; // xetex_format.h:436
-    const END_M_CODE: u16 = 3; // xetex_format.h:437
-    const EVERY_HBOX_TEXT: u16 = 11; // xetex-constants.h:210
-    const EVERY_VBOX_TEXT: u16 = 12; // xetex-constants.h:211
-    const IGNORE_DEPTH: i32 = -65_536_000; // xetex-constants.h:388
-    const LOCAL_EVERY_HBOX: i32 = 5; // xetex_format.h:177
-    const LOCAL_EVERY_VBOX: i32 = 6; // xetex_format.h:178
 
     match st.scanner.cur_chr {
         BOX_CODE => {
@@ -2510,7 +2583,7 @@ pub(crate) fn begin_box_in(
             }
         }
 
-        VSPLIT_CODE_I => {
+        VSPLIT_CODE => {
             crate::scan::scan_register_num_in(st)?;
             let n = st.scanner.cur_val;
             if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
@@ -2590,27 +2663,6 @@ pub(crate) fn handle_right_brace_in(
     use crate::mem::{alloc_noad, delete_glue_ref, free_node, get_node, pop_nest_in, TEX_NULL};
     use crate::packaging::flush_node_list;
     use crate::scan::NodeRecycleAbort;
-
-    const INS_NODE_SIZE: i32 = 5;
-    const NOAD_SIZE: i32 = 4;
-    const ADDITIONAL: i16 = 1;
-    const VTOP_CODE: i16 = 4; // xetex_format.h:484
-    const ADJUST_HEAD: i32 = 4_999_994; // MEM_TOP - 5
-    const PRE_ADJUST_HEAD: i32 = 4_999_985; // MEM_TOP - 14
-    const CONTRIB_HEAD: i32 = 4_999_998; // MEM_TOP - 1
-    const PAGE_HEAD: i32 = 4_999_997; // MEM_TOP - 2
-    const LAST_BOX_CODE: usize = 2; // xetex_format.h:482
-    const OUTPUT_TEXT: u16 = 7; // xetex-constants.h:206
-    const BACKED_UP: u16 = 3; // xetex-constants.h:202
-    const DIMEN_PAR_SPLIT_MAX_DEPTH: i32 = 6; // xetex_format.h:128
-    const INT_PAR_FLOATING_PENALTY: i32 = 42; // xetex_format.h:77
-    const GLUE_PAR_SPLIT_TOP_SKIP: i32 = 10; // xetex_format.h:159
-    const INS_NODE: u16 = 3; // xetex_format.h:383
-    const ADJUST_NODE: u16 = 5; // xetex_format.h:385
-    const SUB_BOX: i32 = 2; // xetex-constants.h:283
-    const SUB_MLIST: i32 = 3; // xetex-constants.h:287
-    const EMPTY: i32 = 0; // xetex-constants.h:230
-    const FROZEN_CR: i32 = 2_243_226 + 1; // FROZEN_CONTROL_SEQUENCE + 1
 
     match st.save_stack.cur_group {
         GroupCode::Simple => {
@@ -2774,9 +2826,9 @@ pub(crate) fn handle_right_brace_in(
                 st.shipout.page_tail.0 = PAGE_HEAD;
             }
 
-            let dp = st.scanner.disc_ptr[LAST_BOX_CODE];
+            let dp = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
             flush_node_list(&mut st.mem, dp).map_err(MainControlAbort::Confusion)?;
-            st.scanner.disc_ptr[LAST_BOX_CODE] = crate::units::MemPtr::NULL;
+            st.scanner.disc_ptr[LAST_BOX_CODE as usize] = crate::units::MemPtr::NULL;
             pop_nest_in(&mut st.mem, &mut st.input);
             crate::pagebuilder::build_page_in(st)?;
         }
@@ -2954,7 +3006,7 @@ pub(crate) fn new_interaction_in(st: &mut crate::state::EngineState) {
     }
 }
 pub(crate) fn alter_aux_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    if st.scanner.cur_chr != st.input.cur_list.mode.unsigned_abs() as i32 {
+    if st.scanner.cur_chr != st.input.cur_list.mode.abs() as i32 {
         return mc_propagate_error(crate::errors::report_illegal_case_in(st));
     }
     let c = st.scanner.cur_chr;
@@ -2983,7 +3035,7 @@ pub(crate) fn alter_prev_graf_in(
     let np = st.input.nest_ptr;
     st.input.nest[np as usize] = st.input.cur_list;
     let mut p = np;
-    while st.input.nest[p as usize].mode.unsigned_abs() != VMODE as u16 {
+    while st.input.nest[p as usize].mode.abs() != VMODE {
         p -= 1;
     }
     crate::scan::scan_optional_equals_in(st)?;
@@ -3334,8 +3386,6 @@ pub(crate) fn build_discretionary_in(
 pub(crate) fn append_italic_correction_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const EXPLICIT: u16 = 1; // xetex_format.h:428
-
     // get_native_italic_correction(p) = real_get_native_italic_correction(&mem[p])
     let native_kern = |st: &mut crate::state::EngineState,
                        tail: i32,
@@ -3398,13 +3448,6 @@ pub(crate) fn append_italic_correction_in(
 }
 // translated from xetex-xetex0.c:9910 (make_accent)
 pub(crate) fn make_accent_in(st: &mut crate::state::EngineState) -> Result<(), MainControlAbort> {
-    const SLANT_CODE: i32 = 1; // xetex-constants.h:273
-    const X_HEIGHT_CODE: i32 = 5; // xetex-constants.h:294
-    const ACC_KERN: u16 = 2; // xetex_format.h:429
-    const ADDITIONAL: i16 = 1; // xetex-constants.h:264
-    const LETTER: u8 = 11; // xetex_format.h:243
-    const CHAR_NUM: u8 = 16; // xetex_format.h:253
-
     fn is_native(fonts: &crate::state::FontState, fnt: i32) -> bool {
         fonts.font_area_entry(fnt) == AAT_FONT_FLAG || fonts.font_area_entry(fnt) == OTGR_FONT_FLAG
     }
@@ -3794,11 +3837,6 @@ pub(crate) fn do_register_command_in(
     st: &mut crate::state::EngineState,
     a: i16,
 ) -> Result<(), MainControlAbort> {
-    const ADVANCE: u8 = 92; // xetex_format.h:332
-    const MULTIPLY: u8 = 93; // xetex_format.h:334
-    const GLUE_REF: u16 = 119; // xetex_format.h:361
-    const NORMAL: u16 = 0; // xetex_format.h:420
-
     let q = st.scanner.cur_cmd;
     let mut w: i32 = 0;
     let mut s: i32 = crate::mem::TEX_NULL;
@@ -4065,9 +4103,6 @@ pub(crate) fn do_register_command_in(
 pub(crate) fn do_assignments_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const MAX_NON_PREFIXED_COMMAND: u8 = 71; // xetex_format.h:312
-    const RELAX: u8 = 0; // xetex_format.h:229
-
     loop {
         loop {
             crate::scan::get_x_token_in(st)?;
@@ -4088,15 +4123,12 @@ pub(crate) fn do_assignments_in(
 pub(crate) fn main_control_append_normal_space_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const GLUE_PAR_SPACE_SKIP_MC: i16 = 12; // xetex_format.h:161
-    const CHAR_NUM_MC: u8 = 16; // xetex_format.h:253
-
-    if inter_char_boundary_after_space_action(st, CHAR_NUM_MC).execute_in(st)? {
+    if inter_char_boundary_after_space_action(st, CHAR_NUM).execute_in(st)? {
         return Ok(());
     }
 
     let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
-    if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP_MC as i32) == 0 {
+    if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32) == 0 {
         st.mainloop.main_p.0 = st.fonts.font_glue(cur_font);
         if st.mainloop.main_p.0 == crate::mem::TEX_NULL {
             st.mainloop.main_p = crate::mem::alloc_spec(&mut st.mem, 0)
@@ -4121,10 +4153,9 @@ pub(crate) fn main_control_append_normal_space_in(
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
             .ptr();
     } else {
-        st.mem.temp_ptr =
-            crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_SPACE_SKIP_MC)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-                .ptr();
+        st.mem.temp_ptr = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_SPACE_SKIP)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
+            .ptr();
     }
 
     let tp = st.mem.temp_ptr;
@@ -4136,68 +4167,29 @@ pub(crate) fn main_control_append_normal_space_in(
 pub(crate) fn main_control_mode_independent_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const AFTER_ASSIGNMENT_MC: u8 = 40;
-    const AFTER_GROUP_MC: u8 = 41;
-    const XRAY_MC: u8 = 19;
-    const CASE_SHIFT_MC: u8 = 57;
-    const MESSAGE_MC: u8 = 58;
-    const EXTENSION_MC: u8 = 59;
-    const IN_STREAM_MC: u8 = 60;
-    const TOKS_REGISTER_MC: u8 = 72;
-    const ASSIGN_TOKS_MC: u8 = 73;
-    const ASSIGN_INT_MC: u8 = 74;
-    const ASSIGN_DIMEN_MC: u8 = 75;
-    const ASSIGN_GLUE_MC: u8 = 76;
-    const ASSIGN_MU_GLUE_MC: u8 = 77;
-    const ASSIGN_FONT_DIMEN_MC: u8 = 78;
-    const ASSIGN_FONT_INT_MC: u8 = 79;
-    const SET_AUX_MC: u8 = 80;
-    const SET_PREV_GRAF_MC: u8 = 81;
-    const SET_PAGE_DIMEN_MC: u8 = 82;
-    const SET_PAGE_INT_MC: u8 = 83;
-    const SET_BOX_DIMEN_MC: u8 = 84;
-    const SET_SHAPE_MC: u8 = 85;
-    const DEF_CODE_MC: u8 = 86;
-    const XETEX_DEF_CODE_MC: u8 = 87;
-    const DEF_FAMILY_MC: u8 = 88;
-    const SET_FONT_MC: u8 = 89;
-    const DEF_FONT_MC: u8 = 90;
-    const REGISTER_MC: u8 = 91;
-    const ADVANCE_MC: u8 = 92;
-    const MULTIPLY_MC: u8 = 93;
-    const DIVIDE_MC: u8 = 94;
-    const PREFIX_MC: u8 = 95;
-    const LET_MC: u8 = 96;
-    const SHORTHAND_DEF_MC: u8 = 97;
-    const READ_TO_CS_MC: u8 = 98;
-    const DEF_MC: u8 = 99;
-    const SET_BOX_MC: u8 = 100;
-    const HYPH_DATA_MC: u8 = 101;
-    const SET_INTERACTION_MC: u8 = 102;
-
     match st.scanner.cur_cmd {
-        TOKS_REGISTER_MC | ASSIGN_TOKS_MC | ASSIGN_INT_MC | ASSIGN_DIMEN_MC | ASSIGN_GLUE_MC
-        | ASSIGN_MU_GLUE_MC | ASSIGN_FONT_DIMEN_MC | ASSIGN_FONT_INT_MC | SET_AUX_MC
-        | SET_PREV_GRAF_MC | SET_PAGE_DIMEN_MC | SET_PAGE_INT_MC | SET_BOX_DIMEN_MC
-        | SET_SHAPE_MC | DEF_CODE_MC | XETEX_DEF_CODE_MC | DEF_FAMILY_MC | SET_FONT_MC
-        | DEF_FONT_MC | REGISTER_MC | ADVANCE_MC | MULTIPLY_MC | DIVIDE_MC | PREFIX_MC | LET_MC
-        | SHORTHAND_DEF_MC | READ_TO_CS_MC | DEF_MC | SET_BOX_MC | HYPH_DATA_MC
-        | SET_INTERACTION_MC => prefixed_command_in(st)?,
-        AFTER_ASSIGNMENT_MC => {
+        TOKS_REGISTER | ASSIGN_TOKS | ASSIGN_INT | ASSIGN_DIMEN | ASSIGN_GLUE | ASSIGN_MU_GLUE
+        | ASSIGN_FONT_DIMEN | ASSIGN_FONT_INT | SET_AUX | SET_PREV_GRAF | SET_PAGE_DIMEN
+        | SET_PAGE_INT | SET_BOX_DIMEN | SET_SHAPE | DEF_CODE | XETEX_DEF_CODE | DEF_FAMILY
+        | SET_FONT | DEF_FONT | REGISTER | ADVANCE | MULTIPLY | DIVIDE | PREFIX | LET
+        | SHORTHAND_DEF | READ_TO_CS | DEF | SET_BOX | HYPH_DATA | SET_INTERACTION => {
+            prefixed_command_in(st)?
+        }
+        AFTER_ASSIGNMENT => {
             crate::scan::get_token_in(st)?;
             st.scanner.after_token = st.scanner.cur_tok;
         }
-        AFTER_GROUP_MC => {
+        AFTER_GROUP => {
             crate::scan::get_token_in(st)?;
             if let Some(a) = crate::save::save_for_after(&mut st.save_stack, st.scanner.cur_tok) {
                 return Err(MainControlAbort::Save(a));
             }
         }
-        IN_STREAM_MC => unsafe { crate::io::open_or_close_in(st)? },
-        MESSAGE_MC => crate::output::issue_message_in(st)?,
-        CASE_SHIFT_MC => shift_case_in(st)?,
-        XRAY_MC => crate::output::show_whatever_in(st)?,
-        EXTENSION_MC => do_extension_in(st)?,
+        IN_STREAM => unsafe { crate::io::open_or_close_in(st)? },
+        MESSAGE => crate::output::issue_message_in(st)?,
+        CASE_SHIFT => shift_case_in(st)?,
+        XRAY => crate::output::show_whatever_in(st)?,
+        EXTENSION => do_extension_in(st)?,
         _ => {}
     }
     Ok(())
@@ -4206,101 +4198,65 @@ pub(crate) fn main_control_mode_independent_in(
 pub(crate) fn main_control_mode_error_cases_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const VMODE_MC: u16 = 1;
-    const HMODE_MC: u16 = 104;
-    const MMODE_MC: u16 = 207;
-    const MAC_PARAM_MC: u8 = 6;
-    const SUP_MARK_MC: u8 = 7;
-    const SUB_MARK_MC: u8 = 8;
-    const ENDV_MC: u8 = 9;
-    const PAR_END_MC: u8 = 13;
-    const STOP_MC: u8 = 14;
-    const DELIM_NUM_MC: u8 = 15;
-    const MATH_CHAR_NUM_MC: u8 = 17;
-    const HMOVE_MC: u8 = 21;
-    const VMOVE_MC: u8 = 22;
-    const UN_VBOX_MC: u8 = 24;
-    const VSKIP_MC: u8 = 27;
-    const MSKIP_MC: u8 = 28;
-    const MKERN_MC: u8 = 30;
-    const VALIGN_MC: u8 = 33;
-    const HRULE_MC: u8 = 36;
-    const VADJUST_MC: u8 = 38;
-    const ITAL_CORR_MC: u8 = 44;
-    const MATH_ACCENT_MC: u8 = 46;
-    const EQ_NO_MC: u8 = 48;
-    const LEFT_RIGHT_MC: u8 = 49;
-    const MATH_COMP_MC: u8 = 50;
-    const LIMIT_SWITCH_MC: u8 = 51;
-    const ABOVE_MC: u8 = 52;
-    const MATH_STYLE_MC: u8 = 53;
-    const MATH_CHOICE_MC: u8 = 54;
-    const NON_SCRIPT_MC: u8 = 55;
-    const VCENTER_MC: u8 = 56;
-    const RADICAL_MC: u8 = 66;
-    const MATH_GIVEN_MC: u8 = 69;
-    const XETEX_MATH_GIVEN_MC: u8 = 70;
-    const LAST_ITEM_MC: u8 = 71;
-
-    match (st.input.cur_list.mode.unsigned_abs(), st.scanner.cur_cmd) {
-        (VMODE_MC, VMOVE_MC)
-        | (HMODE_MC, HMOVE_MC)
-        | (MMODE_MC, HMOVE_MC)
-        | (VMODE_MC, LAST_ITEM_MC)
-        | (HMODE_MC, LAST_ITEM_MC)
-        | (MMODE_MC, LAST_ITEM_MC)
-        | (VMODE_MC, VADJUST_MC)
-        | (VMODE_MC, ITAL_CORR_MC)
-        | (VMODE_MC, EQ_NO_MC)
-        | (HMODE_MC, EQ_NO_MC)
-        | (VMODE_MC, MAC_PARAM_MC)
-        | (HMODE_MC, MAC_PARAM_MC)
-        | (MMODE_MC, MAC_PARAM_MC) => {
+    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
+        (VMODE, VMOVE)
+        | (HMODE, HMOVE)
+        | (MMODE, HMOVE)
+        | (VMODE, LAST_ITEM)
+        | (HMODE, LAST_ITEM)
+        | (MMODE, LAST_ITEM)
+        | (VMODE, VADJUST)
+        | (VMODE, ITAL_CORR)
+        | (VMODE, EQ_NO)
+        | (HMODE, EQ_NO)
+        | (VMODE, MAC_PARAM)
+        | (HMODE, MAC_PARAM)
+        | (MMODE, MAC_PARAM) => {
             mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
         }
-        (VMODE_MC, SUP_MARK_MC)
-        | (HMODE_MC, SUP_MARK_MC)
-        | (VMODE_MC, SUB_MARK_MC)
-        | (HMODE_MC, SUB_MARK_MC)
-        | (VMODE_MC, MATH_CHAR_NUM_MC)
-        | (HMODE_MC, MATH_CHAR_NUM_MC)
-        | (VMODE_MC, MATH_GIVEN_MC)
-        | (HMODE_MC, MATH_GIVEN_MC)
-        | (VMODE_MC, XETEX_MATH_GIVEN_MC)
-        | (HMODE_MC, XETEX_MATH_GIVEN_MC)
-        | (VMODE_MC, MATH_COMP_MC)
-        | (HMODE_MC, MATH_COMP_MC)
-        | (VMODE_MC, DELIM_NUM_MC)
-        | (HMODE_MC, DELIM_NUM_MC)
-        | (VMODE_MC, LEFT_RIGHT_MC)
-        | (HMODE_MC, LEFT_RIGHT_MC)
-        | (VMODE_MC, ABOVE_MC)
-        | (HMODE_MC, ABOVE_MC)
-        | (VMODE_MC, RADICAL_MC)
-        | (HMODE_MC, RADICAL_MC)
-        | (VMODE_MC, MATH_STYLE_MC)
-        | (HMODE_MC, MATH_STYLE_MC)
-        | (VMODE_MC, MATH_CHOICE_MC)
-        | (HMODE_MC, MATH_CHOICE_MC)
-        | (VMODE_MC, VCENTER_MC)
-        | (HMODE_MC, VCENTER_MC)
-        | (VMODE_MC, NON_SCRIPT_MC)
-        | (HMODE_MC, NON_SCRIPT_MC)
-        | (VMODE_MC, MKERN_MC)
-        | (HMODE_MC, MKERN_MC)
-        | (VMODE_MC, LIMIT_SWITCH_MC)
-        | (HMODE_MC, LIMIT_SWITCH_MC)
-        | (VMODE_MC, MSKIP_MC)
-        | (HMODE_MC, MSKIP_MC)
-        | (VMODE_MC, MATH_ACCENT_MC)
-        | (HMODE_MC, MATH_ACCENT_MC)
-        | (MMODE_MC, ENDV_MC)
-        | (MMODE_MC, PAR_END_MC)
-        | (MMODE_MC, STOP_MC)
-        | (MMODE_MC, VSKIP_MC)
-        | (MMODE_MC, UN_VBOX_MC)
-        | (MMODE_MC, VALIGN_MC)
-        | (MMODE_MC, HRULE_MC) => crate::scan::insert_dollar_sign_in(st)?,
+        (VMODE, SUP_MARK)
+        | (HMODE, SUP_MARK)
+        | (VMODE, SUB_MARK)
+        | (HMODE, SUB_MARK)
+        | (VMODE, MATH_CHAR_NUM)
+        | (HMODE, MATH_CHAR_NUM)
+        | (VMODE, MATH_GIVEN)
+        | (HMODE, MATH_GIVEN)
+        | (VMODE, XETEX_MATH_GIVEN)
+        | (HMODE, XETEX_MATH_GIVEN)
+        | (VMODE, MATH_COMP)
+        | (HMODE, MATH_COMP)
+        | (VMODE, DELIM_NUM)
+        | (HMODE, DELIM_NUM)
+        | (VMODE, LEFT_RIGHT)
+        | (HMODE, LEFT_RIGHT)
+        | (VMODE, ABOVE)
+        | (HMODE, ABOVE)
+        | (VMODE, RADICAL)
+        | (HMODE, RADICAL)
+        | (VMODE, MATH_STYLE)
+        | (HMODE, MATH_STYLE)
+        | (VMODE, MATH_CHOICE)
+        | (HMODE, MATH_CHOICE)
+        | (VMODE, VCENTER)
+        | (HMODE, VCENTER)
+        | (VMODE, NON_SCRIPT)
+        | (HMODE, NON_SCRIPT)
+        | (VMODE, MKERN)
+        | (HMODE, MKERN)
+        | (VMODE, LIMIT_SWITCH)
+        | (HMODE, LIMIT_SWITCH)
+        | (VMODE, MSKIP)
+        | (HMODE, MSKIP)
+        | (VMODE, MATH_ACCENT)
+        | (HMODE, MATH_ACCENT)
+        | (MMODE, ENDV)
+        | (MMODE, PAR_END)
+        | (MMODE, STOP)
+        | (MMODE, VSKIP)
+        | (MMODE, UN_VBOX)
+        | (MMODE, VALIGN)
+        | (MMODE, HRULE) => crate::scan::insert_dollar_sign_in(st)?,
         _ => {}
     }
     Ok(())
@@ -4309,55 +4265,35 @@ pub(crate) fn main_control_mode_error_cases_in(
 pub(crate) fn main_control_simple_list_group_cases_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const VMODE_MC: u16 = 1;
-    const HMODE_MC: u16 = 104;
-    const MMODE_MC: u16 = 207;
-    const LEFT_BRACE_MC: u8 = 1;
-    const KERN_MC: u8 = 29;
-    const MKERN_MC: u8 = 30;
-    const HSKIP_MC: u8 = 26;
-    const VSKIP_MC: u8 = 27;
-    const MSKIP_MC: u8 = 28;
-    const BEGIN_GROUP_MC: u8 = 61;
-    const END_GROUP_MC: u8 = 62;
-    const HRULE_MC: u8 = 36;
-    const VRULE_MC: u8 = 35;
-    const IGNORE_DEPTH_MC: i32 = -65_536_000;
-
-    let mode = st.input.cur_list.mode.unsigned_abs();
+    let mode = st.input.cur_list.mode.abs();
     match (mode, st.scanner.cur_cmd) {
-        (VMODE_MC, HRULE_MC) | (HMODE_MC, VRULE_MC) | (MMODE_MC, VRULE_MC) => {
+        (VMODE, HRULE) | (HMODE, VRULE) | (MMODE, VRULE) => {
             let p = crate::scan::scan_rule_spec_in(st)?;
             st.mem.set_b32s1(st.input.cur_list.tail, p);
             st.input.cur_list.tail.0 = p;
-            if mode == VMODE_MC {
-                st.input.cur_list.set_aux_s1(IGNORE_DEPTH_MC);
-            } else if mode == HMODE_MC {
+            if mode == VMODE {
+                st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+            } else if mode == HMODE {
                 st.input.cur_list.set_aux_s0(1000);
             }
         }
-        (VMODE_MC, VSKIP_MC)
-        | (HMODE_MC, HSKIP_MC)
-        | (MMODE_MC, HSKIP_MC)
-        | (MMODE_MC, MSKIP_MC) => append_glue_in(st)?,
-        (VMODE_MC, KERN_MC) | (HMODE_MC, KERN_MC) | (MMODE_MC, KERN_MC) | (MMODE_MC, MKERN_MC) => {
-            append_kern_in(st)?
-        }
-        (VMODE_MC, LEFT_BRACE_MC) | (HMODE_MC, LEFT_BRACE_MC) => {
+        (VMODE, VSKIP) | (HMODE, HSKIP) | (MMODE, HSKIP) | (MMODE, MSKIP) => append_glue_in(st)?,
+        (VMODE, KERN) | (HMODE, KERN) | (MMODE, KERN) | (MMODE, MKERN) => append_kern_in(st)?,
+        (VMODE, LEFT_BRACE) | (HMODE, LEFT_BRACE) => {
             if let Some(a) =
                 crate::save::new_save_level(&mut st.save_stack, GroupCode::Simple, st.mem.line)
             {
                 return Err(MainControlAbort::Save(a));
             }
         }
-        (VMODE_MC, BEGIN_GROUP_MC) | (HMODE_MC, BEGIN_GROUP_MC) | (MMODE_MC, BEGIN_GROUP_MC) => {
+        (VMODE, BEGIN_GROUP) | (HMODE, BEGIN_GROUP) | (MMODE, BEGIN_GROUP) => {
             if let Some(a) =
                 crate::save::new_save_level(&mut st.save_stack, GroupCode::SemiSimple, st.mem.line)
             {
                 return Err(MainControlAbort::Save(a));
             }
         }
-        (VMODE_MC, END_GROUP_MC) | (HMODE_MC, END_GROUP_MC) | (MMODE_MC, END_GROUP_MC) => {
+        (VMODE, END_GROUP) | (HMODE, END_GROUP) | (MMODE, END_GROUP) => {
             if st.save_stack.cur_group == GroupCode::SemiSimple {
                 crate::save::unsave_in(st)?;
             } else {
@@ -4372,50 +4308,11 @@ pub(crate) fn main_control_simple_list_group_cases_in(
 fn main_control_box_list_cases_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const VMODE_MC: u16 = 1;
-    const HMODE_MC: u16 = 104;
-    const MMODE_MC: u16 = 207;
-    const RIGHT_BRACE_MC: u8 = 2;
-    const MATH_SHIFT_MC: u8 = 3;
-    const TAB_MARK_MC: u8 = 4;
-    const CAR_RET_MC: u8 = 5;
-    const LETTER_MC: u8 = 11;
-    const OTHER_CHAR_MC: u8 = 12;
-    const PAR_END_MC: u8 = 13;
-    const STOP_MC: u8 = 14;
-    const CHAR_NUM_MC: u8 = 16;
-    const MARK_MC: u8 = 18;
-    const MAKE_BOX_MC: u8 = 20;
-    const HMOVE_MC: u8 = 21;
-    const VMOVE_MC: u8 = 22;
-    const UN_HBOX_MC: u8 = 23;
-    const UN_VBOX_MC: u8 = 24;
-    const REMOVE_ITEM_MC: u8 = 25;
-    const HSKIP_MC: u8 = 26;
-    const VSKIP_MC: u8 = 27;
-    const LEADER_SHIP_MC: u8 = 31;
-    const HALIGN_MC: u8 = 32;
-    const VALIGN_MC: u8 = 33;
-    const VRULE_MC: u8 = 35;
-    const HRULE_MC: u8 = 36;
-    const INSERT_MC: u8 = 37;
-    const VADJUST_MC: u8 = 38;
-    const BREAK_PENALTY_MC: u8 = 42;
-    const START_PAR_MC: u8 = 43;
-    const ITAL_CORR_MC: u8 = 44;
-    const ACCENT_MC: u8 = 45;
-    const DISCRETIONARY_MC: u8 = 47;
-    const EX_SPACE_MC: u8 = 64;
-    const NO_BOUNDARY_MC: u8 = 65;
-    const CHAR_GIVEN_MC: u8 = 68;
-    const LEADER_FLAG_MC: i32 = 0x4001_0001;
-    const A_LEADERS_MC: i32 = 100;
-
-    match (st.input.cur_list.mode.unsigned_abs(), st.scanner.cur_cmd) {
-        (VMODE_MC, RIGHT_BRACE_MC) | (HMODE_MC, RIGHT_BRACE_MC) | (MMODE_MC, RIGHT_BRACE_MC) => {
+    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
+        (VMODE, RIGHT_BRACE) | (HMODE, RIGHT_BRACE) | (MMODE, RIGHT_BRACE) => {
             handle_right_brace_in(st)?
         }
-        (VMODE_MC, HMOVE_MC) | (HMODE_MC, VMOVE_MC) | (MMODE_MC, VMOVE_MC) => {
+        (VMODE, HMOVE) | (HMODE, VMOVE) | (MMODE, VMOVE) => {
             let t = st.scanner.cur_chr;
             crate::scan::scan_dimen_in(st, false, false, false)?;
             if t == 0 {
@@ -4424,33 +4321,31 @@ fn main_control_box_list_cases_in(
                 scan_box_in(st, -st.scanner.cur_val)?;
             }
         }
-        (VMODE_MC, LEADER_SHIP_MC) | (HMODE_MC, LEADER_SHIP_MC) | (MMODE_MC, LEADER_SHIP_MC) => {
-            scan_box_in(st, LEADER_FLAG_MC - A_LEADERS_MC + st.scanner.cur_chr)?;
+        (VMODE, LEADER_SHIP) | (HMODE, LEADER_SHIP) | (MMODE, LEADER_SHIP) => {
+            scan_box_in(st, LEADER_FLAG - A_LEADERS as i32 + st.scanner.cur_chr)?;
         }
-        (VMODE_MC, MAKE_BOX_MC) | (HMODE_MC, MAKE_BOX_MC) | (MMODE_MC, MAKE_BOX_MC) => {
-            begin_box_in(st, 0)?
-        }
-        (VMODE_MC, START_PAR_MC) => new_graf_in(st, st.scanner.cur_chr > 0)?,
-        (VMODE_MC, LETTER_MC)
-        | (VMODE_MC, OTHER_CHAR_MC)
-        | (VMODE_MC, CHAR_NUM_MC)
-        | (VMODE_MC, CHAR_GIVEN_MC)
-        | (VMODE_MC, MATH_SHIFT_MC)
-        | (VMODE_MC, UN_HBOX_MC)
-        | (VMODE_MC, VRULE_MC)
-        | (VMODE_MC, ACCENT_MC)
-        | (VMODE_MC, DISCRETIONARY_MC)
-        | (VMODE_MC, HSKIP_MC)
-        | (VMODE_MC, VALIGN_MC)
-        | (VMODE_MC, EX_SPACE_MC)
-        | (VMODE_MC, NO_BOUNDARY_MC) => {
+        (VMODE, MAKE_BOX) | (HMODE, MAKE_BOX) | (MMODE, MAKE_BOX) => begin_box_in(st, 0)?,
+        (VMODE, START_PAR) => new_graf_in(st, st.scanner.cur_chr > 0)?,
+        (VMODE, LETTER)
+        | (VMODE, OTHER_CHAR)
+        | (VMODE, CHAR_NUM)
+        | (VMODE, CHAR_GIVEN)
+        | (VMODE, MATH_SHIFT)
+        | (VMODE, UN_HBOX)
+        | (VMODE, VRULE)
+        | (VMODE, ACCENT)
+        | (VMODE, DISCRETIONARY)
+        | (VMODE, HSKIP)
+        | (VMODE, VALIGN)
+        | (VMODE, EX_SPACE)
+        | (VMODE, NO_BOUNDARY) => {
             crate::input::back_input_in(st)?;
             new_graf_in(st, true)?;
         }
-        (HMODE_MC, START_PAR_MC) | (MMODE_MC, START_PAR_MC) => {
+        (HMODE, START_PAR) | (MMODE, START_PAR) => {
             indent_in_hmode(st)?;
         }
-        (VMODE_MC, PAR_END_MC) => {
+        (VMODE, PAR_END) => {
             if let Some(a) = normal_paragraph(
                 &mut st.eqtb,
                 &mut st.save_stack,
@@ -4463,50 +4358,44 @@ fn main_control_box_list_cases_in(
                 crate::pagebuilder::build_page_in(st)?;
             }
         }
-        (HMODE_MC, PAR_END_MC) => {
+        (HMODE, PAR_END) => {
             if st.scanner.align_state < 0 {
                 off_save_in(st)?;
             }
             end_graf_in(st)?;
-            if st.input.cur_list.mode == VMODE_MC as i16 {
+            if st.input.cur_list.mode == VMODE as i16 {
                 crate::pagebuilder::build_page_in(st)?;
             }
         }
-        (HMODE_MC, STOP_MC)
-        | (HMODE_MC, VSKIP_MC)
-        | (HMODE_MC, HRULE_MC)
-        | (HMODE_MC, UN_VBOX_MC)
-        | (HMODE_MC, HALIGN_MC) => head_for_vmode_in(st)?,
-        (VMODE_MC, INSERT_MC)
-        | (HMODE_MC, INSERT_MC)
-        | (MMODE_MC, INSERT_MC)
-        | (HMODE_MC, VADJUST_MC)
-        | (MMODE_MC, VADJUST_MC) => begin_insert_or_adjust_in(st)?,
-        (VMODE_MC, MARK_MC) | (HMODE_MC, MARK_MC) | (MMODE_MC, MARK_MC) => make_mark_in(st)?,
-        (VMODE_MC, BREAK_PENALTY_MC)
-        | (HMODE_MC, BREAK_PENALTY_MC)
-        | (MMODE_MC, BREAK_PENALTY_MC) => append_penalty_in(st)?,
-        (VMODE_MC, REMOVE_ITEM_MC) | (HMODE_MC, REMOVE_ITEM_MC) | (MMODE_MC, REMOVE_ITEM_MC) => {
-            delete_last_in(st)?
+        (HMODE, STOP) | (HMODE, VSKIP) | (HMODE, HRULE) | (HMODE, UN_VBOX) | (HMODE, HALIGN) => {
+            head_for_vmode_in(st)?
         }
-        (VMODE_MC, UN_VBOX_MC) | (HMODE_MC, UN_HBOX_MC) | (MMODE_MC, UN_HBOX_MC) => {
-            unpackage_in(st)?
+        (VMODE, INSERT)
+        | (HMODE, INSERT)
+        | (MMODE, INSERT)
+        | (HMODE, VADJUST)
+        | (MMODE, VADJUST) => begin_insert_or_adjust_in(st)?,
+        (VMODE, MARK) | (HMODE, MARK) | (MMODE, MARK) => make_mark_in(st)?,
+        (VMODE, BREAK_PENALTY) | (HMODE, BREAK_PENALTY) | (MMODE, BREAK_PENALTY) => {
+            append_penalty_in(st)?
         }
-        (HMODE_MC, ITAL_CORR_MC) => append_italic_correction_in(st)?,
-        (MMODE_MC, ITAL_CORR_MC) => {
+        (VMODE, REMOVE_ITEM) | (HMODE, REMOVE_ITEM) | (MMODE, REMOVE_ITEM) => delete_last_in(st)?,
+        (VMODE, UN_VBOX) | (HMODE, UN_HBOX) | (MMODE, UN_HBOX) => unpackage_in(st)?,
+        (HMODE, ITAL_CORR) => append_italic_correction_in(st)?,
+        (MMODE, ITAL_CORR) => {
             let p = crate::mem::alloc_kern(&mut st.mem, 0)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail.set_link(&mut st.mem, p.ptr());
             st.input.cur_list.tail = p.ptr();
         }
-        (HMODE_MC, DISCRETIONARY_MC) | (MMODE_MC, DISCRETIONARY_MC) => append_discretionary_in(st)?,
-        (HMODE_MC, ACCENT_MC) => make_accent_in(st)?,
-        (VMODE_MC, CAR_RET_MC)
-        | (HMODE_MC, CAR_RET_MC)
-        | (MMODE_MC, CAR_RET_MC)
-        | (VMODE_MC, TAB_MARK_MC)
-        | (HMODE_MC, TAB_MARK_MC)
-        | (MMODE_MC, TAB_MARK_MC) => align_error_in(st)?,
+        (HMODE, DISCRETIONARY) | (MMODE, DISCRETIONARY) => append_discretionary_in(st)?,
+        (HMODE, ACCENT) => make_accent_in(st)?,
+        (VMODE, CAR_RET)
+        | (HMODE, CAR_RET)
+        | (MMODE, CAR_RET)
+        | (VMODE, TAB_MARK)
+        | (HMODE, TAB_MARK)
+        | (MMODE, TAB_MARK) => align_error_in(st)?,
         _ => {}
     }
     Ok(())
@@ -4515,28 +4404,15 @@ fn main_control_box_list_cases_in(
 pub(crate) fn main_control_alignment_cases_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const VMODE_MC: u16 = 1;
-    const HMODE_MC: u16 = 104;
-    const MMODE_MC: u16 = 207;
-    const ENDV_MC: u8 = 9;
-    const HALIGN_MC: u8 = 32;
-    const VALIGN_MC: u8 = 33;
-    const NO_ALIGN_MC: u8 = 34;
-    const OMIT_MC: u8 = 63;
-    const END_CS_NAME_MC: u8 = 67;
-    const INT_PAR_TEXXET_MC: i32 = 69;
-
-    match (st.input.cur_list.mode.unsigned_abs(), st.scanner.cur_cmd) {
-        (VMODE_MC, NO_ALIGN_MC) | (HMODE_MC, NO_ALIGN_MC) | (MMODE_MC, NO_ALIGN_MC) => {
-            no_align_error_in(st)?
-        }
-        (VMODE_MC, OMIT_MC) | (HMODE_MC, OMIT_MC) | (MMODE_MC, OMIT_MC) => omit_error_in(st)?,
-        (VMODE_MC, HALIGN_MC) => init_align_in(st)?,
-        (HMODE_MC, VALIGN_MC) => {
+    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
+        (VMODE, NO_ALIGN) | (HMODE, NO_ALIGN) | (MMODE, NO_ALIGN) => no_align_error_in(st)?,
+        (VMODE, OMIT) | (HMODE, OMIT) | (MMODE, OMIT) => omit_error_in(st)?,
+        (VMODE, HALIGN) => init_align_in(st)?,
+        (HMODE, VALIGN) => {
             if st.scanner.cur_chr > 0 {
                 let enabled = crate::scan::eTeX_enabled_in(
                     st,
-                    st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET_MC) > 0,
+                    st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0,
                     st.scanner.cur_cmd as u16,
                     st.scanner.cur_chr,
                 )?;
@@ -4550,7 +4426,7 @@ pub(crate) fn main_control_alignment_cases_in(
                 init_align_in(st)?;
             }
         }
-        (MMODE_MC, HALIGN_MC) => {
+        (MMODE, HALIGN) => {
             if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
                 if st.save_stack.cur_group == GroupCode::MathShift {
                     init_align_in(st)?;
@@ -4559,8 +4435,8 @@ pub(crate) fn main_control_alignment_cases_in(
                 }
             }
         }
-        (VMODE_MC, ENDV_MC) | (HMODE_MC, ENDV_MC) => do_endv_in(st)?,
-        (VMODE_MC, END_CS_NAME_MC) | (HMODE_MC, END_CS_NAME_MC) | (MMODE_MC, END_CS_NAME_MC) => {
+        (VMODE, ENDV) | (HMODE, ENDV) => do_endv_in(st)?,
+        (VMODE, END_CS_NAME) | (HMODE, END_CS_NAME) | (MMODE, END_CS_NAME) => {
             mc_propagate_error(crate::errors::cs_error_in(st))?
         }
         _ => {}
@@ -4573,42 +4449,10 @@ pub(crate) fn main_control_math_cases_in(
 ) -> Result<(), MainControlAbort> {
     extern "C" {}
 
-    const HMODE_MC: u16 = 104; // xetex_format.h:369
-    const MMODE_MC: u16 = 207; // xetex_format.h:370
-    const MATH_SHIFT_MC: u8 = 3; // xetex_format.h:233
-    const LEFT_BRACE_MC: u8 = 1; // xetex_format.h:231
-    const SUP_MARK_MC: u8 = 7; // xetex_format.h:238
-    const SUB_MARK_MC: u8 = 8; // xetex_format.h:239
-    const LETTER_MC: u8 = 11; // xetex_format.h:243
-    const OTHER_CHAR_MC: u8 = 12; // xetex_format.h:244
-    const DELIM_NUM_MC: u8 = 15; // xetex_format.h:251
-    const CHAR_NUM_MC: u8 = 16; // xetex_format.h:253
-    const MATH_CHAR_NUM_MC: u8 = 17; // xetex_format.h:255
-    const ACCENT_MC: u8 = 45; // xetex_format.h:283
-    const MATH_ACCENT_MC: u8 = 46; // xetex_format.h:284
-    const EQ_NO_MC: u8 = 48; // xetex_format.h:286
-    const LEFT_RIGHT_MC: u8 = 49; // xetex_format.h:287
-    const MATH_COMP_MC: u8 = 50; // xetex_format.h:288
-    const LIMIT_SWITCH_MC: u8 = 51; // xetex_format.h:289
-    const ABOVE_MC: u8 = 52; // xetex_format.h:290
-    const MATH_STYLE_MC: u8 = 53; // xetex_format.h:291
-    const MATH_CHOICE_MC: u8 = 54; // xetex_format.h:292
-    const NON_SCRIPT_MC: u8 = 55; // xetex_format.h:293
-    const VCENTER_MC: u8 = 56; // xetex_format.h:294
-    const RADICAL_MC: u8 = 66; // xetex_format.h:304
-    const CHAR_GIVEN_MC: u8 = 68; // xetex_format.h:306
-    const MATH_GIVEN_MC: u8 = 69; // xetex_format.h:308
-    const XETEX_MATH_GIVEN_MC: u8 = 70; // xetex_format.h:309
+    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
+        (HMODE, MATH_SHIFT) => init_math_in(st)?,
 
-    const COND_MATH_GLUE_MC: u16 = 98; // xetex-constants.h:324
-    const IGNORE_DEPTH_MC: i32 = -65_536_000; // xetex_format.h:388
-    const EVERY_VBOX_TEXT_MC: u16 = 12; // xetex-constants.h:211
-    const LOCAL_EVERY_VBOX_MC: i32 = 6; // xetex_format.h:178
-
-    match (st.input.cur_list.mode.unsigned_abs(), st.scanner.cur_cmd) {
-        (HMODE_MC, MATH_SHIFT_MC) => init_math_in(st)?,
-
-        (MMODE_MC, EQ_NO_MC) => {
+        (MMODE, EQ_NO) => {
             if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
                 if st.save_stack.cur_group == GroupCode::MathShift {
                     crate::math::start_eq_no_in(st)?;
@@ -4618,7 +4462,7 @@ pub(crate) fn main_control_math_cases_in(
             }
         }
 
-        (MMODE_MC, LEFT_BRACE_MC) => {
+        (MMODE, LEFT_BRACE) => {
             let n = crate::mem::alloc_noad(&mut st.mem)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail.set_link(&mut st.mem, n.ptr());
@@ -4627,17 +4471,17 @@ pub(crate) fn main_control_math_cases_in(
             crate::scan::scan_math_in(st, st.input.cur_list.tail.0 + 1)?;
         }
 
-        (MMODE_MC, LETTER_MC) | (MMODE_MC, OTHER_CHAR_MC) | (MMODE_MC, CHAR_GIVEN_MC) => {
+        (MMODE, LETTER) | (MMODE, OTHER_CHAR) | (MMODE, CHAR_GIVEN) => {
             crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?;
         }
 
-        (MMODE_MC, CHAR_NUM_MC) => {
+        (MMODE, CHAR_NUM) => {
             crate::scan::scan_char_num_in(st)?;
             st.scanner.cur_chr = st.scanner.cur_val;
             crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?;
         }
 
-        (MMODE_MC, MATH_CHAR_NUM_MC) => {
+        (MMODE, MATH_CHAR_NUM) => {
             if st.scanner.cur_chr == 2 {
                 // \Umathchar
                 crate::scan::scan_math_class_int_in(st)?;
@@ -4661,7 +4505,7 @@ pub(crate) fn main_control_math_cases_in(
             }
         }
 
-        (MMODE_MC, MATH_GIVEN_MC) => {
+        (MMODE, MATH_GIVEN) => {
             let c = st.scanner.cur_chr;
             crate::scan::set_math_char_in(
                 st,
@@ -4669,11 +4513,11 @@ pub(crate) fn main_control_math_cases_in(
             )?;
         }
 
-        (MMODE_MC, XETEX_MATH_GIVEN_MC) => {
+        (MMODE, XETEX_MATH_GIVEN) => {
             crate::scan::set_math_char_in(st, st.scanner.cur_chr)?;
         }
 
-        (MMODE_MC, DELIM_NUM_MC) => {
+        (MMODE, DELIM_NUM) => {
             if st.scanner.cur_chr == 1 {
                 // \Udelimiter
                 crate::scan::scan_math_class_int_in(st)?;
@@ -4693,7 +4537,7 @@ pub(crate) fn main_control_math_cases_in(
             }
         }
 
-        (MMODE_MC, MATH_COMP_MC) => {
+        (MMODE, MATH_COMP) => {
             let n = crate::mem::alloc_noad(&mut st.mem)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail.set_link(&mut st.mem, n.ptr());
@@ -4703,11 +4547,11 @@ pub(crate) fn main_control_math_cases_in(
             crate::scan::scan_math_in(st, st.input.cur_list.tail.0 + 1)?;
         }
 
-        (MMODE_MC, LIMIT_SWITCH_MC) => crate::math::math_limit_switch_in(st)?,
-        (MMODE_MC, RADICAL_MC) => crate::math::math_radical_in(st)?,
-        (MMODE_MC, ACCENT_MC) | (MMODE_MC, MATH_ACCENT_MC) => crate::math::math_ac_in(st)?,
+        (MMODE, LIMIT_SWITCH) => crate::math::math_limit_switch_in(st)?,
+        (MMODE, RADICAL) => crate::math::math_radical_in(st)?,
+        (MMODE, ACCENT) | (MMODE, MATH_ACCENT) => crate::math::math_ac_in(st)?,
 
-        (MMODE_MC, VCENTER_MC) => {
+        (MMODE, VCENTER) => {
             crate::scan::scan_spec_in(st, GroupCode::Vcenter, false)?;
             let save_abort = normal_paragraph(
                 &mut st.eqtb,
@@ -4720,37 +4564,37 @@ pub(crate) fn main_control_math_cases_in(
             }
             crate::mem::push_nest_in(st)?;
             st.input.cur_list.mode = -1;
-            st.input.cur_list.set_aux_s1(IGNORE_DEPTH_MC);
+            st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
             if st.shipout.insert_src_special_every_vbox {
                 crate::ext::insert_src_special_in(st)?;
             }
-            let every_vbox = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_VBOX_MC);
+            let every_vbox = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_VBOX);
             if every_vbox != TEX_NULL {
-                crate::input::begin_token_list_in(st, every_vbox, EVERY_VBOX_TEXT_MC)?;
+                crate::input::begin_token_list_in(st, every_vbox, EVERY_VBOX_TEXT)?;
             }
         }
 
-        (MMODE_MC, MATH_STYLE_MC) => {
+        (MMODE, MATH_STYLE) => {
             let s = crate::mem::alloc_style(&mut st.mem, st.scanner.cur_chr as i16)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail.set_link(&mut st.mem, s.ptr());
             st.input.cur_list.tail = s.ptr();
         }
 
-        (MMODE_MC, NON_SCRIPT_MC) => {
+        (MMODE, NON_SCRIPT) => {
             let g = crate::mem::alloc_glue(&mut st.mem, 0)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail.set_link(&mut st.mem, g.ptr());
             st.input.cur_list.tail = g.ptr();
-            st.mem.set_b16s0(st.input.cur_list.tail, COND_MATH_GLUE_MC);
+            st.mem.set_b16s0(st.input.cur_list.tail, COND_MATH_GLUE);
         }
 
-        (MMODE_MC, MATH_CHOICE_MC) => crate::math::append_choices_in(st)?,
-        (MMODE_MC, SUB_MARK_MC) | (MMODE_MC, SUP_MARK_MC) => crate::math::sub_sup_in(st)?,
-        (MMODE_MC, ABOVE_MC) => crate::math::math_fraction_in(st)?,
-        (MMODE_MC, LEFT_RIGHT_MC) => crate::math::math_left_right_in(st)?,
+        (MMODE, MATH_CHOICE) => crate::math::append_choices_in(st)?,
+        (MMODE, SUB_MARK) | (MMODE, SUP_MARK) => crate::math::sub_sup_in(st)?,
+        (MMODE, ABOVE) => crate::math::math_fraction_in(st)?,
+        (MMODE, LEFT_RIGHT) => crate::math::math_left_right_in(st)?,
 
-        (MMODE_MC, MATH_SHIFT_MC) => {
+        (MMODE, MATH_SHIFT) => {
             if st.save_stack.cur_group == GroupCode::MathShift {
                 after_math_in(st)?;
             } else {
@@ -4766,19 +4610,16 @@ pub(crate) fn main_control_math_cases_in(
 pub(crate) fn main_control_ignore_spaces_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const SPACER_MC: u8 = 10;
-    const NORMAL_SCANNER_MC: u8 = 0;
-
     if st.scanner.cur_chr == 0 {
         loop {
             crate::scan::get_x_token_in(st)?;
-            if st.scanner.cur_cmd != SPACER_MC {
+            if st.scanner.cur_cmd != SPACER {
                 break;
             }
         }
     } else {
         let saved = st.scanner.scanner_status;
-        st.scanner.scanner_status = NORMAL_SCANNER_MC;
+        st.scanner.scanner_status = NORMAL_SCANNER;
         let get_next_outcome = crate::scan::get_next_in(st);
         st.scanner.scanner_status = saved;
         let get_next_result: Result<(), crate::scan::SccAbort> = get_next_outcome.into();
@@ -4900,7 +4741,7 @@ fn inter_char_before_current_char_action(
     let prev = st.mainloop.prev_class;
     if prev == CHAR_CLASS_LIMIT - 1 {
         let cur_input = st.input.cur_input;
-        if cur_input.state == TOKEN_LIST_INPUT && cur_input.index == BACKED_UP_CHAR {
+        if cur_input.state == TOKEN_LIST && cur_input.index == BACKED_UP_CHAR {
             return InterCharInputAction::None;
         }
         crate::save::find_sa_element(
@@ -4993,31 +4834,24 @@ fn mc_new_lig_item(
 pub(crate) fn main_control_hmode_inter_char_check_in(
     st: &mut crate::state::EngineState,
 ) -> Result<bool, MainControlAbort> {
-    const HMODE_MC: i16 = 104;
-    const CHAR_NUM_MC: u8 = 16;
-    if st.input.cur_list.mode.abs() != HMODE_MC {
+    if st.input.cur_list.mode.abs() != HMODE {
         return Ok(false);
     }
-    inter_char_boundary_after_space_action(st, CHAR_NUM_MC).execute_in(st)
+    inter_char_boundary_after_space_action(st, CHAR_NUM).execute_in(st)
 }
 
 pub(crate) fn main_control_spacer_cases_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), MainControlAbort> {
-    const HMODE_MC: u16 = 104; // xetex_format.h:369
-    const MMODE_MC: u16 = 207; // xetex_format.h:370
-    const SPACER_MC: u8 = 10; // xetex_format.h:242
-    const EX_SPACE_MC: u8 = 64; // xetex_format.h:302
-
-    match (st.input.cur_list.mode.unsigned_abs(), st.scanner.cur_cmd) {
-        (HMODE_MC, SPACER_MC) => {
+    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
+        (HMODE, SPACER) => {
             if st.input.cur_list.aux_s0() == 1000 {
                 main_control_append_normal_space_in(st)?;
             } else {
                 app_space_in(st)?;
             }
         }
-        (HMODE_MC, EX_SPACE_MC) | (MMODE_MC, EX_SPACE_MC) => {
+        (HMODE, EX_SPACE) | (MMODE, EX_SPACE) => {
             main_control_append_normal_space_in(st)?;
         }
         _ => {}
@@ -5031,25 +4865,6 @@ pub(crate) unsafe fn main_control_main_loop_in(
     st: &mut crate::state::EngineState,
 ) -> Result<bool, MainControlAbort> {
     use crate::mem::TEX_NULL;
-
-    // Constants
-    const INT_PAR_LANGUAGE: i32 = 50;
-    const INT_PAR_TRACING_LOST_CHARS: i32 = 35;
-    const INT_PAR_XETEX_INTERWORD_SPACE_SHAPING: i32 = 78;
-    const INT_PAR_XETEX_DASH_BREAK: i32 = 70;
-    const INT_PAR_XETEX_USE_GLYPH_METRICS: i32 = 72;
-    const LIG_TAG: u16 = 1;
-    const NON_ADDRESS: i32 = 0;
-    const NATIVE_NODE_SIZE: i32 = 6;
-    const SPACE_ADJUSTMENT: u16 = 3;
-    const WHATSIT_NODE: u16 = 8;
-    const INS_NODE: u16 = 3;
-    const MARK_NODE: u16 = 4;
-    const ADJUST_NODE: u16 = 5;
-    const LETTER: u8 = 11;
-    const OTHER_CHAR: u8 = 12;
-    const CHAR_GIVEN: u8 = 68;
-    const CHAR_NUM: u8 = 16;
 
     // === main_loop: entry point ===
     // SyncTeX: append special at start of new paragraph
@@ -6072,12 +5887,6 @@ unsafe fn do_lookahead(
     _enter_lig1_k: &mut Option<i32>,
     _mf: i32,
 ) -> Result<bool, MainControlAbort> {
-    const LETTER: u8 = 11;
-    const OTHER_CHAR: u8 = 12;
-    const CHAR_GIVEN: u8 = 68;
-    const CHAR_NUM: u8 = 16;
-    const NO_BOUNDARY: u8 = 65;
-
     crate::scan::get_next_scc(st)?;
 
     let is_char_cmd = |cmd: u8| cmd == LETTER || cmd == OTHER_CHAR || cmd == CHAR_GIVEN;
@@ -6151,125 +5960,10 @@ unsafe fn main_control_from_in(
     run_every_job: bool,
     mut resume_pending_command: bool,
 ) -> Result<(), MainControlAbort> {
-    // Mode constants (xetex_format.h)
-    const VMODE: u16 = 1;
-    const HMODE: u16 = 104;
-    const MMODE: u16 = 207;
-
-    // Command constants (xetex_format.h)
-    const RELAX: u8 = 0;
-    const LEFT_BRACE: u8 = 1;
-    const RIGHT_BRACE: u8 = 2;
-    const MATH_SHIFT: u8 = 3;
-    const TAB_MARK: u8 = 4;
-    const CAR_RET: u8 = 5;
-    const MAC_PARAM: u8 = 6;
-    const SUP_MARK: u8 = 7;
-    const SUB_MARK: u8 = 8;
-    const ENDV: u8 = 9;
-    const SPACER: u8 = 10;
-    const LETTER: u8 = 11;
-    const OTHER_CHAR: u8 = 12;
-    const PAR_END: u8 = 13;
-    const STOP: u8 = 14;
-    const DELIM_NUM: u8 = 15;
-    const CHAR_NUM: u8 = 16;
-    const MATH_CHAR_NUM: u8 = 17;
-    const MARK: u8 = 18;
-    const XRAY: u8 = 19;
-    const MAKE_BOX: u8 = 20;
-    const HMOVE: u8 = 21;
-    const VMOVE: u8 = 22;
-    const UN_HBOX: u8 = 23;
-    const UN_VBOX: u8 = 24;
-    const REMOVE_ITEM: u8 = 25;
-    const HSKIP: u8 = 26;
-    const VSKIP: u8 = 27;
-    const MSKIP: u8 = 28;
-    const KERN: u8 = 29;
-    const MKERN: u8 = 30;
-    const LEADER_SHIP: u8 = 31;
-    const HALIGN: u8 = 32;
-    const VALIGN: u8 = 33;
-    const NO_ALIGN: u8 = 34;
-    const VRULE: u8 = 35;
-    const HRULE: u8 = 36;
-    const INSERT: u8 = 37;
-    const VADJUST: u8 = 38;
-    const IGNORE_SPACES: u8 = 39;
-    const AFTER_ASSIGNMENT: u8 = 40;
-    const AFTER_GROUP: u8 = 41;
-    const BREAK_PENALTY: u8 = 42;
-    const START_PAR: u8 = 43;
-    const ITAL_CORR: u8 = 44;
-    const ACCENT: u8 = 45;
-    const MATH_ACCENT: u8 = 46;
-    const DISCRETIONARY: u8 = 47;
-    const EQ_NO: u8 = 48;
-    const LEFT_RIGHT: u8 = 49;
-    const MATH_COMP: u8 = 50;
-    const LIMIT_SWITCH: u8 = 51;
-    const ABOVE: u8 = 52;
-    const MATH_STYLE: u8 = 53;
-    const MATH_CHOICE: u8 = 54;
-    const NON_SCRIPT: u8 = 55;
-    const VCENTER: u8 = 56;
-    const CASE_SHIFT: u8 = 57;
-    const MESSAGE: u8 = 58;
-    const EXTENSION: u8 = 59;
-    const IN_STREAM: u8 = 60;
-    const BEGIN_GROUP: u8 = 61;
-    const END_GROUP: u8 = 62;
-    const OMIT: u8 = 63;
-    const EX_SPACE: u8 = 64;
-    const NO_BOUNDARY: u8 = 65;
-    const RADICAL: u8 = 66;
-    const END_CS_NAME: u8 = 67;
-    const CHAR_GIVEN: u8 = 68;
-    const MATH_GIVEN: u8 = 69;
-    const XETEX_MATH_GIVEN: u8 = 70;
-    const LAST_ITEM: u8 = 71;
-    const TOKS_REGISTER: u8 = 72;
-    const ASSIGN_TOKS: u8 = 73;
-    const ASSIGN_INT: u8 = 74;
-    const ASSIGN_DIMEN: u8 = 75;
-    const ASSIGN_GLUE: u8 = 76;
-    const ASSIGN_MU_GLUE: u8 = 77;
-    const ASSIGN_FONT_DIMEN: u8 = 78;
-    const ASSIGN_FONT_INT: u8 = 79;
-    const SET_AUX: u8 = 80;
-    const SET_PREV_GRAF: u8 = 81;
-    const SET_PAGE_DIMEN: u8 = 82;
-    const SET_PAGE_INT: u8 = 83;
-    const SET_BOX_DIMEN: u8 = 84;
-    const SET_SHAPE: u8 = 85;
-    const DEF_CODE: u8 = 86;
-    const XETEX_DEF_CODE: u8 = 87;
-    const DEF_FAMILY: u8 = 88;
-    const SET_FONT: u8 = 89;
-    const DEF_FONT: u8 = 90;
-    const REGISTER: u8 = 91;
-    const ADVANCE: u8 = 92;
-    const MULTIPLY: u8 = 93;
-    const DIVIDE: u8 = 94;
-    const PREFIX: u8 = 95;
-    const LET: u8 = 96;
-    const SHORTHAND_DEF: u8 = 97;
-    const READ_TO_CS: u8 = 98;
-    const DEF: u8 = 99;
-    const SET_BOX: u8 = 100;
-    const HYPH_DATA: u8 = 101;
-    const SET_INTERACTION: u8 = 102;
-
-    const CC_LOCAL_BASE: i32 = 2_254_871; // xetex_format.h:208
-    const CC_LOCAL_EVERY_JOB: i32 = 7; // xetex_format.h:179
-    const EVERY_JOB_TEXT: u16 = 13; // xetex-constants.h:212
-    const INT_PAR_TRACING_COMMANDS: i32 = 36; // xetex_format.h:71
-
     use crate::mem::TEX_NULL;
 
     if run_every_job {
-        let every_job = st.eqtb.b32s1(CC_LOCAL_BASE + CC_LOCAL_EVERY_JOB);
+        let every_job = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_JOB);
         if every_job != TEX_NULL {
             crate::input::begin_token_list_in(st, every_job, EVERY_JOB_TEXT)?;
         }
@@ -6299,7 +5993,7 @@ unsafe fn main_control_from_in(
                 crate::output::show_cur_cmd_chr_in(st);
             }
 
-            let mode = st.input.cur_list.mode.unsigned_abs();
+            let mode = st.input.cur_list.mode.abs();
             let cmd = st.scanner.cur_cmd;
 
             // Fast char path and boundary check (first switch in C, before inter-char check)
@@ -6689,99 +6383,6 @@ pub(crate) fn prefixed_command_in(
         (((x as u32) & 0xFF) << 24) as i32
     }
 
-    // Command/eqtb constants used by `prefixed_command` (xetex-constants.h).
-    const PREFIX: i32 = 95;
-    const MAX_NON_PREFIXED_COMMAND: i32 = 71;
-    const SPACER: i32 = 10;
-    const RELAX_CMD: i32 = 0;
-    const RIGHT_BRACE: i32 = 2;
-    const LEFT_BRACE: i32 = 1;
-    const TOKS_REGISTER: i32 = 72;
-    const ASSIGN_TOKS: i32 = 73;
-    const ASSIGN_INT: i32 = 74;
-    const ASSIGN_DIMEN: i32 = 75;
-    const ASSIGN_GLUE: i32 = 76;
-    const ASSIGN_MU_GLUE: i32 = 77;
-    const ASSIGN_FONT_DIMEN: i32 = 78;
-    const ASSIGN_FONT_INT: i32 = 79;
-    const SET_AUX: i32 = 80;
-    const SET_PREV_GRAF: i32 = 81;
-    const SET_PAGE_DIMEN: i32 = 82;
-    const SET_PAGE_INT: i32 = 83;
-    const SET_BOX_DIMEN: i32 = 84;
-    const SET_SHAPE: i32 = 85;
-    const DEF_CODE: i32 = 86;
-    const XETEX_DEF_CODE: i32 = 87;
-    const DEF_FAMILY: i32 = 88;
-    const SET_FONT: i32 = 89;
-    const DEF_FONT: i32 = 90;
-    const REGISTER: i32 = 91;
-    const ADVANCE: i32 = 92;
-    const MULTIPLY: i32 = 93;
-    const DIVIDE: i32 = 94;
-    const LET: i32 = 96;
-    const SHORTHAND_DEF: i32 = 97;
-    const READ_TO_CS: i32 = 98;
-    const DEF: i32 = 99;
-    const SET_BOX: i32 = 100;
-    const HYPH_DATA: i32 = 101;
-    const SET_INTERACTION: i32 = 102;
-    const UNDEFINED_CS: i32 = 103;
-    const CALL: i32 = 113;
-    const GLUE_REF: i32 = 119;
-    const SHAPE_REF: i32 = 120;
-    const DATA: i32 = 122;
-    const CHAR_GIVEN: i32 = 68;
-    const MATH_GIVEN: i32 = 69;
-    const XETEX_MATH_GIVEN: i32 = 70;
-    const NORMAL: i32 = 0;
-
-    const CHAR_DEF_CODE: i32 = 0;
-    const MATH_CHAR_DEF_CODE: i32 = 1;
-    const COUNT_DEF_CODE: i32 = 2;
-    const DIMEN_DEF_CODE: i32 = 3;
-    const SKIP_DEF_CODE: i32 = 4;
-    const MU_SKIP_DEF_CODE: i32 = 5;
-    const TOKS_DEF_CODE: i32 = 6;
-    const CHAR_SUB_DEF_CODE: i32 = 7;
-    const XETEX_MATH_CHAR_NUM_DEF_CODE: i32 = 8;
-    const XETEX_MATH_CHAR_DEF_CODE: i32 = 9;
-
-    const GLUE_VAL: i32 = 2;
-    const MU_VAL: i32 = 3;
-    const TOK_VAL: i32 = 5;
-    const INTER_CHAR_VAL: i32 = 6;
-
-    const PROTECTED_TOKEN: i32 = 0x1C0_0000 + 1; // END_MATCH_TOKEN + 1
-    const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
-    const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
-    const OTHER_TOKEN: i32 = 0x180_0000;
-
-    const COUNT_BASE: i32 = 7_826_812;
-    const SCALED_BASE: i32 = 8_941_203;
-    const SKIP_BASE: i32 = 2_254_359;
-    const MU_SKIP_BASE: i32 = 2_254_615;
-    const PC_LOCAL_BASE: i32 = 2_254_871;
-    const LOCAL__PAR_SHAPE: i32 = 0;
-    const LOCAL__OUTPUT_ROUTINE: i32 = 1;
-    const LOCAL__XETEX_INTER_CHAR_TOKS: i32 = 11;
-    const INT_PAR__TRACING_COMMANDS: i32 = 36;
-    const INT_PAR__GLOBAL_DEFS: i32 = 43;
-    const CHAR_CLASS_LIMIT: i32 = 4096;
-
-    const TOO_BIG_USV: i32 = 1_114_112;
-    const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
-    const MAX_CHAR_CODE: i32 = 15;
-    const BIGGEST_USV: i32 = 0x10_FFFF;
-    const BOX_FLAG: i32 = 0x4000_0000;
-    const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;
-    const AAT_FONT_FLAG: i32 = 0xFFFF;
-    const OTGR_FONT_FLAG: i32 = 0xFFFE;
-    const LP_CODE_BASE: i32 = 2;
-    const RP_CODE_BASE: i32 = 3;
-    const PC_LEFT_SIDE: i32 = 0;
-    const PC_RIGHT_SIDE: i32 = 1;
-
     let mut a: i32 = 0;
     let f: i32;
     let mut j: i32;
@@ -6791,19 +6392,19 @@ pub(crate) fn prefixed_command_in(
     let mut n: i32;
     let mut e: bool;
 
-    while st.scanner.cur_cmd as i32 == PREFIX {
+    while st.scanner.cur_cmd == PREFIX {
         if (a / st.scanner.cur_chr) & 1 == 0 {
             a += st.scanner.cur_chr;
         }
 
         loop {
             crate::scan::get_x_token_in(st)?;
-            if !(st.scanner.cur_cmd as i32 == SPACER || st.scanner.cur_cmd as i32 == RELAX_CMD) {
+            if !(st.scanner.cur_cmd == SPACER || st.scanner.cur_cmd == RELAX) {
                 break;
             }
         }
 
-        if (st.scanner.cur_cmd as i32) <= MAX_NON_PREFIXED_COMMAND {
+        if (st.scanner.cur_cmd) <= MAX_NON_PREFIXED_COMMAND {
             crate::output::error_here_with_diagnostic_in(
                 st,
                 c"You can't use a prefix with `".as_ptr(),
@@ -6820,7 +6421,7 @@ pub(crate) fn prefixed_command_in(
             return Ok(());
         }
 
-        if st.eqtb.b32s1(INT_BASE + INT_PAR__TRACING_COMMANDS) > 2 {
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 2 {
             crate::output::show_cur_cmd_chr_in(st);
         }
     }
@@ -6832,7 +6433,7 @@ pub(crate) fn prefixed_command_in(
         j = 0;
     }
 
-    if st.scanner.cur_cmd as i32 != DEF && (a % 4 != 0 || j != 0) {
+    if st.scanner.cur_cmd != DEF && (a % 4 != 0 || j != 0) {
         crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
         crate::output::print_esc_cstr_in(st, c"long".as_ptr());
         crate::output::print_cstr_in(st, c"' or `".as_ptr());
@@ -6849,8 +6450,8 @@ pub(crate) fn prefixed_command_in(
         mc_propagate_error(crate::errors::error_in(st))?;
     }
 
-    if st.eqtb.b32s1(INT_BASE + INT_PAR__GLOBAL_DEFS) != 0 {
-        if st.eqtb.b32s1(INT_BASE + INT_PAR__GLOBAL_DEFS) < 0 {
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) != 0 {
+        if st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) < 0 {
             if a >= 4 {
                 a -= 4;
             }
@@ -6860,7 +6461,7 @@ pub(crate) fn prefixed_command_in(
     }
 
     'sw: {
-        match st.scanner.cur_cmd as i32 {
+        match st.scanner.cur_cmd {
             SET_FONT => {
                 pc_define(st, a >= 4, CUR_FONT_LOC, DATA as u16, st.scanner.cur_chr)?;
             }
@@ -6868,7 +6469,7 @@ pub(crate) fn prefixed_command_in(
             DEF => {
                 if st.scanner.cur_chr & 1 != 0
                     && a < 4
-                    && st.eqtb.b32s1(INT_BASE + INT_PAR__GLOBAL_DEFS) >= 0
+                    && st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) >= 0
                 {
                     a += 4;
                 }
@@ -6887,7 +6488,7 @@ pub(crate) fn prefixed_command_in(
                     st.mem.set_b32s1(st.scanner.def_ref, q);
                 }
 
-                pc_define(st, a >= 4, p, (CALL + (a % 4)) as u16, st.scanner.def_ref.0)?;
+                pc_define(st, a >= 4, p, CALL + (a % 4) as u16, st.scanner.def_ref.0)?;
             }
 
             LET => {
@@ -6895,17 +6496,17 @@ pub(crate) fn prefixed_command_in(
                 crate::scan::get_r_token_in(st)?;
                 p = st.scanner.cur_cs;
 
-                if n == NORMAL {
+                if n == NORMAL as i32 {
                     loop {
                         crate::scan::get_token_in(st)?;
-                        if st.scanner.cur_cmd as i32 != SPACER {
+                        if st.scanner.cur_cmd != SPACER {
                             break;
                         }
                     }
 
                     if st.scanner.cur_tok == OTHER_TOKEN + '=' as i32 {
                         crate::scan::get_token_in(st)?;
-                        if st.scanner.cur_cmd as i32 == SPACER {
+                        if st.scanner.cur_cmd == SPACER {
                             crate::scan::get_token_in(st)?;
                         }
                     }
@@ -6918,11 +6519,10 @@ pub(crate) fn prefixed_command_in(
                     crate::input::back_input_in(st)?;
                 }
 
-                if st.scanner.cur_cmd as i32 >= CALL {
+                if st.scanner.cur_cmd as u16 >= CALL {
                     st.mem
                         .set_b32s0(st.scanner.cur_chr, st.mem.b32s0(st.scanner.cur_chr) + 1);
-                } else if (st.scanner.cur_cmd as i32 == REGISTER
-                    || st.scanner.cur_cmd as i32 == TOKS_REGISTER)
+                } else if (st.scanner.cur_cmd == REGISTER || st.scanner.cur_cmd == TOKS_REGISTER)
                     && (st.scanner.cur_chr < 0 || st.scanner.cur_chr > 19)
                 {
                     st.mem.set_b32s0(
@@ -6951,7 +6551,7 @@ pub(crate) fn prefixed_command_in(
                     crate::scan::get_r_token_in(st)?;
                     p = st.scanner.cur_cs;
 
-                    pc_define(st, a >= 4, p, RELAX_CMD as u16, TOO_BIG_USV)?;
+                    pc_define(st, a >= 4, p, RELAX as u16, TOO_BIG_USV)?;
 
                     crate::scan::scan_optional_equals_in(st)?;
 
@@ -6983,8 +6583,8 @@ pub(crate) fn prefixed_command_in(
                             if st.scanner.cur_val > 255 {
                                 j = n - 2;
 
-                                if j > MU_VAL {
-                                    j = TOK_VAL;
+                                if j > MU_VAL as i32 {
+                                    j = TOK_VAL as i32;
                                 }
 
                                 let __cv7 = st.scanner.cur_val;
@@ -7001,10 +6601,10 @@ pub(crate) fn prefixed_command_in(
                                     st.mem.b32s0(st.scanner.cur_ptr + 1) + 1,
                                 );
 
-                                if j == TOK_VAL {
-                                    j = TOKS_REGISTER;
+                                if j == TOK_VAL as i32 {
+                                    j = TOKS_REGISTER as i32;
                                 } else {
-                                    j = REGISTER;
+                                    j = REGISTER as i32;
                                 }
 
                                 pc_define(st, a >= 4, p, j as u16, st.scanner.cur_ptr.0)?;
@@ -7091,7 +6691,7 @@ pub(crate) fn prefixed_command_in(
                 q = st.scanner.cur_cs;
                 e = false;
 
-                if st.scanner.cur_cmd as i32 == TOKS_REGISTER {
+                if st.scanner.cur_cmd == TOKS_REGISTER {
                     if st.scanner.cur_chr == 0 {
                         crate::scan::scan_register_num_in(st)?;
                         if st.scanner.cur_val > 255 {
@@ -7112,7 +6712,7 @@ pub(crate) fn prefixed_command_in(
                     } else {
                         e = true;
                     }
-                } else if st.scanner.cur_chr == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
+                } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
                     crate::scan::scan_char_class_not_ignored_in(st)?;
                     st.scanner.cur_ptr.0 = st.scanner.cur_val;
                     crate::scan::scan_char_class_not_ignored_in(st)?;
@@ -7135,18 +6735,15 @@ pub(crate) fn prefixed_command_in(
 
                 loop {
                     crate::scan::get_x_token_in(st)?;
-                    if !(st.scanner.cur_cmd as i32 == SPACER
-                        || st.scanner.cur_cmd as i32 == RELAX_CMD)
-                    {
+                    if !(st.scanner.cur_cmd == SPACER || st.scanner.cur_cmd == RELAX) {
                         break;
                     }
                 }
 
-                if st.scanner.cur_cmd as i32 != LEFT_BRACE
-                    && (st.scanner.cur_cmd as i32 == TOKS_REGISTER
-                        || st.scanner.cur_cmd as i32 == ASSIGN_TOKS)
+                if st.scanner.cur_cmd != LEFT_BRACE
+                    && (st.scanner.cur_cmd == TOKS_REGISTER || st.scanner.cur_cmd == ASSIGN_TOKS)
                 {
-                    if st.scanner.cur_cmd as i32 == TOKS_REGISTER {
+                    if st.scanner.cur_cmd == TOKS_REGISTER {
                         if st.scanner.cur_chr == 0 {
                             crate::scan::scan_register_num_in(st)?;
                             if st.scanner.cur_val < 256 {
@@ -7169,7 +6766,7 @@ pub(crate) fn prefixed_command_in(
                         } else {
                             q = st.mem.b32s1(st.scanner.cur_chr + 1);
                         }
-                    } else if st.scanner.cur_chr == PC_LOCAL_BASE + LOCAL__XETEX_INTER_CHAR_TOKS {
+                    } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
                         crate::scan::scan_char_class_not_ignored_in(st)?;
                         st.scanner.cur_ptr.0 = st.scanner.cur_val;
                         crate::scan::scan_char_class_not_ignored_in(st)?;
@@ -7229,7 +6826,7 @@ pub(crate) fn prefixed_command_in(
                     st.mem.set_b32s1(st.scanner.def_ref, st.mem.avail);
                     st.mem.avail = st.scanner.def_ref.0;
                 } else {
-                    if p == PC_LOCAL_BASE + LOCAL__OUTPUT_ROUTINE && !e {
+                    if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
                         let new_avail = crate::mem::get_avail(&mut st.mem)
                             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                         st.mem.set_b32s1(q, new_avail.0);
@@ -7269,9 +6866,9 @@ pub(crate) fn prefixed_command_in(
 
             ASSIGN_GLUE | ASSIGN_MU_GLUE => {
                 p = st.scanner.cur_chr;
-                n = st.scanner.cur_cmd as i32;
+                let is_mu = st.scanner.cur_cmd == ASSIGN_MU_GLUE;
                 crate::scan::scan_optional_equals_in(st)?;
-                if n == ASSIGN_MU_GLUE {
+                if is_mu {
                     crate::scan::scan_glue_in(st, MU_VAL as i16)?;
                 } else {
                     crate::scan::scan_glue_in(st, GLUE_VAL as i16)?;
@@ -7456,7 +7053,7 @@ pub(crate) fn prefixed_command_in(
 
                 if n <= 0 {
                     p = TEX_NULL;
-                } else if q > PC_LOCAL_BASE + LOCAL__PAR_SHAPE {
+                } else if q > LOCAL_BASE + LOCAL_PAR_SHAPE {
                     n = (st.scanner.cur_val / 2) + 1;
                     p = crate::mem::get_node(&mut st.mem, 2 * n + 1)
                         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
@@ -7511,7 +7108,7 @@ pub(crate) fn prefixed_command_in(
 
                     loop {
                         crate::scan::get_token_in(st)?;
-                        if st.scanner.cur_cmd as i32 == RIGHT_BRACE {
+                        if st.scanner.cur_cmd == RIGHT_BRACE {
                             break;
                         }
                     }
@@ -7558,10 +7155,10 @@ pub(crate) fn prefixed_command_in(
                     crate::scan::scan_int_in(st)?;
                     match n {
                         LP_CODE_BASE => unsafe {
-                            set_cp_code(f, p as u32, PC_LEFT_SIDE, st.scanner.cur_val)
+                            set_cp_code(f, p as u32, LEFT_SIDE, st.scanner.cur_val)
                         },
                         RP_CODE_BASE => unsafe {
-                            set_cp_code(f, p as u32, PC_RIGHT_SIDE, st.scanner.cur_val)
+                            set_cp_code(f, p as u32, RIGHT_SIDE, st.scanner.cur_val)
                         },
                         _ => {}
                     }
