@@ -158,7 +158,6 @@ pub(crate) const HOLD_HEAD: i32 = 4_999_995;
 const TEMP_HEAD: i32 = 4_999_996;
 pub(crate) const PAGE_HEAD: i32 = 4_999_997;
 
-
 const ALIGN_STACK_NODE_SIZE: i32 = 6;
 const NATIVE_NODE_SIZE: i32 = 6;
 const SPAN_NODE_SIZE: i32 = 2;
@@ -166,7 +165,7 @@ const SPAN_NODE_SIZE: i32 = 2;
 pub(crate) const NORMAL: u16 = 0;
 pub(crate) const ADDITIONAL: i16 = 1;
 const ACC_KERN: u16 = 2;
-const ZERO_GLUE: i32 = 0;
+pub(crate) const ZERO_GLUE: i32 = 0;
 const FIL_GLUE: i32 = 4;
 const FILL_GLUE: i32 = 8;
 const SS_GLUE: i32 = 12;
