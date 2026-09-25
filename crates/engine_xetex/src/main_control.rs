@@ -4104,10 +4104,12 @@ pub(crate) unsafe fn main_control_main_loop_in(
         }
 
         let main_f = st.mainloop.main_f;
-        let c =
-            crate::fonts::effective_char(&mut st.fonts, false, main_f, st.scanner.cur_chr as u16);
-        let exists = if c > st.fonts.font_ec_entry(main_f) as i32
-            || c < st.fonts.font_bc_entry(main_f) as i32
+        let cur_chr = st.scanner.cur_chr as u16;
+        // Each call resets `xtx_ligature_present`, so the two bounds may see different codes.
+        let exists = if crate::fonts::effective_char(&mut st.fonts, false, main_f, cur_chr)
+            > st.fonts.font_ec_entry(main_f) as i32
+            || crate::fonts::effective_char(&mut st.fonts, false, main_f, cur_chr)
+                < st.fonts.font_bc_entry(main_f) as i32
         {
             false
         } else {
