@@ -208,6 +208,23 @@ pub(crate) fn end_file_reading_in(st: &mut EngineState) -> Result<(), InputAbort
     Ok(())
 }
 
+/// Stores four characters of a pseudo-file line in the word at `w`.
+pub(crate) fn set_packed_chars(mem: &mut MemState, w: i32, chars: [u16; 4]) {
+    mem.set_b16s3(w, chars[0]);
+    mem.set_b16s2(w, chars[1]);
+    mem.set_b16s1(w, chars[2]);
+    mem.set_b16s0(w, chars[3]);
+}
+
+fn packed_chars(mem: &MemState, w: i32) -> [i32; 4] {
+    [
+        mem.b16s3(w) as i32,
+        mem.b16s2(w) as i32,
+        mem.b16s1(w) as i32,
+        mem.b16s0(w) as i32,
+    ]
+}
+
 pub(crate) fn pseudo_input_in(st: &mut EngineState) -> Result<bool, InputAbort> {
     st.input.last = st.input.first;
     let files = st.input.pseudo_files;
@@ -229,12 +246,7 @@ pub(crate) fn pseudo_input_in(st: &mut EngineState) -> Result<bool, InputAbort> 
     st.input.last = st.input.first;
     for w in line + 1..line + size {
         let last = st.input.last as usize;
-        st.input.buffer[last..last + 4].copy_from_slice(&[
-            st.mem.b16s3(w) as i32,
-            st.mem.b16s2(w) as i32,
-            st.mem.b16s1(w) as i32,
-            st.mem.b16s0(w) as i32,
-        ]);
+        st.input.buffer[last..last + 4].copy_from_slice(&packed_chars(&st.mem, w));
         st.input.last += 4;
     }
     if st.input.last >= st.input.max_buf_stack {
