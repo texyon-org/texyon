@@ -3746,7 +3746,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
         st.scanner.set_native_len(0);
         native_text_reserve(&mut st.scanner, mapped_len);
         st.mainloop.main_h = 0;
-        let hyphen = st.fonts.hyphen_char_entry(mf) as u16 as i32;
+        let hyphen = st.fonts.hyphen_char_entry(mf);
         for i in 0..mapped_len {
             let c = st.fonts.mapped_text_entry(i);
             native_text_push(&mut st.scanner, c);
@@ -3956,7 +3956,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
     }
     let main_f = st.mainloop.main_f;
     if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
-        && st.mem.b16s0(st.input.cur_list.tail) == st.fonts.hyphen_char_entry(main_f) as u16
+        && st.mem.b16s0(st.input.cur_list.tail) as i32 == st.fonts.hyphen_char_entry(main_f)
     {
         st.mainloop.ins_disc = true;
     }
