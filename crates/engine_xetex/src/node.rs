@@ -2232,15 +2232,27 @@ impl NodePtr<WhatsitNode> {
     pub fn pic_path_len(self, mem: &MemState) -> u16 {
         mem.b16s1(self.idx.offset(4).0)
     }
+    #[inline]
+    pub fn set_pic_path_len(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.offset(4).0, v);
+    }
     /// Picture page number = `mem[(p) + 4].b16.s0` (`PIC_NODE_page`).
     #[inline]
     pub fn pic_page(self, mem: &MemState) -> u16 {
         mem.b16s0(self.idx.offset(4).0)
     }
+    #[inline]
+    pub fn set_pic_page(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.offset(4).0, v);
+    }
     /// Picture PDF page-box selector = `mem[(p) + 8].b16.s1` (`PIC_NODE_pagebox`).
     #[inline]
     pub fn pic_pagebox(self, mem: &MemState) -> u16 {
         mem.b16s1(self.idx.offset(8).0)
+    }
+    #[inline]
+    pub fn set_pic_pagebox(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.offset(8).0, v);
     }
     /// Picture transform `[a, b, c, d, x, y]` = `mem[(p) + 5..=7]` as `b32` pairs.
     #[inline]
@@ -2255,12 +2267,32 @@ impl NodePtr<WhatsitNode> {
         };
         [w(0), w(1), w(2), w(3), w(4), w(5)]
     }
+    #[inline]
+    pub fn set_pic_transform(self, mem: &mut MemState, t: [i32; 6]) {
+        for (k, v) in (0..).zip(t) {
+            let q = self.idx.offset(5 + k / 2).0;
+            if k % 2 == 0 {
+                mem.set_b32s0(q, v);
+            } else {
+                mem.set_b32s1(q, v);
+            }
+        }
+    }
     /// Picture path bytes, stored inline after the `PIC_NODE_SIZE` header words.
     #[inline]
     pub fn pic_path(self, mem: &MemState) -> &[u8] {
         let ptr = mem.node_addr(self.idx.offset(PIC_NODE_SIZE).0) as *const u8;
         // SAFETY: a picture node holds `pic_path_len` path bytes inline.
         unsafe { std::slice::from_raw_parts(ptr, self.pic_path_len(mem) as usize) }
+    }
+    /// Store `path` inline, the node must have room for it.
+    #[inline]
+    pub fn set_pic_path(self, mem: &mut MemState, path: &[u8]) {
+        let start = self.idx.offset(PIC_NODE_SIZE).0;
+        mem.journal_mark_range(start, path.len().div_ceil(8));
+        let dst = mem.as_u16_ptr_mut(start) as *mut u8;
+        // SAFETY: the caller allocated `path.len()` bytes past the header.
+        unsafe { std::ptr::copy_nonoverlapping(path.as_ptr(), dst, path.len()) };
     }
     /// Native-node glyph count = `mem[(p) + 4].b16.s0` (`NATIVE_NODE_glyph_count`).
     #[inline]
@@ -2290,6 +2322,14 @@ impl NodePtr<WhatsitNode> {
     #[inline]
     pub fn height(self, mem: &MemState) -> Scaled {
         Scaled(mem.b32s1(self.idx.offset(3).0))
+    }
+    #[inline]
+    pub fn set_depth(self, mem: &mut MemState, d: Scaled) {
+        mem.set_b32s1(self.idx.offset(2).0, d.0);
+    }
+    #[inline]
+    pub fn set_height(self, mem: &mut MemState, h: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, h.0);
     }
 
     /// One-based shaped-glyph arena handle; zero means no shaped glyphs.
