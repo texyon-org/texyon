@@ -523,12 +523,8 @@ impl IncrementalXeTeXSession {
                     ladder.rewind_engine(state, 0);
                     return OperationResult::Aborted;
                 }
-                // Keep the whole foreground ladder pinned while the tail plants
-                // periodic rungs beyond the viewport horizon. Without this the
-                // tail's own rungs evict the fences the next edit needs, and a
-                // pause long enough to settle the tail costs the following
-                // keystroke a replay from rung zero. The next edit clears all
-                // stale protections.
+                // Pin the foreground ladder so the tail's own rungs cannot evict
+                // the fences the next edit needs.
                 assert!(ladder.protect_rungs_through(target));
                 configure(state, &config);
                 state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
@@ -784,12 +780,8 @@ unsafe fn run_document(
         }
         Err(error) => {
             crate::engine::release_operation_inputs(state);
-            // Cancellation and fatal-class TeX aborts both interrupt the
-            // operation at a journal-coherent point, so both can rewind to
-            // the operation's replay origin. Wiping the ladder to rung zero
-            // here would make every transient syntax error during typing
-            // (an unbalanced brace mid-edit) force the next valid edit to
-            // replay the whole document.
+            // Both cancellation and fatal aborts stop at a journal-coherent
+            // point, so rewind to the replay origin rather than rung zero.
             let recovery_rung = recovery_rung_clock
                 .and_then(|clock| ladder.rung_at_clock(clock))
                 .unwrap_or(0);
