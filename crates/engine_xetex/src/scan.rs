@@ -597,6 +597,29 @@ pub(crate) fn str_toks_cat_in(
     Ok(p)
 }
 
+/// Appends `\endlinechar` to the line just read and starts reading it.
+#[inline]
+pub(crate) fn finish_line_in(st: &mut EngineState) {
+    let end_char = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
+    if (0..=255).contains(&end_char) {
+        st.input.buffer[st.input.cur_input.limit as usize] = end_char;
+    } else {
+        st.input.cur_input.limit -= 1;
+    }
+    st.input.first = st.input.cur_input.limit + 1;
+    st.input.cur_input.loc = st.input.cur_input.start;
+}
+
+fn close_read_file_in(st: &mut EngineState, m: usize) -> Result<(), SccAbort> {
+    let slot = std::mem::take(&mut st.input.read_file[m]);
+    // SAFETY: closes the handle taken out of the read-file slot.
+    if unsafe { crate::io::u_close(slot) } {
+        return Err(SccAbort::InputClose);
+    }
+    st.input.read_open[m] = CLOSED;
+    Ok(())
+}
+
 pub(crate) fn read_toks_in(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<(), SccAbort> {
     st.scanner.scanner_status = DEFINING;
     st.scanner.warning_index = r;
@@ -625,20 +648,12 @@ pub(crate) fn read_toks_in(st: &mut EngineState, n: i32, r: i32, j: i32) -> Resu
             if unsafe { crate::io::input_line_in(st, rf)? } != 0 {
                 st.input.read_open[m] = NORMAL;
             } else {
-                let slot = std::mem::take(&mut st.input.read_file[m]);
-                if unsafe { crate::io::u_close(slot) } {
-                    return Err(SccAbort::InputClose);
-                }
-                st.input.read_open[m] = CLOSED;
+                close_read_file_in(st, m)?;
             }
         } else {
             let rf = st.input.read_file_ptr(m);
             if unsafe { crate::io::input_line_in(st, rf)? } == 0 {
-                let slot = std::mem::take(&mut st.input.read_file[m]);
-                if unsafe { crate::io::u_close(slot) } {
-                    return Err(SccAbort::InputClose);
-                }
-                st.input.read_open[m] = CLOSED;
+                close_read_file_in(st, m)?;
                 if st.scanner.align_state != 1_000_000 {
                     crate::errors::runaway_in(st);
                     error_here_with_diagnostic_in(st, c"File ended within ".as_ptr());
@@ -653,16 +668,8 @@ pub(crate) fn read_toks_in(st: &mut EngineState, n: i32, r: i32, j: i32) -> Resu
             }
         }
 
-        let lim = st.input.last;
-        st.input.cur_input.limit = lim;
-        let end_char = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
-        if !(0..=255).contains(&end_char) {
-            st.input.cur_input.limit = lim - 1;
-        } else {
-            st.input.buffer[lim as usize] = end_char;
-        }
-        st.input.first = st.input.cur_input.limit + 1;
-        st.input.cur_input.loc = st.input.cur_input.start;
+        st.input.cur_input.limit = st.input.last;
+        finish_line_in(st);
         st.input.cur_input.state = NEW_LINE;
 
         if j == 1 {
@@ -1452,14 +1459,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                         continue 'restart;
                     }
 
-                    let end_char = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
-                    if (0..=255).contains(&end_char) {
-                        st.input.buffer[st.input.cur_input.limit as usize] = end_char;
-                    } else {
-                        st.input.cur_input.limit -= 1;
-                    }
-                    st.input.first = st.input.cur_input.limit + 1;
-                    st.input.cur_input.loc = st.input.cur_input.start;
+                    finish_line_in(st);
                 } else {
                     if st.input.cur_input.name != 0 {
                         st.scanner.cur_cmd = 0;
