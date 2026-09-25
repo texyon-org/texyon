@@ -1458,7 +1458,7 @@ pub(crate) fn expand_in(st: &mut crate::state::EngineState) -> Result<(), SccAbo
                     if st.eqtb.b16s1(st.scanner.cur_cs) == UNDEFINED_CS_CMD {
                         let cur_cs = st.scanner.cur_cs;
                         let s = &mut *st;
-                        crate::save::eq_define(
+                        let _ = crate::save::eq_define(
                             &mut s.eqtb,
                             &mut s.save_stack,
                             &mut s.mem,

@@ -2236,6 +2236,7 @@ impl NodePtr<WhatsitNode> {
 pub enum SaNode {}
 
 impl NodeKind for SaNode {}
+impl HasNodeHeader for SaNode {}
 
 impl NodePtr<SaNode> {
     /// Populated-child reference count = `mem[p].b16.s0`.
@@ -2280,6 +2281,50 @@ impl NodePtr<SaNode> {
     #[inline]
     pub fn sa_ptr(self, mem: &MemState) -> MemPtr {
         MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
+    #[inline]
+    pub fn set_sa_ptr(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+
+    /// Save level of a data record = `mem[p].b16.s0` (`sa_lev`).
+    #[inline]
+    pub fn sa_lev(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_sa_lev(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+
+    /// Type and index code = `mem[p].b16.s1` (`sa_index`).
+    #[inline]
+    pub fn sa_index(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.0)
+    }
+    #[inline]
+    pub fn set_sa_index(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.0, v);
+    }
+
+    /// Reference count of a data record = `mem[p + 1].b32.s0` (`sa_ref`).
+    #[inline]
+    pub fn sa_ref(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_sa_ref(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(1).0, v);
+    }
+
+    /// Integer or dimension value = `mem[p + 2].b32.s1` (`sa_int`).
+    #[inline]
+    pub fn sa_int(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(2).0)
+    }
+    #[inline]
+    pub fn set_sa_int(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(2).0, v);
     }
 }
 

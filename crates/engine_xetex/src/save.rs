@@ -1,44 +1,48 @@
-//! Save-stack management functions translated from `xetex/xetex-xetex0.c`.
+//! The save stack, `eqtb` definitions, and the sparse-array register trie.
 use crate::bridge::diag_append_str;
 use crate::consts::{
-    EQTB_SIZE, GLUE_SPEC_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, TEX_NULL,
+    EQTB_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, REGISTER, TEX_NULL,
     UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::state::{EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
-
+use crate::main_control::{
+    BOX_REF, CALL, DIMEN_VAL, GLUE_REF, LONG_OUTER_CALL, MU_VAL, SHAPE_REF, TOKS_REGISTER,
+};
+use crate::mem::{delete_glue_ref, delete_token_ref, free_node, get_node};
 use crate::mem_types::MemoryWord;
+use crate::node::{NodePtr, SaNode};
+use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
+use crate::units::{MemAddr, MemIdx, MemPtr};
 
-// Save-stack discriminant values (xetex-constants.h:260–285).
+// Save-stack entry types.
 const RESTORE_OLD_VALUE: u16 = 0;
 const RESTORE_ZERO: u16 = 1;
 const INSERT_TOKEN: u16 = 2;
 const LEVEL_BOUNDARY: u16 = 3;
+const RESTORE_SA: u16 = 4;
 
-// Grouping level constants (xetex-constants.h:89–90).
 const LEVEL_ZERO: u16 = 0;
 
-// Brace-token limits for align_state tracking (xetex-constants.h:350,352).
 const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
 const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 
-// eqtb range constants (xetex_format.h:198,204,224).
+const POINTER_NODE_SIZE: i32 = 2;
+const WORD_NODE_SIZE: i32 = 3;
+const MARK_CLASS_NODE_SIZE: i32 = 4;
+const INDEX_NODE_SIZE: i32 = 33;
 
-// ---------------------------------------------------------------------------
-// Cold-path abort sentinel
-// ---------------------------------------------------------------------------
+const MARK_VAL: u16 = 7;
+const DIMEN_VAL_LIMIT: u16 = 128;
+const MU_VAL_LIMIT: u16 = 256;
+const BOX_VAL_LIMIT: u16 = 320;
+const TOK_VAL_LIMIT: u16 = 384;
 
-/// A cold-path abort requested by a save-stack function. Both abort paths
-/// `longjmp`, so a real caller never observes the sentinel — it fires only on a
-/// capacity/consistency failure that no passing test reaches.
+/// A save-stack abort; both variants end the run.
 pub(crate) enum SaveAbort {
-    /// `overflow(msg, n)` — capacity exhaustion.
     Overflow(&'static std::ffi::CStr, i32),
-    /// `confusion(msg)` — internal-consistency failure.
     Confusion(&'static std::ffi::CStr),
 }
 
 impl SaveAbort {
-    /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             SaveAbort::Overflow(s, n) => crate::errors::EngineAbort::Overflow {
@@ -50,186 +54,145 @@ impl SaveAbort {
     }
 }
 
-// ---------------------------------------------------------------------------
-// new_save_level
-// ---------------------------------------------------------------------------
+/// TeX's `check_full_save_stack`, true when no room is left.
+fn save_stack_full(save_stack: &mut SaveStackState) -> bool {
+    if save_stack.save_ptr > save_stack.max_save_stack {
+        save_stack.max_save_stack = save_stack.save_ptr;
+        return save_stack.max_save_stack > save_stack.save_size - 7;
+    }
+    false
+}
 
-/// Push a new grouping level onto the save stack.
-///
-/// translated from xetex-xetex0.c:3932 (new_save_level)
+fn set_save_entry(save_stack: &mut SaveStackState, kind: u16, level: u16, index: i32) {
+    let k = save_stack.save_ptr;
+    save_stack.set_b16s1(k, kind);
+    save_stack.set_b16s0(k, level);
+    save_stack.set_b32s1(k, index);
+}
+
 pub(crate) fn new_save_level(
     save_stack: &mut SaveStackState,
     c: GroupCode,
     line: i32,
-) -> Option<SaveAbort> {
-    if save_stack.save_ptr > save_stack.max_save_stack {
-        save_stack.max_save_stack = save_stack.save_ptr;
-        if save_stack.max_save_stack > save_stack.save_size - 7 {
-            return Some(SaveAbort::Overflow(
-                c"semantic nest size",
-                save_stack.save_size,
-            ));
-        }
+) -> Result<(), SaveAbort> {
+    if save_stack_full(save_stack) {
+        return Err(SaveAbort::Overflow(
+            c"semantic nest size",
+            save_stack.save_size,
+        ));
     }
-    // `line` is passed in by the caller; it is stamped into
-    // the save stack for `\tracingrestores` group-line tracking.
     save_stack.set_b32s1(save_stack.save_ptr, line);
     save_stack.save_ptr += 1;
-    save_stack.set_b16s1(save_stack.save_ptr, LEVEL_BOUNDARY);
-    save_stack.set_b16s0(save_stack.save_ptr, save_stack.cur_group.as_raw() as u16);
-    save_stack.set_b32s1(save_stack.save_ptr, save_stack.cur_boundary);
+    let (group, boundary) = (
+        save_stack.cur_group.as_raw() as u16,
+        save_stack.cur_boundary,
+    );
+    set_save_entry(save_stack, LEVEL_BOUNDARY, group, boundary);
     if save_stack.cur_level == u16::MAX {
-        return Some(SaveAbort::Overflow(c"grouping levels", u16::MAX as i32));
+        return Err(SaveAbort::Overflow(c"grouping levels", u16::MAX as i32));
     }
     save_stack.cur_boundary = save_stack.save_ptr;
     save_stack.cur_group = c;
     save_stack.cur_level += 1;
     save_stack.save_ptr += 1;
-    None
+    Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// eq_save
-// ---------------------------------------------------------------------------
-
-/// Save the current value of `eqtb[p]` at level `l` on the save stack.
-///
-/// translated from xetex-xetex0.c:3914 (eq_save)
 pub(crate) fn eq_save(
     save_stack: &mut SaveStackState,
     eqtb: &EqtbState,
     p: i32,
     l: u16,
-) -> Option<SaveAbort> {
-    if save_stack.save_ptr > save_stack.max_save_stack {
-        save_stack.max_save_stack = save_stack.save_ptr;
-        if save_stack.max_save_stack > save_stack.save_size - 7 {
-            return Some(SaveAbort::Overflow(c"save size", save_stack.save_size));
-        }
+) -> Result<(), SaveAbort> {
+    if save_stack_full(save_stack) {
+        return Err(SaveAbort::Overflow(c"save size", save_stack.save_size));
     }
-    if l == LEVEL_ZERO {
-        save_stack.set_b16s1(save_stack.save_ptr, RESTORE_ZERO);
+    let kind = if l == LEVEL_ZERO {
+        RESTORE_ZERO
     } else {
         save_stack.set_word(save_stack.save_ptr, eqtb.word(p));
         save_stack.save_ptr += 1;
-        save_stack.set_b16s1(save_stack.save_ptr, RESTORE_OLD_VALUE);
-    }
-    save_stack.set_b16s0(save_stack.save_ptr, l);
-    save_stack.set_b32s1(save_stack.save_ptr, p);
+        RESTORE_OLD_VALUE
+    };
+    set_save_entry(save_stack, kind, l, p);
     save_stack.save_ptr += 1;
-    None
+    Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// eq_word_define
-// ---------------------------------------------------------------------------
-
-/// Assign `eqtb[p].b32.s1 = w`, saving the old value if necessary.
-///
-/// translated from xetex-xetex0.c:3954 (eq_word_define)
 pub(crate) fn eq_word_define(
     eqtb: &mut EqtbState,
     save_stack: &mut SaveStackState,
     p: i32,
     w: i32,
-) -> Option<SaveAbort> {
+) -> Result<(), SaveAbort> {
     if eqtb.b32s1(p) == w {
-        return None;
+        return Ok(());
     }
-    if eqtb.xeq_level_at(p) != save_stack.cur_level {
-        let l = eqtb.xeq_level_at(p);
-        let abort = eq_save(save_stack, eqtb, p, l);
-        if abort.is_some() {
-            return abort;
-        }
+    let l = eqtb.xeq_level_at(p);
+    if l != save_stack.cur_level {
+        eq_save(save_stack, eqtb, p, l)?;
         eqtb.set_xeq_level_at(p, save_stack.cur_level);
     }
     eqtb.set_b32s1(p, w);
-    None
+    Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// geq_word_define
-// ---------------------------------------------------------------------------
-
-/// Globally assign `eqtb[p].b32.s1 = w` at LEVEL_ONE.
-///
-/// translated from xetex-xetex0.c:3977 (geq_word_define)
 pub(crate) fn geq_word_define(eqtb: &mut EqtbState, p: i32, w: i32) {
     eqtb.set_b32s1(p, w);
     eqtb.set_xeq_level_at(p, LEVEL_ONE);
 }
 
-// ---------------------------------------------------------------------------
-// save_for_after
-// ---------------------------------------------------------------------------
-
-/// Push token `t` onto the save stack for deferred processing after `}`.
-///
-/// translated from xetex-xetex0.c:3984 (save_for_after)
-pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Option<SaveAbort> {
+pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Result<(), SaveAbort> {
     if save_stack.cur_level > LEVEL_ONE {
-        if save_stack.save_ptr > save_stack.max_save_stack {
-            save_stack.max_save_stack = save_stack.save_ptr;
-            if save_stack.max_save_stack > save_stack.save_size - 7 {
-                return Some(SaveAbort::Overflow(c"save size", save_stack.save_size));
-            }
+        if save_stack_full(save_stack) {
+            return Err(SaveAbort::Overflow(c"save size", save_stack.save_size));
         }
-        save_stack.set_b16s1(save_stack.save_ptr, INSERT_TOKEN);
-        save_stack.set_b16s0(save_stack.save_ptr, LEVEL_ZERO);
-        save_stack.set_b32s1(save_stack.save_ptr, t);
+        set_save_entry(save_stack, INSERT_TOKEN, LEVEL_ZERO, t);
         save_stack.save_ptr += 1;
     }
-    None
+    Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// prepare_mag
-// ---------------------------------------------------------------------------
-
-// INT_PAR__mag = 17 (xetex_format.h:52).
-
-/// Validates `\mag`. Both recoverable `int_error` sites return an
-/// [`ErrorOutcome`]; a non-`Continue` outcome is propagated (the original would
-/// have longjmp'd before reaching the `geq_word_define`, so the early return
-/// matches).
-pub(crate) fn prepare_mag_in(st: &mut crate::state::EngineState) -> crate::errors::ErrorOutcome {
+/// Validates `\mag`, propagating a non-`Continue` error outcome.
+pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcome {
     use crate::errors::ErrorOutcome;
+    use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 
     let mag = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
-        let errmsg = crate::output::error_here_with_diagnostic_in(
-            st,
-            c"Incompatible magnification (".as_ptr(),
-        );
+        let errmsg = error_here_with_diagnostic_in(st, c"Incompatible magnification (".as_ptr());
         crate::output::print_int_in(st, mag);
         crate::output::print_cstr_in(st, c");".as_ptr());
         crate::output::print_nl_cstr_in(st, c" the previous value will be retained".as_ptr());
         unsafe { diag_append_str(errmsg, &format!(" ({})", mag_set)) };
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] =
-            c"I can handle only one magnification ratio per job. So I've".as_ptr();
-        st.errors.help_line[0] =
-            c"reverted to the magnification you used earlier on this run.".as_ptr();
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::main_control::help(
+            &mut st.errors,
+            &[
+                c"I can handle only one magnification ratio per job. So I've",
+                c"reverted to the magnification you used earlier on this run.",
+            ],
+        );
         let outcome = crate::errors::int_error_in(st, mag_set);
         if !matches!(outcome, ErrorOutcome::Continue) {
             return outcome;
         }
         geq_word_define(&mut st.eqtb, INT_BASE + INT_PAR_MAG, mag_set);
     }
-    let mag2 = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
-    if mag2 <= 0 || mag2 > 32768 {
-        let errmsg = crate::output::error_here_with_diagnostic_in(
+    let mag = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
+    if mag <= 0 || mag > 32768 {
+        let errmsg = error_here_with_diagnostic_in(
             st,
             c"Illegal magnification has been changed to 1000".as_ptr(),
         );
-        unsafe { diag_append_str(errmsg, &format!(" ({})", mag2)) };
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 1;
-        st.errors.help_line[0] = c"The magnification ratio must be between 1 and 32768.".as_ptr();
-        let outcome = crate::errors::int_error_in(st, mag2);
+        unsafe { diag_append_str(errmsg, &format!(" ({})", mag)) };
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::main_control::help(
+            &mut st.errors,
+            &[c"The magnification ratio must be between 1 and 32768."],
+        );
+        let outcome = crate::errors::int_error_in(st, mag);
         if !matches!(outcome, ErrorOutcome::Continue) {
             return outcome;
         }
@@ -239,52 +202,34 @@ pub(crate) fn prepare_mag_in(st: &mut crate::state::EngineState) -> crate::error
     ErrorOutcome::Continue
 }
 
-// ---------------------------------------------------------------------------
-// eq_destroy / eq_define / geq_define
-// ---------------------------------------------------------------------------
-
-/// Free any heap resource held by an eqtb entry (token list, glue, box, or sa-ref).
-///
-/// translated from xetex-xetex0.c:3831 (eq_destroy)
+/// Frees the heap resource an `eqtb` entry owns.
 pub(crate) fn eq_destroy(
     mem: &mut MemState,
     scanner: &mut ScannerState,
     w: MemoryWord,
-) -> Option<SaveAbort> {
-    // SAFETY: `MemoryWord` union projections; the eqtb entry was last written
-    // through these views by `eq_define`/`geq_define`.
-    let typ = unsafe { w.b16.s1 };
-    let val = unsafe { w.b32.s1 };
-    match typ {
-        113..=116 => crate::mem::delete_token_ref(mem, val),
-        119 => crate::mem::delete_glue_ref(mem, val),
-        120 => {
-            if val != TEX_NULL {
-                crate::mem::free_node(
-                    mem,
-                    crate::units::MemPtr::from_raw(val),
-                    mem.b32s0(val) + mem.b32s0(val) + 1,
-                );
+) -> Result<(), SaveAbort> {
+    // SAFETY: `MemoryWord` union projections of an `eqtb` entry.
+    let (eq_type, equiv) = unsafe { (w.b16.s1, w.b32.s1) };
+    match eq_type {
+        CALL..=LONG_OUTER_CALL => delete_token_ref(mem, equiv),
+        GLUE_REF => delete_glue_ref(mem, equiv),
+        SHAPE_REF => {
+            if equiv != TEX_NULL {
+                let size = 2 * mem.b32s0(equiv) + 1;
+                free_node(mem, MemPtr::from_raw(equiv), size);
             }
         }
-        121 => {
-            if let Err(msg) = crate::packaging::flush_node_list(mem, val) {
-                return Some(SaveAbort::Confusion(msg));
-            }
-        }
-        72 | 91 => {
-            if !(0..=19).contains(&val) {
-                delete_sa_ref(mem, scanner, val);
+        BOX_REF => crate::packaging::flush_node_list(mem, equiv).map_err(SaveAbort::Confusion)?,
+        t if t == TOKS_REGISTER as u16 || t == REGISTER as u16 => {
+            if !(0..=19).contains(&equiv) {
+                delete_sa_ref(mem, scanner, equiv);
             }
         }
         _ => {}
     }
-    None
+    Ok(())
 }
 
-/// Assign `eqtb[p] = (level=cur_level, type=t, value=e)`, saving if needed.
-///
-/// translated from xetex-xetex0.c:3867 (eq_define)
 pub(crate) fn eq_define(
     eqtb: &mut EqtbState,
     save_stack: &mut SaveStackState,
@@ -293,33 +238,21 @@ pub(crate) fn eq_define(
     p: i32,
     t: u16,
     e: i32,
-) -> Option<SaveAbort> {
+) -> Result<(), SaveAbort> {
     if eqtb.b16s1(p) == t && eqtb.b32s1(p) == e {
-        let w = eqtb.word(p);
-        return eq_destroy(mem, scanner, w);
+        return eq_destroy(mem, scanner, eqtb.word(p));
     }
     if eqtb.b16s0(p) == save_stack.cur_level {
-        let w = eqtb.word(p);
-        let abort = eq_destroy(mem, scanner, w);
-        if abort.is_some() {
-            return abort;
-        }
+        eq_destroy(mem, scanner, eqtb.word(p))?;
     } else if save_stack.cur_level > LEVEL_ONE {
-        let l = eqtb.b16s0(p);
-        let abort = eq_save(save_stack, eqtb, p, l);
-        if abort.is_some() {
-            return abort;
-        }
+        eq_save(save_stack, eqtb, p, eqtb.b16s0(p))?;
     }
     eqtb.set_b16s0(p, save_stack.cur_level);
     eqtb.set_b16s1(p, t);
     eqtb.set_b32s1(p, e);
-    None
+    Ok(())
 }
 
-/// Globally assign `eqtb[p] = (level=LEVEL_ONE, type=t, value=e)`.
-///
-/// translated from xetex-xetex0.c:3886 (geq_define)
 pub(crate) fn geq_define(
     eqtb: &mut EqtbState,
     mem: &mut MemState,
@@ -327,114 +260,63 @@ pub(crate) fn geq_define(
     p: i32,
     t: u16,
     e: i32,
-) -> Option<SaveAbort> {
-    let w = eqtb.word(p);
-    let abort = eq_destroy(mem, scanner, w);
-    if abort.is_some() {
-        return abort;
-    }
+) -> Result<(), SaveAbort> {
+    eq_destroy(mem, scanner, eqtb.word(p))?;
     eqtb.set_b16s0(p, LEVEL_ONE);
     eqtb.set_b16s1(p, t);
     eqtb.set_b32s1(p, e);
-    None
+    Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Sparse-array (SA) register save/restore cluster
-// ---------------------------------------------------------------------------
-
-// Node-size constants (xetex-constants.h:109,120,123,134).
-const POINTER_NODE_SIZE: i32 = 2;
-const WORD_NODE_SIZE: i32 = 3;
-const MARK_CLASS_NODE_SIZE: i32 = 4;
-const INDEX_NODE_SIZE: i32 = 33;
-
-// SA register type values (xetex_format.h:568–570; xetex-constants.h:288,300).
-const DIMEN_VAL: u16 = 1;
-const MU_VAL: u16 = 3;
-const MARK_VAL: u16 = 7;
-
-// SA register type limits (xetex-constants.h:326–331).
-const DIMEN_VAL_LIMIT: u16 = 128;
-const MU_VAL_LIMIT: u16 = 256;
-const BOX_VAL_LIMIT: u16 = 320;
-const TOK_VAL_LIMIT: u16 = 384;
-
-// Save-stack discriminant for SA save/restore (xetex-constants.h:291).
-const RESTORE_SA: u16 = 4;
-
-fn delete_glue_ref_threaded(mem: &mut MemState, p: impl crate::units::MemAddr) {
-    let p = p.addr();
-    if mem.b32s1(p) == TEX_NULL {
-        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), GLUE_SPEC_SIZE);
-    } else {
-        mem.set_b32s1(p, mem.b32s1(p) - 1);
-    }
+/// A sparse-array record; these carry no type tag and are reached only
+/// through the trie or a register's `eqtb` entry.
+#[inline]
+fn sa(p: impl MemAddr) -> NodePtr<SaNode> {
+    // SAFETY: the callers pass a non-null trie record, which is all `SaNode` asserts.
+    unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
 }
 
-fn delete_token_ref_threaded(mem: &mut MemState, p: impl crate::units::MemAddr) {
-    let p = p.addr();
-    if mem.b32s0(p) == TEX_NULL {
-        crate::mem::flush_list(mem, crate::units::MemPtr::from_raw(p));
-    } else {
-        mem.set_b32s0(p, mem.b32s0(p) - 1);
-    }
-}
-
-// translated from xetex-xetex0.c:2789 (delete_sa_ref)
-pub fn delete_sa_ref(
-    mem: &mut MemState,
-    scanner: &mut ScannerState,
-    q: impl crate::units::MemAddr,
-) {
-    let q = q.addr();
-    mem.set_b32s0(q + 1, mem.b32s0(q + 1) - 1);
-    if mem.b32s0(q + 1) != TEX_NULL {
+pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: impl MemAddr) {
+    let mut q = sa(q);
+    q.set_sa_ref(mem, q.sa_ref(mem) - 1);
+    if q.sa_ref(mem) != TEX_NULL {
         return;
     }
-    let mut s: i32;
-    if mem.b16s1(q) < DIMEN_VAL_LIMIT {
-        if mem.b32s1(q + 2) == 0 {
-            s = WORD_NODE_SIZE;
-        } else {
+    let mut s = if q.sa_index(mem) < DIMEN_VAL_LIMIT {
+        if q.sa_int(mem) != 0 {
             return;
         }
+        WORD_NODE_SIZE
     } else {
-        if mem.b16s1(q) < MU_VAL_LIMIT {
-            if mem.b32s1(q + 1) == 0 {
-                delete_glue_ref_threaded(mem, 0);
-            } else {
+        if q.sa_index(mem) < MU_VAL_LIMIT {
+            if q.sa_ptr(mem).0 != 0 {
                 return;
             }
-        } else if mem.b32s1(q + 1) != TEX_NULL {
+            delete_glue_ref(mem, 0);
+        } else if !q.sa_ptr(mem).is_null() {
             return;
         }
-        s = POINTER_NODE_SIZE;
-    }
-    let mut q = q;
+        POINTER_NODE_SIZE
+    };
     loop {
-        let i = (mem.b16s1(q) % 64) as i32;
+        let i = (q.sa_index(mem) % 64) as i32;
         let p = q;
-        q = mem.b32s1(p);
-        crate::mem::free_node(mem, crate::units::MemPtr::from_raw(p), s);
-        if q == TEX_NULL {
-            scanner.sa_root[i as usize] = crate::units::MemPtr::NULL;
+        let next = p.link(mem);
+        free_node(mem, p.ptr(), s);
+        if next.is_null() {
+            scanner.sa_root[i as usize] = MemPtr::NULL;
             return;
         }
-        if (i & 1) != 0 {
-            mem.set_b32s1(q + i / 2 + 1, TEX_NULL);
-        } else {
-            mem.set_b32s0(q + i / 2 + 1, TEX_NULL);
-        }
-        mem.set_b16s0(q, mem.b16s0(q) - 1);
+        q = sa(next);
+        q.set_child(mem, i, MemPtr::NULL);
+        q.set_ref_count(mem, q.ref_count(mem) - 1);
         s = INDEX_NODE_SIZE;
-        if mem.b16s0(q) > 0 {
+        if q.ref_count(mem) > 0 {
             break;
         }
     }
 }
 
-// translated from xetex-xetex0.c:2837 (sa_save)
 pub fn sa_save(
     mem: &mut MemState,
     scanner: &mut ScannerState,
@@ -442,46 +324,40 @@ pub fn sa_save(
     p: i32,
 ) -> Result<(), SaMutationAbort> {
     if save_stack.cur_level != scanner.sa_level {
-        if save_stack.save_ptr > save_stack.max_save_stack {
-            save_stack.max_save_stack = save_stack.save_ptr;
-            if save_stack.max_save_stack > save_stack.save_size - 7 {
-                return Err(SaMutationAbort::SaveOverflow);
-            }
+        if save_stack_full(save_stack) {
+            return Err(SaMutationAbort::SaveOverflow);
         }
-        save_stack.data[save_stack.save_ptr as usize].b16.s1 = RESTORE_SA;
-        save_stack.data[save_stack.save_ptr as usize].b16.s0 = scanner.sa_level;
-        save_stack.data[save_stack.save_ptr as usize].b32.s1 = scanner.sa_chain.0;
+        set_save_entry(save_stack, RESTORE_SA, scanner.sa_level, scanner.sa_chain.0);
         save_stack.save_ptr += 1;
-        scanner.sa_chain.0 = TEX_NULL;
+        scanner.sa_chain = MemPtr::NULL;
         scanner.sa_level = save_stack.cur_level;
     }
-    let mut i = mem.b16s1(p);
-    let q: i32;
+    let p = sa(p);
+    let mut i = p.sa_index(mem);
+    let q;
     if i < DIMEN_VAL_LIMIT {
-        if mem.b32s1(p + 2) == 0 {
-            q = crate::mem::get_node(mem, POINTER_NODE_SIZE)
-                .ok_or(SaMutationAbort::MainMemory)?
-                .0;
+        if p.sa_int(mem) == 0 {
+            q = sa(get_node(mem, POINTER_NODE_SIZE).ok_or(SaMutationAbort::MainMemory)?);
             i = TOK_VAL_LIMIT;
         } else {
-            q = crate::mem::get_node(mem, WORD_NODE_SIZE)
-                .ok_or(SaMutationAbort::MainMemory)?
-                .0;
-            mem.set_b32s1(q + 2, mem.b32s1(p + 2));
+            q = sa(get_node(mem, WORD_NODE_SIZE).ok_or(SaMutationAbort::MainMemory)?);
+            let v = p.sa_int(mem);
+            q.set_sa_int(mem, v);
         }
-        mem.set_b32s1(q + 1, TEX_NULL);
+        q.set_sa_ptr(mem, MemPtr::NULL);
     } else {
-        q = crate::mem::get_node(mem, POINTER_NODE_SIZE)
-            .ok_or(SaMutationAbort::MainMemory)?
-            .0;
-        mem.set_b32s1(q + 1, mem.b32s1(p + 1));
+        q = sa(get_node(mem, POINTER_NODE_SIZE).ok_or(SaMutationAbort::MainMemory)?);
+        let v = p.sa_ptr(mem);
+        q.set_sa_ptr(mem, v);
     }
-    mem.set_b32s0(q + 1, p);
-    mem.set_b16s1(q, i);
-    mem.set_b16s0(q, mem.b16s0(p));
-    mem.set_b32s1(q, scanner.sa_chain.0);
-    scanner.sa_chain.0 = q;
-    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
+    // sa_loc
+    q.set_sa_ref(mem, p.idx().0);
+    q.set_sa_index(mem, i);
+    let lev = p.sa_lev(mem);
+    q.set_sa_lev(mem, lev);
+    q.set_link(mem, scanner.sa_chain);
+    scanner.sa_chain = q.ptr();
+    p.set_sa_ref(mem, p.sa_ref(mem) + 1);
     Ok(())
 }
 
@@ -491,25 +367,21 @@ pub(crate) struct SaMutationResult {
     flush_list: Option<i32>,
 }
 
-// translated from xetex-xetex0.c:2878 (sa_destroy)
-pub(crate) fn sa_destroy(mem: &mut MemState, p: impl crate::units::MemAddr) -> Option<i32> {
-    let p = p.addr();
-    if mem.b16s1(p) < MU_VAL_LIMIT {
-        delete_glue_ref_threaded(mem, mem.b32s1(p + 1));
-        None
-    } else if mem.b32s1(p + 1) != TEX_NULL {
-        if mem.b16s1(p) < BOX_VAL_LIMIT {
-            Some(mem.b32s1(p + 1))
-        } else {
-            delete_token_ref_threaded(mem, mem.b32s1(p + 1));
-            None
+/// Releases the value of `p`, returning a box list the caller must flush.
+pub(crate) fn sa_destroy(mem: &mut MemState, p: impl MemAddr) -> Option<i32> {
+    let p = sa(p);
+    let value = p.sa_ptr(mem);
+    if p.sa_index(mem) < MU_VAL_LIMIT {
+        delete_glue_ref(mem, value);
+    } else if !value.is_null() {
+        if p.sa_index(mem) < BOX_VAL_LIMIT {
+            return Some(value.0);
         }
-    } else {
-        None
+        delete_token_ref(mem, value);
     }
+    None
 }
 
-// translated from xetex-xetex0.c:2891 (sa_def)
 pub(crate) fn sa_def(
     mem: &mut MemState,
     scanner: &mut ScannerState,
@@ -517,23 +389,23 @@ pub(crate) fn sa_def(
     p: i32,
     e: i32,
 ) -> Result<SaMutationResult, SaMutationAbort> {
-    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
+    let node = sa(p);
+    node.set_sa_ref(mem, node.sa_ref(mem) + 1);
     let mut result = SaMutationResult::default();
-    if mem.b32s1(p + 1) == e {
+    if node.sa_ptr(mem).0 == e {
         result.flush_list = sa_destroy(mem, p);
     } else {
-        if mem.b16s0(p) == save_stack.cur_level {
+        if node.sa_lev(mem) == save_stack.cur_level {
             result.flush_list = sa_destroy(mem, p);
         } else {
             sa_save(mem, scanner, save_stack, p)?;
         }
-        mem.set_b16s0(p, save_stack.cur_level);
-        mem.set_b32s1(p + 1, e);
+        node.set_sa_lev(mem, save_stack.cur_level);
+        node.set_sa_ptr(mem, MemPtr::from_raw(e));
     }
     Ok(result)
 }
 
-// translated from xetex-xetex0.c:2908 (sa_w_def)
 pub(crate) fn sa_w_def(
     mem: &mut MemState,
     scanner: &mut ScannerState,
@@ -541,46 +413,35 @@ pub(crate) fn sa_w_def(
     p: i32,
     w: i32,
 ) -> Result<SaMutationResult, SaMutationAbort> {
-    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
-    let result = SaMutationResult::default();
-    if mem.b32s1(p + 2) != w {
-        if mem.b16s0(p) != save_stack.cur_level {
+    let node = sa(p);
+    node.set_sa_ref(mem, node.sa_ref(mem) + 1);
+    if node.sa_int(mem) != w {
+        if node.sa_lev(mem) != save_stack.cur_level {
             sa_save(mem, scanner, save_stack, p)?;
         }
-        mem.set_b16s0(p, save_stack.cur_level);
-        mem.set_b32s1(p + 2, w);
+        node.set_sa_lev(mem, save_stack.cur_level);
+        node.set_sa_int(mem, w);
     }
-    Ok(result)
+    Ok(SaMutationResult::default())
 }
 
-// translated from xetex-xetex0.c:2923 (gsa_def)
-pub(crate) fn gsa_def(
-    mem: &mut MemState,
-    p: impl crate::units::MemAddr,
-    e: i32,
-) -> SaMutationResult {
-    let p = p.addr();
-    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
-    let flush_list = sa_destroy(mem, p);
-    mem.set_b16s0(p, LEVEL_ONE);
-    mem.set_b32s1(p + 1, e);
+pub(crate) fn gsa_def(mem: &mut MemState, p: impl MemAddr, e: i32) -> SaMutationResult {
+    let p = sa(p);
+    p.set_sa_ref(mem, p.sa_ref(mem) + 1);
+    let flush_list = sa_destroy(mem, p.idx());
+    p.set_sa_lev(mem, LEVEL_ONE);
+    p.set_sa_ptr(mem, MemPtr::from_raw(e));
     SaMutationResult { flush_list }
 }
 
-// translated from xetex-xetex0.c:2933 (gsa_w_def)
-pub(crate) fn gsa_w_def(
-    mem: &mut MemState,
-    p: impl crate::units::MemAddr,
-    w: i32,
-) -> SaMutationResult {
-    let p = p.addr();
-    mem.set_b32s0(p + 1, mem.b32s0(p + 1) + 1);
-    mem.set_b16s0(p, LEVEL_ONE);
-    mem.set_b32s1(p + 2, w);
+pub(crate) fn gsa_w_def(mem: &mut MemState, p: impl MemAddr, w: i32) -> SaMutationResult {
+    let p = sa(p);
+    p.set_sa_ref(mem, p.sa_ref(mem) + 1);
+    p.set_sa_lev(mem, LEVEL_ONE);
+    p.set_sa_int(mem, w);
     SaMutationResult::default()
 }
 
-/// Cold abort sentinel for [`finish_sa_mutation_in`].
 pub(crate) enum SaMutationAbort {
     MainMemory,
     SaveOverflow,
@@ -588,8 +449,6 @@ pub(crate) enum SaMutationAbort {
 }
 
 impl SaMutationAbort {
-    /// Map to the unified [`EngineAbort`] terminal. `MainMemory` here is
-    /// a plain overflow (no `runaway`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             SaMutationAbort::MainMemory => crate::errors::EngineAbort::Overflow {
@@ -602,9 +461,9 @@ impl SaMutationAbort {
     }
 }
 
-/// Applies the deferred flush + ref-decrement of an `sa_def`/`gsa_def` result.
+/// Applies the deferred flush and reference drop of an `sa_def`-family result.
 pub(crate) fn finish_sa_mutation_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     p: i32,
     result: SaMutationResult,
 ) -> Result<(), SaMutationAbort> {
@@ -615,49 +474,6 @@ pub(crate) fn finish_sa_mutation_in(
     Ok(())
 }
 
-struct SaRestoreStep {
-    p: i32,
-    chain: i32,
-    flush_list: Option<i32>,
-}
-
-// translated from xetex-xetex0.c:2942 (sa_restore)
-fn sa_restore_prepare(mem: &mut MemState, scanner: &mut ScannerState) -> SaRestoreStep {
-    let sc = scanner.sa_chain.0;
-    let p = mem.b32s0(sc + 1);
-    let mut flush_list = None;
-    if mem.b16s0(p) == LEVEL_ONE {
-        if mem.b16s1(p) >= DIMEN_VAL_LIMIT {
-            flush_list = sa_destroy(mem, sc);
-        }
-    } else {
-        if mem.b16s1(p) < DIMEN_VAL_LIMIT {
-            if mem.b16s1(sc) < DIMEN_VAL_LIMIT {
-                mem.set_b32s1(p + 2, mem.b32s1(sc + 2));
-            } else {
-                mem.set_b32s1(p + 2, 0);
-            }
-        } else {
-            flush_list = sa_destroy(mem, p);
-            mem.set_b32s1(p + 1, mem.b32s1(sc + 1));
-        }
-        mem.set_b16s0(p, mem.b16s0(sc));
-    }
-    SaRestoreStep {
-        p,
-        chain: sc,
-        flush_list,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// unsave
-// ---------------------------------------------------------------------------
-
-/// Cold-path abort raised by [`unsave_in`]. Surfaces the deferred
-/// `eq_destroy`/`flush_node_list` `confusion`, the `back_input` input abort, and
-/// the `get_avail` main-memory overflow. Callers `longjmp` on it; no passing
-/// test reaches any arm.
 pub(crate) enum UnsaveAbort {
     Save(SaveAbort),
     Input(crate::input::InputAbort),
@@ -665,8 +481,6 @@ pub(crate) enum UnsaveAbort {
 }
 
 impl UnsaveAbort {
-    /// Map to the unified [`EngineAbort`] terminal. `MainMemory` runs
-    /// `runaway` (via `main_memory_overflow_abort`).
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             UnsaveAbort::Save(a) => a.into_engine_abort(),
@@ -682,60 +496,74 @@ impl From<crate::input::InputAbort> for UnsaveAbort {
     }
 }
 
-/// Restore the sparse-array chain, returning the `flush_node_list` confusion.
-fn sa_restore_in(st: &mut crate::state::EngineState) -> Result<(), &'static std::ffi::CStr> {
-    loop {
-        let step = {
-            let s = &mut *st;
-            sa_restore_prepare(&mut s.mem, &mut s.scanner)
-        };
-        if let Some(list) = step.flush_list {
-            crate::packaging::flush_node_list(&mut st.mem, list)?;
-        }
-        delete_sa_ref(&mut st.mem, &mut st.scanner, step.p);
-        st.scanner.sa_chain.0 = st.mem.b32s1(step.chain);
-        if st.mem.b16s1(step.chain) < DIMEN_VAL_LIMIT {
-            crate::mem::free_node(
-                &mut st.mem,
-                crate::units::MemPtr::from_raw(step.chain),
-                WORD_NODE_SIZE,
-            );
-        } else {
-            crate::mem::free_node(
-                &mut st.mem,
-                crate::units::MemPtr::from_raw(step.chain),
-                POINTER_NODE_SIZE,
-            );
-        }
-        if st.scanner.sa_chain.0 == TEX_NULL {
-            break;
-        }
+impl From<SaveAbort> for UnsaveAbort {
+    fn from(e: SaveAbort) -> Self {
+        UnsaveAbort::Save(e)
     }
-    Ok(())
 }
 
-/// Pops one grouping level. Cold aborts ride [`UnsaveAbort`].
-///
-/// translated from xetex-xetex0.c:2814 (unsave)
-pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), UnsaveAbort> {
-    if st.save_stack.cur_level > LEVEL_ONE {
-        st.save_stack.cur_level -= 1;
-        let mut l: u16 = 0;
-        let mut a = false;
-        loop {
-            st.save_stack.save_ptr -= 1;
-            let sp = st.save_stack.save_ptr;
-            if st.save_stack.b16s1(sp) == LEVEL_BOUNDARY {
-                break; // goto done
+fn sa_restore_in(st: &mut EngineState) -> Result<(), &'static std::ffi::CStr> {
+    loop {
+        let chain = sa(st.scanner.sa_chain);
+        let p = sa(chain.sa_ref(&st.mem));
+        let mut flush_list = None;
+        if p.sa_lev(&st.mem) == LEVEL_ONE {
+            if p.sa_index(&st.mem) >= DIMEN_VAL_LIMIT {
+                flush_list = sa_destroy(&mut st.mem, chain.idx());
             }
-            let p = st.save_stack.b32s1(sp);
-            if st.save_stack.b16s1(sp) == INSERT_TOKEN {
+        } else {
+            if p.sa_index(&st.mem) < DIMEN_VAL_LIMIT {
+                let v = if chain.sa_index(&st.mem) < DIMEN_VAL_LIMIT {
+                    chain.sa_int(&st.mem)
+                } else {
+                    0
+                };
+                p.set_sa_int(&mut st.mem, v);
+            } else {
+                flush_list = sa_destroy(&mut st.mem, p.idx());
+                let v = chain.sa_ptr(&st.mem);
+                p.set_sa_ptr(&mut st.mem, v);
+            }
+            let lev = chain.sa_lev(&st.mem);
+            p.set_sa_lev(&mut st.mem, lev);
+        }
+        if let Some(list) = flush_list {
+            crate::packaging::flush_node_list(&mut st.mem, list)?;
+        }
+        delete_sa_ref(&mut st.mem, &mut st.scanner, p.idx());
+        st.scanner.sa_chain = chain.link(&st.mem);
+        let size = if chain.sa_index(&st.mem) < DIMEN_VAL_LIMIT {
+            WORD_NODE_SIZE
+        } else {
+            POINTER_NODE_SIZE
+        };
+        free_node(&mut st.mem, chain.ptr(), size);
+        if st.scanner.sa_chain.is_null() {
+            return Ok(());
+        }
+    }
+}
+
+pub(crate) fn unsave_in(st: &mut EngineState) -> Result<(), UnsaveAbort> {
+    if st.save_stack.cur_level <= LEVEL_ONE {
+        return Err(UnsaveAbort::Save(SaveAbort::Confusion(c"curlevel")));
+    }
+    st.save_stack.cur_level -= 1;
+    let mut l: u16 = 0;
+    let mut a = false;
+    loop {
+        st.save_stack.save_ptr -= 1;
+        let sp = st.save_stack.save_ptr;
+        let p = st.save_stack.b32s1(sp);
+        match st.save_stack.b16s1(sp) {
+            LEVEL_BOUNDARY => break,
+            INSERT_TOKEN => {
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = p;
                 if a {
                     let pn = crate::mem::get_avail(&mut st.mem).ok_or(UnsaveAbort::MainMemory)?;
                     pn.set_info(&mut st.mem, st.scanner.cur_tok);
-                    st.mem.set_b32s1(pn, st.input.cur_input.loc);
+                    pn.set_link(&mut st.mem, MemPtr::from_raw(st.input.cur_input.loc));
                     st.input.cur_input.loc = pn.0;
                     st.input.cur_input.start = pn.0;
                     if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
@@ -750,173 +578,119 @@ pub(crate) fn unsave_in(st: &mut crate::state::EngineState) -> Result<(), Unsave
                     a = true;
                 }
                 st.scanner.cur_tok = t;
-            } else if st.save_stack.b16s1(sp) == RESTORE_SA {
+            }
+            RESTORE_SA => {
                 sa_restore_in(st).map_err(|m| UnsaveAbort::Save(SaveAbort::Confusion(m)))?;
-                st.scanner.sa_chain.0 = p;
+                st.scanner.sa_chain = MemPtr::from_raw(p);
                 st.scanner.sa_level = st.save_stack.b16s0(st.save_stack.save_ptr);
-            } else {
-                if st.save_stack.b16s1(sp) == RESTORE_OLD_VALUE {
+            }
+            kind => {
+                if kind == RESTORE_OLD_VALUE {
                     l = st.save_stack.b16s0(sp);
                     st.save_stack.save_ptr -= 1;
                 } else {
                     let w = st.eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
                     st.save_stack.set_word(st.save_stack.save_ptr, w);
                 }
-                let sp = st.save_stack.save_ptr;
+                let saved = st.save_stack.word(st.save_stack.save_ptr);
                 if !(INT_BASE..=EQTB_SIZE).contains(&p) {
                     if st.eqtb.b16s0(p) == LEVEL_ONE {
-                        let w = st.save_stack.word(sp);
-                        if let Some(ab) = {
-                            let s = &mut *st;
-                            eq_destroy(&mut s.mem, &mut s.scanner, w)
-                        } {
-                            return Err(UnsaveAbort::Save(ab));
-                        }
+                        eq_destroy(&mut st.mem, &mut st.scanner, saved)?;
                     } else {
-                        let w = st.eqtb.word(p);
-                        if let Some(ab) = {
-                            let s = &mut *st;
-                            eq_destroy(&mut s.mem, &mut s.scanner, w)
-                        } {
-                            return Err(UnsaveAbort::Save(ab));
-                        }
-                        let w = st.save_stack.word(sp);
-                        st.eqtb.set_word(p, w);
+                        eq_destroy(&mut st.mem, &mut st.scanner, st.eqtb.word(p))?;
+                        st.eqtb.set_word(p, saved);
                     }
                 } else if st.eqtb.xeq_level_at(p) != LEVEL_ONE {
-                    let w = st.save_stack.word(sp);
-                    st.eqtb.set_word(p, w);
+                    st.eqtb.set_word(p, saved);
                     st.eqtb.set_xeq_level_at(p, l);
                 }
             }
         }
-        // done:
-        if st.input.grp_stack[st.input.in_open as usize] == st.save_stack.cur_boundary {
-            crate::output::group_warning_in(st);
-        }
-        let sp = st.save_stack.save_ptr;
-        st.save_stack.cur_group =
-            GroupCode::from_raw(st.save_stack.b16s0(sp) as u8).expect("valid group code");
-        st.save_stack.cur_boundary = st.save_stack.b32s1(sp);
-        st.save_stack.save_ptr -= 1;
-        Ok(())
-    } else {
-        Err(UnsaveAbort::Save(SaveAbort::Confusion(c"curlevel")))
     }
+    if st.input.grp_stack[st.input.in_open as usize] == st.save_stack.cur_boundary {
+        crate::output::group_warning_in(st);
+    }
+    let sp = st.save_stack.save_ptr;
+    st.save_stack.cur_group =
+        GroupCode::from_raw(st.save_stack.b16s0(sp) as u8).expect("valid group code");
+    st.save_stack.cur_boundary = st.save_stack.b32s1(sp);
+    st.save_stack.save_ptr -= 1;
+    Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// new_index / find_sa_element
-// ---------------------------------------------------------------------------
-
-/// Allocate a new INDEX_NODE_SIZE node for the sparse-array trie. `None` is
-/// the arena-exhaustion sentinel.
-///
-/// translated from xetex-xetex0.c:4111 (new_index)
+/// Allocates a trie index node below `q`, also leaving it in `cur_ptr`.
 fn new_index(
     mem: &mut MemState,
     scanner: &mut ScannerState,
     i: u16,
-    q: impl crate::units::MemAddr,
-) -> Option<i32> {
-    let q = q.addr();
-    let p = crate::mem::get_node(mem, INDEX_NODE_SIZE)?.0;
-    scanner.cur_ptr.0 = p;
-    mem.set_b16s1(p, i);
-    mem.set_b16s0(p, 0);
-    mem.set_b32s1(p, q);
-    let null = scanner.sa_null;
+    q: MemPtr,
+) -> Option<NodePtr<SaNode>> {
+    let p = sa(get_node(mem, INDEX_NODE_SIZE)?);
+    scanner.cur_ptr = p.ptr();
+    p.set_sa_index(mem, i);
+    p.set_ref_count(mem, 0);
+    p.set_link(mem, q);
     for k in 1..INDEX_NODE_SIZE {
-        mem.set_word(p + k, null);
+        mem.set_word(p.idx().offset(k), scanner.sa_null);
     }
     Some(p)
 }
 
-/// Helper: read the child pointer at trie index `i` within node `q`.
-/// Odd `i` → b32.s1; even `i` → b32.s0.
-#[inline]
-fn sa_get_child(mem: &MemState, q: impl crate::units::MemAddr, i: i32) -> i32 {
-    let q = q.addr();
-    if i & 1 != 0 {
-        mem.b32s1(q + i / 2 + 1)
-    } else {
-        mem.b32s0(q + i / 2 + 1)
-    }
+fn add_sa_child(mem: &mut MemState, q: NodePtr<SaNode>, i: i32, p: NodePtr<SaNode>) {
+    q.set_child(mem, i, p.ptr());
+    q.set_ref_count(mem, q.ref_count(mem) + 1);
 }
 
-/// Helper: write the child pointer and increment the ref-count in node `q`.
-#[inline]
-fn sa_set_child(
-    mem: &mut MemState,
-    q: impl crate::units::MemAddr,
-    i: i32,
-    p: impl crate::units::MemAddr,
-) {
-    let q = q.addr();
-    let p = p.addr();
-    if i & 1 != 0 {
-        mem.set_b32s1(q + i / 2 + 1, p);
-    } else {
-        mem.set_b32s0(q + i / 2 + 1, p);
-    }
-    mem.set_b16s0(q, mem.b16s0(q) + 1);
-}
-
-/// Allocate a chain of index nodes starting at (`q`, `i`) then continuing
-/// through `rest`, finishing with a data leaf node for type `t` / register `n`.
-/// Corresponds to C's "fall-through" chain lab46 → lab47 → lab48 → lab49.
+/// Creates the missing trie levels below `q` for `levels`, ending in the
+/// data record for type `t` and register `n`.
 fn sa_alloc_chain(
     mem: &mut MemState,
     scanner: &mut ScannerState,
     t: u16,
     n: i32,
-    mut q: i32,
+    mut q: NodePtr<SaNode>,
     levels: &[i32],
-) -> Option<i32> {
-    // Allocate intermediate index nodes for all but the last level.
-    for &lv_i in &levels[..levels.len() - 1] {
-        let p = new_index(mem, scanner, lv_i as u16, q)?;
-        sa_set_child(mem, q, lv_i, p);
-        q = scanner.cur_ptr.0;
+) -> Option<()> {
+    let (&leaf_i, index_levels) = levels.split_last().expect("non-empty trie path");
+    for &i in index_levels {
+        let p = new_index(mem, scanner, i as u16, q.ptr())?;
+        add_sa_child(mem, q, i, p);
+        q = p;
     }
-    // Allocate the data (leaf) node (lab49).
-    let leaf_i = levels[levels.len() - 1];
     let p;
     if t == MARK_VAL {
-        p = crate::mem::get_node(mem, MARK_CLASS_NODE_SIZE)?.0;
-        scanner.cur_ptr.0 = p;
-        mem.set_word(p + 1, scanner.sa_null);
-        mem.set_word(p + 2, scanner.sa_null);
-        mem.set_word(p + 3, scanner.sa_null);
-    } else if t <= DIMEN_VAL {
-        p = crate::mem::get_node(mem, WORD_NODE_SIZE)?.0;
-        scanner.cur_ptr.0 = p;
-        mem.set_b32s1(p + 2, 0);
-        mem.set_b32s1(p + 1, n);
+        p = sa(get_node(mem, MARK_CLASS_NODE_SIZE)?);
+        scanner.cur_ptr = p.ptr();
+        for k in 1..=3 {
+            mem.set_word(p.idx().offset(k), scanner.sa_null);
+        }
+    } else if t <= DIMEN_VAL as u16 {
+        p = sa(get_node(mem, WORD_NODE_SIZE)?);
+        scanner.cur_ptr = p.ptr();
+        p.set_sa_int(mem, 0);
+        // sa_num
+        p.set_sa_ptr(mem, MemPtr::from_raw(n));
     } else {
-        p = crate::mem::get_node(mem, POINTER_NODE_SIZE)?.0;
-        scanner.cur_ptr.0 = p;
-        if t <= MU_VAL {
-            mem.set_b32s1(p + 1, 0);
-            // GLUE_SPEC_ref_count(0)++ : mem[0].b32.s1
+        p = sa(get_node(mem, POINTER_NODE_SIZE)?);
+        scanner.cur_ptr = p.ptr();
+        if t <= MU_VAL as u16 {
+            p.set_sa_ptr(mem, MemPtr::from_raw(0));
+            // add_glue_ref(zero_glue)
             mem.set_b32s1(0, mem.b32s1(0) + 1);
         } else {
-            mem.set_b32s1(p + 1, TEX_NULL);
+            p.set_sa_ptr(mem, MemPtr::NULL);
         }
-        mem.set_b32s0(p + 1, TEX_NULL);
+        p.set_sa_ref(mem, TEX_NULL);
     }
-    mem.set_b16s1(p, (64 * t as i32 + leaf_i) as u16);
-    mem.set_b16s0(p, 1); // level_one
-    mem.set_b32s1(p, q);
-    sa_set_child(mem, q, leaf_i, p);
-    Some(p)
+    p.set_sa_index(mem, (64 * t as i32 + leaf_i) as u16);
+    p.set_sa_lev(mem, LEVEL_ONE);
+    p.set_link(mem, q.ptr());
+    add_sa_child(mem, q, leaf_i, p);
+    Some(())
 }
 
-/// Navigate (and optionally create) a path in the sparse-array trie. The
-/// result is delivered via `scanner.cur_ptr`; `None` is the arena-exhaustion
-/// sentinel.
-///
-/// translated from xetex-xetex0.c:4129 (find_sa_element)
+/// Finds (and with `w` creates) the trie record for type `t`, register `n`,
+/// leaving it in `cur_ptr`. `None` is arena exhaustion.
 pub fn find_sa_element(
     mem: &mut MemState,
     scanner: &mut ScannerState,
@@ -924,45 +698,25 @@ pub fn find_sa_element(
     n: i32,
     w: bool,
 ) -> Option<()> {
-    // Trie-level indices: break n into four 6-bit digits (roughly).
-    let lvl = [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64];
-
-    // Traversal: navigate the 4-level trie, recording parents for linking.
+    let levels = [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64];
     scanner.cur_ptr = scanner.sa_root[t as usize];
-
-    // Check root level (not_found in C).
-    if scanner.cur_ptr.0 == TEX_NULL {
+    if scanner.cur_ptr.is_null() {
         if !w {
             return Some(());
         }
-        new_index(mem, scanner, t, TEX_NULL)?;
-        scanner.sa_root[t as usize] = scanner.cur_ptr;
-        // lab46..lab49: allocate all 4 levels from this root.
-        sa_alloc_chain(mem, scanner, t, n, scanner.cur_ptr.0, &lvl)?;
-        return Some(());
+        let root = new_index(mem, scanner, t, MemPtr::NULL)?;
+        scanner.sa_root[t as usize] = root.ptr();
+        return sa_alloc_chain(mem, scanner, t, n, root, &levels);
     }
-
-    // Levels 0–2: index nodes.
-    let mut qs = [TEX_NULL; 4];
-    for k in 0..3usize {
-        qs[k] = scanner.cur_ptr.0;
-        scanner.cur_ptr.0 = sa_get_child(mem, qs[k], lvl[k]);
-        if scanner.cur_ptr.0 == TEX_NULL {
-            if !w {
-                return Some(());
+    for k in 0..levels.len() {
+        let q = sa(scanner.cur_ptr);
+        scanner.cur_ptr = q.child(mem, levels[k]);
+        if scanner.cur_ptr.is_null() {
+            if w {
+                sa_alloc_chain(mem, scanner, t, n, q, &levels[k..])?;
             }
-            // lab46/47/48: allocate remaining levels from qs[k].
-            sa_alloc_chain(mem, scanner, t, n, qs[k], &lvl[k..])?;
             return Some(());
         }
-    }
-
-    // Level 3: leaf.
-    qs[3] = scanner.cur_ptr.0;
-    scanner.cur_ptr.0 = sa_get_child(mem, qs[3], lvl[3]);
-    if scanner.cur_ptr.0 == TEX_NULL && w {
-        // lab49: allocate just the data node.
-        sa_alloc_chain(mem, scanner, t, n, qs[3], &lvl[3..])?;
     }
     Some(())
 }

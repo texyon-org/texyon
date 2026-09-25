@@ -129,10 +129,9 @@ fn page_error(outcome: ErrorOutcome) -> Result<(), PageBuildAbort> {
     crate::scan::scc_err(outcome).map_err(PageBuildAbort::Scc)
 }
 
-fn page_save(abort: Option<crate::save::SaveAbort>) -> Result<(), PageBuildAbort> {
-    match abort {
-        Some(a) => Err(PageBuildAbort::Save(a)),
-        None => Ok(()),
+impl From<crate::save::SaveAbort> for PageBuildAbort {
+    fn from(e: crate::save::SaveAbort) -> Self {
+        PageBuildAbort::Save(e)
     }
 }
 
@@ -597,17 +596,8 @@ fn fire_up_in(st: &mut EngineState, c: i32) -> Result<(), PageBuildAbort> {
                 st.eqtb.b32s1(LOCAL_BASE + LOCAL__output_routine),
                 OUTPUT_TEXT,
             )?;
-            page_save(crate::save::new_save_level(
-                &mut st.save_stack,
-                GroupCode::Output,
-                st.mem.line,
-            ))?;
-            page_save(crate::main_control::normal_paragraph(
-                &mut st.eqtb,
-                &mut st.save_stack,
-                &mut st.mem,
-                &mut st.scanner,
-            ))?;
+            crate::save::new_save_level(&mut st.save_stack, GroupCode::Output, st.mem.line)?;
+            crate::main_control::normal_paragraph(st)?;
             crate::scan::scan_left_brace_in(st)?;
             return Ok(());
         }

@@ -3512,7 +3512,7 @@ pub(crate) fn start_eq_no_in(
     st.save_stack.save_ptr += 1;
 
     crate::main_control::push_math_in(st, GroupCode::MathShift)?;
-    if let Some(a) = crate::save::eq_word_define(
+    if let Err(a) = crate::save::eq_word_define(
         &mut st.eqtb,
         &mut st.save_stack,
         INT_BASE + INT_PAR_CUR_FAM,
@@ -4942,7 +4942,7 @@ pub(crate) fn init_math_in(
 
         crate::main_control::push_math_in(st, GroupCode::MathShift)?;
         st.input.cur_list.mode = MMODE;
-        if let Some(a) = crate::save::eq_word_define(
+        if let Err(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,
             INT_BASE + INT_PAR_CUR_FAM,
@@ -4950,7 +4950,7 @@ pub(crate) fn init_math_in(
         ) {
             return Err(crate::main_control::MainControlAbort::Save(a));
         }
-        if let Some(a) = crate::save::eq_word_define(
+        if let Err(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,
             DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE,
@@ -4959,7 +4959,7 @@ pub(crate) fn init_math_in(
             return Err(crate::main_control::MainControlAbort::Save(a));
         }
         st.input.cur_list.e_tex_aux = crate::units::MemPtr::from_raw(j);
-        if let Some(a) = crate::save::eq_word_define(
+        if let Err(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,
             INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION,
@@ -4967,7 +4967,7 @@ pub(crate) fn init_math_in(
         ) {
             return Err(crate::main_control::MainControlAbort::Save(a));
         }
-        if let Some(a) = crate::save::eq_word_define(
+        if let Err(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,
             DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH,
@@ -4975,7 +4975,7 @@ pub(crate) fn init_math_in(
         ) {
             return Err(crate::main_control::MainControlAbort::Save(a));
         }
-        if let Some(a) = crate::save::eq_word_define(
+        if let Err(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,
             DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT,
@@ -4998,7 +4998,7 @@ pub(crate) fn init_math_in(
     } else {
         crate::input::back_input_in(st)?;
         crate::main_control::push_math_in(st, GroupCode::MathShift)?;
-        if let Some(a) = crate::save::eq_word_define(
+        if let Err(a) = crate::save::eq_word_define(
             &mut st.eqtb,
             &mut st.save_stack,
             INT_BASE + INT_PAR_CUR_FAM,

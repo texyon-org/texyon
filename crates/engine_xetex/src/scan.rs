@@ -462,7 +462,7 @@ pub(crate) fn scan_spec_in(
     st.save_stack.set_b32s1(sp, spec_code as i32);
     st.save_stack.set_b32s1(sp + 1, st.scanner.cur_val);
     st.save_stack.save_ptr = sp + 2;
-    if let Some(abort) = crate::save::new_save_level(&mut st.save_stack, c, st.mem.line) {
+    if let Err(abort) = crate::save::new_save_level(&mut st.save_stack, c, st.mem.line) {
         return Err(match abort {
             crate::save::SaveAbort::Overflow(what, n) => {
                 SccAbort::Input(crate::input::InputAbort::Overflow {
