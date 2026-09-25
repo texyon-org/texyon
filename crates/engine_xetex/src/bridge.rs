@@ -1,20 +1,7 @@
-//! Direct Rust calls into `tectonic_bridge_core` I/O, replacing the C
-//! `ttstub_*` wrappers from `bridge_core/support/support.c`.
+//! Engine-side wrappers over the `tectonic_bridge_core` I/O functions.
 //!
-//! The C wrappers forwarded every call to the `ttbc_*` Rust functions through
-//! a C-held global state pointer (a rust→C→rust round trip), and two of them
-//! (`ttstub_input_seek`/`ttstub_input_close`) `longjmp`ed over Rust frames on
-//! serious errors. Here the engine calls the `ttbc_*` functions as ordinary
-//! Rust items; the state pointer is threaded in from `tt_engine_xetex_main`
-//! and held in [`BRIDGE_PTR`] for the duration of the run (a locator
-//! re-established each run, like `ENGINE_STATE_PTR` — not engine state).
-//!
-//! The wrappers keep the C shims' names and handle representation (`usize`,
-//! 0 = invalid) so call sites read like the C they were translated from, and
-//! their return-code semantics are those of `support.c` verbatim. The printf
-//! variants (`ttstub_diag_printf`, `ttstub_issue_warning`, ...) have no
-//! variadic equivalents here; call sites format with `format!` and use the
-//! `*_str`/`*_cstr` functions, which forward the finished text.
+//! Handles are raw `usize` values with 0 meaning invalid. The state pointer is
+//! installed per run in `BRIDGE_PTR`.
 
 use tectonic_bridge_core::{
     ttbc_diag_begin_error, ttbc_diag_begin_warning, ttbc_diag_finish, ttbc_get_file_md5,
@@ -25,15 +12,9 @@ use tectonic_bridge_core::{
     ttbc_shell_escape, CoreBridgeState, Diagnostic, FileFormat, InputId, OutputId,
 };
 
-// ---------------------------------------------------------------------------
-// The per-run state locator
-// ---------------------------------------------------------------------------
-
 static mut BRIDGE_PTR: *mut libc::c_void = std::ptr::null_mut();
 
-/// Install the `CoreBridgeState` pointer for this run (null to clear). Called
-/// by `tt_run_engine` on entry/exit; the pointer is the `api` argument the
-/// host passes to `tt_engine_xetex_main`.
+/// Installs the `CoreBridgeState` pointer for this run, or clears it with null.
 pub(crate) unsafe fn set_bridge_state(ptr: *mut libc::c_void) {
     BRIDGE_PTR = ptr;
 }
@@ -65,7 +46,7 @@ unsafe fn es() -> &'static mut CoreBridgeState<'static> {
     &mut *(BRIDGE_PTR as *mut CoreBridgeState<'static>)
 }
 
-/// `ttbc_file_format` int (the value the C ABI carried) → `FileFormat`.
+/// Maps a `ttbc_file_format` number to its `FileFormat`.
 fn file_format_from_int(format: libc::c_int) -> FileFormat {
     match format {
         1 => FileFormat::Pk,
@@ -93,10 +74,6 @@ fn file_format_from_int(format: libc::c_int) -> FileFormat {
         _ => FileFormat::Tex, // 26 and the C wrapper's implicit default
     }
 }
-
-// ---------------------------------------------------------------------------
-// Input
-// ---------------------------------------------------------------------------
 
 pub(crate) unsafe fn ttstub_input_open(
     path: *const libc::c_char,
@@ -144,8 +121,6 @@ pub(crate) unsafe fn ttstub_input_get_mtime(handle: usize) -> libc::time_t {
     if crate::replay::adapter::is_mem(handle) {
         return 0;
     }
-    // See the C wrapper: time_t cannot be bridged portably, so it carries the
-    // i64 across and casts.
     ttbc_input_get_mtime(es(), InputId::from_raw(handle)) as libc::time_t
 }
 
@@ -174,10 +149,8 @@ pub(crate) unsafe fn ttstub_input_read(
     ttbc_input_read(es(), InputId::from_raw(handle), data, len)
 }
 
-/// Unlike the C wrapper, returns the seek error as a flag instead of
-/// `longjmp`ing: `ttbc_input_seek` sets `internal_error` only for an invalid
-/// `whence`, and every engine call site rewinds with `SEEK_SET`, so the error
-/// path is unreachable here (asserted).
+/// `ttbc_input_seek` flags an error only for an invalid `whence`, and every
+/// caller seeks with `SEEK_SET`, so the error path is unreachable.
 pub(crate) unsafe fn input_seek(
     handle: usize,
     offset: libc::ssize_t,
@@ -201,10 +174,7 @@ pub(crate) unsafe fn input_seek(
     rv
 }
 
-/// Unlike the C wrapper, returns `true` on the serious internal close error it
-/// `longjmp`ed on; a `Result`-path caller propagates it as
-/// `EngineAbort::TtAbort` (no cleanup, descriptive message, history 3 — the
-/// bare longjmp ran no cleanup either and left the message undefined).
+/// Returns `true` on a serious internal close error.
 #[must_use]
 pub(crate) unsafe fn input_close(handle: usize) -> bool {
     if let Some(error) = crate::replay::adapter::close(handle) {
@@ -212,10 +182,6 @@ pub(crate) unsafe fn input_close(handle: usize) -> bool {
     }
     ttbc_input_close(es(), InputId::from_raw(handle)) != 0
 }
-
-// ---------------------------------------------------------------------------
-// Output
-// ---------------------------------------------------------------------------
 
 pub(crate) unsafe fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize {
     OutputId::to_raw(ttbc_output_open(es(), path, is_gz))
@@ -245,10 +211,6 @@ pub(crate) unsafe fn ttstub_output_close(handle: usize) -> libc::c_int {
     ttbc_output_close(es(), OutputId::from_raw(handle))
 }
 
-// ---------------------------------------------------------------------------
-// Diagnostics and system requests
-// ---------------------------------------------------------------------------
-
 pub(crate) fn ttbc_diag_begin_warning_ptr() -> *mut libc::c_void {
     ttbc_diag_begin_warning() as *mut libc::c_void
 }
@@ -257,14 +219,12 @@ pub(crate) fn ttbc_diag_begin_error_ptr() -> *mut libc::c_void {
     ttbc_diag_begin_error() as *mut libc::c_void
 }
 
-/// Append a nul-terminated C string to a diagnostic (the `%s`-only
-/// `ttstub_diag_printf` case).
+/// Appends a NUL-terminated C string to a diagnostic.
 pub(crate) unsafe fn diag_append_cstr(diag: *mut libc::c_void, text: *const libc::c_char) {
     tectonic_bridge_core::ttbc_diag_append(&mut *(diag as *mut Diagnostic), text);
 }
 
-/// Append Rust-formatted text to a diagnostic; replaces the formatted
-/// `ttstub_diag_printf` calls (call sites `format!` the text).
+/// Appends Rust-formatted text to a diagnostic.
 pub(crate) unsafe fn diag_append_str(diag: *mut libc::c_void, text: &str) {
     let ctext = std::ffi::CString::new(text).unwrap_or_default();
     tectonic_bridge_core::ttbc_diag_append(&mut *(diag as *mut Diagnostic), ctext.as_ptr());

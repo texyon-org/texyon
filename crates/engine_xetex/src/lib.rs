@@ -23,8 +23,6 @@ use std::{ffi::CString, time::SystemTime};
 use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
 use tectonic_errors::prelude::*;
 
-// Internal modules holding the growing Rust translation of the XeTeX
-// engine.
 mod bridge;
 mod cancellation;
 mod checkpoint;
@@ -51,6 +49,7 @@ mod main_control;
 mod math;
 mod mem;
 mod mem_types;
+mod node;
 mod ot_math;
 mod output;
 mod packaging;
@@ -67,12 +66,9 @@ mod shipout;
 mod state;
 mod string_pool;
 mod sync_index;
-// Typed-memory foundation.
-mod units;
-// Typed node-handle layer over the arena.
-mod node;
 mod synctex;
 mod texmfmp;
+mod units;
 mod utf8;
 
 pub use cancellation::EngineCancellation;
@@ -91,9 +87,6 @@ pub use sync_index::{SyncIndex, SyncRect};
 /// should munge this serial number in the filename, or something along those
 /// lines, to make sure that when the engine is updated you don’t attempt to
 /// reuse old files.
-//
-// DEVELOPER NOTE: if you change this, rerun cbindgen! This value is exported
-// into the C/C++ code as a #define.
 pub const FORMAT_SERIAL: u32 = 33;
 
 /// A possible outcome from a (Xe)TeX engine invocation.
