@@ -3293,43 +3293,21 @@ pub(crate) fn do_assignments_in(st: &mut EngineState) -> Result<(), MainControlA
 pub(crate) fn main_control_append_normal_space_in(
     st: &mut EngineState,
 ) -> Result<(), MainControlAbort> {
+    use crate::scan::NodeRecycleAbort;
+
     if inter_char_boundary_after_space_action(st, CHAR_NUM).execute_in(st)? {
         return Ok(());
     }
-
-    let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
-    if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32) == 0 {
-        st.mainloop.main_p.0 = st.fonts.font_glue(cur_font);
-        if st.mainloop.main_p.0 == TEX_NULL {
-            st.mainloop.main_p = crate::mem::alloc_spec(&mut st.mem, 0)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-                .ptr();
-            st.mainloop.main_k = st.fonts.param_base(cur_font) + 2;
-            st.mem.set_b32s1(
-                st.mainloop.main_p.0 + 1,
-                st.fonts.font_info_b32s1(st.mainloop.main_k),
-            );
-            st.mem.set_b32s1(
-                st.mainloop.main_p.0 + 2,
-                st.fonts.font_info_b32s1(st.mainloop.main_k + 1),
-            );
-            st.mem.set_b32s1(
-                st.mainloop.main_p.0 + 3,
-                st.fonts.font_info_b32s1(st.mainloop.main_k + 2),
-            );
-            st.fonts.set_font_glue(cur_font, st.mainloop.main_p.0);
-        }
-        st.mem.temp_ptr = crate::mem::alloc_glue(&mut st.mem, st.mainloop.main_p.0)
-            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-            .ptr();
+    let glue = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32) == ZERO_GLUE {
+        st.mainloop.main_p.0 = font_space_glue(st)?;
+        crate::mem::alloc_glue(&mut st.mem, st.mainloop.main_p.0)
+            .ok_or(NodeRecycleAbort::Overflow)?
     } else {
-        st.mem.temp_ptr = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_SPACE_SKIP)
-            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-            .ptr();
-    }
-
-    let tp = st.mem.temp_ptr;
-    tail_append(st, tp);
+        crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_SPACE_SKIP)
+            .ok_or(NodeRecycleAbort::Overflow)?
+    };
+    st.mem.temp_ptr = glue.ptr();
+    tail_append(st, glue.ptr());
     Ok(())
 }
 
@@ -3512,7 +3490,7 @@ fn main_control_box_list_cases_in(st: &mut EngineState) -> Result<(), MainContro
                 off_save_in(st)?;
             }
             end_graf_in(st)?;
-            if st.input.cur_list.mode == VMODE as i16 {
+            if st.input.cur_list.mode == VMODE {
                 crate::pagebuilder::build_page_in(st)?;
             }
         }
@@ -3591,9 +3569,22 @@ pub(crate) fn main_control_alignment_cases_in(
     Ok(())
 }
 
-pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    extern "C" {}
+/// Scans the class, family and code of `\Umathchar` or `\Udelimiter`.
+fn scan_umath_char(st: &mut EngineState) -> Result<i32, MainControlAbort> {
+    crate::scan::scan_math_class_int_in(st)?;
+    let mut t = set_class_fn(st.scanner.cur_val);
+    crate::scan::scan_math_fam_int_in(st)?;
+    t += set_family_fn(st.scanner.cur_val);
+    crate::scan::scan_usv_num_in(st)?;
+    Ok(t + st.scanner.cur_val)
+}
 
+/// Converts a classic 15-bit `\mathchar` code to the XeTeX layout.
+fn math_char_from_tex(v: i32) -> i32 {
+    set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
+}
+
+pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
         (HMODE, MATH_SHIFT) => init_math_in(st)?,
 
@@ -3612,7 +3603,7 @@ pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), Mai
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             tail_append(st, n.ptr());
             crate::input::back_input_in(st)?;
-            crate::scan::scan_math_in(st, st.input.cur_list.tail.0 + 1)?;
+            crate::scan::scan_math_in(st, n.nucleus_addr())?;
         }
 
         (MMODE, LETTER) | (MMODE, OTHER_CHAR) | (MMODE, CHAR_GIVEN) => {
@@ -3626,35 +3617,22 @@ pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), Mai
         }
 
         (MMODE, MATH_CHAR_NUM) => {
-            if st.scanner.cur_chr == 2 {
-                // \Umathchar
-                crate::scan::scan_math_class_int_in(st)?;
-                let mut t = set_class_fn(st.scanner.cur_val);
-                crate::scan::scan_math_fam_int_in(st)?;
-                t += set_family_fn(st.scanner.cur_val);
-                crate::scan::scan_usv_num_in(st)?;
-                t += st.scanner.cur_val;
-                crate::scan::set_math_char_in(st, t)?;
-            } else if st.scanner.cur_chr == 1 {
-                // \Umathcharnum
-                crate::scan::scan_xetex_math_char_int_in(st)?;
-                crate::scan::set_math_char_in(st, st.scanner.cur_val)?;
-            } else {
-                crate::scan::scan_fifteen_bit_int_in(st)?;
-                let v = st.scanner.cur_val;
-                crate::scan::set_math_char_in(
-                    st,
-                    set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256),
-                )?;
-            }
+            let c = match st.scanner.cur_chr {
+                2 => scan_umath_char(st)?,
+                1 => {
+                    crate::scan::scan_xetex_math_char_int_in(st)?;
+                    st.scanner.cur_val
+                }
+                _ => {
+                    crate::scan::scan_fifteen_bit_int_in(st)?;
+                    math_char_from_tex(st.scanner.cur_val)
+                }
+            };
+            crate::scan::set_math_char_in(st, c)?;
         }
 
         (MMODE, MATH_GIVEN) => {
-            let c = st.scanner.cur_chr;
-            crate::scan::set_math_char_in(
-                st,
-                set_class_fn(c / 4096) + set_family_fn((c % 4096) / 256) + (c % 256),
-            )?;
+            crate::scan::set_math_char_in(st, math_char_from_tex(st.scanner.cur_chr))?;
         }
 
         (MMODE, XETEX_MATH_GIVEN) => {
@@ -3662,32 +3640,21 @@ pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), Mai
         }
 
         (MMODE, DELIM_NUM) => {
-            if st.scanner.cur_chr == 1 {
-                // \Udelimiter
-                crate::scan::scan_math_class_int_in(st)?;
-                let mut t = set_class_fn(st.scanner.cur_val);
-                crate::scan::scan_math_fam_int_in(st)?;
-                t += set_family_fn(st.scanner.cur_val);
-                crate::scan::scan_usv_num_in(st)?;
-                t += st.scanner.cur_val;
-                crate::scan::set_math_char_in(st, t)?;
+            let c = if st.scanner.cur_chr == 1 {
+                scan_umath_char(st)?
             } else {
                 crate::scan::scan_delimiter_int_in(st)?;
-                let v = st.scanner.cur_val / 4096;
-                crate::scan::set_math_char_in(
-                    st,
-                    set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256),
-                )?;
-            }
+                math_char_from_tex(st.scanner.cur_val / 4096)
+            };
+            crate::scan::set_math_char_in(st, c)?;
         }
 
         (MMODE, MATH_COMP) => {
             let n = crate::mem::alloc_noad(&mut st.mem)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             tail_append(st, n.ptr());
-            st.mem
-                .set_b16s1(st.input.cur_list.tail, st.scanner.cur_chr as u16);
-            crate::scan::scan_math_in(st, st.input.cur_list.tail.0 + 1)?;
+            st.mem.set_b16s1(n.idx(), st.scanner.cur_chr as u16);
+            crate::scan::scan_math_in(st, n.nucleus_addr())?;
         }
 
         (MMODE, LIMIT_SWITCH) => crate::math::math_limit_switch_in(st)?,
@@ -3698,7 +3665,7 @@ pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), Mai
             crate::scan::scan_spec_in(st, GroupCode::Vcenter, false)?;
             normal_paragraph(st)?;
             crate::mem::push_nest_in(st)?;
-            st.input.cur_list.mode = -1;
+            st.input.cur_list.mode = INNER_VMODE;
             st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
             if st.shipout.insert_src_special_every_vbox {
                 crate::ext::insert_src_special_in(st)?;
@@ -3716,7 +3683,7 @@ pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), Mai
             let g = crate::mem::alloc_glue(&mut st.mem, 0)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             tail_append(st, g.ptr());
-            st.mem.set_b16s0(st.input.cur_list.tail, COND_MATH_GLUE);
+            g.set_subtype(&mut st.mem, COND_MATH_GLUE);
         }
 
         (MMODE, MATH_CHOICE) => crate::math::append_choices_in(st)?,
@@ -3748,25 +3715,17 @@ pub(crate) fn main_control_ignore_spaces_in(st: &mut EngineState) -> Result<(), 
     } else {
         let saved = st.scanner.scanner_status;
         st.scanner.scanner_status = NORMAL_SCANNER;
-        let get_next_outcome = crate::scan::get_next_in(st);
+        let outcome = crate::scan::get_next_in(st);
         st.scanner.scanner_status = saved;
-        let get_next_result: Result<(), crate::scan::SccAbort> = get_next_outcome.into();
-        get_next_result?;
+        Result::<(), crate::scan::SccAbort>::from(outcome)?;
 
-        if st.scanner.cur_cs < HASH_BASE {
-            let v = crate::hash::prim_lookup(
-                &mut st.eqtb,
-                &mut st.strings,
-                st.scanner.cur_cs - SINGLE_BASE,
-            )
-            .map_err(crate::scan::hash_err_abort)?;
-            st.scanner.cur_cs = v;
+        let name = if st.scanner.cur_cs < HASH_BASE {
+            st.scanner.cur_cs - SINGLE_BASE
         } else {
-            let s = st.eqtb.hash_s1(st.scanner.cur_cs);
-            let v = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)
-                .map_err(crate::scan::hash_err_abort)?;
-            st.scanner.cur_cs = v;
-        }
+            st.eqtb.hash_s1(st.scanner.cur_cs)
+        };
+        st.scanner.cur_cs = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, name)
+            .map_err(crate::scan::hash_err_abort)?;
 
         if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
             st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + st.scanner.cur_cs) as u8;
@@ -3774,7 +3733,6 @@ pub(crate) fn main_control_ignore_spaces_in(st: &mut EngineState) -> Result<(), 
             st.scanner.cur_tok = CS_TOKEN_FLAG + PRIM_EQTB_BASE + st.scanner.cur_cs;
         }
     }
-    // Caller must do: goto reswitch
     Ok(())
 }
 
