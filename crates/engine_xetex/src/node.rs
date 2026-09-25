@@ -2490,6 +2490,14 @@ impl NodePtr<WhatsitNode> {
         mem.as_u16_ptr(self.idx.offset(6).0)
     }
 
+    /// The native-word UTF-16 text.
+    #[inline]
+    pub fn native_text(self, mem: &MemState) -> &[u16] {
+        let len = self.native_length(mem) as usize;
+        // SAFETY: a native-word node is allocated with room for `native_length` code units.
+        unsafe { std::slice::from_raw_parts(self.native_text_ptr(mem), len) }
+    }
+
     /// Mutable pointer to the inline UTF-16 native-word text payload at
     /// `mem[p + NATIVE_NODE_SIZE]` (`NATIVE_NODE_SIZE = 6`).
     #[inline]
@@ -2588,6 +2596,13 @@ impl NodePtr<SaNode> {
     #[inline]
     pub fn set_sa_index(self, mem: &mut MemState, v: u16) {
         mem.set_b16s1(self.idx.0, v);
+    }
+
+    /// Parent index node = `mem[p].b32.s1`, non-null below the root.
+    #[inline]
+    pub fn parent(self, mem: &MemState) -> NodePtr<SaNode> {
+        // SAFETY: every non-root sparse-array record links to its index node.
+        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(mem.b32s1(self.idx.0))) }
     }
 
     /// Save level of a data record = `mem[p].b16.s0` (`sa_lev`).

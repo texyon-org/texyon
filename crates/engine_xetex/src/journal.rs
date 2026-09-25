@@ -79,20 +79,19 @@ pub(crate) struct WordDelta {
 
 impl WordDelta {
     pub(crate) fn apply_to(&self, data: &mut [MemoryWord]) {
-        for i in (0..self.idx.len()).rev() {
-            data[self.idx[i] as usize] = self.old[i];
+        for (&index, &old) in self.idx.iter().zip(&self.old).rev() {
+            data[index as usize] = old;
         }
     }
 
-    /// Compose two adjacent reverse deltas. `older` restores further back in
-    /// time, so its pre-image wins for indices touched by both epochs.
+    /// `older` restores further back in time, so its pre-image wins on overlap.
     pub(crate) fn compose_with_older(&mut self, mut older: WordDelta) {
         let mut older_indices = older.idx.clone();
         older_indices.sort_unstable();
-        for i in 0..self.idx.len() {
-            if older_indices.binary_search(&self.idx[i]).is_err() {
-                older.idx.push(self.idx[i]);
-                older.old.push(self.old[i]);
+        for (&index, &old) in self.idx.iter().zip(&self.old) {
+            if older_indices.binary_search(&index).is_err() {
+                older.idx.push(index);
+                older.old.push(old);
             }
         }
         *self = older;
@@ -185,27 +184,21 @@ impl<T> Default for PlainDelta<T> {
 
 impl<T: Copy> PlainDelta<T> {
     pub(crate) fn apply_to(&self, data: &mut [T]) {
-        for i in (0..self.idx.len()).rev() {
-            data[self.idx[i] as usize] = self.old[i];
+        for (&index, &old) in self.idx.iter().zip(&self.old).rev() {
+            data[index as usize] = old;
         }
     }
 
-    /// Compose adjacent trails while canonicalizing duplicate indices. The
-    /// first pre-image in `older` is the value furthest back in time.
+    /// Keeps only the first pre-image per index, which is the furthest back in time.
     pub(crate) fn compose_with_older(&mut self, older: PlainDelta<T>) {
         let mut seen = std::collections::HashSet::new();
         let mut idx = Vec::with_capacity(older.idx.len() + self.idx.len());
         let mut old = Vec::with_capacity(older.old.len() + self.old.len());
-        for i in 0..older.idx.len() {
-            if seen.insert(older.idx[i]) {
-                idx.push(older.idx[i]);
-                old.push(older.old[i]);
-            }
-        }
-        for i in 0..self.idx.len() {
-            if seen.insert(self.idx[i]) {
-                idx.push(self.idx[i]);
-                old.push(self.old[i]);
+        let entries = older.idx.iter().zip(&older.old);
+        for (&index, &value) in entries.chain(self.idx.iter().zip(&self.old)) {
+            if seen.insert(index) {
+                idx.push(index);
+                old.push(value);
             }
         }
         self.idx = idx;

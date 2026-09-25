@@ -1,112 +1,77 @@
-//! Error-handling functions translated from `xetex/xetex-errors.c`.
+use std::ffi::CStr;
 
 use crate::bridge::ttstub_output_flush;
-use crate::consts::{BOX_BASE, HISTORY_FATAL_ERROR, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY};
-use crate::state::GroupCode;
-
-// Interaction-mode constants (xetex_format.h:644–647).
-
-// History constants (xetex-xetexd.h:355–358).
+use crate::consts::{
+    BOX_BASE, HISTORY_FATAL_ERROR, LOCAL_BASE, MEM_TOP, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+    TEX_NULL,
+};
 use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
     end_diagnostic_in, error_here_with_diagnostic_in, print_char_in, print_cmd_chr_in,
     print_cstr_in, print_esc_cstr_in, print_in, print_in_mode_in, print_int_in, print_ln_in,
-    print_nl_cstr_in, show_box_in, show_context_in, token_show_in,
+    print_nl_cstr_in, show_box_in, show_context_in, show_token_list_in, token_show_in,
 };
-use crate::state::EngineState;
-use crate::state::InteractionMode;
+use crate::scan::{MATCHING, TEMP_HEAD};
+use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
 
 const HISTORY_ERROR_ISSUED: i32 = 2;
-
-// Group codes matched by `extra_right_brace`.
-
-// Selector constants (xetex-core.h:46–48).
+pub(crate) const ERR_HELP_LOC: i32 = LOCAL_BASE + 9;
 
 extern "C" {
-
-    /// Set the bridge's abort message without longjmp-ing, so the host's
-    /// `EngineAbortedError` surfaces the same string a `_tt_abort` would have
-    /// (the fatal return path bypasses `_tt_abort`).
     fn _ttbc_set_error_message(message: *const libc::c_char);
 }
 
-// ---------------------------------------------------------------------------
-// pre_error_message  (was static in C)
-// ---------------------------------------------------------------------------
+impl ErrorState {
+    /// Installs the help text, lines given in display order.
+    pub(crate) fn set_help(&mut self, lines: &[&'static CStr]) {
+        self.help_ptr = lines.len() as u8;
+        for (slot, line) in self.help_line[..lines.len()].iter_mut().rev().zip(lines) {
+            *slot = line.as_ptr();
+        }
+    }
+}
 
 unsafe fn pre_error_message_in(st: &mut EngineState) {
-    if st.errors.log_opened {
-        st.shipout.selector = SELECTOR_TERM_AND_LOG;
+    st.shipout.selector = if st.errors.log_opened {
+        SELECTOR_TERM_AND_LOG
     } else {
-        st.shipout.selector = SELECTOR_TERM_ONLY;
-    }
+        SELECTOR_TERM_ONLY
+    };
     if st.strings.job_name == 0 {
-        // Absorb an open-log failure instead of the open_log_file()/OpenLogAbort
-        // longjmp: pre_error_message runs inside into_history's terminal cleanup,
-        // which commits to HISTORY_FATAL_ERROR just below. A CannotOpen is dropped —
-        // the selector already fell back to TERM_ONLY, and into_history still returns
-        // 3 surfacing the primary abort's message.
+        // Already on the fatal path, so a log-open failure just leaves TERM_ONLY.
         let _ = crate::io::open_log_file_in(st);
     }
     if st.errors.interaction == InteractionMode::Batch {
         st.shipout.selector -= 1;
     }
-    crate::output::error_here_with_diagnostic_in(st, c"".as_ptr());
+    error_here_with_diagnostic_in(st, c"".as_ptr());
 }
 
-// ---------------------------------------------------------------------------
-// post_error_message  (was static in C)
-// ---------------------------------------------------------------------------
-
 unsafe fn post_error_message_in(st: &mut EngineState, need_to_print_it: bool) {
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
     if st.errors.interaction == InteractionMode::ErrorStop {
         st.errors.interaction = InteractionMode::Scroll;
     }
     if need_to_print_it && st.errors.log_opened {
-        // Absorb the recoverable-error outcome instead of the error()/finish()
-        // longjmp: post_error_message runs inside into_history's terminal cleanup,
-        // which unconditionally commits to HISTORY_FATAL_ERROR just below. A nested
-        // Halt/Hundred outcome is dropped — the surrounding into_history still
-        // returns 3 (an unexercised nested-abort path).
+        // Already committed to a fatal history, so a nested abort is dropped.
         let _ = error_in(st);
     }
     st.errors.history = HISTORY_FATAL_ERROR;
-    // Absorb a finalize_dvi_file failure during terminal cleanup: we already
-    // committed to HISTORY_FATAL_ERROR.
     let _ = crate::io::close_files_and_terminate_in(st);
     crate::engine::tt_cleanup_in(st);
     ttstub_output_flush(st.shipout.rust_stdout);
 }
 
-// ---------------------------------------------------------------------------
-// error
-// ---------------------------------------------------------------------------
-
-/// Outcome of [`error_in`]: a cold abort the wrapper must run. The hot
-/// path returns [`ErrorOutcome::Continue`].
 #[must_use]
 pub(crate) enum ErrorOutcome {
     Continue,
-    /// `halt_on_error_p` tripped.
     Halt,
-    /// 100th recoverable error reached.
     Hundred,
-    /// A helper hit a `confusion(...)` cold path.
-    Confusion(&'static std::ffi::CStr),
-    /// A helper hit an `overflow(what, n)` cold path.
-    Overflow {
-        what: &'static std::ffi::CStr,
-        n: i32,
-    },
+    Confusion(&'static CStr),
+    Overflow { what: &'static CStr, n: i32 },
 }
 
 impl ErrorOutcome {
-    /// Map this cold outcome to the unified [`EngineAbort`] terminal.
-    /// The caller propagates the value up to `tt_run_engine`,
-    /// which runs the print+cleanup via [`EngineAbort::into_history`]. The
-    /// `Halt`/`Hundred` `post_error_message(false)` runs inside
-    /// `into_history(HaltMessage)`, not here. `Continue` never reaches a terminal.
     pub(crate) fn into_engine_abort(self) -> EngineAbort {
         match self {
             ErrorOutcome::Continue => {
@@ -127,9 +92,6 @@ impl ErrorOutcome {
     }
 }
 
-/// The recoverable TeX error handler (translated from
-/// xetex-errors.c:52, `error`). Returns the cold-abort sentinel; the hot
-/// path is `Continue`.
 pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
     if st.errors.history < HISTORY_ERROR_ISSUED {
         st.errors.history = HISTORY_ERROR_ISSUED;
@@ -155,12 +117,10 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
         print_ln_in(st);
         give_err_help_in(st);
     } else {
-        let mut hp = st.errors.help_ptr;
-        while hp > 0 {
-            hp -= 1;
-            print_nl_cstr_in(st, st.errors.help_line[hp as usize]);
+        while st.errors.help_ptr > 0 {
+            st.errors.help_ptr -= 1;
+            print_nl_cstr_in(st, st.errors.help_line[st.errors.help_ptr as usize]);
         }
-        st.errors.help_ptr = hp;
     }
     print_ln_in(st);
     if st.errors.interaction > InteractionMode::Batch {
@@ -170,63 +130,37 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
     ErrorOutcome::Continue
 }
 
-// ---------------------------------------------------------------------------
-// EngineAbort — the unified terminal abort
-// ---------------------------------------------------------------------------
-
-/// The unified terminal abort cause. Every scattered `*Abort` sentinel reduces
-/// to one of these. Consumed via
-/// [`into_history`](EngineAbort::into_history) — prints + cleans **without** the
-/// `_tt_abort` longjmp and returns `HISTORY_FATAL_ERROR`, for `Result` catch
-/// points that propagate the abort up to `tt_run_engine`'s `i32` return.
+/// A terminal abort, reported by [`EngineAbort::into_history`].
 pub(crate) enum EngineAbort {
-    /// Cooperative resident-operation cancellation.
     Cancelled,
     /// A viewport-bounded resident operation stopped at a resumable command fence.
     Horizoned,
-    /// `overflow(what, n)` — TeX capacity exceeded.
-    Overflow { what: *const libc::c_char, n: i32 },
-    /// `overflow("pool size", pool_size - init_pool_ptr)` — string-pool capacity
-    /// exceeded.
+    Overflow {
+        what: *const libc::c_char,
+        n: i32,
+    },
     PoolOverflow,
-    /// `overflow("number of strings", max_strings - init_str_ptr)` — as above but
-    /// for the string count (`st.strings.max_strings - init_str_ptr`).
     StringOverflow,
-    /// `runaway()` then `overflow("main memory size", MEM_TOP+1)`.
     MainMemoryOverflow,
-    /// `overflow("save size", save_size)`.
     SaveOverflow,
-    /// `overflow("semantic nest size", nest_size)`.
     NestOverflow,
-    /// `confusion(s)` — internal consistency failure ("This can't happen").
     Confusion(*const libc::c_char),
-    /// `fatal_error(s)` — "Emergency stop" + `s` (its own inline cleanup, not
-    /// `post_error_message`).
     Fatal(*const libc::c_char),
-    /// `pdf_error(t, p)` — "Error (t): p".
     PdfError {
         t: *const libc::c_char,
         p: *const libc::c_char,
     },
-    /// `_tt_abort(msg)` — direct longjmp; `msg` is the surfaced abort message.
+    /// Prints nothing, only surfaces `msg` as the abort message.
     TtAbort(*const libc::c_char),
-    /// `_tt_abort("cannot open output file \"<name>\"")`.
     CannotOpenOutput,
-    /// `no legal \end found`: `open_log_file` (if `open_log`) then `fatal_error`.
-    NoLegalEnd { open_log: bool },
-    /// `post_error_message(false)` then `_tt_abort(msg)` — the `ErrorOutcome`
-    /// `Halt`/`Hundred` terminal (halt-on-error / 100-errors).
+    NoLegalEnd {
+        open_log: bool,
+    },
+    /// The `Halt`/`Hundred` terminal of [`ErrorOutcome`].
     HaltMessage(*const libc::c_char),
 }
 
 impl EngineAbort {
-    /// Print + clean the abort and return `HISTORY_FATAL_ERROR` (3) **without**
-    /// longjmp-ing. Observationally identical to the
-    /// matching longjmp: same prints, same cleanup, the C wrapper returns 3, and
-    /// the bridge's surfaced message is set to the same string `_tt_abort` would
-    /// have written.
-    /// Shared print+cleanup for the three overflow terminals (`Overflow`,
-    /// `PoolOverflow`, `StringOverflow`).
     unsafe fn overflow_report(st: &mut EngineState, what: *const libc::c_char, n: i32) {
         pre_error_message_in(st);
         print_cstr_in(st, c"TeX capacity exceeded, sorry [".as_ptr());
@@ -234,27 +168,26 @@ impl EngineAbort {
         print_char_in(st, b'=' as i32);
         print_int_in(st, n);
         print_char_in(st, b']' as i32);
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] = c"If you really absolutely need more capacity,".as_ptr();
-        st.errors.help_line[0] = c"you can ask a wizard to enlarge me.".as_ptr();
+        st.errors.set_help(&[
+            c"If you really absolutely need more capacity,",
+            c"you can ask a wizard to enlarge me.",
+        ]);
         post_error_message_in(st, true);
         _ttbc_set_error_message(c"halted on overflow()".as_ptr());
     }
 
-    /// Shared print+cleanup for the `fatal_error(s)` terminal ("Emergency stop" +
-    /// `s`, its own inline cleanup) — used by `Fatal` and `NoLegalEnd`.
     unsafe fn fatal_report(st: &mut EngineState, s: *const libc::c_char) {
         pre_error_message_in(st);
         print_cstr_in(st, c"Emergency stop".as_ptr());
         print_nl_cstr_in(st, s);
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        // Absorb a finalize_dvi_file failure during terminal cleanup.
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
         let _ = crate::io::close_files_and_terminate_in(st);
         crate::engine::tt_cleanup_in(st);
         ttstub_output_flush(st.shipout.rust_stdout);
         _ttbc_set_error_message(s);
     }
 
+    /// Prints and cleans up like the C abort would, then returns the fatal history.
     pub(crate) unsafe fn into_history(self, st: &mut EngineState) -> i32 {
         match self {
             EngineAbort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
@@ -264,7 +197,6 @@ impl EngineAbort {
                 )
                 .into_history(st)
             }
-            // The print + cleanup half of `overflow` (everything bar `_tt_abort`).
             EngineAbort::Overflow { what, n } => Self::overflow_report(st, what, n),
             EngineAbort::PoolOverflow => {
                 let n = st.strings.pool_size - st.strings.init_pool_ptr;
@@ -276,8 +208,7 @@ impl EngineAbort {
             }
             EngineAbort::MainMemoryOverflow => {
                 runaway_in(st);
-                // MEM_TOP + 1 (MEM_TOP = 4_999_999); constant, unchanged.
-                Self::overflow_report(st, c"main memory size".as_ptr(), 5_000_000);
+                Self::overflow_report(st, c"main memory size".as_ptr(), MEM_TOP + 1);
             }
             EngineAbort::SaveOverflow => {
                 let n = st.save_stack.save_size;
@@ -287,39 +218,32 @@ impl EngineAbort {
                 let n = st.input.nest_size;
                 Self::overflow_report(st, c"semantic nest size".as_ptr(), n);
             }
-            // The print + cleanup half of `confusion`.
             EngineAbort::Confusion(s) => {
                 pre_error_message_in(st);
                 if st.errors.history < HISTORY_ERROR_ISSUED {
                     print_cstr_in(st, c"This can't happen (".as_ptr());
                     print_cstr_in(st, s);
                     print_char_in(st, b')' as i32);
-                    st.errors.help_ptr = 1;
-                    st.errors.help_line[0] =
-                        c"I'm broken. Please show this to someone who can fix can fix".as_ptr();
+                    st.errors.set_help(&[
+                        c"I'm broken. Please show this to someone who can fix can fix",
+                    ]);
                 } else {
                     print_cstr_in(st, c"I can't go on meeting you like this".as_ptr());
-                    st.errors.help_ptr = 2;
-                    st.errors.help_line[1] =
-                        c"One of your faux pas seems to have wounded me deeply...".as_ptr();
-                    st.errors.help_line[0] =
-                        c"in fact, I'm barely conscious. Please fix it and try again.".as_ptr();
+                    st.errors.set_help(&[
+                        c"One of your faux pas seems to have wounded me deeply...",
+                        c"in fact, I'm barely conscious. Please fix it and try again.",
+                    ]);
                 }
                 post_error_message_in(st, true);
                 _ttbc_set_error_message(c"halted on confusion()".as_ptr());
             }
-            // The print + cleanup half of `fatal_error` (its own inline cleanup,
-            // not `post_error_message`); `_tt_abort(s)` surfaced `s`.
             EngineAbort::Fatal(s) => Self::fatal_report(st, s),
-            // `no legal \end found`: open the log first, then
-            // the `fatal_error` terminal.
             EngineAbort::NoLegalEnd { open_log } => {
                 if open_log {
                     let _ = crate::io::open_log_file_in(st);
                 }
                 Self::fatal_report(st, c"*** (job aborted, no legal \\end found)".as_ptr());
             }
-            // The print + cleanup half of `pdf_error`.
             EngineAbort::PdfError { t, p } => {
                 pre_error_message_in(st);
                 print_cstr_in(st, c"Error".as_ptr());
@@ -333,11 +257,7 @@ impl EngineAbort {
                 post_error_message_in(st, true);
                 _ttbc_set_error_message(c"halted on pdf_error()".as_ptr());
             }
-            // `_tt_abort(msg)` prints nothing and runs no cleanup; it only writes
-            // `msg` to the bridge's surfaced message — mirror exactly that.
             EngineAbort::TtAbort(msg) => _ttbc_set_error_message(msg),
-            // Format the "cannot open output file" message here from
-            // `st.input.name_of_file`.
             EngineAbort::CannotOpenOutput => {
                 let mut buf = vec![0u8; 512];
                 let np = if st.input.name_of_file.is_empty() {
@@ -354,8 +274,6 @@ impl EngineAbort {
                 let ptr = buf.leak().as_ptr() as *const libc::c_char;
                 _ttbc_set_error_message(ptr);
             }
-            // ErrorOutcome Halt/Hundred: post_error_message(false) then the
-            // `msg` the `_tt_abort` surfaced.
             EngineAbort::HaltMessage(msg) => {
                 post_error_message_in(st, false);
                 _ttbc_set_error_message(msg);
@@ -365,23 +283,12 @@ impl EngineAbort {
     }
 }
 
-// ---------------------------------------------------------------------------
-// int_error
-// ---------------------------------------------------------------------------
-
-/// Append "(N)" to the current error message and call error().
-///
-/// translated from xetex-xetex0.c:15 (int_error, was static)
 pub(crate) fn int_error_in(st: &mut EngineState, n: i32) -> ErrorOutcome {
     print_cstr_in(st, c" (".as_ptr());
     print_int_in(st, n);
     print_char_in(st, b')' as i32);
     error_in(st)
 }
-
-// ---------------------------------------------------------------------------
-// not_*_font_error cluster
-// ---------------------------------------------------------------------------
 
 pub(crate) fn not_font_error_common_in(
     st: &mut EngineState,
@@ -399,20 +306,18 @@ pub(crate) fn not_font_error_common_in(
     error_in(st)
 }
 
-// translated from xetex-xetex0.c:13499 (give_err_help)
 pub(crate) fn give_err_help_in(st: &mut EngineState) {
-    // LOCAL(err_help) = eqtb[LOCAL_BASE + LOCAL__err_help].b32.s1
-    // LOCAL_BASE = 2_254_871, LOCAL__err_help = 9
-    token_show_in(st, st.eqtb.b32s1(2_254_871 + 9));
+    token_show_in(st, st.eqtb.b32s1(ERR_HELP_LOC));
 }
 
 pub(crate) fn mu_error_in(st: &mut EngineState) -> ErrorOutcome {
     error_here_with_diagnostic_in(st, c"Incompatible glue units".as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 1;
-    st.errors.help_line[0] = c"I'm going to assume that 1mu=1pt when they're mixed.".as_ptr();
+    st.errors
+        .set_help(&[c"I'm going to assume that 1mu=1pt when they're mixed."]);
     error_in(st)
 }
+
 pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
     error_here_with_diagnostic_in(st, c"Extra }, or forgotten ".as_ptr());
     match st.save_stack.cur_group {
@@ -422,60 +327,60 @@ pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
         _ => {}
     }
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 5;
-    st.errors.help_line[4] = c"I've deleted a group-closing symbol because it seems to be".as_ptr();
-    st.errors.help_line[3] =
-        c"spurious, as in `$x}$'. But perhaps the } is legitimate and".as_ptr();
-    st.errors.help_line[2] =
-        c"you forgot something else, as in `\\hbox{$x}'. In such cases".as_ptr();
-    st.errors.help_line[1] = c"the way to recover is to insert both the forgotten and the".as_ptr();
-    st.errors.help_line[0] = c"deleted material, e.g., by typing `I$}'.".as_ptr();
+    st.errors.set_help(&[
+        c"I've deleted a group-closing symbol because it seems to be",
+        c"spurious, as in `$x}$'. But perhaps the } is legitimate and",
+        c"you forgot something else, as in `\\hbox{$x}'. In such cases",
+        c"the way to recover is to insert both the forgotten and the",
+        c"deleted material, e.g., by typing `I$}'.",
+    ]);
     let outcome = error_in(st);
     if matches!(outcome, ErrorOutcome::Continue) {
         st.scanner.align_state += 1;
     }
     outcome
 }
+
 pub(crate) fn you_cant_in(st: &mut EngineState) {
     error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
     print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
     print_in_mode_in(st, st.input.cur_list.mode as i32);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
 }
+
 pub(crate) fn report_illegal_case_in(st: &mut EngineState) -> ErrorOutcome {
     you_cant_in(st);
-    st.errors.help_ptr = 4;
-    st.errors.help_line[3] = c"Sorry, but I'm not programmed to handle this case;".as_ptr();
-    st.errors.help_line[2] = c"I'll just pretend that you didn't ask for it.".as_ptr();
-    st.errors.help_line[1] = c"If you're in the wrong mode, you might be able to".as_ptr();
-    st.errors.help_line[0] =
-        c"return to the right one by typing `I}' or `I$' or `I\\par'.".as_ptr();
+    st.errors.set_help(&[
+        c"Sorry, but I'm not programmed to handle this case;",
+        c"I'll just pretend that you didn't ask for it.",
+        c"If you're in the wrong mode, you might be able to",
+        c"return to the right one by typing `I}' or `I$' or `I\\par'.",
+    ]);
     error_in(st)
 }
+
 pub(crate) fn privileged_in(st: &mut EngineState) -> Result<bool, ErrorOutcome> {
     if st.input.cur_list.mode > 0 {
-        Ok(true)
-    } else {
-        let o = report_illegal_case_in(st);
-        if matches!(o, ErrorOutcome::Continue) {
-            Ok(false)
-        } else {
-            Err(o)
-        }
+        return Ok(true);
+    }
+    match report_illegal_case_in(st) {
+        ErrorOutcome::Continue => Ok(false),
+        o => Err(o),
     }
 }
-// translated from xetex-xetex0.c:10489 (cs_error)
+
 pub(crate) fn cs_error_in(st: &mut EngineState) -> ErrorOutcome {
     error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
     print_esc_cstr_in(st, c"endcsname".as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 1;
-    st.errors.help_line[0] = c"I'm ignoring this, since I wasn't doing a \\csname.".as_ptr();
+    st.errors
+        .set_help(&[c"I'm ignoring this, since I wasn't doing a \\csname."]);
     error_in(st)
 }
-// translated from xetex-xetex0.c:9270 (box_error)
+
 pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
-    let box_val = st.eqtb.b32s1(BOX_BASE + n as i32);
+    let loc = BOX_BASE + n as i32;
+    let box_val = st.eqtb.b32s1(loc);
     let outcome = error_in(st);
     if !matches!(outcome, ErrorOutcome::Continue) {
         return outcome;
@@ -486,54 +391,30 @@ pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
     show_box_in(st, box_val);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     end_diagnostic_in(st, true);
-    // flush_node_list aborts via confusion before returning on a corrupt list.
     if let Err(msg) = crate::packaging::flush_node_list(&mut st.mem, box_val) {
         return ErrorOutcome::Confusion(msg);
     }
-    // BOX_REG(n) = TEX_NULL — direct eqtb write, no save-stack involvement
-    st.eqtb.set_b32s1(BOX_BASE + n as i32, crate::mem::TEX_NULL);
+    st.eqtb.set_b32s1(loc, TEX_NULL);
     ErrorOutcome::Continue
 }
-/// `runaway`. Self-contained cold
-/// diagnostic: reads `scanner_status`/`def_ref` (`st.scanner`), `error_line`
-/// (`st.errors`), and the token-list head (`st.mem`), printing in-order through
-/// the `print_*_in`/`show_token_list_in` cores. No
-/// allocation, no cold-abort path.
-pub(crate) fn runaway_in(st: &mut crate::state::EngineState) {
-    use crate::mem::TEX_NULL;
 
-    const SKIPPING: u8 = 1;
+pub(crate) fn runaway_in(st: &mut EngineState) {
     const DEFINING: u8 = 2;
-    const MATCHING: u8 = 3;
     const ALIGNING: u8 = 4;
     const ABSORBING: u8 = 5;
-    const TEMP_HEAD: i32 = 4_999_996; // MEM_TOP - 3
-    const HOLD_HEAD: i32 = 4_999_995; // MEM_TOP - 4
+    const HOLD_HEAD: i32 = MEM_TOP - 4;
 
-    if st.scanner.scanner_status > SKIPPING {
-        let p = match st.scanner.scanner_status {
-            DEFINING => {
-                crate::output::print_nl_cstr_in(st, c"Runaway definition".as_ptr());
-                st.scanner.def_ref.0
-            }
-            MATCHING => {
-                crate::output::print_nl_cstr_in(st, c"Runaway argument".as_ptr());
-                TEMP_HEAD
-            }
-            ALIGNING => {
-                crate::output::print_nl_cstr_in(st, c"Runaway preamble".as_ptr());
-                HOLD_HEAD
-            }
-            ABSORBING => {
-                crate::output::print_nl_cstr_in(st, c"Runaway text".as_ptr());
-                st.scanner.def_ref.0
-            }
-            _ => return,
-        };
-        crate::output::print_char_in(st, '?' as i32);
-        crate::output::print_ln_in(st);
-        let head = st.mem.b32s1(p);
-        let l = st.errors.error_line - 10;
-        crate::output::show_token_list_in(st, head, TEX_NULL, l);
-    }
+    let (msg, p) = match st.scanner.scanner_status {
+        DEFINING => (c"Runaway definition", st.scanner.def_ref.0),
+        MATCHING => (c"Runaway argument", TEMP_HEAD),
+        ALIGNING => (c"Runaway preamble", HOLD_HEAD),
+        ABSORBING => (c"Runaway text", st.scanner.def_ref.0),
+        _ => return,
+    };
+    print_nl_cstr_in(st, msg.as_ptr());
+    print_char_in(st, b'?' as i32);
+    print_ln_in(st);
+    let head = st.mem.link_ptr(p);
+    let l = st.errors.error_line - 10;
+    show_token_list_in(st, head, TEX_NULL, l);
 }
