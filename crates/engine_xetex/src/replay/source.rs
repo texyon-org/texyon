@@ -70,6 +70,21 @@ struct SourceEntry {
     identity: SourceIdentity,
 }
 
+impl SourceEntry {
+    fn new(bytes: Arc<[u8]>) -> Self {
+        Self {
+            identity: identity(&bytes),
+            bytes,
+        }
+    }
+
+    fn parts(&self) -> (Arc<[u8]>, SourceIdentity) {
+        (Arc::clone(&self.bytes), self.identity)
+    }
+}
+
+pub(crate) type ResolvedSource = (SourcePath, Arc<[u8]>, SourceIdentity);
+
 /// Result of replacing one whole editor buffer.
 pub struct SourceUpdate {
     /// The immutable snapshot for the next engine operation.
@@ -141,9 +156,8 @@ impl SourceSnapshot {
         let mut entries = BTreeMap::new();
         for (path, bytes) in sources {
             let path = normalize(&root, &path)?;
-            let identity = identity(&bytes);
             if entries
-                .insert(path.clone(), SourceEntry { bytes, identity })
+                .insert(path.clone(), SourceEntry::new(bytes))
                 .is_some()
             {
                 return Err(SourceError::DuplicatePath(path));
@@ -206,21 +220,9 @@ impl SourceSnapshot {
             });
         }
         let mut entries = (*self.entries).clone();
-        entries.insert(
-            path.clone(),
-            SourceEntry {
-                identity: identity(&bytes),
-                bytes,
-            },
-        );
+        entries.insert(path.clone(), SourceEntry::new(bytes));
         Ok(SourceUpdate {
-            snapshot: Self {
-                root: Arc::clone(&self.root),
-                revision: next_revision(),
-                primary: self.primary.clone(),
-                entries: Arc::new(entries),
-                disk_entries: Arc::new(Mutex::new(BTreeMap::new())),
-            },
+            snapshot: self.derive(next_revision(), Arc::new(entries)),
             changed_path: Some(path),
             first_changed,
         })
@@ -228,9 +230,8 @@ impl SourceSnapshot {
 
     /// Insert or replace one editor-owned source at a caller-assigned revision.
     ///
-    /// Unchanged source buffers and their strong identities remain shared
-    /// instead of being copied and re-hashed when a large editor snapshot
-    /// advances by one file.
+    /// Unchanged buffers and their identities stay shared rather than being
+    /// copied and re-hashed.
     pub fn upsert_with_revision(
         &self,
         path: impl AsRef<Path>,
@@ -244,25 +245,13 @@ impl SourceSnapshot {
             .map_or(Some(0), |old| first_difference(&old.bytes, &bytes));
         let entries = if first_changed.is_some() {
             let mut entries = (*self.entries).clone();
-            entries.insert(
-                path.clone(),
-                SourceEntry {
-                    identity: identity(&bytes),
-                    bytes,
-                },
-            );
+            entries.insert(path.clone(), SourceEntry::new(bytes));
             Arc::new(entries)
         } else {
             Arc::clone(&self.entries)
         };
         Ok(SourceUpdate {
-            snapshot: Self {
-                root: Arc::clone(&self.root),
-                revision,
-                primary: self.primary.clone(),
-                entries,
-                disk_entries: Arc::new(Mutex::new(BTreeMap::new())),
-            },
+            snapshot: self.derive(revision, entries),
             changed_path: first_changed.map(|_| path),
             first_changed,
         })
@@ -270,45 +259,43 @@ impl SourceSnapshot {
 
     /// Fork the editor buffers for a new engine operation.
     ///
-    /// Root-confined disk inputs are deliberately not shared: each operation
-    /// must freeze their current bytes independently.
+    /// Root-confined disk inputs are not shared, so each operation freezes
+    /// their current bytes independently.
     pub fn for_operation(&self) -> Self {
+        self.derive(self.revision, Arc::clone(&self.entries))
+    }
+
+    fn derive(
+        &self,
+        revision: SourceRevision,
+        entries: Arc<BTreeMap<SourcePath, SourceEntry>>,
+    ) -> Self {
         Self {
             root: Arc::clone(&self.root),
-            revision: self.revision,
+            revision,
             primary: self.primary.clone(),
-            entries: Arc::clone(&self.entries),
+            entries,
             disk_entries: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
-    pub(crate) fn primary_entry(&self) -> (SourcePath, Arc<[u8]>, SourceIdentity) {
-        let entry = self
+    pub(crate) fn primary_entry(&self) -> ResolvedSource {
+        let (bytes, identity) = self
             .entries
             .get(&self.primary)
-            .expect("validated snapshot without primary");
-        (
-            self.primary.clone(),
-            Arc::clone(&entry.bytes),
-            entry.identity,
-        )
+            .expect("validated snapshot without primary")
+            .parts();
+        (self.primary.clone(), bytes, identity)
     }
 
-    pub(crate) fn resolve_entry(
-        &self,
-        path: &Path,
-    ) -> Option<(SourcePath, Arc<[u8]>, SourceIdentity)> {
+    pub(crate) fn resolve_entry(&self, path: &Path) -> Option<ResolvedSource> {
         let path = normalize(&self.root, path).ok()?;
-        self.entries
-            .get(&path)
-            .map(|entry| (path, Arc::clone(&entry.bytes), entry.identity))
+        let (bytes, identity) = self.entries.get(&path)?.parts();
+        Some((path, bytes, identity))
     }
 
     /// Resolve editor bytes or freeze a root-confined disk source for this operation.
-    pub(crate) fn resolve_replay_entry(
-        &self,
-        path: &Path,
-    ) -> Option<(SourcePath, Arc<[u8]>, SourceIdentity)> {
+    pub(crate) fn resolve_replay_entry(&self, path: &Path) -> Option<ResolvedSource> {
         let path = normalize(&self.root, path).ok()?;
         let (bytes, identity) = self.replay_entry(&path)?;
         Some((path, bytes, identity))
@@ -317,27 +304,21 @@ impl SourceSnapshot {
     /// Resolve bytes constrained by an existing replay-fence input record.
     pub(crate) fn replay_entry(&self, path: &SourcePath) -> Option<(Arc<[u8]>, SourceIdentity)> {
         if let Some(entry) = self.entries.get(path) {
-            return Some((Arc::clone(&entry.bytes), entry.identity));
+            return Some(entry.parts());
         }
         let mut disk_entries = self.disk_entries.lock().ok()?;
         if let Some(entry) = disk_entries.get(path) {
-            return Some((Arc::clone(&entry.bytes), entry.identity));
+            return Some(entry.parts());
         }
         let root = std::fs::canonicalize(self.root.as_ref()).ok()?;
         let candidate = std::fs::canonicalize(root.join(path.as_str())).ok()?;
         if !candidate.starts_with(&root) || !candidate.is_file() {
             return None;
         }
-        let bytes: Arc<[u8]> = std::fs::read(candidate).ok()?.into();
-        let identity = identity(&bytes);
-        disk_entries.insert(
-            path.clone(),
-            SourceEntry {
-                bytes: Arc::clone(&bytes),
-                identity,
-            },
-        );
-        Some((bytes, identity))
+        let entry = SourceEntry::new(std::fs::read(candidate).ok()?.into());
+        let parts = entry.parts();
+        disk_entries.insert(path.clone(), entry);
+        Some(parts)
     }
 
     /// First differing byte for every current buffer changed since `previous`.
@@ -367,12 +348,21 @@ fn identity(bytes: &[u8]) -> SourceIdentity {
     SourceIdentity(Sha256::digest(bytes).into())
 }
 
-fn first_difference(left: &[u8], right: &[u8]) -> Option<usize> {
+pub(crate) fn first_difference(left: &[u8], right: &[u8]) -> Option<usize> {
+    const CHUNK: usize = 64;
     let shared = left.len().min(right.len());
-    left[..shared]
-        .iter()
-        .zip(&right[..shared])
+    let (left_shared, right_shared) = (&left[..shared], &right[..shared]);
+    // Find the first differing chunk with memcmp before scanning bytes.
+    let start = left_shared
+        .chunks(CHUNK)
+        .zip(right_shared.chunks(CHUNK))
         .position(|(left, right)| left != right)
+        .map_or(shared, |chunk| chunk * CHUNK);
+    left_shared[start..]
+        .iter()
+        .zip(&right_shared[start..])
+        .position(|(left, right)| left != right)
+        .map(|offset| start + offset)
         .or_else(|| (left.len() != right.len()).then_some(shared))
 }
 
