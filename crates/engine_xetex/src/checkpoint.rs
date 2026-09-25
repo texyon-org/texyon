@@ -1,5 +1,8 @@
 //! Reverse-delta checkpoint ladder.
 
+use std::borrow::Cow;
+use std::collections::HashSet;
+
 use crate::journal::{PlainDelta, WordDelta};
 use crate::mem_types::{B32x2, MemoryWord};
 use crate::replay::fence::ReplayFence;
@@ -23,7 +26,13 @@ pub(crate) struct EngineDelta {
 
 impl EngineDelta {
     pub(crate) fn seal(st: &mut EngineState) -> Self {
-        let mut delta = Self {
+        let mut delta = Self::take_open(st);
+        delta.compact();
+        delta
+    }
+
+    fn take_open(st: &mut EngineState) -> Self {
+        let delta = Self {
             mem: st.mem.journal.seal(),
             eqtb: st.eqtb.journal.words.seal(),
             xeq: st.eqtb.journal.xeq.seal(),
@@ -31,7 +40,6 @@ impl EngineDelta {
             prim: st.eqtb.journal.prim.seal(),
             font_info: st.fonts.font_info_journal.seal(),
         };
-        delta.compact();
         st.fonts.fmem_epoch_base = st.fonts.fmem_ptr;
         delta
     }
@@ -86,7 +94,7 @@ impl EngineDelta {
 }
 
 pub(crate) struct Rung<B> {
-    /// Reverse delta from this rung to its predecessor; absent only on rung 0.
+    /// Reverse delta to the predecessor, absent only on rung 0.
     undo: Option<EngineDelta>,
     pub(crate) bundle: B,
     pub(crate) clock: u64,
@@ -135,9 +143,8 @@ pub(crate) enum RungAdmission {
     },
 }
 
-// Covers Vec/Rung headers, allocator rounding, and small owned strings that
-// are deliberately not individually inspected. This is charged per survivor
-// in addition to all measured capacities.
+/// Per-rung charge for container headers, allocator rounding and small
+/// uninspected strings.
 const RUNG_CONTAINER_ALLOWANCE: usize = 4096;
 
 impl<B> CheckpointLadder<B> {
@@ -193,8 +200,8 @@ impl<B> CheckpointLadder<B> {
         self.rungs.len() - 1
     }
 
-    /// Rewind journaled arrays and restore the target's non-journaled bundle.
-    /// The open epoch is undone first, then published rung deltas newest-first.
+    /// Undo the open epoch, then published rung deltas newest-first, and
+    /// restore the target's non-journaled bundle.
     pub(crate) fn rewind_to(
         &mut self,
         st: &mut EngineState,
@@ -202,10 +209,9 @@ impl<B> CheckpointLadder<B> {
         restore: impl FnOnce(&mut EngineState, &B),
     ) {
         assert!(target < self.rungs.len(), "checkpoint target out of range");
-        EngineDelta::seal(st).apply(st);
-        for index in (target + 1..self.rungs.len()).rev() {
-            self.rungs[index]
-                .undo
+        EngineDelta::take_open(st).apply(st);
+        for rung in self.rungs[target + 1..].iter().rev() {
+            rung.undo
                 .as_ref()
                 .expect("non-base rung without undo")
                 .apply(st);
@@ -215,9 +221,8 @@ impl<B> CheckpointLadder<B> {
         st.fonts.fmem_epoch_base = st.fonts.fmem_ptr;
     }
 
-    /// Remove an interior rung without breaking the reverse chain. The rung
-    /// above it absorbs its older undo delta; the successor's own bundle and
-    /// metadata remain the state it originally captured.
+    /// Remove an interior rung. Its successor absorbs the older undo delta
+    /// but keeps its own bundle and metadata.
     pub(crate) fn decimate(&mut self, index: usize) -> bool {
         if index == 0 || index + 1 >= self.rungs.len() || self.rungs[index].protected {
             return false;
@@ -243,16 +248,13 @@ impl<B> CheckpointLadder<B> {
 
     /// Protect every rung through `index` against budget-driven eviction.
     ///
-    /// Background continuation work advances the clock far past the edit that
-    /// produced these rungs, which makes them the oldest and therefore the
-    /// cheapest to drop — exactly backwards, because the next edit replays from
-    /// one of them. Protecting the whole prefix leaves the continuation's own
-    /// rungs as the only eviction candidates under the soft budget.
+    /// Continuation work advances the clock far past these rungs, which would
+    /// make them the cheapest to drop although the next edit replays from one.
     pub(crate) fn protect_rungs_through(&mut self, index: usize) -> bool {
         if index >= self.rungs.len() {
             return false;
         }
-        for rung in self.rungs.iter_mut().take(index + 1) {
+        for rung in &mut self.rungs[..=index] {
             rung.protected = true;
         }
         true
@@ -264,14 +266,6 @@ impl<B> CheckpointLadder<B> {
 
     pub(crate) fn rung_at_clock(&self, clock: u64) -> Option<usize> {
         self.rungs.iter().position(|rung| rung.clock == clock)
-    }
-
-    pub(crate) fn delta_bytes(&self) -> usize {
-        self.rungs
-            .iter()
-            .filter_map(|rung| rung.undo.as_ref())
-            .map(EngineDelta::allocated_bytes)
-            .sum()
     }
 }
 
@@ -286,8 +280,7 @@ impl CheckpointLadder<EngineBundle> {
     #[cfg(test)]
     pub(crate) fn from_engine_verified(st: &EngineState, strings_base: StringWatermark) -> Self {
         let mut ladder = Self::from_engine(st, strings_base);
-        ladder.verify_rewinds = true;
-        ladder.rungs[0].digests = oracle::digest_state(st);
+        ladder.enable_verification(st);
         ladder
     }
 
@@ -319,6 +312,16 @@ impl CheckpointLadder<EngineBundle> {
         Ok(ladder)
     }
 
+    fn capture_candidate(&self, st: &EngineState, strings_base: StringWatermark) -> EngineBundle {
+        EngineBundle::capture(st, strings_base, self.rungs.last().map(|rung| &rung.bundle))
+    }
+
+    fn record_digests(&mut self, st: &EngineState, index: usize) {
+        if self.verify_rewinds {
+            self.rungs[index].digests = oracle::digest_state(st);
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn push_engine(
         &mut self,
@@ -327,12 +330,9 @@ impl CheckpointLadder<EngineBundle> {
         resumable: bool,
         protected: bool,
     ) -> usize {
-        let bundle =
-            EngineBundle::capture(st, strings_base, self.rungs.last().map(|rung| &rung.bundle));
+        let bundle = self.capture_candidate(st, strings_base);
         let index = self.push(st, bundle, st.scanner.logical_clock, resumable, protected);
-        if self.verify_rewinds {
-            self.rungs[index].digests = oracle::digest_state(st);
-        }
+        self.record_digests(st, index);
         index
     }
 
@@ -346,12 +346,8 @@ impl CheckpointLadder<EngineBundle> {
             .enumerate()
             .rev()
             .find_map(|(index, rung)| {
-                (rung.resumable)
-                    .then_some(rung.fence.as_ref())
-                    .flatten()
-                    .filter(|fence| fence.is_eligible(snapshot))
-                    .cloned()
-                    .map(|fence| (index, fence))
+                let fence = rung.fence.as_ref()?;
+                (rung.resumable && fence.is_eligible(snapshot)).then(|| (index, fence.clone()))
             })
     }
 
@@ -368,7 +364,7 @@ impl CheckpointLadder<EngineBundle> {
         }
     }
 
-    pub(crate) fn rewind_engine_checked(
+    fn rewind_engine_checked(
         &mut self,
         st: &mut EngineState,
         target: usize,
@@ -377,11 +373,7 @@ impl CheckpointLadder<EngineBundle> {
         self.verify_rung(st, target)
     }
 
-    pub(crate) fn verify_rung(
-        &self,
-        st: &EngineState,
-        target: usize,
-    ) -> Result<(), RestoreMismatch> {
+    fn verify_rung(&self, st: &EngineState, target: usize) -> Result<(), RestoreMismatch> {
         if !self.verify_rewinds {
             return Ok(());
         }
@@ -417,20 +409,12 @@ impl CheckpointLadder<EngineBundle> {
         Ok(())
     }
 
-    /// Count rung-private allocations and each shared hyphen table exactly
-    /// once, using the Arc allocation address as its stable identity.
     pub(crate) fn accounted_bytes(&self) -> usize {
-        let mut total = self.delta_bytes() + self.rungs.len() * RUNG_CONTAINER_ALLOWANCE;
-        let mut shared = std::collections::HashSet::new();
-        for rung in &self.rungs {
-            total += rung.bundle.allocated_bytes();
-            total += rung.fence.as_ref().map_or(0, ReplayFence::allocated_bytes);
-            let (identity, bytes) = rung.bundle.shared_hyph_tables();
-            if shared.insert(identity as usize) {
-                total += bytes;
-            }
-        }
-        total
+        ladder_bytes(
+            self.rungs
+                .iter()
+                .map(|rung| (&rung.bundle, rung.fence.as_ref(), rung.undo.as_ref())),
+        )
     }
 
     #[cfg(test)]
@@ -469,66 +453,65 @@ impl CheckpointLadder<EngineBundle> {
             budget.target_bytes <= budget.hard_bytes,
             "invalid ladder budget"
         );
-        let candidate =
-            EngineBundle::capture(st, strings_base, self.rungs.last().map(|rung| &rung.bundle));
-        let mut survivors: Vec<Option<usize>> = (0..self.rungs.len()).map(Some).collect();
-        survivors.push(None);
-        let mut clocks: Vec<u64> = self.rungs.iter().map(|rung| rung.clock).collect();
-        clocks.push(st.scanner.logical_clock);
-        let mut protections: Vec<bool> = self.rungs.iter().map(|rung| rung.protected).collect();
-        protections.push(protected);
-        let mut deltas: Vec<Option<EngineDelta>> =
-            self.rungs.iter().map(|rung| rung.undo.clone()).collect();
-        deltas.push(Some(EngineDelta::snapshot_open(st)));
+        let candidate = self.capture_candidate(st, strings_base);
+        let mut plan: Vec<PlannedRung> = self
+            .rungs
+            .iter()
+            .enumerate()
+            .map(|(index, rung)| PlannedRung {
+                source: Some(index),
+                clock: rung.clock,
+                protected: rung.protected,
+                undo: rung.undo.as_ref().map(Cow::Borrowed),
+            })
+            .collect();
+        plan.push(PlannedRung {
+            source: None,
+            clock: st.scanner.logical_clock,
+            protected,
+            undo: Some(Cow::Owned(EngineDelta::snapshot_open(st))),
+        });
+        let planned_bytes = |plan: &[PlannedRung]| {
+            ladder_bytes(plan.iter().map(|planned| {
+                let undo = planned.undo.as_deref();
+                match planned.source {
+                    Some(index) => {
+                        let rung = &self.rungs[index];
+                        (&rung.bundle, rung.fence.as_ref(), undo)
+                    }
+                    None => (&candidate, fence.as_ref(), undo),
+                }
+            }))
+        };
 
         let mut dropped = 0;
-        while planned_bytes(self, &candidate, fence.as_ref(), &survivors, &deltas)
-            > budget.target_bytes
-        {
-            let Some(index) =
-                pick_rung_to_drop(&clocks, &protections, budget.min_recent_rungs, false)
-            else {
+        while planned_bytes(&plan) > budget.target_bytes {
+            let Some(index) = pick_rung_to_drop(&plan, budget.min_recent_rungs, false) else {
                 break;
             };
-            drop_planned_rung(
-                index,
-                &mut survivors,
-                &mut clocks,
-                &mut protections,
-                &mut deltas,
-            );
+            drop_planned_rung(&mut plan, index);
             dropped += 1;
         }
 
         // The soft target never overrides fresh protections or the recent
         // window. The hard cap does: progressively thin any interior rung.
-        while planned_bytes(self, &candidate, fence.as_ref(), &survivors, &deltas)
-            > budget.hard_bytes
-        {
-            let Some(index) = pick_rung_to_drop(&clocks, &protections, 0, true) else {
+        while planned_bytes(&plan) > budget.hard_bytes {
+            let Some(index) = pick_rung_to_drop(&plan, 0, true) else {
                 return RungAdmission::RungNotAdmitted {
-                    minimum_bytes: planned_bytes(
-                        self,
-                        &candidate,
-                        fence.as_ref(),
-                        &survivors,
-                        &deltas,
-                    ),
+                    minimum_bytes: planned_bytes(&plan),
                 };
             };
-            drop_planned_rung(
-                index,
-                &mut survivors,
-                &mut clocks,
-                &mut protections,
-                &mut deltas,
-            );
+            drop_planned_rung(&mut plan, index);
             dropped += 1;
         }
 
-        let surviving_existing: std::collections::HashSet<usize> =
-            survivors.iter().filter_map(|index| *index).collect();
-        self.push_with_fence(
+        let mut kept = vec![false; self.rungs.len()];
+        for index in plan.iter().filter_map(|planned| planned.source) {
+            kept[index] = true;
+        }
+        drop(plan);
+
+        let top = self.push_with_fence(
             st,
             candidate,
             st.scanner.logical_clock,
@@ -536,12 +519,9 @@ impl CheckpointLadder<EngineBundle> {
             protected,
             fence,
         );
-        if self.verify_rewinds {
-            let top = self.rungs.len() - 1;
-            self.rungs[top].digests = oracle::digest_state(st);
-        }
-        for index in (1..self.rungs.len() - 1).rev() {
-            if !surviving_existing.contains(&index) {
+        self.record_digests(st, top);
+        for index in (1..top).rev() {
+            if !kept[index] {
                 // Hard-cap planning is allowed to relax stale protection.
                 self.rungs[index].protected = false;
                 assert!(self.decimate(index));
@@ -560,56 +540,52 @@ impl CheckpointLadder<EngineBundle> {
     }
 }
 
-fn planned_bytes(
-    ladder: &CheckpointLadder<EngineBundle>,
-    candidate: &EngineBundle,
-    candidate_fence: Option<&ReplayFence>,
-    survivors: &[Option<usize>],
-    deltas: &[Option<EngineDelta>],
+/// A rung as admission planning sees it. `source` is `None` for the candidate.
+struct PlannedRung<'a> {
+    source: Option<usize>,
+    clock: u64,
+    protected: bool,
+    undo: Option<Cow<'a, EngineDelta>>,
+}
+
+/// Counts each shared hyphen table once, keyed by its Arc allocation.
+fn ladder_bytes<'a>(
+    rungs: impl Iterator<
+        Item = (
+            &'a EngineBundle,
+            Option<&'a ReplayFence>,
+            Option<&'a EngineDelta>,
+        ),
+    >,
 ) -> usize {
-    let mut total = survivors.len() * RUNG_CONTAINER_ALLOWANCE
-        + deltas
-            .iter()
-            .filter_map(Option::as_ref)
-            .map(EngineDelta::allocated_bytes)
-            .sum::<usize>();
-    total += candidate_fence.map_or(0, ReplayFence::allocated_bytes);
-    let mut shared = std::collections::HashSet::new();
-    for survivor in survivors {
-        let bundle = survivor.map_or(candidate, |index| &ladder.rungs[index].bundle);
-        total += bundle.allocated_bytes();
-        if let Some(index) = survivor {
-            total += ladder.rungs[*index]
-                .fence
-                .as_ref()
-                .map_or(0, ReplayFence::allocated_bytes);
-        }
+    let mut total = 0;
+    let mut shared = HashSet::new();
+    for (bundle, fence, undo) in rungs {
+        total += RUNG_CONTAINER_ALLOWANCE
+            + bundle.allocated_bytes()
+            + fence.map_or(0, ReplayFence::allocated_bytes)
+            + undo.map_or(0, EngineDelta::allocated_bytes);
         let (identity, bytes) = bundle.shared_hyph_tables();
-        if shared.insert(identity as usize) {
+        if shared.insert(identity) {
             total += bytes;
         }
     }
     total
 }
 
-fn pick_rung_to_drop(
-    clocks: &[u64],
-    protected: &[bool],
-    min_recent_rungs: usize,
-    relax: bool,
-) -> Option<usize> {
-    if clocks.len() <= 2 {
+fn pick_rung_to_drop(plan: &[PlannedRung], min_recent_rungs: usize, relax: bool) -> Option<usize> {
+    if plan.len() <= 2 {
         return None;
     }
-    let recent_start = clocks.len().saturating_sub(min_recent_rungs.max(1));
-    let top = clocks[clocks.len() - 1];
+    let recent_start = plan.len().saturating_sub(min_recent_rungs.max(1));
+    let top = plan[plan.len() - 1].clock;
     let mut best: Option<(u64, u64, usize)> = None;
-    for index in 1..clocks.len() - 1 {
-        if !relax && (protected[index] || index >= recent_start) {
+    for index in 1..plan.len() - 1 {
+        if !relax && (plan[index].protected || index >= recent_start) {
             continue;
         }
-        let gap = clocks[index + 1].saturating_sub(clocks[index - 1]);
-        let age = top.saturating_sub(clocks[index]).saturating_add(1);
+        let gap = plan[index + 1].clock.saturating_sub(plan[index - 1].clock);
+        let age = top.saturating_sub(plan[index].clock).saturating_add(1);
         if best.is_none_or(|(best_gap, best_age, _)| {
             u128::from(gap) * u128::from(best_age) < u128::from(best_gap) * u128::from(age)
         }) {
@@ -619,22 +595,17 @@ fn pick_rung_to_drop(
     best.map(|(_, _, index)| index)
 }
 
-fn drop_planned_rung(
-    index: usize,
-    survivors: &mut Vec<Option<usize>>,
-    clocks: &mut Vec<u64>,
-    protected: &mut Vec<bool>,
-    deltas: &mut Vec<Option<EngineDelta>>,
-) {
-    survivors.remove(index);
-    clocks.remove(index);
-    protected.remove(index);
-    let older = deltas
+fn drop_planned_rung(plan: &mut Vec<PlannedRung>, index: usize) {
+    let older = plan
         .remove(index)
-        .expect("interior planned rung without undo");
-    deltas[index]
+        .undo
+        .expect("interior planned rung without undo")
+        .into_owned();
+    plan[index]
+        .undo
         .as_mut()
         .expect("planned successor without undo")
+        .to_mut()
         .compose_with_older(older);
 }
 
