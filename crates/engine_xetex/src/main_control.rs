@@ -3947,6 +3947,16 @@ enum LigExit {
     Restart,
 }
 
+/// Where the next pass of the TFM main loop starts.
+enum Resume {
+    /// `main_lig_loop`.
+    LigLoop,
+    /// `main_lig_loop+1` at lig/kern program index `k`.
+    LigProgram(i32),
+    /// `main_loop_move+2`.
+    Move2,
+}
+
 /// TeX's `wrapup`: packs a pending ligature and inserts a pending
 /// discretionary. `rt_hit` says whether a right boundary hit may count.
 #[inline(always)]
@@ -4042,65 +4052,70 @@ pub(crate) unsafe fn main_control_main_loop_in(
     } else {
         st.fonts.bchar_label_entry(mf)
     };
-    let mut lig_loop_1_k = if bchar_label != NON_ADDRESS {
+    let mut resume = if bchar_label != NON_ADDRESS {
         st.mainloop.cur_r = st.mainloop.cur_l;
         st.mainloop.cur_l = TOO_BIG_CHAR;
-        Some(bchar_label)
+        Resume::LigProgram(bchar_label)
     } else {
-        None
+        Resume::Move2
     };
     let mut main_i = crate::mem_types::B16x4::default();
 
     loop {
-        let exit = if let Some(k) = lig_loop_1_k.take() {
-            lig_kern_program(st, k, &mut main_i)?
-        } else if main_i.s1 % 4 != LIG_TAG || st.mainloop.cur_r == TOO_BIG_CHAR {
-            LigExit::Wrapup
-        } else {
-            let base = st.fonts.lig_kern_base_entry(st.mainloop.main_f);
-            let first = st.fonts.font_info_b16(base + main_i.s0 as i32);
-            let k = if first.s3 > 128 {
-                base + 256 * first.s1 as i32 + first.s0 as i32 + 32768 - 256 * 128
-            } else {
-                base + main_i.s0 as i32
-            };
-            lig_kern_program(st, k, &mut main_i)?
+        let exit = match std::mem::replace(&mut resume, Resume::LigLoop) {
+            Resume::Move2 => None,
+            Resume::LigProgram(k) => Some(lig_kern_program(st, k, &mut main_i)?),
+            Resume::LigLoop if main_i.s1 % 4 != LIG_TAG || st.mainloop.cur_r == TOO_BIG_CHAR => {
+                Some(LigExit::Wrapup)
+            }
+            Resume::LigLoop => {
+                let base = st.fonts.lig_kern_base_entry(st.mainloop.main_f);
+                let first = st.fonts.font_info_b16(base + main_i.s0 as i32);
+                let k = if first.s3 > 128 {
+                    base + 256 * first.s1 as i32 + first.s0 as i32 + 32768 - 256 * 128
+                } else {
+                    base + main_i.s0 as i32
+                };
+                Some(lig_kern_program(st, k, &mut main_i)?)
+            }
         };
-        match exit {
-            LigExit::Restart => continue,
-            LigExit::Wrapup => wrapup(st, true)?,
-            LigExit::Move | LigExit::Move1 => {}
-        }
-        if !matches!(exit, LigExit::Move1) {
-            if st.mainloop.lig_stack.is_null() {
-                return Ok(false);
+        if let Some(exit) = exit {
+            match exit {
+                LigExit::Restart => continue,
+                LigExit::Wrapup => wrapup(st, true)?,
+                LigExit::Move | LigExit::Move1 => {}
             }
-            st.mainloop.cur_q = st.input.cur_list.tail;
-            st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
-        }
-
-        if !is_char_node(&st.mem, st.mainloop.lig_stack) {
-            let item = st.mainloop.lig_stack;
-            let lig_ptr = st.mem.link_ptr(item + 1);
-            if lig_ptr.0 > TEX_NULL {
-                tail_append(st, lig_ptr);
-            }
-            st.mainloop.lig_stack = item.link(&st.mem);
-            crate::mem::free_node(&mut st.mem, item, SMALL_NODE_SIZE);
-            main_i = cur_l_info(st);
-            st.mainloop.ligature_present = true;
-            if st.mainloop.lig_stack.is_null() {
-                if lig_ptr.0 > TEX_NULL {
-                    if !lookahead(st)? {
-                        return Ok(true);
-                    }
-                    continue;
+            if !matches!(exit, LigExit::Move1) {
+                if st.mainloop.lig_stack.is_null() {
+                    return Ok(false);
                 }
-                st.mainloop.cur_r = st.mainloop.bchar;
-            } else {
-                st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
+                st.mainloop.cur_q = st.input.cur_list.tail;
+                st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
             }
-            continue;
+
+            if !is_char_node(&st.mem, st.mainloop.lig_stack) {
+                let item = st.mainloop.lig_stack;
+                let lig_ptr = st.mem.link_ptr(item + 1);
+                if lig_ptr.0 > TEX_NULL {
+                    tail_append(st, lig_ptr);
+                }
+                st.mainloop.lig_stack = item.link(&st.mem);
+                crate::mem::free_node(&mut st.mem, item, SMALL_NODE_SIZE);
+                main_i = cur_l_info(st);
+                st.mainloop.ligature_present = true;
+                if st.mainloop.lig_stack.is_null() {
+                    if lig_ptr.0 > TEX_NULL {
+                        if !lookahead(st)? {
+                            return Ok(true);
+                        }
+                        continue;
+                    }
+                    st.mainloop.cur_r = st.mainloop.bchar;
+                } else {
+                    st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
+                }
+                continue;
+            }
         }
 
         let main_f = st.mainloop.main_f;
