@@ -755,7 +755,7 @@ pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
 pub(crate) fn token_show_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
     let p = p.addr();
     if p != TEX_NULL {
-        let head = st.mem.b32s1(p);
+        let head = st.mem.link_ptr(p);
         show_token_list_in(st, head, TEX_NULL, 10_000_000);
     }
 }
@@ -1042,7 +1042,7 @@ fn print_mark_in(st: &mut EngineState, p: MemPtr) {
     if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
         esc(st, c"CLOBBERED.");
     } else {
-        let head = st.mem.b32s1(p);
+        let head = st.mem.link_ptr(p);
         let l = st.config.max_print_line - 10;
         show_token_list_in(st, head, TEX_NULL, l);
     }
@@ -2441,19 +2441,19 @@ pub(crate) fn show_token_list_in(
     const MATCH: i32 = 13;
     const END_MATCH: i32 = 14;
 
-    let mut p = p.addr();
+    let mut p = MemPtr(p.addr());
     let mut match_chr = b'#' as i32;
     let mut n = b'0' as i32;
     st.errors.tally = 0;
-    while p != TEX_NULL && st.errors.tally < l {
-        if p == q {
+    while !p.is_null() && st.errors.tally < l {
+        if p.0 == q {
             set_trick_count(st);
         }
-        if p < st.mem.hi_mem_min || p > st.mem.mem_end {
+        if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
             esc(st, c"CLOBBERED.");
             return;
         }
-        let w = st.mem.b32s0(p);
+        let w = p.info(&st.mem);
         if w >= CS_TOKEN_FLAG {
             print_cs_in(st, w - CS_TOKEN_FLAG);
         } else if w < 0 {
@@ -2492,9 +2492,9 @@ pub(crate) fn show_token_list_in(
                 _ => esc(st, c"BAD."),
             }
         }
-        p = st.mem.b32s1(p);
+        p = p.link(&st.mem);
     }
-    if p != TEX_NULL {
+    if !p.is_null() {
         esc(st, c"ETC.");
     }
 }

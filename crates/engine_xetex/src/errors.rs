@@ -414,7 +414,7 @@ pub(crate) fn runaway_in(st: &mut EngineState) {
     print_nl_cstr_in(st, msg.as_ptr());
     print_char_in(st, b'?' as i32);
     print_ln_in(st);
-    let head = st.mem.b32s1(p);
+    let head = st.mem.link_ptr(p);
     let l = st.errors.error_line - 10;
     show_token_list_in(st, head, TEX_NULL, l);
 }

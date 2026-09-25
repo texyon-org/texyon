@@ -49,10 +49,10 @@ pub(crate) fn defined_commands(st: &EngineState) -> Vec<DefinedCommand> {
 
 /// Recovers the arity LaTeX hides in an untypeable companion name.
 ///
-/// `\DeclareRobustCommand` puts the body in `\frac␣` (trailing space) and
-/// `\newcommand` with an optional argument puts it in `\\foo` (leading
-/// backslash). Commands built on `\@ifstar` and friends have no parameter text
-/// anywhere and report zero.
+/// `\DeclareRobustCommand{\frac}` puts the body in `frac␣` (trailing space) and
+/// `\newcommand{\foo}` with an optional argument puts it in `\foo` (leading
+/// backslash in the name). Commands built on `\@ifstar` and friends have no
+/// parameter text anywhere and report zero.
 fn resolve_wrappers(found: Vec<DefinedCommand>) -> Vec<DefinedCommand> {
     let arity_of: HashMap<&str, u8> = found
         .iter()
@@ -115,14 +115,14 @@ fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
 fn describe_macro(st: &EngineState, body: i32) -> (bool, u8) {
     let mut protected = false;
     let mut arity = 0u8;
-    let mut at = st.mem.b32s1(body);
+    let mut at = st.mem.link_ptr(body);
 
     // Guards against following a corrupt list.
     for _ in 0..64 {
-        if at <= 0 {
+        if at.0 <= 0 {
             break;
         }
-        let token = st.mem.b32s0(at);
+        let token = at.info(&st.mem);
         if token == PROTECTED_TOKEN {
             protected = true;
         } else if token >= END_MATCH_TOKEN {
@@ -130,7 +130,7 @@ fn describe_macro(st: &EngineState, body: i32) -> (bool, u8) {
         } else if token >= MATCH_TOKEN {
             arity = arity.saturating_add(1);
         }
-        at = st.mem.b32s1(at);
+        at = at.link(&st.mem);
     }
 
     (protected, arity)
