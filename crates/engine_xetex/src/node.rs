@@ -1656,6 +1656,7 @@ impl MemState {
     /// Classify a known lo-mem node as a kern node. `Ok(Some(_))` if `p` is a
     /// `KERN_NODE`; `Ok(None)` if some other valid type; `Err` if invalid.
     /// `p` must already be a non-null lo-mem index.
+    #[cfg(test)]
     #[inline]
     pub fn classify_kern(&self, p: MemIdx) -> Result<Option<NodePtr<KernNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
@@ -1770,6 +1771,7 @@ impl NodePtr<MarginKernNode> {
 
 impl MemState {
     /// Classify a known lo-mem node as a margin kern node.
+    #[cfg(test)]
     #[inline]
     pub fn classify_margin_kern(
         &self,

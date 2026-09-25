@@ -7,8 +7,8 @@ use crate::consts::{
     CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, ENDV, END_TEMPLATE, EQTB_SIZE, FI_CODE, FI_OR_ELSE,
     FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_VAL, INSERTED,
     INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS,
-    JUST_OPEN, LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_NODE,
-    MAX_COMMAND, MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER, NULL_CS,
+    JUST_OPEN, LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MAX_COMMAND,
+    MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER, NULL_CS,
     NUMBER_MATH_FAMILIES, OR_CODE, OTHER_CHAR, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE,
     RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SET_FONT, SF_CODE_BASE,
     SINGLE_BASE, SKIP_BASE, SPACER, SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
@@ -25,7 +25,7 @@ use crate::input::{
     set_packed_chars, EVERY_EOF_TEXT, FROZEN_RELAX, LEFT_BRACE_LIMIT, MID_LINE, PARAMETER,
     RIGHT_BRACE_LIMIT, SKIP_BLANKS, TECTONIC_CODA_TEXT, V_TEMPLATE,
 };
-use crate::node::{GlueSpecNode, NodePtr, RuleDimen, SaNode};
+use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, RuleDimen, RuleNode, SaNode};
 use crate::output::{
     capture_to_diagnostic_in, error_here_with_diagnostic_in, print_cmd_chr_in, print_cstr_in,
     print_esc_cstr_in, print_int_in, print_nl_cstr_in,
@@ -168,7 +168,9 @@ const EXPR_SCALE: i16 = 5;
 const EXPR_NODE_SIZE: i32 = 4;
 const NORMAL_EXPR: u16 = 0;
 
-const LAST_NODE_TYPE_CODE: i32 = 3;
+const LAST_NODE_TYPE_CODE: i16 = 3;
+const WIDTH_OFFSET: i32 = 1;
+const DEPTH_OFFSET: i32 = 2;
 const INPUT_LINE_NO_CODE: i32 = 4;
 const BADNESS_CODE: i32 = 5;
 const PDF_LAST_X_POS_CODE: i32 = 12;
@@ -507,7 +509,7 @@ fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
     (a + 1) / 2
 }
 
-pub(crate) fn scan_rule_spec_in(st: &mut EngineState) -> Result<i32, SccAbort> {
+pub(crate) fn scan_rule_spec_in(st: &mut EngineState) -> Result<NodePtr<RuleNode>, SccAbort> {
     let r = crate::mem::alloc_rule(&mut st.mem).ok_or_else(main_mem_overflow_scc)?;
     if st.scanner.cur_cmd == VRULE {
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
@@ -529,7 +531,7 @@ pub(crate) fn scan_rule_spec_in(st: &mut EngineState) -> Result<i32, SccAbort> {
             break;
         }
     }
-    Ok(r.idx().0)
+    Ok(r)
 }
 
 pub(crate) enum StrToksAbort {
@@ -1670,16 +1672,21 @@ fn new_def_ref_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
     Ok(def_ref)
 }
 
-/// The contents of box register `n`.
-pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> i32 {
-    if n < 256 {
-        return st.eqtb.b32s1(BOX_BASE + n);
-    }
-    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n, false);
-    match NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr) {
-        Some(sa) => sa.sa_ptr(&st.mem).0,
-        None => TEX_NULL,
-    }
+/// The contents of box register `n`, or `None` if it is void.
+pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
+    let contents = if n < 256 {
+        MemPtr::from_raw(st.eqtb.b32s1(BOX_BASE + n))
+    } else {
+        find_sa_in(st, BOX_VAL, n)?.sa_ptr(&st.mem)
+    };
+    let idx = contents.as_idx()?;
+    Some(
+        st.mem
+            .classify_box(idx)
+            .ok()
+            .flatten()
+            .expect("box register holds a box"),
+    )
 }
 
 /// `get_x_token` until the result is not a space.
@@ -3498,50 +3505,45 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
 
 /// `\lastpenalty`, `\lastkern`, `\lastskip` and `\lastnodetype`.
 fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
+    let item = m as i16;
     st.scanner.cur_val = 0;
     let head = st.input.cur_list.head.0;
     let mut tx = st.input.cur_list.tail.0;
-    if tx < st.mem.hi_mem_min && st.mem.b16s1(tx) == MATH_NODE && st.mem.b16s0(tx) == END_M_CODE {
-        let mut r = head;
-        loop {
-            let q = r;
-            r = st.mem.b32s1(q);
-            if r == tx {
-                tx = q;
-                break;
+    let mut node = (tx < st.mem.hi_mem_min).then(|| st.mem.classify(MemIdx::new(tx)));
+    if let Some(Ok(AnyNode::Math(math))) = node {
+        if math.subtype(&st.mem) == END_M_CODE {
+            let mut r = head;
+            loop {
+                let q = r;
+                r = st.mem.b32s1(q);
+                if r == tx {
+                    tx = q;
+                    break;
+                }
             }
+            node = (tx < st.mem.hi_mem_min).then(|| st.mem.classify(MemIdx::new(tx)));
         }
     }
-    if m == LAST_NODE_TYPE_CODE {
+    if item == LAST_NODE_TYPE_CODE {
         st.scanner.cur_val_level = INT_VAL as u8;
         if tx == head || st.input.cur_list.mode == 0 {
             st.scanner.cur_val = -1;
         }
     } else {
-        st.scanner.cur_val_level = m as u8;
+        st.scanner.cur_val_level = item as u8;
     }
-    if tx < st.mem.hi_mem_min && st.input.cur_list.mode != 0 {
-        let node = MemIdx::new(tx);
-        match m {
-            _ if m == INT_VAL as i32 => {
-                if let Ok(Some(p)) = st.mem.classify_penalty(node) {
-                    st.scanner.cur_val = p.penalty(&st.mem);
+    match node {
+        Some(node) if st.input.cur_list.mode != 0 => match (item, node) {
+            (INT_VAL, Ok(AnyNode::Penalty(p))) => st.scanner.cur_val = p.penalty(&st.mem),
+            (DIMEN_VAL, Ok(AnyNode::Kern(k))) => st.scanner.cur_val = k.width(&st.mem).0,
+            (GLUE_VAL, Ok(AnyNode::Glue(g))) => {
+                st.scanner.cur_val = g.glue_ptr(&st.mem).0;
+                if g.subtype(&st.mem) == MU_GLUE {
+                    st.scanner.cur_val_level = MU_VAL as u8;
                 }
             }
-            _ if m == DIMEN_VAL as i32 => {
-                if let Ok(Some(k)) = st.mem.classify_kern(node) {
-                    st.scanner.cur_val = k.width(&st.mem).0;
-                }
-            }
-            _ if m == GLUE_VAL as i32 => {
-                if let Ok(Some(g)) = st.mem.classify_glue(node) {
-                    st.scanner.cur_val = g.glue_ptr(&st.mem).0;
-                    if g.subtype(&st.mem) == MU_GLUE {
-                        st.scanner.cur_val_level = MU_VAL as u8;
-                    }
-                }
-            }
-            LAST_NODE_TYPE_CODE => {
+            (LAST_NODE_TYPE_CODE, _) => {
+                // The node type code itself is the result.
                 let node_type = st.mem.b16s1(tx);
                 st.scanner.cur_val = if node_type <= UNSET_NODE {
                     node_type as i32 + 1
@@ -3550,18 +3552,21 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
                 };
             }
             _ => {}
-        }
-    } else if st.input.cur_list.mode == VMODE && tx == head {
-        match m {
-            _ if m == INT_VAL as i32 => st.scanner.cur_val = st.shipout.last_penalty,
-            _ if m == DIMEN_VAL as i32 => st.scanner.cur_val = st.shipout.last_kern,
-            _ if m == GLUE_VAL as i32 => {
-                if st.shipout.last_glue.0 != MAX_HALFWORD {
-                    st.scanner.cur_val = st.shipout.last_glue.0;
+        },
+        _ => {
+            if st.input.cur_list.mode == VMODE && tx == head {
+                match item {
+                    INT_VAL => st.scanner.cur_val = st.shipout.last_penalty,
+                    DIMEN_VAL => st.scanner.cur_val = st.shipout.last_kern,
+                    GLUE_VAL => {
+                        if st.shipout.last_glue.0 != MAX_HALFWORD {
+                            st.scanner.cur_val = st.shipout.last_glue.0;
+                        }
+                    }
+                    LAST_NODE_TYPE_CODE => st.scanner.cur_val = st.shipout.last_node_type,
+                    _ => {}
                 }
             }
-            LAST_NODE_TYPE_CODE => st.scanner.cur_val = st.shipout.last_node_type,
-            _ => {}
         }
     }
 }
@@ -3664,13 +3669,13 @@ pub(crate) fn scan_something_internal_in(
             }
             SET_BOX_DIMEN => {
                 scan_register_num_in(st)?;
-                let b = fetch_box(st, st.scanner.cur_val);
-                let v = if b == TEX_NULL {
-                    0
-                } else {
-                    st.mem.b32s1(b + m)
+                let v = match fetch_box(st, st.scanner.cur_val) {
+                    None => Scaled(0),
+                    Some(b) if m == WIDTH_OFFSET => b.width(&st.mem),
+                    Some(b) if m == DEPTH_OFFSET => b.depth(&st.mem),
+                    Some(b) => b.height(&st.mem),
                 };
-                set_cur_val(st, v, DIMEN_VAL);
+                set_cur_val(st, v.0, DIMEN_VAL);
             }
             CHAR_GIVEN | MATH_GIVEN | XETEX_MATH_GIVEN => set_cur_val(st, m, INT_VAL),
             ASSIGN_FONT_DIMEN => {

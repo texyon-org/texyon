@@ -1790,7 +1790,7 @@ pub(crate) fn scan_box_in(
     } else if box_context >= LEADER_FLAG
         && (st.scanner.cur_cmd == HRULE || st.scanner.cur_cmd == VRULE)
     {
-        st.scanner.cur_box.0 = crate::scan::scan_rule_spec_in(st)?;
+        st.scanner.cur_box = crate::scan::scan_rule_spec_in(st)?.ptr();
         box_end_in(st, box_context)?;
     } else {
         crate::output::error_here_with_diagnostic_in(
@@ -4327,9 +4327,9 @@ pub(crate) fn main_control_simple_list_group_cases_in(
     let mode = st.input.cur_list.mode.unsigned_abs();
     match (mode, st.scanner.cur_cmd) {
         (VMODE_MC, HRULE_MC) | (HMODE_MC, VRULE_MC) | (MMODE_MC, VRULE_MC) => {
-            let p = crate::scan::scan_rule_spec_in(st)?;
-            st.mem.set_b32s1(st.input.cur_list.tail, p);
-            st.input.cur_list.tail.0 = p;
+            let rule = crate::scan::scan_rule_spec_in(st)?.ptr();
+            st.input.cur_list.tail.set_link(&mut st.mem, rule);
+            st.input.cur_list.tail = rule;
             if mode == VMODE_MC {
                 st.input.cur_list.set_aux_s1(IGNORE_DEPTH_MC);
             } else if mode == HMODE_MC {

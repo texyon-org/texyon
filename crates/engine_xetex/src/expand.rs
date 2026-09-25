@@ -12,7 +12,7 @@ use crate::input::{
     back_error_in, back_input_in, begin_token_list_in, InputAbort, INT_PAR_TRACING_MACROS,
     LEFT_BRACE_LIMIT, MACRO, MARK_TEXT, RIGHT_BRACE_LIMIT, V_TEMPLATE,
 };
-use crate::node::{AnyNode, NodePtr, SaNode};
+use crate::node::{AnyBox, AnyNode, NodePtr, SaNode};
 use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
     end_diagnostic_in, error_here_with_diagnostic_in, print_char_in, print_cmd_chr_in,
@@ -27,7 +27,7 @@ use crate::scan::{
     PROTECTED_TOKEN, SPACE_TOKEN, TEMP_HEAD, THE,
 };
 use crate::state::EngineState;
-use crate::units::{MemIdx, MemPtr, NodeType};
+use crate::units::{MemIdx, MemPtr};
 
 extern "C" {
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
@@ -299,15 +299,11 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
         IF_INNER_CODE => st.input.cur_list.mode < 0,
         IF_VOID_CODE | IF_HBOX_CODE | IF_VBOX_CODE => {
             crate::scan::scan_register_num_in(st)?;
-            let p = fetch_box(st, st.scanner.cur_val);
-            if this_if == IF_VOID_CODE {
-                p == TEX_NULL
-            } else if p == TEX_NULL {
-                false
-            } else if this_if == IF_HBOX_CODE {
-                st.mem.node_type(MemIdx::new(p)) == Ok(NodeType::HList)
-            } else {
-                st.mem.node_type(MemIdx::new(p)) == Ok(NodeType::VList)
+            let contents = fetch_box(st, st.scanner.cur_val);
+            match this_if {
+                IF_VOID_CODE => contents.is_none(),
+                IF_HBOX_CODE => matches!(contents, Some(AnyBox::HList(_))),
+                _ => matches!(contents, Some(AnyBox::VList(_))),
             }
         }
         IFX_CODE => {
@@ -579,21 +575,17 @@ fn scan_nonnegative_int_in(
     Ok(st.scanner.cur_val)
 }
 
-/// Whether `p` may be skipped when looking for a margin kern at the edge of a line.
-fn is_margin_kern_filler(st: &EngineState, p: i32, par_skip: u16) -> bool {
-    if p >= st.mem.hi_mem_min {
-        return false;
-    }
-    let mem = &st.mem;
-    match mem.classify(MemIdx::new(p)) {
-        Ok(AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_)) => true,
-        Ok(AnyNode::Disc(d)) => {
+/// Whether a node may be skipped when looking for a margin kern at the edge of a line.
+fn is_margin_kern_filler(mem: &crate::state::MemState, node: AnyNode, par_skip: u16) -> bool {
+    match node {
+        AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
+        AnyNode::Disc(d) => {
             d.pre_break(mem).is_null() && d.post_break(mem).is_null() && d.subtype(mem) == 0
         }
-        Ok(AnyNode::Math(m)) => m.width(mem).0 == 0,
-        Ok(AnyNode::Kern(k)) => k.width(mem).0 == 0 || k.subtype(mem) == 0,
-        Ok(AnyNode::Glue(g)) => g.glue_ptr(mem).0 == 0 || g.subtype(mem) == par_skip + 1,
-        Ok(AnyNode::HList(h)) => {
+        AnyNode::Math(m) => m.width(mem).0 == 0,
+        AnyNode::Kern(k) => k.width(mem).0 == 0 || k.subtype(mem) == 0,
+        AnyNode::Glue(g) => g.glue_ptr(mem).0 == 0 || g.subtype(mem) == par_skip + 1,
+        AnyNode::HList(h) => {
             h.width(mem).0 == 0
                 && h.height(mem).0 == 0
                 && h.depth(mem).0 == 0
@@ -603,30 +595,32 @@ fn is_margin_kern_filler(st: &EngineState, p: i32, par_skip: u16) -> bool {
     }
 }
 
-/// Prints the width of the margin kern of `side` at `p`, or `0pt` if there is none.
-fn print_margin_kern_in(st: &mut EngineState, p: i32, side: u16) {
-    let kern = if p != TEX_NULL && p < st.mem.hi_mem_min {
-        st.mem.classify_margin_kern(MemIdx::new(p)).ok().flatten()
-    } else {
-        None
+/// Prints the width of the margin kern of `side` found by walking from `p` with `next`,
+/// skipping fillers, or `0pt` if there is none.
+fn print_margin_kern_in(
+    st: &mut EngineState,
+    mut p: i32,
+    side: u16,
+    par_skip: u16,
+    next: impl Fn(&crate::state::MemState, i32) -> i32,
+) {
+    let width = loop {
+        if p == TEX_NULL || p >= st.mem.hi_mem_min {
+            break None;
+        }
+        match st.mem.classify(MemIdx::new(p)) {
+            Ok(node) if is_margin_kern_filler(&st.mem, node, par_skip) => p = next(&st.mem, p),
+            Ok(AnyNode::MarginKern(mk)) if mk.subtype(&st.mem) == side => {
+                break Some(mk.width(&st.mem).0)
+            }
+            _ => break None,
+        }
     };
-    match kern
-        .filter(|mk| mk.subtype(&st.mem) == side)
-        .map(|mk| mk.width(&st.mem).0)
-    {
+    match width {
         Some(w) => print_scaled_in(st, w),
         None => print_char_in(st, '0' as i32),
     }
     print_cstr_in(st, c"pt".as_ptr());
-}
-
-fn hlist_register_list(st: &EngineState, p: i32) -> i32 {
-    st.mem
-        .classify_box(MemIdx::new(p))
-        .expect("valid box")
-        .expect("hlist box register")
-        .list_ptr(&st.mem)
-        .0
 }
 
 pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
@@ -635,7 +629,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let mut fnt: i32 = 0;
     let mut arg1: i32 = 0;
     let mut arg2: i32 = 0;
-    let mut p = TEX_NULL;
+    let mut margin_list = TEX_NULL;
 
     match c {
         NUMBER_CODE | ROMAN_NUMERAL_CODE | UNIFORM_DEVIATE_CODE => scan_int_in(st)?,
@@ -656,13 +650,13 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
         }
         LEFT_MARGIN_KERN_CODE | RIGHT_MARGIN_KERN_CODE => {
             crate::scan::scan_register_num_in(st)?;
-            p = fetch_box(st, st.scanner.cur_val);
-            if p == TEX_NULL || st.mem.node_type(MemIdx::new(p)) != Ok(NodeType::HList) {
+            let Some(AnyBox::HList(hbox)) = fetch_box(st, st.scanner.cur_val) else {
                 return Err(SccAbort::PdfError {
                     t: c"marginkern".as_ptr(),
                     p: c"a non-empty hbox expected".as_ptr(),
                 });
-            }
+            };
+            margin_list = hbox.list_ptr(&st.mem).0;
         }
         PDF_CREATION_DATE_CODE => {
             let b = st.strings.pool_ptr;
@@ -832,20 +826,16 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             }
         }
         ETEX_REVISION_CODE => print_cstr_in(st, c".6".as_ptr()),
-        LEFT_MARGIN_KERN_CODE => {
-            p = hlist_register_list(st, p);
-            while p != TEX_NULL && is_margin_kern_filler(st, p, GLUE_PAR_LEFT_SKIP) {
-                p = st.mem.b32s1(p);
+        LEFT_MARGIN_KERN_CODE | RIGHT_MARGIN_KERN_CODE => {
+            let list = margin_list;
+            if c == LEFT_MARGIN_KERN_CODE {
+                print_margin_kern_in(st, list, 0, GLUE_PAR_LEFT_SKIP, |mem, p| mem.b32s1(p));
+            } else {
+                let last = crate::mem::prev_rightmost(&st.mem, list, TEX_NULL).0;
+                print_margin_kern_in(st, last, 1, GLUE_PAR_RIGHT_SKIP, move |mem, p| {
+                    crate::mem::prev_rightmost(mem, list, p).0
+                });
             }
-            print_margin_kern_in(st, p, 0);
-        }
-        RIGHT_MARGIN_KERN_CODE => {
-            let list = hlist_register_list(st, p);
-            p = crate::mem::prev_rightmost(&st.mem, list, TEX_NULL).0;
-            while p != TEX_NULL && is_margin_kern_filler(st, p, GLUE_PAR_RIGHT_SKIP) {
-                p = crate::mem::prev_rightmost(&st.mem, list, p).0;
-            }
-            print_margin_kern_in(st, p, 1);
         }
         UNIFORM_DEVIATE_CODE => {
             let v = crate::scaled_math::unif_rand(&mut st.errors, st.scanner.cur_val);
