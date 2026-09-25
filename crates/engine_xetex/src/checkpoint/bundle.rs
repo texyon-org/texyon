@@ -981,11 +981,13 @@ mod tests {
 
     #[test]
     fn font_restore_clears_use_flags_beyond_the_checkpoint() {
-        let mut fonts = crate::state::FontState::default();
-        fonts.font_layout_engine = vec![None; 4];
-        fonts.font_mapping = vec![None; 4];
-        fonts.font_used = vec![false; 4];
-        fonts.font_ptr = 1;
+        let mut fonts = FontState {
+            font_layout_engine: vec![None; 4],
+            font_mapping: vec![None; 4],
+            font_used: vec![false; 4],
+            font_ptr: 1,
+            ..Default::default()
+        };
         let checkpoint = FontBundle::capture(&fonts);
 
         fonts.font_ptr = 3;

@@ -1,5 +1,7 @@
 //! Named state digests used only to verify checkpoint restoration.
 
+use crate::globals::InputState;
+use crate::mem_types::{B32x2, ListStateRecord, MemoryWord};
 use crate::state::EngineState;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -9,22 +11,20 @@ pub(crate) struct ComponentDigest {
 }
 
 pub(crate) fn digest_state(st: &EngineState) -> Vec<ComponentDigest> {
-    let groups: [(&'static str, fn(&EngineState) -> u64); 8] = [
-        ("mem", digest_mem),
-        ("eqtb", digest_eqtb),
-        ("strings", digest_strings),
-        ("save", digest_save),
-        ("fonts", digest_fonts),
-        ("input", digest_input),
-        ("scanner", digest_scanner),
-        ("hyph", digest_hyph),
-    ];
-    let mut digests = Vec::with_capacity(groups.len());
-    for (name, digest) in groups {
-        let value = digest(st);
-        digests.push(ComponentDigest { name, value });
-    }
-    digests
+    let component = |name, digest: fn(&EngineState) -> u64| ComponentDigest {
+        name,
+        value: digest(st),
+    };
+    vec![
+        component("mem", digest_mem),
+        component("eqtb", digest_eqtb),
+        component("strings", digest_strings),
+        component("save", digest_save),
+        component("fonts", digest_fonts),
+        component("input", digest_input),
+        component("scanner", digest_scanner),
+        component("hyph", digest_hyph),
+    ]
 }
 
 #[derive(Clone, Copy)]
@@ -43,20 +43,27 @@ impl Fnv {
         self.word(value as u32 as u64);
     }
 
+    fn i32s<'a>(&mut self, values: impl IntoIterator<Item = &'a i32>) {
+        for &value in values {
+            self.i32(value);
+        }
+    }
+
     fn finish(self) -> u64 {
         self.0
     }
 }
 
-fn memory_word(word: crate::mem_types::MemoryWord) -> u64 {
-    // SAFETY: MemoryWord is the engine's exactly-eight-byte C union.
-    unsafe { std::mem::transmute(word) }
+fn memory_word(word: MemoryWord) -> u64 {
+    // SAFETY: every bit pattern is a valid B32x2.
+    let B32x2 { s0, s1 } = unsafe { word.b32 };
+    u64::from(s0 as u32) | u64::from(s1 as u32) << 32
 }
 
 fn digest_mem(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let mem = &st.mem;
-    for value in [
+    h.i32s(&[
         mem.lo_mem_max,
         mem.hi_mem_min,
         mem.avail,
@@ -67,9 +74,7 @@ fn digest_mem(st: &EngineState) -> u64 {
         mem.line,
         mem.cur_synctex_tag,
         mem.temp_ptr.0,
-    ] {
-        h.i32(value);
-    }
+    ]);
     for &word in &mem.data {
         h.word(memory_word(word));
     }
@@ -96,7 +101,7 @@ fn digest_mem(st: &EngineState) -> u64 {
 fn digest_eqtb(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let eqtb = &st.eqtb;
-    for value in [
+    h.i32s(&[
         eqtb.hash_used,
         eqtb.hash_high,
         eqtb.prim_used,
@@ -104,9 +109,7 @@ fn digest_eqtb(st: &EngineState) -> u64 {
         eqtb.hash_extra,
         eqtb.eqtb_top,
         eqtb.hash_top,
-    ] {
-        h.i32(value);
-    }
+    ]);
     h.word(eqtb.no_new_control_sequence as u64);
     for &word in &eqtb.data {
         h.word(memory_word(word));
@@ -124,7 +127,7 @@ fn digest_eqtb(st: &EngineState) -> u64 {
 fn digest_strings(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let strings = &st.strings;
-    for value in [
+    h.i32s(&[
         strings.str_ptr,
         strings.max_strings,
         strings.init_str_ptr,
@@ -136,13 +139,9 @@ fn digest_strings(st: &EngineState) -> u64 {
         strings.pool_ptr,
         strings.format_ident,
         strings.edit_name_start,
-    ] {
-        h.i32(value);
-    }
+    ]);
     let start_top = (strings.str_ptr - crate::consts::TOO_BIG_CHAR).max(0) as usize;
-    for &value in strings.str_start.iter().take(start_top.saturating_add(1)) {
-        h.i32(value);
-    }
+    h.i32s(strings.str_start.iter().take(start_top.saturating_add(1)));
     for &value in strings
         .str_pool
         .iter()
@@ -171,7 +170,7 @@ fn digest_save(st: &EngineState) -> u64 {
 fn digest_fonts(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let fonts = &st.fonts;
-    for value in [
+    h.i32s(&[
         fonts.loaded_font_flags as i32,
         fonts.loaded_font_letter_space,
         fonts.native_font_type_flag,
@@ -179,9 +178,7 @@ fn digest_fonts(st: &EngineState) -> u64 {
         fonts.font_max,
         fonts.fmem_ptr,
         fonts.font_ptr,
-    ] {
-        h.i32(value);
-    }
+    ]);
     h.word(fonts.xtx_ligature_present as u64);
     h.word(fonts.gave_char_warning_help as u64);
     for &word in fonts.font_info.iter().take(fonts.fmem_ptr.max(0) as usize) {
@@ -235,7 +232,7 @@ fn digest_fonts(st: &EngineState) -> u64 {
     h.finish()
 }
 
-fn digest_input_state(h: &mut Fnv, input: &crate::globals::InputState) {
+fn digest_input_state(h: &mut Fnv, input: &InputState) {
     h.word(input.state as u64);
     h.word(input.index as u64);
     h.i32(input.start);
@@ -245,7 +242,7 @@ fn digest_input_state(h: &mut Fnv, input: &crate::globals::InputState) {
     h.i32(input.synctex_tag);
 }
 
-fn digest_list(h: &mut Fnv, list: &crate::mem_types::ListStateRecord) {
+fn digest_list(h: &mut Fnv, list: &ListStateRecord) {
     h.i32(list.mode.into());
     h.i32(list.head.0);
     h.i32(list.tail.0);
@@ -258,7 +255,7 @@ fn digest_list(h: &mut Fnv, list: &crate::mem_types::ListStateRecord) {
 fn digest_input(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let input = &st.input;
-    for value in [
+    h.i32s(&[
         input.open_parens,
         input.in_open,
         input.pseudo_files.0,
@@ -274,14 +271,10 @@ fn digest_input(st: &EngineState) -> u64 {
         input.first,
         input.last,
         input.max_buf_stack,
-    ] {
-        h.i32(value);
-    }
+    ]);
     h.word(input.force_eof as u64);
     let buffer_end = (input.max_buf_stack.max(input.last).max(input.first) + 1).max(0) as usize;
-    for &value in input.buffer.iter().take(buffer_end) {
-        h.i32(value);
-    }
+    h.i32s(input.buffer.iter().take(buffer_end));
     for value in input
         .input_stack
         .iter()
@@ -294,28 +287,19 @@ fn digest_input(st: &EngineState) -> u64 {
         digest_list(&mut h, value);
     }
     digest_list(&mut h, &input.cur_list);
-    for &value in input
-        .param_stack
-        .iter()
-        .take(input.param_ptr.max(0) as usize)
-    {
-        h.i32(value);
-    }
-    for &value in &input.line_stack {
-        h.i32(value);
-    }
-    for &value in &input.grp_stack {
-        h.i32(value);
-    }
+    h.i32s(
+        input
+            .param_stack
+            .iter()
+            .take(input.param_ptr.max(0) as usize),
+    );
+    h.i32s(&input.line_stack);
+    h.i32s(&input.grp_stack);
     for &value in &input.if_stack {
         h.i32(value.0);
     }
-    for &value in &input.source_filename_stack {
-        h.i32(value);
-    }
-    for &value in &input.full_source_filename_stack {
-        h.i32(value);
-    }
+    h.i32s(&input.source_filename_stack);
+    h.i32s(&input.full_source_filename_stack);
     for &value in &input.eof_seen {
         h.word(value as u64);
     }
@@ -358,7 +342,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
     let mut h = Fnv::new();
     let hyph = &st.hyph;
     h.word(hyph.tables_gen);
-    for value in [
+    h.i32s(&[
         hyph.hf,
         hyph.max_hyph_char,
         hyph.trie_max,
@@ -370,9 +354,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
         hyph.trie_op_ptr,
         hyph.hyph_start,
         hyph.hyph_index,
-    ] {
-        h.i32(value);
-    }
+    ]);
     macro_rules! hash_values {
         ($field:ident) => {
             for &value in &hyph.$field {
