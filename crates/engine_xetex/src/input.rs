@@ -28,7 +28,6 @@ pub(crate) const FROZEN_RELAX: i32 = FROZEN_CONTROL_SEQUENCE + 7;
 
 pub(crate) const INT_PAR_TRACING_MACROS: i32 = 30;
 const LOCAL_OUTPUT_ROUTINE: i32 = 1;
-const ASSIGN_TOKS: u16 = 73;
 
 pub(crate) enum InputAbort {
     Overflow {
@@ -301,7 +300,7 @@ pub(crate) fn begin_token_list_in(st: &mut EngineState, p: i32, t: u16) -> Resul
             WRITE_TEXT => print_esc_cstr_in(st, c"write".as_ptr()),
             _ => print_cmd_chr_in(
                 st,
-                ASSIGN_TOKS,
+                crate::scan::ASSIGN_TOKS as u16,
                 t as i32 + LOCAL_BASE + LOCAL_OUTPUT_ROUTINE - OUTPUT_TEXT as i32,
             ),
         }

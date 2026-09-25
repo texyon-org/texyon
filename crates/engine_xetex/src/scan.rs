@@ -57,7 +57,7 @@ const MATH_GIVEN: u8 = 69;
 const XETEX_MATH_GIVEN: u8 = 70;
 const LAST_ITEM: u8 = 71;
 const TOKS_REGISTER: u8 = 72;
-const ASSIGN_TOKS: u8 = 73;
+pub(crate) const ASSIGN_TOKS: u8 = 73;
 const ASSIGN_DIMEN: u8 = 75;
 const ASSIGN_FONT_DIMEN: u8 = 78;
 const ASSIGN_FONT_INT: u8 = 79;
@@ -816,8 +816,7 @@ pub(crate) fn scan_math_in(
                     let mc = st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr);
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
                         st.scanner.cur_cs = st.scanner.cur_chr + 1;
-                        st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
-                        st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+                        fetch_cs_meaning(st);
                         x_token_in(st)?;
                         crate::input::back_input_in(st)?;
                         continue 'main;
@@ -882,8 +881,7 @@ pub(crate) fn set_math_char_in(
 ) -> Result<(), crate::main_control::MainControlAbort> {
     if math_char_fn(c) == ACTIVE_MATH_CHAR {
         st.scanner.cur_cs = st.scanner.cur_chr + 1;
-        st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
-        st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+        fetch_cs_meaning(st);
         x_token_in(st)?;
         crate::input::back_input_in(st)?;
     } else {
@@ -1089,6 +1087,13 @@ pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::I
     crate::input::InputAbort::Overflow { what, n }
 }
 
+/// Sets `cur_cmd` and `cur_chr` to the meaning of `cur_cs`.
+#[inline(always)]
+fn fetch_cs_meaning(st: &mut EngineState) {
+    st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
+    st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+}
+
 #[inline(always)]
 fn is_lc_hex(c: i32) -> bool {
     (0x30..=0x39).contains(&c) || (0x61..=0x66).contains(&c)
@@ -1264,8 +1269,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                                         break 'start_cs;
                                     }
                                 }
-                                st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
-                                st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+                                fetch_cs_meaning(st);
                                 if st.scanner.cur_cmd >= OUTER_CALL {
                                     check_outer_validity!();
                                 }
@@ -1274,8 +1278,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                             // Active character.
                             14 | 30 | 46 => {
                                 st.scanner.cur_cs = st.scanner.cur_chr + 1;
-                                st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
-                                st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+                                fetch_cs_meaning(st);
                                 st.input.cur_input.state = MID_LINE;
                                 if st.scanner.cur_cmd >= OUTER_CALL {
                                     check_outer_validity!();
@@ -1364,8 +1367,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                             38 => {
                                 st.input.cur_input.loc = st.input.cur_input.limit + 1;
                                 st.scanner.cur_cs = st.input.par_loc;
-                                st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
-                                st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+                                fetch_cs_meaning(st);
                                 if st.scanner.cur_cmd >= OUTER_CALL {
                                     check_outer_validity!();
                                 }
@@ -1484,14 +1486,12 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
 
             if t >= CS_TOKEN_FLAG {
                 st.scanner.cur_cs = t - CS_TOKEN_FLAG;
-                st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
-                st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+                fetch_cs_meaning(st);
                 if st.scanner.cur_cmd >= OUTER_CALL {
                     if st.scanner.cur_cmd == DONT_EXPAND {
                         st.scanner.cur_cs = st.mem.b32s0(st.input.cur_input.loc) - CS_TOKEN_FLAG;
                         st.input.cur_input.loc = TEX_NULL;
-                        st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
-                        st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+                        fetch_cs_meaning(st);
                         if st.scanner.cur_cmd > MAX_COMMAND {
                             st.scanner.cur_cmd = RELAX;
                             st.scanner.cur_chr = NO_EXPAND_FLAG;
