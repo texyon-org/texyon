@@ -142,6 +142,41 @@ fn classify_disc_hp(mem: &MemState, p: impl crate::units::MemAddr) -> Option<Nod
     mem.classify_disc(MemIdx::new(p)).ok().flatten()
 }
 
+/// Return a one-word node to the avail list.
+#[inline]
+pub(crate) fn free_avail(mem: &mut MemState, p: MemPtr) {
+    p.set_link(mem, MemPtr(mem.avail));
+    mem.avail = p.0;
+}
+
+/// TeX's `end_LR_type`: the LR-stack entry that a math node of `subtype` opens or closes.
+#[inline]
+pub(crate) fn end_lr_type(subtype: u16) -> i32 {
+    const L_CODE: u16 = 4;
+    const END_M_CODE: u16 = 3;
+    (L_CODE * (subtype / L_CODE) + END_M_CODE) as i32
+}
+
+#[inline]
+pub(crate) fn push_lr(
+    mem: &mut MemState,
+    lr_ptr: &mut MemPtr,
+    info: i32,
+) -> Result<(), NodeRecycleAbort> {
+    let t = crate::mem::get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
+    t.set_info(mem, info);
+    t.set_link(mem, *lr_ptr);
+    *lr_ptr = t;
+    Ok(())
+}
+
+#[inline]
+pub(crate) fn pop_lr(mem: &mut MemState, lr_ptr: &mut MemPtr) {
+    let t = *lr_ptr;
+    *lr_ptr = t.link(mem);
+    free_avail(mem, t);
+}
+
 #[derive(Copy, Clone)]
 pub(crate) enum PackDiag {
     HUnderfull { badness: i32, loose: bool },

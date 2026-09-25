@@ -386,6 +386,10 @@ impl<K: HasSyncFields> NodePtr<K> {
     pub fn sync_tag(self, mem: &MemState) -> i32 {
         mem.b32s0(self.idx.offset(K::SYNC_OFFSET).0)
     }
+    #[inline]
+    pub fn set_sync_tag(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(K::SYNC_OFFSET).0, v);
+    }
 
     /// `SYNCTEX_line(p, size)` = `mem[p + size − 1].b32.s1` — the source
     /// line stamped at allocation time.
@@ -866,11 +870,19 @@ impl NodePtr<LigItem> {
 
     /// Ligature item character code = `mem[p].b16.s0`.
     #[inline]
+    pub fn character(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
     pub fn set_character(self, mem: &mut MemState, c: u16) {
         mem.set_b16s0(self.idx.0, c);
     }
 
     /// Ligature item component pointer = `mem[p + 1].b32.s1`.
+    #[inline]
+    pub fn component(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
     #[inline]
     pub fn set_component(self, mem: &mut MemState, q: MemPtr) {
         mem.set_b32s1(self.idx.offset(1).0, q.0);
