@@ -22,7 +22,9 @@ use crate::hash::HASH_BASE;
 use crate::input::{
     EVERY_EOF_TEXT, MACRO, MARK_TEXT, PARAMETER, TECTONIC_CODA_TEXT, U_TEMPLATE, V_TEMPLATE,
 };
-use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, SaNode, WhatsitNode, WhatsitSubtype};
+use crate::node::{
+    AnyBox, AnyNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
+};
 use crate::scan::{
     AAT_FONT_FLAG, BIGGEST_USV, GARBAGE, MAX_CHAR_VAL, OTGR_FONT_FLAG, PROTECTED_TOKEN, TEMP_HEAD,
 };
@@ -3113,12 +3115,69 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
     }
 }
 
-pub(crate) fn show_activities_in(st: &mut EngineState) {
+/// The outer vertical list part of `show_activities`: the current page and its insertions.
+fn show_page_so_far_in(st: &mut EngineState) {
     const PAGE_INS_HEAD: i32 = MEM_TOP;
     const PAGE_HEAD: i32 = MEM_TOP - 2;
     const EMPTY: u8 = 0;
-    const SPLIT_UP: u16 = 1;
 
+    if st.shipout.page_tail.0 != PAGE_HEAD {
+        print_nl_cstr_in(st, c"### current page:".as_ptr());
+        if st.shipout.output_active {
+            print_cstr_in(st, c" (held over for next output)".as_ptr());
+        }
+        show_box_in(st, st.mem.b32s1(PAGE_HEAD));
+        if st.shipout.page_contents > EMPTY {
+            print_nl_cstr_in(st, c"total height ".as_ptr());
+            print_totals_in(st);
+            print_nl_cstr_in(st, c" goal height ".as_ptr());
+            print_scaled_in(st, st.shipout.page_so_far[0]);
+            let mut r = st.mem.link_ptr(PAGE_INS_HEAD);
+            while r.0 != PAGE_INS_HEAD {
+                // SAFETY: the page_ins_head ring holds only page-insertion records.
+                let ins = unsafe { NodePtr::<PageInsNode>::from_idx_unchecked(MemIdx::new(r)) };
+                print_ln_in(st);
+                esc(st, c"insert");
+                let box_num = ins.subtype(&st.mem);
+                print_int_in(st, box_num as i32);
+                print_cstr_in(st, c" adds ".as_ptr());
+                let count = st.eqtb.b32s1(COUNT_BASE + box_num as i32);
+                let height = ins.height(&st.mem).0;
+                let adds = if count == 1000 {
+                    height
+                } else {
+                    crate::scaled_math::x_over_n_in(&mut st.errors, height, 1000) * count
+                };
+                print_scaled_in(st, adds);
+                if ins.is_split_up(&st.mem) {
+                    let broken_ins = ins.broken_ins(&st.mem).0;
+                    let mut q = PAGE_HEAD;
+                    let mut t = 0;
+                    loop {
+                        q = st.mem.b32s1(q);
+                        if let Ok(AnyNode::Ins(node)) = st.mem.classify(MemIdx::new(q)) {
+                            if node.subtype(&st.mem) == box_num {
+                                t += 1;
+                            }
+                        }
+                        if q == broken_ins {
+                            break;
+                        }
+                    }
+                    print_cstr_in(st, c", #".as_ptr());
+                    print_int_in(st, t);
+                    print_cstr_in(st, c" might split".as_ptr());
+                }
+                r = r.link(&st.mem);
+            }
+        }
+    }
+    if st.mem.b32s1(CONTRIB_HEAD) != TEX_NULL {
+        print_nl_cstr_in(st, c"### recent contributions:".as_ptr());
+    }
+}
+
+pub(crate) fn show_activities_in(st: &mut EngineState) {
     st.input.nest[st.input.nest_ptr as usize] = st.input.cur_list;
     print_nl_cstr_in(st, c"".as_ptr());
     print_ln_in(st);
@@ -3143,58 +3202,7 @@ pub(crate) fn show_activities_in(st: &mut EngineState) {
             print_cstr_in(st, c" (\\output routine)".as_ptr());
         }
         if p == 0 {
-            if st.shipout.page_tail.0 != PAGE_HEAD {
-                print_nl_cstr_in(st, c"### current page:".as_ptr());
-                if st.shipout.output_active {
-                    print_cstr_in(st, c" (held over for next output)".as_ptr());
-                }
-                show_box_in(st, st.mem.b32s1(PAGE_HEAD));
-                if st.shipout.page_contents > EMPTY {
-                    print_nl_cstr_in(st, c"total height ".as_ptr());
-                    print_totals_in(st);
-                    print_nl_cstr_in(st, c" goal height ".as_ptr());
-                    print_scaled_in(st, st.shipout.page_so_far[0]);
-                    let mut r = st.mem.b32s1(PAGE_INS_HEAD);
-                    while r != PAGE_INS_HEAD {
-                        print_ln_in(st);
-                        esc(st, c"insert");
-                        let box_num = st.mem.b16s0(r);
-                        print_int_in(st, box_num as i32);
-                        print_cstr_in(st, c" adds ".as_ptr());
-                        let count = st.eqtb.b32s1(COUNT_BASE + box_num as i32);
-                        let height = st.mem.b32s1(r + 3);
-                        let adds = if count == 1000 {
-                            height
-                        } else {
-                            crate::scaled_math::x_over_n_in(&mut st.errors, height, 1000) * count
-                        };
-                        print_scaled_in(st, adds);
-                        if st.mem.b16s1(r) == SPLIT_UP {
-                            let broken_ins = st.mem.b32s0(r + 1);
-                            let mut q = PAGE_HEAD;
-                            let mut t = 0;
-                            loop {
-                                q = st.mem.b32s1(q);
-                                if let Ok(AnyNode::Ins(ins)) = st.mem.classify(MemIdx::new(q)) {
-                                    if ins.subtype(&st.mem) == box_num {
-                                        t += 1;
-                                    }
-                                }
-                                if q == broken_ins {
-                                    break;
-                                }
-                            }
-                            print_cstr_in(st, c", #".as_ptr());
-                            print_int_in(st, t);
-                            print_cstr_in(st, c" might split".as_ptr());
-                        }
-                        r = st.mem.b32s1(r);
-                    }
-                }
-            }
-            if st.mem.b32s1(CONTRIB_HEAD) != TEX_NULL {
-                print_nl_cstr_in(st, c"### recent contributions:".as_ptr());
-            }
+            show_page_so_far_in(st);
         }
         show_box_in(st, st.mem.b32s1(nest.head));
         let (aux_s0, aux_s1) = (nest.aux_s0(), nest.aux_s1());
