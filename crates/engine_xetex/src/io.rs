@@ -1297,8 +1297,7 @@ pub(crate) unsafe fn close_files_and_terminate_in(
     st.eqtb.set_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR_CFT, -1);
 
     crate::shipout::finalize_dvi_file_in(st).map_err(|e| e.into_engine_abort())?;
-    let log_was_opened = st.errors.log_opened;
-    crate::synctex::synctex_terminate(st, log_was_opened);
+    crate::synctex::synctex_terminate(st);
 
     if st.errors.log_opened {
         let log_file = st.shipout.log_file;
