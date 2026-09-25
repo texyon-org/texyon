@@ -328,18 +328,15 @@ fn ignorable_protrusion_node(mem: &MemState, p: MemPtr) -> bool {
     if is_char_node(mem, p) {
         return false;
     }
-    match mem
-        .classify(MemIdx::new(p))
-        .expect("non-char node has a valid type")
-    {
-        AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
-        AnyNode::Disc(d) => {
+    match mem.classify(MemIdx::new(p)) {
+        Ok(AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_)) => true,
+        Ok(AnyNode::Disc(d)) => {
             d.pre_break(mem).is_null() && d.post_break(mem).is_null() && d.subtype(mem) == 0
         }
-        AnyNode::Math(m) => m.width(mem).0 == 0,
-        AnyNode::Kern(k) => k.width(mem).0 == 0 || k.subtype(mem) == NORMAL,
-        AnyNode::Glue(g) => g.glue_ptr(mem) == ZERO_GLUE,
-        AnyNode::HList(h) => is_empty_hlist(mem, h),
+        Ok(AnyNode::Math(m)) => m.width(mem).0 == 0,
+        Ok(AnyNode::Kern(k)) => k.width(mem).0 == 0 || k.subtype(mem) == NORMAL,
+        Ok(AnyNode::Glue(g)) => g.glue_ptr(mem) == ZERO_GLUE,
+        Ok(AnyNode::HList(h)) => is_empty_hlist(mem, h),
         _ => false,
     }
 }
@@ -636,7 +633,7 @@ pub(crate) fn finite_shrink(
 /// A lig item on `mainloop.lig_stack`, which `reconstitute` fills only with lig items.
 #[inline]
 fn lig_item(p: MemPtr) -> NodePtr<LigItem> {
-    // SAFETY: context boundary, see above. Lig items carry no NODE_type.
+    // SAFETY: `reconstitute` pushes only lig items, which carry no NODE_type.
     unsafe { NodePtr::<LigItem>::from_idx_unchecked(MemIdx::new(p)) }
 }
 

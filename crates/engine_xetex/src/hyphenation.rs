@@ -63,19 +63,17 @@ pub(crate) fn hyph_code(hyph: &HyphState, eqtb: &EqtbState, c: i32) -> i32 {
 }
 
 pub(crate) enum TrieAbort {
-    PatternMemoryOverflow(i32),
-    PatternMemoryOpsOverflow(i32),
-    PatternMemoryOpsPerLanguageOverflow(i32),
+    Patterns(i32),
+    Ops(i32),
+    OpsPerLanguage(i32),
 }
 
 impl TrieAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         let (what, n) = match self {
-            TrieAbort::PatternMemoryOverflow(n) => (c"pattern memory", n),
-            TrieAbort::PatternMemoryOpsOverflow(n) => (c"pattern memory ops", n),
-            TrieAbort::PatternMemoryOpsPerLanguageOverflow(n) => {
-                (c"pattern memory ops per language", n)
-            }
+            TrieAbort::Patterns(n) => (c"pattern memory", n),
+            TrieAbort::Ops(n) => (c"pattern memory ops", n),
+            TrieAbort::OpsPerLanguage(n) => (c"pattern memory ops per language", n),
         };
         crate::errors::EngineAbort::Overflow {
             what: what.as_ptr(),
@@ -99,15 +97,13 @@ fn new_trie_op_in(
         let l = trie_op_hash_in(hyph, h);
         if l == 0 {
             if hyph.trie_op_ptr == TRIE_OP_SIZE {
-                return Err(TrieAbort::PatternMemoryOpsOverflow(TRIE_OP_SIZE));
+                return Err(TrieAbort::Ops(TRIE_OP_SIZE));
             }
 
             let lang = cur_lang as usize;
             let mut u = hyph.trie_used[lang];
             if u == MAX_TRIE_OP {
-                return Err(TrieAbort::PatternMemoryOpsPerLanguageOverflow(
-                    MAX_TRIE_OP as i32 - MIN_TRIE_OP,
-                ));
+                return Err(TrieAbort::OpsPerLanguage(MAX_TRIE_OP as i32 - MIN_TRIE_OP));
             }
 
             hyph.trie_op_ptr += 1;
@@ -194,7 +190,7 @@ fn first_fit(hyph: &mut HyphState, p: i32) -> Result<(), TrieAbort> {
         h = z - c;
         if hyph.trie_max < h + hyph.max_hyph_char {
             if hyph.trie_size <= h + hyph.max_hyph_char {
-                return Err(TrieAbort::PatternMemoryOverflow(hyph.trie_size));
+                return Err(TrieAbort::Patterns(hyph.trie_size));
             }
 
             loop {
@@ -393,7 +389,7 @@ fn trie_insert_node_in(
     first_child: bool,
 ) -> Result<(), TrieAbort> {
     if hyph.trie_ptr == hyph.trie_size {
-        return Err(TrieAbort::PatternMemoryOverflow(hyph.trie_size));
+        return Err(TrieAbort::Patterns(hyph.trie_size));
     }
 
     hyph.trie_ptr += 1;
