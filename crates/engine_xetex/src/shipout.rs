@@ -692,11 +692,7 @@ fn merge_justifiable_native_words(
             loop {
                 q = skip_ignorable_interword_nodes(mem, q);
                 match classify_non_char(mem, q) {
-                    Some(AnyNode::Glue(glue))
-                        if glue
-                            .glue_spec(mem)
-                            .is_some_and(|g| g.shrink_order(mem) == NORMAL) =>
-                    {
+                    Some(AnyNode::Glue(glue)) if glue.subtype(mem) == NORMAL => {
                         if glue.glue_ptr(mem).0 == fonts.font_glue(font.0) {
                             q = skip_ignorable_interword_nodes(mem, glue.link(mem));
                             if let Some(w) = same_font_word(mem, q) {
