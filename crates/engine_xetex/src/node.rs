@@ -1809,6 +1809,15 @@ impl NodeKind for MarkNode {}
 impl HasNodeHeader for MarkNode {}
 
 impl NodePtr<MarkNode> {
+    /// Allocate a mark node (`SMALL_NODE_SIZE` words) stamped `MARK_NODE`.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MarkNode>> {
+        let p = get_node(mem, SMALL_NODE_SIZE)?;
+        mem.set_b16s1(p, NodeType::Mark.as_raw());
+        // SAFETY: `p` is a fresh node just stamped MARK_NODE.
+        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
     /// Mark token list = `mem[(p) + 1].b32.s1` (`MARK_NODE_ptr`).
     #[inline]
     pub fn mark_ptr(self, mem: &MemState) -> MemPtr {
@@ -1840,6 +1849,15 @@ impl NodeKind for AdjustNode {}
 impl HasNodeHeader for AdjustNode {}
 
 impl NodePtr<AdjustNode> {
+    /// Allocate an adjust node (`SMALL_NODE_SIZE` words) stamped `ADJUST_NODE`.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<AdjustNode>> {
+        let p = get_node(mem, SMALL_NODE_SIZE)?;
+        mem.set_b16s1(p, NodeType::Adjust.as_raw());
+        // SAFETY: `p` is a fresh node just stamped ADJUST_NODE.
+        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
     /// Adjustment list = `mem[(p) + 1].b32.s1` (`ADJUST_NODE_ptr`).
     #[inline]
     pub fn adjust_ptr(self, mem: &MemState) -> MemPtr {
@@ -1862,6 +1880,15 @@ impl NodeKind for InsNode {}
 impl HasNodeHeader for InsNode {}
 
 impl NodePtr<InsNode> {
+    /// Allocate an insertion node (5 words) stamped `INS_NODE`.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<InsNode>> {
+        let p = get_node(mem, 5)?;
+        mem.set_b16s1(p, NodeType::Ins.as_raw());
+        // SAFETY: `p` is a fresh node just stamped INS_NODE.
+        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
     /// Vlist to be inserted = `mem[(p) + 4].b32.s0` (`INSERTION_NODE_ins_ptr`).
     #[inline]
     pub fn ins_ptr(self, mem: &MemState) -> MemPtr {
@@ -2121,6 +2148,18 @@ impl NodePtr<WhatsitNode> {
     #[inline]
     pub fn what_rhm(self, mem: &MemState) -> u16 {
         mem.b16s0(self.idx.offset(1).0)
+    }
+    #[inline]
+    pub fn set_what_lang(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(1).0, v);
+    }
+    #[inline]
+    pub fn set_what_lhm(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.offset(1).0, v);
+    }
+    #[inline]
+    pub fn set_what_rhm(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.offset(1).0, v);
     }
 
     /// Native-node total size in words = `mem[(p) + 4].b16.s3`

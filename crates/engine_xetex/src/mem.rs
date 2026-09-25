@@ -751,11 +751,12 @@ pub fn new_whatsit(
     mem: &mut MemState,
     s: i16,
     w: i16,
-) -> Option<MemPtr> {
+) -> Option<NodePtr<crate::node::WhatsitNode>> {
     let p = get_node(mem, w as i32)?;
-    mem.set_b16s1(p, 8); // NODE_type(p) = WHATSIT_NODE (xetex_format.h:388)
+    mem.set_b16s1(p, crate::units::NodeType::Whatsit.as_raw());
     mem.set_b16s0(p, s as u16);
     cl.tail.set_link(mem, p);
     cl.tail = p;
-    Some(p)
+    // SAFETY: `p` is a fresh node just stamped WHATSIT_NODE.
+    Some(unsafe { NodePtr::from_idx_unchecked(crate::units::MemIdx::new(p)) })
 }
