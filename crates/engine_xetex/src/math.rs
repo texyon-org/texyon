@@ -51,7 +51,6 @@ const LIMITS: u16 = 1;
 const LIST_TAG: u16 = 2;
 const EXT_TAG: u16 = 3;
 const DIMEN_PAR_NULL_DELIMITER_SPACE: i32 = 11;
-const WHATSIT_NODE: u16 = 8;
 const GLYPH_NODE_SIZE: i32 = 5;
 const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const MATH_TEXT_CHAR: i32 = 4;
@@ -121,7 +120,6 @@ const GLUE_PAR_THICK_MU_SKIP: i32 = 18;
 const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
 const AFTER: i16 = 1;
-const VLIST_NODE: u16 = 1;
 const COND_MATH_GLUE: u16 = 98;
 const SS_GLUE: i32 = 12;
 
@@ -151,6 +149,24 @@ fn font_uses_opentype(fonts: &FontState, f: i32) -> bool {
 fn font_is_ot_math(fonts: &FontState, f: i32) -> bool {
     fonts.font_area_entry(f) == OTGR_FONT_FLAG
         && unsafe { isOpenTypeMathFont(fonts.font_layout_engine_ptr(f)) }
+}
+
+type CharInfo = crate::mem_types::B16x4;
+
+fn char_width(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
+    fonts.font_info_b32s1(fonts.width_base_entry(f) + i.s3 as i32)
+}
+
+fn char_italic(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
+    fonts.font_info_b32s1(fonts.italic_base_entry(f) + i.s1 as i32 / 4)
+}
+
+fn char_height(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
+    fonts.font_info_b32s1(fonts.height_base_entry(f) + i.s2 as i32 / 16)
+}
+
+fn char_depth(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
+    fonts.font_info_b32s1(fonts.depth_base_entry(f) + i.s2 as i32 % 16)
 }
 
 #[inline]
@@ -678,8 +694,8 @@ fn alloc_null_box(mem: &mut MemState) -> Result<NodePtr<HListNode>, NodeRecycleA
 
 fn alloc_null_vbox(mem: &mut MemState) -> Result<NodePtr<VListNode>, NodeRecycleAbort> {
     let b = crate::mem::alloc_null_box(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    mem.set_b16s1(b.ptr().0, VLIST_NODE);
-    // SAFETY: `b` was just stamped `VLIST_NODE`.
+    mem.set_b16s1(b.ptr().0, NodeType::VList.as_raw());
+    // SAFETY: `b` was just stamped VLIST_NODE.
     Ok(unsafe { NodePtr::<VListNode>::from_idx_unchecked(b.idx()) })
 }
 
@@ -849,9 +865,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
                     q.set_nucleus_char(&mut st.mem, c);
                 }
             }
-            delta = st
-                .fonts
-                .font_info_b32s1(st.fonts.italic_base_entry(f) + st.scanner.cur_i.s1 as i32 / 4);
+            delta = char_italic(&st.fonts, f, st.scanner.cur_i);
         }
 
         let x = clean_box_in(st, q.nucleus_addr(), st.scanner.cur_style)?;
@@ -1011,7 +1025,7 @@ fn lig_kern_start(fonts: &FontState, scanner: &mut ScannerState) -> i32 {
 }
 
 /// The kern amount of kern instruction `i` in font `f`.
-fn lig_kern_kern(fonts: &FontState, f: i32, i: crate::mem_types::B16x4) -> i32 {
+fn lig_kern_kern(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
     fonts.font_info_b32s1(fonts.kern_base_entry(f) + 256 * i.s1 as i32 + i.s0 as i32)
 }
 
@@ -1194,12 +1208,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         while acc_i.s1 % 4 == LIST_TAG {
             let larger = acc_i.s0 as i32;
             acc_i = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + larger);
-            if acc_i.s3 == 0
-                || st
-                    .fonts
-                    .font_info_b32s1(st.fonts.width_base_entry(f) + acc_i.s3 as i32)
-                    > w
-            {
+            if acc_i.s3 == 0 || char_width(&st.fonts, f, acc_i) > w {
                 break;
             }
             c = larger;
@@ -1979,9 +1988,7 @@ fn mlist_nucleus_in(
                 }
                 glyph.ptr()
             } else if st.scanner.cur_i.s3 > 0 {
-                delta = st.fonts.font_info_b32s1(
-                    st.fonts.italic_base_entry(cur_f) + st.scanner.cur_i.s1 as i32 / 4,
-                );
+                delta = char_italic(&st.fonts, cur_f, st.scanner.cur_i);
                 let cc = st.scanner.cur_c as u16;
                 let p = crate::main_control::new_character_in(st, cur_f, cc)?;
                 if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR
@@ -2459,10 +2466,9 @@ fn char_box_tfm(
 ) -> Result<AnyBox, NodeRecycleAbort> {
     let c_eff = crate::fonts::effective_char(fonts, true, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c_eff);
-    let width = fonts.font_info_b32s1(fonts.width_base_entry(f) + q.s3 as i32)
-        + fonts.font_info_b32s1(fonts.italic_base_entry(f) + q.s1 as i32 / 4);
-    let height = fonts.font_info_b32s1(fonts.height_base_entry(f) + q.s2 as i32 / 16);
-    let depth = fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16);
+    let width = char_width(fonts, f, q) + char_italic(fonts, f, q);
+    let height = char_height(fonts, f, q);
+    let depth = char_depth(fonts, f, q);
 
     let b = alloc_null_box(mem)?;
     b.set_width(mem, Scaled(width));
@@ -2486,14 +2492,14 @@ fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
 fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
     let c = crate::fonts::effective_char(fonts, true, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c);
-    fonts.font_info_b32s1(fonts.height_base_entry(f) + q.s2 as i32 / 16)
-        + fonts.font_info_b32s1(fonts.depth_base_entry(f) + q.s2 as i32 % 16)
+    char_height(fonts, f, q) + char_depth(fonts, f, q)
 }
 
 fn alloc_glyph_whatsit(mem: &mut MemState) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
     let p = get_node(mem, GLYPH_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
-    mem.set_b16s1(p, WHATSIT_NODE);
+    mem.set_b16s1(p, NodeType::Whatsit.as_raw());
     mem.set_b16s0(p, WhatsitSubtype::Glyph as u16);
+    // SAFETY: `p` was just stamped as a glyph whatsit.
     Ok(unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(p)) })
 }
 
@@ -3791,9 +3797,10 @@ pub(crate) fn init_math_in(
                         let f = st.mem.b16s1(p) as i32;
                         let c =
                             crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
-                        let d = st.fonts.font_info_b32s1(
-                            st.fonts.width_base_entry(f)
-                                + st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c).s3 as i32,
+                        let d = char_width(
+                            &st.fonts,
+                            f,
+                            st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c),
                         );
                         break (d, true);
                     }
@@ -3987,9 +3994,7 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
         let f = st.mem.b16s1(p) as i32;
         let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
         let q = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
-        let v = st
-            .fonts
-            .font_info_b32s1(st.fonts.width_base_entry(f) + q.s3 as i32);
+        let v = char_width(&st.fonts, f, q);
         let bw = b.width(&st.mem).0;
         if v != bw {
             let k = alloc_kern(&mut st.mem, bw - v).ok_or(NodeRecycleAbort::Overflow)?;
@@ -4096,7 +4101,7 @@ fn build_ext_delimiter_box(
     mem: &mut MemState,
     fonts: &mut FontState,
     f: i32,
-    q: crate::mem_types::B16x4,
+    q: CharInfo,
     v: i32,
 ) -> Result<AnyBox, NodeRecycleAbort> {
     let vb = AnyBox::VList(alloc_null_vbox(mem)?);
@@ -4104,8 +4109,7 @@ fn build_ext_delimiter_box(
     let u = height_plus_depth(fonts, f, r.s0);
     let effective_c = crate::fonts::effective_char(fonts, true, f, r.s0);
     let qq = fonts.font_info_b16(fonts.char_base_entry(f) + effective_c);
-    let box_width = fonts.font_info_b32s1(fonts.width_base_entry(f) + qq.s3 as i32)
-        + fonts.font_info_b32s1(fonts.italic_base_entry(f) + qq.s1 as i32 / 4);
+    let box_width = char_width(fonts, f, qq) + char_italic(fonts, f, qq);
     vb.set_width(mem, Scaled(box_width));
     let mut w = 0;
     if r.s1 != 0 {
@@ -4163,7 +4167,7 @@ fn var_delimiter_in(
     let mut ot_assembly: Option<GlyphAssembly> = None;
     let mut c: u16 = 0;
     let mut w: i32 = 0;
-    let mut q = crate::mem_types::B16x4 {
+    let mut q = CharInfo {
         s3: 0,
         s2: 0,
         s1: 0,
@@ -4224,11 +4228,7 @@ fn var_delimiter_in(
                                         c = y;
                                         break 'found;
                                     }
-                                    let u = fonts.font_info_b32s1(
-                                        fonts.height_base_entry(g) + q.s2 as i32 / 16,
-                                    ) + fonts.font_info_b32s1(
-                                        fonts.depth_base_entry(g) + q.s2 as i32 % 16,
-                                    );
+                                    let u = char_height(fonts, g, q) + char_depth(fonts, g, q);
                                     if u > w {
                                         f = g;
                                         c = y;
