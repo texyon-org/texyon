@@ -2,12 +2,11 @@
 use crate::consts::{
     ACCENT_NOAD_SIZE, ADJUST_HEAD, A_LEADERS, BEFORE, BIGGEST_LANG, BOX_NODE_SIZE, CUR_FONT_LOC,
     DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, EXPLICIT, FONT_BASE,
-    FRACTION_NOAD_SIZE, GLUE_BASE, HLIST_NODE, HMODE, INT_BASE, INT_PAR_HANG_AFTER,
-    INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET,
-    LEFT_TO_RIGHT, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_FONT_BASE, MAX_HALFWORD,
-    MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NUMBER_MATH_FAMILIES, OTHER_CHAR,
-    RADICAL_NOAD_SIZE, RELAX, RIGHT_TO_LEFT, SCRIPT_SIZE, SPACER, SPACE_CODE, STYLE_NODE_SIZE,
-    SUB_BOX, TEXT_SIZE,
+    FRACTION_NOAD_SIZE, GLUE_BASE, HMODE, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
+    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, LEFT_TO_RIGHT, LIG_TAG,
+    LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_FONT_BASE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE,
+    NOAD_SIZE, NUMBER_MATH_FAMILIES, OTHER_CHAR, RADICAL_NOAD_SIZE, RELAX, RIGHT_TO_LEFT,
+    SCRIPT_SIZE, SPACER, SPACE_CODE, STYLE_NODE_SIZE, SUB_BOX, TEXT_SIZE,
 };
 use crate::ext::real_get_native_glyph;
 use crate::mem::{
@@ -124,6 +123,7 @@ const EXACTLY: i16 = 0;
 const AFTER: i16 = 1;
 const VLIST_NODE: u16 = 1;
 const COND_MATH_GLUE: u16 = 98;
+const SS_GLUE: i32 = 12;
 
 use crate::ot_math::{
     get_native_mathex_param, get_native_mathsy_param, get_ot_assembly, get_ot_math_accent_pos,
@@ -139,6 +139,12 @@ extern "C" {
 #[inline]
 fn math_font(eqtb: &EqtbState, n: i32) -> i32 {
     eqtb.b32s1(MATH_FONT_BASE + n)
+}
+
+#[inline]
+fn font_uses_opentype(fonts: &FontState, f: i32) -> bool {
+    fonts.font_area_entry(f) == OTGR_FONT_FLAG
+        && unsafe { usingOpenType(fonts.font_layout_engine_ptr(f)) }
 }
 
 #[inline]
@@ -345,7 +351,7 @@ pub fn flush_math(
     Ok(())
 }
 
-unsafe fn clean_box_in(
+fn clean_box_in(
     st: &mut EngineState,
     p: impl crate::units::MemAddr,
     s: i16,
@@ -400,11 +406,7 @@ unsafe fn clean_box_in(
 
 /// Runs `mlist_to_hlist` on `mlist` at style `s` without penalties and returns
 /// the resulting list, restoring the current style.
-unsafe fn sublist_to_hlist_in(
-    st: &mut EngineState,
-    mlist: MemPtr,
-    s: i16,
-) -> Result<i32, MathBuildAbort> {
+fn sublist_to_hlist_in(st: &mut EngineState, mlist: MemPtr, s: i16) -> Result<i32, MathBuildAbort> {
     st.scanner.cur_mlist = mlist;
     let save_style = st.scanner.cur_style;
     st.scanner.cur_style = s;
@@ -510,7 +512,7 @@ fn set_nucleus_box(mem: &mut MemState, q: NodePtr<Noad>, b: AnyBox) {
     q.set_nucleus_type(mem, SUB_BOX);
 }
 
-unsafe fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let x = clean_box_in(st, q.nucleus_addr(), 2 * (st.scanner.cur_style / 2) + 1)?;
     let rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
     let p = overbar(&mut st.mem, x, 3 * rule_thickness, rule_thickness)?;
@@ -519,7 +521,7 @@ unsafe fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     Ok(())
 }
 
-unsafe fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let x = clean_box_in(st, q.nucleus_addr(), st.scanner.cur_style)?;
     let rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
     let kern = alloc_kern_node(&mut st.mem, 3 * rule_thickness)?;
@@ -548,7 +550,7 @@ fn make_vcenter_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
     Ok(())
 }
 
-unsafe fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let f = math_font(
         &st.eqtb,
         (st.mem.b16s3(q.delimiter_addr()) as i32 % 256) + st.scanner.cur_size,
@@ -681,7 +683,7 @@ fn alloc_null_vbox(mem: &mut MemState) -> Result<NodePtr<VListNode>, NodeRecycle
     Ok(unsafe { NodePtr::<VListNode>::from_idx_unchecked(b.idx()) })
 }
 
-unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     if q.thickness(&st.mem) == DEFAULT_CODE {
         let drt = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
         q.set_thickness(&mut st.mem, drt);
@@ -820,7 +822,7 @@ unsafe fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(),
 }
 
 /// Returns the italic correction `delta`.
-unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAbort> {
+fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAbort> {
     use crate::errors::ErrorOutcome;
     let mut delta: i32 = 0;
 
@@ -835,9 +837,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
         }
 
         let f = st.scanner.cur_f;
-        let is_ot = st.fonts.font_area_entry(f) == OTGR_FONT_FLAG
-            && usingOpenType(st.fonts.font_layout_engine_ptr(f));
-        if !is_ot {
+        if !font_uses_opentype(&st.fonts, f) {
             if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.s1 % 4 == LIST_TAG {
                 let c = st.scanner.cur_i.s0;
                 let i_info = st
@@ -876,12 +876,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                                 get_ot_math_variant(&st.fonts, cur_f, c_glyph, n, &mut h2, false);
                             if h2 > 0 {
                                 glyph.set_native_glyph(&mut st.mem, g as u16);
-                                crate::ext::measure_native_glyph(
-                                    &st.fonts,
-                                    &mut st.mem,
-                                    glyph.idx().0,
-                                    1,
-                                )?;
+                                measure_glyph(&st.fonts, &mut st.mem, glyph)?;
                             }
                             n += 1;
                             if h2 < 0 || h2 >= h1 {
@@ -904,12 +899,7 @@ unsafe fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Math
                                 );
                             }
                         } else {
-                            crate::ext::measure_native_glyph(
-                                &st.fonts,
-                                &mut st.mem,
-                                glyph.idx().0,
-                                1,
-                            )?;
+                            measure_glyph(&st.fonts, &mut st.mem, glyph)?;
                         }
                     }
                     delta =
@@ -1153,10 +1143,7 @@ fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbor
     }
 }
 
-unsafe fn make_math_accent_in(
-    st: &mut EngineState,
-    q: NodePtr<Noad>,
-) -> Result<(), MathBuildAbort> {
+fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     use crate::errors::ErrorOutcome;
     match fetch_in(st, q.accent_char_addr()) {
         ErrorOutcome::Continue => {}
@@ -1223,8 +1210,7 @@ unsafe fn make_math_accent_in(
     let w = x.width(&st.mem).0;
     let mut h = x.height(&st.mem).0;
 
-    let is_ot_math =
-        area == OTGR_FONT_FLAG && isOpenTypeMathFont(st.fonts.font_layout_engine_ptr(f));
+    let is_ot_math = font_is_ot_math(&st.fonts, f);
     let mut delta = if is_ot_math {
         if bottom_accent {
             0
@@ -1268,13 +1254,13 @@ unsafe fn make_math_accent_in(
         glyph.set_native_font(&mut st.mem, f as u16);
         let glyph_id = real_get_native_glyph(&st.mem, old.idx().0, 0);
         glyph.set_native_glyph(&mut st.mem, glyph_id);
-        crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, glyph.idx().0, 1)?;
+        measure_glyph(&st.fonts, &mut st.mem, glyph)?;
         free_native_node(&mut st.mem, old);
         y.set_list_ptr(&mut st.mem, glyph.ptr());
 
         let mut assembly_box = None;
         if !kind.is_multiple_of(2) {
-            crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, glyph.idx().0, 1)?;
+            measure_glyph(&st.fonts, &mut st.mem, glyph)?;
         } else {
             let c_glyph = glyph.native_glyph(&st.mem) as i32;
             let mut n: i32 = 0;
@@ -1283,7 +1269,7 @@ unsafe fn make_math_accent_in(
                 let g = get_ot_math_variant(&st.fonts, f, c_glyph, n, &mut w2, true);
                 if w2 > 0 && w2 <= w {
                     glyph.set_native_glyph(&mut st.mem, g as u16);
-                    crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, glyph.idx().0, 1)?;
+                    measure_glyph(&st.fonts, &mut st.mem, glyph)?;
                     n += 1;
                 }
                 if w2 < 0 || w2 >= w {
@@ -1298,7 +1284,7 @@ unsafe fn make_math_accent_in(
                     assembly_box = Some(b);
                 }
             } else {
-                crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, glyph.idx().0, 1)?;
+                measure_glyph(&st.fonts, &mut st.mem, glyph)?;
             }
         }
 
@@ -1383,7 +1369,7 @@ struct ScriptKernAttachment {
     is_ot_math: bool,
 }
 
-unsafe fn maybe_attach_script_kern_in(
+fn maybe_attach_script_kern_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     p: i32,
@@ -1446,7 +1432,7 @@ struct ScriptBoxPrep {
     shift: i32,
 }
 
-unsafe fn clean_script_box_in(
+fn clean_script_box_in(
     st: &mut EngineState,
     script_field: i32,
     clean_style: i16,
@@ -1481,10 +1467,7 @@ struct ScriptShifts {
     down: i32,
 }
 
-unsafe fn initial_script_shifts_in(
-    st: &mut EngineState,
-    p: i32,
-) -> Result<ScriptShifts, MathBuildAbort> {
+fn initial_script_shifts_in(st: &mut EngineState, p: i32) -> Result<ScriptShifts, MathBuildAbort> {
     if crate::mem::is_char_node(&st.mem, p) || glyph_whatsit(&st.mem, MemPtr::from_raw(p)).is_some()
     {
         Ok(ScriptShifts { up: 0, down: 0 })
@@ -1518,7 +1501,7 @@ struct SubSupStackInput {
     delta: i32,
 }
 
-unsafe fn finish_subsup_stack_in(
+fn finish_subsup_stack_in(
     st: &mut EngineState,
     input: SubSupStackInput,
 ) -> Result<(), MathBuildAbort> {
@@ -1580,7 +1563,7 @@ struct PreparedScript {
     shift: i32,
 }
 
-unsafe fn prepare_subscript_in(
+fn prepare_subscript_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     adjustment: ScriptBoxAdjustment,
@@ -1599,7 +1582,7 @@ unsafe fn prepare_subscript_in(
     })
 }
 
-unsafe fn finish_subscript_only_in(
+fn finish_subscript_only_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     p: i32,
@@ -1629,7 +1612,7 @@ unsafe fn finish_subscript_only_in(
     Ok(())
 }
 
-unsafe fn prepare_superscript_in(
+fn prepare_superscript_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     mut shift_up: i32,
@@ -1663,7 +1646,7 @@ unsafe fn prepare_superscript_in(
     })
 }
 
-unsafe fn finish_superscript_branch_in(
+fn finish_superscript_branch_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     p: i32,
@@ -1783,7 +1766,7 @@ fn first_script_glyph_step(
     (script_head, style)
 }
 
-unsafe fn first_script_glyph_in(
+fn first_script_glyph_in(
     st: &mut EngineState,
     script_head: i32,
 ) -> Result<(u16, i32), MathBuildAbort> {
@@ -1827,7 +1810,7 @@ unsafe fn first_script_glyph_in(
     Ok((script_g, script_f))
 }
 
-unsafe fn make_scripts_in(
+fn make_scripts_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     delta: i32,
@@ -1844,7 +1827,7 @@ unsafe fn make_scripts_in(
     Ok(())
 }
 
-unsafe fn make_left_right_in(
+fn make_left_right_in(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     style: i16,
@@ -1967,7 +1950,7 @@ fn mlist_advance_in(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16
 }
 
 /// Translates the nucleus of `qn` into its `new_hlist` and attaches its scripts.
-unsafe fn mlist_nucleus_in(
+fn mlist_nucleus_in(
     st: &mut EngineState,
     qn: NodePtr<Noad>,
     mut delta: i32,
@@ -1987,7 +1970,7 @@ unsafe fn mlist_nucleus_in(
                 glyph.set_native_font(&mut st.mem, cur_f as u16);
                 let z_glyph = real_get_native_glyph(&st.mem, z.idx().0, 0);
                 glyph.set_native_glyph(&mut st.mem, z_glyph);
-                crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, glyph.idx().0, 1)?;
+                measure_glyph(&st.fonts, &mut st.mem, glyph)?;
                 free_native_node(&mut st.mem, z);
                 delta = get_ot_math_ital_corr(&st.fonts, cur_f, glyph.native_glyph(&st.mem) as i32);
                 if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR && !font_is_ot_math(&st.fonts, cur_f)
@@ -2053,7 +2036,7 @@ const MATH_SPACING: [&[u8; 8]; 8] = [
     b"12341011",
 ];
 
-unsafe fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
+fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
     let mlist = st.scanner.cur_mlist.0;
     let penalties = st.scanner.mlist_penalties;
     let style = st.scanner.cur_style;
@@ -2373,6 +2356,15 @@ fn new_native_char_node(
     Ok(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
 }
 
+fn measure_glyph(
+    fonts: &FontState,
+    mem: &mut MemState,
+    p: NodePtr<WhatsitNode>,
+) -> Result<(), crate::ext::NativeFontAbort> {
+    // SAFETY: `p` is a glyph whatsit and the measurer only reads font tables over FFI.
+    unsafe { crate::ext::measure_native_glyph(fonts, mem, p.idx().0, 1) }
+}
+
 fn free_native_node(mem: &mut MemState, p: NodePtr<WhatsitNode>) {
     let handle = p.native_glyph_info_handle(mem);
     if handle != 0 {
@@ -2514,7 +2506,7 @@ fn new_measured_glyph(
     let p = alloc_glyph_whatsit(&mut st.mem)?;
     p.set_native_font(&mut st.mem, f as u16);
     p.set_native_glyph(&mut st.mem, g as u16);
-    unsafe { crate::ext::measure_native_glyph(&st.fonts, &mut st.mem, p.idx().0, 1) }?;
+    measure_glyph(&st.fonts, &mut st.mem, p)?;
     Ok(p)
 }
 
@@ -2595,7 +2587,7 @@ fn stack_glue_into_box(
     Ok(())
 }
 
-unsafe fn compute_ot_math_accent_pos_in(
+fn compute_ot_math_accent_pos_in(
     st: &mut EngineState,
     mut p: NodePtr<Noad>,
 ) -> Result<i32, MathBuildAbort> {
@@ -3491,7 +3483,7 @@ pub(crate) fn after_math_in(
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
-        unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
+        mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
         let eqno = crate::packaging::hpack_emit_in(st, st.mem.link_ptr(TEMP_HEAD), 0, ADDITIONAL)?;
         eqno.set_subtype(&mut st.mem, DLIST);
         a = eqno.idx().0;
@@ -3517,7 +3509,7 @@ pub(crate) fn after_math_in(
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
-        unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
+        mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
         let hlist = st.mem.link_ptr(TEMP_HEAD);
         let cl = &mut st.input.cur_list;
         cl.tail.set_link(&mut st.mem, hlist);
@@ -3543,7 +3535,7 @@ pub(crate) fn after_math_in(
     st.scanner.cur_mlist.0 = p;
     st.scanner.cur_style = DISPLAY_STYLE;
     st.scanner.mlist_penalties = false;
-    unsafe { mlist_to_hlist_in(st) }.map_err(math_build_abort_main)?;
+    mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
     let mut p = st.mem.link_ptr(TEMP_HEAD);
     st.scanner.adjust_tail.0 = ADJUST_HEAD;
     st.scanner.pre_adjust_tail.0 = PRE_ADJUST_HEAD;
@@ -3980,114 +3972,66 @@ pub(crate) fn init_math_in(
     Ok(())
 }
 
-enum ReboxResult {
-    Done(AnyBox),
-    Hpack(MemPtr),
-}
-
-fn rebox(
-    mem: &mut MemState,
-    bb: AnyBox,
-    w: i32,
-    char_kern_width: Option<i32>,
-) -> Result<ReboxResult, NodeRecycleAbort> {
-    if bb.width(mem).0 != w && !bb.list_ptr(mem).is_null() {
-        let mut p = bb.list_ptr(mem);
-        if let Some(v) = char_kern_width {
-            if v != bb.width(mem).0 {
-                let k = alloc_kern(mem, bb.width(mem).0 - v).ok_or(NodeRecycleAbort::Overflow)?;
-                mem.set_b32s1(p, k.ptr().0);
-            }
-        }
-        free_node(mem, bb.ptr(), BOX_NODE_SIZE);
-        let g = alloc_glue(mem, 12).ok_or(NodeRecycleAbort::Overflow)?;
-        g.set_link(mem, p);
-        while !p.link(mem).is_null() {
-            p = p.link(mem);
-        }
-        let tail_glue = alloc_glue(mem, 12).ok_or(NodeRecycleAbort::Overflow)?;
-        mem.set_b32s1(p, tail_glue.ptr().0);
-        Ok(ReboxResult::Hpack(g.ptr()))
-    } else {
-        bb.set_width(mem, Scaled(w));
-        Ok(ReboxResult::Done(bb))
-    }
-}
-
 fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecycleAbort> {
-    let mut bb = b;
-    if bb.width(&st.mem).0 != w && !bb.list_ptr(&st.mem).is_null() && matches!(bb, AnyBox::VList(_))
-    {
-        bb = crate::packaging::hpack_emit_in(st, bb.ptr(), 0, ADDITIONAL)?;
+    let mut b = b;
+    if b.width(&st.mem).0 != w && !b.list_ptr(&st.mem).is_null() && matches!(b, AnyBox::VList(_)) {
+        b = crate::packaging::hpack_emit_in(st, b.ptr(), 0, ADDITIONAL)?;
+    }
+    if b.width(&st.mem).0 == w || b.list_ptr(&st.mem).is_null() {
+        b.set_width(&mut st.mem, Scaled(w));
+        return Ok(b);
     }
 
-    let char_kern_width = if bb.width(&st.mem).0 != w && !bb.list_ptr(&st.mem).is_null() {
-        let p = bb.list_ptr(&st.mem).0;
-        if crate::mem::is_char_node(&st.mem, p) && st.mem.b32s1(p) == TEX_NULL {
-            let f = st.mem.b16s1(p) as i32;
-            let c_raw = st.mem.b16s0(p);
-            let c_eff = crate::fonts::effective_char(&mut st.fonts, true, f, c_raw);
-            let q = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c_eff);
-            Some(
-                st.fonts
-                    .font_info_b32s1(st.fonts.width_base_entry(f) + q.s3 as i32),
-            )
-        } else {
-            None
+    let mut p = b.list_ptr(&st.mem);
+    if crate::mem::is_char_node(&st.mem, p) && p.link(&st.mem).is_null() {
+        let f = st.mem.b16s1(p) as i32;
+        let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
+        let q = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
+        let v = st
+            .fonts
+            .font_info_b32s1(st.fonts.width_base_entry(f) + q.s3 as i32);
+        let bw = b.width(&st.mem).0;
+        if v != bw {
+            let k = alloc_kern(&mut st.mem, bw - v).ok_or(NodeRecycleAbort::Overflow)?;
+            p.set_link(&mut st.mem, k.ptr());
         }
-    } else {
-        None
-    };
-
-    match rebox(&mut st.mem, bb, w, char_kern_width)? {
-        ReboxResult::Done(rb) => Ok(rb),
-        ReboxResult::Hpack(rb) => Ok(crate::packaging::hpack_emit_in(st, rb, w, EXACTLY)?),
     }
+    let mem = &mut st.mem;
+    free_node(mem, b.ptr(), BOX_NODE_SIZE);
+    let g = alloc_glue(mem, SS_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
+    g.set_link(mem, p);
+    while !p.link(mem).is_null() {
+        p = p.link(mem);
+    }
+    let tail_glue = alloc_glue(mem, SS_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
+    p.set_link(mem, tail_glue.ptr());
+    crate::packaging::hpack_emit_in(st, g.ptr(), w, EXACTLY)
 }
 
-unsafe fn build_opentype_assembly_in(
+fn build_opentype_assembly_in(
     st: &mut EngineState,
     f: i32,
     a: &GlyphAssembly,
     s: i32,
     horiz: bool,
 ) -> Result<AnyBox, NodeRecycleAbort> {
-    let b_idx = crate::mem::alloc_null_box(&mut st.mem)
-        .ok_or(NodeRecycleAbort::Overflow)?
-        .ptr()
-        .0;
-    st.mem
-        .set_b16s1(b_idx, if horiz { HLIST_NODE } else { VLIST_NODE });
-    let b = classify_box_or_panic(&st.mem, b_idx);
-    let mut n: i32 = -1;
-    let mut no_extenders = true;
+    let b = if horiz {
+        AnyBox::HList(alloc_null_box(&mut st.mem)?)
+    } else {
+        AnyBox::VList(alloc_null_vbox(&mut st.mem)?)
+    };
+    // Extenders repeat `n` times, other parts once.
+    let repeats = |i: i32, n: i32| if a.is_extender(i) { n } else { 1 };
+    let no_extenders = (0..a.count()).all(|i| !a.is_extender(i));
     let min_o = ot_min_connector_overlap(&st.fonts, f);
+    let mut n: i32 = -1;
     loop {
         n += 1;
         let mut s_max: i32 = 0;
         let mut prev_o: i32 = 0;
         for i in 0..a.count() {
-            if a.is_extender(i) {
-                no_extenders = false;
-                for _j in 1..=n {
-                    let mut o = a.start_connector(&st.fonts, f, i);
-                    if min_o < o {
-                        o = min_o;
-                    }
-                    if prev_o < o {
-                        o = prev_o;
-                    }
-                    s_max = s_max - o + a.full_advance(&st.fonts, f, i);
-                    prev_o = a.end_connector(&st.fonts, f, i);
-                }
-            } else {
-                let mut o = a.start_connector(&st.fonts, f, i);
-                if min_o < o {
-                    o = min_o;
-                }
-                if prev_o < o {
-                    o = prev_o;
-                }
+            for _ in 0..repeats(i, n) {
+                let o = a.start_connector(&st.fonts, f, i).min(min_o).min(prev_o);
                 s_max = s_max - o + a.full_advance(&st.fonts, f, i);
                 prev_o = a.end_connector(&st.fonts, f, i);
             }
@@ -4098,33 +4042,10 @@ unsafe fn build_opentype_assembly_in(
     }
     let mut prev_o: i32 = 0;
     for i in 0..a.count() {
-        if a.is_extender(i) {
-            for _j in 1..=n {
-                let mut o = a.start_connector(&st.fonts, f, i);
-                if prev_o < o {
-                    o = prev_o;
-                }
-                let oo = o;
-                if min_o < o {
-                    o = min_o;
-                }
-                if oo > 0 {
-                    stack_glue_into_box(&mut st.mem, b, -oo, -o)?;
-                }
-                stack_glyph_into_box_in(st, b, f, a.glyph(i))?;
-                prev_o = a.end_connector(&st.fonts, f, i);
-            }
-        } else {
-            let mut o = a.start_connector(&st.fonts, f, i);
-            if prev_o < o {
-                o = prev_o;
-            }
-            let oo = o;
-            if min_o < o {
-                o = min_o;
-            }
+        for _ in 0..repeats(i, n) {
+            let oo = a.start_connector(&st.fonts, f, i).min(prev_o);
             if oo > 0 {
-                stack_glue_into_box(&mut st.mem, b, -oo, -o)?;
+                stack_glue_into_box(&mut st.mem, b, -oo, -oo.min(min_o))?;
             }
             stack_glyph_into_box_in(st, b, f, a.glyph(i))?;
             prev_o = a.end_connector(&st.fonts, f, i);
@@ -4152,7 +4073,7 @@ unsafe fn build_opentype_assembly_in(
         p = st.mem.b32s1(p);
     }
     if s > nat && str > 0 {
-        let o = if s - nat > str { str } else { s - nat };
+        let o = (s - nat).min(str);
         b.set_glue_order(&mut st.mem, NORMAL);
         b.set_glue_sign(&mut st.mem, GlueSign::Stretching);
         let ratio = o as f64 / str as f64;
@@ -4178,7 +4099,7 @@ fn build_ext_delimiter_box(
     q: crate::mem_types::B16x4,
     v: i32,
 ) -> Result<AnyBox, NodeRecycleAbort> {
-    let vb = alloc_null_vbox(mem)?;
+    let vb = AnyBox::VList(alloc_null_vbox(mem)?);
     let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
     let u = height_plus_depth(fonts, f, r.s0);
     let effective_c = crate::fonts::effective_char(fonts, true, f, r.s0);
@@ -4209,30 +4130,30 @@ fn build_ext_delimiter_box(
     }
     if r.s1 != 0 {
         let p = char_box_tfm(mem, fonts, f, r.s1)?;
-        stack_into_box(mem, AnyBox::VList(vb), p);
+        stack_into_box(mem, vb, p);
     }
     for _ in 1..=n {
         let p = char_box_tfm(mem, fonts, f, r.s0)?;
-        stack_into_box(mem, AnyBox::VList(vb), p);
+        stack_into_box(mem, vb, p);
     }
     if r.s2 != 0 {
         let p = char_box_tfm(mem, fonts, f, r.s2)?;
-        stack_into_box(mem, AnyBox::VList(vb), p);
+        stack_into_box(mem, vb, p);
         for _ in 1..=n {
             let p = char_box_tfm(mem, fonts, f, r.s0)?;
-            stack_into_box(mem, AnyBox::VList(vb), p);
+            stack_into_box(mem, vb, p);
         }
     }
     if r.s3 != 0 {
         let p = char_box_tfm(mem, fonts, f, r.s3)?;
-        stack_into_box(mem, AnyBox::VList(vb), p);
+        stack_into_box(mem, vb, p);
     }
     let height = vb.height(mem).0;
     vb.set_depth(mem, Scaled(w - height));
-    Ok(AnyBox::VList(vb))
+    Ok(vb)
 }
 
-unsafe fn var_delimiter_in(
+fn var_delimiter_in(
     st: &mut EngineState,
     d: i32,
     s: i32,
@@ -4260,12 +4181,11 @@ unsafe fn var_delimiter_in(
                     z -= 256;
                     let g = math_font(&st.eqtb, z);
                     if g != FONT_BASE {
-                        let font_area = st.fonts.font_area_entry(g);
-                        let layout_engine = st.fonts.font_layout_engine_ptr(g);
-                        if font_area == AAT_FONT_FLAG
-                            || (font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine))
+                        if st.fonts.font_area_entry(g) == AAT_FONT_FLAG
+                            || font_uses_opentype(&st.fonts, g)
                         {
-                            x = crate::ext::map_char_to_glyph(&st.fonts, g, x)?;
+                            // SAFETY: pure font-table and FFI glyph lookup.
+                            x = unsafe { crate::ext::map_char_to_glyph(&st.fonts, g, x) }?;
                             f = g;
                             c = x as u16;
                             w = 0;
@@ -4291,49 +4211,36 @@ unsafe fn var_delimiter_in(
                                 break 'found;
                             }
                         } else {
+                            let fonts = &st.fonts;
                             let mut y = x as u16;
-                            let scan: Option<(i32, u16, i32, crate::mem_types::B16x4, bool)> = 'scan: {
-                                let fonts = &st.fonts;
-                                if y < fonts.font_bc_entry(g) || y > fonts.font_ec_entry(g) {
-                                    break 'scan None;
-                                }
+                            if y >= fonts.font_bc_entry(g) && y <= fonts.font_ec_entry(g) {
                                 loop {
-                                    let q_tmp =
-                                        fonts.font_info_b16(fonts.char_base_entry(g) + y as i32);
-                                    q = q_tmp;
-                                    if q.s3 > 0 {
-                                        if q.s1 % 4 == EXT_TAG {
-                                            break 'scan Some((g, y, w, q, true));
-                                        }
-                                        let u = fonts.font_info_b32s1(
-                                            fonts.height_base_entry(g) + q.s2 as i32 / 16,
-                                        ) + fonts.font_info_b32s1(
-                                            fonts.depth_base_entry(g) + q.s2 as i32 % 16,
-                                        );
-                                        if u > w {
-                                            if u >= v {
-                                                break 'scan Some((g, y, u, q, true));
-                                            }
-                                            f = g;
-                                            c = y;
-                                            w = u;
-                                        }
-                                        if q.s1 % 4 == LIST_TAG {
-                                            y = q.s0;
-                                            continue; // goto continue_
+                                    q = fonts.font_info_b16(fonts.char_base_entry(g) + y as i32);
+                                    if q.s3 == 0 {
+                                        break;
+                                    }
+                                    if q.s1 % 4 == EXT_TAG {
+                                        f = g;
+                                        c = y;
+                                        break 'found;
+                                    }
+                                    let u = fonts.font_info_b32s1(
+                                        fonts.height_base_entry(g) + q.s2 as i32 / 16,
+                                    ) + fonts.font_info_b32s1(
+                                        fonts.depth_base_entry(g) + q.s2 as i32 % 16,
+                                    );
+                                    if u > w {
+                                        f = g;
+                                        c = y;
+                                        w = u;
+                                        if u >= v {
+                                            break 'found;
                                         }
                                     }
-                                    break; // exit character-list loop
-                                }
-                                None
-                            };
-                            if let Some((found_f, found_c, found_w, found_q, stop)) = scan {
-                                f = found_f;
-                                c = found_c;
-                                w = found_w;
-                                q = found_q;
-                                if stop {
-                                    break 'found;
+                                    if q.s1 % 4 != LIST_TAG {
+                                        break;
+                                    }
+                                    y = q.s0;
                                 }
                             }
                         }
@@ -4351,32 +4258,24 @@ unsafe fn var_delimiter_in(
             x = st.mem.b16s0(d) as i32 + (st.mem.b16s1(d) as i32 / 256) * 65536;
         }
     }
-    let b;
-    if f != FONT_BASE {
-        let font_area = st.fonts.font_area_entry(f);
-        let layout_engine = st.fonts.font_layout_engine_ptr(f);
-        if !(font_area == OTGR_FONT_FLAG && usingOpenType(layout_engine)) {
-            if q.s1 % 4 == EXT_TAG {
-                b = build_ext_delimiter_box(&mut st.mem, &mut st.fonts, f, q, v)?;
-            } else {
-                b = char_box_in(st, f, c as i32)?;
-            }
-        } else if let Some(assembly) = &ot_assembly {
-            b = build_opentype_assembly_in(st, f, assembly, v, false)?;
-        } else {
-            b = native_glyph_vbox_in(st, f, c)?;
-        }
-    } else {
-        let Some(bb) = crate::mem::alloc_null_box(&mut st.mem) else {
-            return Err(NodeRecycleAbort::Overflow.into());
-        };
+    let b = if f == FONT_BASE {
+        let b = alloc_null_box(&mut st.mem)?;
         let width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE);
-        bb.set_width(&mut st.mem, Scaled(width));
-        b = AnyBox::HList(bb);
-    }
+        b.set_width(&mut st.mem, Scaled(width));
+        AnyBox::HList(b)
+    } else if !font_uses_opentype(&st.fonts, f) {
+        if q.s1 % 4 == EXT_TAG {
+            build_ext_delimiter_box(&mut st.mem, &mut st.fonts, f, q, v)?
+        } else {
+            char_box_in(st, f, c as i32)?
+        }
+    } else if let Some(assembly) = &ot_assembly {
+        build_opentype_assembly_in(st, f, assembly, v, false)?
+    } else {
+        native_glyph_vbox_in(st, f, c)?
+    };
     let axis = axis_height(&st.fonts, &st.eqtb, s);
-    let b_box = b;
-    let shift = crate::scaled_math::half(b_box.height(&st.mem).0 - b_box.depth(&st.mem).0) - axis;
-    b_box.set_shift_amount(&mut st.mem, Scaled(shift));
-    Ok(b_box)
+    let shift = crate::scaled_math::half(b.height(&st.mem).0 - b.depth(&st.mem).0) - axis;
+    b.set_shift_amount(&mut st.mem, Scaled(shift));
+    Ok(b)
 }
