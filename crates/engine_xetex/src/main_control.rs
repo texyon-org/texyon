@@ -1612,7 +1612,7 @@ pub(crate) fn scan_box_in(st: &mut EngineState, box_context: i32) -> Result<(), 
     } else if box_context >= LEADER_FLAG
         && (st.scanner.cur_cmd == HRULE || st.scanner.cur_cmd == VRULE)
     {
-        st.scanner.cur_box.0 = crate::scan::scan_rule_spec_in(st)?;
+        st.scanner.cur_box = crate::scan::scan_rule_spec_in(st)?.ptr();
         box_end_in(st, box_context)
     } else {
         crate::output::error_here_with_diagnostic_in(
@@ -2100,7 +2100,7 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
                 mc_propagate_error(crate::errors::error_in(st))?;
             }
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            st.scanner.cur_box.0 = crate::packaging::vsplit_in(st, n, st.scanner.cur_val)?;
+            st.scanner.cur_box = crate::packaging::vsplit_in(st, n, st.scanner.cur_val)?;
         }
         _ => {
             let k = st.scanner.cur_chr - VTOP_CODE as i32;
@@ -3314,8 +3314,8 @@ pub(crate) fn main_control_append_normal_space_in(
 
 fn append_rule_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let mode = st.input.cur_list.mode.abs();
-    let p = crate::scan::scan_rule_spec_in(st)?;
-    tail_append(st, MemPtr::from_raw(p));
+    let rule = crate::scan::scan_rule_spec_in(st)?;
+    tail_append(st, rule.ptr());
     if mode == VMODE {
         st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
     } else if mode == HMODE {

@@ -65,7 +65,7 @@ pub(crate) fn new_native_word_node(
     mem.set_b16s0(q + 4, 0);
     mem.set_b32s0(q + 5, 0);
     mem.set_b32s1(q + 5, 0);
-    // SAFETY: `q` was just allocated and stamped as a native-word whatsit.
+    // SAFETY: `q` was just allocated and stamped as a whatsit node.
     Ok(unsafe { crate::node::NodePtr::from_idx_unchecked(crate::units::MemIdx::new(q)) })
 }
 /// Allocate the native node and fill its UTF-16 payload.

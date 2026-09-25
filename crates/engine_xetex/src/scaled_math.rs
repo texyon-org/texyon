@@ -1,37 +1,16 @@
-//! Pure-arithmetic helpers translated from `xetex/xetex-scaledmath.c`.
-//!
-//! XeTeX measures lengths in "scaled points" (sp): 1/65536 of a TeX
-//! point. All positions, widths, kerns, and glue amounts flow through
-//! these routines, so correctness is paramount. Translations here are
-//! deliberately boring: they match the C source line-for-line,
-//! preserving the same overflow checks and remainder-sign conventions.
+//! Scaled-point arithmetic from `xetex/xetex-scaledmath.c`, matching the C
+//! overflow checks and remainder-sign conventions exactly.
 
-extern "C" {}
+use crate::state::{EngineState, ErrorState};
 
-// ---------------------------------------------------------------------------
-// tex_round
-// ---------------------------------------------------------------------------
-
-/// Round a `double` to the nearest `int32_t`, with half-way values
-/// going away from zero (0.5 → 1, -0.5 → -1), clipping to the `i32`
-/// range.
-///
-/// translated from xetex-scaledmath.c:11 (tex_round)
+/// Round half away from zero, clipping to the `i32` range.
 pub fn tex_round(r: f64) -> i32 {
-    // We must reproduce very particular rounding semantics to pass the
-    // TRIP test (see comment in the C source). Values outside the i32
-    // range are clipped; within-range values round half-away-from-zero.
-
     if r > 2_147_483_647.0 {
         return i32::MAX;
     }
     if r < -2_147_483_648.0 {
         return i32::MIN;
     }
-
-    // ANSI C's float-to-int cast truncates toward zero, so adding
-    // ±0.5 before the cast yields round-half-away-from-zero. Rust's
-    // `as i32` has the same truncation semantics for values in range.
     if r >= 0.0 {
         (r + 0.5) as i32
     } else {
@@ -39,20 +18,8 @@ pub fn tex_round(r: f64) -> i32 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// half
-// ---------------------------------------------------------------------------
-
-/// `half(x)` computes `(x + 1) / 2` when `x` is odd, otherwise `x / 2`.
-/// Matches Pascal's `(x + 1) div 2` idiom and C integer division for
-/// non-negative `x`; for negative odd `x` it rounds toward +∞ rather
-/// than 0 (because `(x + 1) / 2` in C truncates toward zero).
-///
-/// translated from xetex-scaledmath.c:51 (half)
+/// `(x + 1) / 2` for odd `x`, else `x / 2`.
 pub fn half(x: i32) -> i32 {
-    // The C macro `odd(x)` is `((x) & 1)`; Rust's `x & 1 != 0` is the
-    // same. We wrap the add/divide in `wrapping_*` to match the C's
-    // implementation-defined-but-well-known behaviour for i32 overflow.
     if x & 1 != 0 {
         x.wrapping_add(1) / 2
     } else {
@@ -60,43 +27,24 @@ pub fn half(x: i32) -> i32 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// mult_and_add
-// ---------------------------------------------------------------------------
-
 pub(crate) fn mult_and_add_in(
-    errors: &mut crate::state::ErrorState,
+    errors: &mut ErrorState,
     mut n: i32,
-    mut x: i32,      // scaled_t
-    y: i32,          // scaled_t
-    max_answer: i32, // scaled_t
+    mut x: i32,
+    y: i32,
+    max_answer: i32,
 ) -> i32 {
     if n < 0 {
         x = x.wrapping_neg();
         n = n.wrapping_neg();
     }
-
     if n == 0 {
         return y;
     }
-
-    // C: `x <= (max_answer - y) / n && (-x <= (max_answer + y) / n)`
-    //
-    // `max_answer - y` / `max_answer + y` can overflow i32 when
-    // `y` has magnitude comparable to `i32::MAX`. C signed overflow
-    // is undefined but in practice wraps on two's-complement hardware;
-    // Rust debug mode panics unless we use `wrapping_*`. The wrapped
-    // result matches the C behaviour bit-for-bit, so the comparison
-    // returns the same boolean the C engine computes.
+    // The bounds may overflow i32, and the C wraps.
     let upper_ok = x <= max_answer.wrapping_sub(y) / n;
     let lower_ok = x.wrapping_neg() <= max_answer.wrapping_add(y) / n;
-
     if upper_ok && lower_ok {
-        // The checks above prove `n*x + y` fits in i32, so
-        // `wrapping_*` is semantically identical to checked arithmetic
-        // here. We still use wrapping forms because a bug in the
-        // checks would otherwise manifest as a debug-mode panic that
-        // diverges from the C engine's observed behaviour.
         n.wrapping_mul(x).wrapping_add(y)
     } else {
         errors.arith_error = true;
@@ -104,53 +52,28 @@ pub(crate) fn mult_and_add_in(
     }
 }
 
-// ---------------------------------------------------------------------------
-// x_over_n
-// ---------------------------------------------------------------------------
-
-pub fn x_over_n_in(errors: &mut crate::state::ErrorState, mut x: i32, mut n: i32) -> i32 {
-    // scaled_t is i32
-
+pub fn x_over_n_in(errors: &mut ErrorState, mut x: i32, mut n: i32) -> i32 {
     if n == 0 {
         errors.arith_error = true;
         errors.tex_remainder = x;
         return 0;
     }
-
-    // Track the running remainder across sign flips — the C writes
-    // this into the shared global between sign-flipping the inputs
-    // and doing the divide. We read the current remainder via an
-    // extra helper to match that behaviour.
-    //
-    // In the C body:
-    //   if (n < 0) { x = -x; n = -n; tex_remainder = -tex_remainder; }
-    // The `-tex_remainder` looks pointless (it's immediately
-    // overwritten below), but we preserve it for faithfulness.
     if n < 0 {
         x = x.wrapping_neg();
         n = n.wrapping_neg();
         errors.tex_remainder = errors.tex_remainder.wrapping_neg();
     }
-
     if x >= 0 {
         errors.tex_remainder = x % n;
         x / n
     } else {
-        // Negating x may wrap (if x was i32::MIN), but that case is
-        // still handled correctly: i32::MIN % positive_n and
-        // i32::MIN / positive_n are both defined in Rust and match
-        // C's behaviour after the implicit cast-through-wrap.
         let neg_x = x.wrapping_neg();
         errors.tex_remainder = (neg_x % n).wrapping_neg();
         (neg_x / n).wrapping_neg()
     }
 }
 
-// ---------------------------------------------------------------------------
-// xn_over_d
-// ---------------------------------------------------------------------------
-
-pub(crate) fn xn_over_d_in(errors: &mut crate::state::ErrorState, x: i32, n: i32, d: i32) -> i32 {
+pub(crate) fn xn_over_d_in(errors: &mut ErrorState, x: i32, n: i32, d: i32) -> i32 {
     let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
     if overflowed {
         errors.arith_error = true;
@@ -159,24 +82,14 @@ pub(crate) fn xn_over_d_in(errors: &mut crate::state::ErrorState, x: i32, n: i32
     quotient
 }
 
-/// Pure arithmetic core of [`xn_over_d`]: returns
-/// `(quotient, remainder, overflowed)` with **no** global side effects (unlike
-/// `xn_over_d`, which sets `tex_remainder`, and `arith_error` on overflow).
+/// Side-effect-free core of `xn_over_d`: `(quotient, remainder, overflowed)`.
 pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
-    // scaled_t is i32
-
     let positive = x >= 0;
     if !positive {
         x = x.wrapping_neg();
     }
 
-    // 32768 == 2^15; the code splits x into high/low halves to keep
-    // the n*half products' final *stored* values inside 32 bits. The
-    // intermediates in C may transiently exceed i32 (since `32768L` is
-    // `long`, which is 64-bit on Linux/macOS), but the result is
-    // truncated into the i32 locals `t`/`u`/`v`. Rust `wrapping_*`
-    // gives the identical truncated result deterministically on every
-    // target.
+    // The C computes the halves in `long` and truncates them into i32 locals.
     let t = (x % 32768).wrapping_mul(n);
     let mut u = (x / 32768).wrapping_mul(n).wrapping_add(t / 32768);
     let v = (u % d).wrapping_mul(32768).wrapping_add(t % 32768);
@@ -193,63 +106,31 @@ pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// round_xn_over_d
-// ---------------------------------------------------------------------------
-
-/// Like [`xn_over_d`] but rounds the quotient to the nearest integer
-/// (ties away from zero). Does not touch `tex_remainder`.
-///
-/// translated from xetex-scaledmath.c:137 (round_xn_over_d)
-pub fn round_xn_over_d(errors: &mut crate::state::ErrorState, mut x: i32, n: i32, d: i32) -> i32 {
-    // scaled_t is i32
-
-    let positive: bool;
-    if x >= 0 {
-        positive = true;
-    } else {
-        x = x.wrapping_neg();
-        positive = false;
-    }
-
-    // See `xn_over_d` for why we use `wrapping_*` here.
-    let t = (x % 32768).wrapping_mul(n);
-    let mut u = (x / 32768).wrapping_mul(n).wrapping_add(t / 32768);
-    let v = (u % d).wrapping_mul(32768).wrapping_add(t % 32768);
-
-    if u / d >= 32768 {
+/// `xn_over_d` rounded half away from zero. Leaves `tex_remainder` alone.
+pub fn round_xn_over_d(errors: &mut ErrorState, x: i32, n: i32, d: i32) -> i32 {
+    let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
+    if overflowed {
         errors.arith_error = true;
-    } else {
-        u = 32768i32.wrapping_mul(u / d).wrapping_add(v / d);
     }
-
-    let v = v % d;
-    if v.wrapping_mul(2) >= d {
-        u = u.wrapping_add(1);
-    }
-
-    if positive {
-        u
+    if x >= 0 {
+        if remainder.wrapping_mul(2) >= d {
+            quotient.wrapping_add(1)
+        } else {
+            quotient
+        }
+    } else if remainder.wrapping_neg().wrapping_mul(2) >= d {
+        quotient.wrapping_sub(1)
     } else {
-        u.wrapping_neg()
+        quotient
     }
 }
 
-// ---------------------------------------------------------------------------
-// make_frac
-// ---------------------------------------------------------------------------
-
-/// Compute the fraction `p/q` in the range (-8, 8) as a 28-bit fixed-point
-/// "frac" value (1.0 == 0x10000000). Sets `arith_error` and returns
-/// ±0x7FFFFFFF if |p/q| >= 8.
-///
-/// translated from xetex-scaledmath.c:165 (make_frac)
-pub fn make_frac(errors: &mut crate::state::ErrorState, mut p: i32, mut q: i32) -> i32 {
+/// `p/q` as a 28-bit fraction (1.0 == 0x10000000), saturating at |p/q| >= 8.
+fn make_frac(errors: &mut ErrorState, mut p: i32, mut q: i32) -> i32 {
     let mut negative = p < 0;
     if negative {
         p = -p;
     }
-
     if q <= 0 {
         q = -q;
         negative = !negative;
@@ -257,7 +138,6 @@ pub fn make_frac(errors: &mut crate::state::ErrorState, mut p: i32, mut q: i32) 
 
     let n = p / q;
     p %= q;
-
     if n >= 8 {
         errors.arith_error = true;
         return if negative { -0x7FFF_FFFF } else { 0x7FFF_FFFF };
@@ -265,7 +145,6 @@ pub fn make_frac(errors: &mut crate::state::ErrorState, mut p: i32, mut q: i32) 
 
     let n = (n - 1).wrapping_mul(0x1000_0000);
     let mut f = 1_i32;
-
     loop {
         let be_careful = p.wrapping_sub(q);
         p = be_careful.wrapping_add(p);
@@ -292,20 +171,12 @@ pub fn make_frac(errors: &mut crate::state::ErrorState, mut p: i32, mut q: i32) 
     }
 }
 
-// ---------------------------------------------------------------------------
-// take_frac
-// ---------------------------------------------------------------------------
-
-/// Multiply `q` by the 28-bit frac `f` (1.0 == 0x10000000), returning
-/// a scaled integer. Sets `arith_error` on overflow.
-///
-/// translated from xetex-scaledmath.c:220 (take_frac)
-pub fn take_frac(errors: &mut crate::state::ErrorState, mut q: i32, mut f: i32) -> i32 {
+/// `q` times the 28-bit fraction `f`.
+fn take_frac(errors: &mut ErrorState, mut q: i32, mut f: i32) -> i32 {
     let mut negative = f < 0;
     if negative {
         f = -f;
     }
-
     if q < 0 {
         q = -q;
         negative = !negative;
@@ -326,7 +197,6 @@ pub fn take_frac(errors: &mut crate::state::ErrorState, mut q: i32, mut f: i32) 
 
     f += 0x1000_0000;
     let mut p = 0x0800_0000_i32;
-
     if q < 0x4000_0000 {
         loop {
             if f & 1 != 0 {
@@ -366,19 +236,12 @@ pub fn take_frac(errors: &mut crate::state::ErrorState, mut q: i32, mut f: i32) 
     }
 }
 
-// ---------------------------------------------------------------------------
-// ab_vs_cd
-// ---------------------------------------------------------------------------
-
-/// Compare `a*b` vs `c*d` without overflow, returning 1, 0, or -1.
-///
-/// translated from xetex-scaledmath.c:332 (ab_vs_cd)
-pub fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
+/// The sign of `a*b - c*d`, computed without overflow.
+fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
     if a < 0 {
         a = -a;
         b = -b;
     }
-
     if c < 0 {
         c = -c;
         d = -d;
@@ -392,12 +255,9 @@ pub fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
                 1
             };
         }
-
         if d == 0 {
             return if a == 0 { 0 } else { -1 };
         }
-
-        // swap pairs and flip signs to bring into the main loop
         std::mem::swap(&mut a, &mut c);
         let tmp = -b;
         b = -d;
@@ -412,18 +272,15 @@ pub fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
     loop {
         let q = a / d;
         let r = c / b;
-
         if q != r {
             return if q > r { 1 } else { -1 };
         }
 
         let q = a % d;
         let r = c % b;
-
         if r == 0 {
             return if q == 0 { 0 } else { 1 };
         }
-
         if q == 0 {
             return -1;
         }
@@ -435,52 +292,42 @@ pub fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// new_randoms
-// ---------------------------------------------------------------------------
-
-/// Advance the pseudo-random table by one generation (Fibonacci-lagged
-/// subtraction generator).
-///
-/// translated from xetex-scaledmath.c:418 (new_randoms)
-pub fn new_randoms(errors: &mut crate::state::ErrorState) {
+fn new_randoms(errors: &mut ErrorState) {
     for k in 0_usize..24 {
         let x = errors.randoms[k].wrapping_sub(errors.randoms[k + 31]);
         errors.randoms[k] = if x < 0 { x + 0x1000_0000 } else { x };
     }
-
     for k in 24_usize..55 {
         let x = errors.randoms[k].wrapping_sub(errors.randoms[k - 24]);
         errors.randoms[k] = if x < 0 { x + 0x1000_0000 } else { x };
     }
-
     errors.j_random = 54;
 }
 
-// ---------------------------------------------------------------------------
-// init_randoms
-// ---------------------------------------------------------------------------
+fn next_random(errors: &mut ErrorState) -> i32 {
+    if errors.j_random == 0 {
+        new_randoms(errors);
+    } else {
+        errors.j_random -= 1;
+    }
+    errors.randoms[errors.j_random as usize]
+}
 
-/// Seed the pseudo-random table and run three warmup cycles.
-///
-/// translated from xetex-scaledmath.c:441 (init_randoms)
-pub fn init_randoms(errors: &mut crate::state::ErrorState, seed: i32) {
+pub fn init_randoms(errors: &mut ErrorState, seed: i32) {
     let mut j = seed.abs();
-
     while j >= 0x1000_0000 {
         j /= 2;
     }
 
     let mut k = 1_i32;
-
-    for i in 0_u8..55 {
+    for i in 0_usize..55 {
         let jj = k;
         k = j - k;
         j = jj;
         if k < 0 {
             k += 0x1000_0000;
         }
-        errors.randoms[((i as usize) * 21) % 55] = j;
+        errors.randoms[(i * 21) % 55] = j;
     }
 
     new_randoms(errors);
@@ -488,22 +335,9 @@ pub fn init_randoms(errors: &mut crate::state::ErrorState, seed: i32) {
     new_randoms(errors);
 }
 
-// ---------------------------------------------------------------------------
-// unif_rand
-// ---------------------------------------------------------------------------
-
-/// Return a pseudo-random integer uniformly distributed in
-/// `[0, abs(x))` (or `(-abs(x), 0]` when `x < 0`).
-///
-/// translated from xetex-scaledmath.c:468 (unif_rand)
-pub fn unif_rand(errors: &mut crate::state::ErrorState, x: i32) -> i32 {
-    if errors.j_random == 0 {
-        new_randoms(errors);
-    } else {
-        errors.j_random -= 1;
-    }
-
-    let r = errors.randoms[errors.j_random as usize];
+/// A uniform random integer between 0 and `x` (exclusive, sign of `x`).
+pub fn unif_rand(errors: &mut ErrorState, x: i32) -> i32 {
+    let r = next_random(errors);
     let y = take_frac(errors, x.abs(), r);
     if y == x.abs() {
         0
@@ -514,14 +348,8 @@ pub fn unif_rand(errors: &mut crate::state::ErrorState, x: i32) -> i32 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// m_log
-// ---------------------------------------------------------------------------
-
-/// Natural logarithm in TeX's scaled-point units (result = ln(x/2^30) * 2^24).
-///
-/// translated from xetex-scaledmath.c:22 (m_log)
-pub unsafe fn m_log(st: &mut crate::state::EngineState, mut x: i32) -> i32 {
+/// `ln(x / 2^30) * 2^24`.
+fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
     if x <= 0 {
         crate::output::error_here_with_diagnostic_in(st, c"Logarithm of ".as_ptr());
         crate::output::print_scaled_in(st, x);
@@ -530,14 +358,13 @@ pub unsafe fn m_log(st: &mut crate::state::EngineState, mut x: i32) -> i32 {
         st.errors.help_ptr = 2;
         st.errors.help_line[1] = c"Since I don't take logs of non-positive numbers,".as_ptr();
         st.errors.help_line[0] = c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr();
-        // Dead branch: m_log's only caller (norm_rand) always passes x >= 1.
+        // Unreachable: norm_rand always passes x >= 1.
         let _ = crate::errors::error_in(st);
         return 0;
     }
 
     let mut y = 1_302_456_860_i32;
     let mut z = 6_581_195_i32;
-
     while x < 0x4000_0000 {
         x += x;
         y -= 93_032_639;
@@ -546,7 +373,6 @@ pub unsafe fn m_log(st: &mut crate::state::EngineState, mut x: i32) -> i32 {
 
     y += z / 65536;
     let mut k: usize = 2;
-
     while x > 0x4000_0004 {
         let mut z = ((x - 1) / st.errors.two_to_the[k]) + 1;
         while x < 0x4000_0000 + z {
@@ -560,40 +386,17 @@ pub unsafe fn m_log(st: &mut crate::state::EngineState, mut x: i32) -> i32 {
     y / 8
 }
 
-// ---------------------------------------------------------------------------
-// norm_rand
-// ---------------------------------------------------------------------------
-
-/// Return a pseudo-random integer drawn from a normal distribution.
-///
-/// translated from xetex-scaledmath.c:487 (norm_rand). Calls `m_log`.
-pub unsafe fn norm_rand(st: &mut crate::state::EngineState) -> i32 {
+/// A normally distributed random integer.
+pub fn norm_rand(st: &mut EngineState) -> i32 {
     loop {
-        let (x, u);
-
-        // inner do-while
-        loop {
-            if st.errors.j_random == 0 {
-                new_randoms(&mut st.errors);
-            } else {
-                st.errors.j_random -= 1;
+        let (x, u) = loop {
+            let r = next_random(&mut st.errors) - 0x0800_0000;
+            let x = take_frac(&mut st.errors, 112429, r);
+            let u = next_random(&mut st.errors);
+            if x.abs() < u {
+                break (x, u);
             }
-            let r = st.errors.randoms[st.errors.j_random as usize] - 0x0800_0000;
-            let xi = take_frac(&mut st.errors, 112429, r);
-
-            if st.errors.j_random == 0 {
-                new_randoms(&mut st.errors);
-            } else {
-                st.errors.j_random -= 1;
-            }
-            let ui = st.errors.randoms[st.errors.j_random as usize];
-
-            if xi.abs() < ui {
-                x = xi;
-                u = ui;
-                break;
-            }
-        }
+        };
 
         let xi = make_frac(&mut st.errors, x, u);
         let l = 139_548_960_i32 - m_log(st, u);
@@ -603,207 +406,8 @@ pub unsafe fn norm_rand(st: &mut crate::state::EngineState) -> i32 {
     }
 }
 
-// ===========================================================================
-// tests
-// ===========================================================================
-
-#[cfg(test)]
-mod tests {
-    //! Unit tests for the pure arithmetic helpers.
-    //!
-    //! These tests touch the shared `arith_error` / `tex_remainder`
-    //! globals, which is fine in test builds (the crate is not linked
-    //! against the live engine in `cargo test -p tectonic_engine_xetex`
-    //! alone — dependency graph means we bring in the C statics via
-    //! `build.rs`, but the engine isn't *running*, so these globals
-    //! are ours to trample for the duration of a test).
-    //!
-    //! We serialise on a mutex because every test in this module
-    //! reads/writes the same globals.
-    //!
-    //! NOTE: we avoid `Mutex::lock().unwrap()` because a panicking
-    //! assertion would poison the mutex for the rest of the run.
-
-    use super::*;
-
-    // -----------------------------------------------------------------
-    // tex_round
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn tex_round_basics() {
-        assert_eq!(tex_round(0.0), 0);
-        assert_eq!(tex_round(0.5), 1);
-        assert_eq!(tex_round(-0.5), -1);
-        assert_eq!(tex_round(0.49), 0);
-        assert_eq!(tex_round(-0.49), 0);
-        assert_eq!(tex_round(0.51), 1);
-        assert_eq!(tex_round(-0.51), -1);
-        assert_eq!(tex_round(1.5), 2);
-        assert_eq!(tex_round(-1.5), -2);
-    }
-
-    #[test]
-    fn tex_round_clips_to_i32_range() {
-        assert_eq!(tex_round(1e20), i32::MAX);
-        assert_eq!(tex_round(-1e20), i32::MIN);
-        assert_eq!(tex_round(2_147_483_648.0), i32::MAX);
-        assert_eq!(tex_round(-2_147_483_649.0), i32::MIN);
-    }
-
-    // -----------------------------------------------------------------
-    // half
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn half_basics() {
-        assert_eq!(half(0), 0);
-        assert_eq!(half(1), 1);
-        assert_eq!(half(2), 1);
-        assert_eq!(half(3), 2);
-        assert_eq!(half(4), 2);
-        assert_eq!(half(-1), 0); // (-1 + 1) / 2 == 0
-        assert_eq!(half(-2), -1);
-        assert_eq!(half(-3), -1); // (-3 + 1) / 2 == -1
-        assert_eq!(half(-4), -2);
-    }
-
-    // -----------------------------------------------------------------
-    // mult_and_add
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn mult_and_add_basic() {
-        // TeX calls `mult_and_add` with `max_answer = MAX_HALFWORD`
-        // (0x3FFFFFFF) in practice — the i32::MAX value exceeds the
-        // algorithm's internal precondition that `max_answer ± y`
-        // still fits in i32, so we pick a realistic cap here.
-        const MAX: i32 = 0x3FFF_FFFF;
-
-        let mut e = crate::state::ErrorState::default();
-        assert_eq!(mult_and_add_in(&mut e, 3, 7, 1, MAX), 22);
-        assert!(!e.arith_error);
-
-        assert_eq!(mult_and_add_in(&mut e, 0, 7, 42, MAX), 42);
-        assert!(!e.arith_error);
-
-        // Negative n flips the sign of x and continues.
-        assert_eq!(mult_and_add_in(&mut e, -2, 3, 1, MAX), -5);
-        assert!(!e.arith_error);
-    }
-
-    #[test]
-    fn mult_and_add_detects_overflow() {
-        let mut e = crate::state::ErrorState::default();
-        // Chosen so that n*x + y > max_answer => arith_error.
-        let r = mult_and_add_in(&mut e, 2, 2_000_000_000, 1_000_000_000, i32::MAX);
-        assert_eq!(r, 0);
-        assert!(e.arith_error);
-    }
-
-    // -----------------------------------------------------------------
-    // x_over_n
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn x_over_n_positive() {
-        let mut e = crate::state::ErrorState::default();
-        assert_eq!(x_over_n_in(&mut e, 17, 5), 3);
-        assert_eq!(e.tex_remainder, 2);
-        assert!(!e.arith_error);
-    }
-
-    #[test]
-    fn x_over_n_negative_x_gives_negative_remainder() {
-        let mut e = crate::state::ErrorState::default();
-        assert_eq!(x_over_n_in(&mut e, -17, 5), -3);
-        assert_eq!(e.tex_remainder, -2);
-        assert!(!e.arith_error);
-    }
-
-    #[test]
-    fn x_over_n_zero_divisor_sets_flag() {
-        let mut e = crate::state::ErrorState::default();
-        assert_eq!(x_over_n_in(&mut e, 42, 0), 0);
-        assert_eq!(e.tex_remainder, 42);
-        assert!(e.arith_error);
-    }
-
-    // -----------------------------------------------------------------
-    // xn_over_d
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn xn_over_d_small_values() {
-        let mut e = crate::state::ErrorState::default();
-        // 10 * 3 / 4 = 7.5 → truncated to 7, remainder 2
-        assert_eq!(xn_over_d_in(&mut e, 10, 3, 4), 7);
-        assert_eq!(e.tex_remainder, 2);
-        assert!(!e.arith_error);
-    }
-
-    #[test]
-    fn xn_over_d_large_x_and_divisor() {
-        // The C algorithm is only well-defined when
-        // `(x / 32768) / d < 32768`, i.e., `x < d * 2^30`. With a
-        // moderately-large `d`, this leaves plenty of headroom.
-        let mut e = crate::state::ErrorState::default();
-        // Exact: 1_000_000_000 * 3 / 1000 = 3_000_000
-        assert_eq!(xn_over_d_in(&mut e, 1_000_000_000, 3, 1000), 3_000_000);
-        assert!(!e.arith_error);
-        // Remainder: 1_000_000_000 % 1000 == 0, so no remainder.
-        assert_eq!(e.tex_remainder, 0);
-    }
-
-    #[test]
-    fn xn_over_d_detects_overflow() {
-        // With d=1, `u/d == u == x/32768` must stay below 32768,
-        // i.e. x < 2^30. i32::MAX exceeds this bound and triggers
-        // the arith_error path; the returned `u` is the pre-final
-        // value (still 65535 after the high-half split). We don't
-        // check the numeric return — only that the flag got set,
-        // matching the C behaviour.
-        let mut e = crate::state::ErrorState::default();
-        let _ = xn_over_d_in(&mut e, i32::MAX, 1, 1);
-        assert!(e.arith_error);
-    }
-
-    #[test]
-    fn xn_over_d_negative_x_negates_result_and_remainder() {
-        let mut e = crate::state::ErrorState::default();
-        assert_eq!(xn_over_d_in(&mut e, -10, 3, 4), -7);
-        assert_eq!(e.tex_remainder, -2);
-    }
-
-    // -----------------------------------------------------------------
-    // round_xn_over_d
-    // -----------------------------------------------------------------
-
-    #[test]
-    fn round_xn_over_d_rounds_half_up() {
-        let mut e = crate::state::ErrorState::default();
-        // 10 * 3 / 4 = 7.5 → rounds to 8
-        assert_eq!(round_xn_over_d(&mut e, 10, 3, 4), 8);
-        // 10 * 3 / 5 = 6.0
-        assert_eq!(round_xn_over_d(&mut e, 10, 3, 5), 6);
-        // 10 * 2 / 4 = 5.0 (exact, no rounding)
-        assert_eq!(round_xn_over_d(&mut e, 10, 2, 4), 5);
-    }
-
-    #[test]
-    fn round_xn_over_d_negative_x() {
-        let mut e = crate::state::ErrorState::default();
-        // -10 * 3 / 4 = -7.5 → rounds away from zero to -8
-        assert_eq!(round_xn_over_d(&mut e, -10, 3, 4), -8);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// add_or_sub / quotient / fract
-// ---------------------------------------------------------------------------
-
 pub(crate) fn add_or_sub_in(
-    errors: &mut crate::state::ErrorState,
+    errors: &mut ErrorState,
     x: i32,
     y: i32,
     max_answer: i32,
@@ -825,17 +429,15 @@ pub(crate) fn add_or_sub_in(
     }
 }
 
-pub(crate) fn quotient_in(errors: &mut crate::state::ErrorState, mut n: i32, mut d: i32) -> i32 {
+pub(crate) fn quotient_in(errors: &mut ErrorState, mut n: i32, mut d: i32) -> i32 {
     if d == 0 {
         errors.arith_error = true;
         return 0;
     }
-    let mut negative = if d > 0 {
-        false
-    } else {
+    let mut negative = d < 0;
+    if negative {
         d = -d;
-        true
-    };
+    }
     if n < 0 {
         n = -n;
         negative = !negative;
@@ -854,7 +456,7 @@ pub(crate) fn quotient_in(errors: &mut crate::state::ErrorState, mut n: i32, mut
 }
 
 pub(crate) fn fract_in(
-    errors: &mut crate::state::ErrorState,
+    errors: &mut ErrorState,
     mut x: i32,
     mut n: i32,
     mut d: i32,
@@ -864,12 +466,10 @@ pub(crate) fn fract_in(
         errors.arith_error = true;
         return 0;
     }
-    let mut negative = if d > 0 {
-        false
-    } else {
+    let mut negative = d < 0;
+    if negative {
         d = -d;
-        true
-    };
+    }
     if x < 0 {
         x = -x;
         negative = !negative;
@@ -880,6 +480,7 @@ pub(crate) fn fract_in(
         n = -n;
         negative = !negative;
     }
+
     let t = n / d;
     if t > max_answer / x {
         errors.arith_error = true;
@@ -887,16 +488,14 @@ pub(crate) fn fract_in(
     }
     let mut a = t * x;
     n -= t * d;
-    // If n == 0, skip straight to `found` (return with sign).
-    let a = if n != 0 {
-        let t2 = x / d;
-        if t2 > (max_answer - a) / n {
+    if n != 0 {
+        let t = x / d;
+        if t > (max_answer - a) / n {
             errors.arith_error = true;
             return 0;
         }
-        a += t2 * n;
-        x -= t2 * d;
-        // If x == 0, skip to `found`.
+        a += t * n;
+        x -= t * d;
         if x != 0 {
             if x < n {
                 std::mem::swap(&mut x, &mut n);
@@ -904,7 +503,6 @@ pub(crate) fn fract_in(
             let mut f = 0i32;
             let mut r = (d / 2) - d;
             let h = -r;
-            // The while(true) loop; all `goto found1` become `break`.
             loop {
                 if n & 1 != 0 {
                     r += x;
@@ -931,22 +529,148 @@ pub(crate) fn fract_in(
                     }
                 }
             }
-            // found1:
             if f > max_answer - a {
                 errors.arith_error = true;
                 return 0;
             }
-            a + f
-        } else {
-            a // x == 0: goto found
+            a += f;
         }
-    } else {
-        a // n == 0: goto found
-    };
-    // found:
+    }
+
     if negative {
         -a
     } else {
         a
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tex_round_basics() {
+        assert_eq!(tex_round(0.0), 0);
+        assert_eq!(tex_round(0.5), 1);
+        assert_eq!(tex_round(-0.5), -1);
+        assert_eq!(tex_round(0.49), 0);
+        assert_eq!(tex_round(-0.49), 0);
+        assert_eq!(tex_round(0.51), 1);
+        assert_eq!(tex_round(-0.51), -1);
+        assert_eq!(tex_round(1.5), 2);
+        assert_eq!(tex_round(-1.5), -2);
+    }
+
+    #[test]
+    fn tex_round_clips_to_i32_range() {
+        assert_eq!(tex_round(1e20), i32::MAX);
+        assert_eq!(tex_round(-1e20), i32::MIN);
+        assert_eq!(tex_round(2_147_483_648.0), i32::MAX);
+        assert_eq!(tex_round(-2_147_483_649.0), i32::MIN);
+    }
+
+    #[test]
+    fn half_basics() {
+        assert_eq!(half(0), 0);
+        assert_eq!(half(1), 1);
+        assert_eq!(half(2), 1);
+        assert_eq!(half(3), 2);
+        assert_eq!(half(4), 2);
+        assert_eq!(half(-1), 0);
+        assert_eq!(half(-2), -1);
+        assert_eq!(half(-3), -1);
+        assert_eq!(half(-4), -2);
+    }
+
+    #[test]
+    fn mult_and_add_basic() {
+        // TeX always passes MAX_HALFWORD as max_answer.
+        const MAX: i32 = 0x3FFF_FFFF;
+
+        let mut e = ErrorState::default();
+        assert_eq!(mult_and_add_in(&mut e, 3, 7, 1, MAX), 22);
+        assert!(!e.arith_error);
+
+        assert_eq!(mult_and_add_in(&mut e, 0, 7, 42, MAX), 42);
+        assert!(!e.arith_error);
+
+        assert_eq!(mult_and_add_in(&mut e, -2, 3, 1, MAX), -5);
+        assert!(!e.arith_error);
+    }
+
+    #[test]
+    fn mult_and_add_detects_overflow() {
+        let mut e = ErrorState::default();
+        let r = mult_and_add_in(&mut e, 2, 2_000_000_000, 1_000_000_000, i32::MAX);
+        assert_eq!(r, 0);
+        assert!(e.arith_error);
+    }
+
+    #[test]
+    fn x_over_n_positive() {
+        let mut e = ErrorState::default();
+        assert_eq!(x_over_n_in(&mut e, 17, 5), 3);
+        assert_eq!(e.tex_remainder, 2);
+        assert!(!e.arith_error);
+    }
+
+    #[test]
+    fn x_over_n_negative_x_gives_negative_remainder() {
+        let mut e = ErrorState::default();
+        assert_eq!(x_over_n_in(&mut e, -17, 5), -3);
+        assert_eq!(e.tex_remainder, -2);
+        assert!(!e.arith_error);
+    }
+
+    #[test]
+    fn x_over_n_zero_divisor_sets_flag() {
+        let mut e = ErrorState::default();
+        assert_eq!(x_over_n_in(&mut e, 42, 0), 0);
+        assert_eq!(e.tex_remainder, 42);
+        assert!(e.arith_error);
+    }
+
+    #[test]
+    fn xn_over_d_small_values() {
+        let mut e = ErrorState::default();
+        assert_eq!(xn_over_d_in(&mut e, 10, 3, 4), 7);
+        assert_eq!(e.tex_remainder, 2);
+        assert!(!e.arith_error);
+    }
+
+    #[test]
+    fn xn_over_d_large_x_and_divisor() {
+        let mut e = ErrorState::default();
+        assert_eq!(xn_over_d_in(&mut e, 1_000_000_000, 3, 1000), 3_000_000);
+        assert!(!e.arith_error);
+        assert_eq!(e.tex_remainder, 0);
+    }
+
+    #[test]
+    fn xn_over_d_detects_overflow() {
+        let mut e = ErrorState::default();
+        let _ = xn_over_d_in(&mut e, i32::MAX, 1, 1);
+        assert!(e.arith_error);
+    }
+
+    #[test]
+    fn xn_over_d_negative_x_negates_result_and_remainder() {
+        let mut e = ErrorState::default();
+        assert_eq!(xn_over_d_in(&mut e, -10, 3, 4), -7);
+        assert_eq!(e.tex_remainder, -2);
+    }
+
+    #[test]
+    fn round_xn_over_d_rounds_half_up() {
+        let mut e = ErrorState::default();
+        assert_eq!(round_xn_over_d(&mut e, 10, 3, 4), 8);
+        assert_eq!(round_xn_over_d(&mut e, 10, 3, 5), 6);
+        assert_eq!(round_xn_over_d(&mut e, 10, 2, 4), 5);
+    }
+
+    #[test]
+    fn round_xn_over_d_negative_x() {
+        let mut e = ErrorState::default();
+        assert_eq!(round_xn_over_d(&mut e, -10, 3, 4), -8);
     }
 }

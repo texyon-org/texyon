@@ -396,6 +396,10 @@ impl<K: HasSyncFields> NodePtr<K> {
     pub fn sync_tag(self, mem: &MemState) -> i32 {
         mem.b32s0(self.idx.offset(K::SYNC_OFFSET).0)
     }
+    #[inline]
+    pub fn set_sync_tag(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(K::SYNC_OFFSET).0, v);
+    }
 
     /// `SYNCTEX_line(p, size)` = `mem[p + size − 1].b32.s1` — the source
     /// line stamped at allocation time.
@@ -668,6 +672,24 @@ impl AnyNode {
         }
     }
 
+    /// TeX's `precedes_break`: a node type below `math_node`, after which glue
+    /// is a legal breakpoint.
+    #[inline]
+    pub fn precedes_break(self) -> bool {
+        matches!(
+            self,
+            AnyNode::HList(_)
+                | AnyNode::VList(_)
+                | AnyNode::Rule(_)
+                | AnyNode::Ins(_)
+                | AnyNode::Mark(_)
+                | AnyNode::Adjust(_)
+                | AnyNode::Ligature(_)
+                | AnyNode::Disc(_)
+                | AnyNode::Whatsit(_)
+        )
+    }
+
     /// The horizontal-list width contribution — the `+1` width word, shared by
     /// boxes, rules, kerns, math nodes, and box-dimensioned whatsits (the node
     /// kinds that add their width to the running line total in the line-breaker).
@@ -848,6 +870,7 @@ impl NodePtr<LigatureNode> {
 
 impl MemState {
     /// Classify a known lo-mem node as a ligature node.
+    #[cfg(test)]
     #[inline]
     pub fn classify_ligature(
         &self,
@@ -884,11 +907,19 @@ impl NodePtr<LigItem> {
 
     /// Ligature item character code = `mem[p].b16.s0`.
     #[inline]
+    pub fn character(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
     pub fn set_character(self, mem: &mut MemState, c: u16) {
         mem.set_b16s0(self.idx.0, c);
     }
 
     /// Ligature item component pointer = `mem[p + 1].b32.s1`.
+    #[inline]
+    pub fn component(self, mem: &MemState) -> MemPtr {
+        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
+    }
     #[inline]
     pub fn set_component(self, mem: &mut MemState, q: MemPtr) {
         mem.set_b32s1(self.idx.offset(1).0, q.0);
@@ -977,11 +1008,19 @@ impl NodePtr<MathNode> {
     pub fn set_width(self, mem: &mut MemState, w: Scaled) {
         mem.set_b32s1(self.idx.offset(1).0, w.0);
     }
+
+    /// Turn this math node into a kern of the same width, in place.
+    #[inline]
+    pub fn retype_as_kern(self, mem: &mut MemState) -> NodePtr<KernNode> {
+        mem.set_b16s1(self.idx.0, KERN_NODE);
+        // SAFETY: the node was just stamped KERN_NODE.
+        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+    }
 }
 
 impl MemState {
     /// Classify a known lo-mem node as a math node.
-    #[inline]
+    #[cfg(test)]
     pub fn classify_math(&self, p: MemIdx) -> Result<Option<NodePtr<MathNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
@@ -1021,6 +1060,19 @@ impl NodePtr<StyleNode> {
     pub fn clear_payload(self, mem: &mut MemState) {
         mem.set_b32s1(self.idx.offset(1).0, 0);
         mem.set_b32s1(self.idx.offset(2).0, 0);
+    }
+}
+
+impl NodePtr<ChoiceNode> {
+    /// Retype this choice node in place as a style node for `style`.
+    #[inline]
+    pub fn into_style(self, mem: &mut MemState, style: u16) -> NodePtr<StyleNode> {
+        mem.set_b16s1(self.idx.0, NodeType::Style.as_raw());
+        mem.set_b16s0(self.idx.0, style);
+        // SAFETY: the node was just stamped STYLE_NODE (same size as a choice node).
+        let p = unsafe { NodePtr::<StyleNode>::from_idx_unchecked(self.idx) };
+        p.clear_payload(mem);
+        p
     }
 }
 
@@ -1469,6 +1521,14 @@ impl NodePtr<GlueNode> {
         mem.set_b32s1(self.idx.offset(1).0, q.0);
     }
 
+    /// Turn this glue node into a penalty node in place (both are medium nodes).
+    #[inline]
+    pub fn retype_as_penalty(self, mem: &mut MemState) -> NodePtr<PenaltyNode> {
+        mem.set_b16s1(self.idx.0, PENALTY_NODE);
+        // SAFETY: the node was just stamped PENALTY_NODE.
+        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+    }
+
     /// Classify this glue node's `glue_ptr` as a [`GlueSpecNode`] handle, or
     /// `None` if the pointer is null. Convenience over
     /// `NodePtr::<GlueSpecNode>::from_glue_ptr(p.glue_ptr(mem))`.
@@ -1599,7 +1659,7 @@ impl MemState {
     /// Note there is no analogous `classify_glue_spec`: a glue_spec carries no
     /// `NODE_type`, so it is reached only through
     /// [`NodePtr::<GlueSpecNode>::from_glue_ptr`].
-    #[inline]
+    #[cfg(test)]
     pub fn classify_glue(&self, p: MemIdx) -> Result<Option<NodePtr<GlueNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
             // SAFETY: the NODE_type branch just proved the kind.
@@ -1674,6 +1734,7 @@ impl MemState {
     /// Classify a known lo-mem node as a kern node. `Ok(Some(_))` if `p` is a
     /// `KERN_NODE`; `Ok(None)` if some other valid type; `Err` if invalid.
     /// `p` must already be a non-null lo-mem index.
+    #[cfg(test)]
     #[inline]
     pub fn classify_kern(&self, p: MemIdx) -> Result<Option<NodePtr<KernNode>>, InvalidNodeType> {
         Ok(match self.node_type(p)? {
@@ -1744,6 +1805,7 @@ impl MemState {
     /// Classify a known lo-mem node as a penalty node. `Ok(Some(_))` if `p`
     /// is a `PENALTY_NODE`; `Ok(None)` if some other valid type; `Err` if
     /// invalid. `p` must already be a non-null lo-mem index.
+    #[cfg(test)]
     #[inline]
     pub fn classify_penalty(
         &self,
@@ -1788,6 +1850,7 @@ impl NodePtr<MarginKernNode> {
 
 impl MemState {
     /// Classify a known lo-mem node as a margin kern node.
+    #[cfg(test)]
     #[inline]
     pub fn classify_margin_kern(
         &self,
@@ -2385,19 +2448,26 @@ impl NodePtr<SaNode> {
     pub fn sa_ptr(self, mem: &MemState) -> MemPtr {
         MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
     }
+
     #[inline]
     pub fn set_sa_ptr(self, mem: &mut MemState, v: MemPtr) {
         mem.set_b32s1(self.idx.offset(1).0, v.0);
     }
 
-    /// Save level of a data record = `mem[p].b16.s0` (`sa_lev`).
+    /// Count or dimension value = `mem[p + 2].b32.s1` (`ETEX_SA_int`).
     #[inline]
-    pub fn sa_lev(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
+    pub fn sa_int(self, mem: &MemState) -> i32 {
+        mem.b32s1(self.idx.offset(2).0)
     }
     #[inline]
-    pub fn set_sa_lev(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
+    pub fn set_sa_int(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(2).0, v);
+    }
+
+    /// Register type = `mem[p].b16.s1 / 64` (`ETEX_SA_type`).
+    #[inline]
+    pub fn sa_type(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.0) / 64
     }
 
     /// Type and index code = `mem[p].b16.s1` (`sa_index`).
@@ -2410,7 +2480,17 @@ impl NodePtr<SaNode> {
         mem.set_b16s1(self.idx.0, v);
     }
 
-    /// Reference count of a data record = `mem[p + 1].b32.s0` (`sa_ref`).
+    /// Save level of a data record = `mem[p].b16.s0` (`sa_lev`).
+    #[inline]
+    pub fn sa_lev(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.0)
+    }
+    #[inline]
+    pub fn set_sa_lev(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.0, v);
+    }
+
+    /// Element reference count = `mem[p + 1].b32.s0` (`ETEX_SA_ref`).
     #[inline]
     pub fn sa_ref(self, mem: &MemState) -> i32 {
         mem.b32s0(self.idx.offset(1).0)
@@ -2418,16 +2498,6 @@ impl NodePtr<SaNode> {
     #[inline]
     pub fn set_sa_ref(self, mem: &mut MemState, v: i32) {
         mem.set_b32s0(self.idx.offset(1).0, v);
-    }
-
-    /// Integer or dimension value = `mem[p + 2].b32.s1` (`sa_int`).
-    #[inline]
-    pub fn sa_int(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(2).0)
-    }
-    #[inline]
-    pub fn set_sa_int(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(2).0, v);
     }
 }
 

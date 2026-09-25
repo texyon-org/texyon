@@ -1252,7 +1252,6 @@ pub(crate) unsafe fn initialize_engine(
         }
     }
 
-    crate::math::initialize_math_variables();
     crate::pagebuilder::initialize_pagebuilder_variables(&mut *st);
     crate::shipout::initialize_shipout_variables(&mut *st);
     if st.config.deterministic_mode {

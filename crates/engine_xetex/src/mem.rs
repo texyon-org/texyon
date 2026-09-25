@@ -83,13 +83,6 @@ pub fn get_avail(mem: &mut MemState) -> Option<MemPtr> {
     }
 }
 
-/// Push one-word node `p` back onto the avail list (`free_avail`).
-#[inline]
-pub fn free_avail(mem: &mut MemState, p: MemPtr) {
-    mem.set_b32s1(p, mem.avail);
-    mem.avail = p.0;
-}
-
 /// The `avail == TEX_NULL` tail of [`get_avail`]: grow `mem_end` upward or
 /// `hi_mem_min` downward, or report arena exhaustion as `None`.
 #[cold]
@@ -146,6 +139,14 @@ pub fn flush_list(mem: &mut MemState, p: MemPtr) {
     // q is now the tail; splice: tail.link = old_avail; avail = p
     let avail = mem.avail;
     q.set_link(mem, MemPtr::from_raw(avail));
+    mem.avail = p.0;
+}
+
+/// Returns the one-word node `p` to the free list.
+#[inline]
+pub fn free_avail(mem: &mut MemState, p: MemPtr) {
+    let avail = mem.avail;
+    p.set_link(mem, MemPtr::from_raw(avail));
     mem.avail = p.0;
 }
 
