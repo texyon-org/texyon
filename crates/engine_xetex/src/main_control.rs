@@ -3924,7 +3924,10 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Mai
     }
     let size = joined.native_size(&st.mem);
     crate::mem::free_node(&mut st.mem, joined.ptr(), size);
-    let space = st.mem.b32s1(st.fonts.font_glue(mf) + 1);
+    // TeX reads `width(font_glue[f])`, which stays null while `\spaceskip` supplies the glue.
+    let space = st
+        .fonts
+        .font_info_b32s1(st.fonts.param_base(mf) + SPACE_CODE);
     if t != space {
         let kern = overflow_err(crate::mem::alloc_kern(&mut st.mem, t - space))?;
         kern.set_subtype(&mut st.mem, SPACE_ADJUSTMENT);
