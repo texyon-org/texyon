@@ -15,7 +15,7 @@ mod oracle;
 pub(crate) use bundle::{EngineBundle, StringWatermark};
 
 #[derive(Clone)]
-pub(crate) struct EngineDelta {
+struct EngineDelta {
     mem: WordDelta,
     eqtb: WordDelta,
     xeq: PlainDelta<u16>,
@@ -25,7 +25,7 @@ pub(crate) struct EngineDelta {
 }
 
 impl EngineDelta {
-    pub(crate) fn seal(st: &mut EngineState) -> Self {
+    fn seal(st: &mut EngineState) -> Self {
         let mut delta = Self::take_open(st);
         delta.compact();
         delta
@@ -55,7 +55,7 @@ impl EngineDelta {
         }
     }
 
-    pub(crate) fn apply(&self, st: &mut EngineState) {
+    fn apply(&self, st: &mut EngineState) {
         self.mem.apply_to(&mut st.mem.data);
         self.eqtb.apply_to(&mut st.eqtb.data);
         self.xeq.apply_to(&mut st.eqtb.xeq_level);
@@ -64,7 +64,7 @@ impl EngineDelta {
         self.font_info.apply_to(&mut st.fonts.font_info);
     }
 
-    pub(crate) fn compose_with_older(&mut self, older: EngineDelta) {
+    fn compose_with_older(&mut self, older: EngineDelta) {
         self.mem.compose_with_older(older.mem);
         self.eqtb.compose_with_older(older.eqtb);
         self.xeq.compose_with_older(older.xeq);
@@ -83,7 +83,7 @@ impl EngineDelta {
         self.font_info.compact();
     }
 
-    pub(crate) fn allocated_bytes(&self) -> usize {
+    fn allocated_bytes(&self) -> usize {
         self.mem.allocated_bytes()
             + self.eqtb.allocated_bytes()
             + self.xeq.allocated_bytes()
@@ -93,13 +93,13 @@ impl EngineDelta {
     }
 }
 
-pub(crate) struct Rung<B> {
+struct Rung<B> {
     /// Reverse delta to the predecessor, absent only on rung 0.
     undo: Option<EngineDelta>,
-    pub(crate) bundle: B,
-    pub(crate) clock: u64,
-    pub(crate) resumable: bool,
-    pub(crate) protected: bool,
+    bundle: B,
+    clock: u64,
+    resumable: bool,
+    protected: bool,
     fence: Option<ReplayFence>,
     digests: Vec<oracle::ComponentDigest>,
 }
@@ -110,11 +110,11 @@ pub(crate) struct CheckpointLadder<B> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct RestoreMismatch {
-    pub(crate) rung: usize,
-    pub(crate) component: &'static str,
-    pub(crate) expected: u64,
-    pub(crate) actual: u64,
+struct RestoreMismatch {
+    rung: usize,
+    component: &'static str,
+    expected: u64,
+    actual: u64,
 }
 
 /// Accounted-memory policy for a checkpoint ladder.
@@ -168,7 +168,7 @@ impl<B> CheckpointLadder<B> {
     }
 
     #[cfg(test)]
-    pub(crate) fn push(
+    fn push(
         &mut self,
         st: &mut EngineState,
         bundle: B,
@@ -202,7 +202,7 @@ impl<B> CheckpointLadder<B> {
 
     /// Undo the open epoch, then published rung deltas newest-first, and
     /// restore the target's non-journaled bundle.
-    pub(crate) fn rewind_to(
+    fn rewind_to(
         &mut self,
         st: &mut EngineState,
         target: usize,
@@ -223,7 +223,7 @@ impl<B> CheckpointLadder<B> {
 
     /// Remove an interior rung. Its successor absorbs the older undo delta
     /// but keeps its own bundle and metadata.
-    pub(crate) fn decimate(&mut self, index: usize) -> bool {
+    fn decimate(&mut self, index: usize) -> bool {
         if index == 0 || index + 1 >= self.rungs.len() || self.rungs[index].protected {
             return false;
         }
@@ -278,7 +278,7 @@ impl CheckpointLadder<EngineBundle> {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_engine_verified(st: &EngineState, strings_base: StringWatermark) -> Self {
+    fn from_engine_verified(st: &EngineState, strings_base: StringWatermark) -> Self {
         let mut ladder = Self::from_engine(st, strings_base);
         ladder.enable_verification(st);
         ladder
@@ -323,7 +323,7 @@ impl CheckpointLadder<EngineBundle> {
     }
 
     #[cfg(test)]
-    pub(crate) fn push_engine(
+    fn push_engine(
         &mut self,
         st: &mut EngineState,
         strings_base: StringWatermark,
@@ -399,10 +399,7 @@ impl CheckpointLadder<EngineBundle> {
 
     /// Destructively verify every surviving rung, newest to oldest.
     #[cfg(test)]
-    pub(crate) fn verify_all_rewinds(
-        &mut self,
-        st: &mut EngineState,
-    ) -> Result<(), RestoreMismatch> {
+    fn verify_all_rewinds(&mut self, st: &mut EngineState) -> Result<(), RestoreMismatch> {
         for target in (0..self.rungs.len()).rev() {
             self.rewind_engine_checked(st, target)?;
         }
@@ -418,7 +415,7 @@ impl CheckpointLadder<EngineBundle> {
     }
 
     #[cfg(test)]
-    pub(crate) fn admit_engine_rung(
+    fn admit_engine_rung(
         &mut self,
         st: &mut EngineState,
         strings_base: StringWatermark,
