@@ -1,77 +1,62 @@
-//! Scanner range-validation helpers and mu_error.
-//!
-//! Translated from xetex-xetex0.c.
+//! The tokenizer (`get_next`) and the scanning routines built on it.
+
+use crate::bridge::{diag_append_str, ttstub_output_flush};
 use crate::consts::{
     ACTIVE_BASE, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, BACKED_UP, BACKUP_HEAD, BIGGEST_CHAR,
     BOX_BASE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, CLOSED, COUNT_BASE, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, ENDV, END_TEMPLATE, EQTB_SIZE, FI_CODE, FI_OR_ELSE,
     FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_NODE, GLUE_VAL,
-    INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, JUST_OPEN,
-    KERN_NODE, LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_NODE,
-    MAX_COMMAND, MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN, NEW_LINE, NORMAL_SCANNER,
-    NUMBER_MATH_FAMILIES, OR_CODE, PENALTY_NODE, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE,
-    RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
-    SPACER, SPACE_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
-    XETEX_INT,
+    INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS,
+    JUST_OPEN, KERN_NODE, LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE,
+    MATH_NODE, MAX_COMMAND, MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER,
+    NULL_CS, NUMBER_MATH_FAMILIES, OR_CODE, OTHER_CHAR, PENALTY_NODE, PRIM_EQTB_BASE, REGISTER,
+    RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SET_FONT,
+    SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACER, SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE,
+    TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE, XETEX_INT,
 };
-use crate::ext::aat_font_get;
-use crate::ext::aat_font_get_1;
-use crate::ext::aat_font_get_2;
-use crate::ext::aat_font_get_named;
-use crate::ext::aat_font_get_named_1;
-use crate::ext::gr_font_get_named;
-use crate::ext::gr_font_get_named_1;
-use crate::ext::ot_font_get;
-use crate::ext::ot_font_get_1;
-use crate::ext::ot_font_get_2;
-use crate::ext::ot_font_get_3;
-use crate::state::GroupCode;
-
 use crate::errors::int_error_in;
 use crate::expand::{expand_in, macro_call_in};
-use crate::output::capture_to_diagnostic_in;
-use crate::output::error_here_with_diagnostic_in;
-use crate::output::print_cmd_chr_in;
-use crate::output::print_cstr_in;
-use crate::output::print_esc_cstr_in;
-use crate::output::print_int_in;
-use crate::output::print_nl_cstr_in;
-
-use crate::node::{GlueSpecNode, NodePtr, RuleDimen};
+use crate::ext::{
+    aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
+    gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
+    ot_font_get_3,
+};
+use crate::hash::HASH_BASE;
+use crate::input::{
+    EVERY_EOF_TEXT, FROZEN_RELAX, LEFT_BRACE_LIMIT, MID_LINE, PARAMETER, RIGHT_BRACE_LIMIT,
+    SKIP_BLANKS, TECTONIC_CODA_TEXT, V_TEMPLATE,
+};
+use crate::node::{GlueSpecNode, NodePtr, RuleDimen, SaNode};
+use crate::output::{
+    capture_to_diagnostic_in, error_here_with_diagnostic_in, print_cmd_chr_in, print_cstr_in,
+    print_esc_cstr_in, print_int_in, print_nl_cstr_in,
+};
+use crate::state::{EngineState, GroupCode};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
-use crate::bridge::{diag_append_str, ttstub_output_flush};
-
 extern "C" {
-
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
-
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
-
 }
 
-// Value-type constants for scan_glue (xetex_format.h:568–570).
-
-// INT_BASE + INT_PAR__xetex_hyphenatable_length offset for max_hyphenatable_length
-// (xetex_format.h:568, xetex_format.h:115; xetex_format.h:7826729 = INT_BASE).
-const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80; // xetex_format.h:115
-const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095; // xetex-constants.h:334
-
-// xetex-constants.h:26
-const BIGGEST_USV: i32 = 0x10_FFFF;
-// xetex-constants.h:335
-// xetex-constants.h:343
-const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
-// xetex-constants.h:25
-// xetex_format.h (NUMBER_MATH_FAMILIES)
-
-// --- Constants for scan_something_internal / scan_int ---
-// Command codes (xetex_format.h).
-const DEF_CODE: u8 = 86;
-const XETEX_DEF_CODE: u8 = 87;
-const DEF_FAMILY: u8 = 88;
-const DEF_FONT: u8 = 90;
+const TAB_MARK: u8 = 4;
+const CAR_RET: u8 = 5;
+pub(crate) const MAC_PARAM: u8 = 6;
+const SUP_MARK: u8 = 7;
+const LETTER: u8 = 11;
+pub(crate) const ACTIVE_CHAR: u8 = 13;
+const OUT_PARAM: u8 = 5;
+const DELIM_NUM: u8 = 15;
+const CHAR_NUM: u8 = 16;
+const MATH_CHAR_NUM: u8 = 17;
+const VRULE: u8 = 35;
+const IGNORE_SPACES: u8 = 39;
+const OMIT: u8 = 63;
+const MIN_INTERNAL: u8 = 68;
+const MATH_GIVEN: u8 = 69;
+const XETEX_MATH_GIVEN: u8 = 70;
+const LAST_ITEM: u8 = 71;
 const TOKS_REGISTER: u8 = 72;
 const ASSIGN_TOKS: u8 = 73;
 const ASSIGN_DIMEN: u8 = 75;
@@ -83,34 +68,107 @@ const SET_PAGE_DIMEN: u8 = 82;
 const SET_PAGE_INT: u8 = 83;
 const SET_BOX_DIMEN: u8 = 84;
 const SET_SHAPE: u8 = 85;
-const MATH_GIVEN: u8 = 69;
-const XETEX_MATH_GIVEN: u8 = 70;
-const LAST_ITEM: u8 = 71;
-const IGNORE_SPACES: u8 = 39;
-const MIN_INTERNAL: u8 = 68;
+const DEF_CODE: u8 = 86;
+const XETEX_DEF_CODE: u8 = 87;
+const DEF_FAMILY: u8 = 88;
+const DEF_FONT: u8 = 90;
 const MAX_INTERNAL: u8 = 91;
-// Value types (xetex-constants.h:288–296; xetex_format.h:568–572).
+pub(crate) const IF_TEST: u8 = 107;
+pub(crate) const THE: u8 = 111;
+pub(crate) const CALL: u8 = 113;
+pub(crate) const LONG_CALL: u8 = 114;
+pub(crate) const OUTER_CALL: u8 = 115;
+const DONT_EXPAND: u8 = 118;
+
+const SKIPPING: u8 = 1;
+const DEFINING: u8 = 2;
+pub(crate) const MATCHING: u8 = 3;
+const ALIGNING: u8 = 4;
+const ABSORBING: u8 = 5;
+
 const INT_VAL: i16 = 0;
 const DIMEN_VAL: i16 = 1;
 const MU_VAL: i16 = 3;
-const TOK_VAL: i16 = 5;
 const IDENT_VAL: i16 = 4;
+const TOK_VAL: i16 = 5;
 const INTER_CHAR_VAL: i16 = 6;
-// Mode codes.
-// eqtb bases (xetex_format.h).
-const FONT_ID_BASE: i32 = 2_245_338; // FROZEN_NULL_FONT
-const HASH_BASE: i32 = 2_228_226;
-const FROZEN_RELAX: i32 = 2_243_233; // FROZEN_CONTROL_SEQUENCE + 7
-                                     // LOCAL__ offsets (xetex_format.h:172,183).
+const BOX_VAL: u16 = 4;
+
+pub(crate) const MAX_CHAR_VAL: i32 = 0x20_0000;
+const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
+const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
+const MATH_SHIFT_TOKEN: i32 = 0x60_0000;
+const OUT_PARAM_TOKEN: i32 = 0xA0_0000;
+pub(crate) const SPACE_TOKEN: i32 = 0x140_0020;
+const LETTER_TOKEN: i32 = 0x160_0000;
+pub(crate) const OTHER_TOKEN: i32 = 0x180_0000;
+pub(crate) const MATCH_TOKEN: i32 = 0x1A0_0000;
+pub(crate) const END_MATCH_TOKEN: i32 = 0x1C0_0000;
+pub(crate) const PROTECTED_TOKEN: i32 = END_MATCH_TOKEN + 1;
+const ZERO_TOKEN: i32 = OTHER_TOKEN + b'0' as i32;
+const MINUS_TOKEN: i32 = OTHER_TOKEN + b'-' as i32;
+const PLUS_TOKEN: i32 = OTHER_TOKEN + b'+' as i32;
+const A_TOKEN: i32 = LETTER_TOKEN + b'A' as i32;
+const OTHER_A_TOKEN: i32 = OTHER_TOKEN + b'A' as i32;
+const HEX_TOKEN: i32 = OTHER_TOKEN + b'"' as i32;
+const OCTAL_TOKEN: i32 = OTHER_TOKEN + b'\'' as i32;
+const CONTINENTAL_POINT_TOKEN: i32 = OTHER_TOKEN + b',' as i32;
+const POINT_TOKEN: i32 = OTHER_TOKEN + b'.' as i32;
+const ALPHA_TOKEN: i32 = OTHER_TOKEN + b'`' as i32;
+const FROZEN_PRIM_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
+
+const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
+const FROZEN_CR: i32 = FROZEN_CONTROL_SEQUENCE + 1;
+const FROZEN_FI: i32 = FROZEN_CONTROL_SEQUENCE + 4;
+const FONT_ID_BASE: i32 = 2_245_338;
+
+pub(crate) const TEMP_HEAD: i32 = MEM_TOP - 3;
+const OMIT_TEMPLATE: i32 = MEM_TOP - 10;
+pub(crate) const GARBAGE: i32 = MEM_TOP - 12;
+
+pub(crate) const BIGGEST_USV: i32 = 0x10_FFFF;
+pub(crate) const NO_EXPAND_FLAG: i32 = BIGGEST_USV + 2;
+const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
+const MATH_CHAR: i32 = 1;
+pub(crate) const AAT_FONT_FLAG: i32 = 0xFFFF;
+pub(crate) const OTGR_FONT_FLAG: i32 = 0xFFFE;
+const TEX_INFINITY: i32 = 0x7FFF_FFFF;
+const DEFAULT_RULE: i32 = 26214;
+
+const INT_PAR_CUR_FAM: i32 = 44;
+const INT_PAR_TRACING_SCAN_TOKENS: i32 = 59;
+const INT_PAR_TRACING_NESTING: i32 = 60;
+const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80;
+const LOCAL_EVERY_EOF: i32 = 10;
+const LOCAL_TECTONIC_CODA: i32 = 12;
 const LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
-// Font flags (xetex-ext.h:47–48).
-const AAT_FONT_FLAG: i32 = 0xFFFF;
-const OTGR_FONT_FLAG: i32 = 0xFFFE;
-// LEFT/RIGHT side (xetex_layout/src/c_api.rs).
-// LP/RP code bases for get_cp_code (xetex-constants.h:377–378).
+const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095;
+
+const EXACTLY: u8 = 0;
+const ADDITIONAL: u8 = 1;
+const NORMAL_ORDER: u8 = 0;
+const FIL_ORDER: u8 = 1;
+const FILLL_ORDER: u8 = 3;
+const X_HEIGHT_CODE: i32 = 5;
+const QUAD_CODE: i32 = 6;
+const SPACE_SHRINK_CODE: i32 = 4;
 const LP_CODE_BASE: i32 = 2;
 const RP_CODE_BASE: i32 = 3;
-// LAST_ITEM sub-codes (xetex_format.h:572–636).
+const UNSET_NODE: u16 = 13;
+const END_M_CODE: u16 = 3;
+const ETEX_VERSION: i32 = 2;
+const XETEX_VERSION: i32 = 0;
+
+const EXPR_NONE: i16 = 0;
+const EXPR_ADD: i16 = 1;
+const EXPR_SUB: i16 = 2;
+const EXPR_MULT: i16 = 3;
+const EXPR_DIV: i16 = 4;
+const EXPR_SCALE: i16 = 5;
+const EXPR_NODE_SIZE: i32 = 4;
+const NORMAL_EXPR: u16 = 0;
+
+const LAST_NODE_TYPE_CODE: i32 = 3;
 const INPUT_LINE_NO_CODE: i32 = 4;
 const BADNESS_CODE: i32 = 5;
 const PDF_LAST_X_POS_CODE: i32 = 12;
@@ -154,6 +212,7 @@ const XETEX_FONT_TYPE_CODE: i32 = 51;
 const XETEX_FIRST_CHAR_CODE: i32 = 52;
 const XETEX_LAST_CHAR_CODE: i32 = 53;
 const XETEX_PDF_PAGE_COUNT_CODE: i32 = 54;
+const XETEX_DIM: i32 = 55;
 const XETEX_GLYPH_BOUNDS_CODE: i32 = 55;
 const FONT_CHAR_WD_CODE: i32 = 56;
 const FONT_CHAR_HT_CODE: i32 = 57;
@@ -165,32 +224,12 @@ const PAR_SHAPE_DIMEN_CODE: i32 = 62;
 const GLUE_STRETCH_CODE: i32 = 63;
 const GLUE_SHRINK_CODE: i32 = 64;
 const ETEX_GLUE: i32 = 65;
-const ETEX_MU: i32 = 66;
-const ETEX_EXPR: i32 = 67;
 const MU_TO_GLUE_CODE: i32 = 65;
+const ETEX_MU: i32 = 66;
 const GLUE_TO_MU_CODE: i32 = 66;
-const XETEX_DIM: i32 = 55;
-const LAST_NODE_TYPE_CODE_VAL: i32 = 3; // distinct name from other LAST_NODE_ uses
-                                        // Node type codes (xetex_format.h:389–437).
-const UNSET_NODE: u16 = 13;
-const END_M_CODE: u16 = 3;
-// Conditional codes (xetex_format.h:537–539).
-// Engine version constants (xetex-constants.h:255,279).
-const ETEX_VERSION: i32 = 2;
-const XETEX_VERSION: i32 = 0;
-// Token category constants for scan_int (xetex-constants.h:357,363–370).
-const LETTER_TOKEN: i32 = 0x1600000;
-const A_TOKEN: i32 = LETTER_TOKEN + b'A' as i32;
-const OTHER_A_TOKEN: i32 = OTHER_TOKEN + b'A' as i32;
-const HEX_TOKEN: i32 = OTHER_TOKEN + b'"' as i32;
-const OCTAL_TOKEN: i32 = OTHER_TOKEN + b'\'' as i32;
-const CONTINENTAL_POINT_TOKEN: i32 = OTHER_TOKEN + b',' as i32;
-const POINT_TOKEN: i32 = OTHER_TOKEN + b'.' as i32;
-const ALPHA_TOKEN: i32 = OTHER_TOKEN + b'`' as i32;
-const FROZEN_PRIM_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
+const ETEX_EXPR: i32 = 67;
 
-// translated from xetex-xetex0.c:5078 (scan_char_class)
-pub(crate) fn scan_char_class_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_char_class_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > CHAR_CLASS_LIMIT {
         leaf_int_range_error(
@@ -202,8 +241,7 @@ pub(crate) fn scan_char_class_in(st: &mut crate::state::EngineState) -> Result<(
     Ok(())
 }
 
-// translated from xetex-xetex0.c:5096 (scan_char_class_not_ignored)
-pub(crate) fn scan_eight_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_eight_bit_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > 255 {
         leaf_int_range_error(
@@ -215,8 +253,7 @@ pub(crate) fn scan_eight_bit_int_in(st: &mut crate::state::EngineState) -> Resul
     Ok(())
 }
 
-// translated from xetex-xetex0.c:5330 (scan_math_class_int)
-pub(crate) fn scan_math_class_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_math_class_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > 7 {
         leaf_int_range_error(
@@ -228,9 +265,7 @@ pub(crate) fn scan_math_class_int_in(st: &mut crate::state::EngineState) -> Resu
     Ok(())
 }
 
-// translated from xetex-xetex0.c:5348 (scan_math_fam_int)
-// translated from xetex-xetex0.c:5366 (scan_four_bit_int)
-pub(crate) fn scan_four_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_four_bit_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > 15 {
         leaf_int_range_error(
@@ -242,8 +277,7 @@ pub(crate) fn scan_four_bit_int_in(st: &mut crate::state::EngineState) -> Result
     Ok(())
 }
 
-// translated from xetex-xetex0.c:5384 (scan_fifteen_bit_int)
-pub(crate) fn scan_fifteen_bit_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_fifteen_bit_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > 32767 {
         leaf_int_range_error(
@@ -255,11 +289,7 @@ pub(crate) fn scan_fifteen_bit_int_in(st: &mut crate::state::EngineState) -> Res
     Ok(())
 }
 
-// translated from xetex-xetex0.c:5168 (scan_xetex_math_char_int)
-// math_char(x) = (x as u32) & 0x1FFFFF (xetex-xetexd.h:1205)
-pub(crate) fn scan_xetex_math_char_int_in(
-    st: &mut crate::state::EngineState,
-) -> Result<(), SccAbort> {
+pub(crate) fn scan_xetex_math_char_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     let mc = (st.scanner.cur_val as u32) & 0x1F_FFFF;
     if mc == ACTIVE_MATH_CHAR as u32 {
@@ -288,7 +318,7 @@ pub(crate) fn scan_xetex_math_char_int_in(
     Ok(())
 }
 
-pub(crate) fn scan_delimiter_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_delimiter_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > 0x7FF_FFFF {
         let errmsg = error_here_with_diagnostic_in(st, c"Bad delimiter code".as_ptr());
@@ -304,10 +334,6 @@ pub(crate) fn scan_delimiter_int_in(st: &mut crate::state::EngineState) -> Resul
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// max_hyphenatable_length
-// ---------------------------------------------------------------------------
-
 /// Reads the `\XeTeXhyphenatablelength` integer parameter from `eqtb`.
 pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
     let v = eqtb.b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH);
@@ -318,39 +344,20 @@ pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// scan_normal_glue / scan_mu_glue
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// x_token / scan_optional_equals
-// ---------------------------------------------------------------------------
-
-// Command-code constants (xetex_format.h / xetex-constants.h).
-const MAX_CHAR_VAL: i32 = 0x200000; // 1 << 21
-const OTHER_TOKEN: i32 = 0x1800000; // OTHER_CHAR << 21
-const CALL: u8 = 113;
-// FROZEN_CONTROL_SEQUENCE + 6 (xetex_format.h:201, xetex-constants.h:61)
-// END_MATCH_TOKEN + 1 (xetex-constants.h:360–361)
-const PROTECTED_TOKEN: i32 = 0x1C00001;
-
-// Token-encoding constants (xetex-constants.h:353).
-const MATH_SHIFT_TOKEN: i32 = 0x600000;
-
 pub(crate) fn insert_dollar_sign_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     crate::input::back_input_in(st)?;
     st.scanner.cur_tok = MATH_SHIFT_TOKEN + '$' as i32;
-    crate::output::error_here_with_diagnostic_in(st, c"Missing $ inserted".as_ptr());
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    error_here_with_diagnostic_in(st, c"Missing $ inserted".as_ptr());
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
     st.errors.help_ptr = 2;
     st.errors.help_line[1] = c"I've inserted a begin-math/end-math symbol since I think".as_ptr();
     st.errors.help_line[0] = c"you left one out. Proceed, with fingers crossed.".as_ptr();
     crate::main_control::mc_propagate_error(crate::input::ins_error_in(st)?)
 }
 
-pub(crate) fn scan_optional_equals_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_optional_equals_in(st: &mut EngineState) -> Result<(), SccAbort> {
     loop {
         get_x_token_in(st)?;
         if st.scanner.cur_cmd != SPACER {
@@ -363,14 +370,7 @@ pub(crate) fn scan_optional_equals_in(st: &mut crate::state::EngineState) -> Res
     Ok(())
 }
 
-// Command-code values for scan_left_brace (xetex_format.h).
-const LEFT_BRACE_TOKEN: i32 = 0x200000;
-
-// ---------------------------------------------------------------------------
-// get_x_token / get_x_or_protected
-// ---------------------------------------------------------------------------
-
-pub(crate) fn get_x_or_protected_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_x_or_protected_in(st: &mut EngineState) -> Result<(), SccAbort> {
     loop {
         get_token_in(st)?;
         if st.scanner.cur_cmd <= MAX_COMMAND {
@@ -386,53 +386,10 @@ pub(crate) fn get_x_or_protected_in(st: &mut crate::state::EngineState) -> Resul
     }
 }
 
-// ---------------------------------------------------------------------------
-// scan_keyword
-// ---------------------------------------------------------------------------
-
-// MEM_TOP - 13 (xetex_format.h:30, xetex-constants.h:50)
-// xetex-constants.h:202
-
-// ---------------------------------------------------------------------------
-// scan_expr
-// ---------------------------------------------------------------------------
-
-// xetex-constants.h:121,145–150,182; xetex_format.h:568–570; xetex-constants.h:12,15,288
-const EXPR_NONE: i16 = 0;
-const EXPR_ADD: i16 = 1;
-const EXPR_SUB: i16 = 2;
-const EXPR_MULT: i16 = 3;
-const EXPR_DIV: i16 = 4;
-const EXPR_SCALE: i16 = 5;
-const EXPR_NODE_SIZE: i32 = 4;
-const GLUE_VAL_EXPR: i16 = 2;
-const NORMAL_EXPR: u16 = 0;
-const TEX_INFINITY: i32 = 0x7FFF_FFFF;
-
-// ---------------------------------------------------------------------------
-// scan_general_text
-// ---------------------------------------------------------------------------
-
-// xetex-constants.h:187
-const ABSORBING: u8 = 5;
-// xetex_format.h:232
-// xetex-constants.h:352
-const RIGHT_BRACE_LIMIT: i32 = 0x600000;
-// MEM_TOP - 3 (xetex-constants.h:40)
-const TEMP_HEAD: i32 = 4_999_999 - 3;
-
-// ---------------------------------------------------------------------------
-// scan_spec
-// ---------------------------------------------------------------------------
-
-// xetex-constants.h:256,264
-const EXACTLY: u8 = 0;
-const ADDITIONAL: u8 = 1;
-
 /// The save stack lives in `st.save_stack`; the only cold abort is
 /// `new_save_level`'s save-stack overflow, surfaced through [`SccAbort`].
 pub(crate) fn scan_spec_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     c: GroupCode,
     three_codes: bool,
 ) -> Result<(), SccAbort> {
@@ -479,11 +436,6 @@ pub(crate) fn scan_spec_in(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// round_decimals / xetex_scan_dimen / scan_glyph_number
-// ---------------------------------------------------------------------------
-
-// translated from xetex-xetex0.c:4392 (round_decimals, was static)
 fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
     let mut a: i32 = 0;
     let mut k = k;
@@ -494,19 +446,7 @@ fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
     (a + 1) / 2
 }
 
-// ---------------------------------------------------------------------------
-// scan_dimen / scan_decimal
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// scan_rule_spec
-// ---------------------------------------------------------------------------
-
-// xetex_format.h:273 / xetex-constants.h:316,339
-const VRULE: u8 = 35;
-const DEFAULT_RULE: i32 = 26214;
-
-pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i32, SccAbort> {
+pub(crate) fn scan_rule_spec_in(st: &mut EngineState) -> Result<i32, SccAbort> {
     let Some(r) = crate::mem::alloc_rule(&mut st.mem) else {
         return Err(main_mem_overflow_scc());
     };
@@ -533,26 +473,6 @@ pub(crate) fn scan_rule_spec_in(st: &mut crate::state::EngineState) -> Result<i3
     Ok(r.idx().0)
 }
 
-// xetex-constants.h:204
-
-// ---------------------------------------------------------------------------
-// pseudo_start
-// ---------------------------------------------------------------------------
-
-// INT_BASE = 7_826_729 (xetex_format.h); INT_PAR__new_line_char = 49
-const INT_PAR_TRACING_SCAN_TOKENS: i32 = 59; // xetex_format.h:94
-                                             // xetex-core.h / xetex-xetexd.h:430
-
-// ---------------------------------------------------------------------------
-// str_toks_cat / str_toks
-// ---------------------------------------------------------------------------
-
-// xetex-constants.h:356
-const SPACE_TOKEN: i32 = 0x1400020;
-// xetex_format.h:246
-const ACTIVE_CHAR: i32 = 13;
-
-/// translated from xetex-xetex0.c:6363 (str_toks_cat)
 /// Cold abort reasons for [`str_toks_cat_in`].
 pub(crate) enum StrToksAbort {
     /// `pool_ptr + 1 > pool_size`: `overflow("pool size", …)`.
@@ -567,13 +487,13 @@ pub(crate) fn str_toks_cat_in(
     strings: &mut crate::state::StringsState,
     b: i32,
     cat: i16,
-) -> Result<crate::units::MemPtr, StrToksAbort> {
+) -> Result<MemPtr, StrToksAbort> {
     if strings.pool_ptr + 1 > strings.pool_size {
         return Err(StrToksAbort::PoolOverflow);
     }
 
-    let mut p = crate::units::MemPtr::from_raw(TEMP_HEAD);
-    p.set_link(mem, crate::units::MemPtr::NULL);
+    let mut p = MemPtr::from_raw(TEMP_HEAD);
+    p.set_link(mem, MemPtr::NULL);
     let mut k = b;
 
     while k < strings.pool_ptr {
@@ -613,61 +533,11 @@ pub(crate) fn str_toks_cat_in(
     Ok(p)
 }
 
-// ---------------------------------------------------------------------------
-// the_toks
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// pass_text
-// ---------------------------------------------------------------------------
-
-// xetex_format.h:349,350,537; xetex-constants.h:183
-const SKIPPING: u8 = 1;
-const IF_TEST: u8 = 107;
-// INT_PAR__tracing_ifs = 58 (xetex_format.h:93)
-
-// ---------------------------------------------------------------------------
-// scan_toks
-// ---------------------------------------------------------------------------
-
-// xetex-constants.h:182,184
-const DEFINING: u8 = 2;
-// xetex-constants.h:297 / xetex_format.h:237
-const MAC_PARAM: u8 = 6;
-// xetex_format.h:353
-const THE: u8 = 111;
-// xetex-constants.h:341  (BIGGEST_USV + 2)
-const NO_EXPAND_FLAG: i32 = 0x10_FFFF + 2;
-// xetex-constants.h:355,359,360,350
-const LEFT_BRACE_LIMIT: i32 = 0x400000;
-const OUT_PARAM_TOKEN: i32 = 0xA00000;
-const MATCH_TOKEN: i32 = 0x1A00000;
-const END_MATCH_TOKEN: i32 = 0x1C00000;
-// ZERO_TOKEN = OTHER_TOKEN + '0' = 0x1800000 + 48 = 0x1800030
-const ZERO_TOKEN: i32 = OTHER_TOKEN + b'0' as i32;
-
-// ---------------------------------------------------------------------------
-// read_toks
-// ---------------------------------------------------------------------------
-
-// xetex-constants.h:268,277,223
-// INT_PAR__end_line_char = 48 (xetex_format.h:83)
-
-/// translated from xetex-xetex0.c:7268 (read_toks)
-pub(crate) fn read_toks_in(
-    st: &mut crate::state::EngineState,
-    n: i32,
-    r: i32,
-    j: i32,
-) -> Result<(), SccAbort> {
-    use crate::mem::TEX_NULL;
-
+pub(crate) fn read_toks_in(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<(), SccAbort> {
     st.scanner.scanner_status = DEFINING;
     st.scanner.warning_index = r;
-    let new_def = get_avail_scc(st)?;
-    st.scanner.def_ref = new_def;
-    new_def.set_info(&mut st.mem, TEX_NULL);
-    let mut p = new_def;
+    let def_ref = new_def_ref_in(st)?;
+    let mut p = def_ref;
 
     let q = get_avail_scc(st)?;
     p.set_link(&mut st.mem, q);
@@ -716,7 +586,7 @@ pub(crate) fn read_toks_in(
                 if st.scanner.align_state != 1_000_000 {
                     crate::errors::runaway_in(st);
                     error_here_with_diagnostic_in(st, c"File ended within ".as_ptr());
-                    crate::output::print_esc_cstr_in(st, c"read".as_ptr());
+                    print_esc_cstr_in(st, c"read".as_ptr());
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
                     st.errors.help_ptr = 1;
                     st.errors.help_line[0] = c"This \\read has unbalanced braces.".as_ptr();
@@ -792,51 +662,26 @@ pub(crate) fn read_toks_in(
         }
     }
 
-    st.scanner.cur_val = new_def.0;
+    st.scanner.cur_val = def_ref.0;
     st.scanner.scanner_status = NORMAL_SCANNER;
     st.scanner.align_state = s;
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// extra_right_brace
-// ---------------------------------------------------------------------------
-
-// xetex-constants.h:166,167,168
-
-// ---------------------------------------------------------------------------
-// scan_font_ident
-// ---------------------------------------------------------------------------
-
-const SPACE_SHRINK_CODE: i32 = 4;
-
-// ---------------------------------------------------------------------------
-// scan_something_internal
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// scan_int
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// eTeX_enabled
-// ---------------------------------------------------------------------------
-
-// translated from xetex-xetex0.c:8811 (eTeX_enabled)
 /// `&mut EngineState` core of [`eTeX_enabled`]: the recoverable "disabled
 /// feature" diagnostic prints in order then defers a non-`Continue` outcome via
 /// [`crate::main_control::MainControlAbort`].
 #[allow(non_snake_case)]
 pub(crate) fn eTeX_enabled_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     b: bool,
     j: u16,
     k: i32,
 ) -> Result<bool, crate::main_control::MainControlAbort> {
     if !b {
-        crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
-        crate::output::print_cmd_chr_in(st, j, k);
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
+        print_cmd_chr_in(st, j, k);
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 1;
         st.errors.help_line[0] = c"Sorry, this optional e-TeX feature has been disabled.".as_ptr();
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
@@ -844,55 +689,6 @@ pub(crate) fn eTeX_enabled_in(
     Ok(b)
 }
 
-// ---------------------------------------------------------------------------
-// effective_char / effective_char_info
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// you_cant / report_illegal_case / privileged
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// align_error / no_align_error / omit_error / cs_error
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// push_math
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// append_glue / append_kern
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// make_mark
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// new_interaction
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// alter_aux / alter_prev_graf / alter_page_so_far / alter_integer / alter_box_dimen
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// trap_zero_glue
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// fix_language
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// off_save
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// tokens_to_string
-// ---------------------------------------------------------------------------
-
-// translated from xetex-xetex0.c:13060 (tokens_to_string)
 /// Cold-abort sentinel for [`tokens_to_string_in`].
 pub(crate) enum TokensToStringAbort {
     /// Called with `selector` already `new_string` (a programmer error).
@@ -905,7 +701,7 @@ pub(crate) enum TokensToStringAbort {
 /// `new_string`-reentrancy guard and the string-pool overflow ride
 /// [`TokensToStringAbort`].
 pub(crate) fn tokens_to_string_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     p: i32,
 ) -> Result<i32, TokensToStringAbort> {
     if st.shipout.selector == SELECTOR_NEW_STRING {
@@ -915,28 +711,13 @@ pub(crate) fn tokens_to_string_in(
     st.shipout.selector = SELECTOR_NEW_STRING;
     let arg = st.mem.b32s1(p);
     let l = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list_in(st, arg, crate::mem::TEX_NULL, l);
+    crate::output::show_token_list_in(st, arg, TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting as i32;
     crate::string_pool::make_string(&mut st.strings)
         .map_err(|_| TokensToStringAbort::StringOverflow)
 }
 
-// ---------------------------------------------------------------------------
-// compare_strings
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// do_endv
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// get_r_token
-// ---------------------------------------------------------------------------
-
-const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE; // xetex-constants.h:55
-
-// translated from xetex-xetex0.c:10407 (get_r_token)
-pub(crate) fn get_r_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_r_token_in(st: &mut EngineState) -> Result<(), SccAbort> {
     loop {
         loop {
             get_token_in(st)?;
@@ -973,73 +754,12 @@ pub(crate) fn get_r_token_in(st: &mut crate::state::EngineState) -> Result<(), S
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// append_discretionary
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// shift_case
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// build_discretionary
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// append_to_vlist
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// fin_align
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// align_peek
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// append_italic_correction
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// make_accent
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// new_font
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// do_register_command
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// unpackage
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// delete_last
-// ---------------------------------------------------------------------------
-
 /// Scans one math field; the `{`...`}` sub-formula arm pushes a
 /// `GroupCode::Math` and returns.
 pub(crate) fn scan_math_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     p: i32,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    const LETTER: u8 = 11; // xetex_format.h:243
-    const OTHER_CHAR_CMD: u8 = 12; // xetex_format.h:244
-    const DELIM_NUM: u8 = 15; // xetex_format.h:251
-    const CHAR_NUM_CMD: u8 = 16; // xetex_format.h:253
-    const MATH_CHAR_NUM: u8 = 17; // xetex_format.h:255
-    const CHAR_GIVEN_CMD: u8 = 68; // xetex_format.h:306
-    const MATH_GIVEN_CMD: u8 = 69; // xetex_format.h:308
-    const XETEX_MATH_GIVEN: u8 = 70; // xetex_format.h:309
-    const ACTIVE_MATH_CHAR: i32 = 0x1FFFFF; // xetex-constants.h:343
-    const MATH_CHAR_NODE: i32 = 1; // xetex-constants.h:269
-    const INT_PAR_CUR_FAM: i32 = 44; // xetex_format.h:79
-    const NUMBER_MATH_FAMILIES_VAL: i32 = 256; // xetex-constants.h:31
-
     let c: i32;
     'main: loop {
         loop {
@@ -1050,7 +770,7 @@ pub(crate) fn scan_math_in(
         }
         c = loop {
             break match st.scanner.cur_cmd {
-                LETTER | OTHER_CHAR_CMD | CHAR_GIVEN_CMD => {
+                LETTER | OTHER_CHAR | CHAR_GIVEN => {
                     let mc = st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr);
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
                         st.scanner.cur_cs = st.scanner.cur_chr + 1;
@@ -1062,10 +782,10 @@ pub(crate) fn scan_math_in(
                     }
                     mc
                 }
-                CHAR_NUM_CMD => {
+                CHAR_NUM => {
                     scan_char_num_in(st)?;
                     st.scanner.cur_chr = st.scanner.cur_val;
-                    st.scanner.cur_cmd = CHAR_GIVEN_CMD;
+                    st.scanner.cur_cmd = CHAR_GIVEN;
                     continue; // goto reswitch
                 }
                 MATH_CHAR_NUM => {
@@ -1085,7 +805,7 @@ pub(crate) fn scan_math_in(
                         set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
                     }
                 }
-                MATH_GIVEN_CMD => {
+                MATH_GIVEN => {
                     let v = st.scanner.cur_chr;
                     set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
                 }
@@ -1116,11 +836,10 @@ pub(crate) fn scan_math_in(
         };
         break;
     }
-    st.mem.set_b32s1(p, MATH_CHAR_NODE);
+    st.mem.set_b32s1(p, MATH_CHAR);
     st.mem.set_b16s0(p, (c % 65536) as u16);
     let cur_fam_val = st.eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM);
-    let fam: u16 = if math_class_fn(c) == 7 && (0..NUMBER_MATH_FAMILIES_VAL).contains(&cur_fam_val)
-    {
+    let fam: u16 = if math_class_fn(c) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&cur_fam_val) {
         cur_fam_val as u16
     } else {
         math_fam_fn(c) as u16
@@ -1132,15 +851,10 @@ pub(crate) fn scan_math_in(
 
 /// Appends a math-char noad (or expands the active-math-char).
 pub(crate) fn set_math_char_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     c: i32,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    const ACTIVE_MATH_CHAR_SM: i32 = 0x1FFFFF;
-    const MATH_CHAR_NODE_SM: i32 = 1; // xetex-constants.h:269
-    const INT_PAR_CUR_FAM_SM: i32 = 44;
-    const NUMBER_MATH_FAM_SM: i32 = 256;
-
-    if math_char_fn(c) == ACTIVE_MATH_CHAR_SM {
+    if math_char_fn(c) == ACTIVE_MATH_CHAR {
         st.scanner.cur_cs = st.scanner.cur_chr + 1;
         st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
         st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
@@ -1150,13 +864,13 @@ pub(crate) fn set_math_char_in(
         // `alloc_noad` hands back the typed handle directly; this site does not
         // guard main-memory overflow (as before), so a failure panics here.
         let nd = crate::mem::alloc_noad(&mut st.mem).expect("new noad");
-        nd.set_nucleus_type(&mut st.mem, MATH_CHAR_NODE_SM);
+        nd.set_nucleus_type(&mut st.mem, MATH_CHAR);
         let ch = math_char_fn(c);
         nd.set_nucleus_char(&mut st.mem, (ch % 65536) as u16);
         nd.set_nucleus_fam(&mut st.mem, math_fam_fn(c) as u16);
         if math_class_fn(c) == 7 {
-            let cf = st.eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM_SM);
-            if (0..NUMBER_MATH_FAM_SM).contains(&cf) {
+            let cf = st.eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM);
+            if (0..NUMBER_MATH_FAMILIES).contains(&cf) {
                 nd.set_nucleus_fam(&mut st.mem, cf as u16);
             }
             nd.set_noad_type(&mut st.mem, NodeType::OrdNoad);
@@ -1218,11 +932,10 @@ impl From<crate::ext::NativeFontAbort> for NodeRecycleAbort {
 impl NodeRecycleAbort {
     /// Map to the unified [`EngineAbort`] terminal.
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        const MEM_TOP_NR: i32 = 4_999_999;
         match self {
             NodeRecycleAbort::Overflow => crate::errors::EngineAbort::Overflow {
                 what: c"main memory size".as_ptr(),
-                n: MEM_TOP_NR + 1,
+                n: MEM_TOP + 1,
             },
             NodeRecycleAbort::OverflowRunaway => crate::mem::main_memory_overflow_abort(),
             NodeRecycleAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
@@ -1241,29 +954,7 @@ macro_rules! cnl_get_node {
     };
 }
 
-// Re-export cnl_get_node for the font-loading group in fonts.rs and
-// copy_node_list in packaging.rs.
 pub(crate) use cnl_get_node;
-
-// ---------------------------------------------------------------------------
-// check_outer_validity
-// ---------------------------------------------------------------------------
-
-// Scanner-status discriminants (xetex-constants.h:182–187).
-const NORMAL_COV: u8 = 0;
-const SKIPPING_COV: u8 = 1;
-const DEFINING_COV: u8 = 2;
-const MATCHING_COV: u8 = 3;
-const ALIGNING_COV: u8 = 4;
-const ABSORBING_COV: u8 = 5;
-// Token constants (xetex-constants.h:351; xetex_format.h:357; xetex-constants.h:59).
-const RIGHT_BRACE_TOKEN_COV: i32 = 0x40_0000; // RIGHT_BRACE << 21
-const OUTER_CALL_COV: u8 = 115; // xetex_format.h:357
-const FROZEN_CR_COV: i32 = 2_243_226 + 1; // FROZEN_CONTROL_SEQUENCE + 1
-const FROZEN_FI_COV: i32 = 2_243_226 + 4; // FROZEN_CONTROL_SEQUENCE + 4
-const IF_TEST_COV: u16 = 107; // xetex_format.h:349
-                              // Input-state discriminant (already TOKEN_LIST = 0 in input.rs).
-const TOKEN_LIST_COV: u16 = 0;
 
 /// Handles the cold runaway / forbidden-cs / incomplete-`\if` recovery,
 /// returning the recovering `error`/`ins_error`
@@ -1271,12 +962,12 @@ const TOKEN_LIST_COV: u16 = 0;
 /// `begin_token_list` overflow ride [`InputAbort`](crate::input::InputAbort).
 /// Normal (`NORMAL`) status returns `ErrorOutcome::Continue`.
 pub(crate) fn check_outer_validity_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
 ) -> Result<crate::errors::ErrorOutcome, crate::input::InputAbort> {
     use crate::errors::ErrorOutcome;
     use crate::input::InputAbort;
 
-    if st.scanner.scanner_status == NORMAL_COV {
+    if st.scanner.scanner_status == NORMAL_SCANNER {
         return Ok(ErrorOutcome::Continue);
     }
     st.errors.deletions_allowed = false;
@@ -1284,7 +975,7 @@ pub(crate) fn check_outer_validity_in(
     // If cur_cs is a control sequence, push it back as a backed-up token.
     if st.scanner.cur_cs != 0 {
         let ci = st.input.cur_input;
-        if ci.state == TOKEN_LIST_COV || ci.name < 1 || ci.name > 17 {
+        if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
             let p = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
             p.set_info(&mut st.mem, CS_TOKEN_FLAG + st.scanner.cur_cs);
             crate::input::begin_token_list_in(st, p.0, 3 /* BACKED_UP */)?;
@@ -1293,46 +984,43 @@ pub(crate) fn check_outer_validity_in(
         st.scanner.cur_chr = ' ' as i32;
     }
 
-    let oc = if st.scanner.scanner_status > SKIPPING_COV {
+    let oc = if st.scanner.scanner_status > SKIPPING {
         // scanner_status > SKIPPING: runaway — we hit EOF or OUTER inside a definition/macro/preamble.
         crate::errors::runaway_in(st);
         if st.scanner.cur_cs == 0 {
-            crate::output::error_here_with_diagnostic_in(st, c"File ended".as_ptr());
+            error_here_with_diagnostic_in(st, c"File ended".as_ptr());
         } else {
             st.scanner.cur_cs = 0;
-            crate::output::error_here_with_diagnostic_in(
-                st,
-                c"Forbidden control sequence found".as_ptr(),
-            );
+            error_here_with_diagnostic_in(st, c"Forbidden control sequence found".as_ptr());
         }
 
         let p = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
         match st.scanner.scanner_status {
-            DEFINING_COV => {
-                crate::output::print_cstr_in(st, c" while scanning definition".as_ptr());
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+            DEFINING => {
+                print_cstr_in(st, c" while scanning definition".as_ptr());
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
             }
-            MATCHING_COV => {
-                crate::output::print_cstr_in(st, c" while scanning use".as_ptr());
+            MATCHING => {
+                print_cstr_in(st, c" while scanning use".as_ptr());
                 let par_token = st.input.par_token;
                 p.set_info(&mut st.mem, par_token);
-                st.scanner.long_state = OUTER_CALL_COV;
+                st.scanner.long_state = OUTER_CALL;
             }
-            ALIGNING_COV => {
-                crate::output::print_cstr_in(st, c" while scanning preamble".as_ptr());
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+            ALIGNING => {
+                print_cstr_in(st, c" while scanning preamble".as_ptr());
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
                 let q = p;
                 let p2 = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
                 p2.set_link(&mut st.mem, q);
-                p2.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_CR_COV);
+                p2.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_CR);
                 st.scanner.align_state = -1_000_000;
                 crate::input::begin_token_list_in(st, p2.0, 5 /* INSERTED */)?;
                 // For ALIGNING, we push p2 as the token list, not p.
                 // Then fall through to the help message.
-                crate::output::print_cstr_in(st, c" of ".as_ptr());
+                print_cstr_in(st, c" of ".as_ptr());
                 let warning_index = st.scanner.warning_index;
                 crate::output::sprint_cs_in(st, warning_index);
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                capture_to_diagnostic_in(st, std::ptr::null_mut());
                 st.errors.help_ptr = 4;
                 st.errors.help_line[3] = c"I suspect you have forgotten a `}', causing me".as_ptr();
                 st.errors.help_line[2] = c"to read past where you wanted me to stop.".as_ptr();
@@ -1344,18 +1032,18 @@ pub(crate) fn check_outer_validity_in(
                 st.errors.deletions_allowed = true;
                 return Ok(oc);
             }
-            ABSORBING_COV => {
-                crate::output::print_cstr_in(st, c" while scanning text".as_ptr());
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN_COV + b'}' as i32);
+            ABSORBING => {
+                print_cstr_in(st, c" while scanning text".as_ptr());
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
             }
             _ => {}
         }
 
         crate::input::begin_token_list_in(st, p.0, 5 /* INSERTED */)?;
-        crate::output::print_cstr_in(st, c" of ".as_ptr());
+        print_cstr_in(st, c" of ".as_ptr());
         let warning_index = st.scanner.warning_index;
         crate::output::sprint_cs_in(st, warning_index);
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 4;
         st.errors.help_line[3] = c"I suspect you have forgotten a `}', causing me".as_ptr();
         st.errors.help_line[2] = c"to read past where you wanted me to stop.".as_ptr();
@@ -1364,13 +1052,13 @@ pub(crate) fn check_outer_validity_in(
         crate::errors::error_in(st)
     } else {
         // scanner_status == SKIPPING: inside \if...\fi skip.
-        crate::output::error_here_with_diagnostic_in(st, c"Incomplete ".as_ptr());
+        error_here_with_diagnostic_in(st, c"Incomplete ".as_ptr());
         let cur_if = st.scanner.cur_if;
-        crate::output::print_cmd_chr_in(st, IF_TEST_COV, cur_if as i32);
-        crate::output::print_cstr_in(st, c"; all text was ignored after line ".as_ptr());
+        print_cmd_chr_in(st, IF_TEST as u16, cur_if as i32);
+        print_cstr_in(st, c"; all text was ignored after line ".as_ptr());
         let skip_line = st.scanner.skip_line;
-        crate::output::print_int_in(st, skip_line);
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        print_int_in(st, skip_line);
+        capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 3;
         st.errors.help_line[2] = c"A forbidden control sequence occurred in skipped text.".as_ptr();
         st.errors.help_line[1] =
@@ -1383,16 +1071,12 @@ pub(crate) fn check_outer_validity_in(
             st.errors.help_line[2] =
                 c"The file ended while I was skipping conditional text.".as_ptr();
         }
-        st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_FI_COV;
+        st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_FI;
         crate::input::ins_error_in(st)?
     };
     st.errors.deletions_allowed = true;
     Ok(oc)
 }
-
-// ---------------------------------------------------------------------------
-// expand
-// ---------------------------------------------------------------------------
 
 /// Deferred cold outcomes of [`get_next_in`].
 pub(crate) enum GetNextOutcome {
@@ -1421,7 +1105,7 @@ pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::I
 
 /// The central tokenizer. Cold abort / recoverable-error / no-legal-`\end`
 /// tails ride [`GetNextOutcome`].
-pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome {
+pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
 
     macro_rules! try_in {
@@ -1432,42 +1116,6 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
             }
         };
     }
-
-    // State codes (xetex-constants.h)
-    const TOKEN_LIST: u16 = 0;
-    const MID_LINE: u16 = 1;
-    const SKIP_BLANKS: u16 = 17;
-    const NEW_LINE: u16 = 33;
-    // Category codes (xetex_format.h)
-    const LEFT_BRACE_CAT: u8 = 1;
-    const RIGHT_BRACE_CAT: u8 = 2;
-    const TAB_MARK_CAT: u8 = 4;
-    const CAR_RET: u8 = 5;
-    const SUP_MARK: u8 = 7;
-    const SPACER: u8 = 10;
-    const LETTER: u8 = 11;
-    // Other constants
-    const NULL_CS_GN: i32 = 2_228_225; // xetex_format.h:199
-    const BIGGEST_USV_GN: i32 = 0x10_FFFF;
-    const OUTER_CALL_GN: u8 = 115;
-    const DONT_EXPAND_GN: u8 = 118;
-    const MAX_COMMAND_GN: u8 = 102;
-    const RELAX_GN: u8 = 0;
-    const NO_EXPAND_FLAG_GN: i32 = BIGGEST_USV_GN + 2;
-    const MAX_CHAR_VAL_GN: i32 = 0x200000;
-    const OUT_PARAM_GN: u8 = 5;
-    const PARAMETER_GN: u16 = 0;
-    const V_TEMPLATE_GN: u16 = 2;
-    const OMIT_GN: u8 = 63;
-    const OMIT_TEMPLATE_GN: i32 = 4_999_999 - 10; // MEM_TOP - 10
-    const ALIGNING_GN: u8 = 4;
-    const LOCAL_EVERY_EOF: i32 = 10;
-    const LOCAL_TECTONIC_CODA: i32 = 12;
-    const EVERY_EOF_TEXT_GN: u16 = 16;
-    const TECTONIC_CODA_TEXT_GN: u16 = 19;
-    const SELECTOR_LOG_ONLY_GN: i32 = 18;
-    const INT_PAR_TRACING_NESTING: i32 = 60;
-    const INT_PAR_END_LINE_CHAR_GN: i32 = 48;
 
     #[inline(always)]
     fn is_lc_hex(c: i32) -> bool {
@@ -1511,7 +1159,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                             // ANY_STATE_PLUS(ESCAPE): escape sequence
                             1 | 17 | 33 => {
                                 if st.input.cur_input.loc > st.input.cur_input.limit {
-                                    st.scanner.cur_cs = NULL_CS_GN;
+                                    st.scanner.cur_cs = NULL_CS;
                                 } else {
                                     'start_cs: loop {
                                         let cs_start = st.input.cur_input.loc;
@@ -1596,7 +1244,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                                 c - b'a' as i32 + 10
                                                             };
                                                     }
-                                                    if new_chr <= BIGGEST_USV_GN {
+                                                    if new_chr <= BIGGEST_USV {
                                                         st.input.buffer[(k - 1) as usize] = new_chr;
                                                         let shift = 2 * sup_count - 1;
                                                         st.input.cur_input.limit =
@@ -1696,7 +1344,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                                 c - b'a' as i32 + 10
                                                             };
                                                     }
-                                                    if new_chr <= BIGGEST_USV_GN {
+                                                    if new_chr <= BIGGEST_USV {
                                                         st.input.buffer[(k - 1) as usize] = new_chr;
                                                         let shift = 2 * sup_count - 1;
                                                         st.input.cur_input.limit =
@@ -1743,7 +1391,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 // found:
                                 st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
                                 st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
-                                if st.scanner.cur_cmd >= OUTER_CALL_GN {
+                                if st.scanner.cur_cmd >= OUTER_CALL {
                                     match check_outer_validity_in(st) {
                                         Ok(crate::errors::ErrorOutcome::Continue) => {}
                                         Ok(oc) => return GetNextOutcome::Error(oc),
@@ -1758,7 +1406,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
                                 st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
                                 st.input.cur_input.state = MID_LINE;
-                                if st.scanner.cur_cmd >= OUTER_CALL_GN {
+                                if st.scanner.cur_cmd >= OUTER_CALL {
                                     match check_outer_validity_in(st) {
                                         Ok(crate::errors::ErrorOutcome::Continue) => {}
                                         Ok(oc) => return GetNextOutcome::Error(oc),
@@ -1818,7 +1466,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                                     c - b'a' as i32 + 10
                                                 };
                                         }
-                                        if new_chr > BIGGEST_USV_GN {
+                                        if new_chr > BIGGEST_USV {
                                             st.scanner.cur_chr =
                                                 st.input.buffer[(st.input.cur_input.loc) as usize];
                                             // fall to not_exp
@@ -1836,11 +1484,11 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
                             // ANY_STATE_PLUS(INVALID_CHAR): invalid character
                             16 | 32 | 48 => {
-                                crate::output::error_here_with_diagnostic_in(
+                                error_here_with_diagnostic_in(
                                     st,
                                     c"Text line contains an invalid character".as_ptr(),
                                 );
-                                crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
+                                capture_to_diagnostic_in(st, std::ptr::null_mut());
                                 st.errors.help_ptr = 2;
                                 st.errors.help_line[(1) as usize] =
                                     c"A funny symbol that I can't read has just been input."
@@ -1881,7 +1529,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 st.scanner.cur_cs = st.input.par_loc;
                                 st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
                                 st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
-                                if st.scanner.cur_cmd >= OUTER_CALL_GN {
+                                if st.scanner.cur_cmd >= OUTER_CALL {
                                     match check_outer_validity_in(st) {
                                         Ok(crate::errors::ErrorOutcome::Continue) => {}
                                         Ok(oc) => return GetNextOutcome::Error(oc),
@@ -1951,7 +1599,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                         try_in!(crate::input::begin_token_list_in(
                                             st,
                                             __p,
-                                            EVERY_EOF_TEXT_GN
+                                            EVERY_EOF_TEXT
                                         ))
                                     };
                                     continue 'restart;
@@ -1975,7 +1623,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                     try_in!(crate::input::begin_token_list_in(
                                         st,
                                         __p,
-                                        EVERY_EOF_TEXT_GN
+                                        EVERY_EOF_TEXT
                                     ))
                                 };
                                 continue 'restart;
@@ -2010,7 +1658,7 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                             continue 'restart;
                         }
 
-                        let end_char = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR_GN);
+                        let end_char = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
                         if !(0..=255).contains(&end_char) {
                             st.input.cur_input.limit = st.input.cur_input.limit - 1;
                         } else {
@@ -2039,13 +1687,13 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                                 try_in!(crate::input::begin_token_list_in(
                                     st,
                                     __p,
-                                    TECTONIC_CODA_TEXT_GN
+                                    TECTONIC_CODA_TEXT
                                 ))
                             };
                             continue 'restart;
                         }
                         return GetNextOutcome::NoLegalEnd {
-                            open_log: st.shipout.selector < SELECTOR_LOG_ONLY_GN,
+                            open_log: st.shipout.selector < SELECTOR_LOG_ONLY,
                         };
                     }
                     continue 'texswitch;
@@ -2060,15 +1708,15 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                 st.scanner.cur_cs = t - CS_TOKEN_FLAG;
                 st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
                 st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
-                if st.scanner.cur_cmd >= OUTER_CALL_GN {
-                    if st.scanner.cur_cmd == DONT_EXPAND_GN {
+                if st.scanner.cur_cmd >= OUTER_CALL {
+                    if st.scanner.cur_cmd == DONT_EXPAND {
                         st.scanner.cur_cs = st.mem.b32s0(st.input.cur_input.loc) - CS_TOKEN_FLAG;
                         st.input.cur_input.loc = TEX_NULL;
                         st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
                         st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
-                        if st.scanner.cur_cmd > MAX_COMMAND_GN {
-                            st.scanner.cur_cmd = RELAX_GN;
-                            st.scanner.cur_chr = NO_EXPAND_FLAG_GN;
+                        if st.scanner.cur_cmd > MAX_COMMAND {
+                            st.scanner.cur_cmd = RELAX;
+                            st.scanner.cur_chr = NO_EXPAND_FLAG;
                         }
                     } else {
                         match check_outer_validity_in(st) {
@@ -2079,20 +1727,20 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
                     }
                 }
             } else {
-                st.scanner.cur_cmd = (t / MAX_CHAR_VAL_GN) as u8;
-                st.scanner.cur_chr = t % MAX_CHAR_VAL_GN;
+                st.scanner.cur_cmd = (t / MAX_CHAR_VAL) as u8;
+                st.scanner.cur_chr = t % MAX_CHAR_VAL;
                 match st.scanner.cur_cmd {
-                    x if x == LEFT_BRACE_CAT => {
+                    x if x == LEFT_BRACE => {
                         st.scanner.align_state = st.scanner.align_state + 1;
                     }
-                    x if x == RIGHT_BRACE_CAT => {
+                    x if x == RIGHT_BRACE => {
                         st.scanner.align_state = st.scanner.align_state - 1;
                     }
-                    x if x == OUT_PARAM_GN => {
+                    x if x == OUT_PARAM => {
                         {
                             let __p = st.input.param_stack
                                 [(st.input.cur_input.limit + st.scanner.cur_chr - 1) as usize];
-                            try_in!(crate::input::begin_token_list_in(st, __p, PARAMETER_GN))
+                            try_in!(crate::input::begin_token_list_in(st, __p, PARAMETER))
                         };
                         continue 'restart;
                     }
@@ -2107,10 +1755,10 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
 
         // Alignment preamble check (§818)
         if st.scanner.cur_cmd <= CAR_RET
-            && st.scanner.cur_cmd >= TAB_MARK_CAT
+            && st.scanner.cur_cmd >= TAB_MARK
             && st.scanner.align_state == 0
         {
-            if st.scanner.scanner_status == ALIGNING_GN || st.scanner.cur_align.0 == TEX_NULL {
+            if st.scanner.scanner_status == ALIGNING || st.scanner.cur_align.0 == TEX_NULL {
                 return GetNextOutcome::Abort(crate::input::InputAbort::Fatal(
                     c"(interwoven alignment preambles are not allowed)".as_ptr(),
                 ));
@@ -2118,15 +1766,15 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
             let saved_cmd = st.mem.b32s0(st.scanner.cur_align + 5);
             st.mem
                 .set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_chr);
-            if saved_cmd as u8 == OMIT_GN {
+            if saved_cmd as u8 == OMIT {
                 {
-                    let __p = OMIT_TEMPLATE_GN;
-                    try_in!(crate::input::begin_token_list_in(st, __p, V_TEMPLATE_GN))
+                    let __p = OMIT_TEMPLATE;
+                    try_in!(crate::input::begin_token_list_in(st, __p, V_TEMPLATE))
                 };
             } else {
                 {
                     let __p = st.mem.b32s1(st.scanner.cur_align + 2);
-                    try_in!(crate::input::begin_token_list_in(st, __p, V_TEMPLATE_GN))
+                    try_in!(crate::input::begin_token_list_in(st, __p, V_TEMPLATE))
                 };
             }
             st.scanner.cur_cmd = saved_cmd as u8;
@@ -2137,21 +1785,6 @@ pub(crate) fn get_next_in(st: &mut crate::state::EngineState) -> GetNextOutcome 
     }
     GetNextOutcome::Done
 }
-
-// ---------------------------------------------------------------------------
-// new_native_word_node
-// ---------------------------------------------------------------------------
-
-// Node type/subtype constants (xetex_format.h)
-// INT_PAR offset for xetex_generate_actual_text (xetex_format.h:114)
-
-// ---------------------------------------------------------------------------
-// main_control_main_loop
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// main_control
-// ---------------------------------------------------------------------------
 
 /// Deferred cold outcomes of the scanner / `expand` cores.
 pub(crate) enum SccAbort {
@@ -2251,7 +1884,7 @@ pub(crate) fn scc_err(o: crate::errors::ErrorOutcome) -> Result<(), SccAbort> {
 /// Inlined: as an out-of-line symbol this pure trampoline pays a call/ret plus
 /// a second multi-word outcome conversion on every token read.
 #[inline]
-pub(crate) fn get_next_scc(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_next_scc(st: &mut EngineState) -> Result<(), SccAbort> {
     Result::from(get_next_in(st))
 }
 
@@ -2266,31 +1899,64 @@ pub(crate) fn main_mem_overflow_scc() -> SccAbort {
 }
 
 /// `get_node` with its exhaustion `None` lifted into [`SccAbort`].
-pub(crate) fn get_node_scc(
-    st: &mut crate::state::EngineState,
-    s: i32,
-) -> Result<crate::units::MemPtr, SccAbort> {
+pub(crate) fn get_node_scc(st: &mut EngineState, s: i32) -> Result<MemPtr, SccAbort> {
     crate::mem::get_node(&mut st.mem, s).ok_or_else(main_mem_overflow_scc)
 }
 
-/// `get_avail` with its exhaustion `None` lifted into [`SccAbort`].
-///
-/// `#[inline(always)]`: `Result<MemPtr, SccAbort>` is too wide for a register
-/// return, so an out-of-line call round-trips the `Ok` through a caller stack
-/// slot (sret) on every single-word token allocation — where C's `get_avail`
-/// returns its `int32_t` in a register (and the C original hand-expands
-/// `fast_get_avail` directly inside the hot token-copy loops). Inlining folds
-/// the `Ok`/`?` pair away on those paths.
+// Always inlined: an out-of-line `Result<MemPtr, SccAbort>` return goes through memory.
 #[inline(always)]
-pub(crate) fn get_avail_scc(
-    st: &mut crate::state::EngineState,
-) -> Result<crate::units::MemPtr, SccAbort> {
+pub(crate) fn get_avail_scc(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
     crate::mem::get_avail(&mut st.mem).ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
+}
+
+/// Appends `token` to the token list whose tail is `tail`.
+#[inline(always)]
+pub(crate) fn store_new_token(
+    st: &mut EngineState,
+    tail: &mut MemPtr,
+    token: i32,
+) -> Result<(), SccAbort> {
+    let q = get_avail_scc(st)?;
+    tail.set_link(&mut st.mem, q);
+    q.set_info(&mut st.mem, token);
+    *tail = q;
+    Ok(())
+}
+
+/// Starts a new reference-counted token list in `def_ref` and returns it.
+fn new_def_ref_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
+    let def_ref = get_avail_scc(st)?;
+    st.scanner.def_ref = def_ref;
+    def_ref.set_info(&mut st.mem, TEX_NULL);
+    Ok(def_ref)
+}
+
+/// The contents of box register `n`.
+pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> i32 {
+    if n < 256 {
+        return st.eqtb.b32s1(BOX_BASE + n);
+    }
+    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n, false);
+    match NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr) {
+        Some(sa) => sa.sa_ptr(&st.mem).0,
+        None => TEX_NULL,
+    }
+}
+
+/// `get_x_token` until the result is not a space.
+#[inline]
+pub(crate) fn get_x_non_blank_in(st: &mut EngineState) -> Result<(), SccAbort> {
+    loop {
+        get_x_token_in(st)?;
+        if st.scanner.cur_cmd != SPACER {
+            return Ok(());
+        }
+    }
 }
 
 /// [`crate::mem::alloc_spec`] with arena exhaustion lifted into [`SccAbort`].
 pub(crate) fn new_spec_scc(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     p: impl crate::units::MemAddr,
 ) -> Result<NodePtr<GlueSpecNode>, SccAbort> {
     crate::mem::alloc_spec(&mut st.mem, p).ok_or_else(main_mem_overflow_scc)
@@ -2298,11 +1964,7 @@ pub(crate) fn new_spec_scc(
 
 /// `str_toks_cat` with its [`StrToksAbort`] cold overflow tails lifted into
 /// [`SccAbort`] (via [`crate::input::InputAbort`]).
-pub(crate) fn str_toks_scc(
-    st: &mut crate::state::EngineState,
-    b: i32,
-    cat: i16,
-) -> Result<crate::units::MemPtr, SccAbort> {
+pub(crate) fn str_toks_scc(st: &mut EngineState, b: i32, cat: i16) -> Result<MemPtr, SccAbort> {
     match str_toks_cat_in(&mut st.mem, &mut st.strings, b, cat) {
         Ok(p) => Ok(p),
         Err(StrToksAbort::PoolOverflow) => {
@@ -2317,14 +1979,12 @@ pub(crate) fn str_toks_scc(
     }
 }
 
-// ---------------------------------------------------------------------------
-
 /// Shared tail of the leaf `scan_int` range-check members: emit the "Bad …"
 /// diagnostic for an out-of-range `cur_val`, then reset it to zero. `help1` is
 /// the variable second help line (constant for most, `max_reg_help_line` for
 /// `scan_register_num`).
 fn leaf_int_range_error(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     err_msg: *const libc::c_char,
     help1: *const libc::c_char,
 ) -> Result<(), SccAbort> {
@@ -2339,7 +1999,7 @@ fn leaf_int_range_error(
     Ok(())
 }
 
-pub(crate) fn x_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn x_token_in(st: &mut EngineState) -> Result<(), SccAbort> {
     while st.scanner.cur_cmd > MAX_COMMAND {
         expand_in(st)?;
         get_next_scc(st)?;
@@ -2351,7 +2011,7 @@ pub(crate) fn x_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAb
     }
     Ok(())
 }
-pub(crate) fn get_x_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_x_token_in(st: &mut EngineState) -> Result<(), SccAbort> {
     loop {
         if st.cancellation.at_expansion_token() {
             return Err(SccAbort::Cancelled);
@@ -2379,22 +2039,18 @@ pub(crate) fn get_x_token_in(st: &mut crate::state::EngineState) -> Result<(), S
     }
     Ok(())
 }
-pub(crate) fn the_toks_in(
-    st: &mut crate::state::EngineState,
-) -> Result<crate::units::MemPtr, SccAbort> {
-    use crate::mem::TEX_NULL;
-
+pub(crate) fn the_toks_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
     if st.scanner.cur_chr & 1 != 0 {
         let c = st.scanner.cur_chr;
         scan_general_text_in(st)?;
         if c == 1 {
-            return Ok(crate::units::MemPtr::from_raw(st.scanner.cur_val));
+            return Ok(MemPtr::from_raw(st.scanner.cur_val));
         } else {
             let old_setting = st.shipout.selector;
             st.shipout.selector = SELECTOR_NEW_STRING;
             let b = st.strings.pool_ptr;
             let p = get_avail_scc(st)?;
-            let th = crate::units::MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+            let th = MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
             p.set_link(&mut st.mem, th);
             crate::output::token_show_in(st, p);
             crate::mem::flush_list(&mut st.mem, p);
@@ -2405,15 +2061,15 @@ pub(crate) fn the_toks_in(
     get_x_token_in(st)?;
     scan_something_internal_in(st, TOK_VAL, false)?;
     if st.scanner.cur_val_level >= IDENT_VAL as u8 {
-        let mut p = crate::units::MemPtr::from_raw(TEMP_HEAD);
-        p.set_link(&mut st.mem, crate::units::MemPtr::NULL);
+        let mut p = MemPtr::from_raw(TEMP_HEAD);
+        p.set_link(&mut st.mem, MemPtr::NULL);
         if st.scanner.cur_val_level == IDENT_VAL as u8 {
             let q = get_avail_scc(st)?;
             p.set_link(&mut st.mem, q);
             q.set_info(&mut st.mem, CS_TOKEN_FLAG + st.scanner.cur_val);
             p = q;
         } else if st.scanner.cur_val != TEX_NULL {
-            let mut r = crate::units::MemPtr::from_raw(st.scanner.cur_val).link(&st.mem);
+            let mut r = MemPtr::from_raw(st.scanner.cur_val).link(&st.mem);
             while !r.is_null() {
                 let q = get_avail_scc(st)?;
                 p.set_link(&mut st.mem, q);
@@ -2429,10 +2085,10 @@ pub(crate) fn the_toks_in(
         st.shipout.selector = SELECTOR_NEW_STRING;
         let b = st.strings.pool_ptr;
         match st.scanner.cur_val_level {
-            0 => crate::output::print_int_in(st, st.scanner.cur_val),
+            0 => print_int_in(st, st.scanner.cur_val),
             1 => {
                 crate::output::print_scaled_in(st, st.scanner.cur_val);
-                crate::output::print_cstr_in(st, c"pt".as_ptr());
+                print_cstr_in(st, c"pt".as_ptr());
             }
             2 => {
                 crate::output::print_spec_in(st, st.scanner.cur_val, c"pt".as_ptr());
@@ -2449,22 +2105,18 @@ pub(crate) fn the_toks_in(
     }
 }
 pub(crate) fn scan_toks_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     macro_def: bool,
     xpand: bool,
 ) -> Result<i32, SccAbort> {
-    use crate::mem::TEX_NULL;
-
     if macro_def {
         st.scanner.scanner_status = DEFINING;
     } else {
         st.scanner.scanner_status = ABSORBING;
     }
     st.scanner.warning_index = st.scanner.cur_cs;
-    let new_def = get_avail_scc(st)?;
-    st.scanner.def_ref = new_def;
-    new_def.set_info(&mut st.mem, TEX_NULL);
-    let mut p = new_def;
+    let def_ref = new_def_ref_in(st)?;
+    let mut p = def_ref;
     let mut hash_brace: i32 = 0;
     let mut t = ZERO_TOKEN;
 
@@ -2578,7 +2230,7 @@ pub(crate) fn scan_toks_in(
                         expand_in(st)?;
                     } else {
                         let q = the_toks_in(st)?;
-                        let th = crate::units::MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+                        let th = MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
                         if !th.is_null() {
                             p.set_link(&mut st.mem, th);
                             p = q;
@@ -2648,7 +2300,7 @@ pub(crate) fn scan_toks_in(
     }
     Ok(p.0)
 }
-pub(crate) fn pass_text_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn pass_text_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let save_scanner_status = st.scanner.scanner_status;
     st.scanner.scanner_status = SKIPPING;
     let mut l: i32 = 0;
@@ -2674,14 +2326,14 @@ pub(crate) fn pass_text_in(st: &mut crate::state::EngineState) -> Result<(), Scc
     }
     Ok(())
 }
-pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn pseudo_start_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_general_text_in(st)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
     crate::output::token_show_in(st, TEMP_HEAD);
     st.shipout.selector = old_setting;
     let head = st.mem.b32s1(TEMP_HEAD);
-    crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(head));
+    crate::mem::flush_list(&mut st.mem, MemPtr::from_raw(head));
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(SccAbort::Error(crate::errors::ErrorOutcome::Overflow {
@@ -2780,7 +2432,7 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
             crate::output::print_char_in(st, b' ' as i32);
         }
         st.input.cur_input.name = 19;
-        crate::output::print_cstr_in(st, c"( ".as_ptr());
+        print_cstr_in(st, c"( ".as_ptr());
         st.input.open_parens += 1;
         unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
     } else {
@@ -2790,7 +2442,7 @@ pub(crate) fn pseudo_start_in(st: &mut crate::state::EngineState) -> Result<(), 
     }
     Ok(())
 }
-pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let mut negative = false;
     let mut m: i32;
     let mut d: i32;
@@ -2958,7 +2610,7 @@ pub(crate) fn scan_int_in(st: &mut crate::state::EngineState) -> Result<(), SccA
     Ok(())
 }
 pub(crate) fn scan_dimen_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     mu: bool,
     inf: bool,
     shortcut: bool,
@@ -2966,21 +2618,12 @@ pub(crate) fn scan_dimen_in(
     xetex_scan_dimen_in(st, mu, inf, shortcut, true)
 }
 pub(crate) fn xetex_scan_dimen_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     mu: bool,
     inf: bool,
     shortcut: bool,
     requires_units: bool,
 ) -> Result<(), SccAbort> {
-    const NORMAL_ORDER: u8 = 0;
-    const FIL_ORDER: u8 = 1;
-    const FILLL_ORDER: u8 = 3;
-    const QUAD_CODE: i32 = 6; // xetex-constants.h:298
-    const X_HEIGHT_CODE: i32 = 5; // xetex-constants.h:294
-    const INT_PAR_MAG: i32 = 17; // xetex_format.h:52
-    const MINUS_TOKEN: i32 = OTHER_TOKEN + b'-' as i32;
-    const PLUS_TOKEN: i32 = OTHER_TOKEN + b'+' as i32;
-
     let mut f: i32 = 0;
     let mut negative = false;
 
@@ -3047,7 +2690,7 @@ pub(crate) fn xetex_scan_dimen_in(
 
                 if st.scanner.radix == 10 && st.scanner.cur_tok == POINT_TOKEN {
                     let mut k: i32 = 0;
-                    let mut p: i32 = crate::mem::TEX_NULL;
+                    let mut p: i32 = TEX_NULL;
                     get_token_in(st)?;
                     'decimal: loop {
                         get_x_token_in(st)?;
@@ -3315,10 +2958,7 @@ pub(crate) fn xetex_scan_dimen_in(
     }
     Ok(())
 }
-pub(crate) fn scan_glue_in(st: &mut crate::state::EngineState, level: i16) -> Result<(), SccAbort> {
-    const MINUS_TOKEN: i32 = OTHER_TOKEN + b'-' as i32;
-    const PLUS_TOKEN: i32 = OTHER_TOKEN + b'+' as i32;
-
+pub(crate) fn scan_glue_in(st: &mut EngineState, level: i16) -> Result<(), SccAbort> {
     let mu = level == MU_VAL;
     let mut negative = false;
 
@@ -3376,17 +3016,17 @@ pub(crate) fn scan_glue_in(st: &mut crate::state::EngineState, level: i16) -> Re
     st.scanner.cur_val = gs.ptr().0;
     Ok(())
 }
-pub(crate) fn scan_normal_glue_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_normal_glue_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_glue_in(st, GLUE_VAL)
 }
-pub(crate) fn scan_mu_glue_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
-    scan_glue_in(st, MU_VAL_SCAN)
+pub(crate) fn scan_mu_glue_in(st: &mut EngineState) -> Result<(), SccAbort> {
+    scan_glue_in(st, MU_VAL)
 }
-pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let mut l = st.scanner.cur_val_level as i16;
     let a = st.errors.arith_error;
     let mut b = false;
-    let mut p = crate::mem::TEX_NULL;
+    let mut p = TEX_NULL;
 
     st.scanner.expand_depth_count += 1;
     if st.scanner.expand_depth_count >= st.scanner.expand_depth {
@@ -3442,7 +3082,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                     scan_int_in(st)?;
                 } else if o == DIMEN_VAL {
                     scan_dimen_in(st, false, false, false)?;
-                } else if o == GLUE_VAL_EXPR {
+                } else if o == GLUE_VAL {
                     scan_normal_glue_in(st)?;
                 } else {
                     scan_mu_glue_in(st)?;
@@ -3470,7 +3110,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 EXPR_NONE
             };
             if o == EXPR_NONE {
-                if p == crate::mem::TEX_NULL {
+                if p == TEX_NULL {
                     if st.scanner.cur_cmd != RELAX {
                         crate::input::back_input_in(st)?;
                     }
@@ -3512,7 +3152,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             // o may be modified inside case 3 (EXPR_MULT → EXPR_SCALE)
             match s {
                 0 => {
-                    if l >= GLUE_VAL_EXPR && o != EXPR_NONE {
+                    if l >= GLUE_VAL && o != EXPR_NONE {
                         t = new_spec_scc(st, f)?.ptr().0;
                         crate::mem::delete_glue_ref(&mut st.mem, f);
                         if st.mem.b32s1(t + 2) == 0 {
@@ -3575,7 +3215,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 }
                 4 => {
                     // EXPR_DIV
-                    if l < GLUE_VAL_EXPR {
+                    if l < GLUE_VAL {
                         t = crate::scaled_math::quotient_in(&mut st.errors, t, f);
                     } else {
                         let v1 =
@@ -3700,7 +3340,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
             if o != EXPR_NONE {
                 continue; // goto continue_
             }
-            if p != crate::mem::TEX_NULL {
+            if p != TEX_NULL {
                 f = e;
                 let q = p;
                 e = st.mem.b32s1(q + 1);
@@ -3710,11 +3350,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
                 r = (st.mem.b16s0(q) % 4) as i16;
                 l = st.mem.b16s1(q) as i16;
                 p = st.mem.b32s1(q);
-                crate::mem::free_node(
-                    &mut st.mem,
-                    crate::units::MemPtr::from_raw(q),
-                    EXPR_NODE_SIZE,
-                );
+                crate::mem::free_node(&mut st.mem, MemPtr::from_raw(q), EXPR_NODE_SIZE);
                 skip_scan = true;
                 continue; // goto found
             }
@@ -3731,7 +3367,7 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
         st.errors.help_line[1] = c"I can't evaluate this expression,".as_ptr();
         st.errors.help_line[0] = c"since the result is out of range.".as_ptr();
         scc_err(crate::errors::error_in(st))?;
-        if l >= GLUE_VAL_EXPR {
+        if l >= GLUE_VAL {
             crate::mem::delete_glue_ref(&mut st.mem, e);
             e = 0;
             let v = st.mem.b32s1(e) + 1; // GLUE_SPEC_ref_count(e)++
@@ -3746,11 +3382,11 @@ pub(crate) fn scan_expr_in(st: &mut crate::state::EngineState) -> Result<(), Scc
     Ok(())
 }
 pub(crate) fn scan_keyword_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     s: *const libc::c_char,
 ) -> Result<bool, SccAbort> {
     let mut p = BACKUP_HEAD;
-    st.mem.set_b32s1(p, crate::mem::TEX_NULL);
+    st.mem.set_b32s1(p, TEX_NULL);
 
     let slen = unsafe { libc::strlen(s) };
 
@@ -3764,7 +3400,7 @@ pub(crate) fn scan_keyword_in(
                 st.mem.set_b32s1(p, q.0);
                 q.set_info(&mut st.mem, st.scanner.cur_tok);
                 let head = st.mem.b32s1(BACKUP_HEAD);
-                crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(head));
+                crate::mem::flush_list(&mut st.mem, MemPtr::from_raw(head));
                 return Ok(true);
             } else if st.scanner.cur_cmd != SPACER || p != BACKUP_HEAD {
                 crate::input::back_input_in(st)?;
@@ -3798,10 +3434,10 @@ pub(crate) fn scan_keyword_in(
         }
     }
     let head = st.mem.b32s1(BACKUP_HEAD);
-    crate::mem::flush_list(&mut st.mem, crate::units::MemPtr::from_raw(head));
+    crate::mem::flush_list(&mut st.mem, MemPtr::from_raw(head));
     Ok(true)
 }
-pub(crate) fn scan_left_brace_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_left_brace_in(st: &mut EngineState) -> Result<(), SccAbort> {
     loop {
         get_x_token_in(st)?;
         if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
@@ -3826,7 +3462,7 @@ pub(crate) fn scan_left_brace_in(st: &mut crate::state::EngineState) -> Result<(
     }
     Ok(())
 }
-pub(crate) fn scan_register_num_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_register_num_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > st.scanner.max_reg_num {
         let help1 = st.scanner.max_reg_help_line;
@@ -3834,9 +3470,7 @@ pub(crate) fn scan_register_num_in(st: &mut crate::state::EngineState) -> Result
     }
     Ok(())
 }
-pub(crate) fn scan_four_bit_int_or_18_in(
-    st: &mut crate::state::EngineState,
-) -> Result<(), SccAbort> {
+pub(crate) fn scan_four_bit_int_or_18_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || (st.scanner.cur_val > 15 && st.scanner.cur_val != 18) {
         leaf_int_range_error(
@@ -3848,12 +3482,10 @@ pub(crate) fn scan_four_bit_int_or_18_in(
     Ok(())
 }
 pub(crate) fn scan_something_internal_in(
-    st: &mut crate::state::EngineState,
+    st: &mut EngineState,
     level: i16,
     negative: bool,
 ) -> Result<(), SccAbort> {
-    use crate::mem::TEX_NULL;
-
     let mut m: i32;
     let n: i32;
     let k: i32;
@@ -4917,7 +4549,7 @@ pub(crate) fn scan_something_internal_in(
                             tx = q;
                         }
                     }
-                    if st.scanner.cur_chr == LAST_NODE_TYPE_CODE_VAL {
+                    if st.scanner.cur_chr == LAST_NODE_TYPE_CODE {
                         st.scanner.cur_val_level = INT_VAL as u8;
                         if tx == st.input.cur_list.head.0 || st.input.cur_list.mode == 0 {
                             st.scanner.cur_val = -1;
@@ -4961,7 +4593,7 @@ pub(crate) fn scan_something_internal_in(
                                     }
                                 }
                             }
-                            x if x == LAST_NODE_TYPE_CODE_VAL => {
+                            x if x == LAST_NODE_TYPE_CODE => {
                                 if node_type <= UNSET_NODE {
                                     st.scanner.cur_val = node_type as i32 + 1;
                                 } else {
@@ -4981,7 +4613,7 @@ pub(crate) fn scan_something_internal_in(
                                     st.scanner.cur_val = st.shipout.last_glue.0;
                                 }
                             }
-                            x if x == LAST_NODE_TYPE_CODE_VAL => {
+                            x if x == LAST_NODE_TYPE_CODE => {
                                 st.scanner.cur_val = st.shipout.last_node_type
                             }
                             _ => {}
@@ -5077,7 +4709,7 @@ pub(crate) fn scan_something_internal_in(
     }
     Ok(())
 }
-pub(crate) fn scan_char_num_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_char_num_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > BIGGEST_CHAR {
         leaf_int_range_error(
@@ -5088,7 +4720,7 @@ pub(crate) fn scan_char_num_in(st: &mut crate::state::EngineState) -> Result<(),
     }
     Ok(())
 }
-pub(crate) fn scan_usv_num_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_usv_num_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > BIGGEST_USV {
         leaf_int_range_error(
@@ -5099,9 +4731,7 @@ pub(crate) fn scan_usv_num_in(st: &mut crate::state::EngineState) -> Result<(), 
     }
     Ok(())
 }
-pub(crate) fn scan_char_class_not_ignored_in(
-    st: &mut crate::state::EngineState,
-) -> Result<(), SccAbort> {
+pub(crate) fn scan_char_class_not_ignored_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > CHAR_CLASS_LIMIT {
         leaf_int_range_error(
@@ -5112,7 +4742,7 @@ pub(crate) fn scan_char_class_not_ignored_in(
     }
     Ok(())
 }
-pub(crate) fn scan_math_fam_int_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_math_fam_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > NUMBER_MATH_FAMILIES - 1 {
         leaf_int_range_error(
@@ -5123,7 +4753,7 @@ pub(crate) fn scan_math_fam_int_in(st: &mut crate::state::EngineState) -> Result
     }
     Ok(())
 }
-pub(crate) fn scan_font_ident_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_font_ident_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let f;
     loop {
         get_x_token_in(st)?;
@@ -5152,12 +4782,7 @@ pub(crate) fn scan_font_ident_in(st: &mut crate::state::EngineState) -> Result<(
     st.scanner.cur_val = f;
     Ok(())
 }
-pub(crate) fn find_font_dimen_in(
-    st: &mut crate::state::EngineState,
-    writing: bool,
-) -> Result<(), SccAbort> {
-    use crate::mem::TEX_NULL;
-
+pub(crate) fn find_font_dimen_in(st: &mut EngineState, writing: bool) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     let n = st.scanner.cur_val;
     scan_font_ident_in(st)?;
@@ -5205,10 +4830,10 @@ pub(crate) fn find_font_dimen_in(
         error_here_with_diagnostic_in(st, c"Font ".as_ptr());
         let s1 = st.eqtb.hash[((FONT_ID_BASE + f) as usize) - 514].s1;
         crate::output::print_esc_in(st, s1);
-        crate::output::print_cstr_in(st, c" has only ".as_ptr());
+        print_cstr_in(st, c" has only ".as_ptr());
         let fp = st.fonts.font_params[f as usize];
-        crate::output::print_int_in(st, fp);
-        crate::output::print_cstr_in(st, c" fontdimen parameters".as_ptr());
+        print_int_in(st, fp);
+        print_cstr_in(st, c" fontdimen parameters".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
         st.errors.help_ptr = 2;
         st.errors.help_line[1] = c"To increase the number of font parameters, you must".as_ptr();
@@ -5218,10 +4843,7 @@ pub(crate) fn find_font_dimen_in(
     }
     Ok(())
 }
-pub(crate) fn scan_glyph_number_in(
-    st: &mut crate::state::EngineState,
-    f: i32,
-) -> Result<(), SccAbort> {
+pub(crate) fn scan_glyph_number_in(st: &mut EngineState, f: i32) -> Result<(), SccAbort> {
     if scan_keyword_in(st, c"/".as_ptr())? {
         crate::io::scan_and_pack_name_in(st)?;
         let name = if st.input.name_of_file.is_empty() {
@@ -5242,7 +4864,7 @@ pub(crate) fn scan_glyph_number_in(
     }
     Ok(())
 }
-pub(crate) fn get_token_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_token_in(st: &mut EngineState) -> Result<(), SccAbort> {
     st.eqtb.no_new_control_sequence = false;
     get_next_scc(st)?;
     st.eqtb.no_new_control_sequence = true;
@@ -5253,16 +4875,14 @@ pub(crate) fn get_token_in(st: &mut crate::state::EngineState) -> Result<(), Scc
     }
     Ok(())
 }
-pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_general_text_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let s = st.scanner.scanner_status;
     let w = st.scanner.warning_index;
     let d = st.scanner.def_ref.0;
     st.scanner.scanner_status = ABSORBING;
     st.scanner.warning_index = st.scanner.cur_cs;
-    let new_def = get_avail_scc(st)?;
-    st.scanner.def_ref = new_def;
-    new_def.set_info(&mut st.mem, crate::mem::TEX_NULL);
-    let mut p = new_def;
+    let def_ref = new_def_ref_in(st)?;
+    let mut p = def_ref;
     scan_left_brace_in(st)?;
     let mut unbalance: i32 = 1;
     loop {
@@ -5288,7 +4908,7 @@ pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result
     let av = st.mem.avail;
     st.mem.set_b32s1(dr, av);
     st.mem.avail = dr;
-    if q == crate::mem::TEX_NULL {
+    if q == TEX_NULL {
         st.scanner.cur_val = TEMP_HEAD;
     } else {
         st.scanner.cur_val = p.0;
@@ -5299,11 +4919,11 @@ pub(crate) fn scan_general_text_in(st: &mut crate::state::EngineState) -> Result
     st.scanner.def_ref.0 = d;
     Ok(())
 }
-pub(crate) fn scan_pdf_ext_toks_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_pdf_ext_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_toks_in(st, false, true)?;
     Ok(())
 }
-pub(crate) fn compare_strings_in(st: &mut crate::state::EngineState) -> Result<(), SccAbort> {
+pub(crate) fn compare_strings_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let save_cur_cs = st.scanner.cur_cs;
     scan_toks_in(st, false, true)?;
     let dr1 = st.scanner.def_ref.0;
@@ -5350,11 +4970,3 @@ pub(crate) fn compare_strings_in(st: &mut crate::state::EngineState) -> Result<(
     st.scanner.cur_val_level = INT_VAL as u8;
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// main_control_main_loop
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// main_control
-// ---------------------------------------------------------------------------

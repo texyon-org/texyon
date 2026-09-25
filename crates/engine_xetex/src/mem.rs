@@ -142,6 +142,14 @@ pub fn flush_list(mem: &mut MemState, p: MemPtr) {
     mem.avail = p.0;
 }
 
+/// Returns the one-word node `p` to the free list.
+#[inline]
+pub fn free_avail(mem: &mut MemState, p: MemPtr) {
+    let avail = mem.avail;
+    p.set_link(mem, MemPtr::from_raw(avail));
+    mem.avail = p.0;
+}
+
 // ---------------------------------------------------------------------------
 // free_node
 // ---------------------------------------------------------------------------

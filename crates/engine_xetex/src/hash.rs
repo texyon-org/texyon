@@ -206,3 +206,17 @@ pub fn prim_lookup(
         p = eqtb.prim_s0(p);
     }
 }
+
+/// `prim_lookup` of the name of control sequence `cs`.
+pub(crate) fn prim_lookup_cs(
+    eqtb: &mut EqtbState,
+    strings: &mut StringsState,
+    cs: i32,
+) -> Result<i32, HashLookupError> {
+    let s = if cs < HASH_BASE {
+        cs - crate::consts::SINGLE_BASE
+    } else {
+        eqtb.hash_s1(cs)
+    };
+    prim_lookup(eqtb, strings, s)
+}
