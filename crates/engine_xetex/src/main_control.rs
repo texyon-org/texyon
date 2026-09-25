@@ -3304,262 +3304,46 @@ pub(crate) fn main_control_append_normal_space_in(
     Ok(())
 }
 
-pub(crate) fn main_control_mode_independent_in(
-    st: &mut EngineState,
-) -> Result<(), MainControlAbort> {
-    match st.scanner.cur_cmd {
-        TOKS_REGISTER | ASSIGN_TOKS | ASSIGN_INT | ASSIGN_DIMEN | ASSIGN_GLUE | ASSIGN_MU_GLUE
-        | ASSIGN_FONT_DIMEN | ASSIGN_FONT_INT | SET_AUX | SET_PREV_GRAF | SET_PAGE_DIMEN
-        | SET_PAGE_INT | SET_BOX_DIMEN | SET_SHAPE | DEF_CODE | XETEX_DEF_CODE | DEF_FAMILY
-        | SET_FONT | DEF_FONT | REGISTER | ADVANCE | MULTIPLY | DIVIDE | PREFIX | LET
-        | SHORTHAND_DEF | READ_TO_CS | DEF | SET_BOX | HYPH_DATA | SET_INTERACTION => {
-            prefixed_command_in(st)?
-        }
-        AFTER_ASSIGNMENT => {
-            crate::scan::get_token_in(st)?;
-            st.scanner.after_token = st.scanner.cur_tok;
-        }
-        AFTER_GROUP => {
-            crate::scan::get_token_in(st)?;
-            crate::save::save_for_after(&mut st.save_stack, st.scanner.cur_tok)?;
-        }
-        IN_STREAM => unsafe { crate::io::open_or_close_in(st)? },
-        MESSAGE => crate::output::issue_message_in(st)?,
-        CASE_SHIFT => shift_case_in(st)?,
-        XRAY => crate::output::show_whatever_in(st)?,
-        EXTENSION => do_extension_in(st)?,
-        _ => {}
-    }
-    Ok(())
-}
-
-pub(crate) fn main_control_mode_error_cases_in(
-    st: &mut EngineState,
-) -> Result<(), MainControlAbort> {
-    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
-        (VMODE, VMOVE)
-        | (HMODE, HMOVE)
-        | (MMODE, HMOVE)
-        | (VMODE, LAST_ITEM)
-        | (HMODE, LAST_ITEM)
-        | (MMODE, LAST_ITEM)
-        | (VMODE, VADJUST)
-        | (VMODE, ITAL_CORR)
-        | (VMODE, EQ_NO)
-        | (HMODE, EQ_NO)
-        | (VMODE, MAC_PARAM)
-        | (HMODE, MAC_PARAM)
-        | (MMODE, MAC_PARAM) => {
-            mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
-        }
-        (VMODE, SUP_MARK)
-        | (HMODE, SUP_MARK)
-        | (VMODE, SUB_MARK)
-        | (HMODE, SUB_MARK)
-        | (VMODE, MATH_CHAR_NUM)
-        | (HMODE, MATH_CHAR_NUM)
-        | (VMODE, MATH_GIVEN)
-        | (HMODE, MATH_GIVEN)
-        | (VMODE, XETEX_MATH_GIVEN)
-        | (HMODE, XETEX_MATH_GIVEN)
-        | (VMODE, MATH_COMP)
-        | (HMODE, MATH_COMP)
-        | (VMODE, DELIM_NUM)
-        | (HMODE, DELIM_NUM)
-        | (VMODE, LEFT_RIGHT)
-        | (HMODE, LEFT_RIGHT)
-        | (VMODE, ABOVE)
-        | (HMODE, ABOVE)
-        | (VMODE, RADICAL)
-        | (HMODE, RADICAL)
-        | (VMODE, MATH_STYLE)
-        | (HMODE, MATH_STYLE)
-        | (VMODE, MATH_CHOICE)
-        | (HMODE, MATH_CHOICE)
-        | (VMODE, VCENTER)
-        | (HMODE, VCENTER)
-        | (VMODE, NON_SCRIPT)
-        | (HMODE, NON_SCRIPT)
-        | (VMODE, MKERN)
-        | (HMODE, MKERN)
-        | (VMODE, LIMIT_SWITCH)
-        | (HMODE, LIMIT_SWITCH)
-        | (VMODE, MSKIP)
-        | (HMODE, MSKIP)
-        | (VMODE, MATH_ACCENT)
-        | (HMODE, MATH_ACCENT)
-        | (MMODE, ENDV)
-        | (MMODE, PAR_END)
-        | (MMODE, STOP)
-        | (MMODE, VSKIP)
-        | (MMODE, UN_VBOX)
-        | (MMODE, VALIGN)
-        | (MMODE, HRULE) => crate::scan::insert_dollar_sign_in(st)?,
-        _ => {}
-    }
-    Ok(())
-}
-
-pub(crate) fn main_control_simple_list_group_cases_in(
-    st: &mut EngineState,
-) -> Result<(), MainControlAbort> {
+fn append_rule_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let mode = st.input.cur_list.mode.abs();
-    match (mode, st.scanner.cur_cmd) {
-        (VMODE, HRULE) | (HMODE, VRULE) | (MMODE, VRULE) => {
-            let p = crate::scan::scan_rule_spec_in(st)?;
-            tail_append(st, MemPtr::from_raw(p));
-            if mode == VMODE {
-                st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
-            } else if mode == HMODE {
-                st.input.cur_list.set_aux_s0(1000);
-            }
-        }
-        (VMODE, VSKIP) | (HMODE, HSKIP) | (MMODE, HSKIP) | (MMODE, MSKIP) => append_glue_in(st)?,
-        (VMODE, KERN) | (HMODE, KERN) | (MMODE, KERN) | (MMODE, MKERN) => append_kern_in(st)?,
-        (VMODE, LEFT_BRACE) | (HMODE, LEFT_BRACE) => {
-            crate::save::new_save_level(&mut st.save_stack, GroupCode::Simple, st.mem.line)?;
-        }
-        (VMODE, BEGIN_GROUP) | (HMODE, BEGIN_GROUP) | (MMODE, BEGIN_GROUP) => {
-            crate::save::new_save_level(&mut st.save_stack, GroupCode::SemiSimple, st.mem.line)?;
-        }
-        (VMODE, END_GROUP) | (HMODE, END_GROUP) | (MMODE, END_GROUP) => {
-            if st.save_stack.cur_group == GroupCode::SemiSimple {
-                crate::save::unsave_in(st)?;
-            } else {
-                off_save_in(st)?;
-            }
-        }
-        _ => {}
+    let p = crate::scan::scan_rule_spec_in(st)?;
+    tail_append(st, MemPtr::from_raw(p));
+    if mode == VMODE {
+        st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+    } else if mode == HMODE {
+        st.input.cur_list.set_aux_s0(1000);
     }
     Ok(())
 }
 
-fn main_control_box_list_cases_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
-        (VMODE, RIGHT_BRACE) | (HMODE, RIGHT_BRACE) | (MMODE, RIGHT_BRACE) => {
-            handle_right_brace_in(st)?
-        }
-        (VMODE, HMOVE) | (HMODE, VMOVE) | (MMODE, VMOVE) => {
-            let t = st.scanner.cur_chr;
-            crate::scan::scan_dimen_in(st, false, false, false)?;
-            if t == 0 {
-                scan_box_in(st, st.scanner.cur_val)?;
-            } else {
-                scan_box_in(st, -st.scanner.cur_val)?;
-            }
-        }
-        (VMODE, LEADER_SHIP) | (HMODE, LEADER_SHIP) | (MMODE, LEADER_SHIP) => {
-            scan_box_in(st, LEADER_FLAG - A_LEADERS as i32 + st.scanner.cur_chr)?;
-        }
-        (VMODE, MAKE_BOX) | (HMODE, MAKE_BOX) | (MMODE, MAKE_BOX) => begin_box_in(st, 0)?,
-        (VMODE, START_PAR) => new_graf_in(st, st.scanner.cur_chr > 0)?,
-        (VMODE, LETTER)
-        | (VMODE, OTHER_CHAR)
-        | (VMODE, CHAR_NUM)
-        | (VMODE, CHAR_GIVEN)
-        | (VMODE, MATH_SHIFT)
-        | (VMODE, UN_HBOX)
-        | (VMODE, VRULE)
-        | (VMODE, ACCENT)
-        | (VMODE, DISCRETIONARY)
-        | (VMODE, HSKIP)
-        | (VMODE, VALIGN)
-        | (VMODE, EX_SPACE)
-        | (VMODE, NO_BOUNDARY) => {
-            crate::input::back_input_in(st)?;
-            new_graf_in(st, true)?;
-        }
-        (HMODE, START_PAR) | (MMODE, START_PAR) => {
-            indent_in_hmode(st)?;
-        }
-        (VMODE, PAR_END) => {
-            normal_paragraph(st)?;
-            if st.input.cur_list.mode > 0 {
-                crate::pagebuilder::build_page_in(st)?;
-            }
-        }
-        (HMODE, PAR_END) => {
-            if st.scanner.align_state < 0 {
-                off_save_in(st)?;
-            }
-            end_graf_in(st)?;
-            if st.input.cur_list.mode == VMODE {
-                crate::pagebuilder::build_page_in(st)?;
-            }
-        }
-        (HMODE, STOP) | (HMODE, VSKIP) | (HMODE, HRULE) | (HMODE, UN_VBOX) | (HMODE, HALIGN) => {
-            head_for_vmode_in(st)?
-        }
-        (VMODE, INSERT)
-        | (HMODE, INSERT)
-        | (MMODE, INSERT)
-        | (HMODE, VADJUST)
-        | (MMODE, VADJUST) => begin_insert_or_adjust_in(st)?,
-        (VMODE, MARK) | (HMODE, MARK) | (MMODE, MARK) => make_mark_in(st)?,
-        (VMODE, BREAK_PENALTY) | (HMODE, BREAK_PENALTY) | (MMODE, BREAK_PENALTY) => {
-            append_penalty_in(st)?
-        }
-        (VMODE, REMOVE_ITEM) | (HMODE, REMOVE_ITEM) | (MMODE, REMOVE_ITEM) => delete_last_in(st)?,
-        (VMODE, UN_VBOX) | (HMODE, UN_HBOX) | (MMODE, UN_HBOX) => unpackage_in(st)?,
-        (HMODE, ITAL_CORR) => append_italic_correction_in(st)?,
-        (MMODE, ITAL_CORR) => {
-            let p = crate::mem::alloc_kern(&mut st.mem, 0)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-            tail_append(st, p.ptr());
-        }
-        (HMODE, DISCRETIONARY) | (MMODE, DISCRETIONARY) => append_discretionary_in(st)?,
-        (HMODE, ACCENT) => make_accent_in(st)?,
-        (VMODE, CAR_RET)
-        | (HMODE, CAR_RET)
-        | (MMODE, CAR_RET)
-        | (VMODE, TAB_MARK)
-        | (HMODE, TAB_MARK)
-        | (MMODE, TAB_MARK) => align_error_in(st)?,
-        _ => {}
+fn valign_or_lr_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+    if st.scanner.cur_chr <= 0 {
+        return init_align_in(st);
+    }
+    let enabled = crate::scan::eTeX_enabled_in(
+        st,
+        st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0,
+        st.scanner.cur_cmd as u16,
+        st.scanner.cur_chr,
+    )?;
+    if enabled {
+        let m = crate::mem::alloc_math(&mut st.mem, 0, st.scanner.cur_chr as i16)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        tail_append(st, m.ptr());
     }
     Ok(())
 }
 
-pub(crate) fn main_control_alignment_cases_in(
+/// Runs `action` if the math-shift group is open, else inserts what closes the current group.
+fn in_math_shift_group(
     st: &mut EngineState,
+    action: fn(&mut EngineState) -> Result<(), MainControlAbort>,
 ) -> Result<(), MainControlAbort> {
-    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
-        (VMODE, NO_ALIGN) | (HMODE, NO_ALIGN) | (MMODE, NO_ALIGN) => no_align_error_in(st)?,
-        (VMODE, OMIT) | (HMODE, OMIT) | (MMODE, OMIT) => omit_error_in(st)?,
-        (VMODE, HALIGN) => init_align_in(st)?,
-        (HMODE, VALIGN) => {
-            if st.scanner.cur_chr > 0 {
-                let enabled = crate::scan::eTeX_enabled_in(
-                    st,
-                    st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0,
-                    st.scanner.cur_cmd as u16,
-                    st.scanner.cur_chr,
-                )?;
-                if enabled {
-                    let p = crate::mem::alloc_math(&mut st.mem, 0, st.scanner.cur_chr as i16)
-                        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                    tail_append(st, p.ptr());
-                }
-            } else {
-                init_align_in(st)?;
-            }
-        }
-        (MMODE, HALIGN) => {
-            if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
-                if st.save_stack.cur_group == GroupCode::MathShift {
-                    init_align_in(st)?;
-                } else {
-                    off_save_in(st)?;
-                }
-            }
-        }
-        (VMODE, ENDV) | (HMODE, ENDV) => do_endv_in(st)?,
-        (VMODE, END_CS_NAME) | (HMODE, END_CS_NAME) | (MMODE, END_CS_NAME) => {
-            mc_propagate_error(crate::errors::cs_error_in(st))?
-        }
-        _ => {}
+    if st.save_stack.cur_group == GroupCode::MathShift {
+        action(st)
+    } else {
+        off_save_in(st)
     }
-    Ok(())
 }
 
 /// Scans the class, family and code of `\Umathchar` or `\Udelimiter`.
@@ -3577,124 +3361,56 @@ fn math_char_from_tex(v: i32) -> i32 {
     set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
 }
 
-pub(crate) fn main_control_math_cases_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
-        (HMODE, MATH_SHIFT) => init_math_in(st)?,
-
-        (MMODE, EQ_NO) => {
-            if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
-                if st.save_stack.cur_group == GroupCode::MathShift {
-                    crate::math::start_eq_no_in(st)?;
-                } else {
-                    off_save_in(st)?;
-                }
-            }
+fn math_char_num_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+    let c = match st.scanner.cur_chr {
+        2 => scan_umath_char(st)?,
+        1 => {
+            crate::scan::scan_xetex_math_char_int_in(st)?;
+            st.scanner.cur_val
         }
-
-        (MMODE, LEFT_BRACE) => {
-            let n = crate::mem::alloc_noad(&mut st.mem)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-            tail_append(st, n.ptr());
-            crate::input::back_input_in(st)?;
-            crate::scan::scan_math_in(st, n.nucleus_addr())?;
+        _ => {
+            crate::scan::scan_fifteen_bit_int_in(st)?;
+            math_char_from_tex(st.scanner.cur_val)
         }
-
-        (MMODE, LETTER) | (MMODE, OTHER_CHAR) | (MMODE, CHAR_GIVEN) => {
-            crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?;
-        }
-
-        (MMODE, CHAR_NUM) => {
-            crate::scan::scan_char_num_in(st)?;
-            st.scanner.cur_chr = st.scanner.cur_val;
-            crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?;
-        }
-
-        (MMODE, MATH_CHAR_NUM) => {
-            let c = match st.scanner.cur_chr {
-                2 => scan_umath_char(st)?,
-                1 => {
-                    crate::scan::scan_xetex_math_char_int_in(st)?;
-                    st.scanner.cur_val
-                }
-                _ => {
-                    crate::scan::scan_fifteen_bit_int_in(st)?;
-                    math_char_from_tex(st.scanner.cur_val)
-                }
-            };
-            crate::scan::set_math_char_in(st, c)?;
-        }
-
-        (MMODE, MATH_GIVEN) => {
-            crate::scan::set_math_char_in(st, math_char_from_tex(st.scanner.cur_chr))?;
-        }
-
-        (MMODE, XETEX_MATH_GIVEN) => {
-            crate::scan::set_math_char_in(st, st.scanner.cur_chr)?;
-        }
-
-        (MMODE, DELIM_NUM) => {
-            let c = if st.scanner.cur_chr == 1 {
-                scan_umath_char(st)?
-            } else {
-                crate::scan::scan_delimiter_int_in(st)?;
-                math_char_from_tex(st.scanner.cur_val / 4096)
-            };
-            crate::scan::set_math_char_in(st, c)?;
-        }
-
-        (MMODE, MATH_COMP) => {
-            let n = crate::mem::alloc_noad(&mut st.mem)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-            tail_append(st, n.ptr());
-            st.mem.set_b16s1(n.idx(), st.scanner.cur_chr as u16);
-            crate::scan::scan_math_in(st, n.nucleus_addr())?;
-        }
-
-        (MMODE, LIMIT_SWITCH) => crate::math::math_limit_switch_in(st)?,
-        (MMODE, RADICAL) => crate::math::math_radical_in(st)?,
-        (MMODE, ACCENT) | (MMODE, MATH_ACCENT) => crate::math::math_ac_in(st)?,
-
-        (MMODE, VCENTER) => {
-            crate::scan::scan_spec_in(st, GroupCode::Vcenter, false)?;
-            normal_paragraph(st)?;
-            crate::mem::push_nest_in(st)?;
-            st.input.cur_list.mode = INNER_VMODE;
-            st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
-            if st.shipout.insert_src_special_every_vbox {
-                crate::ext::insert_src_special_in(st)?;
-            }
-            begin_every(st, LOCAL_EVERY_VBOX, EVERY_VBOX_TEXT)?;
-        }
-
-        (MMODE, MATH_STYLE) => {
-            let s = crate::mem::alloc_style(&mut st.mem, st.scanner.cur_chr as i16)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-            tail_append(st, s.ptr());
-        }
-
-        (MMODE, NON_SCRIPT) => {
-            let g = crate::mem::alloc_glue(&mut st.mem, 0)
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-            tail_append(st, g.ptr());
-            g.set_subtype(&mut st.mem, COND_MATH_GLUE);
-        }
-
-        (MMODE, MATH_CHOICE) => crate::math::append_choices_in(st)?,
-        (MMODE, SUB_MARK) | (MMODE, SUP_MARK) => crate::math::sub_sup_in(st)?,
-        (MMODE, ABOVE) => crate::math::math_fraction_in(st)?,
-        (MMODE, LEFT_RIGHT) => crate::math::math_left_right_in(st)?,
-
-        (MMODE, MATH_SHIFT) => {
-            if st.save_stack.cur_group == GroupCode::MathShift {
-                after_math_in(st)?;
-            } else {
-                off_save_in(st)?;
-            }
-        }
-
-        _ => {}
-    }
+    };
+    crate::scan::set_math_char_in(st, c)?;
     Ok(())
+}
+
+fn math_delim_num_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+    let c = if st.scanner.cur_chr == 1 {
+        scan_umath_char(st)?
+    } else {
+        crate::scan::scan_delimiter_int_in(st)?;
+        math_char_from_tex(st.scanner.cur_val / 4096)
+    };
+    crate::scan::set_math_char_in(st, c)?;
+    Ok(())
+}
+
+/// Appends a noad of type `cur_chr` (or an ordinary one for `{`) and scans its nucleus.
+fn append_noad_in(st: &mut EngineState, backup: bool) -> Result<(), MainControlAbort> {
+    let n = crate::mem::alloc_noad(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    tail_append(st, n.ptr());
+    if backup {
+        crate::input::back_input_in(st)?;
+    } else {
+        st.mem.set_b16s1(n.idx(), st.scanner.cur_chr as u16);
+    }
+    crate::scan::scan_math_in(st, n.nucleus_addr())?;
+    Ok(())
+}
+
+fn math_vcenter_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+    crate::scan::scan_spec_in(st, GroupCode::Vcenter, false)?;
+    normal_paragraph(st)?;
+    crate::mem::push_nest_in(st)?;
+    st.input.cur_list.mode = INNER_VMODE;
+    st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
+    if st.shipout.insert_src_special_every_vbox {
+        crate::ext::insert_src_special_in(st)?;
+    }
+    begin_every(st, LOCAL_EVERY_VBOX, EVERY_VBOX_TEXT)
 }
 
 pub(crate) fn main_control_ignore_spaces_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -3837,31 +3553,6 @@ fn overflow_err<T>(p: Option<T>) -> Result<T, MainControlAbort> {
     p.ok_or(MainControlAbort::NodeRecycle(
         crate::scan::NodeRecycleAbort::Overflow,
     ))
-}
-
-/// Returns whether an inter-character token was inserted.
-pub(crate) fn main_control_hmode_inter_char_check_in(
-    st: &mut EngineState,
-) -> Result<bool, MainControlAbort> {
-    if st.input.cur_list.mode.abs() != HMODE {
-        return Ok(false);
-    }
-    insert_boundary_inter_char_toks(st)
-}
-
-pub(crate) fn main_control_spacer_cases_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    match (st.input.cur_list.mode.abs(), st.scanner.cur_cmd) {
-        (HMODE, SPACER) => {
-            if st.input.cur_list.aux_s0() == 1000 {
-                main_control_append_normal_space_in(st)?;
-            } else {
-                app_space_in(st)?;
-            }
-        }
-        (HMODE, EX_SPACE) | (MMODE, EX_SPACE) => main_control_append_normal_space_in(st)?,
-        _ => {}
-    }
-    Ok(())
 }
 
 /// Grows the native text buffer until `extra` more units fit.
@@ -4574,7 +4265,235 @@ fn lookahead(st: &mut EngineState) -> Result<bool, MainControlAbort> {
     Ok(true)
 }
 
-// Top-level TeX command dispatcher: big_switch / reswitch loop.
+/// Where `main_control` continues after a command.
+enum Next {
+    /// `big_switch`: fetch a new token.
+    BigSwitch,
+    /// `reswitch`: act on the current token again.
+    Reswitch,
+    /// `\end` or `\dump` finished the job.
+    Stop,
+}
+
+/// Acts on the current command in the current mode, TeX's `abs(mode)+cur_cmd` case.
+#[inline]
+unsafe fn dispatch_command_in(st: &mut EngineState) -> Result<Next, MainControlAbort> {
+    use crate::scan::NodeRecycleAbort;
+
+    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 0 {
+        crate::output::show_cur_cmd_chr_in(st);
+    }
+    let mode = st.input.cur_list.mode.abs();
+    let cmd = st.scanner.cur_cmd;
+    if mode == HMODE {
+        match cmd {
+            LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM => {
+                if cmd == CHAR_NUM {
+                    crate::scan::scan_usv_num_in(st)?;
+                    st.scanner.cur_chr = st.scanner.cur_val;
+                }
+                return Ok(if main_control_main_loop_in(st)? {
+                    Next::BigSwitch
+                } else {
+                    Next::Reswitch
+                });
+            }
+            NO_BOUNDARY => {
+                crate::scan::get_x_token_in(st)?;
+                if matches!(
+                    st.scanner.cur_cmd,
+                    LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM
+                ) {
+                    st.mainloop.cancel_boundary = true;
+                }
+                return Ok(Next::Reswitch);
+            }
+            _ => {}
+        }
+        if insert_boundary_inter_char_toks(st)? {
+            return Ok(Next::BigSwitch);
+        }
+    }
+
+    match (mode, cmd) {
+        (HMODE, SPACER) => {
+            if st.input.cur_list.aux_s0() == 1000 {
+                main_control_append_normal_space_in(st)?;
+            } else {
+                app_space_in(st)?;
+            }
+        }
+        (HMODE | MMODE, EX_SPACE) => main_control_append_normal_space_in(st)?,
+        (_, RELAX) | (VMODE | MMODE, SPACER) | (MMODE, NO_BOUNDARY) => {}
+        (_, IGNORE_SPACES) => {
+            main_control_ignore_spaces_in(st)?;
+            return Ok(Next::Reswitch);
+        }
+        (VMODE, STOP) => {
+            if its_all_over_in(st)? {
+                return Ok(Next::Stop);
+            }
+        }
+
+        (VMODE, VMOVE)
+        | (HMODE | MMODE, HMOVE)
+        | (_, LAST_ITEM)
+        | (VMODE, VADJUST | ITAL_CORR)
+        | (VMODE | HMODE, EQ_NO)
+        | (_, MAC_PARAM) => mc_propagate_error(crate::errors::report_illegal_case_in(st))?,
+        (
+            VMODE | HMODE,
+            SUP_MARK | SUB_MARK | MATH_CHAR_NUM | MATH_GIVEN | XETEX_MATH_GIVEN | MATH_COMP
+            | DELIM_NUM | LEFT_RIGHT | ABOVE | RADICAL | MATH_STYLE | MATH_CHOICE | VCENTER
+            | NON_SCRIPT | MKERN | LIMIT_SWITCH | MSKIP | MATH_ACCENT,
+        )
+        | (MMODE, ENDV | PAR_END | STOP | VSKIP | UN_VBOX | VALIGN | HRULE) => {
+            crate::scan::insert_dollar_sign_in(st)?
+        }
+
+        (VMODE, HRULE) | (HMODE | MMODE, VRULE) => append_rule_in(st)?,
+        (VMODE, VSKIP) | (HMODE | MMODE, HSKIP) | (MMODE, MSKIP) => append_glue_in(st)?,
+        (_, KERN) | (MMODE, MKERN) => append_kern_in(st)?,
+        (VMODE | HMODE, LEFT_BRACE) => {
+            crate::save::new_save_level(&mut st.save_stack, GroupCode::Simple, st.mem.line)?
+        }
+        (_, BEGIN_GROUP) => {
+            crate::save::new_save_level(&mut st.save_stack, GroupCode::SemiSimple, st.mem.line)?
+        }
+        (_, END_GROUP) => {
+            if st.save_stack.cur_group == GroupCode::SemiSimple {
+                crate::save::unsave_in(st)?;
+            } else {
+                off_save_in(st)?;
+            }
+        }
+
+        (_, RIGHT_BRACE) => handle_right_brace_in(st)?,
+        (VMODE, HMOVE) | (HMODE | MMODE, VMOVE) => {
+            let t = st.scanner.cur_chr;
+            crate::scan::scan_dimen_in(st, false, false, false)?;
+            let shift = if t == 0 {
+                st.scanner.cur_val
+            } else {
+                -st.scanner.cur_val
+            };
+            scan_box_in(st, shift)?;
+        }
+        (_, LEADER_SHIP) => scan_box_in(st, LEADER_FLAG - A_LEADERS as i32 + st.scanner.cur_chr)?,
+        (_, MAKE_BOX) => begin_box_in(st, 0)?,
+        (VMODE, START_PAR) => new_graf_in(st, st.scanner.cur_chr > 0)?,
+        (
+            VMODE,
+            LETTER | OTHER_CHAR | CHAR_NUM | CHAR_GIVEN | MATH_SHIFT | UN_HBOX | VRULE | ACCENT
+            | DISCRETIONARY | HSKIP | VALIGN | EX_SPACE | NO_BOUNDARY,
+        ) => {
+            crate::input::back_input_in(st)?;
+            new_graf_in(st, true)?;
+        }
+        (HMODE | MMODE, START_PAR) => indent_in_hmode(st)?,
+        (VMODE, PAR_END) => {
+            normal_paragraph(st)?;
+            if st.input.cur_list.mode > 0 {
+                crate::pagebuilder::build_page_in(st)?;
+            }
+        }
+        (HMODE, PAR_END) => {
+            if st.scanner.align_state < 0 {
+                off_save_in(st)?;
+            }
+            end_graf_in(st)?;
+            if st.input.cur_list.mode == VMODE {
+                crate::pagebuilder::build_page_in(st)?;
+            }
+        }
+        (HMODE, STOP | VSKIP | HRULE | UN_VBOX | HALIGN) => head_for_vmode_in(st)?,
+        (_, INSERT) | (HMODE | MMODE, VADJUST) => begin_insert_or_adjust_in(st)?,
+        (_, MARK) => make_mark_in(st)?,
+        (_, BREAK_PENALTY) => append_penalty_in(st)?,
+        (_, REMOVE_ITEM) => delete_last_in(st)?,
+        (VMODE, UN_VBOX) | (HMODE | MMODE, UN_HBOX) => unpackage_in(st)?,
+        (HMODE, ITAL_CORR) => append_italic_correction_in(st)?,
+        (MMODE, ITAL_CORR) => {
+            let k = crate::mem::alloc_kern(&mut st.mem, 0).ok_or(NodeRecycleAbort::Overflow)?;
+            tail_append(st, k.ptr());
+        }
+        (HMODE | MMODE, DISCRETIONARY) => append_discretionary_in(st)?,
+        (HMODE, ACCENT) => make_accent_in(st)?,
+        (_, CAR_RET | TAB_MARK) => align_error_in(st)?,
+        (_, NO_ALIGN) => no_align_error_in(st)?,
+        (_, OMIT) => omit_error_in(st)?,
+        (VMODE, HALIGN) => init_align_in(st)?,
+        (HMODE, VALIGN) => valign_or_lr_in(st)?,
+        (MMODE, HALIGN) => {
+            if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
+                in_math_shift_group(st, init_align_in)?;
+            }
+        }
+        (VMODE | HMODE, ENDV) => do_endv_in(st)?,
+        (_, END_CS_NAME) => mc_propagate_error(crate::errors::cs_error_in(st))?,
+
+        (HMODE, MATH_SHIFT) => init_math_in(st)?,
+        (MMODE, EQ_NO) => {
+            if crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
+                in_math_shift_group(st, |st| Ok(crate::math::start_eq_no_in(st)?))?;
+            }
+        }
+        (MMODE, LEFT_BRACE) => append_noad_in(st, true)?,
+        (MMODE, LETTER | OTHER_CHAR | CHAR_GIVEN) => {
+            crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?
+        }
+        (MMODE, CHAR_NUM) => {
+            crate::scan::scan_char_num_in(st)?;
+            st.scanner.cur_chr = st.scanner.cur_val;
+            crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?;
+        }
+        (MMODE, MATH_CHAR_NUM) => math_char_num_in(st)?,
+        (MMODE, MATH_GIVEN) => {
+            crate::scan::set_math_char_in(st, math_char_from_tex(st.scanner.cur_chr))?
+        }
+        (MMODE, XETEX_MATH_GIVEN) => crate::scan::set_math_char_in(st, st.scanner.cur_chr)?,
+        (MMODE, DELIM_NUM) => math_delim_num_in(st)?,
+        (MMODE, MATH_COMP) => append_noad_in(st, false)?,
+        (MMODE, LIMIT_SWITCH) => crate::math::math_limit_switch_in(st)?,
+        (MMODE, RADICAL) => crate::math::math_radical_in(st)?,
+        (MMODE, ACCENT | MATH_ACCENT) => crate::math::math_ac_in(st)?,
+        (MMODE, VCENTER) => math_vcenter_in(st)?,
+        (MMODE, MATH_STYLE) => {
+            let s = crate::mem::alloc_style(&mut st.mem, st.scanner.cur_chr as i16)
+                .ok_or(NodeRecycleAbort::Overflow)?;
+            tail_append(st, s.ptr());
+        }
+        (MMODE, NON_SCRIPT) => {
+            let g =
+                crate::mem::alloc_glue(&mut st.mem, ZERO_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
+            tail_append(st, g.ptr());
+            g.set_subtype(&mut st.mem, COND_MATH_GLUE);
+        }
+        (MMODE, MATH_CHOICE) => crate::math::append_choices_in(st)?,
+        (MMODE, SUB_MARK | SUP_MARK) => crate::math::sub_sup_in(st)?,
+        (MMODE, ABOVE) => crate::math::math_fraction_in(st)?,
+        (MMODE, LEFT_RIGHT) => crate::math::math_left_right_in(st)?,
+        (MMODE, MATH_SHIFT) => in_math_shift_group(st, |st| Ok(after_math_in(st)?))?,
+
+        (_, TOKS_REGISTER..=SET_INTERACTION) => prefixed_command_in(st)?,
+        (_, AFTER_ASSIGNMENT) => {
+            crate::scan::get_token_in(st)?;
+            st.scanner.after_token = st.scanner.cur_tok;
+        }
+        (_, AFTER_GROUP) => {
+            crate::scan::get_token_in(st)?;
+            crate::save::save_for_after(&mut st.save_stack, st.scanner.cur_tok)?;
+        }
+        (_, IN_STREAM) => crate::io::open_or_close_in(st)?,
+        (_, MESSAGE) => crate::output::issue_message_in(st)?,
+        (_, CASE_SHIFT) => shift_case_in(st)?,
+        (_, XRAY) => crate::output::show_whatever_in(st)?,
+        (_, EXTENSION) => do_extension_in(st)?,
+        _ => {}
+    }
+    Ok(Next::BigSwitch)
+}
+
 unsafe fn main_control_from_in(
     st: &mut EngineState,
     run_every_job: bool,
@@ -4583,9 +4502,8 @@ unsafe fn main_control_from_in(
     if run_every_job {
         begin_every(st, LOCAL_EVERY_JOB, EVERY_JOB_TEXT)?;
     }
-
-    // Cancellation and fence hooks are live only for resident sessions; the
-    // batch path must not pay per-command bookkeeping for them.
+    // Cancellation and fence hooks are for resident sessions only; batch runs
+    // must not pay for them per command.
     let resident = st.config.execution_mode == crate::state::EngineExecutionMode::Resident;
     loop {
         if resident && st.cancellation.at_command_boundary() {
@@ -4602,314 +4520,12 @@ unsafe fn main_control_from_in(
         if resident && crate::session::capture_command_fence(st) {
             return Err(MainControlAbort::Horizoned);
         }
-
-        'reswitch: loop {
-            if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 0 {
-                crate::output::show_cur_cmd_chr_in(st);
+        loop {
+            match dispatch_command_in(st)? {
+                Next::BigSwitch => break,
+                Next::Reswitch => {}
+                Next::Stop => return Ok(()),
             }
-
-            let mode = st.input.cur_list.mode.abs();
-            let cmd = st.scanner.cur_cmd;
-
-            // Fast char path and boundary check (first switch in C, before inter-char check)
-            match (mode, cmd) {
-                (HMODE, LETTER) | (HMODE, OTHER_CHAR) | (HMODE, CHAR_GIVEN) => {
-                    if main_control_main_loop_in(st)? {
-                        break 'reswitch;
-                    }
-                    continue 'reswitch;
-                }
-                (HMODE, CHAR_NUM) => {
-                    crate::scan::scan_usv_num_in(st)?;
-                    st.scanner.cur_chr = st.scanner.cur_val;
-                    if main_control_main_loop_in(st)? {
-                        break 'reswitch;
-                    }
-                    continue 'reswitch;
-                }
-                (HMODE, NO_BOUNDARY) => {
-                    crate::scan::get_x_token_in(st)?;
-                    if matches!(
-                        st.scanner.cur_cmd,
-                        LETTER | OTHER_CHAR | CHAR_GIVEN | CHAR_NUM
-                    ) {
-                        st.mainloop.cancel_boundary = true;
-                    }
-                    continue 'reswitch;
-                }
-                _ => {}
-            }
-
-            if main_control_hmode_inter_char_check_in(st)? {
-                break 'reswitch; // → big_switch
-            }
-
-            // Main command dispatch (second switch in C)
-            match (mode, cmd) {
-                // Spacer/ex_space → spacer_cases
-                (HMODE, SPACER) | (HMODE, EX_SPACE) | (MMODE, EX_SPACE) => {
-                    main_control_spacer_cases_in(st)?;
-                }
-                // No-op: ANY_MODE(RELAX), VMODE+SPACER, MMODE+SPACER, MMODE+NO_BOUNDARY
-                (HMODE, RELAX)
-                | (VMODE, RELAX)
-                | (MMODE, RELAX)
-                | (VMODE, SPACER)
-                | (MMODE, SPACER)
-                | (MMODE, NO_BOUNDARY) => {}
-                // ANY_MODE(IGNORE_SPACES) → call helper then reswitch
-                (HMODE, IGNORE_SPACES) | (VMODE, IGNORE_SPACES) | (MMODE, IGNORE_SPACES) => {
-                    main_control_ignore_spaces_in(st)?;
-                    continue 'reswitch;
-                }
-                // VMODE+STOP → "the only way out"
-                (VMODE, STOP) => {
-                    if its_all_over_in(st)? {
-                        return Ok(());
-                    }
-                }
-                // Forbidden / math-mode-mismatch error cases
-                (VMODE, VMOVE)
-                | (HMODE, HMOVE)
-                | (MMODE, HMOVE)
-                | (VMODE, LAST_ITEM)
-                | (HMODE, LAST_ITEM)
-                | (MMODE, LAST_ITEM)
-                | (VMODE, VADJUST)
-                | (VMODE, ITAL_CORR)
-                | (VMODE, EQ_NO)
-                | (HMODE, EQ_NO)
-                | (VMODE, MAC_PARAM)
-                | (HMODE, MAC_PARAM)
-                | (MMODE, MAC_PARAM)
-                | (VMODE, SUP_MARK)
-                | (HMODE, SUP_MARK)
-                | (VMODE, SUB_MARK)
-                | (HMODE, SUB_MARK)
-                | (VMODE, MATH_CHAR_NUM)
-                | (HMODE, MATH_CHAR_NUM)
-                | (VMODE, MATH_GIVEN)
-                | (HMODE, MATH_GIVEN)
-                | (VMODE, XETEX_MATH_GIVEN)
-                | (HMODE, XETEX_MATH_GIVEN)
-                | (VMODE, MATH_COMP)
-                | (HMODE, MATH_COMP)
-                | (VMODE, DELIM_NUM)
-                | (HMODE, DELIM_NUM)
-                | (VMODE, LEFT_RIGHT)
-                | (HMODE, LEFT_RIGHT)
-                | (VMODE, ABOVE)
-                | (HMODE, ABOVE)
-                | (VMODE, RADICAL)
-                | (HMODE, RADICAL)
-                | (VMODE, MATH_STYLE)
-                | (HMODE, MATH_STYLE)
-                | (VMODE, MATH_CHOICE)
-                | (HMODE, MATH_CHOICE)
-                | (VMODE, VCENTER)
-                | (HMODE, VCENTER)
-                | (VMODE, NON_SCRIPT)
-                | (HMODE, NON_SCRIPT)
-                | (VMODE, MKERN)
-                | (HMODE, MKERN)
-                | (VMODE, LIMIT_SWITCH)
-                | (HMODE, LIMIT_SWITCH)
-                | (VMODE, MSKIP)
-                | (HMODE, MSKIP)
-                | (VMODE, MATH_ACCENT)
-                | (HMODE, MATH_ACCENT)
-                | (MMODE, ENDV)
-                | (MMODE, PAR_END)
-                | (MMODE, STOP)
-                | (MMODE, VSKIP)
-                | (MMODE, UN_VBOX)
-                | (MMODE, VALIGN)
-                | (MMODE, HRULE) => {
-                    main_control_mode_error_cases_in(st)?;
-                }
-                // Rule/skip/kern/group cases
-                (VMODE, HRULE)
-                | (HMODE, VRULE)
-                | (MMODE, VRULE)
-                | (VMODE, VSKIP)
-                | (HMODE, HSKIP)
-                | (MMODE, HSKIP)
-                | (MMODE, MSKIP)
-                | (VMODE, KERN)
-                | (HMODE, KERN)
-                | (MMODE, KERN)
-                | (MMODE, MKERN)
-                | (VMODE, LEFT_BRACE)
-                | (HMODE, LEFT_BRACE)
-                | (VMODE, BEGIN_GROUP)
-                | (HMODE, BEGIN_GROUP)
-                | (MMODE, BEGIN_GROUP)
-                | (VMODE, END_GROUP)
-                | (HMODE, END_GROUP)
-                | (MMODE, END_GROUP) => {
-                    main_control_simple_list_group_cases_in(st)?;
-                }
-                // Box/list construction cases
-                (VMODE, RIGHT_BRACE)
-                | (HMODE, RIGHT_BRACE)
-                | (MMODE, RIGHT_BRACE)
-                | (VMODE, HMOVE)
-                | (HMODE, VMOVE)
-                | (MMODE, VMOVE)
-                | (VMODE, LEADER_SHIP)
-                | (HMODE, LEADER_SHIP)
-                | (MMODE, LEADER_SHIP)
-                | (VMODE, MAKE_BOX)
-                | (HMODE, MAKE_BOX)
-                | (MMODE, MAKE_BOX)
-                | (VMODE, START_PAR)
-                | (VMODE, LETTER)
-                | (VMODE, OTHER_CHAR)
-                | (VMODE, CHAR_NUM)
-                | (VMODE, CHAR_GIVEN)
-                | (VMODE, MATH_SHIFT)
-                | (VMODE, UN_HBOX)
-                | (VMODE, VRULE)
-                | (VMODE, ACCENT)
-                | (VMODE, DISCRETIONARY)
-                | (VMODE, HSKIP)
-                | (VMODE, VALIGN)
-                | (VMODE, EX_SPACE)
-                | (VMODE, NO_BOUNDARY)
-                | (HMODE, START_PAR)
-                | (MMODE, START_PAR)
-                | (VMODE, PAR_END)
-                | (HMODE, PAR_END)
-                | (HMODE, STOP)
-                | (HMODE, VSKIP)
-                | (HMODE, HRULE)
-                | (HMODE, UN_VBOX)
-                | (HMODE, HALIGN)
-                | (VMODE, INSERT)
-                | (HMODE, INSERT)
-                | (MMODE, INSERT)
-                | (HMODE, VADJUST)
-                | (MMODE, VADJUST)
-                | (VMODE, MARK)
-                | (HMODE, MARK)
-                | (MMODE, MARK)
-                | (VMODE, BREAK_PENALTY)
-                | (HMODE, BREAK_PENALTY)
-                | (MMODE, BREAK_PENALTY)
-                | (VMODE, REMOVE_ITEM)
-                | (HMODE, REMOVE_ITEM)
-                | (MMODE, REMOVE_ITEM)
-                | (VMODE, UN_VBOX)
-                | (HMODE, UN_HBOX)
-                | (MMODE, UN_HBOX)
-                | (HMODE, ITAL_CORR)
-                | (MMODE, ITAL_CORR)
-                | (HMODE, DISCRETIONARY)
-                | (MMODE, DISCRETIONARY)
-                | (HMODE, ACCENT)
-                | (VMODE, CAR_RET)
-                | (HMODE, CAR_RET)
-                | (MMODE, CAR_RET)
-                | (VMODE, TAB_MARK)
-                | (HMODE, TAB_MARK)
-                | (MMODE, TAB_MARK) => {
-                    main_control_box_list_cases_in(st)?;
-                }
-                // Alignment / endcsname cases
-                (VMODE, NO_ALIGN)
-                | (HMODE, NO_ALIGN)
-                | (MMODE, NO_ALIGN)
-                | (VMODE, OMIT)
-                | (HMODE, OMIT)
-                | (MMODE, OMIT)
-                | (VMODE, HALIGN)
-                | (HMODE, VALIGN)
-                | (MMODE, HALIGN)
-                | (VMODE, ENDV)
-                | (HMODE, ENDV)
-                | (VMODE, END_CS_NAME)
-                | (HMODE, END_CS_NAME)
-                | (MMODE, END_CS_NAME) => {
-                    main_control_alignment_cases_in(st)?;
-                }
-                // Math entry/exit cases
-                (HMODE, MATH_SHIFT)
-                | (MMODE, EQ_NO)
-                | (MMODE, LEFT_BRACE)
-                | (MMODE, LETTER)
-                | (MMODE, OTHER_CHAR)
-                | (MMODE, CHAR_GIVEN)
-                | (MMODE, CHAR_NUM)
-                | (MMODE, MATH_CHAR_NUM)
-                | (MMODE, MATH_GIVEN)
-                | (MMODE, XETEX_MATH_GIVEN)
-                | (MMODE, DELIM_NUM)
-                | (MMODE, MATH_COMP)
-                | (MMODE, LIMIT_SWITCH)
-                | (MMODE, RADICAL)
-                | (MMODE, ACCENT)
-                | (MMODE, MATH_ACCENT)
-                | (MMODE, VCENTER)
-                | (MMODE, MATH_STYLE)
-                | (MMODE, NON_SCRIPT)
-                | (MMODE, MATH_CHOICE)
-                | (MMODE, SUB_MARK)
-                | (MMODE, SUP_MARK)
-                | (MMODE, ABOVE)
-                | (MMODE, LEFT_RIGHT)
-                | (MMODE, MATH_SHIFT) => {
-                    main_control_math_cases_in(st)?;
-                }
-                // Mode-independent cases (ANY_MODE): assignments, defs, etc.
-                _ if matches!(
-                    cmd,
-                    TOKS_REGISTER
-                        | ASSIGN_TOKS
-                        | ASSIGN_INT
-                        | ASSIGN_DIMEN
-                        | ASSIGN_GLUE
-                        | ASSIGN_MU_GLUE
-                        | ASSIGN_FONT_DIMEN
-                        | ASSIGN_FONT_INT
-                        | SET_AUX
-                        | SET_PREV_GRAF
-                        | SET_PAGE_DIMEN
-                        | SET_PAGE_INT
-                        | SET_BOX_DIMEN
-                        | SET_SHAPE
-                        | DEF_CODE
-                        | XETEX_DEF_CODE
-                        | DEF_FAMILY
-                        | SET_FONT
-                        | DEF_FONT
-                        | REGISTER
-                        | ADVANCE
-                        | MULTIPLY
-                        | DIVIDE
-                        | PREFIX
-                        | LET
-                        | SHORTHAND_DEF
-                        | READ_TO_CS
-                        | DEF
-                        | SET_BOX
-                        | HYPH_DATA
-                        | SET_INTERACTION
-                        | AFTER_ASSIGNMENT
-                        | AFTER_GROUP
-                        | IN_STREAM
-                        | MESSAGE
-                        | CASE_SHIFT
-                        | XRAY
-                        | EXTENSION
-                ) =>
-                {
-                    main_control_mode_independent_in(st)?;
-                }
-                // Default: unrecognized / already handled → goto big_switch
-                _ => {}
-            }
-
-            break 'reswitch; // → big_switch (get_x_token at top of loop)
         }
     }
 }
