@@ -4604,36 +4604,61 @@ fn sa_word_define(
     Ok(())
 }
 
+fn add_token_ref(mem: &mut MemState, p: i32) {
+    mem.set_b32s0(p, mem.b32s0(p) + 1);
+}
+
+fn add_sa_ref(mem: &mut MemState, p: MemPtr) {
+    if let Some(sa) = NodePtr::<SaNode>::from_ptr(p) {
+        let refs = sa.sa_ref(mem);
+        sa.set_sa_ref(mem, refs + 1);
+    }
+}
+
+/// `sa_ptr(cur_ptr)`, or null when `cur_ptr` is null.
+fn cur_sa_ptr(st: &EngineState) -> i32 {
+    NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr).map_or(TEX_NULL, |sa| sa.sa_ptr(&st.mem).0)
+}
+
+/// Scans a pair of character classes and finds (with `w`, creates) its
+/// `\XeTeXinterchartoks` record in `cur_ptr`.
+fn find_inter_char_toks(st: &mut EngineState, w: bool) -> Result<(), MainControlAbort> {
+    crate::scan::scan_char_class_not_ignored_in(st)?;
+    // TeX parks the first class in `cur_ptr` while scanning the second.
+    st.scanner.cur_ptr.0 = st.scanner.cur_val;
+    crate::scan::scan_char_class_not_ignored_in(st)?;
+    let n = st.scanner.cur_ptr.0 * CHAR_CLASS_LIMIT + st.scanner.cur_val;
+    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, INTER_CHAR_VAL as u16, n, w)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    Ok(())
+}
+
+/// Defines token list register `p`, a sparse-array entry if `e`, as `list`.
+fn define_toks(
+    st: &mut EngineState,
+    e: bool,
+    global: bool,
+    p: i32,
+    list: i32,
+) -> Result<(), MainControlAbort> {
+    if e {
+        return sa_define(st, global, p, list);
+    }
+    let t = if list == TEX_NULL { UNDEFINED_CS } else { CALL };
+    define(st, global, p, t, list)?;
+    Ok(())
+}
+
 pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    fn set_class(x: i32) -> i32 {
-        (((x as u32) & 0x07) << 21) as i32
-    }
-    fn set_family(x: i32) -> i32 {
-        (((x as u32) & 0xFF) << 24) as i32
-    }
+    use crate::scan::NodeRecycleAbort;
 
     let mut a: i32 = 0;
-    let f: i32;
-    let mut j: i32;
-    let k: i32;
-    let mut p: i32;
-    let mut q: i32;
-    let mut n: i32;
-    let mut e: bool;
-
     while st.scanner.cur_cmd == PREFIX {
         if (a / st.scanner.cur_chr) & 1 == 0 {
             a += st.scanner.cur_chr;
         }
-
-        loop {
-            crate::scan::get_x_token_in(st)?;
-            if !(st.scanner.cur_cmd == SPACER || st.scanner.cur_cmd == RELAX) {
-                break;
-            }
-        }
-
-        if (st.scanner.cur_cmd) <= MAX_NON_PREFIXED_COMMAND {
+        get_x_non_blank_non_relax(st)?;
+        if st.scanner.cur_cmd <= MAX_NON_PREFIXED_COMMAND {
             crate::output::error_here_with_diagnostic_in(
                 st,
                 c"You can't use a prefix with `".as_ptr(),
@@ -4645,24 +4670,20 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                 &mut st.errors,
                 &[c"I'll pretend you didn't say \\long or \\outer or \\global or \\protected."],
             );
-            let outcome = crate::input::back_error_in(st)?;
-            mc_propagate_error(outcome)?;
-            return Ok(());
+            return mc_propagate_error(crate::input::back_error_in(st)?);
         }
-
         if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 2 {
             crate::output::show_cur_cmd_chr_in(st);
         }
     }
 
-    if a >= 8 {
-        j = PROTECTED_TOKEN;
+    let protected = if a >= 8 {
         a -= 8;
+        PROTECTED_TOKEN
     } else {
-        j = 0;
-    }
-
-    if st.scanner.cur_cmd != DEF && (a % 4 != 0 || j != 0) {
+        0
+    };
+    if st.scanner.cur_cmd != DEF && (a % 4 != 0 || protected != 0) {
         crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
         crate::output::print_esc_cstr_in(st, c"long".as_ptr());
         crate::output::print_cstr_in(st, c"' or `".as_ptr());
@@ -4679,744 +4700,521 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
         );
         mc_propagate_error(crate::errors::error_in(st))?;
     }
-
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) != 0 {
-        if st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) < 0 {
-            if a >= 4 {
-                a -= 4;
-            }
-        } else if a < 4 {
-            a += 4;
-        }
+    let global_defs = st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS);
+    if global_defs < 0 && a >= 4 {
+        a -= 4;
+    } else if global_defs > 0 && a < 4 {
+        a += 4;
     }
 
-    'sw: {
-        match st.scanner.cur_cmd {
-            SET_FONT => {
-                define(st, a >= 4, CUR_FONT_LOC, DATA as u16, st.scanner.cur_chr)?;
+    match st.scanner.cur_cmd {
+        SET_FONT => define(st, a >= 4, CUR_FONT_LOC, DATA, st.scanner.cur_chr)?,
+        DEF => {
+            if st.scanner.cur_chr & 1 != 0
+                && a < 4
+                && st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) >= 0
+            {
+                a += 4;
             }
-
-            DEF => {
-                if st.scanner.cur_chr & 1 != 0
-                    && a < 4
-                    && st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS) >= 0
-                {
-                    a += 4;
-                }
-
-                e = st.scanner.cur_chr >= 2;
-                crate::scan::get_r_token_in(st)?;
-                p = st.scanner.cur_cs;
-                crate::scan::scan_toks_in(st, true, e)?;
-
-                if j != 0 {
-                    q = crate::mem::get_avail(&mut st.mem)
-                        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-                        .0;
-                    st.mem.set_b32s0(q, j);
-                    st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref));
-                    st.mem.set_b32s1(st.scanner.def_ref, q);
-                }
-
-                define(st, a >= 4, p, CALL + (a % 4) as u16, st.scanner.def_ref.0)?;
+            let expand = st.scanner.cur_chr >= 2;
+            crate::scan::get_r_token_in(st)?;
+            let p = st.scanner.cur_cs;
+            crate::scan::scan_toks_in(st, true, expand)?;
+            if protected != 0 {
+                let q = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+                q.set_info(&mut st.mem, protected);
+                let body = st.scanner.def_ref.link(&st.mem);
+                q.set_link(&mut st.mem, body);
+                st.scanner.def_ref.set_link(&mut st.mem, q);
             }
-
-            LET => {
-                n = st.scanner.cur_chr;
-                crate::scan::get_r_token_in(st)?;
-                p = st.scanner.cur_cs;
-
-                if n == NORMAL as i32 {
-                    loop {
-                        crate::scan::get_token_in(st)?;
-                        if st.scanner.cur_cmd != SPACER {
-                            break;
-                        }
-                    }
-
-                    if st.scanner.cur_tok == OTHER_TOKEN + '=' as i32 {
-                        crate::scan::get_token_in(st)?;
-                        if st.scanner.cur_cmd == SPACER {
-                            crate::scan::get_token_in(st)?;
-                        }
-                    }
-                } else {
-                    crate::scan::get_token_in(st)?;
-                    q = st.scanner.cur_tok;
-                    crate::scan::get_token_in(st)?;
-                    crate::input::back_input_in(st)?;
-                    st.scanner.cur_tok = q;
-                    crate::input::back_input_in(st)?;
-                }
-
-                if st.scanner.cur_cmd as u16 >= CALL {
-                    st.mem
-                        .set_b32s0(st.scanner.cur_chr, st.mem.b32s0(st.scanner.cur_chr) + 1);
-                } else if (st.scanner.cur_cmd == REGISTER || st.scanner.cur_cmd == TOKS_REGISTER)
-                    && (st.scanner.cur_chr < 0 || st.scanner.cur_chr > 19)
-                {
-                    st.mem.set_b32s0(
-                        st.scanner.cur_chr + 1,
-                        st.mem.b32s0(st.scanner.cur_chr + 1) + 1,
-                    );
-                }
-
-                define(st, a >= 4, p, st.scanner.cur_cmd as u16, st.scanner.cur_chr)?;
-            }
-
-            SHORTHAND_DEF => {
-                if st.scanner.cur_chr == CHAR_SUB_DEF_CODE {
-                    crate::output::error_here_with_diagnostic_in(
-                        st,
-                        c"vestigial MLTeX shorthand encountered??".as_ptr(),
-                    );
-                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    help(
-                        &mut st.errors,
-                        &[c"This should never happen in Tectonic, where MLTeX has been excised."],
-                    );
-                    mc_propagate_error(crate::errors::error_in(st))?;
-                } else {
-                    n = st.scanner.cur_chr;
-                    crate::scan::get_r_token_in(st)?;
-                    p = st.scanner.cur_cs;
-
-                    define(st, a >= 4, p, RELAX as u16, TOO_BIG_USV)?;
-
-                    crate::scan::scan_optional_equals_in(st)?;
-
-                    match n {
-                        CHAR_DEF_CODE => {
-                            crate::scan::scan_usv_num_in(st)?;
-                            define(st, a >= 4, p, CHAR_GIVEN as u16, st.scanner.cur_val)?;
-                        }
-                        MATH_CHAR_DEF_CODE => {
-                            crate::scan::scan_fifteen_bit_int_in(st)?;
-                            define(st, a >= 4, p, MATH_GIVEN as u16, st.scanner.cur_val)?;
-                        }
-                        XETEX_MATH_CHAR_NUM_DEF_CODE => {
-                            crate::scan::scan_xetex_math_char_int_in(st)?;
-                            define(st, a >= 4, p, XETEX_MATH_GIVEN as u16, st.scanner.cur_val)?;
-                        }
-                        XETEX_MATH_CHAR_DEF_CODE => {
-                            crate::scan::scan_math_class_int_in(st)?;
-                            n = set_class(st.scanner.cur_val);
-                            crate::scan::scan_math_fam_int_in(st)?;
-                            n = n.wrapping_add(set_family(st.scanner.cur_val));
-                            crate::scan::scan_usv_num_in(st)?;
-                            n = n.wrapping_add(st.scanner.cur_val);
-                            define(st, a >= 4, p, XETEX_MATH_GIVEN as u16, n)?;
-                        }
-                        _ => {
-                            crate::scan::scan_register_num_in(st)?;
-
-                            if st.scanner.cur_val > 255 {
-                                j = n - 2;
-
-                                if j > MU_VAL as i32 {
-                                    j = TOK_VAL as i32;
-                                }
-
-                                let __cv7 = st.scanner.cur_val;
-                                crate::save::find_sa_element(
-                                    &mut st.mem,
-                                    &mut st.scanner,
-                                    j as u16,
-                                    __cv7,
-                                    true,
-                                )
-                                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                                st.mem.set_b32s0(
-                                    st.scanner.cur_ptr.0 + 1,
-                                    st.mem.b32s0(st.scanner.cur_ptr + 1) + 1,
-                                );
-
-                                if j == TOK_VAL as i32 {
-                                    j = TOKS_REGISTER as i32;
-                                } else {
-                                    j = REGISTER as i32;
-                                }
-
-                                define(st, a >= 4, p, j as u16, st.scanner.cur_ptr.0)?;
-                            } else {
-                                match n {
-                                    COUNT_DEF_CODE => {
-                                        define(
-                                            st,
-                                            a >= 4,
-                                            p,
-                                            ASSIGN_INT as u16,
-                                            COUNT_BASE + st.scanner.cur_val,
-                                        )?;
-                                    }
-                                    DIMEN_DEF_CODE => {
-                                        define(
-                                            st,
-                                            a >= 4,
-                                            p,
-                                            ASSIGN_DIMEN as u16,
-                                            SCALED_BASE + st.scanner.cur_val,
-                                        )?;
-                                    }
-                                    SKIP_DEF_CODE => {
-                                        define(
-                                            st,
-                                            a >= 4,
-                                            p,
-                                            ASSIGN_GLUE as u16,
-                                            SKIP_BASE + st.scanner.cur_val,
-                                        )?;
-                                    }
-                                    MU_SKIP_DEF_CODE => {
-                                        define(
-                                            st,
-                                            a >= 4,
-                                            p,
-                                            ASSIGN_MU_GLUE as u16,
-                                            MU_SKIP_BASE + st.scanner.cur_val,
-                                        )?;
-                                    }
-                                    TOKS_DEF_CODE => {
-                                        define(
-                                            st,
-                                            a >= 4,
-                                            p,
-                                            ASSIGN_TOKS as u16,
-                                            TOKS_BASE + st.scanner.cur_val,
-                                        )?;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            READ_TO_CS => {
-                j = st.scanner.cur_chr;
-                crate::scan::scan_int_in(st)?;
-                n = st.scanner.cur_val;
-                if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
-                    crate::output::error_here_with_diagnostic_in(
-                        st,
-                        c"Missing `to' inserted".as_ptr(),
-                    );
-                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    help(
-                        &mut st.errors,
-                        &[
-                            c"You should have said `\\read<number> to \\cs'.",
-                            c"I'm going to look for the \\cs now.",
-                        ],
-                    );
-                    mc_propagate_error(crate::errors::error_in(st))?;
-                }
-
-                crate::scan::get_r_token_in(st)?;
-                p = st.scanner.cur_cs;
-                crate::scan::read_toks_in(st, n, p, j)?;
-
-                define(st, a >= 4, p, CALL as u16, st.scanner.cur_val)?;
-            }
-
-            TOKS_REGISTER | ASSIGN_TOKS => {
-                q = st.scanner.cur_cs;
-                e = false;
-
-                if st.scanner.cur_cmd == TOKS_REGISTER {
-                    if st.scanner.cur_chr == 0 {
-                        crate::scan::scan_register_num_in(st)?;
-                        if st.scanner.cur_val > 255 {
-                            let __cv6 = st.scanner.cur_val;
-                            crate::save::find_sa_element(
-                                &mut st.mem,
-                                &mut st.scanner,
-                                TOK_VAL as u16,
-                                __cv6,
-                                true,
-                            )
-                            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                            st.scanner.cur_chr = st.scanner.cur_ptr.0;
-                            e = true;
-                        } else {
-                            st.scanner.cur_chr = TOKS_BASE + st.scanner.cur_val;
-                        }
-                    } else {
-                        e = true;
-                    }
-                } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
-                    crate::scan::scan_char_class_not_ignored_in(st)?;
-                    st.scanner.cur_ptr.0 = st.scanner.cur_val;
-                    crate::scan::scan_char_class_not_ignored_in(st)?;
-                    let __cv5 = st.scanner.cur_val;
-                    let __cp5 = st.scanner.cur_ptr.0;
-                    crate::save::find_sa_element(
-                        &mut st.mem,
-                        &mut st.scanner,
-                        INTER_CHAR_VAL as u16,
-                        __cp5 * CHAR_CLASS_LIMIT + __cv5,
-                        true,
-                    )
-                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                    st.scanner.cur_chr = st.scanner.cur_ptr.0;
-                    e = true;
-                }
-
-                p = st.scanner.cur_chr;
-                crate::scan::scan_optional_equals_in(st)?;
-
+            define(st, a >= 4, p, CALL + (a % 4) as u16, st.scanner.def_ref.0)?;
+        }
+        LET => {
+            let n = st.scanner.cur_chr;
+            crate::scan::get_r_token_in(st)?;
+            let p = st.scanner.cur_cs;
+            if n == NORMAL as i32 {
                 loop {
-                    crate::scan::get_x_token_in(st)?;
-                    if !(st.scanner.cur_cmd == SPACER || st.scanner.cur_cmd == RELAX) {
+                    crate::scan::get_token_in(st)?;
+                    if st.scanner.cur_cmd != SPACER {
                         break;
                     }
                 }
-
-                if st.scanner.cur_cmd != LEFT_BRACE
-                    && (st.scanner.cur_cmd == TOKS_REGISTER || st.scanner.cur_cmd == ASSIGN_TOKS)
-                {
-                    if st.scanner.cur_cmd == TOKS_REGISTER {
-                        if st.scanner.cur_chr == 0 {
-                            crate::scan::scan_register_num_in(st)?;
-                            if st.scanner.cur_val < 256 {
-                                q = st.eqtb.b32s1(TOKS_BASE + st.scanner.cur_val);
-                            } else {
-                                let __cv4 = st.scanner.cur_val;
-                                crate::save::find_sa_element(
-                                    &mut st.mem,
-                                    &mut st.scanner,
-                                    TOK_VAL as u16,
-                                    __cv4,
-                                    false,
-                                );
-                                if st.scanner.cur_ptr.0 == TEX_NULL {
-                                    q = TEX_NULL;
-                                } else {
-                                    q = st.mem.b32s1(st.scanner.cur_ptr + 1);
-                                }
-                            }
-                        } else {
-                            q = st.mem.b32s1(st.scanner.cur_chr + 1);
-                        }
-                    } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
-                        crate::scan::scan_char_class_not_ignored_in(st)?;
-                        st.scanner.cur_ptr.0 = st.scanner.cur_val;
-                        crate::scan::scan_char_class_not_ignored_in(st)?;
-                        let __cv3 = st.scanner.cur_val;
-                        let __cp3 = st.scanner.cur_ptr.0;
-                        crate::save::find_sa_element(
-                            &mut st.mem,
-                            &mut st.scanner,
-                            INTER_CHAR_VAL as u16,
-                            __cp3 * CHAR_CLASS_LIMIT + __cv3,
-                            false,
-                        );
-                        if st.scanner.cur_ptr.0 == TEX_NULL {
-                            q = TEX_NULL;
-                        } else {
-                            q = st.mem.b32s1(st.scanner.cur_ptr + 1);
-                        }
-                    } else {
-                        q = st.eqtb.b32s1(st.scanner.cur_chr);
-                    }
-
-                    if q == TEX_NULL {
-                        if e {
-                            sa_define(st, a >= 4, p, TEX_NULL)?;
-                        } else if a >= 4 {
-                            define(st, true, p, UNDEFINED_CS as u16, TEX_NULL)?;
-                        } else {
-                            define(st, false, p, UNDEFINED_CS as u16, TEX_NULL)?;
-                        }
-                    } else {
-                        st.mem.set_b32s0(q, st.mem.b32s0(q) + 1);
-                        if e {
-                            sa_define(st, a >= 4, p, q)?;
-                        } else if a >= 4 {
-                            define(st, true, p, CALL as u16, q)?;
-                        } else {
-                            define(st, false, p, CALL as u16, q)?;
-                        }
-                    }
-
-                    break 'sw;
-                }
-
-                crate::input::back_input_in(st)?;
-                st.scanner.cur_cs = q;
-                q = crate::scan::scan_toks_in(st, false, false)?;
-
-                if st.mem.b32s1(st.scanner.def_ref) == TEX_NULL {
-                    if e {
-                        sa_define(st, a >= 4, p, TEX_NULL)?;
-                    } else if a >= 4 {
-                        define(st, true, p, UNDEFINED_CS as u16, TEX_NULL)?;
-                    } else {
-                        define(st, false, p, UNDEFINED_CS as u16, TEX_NULL)?;
-                    }
-
-                    crate::mem::free_avail(&mut st.mem, st.scanner.def_ref);
-                } else {
-                    if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
-                        let new_avail = crate::mem::get_avail(&mut st.mem)
-                            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                        st.mem.set_b32s1(q, new_avail.0);
-                        q = new_avail.0;
-                        st.mem.set_b32s0(q, RIGHT_BRACE_TOKEN + 125);
-                        q = crate::mem::get_avail(&mut st.mem)
-                            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-                            .0;
-                        st.mem.set_b32s0(q, LEFT_BRACE_TOKEN + 123);
-                        st.mem.set_b32s1(q, st.mem.b32s1(st.scanner.def_ref));
-                        st.mem.set_b32s1(st.scanner.def_ref, q);
-                    }
-
-                    if e {
-                        sa_define(st, a >= 4, p, st.scanner.def_ref.0)?;
-                    } else if a >= 4 {
-                        define(st, true, p, CALL as u16, st.scanner.def_ref.0)?;
-                    } else {
-                        define(st, false, p, CALL as u16, st.scanner.def_ref.0)?;
-                    }
-                }
-            }
-
-            ASSIGN_INT => {
-                p = st.scanner.cur_chr;
-                crate::scan::scan_optional_equals_in(st)?;
-                crate::scan::scan_int_in(st)?;
-                word_define(st, a >= 4, p, st.scanner.cur_val)?;
-            }
-
-            ASSIGN_DIMEN => {
-                p = st.scanner.cur_chr;
-                crate::scan::scan_optional_equals_in(st)?;
-                crate::scan::scan_dimen_in(st, false, false, false)?;
-                word_define(st, a >= 4, p, st.scanner.cur_val)?;
-            }
-
-            ASSIGN_GLUE | ASSIGN_MU_GLUE => {
-                p = st.scanner.cur_chr;
-                let is_mu = st.scanner.cur_cmd == ASSIGN_MU_GLUE;
-                crate::scan::scan_optional_equals_in(st)?;
-                if is_mu {
-                    crate::scan::scan_glue_in(st, MU_VAL as i16)?;
-                } else {
-                    crate::scan::scan_glue_in(st, GLUE_VAL as i16)?;
-                }
-                crate::main_control::trap_zero_glue(st);
-                define(st, a >= 4, p, GLUE_REF as u16, st.scanner.cur_val)?;
-            }
-
-            XETEX_DEF_CODE => {
-                if st.scanner.cur_chr == SF_CODE_BASE {
-                    p = st.scanner.cur_chr;
-                    crate::scan::scan_usv_num_in(st)?;
-                    p += st.scanner.cur_val;
-                    n = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_val) % 65536;
-                    crate::scan::scan_optional_equals_in(st)?;
-                    crate::scan::scan_char_class_in(st)?;
-                    let v = st.scanner.cur_val.wrapping_mul(65536).wrapping_add(n);
-                    define(st, a >= 4, p, DATA as u16, v)?;
-                } else if st.scanner.cur_chr == MATH_CODE_BASE {
-                    p = st.scanner.cur_chr;
-                    crate::scan::scan_usv_num_in(st)?;
-                    p += st.scanner.cur_val;
-                    crate::scan::scan_optional_equals_in(st)?;
-                    crate::scan::scan_xetex_math_char_int_in(st)?;
-                    define(st, a >= 4, p, DATA as u16, st.scanner.cur_val)?;
-                } else if st.scanner.cur_chr == MATH_CODE_BASE + 1 {
-                    p = st.scanner.cur_chr - 1;
-                    crate::scan::scan_usv_num_in(st)?;
-                    p += st.scanner.cur_val;
-                    crate::scan::scan_optional_equals_in(st)?;
-                    crate::scan::scan_math_class_int_in(st)?;
-                    n = set_class(st.scanner.cur_val);
-                    crate::scan::scan_math_fam_int_in(st)?;
-                    n = n.wrapping_add(set_family(st.scanner.cur_val));
-                    crate::scan::scan_usv_num_in(st)?;
-                    n = n.wrapping_add(st.scanner.cur_val);
-                    define(st, a >= 4, p, DATA as u16, n)?;
-                } else if st.scanner.cur_chr == DEL_CODE_BASE {
-                    p = st.scanner.cur_chr;
-                    crate::scan::scan_usv_num_in(st)?;
-                    p += st.scanner.cur_val;
-                    crate::scan::scan_optional_equals_in(st)?;
-                    crate::scan::scan_int_in(st)?;
-                    word_define(st, a >= 4, p, st.scanner.cur_val)?;
-                } else {
-                    p = st.scanner.cur_chr - 1;
-                    crate::scan::scan_usv_num_in(st)?;
-                    p += st.scanner.cur_val;
-                    crate::scan::scan_optional_equals_in(st)?;
-                    n = 0x4000_0000; // "extended delimiter code flag"
-                    crate::scan::scan_math_fam_int_in(st)?;
-                    n = n.wrapping_add(st.scanner.cur_val.wrapping_mul(0x20_0000)); // extended delimiter family
-                    crate::scan::scan_usv_num_in(st)?;
-                    n = n.wrapping_add(st.scanner.cur_val);
-                    word_define(st, a >= 4, p, n)?;
-                }
-            }
-
-            DEF_CODE => {
-                if st.scanner.cur_chr == CAT_CODE_BASE {
-                    n = MAX_CHAR_CODE;
-                } else if st.scanner.cur_chr == MATH_CODE_BASE {
-                    n = 0x8000;
-                } else if st.scanner.cur_chr == SF_CODE_BASE {
-                    n = 0x7FFF;
-                } else if st.scanner.cur_chr == DEL_CODE_BASE {
-                    n = 0xFFFFFF;
-                } else {
-                    n = BIGGEST_USV;
-                }
-
-                p = st.scanner.cur_chr;
-                crate::scan::scan_usv_num_in(st)?;
-                p += st.scanner.cur_val;
-                crate::scan::scan_optional_equals_in(st)?;
-                crate::scan::scan_int_in(st)?;
-
-                if (st.scanner.cur_val < 0 && p < DEL_CODE_BASE) || st.scanner.cur_val > n {
-                    crate::output::error_here_with_diagnostic_in(st, c"Invalid code (".as_ptr());
-                    crate::output::print_int_in(st, st.scanner.cur_val);
-                    if p < DEL_CODE_BASE {
-                        crate::output::print_cstr_in(st, c"), should be in the range 0..".as_ptr());
-                    } else {
-                        crate::output::print_cstr_in(st, c"), should be at most ".as_ptr());
-                    }
-                    crate::output::print_int_in(st, n);
-                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    help(
-                        &mut st.errors,
-                        &[c"I'm going to use 0 instead of that illegal code value."],
-                    );
-                    mc_propagate_error(crate::errors::error_in(st))?;
-                    st.scanner.cur_val = 0;
-                }
-
-                if p < MATH_CODE_BASE {
-                    if p >= SF_CODE_BASE {
-                        n = st.eqtb.b32s1(p) / 65536;
-                        let v = n.wrapping_mul(65536).wrapping_add(st.scanner.cur_val);
-                        define(st, a >= 4, p, DATA as u16, v)?;
-                    } else {
-                        define(st, a >= 4, p, DATA as u16, st.scanner.cur_val)?;
-                    }
-                } else if p < DEL_CODE_BASE {
-                    if st.scanner.cur_val == 32768 {
-                        st.scanner.cur_val = ACTIVE_MATH_CHAR;
-                    } else {
-                        let v = set_class(st.scanner.cur_val / 4096)
-                            .wrapping_add(set_family((st.scanner.cur_val % 4096) / 256))
-                            .wrapping_add(st.scanner.cur_val % 256);
-                        st.scanner.cur_val = v;
-                    }
-
-                    define(st, a >= 4, p, DATA as u16, st.scanner.cur_val)?;
-                } else {
-                    word_define(st, a >= 4, p, st.scanner.cur_val)?;
-                }
-            }
-
-            DEF_FAMILY => {
-                p = st.scanner.cur_chr;
-                crate::scan::scan_math_fam_int_in(st)?;
-                p += st.scanner.cur_val;
-                crate::scan::scan_optional_equals_in(st)?;
-                crate::scan::scan_font_ident_in(st)?;
-                define(st, a >= 4, p, DATA as u16, st.scanner.cur_val)?;
-            }
-
-            REGISTER | ADVANCE | MULTIPLY | DIVIDE => {
-                crate::main_control::do_register_command_in(st, a as i16)?;
-            }
-
-            SET_BOX => {
-                crate::scan::scan_register_num_in(st)?;
-                if a >= 4 {
-                    n = GLOBAL_BOX_FLAG + st.scanner.cur_val;
-                } else {
-                    n = BOX_FLAG + st.scanner.cur_val;
-                }
-
-                crate::scan::scan_optional_equals_in(st)?;
-
-                if st.scanner.set_box_allowed {
-                    crate::main_control::scan_box_in(st, n)?;
-                } else {
-                    crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
-                    crate::output::print_esc_cstr_in(st, c"setbox".as_ptr());
-                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    help(
-                        &mut st.errors,
-                        &[
-                            c"Sorry, \\setbox is not allowed after \\halign in a display,",
-                            c"or between \\accent and an accented character.",
-                        ],
-                    );
-                    mc_propagate_error(crate::errors::error_in(st))?;
-                }
-            }
-
-            SET_AUX => {
-                crate::main_control::alter_aux_in(st)?;
-            }
-
-            SET_PREV_GRAF => {
-                crate::main_control::alter_prev_graf_in(st)?;
-            }
-
-            SET_PAGE_DIMEN => {
-                crate::main_control::alter_page_so_far_in(st)?;
-            }
-
-            SET_PAGE_INT => {
-                crate::main_control::alter_integer_in(st)?;
-            }
-
-            SET_BOX_DIMEN => {
-                crate::main_control::alter_box_dimen_in(st)?;
-            }
-
-            SET_SHAPE => {
-                q = st.scanner.cur_chr;
-                crate::scan::scan_optional_equals_in(st)?;
-                crate::scan::scan_int_in(st)?;
-                n = st.scanner.cur_val;
-
-                if n <= 0 {
-                    p = TEX_NULL;
-                } else if q > LOCAL_BASE + LOCAL_PAR_SHAPE {
-                    n = (st.scanner.cur_val / 2) + 1;
-                    p = crate::mem::get_node(&mut st.mem, 2 * n + 1)
-                        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-                        .0;
-                    st.mem.set_b32s0(p, n);
-                    n = st.scanner.cur_val;
-                    st.mem.set_b32s1(p + 1, n);
-
-                    j = p + 2;
-                    while j <= p + n + 1 {
-                        crate::scan::scan_int_in(st)?;
-                        st.mem.set_b32s1(j, st.scanner.cur_val);
-                        j += 1;
-                    }
-
-                    if n & 1 == 0 {
-                        st.mem.set_b32s1(p + n + 2, 0);
-                    }
-                } else {
-                    p = crate::mem::get_node(&mut st.mem, 2 * n + 1)
-                        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?
-                        .0;
-                    st.mem.set_b32s0(p, n);
-
-                    j = 1;
-                    while j <= n {
-                        crate::scan::scan_dimen_in(st, false, false, false)?;
-                        st.mem.set_b32s1(p + 2 * j - 1, st.scanner.cur_val);
-                        crate::scan::scan_dimen_in(st, false, false, false)?;
-                        st.mem.set_b32s1(p + 2 * j, st.scanner.cur_val);
-                        j += 1;
-                    }
-                }
-
-                define(st, a >= 4, q, SHAPE_REF as u16, p)?;
-            }
-
-            HYPH_DATA => {
-                if st.scanner.cur_chr == 1 {
-                    if st.config.in_initex_mode {
-                        new_patterns_in(st)?;
-                        break 'sw;
-                    }
-
-                    crate::output::error_here_with_diagnostic_in(
-                        st,
-                        c"Patterns can be loaded only by INITEX".as_ptr(),
-                    );
-                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    help(&mut st.errors, &[]);
-                    mc_propagate_error(crate::errors::error_in(st))?;
-
-                    loop {
+                if st.scanner.cur_tok == OTHER_TOKEN + '=' as i32 {
+                    crate::scan::get_token_in(st)?;
+                    if st.scanner.cur_cmd == SPACER {
                         crate::scan::get_token_in(st)?;
-                        if st.scanner.cur_cmd == RIGHT_BRACE {
-                            break;
-                        }
-                    }
-
-                    return Ok(());
-                } else {
-                    new_hyph_exceptions_in(st)?;
-                    break 'sw;
-                }
-            }
-
-            ASSIGN_FONT_DIMEN => {
-                crate::scan::find_font_dimen_in(st, true)?;
-                k = st.scanner.cur_val;
-                crate::scan::scan_optional_equals_in(st)?;
-                crate::scan::scan_dimen_in(st, false, false, false)?;
-                st.fonts.set_font_info_b32s1(k, st.scanner.cur_val);
-            }
-
-            ASSIGN_FONT_INT => {
-                n = st.scanner.cur_chr;
-                crate::scan::scan_font_ident_in(st)?;
-                f = st.scanner.cur_val;
-
-                if n < 2 {
-                    crate::scan::scan_optional_equals_in(st)?;
-                    crate::scan::scan_int_in(st)?;
-                    if n == 0 {
-                        st.fonts.set_hyphen_char_entry(f, st.scanner.cur_val);
-                    } else {
-                        st.fonts.set_skew_char_entry(f, st.scanner.cur_val);
-                    }
-                } else {
-                    if is_native_font(&st.fonts, f) {
-                        crate::scan::scan_glyph_number_in(st, f)?;
-                    } else {
-                        crate::scan::scan_char_num_in(st)?;
-                    }
-
-                    p = st.scanner.cur_val;
-                    crate::scan::scan_optional_equals_in(st)?;
-                    crate::scan::scan_int_in(st)?;
-                    match n {
-                        LP_CODE_BASE => unsafe {
-                            set_cp_code(f, p as u32, LEFT_SIDE, st.scanner.cur_val)
-                        },
-                        RP_CODE_BASE => unsafe {
-                            set_cp_code(f, p as u32, RIGHT_SIDE, st.scanner.cur_val)
-                        },
-                        _ => {}
                     }
                 }
+            } else {
+                crate::scan::get_token_in(st)?;
+                let q = st.scanner.cur_tok;
+                crate::scan::get_token_in(st)?;
+                crate::input::back_input_in(st)?;
+                st.scanner.cur_tok = q;
+                crate::input::back_input_in(st)?;
             }
-
-            DEF_FONT => {
-                unsafe { crate::main_control::new_font_in(st, a as i16)? };
+            if st.scanner.cur_cmd as u16 >= CALL {
+                add_token_ref(&mut st.mem, st.scanner.cur_chr);
+            } else if (st.scanner.cur_cmd == REGISTER || st.scanner.cur_cmd == TOKS_REGISTER)
+                && !(0..=19).contains(&st.scanner.cur_chr)
+            {
+                add_sa_ref(&mut st.mem, MemPtr::from_raw(st.scanner.cur_chr));
             }
-
-            SET_INTERACTION => {
-                crate::main_control::new_interaction_in(st);
-            }
-
-            _ => {
-                return Err(MainControlAbort::Confusion(c"prefix"));
+            define(st, a >= 4, p, st.scanner.cur_cmd as u16, st.scanner.cur_chr)?;
+        }
+        SHORTHAND_DEF => {
+            if st.scanner.cur_chr == CHAR_SUB_DEF_CODE {
+                crate::output::error_here_with_diagnostic_in(
+                    st,
+                    c"vestigial MLTeX shorthand encountered??".as_ptr(),
+                );
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                help(
+                    &mut st.errors,
+                    &[c"This should never happen in Tectonic, where MLTeX has been excised."],
+                );
+                mc_propagate_error(crate::errors::error_in(st))?;
+            } else {
+                shorthand_def_in(st, a >= 4)?;
             }
         }
+        READ_TO_CS => {
+            let j = st.scanner.cur_chr;
+            crate::scan::scan_int_in(st)?;
+            let n = st.scanner.cur_val;
+            if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
+                crate::output::error_here_with_diagnostic_in(st, c"Missing `to' inserted".as_ptr());
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                help(
+                    &mut st.errors,
+                    &[
+                        c"You should have said `\\read<number> to \\cs'.",
+                        c"I'm going to look for the \\cs now.",
+                    ],
+                );
+                mc_propagate_error(crate::errors::error_in(st))?;
+            }
+            crate::scan::get_r_token_in(st)?;
+            let p = st.scanner.cur_cs;
+            crate::scan::read_toks_in(st, n, p, j)?;
+            define(st, a >= 4, p, CALL, st.scanner.cur_val)?;
+        }
+        TOKS_REGISTER | ASSIGN_TOKS => assign_toks_in(st, a >= 4)?,
+        ASSIGN_INT => {
+            let p = st.scanner.cur_chr;
+            crate::scan::scan_optional_equals_in(st)?;
+            crate::scan::scan_int_in(st)?;
+            word_define(st, a >= 4, p, st.scanner.cur_val)?;
+        }
+        ASSIGN_DIMEN => {
+            let p = st.scanner.cur_chr;
+            crate::scan::scan_optional_equals_in(st)?;
+            crate::scan::scan_dimen_in(st, false, false, false)?;
+            word_define(st, a >= 4, p, st.scanner.cur_val)?;
+        }
+        ASSIGN_GLUE | ASSIGN_MU_GLUE => {
+            let p = st.scanner.cur_chr;
+            let level = if st.scanner.cur_cmd == ASSIGN_MU_GLUE {
+                MU_VAL
+            } else {
+                GLUE_VAL
+            };
+            crate::scan::scan_optional_equals_in(st)?;
+            crate::scan::scan_glue_in(st, level)?;
+            trap_zero_glue(st);
+            define(st, a >= 4, p, GLUE_REF, st.scanner.cur_val)?;
+        }
+        XETEX_DEF_CODE => xetex_def_code_in(st, a >= 4)?,
+        DEF_CODE => def_code_in(st, a >= 4)?,
+        DEF_FAMILY => {
+            let base = st.scanner.cur_chr;
+            crate::scan::scan_math_fam_int_in(st)?;
+            let p = base + st.scanner.cur_val;
+            crate::scan::scan_optional_equals_in(st)?;
+            crate::scan::scan_font_ident_in(st)?;
+            define(st, a >= 4, p, DATA, st.scanner.cur_val)?;
+        }
+        REGISTER | ADVANCE | MULTIPLY | DIVIDE => do_register_command_in(st, a as i16)?,
+        SET_BOX => {
+            crate::scan::scan_register_num_in(st)?;
+            let n = if a >= 4 {
+                GLOBAL_BOX_FLAG + st.scanner.cur_val
+            } else {
+                BOX_FLAG + st.scanner.cur_val
+            };
+            crate::scan::scan_optional_equals_in(st)?;
+            if st.scanner.set_box_allowed {
+                scan_box_in(st, n)?;
+            } else {
+                crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
+                crate::output::print_esc_cstr_in(st, c"setbox".as_ptr());
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                help(
+                    &mut st.errors,
+                    &[
+                        c"Sorry, \\setbox is not allowed after \\halign in a display,",
+                        c"or between \\accent and an accented character.",
+                    ],
+                );
+                mc_propagate_error(crate::errors::error_in(st))?;
+            }
+        }
+        SET_AUX => alter_aux_in(st)?,
+        SET_PREV_GRAF => alter_prev_graf_in(st)?,
+        SET_PAGE_DIMEN => alter_page_so_far_in(st)?,
+        SET_PAGE_INT => alter_integer_in(st)?,
+        SET_BOX_DIMEN => alter_box_dimen_in(st)?,
+        SET_SHAPE => set_shape_in(st, a >= 4)?,
+        HYPH_DATA => {
+            if st.scanner.cur_chr != 1 {
+                new_hyph_exceptions_in(st)?;
+            } else if st.config.in_initex_mode {
+                new_patterns_in(st)?;
+            } else {
+                crate::output::error_here_with_diagnostic_in(
+                    st,
+                    c"Patterns can be loaded only by INITEX".as_ptr(),
+                );
+                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                help(&mut st.errors, &[]);
+                mc_propagate_error(crate::errors::error_in(st))?;
+                loop {
+                    crate::scan::get_token_in(st)?;
+                    if st.scanner.cur_cmd == RIGHT_BRACE {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        ASSIGN_FONT_DIMEN => {
+            crate::scan::find_font_dimen_in(st, true)?;
+            let k = st.scanner.cur_val;
+            crate::scan::scan_optional_equals_in(st)?;
+            crate::scan::scan_dimen_in(st, false, false, false)?;
+            st.fonts.set_font_info_b32s1(k, st.scanner.cur_val);
+        }
+        ASSIGN_FONT_INT => {
+            let n = st.scanner.cur_chr;
+            crate::scan::scan_font_ident_in(st)?;
+            let f = st.scanner.cur_val;
+            if n < 2 {
+                crate::scan::scan_optional_equals_in(st)?;
+                crate::scan::scan_int_in(st)?;
+                if n == 0 {
+                    st.fonts.set_hyphen_char_entry(f, st.scanner.cur_val);
+                } else {
+                    st.fonts.set_skew_char_entry(f, st.scanner.cur_val);
+                }
+            } else {
+                if is_native_font(&st.fonts, f) {
+                    crate::scan::scan_glyph_number_in(st, f)?;
+                } else {
+                    crate::scan::scan_char_num_in(st)?;
+                }
+                let p = st.scanner.cur_val;
+                crate::scan::scan_optional_equals_in(st)?;
+                crate::scan::scan_int_in(st)?;
+                match n {
+                    LP_CODE_BASE => unsafe {
+                        set_cp_code(f, p as u32, LEFT_SIDE, st.scanner.cur_val)
+                    },
+                    RP_CODE_BASE => unsafe {
+                        set_cp_code(f, p as u32, RIGHT_SIDE, st.scanner.cur_val)
+                    },
+                    _ => {}
+                }
+            }
+        }
+        DEF_FONT => unsafe { new_font_in(st, a as i16)? },
+        SET_INTERACTION => new_interaction_in(st),
+        _ => return Err(MainControlAbort::Confusion(c"prefix")),
     }
 
-    // done:
     if st.scanner.after_token != 0 {
         st.scanner.cur_tok = st.scanner.after_token;
         crate::input::back_input_in(st)?;
         st.scanner.after_token = 0;
     }
+    Ok(())
+}
+
+fn shorthand_def_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbort> {
+    let n = st.scanner.cur_chr;
+    crate::scan::get_r_token_in(st)?;
+    let p = st.scanner.cur_cs;
+    define(st, global, p, RELAX as u16, TOO_BIG_USV)?;
+    crate::scan::scan_optional_equals_in(st)?;
+    let (t, e) = match n {
+        CHAR_DEF_CODE => {
+            crate::scan::scan_usv_num_in(st)?;
+            (CHAR_GIVEN as u16, st.scanner.cur_val)
+        }
+        MATH_CHAR_DEF_CODE => {
+            crate::scan::scan_fifteen_bit_int_in(st)?;
+            (MATH_GIVEN as u16, st.scanner.cur_val)
+        }
+        XETEX_MATH_CHAR_NUM_DEF_CODE => {
+            crate::scan::scan_xetex_math_char_int_in(st)?;
+            (XETEX_MATH_GIVEN as u16, st.scanner.cur_val)
+        }
+        XETEX_MATH_CHAR_DEF_CODE => (XETEX_MATH_GIVEN as u16, scan_umath_char(st)?),
+        _ => {
+            crate::scan::scan_register_num_in(st)?;
+            if st.scanner.cur_val > 255 {
+                let level = if n - 2 > MU_VAL as i32 {
+                    TOK_VAL as i32
+                } else {
+                    n - 2
+                };
+                let reg = st.scanner.cur_val;
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, level as u16, reg, true)
+                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+                add_sa_ref(&mut st.mem, st.scanner.cur_ptr);
+                let t = if level == TOK_VAL as i32 {
+                    TOKS_REGISTER
+                } else {
+                    REGISTER
+                };
+                (t as u16, st.scanner.cur_ptr.0)
+            } else {
+                let (t, base) = match n {
+                    COUNT_DEF_CODE => (ASSIGN_INT, COUNT_BASE),
+                    DIMEN_DEF_CODE => (ASSIGN_DIMEN, SCALED_BASE),
+                    SKIP_DEF_CODE => (ASSIGN_GLUE, SKIP_BASE),
+                    MU_SKIP_DEF_CODE => (ASSIGN_MU_GLUE, MU_SKIP_BASE),
+                    TOKS_DEF_CODE => (ASSIGN_TOKS, TOKS_BASE),
+                    _ => return Ok(()),
+                };
+                (t as u16, base + st.scanner.cur_val)
+            }
+        }
+    };
+    define(st, global, p, t, e)?;
+    Ok(())
+}
+
+fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbort> {
+    let cs = st.scanner.cur_cs;
+    let mut e = false;
+    if st.scanner.cur_cmd == TOKS_REGISTER {
+        if st.scanner.cur_chr == 0 {
+            crate::scan::scan_register_num_in(st)?;
+            if st.scanner.cur_val > 255 {
+                let reg = st.scanner.cur_val;
+                crate::save::find_sa_element(
+                    &mut st.mem,
+                    &mut st.scanner,
+                    TOK_VAL as u16,
+                    reg,
+                    true,
+                )
+                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+                st.scanner.cur_chr = st.scanner.cur_ptr.0;
+                e = true;
+            } else {
+                st.scanner.cur_chr = TOKS_BASE + st.scanner.cur_val;
+            }
+        } else {
+            e = true;
+        }
+    } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
+        find_inter_char_toks(st, true)?;
+        st.scanner.cur_chr = st.scanner.cur_ptr.0;
+        e = true;
+    }
+    let p = st.scanner.cur_chr;
+    crate::scan::scan_optional_equals_in(st)?;
+    get_x_non_blank_non_relax(st)?;
+
+    if st.scanner.cur_cmd != LEFT_BRACE
+        && (st.scanner.cur_cmd == TOKS_REGISTER || st.scanner.cur_cmd == ASSIGN_TOKS)
+    {
+        let list = if st.scanner.cur_cmd == TOKS_REGISTER {
+            if st.scanner.cur_chr == 0 {
+                crate::scan::scan_register_num_in(st)?;
+                if st.scanner.cur_val < 256 {
+                    st.eqtb.b32s1(TOKS_BASE + st.scanner.cur_val)
+                } else {
+                    let reg = st.scanner.cur_val;
+                    crate::save::find_sa_element(
+                        &mut st.mem,
+                        &mut st.scanner,
+                        TOK_VAL as u16,
+                        reg,
+                        false,
+                    );
+                    cur_sa_ptr(st)
+                }
+            } else {
+                st.mem.b32s1(st.scanner.cur_chr + 1)
+            }
+        } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
+            find_inter_char_toks(st, false)?;
+            cur_sa_ptr(st)
+        } else {
+            st.eqtb.b32s1(st.scanner.cur_chr)
+        };
+        if list != TEX_NULL {
+            add_token_ref(&mut st.mem, list);
+        }
+        return define_toks(st, e, global, p, list);
+    }
+
+    crate::input::back_input_in(st)?;
+    st.scanner.cur_cs = cs;
+    let tail = crate::scan::scan_toks_in(st, false, false)?;
+    let def_ref = st.scanner.def_ref;
+    if def_ref.link(&st.mem).is_null() {
+        define_toks(st, e, global, p, TEX_NULL)?;
+        crate::mem::free_avail(&mut st.mem, def_ref);
+        return Ok(());
+    }
+    if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
+        store_new_token(&mut st.mem, tail, RIGHT_BRACE_TOKEN + '}' as i32)?;
+        let q =
+            crate::mem::get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + '{' as i32);
+        let body = def_ref.link(&st.mem);
+        q.set_link(&mut st.mem, body);
+        def_ref.set_link(&mut st.mem, q);
+    }
+    define_toks(st, e, global, p, def_ref.0)
+}
+
+fn xetex_def_code_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbort> {
+    let chr = st.scanner.cur_chr;
+    let base = if chr == SF_CODE_BASE || chr == MATH_CODE_BASE || chr == DEL_CODE_BASE {
+        chr
+    } else {
+        chr - 1
+    };
+    crate::scan::scan_usv_num_in(st)?;
+    let p = base + st.scanner.cur_val;
+    if chr == SF_CODE_BASE {
+        let sf = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_val) % 65536;
+        crate::scan::scan_optional_equals_in(st)?;
+        crate::scan::scan_char_class_in(st)?;
+        let v = st.scanner.cur_val.wrapping_mul(65536).wrapping_add(sf);
+        define(st, global, p, DATA, v)?;
+    } else if chr == MATH_CODE_BASE {
+        crate::scan::scan_optional_equals_in(st)?;
+        crate::scan::scan_xetex_math_char_int_in(st)?;
+        define(st, global, p, DATA, st.scanner.cur_val)?;
+    } else if chr == MATH_CODE_BASE + 1 {
+        crate::scan::scan_optional_equals_in(st)?;
+        let v = scan_umath_char(st)?;
+        define(st, global, p, DATA, v)?;
+    } else if chr == DEL_CODE_BASE {
+        crate::scan::scan_optional_equals_in(st)?;
+        crate::scan::scan_int_in(st)?;
+        word_define(st, global, p, st.scanner.cur_val)?;
+    } else {
+        crate::scan::scan_optional_equals_in(st)?;
+        // Extended delimiter code flag.
+        let mut n: i32 = 0x4000_0000;
+        crate::scan::scan_math_fam_int_in(st)?;
+        n = n.wrapping_add(st.scanner.cur_val.wrapping_mul(0x20_0000));
+        crate::scan::scan_usv_num_in(st)?;
+        n = n.wrapping_add(st.scanner.cur_val);
+        word_define(st, global, p, n)?;
+    }
+    Ok(())
+}
+
+fn def_code_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbort> {
+    let chr = st.scanner.cur_chr;
+    let max = if chr == CAT_CODE_BASE {
+        MAX_CHAR_CODE
+    } else if chr == MATH_CODE_BASE {
+        0x8000
+    } else if chr == SF_CODE_BASE {
+        0x7FFF
+    } else if chr == DEL_CODE_BASE {
+        0xFF_FFFF
+    } else {
+        BIGGEST_USV
+    };
+    crate::scan::scan_usv_num_in(st)?;
+    let p = chr + st.scanner.cur_val;
+    crate::scan::scan_optional_equals_in(st)?;
+    crate::scan::scan_int_in(st)?;
+    if (st.scanner.cur_val < 0 && p < DEL_CODE_BASE) || st.scanner.cur_val > max {
+        crate::output::error_here_with_diagnostic_in(st, c"Invalid code (".as_ptr());
+        crate::output::print_int_in(st, st.scanner.cur_val);
+        if p < DEL_CODE_BASE {
+            crate::output::print_cstr_in(st, c"), should be in the range 0..".as_ptr());
+        } else {
+            crate::output::print_cstr_in(st, c"), should be at most ".as_ptr());
+        }
+        crate::output::print_int_in(st, max);
+        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        help(
+            &mut st.errors,
+            &[c"I'm going to use 0 instead of that illegal code value."],
+        );
+        mc_propagate_error(crate::errors::error_in(st))?;
+        st.scanner.cur_val = 0;
+    }
+    if p < MATH_CODE_BASE {
+        let v = if p >= SF_CODE_BASE {
+            (st.eqtb.b32s1(p) / 65536)
+                .wrapping_mul(65536)
+                .wrapping_add(st.scanner.cur_val)
+        } else {
+            st.scanner.cur_val
+        };
+        define(st, global, p, DATA, v)?;
+    } else if p < DEL_CODE_BASE {
+        st.scanner.cur_val = if st.scanner.cur_val == 32768 {
+            ACTIVE_MATH_CHAR
+        } else {
+            math_char_from_tex(st.scanner.cur_val)
+        };
+        define(st, global, p, DATA, st.scanner.cur_val)?;
+    } else {
+        word_define(st, global, p, st.scanner.cur_val)?;
+    }
+    Ok(())
+}
+
+fn set_shape_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbort> {
+    use crate::scan::NodeRecycleAbort;
+
+    let q = st.scanner.cur_chr;
+    crate::scan::scan_optional_equals_in(st)?;
+    crate::scan::scan_int_in(st)?;
+    let n = st.scanner.cur_val;
+    let p = if n <= 0 {
+        TEX_NULL
+    } else if q > LOCAL_BASE + LOCAL_PAR_SHAPE {
+        let words = n / 2 + 1;
+        let p = crate::mem::get_node(&mut st.mem, 2 * words + 1)
+            .ok_or(NodeRecycleAbort::Overflow)?
+            .0;
+        st.mem.set_b32s0(p, words);
+        st.mem.set_b32s1(p + 1, n);
+        for j in p + 2..=p + n + 1 {
+            crate::scan::scan_int_in(st)?;
+            st.mem.set_b32s1(j, st.scanner.cur_val);
+        }
+        if n & 1 == 0 {
+            st.mem.set_b32s1(p + n + 2, 0);
+        }
+        p
+    } else {
+        let p = crate::mem::get_node(&mut st.mem, 2 * n + 1)
+            .ok_or(NodeRecycleAbort::Overflow)?
+            .0;
+        st.mem.set_b32s0(p, n);
+        for j in 1..=n {
+            crate::scan::scan_dimen_in(st, false, false, false)?;
+            st.mem.set_b32s1(p + 2 * j - 1, st.scanner.cur_val);
+            crate::scan::scan_dimen_in(st, false, false, false)?;
+            st.mem.set_b32s1(p + 2 * j, st.scanner.cur_val);
+        }
+        p
+    };
+    define(st, global, q, SHAPE_REF, p)?;
     Ok(())
 }
