@@ -274,6 +274,16 @@ impl NodePtr<HListNode> {
     }
 }
 
+impl NodePtr<HListNode> {
+    /// Retypes the box in place as a vlist box.
+    #[inline]
+    pub fn into_vlist(self, mem: &mut MemState) -> NodePtr<VListNode> {
+        mem.set_b16s1(self.idx.0, NodeType::VList.as_raw());
+        // SAFETY: the box was just stamped VLIST_NODE, both have the box layout.
+        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+    }
+}
+
 impl NodePtr<VListNode> {
     /// Allocate a fresh vlist box node (`BOX_NODE_SIZE` words), type-stamped
     /// with `NODE_type = VLIST_NODE`, and return a typed handle to it — or
@@ -403,6 +413,14 @@ pub enum AnyBox {
 }
 
 impl AnyBox {
+    /// Retypes the box in place as an unset node.
+    #[inline]
+    pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
+        mem.set_b16s1(self.idx().0, NodeType::Unset.as_raw());
+        // SAFETY: the box was just stamped UNSET_NODE, which shares the box layout.
+        unsafe { NodePtr::from_idx_unchecked(self.idx()) }
+    }
+
     #[inline]
     pub fn idx(self) -> MemIdx {
         match self {
@@ -1994,6 +2012,52 @@ impl NodePtr<UnsetNode> {
     #[inline]
     pub fn glue_stretch(self, mem: &MemState) -> Scaled {
         Scaled(mem.b32s1(self.idx.offset(6).0))
+    }
+
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+    #[inline]
+    pub fn set_depth(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(2).0, v.0);
+    }
+    #[inline]
+    pub fn set_height(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, v.0);
+    }
+    #[inline]
+    pub fn set_glue_shrink(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(4).0, v.0);
+    }
+    /// On an unset node the glue sign word holds the shrink order.
+    #[inline]
+    pub fn set_glue_sign(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.offset(5).0, v);
+    }
+    #[inline]
+    pub fn set_glue_order(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.offset(5).0, v);
+    }
+    #[inline]
+    pub fn set_glue_stretch(self, mem: &mut MemState, v: Scaled) {
+        mem.set_b32s1(self.idx.offset(6).0, v.0);
+    }
+
+    /// Retypes the node in place as an hlist box.
+    #[inline]
+    pub fn into_hlist(self, mem: &mut MemState) -> NodePtr<HListNode> {
+        mem.set_b16s1(self.idx.0, NodeType::HList.as_raw());
+        // SAFETY: the node was just stamped HLIST_NODE and has the box layout.
+        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+    }
+
+    /// Retypes the node in place as a vlist box.
+    #[inline]
+    pub fn into_vlist(self, mem: &mut MemState) -> NodePtr<VListNode> {
+        mem.set_b16s1(self.idx.0, NodeType::VList.as_raw());
+        // SAFETY: the node was just stamped VLIST_NODE and has the box layout.
+        unsafe { NodePtr::from_idx_unchecked(self.idx) }
     }
 }
 

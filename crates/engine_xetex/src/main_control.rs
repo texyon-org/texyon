@@ -6,15 +6,15 @@ use crate::consts::{
     BIGGEST_LANG, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN,
     CONTRIB_HEAD, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
     DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, ENDV, ETEX_PEN_BASE, EXPLICIT, FONT_BASE,
-    GLUE_BASE, GLUE_NODE, GLUE_VAL, HLIST_NODE, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE,
-    INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS,
-    INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, KERN_NODE, LEFT_BRACE, LEFT_SIDE, LIG_TAG,
-    LOCAL_BASE, LOCAL_PAR_SHAPE, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_COMMAND, MAX_HALFWORD,
-    MMODE, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN, NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS,
-    NULL_FLAG, OTHER_CHAR, OUTPUT_TEXT, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE,
-    SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SET_FONT,
-    SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACER, SPACE_ADJUSTMENT, SPACE_CODE,
-    SUB_BOX, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
+    GLUE_BASE, GLUE_NODE, GLUE_VAL, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_HANG_AFTER,
+    INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN,
+    INT_PAR_TEXXET, KERN_NODE, LEFT_BRACE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE,
+    MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_COMMAND, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE,
+    MU_VAL_SCAN, NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OTHER_CHAR,
+    OUTPUT_TEXT, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE,
+    SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE,
+    SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACER, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX,
+    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
@@ -23,7 +23,7 @@ use crate::math::{after_math_in, init_math_in};
 use crate::mem::is_char_node;
 use crate::node::{
     AdjustNode, AnyBox, AnyNode, GlueSpecNode, InsNode, MarkNode, NodePtr, RuleDimen, SaNode,
-    WhatsitNode, WhatsitSubtype,
+    UnsetNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::{set_class_fn, set_family_fn};
 use crate::state::{EngineState, GroupCode, MemState};
@@ -158,8 +158,6 @@ pub(crate) const HOLD_HEAD: i32 = 4_999_995;
 const TEMP_HEAD: i32 = 4_999_996;
 pub(crate) const PAGE_HEAD: i32 = 4_999_997;
 
-const VLIST_NODE: u16 = 1;
-const UNSET_NODE: u16 = 13;
 
 const ALIGN_STACK_NODE_SIZE: i32 = 6;
 const NATIVE_NODE_SIZE: i32 = 6;
@@ -436,7 +434,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                 }
             }
         }
-        st.mem.set_b16s1(q, UNSET_NODE);
+        st.mem.set_b16s1(q, NodeType::Unset.as_raw());
         st.mem.set_b16s0(q, 0);
         st.mem.set_b32s1(q + 3, 0);
         st.mem.set_b32s1(q + 2, 0);
@@ -476,30 +474,42 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
     while q != TEX_NULL {
         if !is_char_node(&st.mem, q) {
             match st.mem.classify(MemIdx(q)) {
-                Ok(AnyNode::Unset(_)) => {
-                    if st.input.cur_list.mode == INNER_VMODE {
-                        st.mem.set_b16s1(q, HLIST_NODE);
-                        st.mem.set_b32s1(q + 1, p.width(&st.mem).0);
+                Ok(AnyNode::Unset(row)) => {
+                    let row = if st.input.cur_list.mode == INNER_VMODE {
+                        let b = row.into_hlist(&mut st.mem);
+                        let width = p.width(&st.mem);
+                        b.set_width(&mut st.mem, width);
                         if in_display {
-                            st.mem.set_b16s0(q, DLIST);
+                            b.set_subtype(&mut st.mem, DLIST);
                         }
+                        AnyBox::HList(b)
                     } else {
-                        st.mem.set_b16s1(q, VLIST_NODE);
-                        st.mem.set_b32s1(q + 3, p.height(&st.mem).0);
-                    }
-                    st.mem.set_b16s0(q + 5, p.glue_order(&st.mem));
-                    st.mem.set_b16s1(q + 5, p.glue_sign(&st.mem).as_raw());
-                    st.mem.set_gr(q + 6, p.glue_set(&st.mem));
-                    st.mem.set_b32s1(q + 4, o);
+                        let b = row.into_vlist(&mut st.mem);
+                        let height = p.height(&st.mem);
+                        b.set_height(&mut st.mem, height);
+                        AnyBox::VList(b)
+                    };
+                    let (order, sign, set) = (
+                        p.glue_order(&st.mem),
+                        p.glue_sign(&st.mem),
+                        p.glue_set(&st.mem),
+                    );
+                    row.set_glue_order(&mut st.mem, order);
+                    row.set_glue_sign(&mut st.mem, sign);
+                    row.set_glue_set(&mut st.mem, set);
+                    row.set_shift_amount(&mut st.mem, Scaled(o));
 
-                    let mut r = st.mem.b32s1(st.mem.b32s1(q + 5));
+                    let mut r = row.list_ptr(&st.mem).link(&st.mem).0;
                     let mut ss = p.list_ptr(&st.mem).link(&st.mem).0;
                     loop {
-                        let n = st.mem.b16s0(r);
+                        let Ok(AnyNode::Unset(col)) = st.mem.classify(MemIdx(r)) else {
+                            return Err(MainControlAbort::Confusion(c"align"));
+                        };
+                        let n = col.subtype(&st.mem);
                         let w = st.mem.b32s1(ss + 1);
                         let mut t = w;
                         let mut u = HOLD_HEAD;
-                        st.mem.set_b16s0(r, 0);
+                        col.set_subtype(&mut st.mem, 0);
                         for _ in 0..n {
                             ss = st.mem.b32s1(ss);
                             let v = st.mem.b32s0(ss + 1);
@@ -532,30 +542,35 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                                 alloc_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
                             MemPtr(u).set_link(&mut st.mem, nb.ptr());
                             u = nb.ptr().0;
-                            let span_w = st.mem.b32s1(ss + 1);
-                            t += span_w;
+                            let span_w = Scaled(st.mem.b32s1(ss + 1));
+                            t += span_w.0;
                             if st.input.cur_list.mode == INNER_VMODE {
-                                nb.set_width(&mut st.mem, Scaled(span_w));
+                                nb.set_width(&mut st.mem, span_w);
                             } else {
-                                st.mem.set_b16s1(u, VLIST_NODE);
-                                st.mem.set_b32s1(u + 3, span_w);
+                                nb.into_vlist(&mut st.mem).set_height(&mut st.mem, span_w);
                             }
                         }
-                        if st.input.cur_list.mode == INNER_VMODE {
-                            st.mem.set_b32s1(r + 3, st.mem.b32s1(q + 3));
-                            st.mem.set_b32s1(r + 2, st.mem.b32s1(q + 2));
-                            let natural = st.mem.b32s1(r + 1);
-                            set_unset_glue(&mut st.mem, r, t, natural);
-                            st.mem.set_b32s1(r + 1, w);
-                            st.mem.set_b16s1(r, HLIST_NODE);
+                        let col = if st.input.cur_list.mode == INNER_VMODE {
+                            let (h, d) = (row.height(&st.mem), row.depth(&st.mem));
+                            col.set_height(&mut st.mem, h);
+                            col.set_depth(&mut st.mem, d);
+                            let glue = unset_glue(&st.mem, col, t, col.width(&st.mem).0);
+                            let b = col.into_hlist(&mut st.mem);
+                            b.set_width(&mut st.mem, Scaled(w));
+                            (AnyBox::HList(b), glue)
                         } else {
-                            st.mem.set_b32s1(r + 1, st.mem.b32s1(q + 1));
-                            let natural = st.mem.b32s1(r + 3);
-                            set_unset_glue(&mut st.mem, r, t, natural);
-                            st.mem.set_b32s1(r + 3, w);
-                            st.mem.set_b16s1(r, VLIST_NODE);
-                        }
-                        st.mem.set_b32s1(r + 4, 0);
+                            let width = row.width(&st.mem);
+                            col.set_width(&mut st.mem, width);
+                            let glue = unset_glue(&st.mem, col, t, col.height(&st.mem).0);
+                            let b = col.into_vlist(&mut st.mem);
+                            b.set_height(&mut st.mem, Scaled(w));
+                            (AnyBox::VList(b), glue)
+                        };
+                        let (b, (sign, order, set)) = col;
+                        b.set_glue_sign(&mut st.mem, sign);
+                        b.set_glue_order(&mut st.mem, order);
+                        b.set_glue_set(&mut st.mem, set);
+                        b.set_shift_amount(&mut st.mem, Scaled(0));
                         if u != HOLD_HEAD {
                             st.mem.set_b32s1(u, st.mem.b32s1(r));
                             st.mem.set_b32s1(r, st.mem.b32s1(HOLD_HEAD));
@@ -683,34 +698,35 @@ fn move_preamble_dimen(mem: &mut MemState, from: i32, to: i32) {
     }
 }
 
-/// Sets the glue of unset node `r`, whose natural size is `natural`, as if its size were `t`.
-fn set_unset_glue(mem: &mut MemState, r: i32, t: i32, natural: i32) {
+/// The glue setting of unset node `col`, of natural size `natural`, when set to size `t`.
+fn unset_glue(
+    mem: &MemState,
+    col: NodePtr<UnsetNode>,
+    t: i32,
+    natural: i32,
+) -> (GlueSign, u16, f64) {
     if t == natural {
-        mem.set_b16s1(r + 5, NORMAL);
-        mem.set_b16s0(r + 5, NORMAL);
-        mem.set_gr(r + 6, 0.0);
-    } else if t > natural {
-        mem.set_b16s1(r + 5, GlueSign::Stretching.as_raw());
-        let stretch = mem.b32s1(r + 6);
+        return (GlueSign::Normal, NORMAL, 0.0);
+    }
+    if t > natural {
+        let stretch = col.glue_stretch(mem).0;
         let ratio = if stretch == 0 {
             0.0
         } else {
             (t - natural) as f64 / stretch as f64
         };
-        mem.set_gr(r + 6, ratio);
-    } else {
-        mem.set_b16s0(r + 5, mem.b16s1(r + 5));
-        mem.set_b16s1(r + 5, GlueSign::Shrinking.as_raw());
-        let shrink = mem.b32s1(r + 4);
-        let ratio = if shrink == 0 {
-            0.0
-        } else if mem.b16s0(r + 5) == NORMAL && natural - t > shrink {
-            1.0
-        } else {
-            (natural - t) as f64 / shrink as f64
-        };
-        mem.set_gr(r + 6, ratio);
+        return (GlueSign::Stretching, col.glue_order(mem), ratio);
     }
+    let order = col.glue_sign(mem);
+    let shrink = col.glue_shrink(mem).0;
+    let ratio = if shrink == 0 {
+        0.0
+    } else if order == NORMAL && natural - t > shrink {
+        1.0
+    } else {
+        (natural - t) as f64 / shrink as f64
+    };
+    (GlueSign::Shrinking, order, ratio)
 }
 
 pub(crate) fn align_peek_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -986,17 +1002,16 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
         } else if w > st.mem.b32s1(st.scanner.cur_align + 1) {
             st.mem.set_b32s1(st.scanner.cur_align + 1, w);
         }
-        let u = u.idx().0;
-        st.mem.set_b16s1(u, UNSET_NODE);
-        st.mem.set_b16s0(u, n as u16);
+        let u = u.into_unset(&mut st.mem);
+        u.set_subtype(&mut st.mem, n as u16);
         let o = highest_order(&st.scanner.total_stretch);
-        st.mem.set_b16s0(u + 5, o as u16);
-        st.mem.set_b32s1(u + 6, st.scanner.total_stretch[o]);
+        u.set_glue_order(&mut st.mem, o as u16);
+        u.set_glue_stretch(&mut st.mem, Scaled(st.scanner.total_stretch[o]));
         let o = highest_order(&st.scanner.total_shrink);
-        st.mem.set_b16s1(u + 5, o as u16);
-        st.mem.set_b32s1(u + 4, st.scanner.total_shrink[o]);
+        u.set_glue_sign(&mut st.mem, o as u16);
+        u.set_glue_shrink(&mut st.mem, Scaled(st.scanner.total_shrink[o]));
         crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
-        tail_append(st, MemPtr(u));
+        tail_append(st, u.ptr());
         let spec = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1);
         let g = crate::mem::alloc_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
         tail_append(st, g.ptr());
@@ -1049,9 +1064,8 @@ pub(crate) fn fin_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
         st.input.cur_list.set_aux_s0(1000);
         row
     };
-    let p = p.idx().0;
-    st.mem.set_b16s1(p, UNSET_NODE);
-    st.mem.set_b32s1(p + 6, 0);
+    p.into_unset(&mut st.mem)
+        .set_glue_stretch(&mut st.mem, Scaled(0));
     begin_every(st, LOCAL_EVERY_CR, EVERY_CR_TEXT)?;
     align_peek_in(st)
 }
