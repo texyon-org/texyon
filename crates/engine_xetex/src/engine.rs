@@ -10,8 +10,10 @@ use crate::consts::{
     MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, NEW_LINE, NON_ADDRESS,
     NUMBER_USVS, PC_INT_BASE, PRIM_EQTB_BASE, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
     SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
+    UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::format_io::load_fmt_file;
+use crate::hash::{HASH_BASE, HASH_OFFSET, HASH_PRIME, HASH_SIZE};
 use crate::io::init_io;
 use crate::mem::xmalloc;
 use crate::state::InteractionMode;
@@ -19,11 +21,6 @@ use crate::state::{EngineState, GroupCode, MemState};
 
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
 
-const FORMAT_HASH_OFFSET: i32 = 514;
-const HASH_PRIME: i32 = 557_111;
-const HASH_SIZE: i32 = 2_242_711;
-const HASH_BASE: i32 = 1_114_114;
-const HASH_TOP_UNDEFINED_CONTROL_SEQUENCE: i32 = 2_254_339;
 use crate::consts::EMPTY_STRING;
 const INT_PAR_TIME: i32 = 20;
 const NORMAL: i32 = 0;
@@ -1133,27 +1130,15 @@ pub(crate) unsafe fn initialize_engine(
 
             s.eqtb.eqtb_top = EQTB_SIZE + s.eqtb.hash_extra;
             s.eqtb.hash_top = if s.eqtb.hash_extra == 0 {
-                HASH_TOP_UNDEFINED_CONTROL_SEQUENCE
+                UNDEFINED_CONTROL_SEQUENCE
             } else {
                 s.eqtb.eqtb_top
             };
 
-            let n = (1 + s.eqtb.hash_top - 514) as usize;
+            let n = (1 + s.eqtb.hash_top - HASH_OFFSET) as usize;
             s.eqtb.hash = crate::mem_types::zeroed_vec(n);
+            s.eqtb.hash_used = s.eqtb.hash_top;
         }
-
-        st.eqtb.hash[(HASH_BASE as usize) - 514].s0 = 0;
-        st.eqtb.hash[(HASH_BASE as usize) - 514].s1 = 0;
-        let hash_base = st.eqtb.hash[(HASH_BASE as usize) - 514].s0;
-        let hash_base_s1 = st.eqtb.hash[(HASH_BASE as usize) - 514].s1;
-        let mut h = HASH_BASE + 1;
-        let h_top = st.eqtb.hash_top;
-        while h <= h_top {
-            st.eqtb.hash[(h as usize) - 514].s0 = hash_base;
-            st.eqtb.hash[(h as usize) - 514].s1 = hash_base_s1;
-            h += 1;
-        }
-        st.eqtb.hash_used = h_top;
 
         let fms_initex = st.fonts.font_mem_size;
         // `xcalloc_array(n)` allocated `n + 1` zeroed words; match that.
@@ -1205,7 +1190,7 @@ pub(crate) unsafe fn initialize_engine(
     if CS_TOKEN_FLAG + EQTB_SIZE + st.eqtb.hash_extra > MAX_HALFWORD {
         BAD = 21;
     }
-    if FORMAT_HASH_OFFSET < 0 || FORMAT_HASH_OFFSET > HASH_BASE {
+    if HASH_OFFSET < 0 || HASH_OFFSET > HASH_BASE {
         BAD = 42;
     }
     if FORMAT_DEFAULT_LENGTH > i32::MAX {
