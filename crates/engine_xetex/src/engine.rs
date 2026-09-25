@@ -44,13 +44,13 @@ const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80;
 const HISTORY_WARNING_ISSUED: i32 = 1;
 
 const PAGE_INS_HEAD: i32 = MEM_TOP;
-const PAGE_HEAD: i32 = MEM_TOP - 2;
+pub(crate) const PAGE_HEAD: i32 = MEM_TOP - 2;
 const ACTIVE_LIST: i32 = MEM_TOP - 7;
 const END_SPAN: i32 = MEM_TOP - 9;
 const OMIT_TEMPLATE: i32 = MEM_TOP - 10;
 const NULL_LIST: i32 = MEM_TOP - 11;
-const PRE_ADJUST_HEAD: i32 = MEM_TOP - 14;
-const HI_MEM_STAT_USAGE: i32 = 15;
+pub(crate) const PRE_ADJUST_HEAD: i32 = MEM_TOP - 14;
+pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
 const IF_NODE_SIZE: i32 = 2;
 
 const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
@@ -60,7 +60,7 @@ const FROZEN_DONT_EXPAND: i32 = FROZEN_CONTROL_SEQUENCE + 9;
 
 const IGNORE_SPACES: u16 = 39;
 const IF_TEST: u16 = 107;
-const UNDEFINED_CS: u16 = 103;
+pub(crate) const UNDEFINED_CS: u16 = 103;
 const OUTER_CALL: u16 = 115;
 const DONT_EXPAND: u16 = 118;
 const GLUE_REF: u16 = 119;
@@ -80,8 +80,8 @@ const TOP_MARK_CODE: usize = 0;
 const SPLIT_BOT_MARK_CODE: usize = 4;
 const LAST_BOX_CODE: usize = 2;
 const VSPLIT_CODE: usize = 3;
-const INT_VAL: u8 = 0;
-const INTER_CHAR_VAL: usize = 6;
+pub(crate) const INT_VAL: u8 = 0;
+pub(crate) const INTER_CHAR_VAL: usize = 6;
 const MARK_VAL: usize = 7;
 
 const LOCAL_OUTPUT_ROUTINE: i32 = 1;
@@ -89,7 +89,7 @@ const NUM_ETEX_PENALTIES: i32 = 4;
 const NUMBER_REGS: i32 = 256;
 const NUMBER_MATH_FONTS: i32 = 3 * NUMBER_MATH_FAMILIES;
 const TOO_BIG_LANG: i32 = 256;
-const HYPH_PRIME: i32 = 607;
+pub(crate) const HYPH_PRIME: i32 = 607;
 const VAR_FAM_CLASS: i32 = 7;
 
 const ESCAPE: i32 = 0;
@@ -103,7 +103,7 @@ const XF_PRIM_INIT_NONE: i32 = 0;
 const XF_PRIM_INIT_PAR: i32 = 1;
 const XF_PRIM_INIT_WRITE: i32 = 2;
 
-const REGISTER_HELP: &CStr = c"A register number must be between 0 and 32767.";
+pub(crate) const REGISTER_HELP: &CStr = c"A register number must be between 0 and 32767.";
 
 const _: () = assert!(
     MEM_TOP >= 1100
@@ -229,7 +229,7 @@ impl PrimitiveInitAbort {
     }
 }
 
-fn set_eq(eqtb: &mut EqtbState, p: i32, eq_type: u16, equiv: i32, level: u16) {
+pub(crate) fn set_eq(eqtb: &mut EqtbState, p: i32, eq_type: u16, equiv: i32, level: u16) {
     eqtb.set_b16s1(p, eq_type);
     eqtb.set_b32s1(p, equiv);
     eqtb.set_b16s0(p, level);
