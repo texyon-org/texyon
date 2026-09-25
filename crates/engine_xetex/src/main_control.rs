@@ -1858,6 +1858,7 @@ pub(crate) fn new_character_in(
 ) -> Result<i32, NewCharacterAbort> {
     if is_native_font(&st.fonts, f) {
         return crate::fonts::new_native_character_in(st, f, c as u32)
+            .map(|w| w.ptr().0)
             .map_err(NewCharacterAbort::Native);
     }
     let ec = crate::fonts::effective_char(&mut st.fonts, false, f, c) as u16;
@@ -2794,10 +2795,10 @@ pub(crate) fn append_italic_correction_in(st: &mut EngineState) -> Result<(), Ma
             Ok(AnyNode::Ligature(lig)) => char_italic(st, lig.idx().0 + 1),
             Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(&st.mem) {
                 Some(s) if s.is_native_word() => unsafe {
-                    crate::ext::real_get_native_italic_correction(&st.fonts, &st.mem, tail)
+                    crate::ext::real_get_native_italic_correction(&st.fonts, &st.mem, w)
                 },
                 Some(WhatsitSubtype::Glyph) => unsafe {
-                    crate::ext::real_get_native_glyph_italic_correction(&st.fonts, &st.mem, tail)
+                    crate::ext::real_get_native_glyph_italic_correction(&st.fonts, &st.mem, w)
                 },
                 _ => return Ok(()),
             },
@@ -2835,15 +2836,9 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
     let a = if is_native_font(&st.fonts, f) {
         let a = st.mem.b32s1(p + 1);
         if a == 0 {
-            unsafe {
-                crate::ext::get_native_char_sidebearings(
-                    &st.fonts,
-                    f,
-                    st.scanner.cur_val,
-                    &mut lsb,
-                    &mut rsb,
-                )?;
-            }
+            (lsb, rsb) = unsafe {
+                crate::ext::get_native_char_sidebearings(&st.fonts, f, st.scanner.cur_val)?
+            };
         }
         a
     } else {
@@ -2882,17 +2877,8 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
         / 65536.0;
     let (w, h) = if is_native_font(&st.fonts, f) {
         let w = st.mem.b32s1(q + 1);
-        let mut h: i32 = 0;
-        let mut d: i32 = 0;
-        unsafe {
-            crate::ext::get_native_char_height_depth(
-                &st.fonts,
-                f,
-                st.scanner.cur_val,
-                &mut h,
-                &mut d,
-            )?;
-        }
+        let (h, _) =
+            unsafe { crate::ext::get_native_char_height_depth(&st.fonts, f, st.scanner.cur_val)? };
         (w, h)
     } else {
         let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(q));
@@ -3662,8 +3648,8 @@ unsafe fn copy_to_native_node(
     std::ptr::copy_nonoverlapping(src, dst, len.max(0) as usize);
 }
 
-fn use_glyph_metrics(st: &EngineState) -> libc::c_int {
-    (st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0) as libc::c_int
+fn use_glyph_metrics(st: &EngineState) -> bool {
+    st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0
 }
 
 /// Skips the nodes allowed between two words of an interword space.
@@ -3850,7 +3836,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
         let text = st.scanner.native_text.as_ptr();
         copy_to_native_node(&mut st.mem, node, old_len, text, len);
         let metrics = use_glyph_metrics(st);
-        crate::ext::measure_native_node(&st.fonts, &mut st.mem, node.idx().0, metrics)?;
+        crate::ext::measure_native_node(&st.fonts, &mut st.mem, node, metrics)?;
         if let Some(word) = old {
             let mut prev = st.input.cur_list.head;
             if prev != word.ptr() {
@@ -3916,14 +3902,9 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Mai
     let tail_text = st.mem.as_u16_ptr(tail + NATIVE_NODE_SIZE);
     copy_to_native_node(&mut st.mem, joined, prev_len + 1, tail_text, tail_len);
     let metrics = use_glyph_metrics(st);
-    crate::ext::measure_native_node(&st.fonts, &mut st.mem, joined.idx().0, metrics)?;
+    crate::ext::measure_native_node(&st.fonts, &mut st.mem, joined, metrics)?;
     let t = joined.width(&st.mem).0 - prev_word.width(&st.mem).0 - st.mem.b32s1(tail + 1);
-    let handle = joined.native_glyph_info_handle(&st.mem);
-    if handle != 0 {
-        st.mem.glyph_blobs.release(handle);
-    }
-    let size = joined.native_size(&st.mem);
-    crate::mem::free_node(&mut st.mem, joined.ptr(), size);
+    joined.free_native(&mut st.mem);
     let space = st.mem.b32s1(st.fonts.font_glue(mf) + 1);
     if t != space {
         let kern = overflow_err(crate::mem::alloc_kern(&mut st.mem, t - space))?;

@@ -250,8 +250,8 @@ pub(crate) fn set_native_metrics(
     w: NodePtr<WhatsitNode>,
 ) -> Result<(), crate::ext::NativeFontAbort> {
     let use_glyph_metrics = int_par(eqtb, INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
-    // SAFETY: `w` is a native-word whatsit.
-    unsafe { measure_native_node(fonts, mem, w.idx().0, use_glyph_metrics as libc::c_int) }
+    // SAFETY: the measurer only reads font tables over FFI.
+    unsafe { measure_native_node(fonts, mem, w, use_glyph_metrics) }
 }
 
 /// A native-word node of font `f` holding `len` units of `src`'s text from `start`.
@@ -532,9 +532,8 @@ fn char_pw(
                     }
                     let f = w.native_font(mem).0;
                     // SAFETY: `p` is a native word with glyph info.
-                    let cp = unsafe {
-                        crate::ext::real_get_native_word_cp(mem, p.0, side as libc::c_int)
-                    };
+                    let cp =
+                        unsafe { crate::ext::real_get_native_word_cp(mem, w, side as libc::c_int) };
                     return protrusion(errors, fonts, f, cp);
                 }
                 Some(WhatsitSubtype::Glyph) => {
@@ -2848,7 +2847,7 @@ fn hyphenate_native_word(
                 .expect("main memory arena has room for a disc node");
             let hyphen = crate::fonts::new_native_character_in(st, hf, hyf_char as u32)
                 .map_err(HyphNativeAbort::NativeChar)?;
-            disc.set_pre_break(&mut st.mem, MemPtr(hyphen));
+            disc.set_pre_break(&mut st.mem, hyphen.ptr());
             q.set_link(&mut st.mem, disc.ptr());
             s = disc.ptr();
             st.hyph.hyphen_passed = j;

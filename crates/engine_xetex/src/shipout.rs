@@ -926,9 +926,10 @@ fn merge_justifiable_native_words(
                 }
 
                 let nlen = crate::hash::cur_length(strings);
-                q = crate::fonts::new_native_word_node(mem, eqtb, mem.b16s2(r + 4) as i32, nlen)
-                    .map_err(ShipoutAbort::NodeRecycle)?
-                    .ptr();
+                let word =
+                    crate::fonts::new_native_word_node(mem, eqtb, mem.b16s2(r + 4) as i32, nlen)
+                        .map_err(ShipoutAbort::NodeRecycle)?;
+                q = word.ptr();
                 mem.set_b16s0(q, mem.b16s0(r));
 
                 let base = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
@@ -943,7 +944,7 @@ fn merge_justifiable_native_words(
                 }
 
                 mem.set_b32s1(q + 1, k);
-                unsafe { crate::ext::store_justified_native_glyphs(fonts, mem, q.0) }?;
+                unsafe { crate::ext::store_justified_native_glyphs(fonts, mem, word) }?;
                 prev_p.set_link(mem, q);
                 q.set_link(mem, p.link(mem));
                 p.set_link(mem, MemPtr::NULL);

@@ -975,17 +975,6 @@ impl NodeRecycleAbort {
     }
 }
 
-/// `get_node` as a raw index, returning [`NodeRecycleAbort::Overflow`] on exhaustion.
-macro_rules! cnl_get_node {
-    ($mem:expr, $sz:expr) => {
-        crate::mem::get_node($mem, $sz)
-            .ok_or(NodeRecycleAbort::Overflow)?
-            .0
-    };
-}
-
-pub(crate) use cnl_get_node;
-
 pub(crate) fn check_outer_validity_in(
     st: &mut EngineState,
 ) -> Result<crate::errors::ErrorOutcome, crate::input::InputAbort> {

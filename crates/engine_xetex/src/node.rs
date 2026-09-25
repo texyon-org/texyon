@@ -2390,6 +2390,67 @@ impl NodePtr<WhatsitNode> {
     }
 }
 
+impl NodePtr<WhatsitNode> {
+    /// A fresh `size`-word whatsit of the given subtype, fields uninitialized.
+    pub fn alloc(mem: &mut MemState, size: i32, subtype: WhatsitSubtype) -> Option<Self> {
+        let p = get_node(mem, size)?;
+        mem.set_b16s1(p, NodeType::Whatsit.as_raw());
+        mem.set_b16s0(p, subtype as u16);
+        // SAFETY: `p` was just stamped as a whatsit.
+        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p.0)) })
+    }
+    #[inline]
+    pub fn set_write_tokens(self, mem: &mut MemState, v: MemPtr) {
+        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    }
+    #[inline]
+    pub fn set_write_stream(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(1).0, v);
+    }
+    #[inline]
+    pub fn set_open_name(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(1).0, v);
+    }
+    #[inline]
+    pub fn set_open_area(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.idx.offset(2).0, v);
+    }
+    #[inline]
+    pub fn set_open_ext(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s1(self.idx.offset(2).0, v);
+    }
+    #[inline]
+    pub fn set_native_size(self, mem: &mut MemState, words: u16) {
+        mem.set_b16s3(self.idx.offset(4).0, words);
+    }
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, w.0);
+    }
+    #[inline]
+    pub fn set_depth(self, mem: &mut MemState, d: Scaled) {
+        mem.set_b32s1(self.idx.offset(2).0, d.0);
+    }
+    #[inline]
+    pub fn set_height(self, mem: &mut MemState, h: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, h.0);
+    }
+    /// Drop the shaped-glyph payload of a native word.
+    pub fn release_native_glyphs(self, mem: &mut MemState) {
+        let handle = self.native_glyph_info_handle(mem);
+        if handle != 0 {
+            mem.glyph_blobs.release(handle);
+            self.set_native_glyph_info_handle(mem, 0);
+            self.set_native_glyph_count(mem, 0);
+        }
+    }
+    /// Free a native-word node together with its shaped glyphs.
+    pub fn free_native(self, mem: &mut MemState) {
+        self.release_native_glyphs(mem);
+        free_node(mem, self.ptr(), self.native_size(mem));
+    }
+}
+
 /// A sparse-array tree record used by the eTeX mark machinery (`do_marks`):
 /// either an *index node* (a fan-out of child pointers) or a *mark-class node*
 /// (the five `\topmark`/`\firstmark`/`\botmark`/`\splitfirstmark`/

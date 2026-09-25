@@ -437,12 +437,7 @@ pub fn flush_node_list(
                         crate::mem::delete_token_ref(mem, w.write_tokens(mem));
                     }
                     Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
-                        let glyph_handle = w.native_glyph_info_handle(mem);
-                        if glyph_handle != 0 {
-                            mem.glyph_blobs.release(glyph_handle);
-                            w.set_native_glyph_info_handle(mem, 0);
-                            w.set_native_glyph_count(mem, 0);
-                        }
+                        w.release_native_glyphs(mem);
                     }
                     _ => {}
                 }

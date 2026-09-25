@@ -9,6 +9,7 @@ use crate::consts::{
     SCRIPT_SIZE, SPACER, SPACE_CODE, STYLE_NODE_SIZE, SUB_BOX, TEXT_SIZE,
 };
 use crate::ext::real_get_native_glyph;
+use crate::fonts::{char_depth, char_height, char_italic, char_width, CharInfo};
 use crate::mem::{
     alloc_choice, alloc_glue, alloc_kern, alloc_noad, alloc_spec, free_node, get_avail, get_node,
     TEX_NULL,
@@ -149,24 +150,6 @@ fn font_uses_opentype(fonts: &FontState, f: i32) -> bool {
 fn font_is_ot_math(fonts: &FontState, f: i32) -> bool {
     fonts.font_area_entry(f) == OTGR_FONT_FLAG
         && unsafe { isOpenTypeMathFont(fonts.font_layout_engine_ptr(f)) }
-}
-
-type CharInfo = crate::mem_types::B16x4;
-
-fn char_width(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_b32s1(fonts.width_base_entry(f) + i.s3 as i32)
-}
-
-fn char_italic(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_b32s1(fonts.italic_base_entry(f) + i.s1 as i32 / 4)
-}
-
-fn char_height(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_b32s1(fonts.height_base_entry(f) + i.s2 as i32 / 16)
-}
-
-fn char_depth(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_b32s1(fonts.depth_base_entry(f) + i.s2 as i32 % 16)
 }
 
 #[inline]
@@ -1257,14 +1240,14 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
 
     let y;
     if is_native {
-        let old = new_native_char_node(st, f, c as u32)?;
+        let old = crate::fonts::new_native_character_in(st, f, c as u32)?;
         y = native_char_box(&mut st.mem, old)?;
         let glyph = alloc_glyph_whatsit(&mut st.mem)?;
         glyph.set_native_font(&mut st.mem, f as u16);
-        let glyph_id = real_get_native_glyph(&st.mem, old.idx().0, 0);
+        let glyph_id = real_get_native_glyph(&st.mem, old, 0);
         glyph.set_native_glyph(&mut st.mem, glyph_id);
         measure_glyph(&st.fonts, &mut st.mem, glyph)?;
-        free_native_node(&mut st.mem, old);
+        old.free_native(&mut st.mem);
         y.set_list_ptr(&mut st.mem, glyph.ptr());
 
         let mut assembly_box = None;
@@ -1974,13 +1957,13 @@ fn mlist_nucleus_in(
             let cur_f = st.scanner.cur_f;
             let area = st.fonts.font_area_entry(cur_f);
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-                let z = new_native_char_node(st, cur_f, st.scanner.cur_c as u32)?;
+                let z = crate::fonts::new_native_character_in(st, cur_f, st.scanner.cur_c as u32)?;
                 let glyph = alloc_glyph_whatsit(&mut st.mem)?;
                 glyph.set_native_font(&mut st.mem, cur_f as u16);
-                let z_glyph = real_get_native_glyph(&st.mem, z.idx().0, 0);
+                let z_glyph = real_get_native_glyph(&st.mem, z, 0);
                 glyph.set_native_glyph(&mut st.mem, z_glyph);
                 measure_glyph(&st.fonts, &mut st.mem, glyph)?;
-                free_native_node(&mut st.mem, z);
+                z.free_native(&mut st.mem);
                 delta = get_ot_math_ital_corr(&st.fonts, cur_f, glyph.native_glyph(&st.mem) as i32);
                 if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR && !font_is_ot_math(&st.fonts, cur_f)
                 {
@@ -2352,32 +2335,13 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
     Ok(())
 }
 
-/// `new_native_character` as a typed handle.
-fn new_native_char_node(
-    st: &mut EngineState,
-    f: i32,
-    c: u32,
-) -> Result<NodePtr<WhatsitNode>, MathBuildAbort> {
-    let p = crate::fonts::new_native_character_in(st, f, c)?;
-    // SAFETY: `new_native_character` always builds a native-word whatsit.
-    Ok(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
-}
-
 fn measure_glyph(
     fonts: &FontState,
     mem: &mut MemState,
     p: NodePtr<WhatsitNode>,
 ) -> Result<(), crate::ext::NativeFontAbort> {
     // SAFETY: `p` is a glyph whatsit and the measurer only reads font tables over FFI.
-    unsafe { crate::ext::measure_native_glyph(fonts, mem, p.idx().0, 1) }
-}
-
-fn free_native_node(mem: &mut MemState, p: NodePtr<WhatsitNode>) {
-    let handle = p.native_glyph_info_handle(mem);
-    if handle != 0 {
-        mem.glyph_blobs.release(handle);
-    }
-    free_node(mem, p.ptr(), p.native_size(mem));
+    unsafe { crate::ext::measure_native_glyph(fonts, mem, p, true) }
 }
 
 fn native_char_box(
@@ -2451,7 +2415,7 @@ fn math_build_abort_main(a: MathBuildAbort) -> crate::main_control::MainControlA
 fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuildAbort> {
     let area = st.fonts.font_area_entry(f);
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-        let p = new_native_char_node(st, f, c as u32)?;
+        let p = crate::fonts::new_native_character_in(st, f, c as u32)?;
         Ok(native_char_box(&mut st.mem, p)?)
     } else {
         Ok(char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)?)

@@ -692,7 +692,7 @@ impl FontBundle {
             dst.set_font_mapping(f as i32, mapping.clone());
         }
         // The ICU iterator points into transient text and is rebuilt lazily.
-        unsafe { crate::ext::release_linebreak_state(dst) };
+        crate::ext::release_linebreak_state(dst);
         // Fonts created after this checkpoint may have emitted definitions in
         // the abandoned timeline. Reused slots must start unused on replay.
         let restored_font_count = (self.font_ptr + 1).max(0) as usize;

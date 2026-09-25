@@ -47,15 +47,6 @@ pub(crate) unsafe fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut 
     p
 }
 
-pub(crate) unsafe fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mut libc::c_void {
-    if ptr.is_null() {
-        return xmalloc(size);
-    }
-    let p = libc::realloc(ptr, if size == 0 { 1 } else { size });
-    assert!(!p.is_null(), "out of memory: realloc({size} bytes) failed");
-    p
-}
-
 // ---------------------------------------------------------------------------
 // get_avail
 // ---------------------------------------------------------------------------
