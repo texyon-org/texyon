@@ -1935,8 +1935,7 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let w = st
         .input
         .cur_list
-        .new_whatsit(&mut st.mem, WhatsitSubtype::Special, WRITE_NODE_SIZE)
-        .map_err(|_| Abort::AvailOverflow)?;
+        .new_whatsit(&mut st.mem, WhatsitSubtype::Special, WRITE_NODE_SIZE)?;
     w.set_write_stream(&mut st.mem, 0);
     let d = st.mem.get_avail()?;
     st.scanner.def_ref = d;
