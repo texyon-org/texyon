@@ -463,7 +463,7 @@ fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
 }
 
 pub(crate) fn scan_rule_spec_in(st: &mut EngineState) -> Result<NodePtr<RuleNode>, SccAbort> {
-    let r = crate::mem::alloc_rule(&mut st.mem).ok_or_else(main_mem_overflow_scc)?;
+    let r = crate::mem::new_rule(&mut st.mem).ok_or_else(main_mem_overflow_scc)?;
     if st.scanner.cur_cmd == VRULE {
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
@@ -843,7 +843,7 @@ pub(crate) fn set_math_char_in(
         x_token_in(st)?;
         back_input_in(st)?;
     } else {
-        let nd = crate::mem::alloc_noad(&mut st.mem).expect("new noad");
+        let nd = crate::mem::new_noad(&mut st.mem).expect("new noad");
         nd.set_nucleus_type(&mut st.mem, MATH_CHAR);
         let ch = math_char_fn(c);
         nd.set_nucleus_char(&mut st.mem, (ch % 65536) as u16);
@@ -909,7 +909,7 @@ impl NodeRecycleAbort {
                 what: c"main memory size".as_ptr(),
                 n: MEM_TOP + 1,
             },
-            NodeRecycleAbort::OverflowRunaway => crate::mem::main_memory_overflow_abort(),
+            NodeRecycleAbort::OverflowRunaway => crate::errors::EngineAbort::MainMemoryOverflow,
             NodeRecycleAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
             NodeRecycleAbort::NativeFont(e) => e.into_engine_abort(),
         }
@@ -1631,7 +1631,7 @@ pub(crate) fn new_spec_scc(
     st: &mut EngineState,
     p: impl crate::units::MemAddr,
 ) -> Result<NodePtr<GlueSpecNode>, SccAbort> {
-    crate::mem::alloc_spec(&mut st.mem, p).ok_or_else(main_mem_overflow_scc)
+    crate::mem::new_spec(&mut st.mem, p).ok_or_else(main_mem_overflow_scc)
 }
 
 pub(crate) fn str_toks_scc(st: &mut EngineState, b: i32, cat: i16) -> Result<MemPtr, SccAbort> {

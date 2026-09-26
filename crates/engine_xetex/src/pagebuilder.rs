@@ -95,7 +95,9 @@ impl PageBuildAbort {
                 what: c"main memory size".as_ptr(),
                 n: MEM_TOP + 1,
             },
-            PageBuildAbort::MainMemoryOverflowRunaway => crate::mem::main_memory_overflow_abort(),
+            PageBuildAbort::MainMemoryOverflowRunaway => {
+                crate::errors::EngineAbort::MainMemoryOverflow
+            }
             PageBuildAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s.as_ptr()),
         }
     }
@@ -313,7 +315,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
                 let n = rec.subtype(&st.mem) as u8;
                 ensure_vbox_in(st, n)?;
                 if st.eqtb.b32s1(BOX_BASE + n as i32) == TEX_NULL {
-                    let b = crate::mem::alloc_null_box(&mut st.mem)
+                    let b = crate::mem::new_null_box(&mut st.mem)
                         .ok_or(PageBuildAbort::MainMemoryOverflow)?;
                     st.eqtb.set_b32s1(BOX_BASE + n as i32, b.idx().0);
                 }
@@ -681,7 +683,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     } else {
                         st.shipout.page_contents = PageContents::BoxThere;
                     }
-                    let q = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_TOP_SKIP)
+                    let q = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_TOP_SKIP)
                         .ok_or(PageBuildAbort::MainMemoryOverflow)?;
                     let spec = q.glue_spec(&st.mem).expect("fresh top skip spec");
                     let width = spec.width(&st.mem).0;
@@ -842,8 +844,8 @@ fn page_glue_width_in(
         "since the offensive shrinkability has been made finite.",
     ]);
     page_error(crate::errors::error_in(st))?;
-    let finite = crate::mem::alloc_spec(&mut st.mem, spec.idx())
-        .ok_or(PageBuildAbort::MainMemoryOverflow)?;
+    let finite =
+        crate::mem::new_spec(&mut st.mem, spec.idx()).ok_or(PageBuildAbort::MainMemoryOverflow)?;
     finite.set_shrink_order(&mut st.mem, NORMAL);
     crate::mem::delete_glue_ref(&mut st.mem, spec.idx());
     glue.set_glue_ptr(&mut st.mem, finite.ptr());

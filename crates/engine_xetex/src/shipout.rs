@@ -1225,8 +1225,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
-        let kern =
-            crate::mem::alloc_kern(&mut st.mem, 0).ok_or(ShipoutAbort::MainMemoryOverflow)?;
+        let kern = crate::mem::new_kern(&mut st.mem, 0).ok_or(ShipoutAbort::MainMemoryOverflow)?;
         kern.set_sync_tag(&mut st.mem, 0);
         prev_p.set_link(&mut st.mem, kern.ptr());
         st.shipout.cur_h = 0;
@@ -1908,7 +1907,7 @@ fn reverse(
             return Ok(l);
         }
         let dir = scanner.lr_ptr.info(mem) as u16;
-        p = crate::mem::alloc_math(mem, 0, dir)
+        p = crate::mem::new_math(mem, 0, dir)
             .ok_or(ShipoutAbort::MainMemoryOverflow)?
             .ptr();
         scanner.lr_problems += 10000;

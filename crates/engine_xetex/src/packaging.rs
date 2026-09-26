@@ -148,7 +148,7 @@ fn copy_whatsit(
             let copy = copied_node(w, r);
             copy.set_native_glyph_info_handle(mem, 0);
             copy.set_native_glyph_count(mem, 0);
-            crate::mem::copy_native_glyph_info(mem, w.idx(), r);
+            copy.share_native_glyphs(mem, w);
             Ok((r, 0))
         }
         Some(WhatsitSubtype::Write | WhatsitSubtype::Special) => {
@@ -529,10 +529,10 @@ pub fn append_to_vlist(
                 b.height(mem).0
             };
         let p = if d < eqtb.dimen_par(DIMEN_PAR_LINE_SKIP_LIMIT) {
-            crate::mem::alloc_param_glue(mem, eqtb, GLUE_PAR_LINE_SKIP)
+            crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_LINE_SKIP)
                 .ok_or(NodeRecycleAbort::Overflow)?
         } else {
-            let p = crate::mem::alloc_skip_param(mem, eqtb, GLUE_PAR_BASELINE_SKIP)
+            let p = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_BASELINE_SKIP)
                 .ok_or(NodeRecycleAbort::Overflow)?;
             p.glue_spec(mem)
                 .expect("skip parameter glue has a spec")
@@ -1192,7 +1192,7 @@ fn insert_split_top_skip_before(
     p: MemPtr,
     height: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    let q = crate::mem::alloc_skip_param(mem, eqtb, GLUE_PAR_SPLIT_TOP_SKIP)
+    let q = crate::mem::new_skip_param(mem, eqtb, GLUE_PAR_SPLIT_TOP_SKIP)
         .ok_or(NodeRecycleAbort::Overflow)?;
     prev_p.set_link(mem, q.ptr());
     q.set_link(mem, p);
@@ -1711,7 +1711,7 @@ fn hpack_in(
                 let overfull_rule = eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
                 if overfull_rule > 0 && excess > hfuzz {
                     q = list_tail(mem, q);
-                    let rule = crate::mem::alloc_rule(mem).ok_or(NodeRecycleAbort::Overflow)?;
+                    let rule = crate::mem::new_rule(mem).ok_or(NodeRecycleAbort::Overflow)?;
                     q.set_link(mem, rule.ptr());
                     rule.set_width(mem, RuleDimen::Set(Scaled(overfull_rule)));
                 }
@@ -1735,7 +1735,7 @@ fn hpack_in(
         if scanner.lr_ptr.info(mem) != BEFORE.into() {
             q = list_tail(mem, q);
             loop {
-                let math = crate::mem::alloc_math(mem, 0, scanner.lr_ptr.info(mem) as u16)
+                let math = crate::mem::new_math(mem, 0, scanner.lr_ptr.info(mem) as u16)
                     .ok_or(NodeRecycleAbort::Overflow)?;
                 q.set_link(mem, math.ptr());
                 q = math.ptr();

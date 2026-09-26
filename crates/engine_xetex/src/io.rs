@@ -1099,7 +1099,7 @@ pub(crate) fn scan_file_name_braced_in(st: &mut EngineState) -> Result<(), SccAb
 
     let s = crate::string_pool::make_string(&mut st.strings)
         .map_err(|_| name_abort_scc(st, NameAbort::NumberOfStrings))?;
-    crate::mem::delete_token_ref(&mut st.mem, st.scanner.def_ref.0);
+    crate::mem::delete_token_ref(&mut st.mem, st.scanner.def_ref);
     st.scanner.def_ref.0 = save_def_ref;
     st.scanner.cur_cs = save_cur_cs;
     st.scanner.scanner_status = save_scanner_status;

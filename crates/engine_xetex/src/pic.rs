@@ -488,7 +488,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         let pic = crate::mem::new_whatsit(
             &mut st.input.cur_list,
             &mut st.mem,
-            WhatsitSubtype::Pic as i16,
+            WhatsitSubtype::Pic,
             PIC_NODE_SIZE + extra_words,
         )
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;

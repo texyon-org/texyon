@@ -817,9 +817,9 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             if c == LEFT_MARGIN_KERN_CODE {
                 print_margin_kern_in(st, list, 0, GLUE_PAR_LEFT_SKIP, |mem, p| mem.b32s1(p));
             } else {
-                let last = crate::mem::prev_rightmost(&st.mem, list, TEX_NULL).0;
+                let last = crate::mem::prev_rightmost(&st.mem, MemPtr(list), MemPtr::NULL).0;
                 print_margin_kern_in(st, last, 1, GLUE_PAR_RIGHT_SKIP, move |mem, p| {
-                    crate::mem::prev_rightmost(mem, list, p).0
+                    crate::mem::prev_rightmost(mem, MemPtr(list), MemPtr(p)).0
                 });
             }
         }

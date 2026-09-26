@@ -33,7 +33,7 @@ use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{MemAddr, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemAddr, MemIdx, MemPtr, NodeType, Scaled};
 
 const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
 
@@ -557,8 +557,7 @@ fn insert_right_margin_kern(
         return Ok(q);
     }
 
-    let k = crate::mem::alloc_margin_kern(mem, -w, linebreak.last_rightmost_char.0, 1)
-        .ok_or(MarginKernAbort::Overflow)?;
+    let k = crate::mem::new_margin_kern(mem, -w, 1).ok_or(MarginKernAbort::Overflow)?;
     k.set_link(mem, ptmp.link(mem));
     ptmp.set_link(mem, k.ptr());
     Ok(if ptmp == q { q.link(mem) } else { q })
@@ -578,8 +577,7 @@ fn insert_left_margin_kern(
         return Ok(q);
     }
 
-    let k = crate::mem::alloc_margin_kern(mem, -w, linebreak.last_leftmost_char.0, 0)
-        .ok_or(MarginKernAbort::Overflow)?;
+    let k = crate::mem::new_margin_kern(mem, -w, 0).ok_or(MarginKernAbort::Overflow)?;
     k.set_link(mem, q);
     Ok(k.ptr())
 }
@@ -589,7 +587,7 @@ pub(crate) fn finite_shrink(
     mem: &mut MemState,
     spec: NodePtr<GlueSpecNode>,
 ) -> Result<NodePtr<GlueSpecNode>, NodeRecycleAbort> {
-    let q = crate::mem::alloc_spec(mem, spec.ptr()).ok_or(NodeRecycleAbort::Overflow)?;
+    let q = crate::mem::new_spec(mem, spec.ptr()).ok_or(NodeRecycleAbort::Overflow)?;
     q.set_shrink_order(mem, NORMAL);
     crate::mem::delete_glue_ref(mem, spec.ptr());
     Ok(q)
@@ -759,7 +757,7 @@ fn reconstitute(
                                     lig_item(st.mainloop.lig_stack)
                                         .set_character(&mut st.mem, st.mainloop.cur_r as u16);
                                 } else {
-                                    let item = crate::mem::alloc_lig_item(
+                                    let item = crate::mem::new_lig_item(
                                         &mut st.mem,
                                         st.mainloop.cur_r as u16,
                                     )
@@ -779,11 +777,9 @@ fn reconstitute(
                             3 => {
                                 st.mainloop.cur_r = q.s0 as i32;
                                 let below = st.mainloop.lig_stack;
-                                let item = crate::mem::alloc_lig_item(
-                                    &mut st.mem,
-                                    st.mainloop.cur_r as u16,
-                                )
-                                .ok_or(NodeRecycleAbort::Overflow)?;
+                                let item =
+                                    crate::mem::new_lig_item(&mut st.mem, st.mainloop.cur_r as u16)
+                                        .ok_or(NodeRecycleAbort::Overflow)?;
                                 st.mainloop.lig_stack = item.ptr();
                                 item.ptr().set_link(&mut st.mem, below);
                             }
@@ -850,7 +846,7 @@ fn reconstitute(
         }
 
         if w != 0 {
-            let kern = crate::mem::alloc_kern(&mut st.mem, w).ok_or(NodeRecycleAbort::Overflow)?;
+            let kern = crate::mem::new_kern(&mut st.mem, w).ok_or(NodeRecycleAbort::Overflow)?;
             t.set_link(&mut st.mem, kern.ptr());
             t = kern.ptr();
             w = 0;
@@ -873,9 +869,9 @@ fn reconstitute(
 /// `rt` also records a right boundary hit when the lig stack is empty.
 fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, NodeRecycleAbort> {
     let components = st.mainloop.cur_q.link(&st.mem);
-    let lig = crate::mem::alloc_ligature(
+    let lig = crate::mem::new_ligature(
         &mut st.mem,
-        st.hyph.hf,
+        FontId(st.hyph.hf),
         st.mainloop.cur_l as u16,
         components,
     )
@@ -1012,7 +1008,7 @@ fn finish_last_line_fit(
     }
 
     let old_spec = last_line_fill.glue_ptr(mem);
-    let spec = crate::mem::alloc_spec(mem, old_spec).ok_or(NodeRecycleAbort::Overflow)?;
+    let spec = crate::mem::new_spec(mem, old_spec).ok_or(NodeRecycleAbort::Overflow)?;
     crate::mem::delete_glue_ref(mem, old_spec);
 
     spec.set_width(
@@ -1212,7 +1208,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
     };
     match tail_glue {
         None => {
-            let p = crate::mem::alloc_penalty(&mut st.mem, INF_PENALTY)
+            let p = crate::mem::new_penalty(&mut st.mem, INF_PENALTY)
                 .ok_or(LineBreakOutcome::Overflow)?;
             tail.set_link(&mut st.mem, p.ptr());
             st.input.cur_list.tail = p.ptr();
@@ -1229,9 +1225,8 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
         }
     }
 
-    let last_line_fill =
-        crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_PAR_FILL_SKIP)
-            .ok_or(LineBreakOutcome::Overflow)?;
+    let last_line_fill = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_PAR_FILL_SKIP)
+        .ok_or(LineBreakOutcome::Overflow)?;
     st.input
         .cur_list
         .tail
@@ -1856,7 +1851,7 @@ fn post_line_break_prefix(
             let mut temp_ptr = *lr_ptr;
             let mut r = q;
             loop {
-                let s = crate::mem::alloc_math(mem, 0, (temp_ptr.info(mem) - 1) as u16)
+                let s = crate::mem::new_math(mem, 0, (temp_ptr.info(mem) - 1) as u16)
                     .ok_or(NodeRecycleAbort::Overflow)?;
                 s.set_link(mem, r);
                 r = s.ptr();
@@ -1950,7 +1945,7 @@ fn post_line_break_prefix(
     }
 
     if !glue_break {
-        let r = crate::mem::alloc_param_glue(mem, eqtb, GLUE_PAR_RIGHT_SKIP)
+        let r = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_RIGHT_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         r.set_link(mem, q.link(mem));
         q.set_link(mem, r.ptr());
@@ -1967,7 +1962,7 @@ fn post_line_break_prefix(
 
         r = *lr_ptr;
         while !r.is_null() {
-            let m = crate::mem::alloc_math(mem, 0, r.info(mem) as u16)
+            let m = crate::mem::new_math(mem, 0, r.info(mem) as u16)
                 .ok_or(NodeRecycleAbort::Overflow)?;
             s.set_link(mem, m.ptr());
             s = m.ptr();
@@ -1986,7 +1981,7 @@ fn post_line_break_prefix(
     }
 
     if eqtb.glue_par(GLUE_PAR_LEFT_SKIP).ptr() != ZERO_GLUE {
-        let r = crate::mem::alloc_param_glue(mem, eqtb, GLUE_PAR_LEFT_SKIP)
+        let r = crate::mem::new_param_glue(mem, eqtb, GLUE_PAR_LEFT_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         r.set_link(mem, q);
         q = r.ptr();
@@ -2097,7 +2092,7 @@ fn post_line_break_suffix(
         }
 
         if pen != 0 {
-            let r = crate::mem::alloc_penalty(mem, pen).ok_or(NodeRecycleAbort::Overflow)?;
+            let r = crate::mem::new_penalty(mem, pen).ok_or(NodeRecycleAbort::Overflow)?;
             cl.tail_append(mem, r.ptr());
         }
     }
@@ -2805,7 +2800,7 @@ fn hyphenate_native_word(
             .map_err(HyphNativeAbort::Recycle)?;
             s.set_link(&mut st.mem, q.ptr());
 
-            let disc = crate::mem::alloc_disc(&mut st.mem)
+            let disc = crate::mem::new_disc(&mut st.mem)
                 .expect("main memory arena has room for a disc node");
             let hyphen = crate::fonts::new_native_character_in(st, hf, hyf_char as u32)
                 .map_err(HyphNativeAbort::NativeChar)?;
@@ -3189,12 +3184,12 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
         if offs > 0 {
             if prev_offs != 0 {
                 if use_penalty {
-                    let node = crate::mem::alloc_penalty(&mut st.mem, penalty)
+                    let node = crate::mem::new_penalty(&mut st.mem, penalty)
                         .ok_or(NodeRecycleAbort::Overflow)?;
                     st.input.cur_list.tail_append(&mut st.mem, node.ptr());
                 }
                 if use_skip {
-                    let node = crate::mem::alloc_param_glue(
+                    let node = crate::mem::new_param_glue(
                         &mut st.mem,
                         &st.eqtb,
                         GLUE_PAR_XETEX_LINEBREAK_SKIP,

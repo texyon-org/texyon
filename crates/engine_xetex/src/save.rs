@@ -201,7 +201,7 @@ pub(crate) fn eq_destroy(
         return Ok(());
     };
     match eq_type {
-        CALL..=LONG_OUTER_CALL => delete_token_ref(mem, equiv),
+        CALL..=LONG_OUTER_CALL => delete_token_ref(mem, MemPtr(equiv)),
         GLUE_REF => delete_glue_ref(mem, equiv),
         SHAPE_REF => {
             if equiv != TEX_NULL {
@@ -474,7 +474,7 @@ impl UnsaveAbort {
         match self {
             UnsaveAbort::Save(a) => a.into_engine_abort(),
             UnsaveAbort::Input(e) => e.into_engine_abort(),
-            UnsaveAbort::MainMemory => crate::mem::main_memory_overflow_abort(),
+            UnsaveAbort::MainMemory => crate::errors::EngineAbort::MainMemoryOverflow,
         }
     }
 }

@@ -8,9 +8,9 @@
 use std::marker::PhantomData;
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
-    MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PIC_NODE_SIZE,
-    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, EMPTY, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
+    MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NORMAL, NULL_FLAG,
+    PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, TEX_NULL,
 };
 use crate::mem::{free_node, get_node};
 use crate::state::MemState;
@@ -797,6 +797,18 @@ impl NodePtr<Noad> {
         accent_char_fam / set_accent_char_fam: u16 = b16s1 @ 4;
     }
 
+    /// The empty fields and normal subtype of a fresh noad.
+    #[inline]
+    pub fn clear_fields(self, mem: &mut MemState) {
+        self.set_subtype(mem, NORMAL);
+        self.set_nucleus_type(mem, EMPTY);
+        self.set_nucleus_field(mem, TEX_NULL);
+        self.set_supscr_type(mem, EMPTY);
+        self.set_supscr_field(mem, TEX_NULL);
+        self.set_subscr_type(mem, EMPTY);
+        self.set_subscr_field(mem, TEX_NULL);
+    }
+
     #[inline]
     pub fn set_accent_char_type(self, mem: &mut MemState, t: i32) {
         mem.set_b32s1(self.idx.0 + 4, t);
@@ -1152,6 +1164,17 @@ impl NodePtr<WhatsitNode> {
             mem.glyph_blobs.release(handle);
             self.set_native_glyph_info_handle(mem, 0);
             self.set_native_glyph_count(mem, 0);
+        }
+    }
+
+    /// Gives this copy of `src` its own handle on `src`'s shaped glyphs.
+    pub fn share_native_glyphs(self, mem: &mut MemState, src: Self) {
+        let handle = src.native_glyph_info_handle(mem);
+        if handle != 0 {
+            let count = src.native_glyph_count(mem);
+            let copy = mem.glyph_blobs.clone_handle(handle);
+            self.set_native_glyph_info_handle(mem, copy);
+            self.set_native_glyph_count(mem, count);
         }
     }
 

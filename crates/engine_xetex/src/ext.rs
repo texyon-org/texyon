@@ -1991,7 +1991,7 @@ impl InsertSrcAbort {
                 crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
             }
             InsertSrcAbort::StrToksPool => crate::errors::EngineAbort::PoolOverflow,
-            InsertSrcAbort::MainMemory => crate::mem::main_memory_overflow_abort(),
+            InsertSrcAbort::MainMemory => crate::errors::EngineAbort::MainMemoryOverflow,
             InsertSrcAbort::Input(e) => e.into_engine_abort(),
         }
     }
@@ -2027,7 +2027,7 @@ pub(crate) fn append_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let w = crate::mem::new_whatsit(
         &mut st.input.cur_list,
         &mut st.mem,
-        WhatsitSubtype::Special as i16,
+        WhatsitSubtype::Special,
         WRITE_NODE_SIZE,
     )
     .ok_or(InsertSrcAbort::MainMemory)?;
@@ -2108,7 +2108,7 @@ fn new_whatsit_in(
     size: i32,
 ) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
     Ok(
-        crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, subtype as i16, size)
+        crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, subtype, size)
             .ok_or(NodeRecycleAbort::Overflow)?,
     )
 }
@@ -2116,15 +2116,10 @@ fn new_whatsit_in(
 /// Append an `\openout`/`\write`/`\closeout` whatsit and scan its stream number.
 fn new_write_whatsit_in(
     st: &mut EngineState,
+    subtype: WhatsitSubtype,
     size: i32,
 ) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
-    let w = crate::mem::new_whatsit(
-        &mut st.input.cur_list,
-        &mut st.mem,
-        st.scanner.cur_chr as i16,
-        size,
-    )
-    .ok_or(NodeRecycleAbort::Overflow)?;
+    let w = new_whatsit_in(st, subtype, size)?;
     if size != WRITE_NODE_SIZE {
         crate::scan::scan_four_bit_int_in(st)?;
     } else {
@@ -2143,7 +2138,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
     let mode = st.input.cur_list.mode.abs();
     match st.scanner.cur_chr {
         OPEN_NODE => {
-            let w = new_write_whatsit_in(st, OPEN_NODE_SIZE)?;
+            let w = new_write_whatsit_in(st, WhatsitSubtype::Open, OPEN_NODE_SIZE)?;
             crate::scan::scan_optional_equals_in(st)?;
             crate::io::scan_file_name_in(st)?;
             w.set_open_name(&mut st.mem, st.scanner.cur_name);
@@ -2153,14 +2148,14 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
 
         WRITE_NODE => {
             let k = st.scanner.cur_cs;
-            let w = new_write_whatsit_in(st, WRITE_NODE_SIZE)?;
+            let w = new_write_whatsit_in(st, WhatsitSubtype::Write, WRITE_NODE_SIZE)?;
             st.scanner.cur_cs = k;
             crate::scan::scan_toks_in(st, false, false)?;
             w.set_write_tokens(&mut st.mem, st.scanner.def_ref);
         }
 
         CLOSE_NODE => {
-            let w = new_write_whatsit_in(st, WRITE_NODE_SIZE)?;
+            let w = new_write_whatsit_in(st, WhatsitSubtype::Close, WRITE_NODE_SIZE)?;
             w.set_write_tokens(&mut st.mem, MemPtr::NULL);
         }
 

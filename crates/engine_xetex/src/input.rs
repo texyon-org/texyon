@@ -57,7 +57,7 @@ impl InputAbort {
             InputAbort::Overflow { what, n } => EngineAbort::Overflow { what, n },
             InputAbort::Fatal(msg) => EngineAbort::Fatal(msg),
             InputAbort::TtAbort(msg) => EngineAbort::TtAbort(msg),
-            InputAbort::MainMemory => crate::mem::main_memory_overflow_abort(),
+            InputAbort::MainMemory => crate::errors::EngineAbort::MainMemoryOverflow,
             InputAbort::InputClose => {
                 EngineAbort::TtAbort(c"serious internal error closing an input file".as_ptr())
             }
@@ -95,7 +95,7 @@ pub(crate) fn end_token_list_in(st: &mut EngineState) -> Result<(), InputAbort> 
         if ci.index <= INSERTED {
             flush_list(&mut st.mem, MemPtr::from_raw(ci.start));
         } else {
-            crate::mem::delete_token_ref(&mut st.mem, ci.start);
+            crate::mem::delete_token_ref(&mut st.mem, MemPtr(ci.start));
             if ci.index == MACRO {
                 while st.input.param_ptr > ci.limit {
                     st.input.param_ptr -= 1;
