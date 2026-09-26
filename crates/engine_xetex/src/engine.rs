@@ -68,36 +68,14 @@ const _: () = assert!(
         && 2 * MAX_HALFWORD >= MEM_TOP
 );
 
-extern "C" {
-    #[link_name = "pdf_files_init"]
-    fn ffi_pdf_files_init();
-    #[link_name = "pdf_files_close_if_open"]
-    fn ffi_pdf_files_close_if_open();
-    #[link_name = "pdf_files_close"]
-    fn ffi_pdf_files_close();
-    fn destroy_font_manager();
-    fn xetex_layout_reset_font_caches();
-}
-
-fn pdf_files_init() {
-    // SAFETY: sets up pdf_io's process-global file registry, which holds no engine borrows.
-    unsafe { ffi_pdf_files_init() };
-}
-
-fn pdf_files_close() {
-    // SAFETY: tears down pdf_io's process-global file registry.
-    unsafe { ffi_pdf_files_close() };
-}
-
-fn pdf_files_close_if_open() {
-    // SAFETY: as `pdf_files_close`, and a no-op when the registry is closed.
-    unsafe { ffi_pdf_files_close_if_open() };
-}
-
-pub(crate) fn reset_layout_font_caches() {
-    // SAFETY: clears mutex-protected process-global maps and does not borrow
-    // engine state.
-    unsafe { xetex_layout_reset_font_caches() };
+// These touch only process-global C state and take no pointers.
+unsafe extern "C" {
+    safe fn pdf_files_init();
+    safe fn pdf_files_close_if_open();
+    safe fn pdf_files_close();
+    safe fn destroy_font_manager();
+    #[link_name = "xetex_layout_reset_font_caches"]
+    pub(crate) safe fn reset_layout_font_caches();
 }
 
 pub(crate) fn output_file_extension(st: &EngineState) -> &'static str {
@@ -1127,8 +1105,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     pdf_files_close();
     st.shipout.dvi_buf = Vec::new();
 
-    // SAFETY: only drops the thread-local font manager, no pointer is involved.
-    unsafe { destroy_font_manager() };
+    destroy_font_manager();
     st.fonts.release_linebreak_state();
 
     st.fonts.font_layout_engine.fill(None);
