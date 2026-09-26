@@ -1174,8 +1174,7 @@ pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
     let p = if n < 256 {
         MemPtr::from_raw(st.eqtb.b32s1(BOX_BASE + n))
     } else {
-        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n, false);
-        NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)?.sa_ptr(&st.mem)
+        crate::save::find_sa_element(&st.mem, &mut st.scanner, BOX_VAL, n)?.sa_ptr(&st.mem)
     };
     st.mem.classify_box(p.as_idx()?).ok().flatten()
 }
@@ -1186,8 +1185,7 @@ fn change_box(st: &mut EngineState, n: i32, v: i32) {
         st.eqtb.set_b32s1(BOX_BASE + n, v);
         return;
     }
-    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n, false);
-    if let Some(sa) = NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr) {
+    if let Some(sa) = crate::save::find_sa_element(&st.mem, &mut st.scanner, BOX_VAL, n) {
         sa.set_sa_ptr(&mut st.mem, MemPtr::from_raw(v));
         let refs = sa.sa_ref(&st.mem);
         sa.set_sa_ref(&mut st.mem, refs + 1);
@@ -1674,9 +1672,9 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
         if n < 256 {
             define(st, global, BOX_BASE + n, BOX_REF, cb)?;
         } else {
-            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n, true)
+            let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-            sa_define(st, global, st.scanner.cur_ptr.0, cb)?;
+            sa_define(st, global, sa.idx().0, cb)?;
         }
     } else if !st.scanner.cur_box.is_null() {
         if box_context == SHIP_OUT_FLAG {
@@ -2785,7 +2783,7 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         crate::scan::scan_register_num_in(st)?;
         let n = st.scanner.cur_val;
         if n > 255 {
-            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, p, n, true);
+            let _ = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, p, n);
             break 'found (st.scanner.cur_ptr.0, p, true);
         }
         let base = match p {
@@ -3105,8 +3103,8 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
 /// The `\XeTeXinterchartoks` list for class pair `n`, if set. Leaves the
 /// pair's trie record, possibly null, in `cur_ptr`.
 fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<i32> {
-    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, INTER_CHAR_VAL, n, false);
-    let list = NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)?.sa_ptr(&st.mem);
+    let list =
+        crate::save::find_sa_element(&st.mem, &mut st.scanner, INTER_CHAR_VAL, n)?.sa_ptr(&st.mem);
     (!list.is_null()).then_some(list.0)
 }
 
@@ -4224,22 +4222,18 @@ fn add_sa_ref(mem: &mut MemState, p: MemPtr) {
     }
 }
 
-/// `sa_ptr(cur_ptr)`, or null when `cur_ptr` is null.
-fn cur_sa_ptr(st: &EngineState) -> i32 {
-    NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr).map_or(TEX_NULL, |sa| sa.sa_ptr(&st.mem).0)
+/// The `sa_ptr` of a sparse-array record, or null without one.
+fn sa_value(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> i32 {
+    sa.map_or(TEX_NULL, |sa| sa.sa_ptr(&st.mem).0)
 }
 
-/// Scans a pair of character classes and finds (with `w`, creates) its
-/// `\XeTeXinterchartoks` record in `cur_ptr`.
-fn find_inter_char_toks(st: &mut EngineState, w: bool) -> Result<(), MainControlAbort> {
+/// Scans a pair of character classes into its `\XeTeXinterchartoks` index.
+fn scan_inter_char_pair(st: &mut EngineState) -> Result<i32, MainControlAbort> {
     crate::scan::scan_char_class_not_ignored_in(st)?;
     // TeX parks the first class in `cur_ptr` while scanning the second.
     st.scanner.cur_ptr.0 = st.scanner.cur_val;
     crate::scan::scan_char_class_not_ignored_in(st)?;
-    let n = st.scanner.cur_ptr.0 * CHAR_CLASS_LIMIT + st.scanner.cur_val;
-    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, INTER_CHAR_VAL, n, w)
-        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-    Ok(())
+    Ok(st.scanner.cur_ptr.0 * CHAR_CLASS_LIMIT + st.scanner.cur_val)
 }
 
 /// Defines token list register `p`, a sparse-array entry if `e`, as `list`.
@@ -4553,9 +4547,9 @@ fn shorthand_def_in(st: &mut EngineState, global: bool) -> Result<(), MainContro
                     (n - 2) as u8
                 };
                 let reg = st.scanner.cur_val;
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, level, reg, true)
+                let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, level, reg)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                add_sa_ref(&mut st.mem, st.scanner.cur_ptr);
+                add_sa_ref(&mut st.mem, sa.ptr());
                 let t = if level == TOK_VAL {
                     TOKS_REGISTER
                 } else {
@@ -4587,9 +4581,9 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
             crate::scan::scan_register_num_in(st)?;
             if st.scanner.cur_val > 255 {
                 let reg = st.scanner.cur_val;
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, TOK_VAL, reg, true)
+                let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, TOK_VAL, reg)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                st.scanner.cur_chr = st.scanner.cur_ptr.0;
+                st.scanner.cur_chr = sa.idx().0;
                 e = true;
             } else {
                 st.scanner.cur_chr = TOKS_BASE + st.scanner.cur_val;
@@ -4598,8 +4592,10 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
             e = true;
         }
     } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
-        find_inter_char_toks(st, true)?;
-        st.scanner.cur_chr = st.scanner.cur_ptr.0;
+        let n = scan_inter_char_pair(st)?;
+        let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, INTER_CHAR_VAL, n)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        st.scanner.cur_chr = sa.idx().0;
         e = true;
     }
     let p = st.scanner.cur_chr;
@@ -4616,15 +4612,16 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
                     st.eqtb.b32s1(TOKS_BASE + st.scanner.cur_val)
                 } else {
                     let reg = st.scanner.cur_val;
-                    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, TOK_VAL, reg, false);
-                    cur_sa_ptr(st)
+                    let sa = crate::save::find_sa_element(&st.mem, &mut st.scanner, TOK_VAL, reg);
+                    sa_value(st, sa)
                 }
             } else {
                 st.mem.b32s1(st.scanner.cur_chr + 1)
             }
         } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
-            find_inter_char_toks(st, false)?;
-            cur_sa_ptr(st)
+            let n = scan_inter_char_pair(st)?;
+            let sa = crate::save::find_sa_element(&st.mem, &mut st.scanner, INTER_CHAR_VAL, n);
+            sa_value(st, sa)
         } else {
             st.eqtb.b32s1(st.scanner.cur_chr)
         };

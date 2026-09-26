@@ -363,6 +363,12 @@ impl<K: ListRecord> NodePtr<K> {
         // SAFETY: records of these kinds only ever live on their own lists.
         unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
     }
+
+    /// The record at `p`, `None` when the link is null.
+    #[inline]
+    pub fn from_ptr(p: MemPtr) -> Option<Self> {
+        (!p.is_null()).then(|| Self::at(p))
+    }
 }
 
 impl<K: ListRecord + FixedNode> NodePtr<K> {
@@ -1254,11 +1260,6 @@ impl NodePtr<WhatsitNode> {
 // --- eTeX sparse arrays ---
 
 impl NodePtr<SaNode> {
-    #[inline]
-    pub fn from_ptr(p: MemPtr) -> Option<NodePtr<SaNode>> {
-        (!p.is_null()).then(|| Self::at(p))
-    }
-
     fields! {
         /// An index node's count of populated children.
         ref_count / set_ref_count: u16 = b16s0 @ 0;
@@ -1327,11 +1328,6 @@ impl NodePtr<CondNode> {
 // --- shipout movement records ---
 
 impl NodePtr<MovementNode> {
-    #[inline]
-    pub fn from_ptr(p: MemPtr) -> Option<NodePtr<MovementNode>> {
-        (!p.is_null()).then(|| Self::at(p))
-    }
-
     fields! {
         /// Whether the movement may be reused, and as which command.
         state / set_state: i32 = b32s0 @ 0;

@@ -2807,8 +2807,7 @@ fn set_cur_val(st: &mut EngineState, value: i32, level: u8) {
 
 /// The sparse-array element of type `t` for register `n`, if it exists.
 fn find_sa_in(st: &mut EngineState, t: u8, n: i32) -> Option<NodePtr<SaNode>> {
-    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, t, n, false);
-    NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)
+    crate::save::find_sa_element(&st.mem, &mut st.scanner, t, n)
 }
 
 fn sa_token_list(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> i32 {

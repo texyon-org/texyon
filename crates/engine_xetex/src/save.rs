@@ -636,7 +636,7 @@ fn sa_alloc_chain(
     n: i32,
     mut q: NodePtr<SaNode>,
     levels: &[i32],
-) -> Option<()> {
+) -> Option<NodePtr<SaNode>> {
     let (&leaf_i, index_levels) = levels.split_last().expect("non-empty trie path");
     for &i in index_levels {
         let p = new_index(mem, scanner, i as u16, q.ptr())?;
@@ -671,24 +671,43 @@ fn sa_alloc_chain(
     p.set_sa_lev(mem, LEVEL_ONE);
     p.set_link(mem, q.ptr());
     add_sa_child(mem, q, leaf_i, p);
-    Some(())
+    Some(p)
 }
 
-/// Finds (and with `w` creates) the trie record for type `t`, register `n`,
-/// leaving it in `cur_ptr`. `None` is arena exhaustion.
+fn sa_levels(n: i32) -> [i32; 4] {
+    [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64]
+}
+
+/// TeX's `find_sa_element` without creation: the record for type `t`,
+/// register `n`, if any, also left in `cur_ptr`.
 pub fn find_sa_element(
+    mem: &MemState,
+    scanner: &mut ScannerState,
+    t: u8,
+    n: i32,
+) -> Option<NodePtr<SaNode>> {
+    let mut p = scanner.sa_root[t as usize];
+    for i in sa_levels(n) {
+        if p.is_null() {
+            break;
+        }
+        p = sa(p).child(mem, i);
+    }
+    scanner.cur_ptr = p;
+    NodePtr::from_ptr(p)
+}
+
+/// TeX's `find_sa_element` with creation, also leaving the record in
+/// `cur_ptr`. `None` when main memory is exhausted.
+pub fn create_sa_element(
     mem: &mut MemState,
     scanner: &mut ScannerState,
     t: u8,
     n: i32,
-    w: bool,
-) -> Option<()> {
-    let levels = [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64];
+) -> Option<NodePtr<SaNode>> {
+    let levels = sa_levels(n);
     scanner.cur_ptr = scanner.sa_root[t as usize];
     if scanner.cur_ptr.is_null() {
-        if !w {
-            return Some(());
-        }
         let root = new_index(mem, scanner, t.into(), MemPtr::NULL)?;
         scanner.sa_root[t as usize] = root.ptr();
         return sa_alloc_chain(mem, scanner, t, n, root, &levels);
@@ -697,11 +716,8 @@ pub fn find_sa_element(
         let q = sa(scanner.cur_ptr);
         scanner.cur_ptr = q.child(mem, levels[k]);
         if scanner.cur_ptr.is_null() {
-            if w {
-                sa_alloc_chain(mem, scanner, t, n, q, &levels[k..])?;
-            }
-            return Some(());
+            return sa_alloc_chain(mem, scanner, t, n, q, &levels[k..]);
         }
     }
-    Some(())
+    Some(sa(scanner.cur_ptr))
 }

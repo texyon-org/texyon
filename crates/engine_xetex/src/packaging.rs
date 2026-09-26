@@ -878,12 +878,8 @@ fn find_box_register(
     if scanner.cur_val < 256 {
         return Ok(MemPtr(eqtb.b32s1(BOX_BASE + scanner.cur_val)));
     }
-    crate::save::find_sa_element(mem, scanner, BOX_VAL, scanner.cur_val, false)
-        .ok_or(NodeRecycleAbort::Overflow)?;
-    Ok(match NodePtr::<SaNode>::from_ptr(scanner.cur_ptr) {
-        Some(element) => element.sa_ptr(mem),
-        None => MemPtr::NULL,
-    })
+    let element = crate::save::find_sa_element(mem, scanner, BOX_VAL, scanner.cur_val);
+    Ok(element.map_or(MemPtr::NULL, |e| e.sa_ptr(mem)))
 }
 
 fn reset_vsplit_marks(
@@ -951,10 +947,8 @@ fn collect_split_mark(
     let mark_class = mark.mark_class(mem);
     let mark_ptr = mark.mark_ptr(mem);
     if mark_class != 0 {
-        crate::save::find_sa_element(mem, scanner, MARK_VAL, mark_class, true)
+        let element = crate::save::create_sa_element(mem, scanner, MARK_VAL, mark_class)
             .ok_or(NodeRecycleAbort::Overflow)?;
-        let element =
-            NodePtr::<SaNode>::from_ptr(scanner.cur_ptr).expect("find_sa_element creates it");
         let (first, bot) = (SPLIT_FIRST_MARK_CODE as i32, SPLIT_BOT_MARK_CODE as i32);
         if element.child(mem, first).is_null() {
             element.set_child(mem, first, mark_ptr);
@@ -1015,9 +1009,7 @@ fn store_split_remainder(
         eqtb.set_b32s1(BOX_BASE + scanner.cur_val, q.0);
         return Ok(());
     }
-    crate::save::find_sa_element(mem, scanner, BOX_VAL, scanner.cur_val, false)
-        .ok_or(NodeRecycleAbort::Overflow)?;
-    if let Some(element) = NodePtr::<SaNode>::from_ptr(scanner.cur_ptr) {
+    if let Some(element) = crate::save::find_sa_element(mem, scanner, BOX_VAL, scanner.cur_val) {
         element.set_sa_ptr(mem, q);
         element.set_sa_ref(mem, element.sa_ref(mem) + 1);
         crate::save::delete_sa_ref(mem, scanner, element.idx());

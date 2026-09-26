@@ -14,9 +14,7 @@ use crate::input::OUTPUT_TEXT;
 use crate::main_control::{fetch_box, COPY_CODE, LAST_BOX_CODE};
 use crate::mem::add_token_ref;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::node::{
-    AnyBox, AnyNode, GlueSpecNode, InsNode, NodePtr, PageInsNode, SaNode, WhatsitSubtype,
-};
+use crate::node::{AnyBox, AnyNode, GlueSpecNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::scan::MARK_VAL;
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
@@ -159,10 +157,8 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
 fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<(), PageBuildAbort> {
     if class != 0 {
-        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, MARK_VAL, class, true)
+        let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, MARK_VAL, class)
             .ok_or(PageBuildAbort::MainMemoryOverflow)?;
-        let sa = NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)
-            .expect("find_sa_element returned a mark-class element");
         if sa.child(&st.mem, 1).is_null() {
             sa.set_child(&mut st.mem, 1, mark_ptr);
             add_token_ref(&mut st.mem, mark_ptr);

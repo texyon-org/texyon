@@ -19,7 +19,7 @@ use crate::input::{
     MACRO, MARK_TEXT, RIGHT_BRACE_LIMIT, TOKEN_LIST, V_TEMPLATE,
 };
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD, ZERO_GLUE};
-use crate::node::{AnyBox, AnyNode, CondNode, NodePtr, SaNode};
+use crate::node::{AnyBox, AnyNode, CondNode, NodePtr};
 use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
     end_diagnostic_in, error_here_with_diagnostic_in, print_char_in, print_cmd_chr_in,
@@ -939,8 +939,9 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     st.scanner.cur_ptr = st.scanner.cur_mark[t as usize];
                 } else {
                     let n = st.scanner.cur_val;
-                    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, MARK_VAL, n, false);
-                    if let Some(sa) = NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr) {
+                    if let Some(sa) =
+                        crate::save::find_sa_element(&st.mem, &mut st.scanner, MARK_VAL, n)
+                    {
                         st.scanner.cur_ptr = sa.child(&st.mem, t);
                     }
                 }
