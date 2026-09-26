@@ -51,7 +51,7 @@ def make_bundle():
         shutil.rmtree(bundle)
     bundle.mkdir(parents=True)
     for f in ASSETS.iterdir():
-        if f.suffix in (".tfm", ".otf", ".ttf") or f.name in ("knuth-plain.tex", "hyphen.tex"):
+        if f.suffix in (".tfm", ".otf", ".ttf", ".png", ".pdf") or f.name in ("knuth-plain.tex", "hyphen.tex"):
             shutil.copy(f, bundle / f.name)
     for pl in sorted(FONTS.glob("*.pl")):
         subprocess.run([PLTOTF, pl, bundle / (pl.stem + ".tfm")], check=True,
@@ -74,6 +74,7 @@ def tl_env(bundle, fmtdir):
         TFMFONTS=f"{bundle}:",
         OPENTYPEFONTS=f"{bundle}:",
         TTFONTS=f"{bundle}:",
+        TEXPICTS=".:",
         TEXFORMATS=f"{fmtdir}:",
         openout_any="a",
         # Tectonic's fixed capacities (engine.rs), so overflow messages agree.
@@ -116,6 +117,12 @@ def run_tl(name, src, bundle, fmtdir):
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
     shutil.copy(src, d / "probe.tex")
+    # Pictures found in the probe directory print as ./name, like Tectonic's name.
+    text = Path(src).read_bytes()
+    if b"XeTeXpicfile" in text or b"XeTeXpdffile" in text:
+        for f in bundle.iterdir():
+            if f.suffix in (".png", ".pdf"):
+                shutil.copy(f, d / f.name)
     r = subprocess.run(
         [XETEX, "-fmt=plain", "-no-pdf", "-interaction=scrollmode", "probe.tex"],
         cwd=d, env=tl_env(bundle, fmtdir), stdin=subprocess.DEVNULL,
@@ -143,6 +150,7 @@ def run_tt(name, src, bundle):
 LOG_SUBS = [
     # kpathsea reports the path it found.
     (re.compile(r"\(\./"), "("),
+    (re.compile(r'(\\XeTeXp(ic|df)file) "\./'), r'\1 "'),
     # the XDV preamble comment and file-name lengths differ.
     (re.compile(r"^(Output written on \S+ \(\d+ pages?), \d+ bytes\)\.$"), r"\1)."),
 ]
