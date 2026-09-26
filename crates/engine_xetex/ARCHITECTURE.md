@@ -189,7 +189,9 @@ Crate and C boundaries:
 - Fonts and shaping go straight to `tectonic_xetex_layout`'s Rust API:
   `Font`, `LayoutEngine` (`state::FontEngineHandle`), `FontManager`, the
   glyph-box and protrusion caches. Loading a font file takes the run's
-  `CoreBridgeState` (`with_bridge`). That crate has no C API.
+  `CoreBridgeState` (`with_bridge`). That crate has no C API. `ot_math.rs`
+  reads the MATH table through `LayoutEngine::ot_math()`, bridge-harfbuzz's
+  safe `ot::Math`.
 - `extern "C"` remains only for real C: `layout.rs` (TECkit converters, ICU
   line breaking and bidi, with their disposal, plus the HarfBuzz tag and
   `with_c_str` helpers), `io.rs` (ICU input converters), `pic.rs` and
@@ -198,8 +200,7 @@ Crate and C boundaries:
   source-special names) and become C strings only at those calls.
 - Raw pointers stay in those modules. Elsewhere `unsafe` is limited to
   plain-data byte views (`mem_types.rs`, `state.rs`, `format_io.rs`),
-  HarfBuzz MATH queries (`ot_math.rs`), the bridge pointer and `strerror`
-  (`bridge.rs`), the C time calls (`texmfmp.rs`) and the preview
+  the bridge pointer and `strerror` (`bridge.rs`), the C time calls (`texmfmp.rs`) and the preview
   controller's pointers (`session.rs`). Every block has a `// SAFETY:` comment
   (`clippy::undocumented_unsafe_blocks` is clean). The
   engine proper prints and reports with Rust strings: `print(st, "...")`,
@@ -271,6 +272,9 @@ deliberate fix toward upstream.
 
   Add `--test formats` for format changes, and `--test live_preview_session`
   plus `--test live_preview_replay_regressions` for checkpoint or journal work.
+- Clippy: `cargo clippy -p tectonic_engine_xetex --all-targets -- -D warnings`
+  must stay clean. CI runs it on the latest stable, whose clippy can be newer
+  than a local one.
 - Corpus A/B (`scripts/`): `corpus_fetch.sh` fills the corpus cache
   (`$TECTONIC_CORPUS_DIR`), then bless a baseline release build into scratch
   goldens and check the candidate against them:
