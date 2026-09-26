@@ -326,8 +326,11 @@ pub(crate) fn scan_delimiter_int_in(st: &mut EngineState) -> Result<(), SccAbort
 pub(crate) fn scan_register_num_in(st: &mut EngineState) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > st.scanner.max_reg_num {
-        let help = st.scanner.max_reg_help_line;
-        int_range_error(st, c"Bad register code".as_ptr(), help)?;
+        int_range_error(
+            st,
+            c"Bad register code".as_ptr(),
+            "A register number must be between 0 and 32767.",
+        )?;
     }
     Ok(())
 }

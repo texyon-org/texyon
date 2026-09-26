@@ -17,8 +17,7 @@ use crate::consts::{
     TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{
-    alloc_font_arrays, set_eq, sort_avail_in, POOL_FREE, REGISTER_HELP, STRINGS_FREE,
-    TEX_FORMAT_DEFAULT,
+    alloc_font_arrays, set_eq, sort_avail_in, POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT,
 };
 use crate::errors::EngineAbort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -620,7 +619,6 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
     eqtb.data[(EQTB_SIZE + 1) as usize..].fill(undefined_entry);
 
     st.scanner.max_reg_num = 32_767;
-    st.scanner.max_reg_help_line = REGISTER_HELP;
 
     expect_int(fmt_in, MEM_TOP)?;
 

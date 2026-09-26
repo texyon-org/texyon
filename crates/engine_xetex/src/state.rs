@@ -956,7 +956,6 @@ pub(crate) struct ScannerState {
     pub sa_null: crate::mem_types::MemoryWord,
     /// The all-zero B32x2 template (xetex-xetexd.h:608).
     pub empty: crate::mem_types::B32x2,
-    pub max_reg_help_line: &'static str,
     /// Rust-owned dynamic native text buffer.
     pub native_text: Vec<u16>,
     pub native_text_size: i32,

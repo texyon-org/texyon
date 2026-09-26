@@ -59,8 +59,6 @@ const NUMBER_MATH_FONTS: i32 = 3 * NUMBER_MATH_FAMILIES;
 const TOO_BIG_LANG: i32 = 256;
 const VAR_FAM_CLASS: i32 = 7;
 
-pub(crate) const REGISTER_HELP: &str = "A register number must be between 0 and 32767.";
-
 const _: () = assert!(
     MEM_TOP >= 1100
         && HASH_PRIME <= HASH_SIZE
@@ -658,7 +656,6 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     st.strings.format_ident = format_ident;
 
     st.scanner.max_reg_num = 32767;
-    st.scanner.max_reg_help_line = REGISTER_HELP;
     st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize].fill(MemPtr::NULL);
 
     st.eqtb
@@ -1016,7 +1013,6 @@ pub(crate) unsafe fn initialize_engine(
 
     if st.config.in_initex_mode {
         st.scanner.max_reg_num = 32767;
-        st.scanner.max_reg_help_line = REGISTER_HELP;
     }
     st.eqtb.no_new_control_sequence = true;
 
