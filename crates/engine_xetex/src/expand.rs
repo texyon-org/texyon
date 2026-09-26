@@ -27,7 +27,7 @@ use crate::output::{
 use crate::scan::{
     fetch_box, get_avail_scc, get_next_scc, get_node_scc, get_token_in, get_x_non_blank_in,
     get_x_token_in, scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, AAT_FONT_FLAG,
-    BIGGEST_USV, END_MATCH_TOKEN, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NO_EXPAND_FLAG,
+    BIGGEST_USV, END_MATCH_TOKEN, MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NO_EXPAND_FLAG,
     OTGR_FONT_FLAG, OTHER_TOKEN, SPACE_TOKEN,
 };
 use crate::state::EngineState;
@@ -37,59 +37,58 @@ extern "C" {
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
 }
 
-const IF_CHAR_CODE: i16 = 0;
-const IF_CAT_CODE: i16 = 1;
-const IF_INT_CODE: i16 = 2;
-const IF_DIM_CODE: i16 = 3;
-const IF_ODD_CODE: i16 = 4;
-const IF_VMODE_CODE: i16 = 5;
-const IF_HMODE_CODE: i16 = 6;
-const IF_MMODE_CODE: i16 = 7;
-const IF_INNER_CODE: i16 = 8;
-const IF_VOID_CODE: i16 = 9;
-const IF_HBOX_CODE: i16 = 10;
-const IF_VBOX_CODE: i16 = 11;
-const IFX_CODE: i16 = 12;
-const IF_EOF_CODE: i16 = 13;
-const IF_TRUE_CODE: i16 = 14;
-const IF_FALSE_CODE: i16 = 15;
-const IF_CASE_CODE: i16 = 16;
-const IF_DEF_CODE: i16 = 17;
-const IF_CS_CODE: i16 = 18;
-const IF_FONT_CHAR_CODE: i16 = 19;
-const IF_IN_CSNAME_CODE: i16 = 20;
-const IF_PRIMITIVE_CODE: i16 = 21;
-const IF_NODE_SIZE: i32 = 2;
+pub(crate) const IF_CHAR_CODE: i16 = 0;
+pub(crate) const IF_CAT_CODE: i16 = 1;
+pub(crate) const IF_INT_CODE: i16 = 2;
+pub(crate) const IF_DIM_CODE: i16 = 3;
+pub(crate) const IF_ODD_CODE: i16 = 4;
+pub(crate) const IF_VMODE_CODE: i16 = 5;
+pub(crate) const IF_HMODE_CODE: i16 = 6;
+pub(crate) const IF_MMODE_CODE: i16 = 7;
+pub(crate) const IF_INNER_CODE: i16 = 8;
+pub(crate) const IF_VOID_CODE: i16 = 9;
+pub(crate) const IF_HBOX_CODE: i16 = 10;
+pub(crate) const IF_VBOX_CODE: i16 = 11;
+pub(crate) const IFX_CODE: i16 = 12;
+pub(crate) const IF_EOF_CODE: i16 = 13;
+pub(crate) const IF_TRUE_CODE: i16 = 14;
+pub(crate) const IF_FALSE_CODE: i16 = 15;
+pub(crate) const IF_CASE_CODE: i16 = 16;
+pub(crate) const IF_DEF_CODE: i16 = 17;
+pub(crate) const IF_CS_CODE: i16 = 18;
+pub(crate) const IF_FONT_CHAR_CODE: i16 = 19;
+pub(crate) const IF_IN_CSNAME_CODE: i16 = 20;
+pub(crate) const IF_PRIMITIVE_CODE: i16 = 21;
+pub(crate) const IF_NODE_SIZE: i32 = 2;
 const IF_CODE: u8 = 1;
 
-const NUMBER_CODE: i32 = 0;
-const ROMAN_NUMERAL_CODE: i32 = 1;
-const STRING_CODE: i32 = 2;
-const MEANING_CODE: i32 = 3;
-const FONT_NAME_CODE: i32 = 4;
-const ETEX_REVISION_CODE: i32 = 5;
-const EXPANDED_CODE: i32 = 6;
-const LEFT_MARGIN_KERN_CODE: i32 = 16;
-const RIGHT_MARGIN_KERN_CODE: i32 = 17;
-const PDF_STRCMP_CODE: i32 = 18;
-const PDF_CREATION_DATE_CODE: i32 = 22;
-const PDF_FILE_MOD_DATE_CODE: i32 = 23;
-const PDF_FILE_SIZE_CODE: i32 = 24;
-const PDF_MDFIVE_SUM_CODE: i32 = 25;
-const PDF_FILE_DUMP_CODE: i32 = 26;
-const UNIFORM_DEVIATE_CODE: i32 = 29;
-const NORMAL_DEVIATE_CODE: i32 = 30;
-const XETEX_REVISION_CODE: i32 = 33;
-const XETEX_VARIATION_NAME_CODE: i32 = 34;
-const XETEX_FEATURE_NAME_CODE: i32 = 35;
-const XETEX_SELECTOR_NAME_CODE: i32 = 36;
-const XETEX_GLYPH_NAME_CODE: i32 = 37;
-const XETEX_UCHAR_CODE: i32 = 38;
-const XETEX_UCHARCAT_CODE: i32 = 39;
-const JOB_NAME_CODE: i32 = 40;
+pub(crate) const NUMBER_CODE: i32 = 0;
+pub(crate) const ROMAN_NUMERAL_CODE: i32 = 1;
+pub(crate) const STRING_CODE: i32 = 2;
+pub(crate) const MEANING_CODE: i32 = 3;
+pub(crate) const FONT_NAME_CODE: i32 = 4;
+pub(crate) const ETEX_REVISION_CODE: i32 = 5;
+pub(crate) const EXPANDED_CODE: i32 = 6;
+pub(crate) const LEFT_MARGIN_KERN_CODE: i32 = 16;
+pub(crate) const RIGHT_MARGIN_KERN_CODE: i32 = 17;
+pub(crate) const PDF_STRCMP_CODE: i32 = 18;
+pub(crate) const PDF_CREATION_DATE_CODE: i32 = 22;
+pub(crate) const PDF_FILE_MOD_DATE_CODE: i32 = 23;
+pub(crate) const PDF_FILE_SIZE_CODE: i32 = 24;
+pub(crate) const PDF_MDFIVE_SUM_CODE: i32 = 25;
+pub(crate) const PDF_FILE_DUMP_CODE: i32 = 26;
+pub(crate) const UNIFORM_DEVIATE_CODE: i32 = 29;
+pub(crate) const NORMAL_DEVIATE_CODE: i32 = 30;
+pub(crate) const XETEX_REVISION_CODE: i32 = 33;
+pub(crate) const XETEX_VARIATION_NAME_CODE: i32 = 34;
+pub(crate) const XETEX_FEATURE_NAME_CODE: i32 = 35;
+pub(crate) const XETEX_SELECTOR_NAME_CODE: i32 = 36;
+pub(crate) const XETEX_GLYPH_NAME_CODE: i32 = 37;
+pub(crate) const XETEX_UCHAR_CODE: i32 = 38;
+pub(crate) const XETEX_UCHARCAT_CODE: i32 = 39;
+pub(crate) const JOB_NAME_CODE: i32 = 40;
 
-const MARKS_CODE: i32 = 5;
-const MARK_VAL: u16 = 7;
+pub(crate) const MARKS_CODE: i32 = 5;
 const TOO_BIG_USV: i32 = BIGGEST_USV + 1;
 const FROZEN_DONT_EXPAND: i32 = FROZEN_CONTROL_SEQUENCE + 9;
 const GLUE_PAR_LEFT_SKIP: u16 = 7;

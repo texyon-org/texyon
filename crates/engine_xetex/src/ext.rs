@@ -12,8 +12,9 @@ use crate::cmd::EXTENSION;
 use crate::consts::{
     CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_CONTROL_SEQUENCE, HMODE, INSERTED, INT_BASE,
     INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_TRACING_FONTS, LEFT_SIDE,
-    MMODE, RIGHT_SIDE, SMALL_NODE_SIZE, VMODE, XETEX_INT,
+    MMODE, RIGHT_SIDE, SMALL_NODE_SIZE, VMODE,
 };
+use crate::expand::{XETEX_FEATURE_NAME_CODE, XETEX_SELECTOR_NAME_CODE};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::main_control::{mc_propagate_error, new_graf_in, MainControlAbort};
 use crate::mem::TEMP_HEAD;
@@ -21,7 +22,14 @@ use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::packaging::int_par;
 use crate::pic::load_picture_in;
-use crate::scan::{get_x_token_in, scan_int_in, NodeRecycleAbort, AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::scan::{
+    get_x_token_in, scan_int_in, NodeRecycleAbort, AAT_FONT_FLAG, OTGR_FONT_FLAG,
+    XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE, XETEX_COUNT_SELECTORS_CODE,
+    XETEX_FEATURE_CODE_CODE, XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
+    XETEX_IS_DEFAULT_SELECTOR_CODE, XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_OT_COUNT_FEATURES_CODE,
+    XETEX_OT_COUNT_LANGUAGES_CODE, XETEX_OT_COUNT_SCRIPTS_CODE, XETEX_OT_FEATURE_CODE,
+    XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_SELECTOR_CODE_CODE,
+};
 use crate::state::{EngineState, FontState, MemState};
 use crate::units::{MemPtr, Scaled};
 
@@ -30,23 +38,6 @@ type XeTeXLayoutEngine = *mut c_void;
 type RawPlatformFontRef = *mut c_void;
 
 const TTBC_FILE_FORMAT_MISC_FONTS: c_int = 41;
-const XETEX_FEATURE_NAME_CODE: i32 = 35;
-const XETEX_SELECTOR_NAME_CODE: i32 = 36;
-const XETEX_COUNT_GLYPHS: i32 = 28 - XETEX_INT;
-const XETEX_COUNT_FEATURES: i32 = 35 - XETEX_INT;
-const XETEX_FEATURE_CODE: i32 = 36 - XETEX_INT;
-const XETEX_FIND_FEATURE_BY_NAME: i32 = 37 - XETEX_INT;
-const XETEX_IS_EXCLUSIVE_FEATURE: i32 = 38 - XETEX_INT;
-const XETEX_COUNT_SELECTORS: i32 = 39 - XETEX_INT;
-const XETEX_SELECTOR_CODE: i32 = 40 - XETEX_INT;
-const XETEX_FIND_SELECTOR_BY_NAME: i32 = 41 - XETEX_INT;
-const XETEX_IS_DEFAULT_SELECTOR: i32 = 42 - XETEX_INT;
-const XETEX_OT_COUNT_SCRIPTS: i32 = 43 - XETEX_INT;
-const XETEX_OT_COUNT_LANGUAGES: i32 = 44 - XETEX_INT;
-const XETEX_OT_COUNT_FEATURES: i32 = 45 - XETEX_INT;
-const XETEX_OT_SCRIPT_CODE: i32 = 46 - XETEX_INT;
-const XETEX_OT_LANGUAGE_CODE: i32 = 47 - XETEX_INT;
-const XETEX_OT_FEATURE_CODE: i32 = 48 - XETEX_INT;
 const HB_TAG_NONE: u32 = 0;
 const AUTO: c_int = 0;
 const UTF8: c_int = 1;
@@ -1177,9 +1168,9 @@ pub unsafe fn ot_get_font_metrics(engine: *mut c_void) -> NativeFontMetrics {
 pub unsafe fn ot_font_get(what: i32, engine: *mut c_void) -> i32 {
     let font = getFont(engine);
     match what {
-        XETEX_COUNT_GLYPHS => countGlyphs(font) as i32,
-        XETEX_COUNT_FEATURES => countGraphiteFeatures(engine) as i32,
-        XETEX_OT_COUNT_SCRIPTS => countScripts(font) as i32,
+        XETEX_COUNT_GLYPHS_CODE => countGlyphs(font) as i32,
+        XETEX_COUNT_FEATURES_CODE => countGraphiteFeatures(engine) as i32,
+        XETEX_OT_COUNT_SCRIPTS_CODE => countScripts(font) as i32,
         _ => 0,
     }
 }
@@ -1187,11 +1178,11 @@ pub unsafe fn ot_font_get(what: i32, engine: *mut c_void) -> i32 {
 pub unsafe fn ot_font_get_1(what: i32, engine: *mut c_void, param: i32) -> i32 {
     let font = getFont(engine);
     match what {
-        XETEX_OT_COUNT_LANGUAGES => countLanguages(font, param as u32) as i32,
+        XETEX_OT_COUNT_LANGUAGES_CODE => countLanguages(font, param as u32) as i32,
         XETEX_OT_SCRIPT_CODE => getIndScript(font, param as c_uint) as i32,
-        XETEX_FEATURE_CODE => getGraphiteFeatureCode(engine, param as u32) as i32,
-        XETEX_IS_EXCLUSIVE_FEATURE => 1,
-        XETEX_COUNT_SELECTORS => countGraphiteFeatureSettings(engine, param as u32) as i32,
+        XETEX_FEATURE_CODE_CODE => getGraphiteFeatureCode(engine, param as u32) as i32,
+        XETEX_IS_EXCLUSIVE_FEATURE_CODE => 1,
+        XETEX_COUNT_SELECTORS_CODE => countGraphiteFeatureSettings(engine, param as u32) as i32,
         _ => 0,
     }
 }
@@ -1200,11 +1191,11 @@ pub unsafe fn ot_font_get_2(what: i32, engine: *mut c_void, param1: i32, param2:
     let font = getFont(engine);
     match what {
         XETEX_OT_LANGUAGE_CODE => getIndLanguage(font, param1 as u32, param2 as c_uint) as i32,
-        XETEX_OT_COUNT_FEATURES => countFeatures(font, param1 as u32, param2 as u32) as i32,
-        XETEX_SELECTOR_CODE => {
+        XETEX_OT_COUNT_FEATURES_CODE => countFeatures(font, param1 as u32, param2 as u32) as i32,
+        XETEX_SELECTOR_CODE_CODE => {
             getGraphiteFeatureSettingCode(engine, param1 as u32, param2 as u32) as i32
         }
-        XETEX_IS_DEFAULT_SELECTOR => {
+        XETEX_IS_DEFAULT_SELECTOR_CODE => {
             (getGraphiteFeatureDefaultSetting(engine, param1 as u32) == param2 as u32) as i32
         }
         _ => 0,
@@ -1248,7 +1239,7 @@ pub(crate) unsafe fn gr_print_font_name_in(
 }
 
 pub unsafe fn gr_font_get_named(st: &mut EngineState, what: i32, engine: *mut c_void) -> i32 {
-    if what != XETEX_FIND_FEATURE_BY_NAME {
+    if what != XETEX_FIND_FEATURE_BY_NAME_CODE {
         return -1;
     }
     let name = crate::fonts::name_of_file_ptr(st);
@@ -1261,7 +1252,7 @@ pub unsafe fn gr_font_get_named_1(
     engine: *mut c_void,
     param: i32,
 ) -> i32 {
-    if what != XETEX_FIND_SELECTOR_BY_NAME {
+    if what != XETEX_FIND_SELECTOR_BY_NAME_CODE {
         return -1;
     }
     let name = crate::fonts::name_of_file_ptr(st);
@@ -1984,21 +1975,21 @@ const INT_PAR_XETEX_DEFAULT_INPUT_ENCODING: i32 = 76;
 
 // `\openout` .. `\special` and `\pdfsavepos` carry their whatsit subtype as the
 // command modifier.
-const OPEN_NODE: i32 = WhatsitSubtype::Open as i32;
-const WRITE_NODE: i32 = WhatsitSubtype::Write as i32;
-const CLOSE_NODE: i32 = WhatsitSubtype::Close as i32;
-const SPECIAL_NODE: i32 = WhatsitSubtype::Special as i32;
-const PDF_SAVE_POS_NODE: i32 = WhatsitSubtype::PdfSavePos as i32;
-const IMMEDIATE_CODE: i32 = 4;
-const SET_LANGUAGE_CODE: i32 = 5;
-const RESET_TIMER_CODE: i32 = 31;
-const SET_RANDOM_SEED_CODE: i32 = 33;
-const PIC_FILE_CODE: i32 = 41;
-const PDF_FILE_CODE: i32 = 42;
-const GLYPH_CODE: i32 = 43;
-const XETEX_INPUT_ENCODING_EXTENSION_CODE: i32 = 44;
-const XETEX_DEFAULT_ENCODING_EXTENSION_CODE: i32 = 45;
-const XETEX_LINEBREAK_LOCALE_EXTENSION_CODE: i32 = 46;
+pub(crate) const OPEN_NODE: i32 = WhatsitSubtype::Open as i32;
+pub(crate) const WRITE_NODE: i32 = WhatsitSubtype::Write as i32;
+pub(crate) const CLOSE_NODE: i32 = WhatsitSubtype::Close as i32;
+pub(crate) const SPECIAL_NODE: i32 = WhatsitSubtype::Special as i32;
+pub(crate) const PDF_SAVE_POS_NODE: i32 = WhatsitSubtype::PdfSavePos as i32;
+pub(crate) const IMMEDIATE_CODE: i32 = 4;
+pub(crate) const SET_LANGUAGE_CODE: i32 = 5;
+pub(crate) const RESET_TIMER_CODE: i32 = 31;
+pub(crate) const SET_RANDOM_SEED_CODE: i32 = 33;
+pub(crate) const PIC_FILE_CODE: i32 = 41;
+pub(crate) const PDF_FILE_CODE: i32 = 42;
+pub(crate) const GLYPH_CODE: i32 = 43;
+pub(crate) const XETEX_INPUT_ENCODING_EXTENSION_CODE: i32 = 44;
+pub(crate) const XETEX_DEFAULT_ENCODING_EXTENSION_CODE: i32 = 45;
+pub(crate) const XETEX_LINEBREAK_LOCALE_EXTENSION_CODE: i32 = 46;
 
 pub(crate) enum InsertSrcAbort {
     MakeSrcPool,

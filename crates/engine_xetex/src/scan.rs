@@ -13,13 +13,13 @@ use crate::cmd::{
 use crate::consts::{
     ACTIVE_BASE, BACKED_UP, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CLOSED,
     COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, EQTB_SIZE, FI_CODE,
-    FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_VAL, INSERTED,
-    INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS,
-    JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MAX_HALFWORD, MEM_TOP,
-    MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER, NULL_CS, NUMBER_MATH_FAMILIES, OR_CODE,
-    PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SF_CODE_BASE,
-    SINGLE_BASE, SKIP_BASE, SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
-    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE, XETEX_INT,
+    FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, INSERTED, INT_BASE,
+    INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, JUST_OPEN,
+    LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MAX_HALFWORD, MEM_TOP, MU_GLUE,
+    MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER, NULL_CS, NUMBER_MATH_FAMILIES, OR_CODE, PRIM_EQTB_BASE,
+    RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE,
+    SKIP_BASE, SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE,
+    UNLESS_CODE, VMODE,
 };
 use crate::errors::{error_in, int_error_in, mu_error_in};
 use crate::expand::{expand_in, macro_call_in};
@@ -33,6 +33,7 @@ use crate::input::{
     EVERY_EOF_TEXT, FROZEN_RELAX, LEFT_BRACE_LIMIT, MID_LINE, PARAMETER, RIGHT_BRACE_LIMIT,
     SKIP_BLANKS, TECTONIC_CODA_TEXT, V_TEMPLATE,
 };
+use crate::main_control::{LP_CODE_BASE, RP_CODE_BASE};
 use crate::mem::{BACKUP_HEAD, OMIT_TEMPLATE, TEMP_HEAD};
 use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, RuleDimen, RuleNode, SaNode};
 use crate::output::{
@@ -55,13 +56,15 @@ pub(crate) const MATCHING: u8 = 3;
 const ALIGNING: u8 = 4;
 const ABSORBING: u8 = 5;
 
-const INT_VAL: i16 = 0;
-const DIMEN_VAL: i16 = 1;
-const MU_VAL: i16 = 3;
-const IDENT_VAL: i16 = 4;
-const TOK_VAL: i16 = 5;
-const INTER_CHAR_VAL: i16 = 6;
-const BOX_VAL: u16 = 4;
+pub(crate) const INT_VAL: u8 = 0;
+pub(crate) const DIMEN_VAL: u8 = 1;
+pub(crate) const GLUE_VAL: u8 = 2;
+pub(crate) const MU_VAL: u8 = 3;
+pub(crate) const IDENT_VAL: u8 = 4;
+pub(crate) const BOX_VAL: u8 = 4;
+pub(crate) const TOK_VAL: u8 = 5;
+pub(crate) const INTER_CHAR_VAL: u8 = 6;
+pub(crate) const MARK_VAL: u8 = 7;
 
 pub(crate) const MAX_CHAR_VAL: i32 = 0x20_0000;
 const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
@@ -117,8 +120,6 @@ const FILLL_ORDER: u8 = 3;
 const X_HEIGHT_CODE: i32 = 5;
 const QUAD_CODE: i32 = 6;
 const SPACE_SHRINK_CODE: i32 = 4;
-const LP_CODE_BASE: i32 = 2;
-const RP_CODE_BASE: i32 = 3;
 const UNSET_NODE: u16 = 13;
 const END_M_CODE: u16 = 3;
 const ETEX_VERSION: i32 = 2;
@@ -133,68 +134,69 @@ const EXPR_SCALE: i16 = 5;
 const EXPR_NODE_SIZE: i32 = 4;
 const NORMAL_EXPR: u16 = 0;
 
-const LAST_NODE_TYPE_CODE: i16 = 3;
-const WIDTH_OFFSET: i32 = 1;
-const DEPTH_OFFSET: i32 = 2;
-const INPUT_LINE_NO_CODE: i32 = 4;
-const BADNESS_CODE: i32 = 5;
-const PDF_LAST_X_POS_CODE: i32 = 12;
-const PDF_LAST_Y_POS_CODE: i32 = 13;
-const ELAPSED_TIME_CODE: i32 = 16;
-const PDF_SHELL_ESCAPE_CODE: i32 = 17;
-const RANDOM_SEED_CODE: i32 = 18;
-const ETEX_VERSION_CODE: i32 = 19;
-const CURRENT_GROUP_LEVEL_CODE: i32 = 20;
-const CURRENT_GROUP_TYPE_CODE: i32 = 21;
-const CURRENT_IF_LEVEL_CODE: i32 = 22;
-const CURRENT_IF_TYPE_CODE: i32 = 23;
-const CURRENT_IF_BRANCH_CODE: i32 = 24;
-const GLUE_STRETCH_ORDER_CODE: i32 = 25;
-const GLUE_SHRINK_ORDER_CODE: i32 = 26;
-const XETEX_VERSION_CODE: i32 = 27;
-const XETEX_COUNT_GLYPHS_CODE: i32 = 28;
-const XETEX_COUNT_VARIATIONS_CODE: i32 = 29;
-const XETEX_VARIATION_CODE: i32 = 30;
-const XETEX_FIND_VARIATION_BY_NAME_CODE: i32 = 31;
-const XETEX_VARIATION_MIN_CODE: i32 = 32;
-const XETEX_VARIATION_MAX_CODE: i32 = 33;
-const XETEX_VARIATION_DEFAULT_CODE: i32 = 34;
-const XETEX_COUNT_FEATURES_CODE: i32 = 35;
-const XETEX_FEATURE_CODE_CODE: i32 = 36;
-const XETEX_FIND_FEATURE_BY_NAME_CODE: i32 = 37;
-const XETEX_IS_EXCLUSIVE_FEATURE_CODE: i32 = 38;
-const XETEX_COUNT_SELECTORS_CODE: i32 = 39;
-const XETEX_SELECTOR_CODE_CODE: i32 = 40;
-const XETEX_FIND_SELECTOR_BY_NAME_CODE: i32 = 41;
-const XETEX_IS_DEFAULT_SELECTOR_CODE: i32 = 42;
-const XETEX_OT_COUNT_SCRIPTS_CODE: i32 = 43;
-const XETEX_OT_COUNT_LANGUAGES_CODE: i32 = 44;
-const XETEX_OT_COUNT_FEATURES_CODE: i32 = 45;
-const XETEX_OT_SCRIPT_CODE: i32 = 46;
-const XETEX_OT_LANGUAGE_CODE: i32 = 47;
-const XETEX_OT_FEATURE_CODE: i32 = 48;
-const XETEX_MAP_CHAR_TO_GLYPH_CODE: i32 = 49;
-const XETEX_GLYPH_INDEX_CODE: i32 = 50;
-const XETEX_FONT_TYPE_CODE: i32 = 51;
-const XETEX_FIRST_CHAR_CODE: i32 = 52;
-const XETEX_LAST_CHAR_CODE: i32 = 53;
-const XETEX_PDF_PAGE_COUNT_CODE: i32 = 54;
-const XETEX_DIM: i32 = 55;
-const XETEX_GLYPH_BOUNDS_CODE: i32 = 55;
-const FONT_CHAR_WD_CODE: i32 = 56;
-const FONT_CHAR_HT_CODE: i32 = 57;
-const FONT_CHAR_DP_CODE: i32 = 58;
-const FONT_CHAR_IC_CODE: i32 = 59;
-const PAR_SHAPE_LENGTH_CODE: i32 = 60;
-const PAR_SHAPE_INDENT_CODE: i32 = 61;
-const PAR_SHAPE_DIMEN_CODE: i32 = 62;
-const GLUE_STRETCH_CODE: i32 = 63;
-const GLUE_SHRINK_CODE: i32 = 64;
-const ETEX_GLUE: i32 = 65;
-const MU_TO_GLUE_CODE: i32 = 65;
-const ETEX_MU: i32 = 66;
-const GLUE_TO_MU_CODE: i32 = 66;
-const ETEX_EXPR: i32 = 67;
+pub(crate) const LAST_NODE_TYPE_CODE: i32 = 3;
+pub(crate) const WIDTH_OFFSET: i32 = 1;
+pub(crate) const DEPTH_OFFSET: i32 = 2;
+pub(crate) const HEIGHT_OFFSET: i32 = 3;
+pub(crate) const INPUT_LINE_NO_CODE: i32 = 4;
+pub(crate) const BADNESS_CODE: i32 = 5;
+pub(crate) const PDF_LAST_X_POS_CODE: i32 = 12;
+pub(crate) const PDF_LAST_Y_POS_CODE: i32 = 13;
+pub(crate) const ELAPSED_TIME_CODE: i32 = 16;
+pub(crate) const PDF_SHELL_ESCAPE_CODE: i32 = 17;
+pub(crate) const RANDOM_SEED_CODE: i32 = 18;
+pub(crate) const ETEX_VERSION_CODE: i32 = 19;
+pub(crate) const CURRENT_GROUP_LEVEL_CODE: i32 = 20;
+pub(crate) const CURRENT_GROUP_TYPE_CODE: i32 = 21;
+pub(crate) const CURRENT_IF_LEVEL_CODE: i32 = 22;
+pub(crate) const CURRENT_IF_TYPE_CODE: i32 = 23;
+pub(crate) const CURRENT_IF_BRANCH_CODE: i32 = 24;
+pub(crate) const GLUE_STRETCH_ORDER_CODE: i32 = 25;
+pub(crate) const GLUE_SHRINK_ORDER_CODE: i32 = 26;
+pub(crate) const XETEX_VERSION_CODE: i32 = 27;
+pub(crate) const XETEX_COUNT_GLYPHS_CODE: i32 = 28;
+pub(crate) const XETEX_COUNT_VARIATIONS_CODE: i32 = 29;
+pub(crate) const XETEX_VARIATION_CODE: i32 = 30;
+pub(crate) const XETEX_FIND_VARIATION_BY_NAME_CODE: i32 = 31;
+pub(crate) const XETEX_VARIATION_MIN_CODE: i32 = 32;
+pub(crate) const XETEX_VARIATION_MAX_CODE: i32 = 33;
+pub(crate) const XETEX_VARIATION_DEFAULT_CODE: i32 = 34;
+pub(crate) const XETEX_COUNT_FEATURES_CODE: i32 = 35;
+pub(crate) const XETEX_FEATURE_CODE_CODE: i32 = 36;
+pub(crate) const XETEX_FIND_FEATURE_BY_NAME_CODE: i32 = 37;
+pub(crate) const XETEX_IS_EXCLUSIVE_FEATURE_CODE: i32 = 38;
+pub(crate) const XETEX_COUNT_SELECTORS_CODE: i32 = 39;
+pub(crate) const XETEX_SELECTOR_CODE_CODE: i32 = 40;
+pub(crate) const XETEX_FIND_SELECTOR_BY_NAME_CODE: i32 = 41;
+pub(crate) const XETEX_IS_DEFAULT_SELECTOR_CODE: i32 = 42;
+pub(crate) const XETEX_OT_COUNT_SCRIPTS_CODE: i32 = 43;
+pub(crate) const XETEX_OT_COUNT_LANGUAGES_CODE: i32 = 44;
+pub(crate) const XETEX_OT_COUNT_FEATURES_CODE: i32 = 45;
+pub(crate) const XETEX_OT_SCRIPT_CODE: i32 = 46;
+pub(crate) const XETEX_OT_LANGUAGE_CODE: i32 = 47;
+pub(crate) const XETEX_OT_FEATURE_CODE: i32 = 48;
+pub(crate) const XETEX_MAP_CHAR_TO_GLYPH_CODE: i32 = 49;
+pub(crate) const XETEX_GLYPH_INDEX_CODE: i32 = 50;
+pub(crate) const XETEX_FONT_TYPE_CODE: i32 = 51;
+pub(crate) const XETEX_FIRST_CHAR_CODE: i32 = 52;
+pub(crate) const XETEX_LAST_CHAR_CODE: i32 = 53;
+pub(crate) const XETEX_PDF_PAGE_COUNT_CODE: i32 = 54;
+pub(crate) const XETEX_DIM: i32 = 55;
+pub(crate) const XETEX_GLYPH_BOUNDS_CODE: i32 = 55;
+pub(crate) const FONT_CHAR_WD_CODE: i32 = 56;
+pub(crate) const FONT_CHAR_HT_CODE: i32 = 57;
+pub(crate) const FONT_CHAR_DP_CODE: i32 = 58;
+pub(crate) const FONT_CHAR_IC_CODE: i32 = 59;
+pub(crate) const PAR_SHAPE_LENGTH_CODE: i32 = 60;
+pub(crate) const PAR_SHAPE_INDENT_CODE: i32 = 61;
+pub(crate) const PAR_SHAPE_DIMEN_CODE: i32 = 62;
+pub(crate) const GLUE_STRETCH_CODE: i32 = 63;
+pub(crate) const GLUE_SHRINK_CODE: i32 = 64;
+pub(crate) const ETEX_GLUE: i32 = 65;
+pub(crate) const MU_TO_GLUE_CODE: i32 = 65;
+pub(crate) const ETEX_MU: i32 = 66;
+pub(crate) const GLUE_TO_MU_CODE: i32 = 66;
+pub(crate) const ETEX_EXPR: i32 = 67;
 
 /// Reports a bad integer `value` with two help lines.
 fn bad_int_error(
@@ -1739,10 +1741,10 @@ pub(crate) fn the_toks_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
     }
     get_x_token_in(st)?;
     scan_something_internal_in(st, TOK_VAL, false)?;
-    if st.scanner.cur_val_level >= IDENT_VAL as u8 {
+    if st.scanner.cur_val_level >= IDENT_VAL {
         let mut p = TEMP_HEAD;
         p.set_link(&mut st.mem, MemPtr::NULL);
-        if st.scanner.cur_val_level == IDENT_VAL as u8 {
+        if st.scanner.cur_val_level == IDENT_VAL {
             store_new_token(st, &mut p, CS_TOKEN_FLAG + st.scanner.cur_val)?;
         } else if st.scanner.cur_val != TEX_NULL {
             let mut r = MemPtr::from_raw(st.scanner.cur_val).link(&st.mem);
@@ -2254,18 +2256,18 @@ pub(crate) fn xetex_scan_dimen_in(
             if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
                 if mu {
                     scan_something_internal_in(st, MU_VAL, false)?;
-                    if st.scanner.cur_val_level as i16 >= GLUE_VAL {
+                    if st.scanner.cur_val_level >= GLUE_VAL {
                         glue_to_width_in(st);
                     }
-                    if st.scanner.cur_val_level as i16 == MU_VAL {
+                    if st.scanner.cur_val_level == MU_VAL {
                         break 'attach_sign;
                     }
-                    if st.scanner.cur_val_level as i16 != INT_VAL {
+                    if st.scanner.cur_val_level != INT_VAL {
                         scc_err(mu_error_in(st))?;
                     }
                 } else {
                     scan_something_internal_in(st, DIMEN_VAL, false)?;
-                    if st.scanner.cur_val_level as i16 == DIMEN_VAL {
+                    if st.scanner.cur_val_level == DIMEN_VAL {
                         break 'attach_sign;
                     }
                 }
@@ -2349,10 +2351,10 @@ pub(crate) fn xetex_scan_dimen_in(
                 if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
                     if mu {
                         scan_something_internal_in(st, MU_VAL, false)?;
-                        if st.scanner.cur_val_level as i16 >= GLUE_VAL {
+                        if st.scanner.cur_val_level >= GLUE_VAL {
                             glue_to_width_in(st);
                         }
-                        if st.scanner.cur_val_level as i16 != MU_VAL {
+                        if st.scanner.cur_val_level != MU_VAL {
                             scc_err(mu_error_in(st))?;
                         }
                     } else {
@@ -2492,19 +2494,19 @@ fn attach_fraction(st: &mut EngineState, f: i32) {
     }
 }
 
-pub(crate) fn scan_glue_in(st: &mut EngineState, level: i16) -> Result<(), SccAbort> {
+pub(crate) fn scan_glue_in(st: &mut EngineState, level: u8) -> Result<(), SccAbort> {
     let mu = level == MU_VAL;
     let negative = scan_signs_in(st)?;
 
     if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
         scan_something_internal_in(st, level, negative)?;
-        if st.scanner.cur_val_level as i16 >= GLUE_VAL {
-            if st.scanner.cur_val_level as i16 != level {
+        if st.scanner.cur_val_level >= GLUE_VAL {
+            if st.scanner.cur_val_level != level {
                 scc_err(mu_error_in(st))?;
             }
             return Ok(());
         }
-        if st.scanner.cur_val_level as i16 == INT_VAL {
+        if st.scanner.cur_val_level == INT_VAL {
             scan_dimen_in(st, mu, false, true)?;
         } else if level == MU_VAL {
             scc_err(mu_error_in(st))?;
@@ -2599,7 +2601,7 @@ fn add_glue_in(
 pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
     use crate::scaled_math::{add_or_sub_in, fract_in, mult_and_add_in, quotient_in};
 
-    let mut l = st.scanner.cur_val_level as i16;
+    let mut l = st.scanner.cur_val_level;
     let a = st.errors.arith_error;
     let mut b = false;
     let mut p = TEX_NULL;
@@ -2780,7 +2782,7 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
             n = st.mem.b32s1(q + 3);
             s = (st.mem.b16s0(q) / 4) as i16;
             r = (st.mem.b16s0(q) % 4) as i16;
-            l = st.mem.b16s1(q) as i16;
+            l = st.mem.b16s1(q) as u8;
             p = st.mem.b32s1(q);
             crate::mem::free_node(&mut st.mem, MemPtr::from_raw(q), EXPR_NODE_SIZE);
             scan_factor = false;
@@ -2876,13 +2878,13 @@ fn missing_number_error_in(st: &mut EngineState) -> Result<(), SccAbort> {
 }
 
 #[inline]
-fn set_cur_val(st: &mut EngineState, value: i32, level: i16) {
+fn set_cur_val(st: &mut EngineState, value: i32, level: u8) {
     st.scanner.cur_val = value;
     st.scanner.cur_val_level = level as u8;
 }
 
 /// The sparse-array element of type `t` for register `n`, if it exists.
-fn find_sa_in(st: &mut EngineState, t: u16, n: i32) -> Option<NodePtr<SaNode>> {
+fn find_sa_in(st: &mut EngineState, t: u8, n: i32) -> Option<NodePtr<SaNode>> {
     crate::save::find_sa_element(&mut st.mem, &mut st.scanner, t, n, false);
     NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)
 }
@@ -3031,7 +3033,7 @@ fn fetch_xetex_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort>
     Ok(())
 }
 
-fn fetch_token_list_in(st: &mut EngineState, m: i32, level: i16) -> Result<(), SccAbort> {
+fn fetch_token_list_in(st: &mut EngineState, m: i32, level: u8) -> Result<(), SccAbort> {
     if level != TOK_VAL {
         missing_number_error_in(st)?;
         set_cur_val(st, 0, DIMEN_VAL);
@@ -3042,25 +3044,25 @@ fn fetch_token_list_in(st: &mut EngineState, m: i32, level: i16) -> Result<(), S
             st.scanner.cur_val = if n < 256 {
                 st.eqtb.b32s1(TOKS_BASE + n)
             } else {
-                let sa = find_sa_in(st, TOK_VAL as u16, n);
+                let sa = find_sa_in(st, TOK_VAL, n);
                 sa_token_list(st, sa)
             };
         } else {
             st.scanner.cur_val = st.mem.b32s1(m + 1);
         }
-        st.scanner.cur_val_level = TOK_VAL as u8;
+        st.scanner.cur_val_level = TOK_VAL;
     } else if st.scanner.cur_cmd == ASSIGN_TOKS {
         if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
             scan_char_class_not_ignored_in(st)?;
             st.scanner.cur_ptr.0 = st.scanner.cur_val;
             scan_char_class_not_ignored_in(st)?;
             let n = st.scanner.cur_ptr.0 * CHAR_CLASS_LIMIT + st.scanner.cur_val;
-            let sa = find_sa_in(st, INTER_CHAR_VAL as u16, n);
+            let sa = find_sa_in(st, INTER_CHAR_VAL, n);
             st.scanner.cur_val = sa_token_list(st, sa);
         } else {
             st.scanner.cur_val = st.eqtb.b32s1(m);
         }
-        st.scanner.cur_val_level = TOK_VAL as u8;
+        st.scanner.cur_val_level = TOK_VAL;
     } else {
         back_input_in(st)?;
         scan_font_ident_in(st)?;
@@ -3072,7 +3074,7 @@ fn fetch_token_list_in(st: &mut EngineState, m: i32, level: i16) -> Result<(), S
 fn fetch_register_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
     if !(0..=19).contains(&m) {
         let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(m)).expect("sparse register");
-        let level = sa.sa_type(&st.mem) as i16;
+        let level = sa.sa_type(&st.mem) as u8;
         let value = if level < GLUE_VAL {
             sa.sa_int(&st.mem)
         } else {
@@ -3083,10 +3085,10 @@ fn fetch_register_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
     }
     scan_register_num_in(st)?;
     let n = st.scanner.cur_val;
-    let level = m as i16;
+    let level = m as u8;
     st.scanner.cur_val_level = level as u8;
     if n > 255 {
-        st.scanner.cur_val = match find_sa_in(st, level as u16, n) {
+        st.scanner.cur_val = match find_sa_in(st, level, n) {
             None => 0,
             Some(sa) if level < GLUE_VAL => sa.sa_int(&st.mem),
             Some(sa) => sa.sa_ptr(&st.mem).0,
@@ -3123,9 +3125,9 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
         XETEX_COUNT_GLYPHS_CODE => {
             let (_, engine, fa) = scan_font_engine_in(st)?;
             st.scanner.cur_val = if fa == AAT_FONT_FLAG {
-                aat_font_get(m - XETEX_INT, engine)
+                aat_font_get(m, engine)
             } else if fa == OTGR_FONT_FLAG {
-                unsafe { ot_font_get(m - XETEX_INT, engine) }
+                unsafe { ot_font_get(m, engine) }
             } else {
                 0
             };
@@ -3133,9 +3135,9 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
         XETEX_COUNT_FEATURES_CODE => {
             let (_, engine, fa) = scan_font_engine_in(st)?;
             st.scanner.cur_val = if fa == AAT_FONT_FLAG {
-                aat_font_get(m - XETEX_INT, engine)
+                aat_font_get(m, engine)
             } else if uses_graphite(fa, engine) {
-                unsafe { ot_font_get(m - XETEX_INT, engine) }
+                unsafe { ot_font_get(m, engine) }
             } else {
                 0
             };
@@ -3152,11 +3154,10 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             let (f, engine, fa) = scan_font_engine_in(st)?;
             if fa == AAT_FONT_FLAG {
                 scan_int_in(st)?;
-                st.scanner.cur_val = aat_font_get_1(m - XETEX_INT, engine, st.scanner.cur_val);
+                st.scanner.cur_val = aat_font_get_1(m, engine, st.scanner.cur_val);
             } else if uses_graphite(fa, engine) {
                 scan_int_in(st)?;
-                st.scanner.cur_val =
-                    unsafe { ot_font_get_1(m - XETEX_INT, engine, st.scanner.cur_val) };
+                st.scanner.cur_val = unsafe { ot_font_get_1(m, engine, st.scanner.cur_val) };
             } else {
                 font_query_error_in(st, m, f, c"; not an AAT or Graphite font", -1)?;
             }
@@ -3167,13 +3168,12 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
                 scan_int_in(st)?;
                 let k = st.scanner.cur_val;
                 scan_int_in(st)?;
-                st.scanner.cur_val = aat_font_get_2(m - XETEX_INT, engine, k, st.scanner.cur_val);
+                st.scanner.cur_val = aat_font_get_2(m, engine, k, st.scanner.cur_val);
             } else if uses_graphite(fa, engine) {
                 scan_int_in(st)?;
                 let k = st.scanner.cur_val;
                 scan_int_in(st)?;
-                st.scanner.cur_val =
-                    unsafe { ot_font_get_2(m - XETEX_INT, engine, k, st.scanner.cur_val) };
+                st.scanner.cur_val = unsafe { ot_font_get_2(m, engine, k, st.scanner.cur_val) };
             } else {
                 font_query_error_in(st, m, f, c"; not an AAT or Graphite font", -1)?;
             }
@@ -3182,7 +3182,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             let (f, engine, fa) = scan_font_engine_in(st)?;
             if fa == AAT_FONT_FLAG {
                 crate::io::scan_and_pack_name_in(st)?;
-                st.scanner.cur_val = aat_font_get_named(m - XETEX_INT, engine);
+                st.scanner.cur_val = aat_font_get_named(m, engine);
             } else {
                 font_query_error_in(st, m, f, c"; not an AAT font", -1)?;
             }
@@ -3191,10 +3191,10 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             let (f, engine, fa) = scan_font_engine_in(st)?;
             if fa == AAT_FONT_FLAG {
                 crate::io::scan_and_pack_name_in(st)?;
-                st.scanner.cur_val = aat_font_get_named(m - XETEX_INT, engine);
+                st.scanner.cur_val = aat_font_get_named(m, engine);
             } else if uses_graphite(fa, engine) {
                 crate::io::scan_and_pack_name_in(st)?;
-                st.scanner.cur_val = unsafe { gr_font_get_named(st, m - XETEX_INT, engine) };
+                st.scanner.cur_val = unsafe { gr_font_get_named(st, m, engine) };
             } else {
                 font_query_error_in(st, m, f, c"; not an AAT or Graphite font", -1)?;
             }
@@ -3205,12 +3205,12 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
                 scan_int_in(st)?;
                 let k = st.scanner.cur_val;
                 crate::io::scan_and_pack_name_in(st)?;
-                st.scanner.cur_val = aat_font_get_named_1(m - XETEX_INT, engine, k);
+                st.scanner.cur_val = aat_font_get_named_1(m, engine, k);
             } else if uses_graphite(fa, engine) {
                 scan_int_in(st)?;
                 let k = st.scanner.cur_val;
                 crate::io::scan_and_pack_name_in(st)?;
-                st.scanner.cur_val = unsafe { gr_font_get_named_1(st, m - XETEX_INT, engine, k) };
+                st.scanner.cur_val = unsafe { gr_font_get_named_1(st, m, engine, k) };
             } else {
                 font_query_error_in(st, m, f, c"; not an AAT or Graphite font", -1)?;
             }
@@ -3218,7 +3218,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
         XETEX_OT_COUNT_SCRIPTS_CODE => {
             let (_, engine, fa) = scan_font_engine_in(st)?;
             st.scanner.cur_val = if uses_opentype(fa, engine) {
-                unsafe { ot_font_get(m - XETEX_INT, engine) }
+                unsafe { ot_font_get(m, engine) }
             } else {
                 0
             };
@@ -3227,8 +3227,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             let (f, engine, fa) = scan_font_engine_in(st)?;
             if uses_opentype(fa, engine) {
                 scan_int_in(st)?;
-                st.scanner.cur_val =
-                    unsafe { ot_font_get_1(m - XETEX_INT, engine, st.scanner.cur_val) };
+                st.scanner.cur_val = unsafe { ot_font_get_1(m, engine, st.scanner.cur_val) };
             } else {
                 font_query_error_in(st, m, f, c"; not an OpenType Layout font", -1)?;
             }
@@ -3239,8 +3238,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
                 scan_int_in(st)?;
                 let k = st.scanner.cur_val;
                 scan_int_in(st)?;
-                st.scanner.cur_val =
-                    unsafe { ot_font_get_2(m - XETEX_INT, engine, k, st.scanner.cur_val) };
+                st.scanner.cur_val = unsafe { ot_font_get_2(m, engine, k, st.scanner.cur_val) };
             } else {
                 font_query_error_in(st, m, f, c"; not an OpenType Layout font", -1)?;
             }
@@ -3253,8 +3251,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
                 scan_int_in(st)?;
                 let kk = st.scanner.cur_val;
                 scan_int_in(st)?;
-                st.scanner.cur_val =
-                    unsafe { ot_font_get_3(m - XETEX_INT, engine, k, kk, st.scanner.cur_val) };
+                st.scanner.cur_val = unsafe { ot_font_get_3(m, engine, k, kk, st.scanner.cur_val) };
             } else {
                 font_query_error_in(st, m, f, c"; not an OpenType Layout font", -1)?;
             }
@@ -3350,7 +3347,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
         }
         _ => {}
     }
-    st.scanner.cur_val_level = INT_VAL as u8;
+    st.scanner.cur_val_level = INT_VAL;
     Ok(())
 }
 
@@ -3450,13 +3447,14 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
         }
         _ => {}
     }
-    st.scanner.cur_val_level = DIMEN_VAL as u8;
+    st.scanner.cur_val_level = DIMEN_VAL;
     Ok(())
 }
 
 /// `\lastpenalty`, `\lastkern`, `\lastskip` and `\lastnodetype`.
 fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
-    let item = m as i16;
+    let want_type = m == LAST_NODE_TYPE_CODE;
+    let level = m as u8;
     st.scanner.cur_val = 0;
     let head = st.input.cur_list.head.0;
     let mut tx = st.input.cur_list.tail.0;
@@ -3475,38 +3473,41 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
             node = (tx < st.mem.hi_mem_min).then(|| st.mem.classify(MemIdx::new(tx)));
         }
     }
-    if item == LAST_NODE_TYPE_CODE {
-        st.scanner.cur_val_level = INT_VAL as u8;
+    if want_type {
+        st.scanner.cur_val_level = INT_VAL;
         if tx == head || st.input.cur_list.mode == 0 {
             st.scanner.cur_val = -1;
         }
     } else {
-        st.scanner.cur_val_level = item as u8;
+        st.scanner.cur_val_level = level;
     }
     match node {
-        Some(node) if st.input.cur_list.mode != 0 => match (item, node) {
+        Some(_) if st.input.cur_list.mode != 0 && want_type => {
+            let node_type = st.mem.b16s1(tx);
+            st.scanner.cur_val = if node_type <= UNSET_NODE {
+                node_type as i32 + 1
+            } else {
+                UNSET_NODE as i32 + 2
+            };
+        }
+        Some(node) if st.input.cur_list.mode != 0 => match (level, node) {
             (INT_VAL, Ok(AnyNode::Penalty(p))) => st.scanner.cur_val = p.penalty(&st.mem),
             (DIMEN_VAL, Ok(AnyNode::Kern(k))) => st.scanner.cur_val = k.width(&st.mem).0,
             (GLUE_VAL, Ok(AnyNode::Glue(g))) => {
                 st.scanner.cur_val = g.glue_ptr(&st.mem).0;
                 if g.subtype(&st.mem) == MU_GLUE {
-                    st.scanner.cur_val_level = MU_VAL as u8;
+                    st.scanner.cur_val_level = MU_VAL;
                 }
-            }
-            (LAST_NODE_TYPE_CODE, _) => {
-                // The node type code itself is the result.
-                let node_type = st.mem.b16s1(tx);
-                st.scanner.cur_val = if node_type <= UNSET_NODE {
-                    node_type as i32 + 1
-                } else {
-                    UNSET_NODE as i32 + 2
-                };
             }
             _ => {}
         },
         _ => {
             if st.input.cur_list.mode == VMODE && tx == head {
-                match item {
+                if want_type {
+                    st.scanner.cur_val = st.shipout.last_node_type;
+                    return;
+                }
+                match level {
                     INT_VAL => st.scanner.cur_val = st.shipout.last_penalty,
                     DIMEN_VAL => st.scanner.cur_val = st.shipout.last_kern,
                     GLUE_VAL => {
@@ -3514,7 +3515,6 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
                             st.scanner.cur_val = st.shipout.last_glue.0;
                         }
                     }
-                    LAST_NODE_TYPE_CODE => st.scanner.cur_val = st.shipout.last_node_type,
                     _ => {}
                 }
             }
@@ -3525,7 +3525,7 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
 /// Scans an internal quantity of at most `level`, negated if `negative`.
 pub(crate) fn scan_something_internal_in(
     st: &mut EngineState,
-    level: i16,
+    level: u8,
     negative: bool,
 ) -> Result<(), SccAbort> {
     loop {
@@ -3616,7 +3616,7 @@ pub(crate) fn scan_something_internal_in(
                         st.mem.b32s0(par_shape)
                     };
                 }
-                st.scanner.cur_val_level = INT_VAL as u8;
+                st.scanner.cur_val_level = INT_VAL;
             }
             SET_BOX_DIMEN => {
                 scan_register_num_in(st)?;
@@ -3674,26 +3674,26 @@ pub(crate) fn scan_something_internal_in(
                         if m == MU_TO_GLUE_CODE {
                             scan_mu_glue_in(st)?;
                         }
-                        st.scanner.cur_val_level = GLUE_VAL as u8;
+                        st.scanner.cur_val_level = GLUE_VAL;
                     } else if m < ETEX_EXPR {
                         if m == GLUE_TO_MU_CODE {
                             scan_normal_glue_in(st)?;
                         }
-                        st.scanner.cur_val_level = MU_VAL as u8;
+                        st.scanner.cur_val_level = MU_VAL;
                     } else {
                         st.scanner.cur_val_level = (m - ETEX_EXPR) as u8;
                         scan_expr_in(st)?;
                     }
-                    while st.scanner.cur_val_level as i16 > level {
-                        if st.scanner.cur_val_level as i16 == GLUE_VAL {
+                    while st.scanner.cur_val_level > level {
+                        if st.scanner.cur_val_level == GLUE_VAL {
                             glue_to_width_in(st);
-                        } else if st.scanner.cur_val_level as i16 == MU_VAL {
+                        } else if st.scanner.cur_val_level == MU_VAL {
                             scc_err(mu_error_in(st))?;
                         }
                         st.scanner.cur_val_level -= 1;
                     }
                     if negative {
-                        if st.scanner.cur_val_level as i16 >= GLUE_VAL {
+                        if st.scanner.cur_val_level >= GLUE_VAL {
                             let old = negate_glue_in(st)?;
                             crate::mem::delete_glue_ref(&mut st.mem, old);
                         } else {
@@ -3725,22 +3725,22 @@ pub(crate) fn scan_something_internal_in(
         break;
     }
 
-    while st.scanner.cur_val_level as i16 > level {
-        if st.scanner.cur_val_level as i16 == GLUE_VAL {
+    while st.scanner.cur_val_level > level {
+        if st.scanner.cur_val_level == GLUE_VAL {
             st.scanner.cur_val = glue_spec(st.scanner.cur_val).width(&st.mem).0;
-        } else if st.scanner.cur_val_level as i16 == MU_VAL {
+        } else if st.scanner.cur_val_level == MU_VAL {
             scc_err(mu_error_in(st))?;
         }
         st.scanner.cur_val_level -= 1;
     }
 
     if negative {
-        if st.scanner.cur_val_level as i16 >= GLUE_VAL {
+        if st.scanner.cur_val_level >= GLUE_VAL {
             negate_glue_in(st)?;
         } else {
             st.scanner.cur_val = -st.scanner.cur_val;
         }
-    } else if (GLUE_VAL..=MU_VAL).contains(&(st.scanner.cur_val_level as i16)) {
+    } else if (GLUE_VAL..=MU_VAL).contains(&(st.scanner.cur_val_level)) {
         let spec = glue_spec(st.scanner.cur_val);
         let refs = spec.ref_count(&st.mem);
         spec.set_ref_count(&mut st.mem, refs + 1);

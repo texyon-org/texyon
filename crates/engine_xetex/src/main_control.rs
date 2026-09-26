@@ -5,14 +5,14 @@ use crate::consts::{
     A_LEADERS, BACKED_UP, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE,
     CHAR_CLASS_LIMIT, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
     DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, ETEX_PEN_BASE, EXPLICIT, FONT_BASE, GLUE_BASE,
-    GLUE_NODE, GLUE_VAL, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_HANG_AFTER,
-    INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN,
-    INT_PAR_TEXXET, KERN_NODE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE,
-    MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN,
-    NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OUTPUT_TEXT, PRIM_EQTB_BASE,
-    RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY,
-    SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX,
-    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
+    GLUE_NODE, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
+    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET,
+    KERN_NODE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MARGIN_KERN_NODE_SIZE,
+    MATH_CODE_BASE, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, NOAD_SIZE, NON_ADDRESS,
+    NORMAL_SCANNER, NULL_CS, NULL_FLAG, OUTPUT_TEXT, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE,
+    SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
+    SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX, TEX_NULL, TOKEN_LIST,
+    TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
@@ -26,7 +26,10 @@ use crate::node::{
     AdjustNode, AnyBox, AnyNode, GlueSpecNode, InsNode, MarkNode, NodePtr, RuleDimen, SaNode,
     UnsetNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::scan::{set_class_fn, set_family_fn};
+use crate::scan::{
+    set_class_fn, set_family_fn, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL, INT_VAL, MU_VAL,
+    TOK_VAL,
+};
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -57,12 +60,6 @@ extern "C" {
 // Equivalent types beyond `MAX_COMMAND`.
 
 // Value levels (`cur_val_level`).
-const INT_VAL: i16 = 0;
-pub(crate) const DIMEN_VAL: i16 = 1;
-pub(crate) const MU_VAL: i16 = 3;
-const BOX_VAL: i16 = 4;
-const TOK_VAL: i16 = 5;
-const INTER_CHAR_VAL: i16 = 6;
 
 const INNER_VMODE: i16 = -VMODE;
 const INNER_HMODE: i16 = -HMODE;
@@ -145,36 +142,36 @@ const DIMEN_PAR_DISPLAY_INDENT: i32 = 15;
 const DIMEN_PAR_OVERFULL_RULE: i32 = 16;
 
 // `cur_chr` modifiers.
-const BOX_CODE: i32 = 0;
+pub(crate) const BOX_CODE: i32 = 0;
 pub(crate) const COPY_CODE: i32 = 1;
 pub(crate) const LAST_BOX_CODE: i32 = 2;
-const VSPLIT_CODE: i32 = 3;
-const VTOP_CODE: i16 = 4;
-const SKIP_CODE: i16 = 4;
-const MSKIP_CODE: i16 = 5;
-const CHAR_DEF_CODE: i32 = 0;
-const MATH_CHAR_DEF_CODE: i32 = 1;
-const COUNT_DEF_CODE: i32 = 2;
-const DIMEN_DEF_CODE: i32 = 3;
-const SKIP_DEF_CODE: i32 = 4;
-const MU_SKIP_DEF_CODE: i32 = 5;
-const TOKS_DEF_CODE: i32 = 6;
-const CHAR_SUB_DEF_CODE: i32 = 7;
-const XETEX_MATH_CHAR_NUM_DEF_CODE: i32 = 8;
-const XETEX_MATH_CHAR_DEF_CODE: i32 = 9;
+pub(crate) const VSPLIT_CODE: i32 = 3;
+pub(crate) const VTOP_CODE: i32 = 4;
+pub(crate) const SKIP_CODE: i32 = 4;
+pub(crate) const MSKIP_CODE: i32 = 5;
+pub(crate) const CHAR_DEF_CODE: i32 = 0;
+pub(crate) const MATH_CHAR_DEF_CODE: i32 = 1;
+pub(crate) const COUNT_DEF_CODE: i32 = 2;
+pub(crate) const DIMEN_DEF_CODE: i32 = 3;
+pub(crate) const SKIP_DEF_CODE: i32 = 4;
+pub(crate) const MU_SKIP_DEF_CODE: i32 = 5;
+pub(crate) const TOKS_DEF_CODE: i32 = 6;
+pub(crate) const CHAR_SUB_DEF_CODE: i32 = 7;
+pub(crate) const XETEX_MATH_CHAR_NUM_DEF_CODE: i32 = 8;
+pub(crate) const XETEX_MATH_CHAR_DEF_CODE: i32 = 9;
 const SLANT_CODE: i32 = 1;
 const X_HEIGHT_CODE: i32 = 5;
 const EXTRA_SPACE_CODE: i32 = 7;
-const LP_CODE_BASE: i32 = 2;
-const RP_CODE_BASE: i32 = 3;
-const SPAN_CODE: i32 = 1_114_113;
-const CR_CODE: i32 = 1_114_114;
-const CR_CR_CODE: i32 = 1_114_115;
+pub(crate) const LP_CODE_BASE: i32 = 2;
+pub(crate) const RP_CODE_BASE: i32 = 3;
+pub(crate) const SPAN_CODE: i32 = 1_114_113;
+pub(crate) const CR_CODE: i32 = 1_114_114;
+pub(crate) const CR_CR_CODE: i32 = 1_114_115;
 
-const BOX_FLAG: i32 = 0x4000_0000;
-const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;
-const SHIP_OUT_FLAG: i32 = 0x4001_0000;
-const LEADER_FLAG: i32 = 0x4001_0001;
+pub(crate) const BOX_FLAG: i32 = 0x4000_0000;
+pub(crate) const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;
+pub(crate) const SHIP_OUT_FLAG: i32 = 0x4001_0000;
+pub(crate) const LEADER_FLAG: i32 = 0x4001_0001;
 
 const EMPTY: i32 = 0;
 const SUB_MLIST: i32 = 3;
@@ -1312,7 +1309,7 @@ pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
     let p = if n < 256 {
         MemPtr::from_raw(st.eqtb.b32s1(BOX_BASE + n))
     } else {
-        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL as u16, n, false);
+        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n, false);
         NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)?.sa_ptr(&st.mem)
     };
     st.mem.classify_box(p.as_idx()?).ok().flatten()
@@ -1324,7 +1321,7 @@ fn change_box(st: &mut EngineState, n: i32, v: i32) {
         st.eqtb.set_b32s1(BOX_BASE + n, v);
         return;
     }
-    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL as u16, n, false);
+    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n, false);
     if let Some(sa) = NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr) {
         sa.set_sa_ptr(&mut st.mem, MemPtr::from_raw(v));
         let refs = sa.sa_ref(&st.mem);
@@ -1537,7 +1534,7 @@ pub(crate) fn scan_box_in(st: &mut EngineState, box_context: i32) -> Result<(), 
     }
 }
 
-pub(crate) fn package_in(st: &mut EngineState, c: i16) -> Result<(), MainControlAbort> {
+pub(crate) fn package_in(st: &mut EngineState, c: i32) -> Result<(), MainControlAbort> {
     let d = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_BOX_MAX_DEPTH);
     let u = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_UPWARDS);
     crate::save::unsave_in(st)?;
@@ -1838,7 +1835,7 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
         if n < 256 {
             define(st, global, BOX_BASE + n, BOX_REF, cb)?;
         } else {
-            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL as u16, n, true)
+            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n, true)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             sa_define(st, global, st.scanner.cur_ptr.0, cb)?;
         }
@@ -2269,14 +2266,14 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
 }
 
 pub(crate) fn append_glue_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    let s = st.scanner.cur_chr as i16;
+    let s = st.scanner.cur_chr;
     match s {
         0 => st.scanner.cur_val = FIL_GLUE.0,
         1 => st.scanner.cur_val = FILL_GLUE.0,
         2 => st.scanner.cur_val = SS_GLUE.0,
         3 => st.scanner.cur_val = FIL_NEG_GLUE.0,
         SKIP_CODE => crate::scan::scan_glue_in(st, GLUE_VAL)?,
-        MSKIP_CODE => crate::scan::scan_glue_in(st, MU_VAL_SCAN)?,
+        MSKIP_CODE => crate::scan::scan_glue_in(st, MU_VAL)?,
         _ => {}
     }
     let g = crate::mem::alloc_glue(&mut st.mem, st.scanner.cur_val)
@@ -2994,11 +2991,7 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         if q != REGISTER {
             crate::scan::get_x_token_in(st)?;
             if (ASSIGN_INT..=ASSIGN_MU_GLUE).contains(&st.scanner.cur_cmd) {
-                break 'found (
-                    st.scanner.cur_chr,
-                    (st.scanner.cur_cmd - ASSIGN_INT) as i16,
-                    false,
-                );
+                break 'found (st.scanner.cur_chr, (st.scanner.cur_cmd - ASSIGN_INT), false);
             }
             if st.scanner.cur_cmd != REGISTER {
                 crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
@@ -3015,13 +3008,13 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         }
         if !(0..=19).contains(&st.scanner.cur_chr) {
             let l = st.scanner.cur_chr;
-            break 'found (l, (st.mem.b16s1(l) / 64) as i16, true);
+            break 'found (l, (st.mem.b16s1(l) / 64) as u8, true);
         }
-        let p = st.scanner.cur_chr as i16;
+        let p = st.scanner.cur_chr as u8;
         crate::scan::scan_register_num_in(st)?;
         let n = st.scanner.cur_val;
         if n > 255 {
-            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, p as u16, n, true);
+            crate::save::find_sa_element(&mut st.mem, &mut st.scanner, p, n, true);
             break 'found (st.scanner.cur_ptr.0, p, true);
         }
         let base = match p {
@@ -3351,13 +3344,7 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
 /// The `\XeTeXinterchartoks` list for class pair `n`, if set. Leaves the
 /// pair's trie record, possibly null, in `cur_ptr`.
 fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<i32> {
-    crate::save::find_sa_element(
-        &mut st.mem,
-        &mut st.scanner,
-        INTER_CHAR_VAL as u16,
-        n,
-        false,
-    );
+    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, INTER_CHAR_VAL, n, false);
     let list = NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)?.sa_ptr(&st.mem);
     (!list.is_null()).then_some(list.0)
 }
@@ -4538,7 +4525,7 @@ fn find_inter_char_toks(st: &mut EngineState, w: bool) -> Result<(), MainControl
     st.scanner.cur_ptr.0 = st.scanner.cur_val;
     crate::scan::scan_char_class_not_ignored_in(st)?;
     let n = st.scanner.cur_ptr.0 * CHAR_CLASS_LIMIT + st.scanner.cur_val;
-    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, INTER_CHAR_VAL as u16, n, w)
+    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, INTER_CHAR_VAL, n, w)
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     Ok(())
 }
@@ -4873,15 +4860,15 @@ fn shorthand_def_in(st: &mut EngineState, global: bool) -> Result<(), MainContro
             crate::scan::scan_register_num_in(st)?;
             if st.scanner.cur_val > 255 {
                 let level = if n - 2 > MU_VAL as i32 {
-                    TOK_VAL as i32
+                    TOK_VAL
                 } else {
-                    n - 2
+                    (n - 2) as u8
                 };
                 let reg = st.scanner.cur_val;
-                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, level as u16, reg, true)
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, level, reg, true)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 add_sa_ref(&mut st.mem, st.scanner.cur_ptr);
-                let t = if level == TOK_VAL as i32 {
+                let t = if level == TOK_VAL {
                     TOKS_REGISTER
                 } else {
                     REGISTER
@@ -4912,14 +4899,8 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
             crate::scan::scan_register_num_in(st)?;
             if st.scanner.cur_val > 255 {
                 let reg = st.scanner.cur_val;
-                crate::save::find_sa_element(
-                    &mut st.mem,
-                    &mut st.scanner,
-                    TOK_VAL as u16,
-                    reg,
-                    true,
-                )
-                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+                crate::save::find_sa_element(&mut st.mem, &mut st.scanner, TOK_VAL, reg, true)
+                    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 st.scanner.cur_chr = st.scanner.cur_ptr.0;
                 e = true;
             } else {
@@ -4947,13 +4928,7 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
                     st.eqtb.b32s1(TOKS_BASE + st.scanner.cur_val)
                 } else {
                     let reg = st.scanner.cur_val;
-                    crate::save::find_sa_element(
-                        &mut st.mem,
-                        &mut st.scanner,
-                        TOK_VAL as u16,
-                        reg,
-                        false,
-                    );
+                    crate::save::find_sa_element(&mut st.mem, &mut st.scanner, TOK_VAL, reg, false);
                     cur_sa_ptr(st)
                 }
             } else {

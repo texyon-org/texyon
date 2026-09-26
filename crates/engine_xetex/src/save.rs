@@ -4,10 +4,10 @@ use crate::cmd::{BOX_REF, CALL, GLUE_REF, LONG_OUTER_CALL, REGISTER, SHAPE_REF, 
 use crate::consts::{
     EQTB_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::main_control::{DIMEN_VAL, MU_VAL};
 use crate::mem::{delete_glue_ref, delete_token_ref, free_node, get_node, ZERO_GLUE};
 use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
+use crate::scan::{DIMEN_VAL, MARK_VAL, MU_VAL};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 use crate::units::{MemAddr, MemIdx, MemPtr};
 
@@ -28,7 +28,6 @@ const WORD_NODE_SIZE: i32 = 3;
 const MARK_CLASS_NODE_SIZE: i32 = 4;
 const INDEX_NODE_SIZE: i32 = 33;
 
-const MARK_VAL: u16 = 7;
 const DIMEN_VAL_LIMIT: u16 = 128;
 const MU_VAL_LIMIT: u16 = 256;
 const BOX_VAL_LIMIT: u16 = 320;
@@ -646,7 +645,7 @@ fn add_sa_child(mem: &mut MemState, q: NodePtr<SaNode>, i: i32, p: NodePtr<SaNod
 fn sa_alloc_chain(
     mem: &mut MemState,
     scanner: &mut ScannerState,
-    t: u16,
+    t: u8,
     n: i32,
     mut q: NodePtr<SaNode>,
     levels: &[i32],
@@ -664,7 +663,7 @@ fn sa_alloc_chain(
         for k in 1..=3 {
             mem.set_word(p.idx().offset(k), scanner.sa_null);
         }
-    } else if t <= DIMEN_VAL as u16 {
+    } else if t <= DIMEN_VAL {
         p = sa(get_node(mem, WORD_NODE_SIZE)?);
         scanner.cur_ptr = p.ptr();
         p.set_sa_int(mem, 0);
@@ -673,7 +672,7 @@ fn sa_alloc_chain(
     } else {
         p = sa(get_node(mem, POINTER_NODE_SIZE)?);
         scanner.cur_ptr = p.ptr();
-        if t <= MU_VAL as u16 {
+        if t <= MU_VAL {
             p.set_sa_ptr(mem, ZERO_GLUE);
             crate::mem::add_glue_ref(mem, ZERO_GLUE);
         } else {
@@ -693,7 +692,7 @@ fn sa_alloc_chain(
 pub fn find_sa_element(
     mem: &mut MemState,
     scanner: &mut ScannerState,
-    t: u16,
+    t: u8,
     n: i32,
     w: bool,
 ) -> Option<()> {
@@ -703,7 +702,7 @@ pub fn find_sa_element(
         if !w {
             return Some(());
         }
-        let root = new_index(mem, scanner, t, MemPtr::NULL)?;
+        let root = new_index(mem, scanner, t.into(), MemPtr::NULL)?;
         scanner.sa_root[t as usize] = root.ptr();
         return sa_alloc_chain(mem, scanner, t, n, root, &levels);
     }

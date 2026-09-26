@@ -15,6 +15,7 @@ use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, InsNode, NodePtr, PageInsNode, SaNode, WhatsitSubtype,
 };
+use crate::scan::MARK_VAL;
 use crate::state::{EngineState, GroupCode, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -29,7 +30,6 @@ const PAGE_TOTAL: usize = 1;
 const PAGE_SHRINK: usize = 6;
 const PAGE_DEPTH: usize = 7;
 
-const MARK_VAL: usize = 7;
 const FIRE_UP_INIT: i16 = 1;
 const FIRE_UP_DONE: i16 = 2;
 const PAGE_INS_NODE_SIZE: i32 = 4;
@@ -184,7 +184,7 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
 fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<(), PageBuildAbort> {
     if class != 0 {
-        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, MARK_VAL as u16, class, true)
+        crate::save::find_sa_element(&mut st.mem, &mut st.scanner, MARK_VAL, class, true)
             .ok_or(PageBuildAbort::MainMemoryOverflow)?;
         let sa = NodePtr::<SaNode>::from_ptr(st.scanner.cur_ptr)
             .expect("find_sa_element returned a mark-class element");
@@ -293,9 +293,9 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         output_penalty,
     );
 
-    if let Some(root) = st.scanner.sa_root[MARK_VAL].as_idx() {
+    if let Some(root) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
         if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_INIT, 0, root) {
-            st.scanner.sa_root[MARK_VAL] = MemPtr::NULL;
+            st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
         }
     }
     if !st.scanner.cur_mark[BOT_MARK_CODE].is_null() {
@@ -438,9 +438,9 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     }
     PAGE_INS_HEAD.set_link(&mut st.mem, PAGE_INS_HEAD);
 
-    if let Some(root) = st.scanner.sa_root[MARK_VAL].as_idx() {
+    if let Some(root) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
         if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_DONE, 0, root) {
-            st.scanner.sa_root[MARK_VAL] = MemPtr::NULL;
+            st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
         }
     }
     let marks = &mut st.scanner.cur_mark;

@@ -9,12 +9,13 @@ use crate::consts::{
 };
 use crate::errors::ErrorOutcome;
 use crate::fonts::{effective_char, new_native_word_node};
+use crate::main_control::VSPLIT_CODE;
 use crate::mem::{get_avail, is_char_node, GARBAGE, TEMP_HEAD};
 use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, HasGlueSet, KernNode, MarkNode,
     NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::scan::NodeRecycleAbort;
+use crate::scan::{NodeRecycleAbort, BOX_VAL, MARK_VAL};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -55,9 +56,6 @@ const GLUE_PAR_LINE_SKIP: i16 = 0;
 const GLUE_PAR_BASELINE_SKIP: i16 = 1;
 const GLUE_PAR_SPLIT_TOP_SKIP: i16 = 10;
 
-const BOX_VAL: u16 = 4;
-const MARK_VAL: usize = 7;
-const VSPLIT_CODE: usize = 3;
 const SPLIT_FIRST_MARK_CODE: usize = 3;
 const SPLIT_BOT_MARK_CODE: usize = 4;
 const VSPLIT_INIT: i16 = 0;
@@ -1008,12 +1006,13 @@ fn reset_vsplit_marks(
     mem: &mut MemState,
     scanner: &mut ScannerState,
 ) -> Result<(), NodeRecycleAbort> {
-    flush_node_list(mem, scanner.disc_ptr[VSPLIT_CODE]).map_err(NodeRecycleAbort::Confusion)?;
-    scanner.disc_ptr[VSPLIT_CODE] = MemPtr::NULL;
+    flush_node_list(mem, scanner.disc_ptr[VSPLIT_CODE as usize])
+        .map_err(NodeRecycleAbort::Confusion)?;
+    scanner.disc_ptr[VSPLIT_CODE as usize] = MemPtr::NULL;
 
-    if let Some(root) = scanner.sa_root[MARK_VAL].as_idx() {
+    if let Some(root) = scanner.sa_root[MARK_VAL as usize].as_idx() {
         if do_marks(mem, scanner, VSPLIT_INIT, 0, root) {
-            scanner.sa_root[MARK_VAL] = MemPtr::NULL;
+            scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
         }
     }
 
@@ -1068,7 +1067,7 @@ fn collect_split_mark(
     let mark_class = mark.mark_class(mem);
     let mark_ptr = mark.mark_ptr(mem);
     if mark_class != 0 {
-        crate::save::find_sa_element(mem, scanner, MARK_VAL as u16, mark_class, true)
+        crate::save::find_sa_element(mem, scanner, MARK_VAL, mark_class, true)
             .ok_or(NodeRecycleAbort::Overflow)?;
         let element =
             NodePtr::<SaNode>::from_ptr(scanner.cur_ptr).expect("find_sa_element creates it");
@@ -1319,8 +1318,8 @@ fn prune_discard_node(
     node.set_link(mem, MemPtr::NULL);
     prev_p.set_link(mem, q);
     if save_discards {
-        if scanner.disc_ptr[VSPLIT_CODE].is_null() {
-            scanner.disc_ptr[VSPLIT_CODE] = node;
+        if scanner.disc_ptr[VSPLIT_CODE as usize].is_null() {
+            scanner.disc_ptr[VSPLIT_CODE as usize] = node;
         } else {
             r.set_link(mem, node);
         }

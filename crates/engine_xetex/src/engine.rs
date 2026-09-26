@@ -23,16 +23,19 @@ use crate::consts::{
     UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::EngineAbort;
+use crate::expand::IF_NODE_SIZE;
 use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_BASE, HASH_OFFSET, HASH_PRIME, HASH_SIZE, PRIM_SIZE};
 use crate::hyphenation::TRIE_OP_SIZE;
 use crate::io::init_io;
+use crate::main_control::{LAST_BOX_CODE, VSPLIT_CODE};
 use crate::mem::{
     xmalloc, ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, NULL_LIST,
     OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD,
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{GlueSpecNode, NodePtr};
+use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -51,8 +54,6 @@ const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80;
 
 const HISTORY_WARNING_ISSUED: i32 = 1;
 
-const IF_NODE_SIZE: i32 = 2;
-
 const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
 const FROZEN_END_TEMPLATE: i32 = FROZEN_CONTROL_SEQUENCE + 5;
 const END_WRITE: i32 = FROZEN_CONTROL_SEQUENCE + 8;
@@ -68,11 +69,6 @@ const EMPTY: u8 = 0;
 
 const TOP_MARK_CODE: usize = 0;
 const SPLIT_BOT_MARK_CODE: usize = 4;
-const LAST_BOX_CODE: usize = 2;
-const VSPLIT_CODE: usize = 3;
-pub(crate) const INT_VAL: u8 = 0;
-pub(crate) const INTER_CHAR_VAL: usize = 6;
-const MARK_VAL: usize = 7;
 
 const LOCAL_OUTPUT_ROUTINE: i32 = 1;
 const NUM_ETEX_PENALTIES: i32 = 4;
@@ -336,13 +332,13 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
         }
     }
 
-    if let Some(marks) = st.scanner.sa_root[MARK_VAL].as_idx() {
+    if let Some(marks) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
         if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, 3, 0, marks) {
-            st.scanner.sa_root[MARK_VAL] = MemPtr::NULL;
+            st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
         }
     }
 
-    for box_code in LAST_BOX_CODE..=VSPLIT_CODE {
+    for box_code in LAST_BOX_CODE as usize..=VSPLIT_CODE as usize {
         crate::packaging::flush_node_list(&mut st.mem, st.scanner.disc_ptr[box_code])
             .map_err(|msg| EngineAbort::Confusion(msg.as_ptr()))?;
     }
@@ -482,7 +478,7 @@ fn initialize_more_variables_in(st: &mut EngineState) {
     st.scanner.lr_problems = 0;
     st.scanner.cur_dir = LEFT_TO_RIGHT;
     st.input.pseudo_files.0 = TEX_NULL;
-    st.scanner.sa_root[MARK_VAL] = MemPtr::NULL;
+    st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
     st.scanner.sa_null = MemoryWord {
         b32: B32x2 {
             s0: TEX_NULL,
@@ -491,8 +487,8 @@ fn initialize_more_variables_in(st: &mut EngineState) {
     };
     st.scanner.sa_chain.0 = TEX_NULL;
     st.scanner.sa_level = LEVEL_ZERO;
-    st.scanner.disc_ptr[LAST_BOX_CODE] = MemPtr::NULL;
-    st.scanner.disc_ptr[VSPLIT_CODE] = MemPtr::NULL;
+    st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
+    st.scanner.disc_ptr[VSPLIT_CODE as usize] = MemPtr::NULL;
     st.strings.edit_name_start = 0;
     st.scanner.stop_at_space = true;
 }
@@ -682,7 +678,7 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
 
     st.scanner.max_reg_num = 32767;
     st.scanner.max_reg_help_line = REGISTER_HELP.as_ptr();
-    st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL].fill(MemPtr::NULL);
+    st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize].fill(MemPtr::NULL);
 
     st.eqtb
         .set_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);

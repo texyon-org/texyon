@@ -34,15 +34,57 @@ use crate::consts::{
     UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, UNLESS_CODE, VMODE, WRITE_TEXT,
 };
 use crate::errors::{error_in, ErrorOutcome, ERR_HELP_LOC};
+use crate::expand::{
+    ETEX_REVISION_CODE, EXPANDED_CODE, FONT_NAME_CODE, IFX_CODE, IF_CASE_CODE, IF_CAT_CODE,
+    IF_CS_CODE, IF_DEF_CODE, IF_DIM_CODE, IF_EOF_CODE, IF_FALSE_CODE, IF_FONT_CHAR_CODE,
+    IF_HBOX_CODE, IF_HMODE_CODE, IF_INNER_CODE, IF_INT_CODE, IF_IN_CSNAME_CODE, IF_MMODE_CODE,
+    IF_ODD_CODE, IF_PRIMITIVE_CODE, IF_TRUE_CODE, IF_VBOX_CODE, IF_VMODE_CODE, IF_VOID_CODE,
+    LEFT_MARGIN_KERN_CODE, MARKS_CODE, MEANING_CODE, NORMAL_DEVIATE_CODE, NUMBER_CODE,
+    PDF_CREATION_DATE_CODE, PDF_FILE_DUMP_CODE, PDF_FILE_MOD_DATE_CODE, PDF_FILE_SIZE_CODE,
+    PDF_MDFIVE_SUM_CODE, PDF_STRCMP_CODE, RIGHT_MARGIN_KERN_CODE, ROMAN_NUMERAL_CODE, STRING_CODE,
+    UNIFORM_DEVIATE_CODE, XETEX_FEATURE_NAME_CODE, XETEX_GLYPH_NAME_CODE, XETEX_REVISION_CODE,
+    XETEX_SELECTOR_NAME_CODE, XETEX_UCHARCAT_CODE, XETEX_UCHAR_CODE, XETEX_VARIATION_NAME_CODE,
+};
+use crate::ext::{
+    CLOSE_NODE, GLYPH_CODE, IMMEDIATE_CODE, OPEN_NODE, PDF_FILE_CODE, PDF_SAVE_POS_NODE,
+    PIC_FILE_CODE, RESET_TIMER_CODE, SET_LANGUAGE_CODE, SET_RANDOM_SEED_CODE, SPECIAL_NODE,
+    WRITE_NODE, XETEX_DEFAULT_ENCODING_EXTENSION_CODE, XETEX_INPUT_ENCODING_EXTENSION_CODE,
+    XETEX_LINEBREAK_LOCALE_EXTENSION_CODE,
+};
 use crate::hash::HASH_BASE;
 use crate::input::{
     EVERY_EOF_TEXT, MACRO, MARK_TEXT, PARAMETER, TECTONIC_CODA_TEXT, U_TEMPLATE, V_TEMPLATE,
+};
+use crate::main_control::{
+    BOX_CODE, BOX_FLAG, CHAR_DEF_CODE, CHAR_SUB_DEF_CODE, COPY_CODE, COUNT_DEF_CODE, CR_CODE,
+    DIMEN_DEF_CODE, GLOBAL_BOX_FLAG, LAST_BOX_CODE, LEADER_FLAG, LP_CODE_BASE, MATH_CHAR_DEF_CODE,
+    MU_SKIP_DEF_CODE, RP_CODE_BASE, SHIP_OUT_FLAG, SKIP_CODE, SKIP_DEF_CODE, SPAN_CODE,
+    VSPLIT_CODE, VTOP_CODE, XETEX_MATH_CHAR_DEF_CODE, XETEX_MATH_CHAR_NUM_DEF_CODE,
 };
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::scan::{AAT_FONT_FLAG, BIGGEST_USV, MAX_CHAR_VAL, OTGR_FONT_FLAG, PROTECTED_TOKEN};
+use crate::scan::{
+    AAT_FONT_FLAG, BIGGEST_USV, CURRENT_GROUP_LEVEL_CODE, CURRENT_GROUP_TYPE_CODE,
+    CURRENT_IF_BRANCH_CODE, CURRENT_IF_LEVEL_CODE, CURRENT_IF_TYPE_CODE, DIMEN_VAL,
+    ELAPSED_TIME_CODE, ETEX_EXPR, ETEX_VERSION_CODE, FONT_CHAR_DP_CODE, FONT_CHAR_HT_CODE,
+    FONT_CHAR_IC_CODE, FONT_CHAR_WD_CODE, GLUE_SHRINK_CODE, GLUE_SHRINK_ORDER_CODE,
+    GLUE_STRETCH_CODE, GLUE_STRETCH_ORDER_CODE, GLUE_TO_MU_CODE, GLUE_VAL, HEIGHT_OFFSET,
+    INPUT_LINE_NO_CODE, INT_VAL, LAST_NODE_TYPE_CODE, MAX_CHAR_VAL, MU_TO_GLUE_CODE, MU_VAL,
+    OTGR_FONT_FLAG, PAR_SHAPE_DIMEN_CODE, PAR_SHAPE_INDENT_CODE, PAR_SHAPE_LENGTH_CODE,
+    PDF_LAST_X_POS_CODE, PDF_LAST_Y_POS_CODE, PDF_SHELL_ESCAPE_CODE, PROTECTED_TOKEN,
+    RANDOM_SEED_CODE, WIDTH_OFFSET, XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE,
+    XETEX_COUNT_SELECTORS_CODE, XETEX_COUNT_VARIATIONS_CODE, XETEX_FEATURE_CODE_CODE,
+    XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
+    XETEX_FIND_VARIATION_BY_NAME_CODE, XETEX_FIRST_CHAR_CODE, XETEX_FONT_TYPE_CODE,
+    XETEX_GLYPH_BOUNDS_CODE, XETEX_GLYPH_INDEX_CODE, XETEX_IS_DEFAULT_SELECTOR_CODE,
+    XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_LAST_CHAR_CODE, XETEX_MAP_CHAR_TO_GLYPH_CODE,
+    XETEX_OT_COUNT_FEATURES_CODE, XETEX_OT_COUNT_LANGUAGES_CODE, XETEX_OT_COUNT_SCRIPTS_CODE,
+    XETEX_OT_FEATURE_CODE, XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_PDF_PAGE_COUNT_CODE,
+    XETEX_SELECTOR_CODE_CODE, XETEX_VARIATION_CODE, XETEX_VARIATION_DEFAULT_CODE,
+    XETEX_VARIATION_MAX_CODE, XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
+};
 use crate::state::{EngineState, GroupCode, InteractionMode};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType};
 
@@ -1066,145 +1108,16 @@ fn print_mark_in(st: &mut EngineState, p: MemPtr) {
 }
 
 // Sub-codes of \lastitem.
-const INT_VAL: i32 = 0;
-const DIMEN_VAL: i32 = 1;
-const GLUE_VAL: i32 = 2;
-const MU_VAL: i32 = 3;
-const LAST_NODE_TYPE_CODE: i32 = 3;
-const INPUT_LINE_NO_CODE: i32 = 4;
-const PDF_LAST_X_POS_CODE: i32 = 12;
-const PDF_LAST_Y_POS_CODE: i32 = 13;
-const ELAPSED_TIME_CODE: i32 = 16;
-const PDF_SHELL_ESCAPE_CODE: i32 = 17;
-const RANDOM_SEED_CODE: i32 = 18;
-const ETEX_VERSION_CODE: i32 = 19;
-const CURRENT_GROUP_LEVEL_CODE: i32 = 20;
-const CURRENT_GROUP_TYPE_CODE: i32 = 21;
-const CURRENT_IF_LEVEL_CODE: i32 = 22;
-const CURRENT_IF_TYPE_CODE: i32 = 23;
-const CURRENT_IF_BRANCH_CODE: i32 = 24;
-const GLUE_STRETCH_ORDER_CODE: i32 = 25;
-const GLUE_SHRINK_ORDER_CODE: i32 = 26;
-const XETEX_VERSION_CODE: i32 = 27;
-const XETEX_COUNT_GLYPHS_CODE: i32 = 28;
-const XETEX_COUNT_VARIATIONS_CODE: i32 = 29;
-const XETEX_VARIATION_CODE: i32 = 30;
-const XETEX_FIND_VARIATION_BY_NAME_CODE: i32 = 31;
-const XETEX_VARIATION_MIN_CODE: i32 = 32;
-const XETEX_VARIATION_MAX_CODE: i32 = 33;
-const XETEX_VARIATION_DEFAULT_CODE: i32 = 34;
-const XETEX_COUNT_FEATURES_CODE: i32 = 35;
-const XETEX_FEATURE_CODE_CODE: i32 = 36;
-const XETEX_FIND_FEATURE_BY_NAME_CODE: i32 = 37;
-const XETEX_IS_EXCLUSIVE_FEATURE_CODE: i32 = 38;
-const XETEX_COUNT_SELECTORS_CODE: i32 = 39;
-const XETEX_SELECTOR_CODE_CODE: i32 = 40;
-const XETEX_FIND_SELECTOR_BY_NAME_CODE: i32 = 41;
-const XETEX_IS_DEFAULT_SELECTOR_CODE: i32 = 42;
-const XETEX_OT_COUNT_SCRIPTS_CODE: i32 = 43;
-const XETEX_OT_COUNT_LANGUAGES_CODE: i32 = 44;
-const XETEX_OT_COUNT_FEATURES_CODE: i32 = 45;
-const XETEX_OT_SCRIPT_CODE: i32 = 46;
-const XETEX_OT_LANGUAGE_CODE: i32 = 47;
-const XETEX_OT_FEATURE_CODE: i32 = 48;
-const XETEX_MAP_CHAR_TO_GLYPH_CODE: i32 = 49;
-const XETEX_GLYPH_INDEX_CODE: i32 = 50;
-const XETEX_FONT_TYPE_CODE: i32 = 51;
-const XETEX_FIRST_CHAR_CODE: i32 = 52;
-const XETEX_LAST_CHAR_CODE: i32 = 53;
-const XETEX_PDF_PAGE_COUNT_CODE: i32 = 54;
-const XETEX_GLYPH_BOUNDS_CODE: i32 = 55;
-const FONT_CHAR_WD_CODE: i32 = 56;
-const FONT_CHAR_HT_CODE: i32 = 57;
-const FONT_CHAR_DP_CODE: i32 = 58;
-const FONT_CHAR_IC_CODE: i32 = 59;
-const PAR_SHAPE_LENGTH_CODE: i32 = 60;
-const PAR_SHAPE_INDENT_CODE: i32 = 61;
-const PAR_SHAPE_DIMEN_CODE: i32 = 62;
-const GLUE_STRETCH_CODE: i32 = 63;
-const GLUE_SHRINK_CODE: i32 = 64;
-const MU_TO_GLUE_CODE: i32 = 65;
-const GLUE_TO_MU_CODE: i32 = 66;
-const ETEX_EXPR: i32 = 67;
 
 // Sub-codes of \convert.
-const NUMBER_CODE: i32 = 0;
-const ROMAN_NUMERAL_CODE: i32 = 1;
-const STRING_CODE: i32 = 2;
-const MEANING_CODE: i32 = 3;
-const FONT_NAME_CODE: i32 = 4;
-const ETEX_REVISION_CODE: i32 = 5;
-const EXPANDED_CODE: i32 = 6;
-const LEFT_MARGIN_KERN_CODE: i32 = 16;
-const RIGHT_MARGIN_KERN_CODE: i32 = 17;
-const PDF_STRCMP_CODE: i32 = 18;
-const PDF_CREATION_DATE_CODE: i32 = 22;
-const PDF_FILE_MOD_DATE_CODE: i32 = 23;
-const PDF_FILE_SIZE_CODE: i32 = 24;
-const PDF_MDFIVE_SUM_CODE: i32 = 25;
-const PDF_FILE_DUMP_CODE: i32 = 26;
-const UNIFORM_DEVIATE_CODE: i32 = 29;
-const NORMAL_DEVIATE_CODE: i32 = 30;
-const XETEX_REVISION_CODE: i32 = 33;
-const XETEX_VARIATION_NAME_CODE: i32 = 34;
-const XETEX_FEATURE_NAME_CODE: i32 = 35;
-const XETEX_SELECTOR_NAME_CODE: i32 = 36;
-const XETEX_GLYPH_NAME_CODE: i32 = 37;
-const XETEX_UCHAR_CODE: i32 = 38;
-const XETEX_UCHARCAT_CODE: i32 = 39;
 
 // Sub-codes of \if tests.
-const IF_CAT_CODE: i32 = 1;
-const IF_INT_CODE: i32 = 2;
-const IF_DIM_CODE: i32 = 3;
-const IF_ODD_CODE: i32 = 4;
-const IF_VMODE_CODE: i32 = 5;
-const IF_HMODE_CODE: i32 = 6;
-const IF_MMODE_CODE: i32 = 7;
-const IF_INNER_CODE: i32 = 8;
-const IF_VOID_CODE: i32 = 9;
-const IF_HBOX_CODE: i32 = 10;
-const IF_VBOX_CODE: i32 = 11;
-const IFX_CODE: i32 = 12;
-const IF_EOF_CODE: i32 = 13;
-const IF_TRUE_CODE: i32 = 14;
-const IF_FALSE_CODE: i32 = 15;
-const IF_CASE_CODE: i32 = 16;
-const IF_DEF_CODE: i32 = 17;
-const IF_CS_CODE: i32 = 18;
-const IF_FONT_CHAR_CODE: i32 = 19;
-const IF_IN_CSNAME_CODE: i32 = 20;
-const IF_PRIMITIVE_CODE: i32 = 21;
 
 // Sub-codes of \extension.
-const OPEN_NODE: i32 = WhatsitSubtype::Open as i32;
-const WRITE_NODE: i32 = WhatsitSubtype::Write as i32;
-const CLOSE_NODE: i32 = WhatsitSubtype::Close as i32;
-const SPECIAL_NODE: i32 = WhatsitSubtype::Special as i32;
-const IMMEDIATE_CODE: i32 = 4;
-const SET_LANGUAGE_CODE: i32 = 5;
-const PDF_SAVE_POS_NODE: i32 = WhatsitSubtype::PdfSavePos as i32;
-const RESET_TIMER_CODE: i32 = 31;
-const SET_RANDOM_SEED_CODE: i32 = 33;
-const PIC_FILE_CODE: i32 = 41;
-const PDF_FILE_CODE: i32 = 42;
-const GLYPH_CODE: i32 = 43;
-const XETEX_INPUT_ENCODING_EXTENSION_CODE: i32 = 44;
-const XETEX_DEFAULT_ENCODING_EXTENSION_CODE: i32 = 45;
-const XETEX_LINEBREAK_LOCALE_EXTENSION_CODE: i32 = 46;
 
-const MARKS_CODE: i32 = 5;
-const BOX_CODE: i32 = 0;
-const COPY_CODE: i32 = 1;
-const LAST_BOX_CODE: i32 = 2;
-const VSPLIT_CODE: i32 = 3;
-const VTOP_CODE: i32 = 4;
 const FIL_CODE: i32 = 0;
 const FILL_CODE: i32 = 1;
 const SS_CODE: i32 = 2;
-const SKIP_CODE: i32 = 4;
-const WIDTH_OFFSET: i32 = 1;
-const HEIGHT_OFFSET: i32 = 3;
 const BEGIN_L_CODE: i32 = 6;
 const END_L_CODE: i32 = 7;
 const BEGIN_R_CODE: i32 = 10;
@@ -1215,25 +1128,12 @@ const OVER_CODE: i32 = 1;
 const ATOP_CODE: i32 = 2;
 const DELIMITED_CODE: i32 = 3;
 const MIDDLE_NOAD: i32 = 1;
-const CHAR_DEF_CODE: i32 = 0;
-const MATH_CHAR_DEF_CODE: i32 = 1;
-const COUNT_DEF_CODE: i32 = 2;
-const DIMEN_DEF_CODE: i32 = 3;
-const SKIP_DEF_CODE: i32 = 4;
-const MU_SKIP_DEF_CODE: i32 = 5;
-const CHAR_SUB_DEF_CODE: i32 = 7;
-const XETEX_MATH_CHAR_NUM_DEF_CODE: i32 = 8;
-const XETEX_MATH_CHAR_DEF_CODE: i32 = 9;
-const SPAN_CODE: i32 = 1_114_113;
-const CR_CODE: i32 = 1_114_114;
 const SHOW_BOX_CODE: i32 = 1;
 const SHOW_THE_CODE: i32 = 2;
 const SHOW_LISTS: i32 = 3;
 const SHOW_GROUPS: i32 = 4;
 const SHOW_TOKENS: i32 = 5;
 const SHOW_IFS: i32 = 6;
-const LP_CODE_BASE: i32 = 2;
-const RP_CODE_BASE: i32 = 3;
 
 pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
     let char_cmd = |st: &mut EngineState, s: &CStr| {
@@ -1462,7 +1362,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             } else {
                 NodePtr::<SaNode>::from_ptr(MemPtr(chr_code))
             };
-            let the_cmd = sa.map_or(chr_code, |q| q.sa_type(&st.mem) as i32);
+            let the_cmd = sa.map_or(chr_code as u8, |q| q.sa_type(&st.mem) as u8);
             let name = match the_cmd {
                 INT_VAL => c"count",
                 DIMEN_VAL => c"dimen",
@@ -1500,9 +1400,9 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         ),
         LAST_ITEM => {
             let name = match chr_code {
-                INT_VAL => c"lastpenalty",
-                DIMEN_VAL => c"lastkern",
-                GLUE_VAL => c"lastskip",
+                x if x == INT_VAL as i32 => c"lastpenalty",
+                x if x == DIMEN_VAL as i32 => c"lastkern",
+                x if x == GLUE_VAL as i32 => c"lastskip",
                 INPUT_LINE_NO_CODE => c"inputlineno",
                 LAST_NODE_TYPE_CODE => c"lastnodetype",
                 ETEX_VERSION_CODE => c"eTeXversion",
@@ -1547,10 +1447,10 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 PAR_SHAPE_LENGTH_CODE => c"parshapelength",
                 PAR_SHAPE_INDENT_CODE => c"parshapeindent",
                 PAR_SHAPE_DIMEN_CODE => c"parshapedimen",
-                x if x == ETEX_EXPR + INT_VAL => c"numexpr",
-                x if x == ETEX_EXPR + DIMEN_VAL => c"dimexpr",
-                x if x == ETEX_EXPR + GLUE_VAL => c"glueexpr",
-                x if x == ETEX_EXPR + MU_VAL => c"muexpr",
+                x if x == ETEX_EXPR + INT_VAL as i32 => c"numexpr",
+                x if x == ETEX_EXPR + DIMEN_VAL as i32 => c"dimexpr",
+                x if x == ETEX_EXPR + GLUE_VAL as i32 => c"glueexpr",
+                x if x == ETEX_EXPR + MU_VAL as i32 => c"muexpr",
                 GLUE_STRETCH_ORDER_CODE => c"gluestretchorder",
                 GLUE_SHRINK_ORDER_CODE => c"glueshrinkorder",
                 GLUE_STRETCH_CODE => c"gluestretch",
@@ -1600,7 +1500,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             if chr_code >= UNLESS_CODE {
                 esc(st, c"unless");
             }
-            let name = match chr_code % UNLESS_CODE {
+            let name = match (chr_code % UNLESS_CODE) as i16 {
                 IF_CAT_CODE => c"ifcat",
                 IF_INT_CODE => c"ifnum",
                 IF_DIM_CODE => c"ifdim",
@@ -2480,10 +2380,6 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
 
 pub(crate) fn show_save_groups_in(st: &mut EngineState) {
     const EXACTLY: i32 = 0;
-    const BOX_FLAG: i32 = 0x4000_0000;
-    const GLOBAL_BOX_FLAG: i32 = 0x4000_8000;
-    const SHIP_OUT_FLAG: i32 = 0x4001_0000;
-    const LEADER_FLAG: i32 = 0x4001_0001;
 
     // Where the tex.web `found1`/`found2`/`found` label chain is entered.
     enum Entry {

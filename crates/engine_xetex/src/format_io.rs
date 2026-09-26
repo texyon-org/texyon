@@ -16,14 +16,15 @@ use crate::consts::{
     SELECTOR_TERM_AND_LOG, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{
-    alloc_font_arrays, set_eq, sort_avail_in, HYPH_PRIME, INTER_CHAR_VAL, INT_VAL, POOL_FREE,
-    REGISTER_HELP, STRINGS_FREE, TEX_FORMAT_DEFAULT,
+    alloc_font_arrays, set_eq, sort_avail_in, HYPH_PRIME, POOL_FREE, REGISTER_HELP, STRINGS_FREE,
+    TEX_FORMAT_DEFAULT,
 };
 use crate::errors::EngineAbort;
 use crate::hash::{HASH_BASE, HASH_OFFSET, HASH_PRIME, PRIM_SIZE};
 use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::io::name_of_file_ptr;
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
+use crate::scan::{INTER_CHAR_VAL, INT_VAL};
 use crate::state::{EngineState, EqtbState, InteractionMode};
 
 const INT_PAR_TRACING_STATS: i32 = 31;
@@ -319,7 +320,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     dump_int(fmt_out, lo_mem_max)?;
     dump_int(fmt_out, rover)?;
 
-    for root in &st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL] {
+    for root in &st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize] {
         dump_int(fmt_out, root.0)?;
     }
 
@@ -673,7 +674,7 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
     mem.lo_mem_max = undump_in_range(fmt_in, 1019, MEM_TOP - HI_MEM_STAT_USAGE)?;
     mem.rover = undump_in_range(fmt_in, 20, mem.lo_mem_max)?;
 
-    for root in &mut st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL] {
+    for root in &mut st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize] {
         root.0 = undump_in_range(fmt_in, MIN_HALFWORD, mem.lo_mem_max)?;
     }
 
