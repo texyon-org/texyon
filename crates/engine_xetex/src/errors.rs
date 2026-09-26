@@ -2,8 +2,8 @@ use std::ffi::CStr;
 
 use crate::bridge::ttstub_output_flush;
 use crate::consts::{
-    BOX_BASE, HISTORY_FATAL_ERROR, LOCAL_BASE, MEM_TOP, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
-    TEX_NULL,
+    BOX_BASE, HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, LOCAL_BASE, LOCAL_ERR_HELP, MEM_TOP,
+    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, TEX_NULL,
 };
 use crate::mem::{HOLD_HEAD, TEMP_HEAD};
 use crate::output::{
@@ -15,8 +15,7 @@ use crate::output::{
 use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
 
-const HISTORY_ERROR_ISSUED: i32 = 2;
-pub(crate) const ERR_HELP_LOC: i32 = LOCAL_BASE + 9;
+pub(crate) const ERR_HELP_LOC: i32 = LOCAL_BASE + LOCAL_ERR_HELP;
 
 extern "C" {
     fn _ttbc_set_error_message(message: *const libc::c_char);

@@ -245,7 +245,7 @@ impl NodeType {
 
     /// The raw `b16.s1` code for this node type (zero-cost: `self as u16`).
     #[inline]
-    pub fn as_raw(self) -> u16 {
+    pub const fn as_raw(self) -> u16 {
         self as u16
     }
 }
@@ -275,7 +275,7 @@ impl GlueSign {
 
     /// The raw `b16.s1` code for this glue sign (zero-cost: `self as u16`).
     #[inline]
-    pub fn as_raw(self) -> u16 {
+    pub const fn as_raw(self) -> u16 {
         self as u16
     }
 }

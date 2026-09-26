@@ -12,20 +12,20 @@ use crate::cmd::{
 };
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE, CAT_CODE_BASE,
-    CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE,
-    END_M_CODE, EQTB_SIZE, FIL, FILLL, FI_CODE, FONT_BASE, FONT_ID_BASE, FROZEN_CONTROL_SEQUENCE,
-    FROZEN_CR, FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX, INT_BASE,
+    CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, END_M_CODE,
+    EQTB_SIZE, FIL, FILLL, FONT_BASE, FONT_ID_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_CR,
+    FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX, INT_BASE,
     INT_PAR_CUR_FAM, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR,
     INT_PAR_TRACING_IFS, INT_PAR_TRACING_NESTING, INT_PAR_TRACING_SCAN_TOKENS,
     INT_PAR_XETEX_HYPHENATABLE_LENGTH, JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF,
     LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA, LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE,
-    MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS, NUMBER_MATH_FAMILIES, OR_CODE,
+    MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS, NUMBER_MATH_FAMILIES,
     PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SF_CODE_BASE,
     SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE,
     UNLESS_CODE, VMODE,
 };
 use crate::errors::{error_in, int_error_in, mu_error_in};
-use crate::expand::{expand_in, macro_call_in};
+use crate::expand::{expand_in, macro_call_in, ELSE_CODE, FI_CODE, OR_CODE};
 use crate::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
     gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
@@ -101,8 +101,6 @@ pub(crate) const NO_EXPAND_FLAG: i32 = BIGGEST_USV + 2;
 const DEFAULT_RULE: i32 = 26214;
 
 const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095;
-
-const UNSET_NODE: u16 = 13;
 const ETEX_VERSION: i32 = 2;
 const XETEX_VERSION: i32 = 0;
 
@@ -3465,10 +3463,10 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
     match node {
         Some(_) if st.input.cur_list.mode != 0 && want_type => {
             let node_type = st.mem.b16s1(tx);
-            st.scanner.cur_val = if node_type <= UNSET_NODE {
+            st.scanner.cur_val = if node_type <= NodeType::Unset.as_raw() {
                 node_type as i32 + 1
             } else {
-                UNSET_NODE as i32 + 2
+                NodeType::Unset.as_raw() as i32 + 2
             };
         }
         Some(node) if st.input.cur_list.mode != 0 => match (level, node) {

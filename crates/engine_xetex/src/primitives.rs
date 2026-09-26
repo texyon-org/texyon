@@ -19,9 +19,10 @@ use crate::cmd::{
 };
 
 use crate::consts::{
-    CAT_CODE_BASE, DEL_CODE_BASE, DIMEN_BASE, ETEX_PEN_BASE, FROZEN_CONTROL_SEQUENCE,
-    FROZEN_NULL_FONT, FROZEN_RELAX, GLUE_BASE, INT_BASE, LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE,
-    MATH_FONT_BASE, NUMBER_USVS, SF_CODE_BASE, UC_CODE_BASE,
+    CAT_CODE_BASE, DEL_CODE_BASE, DIMEN_BASE, ETEX_PEN_BASE, FROZEN_CR, FROZEN_END_GROUP,
+    FROZEN_FI, FROZEN_NULL_FONT, FROZEN_RELAX, FROZEN_RIGHT, FROZEN_SPECIAL, GLUE_BASE, INT_BASE,
+    LC_CODE_BASE, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE, NUMBER_USVS, SF_CODE_BASE,
+    UC_CODE_BASE,
 };
 
 /// Extra setup `initialize_primitives` runs after defining a primitive.
@@ -60,7 +61,7 @@ impl PrimitiveDef {
 pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p(c"relax", RELAX, NUMBER_USVS).init(PrimInit::Frozen(FROZEN_RELAX)),
     p(c"span", TAB_MARK, NUMBER_USVS + 1),
-    p(c"cr", CAR_RET, NUMBER_USVS + 2).init(PrimInit::Frozen(FROZEN_CONTROL_SEQUENCE + 1)),
+    p(c"cr", CAR_RET, NUMBER_USVS + 2).init(PrimInit::Frozen(FROZEN_CR)),
     p(c"crcr", CAR_RET, NUMBER_USVS + 3),
     p(c"par", PAR_END, NUMBER_USVS).init(PrimInit::Par),
     p(c"end", STOP, 0),
@@ -148,7 +149,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p(c"leqno", EQ_NO, 1),
     p(c"middle", LEFT_RIGHT, 1),
     p(c"left", LEFT_RIGHT, 30),
-    p(c"right", LEFT_RIGHT, 31).init(PrimInit::Frozen(FROZEN_CONTROL_SEQUENCE + 3)),
+    p(c"right", LEFT_RIGHT, 31).init(PrimInit::Frozen(FROZEN_RIGHT)),
     p(c"mathord", MATH_COMP, 16),
     p(c"mathop", MATH_COMP, 17),
     p(c"mathbin", MATH_COMP, 18),
@@ -182,7 +183,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p(c"openout", EXTENSION, 0),
     p(c"write", EXTENSION, 1).init(PrimInit::Write),
     p(c"closeout", EXTENSION, 2),
-    p(c"special", EXTENSION, 3).init(PrimInit::Frozen(FROZEN_CONTROL_SEQUENCE + 10)),
+    p(c"special", EXTENSION, 3).init(PrimInit::Frozen(FROZEN_SPECIAL)),
     p(c"immediate", EXTENSION, 4),
     p(c"setlanguage", EXTENSION, 5),
     p(c"pdfsavepos", EXTENSION, 21),
@@ -197,7 +198,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p(c"closein", IN_STREAM, 0),
     p(c"openin", IN_STREAM, 1),
     p(c"begingroup", BEGIN_GROUP, 0),
-    p(c"endgroup", END_GROUP, 0).init(PrimInit::Frozen(FROZEN_CONTROL_SEQUENCE + 2)),
+    p(c"endgroup", END_GROUP, 0).init(PrimInit::Frozen(FROZEN_END_GROUP)),
     p(c"omit", OMIT, 0),
     p(c" ", EX_SPACE, 0),
     p(c"noboundary", NO_BOUNDARY, 0),
@@ -377,7 +378,7 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p(c"iffontchar", IF_TEST, 19),
     p(c"ifincsname", IF_TEST, 20),
     p(c"ifprimitive", IF_TEST, 21),
-    p(c"fi", FI_OR_ELSE, 2).init(PrimInit::Frozen(FROZEN_CONTROL_SEQUENCE + 4)),
+    p(c"fi", FI_OR_ELSE, 2).init(PrimInit::Frozen(FROZEN_FI)),
     p(c"else", FI_OR_ELSE, 3),
     p(c"or", FI_OR_ELSE, 4),
     p(c"csname", CS_NAME, 0),

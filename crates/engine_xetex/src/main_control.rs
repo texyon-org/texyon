@@ -8,7 +8,7 @@ use crate::consts::{
     DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_OVERFULL_RULE,
     DIMEN_PAR_PAR_INDENT, DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE,
     EXPLICIT, FONT_BASE, FONT_ID_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE,
-    FROZEN_RIGHT, GLUE_BASE, GLUE_NODE, GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP,
+    FROZEN_RIGHT, GLUE_BASE, GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP,
     GLUE_PAR_PAR_SKIP, GLUE_PAR_SPACE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TAB_SKIP,
     GLUE_PAR_XSPACE_SKIP, HASH_BASE, HMODE, IGNORE_DEPTH, INT_BASE, INT_PAR_FLOATING_PENALTY,
     INT_PAR_GLOBAL_DEFS, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN,
@@ -16,14 +16,13 @@ use crate::consts::{
     INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_LOST_CHARS,
     INT_PAR_XETEX_DASH_BREAK, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING,
     INT_PAR_XETEX_INTER_CHAR_TOKENS, INT_PAR_XETEX_UPWARDS, INT_PAR_XETEX_USE_GLYPH_METRICS,
-    KERN_NODE, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB,
-    LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE,
-    LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_HALFWORD, MMODE,
-    MU_GLUE, MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS, NULL_FLAG,
-    PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT,
-    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
-    SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV,
-    UNDEFINED_PRIMITIVE, VMODE,
+    LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB, LOCAL_EVERY_PAR,
+    LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE, LOCAL_XETEX_INTER_CHAR_TOKS,
+    MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE,
+    NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS, NULL_FLAG, PRIM_EQTB_BASE,
+    RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY,
+    SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST,
+    TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::{
@@ -99,6 +98,10 @@ pub(crate) const COPY_CODE: i32 = 1;
 pub(crate) const LAST_BOX_CODE: i32 = 2;
 pub(crate) const VSPLIT_CODE: i32 = 3;
 pub(crate) const VTOP_CODE: i32 = 4;
+pub(crate) const FIL_CODE: i32 = 0;
+pub(crate) const FILL_CODE: i32 = 1;
+pub(crate) const SS_CODE: i32 = 2;
+pub(crate) const FIL_NEG_CODE: i32 = 3;
 pub(crate) const SKIP_CODE: i32 = 4;
 pub(crate) const MSKIP_CODE: i32 = 5;
 pub(crate) const CHAR_DEF_CODE: i32 = 0;
@@ -1321,7 +1324,9 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
 
 pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     if st.input.cur_list.mode == VMODE && st.input.cur_list.tail == st.input.cur_list.head {
-        if st.scanner.cur_chr as u16 != GLUE_NODE || st.shipout.last_glue.0 != MAX_HALFWORD {
+        if st.scanner.cur_chr as u16 != NodeType::Glue.as_raw()
+            || st.shipout.last_glue.0 != MAX_HALFWORD
+        {
             crate::errors::you_cant_in(st);
             help(
                 &mut st.errors,
@@ -1330,9 +1335,9 @@ pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbor
                     c"Try `I\\vskip-\\lastskip' instead.",
                 ],
             );
-            if st.scanner.cur_chr as u16 == KERN_NODE {
+            if st.scanner.cur_chr as u16 == NodeType::Kern.as_raw() {
                 st.errors.help_line[0] = c"Try `I\\kern-\\lastkern' instead.".as_ptr();
-            } else if st.scanner.cur_chr as u16 != GLUE_NODE {
+            } else if st.scanner.cur_chr as u16 != NodeType::Glue.as_raw() {
                 st.errors.help_line[0] = c"Perhaps you can make the output routine do it.".as_ptr();
             }
             return mc_propagate_error(crate::errors::error_in(st));
@@ -2195,10 +2200,10 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
 pub(crate) fn append_glue_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let s = st.scanner.cur_chr;
     match s {
-        0 => st.scanner.cur_val = FIL_GLUE.0,
-        1 => st.scanner.cur_val = FILL_GLUE.0,
-        2 => st.scanner.cur_val = SS_GLUE.0,
-        3 => st.scanner.cur_val = FIL_NEG_GLUE.0,
+        FIL_CODE => st.scanner.cur_val = FIL_GLUE.0,
+        FILL_CODE => st.scanner.cur_val = FILL_GLUE.0,
+        SS_CODE => st.scanner.cur_val = SS_GLUE.0,
+        FIL_NEG_CODE => st.scanner.cur_val = FIL_NEG_GLUE.0,
         SKIP_CODE => crate::scan::scan_glue_in(st, GLUE_VAL)?,
         MSKIP_CODE => crate::scan::scan_glue_in(st, MU_VAL)?,
         _ => {}

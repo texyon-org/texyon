@@ -28,10 +28,9 @@
 use std::marker::PhantomData;
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, DISC_NODE, FRACTION_NOAD_SIZE, GLUE_NODE, GLUE_SPEC_SIZE,
-    HLIST_NODE, KERN_NODE, LIGATURE_NODE, MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_NODE,
-    MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PENALTY_NODE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE,
-    RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, MARGIN_KERN_NODE_SIZE,
+    MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE,
+    SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
 use crate::mem::{free_node, get_node};
 use crate::state::MemState;
@@ -267,7 +266,7 @@ impl NodePtr<HListNode> {
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
         let p = get_node(mem, BOX_NODE_SIZE)?;
         // type-stamp: an hlist node carries NODE_type = HLIST_NODE.
-        mem.set_b16s1(p, HLIST_NODE);
+        mem.set_b16s1(p, NodeType::HList.as_raw());
         // SAFETY: `p` is a freshly allocated `BOX_NODE_SIZE` node just stamped
         // HLIST_NODE; this is the family's audited construction site.
         Some(unsafe { NodePtr::<HListNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -789,7 +788,7 @@ impl NodePtr<RuleNode> {
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
         let p = get_node(mem, RULE_NODE_SIZE)?;
-        mem.set_b16s1(p, RULE_NODE);
+        mem.set_b16s1(p, NodeType::Rule.as_raw());
         // SAFETY: `p` is freshly allocated as a rule-sized node and just
         // stamped RULE_NODE.
         Some(unsafe { NodePtr::<RuleNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -837,7 +836,7 @@ impl NodePtr<LigatureNode> {
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<LigatureNode>> {
         let p = get_node(mem, SMALL_NODE_SIZE)?;
-        mem.set_b16s1(p, LIGATURE_NODE);
+        mem.set_b16s1(p, NodeType::Ligature.as_raw());
         // SAFETY: `p` is freshly allocated as a small node and just stamped
         // LIGATURE_NODE.
         Some(unsafe { NodePtr::<LigatureNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -946,7 +945,7 @@ impl NodePtr<DiscNode> {
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<DiscNode>> {
         let p = get_node(mem, SMALL_NODE_SIZE)?;
-        mem.set_b16s1(p, DISC_NODE);
+        mem.set_b16s1(p, NodeType::Disc.as_raw());
         // SAFETY: `p` is freshly allocated as a small node and just stamped
         // DISC_NODE.
         Some(unsafe { NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -999,7 +998,7 @@ impl NodePtr<MathNode> {
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MathNode>> {
         let p = get_node(mem, MEDIUM_NODE_SIZE)?;
-        mem.set_b16s1(p, MATH_NODE);
+        mem.set_b16s1(p, NodeType::Math.as_raw());
         // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just
         // stamped MATH_NODE; this is the family's audited construction site.
         Some(unsafe { NodePtr::<MathNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -1018,7 +1017,7 @@ impl NodePtr<MathNode> {
     /// Retype this math node in place as a kern of the same width.
     #[inline]
     pub fn into_kern(self, mem: &mut MemState) -> NodePtr<KernNode> {
-        mem.set_b16s1(self.idx.0, KERN_NODE);
+        mem.set_b16s1(self.idx.0, NodeType::Kern.as_raw());
         // SAFETY: the node was just stamped KERN_NODE (same size and width slot).
         unsafe { NodePtr::<KernNode>::from_idx_unchecked(self.idx) }
     }
@@ -1516,7 +1515,7 @@ impl NodePtr<GlueNode> {
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<GlueNode>> {
         let p = get_node(mem, MEDIUM_NODE_SIZE)?;
-        mem.set_b16s1(p, GLUE_NODE);
+        mem.set_b16s1(p, NodeType::Glue.as_raw());
         // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just
         // stamped GLUE_NODE; this is the family's audited construction site.
         Some(unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -1549,7 +1548,7 @@ impl NodePtr<GlueNode> {
     /// Turn this glue node into a penalty node in place (both are medium nodes).
     #[inline]
     pub fn into_penalty(self, mem: &mut MemState) -> NodePtr<PenaltyNode> {
-        mem.set_b16s1(self.idx.0, PENALTY_NODE);
+        mem.set_b16s1(self.idx.0, NodeType::Penalty.as_raw());
         // SAFETY: the node was just stamped PENALTY_NODE.
         unsafe { NodePtr::from_idx_unchecked(self.idx) }
     }
@@ -1557,7 +1556,7 @@ impl NodePtr<GlueNode> {
     /// Retype this glue node in place as a kern of width `w`.
     #[inline]
     pub fn into_kern(self, mem: &mut MemState, w: Scaled) -> NodePtr<KernNode> {
-        mem.set_b16s1(self.idx.0, KERN_NODE);
+        mem.set_b16s1(self.idx.0, NodeType::Kern.as_raw());
         // SAFETY: the node was just stamped KERN_NODE (same size).
         let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(self.idx) };
         kern.set_width(mem, w);
@@ -1747,7 +1746,7 @@ impl NodePtr<KernNode> {
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<KernNode>> {
         let p = get_node(mem, MEDIUM_NODE_SIZE)?;
         // type-stamp: a kern node carries NODE_type = KERN_NODE in its header.
-        mem.set_b16s1(p, KERN_NODE);
+        mem.set_b16s1(p, NodeType::Kern.as_raw());
         // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just stamped
         // KERN_NODE; this is the family's single audited construction site.
         Some(unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -1816,7 +1815,7 @@ impl NodePtr<PenaltyNode> {
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<PenaltyNode>> {
         let p = get_node(mem, MEDIUM_NODE_SIZE)?;
         // type-stamp: a penalty node carries NODE_type = PENALTY_NODE.
-        mem.set_b16s1(p, PENALTY_NODE);
+        mem.set_b16s1(p, NodeType::Penalty.as_raw());
         // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just stamped
         // PENALTY_NODE; this is the family's single audited construction site.
         Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(MemIdx::new(p)) })
@@ -1868,7 +1867,7 @@ impl NodePtr<MarginKernNode> {
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MarginKernNode>> {
         let p = get_node(mem, MARGIN_KERN_NODE_SIZE)?;
-        mem.set_b16s1(p, MARGIN_KERN_NODE);
+        mem.set_b16s1(p, NodeType::MarginKern.as_raw());
         Some(unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(MemIdx::new(p)) })
     }
 

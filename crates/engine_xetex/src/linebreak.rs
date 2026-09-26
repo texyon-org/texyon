@@ -14,7 +14,7 @@ use crate::consts::{
     INT_PAR_TOLERANCE, INT_PAR_UC_HYPH, INT_PAR_WIDOW_PENALTY, INT_PAR_XETEX_LINEBREAK_LOCALE,
     INT_PAR_XETEX_LINEBREAK_PENALTY, INT_PAR_XETEX_PROTRUDE_CHARS, INT_PAR_XETEX_USE_GLYPH_METRICS,
     LC_CODE_BASE, LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP,
-    NON_ADDRESS, NORMAL, RULE_NODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
+    NON_ADDRESS, NORMAL, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::{linebreak_next, linebreak_start_in, measure_native_node};
 use crate::fonts::{LIG_TAG, QUAD_CODE};
@@ -34,11 +34,11 @@ use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{MemAddr, MemIdx, MemPtr, Scaled};
+use crate::units::{MemAddr, MemIdx, MemPtr, NodeType, Scaled};
 
 const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
 
-const DELTA_NODE: u16 = RULE_NODE;
+const DELTA_NODE: u16 = NodeType::Rule.as_raw();
 const PASSIVE_NODE_SIZE: i32 = 2;
 const ACTIVE_NODE_SIZE_NORMAL: i16 = 3;
 const ACTIVE_NODE_SIZE_EXTENDED: i16 = 5;
