@@ -1,0 +1,22 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt
+\XeTeXprotrudechars=2 \rpcode\lb`.=500 \lpcode\lb`A=300 \rpcode\lb`,=1000 \lpcode\lb`(=700 \rpcode\lb`)=700
+\rpcode\tenrm`.=500 \lpcode\tenrm`A=400
+\hsize=100pt \parindent=0pt \tolerance=10000
+\setbox1\vbox{\lb A test line with commas, and periods. And Another, line. (A.)\par}
+\showbox1
+\setbox2\vbox{\unvcopy1 \global\setbox3\lastbox}
+\message{\leftmarginkern3|\rightmarginkern3}
+\setbox4\hbox{\lb A}\message{\leftmarginkern4|\rightmarginkern4}
+\setbox5\vbox{\tenrm A line of roman text. And more text here. A.\par}\showbox5
+\setbox6\vbox{\unvcopy5 \global\setbox7\lastbox}\message{\leftmarginkern7|\rightmarginkern7}
+\setbox8\vbox{\leftskip 5pt \rightskip 3pt \parfillskip 0pt plus 1fil \lb A second (test) of margins.\par \global\setbox9\lastbox}
+\message{\leftmarginkern9|\rightmarginkern9}
+\message{\leftmarginkern 200|}
+\setbox10\vbox{}\message{\leftmarginkern10|}
+\XeTeXprotrudechars=1 \setbox1\vbox{\lb A test line with commas, and periods.\par}\showbox1
+\message{\the\lpcode\lb`A,\the\rpcode\lb`.,\the\lpcode\tenrm`A}
+\lpcode\lb`B=1001 \rpcode\tenrm`B=-1001
+\message{\the\lpcode\lb`B,\the\rpcode\tenrm`B}
+\shipout\box1
+\bye

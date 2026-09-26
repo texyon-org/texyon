@@ -1,0 +1,7 @@
+% hpack must count margin kerns in the natural width of a protruded line.
+\showboxdepth=100 \showboxbreadth=100 \tracingoutput=1
+\XeTeXprotrudechars=2 \rpcode\tenrm`.=500 \lpcode\tenrm`A=400
+\hsize=100pt \parindent=0pt \tolerance=10000 \hbadness=10000
+\setbox0\vbox{\tenrm A line of roman text. And more text here. A.\par}
+\shipout\box0
+\bye

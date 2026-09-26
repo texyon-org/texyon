@@ -288,6 +288,13 @@ fn native_merge_disc_pun() {
 }
 
 #[test]
+fn protrusion_margin_kern() {
+    TestCase::new("protrusion_margin_kern")
+        .expect(Ok(TexOutcome::Warnings))
+        .go()
+}
+
+#[test]
 fn otf_basic() {
     TestCase::new("otf_basic")
         .expect(Ok(TexOutcome::Warnings))

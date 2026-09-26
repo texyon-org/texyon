@@ -1618,6 +1618,9 @@ fn hpack_in(
             Ok(AnyNode::Kern(kern)) => {
                 x += kern.width(mem).0;
             }
+            Ok(AnyNode::MarginKern(kern)) => {
+                x += kern.width(mem).0;
+            }
             Ok(AnyNode::Math(math)) => {
                 x += math.width(mem).0;
                 if texxet {

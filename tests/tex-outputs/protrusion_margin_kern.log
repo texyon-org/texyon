@@ -1,0 +1,66 @@
+**
+(protrusion_margin_kern.tex
+
+Completed box being shipped out [1]
+\vbox(18.94444+0.0)x100.0
+.\hbox(6.94444+0.0)x100.0, glue set 2.47145
+..\kern-4.0 (left margin)
+..\hbox(0.0+0.0)x0.0
+..\tenrm A
+..\glue 3.33333 plus 1.66498 minus 1.11221
+..\tenrm l
+..\tenrm i
+..\tenrm n
+..\tenrm e
+..\glue 3.33333 plus 1.66666 minus 1.11111
+..\tenrm o
+..\tenrm f
+..\glue 3.33333 plus 1.66666 minus 1.11111
+..\tenrm r
+..\tenrm o
+..\discretionary
+...\tenrm -
+..\tenrm m
+..\tenrm a
+..\tenrm n
+..\glue 3.33333 plus 1.66666 minus 1.11111
+..\tenrm t
+..\tenrm e
+..\tenrm x
+..\tenrm t
+..\tenrm .
+..\kern-5.00002 (right margin)
+..\glue(\rightskip) 0.0
+.\penalty 300
+.\glue(\baselineskip) 5.05556
+.\hbox(6.94444+0.0)x100.0, glue set 5.33318fil
+..\kern-4.0 (left margin)
+..\tenrm A
+..\tenrm n
+..\tenrm d
+..\glue 3.33333 plus 1.66666 minus 1.11111
+..\tenrm m
+..\tenrm o
+..\tenrm r
+..\tenrm e
+..\glue 3.33333 plus 1.66666 minus 1.11111
+..\tenrm t
+..\tenrm e
+..\tenrm x
+..\tenrm t
+..\glue 3.33333 plus 1.66666 minus 1.11111
+..\tenrm h
+..\tenrm e
+..\tenrm r
+..\tenrm e
+..\tenrm .
+..\glue 4.44444 plus 4.99997 minus 0.37036
+..\tenrm A
+..\tenrm .
+..\penalty 10000
+..\kern-5.00002 (right margin)
+..\glue(\parfillskip) 0.0 plus 1.0fil
+..\glue(\rightskip) 0.0
+
+ )
+Output written on protrusion_margin_kern.xdv (1 page, 248 bytes).
