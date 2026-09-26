@@ -1,0 +1,20 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lg="[LinLibertine_R_G.ttf]/GR" at 16pt \font\lo="[LinLibertine_R_G.ttf]" at 16pt
+\message{\the\XeTeXfonttype\lg,\the\XeTeXfonttype\lo}
+\message{\the\XeTeXcountfeatures\lg}
+\count1=0
+\loop \ifnum\count1<\XeTeXcountfeatures\lg
+  \count2=\XeTeXfeaturecode\lg\count1
+  \message{[\the\count2:\the\XeTeXcountselectors\lg\count2]}
+  \advance\count1 1 \repeat
+\message{\the\XeTeXfindfeaturebyname\lg "Small capitals"|\the\XeTeXfindfeaturebyname\lg "nonexistent"}
+\message{\the\XeTeXcountfeatures\lo}
+\message{\the\XeTeXcountfeatures\tenrm}
+\message{\the\XeTeXfindfeaturebyname\lo "x"}
+\message{\the\XeTeXcountvariations\lg,\the\XeTeXcountvariations\lo}
+\message{\the\XeTeXvariation\lo 0,\the\XeTeXvariationmin\lo 0,\the\XeTeXvariationmax\lo 0,\the\XeTeXvariationdefault\lo 0}
+\message{\the\XeTeXfindvariationbyname\lo "wght"|\XeTeXvariationname\lo 0|}
+\setbox0\hbox{\lg Hello office fluffy AVAWAY To. Th ft}\showbox0 \shipout\copy0
+\font\lgs="[LinLibertine_R_G.ttf]/GR:smcp=1" at 16pt \setbox0\hbox{\lgs Hello}\showbox0
+\font\lgx="[LinLibertine_R_G.ttf]/GR:nonsense=1;also" at 16pt
+\bye
