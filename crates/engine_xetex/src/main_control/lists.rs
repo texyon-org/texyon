@@ -1,0 +1,878 @@
+//! Building lists: paragraphs, glue, kerns, inserts, marks, discretionaries, accents.
+
+use crate::cmd::{CHAR_GIVEN, CHAR_NUM, HRULE, LETTER, OTHER_CHAR, SHAPE_REF, VADJUST};
+use crate::codes::{BoxCode, SkipCode, ValueLevel};
+use crate::consts::{
+    ACC_KERN, BIGGEST_CHAR, BOX_NODE_SIZE, EMPTY, ETEX_PEN_BASE, EXPLICIT, FROZEN_CR,
+    FROZEN_END_GROUP, FROZEN_RIGHT, HMODE, IGNORE_DEPTH, MAX_DIMEN, MMODE, MU_GLUE, NOAD_SIZE,
+    NULL_FLAG, PAR_SHAPE_LOC, SMALL_NODE_SIZE, SUB_BOX, SUB_MLIST, TEX_NULL, VMODE,
+};
+use crate::errors::Abort;
+use crate::fonts::{
+    EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE, SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
+};
+use crate::input::TokenType;
+use crate::mem::{
+    ADJUST_HEAD, CONTRIB_HEAD, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, PAGE_HEAD, PRE_ADJUST_HEAD,
+    SS_GLUE, TEMP_HEAD, ZERO_GLUE,
+};
+use crate::mem_types::ListStateRecord;
+use crate::node::{
+    AdjustNode, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, InsNode, MarkNode, MathField,
+    NodePtr, WhatsitNode, WhatsitSubtype,
+};
+use crate::packaging::ADDITIONAL;
+use crate::params::{DimenPar, GluePar, IntPar, TokPar};
+use crate::state::{EngineState, GroupCode, MemState};
+use crate::token::Token;
+use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
+
+use super::align::align_peek;
+use super::assign::{define, do_assignments, word_define};
+use super::boxes::package;
+use super::{begin_every, INNER_HMODE, INNER_VMODE};
+
+pub(crate) fn push_math(st: &mut EngineState, c: GroupCode) -> Result<(), Abort> {
+    crate::mem::push_nest(st)?;
+    st.input.cur_list.mode = -MMODE;
+    st.input.cur_list.set_aux_s1(TEX_NULL);
+    st.save_stack.new_save_level(c, st.mem.line)?;
+    Ok(())
+}
+
+pub(super) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
+    if st.input.cur_list.mode != HMODE {
+        return Ok(());
+    }
+    if st.input.cur_list.head == st.input.cur_list.tail {
+        st.mem.pop_nest(&mut st.input);
+    } else {
+        crate::linebreak::line_break(st, false)?;
+    }
+    let lr_save = st.input.cur_list.e_tex_aux;
+    if !lr_save.is_null() {
+        st.mem.flush_list(lr_save);
+        st.input.cur_list.e_tex_aux = MemPtr::NULL;
+    }
+    normal_paragraph(st)?;
+    st.errors.error_count = 0;
+    Ok(())
+}
+
+pub(super) fn append_penalty(st: &mut EngineState) -> Result<(), Abort> {
+    crate::scan::scan_int(st)?;
+    let p = st.mem.new_penalty(st.scanner.cur_val)?;
+    st.input.cur_list.tail_append(&mut st.mem, p.ptr());
+    if st.input.cur_list.mode == VMODE {
+        crate::pagebuilder::build_page(st)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn normal_paragraph(st: &mut EngineState) -> Result<(), Abort> {
+    for (loc, value) in [
+        (IntPar::Looseness.loc(), 0),
+        (DimenPar::HangIndent.loc(), 0),
+        (IntPar::HangAfter.loc(), 1),
+    ] {
+        if st.eqtb.int_at(loc) != value {
+            word_define(st, false, loc, value)?;
+        }
+    }
+    for loc in [PAR_SHAPE_LOC, ETEX_PEN_BASE] {
+        if st.eqtb.equiv(loc) != TEX_NULL {
+            define(st, false, loc, SHAPE_REF, TEX_NULL)?;
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
+    if !crate::errors::privileged(st)? {
+        return Ok(false);
+    }
+    if st.shipout.page_tail == PAGE_HEAD
+        && st.input.cur_list.head == st.input.cur_list.tail
+        && st.shipout.dead_cycles == 0
+    {
+        return Ok(true);
+    }
+    crate::input::back_input(st)?;
+    let b = st.mem.new_null_box()?;
+    st.input.cur_list.tail_append(&mut st.mem, b.ptr());
+    b.set_width(&mut st.mem, st.eqtb.dimen_par(DimenPar::Hsize));
+    let g = st.mem.new_glue(FILL_GLUE)?;
+    st.input.cur_list.tail_append(&mut st.mem, g.ptr());
+    let p = st.mem.new_penalty(NULL_FLAG)?;
+    st.input.cur_list.tail_append(&mut st.mem, p.ptr());
+    crate::pagebuilder::build_page(st)?;
+    Ok(false)
+}
+
+pub(super) fn indent_in_hmode(st: &mut EngineState) -> Result<(), Abort> {
+    if st.scanner.cur_chr <= 0 {
+        return Ok(());
+    }
+    let b = st.mem.new_null_box()?;
+    b.set_width(&mut st.mem, st.eqtb.dimen_par(DimenPar::ParIndent));
+    let p = if st.input.cur_list.mode.abs() == HMODE {
+        st.input.cur_list.set_aux_s0(1000);
+        b.ptr()
+    } else {
+        let q = st.mem.new_noad()?;
+        q.nucleus().set_math_type(&mut st.mem, SUB_BOX);
+        q.nucleus().set_info(&mut st.mem, b.ptr());
+        q.ptr()
+    };
+    st.input.cur_list.tail_append(&mut st.mem, p);
+    Ok(())
+}
+
+pub(super) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
+    if st.input.cur_list.mode >= 0 {
+        crate::input::back_input(st)?;
+        st.scanner.cur_tok = st.input.par_token;
+        crate::input::back_input(st)?;
+        st.input.cur_input.set_token_type(TokenType::Inserted);
+        return Ok(());
+    }
+    if st.scanner.cur_cmd != HRULE {
+        return off_save(st);
+    }
+    crate::output::error_here_with_diagnostic(st, "You can't use `");
+    crate::output::print_esc(st, "hrule");
+    crate::output::print(st, "' here except with leaders");
+    crate::output::capture_to_diagnostic(st, None);
+    st.errors.help(&[
+        "To put a horizontal rule in an hbox or an alignment,",
+        r"you should use \leaders or \hrulefill (see The TeXbook).",
+    ]);
+    crate::errors::error(st)
+}
+
+pub(super) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> {
+    if st.scanner.cur_cmd == VADJUST {
+        st.scanner.cur_val = 255;
+    } else {
+        crate::scan::scan_eight_bit_int(st)?;
+        if st.scanner.cur_val == 255 {
+            crate::output::error_here_with_diagnostic(st, "You can't ");
+            crate::output::print_esc(st, "insert");
+            crate::output::print_int(st, st.scanner.cur_val);
+            crate::output::capture_to_diagnostic(st, None);
+            st.errors
+                .help(&[r"I'm changing to \insert0; box 255 is special."]);
+            crate::errors::error(st)?;
+            st.scanner.cur_val = 0;
+        }
+    }
+    st.save_stack.set_saved(0, st.scanner.cur_val);
+    let pre = st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword(st, "pre")?;
+    st.save_stack.set_saved(1, i32::from(pre));
+    st.save_stack.save_ptr += 2;
+    st.save_stack
+        .new_save_level(GroupCode::Insert, st.mem.line)?;
+    crate::scan::scan_left_brace(st)?;
+    normal_paragraph(st)?;
+    crate::mem::push_nest(st)?;
+    st.input.cur_list.mode = INNER_VMODE;
+    st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
+    Ok(())
+}
+
+/// Appends interword glue for the current space factor.
+pub(super) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
+    let space_factor = st.input.cur_list.aux_s0();
+    let q;
+    let mut side_effects = None;
+    if space_factor >= 2000 && st.eqtb.glue_par(GluePar::XspaceSkip) != ZERO_GLUE {
+        q = st.mem.new_param_glue(&st.eqtb, GluePar::XspaceSkip)?.ptr();
+    } else {
+        let space_skip = st.eqtb.glue_par(GluePar::SpaceSkip);
+        let base = if space_skip != ZERO_GLUE {
+            space_skip
+        } else {
+            font_space_glue(st)?
+        };
+        st.mainloop.main_p = base.ptr();
+        let spec = st.mem.new_spec(base)?;
+        st.mainloop.main_p = spec.ptr();
+        if space_factor >= 2000 {
+            let cf = st.eqtb.cur_font();
+            let extra = st.fonts.param(cf, EXTRA_SPACE_CODE);
+            let width = spec.width(&st.mem) + extra;
+            spec.set_width(&mut st.mem, width);
+        }
+        let (stretch, _, stretch_overflow) =
+            crate::scaled_math::xn_over_d_parts(spec.stretch(&st.mem), space_factor, 1000);
+        spec.set_stretch(&mut st.mem, stretch);
+        let (shrink, remainder, shrink_overflow) =
+            crate::scaled_math::xn_over_d_parts(spec.shrink(&st.mem), 1000, space_factor);
+        spec.set_shrink(&mut st.mem, shrink);
+        side_effects = Some((remainder, stretch_overflow || shrink_overflow));
+        q = st.mem.new_glue(spec)?.ptr();
+        spec.set_ref_count(&mut st.mem, TEX_NULL);
+    }
+    st.input.cur_list.tail_append(&mut st.mem, q);
+    if let Some((remainder, overflowed)) = side_effects {
+        if overflowed {
+            st.errors.arith_error = true;
+        }
+        st.errors.tex_remainder = remainder;
+    }
+    Ok(())
+}
+
+/// The current font's interword glue spec, built from its parameters on first use.
+pub(super) fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
+    let cf = st.eqtb.cur_font();
+    let glue = st.fonts.font_glue[cf];
+    if !glue.is_null() {
+        return Ok(NodePtr::from_glue_ptr(glue));
+    }
+    let spec = st.mem.new_spec(ZERO_GLUE)?;
+    spec.set_width(&mut st.mem, st.fonts.param(cf, SPACE_CODE));
+    spec.set_stretch(&mut st.mem, st.fonts.param(cf, SPACE_STRETCH_CODE));
+    spec.set_shrink(&mut st.mem, st.fonts.param(cf, SPACE_SHRINK_CODE));
+    st.fonts.font_glue[cf] = spec.ptr();
+    Ok(spec)
+}
+
+/// Sets `cur_lang` and the list's language and hyphen minima for a new paragraph.
+pub(crate) fn start_paragraph_language(st: &mut EngineState) {
+    let l = crate::helpers::norm_lang(st.eqtb.int_par(IntPar::Language));
+    st.hyph.cur_lang = l;
+    st.input.cur_list.set_aux_s1(i32::from(l));
+    let lhm = i32::from(crate::helpers::norm_min(
+        st.eqtb.int_par(IntPar::LeftHyphenMin),
+    ));
+    let rhm = i32::from(crate::helpers::norm_min(
+        st.eqtb.int_par(IntPar::RightHyphenMin),
+    ));
+    st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + i32::from(l);
+}
+
+pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort> {
+    st.input.cur_list.prev_graf = 0;
+    if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
+        let g = st.mem.new_param_glue(&st.eqtb, GluePar::ParSkip)?;
+        st.input.cur_list.tail_append(&mut st.mem, g.ptr());
+    }
+    crate::mem::push_nest(st)?;
+    st.input.cur_list.mode = HMODE;
+    st.input.cur_list.set_aux_s0(1000);
+
+    start_paragraph_language(st);
+
+    if indented {
+        let b = st.mem.new_null_box()?;
+        st.input.cur_list.tail = b.ptr();
+        st.input.cur_list.head.set_link(&mut st.mem, b.ptr());
+        b.set_width(&mut st.mem, st.eqtb.dimen_par(DimenPar::ParIndent));
+        if st.shipout.insert_src_special_every_par {
+            crate::ext::insert_src_special(st)?;
+        }
+    }
+    begin_every(st, TokPar::EveryPar, TokenType::EveryPar)?;
+    if st.input.nest_ptr == 1 {
+        crate::pagebuilder::build_page(st)?;
+    }
+    Ok(())
+}
+
+/// What `new_character` makes: a character node, or a glyph for a native font.
+#[derive(Copy, Clone)]
+pub(crate) enum NewChar {
+    Char(NodePtr<CharNode>),
+    Native(NodePtr<WhatsitNode>),
+}
+
+impl NewChar {
+    pub(crate) fn ptr(self) -> MemPtr {
+        match self {
+            NewChar::Char(c) => c.ptr(),
+            NewChar::Native(w) => w.ptr(),
+        }
+    }
+}
+
+/// TeX's `new_character`, `None` for a character the font lacks.
+pub(crate) fn new_character(
+    st: &mut EngineState,
+    f: FontId,
+    c: u16,
+) -> Result<Option<NewChar>, Abort> {
+    if st.fonts.is_native_font(f) {
+        return crate::fonts::new_native_character(st, f, u32::from(c))
+            .map(|w| Some(NewChar::Native(w)));
+    }
+    let ec = st.fonts.effective_char(f, c) as u16;
+    if st.fonts.char_exists(f, i32::from(ec)) {
+        let p = st.mem.new_char(f, c)?;
+        return Ok(Some(NewChar::Char(p)));
+    }
+    crate::output::char_warning(st, f, i32::from(c))?;
+    Ok(None)
+}
+
+pub(super) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
+    match st.save_stack.cur_group {
+        GroupCode::Simple => crate::save::unsave(st)?,
+        GroupCode::BottomLevel => {
+            crate::output::print_err(st, "Too many }'s");
+            st.errors.help(&[
+                "You've closed more groups than you opened.",
+                "Such booboos are generally harmless, so keep going.",
+            ]);
+            crate::errors::error(st)?;
+        }
+        GroupCode::SemiSimple | GroupCode::MathShift | GroupCode::MathLeft => {
+            crate::errors::extra_right_brace(st)?;
+        }
+        GroupCode::Hbox => package(st, false)?,
+        GroupCode::AdjustedHbox => {
+            st.scanner.adjust_tail = ADJUST_HEAD;
+            st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
+            package(st, false)?;
+        }
+        GroupCode::Vbox => {
+            end_graf(st)?;
+            package(st, false)?;
+        }
+        GroupCode::Vtop => {
+            end_graf(st)?;
+            package(st, true)?;
+        }
+        GroupCode::Insert => {
+            end_graf(st)?;
+            let split_top_skip = st.eqtb.glue_par(GluePar::SplitTopSkip);
+            st.mem.add_glue_ref(split_top_skip);
+            let d = st.eqtb.dimen_par(DimenPar::SplitMaxDepth);
+            let f = st.eqtb.int_par(IntPar::FloatingPenalty);
+            crate::save::unsave(st)?;
+            st.save_stack.save_ptr -= 2;
+            let head = st.input.cur_list.head.link(&st.mem);
+            let p = crate::packaging::vpackage(st, head, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
+            st.mem.pop_nest(&mut st.input);
+            let n = st.save_stack.saved(0);
+            if n < 255 {
+                let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
+                st.input.cur_list.tail_append(&mut st.mem, ins.ptr());
+                ins.set_subtype(&mut st.mem, n as u16);
+                let height = p.height(&st.mem) + p.depth(&st.mem);
+                ins.set_height(&mut st.mem, height);
+                let list = p.list_ptr(&st.mem);
+                ins.set_ins_ptr(&mut st.mem, list);
+                ins.set_split_top_ptr(&mut st.mem, split_top_skip);
+                ins.set_depth(&mut st.mem, d);
+                ins.set_float_cost(&mut st.mem, f);
+            } else {
+                let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
+                st.input.cur_list.tail_append(&mut st.mem, adj.ptr());
+                let pre = st.save_stack.saved(1);
+                adj.set_subtype(&mut st.mem, pre as u16);
+                let list = p.list_ptr(&st.mem);
+                adj.set_adjust_ptr(&mut st.mem, list);
+                st.mem.delete_glue_ref(split_top_skip);
+            }
+            st.mem.free_node(p.ptr(), BOX_NODE_SIZE);
+            if st.input.nest_ptr == 0 {
+                crate::pagebuilder::build_page(st)?;
+            }
+        }
+        GroupCode::Output => {
+            if st.input.cur_input.loc != TEX_NULL
+                || (st.input.cur_input.token_type() != TokenType::Output
+                    && st.input.cur_input.token_type() != TokenType::BackedUp)
+            {
+                crate::output::print_err(st, "Unbalanced output routine");
+                st.errors.help(&[
+                    "Your sneaky output routine has problematic {'s and/or }'s.",
+                    "I can't handle that very well; good luck.",
+                ]);
+                crate::errors::error(st)?;
+                loop {
+                    crate::scan::get_token(st)?;
+                    if st.input.cur_input.loc == TEX_NULL {
+                        break;
+                    }
+                }
+            }
+            crate::input::end_token_list(st)?;
+            end_graf(st)?;
+            crate::save::unsave(st)?;
+            st.shipout.output_active = false;
+            st.shipout.insert_penalties = 0;
+
+            if !st.eqtb.box_reg(255).is_null() {
+                crate::output::error_here_with_diagnostic(st, "Output routine didn't use all of ");
+                crate::output::print_esc(st, "box");
+                crate::output::print_int(st, 255);
+                crate::output::capture_to_diagnostic(st, None);
+                st.errors.help(&[
+                    r"Your \output commands should empty \box255,",
+                    r"e.g., by saying `\shipout\box255'.",
+                    "Proceed; I'll discard its present contents.",
+                ]);
+                crate::errors::box_error(st, 255)?;
+            }
+
+            if st.input.cur_list.tail != st.input.cur_list.head {
+                let first = st.input.cur_list.head.link(&st.mem);
+                st.shipout.page_tail.set_link(&mut st.mem, first);
+                st.shipout.page_tail = st.input.cur_list.tail;
+            }
+            if !PAGE_HEAD.link(&st.mem).is_null() {
+                if CONTRIB_HEAD.link(&st.mem).is_null() {
+                    st.input.nest[0].tail = st.shipout.page_tail;
+                }
+                let contrib = CONTRIB_HEAD.link(&st.mem);
+                st.shipout.page_tail.set_link(&mut st.mem, contrib);
+                let page = PAGE_HEAD.link(&st.mem);
+                CONTRIB_HEAD.set_link(&mut st.mem, page);
+                PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
+                st.shipout.page_tail = PAGE_HEAD;
+            }
+
+            let last_box = st.scanner.disc_ptr[BoxCode::LastBox as usize];
+            st.mem.flush_node_list(last_box)?;
+            st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
+            st.mem.pop_nest(&mut st.input);
+            crate::pagebuilder::build_page(st)?;
+        }
+        GroupCode::Disc => build_discretionary(st)?,
+        GroupCode::Align => {
+            crate::input::back_input(st)?;
+            st.scanner.cur_tok = Token::from_cs(FROZEN_CR);
+            crate::output::error_here_with_diagnostic(st, "Missing ");
+            crate::output::print_esc(st, "cr");
+            crate::output::print(st, " inserted");
+            crate::output::capture_to_diagnostic(st, None);
+            st.errors
+                .help(&["I'm guessing that you meant to end an alignment here."]);
+            crate::input::ins_error(st)?;
+        }
+        GroupCode::NoAlign => {
+            end_graf(st)?;
+            crate::save::unsave(st)?;
+            align_peek(st)?;
+        }
+        GroupCode::Vcenter => {
+            end_graf(st)?;
+            crate::save::unsave(st)?;
+            st.save_stack.save_ptr -= 2;
+            let head = st.input.cur_list.head.link(&st.mem);
+            let size = Scaled(st.save_stack.saved(1));
+            let spec_mode = st.save_stack.saved(0) as i16;
+            let p = crate::packaging::vpackage(st, head, size, spec_mode, MAX_DIMEN)?;
+            st.mem.pop_nest(&mut st.input);
+            let noad = st.mem.new_noad()?;
+            st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
+            noad.set_noad_type(&mut st.mem, NodeType::VcenterNoad);
+            noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
+            noad.nucleus().set_info(&mut st.mem, p.ptr());
+        }
+        GroupCode::MathChoice => crate::math::build_choices(st)?,
+        GroupCode::Math => {
+            crate::save::unsave(st)?;
+            st.save_stack.save_ptr -= 1;
+            let save_loc = NodePtr::<MathField>::at(st.save_stack.saved(0));
+            save_loc.set_math_type(&mut st.mem, SUB_MLIST);
+            let p = crate::math::fin_mlist(st, MemPtr::NULL)?;
+            save_loc.set_info(&mut st.mem, p);
+            if p.is_null() || !p.link(&st.mem).is_null() {
+                return Ok(());
+            }
+            let Ok(AnyNode::Noad(noad)) = st.mem.classify(MemIdx::new(p)) else {
+                return Ok(());
+            };
+            match noad.noad_type(&st.mem) {
+                NodeType::OrdNoad
+                    if noad.subscr().math_type(&st.mem) == EMPTY
+                        && noad.supscr().math_type(&st.mem) == EMPTY =>
+                {
+                    save_loc.copy_from(&mut st.mem, noad.nucleus());
+                    st.mem.free_node(noad.ptr(), NOAD_SIZE);
+                }
+                NodeType::AccentNoad
+                    if save_loc.idx().0 == st.input.cur_list.tail.0 + 1
+                        && matches!(
+                            st.mem.classify(MemIdx(st.input.cur_list.tail.0)),
+                            Ok(AnyNode::Noad(t)) if t.noad_type(&st.mem) == NodeType::OrdNoad
+                        ) =>
+                {
+                    let mut q = st.input.cur_list.head;
+                    while q.link(&st.mem) != st.input.cur_list.tail {
+                        q = q.link(&st.mem);
+                    }
+                    q.set_link(&mut st.mem, noad.ptr());
+                    st.mem.free_node(st.input.cur_list.tail, NOAD_SIZE);
+                    st.input.cur_list.tail = noad.ptr();
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abort> {
+    let s = SkipCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("append_glue"))?;
+    match s {
+        SkipCode::Fil => st.scanner.cur_val = FIL_GLUE.idx().0,
+        SkipCode::Fill => st.scanner.cur_val = FILL_GLUE.idx().0,
+        SkipCode::Ss => st.scanner.cur_val = SS_GLUE.idx().0,
+        SkipCode::FilNeg => st.scanner.cur_val = FIL_NEG_GLUE.idx().0,
+        SkipCode::Skip => crate::scan::scan_glue(st, ValueLevel::Glue)?,
+        SkipCode::Mskip => crate::scan::scan_glue(st, ValueLevel::Mu)?,
+    }
+    let g = st.mem.new_glue(st.scanner.cur_glue())?;
+    st.input.cur_list.tail_append(&mut st.mem, g.ptr());
+    if matches!(s, SkipCode::Skip | SkipCode::Mskip) {
+        let spec = g.glue_ptr(&st.mem);
+        let refs = spec.ref_count(&st.mem);
+        spec.set_ref_count(&mut st.mem, refs - 1);
+        if s == SkipCode::Mskip {
+            g.set_subtype(&mut st.mem, MU_GLUE);
+        }
+    }
+    Ok(g)
+}
+
+pub(super) fn append_kern(st: &mut EngineState) -> Result<(), Abort> {
+    let s = st.scanner.cur_chr as u16;
+    crate::scan::scan_dimen(st, s == MU_GLUE, false, false)?;
+    let p = st.mem.new_kern(st.scanner.cur_dimen())?;
+    p.set_subtype(&mut st.mem, s);
+    st.input.cur_list.tail_append(&mut st.mem, p.ptr());
+    Ok(())
+}
+
+pub(super) fn make_mark(st: &mut EngineState) -> Result<(), Abort> {
+    let c = if st.scanner.cur_chr == 0 {
+        0
+    } else {
+        crate::scan::scan_register_num(st)?;
+        st.scanner.cur_val
+    };
+    crate::scan::scan_toks(st, false, true)?;
+    let mark = NodePtr::<MarkNode>::alloc(&mut st.mem)?;
+    mark.set_mark_class(&mut st.mem, c);
+    mark.set_subtype(&mut st.mem, 0);
+    mark.set_mark_ptr(&mut st.mem, st.scanner.def_ref);
+    st.input.cur_list.tail_append(&mut st.mem, mark.ptr());
+    Ok(())
+}
+
+impl ListStateRecord {
+    pub(crate) fn fix_language(
+        &mut self,
+        mem: &mut MemState,
+        eqtb: &crate::state::EqtbState,
+    ) -> Result<(), Abort> {
+        let l = i32::from(crate::helpers::norm_lang(eqtb.int_par(IntPar::Language)));
+        if l == self.aux_s1() {
+            return Ok(());
+        }
+        let w = self.new_whatsit(mem, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
+        w.set_what_lang(mem, l);
+        self.set_aux_s1(l);
+        let lhm = crate::helpers::norm_min(eqtb.int_par(IntPar::LeftHyphenMin)) as u16;
+        w.set_what_lhm(mem, lhm);
+        let rhm = crate::helpers::norm_min(eqtb.int_par(IntPar::RightHyphenMin)) as u16;
+        w.set_what_rhm(mem, rhm);
+        Ok(())
+    }
+}
+
+pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
+    if st.save_stack.cur_group == GroupCode::BottomLevel {
+        crate::output::error_here_with_diagnostic(st, "Extra ");
+        crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
+        crate::output::capture_to_diagnostic(st, None);
+        st.errors
+            .help(&["Things are pretty mixed up, but I think the worst is over."]);
+        return crate::errors::error(st);
+    }
+    crate::input::back_input(st)?;
+    let p = st.mem.get_avail()?;
+    TEMP_HEAD.set_link(&mut st.mem, p);
+    crate::output::error_here_with_diagnostic(st, "Missing ");
+    match st.save_stack.cur_group {
+        GroupCode::SemiSimple => {
+            p.set_token(&mut st.mem, Token::from_cs(FROZEN_END_GROUP));
+            crate::output::print_esc(st, "endgroup");
+        }
+        GroupCode::MathShift => {
+            p.set_token(&mut st.mem, Token::math_shift(b'$'));
+            crate::output::print_char(st, b'$');
+        }
+        GroupCode::MathLeft => {
+            p.set_token(&mut st.mem, Token::from_cs(FROZEN_RIGHT));
+            let q = st.mem.get_avail()?;
+            p.set_link(&mut st.mem, q);
+            q.set_token(&mut st.mem, Token::other(b'.'));
+            crate::output::print_esc(st, "right.");
+        }
+        _ => {
+            p.set_token(&mut st.mem, Token::right_brace(b'}'));
+            crate::output::print_char(st, b'}');
+        }
+    }
+    crate::output::print(st, " inserted");
+    crate::input::begin_token_list(st, TEMP_HEAD.link(&st.mem), TokenType::Inserted)?;
+    crate::output::capture_to_diagnostic(st, None);
+    st.errors.help(&[
+        "I've inserted something that you may have forgotten.",
+        "(See the <inserted text> above.)",
+        "With luck, this will get me unwedged. But if you",
+        "really didn't forget anything, try typing `2' now; then",
+        "my insertion and my current dilemma will both disappear.",
+    ]);
+    crate::errors::error(st)
+}
+
+fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
+    st.save_stack.new_save_level(GroupCode::Disc, st.mem.line)?;
+    crate::scan::scan_left_brace(st)?;
+    crate::mem::push_nest(st)?;
+    st.input.cur_list.mode = INNER_HMODE;
+    st.input.cur_list.set_aux_s0(1000);
+    Ok(())
+}
+
+pub(super) fn append_discretionary(st: &mut EngineState) -> Result<(), Abort> {
+    let d = st.mem.new_disc()?;
+    st.input.cur_list.tail_append(&mut st.mem, d.ptr());
+    if st.scanner.cur_chr == 1 {
+        let f = st.eqtb.cur_font();
+        let c = st.fonts.hyphen_char[f];
+        if (0..=BIGGEST_CHAR).contains(&c) {
+            let ch = new_character(st, f, c as u16)?;
+            d.set_pre_break(&mut st.mem, ch.map_or(MemPtr::NULL, NewChar::ptr));
+        }
+        return Ok(());
+    }
+    st.save_stack.set_saved(0, 0);
+    st.save_stack.save_ptr += 1;
+    begin_disc_group(st)
+}
+
+fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
+    crate::save::unsave(st)?;
+    let head = st.input.cur_list.head;
+    let mut q = head;
+    let mut p = q.link(&st.mem);
+    let mut n: i32 = 0;
+    while !p.is_null() {
+        if !st.mem.is_char_node(p) {
+            let allowed = match st.mem.classify(MemIdx::new(p)) {
+                Ok(
+                    AnyNode::HList(_)
+                    | AnyNode::VList(_)
+                    | AnyNode::Rule(_)
+                    | AnyNode::Kern(_)
+                    | AnyNode::Ligature(_),
+                ) => true,
+                Ok(AnyNode::Whatsit(w)) => w
+                    .whatsit_subtype(&st.mem)
+                    .is_some_and(|s| s.is_native_word() || s == WhatsitSubtype::Glyph),
+                _ => false,
+            };
+            if !allowed {
+                crate::output::print_err(st, "Improper discretionary list");
+                st.errors
+                    .help(&["Discretionary lists must contain only boxes and kerns."]);
+                crate::errors::error(st)?;
+                crate::output::begin_diagnostic(st);
+                crate::output::diagnostic_begin_capture_warning_here(st);
+                crate::output::print_nl(
+                    st,
+                    "The following discretionary sublist has been deleted:",
+                );
+                crate::output::show_box(st, p);
+                crate::output::capture_to_diagnostic(st, None);
+                crate::output::end_diagnostic(st, true);
+                st.mem.flush_node_list(p)?;
+                q.set_link(&mut st.mem, MemPtr::NULL);
+                break;
+            }
+        }
+        q = p;
+        p = q.link(&st.mem);
+        n += 1;
+    }
+
+    p = head.link(&st.mem);
+    st.mem.pop_nest(&mut st.input);
+    // SAFETY: `append_discretionary` left the disc node as the enclosing list's tail.
+    let disc = NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(st.input.cur_list.tail));
+    let part = st.save_stack.saved(-1);
+    match part {
+        0 => disc.set_pre_break(&mut st.mem, p),
+        1 => disc.set_post_break(&mut st.mem, p),
+        2 => {
+            if n > 0 && st.input.cur_list.mode.abs() == MMODE {
+                crate::output::error_here_with_diagnostic(st, "Illegal math ");
+                crate::output::print_esc(st, "discretionary");
+                crate::output::capture_to_diagnostic(st, None);
+                st.errors.help(&[
+                    "Sorry: The third part of a discretionary break must be",
+                    "empty, in math formulas. I had to delete your third part.",
+                ]);
+                st.mem.flush_node_list(p)?;
+                n = 0;
+                crate::errors::error(st)?;
+            } else {
+                disc.set_link(&mut st.mem, p);
+            }
+            if n <= i32::from(u16::MAX) {
+                disc.set_subtype(&mut st.mem, n as u16);
+            } else {
+                crate::output::print_err(st, "Discretionary list is too long");
+                st.errors.help(&[
+                    "Wow---I never thought anybody would tweak me here.",
+                    "You can't seriously need such a huge discretionary list?",
+                ]);
+                crate::errors::error(st)?;
+            }
+            if n > 0 {
+                st.input.cur_list.tail = q;
+            }
+            st.save_stack.save_ptr -= 1;
+            return Ok(());
+        }
+        _ => {}
+    }
+    st.save_stack.set_saved(-1, part + 1);
+    begin_disc_group(st)
+}
+
+/// The italic correction of character `ch`.
+fn char_italic(st: &mut EngineState, ch: NodePtr<CharNode>) -> Scaled {
+    let f = ch.font(&st.mem);
+    let c = st.fonts.effective_char(f, ch.character(&st.mem));
+    let info = st.fonts.char_info(f, c);
+    st.fonts.char_italic(f, info)
+}
+
+pub(super) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort> {
+    let tail = st.input.cur_list.tail.0;
+    if tail == st.input.cur_list.head.0 {
+        return Ok(());
+    }
+    let italic = if let Some(ch) = st.mem.as_char(MemPtr(tail)) {
+        char_italic(st, ch)
+    } else {
+        match st.mem.classify(MemIdx(tail)) {
+            Ok(AnyNode::Ligature(lig)) => char_italic(st, lig.char_word()),
+            Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(&st.mem) {
+                Some(s) if s.is_native_word() => st.fonts.get_native_italic_correction(&st.mem, w),
+                Some(WhatsitSubtype::Glyph) => {
+                    st.fonts.get_native_glyph_italic_correction(&st.mem, w)
+                }
+                _ => return Ok(()),
+            },
+            _ => return Ok(()),
+        }
+    };
+    let kern = st.mem.new_kern(italic)?;
+    st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
+    kern.set_subtype(&mut st.mem, EXPLICIT);
+    Ok(())
+}
+
+pub(super) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
+    crate::scan::scan_char_num(st)?;
+    let f = st.eqtb.cur_font();
+    let Some(p) = new_character(st, f, st.scanner.cur_val as u16)? else {
+        return Ok(());
+    };
+    let x = st.fonts.param(f, X_HEIGHT_CODE);
+    let s = f64::from(st.fonts.param(f, SLANT_CODE)) / 65536.0;
+    let mut lsb = Scaled::ZERO;
+    let mut rsb = Scaled::ZERO;
+    let a = match p {
+        NewChar::Native(w) => {
+            let a = w.width(&st.mem);
+            if a == Scaled::ZERO {
+                (lsb, rsb) = st
+                    .fonts
+                    .get_native_char_sidebearings(f, st.scanner.cur_val)?;
+            }
+            a
+        }
+        NewChar::Char(ch) => {
+            let c = st.fonts.effective_char(f, ch.character(&st.mem));
+            let info = st.fonts.char_info(f, c);
+            st.fonts.char_width(f, info)
+        }
+    };
+
+    do_assignments(st)?;
+    let f = st.eqtb.cur_font();
+    let q = match st.scanner.cur_cmd {
+        LETTER | OTHER_CHAR | CHAR_GIVEN => {
+            let q = new_character(st, f, st.scanner.cur_chr as u16)?;
+            st.scanner.cur_val = st.scanner.cur_chr;
+            q
+        }
+        CHAR_NUM => {
+            crate::scan::scan_char_num(st)?;
+            new_character(st, f, st.scanner.cur_val as u16)?
+        }
+        _ => {
+            crate::input::back_input(st)?;
+            None
+        }
+    };
+    let Some(q) = q else {
+        st.input.cur_list.tail_append(&mut st.mem, p.ptr());
+        st.input.cur_list.set_aux_s0(1000);
+        return Ok(());
+    };
+
+    let t = f64::from(st.fonts.param(f, SLANT_CODE)) / 65536.0;
+    let (w, h) = match q {
+        NewChar::Native(w) => {
+            let w = w.width(&st.mem);
+            let (h, _) = st
+                .fonts
+                .get_native_char_height_depth(f, st.scanner.cur_val)?;
+            (w, h)
+        }
+        NewChar::Char(ch) => {
+            let c = st.fonts.effective_char(f, ch.character(&st.mem));
+            let info = st.fonts.char_info(f, c);
+            let w = st.fonts.char_width(f, info);
+            let h = st.fonts.char_height(f, info);
+            (w, h)
+        }
+    };
+    let accent = if h == x {
+        p.ptr()
+    } else {
+        let b = crate::packaging::hpack(st, p.ptr(), Scaled::ZERO, ADDITIONAL)?;
+        b.set_shift_amount(&mut st.mem, x - h);
+        b.ptr()
+    };
+    let delta = if st.fonts.is_native_font(f) && a == Scaled::ZERO {
+        f64::from(w - lsb + rsb) / 2.0
+    } else {
+        f64::from(w - a) / 2.0
+    };
+    let delta = Scaled(crate::scaled_math::tex_round(
+        delta + f64::from(h) * t - f64::from(x) * s,
+    ));
+    let r = st.mem.new_kern(delta)?;
+    r.set_subtype(&mut st.mem, ACC_KERN);
+    st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());
+    r.set_link(&mut st.mem, accent);
+    let back = st.mem.new_kern(-a - delta)?;
+    st.input.cur_list.tail = back.ptr();
+    back.set_subtype(&mut st.mem, ACC_KERN);
+    accent.set_link(&mut st.mem, back.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, q.ptr());
+    st.input.cur_list.set_aux_s0(1000);
+    Ok(())
+}
