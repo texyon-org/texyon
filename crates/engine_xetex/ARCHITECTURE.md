@@ -43,6 +43,14 @@ State and memory:
     `add_or_sub`, `fract`) is generic over `i32` and `Scaled` (`TexWord`),
     `half` is `Scaled::half`. Sentinels have names: `RUNNING` rule
     dimensions, `IGNORE_DEPTH`, `MAX_DIMEN`, `INFINITE_DIMEN`, `DESIGN_SIZE`.
+  - Overflow: TeX checks it only where WEB does (`\multiply`, `\divide`,
+    the scanners' "Number too big", e-TeX expressions, the helpers above).
+    Everything else wraps at 32 bits as in the C original: `Scaled`
+    arithmetic wraps, and the `i32` sums of user values (`\advance`,
+    penalties and demerits in `line_break`, `insert_penalties`, `prev_graf`
+    and line numbers, negating a scanned value) use `wrapping_*`. So debug
+    builds, which check overflow, behave like release builds. A plain `+`
+    on an `i32` asserts that it cannot overflow.
   - `FontId` indexes the per-font tables (`PerFont<T>` in `FontState`), is
     what char and native nodes store, and comes out of `cur_font`,
     `math_font` and `scan_font_ident`. `NULL_FONT` is `font_base`.
@@ -53,8 +61,9 @@ State and memory:
   - `cur_val` stays a raw `i32` because it holds whatever was scanned.
     `cur_dimen()` and `set_cur_dimen()` read and write it as a length.
 - `consts.rs`: WEB `@d` constants and the `eqtb` layout (region bases).
-- `params.rs`: `IntPar`, `DimenPar` and `GluePar`, the `eqtb` parameters
-  read through `EqtbState::int_par`, `dimen_par` and `glue_par`. Each knows
+- `params.rs`: `IntPar`, `DimenPar`, `GluePar` and `TokPar`, the `eqtb`
+  parameters read through `EqtbState::int_par`, `dimen_par`, `glue_par` and
+  `tok_par` (`\parshape` is `PAR_SHAPE_LOC`). Each knows
   its `eqtb` location (`loc()`) and primitive name, a `GluePar` also the
   subtype of glue made from it.
   Entries are read as `eq_type`/`eq_level`/`equiv` (or `int_at` in the
@@ -66,8 +75,11 @@ State and memory:
 - `codes.rs`: enums for the `chr_code` modifiers of the commands that
   dispatch on them (`LastItemCode`, `ConvertCode`, `IfCode`, `FiOrElseCode`,
   `ExtensionCode`, `BoxCode`, `SkipCode`, `ShorthandDefCode`,
-  `BoxDimenCode`, `ShowCode`) and other small code sets (`ValueLevel` for
-  `cur_val_level` and sparse-array types, `ScannerStatus`). `code_enum!`
+  `BoxDimenCode`, `ShowCode`, `InputCode`, `PageIntCode`, `TheCode`,
+  `MarkCode`, `MathCharNumCode`, `DelimNumCode`, `MathAccentCode`,
+  `RadicalCode`) and other small code sets (`ValueLevel` for
+  `cur_val_level` and sparse-array types, `ScannerStatus`). `cur_mark` is
+  indexed by `MarkCode` and `sa_root` by `ValueLevel`. `code_enum!`
   gives each `from_raw` (a jump table) and `raw`, and `name()` where the
   variants are primitives, which `primitives.rs` and `print_cmd_chr` share.
   Dispatch decodes `cur_chr` once and matches on variants. A `chr_code` that
@@ -99,7 +111,9 @@ The typesetting pipeline:
   (an empty box's `push` is taken back). Preamble and postamble are split in
   two around `prepare_mag`, which can still report an error, as in WEB.
   `movement` optimization stays in `shipout.rs` (it needs `mem`) and patches
-  earlier movements with `set_reg_at`.
+  earlier movements with `set_reg_at`. The buffer and position are private:
+  a checkpoint keeps `into_checkpoint()` of the writer and returns with
+  `restore`, which reuses the live buffer and keeps the page manifest.
 - Font metrics (`fonts.rs`): `st.fonts.char_info(f, c)` is a `CharInfo`
   view (`exists()`, `tag()` as `CharTag::{None, Lig, List, Ext}`,
   `remainder()`), measured with `char_width`/`char_height`/`char_depth`/
@@ -114,7 +128,17 @@ The typesetting pipeline:
 - `fonts.rs` (TFM and font parameters), `ext.rs` and `ot_math.rs` (OpenType
   and Graphite through `tectonic_xetex_layout`), `pic.rs` (pictures).
 - `save.rs` (save stack, `eqtb` definitions, sparse registers), `hash.rs`,
-  `string_pool.rs`, `input.rs`, `io.rs`, `format_io.rs` (`\dump` and load).
+  `string_pool.rs`, `io.rs`.
+- `input.rs`: the input stack. A level's `state` is a scanner state
+  (`MID_LINE`, `SKIP_BLANKS`, `NEW_LINE`, which `get_next` adds to a category
+  code) or `TOKEN_LIST`. Its `index` is the file number of a file level and
+  the `TokenType` of a token-list level (`token_type()`, only valid when
+  `state == TOKEN_LIST`).
+- `format_io.rs` (`\dump` and load): each section of the format file is one
+  function generic over `FmtStream`, so the same code dumps (`Dump`) and
+  loads (`Undump`) it. Load-only range checks and allocation, and dump-only
+  statistics, are `if S::LOADING` branches. `FmtItem` gives each stored type
+  its big-endian encoding, an 8-byte word as one 64-bit value.
 
 Crate and C boundaries:
 
@@ -205,6 +229,9 @@ deliberate fix toward upstream.
   cargo test -p tectonic_engine_xetex
   ```
 
+  `cargo test` builds without optimization and with overflow checks, so the
+  dashboard also exercises the wraparound rules above.
+
   Add `--test formats` for format changes, and `--test live_preview_session`
   plus `--test live_preview_replay_regressions` for checkpoint or journal work.
 - Corpus A/B (`scripts/`): `corpus_fetch.sh` fills the corpus cache
@@ -223,7 +250,16 @@ deliberate fix toward upstream.
   reliable check. `lvt_survey.sh` refreshes `tests/corpus/lvt-viable.txt`, and
   `parity.sh` logs a quick `tex-outputs` count.
 - Upstream differential tests live under `tests/upstream/` and compare the
-  engine against upstream XeTeX directly.
+  engine against upstream XeTeX directly. Running them with a debug
+  `tectonic` binary also checks for overflow panics (`probes/limits/wrap_*`
+  push the wraparound paths). A debug build overflows its stack on
+  `cov-control-expand_depth`, which release handles.
+- `tests/algorithms/` runs small documents through INITEX in-process and
+  checks what they `\show` (packaging, line breaking, math, the page
+  builder, the scanners, register arithmetic). Their expectations come
+  from TeX Live's `xetex -ini` on the same input. Fonts come from
+  `tests/assets`. INITEX has no `\tracingparagraphs` or `\tracingpages`
+  output here (no `stat` code), so tests show boxes and values instead.
 - `FORMAT_SERIAL` (`lib.rs`) is also the bundle URL version
   (`tectonic_bundles::get_fallback_bundle_url`). Never bump it for format
   content fixes.
