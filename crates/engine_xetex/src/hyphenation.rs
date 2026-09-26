@@ -664,10 +664,7 @@ fn store_hyph_exception(st: &mut EngineState, mut n: i16, p: MemPtr) -> Result<(
     n += 1;
     st.hyph.hc[n as usize] = st.hyph.cur_lang as i32;
     if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
-        return Err(Abort::Overflow {
-            what: "pool size",
-            n: st.strings.pool_size - st.strings.init_pool_ptr,
-        });
+        return Err(Abort::PoolOverflow);
     }
 
     let mut h: i32 = 0;

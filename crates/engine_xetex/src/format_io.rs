@@ -219,10 +219,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     };
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(Abort::Overflow {
-            what: "pool size",
-            n: st.strings.pool_size - st.strings.init_pool_ptr,
-        });
+        return Err(Abort::PoolOverflow);
     }
 
     st.strings.format_ident = st.strings.make_string()?;

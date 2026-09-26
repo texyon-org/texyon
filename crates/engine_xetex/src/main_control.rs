@@ -2394,10 +2394,7 @@ pub(crate) unsafe fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort>
         crate::output::print(st, u - 1);
         st.shipout.selector = old_setting;
         if st.strings.pool_ptr + 1 > st.strings.pool_size {
-            return Err(Abort::Overflow {
-                what: "pool size",
-                n: st.strings.pool_size - st.strings.init_pool_ptr,
-            });
+            return Err(Abort::PoolOverflow);
         }
         st.strings.make_string()?
     };

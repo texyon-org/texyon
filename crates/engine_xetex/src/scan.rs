@@ -1713,15 +1713,9 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     st.mem.flush_list(head);
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(Abort::Overflow {
-            what: "pool size",
-            n: st.strings.pool_size - st.strings.init_pool_ptr,
-        });
+        return Err(Abort::PoolOverflow);
     }
-    let s = st.strings.make_string().map_err(|_| Abort::Overflow {
-        what: "number of strings",
-        n: st.strings.max_strings - st.strings.init_str_ptr,
-    })?;
+    let s = st.strings.make_string()?;
     st.strings.str_pool[st.strings.pool_ptr as usize] = b' ' as u16;
     let mut l = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
     let nl = st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) as u16;

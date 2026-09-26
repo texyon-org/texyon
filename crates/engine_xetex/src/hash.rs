@@ -94,10 +94,7 @@ impl EqtbState {
                     }
 
                     if strings.pool_ptr + utf16_len > strings.pool_size {
-                        return Err(Abort::Overflow {
-                            what: "pool size",
-                            n: strings.pool_size - strings.init_pool_ptr,
-                        });
+                        return Err(Abort::PoolOverflow);
                     }
 
                     let d = strings.cur_length();

@@ -87,10 +87,7 @@ impl SaveStackState {
 
     pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: i32, l: u16) -> Result<(), Abort> {
         if self.save_stack_full() {
-            return Err(Abort::Overflow {
-                what: "save size",
-                n: self.save_size,
-            });
+            return Err(Abort::SaveOverflow);
         }
         let kind = if l == LEVEL_ZERO {
             RESTORE_ZERO
@@ -107,10 +104,7 @@ impl SaveStackState {
     pub(crate) fn save_for_after(&mut self, t: i32) -> Result<(), Abort> {
         if self.cur_level > LEVEL_ONE {
             if self.save_stack_full() {
-                return Err(Abort::Overflow {
-                    what: "save size",
-                    n: self.save_size,
-                });
+                return Err(Abort::SaveOverflow);
             }
             self.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t);
             self.save_ptr += 1;
