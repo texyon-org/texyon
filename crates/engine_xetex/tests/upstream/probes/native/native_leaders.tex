@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\setbox1\hbox{\lb ab}
+\setbox0\hbox to 100pt{\leaders\copy1\hfil x\cleaders\hbox{\lb .}\hskip 30pt y\xleaders\copy1\hskip 40pt}\showbox0
+\shipout\box0
+\bye

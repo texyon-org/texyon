@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\setbox0\hbox{\lb ab\kern0pt cd\penalty0 ef\hskip0pt gh\hskip 0pt plus 1pt ij\relax kl{}mn}\showbox0
+\setbox0\hbox{\lb ab\ls cd\lb ef\lb gh}\showbox0
+\setbox0\hbox{\lb ab\vadjust{x}cd\mark{m}ef\insert100{y}gh}\showbox0
+\setbox0\hbox{\lb ab\special{s}cd\write-1{w}ef}\showbox0
+\setbox0\hbox{\lb ab\/cd\-ef\discretionary{}{}{}gh}\showbox0
+\setbox0\hbox{\lb a b\spaceskip=1pt c d\xspaceskip2pt e. f}\showbox0
+\bye
