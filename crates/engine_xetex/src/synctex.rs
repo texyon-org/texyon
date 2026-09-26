@@ -27,7 +27,7 @@ fn synctex_curv(shipout: &ShipoutState) -> i32 {
 }
 
 fn synctex_enabled(eqtb: &EqtbState) -> bool {
-    eqtb.b32s1(INT_BASE + INT_PAR_SYNCTEX) != 0
+    eqtb.int_par(INT_PAR_SYNCTEX) != 0
 }
 
 /// Bytes written (or that would be for the preview sink), -1 on failure.

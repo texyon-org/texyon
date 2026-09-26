@@ -28,7 +28,6 @@ use crate::main_control::{mc_propagate_error, new_graf_in, MainControlAbort};
 use crate::mem::TEMP_HEAD;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
-use crate::packaging::int_par;
 use crate::pic::load_picture_in;
 use crate::scan::{
     get_x_token_in, scan_int_in, NodeRecycleAbort, LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN,
@@ -579,7 +578,7 @@ unsafe fn load_mapping_file_in(
 
     if cnv.is_null() {
         crate::output::font_mapping_warning_in(st, name_ptr as *const c_void, name_len, 2);
-    } else if int_par(&st.eqtb, INT_PAR_XETEX_TRACING_FONTS) > 1 {
+    } else if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 1 {
         crate::output::font_mapping_warning_in(st, name_ptr as *const c_void, name_len, 0);
     }
 
@@ -975,7 +974,7 @@ pub(crate) unsafe fn find_native_font_in(
             if rval.is_none() {
                 deleteFont(font);
             }
-            if rval.is_some() && int_par(&st.eqtb, INT_PAR_XETEX_TRACING_FONTS) > 0 {
+            if rval.is_some() && st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic_in(st);
                 crate::output::print_nl_in(st, b' ' as i32);
                 print_c_string_in(st, c"-> ".as_ptr());
@@ -986,7 +985,7 @@ pub(crate) unsafe fn find_native_font_in(
     } else {
         let font_ref = findFontByName(name_string, var_string, Fix2D(scaled_size));
         if !font_ref.is_null() {
-            if int_par(&st.eqtb, INT_PAR_XETEX_TRACING_FONTS) > 0 {
+            if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic_in(st);
                 crate::output::print_nl_in(st, b' ' as i32);
                 print_c_string_in(st, c"-> ".as_ptr());
@@ -2200,9 +2199,9 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                 };
                 st.input.cur_list.set_aux_s1(lang);
                 w.set_what_lang(&mut st.mem, lang);
-                let lhm = crate::helpers::norm_min(int_par(&st.eqtb, INT_PAR_LEFT_HYPHEN_MIN));
+                let lhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN));
                 w.set_what_lhm(&mut st.mem, lhm as u16);
-                let rhm = crate::helpers::norm_min(int_par(&st.eqtb, INT_PAR_RIGHT_HYPHEN_MIN));
+                let rhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN));
                 w.set_what_rhm(&mut st.mem, rhm as u16);
             }
         }
@@ -2269,7 +2268,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                 }
                 w.set_native_font(&mut st.mem, FontId(cur_font));
                 w.set_native_glyph(&mut st.mem, st.scanner.cur_val as u16);
-                let use_glyph_metrics = int_par(&st.eqtb, INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+                let use_glyph_metrics = st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
                 // SAFETY: the font is native, the measurer only reads its tables.
                 unsafe { measure_native_glyph(&st.fonts, &mut st.mem, w, use_glyph_metrics)? };
             }

@@ -3,7 +3,7 @@
 use crate::cmd::{CHAR_GIVEN, CHAR_NUM, LETTER, OTHER_CHAR, RIGHT_BRACE, SPACER};
 pub(crate) use crate::consts::BIGGEST_LANG;
 use crate::consts::{
-    BIGGEST_CHAR, INT_BASE, INT_PAR_LANGUAGE, INT_PAR_SAVING_HYPH_CODES, LC_CODE_BASE, MIN_TRIE_OP,
+    BIGGEST_CHAR, INT_PAR_LANGUAGE, INT_PAR_SAVING_HYPH_CODES, LC_CODE_BASE, MIN_TRIE_OP,
     TOO_BIG_CHAR,
 };
 use crate::main_control::{mc_propagate_error, MainControlAbort};
@@ -517,7 +517,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
         return Ok(());
     }
 
-    st.hyph.cur_lang = norm_lang(st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE));
+    st.hyph.cur_lang = norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
 
     crate::scan::scan_left_brace_in(st)?;
     let mut k: i16 = 0;
@@ -584,7 +584,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
         }
     }
 
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_SAVING_HYPH_CODES) > 0 {
+    if st.eqtb.int_par(INT_PAR_SAVING_HYPH_CODES) > 0 {
         let lc_codes: [i32; 256] =
             std::array::from_fn(|ci| st.eqtb.b32s1(LC_CODE_BASE + ci as i32));
         save_hyph_codes_in(&mut st.hyph, &lc_codes)?;
@@ -597,7 +597,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
 
     crate::scan::scan_left_brace_in(st)?;
 
-    st.hyph.cur_lang = norm_lang(st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE));
+    st.hyph.cur_lang = norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
     if st.hyph.trie_not_ready {
         st.hyph.hyph_index = 0;
     } else {

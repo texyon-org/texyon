@@ -2,16 +2,16 @@
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, DIMEN_PAR_HFUZZ,
+    ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_BASE, BOX_NODE_SIZE, DIMEN_PAR_HFUZZ,
     DIMEN_PAR_LINE_SKIP_LIMIT, DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_SPLIT_MAX_DEPTH, DIMEN_PAR_VFUZZ,
-    EJECT_PENALTY, EXPLICIT, FIL, FILL, FILLL, FRACTION_NOAD_SIZE, GLUE_BASE,
-    GLUE_PAR_BASELINE_SKIP, GLUE_PAR_LINE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLYPH_NODE_SIZE,
-    IGNORE_DEPTH, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_BASE, INT_PAR_HBADNESS,
-    INT_PAR_SAVING_VDISCARDS, INT_PAR_TEXXET, INT_PAR_VBADNESS, INT_PAR_XETEX_UPWARDS,
-    MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD,
-    NOAD_SIZE, NORMAL, OPEN_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE,
-    SMALL_NODE_SIZE, SPLIT_BOT_MARK_CODE, SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX,
-    TEX_NULL, WRITE_NODE_SIZE,
+    EJECT_PENALTY, EXPLICIT, FIL, FILL, FILLL, FRACTION_NOAD_SIZE, GLUE_PAR_BASELINE_SKIP,
+    GLUE_PAR_LINE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLYPH_NODE_SIZE, IGNORE_DEPTH, INDEX_NODE_SIZE,
+    INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_PAR_HBADNESS, INT_PAR_SAVING_VDISCARDS,
+    INT_PAR_TEXXET, INT_PAR_VBADNESS, INT_PAR_XETEX_UPWARDS, MARGIN_KERN_NODE_SIZE,
+    MARK_CLASS_NODE_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, NORMAL,
+    OPEN_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE,
+    SPLIT_BOT_MARK_CODE, SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, TEX_NULL,
+    WRITE_NODE_SIZE,
 };
 use crate::errors::ErrorOutcome;
 use crate::fonts::{effective_char, new_native_word_node};
@@ -40,16 +40,6 @@ pub(crate) const ADDITIONAL: i16 = 1;
 
 const VSPLIT_INIT: i16 = 0;
 const DESTROY_MARKS: i16 = 3;
-
-#[inline]
-pub(crate) fn int_par(eqtb: &EqtbState, n: i32) -> i32 {
-    eqtb.b32s1(INT_BASE + n)
-}
-
-#[inline]
-pub(crate) fn dimen_par(eqtb: &EqtbState, n: i32) -> i32 {
-    eqtb.b32s1(DIMEN_BASE + n)
-}
 
 /// `p` as a native-word whatsit, if it is one.
 pub(crate) fn as_native_word(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
@@ -527,12 +517,10 @@ pub fn append_to_vlist(
     eqtb: &EqtbState,
     b: AnyBox,
 ) -> Result<(), NodeRecycleAbort> {
-    let upwards = int_par(eqtb, INT_PAR_XETEX_UPWARDS) > 0;
+    let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
     let prev_depth = cl.aux_s1();
     if prev_depth > IGNORE_DEPTH {
-        let baseline_skip = MemPtr(eqtb.b32s1(GLUE_BASE + GLUE_PAR_BASELINE_SKIP as i32));
-        let baseline_skip =
-            NodePtr::<GlueSpecNode>::from_glue_ptr(baseline_skip).expect("non-null glue spec");
+        let baseline_skip = eqtb.glue_par(GLUE_PAR_BASELINE_SKIP);
         let d = baseline_skip.width(mem).0
             - prev_depth
             - if upwards {
@@ -540,7 +528,7 @@ pub fn append_to_vlist(
             } else {
                 b.height(mem).0
             };
-        let p = if d < dimen_par(eqtb, DIMEN_PAR_LINE_SKIP_LIMIT) {
+        let p = if d < eqtb.dimen_par(DIMEN_PAR_LINE_SKIP_LIMIT) {
             crate::mem::alloc_param_glue(mem, eqtb, GLUE_PAR_LINE_SKIP)
                 .ok_or(NodeRecycleAbort::Overflow)?
         } else {
@@ -967,7 +955,7 @@ fn start_vsplit(
     Ok(VsplitStart::Ready(VsplitState {
         h,
         v,
-        split_max_d: dimen_par(eqtb, DIMEN_PAR_SPLIT_MAX_DEPTH),
+        split_max_d: eqtb.dimen_par(DIMEN_PAR_SPLIT_MAX_DEPTH),
         vert_break: start_vert_break(scanner, v.list_ptr(mem)),
     }))
 }
@@ -1064,7 +1052,7 @@ fn finish_vsplit_after_break(
 ) -> Result<VsplitOutcome, NodeRecycleAbort> {
     let mut packages = [None, None];
     let p = split_vlist_at_break(mem, scanner, state, q)?;
-    let save_discards = int_par(eqtb, INT_PAR_SAVING_VDISCARDS) > 0;
+    let save_discards = eqtb.int_par(INT_PAR_SAVING_VDISCARDS) > 0;
     let mut q = prune_page_top(mem, scanner, eqtb, q.0, save_discards)?;
 
     crate::mem::free_node(mem, state.v.ptr(), BOX_NODE_SIZE);
@@ -1526,7 +1514,7 @@ fn hpack_in(
     scanner.total_stretch = [0; 4];
     scanner.total_shrink = [0; 4];
     let mut diags = [None, None];
-    let texxet = int_par(eqtb, INT_PAR_TEXXET) > 0;
+    let texxet = eqtb.int_par(INT_PAR_TEXXET) > 0;
 
     if texxet {
         push_lr(mem, &mut scanner.lr_ptr, BEFORE.into())
@@ -1696,7 +1684,7 @@ fn hpack_in(
         if o == NORMAL && has_list {
             shipout.last_badness =
                 crate::helpers::badness(x, scanner.total_stretch[NORMAL as usize]);
-            if shipout.last_badness > int_par(eqtb, INT_PAR_HBADNESS) {
+            if shipout.last_badness > eqtb.int_par(INT_PAR_HBADNESS) {
                 push_slot(
                     &mut diags,
                     PackDiag::HUnderfull {
@@ -1718,9 +1706,9 @@ fn hpack_in(
             shipout.last_badness = 1_000_000;
             r_node.set_glue_set(mem, 1.0);
             let excess = (-x) - scanner.total_shrink[NORMAL as usize];
-            let hfuzz = dimen_par(eqtb, DIMEN_PAR_HFUZZ);
-            if excess > hfuzz || int_par(eqtb, INT_PAR_HBADNESS) < 100 {
-                let overfull_rule = dimen_par(eqtb, DIMEN_PAR_OVERFULL_RULE);
+            let hfuzz = eqtb.dimen_par(DIMEN_PAR_HFUZZ);
+            if excess > hfuzz || eqtb.int_par(INT_PAR_HBADNESS) < 100 {
+                let overfull_rule = eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
                 if overfull_rule > 0 && excess > hfuzz {
                     q = list_tail(mem, q);
                     let rule = crate::mem::alloc_rule(mem).ok_or(NodeRecycleAbort::Overflow)?;
@@ -1732,7 +1720,7 @@ fn hpack_in(
         } else if o == NORMAL && has_list {
             shipout.last_badness =
                 crate::helpers::badness(-x, scanner.total_shrink[NORMAL as usize]);
-            if shipout.last_badness > int_par(eqtb, INT_PAR_HBADNESS) {
+            if shipout.last_badness > eqtb.int_par(INT_PAR_HBADNESS) {
                 push_slot(
                     &mut diags,
                     PackDiag::HTight {
@@ -1889,7 +1877,7 @@ fn vpackage_in(
 ) -> Result<PackOutcome, NodeRecycleAbort> {
     shipout.last_badness = 0;
     let r_node = NodePtr::<VListNode>::alloc(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    let upwards = int_par(eqtb, INT_PAR_XETEX_UPWARDS) > 0;
+    let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
     r_node.set_subtype(mem, u16::from(upwards));
     r_node.set_shift_amount(mem, Scaled(0));
     r_node.set_list_ptr(mem, list);
@@ -1990,7 +1978,7 @@ fn vpackage_in(
         if o == NORMAL && has_list {
             shipout.last_badness =
                 crate::helpers::badness(x, scanner.total_stretch[NORMAL as usize]);
-            if shipout.last_badness > int_par(eqtb, INT_PAR_VBADNESS) {
+            if shipout.last_badness > eqtb.int_par(INT_PAR_VBADNESS) {
                 push_slot(
                     &mut diags,
                     PackDiag::VUnderfull {
@@ -2012,13 +2000,13 @@ fn vpackage_in(
             shipout.last_badness = 1_000_000;
             r_node.set_glue_set(mem, 1.0);
             let excess = (-x) - scanner.total_shrink[NORMAL as usize];
-            if excess > dimen_par(eqtb, DIMEN_PAR_VFUZZ) || int_par(eqtb, INT_PAR_VBADNESS) < 100 {
+            if excess > eqtb.dimen_par(DIMEN_PAR_VFUZZ) || eqtb.int_par(INT_PAR_VBADNESS) < 100 {
                 push_slot(&mut diags, PackDiag::VOverfull { excess });
             }
         } else if o == NORMAL && has_list {
             shipout.last_badness =
                 crate::helpers::badness(-x, scanner.total_shrink[NORMAL as usize]);
-            if shipout.last_badness > int_par(eqtb, INT_PAR_VBADNESS) {
+            if shipout.last_badness > eqtb.int_par(INT_PAR_VBADNESS) {
                 push_slot(
                     &mut diags,
                     PackDiag::VTight {

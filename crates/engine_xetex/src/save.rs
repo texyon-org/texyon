@@ -150,7 +150,7 @@ pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcom
     use crate::errors::ErrorOutcome;
     use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 
-    let mag = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
+    let mag = st.eqtb.int_par(INT_PAR_MAG);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
         let errmsg = error_here_with_diagnostic_in(st, c"Incompatible magnification (".as_ptr());
@@ -169,7 +169,7 @@ pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcom
         }
         geq_word_define(&mut st.eqtb, INT_BASE + INT_PAR_MAG, mag_set);
     }
-    let mag = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
+    let mag = st.eqtb.int_par(INT_PAR_MAG);
     if mag <= 0 || mag > 32768 {
         let errmsg = error_here_with_diagnostic_in(
             st,
@@ -185,7 +185,7 @@ pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcom
         }
         geq_word_define(&mut st.eqtb, INT_BASE + INT_PAR_MAG, 1000);
     }
-    st.scanner.mag_set = st.eqtb.b32s1(INT_BASE + INT_PAR_MAG);
+    st.scanner.mag_set = st.eqtb.int_par(INT_PAR_MAG);
     ErrorOutcome::Continue
 }
 

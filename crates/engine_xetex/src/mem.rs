@@ -2,8 +2,7 @@
 //! `xetex/xetex-xetex0.c`.
 pub(crate) use crate::consts::TEX_NULL;
 use crate::consts::{
-    EMPTY, END_M_CODE, GLUE_BASE, GLUE_SPEC_SIZE, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP,
-    NORMAL,
+    EMPTY, END_M_CODE, GLUE_SPEC_SIZE, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL,
 };
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
@@ -473,8 +472,7 @@ pub fn alloc_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<
     let p = NodePtr::<GlueNode>::alloc(mem)?;
     p.set_subtype(mem, n as u16 + 1); // subtype = n + 1
     p.set_leader_ptr(mem, MemPtr::NULL);
-    // q = eqtb[GLUE_BASE + n].b32.s1
-    let q = eqtb.b32s1(GLUE_BASE + n as i32);
+    let q = eqtb.glue_par(n).ptr().0;
     p.set_glue_ptr(mem, MemPtr::from_raw(q));
     // GLUE_SPEC_ref_count(q)++  →  mem[q].b32.s1 += 1
     let spec =
@@ -517,7 +515,7 @@ pub fn alloc_glue(mem: &mut MemState, q: impl crate::units::MemAddr) -> Option<N
 ///
 /// translated from xetex-xetex0.c:270 (new_skip_param)
 pub fn alloc_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
-    let spec = eqtb.b32s1(GLUE_BASE + n as i32);
+    let spec = eqtb.glue_par(n).ptr();
     let s = alloc_spec(mem, spec)?;
     mem.temp_ptr = s.ptr();
     let p = alloc_glue(mem, s.ptr())?;

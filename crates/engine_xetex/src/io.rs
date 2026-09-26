@@ -380,7 +380,7 @@ pub(crate) unsafe fn input_line_in(
     let norm = if st.eqtb.data.is_empty() {
         0
     } else {
-        st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_INPUT_NORMALIZATION)
+        st.eqtb.int_par(INT_PAR_XETEX_INPUT_NORMALIZATION)
     };
 
     if (*f).handle == INVALID_HANDLE {
@@ -720,7 +720,7 @@ pub(crate) unsafe fn open_or_close_in(st: &mut EngineState) -> Result<(), OpenOr
     crate::scan::scan_optional_equals_in(st).map_err(OpenOrCloseAbort::Scanner)?;
     scan_and_pack_name_in(st).map_err(OpenOrCloseAbort::Scanner)?;
 
-    let mode = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE);
+    let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let encoding = st
         .eqtb
         .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
@@ -943,7 +943,7 @@ pub(crate) unsafe fn open_log_file_in(st: &mut EngineState) -> Result<(), OpenLo
 
     crate::output::print_nl_cstr_in(st, c"**".as_ptr());
     let mut l = st.input.input_stack[0].limit;
-    if st.input.buffer[l as usize] == st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR) {
+    if st.input.buffer[l as usize] == st.eqtb.int_par(INT_PAR_END_LINE_CHAR) {
         l -= 1;
     }
     for k in 1..=l {
@@ -1018,7 +1018,7 @@ pub(crate) unsafe fn close_files_and_terminate_in(
     }
 
     // Routed through the journaling setter so a rewind restores `\newlinechar`.
-    st.eqtb.set_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, -1);
+    st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, -1);
 
     crate::shipout::finalize_dvi_file_in(st).map_err(|e| e.into_engine_abort())?;
     crate::synctex::synctex_terminate(st);
@@ -1212,7 +1212,7 @@ pub(crate) unsafe fn start_input_in(
     crate::input::begin_file_reading_in(st)?;
 
     let idx = st.input.cur_input.index as i32;
-    let mode = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE);
+    let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let encoding = st
         .eqtb
         .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
@@ -1272,7 +1272,7 @@ pub(crate) unsafe fn start_input_in(
     crate::output::print_in(st, full_name);
     ttstub_output_flush(st.shipout.rust_stdout);
 
-    let tracing_stack_levels = st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS);
+    let tracing_stack_levels = st.eqtb.int_par(INT_PAR_TRACING_STACK_LEVELS);
     if tracing_stack_levels > 0 {
         crate::output::begin_diagnostic_in(st);
         crate::output::diagnostic_begin_capture_warning_here_in(st);

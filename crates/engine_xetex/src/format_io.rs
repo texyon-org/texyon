@@ -223,11 +223,11 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     crate::output::print_cstr_in(st, c" (preloaded format=".as_ptr());
     crate::output::print_in(st, st.strings.job_name);
     crate::output::print_char_in(st, b' ' as i32);
-    crate::output::print_int_in(st, st.eqtb.b32s1(INT_BASE + INT_PAR_YEAR));
+    crate::output::print_int_in(st, st.eqtb.int_par(INT_PAR_YEAR));
     crate::output::print_char_in(st, b'.' as i32);
-    crate::output::print_int_in(st, st.eqtb.b32s1(INT_BASE + INT_PAR_MONTH));
+    crate::output::print_int_in(st, st.eqtb.int_par(INT_PAR_MONTH));
     crate::output::print_char_in(st, b'.' as i32);
-    crate::output::print_int_in(st, st.eqtb.b32s1(INT_BASE + INT_PAR_DAY));
+    crate::output::print_int_in(st, st.eqtb.int_par(INT_PAR_DAY));
     crate::output::print_char_in(st, b')' as i32);
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
@@ -560,7 +560,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     }
 
     dump_int(fmt_out, FORMAT_FOOTER_MAGIC)?;
-    st.eqtb.set_b32s1(INT_BASE + INT_PAR_TRACING_STATS, 0);
+    st.eqtb.set_int_par(INT_PAR_TRACING_STATS, 0);
     ttstub_output_close(fmt_out);
     Ok(())
 }

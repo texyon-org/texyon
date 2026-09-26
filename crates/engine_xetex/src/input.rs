@@ -2,8 +2,7 @@
 
 use crate::cmd::ASSIGN_TOKS;
 use crate::consts::{
-    CS_TOKEN_FLAG, FROZEN_RELAX, INT_BASE, INT_PAR_TRACING_MACROS, LOCAL_BASE,
-    LOCAL_OUTPUT_ROUTINE, TEX_NULL,
+    CS_TOKEN_FLAG, FROZEN_RELAX, INT_PAR_TRACING_MACROS, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, TEX_NULL,
 };
 use crate::errors::{EngineAbort, ErrorOutcome};
 use crate::io::u_close;
@@ -297,7 +296,7 @@ pub(crate) fn begin_token_list_in(st: &mut EngineState, p: i32, t: u16) -> Resul
         return Ok(());
     }
     st.input.cur_input.loc = list.link(&st.mem).0;
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_MACROS) > 1 {
+    if st.eqtb.int_par(INT_PAR_TRACING_MACROS) > 1 {
         use crate::output::{
             begin_diagnostic_in, capture_to_diagnostic_in,
             diagnostic_begin_capture_warning_here_in, end_diagnostic_in, print_cmd_chr_in,

@@ -234,7 +234,7 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
     let c = st.scanner.cur_chr;
 
     if c != 1 {
-        st.eqtb.set_b32s1(INT_BASE + INT_PAR_NEW_LINE_CHAR, -1);
+        st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, -1);
     }
 
     if st.strings.job_name == 0 {
@@ -625,12 +625,12 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
         eqtb.set_b32s1(k, 0);
     }
 
-    eqtb.set_b32s1(INT_BASE + INT_PAR_MAG, 1000);
-    eqtb.set_b32s1(INT_BASE + INT_PAR_TOLERANCE, 10000);
-    eqtb.set_b32s1(INT_BASE + INT_PAR_HANG_AFTER, 1);
-    eqtb.set_b32s1(INT_BASE + INT_PAR_MAX_DEAD_CYCLES, 25);
-    eqtb.set_b32s1(INT_BASE + INT_PAR_ESCAPE_CHAR, b'\\' as i32);
-    eqtb.set_b32s1(INT_BASE + INT_PAR_END_LINE_CHAR, b'\r' as i32);
+    eqtb.set_int_par(INT_PAR_MAG, 1000);
+    eqtb.set_int_par(INT_PAR_TOLERANCE, 10000);
+    eqtb.set_int_par(INT_PAR_HANG_AFTER, 1);
+    eqtb.set_int_par(INT_PAR_MAX_DEAD_CYCLES, 25);
+    eqtb.set_int_par(INT_PAR_ESCAPE_CHAR, b'\\' as i32);
+    eqtb.set_int_par(INT_PAR_END_LINE_CHAR, b'\r' as i32);
 
     for k in 0..NUMBER_USVS {
         eqtb.set_b32s1(DEL_CODE_BASE + k, -1);
@@ -1024,7 +1024,7 @@ pub(crate) unsafe fn initialize_engine(
         }
     }
 
-    let end_line_char = st.eqtb.b32s1(INT_BASE + INT_PAR_END_LINE_CHAR);
+    let end_line_char = st.eqtb.int_par(INT_PAR_END_LINE_CHAR);
     if (0..=BIGGEST_CHAR).contains(&end_line_char) {
         st.input.buffer[st.input.cur_input.limit as usize] = end_line_char;
     } else {
@@ -1036,10 +1036,10 @@ pub(crate) unsafe fn initialize_engine(
     } else {
         crate::texmfmp::get_date_and_time(build_date, st.config.deterministic_mode)
     };
-    st.eqtb.set_b32s1(INT_BASE + INT_PAR_TIME, time);
-    st.eqtb.set_b32s1(INT_BASE + INT_PAR_DAY, day);
-    st.eqtb.set_b32s1(INT_BASE + INT_PAR_MONTH, month);
-    st.eqtb.set_b32s1(INT_BASE + INT_PAR_YEAR, year);
+    st.eqtb.set_int_par(INT_PAR_TIME, time);
+    st.eqtb.set_int_par(INT_PAR_DAY, day);
+    st.eqtb.set_int_par(INT_PAR_MONTH, month);
+    st.eqtb.set_int_par(INT_PAR_YEAR, year);
 
     if st.hyph.trie_not_ready {
         let hyph = &mut st.hyph;

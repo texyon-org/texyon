@@ -1,13 +1,12 @@
 //! Shipping boxes out to the XDV file.
 use crate::consts::{
-    A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_BASE, DIMEN_PAR_H_OFFSET,
+    A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_PAR_H_OFFSET,
     DIMEN_PAR_PDF_PAGE_HEIGHT, DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE,
-    FILLL, FONT_BASE, GLUE_SPEC_SIZE, INT_BASE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE,
-    INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INVALID_HANDLE, LEFT_TO_RIGHT,
-    L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NORMAL,
-    NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
-    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY,
-    TEX_NULL, TOO_BIG_CHAR,
+    FILLL, FONT_BASE, GLUE_SPEC_SIZE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT,
+    INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD,
+    MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG,
+    RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
+    SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::apply_tfm_font_mapping;
 
@@ -334,14 +333,6 @@ pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
     s.cur_s = -1;
 }
 
-fn int_par(eqtb: &EqtbState, k: i32) -> i32 {
-    eqtb.b32s1(INT_BASE + k)
-}
-
-fn dimen_par(eqtb: &EqtbState, k: i32) -> i32 {
-    eqtb.b32s1(DIMEN_BASE + k)
-}
-
 /// Emit the current string (the tail of the pool) as a DVI special and drop it.
 fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
@@ -363,14 +354,14 @@ pub(crate) unsafe fn ship_out_in(
     st: &mut crate::state::EngineState,
     p: i32,
 ) -> Result<(), ShipoutAbort> {
-    let mag = int_par(&st.eqtb, INT_PAR_MAG);
+    let mag = st.eqtb.int_par(INT_PAR_MAG);
     let job_name = crate::texmfmp::gettexstring_in(&st.strings, st.strings.job_name);
     crate::synctex::synctex_sheet(st, mag, job_name);
 
     if st.strings.job_name == 0 {
         crate::io::open_log_file_in(st)?;
     }
-    let tracing_output = int_par(&st.eqtb, INT_PAR_TRACING_OUTPUT) > 0;
+    let tracing_output = st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) > 0;
     if tracing_output {
         crate::output::print_nl_cstr_in(st, c"".as_ptr());
         crate::output::print_ln_in(st);
@@ -412,8 +403,8 @@ pub(crate) unsafe fn ship_out_in(
         page.depth(&st.mem).0,
         page.width(&st.mem).0,
     );
-    let h_offset = dimen_par(&st.eqtb, DIMEN_PAR_H_OFFSET);
-    let v_offset = dimen_par(&st.eqtb, DIMEN_PAR_V_OFFSET);
+    let h_offset = st.eqtb.dimen_par(DIMEN_PAR_H_OFFSET);
+    let v_offset = st.eqtb.dimen_par(DIMEN_PAR_V_OFFSET);
     if height > MAX_HALFWORD
         || depth > MAX_HALFWORD
         || height + depth + v_offset > MAX_HALFWORD
@@ -430,7 +421,7 @@ pub(crate) unsafe fn ship_out_in(
         ]);
         ship_err(crate::errors::error_in(st))?;
 
-        if int_par(&st.eqtb, INT_PAR_TRACING_OUTPUT) <= 0 {
+        if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
             crate::output::begin_diagnostic_in(st);
             crate::output::print_nl_cstr_in(st, c"The following box has been deleted:".as_ptr());
             crate::output::show_box_in(st, p);
@@ -455,7 +446,7 @@ pub(crate) unsafe fn ship_out_in(
     if !st.scanner.lr_ptr.is_null() || st.scanner.cur_dir != LEFT_TO_RIGHT {
         return Err(ShipoutAbort::Confusion(c"LR3"));
     }
-    if int_par(&st.eqtb, INT_PAR_TRACING_OUTPUT) <= 0 {
+    if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
         crate::output::print_char_in(st, b']' as i32);
     }
     st.shipout.dead_cycles = 0;
@@ -471,10 +462,10 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
         page.depth(&st.mem).0,
         page.width(&st.mem).0,
     );
-    let h_offset = dimen_par(&st.eqtb, DIMEN_PAR_H_OFFSET);
-    let v_offset = dimen_par(&st.eqtb, DIMEN_PAR_V_OFFSET);
-    let pdf_page_width = dimen_par(&st.eqtb, DIMEN_PAR_PDF_PAGE_WIDTH);
-    let pdf_page_height = dimen_par(&st.eqtb, DIMEN_PAR_PDF_PAGE_HEIGHT);
+    let h_offset = st.eqtb.dimen_par(DIMEN_PAR_H_OFFSET);
+    let v_offset = st.eqtb.dimen_par(DIMEN_PAR_V_OFFSET);
+    let pdf_page_width = st.eqtb.dimen_par(DIMEN_PAR_PDF_PAGE_WIDTH);
+    let pdf_page_height = st.eqtb.dimen_par(DIMEN_PAR_PDF_PAGE_HEIGHT);
 
     st.shipout.max_v = st.shipout.max_v.max(height + depth + v_offset);
     st.shipout.max_h = st.shipout.max_h.max(width + h_offset);
@@ -516,7 +507,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
         dvi_four(&mut st.shipout, 25_400_000)?;
         dvi_four(&mut st.shipout, 473_628_672)?;
         ship_err(crate::save::prepare_mag_in(st))?;
-        dvi_four(&mut st.shipout, int_par(&st.eqtb, INT_PAR_MAG))?;
+        dvi_four(&mut st.shipout, st.eqtb.int_par(INT_PAR_MAG))?;
         let comment = b"tectonic";
         dvi_out(&mut st.shipout, comment.len() as u8)?;
         dvi_bytes(&mut st.shipout, comment)?;
@@ -1204,7 +1195,7 @@ fn chars_out(
 fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), ShipoutAbort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
-    if int_par(&st.eqtb, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
+    if st.eqtb.int_par(INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
         merge_justifiable_native_words(
             &mut st.mem,
             &mut st.strings,
@@ -1673,7 +1664,7 @@ pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result
     dvi_four(&mut st.shipout, 25_400_000)?;
     dvi_four(&mut st.shipout, 473_628_672)?;
     ship_err(crate::save::prepare_mag_in(st))?;
-    dvi_four(&mut st.shipout, int_par(&st.eqtb, INT_PAR_MAG))?;
+    dvi_four(&mut st.shipout, st.eqtb.int_par(INT_PAR_MAG))?;
     let (max_v, max_h, max_push, total_pages) = (
         st.shipout.max_v,
         st.shipout.max_h,
@@ -2037,7 +2028,7 @@ fn special_out(
 
 /// Log only, or terminal and log when `\tracingonline` is positive.
 fn log_selector(eqtb: &EqtbState) -> i32 {
-    if int_par(eqtb, INT_PAR_TRACING_ONLINE) <= 0 {
+    if eqtb.int_par(INT_PAR_TRACING_ONLINE) <= 0 {
         SELECTOR_LOG_ONLY
     } else {
         SELECTOR_TERM_AND_LOG

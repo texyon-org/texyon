@@ -127,8 +127,8 @@ fn set_contrib_tail(st: &mut EngineState, tail: MemPtr) {
 fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
     let shipout = &mut st.shipout;
     shipout.page_contents = contents;
-    shipout.page_so_far[PAGE_GOAL] = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_VSIZE);
-    shipout.page_max_depth = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_MAX_DEPTH);
+    shipout.page_so_far[PAGE_GOAL] = st.eqtb.dimen_par(DIMEN_PAR_VSIZE);
+    shipout.page_max_depth = st.eqtb.dimen_par(DIMEN_PAR_MAX_DEPTH);
     shipout.page_so_far[PAGE_TOTAL..=PAGE_DEPTH].fill(0);
     shipout.least_page_cost = MAX_HALFWORD;
 }
@@ -302,9 +302,9 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     }
 
     st.shipout.insert_penalties = 0;
-    let save_split_top_skip = st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP as i32);
-    let process_inserts = st.eqtb.b32s1(INT_BASE + INT_PAR_HOLDING_INSERTS) <= 0
-        && !st.config.semantic_pagination_enabled;
+    let save_split_top_skip = st.eqtb.glue_par(GLUE_PAR_SPLIT_TOP_SKIP).ptr().0;
+    let process_inserts =
+        st.eqtb.int_par(INT_PAR_HOLDING_INSERTS) <= 0 && !st.config.semantic_pagination_enabled;
     if process_inserts {
         let mut r = PAGE_INS_HEAD.link(&st.mem);
         while r != PAGE_INS_HEAD {
@@ -372,9 +372,9 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         prev_p.set_link(&mut st.mem, MemPtr::NULL);
     }
 
-    let save_vbadness = st.eqtb.b32s1(INT_BASE + INT_PAR_VBADNESS);
-    st.eqtb.set_b32s1(INT_BASE + INT_PAR_VBADNESS, INF_BAD);
-    let save_vfuzz = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_VFUZZ);
+    let save_vbadness = st.eqtb.int_par(INT_PAR_VBADNESS);
+    st.eqtb.set_int_par(INT_PAR_VBADNESS, INF_BAD);
+    let save_vfuzz = st.eqtb.dimen_par(DIMEN_PAR_VFUZZ);
     st.eqtb
         .set_b32s1(DIMEN_BASE + DIMEN_PAR_VFUZZ, MAX_HALFWORD);
     let page = crate::packaging::vpackage_emit_in(
@@ -387,7 +387,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     st.eqtb.set_b32s1(BOX_BASE + 255, page.idx().0);
     st.eqtb
         .set_b32s1(INT_BASE + INT_PAR_VBADNESS, save_vbadness);
-    st.eqtb.set_b32s1(DIMEN_BASE + DIMEN_PAR_VFUZZ, save_vfuzz);
+    st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, save_vfuzz);
     if st.shipout.last_glue.0 != MAX_HALFWORD {
         crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
     }
@@ -428,7 +428,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
 
     let output_routine = st.eqtb.b32s1(LOCAL_BASE + LOCAL_OUTPUT_ROUTINE);
     if output_routine != TEX_NULL {
-        if st.shipout.dead_cycles < st.eqtb.b32s1(INT_BASE + INT_PAR_MAX_DEAD_CYCLES) {
+        if st.shipout.dead_cycles < st.eqtb.int_par(INT_PAR_MAX_DEAD_CYCLES) {
             st.shipout.output_active = true;
             st.shipout.dead_cycles += 1;
             push_nest_pagebuilder_in(st)?;
@@ -797,7 +797,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 let next = p.link(&st.mem);
                 CONTRIB_HEAD.set_link(&mut st.mem, next);
                 p.set_link(&mut st.mem, MemPtr::NULL);
-                if st.eqtb.b32s1(INT_BASE + INT_PAR_SAVING_VDISCARDS) <= 0 {
+                if st.eqtb.int_par(INT_PAR_SAVING_VDISCARDS) <= 0 {
                     crate::packaging::flush_node_list(&mut st.mem, p.0)
                         .map_err(PageBuildAbort::Confusion)?;
                 } else {

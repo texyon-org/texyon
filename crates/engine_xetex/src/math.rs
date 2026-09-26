@@ -6,7 +6,7 @@ use crate::consts::{
     DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_MATH_SURROUND,
     DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE, DIMEN_PAR_SCRIPT_SPACE, DLIST,
     EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FONT_BASE, FRACTION_NOAD_SIZE,
-    GLUE_BASE, GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
+    GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
     GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_LEFT_SKIP,
     GLUE_PAR_MED_MU_SKIP, GLUE_PAR_RIGHT_SKIP, GLUE_PAR_THICK_MU_SKIP, GLUE_PAR_THIN_MU_SKIP,
     GLYPH_NODE_SIZE, HMODE, INF_PENALTY, INT_BASE, INT_PAR_BIN_OP_PENALTY, INT_PAR_CUR_FAM,
@@ -25,7 +25,7 @@ use crate::fonts::{
 };
 use crate::mem::{
     alloc_choice, alloc_glue, alloc_kern, alloc_noad, alloc_spec, free_node, get_avail, get_node,
-    ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, TEX_NULL,
+    ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, TEX_NULL, ZERO_GLUE,
 };
 use crate::node::{
     AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, HListNode, KernNode, Noad, NodePtr,
@@ -1394,7 +1394,7 @@ fn clean_script_box_in(
         }
     };
     st.scanner.cur_f = saved_font;
-    let w = node.width(&st.mem).0 + st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_SCRIPT_SPACE);
+    let w = node.width(&st.mem).0 + st.eqtb.dimen_par(DIMEN_PAR_SCRIPT_SPACE);
     node.set_width(&mut st.mem, Scaled(w));
     Ok(ScriptBoxPrep {
         box_node: node,
@@ -1778,8 +1778,8 @@ fn make_left_right_in(
     set_cur_size_and_mu(st);
     let size = st.scanner.cur_size;
     let axis_height = axis_height(&st.fonts, &st.eqtb, size);
-    let delimiter_factor = st.eqtb.b32s1(INT_BASE + INT_PAR_DELIMITER_FACTOR);
-    let delimiter_shortfall = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DELIMITER_SHORTFALL);
+    let delimiter_factor = st.eqtb.int_par(INT_PAR_DELIMITER_FACTOR);
+    let delimiter_shortfall = st.eqtb.dimen_par(DIMEN_PAR_DELIMITER_SHORTFALL);
     let delta2 = max_d + axis_height;
     let delta1 = (max_h + max_d - delta2).max(delta2);
     let delta = ((delta1 / 500) * delimiter_factor).max(delta1 + delta1 - delimiter_shortfall);
@@ -2169,11 +2169,11 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     }
                     NodeType::BinNoad => {
                         t = NodeType::BinNoad.as_raw();
-                        pen = st.eqtb.b32s1(INT_BASE + INT_PAR_BIN_OP_PENALTY);
+                        pen = st.eqtb.int_par(INT_PAR_BIN_OP_PENALTY);
                     }
                     NodeType::RelNoad => {
                         t = NodeType::RelNoad.as_raw();
-                        pen = st.eqtb.b32s1(INT_BASE + INT_PAR_REL_PENALTY);
+                        pen = st.eqtb.int_par(INT_PAR_REL_PENALTY);
                     }
                     NodeType::OrdNoad
                     | NodeType::VcenterNoad
@@ -2234,7 +2234,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     _ => return Err(NodeRecycleAbort::Confusion(c"mlist4").into()),
                 };
                 if x != 0 {
-                    let g = MemPtr::from_raw(st.eqtb.b32s1(GLUE_BASE + x as i32));
+                    let g = st.eqtb.glue_par(x).ptr();
                     let mu = st.scanner.cur_mu;
                     let y = math_glue_in(st, g, mu)?;
                     let z = crate::mem::alloc_glue(&mut st.mem, y.ptr())
@@ -2972,7 +2972,7 @@ fn append_accent_noad(
 
 fn finish_accent_math_field(mem: &mut MemState, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
     tail.set_accent_char_val(mem, (value % 65536) as u16);
-    let intpar_cur_fam = eqtb.b32s1(INT_BASE + INT_PAR_CUR_FAM);
+    let intpar_cur_fam = eqtb.int_par(INT_PAR_CUR_FAM);
     if math_class_field(value) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
         tail.set_accent_char_fam(mem, intpar_cur_fam as u16);
     } else {
@@ -3121,7 +3121,7 @@ pub(crate) fn resume_after_display_in(
     st.input.cur_list.mode = HMODE;
     st.input.cur_list.set_aux_s0(1000);
 
-    let lang = st.eqtb.b32s1(INT_BASE + INT_PAR_LANGUAGE);
+    let lang = st.eqtb.int_par(INT_PAR_LANGUAGE);
     let cl: u8 = if lang <= 0 || lang > BIGGEST_LANG {
         0
     } else {
@@ -3130,8 +3130,8 @@ pub(crate) fn resume_after_display_in(
     st.hyph.cur_lang = cl;
     st.input.cur_list.set_aux_s1(cl as i32);
 
-    let lhm = crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as i32;
-    let rhm = crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
+    let lhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as i32;
+    let rhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
     st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + cl as i32;
 
     crate::scan::get_x_token_in(st)?;
@@ -3174,8 +3174,8 @@ fn app_display_in(
     d: i32,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::main_control::MainControlAbort;
-    let s = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
-    let x = st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION);
+    let s = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT);
+    let x = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION);
     if x == 0 {
         classify_box_or_panic(&st.mem, b).set_shift_amount(&mut st.mem, Scaled(s + d));
         crate::packaging::append_to_vlist_emit_in(st, b)?;
@@ -3183,7 +3183,7 @@ fn app_display_in(
     }
 
     let mut d = d;
-    let z = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
+    let z = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_WIDTH);
     let orig = classify_box_or_panic(&st.mem, b);
     let mut e;
     if x > 0 {
@@ -3400,7 +3400,7 @@ pub(crate) fn after_math_in(
     }
 
     if m < 0 {
-        let math_surround = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
+        let math_surround = st.eqtb.dimen_par(DIMEN_PAR_MATH_SURROUND);
         let node = crate::mem::alloc_math(&mut st.mem, math_surround, BEFORE)
             .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
@@ -3444,9 +3444,9 @@ pub(crate) fn after_math_in(
     let pre_t = st.scanner.pre_adjust_tail.0;
     st.scanner.pre_adjust_tail.0 = TEX_NULL;
     let mut w = b.width(&st.mem).0;
-    let z = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH);
-    let mut s = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT);
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
+    let z = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_WIDTH);
+    let mut s = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT);
+    if st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION) < 0 {
         s = -s - z;
     }
     let (mut e, q);
@@ -3488,14 +3488,11 @@ pub(crate) fn after_math_in(
         }
     }
 
-    let pen = crate::mem::alloc_penalty(
-        &mut st.mem,
-        st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY),
-    )
-    .ok_or(NodeRecycleAbort::Overflow)?;
+    let pen = crate::mem::alloc_penalty(&mut st.mem, st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY))
+        .ok_or(NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
-    let pre_display_size = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
+    let pre_display_size = st.eqtb.dimen_par(DIMEN_PAR_PRE_DISPLAY_SIZE);
     let (g1, mut g2) = if d + s <= pre_display_size || l {
         (GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP)
     } else {
@@ -3555,11 +3552,8 @@ pub(crate) fn after_math_in(
         cl.tail.0 = pre_t;
     }
 
-    let pen = crate::mem::alloc_penalty(
-        &mut st.mem,
-        st.eqtb.b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY),
-    )
-    .ok_or(NodeRecycleAbort::Overflow)?;
+    let pen = crate::mem::alloc_penalty(&mut st.mem, st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY))
+        .ok_or(NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
     if g2 > 0 {
@@ -3591,7 +3585,7 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 
 /// A kern, or the parameter glue when that skip is nonzero.
 fn side_skip_in(st: &mut EngineState, param: i16) -> Result<MemPtr, NodeRecycleAbort> {
-    let p = if st.eqtb.b32s1(GLUE_BASE + param as i32) == 0 {
+    let p = if st.eqtb.glue_par(param).ptr() == ZERO_GLUE {
         alloc_kern(&mut st.mem, 0).map(|k| k.ptr())
     } else {
         crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, param).map(|g| g.ptr())
@@ -3660,7 +3654,7 @@ pub(crate) fn init_math_in(
                 .fonts
                 .font_info_b32s1(QUAD_CODE + st.fonts.param_base(cur_font));
 
-            let texxet = st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0;
+            let texxet = st.eqtb.int_par(INT_PAR_TEXXET) > 0;
             if texxet {
                 crate::mem::push_lr(&mut st.mem, &mut st.scanner.lr_ptr, BEFORE.into())
                     .ok_or(NodeRecycleAbort::Overflow)?;
@@ -3797,16 +3791,16 @@ pub(crate) fn init_math_in(
         let s;
         let par_shape = st.eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
         if par_shape == TEX_NULL {
-            let hang = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HANG_INDENT);
-            let hang_after = st.eqtb.b32s1(INT_BASE + INT_PAR_HANG_AFTER);
+            let hang = st.eqtb.dimen_par(DIMEN_PAR_HANG_INDENT);
+            let hang_after = st.eqtb.int_par(INT_PAR_HANG_AFTER);
             let prev_graf = st.input.cur_list.prev_graf;
             if hang != 0
                 && ((hang_after >= 0 && prev_graf + 2 > hang_after) || prev_graf + 1 < -hang_after)
             {
-                l = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE) - hang.abs();
+                l = st.eqtb.dimen_par(DIMEN_PAR_HSIZE) - hang.abs();
                 s = if hang > 0 { hang } else { 0 };
             } else {
-                l = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_HSIZE);
+                l = st.eqtb.dimen_par(DIMEN_PAR_HSIZE);
                 s = 0;
             }
         } else {
@@ -4139,7 +4133,7 @@ fn var_delimiter_in(
     }
     let b = if f == FONT_BASE {
         let b = alloc_null_box(&mut st.mem)?;
-        let width = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_NULL_DELIMITER_SPACE);
+        let width = st.eqtb.dimen_par(DIMEN_PAR_NULL_DELIMITER_SPACE);
         b.set_width(&mut st.mem, Scaled(width));
         AnyBox::HList(b)
     } else if !font_uses_opentype(&st.fonts, f) {

@@ -462,6 +462,29 @@ impl EqtbState {
         self.data[index].b16.s0 = v;
     }
 
+    #[inline]
+    pub fn int_par(&self, n: i32) -> i32 {
+        self.b32s1(crate::consts::INT_BASE + n)
+    }
+    #[inline]
+    pub fn set_int_par(&mut self, n: i32, v: i32) {
+        self.set_b32s1(crate::consts::INT_BASE + n, v);
+    }
+    #[inline]
+    pub fn dimen_par(&self, n: i32) -> i32 {
+        self.b32s1(crate::consts::DIMEN_BASE + n)
+    }
+    #[inline]
+    pub fn set_dimen_par(&mut self, n: i32, v: i32) {
+        self.set_b32s1(crate::consts::DIMEN_BASE + n, v);
+    }
+    /// The spec of glue parameter `n`, never null.
+    #[inline]
+    pub fn glue_par(&self, n: i16) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
+        let spec = crate::units::MemPtr(self.b32s1(crate::consts::GLUE_BASE + n as i32));
+        crate::node::NodePtr::from_glue_ptr(spec).expect("glue parameters are never null")
+    }
+
     /// Read `XEQ_LEVEL(p)` = `xeq_level[p - INT_BASE]`.
     #[inline]
     pub fn xeq_level_at(&self, p: i32) -> u16 {

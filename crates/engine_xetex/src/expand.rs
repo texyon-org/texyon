@@ -7,10 +7,10 @@ use crate::cmd::{
 };
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
-    GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP, HMODE, INT_BASE, INT_PAR_TRACING_COMMANDS,
-    INT_PAR_TRACING_IFS, INT_PAR_TRACING_MACROS, INT_PAR_TRACING_STACK_LEVELS, MMODE, NULL_CS,
-    PRIM_EQTB_BASE, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, TOO_BIG_USV,
-    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP, HMODE, INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_IFS,
+    INT_PAR_TRACING_MACROS, INT_PAR_TRACING_STACK_LEVELS, MMODE, NULL_CS, PRIM_EQTB_BASE,
+    SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE,
+    UNLESS_CODE, VMODE,
 };
 use crate::errors::error_in;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -216,9 +216,7 @@ fn trace_diagnostic_in(st: &mut EngineState, text: &std::ffi::CStr) {
 }
 
 pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
-        && st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) <= 1
-    {
+    if st.eqtb.int_par(INT_PAR_TRACING_IFS) > 0 && st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) <= 1 {
         show_cur_cmd_chr_in(st);
     }
 
@@ -388,7 +386,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
         IF_CASE_CODE => {
             scan_int_in(st)?;
             let mut n = st.scanner.cur_val;
-            if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 1 {
+            if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 1 {
                 begin_diagnostic_in(st);
                 diagnostic_begin_capture_warning_here_in(st);
                 print_cstr_in(st, c"{case ".as_ptr());
@@ -432,7 +430,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
         b = !b;
     }
 
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 1 {
+    if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 1 {
         trace_diagnostic_in(st, if b { c"{true}" } else { c"{false}" });
     }
 
@@ -931,7 +929,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
             }
             break;
         }
-        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 1 {
+        if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 1 {
             show_cur_cmd_chr_in(st);
         }
         match st.scanner.cur_cmd {
@@ -1056,8 +1054,8 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
             THE => ins_the_toks_in(st)?,
             IF_TEST => conditional_in(st)?,
             FI_OR_ELSE => {
-                if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_IFS) > 0
-                    && st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) <= 1
+                if st.eqtb.int_par(INT_PAR_TRACING_IFS) > 0
+                    && st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) <= 1
                 {
                     show_cur_cmd_chr_in(st);
                 }
@@ -1169,7 +1167,7 @@ fn extra_right_brace_in_argument_in(st: &mut EngineState) -> Result<(), SccAbort
 fn trace_macro_call_in(st: &mut EngineState, ref_count: i32) {
     begin_diagnostic_in(st);
     diagnostic_begin_capture_warning_here_in(st);
-    let stack_levels = st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS);
+    let stack_levels = st.eqtb.int_par(INT_PAR_TRACING_STACK_LEVELS);
     if stack_levels > 0 {
         if st.input.input_ptr < stack_levels {
             crate::output::print_ln_in(st);
@@ -1195,7 +1193,7 @@ fn trace_macro_call_in(st: &mut EngineState, ref_count: i32) {
 
 #[cold]
 fn trace_macro_param_in(st: &mut EngineState, match_chr: i32, n: i32, list: i32) {
-    let stack_levels = st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_STACK_LEVELS);
+    let stack_levels = st.eqtb.int_par(INT_PAR_TRACING_STACK_LEVELS);
     if stack_levels == 0 || st.input.input_ptr < stack_levels {
         begin_diagnostic_in(st);
         diagnostic_begin_capture_warning_here_in(st);
@@ -1216,7 +1214,7 @@ pub(crate) fn macro_call_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let mut r = st.mem.b32s1(ref_count);
     let mut n: i32 = 0;
 
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_MACROS) > 0 {
+    if st.eqtb.int_par(INT_PAR_TRACING_MACROS) > 0 {
         trace_macro_call_in(st, ref_count);
     }
 
@@ -1387,7 +1385,7 @@ pub(crate) fn macro_call_in(st: &mut EngineState) -> Result<(), SccAbort> {
                         pstack[n as usize] = st.mem.b32s1(TEMP_HEAD);
                     }
                     n += 1;
-                    if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_MACROS) > 0 {
+                    if st.eqtb.int_par(INT_PAR_TRACING_MACROS) > 0 {
                         trace_macro_param_in(st, match_chr, n, pstack[(n - 1) as usize]);
                     }
                 }
