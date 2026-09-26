@@ -3000,7 +3000,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<(), Ab
                 Some(shape) if st.scanner.cur_val > 0 => {
                     if q == 2 {
                         q = st.scanner.cur_val % 2;
-                        st.scanner.cur_val = (st.scanner.cur_val + q) / 2;
+                        st.scanner.cur_val = st.scanner.cur_val / 2 + q;
                     }
                     let line = st.scanner.cur_val.min(shape.lines(&st.mem));
                     let d = if q == 0 {
