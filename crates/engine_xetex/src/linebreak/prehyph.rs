@@ -1,0 +1,282 @@
+//! Pre-hyphenation: finding the words `hyphenate` should try.
+
+use crate::consts::{L_CODE, NORMAL, TEX_NULL, TOO_BIG_CHAR};
+use crate::errors::Abort;
+use crate::node::{AnyNode, CharNode, NodePtr, WhatsitNode, WhatsitSubtype};
+use crate::params::IntPar;
+use crate::state::{EngineState, MemState};
+use crate::units::{MemIdx, MemPtr};
+
+use super::hyphenate::{hyphenate, split_native_word};
+use super::odd;
+
+/// Switch hyphenation to the language of a `\language` whatsit.
+pub(super) fn set_language(st: &mut EngineState, w: NodePtr<WhatsitNode>) {
+    st.hyph.cur_lang = w.what_lang(&st.mem) as u8;
+    st.hyph.l_hyf = i32::from(w.what_lhm(&st.mem));
+    st.hyph.r_hyf = i32::from(w.what_rhm(&st.mem));
+    st.hyph.set_hyph_index();
+}
+
+impl MemState {
+    /// Scan from `s` to the end of the word, returning the node that ends it, or
+    /// `None` if a node there forbids hyphenation. `math_ok` lets a math node end it.
+    fn find_word_end(&self, mut s: MemPtr, math_ok: bool) -> Option<MemPtr> {
+        loop {
+            if !self.is_char_node(s) {
+                match self.classify(MemIdx::new(s)) {
+                    Ok(AnyNode::Ligature(_)) => {}
+                    Ok(AnyNode::Kern(k)) => {
+                        if k.subtype(self) != NORMAL {
+                            return Some(s);
+                        }
+                    }
+                    Ok(
+                        AnyNode::Whatsit(_)
+                        | AnyNode::Glue(_)
+                        | AnyNode::Penalty(_)
+                        | AnyNode::Ins(_)
+                        | AnyNode::Adjust(_)
+                        | AnyNode::Mark(_),
+                    ) => return Some(s),
+                    Ok(AnyNode::Math(m)) if math_ok => {
+                        return (m.subtype(self) >= L_CODE).then_some(s);
+                    }
+                    _ => return None,
+                }
+            }
+            s = s.link(self);
+        }
+    }
+}
+
+/// Try to hyphenate the word following the glue node `cur`.
+pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abort> {
+    let max_len = st.eqtb.max_hyphenatable_length();
+    let uc_hyph = st.eqtb.int_par(IntPar::UcHyph) > 0;
+    let mut prev_s = cur;
+    let mut s = prev_s.link(&st.mem);
+    if s.is_null() {
+        return Ok(());
+    }
+
+    // Skip to the first letter, setting `hf`.
+    loop {
+        let c;
+        if let Some(ch) = st.mem.as_char(s) {
+            c = i32::from(ch.character(&st.mem));
+            st.hyph.hf = ch.font(&st.mem);
+        } else {
+            match st.mem.classify(MemIdx::new(s)) {
+                Ok(AnyNode::Ligature(lig)) if !lig.lig_ptr(&st.mem).is_null() => {
+                    let first = NodePtr::<CharNode>::at(lig.lig_ptr(&st.mem));
+                    c = i32::from(first.character(&st.mem));
+                    st.hyph.hf = first.font(&st.mem);
+                }
+                Ok(AnyNode::Ligature(_)) => {
+                    prev_s = s;
+                    s = prev_s.link(&st.mem);
+                    continue;
+                }
+                Ok(AnyNode::Kern(k)) if k.subtype(&st.mem) == NORMAL => {
+                    prev_s = s;
+                    s = prev_s.link(&st.mem);
+                    continue;
+                }
+                Ok(AnyNode::Math(m)) if m.subtype(&st.mem) >= L_CODE => {
+                    prev_s = s;
+                    s = prev_s.link(&st.mem);
+                    continue;
+                }
+                Ok(AnyNode::Whatsit(w)) => {
+                    let subtype = w.whatsit_subtype(&st.mem);
+                    if subtype.is_some_and(|sub| sub.is_native_word()) {
+                        let len = i32::from(w.native_length(&st.mem));
+                        let mut l = 0;
+                        while l < len {
+                            let c = st.mem.get_native_usv(w, l);
+                            if st.eqtb.lc_code(c) != 0 {
+                                st.hyph.hf = w.native_font(&st.mem);
+                                prev_s = s;
+                                if st.eqtb.lc_code(c) == c || uc_hyph {
+                                    break;
+                                }
+                                return Ok(());
+                            }
+                            if c >= 65_536 {
+                                l += 1;
+                            }
+                            l += 1;
+                        }
+                        if l < len {
+                            break;
+                        }
+                    }
+
+                    if subtype == Some(WhatsitSubtype::Language) {
+                        set_language(st, w);
+                    }
+                    prev_s = s;
+                    s = prev_s.link(&st.mem);
+                    continue;
+                }
+                _ => return Ok(()),
+            }
+        }
+
+        st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, c);
+        if st.hyph.hc[0] != 0 {
+            if st.hyph.hc[0] == c || uc_hyph {
+                break;
+            }
+            return Ok(());
+        }
+
+        prev_s = s;
+        s = prev_s.link(&st.mem);
+    }
+
+    st.hyph.hyf_char = st.fonts.hyphen_char[st.hyph.hf];
+    if st.hyph.hyf_char < 0 || st.hyph.hyf_char > TOO_BIG_CHAR - 1 {
+        return Ok(());
+    }
+    st.linebreak.ha = prev_s;
+    if st.hyph.l_hyf + st.hyph.r_hyf > max_len {
+        return Ok(());
+    }
+
+    let native_ha = match st.mem.as_native_word(st.linebreak.ha) {
+        Some(ha) => {
+            let Some(end) = st.mem.find_word_end(ha.link(&st.mem), false) else {
+                return Ok(());
+            };
+            s = end;
+            Some(collect_native_word(st, ha, max_len)?)
+        }
+        None => {
+            s = collect_word(st, s, max_len);
+            None
+        }
+    };
+
+    if i32::from(st.linebreak.hn) < st.hyph.l_hyf + st.hyph.r_hyf
+        || st.mem.find_word_end(s, true).is_none()
+    {
+        return Ok(());
+    }
+
+    Ok(hyphenate(st, native_ha)?)
+}
+
+/// Collect the letters of the native word `ha` into `hu`/`hc`, splitting it
+/// where the hyphenatable part begins or ends. Returns the word's final node.
+fn collect_native_word(
+    st: &mut EngineState,
+    mut ha: NodePtr<WhatsitNode>,
+    max_len: i32,
+) -> Result<NodePtr<WhatsitNode>, Abort> {
+    st.linebreak.hn = 0;
+    'restart: loop {
+        let len = i32::from(ha.native_length(&st.mem));
+        let mut l = 0;
+        while l < len {
+            let c = st.mem.get_native_usv(ha, l);
+            let hc0 = st.hyph.hyph_code(&st.eqtb, c);
+            st.hyph.hc[0] = hc0;
+
+            if hc0 == 0 {
+                if st.linebreak.hn > 0 {
+                    split_native_word(st, ha, l)?;
+                    return Ok(ha);
+                }
+            } else if st.linebreak.hn == 0 && l > 0 {
+                ha = split_native_word(st, ha, l)?;
+                st.linebreak.ha = ha.ptr();
+                continue 'restart;
+            } else if i32::from(st.linebreak.hn) == max_len {
+                return Ok(ha);
+            } else {
+                st.linebreak.hn += 1;
+                let hn = st.linebreak.hn as usize;
+                if c < 65_536 {
+                    st.hyph.hu[hn] = c;
+                    st.hyph.hc[hn] = hc0;
+                } else {
+                    st.hyph.hu[hn] = (c - 65_536) / 1024 + 0xD800;
+                    st.hyph.hc[hn] = (hc0 - 65_536) / 1024 + 0xD800;
+                    st.linebreak.hn += 1;
+                    st.hyph.hu[hn + 1] = c % 1024 + 0xDC00;
+                    st.hyph.hc[hn + 1] = hc0 % 1024 + 0xDC00;
+                    l += 1;
+                }
+                st.hyph.hyf_bchar = TOO_BIG_CHAR;
+            }
+            l += 1;
+        }
+        return Ok(ha);
+    }
+}
+
+/// Collect the letters of the word starting at `s` into `hu`/`hc`, setting
+/// `hb` and `hyf_bchar`. Returns the node after the collected letters.
+fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
+    st.linebreak.hn = 0;
+    loop {
+        if let Some(ch) = st.mem.as_char(s) {
+            if ch.font(&st.mem) != st.hyph.hf {
+                return s;
+            }
+            let c = i32::from(ch.character(&st.mem));
+            st.hyph.hyf_bchar = c;
+            let hc0 = st.hyph.hyph_code(&st.eqtb, c);
+            st.hyph.hc[0] = hc0;
+            if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(st.linebreak.hn) == max_len {
+                return s;
+            }
+            st.linebreak.hb = s;
+            st.linebreak.hn += 1;
+            st.hyph.hu[st.linebreak.hn as usize] = c;
+            st.hyph.hc[st.linebreak.hn as usize] = hc0;
+            st.hyph.hyf_bchar = TOO_BIG_CHAR;
+        } else {
+            match st.mem.classify(MemIdx::new(s)) {
+                Ok(AnyNode::Ligature(lig)) => {
+                    if lig.font(&st.mem) != st.hyph.hf {
+                        return s;
+                    }
+                    let mut j = st.linebreak.hn;
+                    let mut q = lig.lig_ptr(&st.mem);
+                    if q.0 > TEX_NULL {
+                        st.hyph.hyf_bchar =
+                            i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
+                    }
+                    while q.0 > TEX_NULL {
+                        let c = i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
+                        let hc0 = st.hyph.hyph_code(&st.eqtb, c);
+                        st.hyph.hc[0] = hc0;
+                        if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(j) == max_len {
+                            return s;
+                        }
+                        j += 1;
+                        st.hyph.hu[j as usize] = c;
+                        st.hyph.hc[j as usize] = hc0;
+                        q = q.link(&st.mem);
+                    }
+                    st.linebreak.hb = s;
+                    st.linebreak.hn = j;
+                    st.hyph.hyf_bchar = if odd(lig.subtype(&st.mem) as u8) {
+                        st.fonts.font_bchar[st.hyph.hf]
+                    } else {
+                        TOO_BIG_CHAR
+                    };
+                }
+                Ok(AnyNode::Kern(k)) if k.subtype(&st.mem) == NORMAL => {
+                    st.linebreak.hb = s;
+                    st.hyph.hyf_bchar = st.fonts.font_bchar[st.hyph.hf];
+                }
+                _ => return s,
+            }
+        }
+        s = s.link(&st.mem);
+    }
+}
