@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingmacros=2
+\def\a#1aab{[#1]}\message{\a xaaab \a aaaab \a aabaab \a {aa}aab}
+\def\b#1abab{[#1]}\message{\b ababab \b aabababab \b abaabab}
+\def\c#1xyxz#2.{[#1|#2]}\message{\c xyxyxz. \c xyxxyxz!. \c xyxyxyxz.}
+\def\d#1\x\x\y{[#1]}\message{\d a\x\x\x\y \d \x\x\y}
+\def\e#1 #2 {[#1|#2]}\message{\e a b \e {a} {b} \e a  b }
+\def\f#1#2aa#3{[#1|#2|#3]}\message{\f xyaaaz \f xaaaaz \f x{a}aaz}
+\def\g#1{{}}#2.{[#1|#2]}\message{\g a{}{}{} b.}
+\def\h#1ab#2abc{[#1|#2]}\message{\h aababcabc \h abababcc abc}
+\long\def\i#1\par#2.{[#1|#2]}\message{\i x\par\par y.}
+\bye
