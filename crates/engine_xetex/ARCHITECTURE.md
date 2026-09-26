@@ -22,10 +22,18 @@ State and memory:
   Shared layouts are traits (`HasLink`, `HasWidth`, `IsBox`, ...), `FixedNode`
   kinds get `alloc`/`free`, and `ListRecord` kinds get `at` because their list
   proves their kind. `AnyNode`/`AnyBox` come out of `MemState::classify`.
+  Noad subfields are `NodePtr<MathField>` and `NodePtr<DelimiterField>`
+  (`q.nucleus()`, `q.left_delimiter()`, ...). Token lists are `MemPtr` chains
+  read with `p.token(mem)` and `p.link(mem)`, their heads carrying
+  `token_ref_count`.
 - `units.rs`: `MemIdx`/`MemPtr` (null is `TEX_NULL`, not zero), `Scaled`,
   `FontId`, `NodeType`, `GlueSign`. `mem_types.rs` holds `MemoryWord`.
 - `consts.rs`: WEB `@d` constants and the `eqtb` layout (region bases and
   parameter indices, read through `EqtbState::int_par`, `dimen_par`, ...).
+  Entries are read as `eq_type`/`eq_level`/`equiv` (or `int_at` in the
+  integer regions) and through named views (`cur_font`, `box_reg`, `toks`,
+  `cat_code`, `par_shape`, ...). The save stack has `saved(k)` and
+  `save_type`/`save_level`/`save_index`.
 - `cmd.rs`: command codes, in `xetex.web` order.
 - `primitives.rs`: the primitive catalog. Its order fixes the hash layout and
   therefore the format.
@@ -64,9 +72,8 @@ The type system knows the node type.
   a single `match st.mem.classify(..)` at the dispatch, with typed handles
   flowing out of each arm. No scattered type-code comparisons, no
   `classify_x().expect()` at use sites.
-- Raw words stay raw at genuine `i32` boundaries (token lists, nest fields,
-  noad subfields, format dump). Don't add `Option` or sentinel juggling just to
-  avoid an `i32`.
+- Raw words stay raw only at genuine `i32` boundaries (nest fields, `loc`,
+  format dump). Don't add `Option` or sentinel juggling just to avoid an `i32`.
 - A missing accessor is a small method on that kind's `impl` in `node.rs`.
 - Typed accessors compile to the same loads as raw ones. Keep the hot paths
   (the main loop's character path, `get_next`/`expand`, `hpack`/`vpack`,
