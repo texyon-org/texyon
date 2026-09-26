@@ -98,8 +98,8 @@ fn alloc_native_word(
 ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
     let size = NATIVE_NODE_SIZE + (n * 2 + 7) / 8;
     let w = NodePtr::<WhatsitNode>::alloc(mem, size, subtype).ok_or(NodeRecycleAbort::Overflow)?;
-    w.set_native_size(mem, size as u16);
-    w.set_native_font(mem, f as u16);
+    w.set_native_size(mem, size);
+    w.set_native_font(mem, crate::units::FontId(f));
     w.set_native_length(mem, n as u16);
     w.set_native_glyph_count(mem, 0);
     w.set_native_glyph_info_handle(mem, 0);

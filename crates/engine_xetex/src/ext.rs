@@ -39,7 +39,7 @@ use crate::scan::{
     XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_SELECTOR_CODE_CODE,
 };
 use crate::state::{EngineState, FontState, MemState};
-use crate::units::{MemPtr, Scaled};
+use crate::units::{FontId, MemPtr, Scaled};
 
 type XeTeXFont = *mut c_void;
 type XeTeXLayoutEngine = *mut c_void;
@@ -2267,7 +2267,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                     mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val))?;
                     st.scanner.cur_val = 0;
                 }
-                w.set_native_font(&mut st.mem, cur_font as u16);
+                w.set_native_font(&mut st.mem, FontId(cur_font));
                 w.set_native_glyph(&mut st.mem, st.scanner.cur_val as u16);
                 let use_glyph_metrics = int_par(&st.eqtb, INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
                 // SAFETY: the font is native, the measurer only reads its tables.

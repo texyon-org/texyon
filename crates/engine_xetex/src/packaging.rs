@@ -18,7 +18,7 @@ use crate::fonts::{effective_char, new_native_word_node};
 use crate::main_control::VSPLIT_CODE;
 use crate::mem::{get_avail, is_char_node, GARBAGE, TEMP_HEAD};
 use crate::node::{
-    AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, HasGlueSet, KernNode, MarkNode,
+    AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, IsBox, KernNode, MarkNode,
     NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::pagebuilder::{FIRE_UP_DONE, FIRE_UP_INIT};
@@ -1456,7 +1456,7 @@ pub(crate) fn glue_order(totals: &[i32; 4]) -> u16 {
 
 /// Set `r`'s glue to distribute `excess` over the highest-order `totals`,
 /// returning that order.
-fn set_box_glue<K: HasGlueSet>(
+fn set_box_glue<K: IsBox>(
     mem: &mut MemState,
     r: NodePtr<K>,
     sign: GlueSign,
@@ -1475,7 +1475,7 @@ fn set_box_glue<K: HasGlueSet>(
     o
 }
 
-fn clear_box_glue<K: HasGlueSet>(mem: &mut MemState, r: NodePtr<K>) {
+fn clear_box_glue<K: IsBox>(mem: &mut MemState, r: NodePtr<K>) {
     r.set_glue_sign(mem, GlueSign::Normal);
     r.set_glue_order(mem, NORMAL);
     r.set_glue_set(mem, 0.0);

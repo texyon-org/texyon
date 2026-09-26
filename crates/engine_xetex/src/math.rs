@@ -35,7 +35,7 @@ use crate::scan::NodeRecycleAbort;
 use crate::state::{
     EngineState, EqtbState, FontState, GroupCode, MemState, SaveStackState, ScannerState,
 };
-use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
 pub(crate) const DELIMITED_CODE: i32 = 3;
 pub(crate) const ABOVE_CODE: i32 = 0;
@@ -1191,7 +1191,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         let old = crate::fonts::new_native_character_in(st, f, c as u32)?;
         y = native_char_box(&mut st.mem, old)?;
         let glyph = alloc_glyph_whatsit(&mut st.mem)?;
-        glyph.set_native_font(&mut st.mem, f as u16);
+        glyph.set_native_font(&mut st.mem, FontId(f));
         let glyph_id = real_get_native_glyph(&st.mem, old, 0);
         glyph.set_native_glyph(&mut st.mem, glyph_id);
         measure_glyph(&st.fonts, &mut st.mem, glyph)?;
@@ -1907,7 +1907,7 @@ fn mlist_nucleus_in(
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
                 let z = crate::fonts::new_native_character_in(st, cur_f, st.scanner.cur_c as u32)?;
                 let glyph = alloc_glyph_whatsit(&mut st.mem)?;
-                glyph.set_native_font(&mut st.mem, cur_f as u16);
+                glyph.set_native_font(&mut st.mem, FontId(cur_f));
                 let z_glyph = real_get_native_glyph(&st.mem, z, 0);
                 glyph.set_native_glyph(&mut st.mem, z_glyph);
                 measure_glyph(&st.fonts, &mut st.mem, glyph)?;
@@ -2422,7 +2422,7 @@ fn new_measured_glyph(
     g: i32,
 ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
     let p = alloc_glyph_whatsit(&mut st.mem)?;
-    p.set_native_font(&mut st.mem, f as u16);
+    p.set_native_font(&mut st.mem, FontId(f));
     p.set_native_glyph(&mut st.mem, g as u16);
     measure_glyph(&st.fonts, &mut st.mem, p)?;
     Ok(p)

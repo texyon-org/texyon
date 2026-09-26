@@ -1,56 +1,31 @@
 //! Typed node handles over the flat `mem` arena.
 //!
-//! [`NodePtr<K>`] is a `#[repr(transparent)]` wrapper over a [`MemIdx`] plus
-//! a compile-time-only `PhantomData<K>` kind marker. It is `Copy`, holds no
-//! borrow of the arena, and — after inlining — compiles to the same
-//! load/store as the raw `i32` index (the zero-cost gate). Field
-//! access is done by passing the [`MemState`] arena as a context parameter
-//! (`p.width(mem)` / `p.set_width(mem, w)`); there are no view structs.
-//!
-//! ## Field offsets (verified against `xetex/xetex-xetexd.h:211–218`)
-//!
-//! | field          | offset.subfield | type     |
-//! |----------------|-----------------|----------|
-//! | `width`        | +1.b32.s1       | `Scaled` |
-//! | `depth`        | +2.b32.s1       | `Scaled` |
-//! | `height`       | +3.b32.s1       | `Scaled` |
-//! | `shift_amount` | +4.b32.s1       | `Scaled` |
-//! | `list_ptr`     | +5.b32.s1       | `MemPtr` (nullable: empty box → `TEX_NULL`) |
-//! | `glue_sign`    | +5.b16.s1       | `u16`    |
-//! | `glue_order`   | +5.b16.s0       | `u16`    |
-//! | `glue_set`     | +6.gr           | `f64` (the glue ratio) |
-//!
-//! `BOX_NODE_SIZE` = 8 words (fixed). Field reads/writes go through the
-//! audited `MemState` word accessors so the `MemoryWord` union projection
-//! stays confined there (one exception: the `glue_set` read uses
-//! `MemState::word(..).gr`, documented below).
+//! [`NodePtr<K>`] is a `Copy` index plus a compile-time kind marker, so a field
+//! access compiles to the same load/store as the raw `mem[p + k]` form. Fields
+//! are read by passing the arena as context: `p.width(mem)`,
+//! `p.set_width(mem, w)`.
 
 use std::marker::PhantomData;
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, MARGIN_KERN_NODE_SIZE,
-    MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE,
-    SMALL_NODE_SIZE, STYLE_NODE_SIZE,
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLUE_SPEC_SIZE, INS_NODE_SIZE,
+    MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PIC_NODE_SIZE,
+    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
 use crate::mem::{free_node, get_node};
 use crate::state::MemState;
 use crate::units::{FontId, GlueSign, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
-/// Marker trait for node kinds. Implemented only by the zero-sized kind
-/// markers below; never constructed.
+/// Marker for node kinds, implemented by the uninhabited kind enums below.
 pub trait NodeKind {}
 
 /// A typed handle to a node of kind `K` in the `mem` arena.
-///
-/// Same runtime payload as [`MemIdx`]; the kind is compile-time only.
 #[repr(transparent)]
 pub struct NodePtr<K: NodeKind> {
     idx: MemIdx,
     _kind: PhantomData<fn() -> K>,
 }
 
-// Manual `Copy`/`Clone`/`PartialEq`/`Eq` so they don't require `K: Copy`
-// (the marker `K` is never instantiated).
 impl<K: NodeKind> Copy for NodePtr<K> {}
 impl<K: NodeKind> Clone for NodePtr<K> {
     #[inline]
@@ -72,15 +47,11 @@ impl<K: NodeKind> std::fmt::Debug for NodePtr<K> {
 }
 
 impl<K: NodeKind> NodePtr<K> {
-    /// Wrap an index as a `NodePtr<K>` **without** checking that it really
-    /// references a `K` node.
+    /// Wraps `idx` without checking that it holds a `K` node.
     ///
     /// # Safety
-    /// The caller must have classified `idx` as a `K`-kind node (e.g. via
-    /// [`MemState::classify_box`] or after a `NODE_type` branch mirroring
-    /// the C source). Constructing the wrong kind is not memory-unsafe (the
-    /// field methods still index in bounds) but it is a *parity* bug — it
-    /// reads a field that does not exist on the real node.
+    /// `idx` must reference a `K` node. A wrong kind is not memory-unsafe (all
+    /// fields index in bounds) but reads fields the real node does not have.
     #[inline]
     pub unsafe fn from_idx_unchecked(idx: MemIdx) -> Self {
         NodePtr {
@@ -89,32 +60,372 @@ impl<K: NodeKind> NodePtr<K> {
         }
     }
 
-    /// The underlying arena index.
     #[inline]
     pub fn idx(self) -> MemIdx {
         self.idx
     }
 
-    /// The node's address as an untyped [`MemPtr`], for link stores and other
-    /// places that traffic in plain arena pointers.
+    /// The node's address as an untyped link value.
     #[inline]
     pub fn ptr(self) -> MemPtr {
         MemPtr::from_idx(self.idx)
     }
 }
 
-// --- the box family: hlist and vlist nodes (NODE_type 0 and 1) ---
+/// A value stored in one subfield of a memory word.
+trait Slot: Copy {
+    type Raw;
+    fn decode(raw: Self::Raw) -> Self;
+    fn encode(self) -> Self::Raw;
+}
 
-/// `HLIST_NODE` (`NODE_type` = 0).
-pub enum HListNode {}
-/// `VLIST_NODE` (`NODE_type` = 1).
-pub enum VListNode {}
+macro_rules! identity_slot {
+    ($($t:ty),*) => {$(
+        impl Slot for $t {
+            type Raw = $t;
+            #[inline(always)]
+            fn decode(raw: $t) -> $t {
+                raw
+            }
+            #[inline(always)]
+            fn encode(self) -> $t {
+                self
+            }
+        }
+    )*};
+}
+identity_slot!(i32, u16);
 
-impl NodeKind for HListNode {}
-impl NodeKind for VListNode {}
+impl Slot for Scaled {
+    type Raw = i32;
+    #[inline(always)]
+    fn decode(raw: i32) -> Self {
+        Scaled(raw)
+    }
+    #[inline(always)]
+    fn encode(self) -> i32 {
+        self.0
+    }
+}
 
-/// A rule dimension: either TeX's running-dimension sentinel (`NULL_FLAG`) or
-/// a concrete scaled length.
+impl Slot for MemPtr {
+    type Raw = i32;
+    #[inline(always)]
+    fn decode(raw: i32) -> Self {
+        MemPtr(raw)
+    }
+    #[inline(always)]
+    fn encode(self) -> i32 {
+        self.0
+    }
+}
+
+impl Slot for FontId {
+    type Raw = u16;
+    #[inline(always)]
+    fn decode(raw: u16) -> Self {
+        FontId(raw as i32)
+    }
+    #[inline(always)]
+    fn encode(self) -> u16 {
+        self.0 as u16
+    }
+}
+
+impl Slot for GlueSign {
+    type Raw = u16;
+    #[inline(always)]
+    fn decode(raw: u16) -> Self {
+        GlueSign::from_raw(raw)
+    }
+    #[inline(always)]
+    fn encode(self) -> u16 {
+        self.as_raw()
+    }
+}
+
+impl Slot for RuleDimen {
+    type Raw = i32;
+    #[inline(always)]
+    fn decode(raw: i32) -> Self {
+        RuleDimen::from_raw(raw)
+    }
+    #[inline(always)]
+    fn encode(self) -> i32 {
+        self.raw()
+    }
+}
+
+macro_rules! write_slot {
+    ($mem:ident, b32s0, $p:expr, $v:expr) => {
+        $mem.set_b32s0($p, $v)
+    };
+    ($mem:ident, b32s1, $p:expr, $v:expr) => {
+        $mem.set_b32s1($p, $v)
+    };
+    ($mem:ident, b16s0, $p:expr, $v:expr) => {
+        $mem.set_b16s0($p, $v)
+    };
+    ($mem:ident, b16s1, $p:expr, $v:expr) => {
+        $mem.set_b16s1($p, $v)
+    };
+    ($mem:ident, b16s2, $p:expr, $v:expr) => {
+        $mem.set_b16s2($p, $v)
+    };
+    ($mem:ident, b16s3, $p:expr, $v:expr) => {
+        $mem.set_b16s3($p, $v)
+    };
+}
+
+/// Field accessors: `getter / setter: Type = subfield @ word_offset;`.
+macro_rules! fields {
+    ($($(#[$m:meta])* $get:ident $(/ $set:ident)?: $ty:ty = $slot:ident @ $off:expr;)*) => {$(
+        $(#[$m])*
+        #[inline]
+        pub fn $get(self, mem: &MemState) -> $ty {
+            <$ty as Slot>::decode(mem.$slot(self.idx.0 + $off))
+        }
+        $(
+            #[inline]
+            pub fn $set(self, mem: &mut MemState, v: $ty) {
+                write_slot!(mem, $slot, self.idx.0 + $off, <$ty as Slot>::encode(v))
+            }
+        )?
+    )*};
+}
+
+/// A kind with a fixed allocation size and header type code.
+pub trait FixedNode: NodeKind {
+    const SIZE: i32;
+    /// The `NODE_type` stamped at allocation, `None` for headerless records.
+    const TYPE: Option<NodeType>;
+}
+
+#[inline]
+fn alloc_node<K: NodeKind>(
+    mem: &mut MemState,
+    size: i32,
+    ty: Option<NodeType>,
+) -> Option<NodePtr<K>> {
+    let p = get_node(mem, size)?;
+    if let Some(ty) = ty {
+        mem.set_b16s1(p, ty.as_raw());
+    }
+    // SAFETY: a fresh node of the caller's size, stamped with the caller's type.
+    Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
+}
+
+impl<K: FixedNode> NodePtr<K> {
+    /// Carves a fresh node with its type stamped and its fields uninitialised.
+    #[inline]
+    pub fn alloc(mem: &mut MemState) -> Option<Self> {
+        alloc_node(mem, K::SIZE, K::TYPE)
+    }
+}
+
+macro_rules! node_kinds {
+    ($($(#[$m:meta])* $kind:ident $(= $ty:ident, $size:expr)?;)*) => {$(
+        $(#[$m])*
+        pub enum $kind {}
+        impl NodeKind for $kind {}
+        $(
+            impl FixedNode for $kind {
+                const SIZE: i32 = $size;
+                const TYPE: Option<NodeType> = Some(NodeType::$ty);
+            }
+        )?
+    )*};
+}
+
+node_kinds! {
+    HListNode = HList, BOX_NODE_SIZE;
+    VListNode = VList, BOX_NODE_SIZE;
+    RuleNode = Rule, RULE_NODE_SIZE;
+    InsNode = Ins, INS_NODE_SIZE;
+    MarkNode = Mark, SMALL_NODE_SIZE;
+    /// A `\vadjust` list, the subtype selects pre or post placement.
+    AdjustNode = Adjust, SMALL_NODE_SIZE;
+    LigatureNode = Ligature, SMALL_NODE_SIZE;
+    DiscNode = Disc, SMALL_NODE_SIZE;
+    MathNode = Math, MEDIUM_NODE_SIZE;
+    GlueNode = Glue, MEDIUM_NODE_SIZE;
+    KernNode = Kern, MEDIUM_NODE_SIZE;
+    PenaltyNode = Penalty, MEDIUM_NODE_SIZE;
+    StyleNode = Style, STYLE_NODE_SIZE;
+    ChoiceNode = Choice, STYLE_NODE_SIZE;
+    /// An LR edge in a shipped list. XeTeX aliases its type code to style.
+    EdgeNode = Style, STYLE_NODE_SIZE;
+    /// Any noad. `alloc` makes an ordinary noad of `NOAD_SIZE`.
+    Noad = OrdNoad, NOAD_SIZE;
+    MarginKernNode = MarginKern, MARGIN_KERN_NODE_SIZE;
+    /// Variable-size, sub-classified by [`WhatsitSubtype`].
+    WhatsitNode;
+    /// An alignment box before its column widths are known. Words +4..+6 hold
+    /// the accumulated shrink, span count and stretch instead of box glue.
+    UnsetNode;
+    /// A glue specification, reached only through a glue pointer. Its header
+    /// word holds the reference count and fill orders, not a type code.
+    GlueSpecNode;
+    /// An entry of the ligature reconstitution stack.
+    LigItem;
+    /// An eTeX sparse-array record: an index node or a register value.
+    SaNode;
+    /// A record on the page builder's insertion ring. Its type code is
+    /// `inserting` or `split_up`, its subtype the insertion's box number.
+    PageInsNode;
+    /// A shipout `down_ptr`/`right_ptr` movement record.
+    MovementNode;
+    /// A line-breaker active node. Its type word holds the break type.
+    ActiveNode;
+    /// A line-breaker delta node, sitting between active nodes.
+    DeltaNode;
+    /// A line-breaker passive node. Its info word is a serial number.
+    PassiveNode;
+}
+
+impl FixedNode for GlueSpecNode {
+    const SIZE: i32 = GLUE_SPEC_SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for LigItem {
+    const SIZE: i32 = SMALL_NODE_SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for MovementNode {
+    const SIZE: i32 = MOVEMENT_NODE_SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+
+const MOVEMENT_NODE_SIZE: i32 = 3;
+
+// --- shared layouts ---
+
+/// A `link` field in word 0.
+pub trait HasLink: NodeKind {}
+/// A list-node header: type in `b16.s1`, subtype in `b16.s0`, link in `b32.s1`.
+pub trait HasNodeHeader: HasLink {}
+/// A `Scaled` width at +1.
+pub trait HasWidth: NodeKind {}
+/// `Scaled` depth and height at +2 and +3.
+pub trait HasHeightDepth: NodeKind {}
+/// A child list at +5.
+pub trait HasListPtr: NodeKind {}
+/// The hlist/vlist box layout: shift at +4 and glue setting at +5 and +6.
+pub trait IsBox: HasWidth + HasHeightDepth + HasListPtr {}
+/// The SyncTeX tag and line that `get_node` stamps into a node's last word.
+pub trait HasSyncFields: FixedNode {}
+
+impl<K: HasNodeHeader> HasLink for K {}
+
+macro_rules! impl_traits {
+    ($trait:ident: $($kind:ident),*) => {$(impl $trait for $kind {})*};
+}
+
+impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, AdjustNode,
+    LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
+    StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode);
+impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode);
+impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
+    EdgeNode, MarginKernNode, GlueSpecNode);
+impl_traits!(HasHeightDepth: HListNode, VListNode, UnsetNode, WhatsitNode, InsNode);
+impl_traits!(HasListPtr: HListNode, VListNode, UnsetNode);
+impl_traits!(IsBox: HListNode, VListNode);
+impl_traits!(HasSyncFields: HListNode, VListNode, RuleNode, GlueNode, KernNode, MathNode);
+
+impl<K: HasLink> NodePtr<K> {
+    fields! {
+        link / set_link: MemPtr = b32s1 @ 0;
+    }
+}
+
+impl<K: HasNodeHeader> NodePtr<K> {
+    fields! {
+        subtype / set_subtype: u16 = b16s0 @ 0;
+    }
+}
+
+impl<K: HasWidth> NodePtr<K> {
+    fields! {
+        width / set_width: Scaled = b32s1 @ 1;
+    }
+}
+
+impl<K: HasHeightDepth> NodePtr<K> {
+    fields! {
+        depth / set_depth: Scaled = b32s1 @ 2;
+        height / set_height: Scaled = b32s1 @ 3;
+    }
+}
+
+impl<K: HasListPtr> NodePtr<K> {
+    fields! {
+        list_ptr / set_list_ptr: MemPtr = b32s1 @ 5;
+    }
+}
+
+impl<K: IsBox> NodePtr<K> {
+    fields! {
+        shift_amount / set_shift_amount: Scaled = b32s1 @ 4;
+        glue_sign / set_glue_sign: GlueSign = b16s1 @ 5;
+        glue_order / set_glue_order: u16 = b16s0 @ 5;
+    }
+
+    #[inline]
+    pub fn glue_set(self, mem: &MemState) -> f64 {
+        // SAFETY: the packers always write this word as `.gr`.
+        unsafe { mem.word(self.idx.0 + 6).gr }
+    }
+    #[inline]
+    pub fn set_glue_set(self, mem: &mut MemState, v: f64) {
+        mem.set_gr(self.idx.0 + 6, v);
+    }
+}
+
+impl<K: HasSyncFields> NodePtr<K> {
+    fields! {
+        sync_tag / set_sync_tag: i32 = b32s0 @ K::SIZE - 1;
+        sync_line: i32 = b32s1 @ K::SIZE - 1;
+    }
+}
+
+impl MemPtr {
+    #[inline]
+    pub fn link(self, mem: &MemState) -> MemPtr {
+        MemPtr(mem.b32s1(self.0))
+    }
+    #[inline]
+    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
+        mem.set_b32s1(self.0, q.0);
+    }
+    /// Knuth's `info`, the payload half of a one-word node.
+    #[inline]
+    pub fn info(self, mem: &MemState) -> i32 {
+        mem.b32s0(self.0)
+    }
+    #[inline]
+    pub fn set_info(self, mem: &mut MemState, v: i32) {
+        mem.set_b32s0(self.0, v);
+    }
+}
+
+// --- boxes and rules ---
+
+impl NodePtr<HListNode> {
+    #[inline]
+    pub fn into_vlist(self, mem: &mut MemState) -> NodePtr<VListNode> {
+        retype(self, mem, NodeType::VList)
+    }
+}
+
+/// Stamps a new type code and rewraps the handle.
+#[inline]
+fn retype<K: NodeKind, L: NodeKind>(p: NodePtr<K>, mem: &mut MemState, ty: NodeType) -> NodePtr<L> {
+    mem.set_b16s1(p.idx.0, ty.as_raw());
+    // SAFETY: callers only retype between kinds that share the node's layout.
+    unsafe { NodePtr::from_idx_unchecked(p.idx) }
+}
+
+/// A rule dimension: the running sentinel (`NULL_FLAG`) or a concrete length.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum RuleDimen {
     Running,
@@ -140,271 +451,11 @@ impl RuleDimen {
     }
 }
 
-/// `RULE_NODE` (`NODE_type` = 2): a rectangular rule with running dimensions.
-pub enum RuleNode {}
-
-impl NodeKind for RuleNode {}
-
-// --- capability traits: shared field layouts (compile-time only) ---
-
-/// Has the `width`/`depth`/`height`/`shift_amount` scaled dimensions at
-/// offsets +1..+4 (`03` `HasDimensions`).
-pub trait HasDimensions: NodeKind {}
-/// Has the `list_ptr` child-list field at +5.b32.s1.
-pub trait HasListPtr: NodeKind {}
-/// Has the glue-set triple (`glue_sign` +5.b16.s1, `glue_order` +5.b16.s0,
-/// `glue_set` +6.gr) — the box glue-setting fields.
-pub trait HasGlueSet: NodeKind {}
-/// Has the list-node header word (`NODE_type` in 0.b16.s1, subtype in
-/// 0.b16.s0). Glue specs deliberately do not implement this: their header word
-/// holds ref_count/stretch_order/shrink_order instead of a node type.
-pub trait HasNodeHeader: NodeKind {}
-/// Has the two-word SyncTeX trailer (`SYNCTEX_tag` .b32.s0 / `SYNCTEX_line`
-/// .b32.s1) in the node's last word, stamped by `get_node` at allocation
-/// (`mem.rs`). The offset is `node size − SYNCTEX_FIELD_SIZE(=1)`, so it
-/// differs per family: boxes +7, rules +4, medium (glue/kern/math) +2.
-pub trait HasSyncFields: NodeKind {
-    /// Word offset of the SyncTeX trailer within the node.
-    const SYNC_OFFSET: i32;
-}
-
-impl HasDimensions for HListNode {}
-impl HasDimensions for VListNode {}
-impl HasListPtr for HListNode {}
-impl HasListPtr for VListNode {}
-impl HasGlueSet for HListNode {}
-impl HasGlueSet for VListNode {}
-impl HasNodeHeader for HListNode {}
-impl HasNodeHeader for VListNode {}
-impl HasNodeHeader for RuleNode {}
-impl HasNodeHeader for DiscNode {}
-impl HasNodeHeader for LigatureNode {}
-impl HasNodeHeader for MathNode {}
-impl HasNodeHeader for StyleNode {}
-impl HasNodeHeader for ChoiceNode {}
-impl HasNodeHeader for GlueNode {}
-impl HasNodeHeader for KernNode {}
-impl HasNodeHeader for PenaltyNode {}
-impl HasNodeHeader for Noad {}
-impl HasNodeHeader for MarginKernNode {}
-
-impl HasSyncFields for HListNode {
-    const SYNC_OFFSET: i32 = BOX_NODE_SIZE - 1;
-}
-impl HasSyncFields for VListNode {
-    const SYNC_OFFSET: i32 = BOX_NODE_SIZE - 1;
-}
-impl HasSyncFields for RuleNode {
-    const SYNC_OFFSET: i32 = RULE_NODE_SIZE - 1;
-}
-impl HasSyncFields for GlueNode {
-    const SYNC_OFFSET: i32 = MEDIUM_NODE_SIZE - 1;
-}
-impl HasSyncFields for KernNode {
-    const SYNC_OFFSET: i32 = MEDIUM_NODE_SIZE - 1;
-}
-impl HasSyncFields for MathNode {
-    const SYNC_OFFSET: i32 = MEDIUM_NODE_SIZE - 1;
-}
-
-impl<K: HasNodeHeader> NodePtr<K> {
-    /// Shared list-node subtype = `mem[p].b16.s0`.
-    #[inline]
-    pub fn subtype(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
-    }
-
-    /// Link pointer to the next list element = `mem[p].b32.s1`.
-    #[inline]
-    pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.0))
-    }
-    #[inline]
-    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.0, q.0);
-    }
-}
-
-impl MemPtr {
-    /// Link pointer to the next list element = `mem[p].b32.s1`. A list cursor
-    /// has no statically-known node kind, so the universal link field lives on
-    /// the pointer itself — same word every node type shares.
-    #[inline]
-    pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.0))
-    }
-    #[inline]
-    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.0, q.0);
-    }
-    /// `info(p)` = `mem[p].b32.s0` — the payload half of a one-word
-    /// (token-list / avail-list) word, Knuth's `info` field.
-    #[inline]
-    pub fn info(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.0)
-    }
-    #[inline]
-    pub fn set_info(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.0, v);
-    }
-}
-
-impl NodePtr<HListNode> {
-    /// Allocate a fresh hlist box node (`BOX_NODE_SIZE` words), type-stamped
-    /// with `NODE_type = HLIST_NODE`, and return a typed handle to it — or
-    /// `None` if the arena is exhausted.
-    ///
-    /// This is the box-family form of the typed allocation boundary: it wraps
-    /// TeX's free-list allocator, writes the node type tag, and
-    /// confines the family's `from_idx_unchecked` construction to this single
-    /// audited site. The caller fills the remaining box fields.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
-        let p = get_node(mem, BOX_NODE_SIZE)?;
-        // type-stamp: an hlist node carries NODE_type = HLIST_NODE.
-        mem.set_b16s1(p, NodeType::HList.as_raw());
-        // SAFETY: `p` is a freshly allocated `BOX_NODE_SIZE` node just stamped
-        // HLIST_NODE; this is the family's audited construction site.
-        Some(unsafe { NodePtr::<HListNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-}
-
-impl NodePtr<HListNode> {
-    /// Retypes the box in place as a vlist box.
-    #[inline]
-    pub fn into_vlist(self, mem: &mut MemState) -> NodePtr<VListNode> {
-        mem.set_b16s1(self.idx.0, NodeType::VList.as_raw());
-        // SAFETY: the box was just stamped VLIST_NODE, both have the box layout.
-        unsafe { NodePtr::from_idx_unchecked(self.idx) }
-    }
-}
-
-impl NodePtr<VListNode> {
-    /// Allocate a fresh vlist box node (`BOX_NODE_SIZE` words), type-stamped
-    /// with `NODE_type = VLIST_NODE`, and return a typed handle to it — or
-    /// `None` if the arena is exhausted.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<VListNode>> {
-        let p = get_node(mem, BOX_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::VList.as_raw());
-        // SAFETY: `p` is a freshly allocated `BOX_NODE_SIZE` node just stamped
-        // VLIST_NODE; this is the family's audited construction site.
-        Some(unsafe { NodePtr::<VListNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-}
-
-impl<K: HasDimensions> NodePtr<K> {
-    /// `BOX_width(p)` = `mem[(p) + 1].b32.s1`.
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, w.0);
-    }
-
-    /// `BOX_depth(p)` = `mem[(p) + 2].b32.s1`.
-    #[inline]
-    pub fn depth(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_depth(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(2).0, w.0);
-    }
-
-    /// `BOX_height(p)` = `mem[(p) + 3].b32.s1`.
-    #[inline]
-    pub fn height(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(3).0))
-    }
-    #[inline]
-    pub fn set_height(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, w.0);
-    }
-
-    /// `BOX_shift_amount(p)` = `mem[(p) + 4].b32.s1`.
-    #[inline]
-    pub fn shift_amount(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(4).0))
-    }
-    #[inline]
-    pub fn set_shift_amount(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(4).0, w.0);
-    }
-}
-
-impl<K: HasListPtr> NodePtr<K> {
-    /// `BOX_list_ptr(p)` = `mem[(p) + 5].b32.s1` — the child list head, or
-    /// `TEX_NULL` for an empty box. Returns a nullable [`MemPtr`].
-    #[inline]
-    pub fn list_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(5).0))
-    }
-    #[inline]
-    pub fn set_list_ptr(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.offset(5).0, q.0);
-    }
-}
-
-impl<K: HasGlueSet> NodePtr<K> {
-    /// `BOX_glue_sign(p)` = `mem[(p) + 5].b16.s1`.
-    #[inline]
-    pub fn glue_sign(self, mem: &MemState) -> GlueSign {
-        GlueSign::from_raw(mem.b16s1(self.idx.offset(5).0))
-    }
-    #[inline]
-    pub fn set_glue_sign(self, mem: &mut MemState, v: GlueSign) {
-        mem.set_b16s1(self.idx.offset(5).0, v.as_raw());
-    }
-
-    /// `BOX_glue_order(p)` = `mem[(p) + 5].b16.s0`.
-    #[inline]
-    pub fn glue_order(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(5).0)
-    }
-    #[inline]
-    pub fn set_glue_order(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.offset(5).0, v);
-    }
-
-    /// `BOX_glue_set(p)` = `mem[(p) + 6].gr` (the `f64` glue ratio).
-    #[inline]
-    pub fn glue_set(self, mem: &MemState) -> f64 {
-        // SAFETY: `MemoryWord` union projection of the `.gr` (f64) field;
-        // `MemState::word` is the audited bounds-checked word read. The box
-        // glue_set word is always written as `.gr` by the packers, so this
-        // reads the field last written (`03` union-safety contract).
-        unsafe { mem.word(self.idx.offset(6).0).gr }
-    }
-    #[inline]
-    pub fn set_glue_set(self, mem: &mut MemState, v: f64) {
-        mem.set_gr(self.idx.offset(6).0, v);
-    }
-}
-
-impl<K: HasSyncFields> NodePtr<K> {
-    /// `SYNCTEX_tag(p, size)` = `mem[p + size − 1].b32.s0` — the input-file
-    /// tag stamped at allocation time.
-    #[inline]
-    pub fn sync_tag(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(K::SYNC_OFFSET).0)
-    }
-    #[inline]
-    pub fn set_sync_tag(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(K::SYNC_OFFSET).0, v);
-    }
-
-    /// `SYNCTEX_line(p, size)` = `mem[p + size − 1].b32.s1` — the source
-    /// line stamped at allocation time.
-    #[inline]
-    pub fn sync_line(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(K::SYNC_OFFSET).0)
+impl NodePtr<RuleNode> {
+    fields! {
+        width / set_width: RuleDimen = b32s1 @ 1;
+        depth / set_depth: RuleDimen = b32s1 @ 2;
+        height / set_height: RuleDimen = b32s1 @ 3;
     }
 }
 
@@ -415,126 +466,50 @@ pub enum AnyBox {
     VList(NodePtr<VListNode>),
 }
 
+macro_rules! box_delegate {
+    ($($name:ident($($arg:ident: $t:ty),*) $(-> $ret:ty)?;)*) => {$(
+        #[inline]
+        pub fn $name(self, $($arg: $t),*) $(-> $ret)? {
+            match self {
+                AnyBox::HList(p) => p.$name($($arg),*),
+                AnyBox::VList(p) => p.$name($($arg),*),
+            }
+        }
+    )*};
+}
+
 impl AnyBox {
-    /// Retypes the box in place as an unset node.
+    box_delegate! {
+        idx() -> MemIdx;
+        ptr() -> MemPtr;
+        sync_tag(mem: &MemState) -> i32;
+        sync_line(mem: &MemState) -> i32;
+        width(mem: &MemState) -> Scaled;
+        depth(mem: &MemState) -> Scaled;
+        height(mem: &MemState) -> Scaled;
+        shift_amount(mem: &MemState) -> Scaled;
+        list_ptr(mem: &MemState) -> MemPtr;
+        subtype(mem: &MemState) -> u16;
+        glue_sign(mem: &MemState) -> GlueSign;
+        glue_order(mem: &MemState) -> u16;
+        glue_set(mem: &MemState) -> f64;
+        set_width(mem: &mut MemState, w: Scaled);
+        set_depth(mem: &mut MemState, d: Scaled);
+        set_height(mem: &mut MemState, h: Scaled);
+        set_shift_amount(mem: &mut MemState, s: Scaled);
+        set_list_ptr(mem: &mut MemState, q: MemPtr);
+        set_link(mem: &mut MemState, q: MemPtr);
+        set_subtype(mem: &mut MemState, v: u16);
+        set_glue_sign(mem: &mut MemState, v: GlueSign);
+        set_glue_order(mem: &mut MemState, v: u16);
+        set_glue_set(mem: &mut MemState, v: f64);
+    }
+
     #[inline]
     pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
-        mem.set_b16s1(self.idx().0, NodeType::Unset.as_raw());
-        // SAFETY: the box was just stamped UNSET_NODE, which shares the box layout.
-        unsafe { NodePtr::from_idx_unchecked(self.idx()) }
-    }
-
-    #[inline]
-    pub fn idx(self) -> MemIdx {
         match self {
-            AnyBox::HList(p) => p.idx(),
-            AnyBox::VList(p) => p.idx(),
-        }
-    }
-
-    /// The box's address as a nullable [`MemPtr`] — for link stores and
-    /// pointer-identity comparisons.
-    #[inline]
-    pub fn ptr(self) -> MemPtr {
-        match self {
-            AnyBox::HList(p) => p.ptr(),
-            AnyBox::VList(p) => p.ptr(),
-        }
-    }
-
-    #[inline]
-    pub fn sync_tag(self, mem: &MemState) -> i32 {
-        match self {
-            AnyBox::HList(p) => p.sync_tag(mem),
-            AnyBox::VList(p) => p.sync_tag(mem),
-        }
-    }
-
-    #[inline]
-    pub fn sync_line(self, mem: &MemState) -> i32 {
-        match self {
-            AnyBox::HList(p) => p.sync_line(mem),
-            AnyBox::VList(p) => p.sync_line(mem),
-        }
-    }
-
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        match self {
-            AnyBox::HList(p) => p.width(mem),
-            AnyBox::VList(p) => p.width(mem),
-        }
-    }
-
-    #[inline]
-    pub fn depth(self, mem: &MemState) -> Scaled {
-        match self {
-            AnyBox::HList(p) => p.depth(mem),
-            AnyBox::VList(p) => p.depth(mem),
-        }
-    }
-
-    #[inline]
-    pub fn height(self, mem: &MemState) -> Scaled {
-        match self {
-            AnyBox::HList(p) => p.height(mem),
-            AnyBox::VList(p) => p.height(mem),
-        }
-    }
-
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
-        match self {
-            AnyBox::HList(p) => p.set_width(mem, w),
-            AnyBox::VList(p) => p.set_width(mem, w),
-        }
-    }
-
-    #[inline]
-    pub fn set_depth(self, mem: &mut MemState, d: Scaled) {
-        match self {
-            AnyBox::HList(p) => p.set_depth(mem, d),
-            AnyBox::VList(p) => p.set_depth(mem, d),
-        }
-    }
-
-    #[inline]
-    pub fn set_height(self, mem: &mut MemState, h: Scaled) {
-        match self {
-            AnyBox::HList(p) => p.set_height(mem, h),
-            AnyBox::VList(p) => p.set_height(mem, h),
-        }
-    }
-
-    #[inline]
-    pub fn shift_amount(self, mem: &MemState) -> Scaled {
-        match self {
-            AnyBox::HList(p) => p.shift_amount(mem),
-            AnyBox::VList(p) => p.shift_amount(mem),
-        }
-    }
-
-    #[inline]
-    pub fn set_shift_amount(self, mem: &mut MemState, s: Scaled) {
-        match self {
-            AnyBox::HList(p) => p.set_shift_amount(mem, s),
-            AnyBox::VList(p) => p.set_shift_amount(mem, s),
-        }
-    }
-
-    #[inline]
-    pub fn list_ptr(self, mem: &MemState) -> MemPtr {
-        match self {
-            AnyBox::HList(p) => p.list_ptr(mem),
-            AnyBox::VList(p) => p.list_ptr(mem),
-        }
-    }
-
-    #[inline]
-    pub fn set_list_ptr(self, mem: &mut MemState, q: MemPtr) {
-        match self {
-            AnyBox::HList(p) => p.set_list_ptr(mem, q),
-            AnyBox::VList(p) => p.set_list_ptr(mem, q),
+            AnyBox::HList(p) => retype(p, mem, NodeType::Unset),
+            AnyBox::VList(p) => retype(p, mem, NodeType::Unset),
         }
     }
 
@@ -543,91 +518,13 @@ impl AnyBox {
     pub fn list_head(self) -> MemPtr {
         MemPtr::from_idx(self.idx().offset(5))
     }
-
-    #[inline]
-    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        match self {
-            AnyBox::HList(p) => p.set_link(mem, q),
-            AnyBox::VList(p) => p.set_link(mem, q),
-        }
-    }
-
-    #[inline]
-    pub fn subtype(self, mem: &MemState) -> u16 {
-        match self {
-            AnyBox::HList(p) => p.subtype(mem),
-            AnyBox::VList(p) => p.subtype(mem),
-        }
-    }
-
-    #[inline]
-    pub fn set_subtype(self, mem: &mut MemState, v: u16) {
-        match self {
-            AnyBox::HList(p) => p.set_subtype(mem, v),
-            AnyBox::VList(p) => p.set_subtype(mem, v),
-        }
-    }
-
-    #[inline]
-    pub fn glue_sign(self, mem: &MemState) -> GlueSign {
-        match self {
-            AnyBox::HList(p) => p.glue_sign(mem),
-            AnyBox::VList(p) => p.glue_sign(mem),
-        }
-    }
-
-    #[inline]
-    pub fn glue_order(self, mem: &MemState) -> u16 {
-        match self {
-            AnyBox::HList(p) => p.glue_order(mem),
-            AnyBox::VList(p) => p.glue_order(mem),
-        }
-    }
-
-    #[inline]
-    pub fn glue_set(self, mem: &MemState) -> f64 {
-        match self {
-            AnyBox::HList(p) => p.glue_set(mem),
-            AnyBox::VList(p) => p.glue_set(mem),
-        }
-    }
-
-    #[inline]
-    pub fn set_glue_sign(self, mem: &mut MemState, v: GlueSign) {
-        match self {
-            AnyBox::HList(p) => p.set_glue_sign(mem, v),
-            AnyBox::VList(p) => p.set_glue_sign(mem, v),
-        }
-    }
-
-    #[inline]
-    pub fn set_glue_order(self, mem: &mut MemState, v: u16) {
-        match self {
-            AnyBox::HList(p) => p.set_glue_order(mem, v),
-            AnyBox::VList(p) => p.set_glue_order(mem, v),
-        }
-    }
-
-    #[inline]
-    pub fn set_glue_set(self, mem: &mut MemState, v: f64) {
-        match self {
-            AnyBox::HList(p) => p.set_glue_set(mem, v),
-            AnyBox::VList(p) => p.set_glue_set(mem, v),
-        }
-    }
 }
 
-/// A fully classified lo-mem node: the typed handle for every family whose
-/// `NodePtr<K>` layer is built, or a raw [`MemIdx`] for families not yet typed.
-/// This is the single dispatch surface: a consumer calls [`MemState::classify`]
-/// once at the list-walk boundary and matches on the result, so the per-arm
-/// `from_idx_unchecked` that a raw `NODE_type` match forces is gone — each arm
-/// carries its static type.
-///
-/// Context-disambiguated codes are classified by their **node-list** meaning:
-/// type 2 → [`AnyNode::Rule`] (not the linebreak-active-list `DELTA_NODE`) and
-/// type 14 → [`AnyNode::Style`] (not `EDGE_NODE`). Walkers of those specialized
-/// lists carry their own context and do not call `classify`.
+// --- classification ---
+
+/// A classified lo-mem node. Type 2 is read as a rule (not a delta node) and
+/// type 14 as a style node (not an edge): walkers of those special lists
+/// know their context and do not classify.
 #[derive(Copy, Clone, Debug)]
 pub enum AnyNode {
     HList(NodePtr<HListNode>),
@@ -646,39 +543,38 @@ pub enum AnyNode {
     Unset(NodePtr<UnsetNode>),
     Style(NodePtr<StyleNode>),
     Choice(NodePtr<ChoiceNode>),
-    /// Any noad (`NODE_type` 16–31); refine with [`NodePtr::<Noad>::noad_type`].
+    /// Any noad, refine with [`NodePtr::<Noad>::noad_type`].
     Noad(NodePtr<Noad>),
     MarginKern(NodePtr<MarginKernNode>),
 }
 
 impl AnyNode {
-    /// The arena index of the classified node, regardless of family.
     #[inline]
     pub fn idx(self) -> MemIdx {
         match self {
             AnyNode::HList(p) => p.idx(),
             AnyNode::VList(p) => p.idx(),
             AnyNode::Rule(p) => p.idx(),
+            AnyNode::Ins(p) => p.idx(),
+            AnyNode::Mark(p) => p.idx(),
+            AnyNode::Adjust(p) => p.idx(),
             AnyNode::Ligature(p) => p.idx(),
             AnyNode::Disc(p) => p.idx(),
+            AnyNode::Whatsit(p) => p.idx(),
             AnyNode::Math(p) => p.idx(),
             AnyNode::Glue(p) => p.idx(),
             AnyNode::Kern(p) => p.idx(),
             AnyNode::Penalty(p) => p.idx(),
+            AnyNode::Unset(p) => p.idx(),
             AnyNode::Style(p) => p.idx(),
             AnyNode::Choice(p) => p.idx(),
             AnyNode::Noad(p) => p.idx(),
             AnyNode::MarginKern(p) => p.idx(),
-            AnyNode::Mark(p) => p.idx(),
-            AnyNode::Adjust(p) => p.idx(),
-            AnyNode::Ins(p) => p.idx(),
-            AnyNode::Unset(p) => p.idx(),
-            AnyNode::Whatsit(p) => p.idx(),
         }
     }
 
-    /// TeX's `precedes_break`: a node type below `math_node`, after which glue
-    /// is a legal breakpoint.
+    /// TeX's `precedes_break`: a type below `math_node`, after which glue is a
+    /// legal breakpoint.
     #[inline]
     pub fn precedes_break(self) -> bool {
         matches!(
@@ -695,11 +591,7 @@ impl AnyNode {
         )
     }
 
-    /// The horizontal-list width contribution — the `+1` width word, shared by
-    /// boxes, rules, kerns, math nodes, and box-dimensioned whatsits (the node
-    /// kinds that add their width to the running line total in the line-breaker).
-    /// Other kinds contribute nothing (`0`); callers reach this only via a
-    /// width-bearing dispatch arm.
+    /// The +1 width word of the kinds that add their width to a line, else 0.
     #[inline]
     pub fn hlist_width(self, mem: &MemState) -> i32 {
         match self {
@@ -715,28 +607,17 @@ impl AnyNode {
 }
 
 impl MemState {
-    /// Read the `NODE_type` (`mem[p].b16.s1`) of a lo-mem node as a checked
-    /// [`NodeType`]. `p` must be a real lo-mem node index (the caller did
-    /// the null / `is_char_node` check at the list-walk boundary).
+    /// The checked `NODE_type` of the non-null lo-mem node `p`.
     #[inline]
     pub fn node_type(&self, p: MemIdx) -> Result<NodeType, InvalidNodeType> {
         NodeType::from_raw(self.b16s1(p.0))
     }
 
-    /// Classify a non-null lo-mem node into its typed handle ([`AnyNode`]).
-    /// `p` must be a real lo-mem node index — the caller did the
-    /// null / `is_char_node` check at the list-walk boundary. `Err`
-    /// if the `NODE_type` code is not valid at all (the 32–39 gap / 41+).
-    ///
-    /// This confines every built family's `from_idx_unchecked` assertion to one
-    /// audited site; a consumer that matches the result writes no `unsafe`.
+    /// Classifies the non-null lo-mem node `p`. `Err` for an invalid type code.
     #[inline]
     pub fn classify(&self, p: MemIdx) -> Result<AnyNode, InvalidNodeType> {
         use NodeType::*;
-        // SAFETY (every typed arm): the `NODE_type` value matched just below was
-        // read from `p`, which proves `p`'s family; `from_idx_unchecked` asserts
-        // exactly that and nothing more. Its kind `K` is inferred from the
-        // `AnyNode` variant being constructed.
+        // SAFETY (every arm): the type code just read from `p` proves its kind.
         Ok(match self.node_type(p)? {
             HList => AnyNode::HList(unsafe { NodePtr::from_idx_unchecked(p) }),
             VList => AnyNode::VList(unsafe { NodePtr::from_idx_unchecked(p) }),
@@ -761,1425 +642,332 @@ impl MemState {
         })
     }
 
-    /// Classify a known lo-mem node as a box, returning the typed handle.
-    ///
-    /// `Ok(Some(_))` if `p` is an hlist or vlist; `Ok(None)` if it is some
-    /// other (valid) node type; `Err` if the type code is not a valid
-    /// `NODE_type` at all (the 32–39 gap / 41+). `p` must already
-    /// be a non-null lo-mem index.
+    /// `Ok(None)` for a valid non-box node.
     #[inline]
     pub fn classify_box(&self, p: MemIdx) -> Result<Option<AnyBox>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::HList => Some(AnyBox::HList(unsafe {
-                NodePtr::<HListNode>::from_idx_unchecked(p)
-            })),
-            NodeType::VList => Some(AnyBox::VList(unsafe {
-                NodePtr::<VListNode>::from_idx_unchecked(p)
-            })),
+        Ok(match self.classify(p)? {
+            AnyNode::HList(b) => Some(AnyBox::HList(b)),
+            AnyNode::VList(b) => Some(AnyBox::VList(b)),
             _ => None,
         })
     }
-}
 
-impl NodePtr<RuleNode> {
-    /// Allocate a fresh rule node (`RULE_NODE_SIZE` words), type-stamped with
-    /// `NODE_type = RULE_NODE`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
-        let p = get_node(mem, RULE_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Rule.as_raw());
-        // SAFETY: `p` is freshly allocated as a rule-sized node and just
-        // stamped RULE_NODE.
-        Some(unsafe { NodePtr::<RuleNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    #[inline]
-    pub fn width(self, mem: &MemState) -> RuleDimen {
-        RuleDimen::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, v: RuleDimen) {
-        mem.set_b32s1(self.idx.offset(1).0, v.raw());
-    }
-
-    #[inline]
-    pub fn depth(self, mem: &MemState) -> RuleDimen {
-        RuleDimen::from_raw(mem.b32s1(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_depth(self, mem: &mut MemState, v: RuleDimen) {
-        mem.set_b32s1(self.idx.offset(2).0, v.raw());
-    }
-
-    #[inline]
-    pub fn height(self, mem: &MemState) -> RuleDimen {
-        RuleDimen::from_raw(mem.b32s1(self.idx.offset(3).0))
-    }
-    #[inline]
-    pub fn set_height(self, mem: &mut MemState, v: RuleDimen) {
-        mem.set_b32s1(self.idx.offset(3).0, v.raw());
-    }
-}
-
-// --- the ligature family: ligature nodes (NODE_type 6) ---
-
-/// `LIGATURE_NODE` (`NODE_type` = 6): a ligature carrying font/character and a
-/// successor list pointer in word +1.
-pub enum LigatureNode {}
-
-impl NodeKind for LigatureNode {}
-
-impl NodePtr<LigatureNode> {
-    /// Allocate a fresh ligature node (`SMALL_NODE_SIZE` words), type-stamped
-    /// with `NODE_type = LIGATURE_NODE`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<LigatureNode>> {
-        let p = get_node(mem, SMALL_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Ligature.as_raw());
-        // SAFETY: `p` is freshly allocated as a small node and just stamped
-        // LIGATURE_NODE.
-        Some(unsafe { NodePtr::<LigatureNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Ligature font = `mem[p + 1].b16.s1`.
-    #[inline]
-    pub fn font(self, mem: &MemState) -> FontId {
-        FontId(mem.b16s1(self.idx.offset(1).0) as i32)
-    }
-    #[inline]
-    pub fn set_font(self, mem: &mut MemState, v: FontId) {
-        mem.set_b16s1(self.idx.offset(1).0, v.0 as u16);
-    }
-
-    /// Ligature character = `mem[p + 1].b16.s0`.
-    #[inline]
-    pub fn character(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_character(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.offset(1).0, v);
-    }
-
-    /// Ligature successor list = `mem[p + 1].b32.s1`.
-    #[inline]
-    pub fn lig_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_lig_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-}
-
-impl MemState {
-    /// Classify a known lo-mem node as a ligature node.
-    #[cfg(test)]
-    #[inline]
-    pub fn classify_ligature(
-        &self,
-        p: MemIdx,
-    ) -> Result<Option<NodePtr<LigatureNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Ligature => Some(unsafe { NodePtr::<LigatureNode>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
-}
-
-// --- the ligature-item record (part of the ligature stack) ---
-
-/// A ligature stack item record. It is a temporary record of `SMALL_NODE_SIZE` (2)
-/// that represents a character in the ligature processing stack.
-/// It carries no `NODE_type` header (its word 0 holds character and link).
-pub enum LigItem {}
-
-impl NodeKind for LigItem {}
-
-impl NodePtr<LigItem> {
-    /// Allocate a fresh, uninitialised ligature item record on the `mem`
-    /// free-list arena and return a typed handle to it, or `None` on arena
-    /// exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<LigItem>> {
-        let p = get_node(mem, SMALL_NODE_SIZE)?;
-        // SAFETY: `p` is a freshly allocated `SMALL_NODE_SIZE` record; this is
-        // the family's single audited construction site.
-        Some(unsafe { NodePtr::<LigItem>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Ligature item character code = `mem[p].b16.s0`.
-    #[inline]
-    pub fn character(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_character(self, mem: &mut MemState, c: u16) {
-        mem.set_b16s0(self.idx.0, c);
-    }
-
-    /// Ligature item component pointer = `mem[p + 1].b32.s1`.
-    #[inline]
-    pub fn component(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_component(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, q.0);
-    }
-}
-
-// --- the discretionary family: discretionary break nodes (NODE_type 7) ---
-
-/// `DISC_NODE` (`NODE_type` = 7): discretionary break with pre/post lists.
-pub enum DiscNode {}
-
-impl NodeKind for DiscNode {}
-
-impl NodePtr<DiscNode> {
-    /// Allocate a fresh discretionary node (`SMALL_NODE_SIZE` words),
-    /// type-stamped with `NODE_type = DISC_NODE`, returning `None` on arena
-    /// exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<DiscNode>> {
-        let p = get_node(mem, SMALL_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Disc.as_raw());
-        // SAFETY: `p` is freshly allocated as a small node and just stamped
-        // DISC_NODE.
-        Some(unsafe { NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Pre-break list = `mem[p + 1].b32.s0`.
-    #[inline]
-    pub fn pre_break(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_pre_break(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s0(self.idx.offset(1).0, v.0);
-    }
-
-    /// Post-break list = `mem[p + 1].b32.s1`.
-    #[inline]
-    pub fn post_break(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_post_break(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-}
-
-impl MemState {
-    /// Classify a known lo-mem node as a discretionary node.
     #[inline]
     pub fn classify_disc(&self, p: MemIdx) -> Result<Option<NodePtr<DiscNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Disc => Some(unsafe { NodePtr::<DiscNode>::from_idx_unchecked(p) }),
+        Ok(match self.classify(p)? {
+            AnyNode::Disc(d) => Some(d),
             _ => None,
         })
     }
-}
 
-// --- the math-node family: math-on/off nodes (NODE_type 9) ---
-
-/// `MATH_NODE` (`NODE_type` = 9): an inline math boundary node with a scaled
-/// width and an LR/math subtype in the shared header's subtype field.
-pub enum MathNode {}
-
-impl NodeKind for MathNode {}
-
-impl NodePtr<MathNode> {
-    /// Allocate a fresh math node (`MEDIUM_NODE_SIZE` words), type-stamped
-    /// with `NODE_type = MATH_NODE`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MathNode>> {
-        let p = get_node(mem, MEDIUM_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Math.as_raw());
-        // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just
-        // stamped MATH_NODE; this is the family's audited construction site.
-        Some(unsafe { NodePtr::<MathNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Math-node width = `mem[(p) + 1].b32.s1`.
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, w.0);
-    }
-
-    /// Retype this math node in place as a kern of the same width.
-    #[inline]
-    pub fn into_kern(self, mem: &mut MemState) -> NodePtr<KernNode> {
-        mem.set_b16s1(self.idx.0, NodeType::Kern.as_raw());
-        // SAFETY: the node was just stamped KERN_NODE (same size and width slot).
-        unsafe { NodePtr::<KernNode>::from_idx_unchecked(self.idx) }
-    }
-}
-
-impl MemState {
-    /// Classify a known lo-mem node as a math node.
-    #[cfg(test)]
-    pub fn classify_math(&self, p: MemIdx) -> Result<Option<NodePtr<MathNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Math => Some(unsafe { NodePtr::<MathNode>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
-}
-
-// --- math style/choice nodes (NODE_type 14 and 15) ---
-
-/// `STYLE_NODE` (`NODE_type` = 14): changes the current math style.
-pub enum StyleNode {}
-/// `EDGE_NODE` (`NODE_type` = 14 in LR-edge context): a shipout edge record.
-pub enum EdgeNode {}
-/// `CHOICE_NODE` (`NODE_type` = 15): four nullable math-list alternatives.
-pub enum ChoiceNode {}
-
-impl NodeKind for StyleNode {}
-impl NodeKind for EdgeNode {}
-impl NodeKind for ChoiceNode {}
-impl HasNodeHeader for EdgeNode {}
-
-impl NodePtr<StyleNode> {
-    /// Allocate a fresh style node (`STYLE_NODE_SIZE` words), type-stamped
-    /// with `NODE_type = STYLE_NODE`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<StyleNode>> {
-        let p = get_node(mem, STYLE_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Style.as_raw());
-        // SAFETY: `p` is freshly allocated and just stamped STYLE_NODE.
-        Some(unsafe { NodePtr::<StyleNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Zero the two payload words used by the C constructor.
-    #[inline]
-    pub fn clear_payload(self, mem: &mut MemState) {
-        mem.set_b32s1(self.idx.offset(1).0, 0);
-        mem.set_b32s1(self.idx.offset(2).0, 0);
-    }
-}
-
-impl NodePtr<StyleNode> {
-    /// Code 14 in a shipped list is an edge node, not a style node.
-    #[inline]
-    pub fn as_edge(self) -> NodePtr<EdgeNode> {
-        // SAFETY: edge and style nodes share code 14 and size, the context decides.
-        unsafe { NodePtr::<EdgeNode>::from_idx_unchecked(self.idx) }
-    }
-}
-
-impl NodePtr<ChoiceNode> {
-    /// Retype this choice node in place as a style node for `style`.
-    #[inline]
-    pub fn into_style(self, mem: &mut MemState, style: u16) -> NodePtr<StyleNode> {
-        mem.set_b16s1(self.idx.0, NodeType::Style.as_raw());
-        mem.set_b16s0(self.idx.0, style);
-        // SAFETY: the node was just stamped STYLE_NODE (same size as a choice node).
-        let p = unsafe { NodePtr::<StyleNode>::from_idx_unchecked(self.idx) };
-        p.clear_payload(mem);
-        p
-    }
-}
-
-impl NodePtr<EdgeNode> {
-    /// Allocate a fresh edge node (`STYLE_NODE_SIZE` words), type-stamped with
-    /// `NODE_type = STYLE_NODE` because XeTeX aliases `EDGE_NODE` to code 14.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<EdgeNode>> {
-        let p = get_node(mem, STYLE_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Style.as_raw());
-        // SAFETY: `p` is freshly allocated and just stamped with the edge
-        // context's NODE_type code.
-        Some(unsafe { NodePtr::<EdgeNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-
-    #[inline]
-    pub fn edge_dist(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(2).0))
-    }
-
-    /// Set edge width = `mem[p + 1].b32.s1`.
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, w.0);
-    }
-
-    /// Set edge distance = `mem[p + 2].b32.s1`.
-    #[inline]
-    pub fn set_edge_dist(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(2).0, w.0);
-    }
-}
-
-impl NodePtr<ChoiceNode> {
-    /// Allocate a fresh choice node (`STYLE_NODE_SIZE` words), type-stamped
-    /// with `NODE_type = CHOICE_NODE`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<ChoiceNode>> {
-        let p = get_node(mem, STYLE_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Choice.as_raw());
-        // SAFETY: `p` is freshly allocated and just stamped CHOICE_NODE.
-        Some(unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Display-style branch pointer = `mem[p + 1].b32.s0`.
-    #[inline]
-    pub fn display_mlist(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_display_mlist(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s0(self.idx.offset(1).0, v.0);
-    }
-
-    /// Text-style branch pointer = `mem[p + 1].b32.s1`.
-    #[inline]
-    pub fn text_mlist(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_text_mlist(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-
-    /// Script-style branch pointer = `mem[p + 2].b32.s0`.
-    #[inline]
-    pub fn script_mlist(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s0(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_script_mlist(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s0(self.idx.offset(2).0, v.0);
-    }
-
-    /// Script-script-style branch pointer = `mem[p + 2].b32.s1`.
-    #[inline]
-    pub fn script_script_mlist(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_script_script_mlist(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(2).0, v.0);
-    }
-}
-
-// --- the math noad family (NODE_type 16 to 31) ---
-
-/// `Noad` (math noads, `NODE_type` between 16 and 31 inclusive): represents a math noad structure.
-pub enum Noad {}
-
-impl NodeKind for Noad {}
-
-impl NodePtr<Noad> {
-    /// Allocate a fresh ordinary noad (`NOAD_SIZE` = 4 words), type-stamped
-    /// with `NODE_type = OrdNoad`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        let p = get_node(mem, NOAD_SIZE)?;
-        mem.set_b16s1(p, NodeType::OrdNoad.as_raw());
-        // SAFETY: `p` is freshly allocated and type-stamped.
-        Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Allocate a fresh radical noad (`RADICAL_NOAD_SIZE` = 5 words), type-stamped
-    /// with `NODE_type = RadicalNoad`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc_radical(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        let p = get_node(mem, RADICAL_NOAD_SIZE)?;
-        mem.set_b16s1(p, NodeType::RadicalNoad.as_raw());
-        Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Allocate a fresh accent noad (`ACCENT_NOAD_SIZE` = 5 words), type-stamped
-    /// with `NODE_type = AccentNoad`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc_accent(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        let p = get_node(mem, ACCENT_NOAD_SIZE)?;
-        mem.set_b16s1(p, NodeType::AccentNoad.as_raw());
-        Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Allocate a fresh fraction noad (`FRACTION_NOAD_SIZE` = 6 words), type-stamped
-    /// with `NODE_type = FractionNoad`, returning `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc_fraction(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        let p = get_node(mem, FRACTION_NOAD_SIZE)?;
-        mem.set_b16s1(p, NodeType::FractionNoad.as_raw());
-        Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Set the noad's type code = `mem[p].b16.s1`.
-    #[inline]
-    pub fn set_noad_type(self, mem: &mut MemState, nt: NodeType) {
-        mem.set_b16s1(self.idx.0, nt.as_raw());
-    }
-
-    /// Get the noad's type code = `mem[p].b16.s1`.
-    #[inline]
-    pub fn noad_type(self, mem: &MemState) -> NodeType {
-        NodeType::from_raw(mem.b16s1(self.idx.0)).expect("valid noad type")
-    }
-
-    /// Nucleus type = `mem[p + 1].b32.s1`
-    #[inline]
-    pub fn nucleus_type(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_nucleus_type(self, mem: &mut MemState, t: i32) {
-        mem.set_b32s1(self.idx.offset(1).0, t);
-    }
-
-    /// The noad's translated hlist (`new_hlist(q)`), physically aliasing the
-    /// nucleus math_type word (`mem[p + 1].b32.s1`).
-    ///
-    /// This is TeX's deliberate storage reuse: once `mlist_to_hlist`'s first
-    /// pass has converted the nucleus into a box or char list, the math_type
-    /// is dead and the resulting hlist pointer is parked in the same word.
-    /// Reads/writes here therefore clobber [`nucleus_type`](Self::nucleus_type)
-    /// and vice versa — use whichever name reflects the phase you are in.
-    #[inline]
-    pub fn new_hlist(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_new_hlist(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(1).0, v);
-    }
-    /// Nucleus field = `mem[p + 1].b32.s0`
-    #[inline]
-    pub fn nucleus_field(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_nucleus_field(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(1).0, v);
-    }
-
-    /// Nucleus character = `mem[p + 1].b16.s0`
-    #[inline]
-    pub fn nucleus_char(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_nucleus_char(self, mem: &mut MemState, c: u16) {
-        mem.set_b16s0(self.idx.offset(1).0, c);
-    }
-    /// Nucleus family = `mem[p + 1].b16.s1`
-    #[inline]
-    pub fn nucleus_fam(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_nucleus_fam(self, mem: &mut MemState, f: u16) {
-        mem.set_b16s1(self.idx.offset(1).0, f);
-    }
-
-    // Noad script layout (matches TeX/this build): superscript = offset +2,
-    // subscript = offset +3.
-
-    /// Superscript type = `mem[p + 2].b32.s1`
-    #[inline]
-    pub fn supscr_type(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(2).0)
-    }
-    #[inline]
-    pub fn set_supscr_type(self, mem: &mut MemState, t: i32) {
-        mem.set_b32s1(self.idx.offset(2).0, t);
-    }
-    /// Superscript field = `mem[p + 2].b32.s0`
-    #[inline]
-    pub fn supscr_field(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(2).0)
-    }
-    #[inline]
-    pub fn set_supscr_field(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(2).0, v);
-    }
-
-    /// Subscript type = `mem[p + 3].b32.s1`
-    #[inline]
-    pub fn subscr_type(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(3).0)
-    }
-    #[inline]
-    pub fn set_subscr_type(self, mem: &mut MemState, t: i32) {
-        mem.set_b32s1(self.idx.offset(3).0, t);
-    }
-    /// Subscript field = `mem[p + 3].b32.s0`
-    #[inline]
-    pub fn subscr_field(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(3).0)
-    }
-    #[inline]
-    pub fn set_subscr_field(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(3).0, v);
-    }
-
-    /// Thickness (Fraction only) = `mem[p + 1].b32.s1`
-    #[inline]
-    pub fn thickness(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_thickness(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(1).0, v);
-    }
-
-    /// Accent character field address (Accent only) = word 4.
-    #[inline]
-    pub fn accent_char_addr(self) -> i32 {
-        self.idx.offset(4).0
-    }
-
-    /// Accent character type (Accent only) = `mem[p + 4].b32.s1`
-    #[inline]
-    pub fn set_accent_char_type(self, mem: &mut MemState, t: i32) {
-        mem.set_b32s1(self.idx.offset(4).0, t);
-    }
-    /// Accent character code = `mem[p + 4].b16.s0`
-    #[inline]
-    pub fn set_accent_char_val(self, mem: &mut MemState, c: u16) {
-        mem.set_b16s0(self.idx.offset(4).0, c);
-    }
-    /// Accent character family = `mem[p + 4].b16.s1`
-    #[inline]
-    pub fn accent_char_fam(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(4).0)
-    }
-    #[inline]
-    pub fn set_accent_char_fam(self, mem: &mut MemState, f: u16) {
-        mem.set_b16s1(self.idx.offset(4).0, f);
-    }
-
-    /// Delimiter field address (Radical: word 4, LeftRight: word 1)
-    #[inline]
-    pub fn delimiter_addr(self) -> i32 {
-        self.idx.offset(4).0
-    }
-
-    /// Left/right delimiter address (LeftRight: word 1)
-    #[inline]
-    pub fn left_right_delimiter_addr(self) -> i32 {
-        self.idx.offset(1).0
-    }
-
-    /// Fraction left delimiter address (Fraction: word 4)
-    #[inline]
-    pub fn fraction_left_delimiter_addr(self) -> i32 {
-        self.idx.offset(4).0
-    }
-
-    /// Fraction right delimiter address (Fraction: word 5)
-    #[inline]
-    pub fn fraction_right_delimiter_addr(self) -> i32 {
-        self.idx.offset(5).0
-    }
-
-    /// Get the nucleus field address (word 1)
-    #[inline]
-    pub fn nucleus_addr(self) -> i32 {
-        self.idx.offset(1).0
-    }
-
-    /// Get the supscr field address (word 2)
-    #[inline]
-    pub fn supscr_addr(self) -> i32 {
-        self.idx.offset(2).0
-    }
-
-    /// Get the subscr field address (word 3)
-    #[inline]
-    pub fn subscr_addr(self) -> i32 {
-        self.idx.offset(3).0
-    }
-
-    /// Fraction numerator field address (word 2 — aliases `supscr` for
-    /// fraction noads, matching TeX's `numerator(#) == supscr(#)`).
-    #[inline]
-    pub fn numerator_addr(self) -> i32 {
-        self.idx.offset(2).0
-    }
-
-    /// Fraction denominator field address (word 3 — aliases `subscr` for
-    /// fraction noads, matching TeX's `denominator(#) == subscr(#)`).
-    #[inline]
-    pub fn denominator_addr(self) -> i32 {
-        self.idx.offset(3).0
-    }
-}
-
-impl MemState {
-    /// Classify a known lo-mem node as a noad.
     #[inline]
     pub fn classify_noad(&self, p: MemIdx) -> Result<Option<NodePtr<Noad>>, InvalidNodeType> {
-        let nt = self.node_type(p)?;
-        Ok(match nt {
-            NodeType::OrdNoad
-            | NodeType::OpNoad
-            | NodeType::BinNoad
-            | NodeType::RelNoad
-            | NodeType::OpenNoad
-            | NodeType::CloseNoad
-            | NodeType::PunctNoad
-            | NodeType::InnerNoad
-            | NodeType::RadicalNoad
-            | NodeType::FractionNoad
-            | NodeType::UnderNoad
-            | NodeType::OverNoad
-            | NodeType::AccentNoad
-            | NodeType::VcenterNoad
-            | NodeType::LeftNoad
-            | NodeType::RightNoad => Some(unsafe { NodePtr::<Noad>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
-}
-
-// --- the glue family: glue nodes and glue_spec records ---
-//
-// Two distinct node shapes that are always reached together:
-//
-// `GlueNode` (`NODE_type` = `GLUE_NODE` = 10; allocated `MEDIUM_NODE_SIZE` = 3
-// in this build because SyncTeX rides in the extra word):
-//
-// | field        | offset.subfield | type                          |
-// |--------------|-----------------|-------------------------------|
-// | `subtype`    | 0.b16.s0        | `u16` (the header word)        |
-// | `glue_ptr`   | +1.b32.s0       | `MemPtr` → the glue_spec       |
-// | `leader_ptr` | +1.b32.s1       | `MemPtr` (nullable: no leaders) |
-//
-// `GlueSpecNode` (`GLUE_SPEC_SIZE` = 4 — a *record*, never a list node):
-//
-// | field           | offset.subfield | type                              |
-// |-----------------|-----------------|-----------------------------------|
-// | `ref_count`     | 0.b32.s1        | `i32` — a REFERENCE COUNT, not a link |
-// | `stretch_order` | 0.b16.s1        | `u16` (the fil order of `stretch`) |
-// | `shrink_order`  | 0.b16.s0        | `u16` (the fil order of `shrink`)  |
-// | `width`         | +1.b32.s1       | `Scaled` (the natural glue amount) |
-// | `stretch`       | +2.b32.s1       | `Scaled`                          |
-// | `shrink`        | +3.b32.s1       | `Scaled`                          |
-//
-// (`width` shares the generic `BOX_width` +1.b32.s1 offset, so there is no
-// dedicated `GLUE_SPEC_width` C macro — verified against `new_spec`/
-// `math_glue` in `src/mem.rs`/`src/math.rs`, which read/write `mem[p+1]` as
-// the spec width.)
-//
-// **Classification differs from the box family.** A glue_spec is *not*
-// found via `NODE_type`: its `0.b16.s1` word holds `stretch_order`, not a
-// type code. A glue_spec is only ever reached through a glue node's
-// `glue_ptr` (or a parameter-glue pointer), so its constructor is
-// [`NodePtr::<GlueSpecNode>::from_glue_ptr`] (a from-`MemPtr` boundary),
-// **not** a `node_type` branch. Only the glue *node* is classified by
-// `NODE_type` (== `GLUE_NODE`), via [`MemState::classify_glue`].
-//
-// **The ref_count trap.** `GLUE_SPEC_ref_count` lives in the
-// `0.b32.s1` word — the same word that holds `link()` in a real list node.
-// On a glue_spec it is a reference count, so it is exposed as `ref_count() ->
-// i32`, never as `link()`/`MemPtr`. Treating it as a pointer is a silent
-// parity break.
-
-/// `GLUE_NODE` (`NODE_type` = 10): inter-element glue, pointing at a shared
-/// `GlueSpecNode` plus an optional leader box/rule list.
-pub enum GlueNode {}
-/// `GLUE_SPEC` record (`GLUE_SPEC_SIZE` = 4): the shared, reference-counted
-/// stretch/shrink specification a glue node refers to. Not a list node — it
-/// carries no `NODE_type` and never appears on a horizontal/vertical list.
-pub enum GlueSpecNode {}
-
-impl NodeKind for GlueNode {}
-impl NodeKind for GlueSpecNode {}
-
-impl NodePtr<GlueNode> {
-    /// Allocate a fresh glue node on the `mem` free-list arena, type-stamped
-    /// with `NODE_type = GLUE_NODE`, returning `None` on arena exhaustion.
-    ///
-    /// This preserves the current XeTeX allocation size (`MEDIUM_NODE_SIZE`,
-    /// not the generic-TeX small-node size) and confines the family's typed
-    /// construction to this single audited site. The caller fills
-    /// `subtype`/`glue_ptr`/`leader_ptr`.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<GlueNode>> {
-        let p = get_node(mem, MEDIUM_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Glue.as_raw());
-        // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just
-        // stamped GLUE_NODE; this is the family's audited construction site.
-        Some(unsafe { NodePtr::<GlueNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// `GLUE_NODE_glue_ptr(p)` = `mem[(p) + 1].b32.s0` — the pointer to this
-    /// node's [`GlueSpecNode`]. Returned as a raw [`MemPtr`]; the caller
-    /// classifies it (typically via [`NodePtr::<GlueSpecNode>::from_glue_ptr`]
-    /// or the [`glue_spec`](Self::glue_spec) helper).
-    #[inline]
-    pub fn glue_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_glue_ptr(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s0(self.idx.offset(1).0, q.0);
-    }
-
-    /// `GLUE_NODE_leader_ptr(p)` = `mem[(p) + 1].b32.s1` — the leader
-    /// box/rule list head, or `TEX_NULL` for plain glue. Nullable [`MemPtr`].
-    #[inline]
-    pub fn leader_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_leader_ptr(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, q.0);
-    }
-
-    /// Turn this glue node into a penalty node in place (both are medium nodes).
-    #[inline]
-    pub fn into_penalty(self, mem: &mut MemState) -> NodePtr<PenaltyNode> {
-        mem.set_b16s1(self.idx.0, NodeType::Penalty.as_raw());
-        // SAFETY: the node was just stamped PENALTY_NODE.
-        unsafe { NodePtr::from_idx_unchecked(self.idx) }
-    }
-
-    /// Retype this glue node in place as a kern of width `w`.
-    #[inline]
-    pub fn into_kern(self, mem: &mut MemState, w: Scaled) -> NodePtr<KernNode> {
-        mem.set_b16s1(self.idx.0, NodeType::Kern.as_raw());
-        // SAFETY: the node was just stamped KERN_NODE (same size).
-        let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(self.idx) };
-        kern.set_width(mem, w);
-        kern
-    }
-
-    /// Classify this glue node's `glue_ptr` as a [`GlueSpecNode`] handle, or
-    /// `None` if the pointer is null. Convenience over
-    /// `NodePtr::<GlueSpecNode>::from_glue_ptr(p.glue_ptr(mem))`.
-    #[inline]
-    pub fn glue_spec(self, mem: &MemState) -> Option<NodePtr<GlueSpecNode>> {
-        NodePtr::<GlueSpecNode>::from_glue_ptr(self.glue_ptr(mem))
-    }
-}
-
-impl NodePtr<GlueSpecNode> {
-    /// Classify a glue node's `glue_ptr` (or a parameter-glue pointer) as a
-    /// `GlueSpecNode` handle. This is the **only** entry into the family — a
-    /// glue_spec carries no `NODE_type`, so it is never produced by
-    /// [`MemState::classify_box`]/[`node_type`](MemState::node_type). Returns
-    /// `None` if `p` is null.
-    ///
-    /// In practice every glue node points at a real spec, so `None` signals a
-    /// caller bug (a null glue_ptr); the caller may `expect` it.
-    #[inline]
-    pub fn from_glue_ptr(p: MemPtr) -> Option<NodePtr<GlueSpecNode>> {
-        // SAFETY: a non-null glue_ptr always references a GLUE_SPEC record by
-        // construction (it is only ever written by the spec allocators).
-        p.as_idx()
-            .map(|idx| unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(idx) })
-    }
-
-    /// Allocate a fresh, **uninitialised** glue_spec record on the `mem`
-    /// free-list arena and return a typed handle to it, or `None` if the
-    /// arena is exhausted.
-    ///
-    /// This is the **typesafe node-allocation boundary** for the family:
-    /// it confines the one `from_idx_unchecked` to a
-    /// single audited site (a node *being initialised* has no `NODE_type` to
-    /// classify yet), so call sites never write `unsafe`. It keeps TeX's
-    /// free-list arena (no per-node heap alloc) — it is exactly the
-    /// `get_node(GLUE_SPEC_SIZE)` the C `new_spec`/`math_glue` do, lifted to a
-    /// typed return. A glue_spec carries no `NODE_type`, so nothing is
-    /// stamped; the caller fills `width`/`stretch`/`shrink`/orders. (A
-    /// type-stamping family's `alloc` would additionally `set_b16s1(NODE_type)`
-    /// before returning — the pattern extends per family as consumers appear.)
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<GlueSpecNode>> {
-        let p = get_node(mem, GLUE_SPEC_SIZE)?;
-        // SAFETY: `p` is a freshly allocated `GLUE_SPEC_SIZE` record; this is
-        // the family's single audited construction site (the node is being
-        // initialised by the caller, so there is no tag to classify).
-        Some(unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// `GLUE_SPEC_ref_count(p)` = `mem[p].b32.s1`.
-    ///
-    /// **This is a reference count, not a link.** It occupies the
-    /// `0.b32.s1` word — the slot that holds the successor pointer on a real
-    /// list node — but on a glue_spec it counts the glue nodes sharing this
-    /// record. Exposed as a plain `i32`; never as `link()`/[`MemPtr`].
-    #[inline]
-    pub fn ref_count(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.0)
-    }
-    #[inline]
-    pub fn set_ref_count(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.0, v);
-    }
-
-    /// `GLUE_SPEC_stretch_order(p)` = `mem[p].b16.s1` — the fil order
-    /// (`NORMAL`/`FIL`/`FILL`/`FILLL`) of the stretch component. Lives in the
-    /// header word's high half, where a list node holds `NODE_type`.
-    #[inline]
-    pub fn stretch_order(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.0)
-    }
-    #[inline]
-    pub fn set_stretch_order(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.0, v);
-    }
-
-    /// `GLUE_SPEC_shrink_order(p)` = `mem[p].b16.s0` — the fil order of the
-    /// shrink component. Header word's low half.
-    #[inline]
-    pub fn shrink_order(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_shrink_order(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
-    }
-
-    /// Glue-spec `width` = `mem[(p) + 1].b32.s1` — the natural glue amount.
-    /// Shares the generic `BOX_width` +1.b32.s1 slot (no dedicated
-    /// `GLUE_SPEC_width` macro), but on a glue_spec it is the rigid width.
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-
-    /// `GLUE_SPEC_stretch(p)` = `mem[(p) + 2].b32.s1` — the stretchability.
-    #[inline]
-    pub fn stretch(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_stretch(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(2).0, v.0);
-    }
-
-    /// `GLUE_SPEC_shrink(p)` = `mem[(p) + 3].b32.s1` — the shrinkability.
-    #[inline]
-    pub fn shrink(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(3).0))
-    }
-    #[inline]
-    pub fn set_shrink(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, v.0);
-    }
-}
-
-impl MemState {
-    /// Classify a known lo-mem node as a glue node, returning the typed
-    /// handle. `Ok(Some(_))` if `p` is a `GLUE_NODE`; `Ok(None)` if it is some
-    /// other (valid) node type; `Err` if the type code is invalid. `p` must
-    /// already be a non-null lo-mem index (the caller did the list-walk
-    /// null/`is_char_node` check).
-    ///
-    /// Note there is no analogous `classify_glue_spec`: a glue_spec carries no
-    /// `NODE_type`, so it is reached only through
-    /// [`NodePtr::<GlueSpecNode>::from_glue_ptr`].
-    #[cfg(test)]
-    pub fn classify_glue(&self, p: MemIdx) -> Result<Option<NodePtr<GlueNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Glue => Some(unsafe { NodePtr::<GlueNode>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
-}
-
-// --- the kern family: kern nodes (NODE_type 11) ---
-//
-// `KernNode` (`NODE_type` = `KERN_NODE` = 11; allocated `MEDIUM_NODE_SIZE` =
-// 3 in this build — the generic-TeX "small (2)" grows to medium when SyncTeX
-// fields ride along):
-//
-// | field     | offset.subfield | type                              |
-// |-----------|-----------------|-----------------------------------|
-// | `subtype` | 0.b16.s0        | `u16` (NORMAL/EXPLICIT/ACC_KERN/MU_GLUE) |
-// | `width`   | +1.b32.s1       | `Scaled`                          |
-//
-// `width` is the same +1.b32.s1 `Scaled` slot as the box family's `width`,
-// but a kern node has **no** depth/height/shift_amount — those offsets hold
-// other data (e.g. the SyncTeX word) — so kern uses a **concrete** `width`
-// method, *not* the `HasDimensions` capability trait (which would falsely
-// expose +2..+4).
-
-/// `KERN_NODE` (`NODE_type` = 11): inter-element kern (a single signed
-/// width).
-pub enum KernNode {}
-
-impl NodeKind for KernNode {}
-
-impl NodePtr<KernNode> {
-    /// Allocate a fresh kern node on the `mem` free-list arena, **type-stamped**
-    /// with `NODE_type = KERN_NODE`, and return a typed handle to it — or `None`
-    /// if the arena is exhausted.
-    ///
-    /// This is the **type-stamping** form of the typesafe node-allocation
-    /// boundary: unlike
-    /// [`NodePtr::<GlueSpecNode>::alloc`] (a glue_spec carries no `NODE_type`,
-    /// so it stamps nothing), a kern node *is* a list node, so its `alloc`
-    /// additionally writes `NODE_type` into the header before returning. It
-    /// confines the family's one `from_idx_unchecked` to this single audited
-    /// site (the node is being initialised, so there is no tag to *classify* —
-    /// `alloc` *writes* the tag), keeping TeX's free-list arena (no per-node
-    /// heap alloc). It is exactly the `get_node(MEDIUM_NODE_SIZE)` +
-    /// `type(p) = kern_node` the C `new_kern` does, lifted to a typed return;
-    /// the caller fills `subtype`/`width`.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<KernNode>> {
-        let p = get_node(mem, MEDIUM_NODE_SIZE)?;
-        // type-stamp: a kern node carries NODE_type = KERN_NODE in its header.
-        mem.set_b16s1(p, NodeType::Kern.as_raw());
-        // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just stamped
-        // KERN_NODE; this is the family's single audited construction site.
-        Some(unsafe { NodePtr::<KernNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// `KERN_NODE` width = `mem[(p) + 1].b32.s1` — the kern amount. Shares the
-    /// box `width` slot/type but is a one-field family (concrete impl).
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, w.0);
-    }
-}
-
-impl MemState {
-    /// Classify a known lo-mem node as a kern node. `Ok(Some(_))` if `p` is a
-    /// `KERN_NODE`; `Ok(None)` if some other valid type; `Err` if invalid.
-    /// `p` must already be a non-null lo-mem index.
-    #[cfg(test)]
-    #[inline]
-    pub fn classify_kern(&self, p: MemIdx) -> Result<Option<NodePtr<KernNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Kern => Some(unsafe { NodePtr::<KernNode>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
-}
-
-// --- the penalty family: penalty nodes (NODE_type 12) ---
-//
-// `PenaltyNode` (`NODE_type` = `PENALTY_NODE` = 12; allocated
-// `MEDIUM_NODE_SIZE` = 3 in this build, like kern):
-//
-// | field     | offset.subfield | type                       |
-// |-----------|-----------------|----------------------------|
-// | `penalty` | +1.b32.s1       | **`i32`** (NOT `Scaled`)    |
-//
-// **The penalty trap.** `PENALTY_NODE_penalty` occupies the same
-// +1.b32.s1 slot as the box/kern `width` (a `Scaled`), but it is a plain
-// **integer breakpoint penalty** (`int`), not a scaled length. Returning
-// `Scaled` here would be a silent type/parity error — it is exposed as
-// `penalty() -> i32`.
-
-/// `PENALTY_NODE` (`NODE_type` = 12): a breakpoint penalty (a plain `i32`,
-/// `INF_PENALTY`/`EJECT_PENALTY` and everything between).
-pub enum PenaltyNode {}
-
-impl NodeKind for PenaltyNode {}
-
-impl NodePtr<PenaltyNode> {
-    /// Allocate a fresh penalty node on the `mem` free-list arena,
-    /// **type-stamped** with `NODE_type = PENALTY_NODE`, and return a typed
-    /// handle to it — or `None` on arena exhaustion.
-    ///
-    /// The type-stamping `alloc` form, like
-    /// [`NodePtr::<KernNode>::alloc`]: it writes `NODE_type` and confines the
-    /// family's one `from_idx_unchecked` to this single audited site, keeping
-    /// TeX's free-list arena. It is the `get_node(MEDIUM_NODE_SIZE)` +
-    /// `type(p) = penalty_node` the C `new_penalty` does; the caller fills
-    /// `subtype`/`penalty`.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<PenaltyNode>> {
-        let p = get_node(mem, MEDIUM_NODE_SIZE)?;
-        // type-stamp: a penalty node carries NODE_type = PENALTY_NODE.
-        mem.set_b16s1(p, NodeType::Penalty.as_raw());
-        // SAFETY: `p` is a freshly allocated `MEDIUM_NODE_SIZE` node just stamped
-        // PENALTY_NODE; this is the family's single audited construction site.
-        Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// `PENALTY_NODE_penalty(p)` = `mem[(p) + 1].b32.s1`.
-    ///
-    /// **A plain `i32`, not `Scaled`** — the breakpoint penalty,
-    /// even though it shares the +1.b32.s1 slot with box/kern `width`.
-    #[inline]
-    pub fn penalty(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_penalty(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(1).0, v);
-    }
-}
-
-impl MemState {
-    /// Classify a known lo-mem node as a penalty node. `Ok(Some(_))` if `p`
-    /// is a `PENALTY_NODE`; `Ok(None)` if some other valid type; `Err` if
-    /// invalid. `p` must already be a non-null lo-mem index.
-    #[cfg(test)]
-    #[inline]
-    pub fn classify_penalty(
-        &self,
-        p: MemIdx,
-    ) -> Result<Option<NodePtr<PenaltyNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            // SAFETY: the NODE_type branch just proved the kind.
-            NodeType::Penalty => Some(unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(p) }),
-            _ => None,
-        })
-    }
-}
-
-// --- the margin kern family: margin kern nodes (NODE_type 40) ---
-
-/// `MARGIN_KERN_NODE` (`NODE_type` = 40): a margin-protrusion kern node.
-pub enum MarginKernNode {}
-
-impl NodeKind for MarginKernNode {}
-
-impl NodePtr<MarginKernNode> {
-    /// Allocate a fresh margin kern node on the `mem` free-list arena,
-    /// type-stamped with `NODE_type = MARGIN_KERN_NODE`, and return a typed
-    /// handle to it — or `None` on arena exhaustion.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MarginKernNode>> {
-        let p = get_node(mem, MARGIN_KERN_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::MarginKern.as_raw());
-        Some(unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// `MARGIN_KERN_NODE` width = `mem[(p) + 1].b32.s1`.
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, w.0);
-    }
-}
-
-impl MemState {
-    /// Classify a known lo-mem node as a margin kern node.
-    #[cfg(test)]
-    #[inline]
-    pub fn classify_margin_kern(
-        &self,
-        p: MemIdx,
-    ) -> Result<Option<NodePtr<MarginKernNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            NodeType::MarginKern => {
-                Some(unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(p) })
-            }
+        Ok(match self.classify(p)? {
+            AnyNode::Noad(n) => Some(n),
             _ => None,
         })
     }
 
-    /// Classify a known lo-mem node as a whatsit, returning the typed handle.
-    /// `Ok(Some(_))` if `p` is a `WHATSIT_NODE`; `Ok(None)` for any other valid
-    /// type; refine the result with [`NodePtr::subtype`].
     #[inline]
     pub fn classify_whatsit(
         &self,
         p: MemIdx,
     ) -> Result<Option<NodePtr<WhatsitNode>>, InvalidNodeType> {
-        Ok(match self.node_type(p)? {
-            NodeType::Whatsit => Some(unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(p) }),
+        Ok(match self.classify(p)? {
+            AnyNode::Whatsit(w) => Some(w),
             _ => None,
         })
     }
 }
 
-// --- mark / adjust families (NODE_type 4, 5) ---
+// --- character-bearing nodes ---
 
-/// `MARK_NODE` (`NODE_type` = 4): a `\mark` whose token list is carried into
-/// the page stream. `SMALL_NODE_SIZE` (2). Field offsets verified against
-/// `xetex/xetex-xetexd.h:258–259` (`MARK_NODE_ptr` / `MARK_NODE_class`).
-pub enum MarkNode {}
+impl NodePtr<LigatureNode> {
+    fields! {
+        font / set_font: FontId = b16s1 @ 1;
+        character / set_character: u16 = b16s0 @ 1;
+        /// The original characters the ligature was formed from.
+        lig_ptr / set_lig_ptr: MemPtr = b32s1 @ 1;
+    }
+}
 
-impl NodeKind for MarkNode {}
-impl HasNodeHeader for MarkNode {}
+impl NodePtr<LigItem> {
+    fields! {
+        character / set_character: u16 = b16s0 @ 0;
+        component / set_component: MemPtr = b32s1 @ 1;
+    }
+}
+
+impl NodePtr<DiscNode> {
+    fields! {
+        pre_break / set_pre_break: MemPtr = b32s0 @ 1;
+        post_break / set_post_break: MemPtr = b32s1 @ 1;
+    }
+}
+
+// --- math, glue, kern, penalty ---
+
+impl NodePtr<MathNode> {
+    /// Retypes the node as a kern of the same width.
+    #[inline]
+    pub fn into_kern(self, mem: &mut MemState) -> NodePtr<KernNode> {
+        retype(self, mem, NodeType::Kern)
+    }
+}
+
+impl NodePtr<StyleNode> {
+    /// Zeroes the two payload words, as `new_style` does.
+    #[inline]
+    pub fn clear_payload(self, mem: &mut MemState) {
+        mem.set_b32s1(self.idx.0 + 1, 0);
+        mem.set_b32s1(self.idx.0 + 2, 0);
+    }
+
+    /// Reads a type-14 node of a shipped list as the edge it is.
+    #[inline]
+    pub fn as_edge(self) -> NodePtr<EdgeNode> {
+        // SAFETY: edge and style nodes share code 14 and size, the context decides.
+        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+    }
+}
+
+impl NodePtr<EdgeNode> {
+    fields! {
+        edge_dist / set_edge_dist: Scaled = b32s1 @ 2;
+    }
+}
+
+impl NodePtr<ChoiceNode> {
+    fields! {
+        display_mlist / set_display_mlist: MemPtr = b32s0 @ 1;
+        text_mlist / set_text_mlist: MemPtr = b32s1 @ 1;
+        script_mlist / set_script_mlist: MemPtr = b32s0 @ 2;
+        script_script_mlist / set_script_script_mlist: MemPtr = b32s1 @ 2;
+    }
+
+    /// Retypes the node as a style node for `style`.
+    #[inline]
+    pub fn into_style(self, mem: &mut MemState, style: u16) -> NodePtr<StyleNode> {
+        let p: NodePtr<StyleNode> = retype(self, mem, NodeType::Style);
+        p.set_subtype(mem, style);
+        p.clear_payload(mem);
+        p
+    }
+}
+
+impl NodePtr<Noad> {
+    #[inline]
+    pub fn alloc_radical(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+        alloc_node(mem, RADICAL_NOAD_SIZE, Some(NodeType::RadicalNoad))
+    }
+
+    #[inline]
+    pub fn alloc_accent(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+        alloc_node(mem, ACCENT_NOAD_SIZE, Some(NodeType::AccentNoad))
+    }
+
+    #[inline]
+    pub fn alloc_fraction(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+        alloc_node(mem, FRACTION_NOAD_SIZE, Some(NodeType::FractionNoad))
+    }
+
+    #[inline]
+    pub fn noad_type(self, mem: &MemState) -> NodeType {
+        NodeType::from_raw(mem.b16s1(self.idx.0)).expect("valid noad type")
+    }
+    #[inline]
+    pub fn set_noad_type(self, mem: &mut MemState, nt: NodeType) {
+        mem.set_b16s1(self.idx.0, nt.as_raw());
+    }
+
+    fields! {
+        nucleus_type / set_nucleus_type: i32 = b32s1 @ 1;
+        nucleus_field / set_nucleus_field: i32 = b32s0 @ 1;
+        nucleus_char / set_nucleus_char: u16 = b16s0 @ 1;
+        nucleus_fam / set_nucleus_fam: u16 = b16s1 @ 1;
+        /// The translated hlist, which reuses the nucleus type word once
+        /// `mlist_to_hlist` has converted the nucleus.
+        new_hlist / set_new_hlist: i32 = b32s1 @ 1;
+        /// A fraction's rule thickness, in the nucleus type word.
+        thickness / set_thickness: i32 = b32s1 @ 1;
+        supscr_type / set_supscr_type: i32 = b32s1 @ 2;
+        supscr_field / set_supscr_field: i32 = b32s0 @ 2;
+        subscr_type / set_subscr_type: i32 = b32s1 @ 3;
+        subscr_field / set_subscr_field: i32 = b32s0 @ 3;
+        accent_char_fam / set_accent_char_fam: u16 = b16s1 @ 4;
+    }
+
+    #[inline]
+    pub fn set_accent_char_type(self, mem: &mut MemState, t: i32) {
+        mem.set_b32s1(self.idx.0 + 4, t);
+    }
+    #[inline]
+    pub fn set_accent_char_val(self, mem: &mut MemState, c: u16) {
+        mem.set_b16s0(self.idx.0 + 4, c);
+    }
+
+    #[inline]
+    pub fn nucleus_addr(self) -> i32 {
+        self.idx.0 + 1
+    }
+    #[inline]
+    pub fn supscr_addr(self) -> i32 {
+        self.idx.0 + 2
+    }
+    #[inline]
+    pub fn subscr_addr(self) -> i32 {
+        self.idx.0 + 3
+    }
+    /// A fraction's numerator, which shares the superscript word.
+    #[inline]
+    pub fn numerator_addr(self) -> i32 {
+        self.idx.0 + 2
+    }
+    /// A fraction's denominator, which shares the subscript word.
+    #[inline]
+    pub fn denominator_addr(self) -> i32 {
+        self.idx.0 + 3
+    }
+    #[inline]
+    pub fn accent_char_addr(self) -> i32 {
+        self.idx.0 + 4
+    }
+    /// A radical's delimiter.
+    #[inline]
+    pub fn delimiter_addr(self) -> i32 {
+        self.idx.0 + 4
+    }
+    #[inline]
+    pub fn left_right_delimiter_addr(self) -> i32 {
+        self.idx.0 + 1
+    }
+    #[inline]
+    pub fn fraction_left_delimiter_addr(self) -> i32 {
+        self.idx.0 + 4
+    }
+    #[inline]
+    pub fn fraction_right_delimiter_addr(self) -> i32 {
+        self.idx.0 + 5
+    }
+}
+
+impl NodePtr<GlueNode> {
+    fields! {
+        glue_ptr / set_glue_ptr: MemPtr = b32s0 @ 1;
+        leader_ptr / set_leader_ptr: MemPtr = b32s1 @ 1;
+    }
+
+    #[inline]
+    pub fn glue_spec(self, mem: &MemState) -> Option<NodePtr<GlueSpecNode>> {
+        NodePtr::<GlueSpecNode>::from_glue_ptr(self.glue_ptr(mem))
+    }
+
+    #[inline]
+    pub fn into_penalty(self, mem: &mut MemState) -> NodePtr<PenaltyNode> {
+        retype(self, mem, NodeType::Penalty)
+    }
+
+    /// Retypes the node as a kern of width `w`.
+    #[inline]
+    pub fn into_kern(self, mem: &mut MemState, w: Scaled) -> NodePtr<KernNode> {
+        let kern: NodePtr<KernNode> = retype(self, mem, NodeType::Kern);
+        kern.set_width(mem, w);
+        kern
+    }
+}
+
+impl NodePtr<GlueSpecNode> {
+    /// The spec a glue pointer references, `None` if it is null.
+    #[inline]
+    pub fn from_glue_ptr(p: MemPtr) -> Option<NodePtr<GlueSpecNode>> {
+        // SAFETY: glue pointers are only ever set to glue specs.
+        p.as_idx()
+            .map(|idx| unsafe { NodePtr::from_idx_unchecked(idx) })
+    }
+
+    fields! {
+        /// A reference count, not a link, although it shares the link word.
+        ref_count / set_ref_count: i32 = b32s1 @ 0;
+        stretch_order / set_stretch_order: u16 = b16s1 @ 0;
+        shrink_order / set_shrink_order: u16 = b16s0 @ 0;
+        stretch / set_stretch: Scaled = b32s1 @ 2;
+        shrink / set_shrink: Scaled = b32s1 @ 3;
+    }
+}
+
+impl NodePtr<PenaltyNode> {
+    fields! {
+        penalty / set_penalty: i32 = b32s1 @ 1;
+    }
+}
+
+// --- page-builder nodes ---
 
 impl NodePtr<MarkNode> {
-    /// Allocate a mark node (`SMALL_NODE_SIZE` words) stamped `MARK_NODE`.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MarkNode>> {
-        let p = get_node(mem, SMALL_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Mark.as_raw());
-        // SAFETY: `p` is a fresh node just stamped MARK_NODE.
-        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Mark token list = `mem[(p) + 1].b32.s1` (`MARK_NODE_ptr`).
-    #[inline]
-    pub fn mark_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_mark_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-
-    /// Mark class = `mem[(p) + 1].b32.s0` (`MARK_NODE_class`).
-    #[inline]
-    pub fn mark_class(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_mark_class(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(1).0, v);
+    fields! {
+        mark_ptr / set_mark_ptr: MemPtr = b32s1 @ 1;
+        mark_class / set_mark_class: i32 = b32s0 @ 1;
     }
 }
-
-/// `ADJUST_NODE` (`NODE_type` = 5): a `\vadjust` list moved to the enclosing
-/// vertical list. `SMALL_NODE_SIZE` (2); the subtype selects pre-/post-adjust
-/// placement. The adjustment list pointer reuses the box `width` slot
-/// (`mem[(p) + 1].b32.s1`).
-pub enum AdjustNode {}
-
-impl NodeKind for AdjustNode {}
-impl HasNodeHeader for AdjustNode {}
 
 impl NodePtr<AdjustNode> {
-    /// Allocate an adjust node (`SMALL_NODE_SIZE` words) stamped `ADJUST_NODE`.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<AdjustNode>> {
-        let p = get_node(mem, SMALL_NODE_SIZE)?;
-        mem.set_b16s1(p, NodeType::Adjust.as_raw());
-        // SAFETY: `p` is a fresh node just stamped ADJUST_NODE.
-        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Adjustment list = `mem[(p) + 1].b32.s1` (`ADJUST_NODE_ptr`).
-    #[inline]
-    pub fn adjust_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_adjust_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
+    fields! {
+        adjust_ptr / set_adjust_ptr: MemPtr = b32s1 @ 1;
     }
 }
-
-/// `INS_NODE` (`NODE_type` = 3): an insertion (`\insert`). `INS_NODE_SIZE` (5).
-/// The subtype holds the insertion class. Field offsets verified against
-/// `xetex/xetex-xetexd.h:246–248` (`INSERTION_NODE_float_cost` /
-/// `INSERTION_NODE_split_top_ptr` / `INSERTION_NODE_ins_ptr`); height/depth
-/// share the box `height`/`depth` slots.
-pub enum InsNode {}
-
-impl NodeKind for InsNode {}
-impl HasNodeHeader for InsNode {}
 
 impl NodePtr<InsNode> {
-    /// Allocate an insertion node (5 words) stamped `INS_NODE`.
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<InsNode>> {
-        let p = get_node(mem, 5)?;
-        mem.set_b16s1(p, NodeType::Ins.as_raw());
-        // SAFETY: `p` is a fresh node just stamped INS_NODE.
-        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Vlist to be inserted = `mem[(p) + 4].b32.s0` (`INSERTION_NODE_ins_ptr`).
-    #[inline]
-    pub fn ins_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s0(self.idx.offset(4).0))
-    }
-    #[inline]
-    pub fn set_ins_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s0(self.idx.offset(4).0, v.0);
-    }
-
-    /// `\splittopskip` glue spec = `mem[(p) + 4].b32.s1`
-    /// (`INSERTION_NODE_split_top_ptr`). Points at a glue spec, not a list.
-    #[inline]
-    pub fn split_top_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(4).0))
-    }
-    #[inline]
-    pub fn set_split_top_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(4).0, v.0);
-    }
-
-    /// Insertion penalty/float cost = `mem[(p) + 1].b32.s1`
-    /// (`INSERTION_NODE_float_cost`); an `i32` cost, not a `Scaled`.
-    #[inline]
-    pub fn float_cost(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_float_cost(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(1).0, v);
-    }
-
-    /// Depth slot = `mem[(p) + 2].b32.s1` (the box `depth` slot, used as the
-    /// `\splitmaxdepth` for an active `\insert`).
-    #[inline]
-    pub fn depth(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_depth(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(2).0, v.0);
-    }
-
-    /// Height slot = `mem[(p) + 3].b32.s1` (the box `height` slot; the natural
-    /// height+depth contributed to the page).
-    #[inline]
-    pub fn height(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(3).0))
-    }
-    #[inline]
-    pub fn set_height(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, v.0);
+    fields! {
+        float_cost / set_float_cost: i32 = b32s1 @ 1;
+        ins_ptr / set_ins_ptr: MemPtr = b32s0 @ 4;
+        /// The `\splittopskip` glue spec.
+        split_top_ptr / set_split_top_ptr: MemPtr = b32s1 @ 4;
     }
 }
 
-/// `UNSET_NODE` (`NODE_type` = 13): an unset box produced while building an
-/// alignment, before column widths are known. It reuses the box layout
-/// (`BOX_NODE_SIZE` = 8) for `width`/`depth`/`height`/`list_ptr`, but its `+4`
-/// and `+5`/`+6` words hold alignment bookkeeping (`glue_shrink`/`span_count`/
-/// `glue_stretch`), so this family deliberately does **not** implement
-/// [`HasDimensions`] (its `shift_amount` slot is `glue_shrink` here). Only the
-/// box dimension/list fields shared verbatim with hlist/vlist are exposed.
-pub enum UnsetNode {}
+impl NodePtr<PageInsNode> {
+    #[inline]
+    pub fn is_split_up(self, mem: &MemState) -> bool {
+        mem.b16s1(self.idx.0) == 1
+    }
+    #[inline]
+    pub fn set_split_up(self, mem: &mut MemState, split: bool) {
+        mem.set_b16s1(self.idx.0, split as u16);
+    }
 
-impl NodeKind for UnsetNode {}
-impl HasNodeHeader for UnsetNode {}
-impl HasListPtr for UnsetNode {}
+    fields! {
+        broken_ins / set_broken_ins: MemPtr = b32s0 @ 1;
+        broken_ptr / set_broken_ptr: MemPtr = b32s1 @ 1;
+        best_ins_ptr / set_best_ins_ptr: MemPtr = b32s0 @ 2;
+        last_ins_ptr / set_last_ins_ptr: MemPtr = b32s1 @ 2;
+        height / set_height: Scaled = b32s1 @ 3;
+    }
+}
 
 impl NodePtr<UnsetNode> {
-    /// Natural width = `mem[(p) + 1].b32.s1` (box `width`).
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    /// Depth = `mem[(p) + 2].b32.s1` (box `depth`).
-    #[inline]
-    pub fn depth(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(2).0))
-    }
-    /// Height = `mem[(p) + 3].b32.s1` (box `height`).
-    #[inline]
-    pub fn height(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(3).0))
-    }
-    /// Accumulated glue shrink = `mem[(p) + 4].b32.s1` (`glue_shrink`, the box
-    /// `shift_amount` slot reused on an unset node).
-    #[inline]
-    pub fn glue_shrink(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(4).0))
-    }
-    /// Glue sign = `mem[(p) + 5].b16.s1`.
-    #[inline]
-    pub fn glue_sign(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(5).0)
-    }
-    /// Glue order = `mem[(p) + 5].b16.s0`.
-    #[inline]
-    pub fn glue_order(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(5).0)
-    }
-    /// Accumulated glue stretch = `mem[(p) + 6].b32.s1` (`glue_stretch`, the box
-    /// `glue_set` slot reused on an unset node).
-    #[inline]
-    pub fn glue_stretch(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(6).0))
+    fields! {
+        glue_shrink / set_glue_shrink: Scaled = b32s1 @ 4;
+        /// The shrink order.
+        glue_sign / set_glue_sign: u16 = b16s1 @ 5;
+        /// The stretch order.
+        glue_order / set_glue_order: u16 = b16s0 @ 5;
+        glue_stretch / set_glue_stretch: Scaled = b32s1 @ 6;
     }
 
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-    #[inline]
-    pub fn set_depth(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(2).0, v.0);
-    }
-    #[inline]
-    pub fn set_height(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, v.0);
-    }
-    #[inline]
-    pub fn set_glue_shrink(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(4).0, v.0);
-    }
-    /// On an unset node the glue sign word holds the shrink order.
-    #[inline]
-    pub fn set_glue_sign(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.offset(5).0, v);
-    }
-    #[inline]
-    pub fn set_glue_order(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.offset(5).0, v);
-    }
-    #[inline]
-    pub fn set_glue_stretch(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(6).0, v.0);
-    }
-
-    /// Retypes the node in place as an hlist box.
     #[inline]
     pub fn into_hlist(self, mem: &mut MemState) -> NodePtr<HListNode> {
-        mem.set_b16s1(self.idx.0, NodeType::HList.as_raw());
-        // SAFETY: the node was just stamped HLIST_NODE and has the box layout.
-        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+        retype(self, mem, NodeType::HList)
     }
 
-    /// Retypes the node in place as a vlist box.
     #[inline]
     pub fn into_vlist(self, mem: &mut MemState) -> NodePtr<VListNode> {
-        mem.set_b16s1(self.idx.0, NodeType::VList.as_raw());
-        // SAFETY: the node was just stamped VLIST_NODE and has the box layout.
-        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+        retype(self, mem, NodeType::VList)
     }
 }
 
-/// `WHATSIT_NODE` (`NODE_type` = 8): the extension-node family — `\openout`,
-/// `\write`, `\closeout`, `\special`, `\setlanguage`, the XeTeX native-word /
-/// glyph nodes, and `\XeTeXpicfile`/PDF nodes. Unlike the fixed-layout families
-/// this one is **variable-size and sub-classified by `NODE_subtype`**
-/// (`b16.s0`, reached through [`subtype`](NodePtr::subtype)): both the node size
-/// and which `+N` fields are live depend on the subtype
-/// (`xetex_format.h:457–467`). Field offsets verified against
-/// `xetex/xetex-xetexd.h:250–289`. Only the fields the list-walkers
-/// read/write are exposed; constructing and FFI-measuring native nodes stays in
-/// `ext.rs`/`fonts.rs` (the inline UTF-16/path data past `+4`/`+5` is not a
-/// typed field).
-pub enum WhatsitNode {}
+// --- whatsits ---
 
-impl NodeKind for WhatsitNode {}
-impl HasNodeHeader for WhatsitNode {}
-
-/// The `subtype` of a whatsit node (`mem[p].b16.s0`, xetex_format.h:456–467). A
-/// non-contiguous domain: the I/O whatsits (`Open`..`Language`, 0–4) carry no box
-/// dimensions; `PdfSavePos` (21) is a bare marker; the extension whatsits
-/// (`NativeWord`..`Pdf`, 40–44) do carry dimensions. Replaces the ~40 duplicated
-/// `const OPEN_NODE`/`NATIVE_WORD_NODE`/… definitions that were scattered across
-/// shipout/linebreak/math/main_control/packaging/pagebuilder/pic/ext.
+/// The subtype of a whatsit node. Only `NativeWord`..`Pdf` carry dimensions.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(u16)]
 pub enum WhatsitSubtype {
@@ -2197,7 +985,6 @@ pub enum WhatsitSubtype {
 }
 
 impl WhatsitSubtype {
-    /// Decode a raw `b16.s0` subtype; `None` for an unknown code.
     pub fn from_raw(v: u16) -> Option<WhatsitSubtype> {
         Some(match v {
             0 => WhatsitSubtype::Open,
@@ -2215,9 +1002,6 @@ impl WhatsitSubtype {
         })
     }
 
-    /// The extension whatsits (native word / glyph / picture / PDF) that contribute
-    /// box dimensions — the old `sub == NATIVE_WORD_NODE || … || PDF_NODE` predicate,
-    /// equivalently the `>= 40` group.
     pub fn has_dimensions(self) -> bool {
         matches!(
             self,
@@ -2229,8 +1013,6 @@ impl WhatsitSubtype {
         )
     }
 
-    /// A native-word whatsit (`NativeWord` or `NativeWordAt`) — the very common
-    /// `sub == NATIVE_WORD_NODE || sub == NATIVE_WORD_NODE_AT` predicate.
     pub fn is_native_word(self) -> bool {
         matches!(
             self,
@@ -2238,8 +1020,7 @@ impl WhatsitSubtype {
         )
     }
 
-    /// The classic dimensionless I/O whatsits (`Open`..`Language`, 0–4) — the old
-    /// `sub <= LANGUAGE_NODE` range filter, expressed as explicit membership.
+    /// `\openout`, `\write`, `\closeout`, `\special` and `\setlanguage`.
     pub fn is_io(self) -> bool {
         matches!(
             self,
@@ -2253,163 +1034,74 @@ impl WhatsitSubtype {
 }
 
 impl NodePtr<WhatsitNode> {
-    /// The whatsit's decoded `subtype` (`None` for an unknown code).
+    /// A fresh `size`-word whatsit of the given subtype, fields uninitialised.
+    #[inline]
+    pub fn alloc(mem: &mut MemState, size: i32, subtype: WhatsitSubtype) -> Option<Self> {
+        let p: Self = alloc_node(mem, size, Some(NodeType::Whatsit))?;
+        p.set_subtype(mem, subtype as u16);
+        Some(p)
+    }
+
     #[inline]
     pub fn whatsit_subtype(self, mem: &MemState) -> Option<WhatsitSubtype> {
         WhatsitSubtype::from_raw(mem.b16s0(self.idx.0))
     }
-}
 
-impl NodePtr<WhatsitNode> {
-    /// `\write`/`\special` token list = `mem[(p) + 1].b32.s1`
-    /// (`WRITE_NODE_tokens`); a token-list ref, not a node list.
-    #[inline]
-    pub fn write_tokens(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-
-    /// `\openout`/`\write`/`\closeout` stream number = `mem[(p) + 1].b32.s0`
-    /// (`WRITE_NODE_stream` / `OPEN_NODE_stream`).
-    #[inline]
-    pub fn write_stream(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(1).0)
-    }
-
-    /// `\openout` file name string = `mem[(p) + 1].b32.s1` (`OPEN_NODE_name`;
-    /// the open-whatsit reading of the [`write_tokens`](NodePtr::write_tokens)
-    /// slot, here a string number).
-    #[inline]
-    pub fn open_name(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(1).0)
-    }
-    /// `\openout` file area string = `mem[(p) + 2].b32.s0` (`OPEN_NODE_area`).
-    #[inline]
-    pub fn open_area(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(2).0)
-    }
-    /// `\openout` file extension string = `mem[(p) + 2].b32.s1`
-    /// (`OPEN_NODE_ext`).
-    #[inline]
-    pub fn open_ext(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(2).0)
+    fields! {
+        write_tokens / set_write_tokens: MemPtr = b32s1 @ 1;
+        write_stream / set_write_stream: i32 = b32s0 @ 1;
+        open_name / set_open_name: i32 = b32s1 @ 1;
+        open_area / set_open_area: i32 = b32s0 @ 2;
+        open_ext / set_open_ext: i32 = b32s1 @ 2;
+        what_lang / set_what_lang: i32 = b32s1 @ 1;
+        what_lhm / set_what_lhm: u16 = b16s1 @ 1;
+        what_rhm / set_what_rhm: u16 = b16s0 @ 1;
+        native_font / set_native_font: FontId = b16s2 @ 4;
+        /// UTF-16 length of a native word.
+        native_length / set_native_length: u16 = b16s1 @ 4;
+        /// Glyph id of a glyph node, in the native length slot.
+        native_glyph / set_native_glyph: u16 = b16s1 @ 4;
+        native_glyph_count / set_native_glyph_count: u16 = b16s0 @ 4;
+        /// One-based shaped-glyph arena handle, zero when unshaped.
+        native_glyph_info_handle: i32 = b32s0 @ 5;
+        /// Path byte length of a picture, in the native length slot.
+        pic_path_len / set_pic_path_len: u16 = b16s1 @ 4;
+        pic_page / set_pic_page: u16 = b16s0 @ 4;
+        pic_pagebox / set_pic_pagebox: u16 = b16s1 @ 8;
     }
 
-    /// `\setlanguage` language number = `mem[(p) + 1].b32.s1`
-    /// (`LANGUAGE_NODE_what_lang`).
-    #[inline]
-    pub fn what_lang(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(1).0)
-    }
-    /// Minimum left fragment = `mem[(p) + 1].b16.s1` (`LANGUAGE_NODE_what_lhm`).
-    #[inline]
-    pub fn what_lhm(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(1).0)
-    }
-    /// Minimum right fragment = `mem[(p) + 1].b16.s0` (`LANGUAGE_NODE_what_rhm`).
-    #[inline]
-    pub fn what_rhm(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_what_lang(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(1).0, v);
-    }
-    #[inline]
-    pub fn set_what_lhm(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.offset(1).0, v);
-    }
-    #[inline]
-    pub fn set_what_rhm(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.offset(1).0, v);
-    }
-
-    /// Native-node total size in words = `mem[(p) + 4].b16.s3`
-    /// (`NATIVE_NODE_size`); used as the `free_node`/copy word count.
+    /// Node size in words, used to free or copy a native node.
     #[inline]
     pub fn native_size(self, mem: &MemState) -> i32 {
-        mem.b16s3(self.idx.offset(4).0) as i32
-    }
-    /// Native-node font = `mem[(p) + 4].b16.s2` (`NATIVE_NODE_font`).
-    #[inline]
-    pub fn native_font(self, mem: &MemState) -> FontId {
-        FontId(mem.b16s2(self.idx.offset(4).0) as i32)
-    }
-    /// Set the native-node font = `mem[(p) + 4].b16.s2` (`NATIVE_NODE_font`).
-    #[inline]
-    pub fn set_native_font(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s2(self.idx.offset(4).0, v);
-    }
-    /// Native-word UTF-16 item count = `mem[(p) + 4].b16.s1`
-    /// (`NATIVE_NODE_length`); for a `GLYPH_NODE` this same word is the glyph
-    /// number ([`native_glyph`](NodePtr::native_glyph)), and for a `PIC_NODE`
-    /// it is the path byte length ([`pic_path_len`](NodePtr::pic_path_len)).
-    #[inline]
-    pub fn native_length(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(4).0)
-    }
-    /// Set the native-word UTF-16 item count = `mem[(p) + 4].b16.s1`.
-    #[inline]
-    pub fn set_native_length(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.offset(4).0, v);
-    }
-    /// Glyph number = `mem[(p) + 4].b16.s1` (`NATIVE_NODE_glyph`; the
-    /// `GLYPH_NODE` reading of the [`native_length`](NodePtr::native_length)
-    /// word).
-    #[inline]
-    pub fn native_glyph(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(4).0)
-    }
-    /// Set the glyph number = `mem[(p) + 4].b16.s1` (`NATIVE_NODE_glyph`).
-    #[inline]
-    pub fn set_native_glyph(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.offset(4).0, v);
-    }
-    /// Picture/PDF path byte length = `mem[(p) + 4].b16.s1`
-    /// (`PIC_NODE_path_len`; the `PIC_NODE`/`PDF_NODE` reading of the
-    /// [`native_length`](NodePtr::native_length) word).
-    #[inline]
-    pub fn pic_path_len(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(4).0)
+        mem.b16s3(self.idx.0 + 4) as i32
     }
     #[inline]
-    pub fn set_pic_path_len(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.offset(4).0, v);
+    pub fn set_native_size(self, mem: &mut MemState, words: i32) {
+        mem.set_b16s3(self.idx.0 + 4, words as u16);
     }
-    /// Picture page number = `mem[(p) + 4].b16.s0` (`PIC_NODE_page`).
+
     #[inline]
-    pub fn pic_page(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(4).0)
+    pub fn set_native_glyph_info_handle(self, mem: &mut MemState, handle: i32) {
+        mem.set_b32s0(self.idx.0 + 5, handle);
+        mem.set_b32s1(self.idx.0 + 5, 0);
     }
-    #[inline]
-    pub fn set_pic_page(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.offset(4).0, v);
-    }
-    /// Picture PDF page-box selector = `mem[(p) + 8].b16.s1` (`PIC_NODE_pagebox`).
-    #[inline]
-    pub fn pic_pagebox(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.offset(8).0)
-    }
-    #[inline]
-    pub fn set_pic_pagebox(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.offset(8).0, v);
-    }
-    /// Picture transform `[a, b, c, d, x, y]` = `mem[(p) + 5..=7]` as `b32` pairs.
+
+    /// The picture transform `[a, b, c, d, x, y]`.
     #[inline]
     pub fn pic_transform(self, mem: &MemState) -> [i32; 6] {
-        let w = |k: i32| {
-            let q = self.idx.offset(5 + k / 2).0;
+        std::array::from_fn(|k| {
+            let q = self.idx.0 + 5 + k as i32 / 2;
             if k % 2 == 0 {
                 mem.b32s0(q)
             } else {
                 mem.b32s1(q)
             }
-        };
-        [w(0), w(1), w(2), w(3), w(4), w(5)]
+        })
     }
     #[inline]
     pub fn set_pic_transform(self, mem: &mut MemState, t: [i32; 6]) {
         for (k, v) in (0..).zip(t) {
-            let q = self.idx.offset(5 + k / 2).0;
+            let q = self.idx.0 + 5 + k / 2;
             if k % 2 == 0 {
                 mem.set_b32s0(q, v);
             } else {
@@ -2417,130 +1109,43 @@ impl NodePtr<WhatsitNode> {
             }
         }
     }
-    /// Picture path bytes, stored inline after the `PIC_NODE_SIZE` header words.
+
     #[inline]
     pub fn pic_path(self, mem: &MemState) -> &[u8] {
-        let ptr = mem.node_addr(self.idx.offset(PIC_NODE_SIZE).0) as *const u8;
+        let ptr = mem.node_addr(self.idx.0 + PIC_NODE_SIZE) as *const u8;
         // SAFETY: a picture node holds `pic_path_len` path bytes inline.
         unsafe { std::slice::from_raw_parts(ptr, self.pic_path_len(mem) as usize) }
     }
-    /// Store `path` inline, the node must have room for it.
+    /// Stores `path` inline, the node must have room for it.
     #[inline]
     pub fn set_pic_path(self, mem: &mut MemState, path: &[u8]) {
-        let start = self.idx.offset(PIC_NODE_SIZE).0;
+        let start = self.idx.0 + PIC_NODE_SIZE;
         mem.journal_mark_range(start, path.len().div_ceil(8));
         let dst = mem.as_u16_ptr_mut(start) as *mut u8;
         // SAFETY: the caller allocated `path.len()` bytes past the header.
         unsafe { std::ptr::copy_nonoverlapping(path.as_ptr(), dst, path.len()) };
     }
-    /// Native-node glyph count = `mem[(p) + 4].b16.s0` (`NATIVE_NODE_glyph_count`).
-    #[inline]
-    pub fn native_glyph_count(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.offset(4).0)
-    }
-    #[inline]
-    pub fn set_native_glyph_count(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.offset(4).0, v);
-    }
-    /// Natural width = `mem[(p) + 1].b32.s1` (box `width` slot). Valid for the
-    /// box-dimensioned subtypes (native-word/glyph and `PIC_NODE`/`PDF_NODE`).
-    #[inline]
-    pub fn width(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, w.0);
-    }
-    /// Depth = `mem[(p) + 2].b32.s1` (box `depth` slot).
-    #[inline]
-    pub fn depth(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(2).0))
-    }
-    /// Height = `mem[(p) + 3].b32.s1` (box `height` slot).
-    #[inline]
-    pub fn height(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(3).0))
-    }
-    #[inline]
-    pub fn set_depth(self, mem: &mut MemState, d: Scaled) {
-        mem.set_b32s1(self.idx.offset(2).0, d.0);
-    }
-    #[inline]
-    pub fn set_height(self, mem: &mut MemState, h: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, h.0);
-    }
 
-    /// One-based shaped-glyph arena handle; zero means no shaped glyphs.
-    #[inline]
-    pub fn native_glyph_info_handle(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(5).0)
-    }
-    #[inline]
-    pub fn set_native_glyph_info_handle(self, mem: &mut MemState, handle: i32) {
-        mem.set_b32s0(self.idx.offset(5).0, handle);
-        mem.set_b32s1(self.idx.offset(5).0, 0);
-    }
-
-    /// Pointer to the inline UTF-16 native-word text payload at
-    /// `mem[p + NATIVE_NODE_SIZE]` (`NATIVE_NODE_SIZE = 6`).
     #[inline]
     pub fn native_text_ptr(self, mem: &MemState) -> *const u16 {
-        mem.as_u16_ptr(self.idx.offset(6).0)
+        mem.as_u16_ptr(self.idx.0 + NATIVE_NODE_SIZE)
     }
 
-    /// The native-word UTF-16 text.
     #[inline]
     pub fn native_text(self, mem: &MemState) -> &[u16] {
         let len = self.native_length(mem) as usize;
-        // SAFETY: a native-word node is allocated with room for `native_length` code units.
+        // SAFETY: a native word is allocated with room for `native_length` units.
         unsafe { std::slice::from_raw_parts(self.native_text_ptr(mem), len) }
     }
 
-    /// Mutable pointer to the inline UTF-16 native-word text payload at
-    /// `mem[p + NATIVE_NODE_SIZE]` (`NATIVE_NODE_SIZE = 6`).
     #[inline]
     pub fn native_text_ptr_mut(self, mem: &mut MemState) -> *mut u16 {
         let words = crate::state::native_text_words(self.native_length(mem) as i32);
-        mem.journal_mark_range(self.idx.offset(6).0, words);
-        mem.as_u16_ptr_mut(self.idx.offset(6).0)
+        mem.journal_mark_range(self.idx.0 + NATIVE_NODE_SIZE, words);
+        mem.as_u16_ptr_mut(self.idx.0 + NATIVE_NODE_SIZE)
     }
-}
 
-impl NodePtr<WhatsitNode> {
-    /// A fresh `size`-word whatsit of the given subtype, fields uninitialized.
-    pub fn alloc(mem: &mut MemState, size: i32, subtype: WhatsitSubtype) -> Option<Self> {
-        let p = get_node(mem, size)?;
-        mem.set_b16s1(p, NodeType::Whatsit.as_raw());
-        mem.set_b16s0(p, subtype as u16);
-        // SAFETY: `p` was just stamped as a whatsit.
-        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p.0)) })
-    }
-    #[inline]
-    pub fn set_write_tokens(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-    #[inline]
-    pub fn set_write_stream(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(1).0, v);
-    }
-    #[inline]
-    pub fn set_open_name(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(1).0, v);
-    }
-    #[inline]
-    pub fn set_open_area(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(2).0, v);
-    }
-    #[inline]
-    pub fn set_open_ext(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(2).0, v);
-    }
-    #[inline]
-    pub fn set_native_size(self, mem: &mut MemState, words: u16) {
-        mem.set_b16s3(self.idx.offset(4).0, words);
-    }
-    /// Drop the shaped-glyph payload of a native word.
+    /// Drops the shaped-glyph payload of a native word.
     pub fn release_native_glyphs(self, mem: &mut MemState) {
         let handle = self.native_glyph_info_handle(mem);
         if handle != 0 {
@@ -2549,42 +1154,46 @@ impl NodePtr<WhatsitNode> {
             self.set_native_glyph_count(mem, 0);
         }
     }
-    /// Free a native-word node together with its shaped glyphs.
+
+    /// Frees a native word together with its shaped glyphs.
     pub fn free_native(self, mem: &mut MemState) {
         self.release_native_glyphs(mem);
         free_node(mem, self.ptr(), self.native_size(mem));
     }
 }
 
-/// A sparse-array tree record used by the eTeX mark machinery (`do_marks`):
-/// either an *index node* (a fan-out of child pointers) or a *mark-class node*
-/// (the five `\topmark`/`\firstmark`/`\botmark`/`\splitfirstmark`/
-/// `\splitbotmark` token lists). Both pack two `b32` pointers per word starting
-/// at `+1`, so child/mark slot `i` lives at `mem[p + i/2 + 1].b32.s{0 if i even
-/// else 1}` (`xetex/xetex-xetexd.h:318–322`, `ETEX_MARK_sa_*`). `mem[p].b16.s0`
-/// is the index node's populated-child reference count. This record carries no
-/// `NODE_type` header and is reached only by context (the `do_marks` caller
-/// guarantees the kind), so it has no `classify` entry.
-pub enum SaNode {}
-
-impl NodeKind for SaNode {}
-impl HasNodeHeader for SaNode {}
+// --- eTeX sparse arrays ---
 
 impl NodePtr<SaNode> {
-    /// Populated-child reference count = `mem[p].b16.s0`.
     #[inline]
-    pub fn ref_count(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_ref_count(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
+    pub fn from_ptr(p: MemPtr) -> Option<NodePtr<SaNode>> {
+        // SAFETY: sparse-array links only ever point at sparse-array records.
+        p.as_idx()
+            .map(|idx| unsafe { NodePtr::from_idx_unchecked(idx) })
     }
 
-    /// Child/mark pointer `i` = `mem[p + i/2 + 1].b32.s{0 if even else 1}`.
+    fields! {
+        /// An index node's count of populated children.
+        ref_count / set_ref_count: u16 = b16s0 @ 0;
+        /// Type and index code.
+        sa_index / set_sa_index: u16 = b16s1 @ 0;
+        sa_lev / set_sa_lev: u16 = b16s0 @ 0;
+        sa_ref / set_sa_ref: i32 = b32s0 @ 1;
+        /// A box or token-list value, in child slot 1.
+        sa_ptr / set_sa_ptr: MemPtr = b32s1 @ 1;
+        /// A count or dimension value.
+        sa_int / set_sa_int: i32 = b32s1 @ 2;
+    }
+
+    #[inline]
+    pub fn sa_type(self, mem: &MemState) -> u16 {
+        self.sa_index(mem) / 64
+    }
+
+    /// Child or mark slot `i`, packed two per word from +1.
     #[inline]
     pub fn child(self, mem: &MemState, i: i32) -> MemPtr {
-        let w = self.idx.offset(i / 2 + 1).0;
+        let w = self.idx.0 + i / 2 + 1;
         MemPtr::from_raw(if i % 2 != 0 {
             mem.b32s1(w)
         } else {
@@ -2593,7 +1202,7 @@ impl NodePtr<SaNode> {
     }
     #[inline]
     pub fn set_child(self, mem: &mut MemState, i: i32, v: MemPtr) {
-        let w = self.idx.offset(i / 2 + 1).0;
+        let w = self.idx.0 + i / 2 + 1;
         if i % 2 != 0 {
             mem.set_b32s1(w, v.0);
         } else {
@@ -2601,678 +1210,221 @@ impl NodePtr<SaNode> {
         }
     }
 
-    /// Convert a nullable sparse-array pointer to a typed record handle.
-    #[inline]
-    pub fn from_ptr(p: MemPtr) -> Option<NodePtr<SaNode>> {
-        p.as_idx()
-            .map(|idx| unsafe { NodePtr::<SaNode>::from_idx_unchecked(idx) })
-    }
-
-    /// Box-value pointer = `mem[p + 1].b32.s1` (`ETEX_SA_ptr`); the stored box
-    /// for a box-class sparse-array element. Same word as child slot 1.
-    #[inline]
-    pub fn sa_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-
-    #[inline]
-    pub fn set_sa_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-
-    /// Count or dimension value = `mem[p + 2].b32.s1` (`ETEX_SA_int`).
-    #[inline]
-    pub fn sa_int(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(2).0)
-    }
-    #[inline]
-    pub fn set_sa_int(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(2).0, v);
-    }
-
-    /// Register type = `mem[p].b16.s1 / 64` (`ETEX_SA_type`).
-    #[inline]
-    pub fn sa_type(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.0) / 64
-    }
-
-    /// Type and index code = `mem[p].b16.s1` (`sa_index`).
-    #[inline]
-    pub fn sa_index(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.0)
-    }
-    #[inline]
-    pub fn set_sa_index(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.0, v);
-    }
-
-    /// Parent index node = `mem[p].b32.s1`, non-null below the root.
+    /// The parent index node, non-null below the root.
     #[inline]
     pub fn parent(self, mem: &MemState) -> NodePtr<SaNode> {
         // SAFETY: every non-root sparse-array record links to its index node.
         unsafe { NodePtr::from_idx_unchecked(MemIdx::new(mem.b32s1(self.idx.0))) }
     }
-
-    /// Save level of a data record = `mem[p].b16.s0` (`sa_lev`).
-    #[inline]
-    pub fn sa_lev(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_sa_lev(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
-    }
-
-    /// Element reference count = `mem[p + 1].b32.s0` (`ETEX_SA_ref`).
-    #[inline]
-    pub fn sa_ref(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_sa_ref(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(1).0, v);
-    }
-}
-
-/// A record on the `page_ins_head` ring of the page builder: `NODE_type` is
-/// `inserting` (0) or `split_up` (1), the subtype is the insertion's box number.
-/// Reached only through the ring, so it has no `classify` entry.
-pub enum PageInsNode {}
-
-impl NodeKind for PageInsNode {}
-impl HasNodeHeader for PageInsNode {}
-
-impl NodePtr<PageInsNode> {
-    /// Whether the insertion was split = `mem[p].b16.s1 == split_up`.
-    #[inline]
-    pub fn is_split_up(self, mem: &MemState) -> bool {
-        mem.b16s1(self.idx.0) == 1
-    }
-    #[inline]
-    pub fn set_split_up(self, mem: &mut MemState, split: bool) {
-        mem.set_b16s1(self.idx.0, split as u16);
-    }
-
-    /// Height of the box so far = `mem[p + 3].b32.s1`.
-    #[inline]
-    pub fn height(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(3).0))
-    }
-    #[inline]
-    pub fn set_height(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, v.0);
-    }
-
-    /// Where a split insertion breaks = `mem[p + 1].b32.s1` (`broken_ptr`).
-    #[inline]
-    pub fn broken_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_broken_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-
-    /// The insertion node that was split = `mem[p + 1].b32.s0` (`broken_ins`).
-    #[inline]
-    pub fn broken_ins(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_broken_ins(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s0(self.idx.offset(1).0, v.0);
-    }
-
-    /// The last insertion node of this class = `mem[p + 2].b32.s1` (`last_ins_ptr`).
-    #[inline]
-    pub fn last_ins_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_last_ins_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s1(self.idx.offset(2).0, v.0);
-    }
-
-    /// The last insertion on the best page = `mem[p + 2].b32.s0` (`best_ins_ptr`).
-    #[inline]
-    pub fn best_ins_ptr(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s0(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_best_ins_ptr(self, mem: &mut MemState, v: MemPtr) {
-        mem.set_b32s0(self.idx.offset(2).0, v.0);
-    }
 }
 
 // --- shipout movement records ---
 
-const MOVEMENT_NODE_SIZE: i32 = 3;
-
-/// A shipout movement record in the `down_ptr` / `right_ptr` lists.
-///
-/// These records are not ordinary list nodes: word 0 is both the linked-list
-/// successor (`b32.s1`) and movement state (`b32.s0`), with no `NODE_type`.
-pub enum MovementNode {}
-
-impl NodeKind for MovementNode {}
-
 impl NodePtr<MovementNode> {
-    /// Allocate a fresh movement record (`MOVEMENT_NODE_SIZE` words).
-    #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<NodePtr<MovementNode>> {
-        let p = get_node(mem, MOVEMENT_NODE_SIZE)?;
-        // SAFETY: `p` is a freshly allocated movement-sized record; it is
-        // classified by the shipout movement-list context.
-        Some(unsafe { NodePtr::<MovementNode>::from_idx_unchecked(MemIdx::new(p)) })
-    }
-
-    /// Convert a nullable movement-list pointer to a typed record handle.
     #[inline]
     pub fn from_ptr(p: MemPtr) -> Option<NodePtr<MovementNode>> {
+        // SAFETY: movement lists only link movement records.
         p.as_idx()
-            .map(|idx| unsafe { NodePtr::<MovementNode>::from_idx_unchecked(idx) })
+            .map(|idx| unsafe { NodePtr::from_idx_unchecked(idx) })
     }
 
-    /// Free this movement record back to the node arena.
     #[inline]
     pub fn free(self, mem: &mut MemState) {
-        free_node(
-            mem,
-            crate::units::MemPtr::from_raw(self.idx.0),
-            MOVEMENT_NODE_SIZE,
-        );
+        free_node(mem, self.ptr(), MOVEMENT_NODE_SIZE);
     }
 
-    /// Movement-list successor = `mem[p].b32.s1`.
-    #[inline]
-    pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.0))
-    }
-    #[inline]
-    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.0, q.0);
-    }
-
-    /// Movement reuse state = `mem[p].b32.s0`.
-    #[inline]
-    pub fn state(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_state(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.0, v);
-    }
-
-    /// Movement distance = `mem[p + 1].b32.s1`.
-    #[inline]
-    pub fn distance(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_distance(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, w.0);
-    }
-
-    /// DVI location where this movement was emitted = `mem[p + 2].b32.s1`.
-    #[inline]
-    pub fn location(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(2).0)
-    }
-    #[inline]
-    pub fn set_location(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(2).0, v);
+    fields! {
+        /// Whether the movement may be reused, and as which command.
+        state / set_state: i32 = b32s0 @ 0;
+        distance / set_distance: Scaled = b32s1 @ 1;
+        /// The DVI offset where the movement was emitted.
+        location / set_location: i32 = b32s1 @ 2;
     }
 }
 
-// --- the line-breaker active list: active + delta nodes ---
-//
-// The line breaker's *active list* (`linebreak.rs`) is a SEPARATE list from
-// the main vlist/hlist, so it reuses the `NODE_type` word with its own
-// codes: an active node carries `break_type` = `UNHYPHENATED`(0) /
-// `HYPHENATED`(1) in `0.b16.s1`, and a delta node carries
-// `DELTA_NODE` = `RULE_NODE`(2) there (the context alias documented on
-// [`NodeType`]). They are therefore classified by *list context* — you are
-// walking the active list — **never** through `NodeType::from_raw`, which
-// would (correctly, for the *main* list) map 0/1/2 to HList/VList/Rule. The
-// list is headed/terminated by the `LAST_ACTIVE` sentinel; the field
-// accessors below are only valid on real active/delta nodes a walk has
-// already established (so the constructor is `from_idx_unchecked`, the
-// context boundary — there is no `classify_*` for these, by design).
-
-/// `ACTIVE_NODE` (line-breaker active list; `break_type` = `UNHYPHENATED`(0)
-/// or `HYPHENATED`(1) lives in the `NODE_type` word, with `fitness` in the
-/// subtype word). Allocated `ACTIVE_NODE_SIZE_NORMAL`(3) or `_EXTENDED`(5)
-/// — the `shortfall`/`glue` fields only exist on the extended form
-/// (`\lastlinefit`). Fields verified against `xetex/xetex-xetexd.h:220-225`.
-pub enum ActiveNode {}
-
-impl NodeKind for ActiveNode {}
+// --- the line breaker's active, delta and passive lists ---
 
 impl NodePtr<ActiveNode> {
-    /// Active-list successor = `mem[p].b32.s1`.
-    #[inline]
-    pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.0))
-    }
-    #[inline]
-    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.0, q.0);
-    }
-
-    /// `ACTIVE_NODE_fitness(p)` = `mem[p].b16.s0` — the fitness class
-    /// (`VERY_LOOSE_FIT`/`LOOSE_FIT`/`DECENT_FIT`/`TIGHT_FIT`), stored in the
-    /// node's subtype word.
-    #[inline]
-    pub fn fitness(self, mem: &MemState) -> u16 {
-        mem.b16s0(self.idx.0)
-    }
-    #[inline]
-    pub fn set_fitness(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s0(self.idx.0, v);
-    }
-
-    /// The break type (`UNHYPHENATED`(0)/`HYPHENATED`(1)), stored in the
-    /// `NODE_type` word `mem[p].b16.s1` — an active-list-private use of the
-    /// type slot (not a [`NodeType`]; see the module note above).
-    #[inline]
-    pub fn break_type(self, mem: &MemState) -> u16 {
-        mem.b16s1(self.idx.0)
-    }
-    #[inline]
-    pub fn set_break_type(self, mem: &mut MemState, v: u16) {
-        mem.set_b16s1(self.idx.0, v);
-    }
-
-    /// `ACTIVE_NODE_break_node(p)` = `mem[(p) + 1].b32.s1` (the "rlink" slot)
-    /// — the passive node recording this breakpoint (nullable).
-    #[inline]
-    pub fn break_node(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_break_node(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, q.0);
-    }
-
-    /// `ACTIVE_NODE_line_number(p)` = `mem[(p) + 1].b32.s0` (the "llink"
-    /// slot) — the line number this breakpoint would end. A plain `i32`.
-    #[inline]
-    pub fn line_number(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.idx.offset(1).0)
-    }
-    #[inline]
-    pub fn set_line_number(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s0(self.idx.offset(1).0, v);
-    }
-
-    /// `ACTIVE_NODE_total_demerits(p)` = `mem[(p) + 2].b32.s1` — the minimum
-    /// total demerits to reach this breakpoint. A plain `i32` (demerits, not
-    /// a scaled length).
-    #[inline]
-    pub fn total_demerits(self, mem: &MemState) -> i32 {
-        mem.b32s1(self.idx.offset(2).0)
-    }
-    #[inline]
-    pub fn set_total_demerits(self, mem: &mut MemState, v: i32) {
-        mem.set_b32s1(self.idx.offset(2).0, v);
-    }
-
-    /// `ACTIVE_NODE_shortfall(p)` = `mem[(p) + 3].b32.s1` (the WEB
-    /// "active_short"; extended active nodes only) — a [`Scaled`].
-    #[inline]
-    pub fn shortfall(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(3).0))
-    }
-    #[inline]
-    pub fn set_shortfall(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, v.0);
-    }
-
-    /// `ACTIVE_NODE_glue(p)` = `mem[(p) + 4].b32.s1` (extended active nodes
-    /// only) — a [`Scaled`].
-    #[inline]
-    pub fn glue(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(4).0))
-    }
-    #[inline]
-    pub fn set_glue(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(4).0, v.0);
+    fields! {
+        fitness / set_fitness: u16 = b16s0 @ 0;
+        /// Unhyphenated or hyphenated, in the type word.
+        break_type / set_break_type: u16 = b16s1 @ 0;
+        break_node / set_break_node: MemPtr = b32s1 @ 1;
+        line_number / set_line_number: i32 = b32s0 @ 1;
+        total_demerits / set_total_demerits: i32 = b32s1 @ 2;
+        /// Extended (`\lastlinefit`) active nodes only.
+        shortfall / set_shortfall: Scaled = b32s1 @ 3;
+        /// Extended (`\lastlinefit`) active nodes only.
+        glue / set_glue: Scaled = b32s1 @ 4;
     }
 }
-
-/// `DELTA_NODE` (line-breaker active list; `DELTA_NODE` = `RULE_NODE`(2) in
-/// the `NODE_type` word — the context alias documented on [`NodeType`]).
-/// A delta node sits *between* active nodes and records the running
-/// width/stretch/shrink change from one breakpoint to the next.
-/// `DELTA_NODE_SIZE` = 7. Fields verified against `xetex/xetex-xetexd.h:230-235`;
-/// all six are [`Scaled`] glue components (`dwidth`, the four stretch orders,
-/// `dshrink`). Context-classified like [`ActiveNode`] (see the module note).
-pub enum DeltaNode {}
-
-impl NodeKind for DeltaNode {}
 
 impl NodePtr<DeltaNode> {
-    /// Active-list successor = `mem[p].b32.s1`.
-    #[inline]
-    pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.0))
-    }
-    #[inline]
-    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.0, q.0);
-    }
-
-    /// `DELTA_NODE_dwidth(p)` = `mem[(p) + 1].b32.s1` — the natural-width
-    /// difference.
-    #[inline]
-    pub fn dwidth(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_dwidth(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, v.0);
-    }
-
-    /// `DELTA_NODE_dstretch0(p)` = `mem[(p) + 2].b32.s1` — the stretch
-    /// difference in points (order 0, `normal`).
-    #[inline]
-    pub fn dstretch0(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(2).0))
-    }
-    #[inline]
-    pub fn set_dstretch0(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(2).0, v.0);
-    }
-
-    /// `DELTA_NODE_dstretch1(p)` = `mem[(p) + 3].b32.s1` — stretch difference
-    /// in `fil`.
-    #[inline]
-    pub fn dstretch1(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(3).0))
-    }
-    #[inline]
-    pub fn set_dstretch1(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, v.0);
-    }
-
-    /// `DELTA_NODE_dstretch2(p)` = `mem[(p) + 4].b32.s1` — stretch difference
-    /// in `fill`.
-    #[inline]
-    pub fn dstretch2(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(4).0))
-    }
-    #[inline]
-    pub fn set_dstretch2(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(4).0, v.0);
-    }
-
-    /// `DELTA_NODE_dstretch3(p)` = `mem[(p) + 5].b32.s1` — stretch difference
-    /// in `filll`.
-    #[inline]
-    pub fn dstretch3(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(5).0))
-    }
-    #[inline]
-    pub fn set_dstretch3(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(5).0, v.0);
-    }
-
-    /// `DELTA_NODE_dshrink(p)` = `mem[(p) + 6].b32.s1` — the shrink
-    /// difference.
-    #[inline]
-    pub fn dshrink(self, mem: &MemState) -> Scaled {
-        Scaled(mem.b32s1(self.idx.offset(6).0))
-    }
-    #[inline]
-    pub fn set_dshrink(self, mem: &mut MemState, v: Scaled) {
-        mem.set_b32s1(self.idx.offset(6).0, v.0);
+    fields! {
+        dwidth / set_dwidth: Scaled = b32s1 @ 1;
+        dstretch0 / set_dstretch0: Scaled = b32s1 @ 2;
+        dstretch1 / set_dstretch1: Scaled = b32s1 @ 3;
+        dstretch2 / set_dstretch2: Scaled = b32s1 @ 4;
+        dstretch3 / set_dstretch3: Scaled = b32s1 @ 5;
+        dshrink / set_dshrink: Scaled = b32s1 @ 6;
     }
 }
 
-// --- the passive node: the line-breaker's passive list (PASSIVE_NODE_SIZE=2) ---
-//
-// A passive node records a feasible breakpoint for the second pass. Like
-// [`GlueSpecNode`], it deliberately does **not** implement [`HasNodeHeader`]:
-// its `serial` number occupies `0.b32.s0`, which overlaps the `b16`
-// type/subtype halves, so a passive node carries no `NODE_type`. It is
-// identified by *list context* (it is in the passive list), and its `link`
-// (`0.b32.s1`) chains the list — exactly as the C builder writes it
-// (`linebreak.rs` post-line-break loop). Fields verified against
-// `xetex/xetex-xetexd.h:278-281`.
-
-/// `PASSIVE_NODE`: a recorded feasible breakpoint (the line-breaker passive
-/// list). No `NODE_type` (the type/subtype slot is the `serial` number).
-pub enum PassiveNode {}
-
-impl NodeKind for PassiveNode {}
-
 impl NodePtr<PassiveNode> {
-    /// The list link `mem[p].b32.s1` chaining the passive list (nullable).
-    /// (Passive nodes have no `NODE_type`, so this is a concrete impl, not
-    /// the [`HasNodeHeader`] `link`.)
-    #[inline]
-    pub fn link(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.0))
-    }
-    #[inline]
-    pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.0, q.0);
+    fields! {
+        cur_break / set_cur_break: MemPtr = b32s1 @ 1;
+        next_break / set_next_break: MemPtr = b32s0 @ 1;
     }
 
-    /// `PASSIVE_NODE_cur_break(p)` = `mem[(p) + 1].b32.s1` (the "rlink"
-    /// slot) — the node where this breakpoint occurs (nullable).
+    /// The previous break on the best path, reversed into `next_break` later.
     #[inline]
-    pub fn cur_break(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s1(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_cur_break(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s1(self.idx.offset(1).0, q.0);
-    }
-
-    /// `PASSIVE_NODE_prev_break(p)` = `mem[(p) + 1].b32.s0` (the "llink"
-    /// slot) — the previous passive breakpoint on the best path (nullable).
-    ///
-    /// **Aliased:** the C macro `PASSIVE_NODE_next_break` names the *same*
-    /// slot (`#define …_next_break(p) …_prev_break(p)`); use [`next_break`]
-    /// for the reading sense. They read/write identical bits.
-    ///
-    /// [`next_break`]: NodePtr::<PassiveNode>::next_break
-    #[inline]
-    pub fn prev_break(self, mem: &MemState) -> MemPtr {
-        MemPtr::from_raw(mem.b32s0(self.idx.offset(1).0))
-    }
-    #[inline]
-    pub fn set_prev_break(self, mem: &mut MemState, q: MemPtr) {
-        mem.set_b32s0(self.idx.offset(1).0, q.0);
-    }
-
-    /// `PASSIVE_NODE_next_break(p)` — the C alias of [`prev_break`] (same
-    /// `+1.b32.s0` slot), used when the list is walked forward.
-    ///
-    /// [`prev_break`]: NodePtr::<PassiveNode>::prev_break
-    #[inline]
-    pub fn next_break(self, mem: &MemState) -> MemPtr {
-        self.prev_break(mem)
-    }
-    #[inline]
-    pub fn set_next_break(self, mem: &mut MemState, q: MemPtr) {
-        self.set_prev_break(mem, q);
+    pub fn set_prev_break(self, mem: &mut MemState, v: MemPtr) {
+        self.set_next_break(mem, v);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mem_types::{B32x2, MemoryWord};
+    use crate::consts::MAX_HALFWORD;
     use std::mem::size_of;
-
-    fn zero_word() -> MemoryWord {
-        MemoryWord {
-            b32: B32x2 { s0: 0, s1: 0 },
-        }
-    }
 
     fn fresh_mem(n: usize) -> MemState {
         MemState {
-            data: vec![zero_word(); n],
-            glyph_blobs: Default::default(),
-            journal: Default::default(),
-            lo_mem_max: 0,
-            hi_mem_min: 1_000_000, // every test index is lo-mem
-            avail: 0,
-            mem_end: 0,
-            rover: 0,
-            var_used: 0,
-            dyn_used: 0,
-            line: 0,
-            cur_synctex_tag: 0,
-            temp_ptr: crate::units::MemPtr::from_raw(0),
+            data: vec![Default::default(); n],
+            hi_mem_min: 1_000_000,
+            ..Default::default()
         }
     }
 
-    #[test]
-    fn nodeptr_is_zero_cost() {
-        assert_eq!(size_of::<NodePtr<HListNode>>(), size_of::<i32>());
-        assert_eq!(size_of::<NodePtr<VListNode>>(), size_of::<i32>());
-    }
-
-    #[test]
-    fn sync_trailer_reads_the_last_word_of_each_family() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-
-        // The trailer is the node's LAST word (size − SYNCTEX_FIELD_SIZE(=1)),
-        // which is what `get_node` stamps at allocation.
-        assert_eq!(<HListNode as HasSyncFields>::SYNC_OFFSET, BOX_NODE_SIZE - 1);
-        assert_eq!(<VListNode as HasSyncFields>::SYNC_OFFSET, BOX_NODE_SIZE - 1);
-        assert_eq!(<RuleNode as HasSyncFields>::SYNC_OFFSET, RULE_NODE_SIZE - 1);
-        assert_eq!(
-            <GlueNode as HasSyncFields>::SYNC_OFFSET,
-            MEDIUM_NODE_SIZE - 1
-        );
-        assert_eq!(
-            <KernNode as HasSyncFields>::SYNC_OFFSET,
-            MEDIUM_NODE_SIZE - 1
-        );
-        assert_eq!(
-            <MathNode as HasSyncFields>::SYNC_OFFSET,
-            MEDIUM_NODE_SIZE - 1
-        );
-
-        mem.set_b16s1(p.0, NodeType::HList.as_raw());
-        let b = unsafe { NodePtr::<HListNode>::from_idx_unchecked(p) };
-        mem.set_b32s0(p.0 + BOX_NODE_SIZE - 1, 42); // tag
-        mem.set_b32s1(p.0 + BOX_NODE_SIZE - 1, 7); // line
-        assert_eq!(b.sync_tag(&mem), 42);
-        assert_eq!(b.sync_line(&mem), 7);
-        assert_eq!(AnyBox::HList(b).sync_tag(&mem), 42);
-        assert_eq!(AnyBox::HList(b).sync_line(&mem), 7);
-
-        mem.set_b16s1(p.0, NodeType::Kern.as_raw());
-        let k = unsafe { NodePtr::<KernNode>::from_idx_unchecked(p) };
-        mem.set_b32s0(p.0 + MEDIUM_NODE_SIZE - 1, 9);
-        mem.set_b32s1(p.0 + MEDIUM_NODE_SIZE - 1, 3);
-        assert_eq!(k.sync_tag(&mem), 9);
-        assert_eq!(k.sync_line(&mem), 3);
-    }
-
-    #[test]
-    fn box_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        // tag it an hlist so classify_box finds it
-        mem.set_b16s1(p.0, NodeType::HList.as_raw());
-        let b = unsafe { NodePtr::<HListNode>::from_idx_unchecked(p) };
-
-        b.set_width(&mut mem, Scaled(0x1111));
-        b.set_depth(&mut mem, Scaled(0x2222));
-        b.set_height(&mut mem, Scaled(0x3333));
-        b.set_shift_amount(&mut mem, Scaled(0x4444));
-        b.set_list_ptr(&mut mem, MemPtr::from_raw(150));
-        b.set_glue_sign(&mut mem, GlueSign::Shrinking);
-        b.set_glue_order(&mut mem, 1);
-        b.set_glue_set(&mut mem, 1.5_f64);
-
-        assert_eq!(b.width(&mem), Scaled(0x1111));
-        assert_eq!(b.depth(&mem), Scaled(0x2222));
-        assert_eq!(b.height(&mem), Scaled(0x3333));
-        assert_eq!(b.shift_amount(&mem), Scaled(0x4444));
-        assert_eq!(b.list_ptr(&mem), MemPtr::from_raw(150));
-        assert_eq!(b.glue_sign(&mem), GlueSign::Shrinking);
-        assert_eq!(b.glue_order(&mem), 1);
-        assert_eq!(b.glue_set(&mem), 1.5_f64);
-
-        // each field landed in the C-exact raw word/subfield
-        assert_eq!(mem.b32s1(p.0 + 1), 0x1111); // width
-        assert_eq!(mem.b32s1(p.0 + 2), 0x2222); // depth
-        assert_eq!(mem.b32s1(p.0 + 3), 0x3333); // height
-        assert_eq!(mem.b32s1(p.0 + 4), 0x4444); // shift_amount
-        assert_eq!(mem.b32s1(p.0 + 5), 150); // list_ptr
-        assert_eq!(mem.b16s1(p.0 + 5), 2); // glue_sign
-        assert_eq!(mem.b16s0(p.0 + 5), 1); // glue_order
-    }
-
-    #[test]
-    fn empty_box_list_ptr_is_null() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b32s1((p.0) + 5, crate::consts::TEX_NULL);
-        let b = unsafe { NodePtr::<HListNode>::from_idx_unchecked(p) };
-        assert!(b.list_ptr(&mem).is_null());
-        assert_eq!(b.list_ptr(&mem).as_idx(), None);
-    }
-
-    #[test]
-    fn alloc_hlist_type_stamps_and_carves_a_usable_handle() {
+    /// An arena whose free list is the single block `[10, 30)`.
+    fn arena_with_free_block() -> MemState {
         let mut mem = fresh_mem(64);
         let rover = 10;
         mem.rover = rover;
         mem.lo_mem_max = 30;
         mem.hi_mem_min = 60;
         mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
+        mem.set_b32s1(rover, MAX_HALFWORD);
         mem.set_b32s1(rover + 1, rover);
         mem.set_b32s0(rover + 1, rover);
         mem.set_b32s1(30, 0);
+        mem
+    }
 
-        let b = NodePtr::<HListNode>::alloc(&mut mem).expect("arena has room");
-        // alloc type-stamped NODE_type = HLIST_NODE, so it classifies back:
-        assert!(matches!(
-            mem.classify_box(b.idx()),
-            Ok(Some(AnyBox::HList(_)))
-        ));
-        b.set_subtype(&mut mem, 0);
-        b.set_width(&mut mem, Scaled(0x1111));
-        b.set_list_ptr(&mut mem, MemPtr::NULL);
-        assert_eq!(b.width(&mem), Scaled(0x1111));
-        assert!(b.list_ptr(&mem).is_null());
+    fn at<K: NodeKind>(mem: &mut MemState, p: i32, ty: Option<NodeType>) -> NodePtr<K> {
+        if let Some(ty) = ty {
+            mem.set_b16s1(p, ty.as_raw());
+        }
+        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
     }
 
     #[test]
-    fn classify_box_dispatches_on_node_type() {
+    fn handles_are_zero_cost() {
+        assert_eq!(size_of::<NodePtr<HListNode>>(), size_of::<i32>());
+        assert_eq!(size_of::<NodePtr<GlueSpecNode>>(), size_of::<i32>());
+        assert_eq!(size_of::<NodePtr<Noad>>(), size_of::<i32>());
+    }
+
+    #[test]
+    fn alloc_stamps_the_type_that_classify_reads_back() {
+        let mut mem = arena_with_free_block();
+        let h = NodePtr::<HListNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(h.idx()), Ok(AnyNode::HList(_))));
+        let mut mem = arena_with_free_block();
+        let r = NodePtr::<RuleNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(r.idx()), Ok(AnyNode::Rule(_))));
+        let l = NodePtr::<LigatureNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(l.idx()), Ok(AnyNode::Ligature(_))));
+        let d = NodePtr::<DiscNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(d.idx()), Ok(AnyNode::Disc(_))));
+        let m = NodePtr::<MathNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(m.idx()), Ok(AnyNode::Math(_))));
+        let s = NodePtr::<StyleNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(s.idx()), Ok(AnyNode::Style(_))));
+
+        let mut mem = arena_with_free_block();
+        let c = NodePtr::<ChoiceNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(c.idx()), Ok(AnyNode::Choice(_))));
+        let g = NodePtr::<GlueNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(g.idx()), Ok(AnyNode::Glue(_))));
+        let k = NodePtr::<KernNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(k.idx()), Ok(AnyNode::Kern(_))));
+        let p = NodePtr::<PenaltyNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(p.idx()), Ok(AnyNode::Penalty(_))));
+        let mk = NodePtr::<MarginKernNode>::alloc(&mut mem).unwrap();
+        assert!(matches!(mem.classify(mk.idx()), Ok(AnyNode::MarginKern(_))));
+
+        let mut mem = arena_with_free_block();
+        let n = NodePtr::<Noad>::alloc(&mut mem).unwrap();
+        assert_eq!(n.noad_type(&mem), NodeType::OrdNoad);
+        let n = NodePtr::<Noad>::alloc_radical(&mut mem).unwrap();
+        assert_eq!(n.noad_type(&mem), NodeType::RadicalNoad);
+        let n = NodePtr::<Noad>::alloc_accent(&mut mem).unwrap();
+        assert_eq!(n.noad_type(&mem), NodeType::AccentNoad);
+        let n = NodePtr::<Noad>::alloc_fraction(&mut mem).unwrap();
+        assert!(matches!(mem.classify(n.idx()), Ok(AnyNode::Noad(_))));
+    }
+
+    #[test]
+    fn headerless_records_alloc_without_stamping() {
+        let mut mem = arena_with_free_block();
+        let spec = NodePtr::<GlueSpecNode>::alloc(&mut mem).unwrap();
+        spec.set_width(&mut mem, Scaled(0x1234));
+        assert_eq!(spec.width(&mem), Scaled(0x1234));
+        let item = NodePtr::<LigItem>::alloc(&mut mem).unwrap();
+        item.set_character(&mut mem, 45);
+        item.set_component(&mut mem, MemPtr(34));
+        assert_eq!(mem.b16s0(item.idx().0), 45);
+        assert_eq!(mem.b32s1(item.idx().0 + 1), 34);
+    }
+
+    #[test]
+    fn sync_trailer_is_the_last_word() {
         let mut mem = fresh_mem(200);
-        let h = MemIdx::new(40);
-        let v = MemIdx::new(60);
-        let other = MemIdx::new(80);
-        mem.set_b16s1(h.0, NodeType::HList.as_raw());
-        mem.set_b16s1(v.0, NodeType::VList.as_raw());
-        mem.set_b16s1(other.0, NodeType::Glue.as_raw());
+        let b: NodePtr<HListNode> = at(&mut mem, 100, Some(NodeType::HList));
+        mem.set_b32s0(100 + BOX_NODE_SIZE - 1, 42);
+        mem.set_b32s1(100 + BOX_NODE_SIZE - 1, 7);
+        assert_eq!(b.sync_tag(&mem), 42);
+        assert_eq!(AnyBox::HList(b).sync_line(&mem), 7);
 
-        assert!(matches!(mem.classify_box(h), Ok(Some(AnyBox::HList(_)))));
-        assert!(matches!(mem.classify_box(v), Ok(Some(AnyBox::VList(_)))));
-        assert!(matches!(mem.classify_box(other), Ok(None))); // valid, not a box
+        let k: NodePtr<KernNode> = at(&mut mem, 100, Some(NodeType::Kern));
+        mem.set_b32s0(100 + MEDIUM_NODE_SIZE - 1, 9);
+        mem.set_b32s1(100 + MEDIUM_NODE_SIZE - 1, 3);
+        assert_eq!(k.sync_tag(&mem), 9);
+        assert_eq!(k.sync_line(&mem), 3);
+    }
 
-        // an invalid NODE_type code (the 32–39 gap) is an error
-        let bad = MemIdx::new(90);
-        mem.set_b16s1(bad.0, 35);
-        assert!(mem.classify_box(bad).is_err());
+    #[test]
+    fn box_fields_land_in_their_words() {
+        let mut mem = fresh_mem(200);
+        let b: NodePtr<HListNode> = at(&mut mem, 100, Some(NodeType::HList));
+        b.set_width(&mut mem, Scaled(0x1111));
+        b.set_depth(&mut mem, Scaled(0x2222));
+        b.set_height(&mut mem, Scaled(0x3333));
+        b.set_shift_amount(&mut mem, Scaled(0x4444));
+        b.set_list_ptr(&mut mem, MemPtr(150));
+        b.set_glue_sign(&mut mem, GlueSign::Shrinking);
+        b.set_glue_order(&mut mem, 1);
+        b.set_glue_set(&mut mem, 1.5);
+        assert_eq!(b.glue_sign(&mem), GlueSign::Shrinking);
+        assert_eq!(b.glue_set(&mem), 1.5);
+        assert_eq!(mem.b32s1(101), 0x1111);
+        assert_eq!(mem.b32s1(102), 0x2222);
+        assert_eq!(mem.b32s1(103), 0x3333);
+        assert_eq!(mem.b32s1(104), 0x4444);
+        assert_eq!(mem.b32s1(105), 150);
+        assert_eq!(mem.b16s1(105), 2);
+        assert_eq!(mem.b16s0(105), 1);
+
+        b.set_list_ptr(&mut mem, MemPtr::NULL);
+        assert!(b.list_ptr(&mem).as_idx().is_none());
     }
 
     #[test]
     fn classify_dispatches_to_typed_handles() {
         let mut mem = fresh_mem(300);
-        let cases: &[(i32, NodeType)] = &[
+        let cases = [
             (40, NodeType::HList),
             (50, NodeType::VList),
             (60, NodeType::Rule),
@@ -3288,902 +1440,249 @@ mod tests {
             (160, NodeType::Whatsit),
             (170, NodeType::Unset),
         ];
-        for &(at, nt) in cases {
-            mem.set_b16s1(at, nt.as_raw());
+        for (p, ty) in cases {
+            mem.set_b16s1(p, ty.as_raw());
         }
-        use AnyNode::*;
-        assert!(matches!(mem.classify(MemIdx::new(40)), Ok(HList(_))));
-        assert!(matches!(mem.classify(MemIdx::new(50)), Ok(VList(_))));
-        assert!(matches!(mem.classify(MemIdx::new(60)), Ok(Rule(_))));
-        assert!(matches!(mem.classify(MemIdx::new(70)), Ok(Glue(_))));
-        assert!(matches!(mem.classify(MemIdx::new(80)), Ok(Kern(_))));
-        assert!(matches!(mem.classify(MemIdx::new(90)), Ok(Math(_))));
-        assert!(matches!(mem.classify(MemIdx::new(100)), Ok(Penalty(_))));
-        assert!(matches!(mem.classify(MemIdx::new(110)), Ok(Disc(_))));
-        assert!(matches!(mem.classify(MemIdx::new(120)), Ok(Choice(_))));
-        assert!(matches!(mem.classify(MemIdx::new(130)), Ok(MarginKern(_))));
-        // every noad code collapses to the single Noad handle
-        assert!(matches!(mem.classify(MemIdx::new(140)), Ok(Noad(_))));
-        assert!(matches!(mem.classify(MemIdx::new(150)), Ok(Noad(_))));
-        // not-yet-typed families carry the raw index
-        assert!(matches!(mem.classify(MemIdx::new(160)), Ok(Whatsit(_))));
-        assert!(matches!(mem.classify(MemIdx::new(170)), Ok(Unset(_))));
-
-        // the carried handle/index points back at the same node
-        assert_eq!(mem.classify(MemIdx::new(40)).unwrap().idx().0, 40);
-        assert_eq!(mem.classify(MemIdx::new(160)).unwrap().idx().0, 160);
-
-        // an invalid NODE_type (the 32–39 gap) is an error
         mem.set_b16s1(180, 35);
-        assert!(mem.classify(MemIdx::new(180)).is_err());
+        let c = |p| mem.classify(MemIdx::new(p));
+        use AnyNode::*;
+        assert!(matches!(c(40), Ok(HList(_))));
+        assert!(matches!(c(50), Ok(VList(_))));
+        assert!(matches!(c(60), Ok(Rule(_))));
+        assert!(matches!(c(70), Ok(Glue(_))));
+        assert!(matches!(c(80), Ok(Kern(_))));
+        assert!(matches!(c(90), Ok(Math(_))));
+        assert!(matches!(c(100), Ok(Penalty(_))));
+        assert!(matches!(c(110), Ok(Disc(_))));
+        assert!(matches!(c(120), Ok(Choice(_))));
+        assert!(matches!(c(130), Ok(MarginKern(_))));
+        assert!(matches!(c(140), Ok(Noad(_))));
+        assert!(matches!(c(150), Ok(Noad(_))));
+        assert!(matches!(c(160), Ok(Whatsit(_))));
+        assert!(matches!(c(170), Ok(Unset(_))));
+        assert!(c(180).is_err());
+        assert_eq!(c(40).unwrap().idx().0, 40);
+
+        assert!(matches!(
+            mem.classify_box(MemIdx(50)),
+            Ok(Some(AnyBox::VList(_)))
+        ));
+        assert!(matches!(mem.classify_box(MemIdx(70)), Ok(None)));
+        assert!(mem.classify_box(MemIdx(180)).is_err());
     }
 
     #[test]
     fn rule_dimensions_model_the_running_sentinel() {
         let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Rule.as_raw());
-        let r = unsafe { NodePtr::<RuleNode>::from_idx_unchecked(p) };
-
+        let r: NodePtr<RuleNode> = at(&mut mem, 100, Some(NodeType::Rule));
         r.set_width(&mut mem, RuleDimen::Running);
         r.set_depth(&mut mem, RuleDimen::Set(Scaled(0)));
         r.set_height(&mut mem, RuleDimen::Set(Scaled(0x2222)));
-
         assert_eq!(r.width(&mem), RuleDimen::Running);
         assert_eq!(r.depth(&mem), RuleDimen::Set(Scaled(0)));
-        assert_eq!(r.height(&mem), RuleDimen::Set(Scaled(0x2222)));
-        assert_eq!(mem.b32s1(p.0 + 1), crate::consts::NULL_FLAG);
-        assert_eq!(mem.b32s1(p.0 + 2), 0);
-        assert_eq!(mem.b32s1(p.0 + 3), 0x2222);
+        assert_eq!(mem.b32s1(101), NULL_FLAG);
+        assert_eq!(mem.b32s1(103), 0x2222);
     }
 
     #[test]
-    fn alloc_rule_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let r = NodePtr::<RuleNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify(r.idx()), Ok(AnyNode::Rule(_))));
-        r.set_subtype(&mut mem, 0);
-        r.set_width(&mut mem, RuleDimen::Running);
-        r.set_height(&mut mem, RuleDimen::Set(Scaled(99)));
-        assert_eq!(r.width(&mem), RuleDimen::Running);
-        assert_eq!(r.height(&mem), RuleDimen::Set(Scaled(99)));
-    }
-
-    #[test]
-    fn ligature_fields_roundtrip_at_the_right_offsets() {
+    fn small_node_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Ligature.as_raw());
-        let lig = unsafe { NodePtr::<LigatureNode>::from_idx_unchecked(p) };
-
-        lig.set_subtype(&mut mem, 0);
+        let lig: NodePtr<LigatureNode> = at(&mut mem, 100, Some(NodeType::Ligature));
         lig.set_font(&mut mem, FontId(77));
         lig.set_character(&mut mem, 0x1234);
-        lig.set_lig_ptr(&mut mem, MemPtr::from_raw(150));
-
-        assert_eq!(lig.subtype(&mem), 0);
         assert_eq!(lig.font(&mem), FontId(77));
-        assert_eq!(lig.character(&mem), 0x1234);
-        assert_eq!(lig.lig_ptr(&mem), MemPtr::from_raw(150));
-        assert_eq!(mem.b16s1(p.0 + 1), 77);
-        assert_eq!(mem.b16s0(p.0 + 1), 0x1234);
-        assert_eq!(mem.b32s1(p.0 + 1), 150);
-    }
+        assert_eq!(mem.b16s1(101), 77);
+        assert_eq!(mem.b16s0(101), 0x1234);
+        lig.set_lig_ptr(&mut mem, MemPtr(150));
+        assert_eq!(mem.b32s1(101), 150);
 
-    #[test]
-    fn alloc_ligature_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
+        let disc: NodePtr<DiscNode> = at(&mut mem, 100, Some(NodeType::Disc));
+        disc.set_pre_break(&mut mem, MemPtr(150));
+        disc.set_post_break(&mut mem, MemPtr(160));
+        assert_eq!(mem.b32s0(101), 150);
+        assert_eq!(mem.b32s1(101), 160);
 
-        let lig = NodePtr::<LigatureNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_ligature(lig.idx()), Ok(Some(_))));
-        lig.set_font(&mut mem, FontId(5));
-        lig.set_character(&mut mem, 42);
-        lig.set_lig_ptr(&mut mem, MemPtr::NULL);
-        assert_eq!(lig.font(&mem), FontId(5));
-        assert_eq!(lig.character(&mem), 42);
-        assert!(lig.lig_ptr(&mem).is_null());
-    }
-
-    #[test]
-    fn disc_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Disc.as_raw());
-        let disc = unsafe { NodePtr::<DiscNode>::from_idx_unchecked(p) };
-
-        disc.set_subtype(&mut mem, 0);
-        disc.set_pre_break(&mut mem, MemPtr::from_raw(150));
-        disc.set_post_break(&mut mem, MemPtr::from_raw(160));
-
-        assert_eq!(disc.subtype(&mem), 0);
-        assert_eq!(disc.pre_break(&mem), MemPtr::from_raw(150));
-        assert_eq!(disc.post_break(&mem), MemPtr::from_raw(160));
-        assert_eq!(mem.b32s0(p.0 + 1), 150);
-        assert_eq!(mem.b32s1(p.0 + 1), 160);
-    }
-
-    #[test]
-    fn alloc_disc_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let disc = NodePtr::<DiscNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_disc(disc.idx()), Ok(Some(_))));
-        disc.set_pre_break(&mut mem, MemPtr::NULL);
-        disc.set_post_break(&mut mem, MemPtr::NULL);
-        assert!(disc.pre_break(&mem).is_null());
-        assert!(disc.post_break(&mem).is_null());
-    }
-
-    #[test]
-    fn math_node_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Math.as_raw());
-        let math = unsafe { NodePtr::<MathNode>::from_idx_unchecked(p) };
-
+        let math: NodePtr<MathNode> = at(&mut mem, 100, Some(NodeType::Math));
         math.set_subtype(&mut mem, 3);
         math.set_width(&mut mem, Scaled(0x1234));
+        assert_eq!(mem.b16s0(100), 3);
+        assert_eq!(mem.b32s1(101), 0x1234);
 
-        assert_eq!(math.subtype(&mem), 3);
-        assert_eq!(math.width(&mem), Scaled(0x1234));
-        assert_eq!(mem.b16s0(p.0), 3);
-        assert_eq!(mem.b32s1(p.0 + 1), 0x1234);
-    }
-
-    #[test]
-    fn alloc_math_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let math = NodePtr::<MathNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_math(math.idx()), Ok(Some(_))));
-        math.set_subtype(&mut mem, 1);
-        math.set_width(&mut mem, Scaled(-99));
-        assert_eq!(math.subtype(&mem), 1);
-        assert_eq!(math.width(&mem), Scaled(-99));
-    }
-
-    #[test]
-    fn style_node_constructor_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Style.as_raw());
-        let style = unsafe { NodePtr::<StyleNode>::from_idx_unchecked(p) };
-
-        style.set_subtype(&mut mem, 4);
+        let style: NodePtr<StyleNode> = at(&mut mem, 100, Some(NodeType::Style));
         style.clear_payload(&mut mem);
+        assert_eq!(mem.b32s1(101), 0);
+        assert_eq!(mem.b32s1(102), 0);
 
-        assert_eq!(style.subtype(&mem), 4);
-        assert_eq!(mem.b16s0(p.0), 4);
-        assert_eq!(mem.b32s1(p.0 + 1), 0);
-        assert_eq!(mem.b32s1(p.0 + 2), 0);
+        let pen: NodePtr<PenaltyNode> = at(&mut mem, 100, Some(NodeType::Penalty));
+        pen.set_penalty(&mut mem, -10000);
+        assert_eq!(mem.b32s1(101), -10000);
+
+        let mark: NodePtr<MarkNode> = at(&mut mem, 100, Some(NodeType::Mark));
+        mark.set_mark_ptr(&mut mem, MemPtr(77));
+        mark.set_mark_class(&mut mem, 3);
+        assert_eq!(mem.b32s1(101), 77);
+        assert_eq!(mem.b32s0(101), 3);
+
+        let adj: NodePtr<AdjustNode> = at(&mut mem, 100, Some(NodeType::Adjust));
+        adj.set_adjust_ptr(&mut mem, MemPtr(88));
+        assert_eq!(mem.b32s1(101), 88);
+
+        let ins: NodePtr<InsNode> = at(&mut mem, 100, Some(NodeType::Ins));
+        ins.set_ins_ptr(&mut mem, MemPtr(55));
+        ins.set_split_top_ptr(&mut mem, MemPtr(66));
+        assert_eq!(mem.b32s0(104), 55);
+        assert_eq!(mem.b32s1(104), 66);
     }
 
     #[test]
-    fn alloc_style_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let style = NodePtr::<StyleNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify(style.idx()), Ok(AnyNode::Style(_))));
-        style.set_subtype(&mut mem, 2);
-        style.clear_payload(&mut mem);
-        assert_eq!(style.subtype(&mem), 2);
-    }
-
-    #[test]
-    fn choice_node_fields_roundtrip_at_the_right_offsets() {
+    fn choice_branches_land_in_their_words() {
         let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Choice.as_raw());
-        let choice = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(p) };
-
-        choice.set_subtype(&mut mem, 0);
-        choice.set_display_mlist(&mut mem, MemPtr::from_raw(11));
-        choice.set_text_mlist(&mut mem, MemPtr::from_raw(22));
-        choice.set_script_mlist(&mut mem, MemPtr::from_raw(33));
-        choice.set_script_script_mlist(&mut mem, MemPtr::from_raw(44));
-
-        assert_eq!(choice.subtype(&mem), 0);
-        assert_eq!(choice.display_mlist(&mem), MemPtr::from_raw(11));
-        assert_eq!(choice.text_mlist(&mem), MemPtr::from_raw(22));
-        assert_eq!(choice.script_mlist(&mem), MemPtr::from_raw(33));
-        assert_eq!(choice.script_script_mlist(&mem), MemPtr::from_raw(44));
-        assert_eq!(mem.b32s0(p.0 + 1), 11);
-        assert_eq!(mem.b32s1(p.0 + 1), 22);
-        assert_eq!(mem.b32s0(p.0 + 2), 33);
-        assert_eq!(mem.b32s1(p.0 + 2), 44);
+        let c: NodePtr<ChoiceNode> = at(&mut mem, 100, Some(NodeType::Choice));
+        c.set_display_mlist(&mut mem, MemPtr(11));
+        c.set_text_mlist(&mut mem, MemPtr(22));
+        c.set_script_mlist(&mut mem, MemPtr(33));
+        c.set_script_script_mlist(&mut mem, MemPtr(44));
+        assert_eq!(mem.b32s0(101), 11);
+        assert_eq!(mem.b32s1(101), 22);
+        assert_eq!(mem.b32s0(102), 33);
+        assert_eq!(mem.b32s1(102), 44);
     }
 
     #[test]
-    fn alloc_choice_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let choice = NodePtr::<ChoiceNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify(choice.idx()), Ok(AnyNode::Choice(_))));
-        choice.set_display_mlist(&mut mem, MemPtr::NULL);
-        choice.set_text_mlist(&mut mem, MemPtr::NULL);
-        choice.set_script_mlist(&mut mem, MemPtr::NULL);
-        choice.set_script_script_mlist(&mut mem, MemPtr::NULL);
-        assert!(choice.display_mlist(&mem).is_null());
-        assert!(choice.text_mlist(&mem).is_null());
-        assert!(choice.script_mlist(&mem).is_null());
-        assert!(choice.script_script_mlist(&mem).is_null());
-    }
-
-    #[test]
-    fn mark_node_fields_roundtrip_at_the_right_offsets() {
+    fn unset_and_whatsit_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Mark.as_raw());
-        let m = match mem.classify(p) {
-            Ok(AnyNode::Mark(m)) => m,
-            other => panic!("expected Mark, got {other:?}"),
-        };
-        m.set_mark_ptr(&mut mem, MemPtr::from_raw(77));
-        m.set_mark_class(&mut mem, 3);
-        assert_eq!(m.mark_ptr(&mem), MemPtr::from_raw(77));
-        assert_eq!(m.mark_class(&mem), 3);
-        assert_eq!(mem.b32s1(p.0 + 1), 77);
-        assert_eq!(mem.b32s0(p.0 + 1), 3);
-    }
-
-    #[test]
-    fn adjust_node_ptr_roundtrips_at_the_right_offset() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Adjust.as_raw());
-        let a = match mem.classify(p) {
-            Ok(AnyNode::Adjust(a)) => a,
-            other => panic!("expected Adjust, got {other:?}"),
-        };
-        a.set_adjust_ptr(&mut mem, MemPtr::from_raw(88));
-        assert_eq!(a.adjust_ptr(&mem), MemPtr::from_raw(88));
-        assert_eq!(mem.b32s1(p.0 + 1), 88);
-    }
-
-    #[test]
-    fn ins_node_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Ins.as_raw());
-        let ins = match mem.classify(p) {
-            Ok(AnyNode::Ins(ins)) => ins,
-            other => panic!("expected Ins, got {other:?}"),
-        };
-        ins.set_ins_ptr(&mut mem, MemPtr::from_raw(55));
-        ins.set_split_top_ptr(&mut mem, MemPtr::from_raw(66));
-        assert_eq!(ins.ins_ptr(&mem), MemPtr::from_raw(55));
-        assert_eq!(ins.split_top_ptr(&mem), MemPtr::from_raw(66));
-        assert_eq!(mem.b32s0(p.0 + 4), 55);
-        assert_eq!(mem.b32s1(p.0 + 4), 66);
-    }
-
-    #[test]
-    fn unset_node_box_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Unset.as_raw());
-        let u = match mem.classify(p) {
-            Ok(AnyNode::Unset(u)) => u,
-            other => panic!("expected Unset, got {other:?}"),
-        };
-        mem.set_b32s1(p.0 + 1, 0x111);
-        mem.set_b32s1(p.0 + 2, 0x222);
-        mem.set_b32s1(p.0 + 3, 0x333);
-        u.set_list_ptr(&mut mem, MemPtr::from_raw(0x444));
+        let u: NodePtr<UnsetNode> = at(&mut mem, 100, Some(NodeType::Unset));
+        mem.set_b32s1(101, 0x111);
+        mem.set_b32s1(103, 0x333);
+        u.set_list_ptr(&mut mem, MemPtr(0x444));
         assert_eq!(u.width(&mem), Scaled(0x111));
-        assert_eq!(u.depth(&mem), Scaled(0x222));
         assert_eq!(u.height(&mem), Scaled(0x333));
-        assert_eq!(u.list_ptr(&mem), MemPtr::from_raw(0x444));
-        assert_eq!(mem.b32s1(p.0 + 5), 0x444);
-    }
+        assert_eq!(mem.b32s1(105), 0x444);
 
-    #[test]
-    fn whatsit_native_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Whatsit.as_raw());
-        let w = match mem.classify(p) {
-            Ok(AnyNode::Whatsit(w)) => w,
-            other => panic!("expected Whatsit, got {other:?}"),
-        };
-        // Subtype is the shared header b16.s0.
+        let w: NodePtr<WhatsitNode> = at(&mut mem, 100, Some(NodeType::Whatsit));
         w.set_subtype(&mut mem, 40);
-        assert_eq!(w.subtype(&mem), 40);
-        assert_eq!(mem.b16s0(p.0), 40);
-
-        // Box-layout dimensions at +1/+2/+3 (native-word / PIC).
-        mem.set_b32s1(p.0 + 1, 0x11);
-        mem.set_b32s1(p.0 + 2, 0x22);
-        mem.set_b32s1(p.0 + 3, 0x33);
-        assert_eq!(w.width(&mem), Scaled(0x11));
-        assert_eq!(w.depth(&mem), Scaled(0x22));
-        assert_eq!(w.height(&mem), Scaled(0x33));
-
-        // Native metadata word at +4: size (b16.s3), font (b16.s2),
-        // length/glyph/path_len (b16.s1), glyph_count (b16.s0).
-        mem.set_b16s3(p.0 + 4, 6);
-        mem.set_b16s2(p.0 + 4, 7);
-        mem.set_b16s1(p.0 + 4, 9);
+        assert_eq!(w.whatsit_subtype(&mem), Some(WhatsitSubtype::NativeWord));
+        mem.set_b16s3(104, 6);
+        mem.set_b16s2(104, 7);
+        mem.set_b16s1(104, 9);
         assert_eq!(w.native_size(&mem), 6);
         assert_eq!(w.native_font(&mem), FontId(7));
         assert_eq!(w.native_length(&mem), 9);
-        assert_eq!(w.native_glyph(&mem), 9);
         assert_eq!(w.pic_path_len(&mem), 9);
         w.set_native_glyph_count(&mut mem, 3);
-        assert_eq!(w.native_glyph_count(&mem), 3);
-        assert_eq!(mem.b16s0(p.0 + 4), 3);
-
-        // Glyph-info handle at +5 (zero means no shaped glyphs).
-        assert_eq!(w.native_glyph_info_handle(&mem), 0);
+        assert_eq!(mem.b16s0(104), 3);
         w.set_native_glyph_info_handle(&mut mem, 7);
         assert_eq!(w.native_glyph_info_handle(&mem), 7);
-        assert_eq!(mem.b32s1(p.0 + 5), 0);
-        w.set_native_glyph_info_handle(&mut mem, 0);
+        assert_eq!(mem.b32s1(105), 0);
 
-        // WRITE/SPECIAL token list + LANGUAGE fields share the +1 word.
-        mem.set_b32s1(p.0 + 1, 0x55);
-        assert_eq!(w.write_tokens(&mem), MemPtr::from_raw(0x55));
+        mem.set_b32s1(101, 0x55);
+        assert_eq!(w.write_tokens(&mem), MemPtr(0x55));
         assert_eq!(w.what_lang(&mem), 0x55);
-        mem.set_b16s1(p.0 + 1, 4);
-        mem.set_b16s0(p.0 + 1, 5);
+        mem.set_b16s1(101, 4);
+        mem.set_b16s0(101, 5);
         assert_eq!(w.what_lhm(&mem), 4);
         assert_eq!(w.what_rhm(&mem), 5);
     }
 
     #[test]
-    fn sa_node_children_map_to_packed_offsets() {
+    fn sa_children_pack_two_per_word() {
         let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        let node = unsafe { NodePtr::<SaNode>::from_idx_unchecked(p) };
-        // even child i -> +i/2+1 .b32.s0; odd child -> .b32.s1
+        let node: NodePtr<SaNode> = at(&mut mem, 100, None);
         for i in 0..6 {
-            node.set_child(&mut mem, i, MemPtr::from_raw(1000 + i));
+            node.set_child(&mut mem, i, MemPtr(1000 + i));
         }
         for i in 0..6 {
-            assert_eq!(node.child(&mem, i), MemPtr::from_raw(1000 + i));
+            assert_eq!(node.child(&mem, i), MemPtr(1000 + i));
         }
-        assert_eq!(mem.b32s0(p.0 + 1), 1000); // child 0
-        assert_eq!(mem.b32s1(p.0 + 1), 1001); // child 1
-        assert_eq!(mem.b32s0(p.0 + 2), 1002); // child 2
-        assert_eq!(mem.b32s1(p.0 + 2), 1003); // child 3
-        assert_eq!(mem.b32s0(p.0 + 3), 1004); // child 4
-        assert_eq!(mem.b32s1(p.0 + 3), 1005); // child 5
-
+        assert_eq!(mem.b32s0(101), 1000);
+        assert_eq!(mem.b32s1(101), 1001);
+        assert_eq!(mem.b32s1(103), 1005);
         node.set_ref_count(&mut mem, 7);
-        assert_eq!(node.ref_count(&mem), 7);
-        assert_eq!(mem.b16s0(p.0), 7);
+        assert_eq!(mem.b16s0(100), 7);
     }
 
     #[test]
-    fn glue_family_is_zero_cost() {
-        assert_eq!(size_of::<NodePtr<GlueNode>>(), size_of::<i32>());
-        assert_eq!(size_of::<NodePtr<GlueSpecNode>>(), size_of::<i32>());
-    }
-
-    #[test]
-    fn glue_node_fields_roundtrip_at_the_right_offsets() {
+    fn glue_node_and_spec_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Glue.as_raw());
-        let g = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(p) };
-
+        let g: NodePtr<GlueNode> = at(&mut mem, 100, Some(NodeType::Glue));
         g.set_subtype(&mut mem, 7);
-        g.set_glue_ptr(&mut mem, MemPtr::from_raw(150));
-        g.set_leader_ptr(&mut mem, MemPtr::from_raw(160));
+        g.set_glue_ptr(&mut mem, MemPtr(150));
+        g.set_leader_ptr(&mut mem, MemPtr(160));
+        assert_eq!(mem.b16s0(100), 7);
+        assert_eq!(mem.b32s0(101), 150);
+        assert_eq!(mem.b32s1(101), 160);
+        assert_eq!(g.glue_spec(&mem).map(|s| s.idx()), Some(MemIdx(150)));
+        g.set_glue_ptr(&mut mem, MemPtr::NULL);
+        assert!(g.glue_spec(&mem).is_none());
 
-        assert_eq!(g.subtype(&mem), 7);
-        assert_eq!(g.glue_ptr(&mem), MemPtr::from_raw(150));
-        assert_eq!(g.leader_ptr(&mem), MemPtr::from_raw(160));
-
-        // each field landed in the C-exact raw word/subfield:
-        // subtype  -> mem[p].b16.s0
-        // glue_ptr -> mem[p+1].b32.s0  (note: the *s0* half, not s1)
-        // leader_ptr -> mem[p+1].b32.s1
-        assert_eq!(mem.b16s0(p.0), 7);
-        assert_eq!(mem.b32s0(p.0 + 1), 150);
-        assert_eq!(mem.b32s1(p.0 + 1), 160);
-    }
-
-    #[test]
-    fn alloc_glue_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let g = NodePtr::<GlueNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_glue(g.idx()), Ok(Some(_))));
-        g.set_subtype(&mut mem, 0);
-        g.set_glue_ptr(&mut mem, MemPtr::from_raw(22));
-        g.set_leader_ptr(&mut mem, MemPtr::NULL);
-        assert_eq!(g.glue_ptr(&mem), MemPtr::from_raw(22));
-        assert!(g.leader_ptr(&mem).is_null());
-    }
-
-    #[test]
-    fn glue_spec_fields_roundtrip_and_ref_count_is_not_a_link() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        let s = unsafe { NodePtr::<GlueSpecNode>::from_idx_unchecked(p) };
-
+        let s: NodePtr<GlueSpecNode> = at(&mut mem, 150, None);
         s.set_ref_count(&mut mem, 42);
         s.set_stretch_order(&mut mem, 2);
         s.set_shrink_order(&mut mem, 1);
         s.set_width(&mut mem, Scaled(0x4444));
         s.set_stretch(&mut mem, Scaled(0x5555));
         s.set_shrink(&mut mem, Scaled(0x6666));
-
-        assert_eq!(s.ref_count(&mem), 42);
-        assert_eq!(s.stretch_order(&mem), 2);
-        assert_eq!(s.shrink_order(&mem), 1);
-        assert_eq!(s.width(&mem), Scaled(0x4444));
-        assert_eq!(s.stretch(&mem), Scaled(0x5555));
-        assert_eq!(s.shrink(&mem), Scaled(0x6666));
-
-        // The ref_count occupies the 0.b32.s1 word — the slot that holds the
-        // link/successor on a real list node — but here it is a count. The
-        // box `list_ptr`-style `MemPtr` reading of this word would be a parity
-        // bug; confirm the raw word holds the count value verbatim.
-        assert_eq!(mem.b32s1(p.0), 42);
-        assert_eq!(mem.b16s1(p.0), 2); // stretch_order
-        assert_eq!(mem.b16s0(p.0), 1); // shrink_order
-        assert_eq!(mem.b32s1(p.0 + 1), 0x4444); // width
-        assert_eq!(mem.b32s1(p.0 + 2), 0x5555); // stretch
-        assert_eq!(mem.b32s1(p.0 + 3), 0x6666); // shrink
+        assert_eq!(mem.b32s1(150), 42);
+        assert_eq!(mem.b16s1(150), 2);
+        assert_eq!(mem.b16s0(150), 1);
+        assert_eq!(mem.b32s1(151), 0x4444);
+        assert_eq!(mem.b32s1(152), 0x5555);
+        assert_eq!(mem.b32s1(153), 0x6666);
     }
 
     #[test]
-    fn glue_ptr_classifies_to_a_spec_handle_and_handles_null() {
+    fn noad_fields_land_in_their_words() {
         let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Glue.as_raw());
-        let g = unsafe { NodePtr::<GlueNode>::from_idx_unchecked(p) };
-
-        // a real glue_ptr classifies to a spec handle at the same index
-        g.set_glue_ptr(&mut mem, MemPtr::from_raw(150));
-        let spec = g.glue_spec(&mem).expect("non-null glue_ptr");
-        assert_eq!(spec.idx(), MemIdx::new(150));
-        assert_eq!(
-            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(150)).map(|s| s.idx()),
-            Some(MemIdx::new(150))
-        );
-
-        // a null glue_ptr classifies to None (a caller bug in practice)
-        g.set_glue_ptr(&mut mem, MemPtr::NULL);
-        assert!(g.glue_spec(&mem).is_none());
-        assert!(NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::NULL).is_none());
+        let n: NodePtr<Noad> = at(&mut mem, 100, Some(NodeType::OrdNoad));
+        n.set_nucleus_type(&mut mem, 1);
+        n.set_nucleus_field(&mut mem, 123);
+        assert_eq!(mem.b32s1(101), 1);
+        assert_eq!(mem.b32s0(101), 123);
+        n.set_nucleus_char(&mut mem, 45);
+        n.set_nucleus_fam(&mut mem, 2);
+        assert_eq!(n.nucleus_char(&mem), 45);
+        assert_eq!(n.nucleus_fam(&mem), 2);
+        n.set_accent_char_val(&mut mem, 48);
+        n.set_accent_char_fam(&mut mem, 5);
+        assert_eq!(mem.b16s0(n.accent_char_addr()), 48);
+        assert_eq!(mem.b16s1(104), 5);
     }
 
     #[test]
-    fn alloc_glue_spec_carves_a_usable_typed_handle() {
-        let mut mem = fresh_mem(64);
-        // Build a single free block spanning [10, 30) on the variable-size
-        // free list: header `.s0` = block size, `.s1` = MAX_HALFWORD (the free
-        // marker); the block is its own left/right neighbour (rover → self).
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60; // no growth needed; keeps the carved node in bounds
-        mem.set_b32s0(rover, 20); // block size 20 → [10, 30)
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD); // free
-        mem.set_b32s1(rover + 1, rover); // rlink → self
-        mem.set_b32s0(rover + 1, rover); // llink → self
-        mem.set_b32s1(30, 0); // word past the block is not a free marker (stop coalescing)
-
-        let spec = NodePtr::<GlueSpecNode>::alloc(&mut mem).expect("arena has room");
-        // the returned handle is a real, in-bounds, writable glue_spec
-        spec.set_width(&mut mem, Scaled(0x1234));
-        spec.set_stretch(&mut mem, Scaled(0x5678));
-        assert_eq!(spec.width(&mem), Scaled(0x1234));
-        assert_eq!(spec.stretch(&mem), Scaled(0x5678));
-        // and `alloc` confined the construction — no `unsafe` at this call site
-    }
-
-    #[test]
-    fn classify_glue_dispatches_on_node_type() {
+    fn line_breaker_records_land_in_their_words() {
         let mut mem = fresh_mem(200);
-        let g = MemIdx::new(40);
-        let other = MemIdx::new(60);
-        mem.set_b16s1(g.0, NodeType::Glue.as_raw());
-        mem.set_b16s1(other.0, NodeType::HList.as_raw());
-
-        assert!(matches!(mem.classify_glue(g), Ok(Some(_))));
-        assert!(matches!(mem.classify_glue(other), Ok(None))); // valid, not glue
-
-        let bad = MemIdx::new(80);
-        mem.set_b16s1(bad.0, 37); // the 32–39 gap
-        assert!(mem.classify_glue(bad).is_err());
-    }
-
-    #[test]
-    fn kern_is_zero_cost() {
-        assert_eq!(size_of::<NodePtr<KernNode>>(), size_of::<i32>());
-    }
-
-    #[test]
-    fn kern_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Kern.as_raw());
-        let k = unsafe { NodePtr::<KernNode>::from_idx_unchecked(p) };
-
-        k.set_subtype(&mut mem, 3);
-        k.set_width(&mut mem, Scaled(0x7777));
-
-        assert_eq!(k.subtype(&mem), 3);
-        assert_eq!(k.width(&mem), Scaled(0x7777));
-
-        // each field landed in the C-exact raw word/subfield
-        assert_eq!(mem.b16s0(p.0), 3); // subtype
-        assert_eq!(mem.b32s1(p.0 + 1), 0x7777); // width
-    }
-
-    #[test]
-    fn alloc_kern_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        // single free block [10, 30) on the variable-size free list (see
-        // `alloc_glue_spec_carves_a_usable_typed_handle` for the layout).
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let k = NodePtr::<KernNode>::alloc(&mut mem).expect("arena has room");
-        // alloc type-stamped NODE_type = KERN_NODE (the type-stamping form,
-        // unlike glue_spec::alloc which stamps nothing) — so it classifies back:
-        assert!(matches!(mem.classify_kern(k.idx()), Ok(Some(_))));
-        // and the handle is a real, in-bounds, writable kern node
-        k.set_subtype(&mut mem, 0);
-        k.set_width(&mut mem, Scaled(0x2468));
-        assert_eq!(k.width(&mem), Scaled(0x2468));
-    }
-
-    #[test]
-    fn classify_kern_dispatches_on_node_type() {
-        let mut mem = fresh_mem(200);
-        let k = MemIdx::new(40);
-        let other = MemIdx::new(60);
-        mem.set_b16s1(k.0, NodeType::Kern.as_raw());
-        mem.set_b16s1(other.0, NodeType::Glue.as_raw());
-
-        assert!(matches!(mem.classify_kern(k), Ok(Some(_))));
-        assert!(matches!(mem.classify_kern(other), Ok(None))); // valid, not kern
-
-        let bad = MemIdx::new(80);
-        mem.set_b16s1(bad.0, 38); // the 32–39 gap
-        assert!(mem.classify_kern(bad).is_err());
-    }
-
-    #[test]
-    fn penalty_is_zero_cost() {
-        assert_eq!(size_of::<NodePtr<PenaltyNode>>(), size_of::<i32>());
-    }
-
-    #[test]
-    fn penalty_roundtrips_as_i32_not_scaled() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::Penalty.as_raw());
-        let pen = unsafe { NodePtr::<PenaltyNode>::from_idx_unchecked(p) };
-
-        // a negative penalty (eject-ish) round-trips with i32 sign semantics
-        pen.set_penalty(&mut mem, -10000);
-        assert_eq!(pen.penalty(&mem), -10000);
-        // the value lands verbatim in the +1.b32.s1 slot
-        assert_eq!(mem.b32s1(p.0 + 1), -10000);
-
-        // the return type is i32, NOT Scaled — this would not type-check if
-        // `penalty()` returned `Scaled` (the trap encoded in the type):
-        let v: i32 = pen.penalty(&mem);
-        assert_eq!(v, -10000);
-    }
-
-    #[test]
-    fn alloc_penalty_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let pen = NodePtr::<PenaltyNode>::alloc(&mut mem).expect("arena has room");
-        // alloc type-stamped NODE_type = PENALTY_NODE, so it classifies back:
-        assert!(matches!(mem.classify_penalty(pen.idx()), Ok(Some(_))));
-        pen.set_subtype(&mut mem, 0);
-        pen.set_penalty(&mut mem, -10000);
-        assert_eq!(pen.penalty(&mem), -10000);
-    }
-
-    #[test]
-    fn classify_penalty_dispatches_on_node_type() {
-        let mut mem = fresh_mem(200);
-        let pen = MemIdx::new(40);
-        let other = MemIdx::new(60);
-        mem.set_b16s1(pen.0, NodeType::Penalty.as_raw());
-        mem.set_b16s1(other.0, NodeType::Kern.as_raw());
-
-        assert!(matches!(mem.classify_penalty(pen), Ok(Some(_))));
-        assert!(matches!(mem.classify_penalty(other), Ok(None))); // valid, not penalty
-
-        let bad = MemIdx::new(80);
-        mem.set_b16s1(bad.0, 39); // the 32–39 gap
-        assert!(mem.classify_penalty(bad).is_err());
-    }
-
-    #[test]
-    fn noad_is_zero_cost() {
-        assert_eq!(size_of::<NodePtr<Noad>>(), size_of::<i32>());
-    }
-
-    #[test]
-    fn alloc_noad_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let noad = NodePtr::<Noad>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_noad(noad.idx()), Ok(Some(_))));
-        noad.set_subtype(&mut mem, 5);
-        noad.set_nucleus_type(&mut mem, 1);
-        noad.set_nucleus_field(&mut mem, 123);
-        assert_eq!(noad.subtype(&mem), 5);
-        assert_eq!(noad.nucleus_type(&mem), 1);
-        assert_eq!(noad.nucleus_field(&mem), 123);
-
-        noad.set_nucleus_char(&mut mem, 45);
-        noad.set_nucleus_fam(&mut mem, 2);
-        assert_eq!(noad.nucleus_char(&mem), 45);
-        assert_eq!(noad.nucleus_fam(&mem), 2);
-
-        noad.set_accent_char_val(&mut mem, 48);
-        noad.set_accent_char_fam(&mut mem, 5);
-        assert_eq!(mem.b16s0(noad.accent_char_addr()), 48);
-        assert_eq!(noad.accent_char_fam(&mem), 5);
-
-        noad.set_link(&mut mem, MemPtr::from_raw(1234));
-        assert_eq!(noad.link(&mem), MemPtr::from_raw(1234));
-
-        let radical = NodePtr::<Noad>::alloc_radical(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_noad(radical.idx()), Ok(Some(_))));
-
-        let accent = NodePtr::<Noad>::alloc_accent(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_noad(accent.idx()), Ok(Some(_))));
-
-        let fraction = NodePtr::<Noad>::alloc_fraction(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_noad(fraction.idx()), Ok(Some(_))));
-    }
-
-    #[test]
-    fn lig_item_is_zero_cost() {
-        assert_eq!(size_of::<NodePtr<LigItem>>(), size_of::<i32>());
-    }
-
-    #[test]
-    fn alloc_lig_item_carves_a_usable_typed_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let item = NodePtr::<LigItem>::alloc(&mut mem).expect("arena has room");
-        item.set_character(&mut mem, 45);
-        item.set_component(&mut mem, MemPtr::from_raw(34));
-
-        assert_eq!(mem.b16s0(item.idx().0), 45);
-        assert_eq!(mem.b32s1(item.idx().offset(1).0), 34);
-    }
-
-    #[test]
-    fn margin_kern_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        mem.set_b16s1(p.0, NodeType::MarginKern.as_raw());
-        let k = unsafe { NodePtr::<MarginKernNode>::from_idx_unchecked(p) };
-
-        k.set_subtype(&mut mem, 1);
-        k.set_width(&mut mem, Scaled(0x1234));
-
-        assert_eq!(k.subtype(&mem), 1);
-        assert_eq!(k.width(&mem), Scaled(0x1234));
-        assert_eq!(mem.b16s0(p.0), 1);
-        assert_eq!(mem.b32s1(p.0 + 1), 0x1234);
-    }
-
-    #[test]
-    fn alloc_margin_kern_type_stamps_and_carves_a_usable_handle() {
-        let mut mem = fresh_mem(64);
-        let rover = 10;
-        mem.rover = rover;
-        mem.lo_mem_max = 30;
-        mem.hi_mem_min = 60;
-        mem.set_b32s0(rover, 20);
-        mem.set_b32s1(rover, crate::consts::MAX_HALFWORD);
-        mem.set_b32s1(rover + 1, rover);
-        mem.set_b32s0(rover + 1, rover);
-        mem.set_b32s1(30, 0);
-
-        let k = NodePtr::<MarginKernNode>::alloc(&mut mem).expect("arena has room");
-        assert!(matches!(mem.classify_margin_kern(k.idx()), Ok(Some(_))));
-        k.set_subtype(&mut mem, 2);
-        k.set_width(&mut mem, Scaled(-123));
-        assert_eq!(k.subtype(&mem), 2);
-        assert_eq!(k.width(&mem), Scaled(-123));
-    }
-
-    #[test]
-    fn active_node_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        // No classify boundary: active/delta nodes are context-classified
-        // (the active-list walk established the kind).
-        let a = unsafe { NodePtr::<ActiveNode>::from_idx_unchecked(p) };
-
-        a.set_break_type(&mut mem, 1); // HYPHENATED, in the NODE_type word
-        a.set_fitness(&mut mem, 2); // DECENT_FIT, in the subtype word
-        a.set_break_node(&mut mem, MemPtr::from_raw(150));
+        let a: NodePtr<ActiveNode> = at(&mut mem, 100, None);
+        a.set_break_type(&mut mem, 1);
+        a.set_fitness(&mut mem, 2);
+        a.set_break_node(&mut mem, MemPtr(150));
         a.set_line_number(&mut mem, 7);
         a.set_total_demerits(&mut mem, 0x5151);
         a.set_shortfall(&mut mem, Scaled(-0x20));
         a.set_glue(&mut mem, Scaled(0x30));
+        assert_eq!(mem.b16s1(100), 1);
+        assert_eq!(mem.b16s0(100), 2);
+        assert_eq!(mem.b32s1(101), 150);
+        assert_eq!(mem.b32s0(101), 7);
+        assert_eq!(mem.b32s1(102), 0x5151);
+        assert_eq!(mem.b32s1(103), -0x20);
+        assert_eq!(mem.b32s1(104), 0x30);
 
-        assert_eq!(a.break_type(&mem), 1);
-        assert_eq!(a.fitness(&mem), 2);
-        assert_eq!(a.break_node(&mem), MemPtr::from_raw(150));
-        assert_eq!(a.line_number(&mem), 7);
-        assert_eq!(a.total_demerits(&mem), 0x5151);
-        assert_eq!(a.shortfall(&mem), Scaled(-0x20));
-        assert_eq!(a.glue(&mem), Scaled(0x30));
-
-        // C-exact raw word/subfield placement (xetex-xetexd.h:220-225).
-        assert_eq!(mem.b16s1(p.0), 1); // break_type (type word)
-        assert_eq!(mem.b16s0(p.0), 2); // fitness (subtype word)
-        assert_eq!(mem.b32s1(p.0 + 1), 150); // break_node (rlink)
-        assert_eq!(mem.b32s0(p.0 + 1), 7); // line_number (llink)
-        assert_eq!(mem.b32s1(p.0 + 2), 0x5151); // total_demerits
-        assert_eq!(mem.b32s1(p.0 + 3), -0x20); // shortfall
-        assert_eq!(mem.b32s1(p.0 + 4), 0x30); // glue
-    }
-
-    #[test]
-    fn delta_node_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        let d = unsafe { NodePtr::<DeltaNode>::from_idx_unchecked(p) };
-
+        let d: NodePtr<DeltaNode> = at(&mut mem, 100, None);
         d.set_dwidth(&mut mem, Scaled(0x11));
-        d.set_dstretch0(&mut mem, Scaled(0x22));
-        d.set_dstretch1(&mut mem, Scaled(0x33));
-        d.set_dstretch2(&mut mem, Scaled(0x44));
         d.set_dstretch3(&mut mem, Scaled(0x55));
         d.set_dshrink(&mut mem, Scaled(-0x66));
+        assert_eq!(mem.b32s1(101), 0x11);
+        assert_eq!(mem.b32s1(105), 0x55);
+        assert_eq!(mem.b32s1(106), -0x66);
 
-        assert_eq!(d.dwidth(&mem), Scaled(0x11));
-        assert_eq!(d.dstretch0(&mem), Scaled(0x22));
-        assert_eq!(d.dstretch1(&mem), Scaled(0x33));
-        assert_eq!(d.dstretch2(&mem), Scaled(0x44));
-        assert_eq!(d.dstretch3(&mem), Scaled(0x55));
-        assert_eq!(d.dshrink(&mem), Scaled(-0x66));
-
-        // C-exact placement: all six are b32.s1 at +1..+6 (xetex-xetexd.h:230-235).
-        assert_eq!(mem.b32s1(p.0 + 1), 0x11);
-        assert_eq!(mem.b32s1(p.0 + 2), 0x22);
-        assert_eq!(mem.b32s1(p.0 + 3), 0x33);
-        assert_eq!(mem.b32s1(p.0 + 4), 0x44);
-        assert_eq!(mem.b32s1(p.0 + 5), 0x55);
-        assert_eq!(mem.b32s1(p.0 + 6), -0x66);
-    }
-
-    #[test]
-    fn passive_node_fields_roundtrip_at_the_right_offsets() {
-        let mut mem = fresh_mem(200);
-        let p = MemIdx::new(100);
-        let pn = unsafe { NodePtr::<PassiveNode>::from_idx_unchecked(p) };
-
-        pn.set_link(&mut mem, MemPtr::from_raw(90));
-        mem.set_b32s0(p.0, 5);
-        pn.set_cur_break(&mut mem, MemPtr::from_raw(150));
-        pn.set_prev_break(&mut mem, MemPtr::from_raw(80));
-
-        assert_eq!(pn.link(&mem), MemPtr::from_raw(90));
-        assert_eq!(mem.b32s0(p.0), 5);
-        assert_eq!(pn.cur_break(&mem), MemPtr::from_raw(150));
-        assert_eq!(pn.prev_break(&mem), MemPtr::from_raw(80));
-        // next_break aliases prev_break (same +1.b32.s0 slot).
-        assert_eq!(pn.next_break(&mem), MemPtr::from_raw(80));
-
-        // C-exact placement (xetex-xetexd.h:278-281).
-        assert_eq!(mem.b32s1(p.0), 90); // link
-        assert_eq!(mem.b32s0(p.0), 5); // serial (info word)
-        assert_eq!(mem.b32s1(p.0 + 1), 150); // cur_break (rlink)
-        assert_eq!(mem.b32s0(p.0 + 1), 80); // prev_break (llink)
-
-        // the alias setter writes the same slot
-        pn.set_next_break(&mut mem, MemPtr::from_raw(70));
-        assert_eq!(pn.prev_break(&mem), MemPtr::from_raw(70));
-        assert_eq!(mem.b32s0(p.0 + 1), 70);
+        let pn: NodePtr<PassiveNode> = at(&mut mem, 100, None);
+        pn.set_link(&mut mem, MemPtr(90));
+        pn.set_cur_break(&mut mem, MemPtr(150));
+        pn.set_prev_break(&mut mem, MemPtr(80));
+        assert_eq!(pn.next_break(&mem), MemPtr(80));
+        assert_eq!(mem.b32s1(100), 90);
+        assert_eq!(mem.b32s1(101), 150);
+        pn.set_next_break(&mut mem, MemPtr(70));
+        assert_eq!(mem.b32s0(101), 70);
     }
 }
