@@ -2459,9 +2459,8 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
 fn char_italic(st: &mut EngineState, ch: NodePtr<CharNode>) -> i32 {
     let f = ch.font(&st.mem).0;
     let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-    let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
-    st.fonts
-        .font_info_b32s1(st.fonts.italic_base_entry(f) + (info.s1 / 4) as i32)
+    let info = crate::fonts::char_info(&st.fonts, f, c);
+    crate::fonts::char_italic(&st.fonts, f, info)
 }
 
 pub(crate) fn append_italic_correction_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -2525,9 +2524,8 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
         }
         NewChar::Char(ch) => {
             let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-            let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
-            st.fonts
-                .font_info_b32s1(st.fonts.width_base_entry(f) + info.s3 as i32)
+            let info = crate::fonts::char_info(&st.fonts, f, c);
+            crate::fonts::char_width(&st.fonts, f, info)
         }
     };
 
@@ -2568,7 +2566,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
         }
         NewChar::Char(ch) => {
             let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-            let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
+            let info = crate::fonts::char_info(&st.fonts, f, c);
             let w = st
                 .fonts
                 .font_info_b32s1(st.fonts.width_base_entry(f) + info.s3 as i32);
@@ -3606,7 +3604,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
 fn cur_l_info(st: &mut EngineState) -> crate::mem_types::B16x4 {
     let main_f = st.mainloop.main_f;
     let c = crate::fonts::effective_char(&mut st.fonts, main_f, st.mainloop.cur_l as u16);
-    st.fonts.font_info_b16(st.fonts.char_base_entry(main_f) + c)
+    crate::fonts::char_info(&st.fonts, main_f, c)
 }
 
 /// Returns true to go to `big_switch`, false to go to `reswitch`.

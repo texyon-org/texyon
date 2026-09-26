@@ -410,8 +410,7 @@ fn fetch_core(
         if scanner.cur_c >= fonts.font_bc_entry(scanner.cur_f) as i32
             && scanner.cur_c <= fonts.font_ec_entry(scanner.cur_f) as i32
         {
-            scanner.cur_i =
-                fonts.font_info_b16(fonts.char_base_entry(scanner.cur_f) + scanner.cur_c);
+            scanner.cur_i = crate::fonts::char_info(fonts, scanner.cur_f, scanner.cur_c);
         } else {
             scanner.cur_i = fonts.null_character;
         }
@@ -1115,7 +1114,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         let w = x.width(&st.mem).0;
         while acc_i.s1 % 4 == LIST_TAG {
             let larger = acc_i.s0 as i32;
-            acc_i = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + larger);
+            acc_i = crate::fonts::char_info(&st.fonts, f, larger);
             if acc_i.s3 == 0 || char_width(&st.fonts, f, acc_i) > w {
                 break;
             }
@@ -2363,7 +2362,7 @@ fn char_box_tfm(
     c: u16,
 ) -> Result<AnyBox, NodeRecycleAbort> {
     let c_eff = crate::fonts::effective_char(fonts, f, c);
-    let q = fonts.font_info_b16(fonts.char_base_entry(f) + c_eff);
+    let q = crate::fonts::char_info(fonts, f, c_eff);
     let width = char_width(fonts, f, q) + char_italic(fonts, f, q);
     let height = char_height(fonts, f, q);
     let depth = char_depth(fonts, f, q);
@@ -2387,7 +2386,7 @@ fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
 
 fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
     let c = crate::fonts::effective_char(fonts, f, c);
-    let q = fonts.font_info_b16(fonts.char_base_entry(f) + c);
+    let q = crate::fonts::char_info(fonts, f, c);
     char_height(fonts, f, q) + char_depth(fonts, f, q)
 }
 
@@ -3626,11 +3625,7 @@ pub(crate) fn init_math_in(
                         let f = ch.font(&st.mem).0;
                         let c =
                             crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-                        let d = char_width(
-                            &st.fonts,
-                            f,
-                            st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c),
-                        );
+                        let d = char_width(&st.fonts, f, crate::fonts::char_info(&st.fonts, f, c));
                         break (d, true);
                     }
                     break match st.mem.classify(MemIdx::new(p)) {
@@ -3827,7 +3822,7 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
     if let Some(ch) = st.mem.as_char(p).filter(|_| p.link(&st.mem).is_null()) {
         let f = ch.font(&st.mem).0;
         let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-        let q = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
+        let q = crate::fonts::char_info(&st.fonts, f, c);
         let v = char_width(&st.fonts, f, q);
         let bw = b.width(&st.mem).0;
         if v != bw {
@@ -3950,7 +3945,7 @@ fn build_ext_delimiter_box(
     let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
     let u = height_plus_depth(fonts, f, r.s0);
     let effective_c = crate::fonts::effective_char(fonts, f, r.s0);
-    let qq = fonts.font_info_b16(fonts.char_base_entry(f) + effective_c);
+    let qq = crate::fonts::char_info(fonts, f, effective_c);
     let box_width = char_width(fonts, f, qq) + char_italic(fonts, f, qq);
     vb.set_width(mem, Scaled(box_width));
     let mut w = 0;
@@ -4061,7 +4056,7 @@ fn var_delimiter_in(
                             let mut y = x as u16;
                             if y >= fonts.font_bc_entry(g) && y <= fonts.font_ec_entry(g) {
                                 loop {
-                                    q = fonts.font_info_b16(fonts.char_base_entry(g) + y as i32);
+                                    q = crate::fonts::char_info(fonts, g, y as i32);
                                     if q.s3 == 0 {
                                         break;
                                     }

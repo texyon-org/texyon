@@ -1509,10 +1509,10 @@ fn hpack_in(
         while let Some(ch) = mem.as_char(p) {
             let f = ch.font(mem).0;
             let c = effective_char(fonts, f, ch.character(mem));
-            let info = fonts.font_info_b16(fonts.char_base_entry(f) + c);
-            x += fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32);
-            h = h.max(fonts.font_info_b32s1(fonts.height_base_entry(f) + info.s2 as i32 / 16));
-            d = d.max(fonts.font_info_b32s1(fonts.depth_base_entry(f) + info.s2 as i32 % 16));
+            let info = crate::fonts::char_info(fonts, f, c);
+            x += crate::fonts::char_width(fonts, f, info);
+            h = h.max(crate::fonts::char_height(fonts, f, info));
+            d = d.max(crate::fonts::char_depth(fonts, f, info));
             p = p.link(mem);
         }
 

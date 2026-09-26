@@ -872,8 +872,8 @@ fn lr_matches(mem: &MemState, scanner: &ScannerState, math: NodePtr<MathNode>) -
 }
 
 fn font_character_width(fonts: &FontState, f: i32, c: i32) -> i32 {
-    let info = fonts.font_info_b16(fonts.char_base_entry(f) + c);
-    fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
+    let info = crate::fonts::char_info(fonts, f, c);
+    crate::fonts::char_width(fonts, f, info)
 }
 
 fn push_dvi_level(shipout: &mut ShipoutState) -> Result<i32, ShipoutAbort> {

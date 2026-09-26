@@ -47,6 +47,10 @@ pub(crate) const EXTRA_SPACE_CODE: i32 = 7;
 
 pub(crate) type CharInfo = B16x4;
 
+pub(crate) fn char_info(fonts: &FontState, f: i32, c: i32) -> CharInfo {
+    fonts.font_info_b16(fonts.char_base_entry(f) + c)
+}
+
 pub(crate) fn char_width(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
     fonts.font_info_b32s1(fonts.width_base_entry(f) + i.s3 as i32)
 }
@@ -76,7 +80,7 @@ pub fn effective_char(fonts: &mut FontState, f: i32, c: u16) -> i32 {
 
 pub fn effective_char_info(fonts: &mut FontState, f: i32, c: u16) -> CharInfo {
     let c = effective_char(fonts, f, c);
-    fonts.font_info_b16(fonts.char_base_entry(f) + c)
+    char_info(fonts, f, c)
 }
 
 /// The UTF-16 encoding of `c`: one unit, or a surrogate pair above the BMP.
@@ -595,9 +599,8 @@ unsafe fn read_font_info_tfm(
     }
     fonts.set_font_size_entry(f, z);
 
-    let char_exists = |fonts: &FontState, ch: i32| {
-        (bc..=ec).contains(&ch) && fonts.font_info_b16(fonts.char_base_entry(f) + ch).s3 != 0
-    };
+    let char_exists =
+        |fonts: &FontState, ch: i32| (bc..=ec).contains(&ch) && char_info(fonts, f, ch).s3 != 0;
 
     for k in fonts.fmem_ptr..fonts.width_base_entry(f) {
         let bytes = read!(read_tfm_bytes(tfm_file));
@@ -618,7 +621,7 @@ unsafe fn read_font_info_tfm(
                 let current = k + bc - fonts.fmem_ptr;
                 let mut dd = d;
                 while dd < current {
-                    let qw = fonts.font_info_b16(fonts.char_base_entry(f) + dd);
+                    let qw = char_info(fonts, f, dd);
                     if qw.s1 % 4 != LIST_TAG {
                         break;
                     }
@@ -745,7 +748,7 @@ unsafe fn read_font_info_tfm(
     }
     fonts.set_font_bchar_entry(f, bchar);
     fonts.set_font_false_bchar_entry(f, bchar);
-    if bchar <= ec && bchar >= bc && fonts.font_info_b16(fonts.char_base_entry(f) + bchar).s3 > 0 {
+    if bchar <= ec && bchar >= bc && char_info(fonts, f, bchar).s3 > 0 {
         fonts.set_font_false_bchar_entry(f, TOO_BIG_CHAR);
     }
 

@@ -67,8 +67,8 @@ fn has_infinite_shrink(mem: &MemState, spec: NodePtr<GlueSpecNode>) -> bool {
 #[inline]
 fn font_character_width(fonts: &mut FontState, f: i32, c: u16) -> i32 {
     let ec = crate::fonts::effective_char(fonts, f, c);
-    let info = fonts.font_info_b16(fonts.char_base_entry(f) + ec);
-    fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
+    let info = crate::fonts::char_info(fonts, f, ec);
+    crate::fonts::char_width(fonts, f, info)
 }
 
 /// A node on the active list, which carries no `NODE_type` of its own.
