@@ -10,9 +10,9 @@ pub fn badness(t: Scaled, s: Scaled) -> i32 {
     if s <= 0 {
         return INF_BAD;
     }
-    // Approximates 100(t/s)^3 without overflow, as in tex.web.
+    // Approximates 100(t/s)^3 without overflow for t >= 0, as in tex.web.
     let r = if t <= 7_230_584 {
-        (t * 297) / s
+        t.wrapping_mul(297) / s
     } else if s >= 1_663_497 {
         t / (s / 297)
     } else {
@@ -21,7 +21,7 @@ pub fn badness(t: Scaled, s: Scaled) -> i32 {
     if r > 1290 {
         return INF_BAD;
     }
-    (r * r * r + 0x2_0000) / 0x4_0000
+    r.wrapping_mul(r).wrapping_mul(r).wrapping_add(0x2_0000) / 0x4_0000
 }
 
 /// Runs its closure when dropped, including during unwinding.

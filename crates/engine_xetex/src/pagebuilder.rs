@@ -461,7 +461,10 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
 
     let rec = page_ins(r);
     if rec.is_split_up(&st.mem) {
-        st.shipout.insert_penalties += ins.float_cost(&st.mem);
+        st.shipout.insert_penalties = st
+            .shipout
+            .insert_penalties
+            .wrapping_add(ins.float_cost(&st.mem));
         return Ok(());
     }
     rec.set_last_ins_ptr(&mut st.mem, p);
@@ -504,9 +507,12 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     rec.set_broken_ptr(&mut st.mem, q);
     rec.set_broken_ins(&mut st.mem, p);
     if q.is_null() {
-        st.shipout.insert_penalties += EJECT_PENALTY;
+        st.shipout.insert_penalties = st.shipout.insert_penalties.wrapping_add(EJECT_PENALTY);
     } else if let Ok(AnyNode::Penalty(pen)) = st.mem.classify(MemIdx::new(q)) {
-        st.shipout.insert_penalties += pen.penalty(&st.mem);
+        st.shipout.insert_penalties = st
+            .shipout
+            .insert_penalties
+            .wrapping_add(pen.penalty(&st.mem));
     }
     Ok(())
 }
@@ -621,7 +627,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                     } else if pi <= EJECT_PENALTY {
                         pi
                     } else if b < INF_BAD {
-                        b + pi + st.shipout.insert_penalties
+                        (b + pi).wrapping_add(st.shipout.insert_penalties)
                     } else {
                         DEPLORABLE
                     };

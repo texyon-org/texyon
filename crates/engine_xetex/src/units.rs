@@ -87,6 +87,9 @@ impl MemPtr {
 }
 
 /// A length in units of 2^-16 pt.
+///
+/// Arithmetic wraps like TeX's 32-bit integers: sums of legal dimensions can
+/// exceed `max_dimen`, and TeX checks overflow only where WEB says so.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
 pub struct Scaled(pub i32);
@@ -104,7 +107,7 @@ impl Scaled {
 
     #[inline]
     pub fn abs(self) -> Scaled {
-        Scaled(self.0.abs())
+        Scaled(self.0.wrapping_abs())
     }
 
     #[inline]
@@ -117,7 +120,7 @@ impl std::ops::Add for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn add(self, rhs: Scaled) -> Scaled {
-        Scaled(self.0 + rhs.0)
+        Scaled(self.0.wrapping_add(rhs.0))
     }
 }
 
@@ -125,7 +128,7 @@ impl std::ops::Sub for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn sub(self, rhs: Scaled) -> Scaled {
-        Scaled(self.0 - rhs.0)
+        Scaled(self.0.wrapping_sub(rhs.0))
     }
 }
 
@@ -133,7 +136,7 @@ impl std::ops::Neg for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn neg(self) -> Scaled {
-        Scaled(-self.0)
+        Scaled(self.0.wrapping_neg())
     }
 }
 
@@ -141,7 +144,7 @@ impl std::ops::Mul<i32> for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn mul(self, rhs: i32) -> Scaled {
-        Scaled(self.0 * rhs)
+        Scaled(self.0.wrapping_mul(rhs))
     }
 }
 
@@ -149,21 +152,21 @@ impl std::ops::Div<i32> for Scaled {
     type Output = Scaled;
     #[inline(always)]
     fn div(self, rhs: i32) -> Scaled {
-        Scaled(self.0 / rhs)
+        Scaled(self.0.wrapping_div(rhs))
     }
 }
 
 impl std::ops::AddAssign for Scaled {
     #[inline(always)]
     fn add_assign(&mut self, rhs: Scaled) {
-        self.0 += rhs.0;
+        *self = *self + rhs;
     }
 }
 
 impl std::ops::SubAssign for Scaled {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: Scaled) {
-        self.0 -= rhs.0;
+        *self = *self - rhs;
     }
 }
 

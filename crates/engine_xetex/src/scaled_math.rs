@@ -273,14 +273,14 @@ impl ErrorState {
         }
     }
 
-    /// `q` times the 28-bit fraction `f`.
+    /// `q` times the 28-bit fraction `f`. A `q` of `i32::MIN` wraps as in C.
     fn take_frac(&mut self, mut q: i32, mut f: i32) -> i32 {
         let mut negative = f < 0;
         if negative {
             f = -f;
         }
         if q < 0 {
-            q = -q;
+            q = q.wrapping_neg();
             negative = !negative;
         }
 
@@ -302,7 +302,7 @@ impl ErrorState {
         if q < 0x4000_0000 {
             loop {
                 if f & 1 != 0 {
-                    p = (p + q) / 2;
+                    p = p.wrapping_add(q) / 2;
                 } else {
                     p /= 2;
                 }
@@ -314,7 +314,7 @@ impl ErrorState {
         } else {
             loop {
                 if f & 1 != 0 {
-                    p = p + (q - p) / 2;
+                    p += q.wrapping_sub(p) / 2;
                 } else {
                     p /= 2;
                 }
@@ -326,15 +326,15 @@ impl ErrorState {
         }
 
         let be_careful = n - 0x7FFF_FFFF;
-        if be_careful + p > 0 {
+        if be_careful.wrapping_add(p) > 0 {
             self.arith_error = true;
-            n = 0x7FFF_FFFF - p;
+            n = 0x7FFF_FFFF_i32.wrapping_sub(p);
         }
 
         if negative {
-            -(n + p)
+            n.wrapping_add(p).wrapping_neg()
         } else {
-            n + p
+            n.wrapping_add(p)
         }
     }
 
@@ -360,7 +360,7 @@ impl ErrorState {
     }
 
     pub fn init_randoms(&mut self, seed: i32) {
-        let mut j = seed.abs();
+        let mut j = seed.wrapping_abs();
         while j >= 0x1000_0000 {
             j /= 2;
         }
@@ -368,7 +368,7 @@ impl ErrorState {
         let mut k = 1_i32;
         for i in 0_usize..55 {
             let jj = k;
-            k = j - k;
+            k = j.wrapping_sub(k);
             j = jj;
             if k < 0 {
                 k += 0x1000_0000;
@@ -384,8 +384,8 @@ impl ErrorState {
     /// A uniform random integer between 0 and `x` (exclusive, sign of `x`).
     pub fn unif_rand(&mut self, x: i32) -> i32 {
         let r = self.next_random();
-        let y = self.take_frac(x.abs(), r);
-        if y == x.abs() {
+        let y = self.take_frac(x.wrapping_abs(), r);
+        if y == x.wrapping_abs() {
             0
         } else if x > 0 {
             y

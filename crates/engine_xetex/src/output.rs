@@ -225,7 +225,7 @@ pub(crate) fn print_scaled(st: &mut EngineState, s: Scaled) {
     let mut s = s.0;
     if s < 0 {
         print_char(st, b'-');
-        s = -s;
+        s = s.wrapping_neg();
     }
     print_int(st, s / 0x10000);
     print_char(st, b'.');

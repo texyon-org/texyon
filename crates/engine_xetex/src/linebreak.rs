@@ -839,7 +839,7 @@ impl MemState {
         q.set_break_type(self, UNHYPHENATED as u16);
         q.set_fitness(self, DECENT_FIT as u16);
         q.set_break_node(self, MemPtr::NULL);
-        q.set_line_number(self, prev_graf + 1);
+        q.set_line_number(self, prev_graf.wrapping_add(1));
         q.set_total_demerits(self, 0);
         ACTIVE_LIST.set_link(self, q.ptr());
         if linebreak.do_last_line_fit {
@@ -907,7 +907,7 @@ impl MemState {
         let mut actual_looseness = 0;
         loop {
             if let ActiveOrDelta::Active(a) = self.classify_active_or_delta(r) {
-                let line_diff = a.line_number(self) - linebreak.best_line;
+                let line_diff = a.line_number(self).wrapping_sub(linebreak.best_line);
                 if (line_diff < actual_looseness && looseness <= line_diff)
                     || (line_diff > actual_looseness && looseness >= line_diff)
                 {
@@ -1136,7 +1136,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
             lb.second_indent = Scaled::ZERO;
         } else {
             let hang_after = st.eqtb.int_par(IntPar::HangAfter);
-            lb.last_special_line = hang_after.abs();
+            lb.last_special_line = hang_after.wrapping_abs();
             if hang_after < 0 {
                 lb.first_width = hsize - hang_indent.abs();
                 lb.first_indent = hang_indent.max(Scaled::ZERO);
@@ -1867,7 +1867,7 @@ impl ListStateRecord {
         }
         scanner.adjust_tail = MemPtr::NULL;
 
-        if *cur_line + 1 != linebreak.best_line {
+        if cur_line.wrapping_add(1) != linebreak.best_line {
             let mut pen = mem
                 .etex_penalty(eqtb, ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, *cur_line)
                 .unwrap_or_else(|| eqtb.int_par(IntPar::InterLinePenalty));
@@ -1875,10 +1875,12 @@ impl ListStateRecord {
             match mem.etex_penalty(
                 eqtb,
                 ETEX_PENALTIES_PAR_CLUB_PENALTIES,
-                *cur_line - self.prev_graf,
+                cur_line.wrapping_sub(self.prev_graf),
             ) {
-                Some(p) => pen += p,
-                None if *cur_line == self.prev_graf + 1 => pen += eqtb.int_par(IntPar::ClubPenalty),
+                Some(p) => pen = pen.wrapping_add(p),
+                None if *cur_line == self.prev_graf.wrapping_add(1) => {
+                    pen = pen.wrapping_add(eqtb.int_par(IntPar::ClubPenalty))
+                }
                 None => {}
             }
 
@@ -1890,14 +1892,20 @@ impl ListStateRecord {
             } else {
                 (ETEX_PENALTIES_PAR_WIDOW_PENALTIES, IntPar::WidowPenalty)
             };
-            match mem.etex_penalty(eqtb, widow_array, linebreak.best_line - *cur_line - 1) {
-                Some(p) => pen += p,
-                None if *cur_line + 2 == linebreak.best_line => pen += eqtb.int_par(widow_penalty),
+            match mem.etex_penalty(
+                eqtb,
+                widow_array,
+                linebreak.best_line.wrapping_sub(*cur_line).wrapping_sub(1),
+            ) {
+                Some(p) => pen = pen.wrapping_add(p),
+                None if cur_line.wrapping_add(2) == linebreak.best_line => {
+                    pen = pen.wrapping_add(eqtb.int_par(widow_penalty))
+                }
                 None => {}
             }
 
             if hpack.disc_break {
-                pen += eqtb.int_par(IntPar::BrokenPenalty);
+                pen = pen.wrapping_add(eqtb.int_par(IntPar::BrokenPenalty));
             }
 
             if pen != 0 {
@@ -1906,7 +1914,7 @@ impl ListStateRecord {
             }
         }
 
-        *cur_line += 1;
+        *cur_line = cur_line.wrapping_add(1);
         linebreak.cur_p = passive_node(linebreak.cur_p).next_break(mem);
 
         if !linebreak.cur_p.is_null() && !hpack.post_disc_break {
@@ -1955,7 +1963,7 @@ fn post_line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
 
     st.mem.reverse_best_breaks(&mut st.linebreak);
 
-    let mut cur_line = st.input.cur_list.prev_graf + 1;
+    let mut cur_line = st.input.cur_list.prev_graf.wrapping_add(1);
     loop {
         let hpack = match st.linebreak.post_line_break_prefix(
             &mut st.errors,
@@ -2002,7 +2010,7 @@ fn post_line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
         return Err(Abort::Confusion("line breaking"));
     }
 
-    st.input.cur_list.prev_graf = st.linebreak.best_line - 1;
+    st.input.cur_list.prev_graf = st.linebreak.best_line.wrapping_sub(1);
     st.input.cur_list.e_tex_aux = lr_ptr;
     Ok(())
 }
@@ -2124,8 +2132,8 @@ impl MemState {
             *prev_r = q.ptr();
         }
 
-        let adj = eqtb.int_par(IntPar::AdjDemerits).abs();
-        if adj >= MAX_HALFWORD - linebreak.minimum_demerits {
+        let adj = eqtb.int_par(IntPar::AdjDemerits).wrapping_abs();
+        if adj >= MAX_HALFWORD.wrapping_sub(linebreak.minimum_demerits) {
             linebreak.minimum_demerits = AWFUL_BAD - 1;
         } else {
             linebreak.minimum_demerits += adj;
@@ -2141,7 +2149,7 @@ impl MemState {
 
                 let q = self.new_active_node(i32::from(linebreak.active_node_size), r)?;
                 q.set_break_node(self, linebreak.passive);
-                q.set_line_number(self, linebreak.best_pl_line[fit_class] + 1);
+                q.set_line_number(self, linebreak.best_pl_line[fit_class].wrapping_add(1));
                 q.set_fitness(self, fit_class as u16);
                 q.set_break_type(self, break_type as u16);
                 q.set_total_demerits(self, linebreak.minimal_demerits[fit_class]);
@@ -2375,8 +2383,8 @@ impl MemState {
             let mut d = if artificial_demerits {
                 0
             } else {
-                let mut d = eqtb.int_par(IntPar::LinePenalty) + b;
-                if d.abs() >= 10_000 {
+                let mut d = eqtb.int_par(IntPar::LinePenalty).wrapping_add(b);
+                if d.wrapping_abs() >= 10_000 {
                     d = 100_000_000;
                 } else {
                     d *= d;
@@ -2389,21 +2397,21 @@ impl MemState {
                 }
 
                 if break_type == HYPHENATED && r_active.break_type(self) as i16 == HYPHENATED {
-                    d += if linebreak.cur_p.is_null() {
+                    d = d.wrapping_add(if linebreak.cur_p.is_null() {
                         eqtb.int_par(IntPar::FinalHyphenDemerits)
                     } else {
                         eqtb.int_par(IntPar::DoubleHyphenDemerits)
-                    };
+                    });
                 }
 
                 if (fit_class as i32 - i32::from(r_active.fitness(self))).abs() > 1 {
-                    d += eqtb.int_par(IntPar::AdjDemerits);
+                    d = d.wrapping_add(eqtb.int_par(IntPar::AdjDemerits));
                 }
 
                 d
             };
 
-            d += r_active.total_demerits(self);
+            d = d.wrapping_add(r_active.total_demerits(self));
             if d <= linebreak.minimal_demerits[fit_class] {
                 linebreak.minimal_demerits[fit_class] = d;
                 linebreak.best_place[fit_class] = r_active.break_node(self);

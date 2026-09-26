@@ -436,11 +436,11 @@ impl DviWriter {
     /// `right` or `down` by `w`, in as few bytes as it fits.
     pub(crate) fn movement(&mut self, axis: Axis, w: Scaled) -> Result<(), Abort> {
         let w = w.0;
-        let len = if w.abs() >= 0x800000 {
+        let len = if w.wrapping_abs() >= 0x800000 {
             4
-        } else if w.abs() >= 0x8000 {
+        } else if w.wrapping_abs() >= 0x8000 {
             3
-        } else if w.abs() >= 128 {
+        } else if w.wrapping_abs() >= 128 {
             2
         } else {
             1

@@ -1833,7 +1833,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if negative {
-        st.scanner.cur_val = -st.scanner.cur_val;
+        st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
     }
     Ok(())
 }
@@ -1956,7 +1956,7 @@ pub(crate) fn xetex_scan_dimen(
 
         if st.scanner.cur_val < 0 {
             negative = !negative;
-            st.scanner.cur_val = -st.scanner.cur_val;
+            st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
         }
 
         if requires_units {
@@ -2083,7 +2083,7 @@ pub(crate) fn xetex_scan_dimen(
         }
     }
 
-    if st.errors.arith_error || st.scanner.cur_val.abs() >= 0x4000_0000 {
+    if st.errors.arith_error || st.scanner.cur_val.wrapping_abs() >= 0x4000_0000 {
         print_err(st, "Dimension too large");
         st.errors.help(&[
             "I can't work with sizes bigger than about 19 feet.",
@@ -2094,7 +2094,7 @@ pub(crate) fn xetex_scan_dimen(
         st.errors.arith_error = false;
     }
     if negative {
-        st.scanner.cur_val = -st.scanner.cur_val;
+        st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
     }
     Ok(())
 }
@@ -2102,7 +2102,7 @@ fn attach_fraction(st: &mut EngineState, f: i32) {
     if st.scanner.cur_val >= 16384 {
         st.errors.arith_error = true;
     } else {
-        st.scanner.cur_val = st.scanner.cur_val * 65536 + f;
+        st.scanner.cur_val = st.scanner.cur_val.wrapping_mul(65536).wrapping_add(f);
     }
 }
 
@@ -2127,7 +2127,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<(), A
         back_input(st)?;
         scan_dimen(st, mu, false, false)?;
         if negative {
-            st.scanner.cur_val = -st.scanner.cur_val;
+            st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
         }
     }
 

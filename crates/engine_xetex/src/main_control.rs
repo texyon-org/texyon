@@ -2517,7 +2517,7 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
                 crate::scan::scan_dimen(st, false, false, false)?;
             }
             if q == ADVANCE {
-                st.scanner.cur_val += w;
+                st.scanner.cur_val = st.scanner.cur_val.wrapping_add(w);
             }
         } else {
             crate::scan::scan_glue(st, p)?;

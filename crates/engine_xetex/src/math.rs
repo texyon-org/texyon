@@ -2824,7 +2824,7 @@ pub(crate) fn resume_after_display(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     crate::save::unsave(st)?;
-    st.input.cur_list.prev_graf = st.input.cur_list.prev_graf + 3;
+    st.input.cur_list.prev_graf = st.input.cur_list.prev_graf.wrapping_add(3);
     crate::mem::push_nest(st)?;
     st.input.cur_list.mode = HMODE;
     st.input.cur_list.set_aux_s0(1000);
@@ -3429,7 +3429,12 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         let l;
         let s;
         if let Some(shape) = st.eqtb.par_shape() {
-            let line = (st.input.cur_list.prev_graf + 2).min(shape.lines(&st.mem));
+            let line = st
+                .input
+                .cur_list
+                .prev_graf
+                .wrapping_add(2)
+                .min(shape.lines(&st.mem));
             s = shape.indent(&st.mem, line);
             l = shape.line_width(&st.mem, line);
         } else {
@@ -3437,7 +3442,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let hang_after = st.eqtb.int_par(IntPar::HangAfter);
             let prev_graf = st.input.cur_list.prev_graf;
             if hang != Scaled::ZERO
-                && ((hang_after >= 0 && prev_graf + 2 > hang_after) || prev_graf + 1 < -hang_after)
+                && ((hang_after >= 0 && prev_graf.wrapping_add(2) > hang_after)
+                    || prev_graf.wrapping_add(1) < hang_after.wrapping_neg())
             {
                 l = st.eqtb.dimen_par(DimenPar::Hsize) - hang.abs();
                 s = if hang > Scaled::ZERO {

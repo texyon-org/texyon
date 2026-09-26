@@ -327,7 +327,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                         skipped_branch_end(st);
                         return Ok(());
                     }
-                    n -= 1;
+                    n = n.wrapping_sub(1);
                 } else if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
                     pop_fi(st);
                 }

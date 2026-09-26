@@ -1630,7 +1630,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
         ExtensionCode::SetRandomSeed => {
             scan_int(st)?;
             if st.scanner.cur_val < 0 {
-                st.scanner.cur_val = -st.scanner.cur_val;
+                st.scanner.cur_val = st.scanner.cur_val.wrapping_neg();
             }
             st.errors.random_seed = st.scanner.cur_val;
             let random_seed = st.errors.random_seed;
