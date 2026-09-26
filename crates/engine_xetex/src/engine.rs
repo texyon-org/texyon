@@ -38,7 +38,7 @@ use crate::mem::{
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
-use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
+use crate::scan::{set_class, set_family, INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{
     ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
 };
@@ -423,9 +423,6 @@ fn initialize_more_variables(st: &mut EngineState) {
 }
 
 fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumber) {
-    let set_family = |x: i32| (x & 0xFF) << 24;
-    let set_class = |x: i32| (x & 0x07) << 21;
-
     let mem = &mut st.mem;
     for spec in [ZERO_GLUE, FIL_GLUE, FILL_GLUE, SS_GLUE, FIL_NEG_GLUE] {
         spec.set_width(mem, Scaled::ZERO);

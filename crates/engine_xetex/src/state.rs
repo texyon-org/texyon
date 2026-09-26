@@ -1538,7 +1538,6 @@ impl InputClusterState {
         &name[..name.iter().position(|&b| b == 0).unwrap_or(name.len())]
     }
 
-    /// `name_of_file` in UTF-16.
     pub(crate) fn name_of_file16(&self) -> Vec<u16> {
         let mut s = &self.name_of_file[..];
         let mut units = Vec::with_capacity(s.len());

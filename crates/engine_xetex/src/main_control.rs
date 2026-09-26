@@ -1829,7 +1829,7 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.save_stack.save_ptr -= 1;
             let save_loc = NodePtr::<MathField>::at(st.save_stack.saved(0));
             save_loc.set_math_type(&mut st.mem, SUB_MLIST);
-            let p = MemPtr(crate::math::fin_mlist(st, TEX_NULL)?);
+            let p = crate::math::fin_mlist(st, MemPtr::NULL)?;
             save_loc.set_info(&mut st.mem, p);
             if p.is_null() || !p.link(&st.mem).is_null() {
                 return Ok(());

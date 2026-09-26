@@ -2509,24 +2509,18 @@ pub(crate) fn append_choices(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 impl ListStateRecord {
-    fn fin_mlist(
-        &mut self,
-        mem: &mut MemState,
-        p: impl crate::units::MemAddr,
-    ) -> Result<i32, Abort> {
-        let p = p.addr();
+    fn fin_mlist(&mut self, mem: &mut MemState, p: MemPtr) -> Result<MemPtr, Abort> {
         let q;
         let aux = self.aux_s1();
         if aux != TEX_NULL {
             let aux_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux));
             aux_noad.subscr().set_math_type(mem, SUB_MLIST);
             aux_noad.subscr().set_info(mem, self.head.link(mem));
-            if p == TEX_NULL {
-                q = aux;
+            if p.is_null() {
+                q = MemPtr(aux);
             } else {
-                q = aux_noad.supscr().info(mem).0;
-                let q_idx = MemIdx::new(q);
-                let q_noad = NodePtr::<Noad>::from_idx_unchecked(q_idx);
+                q = aux_noad.supscr().info(mem);
+                let q_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(q));
                 let etex_aux = self.e_tex_aux.0;
                 if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
                     return Err(Abort::Confusion("right"));
@@ -2536,17 +2530,17 @@ impl ListStateRecord {
                 let etex_link = etex_aux_noad.link(mem);
                 aux_noad.supscr().set_info(mem, etex_link);
                 etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
-                aux_noad.set_link(mem, MemPtr::from_raw(p));
+                aux_noad.set_link(mem, p);
             }
         } else {
-            self.tail.set_link(mem, MemPtr::from_raw(p));
-            q = self.head.link(mem).0;
+            self.tail.set_link(mem, p);
+            q = self.head.link(mem);
         }
         Ok(q)
     }
 }
 
-pub(crate) fn fin_mlist(st: &mut crate::state::EngineState, p: i32) -> Result<i32, Abort> {
+pub(crate) fn fin_mlist(st: &mut crate::state::EngineState, p: MemPtr) -> Result<MemPtr, Abort> {
     let q = st.input.cur_list.fin_mlist(&mut st.mem, p)?;
     st.mem.pop_nest(&mut st.input);
     Ok(q)
@@ -2581,7 +2575,7 @@ impl ListStateRecord {
 
 pub(crate) fn build_choices(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     crate::save::unsave(st)?;
-    let p = st.input.cur_list.fin_mlist(&mut st.mem, TEX_NULL)?;
+    let p = st.input.cur_list.fin_mlist(&mut st.mem, MemPtr::NULL)?;
     st.mem.pop_nest(&mut st.input);
     let complete = st
         .input
@@ -2788,16 +2782,16 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
             p.set_subtype(&mut st.mem, MIDDLE_NOAD);
         }
         let q = if t == NodeType::LeftNoad.as_raw() {
-            p.idx().0
+            p.ptr()
         } else {
-            let q = fin_mlist(st, p.idx().0)?;
+            let q = fin_mlist(st, p.ptr())?;
             crate::save::unsave(st)?;
             q
         };
         if t != NodeType::RightNoad.as_raw() {
             crate::main_control::push_math(st, GroupCode::MathLeft)?;
             let cl = &mut st.input.cur_list;
-            cl.head.set_link(&mut st.mem, MemPtr::from_raw(q));
+            cl.head.set_link(&mut st.mem, q);
             cl.tail = p.ptr();
             cl.e_tex_aux = p.ptr();
         } else {
@@ -2806,7 +2800,7 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
             cl.tail_append(&mut st.mem, inner.ptr());
             inner.set_noad_type(&mut st.mem, NodeType::InnerNoad);
             inner.nucleus().set_math_type(&mut st.mem, SUB_MLIST);
-            inner.nucleus().set_info(&mut st.mem, MemPtr(q));
+            inner.nucleus().set_info(&mut st.mem, q);
         }
     }
     Ok(())
@@ -3066,12 +3060,12 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let mut danger = check_math_fonts(st)?;
     let mut m = i32::from(st.input.cur_list.mode);
     let mut l = false;
-    let mut p = fin_mlist(st, TEX_NULL)?;
+    let mut p = fin_mlist(st, MemPtr::NULL)?;
 
     let a;
     if i32::from(st.input.cur_list.mode) == -m {
         check_display_end(st)?;
-        st.scanner.cur_mlist.0 = p;
+        st.scanner.cur_mlist = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
         mlist_to_hlist(st)?;
@@ -3087,7 +3081,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         j = pre_display_box(st);
         danger = check_math_fonts(st)?;
         m = i32::from(st.input.cur_list.mode);
-        p = fin_mlist(st, TEX_NULL)?;
+        p = fin_mlist(st, MemPtr::NULL)?;
     } else {
         a = None;
     }
@@ -3096,7 +3090,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         let math_surround = st.eqtb.dimen_par(DIMEN_PAR_MATH_SURROUND);
         let node = st.mem.new_math(math_surround, BEFORE)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
-        st.scanner.cur_mlist.0 = p;
+        st.scanner.cur_mlist = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
         mlist_to_hlist(st)?;
@@ -3121,7 +3115,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     if a.is_none() {
         check_display_end(st)?;
     }
-    st.scanner.cur_mlist.0 = p;
+    st.scanner.cur_mlist = p;
     st.scanner.cur_style = DISPLAY_STYLE;
     st.scanner.mlist_penalties = false;
     mlist_to_hlist(st)?;
