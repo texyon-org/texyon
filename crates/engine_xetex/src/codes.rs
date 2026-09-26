@@ -308,3 +308,34 @@ code_enum! {
         Height = 3 => "ht",
     }
 }
+
+code_enum! {
+    /// The `chr_code` of `\openout` and the other `extension` primitives. The
+    /// whatsit-making ones use their whatsit subtype.
+    pub(crate) enum ExtensionCode: u8 {
+        Open = 0 => "openout",
+        Write = 1 => "write",
+        Close = 2 => "closeout",
+        Special = 3 => "special",
+        Immediate = 4 => "immediate",
+        SetLanguage = 5 => "setlanguage",
+        PdfSavePos = 21 => "pdfsavepos",
+        ResetTimer = 31 => "resettimer",
+        SetRandomSeed = 33 => "setrandomseed",
+        PicFile = 41 => "XeTeXpicfile",
+        PdfFile = 42 => "XeTeXpdffile",
+        Glyph = 43 => "XeTeXglyph",
+        InputEncoding = 44 => "XeTeXinputencoding",
+        DefaultEncoding = 45 => "XeTeXdefaultencoding",
+        LinebreakLocale = 46 => "XeTeXlinebreaklocale",
+    }
+}
+
+const _: () = {
+    use crate::node::WhatsitSubtype;
+    assert!(ExtensionCode::Open.raw() == WhatsitSubtype::Open as i32);
+    assert!(ExtensionCode::Write.raw() == WhatsitSubtype::Write as i32);
+    assert!(ExtensionCode::Close.raw() == WhatsitSubtype::Close as i32);
+    assert!(ExtensionCode::Special.raw() == WhatsitSubtype::Special as i32);
+    assert!(ExtensionCode::PdfSavePos.raw() == WhatsitSubtype::PdfSavePos as i32);
+};

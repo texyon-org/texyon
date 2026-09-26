@@ -2,7 +2,7 @@
 //! TECkit mappings, shaping and measuring native word and glyph nodes, and the
 //! extension (`\openout`, `\write`, `\special`, ...) commands.
 
-use crate::codes::{ConvertCode, LastItemCode};
+use crate::codes::{ConvertCode, ExtensionCode, LastItemCode};
 use crate::params::IntPar;
 use std::ffi::c_int;
 use std::sync::Arc;
@@ -1395,24 +1395,6 @@ pub(crate) fn print_glyph_name(st: &mut EngineState, font: FontId, gid: i32) -> 
     Ok(())
 }
 
-// `\openout` .. `\special` and `\pdfsavepos` carry their whatsit subtype as the
-// command modifier.
-pub(crate) const OPEN_NODE: i32 = WhatsitSubtype::Open as i32;
-pub(crate) const WRITE_NODE: i32 = WhatsitSubtype::Write as i32;
-pub(crate) const CLOSE_NODE: i32 = WhatsitSubtype::Close as i32;
-pub(crate) const SPECIAL_NODE: i32 = WhatsitSubtype::Special as i32;
-pub(crate) const PDF_SAVE_POS_NODE: i32 = WhatsitSubtype::PdfSavePos as i32;
-pub(crate) const IMMEDIATE_CODE: i32 = 4;
-pub(crate) const SET_LANGUAGE_CODE: i32 = 5;
-pub(crate) const RESET_TIMER_CODE: i32 = 31;
-pub(crate) const SET_RANDOM_SEED_CODE: i32 = 33;
-pub(crate) const PIC_FILE_CODE: i32 = 41;
-pub(crate) const PDF_FILE_CODE: i32 = 42;
-pub(crate) const GLYPH_CODE: i32 = 43;
-pub(crate) const XETEX_INPUT_ENCODING_EXTENSION_CODE: i32 = 44;
-pub(crate) const XETEX_DEFAULT_ENCODING_EXTENSION_CODE: i32 = 45;
-pub(crate) const XETEX_LINEBREAK_LOCALE_EXTENSION_CODE: i32 = 46;
-
 /// The current source file if the input position moved since the last source
 /// special.
 fn new_source_position(st: &mut EngineState) -> Option<StrNumber> {
@@ -1526,9 +1508,9 @@ fn new_write_whatsit(
 }
 
 /// Appends the `\openout`, `\write` or `\closeout` whatsit for `cur_chr`.
-fn io_whatsit(st: &mut EngineState) -> Result<NodePtr<WhatsitNode>, Abort> {
-    Ok(match st.scanner.cur_chr {
-        OPEN_NODE => {
+fn io_whatsit(st: &mut EngineState, code: ExtensionCode) -> Result<NodePtr<WhatsitNode>, Abort> {
+    Ok(match code {
+        ExtensionCode::Open => {
             let w = new_write_whatsit(st, WhatsitSubtype::Open, OPEN_NODE_SIZE)?;
             crate::scan::scan_optional_equals(st)?;
             crate::io::scan_file_name(st)?;
@@ -1537,7 +1519,7 @@ fn io_whatsit(st: &mut EngineState) -> Result<NodePtr<WhatsitNode>, Abort> {
             w.set_open_ext(&mut st.mem, st.scanner.cur_ext);
             w
         }
-        WRITE_NODE => {
+        ExtensionCode::Write => {
             let k = st.scanner.cur_cs;
             let w = new_write_whatsit(st, WhatsitSubtype::Write, WRITE_NODE_SIZE)?;
             st.scanner.cur_cs = k;
@@ -1555,23 +1537,31 @@ fn io_whatsit(st: &mut EngineState) -> Result<NodePtr<WhatsitNode>, Abort> {
 
 pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
     let mode = st.input.cur_list.mode.abs();
-    match st.scanner.cur_chr {
-        OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
-            io_whatsit(st)?;
+    let code = ExtensionCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("ext1"))?;
+    match code {
+        ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close => {
+            io_whatsit(st, code)?;
         }
 
-        SPECIAL_NODE => {
+        ExtensionCode::Special => {
             let w = new_whatsit(st, WhatsitSubtype::Special, WRITE_NODE_SIZE)?;
             w.set_write_stream(&mut st.mem, crate::mem::TEX_NULL);
             crate::scan::scan_toks(st, false, true)?;
             w.set_write_tokens(&mut st.mem, st.scanner.def_ref);
         }
 
-        IMMEDIATE_CODE => {
+        ExtensionCode::Immediate => {
             get_x_token(st)?;
-            if st.scanner.cur_cmd == EXTENSION && st.scanner.cur_chr <= CLOSE_NODE {
+            let io_code =
+                match ExtensionCode::from_raw(st.scanner.cur_chr) {
+                    Some(
+                        c @ (ExtensionCode::Open | ExtensionCode::Write | ExtensionCode::Close),
+                    ) if st.scanner.cur_cmd == EXTENSION => Some(c),
+                    _ => None,
+                };
+            if let Some(io_code) = io_code {
                 let p = st.input.cur_list.tail;
-                let w = io_whatsit(st)?;
+                let w = io_whatsit(st, io_code)?;
                 crate::shipout::out_what(st, w)?;
                 st.mem.flush_node_list(st.input.cur_list.tail)?;
                 st.input.cur_list.tail = p;
@@ -1581,7 +1571,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        SET_LANGUAGE_CODE => {
+        ExtensionCode::SetLanguage => {
             if mode != HMODE {
                 crate::errors::report_illegal_case(st)?;
             } else {
@@ -1601,18 +1591,18 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        PDF_SAVE_POS_NODE => {
+        ExtensionCode::PdfSavePos => {
             new_whatsit(st, WhatsitSubtype::PdfSavePos, SMALL_NODE_SIZE)?;
         }
 
-        RESET_TIMER_CODE => {
+        ExtensionCode::ResetTimer => {
             if !st.config.deterministic_mode {
                 (st.shipout.epochseconds, st.shipout.microseconds) =
                     crate::texmfmp::get_seconds_and_micros();
             }
         }
 
-        SET_RANDOM_SEED_CODE => {
+        ExtensionCode::SetRandomSeed => {
             scan_int(st)?;
             if st.scanner.cur_val < 0 {
                 st.scanner.cur_val = -st.scanner.cur_val;
@@ -1622,15 +1612,15 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             st.errors.init_randoms(random_seed);
         }
 
-        PIC_FILE_CODE | PDF_FILE_CODE => {
+        ExtensionCode::PicFile | ExtensionCode::PdfFile => {
             if mode == MMODE {
                 crate::errors::report_illegal_case(st)?;
             } else {
-                load_picture(st, st.scanner.cur_chr == PDF_FILE_CODE)?;
+                load_picture(st, code == ExtensionCode::PdfFile)?;
             }
         }
 
-        GLYPH_CODE => {
+        ExtensionCode::Glyph => {
             if mode == VMODE {
                 crate::input::back_input(st)?;
                 new_graf(st, true)?;
@@ -1643,7 +1633,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                     return crate::errors::not_font_error_common(
                         st,
                         EXTENSION,
-                        GLYPH_CODE,
+                        ExtensionCode::Glyph.raw(),
                         cur_font,
                         "; not a native platform font",
                     );
@@ -1669,7 +1659,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        XETEX_INPUT_ENCODING_EXTENSION_CODE => {
+        ExtensionCode::InputEncoding => {
             crate::io::scan_and_pack_name(st)?;
             let name = st.input.name_of_file_bytes().to_vec();
             let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
@@ -1694,7 +1684,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
 
-        XETEX_DEFAULT_ENCODING_EXTENSION_CODE => {
+        ExtensionCode::DefaultEncoding => {
             crate::io::scan_and_pack_name(st)?;
             let name = st.input.name_of_file_bytes().to_vec();
             let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
@@ -1702,7 +1692,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             st.eqtb.set_int_par(IntPar::XetexDefaultInputEncoding, info);
         }
 
-        XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => {
+        ExtensionCode::LinebreakLocale => {
             crate::io::scan_file_name(st)?;
             let locale = if st.strings.length(st.scanner.cur_name) == 0 {
                 StrNumber::NONE
@@ -1711,8 +1701,6 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
             };
             st.eqtb.set_int_par(IntPar::XetexLinebreakLocale, locale.0);
         }
-
-        _ => return Err(Abort::Confusion("ext1")),
     }
     Ok(())
 }

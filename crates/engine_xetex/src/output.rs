@@ -20,8 +20,8 @@ use crate::cmd::{
     VRULE, VSKIP, XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
 use crate::codes::{
-    BoxCode, BoxDimenCode, ConvertCode, FiOrElseCode, IfCode, LastItemCode, ShorthandDefCode,
-    SkipCode, ValueLevel,
+    BoxCode, BoxDimenCode, ConvertCode, ExtensionCode, FiOrElseCode, IfCode, LastItemCode,
+    ShorthandDefCode, SkipCode, ValueLevel,
 };
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
@@ -35,12 +35,6 @@ use crate::consts::{
 };
 use crate::errors::{error, Abort};
 use crate::expand::MARKS_CODE;
-use crate::ext::{
-    CLOSE_NODE, GLYPH_CODE, IMMEDIATE_CODE, OPEN_NODE, PDF_FILE_CODE, PDF_SAVE_POS_NODE,
-    PIC_FILE_CODE, RESET_TIMER_CODE, SET_LANGUAGE_CODE, SET_RANDOM_SEED_CODE, SPECIAL_NODE,
-    WRITE_NODE, XETEX_DEFAULT_ENCODING_EXTENSION_CODE, XETEX_INPUT_ENCODING_EXTENSION_CODE,
-    XETEX_LINEBREAK_LOCALE_EXTENSION_CODE,
-};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{
     BACKED_UP, BACKED_UP_CHAR, EVERY_CR_TEXT, EVERY_DISPLAY_TEXT, EVERY_EOF_TEXT, EVERY_HBOX_TEXT,
@@ -1529,27 +1523,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             print(st, "macro");
         }
         END_TEMPLATE => print_esc(st, "outer endtemplate"),
-        EXTENSION => {
-            let name = match chr_code {
-                OPEN_NODE => "openout",
-                WRITE_NODE => "write",
-                CLOSE_NODE => "closeout",
-                SPECIAL_NODE => "special",
-                IMMEDIATE_CODE => "immediate",
-                SET_LANGUAGE_CODE => "setlanguage",
-                PDF_SAVE_POS_NODE => "pdfsavepos",
-                RESET_TIMER_CODE => "resettimer",
-                SET_RANDOM_SEED_CODE => "setrandomseed",
-                PIC_FILE_CODE => "XeTeXpicfile",
-                PDF_FILE_CODE => "XeTeXpdffile",
-                GLYPH_CODE => "XeTeXglyph",
-                XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => "XeTeXlinebreaklocale",
-                XETEX_INPUT_ENCODING_EXTENSION_CODE => "XeTeXinputencoding",
-                XETEX_DEFAULT_ENCODING_EXTENSION_CODE => "XeTeXdefaultencoding",
-                _ => return print(st, "[unknown extension!]"),
-            };
-            print_esc(st, name);
-        }
+        EXTENSION => match ExtensionCode::from_raw(chr_code) {
+            Some(code) => print_esc(st, code.name()),
+            None => print(st, "[unknown extension!]"),
+        },
         _ => print(st, "[unknown command code!]"),
     }
 }
