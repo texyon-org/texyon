@@ -164,3 +164,90 @@ code_enum! {
         MuExpr = 70 => "muexpr",
     }
 }
+
+code_enum! {
+    /// The `chr_code` of `\number`, `\string` and the other `convert` primitives.
+    pub(crate) enum ConvertCode: u8 {
+        Number = 0 => "number",
+        RomanNumeral = 1 => "romannumeral",
+        String = 2 => "string",
+        Meaning = 3 => "meaning",
+        FontName = 4 => "fontname",
+        EtexRevision = 5 => "eTeXrevision",
+        Expanded = 6 => "expanded",
+        LeftMarginKern = 16 => "leftmarginkern",
+        RightMarginKern = 17 => "rightmarginkern",
+        Strcmp = 18 => "strcmp",
+        CreationDate = 22 => "creationdate",
+        FileModDate = 23 => "filemoddate",
+        FileSize = 24 => "filesize",
+        MdfiveSum = 25 => "mdfivesum",
+        FileDump = 26 => "filedump",
+        UniformDeviate = 29 => "uniformdeviate",
+        NormalDeviate = 30 => "normaldeviate",
+        XetexRevision = 33 => "XeTeXrevision",
+        XetexVariationName = 34 => "XeTeXvariationname",
+        XetexFeatureName = 35 => "XeTeXfeaturename",
+        XetexSelectorName = 36 => "XeTeXselectorname",
+        XetexGlyphName = 37 => "XeTeXglyphname",
+        Uchar = 38 => "Uchar",
+        Ucharcat = 39 => "Ucharcat",
+        JobName = 40 => "jobname",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\if`, `\ifx` and the other `if_test` primitives,
+    /// without the `\unless` offset.
+    pub(crate) enum IfCode: u8 {
+        Char = 0 => "if",
+        Cat = 1 => "ifcat",
+        Num = 2 => "ifnum",
+        Dim = 3 => "ifdim",
+        Odd = 4 => "ifodd",
+        VMode = 5 => "ifvmode",
+        HMode = 6 => "ifhmode",
+        MMode = 7 => "ifmmode",
+        Inner = 8 => "ifinner",
+        Void = 9 => "ifvoid",
+        HBox = 10 => "ifhbox",
+        VBox = 11 => "ifvbox",
+        X = 12 => "ifx",
+        Eof = 13 => "ifeof",
+        True = 14 => "iftrue",
+        False = 15 => "iffalse",
+        Case = 16 => "ifcase",
+        Defined = 17 => "ifdefined",
+        CsName = 18 => "ifcsname",
+        FontChar = 19 => "iffontchar",
+        InCsName = 20 => "ifincsname",
+        Primitive = 21 => "ifprimitive",
+    }
+}
+
+impl IfCode {
+    /// Added to the `chr_code` of an `\if` preceded by `\unless`.
+    pub(crate) const UNLESS: i32 = 32;
+
+    /// Splits an `if_test` `chr_code` into its test and whether it is negated.
+    #[inline]
+    pub(crate) const fn decode(chr: i32) -> Option<(IfCode, bool)> {
+        match IfCode::from_raw(chr % IfCode::UNLESS) {
+            Some(code) => Some((code, chr >= IfCode::UNLESS)),
+            None => None,
+        }
+    }
+}
+
+code_enum! {
+    /// `if_limit`, and the `chr_code` of `\fi`, `\else` and `\or`.
+    #[derive(PartialOrd, Ord, Default)]
+    pub(crate) enum FiOrElseCode: u8 {
+        #[default]
+        Normal = 0,
+        If = 1,
+        Fi = 2,
+        Else = 3,
+        Or = 4,
+    }
+}

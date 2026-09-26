@@ -7,7 +7,7 @@ use crate::cmd::{
     IGNORE, IGNORE_SPACES, INVALID_CHAR, LETTER, OTHER_CHAR, OUTER_CALL, SHAPE_REF, SPACER,
     UNDEFINED_CS,
 };
-use crate::codes::ValueLevel;
+use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
@@ -350,7 +350,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.input.read_open = [CLOSED; 17];
 
     st.scanner.cond_ptr.0 = TEX_NULL;
-    st.scanner.if_limit = NORMAL as u8;
+    st.scanner.if_limit = FiOrElseCode::Normal;
     st.scanner.cur_if = 0;
     st.scanner.if_line = 0;
     st.fonts.null_character = B16x4::default();

@@ -185,6 +185,21 @@ impl Slot for crate::codes::ValueLevel {
     }
 }
 
+impl Slot for crate::codes::FiOrElseCode {
+    type Raw = u16;
+    #[inline(always)]
+    fn decode(raw: u16) -> Self {
+        match Self::from_raw(i32::from(raw)) {
+            Some(code) => code,
+            None => unreachable!("if_limit out of range"),
+        }
+    }
+    #[inline(always)]
+    fn encode(self) -> u16 {
+        self as u16
+    }
+}
+
 impl Slot for RuleDimen {
     type Raw = i32;
     #[inline(always)]
@@ -1695,18 +1710,18 @@ impl NodePtr<SaNode> {
 
 impl NodePtr<CondNode> {
     fields! {
-        if_limit / set_if_limit: u16 = b16s1 @ 0;
+        if_limit / set_if_limit: crate::codes::FiOrElseCode = b16s1 @ 0;
         cur_if / set_cur_if: u16 = b16s0 @ 0;
         if_line / set_if_line: i32 = b32s1 @ 1;
     }
 
     /// The saved `(cur_if, if_line, if_limit)`.
     #[inline]
-    pub fn saved_state(self, mem: &MemState) -> (i16, i32, u8) {
+    pub fn saved_state(self, mem: &MemState) -> (i16, i32, crate::codes::FiOrElseCode) {
         (
             self.cur_if(mem) as i16,
             self.if_line(mem),
-            self.if_limit(mem) as u8,
+            self.if_limit(mem),
         )
     }
 }

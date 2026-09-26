@@ -2,7 +2,7 @@
 //! TECkit mappings, shaping and measuring native word and glyph nodes, and the
 //! extension (`\openout`, `\write`, `\special`, ...) commands.
 
-use crate::codes::LastItemCode;
+use crate::codes::{ConvertCode, LastItemCode};
 use crate::params::IntPar;
 use std::ffi::c_int;
 use std::sync::Arc;
@@ -14,7 +14,6 @@ use crate::consts::{
     OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE, VMODE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
-use crate::expand::{XETEX_FEATURE_NAME_CODE, XETEX_SELECTOR_NAME_CODE};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::input::INSERTED;
@@ -839,14 +838,14 @@ pub(crate) fn ot_font_get_3(
 
 pub(crate) fn gr_print_font_name(
     st: &mut EngineState,
-    what: i32,
+    what: ConvertCode,
     engine: &FontEngineHandle,
     param1: i32,
     param2: i32,
 ) {
     let name = match what {
-        XETEX_FEATURE_NAME_CODE => engine.graphite_feature_label(param1 as u32),
-        XETEX_SELECTOR_NAME_CODE => {
+        ConvertCode::XetexFeatureName => engine.graphite_feature_label(param1 as u32),
+        ConvertCode::XetexSelectorName => {
             engine.graphite_feature_setting_label(param1 as u32, param2 as u32)
         }
         _ => None,

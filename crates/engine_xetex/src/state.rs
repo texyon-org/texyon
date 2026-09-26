@@ -1,6 +1,6 @@
 //! Rust-owned engine state.
 
-use crate::codes::ValueLevel;
+use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::hash::HASH_OFFSET;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::units::{FontId, Scaled, StrNumber};
@@ -842,7 +842,7 @@ pub(crate) struct ScannerState {
     pub sa_level: u16,
     pub max_reg_num: i32,
     pub cond_ptr: crate::units::MemPtr,
-    pub if_limit: u8,
+    pub if_limit: FiOrElseCode,
     pub cur_if: i16,
     pub if_line: i32,
     pub skip_line: i32,

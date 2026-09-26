@@ -19,7 +19,7 @@ use crate::cmd::{
     TOKS_REGISTER, TOP_BOT_MARK, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE,
     VRULE, VSKIP, XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
-use crate::codes::{LastItemCode, ValueLevel};
+use crate::codes::{ConvertCode, FiOrElseCode, IfCode, LastItemCode, ValueLevel};
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
     COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY,
@@ -28,21 +28,10 @@ use crate::consts::{
     LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE,
     MU_SKIP_BASE, NORMAL, NULL_CS, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE, SF_CODE_BASE,
     SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_NULL, TOKS_BASE,
-    TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, UNLESS_CODE, VMODE, X_LEADERS,
+    TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE, X_LEADERS,
 };
 use crate::errors::{error, Abort};
-use crate::expand::{
-    ETEX_REVISION_CODE, EXPANDED_CODE, FI_CODE, FONT_NAME_CODE, IFX_CODE, IF_CASE_CODE,
-    IF_CAT_CODE, IF_CS_CODE, IF_DEF_CODE, IF_DIM_CODE, IF_EOF_CODE, IF_FALSE_CODE,
-    IF_FONT_CHAR_CODE, IF_HBOX_CODE, IF_HMODE_CODE, IF_INNER_CODE, IF_INT_CODE, IF_IN_CSNAME_CODE,
-    IF_MMODE_CODE, IF_ODD_CODE, IF_PRIMITIVE_CODE, IF_TRUE_CODE, IF_VBOX_CODE, IF_VMODE_CODE,
-    IF_VOID_CODE, LEFT_MARGIN_KERN_CODE, MARKS_CODE, MEANING_CODE, NORMAL_DEVIATE_CODE,
-    NUMBER_CODE, OR_CODE, PDF_CREATION_DATE_CODE, PDF_FILE_DUMP_CODE, PDF_FILE_MOD_DATE_CODE,
-    PDF_FILE_SIZE_CODE, PDF_MDFIVE_SUM_CODE, PDF_STRCMP_CODE, RIGHT_MARGIN_KERN_CODE,
-    ROMAN_NUMERAL_CODE, STRING_CODE, UNIFORM_DEVIATE_CODE, XETEX_FEATURE_NAME_CODE,
-    XETEX_GLYPH_NAME_CODE, XETEX_REVISION_CODE, XETEX_SELECTOR_NAME_CODE, XETEX_UCHARCAT_CODE,
-    XETEX_UCHAR_CODE, XETEX_VARIATION_NAME_CODE,
-};
+use crate::expand::MARKS_CODE;
 use crate::ext::{
     CLOSE_NODE, GLYPH_CODE, IMMEDIATE_CODE, OPEN_NODE, PDF_FILE_CODE, PDF_SAVE_POS_NODE,
     PIC_FILE_CODE, RESET_TIMER_CODE, SET_LANGUAGE_CODE, SET_RANDOM_SEED_CODE, SPECIAL_NODE,
@@ -1221,70 +1210,21 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             st,
             LastItemCode::from_raw(chr_code).map_or("badness", LastItemCode::name),
         ),
-        CONVERT => {
-            let name = match chr_code {
-                NUMBER_CODE => "number",
-                ROMAN_NUMERAL_CODE => "romannumeral",
-                STRING_CODE => "string",
-                MEANING_CODE => "meaning",
-                FONT_NAME_CODE => "fontname",
-                ETEX_REVISION_CODE => "eTeXrevision",
-                EXPANDED_CODE => "expanded",
-                LEFT_MARGIN_KERN_CODE => "leftmarginkern",
-                RIGHT_MARGIN_KERN_CODE => "rightmarginkern",
-                PDF_CREATION_DATE_CODE => "creationdate",
-                PDF_FILE_MOD_DATE_CODE => "filemoddate",
-                PDF_FILE_SIZE_CODE => "filesize",
-                PDF_MDFIVE_SUM_CODE => "mdfivesum",
-                PDF_FILE_DUMP_CODE => "filedump",
-                PDF_STRCMP_CODE => "strcmp",
-                UNIFORM_DEVIATE_CODE => "uniformdeviate",
-                NORMAL_DEVIATE_CODE => "normaldeviate",
-                XETEX_REVISION_CODE => "XeTeXrevision",
-                XETEX_VARIATION_NAME_CODE => "XeTeXvariationname",
-                XETEX_FEATURE_NAME_CODE => "XeTeXfeaturename",
-                XETEX_SELECTOR_NAME_CODE => "XeTeXselectorname",
-                XETEX_GLYPH_NAME_CODE => "XeTeXglyphname",
-                XETEX_UCHAR_CODE => "Uchar",
-                XETEX_UCHARCAT_CODE => "Ucharcat",
-                _ => "jobname",
-            };
-            print_esc(st, name);
-        }
+        CONVERT => print_esc(
+            st,
+            ConvertCode::from_raw(chr_code).map_or("jobname", ConvertCode::name),
+        ),
         IF_TEST => {
-            if chr_code >= UNLESS_CODE {
+            if chr_code >= IfCode::UNLESS {
                 print_esc(st, "unless");
             }
-            let name = match (chr_code % UNLESS_CODE) as i16 {
-                IF_CAT_CODE => "ifcat",
-                IF_INT_CODE => "ifnum",
-                IF_DIM_CODE => "ifdim",
-                IF_ODD_CODE => "ifodd",
-                IF_VMODE_CODE => "ifvmode",
-                IF_HMODE_CODE => "ifhmode",
-                IF_MMODE_CODE => "ifmmode",
-                IF_INNER_CODE => "ifinner",
-                IF_VOID_CODE => "ifvoid",
-                IF_HBOX_CODE => "ifhbox",
-                IF_VBOX_CODE => "ifvbox",
-                IFX_CODE => "ifx",
-                IF_EOF_CODE => "ifeof",
-                IF_TRUE_CODE => "iftrue",
-                IF_FALSE_CODE => "iffalse",
-                IF_CASE_CODE => "ifcase",
-                IF_PRIMITIVE_CODE => "ifprimitive",
-                IF_DEF_CODE => "ifdefined",
-                IF_CS_CODE => "ifcsname",
-                IF_FONT_CHAR_CODE => "iffontchar",
-                IF_IN_CSNAME_CODE => "ifincsname",
-                _ => "if",
-            };
+            let name = IfCode::from_raw(chr_code % IfCode::UNLESS).map_or("if", IfCode::name);
             print_esc(st, name);
         }
         FI_OR_ELSE => {
-            let name = if chr_code == i32::from(FI_CODE) {
+            let name = if chr_code == FiOrElseCode::Fi.raw() {
                 "fi"
-            } else if chr_code == i32::from(OR_CODE) {
+            } else if chr_code == FiOrElseCode::Or.raw() {
                 "or"
             } else {
                 "else"
@@ -1781,7 +1721,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         diagnostic_begin_capture_warning_here(st);
         print(st, "end of file when ");
         print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
-        if st.scanner.if_limit == FI_CODE {
+        if st.scanner.if_limit == FiOrElseCode::Fi {
             print_esc(st, "else");
         }
         print_if_line(st, st.scanner.if_line);
@@ -1843,19 +1783,19 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
 
 pub(crate) fn change_if_limit(
     st: &mut EngineState,
-    l: i16,
+    l: FiOrElseCode,
     p: impl crate::units::MemAddr,
 ) -> Result<(), Abort> {
     let p = p.addr();
     if p == st.scanner.cond_ptr.0 {
-        st.scanner.if_limit = l as u8;
+        st.scanner.if_limit = l;
         return Ok(());
     }
     let mut q = st.scanner.cond_ptr;
     while !q.is_null() {
         let next = q.link(&st.mem);
         if next.0 == p {
-            NodePtr::<CondNode>::at(q).set_if_limit(&mut st.mem, l as u16);
+            NodePtr::<CondNode>::at(q).set_if_limit(&mut st.mem, l);
             return Ok(());
         }
         q = next;
@@ -2334,7 +2274,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
                     print_int(st, n);
                     print(st, ": ");
                     print_cmd_chr(st, IF_TEST, i32::from(t));
-                    if m == FI_CODE {
+                    if m == FiOrElseCode::Fi {
                         print_esc(st, "else");
                     }
                     print_if_line(st, l);

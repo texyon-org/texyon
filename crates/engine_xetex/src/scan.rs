@@ -10,7 +10,7 @@ use crate::cmd::{
     SET_BOX_DIMEN, SET_FONT, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF, SET_SHAPE, SPACER,
     SUP_MARK, TAB_MARK, THE, TOKS_REGISTER, VRULE, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
 };
-use crate::codes::{LastItemCode, ValueLevel};
+use crate::codes::{FiOrElseCode, IfCode, LastItemCode, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
     CS_TOKEN_FLAG, DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE,
@@ -19,10 +19,10 @@ use crate::consts::{
     LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MU_GLUE,
     MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FONT, NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE,
     SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL, UNDEFINED_PRIMITIVE,
-    UNLESS_CODE, VMODE,
+    VMODE,
 };
 use crate::errors::{error, int_error, mu_error, Abort};
-use crate::expand::{expand, macro_call, ELSE_CODE, FI_CODE, OR_CODE};
+use crate::expand::{expand, macro_call};
 use crate::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
     gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
@@ -1614,7 +1614,7 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
             if l == 0 {
                 break;
             }
-            if st.scanner.cur_chr == i32::from(FI_CODE) {
+            if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
                 l -= 1;
             }
         } else if st.scanner.cur_cmd == IF_TEST {
@@ -2909,7 +2909,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         LastItemCode::CurrentIfType => {
             st.scanner.cur_val = if st.scanner.cond_ptr.is_null() {
                 0
-            } else if i32::from(st.scanner.cur_if) < UNLESS_CODE {
+            } else if i32::from(st.scanner.cur_if) < IfCode::UNLESS {
                 i32::from(st.scanner.cur_if) + 1
             } else {
                 -(i32::from(st.scanner.cur_if) - 31)
@@ -2917,8 +2917,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abor
         }
         LastItemCode::CurrentIfBranch => {
             st.scanner.cur_val = match st.scanner.if_limit {
-                OR_CODE | ELSE_CODE => 1,
-                FI_CODE => -1,
+                FiOrElseCode::Or | FiOrElseCode::Else => 1,
+                FiOrElseCode::Fi => -1,
                 _ => 0,
             };
         }

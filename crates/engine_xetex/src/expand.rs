@@ -5,11 +5,11 @@ use crate::cmd::{
     IF_TEST, IGNORE, INPUT, LEFT_BRACE, LONG_CALL, MAX_COMMAND, NO_EXPAND, OUTER_CALL, OUT_PARAM,
     RELAX, THE, TOP_BOT_MARK, UNDEFINED_CS,
 };
-use crate::codes::ValueLevel;
+use crate::codes::{ConvertCode, FiOrElseCode, IfCode, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
     HMODE, MMODE, NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_USV,
-    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -32,59 +32,6 @@ use crate::scan::{
 };
 use crate::state::{EngineState, MemState, Selector};
 use crate::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
-
-pub(crate) const IF_CHAR_CODE: i16 = 0;
-pub(crate) const IF_CAT_CODE: i16 = 1;
-pub(crate) const IF_INT_CODE: i16 = 2;
-pub(crate) const IF_DIM_CODE: i16 = 3;
-pub(crate) const IF_ODD_CODE: i16 = 4;
-pub(crate) const IF_VMODE_CODE: i16 = 5;
-pub(crate) const IF_HMODE_CODE: i16 = 6;
-pub(crate) const IF_MMODE_CODE: i16 = 7;
-pub(crate) const IF_INNER_CODE: i16 = 8;
-pub(crate) const IF_VOID_CODE: i16 = 9;
-pub(crate) const IF_HBOX_CODE: i16 = 10;
-pub(crate) const IF_VBOX_CODE: i16 = 11;
-pub(crate) const IFX_CODE: i16 = 12;
-pub(crate) const IF_EOF_CODE: i16 = 13;
-pub(crate) const IF_TRUE_CODE: i16 = 14;
-pub(crate) const IF_FALSE_CODE: i16 = 15;
-pub(crate) const IF_CASE_CODE: i16 = 16;
-pub(crate) const IF_DEF_CODE: i16 = 17;
-pub(crate) const IF_CS_CODE: i16 = 18;
-pub(crate) const IF_FONT_CHAR_CODE: i16 = 19;
-pub(crate) const IF_IN_CSNAME_CODE: i16 = 20;
-pub(crate) const IF_PRIMITIVE_CODE: i16 = 21;
-pub(crate) const IF_CODE: u8 = 1;
-pub(crate) const FI_CODE: u8 = 2;
-pub(crate) const ELSE_CODE: u8 = 3;
-pub(crate) const OR_CODE: u8 = 4;
-
-pub(crate) const NUMBER_CODE: i32 = 0;
-pub(crate) const ROMAN_NUMERAL_CODE: i32 = 1;
-pub(crate) const STRING_CODE: i32 = 2;
-pub(crate) const MEANING_CODE: i32 = 3;
-pub(crate) const FONT_NAME_CODE: i32 = 4;
-pub(crate) const ETEX_REVISION_CODE: i32 = 5;
-pub(crate) const EXPANDED_CODE: i32 = 6;
-pub(crate) const LEFT_MARGIN_KERN_CODE: i32 = 16;
-pub(crate) const RIGHT_MARGIN_KERN_CODE: i32 = 17;
-pub(crate) const PDF_STRCMP_CODE: i32 = 18;
-pub(crate) const PDF_CREATION_DATE_CODE: i32 = 22;
-pub(crate) const PDF_FILE_MOD_DATE_CODE: i32 = 23;
-pub(crate) const PDF_FILE_SIZE_CODE: i32 = 24;
-pub(crate) const PDF_MDFIVE_SUM_CODE: i32 = 25;
-pub(crate) const PDF_FILE_DUMP_CODE: i32 = 26;
-pub(crate) const UNIFORM_DEVIATE_CODE: i32 = 29;
-pub(crate) const NORMAL_DEVIATE_CODE: i32 = 30;
-pub(crate) const XETEX_REVISION_CODE: i32 = 33;
-pub(crate) const XETEX_VARIATION_NAME_CODE: i32 = 34;
-pub(crate) const XETEX_FEATURE_NAME_CODE: i32 = 35;
-pub(crate) const XETEX_SELECTOR_NAME_CODE: i32 = 36;
-pub(crate) const XETEX_GLYPH_NAME_CODE: i32 = 37;
-pub(crate) const XETEX_UCHAR_CODE: i32 = 38;
-pub(crate) const XETEX_UCHARCAT_CODE: i32 = 39;
-pub(crate) const JOB_NAME_CODE: i32 = 40;
 
 pub(crate) const MARKS_CODE: i32 = 5;
 
@@ -116,10 +63,10 @@ fn pop_fi(st: &mut EngineState) {
 
 /// Handles the `\else` or `\fi` that ended a skipped conditional branch.
 fn skipped_branch_end(st: &mut EngineState) {
-    if st.scanner.cur_chr == i32::from(FI_CODE) {
+    if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
         pop_fi(st);
     } else {
-        st.scanner.if_limit = FI_CODE;
+        st.scanner.if_limit = FiOrElseCode::Fi;
     }
 }
 
@@ -212,20 +159,19 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
 
     let cond_node = NodePtr::<CondNode>::alloc(&mut st.mem)?;
     cond_node.set_link(&mut st.mem, st.scanner.cond_ptr);
-    cond_node.set_if_limit(&mut st.mem, u16::from(st.scanner.if_limit));
+    cond_node.set_if_limit(&mut st.mem, st.scanner.if_limit);
     cond_node.set_cur_if(&mut st.mem, st.scanner.cur_if as u16);
     cond_node.set_if_line(&mut st.mem, st.scanner.if_line);
     st.scanner.cond_ptr = cond_node.ptr();
     st.scanner.cur_if = st.scanner.cur_chr as i16;
-    st.scanner.if_limit = IF_CODE;
+    st.scanner.if_limit = FiOrElseCode::If;
     st.scanner.if_line = st.mem.line;
 
     let save_cond_ptr = st.scanner.cond_ptr.0;
-    let is_unless = st.scanner.cur_chr >= UNLESS_CODE;
-    let this_if = (st.scanner.cur_chr % UNLESS_CODE) as i16;
+    let (this_if, is_unless) = IfCode::decode(st.scanner.cur_chr).ok_or(Abort::Confusion("if"))?;
 
     let mut b = match this_if {
-        IF_CHAR_CODE | IF_CAT_CODE => {
+        IfCode::Char | IfCode::Cat => {
             get_x_token_or_active_char(st)?;
             let (m, n) = if st.scanner.cur_cmd > ACTIVE_CHAR || st.scanner.cur_chr > BIGGEST_USV {
                 (RELAX, TOO_BIG_USV)
@@ -237,13 +183,13 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 st.scanner.cur_cmd = RELAX;
                 st.scanner.cur_chr = TOO_BIG_USV;
             }
-            if this_if == IF_CHAR_CODE {
+            if this_if == IfCode::Char {
                 n == st.scanner.cur_chr
             } else {
                 m == st.scanner.cur_cmd
             }
         }
-        IF_INT_CODE | IF_DIM_CODE => {
+        IfCode::Num | IfCode::Dim => {
             scan_int_or_dimen(st, this_if)?;
             let n = st.scanner.cur_val;
             get_x_non_blank(st)?;
@@ -253,7 +199,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 (st.scanner.cur_tok - OTHER_TOKEN) as u8
             } else {
                 error_here_with_diagnostic(st, "Missing = inserted for ");
-                print_cmd_chr(st, IF_TEST, i32::from(this_if));
+                print_cmd_chr(st, IF_TEST, this_if.raw());
                 capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
@@ -268,24 +214,24 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 _ => n > cv,
             }
         }
-        IF_ODD_CODE => {
+        IfCode::Odd => {
             scan_int(st)?;
             st.scanner.cur_val % 2 != 0
         }
-        IF_VMODE_CODE => st.input.cur_list.mode.abs() == VMODE,
-        IF_HMODE_CODE => st.input.cur_list.mode.abs() == HMODE,
-        IF_MMODE_CODE => st.input.cur_list.mode.abs() == MMODE,
-        IF_INNER_CODE => st.input.cur_list.mode < 0,
-        IF_VOID_CODE | IF_HBOX_CODE | IF_VBOX_CODE => {
+        IfCode::VMode => st.input.cur_list.mode.abs() == VMODE,
+        IfCode::HMode => st.input.cur_list.mode.abs() == HMODE,
+        IfCode::MMode => st.input.cur_list.mode.abs() == MMODE,
+        IfCode::Inner => st.input.cur_list.mode < 0,
+        IfCode::Void | IfCode::HBox | IfCode::VBox => {
             crate::scan::scan_register_num(st)?;
             let contents = fetch_box(st, st.scanner.cur_val);
             match this_if {
-                IF_VOID_CODE => contents.is_none(),
-                IF_HBOX_CODE => matches!(contents, Some(AnyBox::HList(_))),
+                IfCode::Void => contents.is_none(),
+                IfCode::HBox => matches!(contents, Some(AnyBox::HList(_))),
                 _ => matches!(contents, Some(AnyBox::VList(_))),
             }
         }
-        IFX_CODE => {
+        IfCode::X => {
             let save_scanner_status = st.scanner.scanner_status;
             st.scanner.scanner_status = NORMAL_SCANNER;
             get_next(st)?;
@@ -317,7 +263,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.scanner_status = save_scanner_status;
             b
         }
-        IF_EOF_CODE => {
+        IfCode::Eof => {
             crate::scan::scan_four_bit_int_or_18(st)?;
             if st.scanner.cur_val == 18 {
                 !st.config.shell_escape_enabled
@@ -325,13 +271,13 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 st.input.read_open[st.scanner.cur_val as usize] == crate::consts::CLOSED
             }
         }
-        IF_TRUE_CODE => true,
-        IF_FALSE_CODE => false,
-        IF_DEF_CODE => {
+        IfCode::True => true,
+        IfCode::False => false,
+        IfCode::Defined => {
             get_next_unexpanded(st)?;
             st.scanner.cur_cmd != UNDEFINED_CS
         }
-        IF_CS_CODE => {
+        IfCode::CsName => {
             let head = scan_cs_name_tokens(st)?;
             let first = st.input.first;
             let m = token_chars_to_buffer(st, head.link(&st.mem))?;
@@ -347,8 +293,8 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.flush_list(head);
             st.eqtb.eq_type(st.scanner.cur_cs) != UNDEFINED_CS
         }
-        IF_IN_CSNAME_CODE => st.scanner.is_in_csname,
-        IF_FONT_CHAR_CODE => {
+        IfCode::InCsName => st.scanner.is_in_csname,
+        IfCode::FontChar => {
             let f = crate::scan::scan_font_ident(st)?;
             crate::scan::scan_usv_num(st)?;
             let c = st.scanner.cur_val;
@@ -363,7 +309,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 false
             }
         }
-        IF_CASE_CODE => {
+        IfCode::Case => {
             scan_int(st)?;
             let mut n = st.scanner.cur_val;
             if st.eqtb.int_par(IntPar::TracingCommands) > 1 {
@@ -378,19 +324,19 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             while n != 0 {
                 crate::scan::pass_text(st)?;
                 if st.scanner.cond_ptr.0 == save_cond_ptr {
-                    if st.scanner.cur_chr != i32::from(OR_CODE) {
+                    if st.scanner.cur_chr != FiOrElseCode::Or.raw() {
                         skipped_branch_end(st);
                         return Ok(());
                     }
                     n -= 1;
-                } else if st.scanner.cur_chr == i32::from(FI_CODE) {
+                } else if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
                     pop_fi(st);
                 }
             }
-            crate::output::change_if_limit(st, i16::from(OR_CODE), save_cond_ptr)?;
+            crate::output::change_if_limit(st, FiOrElseCode::Or, save_cond_ptr)?;
             return Ok(());
         }
-        IF_PRIMITIVE_CODE => {
+        IfCode::Primitive => {
             get_next_unexpanded(st)?;
             let m = st
                 .eqtb
@@ -401,7 +347,6 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 && st.scanner.cur_cmd == st.eqtb.eq_type(PRIM_EQTB_BASE + m)
                 && st.scanner.cur_chr == st.eqtb.equiv(PRIM_EQTB_BASE + m)
         }
-        _ => false,
     };
 
     if is_unless {
@@ -413,14 +358,14 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if b {
-        crate::output::change_if_limit(st, i16::from(ELSE_CODE), save_cond_ptr)?;
+        crate::output::change_if_limit(st, FiOrElseCode::Else, save_cond_ptr)?;
         return Ok(());
     }
 
     loop {
         crate::scan::pass_text(st)?;
         if st.scanner.cond_ptr.0 == save_cond_ptr {
-            if st.scanner.cur_chr != i32::from(OR_CODE) {
+            if st.scanner.cur_chr != FiOrElseCode::Or.raw() {
                 skipped_branch_end(st);
                 return Ok(());
             }
@@ -430,14 +375,14 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             st.errors
                 .help(&[r"I'm ignoring this; it doesn't match any \if."]);
             error(st)?;
-        } else if st.scanner.cur_chr == i32::from(FI_CODE) {
+        } else if st.scanner.cur_chr == FiOrElseCode::Fi.raw() {
             pop_fi(st);
         }
     }
 }
 
-fn scan_int_or_dimen(st: &mut EngineState, this_if: i16) -> Result<(), Abort> {
-    if this_if == IF_INT_CODE {
+fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<(), Abort> {
+    if this_if == IfCode::Num {
         scan_int(st)
     } else {
         crate::scan::scan_dimen(st, false, false, false)
@@ -585,7 +530,7 @@ fn print_margin_kern(
 }
 
 pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st.scanner.cur_chr;
+    let c = ConvertCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("convert"))?;
     let mut cat: i32 = 0;
     let mut fnt = NULL_FONT;
     let mut arg1: i32 = 0;
@@ -593,10 +538,12 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     let mut margin_list = TEX_NULL;
 
     match c {
-        NUMBER_CODE | ROMAN_NUMERAL_CODE | UNIFORM_DEVIATE_CODE => scan_int(st)?,
-        STRING_CODE | MEANING_CODE => get_token_unexpanded(st)?,
-        FONT_NAME_CODE => fnt = crate::scan::scan_font_ident(st)?,
-        EXPANDED_CODE => {
+        ConvertCode::Number | ConvertCode::RomanNumeral | ConvertCode::UniformDeviate => {
+            scan_int(st)?
+        }
+        ConvertCode::String | ConvertCode::Meaning => get_token_unexpanded(st)?,
+        ConvertCode::FontName => fnt = crate::scan::scan_font_ident(st)?,
+        ConvertCode::Expanded => {
             let saved = save_scan(st)?;
             crate::scan::scan_pdf_ext_toks(st)?;
             st.scanner.warning_index = saved.warning_index;
@@ -609,7 +556,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             unseal_pending_str(st, &saved);
             return Ok(());
         }
-        LEFT_MARGIN_KERN_CODE | RIGHT_MARGIN_KERN_CODE => {
+        ConvertCode::LeftMarginKern | ConvertCode::RightMarginKern => {
             crate::scan::scan_register_num(st)?;
             let Some(AnyBox::HList(hbox)) = fetch_box(st, st.scanner.cur_val) else {
                 return Err(Abort::PdfError(&[
@@ -619,27 +566,27 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             };
             margin_list = hbox.list_ptr(&st.mem).0;
         }
-        PDF_CREATION_DATE_CODE => {
+        ConvertCode::CreationDate => {
             let b = st.strings.pool_ptr;
             st.texmf.creation_date(&mut st.strings);
             let tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
             ins_temp_head_list(st, tail)?;
         }
-        PDF_FILE_MOD_DATE_CODE => {
+        ConvertCode::FileModDate => {
             let saved = save_scan(st)?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
             st.strings.file_mod_date(s)?;
             return ins_file_query_result(st, &saved, s, b);
         }
-        PDF_FILE_SIZE_CODE => {
+        ConvertCode::FileSize => {
             let saved = save_scan(st)?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
             st.strings.file_size(s)?;
             return ins_file_query_result(st, &saved, s, b);
         }
-        PDF_MDFIVE_SUM_CODE => {
+        ConvertCode::MdfiveSum => {
             let saved = save_scan(st)?;
             let is_file = crate::scan::scan_keyword(st, "file")?;
             let s = scan_text_to_string(st, &saved)?;
@@ -647,7 +594,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             st.strings.md5_sum(s, is_file);
             return ins_file_query_result(st, &saved, s, b);
         }
-        PDF_FILE_DUMP_CODE => {
+        ConvertCode::FileDump => {
             let saved = save_scan(st)?;
             let offset = scan_nonnegative_int(
                 st,
@@ -666,14 +613,14 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             st.strings.file_dump(s, offset, length)?;
             return ins_file_query_result(st, &saved, s, b);
         }
-        PDF_STRCMP_CODE => {
+        ConvertCode::Strcmp => {
             let saved = save_scan(st)?;
             crate::scan::compare_strings(st)?;
             restore_scan(st, &saved);
             unseal_pending_str(st, &saved);
         }
-        XETEX_UCHAR_CODE => crate::scan::scan_usv_num(st)?,
-        XETEX_UCHARCAT_CODE => {
+        ConvertCode::Uchar => crate::scan::scan_usv_num(st)?,
+        ConvertCode::Ucharcat => {
             crate::scan::scan_usv_num(st)?;
             let saved_chr = st.scanner.cur_val;
             scan_int(st)?;
@@ -696,7 +643,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             }
             st.scanner.cur_val = saved_chr;
         }
-        XETEX_VARIATION_NAME_CODE => {
+        ConvertCode::XetexVariationName => {
             fnt = crate::scan::scan_font_ident(st)?;
             if st.fonts.font_area[fnt] == AAT_FONT_FLAG {
                 scan_int(st)?;
@@ -706,12 +653,12 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                 not_font_error(st, c, fnt, "; not an AAT font")?;
             }
         }
-        XETEX_FEATURE_NAME_CODE | XETEX_SELECTOR_NAME_CODE => {
+        ConvertCode::XetexFeatureName | ConvertCode::XetexSelectorName => {
             fnt = crate::scan::scan_font_ident(st)?;
             if is_aat_or_graphite(st, fnt) {
                 scan_int(st)?;
                 arg1 = st.scanner.cur_val;
-                if c == XETEX_SELECTOR_NAME_CODE {
+                if c == ConvertCode::XetexSelectorName {
                     scan_int(st)?;
                     arg2 = st.scanner.cur_val;
                 } else {
@@ -721,7 +668,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                 not_font_error(st, c, fnt, "; not an AAT or Graphite font")?;
             }
         }
-        XETEX_GLYPH_NAME_CODE => {
+        ConvertCode::XetexGlyphName => {
             fnt = crate::scan::scan_font_ident(st)?;
             let fa = st.fonts.font_area[fnt];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
@@ -731,7 +678,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                 not_font_error(st, c, fnt, "; not a native platform font")?;
             }
         }
-        JOB_NAME_CODE => {
+        ConvertCode::JobName => {
             if st.strings.job_name == StrNumber::NONE {
                 crate::io::open_log_file(st)?;
             }
@@ -744,21 +691,21 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     let b = st.strings.pool_ptr;
 
     match c {
-        NUMBER_CODE | PDF_STRCMP_CODE => print_int(st, st.scanner.cur_val),
-        ROMAN_NUMERAL_CODE => crate::output::print_roman_int(st, st.scanner.cur_val),
-        STRING_CODE => {
+        ConvertCode::Number | ConvertCode::Strcmp => print_int(st, st.scanner.cur_val),
+        ConvertCode::RomanNumeral => crate::output::print_roman_int(st, st.scanner.cur_val),
+        ConvertCode::String => {
             if st.scanner.cur_cs != 0 {
                 sprint_cs(st, st.scanner.cur_cs);
             } else {
                 print_char(st, st.scanner.cur_chr);
             }
         }
-        MEANING_CODE => crate::output::print_meaning(st),
-        FONT_NAME_CODE => crate::output::print_font_name_and_size(st, fnt),
-        ETEX_REVISION_CODE => print(st, ".6"),
-        LEFT_MARGIN_KERN_CODE | RIGHT_MARGIN_KERN_CODE => {
+        ConvertCode::Meaning => crate::output::print_meaning(st),
+        ConvertCode::FontName => crate::output::print_font_name_and_size(st, fnt),
+        ConvertCode::EtexRevision => print(st, ".6"),
+        ConvertCode::LeftMarginKern | ConvertCode::RightMarginKern => {
             let list = margin_list;
-            if c == LEFT_MARGIN_KERN_CODE {
+            if c == ConvertCode::LeftMarginKern {
                 print_margin_kern(st, MemPtr(list), 0, GluePar::LeftSkip, |mem, p| p.link(mem));
             } else {
                 let last = st.mem.prev_rightmost(MemPtr(list), MemPtr::NULL);
@@ -767,31 +714,31 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                 });
             }
         }
-        UNIFORM_DEVIATE_CODE => {
+        ConvertCode::UniformDeviate => {
             let v = st.errors.unif_rand(st.scanner.cur_val);
             print_int(st, v);
         }
-        NORMAL_DEVIATE_CODE => {
+        ConvertCode::NormalDeviate => {
             let v = crate::scaled_math::norm_rand(st);
             print_int(st, v);
         }
-        XETEX_UCHAR_CODE | XETEX_UCHARCAT_CODE => print_char(st, st.scanner.cur_val),
-        XETEX_REVISION_CODE => print(st, ".999994"),
+        ConvertCode::Uchar | ConvertCode::Ucharcat => print_char(st, st.scanner.cur_val),
+        ConvertCode::XetexRevision => print(st, ".999994"),
         // AAT fonts have no names to print on this platform.
-        XETEX_VARIATION_NAME_CODE => {}
-        XETEX_FEATURE_NAME_CODE | XETEX_SELECTOR_NAME_CODE => {
+        ConvertCode::XetexVariationName => {}
+        ConvertCode::XetexFeatureName | ConvertCode::XetexSelectorName => {
             let engine = st.fonts.layout_engine_arc(fnt);
             if let Some(engine) = engine.as_deref().filter(|e| e.using_graphite()) {
                 crate::ext::gr_print_font_name(st, c, engine, arg1, arg2);
             }
         }
-        XETEX_GLYPH_NAME_CODE => {
+        ConvertCode::XetexGlyphName => {
             let fa = st.fonts.font_area[fnt];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 crate::ext::print_glyph_name(st, fnt, arg1)?;
             }
         }
-        JOB_NAME_CODE => {
+        ConvertCode::JobName => {
             let job_name = st.strings.job_name;
             crate::output::print_file_name(st, job_name, StrNumber::NONE, StrNumber::NONE);
         }
@@ -812,8 +759,8 @@ fn is_aat_or_graphite(st: &EngineState, f: FontId) -> bool {
             .is_some_and(|e| e.using_graphite())
 }
 
-fn not_font_error(st: &mut EngineState, c: i32, f: FontId, msg: &str) -> Result<(), Abort> {
-    crate::errors::not_font_error_common(st, CONVERT, c, f, msg)
+fn not_font_error(st: &mut EngineState, c: ConvertCode, f: FontId, msg: &str) -> Result<(), Abort> {
+    crate::errors::not_font_error_common(st, CONVERT, c.raw(), f, msg)
 }
 
 /// Puts `token` in front of the backed-up token list on top of the input stack.
@@ -888,10 +835,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_input(st)?;
                 } else {
                     get_token(st)?;
-                    if st.scanner.cur_cmd == IF_TEST
-                        && st.scanner.cur_chr != i32::from(IF_CASE_CODE)
-                    {
-                        st.scanner.cur_chr += UNLESS_CODE;
+                    if st.scanner.cur_cmd == IF_TEST && st.scanner.cur_chr != IfCode::Case.raw() {
+                        st.scanner.cur_chr += IfCode::UNLESS;
                         continue 'reswitch;
                     }
                     error_here_with_diagnostic(st, "You can't use `");
@@ -975,8 +920,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 {
                     show_cur_cmd_chr(st);
                 }
-                if st.scanner.cur_chr > i32::from(st.scanner.if_limit) {
-                    if st.scanner.if_limit == IF_CODE {
+                if st.scanner.cur_chr > st.scanner.if_limit.raw() {
+                    if st.scanner.if_limit == FiOrElseCode::If {
                         crate::input::insert_relax(st)?;
                     } else {
                         error_here_with_diagnostic(st, "Extra ");
@@ -987,7 +932,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         error(st)?;
                     }
                 } else {
-                    while st.scanner.cur_chr != i32::from(FI_CODE) {
+                    while st.scanner.cur_chr != FiOrElseCode::Fi.raw() {
                         crate::scan::pass_text(st)?;
                     }
                     pop_fi(st);

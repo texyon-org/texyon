@@ -53,7 +53,6 @@ pub const LEFT_TO_RIGHT: i16 = 0;
 pub const RIGHT_TO_LEFT: i16 = 1;
 pub const LEFT_SIDE: i32 = 0;
 pub const RIGHT_SIDE: i32 = 1;
-pub const UNLESS_CODE: i32 = 32;
 
 pub const SMALL_NODE_SIZE: i32 = 2;
 pub const MEDIUM_NODE_SIZE: i32 = 3;
