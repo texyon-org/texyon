@@ -515,7 +515,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     }
 
     if st.hyph.trie_not_ready {
-        crate::hyphenation::init_trie_in(&mut st.hyph).map_err(|e| e.into_engine_abort())?;
+        st.hyph.init_trie().map_err(|e| e.into_engine_abort())?;
     }
 
     let hyph = &st.hyph;

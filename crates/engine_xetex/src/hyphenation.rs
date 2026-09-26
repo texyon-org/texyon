@@ -16,37 +16,39 @@ pub(crate) const HYPH_PRIME: i32 = 607;
 
 const APPENDIX_H: &str = "(See Appendix H.)";
 
-#[inline]
-fn trie_op_hash_in(hyph: &HyphState, k: i32) -> i32 {
-    hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize]
-}
+impl HyphState {
+    #[inline]
+    fn trie_op_hash(&self, k: i32) -> i32 {
+        self.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize]
+    }
 
-#[inline]
-fn set_trie_op_hash_in(hyph: &mut HyphState, k: i32, v: i32) {
-    hyph.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
-}
+    #[inline]
+    fn set_trie_op_hash(&mut self, k: i32, v: i32) {
+        self.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
+    }
 
-/// `\language` clamped to a valid language number (out of range means 0).
+    /// `\language` clamped to a valid language number (out of range means 0).
 
-/// Point `hyph_index` at the `\lccode` table saved with `cur_lang`'s patterns, or 0.
-pub(crate) fn set_hyph_index(hyph: &mut HyphState) {
-    let slot = (hyph.hyph_start + hyph.cur_lang as i32) as usize;
-    hyph.hyph_index = if hyph.trie_trc[slot] != hyph.cur_lang as u16 {
-        0
-    } else {
-        hyph.trie_trl[slot]
-    };
-}
+    /// Point `hyph_index` at the `\lccode` table saved with `cur_lang`'s patterns, or 0.
+    pub(crate) fn set_hyph_index(&mut self) {
+        let slot = (self.hyph_start + self.cur_lang as i32) as usize;
+        self.hyph_index = if self.trie_trc[slot] != self.cur_lang as u16 {
+            0
+        } else {
+            self.trie_trl[slot]
+        };
+    }
 
-/// The hyphenation code of `c` under the current `hyph_index`.
-#[inline]
-pub(crate) fn hyph_code(hyph: &HyphState, eqtb: &EqtbState, c: i32) -> i32 {
-    if hyph.hyph_index == 0 || c > 255 {
-        eqtb.lc_code(c)
-    } else if hyph.trie_trc[(hyph.hyph_index + c) as usize] != c as u16 {
-        0
-    } else {
-        hyph.trie_tro[(hyph.hyph_index + c) as usize]
+    /// The hyphenation code of `c` under the current `hyph_index`.
+    #[inline]
+    pub(crate) fn hyph_code(&self, eqtb: &EqtbState, c: i32) -> i32 {
+        if self.hyph_index == 0 || c > 255 {
+            eqtb.lc_code(c)
+        } else if self.trie_trc[(self.hyph_index + c) as usize] != c as u16 {
+            0
+        } else {
+            self.trie_tro[(self.hyph_index + c) as usize]
+        }
     }
 }
 
@@ -70,419 +72,415 @@ impl TrieAbort {
     }
 }
 
-fn new_trie_op_in(
-    hyph: &mut HyphState,
-    cur_lang: u8,
-    d: i16,
-    n: i16,
-    v: u16,
-) -> Result<u16, TrieAbort> {
-    let mut h = (n as i32 + 313 * d as i32 + 361 * v as i32 + 1009 * cur_lang as i32).abs()
-        % (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE)
-        + NEG_TRIE_OP_SIZE;
+impl HyphState {
+    fn new_trie_op(&mut self, cur_lang: u8, d: i16, n: i16, v: u16) -> Result<u16, TrieAbort> {
+        let mut h = (n as i32 + 313 * d as i32 + 361 * v as i32 + 1009 * cur_lang as i32).abs()
+            % (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE)
+            + NEG_TRIE_OP_SIZE;
 
-    loop {
-        let l = trie_op_hash_in(hyph, h);
-        if l == 0 {
-            if hyph.trie_op_ptr == TRIE_OP_SIZE {
-                return Err(TrieAbort::Ops(TRIE_OP_SIZE));
-            }
-
-            let lang = cur_lang as usize;
-            let mut u = hyph.trie_used[lang];
-            if u == MAX_TRIE_OP {
-                return Err(TrieAbort::OpsPerLanguage(MAX_TRIE_OP as i32 - MIN_TRIE_OP));
-            }
-
-            hyph.trie_op_ptr += 1;
-            u += 1;
-            hyph.trie_used[lang] = u;
-            hyph.max_op_used = hyph.max_op_used.max(u);
-
-            let op_ptr = hyph.trie_op_ptr as usize;
-            hyph.hyf_distance[op_ptr] = d;
-            hyph.hyf_num[op_ptr] = n;
-            hyph.hyf_next[op_ptr] = v;
-            hyph.trie_op_lang[op_ptr] = cur_lang;
-            set_trie_op_hash_in(hyph, h, hyph.trie_op_ptr);
-            hyph.trie_op_val[op_ptr] = u;
-            return Ok(u);
-        }
-
-        let op = l as usize;
-        if hyph.hyf_distance[op] == d
-            && hyph.hyf_num[op] == n
-            && hyph.hyf_next[op] == v
-            && hyph.trie_op_lang[op] == cur_lang
-        {
-            return Ok(hyph.trie_op_val[op]);
-        }
-
-        if h > NEG_TRIE_OP_SIZE {
-            h -= 1;
-        } else {
-            h = TRIE_OP_SIZE;
-        }
-    }
-}
-
-fn trie_node(hyph: &mut HyphState, p: i32) -> i32 {
-    let pu = p as usize;
-    let mut h = (hyph.trie_c[pu] as i32)
-        .wrapping_add(1009_i32.wrapping_mul(hyph.trie_o[pu] as i32))
-        .wrapping_add(2718_i32.wrapping_mul(hyph.trie_l[pu]))
-        .wrapping_add(3142_i32.wrapping_mul(hyph.trie_r[pu]))
-        .wrapping_abs()
-        % hyph.trie_size;
-
-    loop {
-        let q = hyph.trie_hash[h as usize];
-        if q == 0 {
-            hyph.trie_hash[h as usize] = p;
-            return p;
-        }
-
-        let qu = q as usize;
-        if hyph.trie_c[qu] == hyph.trie_c[pu]
-            && hyph.trie_o[qu] == hyph.trie_o[pu]
-            && hyph.trie_l[qu] == hyph.trie_l[pu]
-            && hyph.trie_r[qu] == hyph.trie_r[pu]
-        {
-            return q;
-        }
-
-        if h > 0 {
-            h -= 1;
-        } else {
-            h = hyph.trie_size;
-        }
-    }
-}
-
-fn compress_trie(hyph: &mut HyphState, p: i32) -> i32 {
-    if p == 0 {
-        return 0;
-    }
-
-    hyph.trie_l[p as usize] = compress_trie(hyph, hyph.trie_l[p as usize]);
-    hyph.trie_r[p as usize] = compress_trie(hyph, hyph.trie_r[p as usize]);
-    trie_node(hyph, p)
-}
-
-fn first_fit(hyph: &mut HyphState, p: i32) -> Result<(), TrieAbort> {
-    let c = hyph.trie_c[p as usize] as i32;
-    let mut z = hyph.trie_min[c as usize];
-    let mut h;
-
-    loop {
-        h = z - c;
-        if hyph.trie_max < h + hyph.max_hyph_char {
-            if hyph.trie_size <= h + hyph.max_hyph_char {
-                return Err(TrieAbort::Patterns(hyph.trie_size));
-            }
-
-            loop {
-                hyph.trie_max += 1;
-                let max = hyph.trie_max as usize;
-                hyph.trie_taken[max] = false;
-                hyph.trie_trl[max] = hyph.trie_max + 1;
-                hyph.trie_tro[max] = hyph.trie_max - 1;
-                if hyph.trie_max == h + hyph.max_hyph_char {
-                    break;
-                }
-            }
-        }
-
-        let mut found = !hyph.trie_taken[h as usize];
-        let mut q = hyph.trie_r[p as usize];
-        while found && q > 0 {
-            if hyph.trie_trl[(h + hyph.trie_c[q as usize] as i32) as usize] == 0 {
-                found = false;
-            } else {
-                q = hyph.trie_r[q as usize];
-            }
-        }
-
-        if found {
-            break;
-        }
-
-        z = hyph.trie_trl[z as usize];
-    }
-
-    hyph.trie_taken[h as usize] = true;
-    hyph.trie_hash[p as usize] = h;
-    let mut q = p;
-    loop {
-        z = h + hyph.trie_c[q as usize] as i32;
-        let mut l = hyph.trie_tro[z as usize];
-        let r = hyph.trie_trl[z as usize];
-        hyph.trie_tro[r as usize] = l;
-        hyph.trie_trl[l as usize] = r;
-        hyph.trie_trl[z as usize] = 0;
-
-        if l < hyph.max_hyph_char {
-            let ll = z.min(hyph.max_hyph_char);
-            loop {
-                hyph.trie_min[l as usize] = r;
-                l += 1;
-                if l == ll {
-                    break;
-                }
-            }
-        }
-
-        q = hyph.trie_r[q as usize];
-        if q == 0 {
-            break;
-        }
-    }
-    Ok(())
-}
-
-fn trie_pack(hyph: &mut HyphState, mut p: i32) -> Result<(), TrieAbort> {
-    loop {
-        let q = hyph.trie_l[p as usize];
-        if q > 0 && hyph.trie_hash[q as usize] == 0 {
-            first_fit(hyph, q)?;
-            trie_pack(hyph, q)?;
-        }
-
-        p = hyph.trie_r[p as usize];
-        if p == 0 {
-            return Ok(());
-        }
-    }
-}
-
-fn trie_fix(hyph: &mut HyphState, mut p: i32) {
-    let z = hyph.trie_hash[p as usize];
-    loop {
-        let q = hyph.trie_l[p as usize];
-        let c = hyph.trie_c[p as usize];
-        let slot = (z + c as i32) as usize;
-        hyph.trie_trl[slot] = hyph.trie_hash[q as usize];
-        hyph.trie_trc[slot] = c;
-        hyph.trie_tro[slot] = hyph.trie_o[p as usize] as i32;
-
-        if q > 0 {
-            trie_fix(hyph, q);
-        }
-
-        p = hyph.trie_r[p as usize];
-        if p == 0 {
-            break;
-        }
-    }
-}
-
-pub(crate) fn init_trie_in(hyph: &mut HyphState) -> Result<(), TrieAbort> {
-    hyph.tables_gen = hyph.tables_gen.wrapping_add(1);
-    hyph.max_hyph_char += 1;
-    hyph.op_start[0] = -MIN_TRIE_OP;
-
-    for j in 1..=BIGGEST_LANG as usize {
-        hyph.op_start[j] = hyph.op_start[j - 1] + hyph.trie_used[j - 1] as i32;
-    }
-
-    let op_ptr = hyph.trie_op_ptr;
-    for j in 1..=op_ptr {
-        let lang = hyph.trie_op_lang[j as usize] as usize;
-        let val = hyph.op_start[lang] + hyph.trie_op_val[j as usize] as i32;
-        set_trie_op_hash_in(hyph, j, val);
-    }
-
-    for j in 1..=op_ptr {
-        while trie_op_hash_in(hyph, j) > j {
-            let k = trie_op_hash_in(hyph, j);
-            let (ju, ku) = (j as usize, k as usize);
-            hyph.hyf_distance.swap(ju, ku);
-            hyph.hyf_num.swap(ju, ku);
-            hyph.hyf_next.swap(ju, ku);
-            set_trie_op_hash_in(hyph, j, trie_op_hash_in(hyph, k));
-            set_trie_op_hash_in(hyph, k, k);
-        }
-    }
-
-    hyph.trie_hash[..=hyph.trie_size as usize].fill(0);
-
-    hyph.trie_r[0] = compress_trie(hyph, hyph.trie_r[0]);
-    hyph.trie_l[0] = compress_trie(hyph, hyph.trie_l[0]);
-
-    hyph.trie_hash[..=hyph.trie_ptr as usize].fill(0);
-
-    for p in 0..=BIGGEST_CHAR {
-        hyph.trie_min[p as usize] = p + 1;
-    }
-
-    hyph.trie_trl[0] = 1;
-    hyph.trie_max = 0;
-
-    let trie_l0 = hyph.trie_l[0];
-    if trie_l0 != 0 {
-        first_fit(hyph, trie_l0)?;
-        trie_pack(hyph, trie_l0)?;
-    }
-
-    let trie_r0 = hyph.trie_r[0];
-    if trie_r0 != 0 {
-        if trie_l0 == 0 {
-            for p in 0..=255 {
-                hyph.trie_min[p as usize] = p + 2;
-            }
-        }
-        first_fit(hyph, trie_r0)?;
-        trie_pack(hyph, trie_r0)?;
-        hyph.hyph_start = hyph.trie_hash[trie_r0 as usize];
-    }
-
-    if hyph.trie_max == 0 {
-        for r in 0..=hyph.max_hyph_char as usize {
-            hyph.trie_trl[r] = 0;
-            hyph.trie_tro[r] = MIN_TRIE_OP;
-            hyph.trie_trc[r] = 0;
-        }
-        hyph.trie_max = hyph.max_hyph_char;
-    } else {
-        if trie_r0 > 0 {
-            trie_fix(hyph, trie_r0);
-        }
-        if trie_l0 > 0 {
-            trie_fix(hyph, trie_l0);
-        }
-
-        let mut r = 0;
         loop {
-            let s = hyph.trie_trl[r as usize];
-            hyph.trie_trl[r as usize] = 0;
-            hyph.trie_tro[r as usize] = MIN_TRIE_OP;
-            hyph.trie_trc[r as usize] = 0;
-            r = s;
-            if r > hyph.trie_max {
+            let l = self.trie_op_hash(h);
+            if l == 0 {
+                if self.trie_op_ptr == TRIE_OP_SIZE {
+                    return Err(TrieAbort::Ops(TRIE_OP_SIZE));
+                }
+
+                let lang = cur_lang as usize;
+                let mut u = self.trie_used[lang];
+                if u == MAX_TRIE_OP {
+                    return Err(TrieAbort::OpsPerLanguage(MAX_TRIE_OP as i32 - MIN_TRIE_OP));
+                }
+
+                self.trie_op_ptr += 1;
+                u += 1;
+                self.trie_used[lang] = u;
+                self.max_op_used = self.max_op_used.max(u);
+
+                let op_ptr = self.trie_op_ptr as usize;
+                self.hyf_distance[op_ptr] = d;
+                self.hyf_num[op_ptr] = n;
+                self.hyf_next[op_ptr] = v;
+                self.trie_op_lang[op_ptr] = cur_lang;
+                self.set_trie_op_hash(h, self.trie_op_ptr);
+                self.trie_op_val[op_ptr] = u;
+                return Ok(u);
+            }
+
+            let op = l as usize;
+            if self.hyf_distance[op] == d
+                && self.hyf_num[op] == n
+                && self.hyf_next[op] == v
+                && self.trie_op_lang[op] == cur_lang
+            {
+                return Ok(self.trie_op_val[op]);
+            }
+
+            if h > NEG_TRIE_OP_SIZE {
+                h -= 1;
+            } else {
+                h = TRIE_OP_SIZE;
+            }
+        }
+    }
+
+    fn trie_node(&mut self, p: i32) -> i32 {
+        let pu = p as usize;
+        let mut h = (self.trie_c[pu] as i32)
+            .wrapping_add(1009_i32.wrapping_mul(self.trie_o[pu] as i32))
+            .wrapping_add(2718_i32.wrapping_mul(self.trie_l[pu]))
+            .wrapping_add(3142_i32.wrapping_mul(self.trie_r[pu]))
+            .wrapping_abs()
+            % self.trie_size;
+
+        loop {
+            let q = self.trie_hash[h as usize];
+            if q == 0 {
+                self.trie_hash[h as usize] = p;
+                return p;
+            }
+
+            let qu = q as usize;
+            if self.trie_c[qu] == self.trie_c[pu]
+                && self.trie_o[qu] == self.trie_o[pu]
+                && self.trie_l[qu] == self.trie_l[pu]
+                && self.trie_r[qu] == self.trie_r[pu]
+            {
+                return q;
+            }
+
+            if h > 0 {
+                h -= 1;
+            } else {
+                h = self.trie_size;
+            }
+        }
+    }
+
+    fn compress_trie(&mut self, p: i32) -> i32 {
+        if p == 0 {
+            return 0;
+        }
+
+        self.trie_l[p as usize] = self.compress_trie(self.trie_l[p as usize]);
+        self.trie_r[p as usize] = self.compress_trie(self.trie_r[p as usize]);
+        self.trie_node(p)
+    }
+
+    fn first_fit(&mut self, p: i32) -> Result<(), TrieAbort> {
+        let c = self.trie_c[p as usize] as i32;
+        let mut z = self.trie_min[c as usize];
+        let mut h;
+
+        loop {
+            h = z - c;
+            if self.trie_max < h + self.max_hyph_char {
+                if self.trie_size <= h + self.max_hyph_char {
+                    return Err(TrieAbort::Patterns(self.trie_size));
+                }
+
+                loop {
+                    self.trie_max += 1;
+                    let max = self.trie_max as usize;
+                    self.trie_taken[max] = false;
+                    self.trie_trl[max] = self.trie_max + 1;
+                    self.trie_tro[max] = self.trie_max - 1;
+                    if self.trie_max == h + self.max_hyph_char {
+                        break;
+                    }
+                }
+            }
+
+            let mut found = !self.trie_taken[h as usize];
+            let mut q = self.trie_r[p as usize];
+            while found && q > 0 {
+                if self.trie_trl[(h + self.trie_c[q as usize] as i32) as usize] == 0 {
+                    found = false;
+                } else {
+                    q = self.trie_r[q as usize];
+                }
+            }
+
+            if found {
+                break;
+            }
+
+            z = self.trie_trl[z as usize];
+        }
+
+        self.trie_taken[h as usize] = true;
+        self.trie_hash[p as usize] = h;
+        let mut q = p;
+        loop {
+            z = h + self.trie_c[q as usize] as i32;
+            let mut l = self.trie_tro[z as usize];
+            let r = self.trie_trl[z as usize];
+            self.trie_tro[r as usize] = l;
+            self.trie_trl[l as usize] = r;
+            self.trie_trl[z as usize] = 0;
+
+            if l < self.max_hyph_char {
+                let ll = z.min(self.max_hyph_char);
+                loop {
+                    self.trie_min[l as usize] = r;
+                    l += 1;
+                    if l == ll {
+                        break;
+                    }
+                }
+            }
+
+            q = self.trie_r[q as usize];
+            if q == 0 {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn trie_pack(&mut self, mut p: i32) -> Result<(), TrieAbort> {
+        loop {
+            let q = self.trie_l[p as usize];
+            if q > 0 && self.trie_hash[q as usize] == 0 {
+                self.first_fit(q)?;
+                self.trie_pack(q)?;
+            }
+
+            p = self.trie_r[p as usize];
+            if p == 0 {
+                return Ok(());
+            }
+        }
+    }
+
+    fn trie_fix(&mut self, mut p: i32) {
+        let z = self.trie_hash[p as usize];
+        loop {
+            let q = self.trie_l[p as usize];
+            let c = self.trie_c[p as usize];
+            let slot = (z + c as i32) as usize;
+            self.trie_trl[slot] = self.trie_hash[q as usize];
+            self.trie_trc[slot] = c;
+            self.trie_tro[slot] = self.trie_o[p as usize] as i32;
+
+            if q > 0 {
+                self.trie_fix(q);
+            }
+
+            p = self.trie_r[p as usize];
+            if p == 0 {
                 break;
             }
         }
     }
 
-    hyph.trie_trc[0] = b'?' as u16;
-    hyph.trie_not_ready = false;
-    Ok(())
-}
+    pub(crate) fn init_trie(&mut self) -> Result<(), TrieAbort> {
+        self.tables_gen = self.tables_gen.wrapping_add(1);
+        self.max_hyph_char += 1;
+        self.op_start[0] = -MIN_TRIE_OP;
 
-fn trie_insert_node_in(
-    hyph: &mut HyphState,
-    q: i32,
-    p_ref: &mut i32,
-    c: u16,
-    first_child: bool,
-) -> Result<(), TrieAbort> {
-    if hyph.trie_ptr == hyph.trie_size {
-        return Err(TrieAbort::Patterns(hyph.trie_size));
-    }
-
-    hyph.trie_ptr += 1;
-    let p = hyph.trie_ptr;
-    hyph.trie_r[p as usize] = *p_ref;
-    *p_ref = p;
-    hyph.trie_l[p as usize] = 0;
-    if first_child {
-        hyph.trie_l[q as usize] = p;
-    } else {
-        hyph.trie_r[q as usize] = p;
-    }
-    hyph.trie_c[p as usize] = c;
-    hyph.trie_o[p as usize] = MIN_TRIE_OP as u16;
-    Ok(())
-}
-
-/// Insert the pattern `hc[1..=k]` into the trie, returning its node, its op,
-/// and whether the node already carried an op (a duplicate pattern).
-fn insert_pattern_word_in(hyph: &mut HyphState, k: i16) -> Result<(i32, u16, bool), TrieAbort> {
-    if hyph.hc[1] == 0 {
-        hyph.hyf[0] = 0;
-    }
-    if hyph.hc[k as usize] == 0 {
-        hyph.hyf[k as usize] = 0;
-    }
-
-    let mut l = k;
-    let mut v: u16 = MIN_TRIE_OP as u16;
-    loop {
-        if hyph.hyf[l as usize] != 0 {
-            v = new_trie_op_in(hyph, hyph.cur_lang, k - l, hyph.hyf[l as usize] as i16, v)?;
+        for j in 1..=BIGGEST_LANG as usize {
+            self.op_start[j] = self.op_start[j - 1] + self.trie_used[j - 1] as i32;
         }
-        if l == 0 {
-            break;
+
+        let op_ptr = self.trie_op_ptr;
+        for j in 1..=op_ptr {
+            let lang = self.trie_op_lang[j as usize] as usize;
+            let val = self.op_start[lang] + self.trie_op_val[j as usize] as i32;
+            self.set_trie_op_hash(j, val);
         }
-        l -= 1;
+
+        for j in 1..=op_ptr {
+            while self.trie_op_hash(j) > j {
+                let k = self.trie_op_hash(j);
+                let (ju, ku) = (j as usize, k as usize);
+                self.hyf_distance.swap(ju, ku);
+                self.hyf_num.swap(ju, ku);
+                self.hyf_next.swap(ju, ku);
+                self.set_trie_op_hash(j, self.trie_op_hash(k));
+                self.set_trie_op_hash(k, k);
+            }
+        }
+
+        self.trie_hash[..=self.trie_size as usize].fill(0);
+
+        self.trie_r[0] = self.compress_trie(self.trie_r[0]);
+        self.trie_l[0] = self.compress_trie(self.trie_l[0]);
+
+        self.trie_hash[..=self.trie_ptr as usize].fill(0);
+
+        for p in 0..=BIGGEST_CHAR {
+            self.trie_min[p as usize] = p + 1;
+        }
+
+        self.trie_trl[0] = 1;
+        self.trie_max = 0;
+
+        let trie_l0 = self.trie_l[0];
+        if trie_l0 != 0 {
+            self.first_fit(trie_l0)?;
+            self.trie_pack(trie_l0)?;
+        }
+
+        let trie_r0 = self.trie_r[0];
+        if trie_r0 != 0 {
+            if trie_l0 == 0 {
+                for p in 0..=255 {
+                    self.trie_min[p as usize] = p + 2;
+                }
+            }
+            self.first_fit(trie_r0)?;
+            self.trie_pack(trie_r0)?;
+            self.hyph_start = self.trie_hash[trie_r0 as usize];
+        }
+
+        if self.trie_max == 0 {
+            for r in 0..=self.max_hyph_char as usize {
+                self.trie_trl[r] = 0;
+                self.trie_tro[r] = MIN_TRIE_OP;
+                self.trie_trc[r] = 0;
+            }
+            self.trie_max = self.max_hyph_char;
+        } else {
+            if trie_r0 > 0 {
+                self.trie_fix(trie_r0);
+            }
+            if trie_l0 > 0 {
+                self.trie_fix(trie_l0);
+            }
+
+            let mut r = 0;
+            loop {
+                let s = self.trie_trl[r as usize];
+                self.trie_trl[r as usize] = 0;
+                self.trie_tro[r as usize] = MIN_TRIE_OP;
+                self.trie_trc[r as usize] = 0;
+                r = s;
+                if r > self.trie_max {
+                    break;
+                }
+            }
+        }
+
+        self.trie_trc[0] = b'?' as u16;
+        self.trie_not_ready = false;
+        Ok(())
     }
 
-    let mut q: i32 = 0;
-    hyph.hc[0] = hyph.cur_lang as i32;
-    while l <= k {
-        let c = hyph.hc[l as usize] as u16;
-        l += 1;
-        let mut p = hyph.trie_l[q as usize];
+    fn trie_insert_node(
+        &mut self,
+        q: i32,
+        p_ref: &mut i32,
+        c: u16,
+        first_child: bool,
+    ) -> Result<(), TrieAbort> {
+        if self.trie_ptr == self.trie_size {
+            return Err(TrieAbort::Patterns(self.trie_size));
+        }
+
+        self.trie_ptr += 1;
+        let p = self.trie_ptr;
+        self.trie_r[p as usize] = *p_ref;
+        *p_ref = p;
+        self.trie_l[p as usize] = 0;
+        if first_child {
+            self.trie_l[q as usize] = p;
+        } else {
+            self.trie_r[q as usize] = p;
+        }
+        self.trie_c[p as usize] = c;
+        self.trie_o[p as usize] = MIN_TRIE_OP as u16;
+        Ok(())
+    }
+
+    /// Insert the pattern `hc[1..=k]` into the trie, returning its node, its op,
+    /// and whether the node already carried an op (a duplicate pattern).
+    fn insert_pattern_word(&mut self, k: i16) -> Result<(i32, u16, bool), TrieAbort> {
+        if self.hc[1] == 0 {
+            self.hyf[0] = 0;
+        }
+        if self.hc[k as usize] == 0 {
+            self.hyf[k as usize] = 0;
+        }
+
+        let mut l = k;
+        let mut v: u16 = MIN_TRIE_OP as u16;
+        loop {
+            if self.hyf[l as usize] != 0 {
+                v = self.new_trie_op(self.cur_lang, k - l, self.hyf[l as usize] as i16, v)?;
+            }
+            if l == 0 {
+                break;
+            }
+            l -= 1;
+        }
+
+        let mut q: i32 = 0;
+        self.hc[0] = self.cur_lang as i32;
+        while l <= k {
+            let c = self.hc[l as usize] as u16;
+            l += 1;
+            let mut p = self.trie_l[q as usize];
+            let mut first_child = true;
+
+            while p > 0 && c > self.trie_c[p as usize] {
+                q = p;
+                p = self.trie_r[q as usize];
+                first_child = false;
+            }
+
+            if p == 0 || c < self.trie_c[p as usize] {
+                self.trie_insert_node(q, &mut p, c, first_child)?;
+            }
+
+            q = p;
+        }
+
+        Ok((q, v, self.trie_o[q as usize] != MIN_TRIE_OP as u16))
+    }
+
+    fn save_hyph_codes(&mut self, lc_codes: &[i32; 256]) -> Result<(), TrieAbort> {
+        let c = self.cur_lang as u16;
+        let mut p: i32 = 0;
+
+        let mut q: i32;
+        loop {
+            q = p;
+            p = self.trie_r[q as usize];
+            if p == 0 || c <= self.trie_c[p as usize] {
+                break;
+            }
+        }
+
+        if p == 0 || c < self.trie_c[p as usize] {
+            self.trie_insert_node(q, &mut p, c, false)?;
+        }
+
+        q = p;
+        p = self.trie_l[q as usize];
         let mut first_child = true;
 
-        while p > 0 && c > hyph.trie_c[p as usize] {
-            q = p;
-            p = hyph.trie_r[q as usize];
-            first_child = false;
-        }
-
-        if p == 0 || c < hyph.trie_c[p as usize] {
-            trie_insert_node_in(hyph, q, &mut p, c, first_child)?;
-        }
-
-        q = p;
-    }
-
-    Ok((q, v, hyph.trie_o[q as usize] != MIN_TRIE_OP as u16))
-}
-
-fn save_hyph_codes_in(hyph: &mut HyphState, lc_codes: &[i32; 256]) -> Result<(), TrieAbort> {
-    let c = hyph.cur_lang as u16;
-    let mut p: i32 = 0;
-
-    let mut q: i32;
-    loop {
-        q = p;
-        p = hyph.trie_r[q as usize];
-        if p == 0 || c <= hyph.trie_c[p as usize] {
-            break;
-        }
-    }
-
-    if p == 0 || c < hyph.trie_c[p as usize] {
-        trie_insert_node_in(hyph, q, &mut p, c, false)?;
-    }
-
-    q = p;
-    p = hyph.trie_l[q as usize];
-    let mut first_child = true;
-
-    for (ci, &lc) in (0u16..=255).zip(lc_codes.iter()) {
-        if lc > 0 || (ci == 255 && first_child) {
-            if p == 0 {
-                trie_insert_node_in(hyph, q, &mut p, ci, first_child)?;
-            } else {
-                hyph.trie_c[p as usize] = ci;
+        for (ci, &lc) in (0u16..=255).zip(lc_codes.iter()) {
+            if lc > 0 || (ci == 255 && first_child) {
+                if p == 0 {
+                    self.trie_insert_node(q, &mut p, ci, first_child)?;
+                } else {
+                    self.trie_c[p as usize] = ci;
+                }
+                self.trie_o[p as usize] = lc as u16;
+                q = p;
+                p = self.trie_r[q as usize];
+                first_child = false;
             }
-            hyph.trie_o[p as usize] = lc as u16;
-            q = p;
-            p = hyph.trie_r[q as usize];
-            first_child = false;
         }
-    }
 
-    if first_child {
-        hyph.trie_l[q as usize] = 0;
-    } else {
-        hyph.trie_r[q as usize] = 0;
-    }
+        if first_child {
+            self.trie_l[q as usize] = 0;
+        } else {
+            self.trie_r[q as usize] = 0;
+        }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 /// Finish an error begun at the call site: set its help text (in display
@@ -549,7 +547,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
             }
             SPACER | RIGHT_BRACE => {
                 if k > 0 {
-                    let (q, op, duplicate) = insert_pattern_word_in(&mut st.hyph, k)?;
+                    let (q, op, duplicate) = st.hyph.insert_pattern_word(k)?;
                     if duplicate {
                         crate::output::error_here_with_diagnostic_in(
                             st,
@@ -578,7 +576,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
 
     if st.eqtb.int_par(INT_PAR_SAVING_HYPH_CODES) > 0 {
         let lc_codes: [i32; 256] = std::array::from_fn(|ci| st.eqtb.lc_code(ci as i32));
-        save_hyph_codes_in(&mut st.hyph, &lc_codes)?;
+        st.hyph.save_hyph_codes(&lc_codes)?;
     }
     Ok(())
 }
@@ -592,7 +590,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
     if st.hyph.trie_not_ready {
         st.hyph.hyph_index = 0;
     } else {
-        set_hyph_index(&mut st.hyph);
+        st.hyph.set_hyph_index();
     }
 
     let mut n: i16 = 0;
@@ -613,7 +611,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
                             p = q;
                         }
                     } else {
-                        st.hyph.hc[0] = hyph_code(&st.hyph, &st.eqtb, st.scanner.cur_chr);
+                        st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, st.scanner.cur_chr);
 
                         if st.hyph.hc[0] == 0 {
                             crate::output::error_here_with_diagnostic_in(
