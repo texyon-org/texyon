@@ -1108,7 +1108,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         let glyph =
             NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)?;
         glyph.set_native_font(&mut st.mem, FontId(f));
-        let glyph_id = st.mem.real_get_native_glyph(old, 0);
+        let glyph_id = st.mem.get_native_glyph(old, 0);
         glyph.set_native_glyph(&mut st.mem, glyph_id);
         st.fonts.measure_glyph(&mut st.mem, glyph)?;
         old.free_native(&mut st.mem);
@@ -1653,7 +1653,7 @@ fn first_script_glyph(
                 cur_f_after_fetch,
                 cur_c_after_fetch as u32,
             )?;
-            script_g = st.mem.real_get_native_glyph(script_c, 0);
+            script_g = st.mem.get_native_glyph(script_c, 0);
             script_f = cur_f_after_fetch;
         }
 
@@ -1820,7 +1820,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: i32) -> Res
                     WhatsitSubtype::Glyph,
                 )?;
                 glyph.set_native_font(&mut st.mem, FontId(cur_f));
-                let z_glyph = st.mem.real_get_native_glyph(z, 0);
+                let z_glyph = st.mem.get_native_glyph(z, 0);
                 glyph.set_native_glyph(&mut st.mem, z_glyph);
                 st.fonts.measure_glyph(&mut st.mem, glyph)?;
                 z.free_native(&mut st.mem);
@@ -2338,7 +2338,7 @@ fn compute_ot_math_accent_pos(st: &mut EngineState, mut p: NodePtr<Noad>) -> Res
                 let f = st.scanner.cur_f;
                 let c = st.scanner.cur_c;
                 let q = crate::fonts::new_native_character(st, f, c as u32)?;
-                let g = st.mem.real_get_native_glyph(q, 0);
+                let g = st.mem.get_native_glyph(q, 0);
                 return Ok(st.fonts.get_ot_math_accent_pos(f, g as i32));
             }
             SUB_MLIST => {
@@ -3134,7 +3134,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_list.set_aux_s0(1000);
 
         if st.config.semantic_pagination_enabled {
-            crate::ext::tt_insert_special(st, "tdux:ce math")?;
+            crate::ext::insert_special(st, "tdux:ce math")?;
         }
 
         crate::save::unsave(st)?;
@@ -3278,7 +3278,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if st.config.semantic_pagination_enabled {
-        crate::ext::tt_insert_special(st, "tdux:ce dmath")?;
+        crate::ext::insert_special(st, "tdux:ce dmath")?;
     }
 
     resume_after_display(st)
@@ -3509,7 +3509,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s)?;
 
         if st.config.semantic_pagination_enabled {
-            crate::ext::tt_insert_special(st, "tdux:cs dmath")?;
+            crate::ext::insert_special(st, "tdux:cs dmath")?;
         }
 
         let every_display = st.eqtb.local(LOCAL_EVERY_DISPLAY);
@@ -3527,7 +3527,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             crate::ext::insert_src_special(st)?;
         }
         if st.config.semantic_pagination_enabled {
-            crate::ext::tt_insert_special(st, "tdux:cs math")?;
+            crate::ext::insert_special(st, "tdux:cs math")?;
         }
         let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
         if !every_math.is_null() {

@@ -932,7 +932,7 @@ fn cached_or_measured_bbox(engine: &FontEngineHandle, f: i32, gid: u16) -> Glyph
 }
 
 impl MemState {
-    pub fn real_get_native_glyph(&self, w: NodePtr<WhatsitNode>, index: u32) -> u16 {
+    pub fn get_native_glyph(&self, w: NodePtr<WhatsitNode>, index: u32) -> u16 {
         if index as usize >= w.native_glyph_count(self) as usize {
             0
         } else {
@@ -941,7 +941,7 @@ impl MemState {
     }
 
     /// The protrusion code of the first or last glyph of native word `w`.
-    pub fn real_get_native_word_cp(&self, w: NodePtr<WhatsitNode>, side: c_int) -> i32 {
+    pub fn get_native_word_cp(&self, w: NodePtr<WhatsitNode>, side: c_int) -> i32 {
         let glyph_count = w.native_glyph_count(self) as usize;
         let f = w.native_font(self).0;
         if glyph_count == 0 {
@@ -1090,11 +1090,7 @@ impl FontState {
         Ok(())
     }
 
-    pub fn real_get_native_italic_correction(
-        &self,
-        mem: &MemState,
-        w: NodePtr<WhatsitNode>,
-    ) -> i32 {
+    pub fn get_native_italic_correction(&self, mem: &MemState, w: NodePtr<WhatsitNode>) -> i32 {
         let f = w.native_font(mem).0;
         let n = w.native_glyph_count(mem) as usize;
         if n > 0 {
@@ -1107,7 +1103,7 @@ impl FontState {
         0
     }
 
-    pub fn real_get_native_glyph_italic_correction(
+    pub fn get_native_glyph_italic_correction(
         &self,
         mem: &MemState,
         w: NodePtr<WhatsitNode>,
@@ -1474,7 +1470,7 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// Insert `\special{<ascii_text>}` into the input.
-pub(crate) fn tt_insert_special(st: &mut EngineState, text: &str) -> Result<(), Abort> {
+pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abort> {
     let start_pool = st.strings.pool_ptr;
     let text = text.as_bytes();
     if st.strings.pool_ptr + text.len() as i32 >= st.strings.pool_size {

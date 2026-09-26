@@ -326,7 +326,7 @@ impl LinebreakState {
                             return 0;
                         }
                         let f = w.native_font(mem).0;
-                        let cp = mem.real_get_native_word_cp(w, side as libc::c_int);
+                        let cp = mem.get_native_word_cp(w, side as libc::c_int);
                         return protrusion(errors, fonts, f, cp);
                     }
                     Some(WhatsitSubtype::Glyph) => {

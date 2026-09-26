@@ -4,7 +4,7 @@ use crate::state::ConfigState;
 
 /// Batch entry point. Every dpx call that can `_tt_abort` goes through a
 /// guarded probe in pdf_io that catches its own `longjmp`.
-pub(crate) fn tt_engine_xetex_main(
+pub(crate) fn engine_xetex_main(
     api: &mut tectonic_bridge_core::CoreBridgeState,
     config: ConfigState,
     dump_name: &str,
@@ -14,7 +14,7 @@ pub(crate) fn tt_engine_xetex_main(
     let raw = api as *mut tectonic_bridge_core::CoreBridgeState as *mut libc::c_void;
     // SAFETY: `raw` comes from the exclusive borrow `api`, which outlives the run.
     unsafe { crate::bridge::enter_global_engine(raw) };
-    let rv = crate::engine::tt_run_engine(
+    let rv = crate::engine::run_engine(
         api,
         config,
         dump_name,

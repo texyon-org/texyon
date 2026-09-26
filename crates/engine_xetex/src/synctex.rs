@@ -47,7 +47,7 @@ fn synctex_write(handle: usize, s: &str) -> i32 {
 }
 
 impl SynctexCtxt {
-    fn synctexabort(&mut self) {
+    fn abort(&mut self) {
         if self.file != INVALID_HANDLE && self.file != PREVIEW_HANDLE {
             output_close(self.file);
             self.file = INVALID_HANDLE;
@@ -63,7 +63,7 @@ impl SynctexCtxt {
             self.total_length += len;
             true
         } else {
-            self.synctexabort();
+            self.abort();
             false
         }
     }
@@ -75,7 +75,7 @@ impl SynctexCtxt {
             self.total_length = len;
             true
         } else {
-            self.synctexabort();
+            self.abort();
             false
         }
     }
@@ -103,7 +103,7 @@ impl SynctexCtxt {
             && self.record_anchor()
             && self.record("Post scriptum:\n");
         if !ok {
-            self.synctexabort();
+            self.abort();
         }
         ok
     }
@@ -113,7 +113,7 @@ impl SynctexCtxt {
         if self.record_anchor() && self.record(&format!("{brace}{sheet}\n")) {
             self.count += 1;
         } else {
-            self.synctexabort();
+            self.abort();
         }
     }
 
@@ -144,7 +144,7 @@ impl SynctexCtxt {
             self.total_length += len;
             self.count += 1;
         } else {
-            self.synctexabort();
+            self.abort();
         }
     }
 
@@ -180,19 +180,19 @@ impl SynctexCtxt {
         } else {
             let mut name = job_name.to_vec();
             if name.is_empty() {
-                self.synctexabort();
+                self.abort();
                 return INVALID_HANDLE;
             }
             name.extend_from_slice(b".synctex.gz");
             self.file = output_open(&name, true);
             if self.file == INVALID_HANDLE {
-                self.synctexabort();
+                self.abort();
                 return INVALID_HANDLE;
             }
         }
 
         if !self.record_restart(&format!("SyncTeX Version:{SYNCTEX_VERSION}\n")) {
-            self.synctexabort();
+            self.abort();
             return INVALID_HANDLE;
         }
         if self.magnification == 0 {
@@ -217,7 +217,7 @@ impl SynctexCtxt {
             self.flags.content_ready = true;
             return self.file;
         }
-        self.synctexabort();
+        self.abort();
         INVALID_HANDLE
     }
 
@@ -273,7 +273,7 @@ pub fn synctex_terminate(st: &mut EngineState) {
         }
         synctex.file = INVALID_HANDLE;
     }
-    synctex.synctexabort();
+    synctex.abort();
 }
 
 pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8]) {
@@ -532,6 +532,6 @@ pub fn synctex_current(st: &mut EngineState) {
     if len > 0 {
         synctex.total_length += len;
     } else {
-        synctex.synctexabort();
+        synctex.abort();
     }
 }

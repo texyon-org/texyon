@@ -11,7 +11,7 @@ use crate::ext::{
     aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_tfm_font_mapping,
     ot_get_font_metrics, NativeFontMetrics,
 };
-use crate::io::{pack_file_name, tt_xetex_open_input};
+use crate::io::{open_input_file, pack_file_name};
 use crate::mem_types::B16x4;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{
@@ -343,7 +343,7 @@ pub(crate) fn read_font_info(
         st.fonts
             .check_for_tfm_font_mapping(&mut st.input.name_of_file);
 
-        tfm_file = tt_xetex_open_input(st, TTBC_FILE_FORMAT_TFM);
+        tfm_file = open_input_file(st, TTBC_FILE_FORMAT_TFM);
         if tfm_file == INVALID_HANDLE {
             if !st.scanner.quoted_filename {
                 g = load_native_font(st, u, nom, aire, s)?;

@@ -625,7 +625,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         }
         PDF_CREATION_DATE_CODE => {
             let b = st.strings.pool_ptr;
-            st.texmf.getcreationdate(&mut st.strings);
+            st.texmf.creation_date(&mut st.strings);
             let tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
             ins_temp_head_list(st, tail)?;
         }
@@ -633,14 +633,14 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let saved = save_scan(st)?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
-            st.strings.getfilemoddate(s)?;
+            st.strings.file_mod_date(s)?;
             return ins_file_query_result(st, &saved, s, b);
         }
         PDF_FILE_SIZE_CODE => {
             let saved = save_scan(st)?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
-            st.strings.getfilesize(s)?;
+            st.strings.file_size(s)?;
             return ins_file_query_result(st, &saved, s, b);
         }
         PDF_MDFIVE_SUM_CODE => {
@@ -648,7 +648,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let is_file = crate::scan::scan_keyword(st, "file")?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
-            st.strings.getmd5sum(s, is_file);
+            st.strings.md5_sum(s, is_file);
             return ins_file_query_result(st, &saved, s, b);
         }
         PDF_FILE_DUMP_CODE => {
@@ -667,7 +667,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             )?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
-            st.strings.getfiledump(s, offset, length)?;
+            st.strings.file_dump(s, offset, length)?;
             return ins_file_query_result(st, &saved, s, b);
         }
         PDF_STRCMP_CODE => {

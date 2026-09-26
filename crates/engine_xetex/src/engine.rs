@@ -1,4 +1,4 @@
-//! Engine init, run and cleanup: the `tt_run_engine` entry point, the
+//! Engine init, run and cleanup: the `run_engine` entry point, the
 //! initialize_* primers, primitive registration and teardown.
 
 use crate::bridge::output_open_stdout;
@@ -672,11 +672,11 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Engine entry point (called from `tt_engine_xetex_main`).
+/// Engine entry point (called from `engine_xetex_main`).
 ///
 /// A Rust panic is caught and turned into a `HISTORY_FATAL_ERROR` return with
 /// a surfaced message instead of unwinding into the host.
-pub(crate) fn tt_run_engine(
+pub(crate) fn run_engine(
     api: &mut tectonic_bridge_core::CoreBridgeState,
     config: ConfigState,
     dump_name: &str,
@@ -693,7 +693,7 @@ pub(crate) fn tt_run_engine(
     let _bridge_guard = OnDrop(crate::bridge::clear_bridge_state);
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        tt_run_engine_inner(config, dump_name, input_file_name, build_date)
+        run_engine_inner(config, dump_name, input_file_name, build_date)
     }));
     match outcome {
         Ok(rv) => rv,
@@ -709,7 +709,7 @@ pub(crate) fn tt_run_engine(
     }
 }
 
-fn tt_run_engine_inner(
+fn run_engine_inner(
     config: ConfigState,
     dump_name: &str,
     input_file_name: &str,
@@ -1040,7 +1040,7 @@ fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
     if let Err(a) = result {
         return a.into_history(st);
     }
-    tt_cleanup(st);
+    cleanup(st);
     st.errors.history
 }
 
@@ -1121,7 +1121,7 @@ mod deterministic_input_tests {
     }
 }
 
-pub(crate) fn tt_cleanup(st: &mut EngineState) {
+pub(crate) fn cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
     reset_layout_font_caches();
     pdf_files_close();

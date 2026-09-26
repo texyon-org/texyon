@@ -48,7 +48,7 @@ fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
     }
     st.errors.history = HISTORY_FATAL_ERROR;
     let _ = crate::io::close_files_and_terminate(st);
-    crate::engine::tt_cleanup(st);
+    crate::engine::cleanup(st);
     output_flush(st.shipout.rust_stdout);
 }
 
@@ -153,7 +153,7 @@ impl Abort {
         print_nl(st, s);
         capture_to_diagnostic(st, None);
         let _ = crate::io::close_files_and_terminate(st);
-        crate::engine::tt_cleanup(st);
+        crate::engine::cleanup(st);
         output_flush(st.shipout.rust_stdout);
         set_error_message(s);
     }

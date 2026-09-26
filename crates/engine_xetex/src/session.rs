@@ -582,7 +582,7 @@ impl IncrementalXeTeXSession {
                 run_locked(api, state, |state| {
                     crate::engine::release_operation_inputs(state);
                     ladder.rewind_engine(state, 0);
-                    crate::engine::tt_cleanup(state);
+                    crate::engine::cleanup(state);
                 })
             }))
             .is_err())

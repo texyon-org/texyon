@@ -207,7 +207,7 @@ impl StringsState {
     }
 
     /// Appends the hex MD5 of file (or string) `s` to the pool.
-    pub(crate) fn getmd5sum(&mut self, s: i32, file: bool) {
+    pub(crate) fn md5_sum(&mut self, s: i32, file: bool) {
         let mut digest = [0u8; 16];
         let xname = self.texstring_cstring(s);
 
@@ -252,7 +252,7 @@ impl StringsState {
     }
 
     /// Appends the decimal size of file `s` to the pool.
-    pub(crate) fn getfilesize(&mut self, s: i32) -> Result<(), Abort> {
+    pub(crate) fn file_size(&mut self, s: i32) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
             return Ok(());
@@ -268,7 +268,7 @@ impl StringsState {
     }
 
     /// Appends a hex dump of `length` bytes of file `s` from `offset` to the pool.
-    pub(crate) fn getfiledump(
+    pub(crate) fn file_dump(
         &mut self,
         s: i32,
         offset: libc::c_int,
@@ -321,7 +321,7 @@ pub(crate) fn remember_source_info(
 }
 
 /// Formats `t` as a NUL-terminated PDF date string into `time_str`.
-fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
+fn make_pdf_time(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
     let lt = broken_down_time(t, utc);
     let date = format!(
         "D:{}{:02}{:02}{:02}{:02}{:02}",
@@ -381,22 +381,22 @@ fn nul_terminated(buf: &[u8]) -> &[u8] {
     &buf[..end]
 }
 
-/// Records the PDF date string of `source_date_epoch` for `getcreationdate`.
+/// Records the PDF date string of `source_date_epoch` for `creation_date`.
 pub fn init_start_time(st: &mut crate::state::EngineState, source_date_epoch: libc::time_t) {
     let mut buf = [0u8; 30];
-    makepdftime(source_date_epoch, &mut buf, true);
+    make_pdf_time(source_date_epoch, &mut buf, true);
     st.texmf.start_time_str = buf;
 }
 
 impl TexmfState {
-    pub(crate) fn getcreationdate(&self, strings: &mut StringsState) {
+    pub(crate) fn creation_date(&self, strings: &mut StringsState) {
         strings.push_bytes_or_fill(nul_terminated(&self.start_time_str));
     }
 }
 
 impl StringsState {
     /// Appends the modification date of file `s` to the pool as a PDF date.
-    pub(crate) fn getfilemoddate(&mut self, s: i32) -> Result<(), Abort> {
+    pub(crate) fn file_mod_date(&mut self, s: i32) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
             return Ok(());
@@ -408,7 +408,7 @@ impl StringsState {
         }
 
         let mut buf = [0u8; 30];
-        makepdftime(mtime, &mut buf, true);
+        make_pdf_time(mtime, &mut buf, true);
         self.push_bytes_or_fill(nul_terminated(&buf));
         Ok(())
     }

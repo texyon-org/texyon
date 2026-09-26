@@ -69,7 +69,7 @@ fn with_bridge<R>(f: impl FnOnce(&mut CoreBridgeState<'static>) -> R) -> R {
     // SAFETY: `set_bridge_state` keeps the pointer valid for the whole run, the
     // engine is single-threaded and `f` never re-enters, so this borrow is unique.
     let es = unsafe { BRIDGE_PTR.cast::<CoreBridgeState<'static>>().as_mut() };
-    f(es.expect("bridge state used outside tt_run_engine"))
+    f(es.expect("bridge state used outside run_engine"))
 }
 
 /// Maps a `ttbc_file_format` number to its `FileFormat`.

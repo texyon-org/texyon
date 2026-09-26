@@ -206,7 +206,7 @@ fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i3
     (len, err)
 }
 
-pub(crate) fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_int) -> usize {
+pub(crate) fn open_input_file(st: &mut EngineState, filefmt: libc::c_int) -> usize {
     let handle = if filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY {
         input_open_primary()
     } else if st.input.name_of_file.first() == Some(&b'|') {
@@ -244,7 +244,7 @@ pub(crate) fn u_open_in(
     mut mode: i32,
     encoding_data: i32,
 ) -> Result<Option<Box<UFile>>, Abort> {
-    let handle = tt_xetex_open_input(st, filefmt);
+    let handle = open_input_file(st, filefmt);
     if handle == INVALID_HANDLE {
         return Ok(None);
     }

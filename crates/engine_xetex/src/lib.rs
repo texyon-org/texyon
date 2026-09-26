@@ -15,7 +15,7 @@
 //! [Tectonic]: https://tectonic-typesetting.github.io/
 //! [`tectonic`]: https://docs.rs/tectonic/
 
-use crate::engine_interface::tt_engine_xetex_main;
+use crate::engine_interface::engine_xetex_main;
 use crate::state::ConfigState;
 
 use std::time::SystemTime;
@@ -264,7 +264,7 @@ impl TexEngine {
         };
 
         launcher.with_global_lock(|state| {
-            let r = tt_engine_xetex_main(
+            let r = engine_xetex_main(
                 state,
                 config,
                 format_file_name,

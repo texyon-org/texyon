@@ -2252,11 +2252,9 @@ pub(crate) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
         match st.mem.classify(MemIdx(tail)) {
             Ok(AnyNode::Ligature(lig)) => char_italic(st, lig.char_word()),
             Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(&st.mem) {
-                Some(s) if s.is_native_word() => {
-                    st.fonts.real_get_native_italic_correction(&st.mem, w)
-                }
+                Some(s) if s.is_native_word() => st.fonts.get_native_italic_correction(&st.mem, w),
                 Some(WhatsitSubtype::Glyph) => {
-                    st.fonts.real_get_native_glyph_italic_correction(&st.mem, w)
+                    st.fonts.get_native_glyph_italic_correction(&st.mem, w)
                 }
                 _ => return Ok(()),
             },

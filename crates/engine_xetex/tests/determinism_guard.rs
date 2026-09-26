@@ -24,7 +24,7 @@ const PATTERNS: &[&str] = &[
 const ALLOWED: &[(&str, &str, usize)] = &[
     // get_seconds_and_micros; every caller gates on deterministic_mode.
     ("src/texmfmp.rs", "SystemTime::now", 1),
-    // broken_down_time, which get_date_and_time and makepdftime share.
+    // broken_down_time, which get_date_and_time and make_pdf_time share.
     ("src/texmfmp.rs", "localtime", 1),
     ("src/texmfmp.rs", "gmtime", 1),
     // Declarations only: the libc re-export and the Windows _gmtime64 /
