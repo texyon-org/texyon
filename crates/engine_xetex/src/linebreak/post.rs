@@ -186,7 +186,12 @@ impl LinebreakState {
         let (cur_width, cur_indent) = if cur_line > self.last_special_line {
             (self.second_width, self.second_indent)
         } else if let Some(shape) = eqtb.par_shape() {
-            (shape.line_width(mem, cur_line), shape.indent(mem, cur_line))
+            // A huge \prevgraf wraps line numbers negative, past the shape.
+            if cur_line > 0 {
+                (shape.line_width(mem, cur_line), shape.indent(mem, cur_line))
+            } else {
+                (self.second_width, self.second_indent)
+            }
         } else {
             (self.first_width, self.first_indent)
         };
@@ -235,9 +240,12 @@ impl MemState {
     }
 
     /// Entry `n` (clamped to the last) of the eTeX penalty array `k`, if it is set.
+    /// A line number wrapped negative by a huge `\prevgraf` also gets the last.
     fn etex_penalty(&self, eqtb: &EqtbState, k: i32, n: i32) -> Option<i32> {
         let penalties = eqtb.penalties(ETEX_PEN_BASE + k)?;
-        Some(penalties.penalty(self, n.min(penalties.count(self))))
+        let count = penalties.count(self);
+        let n = if n > 0 { n.min(count) } else { count };
+        Some(penalties.penalty(self, n))
     }
 }
 

@@ -912,7 +912,12 @@ impl MemState {
                     line_width = if l > linebreak.last_special_line {
                         linebreak.second_width
                     } else if let Some(shape) = eqtb.par_shape() {
-                        shape.line_width(self, l)
+                        // A huge \prevgraf wraps line numbers negative, past the shape.
+                        if l > 0 {
+                            shape.line_width(self, l)
+                        } else {
+                            linebreak.second_width
+                        }
                     } else {
                         linebreak.first_width
                     };

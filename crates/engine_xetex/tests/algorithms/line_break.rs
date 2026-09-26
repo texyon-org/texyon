@@ -121,3 +121,20 @@ fn interline_penalties_add_up_with_32_bit_wraparound() {
         [".\\penalty -294967296", ".\\penalty 2000000000"]
     );
 }
+
+#[test]
+fn line_numbers_wrapped_by_prevgraf_are_past_the_parshape() {
+    let r = paragraph(
+        r"\setbox0\vbox{\parshape 2 5pt 30pt 0pt 50pt \interlinepenalties 2 7 8
+          \w\prevgraf=2147483647 \w\w\w\w\w\w\par \showthe\prevgraf}\showbox0",
+    );
+    let shown = r.boxes().remove(0);
+    let lines = rows(&shown);
+    assert_eq!(lines.lines().count(), 7);
+    assert!(lines.lines().all(|l| l.starts_with("\\hbox(5.0+0.0)x50.0")));
+    assert!(shown
+        .lines()
+        .filter(|l| l.starts_with(".\\penalty"))
+        .all(|l| l == ".\\penalty 8"));
+    assert_eq!(r.shown(), ["-2147483642"]);
+}
