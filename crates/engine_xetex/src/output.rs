@@ -827,9 +827,9 @@ pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
 }
 
 pub(crate) fn token_show_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
-    let p = p.addr();
-    if p != TEX_NULL {
-        let head = st.mem.link_ptr(p);
+    let p = MemPtr(p.addr());
+    if !p.is_null() {
+        let head = p.link(&st.mem);
         show_token_list_in(st, head, TEX_NULL, 10_000_000);
     }
 }
@@ -1091,7 +1091,7 @@ fn print_mark_in(st: &mut EngineState, p: MemPtr) {
     if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
         esc(st, c"CLOBBERED.");
     } else {
-        let head = st.mem.link_ptr(p);
+        let head = p.link(&st.mem);
         let l = st.config.max_print_line - 10;
         show_token_list_in(st, head, TEX_NULL, l);
     }
@@ -2633,7 +2633,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
             crate::scan::the_toks_in(st)?;
             print_nl_cstr_in(st, c"> ".as_ptr());
             token_show_in(st, TEMP_HEAD);
-            let list = st.mem.link_ptr(TEMP_HEAD);
+            let list = TEMP_HEAD.link(&st.mem);
             crate::mem::flush_list(&mut st.mem, list);
         }
     }
@@ -2859,7 +2859,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
             print_totals_in(st);
             print_nl_cstr_in(st, c" goal height ".as_ptr());
             print_scaled_in(st, st.shipout.page_so_far[0]);
-            let mut r = st.mem.link_ptr(PAGE_INS_HEAD);
+            let mut r = PAGE_INS_HEAD.link(&st.mem);
             while r != PAGE_INS_HEAD {
                 let ins = NodePtr::<PageInsNode>::at(r);
                 print_ln_in(st);
@@ -2880,7 +2880,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
                     let mut q = PAGE_HEAD;
                     let mut t = 0;
                     loop {
-                        q = st.mem.link_ptr(q);
+                        q = q.link(&st.mem);
                         if let Ok(AnyNode::Ins(node)) = st.mem.classify(MemIdx::new(q)) {
                             if node.subtype(&st.mem) == box_num {
                                 t += 1;

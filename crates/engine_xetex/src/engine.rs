@@ -40,7 +40,7 @@ use crate::mem::{
     SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
-use crate::node::{CondNode, FreeBlock, NodePtr};
+use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState};
 use crate::units::{MemPtr, NodeType, Scaled};
@@ -51,8 +51,6 @@ const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
 pub(crate) const POOL_FREE: i32 = 47_500;
 pub(crate) const STRINGS_FREE: i32 = 100;
 const HYPH_SIZE: i32 = 8_191;
-
-const SPLIT_UP: u16 = 1;
 
 const NUM_ETEX_PENALTIES: i32 = 4;
 const NUMBER_REGS: i32 = 256;
@@ -511,23 +509,26 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     rover.set_llink(mem, mem.rover);
     rover.set_rlink(mem, mem.rover);
     mem.lo_mem_max = mem.rover + 1000;
-    mem.set_b32s1(mem.lo_mem_max, TEX_NULL);
-    mem.set_b32s0(mem.lo_mem_max, TEX_NULL);
+    let end = MemPtr(mem.lo_mem_max);
+    end.set_link(mem, MemPtr::NULL);
+    end.set_info(mem, TEX_NULL);
 
     let template = mem.word(mem.lo_mem_max);
     for k in HI_MEM_STAT_MIN..=MEM_TOP {
         mem.set_word(k, template);
     }
 
-    mem.set_b32s0(OMIT_TEMPLATE, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
+    OMIT_TEMPLATE.set_token(mem, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
     END_SPAN.set_span_count(mem, u16::MAX as i32 + 1);
     mem.set_b32s0(END_SPAN.idx(), TEX_NULL);
-    mem.set_b16s1(ACTIVE_LIST, HYPHENATED as u16);
-    mem.set_b32s0(ACTIVE_LIST + 1, MAX_HALFWORD);
-    mem.set_b16s0(ACTIVE_LIST, 0);
-    mem.set_b16s0(PAGE_INS_HEAD, 255);
-    mem.set_b16s1(PAGE_INS_HEAD, SPLIT_UP);
-    mem.set_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD.0);
+    let active = NodePtr::<ActiveNode>::at(ACTIVE_LIST);
+    active.set_break_type(mem, HYPHENATED as u16);
+    active.set_line_number(mem, MAX_HALFWORD);
+    active.set_fitness(mem, 0);
+    let page_ins = NodePtr::<PageInsNode>::at(PAGE_INS_HEAD);
+    page_ins.set_subtype(mem, 255);
+    page_ins.set_split_up(mem, true);
+    page_ins.set_link(mem, PAGE_INS_HEAD);
     mem.set_b16s1(PAGE_HEAD, NodeType::Glue.as_raw());
     mem.set_b16s0(PAGE_HEAD, NORMAL);
     mem.avail = TEX_NULL;

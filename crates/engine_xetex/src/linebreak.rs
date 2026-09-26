@@ -523,7 +523,7 @@ fn insert_right_margin_kern(
     let (p, ptmp) = if pre_break_tail {
         (q, q)
     } else {
-        let head = mem.link_ptr(TEMP_HEAD);
+        let head = TEMP_HEAD.link(mem);
         let ptmp = crate::mem::prev_rightmost(mem, head, q);
         let p = find_protchar_right(mem, linebreak, head, ptmp).ok_or(MarginKernAbort::PdfError)?;
         (p, ptmp)
@@ -886,7 +886,7 @@ fn start_linebreak_pass(
     scanner.active_width[1..].copy_from_slice(&linebreak.background[1..]);
     linebreak.passive = MemPtr::NULL;
     errors.font_in_short_display = 0;
-    linebreak.cur_p = mem.link_ptr(TEMP_HEAD);
+    linebreak.cur_p = TEMP_HEAD.link(mem);
     linebreak.global_prev_p = linebreak.cur_p;
     linebreak.first_p = linebreak.cur_p;
     Ok(())

@@ -536,12 +536,6 @@ impl MemState {
         unsafe { self.data[p.addr() as usize].b32.s1 }
     }
 
-    /// The link word of `p`, for list heads that are not typed nodes.
-    #[inline]
-    pub(crate) fn link_ptr(&self, p: impl crate::units::MemAddr) -> crate::units::MemPtr {
-        crate::units::MemPtr::from_raw(self.b32s1(p))
-    }
-
     #[inline]
     pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection. The `Vec` index is bounds-checked.

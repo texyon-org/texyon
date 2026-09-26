@@ -2023,7 +2023,7 @@ pub(crate) fn append_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
         .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
     crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0)?;
-    let text = st.mem.link_ptr(TEMP_HEAD);
+    let text = TEMP_HEAD.link(&st.mem);
     d.set_link(&mut st.mem, text);
     w.set_write_tokens(&mut st.mem, d);
     crate::texmfmp::remember_source_info_in(st, fname, st.mem.line);
@@ -2043,7 +2043,7 @@ pub(crate) fn insert_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
         .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
     let text_tail = crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0)?;
-    let text = st.mem.link_ptr(TEMP_HEAD);
+    let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
     let close = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
     text_tail.set_link(&mut st.mem, close);
@@ -2078,7 +2078,7 @@ pub(crate) unsafe fn tt_insert_special_in(
     open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     toklist.set_link(&mut st.mem, open);
     let text_tail = crate::scan::str_toks_scc(st, start_pool, 0)?;
-    let text = st.mem.link_ptr(TEMP_HEAD);
+    let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
     let close = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);

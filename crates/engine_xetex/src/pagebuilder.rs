@@ -352,10 +352,10 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         .set_glue_par(GLUE_PAR_SPLIT_TOP_SKIP, save_split_top_skip);
 
     if !p.is_null() {
-        if st.mem.link_ptr(CONTRIB_HEAD).is_null() {
+        if CONTRIB_HEAD.link(&st.mem).is_null() {
             set_contrib_tail(st, st.shipout.page_tail);
         }
-        let contrib = st.mem.link_ptr(CONTRIB_HEAD);
+        let contrib = CONTRIB_HEAD.link(&st.mem);
         st.shipout.page_tail.set_link(&mut st.mem, contrib);
         CONTRIB_HEAD.set_link(&mut st.mem, p);
         prev_p.set_link(&mut st.mem, MemPtr::NULL);
@@ -367,7 +367,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, MAX_HALFWORD);
     let page = crate::packaging::vpackage_emit_in(
         st,
-        st.mem.link_ptr(PAGE_HEAD),
+        PAGE_HEAD.link(&st.mem),
         st.shipout.best_size,
         EXACTLY,
         st.shipout.page_max_depth,
@@ -389,7 +389,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     st.shipout.page_so_far[PAGE_DEPTH] = 0;
     st.shipout.page_max_depth = 0;
     if hold_tail != HOLD_HEAD {
-        let held = st.mem.link_ptr(HOLD_HEAD);
+        let held = HOLD_HEAD.link(&st.mem);
         PAGE_HEAD.set_link(&mut st.mem, held);
         st.shipout.page_tail = hold_tail;
     }
@@ -440,14 +440,14 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         page_error(crate::errors::error_in(st))?;
     }
 
-    if !st.mem.link_ptr(PAGE_HEAD).is_null() {
-        let contrib = st.mem.link_ptr(CONTRIB_HEAD);
+    if !PAGE_HEAD.link(&st.mem).is_null() {
+        let contrib = CONTRIB_HEAD.link(&st.mem);
         if contrib.is_null() {
             set_contrib_tail(st, st.shipout.page_tail);
         } else {
             st.shipout.page_tail.set_link(&mut st.mem, contrib);
         }
-        let held = st.mem.link_ptr(PAGE_HEAD);
+        let held = PAGE_HEAD.link(&st.mem);
         CONTRIB_HEAD.set_link(&mut st.mem, held);
         PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
         st.shipout.page_tail = PAGE_HEAD;
@@ -623,10 +623,10 @@ enum PageStep {
 }
 
 pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> {
-    if st.mem.link_ptr(CONTRIB_HEAD).is_null() || st.shipout.output_active {
+    if CONTRIB_HEAD.link(&st.mem).is_null() || st.shipout.output_active {
         return Ok(());
     }
-    while let Some(idx) = st.mem.link_ptr(CONTRIB_HEAD).as_idx() {
+    while let Some(idx) = CONTRIB_HEAD.link(&st.mem).as_idx() {
         let p = MemPtr::from_idx(idx);
         let node_type = st.mem.type_code(idx) as i32;
         let node = st.mem.classify(idx).expect("valid page node");

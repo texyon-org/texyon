@@ -3289,7 +3289,7 @@ pub(crate) fn after_math_in(
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
         mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
-        let eqno = crate::packaging::hpack_emit_in(st, st.mem.link_ptr(TEMP_HEAD), 0, ADDITIONAL)?;
+        let eqno = crate::packaging::hpack_emit_in(st, TEMP_HEAD.link(&st.mem), 0, ADDITIONAL)?;
         eqno.set_subtype(&mut st.mem, DLIST);
         a = Some(eqno);
         crate::save::unsave_in(st)?;
@@ -3315,7 +3315,7 @@ pub(crate) fn after_math_in(
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
         mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
-        let hlist = st.mem.link_ptr(TEMP_HEAD);
+        let hlist = TEMP_HEAD.link(&st.mem);
         let cl = &mut st.input.cur_list;
         cl.tail.set_link(&mut st.mem, hlist);
         while !cl.tail.link(&st.mem).is_null() {
@@ -3341,7 +3341,7 @@ pub(crate) fn after_math_in(
     st.scanner.cur_style = DISPLAY_STYLE;
     st.scanner.mlist_penalties = false;
     mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
-    let mut p = st.mem.link_ptr(TEMP_HEAD);
+    let mut p = TEMP_HEAD.link(&st.mem);
     st.scanner.adjust_tail = ADJUST_HEAD;
     st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
     let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
@@ -3451,12 +3451,12 @@ pub(crate) fn after_math_in(
 
     let cl = &mut st.input.cur_list;
     if t != ADJUST_HEAD.0 {
-        let adjusts = st.mem.link_ptr(ADJUST_HEAD);
+        let adjusts = ADJUST_HEAD.link(&st.mem);
         cl.tail.set_link(&mut st.mem, adjusts);
         cl.tail.0 = t;
     }
     if pre_t != PRE_ADJUST_HEAD.0 {
-        let pre_adjusts = st.mem.link_ptr(PRE_ADJUST_HEAD);
+        let pre_adjusts = PRE_ADJUST_HEAD.link(&st.mem);
         cl.tail.set_link(&mut st.mem, pre_adjusts);
         cl.tail.0 = pre_t;
     }

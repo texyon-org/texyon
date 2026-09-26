@@ -113,7 +113,7 @@ fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
 fn describe_macro(st: &EngineState, body: i32) -> (bool, u8) {
     let mut protected = false;
     let mut arity = 0u8;
-    let mut at = st.mem.link_ptr(body);
+    let mut at = crate::units::MemPtr(body).link(&st.mem);
 
     // Guards against following a corrupt list.
     for _ in 0..64 {

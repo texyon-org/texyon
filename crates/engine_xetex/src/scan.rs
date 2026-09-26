@@ -2774,7 +2774,7 @@ pub(crate) fn scan_keyword_in(st: &mut EngineState, keyword: &CStr) -> Result<bo
             return Ok(false);
         }
     }
-    let matched = st.mem.link_ptr(BACKUP_HEAD);
+    let matched = BACKUP_HEAD.link(&st.mem);
     crate::mem::flush_list(&mut st.mem, matched);
     Ok(true)
 }

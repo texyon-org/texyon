@@ -232,7 +232,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
     st.scanner.pack_begin_line = -st.input.cur_list.mode_line;
     let spec_size = st.save_stack.saved(1);
     let spec_mode = st.save_stack.saved(0) as i16;
-    let head = st.mem.link_ptr(ALIGN_HEAD);
+    let head = ALIGN_HEAD.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_VMODE {
         let rule_save = st.eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
         st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, 0);
@@ -402,7 +402,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
 
     let aux_save_s0 = st.input.cur_list.aux_s0();
     let aux_save_s1 = st.input.cur_list.aux_s1();
-    let rows = st.mem.link_ptr(st.input.cur_list.head);
+    let rows = st.input.cur_list.head.link(&st.mem);
     let rows_tail = st.input.cur_list.tail;
     pop_nest_in(&mut st.mem, &mut st.input);
 
@@ -751,7 +751,7 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
     if cur_align.extra_info(&st.mem) != SPAN_CODE {
         crate::save::unsave_in(st)?;
         crate::save::new_save_level(&mut st.save_stack, GroupCode::Align, st.mem.line)?;
-        let head = st.mem.link_ptr(st.input.cur_list.head);
+        let head = st.input.cur_list.head.link(&st.mem);
         let (u, w) = if st.input.cur_list.mode == INNER_HMODE {
             st.scanner.adjust_tail = st.scanner.cur_tail;
             st.scanner.pre_adjust_tail = st.scanner.cur_pre_tail;
@@ -839,7 +839,7 @@ fn begin_every(st: &mut EngineState, local: i32, kind: u16) -> Result<(), MainCo
 pub(crate) fn fin_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     use crate::mem::pop_nest_in;
 
-    let head = st.mem.link_ptr(st.input.cur_list.head);
+    let head = st.input.cur_list.head.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_HMODE {
         let row = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?;
         pop_nest_in(&mut st.mem, &mut st.input);
@@ -1372,7 +1372,7 @@ pub(crate) fn package_in(st: &mut EngineState, c: i32) -> Result<(), MainControl
     st.save_stack.save_ptr -= 3;
     let v = st.eqtb.int_par(INT_PAR_XETEX_UPWARDS);
     st.eqtb.set_int_par(INT_PAR_XETEX_UPWARDS, u);
-    let list = st.mem.link_ptr(st.input.cur_list.head);
+    let list = st.input.cur_list.head.link(&st.mem);
     let size = st.save_stack.saved(2);
     let spec_mode = st.save_stack.saved(1) as i16;
     if st.input.cur_list.mode == INNER_HMODE {
@@ -1890,7 +1890,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             let f = st.eqtb.int_par(INT_PAR_FLOATING_PENALTY);
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 2;
-            let head = st.mem.link_ptr(st.input.cur_list.head);
+            let head = st.input.cur_list.head.link(&st.mem);
             let p = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
             pop_nest_in(&mut st.mem, &mut st.input);
             let n = st.save_stack.saved(0);
@@ -1966,11 +1966,11 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                 st.shipout.page_tail.set_link(&mut st.mem, first);
                 st.shipout.page_tail = st.input.cur_list.tail;
             }
-            if !st.mem.link_ptr(PAGE_HEAD).is_null() {
-                if st.mem.link_ptr(CONTRIB_HEAD).is_null() {
+            if !PAGE_HEAD.link(&st.mem).is_null() {
+                if CONTRIB_HEAD.link(&st.mem).is_null() {
                     st.input.nest[0].tail = st.shipout.page_tail;
                 }
-                let contrib = st.mem.link_ptr(CONTRIB_HEAD);
+                let contrib = CONTRIB_HEAD.link(&st.mem);
                 st.shipout.page_tail.set_link(&mut st.mem, contrib);
                 let page = PAGE_HEAD.link(&st.mem);
                 CONTRIB_HEAD.set_link(&mut st.mem, page);
@@ -2005,7 +2005,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             end_graf_in(st)?;
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 2;
-            let head = st.mem.link_ptr(st.input.cur_list.head);
+            let head = st.input.cur_list.head.link(&st.mem);
             let size = st.save_stack.saved(1);
             let spec_mode = st.save_stack.saved(0) as i16;
             let p = crate::packaging::vpackage_emit_in(st, head, size, spec_mode, MAX_HALFWORD)?;
