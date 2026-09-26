@@ -133,6 +133,12 @@ def norm_log(path):
             break
     out = []
     for l in lines:
+        # Tectonic has no command line in the terminal buffer.
+        if l == "<*> probe.tex":
+            out += ["<*> ", "    "]
+            continue
+        if out[-2:] == ["<*> ", "    "] and l == " " * 13:
+            continue
         for rx, rep in LOG_SUBS:
             l = rx.sub(rep, l)
         out.append(l)
@@ -298,7 +304,7 @@ def main():
     probes = sorted(PROBES.rglob("*.tex"))
     names = [str(p.relative_to(PROBES).with_suffix("")).replace("/", "-") for p in probes]
     todo = [(n, p) for n, p in zip(names, probes)
-            if not args.filters or any(f in n or f in str(p) for f in args.filters)]
+            if not args.filters or any(f in n or f in str(p.relative_to(PROBES)) for f in args.filters)]
 
     # Warm the Tectonic format cache once before running in parallel.
     if todo:

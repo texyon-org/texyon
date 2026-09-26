@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\lm="[lmroman12-regular.otf]" at 16pt
+\Umathcode`a="0 "1 `a \Umathcode`b="7 "1 `b \Umathcode`c="8 "0 `c
+\message{\the\Umathcodenum`a,\the\mathcode`a,\the\Umathcodenum`b}
+\Umathchardef\x="3 "2 "3D \show\x \message{\meaning\x}
+\Udelcode`(="3 "28 \message{\the\Udelcodenum`(,\the\delcode`(}
+\Umathcodenum`d="2000061 \message{\the\Umathcodenum`d}
+\Umathcode`e=8 0 0 \Umathcode`f="7 "100 0 \Umathcode`g="0 "0 "110000
+\setbox0\hbox{$abc\x d\Umathchar"1"1"41 \mathchar"141 \Udelimiter"4"3"28 x\Umathaccent"0"0"7E x$}\showbox0
+\Umathchardef\y="7 "1 "41 \setbox0\hbox{$\y\fam0 \y$}\showbox0
+\message{\the\Umathcode`a}
+\bye
