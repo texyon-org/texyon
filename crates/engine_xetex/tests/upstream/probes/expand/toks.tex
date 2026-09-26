@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\toks0={a#b{c}} \showthe\toks0 \message{\the\toks0}
+\toks1=\toks0 \showthe\toks1 \toks2=\expandafter{\the\toks1 d} \showthe\toks2
+\everypar{\message{EP}} \showthe\everypar
+\edef\x{\the\toks0} \show\x
+\toks3={\par} \showthe\toks3
+\toks4\bgroup x\egroup \showthe\toks4
+\toks5=\relax{y} \showthe\toks5
+\toks6=z
+\bye
