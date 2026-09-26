@@ -995,16 +995,15 @@ pub(crate) unsafe fn find_native_font_in(
         }
     } else {
         let font_ref = findFontByName(name_string, var_string, Fix2D(scaled_size));
-
-        if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
-            crate::output::begin_diagnostic_in(st);
-            crate::output::print_nl_in(st, b' ' as i32);
-            print_c_string_in(st, c"-> ".as_ptr());
-            print_c_string_in(st, ttxl_platfont_get_desc(font_ref));
-            crate::output::end_diagnostic_in(st, false);
-        }
-
         if !font_ref.is_null() {
+            if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+                crate::output::begin_diagnostic_in(st);
+                crate::output::print_nl_in(st, b' ' as i32);
+                print_c_string_in(st, c"-> ".as_ptr());
+                print_c_string_in(st, ttxl_platfont_get_desc(font_ref));
+                crate::output::end_diagnostic_in(st, false);
+            }
+
             let full_name = getFullName(font_ref);
             let mut name_length = libc::strlen(full_name) as i32;
             if !feat_string.is_null() {
