@@ -48,6 +48,14 @@ struct FenceController {
     activity: NonNull<CheckpointActivity>,
 }
 
+/// Where an operation may place checkpoint fences.
+struct FencePlan {
+    strings_base: StringWatermark,
+    budget: LadderBudget,
+    pending_fences: Vec<(SourcePath, Vec<usize>)>,
+    horizon_last: Option<usize>,
+}
+
 thread_local! {
     static FENCE_CONTROLLER: RefCell<Option<FenceController>> = const { RefCell::new(None) };
 }
@@ -65,14 +73,17 @@ impl Drop for FenceControllerGuard {
 fn install_fence_controller(
     ladder: &mut CheckpointLadder<EngineBundle>,
     snapshot: &SourceSnapshot,
-    strings_base: StringWatermark,
-    budget: LadderBudget,
+    plan: FencePlan,
     current_clock: u64,
-    pending_fences: Vec<(SourcePath, Vec<usize>)>,
-    horizon_last: Option<usize>,
     horizon_rung: &mut Option<usize>,
     activity: &mut CheckpointActivity,
 ) -> FenceControllerGuard {
+    let FencePlan {
+        strings_base,
+        budget,
+        pending_fences,
+        horizon_last,
+    } = plan;
     FENCE_CONTROLLER.with(|controller| {
         let previous = controller.borrow_mut().replace(FenceController {
             ladder: NonNull::from(ladder),
@@ -376,15 +387,18 @@ impl IncrementalXeTeXSession {
                 run_document(
                     state,
                     ladder.as_mut().unwrap(),
-                    &input,
-                    &fence_sources,
-                    base,
-                    budget,
-                    None,
-                    None,
-                    Vec::new(),
-                    None,
-                    None,
+                    DocumentRun {
+                        input: &input,
+                        snapshot: &fence_sources,
+                        splice: None,
+                        recovery_rung_clock: None,
+                        fences: FencePlan {
+                            strings_base: base,
+                            budget,
+                            pending_fences: Vec::new(),
+                            horizon_last: None,
+                        },
+                    },
                     &mut checkpoint_activity,
                 )
             }))
@@ -440,20 +454,20 @@ impl IncrementalXeTeXSession {
             Ok(catch_operation(api, state, |state| {
                 let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
-                let (splice_at, resume_pending_command) = if let Some((target, fence)) = selection {
+                let splice = if let Some((target, fence)) = selection {
                     crate::engine::release_operation_inputs(state);
                     ladder.rewind_engine(state, target);
                     assert!(
                         fence.restore_inputs(state),
                         "eligible replay fence failed input reconstruction"
                     );
-                    (
-                        Some(fence.splice_at()),
-                        Some(fence.resume_pending_command()),
-                    )
+                    Some(Splice {
+                        at: fence.splice_at(),
+                        resume_pending_command: fence.resume_pending_command(),
+                    })
                 } else {
                     ladder.rewind_engine(state, 0);
-                    (None, None)
+                    None
                 };
                 let first_shipped = state.shipout.total_pages.max(0) as usize;
                 let horizon_last = viewport.map(|range| range.last.max(first_shipped));
@@ -463,15 +477,18 @@ impl IncrementalXeTeXSession {
                 run_document(
                     state,
                     ladder,
-                    &input,
-                    &fence_sources,
-                    strings_base,
-                    budget,
-                    splice_at,
-                    resume_pending_command,
-                    pending_fences,
-                    horizon_last,
-                    Some(replay_clock),
+                    DocumentRun {
+                        input: &input,
+                        snapshot: &fence_sources,
+                        splice,
+                        recovery_rung_clock: Some(replay_clock),
+                        fences: FencePlan {
+                            strings_base,
+                            budget,
+                            pending_fences,
+                            horizon_last,
+                        },
+                    },
                     &mut checkpoint_activity,
                 )
             }))
@@ -512,8 +529,10 @@ impl IncrementalXeTeXSession {
         let fence = ladder
             .replay_fence(target)
             .ok_or_else(|| anyhow!("pending tail rung is not resumable"))?;
-        let splice_at = fence.splice_at();
-        let resume_pending_command = fence.resume_pending_command();
+        let splice = Splice {
+            at: fence.splice_at(),
+            resume_pending_command: fence.resume_pending_command(),
+        };
         let fence_sources = sources.clone();
         let replay_clock = ladder.rung_clock(target).unwrap_or(rung_clock);
         let mut checkpoint_activity = CheckpointActivity::default();
@@ -534,15 +553,18 @@ impl IncrementalXeTeXSession {
                 run_document(
                     state,
                     ladder,
-                    &input,
-                    &fence_sources,
-                    strings_base,
-                    budget,
-                    Some(splice_at),
-                    Some(resume_pending_command),
-                    Vec::new(),
-                    None,
-                    Some(rung_clock),
+                    DocumentRun {
+                        input: &input,
+                        snapshot: &fence_sources,
+                        splice: Some(splice),
+                        recovery_rung_clock: Some(rung_clock),
+                        fences: FencePlan {
+                            strings_base,
+                            budget,
+                            pending_fences: Vec::new(),
+                            horizon_last: None,
+                        },
+                    },
                     &mut checkpoint_activity,
                 )
             }))
@@ -718,33 +740,46 @@ enum OperationResult {
     Panicked,
 }
 
+/// The replay fence an operation resumes from: its splice offset and whether
+/// it holds an undispatched command.
+#[derive(Clone, Copy)]
+struct Splice {
+    at: usize,
+    resume_pending_command: bool,
+}
+
+struct DocumentRun<'a> {
+    input: &'a str,
+    snapshot: &'a SourceSnapshot,
+    splice: Option<Splice>,
+    recovery_rung_clock: Option<u64>,
+    fences: FencePlan,
+}
+
 fn run_document(
     state: &mut EngineState,
     ladder: &mut CheckpointLadder<EngineBundle>,
-    input: &str,
-    snapshot: &SourceSnapshot,
-    strings_base: StringWatermark,
-    budget: LadderBudget,
-    splice_at: Option<usize>,
-    resume_pending_command: Option<bool>,
-    pending_fences: Vec<(SourcePath, Vec<usize>)>,
-    horizon_last: Option<usize>,
-    recovery_rung_clock: Option<u64>,
+    run: DocumentRun<'_>,
     checkpoint_activity: &mut CheckpointActivity,
 ) -> OperationResult {
+    let DocumentRun {
+        input,
+        snapshot,
+        splice,
+        recovery_rung_clock,
+        fences,
+    } = run;
+    let splice_at = splice.map(|splice| splice.at);
     let mut horizon_rung = None;
     let _fences = install_fence_controller(
         ladder,
         snapshot,
-        strings_base,
-        budget,
+        fences,
         state.scanner.logical_clock,
-        pending_fences,
-        horizon_last,
         &mut horizon_rung,
         checkpoint_activity,
     );
-    if splice_at.is_some() {
+    if splice.is_some() {
         let manifest_start = state.shipout.dvi.pos() as u64;
         state
             .shipout
@@ -754,12 +789,11 @@ fn run_document(
     } else {
         state.shipout.dvi.manifest.begin_operation();
     }
-    let execution = match (splice_at, resume_pending_command) {
-        (Some(_), Some(resume_pending_command)) => {
-            crate::engine::resume_resident_document(state, resume_pending_command)
+    let execution = match splice {
+        Some(splice) => {
+            crate::engine::resume_resident_document(state, splice.resume_pending_command)
         }
-        (None, None) => crate::engine::run_resident_document(state, input),
-        _ => unreachable!("splice and resume mode must be present together"),
+        None => crate::engine::run_resident_document(state, input),
     };
     match execution {
         Ok(history) => OperationResult::Complete { history, splice_at },
