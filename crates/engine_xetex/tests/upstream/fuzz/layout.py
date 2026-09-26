@@ -11,6 +11,7 @@ os.makedirs(OUT, exist_ok=True)
 PRE = r"""\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
 \font\xa=xliga \font\xb=xligb \font\xc=xligc \font\lb="[LinLibertine_R_G.ttf]" at 16pt
 \hyphenchar\xa=`- \hyphenchar\xb=`- \hyphenchar\lb=`-
+\setbox9\hbox{\lb a b}% upstream derefs a null font_glue when space shaping runs before the first space
 """
 
 
