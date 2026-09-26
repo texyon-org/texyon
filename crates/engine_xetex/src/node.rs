@@ -307,6 +307,14 @@ impl FixedNode for LigItem {
     const SIZE: i32 = SMALL_NODE_SIZE;
     const TYPE: Option<NodeType> = None;
 }
+impl FixedNode for PassiveNode {
+    const SIZE: i32 = 2;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for DeltaNode {
+    const SIZE: i32 = 7;
+    const TYPE: Option<NodeType> = Some(NodeType::Rule);
+}
 impl FixedNode for CondNode {
     const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;

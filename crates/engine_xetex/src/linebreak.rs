@@ -24,8 +24,8 @@ use crate::mem::{
 };
 use crate::mem::{list_tail, predecessor};
 use crate::node::{
-    ActiveNode, AnyBox, AnyNode, CharNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, HListNode,
-    LigItem, MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
+    ActiveNode, AnyBox, AnyNode, CharNode, DeltaNode, DiscNode, FixedNode, GlueNode, GlueSpecNode,
+    HListNode, LigItem, MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::scan::NodeRecycleAbort;
@@ -38,10 +38,8 @@ use crate::units::{FontId, MemAddr, MemIdx, MemPtr, NodeType, Scaled};
 const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
 
 const DELTA_NODE: u16 = NodeType::Rule.as_raw();
-const PASSIVE_NODE_SIZE: i32 = 2;
 const ACTIVE_NODE_SIZE_NORMAL: i16 = 3;
 const ACTIVE_NODE_SIZE_EXTENDED: i16 = 5;
-const DELTA_NODE_SIZE: i32 = 7;
 const MAX_HLIST_STACK: i16 = 512;
 const BEST_BET_SET: &str = "best_bet is set by choose_best_break before use";
 
@@ -131,7 +129,7 @@ fn set_delta_widths(d: NodePtr<DeltaNode>, mem: &mut MemState, w: &[i32; 7]) {
     d.set_dshrink(mem, Scaled(w[6]));
 }
 
-fn alloc_active_node(
+fn new_active_node(
     mem: &mut MemState,
     active_node_size: i32,
     link: MemPtr,
@@ -143,23 +141,16 @@ fn alloc_active_node(
 }
 
 /// A new delta node before `link` holding `w[1..=6]`.
-fn alloc_delta_node(
+fn new_delta_node(
     mem: &mut MemState,
     link: MemPtr,
     w: &[i32; 7],
 ) -> Result<NodePtr<DeltaNode>, NodeRecycleAbort> {
-    let p = crate::mem::get_node(mem, DELTA_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
-    let p = delta_node(p);
+    let p = NodePtr::<DeltaNode>::alloc(mem).ok_or(NodeRecycleAbort::Overflow)?;
     p.set_link(mem, link);
-    mem.set_b16s1(p.idx().0, DELTA_NODE);
     mem.set_b16s0(p.idx().0, 0);
     set_delta_widths(p, mem, w);
     Ok(p)
-}
-
-fn alloc_passive_node(mem: &mut MemState) -> Result<NodePtr<PassiveNode>, NodeRecycleAbort> {
-    let p = crate::mem::get_node(mem, PASSIVE_NODE_SIZE).ok_or(NodeRecycleAbort::Overflow)?;
-    Ok(passive_node(p))
 }
 
 /// The Unicode scalar at UTF-16 offset `i` of `w`'s text.
@@ -882,7 +873,7 @@ fn start_linebreak_pass(
     errors: &mut ErrorState,
     prev_graf: i32,
 ) -> Result<(), NodeRecycleAbort> {
-    let q = alloc_active_node(mem, linebreak.active_node_size as i32, LAST_ACTIVE)?;
+    let q = new_active_node(mem, linebreak.active_node_size as i32, LAST_ACTIVE)?;
     q.set_break_type(mem, UNHYPHENATED as u16);
     q.set_fitness(mem, DECENT_FIT as u16);
     q.set_break_node(mem, MemPtr::NULL);
@@ -908,7 +899,7 @@ fn free_break_lists(mem: &mut MemState, linebreak: &LinebreakState) {
     while q != LAST_ACTIVE {
         let next = q.link(mem);
         let size = match classify_active_or_delta(mem, q) {
-            ActiveOrDelta::Delta(_) => DELTA_NODE_SIZE,
+            ActiveOrDelta::Delta(_) => <DeltaNode as FixedNode>::SIZE,
             ActiveOrDelta::Active(_) => linebreak.active_node_size as i32,
         };
         crate::mem::free_node(mem, q, size);
@@ -918,7 +909,7 @@ fn free_break_lists(mem: &mut MemState, linebreak: &LinebreakState) {
     q = linebreak.passive;
     while !q.is_null() {
         let next = passive_node(q).link(mem);
-        crate::mem::free_node(mem, q, PASSIVE_NODE_SIZE);
+        passive_node(q).free(mem);
         q = next;
     }
 }
@@ -2351,7 +2342,7 @@ fn insert_new_active_nodes(
         scanner.active_width[1..].copy_from_slice(&bw[1..]);
     } else {
         let w = std::array::from_fn(|k| bw[k] - caw[k]);
-        let q = alloc_delta_node(mem, r, &w)?;
+        let q = new_delta_node(mem, r, &w)?;
         prev_r.set_link(mem, q.ptr());
         *prev_prev_r = *prev_r;
         *prev_r = q.ptr();
@@ -2366,13 +2357,13 @@ fn insert_new_active_nodes(
 
     for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
         if linebreak.minimal_demerits[fit_class] <= linebreak.minimum_demerits {
-            let passive = alloc_passive_node(mem)?;
+            let passive = NodePtr::<PassiveNode>::alloc(mem).ok_or(NodeRecycleAbort::Overflow)?;
             passive.set_link(mem, linebreak.passive);
             linebreak.passive = passive.ptr();
             passive.set_cur_break(mem, linebreak.cur_p);
             passive.set_prev_break(mem, linebreak.best_place[fit_class]);
 
-            let q = alloc_active_node(mem, linebreak.active_node_size as i32, r)?;
+            let q = new_active_node(mem, linebreak.active_node_size as i32, r)?;
             q.set_break_node(mem, linebreak.passive);
             q.set_line_number(mem, linebreak.best_pl_line[fit_class] + 1);
             q.set_fitness(mem, fit_class as u16);
@@ -2392,7 +2383,7 @@ fn insert_new_active_nodes(
 
     if r != LAST_ACTIVE {
         let w = std::array::from_fn(|k| caw[k] - bw[k]);
-        let q = alloc_delta_node(mem, r, &w)?;
+        let q = new_delta_node(mem, r, &w)?;
         prev_r.set_link(mem, q.ptr());
         *prev_prev_r = *prev_r;
         *prev_r = q.ptr();
@@ -2684,7 +2675,7 @@ fn deactivate_node(
             }
             linebreak.cur_active_width[1..].copy_from_slice(&scanner.active_width[1..]);
             ACTIVE_LIST.set_link(mem, r_delta.link(mem));
-            crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
+            delta_node(r).free(mem);
         }
     } else if let ActiveOrDelta::Delta(prev_delta) = classify_active_or_delta(mem, *prev_r) {
         let r = prev_r.link(mem);
@@ -2694,7 +2685,7 @@ fn deactivate_node(
                 *width -= delta;
             }
             prev_prev_r.set_link(mem, LAST_ACTIVE);
-            crate::mem::free_node(mem, *prev_r, DELTA_NODE_SIZE);
+            delta_node(*prev_r).free(mem);
             *prev_r = *prev_prev_r;
         } else if let ActiveOrDelta::Delta(r_delta) = classify_active_or_delta(mem, r) {
             let rw = delta_widths(r_delta, mem);
@@ -2704,7 +2695,7 @@ fn deactivate_node(
             }
             set_delta_widths(prev_delta, mem, &std::array::from_fn(|k| pw[k] + rw[k]));
             prev_delta.set_link(mem, r_delta.link(mem));
-            crate::mem::free_node(mem, r, DELTA_NODE_SIZE);
+            delta_node(r).free(mem);
         }
     }
 }

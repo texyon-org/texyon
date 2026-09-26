@@ -2709,6 +2709,7 @@ fn fin_mlist(
     let q;
     let aux = cl.aux_s1();
     if aux != TEX_NULL {
+        // SAFETY: a math list's `incompleat_noad` is a fraction noad.
         let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
         aux_noad.set_subscr_type(mem, SUB_MLIST);
         aux_noad.set_subscr_field(mem, cl.head.link(mem).0);
@@ -2717,11 +2718,13 @@ fn fin_mlist(
         } else {
             q = aux_noad.supscr_field(mem);
             let q_idx = MemIdx::new(q);
+            // SAFETY: the numerator of an open `\middle` group is a noad list.
             let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
             let etex_aux = cl.e_tex_aux.0;
             if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
                 return Err(c"right");
             }
+            // SAFETY: a math-left group keeps its last noad in `eTeX_aux`.
             let etex_aux_noad =
                 unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux)) };
             let etex_link = etex_aux_noad.link(mem);
@@ -2753,6 +2756,7 @@ fn build_choices_finish(
     p: impl crate::units::MemAddr,
 ) -> bool {
     let p = p.addr();
+    // SAFETY: a math-choice group builds its branches after the choice node.
     let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cl.tail.0)) };
     let p_ptr = MemPtr::from_raw(p);
     match save_stack.b32s1(save_stack.save_ptr - 1) {

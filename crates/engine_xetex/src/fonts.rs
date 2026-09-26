@@ -89,7 +89,7 @@ fn utf16_units(c: u32) -> ([u16; 2], usize) {
     }
 }
 
-fn alloc_native_word(
+fn new_native_word(
     mem: &mut MemState,
     f: i32,
     n: i32,
@@ -117,7 +117,7 @@ pub(crate) fn new_native_word_node(
     } else {
         WhatsitSubtype::NativeWord
     };
-    alloc_native_word(mem, f, n, subtype)
+    new_native_word(mem, f, n, subtype)
 }
 
 /// Where a native character's UTF-16 text comes from.
@@ -145,7 +145,7 @@ fn build_native_character(
         }
         NativeCharSrc::Single(c) => {
             let (units, n) = utf16_units(c);
-            let w = alloc_native_word(mem, f, n as i32, WhatsitSubtype::NativeWord)?;
+            let w = new_native_word(mem, f, n as i32, WhatsitSubtype::NativeWord)?;
             let text = w.native_text_ptr_mut(mem);
             // SAFETY: the node holds `n` units and the arena never reallocates.
             unsafe { std::ptr::copy_nonoverlapping(units.as_ptr(), text, n) };
