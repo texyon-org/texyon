@@ -2893,7 +2893,7 @@ fn fetch_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
         if st.scanner.cur_val1 >= 0x4000_0000 {
             print_err_in(st, c"Extended delcode used as delcode");
             st.errors.help(&[
-                "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
+                "A delimiter code must be between 0 and \"7FFFFFF.",
                 "I changed this one to zero.",
             ]);
             scc_err(error_in(st))?;
