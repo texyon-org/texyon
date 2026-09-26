@@ -2547,7 +2547,7 @@ pub(crate) fn scan_delimiter_in(
                     st.scanner.cur_val1 = 0x4000_0000;
                     crate::scan::scan_math_class_int_in(st)?;
                     crate::scan::scan_math_fam_int_in(st)?;
-                    st.scanner.cur_val1 += st.scanner.cur_val * 0x2_0000;
+                    st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
                     crate::scan::scan_usv_num_in(st)?;
                     st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
                 } else {

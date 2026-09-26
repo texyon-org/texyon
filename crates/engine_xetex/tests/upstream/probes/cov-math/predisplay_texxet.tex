@@ -1,0 +1,19 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\TeXXeTstate=1 \hsize=200pt \parindent=10pt
+\setbox1\vbox{\beginR abc def\endR\ ghi $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{abc \beginR def $$\showthe\predisplaysize x$$ \endR\par}
+\setbox1\vbox{abc \endR def $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{abc \beginL def\hskip 0pt plus 1fil $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{\beginR abc\hfil\endR $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{\beginR a\beginL bc\endL d\endR e\beginL f\endL $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{\hsize=40pt \beginR aaa bbb ccc ddd\endR $$\showthe\predisplaysize x$$\par}
+\TeXXeTstate=0
+\setbox1\vbox{abc \leaders\hrule\hskip 20pt def $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{\hsize=30pt aaa bbb ccc ddd $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{\rightskip 0pt plus 10pt aaa bbb ccc ddd eee $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{\hsize=50pt\leftskip 0pt minus 5pt aaaaaaaa bbbbbbbbb\hskip0pt minus 3pt $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{$a$ b $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{\noindent$$\showthe\predisplaysize x$$\par}
+\bye

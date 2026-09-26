@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\sh{$\displaystyle{\vrule height 30pt\over\vrule depth 30pt}{\vrule height 1pt\atop\vrule depth 1pt}{a\above 20pt b}$}
+\sh{${a\abovewithdelims\delimiter"4262300 \delimiter"5263301 3pt b}{a\atopwithdelims.. b}$}
+\nulldelimiterspace=-5pt \sh{${a\overwithdelims.. b}\left.x\right.$}
+\sh{$\scriptscriptstyle{a\over b}{a\above -1pt b}$}
+\bye
