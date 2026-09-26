@@ -40,8 +40,8 @@ use crate::node::{
     RuleDimen, SaNode, UnsetNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::{
-    set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL, INT_VAL,
-    LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN,
+    fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL,
+    INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN,
     PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
 };
 use crate::state::{EngineState, GroupCode, MemState};
@@ -1168,15 +1168,6 @@ pub(crate) fn do_endv_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     } else {
         off_save_in(st)
     }
-}
-
-pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
-    let p = if n < 256 {
-        MemPtr::from_raw(st.eqtb.b32s1(BOX_BASE + n))
-    } else {
-        crate::save::find_sa_element(&st.mem, &mut st.scanner, BOX_VAL, n)?.sa_ptr(&st.mem)
-    };
-    st.mem.classify_box(p.as_idx()?).ok().flatten()
 }
 
 /// TeX's `change_box`: sets box register `n` to `v` without saving.

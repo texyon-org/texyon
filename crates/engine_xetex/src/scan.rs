@@ -1601,14 +1601,7 @@ pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
     } else {
         find_sa_in(st, BOX_VAL, n)?.sa_ptr(&st.mem)
     };
-    let idx = contents.as_idx()?;
-    Some(
-        st.mem
-            .classify_box(idx)
-            .ok()
-            .flatten()
-            .expect("box register holds a box"),
-    )
+    st.mem.classify_box(contents.as_idx()?).ok().flatten()
 }
 
 /// `get_x_token` until the result is not a space.
