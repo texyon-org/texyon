@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\mA="[texgyrepagella-math.otf]" at 16pt \font\mC="[texgyrepagella-math.otf]" at 8pt
+\textfont2=\mA \scriptfont2=\mA \scriptscriptfont2=\mC
+\textfont3=\mA \scriptfont3=\mA \scriptscriptfont3=\mC
+\Udelcode`(="3 "28 \Udelcode`)="3 "29
+\def\S#1{\setbox0\hbox{#1}\showbox0 }
+\S{$\left\Udelimiter 4 3 "230A x\right\Udelimiter 5 3 "230B$}
+\S{$\displaystyle{x\overwithdelims(\Udelimiter 4 3 "230A y}$}
+\S{$\displaystyle{x\overwithdelims\Udelimiter 4 3 "230A ) y}$}
+\S{$\left(\vrule height 30pt\right)$}
+\S{$\scriptscriptstyle\left(\vrule height 30pt\right)$}
+\S{$\scriptscriptstyle\Uradical 3 "221A {\vrule height 30pt}$}
+\S{$\displaystyle{x\overwithdelims() y}$}
+\bye

@@ -130,9 +130,11 @@ def run_tl(name, src, bundle, fmtdir):
     r = subprocess.run(
         [XETEX, "-fmt=plain", "-no-pdf", "-interaction=scrollmode", "probe.tex"],
         cwd=d, env=tl_env(bundle, fmtdir), stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
     if r.returncode < 0:
         raise UpstreamCrash(f"upstream xetex died with signal {-r.returncode}")
+    if r.returncode == 3 and b"Internal error" in r.stdout:
+        raise UpstreamCrash("upstream xetex hit an internal error")
     return d
 
 
