@@ -1597,7 +1597,7 @@ fn hpack_in(
     'outer: while !p.is_null() {
         while is_char_node(mem, p) {
             let f = mem.b16s1(p) as i32;
-            let c = effective_char(fonts, true, f, mem.b16s0(p));
+            let c = effective_char(fonts, f, mem.b16s0(p));
             let info = fonts.font_info_b16(fonts.char_base_entry(f) + c);
             x += fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32);
             h = h.max(fonts.font_info_b32s1(fonts.height_base_entry(f) + info.s2 as i32 / 16));

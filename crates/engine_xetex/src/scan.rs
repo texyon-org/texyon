@@ -3353,7 +3353,7 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
                 && st.fonts.font_ec[f as usize] as i32 >= c
             {
                 let fu = f as usize;
-                let ec = crate::fonts::effective_char(&mut st.fonts, true, f, c as u16);
+                let ec = crate::fonts::effective_char(&mut st.fonts, f, c as u16);
                 let info = st.fonts.font_info_b16(st.fonts.char_base[fu] + ec);
                 let fonts = &st.fonts;
                 match m {

@@ -80,7 +80,7 @@ fn has_infinite_shrink(mem: &MemState, spec: NodePtr<GlueSpecNode>) -> bool {
 
 #[inline]
 fn font_character_width(fonts: &mut FontState, f: i32, c: u16) -> i32 {
-    let ec = crate::fonts::effective_char(fonts, true, f, c);
+    let ec = crate::fonts::effective_char(fonts, f, c);
     let info = fonts.font_info_b16(fonts.char_base_entry(f) + ec);
     fonts.font_info_b32s1(fonts.width_base_entry(f) + info.s3 as i32)
 }
@@ -708,7 +708,6 @@ fn reconstitute(
                 let char_base = st.fonts.char_base_entry(st.hyph.hf);
                 let effective = crate::fonts::effective_char(
                     &mut st.fonts,
-                    true,
                     st.hyph.hf,
                     st.mainloop.cur_l as u16,
                 );

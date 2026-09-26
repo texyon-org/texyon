@@ -376,7 +376,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
             } else if st.fonts.font_bc[f as usize] as i32 <= c
                 && st.fonts.font_ec[f as usize] as i32 >= c
             {
-                let ec = crate::fonts::effective_char(&mut st.fonts, true, f, c as u16);
+                let ec = crate::fonts::effective_char(&mut st.fonts, f, c as u16);
                 let info = unsafe {
                     st.fonts.font_info[(st.fonts.char_base[f as usize] + ec) as usize].b16
                 };

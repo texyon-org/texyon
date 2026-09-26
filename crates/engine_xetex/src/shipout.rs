@@ -1830,7 +1830,7 @@ fn reverse(
             if crate::mem::is_char_node(mem, p) {
                 while crate::mem::is_char_node(mem, p) {
                     let f = mem.b16s1(p.0) as i32;
-                    let c = crate::fonts::effective_char(fonts, true, f, mem.b16s0(p.0));
+                    let c = crate::fonts::effective_char(fonts, f, mem.b16s0(p.0));
                     shipout.cur_h += font_character_width(fonts, f, c);
                     let q = p.link(mem);
                     p.set_link(mem, l);

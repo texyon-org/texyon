@@ -1642,7 +1642,7 @@ pub(crate) fn new_character_in(
             .map(|w| w.ptr().0)
             .map_err(NewCharacterAbort::Native);
     }
-    let ec = crate::fonts::effective_char(&mut st.fonts, false, f, c) as u16;
+    let ec = crate::fonts::effective_char(&mut st.fonts, f, c) as u16;
     if st.fonts.font_bc_entry(f) <= ec && st.fonts.font_ec_entry(f) >= ec {
         let info = st
             .fonts
@@ -2515,7 +2515,7 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
 /// The italic correction of the character at `p` (a char node or a ligature's char word).
 fn char_italic(st: &mut EngineState, p: i32) -> i32 {
     let f = st.mem.b16s1(p) as i32;
-    let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
+    let c = crate::fonts::effective_char(&mut st.fonts, f, st.mem.b16s0(p));
     let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
     st.fonts
         .font_info_b32s1(st.fonts.italic_base_entry(f) + (info.s1 / 4) as i32)
@@ -2580,7 +2580,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
         }
         a
     } else {
-        let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
+        let c = crate::fonts::effective_char(&mut st.fonts, f, st.mem.b16s0(p));
         let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
         st.fonts
             .font_info_b32s1(st.fonts.width_base_entry(f) + info.s3 as i32)
@@ -2619,7 +2619,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
             unsafe { crate::ext::get_native_char_height_depth(&st.fonts, f, st.scanner.cur_val)? };
         (w, h)
     } else {
-        let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(q));
+        let c = crate::fonts::effective_char(&mut st.fonts, f, st.mem.b16s0(q));
         let info = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
         let w = st
             .fonts
@@ -3706,7 +3706,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
 #[inline(always)]
 fn cur_l_info(st: &mut EngineState) -> crate::mem_types::B16x4 {
     let main_f = st.mainloop.main_f;
-    let c = crate::fonts::effective_char(&mut st.fonts, true, main_f, st.mainloop.cur_l as u16);
+    let c = crate::fonts::effective_char(&mut st.fonts, main_f, st.mainloop.cur_l as u16);
     st.fonts.font_info_b16(st.fonts.char_base_entry(main_f) + c)
 }
 
@@ -3823,9 +3823,9 @@ pub(crate) unsafe fn main_control_main_loop_in(
         let main_f = st.mainloop.main_f;
         let cur_chr = st.scanner.cur_chr as u16;
         // Each call resets `xtx_ligature_present`, so the two bounds may see different codes.
-        let exists = if crate::fonts::effective_char(&mut st.fonts, false, main_f, cur_chr)
+        let exists = if crate::fonts::effective_char(&mut st.fonts, main_f, cur_chr)
             > st.fonts.font_ec_entry(main_f) as i32
-            || crate::fonts::effective_char(&mut st.fonts, false, main_f, cur_chr)
+            || crate::fonts::effective_char(&mut st.fonts, main_f, cur_chr)
                 < st.fonts.font_bc_entry(main_f) as i32
         {
             false

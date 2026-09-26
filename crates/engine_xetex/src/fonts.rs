@@ -64,7 +64,7 @@ pub(crate) fn char_depth(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
     fonts.font_info_b32s1(fonts.depth_base_entry(f) + i.s2 as i32 % 16)
 }
 
-pub fn effective_char(fonts: &mut FontState, _err_p: bool, f: i32, c: u16) -> i32 {
+pub fn effective_char(fonts: &mut FontState, f: i32, c: u16) -> i32 {
     let mut c = c;
     let mapping = fonts.font_mapping_ptr(f);
     if !fonts.xtx_ligature_present() && !mapping.is_null() {
@@ -76,7 +76,7 @@ pub fn effective_char(fonts: &mut FontState, _err_p: bool, f: i32, c: u16) -> i3
 }
 
 pub fn effective_char_info(fonts: &mut FontState, f: i32, c: u16) -> CharInfo {
-    let c = effective_char(fonts, true, f, c);
+    let c = effective_char(fonts, f, c);
     fonts.font_info_b16(fonts.char_base_entry(f) + c)
 }
 

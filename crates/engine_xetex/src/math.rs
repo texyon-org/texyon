@@ -2376,7 +2376,7 @@ fn char_box_tfm(
     f: i32,
     c: u16,
 ) -> Result<AnyBox, NodeRecycleAbort> {
-    let c_eff = crate::fonts::effective_char(fonts, true, f, c);
+    let c_eff = crate::fonts::effective_char(fonts, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c_eff);
     let width = char_width(fonts, f, q) + char_italic(fonts, f, q);
     let height = char_height(fonts, f, q);
@@ -2402,7 +2402,7 @@ fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
 }
 
 fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
-    let c = crate::fonts::effective_char(fonts, true, f, c);
+    let c = crate::fonts::effective_char(fonts, f, c);
     let q = fonts.font_info_b16(fonts.char_base_entry(f) + c);
     char_height(fonts, f, q) + char_depth(fonts, f, q)
 }
@@ -3697,8 +3697,7 @@ pub(crate) fn init_math_in(
                 let (d, found) = 'reswitch: loop {
                     if p >= st.mem.hi_mem_min {
                         let f = st.mem.b16s1(p) as i32;
-                        let c =
-                            crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
+                        let c = crate::fonts::effective_char(&mut st.fonts, f, st.mem.b16s0(p));
                         let d = char_width(
                             &st.fonts,
                             f,
@@ -3894,7 +3893,7 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
     let mut p = b.list_ptr(&st.mem);
     if crate::mem::is_char_node(&st.mem, p) && p.link(&st.mem).is_null() {
         let f = st.mem.b16s1(p) as i32;
-        let c = crate::fonts::effective_char(&mut st.fonts, true, f, st.mem.b16s0(p));
+        let c = crate::fonts::effective_char(&mut st.fonts, f, st.mem.b16s0(p));
         let q = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
         let v = char_width(&st.fonts, f, q);
         let bw = b.width(&st.mem).0;
@@ -4009,7 +4008,7 @@ fn build_ext_delimiter_box(
     let vb = AnyBox::VList(alloc_null_vbox(mem)?);
     let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
     let u = height_plus_depth(fonts, f, r.s0);
-    let effective_c = crate::fonts::effective_char(fonts, true, f, r.s0);
+    let effective_c = crate::fonts::effective_char(fonts, f, r.s0);
     let qq = fonts.font_info_b16(fonts.char_base_entry(f) + effective_c);
     let box_width = char_width(fonts, f, qq) + char_italic(fonts, f, qq);
     vb.set_width(mem, Scaled(box_width));
