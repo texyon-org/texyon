@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\hsize=100pt \parindent=0pt
+\setbox0\vbox{aa\par\showthe\prevdepth \vbox{} \showthe\prevdepth \hrule\showthe\prevdepth}\showbox0
+\setbox0\vbox{aa $$\halign{#\cr x\cr}$$\showthe\prevdepth bb\par}\showbox0
+\bye

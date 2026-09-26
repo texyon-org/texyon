@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\setbox0\hbox{\lb ab\-cd \discretionary{\lb x}{\ls y}{z}ef \discretionary{}{}{}gh}\showbox0
+\hyphenchar\lb=`- \setbox0\hbox{\lb co-operate}\showbox0
+\hyphenchar\lb=-1 \setbox0\hbox{\lb co\-op}\showbox0
+\hsize=30pt \parindent0pt \hyphenchar\lb=`- \lb co\-op\-er\-a\-tion wonder\-ful\par
+\showlists
+\bye

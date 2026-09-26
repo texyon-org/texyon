@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\XeTeXinterchartokenstate=1
+\newXeTeXintercharclass\A \XeTeXcharclass`a=\A \newXeTeXintercharclass\B \XeTeXcharclass`b=\B
+\XeTeXinterchartoks\A\B={\kern1pt}\XeTeXinterchartoks 0 \A={\kern2pt}\XeTeXinterchartoks\A 4095={\kern3pt}
+\XeTeXinterchartoks 4095 \A={\kern4pt}
+\setbox0\hbox{\lb xab ba aab a}\showbox0
+\setbox0\hbox{\tenrm xab ba aab a}\showbox0
+\message{\the\XeTeXinterchartoks\A\B|\the\XeTeXcharclass`a}
+\XeTeXinterchartokenstate=0 \setbox0\hbox{\lb ab}\showbox0
+\bye

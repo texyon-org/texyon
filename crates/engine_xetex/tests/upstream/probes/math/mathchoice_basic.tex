@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle \mathchoice{D}{T}{S}{SS}$}
+\sb{$\textstyle \mathchoice{D}{T}{S}{SS}$}
+\sb{$\scriptstyle \mathchoice{D}{T}{S}{SS}$}
+\sb{$\scriptscriptstyle \mathchoice{D}{T}{S}{SS}$}
+$\mathchoice{a\showlists}{b}{c}{d}\showlists$
+\sb{$x^{\mathchoice{D}{T}{S}{SS}}_{y_{\mathchoice{D}{T}{S}{SS}}}$}
+\bye

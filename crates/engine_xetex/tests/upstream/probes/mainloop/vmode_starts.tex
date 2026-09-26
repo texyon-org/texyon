@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\def\t#1{\setbox0\hbox{\xa #1}\showbox0 \setbox0\hbox{\xb #1}\showbox0 \shipout\hbox{\xa #1\xb #1}}
+\parindent5pt \hsize100pt
+\setbox0\vbox{\noboundary k\par}\showbox0
+\setbox0\vbox{\xa\everypar{a}b\par}\showbox0
+\setbox0\vbox{\xa\everypar{k}\noboundary m\par}\showbox0
+\setbox0\vbox{\accent"7F a\par}\showbox0
+\setbox0\vbox{\xa\char`a b\par}\showbox0
+\setbox0\vbox{\xa\ k\par}\showbox0
+\setbox0\vbox{\discretionary{a}{b}{c}\par}\showbox0
+\bye

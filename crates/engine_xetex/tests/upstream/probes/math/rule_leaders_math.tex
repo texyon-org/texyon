@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle a\leaders\hrule\hskip 10pt b\cleaders\hbox{.}\hskip 20pt c\xleaders\hbox{-}\hfil$}
+\sb{$\textstyle a\leaders\hrule\hskip 10pt b\cleaders\hbox{.}\hskip 20pt c\xleaders\hbox{-}\hfil$}
+\sb{$\scriptstyle a\leaders\hrule\hskip 10pt b\cleaders\hbox{.}\hskip 20pt c\xleaders\hbox{-}\hfil$}
+\sb{$\scriptscriptstyle a\leaders\hrule\hskip 10pt b\cleaders\hbox{.}\hskip 20pt c\xleaders\hbox{-}\hfil$}
+\sb{$\displaystyle \mathop{\leaders\hrule\hskip 5pt}\limits^1$}
+\sb{$\textstyle \mathop{\leaders\hrule\hskip 5pt}\limits^1$}
+\sb{$\scriptstyle \mathop{\leaders\hrule\hskip 5pt}\limits^1$}
+\sb{$\scriptscriptstyle \mathop{\leaders\hrule\hskip 5pt}\limits^1$}
+\bye

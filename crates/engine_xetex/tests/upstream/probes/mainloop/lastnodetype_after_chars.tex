@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\def\t#1{\setbox0\hbox{\xa #1}\showbox0 \setbox0\hbox{\xb #1}\showbox0 \shipout\hbox{\xa #1\xb #1}}
+\def\s#1{\setbox0\hbox{\xa #1\showthe\lastnodetype}}
+\s{a}\s{ab}\s{aj}\s{k}\s{a\-}\s{a\/}\s{a }\s{}\s{a\noboundary}
+\s{\char`k}\s{s-}
+\bye

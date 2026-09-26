@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle \mathchoice{\mathchoice{1}{2}{3}{4}}{\mathchoice{5}{6}{7}{8}}{{a\over b}}{\sqrt x}$}
+\sb{$\textstyle \mathchoice{\mathchoice{1}{2}{3}{4}}{\mathchoice{5}{6}{7}{8}}{{a\over b}}{\sqrt x}$}
+\sb{$\scriptstyle \mathchoice{\mathchoice{1}{2}{3}{4}}{\mathchoice{5}{6}{7}{8}}{{a\over b}}{\sqrt x}$}
+\sb{$\scriptscriptstyle \mathchoice{\mathchoice{1}{2}{3}{4}}{\mathchoice{5}{6}{7}{8}}{{a\over b}}{\sqrt x}$}
+\sb{$\mathchoice{}{}{}{}$}
+\sb{$\mathchoice{a}{b}{c}{d}^2\mathchoice{\mathpunct{,}}{\mathrel{=}}{x}{y}\mathbin+z$}
+\bye

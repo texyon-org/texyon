@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\setbox0\hbox{\lb A\kern3pt B\hskip 2pt C\penalty0 D\ls E\lb F}\showbox0
+\setbox0\hbox{\lb abc\relax def{}ghi\unskip jkl}\showbox0
+\setbox0\hbox{\lb 1\char`2\char"33 4}\showbox0
+\setbox0\hbox{\lb x\unkern\lastkern}\showbox0
+\setbox1\hbox{\unhcopy0 \lb y}\showbox1
+\setbox0\hbox{\lb \uppercase{abc}\lowercase{DEF}}\showbox0
+\setbox0\hbox{\lb\XeTeXtracingfonts=1 A}
+\message{\the\lastnodetype}
+\bye

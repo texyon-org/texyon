@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$a+b\eqno(1)$$ more}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$a+b\leqno(2)$$ more}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$\vrule width 150pt \eqno(123)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$\vrule width 150pt \leqno(123)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$\vrule width 190pt \eqno(123)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$\vrule width 190pt \leqno(123)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$\vrule width 250pt \eqno(123)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$\vrule width 250pt\leqno(123)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$\eqno(1)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt text $$\leqno(1)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt x $$\hbox to 200pt{\hss}\eqno\vrule width 60pt$$}\showbox1 \box1
+\bye

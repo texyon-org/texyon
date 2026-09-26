@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\tracingcommands=3 \sb{$a^b_c\over d\left(\mathchoice{}{}{}{}\right)\mskip 1mu\nonscript\mathsurround 1pt$}
+\setbox1\vbox{\hsize100pt a$$b\eqno c$$}
+\bye

@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\hbox{a. b, c? D. E) F.) g.'' h! i: j; A. B, K.) }\showbox0
+\setbox0\hbox{\frenchspacing a. b, c? D. E) F.) g.''}\showbox0
+\sfcode`a=999 \sfcode`b=1001 \sfcode`c=0 \sfcode`d=32767
+\setbox0\hbox{a b c d x ab ca dc}\showbox0
+\setbox0\hbox{\spacefactor=2000 \ x\spacefactor=0 \ x\spacefactor=1 \ y}\showbox0
+\showthe\sfcode`.
+\bye

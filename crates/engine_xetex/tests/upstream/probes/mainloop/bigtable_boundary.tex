@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xc=xligc \def\c#1{\setbox0\hbox{\xc #1}\showbox0 \shipout\box0 }
+\c{a}\c{b}\c{c}\c{d}\c{e}\c{f}\c{0}\c{00}\c{a0}\c{0a}\c{b0}\c{ab}\c{bc}\c{cd}\c{de}\c{ef}
+\c{\noboundary a}\c{a\noboundary}\c{\noboundary c\noboundary}
+\c{--}\c{-0}\c{-a}\c{---}\c{a-b}\c{a-}
+\bye

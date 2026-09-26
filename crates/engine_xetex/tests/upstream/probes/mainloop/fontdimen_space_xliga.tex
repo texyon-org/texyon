@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\def\t#1{\setbox0\hbox{\xa #1}\showbox0 \setbox0\hbox{\xb #1}\showbox0 \shipout\hbox{\xa #1\xb #1}}
+\t{a b}\fontdimen2\xa=0pt \t{a b}\fontdimen7\xa=3pt \t{a. b}
+\fontdimen2\xb=1sp \fontdimen3\xb=-1pt \t{a b}
+\fontdimen20\xa=1pt \showthe\fontdimen20\xa \showthe\fontdimen19\xa
+\font\xz=xliga at 5pt \fontdimen10\xz=1pt
+\bye

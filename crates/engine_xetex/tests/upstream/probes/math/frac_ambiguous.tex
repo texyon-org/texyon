@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$a\over b\over c$}
+\sb{$a\over b\atop c \above 1pt d$}
+\sb{${a\over b}\over{c\atop d}$}
+\bye

@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\hsize=100pt \parindent0pt \pretolerance-1 \hbadness10000 \hfuzz\maxdimen
+\lefthyphenmin1 \righthyphenmin1 \hsize1pt \tolerance10000 \lccode`Z=`Z \lccode`-=`-
+\hyphenation{c-a-c-a c-b-c-b c-c-c-c c-d-c-d c-e-c-e c-f-c-f c-g-c-g c-h-c-h c-i-c-i c-j-c-j c-k-c-k c-l-c-l c-m-c-m c-s-c-s c-t-c-t c-u-c-u c-w-c-w c-x-c-x c-y-c-y c-c-c}
+\def\p#1{\setbox0\vbox{#1 caca cbcb cccc cdcd cece cfcf cgcg chch cici cjcj ckck clcl cmcm cscs ctct cucu cwcw cxcx cycy ccc ZcZc c-c\par}\showbox0 \shipout\box0 }
+\def\q#1{\setbox0\vbox{\hsize\maxdimen #1 caca cbcb cccc cdcd cece cfcf cgcg chch cici cjcj ckck clcl cmcm cscs ctct cucu cwcw cxcx cycy ccc ZcZc c-c\par}\showbox0 }
+\hyphenchar\xa=`- \hyphenchar\xb=`- \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`Z \hyphenchar\xb=`Z \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`s \hyphenchar\xb=`t \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`k \hyphenchar\xb=`m \p\xa \p\xb \q\xa \q\xb
+\bye

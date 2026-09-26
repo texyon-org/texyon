@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\def\t#1{\setbox0\hbox{\xa #1}\showbox0 \setbox0\hbox{\xb #1}\showbox0 \shipout\hbox{\xa #1\xb #1}}
+\t{\char`a\char`b}\t{a\char`c}\t{\char`k}\t{\char`k\char`m}
+\chardef\ca=`a \t{\ca b}\t{a\ca}\t{\ca\ca}
+\t{\char`a\char"FF}\t{\char 255 a}
+\bye

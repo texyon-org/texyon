@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\TeXXeTstate=1 \setbox1\vbox{\hsize=200pt \parindent=10pt \beginR aa $$x$$ bb\endR}\showbox1 \box1
+\TeXXeTstate=1 \setbox1\vbox{\hsize=200pt \parindent=10pt \beginL aa\beginR bb $$x\eqno(1)$$ cc\endR\endL}\showbox1 \box1
+\TeXXeTstate=1 \setbox1\vbox{\hsize=200pt \parindent=10pt aa $$\hbox{\beginR x\endR}$$}\showbox1 \box1
+\TeXXeTstate=1 \setbox1\vbox{\hsize=200pt \parindent=10pt \beginR aa\endR $$\leqno 3$$}\showbox1 \box1
+\bye

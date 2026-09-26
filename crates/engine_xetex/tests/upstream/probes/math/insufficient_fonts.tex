@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{{\textfont2=\tenrm $x$}}
+\sb{{\scriptfont2=\tenrm $x$}}
+\sb{{\textfont3=\tenrm $x$}}
+\sb{{\scriptscriptfont3=\tenrm $x$}}
+\setbox1\vbox{\hsize100pt {\textfont3=\tenrm a $$x$$ b}}\showbox1
+\setbox1\vbox{\hsize100pt {\textfont2=\tenrm a $$x\eqno 1$$ b}}\showbox1
+\sb{{\textfont2=\nullfont $x$}}
+\bye

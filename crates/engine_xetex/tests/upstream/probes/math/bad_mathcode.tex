@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\mathcode`a="8001
+\mathcode`a=-1
+\delcode`a="1000000
+\mathchardef\x="8001
+\sb{$\mathchar"8001 \mathchar-1$}
+\sb{$\delimiter"8000000$}
+\sb{$\radical"1000000 x$}
+\sb{$\mathaccent"10000 x$}
+\sb{$\fam16$}
+\bye

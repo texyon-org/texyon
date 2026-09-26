@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\TeXXeTstate=1 \setbox1\vbox{\hsize=200pt \parindent=10pt \beginR a b c $$\showthe\predisplaydirection x\eqno(1)$$ d\endR}\showbox1 \box1
+\TeXXeTstate=1 \setbox1\vbox{\hsize=200pt \parindent=10pt a $$\predisplaydirection=-1 x\eqno(1)$$ b $$\predisplaydirection=1 x\leqno(2)$$}\showbox1 \box1
+\TeXXeTstate=1 \setbox1\vbox{\hsize=200pt \parindent=10pt \beginR a a a a \beginL b\endL $$\showthe\predisplaysize\showthe\predisplaydirection$$ c\endR}\showbox1 \box1
+\TeXXeTstate=1 \setbox1\vbox{\hsize=200pt \parindent=10pt \beginR aaa $$\vrule width 190pt\eqno(12)$$ b\endR}\showbox1 \box1
+\bye

@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\hsize=40pt \parindent=0pt
+\interlinepenalties=3 101 102 103 \clubpenalties=2 201 202 \widowpenalties=4 301 302 303 304
+\showthe\interlinepenalties0 \showthe\interlinepenalties2 \showthe\interlinepenalties9 \showthe\interlinepenalties-1
+\showthe\clubpenalties1 \showthe\widowpenalties4 \showthe\displaywidowpenalties0
+\setbox0\vbox{aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp\par}\showbox0
+\setbox0\vbox{aa bb cc dd ee $$x$$ ff gg hh ii\par}\showbox0
+\displaywidowpenalties=2 401 402
+\setbox0\vbox{aa bb cc dd ee ff gg $$x$$ ii\par}\showbox0
+\interlinepenalties=0 \clubpenalties=-2 \showthe\clubpenalties0 \setbox0\vbox{aa bb cc dd ee ff\par}\showbox0
+\bye

@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\hsize=80pt \parindent=0pt \setbox1\vbox{aaa aaa $a+b+c+d=e+f=g+h+i=j$ bbb $x=y$ cc}\showbox1
+\relpenalty=10000 \binoppenalty=-100 \setbox1\vbox{aaa aaa $a+b+c+d=e+f=g+h+i=j$ bbb $x=y$ cc}\showbox1
+\relpenalty=-10000 \binoppenalty=10000 \setbox1\vbox{a $a+b=c$ b}\showbox1
+\setbox1\vbox{a $a+{b=c}+\left(x=y\right)=z\mathrel{=}\penalty5 d$}\showbox1
+\setbox1\vbox{a $a\mathbin{+}\mathrel{=}\mathbin{+}$ $+=$ $=+$}\showbox1
+\bye

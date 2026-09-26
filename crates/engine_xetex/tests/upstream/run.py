@@ -46,7 +46,7 @@ def make_bundle():
         shutil.rmtree(bundle)
     bundle.mkdir(parents=True)
     for f in ASSETS.iterdir():
-        if f.suffix == ".tfm" or f.name in ("knuth-plain.tex", "hyphen.tex"):
+        if f.suffix in (".tfm", ".otf", ".ttf") or f.name in ("knuth-plain.tex", "hyphen.tex"):
             shutil.copy(f, bundle / f.name)
     for pl in sorted(FONTS.glob("*.pl")):
         subprocess.run([PLTOTF, pl, bundle / (pl.stem + ".tfm")], check=True,
@@ -67,6 +67,8 @@ def tl_env(bundle, fmtdir):
         ENV,
         TEXINPUTS=f".:{bundle}:",
         TFMFONTS=f"{bundle}:",
+        OPENTYPEFONTS=f"{bundle}:",
+        TTFONTS=f"{bundle}:",
         TEXFORMATS=f"{fmtdir}:",
         openout_any="a",
     )
@@ -162,7 +164,7 @@ def xdv_pages(path):
     if u(1) != 247:
         return ["<bad xdv>"]
     u(1)
-    i += 12
+    out.append(f"pre {u(4)} {u(4)} {u(4)}")
     k = u(1)
     i += k
     while i < len(b):
@@ -218,10 +220,14 @@ def xdv_pages(path):
             i += a + l
             out.append(f"fntdef {f} {c} {sz} {ds} {nm}")
         elif op == 248:
+            i += 4
+            out.append(f"post {u(4)} {u(4)} {u(4)} {u(4)} {u(4)} {u(2)} {u(2)}")
+        elif op == 249:
             break
         elif op == 252:
             f, sz, flags, n = u(4), u(4), u(2), u(1)
-            nm = b[i:i + n]
+            # upstream records the path kpathsea found
+            nm = b[i:i + n].rsplit(b"/", 1)[-1]
             i += n
             idx = u(4)
             extra = [u(4) for bit in (0x200, 0x1000, 0x2000, 0x4000) if flags & bit]
@@ -262,11 +268,13 @@ def compare(name, src, bundle, fmtdir):
     except (OSError, subprocess.TimeoutExpired) as e:
         return name, [f"<error: {e}>"]
     diffs = []
-    a, b = norm_log(tl / "probe.log"), norm_log(tt / "probe.log")
-    if a != b:
-        diffs += list(difflib.unified_diff(a, b, "upstream.log", "tectonic.log", lineterm="", n=2))
+    a, log = norm_log(tl / "probe.log"), norm_log(tt / "probe.log")
+    if a != log:
+        diffs += list(difflib.unified_diff(a, log, "upstream.log", "tectonic.log", lineterm="", n=2))
     a, b = xdv_pages(tl / "probe.xdv"), xdv_pages(tt / "probe.xdv")
-    if a != b:
+    # Tectonic keeps no outputs after a fatal error.
+    fatal = any(l.startswith(("! TeX capacity exceeded", "! Emergency stop")) for l in log)
+    if a != b and not fatal:
         diffs += list(difflib.unified_diff(a, b, "upstream.xdv", "tectonic.xdv", lineterm="", n=2))
     return name, diffs
 

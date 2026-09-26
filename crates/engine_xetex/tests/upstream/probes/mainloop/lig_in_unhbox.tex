@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\def\t#1{\setbox0\hbox{\xa #1}\showbox0 \setbox0\hbox{\xb #1}\showbox0 \shipout\hbox{\xa #1\xb #1}}
+\setbox1\hbox{\xa a}\setbox0\hbox{\unhcopy1 b}\showbox0
+\setbox0\hbox{\xa a\unhcopy1 b\unhbox1}\showbox0
+\setbox0\hbox{\xa k\lastkern\showthe\lastkern m\unkern}\showbox0
+\setbox0\hbox{\xa aj\showthe\lastkern\unkern}\showbox0
+\setbox0\hbox{\xa ab\unskip\showlists}\showbox0
+\bye

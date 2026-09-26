@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\mathcode`x="8000 \mathcode`x="FFFFFF \showthe\mathcode`x \mathcode`x="0000 \sb{$x$}
+\mathchardef\mc="7161 \show\mc \sb{$\mc \fam1 \mc$}
+\mathchardef\mb="8000 \show\mb \mathchardef\mbb="10000 \show\mbb
+\sb{$\char`a \char"161$}
+\sb{$\fam=16 \fam=-2 \showthe\fam$}
+\mathcode 70000=5
+\bye

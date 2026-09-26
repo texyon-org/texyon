@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle a\textstyle b\scriptstyle c\scriptscriptstyle d\crampedstyle$}
+\sb{$a\over b\showlists$}
+$\displaystyle\showlists \scriptscriptstyle\showlists\showthe\currentgrouptype$
+\sb{$\displaystyle x^{\displaystyle a}_{\textstyle b}$}
+\sb{$\textstyle x^{\displaystyle a}_{\textstyle b}$}
+\sb{$\scriptstyle x^{\displaystyle a}_{\textstyle b}$}
+\sb{$\scriptscriptstyle x^{\displaystyle a}_{\textstyle b}$}
+\bye

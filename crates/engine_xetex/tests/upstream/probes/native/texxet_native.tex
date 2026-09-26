@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\TeXXeTstate=1
+\setbox0\hbox{\lb abc \beginR def ghi\endR{} jkl}\showbox0
+\shipout\copy0
+\hsize=60pt \parindent0pt \beginR\lb first second third fourth fifth\endR\par
+\showlists
+\bye

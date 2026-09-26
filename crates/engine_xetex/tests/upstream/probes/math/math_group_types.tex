@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\tracingcommands=2 $a^{b}\left(c\middle|d\right)\mathchoice{e}{f}{g}{h}\vcenter{i}\showgroups$
+$$\halign{#\cr x\showgroups\cr}$$
+\bye

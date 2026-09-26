@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\TeXXeTstate=1 \mathsurround=3pt \sb{\beginR a$x+y$b\endR}
+\sb{\beginL a$x$\beginR b$y$\endR\endL}
+\hsize=50pt \parindent=0pt \setbox1\vbox{\beginR aa $x+y$ bb $z$ cc\endR}\showbox1 \box1
+\bye

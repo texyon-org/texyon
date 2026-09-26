@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle {a\atop b+c}$}
+\sb{$\textstyle {a\atop b+c}$}
+\sb{$\scriptstyle {a\atop b+c}$}
+\sb{$\scriptscriptstyle {a\atop b+c}$}
+\bye

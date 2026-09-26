@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle {{a\over b}\over{c\over{d\over e}}}$}
+\sb{$\textstyle {{a\over b}\over{c\over{d\over e}}}$}
+\sb{$\scriptstyle {{a\over b}\over{c\over{d\over e}}}$}
+\sb{$\scriptscriptstyle {{a\over b}\over{c\over{d\over e}}}$}
+\bye

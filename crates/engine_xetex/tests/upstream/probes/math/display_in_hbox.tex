@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$$x$$}
+\setbox1\vbox{$$x\hfill$$}\showbox1
+\setbox1\vbox{\hsize=100pt\noindent$$\hbox to 120pt{x}$$}\showbox1
+\bye
