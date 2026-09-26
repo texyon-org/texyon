@@ -6,12 +6,21 @@
 
 use crate::mem_types::MemoryWord;
 
+/// A pre-image: word `idx` held `old` before the epoch touched it.
+#[derive(Clone, Copy)]
+#[repr(C, packed(4))]
+struct Preimage {
+    idx: u32,
+    old: MemoryWord,
+}
+
+const _: () = assert!(std::mem::size_of::<Preimage>() == 12);
+
 #[derive(Default)]
 pub(crate) struct WordJournal {
     armed: bool,
     touched: Vec<u64>,
-    idx: Vec<u32>,
-    old: Vec<MemoryWord>,
+    entries: Vec<Preimage>,
 }
 
 impl WordJournal {
@@ -27,8 +36,7 @@ impl WordJournal {
         );
         self.touched.clear();
         self.touched.resize(arena_len.div_ceil(64), 0);
-        self.idx.clear();
-        self.old.clear();
+        self.entries.clear();
         self.armed = true;
     }
 
@@ -43,73 +51,74 @@ impl WordJournal {
         let word = &mut self.touched[index >> 6];
         if *word & bit == 0 {
             *word |= bit;
-            self.idx.push(index as u32);
-            self.old.push(old);
+            self.entries.push(Preimage {
+                idx: index as u32,
+                old,
+            });
         }
     }
 
     pub(crate) fn seal(&mut self) -> WordDelta {
-        for &index in &self.idx {
-            self.touched[index as usize >> 6] = 0;
+        for e in &self.entries {
+            self.touched[e.idx as usize >> 6] = 0;
         }
         WordDelta {
-            idx: std::mem::take(&mut self.idx),
-            old: std::mem::take(&mut self.old),
+            entries: std::mem::take(&mut self.entries),
         }
     }
 
     pub(crate) fn snapshot(&self) -> WordDelta {
         WordDelta {
-            idx: self.idx.clone(),
-            old: self.old.clone(),
+            entries: self.entries.clone(),
         }
     }
 
     #[cfg(test)]
     fn open_len(&self) -> usize {
-        self.idx.len()
+        self.entries.len()
     }
 }
 
+/// The pre-images of one epoch, at most one per word.
 #[derive(Clone, Default)]
 pub(crate) struct WordDelta {
-    idx: Vec<u32>,
-    old: Vec<MemoryWord>,
+    entries: Vec<Preimage>,
 }
 
 impl WordDelta {
     pub(crate) fn apply_to(&self, data: &mut [MemoryWord]) {
-        for (&index, &old) in self.idx.iter().zip(&self.old).rev() {
-            data[index as usize] = old;
+        for e in self.entries.iter().rev() {
+            data[e.idx as usize] = e.old;
         }
     }
 
     /// `older` restores further back in time, so its pre-image wins on overlap.
     pub(crate) fn compose_with_older(&mut self, mut older: WordDelta) {
-        let mut older_indices = older.idx.clone();
-        older_indices.sort_unstable();
-        for (&index, &old) in self.idx.iter().zip(&self.old) {
-            if older_indices.binary_search(&index).is_err() {
-                older.idx.push(index);
-                older.old.push(old);
+        // Each delta holds a word at most once, so reordering is harmless.
+        older.entries.sort_unstable_by_key(|e| e.idx);
+        let known = older.entries.len();
+        for &e in &self.entries {
+            if older.entries[..known]
+                .binary_search_by_key(&e.idx, |o| o.idx)
+                .is_err()
+            {
+                older.entries.push(e);
             }
         }
         *self = older;
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.idx.capacity() * std::mem::size_of::<u32>()
-            + self.old.capacity() * std::mem::size_of::<MemoryWord>()
+        self.entries.capacity() * std::mem::size_of::<Preimage>()
     }
 
     pub(crate) fn compact(&mut self) {
-        self.idx.shrink_to_fit();
-        self.old.shrink_to_fit();
+        self.entries.shrink_to_fit();
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.idx.len()
+        self.entries.len()
     }
 }
 
