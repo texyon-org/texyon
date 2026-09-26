@@ -57,13 +57,6 @@ fn odd(v: u8) -> bool {
     v % 2 == 1
 }
 
-impl MemState {
-    #[inline]
-    fn has_infinite_shrink(&self, spec: NodePtr<GlueSpecNode>) -> bool {
-        spec.shrink_order(self) != NORMAL && spec.shrink(self).0 != 0
-    }
-}
-
 impl FontState {
     #[inline]
     fn effective_char_width(&mut self, f: i32, c: u16) -> i32 {
@@ -97,18 +90,6 @@ enum ActiveOrDelta {
     Delta(NodePtr<DeltaNode>),
 }
 
-impl MemState {
-    #[inline]
-    fn classify_active_or_delta(&self, p: impl MemAddr) -> ActiveOrDelta {
-        let p = p.addr();
-        if active(p).break_type(self) == DELTA_NODE {
-            ActiveOrDelta::Delta(delta_node(p))
-        } else {
-            ActiveOrDelta::Active(active(p))
-        }
-    }
-}
-
 /// A delta node's six components, indexed like `active_width` (slot 0 unused).
 #[inline]
 fn delta_widths(d: NodePtr<DeltaNode>, mem: &MemState) -> [i32; 7] {
@@ -134,6 +115,21 @@ fn set_delta_widths(d: NodePtr<DeltaNode>, mem: &mut MemState, w: &[i32; 7]) {
 }
 
 impl MemState {
+    #[inline]
+    fn has_infinite_shrink(&self, spec: NodePtr<GlueSpecNode>) -> bool {
+        spec.shrink_order(self) != NORMAL && spec.shrink(self).0 != 0
+    }
+
+    #[inline]
+    fn classify_active_or_delta(&self, p: impl MemAddr) -> ActiveOrDelta {
+        let p = p.addr();
+        if active(p).break_type(self) == DELTA_NODE {
+            ActiveOrDelta::Delta(delta_node(p))
+        } else {
+            ActiveOrDelta::Active(active(p))
+        }
+    }
+
     fn new_active_node(
         &mut self,
         active_node_size: i32,
@@ -241,56 +237,9 @@ fn split_native_word(
     Ok(tail)
 }
 
-impl MemState {
-    /// Whether `p` is a char node or a node that glue may break after.
-    #[inline]
-    fn is_non_discardable(&self, p: MemPtr) -> bool {
-        self.is_char_node(p)
-            || self
-                .classify(MemIdx::new(p))
-                .is_ok_and(|n| n.precedes_break())
-    }
-
-    #[inline]
-    fn is_empty_hlist(&self, b: NodePtr<HListNode>) -> bool {
-        b.width(self).0 == 0
-            && b.height(self).0 == 0
-            && b.depth(self).0 == 0
-            && b.list_ptr(self).is_null()
-    }
-
-    #[inline]
-    fn is_empty_box(&self, p: MemPtr) -> bool {
-        matches!(self.classify_box(MemIdx::new(p)), Ok(Some(AnyBox::HList(b))) if self.is_empty_hlist(b))
-    }
-
-    /// The list of `p` if `p` is an hlist with a nonempty list.
-    #[inline]
-    fn nonempty_hlist(&self, p: MemPtr) -> Option<MemPtr> {
-        match self.classify_box(MemIdx::new(p)) {
-            Ok(Some(AnyBox::HList(b))) => Some(b.list_ptr(self)).filter(|list| !list.is_null()),
-            _ => None,
-        }
-    }
-
-    fn ignorable_protrusion_node(&self, p: MemPtr) -> bool {
-        if self.is_char_node(p) {
-            return false;
-        }
-        match self.classify(MemIdx::new(p)) {
-            Ok(AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_)) => {
-                true
-            }
-            Ok(AnyNode::Disc(d)) => {
-                d.pre_break(self).is_null() && d.post_break(self).is_null() && d.subtype(self) == 0
-            }
-            Ok(AnyNode::Math(m)) => m.width(self).0 == 0,
-            Ok(AnyNode::Kern(k)) => k.width(self).0 == 0 || k.subtype(self) == NORMAL,
-            Ok(AnyNode::Glue(g)) => g.glue_ptr(self) == ZERO_GLUE,
-            Ok(AnyNode::HList(h)) => self.is_empty_hlist(h),
-            _ => false,
-        }
-    }
+pub(crate) enum MarginKernAbort {
+    Overflow,
+    PdfError,
 }
 
 impl LinebreakState {
@@ -359,9 +308,186 @@ impl LinebreakState {
 
         Some(self.char_pw(errors, mem, fonts, l, 0) + self.char_pw(errors, mem, fonts, r, 1))
     }
+
+    /// The protrusion (`\lpcode`/`\rpcode` scaled to the font quad) of `p`, recording
+    /// the protruding char in `last_leftmost_char`/`last_rightmost_char`.
+    fn char_pw(
+        &mut self,
+        errors: &mut ErrorState,
+        mem: &MemState,
+        fonts: &FontState,
+        p: MemPtr,
+        side: i16,
+    ) -> i32 {
+        fn protrusion(errors: &mut ErrorState, fonts: &FontState, f: i32, cp: i32) -> i32 {
+            let quad = fonts.param(f, QUAD_CODE);
+            errors.round_xn_over_d(quad, cp, 1000)
+        }
+
+        if side == 0 {
+            self.last_leftmost_char = MemPtr::NULL;
+        } else {
+            self.last_rightmost_char = MemPtr::NULL;
+        }
+        if p.is_null() {
+            return 0;
+        }
+
+        let (char_ptr, f, c) = if let Some(ch) = mem.as_char(p) {
+            (p, ch.font(mem).0, ch.character(mem))
+        } else {
+            match mem.classify(MemIdx::new(p)) {
+                Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(mem) {
+                    Some(s) if s.is_native_word() => {
+                        if w.native_glyph_info_handle(mem) == 0 {
+                            return 0;
+                        }
+                        let f = w.native_font(mem).0;
+                        // SAFETY: `p` is a native word with glyph info.
+                        let cp = unsafe { mem.real_get_native_word_cp(w, side as libc::c_int) };
+                        return protrusion(errors, fonts, f, cp);
+                    }
+                    Some(WhatsitSubtype::Glyph) => {
+                        let f = w.native_font(mem).0;
+                        // SAFETY: plain FFI lookup by font and glyph code.
+                        let cp = unsafe { get_cp_code(f, w.native_glyph(mem) as u32, side as i32) };
+                        return protrusion(errors, fonts, f, cp);
+                    }
+                    _ => return 0,
+                },
+                Ok(AnyNode::Ligature(lig)) => (lig.ptr() + 1, lig.font(mem).0, lig.character(mem)),
+                _ => return 0,
+            }
+        };
+
+        // SAFETY: plain FFI lookup by font and character code.
+        let cp = unsafe { get_cp_code(f, c as u32, side as i32) };
+        if side == 0 {
+            self.last_leftmost_char = char_ptr;
+        } else {
+            self.last_rightmost_char = char_ptr;
+        }
+        if cp == 0 {
+            return 0;
+        }
+        protrusion(errors, fonts, f, cp)
+    }
+
+    /// Insert the right margin kern of the line ending at `q`, which is the last
+    /// node of a discretionary's pre-break list when `pre_break_tail` is set.
+    fn insert_right_margin_kern(
+        &mut self,
+        errors: &mut ErrorState,
+        mem: &mut MemState,
+        fonts: &FontState,
+        q: MemPtr,
+        pre_break_tail: bool,
+    ) -> Result<MemPtr, MarginKernAbort> {
+        let (p, ptmp) = if pre_break_tail {
+            (q, q)
+        } else {
+            let head = TEMP_HEAD.link(mem);
+            let ptmp = mem.prev_rightmost(head, q);
+            let p = mem
+                .find_protchar_right(self, head, ptmp)
+                .ok_or(MarginKernAbort::PdfError)?;
+            (p, ptmp)
+        };
+
+        let w = self.char_pw(errors, mem, fonts, p, 1);
+        if w == 0 {
+            return Ok(q);
+        }
+
+        let k = mem
+            .new_margin_kern(-w, 1)
+            .ok_or(MarginKernAbort::Overflow)?;
+        k.set_link(mem, ptmp.link(mem));
+        ptmp.set_link(mem, k.ptr());
+        Ok(if ptmp == q { q.link(mem) } else { q })
+    }
+
+    fn insert_left_margin_kern(
+        &mut self,
+        errors: &mut ErrorState,
+        mem: &mut MemState,
+        fonts: &FontState,
+        q: MemPtr,
+    ) -> Result<MemPtr, MarginKernAbort> {
+        let p = mem
+            .find_protchar_left(self, q, false)
+            .ok_or(MarginKernAbort::PdfError)?;
+
+        let w = self.char_pw(errors, mem, fonts, p, 0);
+        if w == 0 {
+            return Ok(q);
+        }
+
+        let k = mem
+            .new_margin_kern(-w, 0)
+            .ok_or(MarginKernAbort::Overflow)?;
+        k.set_link(mem, q);
+        Ok(k.ptr())
+    }
+}
+
+/// A lig item on `mainloop.lig_stack`, which `reconstitute` fills only with lig items.
+#[inline]
+fn lig_item(p: MemPtr) -> NodePtr<LigItem> {
+    NodePtr::at(p)
 }
 
 impl MemState {
+    /// Whether `p` is a char node or a node that glue may break after.
+    #[inline]
+    fn is_non_discardable(&self, p: MemPtr) -> bool {
+        self.is_char_node(p)
+            || self
+                .classify(MemIdx::new(p))
+                .is_ok_and(|n| n.precedes_break())
+    }
+
+    #[inline]
+    fn is_empty_hlist(&self, b: NodePtr<HListNode>) -> bool {
+        b.width(self).0 == 0
+            && b.height(self).0 == 0
+            && b.depth(self).0 == 0
+            && b.list_ptr(self).is_null()
+    }
+
+    #[inline]
+    fn is_empty_box(&self, p: MemPtr) -> bool {
+        matches!(self.classify_box(MemIdx::new(p)), Ok(Some(AnyBox::HList(b))) if self.is_empty_hlist(b))
+    }
+
+    /// The list of `p` if `p` is an hlist with a nonempty list.
+    #[inline]
+    fn nonempty_hlist(&self, p: MemPtr) -> Option<MemPtr> {
+        match self.classify_box(MemIdx::new(p)) {
+            Ok(Some(AnyBox::HList(b))) => Some(b.list_ptr(self)).filter(|list| !list.is_null()),
+            _ => None,
+        }
+    }
+
+    fn ignorable_protrusion_node(&self, p: MemPtr) -> bool {
+        if self.is_char_node(p) {
+            return false;
+        }
+        match self.classify(MemIdx::new(p)) {
+            Ok(AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_)) => {
+                true
+            }
+            Ok(AnyNode::Disc(d)) => {
+                d.pre_break(self).is_null() && d.post_break(self).is_null() && d.subtype(self) == 0
+            }
+            Ok(AnyNode::Math(m)) => m.width(self).0 == 0,
+            Ok(AnyNode::Kern(k)) => k.width(self).0 == 0 || k.subtype(self) == NORMAL,
+            Ok(AnyNode::Glue(g)) => g.glue_ptr(self) == ZERO_GLUE,
+            Ok(AnyNode::HList(h)) => self.is_empty_hlist(h),
+            _ => false,
+        }
+    }
+
     fn find_protchar_left(
         &self,
         linebreak: &mut LinebreakState,
@@ -449,139 +575,7 @@ impl MemState {
             }
         }
     }
-}
 
-impl LinebreakState {
-    /// The protrusion (`\lpcode`/`\rpcode` scaled to the font quad) of `p`, recording
-    /// the protruding char in `last_leftmost_char`/`last_rightmost_char`.
-    fn char_pw(
-        &mut self,
-        errors: &mut ErrorState,
-        mem: &MemState,
-        fonts: &FontState,
-        p: MemPtr,
-        side: i16,
-    ) -> i32 {
-        fn protrusion(errors: &mut ErrorState, fonts: &FontState, f: i32, cp: i32) -> i32 {
-            let quad = fonts.param(f, QUAD_CODE);
-            errors.round_xn_over_d(quad, cp, 1000)
-        }
-
-        if side == 0 {
-            self.last_leftmost_char = MemPtr::NULL;
-        } else {
-            self.last_rightmost_char = MemPtr::NULL;
-        }
-        if p.is_null() {
-            return 0;
-        }
-
-        let (char_ptr, f, c) = if let Some(ch) = mem.as_char(p) {
-            (p, ch.font(mem).0, ch.character(mem))
-        } else {
-            match mem.classify(MemIdx::new(p)) {
-                Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(mem) {
-                    Some(s) if s.is_native_word() => {
-                        if w.native_glyph_info_handle(mem) == 0 {
-                            return 0;
-                        }
-                        let f = w.native_font(mem).0;
-                        // SAFETY: `p` is a native word with glyph info.
-                        let cp = unsafe { mem.real_get_native_word_cp(w, side as libc::c_int) };
-                        return protrusion(errors, fonts, f, cp);
-                    }
-                    Some(WhatsitSubtype::Glyph) => {
-                        let f = w.native_font(mem).0;
-                        // SAFETY: plain FFI lookup by font and glyph code.
-                        let cp = unsafe { get_cp_code(f, w.native_glyph(mem) as u32, side as i32) };
-                        return protrusion(errors, fonts, f, cp);
-                    }
-                    _ => return 0,
-                },
-                Ok(AnyNode::Ligature(lig)) => (lig.ptr() + 1, lig.font(mem).0, lig.character(mem)),
-                _ => return 0,
-            }
-        };
-
-        // SAFETY: plain FFI lookup by font and character code.
-        let cp = unsafe { get_cp_code(f, c as u32, side as i32) };
-        if side == 0 {
-            self.last_leftmost_char = char_ptr;
-        } else {
-            self.last_rightmost_char = char_ptr;
-        }
-        if cp == 0 {
-            return 0;
-        }
-        protrusion(errors, fonts, f, cp)
-    }
-}
-
-pub(crate) enum MarginKernAbort {
-    Overflow,
-    PdfError,
-}
-
-impl LinebreakState {
-    /// Insert the right margin kern of the line ending at `q`, which is the last
-    /// node of a discretionary's pre-break list when `pre_break_tail` is set.
-    fn insert_right_margin_kern(
-        &mut self,
-        errors: &mut ErrorState,
-        mem: &mut MemState,
-        fonts: &FontState,
-        q: MemPtr,
-        pre_break_tail: bool,
-    ) -> Result<MemPtr, MarginKernAbort> {
-        let (p, ptmp) = if pre_break_tail {
-            (q, q)
-        } else {
-            let head = TEMP_HEAD.link(mem);
-            let ptmp = mem.prev_rightmost(head, q);
-            let p = mem
-                .find_protchar_right(self, head, ptmp)
-                .ok_or(MarginKernAbort::PdfError)?;
-            (p, ptmp)
-        };
-
-        let w = self.char_pw(errors, mem, fonts, p, 1);
-        if w == 0 {
-            return Ok(q);
-        }
-
-        let k = mem
-            .new_margin_kern(-w, 1)
-            .ok_or(MarginKernAbort::Overflow)?;
-        k.set_link(mem, ptmp.link(mem));
-        ptmp.set_link(mem, k.ptr());
-        Ok(if ptmp == q { q.link(mem) } else { q })
-    }
-
-    fn insert_left_margin_kern(
-        &mut self,
-        errors: &mut ErrorState,
-        mem: &mut MemState,
-        fonts: &FontState,
-        q: MemPtr,
-    ) -> Result<MemPtr, MarginKernAbort> {
-        let p = mem
-            .find_protchar_left(self, q, false)
-            .ok_or(MarginKernAbort::PdfError)?;
-
-        let w = self.char_pw(errors, mem, fonts, p, 0);
-        if w == 0 {
-            return Ok(q);
-        }
-
-        let k = mem
-            .new_margin_kern(-w, 0)
-            .ok_or(MarginKernAbort::Overflow)?;
-        k.set_link(mem, q);
-        Ok(k.ptr())
-    }
-}
-
-impl MemState {
     /// A copy of `spec` with finite shrink, releasing `spec`.
     pub(crate) fn finite_shrink(
         &mut self,
@@ -592,15 +586,7 @@ impl MemState {
         self.delete_glue_ref(spec);
         Ok(q)
     }
-}
 
-/// A lig item on `mainloop.lig_stack`, which `reconstitute` fills only with lig items.
-#[inline]
-fn lig_item(p: MemPtr) -> NodePtr<LigItem> {
-    NodePtr::at(p)
-}
-
-impl MemState {
     /// A fresh char node of font `f` holding `c`, linked after `t`.
     fn append_char(&mut self, t: MemPtr, f: i32, c: u16) -> Result<MemPtr, NodeRecycleAbort> {
         let q = self
@@ -1748,41 +1734,6 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
     }
 }
 
-impl MemState {
-    fn reverse_best_breaks(&mut self, linebreak: &mut LinebreakState) {
-        let mut q = linebreak.best_bet.expect(BEST_BET_SET).break_node(self);
-        linebreak.cur_p = MemPtr::NULL;
-        loop {
-            let r = passive_node(q);
-            q = r.next_break(self);
-            r.set_next_break(self, linebreak.cur_p);
-            linebreak.cur_p = r.ptr();
-            if q.is_null() {
-                break;
-            }
-        }
-    }
-
-    /// Track the LR nesting of a math node on the `lr_ptr` stack.
-    fn update_lr_stack(
-        &mut self,
-        q: NodePtr<MathNode>,
-        lr_ptr: &mut MemPtr,
-    ) -> Result<(), NodeRecycleAbort> {
-        let subtype = q.subtype(self);
-        let end_lr = crate::mem::end_lr_type(subtype);
-        if subtype % 2 == 1 {
-            if !lr_ptr.is_null() && lr_ptr.info(self) == end_lr {
-                self.pop_lr(lr_ptr);
-            }
-            Ok(())
-        } else {
-            self.push_lr(lr_ptr, end_lr)
-                .ok_or(NodeRecycleAbort::OverflowRunaway)
-        }
-    }
-}
-
 struct PostLineHpack {
     q: MemPtr,
     cur_width: i32,
@@ -1999,6 +1950,39 @@ impl LinebreakState {
 }
 
 impl MemState {
+    fn reverse_best_breaks(&mut self, linebreak: &mut LinebreakState) {
+        let mut q = linebreak.best_bet.expect(BEST_BET_SET).break_node(self);
+        linebreak.cur_p = MemPtr::NULL;
+        loop {
+            let r = passive_node(q);
+            q = r.next_break(self);
+            r.set_next_break(self, linebreak.cur_p);
+            linebreak.cur_p = r.ptr();
+            if q.is_null() {
+                break;
+            }
+        }
+    }
+
+    /// Track the LR nesting of a math node on the `lr_ptr` stack.
+    fn update_lr_stack(
+        &mut self,
+        q: NodePtr<MathNode>,
+        lr_ptr: &mut MemPtr,
+    ) -> Result<(), NodeRecycleAbort> {
+        let subtype = q.subtype(self);
+        let end_lr = crate::mem::end_lr_type(subtype);
+        if subtype % 2 == 1 {
+            if !lr_ptr.is_null() && lr_ptr.info(self) == end_lr {
+                self.pop_lr(lr_ptr);
+            }
+            Ok(())
+        } else {
+            self.push_lr(lr_ptr, end_lr)
+                .ok_or(NodeRecycleAbort::OverflowRunaway)
+        }
+    }
+
     /// Entry `n` (clamped to the last) of the eTeX penalty array `k`, if it is set.
     fn etex_penalty(&self, eqtb: &EqtbState, k: i32, n: i32) -> Option<i32> {
         let penalties = eqtb.penalties(ETEX_PEN_BASE + k)?;

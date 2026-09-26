@@ -1261,22 +1261,6 @@ impl NativeFontAbort {
     }
 }
 
-impl FontState {
-    /// The layout engine of OpenType/Graphite font `f`, or `BadFlag(msg)` for any
-    /// other font.
-    fn require_ot_engine(
-        &self,
-        f: i32,
-        msg: &'static CStr,
-    ) -> Result<XeTeXLayoutEngine, NativeFontAbort> {
-        if self.font_area_entry(f) == OTGR_FONT_FLAG {
-            Ok(self.font_layout_engine_ptr(f) as XeTeXLayoutEngine)
-        } else {
-            Err(NativeFontAbort::BadFlag(msg.as_ptr()))
-        }
-    }
-}
-
 #[derive(Default)]
 struct ShapedGlyphs {
     locations: Vec<FixedPoint>,
@@ -1343,7 +1327,54 @@ unsafe fn cached_glyph_bbox(engine: XeTeXLayoutEngine, f: i32, gid: u16) -> Glyp
     bbox
 }
 
+impl MemState {
+    pub fn real_get_native_glyph(&self, w: NodePtr<WhatsitNode>, index: u32) -> u16 {
+        if index as usize >= w.native_glyph_count(self) as usize {
+            0
+        } else {
+            self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids[index as usize]
+        }
+    }
+
+    /// The protrusion code of the first or last glyph of native word `w`.
+    pub unsafe fn real_get_native_word_cp(&self, w: NodePtr<WhatsitNode>, side: c_int) -> i32 {
+        let glyph_count = w.native_glyph_count(self) as usize;
+        let f = w.native_font(self).0;
+        if glyph_count == 0 {
+            return 0;
+        }
+        let gids = &self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids;
+        let actual_glyph = match side {
+            LEFT_SIDE => gids[0],
+            RIGHT_SIDE => gids[glyph_count - 1],
+            _ => unreachable!(),
+        };
+        get_cp_code(f, actual_glyph as u32, side)
+    }
+}
+
+fn snap_zone(value: &mut i32, snap_value: i32, fuzz: i32) {
+    let difference = *value - snap_value;
+    if difference <= fuzz && difference >= -fuzz {
+        *value = snap_value;
+    }
+}
+
 impl FontState {
+    /// The layout engine of OpenType/Graphite font `f`, or `BadFlag(msg)` for any
+    /// other font.
+    fn require_ot_engine(
+        &self,
+        f: i32,
+        msg: &'static CStr,
+    ) -> Result<XeTeXLayoutEngine, NativeFontAbort> {
+        if self.font_area_entry(f) == OTGR_FONT_FLAG {
+            Ok(self.font_layout_engine_ptr(f) as XeTeXLayoutEngine)
+        } else {
+            Err(NativeFontAbort::BadFlag(msg.as_ptr()))
+        }
+    }
+
     /// Shape native word `w` and store its width, height, depth and glyphs.
     pub unsafe fn measure_native_node(
         &self,
@@ -1455,19 +1486,7 @@ impl FontState {
         w.set_native_glyph_info_handle(mem, handle);
         Ok(())
     }
-}
 
-impl MemState {
-    pub fn real_get_native_glyph(&self, w: NodePtr<WhatsitNode>, index: u32) -> u16 {
-        if index as usize >= w.native_glyph_count(self) as usize {
-            0
-        } else {
-            self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids[index as usize]
-        }
-    }
-}
-
-impl FontState {
     pub unsafe fn real_get_native_italic_correction(
         &self,
         mem: &MemState,
@@ -1525,34 +1544,7 @@ impl FontState {
         }
         Ok(())
     }
-}
 
-impl MemState {
-    /// The protrusion code of the first or last glyph of native word `w`.
-    pub unsafe fn real_get_native_word_cp(&self, w: NodePtr<WhatsitNode>, side: c_int) -> i32 {
-        let glyph_count = w.native_glyph_count(self) as usize;
-        let f = w.native_font(self).0;
-        if glyph_count == 0 {
-            return 0;
-        }
-        let gids = &self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids;
-        let actual_glyph = match side {
-            LEFT_SIDE => gids[0],
-            RIGHT_SIDE => gids[glyph_count - 1],
-            _ => unreachable!(),
-        };
-        get_cp_code(f, actual_glyph as u32, side)
-    }
-}
-
-fn snap_zone(value: &mut i32, snap_value: i32, fuzz: i32) {
-    let difference = *value - snap_value;
-    if difference <= fuzz && difference >= -fuzz {
-        *value = snap_value;
-    }
-}
-
-impl FontState {
     /// Height and depth of character `ch` of native font `font`.
     pub unsafe fn get_native_char_height_depth(
         &self,
@@ -1722,19 +1714,17 @@ pub(crate) unsafe fn linebreak_start(
     Ok(())
 }
 
+pub(crate) unsafe fn close_linebreak_iterator(iterator: *mut c_void) {
+    ubrk_close(iterator);
+}
+
 impl FontState {
     pub(crate) fn release_linebreak_state(&mut self) {
         self.brk_iter = None;
         self.brk_locale_str_num = 0;
         self.saved_mapping_name = None;
     }
-}
 
-pub(crate) unsafe fn close_linebreak_iterator(iterator: *mut c_void) {
-    ubrk_close(iterator);
-}
-
-impl FontState {
     pub unsafe fn linebreak_next(&self, f: c_int) -> c_int {
         let iterator = self.linebreak_iterator_ptr();
         if !iterator.is_null() {

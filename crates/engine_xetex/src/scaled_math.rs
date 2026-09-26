@@ -27,6 +27,86 @@ pub fn half(x: i32) -> i32 {
     }
 }
 
+/// Side-effect-free core of `xn_over_d`: `(quotient, remainder, overflowed)`.
+pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
+    let positive = x >= 0;
+    if !positive {
+        x = x.wrapping_neg();
+    }
+
+    // The halves are truncated to i32, so the products wrap.
+    let t = (x % 32768).wrapping_mul(n);
+    let mut u = (x / 32768).wrapping_mul(n).wrapping_add(t / 32768);
+    let v = (u % d).wrapping_mul(32768).wrapping_add(t % 32768);
+
+    let overflowed = u / d >= 32768;
+    if !overflowed {
+        u = 32768i32.wrapping_mul(u / d).wrapping_add(v / d);
+    }
+
+    if positive {
+        (u, v % d, overflowed)
+    } else {
+        (u.wrapping_neg(), (v % d).wrapping_neg(), overflowed)
+    }
+}
+
+/// The sign of `a*b - c*d`, computed without overflow.
+fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
+    if a < 0 {
+        a = -a;
+        b = -b;
+    }
+    if c < 0 {
+        c = -c;
+        d = -d;
+    }
+
+    if d <= 0 {
+        if b >= 0 {
+            return if (a == 0 || b == 0) && (c == 0 || d == 0) {
+                0
+            } else {
+                1
+            };
+        }
+        if d == 0 {
+            return if a == 0 { 0 } else { -1 };
+        }
+        std::mem::swap(&mut a, &mut c);
+        let tmp = -b;
+        b = -d;
+        d = tmp;
+    } else if b <= 0 {
+        if b < 0 && a > 0 {
+            return -1;
+        }
+        return if c == 0 { 0 } else { -1 };
+    }
+
+    loop {
+        let q = a / d;
+        let r = c / b;
+        if q != r {
+            return if q > r { 1 } else { -1 };
+        }
+
+        let q = a % d;
+        let r = c % b;
+        if r == 0 {
+            return if q == 0 { 0 } else { 1 };
+        }
+        if q == 0 {
+            return -1;
+        }
+
+        a = b;
+        b = q;
+        c = d;
+        d = r;
+    }
+}
+
 impl ErrorState {
     pub(crate) fn mult_and_add(&mut self, mut n: i32, mut x: i32, y: i32, max_answer: i32) -> i32 {
         if n < 0 {
@@ -76,33 +156,7 @@ impl ErrorState {
         self.tex_remainder = remainder;
         quotient
     }
-}
 
-/// Side-effect-free core of `xn_over_d`: `(quotient, remainder, overflowed)`.
-pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
-    let positive = x >= 0;
-    if !positive {
-        x = x.wrapping_neg();
-    }
-
-    // The halves are truncated to i32, so the products wrap.
-    let t = (x % 32768).wrapping_mul(n);
-    let mut u = (x / 32768).wrapping_mul(n).wrapping_add(t / 32768);
-    let v = (u % d).wrapping_mul(32768).wrapping_add(t % 32768);
-
-    let overflowed = u / d >= 32768;
-    if !overflowed {
-        u = 32768i32.wrapping_mul(u / d).wrapping_add(v / d);
-    }
-
-    if positive {
-        (u, v % d, overflowed)
-    } else {
-        (u.wrapping_neg(), (v % d).wrapping_neg(), overflowed)
-    }
-}
-
-impl ErrorState {
     /// `xn_over_d` rounded half away from zero. Leaves `tex_remainder` alone.
     pub fn round_xn_over_d(&mut self, x: i32, n: i32, d: i32) -> i32 {
         let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
@@ -232,65 +286,7 @@ impl ErrorState {
             n + p
         }
     }
-}
 
-/// The sign of `a*b - c*d`, computed without overflow.
-fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
-    if a < 0 {
-        a = -a;
-        b = -b;
-    }
-    if c < 0 {
-        c = -c;
-        d = -d;
-    }
-
-    if d <= 0 {
-        if b >= 0 {
-            return if (a == 0 || b == 0) && (c == 0 || d == 0) {
-                0
-            } else {
-                1
-            };
-        }
-        if d == 0 {
-            return if a == 0 { 0 } else { -1 };
-        }
-        std::mem::swap(&mut a, &mut c);
-        let tmp = -b;
-        b = -d;
-        d = tmp;
-    } else if b <= 0 {
-        if b < 0 && a > 0 {
-            return -1;
-        }
-        return if c == 0 { 0 } else { -1 };
-    }
-
-    loop {
-        let q = a / d;
-        let r = c / b;
-        if q != r {
-            return if q > r { 1 } else { -1 };
-        }
-
-        let q = a % d;
-        let r = c % b;
-        if r == 0 {
-            return if q == 0 { 0 } else { 1 };
-        }
-        if q == 0 {
-            return -1;
-        }
-
-        a = b;
-        b = q;
-        c = d;
-        d = r;
-    }
-}
-
-impl ErrorState {
     fn new_randoms(&mut self) {
         for k in 0_usize..24 {
             let x = self.randoms[k].wrapping_sub(self.randoms[k + 31]);

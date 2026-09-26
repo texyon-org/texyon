@@ -37,15 +37,6 @@ pub(crate) const ADDITIONAL: i16 = 1;
 const VSPLIT_INIT: i16 = 0;
 const DESTROY_MARKS: i16 = 3;
 
-impl MemState {
-    fn as_disc(&self, p: MemPtr) -> Option<NodePtr<DiscNode>> {
-        if self.is_char_node(p) {
-            return None;
-        }
-        self.classify_disc(MemIdx::new(p)).ok().flatten()
-    }
-}
-
 /// Store `v` in the first empty slot of a two-slot record.
 #[inline]
 fn push_slot<T>(slots: &mut [Option<T>; 2], v: T) {
@@ -53,7 +44,21 @@ fn push_slot<T>(slots: &mut [Option<T>; 2], v: T) {
     slots[i] = Some(v);
 }
 
+/// `r` typed like `src`, whose header word `r` has just received.
+#[inline]
+fn copied_node<K: NodeKind>(_src: NodePtr<K>, r: MemPtr) -> NodePtr<K> {
+    // SAFETY: `r`'s NODE_type word was copied from `src`'s.
+    unsafe { NodePtr::from_idx_unchecked(MemIdx::new(r)) }
+}
+
 impl MemState {
+    fn as_disc(&self, p: MemPtr) -> Option<NodePtr<DiscNode>> {
+        if self.is_char_node(p) {
+            return None;
+        }
+        self.classify_disc(MemIdx::new(p)).ok().flatten()
+    }
+
     /// The size of whatsit `w`, `None` for an unknown subtype.
     fn whatsit_node_size(&self, w: NodePtr<WhatsitNode>) -> Option<i32> {
         use WhatsitSubtype::*;
@@ -74,16 +79,7 @@ impl MemState {
     fn get_node_or_overflow(&mut self, size: i32) -> Result<MemPtr, NodeRecycleAbort> {
         self.get_node(size).ok_or(NodeRecycleAbort::Overflow)
     }
-}
 
-/// `r` typed like `src`, whose header word `r` has just received.
-#[inline]
-fn copied_node<K: NodeKind>(_src: NodePtr<K>, r: MemPtr) -> NodePtr<K> {
-    // SAFETY: `r`'s NODE_type word was copied from `src`'s.
-    unsafe { NodePtr::from_idx_unchecked(MemIdx::new(r)) }
-}
-
-impl MemState {
     /// Copy the first `words` words of node `src` to node `dst`.
     #[inline]
     fn copy_words(&mut self, dst: MemPtr, src: MemPtr, words: i32) {
@@ -1136,6 +1132,37 @@ pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<Option<AnyB
     }
 }
 
+#[derive(Copy, Clone)]
+pub(crate) enum PackDiag {
+    HUnderfull { badness: i32, loose: bool },
+    HOverfull { excess: i32 },
+    HTight { badness: i32 },
+    LrProblem { missing: i32, extra: i32 },
+    VUnderfull { badness: i32, loose: bool },
+    VOverfull { excess: i32 },
+    VTight { badness: i32 },
+}
+
+#[derive(Copy, Clone)]
+struct PackOutcome {
+    r_box: AnyBox,
+    diags: [Option<PackDiag>; 2],
+}
+
+/// The highest glue order with a nonzero total.
+#[inline]
+pub(crate) fn glue_order(totals: &[i32; 4]) -> u16 {
+    if totals[FILLL as usize] != 0 {
+        FILLL
+    } else if totals[FILL as usize] != 0 {
+        FILL
+    } else if totals[FIL as usize] != 0 {
+        FIL
+    } else {
+        NORMAL
+    }
+}
+
 impl MemState {
     /// Insert `\splittopskip` glue between `prev_p` and the box or rule `p` of `height`.
     fn insert_split_top_skip_before(
@@ -1302,40 +1329,7 @@ impl MemState {
         }
         false
     }
-}
 
-#[derive(Copy, Clone)]
-pub(crate) enum PackDiag {
-    HUnderfull { badness: i32, loose: bool },
-    HOverfull { excess: i32 },
-    HTight { badness: i32 },
-    LrProblem { missing: i32, extra: i32 },
-    VUnderfull { badness: i32, loose: bool },
-    VOverfull { excess: i32 },
-    VTight { badness: i32 },
-}
-
-#[derive(Copy, Clone)]
-struct PackOutcome {
-    r_box: AnyBox,
-    diags: [Option<PackDiag>; 2],
-}
-
-/// The highest glue order with a nonzero total.
-#[inline]
-pub(crate) fn glue_order(totals: &[i32; 4]) -> u16 {
-    if totals[FILLL as usize] != 0 {
-        FILLL
-    } else if totals[FILL as usize] != 0 {
-        FILL
-    } else if totals[FIL as usize] != 0 {
-        FIL
-    } else {
-        NORMAL
-    }
-}
-
-impl MemState {
     /// Set `r`'s glue to distribute `excess` over the highest-order `totals`,
     /// returning that order.
     fn set_box_glue<K: IsBox>(

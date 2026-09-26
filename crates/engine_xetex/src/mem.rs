@@ -69,6 +69,26 @@ pub(crate) unsafe fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut 
     p
 }
 
+/// TeX's `end_LR_type`: the LR entry that a math node of `subtype` closes.
+#[inline]
+pub(crate) fn end_lr_type(subtype: u16) -> i32 {
+    (L_CODE * (subtype / L_CODE) + END_M_CODE) as i32
+}
+
+impl ListStateRecord {
+    /// A `size`-word whatsit appended to the current list.
+    pub fn new_whatsit(
+        &mut self,
+        mem: &mut MemState,
+        subtype: WhatsitSubtype,
+        size: i32,
+    ) -> Option<NodePtr<WhatsitNode>> {
+        let p = NodePtr::<WhatsitNode>::alloc(mem, size, subtype)?;
+        self.tail_append(mem, p.ptr());
+        Some(p)
+    }
+}
+
 // --- the one-word free list ---
 
 impl MemState {
@@ -192,15 +212,7 @@ impl MemState {
     pub fn is_char_node(&self, p: impl MemAddr) -> bool {
         p.addr() >= self.hi_mem_min
     }
-}
 
-/// TeX's `end_LR_type`: the LR entry that a math node of `subtype` closes.
-#[inline]
-pub(crate) fn end_lr_type(subtype: u16) -> i32 {
-    (L_CODE * (subtype / L_CODE) + END_M_CODE) as i32
-}
-
-impl MemState {
     /// TeX's `push_LR`, `None` when main memory is exhausted.
     #[inline]
     pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, info: i32) -> Option<()> {
@@ -471,25 +483,7 @@ impl MemState {
         k.set_width(self, Scaled(w));
         Some(k)
     }
-}
 
-impl ListStateRecord {
-    /// A `size`-word whatsit appended to the current list.
-    pub fn new_whatsit(
-        &mut self,
-        mem: &mut MemState,
-        subtype: WhatsitSubtype,
-        size: i32,
-    ) -> Option<NodePtr<WhatsitNode>> {
-        let p = NodePtr::<WhatsitNode>::alloc(mem, size, subtype)?;
-        self.tail_append(mem, p.ptr());
-        Some(p)
-    }
-}
-
-// --- glue spec references ---
-
-impl MemState {
     #[inline]
     pub fn add_glue_ref(&mut self, spec: NodePtr<GlueSpecNode>) {
         spec.set_ref_count(self, spec.ref_count(self) + 1);

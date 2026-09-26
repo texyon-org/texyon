@@ -46,6 +46,31 @@ impl SaveAbort {
     }
 }
 
+impl EqtbState {
+    pub(crate) fn eq_word_define(
+        &mut self,
+        save_stack: &mut SaveStackState,
+        p: i32,
+        w: i32,
+    ) -> Result<(), SaveAbort> {
+        if self.int_at(p) == w {
+            return Ok(());
+        }
+        let l = self.xeq_level_at(p);
+        if l != save_stack.cur_level {
+            save_stack.eq_save(self, p, l)?;
+            self.set_xeq_level_at(p, save_stack.cur_level);
+        }
+        self.set_int_at(p, w);
+        Ok(())
+    }
+
+    pub(crate) fn geq_word_define(&mut self, p: i32, w: i32) {
+        self.set_int_at(p, w);
+        self.set_xeq_level_at(p, LEVEL_ONE);
+    }
+}
+
 impl SaveStackState {
     /// TeX's `check_full_save_stack`, true when no room is left.
     fn save_stack_full(&mut self) -> bool {
@@ -89,34 +114,7 @@ impl SaveStackState {
         self.save_ptr += 1;
         Ok(())
     }
-}
 
-impl EqtbState {
-    pub(crate) fn eq_word_define(
-        &mut self,
-        save_stack: &mut SaveStackState,
-        p: i32,
-        w: i32,
-    ) -> Result<(), SaveAbort> {
-        if self.int_at(p) == w {
-            return Ok(());
-        }
-        let l = self.xeq_level_at(p);
-        if l != save_stack.cur_level {
-            save_stack.eq_save(self, p, l)?;
-            self.set_xeq_level_at(p, save_stack.cur_level);
-        }
-        self.set_int_at(p, w);
-        Ok(())
-    }
-
-    pub(crate) fn geq_word_define(&mut self, p: i32, w: i32) {
-        self.set_int_at(p, w);
-        self.set_xeq_level_at(p, LEVEL_ONE);
-    }
-}
-
-impl SaveStackState {
     pub(crate) fn save_for_after(&mut self, t: i32) -> Result<(), SaveAbort> {
         if self.cur_level > LEVEL_ONE {
             if self.save_stack_full() {
@@ -173,39 +171,6 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> crate::errors::ErrorOutcome {
     ErrorOutcome::Continue
 }
 
-impl MemState {
-    /// Frees the heap resource an `eqtb` entry owns.
-    pub(crate) fn eq_destroy(
-        &mut self,
-        scanner: &mut ScannerState,
-        w: MemoryWord,
-    ) -> Result<(), SaveAbort> {
-        // SAFETY: `MemoryWord` union projections of an `eqtb` entry.
-        let (eq_type, equiv) = unsafe { (w.b16.s1, w.b32.s1) };
-        let Ok(eq_type) = u8::try_from(eq_type) else {
-            return Ok(());
-        };
-        match eq_type {
-            CALL..=LONG_OUTER_CALL => self.delete_token_ref(MemPtr(equiv)),
-            GLUE_REF => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(MemPtr(equiv))),
-            SHAPE_REF => {
-                if equiv != TEX_NULL {
-                    let size = 2 * MemPtr(equiv).info(self) + 1;
-                    self.free_node(MemPtr::from_raw(equiv), size);
-                }
-            }
-            BOX_REF => self.flush_node_list(equiv).map_err(SaveAbort::Confusion)?,
-            TOKS_REGISTER | REGISTER => {
-                if !(0..=19).contains(&equiv) {
-                    self.delete_sa_ref(scanner, equiv);
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-}
-
 impl EqtbState {
     pub(crate) fn eq_define(
         &mut self,
@@ -253,7 +218,44 @@ fn sa(p: impl MemAddr) -> NodePtr<SaNode> {
     NodePtr::at(p)
 }
 
+/// Deferred flush work from an `sa_def`/`sa_w_def`-family mutation.
+#[derive(Default)]
+pub(crate) struct SaMutationResult {
+    flush_list: Option<i32>,
+}
+
 impl MemState {
+    /// Frees the heap resource an `eqtb` entry owns.
+    pub(crate) fn eq_destroy(
+        &mut self,
+        scanner: &mut ScannerState,
+        w: MemoryWord,
+    ) -> Result<(), SaveAbort> {
+        // SAFETY: `MemoryWord` union projections of an `eqtb` entry.
+        let (eq_type, equiv) = unsafe { (w.b16.s1, w.b32.s1) };
+        let Ok(eq_type) = u8::try_from(eq_type) else {
+            return Ok(());
+        };
+        match eq_type {
+            CALL..=LONG_OUTER_CALL => self.delete_token_ref(MemPtr(equiv)),
+            GLUE_REF => self.delete_glue_ref(crate::node::NodePtr::from_glue_ptr(MemPtr(equiv))),
+            SHAPE_REF => {
+                if equiv != TEX_NULL {
+                    let size = 2 * MemPtr(equiv).info(self) + 1;
+                    self.free_node(MemPtr::from_raw(equiv), size);
+                }
+            }
+            BOX_REF => self.flush_node_list(equiv).map_err(SaveAbort::Confusion)?,
+            TOKS_REGISTER | REGISTER => {
+                if !(0..=19).contains(&equiv) {
+                    self.delete_sa_ref(scanner, equiv);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub fn delete_sa_ref(&mut self, scanner: &mut ScannerState, q: impl MemAddr) {
         let mut q = sa(q);
         q.set_sa_ref(self, q.sa_ref(self) - 1);
@@ -343,15 +345,7 @@ impl MemState {
         p.set_sa_ref(self, p.sa_ref(self) + 1);
         Ok(())
     }
-}
 
-/// Deferred flush work from an `sa_def`/`sa_w_def`-family mutation.
-#[derive(Default)]
-pub(crate) struct SaMutationResult {
-    flush_list: Option<i32>,
-}
-
-impl MemState {
     /// Releases the value of `p`, returning a box list the caller must flush.
     pub(crate) fn sa_destroy(&mut self, p: impl MemAddr) -> Option<i32> {
         let p = sa(p);
@@ -604,6 +598,10 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), UnsaveAbort> {
     Ok(())
 }
 
+fn sa_levels(n: i32) -> [i32; 4] {
+    [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64]
+}
+
 impl MemState {
     /// Allocates a trie index node below `q`, also leaving it in `cur_ptr`.
     fn new_index(
@@ -674,13 +672,7 @@ impl MemState {
         self.add_sa_child(q, leaf_i, p);
         Some(p)
     }
-}
 
-fn sa_levels(n: i32) -> [i32; 4] {
-    [n / 0x40000, (n / 4096) % 64, (n / 64) % 64, n % 64]
-}
-
-impl MemState {
     /// TeX's `find_sa_element` without creation: the record for type `t`,
     /// register `n`, if any, also left in `cur_ptr`.
     pub fn find_sa_element(

@@ -103,6 +103,13 @@ fn utf16_units(c: u32) -> ([u16; 2], usize) {
     }
 }
 
+/// Where a native character's UTF-16 text comes from.
+enum NativeCharSrc {
+    /// `len` units already in `FontState::mapped_text`.
+    Mapped(i32),
+    Single(u32),
+}
+
 impl MemState {
     fn new_native_word(
         &mut self,
@@ -135,16 +142,7 @@ impl MemState {
         };
         self.new_native_word(f, n, subtype)
     }
-}
 
-/// Where a native character's UTF-16 text comes from.
-enum NativeCharSrc {
-    /// `len` units already in `FontState::mapped_text`.
-    Mapped(i32),
-    Single(u32),
-}
-
-impl MemState {
     fn build_native_character(
         &mut self,
         eqtb: &EqtbState,
@@ -515,6 +513,32 @@ enum TfmParse {
     OutOfMemory,
 }
 
+pub(crate) enum LoadNativeFontAbort {
+    PoolOverflow,
+    StringOverflow(NodeRecycleAbort),
+    NativeChar(NativeCharAbort),
+    Error(ErrorOutcome),
+    NativeFont(NativeFontAbort),
+}
+
+impl From<NativeFontAbort> for LoadNativeFontAbort {
+    fn from(e: NativeFontAbort) -> Self {
+        LoadNativeFontAbort::NativeFont(e)
+    }
+}
+
+impl LoadNativeFontAbort {
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            LoadNativeFontAbort::PoolOverflow => crate::errors::EngineAbort::PoolOverflow,
+            LoadNativeFontAbort::StringOverflow(e) => e.into_engine_abort(),
+            LoadNativeFontAbort::NativeChar(e) => e.into_engine_abort(),
+            LoadNativeFontAbort::Error(outcome) => outcome.into_engine_abort(),
+            LoadNativeFontAbort::NativeFont(e) => e.into_engine_abort(),
+        }
+    }
+}
+
 impl FontState {
     /// Read the opened TFM file into the tables of the next font slot. Also returns
     /// the (remainder, overflow) side effect of size scaling for the caller to apply.
@@ -824,35 +848,7 @@ impl FontState {
 
         (font_ptr, metrics)
     }
-}
 
-pub(crate) enum LoadNativeFontAbort {
-    PoolOverflow,
-    StringOverflow(NodeRecycleAbort),
-    NativeChar(NativeCharAbort),
-    Error(ErrorOutcome),
-    NativeFont(NativeFontAbort),
-}
-
-impl From<NativeFontAbort> for LoadNativeFontAbort {
-    fn from(e: NativeFontAbort) -> Self {
-        LoadNativeFontAbort::NativeFont(e)
-    }
-}
-
-impl LoadNativeFontAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            LoadNativeFontAbort::PoolOverflow => crate::errors::EngineAbort::PoolOverflow,
-            LoadNativeFontAbort::StringOverflow(e) => e.into_engine_abort(),
-            LoadNativeFontAbort::NativeChar(e) => e.into_engine_abort(),
-            LoadNativeFontAbort::Error(outcome) => outcome.into_engine_abort(),
-            LoadNativeFontAbort::NativeFont(e) => e.into_engine_abort(),
-        }
-    }
-}
-
-impl FontState {
     fn push_font_info(&mut self, v: i32) {
         self.set_font_info_sc(self.fmem_ptr, v);
         self.fmem_ptr += 1;

@@ -57,6 +57,53 @@ pub fn get_seconds_and_micros() -> (i32, i32) {
     (elapsed.as_secs() as i32, elapsed.subsec_micros() as i32)
 }
 
+/// Decodes one UTF-8 sequence from a NUL-terminated string without
+/// validation, advancing `cp`. A NUL cuts the sequence short.
+pub(crate) unsafe fn next_utf8_char(cp: &mut *const u8) -> u32 {
+    let mut rval = **cp as u32;
+    *cp = cp.add(1);
+    let extra_bytes = BYTES_FROM_UTF8[rval as usize] as usize;
+    for _ in 0..extra_bytes {
+        rval <<= 6;
+        if **cp != 0 {
+            rval += **cp as u32;
+            *cp = cp.add(1);
+        }
+    }
+    rval - OFFSETS_FROM_UTF8[extra_bytes]
+}
+
+/// The UTF-16 encoding of `c` and its length in units.
+pub(crate) fn utf16_units(c: u32) -> ([u16; 2], usize) {
+    if c > 0xFFFF {
+        let c = c - 0x10000;
+        (
+            [(0xD800 + c / 0x0400) as u16, (0xDC00 + c % 0x0400) as u16],
+            2,
+        )
+    } else {
+        ([c as u16, 0], 1)
+    }
+}
+
+pub(crate) enum MakeTexStringAbort {
+    /// The pool can't hold the string.
+    PoolOverflow,
+    /// `str_ptr` is exhausted in `make_string`.
+    StringOverflow,
+}
+
+impl MakeTexStringAbort {
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        match self {
+            MakeTexStringAbort::PoolOverflow => {
+                crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
+            }
+            MakeTexStringAbort::StringOverflow => crate::errors::EngineAbort::StringOverflow,
+        }
+    }
+}
+
 impl StringsState {
     /// Encodes pool string `s` as UTF-8. Single-character strings (`s` below
     /// 65536) come out empty, and unpaired low surrogates are kept as 3-byte
@@ -121,38 +168,7 @@ impl StringsState {
         *name.add(bytes.len()) = 0;
         name as *mut libc::c_char
     }
-}
 
-/// Decodes one UTF-8 sequence from a NUL-terminated string without
-/// validation, advancing `cp`. A NUL cuts the sequence short.
-pub(crate) unsafe fn next_utf8_char(cp: &mut *const u8) -> u32 {
-    let mut rval = **cp as u32;
-    *cp = cp.add(1);
-    let extra_bytes = BYTES_FROM_UTF8[rval as usize] as usize;
-    for _ in 0..extra_bytes {
-        rval <<= 6;
-        if **cp != 0 {
-            rval += **cp as u32;
-            *cp = cp.add(1);
-        }
-    }
-    rval - OFFSETS_FROM_UTF8[extra_bytes]
-}
-
-/// The UTF-16 encoding of `c` and its length in units.
-pub(crate) fn utf16_units(c: u32) -> ([u16; 2], usize) {
-    if c > 0xFFFF {
-        let c = c - 0x10000;
-        (
-            [(0xD800 + c / 0x0400) as u16, (0xDC00 + c % 0x0400) as u16],
-            2,
-        )
-    } else {
-        ([c as u16, 0], 1)
-    }
-}
-
-impl StringsState {
     /// Appends code point `c` to the pool as one or two UTF-16 units.
     pub(crate) fn push_utf16(&mut self, c: u32) {
         let (units, n) = utf16_units(c);
@@ -189,27 +205,7 @@ impl StringsState {
             ]);
         }
     }
-}
 
-pub(crate) enum MakeTexStringAbort {
-    /// The pool can't hold the string.
-    PoolOverflow,
-    /// `str_ptr` is exhausted in `make_string`.
-    StringOverflow,
-}
-
-impl MakeTexStringAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            MakeTexStringAbort::PoolOverflow => {
-                crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
-            }
-            MakeTexStringAbort::StringOverflow => crate::errors::EngineAbort::StringOverflow,
-        }
-    }
-}
-
-impl StringsState {
     /// Converts a NUL-terminated UTF-8 string into a new pool string.
     pub(crate) unsafe fn maketexstring(
         &mut self,

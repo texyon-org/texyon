@@ -16,6 +16,26 @@ pub(crate) const HYPH_PRIME: i32 = 607;
 
 const APPENDIX_H: &str = "(See Appendix H.)";
 
+pub(crate) enum TrieAbort {
+    Patterns(i32),
+    Ops(i32),
+    OpsPerLanguage(i32),
+}
+
+impl TrieAbort {
+    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
+        let (what, n) = match self {
+            TrieAbort::Patterns(n) => (c"pattern memory", n),
+            TrieAbort::Ops(n) => (c"pattern memory ops", n),
+            TrieAbort::OpsPerLanguage(n) => (c"pattern memory ops per language", n),
+        };
+        crate::errors::EngineAbort::Overflow {
+            what: what.as_ptr(),
+            n,
+        }
+    }
+}
+
 impl HyphState {
     #[inline]
     fn trie_op_hash(&self, k: i32) -> i32 {
@@ -50,29 +70,7 @@ impl HyphState {
             self.trie_tro[(self.hyph_index + c) as usize]
         }
     }
-}
 
-pub(crate) enum TrieAbort {
-    Patterns(i32),
-    Ops(i32),
-    OpsPerLanguage(i32),
-}
-
-impl TrieAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        let (what, n) = match self {
-            TrieAbort::Patterns(n) => (c"pattern memory", n),
-            TrieAbort::Ops(n) => (c"pattern memory ops", n),
-            TrieAbort::OpsPerLanguage(n) => (c"pattern memory ops per language", n),
-        };
-        crate::errors::EngineAbort::Overflow {
-            what: what.as_ptr(),
-            n,
-        }
-    }
-}
-
-impl HyphState {
     fn new_trie_op(&mut self, cur_lang: u8, d: i16, n: i16, v: u16) -> Result<u16, TrieAbort> {
         let mut h = (n as i32 + 313 * d as i32 + 361 * v as i32 + 1009 * cur_lang as i32).abs()
             % (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE)

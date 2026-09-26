@@ -66,16 +66,6 @@ const REVERSED: u16 = 1;
 pub(crate) const ONE_INCH: i32 = 4_736_287;
 const ONE_INCH_LESS_ONE: i32 = ONE_INCH - 1;
 
-impl MemState {
-    pub fn new_edge(&mut self, s: i16, w: i32) -> Option<NodePtr<EdgeNode>> {
-        let p = NodePtr::<EdgeNode>::alloc(self)?;
-        p.set_subtype(self, s as u16);
-        p.set_width(self, Scaled(w));
-        p.set_edge_dist(self, Scaled(0));
-        Some(p)
-    }
-}
-
 pub(crate) enum ShipoutAbort {
     /// `overflow("pool size")` while merging native words or writing a special.
     PoolSizeOverflow,
@@ -136,6 +126,14 @@ fn ship_err(o: crate::errors::ErrorOutcome) -> Result<(), ShipoutAbort> {
 }
 
 impl MemState {
+    pub fn new_edge(&mut self, s: i16, w: i32) -> Option<NodePtr<EdgeNode>> {
+        let p = NodePtr::<EdgeNode>::alloc(self)?;
+        p.set_subtype(self, s as u16);
+        p.set_width(self, Scaled(w));
+        p.set_edge_dist(self, Scaled(0));
+        Some(p)
+    }
+
     fn get_avail_ship(&mut self) -> Result<crate::units::MemPtr, ShipoutAbort> {
         self.get_avail().ok_or(ShipoutAbort::MainMemoryOverflow)
     }
@@ -582,6 +580,75 @@ fn dvi_font_select(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shi
     Ok(())
 }
 
+/// The glue-setting state of the box being shipped, carried across glue nodes
+/// so rounding errors do not accumulate.
+struct GlueRounding {
+    order: u16,
+    sign: GlueSign,
+    set: f64,
+    cur_g: i32,
+    cur_glue: f64,
+}
+
+impl GlueRounding {
+    fn new(mem: &MemState, this_box: AnyBox) -> GlueRounding {
+        GlueRounding {
+            order: this_box.glue_order(mem),
+            sign: this_box.glue_sign(mem),
+            set: this_box.glue_set(mem),
+            cur_g: 0,
+            cur_glue: 0.0,
+        }
+    }
+
+    /// Whether the box stretches or shrinks `spec`'s component.
+    fn is_set(&self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> bool {
+        match self.sign {
+            GlueSign::Stretching => spec.stretch_order(mem) == self.order,
+            GlueSign::Shrinking => spec.shrink_order(mem) == self.order,
+            GlueSign::Normal => false,
+        }
+    }
+
+    /// The rounded width of `spec` as set in this box.
+    fn width(&mut self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> i32 {
+        let width = spec.width(mem).0 - self.cur_g;
+        if self.is_set(mem, spec) {
+            if self.sign == GlueSign::Stretching {
+                self.cur_glue += spec.stretch(mem).0 as f64;
+            } else {
+                self.cur_glue -= spec.shrink(mem).0 as f64;
+            }
+            let glue_temp = (self.set * self.cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0);
+            self.cur_g = crate::scaled_math::tex_round(glue_temp);
+        }
+        width + self.cur_g
+    }
+}
+
+enum Leader {
+    Rule(NodePtr<RuleNode>),
+    Box(AnyBox),
+}
+
+impl FontState {
+    fn font_character_width(&self, f: i32, c: i32) -> i32 {
+        let info = self.char_info(f, c);
+        self.char_width(f, info)
+    }
+}
+
+impl ShipoutState {
+    fn push_dvi_level(&mut self) -> Result<i32, ShipoutAbort> {
+        self.cur_s += 1;
+        if self.cur_s > 0 {
+            self.dvi_out(PUSH)?;
+        }
+        self.max_push = self.max_push.max(self.cur_s);
+        Ok(self.dvi_offset + self.dvi_ptr)
+    }
+}
+
 impl MemState {
     fn is_space_adjustment(&self, q: MemPtr) -> bool {
         matches!(self.classify_non_char(q), Some(AnyNode::Kern(k)) if k.subtype(self) == SPACE_ADJUSTMENT)
@@ -763,55 +830,7 @@ impl MemState {
         strings.discard_cur_string();
         Ok(tail)
     }
-}
 
-/// The glue-setting state of the box being shipped, carried across glue nodes
-/// so rounding errors do not accumulate.
-struct GlueRounding {
-    order: u16,
-    sign: GlueSign,
-    set: f64,
-    cur_g: i32,
-    cur_glue: f64,
-}
-
-impl GlueRounding {
-    fn new(mem: &MemState, this_box: AnyBox) -> GlueRounding {
-        GlueRounding {
-            order: this_box.glue_order(mem),
-            sign: this_box.glue_sign(mem),
-            set: this_box.glue_set(mem),
-            cur_g: 0,
-            cur_glue: 0.0,
-        }
-    }
-
-    /// Whether the box stretches or shrinks `spec`'s component.
-    fn is_set(&self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> bool {
-        match self.sign {
-            GlueSign::Stretching => spec.stretch_order(mem) == self.order,
-            GlueSign::Shrinking => spec.shrink_order(mem) == self.order,
-            GlueSign::Normal => false,
-        }
-    }
-
-    /// The rounded width of `spec` as set in this box.
-    fn width(&mut self, mem: &MemState, spec: NodePtr<GlueSpecNode>) -> i32 {
-        let width = spec.width(mem).0 - self.cur_g;
-        if self.is_set(mem, spec) {
-            if self.sign == GlueSign::Stretching {
-                self.cur_glue += spec.stretch(mem).0 as f64;
-            } else {
-                self.cur_glue -= spec.shrink(mem).0 as f64;
-            }
-            let glue_temp = (self.set * self.cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0);
-            self.cur_g = crate::scaled_math::tex_round(glue_temp);
-        }
-        width + self.cur_g
-    }
-}
-
-impl MemState {
     /// Replace glue that the box stretched or shrank by a rigid equivalent of
     /// width `w`, so reflected or repeated output sees the width already rounded.
     fn freeze_set_glue(
@@ -835,14 +854,7 @@ impl MemState {
         }
         Ok(())
     }
-}
 
-enum Leader {
-    Rule(NodePtr<RuleNode>),
-    Box(AnyBox),
-}
-
-impl MemState {
     fn leader_of(&self, glue: NodePtr<GlueNode>) -> Leader {
         match self.classify(MemIdx::new(glue.leader_ptr(self).0)) {
             Ok(AnyNode::Rule(rule)) => Leader::Rule(rule),
@@ -860,27 +872,7 @@ impl MemState {
     fn lr_matches(&self, scanner: &ScannerState, math: NodePtr<MathNode>) -> bool {
         scanner.lr_ptr.info(self) == end_lr_type(math.subtype(self))
     }
-}
 
-impl FontState {
-    fn font_character_width(&self, f: i32, c: i32) -> i32 {
-        let info = self.char_info(f, c);
-        self.char_width(f, info)
-    }
-}
-
-impl ShipoutState {
-    fn push_dvi_level(&mut self) -> Result<i32, ShipoutAbort> {
-        self.cur_s += 1;
-        if self.cur_s > 0 {
-            self.dvi_out(PUSH)?;
-        }
-        self.max_push = self.max_push.max(self.cur_s);
-        Ok(self.dvi_offset + self.dvi_ptr)
-    }
-}
-
-impl MemState {
     fn pop_dvi_level(
         &mut self,
         shipout: &mut ShipoutState,

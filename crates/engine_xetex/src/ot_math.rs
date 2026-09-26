@@ -77,13 +77,6 @@ const TEX_EXT_TO_OT_MAP: [Option<i32>; 14] = [
     Some(26), // big_op_spacing5: stackGapMin
 ];
 
-impl FontState {
-    /// The layout engine of `f` when it is an OpenType (HarfBuzz) font.
-    fn ot_engine(&self, f: i32) -> Option<XeTeXLayoutEngine> {
-        (self.font_area_entry(f) == OTGR_FONT_FLAG).then(|| self.font_layout_engine_ptr(f))
-    }
-}
-
 fn units_to_fix(font: XeTeXFont, units: i32) -> i32 {
     unsafe { D2Fix(ttxl_font_units_to_points(font, units as f32) as f64) }
 }
@@ -96,7 +89,56 @@ fn direction(horiz: bool) -> hb::hb_direction_t {
     }
 }
 
+/// The parts HarfBuzz reports for building a stretched glyph.
+pub(crate) struct GlyphAssembly {
+    parts: Vec<hb::hb_ot_math_glyph_part_t>,
+}
+
+impl GlyphAssembly {
+    pub(crate) fn count(&self) -> i32 {
+        self.parts.len() as i32
+    }
+
+    pub(crate) fn glyph(&self, i: i32) -> i32 {
+        self.parts[i as usize].glyph as i32
+    }
+
+    pub(crate) fn is_extender(&self, i: i32) -> bool {
+        self.parts[i as usize].flags & hb::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER != 0
+    }
+
+    fn part_length(&self, fonts: &FontState, f: i32, units: i32) -> i32 {
+        match fonts.ot_engine(f) {
+            Some(engine) => units_to_fix(unsafe { getFont(engine) }, units),
+            None => 0,
+        }
+    }
+
+    pub(crate) fn start_connector(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
+        self.part_length(fonts, f, self.parts[i as usize].start_connector_length)
+    }
+
+    pub(crate) fn end_connector(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
+        self.part_length(fonts, f, self.parts[i as usize].end_connector_length)
+    }
+
+    pub(crate) fn full_advance(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
+        self.part_length(fonts, f, self.parts[i as usize].full_advance)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ScriptKind {
+    Sup,
+    Sub,
+}
+
 impl FontState {
+    /// The layout engine of `f` when it is an OpenType (HarfBuzz) font.
+    fn ot_engine(&self, f: i32) -> Option<XeTeXLayoutEngine> {
+        (self.font_area_entry(f) == OTGR_FONT_FLAG).then(|| self.font_layout_engine_ptr(f))
+    }
+
     pub(crate) fn get_ot_math_constant(&self, f: i32, n: i32) -> i32 {
         let Some(engine) = self.ot_engine(f) else {
             return 0;
@@ -173,14 +215,7 @@ impl FontState {
             variant.glyph as i32
         }
     }
-}
 
-/// The parts HarfBuzz reports for building a stretched glyph.
-pub(crate) struct GlyphAssembly {
-    parts: Vec<hb::hb_ot_math_glyph_part_t>,
-}
-
-impl FontState {
     pub(crate) fn get_ot_assembly(&self, f: i32, g: i32, horiz: bool) -> Option<GlyphAssembly> {
         let engine = self.ot_engine(f)?;
         unsafe {
@@ -212,42 +247,7 @@ impl FontState {
             Some(GlyphAssembly { parts })
         }
     }
-}
 
-impl GlyphAssembly {
-    pub(crate) fn count(&self) -> i32 {
-        self.parts.len() as i32
-    }
-
-    pub(crate) fn glyph(&self, i: i32) -> i32 {
-        self.parts[i as usize].glyph as i32
-    }
-
-    pub(crate) fn is_extender(&self, i: i32) -> bool {
-        self.parts[i as usize].flags & hb::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER != 0
-    }
-
-    fn part_length(&self, fonts: &FontState, f: i32, units: i32) -> i32 {
-        match fonts.ot_engine(f) {
-            Some(engine) => units_to_fix(unsafe { getFont(engine) }, units),
-            None => 0,
-        }
-    }
-
-    pub(crate) fn start_connector(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
-        self.part_length(fonts, f, self.parts[i as usize].start_connector_length)
-    }
-
-    pub(crate) fn end_connector(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
-        self.part_length(fonts, f, self.parts[i as usize].end_connector_length)
-    }
-
-    pub(crate) fn full_advance(&self, fonts: &FontState, f: i32, i: i32) -> i32 {
-        self.part_length(fonts, f, self.parts[i as usize].full_advance)
-    }
-}
-
-impl FontState {
     pub(crate) fn get_ot_math_ital_corr(&self, f: i32, g: i32) -> i32 {
         let Some(engine) = self.ot_engine(f) else {
             return 0;
@@ -299,15 +299,7 @@ impl FontState {
         }
         (height, depth)
     }
-}
 
-#[derive(Clone, Copy)]
-pub(crate) enum ScriptKind {
-    Sup,
-    Sub,
-}
-
-impl FontState {
     pub(crate) fn get_ot_math_kern(
         &self,
         f: i32,
