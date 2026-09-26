@@ -3,8 +3,9 @@ use crate::bridge::diag_append_str;
 use crate::cmd::{BOX_REF, CALL, GLUE_REF, LONG_OUTER_CALL, REGISTER, SHAPE_REF, TOKS_REGISTER};
 use crate::consts::{
     EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE,
-    MEM_TOP, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
+    TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
 };
+use crate::errors::Abort;
 use crate::input::{LEFT_BRACE_LIMIT, RIGHT_BRACE_LIMIT};
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
@@ -28,28 +29,13 @@ pub(crate) const MU_VAL_LIMIT: u16 = 256;
 pub(crate) const BOX_VAL_LIMIT: u16 = 320;
 pub(crate) const TOK_VAL_LIMIT: u16 = 384;
 
-/// A save-stack abort, which ends the run.
-pub(crate) enum SaveAbort {
-    Overflow(&'static str, i32),
-    Confusion(&'static str),
-}
-
-impl SaveAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            SaveAbort::Overflow(s, n) => crate::errors::EngineAbort::Overflow { what: s, n },
-            SaveAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s),
-        }
-    }
-}
-
 impl EqtbState {
     pub(crate) fn eq_word_define(
         &mut self,
         save_stack: &mut SaveStackState,
         p: i32,
         w: i32,
-    ) -> Result<(), SaveAbort> {
+    ) -> Result<(), Abort> {
         if self.int_at(p) == w {
             return Ok(());
         }
@@ -78,16 +64,22 @@ impl SaveStackState {
         false
     }
 
-    pub(crate) fn new_save_level(&mut self, c: GroupCode, line: i32) -> Result<(), SaveAbort> {
+    pub(crate) fn new_save_level(&mut self, c: GroupCode, line: i32) -> Result<(), Abort> {
         if self.save_stack_full() {
-            return Err(SaveAbort::Overflow("semantic nest size", self.save_size));
+            return Err(Abort::Overflow {
+                what: "semantic nest size",
+                n: self.save_size,
+            });
         }
         self.set_saved(0, line);
         self.save_ptr += 1;
         let (group, boundary) = (self.cur_group.as_raw() as u16, self.cur_boundary);
         self.set_save_entry(LEVEL_BOUNDARY, group, boundary);
         if self.cur_level == u16::MAX {
-            return Err(SaveAbort::Overflow("grouping levels", u16::MAX as i32));
+            return Err(Abort::Overflow {
+                what: "grouping levels",
+                n: u16::MAX as i32,
+            });
         }
         self.cur_boundary = self.save_ptr;
         self.cur_group = c;
@@ -96,9 +88,12 @@ impl SaveStackState {
         Ok(())
     }
 
-    pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: i32, l: u16) -> Result<(), SaveAbort> {
+    pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: i32, l: u16) -> Result<(), Abort> {
         if self.save_stack_full() {
-            return Err(SaveAbort::Overflow("save size", self.save_size));
+            return Err(Abort::Overflow {
+                what: "save size",
+                n: self.save_size,
+            });
         }
         let kind = if l == LEVEL_ZERO {
             RESTORE_ZERO
@@ -112,10 +107,13 @@ impl SaveStackState {
         Ok(())
     }
 
-    pub(crate) fn save_for_after(&mut self, t: i32) -> Result<(), SaveAbort> {
+    pub(crate) fn save_for_after(&mut self, t: i32) -> Result<(), Abort> {
         if self.cur_level > LEVEL_ONE {
             if self.save_stack_full() {
-                return Err(SaveAbort::Overflow("save size", self.save_size));
+                return Err(Abort::Overflow {
+                    what: "save size",
+                    n: self.save_size,
+                });
             }
             self.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t);
             self.save_ptr += 1;
@@ -125,8 +123,7 @@ impl SaveStackState {
 }
 
 /// Validates `\mag`, propagating a non-`Continue` error outcome.
-pub(crate) fn prepare_mag(st: &mut EngineState) -> crate::errors::ErrorOutcome {
-    use crate::errors::ErrorOutcome;
+pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 
     let mag = st.eqtb.int_par(INT_PAR_MAG);
@@ -142,10 +139,7 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> crate::errors::ErrorOutcome {
             "I can handle only one magnification ratio per job. So I've",
             "reverted to the magnification you used earlier on this run.",
         ]);
-        let outcome = crate::errors::int_error(st, mag_set);
-        if !matches!(outcome, ErrorOutcome::Continue) {
-            return outcome;
-        }
+        crate::errors::int_error(st, mag_set)?;
         st.eqtb.geq_word_define(INT_BASE + INT_PAR_MAG, mag_set);
     }
     let mag = st.eqtb.int_par(INT_PAR_MAG);
@@ -156,14 +150,11 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> crate::errors::ErrorOutcome {
         capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors
             .help(&["The magnification ratio must be between 1 and 32768."]);
-        let outcome = crate::errors::int_error(st, mag);
-        if !matches!(outcome, ErrorOutcome::Continue) {
-            return outcome;
-        }
+        crate::errors::int_error(st, mag)?;
         st.eqtb.geq_word_define(INT_BASE + INT_PAR_MAG, 1000);
     }
     st.scanner.mag_set = st.eqtb.int_par(INT_PAR_MAG);
-    ErrorOutcome::Continue
+    Ok(())
 }
 
 impl EqtbState {
@@ -175,7 +166,7 @@ impl EqtbState {
         p: i32,
         t: u8,
         e: i32,
-    ) -> Result<(), SaveAbort> {
+    ) -> Result<(), Abort> {
         if self.eq_type(p) == t && self.equiv(p) == e {
             return mem.eq_destroy(scanner, self.word(p));
         }
@@ -197,7 +188,7 @@ impl EqtbState {
         p: i32,
         t: u8,
         e: i32,
-    ) -> Result<(), SaveAbort> {
+    ) -> Result<(), Abort> {
         mem.eq_destroy(scanner, self.word(p))?;
         self.set_eq_level(p, LEVEL_ONE);
         self.set_eq_type(p, t);
@@ -225,7 +216,7 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         w: MemoryWord,
-    ) -> Result<(), SaveAbort> {
+    ) -> Result<(), Abort> {
         // SAFETY: `MemoryWord` union projections of an `eqtb` entry.
         let (eq_type, equiv) = unsafe { (w.b16.s1, w.b32.s1) };
         let Ok(eq_type) = u8::try_from(eq_type) else {
@@ -240,7 +231,7 @@ impl MemState {
                     self.free_node(MemPtr::from_raw(equiv), size);
                 }
             }
-            BOX_REF => self.flush_node_list(equiv).map_err(SaveAbort::Confusion)?,
+            BOX_REF => self.flush_node_list(equiv)?,
             TOKS_REGISTER | REGISTER => {
                 if !(0..=19).contains(&equiv) {
                     self.delete_sa_ref(scanner, equiv);
@@ -296,10 +287,10 @@ impl MemState {
         scanner: &mut ScannerState,
         save_stack: &mut SaveStackState,
         p: i32,
-    ) -> Result<(), SaMutationAbort> {
+    ) -> Result<(), Abort> {
         if save_stack.cur_level != scanner.sa_level {
             if save_stack.save_stack_full() {
-                return Err(SaMutationAbort::SaveOverflow);
+                return Err(Abort::SaveOverflow);
             }
             save_stack.set_save_entry(RESTORE_SA, scanner.sa_level, scanner.sa_chain.0);
             save_stack.save_ptr += 1;
@@ -313,12 +304,10 @@ impl MemState {
             if p.sa_int(self) == 0 {
                 q = sa(self
                     .get_node(POINTER_NODE_SIZE)
-                    .ok_or(SaMutationAbort::MainMemory)?);
+                    .ok_or(Abort::NodeOverflow)?);
                 i = TOK_VAL_LIMIT;
             } else {
-                q = sa(self
-                    .get_node(WORD_NODE_SIZE)
-                    .ok_or(SaMutationAbort::MainMemory)?);
+                q = sa(self.get_node(WORD_NODE_SIZE).ok_or(Abort::NodeOverflow)?);
                 let v = p.sa_int(self);
                 q.set_sa_int(self, v);
             }
@@ -326,7 +315,7 @@ impl MemState {
         } else {
             q = sa(self
                 .get_node(POINTER_NODE_SIZE)
-                .ok_or(SaMutationAbort::MainMemory)?);
+                .ok_or(Abort::NodeOverflow)?);
             let v = p.sa_ptr(self);
             q.set_sa_ptr(self, v);
         }
@@ -362,7 +351,7 @@ impl MemState {
         save_stack: &mut SaveStackState,
         p: i32,
         e: i32,
-    ) -> Result<SaMutationResult, SaMutationAbort> {
+    ) -> Result<SaMutationResult, Abort> {
         let node = sa(p);
         node.set_sa_ref(self, node.sa_ref(self) + 1);
         let mut result = SaMutationResult::default();
@@ -386,7 +375,7 @@ impl MemState {
         save_stack: &mut SaveStackState,
         p: i32,
         w: i32,
-    ) -> Result<SaMutationResult, SaMutationAbort> {
+    ) -> Result<SaMutationResult, Abort> {
         let node = sa(p);
         node.set_sa_ref(self, node.sa_ref(self) + 1);
         if node.sa_int(self) != w {
@@ -417,69 +406,20 @@ impl MemState {
     }
 }
 
-pub(crate) enum SaMutationAbort {
-    MainMemory,
-    SaveOverflow,
-    Confusion(&'static str),
-}
-
-impl SaMutationAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            SaMutationAbort::MainMemory => crate::errors::EngineAbort::Overflow {
-                what: "main memory size",
-                n: MEM_TOP + 1,
-            },
-            SaMutationAbort::SaveOverflow => crate::errors::EngineAbort::SaveOverflow,
-            SaMutationAbort::Confusion(m) => crate::errors::EngineAbort::Confusion(m),
-        }
-    }
-}
-
 /// Applies the deferred flush and reference drop of an `sa_def`-family result.
 pub(crate) fn finish_sa_mutation(
     st: &mut EngineState,
     p: i32,
     result: SaMutationResult,
-) -> Result<(), SaMutationAbort> {
+) -> Result<(), Abort> {
     if let Some(list) = result.flush_list {
-        st.mem
-            .flush_node_list(list)
-            .map_err(SaMutationAbort::Confusion)?;
+        st.mem.flush_node_list(list)?;
     }
     st.mem.delete_sa_ref(&mut st.scanner, p);
     Ok(())
 }
 
-pub(crate) enum UnsaveAbort {
-    Save(SaveAbort),
-    Input(crate::input::InputAbort),
-    MainMemory,
-}
-
-impl UnsaveAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            UnsaveAbort::Save(a) => a.into_engine_abort(),
-            UnsaveAbort::Input(e) => e.into_engine_abort(),
-            UnsaveAbort::MainMemory => crate::errors::EngineAbort::MainMemoryOverflow,
-        }
-    }
-}
-
-impl From<crate::input::InputAbort> for UnsaveAbort {
-    fn from(e: crate::input::InputAbort) -> Self {
-        UnsaveAbort::Input(e)
-    }
-}
-
-impl From<SaveAbort> for UnsaveAbort {
-    fn from(e: SaveAbort) -> Self {
-        UnsaveAbort::Save(e)
-    }
-}
-
-fn sa_restore(st: &mut EngineState) -> Result<(), &'static str> {
+fn sa_restore(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         let chain = sa(st.scanner.sa_chain);
         let p = sa(chain.sa_ref(&st.mem));
@@ -521,9 +461,9 @@ fn sa_restore(st: &mut EngineState) -> Result<(), &'static str> {
     }
 }
 
-pub(crate) fn unsave(st: &mut EngineState) -> Result<(), UnsaveAbort> {
+pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_level <= LEVEL_ONE {
-        return Err(UnsaveAbort::Save(SaveAbort::Confusion("curlevel")));
+        return Err(Abort::Confusion("curlevel"));
     }
     st.save_stack.cur_level -= 1;
     let mut l: u16 = 0;
@@ -538,7 +478,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), UnsaveAbort> {
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = p;
                 if a {
-                    let pn = st.mem.get_avail().ok_or(UnsaveAbort::MainMemory)?;
+                    let pn = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
                     pn.set_info(&mut st.mem, st.scanner.cur_tok);
                     pn.set_link(&mut st.mem, MemPtr::from_raw(st.input.cur_input.loc));
                     st.input.cur_input.loc = pn.0;
@@ -557,7 +497,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), UnsaveAbort> {
                 st.scanner.cur_tok = t;
             }
             RESTORE_SA => {
-                sa_restore(st).map_err(|m| UnsaveAbort::Save(SaveAbort::Confusion(m)))?;
+                sa_restore(st)?;
                 st.scanner.sa_chain = MemPtr::from_raw(p);
                 st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
             }

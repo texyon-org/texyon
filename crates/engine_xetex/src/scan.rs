@@ -18,11 +18,12 @@ use crate::consts::{
     INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, INT_PAR_TRACING_NESTING,
     INT_PAR_TRACING_SCAN_TOKENS, INT_PAR_XETEX_HYPHENATABLE_LENGTH, JUST_OPEN, LEFT_SIDE,
     LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA, LOCAL_XETEX_INTER_CHAR_TOKS,
-    MATH_CHAR, MATH_CODE_BASE, MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS,
+    MATH_CHAR, MATH_CODE_BASE, MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS,
     NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY,
     SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL,
     TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
+use crate::errors::Abort;
 use crate::errors::{error, int_error, mu_error};
 use crate::expand::{expand, macro_call, ELSE_CODE, FI_CODE, OR_CODE};
 use crate::ext::{
@@ -187,15 +188,15 @@ fn bad_int_error(
     value: i32,
     help1: &'static str,
     help0: &'static str,
-) -> Result<(), SccAbort> {
+) -> Result<(), Abort> {
     let errmsg = error_here_with_diagnostic(st, err);
     unsafe { diag_append_str(errmsg, &format!(" ({value})")) };
     capture_to_diagnostic(st, std::ptr::null_mut());
     st.errors.help(&[help1, help0]);
-    scc_err(int_error(st, value))
+    int_error(st, value)
 }
 
-fn int_range_error(st: &mut EngineState, err: &str, help1: &'static str) -> Result<(), SccAbort> {
+fn int_range_error(st: &mut EngineState, err: &str, help1: &'static str) -> Result<(), Abort> {
     bad_int_error(
         st,
         err,
@@ -212,7 +213,7 @@ fn scan_int_up_to(
     max: i32,
     err: &str,
     help: &'static str,
-) -> Result<(), SccAbort> {
+) -> Result<(), Abort> {
     scan_int(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > max {
         int_range_error(st, err, help)?;
@@ -220,7 +221,7 @@ fn scan_int_up_to(
     Ok(())
 }
 
-pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         CHAR_CLASS_LIMIT,
@@ -229,7 +230,7 @@ pub(crate) fn scan_char_class(st: &mut EngineState) -> Result<(), SccAbort> {
     )
 }
 
-pub(crate) fn scan_char_class_not_ignored(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_char_class_not_ignored(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         CHAR_CLASS_LIMIT,
@@ -238,7 +239,7 @@ pub(crate) fn scan_char_class_not_ignored(st: &mut EngineState) -> Result<(), Sc
     )
 }
 
-pub(crate) fn scan_eight_bit_int(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_eight_bit_int(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         255,
@@ -247,7 +248,7 @@ pub(crate) fn scan_eight_bit_int(st: &mut EngineState) -> Result<(), SccAbort> {
     )
 }
 
-pub(crate) fn scan_math_class_int(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_math_class_int(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         7,
@@ -256,7 +257,7 @@ pub(crate) fn scan_math_class_int(st: &mut EngineState) -> Result<(), SccAbort> 
     )
 }
 
-pub(crate) fn scan_math_fam_int(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_math_fam_int(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         NUMBER_MATH_FAMILIES - 1,
@@ -265,7 +266,7 @@ pub(crate) fn scan_math_fam_int(st: &mut EngineState) -> Result<(), SccAbort> {
     )
 }
 
-pub(crate) fn scan_four_bit_int(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_four_bit_int(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         15,
@@ -274,7 +275,7 @@ pub(crate) fn scan_four_bit_int(st: &mut EngineState) -> Result<(), SccAbort> {
     )
 }
 
-pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<(), Abort> {
     scan_int(st)?;
     if st.scanner.cur_val < 0 || (st.scanner.cur_val > 15 && st.scanner.cur_val != 18) {
         int_range_error(
@@ -286,7 +287,7 @@ pub(crate) fn scan_four_bit_int_or_18(st: &mut EngineState) -> Result<(), SccAbo
     Ok(())
 }
 
-pub(crate) fn scan_fifteen_bit_int(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_fifteen_bit_int(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         32767,
@@ -295,7 +296,7 @@ pub(crate) fn scan_fifteen_bit_int(st: &mut EngineState) -> Result<(), SccAbort>
     )
 }
 
-pub(crate) fn scan_char_num(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_char_num(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         BIGGEST_CHAR,
@@ -304,7 +305,7 @@ pub(crate) fn scan_char_num(st: &mut EngineState) -> Result<(), SccAbort> {
     )
 }
 
-pub(crate) fn scan_usv_num(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_usv_num(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         BIGGEST_USV,
@@ -313,7 +314,7 @@ pub(crate) fn scan_usv_num(st: &mut EngineState) -> Result<(), SccAbort> {
     )
 }
 
-pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<(), Abort> {
     scan_int_up_to(
         st,
         0x7FF_FFFF,
@@ -322,7 +323,7 @@ pub(crate) fn scan_delimiter_int(st: &mut EngineState) -> Result<(), SccAbort> {
     )
 }
 
-pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<(), Abort> {
     scan_int(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > st.scanner.max_reg_num {
         int_range_error(
@@ -334,7 +335,7 @@ pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 
-pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<(), Abort> {
     scan_int(st)?;
     if math_char_fn(st.scanner.cur_val) == ACTIVE_MATH_CHAR {
         if st.scanner.cur_val != ACTIVE_MATH_CHAR {
@@ -365,9 +366,7 @@ impl EqtbState {
     }
 }
 
-pub(crate) fn insert_dollar_sign(
-    st: &mut EngineState,
-) -> Result<(), crate::main_control::MainControlAbort> {
+pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
     st.scanner.cur_tok = MATH_SHIFT_TOKEN + '$' as i32;
     print_err(st, "Missing $ inserted");
@@ -375,10 +374,10 @@ pub(crate) fn insert_dollar_sign(
         "I've inserted a begin-math/end-math symbol since I think",
         "you left one out. Proceed, with fingers crossed.",
     ]);
-    crate::main_control::mc_propagate_error(ins_error(st)?)
+    ins_error(st)
 }
 
-pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank(st)?;
     if st.scanner.cur_tok != OTHER_TOKEN + '=' as i32 {
         back_input(st)?;
@@ -394,7 +393,7 @@ impl MemState {
     }
 }
 
-pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_x_or_protected(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_token(st)?;
         if st.scanner.cur_cmd <= MAX_COMMAND {
@@ -414,7 +413,7 @@ pub(crate) fn scan_spec(
     st: &mut EngineState,
     c: GroupCode,
     three_codes: bool,
-) -> Result<(), SccAbort> {
+) -> Result<(), Abort> {
     let s = if three_codes {
         st.save_stack.saved(0)
     } else {
@@ -438,16 +437,7 @@ pub(crate) fn scan_spec(
     st.save_stack.set_saved(0, spec_code as i32);
     st.save_stack.set_saved(1, st.scanner.cur_val);
     st.save_stack.save_ptr += 2;
-    if let Err(abort) = st.save_stack.new_save_level(c, st.mem.line) {
-        return Err(match abort {
-            crate::save::SaveAbort::Overflow(what, n) => {
-                SccAbort::Input(crate::input::InputAbort::Overflow { what, n })
-            }
-            crate::save::SaveAbort::Confusion(what) => {
-                SccAbort::Input(crate::input::InputAbort::Fatal(what))
-            }
-        });
-    }
+    st.save_stack.new_save_level(c, st.mem.line)?;
     scan_left_brace(st)?;
     Ok(())
 }
@@ -462,8 +452,8 @@ impl ErrorState {
     }
 }
 
-pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, SccAbort> {
-    let r = st.mem.new_rule().ok_or_else(main_mem_overflow_scc)?;
+pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, Abort> {
+    let r = st.mem.new_rule().ok_or(Abort::NodeOverflow)?;
     if st.scanner.cur_cmd == VRULE {
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
@@ -487,11 +477,6 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
     Ok(r)
 }
 
-pub(crate) enum StrToksAbort {
-    PoolOverflow,
-    MainMemoryOverflow,
-}
-
 impl MemState {
     /// Converts `str_pool[b..pool_ptr]` to a token list at `link(temp_head)` and returns its tail.
     pub(crate) fn str_toks_cat(
@@ -499,9 +484,9 @@ impl MemState {
         strings: &mut crate::state::StringsState,
         b: i32,
         cat: i16,
-    ) -> Result<MemPtr, StrToksAbort> {
+    ) -> Result<MemPtr, Abort> {
         if strings.pool_ptr + 1 > strings.pool_size {
-            return Err(StrToksAbort::PoolOverflow);
+            return Err(Abort::PoolOverflow);
         }
 
         let mut p = TEMP_HEAD;
@@ -533,7 +518,7 @@ impl MemState {
                 }
             }
 
-            let q = self.get_avail().ok_or(StrToksAbort::MainMemoryOverflow)?;
+            let q = self.get_avail().ok_or(Abort::AvailOverflow)?;
             p.set_link(self, q);
             q.set_info(self, t);
             p = q;
@@ -558,17 +543,17 @@ pub(crate) fn finish_line(st: &mut EngineState) {
     st.input.cur_input.loc = st.input.cur_input.start;
 }
 
-fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), SccAbort> {
+fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
     let slot = std::mem::take(&mut st.input.read_file[m]);
     // SAFETY: closes the handle taken out of the read-file slot.
     if unsafe { crate::io::u_close(slot) } {
-        return Err(SccAbort::InputClose);
+        return Err(Abort::InputClose);
     }
     st.input.read_open[m] = CLOSED;
     Ok(())
 }
 
-pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<(), SccAbort> {
+pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<(), Abort> {
     st.scanner.scanner_status = DEFINING;
     st.scanner.warning_index = r;
     let def_ref = new_def_ref(st)?;
@@ -588,9 +573,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
         st.input.cur_input.name = (m + 1) as i32;
 
         if st.input.read_open[m] == CLOSED {
-            return Err(SccAbort::Input(crate::input::InputAbort::TtAbort(
-                "terminal input forbidden",
-            )));
+            return Err(Abort::Internal("terminal input forbidden"));
         } else if st.input.read_open[m] == JUST_OPEN {
             let rf = st.input.read_file_ptr(m);
             if unsafe { crate::io::input_line(st, rf)? } != 0 {
@@ -610,7 +593,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
                     st.errors.help(&[r"This \read has unbalanced braces."]);
                     st.scanner.align_state = 1_000_000;
                     st.input.cur_input.limit = 0;
-                    scc_err(error(st))?;
+                    error(st)?;
                 }
             }
         }
@@ -666,31 +649,24 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn eTeX_enabled(
-    st: &mut EngineState,
-    b: bool,
-    j: u8,
-    k: i32,
-) -> Result<bool, crate::main_control::MainControlAbort> {
+pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: u8, k: i32) -> Result<bool, Abort> {
     if !b {
         error_here_with_diagnostic(st, "Improper ");
         print_cmd_chr(st, j, k);
         capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors
             .help(&["Sorry, this optional e-TeX feature has been disabled."]);
-        crate::main_control::mc_propagate_error(error(st))?;
+        error(st)?;
     }
     Ok(b)
 }
 
-pub(crate) enum TokensToStringAbort {
-    SelectorNewString,
-    StringOverflow,
-}
-
-pub(crate) fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<i32, TokensToStringAbort> {
+pub(crate) fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<i32, Abort> {
     if st.shipout.selector == SELECTOR_NEW_STRING {
-        return Err(TokensToStringAbort::SelectorNewString);
+        return Err(Abort::PdfError(&[
+            "tokens",
+            "tokens_to_string() called while selector = new_string",
+        ]));
     }
     st.shipout.old_setting = st.shipout.selector as u8;
     st.shipout.selector = SELECTOR_NEW_STRING;
@@ -698,12 +674,10 @@ pub(crate) fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<i32, Toke
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, arg, TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting as i32;
-    st.strings
-        .make_string()
-        .map_err(|_| TokensToStringAbort::StringOverflow)
+    st.strings.make_string().map_err(|_| Abort::StringOverflow)
 }
 
-pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         loop {
             get_token(st)?;
@@ -727,7 +701,7 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), SccAbort> {
                 back_input(st)?;
             }
             st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_PROTECTION;
-            scc_err(ins_error(st)?)?;
+            ins_error(st)?;
         } else {
             return Ok(());
         }
@@ -740,7 +714,7 @@ fn math_code_from_tex(v: i32) -> i32 {
 }
 
 /// Scans the class, family and character of a `\Umathchar`-style code.
-fn scan_umath_code(st: &mut EngineState) -> Result<i32, SccAbort> {
+fn scan_umath_code(st: &mut EngineState) -> Result<i32, Abort> {
     scan_math_class_int(st)?;
     let class = set_class_fn(st.scanner.cur_val);
     scan_math_fam_int(st)?;
@@ -750,7 +724,7 @@ fn scan_umath_code(st: &mut EngineState) -> Result<i32, SccAbort> {
 }
 
 /// `get_x_token` until the result is neither a space nor `\relax`.
-pub(crate) fn get_x_non_blank_non_relax(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_x_non_blank_non_relax(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_x_token(st)?;
         if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
@@ -760,10 +734,7 @@ pub(crate) fn get_x_non_blank_non_relax(st: &mut EngineState) -> Result<(), SccA
 }
 
 /// Scans one math field into the nucleus-like field `p`.
-pub(crate) fn scan_math(
-    st: &mut EngineState,
-    p: NodePtr<MathField>,
-) -> Result<(), crate::main_control::MainControlAbort> {
+pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(), Abort> {
     let c: i32;
     'main: loop {
         get_x_non_blank_non_relax(st)?;
@@ -831,17 +802,14 @@ pub(crate) fn scan_math(
     Ok(())
 }
 
-pub(crate) fn set_math_char(
-    st: &mut EngineState,
-    c: i32,
-) -> Result<(), crate::main_control::MainControlAbort> {
+pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
     if math_char_fn(c) == ACTIVE_MATH_CHAR {
         st.scanner.cur_cs = st.scanner.cur_chr + 1;
         fetch_cs_meaning(st);
         x_token(st)?;
         back_input(st)?;
     } else {
-        let nd = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
+        let nd = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
         nd.nucleus().set_math_type(&mut st.mem, MATH_CHAR);
         let ch = math_char_fn(c);
         nd.nucleus().set_character(&mut st.mem, (ch % 65536) as u16);
@@ -888,48 +856,16 @@ pub(crate) fn set_family_fn(x: i32) -> i32 {
     (((x as u32) & 0xFF) << 24) as i32
 }
 
-pub(crate) enum NodeRecycleAbort {
-    Overflow,
-    OverflowRunaway,
-    Confusion(&'static str),
-    NativeFont(crate::ext::NativeFontAbort),
-}
-
-impl From<crate::ext::NativeFontAbort> for NodeRecycleAbort {
-    fn from(e: crate::ext::NativeFontAbort) -> Self {
-        NodeRecycleAbort::NativeFont(e)
-    }
-}
-
-impl NodeRecycleAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            NodeRecycleAbort::Overflow => crate::errors::EngineAbort::Overflow {
-                what: "main memory size",
-                n: MEM_TOP + 1,
-            },
-            NodeRecycleAbort::OverflowRunaway => crate::errors::EngineAbort::MainMemoryOverflow,
-            NodeRecycleAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg),
-            NodeRecycleAbort::NativeFont(e) => e.into_engine_abort(),
-        }
-    }
-}
-
-pub(crate) fn check_outer_validity(
-    st: &mut EngineState,
-) -> Result<crate::errors::ErrorOutcome, crate::input::InputAbort> {
-    use crate::errors::ErrorOutcome;
-    use crate::input::InputAbort;
-
+pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.scanner_status == NORMAL_SCANNER {
-        return Ok(ErrorOutcome::Continue);
+        return Ok(());
     }
     st.errors.deletions_allowed = false;
 
     if st.scanner.cur_cs != 0 {
         let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
-            let p = st.mem.get_avail().ok_or(InputAbort::MainMemory)?;
+            let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
             p.set_info(&mut st.mem, CS_TOKEN_FLAG + st.scanner.cur_cs);
             begin_token_list(st, p, BACKED_UP)?;
         }
@@ -937,7 +873,7 @@ pub(crate) fn check_outer_validity(
         st.scanner.cur_chr = ' ' as i32;
     }
 
-    let oc = if st.scanner.scanner_status > SKIPPING {
+    let outcome = if st.scanner.scanner_status > SKIPPING {
         crate::errors::runaway(st);
         if st.scanner.cur_cs == 0 {
             error_here_with_diagnostic(st, "File ended");
@@ -946,7 +882,7 @@ pub(crate) fn check_outer_validity(
             error_here_with_diagnostic(st, "Forbidden control sequence found");
         }
 
-        let p = st.mem.get_avail().ok_or(InputAbort::MainMemory)?;
+        let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
         let mut inserted = p;
         match st.scanner.scanner_status {
             DEFINING => {
@@ -961,7 +897,7 @@ pub(crate) fn check_outer_validity(
             ALIGNING => {
                 print(st, " while scanning preamble");
                 p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-                inserted = st.mem.get_avail().ok_or(InputAbort::MainMemory)?;
+                inserted = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
                 inserted.set_link(&mut st.mem, p);
                 inserted.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_CR);
                 st.scanner.align_state = -1_000_000;
@@ -1005,31 +941,10 @@ pub(crate) fn check_outer_validity(
             r"the matching `\fi'. I've inserted a `\fi'; this might work.",
         ]);
         st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_FI;
-        ins_error(st)?
+        ins_error(st)
     };
     st.errors.deletions_allowed = true;
-    Ok(oc)
-}
-
-pub(crate) enum GetNextOutcome {
-    Done,
-    Error(crate::errors::ErrorOutcome),
-    Abort(crate::input::InputAbort),
-    /// The input ended without `\end`.
-    NoLegalEnd {
-        open_log: bool,
-    },
-}
-
-pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::InputAbort {
-    use crate::hash::HashLookupError::*;
-    let (what, n) = match e {
-        HashSizeOverflow(n) => ("hash size", n),
-        PoolSizeOverflow(n) => ("pool size", n),
-        StringNumberOverflow(n) => ("number of strings", n),
-        PrimitiveSizeOverflow(n) => ("primitive size", n),
-    };
-    crate::input::InputAbort::Overflow { what, n }
+    outcome
 }
 
 /// Sets `cur_cmd` and `cur_chr` to the meaning of `cur_cs`.
@@ -1093,36 +1008,8 @@ impl InputClusterState {
 }
 
 /// The central tokenizer.
-pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
+pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.logical_clock = st.scanner.logical_clock.wrapping_add(1);
-
-    macro_rules! try_in {
-        ($e:expr) => {
-            match $e {
-                Ok(v) => v,
-                Err(a) => return GetNextOutcome::Abort(a),
-            }
-        };
-    }
-
-    macro_rules! check_outer_validity {
-        () => {
-            match check_outer_validity(st) {
-                Ok(crate::errors::ErrorOutcome::Continue) => {}
-                Ok(oc) => return GetNextOutcome::Error(oc),
-                Err(a) => return GetNextOutcome::Abort(a),
-            }
-        };
-    }
-
-    macro_rules! id_lookup {
-        ($j:expr, $l:expr) => {
-            match st.eqtb.id_lookup(&mut st.strings, &st.input.buffer, $j, $l) {
-                Ok(p) => p,
-                Err(e) => return GetNextOutcome::Abort(hash_err_abort(e)),
-            }
-        };
-    }
 
     'restart: loop {
         st.scanner.cur_cs = 0;
@@ -1192,7 +1079,12 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                                             }
                                             if k > st.input.cur_input.loc + 1 {
                                                 let loc = st.input.cur_input.loc;
-                                                st.scanner.cur_cs = id_lookup!(loc, k - loc);
+                                                st.scanner.cur_cs = st.eqtb.id_lookup(
+                                                    &mut st.strings,
+                                                    &st.input.buffer,
+                                                    loc,
+                                                    k - loc,
+                                                )?;
                                                 st.input.cur_input.loc = k;
                                                 break 'start_cs;
                                             }
@@ -1206,7 +1098,12 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
 
                                         let loc = st.input.cur_input.loc;
                                         if st.input.buffer[loc as usize] > 65535 {
-                                            st.scanner.cur_cs = id_lookup!(loc, 1);
+                                            st.scanner.cur_cs = st.eqtb.id_lookup(
+                                                &mut st.strings,
+                                                &st.input.buffer,
+                                                loc,
+                                                1,
+                                            )?;
                                         } else {
                                             st.scanner.cur_cs =
                                                 SINGLE_BASE + st.input.buffer[loc as usize];
@@ -1217,7 +1114,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                                 }
                                 fetch_cs_meaning(st);
                                 if st.scanner.cur_cmd >= OUTER_CALL {
-                                    check_outer_validity!();
+                                    check_outer_validity(st)?;
                                 }
                             }
 
@@ -1227,7 +1124,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                                 fetch_cs_meaning(st);
                                 st.input.cur_input.state = MID_LINE;
                                 if st.scanner.cur_cmd >= OUTER_CALL {
-                                    check_outer_validity!();
+                                    check_outer_validity(st)?;
                                 }
                             }
 
@@ -1276,10 +1173,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                                     "Continue, and I'll forget that it ever happened.",
                                 ]);
                                 st.errors.deletions_allowed = false;
-                                let oc = error(st);
-                                if !matches!(oc, crate::errors::ErrorOutcome::Continue) {
-                                    return GetNextOutcome::Error(oc);
-                                }
+                                error(st)?;
                                 st.errors.deletions_allowed = true;
                                 continue 'restart;
                             }
@@ -1309,7 +1203,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                                 st.scanner.cur_cs = st.input.par_loc;
                                 fetch_cs_meaning(st);
                                 if st.scanner.cur_cmd >= OUTER_CALL {
-                                    check_outer_validity!();
+                                    check_outer_validity(st)?;
                                 }
                             }
 
@@ -1344,10 +1238,10 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
 
                     if !st.input.force_eof {
                         let got_line = if st.input.cur_input.name <= 19 {
-                            try_in!(crate::input::pseudo_input(st))
+                            crate::input::pseudo_input(st)?
                         } else {
                             let f = st.input.input_file_ptr(st.input.cur_input.index as i32);
-                            try_in!(unsafe { crate::io::input_line(st, f) }) != 0
+                            unsafe { crate::io::input_line(st, f) }? != 0
                         };
                         if got_line {
                             st.input.cur_input.limit = st.input.last;
@@ -1357,7 +1251,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                             if !every_eof.is_null() && !st.input.eof_seen[index] {
                                 st.input.cur_input.limit = st.input.first - 1;
                                 st.input.eof_seen[index] = true;
-                                try_in!(begin_token_list(st, every_eof, EVERY_EOF_TEXT));
+                                begin_token_list(st, every_eof, EVERY_EOF_TEXT)?;
                                 continue 'restart;
                             }
                             st.input.force_eof = true;
@@ -1378,8 +1272,8 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                             unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
                         }
                         st.input.force_eof = false;
-                        try_in!(crate::input::end_file_reading(st));
-                        check_outer_validity!();
+                        crate::input::end_file_reading(st)?;
+                        check_outer_validity(st)?;
                         continue 'restart;
                     }
 
@@ -1388,21 +1282,21 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                     if st.input.cur_input.name != 0 {
                         st.scanner.cur_cmd = 0;
                         st.scanner.cur_chr = 0;
-                        return GetNextOutcome::Done;
+                        return Ok(());
                     }
                     if st.input.input_ptr > 0 {
-                        try_in!(crate::input::end_file_reading(st));
+                        crate::input::end_file_reading(st)?;
                         continue 'restart;
                     }
                     let coda = st.eqtb.local(LOCAL_TECTONIC_CODA);
                     if !st.scanner.used_tectonic_coda_tokens && !coda.is_null() {
                         st.scanner.used_tectonic_coda_tokens = true;
-                        try_in!(begin_token_list(st, coda, TECTONIC_CODA_TEXT));
+                        begin_token_list(st, coda, TECTONIC_CODA_TEXT)?;
                         continue 'restart;
                     }
-                    return GetNextOutcome::NoLegalEnd {
+                    return Err(Abort::NoLegalEnd {
                         open_log: st.shipout.selector < SELECTOR_LOG_ONLY,
-                    };
+                    });
                 }
             }
         } else if st.input.cur_input.loc != TEX_NULL {
@@ -1424,7 +1318,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                             st.scanner.cur_chr = NO_EXPAND_FLAG;
                         }
                     } else {
-                        check_outer_validity!();
+                        check_outer_validity(st)?;
                     }
                 }
             } else {
@@ -1436,14 +1330,14 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
                     OUT_PARAM => {
                         let param = st.input.param_stack
                             [(st.input.cur_input.limit + st.scanner.cur_chr - 1) as usize];
-                        try_in!(begin_token_list(st, param, PARAMETER));
+                        begin_token_list(st, param, PARAMETER)?;
                         continue 'restart;
                     }
                     _ => {}
                 }
             }
         } else {
-            try_in!(crate::input::end_token_list(st));
+            crate::input::end_token_list(st)?;
             continue 'restart;
         }
 
@@ -1453,7 +1347,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
             && st.scanner.align_state == 0
         {
             if st.scanner.scanner_status == ALIGNING || st.scanner.cur_align.0 == TEX_NULL {
-                return GetNextOutcome::Abort(crate::input::InputAbort::Fatal(
+                return Err(Abort::Fatal(
                     "(interwoven alignment preambles are not allowed)",
                 ));
             }
@@ -1465,111 +1359,14 @@ pub(crate) fn get_next(st: &mut EngineState) -> GetNextOutcome {
             } else {
                 column.v_part(&st.mem)
             };
-            try_in!(begin_token_list(st, template, V_TEMPLATE));
+            begin_token_list(st, template, V_TEMPLATE)?;
             st.scanner.cur_cmd = saved_cmd as u8;
             st.scanner.align_state = 1_000_000;
             continue 'restart;
         }
         break 'restart;
     }
-    GetNextOutcome::Done
-}
-
-/// Aborts and terminal error outcomes of the scanner and expander.
-pub(crate) enum SccAbort {
-    Cancelled,
-    Error(crate::errors::ErrorOutcome),
-    Input(crate::input::InputAbort),
-    NoLegalEnd { open_log: bool },
-    TokensToString(TokensToStringAbort),
-    PdfError { t: &'static str, p: &'static str },
-    OpenLog(crate::io::OpenLogAbort),
-    MakeTexString(crate::texmfmp::MakeTexStringAbort),
-    InputClose,
-    NativeFont(crate::ext::NativeFontAbort),
-}
-
-impl From<crate::ext::NativeFontAbort> for SccAbort {
-    fn from(e: crate::ext::NativeFontAbort) -> Self {
-        SccAbort::NativeFont(e)
-    }
-}
-
-impl SccAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            SccAbort::Cancelled => crate::errors::EngineAbort::Cancelled,
-            SccAbort::Error(oc) => oc.into_engine_abort(),
-            SccAbort::Input(a) => a.into_engine_abort(),
-            SccAbort::NoLegalEnd { open_log } => {
-                crate::errors::EngineAbort::NoLegalEnd { open_log }
-            }
-            SccAbort::TokensToString(a) => match a {
-                TokensToStringAbort::SelectorNewString => crate::errors::EngineAbort::PdfError {
-                    t: "tokens",
-                    p: "tokens_to_string() called while selector = new_string",
-                },
-                TokensToStringAbort::StringOverflow => crate::errors::EngineAbort::StringOverflow,
-            },
-            SccAbort::PdfError { t, p } => crate::errors::EngineAbort::PdfError { t, p },
-            SccAbort::OpenLog(e) => e.into_engine_abort(),
-            SccAbort::MakeTexString(e) => e.into_engine_abort(),
-            SccAbort::InputClose => {
-                crate::errors::EngineAbort::TtAbort("serious internal error closing an input file")
-            }
-            SccAbort::NativeFont(e) => e.into_engine_abort(),
-        }
-    }
-}
-
-impl From<GetNextOutcome> for Result<(), SccAbort> {
-    fn from(o: GetNextOutcome) -> Self {
-        match o {
-            GetNextOutcome::Done => Ok(()),
-            GetNextOutcome::Error(oc) => Err(SccAbort::Error(oc)),
-            GetNextOutcome::Abort(a) => Err(SccAbort::Input(a)),
-            GetNextOutcome::NoLegalEnd { open_log } => Err(SccAbort::NoLegalEnd { open_log }),
-        }
-    }
-}
-
-impl From<crate::input::InputAbort> for SccAbort {
-    fn from(a: crate::input::InputAbort) -> Self {
-        SccAbort::Input(a)
-    }
-}
-
-/// Lifts a non-`Continue` error outcome into an abort.
-pub(crate) fn scc_err(o: crate::errors::ErrorOutcome) -> Result<(), SccAbort> {
-    if matches!(o, crate::errors::ErrorOutcome::Continue) {
-        Ok(())
-    } else {
-        Err(SccAbort::Error(o))
-    }
-}
-
-#[inline]
-pub(crate) fn get_next_scc(st: &mut EngineState) -> Result<(), SccAbort> {
-    Result::from(get_next(st))
-}
-
-pub(crate) fn main_mem_overflow_scc() -> SccAbort {
-    SccAbort::Input(crate::input::InputAbort::Overflow {
-        what: "main memory size",
-        n: MEM_TOP + 1,
-    })
-}
-
-pub(crate) fn get_node_scc(st: &mut EngineState, s: i32) -> Result<MemPtr, SccAbort> {
-    st.mem.get_node(s).ok_or_else(main_mem_overflow_scc)
-}
-
-// Always inlined: an out-of-line `Result<MemPtr, SccAbort>` return goes through memory.
-#[inline(always)]
-pub(crate) fn get_avail_scc(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
-    st.mem
-        .get_avail()
-        .ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
+    Ok(())
 }
 
 /// Appends `token` to the token list whose tail is `tail`.
@@ -1578,15 +1375,15 @@ pub(crate) fn store_new_token(
     st: &mut EngineState,
     tail: &mut MemPtr,
     token: i32,
-) -> Result<(), SccAbort> {
+) -> Result<(), Abort> {
     st.mem
         .store_new_token(tail, token)
-        .ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
+        .ok_or(Abort::AvailOverflow)
 }
 
 /// Starts a new reference-counted token list in `def_ref` and returns it.
-fn new_def_ref(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
-    let def_ref = get_avail_scc(st)?;
+fn new_def_ref(st: &mut EngineState) -> Result<MemPtr, Abort> {
+    let def_ref = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
     st.scanner.def_ref = def_ref;
     def_ref.set_info(&mut st.mem, TEX_NULL);
     Ok(def_ref)
@@ -1625,35 +1422,11 @@ impl MemState {
 
 /// `get_x_token` until the result is not a space.
 #[inline]
-pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         get_x_token(st)?;
         if st.scanner.cur_cmd != SPACER {
             return Ok(());
-        }
-    }
-}
-
-pub(crate) fn new_spec_scc(
-    st: &mut EngineState,
-    p: impl crate::units::MemAddr,
-) -> Result<NodePtr<GlueSpecNode>, SccAbort> {
-    st.mem
-        .new_spec(glue_spec(p.addr()))
-        .ok_or_else(main_mem_overflow_scc)
-}
-
-pub(crate) fn str_toks_scc(st: &mut EngineState, b: i32, cat: i16) -> Result<MemPtr, SccAbort> {
-    match st.mem.str_toks_cat(&mut st.strings, b, cat) {
-        Ok(p) => Ok(p),
-        Err(StrToksAbort::PoolOverflow) => {
-            Err(SccAbort::Input(crate::input::InputAbort::Overflow {
-                what: "pool size",
-                n: st.strings.pool_size - st.strings.init_pool_ptr,
-            }))
-        }
-        Err(StrToksAbort::MainMemoryOverflow) => {
-            Err(SccAbort::Input(crate::input::InputAbort::MainMemory))
         }
     }
 }
@@ -1667,21 +1440,21 @@ fn pack_cur_tok(st: &mut EngineState) {
     };
 }
 
-pub(crate) fn x_token(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn x_token(st: &mut EngineState) -> Result<(), Abort> {
     while st.scanner.cur_cmd > MAX_COMMAND {
         expand(st)?;
-        get_next_scc(st)?;
+        get_next(st)?;
     }
     pack_cur_tok(st);
     Ok(())
 }
 
-pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         if st.cancellation.at_expansion_token() {
-            return Err(SccAbort::Cancelled);
+            return Err(Abort::Cancelled);
         }
-        get_next_scc(st)?;
+        get_next(st)?;
         if st.scanner.cur_cmd <= MAX_COMMAND {
             break;
         }
@@ -1703,7 +1476,7 @@ pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), SccAbort> {
 
 /// Builds the token list for `\the` (or `\unexpanded`/`\detokenize`) at
 /// `link(temp_head)` and returns its tail.
-pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
+pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
     if st.scanner.cur_chr & 1 != 0 {
         let c = st.scanner.cur_chr;
         scan_general_text(st)?;
@@ -1713,13 +1486,13 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
         let old_setting = st.shipout.selector;
         st.shipout.selector = SELECTOR_NEW_STRING;
         let b = st.strings.pool_ptr;
-        let p = get_avail_scc(st)?;
+        let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
         let list = TEMP_HEAD.link(&st.mem);
         p.set_link(&mut st.mem, list);
         crate::output::token_show(st, p);
         st.mem.flush_list(p);
         st.shipout.selector = old_setting;
-        return str_toks_scc(st, b, 0);
+        return st.mem.str_toks_cat(&mut st.strings, b, 0);
     }
     get_x_token(st)?;
     scan_something_internal(st, TOK_VAL, false)?;
@@ -1757,14 +1530,14 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
             _ => {}
         }
         st.shipout.selector = old_setting;
-        str_toks_scc(st, b, 0)
+        st.mem.str_toks_cat(&mut st.strings, b, 0)
     }
 }
 pub(crate) fn scan_toks(
     st: &mut EngineState,
     macro_def: bool,
     xpand: bool,
-) -> Result<MemPtr, SccAbort> {
+) -> Result<MemPtr, Abort> {
     if macro_def {
         st.scanner.scanner_status = DEFINING;
     } else {
@@ -1798,7 +1571,7 @@ pub(crate) fn scan_toks(
                             "I'm going to ignore the # sign you just used,",
                             "as well as the token that followed it.",
                         ]);
-                        scc_err(error(st))?;
+                        error(st)?;
                         continue;
                     }
                     t += 1;
@@ -1808,7 +1581,7 @@ pub(crate) fn scan_toks(
                             "I've inserted the digit you should have used after the #.",
                             "Type `1' to delete what you did use.",
                         ]);
-                        scc_err(back_error(st)?)?;
+                        back_error(st)?;
                     }
                     st.scanner.cur_tok = s;
                 }
@@ -1823,7 +1596,7 @@ pub(crate) fn scan_toks(
                         r"Where was the left brace? You said something like `\def\a}',",
                         r"which I'm going to interpret as `\def\a{}'.",
                     ]);
-                    scc_err(error(st))?;
+                    error(st)?;
                     break 'found;
                 }
             }
@@ -1835,7 +1608,7 @@ pub(crate) fn scan_toks(
         loop {
             if xpand {
                 loop {
-                    get_next_scc(st)?;
+                    get_next(st)?;
                     if st.scanner.cur_cmd >= CALL
                         && st.mem.is_protected_macro(MemPtr(st.scanner.cur_chr))
                     {
@@ -1890,7 +1663,7 @@ pub(crate) fn scan_toks(
                             "Or maybe a } was forgotten somewhere earlier, and things",
                             "are all screwed up? I'm going to assume that you meant ##.",
                         ]);
-                        scc_err(back_error(st)?)?;
+                        back_error(st)?;
                         st.scanner.cur_tok = s;
                     } else {
                         st.scanner.cur_tok = OUT_PARAM_TOKEN - b'0' as i32 + st.scanner.cur_chr;
@@ -1907,14 +1680,14 @@ pub(crate) fn scan_toks(
     Ok(p)
 }
 
-pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
     st.scanner.scanner_status = SKIPPING;
     let mut l: i32 = 0;
     st.scanner.skip_line = st.mem.line;
 
     loop {
-        get_next_scc(st)?;
+        get_next(st)?;
         if st.scanner.cur_cmd == FI_OR_ELSE {
             if l == 0 {
                 break;
@@ -1932,7 +1705,7 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), SccAbort> {
     }
     Ok(())
 }
-pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     scan_general_text(st)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
@@ -1942,21 +1715,19 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), SccAbort> {
     st.mem.flush_list(head);
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(SccAbort::Error(crate::errors::ErrorOutcome::Overflow {
+        return Err(Abort::Overflow {
             what: "pool size",
             n: st.strings.pool_size - st.strings.init_pool_ptr,
-        }));
+        });
     }
-    let s = st.strings.make_string().map_err(|_| {
-        SccAbort::Error(crate::errors::ErrorOutcome::Overflow {
-            what: "number of strings",
-            n: st.strings.max_strings - st.strings.init_str_ptr,
-        })
+    let s = st.strings.make_string().map_err(|_| Abort::Overflow {
+        what: "number of strings",
+        n: st.strings.max_strings - st.strings.init_str_ptr,
     })?;
     st.strings.str_pool[st.strings.pool_ptr as usize] = b' ' as u16;
     let mut l = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
     let nl = st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) as u16;
-    let file = get_avail_scc(st)?;
+    let file = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
     let mut last_line = file;
 
     // Each line becomes a node of words holding four characters each.
@@ -1966,7 +1737,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), SccAbort> {
             l += 1;
         }
         let size = ((l - m + 7) / 4).max(2);
-        let line = NodePtr::<PseudoLineNode>::at(get_node_scc(st, size)?);
+        let line = NodePtr::<PseudoLineNode>::at(st.mem.get_node(size).ok_or(Abort::NodeOverflow)?);
         last_line.set_link(&mut st.mem, line.ptr());
         last_line = line.ptr();
         line.set_size(&mut st.mem, size);
@@ -2021,7 +1792,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 /// Skips blanks and signs, returning whether the net sign is negative.
-fn scan_signs(st: &mut EngineState) -> Result<bool, SccAbort> {
+fn scan_signs(st: &mut EngineState) -> Result<bool, Abort> {
     let mut negative = false;
     loop {
         get_x_non_blank(st)?;
@@ -2036,7 +1807,7 @@ fn scan_signs(st: &mut EngineState) -> Result<bool, SccAbort> {
 }
 
 /// Consumes one optional space after a constant.
-fn scan_optional_space(st: &mut EngineState) -> Result<(), SccAbort> {
+fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
     get_x_token(st)?;
     if st.scanner.cur_cmd != SPACER {
         back_input(st)?;
@@ -2045,12 +1816,12 @@ fn scan_optional_space(st: &mut EngineState) -> Result<(), SccAbort> {
 }
 
 /// Reads the token after `\primitive` and replaces it by the primitive's meaning.
-fn get_primitive_token(st: &mut EngineState) -> Result<(), SccAbort> {
+fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     get_token(st)?;
     let p = st
         .eqtb
         .prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)
-        .map_err(|e| SccAbort::Input(hash_err_abort(e)))?;
+        .map_err(|e| e)?;
     if p != UNDEFINED_PRIMITIVE {
         st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + p);
         st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + p);
@@ -2065,7 +1836,7 @@ fn get_primitive_token(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 
-pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
     let mut ok_so_far = true;
     st.scanner.radix = 0;
     let negative = scan_signs(st)?;
@@ -2092,7 +1863,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), SccAbort> {
                     r"So I'm essentially inserting \0 here.",
                 ]);
                 st.scanner.cur_val = b'0' as i32;
-                scc_err(back_error(st)?)?;
+                back_error(st)?;
             } else {
                 scan_optional_space(st)?;
             }
@@ -2134,7 +1905,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), SccAbort> {
                             "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
                             "so I'm using that number instead of yours.",
                         ]);
-                        scc_err(error(st))?;
+                        error(st)?;
                         st.scanner.cur_val = TEX_INFINITY;
                         ok_so_far = false;
                     }
@@ -2150,7 +1921,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), SccAbort> {
                     "(If you can't figure out why I needed to see a number,",
                     "look up `weird error' in the index to The TeXbook.)",
                 ]);
-                scc_err(back_error(st)?)?;
+                back_error(st)?;
             } else if st.scanner.cur_cmd != SPACER {
                 back_input(st)?;
             }
@@ -2168,7 +1939,7 @@ pub(crate) fn scan_dimen(
     mu: bool,
     inf: bool,
     shortcut: bool,
-) -> Result<(), SccAbort> {
+) -> Result<(), Abort> {
     xetex_scan_dimen(st, mu, inf, shortcut, true)
 }
 /// A glue spec pointer held in a raw word.
@@ -2205,7 +1976,7 @@ pub(crate) fn xetex_scan_dimen(
     inf: bool,
     shortcut: bool,
     requires_units: bool,
-) -> Result<(), SccAbort> {
+) -> Result<(), Abort> {
     let mut f: i32 = 0;
     let mut negative = false;
 
@@ -2226,7 +1997,7 @@ pub(crate) fn xetex_scan_dimen(
                         break 'attach_sign;
                     }
                     if st.scanner.cur_val_level != INT_VAL {
-                        scc_err(mu_error(st))?;
+                        mu_error(st)?;
                     }
                 } else {
                     scan_something_internal(st, DIMEN_VAL, false)?;
@@ -2260,7 +2031,7 @@ pub(crate) fn xetex_scan_dimen(
                             break;
                         }
                         if k < 17 {
-                            let q = get_avail_scc(st)?;
+                            let q = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
                             q.set_link(&mut st.mem, digits);
                             q.set_info(&mut st.mem, st.scanner.cur_tok - ZERO_TOKEN);
                             digits = q;
@@ -2294,7 +2065,7 @@ pub(crate) fn xetex_scan_dimen(
                         if st.scanner.cur_order == FILLL {
                             print_err(st, "Illegal unit of measure (replaced by filll)");
                             st.errors.help(&["I dddon't go any higher than filll."]);
-                            scc_err(error(st))?;
+                            error(st)?;
                         } else {
                             st.scanner.cur_order += 1;
                         }
@@ -2312,7 +2083,7 @@ pub(crate) fn xetex_scan_dimen(
                             glue_to_width(st);
                         }
                         if st.scanner.cur_val_level != MU_VAL {
-                            scc_err(mu_error(st))?;
+                            mu_error(st)?;
                         }
                     } else {
                         scan_something_internal(st, DIMEN_VAL, false)?;
@@ -2351,13 +2122,13 @@ pub(crate) fn xetex_scan_dimen(
                             "delete the erroneous units; e.g., type `2' to delete",
                             "two letters. (See Chapter 27 of The TeXbook.)",
                         ]);
-                        scc_err(error(st))?;
+                        error(st)?;
                         break 'units true;
                     }
                 }
 
                 if scan_keyword(st, "true")? {
-                    scc_err(crate::save::prepare_mag(st))?;
+                    crate::save::prepare_mag(st)?;
                     let mag = st.eqtb.int_par(INT_PAR_MAG);
                     if mag != 1000 {
                         scale_dimen(st, &mut f, 1000, mag);
@@ -2394,7 +2165,7 @@ pub(crate) fn xetex_scan_dimen(
                         "delete the erroneous units; e.g., type `2' to delete",
                         "two letters. (See Chapter 27 of The TeXbook.)",
                     ]);
-                    scc_err(error(st))?;
+                    error(st)?;
                     break 'units true;
                 };
                 scale_dimen(st, &mut f, num, denom);
@@ -2416,7 +2187,7 @@ pub(crate) fn xetex_scan_dimen(
             "I can't work with sizes bigger than about 19 feet.",
             "Continue and I'll use the largest value I can.",
         ]);
-        scc_err(error(st))?;
+        error(st)?;
         st.scanner.cur_val = MAX_HALFWORD;
         st.errors.arith_error = false;
     }
@@ -2433,7 +2204,7 @@ fn attach_fraction(st: &mut EngineState, f: i32) {
     }
 }
 
-pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), SccAbort> {
+pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), Abort> {
     let mu = level == MU_VAL;
     let negative = scan_signs(st)?;
 
@@ -2441,14 +2212,14 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), SccAbort>
         scan_something_internal(st, level, negative)?;
         if st.scanner.cur_val_level >= GLUE_VAL {
             if st.scanner.cur_val_level != level {
-                scc_err(mu_error(st))?;
+                mu_error(st)?;
             }
             return Ok(());
         }
         if st.scanner.cur_val_level == INT_VAL {
             scan_dimen(st, mu, false, true)?;
         } else if level == MU_VAL {
-            scc_err(mu_error(st))?;
+            mu_error(st)?;
         }
     } else {
         back_input(st)?;
@@ -2458,7 +2229,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), SccAbort>
         }
     }
 
-    let gs = new_spec_scc(st, 0)?;
+    let gs = st.mem.new_spec(glue_spec(0)).ok_or(Abort::NodeOverflow)?;
     gs.set_width(&mut st.mem, Scaled(st.scanner.cur_val));
 
     if scan_keyword(st, "plus")? {
@@ -2475,10 +2246,10 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), SccAbort>
     st.scanner.cur_val = gs.ptr().0;
     Ok(())
 }
-pub(crate) fn scan_normal_glue(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_normal_glue(st: &mut EngineState) -> Result<(), Abort> {
     scan_glue(st, GLUE_VAL)
 }
-pub(crate) fn scan_mu_glue(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_mu_glue(st: &mut EngineState) -> Result<(), Abort> {
     scan_glue(st, MU_VAL)
 }
 /// Applies `op` to the width, stretch and shrink of `spec`, in that order.
@@ -2531,7 +2302,7 @@ fn add_glue(st: &mut EngineState, e: NodePtr<GlueSpecNode>, t: NodePtr<GlueSpecN
     normalize_glue_orders(st, e);
 }
 
-pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
     let mut l = st.scanner.cur_val_level;
     let a = st.errors.arith_error;
     let mut b = false;
@@ -2539,10 +2310,10 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), SccAbort> {
 
     st.scanner.expand_depth_count += 1;
     if st.scanner.expand_depth_count >= st.scanner.expand_depth {
-        return Err(SccAbort::Input(crate::input::InputAbort::Overflow {
+        return Err(Abort::Overflow {
             what: "expansion depth",
             n: st.scanner.expand_depth,
-        }));
+        });
     }
 
     // `r` is the pending additive operator, `s` the pending multiplicative one,
@@ -2567,8 +2338,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), SccAbort> {
                 let o = if s == EXPR_NONE { l } else { INT_VAL };
                 get_x_non_blank(st)?;
                 if st.scanner.cur_tok == OTHER_TOKEN + b'(' as i32 {
-                    let q = NodePtr::<ExprNode>::alloc(&mut st.mem)
-                        .ok_or_else(main_mem_overflow_scc)?;
+                    let q = NodePtr::<ExprNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
                     q.set_link(&mut st.mem, p);
                     q.set_level(&mut st.mem, l as u16);
                     q.set_state(&mut st.mem, (4 * s + r) as u16);
@@ -2607,7 +2377,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), SccAbort> {
                     print_err(st, "Missing ) inserted for expression");
                     st.errors
                         .help(&["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."]);
-                    scc_err(back_error(st)?)?;
+                    back_error(st)?;
                 }
             }
 
@@ -2630,14 +2400,19 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), SccAbort> {
                 {
                     st.errors.arith_error = true;
                     st.mem.delete_glue_ref(glue_spec(f));
-                    f = new_spec_scc(st, 0)?.ptr().0;
+                    f = st
+                        .mem
+                        .new_spec(glue_spec(0))
+                        .ok_or(Abort::NodeOverflow)?
+                        .ptr()
+                        .0;
                 }
             }
 
             match s {
                 EXPR_NONE => {
                     if l >= GLUE_VAL && o != EXPR_NONE {
-                        let term = new_spec_scc(st, f)?;
+                        let term = st.mem.new_spec(glue_spec(f)).ok_or(Abort::NodeOverflow)?;
                         t = term.ptr().0;
                         st.mem.delete_glue_ref(glue_spec(f));
                         normalize_glue_orders(st, term);
@@ -2724,7 +2499,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), SccAbort> {
             "I can't evaluate this expression,",
             "since the result is out of range.",
         ]);
-        scc_err(error(st))?;
+        error(st)?;
         if l >= GLUE_VAL {
             st.mem.delete_glue_ref(glue_spec(e));
             e = 0;
@@ -2741,7 +2516,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 
-pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, SccAbort> {
+pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, Abort> {
     let keyword = keyword.as_bytes();
     let save_cur_cs = st.scanner.cur_cs;
     let mut p = BACKUP_HEAD;
@@ -2769,7 +2544,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
     Ok(true)
 }
 
-pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank_non_relax(st)?;
     if st.scanner.cur_cmd != LEFT_BRACE {
         print_err(st, "Missing { inserted");
@@ -2779,7 +2554,7 @@ pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), SccAbort> {
             "so that I will find a matching right brace soon.",
             "(If you're confused by all this, try typing `I}' now.)",
         ]);
-        scc_err(back_error(st)?)?;
+        back_error(st)?;
         st.scanner.cur_tok = LEFT_BRACE_TOKEN + '{' as i32;
         st.scanner.cur_cmd = LEFT_BRACE;
         st.scanner.cur_chr = '{' as i32;
@@ -2788,14 +2563,14 @@ pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 
-fn missing_number_error(st: &mut EngineState) -> Result<(), SccAbort> {
+fn missing_number_error(st: &mut EngineState) -> Result<(), Abort> {
     print_err(st, "Missing number, treated as zero");
     st.errors.help(&[
         "A number should have been here; I inserted `0'.",
         "(If you can't figure out why I needed to see a number,",
         "look up `weird error' in the index to The TeXbook.)",
     ]);
-    scc_err(back_error(st)?)
+    back_error(st)
 }
 
 #[inline]
@@ -2815,16 +2590,16 @@ pub(crate) fn sa_token_list(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> Me
 }
 
 /// Replaces the glue in `cur_val` by a negated copy and returns the original glue.
-fn negate_glue(st: &mut EngineState) -> Result<i32, SccAbort> {
+fn negate_glue(st: &mut EngineState) -> Result<i32, Abort> {
     let old = st.scanner.cur_val;
-    let spec = new_spec_scc(st, old)?;
+    let spec = st.mem.new_spec(glue_spec(old)).ok_or(Abort::NodeOverflow)?;
     st.scanner.cur_val = spec.ptr().0;
     map_glue(st, spec, |_, x| -x);
     Ok(old)
 }
 
 /// Scans a font identifier, returning the font, its layout engine and its area flag.
-fn scan_font_engine(st: &mut EngineState) -> Result<(i32, *mut libc::c_void, i32), SccAbort> {
+fn scan_font_engine(st: &mut EngineState) -> Result<(i32, *mut libc::c_void, i32), Abort> {
     scan_font_ident(st)?;
     let f = st.scanner.cur_val;
     Ok((
@@ -2849,15 +2624,13 @@ fn font_query_error(
     f: i32,
     msg: &str,
     fallback: i32,
-) -> Result<(), SccAbort> {
-    scc_err(crate::errors::not_font_error_common(
-        st, LAST_ITEM, m, f, msg,
-    ))?;
+) -> Result<(), Abort> {
+    crate::errors::not_font_error_common(st, LAST_ITEM, m, f, msg)?;
     st.scanner.cur_val = fallback;
     Ok(())
 }
 
-fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
+fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     scan_usv_num(st)?;
     let n = st.scanner.cur_val;
     if m == MATH_CODE_BASE {
@@ -2886,7 +2659,7 @@ fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
                 "A delimiter code must be between 0 and \"7FFFFFF.",
                 "I changed this one to zero.",
             ]);
-            scc_err(error(st))?;
+            error(st)?;
             set_cur_val(st, 0, INT_VAL);
         } else {
             set_cur_val(st, st.scanner.cur_val1, INT_VAL);
@@ -2901,7 +2674,7 @@ fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
     Ok(())
 }
 
-fn fetch_xetex_def_code(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
+fn fetch_xetex_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     scan_usv_num(st)?;
     let n = st.scanner.cur_val;
     let (err, help1, help0) = if m == SF_CODE_BASE {
@@ -2928,12 +2701,12 @@ fn fetch_xetex_def_code(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
     };
     print_err(st, err);
     st.errors.help(&[help1, help0]);
-    scc_err(error(st))?;
+    error(st)?;
     set_cur_val(st, 0, INT_VAL);
     Ok(())
 }
 
-fn fetch_token_list(st: &mut EngineState, m: i32, level: u8) -> Result<(), SccAbort> {
+fn fetch_token_list(st: &mut EngineState, m: i32, level: u8) -> Result<(), Abort> {
     if level != TOK_VAL {
         missing_number_error(st)?;
         set_cur_val(st, 0, DIMEN_VAL);
@@ -2972,7 +2745,7 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: u8) -> Result<(), SccAb
     Ok(())
 }
 
-fn fetch_register(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
+fn fetch_register(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     if !(0..=19).contains(&m) {
         let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(m)).expect("sparse register");
         let level = sa.sa_type(&st.mem) as u8;
@@ -3008,7 +2781,7 @@ fn fetch_register(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
 }
 
 /// Integer-valued `\lastnodetype`-style and XeTeX font queries.
-fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
+fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     match m {
         INPUT_LINE_NO_CODE => st.scanner.cur_val = st.mem.line,
         BADNESS_CODE => st.scanner.cur_val = st.shipout.last_badness,
@@ -3251,7 +3024,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
     Ok(())
 }
 
-fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
+fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     match m {
         XETEX_GLYPH_BOUNDS_CODE => {
             let f = st.eqtb.cur_font();
@@ -3266,7 +3039,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
                     print_nl(st, "I don't know anything about edge ");
                     print_int(st, edge);
                     capture_to_diagnostic(st, std::ptr::null_mut());
-                    scc_err(error(st))?;
+                    error(st)?;
                     st.scanner.cur_val = 0;
                 } else {
                     scan_int(st)?;
@@ -3413,7 +3186,7 @@ pub(crate) fn scan_something_internal(
     st: &mut EngineState,
     level: u8,
     negative: bool,
-) -> Result<(), SccAbort> {
+) -> Result<(), Abort> {
     loop {
         let m = st.scanner.cur_chr;
         match st.scanner.cur_cmd {
@@ -3437,7 +3210,7 @@ pub(crate) fn scan_something_internal(
                         r"neither of these is meaningful inside \write. So",
                         "I'm forgetting what you said and using zero instead.",
                     ]);
-                    scc_err(error(st))?;
+                    error(st)?;
                     set_cur_val(st, 0, if level != TOK_VAL { DIMEN_VAL } else { INT_VAL });
                 } else if m == VMODE as i32 {
                     set_cur_val(st, st.input.cur_list.aux_s1(), DIMEN_VAL);
@@ -3565,7 +3338,7 @@ pub(crate) fn scan_something_internal(
                         if st.scanner.cur_val_level == GLUE_VAL {
                             glue_to_width(st);
                         } else if st.scanner.cur_val_level == MU_VAL {
-                            scc_err(mu_error(st))?;
+                            mu_error(st)?;
                         }
                         st.scanner.cur_val_level -= 1;
                     }
@@ -3594,7 +3367,7 @@ pub(crate) fn scan_something_internal(
                 capture_to_diagnostic(st, std::ptr::null_mut());
                 st.errors
                     .help(&["I'm forgetting what you said and using zero instead."]);
-                scc_err(error(st))?;
+                error(st)?;
                 set_cur_val(st, 0, if level != TOK_VAL { DIMEN_VAL } else { INT_VAL });
             }
         }
@@ -3605,7 +3378,7 @@ pub(crate) fn scan_something_internal(
         if st.scanner.cur_val_level == GLUE_VAL {
             st.scanner.cur_val = st.scanner.cur_glue().width(&st.mem).0;
         } else if st.scanner.cur_val_level == MU_VAL {
-            scc_err(mu_error(st))?;
+            mu_error(st)?;
         }
         st.scanner.cur_val_level -= 1;
     }
@@ -3624,7 +3397,7 @@ pub(crate) fn scan_something_internal(
     Ok(())
 }
 
-pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank(st)?;
     let f = match st.scanner.cur_cmd {
         DEF_FONT => st.eqtb.cur_font(),
@@ -3640,7 +3413,7 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<(), SccAbort> {
                 "I was looking for a control sequence whose",
                 r"current meaning has been defined by \font.",
             ]);
-            scc_err(back_error(st)?)?;
+            back_error(st)?;
             FONT_BASE
         }
     };
@@ -3648,7 +3421,7 @@ pub(crate) fn scan_font_ident(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 
-pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(), SccAbort> {
+pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(), Abort> {
     scan_int(st)?;
     let n = st.scanner.cur_val;
     scan_font_ident(st)?;
@@ -3674,10 +3447,10 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
             // Only the most recently loaded font can grow its parameter area.
             loop {
                 if st.fonts.fmem_ptr == st.fonts.font_mem_size {
-                    return Err(SccAbort::Error(crate::errors::ErrorOutcome::Overflow {
+                    return Err(Abort::Overflow {
                         what: "font memory",
                         n: st.fonts.font_mem_size,
-                    }));
+                    });
                 }
                 st.fonts.set_font_info_sc(st.fonts.fmem_ptr, 0);
                 st.fonts.fmem_ptr += 1;
@@ -3701,12 +3474,12 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
             "To increase the number of font parameters, you must",
             r"use \fontdimen immediately after the \font is loaded.",
         ]);
-        scc_err(error(st))?;
+        error(st)?;
     }
     Ok(())
 }
 
-pub(crate) fn scan_glyph_number(st: &mut EngineState, f: i32) -> Result<(), SccAbort> {
+pub(crate) fn scan_glyph_number(st: &mut EngineState, f: i32) -> Result<(), Abort> {
     if scan_keyword(st, "/")? {
         crate::io::scan_and_pack_name(st)?;
         let name = st.input.name_of_file_ptr();
@@ -3722,16 +3495,16 @@ pub(crate) fn scan_glyph_number(st: &mut EngineState, f: i32) -> Result<(), SccA
     Ok(())
 }
 
-pub(crate) fn get_token(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn get_token(st: &mut EngineState) -> Result<(), Abort> {
     st.eqtb.no_new_control_sequence = false;
-    get_next_scc(st)?;
+    get_next(st)?;
     st.eqtb.no_new_control_sequence = true;
     pack_cur_tok(st);
     Ok(())
 }
 
 /// Scans a balanced text into a list at `link(temp_head)`; `cur_val` is its tail.
-pub(crate) fn scan_general_text(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_general_text(st: &mut EngineState) -> Result<(), Abort> {
     let saved_status = st.scanner.scanner_status;
     let saved_warning_index = st.scanner.warning_index;
     let saved_def_ref = st.scanner.def_ref;
@@ -3765,21 +3538,21 @@ pub(crate) fn scan_general_text(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 
-pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState) -> Result<(), Abort> {
     scan_toks(st, false, true)?;
     Ok(())
 }
 
-fn scan_toks_to_string(st: &mut EngineState) -> Result<i32, SccAbort> {
+fn scan_toks_to_string(st: &mut EngineState) -> Result<i32, Abort> {
     scan_toks(st, false, true)?;
     let def_ref = st.scanner.def_ref.0;
-    let s = tokens_to_string(st, def_ref).map_err(SccAbort::TokensToString)?;
+    let s = tokens_to_string(st, def_ref)?;
     st.mem.delete_token_ref(st.scanner.def_ref);
     Ok(s)
 }
 
 /// `\strcmp`: compares two general texts as strings.
-pub(crate) fn compare_strings(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn compare_strings(st: &mut EngineState) -> Result<(), Abort> {
     let save_cur_cs = st.scanner.cur_cs;
     let s1 = scan_toks_to_string(st)?;
     st.scanner.cur_cs = save_cur_cs;

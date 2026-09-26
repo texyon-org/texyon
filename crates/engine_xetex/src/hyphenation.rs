@@ -5,7 +5,7 @@ pub(crate) use crate::consts::BIGGEST_LANG;
 use crate::consts::{
     BIGGEST_CHAR, INT_PAR_LANGUAGE, INT_PAR_SAVING_HYPH_CODES, MIN_TRIE_OP, TOO_BIG_CHAR,
 };
-use crate::main_control::{mc_propagate_error, MainControlAbort};
+use crate::errors::Abort;
 use crate::state::{EngineState, EqtbState, HyphState};
 use crate::units::MemPtr;
 
@@ -15,23 +15,6 @@ pub(crate) const MAX_TRIE_OP: u16 = 65_535;
 pub(crate) const HYPH_PRIME: i32 = 607;
 
 const APPENDIX_H: &str = "(See Appendix H.)";
-
-pub(crate) enum TrieAbort {
-    Patterns(i32),
-    Ops(i32),
-    OpsPerLanguage(i32),
-}
-
-impl TrieAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        let (what, n) = match self {
-            TrieAbort::Patterns(n) => ("pattern memory", n),
-            TrieAbort::Ops(n) => ("pattern memory ops", n),
-            TrieAbort::OpsPerLanguage(n) => ("pattern memory ops per language", n),
-        };
-        crate::errors::EngineAbort::Overflow { what, n }
-    }
-}
 
 impl HyphState {
     #[inline]
@@ -68,7 +51,7 @@ impl HyphState {
         }
     }
 
-    fn new_trie_op(&mut self, cur_lang: u8, d: i16, n: i16, v: u16) -> Result<u16, TrieAbort> {
+    fn new_trie_op(&mut self, cur_lang: u8, d: i16, n: i16, v: u16) -> Result<u16, Abort> {
         let mut h = (n as i32 + 313 * d as i32 + 361 * v as i32 + 1009 * cur_lang as i32).abs()
             % (TRIE_OP_SIZE - NEG_TRIE_OP_SIZE)
             + NEG_TRIE_OP_SIZE;
@@ -77,13 +60,19 @@ impl HyphState {
             let l = self.trie_op_hash(h);
             if l == 0 {
                 if self.trie_op_ptr == TRIE_OP_SIZE {
-                    return Err(TrieAbort::Ops(TRIE_OP_SIZE));
+                    return Err(Abort::Overflow {
+                        what: "pattern memory ops",
+                        n: TRIE_OP_SIZE,
+                    });
                 }
 
                 let lang = cur_lang as usize;
                 let mut u = self.trie_used[lang];
                 if u == MAX_TRIE_OP {
-                    return Err(TrieAbort::OpsPerLanguage(MAX_TRIE_OP as i32 - MIN_TRIE_OP));
+                    return Err(Abort::Overflow {
+                        what: "pattern memory ops per language",
+                        n: MAX_TRIE_OP as i32 - MIN_TRIE_OP,
+                    });
                 }
 
                 self.trie_op_ptr += 1;
@@ -161,7 +150,7 @@ impl HyphState {
         self.trie_node(p)
     }
 
-    fn first_fit(&mut self, p: i32) -> Result<(), TrieAbort> {
+    fn first_fit(&mut self, p: i32) -> Result<(), Abort> {
         let c = self.trie_c[p as usize] as i32;
         let mut z = self.trie_min[c as usize];
         let mut h;
@@ -170,7 +159,10 @@ impl HyphState {
             h = z - c;
             if self.trie_max < h + self.max_hyph_char {
                 if self.trie_size <= h + self.max_hyph_char {
-                    return Err(TrieAbort::Patterns(self.trie_size));
+                    return Err(Abort::Overflow {
+                        what: "pattern memory",
+                        n: self.trie_size,
+                    });
                 }
 
                 loop {
@@ -232,7 +224,7 @@ impl HyphState {
         Ok(())
     }
 
-    fn trie_pack(&mut self, mut p: i32) -> Result<(), TrieAbort> {
+    fn trie_pack(&mut self, mut p: i32) -> Result<(), Abort> {
         loop {
             let q = self.trie_l[p as usize];
             if q > 0 && self.trie_hash[q as usize] == 0 {
@@ -268,7 +260,7 @@ impl HyphState {
         }
     }
 
-    pub(crate) fn init_trie(&mut self) -> Result<(), TrieAbort> {
+    pub(crate) fn init_trie(&mut self) -> Result<(), Abort> {
         self.tables_gen = self.tables_gen.wrapping_add(1);
         self.max_hyph_char += 1;
         self.op_start[0] = -MIN_TRIE_OP;
@@ -367,9 +359,12 @@ impl HyphState {
         p_ref: &mut i32,
         c: u16,
         first_child: bool,
-    ) -> Result<(), TrieAbort> {
+    ) -> Result<(), Abort> {
         if self.trie_ptr == self.trie_size {
-            return Err(TrieAbort::Patterns(self.trie_size));
+            return Err(Abort::Overflow {
+                what: "pattern memory",
+                n: self.trie_size,
+            });
         }
 
         self.trie_ptr += 1;
@@ -389,7 +384,7 @@ impl HyphState {
 
     /// Insert the pattern `hc[1..=k]` into the trie, returning its node, its op,
     /// and whether the node already carried an op (a duplicate pattern).
-    fn insert_pattern_word(&mut self, k: i16) -> Result<(i32, u16, bool), TrieAbort> {
+    fn insert_pattern_word(&mut self, k: i16) -> Result<(i32, u16, bool), Abort> {
         if self.hc[1] == 0 {
             self.hyf[0] = 0;
         }
@@ -433,7 +428,7 @@ impl HyphState {
         Ok((q, v, self.trie_o[q as usize] != MIN_TRIE_OP as u16))
     }
 
-    fn save_hyph_codes(&mut self, lc_codes: &[i32; 256]) -> Result<(), TrieAbort> {
+    fn save_hyph_codes(&mut self, lc_codes: &[i32; 256]) -> Result<(), Abort> {
         let c = self.cur_lang as u16;
         let mut p: i32 = 0;
 
@@ -480,13 +475,13 @@ impl HyphState {
 
 /// Finish an error begun at the call site: set its help text (in display
 /// order) and run the recoverable `error()`.
-fn raise_error(st: &mut EngineState, help: &[&'static str]) -> Result<(), MainControlAbort> {
+fn raise_error(st: &mut EngineState, help: &[&'static str]) -> Result<(), Abort> {
     crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
     st.errors.help(help);
-    mc_propagate_error(crate::errors::error(st))
+    crate::errors::error(st)
 }
 
-pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), MainControlAbort> {
+pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), Abort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
     if !st.hyph.trie_not_ready {
@@ -573,7 +568,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), MainControlAbort>
     Ok(())
 }
 
-pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), MainControlAbort> {
+pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
     crate::scan::scan_left_brace(st)?;
@@ -597,7 +592,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), MainContro
                 LETTER | OTHER_CHAR | CHAR_GIVEN => {
                     if st.scanner.cur_chr == b'-' as i32 {
                         if n < st.eqtb.max_hyphenatable_length() as i16 {
-                            let q = crate::scan::get_avail_scc(st)?;
+                            let q = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
                             q.set_link(&mut st.mem, p);
                             q.set_info(&mut st.mem, n as i32);
                             p = q;
@@ -665,20 +660,14 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), MainContro
 }
 
 /// Enter the word `hc[1..n]` with hyphen positions `p` into the exception table.
-fn store_hyph_exception(
-    st: &mut EngineState,
-    mut n: i16,
-    p: MemPtr,
-) -> Result<(), MainControlAbort> {
+fn store_hyph_exception(st: &mut EngineState, mut n: i16, p: MemPtr) -> Result<(), Abort> {
     n += 1;
     st.hyph.hc[n as usize] = st.hyph.cur_lang as i32;
     if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
-        return Err(MainControlAbort::Input(
-            crate::input::InputAbort::Overflow {
-                what: "pool size",
-                n: st.strings.pool_size - st.strings.init_pool_ptr,
-            },
-        ));
+        return Err(Abort::Overflow {
+            what: "pool size",
+            n: st.strings.pool_size - st.strings.init_pool_ptr,
+        });
     }
 
     let mut h: i32 = 0;
@@ -697,12 +686,10 @@ fn store_hyph_exception(
     }
 
     if st.hyph.hyph_count == st.hyph.hyph_size || st.hyph.hyph_next == 0 {
-        return Err(MainControlAbort::Input(
-            crate::input::InputAbort::Overflow {
-                what: "exception dictionary",
-                n: st.hyph.hyph_size,
-            },
-        ));
+        return Err(Abort::Overflow {
+            what: "exception dictionary",
+            n: st.hyph.hyph_size,
+        });
     }
 
     st.hyph.hyph_count += 1;

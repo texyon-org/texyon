@@ -7,10 +7,9 @@ use crate::consts::{
     INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_XETEX_TRACING_FONTS,
     INT_PAR_XETEX_USE_GLYPH_METRICS, INVALID_HANDLE, NATIVE_NODE_SIZE, NON_ADDRESS, TOO_BIG_CHAR,
 };
-use crate::errors::ErrorOutcome;
 use crate::ext::{
     aat_get_font_metrics, apply_tfm_font_mapping, find_native_font, load_tfm_font_mapping,
-    ot_get_font_metrics, NativeFontAbort, NativeFontMetrics,
+    ot_get_font_metrics, NativeFontMetrics,
 };
 use crate::io::{pack_file_name, tt_xetex_open_input};
 use crate::mem_types::B16x4;
@@ -20,10 +19,10 @@ use crate::output::{
     end_diagnostic, error_here_with_diagnostic, print, print_char, print_file_name, print_int,
     print_nl, print_scaled, sprint_cs,
 };
-use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 
 use crate::bridge::{ttstub_input_getc, TTBC_FILE_FORMAT_TFM};
+use crate::errors::Abort;
 
 extern "C" {
     fn get_loaded_font_design_size() -> i32;
@@ -116,10 +115,9 @@ impl MemState {
         f: i32,
         n: i32,
         subtype: WhatsitSubtype,
-    ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+    ) -> Result<NodePtr<WhatsitNode>, Abort> {
         let size = NATIVE_NODE_SIZE + (n * 2 + 7) / 8;
-        let w =
-            NodePtr::<WhatsitNode>::alloc(self, size, subtype).ok_or(NodeRecycleAbort::Overflow)?;
+        let w = NodePtr::<WhatsitNode>::alloc(self, size, subtype).ok_or(Abort::NodeOverflow)?;
         w.set_native_size(self, size);
         w.set_native_font(self, crate::units::FontId(f));
         w.set_native_length(self, n as u16);
@@ -134,7 +132,7 @@ impl MemState {
         eqtb: &EqtbState,
         f: i32,
         n: i32,
-    ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+    ) -> Result<NodePtr<WhatsitNode>, Abort> {
         let subtype = if eqtb.int_par(INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
             WhatsitSubtype::NativeWordAt
         } else {
@@ -149,7 +147,7 @@ impl MemState {
         fonts: &FontState,
         f: i32,
         src: NativeCharSrc,
-    ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+    ) -> Result<NodePtr<WhatsitNode>, Abort> {
         match src {
             NativeCharSrc::Mapped(len) => {
                 let w = self.new_native_word_node(eqtb, f, len)?;
@@ -171,38 +169,11 @@ impl MemState {
     }
 }
 
-pub(crate) enum NativeCharAbort {
-    PoolOverflow,
-    Recycle(NodeRecycleAbort),
-    Error(ErrorOutcome),
-    NativeFont(NativeFontAbort),
-}
-
-impl From<NativeFontAbort> for NativeCharAbort {
-    fn from(e: NativeFontAbort) -> Self {
-        NativeCharAbort::NativeFont(e)
-    }
-}
-
-impl NativeCharAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            NativeCharAbort::PoolOverflow => crate::errors::EngineAbort::PoolOverflow,
-            NativeCharAbort::Recycle(e) => e.into_engine_abort(),
-            NativeCharAbort::Error(outcome) => outcome.into_engine_abort(),
-            NativeCharAbort::NativeFont(e) => e.into_engine_abort(),
-        }
-    }
-}
-
 /// Warn about `c` when font `f` has no glyph for it.
-fn check_native_char(st: &mut EngineState, f: i32, c: i32) -> Result<(), NativeCharAbort> {
+fn check_native_char(st: &mut EngineState, f: i32, c: i32) -> Result<(), Abort> {
     // SAFETY: font-table lookup over FFI, no state re-entry.
     if unsafe { st.fonts.map_char_to_glyph(f, c) }? == 0 {
-        let outcome = char_warning(st, f, c);
-        if !matches!(outcome, ErrorOutcome::Continue) {
-            return Err(NativeCharAbort::Error(outcome));
-        }
+        char_warning(st, f, c)?;
     }
     Ok(())
 }
@@ -213,11 +184,11 @@ pub(crate) fn new_native_character(
     st: &mut EngineState,
     f: i32,
     c: u32,
-) -> Result<NodePtr<WhatsitNode>, NativeCharAbort> {
+) -> Result<NodePtr<WhatsitNode>, Abort> {
     let src = if st.fonts.font_mapping[f as usize].is_some() {
         let (units, n) = utf16_units(c);
         if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
-            return Err(NativeCharAbort::PoolOverflow);
+            return Err(Abort::PoolOverflow);
         }
         for unit in &units[..n] {
             st.strings.str_pool[st.strings.pool_ptr as usize] = *unit;
@@ -256,10 +227,7 @@ pub(crate) fn new_native_character(
         NativeCharSrc::Single(c)
     };
 
-    let w = st
-        .mem
-        .build_native_character(&st.eqtb, &st.fonts, f, src)
-        .map_err(NativeCharAbort::Recycle)?;
+    let w = st.mem.build_native_character(&st.eqtb, &st.fonts, f, src)?;
     let use_glyph_metrics = st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
     // SAFETY: the measurer only reads font tables over re-entry-free FFI.
     unsafe {
@@ -311,34 +279,6 @@ unsafe fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Opti
     }
 }
 
-pub(crate) enum ReadFontInfoAbort {
-    TfmOutOfMemory,
-    Native(LoadNativeFontAbort),
-    Error(ErrorOutcome),
-    InputClose,
-}
-
-impl From<NativeFontAbort> for ReadFontInfoAbort {
-    fn from(e: NativeFontAbort) -> Self {
-        ReadFontInfoAbort::Native(LoadNativeFontAbort::NativeFont(e))
-    }
-}
-
-impl ReadFontInfoAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            ReadFontInfoAbort::TfmOutOfMemory => {
-                crate::errors::EngineAbort::TtAbort("not enough memory to load another font")
-            }
-            ReadFontInfoAbort::Native(e) => e.into_engine_abort(),
-            ReadFontInfoAbort::Error(outcome) => outcome.into_engine_abort(),
-            ReadFontInfoAbort::InputClose => crate::errors::EngineAbort::TtAbort(
-                "serious internal error closing the font metric file",
-            ),
-        }
-    }
-}
-
 pub(crate) fn name_of_file_ptr(st: &mut EngineState) -> *mut libc::c_char {
     if st.input.name_of_file.is_empty() {
         std::ptr::null_mut()
@@ -376,7 +316,7 @@ pub(crate) unsafe fn read_font_info(
     nom: i32,
     aire: i32,
     s: i32,
-) -> Result<i32, ReadFontInfoAbort> {
+) -> Result<i32, Abort> {
     let mut name_too_long = false;
     let mut file_opened = false;
     let mut g = FONT_BASE;
@@ -413,7 +353,7 @@ pub(crate) unsafe fn read_font_info(
         }
 
         if st.scanner.quoted_filename {
-            g = load_native_font(st, u, nom, aire, s).map_err(ReadFontInfoAbort::Native)?;
+            g = load_native_font(st, u, nom, aire, s)?;
             if g != FONT_BASE {
                 break 'read;
             }
@@ -431,7 +371,7 @@ pub(crate) unsafe fn read_font_info(
         tfm_file = tt_xetex_open_input(st, TTBC_FILE_FORMAT_TFM);
         if tfm_file == INVALID_HANDLE {
             if !st.scanner.quoted_filename {
-                g = load_native_font(st, u, nom, aire, s).map_err(ReadFontInfoAbort::Native)?;
+                g = load_native_font(st, u, nom, aire, s)?;
                 if g != FONT_BASE {
                     break 'read;
                 }
@@ -450,7 +390,9 @@ pub(crate) unsafe fn read_font_info(
             }
         }
         match parse {
-            TfmParse::OutOfMemory => return Err(ReadFontInfoAbort::TfmOutOfMemory),
+            TfmParse::OutOfMemory => {
+                return Err(Abort::Internal("not enough memory to load another font"))
+            }
             TfmParse::Bad => bad!(),
             TfmParse::Loaded(f) => {
                 g = f;
@@ -480,14 +422,13 @@ pub(crate) unsafe fn read_font_info(
             r"e.g., type `I\font<same font id>=<substitute font name>'.",
         ]);
 
-        let outcome = crate::errors::error(st);
-        if !matches!(outcome, ErrorOutcome::Continue) {
-            return Err(ReadFontInfoAbort::Error(outcome));
-        }
+        crate::errors::error(st)?;
     }
 
     if file_opened && crate::io::input_close(tfm_file) {
-        return Err(ReadFontInfoAbort::InputClose);
+        return Err(Abort::Internal(
+            "serious internal error closing the font metric file",
+        ));
     }
 
     if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 && (g == FONT_BASE || file_opened) {
@@ -511,32 +452,6 @@ enum TfmParse {
     Loaded(i32),
     Bad,
     OutOfMemory,
-}
-
-pub(crate) enum LoadNativeFontAbort {
-    PoolOverflow,
-    StringOverflow(NodeRecycleAbort),
-    NativeChar(NativeCharAbort),
-    Error(ErrorOutcome),
-    NativeFont(NativeFontAbort),
-}
-
-impl From<NativeFontAbort> for LoadNativeFontAbort {
-    fn from(e: NativeFontAbort) -> Self {
-        LoadNativeFontAbort::NativeFont(e)
-    }
-}
-
-impl LoadNativeFontAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            LoadNativeFontAbort::PoolOverflow => crate::errors::EngineAbort::PoolOverflow,
-            LoadNativeFontAbort::StringOverflow(e) => e.into_engine_abort(),
-            LoadNativeFontAbort::NativeChar(e) => e.into_engine_abort(),
-            LoadNativeFontAbort::Error(outcome) => outcome.into_engine_abort(),
-            LoadNativeFontAbort::NativeFont(e) => e.into_engine_abort(),
-        }
-    }
 }
 
 impl FontState {
@@ -862,7 +777,7 @@ pub(crate) unsafe fn load_native_font(
     nom: i32,
     aire: i32,
     s: i32,
-) -> Result<i32, LoadNativeFontAbort> {
+) -> Result<i32, Abort> {
     let name_of_file = name_of_file_ptr(st);
     let Some(font_engine) = find_native_font(st, name_of_file, s)? else {
         return Ok(FONT_BASE);
@@ -877,17 +792,14 @@ pub(crate) unsafe fn load_native_font(
     };
 
     if st.strings.pool_ptr + st.input.name_length > st.strings.pool_size {
-        return Err(LoadNativeFontAbort::PoolOverflow);
+        return Err(Abort::PoolOverflow);
     }
     for k in 0..st.input.name_length {
         st.strings.str_pool[st.strings.pool_ptr as usize] =
             st.input.name_of_file[k as usize] as u16;
         st.strings.pool_ptr += 1;
     }
-    let full_name = st
-        .strings
-        .make_string()
-        .map_err(LoadNativeFontAbort::StringOverflow)?;
+    let full_name = st.strings.make_string()?;
 
     for f in FONT_BASE + 1..=st.fonts.font_ptr {
         if st.fonts.font_area[f as usize] == st.fonts.native_font_type_flag
@@ -925,10 +837,7 @@ pub(crate) unsafe fn load_native_font(
             r"Or maybe try `I\font<same font id>=<name of loaded font>'.",
         ]);
 
-        let outcome = crate::errors::error(st);
-        if !matches!(outcome, ErrorOutcome::Continue) {
-            return Err(LoadNativeFontAbort::Error(outcome));
-        }
+        crate::errors::error(st)?;
         return Ok(FONT_BASE);
     }
 
@@ -940,8 +849,7 @@ pub(crate) unsafe fn load_native_font(
         num_font_dimens,
     );
 
-    let space =
-        new_native_character(st, font_ptr, b' ' as u32).map_err(LoadNativeFontAbort::NativeChar)?;
+    let space = new_native_character(st, font_ptr, b' ' as u32)?;
     let space_width = space.width(&st.mem).0 + st.fonts.loaded_font_letter_space;
     space.free_native(&mut st.mem);
 

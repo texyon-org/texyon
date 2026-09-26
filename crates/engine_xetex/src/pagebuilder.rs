@@ -5,9 +5,9 @@ use crate::consts::{
     EJECT_PENALTY, FIRST_MARK_CODE, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TOP_SKIP, IGNORE_DEPTH,
     INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_BASE, INT_PAR_HOLDING_INSERTS,
     INT_PAR_MAX_DEAD_CYCLES, INT_PAR_OUTPUT_PENALTY, INT_PAR_SAVING_VDISCARDS, INT_PAR_VBADNESS,
-    LOCAL_OUTPUT_ROUTINE, MAX_HALFWORD, MEM_TOP, NORMAL, TEX_NULL, TOP_MARK_CODE, VMODE,
+    LOCAL_OUTPUT_ROUTINE, MAX_HALFWORD, NORMAL, TEX_NULL, TOP_MARK_CODE, VMODE,
 };
-use crate::errors::ErrorOutcome;
+use crate::errors::Abort;
 use crate::helpers::badness;
 use crate::input::OUTPUT_TEXT;
 use crate::main_control::{COPY_CODE, LAST_BOX_CODE};
@@ -29,80 +29,6 @@ pub(crate) const FIRE_UP_INIT: i16 = 1;
 pub(crate) const FIRE_UP_DONE: i16 = 2;
 const PAGE_INS_NODE_SIZE: i32 = 4;
 const DEPLORABLE: i32 = 100_000;
-
-pub(crate) enum PageBuildAbort {
-    Input(crate::input::InputAbort),
-    NodeRecycle(crate::scan::NodeRecycleAbort),
-    Save(crate::save::SaveAbort),
-    Scc(crate::scan::SccAbort),
-    Shipout(crate::shipout::ShipoutAbort),
-    VertBreak(crate::packaging::VertBreakAbort),
-    MainMemoryOverflow,
-    MainMemoryOverflowRunaway,
-    Confusion(&'static str),
-}
-
-impl From<crate::input::InputAbort> for PageBuildAbort {
-    fn from(a: crate::input::InputAbort) -> Self {
-        PageBuildAbort::Input(a)
-    }
-}
-
-impl From<crate::scan::NodeRecycleAbort> for PageBuildAbort {
-    fn from(a: crate::scan::NodeRecycleAbort) -> Self {
-        PageBuildAbort::NodeRecycle(a)
-    }
-}
-
-impl From<crate::scan::SccAbort> for PageBuildAbort {
-    fn from(a: crate::scan::SccAbort) -> Self {
-        PageBuildAbort::Scc(a)
-    }
-}
-
-impl From<crate::shipout::ShipoutAbort> for PageBuildAbort {
-    fn from(a: crate::shipout::ShipoutAbort) -> Self {
-        PageBuildAbort::Shipout(a)
-    }
-}
-
-impl From<crate::packaging::VertBreakAbort> for PageBuildAbort {
-    fn from(a: crate::packaging::VertBreakAbort) -> Self {
-        PageBuildAbort::VertBreak(a)
-    }
-}
-
-impl From<crate::save::SaveAbort> for PageBuildAbort {
-    fn from(e: crate::save::SaveAbort) -> Self {
-        PageBuildAbort::Save(e)
-    }
-}
-
-impl PageBuildAbort {
-    /// `MainMemoryOverflowRunaway` also reports the runaway text.
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            PageBuildAbort::Input(a) => a.into_engine_abort(),
-            PageBuildAbort::NodeRecycle(a) => a.into_engine_abort(),
-            PageBuildAbort::Save(a) => a.into_engine_abort(),
-            PageBuildAbort::Scc(a) => a.into_engine_abort(),
-            PageBuildAbort::Shipout(a) => a.into_engine_abort(),
-            PageBuildAbort::VertBreak(a) => a.into_engine_abort(),
-            PageBuildAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
-                what: "main memory size",
-                n: MEM_TOP + 1,
-            },
-            PageBuildAbort::MainMemoryOverflowRunaway => {
-                crate::errors::EngineAbort::MainMemoryOverflow
-            }
-            PageBuildAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s),
-        }
-    }
-}
-
-fn page_error(outcome: ErrorOutcome) -> Result<(), PageBuildAbort> {
-    crate::scan::scc_err(outcome).map_err(PageBuildAbort::Scc)
-}
 
 pub fn initialize_pagebuilder_variables(st: &mut EngineState) {
     st.shipout.page_max_depth = 0;
@@ -131,7 +57,7 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
     shipout.least_page_cost = MAX_HALFWORD;
 }
 
-fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), PageBuildAbort> {
+fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     if !matches!(fetch_box(st, n as i32), Some(AnyBox::HList(_))) {
         return Ok(());
     }
@@ -141,25 +67,16 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), PageBuildAbort> {
         r"\box register that now contains an \hbox.",
         "Proceed, and I'll discard its present contents.",
     ]);
-    page_error(crate::errors::box_error(st, n))
-}
-
-fn push_nest_pagebuilder(st: &mut EngineState) -> Result<(), PageBuildAbort> {
-    crate::mem::push_nest(st).map_err(|e| match e {
-        crate::mem::PushNestAbort::SemanticNest => PageBuildAbort::Save(
-            crate::save::SaveAbort::Overflow("semantic nest size", st.input.nest_size),
-        ),
-        crate::mem::PushNestAbort::MainMemory => PageBuildAbort::MainMemoryOverflowRunaway,
-    })
+    crate::errors::box_error(st, n)
 }
 
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
-fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<(), PageBuildAbort> {
+fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<(), Abort> {
     if class != 0 {
         let sa = st
             .mem
             .create_sa_element(&mut st.scanner, MARK_VAL, class)
-            .ok_or(PageBuildAbort::MainMemoryOverflow)?;
+            .ok_or(Abort::NodeOverflow)?;
         if sa.child(&st.mem, 1).is_null() {
             sa.set_child(&mut st.mem, 1, mark_ptr);
             st.mem.add_token_ref(mark_ptr);
@@ -187,11 +104,7 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<()
 
 /// Moves insertion `ins` at `p` into its box when it made it onto the page.
 /// Returns whether it has to wait for the next page.
-fn place_insertion(
-    st: &mut EngineState,
-    ins: NodePtr<InsNode>,
-    p: MemPtr,
-) -> Result<bool, PageBuildAbort> {
+fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Result<bool, Abort> {
     let mut r = PAGE_INS_HEAD.link(&st.mem);
     while page_ins(r).subtype(&st.mem) != ins.subtype(&st.mem) {
         r = r.link(&st.mem);
@@ -243,7 +156,7 @@ fn place_insertion(
 }
 
 /// TeX's `fire_up`: puts the best page into `\box255` and runs the output routine.
-fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
+fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let best = st.shipout.best_page_break;
     let output_penalty = match best.as_idx().map(|b| st.mem.classify(b)) {
         Some(Ok(AnyNode::Penalty(pen))) => {
@@ -284,7 +197,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
             r"You shouldn't use \box255 except in \output routines.",
             "Proceed, and I'll discard its present contents.",
         ]);
-        page_error(crate::errors::box_error(st, 255))?;
+        crate::errors::box_error(st, 255)?;
     }
 
     st.shipout.insert_penalties = 0;
@@ -299,10 +212,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
                 let n = rec.subtype(&st.mem) as u8;
                 ensure_vbox(st, n)?;
                 if st.eqtb.box_reg(n as i32).is_null() {
-                    let b = st
-                        .mem
-                        .new_null_box()
-                        .ok_or(PageBuildAbort::MainMemoryOverflow)?;
+                    let b = st.mem.new_null_box().ok_or(Abort::NodeOverflow)?;
                     st.eqtb.set_box_reg(n as i32, b.ptr());
                 }
                 // The box's `list_ptr` word serves as the head link of its list.
@@ -415,7 +325,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         if st.shipout.dead_cycles < st.eqtb.int_par(INT_PAR_MAX_DEAD_CYCLES) {
             st.shipout.output_active = true;
             st.shipout.dead_cycles += 1;
-            push_nest_pagebuilder(st)?;
+            crate::mem::push_nest(st)?;
             st.input.cur_list.mode = -VMODE;
             st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
             st.input.cur_list.mode_line = -st.mem.line;
@@ -435,7 +345,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
             r"\shipout, so I'm shipping \box255 out myself. Next time",
             r"increase \maxdeadcycles if you want me to be more patient!",
         ]);
-        page_error(crate::errors::error(st))?;
+        crate::errors::error(st)?;
     }
 
     if !PAGE_HEAD.link(&st.mem).is_null() {
@@ -451,9 +361,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         st.shipout.page_tail = PAGE_HEAD;
     }
     let discards = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
-    st.mem
-        .flush_node_list(discards.0)
-        .map_err(PageBuildAbort::Confusion)?;
+    st.mem.flush_node_list(discards.0)?;
     st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
     unsafe { crate::shipout::ship_out(st, page)? };
     st.eqtb.set_box_reg(255, MemPtr::NULL);
@@ -505,11 +413,7 @@ fn scale_by_count(st: &mut EngineState, x: i32, count: i32) -> i32 {
 }
 
 /// Adds insertion `ins` at `p` to the current page, splitting it if needed.
-fn append_insertion(
-    st: &mut EngineState,
-    ins: NodePtr<InsNode>,
-    p: MemPtr,
-) -> Result<(), PageBuildAbort> {
+fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Result<(), Abort> {
     if st.shipout.page_contents == PageContents::Empty {
         freeze_page_specs(st, PageContents::InsertsOnly);
     }
@@ -522,7 +426,7 @@ fn append_insertion(
         let q = st
             .mem
             .get_node(PAGE_INS_NODE_SIZE)
-            .ok_or(PageBuildAbort::MainMemoryOverflow)?;
+            .ok_or(Abort::NodeOverflow)?;
         let next = r.link(&st.mem);
         q.set_link(&mut st.mem, next);
         r.set_link(&mut st.mem, q);
@@ -554,7 +458,7 @@ fn append_insertion(
                 "must have finite shrinkability. But you may proceed,",
                 "since the offensive shrinkability has been made finite.",
             ]);
-            page_error(crate::errors::error(st))?;
+            crate::errors::error(st)?;
         }
     }
 
@@ -622,7 +526,7 @@ enum PageStep {
     Break(i32),
 }
 
-pub(crate) fn build_page(st: &mut EngineState) -> Result<(), PageBuildAbort> {
+pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
     if CONTRIB_HEAD.link(&st.mem).is_null() || st.shipout.output_active {
         return Ok(());
     }
@@ -653,7 +557,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), PageBuildAbort> {
                     let q = st
                         .mem
                         .new_skip_param(&st.eqtb, GLUE_PAR_TOP_SKIP)
-                        .ok_or(PageBuildAbort::MainMemoryOverflow)?;
+                        .ok_or(Abort::NodeOverflow)?;
                     let spec = q.glue_ptr(&st.mem);
                     let width = spec.width(&st.mem).0;
                     let width = if width > height { width - height } else { 0 };
@@ -705,7 +609,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), PageBuildAbort> {
                 append_insertion(st, ins, p)?;
                 PageStep::Contribute
             }
-            _ => return Err(PageBuildAbort::Confusion("page")),
+            _ => return Err(Abort::Confusion("page")),
         };
 
         let step = match step {
@@ -770,9 +674,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), PageBuildAbort> {
                 CONTRIB_HEAD.set_link(&mut st.mem, next);
                 p.set_link(&mut st.mem, MemPtr::NULL);
                 if st.eqtb.int_par(INT_PAR_SAVING_VDISCARDS) <= 0 {
-                    st.mem
-                        .flush_node_list(p.0)
-                        .map_err(PageBuildAbort::Confusion)?;
+                    st.mem.flush_node_list(p.0)?;
                 } else {
                     let discards = &mut st.scanner.disc_ptr;
                     if discards[LAST_BOX_CODE as usize].is_null() {
@@ -795,7 +697,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), PageBuildAbort> {
 fn page_glue_width(
     st: &mut EngineState,
     glue: NodePtr<crate::node::GlueNode>,
-) -> Result<i32, PageBuildAbort> {
+) -> Result<i32, Abort> {
     let spec = glue.glue_ptr(&st.mem);
     let order = spec.stretch_order(&st.mem) as usize;
     st.shipout.page_so_far[2 + order] += spec.stretch(&st.mem).0;
@@ -810,11 +712,8 @@ fn page_glue_width(
         "Such glue doesn't belong there; but you can safely proceed,",
         "since the offensive shrinkability has been made finite.",
     ]);
-    page_error(crate::errors::error(st))?;
-    let finite = st
-        .mem
-        .new_spec(spec)
-        .ok_or(PageBuildAbort::MainMemoryOverflow)?;
+    crate::errors::error(st)?;
+    let finite = st.mem.new_spec(spec).ok_or(Abort::NodeOverflow)?;
     finite.set_shrink_order(&mut st.mem, NORMAL);
     st.mem.delete_glue_ref(spec);
     glue.set_glue_ptr(&mut st.mem, finite);

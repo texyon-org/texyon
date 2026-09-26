@@ -12,7 +12,7 @@ use crate::consts::{
     RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE, SPLIT_BOT_MARK_CODE,
     SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, WRITE_NODE_SIZE,
 };
-use crate::errors::ErrorOutcome;
+use crate::errors::Abort;
 use crate::main_control::VSPLIT_CODE;
 use crate::mem::{end_lr_type, GARBAGE, TEMP_HEAD};
 use crate::mem_types::ListStateRecord;
@@ -21,7 +21,7 @@ use crate::node::{
     MarkNode, NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::pagebuilder::{FIRE_UP_DONE, FIRE_UP_INIT};
-use crate::scan::{NodeRecycleAbort, MARK_VAL};
+use crate::scan::MARK_VAL;
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -75,11 +75,6 @@ impl MemState {
         })
     }
 
-    #[inline]
-    fn get_node_or_overflow(&mut self, size: i32) -> Result<MemPtr, NodeRecycleAbort> {
-        self.get_node(size).ok_or(NodeRecycleAbort::Overflow)
-    }
-
     /// Copy the first `words` words of node `src` to node `dst`.
     #[inline]
     fn copy_words(&mut self, dst: MemPtr, src: MemPtr, words: i32) {
@@ -88,8 +83,8 @@ impl MemState {
         }
     }
 
-    fn copy_box_shell(&mut self, src: AnyBox, list: MemPtr) -> Result<AnyBox, NodeRecycleAbort> {
-        let r = self.get_node_or_overflow(BOX_NODE_SIZE)?;
+    fn copy_box_shell(&mut self, src: AnyBox, list: MemPtr) -> Result<AnyBox, Abort> {
+        let r = self.get_node(BOX_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
         self.copy_words(r, src.ptr(), BOX_NODE_SIZE);
         let r = match src {
             AnyBox::HList(b) => AnyBox::HList(copied_node(b, r)),
@@ -100,12 +95,9 @@ impl MemState {
     }
 
     /// A copy of glue node `p` sharing its spec. The leader pointer is left to the caller.
-    fn copy_glue_shell(
-        &mut self,
-        p: NodePtr<GlueNode>,
-    ) -> Result<NodePtr<GlueNode>, NodeRecycleAbort> {
+    fn copy_glue_shell(&mut self, p: NodePtr<GlueNode>) -> Result<NodePtr<GlueNode>, Abort> {
         let spec = p.glue_ptr(self);
-        let r = self.get_node_or_overflow(MEDIUM_NODE_SIZE)?;
+        let r = self.get_node(MEDIUM_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
         self.add_glue_ref(spec);
         let sync = MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE;
         self.set_word(r, self.word(p.ptr()));
@@ -117,11 +109,11 @@ impl MemState {
 
     /// Allocate a copy of whatsit `w`, returning it and how many of its leading
     /// words are still to be copied.
-    fn copy_whatsit(&mut self, w: NodePtr<WhatsitNode>) -> Result<(MemPtr, i32), NodeRecycleAbort> {
+    fn copy_whatsit(&mut self, w: NodePtr<WhatsitNode>) -> Result<(MemPtr, i32), Abort> {
         let Some(size) = self.whatsit_node_size(w) else {
-            return Err(NodeRecycleAbort::Confusion("ext2"));
+            return Err(Abort::Confusion("ext2"));
         };
-        let r = self.get_node_or_overflow(size)?;
+        let r = self.get_node(size).ok_or(Abort::NodeOverflow)?;
         match w.whatsit_subtype(self) {
             Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
                 self.copy_words(r, w.ptr(), size);
@@ -142,15 +134,10 @@ impl MemState {
 
     /// Copy the list `p` without the contents of its boxes, linking the copies
     /// after `h` and ending them with `t`.
-    pub fn just_copy(
-        &mut self,
-        mut p: MemPtr,
-        mut h: MemPtr,
-        t: MemPtr,
-    ) -> Result<(), NodeRecycleAbort> {
+    pub fn just_copy(&mut self, mut p: MemPtr, mut h: MemPtr, t: MemPtr) -> Result<(), Abort> {
         while !p.is_null() {
             let copy = if self.is_char_node(p) {
-                let r = self.get_avail().ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                let r = self.get_avail().ok_or(Abort::AvailOverflow)?;
                 Some((r, 1))
             } else {
                 match self.classify(MemIdx::new(p)).ok() {
@@ -162,16 +149,17 @@ impl MemState {
                         self.copy_box_shell(AnyBox::VList(b), MemPtr::NULL)?.ptr(),
                         0,
                     )),
-                    Some(AnyNode::Rule(_)) => {
-                        Some((self.get_node_or_overflow(RULE_NODE_SIZE)?, RULE_NODE_SIZE))
-                    }
+                    Some(AnyNode::Rule(_)) => Some((
+                        self.get_node(RULE_NODE_SIZE).ok_or(Abort::NodeOverflow)?,
+                        RULE_NODE_SIZE,
+                    )),
                     Some(AnyNode::Ligature(lig)) => {
-                        let r = self.get_avail().ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                        let r = self.get_avail().ok_or(Abort::AvailOverflow)?;
                         self.set_word(r, self.word(lig.ptr() + 1));
                         Some((r, 0))
                     }
                     Some(AnyNode::Kern(_) | AnyNode::Math(_)) => Some((
-                        self.get_node_or_overflow(MEDIUM_NODE_SIZE)?,
+                        self.get_node(MEDIUM_NODE_SIZE).ok_or(Abort::NodeOverflow)?,
                         MEDIUM_NODE_SIZE,
                     )),
                     Some(AnyNode::Glue(g)) => {
@@ -197,11 +185,7 @@ impl MemState {
     }
 
     /// Reverse the hlist after `p` for TeX--XeT, leaving the result after `TEMP_HEAD`.
-    pub fn just_reverse(
-        &mut self,
-        scanner: &mut ScannerState,
-        p: MemPtr,
-    ) -> Result<(), NodeRecycleAbort> {
+    pub fn just_reverse(&mut self, scanner: &mut ScannerState, p: MemPtr) -> Result<(), Abort> {
         let mut m = MIN_HALFWORD;
         let mut n = MIN_HALFWORD;
 
@@ -211,14 +195,13 @@ impl MemState {
         } else {
             let q = p.link(self);
             p.set_link(self, MemPtr::NULL);
-            self.flush_node_list(TEMP_HEAD.link(self))
-                .map_err(NodeRecycleAbort::Confusion)?;
+            self.flush_node_list(TEMP_HEAD.link(self))?;
             q
         };
 
         let t = self
             .new_edge(scanner.cur_dir, 0)
-            .ok_or(NodeRecycleAbort::Overflow)?;
+            .ok_or(Abort::NodeOverflow)?;
         let mut l = t.ptr();
         scanner.cur_dir = 1 - scanner.cur_dir;
 
@@ -264,7 +247,7 @@ impl MemState {
                         }
                     } else {
                         self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))
-                            .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                            .ok_or(Abort::AvailOverflow)?;
 
                         if n > MIN_HALFWORD || (subtype / R_CODE) as i16 != scanner.cur_dir {
                             n += 1;
@@ -286,7 +269,7 @@ impl MemState {
     }
 
     /// Free every node of the list `p` and everything it owns.
-    pub fn flush_node_list(&mut self, p: impl crate::units::MemAddr) -> Result<(), &'static str> {
+    pub fn flush_node_list(&mut self, p: impl crate::units::MemAddr) -> Result<(), Abort> {
         let mut p = MemPtr(p.addr());
         while !p.is_null() {
             let q = p.link(self);
@@ -296,7 +279,10 @@ impl MemState {
                 continue;
             }
 
-            let size = match self.classify(MemIdx::new(p)).map_err(|_| "flushing")? {
+            let size = match self
+                .classify(MemIdx::new(p))
+                .map_err(|_| Abort::Confusion("flushing"))?
+            {
                 AnyNode::HList(b) => {
                     self.flush_node_list(b.list_ptr(self))?;
                     BOX_NODE_SIZE
@@ -316,7 +302,7 @@ impl MemState {
                     INS_NODE_SIZE
                 }
                 AnyNode::Whatsit(w) => {
-                    let size = self.whatsit_node_size(w).ok_or("ext3")?;
+                    let size = self.whatsit_node_size(w).ok_or(Abort::Confusion("ext3"))?;
                     match w.whatsit_subtype(self) {
                         Some(WhatsitSubtype::Write | WhatsitSubtype::Special) => {
                             self.delete_token_ref(w.write_tokens(self));
@@ -393,7 +379,7 @@ impl MemState {
 
     /// A deep copy of the list `p`.
     /// A copy of box `b` and its contents.
-    pub(crate) fn copy_box(&mut self, b: AnyBox) -> Result<AnyBox, NodeRecycleAbort> {
+    pub(crate) fn copy_box(&mut self, b: AnyBox) -> Result<AnyBox, Abort> {
         let r = self.copy_list(b.ptr())?;
         Ok(match b {
             AnyBox::HList(h) => AnyBox::HList(copied_node(h, r)),
@@ -401,19 +387,16 @@ impl MemState {
         })
     }
 
-    pub fn copy_node_list(&mut self, p: i32) -> Result<i32, NodeRecycleAbort> {
+    pub fn copy_node_list(&mut self, p: i32) -> Result<i32, Abort> {
         Ok(self.copy_list(MemPtr(p))?.0)
     }
 
-    fn copy_list(&mut self, mut p: MemPtr) -> Result<MemPtr, NodeRecycleAbort> {
-        let h = self.get_avail().ok_or(NodeRecycleAbort::OverflowRunaway)?;
+    fn copy_list(&mut self, mut p: MemPtr) -> Result<MemPtr, Abort> {
+        let h = self.get_avail().ok_or(Abort::AvailOverflow)?;
         let mut q = h;
         while !p.is_null() {
             let (r, words) = if self.is_char_node(p) {
-                (
-                    self.get_avail().ok_or(NodeRecycleAbort::OverflowRunaway)?,
-                    1,
-                )
+                (self.get_avail().ok_or(Abort::AvailOverflow)?, 1)
             } else {
                 self.copy_node(p)?
             };
@@ -430,10 +413,10 @@ impl MemState {
 
     /// Allocate a copy of the non-char node `p`, returning it and how many of its
     /// leading words are still to be copied.
-    fn copy_node(&mut self, p: MemPtr) -> Result<(MemPtr, i32), NodeRecycleAbort> {
+    fn copy_node(&mut self, p: MemPtr) -> Result<(MemPtr, i32), Abort> {
         let node = self
             .classify(MemIdx::new(p))
-            .map_err(|_| NodeRecycleAbort::Confusion("copying"))?;
+            .map_err(|_| Abort::Confusion("copying"))?;
         Ok(match node {
             AnyNode::HList(b) => {
                 let list = self.copy_list(b.list_ptr(self))?;
@@ -444,18 +427,18 @@ impl MemState {
                 (self.copy_box_shell(AnyBox::VList(b), list)?.ptr(), 0)
             }
             AnyNode::Unset(u) => {
-                let r = self.get_node_or_overflow(BOX_NODE_SIZE)?;
+                let r = self.get_node(BOX_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
                 self.copy_words(r, p, BOX_NODE_SIZE);
                 let list = self.copy_list(u.list_ptr(self))?;
                 copied_node(u, r).set_list_ptr(self, list);
                 (r, 0)
             }
             AnyNode::Rule(_) => (
-                self.get_node_or_overflow(RULE_NODE_SIZE)?,
+                self.get_node(RULE_NODE_SIZE).ok_or(Abort::NodeOverflow)?,
                 RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE,
             ),
             AnyNode::Ins(ins) => {
-                let r = self.get_node_or_overflow(INS_NODE_SIZE)?;
+                let r = self.get_node(INS_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
                 self.copy_words(r, p, INS_NODE_SIZE);
                 self.add_glue_ref(ins.split_top_ptr(self));
                 let list = self.copy_list(ins.ins_ptr(self))?;
@@ -470,22 +453,23 @@ impl MemState {
                 (r.ptr(), 0)
             }
             AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => (
-                self.get_node_or_overflow(MEDIUM_NODE_SIZE)?,
+                self.get_node(MEDIUM_NODE_SIZE).ok_or(Abort::NodeOverflow)?,
                 MEDIUM_NODE_SIZE,
             ),
             AnyNode::MarginKern(_) => (
-                self.get_node_or_overflow(MARGIN_KERN_NODE_SIZE)?,
+                self.get_node(MARGIN_KERN_NODE_SIZE)
+                    .ok_or(Abort::NodeOverflow)?,
                 MARGIN_KERN_NODE_SIZE,
             ),
             AnyNode::Ligature(lig) => {
-                let r = self.get_node_or_overflow(SMALL_NODE_SIZE)?;
+                let r = self.get_node(SMALL_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
                 self.copy_words(r, p, SMALL_NODE_SIZE);
                 let components = self.copy_list(lig.lig_ptr(self))?;
                 copied_node(lig, r).set_lig_ptr(self, components);
                 (r, 0)
             }
             AnyNode::Disc(disc) => {
-                let r = self.get_node_or_overflow(SMALL_NODE_SIZE)?;
+                let r = self.get_node(SMALL_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
                 self.copy_words(r, p, 1);
                 let copy = copied_node(disc, r);
                 let pre_break = self.copy_list(disc.pre_break(self))?;
@@ -495,18 +479,18 @@ impl MemState {
                 (r, 0)
             }
             AnyNode::Mark(mark) => {
-                let r = self.get_node_or_overflow(SMALL_NODE_SIZE)?;
+                let r = self.get_node(SMALL_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
                 self.add_token_ref(mark.mark_ptr(self));
                 (r, SMALL_NODE_SIZE)
             }
             AnyNode::Adjust(adjust) => {
-                let r = self.get_node_or_overflow(SMALL_NODE_SIZE)?;
+                let r = self.get_node(SMALL_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
                 self.copy_words(r, p, 1);
                 let list = self.copy_list(adjust.adjust_ptr(self))?;
                 copied_node(adjust, r).set_adjust_ptr(self, list);
                 (r, 0)
             }
-            _ => return Err(NodeRecycleAbort::Confusion("copying")),
+            _ => return Err(Abort::Confusion("copying")),
         })
     }
 }
@@ -518,7 +502,7 @@ impl ListStateRecord {
         mem: &mut MemState,
         eqtb: &EqtbState,
         b: AnyBox,
-    ) -> Result<(), NodeRecycleAbort> {
+    ) -> Result<(), Abort> {
         let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
         let prev_depth = self.aux_s1();
         if prev_depth > IGNORE_DEPTH {
@@ -532,11 +516,11 @@ impl ListStateRecord {
                 };
             let p = if d < eqtb.dimen_par(DIMEN_PAR_LINE_SKIP_LIMIT) {
                 mem.new_param_glue(eqtb, GLUE_PAR_LINE_SKIP)
-                    .ok_or(NodeRecycleAbort::Overflow)?
+                    .ok_or(Abort::NodeOverflow)?
             } else {
                 let p = mem
                     .new_skip_param(eqtb, GLUE_PAR_BASELINE_SKIP)
-                    .ok_or(NodeRecycleAbort::Overflow)?;
+                    .ok_or(Abort::NodeOverflow)?;
                 p.glue_ptr(mem).set_width(mem, Scaled(d));
                 p
             };
@@ -552,7 +536,7 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn append_to_vlist(st: &mut EngineState, b: AnyBox) -> Result<(), NodeRecycleAbort> {
+pub(crate) fn append_to_vlist(st: &mut EngineState, b: AnyBox) -> Result<(), Abort> {
     st.input.cur_list.append_to_vlist(&mut st.mem, &st.eqtb, b)
 }
 
@@ -636,7 +620,7 @@ impl MemState {
         &self,
         scanner: &mut ScannerState,
         cursor: &mut VertBreakCursor,
-    ) -> Result<VertBreakNext, NodeRecycleAbort> {
+    ) -> Result<VertBreakNext, Abort> {
         if cursor.p.is_null() {
             return Ok(VertBreakNext::CheckPi {
                 pi: EJECT_PENALTY,
@@ -646,7 +630,7 @@ impl MemState {
 
         let node = self
             .classify(MemIdx::new(cursor.p))
-            .map_err(|_| NodeRecycleAbort::Confusion("vertbreak"))?;
+            .map_err(|_| Abort::Confusion("vertbreak"))?;
         cursor.breakable = node.precedes_break();
         match node {
             AnyNode::HList(b) => {
@@ -706,7 +690,7 @@ impl MemState {
                 update_after: None,
             }),
             AnyNode::Ins(_) | AnyNode::Mark(_) => Ok(VertBreakNext::NotFound),
-            _ => Err(NodeRecycleAbort::Confusion("vertbreak")),
+            _ => Err(Abort::Confusion("vertbreak")),
         }
     }
 
@@ -716,7 +700,7 @@ impl MemState {
         cursor: &mut VertBreakCursor,
         h: i32,
         d: i32,
-    ) -> Result<VertBreakStep, NodeRecycleAbort> {
+    ) -> Result<VertBreakStep, Abort> {
         loop {
             if let Some(glue) = cursor.finish_glue_after_shrinkage.take() {
                 let spec = glue.glue_ptr(self);
@@ -787,7 +771,7 @@ impl MemState {
     }
 }
 
-fn print_vert_break_infinite_shrinkage_error(st: &mut EngineState) -> ErrorOutcome {
+fn print_vert_break_infinite_shrinkage_error(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::print_err(st, "Infinite glue shrinkage found in box being split");
     st.errors.help(&[
         r"The box you are \vsplitting contains some infinitely",
@@ -803,40 +787,15 @@ impl MemState {
         &mut self,
         glue: NodePtr<GlueNode>,
         spec: NodePtr<GlueSpecNode>,
-    ) -> Result<(), NodeRecycleAbort> {
+    ) -> Result<(), Abort> {
         let spec = self.finite_shrink(spec)?;
         glue.set_glue_ptr(self, spec);
         Ok(())
     }
 }
 
-pub(crate) enum VertBreakAbort {
-    NodeRecycle(NodeRecycleAbort),
-    Error(ErrorOutcome),
-}
-
-impl From<NodeRecycleAbort> for VertBreakAbort {
-    fn from(e: NodeRecycleAbort) -> Self {
-        VertBreakAbort::NodeRecycle(e)
-    }
-}
-
-impl VertBreakAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            VertBreakAbort::NodeRecycle(e) => e.into_engine_abort(),
-            VertBreakAbort::Error(o) => o.into_engine_abort(),
-        }
-    }
-}
-
 /// The best place to break the vlist `p` for a height `h` with maximum depth `d`.
-pub(crate) fn vert_break(
-    st: &mut EngineState,
-    p: i32,
-    h: i32,
-    d: i32,
-) -> Result<i32, VertBreakAbort> {
+pub(crate) fn vert_break(st: &mut EngineState, p: i32, h: i32, d: i32) -> Result<i32, Abort> {
     let mut cursor = st.scanner.start_vert_break(MemPtr(p));
     loop {
         match st
@@ -845,10 +804,7 @@ pub(crate) fn vert_break(
         {
             VertBreakStep::Done(best_place) => return Ok(best_place.0),
             VertBreakStep::InfiniteShrinkage { glue, spec } => {
-                let outcome = print_vert_break_infinite_shrinkage_error(st);
-                if !matches!(outcome, ErrorOutcome::Continue) {
-                    return Err(VertBreakAbort::Error(outcome));
-                }
+                print_vert_break_infinite_shrinkage_error(st)?;
                 st.mem.repair_vert_break_infinite_shrinkage(glue, spec)?;
             }
         }
@@ -884,9 +840,8 @@ enum VsplitStep {
 
 impl MemState {
     /// The contents of box register `n`, leaving `n` in `cur_val`.
-    fn reset_vsplit_marks(&mut self, scanner: &mut ScannerState) -> Result<(), NodeRecycleAbort> {
-        self.flush_node_list(scanner.disc_ptr[VSPLIT_CODE as usize])
-            .map_err(NodeRecycleAbort::Confusion)?;
+    fn reset_vsplit_marks(&mut self, scanner: &mut ScannerState) -> Result<(), Abort> {
+        self.flush_node_list(scanner.disc_ptr[VSPLIT_CODE as usize])?;
         scanner.disc_ptr[VSPLIT_CODE as usize] = MemPtr::NULL;
 
         if let Some(root) = scanner.sa_root[MARK_VAL as usize].as_idx() {
@@ -906,7 +861,7 @@ impl MemState {
     }
 }
 
-fn start_vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<VsplitStart, NodeRecycleAbort> {
+fn start_vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<VsplitStart, Abort> {
     st.scanner.cur_val = n;
     let v = crate::scan::fetch_box(st, n);
     st.mem.reset_vsplit_marks(&mut st.scanner)?;
@@ -935,13 +890,13 @@ impl MemState {
         &mut self,
         scanner: &mut ScannerState,
         mark: NodePtr<MarkNode>,
-    ) -> Result<(), NodeRecycleAbort> {
+    ) -> Result<(), Abort> {
         let mark_class = mark.mark_class(self);
         let mark_ptr = mark.mark_ptr(self);
         if mark_class != 0 {
             let element = self
                 .create_sa_element(scanner, MARK_VAL, mark_class)
-                .ok_or(NodeRecycleAbort::Overflow)?;
+                .ok_or(Abort::NodeOverflow)?;
             let (first, bot) = (SPLIT_FIRST_MARK_CODE as i32, SPLIT_BOT_MARK_CODE as i32);
             if element.child(self, first).is_null() {
                 element.set_child(self, first, mark_ptr);
@@ -969,7 +924,7 @@ impl MemState {
         scanner: &mut ScannerState,
         state: &VsplitState,
         q: MemPtr,
-    ) -> Result<MemPtr, NodeRecycleAbort> {
+    ) -> Result<MemPtr, Abort> {
         let mut p = state.v.list_ptr(self);
         if p == q {
             state.v.set_list_ptr(self, MemPtr::NULL);
@@ -977,7 +932,7 @@ impl MemState {
             loop {
                 if let AnyNode::Mark(mark) = self
                     .classify(MemIdx::new(p))
-                    .map_err(|_| NodeRecycleAbort::Confusion("vsplit"))?
+                    .map_err(|_| Abort::Confusion("vsplit"))?
                 {
                     self.collect_split_mark(scanner, mark)?;
                 }
@@ -999,7 +954,7 @@ impl MemState {
         shipout: &mut ShipoutState,
         state: &VsplitState,
         q: MemPtr,
-    ) -> Result<VsplitOutcome, NodeRecycleAbort> {
+    ) -> Result<VsplitOutcome, Abort> {
         let mut packages = [None, None];
         let p = self.split_vlist_at_break(scanner, state, q)?;
         let save_discards = eqtb.int_par(INT_PAR_SAVING_VDISCARDS) > 0;
@@ -1035,7 +990,7 @@ impl MemState {
         scanner: &mut ScannerState,
         shipout: &mut ShipoutState,
         state: &mut VsplitState,
-    ) -> Result<VsplitStep, NodeRecycleAbort> {
+    ) -> Result<VsplitStep, Abort> {
         match self.vert_break_resume(scanner, &mut state.vert_break, state.h, state.split_max_d)? {
             VertBreakStep::Done(q) => {
                 let outcome = self.finish_vsplit_after_break(eqtb, scanner, shipout, state, q)?;
@@ -1048,7 +1003,7 @@ impl MemState {
     }
 }
 
-fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> ErrorOutcome {
+fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::error_here_with_diagnostic(st, "");
     crate::output::print_esc(st, "vsplit");
     crate::output::print(st, " needs a ");
@@ -1069,38 +1024,15 @@ fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
     }
 }
 
-pub(crate) enum VsplitAbort {
-    Node(NodeRecycleAbort),
-    Error(ErrorOutcome),
-}
-
-impl From<NodeRecycleAbort> for VsplitAbort {
-    fn from(e: NodeRecycleAbort) -> Self {
-        VsplitAbort::Node(e)
-    }
-}
-
-impl VsplitAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            VsplitAbort::Node(e) => e.into_engine_abort(),
-            VsplitAbort::Error(o) => o.into_engine_abort(),
-        }
-    }
-}
-
 /// `\vsplit n to h`: the box split off the top of box register `n`.
-pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<Option<AnyBox>, VsplitAbort> {
+pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<Option<AnyBox>, Abort> {
     let mut state = match start_vsplit(st, n, h)? {
         VsplitStart::Done(outcome) => {
             print_vsplit_packages(st, outcome);
             return Ok(outcome.result);
         }
         VsplitStart::NeedsVboxDiagnostic => {
-            let outcome = print_vsplit_needs_vbox_error(st);
-            if !matches!(outcome, ErrorOutcome::Continue) {
-                return Err(VsplitAbort::Error(outcome));
-            }
+            print_vsplit_needs_vbox_error(st)?;
             return Ok(None);
         }
         VsplitStart::Ready(state) => state,
@@ -1116,10 +1048,7 @@ pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<Option<AnyB
                 return Ok(outcome.result);
             }
             VsplitStep::InfiniteShrinkage { glue, spec } => {
-                let outcome = print_vert_break_infinite_shrinkage_error(st);
-                if !matches!(outcome, ErrorOutcome::Continue) {
-                    return Err(VsplitAbort::Error(outcome));
-                }
+                print_vert_break_infinite_shrinkage_error(st)?;
                 st.mem.repair_vert_break_infinite_shrinkage(glue, spec)?;
             }
         }
@@ -1165,10 +1094,10 @@ impl MemState {
         prev_p: MemPtr,
         p: MemPtr,
         height: i32,
-    ) -> Result<(), NodeRecycleAbort> {
+    ) -> Result<(), Abort> {
         let q = self
             .new_skip_param(eqtb, GLUE_PAR_SPLIT_TOP_SKIP)
-            .ok_or(NodeRecycleAbort::Overflow)?;
+            .ok_or(Abort::NodeOverflow)?;
         prev_p.set_link(self, q.ptr());
         q.set_link(self, p);
         let spec = q.glue_ptr(self);
@@ -1190,7 +1119,7 @@ impl MemState {
         r: &mut MemPtr,
         node: MemPtr,
         save_discards: bool,
-    ) -> Result<MemPtr, NodeRecycleAbort> {
+    ) -> Result<MemPtr, Abort> {
         let q = node.link(self);
         node.set_link(self, MemPtr::NULL);
         prev_p.set_link(self, q);
@@ -1202,8 +1131,7 @@ impl MemState {
             }
             *r = node;
         } else {
-            self.flush_node_list(node)
-                .map_err(NodeRecycleAbort::Confusion)?;
+            self.flush_node_list(node)?;
         }
         Ok(q)
     }
@@ -1216,7 +1144,7 @@ impl MemState {
         eqtb: &EqtbState,
         p: i32,
         s: bool,
-    ) -> Result<MemPtr, NodeRecycleAbort> {
+    ) -> Result<MemPtr, Abort> {
         let mut p = MemPtr(p);
         let mut prev_p = TEMP_HEAD;
         let mut r = MemPtr::NULL;
@@ -1225,7 +1153,7 @@ impl MemState {
         while !p.is_null() {
             let node = self
                 .classify(MemIdx::new(p))
-                .map_err(|_| NodeRecycleAbort::Confusion("pruning"))?;
+                .map_err(|_| Abort::Confusion("pruning"))?;
             let height = match node {
                 AnyNode::HList(b) => b.height(self).0,
                 AnyNode::VList(b) => b.height(self).0,
@@ -1239,7 +1167,7 @@ impl MemState {
                     p = self.prune_discard_node(scanner, prev_p, &mut r, p, s)?;
                     continue;
                 }
-                _ => return Err(NodeRecycleAbort::Confusion("pruning")),
+                _ => return Err(Abort::Confusion("pruning")),
             };
             self.insert_split_top_skip_before(eqtb, prev_p, p, height)?;
             p = MemPtr::NULL;
@@ -1372,7 +1300,7 @@ impl MemState {
         r_node: NodePtr<HListNode>,
         mut q: MemPtr,
         w: NodePtr<WhatsitNode>,
-    ) -> Result<(MemPtr, NodePtr<WhatsitNode>), NodeRecycleAbort> {
+    ) -> Result<(MemPtr, NodePtr<WhatsitNode>), Abort> {
         let p = w.ptr();
         let font = w.native_font(self).0;
         let same_font = |mem: &MemState, p: MemPtr| {
@@ -1443,8 +1371,7 @@ impl MemState {
             }
             s = s.link(self);
         }
-        self.flush_node_list(p)
-            .map_err(NodeRecycleAbort::Confusion)?;
+        self.flush_node_list(p)?;
         self.set_native_metrics(eqtb, fonts, merged)?;
         Ok((q, merged))
     }
@@ -1459,9 +1386,9 @@ impl MemState {
         list: MemPtr,
         w: i32,
         m: i16,
-    ) -> Result<PackOutcome, NodeRecycleAbort> {
+    ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
-        let r_node = NodePtr::<HListNode>::alloc(self).ok_or(NodeRecycleAbort::Overflow)?;
+        let r_node = NodePtr::<HListNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
         r_node.set_subtype(self, 0);
         r_node.set_shift_amount(self, Scaled(0));
         r_node.set_list_ptr(self, list);
@@ -1477,7 +1404,7 @@ impl MemState {
 
         if texxet {
             self.push_lr(&mut scanner.lr_ptr, BEFORE.into())
-                .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                .ok_or(Abort::AvailOverflow)?;
         }
 
         let mut p = list;
@@ -1529,7 +1456,7 @@ impl MemState {
                             &mut scanner.adjust_tail
                         };
                         if tail.is_null() {
-                            return Err(NodeRecycleAbort::Confusion("pre vadjust"));
+                            return Err(Abort::Confusion("pre vadjust"));
                         }
                         tail.set_link(self, adjust_list);
                         *tail = self.list_tail(*tail);
@@ -1604,7 +1531,7 @@ impl MemState {
                             }
                         } else {
                             self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))
-                                .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                                .ok_or(Abort::AvailOverflow)?;
                         }
                     }
                 }
@@ -1675,7 +1602,7 @@ impl MemState {
                     let overfull_rule = eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
                     if overfull_rule > 0 && excess > hfuzz {
                         q = self.list_tail(q);
-                        let rule = self.new_rule().ok_or(NodeRecycleAbort::Overflow)?;
+                        let rule = self.new_rule().ok_or(Abort::NodeOverflow)?;
                         q.set_link(self, rule.ptr());
                         rule.set_width(self, RuleDimen::Set(Scaled(overfull_rule)));
                     }
@@ -1701,7 +1628,7 @@ impl MemState {
                 loop {
                     let math = self
                         .new_math(0, scanner.lr_ptr.info(self) as u16)
-                        .ok_or(NodeRecycleAbort::Overflow)?;
+                        .ok_or(Abort::NodeOverflow)?;
                     q.set_link(self, math.ptr());
                     q = math.ptr();
                     scanner.lr_problems += 10000;
@@ -1723,7 +1650,7 @@ impl MemState {
             }
             self.pop_lr(&mut scanner.lr_ptr);
             if !scanner.lr_ptr.is_null() {
-                return Err(NodeRecycleAbort::Confusion("LR1"));
+                return Err(Abort::Confusion("LR1"));
             }
         }
 
@@ -1807,12 +1734,7 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
 }
 
 /// `hpack`, printing its over/underfull diagnostics in order.
-pub(crate) fn hpack(
-    st: &mut EngineState,
-    list: MemPtr,
-    w: i32,
-    m: i16,
-) -> Result<AnyBox, NodeRecycleAbort> {
+pub(crate) fn hpack(st: &mut EngineState, list: MemPtr, w: i32, m: i16) -> Result<AnyBox, Abort> {
     let outcome = st.mem.hpack(
         &st.eqtb,
         &mut st.fonts,
@@ -1839,9 +1761,9 @@ impl MemState {
         h: i32,
         m: i16,
         l: i32,
-    ) -> Result<PackOutcome, NodeRecycleAbort> {
+    ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
-        let r_node = NodePtr::<VListNode>::alloc(self).ok_or(NodeRecycleAbort::Overflow)?;
+        let r_node = NodePtr::<VListNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
         let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
         r_node.set_subtype(self, u16::from(upwards));
         r_node.set_shift_amount(self, Scaled(0));
@@ -1857,7 +1779,7 @@ impl MemState {
         let mut p = list;
         while !p.is_null() {
             if self.is_char_node(p) {
-                return Err(NodeRecycleAbort::Confusion("vpack"));
+                return Err(Abort::Confusion("vpack"));
             }
             match self.classify(MemIdx::new(p)) {
                 Ok(AnyNode::HList(b)) => {
@@ -2056,7 +1978,7 @@ pub(crate) fn vpackage(
     h: i32,
     m: i16,
     l: i32,
-) -> Result<AnyBox, NodeRecycleAbort> {
+) -> Result<AnyBox, Abort> {
     let outcome = st
         .mem
         .vpackage(&st.eqtb, &mut st.scanner, &mut st.shipout, list, h, m, l)?;

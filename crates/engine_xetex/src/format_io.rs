@@ -15,7 +15,7 @@ use crate::consts::{
     TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
-use crate::errors::EngineAbort;
+use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{HASH_OFFSET, HASH_PRIME};
 use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
@@ -30,12 +30,12 @@ const SUP_FONT_MEM_SIZE: i32 = 147_483_647;
 const SUP_POOL_SIZE: i32 = 40_000_000;
 const SUP_HASH_EXTRA: i32 = 2_097_151;
 
-fn bad_fmt() -> EngineAbort {
-    EngineAbort::TtAbort("fatal format file error")
+fn bad_fmt() -> Abort {
+    Abort::Internal("fatal format file error")
 }
 
 /// Writes `v[start..start + n]`, byte-swapping each item to big-endian.
-unsafe fn dump_slice<T>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result<(), EngineAbort> {
+unsafe fn dump_slice<T>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result<(), Abort> {
     if n <= 0 {
         return Ok(());
     }
@@ -54,26 +54,21 @@ unsafe fn dump_slice<T>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result<(
     };
 
     if written != byte_len {
-        return Err(EngineAbort::TtAbort("could not write format file data"));
+        return Err(Abort::Internal("could not write format file data"));
     }
     Ok(())
 }
 
-unsafe fn dump_one<T: Copy>(fmt_out: usize, value: T) -> Result<(), EngineAbort> {
+unsafe fn dump_one<T: Copy>(fmt_out: usize, value: T) -> Result<(), Abort> {
     dump_slice(fmt_out, &[value], 0, 1)
 }
 
-unsafe fn dump_int(fmt_out: usize, value: i32) -> Result<(), EngineAbort> {
+unsafe fn dump_int(fmt_out: usize, value: i32) -> Result<(), Abort> {
     dump_one(fmt_out, value)
 }
 
 /// Reads `n` items into `v[start..]`, converting each from big-endian.
-unsafe fn undump_slice<T>(
-    fmt_in: usize,
-    v: &mut [T],
-    start: i32,
-    n: i32,
-) -> Result<(), EngineAbort> {
+unsafe fn undump_slice<T>(fmt_in: usize, v: &mut [T], start: i32, n: i32) -> Result<(), Abort> {
     if n <= 0 {
         return Ok(());
     }
@@ -83,7 +78,7 @@ unsafe fn undump_slice<T>(
     let ptr = items.as_mut_ptr() as *mut u8;
     let read = ttstub_input_read(fmt_in, ptr, byte_len);
     if read < 0 || read as usize != byte_len {
-        return Err(EngineAbort::TtAbort("could not read format file data"));
+        return Err(Abort::Internal("could not read format file data"));
     }
 
     if cfg!(target_endian = "little") && item_size > 1 {
@@ -95,14 +90,14 @@ unsafe fn undump_slice<T>(
     Ok(())
 }
 
-unsafe fn undump_int(fmt_in: usize) -> Result<i32, EngineAbort> {
+unsafe fn undump_int(fmt_in: usize) -> Result<i32, Abort> {
     let mut value = [0i32];
     undump_slice(fmt_in, &mut value, 0, 1)?;
     Ok(value[0])
 }
 
 /// Reads an int that must lie in `low..=high`.
-unsafe fn undump_in_range(fmt_in: usize, low: i32, high: i32) -> Result<i32, EngineAbort> {
+unsafe fn undump_in_range(fmt_in: usize, low: i32, high: i32) -> Result<i32, Abort> {
     let x = undump_int(fmt_in)?;
     if x < low || x > high {
         return Err(bad_fmt());
@@ -116,18 +111,18 @@ unsafe fn undump_size(
     low: i32,
     high: i32,
     too_big: &'static str,
-) -> Result<i32, EngineAbort> {
+) -> Result<i32, Abort> {
     let x = undump_int(fmt_in)?;
     if x < low {
         return Err(bad_fmt());
     }
     if x > high {
-        return Err(EngineAbort::TtAbort(too_big));
+        return Err(Abort::Internal(too_big));
     }
     Ok(x)
 }
 
-unsafe fn expect_int(fmt_in: usize, expected: i32) -> Result<(), EngineAbort> {
+unsafe fn expect_int(fmt_in: usize, expected: i32) -> Result<(), Abort> {
     if undump_int(fmt_in)? != expected {
         return Err(bad_fmt());
     }
@@ -142,7 +137,7 @@ unsafe fn undump_checked<T: Copy + PartialOrd>(
     n: i32,
     low: T,
     high: T,
-) -> Result<(), EngineAbort> {
+) -> Result<(), Abort> {
     undump_slice(fmt_in, v, start, n)?;
     if n > 0 {
         let items = &v[start as usize..(start + n) as usize];
@@ -161,7 +156,7 @@ unsafe fn dump_eqtb_runs(
     mut k: i32,
     last: i32,
     same: impl Fn(&EqtbState, i32, i32) -> bool,
-) -> Result<i32, EngineAbort> {
+) -> Result<i32, Abort> {
     loop {
         let mut j = k;
         while j < last && !same(eqtb, j, j + 1) {
@@ -188,7 +183,7 @@ unsafe fn dump_eqtb_runs(
     }
 }
 
-pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), EngineAbort> {
+pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.save_ptr != 0 {
         crate::output::print_err(st, "You can't dump inside a group");
         st.errors.help(&[r"`{...\dump}' is a no-no."]);
@@ -197,16 +192,13 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), EngineAb
             st.errors.interaction = InteractionMode::Scroll;
         }
         if st.errors.log_opened {
-            let outcome = crate::errors::error(st);
-            if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
-                return Err(outcome.into_engine_abort());
-            }
+            crate::errors::error(st)?;
         }
 
         st.errors.history = HISTORY_FATAL_ERROR;
         let _ = crate::io::close_files_and_terminate(st);
         ttstub_output_flush(st.shipout.rust_stdout);
-        return Err(EngineAbort::TtAbort("\\dump inside a group"));
+        return Err(Abort::Internal("\\dump inside a group"));
     }
 
     st.shipout.selector = SELECTOR_NEW_STRING;
@@ -227,7 +219,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), EngineAb
     };
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(EngineAbort::Overflow {
+        return Err(Abort::Overflow {
             what: "pool size",
             n: st.strings.pool_size - st.strings.init_pool_ptr,
         });
@@ -235,23 +227,23 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), EngineAb
 
     st.strings.format_ident = match st.strings.make_string() {
         Ok(value) => value,
-        Err(crate::scan::NodeRecycleAbort::Overflow) => {
-            return Err(EngineAbort::Overflow {
+        Err(Abort::NodeOverflow) => {
+            return Err(Abort::Overflow {
                 what: "number of strings",
                 n: st.strings.max_strings - st.strings.init_str_ptr,
             })
         }
-        Err(e) => return Err(e.into_engine_abort()),
+        Err(e) => return Err(e),
     };
-    crate::io::pack_job_name(st, ".fmt").map_err(|e| e.into_engine_abort())?;
+    crate::io::pack_job_name(st, ".fmt")?;
 
     let fmt_out = ttstub_output_open(st.input.name_of_file_ptr(), 0);
     if fmt_out == INVALID_HANDLE {
-        return Err(EngineAbort::TtAbort("cannot open format output file"));
+        return Err(Abort::Internal("cannot open format output file"));
     }
 
     crate::output::print_nl(st, "Beginning to dump on file ");
-    let name_string = crate::io::make_name_string(st).map_err(|e| e.into_engine_abort())?;
+    let name_string = crate::io::make_name_string(st)?;
     crate::output::print(st, name_string);
 
     st.strings.str_ptr -= 1;
@@ -454,10 +446,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), EngineAb
                 "It won't work, and only confuses me.",
                 "(Load them at runtime, not as part of the format file.)",
             ]);
-            let outcome = crate::errors::error(st);
-            if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
-                return Err(outcome.into_engine_abort());
-            }
+            crate::errors::error(st)?;
         } else {
             crate::output::print_file_name(st, font_name, font_area, EMPTY_STRING);
         }
@@ -506,7 +495,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), EngineAb
     }
 
     if st.hyph.trie_not_ready {
-        st.hyph.init_trie().map_err(|e| e.into_engine_abort())?;
+        st.hyph.init_trie()?;
     }
 
     let hyph = &st.hyph;
@@ -553,7 +542,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), EngineAb
     Ok(())
 }
 
-pub unsafe fn load_fmt_file(st: &mut EngineState) -> Result<bool, EngineAbort> {
+pub unsafe fn load_fmt_file(st: &mut EngineState) -> Result<bool, Abort> {
     let loc = st.input.cur_input.loc;
 
     let name = std::ffi::CStr::from_ptr(TEX_FORMAT_DEFAULT).to_bytes_with_nul();
@@ -562,7 +551,7 @@ pub unsafe fn load_fmt_file(st: &mut EngineState) -> Result<bool, EngineAbort> {
 
     let fmt_in = ttstub_input_open(st.input.name_of_file_ptr(), TTBC_FILE_FORMAT_FORMAT, 0);
     if fmt_in == INVALID_HANDLE {
-        return Err(EngineAbort::TtAbort("cannot open the format file"));
+        return Err(Abort::Internal("cannot open the format file"));
     }
 
     st.input.cur_input.loc = loc;
@@ -570,7 +559,7 @@ pub unsafe fn load_fmt_file(st: &mut EngineState) -> Result<bool, EngineAbort> {
     read_fmt_file(st, fmt_in)
 }
 
-unsafe fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, EngineAbort> {
+unsafe fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
     if st.config.in_initex_mode {
         st.fonts.font_info = Vec::new();
         st.strings.str_pool = Vec::new();
@@ -582,7 +571,7 @@ unsafe fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Eng
 
     expect_int(fmt_in, FORMAT_HEADER_MAGIC)?;
     if undump_int(fmt_in)? != crate::FORMAT_SERIAL as i32 {
-        return Err(EngineAbort::TtAbort("format file is of the wrong version"));
+        return Err(Abort::Internal("format file is of the wrong version"));
     }
 
     let eqtb = &mut st.eqtb;
@@ -905,7 +894,7 @@ unsafe fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Eng
     expect_int(fmt_in, FORMAT_FOOTER_MAGIC)?;
 
     if crate::io::input_close(fmt_in) {
-        return Err(EngineAbort::TtAbort(
+        return Err(Abort::Internal(
             "serious internal error closing the format file",
         ));
     }

@@ -5,6 +5,7 @@ pub(crate) use crate::consts::TEX_NULL;
 use crate::consts::{
     END_M_CODE, GLUE_SPEC_SIZE, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL,
 };
+use crate::errors::Abort;
 use crate::mem_types::ListStateRecord;
 use crate::node::{
     CharNode, ChoiceNode, DiscNode, FreeBlock, GlueNode, GlueSpecNode, HListNode, KernNode,
@@ -501,31 +502,17 @@ impl MemState {
 
 // --- the semantic nest ---
 
-pub(crate) enum PushNestAbort {
-    SemanticNest,
-    MainMemory,
-}
-
-impl PushNestAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            PushNestAbort::SemanticNest => crate::errors::EngineAbort::NestOverflow,
-            PushNestAbort::MainMemory => crate::errors::EngineAbort::MainMemoryOverflow,
-        }
-    }
-}
-
-pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), PushNestAbort> {
+pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     let np = st.input.nest_ptr;
     if np > st.input.max_nest_stack {
         st.input.max_nest_stack = np;
         if np == st.input.nest_size {
-            return Err(PushNestAbort::SemanticNest);
+            return Err(Abort::NestOverflow);
         }
     }
     st.input.nest[np as usize] = st.input.cur_list;
     st.input.nest_ptr = np + 1;
-    let h = st.mem.get_avail().ok_or(PushNestAbort::MainMemory)?;
+    let h = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
     let cl = &mut st.input.cur_list;
     cl.head = h;
     cl.tail = h;

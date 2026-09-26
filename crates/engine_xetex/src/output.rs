@@ -36,7 +36,8 @@ use crate::consts::{
     TEXT_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
     UNLESS_CODE, VMODE, X_LEADERS,
 };
-use crate::errors::{error, ErrorOutcome};
+use crate::errors::error;
+use crate::errors::Abort;
 use crate::expand::{
     ETEX_REVISION_CODE, EXPANDED_CODE, FI_CODE, FONT_NAME_CODE, IFX_CODE, IF_CASE_CODE,
     IF_CAT_CODE, IF_CS_CODE, IF_DEF_CODE, IF_DIM_CODE, IF_EOF_CODE, IF_FALSE_CODE,
@@ -2039,22 +2040,22 @@ pub(crate) fn change_if_limit(
     st: &mut EngineState,
     l: i16,
     p: impl crate::units::MemAddr,
-) -> ErrorOutcome {
+) -> Result<(), Abort> {
     let p = p.addr();
     if p == st.scanner.cond_ptr.0 {
         st.scanner.if_limit = l as u8;
-        return ErrorOutcome::Continue;
+        return Ok(());
     }
     let mut q = st.scanner.cond_ptr;
     while !q.is_null() {
         let next = q.link(&st.mem);
         if next.0 == p {
             NodePtr::<CondNode>::at(q).set_if_limit(&mut st.mem, l as u16);
-            return ErrorOutcome::Continue;
+            return Ok(());
         }
         q = next;
     }
-    ErrorOutcome::Confusion("if")
+    Err(Abort::Confusion("if"))
 }
 
 /// C++ font-layer callback, reaching the run's state through the locator pointer.
@@ -2239,27 +2240,9 @@ fn flush_last_string(st: &mut EngineState) {
     st.strings.discard_cur_string();
 }
 
-pub(crate) enum IssueMessageAbort {
-    Scanner(crate::scan::SccAbort),
-    NodeRecycle(crate::scan::NodeRecycleAbort),
-    Error(ErrorOutcome),
-    PoolSize,
-}
-
-impl IssueMessageAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            IssueMessageAbort::Scanner(e) => e.into_engine_abort(),
-            IssueMessageAbort::NodeRecycle(e) => e.into_engine_abort(),
-            IssueMessageAbort::Error(o) => o.into_engine_abort(),
-            IssueMessageAbort::PoolSize => crate::errors::EngineAbort::PoolOverflow,
-        }
-    }
-}
-
-pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), IssueMessageAbort> {
+pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr as u8;
-    let toks = crate::scan::scan_toks(st, false, true).map_err(IssueMessageAbort::Scanner)?;
+    let toks = crate::scan::scan_toks(st, false, true)?;
     GARBAGE.set_link(&mut st.mem, toks);
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
@@ -2267,12 +2250,9 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), IssueMessageAbor
     st.shipout.selector = old_setting;
     st.mem.flush_list(st.scanner.def_ref);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(IssueMessageAbort::PoolSize);
+        return Err(Abort::PoolOverflow);
     }
-    let s = st
-        .strings
-        .make_string()
-        .map_err(IssueMessageAbort::NodeRecycle)?;
+    let s = st.strings.make_string()?;
     if c == 0 {
         let len = st.strings.length(s);
         if st.shipout.term_offset + len > st.config.max_print_line - 2 {
@@ -2303,9 +2283,7 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), IssueMessageAbor
         }
         let outcome = error(st);
         st.errors.use_err_help = false;
-        if !matches!(outcome, ErrorOutcome::Continue) {
-            return Err(IssueMessageAbort::Error(outcome));
-        }
+        outcome?;
     }
     flush_last_string(st);
     Ok(())
@@ -2513,27 +2491,7 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
     st.save_stack.cur_group = saved_group;
 }
 
-pub(crate) enum ShowWhateverAbort {
-    Scanner(crate::scan::SccAbort),
-    Error(ErrorOutcome),
-}
-
-impl ShowWhateverAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            ShowWhateverAbort::Scanner(e) => e.into_engine_abort(),
-            ShowWhateverAbort::Error(o) => o.into_engine_abort(),
-        }
-    }
-}
-
-impl From<crate::scan::SccAbort> for ShowWhateverAbort {
-    fn from(e: crate::scan::SccAbort) -> Self {
-        ShowWhateverAbort::Scanner(e)
-    }
-}
-
-pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), ShowWhateverAbort> {
+pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
     const SHOW_CODE: i32 = 0;
 
     diagnostic_begin_capture_warning_here(st);
@@ -2645,13 +2603,10 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), ShowWhateverAbor
             "lists on your terminal as well as in the transcript file.",
         ]);
     }
-    match error(st) {
-        ErrorOutcome::Continue => Ok(()),
-        outcome => Err(ShowWhateverAbort::Error(outcome)),
-    }
+    error(st)
 }
 
-pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome {
+pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), Abort> {
     let tracing_lost = st.eqtb.int_par(INT_PAR_TRACING_LOST_CHARS);
     if tracing_lost > 0 {
         let old_setting = st.eqtb.int_par(INT_PAR_TRACING_ONLINE);
@@ -2683,10 +2638,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome
         st.eqtb.set_int_par(INT_PAR_TRACING_ONLINE, old_setting);
         if tracing_lost > 2 {
             st.errors.help(&[]);
-            let outcome = error(st);
-            if !matches!(outcome, ErrorOutcome::Continue) {
-                return outcome;
-            }
+            error(st)?;
         } else {
             capture_to_diagnostic(st, std::ptr::null_mut());
             end_diagnostic(st, false);
@@ -2699,10 +2651,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome
     print_code(st, c);
     st.shipout.selector = prev_sel;
     let Ok(s) = st.strings.make_string() else {
-        return ErrorOutcome::Overflow {
-            what: "number of strings",
-            n: st.strings.max_strings - st.strings.init_str_ptr,
-        };
+        return Err(Abort::StringOverflow);
     };
     let chr_c = unsafe { st.strings.gettexstring(s) };
     flush_last_string(st);
@@ -2727,7 +2676,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome
         }
         st.fonts.gave_char_warning_help = true;
     }
-    ErrorOutcome::Continue
+    Ok(())
 }
 
 pub(crate) fn show_box(st: &mut EngineState, p: impl crate::units::MemAddr) {

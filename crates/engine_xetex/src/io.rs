@@ -7,9 +7,8 @@ use crate::consts::{
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_INPUT_NORMALIZATION, INVALID_HANDLE, JUST_OPEN,
     SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
 };
-use crate::input::{InputAbort, NEW_LINE};
+use crate::input::NEW_LINE;
 use crate::mem::{xcalloc, xmalloc};
-use crate::scan::SccAbort;
 use crate::state::EngineState;
 use crate::texmfmp::{next_utf8_char, utf16_units};
 use tectonic_bridge_core::EOF;
@@ -21,6 +20,7 @@ use crate::bridge::{
     ttstub_output_putc, TTBC_FILE_FORMAT_TECTONIC_PRIMARY, TTBC_FILE_FORMAT_TEX,
 };
 use crate::cmd::{LEFT_BRACE, OTHER_CHAR, RELAX, SPACER};
+use crate::errors::Abort;
 
 pub(crate) const AUTO: i32 = 0;
 pub(crate) const UTF8: i32 = 1;
@@ -199,7 +199,7 @@ pub(crate) unsafe fn u_open_in(
     filefmt: i32,
     mut mode: i32,
     encoding_data: i32,
-) -> Result<Option<Box<UFile>>, crate::texmfmp::MakeTexStringAbort> {
+) -> Result<Option<Box<UFile>>, Abort> {
     let handle = tt_xetex_open_input(st, filefmt);
     if handle == INVALID_HANDLE {
         return Ok(None);
@@ -247,7 +247,7 @@ pub(crate) unsafe fn set_input_file_encoding(
     f: *mut UFile,
     mode: i32,
     encoding_data: i32,
-) -> Result<(), crate::texmfmp::MakeTexStringAbort> {
+) -> Result<(), Abort> {
     let f = &mut *f;
     if f.encoding_mode == ICUMAPPING as i16 && !f.conversion_data.is_null() {
         xetex_ucnv_close(f.conversion_data);
@@ -303,8 +303,8 @@ unsafe fn is_true_eof(c: i32) -> bool {
     c == EOF && *crate::compat::errno_location() != libc::EINTR
 }
 
-fn line_too_long() -> InputAbort {
-    InputAbort::TtAbort("unable to read an entire line (buffer too small)")
+fn line_too_long() -> Abort {
+    Abort::Internal("unable to read an entire line (buffer too small)")
 }
 
 fn conversion_error(st: &mut EngineState, errcode: i32) {
@@ -323,7 +323,7 @@ unsafe fn apply_normalization(
     buf: *mut u32,
     len: i32,
     norm: i32,
-) -> Result<(), InputAbort> {
+) -> Result<(), Abort> {
     let normalizer = &mut NORMALIZERS[(norm - 1) as usize];
     if normalizer.is_null() {
         let target_form = NATIVE_UTF32 | if norm == 1 { K_FORM_NFC } else { K_FORM_NFD };
@@ -336,7 +336,7 @@ unsafe fn apply_normalization(
             normalizer as *mut *mut libc::c_void,
         );
         if status != K_STATUS_NO_ERROR {
-            return Err(InputAbort::TtAbort("failed to create normalizer"));
+            return Err(Abort::Internal("failed to create normalizer"));
         }
     }
 
@@ -364,10 +364,7 @@ unsafe fn apply_normalization(
 
 /// Reads one line of `f` into `buffer[first..last]`, decoding and optionally
 /// normalizing it. Returns 0 at end of file.
-pub(crate) unsafe fn input_line(
-    st: &mut EngineState,
-    f: *mut UFile,
-) -> Result<libc::c_int, InputAbort> {
+pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<libc::c_int, Abort> {
     let norm = if st.eqtb.data.is_empty() {
         0
     } else {
@@ -375,7 +372,7 @@ pub(crate) unsafe fn input_line(
     };
 
     if (*f).handle == INVALID_HANDLE {
-        return Err(InputAbort::TtAbort(
+        return Err(Abort::Internal(
             "reads from synthetic \"terminal\" file #0 should never happen",
         ));
     }
@@ -544,9 +541,9 @@ pub(crate) unsafe fn make_utf16_name(st: &mut EngineState) {
 /// `Result` in registers on this hot path.
 pub(crate) struct InvalidInputMode;
 
-impl From<InvalidInputMode> for InputAbort {
+impl From<InvalidInputMode> for Abort {
     fn from(_: InvalidInputMode) -> Self {
-        InputAbort::TtAbort("internal error; file input mode is invalid")
+        Abort::Internal("internal error; file input mode is invalid")
     }
 }
 
@@ -650,30 +647,9 @@ pub unsafe fn u_close(slot: crate::state::InputSlot) -> bool {
     false
 }
 
-pub(crate) enum OpenOrCloseAbort {
-    Scanner(SccAbort),
-    Name(NameAbort),
-    MakeString(crate::texmfmp::MakeTexStringAbort),
-    /// A serious internal error closing a `\read` stream.
-    InputClose,
-}
-
-impl OpenOrCloseAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            OpenOrCloseAbort::Scanner(e) => e.into_engine_abort(),
-            OpenOrCloseAbort::Name(e) => e.into_engine_abort(),
-            OpenOrCloseAbort::MakeString(e) => e.into_engine_abort(),
-            OpenOrCloseAbort::InputClose => {
-                crate::errors::EngineAbort::TtAbort("serious internal error closing an input file")
-            }
-        }
-    }
-}
-
 /// Runs `name_of_file` back through the name scanner so that `cur_name`,
 /// `cur_area` and `cur_ext` describe the file actually opened.
-unsafe fn rescan_opened_name(st: &mut EngineState) -> Result<(), NameAbort> {
+unsafe fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
     make_utf16_name(st);
     st.scanner.name_in_progress = true;
     begin_name(st);
@@ -690,15 +666,15 @@ unsafe fn rescan_opened_name(st: &mut EngineState) -> Result<(), NameAbort> {
 }
 
 /// `\openin` and `\closein`.
-pub(crate) unsafe fn open_or_close(st: &mut EngineState) -> Result<(), OpenOrCloseAbort> {
+pub(crate) unsafe fn open_or_close(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr as u8;
-    crate::scan::scan_four_bit_int(st).map_err(OpenOrCloseAbort::Scanner)?;
+    crate::scan::scan_four_bit_int(st)?;
     let n = st.scanner.cur_val as u8 as usize;
 
     if st.input.read_open[n] != CLOSED {
         let slot = std::mem::take(&mut st.input.read_file[n]);
         if u_close(slot) {
-            return Err(OpenOrCloseAbort::InputClose);
+            return Err(Abort::InputClose);
         }
         st.input.read_open[n] = CLOSED;
     }
@@ -707,16 +683,14 @@ pub(crate) unsafe fn open_or_close(st: &mut EngineState) -> Result<(), OpenOrClo
         return Ok(());
     }
 
-    crate::scan::scan_optional_equals(st).map_err(OpenOrCloseAbort::Scanner)?;
-    scan_and_pack_name(st).map_err(OpenOrCloseAbort::Scanner)?;
+    crate::scan::scan_optional_equals(st)?;
+    scan_and_pack_name(st)?;
 
     let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
-    if let Some(file) =
-        u_open_in(st, TTBC_FILE_FORMAT_TEX, mode, encoding).map_err(OpenOrCloseAbort::MakeString)?
-    {
+    if let Some(file) = u_open_in(st, TTBC_FILE_FORMAT_TEX, mode, encoding)? {
         st.input.read_file[n] = crate::state::InputSlot::Open(file);
-        rescan_opened_name(st).map_err(OpenOrCloseAbort::Name)?;
+        rescan_opened_name(st)?;
         st.input.read_open[n] = JUST_OPEN;
     }
 
@@ -730,22 +704,7 @@ pub(crate) fn begin_name(st: &mut EngineState) {
     st.scanner.file_name_quote_char = 0;
 }
 
-/// Overflows of the file-name machinery.
-pub(crate) enum NameAbort {
-    PoolSize,
-    NumberOfStrings,
-}
-
-impl NameAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            NameAbort::PoolSize => crate::errors::EngineAbort::PoolOverflow,
-            NameAbort::NumberOfStrings => crate::errors::EngineAbort::StringOverflow,
-        }
-    }
-}
-
-pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, NameAbort> {
+pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, Abort> {
     let stop = st.scanner.stop_at_space;
     let q = st.scanner.file_name_quote_char;
     if stop && q == 0 && c == b' ' as u16 {
@@ -761,7 +720,7 @@ pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, NameAbort>
         return Ok(true);
     }
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(NameAbort::PoolSize);
+        return Err(Abort::PoolOverflow);
     }
     st.strings.str_pool[st.strings.pool_ptr as usize] = c;
     st.strings.pool_ptr += 1;
@@ -774,9 +733,9 @@ pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, NameAbort>
     Ok(true)
 }
 
-pub(crate) fn end_name(st: &mut EngineState) -> Result<(), NameAbort> {
+pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
     if st.strings.str_ptr + 3 > st.strings.max_strings {
-        return Err(NameAbort::NumberOfStrings);
+        return Err(Abort::StringOverflow);
     }
 
     let area_delimiter = st.scanner.area_delimiter;
@@ -805,7 +764,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), NameAbort> {
         st.scanner.cur_name = st
             .strings
             .slow_make_string()
-            .map_err(|_| NameAbort::NumberOfStrings)?;
+            .map_err(|_| Abort::StringOverflow)?;
     } else {
         let strings = &mut st.strings;
         let shift = st.scanner.ext_delimiter - area_delimiter - 1;
@@ -814,9 +773,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), NameAbort> {
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + shift;
         strings.str_ptr += 1;
 
-        st.scanner.cur_ext = strings
-            .make_string()
-            .map_err(|_| NameAbort::NumberOfStrings)?;
+        st.scanner.cur_ext = strings.make_string().map_err(|_| Abort::StringOverflow)?;
         strings.str_ptr -= 1;
         let temp_str = strings.search_string(st.scanner.cur_name);
         if temp_str > 0 {
@@ -830,12 +787,12 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), NameAbort> {
         }
         st.scanner.cur_ext = strings
             .slow_make_string()
-            .map_err(|_| NameAbort::NumberOfStrings)?;
+            .map_err(|_| Abort::StringOverflow)?;
     }
     Ok(())
 }
 
-pub(crate) unsafe fn make_name_string(st: &mut EngineState) -> Result<i32, NameAbort> {
+pub(crate) unsafe fn make_name_string(st: &mut EngineState) -> Result<i32, Abort> {
     if st.strings.pool_ptr + st.input.name_length > st.strings.pool_size
         || st.strings.str_ptr == st.strings.max_strings
         || st.strings.cur_length() > 0
@@ -854,7 +811,7 @@ pub(crate) unsafe fn make_name_string(st: &mut EngineState) -> Result<i32, NameA
     let result = st
         .strings
         .make_string()
-        .map_err(|_| NameAbort::NumberOfStrings)?;
+        .map_err(|_| Abort::StringOverflow)?;
     let save_area_delimiter = st.scanner.area_delimiter;
     let save_ext_delimiter = st.scanner.ext_delimiter;
     let save_name_in_progress = st.scanner.name_in_progress;
@@ -878,10 +835,7 @@ pub(crate) unsafe fn make_name_string(st: &mut EngineState) -> Result<i32, NameA
     Ok(result)
 }
 
-pub(crate) unsafe fn pack_job_name(
-    st: &mut EngineState,
-    s: &str,
-) -> Result<(), crate::texmfmp::MakeTexStringAbort> {
+pub(crate) unsafe fn pack_job_name(st: &mut EngineState, s: &str) -> Result<(), Abort> {
     st.scanner.cur_area = EMPTY_STRING;
     st.scanner.cur_ext = st.strings.make_tex_string(s)?;
     st.scanner.cur_name = st.strings.job_name;
@@ -894,44 +848,22 @@ pub(crate) unsafe fn pack_job_name(
     Ok(())
 }
 
-pub(crate) enum OpenLogAbort {
-    MakeString(crate::texmfmp::MakeTexStringAbort),
-    Name(NameAbort),
-    /// The host refused to open the log file.
-    CannotOpen,
-}
-
-impl OpenLogAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            OpenLogAbort::MakeString(e) => e.into_engine_abort(),
-            OpenLogAbort::Name(e) => e.into_engine_abort(),
-            OpenLogAbort::CannotOpen => {
-                crate::errors::EngineAbort::TtAbort("cannot open log file output")
-            }
-        }
-    }
-}
-
 /// Opens the transcript and writes its banner.
-pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), OpenLogAbort> {
+pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
     let old_setting = st.shipout.selector;
     if st.strings.job_name == 0 {
-        st.strings.job_name = st
-            .strings
-            .make_tex_string("texput")
-            .map_err(OpenLogAbort::MakeString)?;
+        st.strings.job_name = st.strings.make_tex_string("texput")?;
     }
 
-    pack_job_name(st, ".log").map_err(OpenLogAbort::MakeString)?;
+    pack_job_name(st, ".log")?;
 
     let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
     if handle == INVALID_HANDLE {
-        return Err(OpenLogAbort::CannotOpen);
+        return Err(Abort::Internal("cannot open log file output"));
     }
     st.shipout.log_file = handle;
 
-    st.strings.texmf_log_name = make_name_string(st).map_err(OpenLogAbort::Name)?;
+    st.strings.texmf_log_name = make_name_string(st)?;
     st.shipout.selector = SELECTOR_LOG_ONLY;
     st.errors.log_opened = true;
 
@@ -955,33 +887,26 @@ pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), OpenLogAb
 ///
 /// Checkpoints keep the logical output state, but bridge handles and
 /// diagnostic pointers are valid only for the operation that created them.
-pub(crate) unsafe fn reopen_resident_outputs(
-    st: &mut EngineState,
-) -> Result<(), crate::errors::EngineAbort> {
+pub(crate) unsafe fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.current_diagnostic = core::ptr::null_mut();
     st.shipout.write_file = [INVALID_HANDLE; 16];
     st.shipout.log_file = INVALID_HANDLE;
     st.shipout.dvi_file = INVALID_HANDLE;
 
     if st.errors.log_opened {
-        pack_job_name(st, ".log").map_err(|e| e.into_engine_abort())?;
+        pack_job_name(st, ".log")?;
         let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
         if handle == INVALID_HANDLE {
-            return Err(crate::errors::EngineAbort::TtAbort(
-                "cannot reopen log file output",
-            ));
+            return Err(Abort::Internal("cannot reopen log file output"));
         }
         st.shipout.log_file = handle;
     }
 
     if st.shipout.output_file_name != 0 {
-        pack_job_name(st, crate::engine::output_file_extension(st))
-            .map_err(|e| e.into_engine_abort())?;
+        pack_job_name(st, crate::engine::output_file_extension(st))?;
         let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
         if handle == INVALID_HANDLE {
-            return Err(crate::errors::EngineAbort::TtAbort(
-                "cannot reopen XDV file output",
-            ));
+            return Err(Abort::Internal("cannot reopen XDV file output"));
         }
         st.shipout.dvi_file = handle;
     }
@@ -1002,13 +927,10 @@ pub(crate) fn pack_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
     name.push(0);
 }
 
-pub(crate) unsafe fn close_files_and_terminate(
-    st: &mut EngineState,
-) -> Result<(), crate::errors::EngineAbort> {
+pub(crate) unsafe fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
     for k in 0usize..=15 {
         if st.shipout.write_open[k] {
-            crate::shipout::ensure_write_stream_open(st, k)
-                .map_err(|error| error.into_engine_abort())?;
+            crate::shipout::ensure_write_stream_open(st, k)?;
             ttstub_output_close(st.shipout.write_file[k]);
         }
     }
@@ -1016,7 +938,7 @@ pub(crate) unsafe fn close_files_and_terminate(
     // Routed through the journaling setter so a rewind restores `\newlinechar`.
     st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, -1);
 
-    crate::shipout::finalize_dvi_file(st).map_err(|e| e.into_engine_abort())?;
+    crate::shipout::finalize_dvi_file(st)?;
     crate::synctex::synctex_terminate(st);
 
     if st.errors.log_opened {
@@ -1051,19 +973,7 @@ pub unsafe fn init_io(st: &mut EngineState) {
     st.input.first = first + 1;
 }
 
-/// Lifts a file-name overflow into [`SccAbort`], sized from the live pool.
-fn name_abort_scc(st: &EngineState, e: NameAbort) -> SccAbort {
-    let (what, n) = match e {
-        NameAbort::PoolSize => ("pool size", st.strings.pool_size - st.strings.init_pool_ptr),
-        NameAbort::NumberOfStrings => (
-            "number of strings",
-            st.strings.max_strings - st.strings.init_str_ptr,
-        ),
-    };
-    SccAbort::Input(InputAbort::Overflow { what, n })
-}
-
-pub(crate) fn scan_and_pack_name(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_and_pack_name(st: &mut EngineState) -> Result<(), Abort> {
     scan_file_name(st)?;
     pack_file_name(
         st,
@@ -1074,7 +984,7 @@ pub(crate) fn scan_and_pack_name(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 
-pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
     let save_def_ref = st.scanner.def_ref.0;
     let save_cur_cs = st.scanner.cur_cs;
@@ -1093,7 +1003,7 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), SccAbort
     let s = st
         .strings
         .make_string()
-        .map_err(|_| name_abort_scc(st, NameAbort::NumberOfStrings))?;
+        .map_err(|_| Abort::StringOverflow)?;
     st.mem.delete_token_ref(st.scanner.def_ref);
     st.scanner.def_ref.0 = save_def_ref;
     st.scanner.cur_cs = save_cur_cs;
@@ -1104,13 +1014,13 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), SccAbort
     let end = st.strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize];
     for i in start..end {
         let c = st.strings.str_pool[i as usize];
-        more_name(st, c).map_err(|e| name_abort_scc(st, e))?;
+        more_name(st, c)?;
     }
     st.scanner.stop_at_space = save_stop_at_space;
     Ok(())
 }
 
-pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), SccAbort> {
+pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
     let save_warning_index = st.scanner.warning_index;
     st.scanner.warning_index = st.scanner.cur_cs;
 
@@ -1142,7 +1052,7 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), SccAbort> {
                 break;
             }
 
-            if !more_name(st, st.scanner.cur_chr as u16).map_err(|e| name_abort_scc(st, e))? {
+            if !more_name(st, st.scanner.cur_chr as u16)? {
                 break;
             }
 
@@ -1150,7 +1060,7 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), SccAbort> {
         }
     }
 
-    end_name(st).map_err(|e| name_abort_scc(st, e))?;
+    end_name(st)?;
     st.scanner.name_in_progress = false;
     st.scanner.warning_index = save_warning_index;
     Ok(())
@@ -1160,7 +1070,7 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), SccAbort> {
 pub(crate) unsafe fn start_input(
     st: &mut EngineState,
     primary_input_name: *const libc::c_char,
-) -> Result<(), SccAbort> {
+) -> Result<(), Abort> {
     let format = if primary_input_name.is_null() {
         TTBC_FILE_FORMAT_TEX
     } else {
@@ -1176,7 +1086,7 @@ pub(crate) unsafe fn start_input(
 
         let mut name = std::ffi::CStr::from_ptr(primary_input_name).to_bytes();
         if st.strings.pool_ptr + name.len() as i32 * 2 >= st.strings.pool_size {
-            return Err(SccAbort::Input(InputAbort::TtAbort("string pool overflow")));
+            return Err(Abort::Internal("string pool overflow"));
         }
 
         while !name.is_empty() {
@@ -1191,7 +1101,7 @@ pub(crate) unsafe fn start_input(
         }
 
         st.scanner.stop_at_space = true;
-        end_name(st).map_err(|e| name_abort_scc(st, e))?;
+        end_name(st)?;
         st.scanner.name_in_progress = false;
     }
 
@@ -1206,22 +1116,19 @@ pub(crate) unsafe fn start_input(
     let idx = st.input.cur_input.index as i32;
     let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
-    let Some(file) = u_open_in(st, format, mode, encoding).map_err(SccAbort::MakeTexString)? else {
-        return Err(SccAbort::Input(InputAbort::CannotOpenInput));
+    let Some(file) = u_open_in(st, format, mode, encoding)? else {
+        return Err(Abort::CannotOpenInput);
     };
     st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
 
-    rescan_opened_name(st).map_err(|e| name_abort_scc(st, e))?;
+    rescan_opened_name(st)?;
 
-    let name = make_name_string(st).map_err(|e| name_abort_scc(st, e))?;
+    let name = make_name_string(st)?;
     st.input.cur_input.name = name;
     let in_open = st.input.in_open as usize;
     st.input.source_filename_stack[in_open] = name;
     let full_name = st.input.name_of_input_file.clone().unwrap_or_default();
-    let full_name = st
-        .strings
-        .make_tex_string(full_name.as_bytes())
-        .map_err(SccAbort::MakeTexString)?;
+    let full_name = st.strings.make_tex_string(full_name.as_bytes())?;
     st.input.full_source_filename_stack[in_open] = full_name;
 
     if st.input.cur_input.name == st.strings.str_ptr - 1 {
@@ -1235,7 +1142,7 @@ pub(crate) unsafe fn start_input(
 
     if st.strings.job_name == 0 {
         st.strings.job_name = st.scanner.cur_name;
-        open_log_file(st).map_err(SccAbort::OpenLog)?;
+        open_log_file(st)?;
     }
 
     if st.shipout.term_offset + st.strings.length(full_name) > st.config.max_print_line - 2 {

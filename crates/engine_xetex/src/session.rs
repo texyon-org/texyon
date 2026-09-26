@@ -14,6 +14,7 @@ use tectonic_errors::prelude::*;
 use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
 };
+use crate::errors::Abort;
 use crate::helpers::OnDrop;
 use crate::replay::source::SourcePath;
 use crate::state::{EngineExecutionMode, EngineState};
@@ -760,7 +761,7 @@ unsafe fn run_document(
     };
     match execution {
         Ok(history) => OperationResult::Complete { history, splice_at },
-        Err(crate::errors::EngineAbort::Horizoned) => {
+        Err(Abort::Horizoned) => {
             let Some(rung) = horizon_rung else {
                 crate::engine::release_operation_inputs(state);
                 ladder.rewind_engine(state, 0);
@@ -787,7 +788,7 @@ unsafe fn run_document(
                 .and_then(|clock| ladder.rung_at_clock(clock))
                 .unwrap_or(0);
             ladder.rewind_engine(state, recovery_rung);
-            if matches!(error, crate::errors::EngineAbort::Cancelled) {
+            if matches!(error, Abort::Cancelled) {
                 OperationResult::Cancelled
             } else {
                 OperationResult::Aborted

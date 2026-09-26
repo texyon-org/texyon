@@ -4,6 +4,7 @@ use crate::consts::{
     BIGGEST_CHAR, EQTB_SIZE, HASH_BASE, PRIM_SIZE, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
     UNDEFINED_PRIMITIVE,
 };
+use crate::errors::Abort;
 use crate::state::{EqtbState, StringsState};
 
 pub(crate) const HASH_OFFSET: i32 = 514;
@@ -11,14 +12,6 @@ pub(crate) const HASH_SIZE: i32 = 15000;
 pub(crate) const HASH_PRIME: i32 = 8501;
 const PRIM_PRIME: i32 = 1777;
 const PRIM_BASE: i32 = 1;
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum HashLookupError {
-    HashSizeOverflow(i32),
-    PoolSizeOverflow(i32),
-    StringNumberOverflow(i32),
-    PrimitiveSizeOverflow(i32),
-}
 
 impl StringsState {
     #[inline]
@@ -41,7 +34,7 @@ impl EqtbState {
         buffer: &[i32],
         j: i32,
         l: i32,
-    ) -> Result<i32, HashLookupError> {
+    ) -> Result<i32, Abort> {
         let mut h: i32 = 0;
         for k in j..=(j + l - 1) {
             h = h + h + buffer[k as usize];
@@ -85,9 +78,10 @@ impl EqtbState {
                         } else {
                             loop {
                                 if self.hash_used == HASH_BASE {
-                                    return Err(HashLookupError::HashSizeOverflow(
-                                        HASH_SIZE + self.hash_extra,
-                                    ));
+                                    return Err(Abort::Overflow {
+                                        what: "hash size",
+                                        n: HASH_SIZE + self.hash_extra,
+                                    });
                                 }
                                 self.hash_used -= 1;
                                 if self.hash_s1(self.hash_used) == 0 {
@@ -100,9 +94,10 @@ impl EqtbState {
                     }
 
                     if strings.pool_ptr + utf16_len > strings.pool_size {
-                        return Err(HashLookupError::PoolSizeOverflow(
-                            strings.pool_size - strings.init_pool_ptr,
-                        ));
+                        return Err(Abort::Overflow {
+                            what: "pool size",
+                            n: strings.pool_size - strings.init_pool_ptr,
+                        });
                     }
 
                     let d = strings.cur_length();
@@ -127,10 +122,9 @@ impl EqtbState {
                         }
                     }
 
-                    let s_idx = strings.make_string().map_err(|_| {
-                        HashLookupError::StringNumberOverflow(
-                            strings.max_strings - strings.init_str_ptr,
-                        )
+                    let s_idx = strings.make_string().map_err(|_| Abort::Overflow {
+                        what: "number of strings",
+                        n: strings.max_strings - strings.init_str_ptr,
                     })?;
                     self.set_hash_s1(p, s_idx);
                     strings.pool_ptr += d;
@@ -142,11 +136,7 @@ impl EqtbState {
         }
     }
 
-    pub fn prim_lookup(
-        &mut self,
-        strings: &mut StringsState,
-        s: i32,
-    ) -> Result<i32, HashLookupError> {
+    pub fn prim_lookup(&mut self, strings: &mut StringsState, s: i32) -> Result<i32, Abort> {
         let mut p;
         let l;
         if s <= BIGGEST_CHAR {
@@ -189,7 +179,10 @@ impl EqtbState {
                     if text > 0 {
                         loop {
                             if self.prim_used == PRIM_BASE {
-                                return Err(HashLookupError::PrimitiveSizeOverflow(PRIM_SIZE));
+                                return Err(Abort::Overflow {
+                                    what: "primitive size",
+                                    n: PRIM_SIZE,
+                                });
                             }
                             self.prim_used -= 1;
                             if self.prim_s1(self.prim_used) == 0 {
@@ -213,7 +206,7 @@ impl EqtbState {
         &mut self,
         strings: &mut StringsState,
         cs: i32,
-    ) -> Result<i32, HashLookupError> {
+    ) -> Result<i32, Abort> {
         let s = if cs < HASH_BASE {
             cs - crate::consts::SINGLE_BASE
         } else {

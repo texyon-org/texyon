@@ -2,7 +2,7 @@
 //! Strings below `TOO_BIG_CHAR` are single characters stored implicitly.
 
 use crate::consts::{EMPTY_STRING, TOO_BIG_CHAR};
-use crate::scan::NodeRecycleAbort;
+use crate::errors::Abort;
 use crate::state::StringsState;
 
 impl StringsState {
@@ -27,9 +27,9 @@ impl StringsState {
         }
     }
 
-    pub fn make_string(&mut self) -> Result<i32, NodeRecycleAbort> {
+    pub fn make_string(&mut self) -> Result<i32, Abort> {
         if self.str_ptr == self.max_strings {
-            return Err(NodeRecycleAbort::Overflow);
+            return Err(Abort::NodeOverflow);
         }
         self.str_ptr += 1;
         let slot = self.cur_start_slot();
@@ -37,10 +37,10 @@ impl StringsState {
         Ok(self.str_ptr - 1)
     }
 
-    pub fn append_str(&mut self, s: i32) -> Result<(), NodeRecycleAbort> {
+    pub fn append_str(&mut self, s: i32) -> Result<(), Abort> {
         let len = self.length(s);
         if self.pool_ptr + len > self.pool_size {
-            return Err(NodeRecycleAbort::Overflow);
+            return Err(Abort::NodeOverflow);
         }
         let src = self.str_start(s) as usize;
         let dst = self.pool_ptr as usize;
@@ -109,7 +109,7 @@ impl StringsState {
     }
 
     /// `make_string` that reuses an existing equal string instead.
-    pub fn slow_make_string(&mut self) -> Result<i32, NodeRecycleAbort> {
+    pub fn slow_make_string(&mut self) -> Result<i32, Abort> {
         let t = self.make_string()?;
         let s = self.search_string(t);
         if s > 0 {
@@ -120,7 +120,7 @@ impl StringsState {
     }
 
     /// Returns the last loaded string number, or 0 if the pool would overflow.
-    pub fn load_pool_strings(&mut self, spare_size: i32) -> Result<i32, NodeRecycleAbort> {
+    pub fn load_pool_strings(&mut self, spare_size: i32) -> Result<i32, Abort> {
         const STRING_CONSTANTS: &[&[u8]] = &[b"this marks the start of the stringpool", b""];
 
         let mut total_len = 0;

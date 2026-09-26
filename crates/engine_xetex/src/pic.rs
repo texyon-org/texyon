@@ -4,8 +4,8 @@ use libc::{c_char, c_double, c_int, c_uint};
 
 use crate::bridge::{ttstub_input_open, TTBC_FILE_FORMAT_PICT};
 use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
+use crate::errors::Abort;
 use crate::ext::{D2Fix, Fix2D};
-use crate::main_control::{mc_propagate_error, MainControlAbort};
 use crate::node::WhatsitSubtype;
 use crate::state::EngineState;
 use crate::units::Scaled;
@@ -225,7 +225,7 @@ unsafe fn find_pic_file(
     name_of_file: *const c_char,
     pdf_box: Option<PageboxType>,
     page: c_int,
-) -> Result<(c_int, RealRect), MainControlAbort> {
+) -> Result<(c_int, RealRect), Abort> {
     let handle = ttstub_input_open(name_of_file, TTBC_FILE_FORMAT_PICT, 0);
     if handle == INVALID_HANDLE {
         return Ok((1, RealRect::default()));
@@ -250,7 +250,7 @@ unsafe fn find_pic_file(
         }
     };
     if crate::io::input_close(handle) {
-        return Err(MainControlAbort::InputClose);
+        return Err(Abort::InputClose);
     }
     Ok((err, bounds))
 }
@@ -349,7 +349,7 @@ impl Placement {
 }
 
 /// Scan an image dimension, reporting and ignoring non-positive values.
-fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, MainControlAbort> {
+fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
     crate::scan::scan_dimen(st, false, false, false)?;
     if st.scanner.cur_val > 0 {
         return Ok(Some(Fix2D(st.scanner.cur_val)));
@@ -363,16 +363,16 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, MainControlAbort
         "I can't scale images to zero or negative sizes,",
         "so I'm ignoring this.",
     ]);
-    mc_propagate_error(crate::errors::error(st))?;
+    crate::errors::error(st)?;
     Ok(None)
 }
 
-fn scan_scale_factor(st: &mut EngineState) -> Result<f64, MainControlAbort> {
+fn scan_scale_factor(st: &mut EngineState) -> Result<f64, Abort> {
     crate::scan::scan_int(st)?;
     Ok(st.scanner.cur_val as f64 / 1000.0)
 }
 
-pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), MainControlAbort> {
+pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abort> {
     crate::io::scan_and_pack_name(st)?;
 
     let mut pdf_box_type = None;
@@ -493,7 +493,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Mai
                 WhatsitSubtype::Pic,
                 PIC_NODE_SIZE + extra_words,
             )
-            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+            .ok_or(Abort::NodeOverflow)?;
         let mem = &mut st.mem;
         if is_pdf {
             pic.set_subtype(mem, WhatsitSubtype::Pdf as u16);
@@ -520,14 +520,12 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Mai
         };
         st.errors
             .help(&["The requested image couldn't be read because", reason]);
-        mc_propagate_error(crate::errors::error(st))?;
+        crate::errors::error(st)?;
     }
     Ok(())
 }
 
-pub(crate) unsafe fn count_pdf_file_pages_named(
-    name: *const libc::c_char,
-) -> Result<c_int, crate::scan::SccAbort> {
+pub(crate) unsafe fn count_pdf_file_pages_named(name: *const libc::c_char) -> Result<c_int, Abort> {
     let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_PICT, 0);
     if handle == INVALID_HANDLE {
         return Ok(0);
@@ -537,7 +535,7 @@ pub(crate) unsafe fn count_pdf_file_pages_named(
         pages = 0;
     }
     if crate::io::input_close(handle) {
-        return Err(crate::scan::SccAbort::InputClose);
+        return Err(Abort::InputClose);
     }
     Ok(pages)
 }

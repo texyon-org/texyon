@@ -7,6 +7,7 @@ use crate::bridge::{
     ttstub_input_read, TTBC_FILE_FORMAT_TEX,
 };
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE, TOO_BIG_CHAR};
+use crate::errors::Abort;
 use crate::mem::xmalloc;
 use crate::state::{ShipoutState, StringsState, TexmfState};
 use crate::utf8::{BYTES_FROM_UTF8, FIRST_BYTE_MARK, OFFSETS_FROM_UTF8};
@@ -84,24 +85,6 @@ pub(crate) fn utf16_units(c: u32) -> ([u16; 2], usize) {
         )
     } else {
         ([c as u16, 0], 1)
-    }
-}
-
-pub(crate) enum MakeTexStringAbort {
-    /// The pool can't hold the string.
-    PoolOverflow,
-    /// `str_ptr` is exhausted in `make_string`.
-    StringOverflow,
-}
-
-impl MakeTexStringAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            MakeTexStringAbort::PoolOverflow => {
-                crate::errors::EngineAbort::TtAbort("string pool overflow")
-            }
-            MakeTexStringAbort::StringOverflow => crate::errors::EngineAbort::StringOverflow,
-        }
     }
 }
 
@@ -208,25 +191,21 @@ impl StringsState {
     }
 
     /// Converts UTF-8 bytes into a new pool string.
-    pub(crate) fn make_tex_string(
-        &mut self,
-        s: impl AsRef<[u8]>,
-    ) -> Result<i32, MakeTexStringAbort> {
+    pub(crate) fn make_tex_string(&mut self, s: impl AsRef<[u8]>) -> Result<i32, Abort> {
         let mut s = s.as_ref();
         if s.is_empty() {
             return Ok(EMPTY_STRING);
         }
 
         if self.pool_ptr as usize + s.len() >= self.pool_size as usize {
-            return Err(MakeTexStringAbort::PoolOverflow);
+            return Err(Abort::Internal("string pool overflow"));
         }
 
         while !s.is_empty() {
             self.push_utf16(next_utf8_char(&mut s));
         }
 
-        self.make_string()
-            .map_err(|_| MakeTexStringAbort::StringOverflow)
+        self.make_string().map_err(|_| Abort::StringOverflow)
     }
 
     /// Appends the hex MD5 of file (or string) `s` to the pool.
@@ -280,7 +259,7 @@ impl StringsState {
     }
 
     /// Appends the decimal size of file `s` to the pool.
-    pub(crate) unsafe fn getfilesize(&mut self, s: i32) -> Result<(), crate::scan::SccAbort> {
+    pub(crate) unsafe fn getfilesize(&mut self, s: i32) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
             return Ok(());
@@ -288,7 +267,7 @@ impl StringsState {
 
         let file_len = ttstub_input_get_size(handle);
         if crate::io::input_close(handle) {
-            return Err(crate::scan::SccAbort::InputClose);
+            return Err(Abort::InputClose);
         }
 
         self.push_bytes_or_fill((file_len as u64).to_string().as_bytes());
@@ -301,7 +280,7 @@ impl StringsState {
         s: i32,
         offset: libc::c_int,
         length: libc::c_int,
-    ) -> Result<(), crate::scan::SccAbort> {
+    ) -> Result<(), Abort> {
         if length == 0 {
             return Ok(());
         }
@@ -320,7 +299,7 @@ impl StringsState {
         crate::io::input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
         let actual = ttstub_input_read(handle, buffer.as_mut_ptr(), length as libc::size_t);
         if crate::io::input_close(handle) {
-            return Err(crate::scan::SccAbort::InputClose);
+            return Err(Abort::InputClose);
         }
 
         self.push_hex(&buffer[..actual.max(0) as usize]);
@@ -422,7 +401,7 @@ impl TexmfState {
 
 impl StringsState {
     /// Appends the modification date of file `s` to the pool as a PDF date.
-    pub(crate) unsafe fn getfilemoddate(&mut self, s: i32) -> Result<(), crate::scan::SccAbort> {
+    pub(crate) unsafe fn getfilemoddate(&mut self, s: i32) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
             return Ok(());
@@ -430,7 +409,7 @@ impl StringsState {
 
         let mtime = ttstub_input_get_mtime(handle);
         if crate::io::input_close(handle) {
-            return Err(crate::scan::SccAbort::InputClose);
+            return Err(Abort::InputClose);
         }
 
         let mut buf = [0u8; 30];

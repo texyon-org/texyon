@@ -23,7 +23,7 @@ use crate::consts::{
     SPLIT_BOT_MARK_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOP_MARK_CODE, UC_CODE_BASE,
     UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
-use crate::errors::EngineAbort;
+use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_OFFSET, HASH_PRIME, HASH_SIZE};
 use crate::helpers::OnDrop;
@@ -91,18 +91,15 @@ pub(crate) fn output_file_extension(st: &EngineState) -> &'static str {
     }
 }
 
-pub(crate) unsafe fn get_strings_started(st: &mut EngineState) -> Result<(), EngineAbort> {
+pub(crate) unsafe fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
     st.strings.pool_ptr = 0;
     st.strings.str_start[0] = 0;
     st.strings.str_ptr = TOO_BIG_CHAR;
 
     let spare_size = st.strings.pool_size - st.strings.string_vacancies;
-    let loaded = st
-        .strings
-        .load_pool_strings(spare_size)
-        .map_err(|e| e.into_engine_abort())?;
+    let loaded = st.strings.load_pool_strings(spare_size)?;
     if loaded == 0 {
-        return Err(EngineAbort::TtAbort("must increase pool_size"));
+        return Err(Abort::Internal("must increase pool_size"));
     }
     Ok(())
 }
@@ -149,46 +146,6 @@ impl MemState {
     }
 }
 
-enum PrimitiveInitAbort {
-    MakeTexString(crate::texmfmp::MakeTexStringAbort),
-    HashLookup(crate::hash::HashLookupError),
-    BufferSize(i32),
-}
-
-impl From<crate::texmfmp::MakeTexStringAbort> for PrimitiveInitAbort {
-    fn from(value: crate::texmfmp::MakeTexStringAbort) -> Self {
-        Self::MakeTexString(value)
-    }
-}
-
-impl From<crate::hash::HashLookupError> for PrimitiveInitAbort {
-    fn from(value: crate::hash::HashLookupError) -> Self {
-        Self::HashLookup(value)
-    }
-}
-
-impl PrimitiveInitAbort {
-    fn into_engine_abort(self) -> EngineAbort {
-        match self {
-            PrimitiveInitAbort::MakeTexString(e) => e.into_engine_abort(),
-            PrimitiveInitAbort::HashLookup(e) => {
-                use crate::hash::HashLookupError::*;
-                let (what, n) = match e {
-                    HashSizeOverflow(n) => ("hash size", n),
-                    PoolSizeOverflow(n) => ("pool size", n),
-                    StringNumberOverflow(n) => ("number of strings", n),
-                    PrimitiveSizeOverflow(n) => ("primitive size", n),
-                };
-                EngineAbort::Overflow { what, n }
-            }
-            PrimitiveInitAbort::BufferSize(limit) => EngineAbort::Overflow {
-                what: "buffer size",
-                n: limit,
-            },
-        }
-    }
-}
-
 impl EqtbState {
     pub(crate) fn set_eq(&mut self, p: i32, eq_type: u8, equiv: i32, level: u16) {
         self.set_eq_type(p, eq_type);
@@ -197,19 +154,17 @@ impl EqtbState {
     }
 }
 
-unsafe fn primitive(
-    st: &mut EngineState,
-    ident: &str,
-    c: u8,
-    o: i32,
-) -> Result<(), PrimitiveInitAbort> {
+unsafe fn primitive(st: &mut EngineState, ident: &str, c: u8, o: i32) -> Result<(), Abort> {
     let bytes = ident.as_bytes();
     let prim_val = if bytes.len() > 1 {
         let len = bytes.len() as i32;
         let s = st.strings.make_tex_string(ident)?;
 
         if st.input.first + len > st.input.buf_size + 1 {
-            return Err(PrimitiveInitAbort::BufferSize(st.input.buf_size));
+            return Err(Abort::Overflow {
+                what: "buffer size",
+                n: st.input.buf_size,
+            });
         }
         let first = st.input.first as usize;
         for (slot, &b) in st.input.buffer[first..].iter_mut().zip(bytes) {
@@ -234,7 +189,7 @@ unsafe fn primitive(
     Ok(())
 }
 
-pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbort> {
+pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr;
 
     if c != 1 {
@@ -242,14 +197,14 @@ pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbo
     }
 
     if st.strings.job_name == 0 {
-        crate::io::open_log_file(st).map_err(|e| e.into_engine_abort())?;
+        crate::io::open_log_file(st)?;
     }
 
     while st.input.input_ptr > 0 {
         if st.input.cur_input.state == TOKEN_LIST {
-            crate::input::end_token_list(st).map_err(|e| e.into_engine_abort())?;
+            crate::input::end_token_list(st)?;
         } else {
-            crate::input::end_file_reading(st).map_err(|e| e.into_engine_abort())?;
+            crate::input::end_file_reading(st)?;
         }
     }
 
@@ -319,9 +274,7 @@ pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbo
     }
 
     for box_code in LAST_BOX_CODE as usize..=VSPLIT_CODE as usize {
-        st.mem
-            .flush_node_list(st.scanner.disc_ptr[box_code])
-            .map_err(|msg| EngineAbort::Confusion(msg))?;
+        st.mem.flush_node_list(st.scanner.disc_ptr[box_code])?;
     }
 
     if let Some(spec) = st.shipout.last_glue {
@@ -649,17 +602,13 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: i32) {
     st.eqtb.set_int_par(INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);
 }
 
-unsafe fn set_frozen_text(
-    st: &mut EngineState,
-    p: i32,
-    text: &str,
-) -> Result<(), PrimitiveInitAbort> {
+unsafe fn set_frozen_text(st: &mut EngineState, p: i32, text: &str) -> Result<(), Abort> {
     let s = st.strings.make_tex_string(text)?;
     st.eqtb.set_hash_s1(p, s);
     Ok(())
 }
 
-unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveInitAbort> {
+unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
     use crate::primitives::PrimInit;
 
     st.eqtb.no_new_control_sequence = false;
@@ -907,11 +856,11 @@ pub(crate) unsafe fn initialize_engine(
         }
         let format_ident = match st.strings.make_tex_string(" (INITEX)") {
             Ok(v) => v,
-            Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
+            Err(e) => return InitOutcome::Terminate(e.into_history(st)),
         };
         initialize_more_initex_variables(st, format_ident);
         if let Err(e) = initialize_primitives(st) {
-            return InitOutcome::Terminate(e.into_engine_abort().into_history(st));
+            return InitOutcome::Terminate(e.into_history(st));
         }
         st.strings.init_str_ptr = st.strings.str_ptr;
         st.strings.init_pool_ptr = st.strings.pool_ptr;
@@ -1012,7 +961,7 @@ pub(crate) unsafe fn initialize_engine(
 
         let nullfont_name = match st.strings.make_tex_string("nullfont") {
             Ok(v) => v,
-            Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
+            Err(e) => return InitOutcome::Terminate(e.into_history(st)),
         };
         let fonts = &mut st.fonts;
         let f = FONT_BASE as usize;
@@ -1064,9 +1013,9 @@ pub(crate) unsafe fn initialize_engine(
 /// Open, execute, finalize, and release one batch document operation.
 unsafe fn run_document_to_end(st: &mut EngineState, input_file_name: *const libc::c_char) -> i32 {
     let result = (|| {
-        crate::io::start_input(st, input_file_name).map_err(|e| e.into_engine_abort())?;
+        crate::io::start_input(st, input_file_name)?;
         st.errors.history = HISTORY_SPOTLESS;
-        crate::main_control::main_control(st).map_err(|e| e.into_engine_abort())?;
+        crate::main_control::main_control(st)?;
         final_cleanup(st)?;
         crate::io::close_files_and_terminate(st)
     })();
@@ -1083,10 +1032,10 @@ unsafe fn run_document_to_end(st: &mut EngineState, input_file_name: *const libc
 pub(crate) unsafe fn run_resident_document(
     st: &mut EngineState,
     input_file_name: *const libc::c_char,
-) -> Result<i32, EngineAbort> {
-    crate::io::start_input(st, input_file_name).map_err(|e| e.into_engine_abort())?;
+) -> Result<i32, Abort> {
+    crate::io::start_input(st, input_file_name)?;
     st.errors.history = HISTORY_SPOTLESS;
-    crate::main_control::main_control(st).map_err(|e| e.into_engine_abort())?;
+    crate::main_control::main_control(st)?;
     final_cleanup(st)?;
     crate::io::close_files_and_terminate(st)?;
     Ok(st.errors.history)
@@ -1096,10 +1045,9 @@ pub(crate) unsafe fn run_resident_document(
 pub(crate) unsafe fn resume_resident_document(
     st: &mut EngineState,
     resume_pending_command: bool,
-) -> Result<i32, EngineAbort> {
+) -> Result<i32, Abort> {
     crate::io::reopen_resident_outputs(st)?;
-    crate::main_control::main_control_resume(st, resume_pending_command)
-        .map_err(|e| e.into_engine_abort())?;
+    crate::main_control::main_control_resume(st, resume_pending_command)?;
     final_cleanup(st)?;
     crate::io::close_files_and_terminate(st)?;
     Ok(st.errors.history)

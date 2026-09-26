@@ -52,34 +52,7 @@ unsafe fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
     ttstub_output_flush(st.shipout.rust_stdout);
 }
 
-#[must_use]
-pub(crate) enum ErrorOutcome {
-    Continue,
-    Halt,
-    Hundred,
-    Confusion(&'static str),
-    Overflow { what: &'static str, n: i32 },
-}
-
-impl ErrorOutcome {
-    pub(crate) fn into_engine_abort(self) -> EngineAbort {
-        match self {
-            ErrorOutcome::Continue => {
-                unreachable!("Continue is never propagated as a terminal abort")
-            }
-            ErrorOutcome::Halt => {
-                EngineAbort::HaltMessage("halted on potentially-recoverable error as specified")
-            }
-            ErrorOutcome::Hundred => {
-                EngineAbort::HaltMessage("halted after 100 potentially-recoverable errors")
-            }
-            ErrorOutcome::Confusion(msg) => EngineAbort::Confusion(msg),
-            ErrorOutcome::Overflow { what, n } => EngineAbort::Overflow { what, n },
-        }
-    }
-}
-
-pub(crate) fn error(st: &mut EngineState) -> ErrorOutcome {
+pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
     if st.errors.history < HISTORY_ERROR_ISSUED {
         st.errors.history = HISTORY_ERROR_ISSUED;
     }
@@ -87,14 +60,14 @@ pub(crate) fn error(st: &mut EngineState) -> ErrorOutcome {
     show_context(st);
     if st.config.halt_on_error_p != 0 {
         st.errors.history = HISTORY_FATAL_ERROR;
-        return ErrorOutcome::Halt;
+        return Err(Abort::HaltOnError);
     }
 
     st.errors.error_count = st.errors.error_count.wrapping_add(1);
     if st.errors.error_count == 100 {
         print_nl(st, "(That makes 100 errors; please try again.)");
         st.errors.history = HISTORY_FATAL_ERROR;
-        return ErrorOutcome::Hundred;
+        return Err(Abort::HundredErrors);
     }
 
     if st.errors.interaction > InteractionMode::Batch {
@@ -116,42 +89,49 @@ pub(crate) fn error(st: &mut EngineState) -> ErrorOutcome {
         st.shipout.selector += 1;
     }
     print_ln(st);
-    ErrorOutcome::Continue
+    Ok(())
 }
 
-/// A terminal abort, reported by [`EngineAbort::into_history`].
-pub(crate) enum EngineAbort {
+/// Why a run ends early. Reported once, by [`Abort::into_history`].
+#[must_use]
+pub(crate) enum Abort {
+    /// A resident operation was cancelled cooperatively.
     Cancelled,
     /// A viewport-bounded resident operation stopped at a resumable command fence.
     Horizoned,
+    /// `overflow(what, n)`.
     Overflow {
         what: &'static str,
         n: i32,
     },
     PoolOverflow,
     StringOverflow,
-    MainMemoryOverflow,
+    /// `get_avail` ran out: the runaway text, then the main memory overflow.
+    AvailOverflow,
+    /// `get_node` ran out: the main memory overflow alone.
+    NodeOverflow,
     SaveOverflow,
     NestOverflow,
     Confusion(&'static str),
     Fatal(&'static str),
-    PdfError {
-        t: &'static str,
-        p: &'static str,
-    },
-    /// Prints nothing, only surfaces `msg` as the abort message.
-    TtAbort(&'static str),
-    CannotOpenOutput,
-    CannotOpenInput,
+    /// `pdf_error(t, p)`.
+    PdfError(&'static [&'static str; 2]),
+    /// `error` with `\haltonerror` set.
+    HaltOnError,
+    /// The hundredth `error` of the run.
+    HundredErrors,
     NoLegalEnd {
         open_log: bool,
     },
-    /// The `Halt`/`Hundred` terminal of [`ErrorOutcome`].
-    HaltMessage(&'static str),
+    /// A host-level failure: no TeX error is printed, only `msg` is surfaced.
+    Internal(&'static str),
+    InputClose,
+    CannotOpenInput,
+    CannotOpenOutput,
 }
 
-impl EngineAbort {
-    unsafe fn overflow_report(st: &mut EngineState, what: &'static str, n: i32) {
+impl Abort {
+    unsafe fn overflow_report(st: &mut EngineState, what: &str, n: i32) {
         pre_error_message(st);
         print(st, "TeX capacity exceeded, sorry [");
         print(st, what);
@@ -166,7 +146,7 @@ impl EngineAbort {
         set_error_message("halted on overflow()");
     }
 
-    unsafe fn fatal_report(st: &mut EngineState, s: &'static str) {
+    unsafe fn fatal_report(st: &mut EngineState, s: &str) {
         pre_error_message(st);
         print(st, "Emergency stop");
         print_nl(st, s);
@@ -192,33 +172,34 @@ impl EngineAbort {
     /// Prints the abort and cleans up, then returns the fatal history.
     pub(crate) unsafe fn into_history(self, st: &mut EngineState) -> i32 {
         match self {
-            EngineAbort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
-            EngineAbort::Horizoned => {
-                return EngineAbort::Confusion("horizon stop escaped resident orchestration")
+            Abort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
+            Abort::Horizoned => {
+                return Abort::Confusion("horizon stop escaped resident orchestration")
                     .into_history(st)
             }
-            EngineAbort::Overflow { what, n } => Self::overflow_report(st, what, n),
-            EngineAbort::PoolOverflow => {
+            Abort::Overflow { what, n } => Self::overflow_report(st, what, n),
+            Abort::PoolOverflow => {
                 let n = st.strings.pool_size - st.strings.init_pool_ptr;
                 Self::overflow_report(st, "pool size", n);
             }
-            EngineAbort::StringOverflow => {
+            Abort::StringOverflow => {
                 let n = st.strings.max_strings - st.strings.init_str_ptr;
                 Self::overflow_report(st, "number of strings", n);
             }
-            EngineAbort::MainMemoryOverflow => {
+            Abort::AvailOverflow => {
                 runaway(st);
                 Self::overflow_report(st, "main memory size", MEM_TOP + 1);
             }
-            EngineAbort::SaveOverflow => {
+            Abort::NodeOverflow => Self::overflow_report(st, "main memory size", MEM_TOP + 1),
+            Abort::SaveOverflow => {
                 let n = st.save_stack.save_size;
                 Self::overflow_report(st, "save size", n);
             }
-            EngineAbort::NestOverflow => {
+            Abort::NestOverflow => {
                 let n = st.input.nest_size;
                 Self::overflow_report(st, "semantic nest size", n);
             }
-            EngineAbort::Confusion(s) => {
+            Abort::Confusion(s) => {
                 pre_error_message(st);
                 if st.errors.history < HISTORY_ERROR_ISSUED {
                     print(st, "This can't happen (");
@@ -236,37 +217,40 @@ impl EngineAbort {
                 post_error_message(st, true);
                 set_error_message("halted on confusion()");
             }
-            EngineAbort::Fatal(s) => Self::fatal_report(st, s),
-            EngineAbort::NoLegalEnd { open_log } => {
+            Abort::Fatal(s) => Self::fatal_report(st, s),
+            Abort::NoLegalEnd { open_log } => {
                 if open_log {
                     let _ = crate::io::open_log_file(st);
                 }
                 Self::fatal_report(st, "*** (job aborted, no legal \\end found)");
             }
-            EngineAbort::PdfError { t, p } => {
+            Abort::PdfError([t, p]) => {
                 pre_error_message(st);
-                print(st, "Error");
-                print(st, " (");
-                print(st, t);
-                print_char(st, b')' as i32);
-                print(st, ": ");
-                print(st, p);
+                print(st, "Error (");
+                print(st, *t);
+                print(st, "): ");
+                print(st, *p);
                 post_error_message(st, true);
                 set_error_message("halted on pdf_error()");
             }
-            EngineAbort::TtAbort(msg) => set_error_message(msg),
-            EngineAbort::CannotOpenOutput => Self::open_failure(st, "cannot open output file"),
-            EngineAbort::CannotOpenInput => Self::open_failure(st, "failed to open input file"),
-            EngineAbort::HaltMessage(msg) => {
+            Abort::HaltOnError => {
                 post_error_message(st, false);
-                set_error_message(msg);
+                set_error_message("halted on potentially-recoverable error as specified");
             }
+            Abort::HundredErrors => {
+                post_error_message(st, false);
+                set_error_message("halted after 100 potentially-recoverable errors");
+            }
+            Abort::Internal(msg) => set_error_message(msg),
+            Abort::InputClose => set_error_message("serious internal error closing an input file"),
+            Abort::CannotOpenInput => Self::open_failure(st, "failed to open input file"),
+            Abort::CannotOpenOutput => Self::open_failure(st, "cannot open output file"),
         }
         HISTORY_FATAL_ERROR
     }
 }
 
-pub(crate) fn int_error(st: &mut EngineState, n: i32) -> ErrorOutcome {
+pub(crate) fn int_error(st: &mut EngineState, n: i32) -> Result<(), Abort> {
     print(st, " (");
     print_int(st, n);
     print_char(st, b')' as i32);
@@ -279,7 +263,7 @@ pub(crate) fn not_font_error_common(
     c: i32,
     f: i32,
     suffix: &str,
-) -> ErrorOutcome {
+) -> Result<(), Abort> {
     error_here_with_diagnostic(st, "Cannot use ");
     print_cmd_chr(st, cmd, c);
     print(st, " with ");
@@ -293,14 +277,14 @@ pub(crate) fn give_err_help(st: &mut EngineState) {
     token_show(st, st.eqtb.local(LOCAL_ERR_HELP));
 }
 
-pub(crate) fn mu_error(st: &mut EngineState) -> ErrorOutcome {
+pub(crate) fn mu_error(st: &mut EngineState) -> Result<(), Abort> {
     print_err(st, "Incompatible glue units");
     st.errors
         .help(&["I'm going to assume that 1mu=1pt when they're mixed."]);
     error(st)
 }
 
-pub(crate) fn extra_right_brace(st: &mut EngineState) -> ErrorOutcome {
+pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
     error_here_with_diagnostic(st, "Extra }, or forgotten ");
     match st.save_stack.cur_group {
         GroupCode::SemiSimple => print_esc(st, "endgroup"),
@@ -316,11 +300,9 @@ pub(crate) fn extra_right_brace(st: &mut EngineState) -> ErrorOutcome {
         "the way to recover is to insert both the forgotten and the",
         "deleted material, e.g., by typing `I$}'.",
     ]);
-    let outcome = error(st);
-    if matches!(outcome, ErrorOutcome::Continue) {
-        st.scanner.align_state += 1;
-    }
-    outcome
+    error(st)?;
+    st.scanner.align_state += 1;
+    Ok(())
 }
 
 pub(crate) fn you_cant(st: &mut EngineState) {
@@ -330,7 +312,7 @@ pub(crate) fn you_cant(st: &mut EngineState) {
     capture_to_diagnostic(st, std::ptr::null_mut());
 }
 
-pub(crate) fn report_illegal_case(st: &mut EngineState) -> ErrorOutcome {
+pub(crate) fn report_illegal_case(st: &mut EngineState) -> Result<(), Abort> {
     you_cant(st);
     st.errors.help(&[
         "Sorry, but I'm not programmed to handle this case;",
@@ -341,17 +323,15 @@ pub(crate) fn report_illegal_case(st: &mut EngineState) -> ErrorOutcome {
     error(st)
 }
 
-pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, ErrorOutcome> {
+pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, Abort> {
     if st.input.cur_list.mode > 0 {
         return Ok(true);
     }
-    match report_illegal_case(st) {
-        ErrorOutcome::Continue => Ok(false),
-        o => Err(o),
-    }
+    report_illegal_case(st)?;
+    Ok(false)
 }
 
-pub(crate) fn cs_error(st: &mut EngineState) -> ErrorOutcome {
+pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
     error_here_with_diagnostic(st, "Extra ");
     print_esc(st, "endcsname");
     capture_to_diagnostic(st, std::ptr::null_mut());
@@ -360,23 +340,18 @@ pub(crate) fn cs_error(st: &mut EngineState) -> ErrorOutcome {
     error(st)
 }
 
-pub(crate) fn box_error(st: &mut EngineState, n: u8) -> ErrorOutcome {
+pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     let box_val = st.eqtb.box_reg(n as i32);
-    let outcome = error(st);
-    if !matches!(outcome, ErrorOutcome::Continue) {
-        return outcome;
-    }
+    error(st)?;
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
     print_nl(st, "The following box has been deleted:");
     show_box(st, box_val);
     capture_to_diagnostic(st, std::ptr::null_mut());
     end_diagnostic(st, true);
-    if let Err(msg) = st.mem.flush_node_list(box_val) {
-        return ErrorOutcome::Confusion(msg);
-    }
+    st.mem.flush_node_list(box_val)?;
     st.eqtb.set_box_reg(n as i32, crate::units::MemPtr::NULL);
-    ErrorOutcome::Continue
+    Ok(())
 }
 
 pub(crate) fn runaway(st: &mut EngineState) {

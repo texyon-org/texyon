@@ -4,7 +4,7 @@ use crate::cmd::ASSIGN_TOKS;
 use crate::consts::{
     CS_TOKEN_FLAG, FROZEN_RELAX, INT_PAR_TRACING_MACROS, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, TEX_NULL,
 };
-use crate::errors::{EngineAbort, ErrorOutcome};
+use crate::errors::Abort;
 use crate::io::u_close;
 use crate::node::{NodePtr, PseudoLineNode};
 use crate::state::{EngineState, InputClusterState, MemState};
@@ -39,41 +39,13 @@ pub(crate) const NEW_LINE: u16 = 33;
 pub(crate) const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
 pub(crate) const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 
-pub(crate) enum InputAbort {
-    Overflow {
-        what: &'static str,
-        n: i32,
-    },
-    Fatal(&'static str),
-    /// Aborts without printing a TeX error first.
-    TtAbort(&'static str),
-    MainMemory,
-    InputClose,
-    CannotOpenInput,
-}
-
-impl InputAbort {
-    pub(crate) fn into_engine_abort(self) -> EngineAbort {
-        match self {
-            InputAbort::Overflow { what, n } => EngineAbort::Overflow { what, n },
-            InputAbort::Fatal(msg) => EngineAbort::Fatal(msg),
-            InputAbort::TtAbort(msg) => EngineAbort::TtAbort(msg),
-            InputAbort::MainMemory => crate::errors::EngineAbort::MainMemoryOverflow,
-            InputAbort::CannotOpenInput => EngineAbort::CannotOpenInput,
-            InputAbort::InputClose => {
-                EngineAbort::TtAbort("serious internal error closing an input file")
-            }
-        }
-    }
-}
-
 #[inline]
-fn push_input(st: &mut EngineState) -> Result<(), InputAbort> {
+fn push_input(st: &mut EngineState) -> Result<(), Abort> {
     let ptr = st.input.input_ptr;
     if ptr > st.input.max_in_stack {
         st.input.max_in_stack = ptr;
         if ptr == st.input.stack_size {
-            return Err(InputAbort::Overflow {
+            return Err(Abort::Overflow {
                 what: "input stack size",
                 n: st.input.stack_size,
             });
@@ -91,7 +63,7 @@ fn pop_input(st: &mut EngineState) {
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
 }
 
-pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), InputAbort> {
+pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
     let ci = st.input.cur_input;
     if ci.index >= BACKED_UP {
         if ci.index <= INSERTED {
@@ -110,7 +82,7 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), InputAbort> {
         if st.scanner.align_state > 500_000 {
             st.scanner.align_state = 0;
         } else {
-            return Err(InputAbort::Fatal(
+            return Err(Abort::Fatal(
                 "(interwoven alignment preambles are not allowed)",
             ));
         }
@@ -119,14 +91,14 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), InputAbort> {
     Ok(())
 }
 
-pub(crate) fn back_input(st: &mut EngineState) -> Result<(), InputAbort> {
+pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     while st.input.cur_input.state == TOKEN_LIST
         && st.input.cur_input.loc == TEX_NULL
         && st.input.cur_input.index != V_TEMPLATE
     {
         end_token_list(st)?;
     }
-    let p = st.mem.get_avail().ok_or(InputAbort::MainMemory)?;
+    let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
     p.set_info(&mut st.mem, st.scanner.cur_tok);
     if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
         if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
@@ -143,15 +115,15 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), InputAbort> {
     Ok(())
 }
 
-pub(crate) fn back_error(st: &mut EngineState) -> Result<ErrorOutcome, InputAbort> {
+pub(crate) fn back_error(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
-    Ok(crate::errors::error(st))
+    crate::errors::error(st)
 }
 
-pub(crate) fn ins_error(st: &mut EngineState) -> Result<ErrorOutcome, InputAbort> {
+pub(crate) fn ins_error(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
     st.input.cur_input.index = INSERTED;
-    Ok(crate::errors::error(st))
+    crate::errors::error(st)
 }
 
 impl MemState {
@@ -168,15 +140,15 @@ impl MemState {
     }
 }
 
-pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), InputAbort> {
+pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     if st.input.in_open == st.input.max_in_open {
-        return Err(InputAbort::Overflow {
+        return Err(Abort::Overflow {
             what: "text input levels",
             n: st.input.max_in_open,
         });
     }
     if st.input.first == st.input.buf_size {
-        return Err(InputAbort::Overflow {
+        return Err(Abort::Overflow {
             what: "buffer size",
             n: st.input.buf_size,
         });
@@ -199,7 +171,7 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), InputAbort>
     Ok(())
 }
 
-pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), InputAbort> {
+pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     st.input.first = st.input.cur_input.start;
     st.mem.line = st.input.line_stack[st.input.cur_input.index as usize];
     match st.input.cur_input.name {
@@ -209,7 +181,7 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), InputAbort> {
             let slot = std::mem::take(&mut st.input.input_file[idx]);
             // SAFETY: FFI close of the open input file handle at this stack slot.
             if unsafe { u_close(slot) } {
-                return Err(InputAbort::InputClose);
+                return Err(Abort::InputClose);
             }
         }
         _ => {}
@@ -219,7 +191,7 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), InputAbort> {
     Ok(())
 }
 
-pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, InputAbort> {
+pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
     st.input.last = st.input.first;
     let files = st.input.pseudo_files;
     let Some(line) = NodePtr::<PseudoLineNode>::from_ptr(MemPtr(files.info(&st.mem))) else {
@@ -231,7 +203,7 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, InputAbort> {
     if 4 * size - 3 >= st.input.buf_size - st.input.last {
         st.input.cur_input.loc = st.input.first;
         st.input.cur_input.limit = st.input.last - 1;
-        return Err(InputAbort::Overflow {
+        return Err(Abort::Overflow {
             what: "buffer size",
             n: st.input.buf_size,
         });
@@ -255,7 +227,7 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, InputAbort> {
     Ok(true)
 }
 
-pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), InputAbort> {
+pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
     back_input(st)?;
     st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_RELAX;
@@ -264,11 +236,7 @@ pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), InputAbort> {
     Ok(())
 }
 
-pub(crate) fn begin_token_list(
-    st: &mut EngineState,
-    list: MemPtr,
-    t: u16,
-) -> Result<(), InputAbort> {
+pub(crate) fn begin_token_list(st: &mut EngineState, list: MemPtr, t: u16) -> Result<(), Abort> {
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
     st.input.cur_input.start = list.0;

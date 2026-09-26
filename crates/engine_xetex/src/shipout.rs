@@ -3,7 +3,7 @@ use crate::consts::{
     A_LEADERS, BEFORE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_PAR_H_OFFSET, DIMEN_PAR_PDF_PAGE_HEIGHT,
     DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE, FILLL, FONT_BASE, INT_PAR_MAG,
     INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING,
-    INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD,
+    INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD,
     NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY,
     SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE,
     SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL,
@@ -14,6 +14,7 @@ use crate::bridge::{
     ttstub_output_close, ttstub_output_flush, ttstub_output_open, ttstub_output_write,
     ttstub_shell_escape,
 };
+use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{INSERTED, WRITE_TEXT};
 use crate::mem::{end_lr_type, LIG_TRICK};
@@ -66,65 +67,6 @@ const REVERSED: u16 = 1;
 pub(crate) const ONE_INCH: i32 = 4_736_287;
 const ONE_INCH_LESS_ONE: i32 = ONE_INCH - 1;
 
-pub(crate) enum ShipoutAbort {
-    /// `overflow("pool size")` while merging native words or writing a special.
-    PoolSizeOverflow,
-    NodeRecycle(crate::scan::NodeRecycleAbort),
-    Confusion(&'static str),
-    /// Short write to the XDV file.
-    DviWriteFailed,
-    /// The DVI length exceeded 0x7FFFFFFF.
-    DviLengthOverflow,
-    /// `overflow("main memory size")`.
-    MainMemoryOverflow,
-    /// A scanner abort while expanding a `\write`.
-    Scc(crate::scan::SccAbort),
-    CannotOpenOutput,
-    Name(crate::io::NameAbort),
-    NativeFont(crate::ext::NativeFontAbort),
-}
-
-impl From<crate::ext::NativeFontAbort> for ShipoutAbort {
-    fn from(e: crate::ext::NativeFontAbort) -> Self {
-        ShipoutAbort::NativeFont(e)
-    }
-}
-
-impl From<crate::scan::SccAbort> for ShipoutAbort {
-    fn from(a: crate::scan::SccAbort) -> Self {
-        ShipoutAbort::Scc(a)
-    }
-}
-
-impl From<crate::input::InputAbort> for ShipoutAbort {
-    fn from(a: crate::input::InputAbort) -> Self {
-        ShipoutAbort::Scc(crate::scan::SccAbort::Input(a))
-    }
-}
-
-impl From<crate::io::NameAbort> for ShipoutAbort {
-    fn from(a: crate::io::NameAbort) -> Self {
-        ShipoutAbort::Name(a)
-    }
-}
-
-impl From<crate::io::OpenLogAbort> for ShipoutAbort {
-    fn from(a: crate::io::OpenLogAbort) -> Self {
-        ShipoutAbort::Scc(crate::scan::SccAbort::OpenLog(a))
-    }
-}
-
-impl From<crate::texmfmp::MakeTexStringAbort> for ShipoutAbort {
-    fn from(a: crate::texmfmp::MakeTexStringAbort) -> Self {
-        ShipoutAbort::Scc(crate::scan::SccAbort::MakeTexString(a))
-    }
-}
-
-/// `Continue` keeps going, any other error outcome aborts.
-fn ship_err(o: crate::errors::ErrorOutcome) -> Result<(), ShipoutAbort> {
-    crate::scan::scc_err(o).map_err(ShipoutAbort::Scc)
-}
-
 impl MemState {
     pub fn new_edge(&mut self, s: i16, w: i32) -> Option<NodePtr<EdgeNode>> {
         let p = NodePtr::<EdgeNode>::alloc(self)?;
@@ -133,38 +75,10 @@ impl MemState {
         p.set_edge_dist(self, Scaled(0));
         Some(p)
     }
-
-    fn get_avail_ship(&mut self) -> Result<crate::units::MemPtr, ShipoutAbort> {
-        self.get_avail().ok_or(ShipoutAbort::MainMemoryOverflow)
-    }
-}
-
-impl ShipoutAbort {
-    pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
-        match self {
-            ShipoutAbort::PoolSizeOverflow => crate::errors::EngineAbort::PoolOverflow,
-            ShipoutAbort::NodeRecycle(e) => e.into_engine_abort(),
-            ShipoutAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg),
-            ShipoutAbort::DviWriteFailed => {
-                crate::errors::EngineAbort::TtAbort("failed to write data to XDV file")
-            }
-            ShipoutAbort::DviLengthOverflow => {
-                crate::errors::EngineAbort::Fatal("dvi length exceeds 0x7FFFFFFF")
-            }
-            ShipoutAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
-                what: "main memory size",
-                n: MEM_TOP + 1,
-            },
-            ShipoutAbort::Scc(e) => e.into_engine_abort(),
-            ShipoutAbort::CannotOpenOutput => crate::errors::EngineAbort::CannotOpenOutput,
-            ShipoutAbort::Name(e) => e.into_engine_abort(),
-            ShipoutAbort::NativeFont(e) => e.into_engine_abort(),
-        }
-    }
 }
 
 impl ShipoutState {
-    fn write_to_dvi(&self, a: i32, b: i32) -> Result<(), ShipoutAbort> {
+    fn write_to_dvi(&self, a: i32, b: i32) -> Result<(), Abort> {
         let bytes = &self.dvi_buf[a as usize..=b as usize];
         // SAFETY: FFI write of a live byte slice, no engine re-entry.
         let written = unsafe {
@@ -175,15 +89,15 @@ impl ShipoutState {
             )
         };
         if written != bytes.len() {
-            return Err(ShipoutAbort::DviWriteFailed);
+            return Err(Abort::Internal("failed to write data to XDV file"));
         }
         Ok(())
     }
 
-    fn dvi_swap(&mut self) -> Result<(), ShipoutAbort> {
+    fn dvi_swap(&mut self) -> Result<(), Abort> {
         if self.dvi_ptr > TEX_INFINITY - self.dvi_offset {
             self.cur_s = -2;
-            return Err(ShipoutAbort::DviLengthOverflow);
+            return Err(Abort::Fatal("dvi length exceeds 0x7FFFFFFF"));
         }
         if self.dvi_limit == DVI_BUF_SIZE {
             self.write_to_dvi(0, HALF_BUF - 1)?;
@@ -199,7 +113,7 @@ impl ShipoutState {
     }
 
     #[inline]
-    fn dvi_out(&mut self, c: u8) -> Result<(), ShipoutAbort> {
+    fn dvi_out(&mut self, c: u8) -> Result<(), Abort> {
         self.page_manifest.record_byte(c);
         self.dvi_buf[self.dvi_ptr as usize] = c;
         self.dvi_ptr += 1;
@@ -209,7 +123,7 @@ impl ShipoutState {
         Ok(())
     }
 
-    fn dvi_bytes(&mut self, mut bytes: &[u8]) -> Result<(), ShipoutAbort> {
+    fn dvi_bytes(&mut self, mut bytes: &[u8]) -> Result<(), Abort> {
         while !bytes.is_empty() {
             let ptr = self.dvi_ptr as usize;
             let n = bytes.len().min(self.dvi_limit as usize - ptr);
@@ -224,16 +138,16 @@ impl ShipoutState {
         Ok(())
     }
 
-    fn dvi_four(&mut self, x: i32) -> Result<(), ShipoutAbort> {
+    fn dvi_four(&mut self, x: i32) -> Result<(), Abort> {
         self.dvi_bytes(&x.to_be_bytes())
     }
 
-    fn dvi_two(&mut self, s: u16) -> Result<(), ShipoutAbort> {
+    fn dvi_two(&mut self, s: u16) -> Result<(), Abort> {
         self.dvi_bytes(&s.to_be_bytes())
     }
 }
 
-fn synch_h(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
+fn synch_h(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     if st.shipout.cur_h != st.shipout.dvi_h {
         let delta = st.shipout.cur_h - st.shipout.dvi_h;
         st.mem.movement(&mut st.shipout, delta, RIGHT1)?;
@@ -242,7 +156,7 @@ fn synch_h(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     Ok(())
 }
 
-fn synch_v(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
+fn synch_v(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     if st.shipout.cur_v != st.shipout.dvi_v {
         let delta = st.shipout.cur_v - st.shipout.dvi_v;
         st.mem.movement(&mut st.shipout, delta, DOWN1)?;
@@ -251,7 +165,7 @@ fn synch_v(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     Ok(())
 }
 
-fn dvi_native_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
+fn dvi_native_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Abort> {
     // SAFETY: FFI fill of `xdv_buffer`, returning the definition length.
     let font_def_length = unsafe { st.fonts.make_font_def(f) }?;
     st.shipout.dvi_out(DEFINE_NATIVE_FONT)?;
@@ -260,7 +174,7 @@ fn dvi_native_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(),
         .dvi_bytes(&st.fonts.xdv_buffer[..font_def_length as usize])
 }
 
-fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
+fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Abort> {
     let font_area = st.fonts.font_area_entry(f);
     if font_area == AAT_FONT_FLAG || font_area == OTGR_FONT_FLAG {
         return dvi_native_font_def(st, f);
@@ -319,7 +233,7 @@ pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
 }
 
 /// Emit the current string (the tail of the pool) as a DVI special and drop it.
-fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
+fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     let base = st.strings.cur_string_start();
     let cur_len = st.strings.pool_ptr - base;
     if cur_len < 256 {
@@ -338,7 +252,7 @@ fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(),
 pub(crate) unsafe fn ship_out(
     st: &mut crate::state::EngineState,
     page: AnyBox,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     let p = page.ptr();
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     let job_name = st.strings.gettexstring(st.strings.job_name);
@@ -397,7 +311,7 @@ pub(crate) unsafe fn ship_out(
             "The page just created is more than 18 feet tall or",
             "more than 18 feet wide, so I suspect something went wrong.",
         ]);
-        ship_err(crate::errors::error(st))?;
+        crate::errors::error(st)?;
 
         if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
             crate::output::begin_diagnostic(st);
@@ -422,19 +336,19 @@ pub(crate) unsafe fn ship_out(
     }
 
     if !st.scanner.lr_ptr.is_null() || st.scanner.cur_dir != LEFT_TO_RIGHT {
-        return Err(ShipoutAbort::Confusion("LR3"));
+        return Err(Abort::Confusion("LR3"));
     }
     if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
         crate::output::print_char(st, b']' as i32);
     }
     st.shipout.dead_cycles = 0;
     ttstub_output_flush(st.shipout.rust_stdout);
-    st.mem.flush_node_list(p).map_err(ShipoutAbort::Confusion)?;
+    st.mem.flush_node_list(p)?;
     crate::synctex::synctex_teehs(st);
     Ok(())
 }
 
-unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), ShipoutAbort> {
+unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
     let (height, depth, width) = (
         page.height(&st.mem).0,
         page.depth(&st.mem).0,
@@ -471,7 +385,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
         crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
         st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file_ptr(), 0);
         if st.shipout.dvi_file == INVALID_HANDLE {
-            return Err(ShipoutAbort::CannotOpenOutput);
+            return Err(Abort::CannotOpenOutput);
         }
         st.shipout.output_file_name = crate::io::make_name_string(st)?;
     }
@@ -482,7 +396,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
             .dvi_out(id_byte(st.config.semantic_pagination_enabled))?;
         st.shipout.dvi_four(25_400_000)?;
         st.shipout.dvi_four(473_628_672)?;
-        ship_err(crate::save::prepare_mag(st))?;
+        crate::save::prepare_mag(st)?;
         st.shipout.dvi_four(st.eqtb.int_par(INT_PAR_MAG))?;
         let comment = b"tectonic";
         st.shipout.dvi_out(comment.len() as u8)?;
@@ -549,7 +463,7 @@ fn id_byte(semantic_pagination: bool) -> u8 {
 }
 
 impl ShipoutState {
-    fn dvi_pop(&mut self, l: i32) -> Result<(), ShipoutAbort> {
+    fn dvi_pop(&mut self, l: i32) -> Result<(), Abort> {
         if l == self.dvi_offset + self.dvi_ptr && self.dvi_ptr > 0 {
             self.dvi_ptr -= 1;
             self.page_manifest.pop_byte();
@@ -560,7 +474,7 @@ impl ShipoutState {
     }
 }
 
-fn dvi_font_select(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
+fn dvi_font_select(st: &mut crate::state::EngineState, f: i32) -> Result<(), Abort> {
     if f == st.shipout.dvi_f {
         return Ok(());
     }
@@ -639,7 +553,7 @@ impl FontState {
 }
 
 impl ShipoutState {
-    fn push_dvi_level(&mut self) -> Result<i32, ShipoutAbort> {
+    fn push_dvi_level(&mut self) -> Result<i32, Abort> {
         self.cur_s += 1;
         if self.cur_s > 0 {
             self.dvi_out(PUSH)?;
@@ -662,7 +576,7 @@ impl MemState {
         fonts: &FontState,
         eqtb: &EqtbState,
         this_box: AnyBox,
-    ) -> Result<(), ShipoutAbort> {
+    ) -> Result<(), Abort> {
         let mut prev_p = this_box.list_head();
         let mut p = this_box.list_ptr(self);
 
@@ -739,9 +653,9 @@ impl MemState {
         first: NodePtr<WhatsitNode>,
         last: NodePtr<WhatsitNode>,
         text_len: i32,
-    ) -> Result<MemPtr, ShipoutAbort> {
+    ) -> Result<MemPtr, Abort> {
         if strings.pool_ptr + text_len > strings.pool_size {
-            return Err(ShipoutAbort::PoolSizeOverflow);
+            return Err(Abort::PoolOverflow);
         }
 
         let g_order = this_box.glue_order(self);
@@ -791,9 +705,7 @@ impl MemState {
         }
 
         let nlen = strings.cur_length();
-        let word = self
-            .new_native_word_node(eqtb, first.native_font(self).0, nlen)
-            .map_err(ShipoutAbort::NodeRecycle)?;
+        let word = self.new_native_word_node(eqtb, first.native_font(self).0, nlen)?;
         word.set_subtype(self, first.subtype(self));
         let base = strings.cur_string_start() as usize;
         let text = &strings.str_pool[base..base + nlen as usize];
@@ -825,8 +737,7 @@ impl MemState {
             p = p.link(self);
         }
 
-        self.flush_node_list(first.ptr())
-            .map_err(ShipoutAbort::Confusion)?;
+        self.flush_node_list(first.ptr())?;
         strings.discard_cur_string();
         Ok(tail)
     }
@@ -838,13 +749,12 @@ impl MemState {
         glue: NodePtr<GlueNode>,
         spec: NodePtr<GlueSpecNode>,
         w: i32,
-    ) -> Result<(), ShipoutAbort> {
+    ) -> Result<(), Abort> {
         self.delete_glue_ref(spec);
         if glue.subtype(self) < A_LEADERS {
             glue.into_kern(self, Scaled(w));
         } else {
-            let rigid =
-                NodePtr::<GlueSpecNode>::alloc(self).ok_or(ShipoutAbort::MainMemoryOverflow)?;
+            let rigid = NodePtr::<GlueSpecNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
             rigid.set_stretch_order(self, FILLL + 1);
             rigid.set_shrink_order(self, FILLL + 1);
             rigid.set_width(self, Scaled(w));
@@ -873,11 +783,7 @@ impl MemState {
         scanner.lr_ptr.info(self) == end_lr_type(math.subtype(self))
     }
 
-    fn pop_dvi_level(
-        &mut self,
-        shipout: &mut ShipoutState,
-        save_loc: i32,
-    ) -> Result<(), ShipoutAbort> {
+    fn pop_dvi_level(&mut self, shipout: &mut ShipoutState, save_loc: i32) -> Result<(), Abort> {
         self.prune_movements(shipout, save_loc);
         if shipout.cur_s > 0 {
             shipout.dvi_pop(save_loc)?;
@@ -887,7 +793,7 @@ impl MemState {
     }
 }
 
-fn ship_box(st: &mut crate::state::EngineState, b: AnyBox) -> Result<(), ShipoutAbort> {
+fn ship_box(st: &mut crate::state::EngineState, b: AnyBox) -> Result<(), Abort> {
     match b {
         AnyBox::HList(_) => hlist_out(st, b),
         AnyBox::VList(_) => vlist_out(st, b),
@@ -895,7 +801,7 @@ fn ship_box(st: &mut crate::state::EngineState, b: AnyBox) -> Result<(), Shipout
 }
 
 /// Ship one copy of a leader box with `doing_leaders` set.
-fn ship_leader_box(st: &mut crate::state::EngineState, leader: AnyBox) -> Result<(), ShipoutAbort> {
+fn ship_leader_box(st: &mut crate::state::EngineState, leader: AnyBox) -> Result<(), Abort> {
     let outer_doing_leaders = st.shipout.doing_leaders;
     st.shipout.doing_leaders = true;
     ship_box(st, leader)?;
@@ -908,7 +814,7 @@ fn hlist_rule_out(
     this_box: AnyBox,
     base_line: i32,
     p: MemPtr,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     if st.shipout.rule_ht == NULL_FLAG {
         st.shipout.rule_ht = this_box.height(&st.mem).0;
     }
@@ -934,7 +840,7 @@ fn vlist_rule_out(
     this_box: AnyBox,
     left_edge: i32,
     upwards: bool,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     if st.shipout.rule_wd == NULL_FLAG {
         st.shipout.rule_wd = this_box.width(&st.mem).0;
     }
@@ -953,7 +859,7 @@ fn vlist_rule_out(
 }
 
 impl ShipoutState {
-    fn dvi_rule(&mut self, opcode: u8) -> Result<(), ShipoutAbort> {
+    fn dvi_rule(&mut self, opcode: u8) -> Result<(), Abort> {
         let (ht, wd) = (self.rule_ht, self.rule_wd);
         self.dvi_out(opcode)?;
         self.dvi_four(ht)?;
@@ -977,7 +883,7 @@ fn hlist_glue_out(
     left_edge: i32,
     glue: NodePtr<GlueNode>,
     rounding: &mut GlueRounding,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     let spec = glue.glue_ptr(&st.mem);
     st.shipout.rule_wd = rounding.width(&st.mem, spec);
     if rounding.is_set(&st.mem, spec) {
@@ -1050,7 +956,7 @@ fn hlist_glue_out(
     Ok(())
 }
 
-fn dvi_xdv_buffer(st: &mut crate::state::EngineState, len: usize) -> Result<(), ShipoutAbort> {
+fn dvi_xdv_buffer(st: &mut crate::state::EngineState, len: usize) -> Result<(), Abort> {
     st.shipout.dvi_bytes(&st.fonts.xdv_buffer[..len])
 }
 
@@ -1058,7 +964,7 @@ fn native_word_out(
     st: &mut crate::state::EngineState,
     word: NodePtr<WhatsitNode>,
     subtype: WhatsitSubtype,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     dvi_font_select(st, word.native_font(&st.mem).0)?;
@@ -1111,7 +1017,7 @@ fn chars_out(
     st: &mut crate::state::EngineState,
     mut p: MemPtr,
     mut prev_p: MemPtr,
-) -> Result<(MemPtr, MemPtr), ShipoutAbort> {
+) -> Result<(MemPtr, MemPtr), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     while let Some(ch) = st.mem.as_char(p) {
@@ -1145,7 +1051,7 @@ fn chars_out(
     Ok((p, prev_p))
 }
 
-fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), ShipoutAbort> {
+fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), Abort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     if st.eqtb.int_par(INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
@@ -1160,7 +1066,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     let mut prev_p = this_box.list_head();
     st.mem
         .push_lr(&mut st.scanner.lr_ptr, BEFORE.into())
-        .ok_or(ShipoutAbort::MainMemoryOverflow)?;
+        .ok_or(Abort::NodeOverflow)?;
 
     if this_box.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
@@ -1174,7 +1080,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
-        let kern = st.mem.new_kern(0).ok_or(ShipoutAbort::MainMemoryOverflow)?;
+        let kern = st.mem.new_kern(0).ok_or(Abort::NodeOverflow)?;
         kern.set_sync_tag(&mut st.mem, 0);
         prev_p.set_link(&mut st.mem, kern.ptr());
         st.shipout.cur_h = 0;
@@ -1254,7 +1160,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                     let end_type = end_lr_type(math.subtype(&st.mem));
                     st.mem
                         .push_lr(&mut st.scanner.lr_ptr, end_type)
-                        .ok_or(ShipoutAbort::MainMemoryOverflow)?;
+                        .ok_or(Abort::NodeOverflow)?;
                     if st.mem.lr_dir(math) != st.scanner.cur_dir {
                         let edge = reverse_segment(
                             st,
@@ -1311,7 +1217,7 @@ fn hlist_box_out(
     st: &mut crate::state::EngineState,
     b: AnyBox,
     base_line: i32,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     if b.list_ptr(&st.mem).is_null() {
         match b {
             AnyBox::VList(v) => crate::synctex::synctex_void_vlist(st, v),
@@ -1344,7 +1250,7 @@ fn reverse_segment(
     left_edge: i32,
     math_width: i32,
     rounding: &mut GlueRounding,
-) -> Result<NodePtr<EdgeNode>, ShipoutAbort> {
+) -> Result<NodePtr<EdgeNode>, Abort> {
     let save_h = st.shipout.cur_h;
     st.mem.temp_ptr = math.link(&st.mem);
     st.shipout.rule_wd = math_width;
@@ -1353,13 +1259,13 @@ fn reverse_segment(
     let edge = st
         .mem
         .new_edge(st.scanner.cur_dir, st.shipout.rule_wd)
-        .ok_or(ShipoutAbort::MainMemoryOverflow)?;
+        .ok_or(Abort::NodeOverflow)?;
     prev_p.set_link(&mut st.mem, edge.ptr());
     st.shipout.cur_h = st.shipout.cur_h - left_edge + st.shipout.rule_wd;
     let end = st
         .mem
         .new_edge(1 - st.scanner.cur_dir, 0)
-        .ok_or(ShipoutAbort::MainMemoryOverflow)?;
+        .ok_or(Abort::NodeOverflow)?;
     let reversed = st.mem.reverse(
         &mut st.shipout,
         &mut st.scanner,
@@ -1374,7 +1280,7 @@ fn reverse_segment(
     Ok(edge)
 }
 
-fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), ShipoutAbort> {
+fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(), Abort> {
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     let mut p = this_box.list_ptr(&st.mem);
@@ -1391,7 +1297,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 
     while !p.is_null() {
         if st.mem.is_char_node(p) {
-            return Err(ShipoutAbort::Confusion("vlistout"));
+            return Err(Abort::Confusion("vlistout"));
         }
         match st
             .mem
@@ -1475,7 +1381,7 @@ fn vlist_box_out(
     b: AnyBox,
     left_edge: i32,
     upwards: bool,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     let (height, depth) = (b.height(&st.mem).0, b.depth(&st.mem).0);
     if upwards {
         st.shipout.cur_v -= depth;
@@ -1522,7 +1428,7 @@ fn vlist_leaders_out(
     left_edge: i32,
     top_edge: i32,
     upwards: bool,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     let leader_ht = leader.height(&st.mem).0 + leader.depth(&st.mem).0;
     if leader_ht <= 0 || st.shipout.rule_ht <= 0 {
         st.shipout.move_past_vlist_rule(upwards);
@@ -1587,7 +1493,7 @@ impl MemState {
     }
 }
 
-pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
+pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<(), Abort> {
     while st.shipout.cur_s > -1 {
         if st.shipout.cur_s > 0 {
             st.shipout.dvi_out(POP)?;
@@ -1616,7 +1522,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     st.shipout.last_bop = st.shipout.dvi_offset + st.shipout.dvi_ptr - 5;
     st.shipout.dvi_four(25_400_000)?;
     st.shipout.dvi_four(473_628_672)?;
-    ship_err(crate::save::prepare_mag(st))?;
+    crate::save::prepare_mag(st)?;
     st.shipout.dvi_four(st.eqtb.int_par(INT_PAR_MAG))?;
     let (max_v, max_h, max_push, total_pages) = (
         st.shipout.max_v,
@@ -1657,7 +1563,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     }
     if st.shipout.dvi_ptr > TEX_INFINITY - st.shipout.dvi_offset {
         st.shipout.cur_s = -2;
-        return Err(ShipoutAbort::DviLengthOverflow);
+        return Err(Abort::Fatal("dvi length exceeds 0x7FFFFFFF"));
     }
     if st.shipout.dvi_ptr > 0 {
         st.shipout.write_to_dvi(0, st.shipout.dvi_ptr - 1)?;
@@ -1739,7 +1645,7 @@ impl MemState {
         fonts: &mut FontState,
         t: Option<NodePtr<EdgeNode>>,
         rounding: &mut GlueRounding,
-    ) -> Result<MemPtr, ShipoutAbort> {
+    ) -> Result<MemPtr, Abort> {
         let mut l = t.map_or(MemPtr::NULL, |t| t.ptr());
         let mut p = self.temp_ptr;
         let mut m = MIN_HALFWORD;
@@ -1789,7 +1695,7 @@ impl MemState {
                     Ok(AnyNode::Ligature(ligature)) => {
                         self.flush_list(ligature.lig_ptr(self));
                         self.temp_ptr = ligature.ptr();
-                        let c = self.get_avail_ship()?;
+                        let c = self.get_avail().ok_or(Abort::NodeOverflow)?;
                         self.set_word(c.0, self.word(ligature.idx().offset(1).0));
                         c.set_link(self, q);
                         self.free_node(ligature.ptr(), SMALL_NODE_SIZE);
@@ -1829,7 +1735,7 @@ impl MemState {
                         } else {
                             let end_type = end_lr_type(math.subtype(self));
                             self.push_lr(&mut scanner.lr_ptr, end_type)
-                                .ok_or(ShipoutAbort::MainMemoryOverflow)?;
+                                .ok_or(Abort::NodeOverflow)?;
                             if n > MIN_HALFWORD || self.lr_dir(math) != scanner.cur_dir {
                                 n += 1;
                                 math.set_subtype(self, math.subtype(self) + 1);
@@ -1840,7 +1746,7 @@ impl MemState {
                             }
                         }
                     }
-                    Ok(AnyNode::Style(_)) => return Err(ShipoutAbort::Confusion("LR2")),
+                    Ok(AnyNode::Style(_)) => return Err(Abort::Confusion("LR2")),
                     _ => add_width = false,
                 }
 
@@ -1860,16 +1766,13 @@ impl MemState {
                 return Ok(l);
             }
             let dir = scanner.lr_ptr.info(self) as u16;
-            p = self
-                .new_math(0, dir)
-                .ok_or(ShipoutAbort::MainMemoryOverflow)?
-                .ptr();
+            p = self.new_math(0, dir).ok_or(Abort::NodeOverflow)?.ptr();
             scanner.lr_problems += 10000;
         }
     }
 
-    fn movement(&mut self, shipout: &mut ShipoutState, w: i32, o: u8) -> Result<(), ShipoutAbort> {
-        let mut q = NodePtr::<MovementNode>::alloc(self).ok_or(ShipoutAbort::MainMemoryOverflow)?;
+    fn movement(&mut self, shipout: &mut ShipoutState, w: i32, o: u8) -> Result<(), Abort> {
+        let mut q = NodePtr::<MovementNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
         q.set_distance(self, Scaled(w));
         q.set_location(self, shipout.dvi_offset + shipout.dvi_ptr);
         let head = if o == DOWN1 {
@@ -1957,7 +1860,7 @@ impl MemState {
 fn special_out(
     st: &mut crate::state::EngineState,
     special: NodePtr<WhatsitNode>,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     st.shipout.doing_special = true;
@@ -1968,7 +1871,7 @@ fn special_out(
     crate::output::show_token_list(st, tokens, TEX_NULL, avail);
     st.shipout.selector = old_setting;
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
-        return Err(ShipoutAbort::PoolSizeOverflow);
+        return Err(Abort::PoolOverflow);
     }
     dvi_special_from_cur_string(st)?;
     st.shipout.doing_special = false;
@@ -1986,18 +1889,15 @@ impl EqtbState {
     }
 }
 
-fn write_out(
-    st: &mut crate::state::EngineState,
-    write: NodePtr<WhatsitNode>,
-) -> Result<(), ShipoutAbort> {
-    let q = st.mem.get_avail_ship()?;
+fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) -> Result<(), Abort> {
+    let q = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
     q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-    let r = st.mem.get_avail_ship()?;
+    let r = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
     q.set_link(&mut st.mem, r);
     r.set_info(&mut st.mem, CS_TOKEN_FLAG + END_WRITE);
     crate::input::begin_token_list(st, q, INSERTED)?;
     crate::input::begin_token_list(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
-    let q = st.mem.get_avail_ship()?;
+    let q = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
     q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     crate::input::begin_token_list(st, q, INSERTED)?;
 
@@ -2013,7 +1913,7 @@ fn write_out(
             r"On this page there's a \write with fewer real {'s than }'s.",
             "I can't handle that very well; good luck.",
         ]);
-        ship_err(crate::errors::error(st))?;
+        crate::errors::error(st)?;
         loop {
             crate::scan::get_token(st)?;
             if st.scanner.cur_tok == CS_TOKEN_FLAG + END_WRITE {
@@ -2073,10 +1973,7 @@ fn write_out(
     Ok(())
 }
 
-fn pic_out(
-    st: &mut crate::state::EngineState,
-    pic: NodePtr<WhatsitNode>,
-) -> Result<(), ShipoutAbort> {
+fn pic_out(st: &mut crate::state::EngineState, pic: NodePtr<WhatsitNode>) -> Result<(), Abort> {
     synch_h(st)?;
     synch_v(st)?;
     let old_setting = st.shipout.selector;
@@ -2109,7 +2006,7 @@ fn pic_out(
 pub(crate) fn out_what(
     st: &mut crate::state::EngineState,
     w: NodePtr<WhatsitNode>,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     let subtype = w.whatsit_subtype(&st.mem);
     match subtype {
         Some(WhatsitSubtype::Open | WhatsitSubtype::Write | WhatsitSubtype::Close) => {
@@ -2119,7 +2016,7 @@ pub(crate) fn out_what(
         }
         Some(WhatsitSubtype::Special) => special_out(st, w)?,
         Some(WhatsitSubtype::Language) => {}
-        _ => return Err(ShipoutAbort::Confusion("ext4")),
+        _ => return Err(Abort::Confusion("ext4")),
     }
     Ok(())
 }
@@ -2128,7 +2025,7 @@ fn out_write_stream(
     st: &mut crate::state::EngineState,
     w: NodePtr<WhatsitNode>,
     subtype: Option<WhatsitSubtype>,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     if subtype == Some(WhatsitSubtype::Write) {
         return write_out(st, w);
     }
@@ -2161,7 +2058,7 @@ fn out_write_stream(
     // SAFETY: FFI open with the packed name buffer.
     let handle = unsafe { ttstub_output_open(st.input.name_of_file_ptr(), 0) };
     if handle == INVALID_HANDLE {
-        return Err(ShipoutAbort::CannotOpenOutput);
+        return Err(Abort::CannotOpenOutput);
     }
     st.shipout.write_file[stream] = handle;
     st.shipout.write_open[stream] = true;
@@ -2188,17 +2085,17 @@ fn out_write_stream(
 pub(crate) fn ensure_write_stream_open(
     st: &mut crate::state::EngineState,
     stream: usize,
-) -> Result<(), ShipoutAbort> {
+) -> Result<(), Abort> {
     if st.shipout.write_file[stream] != INVALID_HANDLE {
         return Ok(());
     }
     let name = &st.shipout.write_name[stream];
     if name.last() != Some(&0) {
-        return Err(ShipoutAbort::CannotOpenOutput);
+        return Err(Abort::CannotOpenOutput);
     }
     let handle = unsafe { ttstub_output_open(name.as_ptr().cast(), 0) };
     if handle == INVALID_HANDLE {
-        return Err(ShipoutAbort::CannotOpenOutput);
+        return Err(Abort::CannotOpenOutput);
     }
     for &code_unit in &st.shipout.write_prefix[stream] {
         unsafe { crate::bridge::ttstub_output_putc(handle, code_unit) };
