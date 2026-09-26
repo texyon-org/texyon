@@ -180,9 +180,9 @@ impl<'a> LayoutEngine<'a> {
         &self.font
     }
 
-    /// The raw HarfBuzz font, alive as long as this engine.
-    pub fn raw_hb_font(&self) -> *mut hb::sys::hb_font_t {
-        self.font.hb_font().as_ptr()
+    /// OpenType MATH queries on the HarfBuzz font.
+    pub fn ot_math(&self) -> hb::ot::Math<'_> {
+        self.font.hb_font().ot_math()
     }
 
     /// Whether the font has an OpenType MATH table.

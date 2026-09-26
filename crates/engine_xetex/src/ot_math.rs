@@ -1,7 +1,9 @@
 //! OpenType MATH table queries.
 
 use crate::units::{FontId, Scaled};
-use tectonic_bridge_harfbuzz::sys as hb;
+use tectonic_bridge_harfbuzz::ot::{MathGlyphPart, MathKern};
+use tectonic_bridge_harfbuzz::sys::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER;
+use tectonic_bridge_harfbuzz::Direction;
 
 use crate::ext::{d2fix, fix2d};
 use crate::state::FontEngineHandle;
@@ -71,17 +73,17 @@ fn points_to_units(font: &Font, points: f32) -> f32 {
     font.points_to_units(f64::from(points)) as f32
 }
 
-fn direction(horiz: bool) -> hb::hb_direction_t {
+fn direction(horiz: bool) -> Direction {
     if horiz {
-        hb::hb_direction_t::Rtl
+        Direction::Rtl
     } else {
-        hb::hb_direction_t::Ttb
+        Direction::Ttb
     }
 }
 
 /// The parts HarfBuzz reports for building a stretched glyph.
 pub(crate) struct GlyphAssembly {
-    parts: Vec<hb::hb_ot_math_glyph_part_t>,
+    parts: Vec<MathGlyphPart>,
 }
 
 impl GlyphAssembly {
@@ -94,7 +96,7 @@ impl GlyphAssembly {
     }
 
     pub(crate) fn is_extender(&self, i: i32) -> bool {
-        self.parts[i as usize].flags & hb::HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER != 0
+        self.parts[i as usize].flags & HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER != 0
     }
 
     fn part_length(&self, fonts: &FontState, f: FontId, units: i32) -> Scaled {
@@ -134,8 +136,7 @@ impl FontState {
         let Some(engine) = self.ot_engine(f) else {
             return Scaled::ZERO;
         };
-        // SAFETY: the engine keeps its HarfBuzz font alive.
-        let rval = unsafe { hb::hb_ot_math_get_constant(engine.raw_hb_font(), n) };
+        let rval = engine.ot_math().constant(n);
         match n {
             HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN
             | HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
@@ -183,63 +184,24 @@ impl FontState {
         let Some(engine) = self.ot_engine(f) else {
             return g;
         };
-        let mut variant = hb::hb_ot_math_glyph_variant_t {
-            glyph: 0,
-            advance: 0,
-        };
-        let mut count = 1;
-        // SAFETY: the engine keeps its HarfBuzz font alive, and `count` and
-        // `variant` hold the one variant asked for.
-        unsafe {
-            hb::hb_ot_math_get_glyph_variants(
-                engine.raw_hb_font(),
-                g as u32,
-                direction(horiz),
-                v as u32,
-                &mut count,
-                &mut variant,
-            )
-        };
-        if count == 0 {
+        let Some(variant) = engine
+            .ot_math()
+            .variant(g as u32, direction(horiz), v as u32)
+        else {
             return g;
-        }
+        };
         *adv = units_to_fix(engine.font(), variant.advance);
         variant.glyph as i32
     }
 
     pub(crate) fn get_ot_assembly(&self, f: FontId, g: i32, horiz: bool) -> Option<GlyphAssembly> {
-        let hb_font = self.ot_engine(f)?.raw_hb_font();
-        // SAFETY: the engine keeps its HarfBuzz font alive, and null outputs
-        // only ask for the part count.
-        let count = unsafe {
-            hb::hb_ot_math_get_glyph_assembly(
-                hb_font,
-                g as u32,
-                direction(horiz),
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            )
-        };
-        if count == 0 {
+        let parts = self
+            .ot_engine(f)?
+            .ot_math()
+            .assembly(g as u32, direction(horiz));
+        if parts.is_empty() {
             return None;
         }
-        let mut parts = vec![hb::hb_ot_math_glyph_part_t::default(); count as usize];
-        let mut filled = count;
-        // SAFETY: as above, and `parts` holds the `filled` parts asked for.
-        unsafe {
-            hb::hb_ot_math_get_glyph_assembly(
-                hb_font,
-                g as u32,
-                direction(horiz),
-                0,
-                &mut filled,
-                parts.as_mut_ptr(),
-                std::ptr::null_mut(),
-            )
-        };
-        parts.truncate(filled as usize);
         Some(GlyphAssembly { parts })
     }
 
@@ -247,9 +209,7 @@ impl FontState {
         let Some(engine) = self.ot_engine(f) else {
             return Scaled::ZERO;
         };
-        // SAFETY: the engine keeps its HarfBuzz font alive.
-        let rval =
-            unsafe { hb::hb_ot_math_get_glyph_italics_correction(engine.raw_hb_font(), g as u32) };
+        let rval = engine.ot_math().italics_correction(g as u32);
         units_to_fix(engine.font(), rval)
     }
 
@@ -257,10 +217,7 @@ impl FontState {
         let Some(engine) = self.ot_engine(f) else {
             return crate::consts::INFINITE_DIMEN;
         };
-        // SAFETY: the engine keeps its HarfBuzz font alive.
-        let rval = unsafe {
-            hb::hb_ot_math_get_glyph_top_accent_attachment(engine.raw_hb_font(), g as u32)
-        };
+        let rval = engine.ot_math().top_accent_attachment(g as u32);
         units_to_fix(engine.font(), rval)
     }
 
@@ -268,19 +225,14 @@ impl FontState {
         let Some(engine) = self.ot_engine(f) else {
             return Scaled::ZERO;
         };
-        // SAFETY: the engine keeps its HarfBuzz font alive.
-        let rval = unsafe {
-            hb::hb_ot_math_get_min_connector_overlap(engine.raw_hb_font(), hb::hb_direction_t::Rtl)
-        };
+        let rval = engine.ot_math().min_connector_overlap(Direction::Rtl);
         units_to_fix(engine.font(), rval)
     }
 
-    fn math_kern_at(&self, f: FontId, g: i32, height: i32, side: hb::hb_ot_math_kern_t) -> i32 {
-        let Some(engine) = self.ot_engine(f) else {
-            return 0;
-        };
-        // SAFETY: the engine keeps its HarfBuzz font alive.
-        unsafe { hb::hb_ot_math_get_glyph_kerning(engine.raw_hb_font(), g as u32, side, height) }
+    fn math_kern_at(&self, f: FontId, g: i32, height: i32, corner: MathKern) -> i32 {
+        self.ot_engine(f).map_or(0, |engine| {
+            engine.ot_math().kerning(g as u32, corner, height)
+        })
     }
 
     fn glyph_height_depth(&self, f: FontId, g: i32) -> (f32, f32) {
@@ -327,18 +279,17 @@ impl FontState {
                         f,
                         g,
                         (shift as f32 - scale * sg_depth as f32) as i32,
-                        hb::HB_OT_MATH_KERN_TOP_RIGHT,
+                        MathKern::TopRight,
                     );
-                    let skern =
-                        self.math_kern_at(sf, sg, -sg_depth, hb::HB_OT_MATH_KERN_BOTTOM_LEFT);
+                    let skern = self.math_kern_at(sf, sg, -sg_depth, MathKern::BottomLeft);
                     let top_kern = scaled_sum(kern, skern);
 
-                    let kern = self.math_kern_at(f, g, g_height, hb::HB_OT_MATH_KERN_TOP_RIGHT);
+                    let kern = self.math_kern_at(f, g, g_height, MathKern::TopRight);
                     let skern = self.math_kern_at(
                         sf,
                         sg,
                         ((g_height - shift) as f32 / scale) as i32,
-                        hb::HB_OT_MATH_KERN_BOTTOM_LEFT,
+                        MathKern::BottomLeft,
                     );
                     let bot_kern = scaled_sum(kern, skern);
 
@@ -350,17 +301,17 @@ impl FontState {
                         f,
                         g,
                         (scale * sg_height as f32 - shift as f32) as i32,
-                        hb::HB_OT_MATH_KERN_BOTTOM_RIGHT,
+                        MathKern::BottomRight,
                     );
-                    let skern = self.math_kern_at(sf, sg, sg_height, hb::HB_OT_MATH_KERN_TOP_LEFT);
+                    let skern = self.math_kern_at(sf, sg, sg_height, MathKern::TopLeft);
                     let top_kern = scaled_sum(kern, skern);
 
-                    let kern = self.math_kern_at(f, g, -g_depth, hb::HB_OT_MATH_KERN_BOTTOM_RIGHT);
+                    let kern = self.math_kern_at(f, g, -g_depth, MathKern::BottomRight);
                     let skern = self.math_kern_at(
                         sf,
                         sg,
                         ((shift - g_depth) as f32 / scale) as i32,
-                        hb::HB_OT_MATH_KERN_TOP_LEFT,
+                        MathKern::TopLeft,
                     );
                     let bot_kern = scaled_sum(kern, skern);
 

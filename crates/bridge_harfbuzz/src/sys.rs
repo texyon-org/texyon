@@ -242,7 +242,7 @@ pub struct hb_ot_math_glyph_part_t {
     pub flags: hb_ot_math_glyph_part_flags_t,
 }
 
-#[derive(Default, Debug, PartialEq)]
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
 #[repr(C)]
 pub enum hb_direction_t {
     #[default]

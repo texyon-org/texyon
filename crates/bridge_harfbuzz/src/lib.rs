@@ -505,6 +505,11 @@ impl<'a> FontRef<'a> {
         FaceRef(NonNull::new(ptr).unwrap(), PhantomData)
     }
 
+    /// Helper for OpenType MATH queries on this font
+    pub fn ot_math(self) -> ot::Math<'a> {
+        ot::Math(self)
+    }
+
     /// Get the point size of this font
     pub fn ptem(self) -> f32 {
         // SAFETY: Internal pointer guaranteed valid
@@ -733,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_tag() {
-        let raw = u32::from_be_bytes([b't', b'e', b's', b't']);
+        let raw = u32::from_be_bytes(*b"test");
 
         assert_eq!(Tag::new(raw).to_raw(), raw);
         assert_eq!(Tag::from_str("test"), Tag::new(raw));

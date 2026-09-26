@@ -1,6 +1,6 @@
 //! OpenType layout support for Harfbuzz
 
-use crate::{sys, FaceRef, GTag, OtNameId, Tag};
+use crate::{sys, Codepoint, Direction, FaceRef, FontRef, GTag, OtNameId, Position, Tag};
 use std::ptr;
 
 /// Optical size data for a face
@@ -295,6 +295,132 @@ impl Language<'_> {
         } else {
             Some(Tag::new(out))
         }
+    }
+}
+
+/// One part of a MATH glyph assembly.
+pub use sys::hb_ot_math_glyph_part_t as MathGlyphPart;
+/// A glyph variant from the MATH table: the glyph and its advance.
+pub use sys::hb_ot_math_glyph_variant_t as MathGlyphVariant;
+
+/// A corner of a glyph for MATH kerning.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MathKern {
+    /// Top right
+    TopRight,
+    /// Top left
+    TopLeft,
+    /// Bottom right
+    BottomRight,
+    /// Bottom left
+    BottomLeft,
+}
+
+impl MathKern {
+    fn to_raw(self) -> sys::hb_ot_math_kern_t {
+        match self {
+            MathKern::TopRight => sys::HB_OT_MATH_KERN_TOP_RIGHT,
+            MathKern::TopLeft => sys::HB_OT_MATH_KERN_TOP_LEFT,
+            MathKern::BottomRight => sys::HB_OT_MATH_KERN_BOTTOM_RIGHT,
+            MathKern::BottomLeft => sys::HB_OT_MATH_KERN_BOTTOM_LEFT,
+        }
+    }
+}
+
+/// OpenType MATH table queries for a [`FontRef`], in font units.
+#[derive(Copy, Clone)]
+pub struct Math<'a>(pub(crate) FontRef<'a>);
+
+impl Math<'_> {
+    /// The MATH constant with index `constant` (`hb_ot_math_constant_t`).
+    pub fn constant(self, constant: i32) -> Position {
+        // SAFETY: Font pointer is guaranteed valid.
+        unsafe { sys::hb_ot_math_get_constant(self.0.as_ptr(), constant) }
+    }
+
+    /// The italics correction of `glyph`.
+    pub fn italics_correction(self, glyph: Codepoint) -> Position {
+        // SAFETY: Font pointer is guaranteed valid.
+        unsafe { sys::hb_ot_math_get_glyph_italics_correction(self.0.as_ptr(), glyph) }
+    }
+
+    /// The horizontal position of `glyph`'s top accent attachment.
+    pub fn top_accent_attachment(self, glyph: Codepoint) -> Position {
+        // SAFETY: Font pointer is guaranteed valid.
+        unsafe { sys::hb_ot_math_get_glyph_top_accent_attachment(self.0.as_ptr(), glyph) }
+    }
+
+    /// The kerning of `glyph` at `corner`, for a neighbour at `height`.
+    pub fn kerning(self, glyph: Codepoint, corner: MathKern, height: Position) -> Position {
+        // SAFETY: Font pointer is guaranteed valid.
+        unsafe {
+            sys::hb_ot_math_get_glyph_kerning(self.0.as_ptr(), glyph, corner.to_raw(), height)
+        }
+    }
+
+    /// The size variant of `glyph` at `index` in `direction`, if there is one.
+    pub fn variant(
+        self,
+        glyph: Codepoint,
+        direction: Direction,
+        index: u32,
+    ) -> Option<MathGlyphVariant> {
+        let mut variant = MathGlyphVariant {
+            glyph: 0,
+            advance: 0,
+        };
+        let mut count = 1;
+        // SAFETY: Font pointer is guaranteed valid, and `count` says `variant` holds one entry.
+        unsafe {
+            sys::hb_ot_math_get_glyph_variants(
+                self.0.as_ptr(),
+                glyph,
+                direction,
+                index,
+                &mut count,
+                &mut variant,
+            )
+        };
+        (count != 0).then_some(variant)
+    }
+
+    /// The minimum overlap of connecting glyph parts in `direction`.
+    pub fn min_connector_overlap(self, direction: Direction) -> Position {
+        // SAFETY: Font pointer is guaranteed valid.
+        unsafe { sys::hb_ot_math_get_min_connector_overlap(self.0.as_ptr(), direction) }
+    }
+
+    /// The parts that build a stretched `glyph` in `direction`, empty if it has none.
+    pub fn assembly(self, glyph: Codepoint, direction: Direction) -> Vec<MathGlyphPart> {
+        let font = self.0.as_ptr();
+        // SAFETY: Font pointer is guaranteed valid. Null outputs only ask for the part count.
+        let count = unsafe {
+            sys::hb_ot_math_get_glyph_assembly(
+                font,
+                glyph,
+                direction,
+                0,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            )
+        };
+        let mut parts = vec![MathGlyphPart::default(); count as usize];
+        let mut filled = count;
+        // SAFETY: Font pointer is guaranteed valid, and `filled` says how many parts `parts` holds.
+        unsafe {
+            sys::hb_ot_math_get_glyph_assembly(
+                font,
+                glyph,
+                direction,
+                0,
+                &mut filled,
+                parts.as_mut_ptr(),
+                ptr::null_mut(),
+            )
+        };
+        parts.truncate(filled as usize);
+        parts
     }
 }
 
