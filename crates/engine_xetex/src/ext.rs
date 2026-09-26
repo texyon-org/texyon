@@ -1936,7 +1936,7 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
         .input
         .cur_list
         .new_whatsit(&mut st.mem, WhatsitSubtype::Special, WRITE_NODE_SIZE)
-        .ok_or(Abort::AvailOverflow)?;
+        .map_err(|_| Abort::AvailOverflow)?;
     w.set_write_stream(&mut st.mem, 0);
     let d = st.mem.get_avail()?;
     st.scanner.def_ref = d;
@@ -2009,11 +2009,7 @@ fn new_whatsit(
     subtype: WhatsitSubtype,
     size: i32,
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
-    Ok(st
-        .input
-        .cur_list
-        .new_whatsit(&mut st.mem, subtype, size)
-        .ok_or(Abort::NodeOverflow)?)
+    Ok(st.input.cur_list.new_whatsit(&mut st.mem, subtype, size)?)
 }
 
 /// Append an `\openout`/`\write`/`\closeout` whatsit and scan its stream number.

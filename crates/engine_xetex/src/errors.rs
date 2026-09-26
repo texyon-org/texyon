@@ -94,6 +94,7 @@ pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
 
 /// Why a run ends early. Reported once, by [`Abort::into_history`].
 #[must_use]
+#[derive(Debug)]
 pub(crate) enum Abort {
     /// A resident operation was cancelled cooperatively.
     Cancelled,

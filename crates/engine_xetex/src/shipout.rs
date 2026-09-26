@@ -68,12 +68,12 @@ pub(crate) const ONE_INCH: i32 = 4_736_287;
 const ONE_INCH_LESS_ONE: i32 = ONE_INCH - 1;
 
 impl MemState {
-    pub fn new_edge(&mut self, s: i16, w: i32) -> Option<NodePtr<EdgeNode>> {
+    pub fn new_edge(&mut self, s: i16, w: i32) -> Result<NodePtr<EdgeNode>, Abort> {
         let p = NodePtr::<EdgeNode>::alloc(self)?;
         p.set_subtype(self, s as u16);
         p.set_width(self, Scaled(w));
         p.set_edge_dist(self, Scaled(0));
-        Some(p)
+        Ok(p)
     }
 }
 
@@ -754,7 +754,7 @@ impl MemState {
         if glue.subtype(self) < A_LEADERS {
             glue.into_kern(self, Scaled(w));
         } else {
-            let rigid = NodePtr::<GlueSpecNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
+            let rigid = NodePtr::<GlueSpecNode>::alloc(self)?;
             rigid.set_stretch_order(self, FILLL + 1);
             rigid.set_shrink_order(self, FILLL + 1);
             rigid.set_width(self, Scaled(w));
@@ -1078,7 +1078,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
-        let kern = st.mem.new_kern(0).ok_or(Abort::NodeOverflow)?;
+        let kern = st.mem.new_kern(0)?;
         kern.set_sync_tag(&mut st.mem, 0);
         prev_p.set_link(&mut st.mem, kern.ptr());
         st.shipout.cur_h = 0;
@@ -1252,16 +1252,10 @@ fn reverse_segment(
     st.shipout.rule_wd = math_width;
     st.mem.free_node(math.ptr(), MEDIUM_NODE_SIZE);
     st.scanner.cur_dir = 1 - st.scanner.cur_dir;
-    let edge = st
-        .mem
-        .new_edge(st.scanner.cur_dir, st.shipout.rule_wd)
-        .ok_or(Abort::NodeOverflow)?;
+    let edge = st.mem.new_edge(st.scanner.cur_dir, st.shipout.rule_wd)?;
     prev_p.set_link(&mut st.mem, edge.ptr());
     st.shipout.cur_h = st.shipout.cur_h - left_edge + st.shipout.rule_wd;
-    let end = st
-        .mem
-        .new_edge(1 - st.scanner.cur_dir, 0)
-        .ok_or(Abort::NodeOverflow)?;
+    let end = st.mem.new_edge(1 - st.scanner.cur_dir, 0)?;
     let reversed = st.mem.reverse(
         &mut st.shipout,
         &mut st.scanner,
@@ -1761,13 +1755,13 @@ impl MemState {
                 return Ok(l);
             }
             let dir = scanner.lr_ptr.info(self) as u16;
-            p = self.new_math(0, dir).ok_or(Abort::NodeOverflow)?.ptr();
+            p = self.new_math(0, dir)?.ptr();
             scanner.lr_problems += 10000;
         }
     }
 
     fn movement(&mut self, shipout: &mut ShipoutState, w: i32, o: u8) -> Result<(), Abort> {
-        let mut q = NodePtr::<MovementNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
+        let mut q = NodePtr::<MovementNode>::alloc(self)?;
         q.set_distance(self, Scaled(w));
         q.set_location(self, shipout.dvi_offset + shipout.dvi_ptr);
         let head = if o == DOWN1 {

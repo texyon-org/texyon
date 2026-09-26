@@ -215,7 +215,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         show_cur_cmd_chr(st);
     }
 
-    let cond_node = NodePtr::<CondNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
+    let cond_node = NodePtr::<CondNode>::alloc(&mut st.mem)?;
     cond_node.set_link(&mut st.mem, st.scanner.cond_ptr);
     cond_node.set_if_limit(&mut st.mem, st.scanner.if_limit as u16);
     cond_node.set_cur_if(&mut st.mem, st.scanner.cur_if as u16);

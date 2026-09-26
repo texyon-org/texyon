@@ -302,20 +302,16 @@ impl MemState {
         let q;
         if i < DIMEN_VAL_LIMIT {
             if p.sa_int(self) == 0 {
-                q = sa(self
-                    .get_node(POINTER_NODE_SIZE)
-                    .ok_or(Abort::NodeOverflow)?);
+                q = sa(self.get_node(POINTER_NODE_SIZE)?);
                 i = TOK_VAL_LIMIT;
             } else {
-                q = sa(self.get_node(WORD_NODE_SIZE).ok_or(Abort::NodeOverflow)?);
+                q = sa(self.get_node(WORD_NODE_SIZE)?);
                 let v = p.sa_int(self);
                 q.set_sa_int(self, v);
             }
             q.set_sa_ptr(self, MemPtr::NULL);
         } else {
-            q = sa(self
-                .get_node(POINTER_NODE_SIZE)
-                .ok_or(Abort::NodeOverflow)?);
+            q = sa(self.get_node(POINTER_NODE_SIZE)?);
             let v = p.sa_ptr(self);
             q.set_sa_ptr(self, v);
         }
@@ -544,7 +540,7 @@ impl MemState {
         scanner: &mut ScannerState,
         i: u16,
         q: MemPtr,
-    ) -> Option<NodePtr<SaNode>> {
+    ) -> Result<NodePtr<SaNode>, Abort> {
         let p = sa(self.get_node(INDEX_NODE_SIZE)?);
         scanner.cur_ptr = p.ptr();
         p.set_sa_index(self, i);
@@ -553,7 +549,7 @@ impl MemState {
         for k in 1..INDEX_NODE_SIZE {
             self.set_word(p.idx().offset(k), scanner.sa_null);
         }
-        Some(p)
+        Ok(p)
     }
 
     fn add_sa_child(&mut self, q: NodePtr<SaNode>, i: i32, p: NodePtr<SaNode>) {
@@ -570,7 +566,7 @@ impl MemState {
         n: i32,
         mut q: NodePtr<SaNode>,
         levels: &[i32],
-    ) -> Option<NodePtr<SaNode>> {
+    ) -> Result<NodePtr<SaNode>, Abort> {
         let (&leaf_i, index_levels) = levels.split_last().expect("non-empty trie path");
         for &i in index_levels {
             let p = self.new_index(scanner, i as u16, q.ptr())?;
@@ -605,7 +601,7 @@ impl MemState {
         p.set_sa_lev(self, LEVEL_ONE);
         p.set_link(self, q.ptr());
         self.add_sa_child(q, leaf_i, p);
-        Some(p)
+        Ok(p)
     }
 
     /// TeX's `find_sa_element` without creation: the record for type `t`,
@@ -634,7 +630,7 @@ impl MemState {
         scanner: &mut ScannerState,
         t: u8,
         n: i32,
-    ) -> Option<NodePtr<SaNode>> {
+    ) -> Result<NodePtr<SaNode>, Abort> {
         let levels = sa_levels(n);
         scanner.cur_ptr = scanner.sa_root[t as usize];
         if scanner.cur_ptr.is_null() {
@@ -649,6 +645,6 @@ impl MemState {
                 return self.sa_alloc_chain(scanner, t, n, q, &levels[k..]);
             }
         }
-        Some(sa(scanner.cur_ptr))
+        Ok(sa(scanner.cur_ptr))
     }
 }

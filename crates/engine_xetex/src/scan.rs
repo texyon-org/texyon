@@ -453,7 +453,7 @@ impl ErrorState {
 }
 
 pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, Abort> {
-    let r = st.mem.new_rule().ok_or(Abort::NodeOverflow)?;
+    let r = st.mem.new_rule()?;
     if st.scanner.cur_cmd == VRULE {
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
@@ -809,7 +809,7 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
         x_token(st)?;
         back_input(st)?;
     } else {
-        let nd = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+        let nd = st.mem.new_noad()?;
         nd.nucleus().set_math_type(&mut st.mem, MATH_CHAR);
         let ch = math_char_fn(c);
         nd.nucleus().set_character(&mut st.mem, (ch % 65536) as u16);
@@ -1735,7 +1735,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
             l += 1;
         }
         let size = ((l - m + 7) / 4).max(2);
-        let line = NodePtr::<PseudoLineNode>::at(st.mem.get_node(size).ok_or(Abort::NodeOverflow)?);
+        let line = NodePtr::<PseudoLineNode>::at(st.mem.get_node(size)?);
         last_line.set_link(&mut st.mem, line.ptr());
         last_line = line.ptr();
         line.set_size(&mut st.mem, size);
@@ -2227,7 +2227,7 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), Abort> {
         }
     }
 
-    let gs = st.mem.new_spec(glue_spec(0)).ok_or(Abort::NodeOverflow)?;
+    let gs = st.mem.new_spec(glue_spec(0))?;
     gs.set_width(&mut st.mem, Scaled(st.scanner.cur_val));
 
     if scan_keyword(st, "plus")? {
@@ -2336,7 +2336,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 let o = if s == EXPR_NONE { l } else { INT_VAL };
                 get_x_non_blank(st)?;
                 if st.scanner.cur_tok == OTHER_TOKEN + b'(' as i32 {
-                    let q = NodePtr::<ExprNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
+                    let q = NodePtr::<ExprNode>::alloc(&mut st.mem)?;
                     q.set_link(&mut st.mem, p);
                     q.set_level(&mut st.mem, l as u16);
                     q.set_state(&mut st.mem, (4 * s + r) as u16);
@@ -2398,19 +2398,14 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 {
                     st.errors.arith_error = true;
                     st.mem.delete_glue_ref(glue_spec(f));
-                    f = st
-                        .mem
-                        .new_spec(glue_spec(0))
-                        .ok_or(Abort::NodeOverflow)?
-                        .ptr()
-                        .0;
+                    f = st.mem.new_spec(glue_spec(0))?.ptr().0;
                 }
             }
 
             match s {
                 EXPR_NONE => {
                     if l >= GLUE_VAL && o != EXPR_NONE {
-                        let term = st.mem.new_spec(glue_spec(f)).ok_or(Abort::NodeOverflow)?;
+                        let term = st.mem.new_spec(glue_spec(f))?;
                         t = term.ptr().0;
                         st.mem.delete_glue_ref(glue_spec(f));
                         normalize_glue_orders(st, term);
@@ -2590,7 +2585,7 @@ pub(crate) fn sa_token_list(st: &EngineState, sa: Option<NodePtr<SaNode>>) -> Me
 /// Replaces the glue in `cur_val` by a negated copy and returns the original glue.
 fn negate_glue(st: &mut EngineState) -> Result<i32, Abort> {
     let old = st.scanner.cur_val;
-    let spec = st.mem.new_spec(glue_spec(old)).ok_or(Abort::NodeOverflow)?;
+    let spec = st.mem.new_spec(glue_spec(old))?;
     st.scanner.cur_val = spec.ptr().0;
     map_glue(st, spec, |_, x| -x);
     Ok(old)

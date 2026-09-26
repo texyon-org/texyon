@@ -135,7 +135,7 @@ impl MemState {
         active_node_size: i32,
         link: MemPtr,
     ) -> Result<NodePtr<ActiveNode>, Abort> {
-        let p = self.get_node(active_node_size).ok_or(Abort::NodeOverflow)?;
+        let p = self.get_node(active_node_size)?;
         let p = active(p);
         p.set_link(self, link);
         Ok(p)
@@ -143,7 +143,7 @@ impl MemState {
 
     /// A new delta node before `link` holding `w[1..=6]`.
     fn new_delta_node(&mut self, link: MemPtr, w: &[i32; 7]) -> Result<NodePtr<DeltaNode>, Abort> {
-        let p = NodePtr::<DeltaNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
+        let p = NodePtr::<DeltaNode>::alloc(self)?;
         p.set_link(self, link);
         p.set_subtype(self, 0);
         set_delta_widths(p, self, w);
@@ -391,7 +391,7 @@ impl LinebreakState {
             return Ok(q);
         }
 
-        let k = mem.new_margin_kern(-w, 1).ok_or(Abort::NodeOverflow)?;
+        let k = mem.new_margin_kern(-w, 1)?;
         k.set_link(mem, ptmp.link(mem));
         ptmp.set_link(mem, k.ptr());
         Ok(if ptmp == q { q.link(mem) } else { q })
@@ -416,7 +416,7 @@ impl LinebreakState {
             return Ok(q);
         }
 
-        let k = mem.new_margin_kern(-w, 0).ok_or(Abort::NodeOverflow)?;
+        let k = mem.new_margin_kern(-w, 0)?;
         k.set_link(mem, q);
         Ok(k.ptr())
     }
@@ -572,7 +572,7 @@ impl MemState {
         &mut self,
         spec: NodePtr<GlueSpecNode>,
     ) -> Result<NodePtr<GlueSpecNode>, Abort> {
-        let q = self.new_spec(spec).ok_or(Abort::NodeOverflow)?;
+        let q = self.new_spec(spec)?;
         q.set_shrink_order(self, NORMAL);
         self.delete_glue_ref(spec);
         Ok(q)
@@ -734,10 +734,7 @@ fn reconstitute(
                                     lig_item(st.mainloop.lig_stack)
                                         .set_character(&mut st.mem, st.mainloop.cur_r as u16);
                                 } else {
-                                    let item = st
-                                        .mem
-                                        .new_lig_item(st.mainloop.cur_r as u16)
-                                        .ok_or(Abort::NodeOverflow)?;
+                                    let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
                                     st.mainloop.lig_stack = item.ptr();
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
@@ -753,10 +750,7 @@ fn reconstitute(
                             3 => {
                                 st.mainloop.cur_r = q.s0 as i32;
                                 let below = st.mainloop.lig_stack;
-                                let item = st
-                                    .mem
-                                    .new_lig_item(st.mainloop.cur_r as u16)
-                                    .ok_or(Abort::NodeOverflow)?;
+                                let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
                                 st.mainloop.lig_stack = item.ptr();
                                 item.ptr().set_link(&mut st.mem, below);
                             }
@@ -820,7 +814,7 @@ fn reconstitute(
         }
 
         if w != 0 {
-            let kern = st.mem.new_kern(w).ok_or(Abort::NodeOverflow)?;
+            let kern = st.mem.new_kern(w)?;
             t.set_link(&mut st.mem, kern.ptr());
             t = kern.ptr();
             w = 0;
@@ -845,8 +839,7 @@ fn wrap_lig(st: &mut EngineState, rt: bool) -> Result<MemPtr, Abort> {
     let components = st.mainloop.cur_q.link(&st.mem);
     let lig = st
         .mem
-        .new_ligature(FontId(st.hyph.hf), st.mainloop.cur_l as u16, components)
-        .ok_or(Abort::NodeOverflow)?;
+        .new_ligature(FontId(st.hyph.hf), st.mainloop.cur_l as u16, components)?;
     if st.mainloop.lft_hit {
         lig.set_subtype(&mut st.mem, 2);
         st.mainloop.lft_hit = false;
@@ -981,7 +974,7 @@ impl MemState {
         }
 
         let old_spec = last_line_fill.glue_ptr(self);
-        let spec = self.new_spec(old_spec).ok_or(Abort::NodeOverflow)?;
+        let spec = self.new_spec(old_spec)?;
         self.delete_glue_ref(old_spec);
 
         spec.set_width(
@@ -1091,7 +1084,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
     };
     match tail_glue {
         None => {
-            let p = st.mem.new_penalty(INF_PENALTY).ok_or(Abort::NodeOverflow)?;
+            let p = st.mem.new_penalty(INF_PENALTY)?;
             tail.set_link(&mut st.mem, p.ptr());
             st.input.cur_list.tail = p.ptr();
         }
@@ -1106,10 +1099,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
         }
     }
 
-    let last_line_fill = st
-        .mem
-        .new_param_glue(&st.eqtb, GLUE_PAR_PAR_FILL_SKIP)
-        .ok_or(Abort::NodeOverflow)?;
+    let last_line_fill = st.mem.new_param_glue(&st.eqtb, GLUE_PAR_PAR_FILL_SKIP)?;
     st.input
         .cur_list
         .tail
@@ -1681,9 +1671,7 @@ impl LinebreakState {
                 let mut temp_ptr = *lr_ptr;
                 let mut r = q;
                 loop {
-                    let s = mem
-                        .new_math(0, (temp_ptr.info(mem) - 1) as u16)
-                        .ok_or(Abort::NodeOverflow)?;
+                    let s = mem.new_math(0, (temp_ptr.info(mem) - 1) as u16)?;
                     s.set_link(mem, r);
                     r = s.ptr();
                     temp_ptr = temp_ptr.link(mem);
@@ -1775,9 +1763,7 @@ impl LinebreakState {
         }
 
         if !glue_break {
-            let r = mem
-                .new_param_glue(eqtb, GLUE_PAR_RIGHT_SKIP)
-                .ok_or(Abort::NodeOverflow)?;
+            let r = mem.new_param_glue(eqtb, GLUE_PAR_RIGHT_SKIP)?;
             r.set_link(mem, q.link(mem));
             q.set_link(mem, r.ptr());
             q = r.ptr();
@@ -1793,9 +1779,7 @@ impl LinebreakState {
 
             r = *lr_ptr;
             while !r.is_null() {
-                let m = mem
-                    .new_math(0, r.info(mem) as u16)
-                    .ok_or(Abort::NodeOverflow)?;
+                let m = mem.new_math(0, r.info(mem) as u16)?;
                 s.set_link(mem, m.ptr());
                 s = m.ptr();
                 r = r.link(mem);
@@ -1813,9 +1797,7 @@ impl LinebreakState {
         }
 
         if eqtb.glue_par(GLUE_PAR_LEFT_SKIP) != ZERO_GLUE {
-            let r = mem
-                .new_param_glue(eqtb, GLUE_PAR_LEFT_SKIP)
-                .ok_or(Abort::NodeOverflow)?;
+            let r = mem.new_param_glue(eqtb, GLUE_PAR_LEFT_SKIP)?;
             r.set_link(mem, q);
             q = r.ptr();
         }
@@ -1947,7 +1929,7 @@ impl ListStateRecord {
             }
 
             if pen != 0 {
-                let r = mem.new_penalty(pen).ok_or(Abort::NodeOverflow)?;
+                let r = mem.new_penalty(pen)?;
                 self.tail_append(mem, r.ptr());
             }
         }
@@ -2179,7 +2161,7 @@ impl MemState {
 
         for fit_class in VERY_LOOSE_FIT..=TIGHT_FIT {
             if linebreak.minimal_demerits[fit_class] <= linebreak.minimum_demerits {
-                let passive = NodePtr::<PassiveNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
+                let passive = NodePtr::<PassiveNode>::alloc(self)?;
                 passive.set_link(self, linebreak.passive);
                 linebreak.passive = passive.ptr();
                 passive.set_cur_break(self, linebreak.cur_p);
@@ -2540,7 +2522,7 @@ fn hyphenate_native_word(
             )?;
             s.set_link(&mut st.mem, q.ptr());
 
-            let disc = st.mem.new_disc().ok_or(Abort::NodeOverflow)?;
+            let disc = st.mem.new_disc()?;
             let hyphen = crate::fonts::new_native_character(st, hf, hyf_char as u32)?;
             disc.set_pre_break(&mut st.mem, hyphen.ptr());
             q.set_link(&mut st.mem, disc.ptr());
@@ -2762,7 +2744,7 @@ fn insert_hyphens(
 
         if st.hyph.hyphen_passed > 0 {
             loop {
-                let disc = NodePtr::<DiscNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
+                let disc = NodePtr::<DiscNode>::alloc(&mut st.mem)?;
                 let hold = HOLD_HEAD.link(&st.mem);
                 disc.set_link(&mut st.mem, hold);
                 let mut major_tail = disc.ptr();
@@ -2911,14 +2893,13 @@ pub(crate) unsafe fn do_locale_linebreaks(
         if offs > 0 {
             if prev_offs != 0 {
                 if use_penalty {
-                    let node = st.mem.new_penalty(penalty).ok_or(Abort::NodeOverflow)?;
+                    let node = st.mem.new_penalty(penalty)?;
                     st.input.cur_list.tail_append(&mut st.mem, node.ptr());
                 }
                 if use_skip {
                     let node = st
                         .mem
-                        .new_param_glue(&st.eqtb, GLUE_PAR_XETEX_LINEBREAK_SKIP)
-                        .ok_or(Abort::NodeOverflow)?;
+                        .new_param_glue(&st.eqtb, GLUE_PAR_XETEX_LINEBREAK_SKIP)?;
                     st.input.cur_list.tail_append(&mut st.mem, node.ptr());
                 }
             }

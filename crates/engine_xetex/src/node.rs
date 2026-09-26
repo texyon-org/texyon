@@ -12,6 +12,7 @@ use crate::consts::{
     MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NORMAL, NULL_FLAG,
     PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
+use crate::errors::Abort;
 use crate::state::MemState;
 use crate::units::{FontId, GlueSign, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -214,20 +215,24 @@ pub trait FixedNode: NodeKind {
 
 impl MemState {
     #[inline]
-    fn alloc_node<K: NodeKind>(&mut self, size: i32, ty: Option<NodeType>) -> Option<NodePtr<K>> {
+    fn alloc_node<K: NodeKind>(
+        &mut self,
+        size: i32,
+        ty: Option<NodeType>,
+    ) -> Result<NodePtr<K>, Abort> {
         let p = self.get_node(size)?;
         if let Some(ty) = ty {
             self.set_b16s1(p, ty.as_raw());
         }
         // SAFETY: a fresh node of the caller's size, stamped with the caller's type.
-        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
+        Ok(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
     }
 }
 
 impl<K: FixedNode> NodePtr<K> {
     /// Carves a fresh node with its type stamped and its fields uninitialised.
     #[inline]
-    pub fn alloc(mem: &mut MemState) -> Option<Self> {
+    pub fn alloc(mem: &mut MemState) -> Result<Self, Abort> {
         mem.alloc_node(K::SIZE, K::TYPE)
     }
 }
@@ -932,17 +937,17 @@ impl NodePtr<ChoiceNode> {
 
 impl NodePtr<Noad> {
     #[inline]
-    pub fn alloc_radical(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+    pub fn alloc_radical(mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
         mem.alloc_node(RADICAL_NOAD_SIZE, Some(NodeType::RadicalNoad))
     }
 
     #[inline]
-    pub fn alloc_accent(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+    pub fn alloc_accent(mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
         mem.alloc_node(ACCENT_NOAD_SIZE, Some(NodeType::AccentNoad))
     }
 
     #[inline]
-    pub fn alloc_fraction(mem: &mut MemState) -> Option<NodePtr<Noad>> {
+    pub fn alloc_fraction(mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
         mem.alloc_node(FRACTION_NOAD_SIZE, Some(NodeType::FractionNoad))
     }
 
@@ -1460,10 +1465,10 @@ impl WhatsitSubtype {
 impl NodePtr<WhatsitNode> {
     /// A fresh `size`-word whatsit of the given subtype, fields uninitialised.
     #[inline]
-    pub fn alloc(mem: &mut MemState, size: i32, subtype: WhatsitSubtype) -> Option<Self> {
+    pub fn alloc(mem: &mut MemState, size: i32, subtype: WhatsitSubtype) -> Result<Self, Abort> {
         let p: Self = mem.alloc_node(size, Some(NodeType::Whatsit))?;
         p.set_subtype(mem, subtype as u16);
-        Some(p)
+        Ok(p)
     }
 
     #[inline]

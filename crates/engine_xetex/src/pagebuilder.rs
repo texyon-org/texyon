@@ -73,10 +73,7 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
 fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<(), Abort> {
     if class != 0 {
-        let sa = st
-            .mem
-            .create_sa_element(&mut st.scanner, MARK_VAL, class)
-            .ok_or(Abort::NodeOverflow)?;
+        let sa = st.mem.create_sa_element(&mut st.scanner, MARK_VAL, class)?;
         if sa.child(&st.mem, 1).is_null() {
             sa.set_child(&mut st.mem, 1, mark_ptr);
             st.mem.add_token_ref(mark_ptr);
@@ -212,7 +209,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
                 let n = rec.subtype(&st.mem) as u8;
                 ensure_vbox(st, n)?;
                 if st.eqtb.box_reg(n as i32).is_null() {
-                    let b = st.mem.new_null_box().ok_or(Abort::NodeOverflow)?;
+                    let b = st.mem.new_null_box()?;
                     st.eqtb.set_box_reg(n as i32, b.ptr());
                 }
                 // The box's `list_ptr` word serves as the head link of its list.
@@ -423,10 +420,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         r = r.link(&st.mem);
     }
     if page_ins(r).subtype(&st.mem) as u8 != n {
-        let q = st
-            .mem
-            .get_node(PAGE_INS_NODE_SIZE)
-            .ok_or(Abort::NodeOverflow)?;
+        let q = st.mem.get_node(PAGE_INS_NODE_SIZE)?;
         let next = r.link(&st.mem);
         q.set_link(&mut st.mem, next);
         r.set_link(&mut st.mem, q);
@@ -554,10 +548,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                     } else {
                         st.shipout.page_contents = PageContents::BoxThere;
                     }
-                    let q = st
-                        .mem
-                        .new_skip_param(&st.eqtb, GLUE_PAR_TOP_SKIP)
-                        .ok_or(Abort::NodeOverflow)?;
+                    let q = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_TOP_SKIP)?;
                     let spec = q.glue_ptr(&st.mem);
                     let width = spec.width(&st.mem).0;
                     let width = if width > height { width - height } else { 0 };
@@ -713,7 +704,7 @@ fn page_glue_width(
         "since the offensive shrinkability has been made finite.",
     ]);
     crate::errors::error(st)?;
-    let finite = st.mem.new_spec(spec).ok_or(Abort::NodeOverflow)?;
+    let finite = st.mem.new_spec(spec)?;
     finite.set_shrink_order(&mut st.mem, NORMAL);
     st.mem.delete_glue_ref(spec);
     glue.set_glue_ptr(&mut st.mem, finite);

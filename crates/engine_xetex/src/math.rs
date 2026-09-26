@@ -206,9 +206,7 @@ impl FontState {
 
 impl MemState {
     pub fn fraction_rule(&mut self, t: i32) -> Result<NodePtr<RuleNode>, Abort> {
-        let Some(p) = NodePtr::<RuleNode>::alloc(self) else {
-            return Err(Abort::NodeOverflow);
-        };
+        let p = NodePtr::<RuleNode>::alloc(self)?;
         p.set_subtype(self, 0);
         p.set_width(self, RuleDimen::Running);
         p.set_height(self, RuleDimen::Set(Scaled(t)));
@@ -217,11 +215,11 @@ impl MemState {
     }
 
     pub fn overbar(&mut self, b: AnyBox, k: i32, t: i32) -> Result<MemPtr, Abort> {
-        let p = self.new_kern(k).ok_or(Abort::NodeOverflow)?;
+        let p = self.new_kern(k)?;
         p.set_link(self, b.ptr());
         let q = self.fraction_rule(t)?;
         q.set_link(self, p.ptr());
-        let r = self.new_kern(t).ok_or(Abort::NodeOverflow)?;
+        let r = self.new_kern(t)?;
         r.set_link(self, q.ptr());
         Ok(r.ptr())
     }
@@ -263,7 +261,7 @@ fn math_glue(
         shrink = st.errors.mu_mult(mu, shrink);
     }
 
-    let p = NodePtr::<GlueSpecNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
+    let p = NodePtr::<GlueSpecNode>::alloc(&mut st.mem)?;
     p.set_width(&mut st.mem, Scaled(width));
     p.set_stretch_order(&mut st.mem, stretch_order);
     p.set_stretch(&mut st.mem, Scaled(stretch));
@@ -295,13 +293,13 @@ impl ListStateRecord {
 fn clean_box(st: &mut EngineState, p: NodePtr<MathField>, s: i16) -> Result<AnyBox, Abort> {
     let q = match p.math_type(&st.mem) {
         MATH_CHAR => {
-            let noad = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+            let noad = st.mem.new_noad()?;
             noad.nucleus().copy_from(&mut st.mem, p);
             sublist_to_hlist(st, noad.ptr(), s)?
         }
         SUB_BOX => p.info(&st.mem),
         SUB_MLIST => sublist_to_hlist(st, p.info(&st.mem), s)?,
-        _ => st.mem.new_null_box().ok_or(Abort::NodeOverflow)?.ptr(),
+        _ => st.mem.new_null_box()?.ptr(),
     };
 
     let lone_box = match q.as_idx() {
@@ -455,10 +453,7 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
     let rule_thickness = st
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
-    let kern = st
-        .mem
-        .new_kern(3 * rule_thickness)
-        .ok_or(Abort::NodeOverflow)?;
+    let kern = st.mem.new_kern(3 * rule_thickness)?;
     x.set_link(&mut st.mem, kern.ptr());
     let rule = st.mem.fraction_rule(rule_thickness)?;
     kern.set_link(&mut st.mem, rule.ptr());
@@ -549,11 +544,7 @@ struct FractionAssembly {
 
 impl MemState {
     fn make_fraction(&mut self, assembly: FractionAssembly) -> Result<AnyBox, Abort> {
-        let vb = AnyBox::VList(
-            self.new_null_box()
-                .ok_or(Abort::NodeOverflow)?
-                .into_vlist(self),
-        );
+        let vb = AnyBox::VList(self.new_null_box()?.into_vlist(self));
         let xb = assembly.x;
         let zb = assembly.z;
         vb.set_height(self, Scaled(assembly.shift_up + xb.height(self).0));
@@ -564,18 +555,18 @@ impl MemState {
         if assembly.rule_thickness == 0 {
             let kw =
                 (assembly.shift_up - xb.depth(self).0) - (zb.height(self).0 - assembly.shift_down);
-            p = self.new_kern(kw).ok_or(Abort::NodeOverflow)?;
+            p = self.new_kern(kw)?;
             p.set_link(self, assembly.z.ptr());
         } else {
             let y = self.fraction_rule(assembly.rule_thickness)?;
             let p1w =
                 (assembly.axis_height - assembly.delta) - (zb.height(self).0 - assembly.shift_down);
-            let p1 = self.new_kern(p1w).ok_or(Abort::NodeOverflow)?;
+            let p1 = self.new_kern(p1w)?;
             y.set_link(self, p1.ptr());
             p1.set_link(self, assembly.z.ptr());
             let pw =
                 (assembly.shift_up - xb.depth(self).0) - (assembly.axis_height + assembly.delta);
-            p = self.new_kern(pw).ok_or(Abort::NodeOverflow)?;
+            p = self.new_kern(pw)?;
             p.set_link(self, y.ptr());
         }
 
@@ -833,12 +824,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
         let y = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
         let z = clean_box(st, q.subscr(), (2 * (cs / 4) + 5) as i16)?;
 
-        let v = AnyBox::VList(
-            st.mem
-                .new_null_box()
-                .ok_or(Abort::NodeOverflow)?
-                .into_vlist(&mut st.mem),
-        );
+        let v = AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem));
         let w = y
             .width(&st.mem)
             .0
@@ -870,10 +856,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
             v.set_list_ptr(mem, y.ptr());
         } else {
             let shift_up = (bos3 - x.depth(mem).0).max(bos1);
-            let p = mem.new_kern(shift_up).ok_or(Abort::NodeOverflow)?;
+            let p = mem.new_kern(shift_up)?;
             p.set_link(mem, y.ptr());
             x.set_link(mem, p.ptr());
-            let p = mem.new_kern(bos5).ok_or(Abort::NodeOverflow)?;
+            let p = mem.new_kern(bos5)?;
             p.set_link(mem, x.ptr());
             v.set_list_ptr(mem, p.ptr());
             let height = v.height(mem).0 + bos5 + x.height(mem).0 + x.depth(mem).0 + shift_up;
@@ -884,10 +870,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, Abort> {
             mem.free_node(z.ptr(), BOX_NODE_SIZE);
         } else {
             let shift_down = (bos4 - z.height(mem).0).max(bos2);
-            let p = mem.new_kern(shift_down).ok_or(Abort::NodeOverflow)?;
+            let p = mem.new_kern(shift_down)?;
             y.set_link(mem, p.ptr());
             p.set_link(mem, z.ptr());
-            let p = mem.new_kern(bos5).ok_or(Abort::NodeOverflow)?;
+            let p = mem.new_kern(bos5)?;
             z.set_link(mem, p.ptr());
             let depth = v.depth(mem).0 + bos5 + z.height(mem).0 + z.depth(mem).0 + shift_down;
             v.set_depth(mem, Scaled(depth));
@@ -920,7 +906,6 @@ impl FontState {
 enum MakeOrdStep {
     Return,
     Restart,
-    Overflow,
 }
 
 impl MemState {
@@ -930,20 +915,18 @@ impl MemState {
         scanner: &mut ScannerState,
         q: NodePtr<Noad>,
         p: NodePtr<Noad>,
-    ) -> MakeOrdStep {
+    ) -> Result<MakeOrdStep, Abort> {
         scanner.cur_c = p.nucleus().character(self) as i32;
         let mut a = fonts.lig_kern_start(scanner);
         loop {
             if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
                 if scanner.cur_i.s1 >= 128 {
                     let kern_width = fonts.char_kern(scanner.cur_f, scanner.cur_i);
-                    let Ok(p_kern) = self.new_kern(kern_width).ok_or(Abort::NodeOverflow) else {
-                        return MakeOrdStep::Overflow;
-                    };
+                    let p_kern = self.new_kern(kern_width)?;
                     let link_q = q.link(self);
                     p_kern.set_link(self, link_q);
                     q.set_link(self, p_kern.ptr());
-                    return MakeOrdStep::Return;
+                    return Ok(MakeOrdStep::Return);
                 } else {
                     match scanner.cur_i.s1 {
                         1 | 5 => {
@@ -953,9 +936,7 @@ impl MemState {
                             p.nucleus().set_character(self, scanner.cur_i.s0);
                         }
                         3 | 7 | 11 => {
-                            let Some(r) = self.new_noad() else {
-                                return MakeOrdStep::Overflow;
-                            };
+                            let r = self.new_noad()?;
                             r.nucleus().set_character(self, scanner.cur_i.s0);
                             r.nucleus()
                                 .set_plane_and_fam(self, q.nucleus().plane_and_fam(self) % 256);
@@ -977,14 +958,14 @@ impl MemState {
                         }
                     }
                     if scanner.cur_i.s1 > 3 {
-                        return MakeOrdStep::Return;
+                        return Ok(MakeOrdStep::Return);
                     }
                     q.nucleus().set_math_type(self, MATH_CHAR);
-                    return MakeOrdStep::Restart;
+                    return Ok(MakeOrdStep::Restart);
                 }
             }
             if scanner.cur_i.s3 >= 128 {
-                return MakeOrdStep::Return;
+                return Ok(MakeOrdStep::Return);
             }
             a += scanner.cur_i.s3 as i32 + 1;
             scanner.cur_i = fonts.font_info_b16(a);
@@ -1030,10 +1011,12 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
             return Ok(());
         }
 
-        match st.mem.make_ord_body(&st.fonts, &mut st.scanner, q, p_node) {
+        match st
+            .mem
+            .make_ord_body(&st.fonts, &mut st.scanner, q, p_node)?
+        {
             MakeOrdStep::Return => return Ok(()),
             MakeOrdStep::Restart => continue 'restart,
-            MakeOrdStep::Overflow => return Err(Abort::NodeOverflow),
         }
     }
 }
@@ -1108,7 +1091,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         && q.nucleus().math_type(&st.mem) == MATH_CHAR
     {
         st.mem.flush_node_list(x.idx().0)?;
-        let base = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+        let base = st.mem.new_noad()?;
         let mem = &mut st.mem;
         base.nucleus().copy_from(mem, q.nucleus());
         base.supscr().copy_from(mem, q.supscr());
@@ -1129,8 +1112,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         let old = crate::fonts::new_native_character(st, f, c as u32)?;
         y = st.mem.native_char_box(old)?;
         let glyph =
-            NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)
-                .ok_or(Abort::NodeOverflow)?;
+            NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)?;
         glyph.set_native_font(&mut st.mem, FontId(f));
         let glyph_id = st.mem.real_get_native_glyph(old, 0);
         glyph.set_native_glyph(&mut st.mem, glyph_id);
@@ -1213,15 +1195,13 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         v.set_shift_amount(&mut st.mem, Scaled(-(h - v_height)));
         v
     } else {
-        let kern = st.mem.new_kern(-delta).ok_or(Abort::NodeOverflow)?;
+        let kern = st.mem.new_kern(-delta)?;
         kern.set_link(&mut st.mem, x.ptr());
         y.set_link(&mut st.mem, kern.ptr());
         let v = crate::packaging::vpackage(st, y.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
         let mem = &mut st.mem;
         if v.height(mem).0 < h {
-            let kern = mem
-                .new_kern(h - v.height(mem).0)
-                .ok_or(Abort::NodeOverflow)?;
+            let kern = mem.new_kern(h - v.height(mem).0)?;
             kern.set_link(mem, v.list_ptr(mem));
             v.set_list_ptr(mem, kern.ptr());
             v.set_height(mem, Scaled(h));
@@ -1294,7 +1274,7 @@ fn maybe_attach_script_kern(
     let p = if kern == 0 {
         p
     } else {
-        let k = st.mem.new_kern(kern).ok_or(Abort::NodeOverflow)?;
+        let k = st.mem.new_kern(kern)?;
         st.mem.append_to_new_hlist(q, k.ptr());
         q.new_hlist(&st.mem)
     };
@@ -1424,9 +1404,7 @@ fn finish_subsup_stack(st: &mut EngineState, input: SubSupStackInput) -> Result<
     input
         .x
         .set_shift_amount(&mut st.mem, Scaled(sup_kern + input.delta - sub_kern));
-    let Some(kern) = st.mem.new_kern(kern_width) else {
-        return Err(Abort::NodeOverflow);
-    };
+    let kern = st.mem.new_kern(kern_width)?;
     input.x.set_link(&mut st.mem, kern.ptr());
     kern.set_link(&mut st.mem, input.y.ptr());
 
@@ -1846,8 +1824,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: i32) -> Res
                     &mut st.mem,
                     GLYPH_NODE_SIZE,
                     WhatsitSubtype::Glyph,
-                )
-                .ok_or(Abort::NodeOverflow)?;
+                )?;
                 glyph.set_native_font(&mut st.mem, FontId(cur_f));
                 let z_glyph = st.mem.real_get_native_glyph(z, 0);
                 glyph.set_native_glyph(&mut st.mem, z_glyph);
@@ -1877,7 +1854,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: i32) -> Res
                 MemPtr::NULL
             };
             if !p.is_null() && qn.subscr().math_type(&st.mem) == EMPTY && delta != 0 {
-                let k = st.mem.new_kern(delta).ok_or(Abort::NodeOverflow)?;
+                let k = st.mem.new_kern(delta)?;
                 p.set_link(&mut st.mem, k.ptr());
                 delta = 0;
             }
@@ -2176,7 +2153,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                     let g = st.eqtb.glue_par(x);
                     let mu = st.scanner.cur_mu;
                     let y = math_glue(st, g, mu)?;
-                    let z = st.mem.new_glue(y).ok_or(Abort::NodeOverflow)?;
+                    let z = st.mem.new_glue(y)?;
                     y.set_ref_count(&mut st.mem, TEX_NULL);
                     p.set_link(&mut st.mem, z.ptr());
                     z.set_subtype(&mut st.mem, (x + 1) as u16);
@@ -2200,7 +2177,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
                         st.mem.node_type(next),
                         Ok(NodeType::Penalty | NodeType::RelNoad)
                     ) {
-                        let z = st.mem.new_penalty(pen).ok_or(Abort::NodeOverflow)?;
+                        let z = st.mem.new_penalty(pen)?;
                         p.set_link(&mut st.mem, z.ptr());
                         p = z.ptr();
                     }
@@ -2229,7 +2206,7 @@ impl FontState {
 
 impl MemState {
     fn native_char_box(&mut self, p: NodePtr<WhatsitNode>) -> Result<AnyBox, Abort> {
-        let b = self.new_null_box().ok_or(Abort::NodeOverflow)?;
+        let b = self.new_null_box()?;
         b.set_height(self, p.height(self));
         b.set_width(self, p.width(self));
         b.set_depth(self, Scaled(p.depth(self).0.max(0)));
@@ -2256,7 +2233,7 @@ impl MemState {
         let height = fonts.char_height(f, q);
         let depth = fonts.char_depth(f, q);
 
-        let b = self.new_null_box().ok_or(Abort::NodeOverflow)?;
+        let b = self.new_null_box()?;
         b.set_width(self, Scaled(width));
         b.set_height(self, Scaled(height));
         b.set_depth(self, Scaled(depth));
@@ -2284,8 +2261,7 @@ impl FontState {
 
 /// A measured glyph whatsit for glyph `g` of font `f`.
 fn new_measured_glyph(st: &mut EngineState, f: i32, g: i32) -> Result<NodePtr<WhatsitNode>, Abort> {
-    let p = NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)
-        .ok_or(Abort::NodeOverflow)?;
+    let p = NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)?;
     p.set_native_font(&mut st.mem, FontId(f));
     p.set_native_glyph(&mut st.mem, g as u16);
     st.fonts.measure_glyph(&mut st.mem, p)?;
@@ -2323,12 +2299,7 @@ fn stack_glyph_into_box(st: &mut EngineState, b: AnyBox, f: i32, g: i32) -> Resu
 }
 
 fn native_glyph_vbox(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, Abort> {
-    let b = AnyBox::VList(
-        st.mem
-            .new_null_box()
-            .ok_or(Abort::NodeOverflow)?
-            .into_vlist(&mut st.mem),
-    );
+    let b = AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem));
     let p = new_measured_glyph(st, f, g as i32)?;
     let mem = &mut st.mem;
     b.set_list_ptr(mem, p.ptr());
@@ -2340,10 +2311,10 @@ fn native_glyph_vbox(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, Abo
 
 impl MemState {
     fn stack_glue_into_box(&mut self, b: AnyBox, min: i32, max: i32) -> Result<(), Abort> {
-        let spec = self.new_spec(ZERO_GLUE).ok_or(Abort::NodeOverflow)?;
+        let spec = self.new_spec(ZERO_GLUE)?;
         spec.set_width(self, Scaled(min));
         spec.set_stretch(self, Scaled(max - min));
-        let p = self.new_glue(spec).ok_or(Abort::NodeOverflow)?;
+        let p = self.new_glue(spec)?;
         if matches!(b, AnyBox::HList(_)) {
             let mut q = b.list_ptr(self);
             if q.is_null() {
@@ -2513,7 +2484,7 @@ pub(crate) fn math_limit_switch(st: &mut EngineState) -> Result<(), Abort> {
 
 impl ListStateRecord {
     fn append_radical_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        let node = NodePtr::<Noad>::alloc_radical(mem).ok_or(Abort::NodeOverflow)?;
+        let node = NodePtr::<Noad>::alloc_radical(mem)?;
         self.tail_append(mem, node.ptr());
         node.clear_fields(mem);
         Ok(node)
@@ -2532,7 +2503,7 @@ impl ListStateRecord {
         mem: &mut MemState,
         save_stack: &mut SaveStackState,
     ) -> Result<(), Abort> {
-        let choice = mem.new_choice().ok_or(Abort::NodeOverflow)?;
+        let choice = mem.new_choice()?;
         self.tail_append(mem, choice.ptr());
         save_stack.save_ptr += 1;
         save_stack.set_saved(-1, 0);
@@ -2675,7 +2646,7 @@ impl ListStateRecord {
         let p = match p {
             Some(field) if t == EMPTY => field,
             _ => {
-                let noad = mem.new_noad().ok_or(Abort::NodeOverflow)?;
+                let noad = mem.new_noad()?;
                 self.tail_append(mem, noad.ptr());
                 if t != EMPTY {
                     duplicate = Some(if cmd == SUP_MARK {
@@ -2715,7 +2686,7 @@ pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
 
 impl ListStateRecord {
     fn start_fraction_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        let fraction = NodePtr::<Noad>::alloc_fraction(mem).ok_or(Abort::NodeOverflow)?;
+        let fraction = NodePtr::<Noad>::alloc_fraction(mem)?;
         self.set_aux_s1(fraction.idx().0);
         fraction.set_subtype(mem, NORMAL);
         fraction.supscr().set_math_type(mem, SUB_MLIST);
@@ -2774,7 +2745,7 @@ pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
 
 impl ListStateRecord {
     fn append_accent_noad(&mut self, mem: &mut MemState) -> Result<NodePtr<Noad>, Abort> {
-        let accent = NodePtr::<Noad>::alloc_accent(mem).ok_or(Abort::NodeOverflow)?;
+        let accent = NodePtr::<Noad>::alloc_accent(mem)?;
         self.tail_append(mem, accent.ptr());
         accent.clear_fields(mem);
         accent.accent_chr().set_math_type(mem, MATH_CHAR);
@@ -2823,7 +2794,7 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
             crate::main_control::off_save(st)?;
         }
     } else {
-        let p = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+        let p = st.mem.new_noad()?;
         p.set_type_code(&mut st.mem, t);
         scan_delimiter(st, p.delimiter(), false)?;
         if t == MIDDLE_NOAD {
@@ -2844,7 +2815,7 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
             cl.tail = p.ptr();
             cl.e_tex_aux = p.ptr();
         } else {
-            let inner = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+            let inner = st.mem.new_noad()?;
             let cl = &mut st.input.cur_list;
             cl.tail_append(&mut st.mem, inner.ptr());
             inner.set_noad_type(&mut st.mem, NodeType::InnerNoad);
@@ -3028,25 +2999,15 @@ fn app_display(st: &mut EngineState, j: Option<AnyBox>, orig: AnyBox, d: i32) ->
     }
 
     let (r, t) = match copy {
-        None => (
-            st.mem.new_kern(0).ok_or(Abort::NodeOverflow)?.ptr(),
-            st.mem.new_kern(0).ok_or(Abort::NodeOverflow)?.ptr(),
-        ),
+        None => (st.mem.new_kern(0)?.ptr(), st.mem.new_kern(0)?.ptr()),
         Some(bc) => {
             let r = bc.list_ptr(&st.mem);
             (r, r.link(&st.mem))
         }
     };
-    let u = st
-        .mem
-        .new_math(0, END_M_CODE)
-        .ok_or(Abort::NodeOverflow)?
-        .ptr();
+    let u = st.mem.new_math(0, END_M_CODE)?.ptr();
     if let Ok(AnyNode::Glue(tg)) = st.mem.classify(MemIdx::new(t.0)) {
-        let skip = st
-            .mem
-            .new_skip_param(&st.eqtb, GLUE_PAR_RIGHT_SKIP)
-            .ok_or(Abort::NodeOverflow)?;
+        let skip = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_RIGHT_SKIP)?;
         q.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, u);
         st.mem.set_display_skip(skip, tg, e);
@@ -3057,16 +3018,9 @@ fn app_display(st: &mut EngineState, j: Option<AnyBox>, orig: AnyBox, d: i32) ->
         q.set_link(&mut st.mem, t);
     }
 
-    let u = st
-        .mem
-        .new_math(0, BEGIN_M_CODE)
-        .ok_or(Abort::NodeOverflow)?
-        .ptr();
+    let u = st.mem.new_math(0, BEGIN_M_CODE)?.ptr();
     if let Ok(AnyNode::Glue(rg)) = st.mem.classify(MemIdx::new(r.0)) {
-        let skip = st
-            .mem
-            .new_skip_param(&st.eqtb, GLUE_PAR_LEFT_SKIP)
-            .ok_or(Abort::NodeOverflow)?;
+        let skip = st.mem.new_skip_param(&st.eqtb, GLUE_PAR_LEFT_SKIP)?;
         u.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, p);
         st.mem.set_display_skip(skip, rg, d);
@@ -3174,10 +3128,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
     if m < 0 {
         let math_surround = st.eqtb.dimen_par(DIMEN_PAR_MATH_SURROUND);
-        let node = st
-            .mem
-            .new_math(math_surround, BEFORE)
-            .ok_or(Abort::NodeOverflow)?;
+        let node = st.mem.new_math(math_surround, BEFORE)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
@@ -3189,10 +3140,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
         while !cl.tail.link(&st.mem).is_null() {
             cl.tail = cl.tail.link(&st.mem);
         }
-        let node = st
-            .mem
-            .new_math(math_surround, AFTER)
-            .ok_or(Abort::NodeOverflow)?;
+        let node = st.mem.new_math(math_surround, AFTER)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.input.cur_list.set_aux_s0(1000);
 
@@ -3268,8 +3216,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
     let pen = st
         .mem
-        .new_penalty(st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY))
-        .ok_or(Abort::NodeOverflow)?;
+        .new_penalty(st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY))?;
     st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
     let pre_display_size = st.eqtb.dimen_par(DIMEN_PAR_PRE_DISPLAY_SIZE);
@@ -3284,18 +3231,15 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
     if let Some(eqno) = a.filter(|_| l && e == 0) {
         app_display(st, j, eqno, 0)?;
-        let pen = st.mem.new_penalty(INF_PENALTY).ok_or(Abort::NodeOverflow)?;
+        let pen = st.mem.new_penalty(INF_PENALTY)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
     } else {
-        let glue = st
-            .mem
-            .new_param_glue(&st.eqtb, g1)
-            .ok_or(Abort::NodeOverflow)?;
+        let glue = st.mem.new_param_glue(&st.eqtb, g1)?;
         st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
     if let Some(eqno) = a.filter(|_| e != 0) {
-        let r = st.mem.new_kern(z - w - e - d).ok_or(Abort::NodeOverflow)?;
+        let r = st.mem.new_kern(z - w - e - d)?;
         if l {
             eqno.set_link(&mut st.mem, r.ptr());
             r.set_link(&mut st.mem, b.ptr());
@@ -3311,7 +3255,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     app_display(st, j, b, d)?;
 
     if let Some(eqno) = a.filter(|_| e == 0 && !l) {
-        let pen = st.mem.new_penalty(INF_PENALTY).ok_or(Abort::NodeOverflow)?;
+        let pen = st.mem.new_penalty(INF_PENALTY)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
         let a_width = eqno.width(&st.mem).0;
         app_display(st, j, eqno, z - a_width)?;
@@ -3332,15 +3276,11 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
     let pen = st
         .mem
-        .new_penalty(st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY))
-        .ok_or(Abort::NodeOverflow)?;
+        .new_penalty(st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY))?;
     st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
     if g2 > 0 {
-        let glue = st
-            .mem
-            .new_param_glue(&st.eqtb, g2)
-            .ok_or(Abort::NodeOverflow)?;
+        let glue = st.mem.new_param_glue(&st.eqtb, g2)?;
         st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
@@ -3374,7 +3314,7 @@ fn side_skip(st: &mut EngineState, param: i16) -> Result<MemPtr, Abort> {
     } else {
         st.mem.new_param_glue(&st.eqtb, param).map(|g| g.ptr())
     };
-    p.ok_or(Abort::NodeOverflow)
+    p
 }
 
 pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
@@ -3395,7 +3335,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             let left = side_skip(st, GLUE_PAR_LEFT_SKIP)?;
             left.set_link(&mut st.mem, right);
 
-            let jbox = st.mem.new_null_box().ok_or(Abort::NodeOverflow)?;
+            let jbox = st.mem.new_null_box()?;
             j = jbox.idx().0;
             let jb = st.scanner.just_box.expect("line_break sets just_box");
             let mem = &mut st.mem;
@@ -3415,17 +3355,9 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                 TEMP_HEAD.set_link(&mut st.mem, MemPtr::NULL);
             } else {
                 v = -v - jb.width(&st.mem).0;
-                let begin = st
-                    .mem
-                    .new_math(0, BEGIN_L_CODE)
-                    .ok_or(Abort::NodeOverflow)?
-                    .ptr();
+                let begin = st.mem.new_math(0, BEGIN_L_CODE)?.ptr();
                 TEMP_HEAD.set_link(&mut st.mem, begin);
-                let end = st
-                    .mem
-                    .new_math(0, END_L_CODE)
-                    .ok_or(Abort::NodeOverflow)?
-                    .ptr();
+                let end = st.mem.new_math(0, END_L_CODE)?.ptr();
                 let list = jb.list_ptr(&st.mem);
                 st.mem.just_copy(list, begin, end)?;
                 st.scanner.cur_dir = RIGHT_TO_LEFT;
@@ -3634,18 +3566,18 @@ fn rebox(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, Abort> {
         let v = st.fonts.char_width(f, q);
         let bw = b.width(&st.mem).0;
         if v != bw {
-            let k = st.mem.new_kern(bw - v).ok_or(Abort::NodeOverflow)?;
+            let k = st.mem.new_kern(bw - v)?;
             p.set_link(&mut st.mem, k.ptr());
         }
     }
     let mem = &mut st.mem;
     mem.free_node(b.ptr(), BOX_NODE_SIZE);
-    let g = mem.new_glue(SS_GLUE).ok_or(Abort::NodeOverflow)?;
+    let g = mem.new_glue(SS_GLUE)?;
     g.set_link(mem, p);
     while !p.link(mem).is_null() {
         p = p.link(mem);
     }
-    let tail_glue = mem.new_glue(SS_GLUE).ok_or(Abort::NodeOverflow)?;
+    let tail_glue = mem.new_glue(SS_GLUE)?;
     p.set_link(mem, tail_glue.ptr());
     crate::packaging::hpack(st, g.ptr(), w, EXACTLY)
 }
@@ -3658,14 +3590,9 @@ fn build_opentype_assembly(
     horiz: bool,
 ) -> Result<AnyBox, Abort> {
     let b = if horiz {
-        AnyBox::HList(st.mem.new_null_box().ok_or(Abort::NodeOverflow)?)
+        AnyBox::HList(st.mem.new_null_box()?)
     } else {
-        AnyBox::VList(
-            st.mem
-                .new_null_box()
-                .ok_or(Abort::NodeOverflow)?
-                .into_vlist(&mut st.mem),
-        )
+        AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem))
     };
     // Extenders repeat `n` times, other parts once.
     let repeats = |i: i32, n: i32| if a.is_extender(i) { n } else { 1 };
@@ -3747,11 +3674,7 @@ impl MemState {
         q: CharInfo,
         v: i32,
     ) -> Result<AnyBox, Abort> {
-        let vb = AnyBox::VList(
-            self.new_null_box()
-                .ok_or(Abort::NodeOverflow)?
-                .into_vlist(self),
-        );
+        let vb = AnyBox::VList(self.new_null_box()?.into_vlist(self));
         let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
         let u = fonts.height_plus_depth(f, r.s0);
         let effective_c = fonts.effective_char(f, r.s0);
@@ -3904,7 +3827,7 @@ fn var_delimiter(
         }
     }
     let b = if f == FONT_BASE {
-        let b = st.mem.new_null_box().ok_or(Abort::NodeOverflow)?;
+        let b = st.mem.new_null_box()?;
         let width = st.eqtb.dimen_par(DIMEN_PAR_NULL_DELIMITER_SPACE);
         b.set_width(&mut st.mem, Scaled(width));
         AnyBox::HList(b)

@@ -292,7 +292,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                     col.set_subtype(&mut st.mem, 0);
                     for _ in 0..n {
                         let spec = proto.tab_skip(&st.mem).glue_ptr(&st.mem);
-                        let g = st.mem.new_glue(spec).ok_or(Abort::NodeOverflow)?;
+                        let g = st.mem.new_glue(spec)?;
                         u.set_link(&mut st.mem, g.ptr());
                         u = g.ptr();
                         g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
@@ -318,7 +318,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
                             return Err(Abort::Confusion("align"));
                         };
                         proto = spanned;
-                        let nb = st.mem.new_null_box().ok_or(Abort::NodeOverflow)?;
+                        let nb = st.mem.new_null_box()?;
                         u.set_link(&mut st.mem, nb.ptr());
                         u = nb.ptr();
                         let span_w = proto.width(&st.mem);
@@ -415,27 +415,22 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         st.mem.flush_node_list(etex_aux)?;
         st.mem.pop_nest(&mut st.input);
         let pre_penalty = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY);
-        let pen = st.mem.new_penalty(pre_penalty).ok_or(Abort::NodeOverflow)?;
+        let pen = st.mem.new_penalty(pre_penalty)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
         let above = st
             .mem
-            .new_param_glue(&st.eqtb, GLUE_PAR_ABOVE_DISPLAY_SKIP)
-            .ok_or(Abort::NodeOverflow)?;
+            .new_param_glue(&st.eqtb, GLUE_PAR_ABOVE_DISPLAY_SKIP)?;
         st.input.cur_list.tail_append(&mut st.mem, above.ptr());
         st.input.cur_list.tail.set_link(&mut st.mem, rows);
         if !rows.is_null() {
             st.input.cur_list.tail = rows_tail;
         }
         let post_penalty = st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY);
-        let pen = st
-            .mem
-            .new_penalty(post_penalty)
-            .ok_or(Abort::NodeOverflow)?;
+        let pen = st.mem.new_penalty(post_penalty)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
         let below = st
             .mem
-            .new_param_glue(&st.eqtb, GLUE_PAR_BELOW_DISPLAY_SKIP)
-            .ok_or(Abort::NodeOverflow)?;
+            .new_param_glue(&st.eqtb, GLUE_PAR_BELOW_DISPLAY_SKIP)?;
         st.input.cur_list.tail_append(&mut st.mem, below.ptr());
         st.input.cur_list.set_aux_s1(aux_save_s1);
         crate::math::resume_after_display(st)?;
@@ -606,7 +601,7 @@ pub(crate) fn init_row(st: &mut EngineState) -> Result<(), Abort> {
     }
     let tab_skip = NodePtr::<GlueNode>::tab_skip_after(&st.mem, ALIGN_HEAD);
     let spec = tab_skip.glue_ptr(&st.mem);
-    let glue = st.mem.new_glue(spec).ok_or(Abort::NodeOverflow)?;
+    let glue = st.mem.new_glue(spec)?;
     st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     glue.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
     st.scanner.cur_align = tab_skip.link(&st.mem);
@@ -628,7 +623,7 @@ pub(crate) fn init_col(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn push_alignment(st: &mut EngineState) -> Result<(), Abort> {
-    let p = NodePtr::<AlignStackNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
+    let p = NodePtr::<AlignStackNode>::alloc(&mut st.mem)?;
     let (mem, sc) = (&mut st.mem, &st.scanner);
     p.set_link(mem, sc.align_ptr);
     p.set_cur_align(mem, sc.cur_align);
@@ -678,7 +673,7 @@ impl MemState {
 
     /// A fresh preamble column with an empty span list and no entries yet.
     fn new_align_record(&mut self) -> Result<NodePtr<AlignRecord>, Abort> {
-        let nb = self.new_null_box().ok_or(Abort::NodeOverflow)?;
+        let nb = self.new_null_box()?;
         let column = NodePtr::<AlignRecord>::at(nb.idx());
         column.span_head().set_next(self, END_SPAN);
         column.set_width(self, Scaled(NULL_FLAG));
@@ -716,7 +711,7 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             let tab_skip = template.tab_skip(&st.mem);
             st.scanner.cur_loop = tab_skip.ptr();
             let spec = tab_skip.glue_ptr(&st.mem);
-            let g = st.mem.new_glue(spec).ok_or(Abort::NodeOverflow)?;
+            let g = st.mem.new_glue(spec)?;
             column.set_link(&mut st.mem, g.ptr());
             g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
         } else {
@@ -772,7 +767,7 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
             }
             let next = q.next(&st.mem);
             if next.span_count(&st.mem) > n {
-                let s = NodePtr::<SpanNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
+                let s = NodePtr::<SpanNode>::alloc(&mut st.mem)?;
                 s.set_next(&mut st.mem, next);
                 s.set_span_count(&mut st.mem, n);
                 q.set_next(&mut st.mem, s);
@@ -794,7 +789,7 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
         st.mem.pop_nest(&mut st.input);
         st.input.cur_list.tail_append(&mut st.mem, u.ptr());
         let spec = cur_align.tab_skip(&st.mem).glue_ptr(&st.mem);
-        let g = st.mem.new_glue(spec).ok_or(Abort::NodeOverflow)?;
+        let g = st.mem.new_glue(spec)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
         g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
         if cur_align.extra_info(&st.mem) >= CR_CODE {
@@ -891,11 +886,7 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.align_state = -1_000_000;
 
     loop {
-        let g = st
-            .mem
-            .new_param_glue(&st.eqtb, GLUE_PAR_TAB_SKIP)
-            .ok_or(Abort::NodeOverflow)?
-            .ptr();
+        let g = st.mem.new_param_glue(&st.eqtb, GLUE_PAR_TAB_SKIP)?.ptr();
         st.scanner.cur_align.set_link(&mut st.mem, g);
         st.scanner.cur_align = g;
         if st.scanner.cur_cmd == CAR_RET {
@@ -999,10 +990,7 @@ pub(crate) fn end_graf(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn append_penalty(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::scan_int(st)?;
-    let p = st
-        .mem
-        .new_penalty(st.scanner.cur_val)
-        .ok_or(Abort::NodeOverflow)?;
+    let p = st.mem.new_penalty(st.scanner.cur_val)?;
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     if st.input.cur_list.mode == VMODE {
         crate::pagebuilder::build_page(st)?;
@@ -1039,12 +1027,12 @@ pub(crate) fn its_all_over(st: &mut EngineState) -> Result<bool, Abort> {
         return Ok(true);
     }
     crate::input::back_input(st)?;
-    let b = st.mem.new_null_box().ok_or(Abort::NodeOverflow)?;
+    let b = st.mem.new_null_box()?;
     st.input.cur_list.tail_append(&mut st.mem, b.ptr());
     b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_HSIZE)));
-    let g = st.mem.new_glue(FILL_GLUE).ok_or(Abort::NodeOverflow)?;
+    let g = st.mem.new_glue(FILL_GLUE)?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
-    let p = st.mem.new_penalty(NULL_FLAG).ok_or(Abort::NodeOverflow)?;
+    let p = st.mem.new_penalty(NULL_FLAG)?;
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     crate::pagebuilder::build_page(st)?;
     Ok(false)
@@ -1054,13 +1042,13 @@ pub(crate) fn indent_in_hmode(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.cur_chr <= 0 {
         return Ok(());
     }
-    let b = st.mem.new_null_box().ok_or(Abort::NodeOverflow)?;
+    let b = st.mem.new_null_box()?;
     b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT)));
     let p = if st.input.cur_list.mode.abs() == HMODE {
         st.input.cur_list.set_aux_s0(1000);
         b.ptr()
     } else {
-        let q = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+        let q = st.mem.new_noad()?;
         q.nucleus().set_math_type(&mut st.mem, SUB_BOX);
         q.nucleus().set_info(&mut st.mem, b.ptr());
         q.ptr()
@@ -1247,11 +1235,7 @@ pub(crate) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
     let q;
     let mut side_effects = None;
     if space_factor >= 2000 && st.eqtb.glue_par(GLUE_PAR_XSPACE_SKIP) != ZERO_GLUE {
-        q = st
-            .mem
-            .new_param_glue(&st.eqtb, GLUE_PAR_XSPACE_SKIP)
-            .ok_or(Abort::NodeOverflow)?
-            .ptr();
+        q = st.mem.new_param_glue(&st.eqtb, GLUE_PAR_XSPACE_SKIP)?.ptr();
     } else {
         let space_skip = st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP);
         let base = if space_skip != ZERO_GLUE {
@@ -1260,7 +1244,7 @@ pub(crate) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
             font_space_glue(st)?
         };
         st.mainloop.main_p = base.ptr();
-        let spec = st.mem.new_spec(base).ok_or(Abort::NodeOverflow)?;
+        let spec = st.mem.new_spec(base)?;
         st.mainloop.main_p = spec.ptr();
         if space_factor >= 2000 {
             let cf = st.eqtb.cur_font();
@@ -1275,7 +1259,7 @@ pub(crate) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
             crate::scaled_math::xn_over_d_parts(spec.shrink(&st.mem).0, 1000, space_factor);
         spec.set_shrink(&mut st.mem, Scaled(shrink));
         side_effects = Some((remainder, stretch_overflow || shrink_overflow));
-        q = st.mem.new_glue(spec).ok_or(Abort::NodeOverflow)?.ptr();
+        q = st.mem.new_glue(spec)?.ptr();
         spec.set_ref_count(&mut st.mem, TEX_NULL);
     }
     st.input.cur_list.tail_append(&mut st.mem, q);
@@ -1295,7 +1279,7 @@ fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort>
     if glue != TEX_NULL {
         return Ok(crate::node::NodePtr::from_glue_ptr(MemPtr(glue)));
     }
-    let spec = st.mem.new_spec(ZERO_GLUE).ok_or(Abort::NodeOverflow)?;
+    let spec = st.mem.new_spec(ZERO_GLUE)?;
     st.mainloop.main_k = st.fonts.param_base(cf) + SPACE_CODE;
     let k = st.mainloop.main_k;
     spec.set_width(&mut st.mem, Scaled(st.fonts.font_info_sc(k)));
@@ -1372,10 +1356,7 @@ pub(crate) fn start_paragraph_language(st: &mut EngineState) {
 pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort> {
     st.input.cur_list.prev_graf = 0;
     if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
-        let g = st
-            .mem
-            .new_param_glue(&st.eqtb, GLUE_PAR_PAR_SKIP)
-            .ok_or(Abort::NodeOverflow)?;
+        let g = st.mem.new_param_glue(&st.eqtb, GLUE_PAR_PAR_SKIP)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     }
     crate::mem::push_nest(st)?;
@@ -1385,7 +1366,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
     start_paragraph_language(st);
 
     if indented {
-        let b = st.mem.new_null_box().ok_or(Abort::NodeOverflow)?;
+        let b = st.mem.new_null_box()?;
         st.input.cur_list.tail = b.ptr();
         st.input.cur_list.head.set_link(&mut st.mem, b.ptr());
         b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT)));
@@ -1472,7 +1453,7 @@ pub(crate) fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abor
                 st.input.cur_list.set_aux_s0(1000);
                 b.ptr()
             } else {
-                let noad = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+                let noad = st.mem.new_noad()?;
                 noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
                 noad.nucleus().set_info(&mut st.mem, b.ptr());
                 noad.ptr()
@@ -1490,10 +1471,7 @@ pub(crate) fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abor
         if n < 256 {
             define(st, global, BOX_BASE + n, BOX_REF, cb)?;
         } else {
-            let sa = st
-                .mem
-                .create_sa_element(&mut st.scanner, BOX_VAL, n)
-                .ok_or(Abort::NodeOverflow)?;
+            let sa = st.mem.create_sa_element(&mut st.scanner, BOX_VAL, n)?;
             sa_define(st, global, sa.idx().0, cb)?;
         }
     } else if let Some(cb) = st.scanner.cur_box {
@@ -1724,7 +1702,7 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.pop_nest(&mut st.input);
             let n = st.save_stack.saved(0);
             if n < 255 {
-                let ins = NodePtr::<InsNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
+                let ins = NodePtr::<InsNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, ins.ptr());
                 ins.set_subtype(&mut st.mem, n as u16);
                 let height = p.height(&st.mem).0 + p.depth(&st.mem).0;
@@ -1735,7 +1713,7 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 ins.set_depth(&mut st.mem, Scaled(d));
                 ins.set_float_cost(&mut st.mem, f);
             } else {
-                let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem).ok_or(Abort::NodeOverflow)?;
+                let adj = NodePtr::<AdjustNode>::alloc(&mut st.mem)?;
                 st.input.cur_list.tail_append(&mut st.mem, adj.ptr());
                 let pre = st.save_stack.saved(1);
                 adj.set_subtype(&mut st.mem, pre as u16);
@@ -1834,7 +1812,7 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             let spec_mode = st.save_stack.saved(0) as i16;
             let p = crate::packaging::vpackage(st, head, size, spec_mode, MAX_HALFWORD)?;
             st.mem.pop_nest(&mut st.input);
-            let noad = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+            let noad = st.mem.new_noad()?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
             noad.set_noad_type(&mut st.mem, NodeType::VcenterNoad);
             noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
@@ -1895,10 +1873,7 @@ pub(crate) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abo
         MSKIP_CODE => crate::scan::scan_glue(st, MU_VAL)?,
         _ => {}
     }
-    let g = st
-        .mem
-        .new_glue(st.scanner.cur_glue())
-        .ok_or(Abort::NodeOverflow)?;
+    let g = st.mem.new_glue(st.scanner.cur_glue())?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     if s >= SKIP_CODE {
         let spec = g.glue_ptr(&st.mem);
@@ -1914,10 +1889,7 @@ pub(crate) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abo
 pub(crate) fn append_kern(st: &mut EngineState) -> Result<(), Abort> {
     let s = st.scanner.cur_chr as u16;
     crate::scan::scan_dimen(st, s == MU_GLUE, false, false)?;
-    let p = st
-        .mem
-        .new_kern(st.scanner.cur_val)
-        .ok_or(Abort::NodeOverflow)?;
+    let p = st.mem.new_kern(st.scanner.cur_val)?;
     p.set_subtype(&mut st.mem, s);
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     Ok(())
@@ -1931,7 +1903,7 @@ pub(crate) fn make_mark(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_val
     };
     crate::scan::scan_toks(st, false, true)?;
-    let mark = overflow_err(NodePtr::<MarkNode>::alloc(&mut st.mem))?;
+    let mark = NodePtr::<MarkNode>::alloc(&mut st.mem)?;
     mark.set_mark_class(&mut st.mem, c);
     mark.set_subtype(&mut st.mem, 0);
     mark.set_mark_ptr(&mut st.mem, st.scanner.def_ref);
@@ -2070,9 +2042,7 @@ impl ListStateRecord {
         if l == self.aux_s1() {
             return Ok(());
         }
-        let w = self
-            .new_whatsit(mem, WhatsitSubtype::Language, SMALL_NODE_SIZE)
-            .ok_or(Abort::NodeOverflow)?;
+        let w = self.new_whatsit(mem, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
         w.set_what_lang(mem, l);
         self.set_aux_s1(l);
         let lhm = crate::helpers::norm_min(eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as u16;
@@ -2140,7 +2110,7 @@ fn begin_disc_group(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn append_discretionary(st: &mut EngineState) -> Result<(), Abort> {
-    let d = st.mem.new_disc().ok_or(Abort::NodeOverflow)?;
+    let d = st.mem.new_disc()?;
     st.input.cur_list.tail_append(&mut st.mem, d.ptr());
     if st.scanner.cur_chr == 1 {
         let f = st.eqtb.cur_font();
@@ -2298,7 +2268,7 @@ pub(crate) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
             _ => return Ok(()),
         }
     };
-    let kern = st.mem.new_kern(italic).ok_or(Abort::NodeOverflow)?;
+    let kern = st.mem.new_kern(italic)?;
     st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
     kern.set_subtype(&mut st.mem, EXPLICIT);
     Ok(())
@@ -2385,11 +2355,11 @@ pub(crate) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
     };
-    let r = st.mem.new_kern(delta).ok_or(Abort::NodeOverflow)?;
+    let r = st.mem.new_kern(delta)?;
     r.set_subtype(&mut st.mem, ACC_KERN);
     st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());
     r.set_link(&mut st.mem, accent);
-    let back = st.mem.new_kern(-a - delta).ok_or(Abort::NodeOverflow)?;
+    let back = st.mem.new_kern(-a - delta)?;
     st.input.cur_list.tail = back.ptr();
     back.set_subtype(&mut st.mem, ACC_KERN);
     accent.set_link(&mut st.mem, back.ptr());
@@ -2568,10 +2538,7 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
         crate::scan::scan_register_num(st)?;
         let n = st.scanner.cur_val;
         if n > 255 {
-            let sa = st
-                .mem
-                .create_sa_element(&mut st.scanner, p, n)
-                .ok_or(Abort::NodeOverflow)?;
+            let sa = st.mem.create_sa_element(&mut st.scanner, p, n)?;
             break 'found (sa.idx().0, p, true);
         }
         let base = match p {
@@ -2611,10 +2578,7 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
         } else {
             crate::scan::scan_glue(st, p)?;
             if q == ADVANCE {
-                let sum = st
-                    .mem
-                    .new_spec(st.scanner.cur_glue())
-                    .ok_or(Abort::NodeOverflow)?;
+                let sum = st.mem.new_spec(st.scanner.cur_glue())?;
                 st.mem.delete_glue_ref(st.scanner.cur_glue());
                 let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(s));
                 let width = sum.width(&st.mem).0 + old.width(&st.mem).0;
@@ -2667,7 +2631,7 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
             st.scanner.cur_val = scale(&mut st.errors, w, max_answer);
         } else {
             let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(s));
-            let r = st.mem.new_spec(old).ok_or(Abort::NodeOverflow)?;
+            let r = st.mem.new_spec(old)?;
             let (width, stretch, shrink) = (
                 old.width(&st.mem).0,
                 old.stretch(&st.mem).0,
@@ -2734,11 +2698,9 @@ pub(crate) fn main_control_append_normal_space(st: &mut EngineState) -> Result<(
     let glue = if st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP) == ZERO_GLUE {
         let spec = font_space_glue(st)?;
         st.mainloop.main_p = spec.ptr();
-        st.mem.new_glue(spec).ok_or(Abort::NodeOverflow)?
+        st.mem.new_glue(spec)?
     } else {
-        st.mem
-            .new_param_glue(&st.eqtb, GLUE_PAR_SPACE_SKIP)
-            .ok_or(Abort::NodeOverflow)?
+        st.mem.new_param_glue(&st.eqtb, GLUE_PAR_SPACE_SKIP)?
     };
     st.mem.temp_ptr = glue.ptr();
     st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
@@ -2768,10 +2730,7 @@ fn valign_or_lr(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_chr,
     )?;
     if enabled {
-        let m = st
-            .mem
-            .new_math(0, st.scanner.cur_chr as u16)
-            .ok_or(Abort::NodeOverflow)?;
+        let m = st.mem.new_math(0, st.scanner.cur_chr as u16)?;
         st.input.cur_list.tail_append(&mut st.mem, m.ptr());
     }
     Ok(())
@@ -2833,7 +2792,7 @@ fn math_delim_num(st: &mut EngineState) -> Result<(), Abort> {
 
 /// Appends a noad of type `cur_chr` (or an ordinary one for `{`) and scans its nucleus.
 fn append_noad(st: &mut EngineState, backup: bool) -> Result<(), Abort> {
-    let n = st.mem.new_noad().ok_or(Abort::NodeOverflow)?;
+    let n = st.mem.new_noad()?;
     st.input.cur_list.tail_append(&mut st.mem, n.ptr());
     if backup {
         crate::input::back_input(st)?;
@@ -2982,9 +2941,6 @@ fn is_char_cmd(cmd: u8) -> bool {
 }
 
 #[inline]
-fn overflow_err<T>(p: Option<T>) -> Result<T, Abort> {
-    p.ok_or(Abort::NodeOverflow)
-}
 
 fn is_hyphen_unit(st: &EngineState, c: i32, hyphen: i32) -> bool {
     c == hyphen || (st.eqtb.int_par(INT_PAR_XETEX_DASH_BREAK) > 0 && (c == 8212 || c == 8211))
@@ -3199,7 +3155,7 @@ unsafe fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort>
                 advance_past_hyphen(st, start, remaining);
             }
             if remaining > 0 || st.hyph.is_hyph {
-                let disc = overflow_err(st.mem.new_disc())?;
+                let disc = st.mem.new_disc()?;
                 st.input.cur_list.tail_append(&mut st.mem, disc.ptr());
                 st.mainloop.main_pp = st.input.cur_list.tail;
             }
@@ -3295,7 +3251,7 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Abo
     // TeX reads `width(font_glue[f])`, which stays null while `\spaceskip` supplies the glue.
     let space = st.fonts.param(mf, SPACE_CODE);
     if t != space {
-        let kern = overflow_err(st.mem.new_kern(t - space))?;
+        let kern = st.mem.new_kern(t - space)?;
         kern.set_subtype(&mut st.mem, SPACE_ADJUSTMENT);
         let next = glue.link(&st.mem);
         kern.set_link(&mut st.mem, next);
@@ -3348,11 +3304,9 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
     }
     if st.mainloop.ligature_present {
         let lig_list = st.mainloop.cur_q.link(&st.mem);
-        let lig = overflow_err(st.mem.new_ligature(
-            FontId(main_f),
-            st.mainloop.cur_l as u16,
-            lig_list,
-        ))?;
+        let lig = st
+            .mem
+            .new_ligature(FontId(main_f), st.mainloop.cur_l as u16, lig_list)?;
         if st.mainloop.lft_hit {
             lig.set_subtype(&mut st.mem, 2);
             st.mainloop.lft_hit = false;
@@ -3369,7 +3323,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
     if st.mainloop.ins_disc {
         st.mainloop.ins_disc = false;
         if st.input.cur_list.mode > 0 {
-            let disc = overflow_err(st.mem.new_disc())?;
+            let disc = st.mem.new_disc()?;
             st.input.cur_list.tail_append(&mut st.mem, disc.ptr());
         }
     }
@@ -3539,7 +3493,7 @@ fn lig_kern_program(
             wrapup(st, true)?;
             let main_f = st.mainloop.main_f;
             let kern = st.fonts.char_kern(main_f, step);
-            let kern = overflow_err(st.mem.new_kern(kern))?;
+            let kern = st.mem.new_kern(kern)?;
             st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
             return Ok(LigExit::Move);
         }
@@ -3558,11 +3512,11 @@ fn lig_kern_program(
                 st.mainloop.cur_r = step.s0 as i32;
                 let c = st.mainloop.cur_r as u16;
                 if st.mainloop.lig_stack.is_null() {
-                    st.mainloop.lig_stack = overflow_err(st.mem.new_lig_item(c))?.ptr();
+                    st.mainloop.lig_stack = st.mem.new_lig_item(c)?.ptr();
                     st.mainloop.bchar = TOO_BIG_CHAR;
                 } else if st.mem.is_char_node(st.mainloop.lig_stack) {
                     let prev = st.mainloop.lig_stack;
-                    let item = overflow_err(st.mem.new_lig_item(c))?;
+                    let item = st.mem.new_lig_item(c)?;
                     st.mainloop.lig_stack = item.ptr();
                     item.set_component(&mut st.mem, prev);
                 } else {
@@ -3572,7 +3526,7 @@ fn lig_kern_program(
             3 => {
                 st.mainloop.cur_r = step.s0 as i32;
                 let prev = st.mainloop.lig_stack;
-                let item = overflow_err(st.mem.new_lig_item(st.mainloop.cur_r as u16))?;
+                let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
                 st.mainloop.lig_stack = item.ptr();
                 item.ptr().set_link(&mut st.mem, prev);
             }
@@ -3794,7 +3748,7 @@ unsafe fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (VMODE, UN_VBOX) | (HMODE | MMODE, UN_HBOX) => unpackage(st)?,
         (HMODE, ITAL_CORR) => append_italic_correction(st)?,
         (MMODE, ITAL_CORR) => {
-            let k = st.mem.new_kern(0).ok_or(Abort::NodeOverflow)?;
+            let k = st.mem.new_kern(0)?;
             st.input.cur_list.tail_append(&mut st.mem, k.ptr());
         }
         (HMODE | MMODE, DISCRETIONARY) => append_discretionary(st)?,
@@ -3839,14 +3793,11 @@ unsafe fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (MMODE, ACCENT | MATH_ACCENT) => crate::math::math_ac(st)?,
         (MMODE, VCENTER) => math_vcenter(st)?,
         (MMODE, MATH_STYLE) => {
-            let s = st
-                .mem
-                .new_style(st.scanner.cur_chr as i16)
-                .ok_or(Abort::NodeOverflow)?;
+            let s = st.mem.new_style(st.scanner.cur_chr as i16)?;
             st.input.cur_list.tail_append(&mut st.mem, s.ptr());
         }
         (MMODE, NON_SCRIPT) => {
-            let g = st.mem.new_glue(ZERO_GLUE).ok_or(Abort::NodeOverflow)?;
+            let g = st.mem.new_glue(ZERO_GLUE)?;
             st.input.cur_list.tail_append(&mut st.mem, g.ptr());
             g.set_subtype(&mut st.mem, COND_MATH_GLUE);
         }
@@ -4287,10 +4238,7 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                     (n - 2) as u8
                 };
                 let reg = st.scanner.cur_val;
-                let sa = st
-                    .mem
-                    .create_sa_element(&mut st.scanner, level, reg)
-                    .ok_or(Abort::NodeOverflow)?;
+                let sa = st.mem.create_sa_element(&mut st.scanner, level, reg)?;
                 st.mem.add_sa_ref(sa.ptr());
                 let t = if level == TOK_VAL {
                     TOKS_REGISTER
@@ -4323,10 +4271,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
             crate::scan::scan_register_num(st)?;
             if st.scanner.cur_val > 255 {
                 let reg = st.scanner.cur_val;
-                let sa = st
-                    .mem
-                    .create_sa_element(&mut st.scanner, TOK_VAL, reg)
-                    .ok_or(Abort::NodeOverflow)?;
+                let sa = st.mem.create_sa_element(&mut st.scanner, TOK_VAL, reg)?;
                 st.scanner.cur_chr = sa.idx().0;
                 e = true;
             } else {
@@ -4339,8 +4284,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         let n = scan_inter_char_pair(st)?;
         let sa = st
             .mem
-            .create_sa_element(&mut st.scanner, INTER_CHAR_VAL, n)
-            .ok_or(Abort::NodeOverflow)?;
+            .create_sa_element(&mut st.scanner, INTER_CHAR_VAL, n)?;
         st.scanner.cur_chr = sa.idx().0;
         e = true;
     }
@@ -4502,7 +4446,7 @@ fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         MemPtr::NULL
     } else if q > LOCAL_BASE + LOCAL_PAR_SHAPE {
         let words = n / 2 + 1;
-        let p = st.mem.get_node(2 * words + 1).ok_or(Abort::NodeOverflow)?;
+        let p = st.mem.get_node(2 * words + 1)?;
         let penalties = NodePtr::<PenaltiesNode>::at(p);
         penalties.set_words(&mut st.mem, words);
         penalties.set_count(&mut st.mem, n);
@@ -4515,7 +4459,7 @@ fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         }
         p
     } else {
-        let p = st.mem.get_node(2 * n + 1).ok_or(Abort::NodeOverflow)?;
+        let p = st.mem.get_node(2 * n + 1)?;
         let shape = NodePtr::<ParShapeNode>::at(p);
         shape.set_lines(&mut st.mem, n);
         for line in 1..=n {

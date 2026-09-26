@@ -83,10 +83,10 @@ impl ListStateRecord {
         mem: &mut MemState,
         subtype: WhatsitSubtype,
         size: i32,
-    ) -> Option<NodePtr<WhatsitNode>> {
+    ) -> Result<NodePtr<WhatsitNode>, Abort> {
         let p = NodePtr::<WhatsitNode>::alloc(mem, size, subtype)?;
         self.tail_append(mem, p.ptr());
-        Some(p)
+        Ok(p)
     }
 }
 
@@ -235,9 +235,9 @@ impl MemState {
 
     // --- the variable-size free list ---
 
-    /// TeX's `get_node`, `None` when main memory is exhausted. The request
-    /// `0x4000_0000` is `sort_avail`'s probe and yields `MAX_HALFWORD`.
-    pub fn get_node(&mut self, s: i32) -> Option<MemPtr> {
+    /// TeX's `get_node`. The request `0x4000_0000` is `sort_avail`'s probe
+    /// and yields `MAX_HALFWORD`.
+    pub fn get_node(&mut self, s: i32) -> Result<MemPtr, Abort> {
         let block = |p: i32| NodePtr::<FreeBlock>::at(p);
         let r = 'restart: loop {
             let mut p = self.rover;
@@ -278,7 +278,7 @@ impl MemState {
             }
 
             if s == 0x4000_0000 {
-                return Some(MemPtr(MAX_HALFWORD));
+                return Ok(MemPtr(MAX_HALFWORD));
             }
 
             if self.lo_mem_max + 2 < self.hi_mem_min && self.lo_mem_max + 2 <= MAX_HALFWORD {
@@ -307,7 +307,7 @@ impl MemState {
                 continue 'restart;
             }
 
-            return None;
+            return Err(Abort::NodeOverflow);
         };
 
         MemPtr(r).set_link(self, MemPtr::NULL);
@@ -315,7 +315,7 @@ impl MemState {
             self.set_b32s0(r + s - 1, self.cur_synctex_tag);
             self.set_b32s1(r + s - 1, self.line);
         }
-        Some(MemPtr(r))
+        Ok(MemPtr(r))
     }
 
     /// Returns the `s`-word node `p` to the variable-size free list.
@@ -334,7 +334,7 @@ impl MemState {
 
     // --- node constructors ---
 
-    pub fn new_null_box(&mut self) -> Option<NodePtr<HListNode>> {
+    pub fn new_null_box(&mut self) -> Result<NodePtr<HListNode>, Abort> {
         let p = NodePtr::<HListNode>::alloc(self)?;
         p.set_subtype(self, 0);
         p.set_width(self, Scaled(0));
@@ -345,17 +345,17 @@ impl MemState {
         p.set_glue_sign(self, GlueSign::Normal);
         p.set_glue_order(self, NORMAL);
         p.set_glue_set(self, 0.0);
-        Some(p)
+        Ok(p)
     }
 
     /// A rule with running dimensions.
-    pub fn new_rule(&mut self) -> Option<NodePtr<RuleNode>> {
+    pub fn new_rule(&mut self) -> Result<NodePtr<RuleNode>, Abort> {
         let p = NodePtr::<RuleNode>::alloc(self)?;
         p.set_subtype(self, 0);
         p.set_width(self, RuleDimen::Running);
         p.set_depth(self, RuleDimen::Running);
         p.set_height(self, RuleDimen::Running);
-        Some(p)
+        Ok(p)
     }
 
     /// A character node for `c` in font `f`.
@@ -367,121 +367,126 @@ impl MemState {
         Ok(p)
     }
 
-    pub fn new_ligature(&mut self, f: FontId, c: u16, q: MemPtr) -> Option<NodePtr<LigatureNode>> {
+    pub fn new_ligature(
+        &mut self,
+        f: FontId,
+        c: u16,
+        q: MemPtr,
+    ) -> Result<NodePtr<LigatureNode>, Abort> {
         let p = NodePtr::<LigatureNode>::alloc(self)?;
         p.set_font(self, f);
         p.set_character(self, c);
         p.set_lig_ptr(self, q);
         p.set_subtype(self, 0);
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_lig_item(&mut self, c: u16) -> Option<NodePtr<LigItem>> {
+    pub fn new_lig_item(&mut self, c: u16) -> Result<NodePtr<LigItem>, Abort> {
         let p = NodePtr::<LigItem>::alloc(self)?;
         p.set_character(self, c);
         p.set_component(self, MemPtr::NULL);
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_disc(&mut self) -> Option<NodePtr<DiscNode>> {
+    pub fn new_disc(&mut self) -> Result<NodePtr<DiscNode>, Abort> {
         let p = NodePtr::<DiscNode>::alloc(self)?;
         p.set_subtype(self, 0);
         p.set_pre_break(self, MemPtr::NULL);
         p.set_post_break(self, MemPtr::NULL);
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_math(&mut self, w: i32, s: u16) -> Option<NodePtr<MathNode>> {
+    pub fn new_math(&mut self, w: i32, s: u16) -> Result<NodePtr<MathNode>, Abort> {
         let p = NodePtr::<MathNode>::alloc(self)?;
         p.set_subtype(self, s);
         p.set_width(self, Scaled(w));
-        Some(p)
+        Ok(p)
     }
 
     /// An unshared copy of the glue spec `src`.
-    pub fn new_spec(&mut self, src: NodePtr<GlueSpecNode>) -> Option<NodePtr<GlueSpecNode>> {
+    pub fn new_spec(&mut self, src: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueSpecNode>, Abort> {
         let q = NodePtr::<GlueSpecNode>::alloc(self)?;
         self.set_word(q.idx().0, self.word(src.idx().0));
         q.set_ref_count(self, TEX_NULL);
         q.set_width(self, src.width(self));
         q.set_stretch(self, src.stretch(self));
         q.set_shrink(self, src.shrink(self));
-        Some(q)
+        Ok(q)
     }
 
     /// Glue for parameter `n`, sharing its spec.
-    pub fn new_param_glue(&mut self, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
+    pub fn new_param_glue(&mut self, eqtb: &EqtbState, n: i16) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
         p.set_subtype(self, n as u16 + 1);
         p.set_leader_ptr(self, MemPtr::NULL);
         let spec = eqtb.glue_par(n);
         p.set_glue_ptr(self, spec);
         self.add_glue_ref(spec);
-        Some(p)
+        Ok(p)
     }
 
     /// Glue sharing the spec `q`.
-    pub fn new_glue(&mut self, q: NodePtr<GlueSpecNode>) -> Option<NodePtr<GlueNode>> {
+    pub fn new_glue(&mut self, q: NodePtr<GlueSpecNode>) -> Result<NodePtr<GlueNode>, Abort> {
         let p = NodePtr::<GlueNode>::alloc(self)?;
         p.set_subtype(self, NORMAL);
         p.set_leader_ptr(self, MemPtr::NULL);
         p.set_glue_ptr(self, q);
         self.add_glue_ref(q);
-        Some(p)
+        Ok(p)
     }
 
     /// Glue for parameter `n` with a private copy of its spec, left in `temp_ptr`.
-    pub fn new_skip_param(&mut self, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
+    pub fn new_skip_param(&mut self, eqtb: &EqtbState, n: i16) -> Result<NodePtr<GlueNode>, Abort> {
         let s = self.new_spec(eqtb.glue_par(n))?;
         self.temp_ptr = s.ptr();
         let p = self.new_glue(s)?;
         s.set_ref_count(self, TEX_NULL);
         p.set_subtype(self, n as u16 + 1);
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_kern(&mut self, w: i32) -> Option<NodePtr<KernNode>> {
+    pub fn new_kern(&mut self, w: i32) -> Result<NodePtr<KernNode>, Abort> {
         let p = NodePtr::<KernNode>::alloc(self)?;
         p.set_subtype(self, NORMAL);
         p.set_width(self, Scaled(w));
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_penalty(&mut self, m: i32) -> Option<NodePtr<PenaltyNode>> {
+    pub fn new_penalty(&mut self, m: i32) -> Result<NodePtr<PenaltyNode>, Abort> {
         let p = NodePtr::<PenaltyNode>::alloc(self)?;
         p.set_subtype(self, 0);
         p.set_penalty(self, m);
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_noad(&mut self) -> Option<NodePtr<Noad>> {
+    pub fn new_noad(&mut self) -> Result<NodePtr<Noad>, Abort> {
         let p = NodePtr::<Noad>::alloc(self)?;
         p.clear_fields(self);
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_style(&mut self, s: i16) -> Option<NodePtr<StyleNode>> {
+    pub fn new_style(&mut self, s: i16) -> Result<NodePtr<StyleNode>, Abort> {
         let p = NodePtr::<StyleNode>::alloc(self)?;
         p.set_subtype(self, s as u16);
         p.clear_payload(self);
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_choice(&mut self) -> Option<NodePtr<ChoiceNode>> {
+    pub fn new_choice(&mut self) -> Result<NodePtr<ChoiceNode>, Abort> {
         let p = NodePtr::<ChoiceNode>::alloc(self)?;
         p.set_subtype(self, 0);
         p.set_display_mlist(self, MemPtr::NULL);
         p.set_text_mlist(self, MemPtr::NULL);
         p.set_script_mlist(self, MemPtr::NULL);
         p.set_script_script_mlist(self, MemPtr::NULL);
-        Some(p)
+        Ok(p)
     }
 
-    pub fn new_margin_kern(&mut self, w: i32, side: i16) -> Option<NodePtr<MarginKernNode>> {
+    pub fn new_margin_kern(&mut self, w: i32, side: i16) -> Result<NodePtr<MarginKernNode>, Abort> {
         let k = NodePtr::<MarginKernNode>::alloc(self)?;
         k.set_subtype(self, side as u16);
         k.set_width(self, Scaled(w));
-        Some(k)
+        Ok(k)
     }
 
     #[inline]

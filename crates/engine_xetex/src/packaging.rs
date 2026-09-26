@@ -84,7 +84,7 @@ impl MemState {
     }
 
     fn copy_box_shell(&mut self, src: AnyBox, list: MemPtr) -> Result<AnyBox, Abort> {
-        let r = self.get_node(BOX_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
+        let r = self.get_node(BOX_NODE_SIZE)?;
         self.copy_words(r, src.ptr(), BOX_NODE_SIZE);
         let r = match src {
             AnyBox::HList(b) => AnyBox::HList(copied_node(b, r)),
@@ -97,7 +97,7 @@ impl MemState {
     /// A copy of glue node `p` sharing its spec. The leader pointer is left to the caller.
     fn copy_glue_shell(&mut self, p: NodePtr<GlueNode>) -> Result<NodePtr<GlueNode>, Abort> {
         let spec = p.glue_ptr(self);
-        let r = self.get_node(MEDIUM_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
+        let r = self.get_node(MEDIUM_NODE_SIZE)?;
         self.add_glue_ref(spec);
         let sync = MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE;
         self.set_word(r, self.word(p.ptr()));
@@ -113,7 +113,7 @@ impl MemState {
         let Some(size) = self.whatsit_node_size(w) else {
             return Err(Abort::Confusion("ext2"));
         };
-        let r = self.get_node(size).ok_or(Abort::NodeOverflow)?;
+        let r = self.get_node(size)?;
         match w.whatsit_subtype(self) {
             Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
                 self.copy_words(r, w.ptr(), size);
@@ -149,19 +149,17 @@ impl MemState {
                         self.copy_box_shell(AnyBox::VList(b), MemPtr::NULL)?.ptr(),
                         0,
                     )),
-                    Some(AnyNode::Rule(_)) => Some((
-                        self.get_node(RULE_NODE_SIZE).ok_or(Abort::NodeOverflow)?,
-                        RULE_NODE_SIZE,
-                    )),
+                    Some(AnyNode::Rule(_)) => {
+                        Some((self.get_node(RULE_NODE_SIZE)?, RULE_NODE_SIZE))
+                    }
                     Some(AnyNode::Ligature(lig)) => {
                         let r = self.get_avail()?;
                         self.set_word(r, self.word(lig.ptr() + 1));
                         Some((r, 0))
                     }
-                    Some(AnyNode::Kern(_) | AnyNode::Math(_)) => Some((
-                        self.get_node(MEDIUM_NODE_SIZE).ok_or(Abort::NodeOverflow)?,
-                        MEDIUM_NODE_SIZE,
-                    )),
+                    Some(AnyNode::Kern(_) | AnyNode::Math(_)) => {
+                        Some((self.get_node(MEDIUM_NODE_SIZE)?, MEDIUM_NODE_SIZE))
+                    }
                     Some(AnyNode::Glue(g)) => {
                         let r = self.copy_glue_shell(g)?;
                         r.set_leader_ptr(self, MemPtr::NULL);
@@ -199,9 +197,7 @@ impl MemState {
             q
         };
 
-        let t = self
-            .new_edge(scanner.cur_dir, 0)
-            .ok_or(Abort::NodeOverflow)?;
+        let t = self.new_edge(scanner.cur_dir, 0)?;
         let mut l = t.ptr();
         scanner.cur_dir = 1 - scanner.cur_dir;
 
@@ -426,18 +422,18 @@ impl MemState {
                 (self.copy_box_shell(AnyBox::VList(b), list)?.ptr(), 0)
             }
             AnyNode::Unset(u) => {
-                let r = self.get_node(BOX_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
+                let r = self.get_node(BOX_NODE_SIZE)?;
                 self.copy_words(r, p, BOX_NODE_SIZE);
                 let list = self.copy_list(u.list_ptr(self))?;
                 copied_node(u, r).set_list_ptr(self, list);
                 (r, 0)
             }
             AnyNode::Rule(_) => (
-                self.get_node(RULE_NODE_SIZE).ok_or(Abort::NodeOverflow)?,
+                self.get_node(RULE_NODE_SIZE)?,
                 RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE,
             ),
             AnyNode::Ins(ins) => {
-                let r = self.get_node(INS_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
+                let r = self.get_node(INS_NODE_SIZE)?;
                 self.copy_words(r, p, INS_NODE_SIZE);
                 self.add_glue_ref(ins.split_top_ptr(self));
                 let list = self.copy_list(ins.ins_ptr(self))?;
@@ -451,24 +447,21 @@ impl MemState {
                 r.set_leader_ptr(self, leaders);
                 (r.ptr(), 0)
             }
-            AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => (
-                self.get_node(MEDIUM_NODE_SIZE).ok_or(Abort::NodeOverflow)?,
-                MEDIUM_NODE_SIZE,
-            ),
-            AnyNode::MarginKern(_) => (
-                self.get_node(MARGIN_KERN_NODE_SIZE)
-                    .ok_or(Abort::NodeOverflow)?,
-                MARGIN_KERN_NODE_SIZE,
-            ),
+            AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => {
+                (self.get_node(MEDIUM_NODE_SIZE)?, MEDIUM_NODE_SIZE)
+            }
+            AnyNode::MarginKern(_) => {
+                (self.get_node(MARGIN_KERN_NODE_SIZE)?, MARGIN_KERN_NODE_SIZE)
+            }
             AnyNode::Ligature(lig) => {
-                let r = self.get_node(SMALL_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
+                let r = self.get_node(SMALL_NODE_SIZE)?;
                 self.copy_words(r, p, SMALL_NODE_SIZE);
                 let components = self.copy_list(lig.lig_ptr(self))?;
                 copied_node(lig, r).set_lig_ptr(self, components);
                 (r, 0)
             }
             AnyNode::Disc(disc) => {
-                let r = self.get_node(SMALL_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
+                let r = self.get_node(SMALL_NODE_SIZE)?;
                 self.copy_words(r, p, 1);
                 let copy = copied_node(disc, r);
                 let pre_break = self.copy_list(disc.pre_break(self))?;
@@ -478,12 +471,12 @@ impl MemState {
                 (r, 0)
             }
             AnyNode::Mark(mark) => {
-                let r = self.get_node(SMALL_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
+                let r = self.get_node(SMALL_NODE_SIZE)?;
                 self.add_token_ref(mark.mark_ptr(self));
                 (r, SMALL_NODE_SIZE)
             }
             AnyNode::Adjust(adjust) => {
-                let r = self.get_node(SMALL_NODE_SIZE).ok_or(Abort::NodeOverflow)?;
+                let r = self.get_node(SMALL_NODE_SIZE)?;
                 self.copy_words(r, p, 1);
                 let list = self.copy_list(adjust.adjust_ptr(self))?;
                 copied_node(adjust, r).set_adjust_ptr(self, list);
@@ -514,12 +507,9 @@ impl ListStateRecord {
                     b.height(mem).0
                 };
             let p = if d < eqtb.dimen_par(DIMEN_PAR_LINE_SKIP_LIMIT) {
-                mem.new_param_glue(eqtb, GLUE_PAR_LINE_SKIP)
-                    .ok_or(Abort::NodeOverflow)?
+                mem.new_param_glue(eqtb, GLUE_PAR_LINE_SKIP)?
             } else {
-                let p = mem
-                    .new_skip_param(eqtb, GLUE_PAR_BASELINE_SKIP)
-                    .ok_or(Abort::NodeOverflow)?;
+                let p = mem.new_skip_param(eqtb, GLUE_PAR_BASELINE_SKIP)?;
                 p.glue_ptr(mem).set_width(mem, Scaled(d));
                 p
             };
@@ -893,9 +883,7 @@ impl MemState {
         let mark_class = mark.mark_class(self);
         let mark_ptr = mark.mark_ptr(self);
         if mark_class != 0 {
-            let element = self
-                .create_sa_element(scanner, MARK_VAL, mark_class)
-                .ok_or(Abort::NodeOverflow)?;
+            let element = self.create_sa_element(scanner, MARK_VAL, mark_class)?;
             let (first, bot) = (SPLIT_FIRST_MARK_CODE as i32, SPLIT_BOT_MARK_CODE as i32);
             if element.child(self, first).is_null() {
                 element.set_child(self, first, mark_ptr);
@@ -1094,9 +1082,7 @@ impl MemState {
         p: MemPtr,
         height: i32,
     ) -> Result<(), Abort> {
-        let q = self
-            .new_skip_param(eqtb, GLUE_PAR_SPLIT_TOP_SKIP)
-            .ok_or(Abort::NodeOverflow)?;
+        let q = self.new_skip_param(eqtb, GLUE_PAR_SPLIT_TOP_SKIP)?;
         prev_p.set_link(self, q.ptr());
         q.set_link(self, p);
         let spec = q.glue_ptr(self);
@@ -1387,7 +1373,7 @@ impl MemState {
         m: i16,
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
-        let r_node = NodePtr::<HListNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
+        let r_node = NodePtr::<HListNode>::alloc(self)?;
         r_node.set_subtype(self, 0);
         r_node.set_shift_amount(self, Scaled(0));
         r_node.set_list_ptr(self, list);
@@ -1599,7 +1585,7 @@ impl MemState {
                     let overfull_rule = eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
                     if overfull_rule > 0 && excess > hfuzz {
                         q = self.list_tail(q);
-                        let rule = self.new_rule().ok_or(Abort::NodeOverflow)?;
+                        let rule = self.new_rule()?;
                         q.set_link(self, rule.ptr());
                         rule.set_width(self, RuleDimen::Set(Scaled(overfull_rule)));
                     }
@@ -1623,9 +1609,7 @@ impl MemState {
             if scanner.lr_ptr.info(self) != BEFORE.into() {
                 q = self.list_tail(q);
                 loop {
-                    let math = self
-                        .new_math(0, scanner.lr_ptr.info(self) as u16)
-                        .ok_or(Abort::NodeOverflow)?;
+                    let math = self.new_math(0, scanner.lr_ptr.info(self) as u16)?;
                     q.set_link(self, math.ptr());
                     q = math.ptr();
                     scanner.lr_problems += 10000;
@@ -1760,7 +1744,7 @@ impl MemState {
         l: i32,
     ) -> Result<PackOutcome, Abort> {
         shipout.last_badness = 0;
-        let r_node = NodePtr::<VListNode>::alloc(self).ok_or(Abort::NodeOverflow)?;
+        let r_node = NodePtr::<VListNode>::alloc(self)?;
         let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
         r_node.set_subtype(self, u16::from(upwards));
         r_node.set_shift_amount(self, Scaled(0));
