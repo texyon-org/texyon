@@ -75,7 +75,7 @@ use crate::math::{
 };
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{
-    AnyBox, AnyNode, CondNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode,
+    AnyBox, AnyNode, CharNode, CondNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode,
     WhatsitSubtype,
 };
 use crate::packaging::EXACTLY;
@@ -1099,7 +1099,8 @@ fn print_font_and_char_in(st: &mut EngineState, p: i32) {
     if p > st.mem.mem_end {
         esc(st, c"CLOBBERED.");
     } else {
-        print_font_char_in(st, st.mem.b16s1(p) as i32, st.mem.b16s0(p));
+        let ch = NodePtr::<CharNode>::at(p);
+        print_font_char_in(st, ch.font(&st.mem).0, ch.character(&st.mem));
     }
 }
 

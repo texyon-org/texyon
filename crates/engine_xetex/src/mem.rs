@@ -7,9 +7,9 @@ use crate::consts::{
 };
 use crate::mem_types::ListStateRecord;
 use crate::node::{
-    ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
-    MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
-    WhatsitNode, WhatsitSubtype,
+    CharNode, ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem,
+    LigatureNode, MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode,
+    StyleNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, GlueSign, MemAddr, MemIdx, MemPtr, Scaled};
@@ -323,6 +323,15 @@ pub fn new_rule(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
     p.set_width(mem, RuleDimen::Running);
     p.set_depth(mem, RuleDimen::Running);
     p.set_height(mem, RuleDimen::Running);
+    Some(p)
+}
+
+/// A character node for `c` in font `f`.
+#[inline]
+pub fn new_char(mem: &mut MemState, f: FontId, c: u16) -> Option<NodePtr<CharNode>> {
+    let p = NodePtr::<CharNode>::at(get_avail(mem)?);
+    p.set_font(mem, f);
+    p.set_character(mem, c);
     Some(p)
 }
 

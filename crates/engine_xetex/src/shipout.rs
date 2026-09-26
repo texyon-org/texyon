@@ -1121,9 +1121,9 @@ fn chars_out(
 ) -> Result<(MemPtr, MemPtr), ShipoutAbort> {
     synch_h(st)?;
     synch_v(st)?;
-    while crate::mem::is_char_node(&st.mem, p) {
-        let f = st.mem.b16s1(p.0) as i32;
-        let mut c = st.mem.b16s0(p.0);
+    while let Some(ch) = st.mem.as_char(p) {
+        let f = ch.font(&st.mem).0;
+        let mut c = ch.character(&st.mem);
         let mapping = st.fonts.font_mapping_ptr(f);
         if p != LIG_TRICK && !mapping.is_null() {
             // SAFETY: `mapping` is the font's live TECkit converter.
@@ -1758,9 +1758,9 @@ fn reverse(
     loop {
         while !p.is_null() {
             if crate::mem::is_char_node(mem, p) {
-                while crate::mem::is_char_node(mem, p) {
-                    let f = mem.b16s1(p.0) as i32;
-                    let c = crate::fonts::effective_char(fonts, f, mem.b16s0(p.0));
+                while let Some(ch) = mem.as_char(p) {
+                    let f = ch.font(mem).0;
+                    let c = crate::fonts::effective_char(fonts, f, ch.character(mem));
                     shipout.cur_h += font_character_width(fonts, f, c);
                     let q = p.link(mem);
                     p.set_link(mem, l);

@@ -23,7 +23,7 @@ use crate::fonts::{
     LIST_TAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE, X_HEIGHT_CODE,
 };
 use crate::mem::{
-    free_node, get_avail, new_choice, new_glue, new_kern, new_noad, new_spec, ADJUST_HEAD, GARBAGE,
+    free_node, new_choice, new_glue, new_kern, new_noad, new_spec, ADJUST_HEAD, GARBAGE,
     PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, TEX_NULL, ZERO_GLUE,
 };
 use crate::node::{
@@ -1907,6 +1907,7 @@ fn mlist_nucleus_in(
                 delta = char_italic(&st.fonts, cur_f, st.scanner.cur_i);
                 let cc = st.scanner.cur_c as u16;
                 let p = crate::main_control::new_character_in(st, cur_f, cc)?;
+                let p = p.map_or(MemPtr::NULL, crate::main_control::NewChar::ptr);
                 if qn.nucleus_type(&st.mem) == MATH_TEXT_CHAR
                     && st
                         .fonts
@@ -1915,7 +1916,7 @@ fn mlist_nucleus_in(
                 {
                     delta = 0;
                 }
-                MemPtr::from_raw(p)
+                p
             } else {
                 MemPtr::NULL
             };
@@ -2371,10 +2372,8 @@ fn char_box_tfm(
     b.set_width(mem, Scaled(width));
     b.set_height(mem, Scaled(height));
     b.set_depth(mem, Scaled(depth));
-    let p = get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
-    mem.set_b16s0(p, c);
-    mem.set_b16s1(p, f as u16);
-    b.set_list_ptr(mem, p);
+    let p = crate::mem::new_char(mem, FontId(f), c).ok_or(NodeRecycleAbort::OverflowRunaway)?;
+    b.set_list_ptr(mem, p.ptr());
     Ok(AnyBox::HList(b))
 }
 
@@ -3611,9 +3610,10 @@ pub(crate) fn init_math_in(
 
             'outer: while p != TEX_NULL {
                 let (d, found) = 'reswitch: loop {
-                    if p >= st.mem.hi_mem_min {
-                        let f = st.mem.b16s1(p) as i32;
-                        let c = crate::fonts::effective_char(&mut st.fonts, f, st.mem.b16s0(p));
+                    if let Some(ch) = st.mem.as_char(MemPtr(p)) {
+                        let f = ch.font(&st.mem).0;
+                        let c =
+                            crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
                         let d = char_width(
                             &st.fonts,
                             f,
@@ -3812,9 +3812,9 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
     }
 
     let mut p = b.list_ptr(&st.mem);
-    if crate::mem::is_char_node(&st.mem, p) && p.link(&st.mem).is_null() {
-        let f = st.mem.b16s1(p) as i32;
-        let c = crate::fonts::effective_char(&mut st.fonts, f, st.mem.b16s0(p));
+    if let Some(ch) = st.mem.as_char(p).filter(|_| p.link(&st.mem).is_null()) {
+        let f = ch.font(&st.mem).0;
+        let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
         let q = st.fonts.font_info_b16(st.fonts.char_base_entry(f) + c);
         let v = char_width(&st.fonts, f, q);
         let bw = b.width(&st.mem).0;

@@ -295,6 +295,8 @@ node_kinds! {
     PassiveNode;
     /// An entry of the conditional stack, saving the enclosing `\if`.
     CondNode;
+    /// A one-word character node. A ligature's +1 word has the same layout.
+    CharNode;
 }
 
 impl FixedNode for GlueSpecNode {
@@ -342,7 +344,7 @@ macro_rules! impl_traits {
 impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, AdjustNode,
     LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
     StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode);
-impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode, CondNode);
+impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode, CondNode, CharNode);
 impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
     EdgeNode, MarginKernNode, GlueSpecNode);
 impl_traits!(HasHeightDepth: HListNode, VListNode, UnsetNode, WhatsitNode, InsNode);
@@ -354,7 +356,7 @@ impl_traits!(HasSyncFields: HListNode, VListNode, RuleNode, GlueNode, KernNode, 
 pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaNode, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
-    LigItem, CondNode);
+    LigItem, CondNode, CharNode);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -777,12 +779,33 @@ impl MemState {
 
 // --- character-bearing nodes ---
 
+impl NodePtr<CharNode> {
+    fields! {
+        font / set_font: FontId = b16s1 @ 0;
+        character / set_character: u16 = b16s0 @ 0;
+    }
+}
+
+impl MemState {
+    /// `p` as a character node, if it lies in the one-word region.
+    #[inline]
+    pub fn as_char(&self, p: MemPtr) -> Option<NodePtr<CharNode>> {
+        (p.0 >= self.hi_mem_min).then(|| NodePtr::at(p))
+    }
+}
+
 impl NodePtr<LigatureNode> {
     fields! {
         font / set_font: FontId = b16s1 @ 1;
         character / set_character: u16 = b16s0 @ 1;
         /// The original characters the ligature was formed from.
         lig_ptr / set_lig_ptr: MemPtr = b32s1 @ 1;
+    }
+
+    /// The font and character word, laid out like a character node.
+    #[inline]
+    pub fn char_word(self) -> NodePtr<CharNode> {
+        NodePtr::at(self.idx.0 + 1)
     }
 }
 

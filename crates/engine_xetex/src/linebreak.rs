@@ -24,8 +24,8 @@ use crate::mem::{
 };
 use crate::mem::{list_tail, predecessor};
 use crate::node::{
-    ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, HListNode, LigItem,
-    MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
+    ActiveNode, AnyBox, AnyNode, CharNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, HListNode,
+    LigItem, MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::scan::NodeRecycleAbort;
@@ -473,8 +473,8 @@ fn char_pw(
         return 0;
     }
 
-    let (char_ptr, f, c) = if is_char_node(mem, p) {
-        (p, mem.b16s1(p) as i32, mem.b16s0(p))
+    let (char_ptr, f, c) = if let Some(ch) = mem.as_char(p) {
+        (p, ch.font(mem).0, ch.character(mem))
     } else {
         match mem.classify(MemIdx::new(p)) {
             Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(mem) {
@@ -587,11 +587,9 @@ fn lig_item(p: MemPtr) -> NodePtr<LigItem> {
 
 /// A fresh char node of font `f` holding `c`, linked after `t`.
 fn append_char(mem: &mut MemState, t: MemPtr, f: i32, c: u16) -> Result<MemPtr, NodeRecycleAbort> {
-    let q = crate::mem::get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
-    t.set_link(mem, q);
-    mem.set_b16s1(q, f as u16);
-    mem.set_b16s0(q, c);
-    Ok(q)
+    let q = crate::mem::new_char(mem, FontId(f), c).ok_or(NodeRecycleAbort::OverflowRunaway)?;
+    t.set_link(mem, q.ptr());
+    Ok(q.ptr())
 }
 
 /// Load `cur_r` for position `j` and return the hyphen char still to be tried there.
@@ -658,7 +656,7 @@ fn reconstitute(
             st.mainloop.lft_hit = st.hyph.init_lft;
         }
         while p.0 > TEX_NULL {
-            let c = st.mem.b16s0(p);
+            let c = NodePtr::<CharNode>::at(p).character(&st.mem);
             t = append_char(&mut st.mem, t, st.hyph.hf, c)?;
             p = p.link(&st.mem);
         }
@@ -751,11 +749,13 @@ fn reconstitute(
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
-                                        let p = crate::mem::get_avail(&mut st.mem)
-                                            .ok_or(NodeRecycleAbort::OverflowRunaway)?;
-                                        item.set_component(&mut st.mem, p);
-                                        st.mem.set_b16s0(p, st.hyph.hu[(j + 1) as usize] as u16);
-                                        st.mem.set_b16s1(p, st.hyph.hf as u16);
+                                        let p = crate::mem::new_char(
+                                            &mut st.mem,
+                                            FontId(st.hyph.hf),
+                                            st.hyph.hu[(j + 1) as usize] as u16,
+                                        )
+                                        .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+                                        item.set_component(&mut st.mem, p.ptr());
                                     }
                                 }
                             }
@@ -1131,11 +1131,11 @@ fn kern_break(
 /// without dimensions, `Err(false)` for any other node that cannot occur there.
 #[inline]
 fn disc_node_width(mem: &MemState, fonts: &mut FontState, p: MemPtr) -> Result<i32, bool> {
-    if is_char_node(mem, p) {
+    if let Some(ch) = mem.as_char(p) {
         return Ok(font_character_width(
             fonts,
-            mem.b16s1(p) as i32,
-            mem.b16s0(p),
+            ch.font(mem).0,
+            ch.character(mem),
         ));
     }
 
@@ -1334,8 +1334,9 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                 prev_breakable = true;
                 st.linebreak.global_prev_p = cur;
                 loop {
-                    let f = st.mem.b16s1(cur) as i32;
-                    let c = st.mem.b16s0(cur);
+                    let ch = NodePtr::<CharNode>::at(cur);
+                    let f = ch.font(&st.mem).0;
+                    let c = ch.character(&st.mem);
                     st.scanner.active_width[1] += font_character_width(&mut st.fonts, f, c);
                     cur = cur.link(&st.mem);
                     if !is_char_node(&st.mem, cur) {
@@ -1531,9 +1532,9 @@ fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), LineBreakOutco
     // Skip to the first letter, setting `hf`.
     loop {
         let c;
-        if is_char_node(&st.mem, s) {
-            c = st.mem.b16s0(s) as i32;
-            st.hyph.hf = st.mem.b16s1(s) as i32;
+        if let Some(ch) = st.mem.as_char(s) {
+            c = ch.character(&st.mem) as i32;
+            st.hyph.hf = ch.font(&st.mem).0;
         } else {
             match st.mem.classify(MemIdx::new(s)) {
                 Ok(AnyNode::Ligature(lig)) if !lig.lig_ptr(&st.mem).is_null() => {
@@ -1690,11 +1691,11 @@ fn collect_native_word(
 fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
     st.linebreak.hn = 0;
     loop {
-        if is_char_node(&st.mem, s) {
-            if st.mem.b16s1(s) as i32 != st.hyph.hf {
+        if let Some(ch) = st.mem.as_char(s) {
+            if ch.font(&st.mem).0 != st.hyph.hf {
                 return s;
             }
-            let c = st.mem.b16s0(s) as i32;
+            let c = ch.character(&st.mem) as i32;
             st.hyph.hyf_bchar = c;
             let hc0 = hyph_code(&st.hyph, &st.eqtb, c);
             st.hyph.hc[0] = hc0;
@@ -1715,10 +1716,10 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     let mut j = st.linebreak.hn;
                     let mut q = lig.lig_ptr(&st.mem);
                     if q.0 > TEX_NULL {
-                        st.hyph.hyf_bchar = st.mem.b16s0(q) as i32;
+                        st.hyph.hyf_bchar = NodePtr::<CharNode>::at(q).character(&st.mem) as i32;
                     }
                     while q.0 > TEX_NULL {
-                        let c = st.mem.b16s0(q) as i32;
+                        let c = NodePtr::<CharNode>::at(q).character(&st.mem) as i32;
                         let hc0 = hyph_code(&st.hyph, &st.eqtb, c);
                         st.hyph.hc[0] = hc0;
                         if hc0 == 0 || hc0 > st.hyph.max_hyph_char || j as i32 == max_len {
@@ -2959,13 +2960,13 @@ fn insert_hyphens(
         st.hyph.init_list = MemPtr::NULL;
         (ha, 0)
     };
-    let (mut s, mut j) = if is_char_node(&st.mem, ha) {
-        if st.mem.b16s1(ha) as i32 != st.hyph.hf {
+    let (mut s, mut j) = if let Some(ha_ch) = st.mem.as_char(ha) {
+        if ha_ch.font(&st.mem).0 != st.hyph.hf {
             found2(st)
         } else {
             st.hyph.init_list = ha;
             st.hyph.init_lig = false;
-            st.hyph.hu[0] = st.mem.b16s0(ha) as i32;
+            st.hyph.hu[0] = ha_ch.character(&st.mem) as i32;
             (predecessor(&st.mem, st.linebreak.cur_p, ha), 0)
         }
     } else if let Ok(AnyNode::Ligature(ha_lig)) = st.mem.classify(MemIdx::new(ha)) {
@@ -3032,11 +3033,11 @@ fn insert_hyphens(
                     crate::main_control::new_character_in(st, st.hyph.hf, st.hyph.hyf_char as u16)
                         .map_err(HyphenateAbort::NewCharacter)?;
                 let mut saved_c = 0;
-                if hyf_node != TEX_NULL {
+                if let Some(node) = hyf_node {
                     i += 1;
                     saved_c = st.hyph.hu[i as usize];
                     st.hyph.hu[i as usize] = st.hyph.hyf_char;
-                    crate::mem::free_avail(&mut st.mem, MemPtr(hyf_node));
+                    crate::mem::free_avail(&mut st.mem, node.ptr());
                 }
 
                 while l <= i {
@@ -3045,7 +3046,7 @@ fn insert_hyphens(
                     append_to_disc_list(&mut st.mem, disc, false, &mut minor_tail);
                 }
 
-                if hyf_node != TEX_NULL {
+                if hyf_node.is_some() {
                     st.hyph.hu[i as usize] = saved_c;
                     l = i;
                 }
