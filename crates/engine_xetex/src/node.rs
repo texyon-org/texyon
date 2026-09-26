@@ -344,6 +344,21 @@ impl_traits!(HasListPtr: HListNode, VListNode, UnsetNode);
 impl_traits!(IsBox: HListNode, VListNode);
 impl_traits!(HasSyncFields: HListNode, VListNode, RuleNode, GlueNode, KernNode, MathNode);
 
+/// A record kept only on its own list, which therefore proves its kind.
+pub trait ListRecord: NodeKind {}
+
+impl_traits!(ListRecord: SaNode, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
+    LigItem);
+
+impl<K: ListRecord> NodePtr<K> {
+    /// The record at `p`, a non-null link of a list of `K` records.
+    #[inline]
+    pub fn at(p: impl crate::units::MemAddr) -> Self {
+        // SAFETY: records of these kinds only ever live on their own lists.
+        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
+    }
+}
+
 impl<K: HasLink> NodePtr<K> {
     fields! {
         link / set_link: MemPtr = b32s1 @ 0;
@@ -603,6 +618,17 @@ impl AnyNode {
         )
     }
 
+    /// A node that may sit between the words of an interword space: a
+    /// penalty, insertion, mark, adjust or I/O whatsit.
+    #[inline]
+    pub fn is_interword_filler(self, mem: &MemState) -> bool {
+        match self {
+            AnyNode::Penalty(_) | AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) => true,
+            AnyNode::Whatsit(w) => w.whatsit_subtype(mem).is_some_and(|s| s.is_io()),
+            _ => false,
+        }
+    }
+
     /// The +1 width word of the kinds that add their width to a line, else 0.
     #[inline]
     pub fn hlist_width(self, mem: &MemState) -> i32 {
@@ -652,6 +678,26 @@ impl MemState {
             | LeftNoad | RightNoad => AnyNode::Noad(unsafe { NodePtr::from_idx_unchecked(p) }),
             MarginKern => AnyNode::MarginKern(unsafe { NodePtr::from_idx_unchecked(p) }),
         })
+    }
+
+    /// Classifies `p` unless it is null or a character.
+    #[inline]
+    pub fn classify_non_char(&self, p: MemPtr) -> Option<AnyNode> {
+        if p.is_null() || p.0 >= self.hi_mem_min {
+            return None;
+        }
+        self.classify(MemIdx(p.0)).ok()
+    }
+
+    /// `p` as a native-word whatsit, if it is one.
+    #[inline]
+    pub fn as_native_word(&self, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
+        match self.classify_non_char(p)? {
+            AnyNode::Whatsit(w) if w.whatsit_subtype(self).is_some_and(|s| s.is_native_word()) => {
+                Some(w)
+            }
+            _ => None,
+        }
     }
 
     /// `Ok(None)` for a valid non-box node.
@@ -1197,9 +1243,7 @@ impl NodePtr<WhatsitNode> {
 impl NodePtr<SaNode> {
     #[inline]
     pub fn from_ptr(p: MemPtr) -> Option<NodePtr<SaNode>> {
-        // SAFETY: sparse-array links only ever point at sparse-array records.
-        p.as_idx()
-            .map(|idx| unsafe { NodePtr::from_idx_unchecked(idx) })
+        (!p.is_null()).then(|| Self::at(p))
     }
 
     fields! {
@@ -1243,8 +1287,7 @@ impl NodePtr<SaNode> {
     /// The parent index node, non-null below the root.
     #[inline]
     pub fn parent(self, mem: &MemState) -> NodePtr<SaNode> {
-        // SAFETY: every non-root sparse-array record links to its index node.
-        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(mem.b32s1(self.idx.0))) }
+        Self::at(self.link(mem))
     }
 }
 
@@ -1253,9 +1296,7 @@ impl NodePtr<SaNode> {
 impl NodePtr<MovementNode> {
     #[inline]
     pub fn from_ptr(p: MemPtr) -> Option<NodePtr<MovementNode>> {
-        // SAFETY: movement lists only link movement records.
-        p.as_idx()
-            .map(|idx| unsafe { NodePtr::from_idx_unchecked(idx) })
+        (!p.is_null()).then(|| Self::at(p))
     }
 
     #[inline]

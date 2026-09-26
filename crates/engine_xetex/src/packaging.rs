@@ -41,17 +41,6 @@ pub(crate) const ADDITIONAL: i16 = 1;
 const VSPLIT_INIT: i16 = 0;
 const DESTROY_MARKS: i16 = 3;
 
-/// `p` as a native-word whatsit, if it is one.
-pub(crate) fn as_native_word(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
-    if p.is_null() || is_char_node(mem, p) {
-        return None;
-    }
-    mem.classify_whatsit(MemIdx::new(p))
-        .ok()
-        .flatten()
-        .filter(|w| w.whatsit_subtype(mem).is_some_and(|s| s.is_native_word()))
-}
-
 fn as_disc(mem: &MemState, p: MemPtr) -> Option<NodePtr<DiscNode>> {
     if is_char_node(mem, p) {
         return None;
@@ -1273,9 +1262,7 @@ pub fn prune_page_top(
 /// Apply mark action `a` to the sparse-array mark tree `q` at level `l`.
 /// Returns whether the record at `q` was freed.
 pub fn do_marks(mem: &mut MemState, scanner: &mut ScannerState, a: i16, l: i16, q: MemIdx) -> bool {
-    // SAFETY: `do_marks` is only entered (and recursed) with a real sparse-array
-    // record index, which carries no NODE_type to classify.
-    let node = unsafe { NodePtr::<SaNode>::from_idx_unchecked(q) };
+    let node = NodePtr::<SaNode>::at(q);
 
     if l < 4 {
         for i in 0..=15 {
@@ -1419,8 +1406,10 @@ fn merge_native_words(
 ) -> Result<(MemPtr, NodePtr<WhatsitNode>), NodeRecycleAbort> {
     let p = w.ptr();
     let font = w.native_font(mem).0;
-    let same_font =
-        |mem: &MemState, p: MemPtr| as_native_word(mem, p).filter(|w| w.native_font(mem).0 == font);
+    let same_font = |mem: &MemState, p: MemPtr| {
+        mem.as_native_word(p)
+            .filter(|w| w.native_font(mem).0 == font)
+    };
 
     let mut k = if q != r_node.ptr() + LIST_OFFSET {
         as_disc(mem, q).map_or(0, |disc| disc.subtype(mem) as i32)
@@ -1453,7 +1442,7 @@ fn merge_native_words(
     let mut total_chars: i32 = 0;
     let mut s = p;
     while s != pp {
-        if let Some(sw) = as_native_word(mem, s) {
+        if let Some(sw) = mem.as_native_word(s) {
             total_chars += sw.native_length(mem) as i32;
         }
         s = s.link(mem);
@@ -1469,7 +1458,7 @@ fn merge_native_words(
     total_chars = 0;
     let mut s = p;
     loop {
-        if let Some(sw) = as_native_word(mem, s) {
+        if let Some(sw) = mem.as_native_word(s) {
             let count = sw.native_length(mem) as usize;
             let src = sw.native_text_ptr(mem);
             let dst = merged.native_text_ptr_mut(mem);

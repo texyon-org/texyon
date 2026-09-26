@@ -27,7 +27,7 @@ use crate::node::{
     ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, HListNode, LigItem,
     MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::packaging::{as_native_word, ADDITIONAL, EXACTLY};
+use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::scan::NodeRecycleAbort;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
@@ -76,26 +76,17 @@ fn font_character_width(fonts: &mut FontState, f: i32, c: u16) -> i32 {
 /// A node on the active list, which carries no `NODE_type` of its own.
 #[inline]
 fn active(p: impl MemAddr) -> NodePtr<ActiveNode> {
-    let p = p.addr();
-    // SAFETY: the caller is walking the active list; `p` is a real active
-    // node (the context boundary that justifies `from_idx_unchecked`).
-    unsafe { NodePtr::<ActiveNode>::from_idx_unchecked(MemIdx::new(p)) }
+    NodePtr::at(p)
 }
 
 #[inline]
 fn delta_node(p: impl MemAddr) -> NodePtr<DeltaNode> {
-    let p = p.addr();
-    // SAFETY: the caller is walking the active list and has already established
-    // this node as `DELTA_NODE` in that list context.
-    unsafe { NodePtr::<DeltaNode>::from_idx_unchecked(MemIdx::new(p)) }
+    NodePtr::at(p)
 }
 
 #[inline]
 fn passive_node(p: impl MemAddr) -> NodePtr<PassiveNode> {
-    let p = p.addr();
-    // SAFETY: the caller is walking or constructing the passive list; passive
-    // nodes are context-classified records with no NODE_type header.
-    unsafe { NodePtr::<PassiveNode>::from_idx_unchecked(MemIdx::new(p)) }
+    NodePtr::at(p)
 }
 
 /// An active-list entry. Its type word holds the break type (0/1) or
@@ -591,8 +582,7 @@ pub(crate) fn finite_shrink(
 /// A lig item on `mainloop.lig_stack`, which `reconstitute` fills only with lig items.
 #[inline]
 fn lig_item(p: MemPtr) -> NodePtr<LigItem> {
-    // SAFETY: `reconstitute` pushes only lig items, which carry no NODE_type.
-    unsafe { NodePtr::<LigItem>::from_idx_unchecked(MemIdx::new(p)) }
+    NodePtr::at(p)
 }
 
 /// A fresh char node of font `f` holding `c`, linked after `t`.
@@ -1627,7 +1617,7 @@ fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), LineBreakOutco
         return Ok(());
     }
 
-    let native_ha = match as_native_word(&st.mem, st.linebreak.ha) {
+    let native_ha = match st.mem.as_native_word(st.linebreak.ha) {
         Some(ha) => {
             let Some(end) = find_word_end(&st.mem, ha.link(&st.mem), false) else {
                 return Ok(());

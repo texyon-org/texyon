@@ -604,12 +604,8 @@ fn classify_box_or_panic(mem: &MemState, p: impl crate::units::MemAddr) -> AnyBo
 }
 
 fn glyph_whatsit(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
-    let idx = p.as_idx()?;
-    if crate::mem::is_char_node(mem, p) {
-        return None;
-    }
-    match mem.classify(idx) {
-        Ok(AnyNode::Whatsit(w)) if w.whatsit_subtype(mem) == Some(WhatsitSubtype::Glyph) => Some(w),
+    match mem.classify_non_char(p)? {
+        AnyNode::Whatsit(w) if w.whatsit_subtype(mem) == Some(WhatsitSubtype::Glyph) => Some(w),
         _ => None,
     }
 }

@@ -113,8 +113,7 @@ pub fn initialize_pagebuilder_variables(st: &mut EngineState) {
 
 /// A record on the `page_ins_head` ring.
 fn page_ins(p: MemPtr) -> NodePtr<PageInsNode> {
-    // SAFETY: callers pass records reached through the `page_ins_head` ring.
-    unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
+    NodePtr::at(p)
 }
 
 /// TeX's `contrib_tail`, the tail of the outermost vertical list.
@@ -497,22 +496,6 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
     }
 }
 
-/// TeX's `precedes_break`: whether a legal breakpoint may follow `p`.
-fn precedes_break(st: &EngineState, p: MemPtr) -> bool {
-    matches!(
-        st.mem.classify(MemIdx::new(p)),
-        Ok(AnyNode::HList(_)
-            | AnyNode::VList(_)
-            | AnyNode::Rule(_)
-            | AnyNode::Ins(_)
-            | AnyNode::Mark(_)
-            | AnyNode::Adjust(_)
-            | AnyNode::Ligature(_)
-            | AnyNode::Disc(_)
-            | AnyNode::Whatsit(_))
-    )
-}
-
 fn page_badness(shipout: &ShipoutState) -> i32 {
     let so_far = &shipout.page_so_far;
     if so_far[PAGE_TOTAL] < so_far[PAGE_GOAL] {
@@ -715,7 +698,8 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
             }
             AnyNode::Glue(_) if below_box => PageStep::Discard,
             AnyNode::Glue(_) => {
-                if precedes_break(st, st.shipout.page_tail) {
+                let tail = st.mem.classify(MemIdx::new(st.shipout.page_tail));
+                if tail.is_ok_and(AnyNode::precedes_break) {
                     PageStep::Break(0)
                 } else {
                     PageStep::UpdateHeights

@@ -11,7 +11,7 @@ use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
 use crate::scan::{DIMEN_VAL, MARK_VAL, MU_VAL};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
-use crate::units::{MemAddr, MemIdx, MemPtr};
+use crate::units::{MemAddr, MemPtr};
 
 // Save-stack entry types.
 const RESTORE_OLD_VALUE: u16 = 0;
@@ -262,8 +262,7 @@ pub(crate) fn geq_define(
 /// through the trie or a register's `eqtb` entry.
 #[inline]
 fn sa(p: impl MemAddr) -> NodePtr<SaNode> {
-    // SAFETY: the callers pass a non-null trie record, which is all `SaNode` asserts.
-    unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
+    NodePtr::at(p)
 }
 
 pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: impl MemAddr) {

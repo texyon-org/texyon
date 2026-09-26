@@ -3318,25 +3318,13 @@ fn find_main_ppp(st: &mut EngineState) {
     st.mainloop.main_ppp = ppp;
 }
 
-fn as_native_word(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
-    if is_char_node(mem, p) {
-        return None;
-    }
-    match mem.classify(MemIdx(p.0)) {
-        Ok(AnyNode::Whatsit(w)) if w.whatsit_subtype(mem).is_some_and(|s| s.is_native_word()) => {
-            Some(w)
-        }
-        _ => None,
-    }
-}
-
 /// The native word `main_pp` if new text in font `f` can extend it.
 fn extendable_native_word(st: &EngineState, f: i32) -> Option<NodePtr<WhatsitNode>> {
     let (pp, ppp) = (st.mainloop.main_pp, st.mainloop.main_ppp);
     if pp.is_null() {
         return None;
     }
-    let word = as_native_word(&st.mem, pp)?;
+    let word = st.mem.as_native_word(pp)?;
     let extendable = word.native_font(&st.mem).0 == f
         && ppp != pp
         && !is_char_node(&st.mem, ppp)
@@ -3361,22 +3349,6 @@ unsafe fn copy_to_native_node(
 
 fn use_glyph_metrics(st: &EngineState) -> bool {
     st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0
-}
-
-/// Skips the nodes allowed between two words of an interword space.
-fn skip_interword_items(mem: &MemState, mut p: MemPtr) -> MemPtr {
-    while !is_char_node(mem, p)
-        && match mem.classify(MemIdx(p.0)) {
-            Ok(AnyNode::Penalty(_) | AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_)) => {
-                true
-            }
-            Ok(AnyNode::Whatsit(w)) => w.whatsit_subtype(mem).is_some_and(|s| s.is_io()),
-            _ => false,
-        }
-    {
-        p = p.link(mem);
-    }
-    p
 }
 
 /// The main loop for an AAT or OpenType font: collects a run of characters
@@ -3580,21 +3552,21 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Mai
     let mut prev_word = None;
     while p != tail {
         if !p.is_null() {
-            prev_word = as_native_word(&st.mem, p).or(prev_word);
+            prev_word = st.mem.as_native_word(p).or(prev_word);
         }
         p = p.link(&st.mem);
     }
     let Some(prev_word) = prev_word.filter(|w| w.native_font(&st.mem).0 == mf) else {
         return Ok(());
     };
-    let glue = skip_interword_items(&st.mem, prev_word.link(&st.mem));
+    let glue = crate::mem::skip_interword_fillers(&st.mem, prev_word.link(&st.mem));
     if is_char_node(&st.mem, glue) {
         return Ok(());
     }
     let Ok(AnyNode::Glue(glue)) = st.mem.classify(MemIdx(glue.0)) else {
         return Ok(());
     };
-    if skip_interword_items(&st.mem, glue.link(&st.mem)) != tail {
+    if crate::mem::skip_interword_fillers(&st.mem, glue.link(&st.mem)) != tail {
         return Ok(());
     }
     // The tail is normally the new native word but is read unchecked, as in TeX.

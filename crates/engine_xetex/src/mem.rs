@@ -162,6 +162,17 @@ pub fn prev_rightmost(mem: &MemState, s: MemPtr, e: MemPtr) -> MemPtr {
     p
 }
 
+/// Skips the nodes that may sit between the words of an interword space.
+pub(crate) fn skip_interword_fillers(mem: &MemState, mut p: MemPtr) -> MemPtr {
+    while mem
+        .classify_non_char(p)
+        .is_some_and(|n| n.is_interword_filler(mem))
+    {
+        p = p.link(mem);
+    }
+    p
+}
+
 /// Whether `p` lies in the one-word region, where every node is a character.
 #[inline]
 pub fn is_char_node(mem: &MemState, p: impl MemAddr) -> bool {

@@ -604,39 +604,8 @@ fn dvi_font_select(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shi
     Ok(())
 }
 
-fn classify_non_char(mem: &MemState, p: MemPtr) -> Option<AnyNode> {
-    if p.is_null() || crate::mem::is_char_node(mem, p) {
-        return None;
-    }
-    mem.classify(MemIdx::new(p.0)).ok()
-}
-
-fn native_word_node(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
-    match classify_non_char(mem, p)? {
-        AnyNode::Whatsit(w) if w.whatsit_subtype(mem).is_some_and(|s| s.is_native_word()) => {
-            Some(w)
-        }
-        _ => None,
-    }
-}
-
-fn is_ignorable_interword_node(mem: &MemState, p: MemPtr) -> bool {
-    match classify_non_char(mem, p) {
-        Some(AnyNode::Penalty(_) | AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_)) => true,
-        Some(AnyNode::Whatsit(w)) => w.whatsit_subtype(mem).is_some_and(|s| s.is_io()),
-        _ => false,
-    }
-}
-
-fn skip_ignorable_interword_nodes(mem: &MemState, mut q: MemPtr) -> MemPtr {
-    while is_ignorable_interword_node(mem, q) {
-        q = q.link(mem);
-    }
-    q
-}
-
 fn is_space_adjustment(mem: &MemState, q: MemPtr) -> bool {
-    matches!(classify_non_char(mem, q), Some(AnyNode::Kern(k)) if k.subtype(mem) == SPACE_ADJUSTMENT)
+    matches!(mem.classify_non_char(q), Some(AnyNode::Kern(k)) if k.subtype(mem) == SPACE_ADJUSTMENT)
 }
 
 /// Merge runs of native words separated by interword glue into single nodes
@@ -652,23 +621,23 @@ fn merge_justifiable_native_words(
     let mut p = this_box.list_ptr(mem);
 
     while !p.is_null() {
-        let first = native_word_node(mem, p).filter(|r| {
+        let first = mem.as_native_word(p).filter(|r| {
             fonts.font_letter_space_entry(r.native_font(mem).0) == 0 && !p.link(mem).is_null()
         });
         if let Some(r) = first {
             let font = r.native_font(mem);
             let same_font_word = |mem: &MemState, q: MemPtr| {
-                native_word_node(mem, q).filter(|w| w.native_font(mem) == font)
+                mem.as_native_word(q).filter(|w| w.native_font(mem) == font)
             };
             let mut last = r;
             let mut text_len = r.native_length(mem) as i32;
             let mut q = r.link(mem);
             loop {
-                q = skip_ignorable_interword_nodes(mem, q);
-                match classify_non_char(mem, q) {
+                q = crate::mem::skip_interword_fillers(mem, q);
+                match mem.classify_non_char(q) {
                     Some(AnyNode::Glue(glue)) if glue.subtype(mem) == NORMAL => {
                         if glue.glue_ptr(mem).ptr().0 == fonts.font_glue(font.0) {
-                            q = skip_ignorable_interword_nodes(mem, glue.link(mem));
+                            q = crate::mem::skip_interword_fillers(mem, glue.link(mem));
                             if let Some(w) = same_font_word(mem, q) {
                                 last = w;
                                 text_len += 1 + w.native_length(mem) as i32;
@@ -679,7 +648,7 @@ fn merge_justifiable_native_words(
                             q = glue.link(mem);
                         }
                         if is_space_adjustment(mem, q) {
-                            q = skip_ignorable_interword_nodes(mem, q.link(mem));
+                            q = crate::mem::skip_interword_fillers(mem, q.link(mem));
                             if let Some(w) = same_font_word(mem, q) {
                                 last = w;
                                 text_len += 1 + w.native_length(mem) as i32;
@@ -796,7 +765,10 @@ fn merge_native_word_run(
     let mut prev_p = first.ptr();
     let mut p = first.link(mem);
     while !p.is_null() {
-        if is_ignorable_interword_node(mem, p) {
+        if mem
+            .classify_non_char(p)
+            .is_some_and(|n| n.is_interword_filler(mem))
+        {
             prev_p.set_link(mem, p.link(mem));
             p.set_link(mem, tail.link(mem));
             tail.set_link(mem, p);

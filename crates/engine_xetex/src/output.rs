@@ -2890,8 +2890,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
             print_scaled_in(st, st.shipout.page_so_far[0]);
             let mut r = st.mem.link_ptr(PAGE_INS_HEAD);
             while r != PAGE_INS_HEAD {
-                // SAFETY: the page_ins_head ring holds only page-insertion records.
-                let ins = unsafe { NodePtr::<PageInsNode>::from_idx_unchecked(MemIdx::new(r)) };
+                let ins = NodePtr::<PageInsNode>::at(r);
                 print_ln_in(st);
                 esc(st, c"insert");
                 let box_num = ins.subtype(&st.mem);
