@@ -2832,7 +2832,7 @@ fn hyphenate(
             break;
         }
 
-        if crate::string_pool::length(&st.strings, k) == hn as i32 {
+        if st.strings.length(k) == hn as i32 {
             let start = st.strings.str_start[(k - TOO_BIG_CHAR) as usize] as usize;
             let word = &st.strings.str_pool[start..start + hn as usize];
             if word

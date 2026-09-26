@@ -701,7 +701,7 @@ fn store_hyph_exception(
         st.strings.pool_ptr += 1;
     }
 
-    let mut s = crate::string_pool::make_string(&mut st.strings)?;
+    let mut s = st.strings.make_string()?;
 
     if st.hyph.hyph_next <= HYPH_PRIME {
         while st.hyph.hyph_next > 0 && st.hyph.hyph_word[(st.hyph.hyph_next - 1) as usize] > 0 {
@@ -726,8 +726,7 @@ fn store_hyph_exception(
             break;
         }
 
-        if crate::string_pool::length(&st.strings, k) == crate::string_pool::length(&st.strings, s)
-        {
+        if st.strings.length(k) == st.strings.length(s) {
             let strings = &st.strings;
             let u = strings.str_start[(k - TOO_BIG_CHAR) as usize] as usize;
             let end = strings.str_start[(k + 1 - TOO_BIG_CHAR) as usize] as usize;

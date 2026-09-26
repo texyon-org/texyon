@@ -2649,7 +2649,7 @@ fn string_overflow(st: &EngineState, e: crate::scan::NodeRecycleAbort) -> MainCo
 }
 
 fn make_string_in(st: &mut EngineState) -> Result<i32, MainControlAbort> {
-    crate::string_pool::make_string(&mut st.strings).map_err(|e| match e {
+    st.strings.make_string().map_err(|e| match e {
         crate::scan::NodeRecycleAbort::Overflow => {
             MainControlAbort::Input(crate::input::InputAbort::Overflow {
                 what: c"number of strings".as_ptr(),
@@ -2675,7 +2675,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
         st.eqtb.hash_s1(u)
     } else if u >= SINGLE_BASE {
         if u == NULL_CS {
-            crate::texmfmp::maketexstring_in(&mut st.strings, c"FONT".as_ptr())?
+            st.strings.maketexstring(c"FONT".as_ptr())?
         } else {
             u - SINGLE_BASE
         }
@@ -2756,29 +2756,26 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
     let f = 'search: {
         for f in FONT_BASE + 1..=st.fonts.font_ptr {
             let fi = f as usize;
-            let area_matches = (crate::string_pool::length(&st.strings, st.scanner.cur_area) == 0
+            let area_matches = (st.strings.length(st.scanner.cur_area) == 0
                 && st.fonts.is_native_font(f))
-                || crate::string_pool::str_eq_str(
-                    &st.strings,
-                    st.fonts.font_area[fi],
-                    st.scanner.cur_area,
-                );
-            if crate::string_pool::str_eq_str(
-                &st.strings,
-                st.fonts.font_name[fi],
-                st.scanner.cur_name,
-            ) && area_matches
+                || st
+                    .strings
+                    .str_eq_str(st.fonts.font_area[fi], st.scanner.cur_area);
+            if st
+                .strings
+                .str_eq_str(st.fonts.font_name[fi], st.scanner.cur_name)
+                && area_matches
                 && size_matches(st, fi)
             {
                 break 'search f;
             }
             for part in [st.scanner.cur_area, st.scanner.cur_name, st.scanner.cur_ext] {
-                crate::string_pool::append_str(&mut st.strings, part)
+                st.strings
+                    .append_str(part)
                     .map_err(|e| string_overflow(st, e))?;
             }
             let full_name = make_string_in(st)?;
-            let same_name =
-                crate::string_pool::str_eq_str(&st.strings, st.fonts.font_name[fi], full_name);
+            let same_name = st.strings.str_eq_str(st.fonts.font_name[fi], full_name);
             flush_last_string(st);
             if same_name && st.fonts.is_native_font(f) && size_matches(st, fi) {
                 break 'search f;

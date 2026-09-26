@@ -8,7 +8,7 @@ use crate::bridge::{
 };
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE, TOO_BIG_CHAR};
 use crate::mem::xmalloc;
-use crate::state::StringsState;
+use crate::state::{StringsState, TexmfState};
 use crate::utf8::{BYTES_FROM_UTF8, FIRST_BYTE_MARK, OFFSETS_FROM_UTF8};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
@@ -54,68 +54,70 @@ pub fn get_seconds_and_micros() -> (i32, i32) {
     (elapsed.as_secs() as i32, elapsed.subsec_micros() as i32)
 }
 
-/// Encodes pool string `s` as UTF-8. Single-character strings (`s` below
-/// 65536) come out empty, and unpaired low surrogates are kept as 3-byte
-/// sequences.
-pub(crate) fn texstring_utf8(strings: &StringsState, s: i32) -> Vec<u8> {
-    if s < TOO_BIG_CHAR {
-        return Vec::new();
-    }
-    let base = strings.str_start[(s - TOO_BIG_CHAR) as usize];
-    let len = strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize] - base;
-    let unit = |i: i32| strings.str_pool[(base + i) as usize] as u32;
-
-    let mut out = Vec::with_capacity(len as usize * 3);
-    let mut i = 0;
-    while i < len {
-        let mut c = unit(i);
-        if (0xD800..=0xDBFF).contains(&c) {
-            i += 1;
-            let lo = unit(i);
-            c = if (0xDC00..=0xDFFF).contains(&lo) {
-                (c - 0xD800) * 0x0400 + lo - 0xDC00 + 0x10000
-            } else {
-                0xFFFD
-            };
+impl StringsState {
+    /// Encodes pool string `s` as UTF-8. Single-character strings (`s` below
+    /// 65536) come out empty, and unpaired low surrogates are kept as 3-byte
+    /// sequences.
+    pub(crate) fn texstring_utf8(&self, s: i32) -> Vec<u8> {
+        if s < TOO_BIG_CHAR {
+            return Vec::new();
         }
+        let base = self.str_start[(s - TOO_BIG_CHAR) as usize];
+        let len = self.str_start[(s + 1 - TOO_BIG_CHAR) as usize] - base;
+        let unit = |i: i32| self.str_pool[(base + i) as usize] as u32;
 
-        let n = match c {
-            0..=0x7F => 1,
-            0x80..=0x7FF => 2,
-            0x800..=0xFFFF => 3,
-            0x10000..=0x10FFFF => 4,
-            _ => {
-                c = 0xFFFD;
-                3
+        let mut out = Vec::with_capacity(len as usize * 3);
+        let mut i = 0;
+        while i < len {
+            let mut c = unit(i);
+            if (0xD800..=0xDBFF).contains(&c) {
+                i += 1;
+                let lo = unit(i);
+                c = if (0xDC00..=0xDFFF).contains(&lo) {
+                    (c - 0xD800) * 0x0400 + lo - 0xDC00 + 0x10000
+                } else {
+                    0xFFFD
+                };
             }
-        };
-        out.push(((c >> (6 * (n - 1))) | FIRST_BYTE_MARK[n] as u32) as u8);
-        for k in (0..n - 1).rev() {
-            out.push(0x80 | ((c >> (6 * k)) & 0x3F) as u8);
+
+            let n = match c {
+                0..=0x7F => 1,
+                0x80..=0x7FF => 2,
+                0x800..=0xFFFF => 3,
+                0x10000..=0x10FFFF => 4,
+                _ => {
+                    c = 0xFFFD;
+                    3
+                }
+            };
+            out.push(((c >> (6 * (n - 1))) | FIRST_BYTE_MARK[n] as u32) as u8);
+            for k in (0..n - 1).rev() {
+                out.push(0x80 | ((c >> (6 * k)) & 0x3F) as u8);
+            }
+
+            i += 1;
         }
-
-        i += 1;
+        out
     }
-    out
-}
 
-/// Pool string `s` as a C string, cut at its first NUL.
-pub(crate) fn texstring_cstring(strings: &StringsState, s: i32) -> CString {
-    let mut bytes = texstring_utf8(strings, s);
-    if let Some(nul) = bytes.iter().position(|&b| b == 0) {
-        bytes.truncate(nul);
+    /// Pool string `s` as a C string, cut at its first NUL.
+    pub(crate) fn texstring_cstring(&self, s: i32) -> CString {
+        let mut bytes = self.texstring_utf8(s);
+        if let Some(nul) = bytes.iter().position(|&b| b == 0) {
+            bytes.truncate(nul);
+        }
+        // SAFETY: the bytes were cut at the first NUL.
+        unsafe { CString::from_vec_unchecked(bytes) }
     }
-    // SAFETY: the bytes were cut at the first NUL.
-    unsafe { CString::from_vec_unchecked(bytes) }
-}
 
-/// Pool string `s` as a `malloc`ed NUL-terminated UTF-8 string the caller frees.
-pub unsafe fn gettexstring_in(strings: &StringsState, s: i32) -> *mut libc::c_char {
-    let bytes = texstring_utf8(strings, s);
-    let name = xmalloc(bytes.len() + 1) as *mut u8;
-    std::ptr::copy_nonoverlapping(bytes.as_ptr(), name, bytes.len());
-    *name.add(bytes.len()) = 0;
-    name as *mut libc::c_char
+    /// Pool string `s` as a `malloc`ed NUL-terminated UTF-8 string the caller frees.
+    pub unsafe fn gettexstring(&self, s: i32) -> *mut libc::c_char {
+        let bytes = self.texstring_utf8(s);
+        let name = xmalloc(bytes.len() + 1) as *mut u8;
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), name, bytes.len());
+        *name.add(bytes.len()) = 0;
+        name as *mut libc::c_char
+    }
 }
 
 /// Decodes one UTF-8 sequence from a NUL-terminated string without
@@ -147,43 +149,42 @@ pub(crate) fn utf16_units(c: u32) -> ([u16; 2], usize) {
     }
 }
 
-/// Appends code point `c` to the pool as one or two UTF-16 units.
-pub(crate) fn push_utf16(strings: &mut StringsState, c: u32) {
-    let (units, n) = utf16_units(c);
-    let p = strings.pool_ptr as usize;
-    strings.str_pool[p..p + n].copy_from_slice(&units[..n]);
-    strings.pool_ptr += n as i32;
-}
-
-fn push_bytes(strings: &mut StringsState, bytes: &[u8]) {
-    let start = strings.pool_ptr as usize;
-    for (slot, &b) in strings.str_pool[start..start + bytes.len()]
-        .iter_mut()
-        .zip(bytes)
-    {
-        *slot = b as u16;
+impl StringsState {
+    /// Appends code point `c` to the pool as one or two UTF-16 units.
+    pub(crate) fn push_utf16(&mut self, c: u32) {
+        let (units, n) = utf16_units(c);
+        let p = self.pool_ptr as usize;
+        self.str_pool[p..p + n].copy_from_slice(&units[..n]);
+        self.pool_ptr += n as i32;
     }
-    strings.pool_ptr += bytes.len() as i32;
-}
 
-/// Appends `bytes` if they fit, else marks the pool as full.
-fn push_bytes_or_fill(strings: &mut StringsState, bytes: &[u8]) {
-    if strings.pool_ptr as usize + bytes.len() >= strings.pool_size as usize {
-        strings.pool_ptr = strings.pool_size;
-    } else {
-        push_bytes(strings, bytes);
+    fn push_bytes(&mut self, bytes: &[u8]) {
+        let start = self.pool_ptr as usize;
+        for (slot, &b) in self.str_pool[start..start + bytes.len()]
+            .iter_mut()
+            .zip(bytes)
+        {
+            *slot = b as u16;
+        }
+        self.pool_ptr += bytes.len() as i32;
     }
-}
 
-fn push_hex(strings: &mut StringsState, bytes: &[u8]) {
-    for &b in bytes {
-        push_bytes(
-            strings,
-            &[
+    /// Appends `bytes` if they fit, else marks the pool as full.
+    fn push_bytes_or_fill(&mut self, bytes: &[u8]) {
+        if self.pool_ptr as usize + bytes.len() >= self.pool_size as usize {
+            self.pool_ptr = self.pool_size;
+        } else {
+            self.push_bytes(bytes);
+        }
+    }
+
+    fn push_hex(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.push_bytes(&[
                 HEX_DIGITS[(b >> 4) as usize],
                 HEX_DIGITS[(b & 0xF) as usize],
-            ],
-        );
+            ]);
+        }
     }
 }
 
@@ -205,43 +206,50 @@ impl MakeTexStringAbort {
     }
 }
 
-/// Converts a NUL-terminated UTF-8 string into a new pool string.
-pub(crate) unsafe fn maketexstring_in(
-    strings: &mut StringsState,
-    s: *const libc::c_char,
-) -> Result<i32, MakeTexStringAbort> {
-    if s.is_null() || *s == 0 {
-        return Ok(EMPTY_STRING);
+impl StringsState {
+    /// Converts a NUL-terminated UTF-8 string into a new pool string.
+    pub(crate) unsafe fn maketexstring(
+        &mut self,
+        s: *const libc::c_char,
+    ) -> Result<i32, MakeTexStringAbort> {
+        if s.is_null() || *s == 0 {
+            return Ok(EMPTY_STRING);
+        }
+
+        if self.pool_ptr as usize + libc::strlen(s) >= self.pool_size as usize {
+            return Err(MakeTexStringAbort::PoolOverflow);
+        }
+
+        let mut cp = s as *const u8;
+        while *cp != 0 {
+            self.push_utf16(next_utf8_char(&mut cp));
+        }
+
+        self.make_string()
+            .map_err(|_| MakeTexStringAbort::StringOverflow)
     }
 
-    if strings.pool_ptr as usize + libc::strlen(s) >= strings.pool_size as usize {
-        return Err(MakeTexStringAbort::PoolOverflow);
+    /// Appends the hex MD5 of file (or string) `s` to the pool.
+    pub(crate) unsafe fn getmd5sum(&mut self, s: i32, file: bool) {
+        let mut digest = [0u8; 16];
+        let xname = self.texstring_cstring(s);
+
+        let ret = if file {
+            ttstub_get_file_md5(xname.as_ptr(), digest.as_mut_ptr())
+        } else {
+            let bytes = xname.as_bytes();
+            tectonic_bridge_core::ttbc_get_data_md5(
+                bytes.as_ptr(),
+                bytes.len(),
+                digest.as_mut_ptr(),
+            )
+        };
+
+        if ret != 0 || self.pool_ptr + 2 * digest.len() as i32 >= self.pool_size {
+            return;
+        }
+        self.push_hex(&digest);
     }
-
-    let mut cp = s as *const u8;
-    while *cp != 0 {
-        push_utf16(strings, next_utf8_char(&mut cp));
-    }
-
-    crate::string_pool::make_string(strings).map_err(|_| MakeTexStringAbort::StringOverflow)
-}
-
-/// Appends the hex MD5 of file (or string) `s` to the pool.
-pub(crate) unsafe fn getmd5sum_in(strings: &mut StringsState, s: i32, file: bool) {
-    let mut digest = [0u8; 16];
-    let xname = texstring_cstring(strings, s);
-
-    let ret = if file {
-        ttstub_get_file_md5(xname.as_ptr(), digest.as_mut_ptr())
-    } else {
-        let bytes = xname.as_bytes();
-        tectonic_bridge_core::ttbc_get_data_md5(bytes.as_ptr(), bytes.len(), digest.as_mut_ptr())
-    };
-
-    if ret != 0 || strings.pool_ptr + 2 * digest.len() as i32 >= strings.pool_size {
-        return;
-    }
-    push_hex(strings, &digest);
 }
 
 /// Writes "src:<lineno> <filename>" into the pool and returns its start, or
@@ -252,7 +260,7 @@ pub(crate) fn make_src_special_in(
     lineno: i32,
 ) -> Result<i32, ()> {
     let old_pool_ptr = st.strings.pool_ptr;
-    let filename = texstring_cstring(&st.strings, srcfilename);
+    let filename = st.strings.texstring_cstring(srcfilename);
     let prefix = format!("src:{} ", lineno);
     let filename = filename.as_bytes();
 
@@ -260,65 +268,64 @@ pub(crate) fn make_src_special_in(
     {
         return Err(());
     }
-    push_bytes(&mut st.strings, prefix.as_bytes());
-    push_bytes(&mut st.strings, filename);
+    st.strings.push_bytes(prefix.as_bytes());
+    st.strings.push_bytes(filename);
     Ok(old_pool_ptr)
 }
 
-unsafe fn open_tex_file(strings: &StringsState, s: i32) -> usize {
-    let name = texstring_cstring(strings, s);
-    ttstub_input_open(name.as_ptr(), TTBC_FILE_FORMAT_TEX, 0)
-}
-
-/// Appends the decimal size of file `s` to the pool.
-pub(crate) unsafe fn getfilesize_in(
-    strings: &mut StringsState,
-    s: i32,
-) -> Result<(), crate::scan::SccAbort> {
-    let handle = open_tex_file(strings, s);
-    if handle == INVALID_HANDLE {
-        return Ok(());
+impl StringsState {
+    unsafe fn open_tex_file(&self, s: i32) -> usize {
+        let name = self.texstring_cstring(s);
+        ttstub_input_open(name.as_ptr(), TTBC_FILE_FORMAT_TEX, 0)
     }
 
-    let file_len = ttstub_input_get_size(handle);
-    if crate::io::input_close(handle) {
-        return Err(crate::scan::SccAbort::InputClose);
+    /// Appends the decimal size of file `s` to the pool.
+    pub(crate) unsafe fn getfilesize(&mut self, s: i32) -> Result<(), crate::scan::SccAbort> {
+        let handle = self.open_tex_file(s);
+        if handle == INVALID_HANDLE {
+            return Ok(());
+        }
+
+        let file_len = ttstub_input_get_size(handle);
+        if crate::io::input_close(handle) {
+            return Err(crate::scan::SccAbort::InputClose);
+        }
+
+        self.push_bytes_or_fill((file_len as u64).to_string().as_bytes());
+        Ok(())
     }
 
-    push_bytes_or_fill(strings, (file_len as u64).to_string().as_bytes());
-    Ok(())
-}
+    /// Appends a hex dump of `length` bytes of file `s` from `offset` to the pool.
+    pub(crate) unsafe fn getfiledump(
+        &mut self,
+        s: i32,
+        offset: libc::c_int,
+        length: libc::c_int,
+    ) -> Result<(), crate::scan::SccAbort> {
+        if length == 0 {
+            return Ok(());
+        }
 
-/// Appends a hex dump of `length` bytes of file `s` from `offset` to the pool.
-pub(crate) unsafe fn getfiledump_in(
-    strings: &mut StringsState,
-    s: i32,
-    offset: libc::c_int,
-    length: libc::c_int,
-) -> Result<(), crate::scan::SccAbort> {
-    if length == 0 {
-        return Ok(());
+        if self.pool_ptr + 2 * length + 1 >= self.pool_size {
+            self.pool_ptr = self.pool_size;
+            return Ok(());
+        }
+
+        let mut buffer = vec![0u8; length as usize + 1];
+        let handle = self.open_tex_file(s);
+        if handle == INVALID_HANDLE {
+            return Ok(());
+        }
+
+        crate::io::input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
+        let actual = ttstub_input_read(handle, buffer.as_mut_ptr(), length as libc::size_t);
+        if crate::io::input_close(handle) {
+            return Err(crate::scan::SccAbort::InputClose);
+        }
+
+        self.push_hex(&buffer[..actual.max(0) as usize]);
+        Ok(())
     }
-
-    if strings.pool_ptr + 2 * length + 1 >= strings.pool_size {
-        strings.pool_ptr = strings.pool_size;
-        return Ok(());
-    }
-
-    let mut buffer = vec![0u8; length as usize + 1];
-    let handle = open_tex_file(strings, s);
-    if handle == INVALID_HANDLE {
-        return Ok(());
-    }
-
-    crate::io::input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
-    let actual = ttstub_input_read(handle, buffer.as_mut_ptr(), length as libc::size_t);
-    if crate::io::input_close(handle) {
-        return Err(crate::scan::SccAbort::InputClose);
-    }
-
-    push_hex(strings, &buffer[..actual.max(0) as usize]);
-    Ok(())
 }
 
 /// Whether `srcfilename:lineno` differs from the last remembered source.
@@ -327,7 +334,7 @@ pub(crate) fn is_new_source_in(
     srcfilename: i32,
     lineno: i32,
 ) -> bool {
-    let name = texstring_cstring(&st.strings, srcfilename);
+    let name = st.strings.texstring_cstring(srcfilename);
     let last_name = st
         .texmf
         .last_source_name
@@ -341,7 +348,7 @@ pub(crate) fn remember_source_info_in(
     srcfilename: i32,
     lineno: i32,
 ) {
-    st.texmf.last_source_name = Some(texstring_cstring(&st.strings, srcfilename));
+    st.texmf.last_source_name = Some(st.strings.texstring_cstring(srcfilename));
     st.texmf.last_lineno = lineno;
 }
 
@@ -411,27 +418,28 @@ pub unsafe fn init_start_time(st: &mut crate::state::EngineState, source_date_ep
     st.texmf.start_time_str = buf;
 }
 
-pub(crate) fn getcreationdate_in(texmf: &crate::state::TexmfState, strings: &mut StringsState) {
-    push_bytes_or_fill(strings, nul_terminated(&texmf.start_time_str));
+impl TexmfState {
+    pub(crate) fn getcreationdate(&self, strings: &mut StringsState) {
+        strings.push_bytes_or_fill(nul_terminated(&self.start_time_str));
+    }
 }
 
-/// Appends the modification date of file `s` to the pool as a PDF date.
-pub(crate) unsafe fn getfilemoddate_in(
-    strings: &mut StringsState,
-    s: i32,
-) -> Result<(), crate::scan::SccAbort> {
-    let handle = open_tex_file(strings, s);
-    if handle == INVALID_HANDLE {
-        return Ok(());
-    }
+impl StringsState {
+    /// Appends the modification date of file `s` to the pool as a PDF date.
+    pub(crate) unsafe fn getfilemoddate(&mut self, s: i32) -> Result<(), crate::scan::SccAbort> {
+        let handle = self.open_tex_file(s);
+        if handle == INVALID_HANDLE {
+            return Ok(());
+        }
 
-    let mtime = ttstub_input_get_mtime(handle);
-    if crate::io::input_close(handle) {
-        return Err(crate::scan::SccAbort::InputClose);
-    }
+        let mtime = ttstub_input_get_mtime(handle);
+        if crate::io::input_close(handle) {
+            return Err(crate::scan::SccAbort::InputClose);
+        }
 
-    let mut buf = [0u8; 30];
-    makepdftime(mtime, &mut buf, true);
-    push_bytes_or_fill(strings, nul_terminated(&buf));
-    Ok(())
+        let mut buf = [0u8; 30];
+        makepdftime(mtime, &mut buf, true);
+        self.push_bytes_or_fill(nul_terminated(&buf));
+        Ok(())
+    }
 }

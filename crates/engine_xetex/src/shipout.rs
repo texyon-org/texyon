@@ -288,26 +288,20 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shipou
     )?;
     dvi_four(&mut st.shipout, st.fonts.font_size[fu])?;
     dvi_four(&mut st.shipout, st.fonts.font_dsize[fu])?;
-    dvi_out(
-        &mut st.shipout,
-        crate::string_pool::length(&st.strings, font_area) as u8,
-    )?;
+    dvi_out(&mut st.shipout, st.strings.length(font_area) as u8)?;
 
     let font_name = st.fonts.font_name[fu];
-    let name = str_range(&st.strings, font_name);
+    let name = st.strings.str_range(font_name);
     // Only the part before a `:features` suffix is written (a leading colon does not count).
     let colon = st.strings.str_pool[name.clone()]
         .iter()
         .skip(1)
         .position(|&c| c == b':' as u16)
         .map(|l| l + 1);
-    let name_len = colon.map_or_else(
-        || crate::string_pool::length(&st.strings, font_name),
-        |l| l as i32,
-    );
+    let name_len = colon.map_or_else(|| st.strings.length(font_name), |l| l as i32);
     dvi_out(&mut st.shipout, name_len as u8)?;
 
-    let area = str_range(&st.strings, font_area);
+    let area = st.strings.str_range(font_area);
     for k in area {
         dvi_out(&mut st.shipout, st.strings.str_pool[k] as u8)?;
     }
@@ -318,10 +312,12 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shipou
     Ok(())
 }
 
-pub(crate) fn str_range(strings: &StringsState, s: i32) -> std::ops::Range<usize> {
-    let start = strings.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
-    let end = strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize] as usize;
-    start..end
+impl StringsState {
+    pub(crate) fn str_range(&self, s: i32) -> std::ops::Range<usize> {
+        let start = self.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
+        let end = self.str_start[(s + 1 - TOO_BIG_CHAR) as usize] as usize;
+        start..end
+    }
 }
 
 pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
@@ -360,7 +356,7 @@ pub(crate) unsafe fn ship_out_in(
 ) -> Result<(), ShipoutAbort> {
     let p = page.ptr();
     let mag = st.eqtb.int_par(INT_PAR_MAG);
-    let job_name = crate::texmfmp::gettexstring_in(&st.strings, st.strings.job_name);
+    let job_name = st.strings.gettexstring(st.strings.job_name);
     crate::synctex::synctex_sheet(st, mag, job_name);
 
     if st.strings.job_name == 0 {
@@ -542,7 +538,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
     st.shipout.selector = old_setting;
 
     dvi_out(&mut st.shipout, XXX1)?;
-    dvi_out(&mut st.shipout, crate::hash::cur_length(&st.strings) as u8)?;
+    dvi_out(&mut st.shipout, st.strings.cur_length() as u8)?;
     let base = st.strings.cur_string_start();
     for k in base..st.strings.pool_ptr {
         dvi_out(&mut st.shipout, st.strings.str_pool[k as usize] as u8)?;
@@ -745,7 +741,7 @@ impl MemState {
             q = q.link(self);
         }
 
-        let nlen = crate::hash::cur_length(strings);
+        let nlen = strings.cur_length();
         let word = self
             .new_native_word_node(eqtb, first.native_font(self).0, nlen)
             .map_err(ShipoutAbort::NodeRecycle)?;
@@ -2180,10 +2176,9 @@ fn out_write_stream(
     st.scanner.cur_name = w.open_name(&st.mem);
     st.scanner.cur_area = w.open_area(&st.mem);
     st.scanner.cur_ext = w.open_ext(&st.mem);
-    if crate::string_pool::length(&st.strings, st.scanner.cur_ext) == 0 {
+    if st.strings.length(st.scanner.cur_ext) == 0 {
         // SAFETY: FFI string interning.
-        st.scanner.cur_ext =
-            unsafe { crate::texmfmp::maketexstring_in(&mut st.strings, c".tex".as_ptr()) }?;
+        st.scanner.cur_ext = unsafe { st.strings.maketexstring(c".tex".as_ptr()) }?;
     }
     let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
     crate::io::pack_file_name_in(st, n, a, e);

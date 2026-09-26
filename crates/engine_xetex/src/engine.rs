@@ -100,7 +100,9 @@ pub(crate) unsafe fn get_strings_started_in(st: &mut EngineState) -> Result<(), 
     st.strings.str_ptr = TOO_BIG_CHAR;
 
     let spare_size = st.strings.pool_size - st.strings.string_vacancies;
-    let loaded = crate::string_pool::load_pool_strings(&mut st.strings, spare_size)
+    let loaded = st
+        .strings
+        .load_pool_strings(spare_size)
         .map_err(|e| e.into_engine_abort())?;
     if loaded == 0 {
         return Err(EngineAbort::TtAbort(c"must increase pool_size".as_ptr()));
@@ -205,7 +207,7 @@ unsafe fn primitive(
     let bytes = ident.to_bytes();
     let prim_val = if bytes.len() > 1 {
         let len = bytes.len() as i32;
-        let s = crate::texmfmp::maketexstring_in(&mut st.strings, ident.as_ptr())?;
+        let s = st.strings.maketexstring(ident.as_ptr())?;
 
         if st.input.first + len > st.input.buf_size + 1 {
             return Err(PrimitiveInitAbort::BufferSize(st.input.buf_size));
@@ -667,7 +669,7 @@ unsafe fn set_frozen_text(
     p: i32,
     text: &CStr,
 ) -> Result<(), PrimitiveInitAbort> {
-    let s = crate::texmfmp::maketexstring_in(&mut st.strings, text.as_ptr())?;
+    let s = st.strings.maketexstring(text.as_ptr())?;
     st.eqtb.set_hash_s1(p, s);
     Ok(())
 }
@@ -930,11 +932,10 @@ pub(crate) unsafe fn initialize_engine(
         if let Err(a) = get_strings_started_in(st) {
             return InitOutcome::Terminate(a.into_history(st));
         }
-        let format_ident =
-            match crate::texmfmp::maketexstring_in(&mut st.strings, c" (INITEX)".as_ptr()) {
-                Ok(v) => v,
-                Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
-            };
+        let format_ident = match st.strings.maketexstring(c" (INITEX)".as_ptr()) {
+            Ok(v) => v,
+            Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
+        };
         initialize_more_initex_variables_in(st, format_ident);
         if let Err(e) = initialize_primitives(st) {
             return InitOutcome::Terminate(e.into_engine_abort().into_history(st));
@@ -1036,11 +1037,10 @@ pub(crate) unsafe fn initialize_engine(
 
         st.fonts.alloc_font_arrays();
 
-        let nullfont_name =
-            match crate::texmfmp::maketexstring_in(&mut st.strings, c"nullfont".as_ptr()) {
-                Ok(v) => v,
-                Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
-            };
+        let nullfont_name = match st.strings.maketexstring(c"nullfont".as_ptr()) {
+            Ok(v) => v,
+            Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
+        };
         let fonts = &mut st.fonts;
         let f = FONT_BASE as usize;
         fonts.font_ptr = FONT_BASE;

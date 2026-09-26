@@ -447,7 +447,7 @@ unsafe fn get_encoding_mode_and_info_in(
         Ok((RAW, 0))
     } else {
         crate::io::xetex_ucnv_close(cnv);
-        let info = crate::texmfmp::maketexstring_in(&mut st.strings, name_of_file)?;
+        let info = st.strings.maketexstring(name_of_file)?;
         Ok((ICUMAPPING, info))
     }
 }
@@ -1677,7 +1677,7 @@ pub(crate) unsafe fn linebreak_start_in(
     text_length: i32,
 ) -> Result<(), NativeFontAbort> {
     let mut status: i32 = 0;
-    let locale = crate::texmfmp::gettexstring_in(&st.strings, locale_str_num);
+    let locale = st.strings.gettexstring(locale_str_num);
 
     if st.fonts.font_area_entry(f) == OTGR_FONT_FLAG {
         let engine = st.fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
@@ -2314,7 +2314,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
 
         XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => {
             crate::io::scan_file_name_in(st)?;
-            let locale = if crate::string_pool::length(&st.strings, st.scanner.cur_name) == 0 {
+            let locale = if st.strings.length(st.scanner.cur_name) == 0 {
                 0
             } else {
                 st.scanner.cur_name

@@ -240,7 +240,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
         });
     }
 
-    st.strings.format_ident = match crate::string_pool::make_string(&mut st.strings) {
+    st.strings.format_ident = match st.strings.make_string() {
         Ok(value) => value,
         Err(crate::scan::NodeRecycleAbort::Overflow) => {
             return Err(EngineAbort::Overflow {

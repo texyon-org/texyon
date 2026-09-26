@@ -512,7 +512,7 @@ fn diagnostic_print_file_line_in(st: &mut EngineState, diagnostic: *mut std::ffi
         unsafe { diag_append_cstr(diagnostic, c"!".as_ptr()) };
         return;
     };
-    let filename = unsafe { crate::texmfmp::gettexstring_in(&st.strings, name) };
+    let filename = unsafe { st.strings.gettexstring(name) };
     unsafe {
         let name = CStr::from_ptr(filename).to_string_lossy();
         diag_append_str(diagnostic, &format!("{name}:{line}: "));
@@ -602,7 +602,7 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
         if s == 0 {
             continue;
         }
-        for j in crate::shipout::str_range(&st.strings, s) {
+        for j in st.strings.str_range(s) {
             if must_quote && quote_char != 0 {
                 break;
             }
@@ -627,7 +627,7 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
         if s == 0 {
             continue;
         }
-        for j in crate::shipout::str_range(&st.strings, s) {
+        for j in st.strings.str_range(s) {
             let c = st.strings.str_pool[j] as i32;
             if c == quote_char {
                 print_in(st, quote_char);
@@ -1856,8 +1856,8 @@ fn print_font_select_in(st: &mut EngineState, f: usize) {
     let name = st.fonts.font_name[f];
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-        let has_double_quote = st.strings.str_pool[crate::shipout::str_range(&st.strings, name)]
-            .contains(&(b'"' as u16));
+        let has_double_quote =
+            st.strings.str_pool[st.strings.str_range(name)].contains(&(b'"' as u16));
         let quote_char = if has_double_quote { b'\'' } else { b'"' } as i32;
         print_char_in(st, quote_char);
         print_in(st, name);
@@ -2292,10 +2292,12 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(IssueMessageAbort::PoolSize);
     }
-    let s =
-        crate::string_pool::make_string(&mut st.strings).map_err(IssueMessageAbort::NodeRecycle)?;
+    let s = st
+        .strings
+        .make_string()
+        .map_err(IssueMessageAbort::NodeRecycle)?;
     if c == 0 {
-        let len = crate::string_pool::length(&st.strings, s);
+        let len = st.strings.length(s);
         if st.shipout.term_offset + len > st.config.max_print_line - 2 {
             print_ln_in(st);
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
@@ -2714,19 +2716,18 @@ pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutc
         }
     }
 
-    let font_name_c =
-        unsafe { crate::texmfmp::gettexstring_in(&st.strings, st.fonts.font_name[f as usize]) };
+    let font_name_c = unsafe { st.strings.gettexstring(st.fonts.font_name[f as usize]) };
     let prev_sel = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
     print_code_in(st, c);
     st.shipout.selector = prev_sel;
-    let Ok(s) = crate::string_pool::make_string(&mut st.strings) else {
+    let Ok(s) = st.strings.make_string() else {
         return ErrorOutcome::Overflow {
             what: c"number of strings",
             n: st.strings.max_strings - st.strings.init_str_ptr,
         };
     };
-    let chr_c = unsafe { crate::texmfmp::gettexstring_in(&st.strings, s) };
+    let chr_c = unsafe { st.strings.gettexstring(s) };
     flush_last_string(st);
     unsafe {
         issue_warning_str(&format!(
@@ -2974,7 +2975,7 @@ fn node_list_display_in(st: &mut EngineState, c: u8, list: MemPtr) {
 
 /// Shows the noad field at `p`, marked with `c` in the indentation string.
 fn print_subsidiary_data_in(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
-    if crate::hash::cur_length(&st.strings) >= st.errors.depth_threshold {
+    if st.strings.cur_length() >= st.errors.depth_threshold {
         if p.math_type(&st.mem) != EMPTY {
             print_cstr_in(st, c" []".as_ptr());
         }
@@ -3006,7 +3007,7 @@ fn print_subsidiary_data_in(st: &mut EngineState, p: NodePtr<MathField>, c: u8) 
 
 pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
     let mut p = MemPtr(p.addr());
-    if crate::hash::cur_length(&st.strings) > st.errors.depth_threshold {
+    if st.strings.cur_length() > st.errors.depth_threshold {
         if p.0 > TEX_NULL {
             print_cstr_in(st, c" []".as_ptr());
         }

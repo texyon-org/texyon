@@ -224,7 +224,7 @@ pub(crate) fn new_native_character_in(
 
         let start = st.strings.cur_string_start();
         let map = st.fonts.font_mapping_ptr(f);
-        let cur_len = crate::hash::cur_length(&st.strings);
+        let cur_len = st.strings.cur_length();
         // SAFETY: `dst` points into the non-reallocating string pool, disjoint
         // from the `&mut st.fonts` borrow.
         let len = unsafe {
@@ -417,8 +417,7 @@ pub(crate) unsafe fn read_font_info_in(
             }
         }
 
-        name_too_long = crate::string_pool::length(&st.strings, nom) > 255
-            || crate::string_pool::length(&st.strings, aire) > 255;
+        name_too_long = st.strings.length(nom) > 255 || st.strings.length(aire) > 255;
         if name_too_long {
             bad!();
         }
@@ -885,16 +884,16 @@ pub(crate) unsafe fn load_native_font_in(
             st.input.name_of_file[k as usize] as u8 as u16;
         st.strings.pool_ptr += 1;
     }
-    let full_name = crate::string_pool::make_string(&mut st.strings)
+    let full_name = st
+        .strings
+        .make_string()
         .map_err(LoadNativeFontAbort::StringOverflow)?;
 
     for f in FONT_BASE + 1..=st.fonts.font_ptr {
         if st.fonts.font_area[f as usize] == st.fonts.native_font_type_flag
-            && crate::string_pool::str_eq_str(
-                &st.strings,
-                st.fonts.font_name[f as usize],
-                full_name,
-            )
+            && st
+                .strings
+                .str_eq_str(st.fonts.font_name[f as usize], full_name)
             && st.fonts.font_size[f as usize] == actual_size
         {
             drop(font_engine);

@@ -5,7 +5,6 @@ use crate::consts::{
     UNDEFINED_PRIMITIVE,
 };
 use crate::state::{EqtbState, StringsState};
-use crate::string_pool::{length, make_string, str_eq_buf, str_eq_str};
 
 pub(crate) const HASH_OFFSET: i32 = 514;
 pub(crate) const HASH_SIZE: i32 = 15000;
@@ -21,9 +20,11 @@ pub(crate) enum HashLookupError {
     PrimitiveSizeOverflow(i32),
 }
 
-#[inline]
-pub(crate) fn cur_length(strings: &StringsState) -> i32 {
-    strings.pool_ptr - strings.cur_string_start()
+impl StringsState {
+    #[inline]
+    pub(crate) fn cur_length(&self) -> i32 {
+        self.pool_ptr - self.cur_string_start()
+    }
 }
 
 /// Kept out of line so LLVM cannot hoist the modulo back into `id_lookup`'s loop.
@@ -66,7 +67,7 @@ pub fn id_lookup(
 
     loop {
         let text = eqtb.hash_s1(p);
-        if text > 0 && length(strings, text) == utf16_len && str_eq_buf(strings, buffer, text, j) {
+        if text > 0 && strings.length(text) == utf16_len && strings.str_eq_buf(buffer, text, j) {
             return Ok(p);
         }
 
@@ -102,7 +103,7 @@ pub fn id_lookup(
                     ));
                 }
 
-                let d = cur_length(strings);
+                let d = strings.cur_length();
                 while strings.pool_ptr > strings.cur_string_start() {
                     strings.pool_ptr -= 1;
                     strings.str_pool[(strings.pool_ptr + l) as usize] =
@@ -124,7 +125,7 @@ pub fn id_lookup(
                     }
                 }
 
-                let s_idx = make_string(strings).map_err(|_| {
+                let s_idx = strings.make_string().map_err(|_| {
                     HashLookupError::StringNumberOverflow(
                         strings.max_strings - strings.init_str_ptr,
                     )
@@ -155,9 +156,9 @@ pub fn prim_lookup(
     } else {
         let j = strings.str_start[(s - TOO_BIG_CHAR) as usize];
         l = if s == strings.str_ptr {
-            cur_length(strings)
+            strings.cur_length()
         } else {
-            length(strings, s)
+            strings.length(s)
         };
         let mut h = strings.str_pool[j as usize] as i32;
         for k in j + 1..j + l {
@@ -172,7 +173,7 @@ pub fn prim_lookup(
     loop {
         let text = eqtb.prim_s1(p);
         if text > TOO_BIG_CHAR {
-            if length(strings, text - 1) == l && str_eq_str(strings, text - 1, s) {
+            if strings.length(text - 1) == l && strings.str_eq_str(text - 1, s) {
                 return Ok(p);
             }
         } else if text == 1 + s {

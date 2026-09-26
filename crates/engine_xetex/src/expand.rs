@@ -483,7 +483,8 @@ fn save_scan_in(st: &mut EngineState) -> Result<SavedScan, SccAbort> {
         pending_str: st.strings.cur_string_start() < st.strings.pool_ptr,
     };
     if saved.pending_str {
-        crate::string_pool::make_string(&mut st.strings)
+        st.strings
+            .make_string()
             .map_err(|_| make_string_overflow_scc(st))?;
     }
     Ok(saved)
@@ -516,7 +517,9 @@ fn scan_text_to_string_in(st: &mut EngineState, saved: &SavedScan) -> Result<i32
     let limit = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list_in(st, text, TEX_NULL, limit);
     st.shipout.selector = old_selector;
-    let s = crate::string_pool::make_string(&mut st.strings)
+    let s = st
+        .strings
+        .make_string()
         .map_err(|_| make_string_overflow_scc(st))?;
     st.mem.delete_token_ref(st.scanner.def_ref);
     restore_scan(st, saved);
@@ -531,7 +534,7 @@ fn ins_file_query_result_in(
     b: i32,
 ) -> Result<(), SccAbort> {
     let tail = str_toks_scc(st, b, 0)?;
-    crate::string_pool::flush_str(&mut st.strings, s);
+    st.strings.flush_str(s);
     ins_temp_head_list(st, tail)?;
     unseal_pending_str(st, saved);
     Ok(())
@@ -645,7 +648,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
         }
         PDF_CREATION_DATE_CODE => {
             let b = st.strings.pool_ptr;
-            crate::texmfmp::getcreationdate_in(&st.texmf, &mut st.strings);
+            st.texmf.getcreationdate(&mut st.strings);
             let tail = str_toks_scc(st, b, 0)?;
             ins_temp_head_list(st, tail)?;
         }
@@ -653,14 +656,14 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             let saved = save_scan_in(st)?;
             let s = scan_text_to_string_in(st, &saved)?;
             let b = st.strings.pool_ptr;
-            unsafe { crate::texmfmp::getfilemoddate_in(&mut st.strings, s) }?;
+            unsafe { st.strings.getfilemoddate(s) }?;
             return ins_file_query_result_in(st, &saved, s, b);
         }
         PDF_FILE_SIZE_CODE => {
             let saved = save_scan_in(st)?;
             let s = scan_text_to_string_in(st, &saved)?;
             let b = st.strings.pool_ptr;
-            unsafe { crate::texmfmp::getfilesize_in(&mut st.strings, s) }?;
+            unsafe { st.strings.getfilesize(s) }?;
             return ins_file_query_result_in(st, &saved, s, b);
         }
         PDF_MDFIVE_SUM_CODE => {
@@ -668,7 +671,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             let is_file = crate::scan::scan_keyword_in(st, c"file")?;
             let s = scan_text_to_string_in(st, &saved)?;
             let b = st.strings.pool_ptr;
-            unsafe { crate::texmfmp::getmd5sum_in(&mut st.strings, s, is_file) };
+            unsafe { st.strings.getmd5sum(s, is_file) };
             return ins_file_query_result_in(st, &saved, s, b);
         }
         PDF_FILE_DUMP_CODE => {
@@ -687,7 +690,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             )?;
             let s = scan_text_to_string_in(st, &saved)?;
             let b = st.strings.pool_ptr;
-            unsafe { crate::texmfmp::getfiledump_in(&mut st.strings, s, offset, length) }?;
+            unsafe { st.strings.getfiledump(s, offset, length) }?;
             return ins_file_query_result_in(st, &saved, s, b);
         }
         PDF_STRCMP_CODE => {
@@ -790,7 +793,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             let fa = st.fonts.font_area[f];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 let start = st.strings.str_start[(name - TOO_BIG_CHAR) as usize] as usize;
-                let len = crate::string_pool::length(&st.strings, name).max(0) as usize;
+                let len = st.strings.length(name).max(0) as usize;
                 let quote_char = if st.strings.str_pool[start..start + len].contains(&(b'"' as u16))
                 {
                     '\'' as i32

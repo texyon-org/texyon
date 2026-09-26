@@ -7,12 +7,11 @@ use crate::consts::{
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_INPUT_NORMALIZATION, INVALID_HANDLE, JUST_OPEN,
     SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
 };
-use crate::hash::cur_length;
 use crate::input::{InputAbort, NEW_LINE};
 use crate::mem::{xcalloc, xmalloc};
 use crate::scan::SccAbort;
 use crate::state::EngineState;
-use crate::texmfmp::{next_utf8_char, push_utf16, texstring_cstring, utf16_units};
+use crate::texmfmp::{next_utf8_char, utf16_units};
 use tectonic_bridge_core::EOF;
 
 pub(crate) use crate::bridge::{input_close, input_seek};
@@ -268,7 +267,7 @@ pub(crate) unsafe fn set_input_file_encoding_in(
             f.encoding_mode = mode as i16;
         }
         ICUMAPPING => {
-            let name = texstring_cstring(&st.strings, encoding_data);
+            let name = st.strings.texstring_cstring(encoding_data);
             let mut err: libc::c_int = 0;
             let cnv = xetex_ucnv_open(name.as_ptr(), &mut err);
             if cnv.is_null() {
@@ -776,17 +775,15 @@ pub(crate) fn more_name_in(st: &mut EngineState, c: u16) -> Result<bool, NameAbo
     st.strings.str_pool[st.strings.pool_ptr as usize] = c;
     st.strings.pool_ptr += 1;
     if c == b'/' as u16 {
-        st.scanner.area_delimiter = cur_length(&st.strings);
+        st.scanner.area_delimiter = st.strings.cur_length();
         st.scanner.ext_delimiter = 0;
     } else if c == b'.' as u16 {
-        st.scanner.ext_delimiter = cur_length(&st.strings);
+        st.scanner.ext_delimiter = st.strings.cur_length();
     }
     Ok(true)
 }
 
 pub(crate) fn end_name_in(st: &mut EngineState) -> Result<(), NameAbort> {
-    use crate::string_pool::{make_string, search_string, slow_make_string};
-
     if st.strings.str_ptr + 3 > st.strings.max_strings {
         return Err(NameAbort::NumberOfStrings);
     }
@@ -800,7 +797,7 @@ pub(crate) fn end_name_in(st: &mut EngineState) -> Result<(), NameAbort> {
         let start = strings.cur_string_start();
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + area_delimiter;
         strings.str_ptr += 1;
-        let temp_str = search_string(strings, st.scanner.cur_area);
+        let temp_str = strings.search_string(st.scanner.cur_area);
         if temp_str > 0 {
             st.scanner.cur_area = temp_str;
             strings.str_ptr -= 1;
@@ -814,8 +811,10 @@ pub(crate) fn end_name_in(st: &mut EngineState) -> Result<(), NameAbort> {
 
     if st.scanner.ext_delimiter == 0 {
         st.scanner.cur_ext = EMPTY_STRING;
-        st.scanner.cur_name =
-            slow_make_string(&mut st.strings).map_err(|_| NameAbort::NumberOfStrings)?;
+        st.scanner.cur_name = st
+            .strings
+            .slow_make_string()
+            .map_err(|_| NameAbort::NumberOfStrings)?;
     } else {
         let strings = &mut st.strings;
         let shift = st.scanner.ext_delimiter - area_delimiter - 1;
@@ -824,9 +823,11 @@ pub(crate) fn end_name_in(st: &mut EngineState) -> Result<(), NameAbort> {
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + shift;
         strings.str_ptr += 1;
 
-        st.scanner.cur_ext = make_string(strings).map_err(|_| NameAbort::NumberOfStrings)?;
+        st.scanner.cur_ext = strings
+            .make_string()
+            .map_err(|_| NameAbort::NumberOfStrings)?;
         strings.str_ptr -= 1;
-        let temp_str = search_string(strings, st.scanner.cur_name);
+        let temp_str = strings.search_string(st.scanner.cur_name);
         if temp_str > 0 {
             st.scanner.cur_name = temp_str;
             strings.str_ptr -= 1;
@@ -836,7 +837,9 @@ pub(crate) fn end_name_in(st: &mut EngineState) -> Result<(), NameAbort> {
             }
             strings.pool_ptr -= shift;
         }
-        st.scanner.cur_ext = slow_make_string(strings).map_err(|_| NameAbort::NumberOfStrings)?;
+        st.scanner.cur_ext = strings
+            .slow_make_string()
+            .map_err(|_| NameAbort::NumberOfStrings)?;
     }
     Ok(())
 }
@@ -844,7 +847,7 @@ pub(crate) fn end_name_in(st: &mut EngineState) -> Result<(), NameAbort> {
 pub(crate) unsafe fn make_name_string_in(st: &mut EngineState) -> Result<i32, NameAbort> {
     if st.strings.pool_ptr + st.input.name_length > st.strings.pool_size
         || st.strings.str_ptr == st.strings.max_strings
-        || cur_length(&st.strings) > 0
+        || st.strings.cur_length() > 0
     {
         return Ok(b'?' as i32);
     }
@@ -857,8 +860,10 @@ pub(crate) unsafe fn make_name_string_in(st: &mut EngineState) -> Result<i32, Na
         .copy_from_slice(&st.input.name_of_file16[..name_len16]);
     st.strings.pool_ptr += name_len16 as i32;
 
-    let result =
-        crate::string_pool::make_string(&mut st.strings).map_err(|_| NameAbort::NumberOfStrings)?;
+    let result = st
+        .strings
+        .make_string()
+        .map_err(|_| NameAbort::NumberOfStrings)?;
     let save_area_delimiter = st.scanner.area_delimiter;
     let save_ext_delimiter = st.scanner.ext_delimiter;
     let save_name_in_progress = st.scanner.name_in_progress;
@@ -887,7 +892,7 @@ pub(crate) unsafe fn pack_job_name_in(
     s: *const libc::c_char,
 ) -> Result<(), crate::texmfmp::MakeTexStringAbort> {
     st.scanner.cur_area = EMPTY_STRING;
-    st.scanner.cur_ext = crate::texmfmp::maketexstring_in(&mut st.strings, s)?;
+    st.scanner.cur_ext = st.strings.maketexstring(s)?;
     st.scanner.cur_name = st.strings.job_name;
     pack_file_name_in(
         st,
@@ -921,7 +926,9 @@ impl OpenLogAbort {
 pub(crate) unsafe fn open_log_file_in(st: &mut EngineState) -> Result<(), OpenLogAbort> {
     let old_setting = st.shipout.selector;
     if st.strings.job_name == 0 {
-        st.strings.job_name = crate::texmfmp::maketexstring_in(&mut st.strings, c"texput".as_ptr())
+        st.strings.job_name = st
+            .strings
+            .maketexstring(c"texput".as_ptr())
             .map_err(OpenLogAbort::MakeString)?;
     }
 
@@ -997,7 +1004,7 @@ pub(crate) fn pack_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
     let name = &mut st.input.name_of_file;
     name.clear();
     for part in [a, n, e] {
-        let part = texstring_cstring(&st.strings, part);
+        let part = st.strings.texstring_cstring(part);
         name.extend(part.as_bytes().iter().map(|&b| b as libc::c_char));
     }
     st.input.name_length = name.len() as i32;
@@ -1095,7 +1102,9 @@ pub(crate) fn scan_file_name_braced_in(st: &mut EngineState) -> Result<(), SccAb
     crate::output::show_token_list_in(st, arg, crate::mem::TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting as i32;
 
-    let s = crate::string_pool::make_string(&mut st.strings)
+    let s = st
+        .strings
+        .make_string()
         .map_err(|_| name_abort_scc(st, NameAbort::NumberOfStrings))?;
     st.mem.delete_token_ref(st.scanner.def_ref);
     st.scanner.def_ref.0 = save_def_ref;
@@ -1187,12 +1196,12 @@ pub(crate) unsafe fn start_input_in(
         let mut cp = primary_input_name as *const u8;
         while *cp != 0 {
             let rval = next_utf8_char(&mut cp);
-            push_utf16(&mut st.strings, rval);
+            st.strings.push_utf16(rval);
             if rval == b'/' as u32 {
-                st.scanner.area_delimiter = cur_length(&st.strings);
+                st.scanner.area_delimiter = st.strings.cur_length();
                 st.scanner.ext_delimiter = 0;
             } else if rval == b'.' as u32 {
-                st.scanner.ext_delimiter = cur_length(&st.strings);
+                st.scanner.ext_delimiter = st.strings.cur_length();
             }
         }
 
@@ -1237,12 +1246,14 @@ pub(crate) unsafe fn start_input_in(
         .name_of_input_file
         .as_deref()
         .map_or(std::ptr::null(), |name| name.as_ptr());
-    let full_name = crate::texmfmp::maketexstring_in(&mut st.strings, full_name)
+    let full_name = st
+        .strings
+        .maketexstring(full_name)
         .map_err(SccAbort::MakeTexString)?;
     st.input.full_source_filename_stack[in_open] = full_name;
 
     if st.input.cur_input.name == st.strings.str_ptr - 1 {
-        let temp_str = crate::string_pool::search_string(&st.strings, st.input.cur_input.name);
+        let temp_str = st.strings.search_string(st.input.cur_input.name);
         if temp_str > 0 {
             st.input.cur_input.name = temp_str;
             st.strings.str_ptr -= 1;
@@ -1255,9 +1266,7 @@ pub(crate) unsafe fn start_input_in(
         open_log_file_in(st).map_err(SccAbort::OpenLog)?;
     }
 
-    if st.shipout.term_offset + crate::string_pool::length(&st.strings, full_name)
-        > st.config.max_print_line - 2
-    {
+    if st.shipout.term_offset + st.strings.length(full_name) > st.config.max_print_line - 2 {
         crate::output::print_ln_in(st);
     } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
         crate::output::print_char_in(st, b' ' as i32);
@@ -1290,7 +1299,7 @@ pub(crate) unsafe fn start_input_in(
     }
 
     st.input.cur_input.state = NEW_LINE;
-    let synctex_job_name = crate::texmfmp::gettexstring_in(&st.strings, st.strings.job_name);
+    let synctex_job_name = st.strings.gettexstring(st.strings.job_name);
     crate::synctex::synctex_start_input(st, synctex_job_name);
     st.mem.line = 1;
     let f = st.input.input_file_ptr(idx);

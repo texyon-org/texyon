@@ -703,7 +703,8 @@ pub(crate) fn tokens_to_string_in(
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list_in(st, arg, TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting as i32;
-    crate::string_pool::make_string(&mut st.strings)
+    st.strings
+        .make_string()
         .map_err(|_| TokensToStringAbort::StringOverflow)
 }
 
@@ -1957,7 +1958,7 @@ pub(crate) fn pseudo_start_in(st: &mut EngineState) -> Result<(), SccAbort> {
             n: st.strings.pool_size - st.strings.init_pool_ptr,
         }));
     }
-    let s = crate::string_pool::make_string(&mut st.strings).map_err(|_| {
+    let s = st.strings.make_string().map_err(|_| {
         SccAbort::Error(crate::errors::ErrorOutcome::Overflow {
             what: c"number of strings",
             n: st.strings.max_strings - st.strings.init_str_ptr,
@@ -2005,7 +2006,7 @@ pub(crate) fn pseudo_start_in(st: &mut EngineState) -> Result<(), SccAbort> {
     file.set_info(&mut st.mem, lines.0);
     file.set_link(&mut st.mem, st.input.pseudo_files);
     st.input.pseudo_files = file;
-    crate::string_pool::flush_str(&mut st.strings, s);
+    st.strings.flush_str(s);
 
     crate::input::begin_file_reading_in(st)?;
     st.mem.line = 0;
@@ -3829,8 +3830,8 @@ pub(crate) fn compare_strings_in(st: &mut EngineState) -> Result<(), SccAbort> {
         std::cmp::Ordering::Greater => 1,
     };
 
-    crate::string_pool::flush_str(&mut st.strings, s2);
-    crate::string_pool::flush_str(&mut st.strings, s1);
+    st.strings.flush_str(s2);
+    st.strings.flush_str(s1);
     set_cur_val(st, result, INT_VAL);
     Ok(())
 }

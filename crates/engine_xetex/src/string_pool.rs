@@ -5,141 +5,140 @@ use crate::consts::{EMPTY_STRING, TOO_BIG_CHAR};
 use crate::scan::NodeRecycleAbort;
 use crate::state::StringsState;
 
-fn str_start(strings: &StringsState, s: i32) -> i32 {
-    strings.str_start[(s - TOO_BIG_CHAR) as usize]
-}
+impl StringsState {
+    fn str_start(&self, s: i32) -> i32 {
+        self.str_start[(s - TOO_BIG_CHAR) as usize]
+    }
 
-pub fn length(strings: &StringsState, s: i32) -> i32 {
-    if s >= TOO_BIG_CHAR {
-        return str_start(strings, s + 1) - str_start(strings, s);
+    pub fn length(&self, s: i32) -> i32 {
+        if s >= TOO_BIG_CHAR {
+            return self.str_start(s + 1) - self.str_start(s);
+        }
+        match s {
+            32..=126 => 1,
+            ..=127 => 3,
+            128..=255 => 4,
+            _ => 8,
+        }
     }
-    match s {
-        32..=126 => 1,
-        ..=127 => 3,
-        128..=255 => 4,
-        _ => 8,
-    }
-}
 
-pub fn make_string(strings: &mut StringsState) -> Result<i32, NodeRecycleAbort> {
-    if strings.str_ptr == strings.max_strings {
-        return Err(NodeRecycleAbort::Overflow);
+    pub fn make_string(&mut self) -> Result<i32, NodeRecycleAbort> {
+        if self.str_ptr == self.max_strings {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        self.str_ptr += 1;
+        let slot = self.cur_start_slot();
+        self.str_start[slot] = self.pool_ptr;
+        Ok(self.str_ptr - 1)
     }
-    strings.str_ptr += 1;
-    let slot = strings.cur_start_slot();
-    strings.str_start[slot] = strings.pool_ptr;
-    Ok(strings.str_ptr - 1)
-}
 
-pub fn append_str(strings: &mut StringsState, s: i32) -> Result<(), NodeRecycleAbort> {
-    let len = length(strings, s);
-    if strings.pool_ptr + len > strings.pool_size {
-        return Err(NodeRecycleAbort::Overflow);
+    pub fn append_str(&mut self, s: i32) -> Result<(), NodeRecycleAbort> {
+        let len = self.length(s);
+        if self.pool_ptr + len > self.pool_size {
+            return Err(NodeRecycleAbort::Overflow);
+        }
+        let src = self.str_start(s) as usize;
+        let dst = self.pool_ptr as usize;
+        for i in 0..len.max(0) as usize {
+            self.str_pool[dst + i] = self.str_pool[src + i];
+        }
+        self.pool_ptr += len.max(0);
+        Ok(())
     }
-    let src = str_start(strings, s) as usize;
-    let dst = strings.pool_ptr as usize;
-    for i in 0..len.max(0) as usize {
-        strings.str_pool[dst + i] = strings.str_pool[src + i];
-    }
-    strings.pool_ptr += len.max(0);
-    Ok(())
-}
 
-/// Whether string `s` equals the buffer run starting at `k`.
-pub fn str_eq_buf(strings: &StringsState, buffer: &[i32], s: i32, mut k: i32) -> bool {
-    let mut j = str_start(strings, s);
-    let end = str_start(strings, s + 1);
-    while j < end {
-        let c = buffer[k as usize];
-        if c >= TOO_BIG_CHAR {
-            let hi = 0xD800 + (c - TOO_BIG_CHAR) / 1024;
-            let lo = 0xDC00 + (c - TOO_BIG_CHAR) % 1024;
-            if strings.str_pool[j as usize] as i32 != hi
-                || strings.str_pool[(j + 1) as usize] as i32 != lo
-            {
+    /// Whether string `s` equals the buffer run starting at `k`.
+    pub fn str_eq_buf(&self, buffer: &[i32], s: i32, mut k: i32) -> bool {
+        let mut j = self.str_start(s);
+        let end = self.str_start(s + 1);
+        while j < end {
+            let c = buffer[k as usize];
+            if c >= TOO_BIG_CHAR {
+                let hi = 0xD800 + (c - TOO_BIG_CHAR) / 1024;
+                let lo = 0xDC00 + (c - TOO_BIG_CHAR) % 1024;
+                if self.str_pool[j as usize] as i32 != hi
+                    || self.str_pool[(j + 1) as usize] as i32 != lo
+                {
+                    return false;
+                }
+                j += 1;
+            } else if self.str_pool[j as usize] as i32 != c {
                 return false;
             }
             j += 1;
-        } else if strings.str_pool[j as usize] as i32 != c {
+            k += 1;
+        }
+        true
+    }
+
+    pub fn str_eq_str(&self, s: i32, t: i32) -> bool {
+        let len = self.length(s);
+        if len != self.length(t) {
             return false;
         }
-        j += 1;
-        k += 1;
+        if len == 1 {
+            let first_unit = |x: i32| {
+                if x < TOO_BIG_CHAR {
+                    x as u16
+                } else {
+                    self.str_pool[self.str_start(x) as usize]
+                }
+            };
+            return first_unit(s) == first_unit(t);
+        }
+        let j = self.str_start(s) as usize;
+        let k = self.str_start(t) as usize;
+        let n = (self.str_start(s + 1) as usize).saturating_sub(j);
+        self.str_pool[j..j + n] == self.str_pool[k..k + n]
     }
-    true
-}
 
-pub fn str_eq_str(strings: &StringsState, s: i32, t: i32) -> bool {
-    let len = length(strings, s);
-    if len != length(strings, t) {
-        return false;
+    /// An existing string equal to `search`, or 0 if none.
+    pub fn search_string(&self, search: i32) -> i32 {
+        let len = self.length(search);
+        if len == 0 {
+            return EMPTY_STRING;
+        }
+        (TOO_BIG_CHAR..search)
+            .rev()
+            .find(|&s| self.length(s) == len && self.str_eq_str(s, search))
+            .unwrap_or(0)
     }
-    if len == 1 {
-        let first_unit = |x: i32| {
-            if x < TOO_BIG_CHAR {
-                x as u16
-            } else {
-                strings.str_pool[str_start(strings, x) as usize]
+
+    /// `make_string` that reuses an existing equal string instead.
+    pub fn slow_make_string(&mut self) -> Result<i32, NodeRecycleAbort> {
+        let t = self.make_string()?;
+        let s = self.search_string(t);
+        if s > 0 {
+            self.flush_str(t);
+            return Ok(s);
+        }
+        Ok(t)
+    }
+
+    /// Returns the last loaded string number, or 0 if the pool would overflow.
+    pub fn load_pool_strings(&mut self, spare_size: i32) -> Result<i32, NodeRecycleAbort> {
+        const STRING_CONSTANTS: &[&[u8]] = &[b"this marks the start of the stringpool", b""];
+
+        let mut total_len = 0;
+        let mut g = 0;
+        for s in STRING_CONSTANTS {
+            total_len += s.len();
+            if total_len >= spare_size as usize {
+                return Ok(0);
             }
-        };
-        return first_unit(s) == first_unit(t);
-    }
-    let j = str_start(strings, s) as usize;
-    let k = str_start(strings, t) as usize;
-    let n = (str_start(strings, s + 1) as usize).saturating_sub(j);
-    strings.str_pool[j..j + n] == strings.str_pool[k..k + n]
-}
-
-/// An existing string equal to `search`, or 0 if none.
-pub fn search_string(strings: &StringsState, search: i32) -> i32 {
-    let len = length(strings, search);
-    if len == 0 {
-        return EMPTY_STRING;
-    }
-    (TOO_BIG_CHAR..search)
-        .rev()
-        .find(|&s| length(strings, s) == len && str_eq_str(strings, s, search))
-        .unwrap_or(0)
-}
-
-/// `make_string` that reuses an existing equal string instead.
-pub fn slow_make_string(strings: &mut StringsState) -> Result<i32, NodeRecycleAbort> {
-    let t = make_string(strings)?;
-    let s = search_string(strings, t);
-    if s > 0 {
-        flush_str(strings, t);
-        return Ok(s);
-    }
-    Ok(t)
-}
-
-/// Returns the last loaded string number, or 0 if the pool would overflow.
-pub fn load_pool_strings(
-    strings: &mut StringsState,
-    spare_size: i32,
-) -> Result<i32, NodeRecycleAbort> {
-    const STRING_CONSTANTS: &[&[u8]] = &[b"this marks the start of the stringpool", b""];
-
-    let mut total_len = 0;
-    let mut g = 0;
-    for s in STRING_CONSTANTS {
-        total_len += s.len();
-        if total_len >= spare_size as usize {
-            return Ok(0);
+            for &byte in *s {
+                self.str_pool[self.pool_ptr as usize] = byte as u16;
+                self.pool_ptr += 1;
+            }
+            g = self.make_string()?;
         }
-        for &byte in *s {
-            strings.str_pool[strings.pool_ptr as usize] = byte as u16;
-            strings.pool_ptr += 1;
-        }
-        g = make_string(strings)?;
+        Ok(g)
     }
-    Ok(g)
-}
 
-/// Frees `s` if it is the most recently made string.
-pub fn flush_str(strings: &mut StringsState, s: i32) {
-    if s == strings.str_ptr - 1 {
-        strings.str_ptr -= 1;
-        strings.pool_ptr = str_start(strings, strings.str_ptr);
+    /// Frees `s` if it is the most recently made string.
+    pub fn flush_str(&mut self, s: i32) {
+        if s == self.str_ptr - 1 {
+            self.str_ptr -= 1;
+            self.pool_ptr = self.str_start(self.str_ptr);
+        }
     }
 }
