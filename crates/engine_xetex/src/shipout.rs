@@ -1064,9 +1064,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     let save_loc = st.shipout.push_dvi_level()?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
-    st.mem
-        .push_lr(&mut st.scanner.lr_ptr, BEFORE.into())
-        .ok_or(Abort::NodeOverflow)?;
+    st.mem.push_lr(&mut st.scanner.lr_ptr, BEFORE.into())?;
 
     if this_box.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
@@ -1158,9 +1156,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                     }
                 } else {
                     let end_type = end_lr_type(math.subtype(&st.mem));
-                    st.mem
-                        .push_lr(&mut st.scanner.lr_ptr, end_type)
-                        .ok_or(Abort::NodeOverflow)?;
+                    st.mem.push_lr(&mut st.scanner.lr_ptr, end_type)?;
                     if st.mem.lr_dir(math) != st.scanner.cur_dir {
                         let edge = reverse_segment(
                             st,
@@ -1695,7 +1691,7 @@ impl MemState {
                     Ok(AnyNode::Ligature(ligature)) => {
                         self.flush_list(ligature.lig_ptr(self));
                         self.temp_ptr = ligature.ptr();
-                        let c = self.get_avail().ok_or(Abort::NodeOverflow)?;
+                        let c = self.get_avail()?;
                         self.set_word(c.0, self.word(ligature.idx().offset(1).0));
                         c.set_link(self, q);
                         self.free_node(ligature.ptr(), SMALL_NODE_SIZE);
@@ -1734,8 +1730,7 @@ impl MemState {
                             }
                         } else {
                             let end_type = end_lr_type(math.subtype(self));
-                            self.push_lr(&mut scanner.lr_ptr, end_type)
-                                .ok_or(Abort::NodeOverflow)?;
+                            self.push_lr(&mut scanner.lr_ptr, end_type)?;
                             if n > MIN_HALFWORD || self.lr_dir(math) != scanner.cur_dir {
                                 n += 1;
                                 math.set_subtype(self, math.subtype(self) + 1);
@@ -1890,14 +1885,14 @@ impl EqtbState {
 }
 
 fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) -> Result<(), Abort> {
-    let q = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
+    let q = st.mem.get_avail()?;
     q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-    let r = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
+    let r = st.mem.get_avail()?;
     q.set_link(&mut st.mem, r);
     r.set_info(&mut st.mem, CS_TOKEN_FLAG + END_WRITE);
     crate::input::begin_token_list(st, q, INSERTED)?;
     crate::input::begin_token_list(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
-    let q = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
+    let q = st.mem.get_avail()?;
     q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     crate::input::begin_token_list(st, q, INSERTED)?;
 

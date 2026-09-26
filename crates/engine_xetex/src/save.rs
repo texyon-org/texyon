@@ -478,7 +478,7 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
                 let t = st.scanner.cur_tok;
                 st.scanner.cur_tok = p;
                 if a {
-                    let pn = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+                    let pn = st.mem.get_avail()?;
                     pn.set_info(&mut st.mem, st.scanner.cur_tok);
                     pn.set_link(&mut st.mem, MemPtr::from_raw(st.input.cur_input.loc));
                     st.input.cur_input.loc = pn.0;

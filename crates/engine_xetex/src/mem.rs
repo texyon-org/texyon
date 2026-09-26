@@ -93,33 +93,33 @@ impl ListStateRecord {
 // --- the one-word free list ---
 
 impl MemState {
-    /// TeX's `get_avail`, `None` when main memory is exhausted.
+    /// TeX's `get_avail`.
     #[inline(always)]
-    pub fn get_avail(&mut self) -> Option<MemPtr> {
+    pub fn get_avail(&mut self) -> Result<MemPtr, Abort> {
         let p = self.avail;
         if p != TEX_NULL {
             self.avail = self.b32s1(p);
             self.set_b32s1(p, TEX_NULL);
-            Some(MemPtr(p))
+            Ok(MemPtr(p))
         } else {
             self.get_avail_grow()
         }
     }
 
     #[cold]
-    fn get_avail_grow(&mut self) -> Option<MemPtr> {
+    fn get_avail_grow(&mut self) -> Result<MemPtr, Abort> {
         let p = if self.mem_end < MEM_TOP {
             self.mem_end += 1;
             self.mem_end
         } else {
             self.hi_mem_min -= 1;
             if self.lo_mem_max >= self.hi_mem_min {
-                return None;
+                return Err(Abort::AvailOverflow);
             }
             self.hi_mem_min
         };
         self.set_b32s1(p, TEX_NULL);
-        Some(MemPtr(p))
+        Ok(MemPtr(p))
     }
 
     /// Returns the one-word node `p` to the free list.
@@ -138,15 +138,14 @@ impl MemState {
         self.avail = p.0;
     }
 
-    /// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail,
-    /// `None` when main memory is exhausted.
+    /// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail.
     #[inline(always)]
-    pub(crate) fn store_new_token(&mut self, tail: &mut MemPtr, tok: i32) -> Option<()> {
+    pub(crate) fn store_new_token(&mut self, tail: &mut MemPtr, tok: i32) -> Result<(), Abort> {
         let q = self.get_avail()?;
         tail.set_link(self, q);
         q.set_token(self, tok);
         *tail = q;
-        Some(())
+        Ok(())
     }
 
     #[inline]
@@ -214,15 +213,15 @@ impl MemState {
         p.addr() >= self.hi_mem_min
     }
 
-    /// TeX's `push_LR`, `None` when main memory is exhausted.
+    /// TeX's `push_LR`.
     #[inline]
-    pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, info: i32) -> Option<()> {
+    pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, info: i32) -> Result<(), Abort> {
         let t = self.get_avail()?;
         self.temp_ptr = t;
         t.set_info(self, info);
         t.set_link(self, *lr_ptr);
         *lr_ptr = t;
-        Some(())
+        Ok(())
     }
 
     /// TeX's `pop_LR`.
@@ -361,11 +360,11 @@ impl MemState {
 
     /// A character node for `c` in font `f`.
     #[inline]
-    pub fn new_char(&mut self, f: FontId, c: u16) -> Option<NodePtr<CharNode>> {
+    pub fn new_char(&mut self, f: FontId, c: u16) -> Result<NodePtr<CharNode>, Abort> {
         let p = NodePtr::<CharNode>::at(self.get_avail()?);
         p.set_font(self, f);
         p.set_character(self, c);
-        Some(p)
+        Ok(p)
     }
 
     pub fn new_ligature(&mut self, f: FontId, c: u16, q: MemPtr) -> Option<NodePtr<LigatureNode>> {
@@ -512,7 +511,7 @@ pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), Abort>
     }
     st.input.nest[np as usize] = st.input.cur_list;
     st.input.nest_ptr = np + 1;
-    let h = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let h = st.mem.get_avail()?;
     let cl = &mut st.input.cur_list;
     cl.head = h;
     cl.tail = h;

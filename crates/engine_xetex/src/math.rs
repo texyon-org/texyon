@@ -2260,7 +2260,7 @@ impl MemState {
         b.set_width(self, Scaled(width));
         b.set_height(self, Scaled(height));
         b.set_depth(self, Scaled(depth));
-        let p = self.new_char(FontId(f), c).ok_or(Abort::AvailOverflow)?;
+        let p = self.new_char(FontId(f), c)?;
         b.set_list_ptr(self, p.ptr());
         Ok(AnyBox::HList(b))
     }
@@ -3437,9 +3437,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
 
             let texxet = st.eqtb.int_par(INT_PAR_TEXXET) > 0;
             if texxet {
-                st.mem
-                    .push_lr(&mut st.scanner.lr_ptr, BEFORE.into())
-                    .ok_or(Abort::NodeOverflow)?;
+                st.mem.push_lr(&mut st.scanner.lr_ptr, BEFORE.into())?;
             }
 
             'outer: while !p.is_null() {
@@ -3478,12 +3476,10 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                                         break 'outer;
                                     }
                                 } else {
-                                    st.mem
-                                        .push_lr(
-                                            &mut st.scanner.lr_ptr,
-                                            crate::mem::end_lr_type(subtype),
-                                        )
-                                        .ok_or(Abort::NodeOverflow)?;
+                                    st.mem.push_lr(
+                                        &mut st.scanner.lr_ptr,
+                                        crate::mem::end_lr_type(subtype),
+                                    )?;
                                     if (subtype / R_CODE) as i32 != st.scanner.cur_dir as i32 {
                                         st.mem.just_reverse(&mut st.scanner, p)?;
                                         p = TEMP_HEAD;

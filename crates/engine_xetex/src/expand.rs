@@ -176,7 +176,7 @@ fn token_chars_to_buffer(st: &mut EngineState, list: MemPtr) -> Result<i32, Abor
 
 /// Scans the tokens of a `\csname`-like name up to the terminating control sequence.
 fn scan_cs_name_tokens(st: &mut EngineState) -> Result<MemPtr, Abort> {
-    let head = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let head = st.mem.get_avail()?;
     let mut tail = head;
     let saved_in_csname = st.scanner.is_in_csname;
     st.scanner.is_in_csname = true;
@@ -866,7 +866,7 @@ fn not_font_error(st: &mut EngineState, c: i32, f: i32, msg: &str) -> Result<(),
 
 /// Puts `token` in front of the backed-up token list on top of the input stack.
 fn prepend_to_backed_up(st: &mut EngineState, token: i32) -> Result<(), Abort> {
-    let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let p = st.mem.get_avail()?;
     p.set_info(&mut st.mem, token);
     p.set_link(&mut st.mem, MemPtr::from_raw(st.input.cur_input.loc));
     st.input.cur_input.start = p.0;

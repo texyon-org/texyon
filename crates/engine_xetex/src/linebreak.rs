@@ -580,7 +580,7 @@ impl MemState {
 
     /// A fresh char node of font `f` holding `c`, linked after `t`.
     fn append_char(&mut self, t: MemPtr, f: i32, c: u16) -> Result<MemPtr, Abort> {
-        let q = self.new_char(FontId(f), c).ok_or(Abort::AvailOverflow)?;
+        let q = self.new_char(FontId(f), c)?;
         t.set_link(self, q.ptr());
         Ok(q.ptr())
     }
@@ -742,13 +742,10 @@ fn reconstitute(
                                     if j == n {
                                         bchar = TOO_BIG_CHAR;
                                     } else {
-                                        let p = st
-                                            .mem
-                                            .new_char(
-                                                FontId(st.hyph.hf),
-                                                st.hyph.hu[(j + 1) as usize] as u16,
-                                            )
-                                            .ok_or(Abort::AvailOverflow)?;
+                                        let p = st.mem.new_char(
+                                            FontId(st.hyph.hf),
+                                            st.hyph.hu[(j + 1) as usize] as u16,
+                                        )?;
                                         item.set_component(&mut st.mem, p.ptr());
                                     }
                                 }
@@ -1870,7 +1867,7 @@ impl MemState {
             }
             Ok(())
         } else {
-            self.push_lr(lr_ptr, end_lr).ok_or(Abort::AvailOverflow)
+            self.push_lr(lr_ptr, end_lr)
         }
     }
 

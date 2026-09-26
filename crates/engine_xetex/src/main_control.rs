@@ -641,8 +641,8 @@ pub(crate) fn push_alignment(st: &mut EngineState) -> Result<(), Abort> {
     p.set_cur_pre_head(mem, sc.cur_pre_head);
     p.set_cur_pre_tail(mem, sc.cur_pre_tail);
     st.scanner.align_ptr = p.ptr();
-    st.scanner.cur_head = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
-    st.scanner.cur_pre_head = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    st.scanner.cur_head = st.mem.get_avail()?;
+    st.scanner.cur_pre_head = st.mem.get_avail()?;
     Ok(())
 }
 
@@ -669,8 +669,7 @@ impl MemState {
     fn copy_token_list(&mut self, mut r: MemPtr) -> Result<MemPtr, Abort> {
         let mut q = HOLD_HEAD;
         while !r.is_null() {
-            self.store_new_token(&mut q, r.token(self))
-                .ok_or(Abort::NodeOverflow)?;
+            self.store_new_token(&mut q, r.token(self))?;
             r = r.link(self);
         }
         q.set_link(self, MemPtr::NULL);
@@ -927,9 +926,7 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                     break;
                 }
             } else if st.scanner.cur_cmd != SPACER || p != HOLD_HEAD {
-                st.mem
-                    .store_new_token(&mut p, st.scanner.cur_tok)
-                    .ok_or(Abort::NodeOverflow)?;
+                st.mem.store_new_token(&mut p, st.scanner.cur_tok)?;
             }
         }
 
@@ -958,13 +955,10 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
                 crate::errors::error(st)?;
                 continue;
             }
-            st.mem
-                .store_new_token(&mut p, st.scanner.cur_tok)
-                .ok_or(Abort::NodeOverflow)?;
+            st.mem.store_new_token(&mut p, st.scanner.cur_tok)?;
         }
         st.mem
-            .store_new_token(&mut p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE)
-            .ok_or(Abort::NodeOverflow)?;
+            .store_new_token(&mut p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE)?;
         let v_part = HOLD_HEAD.link(&st.mem);
         column.set_v_part(&mut st.mem, v_part);
     }
@@ -1438,7 +1432,7 @@ pub(crate) fn new_character(
             .fonts
             .font_info_b16(st.fonts.char_base_entry(f) + ec as i32);
         if info.s3 > 0 {
-            let p = st.mem.new_char(FontId(f), c).ok_or(Abort::AvailOverflow)?;
+            let p = st.mem.new_char(FontId(f), c)?;
             return Ok(Some(NewChar::Char(p)));
         }
     }
@@ -2099,7 +2093,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         return crate::errors::error(st);
     }
     crate::input::back_input(st)?;
-    let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let p = st.mem.get_avail()?;
     TEMP_HEAD.set_link(&mut st.mem, p);
     crate::output::error_here_with_diagnostic(st, "Missing ");
     match st.save_stack.cur_group {
@@ -2113,7 +2107,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         }
         GroupCode::MathLeft => {
             p.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_RIGHT);
-            let q = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+            let q = st.mem.get_avail()?;
             p.set_link(&mut st.mem, q);
             q.set_info(&mut st.mem, OTHER_TOKEN + b'.' as i32);
             crate::output::print_esc(st, "right.");
@@ -3418,7 +3412,7 @@ pub(crate) unsafe fn main_control_main_loop(st: &mut EngineState) -> Result<bool
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
     st.mainloop.cur_l = st.scanner.cur_chr;
-    let ls = overflow_err(st.mem.new_char(FontId(mf), st.mainloop.cur_l as u16))?;
+    let ls = st.mem.new_char(FontId(mf), st.mainloop.cur_l as u16)?;
     st.mainloop.lig_stack = ls.ptr();
     st.mainloop.cur_q = st.input.cur_list.tail;
 
@@ -3642,7 +3636,7 @@ fn lookahead(st: &mut EngineState) -> Result<bool, Abort> {
     note_char_class(st, sc);
 
     let c = st.scanner.cur_chr;
-    let ls = overflow_err(st.mem.new_char(FontId(st.mainloop.main_f), c as u16))?;
+    let ls = st.mem.new_char(FontId(st.mainloop.main_f), c as u16)?;
     st.mainloop.lig_stack = ls.ptr();
     st.mainloop.cur_r = c;
     if c == st.mainloop.false_bchar {
@@ -4063,7 +4057,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             let p = st.scanner.cur_cs;
             crate::scan::scan_toks(st, true, expand)?;
             if protected != 0 {
-                let q = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
+                let q = st.mem.get_avail()?;
                 q.set_info(&mut st.mem, protected);
                 let body = st.scanner.def_ref.link(&st.mem);
                 q.set_link(&mut st.mem, body);
@@ -4395,9 +4389,8 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
         let mut tail = tail;
         st.mem
-            .store_new_token(&mut tail, RIGHT_BRACE_TOKEN + '}' as i32)
-            .ok_or(Abort::NodeOverflow)?;
-        let q = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
+            .store_new_token(&mut tail, RIGHT_BRACE_TOKEN + '}' as i32)?;
+        let q = st.mem.get_avail()?;
         q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + '{' as i32);
         let body = def_ref.link(&st.mem);
         q.set_link(&mut st.mem, body);

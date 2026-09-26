@@ -1938,7 +1938,7 @@ pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), Abort> {
         .new_whatsit(&mut st.mem, WhatsitSubtype::Special, WRITE_NODE_SIZE)
         .ok_or(Abort::AvailOverflow)?;
     w.set_write_stream(&mut st.mem, 0);
-    let d = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let d = st.mem.get_avail()?;
     st.scanner.def_ref = d;
     d.set_info(&mut st.mem, crate::mem::TEX_NULL);
     let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
@@ -1956,9 +1956,9 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let Some(fname) = new_source_position(st) else {
         return Ok(());
     };
-    let toklist = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let toklist = st.mem.get_avail()?;
     toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-    let open = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let open = st.mem.get_avail()?;
     toklist.set_link(&mut st.mem, open);
     open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
@@ -1966,7 +1966,7 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let text_tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
-    let close = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let close = st.mem.get_avail()?;
     text_tail.set_link(&mut st.mem, close);
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
     crate::input::begin_token_list(st, toklist, INSERTED)?;
@@ -1989,15 +1989,15 @@ pub(crate) fn tt_insert_special(st: &mut EngineState, text: &str) -> Result<(), 
         st.strings.pool_ptr += 1;
     }
 
-    let toklist = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
+    let toklist = st.mem.get_avail()?;
     toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-    let open = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
+    let open = st.mem.get_avail()?;
     open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     toklist.set_link(&mut st.mem, open);
     let text_tail = st.mem.str_toks_cat(&mut st.strings, start_pool, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
-    let close = st.mem.get_avail().ok_or(Abort::NodeOverflow)?;
+    let close = st.mem.get_avail()?;
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
     text_tail.set_link(&mut st.mem, close);
     crate::input::begin_token_list(st, toklist, INSERTED)?;

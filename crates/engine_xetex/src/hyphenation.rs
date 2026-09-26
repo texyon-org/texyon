@@ -592,7 +592,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), Abort> {
                 LETTER | OTHER_CHAR | CHAR_GIVEN => {
                     if st.scanner.cur_chr == b'-' as i32 {
                         if n < st.eqtb.max_hyphenatable_length() as i16 {
-                            let q = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+                            let q = st.mem.get_avail()?;
                             q.set_link(&mut st.mem, p);
                             q.set_info(&mut st.mem, n as i32);
                             p = q;

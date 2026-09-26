@@ -518,7 +518,7 @@ impl MemState {
                 }
             }
 
-            let q = self.get_avail().ok_or(Abort::AvailOverflow)?;
+            let q = self.get_avail()?;
             p.set_link(self, q);
             q.set_info(self, t);
             p = q;
@@ -865,7 +865,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.cur_cs != 0 {
         let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
-            let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+            let p = st.mem.get_avail()?;
             p.set_info(&mut st.mem, CS_TOKEN_FLAG + st.scanner.cur_cs);
             begin_token_list(st, p, BACKED_UP)?;
         }
@@ -882,7 +882,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             error_here_with_diagnostic(st, "Forbidden control sequence found");
         }
 
-        let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+        let p = st.mem.get_avail()?;
         let mut inserted = p;
         match st.scanner.scanner_status {
             DEFINING => {
@@ -897,7 +897,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             ALIGNING => {
                 print(st, " while scanning preamble");
                 p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-                inserted = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+                inserted = st.mem.get_avail()?;
                 inserted.set_link(&mut st.mem, p);
                 inserted.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_CR);
                 st.scanner.align_state = -1_000_000;
@@ -1376,14 +1376,12 @@ pub(crate) fn store_new_token(
     tail: &mut MemPtr,
     token: i32,
 ) -> Result<(), Abort> {
-    st.mem
-        .store_new_token(tail, token)
-        .ok_or(Abort::AvailOverflow)
+    st.mem.store_new_token(tail, token)
 }
 
 /// Starts a new reference-counted token list in `def_ref` and returns it.
 fn new_def_ref(st: &mut EngineState) -> Result<MemPtr, Abort> {
-    let def_ref = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let def_ref = st.mem.get_avail()?;
     st.scanner.def_ref = def_ref;
     def_ref.set_info(&mut st.mem, TEX_NULL);
     Ok(def_ref)
@@ -1486,7 +1484,7 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
         let old_setting = st.shipout.selector;
         st.shipout.selector = SELECTOR_NEW_STRING;
         let b = st.strings.pool_ptr;
-        let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+        let p = st.mem.get_avail()?;
         let list = TEMP_HEAD.link(&st.mem);
         p.set_link(&mut st.mem, list);
         crate::output::token_show(st, p);
@@ -1727,7 +1725,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     st.strings.str_pool[st.strings.pool_ptr as usize] = b' ' as u16;
     let mut l = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
     let nl = st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) as u16;
-    let file = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let file = st.mem.get_avail()?;
     let mut last_line = file;
 
     // Each line becomes a node of words holding four characters each.
@@ -2031,7 +2029,7 @@ pub(crate) fn xetex_scan_dimen(
                             break;
                         }
                         if k < 17 {
-                            let q = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+                            let q = st.mem.get_avail()?;
                             q.set_link(&mut st.mem, digits);
                             q.set_info(&mut st.mem, st.scanner.cur_tok - ZERO_TOKEN);
                             digits = q;

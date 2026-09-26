@@ -137,7 +137,7 @@ impl MemState {
     pub fn just_copy(&mut self, mut p: MemPtr, mut h: MemPtr, t: MemPtr) -> Result<(), Abort> {
         while !p.is_null() {
             let copy = if self.is_char_node(p) {
-                let r = self.get_avail().ok_or(Abort::AvailOverflow)?;
+                let r = self.get_avail()?;
                 Some((r, 1))
             } else {
                 match self.classify(MemIdx::new(p)).ok() {
@@ -154,7 +154,7 @@ impl MemState {
                         RULE_NODE_SIZE,
                     )),
                     Some(AnyNode::Ligature(lig)) => {
-                        let r = self.get_avail().ok_or(Abort::AvailOverflow)?;
+                        let r = self.get_avail()?;
                         self.set_word(r, self.word(lig.ptr() + 1));
                         Some((r, 0))
                     }
@@ -246,8 +246,7 @@ impl MemState {
                             }
                         }
                     } else {
-                        self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))
-                            .ok_or(Abort::AvailOverflow)?;
+                        self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))?;
 
                         if n > MIN_HALFWORD || (subtype / R_CODE) as i16 != scanner.cur_dir {
                             n += 1;
@@ -392,11 +391,11 @@ impl MemState {
     }
 
     fn copy_list(&mut self, mut p: MemPtr) -> Result<MemPtr, Abort> {
-        let h = self.get_avail().ok_or(Abort::AvailOverflow)?;
+        let h = self.get_avail()?;
         let mut q = h;
         while !p.is_null() {
             let (r, words) = if self.is_char_node(p) {
-                (self.get_avail().ok_or(Abort::AvailOverflow)?, 1)
+                (self.get_avail()?, 1)
             } else {
                 self.copy_node(p)?
             };
@@ -1403,8 +1402,7 @@ impl MemState {
         let texxet = eqtb.int_par(INT_PAR_TEXXET) > 0;
 
         if texxet {
-            self.push_lr(&mut scanner.lr_ptr, BEFORE.into())
-                .ok_or(Abort::AvailOverflow)?;
+            self.push_lr(&mut scanner.lr_ptr, BEFORE.into())?;
         }
 
         let mut p = list;
@@ -1530,8 +1528,7 @@ impl MemState {
                                 math.into_kern(self).set_subtype(self, EXPLICIT);
                             }
                         } else {
-                            self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))
-                                .ok_or(Abort::AvailOverflow)?;
+                            self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))?;
                         }
                     }
                 }

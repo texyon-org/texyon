@@ -98,7 +98,7 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     {
         end_token_list(st)?;
     }
-    let p = st.mem.get_avail().ok_or(Abort::AvailOverflow)?;
+    let p = st.mem.get_avail()?;
     p.set_info(&mut st.mem, st.scanner.cur_tok);
     if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
         if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
