@@ -199,19 +199,30 @@ impl<T: Copy> PlainDelta<T> {
     }
 
     /// Keeps only the first pre-image per index, which is the furthest back in time.
-    pub(crate) fn compose_with_older(&mut self, older: PlainDelta<T>) {
-        let mut seen = std::collections::HashSet::new();
-        let mut idx = Vec::with_capacity(older.idx.len() + self.idx.len());
-        let mut old = Vec::with_capacity(older.old.len() + self.old.len());
-        let entries = older.idx.iter().zip(&older.old);
-        for (&index, &value) in entries.chain(self.idx.iter().zip(&self.old)) {
-            if seen.insert(index) {
-                idx.push(index);
-                old.push(value);
+    pub(crate) fn compose_with_older(&mut self, mut older: PlainDelta<T>) {
+        COMPOSE_SEEN.with_borrow_mut(|seen| {
+            let mut kept = 0;
+            for k in 0..older.idx.len() {
+                let index = older.idx[k];
+                if first_sighting(seen, index) {
+                    older.idx[kept] = index;
+                    older.old[kept] = older.old[k];
+                    kept += 1;
+                }
             }
-        }
-        self.idx = idx;
-        self.old = old;
+            older.idx.truncate(kept);
+            older.old.truncate(kept);
+            for (&index, &value) in self.idx.iter().zip(&self.old) {
+                if first_sighting(seen, index) {
+                    older.idx.push(index);
+                    older.old.push(value);
+                }
+            }
+            for &index in &older.idx {
+                seen[index as usize >> 6] = 0;
+            }
+        });
+        *self = older;
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
@@ -228,6 +239,24 @@ impl<T: Copy> PlainDelta<T> {
     fn len(&self) -> usize {
         self.idx.len()
     }
+}
+
+thread_local! {
+    /// Index bitmap for [`PlainDelta::compose_with_older`], all clear between calls.
+    static COMPOSE_SEEN: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Marks `index` in `seen`, reporting whether it was clear.
+#[inline]
+fn first_sighting(seen: &mut Vec<u64>, index: u32) -> bool {
+    let word = index as usize >> 6;
+    if word >= seen.len() {
+        seen.resize(word + 1, 0);
+    }
+    let bit = 1u64 << (index & 63);
+    let fresh = seen[word] & bit == 0;
+    seen[word] |= bit;
+    fresh
 }
 
 #[derive(Default)]
@@ -381,6 +410,34 @@ mod tests {
         assert_eq!(newer.len(), 2);
         newer.apply_to(&mut data);
         assert_eq!(data, vec![0, 0]);
+    }
+
+    #[test]
+    fn plain_delta_composition_keeps_first_sightings_in_order() {
+        let delta = |entries: &[(u32, i32)]| PlainDelta {
+            idx: entries.iter().map(|e| e.0).collect(),
+            old: entries.iter().map(|e| e.1).collect(),
+        };
+        let pairs = |d: &PlainDelta<i32>| -> Vec<(u32, i32)> {
+            d.idx.iter().copied().zip(d.old.iter().copied()).collect()
+        };
+
+        let older = delta(&[(900, 1), (5, 2), (900, 3), (64, 4)]);
+        let mut newer = delta(&[(64, 5), (7, 6), (5, 7), (7, 8), (1000, 9)]);
+        newer.compose_with_older(older);
+        assert_eq!(
+            pairs(&newer),
+            vec![(900, 1), (5, 2), (64, 4), (7, 6), (1000, 9)]
+        );
+
+        // The scratch bitmap is left clear, so a later merge sees fresh indices.
+        let mut again = delta(&[(5, 10), (900, 11)]);
+        again.compose_with_older(delta(&[(7, 12)]));
+        assert_eq!(pairs(&again), vec![(7, 12), (5, 10), (900, 11)]);
+
+        let mut empty = PlainDelta::<i32>::default();
+        empty.compose_with_older(PlainDelta::default());
+        assert_eq!(empty.len(), 0);
     }
 
     #[test]
