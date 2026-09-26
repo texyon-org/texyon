@@ -3,14 +3,18 @@
 //! Handles are raw `usize` values with 0 meaning invalid. The state pointer is
 //! installed per run in `BRIDGE_PTR`.
 
+use std::ffi::{CStr, CString};
+
 use tectonic_bridge_core::{
-    ttbc_diag_begin_error, ttbc_diag_begin_warning, ttbc_diag_finish, ttbc_get_file_md5,
-    ttbc_get_last_input_abspath, ttbc_input_close, ttbc_input_get_mtime, ttbc_input_get_size,
-    ttbc_input_getc, ttbc_input_open, ttbc_input_open_primary, ttbc_input_read, ttbc_input_seek,
-    ttbc_input_ungetc, ttbc_issue_error, ttbc_issue_warning, ttbc_output_close, ttbc_output_flush,
-    ttbc_output_open, ttbc_output_open_stdout, ttbc_output_putc, ttbc_output_write,
-    ttbc_shell_escape, CoreBridgeState, Diagnostic, FileFormat, InputId, OutputId,
+    ttbc_diag_append, ttbc_diag_begin_error, ttbc_diag_begin_warning, ttbc_diag_finish,
+    ttbc_get_file_md5, ttbc_get_last_input_abspath, ttbc_input_close, ttbc_input_get_mtime,
+    ttbc_input_get_size, ttbc_input_getc, ttbc_input_open_primary, ttbc_input_read,
+    ttbc_input_seek, ttbc_input_ungetc, ttbc_issue_error, ttbc_issue_warning, ttbc_output_close,
+    ttbc_output_flush, ttbc_output_open_stdout, ttbc_output_putc, ttbc_output_write,
+    ttbc_shell_escape, CoreBridgeState, FileFormat, InputId, OutputId,
 };
+
+pub(crate) use tectonic_bridge_core::Diagnostic;
 
 static mut BRIDGE_PTR: *mut libc::c_void = std::ptr::null_mut();
 
@@ -23,6 +27,11 @@ pub(crate) const TTBC_FILE_FORMAT_TECTONIC_PRIMARY: libc::c_int =
     FileFormat::TectonicPrimary as libc::c_int;
 
 /// Installs the `CoreBridgeState` pointer for this run, or clears it with null.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a `CoreBridgeState` that stays valid and
+/// otherwise unborrowed until it is cleared.
 pub(crate) unsafe fn set_bridge_state(ptr: *mut libc::c_void) {
     BRIDGE_PTR = ptr;
 }
@@ -33,26 +42,28 @@ extern "C" {
     fn ttbc_global_engine_exit();
 }
 
-/// Register a Rust-direct resident operation with bridge-core's C callbacks.
+/// Registers a Rust-direct resident operation with bridge-core's C callbacks.
+///
+/// # Safety
+///
+/// `api` must point to the operation's `CoreBridgeState`.
 pub(crate) unsafe fn enter_global_engine(api: *mut libc::c_void) {
     let _ = ttbc_global_engine_enter(api);
 }
 
-/// Clear the callback state installed by [`enter_global_engine`].
-pub(crate) unsafe fn exit_global_engine() {
-    ttbc_global_engine_exit();
+/// Clears the callback state installed by [`enter_global_engine`].
+pub(crate) fn exit_global_engine() {
+    // SAFETY: only resets bridge-core's global callback slot.
+    unsafe { ttbc_global_engine_exit() };
 }
 
-/// The bridge state for the current run. The engine is single-threaded and
-/// none of the wrappers re-enter, so the exclusive borrow is short-lived and
-/// unique.
+/// Runs `f` on the bridge state of the current run.
 #[inline]
-unsafe fn es() -> &'static mut CoreBridgeState<'static> {
-    debug_assert!(
-        !BRIDGE_PTR.is_null(),
-        "bridge state used outside tt_run_engine"
-    );
-    &mut *(BRIDGE_PTR as *mut CoreBridgeState<'static>)
+fn with_bridge<R>(f: impl FnOnce(&mut CoreBridgeState<'static>) -> R) -> R {
+    // SAFETY: `set_bridge_state` keeps the pointer valid for the whole run, the
+    // engine is single-threaded and `f` never re-enters, so this borrow is unique.
+    let es = unsafe { BRIDGE_PTR.cast::<CoreBridgeState<'static>>().as_mut() };
+    f(es.expect("bridge state used outside tt_run_engine"))
 }
 
 /// Maps a `ttbc_file_format` number to its `FileFormat`.
@@ -84,83 +95,77 @@ fn file_format_from_int(format: libc::c_int) -> FileFormat {
     }
 }
 
-pub(crate) unsafe fn ttstub_input_open(
-    path: *const libc::c_char,
-    format: libc::c_int,
-    is_gz: libc::c_int,
-) -> usize {
-    if let Some(handle) = crate::replay::adapter::open_named(path, format) {
+/// Opens input file `path`, or returns 0.
+pub(crate) fn input_open(path: &[u8], format: libc::c_int, is_gz: bool) -> usize {
+    let path = String::from_utf8_lossy(path);
+    if let Some(handle) = crate::replay::adapter::open_named(&path, format) {
         return handle;
     }
     crate::replay::adapter::clear_last_path();
-    InputId::to_raw(ttbc_input_open(
-        es(),
-        path,
-        file_format_from_int(format),
-        is_gz,
-    ))
+    InputId::to_raw(with_bridge(|es| {
+        es.input_open(&path, file_format_from_int(format), is_gz)
+    }))
 }
 
-pub(crate) unsafe fn ttstub_input_open_primary() -> usize {
+pub(crate) fn input_open_primary() -> usize {
     if let Some(handle) = crate::replay::adapter::open_primary() {
         return handle;
     }
     crate::replay::adapter::clear_last_path();
-    InputId::to_raw(ttbc_input_open_primary(es()))
+    InputId::to_raw(with_bridge(|es| ttbc_input_open_primary(es)))
 }
 
-pub(crate) unsafe fn ttstub_get_last_input_abspath(
-    buffer: *mut libc::c_char,
-    len: libc::size_t,
-) -> libc::ssize_t {
-    if let Some(copied) = crate::replay::adapter::copy_last_abspath(buffer, len) {
+/// Copies the absolute path of the last opened input into `buffer` as a C string.
+pub(crate) fn last_input_abspath(buffer: &mut [u8]) -> libc::ssize_t {
+    if let Some(copied) = crate::replay::adapter::copy_last_abspath(buffer) {
         return copied;
     }
-    ttbc_get_last_input_abspath(es(), buffer as *mut u8, len)
+    // SAFETY: `buffer` is valid for `buffer.len()` bytes.
+    with_bridge(|es| unsafe { ttbc_get_last_input_abspath(es, buffer.as_mut_ptr(), buffer.len()) })
 }
 
-pub(crate) unsafe fn ttstub_input_get_size(handle: usize) -> libc::size_t {
+pub(crate) fn input_get_size(handle: usize) -> libc::size_t {
     if let Some(size) = crate::replay::adapter::get_size(handle) {
         return size;
     }
-    ttbc_input_get_size(es(), InputId::from_raw(handle))
+    with_bridge(|es| ttbc_input_get_size(es, InputId::from_raw(handle)))
 }
 
-pub(crate) unsafe fn ttstub_input_get_mtime(handle: usize) -> libc::time_t {
+pub(crate) fn input_get_mtime(handle: usize) -> libc::time_t {
     if crate::replay::adapter::is_mem(handle) {
         return 0;
     }
-    ttbc_input_get_mtime(es(), InputId::from_raw(handle)) as libc::time_t
+    with_bridge(|es| ttbc_input_get_mtime(es, InputId::from_raw(handle))) as libc::time_t
 }
 
-pub(crate) unsafe fn ttstub_input_getc(handle: usize) -> libc::c_int {
+pub(crate) fn input_getc(handle: usize) -> libc::c_int {
     if let Some(value) = crate::replay::adapter::getc(handle) {
         return value;
     }
-    ttbc_input_getc(es(), InputId::from_raw(handle))
+    with_bridge(|es| ttbc_input_getc(es, InputId::from_raw(handle)))
 }
 
-pub(crate) unsafe fn ttstub_input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int {
+pub(crate) fn input_ungetc(handle: usize, ch: libc::c_int) -> libc::c_int {
     if let Some(value) = crate::replay::adapter::ungetc(handle, ch) {
         return value;
     }
-    ttbc_input_ungetc(es(), InputId::from_raw(handle), ch)
+    with_bridge(|es| ttbc_input_ungetc(es, InputId::from_raw(handle), ch))
 }
 
-pub(crate) unsafe fn ttstub_input_read(
-    handle: usize,
-    data: *mut u8,
-    len: libc::size_t,
-) -> libc::ssize_t {
-    if let Some(value) = crate::replay::adapter::read(handle, data, len) {
+/// Fills `buf` from `handle`, returning its length or -1 on a short read.
+pub(crate) fn input_read(handle: usize, buf: &mut [u8]) -> libc::ssize_t {
+    if let Some(value) = crate::replay::adapter::read(handle, buf) {
         return value;
     }
-    ttbc_input_read(es(), InputId::from_raw(handle), data, len)
+    // SAFETY: `buf` is valid for `buf.len()` bytes.
+    with_bridge(|es| unsafe {
+        ttbc_input_read(es, InputId::from_raw(handle), buf.as_mut_ptr(), buf.len())
+    })
 }
 
 /// `ttbc_input_seek` flags an error only for an invalid `whence`, and every
 /// caller seeks with `SEEK_SET`, so the error path is unreachable.
-pub(crate) unsafe fn input_seek(
+pub(crate) fn input_seek(
     handle: usize,
     offset: libc::ssize_t,
     whence: libc::c_int,
@@ -169,13 +174,16 @@ pub(crate) unsafe fn input_seek(
         return position;
     }
     let mut internal_error: libc::c_int = 0;
-    let rv = ttbc_input_seek(
-        es(),
-        InputId::from_raw(handle),
-        offset,
-        whence,
-        &mut internal_error,
-    );
+    // SAFETY: `internal_error` is a valid out-parameter.
+    let rv = with_bridge(|es| unsafe {
+        ttbc_input_seek(
+            es,
+            InputId::from_raw(handle),
+            offset,
+            whence,
+            &mut internal_error,
+        )
+    });
     debug_assert_eq!(
         internal_error, 0,
         "ttbc_input_seek flags internal_error only for an invalid whence"
@@ -185,87 +193,109 @@ pub(crate) unsafe fn input_seek(
 
 /// Returns `true` on a serious internal close error.
 #[must_use]
-pub(crate) unsafe fn input_close(handle: usize) -> bool {
+pub(crate) fn input_close(handle: usize) -> bool {
     if let Some(error) = crate::replay::adapter::close(handle) {
         return error;
     }
-    ttbc_input_close(es(), InputId::from_raw(handle)) != 0
+    with_bridge(|es| ttbc_input_close(es, InputId::from_raw(handle))) != 0
 }
 
-pub(crate) unsafe fn ttstub_output_open(path: *const libc::c_char, is_gz: libc::c_int) -> usize {
-    OutputId::to_raw(ttbc_output_open(es(), path, is_gz))
+/// Opens output file `path`, or returns 0.
+pub(crate) fn output_open(path: &[u8], is_gz: bool) -> usize {
+    let path = String::from_utf8_lossy(path);
+    OutputId::to_raw(with_bridge(|es| es.output_open(&path, is_gz)))
 }
 
-pub(crate) unsafe fn ttstub_output_open_stdout() -> usize {
-    OutputId::to_raw(ttbc_output_open_stdout(es()))
+pub(crate) fn output_open_stdout() -> usize {
+    OutputId::to_raw(with_bridge(|es| ttbc_output_open_stdout(es)))
 }
 
-pub(crate) unsafe fn ttstub_output_putc(handle: usize, c: libc::c_int) -> libc::c_int {
-    ttbc_output_putc(es(), OutputId::from_raw(handle), c)
+pub(crate) fn output_putc(handle: usize, c: libc::c_int) -> libc::c_int {
+    with_bridge(|es| ttbc_output_putc(es, OutputId::from_raw(handle), c))
 }
 
-pub(crate) unsafe fn ttstub_output_write(
-    handle: usize,
-    data: *const libc::c_char,
-    len: libc::size_t,
-) -> libc::size_t {
-    ttbc_output_write(es(), OutputId::from_raw(handle), data as *const u8, len)
+pub(crate) fn output_write(handle: usize, data: &[u8]) -> libc::size_t {
+    // SAFETY: `data` is valid for `data.len()` bytes.
+    with_bridge(|es| unsafe {
+        ttbc_output_write(es, OutputId::from_raw(handle), data.as_ptr(), data.len())
+    })
 }
 
-pub(crate) unsafe fn ttstub_output_flush(handle: usize) -> libc::c_int {
-    ttbc_output_flush(es(), OutputId::from_raw(handle))
+pub(crate) fn output_flush(handle: usize) -> libc::c_int {
+    with_bridge(|es| ttbc_output_flush(es, OutputId::from_raw(handle)))
 }
 
-pub(crate) unsafe fn ttstub_output_close(handle: usize) -> libc::c_int {
-    ttbc_output_close(es(), OutputId::from_raw(handle))
+pub(crate) fn output_close(handle: usize) -> libc::c_int {
+    with_bridge(|es| ttbc_output_close(es, OutputId::from_raw(handle)))
 }
 
-pub(crate) fn ttbc_diag_begin_warning_ptr() -> *mut libc::c_void {
-    ttbc_diag_begin_warning() as *mut libc::c_void
+fn diag_from_raw(raw: *mut Diagnostic) -> Box<Diagnostic> {
+    // SAFETY: bridge-core allocates diagnostics with `Box::into_raw`.
+    unsafe { Box::from_raw(raw) }
 }
 
-pub(crate) fn ttbc_diag_begin_error_ptr() -> *mut libc::c_void {
-    ttbc_diag_begin_error() as *mut libc::c_void
+pub(crate) fn diag_begin_warning() -> Box<Diagnostic> {
+    diag_from_raw(ttbc_diag_begin_warning())
 }
 
-/// Appends a NUL-terminated C string to a diagnostic.
-pub(crate) unsafe fn diag_append_cstr(diag: *mut libc::c_void, text: *const libc::c_char) {
-    tectonic_bridge_core::ttbc_diag_append(&mut *(diag as *mut Diagnostic), text);
+pub(crate) fn diag_begin_error() -> Box<Diagnostic> {
+    diag_from_raw(ttbc_diag_begin_error())
 }
 
-/// Appends Rust-formatted text to a diagnostic.
-pub(crate) unsafe fn diag_append_str(diag: *mut libc::c_void, text: &str) {
-    let ctext = std::ffi::CString::new(text).unwrap_or_default();
-    tectonic_bridge_core::ttbc_diag_append(&mut *(diag as *mut Diagnostic), ctext.as_ptr());
+/// Appends `text`. A text with a NUL appends nothing.
+pub(crate) fn diag_append(diag: &mut Diagnostic, text: &str) {
+    let text = CString::new(text).unwrap_or_default();
+    // SAFETY: `text` is NUL-terminated.
+    unsafe { ttbc_diag_append(diag, text.as_ptr()) };
 }
 
-pub(crate) unsafe fn ttstub_diag_finish(diag: *mut libc::c_void) {
-    ttbc_diag_finish(es(), diag as *mut Diagnostic);
+/// Appends one output byte as C did: alone, lossily decoded, nothing for NUL.
+pub(crate) fn diag_append_byte(diag: &mut Diagnostic, byte: u8) {
+    let text = [byte, 0];
+    // SAFETY: `text` is NUL-terminated.
+    unsafe { ttbc_diag_append(diag, text.as_ptr().cast()) };
 }
 
-pub(crate) unsafe fn issue_warning_str(text: &str) {
-    let ctext = std::ffi::CString::new(text).unwrap_or_default();
-    ttbc_issue_warning(es(), ctext.as_ptr());
+/// Reports `diag` to the driver.
+pub(crate) fn diag_finish(diag: Box<Diagnostic>) {
+    // SAFETY: the pointer comes from `Box::into_raw` and the callee takes it back.
+    with_bridge(|es| unsafe { ttbc_diag_finish(es, Box::into_raw(diag)) });
 }
 
-pub(crate) unsafe fn issue_error_cstr(text: *const libc::c_char) {
-    ttbc_issue_error(es(), text);
+pub(crate) fn issue_warning(text: &str) {
+    let text = CString::new(text).unwrap_or_default();
+    // SAFETY: `text` is NUL-terminated.
+    with_bridge(|es| unsafe { ttbc_issue_warning(es, text.as_ptr()) });
 }
 
-pub(crate) unsafe fn ttstub_shell_escape(cmd: *const u16, len: libc::size_t) -> libc::c_int {
-    ttbc_shell_escape(es(), cmd, len)
+pub(crate) fn issue_error(text: &str) {
+    let text = CString::new(text).unwrap_or_default();
+    // SAFETY: `text` is NUL-terminated.
+    with_bridge(|es| unsafe { ttbc_issue_error(es, text.as_ptr()) });
 }
 
-pub(crate) unsafe fn ttstub_get_file_md5(
-    path: *const libc::c_char,
-    digest: *mut u8,
-) -> libc::c_int {
-    ttbc_get_file_md5(es(), path, digest)
+pub(crate) fn shell_escape(cmd: &[u16]) -> libc::c_int {
+    // SAFETY: `cmd` is valid for `cmd.len()` units.
+    with_bridge(|es| unsafe { ttbc_shell_escape(es, cmd.as_ptr(), cmd.len()) })
+}
+
+/// Writes the MD5 digest of file `path` to `digest`, returning nonzero on failure.
+pub(crate) fn get_file_md5(path: &CStr, digest: &mut [u8; 16]) -> libc::c_int {
+    // SAFETY: `path` is NUL-terminated and `digest` holds the 16 bytes written.
+    with_bridge(|es| unsafe { ttbc_get_file_md5(es, path.as_ptr(), digest.as_mut_ptr()) })
+}
+
+/// Writes the MD5 digest of `data` to `digest`, returning nonzero on failure.
+pub(crate) fn data_md5(data: &[u8], digest: &mut [u8; 16]) -> libc::c_int {
+    // SAFETY: `data` is valid for its length and `digest` holds the 16 bytes written.
+    unsafe {
+        tectonic_bridge_core::ttbc_get_data_md5(data.as_ptr(), data.len(), digest.as_mut_ptr())
+    }
 }
 
 /// Surfaces `message` as the run's abort message. A message with a NUL is dropped.
 pub(crate) fn set_error_message(message: impl Into<Vec<u8>>) {
-    if let Ok(msg) = std::ffi::CString::new(message) {
+    if let Ok(msg) = CString::new(message) {
         // SAFETY: `msg` is NUL-terminated and the callee copies it.
         unsafe { _ttbc_set_error_message(msg.as_ptr()) };
     }

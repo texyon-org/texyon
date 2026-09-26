@@ -1,6 +1,22 @@
 //! The main control loop, its command verbs, and the `\halign`/`\valign`
 //! alignment family.
 
+use crate::cmd::{
+    ABOVE, ACCENT, ADVANCE, AFTER_ASSIGNMENT, AFTER_GROUP, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN,
+    ASSIGN_FONT_INT, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, ASSIGN_TOKS, BEGIN_GROUP, BOX_REF,
+    BREAK_PENALTY, CALL, CAR_RET, CASE_SHIFT, CHAR_GIVEN, CHAR_NUM, DATA, DEF, DEF_CODE,
+    DEF_FAMILY, DEF_FONT, DELIM_NUM, DISCRETIONARY, DIVIDE, ENDV, END_CS_NAME, END_GROUP, EQ_NO,
+    EXTENSION, EX_SPACE, GLUE_REF, HALIGN, HMOVE, HRULE, HSKIP, HYPH_DATA, IGNORE_SPACES, INSERT,
+    IN_STREAM, ITAL_CORR, KERN, LAST_ITEM, LEADER_SHIP, LEFT_BRACE, LEFT_RIGHT, LET, LETTER,
+    LIMIT_SWITCH, MAC_PARAM, MAKE_BOX, MARK, MATH_ACCENT, MATH_CHAR_NUM, MATH_CHOICE, MATH_COMP,
+    MATH_GIVEN, MATH_SHIFT, MATH_STYLE, MAX_CHAR_CODE, MAX_COMMAND, MAX_NON_PREFIXED_COMMAND,
+    MESSAGE, MKERN, MSKIP, MULTIPLY, NON_SCRIPT, NO_ALIGN, NO_BOUNDARY, OMIT, OTHER_CHAR, PAR_END,
+    PREFIX, RADICAL, READ_TO_CS, REGISTER, RELAX, REMOVE_ITEM, RIGHT_BRACE, SET_AUX, SET_BOX,
+    SET_BOX_DIMEN, SET_FONT, SET_INTERACTION, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF,
+    SET_SHAPE, SHAPE_REF, SHORTHAND_DEF, SPACER, START_PAR, STOP, SUB_MARK, SUP_MARK, TAB_MARK,
+    TOKS_REGISTER, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE, VRULE, VSKIP,
+    XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
+};
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
     BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG,
@@ -24,21 +40,28 @@ use crate::consts::{
     SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV,
     UNDEFINED_PRIMITIVE, VMODE,
 };
+use crate::errors::Abort;
 use crate::ext::{append_src_special, do_extension};
 use crate::fonts::{
     read_font_info, EXTRA_SPACE_CODE, LIG_TAG, SLANT_CODE, SPACE_CODE, X_HEIGHT_CODE,
 };
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
+use crate::input::{
+    BACKED_UP, BACKED_UP_CHAR, EVERY_CR_TEXT, EVERY_HBOX_TEXT, EVERY_JOB_TEXT, EVERY_PAR_TEXT,
+    EVERY_VBOX_TEXT, INSERTED, INTER_CHAR_TEXT, OUTPUT_TEXT, TOKEN_LIST, U_TEMPLATE, V_TEMPLATE,
+};
 use crate::math::{after_math, init_math};
 use crate::mem::{
     ADJUST_HEAD, ALIGN_HEAD, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HOLD_HEAD,
     PAGE_HEAD, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, ZERO_GLUE,
 };
+use crate::mem_types::ListStateRecord;
 use crate::node::{
     AdjustNode, AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, BoxOrRule, CharNode,
     DiscNode, GlueNode, GlueSpecNode, InsNode, LigItem, MarkNode, MathField, NodePtr, ParShapeNode,
     PenaltiesNode, RuleDimen, SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype,
 };
+use crate::packaging::ADDITIONAL;
 use crate::scan::{
     fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL,
     INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN,
@@ -46,31 +69,6 @@ use crate::scan::{
 };
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
-
-use crate::bridge::diag_append_str;
-use crate::cmd::{
-    ABOVE, ACCENT, ADVANCE, AFTER_ASSIGNMENT, AFTER_GROUP, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN,
-    ASSIGN_FONT_INT, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, ASSIGN_TOKS, BEGIN_GROUP, BOX_REF,
-    BREAK_PENALTY, CALL, CAR_RET, CASE_SHIFT, CHAR_GIVEN, CHAR_NUM, DATA, DEF, DEF_CODE,
-    DEF_FAMILY, DEF_FONT, DELIM_NUM, DISCRETIONARY, DIVIDE, ENDV, END_CS_NAME, END_GROUP, EQ_NO,
-    EXTENSION, EX_SPACE, GLUE_REF, HALIGN, HMOVE, HRULE, HSKIP, HYPH_DATA, IGNORE_SPACES, INSERT,
-    IN_STREAM, ITAL_CORR, KERN, LAST_ITEM, LEADER_SHIP, LEFT_BRACE, LEFT_RIGHT, LET, LETTER,
-    LIMIT_SWITCH, MAC_PARAM, MAKE_BOX, MARK, MATH_ACCENT, MATH_CHAR_NUM, MATH_CHOICE, MATH_COMP,
-    MATH_GIVEN, MATH_SHIFT, MATH_STYLE, MAX_CHAR_CODE, MAX_COMMAND, MAX_NON_PREFIXED_COMMAND,
-    MESSAGE, MKERN, MSKIP, MULTIPLY, NON_SCRIPT, NO_ALIGN, NO_BOUNDARY, OMIT, OTHER_CHAR, PAR_END,
-    PREFIX, RADICAL, READ_TO_CS, REGISTER, RELAX, REMOVE_ITEM, RIGHT_BRACE, SET_AUX, SET_BOX,
-    SET_BOX_DIMEN, SET_FONT, SET_INTERACTION, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF,
-    SET_SHAPE, SHAPE_REF, SHORTHAND_DEF, SPACER, START_PAR, STOP, SUB_MARK, SUP_MARK, TAB_MARK,
-    TOKS_REGISTER, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE, VRULE, VSKIP,
-    XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
-};
-use crate::errors::Abort;
-use crate::input::{
-    BACKED_UP, BACKED_UP_CHAR, EVERY_CR_TEXT, EVERY_HBOX_TEXT, EVERY_JOB_TEXT, EVERY_PAR_TEXT,
-    EVERY_VBOX_TEXT, INSERTED, INTER_CHAR_TEXT, OUTPUT_TEXT, TOKEN_LIST, U_TEMPLATE, V_TEMPLATE,
-};
-use crate::mem_types::ListStateRecord;
-use crate::packaging::ADDITIONAL;
 
 extern "C" {
     fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
@@ -120,7 +118,7 @@ pub(crate) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.align_state.abs() > 2 {
         crate::output::error_here_with_diagnostic(st, "Misplaced ");
         crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         if st.scanner.cur_tok == TAB_TOKEN + 38 {
             st.errors.help(&[
                 "I can't figure out why you would want to use a tab mark",
@@ -163,7 +161,7 @@ pub(crate) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn no_align_error(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::error_here_with_diagnostic(st, "Misplaced ");
     crate::output::print_esc(st, "noalign");
-    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+    crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
         r"I expect to see \noalign only after the \cr of",
         "an alignment. Proceed, and I'll ignore this case.",
@@ -173,7 +171,7 @@ pub(crate) fn no_align_error(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn omit_error(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::error_here_with_diagnostic(st, "Misplaced ");
     crate::output::print_esc(st, "omit");
-    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+    crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
         r"I expect to see \omit only after tab marks or the \cr of",
         "an alignment. Proceed, and I'll ignore this case.",
@@ -720,7 +718,7 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
                 "Extra alignment tab has been changed to ",
             );
             crate::output::print_esc(st, "cr");
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             st.errors.help(&[
                 r"You have given more \span or & marks than there were",
                 r"in the preamble to the \halign or \valign now in progress.",
@@ -858,7 +856,7 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::error_here_with_diagnostic(st, "Improper ");
         crate::output::print_esc(st, "halign");
         crate::output::print(st, " inside $$'s");
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
             r"Displays can use special alignments (like \eqalignno)",
             "only if nothing but the alignment itself is between $$'s.",
@@ -1071,7 +1069,7 @@ pub(crate) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::error_here_with_diagnostic(st, "You can't use `");
     crate::output::print_esc(st, "hrule");
     crate::output::print(st, "' here except with leaders");
-    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+    crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
         "To put a horizontal rule in an hbox or an alignment,",
         r"you should use \leaders or \hrulefill (see The TeXbook).",
@@ -1088,7 +1086,7 @@ pub(crate) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
             crate::output::error_here_with_diagnostic(st, "You can't ");
             crate::output::print_esc(st, "insert");
             crate::output::print_int(st, st.scanner.cur_val);
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             st.errors
                 .help(&[r"I'm changing to \insert0; box 255 is special."]);
             crate::errors::error(st)?;
@@ -1754,7 +1752,7 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 crate::output::error_here_with_diagnostic(st, "Output routine didn't use all of ");
                 crate::output::print_esc(st, "box");
                 crate::output::print_int(st, 255);
-                crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+                crate::output::capture_to_diagnostic(st, None);
                 st.errors.help(&[
                     r"Your \output commands should empty \box255,",
                     r"e.g., by saying `\shipout\box255'.",
@@ -1793,7 +1791,7 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             crate::output::error_here_with_diagnostic(st, "Missing ");
             crate::output::print_esc(st, "cr");
             crate::output::print(st, " inserted");
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             st.errors
                 .help(&["I'm guessing that you meant to end an alignment here."]);
             crate::input::ins_error(st)?;
@@ -1938,9 +1936,9 @@ pub(crate) fn alter_aux(st: &mut EngineState) -> Result<(), Abort> {
     }
     crate::scan::scan_int(st)?;
     if st.scanner.cur_val <= 0 || st.scanner.cur_val > 32767 {
-        let errmsg = crate::output::error_here_with_diagnostic(st, "Bad space factor");
-        unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::error_here_with_diagnostic(st, "Bad space factor");
+        crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
+        crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&["I allow only values in the range 1..32767 here."]);
         return crate::errors::int_error(st, st.scanner.cur_val);
@@ -1959,10 +1957,10 @@ pub(crate) fn alter_prev_graf(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     crate::scan::scan_int(st)?;
     if st.scanner.cur_val < 0 {
-        let errmsg = crate::output::error_here_with_diagnostic(st, "Bad ");
-        unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
+        crate::output::error_here_with_diagnostic(st, "Bad ");
+        crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
         crate::output::print_esc(st, "prevgraf");
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&["I allow only nonnegative values here."]);
         return crate::errors::int_error(st, st.scanner.cur_val);
     }
@@ -1987,9 +1985,9 @@ pub(crate) fn alter_integer(st: &mut EngineState) -> Result<(), Abort> {
         0 => st.shipout.dead_cycles = st.scanner.cur_val,
         2 => {
             if crate::state::InteractionMode::from_raw(st.scanner.cur_val).is_none() {
-                let errmsg = crate::output::error_here_with_diagnostic(st, "Bad interaction mode");
-                unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
-                crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+                crate::output::error_here_with_diagnostic(st, "Bad interaction mode");
+                crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
+                crate::output::capture_to_diagnostic(st, None);
                 st.errors.help(&[
                     "Modes are 0=batch, 1=nonstop, 2=scroll, and",
                     "3=errorstop. Proceed, and I'll ignore this case.",
@@ -2057,7 +2055,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.cur_group == GroupCode::BottomLevel {
         crate::output::error_here_with_diagnostic(st, "Extra ");
         crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&["Things are pretty mixed up, but I think the worst is over."]);
         return crate::errors::error(st);
@@ -2089,7 +2087,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     }
     crate::output::print(st, " inserted");
     crate::input::begin_token_list(st, TEMP_HEAD.link(&st.mem), INSERTED)?;
-    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+    crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
         "I've inserted something that you may have forgotten.",
         "(See the <inserted text> above.)",
@@ -2180,7 +2178,7 @@ pub(crate) fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
                     "The following discretionary sublist has been deleted:",
                 );
                 crate::output::show_box(st, p);
-                crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+                crate::output::capture_to_diagnostic(st, None);
                 crate::output::end_diagnostic(st, true);
                 st.mem.flush_node_list(p)?;
                 q.set_link(&mut st.mem, MemPtr::NULL);
@@ -2205,7 +2203,7 @@ pub(crate) fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
             if n > 0 && st.input.cur_list.mode.abs() == MMODE {
                 crate::output::error_here_with_diagnostic(st, "Illegal math ");
                 crate::output::print_esc(st, "discretionary");
-                crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+                crate::output::capture_to_diagnostic(st, None);
                 st.errors.help(&[
                     "Sorry: The third part of a discretionary break must be",
                     "empty, in math formulas. I had to delete your third part.",
@@ -2411,7 +2409,7 @@ pub(crate) unsafe fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort>
             crate::output::error_here_with_diagnostic(st, "Improper `at' size (");
             crate::output::print_scaled(st, size);
             crate::output::print(st, "pt), replaced by 10pt");
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             st.errors.help(&[
                 "I can only handle fonts at positive sizes that are",
                 "less than 2048pt, so I've changed what you said to 10pt.",
@@ -2425,12 +2423,12 @@ pub(crate) unsafe fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort>
         crate::scan::scan_int(st)?;
         let mag = st.scanner.cur_val;
         if mag <= 0 || mag > 32768 {
-            let errmsg = crate::output::error_here_with_diagnostic(
+            crate::output::error_here_with_diagnostic(
                 st,
                 "Illegal magnification has been changed to 1000",
             );
-            diag_append_str(errmsg, &format!(" ({})", mag));
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::append_to_diagnostic(st, &format!(" ({})", mag));
+            crate::output::capture_to_diagnostic(st, None);
             st.errors
                 .help(&["The magnification ratio must be between 1 and 32768."]);
             crate::errors::int_error(st, mag)?;
@@ -2499,7 +2497,7 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
                 crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
                 crate::output::print(st, "' after ");
                 crate::output::print_cmd_chr(st, q, 0);
-                crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+                crate::output::capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I'm forgetting what you said and not changing anything."]);
                 return crate::errors::error(st);
@@ -3934,7 +3932,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             crate::output::error_here_with_diagnostic(st, "You can't use a prefix with `");
             crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
             crate::output::print_char(st, '\'' as i32);
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             st.errors
                 .help(&[r"I'll pretend you didn't say \long or \outer or \global or \protected."]);
             return crate::input::back_error(st);
@@ -3960,7 +3958,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::print(st, "' with `");
         crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
         crate::output::print_char(st, '\'' as i32);
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&[r"I'll pretend you didn't say \long or \outer or \protected here."]);
         crate::errors::error(st)?;
@@ -4101,7 +4099,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 crate::output::error_here_with_diagnostic(st, "Improper ");
                 crate::output::print_esc(st, "setbox");
-                crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+                crate::output::capture_to_diagnostic(st, None);
                 st.errors.help(&[
                     r"Sorry, \setbox is not allowed after \halign in a display,",
                     r"or between \accent and an accented character.",
@@ -4384,7 +4382,7 @@ fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
             crate::output::print(st, "), should be at most ");
         }
         crate::output::print_int(st, max);
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&["I'm going to use 0 instead of that illegal code value."]);
         crate::errors::error(st)?;

@@ -350,7 +350,7 @@ fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
         crate::output::error_here_with_diagnostic(st, "Logarithm of ");
         crate::output::print_scaled(st, x);
         crate::output::print(st, " has been replaced by 0");
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
             "Since I don't take logs of non-positive numbers,",
             "I'm zeroing this one. Proceed, with fingers crossed.",

@@ -3,8 +3,8 @@
 use std::ffi::CString;
 
 use crate::bridge::{
-    ttstub_get_file_md5, ttstub_input_get_mtime, ttstub_input_get_size, ttstub_input_open,
-    ttstub_input_read, TTBC_FILE_FORMAT_TEX,
+    data_md5, get_file_md5, input_get_mtime, input_get_size, input_open, input_read,
+    TTBC_FILE_FORMAT_TEX,
 };
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE, TOO_BIG_CHAR};
 use crate::errors::Abort;
@@ -214,14 +214,9 @@ impl StringsState {
         let xname = self.texstring_cstring(s);
 
         let ret = if file {
-            ttstub_get_file_md5(xname.as_ptr(), digest.as_mut_ptr())
+            get_file_md5(&xname, &mut digest)
         } else {
-            let bytes = xname.as_bytes();
-            tectonic_bridge_core::ttbc_get_data_md5(
-                bytes.as_ptr(),
-                bytes.len(),
-                digest.as_mut_ptr(),
-            )
+            data_md5(xname.as_bytes(), &mut digest)
         };
 
         if ret != 0 || self.pool_ptr + 2 * digest.len() as i32 >= self.pool_size {
@@ -255,7 +250,7 @@ pub(crate) fn make_src_special(
 impl StringsState {
     unsafe fn open_tex_file(&self, s: i32) -> usize {
         let name = self.texstring_cstring(s);
-        ttstub_input_open(name.as_ptr(), TTBC_FILE_FORMAT_TEX, 0)
+        input_open(name.as_bytes(), TTBC_FILE_FORMAT_TEX, false)
     }
 
     /// Appends the decimal size of file `s` to the pool.
@@ -265,7 +260,7 @@ impl StringsState {
             return Ok(());
         }
 
-        let file_len = ttstub_input_get_size(handle);
+        let file_len = input_get_size(handle);
         if crate::io::input_close(handle) {
             return Err(Abort::InputClose);
         }
@@ -297,7 +292,7 @@ impl StringsState {
         }
 
         crate::io::input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
-        let actual = ttstub_input_read(handle, buffer.as_mut_ptr(), length as libc::size_t);
+        let actual = input_read(handle, &mut buffer[..length as usize]);
         if crate::io::input_close(handle) {
             return Err(Abort::InputClose);
         }
@@ -407,7 +402,7 @@ impl StringsState {
             return Ok(());
         }
 
-        let mtime = ttstub_input_get_mtime(handle);
+        let mtime = input_get_mtime(handle);
         if crate::io::input_close(handle) {
             return Err(Abort::InputClose);
         }

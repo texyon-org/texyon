@@ -21,7 +21,7 @@ use crate::output::{
 };
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 
-use crate::bridge::{ttstub_input_getc, TTBC_FILE_FORMAT_TFM};
+use crate::bridge::{input_getc, TTBC_FILE_FORMAT_TFM};
 use crate::errors::Abort;
 
 extern "C" {
@@ -238,7 +238,7 @@ pub(crate) fn new_native_character(
 }
 
 unsafe fn tfm_getc(handle: usize) -> i32 {
-    ttstub_input_getc(handle) as i32
+    input_getc(handle) as i32
 }
 
 /// The next four TFM bytes, or `None` at end of file.
@@ -339,7 +339,7 @@ pub(crate) unsafe fn read_font_info(
             print_scaled(st, s);
             print(st, "pt");
         }
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
 
@@ -412,7 +412,7 @@ pub(crate) unsafe fn read_font_info(
             " not loadable: Metric (TFM) file or installed font not found"
         };
         print(st, reason);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
 
         st.errors.help(&[
             "I wasn't able to read the size data for this font,",
@@ -441,7 +441,7 @@ pub(crate) unsafe fn read_font_info(
             let name = st.input.name_of_file_bytes().to_vec();
             print(st, name.as_slice());
         }
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
 
@@ -828,7 +828,7 @@ pub(crate) unsafe fn load_native_font(
     {
         font_error_start(st, u, nom, aire, s);
         print(st, " not loaded: Not enough room left");
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
 
         st.errors.help(&[
             "I'm afraid I won't be able to make use of this font,",

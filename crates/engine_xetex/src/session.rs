@@ -458,7 +458,7 @@ impl IncrementalXeTeXSession {
                 let horizon_last = viewport.map(|range| range.last.max(first_shipped));
                 ladder.clear_protections();
                 configure(state, &config);
-                state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
+                state.shipout.rust_stdout = crate::bridge::output_open_stdout();
                 run_document(
                     state,
                     ladder,
@@ -529,7 +529,7 @@ impl IncrementalXeTeXSession {
                 // the fences the next edit needs.
                 assert!(ladder.protect_rungs_through(target));
                 configure(state, &config);
-                state.shipout.rust_stdout = crate::bridge::ttstub_output_open_stdout();
+                state.shipout.rust_stdout = crate::bridge::output_open_stdout();
                 run_document(
                     state,
                     ladder,

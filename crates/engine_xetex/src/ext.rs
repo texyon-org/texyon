@@ -7,10 +7,7 @@ use std::ptr;
 
 use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 
-use crate::bridge::{
-    diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read,
-    TTBC_FILE_FORMAT_MISC_FONTS,
-};
+use crate::bridge::{input_get_size, input_open, input_read, TTBC_FILE_FORMAT_MISC_FONTS};
 use crate::cmd::EXTENSION;
 use crate::consts::{
     CS_TOKEN_FLAG, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_PAR_LEFT_HYPHEN_MIN,
@@ -298,12 +295,6 @@ pub(crate) struct NativeFontMetrics {
     pub slant: i32,
 }
 
-fn print_raw_bytes(st: &mut EngineState, bytes: &[u8]) {
-    for &byte in bytes {
-        crate::output::print_raw_char(st, byte as i32, true);
-    }
-}
-
 unsafe fn peek(ptr: *const c_char) -> u8 {
     *ptr as u8
 }
@@ -522,14 +513,6 @@ pub unsafe fn readFeatureNumber(
     s == e
 }
 
-pub(crate) fn print_utf8_str(st: &mut EngineState, str_: *const u8, len: c_int) {
-    for i in 0..len.max(0) as usize {
-        // SAFETY: the caller passes a buffer of at least `len` bytes.
-        let byte = unsafe { *str_.add(i) };
-        crate::output::print_raw_char(st, byte as i32, true);
-    }
-}
-
 /// Load TECkit mapping `s..e` (plus `.tec`), mapping to bytes for TFM fonts or
 /// to UTF-16 for native ones.
 unsafe fn load_mapping_file(
@@ -539,22 +522,23 @@ unsafe fn load_mapping_file(
     byte_mapping: bool,
 ) -> Result<Option<std::sync::Arc<crate::state::FontMappingHandle>>, Abort> {
     let source = std::slice::from_raw_parts(s as *const u8, e.offset_from(s) as usize);
-    let mut file_name = Vec::with_capacity(source.len() + 5);
-    file_name.extend_from_slice(source);
-    file_name.extend_from_slice(b".tec\0");
-    let name_ptr = file_name.as_ptr() as *const c_char;
-    let name_len = libc::strlen(name_ptr) as i32;
+    let file_name = [source, b".tec"].concat();
+    let name_len = file_name
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(file_name.len());
+    let name = &file_name[..name_len];
 
     let mut cnv: *mut c_void = ptr::null_mut();
-    let map = ttstub_input_open(name_ptr, TTBC_FILE_FORMAT_MISC_FONTS, 0);
+    let map = input_open(name, TTBC_FILE_FORMAT_MISC_FONTS, false);
     if map == 0 {
-        crate::output::font_mapping_warning(st, name_ptr as *const c_void, name_len, 1);
+        crate::output::font_mapping_warning(st, name, 1);
         return Ok(None);
     }
 
-    let mapping_size = ttstub_input_get_size(map);
+    let mapping_size = input_get_size(map);
     let mut mapping = vec![0u8; mapping_size];
-    let read = ttstub_input_read(map, mapping.as_mut_ptr(), mapping_size);
+    let read = input_read(map, &mut mapping);
     if read < 0 || read as libc::size_t != mapping_size {
         return Err(Abort::Internal("could not read mapping file"));
     }
@@ -577,9 +561,9 @@ unsafe fn load_mapping_file(
     );
 
     if cnv.is_null() {
-        crate::output::font_mapping_warning(st, name_ptr as *const c_void, name_len, 2);
+        crate::output::font_mapping_warning(st, name, 2);
     } else if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 1 {
-        crate::output::font_mapping_warning(st, name_ptr as *const c_void, name_len, 0);
+        crate::output::font_mapping_warning(st, name, 0);
     }
 
     Ok((!cnv.is_null()).then(|| std::sync::Arc::new(crate::state::FontMappingHandle { raw: cnv })))
@@ -833,13 +817,9 @@ unsafe fn load_ot_font(
             };
 
             if parsed != Some(true) {
-                crate::output::font_feature_warning(
-                    st,
-                    cp1 as *const c_void,
-                    cp2.offset_from(cp1) as i32,
-                    ptr::null(),
-                    0,
-                );
+                let feature =
+                    std::slice::from_raw_parts(cp1 as *const u8, cp2.offset_from(cp1) as usize);
+                crate::output::font_feature_warning(st, feature, &[]);
             }
             cp1 = cp2;
         }
@@ -978,8 +958,8 @@ pub(crate) unsafe fn find_native_font(
             if rval.is_some() && st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ' as i32);
-                print_raw_bytes(st, b"-> ");
-                print_raw_bytes(st, CStr::from_ptr(path).to_bytes());
+                crate::output::print_raw_bytes(st, b"-> ");
+                crate::output::print_raw_bytes(st, CStr::from_ptr(path).to_bytes());
                 crate::output::end_diagnostic(st, false);
             }
         }
@@ -989,8 +969,8 @@ pub(crate) unsafe fn find_native_font(
             if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ' as i32);
-                print_raw_bytes(st, b"-> ");
-                print_raw_bytes(
+                crate::output::print_raw_bytes(st, b"-> ");
+                crate::output::print_raw_bytes(
                     st,
                     CStr::from_ptr(ttxl_platfont_get_desc(font_ref)).to_bytes(),
                 );
@@ -2158,9 +2138,9 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 let w = new_whatsit(st, WhatsitSubtype::Glyph, GLYPH_NODE_SIZE)?;
                 scan_int(st)?;
                 if st.scanner.cur_val < 0 || st.scanner.cur_val > 65535 {
-                    let errmsg = error_here_with_diagnostic(st, "Bad glyph number");
-                    unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
-                    capture_to_diagnostic(st, ptr::null_mut());
+                    error_here_with_diagnostic(st, "Bad glyph number");
+                    crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
+                    capture_to_diagnostic(st, None);
                     st.errors.help(&[
                         "A glyph number must be between 0 and 65535.",
                         "I changed this one to zero.",
@@ -2188,7 +2168,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                     st,
                     "Encoding mode `auto' is not valid for \\XeTeXinputencoding",
                 );
-                capture_to_diagnostic(st, ptr::null_mut());
+                capture_to_diagnostic(st, None);
                 st.errors.help(&[
                     r"You can't use `auto' encoding here, only for \XeTeXdefaultencoding.",
                     "I'll ignore this and leave the current encoding unchanged.",

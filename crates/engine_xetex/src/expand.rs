@@ -191,7 +191,7 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<MemPtr, Abort> {
         error_here_with_diagnostic(st, "Missing ");
         print_esc(st, "endcsname");
         print(st, " inserted");
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         st.errors.help(&[
             "The control sequence marked <to be read again> should",
             r"not appear between \csname and \endcsname.",
@@ -206,7 +206,7 @@ fn trace_diagnostic(st: &mut EngineState, text: &str) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
     print(st, text);
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
@@ -259,7 +259,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 error_here_with_diagnostic(st, "Missing = inserted for ");
                 print_cmd_chr(st, IF_TEST, this_if as i32);
-                capture_to_diagnostic(st, std::ptr::null_mut());
+                capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
                 back_error(st)?;
@@ -382,7 +382,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 print(st, "{case ");
                 print_int(st, n);
                 print_char(st, b'}' as i32);
-                capture_to_diagnostic(st, std::ptr::null_mut());
+                capture_to_diagnostic(st, None);
                 end_diagnostic(st, false);
             }
             while n != 0 {
@@ -436,7 +436,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             }
             error_here_with_diagnostic(st, "Extra ");
             print_esc(st, "or");
-            capture_to_diagnostic(st, std::ptr::null_mut());
+            capture_to_diagnostic(st, None);
             st.errors
                 .help(&[r"I'm ignoring this; it doesn't match any \if."]);
             error(st)?;
@@ -696,7 +696,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                 error_here_with_diagnostic(st, "Invalid code (");
                 print_int(st, code);
                 print(st, "), should be in the ranges 1..4, 6..8, 10..13");
-                capture_to_diagnostic(st, std::ptr::null_mut());
+                capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I'm going to use 12 instead of that illegal code value."]);
                 error(st)?;
@@ -940,7 +940,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     print(st, "' before `");
                     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
                     print_char(st, '\'' as i32);
-                    capture_to_diagnostic(st, std::ptr::null_mut());
+                    capture_to_diagnostic(st, None);
                     st.errors
                         .help(&["Continue, and I'll forget that it ever happened."]);
                     back_error(st)?;
@@ -1022,7 +1022,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     } else {
                         error_here_with_diagnostic(st, "Extra ");
                         print_cmd_chr(st, FI_OR_ELSE, st.scanner.cur_chr);
-                        capture_to_diagnostic(st, std::ptr::null_mut());
+                        capture_to_diagnostic(st, None);
                         st.errors
                             .help(&[r"I'm ignoring this; it doesn't match any \if."]);
                         error(st)?;
@@ -1082,7 +1082,7 @@ fn runaway_par_in_argument(
         error_here_with_diagnostic(st, "Paragraph ended before ");
         sprint_cs(st, st.scanner.warning_index);
         print(st, " was complete");
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         st.errors.help(&[
             "I suspect you've forgotten a `}', causing me to apply this",
             "control sequence to too much text. How can we recover?",
@@ -1104,7 +1104,7 @@ fn extra_right_brace_in_argument(st: &mut EngineState) -> Result<(), Abort> {
     error_here_with_diagnostic(st, "Argument of ");
     sprint_cs(st, st.scanner.warning_index);
     print(st, " has an extra }");
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     st.errors.help(&[
         "I've run across a `}' that doesn't seem to match anything.",
         r"For example, `\def\a#1{...}' and `\a}' would produce",
@@ -1143,7 +1143,7 @@ fn trace_macro_call(st: &mut EngineState, ref_count: MemPtr) {
         crate::output::print_cs(st, st.scanner.warning_index);
         crate::output::token_show(st, ref_count);
     }
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
@@ -1157,7 +1157,7 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: MemPtr)
         print_int(st, n);
         print(st, "<-");
         crate::output::show_token_list(st, list, TEX_NULL, 1000);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
 }
@@ -1226,7 +1226,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                             error_here_with_diagnostic(st, "Use of ");
                             sprint_cs(st, st.scanner.warning_index);
                             print(st, " doesn't match its definition");
-                            capture_to_diagnostic(st, std::ptr::null_mut());
+                            capture_to_diagnostic(st, None);
                             st.errors.help(&[
                                 r"If you say, e.g., `\def\a1{...}', then you must always",
                                 r"put `1' after `\a', since control sequence names are",

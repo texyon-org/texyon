@@ -1,6 +1,6 @@
 //! The tokenizer (`get_next`) and the scanning routines built on it.
 
-use crate::bridge::{diag_append_str, ttstub_output_flush};
+use crate::bridge::output_flush;
 use crate::cmd::{
     ACTIVE_CHAR, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN, ASSIGN_FONT_INT, ASSIGN_GLUE, ASSIGN_INT,
     ASSIGN_MU_GLUE, ASSIGN_TOKS, CALL, CAR_RET, CHAR_GIVEN, CHAR_NUM, DEF_CODE, DEF_FAMILY,
@@ -189,9 +189,9 @@ fn bad_int_error(
     help1: &'static str,
     help0: &'static str,
 ) -> Result<(), Abort> {
-    let errmsg = error_here_with_diagnostic(st, err);
-    unsafe { diag_append_str(errmsg, &format!(" ({value})")) };
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    error_here_with_diagnostic(st, err);
+    crate::output::append_to_diagnostic(st, &format!(" ({value})"));
+    capture_to_diagnostic(st, None);
     st.errors.help(&[help1, help0]);
     int_error(st, value)
 }
@@ -589,7 +589,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
                     crate::errors::runaway(st);
                     error_here_with_diagnostic(st, "File ended within ");
                     print_esc(st, "read");
-                    capture_to_diagnostic(st, std::ptr::null_mut());
+                    capture_to_diagnostic(st, None);
                     st.errors.help(&[r"This \read has unbalanced braces."]);
                     st.scanner.align_state = 1_000_000;
                     st.input.cur_input.limit = 0;
@@ -653,7 +653,7 @@ pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: u8, k: i32) -> Resu
     if !b {
         error_here_with_diagnostic(st, "Improper ");
         print_cmd_chr(st, j, k);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         st.errors
             .help(&["Sorry, this optional e-TeX feature has been disabled."]);
         error(st)?;
@@ -913,7 +913,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         print(st, " of ");
         let warning_index = st.scanner.warning_index;
         crate::output::sprint_cs(st, warning_index);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         st.errors.help(&[
             "I suspect you have forgotten a `}', causing me",
             "to read past where you wanted me to stop.",
@@ -928,7 +928,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         print(st, "; all text was ignored after line ");
         let skip_line = st.scanner.skip_line;
         print_int(st, skip_line);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         let cause = if st.scanner.cur_cs != 0 {
             st.scanner.cur_cs = 0;
             "A forbidden control sequence occurred in skipped text."
@@ -1269,7 +1269,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                         if st.input.cur_input.name >= 19 {
                             crate::output::print_char(st, b')' as i32);
                             st.input.open_parens -= 1;
-                            unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
+                            output_flush(st.shipout.rust_stdout);
                         }
                         st.input.force_eof = false;
                         crate::input::end_file_reading(st)?;
@@ -1655,7 +1655,7 @@ pub(crate) fn scan_toks(
                             "Illegal parameter number in definition of ",
                         );
                         crate::output::sprint_cs(st, st.scanner.warning_index);
-                        capture_to_diagnostic(st, std::ptr::null_mut());
+                        capture_to_diagnostic(st, None);
                         st.errors.help(&[
                             "You meant to type ## instead of #, right?",
                             "Or maybe a } was forgotten somewhere earlier, and things",
@@ -1775,7 +1775,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         st.input.cur_input.name = 19;
         print(st, "( ");
         st.input.open_parens += 1;
-        unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
+        output_flush(st.shipout.rust_stdout);
     } else {
         st.input.cur_input.name = 18;
         st.input.cur_input.synctex_tag = 0;
@@ -2964,8 +2964,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         PDF_LAST_Y_POS_CODE => st.scanner.cur_val = st.shipout.pdf_last_y_pos,
         XETEX_PDF_PAGE_COUNT_CODE => {
             crate::io::scan_and_pack_name(st)?;
-            let name = st.input.name_of_file_ptr();
-            st.scanner.cur_val = unsafe { crate::pic::count_pdf_file_pages_named(name) }?;
+            let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
+            st.scanner.cur_val = unsafe { crate::pic::count_pdf_file_pages_named(&name) }?;
         }
         CURRENT_GROUP_LEVEL_CODE => st.scanner.cur_val = st.save_stack.cur_level as i32 - 1,
         CURRENT_GROUP_TYPE_CODE => st.scanner.cur_val = st.save_stack.cur_group as i32,
@@ -3025,7 +3025,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                     );
                     print_nl(st, "I don't know anything about edge ");
                     print_int(st, edge);
-                    capture_to_diagnostic(st, std::ptr::null_mut());
+                    capture_to_diagnostic(st, None);
                     error(st)?;
                     st.scanner.cur_val = 0;
                 } else {
@@ -3190,7 +3190,7 @@ pub(crate) fn scan_something_internal(
                 if st.input.cur_list.mode.abs() as i32 != m {
                     error_here_with_diagnostic(st, "Improper ");
                     print_cmd_chr(st, SET_AUX, m);
-                    capture_to_diagnostic(st, std::ptr::null_mut());
+                    capture_to_diagnostic(st, None);
                     st.errors.help(&[
                         r"You can refer to \spacefactor only in horizontal mode;",
                         r"you can refer to \prevdepth only in vertical mode; and",
@@ -3351,7 +3351,7 @@ pub(crate) fn scan_something_internal(
                 print_cmd_chr(st, st.scanner.cur_cmd, m);
                 print(st, "' after ");
                 print_esc(st, "the");
-                capture_to_diagnostic(st, std::ptr::null_mut());
+                capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I'm forgetting what you said and using zero instead."]);
                 error(st)?;
@@ -3456,7 +3456,7 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
         print(st, " has only ");
         print_int(st, st.fonts.font_params[fu]);
         print(st, " fontdimen parameters");
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         st.errors.help(&[
             "To increase the number of font parameters, you must",
             r"use \fontdimen immediately after the \font is loaded.",

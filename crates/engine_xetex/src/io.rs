@@ -15,9 +15,9 @@ use tectonic_bridge_core::EOF;
 
 pub(crate) use crate::bridge::{input_close, input_seek};
 use crate::bridge::{
-    ttstub_get_last_input_abspath, ttstub_input_getc, ttstub_input_open, ttstub_input_open_primary,
-    ttstub_input_ungetc, ttstub_output_close, ttstub_output_flush, ttstub_output_open,
-    ttstub_output_putc, TTBC_FILE_FORMAT_TECTONIC_PRIMARY, TTBC_FILE_FORMAT_TEX,
+    input_getc, input_open, input_open_primary, input_ungetc, last_input_abspath, output_close,
+    output_flush, output_open, output_putc, TTBC_FILE_FORMAT_TECTONIC_PRIMARY,
+    TTBC_FILE_FORMAT_TEX,
 };
 use crate::cmd::{LEFT_BRACE, OTHER_CHAR, RELAX, SPACER};
 use crate::errors::Abort;
@@ -164,7 +164,7 @@ unsafe fn xetex_ucnv_to_utf32(
 
 pub(crate) unsafe fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_int) -> usize {
     let handle = if filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY {
-        ttstub_input_open_primary()
+        input_open_primary()
     } else if st.input.name_of_file.first() == Some(&b'|') {
         crate::output::print_nl(st, "Warning: ");
         crate::output::diagnostic_begin_capture_warning_here(st);
@@ -172,10 +172,10 @@ pub(crate) unsafe fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_
             st,
             "piped inputs from external commands are not implemented in Tectonic",
         );
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         return INVALID_HANDLE;
     } else {
-        ttstub_input_open(st.input.name_of_file_ptr(), filefmt, 0)
+        input_open(st.input.name_of_file_bytes(), filefmt, false)
     };
 
     if handle == INVALID_HANDLE {
@@ -183,7 +183,7 @@ pub(crate) unsafe fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_
     }
 
     let abspath = &mut st.input.abspath_of_input_file.0;
-    if ttstub_get_last_input_abspath(abspath.as_mut_ptr(), abspath.len()) < 1 {
+    if last_input_abspath(abspath) < 1 {
         abspath[0] = 0;
     }
 
@@ -214,8 +214,8 @@ pub(crate) unsafe fn u_open_in(
     });
 
     if mode == AUTO {
-        let b1 = ttstub_input_getc(f.handle);
-        let b2 = ttstub_input_getc(f.handle);
+        let b1 = input_getc(f.handle);
+        let b2 = input_getc(f.handle);
 
         if b1 == 0xfe && b2 == 0xff {
             mode = UTF16BE;
@@ -227,7 +227,7 @@ pub(crate) unsafe fn u_open_in(
         } else if b2 == 0 && b1 != 0 {
             mode = UTF16LE;
             input_seek(f.handle, 0, libc::SEEK_SET);
-        } else if b1 == 0xEF && b2 == 0xBB && ttstub_input_getc(f.handle) == 0xBF {
+        } else if b1 == 0xEF && b2 == 0xBB && input_getc(f.handle) == 0xBF {
             mode = UTF8;
         }
 
@@ -387,11 +387,11 @@ pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<l
             BYTE_BUFFER = xmalloc((st.input.buf_size + 1) as libc::size_t) as *mut libc::c_char;
         }
 
-        i = ttstub_input_getc((*f).handle);
+        i = input_getc((*f).handle);
         if (*f).skip_next_lf != 0 {
             (*f).skip_next_lf = 0;
             if i == b'\n' as libc::c_int {
-                i = ttstub_input_getc((*f).handle);
+                i = input_getc((*f).handle);
             }
         }
 
@@ -399,7 +399,7 @@ pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<l
             *BYTE_BUFFER.add(bytes_read as usize) = i as libc::c_char;
             bytes_read += 1;
             while bytes_read < st.input.buf_size as u32 {
-                i = ttstub_input_getc((*f).handle);
+                i = input_getc((*f).handle);
                 if is_line_end(i) {
                     break;
                 }
@@ -562,7 +562,7 @@ pub(crate) unsafe fn get_uni_c(
     let handle = f.handle;
     let rval = match f.encoding_mode as i32 {
         UTF8 => {
-            let mut rval = ttstub_input_getc(handle);
+            let mut rval = input_getc(handle);
             if rval != EOF {
                 let extra_bytes = crate::utf8::BYTES_FROM_UTF8[rval as usize] as usize;
                 if extra_bytes >= 4 {
@@ -570,10 +570,10 @@ pub(crate) unsafe fn get_uni_c(
                     return Ok(0xFFFD);
                 }
                 for _ in 0..extra_bytes {
-                    let c = ttstub_input_getc(handle);
+                    let c = input_getc(handle);
                     if !(0x80..0xC0).contains(&c) {
                         if c != EOF {
-                            ttstub_input_ungetc(handle, c);
+                            input_ungetc(handle, c);
                         }
                         crate::output::bad_utf8_warning(st);
                         return Ok(0xFFFD);
@@ -592,18 +592,18 @@ pub(crate) unsafe fn get_uni_c(
 
         mode @ (UTF16BE | UTF16LE) => {
             let unit = |first: i32| {
-                let second = ttstub_input_getc(handle);
+                let second = input_getc(handle);
                 if mode == UTF16BE {
                     (first << 8) + second
                 } else {
                     first + (second << 8)
                 }
             };
-            let mut rval = ttstub_input_getc(handle);
+            let mut rval = input_getc(handle);
             if rval != EOF {
                 rval = unit(rval);
                 if (0xd800..=0xdbff).contains(&rval) {
-                    let lo = unit(ttstub_input_getc(handle));
+                    let lo = unit(input_getc(handle));
                     if (0xdc00..=0xdfff).contains(&lo) {
                         rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
                     } else {
@@ -617,7 +617,7 @@ pub(crate) unsafe fn get_uni_c(
             rval
         }
 
-        RAW => ttstub_input_getc(handle),
+        RAW => input_getc(handle),
 
         _ => return Err(InvalidInputMode),
     };
@@ -849,7 +849,7 @@ pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
 
     pack_job_name(st, ".log")?;
 
-    let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
+    let handle = output_open(st.input.name_of_file_bytes(), false);
     if handle == INVALID_HANDLE {
         return Err(Abort::Internal("cannot open log file output"));
     }
@@ -880,14 +880,14 @@ pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
 /// Checkpoints keep the logical output state, but bridge handles and
 /// diagnostic pointers are valid only for the operation that created them.
 pub(crate) unsafe fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort> {
-    st.shipout.current_diagnostic = core::ptr::null_mut();
+    st.shipout.current_diagnostic = None;
     st.shipout.write_file = [INVALID_HANDLE; 16];
     st.shipout.log_file = INVALID_HANDLE;
     st.shipout.dvi_file = INVALID_HANDLE;
 
     if st.errors.log_opened {
         pack_job_name(st, ".log")?;
-        let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
+        let handle = output_open(st.input.name_of_file_bytes(), false);
         if handle == INVALID_HANDLE {
             return Err(Abort::Internal("cannot reopen log file output"));
         }
@@ -896,7 +896,7 @@ pub(crate) unsafe fn reopen_resident_outputs(st: &mut EngineState) -> Result<(),
 
     if st.shipout.output_file_name != 0 {
         pack_job_name(st, crate::engine::output_file_extension(st))?;
-        let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
+        let handle = output_open(st.input.name_of_file_bytes(), false);
         if handle == INVALID_HANDLE {
             return Err(Abort::Internal("cannot reopen XDV file output"));
         }
@@ -923,7 +923,7 @@ pub(crate) unsafe fn close_files_and_terminate(st: &mut EngineState) -> Result<(
     for k in 0usize..=15 {
         if st.shipout.write_open[k] {
             crate::shipout::ensure_write_stream_open(st, k)?;
-            ttstub_output_close(st.shipout.write_file[k]);
+            output_close(st.shipout.write_file[k]);
         }
     }
 
@@ -935,8 +935,8 @@ pub(crate) unsafe fn close_files_and_terminate(st: &mut EngineState) -> Result<(
 
     if st.errors.log_opened {
         let log_file = st.shipout.log_file;
-        ttstub_output_putc(log_file, b'\n' as i32);
-        ttstub_output_close(log_file);
+        output_putc(log_file, b'\n' as i32);
+        output_close(log_file);
         st.shipout.selector -= 2;
         if st.shipout.selector == SELECTOR_TERM_ONLY {
             crate::output::print_nl(st, "Transcript written on ");
@@ -1142,7 +1142,7 @@ pub(crate) unsafe fn start_input(
     crate::output::print_char(st, b'(' as i32);
     st.input.open_parens += 1;
     crate::output::print(st, full_name);
-    ttstub_output_flush(st.shipout.rust_stdout);
+    output_flush(st.shipout.rust_stdout);
 
     let tracing_stack_levels = st.eqtb.int_par(INT_PAR_TRACING_STACK_LEVELS);
     if tracing_stack_levels > 0 {
@@ -1162,7 +1162,7 @@ pub(crate) unsafe fn start_input(
         crate::output::print(st, st.scanner.cur_name);
         crate::output::print(st, st.scanner.cur_ext);
         crate::output::print_ln(st);
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         crate::output::end_diagnostic(st, false);
     }
 

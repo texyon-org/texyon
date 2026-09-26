@@ -1,4 +1,4 @@
-use crate::bridge::{set_error_message, ttstub_output_flush};
+use crate::bridge::{output_flush, set_error_message};
 use crate::consts::{
     HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, LOCAL_ERR_HELP, MEM_TOP, SELECTOR_TERM_AND_LOG,
     SELECTOR_TERM_ONLY, TEX_NULL,
@@ -38,7 +38,7 @@ unsafe fn pre_error_message(st: &mut EngineState) {
 }
 
 unsafe fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     if st.errors.interaction == InteractionMode::ErrorStop {
         st.errors.interaction = InteractionMode::Scroll;
     }
@@ -49,7 +49,7 @@ unsafe fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
     st.errors.history = HISTORY_FATAL_ERROR;
     let _ = crate::io::close_files_and_terminate(st);
     crate::engine::tt_cleanup(st);
-    ttstub_output_flush(st.shipout.rust_stdout);
+    output_flush(st.shipout.rust_stdout);
 }
 
 pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
@@ -151,10 +151,10 @@ impl Abort {
         pre_error_message(st);
         print(st, "Emergency stop");
         print_nl(st, s);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         let _ = crate::io::close_files_and_terminate(st);
         crate::engine::tt_cleanup(st);
-        ttstub_output_flush(st.shipout.rust_stdout);
+        output_flush(st.shipout.rust_stdout);
         set_error_message(s);
     }
 
@@ -270,7 +270,7 @@ pub(crate) fn not_font_error_common(
     print(st, " with ");
     print(st, st.fonts.font_name[f as usize]);
     print(st, suffix);
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     error(st)
 }
 
@@ -293,7 +293,7 @@ pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::MathLeft => print_esc(st, "right"),
         _ => {}
     }
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     st.errors.help(&[
         "I've deleted a group-closing symbol because it seems to be",
         "spurious, as in `$x}$'. But perhaps the } is legitimate and",
@@ -310,7 +310,7 @@ pub(crate) fn you_cant(st: &mut EngineState) {
     error_here_with_diagnostic(st, "You can't use `");
     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
     print_in_mode(st, st.input.cur_list.mode as i32);
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
 }
 
 pub(crate) fn report_illegal_case(st: &mut EngineState) -> Result<(), Abort> {
@@ -335,7 +335,7 @@ pub(crate) fn privileged(st: &mut EngineState) -> Result<bool, Abort> {
 pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
     error_here_with_diagnostic(st, "Extra ");
     print_esc(st, "endcsname");
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     st.errors
         .help(&[r"I'm ignoring this, since I wasn't doing a \csname."]);
     error(st)
@@ -348,7 +348,7 @@ pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     diagnostic_begin_capture_warning_here(st);
     print_nl(st, "The following box has been deleted:");
     show_box(st, box_val);
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     end_diagnostic(st, true);
     st.mem.flush_node_list(box_val)?;
     st.eqtb.set_box_reg(n as i32, crate::units::MemPtr::NULL);

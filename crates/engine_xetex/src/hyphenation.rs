@@ -476,7 +476,7 @@ impl HyphState {
 /// Finish an error begun at the call site: set its help text (in display
 /// order) and run the recoverable `error()`.
 fn raise_error(st: &mut EngineState, help: &[&'static str]) -> Result<(), Abort> {
-    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+    crate::output::capture_to_diagnostic(st, None);
     st.errors.help(help);
     crate::errors::error(st)
 }

@@ -1,8 +1,8 @@
 use std::ffi::CStr;
 
 use crate::bridge::{
-    diag_append_cstr, diag_append_str, issue_warning_str, ttbc_diag_begin_error_ptr,
-    ttbc_diag_begin_warning_ptr, ttstub_diag_finish, ttstub_output_flush, ttstub_output_putc,
+    diag_append, diag_append_byte, diag_begin_error, diag_begin_warning, diag_finish,
+    issue_warning, output_flush, output_putc, Diagnostic,
 };
 use crate::cmd::{
     ABOVE, ACCENT, ADVANCE, AFTER_ASSIGNMENT, AFTER_GROUP, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN,
@@ -278,10 +278,8 @@ pub(crate) fn print_scaled(st: &mut EngineState, mut s: i32) {
 }
 
 fn warn_char(st: &mut EngineState, c: i32) {
-    let diag = st.shipout.current_diagnostic;
-    if !diag.is_null() {
-        let bytes: [u8; 2] = [c as u8, 0];
-        unsafe { diag_append_cstr(diag, bytes.as_ptr() as *const libc::c_char) };
+    if let Some(diag) = &mut st.shipout.current_diagnostic {
+        diag_append_byte(diag, c as u8);
     }
 }
 
@@ -290,10 +288,10 @@ pub(crate) fn print_ln(st: &mut EngineState) {
         sel @ (SELECTOR_TERM_ONLY | SELECTOR_LOG_ONLY | SELECTOR_TERM_AND_LOG) => {
             warn_char(st, b'\n' as i32);
             if sel != SELECTOR_LOG_ONLY {
-                unsafe { ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32) };
+                output_putc(st.shipout.rust_stdout, b'\n' as i32);
             }
             if sel != SELECTOR_TERM_ONLY {
-                unsafe { ttstub_output_putc(st.shipout.log_file, b'\n' as i32) };
+                output_putc(st.shipout.log_file, b'\n' as i32);
             }
             if sel != SELECTOR_LOG_ONLY {
                 st.shipout.term_offset = 0;
@@ -304,7 +302,7 @@ pub(crate) fn print_ln(st: &mut EngineState) {
         }
         SELECTOR_NO_PRINT | SELECTOR_PSEUDO | SELECTOR_NEW_STRING => {}
         sel => {
-            unsafe { ttstub_output_putc(st.shipout.write_file[sel as usize], b'\n' as i32) };
+            output_putc(st.shipout.write_file[sel as usize], b'\n' as i32);
             st.shipout.write_prefix[sel as usize].push(b'\n' as i32);
         }
     }
@@ -318,10 +316,10 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: i32, incr_offset: bool) {
             let to_log = sel != SELECTOR_TERM_ONLY;
             warn_char(st, s);
             if to_term {
-                unsafe { ttstub_output_putc(st.shipout.rust_stdout, s) };
+                output_putc(st.shipout.rust_stdout, s);
             }
             if to_log {
-                unsafe { ttstub_output_putc(st.shipout.log_file, s) };
+                output_putc(st.shipout.log_file, s);
             }
             if incr_offset {
                 if to_term {
@@ -332,11 +330,11 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: i32, incr_offset: bool) {
                 }
             }
             if to_term && st.shipout.term_offset == st.config.max_print_line {
-                unsafe { ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32) };
+                output_putc(st.shipout.rust_stdout, b'\n' as i32);
                 st.shipout.term_offset = 0;
             }
             if to_log && st.shipout.file_offset == st.config.max_print_line {
-                unsafe { ttstub_output_putc(st.shipout.log_file, b'\n' as i32) };
+                output_putc(st.shipout.log_file, b'\n' as i32);
                 st.shipout.file_offset = 0;
             }
         }
@@ -355,7 +353,7 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: i32, incr_offset: bool) {
             }
         }
         sel => {
-            unsafe { ttstub_output_putc(st.shipout.write_file[sel as usize], s) };
+            output_putc(st.shipout.write_file[sel as usize], s);
             st.shipout.write_prefix[sel as usize].push(s);
         }
     }
@@ -485,12 +483,18 @@ fn print_current_string(st: &mut EngineState) {
     }
 }
 
-pub(crate) fn capture_to_diagnostic(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
-    let cur = st.shipout.current_diagnostic;
-    if !cur.is_null() {
-        unsafe { ttstub_diag_finish(cur) };
+/// Reports the diagnostic being captured and captures into `diagnostic` from now on.
+pub(crate) fn capture_to_diagnostic(st: &mut EngineState, diagnostic: Option<Box<Diagnostic>>) {
+    if let Some(cur) = std::mem::replace(&mut st.shipout.current_diagnostic, diagnostic) {
+        diag_finish(cur);
     }
-    st.shipout.current_diagnostic = diagnostic;
+}
+
+/// Appends `text` to the diagnostic being captured.
+pub(crate) fn append_to_diagnostic(st: &mut EngineState, text: &str) {
+    if let Some(diag) = &mut st.shipout.current_diagnostic {
+        diag_append(diag, text);
+    }
 }
 
 /// The innermost input level that is a real file, with its current line.
@@ -510,43 +514,36 @@ fn current_file_line(st: &EngineState) -> Option<(i32, i32)> {
     Some((st.input.full_source_filename_stack[level as usize], line))
 }
 
-fn diagnostic_print_file_line(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
+fn diagnostic_print_file_line(st: &EngineState, diagnostic: &mut Diagnostic) {
     let Some((name, line)) = current_file_line(st) else {
-        unsafe { diag_append_str(diagnostic, "!") };
+        diag_append(diagnostic, "!");
         return;
     };
-    let filename = unsafe { st.strings.gettexstring(name) };
-    unsafe {
-        let name = CStr::from_ptr(filename).to_string_lossy();
-        diag_append_str(diagnostic, &format!("{name}:{line}: "));
-        libc::free(filename as *mut std::ffi::c_void);
-    }
+    let name = st.strings.texstring_cstring(name);
+    let name = String::from_utf8_lossy(name.as_bytes());
+    diag_append(diagnostic, &format!("{name}:{line}: "));
 }
 
-pub(crate) fn diagnostic_begin_capture_warning_here(st: &mut EngineState) -> *mut std::ffi::c_void {
-    let warning = ttbc_diag_begin_warning_ptr();
-    diagnostic_print_file_line(st, warning);
-    capture_to_diagnostic(st, warning);
-    warning
+pub(crate) fn diagnostic_begin_capture_warning_here(st: &mut EngineState) {
+    let mut warning = diag_begin_warning();
+    diagnostic_print_file_line(st, &mut warning);
+    capture_to_diagnostic(st, Some(warning));
 }
 
-pub(crate) fn error_here_with_diagnostic(
-    st: &mut EngineState,
-    message: &str,
-) -> *mut std::ffi::c_void {
-    let error = ttbc_diag_begin_error_ptr();
-    diagnostic_print_file_line(st, error);
-    unsafe { diag_append_str(error, message) };
+/// Starts an error with `message`, capturing what follows into its diagnostic.
+pub(crate) fn error_here_with_diagnostic(st: &mut EngineState, message: &str) {
+    let mut error = diag_begin_error();
+    diagnostic_print_file_line(st, &mut error);
+    diag_append(&mut error, message);
     print_error_prefix(st);
     print(st, message);
-    capture_to_diagnostic(st, error);
-    error
+    capture_to_diagnostic(st, Some(error));
 }
 
 /// TeX's `print_err`: starts an error with `message` and closes its diagnostic.
 pub(crate) fn print_err(st: &mut EngineState, message: &str) {
     error_here_with_diagnostic(st, message);
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
 }
 
 /// Starts an error line with `! ` or, in file:line:error style, the source position.
@@ -1903,7 +1900,7 @@ pub(crate) fn group_warning(st: &mut EngineState) {
             show_context(st);
         }
         note_warning_issued(st);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
     }
 }
 
@@ -1930,7 +1927,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
         if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
             show_context(st);
         }
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         note_warning_issued(st);
     }
 }
@@ -1960,7 +1957,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         print(st, "end of file when ");
         print_group(st, true);
         print(st, " is incomplete");
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         leave_group_boundary(st);
     }
     st.save_stack.save_ptr = saved_ptr;
@@ -1981,7 +1978,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         }
         print_if_line(st, st.scanner.if_line);
         print(st, " is incomplete");
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
         (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = cond.saved_state(&st.mem);
         st.scanner.cond_ptr = cond.link(&st.mem);
@@ -1995,7 +1992,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
         diagnostic_begin_capture_warning_here(st);
         show_context(st);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
     }
     note_warning_issued(st);
 }
@@ -2032,7 +2029,7 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
         print_if_line(st, l);
     }
     print_char(st, b'}' as i32);
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
@@ -2059,6 +2056,9 @@ pub(crate) fn change_if_limit(
 }
 
 /// C++ font-layer callback, reaching the run's state through the locator pointer.
+/// # Safety
+///
+/// Each name must be valid for its length, or have a length of at most 0.
 #[export_name = "font_feature_warning"]
 pub unsafe extern "C" fn font_feature_warning_callback(
     feature_name_p: *const libc::c_void,
@@ -2066,42 +2066,44 @@ pub unsafe extern "C" fn font_feature_warning_callback(
     setting_name_p: *const libc::c_void,
     set_len: i32,
 ) {
+    let name = |p: *const libc::c_void, len: i32| {
+        if len > 0 {
+            // SAFETY: the caller passes `len` readable bytes at `p`.
+            unsafe { std::slice::from_raw_parts(p.cast::<u8>(), len as usize) }
+        } else {
+            &[]
+        }
+    };
     let p = crate::state::current_engine_state();
     if !p.is_null() {
-        font_feature_warning(&mut *p, feature_name_p, feat_len, setting_name_p, set_len);
+        let (feature, setting) = (
+            name(feature_name_p, feat_len),
+            name(setting_name_p, set_len),
+        );
+        // SAFETY: the locator points at the running engine, which is inside the font layer.
+        font_feature_warning(unsafe { &mut *p }, feature, setting);
     }
 }
 
-pub(crate) fn font_feature_warning(
-    st: &mut EngineState,
-    feature_name_p: *const libc::c_void,
-    feat_len: i32,
-    setting_name_p: *const libc::c_void,
-    set_len: i32,
-) {
+pub(crate) fn font_feature_warning(st: &mut EngineState, feature: &[u8], setting: &[u8]) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
     print_nl(st, "Unknown ");
-    if set_len > 0 {
+    if !setting.is_empty() {
         print(st, "selector `");
-        crate::ext::print_utf8_str(st, setting_name_p as *const u8, set_len);
+        print_raw_bytes(st, setting);
         print(st, "' for ");
     }
     print(st, "feature `");
-    crate::ext::print_utf8_str(st, feature_name_p as *const u8, feat_len);
+    print_raw_bytes(st, feature);
     print(st, "' in font `");
     print_name_of_file(st);
     print(st, "'.");
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
-pub(crate) fn font_mapping_warning(
-    st: &mut EngineState,
-    mapping_name_p: *const libc::c_void,
-    mapping_name_len: i32,
-    warning_type: i32,
-) {
+pub(crate) fn font_mapping_warning(st: &mut EngineState, mapping_name: &[u8], warning_type: i32) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
     if warning_type == 0 {
@@ -2109,7 +2111,7 @@ pub(crate) fn font_mapping_warning(
     } else {
         print_nl(st, "Font mapping `");
     }
-    crate::ext::print_utf8_str(st, mapping_name_p as *const u8, mapping_name_len);
+    print_raw_bytes(st, mapping_name);
     print(st, "' for font `");
     print_name_of_file(st);
     match warning_type {
@@ -2120,16 +2122,19 @@ pub(crate) fn font_mapping_warning(
         }
         _ => print(st, "'."),
     }
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
 fn print_name_of_file(st: &mut EngineState) {
-    let name = &st.input.name_of_file;
-    let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
-    for i in 0..len {
-        let b = st.input.name_of_file[i] as i32;
-        print_raw_char(st, b, true);
+    let name = st.input.name_of_file_bytes().to_vec();
+    print_raw_bytes(st, &name);
+}
+
+/// Prints `bytes` with `print_raw_char`, one column each.
+pub(crate) fn print_raw_bytes(st: &mut EngineState, bytes: &[u8]) {
+    for &b in bytes {
+        print_raw_char(st, b as i32, true);
     }
 }
 
@@ -2144,7 +2149,7 @@ pub(crate) fn bad_utf8_warning(st: &mut EngineState) {
         print_int(st, st.mem.line);
     }
     print(st, " replaced by U+FFFD.");
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
 
@@ -2261,11 +2266,11 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
             print_char(st, b' ' as i32);
         }
         print(st, s);
-        unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
+        output_flush(st.shipout.rust_stdout);
     } else {
         error_here_with_diagnostic(st, "");
         print(st, s);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         if !st.eqtb.local(crate::consts::LOCAL_ERR_HELP).is_null() {
             st.errors.use_err_help = true;
         } else if st.errors.long_help_seen {
@@ -2571,7 +2576,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if matches!(chr, SHOW_LISTS | SHOW_BOX_CODE | SHOW_GROUPS | SHOW_IFS) {
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         end_diagnostic(st, true);
         print_error_prefix(st);
         print(st, "OK");
@@ -2584,7 +2589,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     if st.errors.interaction < InteractionMode::ErrorStop {
         st.errors.help(&[]);
         st.errors.error_count -= 1;
@@ -2640,7 +2645,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
             st.errors.help(&[]);
             error(st)?;
         } else {
-            capture_to_diagnostic(st, std::ptr::null_mut());
+            capture_to_diagnostic(st, None);
             end_diagnostic(st, false);
         }
     }
@@ -2654,7 +2659,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
     let chr_c = unsafe { st.strings.gettexstring(s) };
     flush_last_string(st);
     unsafe {
-        issue_warning_str(&format!(
+        issue_warning(&format!(
             "could not represent character \"{}\" (0x{:x}) in font \"{}\"",
             CStr::from_ptr(chr_c).to_string_lossy(),
             c as u32,
@@ -2664,14 +2669,10 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
         libc::free(chr_c as *mut libc::c_void);
     }
     if !st.fonts.gave_char_warning_help {
-        unsafe {
-            issue_warning_str(
-                "  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to",
-            );
-            issue_warning_str(
-                "  choose a different font that covers the unrepresentable character(s)",
-            );
-        }
+        issue_warning(
+            "  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to",
+        );
+        issue_warning("  choose a different font that covers the unrepresentable character(s)");
         st.fonts.gave_char_warning_help = true;
     }
     Ok(())

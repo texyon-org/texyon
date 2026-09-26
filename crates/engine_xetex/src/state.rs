@@ -113,7 +113,7 @@ pub(crate) struct TexmfState {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct AbsPathBuf(pub [libc::c_char; 1024]);
+pub(crate) struct AbsPathBuf(pub [u8; 1024]);
 impl Default for AbsPathBuf {
     fn default() -> Self {
         AbsPathBuf([0; 1024])
@@ -1393,7 +1393,7 @@ pub(crate) struct ShipoutState {
     pub write_prefix: [Vec<i32>; 16],
     pub rust_stdout: usize,
     pub log_file: usize,
-    pub current_diagnostic: *mut std::ffi::c_void,
+    pub current_diagnostic: Option<Box<crate::bridge::Diagnostic>>,
     pub best_page_break: crate::units::MemPtr,
     pub best_size: i32,
     pub least_page_cost: i32,
@@ -1793,8 +1793,7 @@ impl InputClusterState {
     }
 
     pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {
-        // SAFETY: self.abspath_of_input_file.0 is a NUL-terminated buffer of length 1024.
-        unsafe { std::ffi::CStr::from_ptr(self.abspath_of_input_file.0.as_ptr()) }
+        std::ffi::CStr::from_bytes_until_nul(&self.abspath_of_input_file.0).unwrap_or_default()
     }
 
     pub(crate) fn input_file_ptr(&mut self, idx: i32) -> *mut crate::io::UFile {

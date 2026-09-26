@@ -1,7 +1,7 @@
 //! Engine init, run and cleanup: the `tt_run_engine` entry point, the
 //! initialize_* primers, primitive registration and teardown.
 
-use crate::bridge::ttstub_output_open_stdout;
+use crate::bridge::output_open_stdout;
 use crate::cmd::{
     BOX_REF, CAR_RET, COMMENT, DATA, DONT_EXPAND, ENDV, END_TEMPLATE, ESCAPE, GLUE_REF, IF_TEST,
     IGNORE, IGNORE_SPACES, INVALID_CHAR, LETTER, OTHER_CHAR, OUTER_CALL, SHAPE_REF, SPACER,
@@ -757,7 +757,7 @@ pub(crate) unsafe fn initialize_engine(
     dump_name: &str,
     build_date: libc::time_t,
 ) -> InitOutcome {
-    st.shipout.rust_stdout = ttstub_output_open_stdout();
+    st.shipout.rust_stdout = output_open_stdout();
 
     if st.config.file_line_error_style_p < 0 {
         st.config.file_line_error_style_p = 0;

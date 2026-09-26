@@ -2,10 +2,7 @@
 
 use std::fmt::Write as _;
 
-use crate::bridge::{
-    issue_error_cstr, issue_warning_str, ttstub_output_close, ttstub_output_open,
-    ttstub_output_write,
-};
+use crate::bridge::{issue_error, issue_warning, output_close, output_open, output_write};
 use crate::consts::{INT_PAR_SYNCTEX, INVALID_HANDLE};
 use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
 use crate::shipout::ONE_INCH;
@@ -42,9 +39,7 @@ fn synctex_write(handle: usize, s: &str) -> i32 {
     if handle == PREVIEW_HANDLE {
         return i32::try_from(bytes.len()).unwrap_or(i32::MAX);
     }
-    // SAFETY: FFI write of a live byte slice.
-    let written =
-        unsafe { ttstub_output_write(handle, bytes.as_ptr() as *const c_char, bytes.len()) };
+    let written = output_write(handle, bytes);
     if written > 0 {
         written as i32
     } else {
@@ -55,8 +50,7 @@ fn synctex_write(handle: usize, s: &str) -> i32 {
 impl SynctexCtxt {
     fn synctexabort(&mut self) {
         if self.file != INVALID_HANDLE && self.file != PREVIEW_HANDLE {
-            // SAFETY: FFI close of the open SyncTeX file.
-            unsafe { ttstub_output_close(self.file) };
+            output_close(self.file);
             self.file = INVALID_HANDLE;
         }
         self.root_name = None;
@@ -195,8 +189,8 @@ impl SynctexCtxt {
                 self.synctexabort();
                 return INVALID_HANDLE;
             }
-            name.extend_from_slice(b".synctex.gz\0");
-            self.file = ttstub_output_open(name.as_ptr() as *const c_char, 1);
+            name.extend_from_slice(b".synctex.gz");
+            self.file = output_open(&name, true);
             if self.file == INVALID_HANDLE {
                 self.synctexabort();
                 return INVALID_HANDLE;
@@ -282,8 +276,7 @@ pub fn synctex_terminate(st: &mut EngineState) {
     if synctex.file != INVALID_HANDLE {
         synctex.record_postamble();
         if synctex.file != PREVIEW_HANDLE {
-            // SAFETY: FFI close of the open SyncTeX file.
-            unsafe { ttstub_output_close(synctex.file) };
+            output_close(synctex.file);
         }
         synctex.file = INVALID_HANDLE;
     }
@@ -334,9 +327,7 @@ pub unsafe fn synctex_sheet(st: &mut EngineState, mag: i32, tmp: *mut c_char) {
         libc::free(tmp as *mut libc::c_void);
         if st.eqtb.synctex_enabled() && !synctex.flags.warn {
             synctex.flags.warn = true;
-            issue_warning_str(
-                "SyncTeX was disabled -- changing the value of \\synctex has no effect",
-            );
+            issue_warning("SyncTeX was disabled -- changing the value of \\synctex has no effect");
         }
         return;
     }
@@ -477,12 +468,10 @@ pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
         Ok(AnyNode::Glue(g)) => (g.sync_tag(&st.mem), g.sync_line(&st.mem)),
         Ok(AnyNode::Kern(k)) => (k.sync_tag(&st.mem), k.sync_line(&st.mem)),
         _ => {
-            let s = format!(
-                "unknown node type {} in SyncTeX\0",
+            issue_error(&format!(
+                "unknown node type {} in SyncTeX",
                 st.mem.type_code(MemIdx::new(p))
-            );
-            // SAFETY: `s` is NUL-terminated and outlives the call.
-            unsafe { issue_error_cstr(s.as_ptr() as *const c_char) };
+            ));
             return;
         }
     };

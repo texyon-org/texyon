@@ -1,7 +1,6 @@
 //! Tagged byte handles for immutable in-memory TeX sources.
 
 use std::cell::{Cell, RefCell};
-use std::ffi::CStr;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -121,15 +120,11 @@ pub(crate) fn open_primary() -> Option<usize> {
     })
 }
 
-pub(crate) unsafe fn open_named(path: *const libc::c_char, format: libc::c_int) -> Option<usize> {
-    if path.is_null() {
-        return None;
-    }
-    let path = CStr::from_ptr(path).to_string_lossy();
+pub(crate) fn open_named(path: &str, format: libc::c_int) -> Option<usize> {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let sources = active.as_mut()?;
-        let requested = Path::new(path.as_ref());
+        let requested = Path::new(path);
         let resolved = sources.snapshot.resolve_entry(requested).or_else(|| {
             (format == TTBC_FILE_FORMAT_TEX)
                 .then(|| sources.snapshot.resolve_replay_entry(requested))
@@ -147,22 +142,19 @@ pub(crate) fn clear_last_path() {
     });
 }
 
-pub(crate) unsafe fn copy_last_abspath(
-    buffer: *mut libc::c_char,
-    len: usize,
-) -> Option<libc::ssize_t> {
+pub(crate) fn copy_last_abspath(buffer: &mut [u8]) -> Option<libc::ssize_t> {
     ACTIVE.with(|active| {
         let active = active.borrow();
         let sources = active.as_ref()?;
         let path = sources.last_path.as_ref()?;
-        if len == 0 {
+        if buffer.is_empty() {
             return Some(0);
         }
         let path = sources.snapshot.absolute_path(path);
         let bytes = path.to_string_lossy();
-        let copied = bytes.len().min(len - 1);
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.cast::<u8>(), copied);
-        *buffer.add(copied) = 0;
+        let copied = bytes.len().min(buffer.len() - 1);
+        buffer[..copied].copy_from_slice(&bytes.as_bytes()[..copied]);
+        buffer[copied] = 0;
         Some(copied as libc::ssize_t)
     })
 }
@@ -226,22 +218,20 @@ pub(crate) fn ungetc(handle: usize, ch: libc::c_int) -> Option<libc::c_int> {
     })
 }
 
-pub(crate) unsafe fn read(handle: usize, data: *mut u8, len: usize) -> Option<libc::ssize_t> {
+pub(crate) fn read(handle: usize, data: &mut [u8]) -> Option<libc::ssize_t> {
+    let len = data.len();
     with_open_input(handle, |input| {
         let mut copied = 0;
         if len > 0 {
             if let Some(byte) = input.pushback.take() {
-                *data = byte;
+                data[0] = byte;
                 copied = 1;
             }
         }
         let available = input.bytes.len().saturating_sub(input.position);
         let direct = (len - copied).min(available);
-        std::ptr::copy_nonoverlapping(
-            input.bytes.as_ptr().add(input.position),
-            data.add(copied),
-            direct,
-        );
+        data[copied..copied + direct]
+            .copy_from_slice(&input.bytes[input.position..input.position + direct]);
         input.position += direct;
         observe_through(input, input.position);
         copied += direct;
@@ -355,8 +345,7 @@ mod tests {
         assert_eq!(getc(handle), Some(b'Q'.into()));
         assert_eq!(seek(handle, 1, libc::SEEK_SET), Some(1));
         let mut buf = [0u8; 2];
-        // SAFETY: valid C string or buffer for the call.
-        assert_eq!(unsafe { read(handle, buf.as_mut_ptr(), 2) }, Some(2));
+        assert_eq!(read(handle, &mut buf), Some(2));
         assert_eq!(&buf, b"bc");
         assert_eq!(getc(handle), Some(EOF));
         assert_eq!(close(handle), Some(false));
@@ -366,8 +355,7 @@ mod tests {
     fn primary_and_child_are_memory_backed_from_the_first_open() {
         let _guard = install(snapshot());
         let primary = open_primary().unwrap();
-        // SAFETY: valid C string or buffer for the call.
-        let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
+        let child = open_named("child", 26).unwrap();
         assert!(is_mem(primary));
         assert!(is_mem(child));
         assert_eq!(getc(primary), Some(b'a'.into()));
@@ -379,8 +367,7 @@ mod tests {
         let checkpoints = {
             let _guard = install(snapshot());
             let primary = open_primary().unwrap();
-            // SAFETY: valid C string or buffer for the call.
-            let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
+            let child = open_named("child", 26).unwrap();
             assert_eq!(getc(primary), Some(b'a'.into()));
             assert_eq!(getc(child), Some(b'x'.into()));
             assert_eq!(ungetc(child, b'Q'.into()), Some(0));
@@ -404,12 +391,9 @@ mod tests {
         assert_eq!(seek(primary, 0, libc::SEEK_SET), Some(0));
         assert_eq!(getc(primary), Some(b'a'.into()));
         assert_eq!(observed_bytes(), 1);
-
-        // SAFETY: valid C string or buffer for the call.
-        let child = unsafe { open_named(c"child".as_ptr(), 26) }.unwrap();
+        let child = open_named("child", 26).unwrap();
         let mut buf = [0u8; 2];
-        // SAFETY: valid C string or buffer for the call.
-        assert_eq!(unsafe { read(child, buf.as_mut_ptr(), 2) }, Some(2));
+        assert_eq!(read(child, &mut buf), Some(2));
         assert_eq!(observed_bytes(), 3);
 
         let checkpoints = checkpoint_inputs().unwrap();

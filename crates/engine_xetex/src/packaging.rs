@@ -995,7 +995,7 @@ fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::print_esc(st, "vsplit");
     crate::output::print(st, " needs a ");
     crate::output::print_esc(st, "vbox");
-    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+    crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
         r"The box you are trying to split is an \hbox.",
         "I can't split such a box, so I'll leave it alone.",
@@ -1703,7 +1703,7 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
         }
         print_int(st, st.mem.line);
     }
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     print_ln(st);
     st.errors.font_in_short_display = 0;
     let list = box_ptr.list_ptr(&st.mem).0;
@@ -1946,7 +1946,7 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
         print_int(st, st.mem.line);
         print_ln(st);
     }
-    capture_to_diagnostic(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, None);
     begin_diagnostic(st);
     show_box(st, box_ptr.idx().0);
     end_diagnostic(st, true);

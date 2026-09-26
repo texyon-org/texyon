@@ -2,7 +2,9 @@
 
 use libc::{c_char, c_double, c_int, c_uint};
 
-use crate::bridge::{ttstub_input_open, TTBC_FILE_FORMAT_PICT};
+use std::ffi::CStr;
+
+use crate::bridge::{input_open, TTBC_FILE_FORMAT_PICT};
 use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
 use crate::errors::Abort;
 use crate::ext::{D2Fix, Fix2D};
@@ -222,17 +224,17 @@ unsafe fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
 
 /// Measure the picture `name_of_file`, returning the probe status and its bounds.
 unsafe fn find_pic_file(
-    name_of_file: *const c_char,
+    name_of_file: &CStr,
     pdf_box: Option<PageboxType>,
     page: c_int,
 ) -> Result<(c_int, RealRect), Abort> {
-    let handle = ttstub_input_open(name_of_file, TTBC_FILE_FORMAT_PICT, 0);
+    let handle = input_open(name_of_file.to_bytes(), TTBC_FILE_FORMAT_PICT, false);
     if handle == INVALID_HANDLE {
         return Ok((1, RealRect::default()));
     }
 
     let (err, bounds) = match pdf_box {
-        Some(pdf_box) => match pdf_get_rect(name_of_file, handle, page, pdf_box) {
+        Some(pdf_box) => match pdf_get_rect(name_of_file.as_ptr(), handle, page, pdf_box) {
             Some(bounds) => (0, bounds),
             None => (-1, RealRect::default()),
         },
@@ -358,7 +360,7 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
     crate::output::print(st, "size (");
     crate::output::print_scaled(st, st.scanner.cur_val);
     crate::output::print(st, "pt) will be ignored");
-    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+    crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
         "I can't scale images to zero or negative sizes,",
         "so I'm ignoring this.",
@@ -399,13 +401,9 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         pdf_box_type = Some(pdf_box);
     }
 
-    let name_of_file = st.input.name_of_file_ptr();
-    // SAFETY: `name_of_file` is the NUL-terminated packed name.
-    let (result, bounds) = unsafe { find_pic_file(name_of_file, pdf_box_type, page)? };
-    // SAFETY: as above.
-    let pic_path = unsafe { std::ffi::CStr::from_ptr(name_of_file) }
-        .to_bytes()
-        .to_vec();
+    let name_of_file = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
+    let (result, bounds) = unsafe { find_pic_file(&name_of_file, pdf_box_type, page)? };
+    let pic_path = name_of_file.into_bytes();
 
     let (x, y, wd, ht) = (bounds.x, bounds.y, bounds.wd, bounds.ht);
     let mut placement = Placement {
@@ -508,7 +506,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
         crate::output::print_file_name(st, n, a, e);
         crate::output::print(st, '\'' as i32);
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         let reason = if result == FILE_NOT_FOUND {
             "the file was not found."
         } else {
@@ -521,13 +519,13 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
     Ok(())
 }
 
-pub(crate) unsafe fn count_pdf_file_pages_named(name: *const libc::c_char) -> Result<c_int, Abort> {
-    let handle = ttstub_input_open(name, TTBC_FILE_FORMAT_PICT, 0);
+pub(crate) unsafe fn count_pdf_file_pages_named(name: &CStr) -> Result<c_int, Abort> {
+    let handle = input_open(name.to_bytes(), TTBC_FILE_FORMAT_PICT, false);
     if handle == INVALID_HANDLE {
         return Ok(0);
     }
     let mut pages = 0;
-    if tt_pic_probe_pdf_page_count(name, handle, &mut pages) != PIC_PROBE_OK {
+    if tt_pic_probe_pdf_page_count(name.as_ptr(), handle, &mut pages) != PIC_PROBE_OK {
         pages = 0;
     }
     if crate::io::input_close(handle) {

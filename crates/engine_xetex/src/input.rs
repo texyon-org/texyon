@@ -270,7 +270,7 @@ pub(crate) fn begin_token_list(st: &mut EngineState, list: MemPtr, t: u16) -> Re
         }
         print(st, "->");
         token_show(st, list);
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, None);
         end_diagnostic(st, false);
     }
     Ok(())

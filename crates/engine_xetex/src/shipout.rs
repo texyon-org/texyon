@@ -10,10 +10,7 @@ use crate::consts::{
 };
 use crate::ext::apply_tfm_font_mapping;
 
-use crate::bridge::{
-    ttstub_output_close, ttstub_output_flush, ttstub_output_open, ttstub_output_write,
-    ttstub_shell_escape,
-};
+use crate::bridge::{output_close, output_flush, output_open, output_write, shell_escape};
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{INSERTED, WRITE_TEXT};
@@ -80,14 +77,7 @@ impl MemState {
 impl ShipoutState {
     fn write_to_dvi(&self, a: i32, b: i32) -> Result<(), Abort> {
         let bytes = &self.dvi_buf[a as usize..=b as usize];
-        // SAFETY: FFI write of a live byte slice, no engine re-entry.
-        let written = unsafe {
-            ttstub_output_write(
-                self.dvi_file,
-                bytes.as_ptr() as *const libc::c_char,
-                bytes.len(),
-            )
-        };
+        let written = output_write(self.dvi_file, bytes);
         if written != bytes.len() {
             return Err(Abort::Internal("failed to write data to XDV file"));
         }
@@ -284,7 +274,7 @@ pub(crate) unsafe fn ship_out(
             crate::output::print_char(st, b'.' as i32);
         }
     }
-    ttstub_output_flush(st.shipout.rust_stdout);
+    output_flush(st.shipout.rust_stdout);
 
     if tracing_output {
         crate::output::print_char(st, b']' as i32);
@@ -306,7 +296,7 @@ pub(crate) unsafe fn ship_out(
         || width + h_offset > MAX_HALFWORD
     {
         crate::output::error_here_with_diagnostic(st, "Huge page cannot be shipped out");
-        crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
             "The page just created is more than 18 feet tall or",
             "more than 18 feet wide, so I suspect something went wrong.",
@@ -342,7 +332,7 @@ pub(crate) unsafe fn ship_out(
         crate::output::print_char(st, b']' as i32);
     }
     st.shipout.dead_cycles = 0;
-    ttstub_output_flush(st.shipout.rust_stdout);
+    output_flush(st.shipout.rust_stdout);
     st.mem.flush_node_list(p)?;
     crate::synctex::synctex_teehs(st);
     Ok(())
@@ -383,7 +373,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
             crate::io::open_log_file(st)?;
         }
         crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
-        st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file_ptr(), 0);
+        st.shipout.dvi_file = output_open(st.input.name_of_file_bytes(), false);
         if st.shipout.dvi_file == INVALID_HANDLE {
             return Err(Abort::CannotOpenOutput);
         }
@@ -1559,8 +1549,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
         st.shipout.write_to_dvi(0, st.shipout.dvi_ptr - 1)?;
     }
 
-    // SAFETY: FFI close of the output file.
-    let k = unsafe { ttstub_output_close(st.shipout.dvi_file) as u8 };
+    let k = output_close(st.shipout.dvi_file) as u8;
     if k == 0 {
         crate::output::print_nl(st, "Output written on ");
         crate::output::print(st, st.shipout.output_file_name);
@@ -1897,7 +1886,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
     crate::scan::get_token(st)?;
     if st.scanner.cur_tok != CS_TOKEN_FLAG + END_WRITE {
         crate::output::error_here_with_diagnostic(st, "Unbalanced write command");
-        crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
             r"On this page there's a \write with fewer real {'s than }'s.",
             "I can't handle that very well; good luck.",
@@ -1947,14 +1936,13 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
             crate::output::print(st, ")...");
             crate::output::print(st, "disabled");
             crate::output::print_char(st, b'.' as i32);
-            crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             crate::output::print_nl(st, "");
             crate::output::print_ln(st);
         } else {
             let base = st.strings.cur_string_start();
             let cmd = &st.strings.str_pool[base as usize..st.strings.pool_ptr as usize];
-            // SAFETY: FFI hands the command's UTF-16 units to the driver.
-            unsafe { ttstub_shell_escape(cmd.as_ptr(), cmd.len()) };
+            shell_escape(cmd);
         }
         st.strings.discard_cur_string();
     }
@@ -2022,8 +2010,7 @@ fn out_write_stream(
     let stream = j as usize;
     if st.shipout.write_open[stream] {
         ensure_write_stream_open(st, stream)?;
-        // SAFETY: FFI close of the write-stream output handle.
-        unsafe { ttstub_output_close(st.shipout.write_file[stream]) };
+        output_close(st.shipout.write_file[stream]);
     }
     if subtype == Some(WhatsitSubtype::Close) {
         st.shipout.write_open[stream] = false;
@@ -2044,8 +2031,7 @@ fn out_write_stream(
     }
     let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
     crate::io::pack_file_name(st, n, a, e);
-    // SAFETY: FFI open with the packed name buffer.
-    let handle = unsafe { ttstub_output_open(st.input.name_of_file_ptr(), 0) };
+    let handle = output_open(st.input.name_of_file_bytes(), false);
     if handle == INVALID_HANDLE {
         return Err(Abort::CannotOpenOutput);
     }
@@ -2082,12 +2068,12 @@ pub(crate) fn ensure_write_stream_open(
     if name.last() != Some(&0) {
         return Err(Abort::CannotOpenOutput);
     }
-    let handle = unsafe { ttstub_output_open(name.as_ptr().cast(), 0) };
+    let handle = output_open(&name[..name.len() - 1], false);
     if handle == INVALID_HANDLE {
         return Err(Abort::CannotOpenOutput);
     }
     for &code_unit in &st.shipout.write_prefix[stream] {
-        unsafe { crate::bridge::ttstub_output_putc(handle, code_unit) };
+        crate::bridge::output_putc(handle, code_unit);
     }
     st.shipout.write_file[stream] = handle;
     Ok(())

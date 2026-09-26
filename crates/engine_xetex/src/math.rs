@@ -417,7 +417,7 @@ fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> Result<(), Abort> {
             crate::output::print(st, " is undefined (character ");
             crate::output::print(st, c);
             crate::output::print_char(st, ')' as i32);
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             st.errors.help(&[
                 "Somewhere in the math formula just ended, you used the",
                 "stated character from an undefined font family. For example,",
@@ -2678,7 +2678,7 @@ pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), Abort> {
                     .help(&["I treat `x_1_2' essentially like `x_1{}_2'."]);
             }
         }
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         crate::errors::error(st)?;
     }
     crate::scan::scan_math(st, p)
@@ -2788,7 +2788,7 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
                 st.errors
                     .help(&[r"I'm ignoring a \right that had no matching \left."]);
             }
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             crate::errors::error(st)?;
         } else {
             crate::main_control::off_save(st)?;
@@ -2852,7 +2852,7 @@ pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::error_here_with_diagnostic(st, "Please use ");
         crate::output::print_esc(st, "mathaccent");
         crate::output::print(st, " for accents in math mode");
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
             r"I'm changing \accent to \mathaccent here; wish me luck.",
             "(Accents are not the same in formulas as they are in text.)",

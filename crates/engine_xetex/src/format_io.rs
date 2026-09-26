@@ -3,8 +3,8 @@
 //! Every multi-byte item is stored big-endian.
 
 use crate::bridge::{
-    ttstub_input_open, ttstub_input_read, ttstub_output_close, ttstub_output_flush,
-    ttstub_output_open, ttstub_output_write, TTBC_FILE_FORMAT_FORMAT,
+    input_open, input_read, output_close, output_flush, output_open, output_write,
+    TTBC_FILE_FORMAT_FORMAT,
 };
 use crate::cmd::UNDEFINED_CS;
 use crate::consts::{
@@ -48,9 +48,9 @@ unsafe fn dump_slice<T>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result<(
         for item in bytes.chunks_exact_mut(item_size) {
             item.reverse();
         }
-        ttstub_output_write(fmt_out, bytes.as_ptr() as *const libc::c_char, byte_len)
+        output_write(fmt_out, &bytes)
     } else {
-        ttstub_output_write(fmt_out, ptr as *const libc::c_char, byte_len)
+        output_write(fmt_out, std::slice::from_raw_parts(ptr, byte_len))
     };
 
     if written != byte_len {
@@ -76,7 +76,7 @@ unsafe fn undump_slice<T>(fmt_in: usize, v: &mut [T], start: i32, n: i32) -> Res
     let item_size = std::mem::size_of::<T>();
     let byte_len = std::mem::size_of_val(items);
     let ptr = items.as_mut_ptr() as *mut u8;
-    let read = ttstub_input_read(fmt_in, ptr, byte_len);
+    let read = input_read(fmt_in, std::slice::from_raw_parts_mut(ptr, byte_len));
     if read < 0 || read as usize != byte_len {
         return Err(Abort::Internal("could not read format file data"));
     }
@@ -197,7 +197,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
 
         st.errors.history = HISTORY_FATAL_ERROR;
         let _ = crate::io::close_files_and_terminate(st);
-        ttstub_output_flush(st.shipout.rust_stdout);
+        output_flush(st.shipout.rust_stdout);
         return Err(Abort::Internal("\\dump inside a group"));
     }
 
@@ -225,7 +225,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     st.strings.format_ident = st.strings.make_string()?;
     crate::io::pack_job_name(st, ".fmt")?;
 
-    let fmt_out = ttstub_output_open(st.input.name_of_file_ptr(), 0);
+    let fmt_out = output_open(st.input.name_of_file_bytes(), false);
     if fmt_out == INVALID_HANDLE {
         return Err(Abort::Internal("cannot open format output file"));
     }
@@ -526,7 +526,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
 
     dump_int(fmt_out, FORMAT_FOOTER_MAGIC)?;
     st.eqtb.set_int_par(INT_PAR_TRACING_STATS, 0);
-    ttstub_output_close(fmt_out);
+    output_close(fmt_out);
     Ok(())
 }
 
@@ -536,7 +536,11 @@ pub unsafe fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<boo
     st.input.name_of_file = [dump_name.as_bytes(), b"\0"].concat();
     st.input.name_length = dump_name.len() as i32;
 
-    let fmt_in = ttstub_input_open(st.input.name_of_file_ptr(), TTBC_FILE_FORMAT_FORMAT, 0);
+    let fmt_in = input_open(
+        st.input.name_of_file_bytes(),
+        TTBC_FILE_FORMAT_FORMAT,
+        false,
+    );
     if fmt_in == INVALID_HANDLE {
         return Err(Abort::Internal("cannot open the format file"));
     }

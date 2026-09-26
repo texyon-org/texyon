@@ -189,7 +189,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         crate::output::error_here_with_diagnostic(st, "");
         crate::output::print_esc(st, "box");
         crate::output::print(st, "255 is not void");
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
             r"You shouldn't use \box255 except in \output routines.",
             "Proceed, and I'll discard its present contents.",
@@ -336,7 +336,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         crate::output::error_here_with_diagnostic(st, "Output loop---");
         crate::output::print_int(st, st.shipout.dead_cycles);
         crate::output::print(st, " consecutive dead cycles");
-        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
             r"I've concluded that your \output is awry; it never does a",
             r"\shipout, so I'm shipping \box255 out myself. Next time",
@@ -446,7 +446,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
             crate::output::error_here_with_diagnostic(st, "Infinite glue shrinkage inserted from ");
             crate::output::print_esc(st, "skip");
             crate::output::print_int(st, n as i32);
-            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::output::capture_to_diagnostic(st, None);
             st.errors.help(&[
                 "The correction glue for page breaking with insertions",
                 "must have finite shrinkability. But you may proceed,",

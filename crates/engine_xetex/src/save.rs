@@ -1,5 +1,4 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
-use crate::bridge::diag_append_str;
 use crate::cmd::{BOX_REF, CALL, GLUE_REF, LONG_OUTER_CALL, REGISTER, SHAPE_REF, TOKS_REGISTER};
 use crate::consts::{
     EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE,
@@ -120,12 +119,12 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
-        let errmsg = error_here_with_diagnostic(st, "Incompatible magnification (");
+        error_here_with_diagnostic(st, "Incompatible magnification (");
         crate::output::print_int(st, mag);
         crate::output::print(st, ");");
         crate::output::print_nl(st, " the previous value will be retained");
-        unsafe { diag_append_str(errmsg, &format!(" ({})", mag_set)) };
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::output::append_to_diagnostic(st, &format!(" ({})", mag_set));
+        capture_to_diagnostic(st, None);
         st.errors.help(&[
             "I can handle only one magnification ratio per job. So I've",
             "reverted to the magnification you used earlier on this run.",
@@ -135,10 +134,9 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> Result<(), Abort> {
     }
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     if mag <= 0 || mag > 32768 {
-        let errmsg =
-            error_here_with_diagnostic(st, "Illegal magnification has been changed to 1000");
-        unsafe { diag_append_str(errmsg, &format!(" ({})", mag)) };
-        capture_to_diagnostic(st, std::ptr::null_mut());
+        error_here_with_diagnostic(st, "Illegal magnification has been changed to 1000");
+        crate::output::append_to_diagnostic(st, &format!(" ({})", mag));
+        capture_to_diagnostic(st, None);
         st.errors
             .help(&["The magnification ratio must be between 1 and 32768."]);
         crate::errors::int_error(st, mag)?;
