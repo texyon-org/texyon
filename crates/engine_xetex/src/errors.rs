@@ -1,8 +1,5 @@
 use crate::bridge::{output_flush, set_error_message};
-use crate::consts::{
-    HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, LOCAL_ERR_HELP, MEM_TOP, SELECTOR_TERM_AND_LOG,
-    SELECTOR_TERM_ONLY, TEX_NULL,
-};
+use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, LOCAL_ERR_HELP, MEM_TOP, TEX_NULL};
 use crate::mem::{HOLD_HEAD, TEMP_HEAD};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
@@ -11,7 +8,7 @@ use crate::output::{
     token_show,
 };
 use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
-use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
+use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, StrNumber};
 
 impl ErrorState {
@@ -24,16 +21,16 @@ impl ErrorState {
 
 fn pre_error_message(st: &mut EngineState) {
     st.shipout.selector = if st.errors.log_opened {
-        SELECTOR_TERM_AND_LOG
+        Selector::TermAndLog
     } else {
-        SELECTOR_TERM_ONLY
+        Selector::TermOnly
     };
     if st.strings.job_name == StrNumber::NONE {
         // Already on the fatal path, so a log-open failure just leaves TERM_ONLY.
         let _ = crate::io::open_log_file(st);
     }
     if st.errors.interaction == InteractionMode::Batch {
-        st.shipout.selector -= 1;
+        st.shipout.selector = st.shipout.selector.without_terminal();
     }
     error_here_with_diagnostic(st, "");
 }
@@ -72,7 +69,7 @@ pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if st.errors.interaction > InteractionMode::Batch {
-        st.shipout.selector -= 1;
+        st.shipout.selector = st.shipout.selector.without_terminal();
     }
     if st.errors.use_err_help {
         print_ln(st);
@@ -87,7 +84,7 @@ pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
     }
     print_ln(st);
     if st.errors.interaction > InteractionMode::Batch {
-        st.shipout.selector += 1;
+        st.shipout.selector = st.shipout.selector.with_terminal();
     }
     print_ln(st);
     Ok(())

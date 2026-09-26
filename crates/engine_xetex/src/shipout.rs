@@ -2,12 +2,14 @@
 use crate::consts::{
     A_LEADERS, BEFORE, CS_TOKEN_FLAG, C_LEADERS, DLIST, END_WRITE, FILLL, INVALID_HANDLE,
     LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE,
-    NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
-    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY,
+    NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY,
     TEX_NULL,
 };
 use crate::ext::apply_tfm_font_mapping;
 use crate::params::{DimenPar, IntPar};
+use crate::state::{
+    EqtbState, FontState, MemState, ScannerState, Selector, ShipoutState, StringsState,
+};
 
 use crate::bridge::{output_close, output_flush, output_open, output_write, shell_escape};
 use crate::errors::Abort;
@@ -19,7 +21,6 @@ use crate::node::{
     WhatsitNode, WhatsitSubtype, RUNNING,
 };
 use crate::scan::{LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN};
-use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, Scaled, StrNumber};
 
 const DVI_BUF_SIZE: i32 = 16384;
@@ -407,7 +408,7 @@ fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abo
     st.shipout.last_bop = page_loc;
 
     let old_setting = st.shipout.selector;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     crate::output::print(st, "pdf:pagesize ");
     if pdf_page_width <= Scaled::ZERO || pdf_page_height <= Scaled::ZERO {
         crate::output::print(st, "default");
@@ -1828,7 +1829,7 @@ fn special_out(
     synch_v(st)?;
     st.shipout.doing_special = true;
     let old_setting = st.shipout.selector;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     let tokens = special.write_tokens(&st.mem).link(&st.mem).0;
     let avail = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, tokens, TEX_NULL, avail);
@@ -1843,11 +1844,11 @@ fn special_out(
 
 impl EqtbState {
     /// Log only, or terminal and log when `\tracingonline` is positive.
-    fn log_selector(&self) -> i32 {
+    fn log_selector(&self) -> Selector {
         if self.int_par(IntPar::TracingOnline) <= 0 {
-            SELECTOR_LOG_ONLY
+            Selector::LogOnly
         } else {
-            SELECTOR_TERM_AND_LOG
+            Selector::TermAndLog
         }
     }
 }
@@ -1890,13 +1891,13 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
     let old_setting = st.shipout.selector;
     let j = write.write_stream(&st.mem);
     if j == 18 {
-        st.shipout.selector = SELECTOR_NEW_STRING;
+        st.shipout.selector = Selector::NewString;
     } else if st.shipout.write_open[j as usize] {
         ensure_write_stream_open(st, j as usize)?;
-        st.shipout.selector = j;
+        st.shipout.selector = Selector::File(j as u8);
     } else {
-        if j == 17 && st.shipout.selector == SELECTOR_TERM_AND_LOG {
-            st.shipout.selector = SELECTOR_LOG_ONLY;
+        if j == 17 && st.shipout.selector == Selector::TermAndLog {
+            st.shipout.selector = Selector::LogOnly;
         }
         crate::output::print_nl(st, "");
     }
@@ -1908,7 +1909,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
     if j == 18 {
         st.shipout.selector = st.eqtb.log_selector();
         if !st.errors.log_opened {
-            st.shipout.selector = SELECTOR_TERM_ONLY;
+            st.shipout.selector = Selector::TermOnly;
         }
         // Tectonic leaves shell-escape warnings to the driver when it is enabled.
         if !st.config.shell_escape_enabled {
@@ -1937,7 +1938,7 @@ fn pic_out(st: &mut crate::state::EngineState, pic: NodePtr<WhatsitNode>) -> Res
     synch_h(st)?;
     synch_v(st)?;
     let old_setting = st.shipout.selector;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     crate::output::print(st, "pdf:image ");
     crate::output::print(st, "matrix ");
     for v in pic.pic_transform(&st.mem) {

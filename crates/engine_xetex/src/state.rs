@@ -1126,11 +1126,11 @@ pub(crate) struct ShipoutState {
     pub insert_src_special_every_math: bool,
     pub insert_src_special_every_vbox: bool,
     pub insert_src_special_auto: bool,
-    pub selector: i32,
+    pub selector: Selector,
     pub doing_special: bool,
     pub term_offset: i32,
     pub file_offset: i32,
-    pub old_setting: u8,
+    pub old_setting: Selector,
     pub epochseconds: i32,
     pub microseconds: i32,
     pub dead_cycles: i32,
@@ -1210,6 +1210,67 @@ impl InteractionMode {
             3 => Some(InteractionMode::ErrorStop),
             _ => None,
         }
+    }
+}
+
+/// Where printing goes (`selector`), ordered like TeX's numeric codes.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub(crate) enum Selector {
+    /// `\write` stream `0..=15`.
+    File(u8),
+    NoPrint,
+    #[default]
+    TermOnly,
+    LogOnly,
+    TermAndLog,
+    Pseudo,
+    NewString,
+}
+
+impl Selector {
+    pub(crate) const fn raw(self) -> u8 {
+        match self {
+            Selector::File(n) => n,
+            Selector::NoPrint => 16,
+            Selector::TermOnly => 17,
+            Selector::LogOnly => 18,
+            Selector::TermAndLog => 19,
+            Selector::Pseudo => 20,
+            Selector::NewString => 21,
+        }
+    }
+
+    const fn from_raw(v: u8) -> Selector {
+        match v {
+            0..=15 => Selector::File(v),
+            16 => Selector::NoPrint,
+            17 => Selector::TermOnly,
+            18 => Selector::LogOnly,
+            19 => Selector::TermAndLog,
+            20 => Selector::Pseudo,
+            21 => Selector::NewString,
+            _ => panic!("selector out of range"),
+        }
+    }
+
+    /// TeX's `selector - 1`: `TermAndLog` to `LogOnly`, `TermOnly` to `NoPrint`.
+    pub(crate) const fn without_terminal(self) -> Selector {
+        Selector::from_raw(self.raw() - 1)
+    }
+
+    /// TeX's `selector + 1`, undoing [`Selector::without_terminal`].
+    pub(crate) const fn with_terminal(self) -> Selector {
+        Selector::from_raw(self.raw() + 1)
+    }
+
+    /// TeX's `selector + 2`: `NoPrint` to `LogOnly`, `TermOnly` to `TermAndLog`.
+    pub(crate) const fn with_log(self) -> Selector {
+        Selector::from_raw(self.raw() + 2)
+    }
+
+    /// TeX's `selector - 2`, undoing [`Selector::with_log`].
+    pub(crate) const fn without_log(self) -> Selector {
+        Selector::from_raw(self.raw() - 2)
     }
 }
 

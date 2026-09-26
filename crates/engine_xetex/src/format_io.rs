@@ -10,8 +10,7 @@ use crate::cmd::UNDEFINED_CS;
 use crate::consts::{
     ACTIVE_BASE, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
     HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
-    MIN_HALFWORD, PRIM_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
-    TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
+    MIN_HALFWORD, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
@@ -21,7 +20,7 @@ use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::params::IntPar;
 use crate::scan::{INTER_CHAR_VAL, INT_VAL};
-use crate::state::{EngineState, EqtbState, InteractionMode};
+use crate::state::{EngineState, EqtbState, InteractionMode, Selector};
 use crate::units::{FontId, MemPtr, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
@@ -236,7 +235,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::Internal("\\dump inside a group"));
     }
 
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     crate::output::print(st, " (preloaded format=");
     crate::output::print(st, st.strings.job_name);
     crate::output::print_char(st, b' ');
@@ -248,9 +247,9 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::print_char(st, b')');
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
-        SELECTOR_LOG_ONLY
+        Selector::LogOnly
     } else {
-        SELECTOR_TERM_AND_LOG
+        Selector::TermAndLog
     };
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {

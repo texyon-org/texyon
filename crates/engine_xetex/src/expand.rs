@@ -7,11 +7,10 @@ use crate::cmd::{
 };
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
-    HMODE, MMODE, NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL,
-    TOO_BIG_USV, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    HMODE, MMODE, NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_USV,
+    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
-use crate::errors::error;
-use crate::errors::Abort;
+use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{
     back_error, back_input, begin_token_list, INSERTED, LEFT_BRACE_LIMIT, MACRO, MARK_TEXT,
@@ -30,7 +29,7 @@ use crate::scan::{
     END_MATCH_TOKEN, MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG,
     OTHER_TOKEN, SPACE_TOKEN,
 };
-use crate::state::{EngineState, MemState};
+use crate::state::{EngineState, MemState, Selector};
 use crate::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
 
 pub(crate) const IF_CHAR_CODE: i16 = 0;
@@ -481,14 +480,14 @@ fn unseal_pending_str(st: &mut EngineState, saved: &SavedScan) {
 /// Scans a general text and returns it as a new pool string.
 fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<StrNumber, Abort> {
     crate::scan::scan_pdf_ext_toks(st)?;
-    if st.shipout.selector == SELECTOR_NEW_STRING {
+    if st.shipout.selector == Selector::NewString {
         return Err(Abort::PdfError(&[
             "tokens",
             "tokens_to_string() called while selector = new_string",
         ]));
     }
     let old_selector = st.shipout.selector;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     let text = st.scanner.def_ref.link(&st.mem);
     let limit = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, text, TEX_NULL, limit);
@@ -740,7 +739,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     let old_selector = st.shipout.selector;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     let b = st.strings.pool_ptr;
 
     match c {

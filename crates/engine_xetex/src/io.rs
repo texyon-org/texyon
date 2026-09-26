@@ -1,14 +1,11 @@
 //! Low-level input and output: encoded line reading, file names, and the
 //! log and input-file lifecycle.
 
-use crate::consts::{
-    BIGGEST_CHAR, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN, SELECTOR_LOG_ONLY,
-    SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
-};
+use crate::consts::{BIGGEST_CHAR, CLOSED, EMPTY_STRING, INVALID_HANDLE, JUST_OPEN, TOO_BIG_CHAR};
 use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
 use crate::params::IntPar;
-use crate::state::EngineState;
+use crate::state::{EngineState, Selector};
 use crate::units::StrNumber;
 use crate::utf8::next_utf8_char;
 use tectonic_bridge_core::EOF;
@@ -850,7 +847,7 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.log_file = handle;
 
     st.strings.texmf_log_name = make_name_string(st)?;
-    st.shipout.selector = SELECTOR_LOG_ONLY;
+    st.shipout.selector = Selector::LogOnly;
     st.errors.log_opened = true;
 
     st.input.input_stack[st.input.input_ptr as usize] = st.input.cur_input;
@@ -865,7 +862,7 @@ pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     crate::output::print_ln(st);
-    st.shipout.selector = old_setting + 2;
+    st.shipout.selector = old_setting.with_log();
     Ok(())
 }
 
@@ -927,8 +924,8 @@ pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abor
         let log_file = st.shipout.log_file;
         output_putc(log_file, b'\n');
         output_close(log_file);
-        st.shipout.selector -= 2;
-        if st.shipout.selector == SELECTOR_TERM_ONLY {
+        st.shipout.selector = st.shipout.selector.without_log();
+        if st.shipout.selector == Selector::TermOnly {
             crate::output::print_nl(st, "Transcript written on ");
             crate::output::print(st, st.strings.texmf_log_name);
             crate::output::print_char(st, b'.');
@@ -969,12 +966,12 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.cur_cs = st.scanner.warning_index;
     crate::scan::scan_toks(st, false, true)?;
 
-    st.shipout.old_setting = st.shipout.selector as u8;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.old_setting = st.shipout.selector;
+    st.shipout.selector = Selector::NewString;
     let arg = st.scanner.def_ref.link(&st.mem);
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, arg, crate::mem::TEX_NULL, l);
-    st.shipout.selector = i32::from(st.shipout.old_setting);
+    st.shipout.selector = st.shipout.old_setting;
 
     let s = st.strings.make_string()?;
     st.mem.delete_token_ref(st.scanner.def_ref);

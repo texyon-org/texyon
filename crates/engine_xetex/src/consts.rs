@@ -41,11 +41,6 @@ pub const HISTORY_SPOTLESS: i32 = 0;
 pub const HISTORY_WARNING_ISSUED: i32 = 1;
 pub const HISTORY_ERROR_ISSUED: i32 = 2;
 pub const HISTORY_FATAL_ERROR: i32 = 3;
-pub const SELECTOR_NO_PRINT: i32 = 16;
-pub const SELECTOR_TERM_ONLY: i32 = 17;
-pub const SELECTOR_LOG_ONLY: i32 = 18;
-pub const SELECTOR_TERM_AND_LOG: i32 = 19;
-pub const SELECTOR_NEW_STRING: i32 = 21;
 pub const JUST_OPEN: u8 = 1;
 pub const CLOSED: u8 = 2;
 

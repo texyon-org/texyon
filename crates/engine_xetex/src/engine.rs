@@ -16,9 +16,8 @@ use crate::consts::{
     LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE,
     LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
     MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES, NUMBER_USVS, PRIM_EQTB_BASE,
-    PRIM_SIZE, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE,
-    SINGLE_BASE, SPLIT_BOT_MARK_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOP_MARK_CODE,
-    UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE, SPLIT_BOT_MARK_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
+    TOP_MARK_CODE, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
@@ -39,6 +38,7 @@ use crate::params::IntPar;
 use crate::scan::{set_class, set_family, INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{
     ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
+    Selector,
 };
 use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
 
@@ -238,11 +238,11 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     if st.errors.history != HISTORY_SPOTLESS
         && (st.errors.history == HISTORY_WARNING_ISSUED
             || st.errors.interaction < InteractionMode::ErrorStop)
-        && st.shipout.selector == SELECTOR_TERM_AND_LOG
+        && st.shipout.selector == Selector::TermAndLog
     {
-        st.shipout.selector = SELECTOR_TERM_ONLY;
+        st.shipout.selector = Selector::TermOnly;
         crate::output::print_nl(st, "(see the transcript file for additional information)");
-        st.shipout.selector = SELECTOR_TERM_AND_LOG;
+        st.shipout.selector = Selector::TermAndLog;
     }
 
     if c != 1 {
@@ -868,7 +868,7 @@ pub(crate) fn initialize_engine(
     }
     crate::texmfmp::init_start_time(st, build_date);
 
-    st.shipout.selector = SELECTOR_TERM_ONLY;
+    st.shipout.selector = Selector::TermOnly;
     st.errors.tally = 0;
     st.shipout.term_offset = 0;
     st.shipout.file_offset = 0;
@@ -987,9 +987,9 @@ pub(crate) fn initialize_engine(
     st.errors.init_randoms(random_seed);
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
-        SELECTOR_NO_PRINT
+        Selector::NoPrint
     } else {
-        SELECTOR_TERM_ONLY
+        Selector::TermOnly
     };
 
     if st.config.semantic_pagination_enabled {

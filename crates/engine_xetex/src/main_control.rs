@@ -26,10 +26,9 @@ use crate::consts::{
     LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE,
     LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD,
     MMODE, MU_GLUE, MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS,
-    NULL_FLAG, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT,
-    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
-    SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV,
-    UNDEFINED_PRIMITIVE, VMODE,
+    NULL_FLAG, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
+    SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE,
+    TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::errors::Abort;
 use crate::ext::{append_src_special, do_extension};
@@ -59,7 +58,7 @@ use crate::scan::{
     MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN, PROTECTED_TOKEN,
     RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
 };
-use crate::state::{EngineState, GroupCode, MemState};
+use crate::state::{EngineState, GroupCode, MemState, Selector};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 use crate::layout::set_cp_code;
@@ -1911,12 +1910,12 @@ pub(crate) fn new_interaction(st: &mut EngineState) {
     st.errors.interaction = crate::state::InteractionMode::from_raw(st.scanner.cur_chr)
         .expect("interaction primitive chr is 0..=3");
     st.shipout.selector = if st.errors.interaction == crate::state::InteractionMode::Batch {
-        SELECTOR_NO_PRINT
+        Selector::NoPrint
     } else {
-        SELECTOR_TERM_ONLY
+        Selector::TermOnly
     };
     if st.errors.log_opened {
-        st.shipout.selector += 2;
+        st.shipout.selector = st.shipout.selector.with_log();
     }
 }
 
@@ -2385,7 +2384,7 @@ pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
         }
     } else {
         let old_setting = st.shipout.selector;
-        st.shipout.selector = SELECTOR_NEW_STRING;
+        st.shipout.selector = Selector::NewString;
         crate::output::print(st, "FONT");
         crate::output::print(st, u - 1);
         st.shipout.selector = old_setting;

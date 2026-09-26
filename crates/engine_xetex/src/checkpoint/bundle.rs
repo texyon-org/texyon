@@ -4,11 +4,10 @@ use std::mem::{size_of, take};
 use std::sync::Arc;
 
 use crate::mem_types::{B16x4, ListStateRecord, MemoryWord};
-use crate::state::InputState;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
-    FontState, GroupCode, HyphState, InputClusterState, LinebreakState, MainLoopState, MemState,
-    SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
+    FontState, GroupCode, HyphState, InputClusterState, InputState, LinebreakState, MainLoopState,
+    MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 

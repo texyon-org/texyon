@@ -13,8 +13,7 @@ use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::scan::fetch_box;
-use crate::scan::MARK_VAL;
+use crate::scan::{fetch_box, MARK_VAL};
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 

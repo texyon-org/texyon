@@ -17,11 +17,10 @@ use crate::consts::{
     JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA,
     LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MU_GLUE,
     MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FONT, NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE,
-    SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
-    TEX_INFINITY, TEX_NULL, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL, UNDEFINED_PRIMITIVE,
+    UNLESS_CODE, VMODE,
 };
-use crate::errors::Abort;
-use crate::errors::{error, int_error, mu_error};
+use crate::errors::{error, int_error, mu_error, Abort};
 use crate::expand::{expand, macro_call, ELSE_CODE, FI_CODE, OR_CODE};
 use crate::ext::{
     aat_font_get, aat_font_get_1, aat_font_get_2, aat_font_get_named, aat_font_get_named_1,
@@ -48,6 +47,7 @@ use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::IntPar;
 use crate::state::{
     EngineState, EqtbState, ErrorState, GroupCode, InputClusterState, MemState, ScannerState,
+    Selector,
 };
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
@@ -653,18 +653,18 @@ pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: u8, k: i32) -> Resu
 }
 
 pub(crate) fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<StrNumber, Abort> {
-    if st.shipout.selector == SELECTOR_NEW_STRING {
+    if st.shipout.selector == Selector::NewString {
         return Err(Abort::PdfError(&[
             "tokens",
             "tokens_to_string() called while selector = new_string",
         ]));
     }
-    st.shipout.old_setting = st.shipout.selector as u8;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.old_setting = st.shipout.selector;
+    st.shipout.selector = Selector::NewString;
     let arg = MemPtr(p).link(&st.mem);
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, arg, TEX_NULL, l);
-    st.shipout.selector = i32::from(st.shipout.old_setting);
+    st.shipout.selector = st.shipout.old_setting;
     st.strings.make_string()
 }
 
@@ -1288,7 +1288,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                         continue 'restart;
                     }
                     return Err(Abort::NoLegalEnd {
-                        open_log: st.shipout.selector < SELECTOR_LOG_ONLY,
+                        open_log: st.shipout.selector < Selector::LogOnly,
                     });
                 }
             }
@@ -1475,7 +1475,7 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
             return Ok(MemPtr::from_raw(st.scanner.cur_val));
         }
         let old_setting = st.shipout.selector;
-        st.shipout.selector = SELECTOR_NEW_STRING;
+        st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
         let p = st.mem.get_avail()?;
         let list = TEMP_HEAD.link(&st.mem);
@@ -1502,7 +1502,7 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
         Ok(p)
     } else {
         let old_setting = st.shipout.selector;
-        st.shipout.selector = SELECTOR_NEW_STRING;
+        st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
         match st.scanner.cur_val_level {
             0 => print_int(st, st.scanner.cur_val),
@@ -1699,7 +1699,7 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     scan_general_text(st)?;
     let old_setting = st.shipout.selector;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     crate::output::token_show(st, TEMP_HEAD);
     st.shipout.selector = old_setting;
     let head = TEMP_HEAD.link(&st.mem);

@@ -25,14 +25,11 @@ use crate::consts::{
     END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE,
     HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE,
     LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE,
-    MU_SKIP_BASE, NORMAL, NULL_CS, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE,
-    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
-    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST,
-    TEXT_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
-    UNLESS_CODE, VMODE, X_LEADERS,
+    MU_SKIP_BASE, NORMAL, NULL_CS, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE, SF_CODE_BASE,
+    SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_NULL, TOKS_BASE,
+    TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, UNLESS_CODE, VMODE, X_LEADERS,
 };
-use crate::errors::error;
-use crate::errors::Abort;
+use crate::errors::{error, Abort};
 use crate::expand::{
     ETEX_REVISION_CODE, EXPANDED_CODE, FI_CODE, FONT_NAME_CODE, IFX_CODE, IF_CASE_CODE,
     IF_CAT_CODE, IF_CS_CODE, IF_DEF_CODE, IF_DIM_CODE, IF_EOF_CODE, IF_FALSE_CODE,
@@ -95,10 +92,8 @@ use crate::scan::{
     XETEX_SELECTOR_CODE_CODE, XETEX_VARIATION_CODE, XETEX_VARIATION_DEFAULT_CODE,
     XETEX_VARIATION_MAX_CODE, XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
 };
-use crate::state::{EngineState, GroupCode, InteractionMode};
+use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
-
-const SELECTOR_PSEUDO: i32 = 20;
 
 fn print_the_digs(st: &mut EngineState, mut k: u8) {
     while k > 0 {
@@ -214,8 +209,8 @@ fn print_bytes(st: &mut EngineState, bytes: &[u8]) {
 
 fn at_line_start(st: &EngineState) -> bool {
     let sel = st.shipout.selector;
-    !((st.shipout.term_offset > 0 && sel & 1 != 0)
-        || (st.shipout.file_offset > 0 && sel >= SELECTOR_LOG_ONLY))
+    !((st.shipout.term_offset > 0 && sel.raw() % 2 == 1)
+        || (st.shipout.file_offset > 0 && sel >= Selector::LogOnly))
 }
 
 pub(crate) fn print_nl(st: &mut EngineState, s: impl TexStr) {
@@ -297,25 +292,25 @@ fn warn_char(st: &mut EngineState, c: i32) {
 
 pub(crate) fn print_ln(st: &mut EngineState) {
     match st.shipout.selector {
-        sel @ (SELECTOR_TERM_ONLY | SELECTOR_LOG_ONLY | SELECTOR_TERM_AND_LOG) => {
+        sel @ (Selector::TermOnly | Selector::LogOnly | Selector::TermAndLog) => {
             warn_char(st, i32::from(b'\n'));
-            if sel != SELECTOR_LOG_ONLY {
+            if sel != Selector::LogOnly {
                 output_putc(st.shipout.rust_stdout, b'\n');
             }
-            if sel != SELECTOR_TERM_ONLY {
+            if sel != Selector::TermOnly {
                 output_putc(st.shipout.log_file, b'\n');
             }
-            if sel != SELECTOR_LOG_ONLY {
+            if sel != Selector::LogOnly {
                 st.shipout.term_offset = 0;
             }
-            if sel != SELECTOR_TERM_ONLY {
+            if sel != Selector::TermOnly {
                 st.shipout.file_offset = 0;
             }
         }
-        SELECTOR_NO_PRINT | SELECTOR_PSEUDO | SELECTOR_NEW_STRING => {}
-        sel => {
-            output_putc(st.shipout.write_file[sel as usize], b'\n');
-            st.shipout.write_prefix[sel as usize].push(i32::from(b'\n'));
+        Selector::NoPrint | Selector::Pseudo | Selector::NewString => {}
+        Selector::File(j) => {
+            output_putc(st.shipout.write_file[usize::from(j)], b'\n');
+            st.shipout.write_prefix[usize::from(j)].push(i32::from(b'\n'));
         }
     }
 }
@@ -324,9 +319,9 @@ pub(crate) fn print_ln(st: &mut EngineState) {
 pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offset: bool) {
     let s = s.into();
     match st.shipout.selector {
-        sel @ (SELECTOR_TERM_ONLY | SELECTOR_LOG_ONLY | SELECTOR_TERM_AND_LOG) => {
-            let to_term = sel != SELECTOR_LOG_ONLY;
-            let to_log = sel != SELECTOR_TERM_ONLY;
+        sel @ (Selector::TermOnly | Selector::LogOnly | Selector::TermAndLog) => {
+            let to_term = sel != Selector::LogOnly;
+            let to_log = sel != Selector::TermOnly;
             warn_char(st, s);
             if to_term {
                 output_putc(st.shipout.rust_stdout, s);
@@ -351,23 +346,23 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offse
                 st.shipout.file_offset = 0;
             }
         }
-        SELECTOR_NO_PRINT => {}
-        SELECTOR_PSEUDO => {
+        Selector::NoPrint => {}
+        Selector::Pseudo => {
             let t = st.errors.tally;
             if t < st.errors.trick_count {
                 st.errors.trick_buf[(t % st.errors.error_line) as usize] = s;
             }
         }
-        SELECTOR_NEW_STRING => {
+        Selector::NewString => {
             let pp = st.strings.pool_ptr;
             if pp < st.strings.pool_size {
                 st.strings.str_pool[pp as usize] = s as u16;
                 st.strings.pool_ptr = pp + 1;
             }
         }
-        sel => {
-            output_putc(st.shipout.write_file[sel as usize], s);
-            st.shipout.write_prefix[sel as usize].push(s);
+        Selector::File(j) => {
+            output_putc(st.shipout.write_file[usize::from(j)], s);
+            st.shipout.write_prefix[usize::from(j)].push(s);
         }
     }
     st.errors.tally += 1;
@@ -375,7 +370,7 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offse
 
 pub(crate) fn print_char(st: &mut EngineState, s: impl Into<i32>) {
     let s = s.into();
-    if st.shipout.selector > SELECTOR_PSEUDO && !st.shipout.doing_special {
+    if st.shipout.selector == Selector::NewString && !st.shipout.doing_special {
         if s >= 0x10000 {
             print_raw_char(st, 0xD800 + (s - 0x10000) / 1024, true);
             print_raw_char(st, 0xDC00 + (s - 0x10000) % 1024, true);
@@ -385,7 +380,7 @@ pub(crate) fn print_char(st: &mut EngineState, s: impl Into<i32>) {
         return;
     }
 
-    if s == st.eqtb.int_par(IntPar::NewLineChar) && st.shipout.selector < SELECTOR_PSEUDO {
+    if s == st.eqtb.int_par(IntPar::NewLineChar) && st.shipout.selector < Selector::Pseudo {
         print_ln(st);
         return;
     }
@@ -416,7 +411,7 @@ pub(crate) fn print_char(st: &mut EngineState, s: impl Into<i32>) {
         print_raw_char(st, b'^', true);
         print_raw_char(st, hex_digit((s % 256) / 16), true);
         print_raw_char(st, hex_digit(s % 16), true);
-    } else if st.shipout.selector == SELECTOR_PSEUDO {
+    } else if st.shipout.selector == Selector::Pseudo {
         print_raw_char(st, s, true);
     } else {
         // UTF-8, counting one column per character.
@@ -448,11 +443,11 @@ fn print_pool_str(st: &mut EngineState, s: i32) {
         if s < 0 {
             return print(st, "???");
         }
-        if st.shipout.selector > SELECTOR_PSEUDO {
+        if st.shipout.selector == Selector::NewString {
             print_char(st, s);
             return;
         }
-        if s == st.eqtb.int_par(IntPar::NewLineChar) && st.shipout.selector < SELECTOR_PSEUDO {
+        if s == st.eqtb.int_par(IntPar::NewLineChar) && st.shipout.selector < Selector::Pseudo {
             print_ln(st);
             return;
         }
@@ -742,9 +737,9 @@ fn print_sa_num(st: &mut EngineState, q: NodePtr<SaNode>) {
 }
 
 pub(crate) fn begin_diagnostic(st: &mut EngineState) {
-    st.shipout.old_setting = st.shipout.selector as u8;
-    if st.eqtb.int_par(IntPar::TracingOnline) <= 0 && st.shipout.selector == SELECTOR_TERM_AND_LOG {
-        st.shipout.selector -= 1;
+    st.shipout.old_setting = st.shipout.selector;
+    if st.eqtb.int_par(IntPar::TracingOnline) <= 0 && st.shipout.selector == Selector::TermAndLog {
+        st.shipout.selector = Selector::LogOnly;
         note_warning_issued(st);
     }
 }
@@ -754,7 +749,7 @@ pub(crate) fn end_diagnostic(st: &mut EngineState, blank_line: bool) {
     if blank_line {
         print_ln(st);
     }
-    st.shipout.selector = i32::from(st.shipout.old_setting);
+    st.shipout.selector = st.shipout.old_setting;
 }
 
 fn note_warning_issued(st: &mut EngineState) {
@@ -2114,7 +2109,7 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
     let toks = crate::scan::scan_toks(st, false, true)?;
     GARBAGE.set_link(&mut st.mem, toks);
     let old_setting = st.shipout.selector;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     token_show(st, st.scanner.def_ref);
     st.shipout.selector = old_setting;
     st.mem.flush_list(st.scanner.def_ref);
@@ -2444,12 +2439,12 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
         end_diagnostic(st, true);
         print_error_prefix(st);
         print(st, "OK");
-        if st.shipout.selector == SELECTOR_TERM_AND_LOG
+        if st.shipout.selector == Selector::TermAndLog
             && st.eqtb.int_par(IntPar::TracingOnline) <= 0
         {
-            st.shipout.selector = SELECTOR_TERM_ONLY;
+            st.shipout.selector = Selector::TermOnly;
             print(st, " (see the transcript file)");
-            st.shipout.selector = SELECTOR_TERM_AND_LOG;
+            st.shipout.selector = Selector::TermAndLog;
         }
     }
 
@@ -2516,7 +2511,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<()
 
     let font_name = st.strings.texstring_bytes(st.fonts.font_name[f]);
     let prev_sel = st.shipout.selector;
-    st.shipout.selector = SELECTOR_NEW_STRING;
+    st.shipout.selector = Selector::NewString;
     print_code(st, c);
     st.shipout.selector = prev_sel;
     let s = st.strings.make_string()?;
@@ -3210,7 +3205,7 @@ fn token_list_label(index: u16, loc: i32) -> Option<&'static str> {
 fn begin_pseudoprint(st: &mut EngineState) -> i32 {
     let l = st.errors.tally;
     st.errors.tally = 0;
-    st.shipout.selector = SELECTOR_PSEUDO;
+    st.shipout.selector = Selector::Pseudo;
     st.errors.trick_count = 1_000_000;
     l
 }
