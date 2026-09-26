@@ -2797,14 +2797,22 @@ fn prepare_sub_sup(
     mem: &mut MemState,
     cmd: u8,
 ) -> Result<(i32, Option<ScriptDuplication>), NodeRecycleAbort> {
+    let script = |n: NodePtr<Noad>| {
+        if cmd == SUP_MARK {
+            n.supscr_addr()
+        } else {
+            n.subscr_addr()
+        }
+    };
     let mut t = EMPTY;
     let mut p = TEX_NULL;
 
-    if cl.tail.0 != cl.head.0 {
-        let node_type = mem.b16s1(cl.tail);
-        if (NodeType::OrdNoad.as_raw()..NodeType::LeftNoad.as_raw()).contains(&node_type) {
-            p = cl.tail.0 + 2 + cmd as i32 - 7;
-            t = mem.b32s1(p);
+    if cl.tail != cl.head {
+        if let Ok(Some(n)) = mem.classify_noad(MemIdx::new(cl.tail)) {
+            if n.noad_type(mem).as_raw() < NodeType::LeftNoad.as_raw() {
+                p = script(n);
+                t = mem.b32s1(p);
+            }
         }
     }
 
@@ -2812,7 +2820,7 @@ fn prepare_sub_sup(
     if p == TEX_NULL || t != EMPTY {
         let noad = new_noad(mem).ok_or(NodeRecycleAbort::Overflow)?;
         cl.tail_append(mem, noad.ptr());
-        p = cl.tail.0 + 2 + cmd as i32 - 7;
+        p = script(noad);
         if t != EMPTY {
             duplicate = Some(if cmd == SUP_MARK {
                 ScriptDuplication::Superscript

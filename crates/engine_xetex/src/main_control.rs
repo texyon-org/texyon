@@ -2786,7 +2786,7 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         }
         if !(0..=19).contains(&st.scanner.cur_chr) {
             let l = st.scanner.cur_chr;
-            break 'found (l, (st.mem.b16s1(l) / 64) as u8, true);
+            break 'found (l, NodePtr::<SaNode>::at(l).sa_type(&st.mem) as u8, true);
         }
         let p = st.scanner.cur_chr as u8;
         crate::scan::scan_register_num_in(st)?;
