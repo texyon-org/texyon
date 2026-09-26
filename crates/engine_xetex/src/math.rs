@@ -27,7 +27,8 @@ use crate::node::{
 };
 use crate::scan::NodeRecycleAbort;
 use crate::state::{
-    EngineState, EqtbState, FontState, GroupCode, MemState, SaveStackState, ScannerState,
+    EngineState, EqtbState, ErrorState, FontState, GroupCode, MemState, SaveStackState,
+    ScannerState,
 };
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -225,20 +226,22 @@ impl MemState {
     }
 }
 
-/// The integer and fractional parts of the mu factor `m`, as `math_glue` splits it.
-fn mu_parts(errors: &mut crate::state::ErrorState, m: i32) -> (i32, i32) {
-    let mut n = crate::scaled_math::x_over_n_in(errors, m, 65_536);
-    let mut f = errors.tex_remainder;
-    if f < 0 {
-        n -= 1;
-        f += 65_536;
+impl ErrorState {
+    /// The integer and fractional parts of the mu factor `m`, as `math_glue` splits it.
+    fn mu_parts(&mut self, m: i32) -> (i32, i32) {
+        let mut n = self.x_over_n(m, 65_536);
+        let mut f = self.tex_remainder;
+        if f < 0 {
+            n -= 1;
+            f += 65_536;
+        }
+        (n, f)
     }
-    (n, f)
-}
 
-fn mu_mult(errors: &mut crate::state::ErrorState, (n, f): (i32, i32), v: i32) -> i32 {
-    let xnd = crate::scaled_math::xn_over_d_in(errors, v, f, 65_536);
-    crate::scaled_math::mult_and_add_in(errors, n, v, xnd, MAX_HALFWORD)
+    fn mu_mult(&mut self, (n, f): (i32, i32), v: i32) -> i32 {
+        let xnd = self.xn_over_d(v, f, 65_536);
+        self.mult_and_add(n, v, xnd, MAX_HALFWORD)
+    }
 }
 
 fn math_glue_in(
@@ -246,17 +249,17 @@ fn math_glue_in(
     spec: NodePtr<GlueSpecNode>,
     m: i32,
 ) -> Result<NodePtr<GlueSpecNode>, NodeRecycleAbort> {
-    let mu = mu_parts(&mut st.errors, m);
+    let mu = st.errors.mu_parts(m);
     let stretch_order = spec.stretch_order(&st.mem);
     let shrink_order = spec.shrink_order(&st.mem);
-    let width = mu_mult(&mut st.errors, mu, spec.width(&st.mem).0);
+    let width = st.errors.mu_mult(mu, spec.width(&st.mem).0);
     let mut stretch = spec.stretch(&st.mem).0;
     if stretch_order == NORMAL {
-        stretch = mu_mult(&mut st.errors, mu, stretch);
+        stretch = st.errors.mu_mult(mu, stretch);
     }
     let mut shrink = spec.shrink(&st.mem).0;
     if shrink_order == NORMAL {
-        shrink = mu_mult(&mut st.errors, mu, shrink);
+        shrink = st.errors.mu_mult(mu, shrink);
     }
 
     let p = NodePtr::<GlueSpecNode>::alloc(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
@@ -270,8 +273,8 @@ fn math_glue_in(
 
 fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
     if p.subtype(&st.mem) == MU_GLUE {
-        let mu = mu_parts(&mut st.errors, m);
-        let width = mu_mult(&mut st.errors, mu, p.width(&st.mem).0);
+        let mu = st.errors.mu_parts(m);
+        let width = st.errors.mu_mult(mu, p.width(&st.mem).0);
         p.set_width(&mut st.mem, Scaled(width));
         p.set_subtype(&mut st.mem, EXPLICIT);
     }
@@ -365,7 +368,7 @@ fn set_cur_size_and_mu(st: &mut EngineState) {
         SCRIPT_SIZE * ((st.scanner.cur_style as i32 - 2) / 2)
     };
     let mq = st.fonts.math_quad(&st.eqtb, st.scanner.cur_size);
-    st.scanner.cur_mu = crate::scaled_math::x_over_n_in(&mut st.errors, mq, 18);
+    st.scanner.cur_mu = st.errors.x_over_n(mq, 18);
 }
 
 enum FetchOutcome {

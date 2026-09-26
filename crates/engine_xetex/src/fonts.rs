@@ -871,7 +871,7 @@ pub(crate) unsafe fn load_native_font_in(
     let actual_size = if s >= 0 {
         s
     } else if s != -1000 {
-        crate::scaled_math::xn_over_d_in(&mut st.errors, get_loaded_font_design_size(), -s, 1000)
+        st.errors.xn_over_d(get_loaded_font_design_size(), -s, 1000)
     } else {
         get_loaded_font_design_size()
     };

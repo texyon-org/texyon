@@ -462,7 +462,7 @@ fn char_pw(
 ) -> i32 {
     fn protrusion(errors: &mut ErrorState, fonts: &FontState, f: i32, cp: i32) -> i32 {
         let quad = fonts.param(f, QUAD_CODE);
-        crate::scaled_math::round_xn_over_d(errors, quad, cp, 1000)
+        errors.round_xn_over_d(quad, cp, 1000)
     }
 
     if side == 0 {
@@ -2529,8 +2529,7 @@ impl MemState {
 
                         if g > 0 {
                             errors.arith_error = false;
-                            g = crate::scaled_math::fract_in(
-                                errors,
+                            g = errors.fract(
                                 g,
                                 r_active.shortfall(self).0,
                                 r_active.glue(self).0,
@@ -2538,13 +2537,7 @@ impl MemState {
                             );
                             let last_line_fit = eqtb.int_par(INT_PAR_LAST_LINE_FIT);
                             if last_line_fit < 1000 {
-                                g = crate::scaled_math::fract_in(
-                                    errors,
-                                    g,
-                                    last_line_fit,
-                                    1000,
-                                    MAX_HALFWORD,
-                                );
+                                g = errors.fract(g, last_line_fit, 1000, MAX_HALFWORD);
                             }
                             if errors.arith_error {
                                 g = if r_active.shortfall(self).0 > 0 {

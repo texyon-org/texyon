@@ -2744,13 +2744,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
         if s > 0 {
             s == st.fonts.font_size[f]
         } else {
-            st.fonts.font_size[f]
-                == crate::scaled_math::xn_over_d_in(
-                    &mut st.errors,
-                    st.fonts.font_dsize[f],
-                    -s,
-                    1000,
-                )
+            st.fonts.font_size[f] == st.errors.xn_over_d(st.fonts.font_dsize[f], -s, 1000)
         }
     };
     let f = 'search: {
@@ -2792,8 +2786,6 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
 }
 
 pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(), MainControlAbort> {
-    use crate::scaled_math::{mult_and_add_in, x_over_n_in};
-
     let q = st.scanner.cur_cmd;
     let (l, p, e) = 'found: {
         if q != REGISTER {
@@ -2905,9 +2897,9 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         let n = st.scanner.cur_val;
         let scale = |errors: &mut crate::state::ErrorState, x: i32, max_answer: i32| {
             if q == MULTIPLY {
-                mult_and_add_in(errors, x, n, 0, max_answer)
+                errors.mult_and_add(x, n, 0, max_answer)
             } else {
-                x_over_n_in(errors, x, n)
+                errors.x_over_n(x, n)
             }
         };
         if p < GLUE_VAL {

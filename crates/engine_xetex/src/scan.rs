@@ -49,7 +49,7 @@ use crate::output::{
     print_err_in, print_esc_cstr_in, print_int_in, print_nl_cstr_in,
 };
 use crate::packaging::{ADDITIONAL, EXACTLY};
-use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
+use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, MemState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 use std::ffi::CStr;
 
@@ -456,12 +456,14 @@ pub(crate) fn scan_spec_in(
     Ok(())
 }
 
-fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
-    let a = errors.dig[..k as usize]
-        .iter()
-        .rev()
-        .fold(0, |a, &d| (a + d as i32 * 0x2_0000) / 10);
-    (a + 1) / 2
+impl ErrorState {
+    fn round_decimals(&self, k: i32) -> i32 {
+        let a = self.dig[..k as usize]
+            .iter()
+            .rev()
+            .fold(0, |a, &d| (a + d as i32 * 0x2_0000) / 10);
+        (a + 1) / 2
+    }
 }
 
 pub(crate) fn scan_rule_spec_in(st: &mut EngineState) -> Result<NodePtr<RuleNode>, SccAbort> {
@@ -2194,8 +2196,7 @@ fn glue_to_width_in(st: &mut EngineState) {
 
 /// Scales `cur_val` and the fraction `f` by `num / denom`.
 fn scale_dimen_in(st: &mut EngineState, f: &mut i32, num: i32, denom: i32) {
-    st.scanner.cur_val =
-        crate::scaled_math::xn_over_d_in(&mut st.errors, st.scanner.cur_val, num, denom);
+    st.scanner.cur_val = st.errors.xn_over_d(st.scanner.cur_val, num, denom);
     *f = (num * *f + 65536 * st.errors.tex_remainder) / denom;
     st.scanner.cur_val += *f / 65536;
     *f %= 65536;
@@ -2203,14 +2204,10 @@ fn scale_dimen_in(st: &mut EngineState, f: &mut i32, num: i32, denom: i32) {
 
 /// Sets `cur_val` to `integer.fraction` times the unit `v`.
 fn attach_unit_in(st: &mut EngineState, integer: i32, fraction: i32, v: i32) {
-    let fraction_part = crate::scaled_math::xn_over_d_in(&mut st.errors, v, fraction, 65536);
-    st.scanner.cur_val = crate::scaled_math::mult_and_add_in(
-        &mut st.errors,
-        integer,
-        v,
-        fraction_part,
-        MAX_HALFWORD,
-    );
+    let fraction_part = st.errors.xn_over_d(v, fraction, 65536);
+    st.scanner.cur_val = st
+        .errors
+        .mult_and_add(integer, v, fraction_part, MAX_HALFWORD);
 }
 
 pub(crate) fn xetex_scan_dimen_in(
@@ -2287,7 +2284,7 @@ pub(crate) fn xetex_scan_dimen_in(
                         st.mem.free_avail(digits);
                         digits = next;
                     }
-                    f = round_decimals(&st.errors, k);
+                    f = st.errors.round_decimals(k);
                     if st.scanner.cur_cmd != SPACER {
                         back_input_in(st)?;
                     }
@@ -2525,15 +2522,14 @@ fn add_glue_in(
     t: NodePtr<GlueSpecNode>,
     sub: bool,
 ) {
-    use crate::scaled_math::add_or_sub_in;
     let mem = &mut st.mem;
     let errors = &mut st.errors;
-    let width = add_or_sub_in(errors, e.width(mem).0, t.width(mem).0, MAX_HALFWORD, sub);
+    let width = errors.add_or_sub(e.width(mem).0, t.width(mem).0, MAX_HALFWORD, sub);
     e.set_width(mem, Scaled(width));
     let (e_order, t_order, t_stretch) =
         (e.stretch_order(mem), t.stretch_order(mem), t.stretch(mem));
     if e_order == t_order {
-        let stretch = add_or_sub_in(errors, e.stretch(mem).0, t_stretch.0, MAX_HALFWORD, sub);
+        let stretch = errors.add_or_sub(e.stretch(mem).0, t_stretch.0, MAX_HALFWORD, sub);
         e.set_stretch(mem, Scaled(stretch));
     } else if e_order < t_order && t_stretch.0 != 0 {
         e.set_stretch(mem, t_stretch);
@@ -2541,7 +2537,7 @@ fn add_glue_in(
     }
     let (e_order, t_order, t_shrink) = (e.shrink_order(mem), t.shrink_order(mem), t.shrink(mem));
     if e_order == t_order {
-        let shrink = add_or_sub_in(errors, e.shrink(mem).0, t_shrink.0, MAX_HALFWORD, sub);
+        let shrink = errors.add_or_sub(e.shrink(mem).0, t_shrink.0, MAX_HALFWORD, sub);
         e.set_shrink(mem, Scaled(shrink));
     } else if e_order < t_order && t_shrink.0 != 0 {
         e.set_shrink(mem, t_shrink);
@@ -2552,8 +2548,6 @@ fn add_glue_in(
 }
 
 pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
-    use crate::scaled_math::{add_or_sub_in, fract_in, mult_and_add_in, quotient_in};
-
     let mut l = st.scanner.cur_val_level;
     let a = st.errors.arith_error;
     let mut b = false;
@@ -2672,30 +2666,30 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
                         n = f;
                         o = EXPR_SCALE;
                     } else if l == INT_VAL {
-                        t = mult_and_add_in(&mut st.errors, t, f, 0, TEX_INFINITY);
+                        t = st.errors.mult_and_add(t, f, 0, TEX_INFINITY);
                     } else if l == DIMEN_VAL {
-                        t = mult_and_add_in(&mut st.errors, t, f, 0, MAX_HALFWORD);
+                        t = st.errors.mult_and_add(t, f, 0, MAX_HALFWORD);
                     } else {
                         map_glue_in(st, glue_spec(t), |errors, x| {
-                            mult_and_add_in(errors, x, f, 0, MAX_HALFWORD)
+                            errors.mult_and_add(x, f, 0, MAX_HALFWORD)
                         });
                     }
                 }
                 EXPR_DIV => {
                     if l < GLUE_VAL {
-                        t = quotient_in(&mut st.errors, t, f);
+                        t = st.errors.quotient(t, f);
                     } else {
-                        map_glue_in(st, glue_spec(t), |errors, x| quotient_in(errors, x, f));
+                        map_glue_in(st, glue_spec(t), |errors, x| errors.quotient(x, f));
                     }
                 }
                 EXPR_SCALE => {
                     if l == INT_VAL {
-                        t = fract_in(&mut st.errors, t, n, f, TEX_INFINITY);
+                        t = st.errors.fract(t, n, f, TEX_INFINITY);
                     } else if l == DIMEN_VAL {
-                        t = fract_in(&mut st.errors, t, n, f, MAX_HALFWORD);
+                        t = st.errors.fract(t, n, f, MAX_HALFWORD);
                     } else {
                         map_glue_in(st, glue_spec(t), |errors, x| {
-                            fract_in(errors, x, n, f, MAX_HALFWORD)
+                            errors.fract(x, n, f, MAX_HALFWORD)
                         });
                     }
                 }
@@ -2709,9 +2703,9 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 if r == EXPR_NONE {
                     e = t;
                 } else if l == INT_VAL {
-                    e = add_or_sub_in(&mut st.errors, e, t, TEX_INFINITY, r == EXPR_SUB);
+                    e = st.errors.add_or_sub(e, t, TEX_INFINITY, r == EXPR_SUB);
                 } else if l == DIMEN_VAL {
-                    e = add_or_sub_in(&mut st.errors, e, t, MAX_HALFWORD, r == EXPR_SUB);
+                    e = st.errors.add_or_sub(e, t, MAX_HALFWORD, r == EXPR_SUB);
                 } else {
                     add_glue_in(st, glue_spec(e), glue_spec(t), r == EXPR_SUB);
                 }

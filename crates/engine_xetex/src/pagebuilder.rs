@@ -500,7 +500,7 @@ fn scale_by_count(st: &mut EngineState, x: i32, count: i32) -> i32 {
     if count == 1000 {
         x
     } else {
-        crate::scaled_math::x_over_n_in(&mut st.errors, x, 1000) * count
+        st.errors.x_over_n(x, 1000) * count
     }
 }
 
@@ -587,7 +587,7 @@ fn append_insertion_in(
         if count == 1000 {
             w
         } else {
-            crate::scaled_math::x_over_n_in(&mut st.errors, w, count) * 1000
+            st.errors.x_over_n(w, count) * 1000
         }
     };
     let room = max_height - rec.height(&st.mem).0;

@@ -1071,7 +1071,7 @@ pub(crate) unsafe fn initialize_engine(
         st.shipout.microseconds,
     );
     let random_seed = st.errors.random_seed;
-    crate::scaled_math::init_randoms(&mut st.errors, random_seed);
+    st.errors.init_randoms(random_seed);
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
         SELECTOR_NO_PRINT

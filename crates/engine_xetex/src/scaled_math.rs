@@ -27,59 +27,55 @@ pub fn half(x: i32) -> i32 {
     }
 }
 
-pub(crate) fn mult_and_add_in(
-    errors: &mut ErrorState,
-    mut n: i32,
-    mut x: i32,
-    y: i32,
-    max_answer: i32,
-) -> i32 {
-    if n < 0 {
-        x = x.wrapping_neg();
-        n = n.wrapping_neg();
+impl ErrorState {
+    pub(crate) fn mult_and_add(&mut self, mut n: i32, mut x: i32, y: i32, max_answer: i32) -> i32 {
+        if n < 0 {
+            x = x.wrapping_neg();
+            n = n.wrapping_neg();
+        }
+        if n == 0 {
+            return y;
+        }
+        // The bounds may overflow i32 and must wrap.
+        let upper_ok = x <= max_answer.wrapping_sub(y) / n;
+        let lower_ok = x.wrapping_neg() <= max_answer.wrapping_add(y) / n;
+        if upper_ok && lower_ok {
+            n.wrapping_mul(x).wrapping_add(y)
+        } else {
+            self.arith_error = true;
+            0
+        }
     }
-    if n == 0 {
-        return y;
-    }
-    // The bounds may overflow i32 and must wrap.
-    let upper_ok = x <= max_answer.wrapping_sub(y) / n;
-    let lower_ok = x.wrapping_neg() <= max_answer.wrapping_add(y) / n;
-    if upper_ok && lower_ok {
-        n.wrapping_mul(x).wrapping_add(y)
-    } else {
-        errors.arith_error = true;
-        0
-    }
-}
 
-pub fn x_over_n_in(errors: &mut ErrorState, mut x: i32, mut n: i32) -> i32 {
-    if n == 0 {
-        errors.arith_error = true;
-        errors.tex_remainder = x;
-        return 0;
+    pub fn x_over_n(&mut self, mut x: i32, mut n: i32) -> i32 {
+        if n == 0 {
+            self.arith_error = true;
+            self.tex_remainder = x;
+            return 0;
+        }
+        if n < 0 {
+            x = x.wrapping_neg();
+            n = n.wrapping_neg();
+            self.tex_remainder = self.tex_remainder.wrapping_neg();
+        }
+        if x >= 0 {
+            self.tex_remainder = x % n;
+            x / n
+        } else {
+            let neg_x = x.wrapping_neg();
+            self.tex_remainder = (neg_x % n).wrapping_neg();
+            (neg_x / n).wrapping_neg()
+        }
     }
-    if n < 0 {
-        x = x.wrapping_neg();
-        n = n.wrapping_neg();
-        errors.tex_remainder = errors.tex_remainder.wrapping_neg();
-    }
-    if x >= 0 {
-        errors.tex_remainder = x % n;
-        x / n
-    } else {
-        let neg_x = x.wrapping_neg();
-        errors.tex_remainder = (neg_x % n).wrapping_neg();
-        (neg_x / n).wrapping_neg()
-    }
-}
 
-pub(crate) fn xn_over_d_in(errors: &mut ErrorState, x: i32, n: i32, d: i32) -> i32 {
-    let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
-    if overflowed {
-        errors.arith_error = true;
+    pub(crate) fn xn_over_d(&mut self, x: i32, n: i32, d: i32) -> i32 {
+        let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
+        if overflowed {
+            self.arith_error = true;
+        }
+        self.tex_remainder = remainder;
+        quotient
     }
-    errors.tex_remainder = remainder;
-    quotient
 }
 
 /// Side-effect-free core of `xn_over_d`: `(quotient, remainder, overflowed)`.
@@ -106,133 +102,135 @@ pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
     }
 }
 
-/// `xn_over_d` rounded half away from zero. Leaves `tex_remainder` alone.
-pub fn round_xn_over_d(errors: &mut ErrorState, x: i32, n: i32, d: i32) -> i32 {
-    let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
-    if overflowed {
-        errors.arith_error = true;
-    }
-    if x >= 0 {
-        if remainder.wrapping_mul(2) >= d {
-            quotient.wrapping_add(1)
+impl ErrorState {
+    /// `xn_over_d` rounded half away from zero. Leaves `tex_remainder` alone.
+    pub fn round_xn_over_d(&mut self, x: i32, n: i32, d: i32) -> i32 {
+        let (quotient, remainder, overflowed) = xn_over_d_parts(x, n, d);
+        if overflowed {
+            self.arith_error = true;
+        }
+        if x >= 0 {
+            if remainder.wrapping_mul(2) >= d {
+                quotient.wrapping_add(1)
+            } else {
+                quotient
+            }
+        } else if remainder.wrapping_neg().wrapping_mul(2) >= d {
+            quotient.wrapping_sub(1)
         } else {
             quotient
         }
-    } else if remainder.wrapping_neg().wrapping_mul(2) >= d {
-        quotient.wrapping_sub(1)
-    } else {
-        quotient
-    }
-}
-
-/// `p/q` as a 28-bit fraction (1.0 == 0x10000000), saturating at |p/q| >= 8.
-fn make_frac(errors: &mut ErrorState, mut p: i32, mut q: i32) -> i32 {
-    let mut negative = p < 0;
-    if negative {
-        p = -p;
-    }
-    if q <= 0 {
-        q = -q;
-        negative = !negative;
     }
 
-    let n = p / q;
-    p %= q;
-    if n >= 8 {
-        errors.arith_error = true;
-        return if negative { -0x7FFF_FFFF } else { 0x7FFF_FFFF };
-    }
+    /// `p/q` as a 28-bit fraction (1.0 == 0x10000000), saturating at |p/q| >= 8.
+    fn make_frac(&mut self, mut p: i32, mut q: i32) -> i32 {
+        let mut negative = p < 0;
+        if negative {
+            p = -p;
+        }
+        if q <= 0 {
+            q = -q;
+            negative = !negative;
+        }
 
-    let n = (n - 1).wrapping_mul(0x1000_0000);
-    let mut f = 1_i32;
-    loop {
+        let n = p / q;
+        p %= q;
+        if n >= 8 {
+            self.arith_error = true;
+            return if negative { -0x7FFF_FFFF } else { 0x7FFF_FFFF };
+        }
+
+        let n = (n - 1).wrapping_mul(0x1000_0000);
+        let mut f = 1_i32;
+        loop {
+            let be_careful = p.wrapping_sub(q);
+            p = be_careful.wrapping_add(p);
+            if p >= 0 {
+                f = f + f + 1;
+            } else {
+                f = f + f;
+                p += q;
+            }
+            if f >= 0x1000_0000 {
+                break;
+            }
+        }
+
         let be_careful = p.wrapping_sub(q);
-        p = be_careful.wrapping_add(p);
-        if p >= 0 {
-            f = f + f + 1;
+        if be_careful.wrapping_add(p) >= 0 {
+            f += 1;
+        }
+
+        if negative {
+            -(f + n)
         } else {
-            f = f + f;
-            p += q;
-        }
-        if f >= 0x1000_0000 {
-            break;
+            f + n
         }
     }
 
-    let be_careful = p.wrapping_sub(q);
-    if be_careful.wrapping_add(p) >= 0 {
-        f += 1;
-    }
+    /// `q` times the 28-bit fraction `f`.
+    fn take_frac(&mut self, mut q: i32, mut f: i32) -> i32 {
+        let mut negative = f < 0;
+        if negative {
+            f = -f;
+        }
+        if q < 0 {
+            q = -q;
+            negative = !negative;
+        }
 
-    if negative {
-        -(f + n)
-    } else {
-        f + n
-    }
-}
-
-/// `q` times the 28-bit fraction `f`.
-fn take_frac(errors: &mut ErrorState, mut q: i32, mut f: i32) -> i32 {
-    let mut negative = f < 0;
-    if negative {
-        f = -f;
-    }
-    if q < 0 {
-        q = -q;
-        negative = !negative;
-    }
-
-    let mut n = if f < 0x1000_0000 {
-        0_i32
-    } else {
-        let nn = f / 0x1000_0000;
-        f %= 0x1000_0000;
-        if q <= 0x7FFF_FFFF / nn {
-            nn * q
+        let mut n = if f < 0x1000_0000 {
+            0_i32
         } else {
-            errors.arith_error = true;
-            0x7FFF_FFFF
-        }
-    };
-
-    f += 0x1000_0000;
-    let mut p = 0x0800_0000_i32;
-    if q < 0x4000_0000 {
-        loop {
-            if f & 1 != 0 {
-                p = (p + q) / 2;
+            let nn = f / 0x1000_0000;
+            f %= 0x1000_0000;
+            if q <= 0x7FFF_FFFF / nn {
+                nn * q
             } else {
-                p /= 2;
+                self.arith_error = true;
+                0x7FFF_FFFF
             }
-            f /= 2;
-            if f == 1 {
-                break;
+        };
+
+        f += 0x1000_0000;
+        let mut p = 0x0800_0000_i32;
+        if q < 0x4000_0000 {
+            loop {
+                if f & 1 != 0 {
+                    p = (p + q) / 2;
+                } else {
+                    p /= 2;
+                }
+                f /= 2;
+                if f == 1 {
+                    break;
+                }
+            }
+        } else {
+            loop {
+                if f & 1 != 0 {
+                    p = p + (q - p) / 2;
+                } else {
+                    p /= 2;
+                }
+                f /= 2;
+                if f == 1 {
+                    break;
+                }
             }
         }
-    } else {
-        loop {
-            if f & 1 != 0 {
-                p = p + (q - p) / 2;
-            } else {
-                p /= 2;
-            }
-            f /= 2;
-            if f == 1 {
-                break;
-            }
+
+        let be_careful = n - 0x7FFF_FFFF;
+        if be_careful + p > 0 {
+            self.arith_error = true;
+            n = 0x7FFF_FFFF - p;
         }
-    }
 
-    let be_careful = n - 0x7FFF_FFFF;
-    if be_careful + p > 0 {
-        errors.arith_error = true;
-        n = 0x7FFF_FFFF - p;
-    }
-
-    if negative {
-        -(n + p)
-    } else {
-        n + p
+        if negative {
+            -(n + p)
+        } else {
+            n + p
+        }
     }
 }
 
@@ -292,59 +290,61 @@ fn ab_vs_cd(mut a: i32, mut b: i32, mut c: i32, mut d: i32) -> i32 {
     }
 }
 
-fn new_randoms(errors: &mut ErrorState) {
-    for k in 0_usize..24 {
-        let x = errors.randoms[k].wrapping_sub(errors.randoms[k + 31]);
-        errors.randoms[k] = if x < 0 { x + 0x1000_0000 } else { x };
-    }
-    for k in 24_usize..55 {
-        let x = errors.randoms[k].wrapping_sub(errors.randoms[k - 24]);
-        errors.randoms[k] = if x < 0 { x + 0x1000_0000 } else { x };
-    }
-    errors.j_random = 54;
-}
-
-fn next_random(errors: &mut ErrorState) -> i32 {
-    if errors.j_random == 0 {
-        new_randoms(errors);
-    } else {
-        errors.j_random -= 1;
-    }
-    errors.randoms[errors.j_random as usize]
-}
-
-pub fn init_randoms(errors: &mut ErrorState, seed: i32) {
-    let mut j = seed.abs();
-    while j >= 0x1000_0000 {
-        j /= 2;
-    }
-
-    let mut k = 1_i32;
-    for i in 0_usize..55 {
-        let jj = k;
-        k = j - k;
-        j = jj;
-        if k < 0 {
-            k += 0x1000_0000;
+impl ErrorState {
+    fn new_randoms(&mut self) {
+        for k in 0_usize..24 {
+            let x = self.randoms[k].wrapping_sub(self.randoms[k + 31]);
+            self.randoms[k] = if x < 0 { x + 0x1000_0000 } else { x };
         }
-        errors.randoms[(i * 21) % 55] = j;
+        for k in 24_usize..55 {
+            let x = self.randoms[k].wrapping_sub(self.randoms[k - 24]);
+            self.randoms[k] = if x < 0 { x + 0x1000_0000 } else { x };
+        }
+        self.j_random = 54;
     }
 
-    new_randoms(errors);
-    new_randoms(errors);
-    new_randoms(errors);
-}
+    fn next_random(&mut self) -> i32 {
+        if self.j_random == 0 {
+            self.new_randoms();
+        } else {
+            self.j_random -= 1;
+        }
+        self.randoms[self.j_random as usize]
+    }
 
-/// A uniform random integer between 0 and `x` (exclusive, sign of `x`).
-pub fn unif_rand(errors: &mut ErrorState, x: i32) -> i32 {
-    let r = next_random(errors);
-    let y = take_frac(errors, x.abs(), r);
-    if y == x.abs() {
-        0
-    } else if x > 0 {
-        y
-    } else {
-        -y
+    pub fn init_randoms(&mut self, seed: i32) {
+        let mut j = seed.abs();
+        while j >= 0x1000_0000 {
+            j /= 2;
+        }
+
+        let mut k = 1_i32;
+        for i in 0_usize..55 {
+            let jj = k;
+            k = j - k;
+            j = jj;
+            if k < 0 {
+                k += 0x1000_0000;
+            }
+            self.randoms[(i * 21) % 55] = j;
+        }
+
+        self.new_randoms();
+        self.new_randoms();
+        self.new_randoms();
+    }
+
+    /// A uniform random integer between 0 and `x` (exclusive, sign of `x`).
+    pub fn unif_rand(&mut self, x: i32) -> i32 {
+        let r = self.next_random();
+        let y = self.take_frac(x.abs(), r);
+        if y == x.abs() {
+            0
+        } else if x > 0 {
+            y
+        } else {
+            -y
+        }
     }
 }
 
@@ -391,15 +391,15 @@ fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
 pub fn norm_rand(st: &mut EngineState) -> i32 {
     loop {
         let (x, u) = loop {
-            let r = next_random(&mut st.errors) - 0x0800_0000;
-            let x = take_frac(&mut st.errors, 112429, r);
-            let u = next_random(&mut st.errors);
+            let r = st.errors.next_random() - 0x0800_0000;
+            let x = st.errors.take_frac(112429, r);
+            let u = st.errors.next_random();
             if x.abs() < u {
                 break (x, u);
             }
         };
 
-        let xi = make_frac(&mut st.errors, x, u);
+        let xi = st.errors.make_frac(x, u);
         let l = 139_548_960_i32 - m_log(st, u);
         if ab_vs_cd(1024, l, xi, xi) >= 0 {
             return xi;
@@ -407,141 +407,131 @@ pub fn norm_rand(st: &mut EngineState) -> i32 {
     }
 }
 
-pub(crate) fn add_or_sub_in(
-    errors: &mut ErrorState,
-    x: i32,
-    y: i32,
-    max_answer: i32,
-    negative: bool,
-) -> i32 {
-    let y = if negative { -y } else { y };
-    if x >= 0 {
-        if y <= max_answer - x {
+impl ErrorState {
+    pub(crate) fn add_or_sub(&mut self, x: i32, y: i32, max_answer: i32, negative: bool) -> i32 {
+        let y = if negative { -y } else { y };
+        if x >= 0 {
+            if y <= max_answer - x {
+                x + y
+            } else {
+                self.arith_error = true;
+                0
+            }
+        } else if y >= -max_answer - x {
             x + y
         } else {
-            errors.arith_error = true;
+            self.arith_error = true;
             0
         }
-    } else if y >= -max_answer - x {
-        x + y
-    } else {
-        errors.arith_error = true;
-        0
-    }
-}
-
-pub(crate) fn quotient_in(errors: &mut ErrorState, mut n: i32, mut d: i32) -> i32 {
-    if d == 0 {
-        errors.arith_error = true;
-        return 0;
-    }
-    let mut negative = d < 0;
-    if negative {
-        d = -d;
-    }
-    if n < 0 {
-        n = -n;
-        negative = !negative;
-    }
-    let mut a = n / d;
-    n -= a * d;
-    d = n - d;
-    if d + n >= 0 {
-        a += 1;
-    }
-    if negative {
-        -a
-    } else {
-        a
-    }
-}
-
-pub(crate) fn fract_in(
-    errors: &mut ErrorState,
-    mut x: i32,
-    mut n: i32,
-    mut d: i32,
-    max_answer: i32,
-) -> i32 {
-    if d == 0 {
-        errors.arith_error = true;
-        return 0;
-    }
-    let mut negative = d < 0;
-    if negative {
-        d = -d;
-    }
-    if x < 0 {
-        x = -x;
-        negative = !negative;
-    } else if x == 0 {
-        return 0;
-    }
-    if n < 0 {
-        n = -n;
-        negative = !negative;
     }
 
-    let t = n / d;
-    if t > max_answer / x {
-        errors.arith_error = true;
-        return 0;
-    }
-    let mut a = t * x;
-    n -= t * d;
-    if n != 0 {
-        let t = x / d;
-        if t > (max_answer - a) / n {
-            errors.arith_error = true;
+    pub(crate) fn quotient(&mut self, mut n: i32, mut d: i32) -> i32 {
+        if d == 0 {
+            self.arith_error = true;
             return 0;
         }
-        a += t * n;
-        x -= t * d;
-        if x != 0 {
-            if x < n {
-                std::mem::swap(&mut x, &mut n);
-            }
-            let mut f = 0i32;
-            let mut r = (d / 2) - d;
-            let h = -r;
-            loop {
-                if n & 1 != 0 {
-                    r += x;
-                    if r >= 0 {
-                        r -= d;
-                        f += 1;
-                    }
-                }
-                n /= 2;
-                if n == 0 {
-                    break;
-                }
-                if x < h {
-                    x += x;
-                } else {
-                    let tmp = x - d;
-                    x += tmp;
-                    f += n;
-                    if x < n {
-                        if x == 0 {
-                            break;
-                        }
-                        std::mem::swap(&mut x, &mut n);
-                    }
-                }
-            }
-            if f > max_answer - a {
-                errors.arith_error = true;
-                return 0;
-            }
-            a += f;
+        let mut negative = d < 0;
+        if negative {
+            d = -d;
+        }
+        if n < 0 {
+            n = -n;
+            negative = !negative;
+        }
+        let mut a = n / d;
+        n -= a * d;
+        d = n - d;
+        if d + n >= 0 {
+            a += 1;
+        }
+        if negative {
+            -a
+        } else {
+            a
         }
     }
 
-    if negative {
-        -a
-    } else {
-        a
+    pub(crate) fn fract(&mut self, mut x: i32, mut n: i32, mut d: i32, max_answer: i32) -> i32 {
+        if d == 0 {
+            self.arith_error = true;
+            return 0;
+        }
+        let mut negative = d < 0;
+        if negative {
+            d = -d;
+        }
+        if x < 0 {
+            x = -x;
+            negative = !negative;
+        } else if x == 0 {
+            return 0;
+        }
+        if n < 0 {
+            n = -n;
+            negative = !negative;
+        }
+
+        let t = n / d;
+        if t > max_answer / x {
+            self.arith_error = true;
+            return 0;
+        }
+        let mut a = t * x;
+        n -= t * d;
+        if n != 0 {
+            let t = x / d;
+            if t > (max_answer - a) / n {
+                self.arith_error = true;
+                return 0;
+            }
+            a += t * n;
+            x -= t * d;
+            if x != 0 {
+                if x < n {
+                    std::mem::swap(&mut x, &mut n);
+                }
+                let mut f = 0i32;
+                let mut r = (d / 2) - d;
+                let h = -r;
+                loop {
+                    if n & 1 != 0 {
+                        r += x;
+                        if r >= 0 {
+                            r -= d;
+                            f += 1;
+                        }
+                    }
+                    n /= 2;
+                    if n == 0 {
+                        break;
+                    }
+                    if x < h {
+                        x += x;
+                    } else {
+                        let tmp = x - d;
+                        x += tmp;
+                        f += n;
+                        if x < n {
+                            if x == 0 {
+                                break;
+                            }
+                            std::mem::swap(&mut x, &mut n);
+                        }
+                    }
+                }
+                if f > max_answer - a {
+                    self.arith_error = true;
+                    return 0;
+                }
+                a += f;
+            }
+        }
+
+        if negative {
+            -a
+        } else {
+            a
+        }
     }
 }
 
@@ -589,20 +579,20 @@ mod tests {
         const MAX: i32 = 0x3FFF_FFFF;
 
         let mut e = ErrorState::default();
-        assert_eq!(mult_and_add_in(&mut e, 3, 7, 1, MAX), 22);
+        assert_eq!(e.mult_and_add(3, 7, 1, MAX), 22);
         assert!(!e.arith_error);
 
-        assert_eq!(mult_and_add_in(&mut e, 0, 7, 42, MAX), 42);
+        assert_eq!(e.mult_and_add(0, 7, 42, MAX), 42);
         assert!(!e.arith_error);
 
-        assert_eq!(mult_and_add_in(&mut e, -2, 3, 1, MAX), -5);
+        assert_eq!(e.mult_and_add(-2, 3, 1, MAX), -5);
         assert!(!e.arith_error);
     }
 
     #[test]
     fn mult_and_add_detects_overflow() {
         let mut e = ErrorState::default();
-        let r = mult_and_add_in(&mut e, 2, 2_000_000_000, 1_000_000_000, i32::MAX);
+        let r = e.mult_and_add(2, 2_000_000_000, 1_000_000_000, i32::MAX);
         assert_eq!(r, 0);
         assert!(e.arith_error);
     }
@@ -610,7 +600,7 @@ mod tests {
     #[test]
     fn x_over_n_positive() {
         let mut e = ErrorState::default();
-        assert_eq!(x_over_n_in(&mut e, 17, 5), 3);
+        assert_eq!(e.x_over_n(17, 5), 3);
         assert_eq!(e.tex_remainder, 2);
         assert!(!e.arith_error);
     }
@@ -618,7 +608,7 @@ mod tests {
     #[test]
     fn x_over_n_negative_x_gives_negative_remainder() {
         let mut e = ErrorState::default();
-        assert_eq!(x_over_n_in(&mut e, -17, 5), -3);
+        assert_eq!(e.x_over_n(-17, 5), -3);
         assert_eq!(e.tex_remainder, -2);
         assert!(!e.arith_error);
     }
@@ -626,7 +616,7 @@ mod tests {
     #[test]
     fn x_over_n_zero_divisor_sets_flag() {
         let mut e = ErrorState::default();
-        assert_eq!(x_over_n_in(&mut e, 42, 0), 0);
+        assert_eq!(e.x_over_n(42, 0), 0);
         assert_eq!(e.tex_remainder, 42);
         assert!(e.arith_error);
     }
@@ -634,7 +624,7 @@ mod tests {
     #[test]
     fn xn_over_d_small_values() {
         let mut e = ErrorState::default();
-        assert_eq!(xn_over_d_in(&mut e, 10, 3, 4), 7);
+        assert_eq!(e.xn_over_d(10, 3, 4), 7);
         assert_eq!(e.tex_remainder, 2);
         assert!(!e.arith_error);
     }
@@ -642,7 +632,7 @@ mod tests {
     #[test]
     fn xn_over_d_large_x_and_divisor() {
         let mut e = ErrorState::default();
-        assert_eq!(xn_over_d_in(&mut e, 1_000_000_000, 3, 1000), 3_000_000);
+        assert_eq!(e.xn_over_d(1_000_000_000, 3, 1000), 3_000_000);
         assert!(!e.arith_error);
         assert_eq!(e.tex_remainder, 0);
     }
@@ -650,28 +640,28 @@ mod tests {
     #[test]
     fn xn_over_d_detects_overflow() {
         let mut e = ErrorState::default();
-        let _ = xn_over_d_in(&mut e, i32::MAX, 1, 1);
+        let _ = e.xn_over_d(i32::MAX, 1, 1);
         assert!(e.arith_error);
     }
 
     #[test]
     fn xn_over_d_negative_x_negates_result_and_remainder() {
         let mut e = ErrorState::default();
-        assert_eq!(xn_over_d_in(&mut e, -10, 3, 4), -7);
+        assert_eq!(e.xn_over_d(-10, 3, 4), -7);
         assert_eq!(e.tex_remainder, -2);
     }
 
     #[test]
     fn round_xn_over_d_rounds_half_up() {
         let mut e = ErrorState::default();
-        assert_eq!(round_xn_over_d(&mut e, 10, 3, 4), 8);
-        assert_eq!(round_xn_over_d(&mut e, 10, 3, 5), 6);
-        assert_eq!(round_xn_over_d(&mut e, 10, 2, 4), 5);
+        assert_eq!(e.round_xn_over_d(10, 3, 4), 8);
+        assert_eq!(e.round_xn_over_d(10, 3, 5), 6);
+        assert_eq!(e.round_xn_over_d(10, 2, 4), 5);
     }
 
     #[test]
     fn round_xn_over_d_negative_x() {
         let mut e = ErrorState::default();
-        assert_eq!(round_xn_over_d(&mut e, -10, 3, 4), -8);
+        assert_eq!(e.round_xn_over_d(-10, 3, 4), -8);
     }
 }

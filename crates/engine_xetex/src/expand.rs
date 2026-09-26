@@ -827,7 +827,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             }
         }
         UNIFORM_DEVIATE_CODE => {
-            let v = crate::scaled_math::unif_rand(&mut st.errors, st.scanner.cur_val);
+            let v = st.errors.unif_rand(st.scanner.cur_val);
             print_int_in(st, v);
         }
         NORMAL_DEVIATE_CODE => {

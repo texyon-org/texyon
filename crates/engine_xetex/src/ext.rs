@@ -37,7 +37,7 @@ use crate::scan::{
     XETEX_OT_COUNT_LANGUAGES_CODE, XETEX_OT_COUNT_SCRIPTS_CODE, XETEX_OT_FEATURE_CODE,
     XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_SELECTOR_CODE_CODE,
 };
-use crate::state::{EngineState, FontState, MemState};
+use crate::state::{EngineState, ErrorState, FontState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
 type XeTeXFont = *mut c_void;
@@ -896,24 +896,22 @@ unsafe fn load_ot_font(
     }))
 }
 
-/// Resolve a negative (`scaled`) font size against `font`'s design size, then
-/// delete `font`.
-unsafe fn scale_by_design_size(
-    errors: &mut crate::state::ErrorState,
-    font: XeTeXFont,
-    scaled_size: i32,
-) -> i32 {
-    if font.is_null() {
-        return scaled_size;
+impl ErrorState {
+    /// Resolve a negative (`scaled`) font size against `font`'s design size, then
+    /// delete `font`.
+    unsafe fn scale_by_design_size(&mut self, font: XeTeXFont, scaled_size: i32) -> i32 {
+        if font.is_null() {
+            return scaled_size;
+        }
+        let dsize = D2Fix(getDesignSize(font));
+        let size = if scaled_size == -1000 {
+            dsize
+        } else {
+            self.xn_over_d(dsize, -scaled_size, 1000)
+        };
+        deleteFont(font);
+        size
     }
-    let dsize = D2Fix(getDesignSize(font));
-    let size = if scaled_size == -1000 {
-        dsize
-    } else {
-        crate::scaled_math::xn_over_d_in(errors, dsize, -scaled_size, 1000)
-    };
-    deleteFont(font);
-    size
 }
 
 /// Look up native font `name` (a `[file]` path or an installed font name with
@@ -948,7 +946,7 @@ pub(crate) unsafe fn find_native_font_in(
         let path = name_string.add(1);
         if scaled_size < 0 {
             let font = createFontFromFile(path, index, 655360);
-            scaled_size = scale_by_design_size(&mut st.errors, font, scaled_size);
+            scaled_size = st.errors.scale_by_design_size(font, scaled_size);
         }
         let font = createFontFromFile(path, index, scaled_size);
         if !font.is_null() {
@@ -1003,7 +1001,7 @@ pub(crate) unsafe fn find_native_font_in(
 
             if scaled_size < 0 {
                 let font = createFont(font_ref, scaled_size);
-                scaled_size = scale_by_design_size(&mut st.errors, font, scaled_size);
+                scaled_size = st.errors.scale_by_design_size(font, scaled_size);
             }
 
             let font = createFont(font_ref, scaled_size);
@@ -2223,7 +2221,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
             }
             st.errors.random_seed = st.scanner.cur_val;
             let random_seed = st.errors.random_seed;
-            crate::scaled_math::init_randoms(&mut st.errors, random_seed);
+            st.errors.init_randoms(random_seed);
         }
 
         PIC_FILE_CODE | PDF_FILE_CODE => {

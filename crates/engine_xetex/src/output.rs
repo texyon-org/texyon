@@ -2868,7 +2868,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
                 let adds = if count == 1000 {
                     height
                 } else {
-                    crate::scaled_math::x_over_n_in(&mut st.errors, height, 1000) * count
+                    st.errors.x_over_n(height, 1000) * count
                 };
                 print_scaled_in(st, adds);
                 if ins.is_split_up(&st.mem) {
