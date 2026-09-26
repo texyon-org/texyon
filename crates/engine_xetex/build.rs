@@ -1,8 +1,8 @@
 // Copyright 2021 the Tectonic Project
 // Licensed under the MIT License.
 
-//! XeTeX engine build script. Builds and links our locally modified copy of the XeTeX typesetting
-//! engine.
+//! XeTeX engine build script. Builds TECkit, the engine's only C++ code, and
+//! finds the ICU version suffix for the Rust FFI.
 
 use std::{env, fs, io::BufRead, path::PathBuf};
 
@@ -11,16 +11,8 @@ use tectonic_cfg_support::*;
 fn main() {
     let target = env::var("TARGET").unwrap();
 
-    // Include paths exported by our internal dependencies.
-
-    let pdfio_include_path = env::var("DEP_TECTONIC_PDF_IO_INCLUDE_PATH").unwrap();
     let core_include_dir = env::var("DEP_TECTONIC_BRIDGE_CORE_INCLUDE").unwrap();
     let flate_include_dir = env::var("DEP_TECTONIC_BRIDGE_FLATE_INCLUDE").unwrap();
-    let graphite2_include_path = env::var("DEP_GRAPHITE2_INCLUDE_PATH").unwrap();
-    let graphite2_static = !env::var("DEP_GRAPHITE2_DEFINE_STATIC").unwrap().is_empty();
-    let freetype_include_path = env::var("DEP_FREETYPE2_INCLUDE_PATH").unwrap();
-    let harfbuzz_include_path = env::var("DEP_HARFBUZZ_INCLUDE_PATH").unwrap();
-    let icu_include_path = env::var("DEP_ICUUC_INCLUDE_PATH").unwrap();
 
     // Detect ICU version suffix (e.g. "_74") so Rust FFI can use #[link_name] with versioned names.
     //
@@ -31,7 +23,8 @@ fn main() {
     let icu_suffix = match env::var("DEP_ICUUC_VERSION_SUFFIX") {
         Ok(suffix) => suffix,
         Err(_) => {
-            let icu_major = icu_include_path
+            let icu_major = env::var("DEP_ICUUC_INCLUDE_PATH")
+                .unwrap()
                 .split(';')
                 .find_map(|dir| {
                     let uvernum = PathBuf::from(dir).join("unicode/uvernum.h");
@@ -86,30 +79,6 @@ fn main() {
 
     for p in &[".", &core_include_dir, &flate_include_dir] {
         cxx_cfg.include(p);
-    }
-
-    for item in pdfio_include_path.split(';') {
-        cxx_cfg.include(item);
-    }
-
-    for item in harfbuzz_include_path.split(';') {
-        cxx_cfg.include(item);
-    }
-
-    for item in freetype_include_path.split(';') {
-        cxx_cfg.include(item);
-    }
-
-    for item in graphite2_include_path.split(';') {
-        cxx_cfg.include(item);
-    }
-
-    for item in icu_include_path.split(';') {
-        cxx_cfg.include(item);
-    }
-
-    if graphite2_static {
-        cxx_cfg.define("GRAPHITE2_STATIC", "1");
     }
 
     // Platform-specific adjustments:
