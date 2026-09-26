@@ -70,9 +70,7 @@ use crate::scan::{
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
-extern "C" {
-    fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
-}
+use crate::layout::set_cp_code;
 
 const INNER_VMODE: i16 = -VMODE;
 const INNER_HMODE: i16 = -HMODE;
@@ -2254,12 +2252,12 @@ pub(crate) fn append_italic_correction(st: &mut EngineState) -> Result<(), Abort
         match st.mem.classify(MemIdx(tail)) {
             Ok(AnyNode::Ligature(lig)) => char_italic(st, lig.char_word()),
             Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(&st.mem) {
-                Some(s) if s.is_native_word() => unsafe {
+                Some(s) if s.is_native_word() => {
                     st.fonts.real_get_native_italic_correction(&st.mem, w)
-                },
-                Some(WhatsitSubtype::Glyph) => unsafe {
+                }
+                Some(WhatsitSubtype::Glyph) => {
                     st.fonts.real_get_native_glyph_italic_correction(&st.mem, w)
-                },
+                }
                 _ => return Ok(()),
             },
             _ => return Ok(()),
@@ -2285,10 +2283,9 @@ pub(crate) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
         NewChar::Native(w) => {
             let a = w.width(&st.mem).0;
             if a == 0 {
-                (lsb, rsb) = unsafe {
-                    st.fonts
-                        .get_native_char_sidebearings(f, st.scanner.cur_val)?
-                };
+                (lsb, rsb) = st
+                    .fonts
+                    .get_native_char_sidebearings(f, st.scanner.cur_val)?;
             }
             a
         }
@@ -2326,10 +2323,9 @@ pub(crate) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     let (w, h) = match q {
         NewChar::Native(w) => {
             let w = w.width(&st.mem).0;
-            let (h, _) = unsafe {
-                st.fonts
-                    .get_native_char_height_depth(f, st.scanner.cur_val)?
-            };
+            let (h, _) = st
+                .fonts
+                .get_native_char_height_depth(f, st.scanner.cur_val)?;
             (w, h)
         }
         NewChar::Char(ch) => {
@@ -2370,7 +2366,7 @@ fn flush_last_string(st: &mut EngineState) {
     st.strings.discard_cur_string();
 }
 
-pub(crate) unsafe fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
+pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     if st.strings.job_name == 0 {
         crate::io::open_log_file(st)?;
     }
@@ -2969,19 +2965,23 @@ fn extendable_native_word(st: &EngineState, f: i32) -> Option<NodePtr<WhatsitNod
 }
 
 impl MemState {
-    /// # Safety
-    /// `src` must hold `len` units and `node` must have room for `at + len`.
-    unsafe fn copy_to_native_node(
+    /// Writes `text` into `node`'s text at `at`, unjournaled.
+    fn write_native_text(&mut self, node: NodePtr<WhatsitNode>, at: i32, text: &[u16]) {
+        let to = node.native_text_start() + at as usize;
+        self.units_mut()[to..to + text.len()].copy_from_slice(text);
+    }
+
+    /// Copies the text of `src` into `node`'s text at `at`, unjournaled.
+    fn copy_native_text_into(
         &mut self,
         node: NodePtr<WhatsitNode>,
         at: i32,
-        src: *const u16,
-        len: i32,
+        src: NodePtr<WhatsitNode>,
     ) {
-        let dst = self
-            .as_u16_ptr_mut(node.idx().offset(NATIVE_NODE_SIZE))
-            .add(at as usize);
-        std::ptr::copy_nonoverlapping(src, dst, len.max(0) as usize);
+        let from = src.native_text_start();
+        let len = src.native_length(self) as usize;
+        self.units_mut()
+            .copy_within(from..from + len, node.native_text_start() + at as usize);
     }
 }
 
@@ -2991,7 +2991,7 @@ fn use_glyph_metrics(st: &EngineState) -> bool {
 
 /// The main loop for an AAT or OpenType font: collects a run of characters
 /// into native word nodes. Returns whether to go to `big_switch`.
-unsafe fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
+fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
     if st.input.cur_list.mode > 0 && st.eqtb.int_par(INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
     {
         st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
@@ -3046,11 +3046,9 @@ unsafe fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort>
         break;
     }
 
-    let mapping = st.fonts.font_mapping_ptr(mf);
-    if !mapping.is_null() {
-        let text = st.scanner.native_text.as_mut_ptr();
-        let len = st.scanner.native_len;
-        let mapped_len = st.fonts.apply_mapping(mapping, text, len);
+    if let Some(mapping) = st.fonts.font_mapping[mf as usize].clone() {
+        let text = &st.scanner.native_text[..st.scanner.native_len as usize];
+        let mapped_len = st.fonts.apply_mapping(&mapping, text);
         st.scanner.native_len = 0;
         st.scanner.reserve_native_text(mapped_len);
         st.mainloop.main_h = 0;
@@ -3095,10 +3093,7 @@ unsafe fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort>
                 remaining = st.mainloop.main_h + old_len;
                 st.scanner.reserve_native_text(remaining);
                 st.scanner.save_native_len = st.scanner.native_len;
-                // SAFETY: a native word stores `native_length` text units after its header.
-                let old_text =
-                    std::slice::from_raw_parts(word.native_text_ptr(&st.mem), old_len as usize);
-                for &c in old_text {
+                for &c in word.native_text(&st.mem) {
                     st.scanner.push_native_text(c);
                 }
                 for i in 0..st.mainloop.main_h {
@@ -3147,11 +3142,10 @@ unsafe fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort>
             crate::state::native_text_words(len + old_len),
         );
         if let Some(word) = old {
-            let old_text = word.native_text_ptr(&st.mem);
-            st.mem.copy_to_native_node(node, 0, old_text, old_len);
+            st.mem.copy_native_text_into(node, 0, word);
         }
-        let text = st.scanner.native_text.as_ptr();
-        st.mem.copy_to_native_node(node, old_len, text, len);
+        st.mem
+            .write_native_text(node, old_len, &st.scanner.native_text[..len as usize]);
         let metrics = use_glyph_metrics(st);
         st.fonts.measure_native_node(&mut st.mem, node, metrics)?;
         if let Some(word) = old {
@@ -3176,7 +3170,7 @@ unsafe fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort>
 
 /// Kerns the interword glue before the current word by what the font's shaping
 /// of `word space word` implies.
-unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Abort> {
+fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Abort> {
     let tail = st.input.cur_list.tail;
     let mut p = st.input.cur_list.head;
     let mut prev_word = None;
@@ -3208,13 +3202,10 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Abo
         joined.idx().offset(NATIVE_NODE_SIZE),
         crate::state::native_text_words(len),
     );
-    let prev_text = prev_word.native_text_ptr(&st.mem);
-    st.mem.copy_to_native_node(joined, 0, prev_text, prev_len);
+    st.mem.copy_native_text_into(joined, 0, prev_word);
+    st.mem.write_native_text(joined, prev_len, &[b' ' as u16]);
     st.mem
-        .copy_to_native_node(joined, prev_len, &(b' ' as u16), 1);
-    let tail_text = tail_word.native_text_ptr(&st.mem);
-    st.mem
-        .copy_to_native_node(joined, prev_len + 1, tail_text, tail_len);
+        .copy_native_text_into(joined, prev_len + 1, tail_word);
     let metrics = use_glyph_metrics(st);
     st.fonts.measure_native_node(&mut st.mem, joined, metrics)?;
     let t = joined.width(&st.mem).0 - prev_word.width(&st.mem).0 - tail_word.width(&st.mem).0;
@@ -3309,7 +3300,7 @@ fn cur_l_info(st: &mut EngineState) -> crate::mem_types::B16x4 {
 }
 
 /// Returns true to go to `big_switch`, false to go to `reswitch`.
-pub(crate) unsafe fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort> {
+pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort> {
     if st.input.cur_list.head == st.input.cur_list.tail
         && st.input.cur_list.mode > 0
         && st.shipout.insert_src_special_auto
@@ -3582,7 +3573,7 @@ enum Next {
 
 /// Acts on the current command in the current mode, TeX's `abs(mode)+cur_cmd` case.
 #[inline]
-unsafe fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
+fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
     if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 0 {
         crate::output::show_cur_cmd_chr(st);
     }
@@ -3797,7 +3788,7 @@ unsafe fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
     Ok(Next::BigSwitch)
 }
 
-unsafe fn main_control_from(
+fn main_control_from(
     st: &mut EngineState,
     run_every_job: bool,
     mut resume_pending_command: bool,
@@ -3834,12 +3825,12 @@ unsafe fn main_control_from(
 }
 
 /// Dispatch a fresh document, including `\everyjob` and the first token fetch.
-pub(crate) unsafe fn main_control(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn main_control(st: &mut EngineState) -> Result<(), Abort> {
     main_control_from(st, true, false)
 }
 
 /// Resume at a restored command boundary, optionally with a command already fetched.
-pub(crate) unsafe fn main_control_resume(
+pub(crate) fn main_control_resume(
     st: &mut EngineState,
     resume_pending_command: bool,
 ) -> Result<(), Abort> {
@@ -4157,17 +4148,13 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                 crate::scan::scan_optional_equals(st)?;
                 crate::scan::scan_int(st)?;
                 match n {
-                    LP_CODE_BASE => unsafe {
-                        set_cp_code(f, p as u32, LEFT_SIDE, st.scanner.cur_val)
-                    },
-                    RP_CODE_BASE => unsafe {
-                        set_cp_code(f, p as u32, RIGHT_SIDE, st.scanner.cur_val)
-                    },
+                    LP_CODE_BASE => set_cp_code(f, p as u32, LEFT_SIDE, st.scanner.cur_val),
+                    RP_CODE_BASE => set_cp_code(f, p as u32, RIGHT_SIDE, st.scanner.cur_val),
                     _ => {}
                 }
             }
         }
-        DEF_FONT => unsafe { new_font(st, a as i16)? },
+        DEF_FONT => new_font(st, a as i16)?,
         SET_INTERACTION => new_interaction(st),
         _ => return Err(Abort::Confusion("prefix")),
     }

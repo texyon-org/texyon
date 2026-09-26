@@ -17,9 +17,11 @@ use crate::consts::{
     TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::Abort;
-use crate::ext::linebreak_start;
+use std::ffi::CStr;
+
 use crate::fonts::{LIG_TAG, QUAD_CODE};
 use crate::hyphenation::HYPH_PRIME;
+use crate::layout::get_cp_code;
 use crate::mem::{ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
@@ -47,10 +49,6 @@ const VERY_LOOSE_FIT: usize = 0;
 const LOOSE_FIT: usize = 1;
 const DECENT_FIT: usize = 2;
 const TIGHT_FIT: usize = 3;
-
-extern "C" {
-    fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
-}
 
 #[inline]
 fn odd(v: u8) -> bool {
@@ -152,13 +150,11 @@ impl MemState {
 
     /// The Unicode scalar at UTF-16 offset `i` of `w`'s text.
     fn get_native_usv(&self, w: NodePtr<WhatsitNode>, i: i32) -> i32 {
-        let text = w.native_text_ptr(self);
-        // SAFETY: `i` lies within the node's text.
-        let c = unsafe { *text.add(i as usize) };
+        let at = w.native_text_start() + i as usize;
+        let c = self.units()[at];
 
         if (0xD800..0xDC00).contains(&c) {
-            // SAFETY: a high surrogate is followed by its low surrogate.
-            let lo = unsafe { *text.add(i as usize + 1) };
+            let lo = self.units()[at + 1];
             return 0x10000 + (c as i32 - 0xD800) * 0x400 + lo as i32 - 0xDC00;
         }
 
@@ -176,11 +172,10 @@ impl MemState {
         if len <= 0 {
             return;
         }
-        let dst = dst.native_text_ptr_mut(self);
-        let src = src.native_text_ptr(self);
-        // SAFETY: both nodes are sized for the copied range, are distinct, and the
-        // arena is not reallocated in between.
-        unsafe { std::ptr::copy_nonoverlapping(src.add(start as usize), dst, len as usize) };
+        dst.mark_native_text(self);
+        let from = src.native_text_start() + start as usize;
+        self.units_mut()
+            .copy_within(from..from + len as usize, dst.native_text_start());
     }
 
     pub(crate) fn set_native_metrics(
@@ -190,8 +185,7 @@ impl MemState {
         w: NodePtr<WhatsitNode>,
     ) -> Result<(), Abort> {
         let use_glyph_metrics = eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
-        // SAFETY: the measurer only reads font tables over FFI.
-        unsafe { fonts.measure_native_node(self, w, use_glyph_metrics) }
+        fonts.measure_native_node(self, w, use_glyph_metrics)
     }
 
     /// A native-word node of font `f` holding `len` units of `src`'s text from `start`.
@@ -332,14 +326,12 @@ impl LinebreakState {
                             return 0;
                         }
                         let f = w.native_font(mem).0;
-                        // SAFETY: `p` is a native word with glyph info.
-                        let cp = unsafe { mem.real_get_native_word_cp(w, side as libc::c_int) };
+                        let cp = mem.real_get_native_word_cp(w, side as libc::c_int);
                         return protrusion(errors, fonts, f, cp);
                     }
                     Some(WhatsitSubtype::Glyph) => {
                         let f = w.native_font(mem).0;
-                        // SAFETY: plain FFI lookup by font and glyph code.
-                        let cp = unsafe { get_cp_code(f, w.native_glyph(mem) as u32, side as i32) };
+                        let cp = get_cp_code(f, w.native_glyph(mem) as u32, side as i32);
                         return protrusion(errors, fonts, f, cp);
                     }
                     _ => return 0,
@@ -349,8 +341,7 @@ impl LinebreakState {
             }
         };
 
-        // SAFETY: plain FFI lookup by font and character code.
-        let cp = unsafe { get_cp_code(f, c as u32, side as i32) };
+        let cp = get_cp_code(f, c as u32, side as i32);
         if side == 0 {
             self.last_leftmost_char = char_ptr;
         } else {
@@ -2843,75 +2834,130 @@ fn insert_hyphens(
     Ok(())
 }
 
-/// Append a native word of font `f` holding `text[..len]` to the current list.
-///
-/// # Safety
-/// `text` must be valid for `len` reads.
-unsafe fn append_native_word(
-    st: &mut EngineState,
-    f: i32,
-    text: *const u16,
-    len: i32,
-) -> Result<(), Abort> {
-    let w = st.mem.new_native_word_node(&st.eqtb, f, len)?;
+/// Append a native word of font `f` holding `text` to the current list.
+fn append_native_word(st: &mut EngineState, f: i32, text: &[u16]) -> Result<(), Abort> {
+    let w = st
+        .mem
+        .new_native_word_node(&st.eqtb, f, text.len() as i32)?;
     st.input.cur_list.tail_append(&mut st.mem, w.ptr());
-    if len > 0 {
-        let dst = w.native_text_ptr_mut(&mut st.mem);
-        std::ptr::copy_nonoverlapping(text, dst, len as usize);
+    if !text.is_empty() {
+        w.native_text_mut(&mut st.mem).copy_from_slice(text);
     }
     st.mem.set_native_metrics(&st.eqtb, &st.fonts, w)?;
     Ok(())
 }
 
+/// Where a run of native text may break.
+enum TextBreaks<'t> {
+    Icu(crate::layout::IcuBreaks<'t>),
+    Graphite(crate::layout::GraphiteBreaks<'t>),
+    /// An ICU iterator left over from earlier text, which it already ran through.
+    Stale(&'t crate::layout::LinebreakHandle),
+}
+
+impl TextBreaks<'_> {
+    fn next_break(&mut self) -> i32 {
+        match self {
+            TextBreaks::Icu(breaks) => breaks.next_break(),
+            TextBreaks::Graphite(breaks) => breaks.next_break(),
+            TextBreaks::Stale(iter) => iter.next_after_end(),
+        }
+    }
+}
+
+/// Makes sure `fonts.brk_iter` is an ICU line breaker for `locale`.
+fn open_linebreak_iterator(st: &mut EngineState, locale: i32, name: &CStr) -> Result<(), Abort> {
+    if locale != st.fonts.brk_locale_str_num {
+        st.fonts.brk_iter = None;
+    }
+    if st.fonts.brk_iter.is_none() {
+        let (mut iter, status) = crate::layout::LinebreakHandle::open(name);
+        if status > 0 {
+            crate::output::begin_diagnostic(st);
+            crate::output::print_nl(st, b'E' as i32);
+            crate::output::print(st, "rror ");
+            crate::output::print_int(st, status);
+            crate::output::print(st, " creating linebreak iterator for locale `");
+            crate::output::print(st, name.to_bytes());
+            crate::output::print(st, "'; trying default locale `en_us'.");
+            crate::output::end_diagnostic(st, true);
+            drop(iter);
+            iter = crate::layout::LinebreakHandle::open(c"en_us").0;
+        }
+        st.fonts.brk_locale_str_num = locale;
+        st.fonts.brk_iter = iter;
+    }
+    if st.fonts.brk_iter.is_none() {
+        return Err(Abort::Internal("failed to create linebreak iterator"));
+    }
+    Ok(())
+}
+
 /// Append `native_text[s..s + len]` as native words, split at the locale's
 /// line-break opportunities when `\XeTeXlinebreaklocale` is set.
-///
-/// # Safety
-/// `s..s + len` must lie within `scanner.native_text`.
-pub(crate) unsafe fn do_locale_linebreaks(
-    st: &mut EngineState,
-    s: i32,
-    len: i32,
-) -> Result<(), Abort> {
+pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Result<(), Abort> {
     let main_f = st.mainloop.main_f;
-    // `native_text` is not resized here, so the pointer stays valid across the allocations.
-    let native_text = st.scanner.native_text.as_mut_ptr();
+    let text = st.scanner.native_text[s as usize..(s + len) as usize].to_vec();
 
     let locale = st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_LOCALE);
     if locale == 0 || len == 1 {
-        return append_native_word(st, main_f, native_text.add(s as usize), len);
+        return append_native_word(st, main_f, &text);
     }
 
     let use_skip = st.eqtb.glue_par(GLUE_PAR_XETEX_LINEBREAK_SKIP) != ZERO_GLUE;
     let penalty = st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_PENALTY);
     let use_penalty = penalty != 0 || !use_skip;
-    linebreak_start(st, main_f, locale, native_text.add(s as usize), len)?;
-    let mut offs = 0;
-    loop {
-        let prev_offs = offs;
-        offs = st.fonts.linebreak_next(main_f);
-        if offs > 0 {
-            if prev_offs != 0 {
-                if use_penalty {
-                    let node = st.mem.new_penalty(penalty)?;
-                    st.input.cur_list.tail_append(&mut st.mem, node.ptr());
-                }
-                if use_skip {
-                    let node = st
-                        .mem
-                        .new_param_glue(&st.eqtb, GLUE_PAR_XETEX_LINEBREAK_SKIP)?;
-                    st.input.cur_list.tail_append(&mut st.mem, node.ptr());
-                }
+    let locale_name = st.strings.texstring_cstring(locale);
+
+    let engine = st.fonts.layout_engine_arc(main_f);
+    let graphite = engine
+        .as_deref()
+        .filter(|_| locale_name.as_bytes() == b"G")
+        .and_then(|engine| engine.graphite_breaks(&text));
+    let mut iter = None;
+    let mut breaks = match graphite {
+        Some(graphite) => match &st.fonts.brk_iter {
+            Some(_) => {
+                iter = st.fonts.brk_iter.take();
+                TextBreaks::Stale(iter.as_ref().unwrap())
             }
-            append_native_word(
-                st,
-                main_f,
-                native_text.add((s + prev_offs) as usize),
-                offs - prev_offs,
-            )?;
+            None => TextBreaks::Graphite(graphite),
+        },
+        None => {
+            open_linebreak_iterator(st, locale, &locale_name)?;
+            iter = st.fonts.brk_iter.take();
+            TextBreaks::Icu(iter.as_mut().unwrap().breaks(&text))
         }
-        if offs < 0 {
-            return Ok(());
+    };
+
+    let result = (|| {
+        let mut offs = 0;
+        loop {
+            let prev_offs = offs;
+            offs = breaks.next_break();
+            if offs > 0 {
+                if prev_offs != 0 {
+                    if use_penalty {
+                        let node = st.mem.new_penalty(penalty)?;
+                        st.input.cur_list.tail_append(&mut st.mem, node.ptr());
+                    }
+                    if use_skip {
+                        let node = st
+                            .mem
+                            .new_param_glue(&st.eqtb, GLUE_PAR_XETEX_LINEBREAK_SKIP)?;
+                        st.input.cur_list.tail_append(&mut st.mem, node.ptr());
+                    }
+                }
+                append_native_word(st, main_f, &text[prev_offs as usize..offs as usize])?;
+            }
+            if offs < 0 {
+                return Ok(());
+            }
         }
+    })();
+    drop(breaks);
+    if iter.is_some() {
+        st.fonts.brk_iter = iter;
     }
+    result
 }

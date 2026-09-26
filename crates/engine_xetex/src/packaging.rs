@@ -1343,11 +1343,10 @@ impl MemState {
         loop {
             if let Some(sw) = self.as_native_word(s) {
                 let count = sw.native_length(self) as usize;
-                let src = sw.native_text_ptr(self);
-                let dst = merged.native_text_ptr_mut(self);
-                // SAFETY: `merged` holds the fragments' total length, the fragments are
-                // distinct nodes, and the arena is not reallocated here.
-                unsafe { std::ptr::copy_nonoverlapping(src, dst.add(total_chars as usize), count) };
+                merged.mark_native_text(self);
+                let from = sw.native_text_start();
+                let to = merged.native_text_start() + total_chars as usize;
+                self.units_mut().copy_within(from..from + count, to);
                 total_chars += count as i32;
             }
             if s.link(self).is_null() {

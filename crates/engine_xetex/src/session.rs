@@ -349,7 +349,7 @@ impl IncrementalXeTeXSession {
         let accepted_sources = sources.clone();
         let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
-            Ok(catch_operation(api, state, |state| unsafe {
+            Ok(catch_operation(api, state, |state| {
                 configure(state, &config);
                 let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
@@ -436,7 +436,7 @@ impl IncrementalXeTeXSession {
         let replay_clock = ladder.rung_clock(replay_rung).unwrap_or(0);
         let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
-            Ok(catch_operation(api, state, |state| unsafe {
+            Ok(catch_operation(api, state, |state| {
                 let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
                 let (splice_at, resume_pending_command) = if let Some((target, fence)) = selection {
@@ -517,7 +517,7 @@ impl IncrementalXeTeXSession {
         let replay_clock = ladder.rung_clock(target).unwrap_or(rung_clock);
         let mut checkpoint_activity = CheckpointActivity::default();
         let result = launcher.with_global_lock(|api| {
-            Ok(catch_operation(api, state, |state| unsafe {
+            Ok(catch_operation(api, state, |state| {
                 let _sources = crate::replay::adapter::install(sources);
                 crate::engine::release_operation_inputs(state);
                 ladder.rewind_engine(state, target);
@@ -717,7 +717,7 @@ enum OperationResult {
     Panicked,
 }
 
-unsafe fn run_document(
+fn run_document(
     state: &mut EngineState,
     ladder: &mut CheckpointLadder<EngineBundle>,
     input: &str,

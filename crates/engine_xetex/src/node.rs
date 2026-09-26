@@ -1535,37 +1535,44 @@ impl NodePtr<WhatsitNode> {
 
     #[inline]
     pub fn pic_path(self, mem: &MemState) -> &[u8] {
-        let ptr = mem.node_addr(self.idx.0 + PIC_NODE_SIZE) as *const u8;
-        // SAFETY: a picture node holds `pic_path_len` path bytes inline.
-        unsafe { std::slice::from_raw_parts(ptr, self.pic_path_len(mem) as usize) }
+        let start = (self.idx.0 + PIC_NODE_SIZE) as usize * 8;
+        &mem.bytes()[start..start + self.pic_path_len(mem) as usize]
     }
     /// Stores `path` inline, the node must have room for it.
     #[inline]
     pub fn set_pic_path(self, mem: &mut MemState, path: &[u8]) {
         let start = self.idx.0 + PIC_NODE_SIZE;
         mem.journal_mark_range(start, path.len().div_ceil(8));
-        let dst = mem.as_u16_ptr_mut(start) as *mut u8;
-        // SAFETY: the caller allocated `path.len()` bytes past the header.
-        unsafe { std::ptr::copy_nonoverlapping(path.as_ptr(), dst, path.len()) };
+        let at = start as usize * 8;
+        mem.bytes_mut()[at..at + path.len()].copy_from_slice(path);
     }
 
+    /// The index in `mem.units()` where the text starts.
     #[inline]
-    pub fn native_text_ptr(self, mem: &MemState) -> *const u16 {
-        mem.as_u16_ptr(self.idx.0 + NATIVE_NODE_SIZE)
+    pub fn native_text_start(self) -> usize {
+        (self.idx.0 + NATIVE_NODE_SIZE) as usize * 4
     }
 
     #[inline]
     pub fn native_text(self, mem: &MemState) -> &[u16] {
-        let len = self.native_length(mem) as usize;
-        // SAFETY: a native word is allocated with room for `native_length` units.
-        unsafe { std::slice::from_raw_parts(self.native_text_ptr(mem), len) }
+        let start = self.native_text_start();
+        &mem.units()[start..start + self.native_length(mem) as usize]
     }
 
+    /// Journals the words of the text before it is written.
     #[inline]
-    pub fn native_text_ptr_mut(self, mem: &mut MemState) -> *mut u16 {
+    pub fn mark_native_text(self, mem: &mut MemState) {
         let words = crate::state::native_text_words(self.native_length(mem) as i32);
         mem.journal_mark_range(self.idx.0 + NATIVE_NODE_SIZE, words);
-        mem.as_u16_ptr_mut(self.idx.0 + NATIVE_NODE_SIZE)
+    }
+
+    /// The text, journaled for writing.
+    #[inline]
+    pub fn native_text_mut(self, mem: &mut MemState) -> &mut [u16] {
+        self.mark_native_text(mem);
+        let start = self.native_text_start();
+        let len = self.native_length(mem) as usize;
+        &mut mem.units_mut()[start..start + len]
     }
 
     /// Drops the shaped-glyph payload of a native word.

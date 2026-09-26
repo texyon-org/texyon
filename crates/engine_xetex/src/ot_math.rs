@@ -1,28 +1,10 @@
 //! OpenType MATH table queries.
 
-use libc::c_void;
 use tectonic_bridge_harfbuzz::sys as hb;
 
-use crate::ext::{D2Fix, Fix2D};
-use crate::fonts::OTGR_FONT_FLAG;
+use crate::ext::{d2fix, fix2d};
+use crate::layout::{FontEngineHandle, FontRef};
 use crate::state::FontState;
-
-type XeTeXFont = *mut c_void;
-type XeTeXLayoutEngine = *mut c_void;
-
-extern "C" {
-    fn getFont(engine: XeTeXLayoutEngine) -> XeTeXFont;
-    fn getGlyphHeightDepth(
-        engine: XeTeXLayoutEngine,
-        glyph_id: u32,
-        height: *mut f32,
-        depth: *mut f32,
-    );
-    fn ttxl_get_hb_font(engine: XeTeXLayoutEngine) -> *mut hb::hb_font_t;
-    fn ttxl_font_units_to_points(font: XeTeXFont, units: f32) -> f32;
-    fn ttxl_font_points_to_units(font: XeTeXFont, points: f32) -> f32;
-    fn ttxl_font_get_point_size(font: XeTeXFont) -> f32;
-}
 
 const HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN: i32 = 0;
 const HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN: i32 = 1;
@@ -77,8 +59,8 @@ const TEX_EXT_TO_OT_MAP: [Option<i32>; 14] = [
     Some(26), // big_op_spacing5: stackGapMin
 ];
 
-fn units_to_fix(font: XeTeXFont, units: i32) -> i32 {
-    unsafe { D2Fix(ttxl_font_units_to_points(font, units as f32) as f64) }
+fn units_to_fix(font: FontRef, units: i32) -> i32 {
+    d2fix(font.units_to_points(units as f32) as f64)
 }
 
 fn direction(horiz: bool) -> hb::hb_direction_t {
@@ -109,7 +91,7 @@ impl GlyphAssembly {
 
     fn part_length(&self, fonts: &FontState, f: i32, units: i32) -> i32 {
         match fonts.ot_engine(f) {
-            Some(engine) => units_to_fix(unsafe { getFont(engine) }, units),
+            Some(engine) => units_to_fix(engine.font(), units),
             None => 0,
         }
     }
@@ -135,23 +117,21 @@ pub(crate) enum ScriptKind {
 
 impl FontState {
     /// The layout engine of `f` when it is an OpenType (HarfBuzz) font.
-    fn ot_engine(&self, f: i32) -> Option<XeTeXLayoutEngine> {
-        (self.font_area_entry(f) == OTGR_FONT_FLAG).then(|| self.font_layout_engine_ptr(f))
+    fn ot_engine(&self, f: i32) -> Option<&FontEngineHandle> {
+        self.layout_engine(f)
     }
 
     pub(crate) fn get_ot_math_constant(&self, f: i32, n: i32) -> i32 {
         let Some(engine) = self.ot_engine(f) else {
             return 0;
         };
-        unsafe {
-            let font = getFont(engine);
-            let rval = hb::hb_ot_math_get_constant(ttxl_get_hb_font(engine), n);
-            match n {
-                HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN
-                | HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
-                | HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT => rval,
-                _ => units_to_fix(font, rval),
-            }
+        // SAFETY: the engine keeps its HarfBuzz font alive.
+        let rval = unsafe { hb::hb_ot_math_get_constant(engine.hb_font(), n) };
+        match n {
+            HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN
+            | HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
+            | HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT => rval,
+            _ => units_to_fix(engine.font(), rval),
         }
     }
 
@@ -194,33 +174,36 @@ impl FontState {
         let Some(engine) = self.ot_engine(f) else {
             return g;
         };
+        let mut variant = hb::hb_ot_math_glyph_variant_t {
+            glyph: 0,
+            advance: 0,
+        };
+        let mut count = 1;
+        // SAFETY: the engine keeps its HarfBuzz font alive, and `count` and
+        // `variant` hold the one variant asked for.
         unsafe {
-            let mut variant = hb::hb_ot_math_glyph_variant_t {
-                glyph: 0,
-                advance: 0,
-            };
-            let mut count = 1;
             hb::hb_ot_math_get_glyph_variants(
-                ttxl_get_hb_font(engine),
+                engine.hb_font(),
                 g as u32,
                 direction(horiz),
                 v as u32,
                 &mut count,
                 &mut variant,
-            );
-            if count == 0 {
-                return g;
-            }
-            *adv = units_to_fix(getFont(engine), variant.advance);
-            variant.glyph as i32
+            )
+        };
+        if count == 0 {
+            return g;
         }
+        *adv = units_to_fix(engine.font(), variant.advance);
+        variant.glyph as i32
     }
 
     pub(crate) fn get_ot_assembly(&self, f: i32, g: i32, horiz: bool) -> Option<GlyphAssembly> {
-        let engine = self.ot_engine(f)?;
-        unsafe {
-            let hb_font = ttxl_get_hb_font(engine);
-            let count = hb::hb_ot_math_get_glyph_assembly(
+        let hb_font = self.ot_engine(f)?.hb_font();
+        // SAFETY: the engine keeps its HarfBuzz font alive, and null outputs
+        // only ask for the part count.
+        let count = unsafe {
+            hb::hb_ot_math_get_glyph_assembly(
                 hb_font,
                 g as u32,
                 direction(horiz),
@@ -228,12 +211,15 @@ impl FontState {
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-            );
-            if count == 0 {
-                return None;
-            }
-            let mut parts = vec![hb::hb_ot_math_glyph_part_t::default(); count as usize];
-            let mut filled = count;
+            )
+        };
+        if count == 0 {
+            return None;
+        }
+        let mut parts = vec![hb::hb_ot_math_glyph_part_t::default(); count as usize];
+        let mut filled = count;
+        // SAFETY: as above, and `parts` holds the `filled` parts asked for.
+        unsafe {
             hb::hb_ot_math_get_glyph_assembly(
                 hb_font,
                 g as u32,
@@ -242,62 +228,54 @@ impl FontState {
                 &mut filled,
                 parts.as_mut_ptr(),
                 std::ptr::null_mut(),
-            );
-            parts.truncate(filled as usize);
-            Some(GlyphAssembly { parts })
-        }
+            )
+        };
+        parts.truncate(filled as usize);
+        Some(GlyphAssembly { parts })
     }
 
     pub(crate) fn get_ot_math_ital_corr(&self, f: i32, g: i32) -> i32 {
         let Some(engine) = self.ot_engine(f) else {
             return 0;
         };
-        unsafe {
-            let rval =
-                hb::hb_ot_math_get_glyph_italics_correction(ttxl_get_hb_font(engine), g as u32);
-            units_to_fix(getFont(engine), rval)
-        }
+        // SAFETY: the engine keeps its HarfBuzz font alive.
+        let rval =
+            unsafe { hb::hb_ot_math_get_glyph_italics_correction(engine.hb_font(), g as u32) };
+        units_to_fix(engine.font(), rval)
     }
 
     pub(crate) fn get_ot_math_accent_pos(&self, f: i32, g: i32) -> i32 {
         let Some(engine) = self.ot_engine(f) else {
             return i32::MAX;
         };
-        unsafe {
-            let rval =
-                hb::hb_ot_math_get_glyph_top_accent_attachment(ttxl_get_hb_font(engine), g as u32);
-            units_to_fix(getFont(engine), rval)
-        }
+        // SAFETY: the engine keeps its HarfBuzz font alive.
+        let rval =
+            unsafe { hb::hb_ot_math_get_glyph_top_accent_attachment(engine.hb_font(), g as u32) };
+        units_to_fix(engine.font(), rval)
     }
 
     pub(crate) fn ot_min_connector_overlap(&self, f: i32) -> i32 {
         let Some(engine) = self.ot_engine(f) else {
             return 0;
         };
-        unsafe {
-            let rval = hb::hb_ot_math_get_min_connector_overlap(
-                ttxl_get_hb_font(engine),
-                hb::hb_direction_t::Rtl,
-            );
-            units_to_fix(getFont(engine), rval)
-        }
+        // SAFETY: the engine keeps its HarfBuzz font alive.
+        let rval = unsafe {
+            hb::hb_ot_math_get_min_connector_overlap(engine.hb_font(), hb::hb_direction_t::Rtl)
+        };
+        units_to_fix(engine.font(), rval)
     }
 
     fn math_kern_at(&self, f: i32, g: i32, height: i32, side: hb::hb_ot_math_kern_t) -> i32 {
         let Some(engine) = self.ot_engine(f) else {
             return 0;
         };
-        unsafe {
-            hb::hb_ot_math_get_glyph_kerning(ttxl_get_hb_font(engine), g as u32, side, height)
-        }
+        // SAFETY: the engine keeps its HarfBuzz font alive.
+        unsafe { hb::hb_ot_math_get_glyph_kerning(engine.hb_font(), g as u32, side, height) }
     }
 
     fn glyph_height_depth(&self, f: i32, g: i32) -> (f32, f32) {
-        let (mut height, mut depth) = (0.0, 0.0);
-        if let Some(engine) = self.ot_engine(f) {
-            unsafe { getGlyphHeightDepth(engine, g as u32, &mut height, &mut depth) };
-        }
-        (height, depth)
+        self.ot_engine(f)
+            .map_or((0.0, 0.0), |engine| engine.glyph_height_depth(g as u32))
     }
 
     pub(crate) fn get_ot_math_kern(
@@ -313,21 +291,21 @@ impl FontState {
             return 0;
         };
         // Kerns are computed in base-glyph units, with XeTeX's float/int conversions.
-        unsafe {
-            let font = getFont(engine);
-            let sfont = getFont(sengine);
+        {
+            let font = engine.font();
+            let sfont = sengine.font();
 
             let (g_h, g_d) = self.glyph_height_depth(f, g);
             let (sg_h, sg_d) = self.glyph_height_depth(sf, sg);
-            let g_height = ttxl_font_points_to_units(font, g_h) as i32;
-            let g_depth = ttxl_font_points_to_units(font, g_d) as i32;
-            let sg_height = ttxl_font_points_to_units(sfont, sg_h) as i32;
-            let sg_depth = ttxl_font_points_to_units(sfont, sg_d) as i32;
+            let g_height = font.points_to_units(g_h) as i32;
+            let g_depth = font.points_to_units(g_d) as i32;
+            let sg_height = sfont.points_to_units(sg_h) as i32;
+            let sg_depth = sfont.points_to_units(sg_d) as i32;
 
-            let shift = ttxl_font_points_to_units(font, Fix2D(shift_scaled) as f32) as i32;
+            let shift = font.points_to_units(fix2d(shift_scaled) as f32) as i32;
 
-            let f_size = ttxl_font_get_point_size(font);
-            let sf_size = ttxl_font_get_point_size(sfont);
+            let f_size = font.point_size();
+            let sf_size = sfont.point_size();
             assert!(f_size != 0.0);
             let scale = sf_size / f_size;
 

@@ -7,7 +7,7 @@ use std::ffi::CStr;
 use crate::bridge::{input_open, TTBC_FILE_FORMAT_PICT};
 use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
 use crate::errors::Abort;
-use crate::ext::{D2Fix, Fix2D};
+use crate::ext::{d2fix, fix2d};
 use crate::node::WhatsitSubtype;
 use crate::state::EngineState;
 use crate::units::Scaled;
@@ -362,7 +362,7 @@ impl Placement {
 fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
     crate::scan::scan_dimen(st, false, false, false)?;
     if st.scanner.cur_val > 0 {
-        return Ok(Some(Fix2D(st.scanner.cur_val)));
+        return Ok(Some(fix2d(st.scanner.cur_val)));
     }
     crate::output::error_here_with_diagnostic(st, "Improper image ");
     crate::output::print(st, "size (");
@@ -460,7 +460,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
                 x_size_req = 0.0;
                 y_size_req = 0.0;
             }
-            let angle = Fix2D(st.scanner.cur_val) * std::f64::consts::PI / 180.0;
+            let angle = fix2d(st.scanner.cur_val) * std::f64::consts::PI / 180.0;
             let rotation = Transform::rotation(angle);
             for c in &mut placement.corners {
                 rotation.apply(c);
@@ -503,11 +503,11 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         pic.set_pic_path_len(mem, pic_path.len() as u16);
         pic.set_pic_page(mem, page as u16);
         pic.set_pic_pagebox(mem, pdf_box_type.map_or(0, |pb| pb as u16));
-        pic.set_width(mem, Scaled(D2Fix(xmax - xmin)));
-        pic.set_height(mem, Scaled(D2Fix(ymax - ymin)));
+        pic.set_width(mem, Scaled(d2fix(xmax - xmin)));
+        pic.set_height(mem, Scaled(d2fix(ymax - ymin)));
         pic.set_depth(mem, Scaled(0));
         let t = &placement.t;
-        pic.set_pic_transform(mem, [t.a, t.b, t.c, t.d, t.x, t.y].map(|v| D2Fix(v)));
+        pic.set_pic_transform(mem, [t.a, t.b, t.c, t.d, t.x, t.y].map(|v| d2fix(v)));
         pic.set_pic_path(mem, &pic_path);
     } else {
         crate::output::error_here_with_diagnostic(st, "Unable to load picture or PDF file '");

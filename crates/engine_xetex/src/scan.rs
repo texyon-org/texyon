@@ -31,9 +31,7 @@ use crate::ext::{
     gr_font_get_named, gr_font_get_named_1, ot_font_get, ot_font_get_1, ot_font_get_2,
     ot_font_get_3,
 };
-use crate::fonts::{
-    AAT_FONT_FLAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE, SPACE_SHRINK_CODE, X_HEIGHT_CODE,
-};
+use crate::fonts::{AAT_FONT_FLAG, QUAD_CODE, SPACE_CODE, SPACE_SHRINK_CODE, X_HEIGHT_CODE};
 use crate::input::{
     back_error, back_input, begin_token_list, ins_error, BACKED_UP, EVERY_EOF_TEXT, INSERTED,
     LEFT_BRACE_LIMIT, MID_LINE, NEW_LINE, PARAMETER, RIGHT_BRACE_LIMIT, SKIP_BLANKS,
@@ -55,11 +53,9 @@ use crate::state::{
 };
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 
-extern "C" {
-    fn usingGraphite(engine: *mut libc::c_void) -> bool;
-    fn usingOpenType(engine: *mut libc::c_void) -> bool;
-    fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
-}
+use std::sync::Arc;
+
+use crate::layout::{get_cp_code, FontEngineHandle};
 
 pub(crate) const NORMAL_SCANNER: u8 = 0;
 pub(crate) const SKIPPING: u8 = 1;
@@ -2583,23 +2579,26 @@ fn negate_glue(st: &mut EngineState) -> Result<i32, Abort> {
     Ok(old)
 }
 
-/// Scans a font identifier, returning the font, its layout engine and its area flag.
-fn scan_font_engine(st: &mut EngineState) -> Result<(i32, *mut libc::c_void, i32), Abort> {
+/// Scans a font identifier, returning the font, its OpenType/Graphite layout
+/// engine and its area flag.
+fn scan_font_engine(
+    st: &mut EngineState,
+) -> Result<(i32, Option<Arc<FontEngineHandle>>, i32), Abort> {
     scan_font_ident(st)?;
     let f = st.scanner.cur_val;
     Ok((
         f,
-        st.fonts.font_layout_engine_ptr(f),
+        st.fonts.layout_engine_arc(f),
         st.fonts.font_area[f as usize],
     ))
 }
 
-fn uses_graphite(fa: i32, engine: *mut libc::c_void) -> bool {
-    fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) }
+fn graphite_engine(engine: &Option<Arc<FontEngineHandle>>) -> Option<&FontEngineHandle> {
+    engine.as_deref().filter(|e| e.using_graphite())
 }
 
-fn uses_opentype(fa: i32, engine: *mut libc::c_void) -> bool {
-    fa == OTGR_FONT_FLAG && unsafe { usingOpenType(engine) }
+fn opentype_engine(engine: &Option<Arc<FontEngineHandle>>) -> Option<&FontEngineHandle> {
+    engine.as_deref().filter(|e| e.using_opentype())
 }
 
 /// Reports a font query on an unsuitable font and yields `fallback`.
@@ -2784,9 +2783,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         XETEX_COUNT_GLYPHS_CODE => {
             let (_, engine, fa) = scan_font_engine(st)?;
             st.scanner.cur_val = if fa == AAT_FONT_FLAG {
-                aat_font_get(m, engine)
-            } else if fa == OTGR_FONT_FLAG {
-                unsafe { ot_font_get(m, engine) }
+                aat_font_get(m)
+            } else if let Some(engine) = engine.as_deref() {
+                ot_font_get(m, engine)
             } else {
                 0
             };
@@ -2794,9 +2793,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         XETEX_COUNT_FEATURES_CODE => {
             let (_, engine, fa) = scan_font_engine(st)?;
             st.scanner.cur_val = if fa == AAT_FONT_FLAG {
-                aat_font_get(m, engine)
-            } else if uses_graphite(fa, engine) {
-                unsafe { ot_font_get(m, engine) }
+                aat_font_get(m)
+            } else if let Some(engine) = graphite_engine(&engine) {
+                ot_font_get(m, engine)
             } else {
                 0
             };
@@ -2813,10 +2812,10 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 scan_int(st)?;
-                st.scanner.cur_val = aat_font_get_1(m, engine, st.scanner.cur_val);
-            } else if uses_graphite(fa, engine) {
+                st.scanner.cur_val = aat_font_get_1(m, st.scanner.cur_val);
+            } else if let Some(engine) = graphite_engine(&engine) {
                 scan_int(st)?;
-                st.scanner.cur_val = unsafe { ot_font_get_1(m, engine, st.scanner.cur_val) };
+                st.scanner.cur_val = ot_font_get_1(m, engine, st.scanner.cur_val);
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
@@ -2827,21 +2826,21 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 scan_int(st)?;
                 let k = st.scanner.cur_val;
                 scan_int(st)?;
-                st.scanner.cur_val = aat_font_get_2(m, engine, k, st.scanner.cur_val);
-            } else if uses_graphite(fa, engine) {
+                st.scanner.cur_val = aat_font_get_2(m, k, st.scanner.cur_val);
+            } else if let Some(engine) = graphite_engine(&engine) {
                 scan_int(st)?;
                 let k = st.scanner.cur_val;
                 scan_int(st)?;
-                st.scanner.cur_val = unsafe { ot_font_get_2(m, engine, k, st.scanner.cur_val) };
+                st.scanner.cur_val = ot_font_get_2(m, engine, k, st.scanner.cur_val);
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
         }
         XETEX_FIND_VARIATION_BY_NAME_CODE => {
-            let (f, engine, fa) = scan_font_engine(st)?;
+            let (f, _, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 crate::io::scan_and_pack_name(st)?;
-                st.scanner.cur_val = aat_font_get_named(m, engine);
+                st.scanner.cur_val = aat_font_get_named(m);
             } else {
                 font_query_error(st, m, f, "; not an AAT font", -1)?;
             }
@@ -2850,10 +2849,10 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 crate::io::scan_and_pack_name(st)?;
-                st.scanner.cur_val = aat_font_get_named(m, engine);
-            } else if uses_graphite(fa, engine) {
+                st.scanner.cur_val = aat_font_get_named(m);
+            } else if let Some(engine) = graphite_engine(&engine) {
                 crate::io::scan_and_pack_name(st)?;
-                st.scanner.cur_val = unsafe { gr_font_get_named(st, m, engine) };
+                st.scanner.cur_val = gr_font_get_named(st, m, engine);
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
@@ -2864,53 +2863,53 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 scan_int(st)?;
                 let k = st.scanner.cur_val;
                 crate::io::scan_and_pack_name(st)?;
-                st.scanner.cur_val = aat_font_get_named_1(m, engine, k);
-            } else if uses_graphite(fa, engine) {
+                st.scanner.cur_val = aat_font_get_named_1(m, k);
+            } else if let Some(engine) = graphite_engine(&engine) {
                 scan_int(st)?;
                 let k = st.scanner.cur_val;
                 crate::io::scan_and_pack_name(st)?;
-                st.scanner.cur_val = unsafe { gr_font_get_named_1(st, m, engine, k) };
+                st.scanner.cur_val = gr_font_get_named_1(st, m, engine, k);
             } else {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
         }
         XETEX_OT_COUNT_SCRIPTS_CODE => {
-            let (_, engine, fa) = scan_font_engine(st)?;
-            st.scanner.cur_val = if uses_opentype(fa, engine) {
-                unsafe { ot_font_get(m, engine) }
+            let (_, engine, _) = scan_font_engine(st)?;
+            st.scanner.cur_val = if let Some(engine) = opentype_engine(&engine) {
+                ot_font_get(m, engine)
             } else {
                 0
             };
         }
         XETEX_OT_COUNT_LANGUAGES_CODE | XETEX_OT_SCRIPT_CODE => {
-            let (f, engine, fa) = scan_font_engine(st)?;
-            if uses_opentype(fa, engine) {
+            let (f, engine, _) = scan_font_engine(st)?;
+            if let Some(engine) = opentype_engine(&engine) {
                 scan_int(st)?;
-                st.scanner.cur_val = unsafe { ot_font_get_1(m, engine, st.scanner.cur_val) };
+                st.scanner.cur_val = ot_font_get_1(m, engine, st.scanner.cur_val);
             } else {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
         }
         XETEX_OT_COUNT_FEATURES_CODE | XETEX_OT_LANGUAGE_CODE => {
-            let (f, engine, fa) = scan_font_engine(st)?;
-            if uses_opentype(fa, engine) {
+            let (f, engine, _) = scan_font_engine(st)?;
+            if let Some(engine) = opentype_engine(&engine) {
                 scan_int(st)?;
                 let k = st.scanner.cur_val;
                 scan_int(st)?;
-                st.scanner.cur_val = unsafe { ot_font_get_2(m, engine, k, st.scanner.cur_val) };
+                st.scanner.cur_val = ot_font_get_2(m, engine, k, st.scanner.cur_val);
             } else {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
         }
         XETEX_OT_FEATURE_CODE => {
-            let (f, engine, fa) = scan_font_engine(st)?;
-            if uses_opentype(fa, engine) {
+            let (f, engine, _) = scan_font_engine(st)?;
+            if let Some(engine) = opentype_engine(&engine) {
                 scan_int(st)?;
                 let k = st.scanner.cur_val;
                 scan_int(st)?;
                 let kk = st.scanner.cur_val;
                 scan_int(st)?;
-                st.scanner.cur_val = unsafe { ot_font_get_3(m, engine, k, kk, st.scanner.cur_val) };
+                st.scanner.cur_val = ot_font_get_3(m, engine, k, kk, st.scanner.cur_val);
             } else {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
@@ -2919,7 +2918,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
                 scan_int(st)?;
-                st.scanner.cur_val = unsafe { st.fonts.map_char_to_glyph(f, st.scanner.cur_val) }?;
+                st.scanner.cur_val = st.fonts.map_char_to_glyph(f, st.scanner.cur_val)?;
             } else {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
             }
@@ -2928,8 +2927,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
                 crate::io::scan_and_pack_name(st)?;
-                let name = st.input.name_of_file_ptr();
-                st.scanner.cur_val = unsafe { st.fonts.map_glyph_to_index(f, name) }?;
+                let name = st.input.name_of_file_cstr().unwrap_or_default();
+                st.scanner.cur_val = st.fonts.map_glyph_to_index(f, name)?;
             } else {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
             }
@@ -2938,9 +2937,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let (_, engine, fa) = scan_font_engine(st)?;
             st.scanner.cur_val = if fa == AAT_FONT_FLAG {
                 1
-            } else if uses_opentype(fa, engine) {
+            } else if opentype_engine(&engine).is_some() {
                 2
-            } else if uses_graphite(fa, engine) {
+            } else if graphite_engine(&engine).is_some() {
                 3
             } else {
                 0
@@ -2951,7 +2950,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let f = st.scanner.cur_val;
             let first = m == XETEX_FIRST_CHAR_CODE;
             st.scanner.cur_val = if st.fonts.is_native_font(f) {
-                unsafe { st.fonts.get_font_char_range(f, first as i32) }?
+                st.fonts.get_font_char_range(f, first as i32)?
             } else if first {
                 st.fonts.font_bc[f as usize] as i32
             } else {
@@ -3028,8 +3027,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                     st.scanner.cur_val = 0;
                 } else {
                     scan_int(st)?;
-                    st.scanner.cur_val =
-                        unsafe { st.fonts.get_glyph_bounds(f, edge, st.scanner.cur_val) }?;
+                    st.scanner.cur_val = st.fonts.get_glyph_bounds(f, edge, st.scanner.cur_val)?;
                 }
             } else {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
@@ -3042,13 +3040,11 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let c = st.scanner.cur_val;
             st.scanner.cur_val = if st.fonts.is_native_font(f) {
                 let fonts = &st.fonts;
-                unsafe {
-                    match m {
-                        FONT_CHAR_WD_CODE => fonts.getnativecharwd(f, c),
-                        FONT_CHAR_HT_CODE => fonts.getnativecharht(f, c),
-                        FONT_CHAR_DP_CODE => fonts.getnativechardp(f, c),
-                        _ => fonts.getnativecharic(f, c),
-                    }
+                match m {
+                    FONT_CHAR_WD_CODE => fonts.native_char_width(f, c),
+                    FONT_CHAR_HT_CODE => fonts.native_char_height(f, c),
+                    FONT_CHAR_DP_CODE => fonts.native_char_depth(f, c),
+                    _ => fonts.native_char_italic_correction(f, c),
                 }?
             } else if st.fonts.font_bc[f as usize] as i32 <= c
                 && st.fonts.font_ec[f as usize] as i32 >= c
@@ -3284,13 +3280,11 @@ pub(crate) fn scan_something_internal(
                         let code = st.scanner.cur_val as u32;
                         match m {
                             LP_CODE_BASE => {
-                                set_cur_val(st, unsafe { get_cp_code(f, code, LEFT_SIDE) }, INT_VAL)
+                                set_cur_val(st, get_cp_code(f, code, LEFT_SIDE), INT_VAL)
                             }
-                            RP_CODE_BASE => set_cur_val(
-                                st,
-                                unsafe { get_cp_code(f, code, RIGHT_SIDE) },
-                                INT_VAL,
-                            ),
+                            RP_CODE_BASE => {
+                                set_cur_val(st, get_cp_code(f, code, RIGHT_SIDE), INT_VAL)
+                            }
                             _ => {}
                         }
                     }
@@ -3467,12 +3461,12 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
 pub(crate) fn scan_glyph_number(st: &mut EngineState, f: i32) -> Result<(), Abort> {
     if scan_keyword(st, "/")? {
         crate::io::scan_and_pack_name(st)?;
-        let name = st.input.name_of_file_ptr();
-        let v = unsafe { st.fonts.map_glyph_to_index(f, name) }?;
+        let name = st.input.name_of_file_cstr().unwrap_or_default();
+        let v = st.fonts.map_glyph_to_index(f, name)?;
         set_cur_val(st, v, INT_VAL);
     } else if scan_keyword(st, "u")? {
         scan_char_num(st)?;
-        let v = unsafe { st.fonts.map_char_to_glyph(f, st.scanner.cur_val) }?;
+        let v = st.fonts.map_char_to_glyph(f, st.scanner.cur_val)?;
         set_cur_val(st, v, INT_VAL);
     } else {
         scan_int(st)?;

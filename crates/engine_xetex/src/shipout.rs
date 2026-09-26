@@ -156,8 +156,7 @@ fn synch_v(st: &mut crate::state::EngineState) -> Result<(), Abort> {
 }
 
 fn dvi_native_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Abort> {
-    // SAFETY: FFI fill of `xdv_buffer`, returning the definition length.
-    let font_def_length = unsafe { st.fonts.make_font_def(f) }?;
+    let font_def_length = st.fonts.make_font_def(f)?;
     st.shipout.dvi_out(DEFINE_NATIVE_FONT)?;
     st.shipout.dvi_four(f - 1)?;
     st.shipout
@@ -653,11 +652,8 @@ impl MemState {
             match self.classify(MemIdx::new(q.0)) {
                 Ok(AnyNode::Whatsit(w)) => {
                     if w.whatsit_subtype(self).is_some_and(|s| s.is_native_word()) {
-                        let len = w.native_length(self) as usize;
-                        let text = w.native_text_ptr(self);
-                        for j in 0..len {
-                            // SAFETY: a native word holds `native_length` UTF-16 units inline.
-                            strings.str_pool[strings.pool_ptr as usize] = unsafe { *text.add(j) };
+                        for &unit in w.native_text(self) {
+                            strings.str_pool[strings.pool_ptr as usize] = unit;
                             strings.pool_ptr += 1;
                         }
                         width += w.width(self).0;
@@ -695,13 +691,10 @@ impl MemState {
         let word = self.new_native_word_node(eqtb, first.native_font(self).0, nlen)?;
         word.set_subtype(self, first.subtype(self));
         let base = strings.cur_string_start() as usize;
-        let text = &strings.str_pool[base..base + nlen as usize];
-        let dst = word.native_text_ptr_mut(self);
-        // SAFETY: the new node holds `nlen` UTF-16 units inline, disjoint from the pool.
-        unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), dst, text.len()) };
+        word.native_text_mut(self)
+            .copy_from_slice(&strings.str_pool[base..base + nlen as usize]);
         word.set_width(self, Scaled(width));
-        // SAFETY: FFI re-measure of the node just built.
-        unsafe { fonts.store_justified_native_glyphs(self, word) }?;
+        fonts.store_justified_native_glyphs(self, word)?;
 
         prev_p.set_link(self, word.ptr());
         word.set_link(self, last.link(self));
@@ -969,10 +962,8 @@ fn native_word_out(
             if len > 0 || word.native_glyph_info_handle(&st.mem) != 0 {
                 st.shipout.dvi_out(SET_TEXT_AND_GLYPHS)?;
                 st.shipout.dvi_two(len)?;
-                let text = word.native_text_ptr(&st.mem);
-                for k in 0..len as usize {
-                    // SAFETY: the node holds `native_length` UTF-16 units inline.
-                    st.shipout.dvi_two(unsafe { *text.add(k) })?;
+                for &unit in word.native_text(&st.mem) {
+                    st.shipout.dvi_two(unit)?;
                 }
                 let len = make_xdv_glyph_array_data(st, word);
                 dvi_xdv_buffer(st, len)?;
@@ -1010,10 +1001,10 @@ fn chars_out(
     while let Some(ch) = st.mem.as_char(p) {
         let f = ch.font(&st.mem).0;
         let mut c = ch.character(&st.mem);
-        let mapping = st.fonts.font_mapping_ptr(f);
-        if p != LIG_TRICK && !mapping.is_null() {
-            // SAFETY: `mapping` is the font's live TECkit converter.
-            c = unsafe { apply_tfm_font_mapping(mapping, c as libc::c_int) } as u16;
+        if p != LIG_TRICK {
+            if let Some(mapping) = st.fonts.font_mapping[f as usize].as_deref() {
+                c = apply_tfm_font_mapping(mapping, c as libc::c_int) as u16;
+            }
         }
         dvi_font_select(st, f)?;
         if st.fonts.font_ec_entry(f) >= c

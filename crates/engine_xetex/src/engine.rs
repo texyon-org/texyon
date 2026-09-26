@@ -676,8 +676,8 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
 ///
 /// A Rust panic is caught and turned into a `HISTORY_FATAL_ERROR` return with
 /// a surfaced message instead of unwinding into the host.
-pub(crate) unsafe fn tt_run_engine(
-    api: *mut libc::c_void,
+pub(crate) fn tt_run_engine(
+    api: &mut tectonic_bridge_core::CoreBridgeState,
     config: ConfigState,
     dump_name: &str,
     input_file_name: &str,
@@ -686,8 +686,12 @@ pub(crate) unsafe fn tt_run_engine(
     reset_layout_font_caches();
     let _layout_cache_guard = OnDrop(|| reset_layout_font_caches());
 
-    crate::bridge::set_bridge_state(api);
-    let _bridge_guard = OnDrop(|| crate::bridge::set_bridge_state(std::ptr::null_mut()));
+    let api = api as *mut tectonic_bridge_core::CoreBridgeState as *mut libc::c_void;
+    // SAFETY: `api` is exclusively borrowed for this call, and the guard clears
+    // it again before the borrow ends.
+    unsafe { crate::bridge::set_bridge_state(api) };
+    // SAFETY: clearing the pointer is always sound.
+    let _bridge_guard = OnDrop(|| unsafe { crate::bridge::set_bridge_state(std::ptr::null_mut()) });
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         tt_run_engine_inner(config, dump_name, input_file_name, build_date)
@@ -706,7 +710,7 @@ pub(crate) unsafe fn tt_run_engine(
     }
 }
 
-unsafe fn tt_run_engine_inner(
+fn tt_run_engine_inner(
     config: ConfigState,
     dump_name: &str,
     input_file_name: &str,
@@ -1028,7 +1032,7 @@ pub(crate) fn initialize_engine(
 }
 
 /// Open, execute, finalize, and release one batch document operation.
-unsafe fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
+fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
     let result = (|| {
         crate::io::start_input(st, Some(input_file_name))?;
         st.errors.history = HISTORY_SPOTLESS;
@@ -1046,7 +1050,7 @@ unsafe fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i3
 /// Run and finalize one document while retaining the initialized engine arenas.
 /// Aborts are returned without terminal cleanup so a resident session can
 /// close operation resources and rewind rung zero.
-pub(crate) unsafe fn run_resident_document(
+pub(crate) fn run_resident_document(
     st: &mut EngineState,
     input_file_name: &str,
 ) -> Result<i32, Abort> {
@@ -1059,7 +1063,7 @@ pub(crate) unsafe fn run_resident_document(
 }
 
 /// Resume a resident document at a restored command boundary.
-pub(crate) unsafe fn resume_resident_document(
+pub(crate) fn resume_resident_document(
     st: &mut EngineState,
     resume_pending_command: bool,
 ) -> Result<i32, Abort> {

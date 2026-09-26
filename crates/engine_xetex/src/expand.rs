@@ -34,10 +34,6 @@ use crate::scan::{
 use crate::state::{EngineState, MemState};
 use crate::units::{MemIdx, MemPtr};
 
-extern "C" {
-    fn usingGraphite(engine: *mut libc::c_void) -> bool;
-}
-
 pub(crate) const IF_CHAR_CODE: i16 = 0;
 pub(crate) const IF_CAT_CODE: i16 = 1;
 pub(crate) const IF_INT_CODE: i16 = 2;
@@ -360,7 +356,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             let c = st.scanner.cur_val;
             let fa = st.fonts.font_area[f as usize];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                unsafe { st.fonts.map_char_to_glyph(f, c) }? > 0
+                st.fonts.map_char_to_glyph(f, c)? > 0
             } else if st.fonts.font_bc[f as usize] as i32 <= c
                 && st.fonts.font_ec[f as usize] as i32 >= c
             {
@@ -816,25 +812,18 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         }
         XETEX_UCHAR_CODE | XETEX_UCHARCAT_CODE => print_char(st, st.scanner.cur_val),
         XETEX_REVISION_CODE => print(st, ".999994"),
-        XETEX_VARIATION_NAME_CODE => {
-            if st.fonts.font_area[fnt as usize] == AAT_FONT_FLAG {
-                let engine = st.fonts.font_layout_engine_ptr(fnt);
-                crate::ext::aat_print_font_name(c, engine, arg1, arg2);
-            }
-        }
+        // AAT fonts have no names to print on this platform.
+        XETEX_VARIATION_NAME_CODE => {}
         XETEX_FEATURE_NAME_CODE | XETEX_SELECTOR_NAME_CODE => {
-            let fa = st.fonts.font_area[fnt as usize];
-            let engine = st.fonts.font_layout_engine_ptr(fnt);
-            if fa == AAT_FONT_FLAG {
-                crate::ext::aat_print_font_name(c, engine, arg1, arg2);
-            } else if fa == OTGR_FONT_FLAG && unsafe { usingGraphite(engine) } {
-                unsafe { crate::ext::gr_print_font_name(st, c, engine, arg1, arg2) };
+            let engine = st.fonts.layout_engine_arc(fnt);
+            if let Some(engine) = engine.as_deref().filter(|e| e.using_graphite()) {
+                crate::ext::gr_print_font_name(st, c, engine, arg1, arg2);
             }
         }
         XETEX_GLYPH_NAME_CODE => {
             let fa = st.fonts.font_area[fnt as usize];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                unsafe { crate::ext::print_glyph_name(st, fnt, arg1) }?;
+                crate::ext::print_glyph_name(st, fnt, arg1)?;
             }
         }
         JOB_NAME_CODE => {
@@ -852,7 +841,10 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
 fn is_aat_or_graphite(st: &EngineState, f: i32) -> bool {
     let fa = st.fonts.font_area[f as usize];
     fa == AAT_FONT_FLAG
-        || (fa == OTGR_FONT_FLAG && unsafe { usingGraphite(st.fonts.font_layout_engine_ptr(f)) })
+        || st
+            .fonts
+            .layout_engine(f)
+            .is_some_and(|e| e.using_graphite())
 }
 
 fn not_font_error(st: &mut EngineState, c: i32, f: i32, msg: &str) -> Result<(), Abort> {

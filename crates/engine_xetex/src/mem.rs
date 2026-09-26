@@ -45,16 +45,6 @@ pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr(MEM_TOP - 14);
 pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
 pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
 
-/// `malloc` that panics instead of returning null, for C-owned buffers.
-///
-/// # Safety
-/// The caller owns the uninitialised result and frees it with `libc::free`.
-pub(crate) unsafe fn xmalloc(size: libc::size_t) -> *mut libc::c_void {
-    let p = libc::malloc(size.max(1));
-    assert!(!p.is_null(), "out of memory: malloc({size} bytes) failed");
-    p
-}
-
 /// TeX's `end_LR_type`: the LR entry that a math node of `subtype` closes.
 #[inline]
 pub(crate) fn end_lr_type(subtype: u16) -> i32 {

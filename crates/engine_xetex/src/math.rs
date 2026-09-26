@@ -73,22 +73,16 @@ use crate::mem_types::ListStateRecord;
 use crate::ot_math::{GlyphAssembly, ScriptKind};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 
-extern "C" {
-    fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
-    fn usingOpenType(engine: *mut libc::c_void) -> bool;
-}
-
 impl FontState {
     #[inline]
     fn font_uses_opentype(&self, f: i32) -> bool {
-        self.font_area_entry(f) == OTGR_FONT_FLAG
-            && unsafe { usingOpenType(self.font_layout_engine_ptr(f)) }
+        self.layout_engine(f).is_some_and(|e| e.using_opentype())
     }
 
     #[inline]
     fn font_is_ot_math(&self, f: i32) -> bool {
-        self.font_area_entry(f) == OTGR_FONT_FLAG
-            && unsafe { isOpenTypeMathFont(self.font_layout_engine_ptr(f)) }
+        self.layout_engine(f)
+            .is_some_and(|e| e.is_opentype_math_font())
     }
 
     #[inline]
@@ -2199,8 +2193,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), Abort> {
 
 impl FontState {
     fn measure_glyph(&self, mem: &mut MemState, p: NodePtr<WhatsitNode>) -> Result<(), Abort> {
-        // SAFETY: `p` is a glyph whatsit and the measurer only reads font tables over FFI.
-        unsafe { self.measure_native_glyph(mem, p, true) }
+        self.measure_native_glyph(mem, p, true)
     }
 }
 
@@ -3753,8 +3746,7 @@ fn var_delimiter(
                         if st.fonts.font_area_entry(g) == AAT_FONT_FLAG
                             || st.fonts.font_uses_opentype(g)
                         {
-                            // SAFETY: pure font-table and FFI glyph lookup.
-                            x = unsafe { st.fonts.map_char_to_glyph(g, x) }?;
+                            x = st.fonts.map_char_to_glyph(g, x)?;
                             f = g;
                             c = x as u16;
                             w = 0;

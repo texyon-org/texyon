@@ -43,6 +43,7 @@ mod input;
 pub mod introspect;
 mod io;
 mod journal;
+mod layout;
 mod linebreak;
 mod main_control;
 mod math;
@@ -263,19 +264,16 @@ impl TexEngine {
         };
 
         launcher.with_global_lock(|state| {
-            // SAFETY: the global lock is held for the whole run.
-            let r = unsafe {
-                tt_engine_xetex_main(
-                    state,
-                    config,
-                    format_file_name,
-                    input_file_name,
-                    self.build_date
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .expect("invalid build date")
-                        .as_secs(),
-                )
-            };
+            let r = tt_engine_xetex_main(
+                state,
+                config,
+                format_file_name,
+                input_file_name,
+                self.build_date
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .expect("invalid build date")
+                    .as_secs(),
+            );
 
             match r {
                 0 => Ok(TexOutcome::Spotless),

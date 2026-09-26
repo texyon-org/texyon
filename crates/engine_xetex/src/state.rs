@@ -609,19 +609,37 @@ impl MemState {
         self.data[index].gr = v;
     }
 
+    /// `mem` as UTF-16 units, four per word, for text stored inline in nodes.
     #[inline]
-    pub(crate) fn as_u16_ptr_mut(&mut self, p: impl crate::units::MemAddr) -> *mut u16 {
-        self.data.as_mut_ptr().wrapping_add(p.addr() as usize) as *mut u16
+    pub(crate) fn units(&self) -> &[u16] {
+        // SAFETY: a `MemoryWord` is 8 bytes of plain data, 8-aligned, so its
+        // storage reads as four valid `u16`s.
+        unsafe { std::slice::from_raw_parts(self.data.as_ptr().cast(), self.data.len() * 4) }
     }
 
+    /// `units`, writable. Journaling the words written is up to the caller.
     #[inline]
-    pub(crate) fn as_u16_ptr(&self, p: impl crate::units::MemAddr) -> *const u16 {
-        self.data.as_ptr().wrapping_add(p.addr() as usize) as *const u16
+    pub(crate) fn units_mut(&mut self) -> &mut [u16] {
+        // SAFETY: as in `units`, and any `u16`s written form valid words.
+        unsafe {
+            std::slice::from_raw_parts_mut(self.data.as_mut_ptr().cast(), self.data.len() * 4)
+        }
     }
 
+    /// `mem` as bytes, eight per word.
     #[inline]
-    pub(crate) fn node_addr(&self, p: impl crate::units::MemAddr) -> *mut std::ffi::c_void {
-        self.data.as_ptr().wrapping_add(p.addr() as usize) as *mut std::ffi::c_void
+    pub(crate) fn bytes(&self) -> &[u8] {
+        // SAFETY: as in `units`.
+        unsafe { std::slice::from_raw_parts(self.data.as_ptr().cast(), self.data.len() * 8) }
+    }
+
+    /// `bytes`, writable. Journaling the words written is up to the caller.
+    #[inline]
+    pub(crate) fn bytes_mut(&mut self) -> &mut [u8] {
+        // SAFETY: as in `units_mut`.
+        unsafe {
+            std::slice::from_raw_parts_mut(self.data.as_mut_ptr().cast(), self.data.len() * 8)
+        }
     }
 
     #[inline]
@@ -912,54 +930,13 @@ pub(crate) struct ConfigState {
     pub max_print_line: i32,
 }
 
-/// Owned native layout engine with exactly-once disposal. Multiple resident
-/// checkpoints may share the handle, but the underlying engine is released
-/// only after the final owner is dropped.
-pub(crate) struct FontEngineHandle {
-    pub raw: *mut libc::c_void,
-    pub area: i32,
-}
-
-impl Drop for FontEngineHandle {
-    fn drop(&mut self) {
-        // SAFETY: construction is restricted to successful native-font loads, and
-        // Arc sharing preserves exactly-once disposal.
-        unsafe { crate::ext::release_font_engine(self.raw, self.area) }
-    }
-}
-
-/// Owned TECkit converter with exactly-once disposal.
-pub(crate) struct FontMappingHandle {
-    pub raw: *mut libc::c_void,
-}
-
-impl Drop for FontMappingHandle {
-    fn drop(&mut self) {
-        // SAFETY: construction is restricted to successful converter loads, and
-        // Arc sharing preserves exactly-once disposal.
-        unsafe { crate::ext::dispose_font_mapping(self.raw) }
-    }
-}
-
-/// Owned ICU line-break iterator cache. Its locale key is a TeX string-pool
-/// index, so the cache belongs to one engine state and must not outlive it.
-pub(crate) struct LinebreakHandle {
-    pub raw: *mut libc::c_void,
-}
-
-impl Drop for LinebreakHandle {
-    fn drop(&mut self) {
-        // SAFETY: `raw` came from a successful `ubrk_open` and this handle is
-        // its sole owner.
-        unsafe { crate::ext::close_linebreak_iterator(self.raw) }
-    }
-}
+pub(crate) use crate::layout::{FontEngineHandle, FontMappingHandle, LinebreakHandle};
 
 pub(crate) struct FontState {
     /// Converter staged by a `mapping=` font feature until it is transferred
     /// into a font slot.
     pub loaded_font_mapping: Option<std::sync::Arc<FontMappingHandle>>,
-    pub loaded_font_flags: libc::c_char,
+    pub loaded_font_flags: i8,
     /// TFM mapping name captured during filename parsing and consumed by the
     /// subsequent font load.
     pub saved_mapping_name: Option<std::ffi::CString>,
@@ -1072,22 +1049,8 @@ impl Default for FontState {
 
 impl FontState {
     #[inline]
-    pub(crate) fn linebreak_iterator_ptr(&self) -> *mut libc::c_void {
-        self.brk_iter
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |handle| handle.raw)
-    }
-
-    #[inline]
     pub(crate) fn font_area_entry(&self, f: i32) -> i32 {
         self.font_area[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn font_layout_engine_ptr(&self, f: i32) -> *mut libc::c_void {
-        self.font_layout_engine[f as usize]
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |handle| handle.raw)
     }
 
     #[inline]
@@ -1108,13 +1071,6 @@ impl FontState {
     #[inline]
     pub(crate) fn font_ec_entry(&self, f: i32) -> u16 {
         self.font_ec[f as usize]
-    }
-
-    #[inline]
-    pub(crate) fn font_mapping_ptr(&self, f: i32) -> *mut libc::c_void {
-        self.font_mapping[f as usize]
-            .as_ref()
-            .map_or(std::ptr::null_mut(), |handle| handle.raw)
     }
 
     #[inline]
@@ -1783,12 +1739,6 @@ impl InputClusterState {
 
     pub(crate) fn name_of_file_cstr(&self) -> Option<&std::ffi::CStr> {
         std::ffi::CStr::from_bytes_until_nul(&self.name_of_file).ok()
-    }
-
-    /// `name_of_file` for C callees, null before the first `pack_file_name`.
-    pub(crate) fn name_of_file_ptr(&self) -> *const libc::c_char {
-        self.name_of_file_cstr()
-            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
     }
 
     pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {

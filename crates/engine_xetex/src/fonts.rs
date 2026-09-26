@@ -24,10 +24,7 @@ use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::bridge::{input_getc, TTBC_FILE_FORMAT_TFM};
 use crate::errors::Abort;
 
-extern "C" {
-    fn get_loaded_font_design_size() -> i32;
-    fn isOpenTypeMathFont(engine: *mut libc::c_void) -> bool;
-}
+use crate::layout::get_loaded_font_design_size;
 
 const EOF: i32 = -1;
 pub(crate) const AAT_FONT_FLAG: i32 = 0xFFFF;
@@ -77,10 +74,10 @@ impl FontState {
 
     pub fn effective_char(&mut self, f: i32, c: u16) -> i32 {
         let mut c = c;
-        let mapping = self.font_mapping_ptr(f);
-        if !self.xtx_ligature_present && !mapping.is_null() {
-            // SAFETY: `mapping` is the font's live TECkit converter.
-            c = unsafe { apply_tfm_font_mapping(mapping, c as i32) } as u16;
+        if !self.xtx_ligature_present {
+            if let Some(mapping) = self.font_mapping[f as usize].as_deref() {
+                c = apply_tfm_font_mapping(mapping, c as i32) as u16;
+            }
         }
         self.xtx_ligature_present = false;
         c as i32
@@ -151,18 +148,14 @@ impl MemState {
         match src {
             NativeCharSrc::Mapped(len) => {
                 let w = self.new_native_word_node(eqtb, f, len)?;
-                let src = &fonts.mapped_text[..len as usize];
-                let text = w.native_text_ptr_mut(self);
-                // SAFETY: the node holds `len` units and the arena never reallocates.
-                unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), text, src.len()) };
+                w.native_text_mut(self)
+                    .copy_from_slice(&fonts.mapped_text[..len as usize]);
                 Ok(w)
             }
             NativeCharSrc::Single(c) => {
                 let (units, n) = utf16_units(c);
                 let w = self.new_native_word(f, n as i32, WhatsitSubtype::NativeWord)?;
-                let text = w.native_text_ptr_mut(self);
-                // SAFETY: the node holds `n` units and the arena never reallocates.
-                unsafe { std::ptr::copy_nonoverlapping(units.as_ptr(), text, n) };
+                w.native_text_mut(self).copy_from_slice(&units[..n]);
                 Ok(w)
             }
         }
@@ -171,8 +164,7 @@ impl MemState {
 
 /// Warn about `c` when font `f` has no glyph for it.
 fn check_native_char(st: &mut EngineState, f: i32, c: i32) -> Result<(), Abort> {
-    // SAFETY: font-table lookup over FFI, no state re-entry.
-    if unsafe { st.fonts.map_char_to_glyph(f, c) }? == 0 {
+    if st.fonts.map_char_to_glyph(f, c)? == 0 {
         char_warning(st, f, c)?;
     }
     Ok(())
@@ -185,7 +177,7 @@ pub(crate) fn new_native_character(
     f: i32,
     c: u32,
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
-    let src = if st.fonts.font_mapping[f as usize].is_some() {
+    let src = if let Some(map) = st.fonts.font_mapping[f as usize].clone() {
         let (units, n) = utf16_units(c);
         if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
             return Err(Abort::PoolOverflow);
@@ -196,14 +188,8 @@ pub(crate) fn new_native_character(
         }
 
         let start = st.strings.cur_string_start();
-        let map = st.fonts.font_mapping_ptr(f);
-        let cur_len = st.strings.cur_length();
-        // SAFETY: `dst` points into the non-reallocating string pool, disjoint
-        // from the `&mut st.fonts` borrow.
-        let len = unsafe {
-            let dst = st.strings.str_pool.as_mut_ptr().add(start as usize);
-            st.fonts.apply_mapping(map, dst, cur_len)
-        };
+        let text = &st.strings.str_pool[start as usize..st.strings.pool_ptr as usize];
+        let len = st.fonts.apply_mapping(&map, text);
         st.strings.pool_ptr = start;
 
         let mut i = 0;
@@ -229,11 +215,8 @@ pub(crate) fn new_native_character(
 
     let w = st.mem.build_native_character(&st.eqtb, &st.fonts, f, src)?;
     let use_glyph_metrics = st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
-    // SAFETY: the measurer only reads font tables over re-entry-free FFI.
-    unsafe {
-        st.fonts
-            .measure_native_node(&mut st.mem, w, use_glyph_metrics)?
-    };
+    st.fonts
+        .measure_native_node(&mut st.mem, w, use_glyph_metrics)?;
     Ok(w)
 }
 
@@ -279,14 +262,6 @@ fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<i32>
     }
 }
 
-pub(crate) fn name_of_file_ptr(st: &mut EngineState) -> *mut libc::c_char {
-    if st.input.name_of_file.is_empty() {
-        std::ptr::null_mut()
-    } else {
-        st.input.name_of_file.as_mut_ptr().cast()
-    }
-}
-
 /// Start a "Font \cs=name at size" error.
 fn font_error_start(st: &mut EngineState, u: i32, nom: i32, aire: i32, s: i32) {
     error_here_with_diagnostic(st, "Font ");
@@ -310,7 +285,7 @@ fn font_error_start(st: &mut EngineState, u: i32, nom: i32, aire: i32, s: i32) {
     }
 }
 
-pub(crate) unsafe fn read_font_info(
+pub(crate) fn read_font_info(
     st: &mut EngineState,
     u: i32,
     nom: i32,
@@ -725,7 +700,7 @@ impl FontState {
 
     /// Set up the tables of a new native font slot. Returns the slot and the
     /// font's metrics.
-    unsafe fn init_native_font_tables(
+    fn init_native_font_tables(
         &mut self,
         eqtb: &EqtbState,
         font_engine: crate::state::FontEngineHandle,
@@ -743,9 +718,9 @@ impl FontState {
         self.set_font_size_entry(font_ptr, actual_size);
 
         let metrics = if self.native_font_type_flag == AAT_FONT_FLAG {
-            aat_get_font_metrics(font_engine.raw)
+            aat_get_font_metrics()
         } else {
-            ot_get_font_metrics(font_engine.raw)
+            ot_get_font_metrics(&font_engine)
         };
 
         self.set_height_base_entry(font_ptr, metrics.ascent);
@@ -771,15 +746,15 @@ impl FontState {
 }
 
 /// Load a native OpenType/Graphite font and set up its TeX font tables.
-pub(crate) unsafe fn load_native_font(
+pub(crate) fn load_native_font(
     st: &mut EngineState,
     u: i32,
     nom: i32,
     aire: i32,
     s: i32,
 ) -> Result<i32, Abort> {
-    let name_of_file = name_of_file_ptr(st);
-    let Some(font_engine) = find_native_font(st, name_of_file, s)? else {
+    let name_of_file = st.input.name_of_file_bytes().to_vec();
+    let Some(font_engine) = find_native_font(st, &name_of_file, s)? else {
         return Ok(FONT_BASE);
     };
 
@@ -816,7 +791,7 @@ pub(crate) unsafe fn load_native_font(
     }
 
     let num_font_dimens = if st.fonts.native_font_type_flag == OTGR_FONT_FLAG
-        && isOpenTypeMathFont(font_engine.raw)
+        && font_engine.is_opentype_math_font()
     {
         65
     } else {
