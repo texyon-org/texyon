@@ -31,17 +31,143 @@ const EOF: i32 = -1;
 pub(crate) const AAT_FONT_FLAG: StrNumber = StrNumber(0xFFFF);
 /// The `font_area` of an OpenType or Graphite font.
 pub(crate) const OTGR_FONT_FLAG: StrNumber = StrNumber(0xFFFE);
-pub(crate) const LIG_TAG: u16 = 1;
-pub(crate) const LIST_TAG: u16 = 2;
-pub(crate) const EXT_TAG: u16 = 3;
 pub(crate) const SLANT_CODE: i32 = 1;
 pub(crate) const SPACE_CODE: i32 = 2;
+pub(crate) const SPACE_STRETCH_CODE: i32 = 3;
 pub(crate) const SPACE_SHRINK_CODE: i32 = 4;
 pub(crate) const X_HEIGHT_CODE: i32 = 5;
 pub(crate) const QUAD_CODE: i32 = 6;
 pub(crate) const EXTRA_SPACE_CODE: i32 = 7;
 
-pub(crate) type CharInfo = B16x4;
+/// What a character's `remainder` means.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(crate) enum CharTag {
+    None,
+    /// The remainder starts a lig/kern program.
+    Lig,
+    /// The remainder is the next larger character.
+    List,
+    /// The remainder indexes an extensible recipe.
+    Ext,
+}
+
+/// A TFM `char_info` word.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub(crate) struct CharInfo(B16x4);
+
+impl CharInfo {
+    /// TeX's `null_character`.
+    pub(crate) const NULL: CharInfo = CharInfo(B16x4 {
+        s0: 0,
+        s1: 0,
+        s2: 0,
+        s3: 0,
+    });
+
+    #[inline]
+    pub(crate) fn exists(self) -> bool {
+        self.0.s3 > 0
+    }
+
+    #[inline]
+    fn width_index(self) -> i32 {
+        i32::from(self.0.s3)
+    }
+
+    #[inline]
+    fn height_index(self) -> i32 {
+        i32::from(self.0.s2) / 16
+    }
+
+    #[inline]
+    fn depth_index(self) -> i32 {
+        i32::from(self.0.s2) % 16
+    }
+
+    #[inline]
+    fn italic_index(self) -> i32 {
+        i32::from(self.0.s1) / 4
+    }
+
+    #[inline]
+    pub(crate) fn tag(self) -> CharTag {
+        match self.0.s1 % 4 {
+            0 => CharTag::None,
+            1 => CharTag::Lig,
+            2 => CharTag::List,
+            _ => CharTag::Ext,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn remainder(self) -> u16 {
+        self.0.s0
+    }
+}
+
+/// One lig/kern instruction.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct LigKernStep(B16x4);
+
+impl LigKernStep {
+    const STOP_FLAG: u16 = 128;
+    const KERN_FLAG: u16 = 128;
+
+    /// This is the last instruction for the character.
+    #[inline]
+    pub(crate) fn is_last(self) -> bool {
+        self.0.s3 >= Self::STOP_FLAG
+    }
+
+    /// A first instruction that only points to the real program.
+    #[inline]
+    pub(crate) fn is_redirect(self) -> bool {
+        self.0.s3 > Self::STOP_FLAG
+    }
+
+    #[inline]
+    pub(crate) fn next_char(self) -> u16 {
+        self.0.s2
+    }
+
+    /// The instruction applies to next character `c`.
+    #[inline]
+    pub(crate) fn matches(self, c: i32) -> bool {
+        i32::from(self.next_char()) == c && !self.is_redirect()
+    }
+
+    #[inline]
+    pub(crate) fn is_kern(self) -> bool {
+        self.0.s1 >= Self::KERN_FLAG
+    }
+
+    /// The ligature operation (`=:`, `|=:|>`, ...) as TeX numbers it.
+    #[inline]
+    pub(crate) fn lig_op(self) -> u16 {
+        self.0.s1
+    }
+
+    /// The character a ligature instruction inserts.
+    #[inline]
+    pub(crate) fn lig_char(self) -> u16 {
+        self.0.s0
+    }
+
+    /// The index of the next instruction for the character, from this one's `k`.
+    #[inline]
+    pub(crate) fn next_index(self, k: i32) -> i32 {
+        k + i32::from(self.0.s3) + 1
+    }
+}
+
+/// An extensible recipe: the character of each piece, 0 for none.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ExtRecipe {
+    pub top: u16,
+    pub mid: u16,
+    pub bot: u16,
+    pub rep: u16,
+}
 
 impl FontState {
     pub(crate) fn is_native_font(&self, f: FontId) -> bool {
@@ -59,29 +185,78 @@ impl FontState {
         Scaled(self.depth_base[f])
     }
 
+    #[inline]
     pub(crate) fn char_info(&self, f: FontId, c: i32) -> CharInfo {
-        self.font_info_b16(self.char_base[f] + c)
+        CharInfo(self.font_info_b16(self.char_base[f] + c))
     }
 
+    /// `c` is in the font's range and exists.
+    #[inline]
+    pub(crate) fn char_exists(&self, f: FontId, c: i32) -> bool {
+        (i32::from(self.font_bc[f])..=i32::from(self.font_ec[f])).contains(&c)
+            && self.char_info(f, c).exists()
+    }
+
+    #[inline]
     pub(crate) fn char_width(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.width_base[f] + i32::from(i.s3))
+        self.font_info_sc(self.width_base[f] + i.width_index())
     }
 
+    #[inline]
     pub(crate) fn char_italic(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.italic_base[f] + i32::from(i.s1) / 4)
+        self.font_info_sc(self.italic_base[f] + i.italic_index())
     }
 
+    #[inline]
     pub(crate) fn char_height(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.height_base[f] + i32::from(i.s2) / 16)
+        self.font_info_sc(self.height_base[f] + i.height_index())
     }
 
+    #[inline]
     pub(crate) fn char_depth(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.depth_base[f] + i32::from(i.s2) % 16)
+        self.font_info_sc(self.depth_base[f] + i.depth_index())
     }
 
-    /// The kern amount of lig/kern instruction `i` in font `f`.
-    pub(crate) fn char_kern(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.kern_base[f] + 256 * i32::from(i.s1) + i32::from(i.s0))
+    /// The lig/kern instruction at `font_info` index `k`.
+    #[inline]
+    pub(crate) fn lig_kern_step(&self, k: i32) -> LigKernStep {
+        LigKernStep(self.font_info_b16(k))
+    }
+
+    /// The index and first instruction of the lig/kern program of `i`, which
+    /// is tagged `Lig`.
+    #[inline]
+    pub(crate) fn lig_kern_start(&self, f: FontId, i: CharInfo) -> (i32, LigKernStep) {
+        let k = self.lig_kern_base[f] + i32::from(i.remainder());
+        let step = self.lig_kern_step(k);
+        if !step.is_redirect() {
+            return (k, step);
+        }
+        let k = self.lig_kern_base[f] + 256 * i32::from(step.0.s1) + i32::from(step.0.s0);
+        (k, self.lig_kern_step(k))
+    }
+
+    /// The amount of kern instruction `step`.
+    #[inline]
+    pub(crate) fn char_kern(&self, f: FontId, step: LigKernStep) -> Scaled {
+        self.font_info_sc(self.kern_base[f] + 256 * i32::from(step.0.s1) + i32::from(step.0.s0))
+    }
+
+    /// The extensible recipe of `i`, which is tagged `Ext`.
+    pub(crate) fn ext_recipe(&self, f: FontId, i: CharInfo) -> ExtRecipe {
+        let w = self.font_info_b16(self.exten_base[f] + i32::from(i.remainder()));
+        ExtRecipe {
+            top: w.s3,
+            mid: w.s2,
+            bot: w.s1,
+            rep: w.s0,
+        }
+    }
+
+    /// A TFM font's check sum, in file byte order.
+    pub(crate) fn check_bytes(&self, f: FontId) -> [u8; 4] {
+        let c = self.font_check[f];
+        [c.s3 as u8, c.s2 as u8, c.s1 as u8, c.s0 as u8]
     }
 
     pub fn effective_char(&mut self, f: FontId, c: u16) -> i32 {
@@ -531,7 +706,7 @@ impl FontState {
         self.font_size[f] = Scaled(z);
 
         let char_exists =
-            |fonts: &FontState, ch: i32| (bc..=ec).contains(&ch) && fonts.char_info(f, ch).s3 != 0;
+            |fonts: &FontState, ch: i32| (bc..=ec).contains(&ch) && fonts.char_info(f, ch).exists();
 
         for k in self.fmem_ptr..self.width_base[f] {
             let bytes = read!(read_tfm_bytes(tfm_file));
@@ -553,10 +728,10 @@ impl FontState {
                     let mut dd = d;
                     while dd < current {
                         let qw = self.char_info(f, dd);
-                        if qw.s1 % 4 != LIST_TAG {
+                        if qw.tag() != CharTag::List {
                             break;
                         }
-                        dd = i32::from(qw.s0);
+                        dd = i32::from(qw.remainder());
                     }
                     if dd == current {
                         bad!();
@@ -679,7 +854,7 @@ impl FontState {
         }
         self.font_bchar[f] = bchar;
         self.font_false_bchar[f] = bchar;
-        if bchar <= ec && bchar >= bc && self.char_info(f, bchar).s3 > 0 {
+        if bchar <= ec && bchar >= bc && self.char_info(f, bchar).exists() {
             self.font_false_bchar[f] = TOO_BIG_CHAR;
         }
 

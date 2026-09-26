@@ -350,7 +350,6 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.if_limit = FiOrElseCode::Normal;
     st.scanner.cur_if = 0;
     st.scanner.if_line = 0;
-    st.fonts.null_character = B16x4::default();
     st.shipout.total_pages = 0;
     st.shipout.max_v = Scaled::ZERO;
     st.shipout.max_h = Scaled::ZERO;

@@ -608,7 +608,6 @@ struct FontBundle {
     font_max: FontId,
     fmem_ptr: i32,
     font_ptr: FontId,
-    null_character: B16x4,
     arrays: FontArrays,
     engines: Vec<Option<Arc<FontEngineHandle>>>,
     mappings: Vec<Option<Arc<FontMappingHandle>>>,
@@ -636,7 +635,6 @@ impl FontBundle {
             font_ptr,
             font_flags: _,
             font_letter_space: _,
-            null_character,
             font_check: _,
             font_size: _,
             font_dsize: _,
@@ -680,7 +678,6 @@ impl FontBundle {
             font_max: *font_max,
             fmem_ptr: *fmem_ptr,
             font_ptr: *font_ptr,
-            null_character: *null_character,
             arrays: FontArrays::capture(src, count),
             engines: live_prefix(font_layout_engine.as_slice(), count),
             mappings: live_prefix(font_mapping.as_slice(), count),
@@ -716,7 +713,6 @@ impl FontBundle {
         dst.font_max = self.font_max;
         dst.fmem_ptr = self.fmem_ptr;
         dst.font_ptr = self.font_ptr;
-        dst.null_character = self.null_character;
         self.arrays.restore(dst);
         dst.xdv_buffer.clone_from(&self.xdv_buffer);
         dst.mapped_text.clone_from(&self.mapped_text);

@@ -29,7 +29,6 @@ pub(crate) struct EngineState {
 #[derive(Default, Clone)]
 pub(crate) struct MainLoopState {
     pub main_p: crate::units::MemPtr,
-    pub main_k: i32,
     pub main_f: FontId,
     pub main_h: i32,
     pub main_pp: crate::units::MemPtr,
@@ -879,7 +878,7 @@ pub(crate) struct ScannerState {
     pub just_box: Option<crate::node::AnyBox>,
     pub cur_f: FontId,
     pub cur_c: i32,
-    pub cur_i: crate::mem_types::B16x4,
+    pub cur_i: crate::fonts::CharInfo,
     pub pack_begin_line: i32,
     pub set_box_allowed: bool,
     pub active_width: [Scaled; 7],
@@ -947,7 +946,6 @@ pub(crate) struct FontState {
     pub font_ptr: FontId,
     pub font_flags: PerFont<i8>,
     pub font_letter_space: PerFont<Scaled>,
-    pub null_character: crate::mem_types::B16x4,
     pub font_check: PerFont<crate::mem_types::B16x4>,
     pub font_size: PerFont<Scaled>,
     pub font_dsize: PerFont<Scaled>,
@@ -1000,12 +998,6 @@ impl Default for FontState {
             font_ptr: crate::consts::NULL_FONT,
             font_flags: PerFont::default(),
             font_letter_space: PerFont::default(),
-            null_character: crate::mem_types::B16x4 {
-                s0: 0,
-                s1: 0,
-                s2: 0,
-                s3: 0,
-            },
             font_check: PerFont::default(),
             font_size: PerFont::default(),
             font_dsize: PerFont::default(),

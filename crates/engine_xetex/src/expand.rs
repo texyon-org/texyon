@@ -300,9 +300,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 st.fonts.map_char_to_glyph(f, c)? > 0
             } else if i32::from(st.fonts.font_bc[f]) <= c && i32::from(st.fonts.font_ec[f]) >= c {
-                let ec = st.fonts.effective_char(f, c as u16);
-                let info = st.fonts.font_info_b16(st.fonts.char_base[f] + ec);
-                info.s3 > 0
+                st.fonts.effective_char_info(f, c as u16).exists()
             } else {
                 false
             }

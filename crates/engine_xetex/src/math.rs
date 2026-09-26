@@ -9,8 +9,7 @@ use crate::consts::{
     TEXT_SIZE,
 };
 use crate::fonts::{
-    CharInfo, AAT_FONT_FLAG, EXT_TAG, LIG_TAG, LIST_TAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE,
-    X_HEIGHT_CODE,
+    CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE, X_HEIGHT_CODE,
 };
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::node::{
@@ -365,27 +364,27 @@ impl MemState {
 
         if scanner.cur_f == NULL_FONT {
             let c = scanner.cur_c;
-            scanner.cur_i = fonts.null_character;
+            scanner.cur_i = CharInfo::NULL;
             a.set_math_type(self, EMPTY);
             return FetchOutcome::UndefinedFont { size, fam, c };
         }
 
         let area = fonts.font_area[scanner.cur_f];
         if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-            scanner.cur_i = fonts.null_character;
+            scanner.cur_i = CharInfo::NULL;
         } else {
             if scanner.cur_c >= i32::from(fonts.font_bc[scanner.cur_f])
                 && scanner.cur_c <= i32::from(fonts.font_ec[scanner.cur_f])
             {
                 scanner.cur_i = fonts.char_info(scanner.cur_f, scanner.cur_c);
             } else {
-                scanner.cur_i = fonts.null_character;
+                scanner.cur_i = CharInfo::NULL;
             }
-            if scanner.cur_i.s3 == 0 {
+            if !scanner.cur_i.exists() {
                 let f = scanner.cur_f;
                 let c = scanner.cur_c;
                 a.set_math_type(self, EMPTY);
-                scanner.cur_i = fonts.null_character;
+                scanner.cur_i = CharInfo::NULL;
                 return FetchOutcome::CharMissing { f, c };
             }
         }
@@ -710,10 +709,10 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
 
         let f = st.scanner.cur_f;
         if !st.fonts.font_uses_opentype(f) {
-            if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.s1 % 4 == LIST_TAG {
-                let c = st.scanner.cur_i.s0;
-                let i_info = st.fonts.font_info_b16(st.fonts.char_base[f] + i32::from(c));
-                if i_info.s3 > 0 {
+            if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.tag() == CharTag::List {
+                let c = st.scanner.cur_i.remainder();
+                let i_info = st.fonts.char_info(f, i32::from(c));
+                if i_info.exists() {
                     st.scanner.cur_c = i32::from(c);
                     st.scanner.cur_i = i_info;
                     q.nucleus().set_character(&mut st.mem, c);
@@ -859,24 +858,6 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
     Ok(delta)
 }
 
-impl FontState {
-    /// Points `cur_i` at the first instruction of the lig/kern program for `cur_i`
-    /// in `cur_f` and returns its index.
-    fn lig_kern_start(&self, scanner: &mut ScannerState) -> i32 {
-        let mut a = self.lig_kern_base[scanner.cur_f] + i32::from(scanner.cur_i.s0);
-        scanner.cur_i = self.font_info_b16(a);
-        if scanner.cur_i.s3 > 128 {
-            a = self.lig_kern_base[scanner.cur_f]
-                + 256 * i32::from(scanner.cur_i.s1)
-                + i32::from(scanner.cur_i.s0)
-                + 32768
-                - 256 * 128;
-            scanner.cur_i = self.font_info_b16(a);
-        }
-        a
-    }
-}
-
 enum MakeOrdStep {
     Return,
     Restart,
@@ -891,58 +872,58 @@ impl MemState {
         p: NodePtr<Noad>,
     ) -> Result<MakeOrdStep, Abort> {
         scanner.cur_c = i32::from(p.nucleus().character(self));
-        let mut a = fonts.lig_kern_start(scanner);
+        let (mut a, mut step) = fonts.lig_kern_start(scanner.cur_f, scanner.cur_i);
         loop {
-            if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
-                if scanner.cur_i.s1 >= 128 {
-                    let kern_width = fonts.char_kern(scanner.cur_f, scanner.cur_i);
+            if step.matches(scanner.cur_c) {
+                if step.is_kern() {
+                    let kern_width = fonts.char_kern(scanner.cur_f, step);
                     let p_kern = self.new_kern(kern_width)?;
                     let link_q = q.link(self);
                     p_kern.set_link(self, link_q);
                     q.set_link(self, p_kern.ptr());
                     return Ok(MakeOrdStep::Return);
-                } else {
-                    match scanner.cur_i.s1 {
-                        1 | 5 => {
-                            q.nucleus().set_character(self, scanner.cur_i.s0);
-                        }
-                        2 | 6 => {
-                            p.nucleus().set_character(self, scanner.cur_i.s0);
-                        }
-                        3 | 7 | 11 => {
-                            let r = self.new_noad()?;
-                            r.nucleus().set_character(self, scanner.cur_i.s0);
-                            r.nucleus()
-                                .set_plane_and_fam(self, q.nucleus().plane_and_fam(self) % 256);
-                            q.set_link(self, r.ptr());
-                            r.set_link(self, p.ptr());
-                            if scanner.cur_i.s1 < 11 {
-                                r.nucleus().set_math_type(self, MATH_CHAR);
-                            } else {
-                                r.nucleus().set_math_type(self, MATH_TEXT_CHAR);
-                            }
-                        }
-                        _ => {
-                            let link_p = p.link(self);
-                            q.set_link(self, link_p);
-                            q.nucleus().set_character(self, scanner.cur_i.s0);
-                            q.subscr().copy_from(self, p.subscr());
-                            q.supscr().copy_from(self, p.supscr());
-                            self.free_node(p.ptr(), NOAD_SIZE);
-                        }
-                    }
-                    if scanner.cur_i.s1 > 3 {
-                        return Ok(MakeOrdStep::Return);
-                    }
-                    q.nucleus().set_math_type(self, MATH_CHAR);
-                    return Ok(MakeOrdStep::Restart);
                 }
+                let op = step.lig_op();
+                match op {
+                    1 | 5 => {
+                        q.nucleus().set_character(self, step.lig_char());
+                    }
+                    2 | 6 => {
+                        p.nucleus().set_character(self, step.lig_char());
+                    }
+                    3 | 7 | 11 => {
+                        let r = self.new_noad()?;
+                        r.nucleus().set_character(self, step.lig_char());
+                        r.nucleus()
+                            .set_plane_and_fam(self, q.nucleus().plane_and_fam(self) % 256);
+                        q.set_link(self, r.ptr());
+                        r.set_link(self, p.ptr());
+                        if op < 11 {
+                            r.nucleus().set_math_type(self, MATH_CHAR);
+                        } else {
+                            r.nucleus().set_math_type(self, MATH_TEXT_CHAR);
+                        }
+                    }
+                    _ => {
+                        let link_p = p.link(self);
+                        q.set_link(self, link_p);
+                        q.nucleus().set_character(self, step.lig_char());
+                        q.subscr().copy_from(self, p.subscr());
+                        q.supscr().copy_from(self, p.supscr());
+                        self.free_node(p.ptr(), NOAD_SIZE);
+                    }
+                }
+                if op > 3 {
+                    return Ok(MakeOrdStep::Return);
+                }
+                q.nucleus().set_math_type(self, MATH_CHAR);
+                return Ok(MakeOrdStep::Restart);
             }
-            if scanner.cur_i.s3 >= 128 {
+            if step.is_last() {
                 return Ok(MakeOrdStep::Return);
             }
-            a += i32::from(scanner.cur_i.s3) + 1;
-            scanner.cur_i = fonts.font_info_b16(a);
+            a = step.next_index(a);
+            step = fonts.lig_kern_step(a);
         }
     }
 }
@@ -981,7 +962,7 @@ fn make_ord(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort> {
 
         q.nucleus().set_math_type(&mut st.mem, MATH_TEXT_CHAR);
         fetch(st, q.nucleus())?;
-        if st.scanner.cur_i.s1 % 4 != LIG_TAG {
+        if st.scanner.cur_i.tag() != CharTag::Lig {
             return Ok(());
         }
 
@@ -1011,35 +992,35 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
             s = compute_ot_math_accent_pos(st, q)?;
         }
         x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
-    } else if st.scanner.cur_i.s3 > 0 {
+    } else if st.scanner.cur_i.exists() {
         let mut acc_i = st.scanner.cur_i;
         if q.nucleus().math_type(&st.mem) == MATH_CHAR {
             fetch(st, q.nucleus())?;
-            if st.scanner.cur_i.s1 % 4 == LIG_TAG {
-                let mut a = st.fonts.lig_kern_start(&mut st.scanner);
-                let skew_char = st.fonts.skew_char[st.scanner.cur_f] as u16;
+            if st.scanner.cur_i.tag() == CharTag::Lig {
+                let cur_f = st.scanner.cur_f;
+                let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, st.scanner.cur_i);
+                let skew_char = st.fonts.skew_char[cur_f] as u16;
                 s = loop {
-                    let i = st.scanner.cur_i;
-                    if i.s2 == skew_char {
-                        if i.s1 >= 128 && i.s3 <= 128 {
-                            break st.fonts.char_kern(st.scanner.cur_f, i);
+                    if step.next_char() == skew_char {
+                        if step.is_kern() && !step.is_redirect() {
+                            break st.fonts.char_kern(cur_f, step);
                         }
                         break Scaled::ZERO;
                     }
-                    if i.s3 >= 128 {
+                    if step.is_last() {
                         break Scaled::ZERO;
                     }
-                    a += i32::from(i.s3) + 1;
-                    st.scanner.cur_i = st.fonts.font_info_b16(a);
+                    a = step.next_index(a);
+                    step = st.fonts.lig_kern_step(a);
                 };
             }
         }
         x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
         let w = x.width(&st.mem);
-        while acc_i.s1 % 4 == LIST_TAG {
-            let larger = i32::from(acc_i.s0);
+        while acc_i.tag() == CharTag::List {
+            let larger = i32::from(acc_i.remainder());
             acc_i = st.fonts.char_info(f, larger);
-            if acc_i.s3 == 0 || st.fonts.char_width(f, acc_i) > w {
+            if !acc_i.exists() || st.fonts.char_width(f, acc_i) > w {
                 break;
             }
             c = larger;
@@ -1817,7 +1798,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: Scaled) -> 
                     delta = Scaled::ZERO;
                 }
                 glyph.ptr()
-            } else if st.scanner.cur_i.s3 > 0 {
+            } else if st.scanner.cur_i.exists() {
                 delta = st.fonts.char_italic(cur_f, st.scanner.cur_i);
                 let cc = st.scanner.cur_c as u16;
                 let p = crate::main_control::new_character(st, cur_f, cc)?;
@@ -3633,21 +3614,21 @@ impl MemState {
         v: Scaled,
     ) -> Result<AnyBox, Abort> {
         let vb = AnyBox::VList(self.new_null_box()?.into_vlist(self));
-        let r = fonts.font_info_b16(fonts.exten_base[f] + i32::from(q.s0));
-        let u = fonts.height_plus_depth(f, r.s0);
-        let effective_c = fonts.effective_char(f, r.s0);
+        let r = fonts.ext_recipe(f, q);
+        let u = fonts.height_plus_depth(f, r.rep);
+        let effective_c = fonts.effective_char(f, r.rep);
         let qq = fonts.char_info(f, effective_c);
         let box_width = fonts.char_width(f, qq) + fonts.char_italic(f, qq);
         vb.set_width(self, box_width);
         let mut w = Scaled::ZERO;
-        if r.s1 != 0 {
-            w += fonts.height_plus_depth(f, r.s1);
+        if r.bot != 0 {
+            w += fonts.height_plus_depth(f, r.bot);
         }
-        if r.s2 != 0 {
-            w += fonts.height_plus_depth(f, r.s2);
+        if r.mid != 0 {
+            w += fonts.height_plus_depth(f, r.mid);
         }
-        if r.s3 != 0 {
-            w += fonts.height_plus_depth(f, r.s3);
+        if r.top != 0 {
+            w += fonts.height_plus_depth(f, r.top);
         }
 
         let mut n: i32 = 0;
@@ -3655,29 +3636,29 @@ impl MemState {
             while w < v {
                 w += u;
                 n += 1;
-                if r.s2 != 0 {
+                if r.mid != 0 {
                     w += u;
                 }
             }
         }
-        if r.s1 != 0 {
-            let p = self.char_box_tfm(fonts, f, r.s1)?;
+        if r.bot != 0 {
+            let p = self.char_box_tfm(fonts, f, r.bot)?;
             self.stack_into_box(vb, p);
         }
         for _ in 1..=n {
-            let p = self.char_box_tfm(fonts, f, r.s0)?;
+            let p = self.char_box_tfm(fonts, f, r.rep)?;
             self.stack_into_box(vb, p);
         }
-        if r.s2 != 0 {
-            let p = self.char_box_tfm(fonts, f, r.s2)?;
+        if r.mid != 0 {
+            let p = self.char_box_tfm(fonts, f, r.mid)?;
             self.stack_into_box(vb, p);
             for _ in 1..=n {
-                let p = self.char_box_tfm(fonts, f, r.s0)?;
+                let p = self.char_box_tfm(fonts, f, r.rep)?;
                 self.stack_into_box(vb, p);
             }
         }
-        if r.s3 != 0 {
-            let p = self.char_box_tfm(fonts, f, r.s3)?;
+        if r.top != 0 {
+            let p = self.char_box_tfm(fonts, f, r.top)?;
             self.stack_into_box(vb, p);
         }
         let height = vb.height(self);
@@ -3696,12 +3677,7 @@ fn var_delimiter(
     let mut ot_assembly: Option<GlyphAssembly> = None;
     let mut c: u16 = 0;
     let mut w = Scaled::ZERO;
-    let mut q = CharInfo {
-        s3: 0,
-        s2: 0,
-        s1: 0,
-        s0: 0,
-    };
+    let mut q = CharInfo::NULL;
     let mut large_attempt = false;
     let (mut z, mut x) = d.small(&st.mem);
     'found: {
@@ -3745,10 +3721,10 @@ fn var_delimiter(
                             if y >= fonts.font_bc[g] && y <= fonts.font_ec[g] {
                                 loop {
                                     q = fonts.char_info(g, i32::from(y));
-                                    if q.s3 == 0 {
+                                    if !q.exists() {
                                         break;
                                     }
-                                    if q.s1 % 4 == EXT_TAG {
+                                    if q.tag() == CharTag::Ext {
                                         f = g;
                                         c = y;
                                         break 'found;
@@ -3762,10 +3738,10 @@ fn var_delimiter(
                                             break 'found;
                                         }
                                     }
-                                    if q.s1 % 4 != LIST_TAG {
+                                    if q.tag() != CharTag::List {
                                         break;
                                     }
-                                    y = q.s0;
+                                    y = q.remainder();
                                 }
                             }
                         }
@@ -3788,7 +3764,7 @@ fn var_delimiter(
         b.set_width(&mut st.mem, width);
         AnyBox::HList(b)
     } else if !st.fonts.font_uses_opentype(f) {
-        if q.s1 % 4 == EXT_TAG {
+        if q.tag() == CharTag::Ext {
             st.mem.build_ext_delimiter_box(&mut st.fonts, f, q, v)?
         } else {
             char_box(st, f, i32::from(c))?

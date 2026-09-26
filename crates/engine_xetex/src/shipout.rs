@@ -181,13 +181,7 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abo
         st.shipout
             .dvi_bytes(&[FNT_DEF1 + 1, (k / 256) as u8, (k % 256) as u8])?;
     }
-    let check = st.fonts.font_check[f];
-    st.shipout.dvi_bytes(&[
-        check.s3 as u8,
-        check.s2 as u8,
-        check.s1 as u8,
-        check.s0 as u8,
-    ])?;
+    st.shipout.dvi_bytes(&st.fonts.check_bytes(f))?;
     st.shipout.dvi_four(st.fonts.font_size[f].0)?;
     st.shipout.dvi_four(st.fonts.font_dsize[f].0)?;
     st.shipout.dvi_out(st.strings.length(font_area) as u8)?;
@@ -1012,14 +1006,7 @@ fn chars_out(
             }
         }
         dvi_font_select(st, f)?;
-        if st.fonts.font_ec[f] >= c
-            && st.fonts.font_bc[f] <= c
-            && st
-                .fonts
-                .font_info_b16(st.fonts.char_base[f] + i32::from(c))
-                .s3
-                > 0
-        {
+        if st.fonts.char_exists(f, i32::from(c)) {
             if c >= 128 {
                 st.shipout.dvi_out(SET1)?;
             }

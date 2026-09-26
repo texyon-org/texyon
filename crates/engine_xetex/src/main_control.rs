@@ -34,7 +34,8 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::ext::{append_src_special, do_extension};
 use crate::fonts::{
-    read_font_info, EXTRA_SPACE_CODE, LIG_TAG, SLANT_CODE, SPACE_CODE, X_HEIGHT_CODE,
+    read_font_info, CharInfo, CharTag, LigKernStep, EXTRA_SPACE_CODE, SLANT_CODE, SPACE_CODE,
+    SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
 };
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::input::{
@@ -1247,11 +1248,9 @@ fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort>
         return Ok(NodePtr::from_glue_ptr(glue));
     }
     let spec = st.mem.new_spec(ZERO_GLUE)?;
-    st.mainloop.main_k = st.fonts.param_base[cf] + SPACE_CODE;
-    let k = st.mainloop.main_k;
-    spec.set_width(&mut st.mem, st.fonts.font_info_sc(k));
-    spec.set_stretch(&mut st.mem, st.fonts.font_info_sc(k + 1));
-    spec.set_shrink(&mut st.mem, st.fonts.font_info_sc(k + 2));
+    spec.set_width(&mut st.mem, st.fonts.param(cf, SPACE_CODE));
+    spec.set_stretch(&mut st.mem, st.fonts.param(cf, SPACE_STRETCH_CODE));
+    spec.set_shrink(&mut st.mem, st.fonts.param(cf, SPACE_SHRINK_CODE));
     st.fonts.font_glue[cf] = spec.ptr();
     Ok(spec)
 }
@@ -1379,14 +1378,9 @@ pub(crate) fn new_character(
             .map(|w| Some(NewChar::Native(w)));
     }
     let ec = st.fonts.effective_char(f, c) as u16;
-    if st.fonts.font_bc[f] <= ec && st.fonts.font_ec[f] >= ec {
-        let info = st
-            .fonts
-            .font_info_b16(st.fonts.char_base[f] + i32::from(ec));
-        if info.s3 > 0 {
-            let p = st.mem.new_char(f, c)?;
-            return Ok(Some(NewChar::Char(p)));
-        }
+    if st.fonts.char_exists(f, i32::from(ec)) {
+        let p = st.mem.new_char(f, c)?;
+        return Ok(Some(NewChar::Char(p)));
     }
     crate::output::char_warning(st, f, i32::from(c))?;
     Ok(None)
@@ -3264,7 +3258,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
 }
 
 #[inline(always)]
-fn cur_l_info(st: &mut EngineState) -> crate::mem_types::B16x4 {
+fn cur_l_info(st: &mut EngineState) -> CharInfo {
     let main_f = st.mainloop.main_f;
     let c = st.fonts.effective_char(main_f, st.mainloop.cur_l as u16);
     st.fonts.char_info(main_f, c)
@@ -3316,24 +3310,23 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     } else {
         Resume::Move2
     };
-    let mut main_i = crate::mem_types::B16x4::default();
+    let mut main_i = CharInfo::NULL;
 
     loop {
         let exit = match std::mem::replace(&mut resume, Resume::LigLoop) {
             Resume::Move2 => None,
-            Resume::LigProgram(k) => Some(lig_kern_program(st, k, &mut main_i)?),
-            Resume::LigLoop if main_i.s1 % 4 != LIG_TAG || st.mainloop.cur_r == TOO_BIG_CHAR => {
+            Resume::LigProgram(k) => {
+                let step = st.fonts.lig_kern_step(k);
+                Some(lig_kern_program(st, k, step, &mut main_i)?)
+            }
+            Resume::LigLoop
+                if main_i.tag() != CharTag::Lig || st.mainloop.cur_r == TOO_BIG_CHAR =>
+            {
                 Some(LigExit::Wrapup)
             }
             Resume::LigLoop => {
-                let base = st.fonts.lig_kern_base[st.mainloop.main_f];
-                let first = st.fonts.font_info_b16(base + i32::from(main_i.s0));
-                let k = if first.s3 > 128 {
-                    base + 256 * i32::from(first.s1) + i32::from(first.s0) + 32768 - 256 * 128
-                } else {
-                    base + i32::from(main_i.s0)
-                };
-                Some(lig_kern_program(st, k, &mut main_i)?)
+                let (k, step) = st.fonts.lig_kern_start(st.mainloop.main_f, main_i);
+                Some(lig_kern_program(st, k, step, &mut main_i)?)
             }
         };
         if let Some(exit) = exit {
@@ -3387,7 +3380,7 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
             main_i = st
                 .fonts
                 .effective_char_info(main_f, st.mainloop.cur_l as u16);
-            main_i.s3 > 0
+            main_i.exists()
         };
         if !exists {
             crate::output::char_warning(st, main_f, st.scanner.cur_chr)?;
@@ -3403,26 +3396,25 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
     }
 }
 
-/// Runs the font's ligature/kern program for `cur_l` and `cur_r` from index `k`.
+/// Runs the font's ligature/kern program for `cur_l` and `cur_r` from
+/// instruction `step` at index `k`.
 #[inline(always)]
 fn lig_kern_program(
     st: &mut EngineState,
     mut k: i32,
-    main_i: &mut crate::mem_types::B16x4,
+    mut step: LigKernStep,
+    main_i: &mut CharInfo,
 ) -> Result<LigExit, Abort> {
     loop {
-        let step = st.fonts.font_info_b16(k);
-        if i32::from(step.s2) != st.mainloop.cur_r || step.s3 > 128 {
-            if step.s3 == 0 {
-                k += 1;
-            } else if step.s3 >= 128 {
+        if !step.matches(st.mainloop.cur_r) {
+            if step.is_last() {
                 return Ok(LigExit::Wrapup);
-            } else {
-                k += i32::from(step.s3) + 1;
             }
+            k = step.next_index(k);
+            step = st.fonts.lig_kern_step(k);
             continue;
         }
-        if step.s1 >= 128 {
+        if step.is_kern() {
             wrapup(st, true)?;
             let main_f = st.mainloop.main_f;
             let kern = st.fonts.char_kern(main_f, step);
@@ -3435,14 +3427,15 @@ fn lig_kern_program(
         } else if st.mainloop.lig_stack.is_null() {
             st.mainloop.rt_hit = true;
         }
-        match step.s1 {
+        let op = step.lig_op();
+        match op {
             1 | 5 => {
-                st.mainloop.cur_l = i32::from(step.s0);
+                st.mainloop.cur_l = i32::from(step.lig_char());
                 *main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
             }
             2 | 6 => {
-                st.mainloop.cur_r = i32::from(step.s0);
+                st.mainloop.cur_r = i32::from(step.lig_char());
                 let c = st.mainloop.cur_r as u16;
                 if st.mainloop.lig_stack.is_null() {
                     st.mainloop.lig_stack = st.mem.new_lig_item(c)?.ptr();
@@ -3457,7 +3450,7 @@ fn lig_kern_program(
                 }
             }
             3 => {
-                st.mainloop.cur_r = i32::from(step.s0);
+                st.mainloop.cur_r = i32::from(step.lig_char());
                 let prev = st.mainloop.lig_stack;
                 let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
                 st.mainloop.lig_stack = item.ptr();
@@ -3466,12 +3459,12 @@ fn lig_kern_program(
             7 | 11 => {
                 wrapup(st, false)?;
                 st.mainloop.cur_q = st.input.cur_list.tail;
-                st.mainloop.cur_l = i32::from(step.s0);
+                st.mainloop.cur_l = i32::from(step.lig_char());
                 *main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
             }
             _ => {
-                st.mainloop.cur_l = i32::from(step.s0);
+                st.mainloop.cur_l = i32::from(step.lig_char());
                 st.mainloop.ligature_present = true;
                 return Ok(if st.mainloop.lig_stack.is_null() {
                     LigExit::Wrapup
@@ -3480,13 +3473,14 @@ fn lig_kern_program(
                 });
             }
         }
-        if step.s1 > 4 && step.s1 != 7 {
+        if op > 4 && op != 7 {
             return Ok(LigExit::Wrapup);
         }
         if st.mainloop.cur_l < TOO_BIG_CHAR {
             return Ok(LigExit::Restart);
         }
         k = st.fonts.bchar_label[st.mainloop.main_f];
+        step = st.fonts.lig_kern_step(k);
     }
 }
 

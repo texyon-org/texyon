@@ -11,7 +11,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::params::{DimenPar, GluePar, IntPar};
 
-use crate::fonts::{LIG_TAG, QUAD_CODE};
+use crate::fonts::{CharTag, QUAD_CODE};
 use crate::hyphenation::HYPH_PRIME;
 use crate::mem::{ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
@@ -652,35 +652,21 @@ fn reconstitute(
 
     loop {
         'continue_: loop {
-            let mut k;
-            let mut q;
-
-            if st.mainloop.cur_l == TOO_BIG_CHAR {
-                k = st.fonts.bchar_label[st.hyph.hf];
+            let (mut k, mut q) = if st.mainloop.cur_l == TOO_BIG_CHAR {
+                let k = st.fonts.bchar_label[st.hyph.hf];
                 if k == NON_ADDRESS {
                     break 'continue_;
                 }
-                q = st.fonts.font_info_b16(k);
+                (k, st.fonts.lig_kern_step(k))
             } else {
-                let char_base = st.fonts.char_base[st.hyph.hf];
-                let effective = st
+                let info = st
                     .fonts
-                    .effective_char(st.hyph.hf, st.mainloop.cur_l as u16);
-                q = st.fonts.font_info_b16(char_base + effective);
-                if q.s1 % 4 != LIG_TAG {
+                    .effective_char_info(st.hyph.hf, st.mainloop.cur_l as u16);
+                if info.tag() != CharTag::Lig {
                     break 'continue_;
                 }
-                k = st.fonts.lig_kern_base[st.hyph.hf] + i32::from(q.s0);
-                q = st.fonts.font_info_b16(k);
-                if q.s3 > 128 {
-                    k = st.fonts.lig_kern_base[st.hyph.hf]
-                        + 256 * i32::from(q.s1)
-                        + i32::from(q.s0)
-                        + 32768
-                        - 256 * 128;
-                    q = st.fonts.font_info_b16(k);
-                }
-            }
+                st.fonts.lig_kern_start(st.hyph.hf, info)
+            };
 
             let mut test_char = if cur_rh < TOO_BIG_CHAR {
                 cur_rh
@@ -689,7 +675,7 @@ fn reconstitute(
             };
 
             loop {
-                if i32::from(q.s2) == test_char && q.s3 <= 128 {
+                if q.matches(test_char) {
                     if cur_rh < TOO_BIG_CHAR {
                         st.hyph.hyphen_passed = j;
                         hchar = TOO_BIG_CHAR;
@@ -702,7 +688,7 @@ fn reconstitute(
                         hchar = TOO_BIG_CHAR;
                     }
 
-                    if q.s1 < 128 {
+                    if !q.is_kern() {
                         if st.mainloop.cur_l == TOO_BIG_CHAR {
                             st.mainloop.lft_hit = true;
                         }
@@ -710,13 +696,13 @@ fn reconstitute(
                             st.mainloop.rt_hit = true;
                         }
 
-                        match q.s1 {
+                        match q.lig_op() {
                             1 | 5 => {
-                                st.mainloop.cur_l = i32::from(q.s0);
+                                st.mainloop.cur_l = i32::from(q.lig_char());
                                 st.mainloop.ligature_present = true;
                             }
                             2 | 6 => {
-                                st.mainloop.cur_r = i32::from(q.s0);
+                                st.mainloop.cur_r = i32::from(q.lig_char());
                                 if st.mainloop.lig_stack.0 > TEX_NULL {
                                     lig_item(st.mainloop.lig_stack)
                                         .set_character(&mut st.mem, st.mainloop.cur_r as u16);
@@ -735,7 +721,7 @@ fn reconstitute(
                                 }
                             }
                             3 => {
-                                st.mainloop.cur_r = i32::from(q.s0);
+                                st.mainloop.cur_r = i32::from(q.lig_char());
                                 let below = st.mainloop.lig_stack;
                                 let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
                                 st.mainloop.lig_stack = item.ptr();
@@ -746,11 +732,11 @@ fn reconstitute(
                                     t = wrap_lig(st, false)?;
                                 }
                                 st.mainloop.cur_q = t;
-                                st.mainloop.cur_l = i32::from(q.s0);
+                                st.mainloop.cur_l = i32::from(q.lig_char());
                                 st.mainloop.ligature_present = true;
                             }
                             _ => {
-                                st.mainloop.cur_l = i32::from(q.s0);
+                                st.mainloop.cur_l = i32::from(q.lig_char());
                                 st.mainloop.ligature_present = true;
                                 if st.mainloop.lig_stack.0 > TEX_NULL {
                                     pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
@@ -768,7 +754,7 @@ fn reconstitute(
                             }
                         }
 
-                        if q.s1 > 4 && q.s1 != 7 {
+                        if q.lig_op() > 4 && q.lig_op() != 7 {
                             break 'continue_;
                         }
                         continue 'continue_;
@@ -778,7 +764,7 @@ fn reconstitute(
                     break 'continue_;
                 }
 
-                if q.s3 >= 128 {
+                if q.is_last() {
                     if cur_rh == TOO_BIG_CHAR {
                         break 'continue_;
                     }
@@ -786,8 +772,8 @@ fn reconstitute(
                     continue 'continue_;
                 }
 
-                k += i32::from(q.s3) + 1;
-                q = st.fonts.font_info_b16(k);
+                k = q.next_index(k);
+                q = st.fonts.lig_kern_step(k);
                 test_char = if cur_rh < TOO_BIG_CHAR {
                     cur_rh
                 } else {
