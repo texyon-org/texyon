@@ -3317,7 +3317,7 @@ fn show_whatsit_in(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             } else {
                 esc(st, c"XeTeXpdffile");
             }
-            print_cstr_in(st, c"( ".as_ptr());
+            print_cstr_in(st, c" \"".as_ptr());
             for i in 0..node.pic_path_len(&st.mem) as usize {
                 let b = node.pic_path(&st.mem)[i];
                 print_raw_char_in(st, b as i32, true);
