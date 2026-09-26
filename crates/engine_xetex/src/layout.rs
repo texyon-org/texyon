@@ -450,12 +450,13 @@ impl PlatformFont {
     }
 }
 
-/// Options of a new layout engine. `shapers` must be null-terminated when not empty.
+/// Options of a new layout engine.
 pub(crate) struct EngineOptions<'a> {
     pub script: u32,
     pub language: Option<&'a CStr>,
     pub features: &'a mut [HbFeature],
-    pub shapers: &'a mut [*const c_char],
+    /// The engine keeps these pointers, hence `'static`.
+    pub shapers: &'a [&'static CStr],
     pub rgb_value: u32,
     pub extend: f32,
     pub slant: f32,
@@ -551,10 +552,12 @@ impl FontEngineHandle {
         } else {
             features.as_mut_ptr()
         };
-        let shapers_ptr = if shapers.is_empty() {
+        let mut shaper_list: Vec<*const c_char> = shapers.iter().map(|s| s.as_ptr()).collect();
+        let shapers_ptr = if shaper_list.is_empty() {
             ptr::null_mut()
         } else {
-            shapers.as_mut_ptr()
+            shaper_list.push(ptr::null());
+            shaper_list.as_mut_ptr()
         };
         // SAFETY: `font` is live, `language` is null or NUL-terminated, the
         // feature and shaper arrays are valid for the call and the shaper

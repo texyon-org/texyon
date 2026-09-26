@@ -1,7 +1,7 @@
 //! Small C-runtime compatibility surface.
 
 #[cfg(not(windows))]
-pub use libc::{gmtime, localtime, strftime};
+pub use libc::{gmtime, localtime};
 
 #[cfg(windows)]
 extern "C" {
@@ -10,11 +10,4 @@ extern "C" {
 
     #[link_name = "_localtime64"]
     pub fn localtime(time: *const libc::time_t) -> *mut libc::tm;
-
-    pub fn strftime(
-        buffer: *mut libc::c_char,
-        count: libc::size_t,
-        format: *const libc::c_char,
-        time: *const libc::tm,
-    ) -> libc::size_t;
 }

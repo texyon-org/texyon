@@ -418,7 +418,7 @@ fn load_ot_font(
     let mut script = HB_TAG_NONE;
     let mut language: Option<CString> = None;
     let mut features: Vec<HbFeature> = Vec::new();
-    let mut shapers: Vec<*const c_char> = Vec::new();
+    let mut shapers: Vec<&'static CStr> = Vec::new();
     let mut opts = CommonFeatures {
         extend: 1.0,
         slant: 0.0,
@@ -429,8 +429,8 @@ fn load_ot_font(
     let req_engine = req_engine();
 
     match req_engine {
-        b'O' => shapers.push(c"ot".as_ptr()),
-        b'G' => shapers.push(c"graphite2".as_ptr()),
+        b'O' => shapers.push(c"ot"),
+        b'G' => shapers.push(c"graphite2"),
         _ => {}
     }
 
@@ -485,7 +485,7 @@ fn load_ot_font(
                     };
                     // Leaked on purpose: the layout engine keeps the pointer.
                     let shaper = CString::new(&feat[cp1 + value..cp2]).unwrap_or_default();
-                    shapers.push(Box::leak(shaper.into_boxed_c_str()).as_ptr());
+                    shapers.push(Box::leak(shaper.into_boxed_c_str()));
                     break 'option Some(true);
                 }
                 if let Some(valid) = read_common_feature(st, feat, cp1, cp2, &mut opts)? {
@@ -538,9 +538,6 @@ fn load_ot_font(
         }
     }
 
-    if !shapers.is_empty() {
-        shapers.push(std::ptr::null());
-    }
     drop(probe);
 
     if opts.embolden != 0.0 {
@@ -563,7 +560,7 @@ fn load_ot_font(
             script,
             language: language.as_deref(),
             features: &mut features,
-            shapers: &mut shapers,
+            shapers: &shapers,
             rgb_value: opts.rgb_value,
             extend: opts.extend,
             slant: opts.slant,

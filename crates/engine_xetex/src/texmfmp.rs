@@ -323,20 +323,22 @@ pub(crate) fn remember_source_info(
 /// Formats `t` as a NUL-terminated PDF date string into `time_str`.
 fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
     let lt = broken_down_time(t, utc);
-    // SAFETY: `time_str` holds the 30 bytes passed, the format is a C string
-    // and `lt` is a valid `tm`.
-    let size = unsafe {
-        crate::compat::strftime(
-            time_str.as_mut_ptr().cast(),
-            30,
-            c"D:%Y%m%d%H%M%S".as_ptr(),
-            &lt,
-        )
-    };
-    if size == 0 {
+    let date = format!(
+        "D:{}{:02}{:02}{:02}{:02}{:02}",
+        lt.tm_year as i64 + 1900,
+        lt.tm_mon + 1,
+        lt.tm_mday,
+        lt.tm_hour,
+        lt.tm_min,
+        lt.tm_sec
+    );
+    let size = date.len();
+    if size >= time_str.len() {
         time_str[0] = 0;
         return;
     }
+    time_str[..size].copy_from_slice(date.as_bytes());
+    time_str[size] = 0;
 
     // %S can be 60 or 61 (leap seconds) but PDF expects 00..59.
     if time_str[14] == b'6' {
