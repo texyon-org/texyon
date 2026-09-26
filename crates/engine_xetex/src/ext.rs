@@ -17,6 +17,7 @@ use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::main_control::{mc_propagate_error, new_graf_in, MainControlAbort};
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
+use crate::packaging::int_par;
 use crate::pic::load_picture_in;
 use crate::scan::{
     get_x_token_in, scan_int_in, NodeRecycleAbort, AAT_FONT_FLAG, OTGR_FONT_FLAG, TEMP_HEAD,
@@ -426,13 +427,12 @@ pub unsafe fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
     (rgb_value << 8) + if digits == 2 { alpha } else { 0xFF }
 }
 
-pub(crate) unsafe fn get_encoding_mode_and_info_in(
+/// The input mode named `name_of_file`, with the ICU converter name string
+/// for `ICUMAPPING`.
+unsafe fn get_encoding_mode_and_info_in(
     st: &mut EngineState,
     name_of_file: *const c_char,
-    info: *mut i32,
-) -> Result<c_int, crate::texmfmp::MakeTexStringAbort> {
-    *info = 0;
-
+) -> Result<(c_int, i32), crate::texmfmp::MakeTexStringAbort> {
     for (name, mode) in [
         (c"auto", AUTO),
         (c"utf8", UTF8),
@@ -442,7 +442,7 @@ pub(crate) unsafe fn get_encoding_mode_and_info_in(
         (c"bytes", RAW),
     ] {
         if crate::compat::strcasecmp(name_of_file, name.as_ptr()) == 0 {
-            return Ok(mode);
+            return Ok((mode, 0));
         }
     }
 
@@ -455,16 +455,16 @@ pub(crate) unsafe fn get_encoding_mode_and_info_in(
         crate::output::print_cstr_in(st, name_of_file);
         crate::output::print_cstr_in(st, c"'; reading as raw bytes".as_ptr());
         crate::output::end_diagnostic_in(st, true);
-        Ok(RAW)
+        Ok((RAW, 0))
     } else {
         crate::io::xetex_ucnv_close(cnv);
-        *info = crate::texmfmp::maketexstring_in(&mut st.strings, name_of_file)?;
-        Ok(ICUMAPPING)
+        let info = crate::texmfmp::maketexstring_in(&mut st.strings, name_of_file)?;
+        Ok((ICUMAPPING, info))
     }
 }
 
 /// Parse an OpenType feature tag with an optional `=n` parameter.
-pub unsafe fn read_tag_with_param(cp: *const c_char, param: *mut c_int) -> u32 {
+unsafe fn read_tag_with_param(cp: *const c_char) -> (u32, c_int) {
     let mut cp2 = cp;
     while !matches!(peek(cp2), 0 | b':' | b';' | b',' | b'=') {
         cp2 = cp2.add(1);
@@ -472,6 +472,7 @@ pub unsafe fn read_tag_with_param(cp: *const c_char, param: *mut c_int) -> u32 {
 
     let tag = hb_tag_from_string(cp, cp2.offset_from(cp) as c_int);
 
+    let mut param: c_int = 0;
     let mut cp = cp2;
     if peek(cp) == b'=' {
         let mut neg = false;
@@ -481,14 +482,14 @@ pub unsafe fn read_tag_with_param(cp: *const c_char, param: *mut c_int) -> u32 {
             cp = cp.add(1);
         }
         while peek(cp).is_ascii_digit() {
-            *param = *param * 10 + (peek(cp) - b'0') as c_int;
+            param = param * 10 + (peek(cp) - b'0') as c_int;
             cp = cp.add(1);
         }
         if neg {
-            *param = -*param;
+            param = -param;
         }
     }
-    tag
+    (tag, param)
 }
 
 /// Parse a Graphite `feature=setting` pair given as numbers, spanning exactly
@@ -586,7 +587,7 @@ unsafe fn load_mapping_file_in(
 
     if cnv.is_null() {
         crate::output::font_mapping_warning_in(st, name_ptr as *const c_void, name_len, 2);
-    } else if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 1 {
+    } else if int_par(&st.eqtb, INT_PAR_XETEX_TRACING_FONTS) > 1 {
         crate::output::font_mapping_warning_in(st, name_ptr as *const c_void, name_len, 0);
     }
 
@@ -622,7 +623,6 @@ pub(crate) unsafe fn load_tfm_font_mapping_in(
     load_mapping_file_in(st, start, start.add(name.as_bytes().len()), true)
 }
 
-/// Map an 8-bit TFM character through TECkit converter `cnv`.
 pub unsafe fn apply_tfm_font_mapping(cnv: *mut c_void, c: c_int) -> c_int {
     let input = c as u16;
     let mut out = [0u8; 2];
@@ -648,7 +648,6 @@ pub unsafe fn apply_tfm_font_mapping(cnv: *mut c_void, c: c_int) -> c_int {
     }
 }
 
-/// Font options accepted by every native font.
 struct CommonFeatures {
     extend: c_float,
     slant: c_float,
@@ -807,8 +806,7 @@ unsafe fn load_ot_font(
                     }
                 }
                 if peek(cp1) == b'+' {
-                    let mut param = 0;
-                    let tag = read_tag_with_param(cp1.add(1), &mut param);
+                    let (tag, mut param) = read_tag_with_param(cp1.add(1));
                     if param >= 0 {
                         param += 1;
                     }
@@ -985,7 +983,7 @@ pub(crate) unsafe fn find_native_font_in(
             if rval.is_none() {
                 deleteFont(font);
             }
-            if rval.is_some() && st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+            if rval.is_some() && int_par(&st.eqtb, INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic_in(st);
                 crate::output::print_nl_in(st, b' ' as i32);
                 print_c_string_in(st, c"-> ".as_ptr());
@@ -996,7 +994,7 @@ pub(crate) unsafe fn find_native_font_in(
     } else {
         let font_ref = findFontByName(name_string, var_string, Fix2D(scaled_size));
         if !font_ref.is_null() {
-            if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+            if int_par(&st.eqtb, INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic_in(st);
                 crate::output::print_nl_in(st, b' ' as i32);
                 print_c_string_in(st, c"-> ".as_ptr());
@@ -1522,7 +1520,6 @@ pub unsafe fn real_get_native_glyph_italic_correction(
     0
 }
 
-/// Set the width, height and depth of glyph node `w`.
 pub unsafe fn measure_native_glyph(
     fonts: &FontState,
     mem: &mut MemState,
@@ -2226,11 +2223,9 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                 };
                 st.input.cur_list.set_aux_s1(lang);
                 w.set_what_lang(&mut st.mem, lang);
-                let lhm =
-                    crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN));
+                let lhm = crate::helpers::norm_min(int_par(&st.eqtb, INT_PAR_LEFT_HYPHEN_MIN));
                 w.set_what_lhm(&mut st.mem, lhm as u16);
-                let rhm =
-                    crate::helpers::norm_min(st.eqtb.b32s1(INT_BASE + INT_PAR_RIGHT_HYPHEN_MIN));
+                let rhm = crate::helpers::norm_min(int_par(&st.eqtb, INT_PAR_RIGHT_HYPHEN_MIN));
                 w.set_what_rhm(&mut st.mem, rhm as u16);
             }
         }
@@ -2288,17 +2283,16 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                     let errmsg = error_here_with_diagnostic_in(st, c"Bad glyph number".as_ptr());
                     unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
                     capture_to_diagnostic_in(st, ptr::null_mut());
-                    st.errors.help_ptr = 2;
-                    st.errors.help_line[1] =
-                        c"A glyph number must be between 0 and 65535.".as_ptr();
-                    st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
+                    st.errors.set_help(&[
+                        c"A glyph number must be between 0 and 65535.",
+                        c"I changed this one to zero.",
+                    ]);
                     mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val))?;
                     st.scanner.cur_val = 0;
                 }
                 w.set_native_font(&mut st.mem, cur_font as u16);
                 w.set_native_glyph(&mut st.mem, st.scanner.cur_val as u16);
-                let use_glyph_metrics =
-                    st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+                let use_glyph_metrics = int_par(&st.eqtb, INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
                 // SAFETY: the font is native, the measurer only reads its tables.
                 unsafe { measure_native_glyph(&st.fonts, &mut st.mem, w, use_glyph_metrics)? };
             }
@@ -2306,21 +2300,18 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
 
         XETEX_INPUT_ENCODING_EXTENSION_CODE => {
             crate::io::scan_and_pack_name_in(st)?;
-            let mut info: i32 = 0;
             let name = st.input.name_of_file.as_mut_ptr();
-            let enc_mode = unsafe { get_encoding_mode_and_info_in(st, name, &mut info)? };
+            let (enc_mode, info) = unsafe { get_encoding_mode_and_info_in(st, name)? };
             if enc_mode == AUTO {
                 error_here_with_diagnostic_in(
                     st,
                     c"Encoding mode `auto' is not valid for \\XeTeXinputencoding".as_ptr(),
                 );
                 capture_to_diagnostic_in(st, ptr::null_mut());
-                st.errors.help_ptr = 2;
-                st.errors.help_line[1] =
-                    c"You can't use `auto' encoding here, only for \\XeTeXdefaultencoding."
-                        .as_ptr();
-                st.errors.help_line[0] =
-                    c"I'll ignore this and leave the current encoding unchanged.".as_ptr();
+                st.errors.set_help(&[
+                    c"You can't use `auto' encoding here, only for \\XeTeXdefaultencoding.",
+                    c"I'll ignore this and leave the current encoding unchanged.",
+                ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {
                 unsafe {
@@ -2335,9 +2326,8 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
 
         XETEX_DEFAULT_ENCODING_EXTENSION_CODE => {
             crate::io::scan_and_pack_name_in(st)?;
-            let mut info: i32 = 0;
             let name = st.input.name_of_file.as_mut_ptr();
-            let enc_mode = unsafe { get_encoding_mode_and_info_in(st, name, &mut info)? };
+            let (enc_mode, info) = unsafe { get_encoding_mode_and_info_in(st, name)? };
             st.eqtb
                 .set_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE, enc_mode);
             st.eqtb

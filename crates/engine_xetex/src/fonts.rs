@@ -2,8 +2,8 @@
 //! character nodes and the TFM `char_info` accessors.
 
 use crate::consts::{
-    EMPTY_STRING, FONT_BASE, INT_BASE, INT_PAR_XETEX_GENERATE_ACTUAL_TEXT,
-    INT_PAR_XETEX_TRACING_FONTS, INVALID_HANDLE, TOO_BIG_CHAR,
+    EMPTY_STRING, FONT_BASE, INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_XETEX_TRACING_FONTS,
+    INVALID_HANDLE, TOO_BIG_CHAR,
 };
 use crate::errors::ErrorOutcome;
 use crate::ext::{
@@ -20,6 +20,7 @@ use crate::output::{
     print_char_in, print_cstr_in, print_file_name_in, print_int_in, print_nl_cstr_in,
     print_scaled_in, sprint_cs_in,
 };
+use crate::packaging::int_par;
 use crate::scan::{NodeRecycleAbort, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 
@@ -108,7 +109,7 @@ pub(crate) fn new_native_word_node(
     f: i32,
     n: i32,
 ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
-    let subtype = if eqtb.b32s1(INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
+    let subtype = if int_par(eqtb, INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
         WhatsitSubtype::NativeWordAt
     } else {
         WhatsitSubtype::NativeWord
@@ -229,7 +230,7 @@ pub(crate) fn new_native_character_in(
         }
         NativeCharSrc::Mapped(len)
     } else {
-        if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_LOST_CHARS) > 0 {
+        if int_par(&st.eqtb, INT_PAR_TRACING_LOST_CHARS) > 0 {
             check_native_char_in(st, f, c as i32)?;
         }
         NativeCharSrc::Single(c)
@@ -237,7 +238,7 @@ pub(crate) fn new_native_character_in(
 
     let w = build_native_character(&mut st.mem, &st.eqtb, &st.fonts, f, src)
         .map_err(NativeCharAbort::Recycle)?;
-    let use_glyph_metrics = st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
+    let use_glyph_metrics = int_par(&st.eqtb, INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
     // SAFETY: the measurer only reads font tables over re-entry-free FFI.
     unsafe { measure_native_node(&st.fonts, &mut st.mem, w, use_glyph_metrics)? };
     Ok(w)
@@ -358,7 +359,7 @@ pub(crate) unsafe fn read_font_info_in(
 
     pack_file_name_in(st, nom, aire, st.scanner.cur_ext);
 
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 {
+    if int_par(&st.eqtb, INT_PAR_XETEX_TRACING_FONTS) > 0 {
         begin_diagnostic_in(st);
         diagnostic_begin_capture_warning_here_in(st);
         print_nl_cstr_in(st, c"Requested font \"".as_ptr());
@@ -434,12 +435,7 @@ pub(crate) unsafe fn read_font_info_in(
         }
     }
 
-    if bad_tfm
-        && st
-            .eqtb
-            .b32s1(INT_BASE + INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR)
-            == 0
-    {
+    if bad_tfm && int_par(&st.eqtb, INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR) == 0 {
         font_error_start_in(st, u, nom, aire, s);
         let reason = if file_opened {
             c" not loadable: Bad metric (TFM) file"
@@ -451,13 +447,13 @@ pub(crate) unsafe fn read_font_info_in(
         print_cstr_in(st, reason.as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
 
-        st.errors.help_ptr = 5;
-        st.errors.help_line[4] = c"I wasn't able to read the size data for this font,".as_ptr();
-        st.errors.help_line[3] = c"so I will ignore the font specification.".as_ptr();
-        st.errors.help_line[2] = c"[Wizards can fix TFM files using TFtoPL/PLtoTF.]".as_ptr();
-        st.errors.help_line[1] = c"You might try inserting a different font spec;".as_ptr();
-        st.errors.help_line[0] =
-            c"e.g., type `I\\font<same font id>=<substitute font name>'.".as_ptr();
+        st.errors.set_help(&[
+            c"I wasn't able to read the size data for this font,",
+            c"so I will ignore the font specification.",
+            c"[Wizards can fix TFM files using TFtoPL/PLtoTF.]",
+            c"You might try inserting a different font spec;",
+            c"e.g., type `I\\font<same font id>=<substitute font name>'.",
+        ]);
 
         let outcome = crate::errors::error_in(st);
         if !matches!(outcome, ErrorOutcome::Continue) {
@@ -469,8 +465,7 @@ pub(crate) unsafe fn read_font_info_in(
         return Err(ReadFontInfoAbort::InputClose);
     }
 
-    if st.eqtb.b32s1(INT_BASE + INT_PAR_XETEX_TRACING_FONTS) > 0 && (g == FONT_BASE || file_opened)
-    {
+    if int_par(&st.eqtb, INT_PAR_XETEX_TRACING_FONTS) > 0 && (g == FONT_BASE || file_opened) {
         begin_diagnostic_in(st);
         diagnostic_begin_capture_warning_here_in(st);
         print_nl_cstr_in(st, c" -> ".as_ptr());
@@ -738,8 +733,8 @@ unsafe fn read_font_info_tfm(
     }
 
     fonts.set_font_params(f, np.max(7));
-    fonts.set_hyphen_char_entry(f, eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_HYPHEN_CHAR));
-    fonts.set_skew_char_entry(f, eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR));
+    fonts.set_hyphen_char_entry(f, int_par(eqtb, INT_PAR_DEFAULT_HYPHEN_CHAR));
+    fonts.set_skew_char_entry(f, int_par(eqtb, INT_PAR_DEFAULT_SKEW_CHAR));
     if bch_label < nl {
         fonts.set_bchar_label_entry(f, bch_label + fonts.lig_kern_base_entry(f));
     } else {
@@ -793,8 +788,8 @@ unsafe fn init_native_font_tables(
     fonts.set_font_bc_entry(font_ptr, 0);
     fonts.set_font_ec_entry(font_ptr, 65_535);
     fonts.set_font_used_entry(font_ptr, false);
-    fonts.set_hyphen_char_entry(font_ptr, eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_HYPHEN_CHAR));
-    fonts.set_skew_char_entry(font_ptr, eqtb.b32s1(INT_BASE + INT_PAR_DEFAULT_SKEW_CHAR));
+    fonts.set_hyphen_char_entry(font_ptr, int_par(eqtb, INT_PAR_DEFAULT_HYPHEN_CHAR));
+    fonts.set_skew_char_entry(font_ptr, int_par(eqtb, INT_PAR_DEFAULT_SKEW_CHAR));
     fonts.set_param_base(font_ptr, fonts.fmem_ptr - 1);
     fonts.set_font_layout_engine(font_ptr, Some(std::sync::Arc::new(font_engine)));
     fonts.set_font_mapping(font_ptr, None);
@@ -898,13 +893,12 @@ pub(crate) unsafe fn load_native_font_in(
         print_cstr_in(st, c" not loaded: Not enough room left".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
 
-        st.errors.help_ptr = 4;
-        st.errors.help_line[3] = c"I'm afraid I won't be able to make use of this font,".as_ptr();
-        st.errors.help_line[2] =
-            c"because my memory for character-size data is too small.".as_ptr();
-        st.errors.help_line[1] = c"If you're really stuck, ask a wizard to enlarge me.".as_ptr();
-        st.errors.help_line[0] =
-            c"Or maybe try `I\\font<same font id>=<name of loaded font>'.".as_ptr();
+        st.errors.set_help(&[
+            c"I'm afraid I won't be able to make use of this font,",
+            c"because my memory for character-size data is too small.",
+            c"If you're really stuck, ask a wizard to enlarge me.",
+            c"Or maybe try `I\\font<same font id>=<name of loaded font>'.",
+        ]);
 
         let outcome = crate::errors::error_in(st);
         if !matches!(outcome, ErrorOutcome::Continue) {
