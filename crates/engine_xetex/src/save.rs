@@ -2,7 +2,8 @@
 use crate::bridge::diag_append_str;
 use crate::cmd::{BOX_REF, CALL, GLUE_REF, LONG_OUTER_CALL, REGISTER, SHAPE_REF, TOKS_REGISTER};
 use crate::consts::{
-    EQTB_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
+    EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE,
+    MEM_TOP, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::mem::{delete_glue_ref, delete_token_ref, free_node, get_node, ZERO_GLUE};
 use crate::mem_types::MemoryWord;
@@ -18,15 +19,11 @@ const INSERT_TOKEN: u16 = 2;
 const LEVEL_BOUNDARY: u16 = 3;
 const RESTORE_SA: u16 = 4;
 
-const LEVEL_ZERO: u16 = 0;
-
 const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
 const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 
 const POINTER_NODE_SIZE: i32 = 2;
 const WORD_NODE_SIZE: i32 = 3;
-const MARK_CLASS_NODE_SIZE: i32 = 4;
-const INDEX_NODE_SIZE: i32 = 33;
 
 const DIMEN_VAL_LIMIT: u16 = 128;
 const MU_VAL_LIMIT: u16 = 256;

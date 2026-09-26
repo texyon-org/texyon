@@ -11,18 +11,18 @@ use crate::cmd::{
     SUP_MARK, TAB_MARK, THE, TOKS_REGISTER, VRULE, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
 };
 use crate::consts::{
-    ACTIVE_BASE, BACKED_UP, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CLOSED,
-    COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, EQTB_SIZE, FI_CODE,
-    FONT_BASE, FONT_ID_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI,
-    FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX, INSERTED, INT_BASE, INT_PAR_CUR_FAM,
-    INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS,
-    INT_PAR_TRACING_NESTING, INT_PAR_TRACING_SCAN_TOKENS, INT_PAR_XETEX_HYPHENATABLE_LENGTH,
-    JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA,
-    LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CODE_BASE, MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE,
-    NEW_LINE, NORMAL_SCANNER, NULL_CS, NUMBER_MATH_FAMILIES, OR_CODE, PRIM_EQTB_BASE, RIGHT_SIDE,
-    SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
-    SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE,
-    VMODE,
+    ACTIVE_BASE, ACTIVE_MATH_CHAR, BACKED_UP, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE, CAT_CODE_BASE,
+    CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE,
+    END_M_CODE, EQTB_SIZE, FIL, FILLL, FI_CODE, FONT_BASE, FONT_ID_BASE, FROZEN_CONTROL_SEQUENCE,
+    FROZEN_CR, FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX, INSERTED,
+    INT_BASE, INT_PAR_CUR_FAM, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR,
+    INT_PAR_TRACING_IFS, INT_PAR_TRACING_NESTING, INT_PAR_TRACING_SCAN_TOKENS,
+    INT_PAR_XETEX_HYPHENATABLE_LENGTH, JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF,
+    LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA, LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CODE_BASE,
+    MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL, NORMAL_SCANNER, NULL_CS,
+    NUMBER_MATH_FAMILIES, OR_CODE, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY,
+    SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACE_CODE, TEX_INFINITY, TEX_NULL,
+    TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 use crate::errors::{error_in, int_error_in, mu_error_in};
 use crate::expand::{expand_in, macro_call_in};
@@ -52,7 +52,6 @@ extern "C" {
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
 }
 
-const NORMAL: u8 = 0;
 const SKIPPING: u8 = 1;
 const DEFINING: u8 = 2;
 pub(crate) const MATCHING: u8 = 3;
@@ -92,27 +91,20 @@ const POINT_TOKEN: i32 = OTHER_TOKEN + b'.' as i32;
 const ALPHA_TOKEN: i32 = OTHER_TOKEN + b'`' as i32;
 const FROZEN_PRIM_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
 
-pub(crate) const BIGGEST_USV: i32 = 0x10_FFFF;
 pub(crate) const NO_EXPAND_FLAG: i32 = BIGGEST_USV + 2;
-const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
 const MATH_CHAR: i32 = 1;
 pub(crate) const AAT_FONT_FLAG: i32 = 0xFFFF;
 pub(crate) const OTGR_FONT_FLAG: i32 = 0xFFFE;
-const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 const DEFAULT_RULE: i32 = 26214;
 
 const HYPHENATABLE_LENGTH_LIMIT: i32 = 4095;
 
 const EXACTLY: u8 = 0;
 const ADDITIONAL: u8 = 1;
-const NORMAL_ORDER: u8 = 0;
-const FIL_ORDER: u8 = 1;
-const FILLL_ORDER: u8 = 3;
 const X_HEIGHT_CODE: i32 = 5;
 const QUAD_CODE: i32 = 6;
 const SPACE_SHRINK_CODE: i32 = 4;
 const UNSET_NODE: u16 = 13;
-const END_M_CODE: u16 = 3;
 const ETEX_VERSION: i32 = 2;
 const XETEX_VERSION: i32 = 0;
 
@@ -603,7 +595,7 @@ pub(crate) fn read_toks_in(st: &mut EngineState, n: i32, r: i32, j: i32) -> Resu
         } else if st.input.read_open[m] == JUST_OPEN {
             let rf = st.input.read_file_ptr(m);
             if unsafe { crate::io::input_line_in(st, rf)? } != 0 {
-                st.input.read_open[m] = NORMAL;
+                st.input.read_open[m] = NORMAL as u8;
             } else {
                 close_read_file_in(st, m)?;
             }
@@ -2238,7 +2230,7 @@ pub(crate) fn xetex_scan_dimen_in(
     let mut negative = false;
 
     st.errors.arith_error = false;
-    st.scanner.cur_order = NORMAL_ORDER;
+    st.scanner.cur_order = NORMAL;
 
     'attach_sign: {
         if !shortcut {
@@ -2317,9 +2309,9 @@ pub(crate) fn xetex_scan_dimen_in(
         if requires_units {
             let apply_fraction = 'units: {
                 if inf && scan_keyword_in(st, c"fil".as_ptr())? {
-                    st.scanner.cur_order = FIL_ORDER;
+                    st.scanner.cur_order = FIL;
                     while scan_keyword_in(st, c"l".as_ptr())? {
-                        if st.scanner.cur_order == FILLL_ORDER {
+                        if st.scanner.cur_order == FILLL {
                             error_here_with_diagnostic_in(
                                 st,
                                 c"Illegal unit of measure (replaced with filll)".as_ptr(),
@@ -2516,12 +2508,12 @@ pub(crate) fn scan_glue_in(st: &mut EngineState, level: u8) -> Result<(), SccAbo
     if scan_keyword_in(st, c"plus".as_ptr())? {
         scan_dimen_in(st, mu, true, false)?;
         gs.set_stretch(&mut st.mem, Scaled(st.scanner.cur_val));
-        gs.set_stretch_order(&mut st.mem, st.scanner.cur_order as u16);
+        gs.set_stretch_order(&mut st.mem, st.scanner.cur_order);
     }
     if scan_keyword_in(st, c"minus".as_ptr())? {
         scan_dimen_in(st, mu, true, false)?;
         gs.set_shrink(&mut st.mem, Scaled(st.scanner.cur_val));
-        gs.set_shrink_order(&mut st.mem, st.scanner.cur_order as u16);
+        gs.set_shrink_order(&mut st.mem, st.scanner.cur_order);
     }
 
     st.scanner.cur_val = gs.ptr().0;

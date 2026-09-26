@@ -933,7 +933,7 @@ pub(crate) struct ScannerState {
     pub mlist_penalties: bool,
     pub cur_box: crate::units::MemPtr,
     pub after_token: i32,
-    pub cur_order: u8,
+    pub cur_order: u16,
     pub adjust_tail: crate::units::MemPtr,
     pub pre_adjust_tail: crate::units::MemPtr,
     pub total_stretch: [i32; 4],

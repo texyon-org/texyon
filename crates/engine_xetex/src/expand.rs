@@ -6,12 +6,12 @@ use crate::cmd::{
     RELAX, THE, TOP_BOT_MARK, UNDEFINED_CS,
 };
 use crate::consts::{
-    ACTIVE_BASE, CS_TOKEN_FLAG, ELSE_CODE, FI_CODE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
+    ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, ELSE_CODE, FI_CODE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
     FROZEN_PRIMITIVE, GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP, HMODE, INSERTED, INT_BASE,
     INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_IFS, INT_PAR_TRACING_MACROS,
     INT_PAR_TRACING_STACK_LEVELS, MMODE, NORMAL_SCANNER, NULL_CS, OR_CODE, PRIM_EQTB_BASE,
-    SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOKEN_LIST, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE,
-    UNLESS_CODE, VMODE,
+    SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOKEN_LIST, TOO_BIG_CHAR, TOO_BIG_USV,
+    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 use crate::errors::error_in;
 use crate::input::{
@@ -29,8 +29,8 @@ use crate::output::{
 use crate::scan::{
     fetch_box, get_avail_scc, get_next_scc, get_node_scc, get_token_in, get_x_non_blank_in,
     get_x_token_in, scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, AAT_FONT_FLAG,
-    BIGGEST_USV, END_MATCH_TOKEN, MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NO_EXPAND_FLAG,
-    OTGR_FONT_FLAG, OTHER_TOKEN, SPACE_TOKEN,
+    END_MATCH_TOKEN, MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NO_EXPAND_FLAG, OTGR_FONT_FLAG,
+    OTHER_TOKEN, SPACE_TOKEN,
 };
 use crate::state::EngineState;
 use crate::units::{MemIdx, MemPtr};
@@ -91,7 +91,6 @@ pub(crate) const XETEX_UCHARCAT_CODE: i32 = 39;
 pub(crate) const JOB_NAME_CODE: i32 = 40;
 
 pub(crate) const MARKS_CODE: i32 = 5;
-const TOO_BIG_USV: i32 = BIGGEST_USV + 1;
 
 pub(crate) fn ins_the_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let tail = crate::scan::the_toks_in(st)?;

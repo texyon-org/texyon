@@ -1,6 +1,5 @@
-const INF_BAD: i32 = 10000;
-
 /// Badness of stretching or shrinking natural size `t` by available amount `s`.
+use crate::consts::INF_BAD;
 pub fn badness(t: i32, s: i32) -> i32 {
     if t == 0 {
         return 0;

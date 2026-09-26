@@ -23,18 +23,19 @@ use crate::cmd::{
     VRULE, VSKIP, XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
 use crate::consts::{
-    ACTIVE_BASE, A_LEADERS, BACKED_UP, BIGGEST_CHAR, CAT_CODE_BASE, COUNT_BASE, CS_TOKEN_FLAG,
-    DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FI_CODE, FONT_ID_BASE, FROZEN_NULL_FONT,
-    GLUE_BASE, HASH_BASE, HISTORY_SPOTLESS, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE,
-    INT_PAR_END_LINE_CHAR, INT_PAR_ERROR_CONTEXT_LINES, INT_PAR_ESCAPE_CHAR, INT_PAR_NEW_LINE_CHAR,
-    INT_PAR_SHOW_BOX_BREADTH, INT_PAR_SHOW_BOX_DEPTH, INT_PAR_TRACING_IFS,
-    INT_PAR_TRACING_LOST_CHARS, INT_PAR_TRACING_NESTING, INT_PAR_TRACING_ONLINE, LC_CODE_BASE,
-    LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE, MU_SKIP_BASE,
-    NULL_CS, NULL_FLAG, OR_CODE, OUTPUT_TEXT, PRIM_EQTB_BASE, SCALED_BASE, SCRIPT_SIZE,
-    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
-    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, TEXT_SIZE,
-    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
-    UNLESS_CODE, VMODE, WRITE_TEXT,
+    ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BACKED_UP, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR,
+    BIGGEST_USV, CAT_CODE_BASE, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS,
+    DEL_CODE_BASE, DIMEN_BASE, DLIST, END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FI_CODE,
+    FONT_ID_BASE, FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED,
+    HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_ERROR_CONTEXT_LINES,
+    INT_PAR_ESCAPE_CHAR, INT_PAR_NEW_LINE_CHAR, INT_PAR_SHOW_BOX_BREADTH, INT_PAR_SHOW_BOX_DEPTH,
+    INT_PAR_TRACING_IFS, INT_PAR_TRACING_LOST_CHARS, INT_PAR_TRACING_NESTING,
+    INT_PAR_TRACING_ONLINE, LC_CODE_BASE, LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MATH_CODE_BASE,
+    MATH_FONT_BASE, MMODE, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FLAG, OR_CODE, OUTPUT_TEXT,
+    PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
+    SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
+    SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, TEXT_SIZE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
+    UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, UNLESS_CODE, VMODE, WRITE_TEXT, X_LEADERS,
 };
 use crate::errors::{error_in, ErrorOutcome, ERR_HELP_LOC};
 use crate::expand::{
@@ -68,30 +69,29 @@ use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::{
-    AAT_FONT_FLAG, BIGGEST_USV, CURRENT_GROUP_LEVEL_CODE, CURRENT_GROUP_TYPE_CODE,
-    CURRENT_IF_BRANCH_CODE, CURRENT_IF_LEVEL_CODE, CURRENT_IF_TYPE_CODE, DIMEN_VAL,
-    ELAPSED_TIME_CODE, ETEX_EXPR, ETEX_VERSION_CODE, FONT_CHAR_DP_CODE, FONT_CHAR_HT_CODE,
-    FONT_CHAR_IC_CODE, FONT_CHAR_WD_CODE, GLUE_SHRINK_CODE, GLUE_SHRINK_ORDER_CODE,
-    GLUE_STRETCH_CODE, GLUE_STRETCH_ORDER_CODE, GLUE_TO_MU_CODE, GLUE_VAL, HEIGHT_OFFSET,
-    INPUT_LINE_NO_CODE, INT_VAL, LAST_NODE_TYPE_CODE, MAX_CHAR_VAL, MU_TO_GLUE_CODE, MU_VAL,
-    OTGR_FONT_FLAG, PAR_SHAPE_DIMEN_CODE, PAR_SHAPE_INDENT_CODE, PAR_SHAPE_LENGTH_CODE,
-    PDF_LAST_X_POS_CODE, PDF_LAST_Y_POS_CODE, PDF_SHELL_ESCAPE_CODE, PROTECTED_TOKEN,
-    RANDOM_SEED_CODE, WIDTH_OFFSET, XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE,
-    XETEX_COUNT_SELECTORS_CODE, XETEX_COUNT_VARIATIONS_CODE, XETEX_FEATURE_CODE_CODE,
-    XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
-    XETEX_FIND_VARIATION_BY_NAME_CODE, XETEX_FIRST_CHAR_CODE, XETEX_FONT_TYPE_CODE,
-    XETEX_GLYPH_BOUNDS_CODE, XETEX_GLYPH_INDEX_CODE, XETEX_IS_DEFAULT_SELECTOR_CODE,
-    XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_LAST_CHAR_CODE, XETEX_MAP_CHAR_TO_GLYPH_CODE,
-    XETEX_OT_COUNT_FEATURES_CODE, XETEX_OT_COUNT_LANGUAGES_CODE, XETEX_OT_COUNT_SCRIPTS_CODE,
-    XETEX_OT_FEATURE_CODE, XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_PDF_PAGE_COUNT_CODE,
-    XETEX_SELECTOR_CODE_CODE, XETEX_VARIATION_CODE, XETEX_VARIATION_DEFAULT_CODE,
-    XETEX_VARIATION_MAX_CODE, XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
+    AAT_FONT_FLAG, CURRENT_GROUP_LEVEL_CODE, CURRENT_GROUP_TYPE_CODE, CURRENT_IF_BRANCH_CODE,
+    CURRENT_IF_LEVEL_CODE, CURRENT_IF_TYPE_CODE, DIMEN_VAL, ELAPSED_TIME_CODE, ETEX_EXPR,
+    ETEX_VERSION_CODE, FONT_CHAR_DP_CODE, FONT_CHAR_HT_CODE, FONT_CHAR_IC_CODE, FONT_CHAR_WD_CODE,
+    GLUE_SHRINK_CODE, GLUE_SHRINK_ORDER_CODE, GLUE_STRETCH_CODE, GLUE_STRETCH_ORDER_CODE,
+    GLUE_TO_MU_CODE, GLUE_VAL, HEIGHT_OFFSET, INPUT_LINE_NO_CODE, INT_VAL, LAST_NODE_TYPE_CODE,
+    MAX_CHAR_VAL, MU_TO_GLUE_CODE, MU_VAL, OTGR_FONT_FLAG, PAR_SHAPE_DIMEN_CODE,
+    PAR_SHAPE_INDENT_CODE, PAR_SHAPE_LENGTH_CODE, PDF_LAST_X_POS_CODE, PDF_LAST_Y_POS_CODE,
+    PDF_SHELL_ESCAPE_CODE, PROTECTED_TOKEN, RANDOM_SEED_CODE, WIDTH_OFFSET,
+    XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE, XETEX_COUNT_SELECTORS_CODE,
+    XETEX_COUNT_VARIATIONS_CODE, XETEX_FEATURE_CODE_CODE, XETEX_FIND_FEATURE_BY_NAME_CODE,
+    XETEX_FIND_SELECTOR_BY_NAME_CODE, XETEX_FIND_VARIATION_BY_NAME_CODE, XETEX_FIRST_CHAR_CODE,
+    XETEX_FONT_TYPE_CODE, XETEX_GLYPH_BOUNDS_CODE, XETEX_GLYPH_INDEX_CODE,
+    XETEX_IS_DEFAULT_SELECTOR_CODE, XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_LAST_CHAR_CODE,
+    XETEX_MAP_CHAR_TO_GLYPH_CODE, XETEX_OT_COUNT_FEATURES_CODE, XETEX_OT_COUNT_LANGUAGES_CODE,
+    XETEX_OT_COUNT_SCRIPTS_CODE, XETEX_OT_FEATURE_CODE, XETEX_OT_LANGUAGE_CODE,
+    XETEX_OT_SCRIPT_CODE, XETEX_PDF_PAGE_COUNT_CODE, XETEX_SELECTOR_CODE_CODE,
+    XETEX_VARIATION_CODE, XETEX_VARIATION_DEFAULT_CODE, XETEX_VARIATION_MAX_CODE,
+    XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
 };
 use crate::state::{EngineState, GroupCode, InteractionMode};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType};
 
 const SELECTOR_PSEUDO: i32 = 20;
-const HISTORY_WARNING_ISSUED: i32 = 1;
 const DIMEN_VAL_LIMIT: u16 = 128;
 
 fn int_par(st: &EngineState, n: i32) -> i32 {
@@ -834,16 +834,11 @@ pub(crate) fn print_spec_in(
     }
     if gs.stretch(&st.mem).0 != 0 {
         print_cstr_in(st, c" plus ".as_ptr());
-        print_glue_in(
-            st,
-            gs.stretch(&st.mem).0,
-            gs.stretch_order(&st.mem) as i32,
-            s,
-        );
+        print_glue_in(st, gs.stretch(&st.mem).0, gs.stretch_order(&st.mem), s);
     }
     if gs.shrink(&st.mem).0 != 0 {
         print_cstr_in(st, c" minus ".as_ptr());
-        print_glue_in(st, gs.shrink(&st.mem).0, gs.shrink_order(&st.mem) as i32, s);
+        print_glue_in(st, gs.shrink(&st.mem).0, gs.shrink_order(&st.mem), s);
     }
 }
 
@@ -1057,9 +1052,7 @@ pub(crate) fn print_rule_dimen_in(st: &mut EngineState, d: i32) {
 }
 
 /// Prints `d` with its fil/fill/filll order, or the unit `s` for finite glue.
-pub(crate) fn print_glue_in(st: &mut EngineState, d: i32, order: i32, s: *const libc::c_char) {
-    const NORMAL: i32 = 0;
-    const FILLL: i32 = 3;
+pub(crate) fn print_glue_in(st: &mut EngineState, d: i32, order: u16, s: *const libc::c_char) {
     print_scaled_in(st, d);
     if !(NORMAL..=FILLL).contains(&order) {
         print_cstr_in(st, c"foul".as_ptr());
@@ -1114,9 +1107,6 @@ fn print_mark_in(st: &mut EngineState, p: MemPtr) {
 const FIL_CODE: i32 = 0;
 const FILL_CODE: i32 = 1;
 const SS_CODE: i32 = 2;
-const BEGIN_L_CODE: i32 = 6;
-const END_L_CODE: i32 = 7;
-const BEGIN_R_CODE: i32 = 10;
 const LIMITS: i32 = 1;
 const NO_LIMITS: i32 = 2;
 const ABOVE_CODE: i32 = 0;
@@ -1322,9 +1312,9 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             st,
             match chr_code {
                 0 => c"valign",
-                BEGIN_L_CODE => c"beginL",
-                END_L_CODE => c"endL",
-                BEGIN_R_CODE => c"beginR",
+                x if x == BEGIN_L_CODE as i32 => c"beginL",
+                x if x == END_L_CODE as i32 => c"endL",
+                x if x == BEGIN_R_CODE as i32 => c"beginR",
                 _ => c"endR",
             },
         ),
@@ -2812,8 +2802,6 @@ pub(crate) fn show_box_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
 }
 
 pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
-    const L_CODE: u16 = 4;
-
     let mut p = p.addr();
     while p > 0 {
         if p >= st.mem.hi_mem_min {
@@ -3099,12 +3087,12 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
                     }
                     if node.glue_stretch(&st.mem).0 != 0 {
                         print_cstr_in(st, c", stretch ".as_ptr());
-                        let order = node.glue_order(&st.mem) as i32;
+                        let order = node.glue_order(&st.mem);
                         print_glue_in(st, node.glue_stretch(&st.mem).0, order, std::ptr::null());
                     }
                     if node.glue_shrink(&st.mem).0 != 0 {
                         print_cstr_in(st, c", shrink ".as_ptr());
-                        let order = node.glue_sign(&st.mem) as i32;
+                        let order = node.glue_sign(&st.mem);
                         print_glue_in(st, node.glue_shrink(&st.mem).0, order, std::ptr::null());
                     }
                     node_list_display_in(st, b'.', node.list_ptr(&st.mem));
@@ -3133,7 +3121,6 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
                 Ok(AnyNode::Whatsit(node)) => show_whatsit_in(st, node),
                 Ok(AnyNode::Glue(node)) => show_glue_in(st, node),
                 Ok(AnyNode::Kern(node)) => {
-                    const ACC_KERN: u16 = 2;
                     let sub = node.subtype(&st.mem);
                     if sub != MU_GLUE {
                         esc(st, c"kern");
@@ -3162,9 +3149,6 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
                     }
                 }
                 Ok(AnyNode::Math(node)) => {
-                    const AFTER: u16 = 1;
-                    const L_CODE: u16 = 4;
-                    const R_CODE: u16 = 8;
                     let sub = node.subtype(&st.mem);
                     if sub > AFTER {
                         esc(st, if sub % 2 == 1 { c"end" } else { c"begin" });
@@ -3250,7 +3234,6 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
 }
 
 fn show_box_node_in(st: &mut EngineState, b: AnyBox) {
-    const DLIST: u16 = 2;
     let is_hlist = matches!(b, AnyBox::HList(_));
     print_esc_in(st, if is_hlist { b'h' } else { b'v' } as i32);
     print_cstr_in(st, c"box(".as_ptr());
@@ -3266,7 +3249,7 @@ fn show_box_node_in(st: &mut EngineState, b: AnyBox) {
         if glue_sign == GlueSign::Shrinking {
             print_cstr_in(st, c"- ".as_ptr());
         }
-        let order = b.glue_order(&st.mem) as i32;
+        let order = b.glue_order(&st.mem);
         if g.abs() > 20000.0 {
             if g > 0.0 {
                 print_char_in(st, b'>' as i32);
@@ -3354,10 +3337,6 @@ fn show_whatsit_in(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
 }
 
 fn show_glue_in(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
-    const C_LEADERS: u16 = A_LEADERS + 1;
-    const X_LEADERS: u16 = A_LEADERS + 2;
-    const COND_MATH_GLUE: u16 = 98;
-
     let sub = node.subtype(&st.mem);
     if sub >= A_LEADERS {
         esc(st, c"");

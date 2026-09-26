@@ -489,7 +489,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
             &mut st.input.cur_list,
             &mut st.mem,
             WhatsitSubtype::Pic as i16,
-            (PIC_NODE_SIZE + extra_words) as i16,
+            PIC_NODE_SIZE + extra_words,
         )
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         let mem = &mut st.mem;

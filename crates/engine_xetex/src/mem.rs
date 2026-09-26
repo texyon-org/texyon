@@ -1,7 +1,7 @@
 //! Memory arena types and allocator functions translated from
 //! `xetex/xetex-xetex0.c`.
 pub(crate) use crate::consts::TEX_NULL;
-use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP};
+use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL};
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
     MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
@@ -9,7 +9,6 @@ use crate::node::{
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
-const NORMAL: u16 = 0;
 const EMPTY: i32 = 0;
 
 pub(crate) const ZERO_GLUE: MemPtr = MemPtr(0);
@@ -379,9 +378,9 @@ pub fn alloc_disc(mem: &mut MemState) -> Option<NodePtr<DiscNode>> {
 /// typed `NodePtr<MathNode>` handle (`None` on arena exhaustion).
 ///
 /// translated from xetex-xetex0.c:221 (new_math)
-pub fn alloc_math(mem: &mut MemState, w: i32, s: i16) -> Option<NodePtr<MathNode>> {
+pub fn alloc_math(mem: &mut MemState, w: i32, s: u16) -> Option<NodePtr<MathNode>> {
     let p = NodePtr::<MathNode>::alloc(mem)?;
-    p.set_subtype(mem, s as u16);
+    p.set_subtype(mem, s);
     p.set_width(mem, Scaled(w));
     Some(p)
 }
@@ -761,9 +760,9 @@ pub fn new_whatsit(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
     s: i16,
-    w: i16,
+    w: i32,
 ) -> Option<NodePtr<crate::node::WhatsitNode>> {
-    let p = get_node(mem, w as i32)?;
+    let p = get_node(mem, w)?;
     mem.set_b16s1(p, crate::units::NodeType::Whatsit.as_raw());
     mem.set_b16s0(p, s as u16);
     cl.tail.set_link(mem, p);

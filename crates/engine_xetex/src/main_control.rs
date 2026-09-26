@@ -2,12 +2,13 @@
 //! alignment family (= xetex0.c's main_control group).
 
 use crate::consts::{
-    A_LEADERS, BACKED_UP, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE,
-    CHAR_CLASS_LIMIT, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
-    DIMEN_PAR_BOX_MAX_DEPTH, DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE,
-    DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_PAR_INDENT, DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, ETEX_PEN_BASE,
-    EXPLICIT, FONT_BASE, FONT_ID_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE,
-    FROZEN_RIGHT, GLUE_BASE, GLUE_NODE, GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP,
+    ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BACKED_UP, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_LANG,
+    BIGGEST_USV, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE,
+    COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_BOX_MAX_DEPTH,
+    DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_OVERFULL_RULE,
+    DIMEN_PAR_PAR_INDENT, DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, END_M_CODE, ETEX_PEN_BASE, EXPLICIT,
+    FONT_BASE, FONT_ID_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT,
+    GLUE_BASE, GLUE_NODE, GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP,
     GLUE_PAR_PAR_SKIP, GLUE_PAR_SPACE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TAB_SKIP,
     GLUE_PAR_XSPACE_SKIP, HASH_BASE, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE,
     INT_PAR_FLOATING_PENALTY, INT_PAR_GLOBAL_DEFS, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
@@ -18,11 +19,11 @@ use crate::consts::{
     INT_PAR_XETEX_USE_GLYPH_METRICS, KERN_NODE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_EVERY_CR,
     LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB, LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE,
     LOCAL_PAR_SHAPE, LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE,
-    MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS,
-    NULL_FLAG, OUTPUT_TEXT, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING,
-    SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE,
-    SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
-    UNDEFINED_PRIMITIVE, VMODE,
+    MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL,
+    NORMAL_SCANNER, NULL_CS, NULL_FLAG, OUTPUT_TEXT, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE,
+    SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
+    SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX, TEX_INFINITY, TEX_NULL,
+    TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
@@ -77,19 +78,10 @@ const INNER_HMODE: i16 = -HMODE;
 const ALIGNING: u8 = 4;
 
 const ALIGN_STACK_NODE_SIZE: i32 = 6;
-const NATIVE_NODE_SIZE: i32 = 6;
 const SPAN_NODE_SIZE: i32 = 2;
 
-pub(crate) const NORMAL: u16 = 0;
 pub(crate) const ADDITIONAL: i16 = 1;
-const ACC_KERN: u16 = 2;
 const TAB_SKIP_SUBTYPE: u16 = GLUE_PAR_TAB_SKIP as u16 + 1;
-const COND_MATH_GLUE: u16 = 98;
-const FIL: usize = 1;
-const FILL: usize = 2;
-const FILLL: usize = 3;
-const BEGIN_M_CODE: u16 = 2;
-const END_M_CODE: u16 = 3;
 
 // Token-list types.
 const U_TEMPLATE: u16 = 1;
@@ -146,10 +138,6 @@ pub(crate) const LEADER_FLAG: i32 = 0x4001_0001;
 const EMPTY: i32 = 0;
 const SUB_MLIST: i32 = 3;
 const MAX_CHAR_VAL: i32 = 0x20_0000;
-const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
-const BIGGEST_USV: i32 = 0x10_FFFF;
-const TOO_BIG_USV: i32 = 1_114_112;
-const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 const AAT_FONT_FLAG: i32 = 0xFFFF;
 const OTGR_FONT_FLAG: i32 = 0xFFFE;
 
@@ -759,18 +747,6 @@ fn copy_token_list(mem: &mut MemState, mut r: i32) -> Result<i32, crate::scan::N
     Ok(mem.b32s1(HOLD_HEAD))
 }
 
-fn highest_order(totals: &[i32]) -> usize {
-    if totals[FILLL] != 0 {
-        FILLL
-    } else if totals[FILL] != 0 {
-        FILL
-    } else if totals[FIL] != 0 {
-        FIL
-    } else {
-        0
-    }
-}
-
 pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort> {
     use crate::scan::NodeRecycleAbort;
 
@@ -875,12 +851,12 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
         }
         let u = u.into_unset(&mut st.mem);
         u.set_subtype(&mut st.mem, n as u16);
-        let o = highest_order(&st.scanner.total_stretch);
-        u.set_glue_order(&mut st.mem, o as u16);
-        u.set_glue_stretch(&mut st.mem, Scaled(st.scanner.total_stretch[o]));
-        let o = highest_order(&st.scanner.total_shrink);
-        u.set_glue_sign(&mut st.mem, o as u16);
-        u.set_glue_shrink(&mut st.mem, Scaled(st.scanner.total_shrink[o]));
+        let o = crate::packaging::glue_order(&st.scanner.total_stretch);
+        u.set_glue_order(&mut st.mem, o);
+        u.set_glue_stretch(&mut st.mem, Scaled(st.scanner.total_stretch[o as usize]));
+        let o = crate::packaging::glue_order(&st.scanner.total_shrink);
+        u.set_glue_sign(&mut st.mem, o);
+        u.set_glue_shrink(&mut st.mem, Scaled(st.scanner.total_shrink[o as usize]));
         crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
         tail_append(st, u.ptr());
         let spec = st.mem.b32s0(st.mem.b32s1(st.scanner.cur_align) + 1);
@@ -2423,13 +2399,8 @@ pub(crate) fn fix_language(
     if l == cl.aux_s1() {
         return Ok(());
     }
-    let w = crate::mem::new_whatsit(
-        cl,
-        mem,
-        WhatsitSubtype::Language as i16,
-        SMALL_NODE_SIZE as i16,
-    )
-    .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    let w = crate::mem::new_whatsit(cl, mem, WhatsitSubtype::Language as i16, SMALL_NODE_SIZE)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     w.set_what_lang(mem, l);
     cl.set_aux_s1(l);
     let lhm = crate::helpers::norm_min(eqtb.b32s1(INT_BASE + INT_PAR_LEFT_HYPHEN_MIN)) as u16;
@@ -3189,7 +3160,7 @@ fn valign_or_lr_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
         st.scanner.cur_chr,
     )?;
     if enabled {
-        let m = crate::mem::alloc_math(&mut st.mem, 0, st.scanner.cur_chr as i16)
+        let m = crate::mem::alloc_math(&mut st.mem, 0, st.scanner.cur_chr as u16)
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         tail_append(st, m.ptr());
     }

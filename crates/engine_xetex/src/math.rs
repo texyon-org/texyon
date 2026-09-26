@@ -1,19 +1,22 @@
 //! Math mode: noad construction and `mlist_to_hlist`, from `xetex/xetex-math.c`.
 use crate::consts::{
-    ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BIGGEST_LANG, BOX_NODE_SIZE, CUR_FONT_LOC, DEL_CODE_BASE,
-    DIMEN_BASE, DIMEN_PAR_DELIMITER_SHORTFALL, DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_DISPLAY_WIDTH,
+    ACCENT_NOAD_SIZE, AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BIGGEST_LANG,
+    BOX_NODE_SIZE, COND_MATH_GLUE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
+    DIMEN_PAR_DELIMITER_SHORTFALL, DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_DISPLAY_WIDTH,
     DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_MATH_SURROUND,
     DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE, DIMEN_PAR_SCRIPT_SPACE, DLIST,
-    EXPLICIT, FONT_BASE, FRACTION_NOAD_SIZE, GLUE_BASE, GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP,
-    GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP,
-    GLUE_PAR_LEFT_SKIP, GLUE_PAR_MED_MU_SKIP, GLUE_PAR_RIGHT_SKIP, GLUE_PAR_THICK_MU_SKIP,
-    GLUE_PAR_THIN_MU_SKIP, HMODE, INT_BASE, INT_PAR_BIN_OP_PENALTY, INT_PAR_CUR_FAM,
+    END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FONT_BASE, FRACTION_NOAD_SIZE, GLUE_BASE,
+    GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
+    GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_LEFT_SKIP,
+    GLUE_PAR_MED_MU_SKIP, GLUE_PAR_RIGHT_SKIP, GLUE_PAR_THICK_MU_SKIP, GLUE_PAR_THIN_MU_SKIP,
+    GLYPH_NODE_SIZE, HMODE, INF_PENALTY, INT_BASE, INT_PAR_BIN_OP_PENALTY, INT_PAR_CUR_FAM,
     INT_PAR_DELIMITER_FACTOR, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN,
     INT_PAR_POST_DISPLAY_PENALTY, INT_PAR_PRE_DISPLAY_DIRECTION, INT_PAR_PRE_DISPLAY_PENALTY,
     INT_PAR_REL_PENALTY, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, LEFT_TO_RIGHT, LIG_TAG,
-    LOCAL_BASE, LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, LOCAL_PAR_SHAPE, MATH_FONT_BASE,
-    MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NUMBER_MATH_FAMILIES,
-    RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, SCRIPT_SIZE, SPACE_CODE, STYLE_NODE_SIZE, SUB_BOX, TEXT_SIZE,
+    LOCAL_BASE, LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, LOCAL_PAR_SHAPE, L_CODE, MATH_FONT_BASE,
+    MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL, NUMBER_MATH_FAMILIES,
+    RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, SPACE_CODE, STYLE_NODE_SIZE, SUB_BOX,
+    TEXT_SIZE, TEX_INFINITY,
 };
 use crate::ext::real_get_native_glyph;
 use crate::fonts::{char_depth, char_height, char_italic, char_width, CharInfo};
@@ -46,21 +49,15 @@ const FIXED_ACC: u16 = 1;
 const BOTTOM_ACC: u16 = 2;
 const MIDDLE_NOAD: u16 = 1;
 
-const NORMAL: u16 = 0;
 const LIMITS: u16 = 1;
 const LIST_TAG: u16 = 2;
 const EXT_TAG: u16 = 3;
-const GLYPH_NODE_SIZE: i32 = 5;
 const DISPLAYOPERATORMINHEIGHT: i32 = 3;
 const MATH_TEXT_CHAR: i32 = 4;
 const ACCENTBASEHEIGHT: i32 = 6;
 const X_HEIGHT_CODE: i32 = 5;
 
 const QUAD_CODE: i32 = 6;
-const L_CODE: i32 = 4;
-const R_CODE: i32 = 8;
-const BEGIN_L_CODE: i16 = 6;
-const END_L_CODE: i16 = 7;
 const EVERY_DISPLAY_TEXT: u16 = 10;
 
 const SCRIPT_SCRIPT_SIZE: i32 = 512;
@@ -68,7 +65,6 @@ const TOTAL_MATHSY_PARAMS: i32 = 22;
 const TOTAL_MATHEX_PARAMS: i32 = 13;
 const AAT_FONT_FLAG: i32 = 0xFFFF;
 pub(crate) const OTGR_FONT_FLAG: i32 = 0xFFFE;
-const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 const STACKGAPMIN: i32 = 26;
 const STACKDISPLAYSTYLEGAPMIN: i32 = 27;
 const FRACTIONNUMERATORGAPMIN: i32 = 36;
@@ -82,19 +78,11 @@ const SUBSCRIPTTOPMAX: i32 = 9;
 const SUPERSCRIPTBOTTOMMIN: i32 = 13;
 const SUBSUPERSCRIPTGAPMIN: i32 = 15;
 const SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT: i32 = 16;
-const BEGIN_M_CODE: i16 = 2;
-const END_M_CODE: i16 = 3;
 const DISPLAY_STYLE: i16 = 0;
 const TEXT_STYLE: i16 = 2;
 const SCRIPT_STYLE: i16 = 4;
-const FIL: usize = 1;
-const FILL: usize = 2;
-const FILLL: usize = 3;
-const INF_PENALTY: i32 = 10000;
 const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
-const AFTER: i16 = 1;
-const COND_MATH_GLUE: u16 = 98;
 
 use crate::cmd::{ACCENT, DELIM_NUM, LETTER, MATH_SHIFT, OTHER_CHAR, RELAX, SPACER, SUP_MARK};
 use crate::ot_math::{
@@ -3446,7 +3434,7 @@ pub(crate) fn after_math_in(
 
     if m < 0 {
         let math_surround = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
-        let node = crate::mem::alloc_math(&mut st.mem, math_surround, BEFORE as i16)
+        let node = crate::mem::alloc_math(&mut st.mem, math_surround, BEFORE)
             .ok_or(NodeRecycleAbort::Overflow)?;
         tail_append(&mut st.input.cur_list, &mut st.mem, node.ptr());
         st.scanner.cur_mlist.0 = p;
@@ -3505,9 +3493,9 @@ pub(crate) fn after_math_in(
     if w + q > z {
         if e != 0
             && (w - st.scanner.total_shrink[0] + q <= z
-                || st.scanner.total_shrink[FIL] != 0
-                || st.scanner.total_shrink[FILL] != 0
-                || st.scanner.total_shrink[FILLL] != 0)
+                || st.scanner.total_shrink[FIL as usize] != 0
+                || st.scanner.total_shrink[FILL as usize] != 0
+                || st.scanner.total_shrink[FILLL as usize] != 0)
         {
             free_node(&mut st.mem, b.ptr(), BOX_NODE_SIZE);
             b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?;
@@ -3645,7 +3633,7 @@ fn pre_display_direction(st: &EngineState) -> i32 {
     let aux = st.input.cur_list.e_tex_aux;
     if aux.is_null() {
         0
-    } else if aux.info(&st.mem) >= R_CODE {
+    } else if aux.info(&st.mem) >= R_CODE.into() {
         -1
     } else {
         1
@@ -3725,7 +3713,7 @@ pub(crate) fn init_math_in(
 
             let texxet = st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0;
             if texxet {
-                push_lr_in(st, BEFORE)?;
+                push_lr_in(st, BEFORE.into())?;
             }
 
             'outer: while p != TEX_NULL {
@@ -3756,11 +3744,11 @@ pub(crate) fn init_math_in(
                         Ok(AnyNode::MarginKern(k)) => (k.width(&st.mem).0, false),
                         Ok(AnyNode::Math(m)) => {
                             let d = m.width(&st.mem).0;
-                            let subtype = m.subtype(&st.mem) as i32;
+                            let subtype = m.subtype(&st.mem);
                             if texxet {
                                 if subtype & 1 != 0 {
                                     if st.scanner.lr_ptr.info(&st.mem)
-                                        == L_CODE * (subtype / L_CODE) + 3
+                                        == crate::packaging::end_lr_type(subtype)
                                     {
                                         pop_lr(st);
                                     } else if subtype > L_CODE {
@@ -3768,8 +3756,8 @@ pub(crate) fn init_math_in(
                                         break 'outer;
                                     }
                                 } else {
-                                    push_lr_in(st, L_CODE * (subtype / L_CODE) + 3)?;
-                                    if subtype / R_CODE != st.scanner.cur_dir as i32 {
+                                    push_lr_in(st, crate::packaging::end_lr_type(subtype))?;
+                                    if (subtype / R_CODE) as i32 != st.scanner.cur_dir as i32 {
                                         crate::packaging::just_reverse(
                                             &mut st.mem,
                                             &mut st.scanner,

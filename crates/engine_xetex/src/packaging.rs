@@ -4,11 +4,14 @@
 use crate::consts::{
     ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, DIMEN_PAR_HFUZZ,
     DIMEN_PAR_LINE_SKIP_LIMIT, DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_SPLIT_MAX_DEPTH, DIMEN_PAR_VFUZZ,
-    EJECT_PENALTY, EXPLICIT, FRACTION_NOAD_SIZE, GLUE_BASE, GLUE_PAR_BASELINE_SKIP,
-    GLUE_PAR_LINE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, IGNORE_DEPTH, INT_BASE, INT_PAR_HBADNESS,
-    INT_PAR_SAVING_VDISCARDS, INT_PAR_TEXXET, INT_PAR_VBADNESS, INT_PAR_XETEX_UPWARDS,
-    MARGIN_KERN_NODE_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, PIC_NODE_SIZE,
-    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX, TEX_NULL,
+    EJECT_PENALTY, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FRACTION_NOAD_SIZE, GLUE_BASE,
+    GLUE_PAR_BASELINE_SKIP, GLUE_PAR_LINE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLYPH_NODE_SIZE,
+    IGNORE_DEPTH, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_BASE, INT_PAR_HBADNESS,
+    INT_PAR_SAVING_VDISCARDS, INT_PAR_TEXXET, INT_PAR_VBADNESS, INT_PAR_XETEX_UPWARDS, L_CODE,
+    MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD,
+    NOAD_SIZE, NORMAL, OPEN_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE,
+    SMALL_NODE_SIZE, SPLIT_BOT_MARK_CODE, SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX,
+    TEX_NULL, WRITE_NODE_SIZE,
 };
 use crate::errors::ErrorOutcome;
 use crate::fonts::{effective_char, new_native_word_node};
@@ -25,29 +28,12 @@ use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 /// The word of a box whose link field is its `list_ptr`.
 const LIST_OFFSET: i32 = 5;
 
-const INS_NODE_SIZE: i32 = 5;
-const OPEN_NODE_SIZE: i32 = 3;
-const WRITE_NODE_SIZE: i32 = 2;
-const GLYPH_NODE_SIZE: i32 = 5;
-const INDEX_NODE_SIZE: i32 = 33;
-const MARK_CLASS_NODE_SIZE: i32 = 4;
 const SYNCTEX_FIELD_SIZE: i32 = 1;
 const MEMORY_WORD_SIZE: i32 = 8;
 
-const NORMAL: usize = 0;
-const FIL: usize = 1;
-const FILL: usize = 2;
-const FILLL: usize = 3;
 const EXACTLY: i16 = 0;
 const ADDITIONAL: i16 = 1;
-const INF_BAD: i32 = 10_000;
-const INF_PENALTY: i32 = 10_000;
-const L_CODE: u16 = 4;
-const R_CODE: u16 = 8;
-const END_M_CODE: u16 = 3;
 
-const SPLIT_FIRST_MARK_CODE: usize = 3;
-const SPLIT_BOT_MARK_CODE: usize = 4;
 const VSPLIT_INIT: i16 = 0;
 const FIRE_UP_INIT: i16 = 1;
 const FIRE_UP_DONE: i16 = 2;
@@ -867,7 +853,7 @@ fn vert_break_resume(
                 let spec = glue.glue_spec(mem).expect("glue node has glue_spec");
                 scanner.active_width[2 + spec.stretch_order(mem) as usize] += spec.stretch(mem).0;
                 scanner.active_width[6] += spec.shrink(mem).0;
-                if spec.shrink_order(mem) != NORMAL as u16 && spec.shrink(mem).0 != 0 {
+                if spec.shrink_order(mem) != NORMAL && spec.shrink(mem).0 != 0 {
                     cursor.finish_glue_after_shrinkage = Some(glue);
                     return Ok(VertBreakStep::InfiniteShrinkage { glue, spec });
                 }
@@ -1457,12 +1443,12 @@ struct PackOutcome {
 
 /// The highest glue order with a nonzero total.
 #[inline]
-fn glue_order(totals: &[i32; 4]) -> usize {
-    if totals[FILLL] != 0 {
+pub(crate) fn glue_order(totals: &[i32; 4]) -> u16 {
+    if totals[FILLL as usize] != 0 {
         FILLL
-    } else if totals[FILL] != 0 {
+    } else if totals[FILL as usize] != 0 {
         FILL
-    } else if totals[FIL] != 0 {
+    } else if totals[FIL as usize] != 0 {
         FIL
     } else {
         NORMAL
@@ -1477,12 +1463,12 @@ fn set_box_glue<K: HasGlueSet>(
     sign: GlueSign,
     excess: f64,
     totals: &[i32; 4],
-) -> usize {
+) -> u16 {
     let o = glue_order(totals);
-    r.set_glue_order(mem, o as u16);
+    r.set_glue_order(mem, o);
     r.set_glue_sign(mem, sign);
-    if totals[o] != 0 {
-        r.set_glue_set(mem, excess / totals[o] as f64);
+    if totals[o as usize] != 0 {
+        r.set_glue_set(mem, excess / totals[o as usize] as f64);
     } else {
         r.set_glue_sign(mem, GlueSign::Normal);
         r.set_glue_set(mem, 0.0);
@@ -1492,7 +1478,7 @@ fn set_box_glue<K: HasGlueSet>(
 
 fn clear_box_glue<K: HasGlueSet>(mem: &mut MemState, r: NodePtr<K>) {
     r.set_glue_sign(mem, GlueSign::Normal);
-    r.set_glue_order(mem, NORMAL as u16);
+    r.set_glue_order(mem, NORMAL);
     r.set_glue_set(mem, 0.0);
 }
 
@@ -1605,7 +1591,7 @@ fn hpack_in(
     let texxet = int_par(eqtb, INT_PAR_TEXXET) > 0;
 
     if texxet {
-        push_lr(mem, &mut scanner.lr_ptr, BEFORE)?;
+        push_lr(mem, &mut scanner.lr_ptr, BEFORE.into())?;
     }
 
     let mut p = list;
@@ -1768,7 +1754,8 @@ fn hpack_in(
             &scanner.total_stretch,
         );
         if o == NORMAL && has_list {
-            shipout.last_badness = crate::helpers::badness(x, scanner.total_stretch[NORMAL]);
+            shipout.last_badness =
+                crate::helpers::badness(x, scanner.total_stretch[NORMAL as usize]);
             if shipout.last_badness > int_par(eqtb, INT_PAR_HBADNESS) {
                 push_slot(
                     &mut diags,
@@ -1787,10 +1774,10 @@ fn hpack_in(
             (-x) as f64,
             &scanner.total_shrink,
         );
-        if scanner.total_shrink[o] < (-x) && o == NORMAL && has_list {
+        if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {
             shipout.last_badness = 1_000_000;
             r_node.set_glue_set(mem, 1.0);
-            let excess = (-x) - scanner.total_shrink[NORMAL];
+            let excess = (-x) - scanner.total_shrink[NORMAL as usize];
             let hfuzz = dimen_par(eqtb, DIMEN_PAR_HFUZZ);
             if excess > hfuzz || int_par(eqtb, INT_PAR_HBADNESS) < 100 {
                 let overfull_rule = dimen_par(eqtb, DIMEN_PAR_OVERFULL_RULE);
@@ -1803,7 +1790,8 @@ fn hpack_in(
                 push_slot(&mut diags, PackDiag::HOverfull { excess });
             }
         } else if o == NORMAL && has_list {
-            shipout.last_badness = crate::helpers::badness(-x, scanner.total_shrink[NORMAL]);
+            shipout.last_badness =
+                crate::helpers::badness(-x, scanner.total_shrink[NORMAL as usize]);
             if shipout.last_badness > int_par(eqtb, INT_PAR_HBADNESS) {
                 push_slot(
                     &mut diags,
@@ -1816,16 +1804,16 @@ fn hpack_in(
     }
 
     if texxet {
-        if scanner.lr_ptr.info(mem) != BEFORE {
+        if scanner.lr_ptr.info(mem) != BEFORE.into() {
             q = list_tail(mem, q);
             loop {
-                let math = crate::mem::alloc_math(mem, 0, scanner.lr_ptr.info(mem) as i16)
+                let math = crate::mem::alloc_math(mem, 0, scanner.lr_ptr.info(mem) as u16)
                     .ok_or(NodeRecycleAbort::Overflow)?;
                 q.set_link(mem, math.ptr());
                 q = math.ptr();
                 scanner.lr_problems += 10000;
                 pop_lr(mem, &mut scanner.lr_ptr);
-                if scanner.lr_ptr.info(mem) == BEFORE {
+                if scanner.lr_ptr.info(mem) == BEFORE.into() {
                     break;
                 }
             }
@@ -2060,7 +2048,8 @@ fn vpackage_in(
             &scanner.total_stretch,
         );
         if o == NORMAL && has_list {
-            shipout.last_badness = crate::helpers::badness(x, scanner.total_stretch[NORMAL]);
+            shipout.last_badness =
+                crate::helpers::badness(x, scanner.total_stretch[NORMAL as usize]);
             if shipout.last_badness > int_par(eqtb, INT_PAR_VBADNESS) {
                 push_slot(
                     &mut diags,
@@ -2079,15 +2068,16 @@ fn vpackage_in(
             (-(x as i64)) as f64,
             &scanner.total_shrink,
         );
-        if scanner.total_shrink[o] < (-x) && o == NORMAL && has_list {
+        if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {
             shipout.last_badness = 1_000_000;
             r_node.set_glue_set(mem, 1.0);
-            let excess = (-x) - scanner.total_shrink[NORMAL];
+            let excess = (-x) - scanner.total_shrink[NORMAL as usize];
             if excess > dimen_par(eqtb, DIMEN_PAR_VFUZZ) || int_par(eqtb, INT_PAR_VBADNESS) < 100 {
                 push_slot(&mut diags, PackDiag::VOverfull { excess });
             }
         } else if o == NORMAL && has_list {
-            shipout.last_badness = crate::helpers::badness(-x, scanner.total_shrink[NORMAL]);
+            shipout.last_badness =
+                crate::helpers::badness(-x, scanner.total_shrink[NORMAL as usize]);
             if shipout.last_badness > int_par(eqtb, INT_PAR_VBADNESS) {
                 push_slot(
                     &mut diags,

@@ -6,15 +6,15 @@ use crate::consts::{
     ETEX_PENALTIES_PAR_CLUB_PENALTIES, ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
     ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, ETEX_PENALTIES_PAR_WIDOW_PENALTIES, ETEX_PEN_BASE,
     EXPLICIT, GLUE_BASE, GLUE_PAR_LEFT_SKIP, GLUE_PAR_PAR_FILL_SKIP, GLUE_PAR_RIGHT_SKIP,
-    GLUE_PAR_XETEX_LINEBREAK_SKIP, INT_PAR_ADJ_DEMERITS, INT_PAR_BROKEN_PENALTY,
-    INT_PAR_CLUB_PENALTY, INT_PAR_DISPLAY_WIDOW_PENALTY, INT_PAR_DOUBLE_HYPHEN_DEMERITS,
-    INT_PAR_EX_HYPHEN_PENALTY, INT_PAR_FINAL_HYPHEN_DEMERITS, INT_PAR_HANG_AFTER,
-    INT_PAR_HYPHEN_PENALTY, INT_PAR_INTER_LINE_PENALTY, INT_PAR_LAST_LINE_FIT,
+    GLUE_PAR_XETEX_LINEBREAK_SKIP, INF_BAD, INF_PENALTY, INT_PAR_ADJ_DEMERITS,
+    INT_PAR_BROKEN_PENALTY, INT_PAR_CLUB_PENALTY, INT_PAR_DISPLAY_WIDOW_PENALTY,
+    INT_PAR_DOUBLE_HYPHEN_DEMERITS, INT_PAR_EX_HYPHEN_PENALTY, INT_PAR_FINAL_HYPHEN_DEMERITS,
+    INT_PAR_HANG_AFTER, INT_PAR_HYPHEN_PENALTY, INT_PAR_INTER_LINE_PENALTY, INT_PAR_LAST_LINE_FIT,
     INT_PAR_LINE_PENALTY, INT_PAR_LOOSENESS, INT_PAR_PRETOLERANCE, INT_PAR_TEXXET,
     INT_PAR_TOLERANCE, INT_PAR_UC_HYPH, INT_PAR_WIDOW_PENALTY, INT_PAR_XETEX_LINEBREAK_LOCALE,
     INT_PAR_XETEX_LINEBREAK_PENALTY, INT_PAR_XETEX_PROTRUDE_CHARS, INT_PAR_XETEX_USE_GLYPH_METRICS,
-    LC_CODE_BASE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP,
-    NON_ADDRESS, RULE_NODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
+    LC_CODE_BASE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP,
+    NON_ADDRESS, NORMAL, RULE_NODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::{linebreak_next, linebreak_start_in, measure_native_node};
 use crate::hyphenation::{hyph_code, set_hyph_index, HYPH_PRIME};
@@ -43,8 +43,6 @@ const DELTA_NODE_SIZE: i32 = 7;
 const MAX_HLIST_STACK: i16 = 512;
 const BEST_BET_SET: &str = "best_bet is set by choose_best_break before use";
 
-const NORMAL: u16 = 0;
-const L_CODE: u16 = 4;
 const EXACTLY: i16 = 0;
 const ADDITIONAL: i16 = 1;
 const UNHYPHENATED: i16 = 0;
@@ -53,8 +51,6 @@ const VERY_LOOSE_FIT: usize = 0;
 const LOOSE_FIT: usize = 1;
 const DECENT_FIT: usize = 2;
 const TIGHT_FIT: usize = 3;
-const INF_BAD: i32 = 10_000;
-const INF_PENALTY: i32 = 10_000;
 const QUAD_CODE: i32 = 6;
 
 extern "C" {
@@ -1870,7 +1866,7 @@ fn post_line_break_prefix(
             let mut temp_ptr = *lr_ptr;
             let mut r = q;
             loop {
-                let s = crate::mem::alloc_math(mem, 0, (temp_ptr.info(mem) - 1) as i16)
+                let s = crate::mem::alloc_math(mem, 0, (temp_ptr.info(mem) - 1) as u16)
                     .ok_or(NodeRecycleAbort::Overflow)?;
                 s.set_link(mem, r);
                 r = s.ptr();
@@ -1981,7 +1977,7 @@ fn post_line_break_prefix(
 
         r = *lr_ptr;
         while !r.is_null() {
-            let m = crate::mem::alloc_math(mem, 0, r.info(mem) as i16)
+            let m = crate::mem::alloc_math(mem, 0, r.info(mem) as u16)
                 .ok_or(NodeRecycleAbort::Overflow)?;
             s.set_link(mem, m.ptr());
             s = m.ptr();

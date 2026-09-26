@@ -10,10 +10,11 @@ use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 use crate::bridge::{diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read};
 use crate::cmd::EXTENSION;
 use crate::consts::{
-    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_SPECIAL, HMODE, INSERTED, INT_BASE,
+    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INSERTED, INT_BASE,
     INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_LINEBREAK_LOCALE, INT_PAR_XETEX_TRACING_FONTS,
-    INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, MMODE, RIGHT_SIDE, SMALL_NODE_SIZE, VMODE,
+    INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, MMODE, OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE,
+    VMODE, WRITE_NODE_SIZE,
 };
 use crate::expand::{XETEX_FEATURE_NAME_CODE, XETEX_SELECTOR_NAME_CODE};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
@@ -1964,10 +1965,6 @@ pub(crate) unsafe fn print_glyph_name_in(
 const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
 const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
 
-const OPEN_NODE_SIZE: i16 = 3;
-const WRITE_NODE_SIZE: i16 = 2;
-const GLYPH_NODE_SIZE: i16 = 5;
-
 // `\openout` .. `\special` and `\pdfsavepos` carry their whatsit subtype as the
 // command modifier.
 pub(crate) const OPEN_NODE: i32 = WhatsitSubtype::Open as i32;
@@ -2114,7 +2111,7 @@ pub(crate) unsafe fn tt_insert_special_in(
 fn new_whatsit_in(
     st: &mut EngineState,
     subtype: WhatsitSubtype,
-    size: i16,
+    size: i32,
 ) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
     Ok(
         crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, subtype as i16, size)
@@ -2125,7 +2122,7 @@ fn new_whatsit_in(
 /// Append an `\openout`/`\write`/`\closeout` whatsit and scan its stream number.
 fn new_write_whatsit_in(
     st: &mut EngineState,
-    size: i16,
+    size: i32,
 ) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
     let w = crate::mem::new_whatsit(
         &mut st.input.cur_list,
@@ -2199,7 +2196,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
             if mode != HMODE {
                 mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
             } else {
-                let w = new_whatsit_in(st, WhatsitSubtype::Language, SMALL_NODE_SIZE as i16)?;
+                let w = new_whatsit_in(st, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
                 scan_int_in(st)?;
                 let lang = if st.scanner.cur_val <= 0 || st.scanner.cur_val > 255 {
                     0
@@ -2216,7 +2213,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
         }
 
         PDF_SAVE_POS_NODE => {
-            new_whatsit_in(st, WhatsitSubtype::PdfSavePos, SMALL_NODE_SIZE as i16)?;
+            new_whatsit_in(st, WhatsitSubtype::PdfSavePos, SMALL_NODE_SIZE)?;
         }
 
         RESET_TIMER_CODE => {

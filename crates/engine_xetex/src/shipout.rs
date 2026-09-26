@@ -1,12 +1,13 @@
 //! Shipping boxes out to the XDV file.
 use crate::consts::{
-    A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, DIMEN_BASE, DIMEN_PAR_H_OFFSET,
-    DIMEN_PAR_PDF_PAGE_HEIGHT, DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE,
-    FONT_BASE, GLUE_SPEC_SIZE, INSERTED, INT_BASE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE,
-    INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INVALID_HANDLE, LEFT_TO_RIGHT,
-    MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NULL_FLAG,
-    RIGHT_TO_LEFT, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
-    SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR, WRITE_TEXT,
+    A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_BASE, DIMEN_PAR_H_OFFSET,
+    DIMEN_PAR_PDF_PAGE_HEIGHT, DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_M_CODE,
+    END_WRITE, FILLL, FONT_BASE, GLUE_SPEC_SIZE, INSERTED, INT_BASE, INT_PAR_MAG,
+    INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING,
+    INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD,
+    NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY,
+    SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE,
+    SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL, TOO_BIG_CHAR, WRITE_TEXT,
 };
 use crate::ext::apply_tfm_font_mapping;
 
@@ -24,7 +25,6 @@ use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
 
 const DVI_BUF_SIZE: i32 = 16384;
 const HALF_BUF: i32 = 8192;
-const TEX_INFINITY: i32 = 0x7FFF_FFFF;
 
 const SET1: u8 = 128;
 const SET_RULE: u8 = 132;
@@ -62,13 +62,6 @@ const MOV_Y_SEEN: i32 = 6;
 const MOV_D_FIXED: i32 = 6;
 const MOV_Z_SEEN: i32 = 12;
 
-const FILLL: u16 = 3;
-const NORMAL: u16 = 0;
-const C_LEADERS: u16 = 101;
-
-const L_CODE: u16 = 4;
-const R_CODE: u16 = 8;
-const END_M_CODE: u16 = 3;
 const REVERSED: u16 = 1;
 
 pub(crate) const ONE_INCH: i32 = 4_736_287;
@@ -1251,7 +1244,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     let save_loc = push_dvi_level(&mut st.shipout)?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
-    push_lr(&mut st.mem, &mut st.scanner, BEFORE)?;
+    push_lr(&mut st.mem, &mut st.scanner, BEFORE.into())?;
 
     if this_box.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
@@ -1385,7 +1378,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 
     crate::synctex::synctex_tsilh(st, this_box);
 
-    while st.scanner.lr_ptr.info(&st.mem) != BEFORE {
+    while st.scanner.lr_ptr.info(&st.mem) != BEFORE.into() {
         if st.scanner.lr_ptr.info(&st.mem) as u16 > L_CODE {
             st.scanner.lr_problems += 10000;
         }
@@ -1945,7 +1938,7 @@ fn reverse(
         if t.is_none() && m == MIN_HALFWORD && n == MIN_HALFWORD {
             return Ok(l);
         }
-        let dir = scanner.lr_ptr.info(mem) as i16;
+        let dir = scanner.lr_ptr.info(mem) as u16;
         p = crate::mem::alloc_math(mem, 0, dir)
             .ok_or(ShipoutAbort::MainMemoryOverflow)?
             .ptr();
