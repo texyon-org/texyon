@@ -380,6 +380,14 @@ impl FontState {
     }
 }
 
+/// Native words of one font joined by interword glue, and their text length
+/// with a space for each glue.
+struct NativeWordRun {
+    first: NodePtr<WhatsitNode>,
+    last: NodePtr<WhatsitNode>,
+    text_len: i32,
+}
+
 impl MemState {
     fn is_space_adjustment(&self, q: MemPtr) -> bool {
         matches!(self.classify_non_char(q), Some(AnyNode::Kern(k)) if k.subtype(self) == SPACE_ADJUSTMENT)
@@ -448,9 +456,12 @@ impl MemState {
                 }
 
                 if last != r {
-                    p = self.merge_native_word_run(
-                        strings, fonts, eqtb, this_box, prev_p, r, last, text_len,
-                    )?;
+                    let run = NativeWordRun {
+                        first: r,
+                        last,
+                        text_len,
+                    };
+                    p = self.merge_native_word_run(strings, fonts, eqtb, this_box, prev_p, run)?;
                 }
             }
             prev_p = p;
@@ -468,10 +479,13 @@ impl MemState {
         eqtb: &EqtbState,
         this_box: AnyBox,
         prev_p: MemPtr,
-        first: NodePtr<WhatsitNode>,
-        last: NodePtr<WhatsitNode>,
-        text_len: i32,
+        run: NativeWordRun,
     ) -> Result<MemPtr, Abort> {
+        let NativeWordRun {
+            first,
+            last,
+            text_len,
+        } = run;
         if strings.pool_ptr + text_len > strings.pool_size {
             return Err(Abort::PoolOverflow);
         }
