@@ -969,7 +969,7 @@ pub(crate) fn print_param_in(st: &mut EngineState, n: i32) {
         80 => c"XeTeXhyphenatablelength",
         81 => c"synctex",
         82 => c"pdfoutput",
-        _ => return print_cstr_in(st, c"[unknown int32_t parameter!]".as_ptr()),
+        _ => return print_cstr_in(st, c"[unknown integer parameter!]".as_ptr()),
     };
     esc(st, name);
 }
