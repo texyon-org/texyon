@@ -2193,8 +2193,7 @@ pub(crate) fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
     p = head.link(&st.mem);
     st.mem.pop_nest(&mut st.input);
     // SAFETY: `append_discretionary` left the disc node as the enclosing list's tail.
-    let disc =
-        unsafe { NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(st.input.cur_list.tail)) };
+    let disc = NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(st.input.cur_list.tail));
     let part = st.save_stack.saved(-1);
     match part {
         0 => disc.set_pre_break(&mut st.mem, p),
@@ -3200,8 +3199,7 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Abo
     if st.mem.skip_interword_fillers(glue.link(&st.mem)) != tail {
         return Ok(());
     }
-    // SAFETY: the tail is normally the new native word but is read unchecked, as in TeX.
-    let tail_word = unsafe { NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(tail)) };
+    let tail_word = NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(tail));
     let prev_len = prev_word.native_length(&st.mem) as i32;
     let tail_len = tail_word.native_length(&st.mem) as i32;
     let len = prev_len + 1 + tail_len;

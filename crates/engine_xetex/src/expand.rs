@@ -646,7 +646,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let saved = save_scan(st)?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
-            unsafe { st.strings.getfilesize(s) }?;
+            st.strings.getfilesize(s)?;
             return ins_file_query_result(st, &saved, s, b);
         }
         PDF_MDFIVE_SUM_CODE => {
@@ -654,7 +654,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let is_file = crate::scan::scan_keyword(st, "file")?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
-            unsafe { st.strings.getmd5sum(s, is_file) };
+            st.strings.getmd5sum(s, is_file);
             return ins_file_query_result(st, &saved, s, b);
         }
         PDF_FILE_DUMP_CODE => {
@@ -673,7 +673,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             )?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
-            unsafe { st.strings.getfiledump(s, offset, length) }?;
+            st.strings.getfiledump(s, offset, length)?;
             return ins_file_query_result(st, &saved, s, b);
         }
         PDF_STRCMP_CODE => {
@@ -746,7 +746,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         }
         JOB_NAME_CODE => {
             if st.strings.job_name == 0 {
-                unsafe { crate::io::open_log_file(st) }?;
+                crate::io::open_log_file(st)?;
             }
         }
         _ => {}

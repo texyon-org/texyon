@@ -162,7 +162,7 @@ unsafe fn xetex_ucnv_to_utf32(
     (len, err)
 }
 
-pub(crate) unsafe fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_int) -> usize {
+pub(crate) fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_int) -> usize {
     let handle = if filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY {
         input_open_primary()
     } else if st.input.name_of_file.first() == Some(&b'|') {
@@ -521,7 +521,7 @@ pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<l
 }
 
 /// Converts `name_of_file` (UTF-8) to UTF-16 in `name_of_file16`.
-pub(crate) unsafe fn make_utf16_name(st: &mut EngineState) {
+pub(crate) fn make_utf16_name(st: &mut EngineState) {
     let name_len = st.input.name_length as usize;
     let needed = name_len + 10;
     if st.input.name_of_file16.len() < needed {
@@ -628,7 +628,7 @@ pub(crate) unsafe fn get_uni_c(
 /// Closes an input slot. Returns `true` on a serious internal close error, in
 /// which case the converter and the file are leaked like the old abort did.
 #[must_use]
-pub unsafe fn u_close(slot: crate::state::InputSlot) -> bool {
+pub fn u_close(slot: crate::state::InputSlot) -> bool {
     let crate::state::InputSlot::Open(f) = slot else {
         return false;
     };
@@ -649,7 +649,7 @@ pub unsafe fn u_close(slot: crate::state::InputSlot) -> bool {
 
 /// Runs `name_of_file` back through the name scanner so that `cur_name`,
 /// `cur_area` and `cur_ext` describe the file actually opened.
-unsafe fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
+fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
     make_utf16_name(st);
     st.scanner.name_in_progress = true;
     begin_name(st);
@@ -787,7 +787,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) unsafe fn make_name_string(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn make_name_string(st: &mut EngineState) -> Result<i32, Abort> {
     if st.strings.pool_ptr + st.input.name_length > st.strings.pool_size
         || st.strings.str_ptr == st.strings.max_strings
         || st.strings.cur_length() > 0
@@ -827,7 +827,7 @@ pub(crate) unsafe fn make_name_string(st: &mut EngineState) -> Result<i32, Abort
     Ok(result)
 }
 
-pub(crate) unsafe fn pack_job_name(st: &mut EngineState, s: &str) -> Result<(), Abort> {
+pub(crate) fn pack_job_name(st: &mut EngineState, s: &str) -> Result<(), Abort> {
     st.scanner.cur_area = EMPTY_STRING;
     st.scanner.cur_ext = st.strings.make_tex_string(s)?;
     st.scanner.cur_name = st.strings.job_name;
@@ -841,7 +841,7 @@ pub(crate) unsafe fn pack_job_name(st: &mut EngineState, s: &str) -> Result<(), 
 }
 
 /// Opens the transcript and writes its banner.
-pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
     let old_setting = st.shipout.selector;
     if st.strings.job_name == 0 {
         st.strings.job_name = st.strings.make_tex_string("texput")?;
@@ -879,7 +879,7 @@ pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
 ///
 /// Checkpoints keep the logical output state, but bridge handles and
 /// diagnostic pointers are valid only for the operation that created them.
-pub(crate) unsafe fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.current_diagnostic = None;
     st.shipout.write_file = [INVALID_HANDLE; 16];
     st.shipout.log_file = INVALID_HANDLE;
@@ -919,7 +919,7 @@ pub(crate) fn pack_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
     name.push(0);
 }
 
-pub(crate) unsafe fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
     for k in 0usize..=15 {
         if st.shipout.write_open[k] {
             crate::shipout::ensure_write_stream_open(st, k)?;

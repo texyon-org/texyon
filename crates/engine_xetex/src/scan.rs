@@ -545,8 +545,7 @@ pub(crate) fn finish_line(st: &mut EngineState) {
 
 fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
     let slot = std::mem::take(&mut st.input.read_file[m]);
-    // SAFETY: closes the handle taken out of the read-file slot.
-    if unsafe { crate::io::u_close(slot) } {
+    if crate::io::u_close(slot) {
         return Err(Abort::InputClose);
     }
     st.input.read_open[m] = CLOSED;

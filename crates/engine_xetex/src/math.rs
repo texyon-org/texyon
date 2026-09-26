@@ -2530,8 +2530,7 @@ impl ListStateRecord {
         let q;
         let aux = self.aux_s1();
         if aux != TEX_NULL {
-            // SAFETY: a math list's `incompleat_noad` is a fraction noad.
-            let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
+            let aux_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux));
             aux_noad.subscr().set_math_type(mem, SUB_MLIST);
             aux_noad.subscr().set_info(mem, self.head.link(mem));
             if p == TEX_NULL {
@@ -2539,15 +2538,13 @@ impl ListStateRecord {
             } else {
                 q = aux_noad.supscr().info(mem).0;
                 let q_idx = MemIdx::new(q);
-                // SAFETY: the numerator of an open `\middle` group is a noad list.
-                let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
+                let q_noad = NodePtr::<Noad>::from_idx_unchecked(q_idx);
                 let etex_aux = self.e_tex_aux.0;
                 if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
                     return Err(Abort::Confusion("right"));
                 }
                 // SAFETY: a math-left group keeps its last noad in `eTeX_aux`.
-                let etex_aux_noad =
-                    unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux)) };
+                let etex_aux_noad = NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux));
                 let etex_link = etex_aux_noad.link(mem);
                 aux_noad.supscr().set_info(mem, etex_link);
                 etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
@@ -2575,8 +2572,7 @@ impl ListStateRecord {
         p: impl crate::units::MemAddr,
     ) -> bool {
         let p = p.addr();
-        // SAFETY: a math-choice group builds its branches after the choice node.
-        let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(self.tail.0)) };
+        let tail = NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(self.tail.0));
         let p_ptr = MemPtr::from_raw(p);
         match save_stack.saved(-1) {
             0 => tail.set_display_mlist(mem, p_ptr),

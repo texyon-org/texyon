@@ -21,7 +21,7 @@ impl ErrorState {
     }
 }
 
-unsafe fn pre_error_message(st: &mut EngineState) {
+fn pre_error_message(st: &mut EngineState) {
     st.shipout.selector = if st.errors.log_opened {
         SELECTOR_TERM_AND_LOG
     } else {

@@ -1654,7 +1654,7 @@ pub(crate) fn set_engine_state_ptr(p: *mut EngineState) {
 ///
 /// # Safety
 /// The caller must not alias another live borrow of the engine.
-pub(crate) unsafe fn current_engine_state() -> *mut EngineState {
+pub(crate) fn current_engine_state() -> *mut EngineState {
     ENGINE_STATE_PTR.with(|c| c.get())
 }
 

@@ -90,7 +90,7 @@ pub(crate) fn output_file_extension(st: &EngineState) -> &'static str {
     }
 }
 
-pub(crate) unsafe fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
     st.strings.pool_ptr = 0;
     st.strings.str_start[0] = 0;
     st.strings.str_ptr = TOO_BIG_CHAR;
@@ -153,7 +153,7 @@ impl EqtbState {
     }
 }
 
-unsafe fn primitive(st: &mut EngineState, ident: &str, c: u8, o: i32) -> Result<(), Abort> {
+fn primitive(st: &mut EngineState, ident: &str, c: u8, o: i32) -> Result<(), Abort> {
     let bytes = ident.as_bytes();
     let prim_val = if bytes.len() > 1 {
         let len = bytes.len() as i32;
@@ -601,13 +601,13 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: i32) {
     st.eqtb.set_int_par(INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);
 }
 
-unsafe fn set_frozen_text(st: &mut EngineState, p: i32, text: &str) -> Result<(), Abort> {
+fn set_frozen_text(st: &mut EngineState, p: i32, text: &str) -> Result<(), Abort> {
     let s = st.strings.make_tex_string(text)?;
     st.eqtb.set_hash_s1(p, s);
     Ok(())
 }
 
-unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
+fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
     use crate::primitives::PrimInit;
 
     st.eqtb.no_new_control_sequence = false;
@@ -1053,7 +1053,7 @@ pub(crate) unsafe fn resume_resident_document(
 }
 
 /// Close input slots that may remain live after an interrupted resident op.
-pub(crate) unsafe fn release_operation_inputs(st: &mut EngineState) {
+pub(crate) fn release_operation_inputs(st: &mut EngineState) {
     for slot in st
         .input
         .input_file

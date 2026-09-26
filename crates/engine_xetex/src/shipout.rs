@@ -338,7 +338,7 @@ pub(crate) unsafe fn ship_out(
     Ok(())
 }
 
-unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
+fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
     let (height, depth, width) = (
         page.height(&st.mem).0,
         page.depth(&st.mem).0,

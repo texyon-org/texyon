@@ -209,7 +209,7 @@ impl StringsState {
     }
 
     /// Appends the hex MD5 of file (or string) `s` to the pool.
-    pub(crate) unsafe fn getmd5sum(&mut self, s: i32, file: bool) {
+    pub(crate) fn getmd5sum(&mut self, s: i32, file: bool) {
         let mut digest = [0u8; 16];
         let xname = self.texstring_cstring(s);
 
@@ -248,13 +248,13 @@ pub(crate) fn make_src_special(
 }
 
 impl StringsState {
-    unsafe fn open_tex_file(&self, s: i32) -> usize {
+    fn open_tex_file(&self, s: i32) -> usize {
         let name = self.texstring_cstring(s);
         input_open(name.as_bytes(), TTBC_FILE_FORMAT_TEX, false)
     }
 
     /// Appends the decimal size of file `s` to the pool.
-    pub(crate) unsafe fn getfilesize(&mut self, s: i32) -> Result<(), Abort> {
+    pub(crate) fn getfilesize(&mut self, s: i32) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
             return Ok(());
@@ -270,7 +270,7 @@ impl StringsState {
     }
 
     /// Appends a hex dump of `length` bytes of file `s` from `offset` to the pool.
-    pub(crate) unsafe fn getfiledump(
+    pub(crate) fn getfiledump(
         &mut self,
         s: i32,
         offset: libc::c_int,

@@ -53,7 +53,7 @@ impl<K: NodeKind> NodePtr<K> {
     /// `idx` must reference a `K` node. A wrong kind is not memory-unsafe (all
     /// fields index in bounds) but reads fields the real node does not have.
     #[inline]
-    pub const unsafe fn from_idx_unchecked(idx: MemIdx) -> Self {
+    pub const fn from_idx_unchecked(idx: MemIdx) -> Self {
         NodePtr {
             idx,
             _kind: PhantomData,
@@ -224,8 +224,7 @@ impl MemState {
         if let Some(ty) = ty {
             self.set_b16s1(p, ty.as_raw());
         }
-        // SAFETY: a fresh node of the caller's size, stamped with the caller's type.
-        Ok(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
+        Ok(NodePtr::from_idx_unchecked(MemIdx::new(p)))
     }
 }
 
@@ -409,8 +408,7 @@ impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
     #[inline]
     pub fn at(p: impl crate::units::MemAddr) -> Self {
-        // SAFETY: records of these kinds only ever live on their own lists.
-        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
+        NodePtr::from_idx_unchecked(MemIdx::new(p))
     }
 
     /// The record at `p`, `None` when the link is null.
@@ -536,8 +534,7 @@ impl NodePtr<HListNode> {
 #[inline]
 fn retype<K: NodeKind, L: NodeKind>(p: NodePtr<K>, mem: &mut MemState, ty: NodeType) -> NodePtr<L> {
     mem.set_b16s1(p.idx.0, ty.as_raw());
-    // SAFETY: callers only retype between kinds that share the node's layout.
-    unsafe { NodePtr::from_idx_unchecked(p.idx) }
+    NodePtr::from_idx_unchecked(p.idx)
 }
 
 /// A rule dimension: the running sentinel (`NULL_FLAG`) or a concrete length.
@@ -769,26 +766,26 @@ impl MemState {
         use NodeType::*;
         // SAFETY (every arm): the type code just read from `p` proves its kind.
         Ok(match self.node_type(p)? {
-            HList => AnyNode::HList(unsafe { NodePtr::from_idx_unchecked(p) }),
-            VList => AnyNode::VList(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Rule => AnyNode::Rule(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Ins => AnyNode::Ins(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Mark => AnyNode::Mark(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Adjust => AnyNode::Adjust(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Ligature => AnyNode::Ligature(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Disc => AnyNode::Disc(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Whatsit => AnyNode::Whatsit(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Math => AnyNode::Math(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Glue => AnyNode::Glue(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Kern => AnyNode::Kern(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Penalty => AnyNode::Penalty(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Unset => AnyNode::Unset(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Style => AnyNode::Style(unsafe { NodePtr::from_idx_unchecked(p) }),
-            Choice => AnyNode::Choice(unsafe { NodePtr::from_idx_unchecked(p) }),
+            HList => AnyNode::HList(NodePtr::from_idx_unchecked(p)),
+            VList => AnyNode::VList(NodePtr::from_idx_unchecked(p)),
+            Rule => AnyNode::Rule(NodePtr::from_idx_unchecked(p)),
+            Ins => AnyNode::Ins(NodePtr::from_idx_unchecked(p)),
+            Mark => AnyNode::Mark(NodePtr::from_idx_unchecked(p)),
+            Adjust => AnyNode::Adjust(NodePtr::from_idx_unchecked(p)),
+            Ligature => AnyNode::Ligature(NodePtr::from_idx_unchecked(p)),
+            Disc => AnyNode::Disc(NodePtr::from_idx_unchecked(p)),
+            Whatsit => AnyNode::Whatsit(NodePtr::from_idx_unchecked(p)),
+            Math => AnyNode::Math(NodePtr::from_idx_unchecked(p)),
+            Glue => AnyNode::Glue(NodePtr::from_idx_unchecked(p)),
+            Kern => AnyNode::Kern(NodePtr::from_idx_unchecked(p)),
+            Penalty => AnyNode::Penalty(NodePtr::from_idx_unchecked(p)),
+            Unset => AnyNode::Unset(NodePtr::from_idx_unchecked(p)),
+            Style => AnyNode::Style(NodePtr::from_idx_unchecked(p)),
+            Choice => AnyNode::Choice(NodePtr::from_idx_unchecked(p)),
             OrdNoad | OpNoad | BinNoad | RelNoad | OpenNoad | CloseNoad | PunctNoad | InnerNoad
             | RadicalNoad | FractionNoad | UnderNoad | OverNoad | AccentNoad | VcenterNoad
-            | LeftNoad | RightNoad => AnyNode::Noad(unsafe { NodePtr::from_idx_unchecked(p) }),
-            MarginKern => AnyNode::MarginKern(unsafe { NodePtr::from_idx_unchecked(p) }),
+            | LeftNoad | RightNoad => AnyNode::Noad(NodePtr::from_idx_unchecked(p)),
+            MarginKern => AnyNode::MarginKern(NodePtr::from_idx_unchecked(p)),
         })
     }
 
@@ -906,8 +903,7 @@ impl NodePtr<StyleNode> {
     /// Reads a type-14 node of a shipped list as the edge it is.
     #[inline]
     pub fn as_edge(self) -> NodePtr<EdgeNode> {
-        // SAFETY: edge and style nodes share code 14 and size, the context decides.
-        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+        NodePtr::from_idx_unchecked(self.idx)
     }
 }
 
@@ -1120,8 +1116,7 @@ impl NodePtr<GlueSpecNode> {
     #[inline]
     pub fn from_glue_ptr(p: MemPtr) -> NodePtr<GlueSpecNode> {
         let idx = p.as_idx().expect("null glue spec");
-        // SAFETY: glue pointers are only ever set to glue specs.
-        unsafe { NodePtr::from_idx_unchecked(idx) }
+        NodePtr::from_idx_unchecked(idx)
     }
 
     fields! {
@@ -1218,7 +1213,7 @@ impl<K: AlignColumn> NodePtr<K> {
         // SAFETY: tabskip glue is followed by a column or ends the list.
         g.link(mem)
             .as_idx()
-            .map(|idx| unsafe { NodePtr::from_idx_unchecked(idx) })
+            .map(|idx| NodePtr::from_idx_unchecked(idx))
     }
 
     #[inline]
@@ -1236,8 +1231,7 @@ impl NodePtr<GlueNode> {
     /// The tabskip glue linked from `ALIGN_HEAD` or an alignment column `p`.
     #[inline]
     pub fn tab_skip_after(mem: &MemState, p: MemPtr) -> Self {
-        // SAFETY: every column, and the preamble head, is followed by tabskip glue.
-        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p.link(mem))) }
+        NodePtr::from_idx_unchecked(MemIdx::new(p.link(mem)))
     }
 }
 
@@ -1756,7 +1750,7 @@ mod tests {
         if let Some(ty) = ty {
             mem.set_b16s1(p, ty.as_raw());
         }
-        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
+        NodePtr::from_idx_unchecked(MemIdx::new(p))
     }
 
     #[test]

@@ -179,8 +179,7 @@ pub(crate) fn end_file_reading(st: &mut EngineState) -> Result<(), Abort> {
         name if name > 17 => {
             let idx = st.input.cur_input.index as usize;
             let slot = std::mem::take(&mut st.input.input_file[idx]);
-            // SAFETY: FFI close of the open input file handle at this stack slot.
-            if unsafe { u_close(slot) } {
+            if u_close(slot) {
                 return Err(Abort::InputClose);
             }
         }

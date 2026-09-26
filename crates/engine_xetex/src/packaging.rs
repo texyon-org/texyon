@@ -47,8 +47,7 @@ fn push_slot<T>(slots: &mut [Option<T>; 2], v: T) {
 /// `r` typed like `src`, whose header word `r` has just received.
 #[inline]
 fn copied_node<K: NodeKind>(_src: NodePtr<K>, r: MemPtr) -> NodePtr<K> {
-    // SAFETY: `r`'s NODE_type word was copied from `src`'s.
-    unsafe { NodePtr::from_idx_unchecked(MemIdx::new(r)) }
+    NodePtr::from_idx_unchecked(MemIdx::new(r))
 }
 
 impl MemState {

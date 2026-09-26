@@ -237,12 +237,12 @@ pub(crate) fn new_native_character(
     Ok(w)
 }
 
-unsafe fn tfm_getc(handle: usize) -> i32 {
+fn tfm_getc(handle: usize) -> i32 {
     input_getc(handle) as i32
 }
 
 /// The next four TFM bytes, or `None` at end of file.
-unsafe fn read_tfm_bytes(handle: usize) -> Option<[i32; 4]> {
+fn read_tfm_bytes(handle: usize) -> Option<[i32; 4]> {
     let bytes = [
         tfm_getc(handle),
         tfm_getc(handle),
@@ -261,7 +261,7 @@ fn four_quarters([a, b, c, d]: [i32; 4]) -> B16x4 {
     }
 }
 
-unsafe fn read_fifteen(handle: usize) -> Option<i32> {
+fn read_fifteen(handle: usize) -> Option<i32> {
     let x = tfm_getc(handle);
     if x > 127 || x == EOF {
         return None;
@@ -269,7 +269,7 @@ unsafe fn read_fifteen(handle: usize) -> Option<i32> {
     Some(x * 256 + tfm_getc(handle))
 }
 
-unsafe fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<i32> {
+fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<i32> {
     let [a, b, c, d] = read_tfm_bytes(handle)?;
     let sw = (((((d * z) / 256) + c * z) / 256) + b * z) / beta;
     match a {
@@ -457,7 +457,7 @@ enum TfmParse {
 impl FontState {
     /// Read the opened TFM file into the tables of the next font slot. Also returns
     /// the (remainder, overflow) side effect of size scaling for the caller to apply.
-    unsafe fn read_font_info_tfm(
+    fn read_font_info_tfm(
         &mut self,
         eqtb: &EqtbState,
         tfm_file: usize,

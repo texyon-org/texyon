@@ -23,8 +23,7 @@ pub(crate) const FIL_NEG_GLUE: NodePtr<GlueSpecNode> = static_spec(4);
 
 /// The `k`th of the glue specs that INITEX builds at the bottom of `mem`.
 const fn static_spec(k: i32) -> NodePtr<GlueSpecNode> {
-    // SAFETY: those words hold glue specs for the whole run.
-    unsafe { NodePtr::from_idx_unchecked(MemIdx(k * GLUE_SPEC_SIZE)) }
+    NodePtr::from_idx_unchecked(MemIdx(k * GLUE_SPEC_SIZE))
 }
 
 pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr(MEM_TOP);
@@ -36,8 +35,7 @@ pub(crate) const ADJUST_HEAD: MemPtr = MemPtr(MEM_TOP - 5);
 pub(crate) const ACTIVE_LIST: MemPtr = MemPtr(MEM_TOP - 7);
 pub(crate) const ALIGN_HEAD: MemPtr = MemPtr(MEM_TOP - 8);
 // SAFETY: the static word at `MEM_TOP - 9` ends every span list.
-pub(crate) const END_SPAN: NodePtr<SpanNode> =
-    unsafe { NodePtr::from_idx_unchecked(MemIdx(MEM_TOP - 9)) };
+pub(crate) const END_SPAN: NodePtr<SpanNode> = NodePtr::from_idx_unchecked(MemIdx(MEM_TOP - 9));
 pub(crate) const OMIT_TEMPLATE: MemPtr = MemPtr(MEM_TOP - 10);
 pub(crate) const NULL_LIST: MemPtr = MemPtr(MEM_TOP - 11);
 pub(crate) const LIG_TRICK: MemPtr = MemPtr(MEM_TOP - 12);
