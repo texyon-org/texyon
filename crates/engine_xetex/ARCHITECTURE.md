@@ -94,14 +94,48 @@ State and memory:
   loop, which prints the WEB termination text and maps it to a history code.
   `get_avail` overflow shows the runaway text, `get_node` overflow does not.
 
-The typesetting pipeline:
+The typesetting pipeline. The big modules are split by `tex.web` part into
+submodules. The parent keeps what its children share and re-exports the
+crate-facing procedures, so callers write `crate::scan::scan_int`. Children
+see each other through `pub(super)`.
 
-- `scan.rs` (`get_next`, scanning, box registers), `expand.rs` (macros,
-  conditionals), `main_control.rs` (the main loop, command verbs, alignments).
-- `linebreak.rs` (paragraphs, hyphenation passes), `hyphenation.rs` (patterns
-  and exceptions), `packaging.rs` (`hpack`, `vpack`, `vert_break`, `vsplit`),
-  `pagebuilder.rs`, `math.rs` (`mlist_to_hlist`), `shipout.rs` (`ship_out`,
-  `hlist_out`, `vlist_out`).
+- `scan.rs` (keywords, math codes, rule specs, box registers) with
+  `scan/next.rs` (`get_next`, `get_x_token`, `pass_text`), `scan/numbers.rs`
+  (`scan_int`, `scan_dimen`, `scan_glue`, `scan_expr` and the bounded
+  `scan_*_int`s), `scan/internal.rs` (`scan_something_internal`, font
+  queries) and `scan/toks.rs` (`the_toks`, `scan_toks`, `read_toks`,
+  `\scantokens`).
+- `expand.rs` (macros, conditionals).
+- `main_control.rs` (the main loop and its `dispatch_command`) with
+  `main_control/main_loop.rs` (the character loop: ligatures, kerns, native
+  words, interchar tokens), `lists.rs` (paragraphs, glue, kerns, inserts,
+  marks, discretionaries, accents, `handle_right_brace`), `boxes.rs`
+  (`begin_box`, `box_end`, `package`, `unpackage`, `delete_last`),
+  `align.rs` (`\halign`/`\valign`) and `assign.rs` (`prefixed_command`,
+  registers, `new_font`, the `alter_*` family).
+- `linebreak.rs` (`line_break`, `try_break`, the active list) with
+  `linebreak/post.rs` (`post_line_break`), `protrusion.rs` (margin kerns),
+  `prehyph.rs` (finding words to hyphenate), `hyphenate.rs` (`hyphenate`,
+  `reconstitute`, native-word hyphens) and `locale.rs` (ICU line breaks).
+  `hyphenation.rs` holds patterns and exceptions.
+- `packaging.rs` (`hpack`, `vpackage`, `append_to_vlist`) with
+  `packaging/vert_break.rs` (`vert_break`, `vsplit`, `prune_page_top`,
+  `do_marks`) and `packaging/copy.rs` (`copy_node_list`,
+  `flush_node_list`, `just_copy`, `just_reverse`).
+- `pagebuilder.rs`.
+- `math.rs` (math font parameters) with `math/mlist.rs` (`mlist_to_hlist`
+  and the `make_*` noad handlers), `math/scripts.rs` (`make_scripts`),
+  `math/delimiters.rs` (`char_box`, `var_delimiter`, `rebox`),
+  `math/build.rs` (the math-mode commands, `fin_mlist`) and
+  `math/display.rs` (`init_math`, `after_math`, displays).
+- `shipout.rs` (`ship_out`, `hlist_out`, `vlist_out`, movements) with
+  `shipout/whatsits.rs` (`out_what`: `\special`, `\write`, `\openout`
+  streams, pictures).
+- `output.rs` (`print_*`, the diagnostic sink) with `output/cmd_chr.rs`
+  (`print_cmd_chr`, `print_meaning`), `output/show_box.rs` (`show_box`,
+  `show_node_list`), `output/show.rs` (`show_whatever`, `show_activities`,
+  `show_context`, `show_token_list`, `issue_message`) and
+  `output/warnings.rs` (e-TeX nesting warnings, font and `char_warning`s).
 - `dvi.rs`: `DviWriter` (`st.shipout.dvi`), the XDV byte stream. It owns
   TeX's half-swapped `dvi_buf`, the file handle, `last_bop`, the push depth
   (`cur_s`, -2 after an overflow) and the page manifest that records byte
@@ -125,8 +159,11 @@ The typesetting pipeline:
   `ext_recipe(f, i)` (an `ExtRecipe` of `top`/`mid`/`bot`/`rep`) complete the
   set, and `param(f, n)` reads a font parameter. The TFM reader stores raw
   words, only these views interpret them.
-- `fonts.rs` (TFM and font parameters), `ext.rs` and `ot_math.rs` (OpenType
-  and Graphite through `tectonic_xetex_layout`), `pic.rs` (pictures).
+- `fonts.rs` (TFM and font parameters), `ext.rs` (loading OpenType and
+  Graphite fonts through `tectonic_xetex_layout`, feature parsing, TECkit
+  mappings, font queries) with `ext/native.rs` (shaping and measuring native
+  words and glyphs) and `ext/extension.rs` (`do_extension`, source
+  specials), `ot_math.rs` (OpenType MATH), `pic.rs` (pictures).
 - `save.rs` (save stack, `eqtb` definitions, sparse registers), `hash.rs`,
   `string_pool.rs`, `io.rs`.
 - `input.rs`: the input stack. A level's `state` is a scanner state
