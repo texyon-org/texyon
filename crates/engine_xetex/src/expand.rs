@@ -154,6 +154,28 @@ fn trace_diagnostic(st: &mut EngineState, text: &str) {
     end_diagnostic(st, false);
 }
 
+fn change_if_limit(
+    st: &mut EngineState,
+    l: FiOrElseCode,
+    p: impl crate::units::MemAddr,
+) -> Result<(), Abort> {
+    let p = p.addr();
+    if p == st.scanner.cond_ptr.0 {
+        st.scanner.if_limit = l;
+        return Ok(());
+    }
+    let mut q = st.scanner.cond_ptr;
+    while !q.is_null() {
+        let next = q.link(&st.mem);
+        if next.0 == p {
+            NodePtr::<CondNode>::at(q).set_if_limit(&mut st.mem, l);
+            return Ok(());
+        }
+        q = next;
+    }
+    Err(Abort::Confusion("if"))
+}
+
 pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     if st.eqtb.int_par(IntPar::TracingIfs) > 0 && st.eqtb.int_par(IntPar::TracingCommands) <= 1 {
         show_cur_cmd_chr(st);
@@ -332,7 +354,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                     pop_fi(st);
                 }
             }
-            crate::output::change_if_limit(st, FiOrElseCode::Or, save_cond_ptr)?;
+            change_if_limit(st, FiOrElseCode::Or, save_cond_ptr)?;
             return Ok(());
         }
         IfCode::Primitive => {
@@ -357,7 +379,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if b {
-        crate::output::change_if_limit(st, FiOrElseCode::Else, save_cond_ptr)?;
+        change_if_limit(st, FiOrElseCode::Else, save_cond_ptr)?;
         return Ok(());
     }
 
