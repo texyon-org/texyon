@@ -1,5 +1,5 @@
-//! The primitive-command catalog from `XETEX_FORMAT_PRIMITIVE_INITIALIZERS` in
-//! xetex/xetex_format.h. Order matters: it fixes the hash layout and the format.
+//! The primitive-command catalog, in `tectonic_xetex_format`'s order. Order
+//! matters: it fixes the hash layout and the format.
 
 use std::ffi::CStr;
 

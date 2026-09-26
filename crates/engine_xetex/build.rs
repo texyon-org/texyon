@@ -21,7 +21,6 @@ fn main() {
     let graphite2_static = !env::var("DEP_GRAPHITE2_DEFINE_STATIC").unwrap().is_empty();
     let freetype_include_path = env::var("DEP_FREETYPE2_INCLUDE_PATH").unwrap();
     let harfbuzz_include_path = env::var("DEP_HARFBUZZ_INCLUDE_PATH").unwrap();
-    let fontconfig_include_path = env::var("DEP_FONTCONFIG_INCLUDE_PATH");
     let icu_include_path = env::var("DEP_ICUUC_INCLUDE_PATH").unwrap();
 
     // Detect ICU version suffix (e.g. "_74") so Rust FFI can use #[link_name] with versioned names.
@@ -76,87 +75,56 @@ fn main() {
 
     // Time to set up the C/C++ support libraries.
 
-    let mut c_cfg = cc::Build::new();
     let mut cxx_cfg = cc::Build::new();
 
     cxx_cfg.cpp(true);
-
-    for flag in C_FLAGS {
-        c_cfg.flag_if_supported(flag);
-    }
 
     for flag in CXX_FLAGS {
         cxx_cfg.flag_if_supported(flag);
     }
 
-    profile_config(&mut c_cfg);
     profile_config(&mut cxx_cfg);
 
     for p in &[".", &core_include_dir, &flate_include_dir] {
-        c_cfg.include(p);
         cxx_cfg.include(p);
     }
 
     for item in xetex_layout_include_path.split(';') {
-        c_cfg.include(item);
         cxx_cfg.include(item);
     }
 
     for item in pdfio_include_path.split(';') {
-        c_cfg.include(item);
         cxx_cfg.include(item);
     }
 
     for item in harfbuzz_include_path.split(';') {
-        c_cfg.include(item);
         cxx_cfg.include(item);
     }
 
     for item in freetype_include_path.split(';') {
-        c_cfg.include(item);
         cxx_cfg.include(item);
     }
 
     for item in graphite2_include_path.split(';') {
-        c_cfg.include(item);
         cxx_cfg.include(item);
     }
 
     for item in icu_include_path.split(';') {
-        c_cfg.include(item);
         cxx_cfg.include(item);
     }
 
-    if let Ok(fc_includes) = fontconfig_include_path {
-        for item in fc_includes.split(';') {
-            c_cfg.include(item);
-            cxx_cfg.include(item);
-        }
-    }
-
     if graphite2_static {
-        c_cfg.define("GRAPHITE2_STATIC", "1");
         cxx_cfg.define("GRAPHITE2_STATIC", "1");
     }
 
     // Platform-specific adjustments:
 
-    let is_mac_os = target_cfg!(target_os = "macos");
-
-    if is_mac_os {
-        c_cfg.define("XETEX_MAC", Some("1"));
-        c_cfg.file("xetex/xetex-macos.c");
-        cxx_cfg.define("XETEX_MAC", Some("1"));
-    }
-
     let is_big_endian = target_cfg!(target_endian = "big");
     if is_big_endian {
-        c_cfg.define("WORDS_BIGENDIAN", "1");
         cxx_cfg.define("WORDS_BIGENDIAN", "1");
     }
 
     if target.contains("-msvc") {
-        c_cfg.flag("/EHsc");
         cxx_cfg.flag("/EHsc");
     }
 
@@ -166,10 +134,6 @@ fn main() {
         cxx_cfg.file(file);
     }
 
-    // The only C left is the macOS platform glue.
-    if is_mac_os {
-        c_cfg.compile("libtectonic_engine_xetex_c.a");
-    }
     cxx_cfg.compile("libtectonic_engine_xetex_cxx.a");
 
     // Rebuild if C/C++ files have changed. We scan the whole directory to get
@@ -180,45 +144,6 @@ fn main() {
         println!("cargo:rerun-if-changed={}", file.path().display());
     }
 }
-
-const C_FLAGS: &[&str] = &[
-    "-Wall",
-    "-Wcast-qual",
-    "-Wdate-time",
-    "-Wendif-labels",
-    "-Wextra",
-    "-Wextra-semi",
-    "-Wformat=2",
-    "-Winit-self",
-    "-Wlogical-op",
-    "-Wmissing-declarations",
-    "-Wmissing-include-dirs",
-    "-Wmissing-prototypes",
-    "-Wmissing-variable-declarations",
-    "-Wnested-externs",
-    "-Wold-style-definition",
-    "-Wpointer-arith",
-    "-Wredundant-decls",
-    "-Wstrict-prototypes",
-    "-Wsuggest-attribute=format",
-    "-Wswitch-bool",
-    "-Wundef",
-    "-Wwrite-strings",
-    // TODO: Fix existing warnings before enabling these:
-    // "-Wbad-function-cast",
-    // "-Wcast-align",
-    // "-Wconversion",
-    // "-Wdouble-promotion",
-    // "-Wshadow",
-    // "-Wsuggest-attribute=const",
-    // "-Wsuggest-attribute=noreturn",
-    // "-Wsuggest-attribute=pure",
-    // "-Wunreachable-code-aggresive",
-    "-Wno-unused-parameter",
-    "-Wno-implicit-fallthrough",
-    "-Wno-sign-compare",
-    "-std=gnu11",
-];
 
 const CXX_FLAGS: &[&str] = &[
     "-std=c++14",

@@ -250,8 +250,6 @@ extern "C" {
     fn getRgbValue(engine: XeTeXLayoutEngine) -> u32;
     fn getEmboldenFactor(engine: XeTeXLayoutEngine) -> f32;
     fn getPointSize(engine: XeTeXLayoutEngine) -> f32;
-    #[cfg(target_os = "macos")]
-    fn CFRelease(cf: *const c_void);
 }
 
 #[repr(C)]
@@ -1011,16 +1009,9 @@ pub(crate) unsafe fn find_native_font_in(
 
             let font = createFont(font_ref, scaled_size);
             if !font.is_null() {
-                #[cfg(target_os = "macos")]
-                {
-                    compile_error!("AAT native font loading is still implemented in C on macOS");
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    rval = load_ot_font(st, font, scaled_size, feat_string)?;
-                    if rval.is_none() {
-                        deleteFont(font);
-                    }
+                rval = load_ot_font(st, font, scaled_size, feat_string)?;
+                if rval.is_none() {
+                    deleteFont(font);
                 }
             }
 
@@ -1107,12 +1098,6 @@ pub(crate) unsafe fn dispose_font_mapping(cnv: *mut c_void) {
 }
 
 pub unsafe fn release_font_engine(engine: *mut c_void, type_flag: c_int) {
-    #[cfg(target_os = "macos")]
-    if type_flag == AAT_FONT_FLAG {
-        CFRelease(engine);
-        return;
-    }
-
     if type_flag == OTGR_FONT_FLAG {
         deleteLayoutEngine(engine as XeTeXLayoutEngine);
     }
