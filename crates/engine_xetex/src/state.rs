@@ -237,13 +237,13 @@ impl EqtbState {
     }
 
     #[inline]
-    pub fn b32s1(&self, p: i32) -> i32 {
+    fn b32s1(&self, p: i32) -> i32 {
         // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b32.s1 }
     }
 
     #[inline]
-    pub fn set_b32s1(&mut self, p: i32, v: i32) {
+    fn set_b32s1(&mut self, p: i32, v: i32) {
         let index = p as usize;
         self.note(index);
         self.data[index].b32.s1 = v;
@@ -318,7 +318,7 @@ impl EqtbState {
     }
 
     #[inline]
-    pub fn b16s1(&self, p: i32) -> u16 {
+    fn b16s1(&self, p: i32) -> u16 {
         // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b16.s1 }
     }
@@ -328,22 +328,116 @@ impl EqtbState {
     pub(crate) fn eq_type(&self, p: i32) -> u8 {
         self.b16s1(p) as u8
     }
+    #[inline]
+    pub(crate) fn set_eq_type(&mut self, p: i32, t: u8) {
+        self.set_b16s1(p, t.into());
+    }
+    #[inline]
+    pub(crate) fn eq_level(&self, p: i32) -> u16 {
+        self.b16s0(p)
+    }
+    #[inline]
+    pub(crate) fn set_eq_level(&mut self, p: i32, l: u16) {
+        self.set_b16s0(p, l);
+    }
+    #[inline]
+    pub(crate) fn equiv(&self, p: i32) -> i32 {
+        self.b32s1(p)
+    }
+    #[inline]
+    pub(crate) fn set_equiv(&mut self, p: i32, v: i32) {
+        self.set_b32s1(p, v);
+    }
+
+    /// `eqtb[p].int`, a word in the integer or dimension regions.
+    #[inline]
+    pub(crate) fn int_at(&self, p: i32) -> i32 {
+        self.b32s1(p)
+    }
+    #[inline]
+    pub(crate) fn set_int_at(&mut self, p: i32, v: i32) {
+        self.set_b32s1(p, v);
+    }
 
     #[inline]
-    pub fn set_b16s1(&mut self, p: i32, v: u16) {
+    pub(crate) fn cur_font(&self) -> i32 {
+        self.equiv(crate::consts::CUR_FONT_LOC)
+    }
+    /// Token list or shape parameter `n` (`LOCAL_*`).
+    #[inline]
+    pub(crate) fn local(&self, n: i32) -> i32 {
+        self.equiv(crate::consts::LOCAL_BASE + n)
+    }
+    #[inline]
+    pub(crate) fn par_shape_ptr(&self) -> i32 {
+        self.local(crate::consts::LOCAL_PAR_SHAPE)
+    }
+    #[inline]
+    pub(crate) fn box_reg(&self, n: i32) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.equiv(crate::consts::BOX_BASE + n))
+    }
+    #[inline]
+    pub(crate) fn set_box_reg(&mut self, n: i32, p: crate::units::MemPtr) {
+        self.set_equiv(crate::consts::BOX_BASE + n, p.0);
+    }
+    #[inline]
+    pub(crate) fn skip(&self, n: i32) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
+        crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(
+            self.equiv(crate::consts::SKIP_BASE + n),
+        ))
+    }
+    #[inline]
+    pub(crate) fn dimen(&self, n: i32) -> i32 {
+        self.int_at(crate::consts::SCALED_BASE + n)
+    }
+    #[inline]
+    pub(crate) fn toks(&self, n: i32) -> i32 {
+        self.equiv(crate::consts::TOKS_BASE + n)
+    }
+    #[inline]
+    pub(crate) fn count(&self, n: i32) -> i32 {
+        self.equiv(crate::consts::COUNT_BASE + n)
+    }
+    #[inline]
+    pub(crate) fn math_font(&self, n: i32) -> i32 {
+        self.equiv(crate::consts::MATH_FONT_BASE + n)
+    }
+    #[inline]
+    pub(crate) fn cat_code(&self, c: i32) -> i32 {
+        self.equiv(crate::consts::CAT_CODE_BASE + c)
+    }
+    #[inline]
+    pub(crate) fn lc_code(&self, c: i32) -> i32 {
+        self.equiv(crate::consts::LC_CODE_BASE + c)
+    }
+    #[inline]
+    pub(crate) fn sf_code(&self, c: i32) -> i32 {
+        self.equiv(crate::consts::SF_CODE_BASE + c)
+    }
+    #[inline]
+    pub(crate) fn math_code(&self, c: i32) -> i32 {
+        self.equiv(crate::consts::MATH_CODE_BASE + c)
+    }
+    #[inline]
+    pub(crate) fn del_code(&self, c: i32) -> i32 {
+        self.equiv(crate::consts::DEL_CODE_BASE + c)
+    }
+
+    #[inline]
+    fn set_b16s1(&mut self, p: i32, v: u16) {
         let index = p as usize;
         self.note(index);
         self.data[index].b16.s1 = v;
     }
 
     #[inline]
-    pub fn b16s0(&self, p: i32) -> u16 {
+    fn b16s0(&self, p: i32) -> u16 {
         // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b16.s0 }
     }
 
     #[inline]
-    pub fn set_b16s0(&mut self, p: i32, v: u16) {
+    fn set_b16s0(&mut self, p: i32, v: u16) {
         let index = p as usize;
         self.note(index);
         self.data[index].b16.s0 = v;
@@ -371,6 +465,11 @@ impl EqtbState {
         crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(
             self.b32s1(crate::consts::GLUE_BASE + n as i32),
         ))
+    }
+
+    #[inline]
+    pub fn set_glue_par(&mut self, n: i16, spec: crate::node::NodePtr<crate::node::GlueSpecNode>) {
+        self.set_b32s1(crate::consts::GLUE_BASE + n as i32, spec.ptr().0);
     }
 
     #[inline]

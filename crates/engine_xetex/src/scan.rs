@@ -11,17 +11,17 @@ use crate::cmd::{
     SUP_MARK, TAB_MARK, THE, TOKS_REGISTER, VRULE, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
 };
 use crate::consts::{
-    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE, CAT_CODE_BASE,
-    CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, END_M_CODE,
-    EQTB_SIZE, FIL, FILLL, FONT_BASE, FONT_ID_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_CR,
-    FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX, INT_PAR_CUR_FAM,
-    INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS,
-    INT_PAR_TRACING_NESTING, INT_PAR_TRACING_SCAN_TOKENS, INT_PAR_XETEX_HYPHENATABLE_LENGTH,
-    JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA,
-    LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE, MAX_HALFWORD, MEM_TOP, MU_GLUE,
-    MU_SKIP_BASE, NORMAL, NULL_CS, NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE,
-    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY,
-    TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
+    CS_TOKEN_FLAG, DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FONT_BASE, FONT_ID_BASE,
+    FROZEN_CONTROL_SEQUENCE, FROZEN_CR, FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE,
+    FROZEN_PROTECTION, FROZEN_RELAX, INT_PAR_CUR_FAM, INT_PAR_END_LINE_CHAR, INT_PAR_MAG,
+    INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, INT_PAR_TRACING_NESTING,
+    INT_PAR_TRACING_SCAN_TOKENS, INT_PAR_XETEX_HYPHENATABLE_LENGTH, JUST_OPEN, LEFT_SIDE,
+    LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA, LOCAL_XETEX_INTER_CHAR_TOKS,
+    MATH_CHAR, MATH_CODE_BASE, MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS,
+    NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY,
+    SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL,
+    TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 use crate::errors::{error_in, int_error_in, mu_error_in};
 use crate::expand::{expand_in, macro_call_in, ELSE_CODE, FI_CODE, OR_CODE};
@@ -772,7 +772,7 @@ pub(crate) fn scan_math_in(
         c = loop {
             break match st.scanner.cur_cmd {
                 LETTER | OTHER_CHAR | CHAR_GIVEN => {
-                    let mc = st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr);
+                    let mc = st.eqtb.math_code(st.scanner.cur_chr);
                     if mc & 0x1FFFFF == ACTIVE_MATH_CHAR {
                         st.scanner.cur_cs = st.scanner.cur_chr + 1;
                         fetch_cs_meaning(st);
@@ -1038,7 +1038,7 @@ pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::I
 #[inline(always)]
 fn fetch_cs_meaning(st: &mut EngineState) {
     st.scanner.cur_cmd = st.eqtb.eq_type(st.scanner.cur_cs);
-    st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
+    st.scanner.cur_chr = st.eqtb.equiv(st.scanner.cur_cs);
 }
 
 #[inline(always)]
@@ -1144,7 +1144,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                     }
 
                     'reswitch: loop {
-                        let cat = st.eqtb.b32s1(CAT_CODE_BASE + st.scanner.cur_chr) as u8;
+                        let cat = st.eqtb.cat_code(st.scanner.cur_chr) as u8;
                         st.scanner.cur_cmd = cat;
 
                         // Dispatch on state + category (states 1, 17, 33, categories 0..=15).
@@ -1160,8 +1160,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                                     'start_cs: loop {
                                         let start = st.input.cur_input.loc;
                                         let first_chr = st.input.buffer[start as usize];
-                                        let first_cat =
-                                            st.eqtb.b32s1(CAT_CODE_BASE + first_chr) as u8;
+                                        let first_cat = st.eqtb.cat_code(first_chr) as u8;
                                         let mut k = start + 1;
                                         st.input.cur_input.state =
                                             if first_cat == LETTER || first_cat == SPACER {
@@ -1175,7 +1174,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                                             let mut cat;
                                             loop {
                                                 chr = st.input.buffer[k as usize];
-                                                cat = st.eqtb.b32s1(CAT_CODE_BASE + chr) as u8;
+                                                cat = st.eqtb.cat_code(chr) as u8;
                                                 k += 1;
                                                 if cat != LETTER || k > st.input.cur_input.limit {
                                                     break;
@@ -1354,7 +1353,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                             st.input.cur_input.limit = st.input.last;
                         } else {
                             let index = st.input.cur_input.index as usize;
-                            let every_eof = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_EOF);
+                            let every_eof = st.eqtb.local(LOCAL_EVERY_EOF);
                             if every_eof != TEX_NULL && !st.input.eof_seen[index] {
                                 st.input.cur_input.limit = st.input.first - 1;
                                 st.input.eof_seen[index] = true;
@@ -1395,7 +1394,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                         try_in!(crate::input::end_file_reading_in(st));
                         continue 'restart;
                     }
-                    let coda = st.eqtb.b32s1(LOCAL_BASE + LOCAL_TECTONIC_CODA);
+                    let coda = st.eqtb.local(LOCAL_TECTONIC_CODA);
                     if !st.scanner.used_tectonic_coda_tokens && coda != TEX_NULL {
                         st.scanner.used_tectonic_coda_tokens = true;
                         try_in!(begin_token_list_in(st, coda, TECTONIC_CODA_TEXT));
@@ -1599,7 +1598,7 @@ fn new_def_ref_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
 /// The contents of box register `n`, or `None` if it is void.
 pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
     let contents = if n < 256 {
-        MemPtr::from_raw(st.eqtb.b32s1(BOX_BASE + n))
+        st.eqtb.box_reg(n)
     } else {
         find_sa_in(st, BOX_VAL, n)?.sa_ptr(&st.mem)
     };
@@ -1615,7 +1614,7 @@ pub(crate) fn change_box(
     v: MemPtr,
 ) {
     if n < 256 {
-        eqtb.set_b32s1(BOX_BASE + n, v.0);
+        eqtb.set_box_reg(n, v);
         return;
     }
     if let Some(sa) = crate::save::find_sa_element(mem, scanner, BOX_VAL, n) {
@@ -2053,7 +2052,7 @@ fn get_primitive_token_in(st: &mut EngineState) -> Result<(), SccAbort> {
         .map_err(|e| SccAbort::Input(hash_err_abort(e)))?;
     if p != UNDEFINED_PRIMITIVE {
         st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + p);
-        st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + p);
+        st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + p);
         st.scanner.cur_cs = PRIM_EQTB_BASE + p;
         st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
     } else {
@@ -2337,7 +2336,7 @@ pub(crate) fn xetex_scan_dimen_in(
                         None
                     };
                     if let Some(code) = font_param {
-                        let font = st.eqtb.b32s1(CUR_FONT_LOC);
+                        let font = st.eqtb.cur_font();
                         let v = st
                             .fonts
                             .font_info_b32s1(code + st.fonts.param_base[font as usize]);
@@ -2892,7 +2891,7 @@ fn fetch_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
     scan_usv_num_in(st)?;
     let n = st.scanner.cur_val;
     if m == MATH_CODE_BASE {
-        let code = st.eqtb.b32s1(MATH_CODE_BASE + n);
+        let code = st.eqtb.math_code(n);
         st.scanner.cur_val1 = code;
         if math_char_fn(code) == ACTIVE_MATH_CHAR {
             st.scanner.cur_val1 = 0x8000;
@@ -2910,7 +2909,7 @@ fn fetch_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
         let v = math_class_fn(code) * 0x1000 + math_fam_fn(code) * 0x100 + math_char_fn(code);
         set_cur_val(st, v, INT_VAL);
     } else if m == DEL_CODE_BASE {
-        st.scanner.cur_val1 = st.eqtb.b32s1(DEL_CODE_BASE + n);
+        st.scanner.cur_val1 = st.eqtb.del_code(n);
         if st.scanner.cur_val1 >= 0x4000_0000 {
             print_err_in(st, c"Extended delcode used as delcode");
             st.errors.help(&[
@@ -2923,11 +2922,11 @@ fn fetch_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
             set_cur_val(st, st.scanner.cur_val1, INT_VAL);
         }
     } else if m < SF_CODE_BASE {
-        set_cur_val(st, st.eqtb.b32s1(m + n), INT_VAL);
+        set_cur_val(st, st.eqtb.equiv(m + n), INT_VAL);
     } else if m < MATH_CODE_BASE {
-        set_cur_val(st, st.eqtb.b32s1(m + n) % 65536, INT_VAL);
+        set_cur_val(st, st.eqtb.equiv(m + n) % 65536, INT_VAL);
     } else {
-        set_cur_val(st, st.eqtb.b32s1(m + n), INT_VAL);
+        set_cur_val(st, st.eqtb.equiv(m + n), INT_VAL);
     }
     Ok(())
 }
@@ -2936,10 +2935,10 @@ fn fetch_xetex_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort>
     scan_usv_num_in(st)?;
     let n = st.scanner.cur_val;
     let (err, help1, help0) = if m == SF_CODE_BASE {
-        set_cur_val(st, st.eqtb.b32s1(SF_CODE_BASE + n) / 65536, INT_VAL);
+        set_cur_val(st, st.eqtb.sf_code(n) / 65536, INT_VAL);
         return Ok(());
     } else if m == MATH_CODE_BASE {
-        set_cur_val(st, st.eqtb.b32s1(MATH_CODE_BASE + n), INT_VAL);
+        set_cur_val(st, st.eqtb.math_code(n), INT_VAL);
         return Ok(());
     } else if m == MATH_CODE_BASE + 1 {
         (
@@ -2948,7 +2947,7 @@ fn fetch_xetex_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort>
             r"use \Umathcodenum to access them as single values.",
         )
     } else if m == DEL_CODE_BASE {
-        set_cur_val(st, st.eqtb.b32s1(DEL_CODE_BASE + n), INT_VAL);
+        set_cur_val(st, st.eqtb.del_code(n), INT_VAL);
         return Ok(());
     } else {
         (
@@ -2973,7 +2972,7 @@ fn fetch_token_list_in(st: &mut EngineState, m: i32, level: u8) -> Result<(), Sc
             scan_register_num_in(st)?;
             let n = st.scanner.cur_val;
             st.scanner.cur_val = if n < 256 {
-                st.eqtb.b32s1(TOKS_BASE + n)
+                st.eqtb.toks(n)
             } else {
                 let sa = find_sa_in(st, TOK_VAL, n);
                 sa_token_list(st, sa)
@@ -2991,7 +2990,7 @@ fn fetch_token_list_in(st: &mut EngineState, m: i32, level: u8) -> Result<(), Sc
             let sa = find_sa_in(st, INTER_CHAR_VAL, n);
             st.scanner.cur_val = sa_token_list(st, sa);
         } else {
-            st.scanner.cur_val = st.eqtb.b32s1(m);
+            st.scanner.cur_val = st.eqtb.equiv(m);
         }
         st.scanner.cur_val_level = TOK_VAL;
     } else {
@@ -3032,7 +3031,7 @@ fn fetch_register_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
             MU_VAL => MU_SKIP_BASE,
             _ => return Ok(()),
         };
-        st.scanner.cur_val = st.eqtb.b32s1(base + n);
+        st.scanner.cur_val = st.eqtb.equiv(base + n);
     }
     Ok(())
 }
@@ -3188,7 +3187,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             }
         }
         XETEX_MAP_CHAR_TO_GLYPH_CODE => {
-            let f = st.eqtb.b32s1(CUR_FONT_LOC);
+            let f = st.eqtb.cur_font();
             if is_native_font(st, f) {
                 scan_int_in(st)?;
                 st.scanner.cur_val =
@@ -3198,7 +3197,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             }
         }
         XETEX_GLYPH_INDEX_CODE => {
-            let f = st.eqtb.b32s1(CUR_FONT_LOC);
+            let f = st.eqtb.cur_font();
             if is_native_font(st, f) {
                 crate::io::scan_and_pack_name_in(st)?;
                 let name = name_of_file_ptr(st);
@@ -3285,7 +3284,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
 fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
     match m {
         XETEX_GLYPH_BOUNDS_CODE => {
-            let f = st.eqtb.b32s1(CUR_FONT_LOC);
+            let f = st.eqtb.cur_font();
             if is_native_font(st, f) {
                 scan_int_in(st)?;
                 let edge = st.scanner.cur_val;
@@ -3350,7 +3349,7 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
         PAR_SHAPE_LENGTH_CODE | PAR_SHAPE_INDENT_CODE | PAR_SHAPE_DIMEN_CODE => {
             let mut q = m - PAR_SHAPE_LENGTH_CODE;
             scan_int_in(st)?;
-            let par_shape = st.eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+            let par_shape = st.eqtb.par_shape_ptr();
             if par_shape == TEX_NULL || st.scanner.cur_val <= 0 {
                 st.scanner.cur_val = 0;
             } else {
@@ -3467,10 +3466,10 @@ pub(crate) fn scan_something_internal_in(
             TOKS_REGISTER | ASSIGN_TOKS | DEF_FAMILY | SET_FONT | DEF_FONT => {
                 fetch_token_list_in(st, m, level)?
             }
-            ASSIGN_INT => set_cur_val(st, st.eqtb.b32s1(m), INT_VAL),
-            ASSIGN_DIMEN => set_cur_val(st, st.eqtb.b32s1(m), DIMEN_VAL),
-            ASSIGN_GLUE => set_cur_val(st, st.eqtb.b32s1(m), GLUE_VAL),
-            ASSIGN_MU_GLUE => set_cur_val(st, st.eqtb.b32s1(m), MU_VAL),
+            ASSIGN_INT => set_cur_val(st, st.eqtb.int_at(m), INT_VAL),
+            ASSIGN_DIMEN => set_cur_val(st, st.eqtb.int_at(m), DIMEN_VAL),
+            ASSIGN_GLUE => set_cur_val(st, st.eqtb.equiv(m), GLUE_VAL),
+            ASSIGN_MU_GLUE => set_cur_val(st, st.eqtb.equiv(m), MU_VAL),
             SET_AUX => {
                 if st.input.cur_list.mode.abs() as i32 != m {
                     error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
@@ -3528,7 +3527,7 @@ pub(crate) fn scan_something_internal_in(
             SET_SHAPE => {
                 if m > LOCAL_BASE + LOCAL_PAR_SHAPE {
                     scan_int_in(st)?;
-                    let penalties = st.eqtb.b32s1(m);
+                    let penalties = st.eqtb.equiv(m);
                     if penalties == TEX_NULL || st.scanner.cur_val < 0 {
                         st.scanner.cur_val = 0;
                     } else {
@@ -3539,7 +3538,7 @@ pub(crate) fn scan_something_internal_in(
                         st.scanner.cur_val = st.mem.b32s1(penalties + st.scanner.cur_val + 1);
                     }
                 } else {
-                    let par_shape = st.eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+                    let par_shape = st.eqtb.par_shape_ptr();
                     st.scanner.cur_val = if par_shape == TEX_NULL {
                         0
                     } else {
@@ -3680,12 +3679,12 @@ pub(crate) fn scan_something_internal_in(
 pub(crate) fn scan_font_ident_in(st: &mut EngineState) -> Result<(), SccAbort> {
     get_x_non_blank_in(st)?;
     let f = match st.scanner.cur_cmd {
-        DEF_FONT => st.eqtb.b32s1(CUR_FONT_LOC),
+        DEF_FONT => st.eqtb.cur_font(),
         SET_FONT => st.scanner.cur_chr,
         DEF_FAMILY => {
             let m = st.scanner.cur_chr;
             scan_math_fam_int_in(st)?;
-            st.eqtb.b32s1(m + st.scanner.cur_val)
+            st.eqtb.equiv(m + st.scanner.cur_val)
         }
         _ => {
             print_err_in(st, c"Missing font identifier");

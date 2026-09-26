@@ -117,7 +117,7 @@ pub(crate) fn eq_word_define(
     p: i32,
     w: i32,
 ) -> Result<(), SaveAbort> {
-    if eqtb.b32s1(p) == w {
+    if eqtb.int_at(p) == w {
         return Ok(());
     }
     let l = eqtb.xeq_level_at(p);
@@ -125,12 +125,12 @@ pub(crate) fn eq_word_define(
         eq_save(save_stack, eqtb, p, l)?;
         eqtb.set_xeq_level_at(p, save_stack.cur_level);
     }
-    eqtb.set_b32s1(p, w);
+    eqtb.set_int_at(p, w);
     Ok(())
 }
 
 pub(crate) fn geq_word_define(eqtb: &mut EqtbState, p: i32, w: i32) {
-    eqtb.set_b32s1(p, w);
+    eqtb.set_int_at(p, w);
     eqtb.set_xeq_level_at(p, LEVEL_ONE);
 }
 
@@ -229,17 +229,17 @@ pub(crate) fn eq_define(
     t: u8,
     e: i32,
 ) -> Result<(), SaveAbort> {
-    if eqtb.b16s1(p) == t.into() && eqtb.b32s1(p) == e {
+    if eqtb.eq_type(p) == t && eqtb.equiv(p) == e {
         return eq_destroy(mem, scanner, eqtb.word(p));
     }
-    if eqtb.b16s0(p) == save_stack.cur_level {
+    if eqtb.eq_level(p) == save_stack.cur_level {
         eq_destroy(mem, scanner, eqtb.word(p))?;
     } else if save_stack.cur_level > LEVEL_ONE {
-        eq_save(save_stack, eqtb, p, eqtb.b16s0(p))?;
+        eq_save(save_stack, eqtb, p, eqtb.eq_level(p))?;
     }
-    eqtb.set_b16s0(p, save_stack.cur_level);
-    eqtb.set_b16s1(p, t.into());
-    eqtb.set_b32s1(p, e);
+    eqtb.set_eq_level(p, save_stack.cur_level);
+    eqtb.set_eq_type(p, t);
+    eqtb.set_equiv(p, e);
     Ok(())
 }
 
@@ -252,9 +252,9 @@ pub(crate) fn geq_define(
     e: i32,
 ) -> Result<(), SaveAbort> {
     eq_destroy(mem, scanner, eqtb.word(p))?;
-    eqtb.set_b16s0(p, LEVEL_ONE);
-    eqtb.set_b16s1(p, t.into());
-    eqtb.set_b32s1(p, e);
+    eqtb.set_eq_level(p, LEVEL_ONE);
+    eqtb.set_eq_type(p, t);
+    eqtb.set_equiv(p, e);
     Ok(())
 }
 
@@ -582,7 +582,7 @@ pub(crate) fn unsave_in(st: &mut EngineState) -> Result<(), UnsaveAbort> {
                 }
                 let saved = st.save_stack.word(st.save_stack.save_ptr);
                 if !(INT_BASE..=EQTB_SIZE).contains(&p) {
-                    if st.eqtb.b16s0(p) == LEVEL_ONE {
+                    if st.eqtb.eq_level(p) == LEVEL_ONE {
                         eq_destroy(&mut st.mem, &mut st.scanner, saved)?;
                     } else {
                         eq_destroy(&mut st.mem, &mut st.scanner, st.eqtb.word(p))?;

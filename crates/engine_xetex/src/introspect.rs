@@ -90,7 +90,7 @@ fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
     };
 
     let (kind, arity) = if meaning >= CALL {
-        let (protected, arity) = describe_macro(st, st.eqtb.b32s1(slot));
+        let (protected, arity) = describe_macro(st, st.eqtb.equiv(slot));
         let kind = if protected {
             CommandKind::ProtectedMacro
         } else {

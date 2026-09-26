@@ -185,9 +185,9 @@ impl PrimitiveInitAbort {
 }
 
 pub(crate) fn set_eq(eqtb: &mut EqtbState, p: i32, eq_type: u8, equiv: i32, level: u16) {
-    eqtb.set_b16s1(p, eq_type.into());
-    eqtb.set_b32s1(p, equiv);
-    eqtb.set_b16s0(p, level);
+    eqtb.set_eq_type(p, eq_type);
+    eqtb.set_equiv(p, equiv);
+    eqtb.set_eq_level(p, level);
 }
 
 unsafe fn primitive(
@@ -576,43 +576,43 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     eqtb.data[(CAT_CODE_BASE + 1) as usize..INT_BASE as usize].fill(cat_code_entry);
 
     for k in 0..NUMBER_USVS {
-        eqtb.set_b32s1(CAT_CODE_BASE + k, OTHER_CHAR.into());
-        eqtb.set_b32s1(MATH_CODE_BASE + k, k);
-        eqtb.set_b32s1(SF_CODE_BASE + k, 1000);
+        eqtb.set_equiv(CAT_CODE_BASE + k, OTHER_CHAR.into());
+        eqtb.set_equiv(MATH_CODE_BASE + k, k);
+        eqtb.set_equiv(SF_CODE_BASE + k, 1000);
     }
 
-    eqtb.set_b32s1(CAT_CODE_BASE + 13, CAR_RET.into());
-    eqtb.set_b32s1(CAT_CODE_BASE + 32, SPACER.into());
-    eqtb.set_b32s1(CAT_CODE_BASE + 92, ESCAPE.into());
-    eqtb.set_b32s1(CAT_CODE_BASE + 37, COMMENT.into());
-    eqtb.set_b32s1(CAT_CODE_BASE + 127, INVALID_CHAR.into());
-    eqtb.set_b32s1(CAT_CODE_BASE, IGNORE.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 13, CAR_RET.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 32, SPACER.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 92, ESCAPE.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 37, COMMENT.into());
+    eqtb.set_equiv(CAT_CODE_BASE + 127, INVALID_CHAR.into());
+    eqtb.set_equiv(CAT_CODE_BASE, IGNORE.into());
 
     for k in (b'0' as i32)..=(b'9' as i32) {
-        eqtb.set_b32s1(MATH_CODE_BASE + k, k + set_class(VAR_FAM_CLASS));
+        eqtb.set_equiv(MATH_CODE_BASE + k, k + set_class(VAR_FAM_CLASS));
     }
 
     for k in (b'A' as i32)..=(b'Z' as i32) {
         let lower = k + 32;
-        eqtb.set_b32s1(CAT_CODE_BASE + k, LETTER.into());
-        eqtb.set_b32s1(CAT_CODE_BASE + lower, LETTER.into());
-        eqtb.set_b32s1(
+        eqtb.set_equiv(CAT_CODE_BASE + k, LETTER.into());
+        eqtb.set_equiv(CAT_CODE_BASE + lower, LETTER.into());
+        eqtb.set_equiv(
             MATH_CODE_BASE + k,
             k + set_family(1) + set_class(VAR_FAM_CLASS),
         );
-        eqtb.set_b32s1(
+        eqtb.set_equiv(
             MATH_CODE_BASE + lower,
             lower + set_family(1) + set_class(VAR_FAM_CLASS),
         );
-        eqtb.set_b32s1(LC_CODE_BASE + k, lower);
-        eqtb.set_b32s1(LC_CODE_BASE + lower, lower);
-        eqtb.set_b32s1(UC_CODE_BASE + k, k);
-        eqtb.set_b32s1(UC_CODE_BASE + lower, k);
-        eqtb.set_b32s1(SF_CODE_BASE + k, 999);
+        eqtb.set_equiv(LC_CODE_BASE + k, lower);
+        eqtb.set_equiv(LC_CODE_BASE + lower, lower);
+        eqtb.set_equiv(UC_CODE_BASE + k, k);
+        eqtb.set_equiv(UC_CODE_BASE + lower, k);
+        eqtb.set_equiv(SF_CODE_BASE + k, 999);
     }
 
     for k in INT_BASE..DEL_CODE_BASE {
-        eqtb.set_b32s1(k, 0);
+        eqtb.set_int_at(k, 0);
     }
 
     eqtb.set_int_par(INT_PAR_MAG, 1000);
@@ -623,12 +623,12 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     eqtb.set_int_par(INT_PAR_END_LINE_CHAR, b'\r' as i32);
 
     for k in 0..NUMBER_USVS {
-        eqtb.set_b32s1(DEL_CODE_BASE + k, -1);
+        eqtb.set_int_at(DEL_CODE_BASE + k, -1);
     }
-    eqtb.set_b32s1(DEL_CODE_BASE + b'.' as i32, 0);
+    eqtb.set_int_at(DEL_CODE_BASE + b'.' as i32, 0);
 
     for k in DIMEN_BASE..=EQTB_SIZE {
-        eqtb.set_b32s1(k, 0);
+        eqtb.set_int_at(k, 0);
     }
 
     eqtb.prim_used = PRIM_SIZE;
@@ -698,7 +698,7 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
     set_eq(&mut st.eqtb, FROZEN_ENDV, ENDV, NULL_LIST.0, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_DONT_EXPAND, c"notexpanded:")?;
-    st.eqtb.set_b16s1(FROZEN_DONT_EXPAND, DONT_EXPAND.into());
+    st.eqtb.set_eq_type(FROZEN_DONT_EXPAND, DONT_EXPAND);
 
     set_frozen_text(st, FROZEN_PRIMITIVE, c"primitive")?;
     set_eq(&mut st.eqtb, FROZEN_PRIMITIVE, IGNORE_SPACES, 1, LEVEL_ONE);

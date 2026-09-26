@@ -1,12 +1,11 @@
 //! The page builder: `build_page` and `fire_up`.
 
 use crate::consts::{
-    AWFUL_BAD, BOT_MARK_CODE, BOX_BASE, BOX_NODE_SIZE, COUNT_BASE, DIMEN_PAR_MAX_DEPTH,
-    DIMEN_PAR_VFUZZ, DIMEN_PAR_VSIZE, EJECT_PENALTY, FIRST_MARK_CODE, GLUE_BASE,
-    GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TOP_SKIP, IGNORE_DEPTH, INF_BAD, INF_PENALTY, INS_NODE_SIZE,
-    INT_BASE, INT_PAR_HOLDING_INSERTS, INT_PAR_MAX_DEAD_CYCLES, INT_PAR_OUTPUT_PENALTY,
-    INT_PAR_SAVING_VDISCARDS, INT_PAR_VBADNESS, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, MAX_HALFWORD,
-    MEM_TOP, NORMAL, SCALED_BASE, SKIP_BASE, TEX_NULL, TOP_MARK_CODE, VMODE,
+    AWFUL_BAD, BOT_MARK_CODE, BOX_NODE_SIZE, DIMEN_PAR_MAX_DEPTH, DIMEN_PAR_VFUZZ, DIMEN_PAR_VSIZE,
+    EJECT_PENALTY, FIRST_MARK_CODE, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TOP_SKIP, IGNORE_DEPTH,
+    INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_BASE, INT_PAR_HOLDING_INSERTS,
+    INT_PAR_MAX_DEAD_CYCLES, INT_PAR_OUTPUT_PENALTY, INT_PAR_SAVING_VDISCARDS, INT_PAR_VBADNESS,
+    LOCAL_OUTPUT_ROUTINE, MAX_HALFWORD, MEM_TOP, NORMAL, TEX_NULL, TOP_MARK_CODE, VMODE,
 };
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
@@ -14,7 +13,7 @@ use crate::input::OUTPUT_TEXT;
 use crate::main_control::{COPY_CODE, LAST_BOX_CODE};
 use crate::mem::add_token_ref;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
-use crate::node::{AnyBox, AnyNode, GlueSpecNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
+use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::scan::fetch_box;
 use crate::scan::MARK_VAL;
@@ -218,10 +217,8 @@ fn place_insertion_in(
             s = s.link(&st.mem);
         }
         s.set_link(&mut st.mem, MemPtr::NULL);
-        st.eqtb.set_b32s1(
-            GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP as i32,
-            ins.split_top_ptr(&st.mem).ptr().0,
-        );
+        st.eqtb
+            .set_glue_par(GLUE_PAR_SPLIT_TOP_SKIP, ins.split_top_ptr(&st.mem));
         let pruned = crate::packaging::prune_page_top(
             &mut st.mem,
             &mut st.scanner,
@@ -244,7 +241,7 @@ fn place_insertion_in(
     let list = b.list_ptr(&st.mem);
     crate::mem::free_node(&mut st.mem, b.ptr(), BOX_NODE_SIZE);
     let packed = crate::packaging::vpackage_emit_in(st, list, 0, ADDITIONAL, MAX_HALFWORD)?;
-    st.eqtb.set_b32s1(BOX_BASE + n as i32, packed.idx().0);
+    st.eqtb.set_box_reg(n as i32, packed.ptr());
     Ok(wait)
 }
 
@@ -283,7 +280,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     if c == best {
         st.shipout.best_page_break = MemPtr::NULL;
     }
-    if st.eqtb.b32s1(BOX_BASE + 255) != TEX_NULL {
+    if !st.eqtb.box_reg(255).is_null() {
         crate::output::error_here_with_diagnostic_in(st, c"".as_ptr());
         crate::output::print_esc_cstr_in(st, c"box".as_ptr());
         crate::output::print_cstr_in(st, c"255 is not void".as_ptr());
@@ -296,7 +293,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     }
 
     st.shipout.insert_penalties = 0;
-    let save_split_top_skip = st.eqtb.glue_par(GLUE_PAR_SPLIT_TOP_SKIP).ptr().0;
+    let save_split_top_skip = st.eqtb.glue_par(GLUE_PAR_SPLIT_TOP_SKIP);
     let process_inserts =
         st.eqtb.int_par(INT_PAR_HOLDING_INSERTS) <= 0 && !st.config.semantic_pagination_enabled;
     if process_inserts {
@@ -306,13 +303,13 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
             if !rec.best_ins_ptr(&st.mem).is_null() {
                 let n = rec.subtype(&st.mem) as u8;
                 ensure_vbox_in(st, n)?;
-                if st.eqtb.b32s1(BOX_BASE + n as i32) == TEX_NULL {
+                if st.eqtb.box_reg(n as i32).is_null() {
                     let b = crate::mem::new_null_box(&mut st.mem)
                         .ok_or(PageBuildAbort::MainMemoryOverflow)?;
-                    st.eqtb.set_b32s1(BOX_BASE + n as i32, b.idx().0);
+                    st.eqtb.set_box_reg(n as i32, b.ptr());
                 }
                 // The box's `list_ptr` word serves as the head link of its list.
-                let mut p = MemPtr(st.eqtb.b32s1(BOX_BASE + n as i32) + 5);
+                let mut p = st.eqtb.box_reg(n as i32) + 5;
                 while !p.link(&st.mem).is_null() {
                     p = p.link(&st.mem);
                 }
@@ -351,10 +348,8 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         }
         p = prev_p.link(&st.mem);
     }
-    st.eqtb.set_b32s1(
-        GLUE_BASE + GLUE_PAR_SPLIT_TOP_SKIP as i32,
-        save_split_top_skip,
-    );
+    st.eqtb
+        .set_glue_par(GLUE_PAR_SPLIT_TOP_SKIP, save_split_top_skip);
 
     if !p.is_null() {
         if st.mem.link_ptr(CONTRIB_HEAD).is_null() {
@@ -377,7 +372,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         EXACTLY,
         st.shipout.page_max_depth,
     )?;
-    st.eqtb.set_b32s1(BOX_BASE + 255, page.idx().0);
+    st.eqtb.set_box_reg(255, page.ptr());
     st.eqtb.set_int_par(INT_PAR_VBADNESS, save_vbadness);
     st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, save_vfuzz);
     if let Some(spec) = st.shipout.last_glue {
@@ -418,7 +413,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         add_token_ref(&mut st.mem, marks[TOP_MARK_CODE]);
     }
 
-    let output_routine = st.eqtb.b32s1(LOCAL_BASE + LOCAL_OUTPUT_ROUTINE);
+    let output_routine = st.eqtb.local(LOCAL_OUTPUT_ROUTINE);
     if output_routine != TEX_NULL {
         if st.shipout.dead_cycles < st.eqtb.int_par(INT_PAR_MAX_DEAD_CYCLES) {
             st.shipout.output_active = true;
@@ -462,7 +457,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         .map_err(PageBuildAbort::Confusion)?;
     st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
     unsafe { crate::shipout::ship_out_in(st, page)? };
-    st.eqtb.set_b32s1(BOX_BASE + 255, TEX_NULL);
+    st.eqtb.set_box_reg(255, MemPtr::NULL);
     Ok(())
 }
 
@@ -539,9 +534,8 @@ fn append_insertion_in(
         };
         rec.set_height(&mut st.mem, Scaled(height));
         rec.set_best_ins_ptr(&mut st.mem, MemPtr::NULL);
-        let skip =
-            NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(st.eqtb.b32s1(SKIP_BASE + n as i32)));
-        let count = st.eqtb.b32s1(COUNT_BASE + n as i32);
+        let skip = st.eqtb.skip(n as i32);
+        let count = st.eqtb.count(n as i32);
         let h = scale_by_count(st, height, count);
         st.shipout.page_so_far[PAGE_GOAL] -= h + skip.width(&st.mem).0;
         let order = skip.stretch_order(&st.mem) as usize;
@@ -572,10 +566,10 @@ fn append_insertion_in(
     rec.set_last_ins_ptr(&mut st.mem, p);
     let so_far = st.shipout.page_so_far;
     let delta = so_far[PAGE_GOAL] - so_far[PAGE_TOTAL] - so_far[PAGE_DEPTH] + so_far[PAGE_SHRINK];
-    let count = st.eqtb.b32s1(COUNT_BASE + n as i32);
+    let count = st.eqtb.count(n as i32);
     let ins_height = ins.height(&st.mem).0;
     let h = scale_by_count(st, ins_height, count);
-    let max_height = st.eqtb.b32s1(SCALED_BASE + n as i32);
+    let max_height = st.eqtb.dimen(n as i32);
     if (h <= 0 || h <= delta) && ins_height + rec.height(&st.mem).0 <= max_height {
         st.shipout.page_so_far[PAGE_GOAL] -= h;
         let height = rec.height(&st.mem).0 + ins_height;

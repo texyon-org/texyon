@@ -13,7 +13,7 @@ use crate::bridge::{
 };
 use crate::cmd::EXTENSION;
 use crate::consts::{
-    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_PAR_LEFT_HYPHEN_MIN,
+    CS_TOKEN_FLAG, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_PAR_LEFT_HYPHEN_MIN,
     INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_LINEBREAK_LOCALE, INT_PAR_XETEX_TRACING_FONTS,
     INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, MMODE, OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE,
@@ -2232,7 +2232,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
             } else if mode == MMODE {
                 mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
             } else {
-                let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
+                let cur_font = st.eqtb.cur_font();
                 let area = st.fonts.font_area_entry(cur_font);
                 if area != AAT_FONT_FLAG && area != OTGR_FONT_FLAG {
                     return mc_propagate_error(crate::errors::not_font_error_common_in(

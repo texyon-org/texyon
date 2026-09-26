@@ -2,8 +2,8 @@ use std::ffi::CStr;
 
 use crate::bridge::ttstub_output_flush;
 use crate::consts::{
-    BOX_BASE, HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, LOCAL_BASE, LOCAL_ERR_HELP, MEM_TOP,
-    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, TEX_NULL,
+    HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, LOCAL_ERR_HELP, MEM_TOP, SELECTOR_TERM_AND_LOG,
+    SELECTOR_TERM_ONLY, TEX_NULL,
 };
 use crate::mem::{HOLD_HEAD, TEMP_HEAD};
 use crate::output::{
@@ -15,8 +15,6 @@ use crate::output::{
 };
 use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
-
-pub(crate) const ERR_HELP_LOC: i32 = LOCAL_BASE + LOCAL_ERR_HELP;
 
 extern "C" {
     fn _ttbc_set_error_message(message: *const libc::c_char);
@@ -307,7 +305,7 @@ pub(crate) fn not_font_error_common_in(
 }
 
 pub(crate) fn give_err_help_in(st: &mut EngineState) {
-    token_show_in(st, st.eqtb.b32s1(ERR_HELP_LOC));
+    token_show_in(st, st.eqtb.local(LOCAL_ERR_HELP));
 }
 
 pub(crate) fn mu_error_in(st: &mut EngineState) -> ErrorOutcome {
@@ -378,8 +376,7 @@ pub(crate) fn cs_error_in(st: &mut EngineState) -> ErrorOutcome {
 }
 
 pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
-    let loc = BOX_BASE + n as i32;
-    let box_val = st.eqtb.b32s1(loc);
+    let box_val = st.eqtb.box_reg(n as i32);
     let outcome = error_in(st);
     if !matches!(outcome, ErrorOutcome::Continue) {
         return outcome;
@@ -393,7 +390,7 @@ pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
     if let Err(msg) = crate::packaging::flush_node_list(&mut st.mem, box_val) {
         return ErrorOutcome::Confusion(msg);
     }
-    st.eqtb.set_b32s1(loc, TEX_NULL);
+    st.eqtb.set_box_reg(n as i32, crate::units::MemPtr::NULL);
     ErrorOutcome::Continue
 }
 

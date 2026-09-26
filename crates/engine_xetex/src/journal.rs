@@ -465,7 +465,7 @@ mod tests {
         eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; 1];
         eqtb.journal.words.arm(eqtb.data.len());
         eqtb.journal.hash.arm();
-        eqtb.set_b32s1(1, 5);
+        eqtb.set_equiv(1, 5);
         eqtb.set_hash_s1(514, 6);
         eqtb.journal.words.seal().apply_to(&mut eqtb.data);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);

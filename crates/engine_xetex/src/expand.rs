@@ -306,7 +306,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 st.scanner.cur_chr == q
             } else {
                 let mut p = st.mem.b32s1(st.scanner.cur_chr);
-                let mut q = st.mem.b32s1(st.eqtb.b32s1(n));
+                let mut q = st.mem.b32s1(st.eqtb.equiv(n));
                 if p == q {
                     true
                 } else {
@@ -418,7 +418,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
             st.scanner.cur_cmd != UNDEFINED_CS
                 && m != UNDEFINED_PRIMITIVE
                 && st.scanner.cur_cmd == st.eqtb.eq_type(PRIM_EQTB_BASE + m)
-                && st.scanner.cur_chr == st.eqtb.b32s1(PRIM_EQTB_BASE + m)
+                && st.scanner.cur_chr == st.eqtb.equiv(PRIM_EQTB_BASE + m)
         }
         _ => false,
     };
@@ -998,7 +998,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                         let cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
                         if cmd > MAX_COMMAND {
                             st.scanner.cur_cmd = cmd;
-                            st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + st.scanner.cur_cs);
+                            st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + st.scanner.cur_cs);
                             st.scanner.cur_tok =
                                 st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
                             st.scanner.cur_cs = 0;

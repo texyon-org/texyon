@@ -840,7 +840,7 @@ fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) {
 }
 
 fn begin_every(st: &mut EngineState, local: i32, kind: u16) -> Result<(), MainControlAbort> {
-    let list = st.eqtb.b32s1(LOCAL_BASE + local);
+    let list = st.eqtb.local(local);
     if list != TEX_NULL {
         crate::input::begin_token_list_in(st, list, kind)?;
     }
@@ -1041,12 +1041,12 @@ pub(crate) fn normal_paragraph(st: &mut EngineState) -> Result<(), crate::save::
         (DIMEN_BASE + DIMEN_PAR_HANG_INDENT, 0),
         (INT_BASE + INT_PAR_HANG_AFTER, 1),
     ] {
-        if st.eqtb.b32s1(loc) != value {
+        if st.eqtb.int_at(loc) != value {
             word_define(st, false, loc, value)?;
         }
     }
     for loc in [LOCAL_BASE + LOCAL_PAR_SHAPE, ETEX_PEN_BASE] {
-        if st.eqtb.b32s1(loc) != TEX_NULL {
+        if st.eqtb.equiv(loc) != TEX_NULL {
             define(st, false, loc, SHAPE_REF, TEX_NULL)?;
         }
     }
@@ -1289,7 +1289,7 @@ pub(crate) fn app_space(
         let spec = crate::mem::new_spec(&mut st.mem, base).ok_or(NodeRecycleAbort::Overflow)?;
         st.mainloop.main_p = spec.ptr();
         if space_factor >= 2000 {
-            let cf = st.eqtb.b32s1(CUR_FONT_LOC);
+            let cf = st.eqtb.cur_font();
             let extra = st
                 .fonts
                 .font_info_b32s1(EXTRA_SPACE_CODE + st.fonts.param_base(cf));
@@ -1316,7 +1316,7 @@ pub(crate) fn app_space(
 fn font_space_glue(
     st: &mut EngineState,
 ) -> Result<NodePtr<GlueSpecNode>, crate::scan::NodeRecycleAbort> {
-    let cf = st.eqtb.b32s1(CUR_FONT_LOC);
+    let cf = st.eqtb.cur_font();
     let glue = st.fonts.font_glue(cf);
     if glue != TEX_NULL {
         return Ok(crate::node::NodePtr::from_glue_ptr(MemPtr(glue)));
@@ -1960,7 +1960,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             st.shipout.output_active = false;
             st.shipout.insert_penalties = 0;
 
-            if st.eqtb.b32s1(BOX_BASE + 255) != TEX_NULL {
+            if !st.eqtb.box_reg(255).is_null() {
                 crate::output::error_here_with_diagnostic_in(
                     st,
                     c"Output routine didn't use all of ".as_ptr(),
@@ -2323,7 +2323,7 @@ pub(crate) fn append_discretionary_in(st: &mut EngineState) -> Result<(), MainCo
     let d = crate::mem::new_disc(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, d.ptr());
     if st.scanner.cur_chr == 1 {
-        let f = st.eqtb.b32s1(CUR_FONT_LOC);
+        let f = st.eqtb.cur_font();
         let c = st.fonts.hyphen_char[f as usize];
         if (0..=BIGGEST_CHAR).contains(&c) {
             let ch = new_character_in(st, f, c as u16)?;
@@ -2344,7 +2344,7 @@ pub(crate) fn shift_case_in(st: &mut EngineState) -> Result<(), MainControlAbort
         let t = st.mem.b32s0(p);
         if t < CS_TOKEN_FLAG + SINGLE_BASE {
             let c = t % MAX_CHAR_VAL;
-            let mapped = st.eqtb.b32s1(b + c);
+            let mapped = st.eqtb.equiv(b + c);
             if mapped != 0 {
                 st.mem.set_b32s0(p, t - c + mapped);
             }
@@ -2493,7 +2493,7 @@ fn is_native_font(fonts: &crate::state::FontState, f: i32) -> bool {
 
 pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     crate::scan::scan_char_num_in(st)?;
-    let f = st.eqtb.b32s1(CUR_FONT_LOC);
+    let f = st.eqtb.cur_font();
     let Some(p) = new_character_in(st, f, st.scanner.cur_val as u16)? else {
         return Ok(());
     };
@@ -2524,7 +2524,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
     };
 
     do_assignments_in(st)?;
-    let f = st.eqtb.b32s1(CUR_FONT_LOC);
+    let f = st.eqtb.cur_font();
     let q = match st.scanner.cur_cmd {
         LETTER | OTHER_CHAR | CHAR_GIVEN => {
             let q = new_character_in(st, f, st.scanner.cur_chr as u16)?;
@@ -2800,9 +2800,9 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
 
     let (w, s) = match (p < GLUE_VAL, e) {
         (true, true) => (st.mem.b32s1(l + 2), TEX_NULL),
-        (true, false) => (st.eqtb.b32s1(l), TEX_NULL),
+        (true, false) => (st.eqtb.equiv(l), TEX_NULL),
         (false, true) => (0, st.mem.b32s1(l + 1)),
-        (false, false) => (0, st.eqtb.b32s1(l)),
+        (false, false) => (0, st.eqtb.equiv(l)),
     };
 
     if q == REGISTER {
@@ -3091,7 +3091,7 @@ pub(crate) fn main_control_ignore_spaces_in(st: &mut EngineState) -> Result<(), 
 
         if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
             st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
-            st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + st.scanner.cur_cs);
+            st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + st.scanner.cur_cs);
             st.scanner.cur_tok = CS_TOKEN_FLAG + PRIM_EQTB_BASE + st.scanner.cur_cs;
         }
     }
@@ -3173,7 +3173,7 @@ fn note_char_class(st: &mut EngineState, sc: i32) {
 /// records and returns the character's space class.
 #[inline(always)]
 fn adjust_space_factor(st: &mut EngineState) -> i32 {
-    let sf_code = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_chr);
+    let sf_code = st.eqtb.sf_code(st.scanner.cur_chr);
     let s = sf_code % 65536;
     if s == 1000 {
         st.input.cur_list.set_aux_s0(1000);
@@ -3609,7 +3609,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
     }
     st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
 
-    let mf = st.eqtb.b32s1(CUR_FONT_LOC);
+    let mf = st.eqtb.cur_font();
     if is_native_font(&st.fonts, mf) {
         return main_loop_native_in(st, mf);
     }
@@ -4054,12 +4054,12 @@ unsafe fn dispatch_command_in(st: &mut EngineState) -> Result<Next, MainControlA
         }
         (MMODE, LEFT_BRACE) => append_noad_in(st, true)?,
         (MMODE, LETTER | OTHER_CHAR | CHAR_GIVEN) => {
-            crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?
+            crate::scan::set_math_char_in(st, st.eqtb.math_code(st.scanner.cur_chr))?
         }
         (MMODE, CHAR_NUM) => {
             crate::scan::scan_char_num_in(st)?;
             st.scanner.cur_chr = st.scanner.cur_val;
-            crate::scan::set_math_char_in(st, st.eqtb.b32s1(MATH_CODE_BASE + st.scanner.cur_chr))?;
+            crate::scan::set_math_char_in(st, st.eqtb.math_code(st.scanner.cur_chr))?;
         }
         (MMODE, MATH_CHAR_NUM) => math_char_num_in(st)?,
         (MMODE, MATH_GIVEN) => {
@@ -4612,7 +4612,7 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
             if st.scanner.cur_chr == 0 {
                 crate::scan::scan_register_num_in(st)?;
                 if st.scanner.cur_val < 256 {
-                    st.eqtb.b32s1(TOKS_BASE + st.scanner.cur_val)
+                    st.eqtb.toks(st.scanner.cur_val)
                 } else {
                     let reg = st.scanner.cur_val;
                     let sa = crate::save::find_sa_element(&st.mem, &mut st.scanner, TOK_VAL, reg);
@@ -4626,7 +4626,7 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
             let sa = crate::save::find_sa_element(&st.mem, &mut st.scanner, INTER_CHAR_VAL, n);
             sa_value(st, sa)
         } else {
-            st.eqtb.b32s1(st.scanner.cur_chr)
+            st.eqtb.equiv(st.scanner.cur_chr)
         };
         if list != TEX_NULL {
             crate::mem::add_token_ref(&mut st.mem, MemPtr(list));
@@ -4665,7 +4665,7 @@ fn xetex_def_code_in(st: &mut EngineState, global: bool) -> Result<(), MainContr
     crate::scan::scan_usv_num_in(st)?;
     let p = base + st.scanner.cur_val;
     if chr == SF_CODE_BASE {
-        let sf = st.eqtb.b32s1(SF_CODE_BASE + st.scanner.cur_val) % 65536;
+        let sf = st.eqtb.sf_code(st.scanner.cur_val) % 65536;
         crate::scan::scan_optional_equals_in(st)?;
         crate::scan::scan_char_class_in(st)?;
         let v = st.scanner.cur_val.wrapping_mul(65536).wrapping_add(sf);
@@ -4729,7 +4729,7 @@ fn def_code_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbor
     }
     if p < MATH_CODE_BASE {
         let v = if p >= SF_CODE_BASE {
-            (st.eqtb.b32s1(p) / 65536)
+            (st.eqtb.int_at(p) / 65536)
                 .wrapping_mul(65536)
                 .wrapping_add(st.scanner.cur_val)
         } else {

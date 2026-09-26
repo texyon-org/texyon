@@ -5,7 +5,7 @@ use crate::consts::{
     AWFUL_BAD, DIMEN_PAR_EMERGENCY_STRETCH, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, EJECT_PENALTY,
     ETEX_PENALTIES_PAR_CLUB_PENALTIES, ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
     ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, ETEX_PENALTIES_PAR_WIDOW_PENALTIES, ETEX_PEN_BASE,
-    EXPLICIT, GLUE_BASE, GLUE_PAR_LEFT_SKIP, GLUE_PAR_PAR_FILL_SKIP, GLUE_PAR_RIGHT_SKIP,
+    EXPLICIT, GLUE_PAR_LEFT_SKIP, GLUE_PAR_PAR_FILL_SKIP, GLUE_PAR_RIGHT_SKIP,
     GLUE_PAR_XETEX_LINEBREAK_SKIP, INF_BAD, INF_PENALTY, INT_PAR_ADJ_DEMERITS,
     INT_PAR_BROKEN_PENALTY, INT_PAR_CLUB_PENALTY, INT_PAR_DISPLAY_WIDOW_PENALTY,
     INT_PAR_DOUBLE_HYPHEN_DEMERITS, INT_PAR_EX_HYPHEN_PENALTY, INT_PAR_FINAL_HYPHEN_DEMERITS,
@@ -13,8 +13,8 @@ use crate::consts::{
     INT_PAR_LINE_PENALTY, INT_PAR_LOOSENESS, INT_PAR_PRETOLERANCE, INT_PAR_TEXXET,
     INT_PAR_TOLERANCE, INT_PAR_UC_HYPH, INT_PAR_WIDOW_PENALTY, INT_PAR_XETEX_LINEBREAK_LOCALE,
     INT_PAR_XETEX_LINEBREAK_PENALTY, INT_PAR_XETEX_PROTRUDE_CHARS, INT_PAR_XETEX_USE_GLYPH_METRICS,
-    LC_CODE_BASE, LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP,
-    NON_ADDRESS, NORMAL, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
+    L_CODE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, NORMAL, SMALL_NODE_SIZE,
+    SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::{linebreak_next, linebreak_start_in, measure_native_node};
 use crate::fonts::{LIG_TAG, QUAD_CODE};
@@ -1214,7 +1214,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
         let spec = st.eqtb.glue_par(n);
         if has_infinite_shrink(&st.mem, spec) {
             let spec = finite_shrink_emit(st, spec)?;
-            st.eqtb.set_b32s1(GLUE_BASE + n as i32, spec.ptr().0);
+            st.eqtb.set_glue_par(n, spec);
         }
     }
 
@@ -1247,7 +1247,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
     st.linebreak.minimum_demerits = AWFUL_BAD;
     st.linebreak.minimal_demerits = [AWFUL_BAD; 4];
 
-    let par_shape = st.eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+    let par_shape = st.eqtb.par_shape_ptr();
     let lb = &mut st.linebreak;
     if par_shape == TEX_NULL {
         let hang_indent = st.eqtb.dimen_par(DIMEN_PAR_HANG_INDENT);
@@ -1477,7 +1477,7 @@ fn set_language(st: &mut EngineState, w: NodePtr<WhatsitNode>) {
 
 #[inline]
 fn lc_code(eqtb: &EqtbState, c: i32) -> i32 {
-    eqtb.b32s1(LC_CODE_BASE + c)
+    eqtb.lc_code(c)
 }
 
 /// Scan from `s` to the end of the word, returning the node that ends it, or
@@ -1960,7 +1960,7 @@ fn post_line_break_prefix(
         q = r.ptr();
     }
 
-    let par_shape = eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+    let par_shape = eqtb.par_shape_ptr();
     let (cur_width, cur_indent) = if cur_line > linebreak.last_special_line {
         (linebreak.second_width, linebreak.second_indent)
     } else if par_shape == TEX_NULL {
@@ -1987,7 +1987,7 @@ fn post_line_break_prefix(
 
 /// Entry `n` (clamped to the last) of the eTeX penalty array `k`, if it is set.
 fn etex_penalty(mem: &MemState, eqtb: &EqtbState, k: i32, n: i32) -> Option<i32> {
-    let q = eqtb.b32s1(ETEX_PEN_BASE + k);
+    let q = eqtb.equiv(ETEX_PEN_BASE + k);
     if q == TEX_NULL {
         return None;
     }
@@ -2469,7 +2469,7 @@ fn try_break(
                 old_l = MAX_HALFWORD - 1;
             } else {
                 old_l = l;
-                let par_shape = eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+                let par_shape = eqtb.par_shape_ptr();
                 line_width = if l > linebreak.last_special_line {
                     linebreak.second_width
                 } else if par_shape == TEX_NULL {

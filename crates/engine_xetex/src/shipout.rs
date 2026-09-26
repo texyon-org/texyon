@@ -1,12 +1,12 @@
 //! Shipping boxes out to the XDV file.
 use crate::consts::{
-    A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_PAR_H_OFFSET,
-    DIMEN_PAR_PDF_PAGE_HEIGHT, DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE,
-    FILLL, FONT_BASE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT,
-    INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD,
-    MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG,
-    RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
-    SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL, TOO_BIG_CHAR,
+    A_LEADERS, BEFORE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_PAR_H_OFFSET, DIMEN_PAR_PDF_PAGE_HEIGHT,
+    DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE, FILLL, FONT_BASE, INT_PAR_MAG,
+    INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING,
+    INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD,
+    NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY,
+    SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE,
+    SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::apply_tfm_font_mapping;
 
@@ -376,11 +376,11 @@ pub(crate) unsafe fn ship_out_in(
 
     crate::output::print_char_in(st, b'[' as i32);
     let mut j = 9;
-    while j > 0 && st.eqtb.b32s1(COUNT_BASE + j) == 0 {
+    while j > 0 && st.eqtb.count(j) == 0 {
         j -= 1;
     }
     for k in 0..=j {
-        crate::output::print_int_in(st, st.eqtb.b32s1(COUNT_BASE + k));
+        crate::output::print_int_in(st, st.eqtb.count(k));
         if k < j {
             crate::output::print_char_in(st, b'.' as i32);
         }
@@ -513,7 +513,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
     st.shipout.page_manifest.begin_page(page_loc as u64);
     dvi_out(&mut st.shipout, BOP)?;
     for k in 0..10 {
-        dvi_four(&mut st.shipout, st.eqtb.b32s1(COUNT_BASE + k))?;
+        dvi_four(&mut st.shipout, st.eqtb.count(k))?;
     }
     let last_bop = st.shipout.last_bop;
     dvi_four(&mut st.shipout, last_bop)?;

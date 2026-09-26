@@ -1,21 +1,20 @@
 //! Math mode: noad construction and `mlist_to_hlist`.
 use crate::consts::{
     ACCENT_NOAD_SIZE, AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE,
-    COND_MATH_GLUE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_DELIMITER_SHORTFALL,
-    DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_DISPLAY_WIDTH, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE,
-    DIMEN_PAR_MATH_SURROUND, DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE,
-    DIMEN_PAR_SCRIPT_SPACE, DLIST, EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL,
-    FONT_BASE, FRACTION_NOAD_SIZE, GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
+    COND_MATH_GLUE, DIMEN_BASE, DIMEN_PAR_DELIMITER_SHORTFALL, DIMEN_PAR_DISPLAY_INDENT,
+    DIMEN_PAR_DISPLAY_WIDTH, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_MATH_SURROUND,
+    DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE, DIMEN_PAR_SCRIPT_SPACE, DLIST,
+    EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FONT_BASE, FRACTION_NOAD_SIZE,
+    GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
     GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_LEFT_SKIP,
     GLUE_PAR_MED_MU_SKIP, GLUE_PAR_RIGHT_SKIP, GLUE_PAR_THICK_MU_SKIP, GLUE_PAR_THIN_MU_SKIP,
     GLYPH_NODE_SIZE, HMODE, INF_PENALTY, INT_BASE, INT_PAR_BIN_OP_PENALTY, INT_PAR_CUR_FAM,
     INT_PAR_DELIMITER_FACTOR, INT_PAR_HANG_AFTER, INT_PAR_POST_DISPLAY_PENALTY,
     INT_PAR_PRE_DISPLAY_DIRECTION, INT_PAR_PRE_DISPLAY_PENALTY, INT_PAR_REL_PENALTY,
-    INT_PAR_TEXXET, LEFT_TO_RIGHT, LOCAL_BASE, LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH,
-    LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_FONT_BASE, MATH_TEXT_CHAR, MAX_HALFWORD,
-    MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL, NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE,
-    RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
-    TEX_INFINITY,
+    INT_PAR_TEXXET, LEFT_TO_RIGHT, LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, L_CODE, MATH_CHAR,
+    MATH_TEXT_CHAR, MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL,
+    NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE,
+    SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_INFINITY,
 };
 use crate::ext::real_get_native_glyph;
 use crate::fonts::{
@@ -87,7 +86,7 @@ extern "C" {
 
 #[inline]
 fn math_font(eqtb: &EqtbState, n: i32) -> i32 {
-    eqtb.b32s1(MATH_FONT_BASE + n)
+    eqtb.math_font(n)
 }
 
 #[inline]
@@ -2539,9 +2538,7 @@ pub(crate) fn scan_delimiter_in(
         }
 
         match st.scanner.cur_cmd {
-            LETTER | OTHER_CHAR => {
-                st.scanner.cur_val = st.eqtb.b32s1(DEL_CODE_BASE + st.scanner.cur_chr)
-            }
+            LETTER | OTHER_CHAR => st.scanner.cur_val = st.eqtb.del_code(st.scanner.cur_chr),
             DELIM_NUM => {
                 if st.scanner.cur_chr == 1 {
                     st.scanner.cur_val1 = 0x4000_0000;
@@ -2619,7 +2616,7 @@ pub(crate) fn start_eq_no_in(
     if st.shipout.insert_src_special_every_math {
         crate::ext::insert_src_special_in(st)?;
     }
-    let every_math = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
+    let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
     if every_math != TEX_NULL {
         crate::input::begin_token_list_in(st, every_math, EVERY_MATH_TEXT)?;
     }
@@ -3106,13 +3103,13 @@ pub(crate) fn resume_after_display_in(
 
 #[inline]
 fn sym_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
-    let f = eqtb.b32s1(MATH_FONT_BASE + 2 + size);
+    let f = eqtb.math_font(2 + size);
     fonts.font_params(f) >= TOTAL_MATHSY_PARAMS || font_is_ot_math(fonts, f)
 }
 
 #[inline]
 fn ext_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
-    let f = eqtb.b32s1(MATH_FONT_BASE + 3 + size);
+    let f = eqtb.math_font(3 + size);
     fonts.font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(fonts, f)
 }
 
@@ -3608,7 +3605,7 @@ pub(crate) fn init_math_in(
                 p = begin.0;
             }
 
-            let cur_font = st.eqtb.b32s1(CUR_FONT_LOC);
+            let cur_font = st.eqtb.cur_font();
             v += 2 * st
                 .fonts
                 .font_info_b32s1(QUAD_CODE + st.fonts.param_base(cur_font));
@@ -3745,7 +3742,7 @@ pub(crate) fn init_math_in(
 
         let l;
         let s;
-        let par_shape = st.eqtb.b32s1(LOCAL_BASE + LOCAL_PAR_SHAPE);
+        let par_shape = st.eqtb.par_shape_ptr();
         if par_shape == TEX_NULL {
             let hang = st.eqtb.dimen_par(DIMEN_PAR_HANG_INDENT);
             let hang_after = st.eqtb.int_par(INT_PAR_HANG_AFTER);
@@ -3783,7 +3780,7 @@ pub(crate) fn init_math_in(
             unsafe { crate::ext::tt_insert_special_in(st, c"tdux:cs dmath".as_ptr()) }?;
         }
 
-        let every_display = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_DISPLAY);
+        let every_display = st.eqtb.local(LOCAL_EVERY_DISPLAY);
         if every_display != TEX_NULL {
             crate::input::begin_token_list_in(st, every_display, EVERY_DISPLAY_TEXT)?;
         }
@@ -3800,7 +3797,7 @@ pub(crate) fn init_math_in(
         if st.config.semantic_pagination_enabled {
             unsafe { crate::ext::tt_insert_special_in(st, c"tdux:cs math".as_ptr()) }?;
         }
-        let every_math = st.eqtb.b32s1(LOCAL_BASE + LOCAL_EVERY_MATH);
+        let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
         if every_math != TEX_NULL {
             crate::input::begin_token_list_in(st, every_math, EVERY_MATH_TEXT)?;
         }

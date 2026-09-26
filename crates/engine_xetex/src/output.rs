@@ -24,9 +24,9 @@ use crate::cmd::{
 };
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
-    CAT_CODE_BASE, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE,
-    DLIST, EMPTY, END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FONT_ID_BASE, FROZEN_NULL_FONT,
-    GLUE_BASE, HASH_BASE, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE,
+    COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY,
+    END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FONT_ID_BASE, FROZEN_NULL_FONT, GLUE_BASE,
+    HASH_BASE, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE,
     INT_PAR_END_LINE_CHAR, INT_PAR_ERROR_CONTEXT_LINES, INT_PAR_ESCAPE_CHAR, INT_PAR_NEW_LINE_CHAR,
     INT_PAR_SHOW_BOX_BREADTH, INT_PAR_SHOW_BOX_DEPTH, INT_PAR_TRACING_IFS,
     INT_PAR_TRACING_LOST_CHARS, INT_PAR_TRACING_NESTING, INT_PAR_TRACING_ONLINE, LC_CODE_BASE,
@@ -37,7 +37,7 @@ use crate::consts::{
     TEXT_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
     UNLESS_CODE, VMODE, X_LEADERS,
 };
-use crate::errors::{error_in, ErrorOutcome, ERR_HELP_LOC};
+use crate::errors::{error_in, ErrorOutcome};
 use crate::expand::{
     ETEX_REVISION_CODE, EXPANDED_CODE, FI_CODE, FONT_NAME_CODE, IFX_CODE, IF_CASE_CODE,
     IF_CAT_CODE, IF_CS_CODE, IF_DEF_CODE, IF_DIM_CODE, IF_EOF_CODE, IF_FALSE_CODE,
@@ -667,7 +667,7 @@ pub(crate) fn print_cs_in(st: &mut EngineState, p: i32) {
                 print_char_in(st, b' ' as i32);
             } else {
                 print_esc_in(st, p - SINGLE_BASE);
-                if st.eqtb.b32s1(CAT_CODE_BASE + p - SINGLE_BASE) == LETTER.into() {
+                if st.eqtb.cat_code(p - SINGLE_BASE) == LETTER.into() {
                     print_char_in(st, b' ' as i32);
                 }
             }
@@ -2330,7 +2330,7 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
         error_here_with_diagnostic_in(st, c"".as_ptr());
         print_in(st, s);
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        if st.eqtb.b32s1(ERR_HELP_LOC) != TEX_NULL {
+        if st.eqtb.local(crate::consts::LOCAL_ERR_HELP) != TEX_NULL {
             st.errors.use_err_help = true;
         } else if st.errors.long_help_seen {
             st.errors.help(&[r"(That was another \errmessage.)"]);
@@ -2886,7 +2886,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
                 let box_num = ins.subtype(&st.mem);
                 print_int_in(st, box_num as i32);
                 print_cstr_in(st, c" adds ".as_ptr());
-                let count = st.eqtb.b32s1(COUNT_BASE + box_num as i32);
+                let count = st.eqtb.count(box_num as i32);
                 let height = ins.height(&st.mem).0;
                 let adds = if count == 1000 {
                     height

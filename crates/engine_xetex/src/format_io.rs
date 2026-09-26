@@ -366,13 +366,13 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
         ACTIVE_BASE,
         INT_BASE - 1,
         |eqtb, a, b| {
-            eqtb.b32s1(a) == eqtb.b32s1(b)
-                && eqtb.b16s1(a) == eqtb.b16s1(b)
-                && eqtb.b16s0(a) == eqtb.b16s0(b)
+            eqtb.equiv(a) == eqtb.equiv(b)
+                && eqtb.eq_type(a) == eqtb.eq_type(b)
+                && eqtb.eq_level(a) == eqtb.eq_level(b)
         },
     )?;
     dump_eqtb_runs(fmt_out, &st.eqtb, k, EQTB_SIZE, |eqtb, a, b| {
-        eqtb.b32s1(a) == eqtb.b32s1(b)
+        eqtb.int_at(a) == eqtb.int_at(b)
     })?;
 
     let hash_high = st.eqtb.hash_high;
