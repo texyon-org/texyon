@@ -1258,9 +1258,7 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
 
 pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     if st.input.cur_list.mode == VMODE && st.input.cur_list.tail == st.input.cur_list.head {
-        if st.scanner.cur_chr as u16 != NodeType::Glue.as_raw()
-            || st.shipout.last_glue.0 != MAX_HALFWORD
-        {
+        if st.scanner.cur_chr as u16 != NodeType::Glue.as_raw() || st.shipout.last_glue.is_some() {
             crate::errors::you_cant_in(st);
             let remedy = if st.scanner.cur_chr as u16 == NodeType::Kern.as_raw() {
                 r"Try `I\kern-\lastkern' instead."

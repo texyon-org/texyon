@@ -1237,7 +1237,7 @@ pub(crate) struct ShipoutState {
     pub last_badness: i32,
     pub page_contents: PageContents,
     pub page_so_far: [i32; 8],
-    pub last_glue: crate::units::MemPtr,
+    pub last_glue: Option<crate::node::NodePtr<crate::node::GlueSpecNode>>,
     pub last_penalty: i32,
     pub last_kern: i32,
     pub last_node_type: i32,

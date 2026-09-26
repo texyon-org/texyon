@@ -323,11 +323,8 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
             .map_err(|msg| EngineAbort::Confusion(msg.as_ptr()))?;
     }
 
-    if st.shipout.last_glue.0 != MAX_HALFWORD {
-        crate::mem::delete_glue_ref(
-            &mut st.mem,
-            crate::node::NodePtr::from_glue_ptr(st.shipout.last_glue),
-        );
+    if let Some(spec) = st.shipout.last_glue {
+        crate::mem::delete_glue_ref(&mut st.mem, spec);
     }
 
     crate::format_io::store_fmt_file_in(st)
@@ -372,7 +369,7 @@ fn initialize_more_variables_in(st: &mut EngineState) {
     st.scanner.shown_mode = 0;
     st.shipout.page_contents = crate::state::PageContents::Empty;
     st.shipout.page_tail = PAGE_HEAD;
-    st.shipout.last_glue.0 = MAX_HALFWORD;
+    st.shipout.last_glue = None;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
     st.shipout.last_node_type = -1;

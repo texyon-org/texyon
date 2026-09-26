@@ -380,17 +380,14 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     st.eqtb.set_b32s1(BOX_BASE + 255, page.idx().0);
     st.eqtb.set_int_par(INT_PAR_VBADNESS, save_vbadness);
     st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, save_vfuzz);
-    if st.shipout.last_glue.0 != MAX_HALFWORD {
-        crate::mem::delete_glue_ref(
-            &mut st.mem,
-            crate::node::NodePtr::from_glue_ptr(st.shipout.last_glue),
-        );
+    if let Some(spec) = st.shipout.last_glue {
+        crate::mem::delete_glue_ref(&mut st.mem, spec);
     }
 
     st.shipout.page_contents = PageContents::Empty;
     st.shipout.page_tail = PAGE_HEAD;
     PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
-    st.shipout.last_glue.0 = MAX_HALFWORD;
+    st.shipout.last_glue = None;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
     st.shipout.last_node_type = -1;
@@ -473,11 +470,11 @@ fn update_last_node_info(st: &mut EngineState, node: AnyNode, node_type: i32) {
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
     st.shipout.last_node_type = node_type + 1;
-    st.shipout.last_glue.0 = MAX_HALFWORD;
+    st.shipout.last_glue = None;
     match node {
         AnyNode::Glue(glue) => {
             let spec = glue.glue_ptr(&st.mem);
-            st.shipout.last_glue = spec.ptr();
+            st.shipout.last_glue = Some(spec);
             let refs = spec.ref_count(&st.mem);
             spec.set_ref_count(&mut st.mem, refs + 1);
         }
@@ -639,11 +636,8 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
         let p = MemPtr::from_idx(idx);
         let node_type = st.mem.b16s1(p) as i32;
         let node = st.mem.classify(idx).expect("valid page node");
-        if st.shipout.last_glue.0 != MAX_HALFWORD {
-            crate::mem::delete_glue_ref(
-                &mut st.mem,
-                crate::node::NodePtr::from_glue_ptr(st.shipout.last_glue),
-            );
+        if let Some(spec) = st.shipout.last_glue {
+            crate::mem::delete_glue_ref(&mut st.mem, spec);
         }
         update_last_node_info(st, node, node_type);
 

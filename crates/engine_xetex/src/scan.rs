@@ -3423,8 +3423,8 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
                     INT_VAL => st.scanner.cur_val = st.shipout.last_penalty,
                     DIMEN_VAL => st.scanner.cur_val = st.shipout.last_kern,
                     GLUE_VAL => {
-                        if st.shipout.last_glue.0 != MAX_HALFWORD {
-                            st.scanner.cur_val = st.shipout.last_glue.0;
+                        if let Some(spec) = st.shipout.last_glue {
+                            st.scanner.cur_val = spec.ptr().0;
                         }
                     }
                     _ => {}
