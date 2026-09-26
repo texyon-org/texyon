@@ -1,0 +1,184 @@
+//! Tests of TeX's core algorithms: small documents run through INITEX, with
+//! expectations read back from what they `\show` in the log.
+
+mod arithmetic;
+mod line_break;
+mod math;
+mod packaging;
+mod page_builder;
+mod scanning;
+
+use std::collections::HashSet;
+use std::io::{Cursor, Read, SeekFrom};
+use std::path::Path;
+
+use tectonic_bridge_core::{CoreBridgeLauncher, MinimalDriver};
+use tectonic_engine_xetex::TexEngine;
+use tectonic_errors::Result;
+use tectonic_io_base::filesystem::FilesystemIo;
+use tectonic_io_base::stack::IoStack;
+use tectonic_io_base::{InputFeatures, InputHandle, InputOrigin, IoProvider, MemoryIo, OpenResult};
+use tectonic_status_base::{NoopStatusBackend, StatusBackend};
+
+/// INITEX has no macros, so the category codes plain TeX sets come first.
+const PRELUDE: &str = r"\catcode`\{=1 \catcode`\}=2 \catcode`\$=3 \catcode`\&=4
+\catcode`\#=6 \catcode`\^=7 \catcode`\_=8 \catcode`\^^I=10
+\scrollmode \showboxdepth=100 \showboxbreadth=100 \tracingonline=1
+\hbadness=10000 \vbadness=10000 \hfuzz=16383pt \vfuzz=16383pt
+";
+
+/// Loads the Computer Modern fonts that math needs in every size.
+const MATH_FONTS: &str = r#"\font\rm=cmr10 \font\mi=cmmi10 \font\sy=cmsy10 \font\ex=cmex10
+\textfont0=\rm \scriptfont0=\rm \scriptscriptfont0=\rm
+\textfont1=\mi \scriptfont1=\mi \scriptscriptfont1=\mi
+\textfont2=\sy \scriptfont2=\sy \scriptscriptfont2=\sy
+\textfont3=\ex \scriptfont3=\ex \scriptscriptfont3=\ex
+\mathcode`x="7178 \mathcode`y="7179 \mathcode`+="202B
+\delcode`(="028300 \delcode`)="029301 \rm
+"#;
+
+/// The primary input, served from memory.
+struct Source(Vec<u8>);
+
+struct SourceReader(Cursor<Vec<u8>>);
+
+impl Read for SourceReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl InputFeatures for SourceReader {
+    fn get_size(&mut self) -> Result<usize> {
+        Ok(self.0.get_ref().len())
+    }
+
+    fn try_seek(&mut self, pos: SeekFrom) -> Result<u64> {
+        Ok(std::io::Seek::seek(&mut self.0, pos)?)
+    }
+}
+
+impl IoProvider for Source {
+    fn input_open_primary(&mut self, _: &mut dyn StatusBackend) -> OpenResult<InputHandle> {
+        OpenResult::Ok(InputHandle::new_read_only(
+            "texput.tex",
+            SourceReader(Cursor::new(self.0.clone())),
+            InputOrigin::Other,
+        ))
+    }
+}
+
+/// The log of one INITEX run.
+struct Run {
+    log: String,
+}
+
+/// Runs `body` after the prelude, then `\end`.
+fn run(body: &str) -> Run {
+    let source = format!("{PRELUDE}{body}\n\\end\n");
+    let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/assets");
+    let mut fonts = FilesystemIo::new(&assets, false, false, HashSet::new());
+    let mut primary = Source(source.into_bytes());
+    let mut outputs = MemoryIo::new(true);
+    {
+        let io = IoStack::new(vec![&mut outputs, &mut primary, &mut fonts]);
+        let mut hooks = MinimalDriver::new(io);
+        let mut status = NoopStatusBackend::default();
+        let mut launcher = CoreBridgeLauncher::new(&mut hooks, &mut status);
+        let _ = TexEngine::default()
+            .halt_on_error_mode(false)
+            .initex_mode(true)
+            .deterministic_mode(true)
+            .process(&mut launcher, "UNUSED.fmt", "texput.tex");
+    }
+    let files = outputs.files.borrow();
+    let log = files.get("texput.log").expect("the run wrote a log");
+    Run {
+        log: String::from_utf8_lossy(&log.data).into_owned(),
+    }
+}
+
+impl Run {
+    /// What each `\showthe` showed, in order.
+    fn shown(&self) -> Vec<&str> {
+        self.log
+            .lines()
+            .filter_map(|l| l.strip_prefix("> "))
+            .filter(|l| !l.starts_with('\\'))
+            .map(|l| l.strip_suffix('.').unwrap_or(l))
+            .collect()
+    }
+
+    /// The contents of each `\showbox`, one string of lines per box.
+    fn boxes(&self) -> Vec<String> {
+        let mut boxes = Vec::new();
+        let mut lines = self.log.lines();
+        while let Some(line) = lines.next() {
+            if line.starts_with("> \\box") {
+                let body: Vec<&str> = lines.by_ref().take_while(|l| !l.is_empty()).collect();
+                boxes.push(body.join("\n"));
+            }
+        }
+        boxes
+    }
+
+    /// Log lines that start with `prefix`.
+    fn lines_starting(&self, prefix: &str) -> Vec<&str> {
+        self.log.lines().filter(|l| l.starts_with(prefix)).collect()
+    }
+
+    /// The error messages, without their `! `.
+    fn errors(&self) -> Vec<&str> {
+        self.log
+            .lines()
+            .filter_map(|l| l.strip_prefix("! "))
+            .filter(|l| *l != "OK.")
+            .collect()
+    }
+}
+
+/// The boxes directly inside a shown box, such as the lines of a paragraph.
+fn rows(shown_box: &str) -> String {
+    shown_box
+        .lines()
+        .filter_map(|l| l.strip_prefix('.'))
+        .filter(|l| l.starts_with("\\hbox") || l.starts_with("\\vbox"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Shows `\the` of each item, returning the values.
+fn show_the(setup: &str, items: &[&str]) -> Vec<String> {
+    let shows: String = items.iter().map(|i| format!("\\showthe{i}\n")).collect();
+    run(&format!("{setup}\n{shows}"))
+        .shown()
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Asserts that the lines of `actual` are `expected`, ignoring the common
+/// indentation of `expected`.
+#[track_caller]
+fn assert_lines(actual: &str, expected: &str) {
+    let expected: Vec<&str> = expected
+        .lines()
+        .skip_while(|l| l.trim().is_empty())
+        .collect();
+    let indent = expected
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.len() - l.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    let expected: Vec<&str> = expected
+        .iter()
+        .map(|l| l.get(indent..).unwrap_or("").trim_end())
+        .collect();
+    let expected = expected.join("\n");
+    assert_eq!(
+        actual,
+        expected.trim_end(),
+        "\n--- actual:\n{actual}\n--- expected:\n{expected}"
+    );
+}

@@ -1,0 +1,88 @@
+//! The scanners: numbers, units, glue and e-TeX expressions.
+
+use crate::{run, show_the};
+
+#[test]
+fn units_convert_to_points_as_tex_rounds_them() {
+    let shown = show_the(
+        r"\dimen1=1in \dimen2=1cm \dimen3=1bp \dimen4=3pc \dimen5=1dd \dimen6=12sp",
+        &[
+            r"\dimen1", r"\dimen2", r"\dimen3", r"\dimen4", r"\dimen5", r"\dimen6",
+        ],
+    );
+    assert_eq!(
+        shown,
+        [
+            "72.26999pt",
+            "28.45274pt",
+            "1.00374pt",
+            "36.0pt",
+            "1.07pt",
+            "0.00018pt"
+        ]
+    );
+}
+
+#[test]
+fn decimals_round_to_the_nearest_scaled_point() {
+    let shown = show_the(
+        r"\dimen1=1.23456789pt \dimen2=-.5\dimen1",
+        &[r"\dimen1", r"\dimen2"],
+    );
+    assert_eq!(shown, ["1.23457pt", "-0.61728pt"]);
+}
+
+#[test]
+fn integers_in_every_radix_and_with_signs() {
+    let shown = show_the(
+        r#"\count1='777 \count2="FF \count3=`a \count4=-+-3"#,
+        &[r"\count1", r"\count2", r"\count3", r"\count4"],
+    );
+    assert_eq!(shown, ["511", "255", "97", "3"]);
+}
+
+#[test]
+fn glue_keeps_the_order_of_each_component() {
+    let shown = show_the(
+        r"\skip1=1pt plus 2fil minus 3fill \skip2=1pt plus -1fil",
+        &[r"\skip1", r"\skip2"],
+    );
+    assert_eq!(
+        shown,
+        ["1.0pt plus 2.0fil minus 3.0fill", "1.0pt plus -1.0fil"]
+    );
+}
+
+#[test]
+fn out_of_range_values_are_reported_and_clamped() {
+    let r = run(r"\count1=2147483648 \dimen1=16384pt \showthe\count1 \showthe\dimen1");
+    assert_eq!(r.errors(), ["Number too big.", "Dimension too large."]);
+    assert_eq!(r.shown(), ["2147483647", "16383.99998pt"]);
+}
+
+#[test]
+fn expressions_round_and_check_overflow() {
+    let r = run(r"\showthe\numexpr 7*11/3\relax \showthe\numexpr -7/2\relax
+                  \showthe\numexpr (1+2)*(3+4)\relax \showthe\dimexpr 1pt*3/4\relax
+                  \showthe\glueexpr 1pt plus 2fil*2\relax \showthe\numexpr 2147483647+1\relax");
+    assert_eq!(
+        r.shown(),
+        ["26", "-4", "21", "0.75pt", "2.0pt plus 4.0fil", "0"]
+    );
+    assert_eq!(r.errors(), ["Arithmetic overflow."]);
+}
+
+#[test]
+fn parshapedimen_clamps_to_the_last_line() {
+    let r = run(r"\parshape 2 1pt 2pt 3pt 4pt
+                  \showthe\parshapedimen 3 \showthe\parshapedimen 2147483647
+                  \showthe\parshapedimen 2147483646
+                  \showthe\parshapeindent 2147483647 \showthe\parshapelength 2147483647");
+    assert_eq!(r.shown(), ["3.0pt", "3.0pt", "4.0pt", "3.0pt", "4.0pt"]);
+}
+
+#[test]
+fn showtokens_detokenizes_its_argument() {
+    let r = run(r"\showtokens{a#b}");
+    assert_eq!(r.shown(), ["a##b"]);
+}
