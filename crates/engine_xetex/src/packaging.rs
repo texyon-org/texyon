@@ -397,6 +397,15 @@ pub fn flush_node_list(
 }
 
 /// A deep copy of the list `p`.
+/// A copy of box `b` and its contents.
+pub(crate) fn copy_box(mem: &mut MemState, b: AnyBox) -> Result<AnyBox, NodeRecycleAbort> {
+    let r = copy_list(mem, b.ptr())?;
+    Ok(match b {
+        AnyBox::HList(h) => AnyBox::HList(copied_node(h, r)),
+        AnyBox::VList(v) => AnyBox::VList(copied_node(v, r)),
+    })
+}
+
 pub fn copy_node_list(mem: &mut MemState, p: i32) -> Result<i32, NodeRecycleAbort> {
     Ok(copy_list(mem, MemPtr(p))?.0)
 }
@@ -849,7 +858,7 @@ struct VsplitState {
 
 #[derive(Copy, Clone)]
 struct VsplitOutcome {
-    result: MemPtr,
+    result: Option<AnyBox>,
     packages: [Option<PackOutcome>; 2],
 }
 
@@ -918,7 +927,7 @@ fn start_vsplit(
 
     if v.is_null() {
         return Ok(VsplitStart::Done(VsplitOutcome {
-            result: MemPtr::NULL,
+            result: None,
             packages: [None, None],
         }));
     }
@@ -1048,7 +1057,7 @@ fn finish_vsplit_after_break(
         EXACTLY,
         state.split_max_d,
     )?;
-    let result = packed.r_box.ptr();
+    let result = Some(packed.r_box);
     push_slot(&mut packages, packed);
 
     Ok(VsplitOutcome { result, packages })
@@ -1120,7 +1129,11 @@ impl VsplitAbort {
 }
 
 /// `\vsplit n to h`: the box split off the top of box register `n`.
-pub(crate) fn vsplit_in(st: &mut EngineState, n: i32, h: i32) -> Result<MemPtr, VsplitAbort> {
+pub(crate) fn vsplit_in(
+    st: &mut EngineState,
+    n: i32,
+    h: i32,
+) -> Result<Option<AnyBox>, VsplitAbort> {
     let mut state = match start_vsplit(&mut st.mem, &st.eqtb, &mut st.scanner, n, h)? {
         VsplitStart::Done(outcome) => {
             print_vsplit_packages_in(st, outcome);
@@ -1131,7 +1144,7 @@ pub(crate) fn vsplit_in(st: &mut EngineState, n: i32, h: i32) -> Result<MemPtr, 
             if !matches!(outcome, ErrorOutcome::Continue) {
                 return Err(VsplitAbort::Error(outcome));
             }
-            return Ok(MemPtr::NULL);
+            return Ok(None);
         }
         VsplitStart::Ready(state) => state,
     };

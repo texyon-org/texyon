@@ -352,8 +352,9 @@ fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(),
 
 pub(crate) unsafe fn ship_out_in(
     st: &mut crate::state::EngineState,
-    p: i32,
+    page: AnyBox,
 ) -> Result<(), ShipoutAbort> {
+    let p = page.ptr();
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     let job_name = crate::texmfmp::gettexstring_in(&st.strings, st.strings.job_name);
     crate::synctex::synctex_sheet(st, mag, job_name);
@@ -393,11 +394,6 @@ pub(crate) unsafe fn ship_out_in(
         crate::output::end_diagnostic_in(st, true);
     }
 
-    let page = st
-        .mem
-        .classify_box(MemIdx::new(p))
-        .expect("valid shipped box")
-        .expect("shipped box");
     let (height, depth, width) = (
         page.height(&st.mem).0,
         page.depth(&st.mem).0,

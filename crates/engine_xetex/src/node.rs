@@ -566,6 +566,24 @@ impl AnyBox {
     }
 }
 
+/// What `\box`, `\hrule` and friends leave in `cur_box`: a rule only where
+/// leaders accept one.
+#[derive(Copy, Clone, Debug)]
+pub enum BoxOrRule {
+    Box(AnyBox),
+    Rule(NodePtr<RuleNode>),
+}
+
+impl BoxOrRule {
+    #[inline]
+    pub fn ptr(self) -> MemPtr {
+        match self {
+            BoxOrRule::Box(b) => b.ptr(),
+            BoxOrRule::Rule(r) => r.ptr(),
+        }
+    }
+}
+
 // --- classification ---
 
 /// A classified lo-mem node. Type 2 is read as a rule (not a delta node) and

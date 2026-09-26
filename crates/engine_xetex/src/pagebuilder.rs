@@ -378,8 +378,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         st.shipout.page_max_depth,
     )?;
     st.eqtb.set_b32s1(BOX_BASE + 255, page.idx().0);
-    st.eqtb
-        .set_b32s1(INT_BASE + INT_PAR_VBADNESS, save_vbadness);
+    st.eqtb.set_int_par(INT_PAR_VBADNESS, save_vbadness);
     st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, save_vfuzz);
     if st.shipout.last_glue.0 != MAX_HALFWORD {
         crate::mem::delete_glue_ref(
@@ -456,8 +455,8 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         } else {
             st.shipout.page_tail.set_link(&mut st.mem, contrib);
         }
-        let page = st.mem.link_ptr(PAGE_HEAD);
-        CONTRIB_HEAD.set_link(&mut st.mem, page);
+        let held = st.mem.link_ptr(PAGE_HEAD);
+        CONTRIB_HEAD.set_link(&mut st.mem, held);
         PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
         st.shipout.page_tail = PAGE_HEAD;
     }
@@ -465,7 +464,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     crate::packaging::flush_node_list(&mut st.mem, discards.0)
         .map_err(PageBuildAbort::Confusion)?;
     st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
-    unsafe { crate::shipout::ship_out_in(st, st.eqtb.b32s1(BOX_BASE + 255))? };
+    unsafe { crate::shipout::ship_out_in(st, page)? };
     st.eqtb.set_b32s1(BOX_BASE + 255, TEX_NULL);
     Ok(())
 }

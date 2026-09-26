@@ -2017,7 +2017,7 @@ fn post_line_break_suffix(
     lr_ptr: &mut MemPtr,
     cur_line: &mut i32,
 ) -> Result<bool, NodeRecycleAbort> {
-    scanner.just_box = just_box.ptr();
+    scanner.just_box = Some(just_box);
     just_box.set_shift_amount(mem, Scaled(hpack.cur_indent));
 
     if scanner.pre_adjust_tail != PRE_ADJUST_HEAD {

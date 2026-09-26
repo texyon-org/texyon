@@ -3573,7 +3573,7 @@ pub(crate) fn init_math_in(
 
             let jbox = crate::mem::new_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
             j = jbox.idx().0;
-            let jb = classify_box_or_panic(&st.mem, st.scanner.just_box);
+            let jb = st.scanner.just_box.expect("line_break sets just_box");
             let mem = &mut st.mem;
             jbox.set_width(mem, jb.width(mem));
             jbox.set_shift_amount(mem, jb.shift_amount(mem));

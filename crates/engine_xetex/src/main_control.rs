@@ -36,8 +36,8 @@ use crate::mem::{
     FIL_NEG_GLUE, HOLD_HEAD, PAGE_HEAD, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, ZERO_GLUE,
 };
 use crate::node::{
-    AdjustNode, AnyBox, AnyNode, GlueSpecNode, InsNode, MarkNode, NodePtr, RuleDimen, SaNode,
-    UnsetNode, WhatsitNode, WhatsitSubtype,
+    AdjustNode, AnyBox, AnyNode, BoxOrRule, GlueSpecNode, InsNode, MarkNode, NodePtr, RuleDimen,
+    SaNode, UnsetNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::{
     set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL, INT_VAL,
@@ -1373,7 +1373,7 @@ pub(crate) fn scan_box_in(st: &mut EngineState, box_context: i32) -> Result<(), 
     } else if box_context >= LEADER_FLAG
         && (st.scanner.cur_cmd == HRULE || st.scanner.cur_cmd == VRULE)
     {
-        st.scanner.cur_box = crate::scan::scan_rule_spec_in(st)?.ptr();
+        st.scanner.cur_box = Some(BoxOrRule::Rule(crate::scan::scan_rule_spec_in(st)?));
         box_end_in(st, box_context)
     } else {
         crate::output::print_err_in(st, c"A <box> was supposed to be here");
@@ -1398,10 +1398,11 @@ pub(crate) fn package_in(st: &mut EngineState, c: i32) -> Result<(), MainControl
     let size = st.save_stack.b32s1(sp + 2);
     let spec_mode = st.save_stack.b32s1(sp + 1) as i16;
     if st.input.cur_list.mode == INNER_HMODE {
-        st.scanner.cur_box = crate::packaging::hpack_emit_in(st, list, size, spec_mode)?.ptr();
+        let b = crate::packaging::hpack_emit_in(st, list, size, spec_mode)?;
+        st.scanner.cur_box = Some(BoxOrRule::Box(b));
     } else {
         let b = crate::packaging::vpackage_emit_in(st, list, size, spec_mode, d)?;
-        st.scanner.cur_box = b.ptr();
+        st.scanner.cur_box = Some(BoxOrRule::Box(b));
         if c == VTOP_CODE {
             let h = match b.list_ptr(&st.mem).as_idx().map(|p| st.mem.classify(p)) {
                 Some(Ok(AnyNode::HList(first))) => first.height(&st.mem).0,
@@ -1620,11 +1621,12 @@ pub(crate) fn new_character_in(
 
 pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), MainControlAbort> {
     if box_context < BOX_FLAG {
-        let cb = st.scanner.cur_box;
-        if cb.is_null() {
-            return Ok(());
-        }
-        st.mem.set_b32s1(cb + 4, box_context);
+        let b = match st.scanner.cur_box {
+            None => return Ok(()),
+            Some(BoxOrRule::Box(b)) => b,
+            Some(BoxOrRule::Rule(_)) => unreachable!("only leaders take a rule"),
+        };
+        b.set_shift_amount(&mut st.mem, Scaled(box_context));
         if st.input.cur_list.mode.abs() == VMODE {
             if !st.scanner.pre_adjust_tail.is_null() {
                 if st.scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
@@ -1632,11 +1634,6 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 }
                 st.scanner.pre_adjust_tail = MemPtr::NULL;
             }
-            let b = st
-                .mem
-                .classify_box(MemIdx::new(cb))
-                .expect("valid node type for append_to_vlist")
-                .expect("append_to_vlist receives an hlist or vlist node");
             crate::packaging::append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, b)?;
             if !st.scanner.adjust_tail.is_null() {
                 if st.scanner.adjust_tail != ADJUST_HEAD {
@@ -1648,18 +1645,17 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 crate::pagebuilder::build_page_in(st)?;
             }
         } else {
-            if st.input.cur_list.mode.abs() == HMODE {
+            let node = if st.input.cur_list.mode.abs() == HMODE {
                 st.input.cur_list.set_aux_s0(1000);
+                b.ptr()
             } else {
                 let noad = crate::mem::new_noad(&mut st.mem)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 noad.set_nucleus_type(&mut st.mem, SUB_BOX);
-                noad.set_nucleus_field(&mut st.mem, cb.0);
-                st.scanner.cur_box = noad.ptr();
-            }
-            st.input
-                .cur_list
-                .tail_append(&mut st.mem, st.scanner.cur_box);
+                noad.set_nucleus_field(&mut st.mem, b.idx().0);
+                noad.ptr()
+            };
+            st.input.cur_list.tail_append(&mut st.mem, node);
         }
     } else if box_context < SHIP_OUT_FLAG {
         let (n, global) = if box_context < GLOBAL_BOX_FLAG {
@@ -1668,7 +1664,7 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
             (box_context - GLOBAL_BOX_FLAG, true)
         };
         st.scanner.cur_val = n;
-        let cb = st.scanner.cur_box.0;
+        let cb = st.scanner.cur_box.map_or(TEX_NULL, |b| b.ptr().0);
         if n < 256 {
             define(st, global, BOX_BASE + n, BOX_REF, cb)?;
         } else {
@@ -1676,10 +1672,12 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             sa_define(st, global, sa.idx().0, cb)?;
         }
-    } else if !st.scanner.cur_box.is_null() {
+    } else if let Some(cb) = st.scanner.cur_box {
         if box_context == SHIP_OUT_FLAG {
-            let cb = st.scanner.cur_box.0;
-            unsafe { crate::shipout::ship_out_in(st, cb)? };
+            let BoxOrRule::Box(b) = cb else {
+                unreachable!("only leaders take a rule");
+            };
+            unsafe { crate::shipout::ship_out_in(st, b)? };
             return Ok(());
         }
         get_x_non_blank_non_relax(st)?;
@@ -1691,7 +1689,7 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 tail,
                 (box_context - (LEADER_FLAG - A_LEADERS as i32)) as u16,
             );
-            st.mem.set_b32s1(tail + 1, st.scanner.cur_box.0);
+            st.mem.set_b32s1(tail + 1, cb.ptr().0);
         } else {
             crate::output::print_err_in(st, c"Leaders not followed by proper glue");
             st.errors.help(&[
@@ -1700,7 +1698,7 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 "<hskip or vskip>, so I'm ignoring these leaders.",
             ]);
             mc_propagate_error(crate::input::back_error_in(st)?)?;
-            crate::packaging::flush_node_list(&mut st.mem, st.scanner.cur_box.0)
+            crate::packaging::flush_node_list(&mut st.mem, cb.ptr())
                 .map_err(MainControlAbort::Confusion)?;
         }
     }
@@ -1779,16 +1777,18 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
         BOX_CODE => {
             crate::scan::scan_register_num_in(st)?;
             let n = st.scanner.cur_val;
-            st.scanner.cur_box = fetch_box(st, n).map_or(MemPtr::NULL, AnyBox::ptr);
+            st.scanner.cur_box = fetch_box(st, n).map(BoxOrRule::Box);
             change_box(st, n, TEX_NULL);
         }
         COPY_CODE => {
             crate::scan::scan_register_num_in(st)?;
-            let q = fetch_box(st, st.scanner.cur_val).map_or(TEX_NULL, |b| b.idx().0);
-            st.scanner.cur_box.0 = crate::packaging::copy_node_list(&mut st.mem, q)?;
+            st.scanner.cur_box = match fetch_box(st, st.scanner.cur_val) {
+                Some(b) => Some(BoxOrRule::Box(crate::packaging::copy_box(&mut st.mem, b)?)),
+                None => None,
+            };
         }
         LAST_BOX_CODE => {
-            st.scanner.cur_box = MemPtr::NULL;
+            st.scanner.cur_box = None;
             if st.input.cur_list.mode.abs() == MMODE {
                 crate::errors::you_cant_in(st);
                 st.errors.help(&[r"Sorry; this \lastbox will be void."]);
@@ -1807,7 +1807,7 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
                 if !is_char_node(&st.mem, tx) {
                     if let Ok(Some(b)) = st.mem.classify_box(MemIdx(tx)) {
                         if unlink_effective_tail(st, tx)? {
-                            st.scanner.cur_box = b.ptr();
+                            st.scanner.cur_box = Some(BoxOrRule::Box(b));
                             b.set_shift_amount(&mut st.mem, Scaled(0));
                         }
                     }
@@ -1826,7 +1826,8 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
                 mc_propagate_error(crate::errors::error_in(st))?;
             }
             crate::scan::scan_dimen_in(st, false, false, false)?;
-            st.scanner.cur_box = crate::packaging::vsplit_in(st, n, st.scanner.cur_val)?;
+            st.scanner.cur_box =
+                crate::packaging::vsplit_in(st, n, st.scanner.cur_val)?.map(BoxOrRule::Box);
         }
         _ => {
             let k = st.scanner.cur_chr - VTOP_CODE as i32;
