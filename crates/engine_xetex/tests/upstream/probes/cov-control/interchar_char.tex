@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\XeTeXinterchartokenstate=1 \XeTeXcharclass`a=1 \XeTeXcharclass`b=2
+\XeTeXinterchartoks 1 2={\kern1pt}\XeTeXinterchartoks 1 4095={\kern2pt}
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt
+\setbox0\hbox{\char`a\char`b x\chardef\cb=`b \cb\char`a}\showbox0
+\setbox0\hbox{\lb \char`a\char`b x\cb\char`a}\showbox0
+\setbox0\hbox{a\relax b \kern1pt a{}b}\showbox0
+\XeTeXinterchartokenstate=0
+\bye

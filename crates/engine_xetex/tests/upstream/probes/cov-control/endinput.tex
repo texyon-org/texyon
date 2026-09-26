@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\immediate\openout3=eitest
+\immediate\write3{\noexpand\message{first}\noexpand\endinput\noexpand\message{same line}}
+\immediate\write3{\noexpand\message{never}}
+\immediate\closeout3
+\input eitest.tex
+\message{after}
+\scantokens{\message{a}\endinput\message{b}
+\message{c}}
+\bye

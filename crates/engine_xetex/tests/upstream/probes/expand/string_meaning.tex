@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\a#1#2{x#1y#2}\long\def\b{}\outer\def\c{}\protected\def\d{}
+\message{\meaning\a|\meaning\b|\meaning\c|\meaning\d|\meaning a|\meaning ~|\meaning\undefined}
+\message{\meaning{ \meaning} \meaning$ \meaning& \meaning# \meaning^ \meaning_ \meaning\ }
+\chardef\ch=65 \mathchardef\mc="7123 \countdef\cd=5 \dimendef\dd=6 \skipdef\sd=7 \muskipdef\md=8 \toksdef\td=9
+\message{\meaning\ch|\meaning\mc|\meaning\cd|\meaning\dd|\meaning\sd|\meaning\md|\meaning\td}
+\message{\meaning\tenrm|\meaning\nullfont|\meaning\textfont|\meaning\count|\meaning\box}
+\font\x=cmr10 at 5pt \message{\meaning\x \fontname\x}
+\message{\string\a\string~\string{\string\ }
+\let\z=a \message{\meaning\z} \let\z={ \message{\meaning\z} \let\z= \message{\meaning\z}
+\bye

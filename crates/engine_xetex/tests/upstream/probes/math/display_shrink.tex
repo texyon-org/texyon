@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\hskip 0pt minus 30pt \hbox to 205pt{}\eqno(1)$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\hbox to 220pt{} \hskip 0pt minus 30pt$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\hbox to 220pt{}\hskip 0pt minus 5pt\eqno(1)$$}\showbox1 \box1
+\bye

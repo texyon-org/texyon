@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+
+\setbox1\hbox{inner}
+\shipout\hbox{a\write-1{\noexpand\shipout\noexpand\copy1}b}
+\shipout\hbox{a\write-1{x\shipout\copy1}b}
+\bye

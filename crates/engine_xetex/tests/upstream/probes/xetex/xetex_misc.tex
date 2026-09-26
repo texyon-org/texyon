@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\lm="[lmroman12-regular.otf]" at 16pt
+\message{\the\XeTeXdashbreakstate,\the\XeTeXinputnormalization,\the\XeTeXtracingfonts,\the\XeTeXupwardsmode,\the\XeTeXuseglyphmetrics,\the\XeTeXinterchartokenstate,\the\XeTeXgenerateactualtext,\the\XeTeXhyphenatablelength,\the\XeTeXinterwordspaceshaping,\the\XeTeXprotrudechars}
+\XeTeXdashbreakstate=1 \hsize 30pt \parindent0pt \lb word\char"2014 word\char"2014 another\char"2013 more\par \showlists
+\setbox0\hbox{\lb a\char"2014 b}\showbox0
+\XeTeXdashbreakstate=0
+\message{\the\XeTeXdefaultencoding} \XeTeXdefaultencoding "utf8"
+\XeTeXinputencoding "bytes"
+\message{é}
+\XeTeXinputencoding "utf8"
+\message{é}
+\message{\Uchar"41\Uchar"E9\Ucharcat"41 11 \Ucharcat`\% 12}
+\edef\x{\Ucharcat`a 1 \Ucharcat`b 2 \Ucharcat`c 3 \Ucharcat`d 4 \Ucharcat`e 6 \Ucharcat`f 7 \Ucharcat`g 8 \Ucharcat`h 10 \Ucharcat`i 11 \Ucharcat`j 12 \Ucharcat`k 13}\show\x
+\edef\y{\Ucharcat`a 0 }\edef\y{\Ucharcat`a 5 }\edef\y{\Ucharcat`a 9 }\edef\y{\Ucharcat`a 14 }\edef\y{\Uchar 0 \Uchar"110000 \Uchar-1}
+\bye

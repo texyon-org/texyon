@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\message{\number`\{ \number`\} \number`\a \number`a \number`\^^M}
+\catcode`A=12 \catcode`F=12 \message{\number"AF \number"FF \number"1a}
+\catcode`A=11 \catcode`F=11
+\message{\number"FFFFFFFF \number'77777777777 \number 999999999999}
+\dimen0=1,5pt \message{\the\dimen0} \dimen0=1.123456789012345678901234pt \message{\the\dimen0}
+\dimen0=,5pt \message{\the\dimen0} \dimen0=.pt \message{\the\dimen0}
+\dimen1=3pt \dimen0=-\dimen1 \message{\the\dimen0} \dimen0=--\dimen1 \message{\the\dimen0}
+\dimen0=-2\dimen1 \message{\the\dimen0} \dimen0=-.5\dimen1 \message{\the\dimen0}
+\skip1=4pt plus 2pt \dimen0=-\skip1 \message{\the\dimen0} \dimen0=-1.5\skip1 \message{\the\dimen0}
+\count1=-7 \dimen0=\count1 sp \message{\the\dimen0} \dimen0=-\count1 pt \message{\the\dimen0}
+\dimen0=\count1\dimen1 \message{\the\dimen0}
+\bye

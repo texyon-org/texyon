@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\def\x{A}\message{\expandafter\meaning\csname\endcsname}
+\catcode`\^=7
+\expandafter\def\csname\endcsname{NULL}\message{\
+}
+\message{\^^41\^^^^0042\^^^^^^01f600 \string\^^^^^^01f600 \string\a^^^^^^01f600b}
+\expandafter\def\csname a^^^^^^01f600b\endcsname{emoji}\message{\a^^^^^^01f600b}
+\message{^^zz ^^4g ^^^^004G \string\^^Z \string\^^7f \string^^M}
+\message{\csname ^^^^^^10ffff\endcsname \string^^^^^^10ffff}
+\bye

@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle \root 3 \of {x+1}$}
+\sb{$\textstyle \root 3 \of {x+1}$}
+\sb{$\scriptstyle \root 3 \of {x+1}$}
+\sb{$\scriptscriptstyle \root 3 \of {x+1}$}
+\sb{$\displaystyle \root n+1 \of{\vrule height 25pt}$}
+\sb{$\textstyle \root n+1 \of{\vrule height 25pt}$}
+\sb{$\scriptstyle \root n+1 \of{\vrule height 25pt}$}
+\sb{$\scriptscriptstyle \root n+1 \of{\vrule height 25pt}$}
+\bye

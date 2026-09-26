@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\message{\the\dimexpr 16383pt*3/5\relax,\the\dimexpr 1sp*2147483647/2147483647\relax,\the\dimexpr -7sp*3/2\relax,\the\dimexpr 7sp*-3/2\relax}
+\message{\the\numexpr 2147483647*2/3\relax,\the\numexpr -2147483647*2/3\relax,\the\numexpr 65536*65536/65536\relax}
+\message{\the\numexpr 3*2147483647/7\relax,\the\numexpr 2147483647*2147483647/2147483647\relax}
+\message{\the\numexpr 5/0\relax,\the\numexpr (1*0)/(0*1)\relax,\the\numexpr -2147483647/-1\relax}
+\message{\the\dimexpr 1pt*(3/2)\relax,\the\dimexpr 1pt*3/2*5/7\relax,\the\glueexpr 1pt plus 2fil*3/4\relax}
+\message{\the\muexpr 3mu*5/7\relax,\the\muexpr (1mu plus 1fill)*-1\relax}
+\message{\the\dimexpr 16383.99998pt+1sp\relax,\the\dimexpr -16383.99998pt-2sp\relax}
+\message{\the\numexpr 1073741824*2\relax,\the\numexpr -1073741824*2\relax,\the\numexpr 46341*46341\relax}
+\bye

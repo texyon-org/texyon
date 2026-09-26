@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\thinmuskip=5mu plus 2mu \medmuskip=0mu minus 10mu \thickmuskip=-3mu \sb{$a,b+c=d\mathinner{e}$}
+\sb{$\displaystyle a\nonscript\mskip 18mu b\nonscript\mkern-9mu c\mskip 3mu plus 1fil d\mkern 1mu e \nonscript\hskip 5pt f\nonscript$}
+\sb{$\textstyle a\nonscript\mskip 18mu b\nonscript\mkern-9mu c\mskip 3mu plus 1fil d\mkern 1mu e \nonscript\hskip 5pt f\nonscript$}
+\sb{$\scriptstyle a\nonscript\mskip 18mu b\nonscript\mkern-9mu c\mskip 3mu plus 1fil d\mkern 1mu e \nonscript\hskip 5pt f\nonscript$}
+\sb{$\scriptscriptstyle a\nonscript\mskip 18mu b\nonscript\mkern-9mu c\mskip 3mu plus 1fil d\mkern 1mu e \nonscript\hskip 5pt f\nonscript$}
+\sb{$\nonscript$}
+\sb{$\mskip 3pt \mkern 2pt \hskip 3mu \kern 1mu$}
+\sb{$\displaystyle \nonscript\mskip 5mu x \mathbin{\nonscript\mskip5mu}$}
+\sb{$\textstyle \nonscript\mskip 5mu x \mathbin{\nonscript\mskip5mu}$}
+\sb{$\scriptstyle \nonscript\mskip 5mu x \mathbin{\nonscript\mskip5mu}$}
+\sb{$\scriptscriptstyle \nonscript\mskip 5mu x \mathbin{\nonscript\mskip5mu}$}
+\bye

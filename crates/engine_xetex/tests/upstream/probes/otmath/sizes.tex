@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\mA="[latinmodern-math.otf]" at 16pt \font\mB="[latinmodern-math.otf]:+ssty=0" at 8pt \font\mC="[latinmodern-math.otf]:+ssty=1" at 4pt
+\textfont2=\mA \scriptfont2=\mB \scriptscriptfont2=\mC \textfont3=\mA \scriptfont3=\mB \scriptscriptfont3=\mC
+\textfont1=\mA \scriptfont1=\mB \scriptscriptfont1=\mC \textfont0=\mA \scriptfont0=\mB \scriptscriptfont0=\mC
+\Umathcode`a="7 "1 "1D44E \Umathcode`b="7 "1 "1D44F \Umathcode`x="7 "1 "1D465 \Umathcode`y="7 "1 "1D466
+\Umathcode`+="2 "0 "2B \Umathcode`=="3 "0 "3D \Umathcode`(="4 "0 "28 \Umathcode`)="5 "0 "29 \Umathcode`,="6 "0 "2C
+\Udelcode`(="0 "28 \Udelcode`)="0 "29 \Udelcode`[="0 "5B \Udelcode`]="0 "5D \Udelcode`|="0 "7C \Udelcode`/="0 "2F
+\Umathchardef\sum="1 "0 "2211 \Umathchardef\int="1 "0 "222B \Umathchardef\prod="1 "0 "220F
+\def\sqrt{\Uradical "0 "221A }
+\def\show#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\font\mD="[latinmodern-math.otf]" at 8pt \textfont2=\mD \textfont3=\mD
+\show{$\left(\vrule height 20pt\right) a\over b$}
+\textfont2=\mA \scriptfont2=\mA \show{$a^b$}
+\bye

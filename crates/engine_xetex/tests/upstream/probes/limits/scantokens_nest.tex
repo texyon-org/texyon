@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count1=0 \def\a{\advance\count1 1 \ifnum\count1<10 \scantokens{\a}\fi}\a \message{\the\count1}
+\everyeof{\message{eof}}\scantokens{\scantokens{\scantokens{x}}}
+\everyeof{} \tracingnesting=2 \scantokens{\begingroup}\endgroup \scantokens{\iftrue}\fi
+\bye

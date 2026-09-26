@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\a{x} \long\def\b#1{#1} \outer\def\c#1#2.{#2#1} \protected\def\d{}
+\long\outer\protected\def\e#1#{} \edef\f{\a\a} \gdef\g##{} \xdef\h{\noexpand\a}
+\show\a \show\b \show\c \show\d \show\e \show\f \show\g \show\h
+\let\i=\e \show\i \show\undefined \show a \show\bgroup \show\egroup \show ^ \show _
+\show\hbox \show\count \show\tenrm \show\par \show\endgraf \show\ \show\/ \show\-
+\chardef\j=65 \mathchardef\k="7161 \countdef\l=5 \dimendef\m=5 \skipdef\n=5 \muskipdef\o=5 \toksdef\p=5
+\show\j \show\k \show\l \show\m \show\n \show\o \show\p
+\def\q{#} \show\q
+\edef\r{\string\x\string{} \show\r
+\showtokens{\a \b # ## {x} \par \q}
+\showtokens\expandafter{\c}
+\message{\meaning\a \meaning\c \meaning\e \meaning\q}
+\bye

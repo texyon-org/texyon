@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{a} \setbox1\hbox{b}
+\setbox2\hbox{\unvbox0} \setbox2\hbox{\unvcopy0}
+\setbox2\vbox{\unhbox1} \setbox2\vbox{\unhcopy1 \showlists}
+\setbox2\hbox{\unhcopy1 \unhcopy1 \unhbox1 \unhbox1 \unhbox300} \showbox2
+$\unhbox1 \unvbox0 \unhcopy1$
+\setbox2\vbox{\unvcopy0 \unvbox0 \unvbox0} \showbox2
+\bye

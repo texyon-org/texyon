@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\relax{MY}\primitive\relax \message{ok}
+\ifprimitive\relax\message{p}\else\message{np}\fi
+\ifprimitive\hbox\message{p}\else\message{np}\fi
+\ifprimitive\undefinedx\message{p}\else\message{np}\fi
+\let\hb\hbox \ifprimitive\hb\message{p}\else\message{np}\fi
+\primitive\undefinedx
+\primitive\message{prim}
+\expandafter\show\primitive\relax
+\edef\x{\primitive\number 5}\show\x
+\bye

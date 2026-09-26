@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\halign{#a#&b\cr x&y\cr}}\showbox0 \box0
+\setbox0\vbox{\halign{a&b#\cr x&y\cr}}\showbox0 \box0
+\setbox0\vbox{\halign{&a#&b#\cr x&y&z&w&v\cr}}\showbox0 \box0
+\setbox0\vbox{\halign{a#&&b#\cr x&y&z&w&v\cr}}\showbox0 \box0
+\bye

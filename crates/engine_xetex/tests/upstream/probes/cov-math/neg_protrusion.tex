@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\XeTeXprotrudechars=2 \rpcode\tenrm`.=-500 \lpcode\tenrm`A=-1000 \rpcode\tenrm`,=1000 \lpcode\tenrm`(=-333 \rpcode\tenrm`)=333
+\hsize=100pt \parindent=0pt \tolerance=10000 \hbadness=10000
+\setbox1\vbox{A line of text, here. (A line) of text, here. A.\par}\showbox1
+\fontdimen6\tenrm=-10pt
+\setbox1\vbox{A line of text, here. (A line) of text, here. A.\par}\showbox1
+\fontdimen6\tenrm=10.00002pt
+\setbox1\vbox{A line of text, here. (A line) of text, here. A.\par}\showbox1
+\bye

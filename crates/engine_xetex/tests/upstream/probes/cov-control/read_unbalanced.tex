@@ -1,0 +1,20 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\immediate\openout3=rdtest
+\immediate\write3{line one {open}
+\immediate\write3{line {two}
+\immediate\write3{three}
+\immediate\write3{\noexpand\par four}
+\immediate\closeout3
+\openin5=rdtest
+\read5 to\a \show\a
+\read5 to\a \show\a
+\ifeof5 \message{EOF}\else\message{notEOF}\fi
+\read5 to\a \show\a
+\read5 to\a \show\a
+\ifeof5 \message{EOF}\else\message{notEOF}\fi
+\closein5
+\openin5=rdtest \readline5 to\b \show\b \endlinechar=-1 \readline5 to\b \show\b \endlinechar=13
+\global\read5 to\c \show\c \closein5
+\openin6=rdtest \catcode`\{=12 \read6 to\d \show\d \catcode`\{=1 \closein6
+\bye

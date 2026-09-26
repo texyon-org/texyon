@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\hsize=100pt \parskip=1pt plus 1pt \leftskip=2pt\rightskip=3pt\parfillskip=0pt plus 1fil \baselineskip=12pt \lineskip=1pt \topskip=5pt
+\noindent a\par \hbox{b}\hbox{\vrule height 20pt}\par\indent c\par
+\noindent\spaceskip=4pt\xspaceskip=5pt a b. c\par}\showbox0
+\setbox0\hbox{$a\hskip\thinmuskip\mskip\medmuskip b\,c\>d\;e\!f\quad g$}\showbox0
+\setbox0\vbox{\halign{#\tabskip 3pt&#\cr a&b\cr}}\showbox0
+\setbox0\vbox{\hsize 50pt$$a$$}\showbox0
+\setbox0\vbox{\hsize 50pt\noindent$$a\eqno b$$ \par}\showbox0
+\bye

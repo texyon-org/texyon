@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle \underline{x}\overline{y}\overline{\underline{a+b}}\underline{g_y}$}
+\sb{$\textstyle \underline{x}\overline{y}\overline{\underline{a+b}}\underline{g_y}$}
+\sb{$\scriptstyle \underline{x}\overline{y}\overline{\underline{a+b}}\underline{g_y}$}
+\sb{$\scriptscriptstyle \underline{x}\overline{y}\overline{\underline{a+b}}\underline{g_y}$}
+\sb{$\displaystyle \overline{\overline{\overline x}}\underline{{a\over b}}$}
+\sb{$\textstyle \overline{\overline{\overline x}}\underline{{a\over b}}$}
+\sb{$\scriptstyle \overline{\overline{\overline x}}\underline{{a\over b}}$}
+\sb{$\scriptscriptstyle \overline{\overline{\overline x}}\underline{{a\over b}}$}
+\bye

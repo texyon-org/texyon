@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\showtokens{a#b {c} \par \foo ##}
+\toks0{x\y z}\showtokens\expandafter{\the\toks0}
+\def\m#1{[#1]}\showtokens\expandafter{\m{q}}
+\showtokens{}
+\showtokens\bgroup
+\showtokens{a\relax}\relax
+\bye

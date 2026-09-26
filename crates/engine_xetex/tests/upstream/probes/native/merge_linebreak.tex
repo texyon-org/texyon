@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\hsize=90pt \parindent=0pt \tolerance=10000 \hbadness=10000
+\lb ab\kern0pt cd efgh ijkl\penalty0 mnop qrst uvwx\hskip 0pt yzab cdef ghij\par
+\showlists
+\setbox0\vbox{\lb abcdefghij\kern1pt klmnop qrstuv wxyz abcdef ghijklm nopqrstu\par}\showbox0
+\shipout\box0
+\bye

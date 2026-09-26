@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox1000\hbox{a}\setbox1001\vbox{\hbox{b}}
+\setbox0\hbox{\copy1000\box1000\unhcopy1000}\showbox0
+\setbox0\vbox{\unvbox1001}\showbox0 \showbox1001
+\wd1000=5pt \setbox1000\hbox{x}\wd1000=5pt\ht1000=6pt\dp1000=7pt\showbox1000
+\setbox1002\vbox{\hbox{a}\penalty0\hbox{b}} \setbox1003\vsplit1002 to 1pt \showbox1002\showbox1003
+\setbox2000=\lastbox
+\showthe\wd4000
+\ifvoid 4000 \message{void}\fi \ifhbox1000\message{hb}\fi
+\bye

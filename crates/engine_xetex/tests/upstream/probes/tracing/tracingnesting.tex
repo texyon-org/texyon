@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingnesting=1
+\scantokens{\begingroup}\endgroup
+\scantokens{\iftrue}\fi
+\tracingnesting=2
+\scantokens{\begingroup\iftrue}\fi\endgroup
+\scantokens{\scantokens{\begingroup}}\endgroup
+\tracingnesting=0 \tracingscantokens=1
+\scantokens{\undefinedx}
+\scantokens{\scantokens{\message{in}}}
+\bye

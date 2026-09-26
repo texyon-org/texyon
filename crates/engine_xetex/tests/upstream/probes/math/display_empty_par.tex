@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\setbox1\vbox{\hsize=200pt \parindent=10pt $$x$$ $$y$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \noindent $$a$$\par $$b$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \parskip=3pt \noindent\par $$x$$}\showbox1 \box1
+\everydisplay{\showlists}\setbox1\vbox{\hsize=200pt \parindent=10pt a $$b$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$ $$ b}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\displaystyle\showthe\displaywidth$$}\showbox1 \box1
+\bye

@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\t{\message{[\the\currentgrouplevel:\the\currentgrouptype]}}
+\t{\t}\begingroup\t\endgroup \setbox0\hbox{\t\vbox{\t}\vtop{\t}}
+\halign{#\t\cr a\cr\noalign{\t}}
+\setbox0\hbox{\discretionary{\t}{}{}}\insert100{\t}\vadjust{\t}
+$\t\vcenter{\t}\mathchoice{\t}{}{}{}\left(\t\right)$
+$$\t$$\setbox0\hbox{$\t$}
+\output={\t\shipout\box255}\hbox{}\penalty-10000
+\bye

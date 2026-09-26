@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\font\xa=xliga \font\xb=xligb \font\xc=xligc
+\textfont4=\xa \scriptfont4=\xa \scriptscriptfont4=\xa
+\textfont5=\xc \scriptfont5=\xc \scriptscriptfont5=\xc
+\count1=`a \loop \mathcode\count1=\numexpr"0400+\count1\relax \advance\count1 1 \ifnum\count1<123 \repeat
+\mathcode`Z="045A \mathcode`-="042D \mathcode`.="042E
+\sh{$ab\ ac\ ad\ ae\ af\ ag\ ah\ ai\ aj\ aZ$}
+\sh{$ya\ yy\ kZ\ kk\ lZ\ mZ\ mm\ s-\ -a\ --\ st\ tt\ ttt\ sw\ ww\ wx\ ss$}
+\sh{$a^2b\ a_1c\ {a}b\ \mathrel{a}b\ \mathop{a}b\ a\mathbin{b}$}
+\sh{$\scriptstyle ab\ ac\ \scriptscriptstyle ad\ ae$}
+\sh{$aaaa\ bbbb\ \fam5 aaaa\ abab\ cdcd\ mnmn$}
+\sh{$\mathchar"0561\mathchar"0562\mathchar"0563 \mathchar"0461\mathchar"0561$}
+\bye

@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+$a\discretionary{a}{b}{c}b$
+$a\discretionary{a}{b}{}b\showlists$
+$a\-b$
+$\discretionary{\hbox{}}{\kern1pt\vrule}{\penalty1 a}$
+\setbox0\hbox{\discretionary{\vrule}{\hskip 1pt}{\penalty5\mark{}a}}\showbox0
+\setbox0\hbox{\discretionary{\raise1pt\hbox{}\kern1pt}{\vadjust{}}{\unskip}}\showbox0
+\bye

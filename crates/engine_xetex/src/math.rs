@@ -2521,7 +2521,7 @@ pub(crate) fn scan_delimiter_in(
                     st.scanner.cur_val1 = 0x4000_0000;
                     crate::scan::scan_math_class_int_in(st)?;
                     crate::scan::scan_math_fam_int_in(st)?;
-                    st.scanner.cur_val1 += st.scanner.cur_val * 0x2_0000;
+                    st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
                     crate::scan::scan_usv_num_in(st)?;
                     st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
                 } else {
@@ -3866,12 +3866,12 @@ fn build_opentype_assembly_in(
         if horiz {
             b.set_width(&mut st.mem, set_dim);
         } else {
-            b.set_depth(&mut st.mem, set_dim);
+            b.set_height(&mut st.mem, set_dim);
         }
     } else if horiz {
         b.set_width(&mut st.mem, Scaled(nat));
     } else {
-        b.set_depth(&mut st.mem, Scaled(nat));
+        b.set_height(&mut st.mem, Scaled(nat));
     }
     Ok(b)
 }

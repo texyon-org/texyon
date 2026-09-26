@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\delcode`a="1000000
+\delcode`a=-2 \showthe\delcode`a
+\delimiter"8000000
+\mathcode`a="8000 \showthe\mathcode`a
+\mathcode`a="8001
+\mathchardef\x="8001
+\setbox0\hbox{$\mathchar"7FFF \mathchar"8000$}
+\setbox0\hbox{$\left a \right a$}
+\delcode`b=-1 \setbox0\hbox{$\left b\right.$}
+\Umathcode`c="8 "1 "10FFFF
+\Umathcode`c=8 "1 "110000
+\Udelcode`c="100 "1 "0
+\Umathchardef\y="8 "1 "0
+\bye

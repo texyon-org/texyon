@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\font\lc="[LinLibertine_R_G.ttf]:+smcp" at 16pt \font\le="[LinLibertine_R_G.ttf]:extend=2" at 16pt
+\font\lsl="[LinLibertine_R_G.ttf]:slant=0.5" at 16pt \font\lcol="[LinLibertine_R_G.ttf]:color=FF000080" at 16pt
+\font\lls="[LinLibertine_R_G.ttf]:letterspace=12.5" at 16pt \font\lnl="[LinLibertine_R_G.ttf]:-liga" at 16pt
+\setbox0\hbox{\lc Small Caps \le wide \lsl slant \lcol red \lls spaced \lnl office}\showbox0
+\shipout\copy0
+\message{\fontname\lc|\fontname\le|\fontname\lcol}
+\bye

@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\hsize=100pt \parindent0pt \pretolerance-1 \hbadness10000 \hfuzz\maxdimen
+\lefthyphenmin1 \righthyphenmin1 \hsize1pt \tolerance10000 \lccode`Z=`Z \lccode`-=`-
+\hyphenation{s-a-s-a s-b-s-b s-c-s-c s-d-s-d s-e-s-e s-f-s-f s-g-s-g s-h-s-h s-i-s-i s-j-s-j s-k-s-k s-l-s-l s-m-s-m s-s-s-s s-t-s-t s-u-s-u s-w-s-w s-x-s-x s-y-s-y s-s-s}
+\def\p#1{\setbox0\vbox{#1 sasa sbsb scsc sdsd sese sfsf sgsg shsh sisi sjsj sksk slsl smsm ssss stst susu swsw sxsx sysy sss ZsZs s-s\par}\showbox0 \shipout\box0 }
+\def\q#1{\setbox0\vbox{\hsize\maxdimen #1 sasa sbsb scsc sdsd sese sfsf sgsg shsh sisi sjsj sksk slsl smsm ssss stst susu swsw sxsx sysy sss ZsZs s-s\par}\showbox0 }
+\hyphenchar\xa=`- \hyphenchar\xb=`- \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`Z \hyphenchar\xb=`Z \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`s \hyphenchar\xb=`t \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`k \hyphenchar\xb=`m \p\xa \p\xb \q\xa \q\xb
+\bye

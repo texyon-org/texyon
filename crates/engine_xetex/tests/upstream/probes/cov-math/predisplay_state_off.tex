@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\hsize=200pt \parindent=10pt
+\TeXXeTstate=1 \setbox1\vbox{abc \beginR def\endR\ ghi \TeXXeTstate=0 $$\showthe\predisplaysize x$$\par}
+\TeXXeTstate=1 \setbox1\vbox{\beginL abc \TeXXeTstate=0 $$\showthe\predisplaysize x$$\par}
+\TeXXeTstate=1 \setbox1\vbox{a\beginR b\beginL c\endR d $$\showthe\predisplaysize x$$\par}
+\TeXXeTstate=1 \setbox1\vbox{a\beginL b\endL\endL c $$\showthe\predisplaysize x$$\par}
+\TeXXeTstate=1 \setbox1\vbox{\beginR a\beginL b $$\showthe\predisplaysize x$$\par}
+\TeXXeTstate=0
+\bye

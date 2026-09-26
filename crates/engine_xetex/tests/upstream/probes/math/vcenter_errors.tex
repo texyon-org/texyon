@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\vcenter to 5pt{\hbox{a}\hbox{b}\hbox{c}} \sb{$\vcenter to 1pt{\hbox{a}\hbox{b}}$}
+\vbadness=0 \sb{$\vcenter to 50pt{\hbox{a}}$}
+\bye

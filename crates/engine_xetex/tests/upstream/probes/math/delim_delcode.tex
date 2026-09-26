@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\delcode`x="161300 \sb{$\left x a\right x$}
+\delcode`y=-1 \sb{$\left y a\right)$}
+\delcode`z="1000000 \sb{$\left z a\right)$}
+\delcode`z="FFFFFF \sb{$\left z a\right)$}
+\showthe\delcode`z \showthe\delcode`( 
+\bye

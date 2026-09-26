@@ -1,0 +1,13 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\immediate\openout1=rlc.tex
+\immediate\write1{\string\a\space $ & # ^ _ ~ \string{ \string} \string%}
+\immediate\write1{  leading and trailing   }
+\immediate\closeout1
+\openin1=rlc.tex
+\readline1 to\x \show\x
+\readline1 to\y \show\y
+\readline1 to\z \show\z \ifeof1 \message{eof}\fi
+\closein1
+\openin1=rlc.tex \global\read1 to\g \show\g \closein1
+\endlinechar=-1 \openin1=rlc.tex \readline1 to\x \show\x \closein1
+\bye

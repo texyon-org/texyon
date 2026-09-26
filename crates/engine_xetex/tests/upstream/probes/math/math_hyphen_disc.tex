@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\hsize=40pt \setbox1\vbox{\pretolerance-1 $a\discretionary{b}{c}{d}e\-f$ ab $x\discretionary{}{}{\hbox{x}}$}\showbox1
+\sb{$\discretionary{a}{b}{\kern1pt}$}
+\sb{$\discretionary{a\over b}{}{}$}
+\bye

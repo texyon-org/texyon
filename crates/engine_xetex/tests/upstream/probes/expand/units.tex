@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\s#1{\dimen0=#1\relax\message{[#1=\the\dimen0]}}
+\s{1in}\s{1cm}\s{1mm}\s{1bp}\s{1pc}\s{1dd}\s{1cc}\s{1sp}\s{1pt}\s{1em}\s{1ex}\s{1px}
+\s{1truein}\s{-.1234567pt}\s{0.9999999pt}\s{1,5pt}\s{'17pt}\s{"1Fpt}\s{12345678sp}
+\s{1 true pt}\s{1zz}\s{1}\s{16383.99999999pt}\s{8192.1in}
+\mag=2000 \s{1truept}\s{1truein}
+\mag=0 \s{1truept}
+\mag=1000
+\muskip0=1mu plus 2fil minus 1mu \showthe\muskip0
+\muskip0=1pt \showthe\muskip0
+\skip0=1mu \showthe\skip0
+\skip0=\muskip0 \showthe\skip0
+\dimen0=\skip0 \showthe\dimen0
+\count0=\skip0 \showthe\count0
+\bye

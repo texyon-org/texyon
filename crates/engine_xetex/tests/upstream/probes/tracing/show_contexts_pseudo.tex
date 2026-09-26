@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\errorcontextlines=100
+\scantokens{\undefinedA
+second line \undefinedB}
+\def\a{\scantokens{\undefinedC}}\a
+\everyeof{\undefinedD}\scantokens{}
+\everyeof{}
+\scantokens{\scantokens{\undefinedE}}
+\newlinechar=`\^^J
+\scantokens{a^^J\undefinedF^^Jb}
+\bye

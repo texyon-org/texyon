@@ -1471,7 +1471,7 @@ pub(crate) struct ErrorState {
     pub tally: i32,
     pub error_line: i32,
     pub half_error_line: i32,
-    pub trick_buf: [u16; 256],
+    pub trick_buf: [i32; 256],
     pub trick_count: i32,
     pub first_count: i32,
     pub deletions_allowed: bool,

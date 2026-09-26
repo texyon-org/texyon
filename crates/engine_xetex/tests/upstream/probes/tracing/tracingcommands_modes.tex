@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingcommands=3
+\setbox0\vbox{\halign{#\cr a\cr\noalign{\kern1pt}\omit b\cr}}
+\setbox0\hbox{\valign{#\cr a\cr}}
+\setbox0\vbox{$$a\eqno b$$}
+\setbox0\hbox{$a\left(b\middle|c\right)\mathchoice{d}{e}{f}{g}$}
+\setbox0\vbox{\output={}}
+\hbox{}\penalty-10000
+\output={\shipout\box255}
+\tracingcommands=0
+\bye

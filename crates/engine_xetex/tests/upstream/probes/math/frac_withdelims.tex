@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle {a\overwithdelims() b}$}
+\sb{$\textstyle {a\overwithdelims() b}$}
+\sb{$\scriptstyle {a\overwithdelims() b}$}
+\sb{$\scriptscriptstyle {a\overwithdelims() b}$}
+\sb{$\displaystyle {a\atopwithdelims[] b}$}
+\sb{$\textstyle {a\atopwithdelims[] b}$}
+\sb{$\scriptstyle {a\atopwithdelims[] b}$}
+\sb{$\scriptscriptstyle {a\atopwithdelims[] b}$}
+\sb{$\displaystyle {a\abovewithdelims\{\} 1pt b}$}
+\sb{$\textstyle {a\abovewithdelims\{\} 1pt b}$}
+\sb{$\scriptstyle {a\abovewithdelims\{\} 1pt b}$}
+\sb{$\scriptscriptstyle {a\abovewithdelims\{\} 1pt b}$}
+\bye

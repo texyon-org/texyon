@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\output={\message{[\topmarks0|\firstmarks0|\botmarks0|\topmarks100|\firstmarks100|\botmarks100|\firstmarks32767]}\shipout\box255}
+\vsize=20pt
+\count1=0 \loop \hbox{\marks0{a\the\count1}\marks100{b\the\count1}\marks32767{c\the\count1}x}\advance\count1 1 \ifnum\count1<10 \repeat
+\marks32768{bad}\marks-1{bad}
+\bye

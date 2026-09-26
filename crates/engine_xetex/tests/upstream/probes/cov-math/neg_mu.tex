@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\fontdimen6\tensy=-10pt
+\sh{$a\mskip 5mu b\mkern-7mu c\mskip 3mu plus 2mu minus 1mu d\mathpunct{,}e\mathbin{+}f\mathrel{=}g$}
+\sh{$\scriptstyle a\mskip 18mu b\mkern 1mu c$}
+\fontdimen6\tensy=-0.00002pt \sh{$a\mskip 5mu b\mkern 13mu c$}
+\fontdimen6\tensy=10pt
+\bye

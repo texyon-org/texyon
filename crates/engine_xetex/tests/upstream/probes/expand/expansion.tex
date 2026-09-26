@@ -1,0 +1,21 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingmacros2 \tracingcommands3
+\def\a#1#2{(#1,#2)}\def\b{\a x}
+\message{\b y \a{12}{3}}
+\edef\c{\noexpand\a\expandafter\noexpand\csname b\endcsname}\show\c
+\edef\d{\csname undefined!\endcsname}\show\d \expandafter\show\csname undefined!\endcsname
+\futurelet\e\show\e x
+\let\f=\undefinedthing \show\f
+\def\g#1\end{[#1]}\message{\g a{b}c\end}
+\def\h#1#{<#1>}\message{\h ab{c}}
+\afterassignment\show \count0=5\relax
+\begingroup\aftergroup\x\aftergroup\y\def\x{X}\def\y{Y}\endgroup
+\def\x{\message{X}}\def\y{\message{Y}}
+\begingroup\aftergroup\x\aftergroup\y\endgroup
+\uppercase\expandafter{\romannumeral 12}
+\message{\ifcase 2 a\or b\or c\else d\fi \ifcase -1 a\else neg\fi}
+\message{\ifnum1<2 T\else F\fi \ifdim1pt=1pt T\fi \ifodd-3 O\fi \ifvmode V\fi \ifinner I\else NI\fi}
+\message{\if aa T\fi \ifcat a1 N\else Y\fi \ifx\relax\relax X\fi \ifx\a\b N\else D\fi}
+\message{\if\relax\noexpand\foo T\fi \ifcat\noexpand~\noexpand\undefined T\else F\fi}
+\message{\ifhmode H\fi \ifmmode M\fi \ifvoid0 V\fi \ifhbox0 H\fi \ifvbox0 B\fi \iftrue T\fi \iffalse F\fi}
+\bye

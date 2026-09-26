@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\setbox1\vbox{\hsize=200pt \parindent=10pt short $$x$$ after}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \hbox to 180pt{long line}\break\hbox to 180pt{}$$x$$}\showbox1 \box1
+\abovedisplayshortskip=1pt plus 1pt \belowdisplayshortskip=2pt \setbox1\vbox{\hsize=200pt \parindent=10pt a $$xxxxx$$ b}\showbox1 \box1
+\predisplaypenalty=-500 \postdisplaypenalty=77 \setbox1\vbox{\hsize=200pt \parindent=10pt a\par b $$x$$ c}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \noindent$$x$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \indent$$x$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \par$$x$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\halign{#\cr x\cr y\cr}$$ b}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\halign to 100pt{#\tabskip 0pt plus 1fil&#\cr x&y\cr}$$ b}\showbox1 \box1
+\bye

@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\splittopskip 10pt plus 2pt \splitmaxdepth 3pt
+\setbox1\vbox{\hbox{\vrule height 2pt depth 4pt}\hbox{\vrule height 20pt depth 6pt}\hbox{c}\kern4pt\hbox{d}}
+\setbox2\vsplit1 to 8pt \showbox1 \showbox2
+\splittopskip 0pt \setbox2\vsplit1 to 1pt \showbox1 \showbox2
+\setbox1\vbox{\hbox{a}}\setbox2\vsplit1 to -5pt \showbox1 \showbox2
+\bye

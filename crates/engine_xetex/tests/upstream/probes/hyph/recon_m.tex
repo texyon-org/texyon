@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\hsize=100pt \parindent0pt \pretolerance-1 \hbadness10000 \hfuzz\maxdimen
+\lefthyphenmin1 \righthyphenmin1 \hsize1pt \tolerance10000 \lccode`Z=`Z \lccode`-=`-
+\hyphenation{m-a-m-a m-b-m-b m-c-m-c m-d-m-d m-e-m-e m-f-m-f m-g-m-g m-h-m-h m-i-m-i m-j-m-j m-k-m-k m-l-m-l m-m-m-m m-s-m-s m-t-m-t m-u-m-u m-w-m-w m-x-m-x m-y-m-y m-m-m}
+\def\p#1{\setbox0\vbox{#1 mama mbmb mcmc mdmd meme mfmf mgmg mhmh mimi mjmj mkmk mlml mmmm msms mtmt mumu mwmw mxmx mymy mmm ZmZm m-m\par}\showbox0 \shipout\box0 }
+\def\q#1{\setbox0\vbox{\hsize\maxdimen #1 mama mbmb mcmc mdmd meme mfmf mgmg mhmh mimi mjmj mkmk mlml mmmm msms mtmt mumu mwmw mxmx mymy mmm ZmZm m-m\par}\showbox0 }
+\hyphenchar\xa=`- \hyphenchar\xb=`- \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`Z \hyphenchar\xb=`Z \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`s \hyphenchar\xb=`t \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`k \hyphenchar\xb=`m \p\xa \p\xb \q\xa \q\xb
+\bye

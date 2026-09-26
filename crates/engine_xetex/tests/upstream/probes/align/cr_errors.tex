@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\halign{#\cr a}}\showbox0 \box0
+\setbox0\vbox{\halign{#\cr a\par b\cr}}\showbox0 \box0
+\setbox0\vbox{\halign{#\cr a{b\cr}c\cr}}\showbox0 \box0
+\bye

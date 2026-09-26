@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\s#1{\message{[\the\glueexpr#1\relax]}}
+\s{1pt plus 2pt minus 3pt + 4pt plus 5fil}
+\s{1pt plus 1fil + 1pt plus 1fill} \s{(1pt plus 2pt)*3} \s{(1pt plus 2pt minus 1fil)/2}
+\s{1pt plus 1fil - 1pt plus 1fil} \s{\skip0+\thinmuskip}
+\s{1pt plus -1fil + 1pt plus 1fil}
+\def\m#1{\message{[\the\muexpr#1\relax]}}
+\m{1mu plus 2fill + 3mu} \m{\thinmuskip*2} \m{(\medmuskip+\thickmuskip)/3} \m{1pt}
+\bye

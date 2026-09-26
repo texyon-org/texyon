@@ -1,0 +1,13 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\openout3=abc \write3{x\relax} \closeout3 \special{sp\relax} \mark{m} \marks3{mm}
+\insert100{\hbox{i}} \vadjust{\hbox{v}} \penalty-5 \kern3pt \vskip 1pt plus 2fil minus 3fill
+\hrule width 1pt \hbox{\hskip 1pt plus -2fill \mskip 3mu $\mkern2mu\mskip1mu plus 2mu \nonscript\mskip 3mu x$ \discretionary{a}{b}{cd} \- \/ ab\kern1pt\kern-1pt}
+\leaders\hbox{L}\vskip 5pt \cleaders\hrule\vskip 1pt \xleaders\copy0\vskip 2pt
+\noindent\leftskip=1pt plus 1fil\rightskip=2pt\parfillskip=3pt \hskip 3pt x\par
+\write-1{\noexpand\foo} \immediate\write-1{now}
+\setlanguage5 \XeTeXlinebreaklocale "ab"
+}
+\showbox0
+\setbox0\hbox{\beginL\beginR\endR\endL\TeXXeTstate=1 \beginL a\beginR b\endR\endL}\showbox0
+\setbox0\hbox{\hbox to 5pt{} \vrule width 1pt height 2pt depth 3pt \vrule height -1pt \lower2pt\hbox{}\raise3pt\vbox{}}\showbox0
+\bye

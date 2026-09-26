@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\lm="[lmroman12-regular.otf]" at 16pt
+\pdfpagewidth=200pt \pdfpageheight=300pt \message{\the\pdfpagewidth,\the\pdfpageheight}
+\shipout\hbox{a}
+\pdfpagewidth=0pt \shipout\hbox{b}
+\pdfpageheight=0pt \shipout\hbox{c}
+\hoffset=10pt \voffset=-5pt \shipout\hbox{d}
+\mag=2000 \shipout\hbox{e}
+\bye

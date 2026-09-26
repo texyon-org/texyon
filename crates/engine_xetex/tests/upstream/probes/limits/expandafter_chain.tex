@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\a{\b}\def\b{\c}\def\c{\d}\def\d{X}
+\message{\expandafter\expandafter\expandafter\meaning\expandafter\expandafter\expandafter\a\a}
+\count1=0 \def\r{\advance\count1 1 \ifnum\count1<500 \expandafter\r\fi}\r\message{\the\count1}
+\def\s#1{\ifnum#1<300 \expandafter\s\expandafter{\number\numexpr#1+1\expandafter}\else\message{#1}\fi}\s{0}
+\bye

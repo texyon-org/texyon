@@ -1,0 +1,16 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\message{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+\message{short}\message{words}\message{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+\message{x}\message{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+\message{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}\message{b}
+\message{a^^Jb}
+\newlinechar=`\^^J
+\message{c^^Jd}
+\immediate\write-1{e^^Jf}
+\immediate\write16{g^^Jh}
+\newlinechar=-1
+\message{^^e9^^ff^^80^^7f^^00^^1f}
+\message{\string\^^M}
+\escapechar=-1 \message{\string\relax} \escapechar=`\A \message{\string\relax} \escapechar=`\\
+\message{\meaning\relax\meaning a\meaning\bgroup}
+\bye

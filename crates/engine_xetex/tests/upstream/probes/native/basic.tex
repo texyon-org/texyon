@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\setbox0\hbox{\lb Hello office fluffy AVAWAY To.}\showbox0
+\setbox1\hbox{\ls Hello office fluffy}\showbox1
+\message{\the\fontdimen1\lb,\the\fontdimen2\lb,\the\fontdimen3\lb,\the\fontdimen4\lb,\the\fontdimen5\lb,\the\fontdimen6\lb,\the\fontdimen7\lb,\the\fontdimen8\lb}
+\message{\fontname\lb|\fontname\ls}
+\message{\the\fontcharwd\lb`A,\the\fontcharht\lb`A,\the\fontchardp\lb`g,\the\fontcharic\lb`f}
+\message{\the\XeTeXcharglyph`A \the\XeTeXglyphindex"A" \the\XeTeXcountglyphs\lb}
+\shipout\copy0 \shipout\copy1
+\bye

@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox300\vbox{\hbox{a}\marks300{mm}\hbox{b}\hbox{c}}
+\setbox301\vsplit300 to 10pt \showbox300 \showbox301
+\message{[\splitfirstmarks300][\splitbotmarks300]}
+\setbox2\vsplit302 to 1pt \showbox2
+\bye

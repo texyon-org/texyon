@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\batchmode \undefineda \showthe\interactionmode \message{batch message}\showbox0
+\setbox0\hbox to 1pt{xxx}\immediate\write16{to terminal}\immediate\write-1{to log}
+\nonstopmode \undefinedb \showthe\interactionmode \message{nonstop message}
+\setbox0\hbox to 1pt{yyy}\showlists
+\interactionmode=1 \undefinedc \showthe\interactionmode
+\interactionmode=0 \undefinedd \interactionmode=5 \interactionmode=-1 \showthe\interactionmode
+\scrollmode \undefinede \errmessage{err}\errhelp{help}\errmessage{err2}
+{\batchmode}\showthe\interactionmode
+\bye

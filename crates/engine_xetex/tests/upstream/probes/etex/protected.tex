@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\protected\def\p{P}\def\q{Q}
+\edef\x{\p\q}\show\x \show\p \message{\p\q}
+\protected\long\outer\def\r{R}\show\r
+\long\protected\edef\s{\q}\show\s
+\halign{#\cr\p\cr \q\cr}
+\edef\y{\ifx\p\relax\else no\fi}\show\y
+\protected\chardef\c=1
+\protected\let\z\relax
+\showthe\p
+\bye

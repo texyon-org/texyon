@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\a{A}\protected\def\p{P}
+\message{\expanded{\a\p\noexpand\a}}
+\edef\x{\expanded{\a\unexpanded{\a}}}\show\x
+\edef\x{\expanded{##}}\show\x
+\expandafter\def\expandafter\y\expanded{{\a}}\show\y
+\bye

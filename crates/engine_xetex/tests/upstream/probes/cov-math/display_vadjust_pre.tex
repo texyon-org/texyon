@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\hsize=200pt
+\setbox1\vbox{a $$x\vadjust pre{\hrule height 1pt}\vadjust{\hrule height 2pt}y\eqno(1)$$ b\par}\showbox1
+\setbox1\vbox{a $$x\vadjust pre{\hrule height 1pt}\leqno(2)$$\par}\showbox1
+\setbox1\vbox{a $$\halign{#\cr x\vadjust pre{\kern1pt}\cr}$$\par}\showbox1
+\setbox1\vbox{a $x\vadjust pre{\kern3pt}y$ b\vadjust pre{\kern4pt}\vadjust{\kern5pt}\par}\showbox1
+\bye

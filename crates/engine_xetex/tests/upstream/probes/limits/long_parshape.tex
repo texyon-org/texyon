@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count1=0 \edef\ps{}\loop \edef\ps{\ps \the\count1 pt \the\numexpr 300-\count1 pt}\advance\count1 1 \ifnum\count1<150 \repeat
+\parshape 150 \ps \message{\the\parshape,\the\parshapelength 1,\the\parshapeindent 150,\the\parshapedimen 300,\the\parshapedimen 301,\the\parshapelength 0,\the\parshapelength -1}
+\parindent0pt \tolerance10000 \hbadness10000
+\setbox0\vbox{\parshape 150 \ps \tenrm \count1=0 \loop a b c d e \advance\count1 1 \ifnum\count1<80 \repeat\par}
+\message{\the\ht0,\the\wd0}
+\bye

@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\skip3=1pt plus 2fil minus 3fill
+\message{\the\gluestretch\skip3,\the\glueshrink\skip3,\the\gluestretchorder\skip3,\the\glueshrinkorder\skip3}
+\skip4=1pt plus 2pt minus 3filll
+\message{\the\gluestretch\skip4,\the\glueshrink\skip4,\the\gluestretchorder\skip4,\the\glueshrinkorder\skip4}
+\message{\the\gluestretch\thinmuskip}
+\message{\the\mutoglue\thickmuskip,\the\gluetomu\skip3}
+\muskip3=\gluetomu\skip4 \showthe\muskip3
+\skip5=\mutoglue\muskip3 \showthe\skip5
+\message{\the\gluestretchorder\glueexpr 1pt plus 1fi\relax}
+\bye

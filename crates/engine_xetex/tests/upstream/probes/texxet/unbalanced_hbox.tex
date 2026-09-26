@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\TeXXeTstate=1 
+\setbox0\hbox{\beginR abc}\showbox0
+\setbox0\hbox{abc\endR}\showbox0
+\setbox0\hbox{\beginL abc\endR}\showbox0
+\setbox0\hbox{\beginR\beginL abc}\showbox0 \shipout\box0
+\bye

@@ -1,0 +1,17 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle x^2_1 x_1^2 x^{a^b} {}^1x x_{a_{b_c}} f'' f'^2 f_1' \int_0^1$}
+\sb{$\textstyle x^2_1 x_1^2 x^{a^b} {}^1x x_{a_{b_c}} f'' f'^2 f_1' \int_0^1$}
+\sb{$\scriptstyle x^2_1 x_1^2 x^{a^b} {}^1x x_{a_{b_c}} f'' f'^2 f_1' \int_0^1$}
+\sb{$\scriptscriptstyle x^2_1 x_1^2 x^{a^b} {}^1x x_{a_{b_c}} f'' f'^2 f_1' \int_0^1$}
+\scriptspace=3pt \sb{$x^2 y_1 z^1_2$}
+\scriptspace=-1pt \sb{$x^2 y_1$}
+\sb{$\displaystyle \vrule height 20pt depth 10pt^{\vrule height 12pt}_{\vrule depth 12pt}$}
+\sb{$\textstyle \vrule height 20pt depth 10pt^{\vrule height 12pt}_{\vrule depth 12pt}$}
+\sb{$\scriptstyle \vrule height 20pt depth 10pt^{\vrule height 12pt}_{\vrule depth 12pt}$}
+\sb{$\scriptscriptstyle \vrule height 20pt depth 10pt^{\vrule height 12pt}_{\vrule depth 12pt}$}
+\sb{$\displaystyle A^{\vrule depth 8pt}_{\vrule height 8pt}$}
+\sb{$\textstyle A^{\vrule depth 8pt}_{\vrule height 8pt}$}
+\sb{$\scriptstyle A^{\vrule depth 8pt}_{\vrule height 8pt}$}
+\sb{$\scriptscriptstyle A^{\vrule depth 8pt}_{\vrule height 8pt}$}
+\bye

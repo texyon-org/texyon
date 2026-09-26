@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\t{\showthe\lastnodetype}
+\t
+\setbox0\hbox{\t a\t\hbox{}\t\vbox{}\t\vrule\t\vadjust{}\t\insert100{}\t\mark{}\t\special{}\t
+ \discretionary{}{}{}\t$$\t\hskip1pt\t\kern1pt\t\penalty1\t\unskip\t\beginL\t\endL\t}
+\setbox0\hbox{a\/\t $x^2$\t\penalty3\unpenalty\t\kern1pt\unkern\t\hbox{}\setbox2\lastbox\t}
+\setbox0\vbox{\t\hrule\t\vskip1pt\t\penalty5\t\mark{x}\t\hbox{}\t\write1{x}\t}
+$\t x\t\mathchoice{}{}{}{}\t\left(\t\right)\t\over\t\mathop{}\t\hbox{}\t$
+$$\t\halign{#\cr a\cr}\t$$
+\bye

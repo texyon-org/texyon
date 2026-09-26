@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\font\xc=xligc \textfont5=\xc \scriptfont5=\xc \scriptscriptfont5=\xc
+\count1=`a \loop \mathcode\count1=\numexpr"0500+\count1\relax \advance\count1 1 \ifnum\count1<123 \repeat
+\def\all{abcdefghijklmnopqrstuvwxyz}
+\sh{$a\all\ b\all\ c\all$}
+\sh{$d\all\ e\all\ f\all\ g\all$}
+\sh{$h\all\ i\all\ j\all\ k\all\ x\all\ y\all\ z\all$}
+\bye

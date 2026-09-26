@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+{\catcode`\~=13 \gdef~{TILDE}} \mathcode`a="8000 {\catcode`a=13 \gdef a{\sqrt{Q}}} \sb{$a b a$}
+\mathcode`b="8000 \sb{$b$}
+\mathcode`c="7FFF \sb{$c$}
+\mathcode`d="7061 \fam1 \sb{$d \fam0 d \fam15 d \fam-1 d$}
+\showthe\mathcode`d \mathcode`e="8001 \mathcode`e=-1 \showthe\mathcode`e
+\sb{$\mathchar"7FFF \mathchar"8000 \mathchar"1FFFF$}
+\bye

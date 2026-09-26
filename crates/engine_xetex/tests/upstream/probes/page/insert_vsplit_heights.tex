@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingpages1 \vsize100pt
+\count100=500 \dimen100=30pt \skip100=3pt plus 1pt
+\output={\showbox100 \shipout\box255 \global\setbox100\box100}
+\hbox{a}\insert100{\hbox{\vrule height 20pt depth 2pt}\penalty0\hbox{\vrule height 20pt depth 3pt}\kern2pt\hbox{\vrule height 20pt}}
+\hbox{b}\penalty-10000
+\bye

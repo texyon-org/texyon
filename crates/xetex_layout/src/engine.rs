@@ -367,7 +367,7 @@ pub(crate) fn find_graphite_feature(
     *v = 0;
 
     let mut idx = 0;
-    while str[idx] == b' ' || str[idx] == b'\t' {
+    while str.get(idx).is_some_and(|c| *c == b' ' || *c == b'\t') {
         idx += 1;
     }
     while str.get(idx).is_some_and(|c| *c != b'=') {
@@ -397,15 +397,18 @@ pub(crate) fn find_graphite_feature(
 
 pub(crate) fn find_graphite_feature_named(engine: &LayoutEngine, name: &[u8]) -> Option<u32> {
     let gr_face = engine.font().hb_font().face().gr_face()?;
-
-    let tag = hb::Tag::from_str(std::str::from_utf8(name).unwrap()).to_raw();
+    // Matching the tag as well as the label prefix is a Tectonic extension.
+    let tag = std::str::from_utf8(name).map_or(0, |n| hb::Tag::from_str(n).to_raw());
 
     for i in 0..gr_face.num_feature_refs() {
-        let feature = gr_face.feature_ref(i)?;
-        let lang_id = 0x409;
-        let label = feature.label(lang_id)?;
-
-        if &label.as_bytes()[..name.len()] == name || feature.id() == tag {
+        let Some(feature) = gr_face.feature_ref(i) else {
+            continue;
+        };
+        if feature.id() == tag
+            || feature
+                .label(0x409)
+                .is_some_and(|l| l.as_bytes().starts_with(name))
+        {
             return Some(feature.id());
         }
     }
@@ -419,14 +422,12 @@ pub(crate) fn find_graphite_feature_setting_named(
     name: &[u8],
 ) -> Option<i16> {
     let face = engine.font().hb_font().face().gr_face()?;
-
-    let tag = hb::Tag::from_str(std::str::from_utf8(name).unwrap()).to_raw();
-
     let feature = face.find_feature_ref(id)?;
     for i in 0..feature.num_values() {
-        let lang_id = 0x409;
-        let label = feature.value_label(i, lang_id)?;
-        if &label.as_bytes()[..name.len()] == name || feature.id() == tag {
+        if feature
+            .value_label(i, 0x409)
+            .is_some_and(|l| l.as_bytes().starts_with(name))
+        {
             return Some(feature.value(i));
         }
     }

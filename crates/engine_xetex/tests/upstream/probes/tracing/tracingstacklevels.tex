@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingstacklevels=3 \tracingmacros=1
+\def\a{\b}\def\b{\c}\def\c{\d}\def\d{x}
+\setbox0\hbox{\a}
+\tracingstacklevels=1 \setbox0\hbox{\a}
+\tracingstacklevels=0 \tracingmacros=0
+\bye

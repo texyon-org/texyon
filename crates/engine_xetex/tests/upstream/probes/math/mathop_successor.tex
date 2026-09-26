@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle \mathchar"1350 \mathchar"1352 \mathchar"1348 \mathchar"135A$}
+\sb{$\textstyle \mathchar"1350 \mathchar"1352 \mathchar"1348 \mathchar"135A$}
+\sb{$\scriptstyle \mathchar"1350 \mathchar"1352 \mathchar"1348 \mathchar"135A$}
+\sb{$\scriptscriptstyle \mathchar"1350 \mathchar"1352 \mathchar"1348 \mathchar"135A$}
+\sb{$\displaystyle\mathop{\mathchar"350}\limits_a^b$}
+\bye

@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\sh{$x^{\mathchoice{D}{T}{S}{SS}}_{\mathchoice{D}{T}{S}{SS}}$}
+\sh{$\displaystyle x^{\mathchoice{\displaystyle D}{T}{S}{SS}y}$}
+\sh{$\mathchoice{a}{b}{c}{d}^2 \mathchoice{}{}{}{}^3$}
+\sh{$\displaystyle\mathchoice{a}{b}{c}{d}\textstyle\mathchoice{a}{b}{c}{d}\scriptstyle\mathchoice{a}{b}{c}{d}\scriptscriptstyle\mathchoice{a}{b}{c}{d}$}
+\sh{$\mathop{\mathchoice{\sum}{\sum}{\sum}{\sum}}\limits^a_b \mathop{\mathchoice{\int}{I}{i}{.}}\nolimits^a$}
+\sh{$\mathaccent"7016{\mathchoice{a}{b}{c}{d}}\mathaccent"717E{\mathaccent"7016 x}$}
+\bye

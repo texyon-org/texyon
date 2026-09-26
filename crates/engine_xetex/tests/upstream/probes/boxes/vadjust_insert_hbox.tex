@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\hbox{a\vadjust{\hbox{V}}b\insert100{\hbox{I}}\mark{M}}\showlists}
+\setbox0\vbox{\noindent a\vadjust{\hbox{V}}b\insert100{\hbox{I}}\mark{M}\par\showlists}
+\setbox0\hbox{\vadjust{\penalty5}\showlists}\showbox0
+\setbox0\vbox{\hsize=20pt \noindent aaa aaa aaa\vadjust{\kern3pt}aaa\insert100{\hbox{x}}aaa aaa\par}\showbox0
+\bye

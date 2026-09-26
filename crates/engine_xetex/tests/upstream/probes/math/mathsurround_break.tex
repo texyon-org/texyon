@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\hsize=60pt \parindent=0pt \mathsurround=6pt \setbox1\vbox{x $a+b=c+d=e$ $ab$ y $a$ $b$ $c$ $d$}\showbox1
+\setbox1\vbox{\hsize=10pt \mathsurround=3pt $a$\penalty-10000 $b$}\showbox1
+\bye

@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\message{\ifincsname Y\else N\fi \csname\ifincsname relax\else undefined\fi\endcsname}
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt
+\message{\iffontchar\lb`A Y\else N\fi \iffontchar\lb"E000 Y\else N\fi \iffontchar\lb"10FFFF Y\else N\fi}
+\message{\ifeof 3 Y\else N\fi}
+\message{\unless\ifcase 1 a\or b\fi}
+\message{\unless\unless\iftrue T\else F\fi}
+\message{\unless\relax x}
+\message{\unless\fi}
+\message{\ifcase 3 a\or b\else c\or d\fi}
+\message{\unless\ifx aa T\else F\fi \unless\ifdefined\undefined U\fi \unless\ifcsname relax\endcsname C\else NC\fi}
+\message{\ifcase 0 \or\or\fi \ifcase 2 a\or b\fi end}
+\bye

@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\vsize20pt
+\output={\shipout\copy255 }
+\hbox{a}\penalty-10000 \hbox{b}\penalty-10000
+\output={\shipout\box255}
+\setbox255\hbox{junk}\hbox{c}\penalty-10000
+\bye

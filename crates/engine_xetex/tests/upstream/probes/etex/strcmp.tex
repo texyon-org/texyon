@@ -1,0 +1,19 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\ifdefined\strcmp \message{strcmp:\strcmp{a}{b},\strcmp{b}{a},\strcmp{a}{a}}\else\message{nostrcmp}\fi
+\ifdefined\pdfstrcmp\message{pdfstrcmp}\else\message{nopdfstrcmp}\fi
+\ifdefined\mdfivesum \message{\mdfivesum{abc}}\else\message{nomd5}\fi
+\ifdefined\expanded\message{\expanded{\noexpand\foo x}}\fi
+\ifdefined\creationdate\message{cd}\fi
+\ifdefined\elapsedtime\message{et}\fi
+\ifdefined\filesize\message{fs}\fi
+\ifdefined\uniformdeviate\message{ud}\fi
+\ifdefined\normaldeviate\message{nd}\fi
+\ifdefined\randomseed\message{rs}\fi
+\ifdefined\resettimer\message{rt}\fi
+\ifdefined\filemoddate\message{fmd}\fi
+\ifdefined\filedump\message{fdump}\fi
+\ifdefined\tracingstacklevels\message{tsl}\fi
+\ifdefined\lastnamedcs\message{lnc}\fi
+\ifdefined\ifincsname\message{iic}\fi
+\ifdefined\vadjust\message{va}\fi
+\bye

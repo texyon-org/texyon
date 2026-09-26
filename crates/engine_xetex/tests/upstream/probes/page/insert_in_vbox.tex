@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\hbox{a}\insert100{\hbox{i}\penalty5}\mark{m}\hbox{b}}\showbox0
+\vsize30pt \count100=1000 \dimen100=100pt \skip100=2pt
+\output={\showbox100 \shipout\box255}
+\unvbox0 \penalty-10000
+\bye

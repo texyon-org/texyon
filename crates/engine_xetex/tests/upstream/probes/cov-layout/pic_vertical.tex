@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+
+\setbox0\vbox{\XeTeXpicfile "redbox.png" width 20pt \XeTeXpicfile "redbox.png" height 10pt \hrule\XeTeXpdffile "issue393_ungetc_trigger.pdf" scaled 100 }\showbox0
+\setbox1\vsplit0 to 15pt \showbox1 \showbox0
+\shipout\vbox{\XeTeXpicfile "redbox.png" width 20pt \kern3pt \XeTeXpicfile "redbox.png" rotated 45 width 10pt }
+\vsize=100pt \output={\showbox255 \shipout\box255}
+\XeTeXpicfile "redbox.png" width 30pt \XeTeXpicfile "redbox.png" height 50pt \XeTeXpicfile "redbox.png" height 50pt \penalty-10000
+\message{\the\pagetotal}
+\bye

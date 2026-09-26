@@ -1,0 +1,17 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\immediate\openout3=rwtest.tex
+\immediate\write3{line one {braced}}
+\immediate\write3{line two \noexpand\foo}
+\immediate\write3{}
+\immediate\write3{% not a comment? }
+\immediate\closeout3
+\openin5=rwtest.tex
+\ifeof5 \message{eof!}\else\message{open}\fi
+\readline5 to\a \show\a
+\read5 to\b \show\b
+\readline5 to\c \show\c
+\readline5 to\d \show\d
+\readline5 to\e \show\e \ifeof5 \message{now eof}\fi
+\closein5
+\ifeof5 \message{closed eof}\fi
+\bye
