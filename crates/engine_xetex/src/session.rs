@@ -578,7 +578,7 @@ impl IncrementalXeTeXSession {
         let ladder = self.ladder.as_mut().expect("opened session without ladder");
         let teardown = launcher.with_global_lock(|api| {
             Ok(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_locked(api, state, |state| unsafe {
+                run_locked(api, state, |state| {
                     crate::engine::release_operation_inputs(state);
                     ladder.rewind_engine(state, 0);
                     crate::engine::tt_cleanup(state);

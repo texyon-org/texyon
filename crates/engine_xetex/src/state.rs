@@ -137,9 +137,8 @@ pub(crate) struct InputState {
 pub(crate) enum InputSlot {
     #[default]
     Empty,
-    /// Address-stable terminal sentinel owned by `io.rs`.
+    /// The terminal, which has no file.
     Terminal,
-    /// Open file state. The box keeps raw FFI borrows address-stable.
     Open(Box<crate::io::UFile>),
 }
 
@@ -1794,22 +1793,6 @@ impl InputClusterState {
 
     pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {
         std::ffi::CStr::from_bytes_until_nul(&self.abspath_of_input_file.0).unwrap_or_default()
-    }
-
-    pub(crate) fn input_file_ptr(&mut self, idx: i32) -> *mut crate::io::UFile {
-        Self::slot_ptr(&mut self.input_file[idx as usize])
-    }
-
-    pub(crate) fn read_file_ptr(&mut self, idx: usize) -> *mut crate::io::UFile {
-        Self::slot_ptr(&mut self.read_file[idx])
-    }
-
-    fn slot_ptr(slot: &mut InputSlot) -> *mut crate::io::UFile {
-        match slot {
-            InputSlot::Empty => std::ptr::null_mut(),
-            InputSlot::Terminal => crate::io::stdin_ufile_ptr(),
-            InputSlot::Open(file) => &mut **file,
-        }
     }
 }
 

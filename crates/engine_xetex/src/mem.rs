@@ -55,19 +55,6 @@ pub(crate) unsafe fn xmalloc(size: libc::size_t) -> *mut libc::c_void {
     p
 }
 
-/// `calloc` that panics instead of returning null, for C-owned buffers.
-///
-/// # Safety
-/// The caller owns the zeroed result and frees it with `libc::free`.
-pub(crate) unsafe fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut libc::c_void {
-    let p = libc::calloc(nelem.max(1), elsize.max(1));
-    assert!(
-        !p.is_null(),
-        "out of memory: calloc({nelem}, {elsize}) failed"
-    );
-    p
-}
-
 /// TeX's `end_LR_type`: the LR entry that a math node of `subtype` closes.
 #[inline]
 pub(crate) fn end_lr_type(subtype: u16) -> i32 {

@@ -8,22 +8,30 @@ use crate::bridge::{
 };
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE, TOO_BIG_CHAR};
 use crate::errors::Abort;
-use crate::mem::xmalloc;
 use crate::state::{ShipoutState, StringsState, TexmfState};
 use crate::utf8::{BYTES_FROM_UTF8, FIRST_BYTE_MARK, OFFSETS_FROM_UTF8};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
+/// `gmtime` or `localtime` of `t`.
+fn broken_down_time(t: libc::time_t, utc: bool) -> libc::tm {
+    // SAFETY: both return null or a pointer to a static `tm` that stays valid
+    // until the next call, and it is copied out right away.
+    let tm = unsafe {
+        if utc {
+            crate::compat::gmtime(&t)
+        } else {
+            crate::compat::localtime(&t)
+        }
+        .as_ref()
+        .copied()
+    };
+    tm.expect("time out of range")
+}
+
 /// Returns `(minutes, day, month, year)` for `source_date_epoch`.
 pub fn get_date_and_time(source_date_epoch: libc::time_t, use_utc: bool) -> (i32, i32, i32, i32) {
-    // SAFETY: gmtime/localtime return a pointer valid until the next call.
-    let tm = unsafe {
-        *if use_utc {
-            crate::compat::gmtime(&source_date_epoch)
-        } else {
-            crate::compat::localtime(&source_date_epoch)
-        }
-    };
+    let tm = broken_down_time(source_date_epoch, use_utc);
     (
         tm.tm_hour * 60 + tm.tm_min,
         tm.tm_mday,
@@ -142,15 +150,6 @@ impl StringsState {
         }
         // SAFETY: the bytes were cut at the first NUL.
         unsafe { CString::from_vec_unchecked(bytes) }
-    }
-
-    /// Pool string `s` as a `malloc`ed NUL-terminated UTF-8 string the caller frees.
-    pub unsafe fn gettexstring(&self, s: i32) -> *mut libc::c_char {
-        let bytes = self.texstring_utf8(s);
-        let name = xmalloc(bytes.len() + 1) as *mut u8;
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), name, bytes.len());
-        *name.add(bytes.len()) = 0;
-        name as *mut libc::c_char
     }
 
     /// Appends code point `c` to the pool as one or two UTF-16 units.
@@ -323,18 +322,18 @@ pub(crate) fn remember_source_info(
 }
 
 /// Formats `t` as a NUL-terminated PDF date string into `time_str`.
-unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
-    let lt = if utc {
-        *crate::compat::gmtime(&t)
-    } else {
-        *crate::compat::localtime(&t)
+fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
+    let lt = broken_down_time(t, utc);
+    // SAFETY: `time_str` holds the 30 bytes passed, the format is a C string
+    // and `lt` is a valid `tm`.
+    let size = unsafe {
+        crate::compat::strftime(
+            time_str.as_mut_ptr().cast(),
+            30,
+            c"D:%Y%m%d%H%M%S".as_ptr(),
+            &lt,
+        )
     };
-    let size = crate::compat::strftime(
-        time_str.as_mut_ptr() as *mut libc::c_char,
-        30,
-        c"D:%Y%m%d%H%M%S".as_ptr(),
-        &lt as *const libc::tm,
-    );
     if size == 0 {
         time_str[0] = 0;
         return;
@@ -347,7 +346,7 @@ unsafe fn makepdftime(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
         time_str[16] = 0;
     }
 
-    let gmt = *crate::compat::gmtime(&t);
+    let gmt = broken_down_time(t, true);
     let mut off = 60 * (lt.tm_hour - gmt.tm_hour) + lt.tm_min - gmt.tm_min;
     if lt.tm_year != gmt.tm_year {
         off += if lt.tm_year > gmt.tm_year {
@@ -382,7 +381,7 @@ fn nul_terminated(buf: &[u8]) -> &[u8] {
 }
 
 /// Records the PDF date string of `source_date_epoch` for `getcreationdate`.
-pub unsafe fn init_start_time(st: &mut crate::state::EngineState, source_date_epoch: libc::time_t) {
+pub fn init_start_time(st: &mut crate::state::EngineState, source_date_epoch: libc::time_t) {
     let mut buf = [0u8; 30];
     makepdftime(source_date_epoch, &mut buf, true);
     st.texmf.start_time_str = buf;
@@ -396,7 +395,7 @@ impl TexmfState {
 
 impl StringsState {
     /// Appends the modification date of file `s` to the pool as a PDF date.
-    pub(crate) unsafe fn getfilemoddate(&mut self, s: i32) -> Result<(), Abort> {
+    pub(crate) fn getfilemoddate(&mut self, s: i32) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
             return Ok(());

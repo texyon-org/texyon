@@ -360,7 +360,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     let discards = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
     st.mem.flush_node_list(discards.0)?;
     st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
-    unsafe { crate::shipout::ship_out(st, page)? };
+    crate::shipout::ship_out(st, page)?;
     st.eqtb.set_box_reg(255, MemPtr::NULL);
     Ok(())
 }

@@ -639,7 +639,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let saved = save_scan(st)?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
-            unsafe { st.strings.getfilemoddate(s) }?;
+            st.strings.getfilemoddate(s)?;
             return ins_file_query_result(st, &saved, s, b);
         }
         PDF_FILE_SIZE_CODE => {
@@ -1042,7 +1042,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 } else if st.scanner.name_in_progress {
                     crate::input::insert_relax(st)?;
                 } else {
-                    unsafe { crate::io::start_input(st, None) }?;
+                    crate::io::start_input(st, None)?;
                 }
             }
             _ => {

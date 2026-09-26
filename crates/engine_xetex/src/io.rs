@@ -1,6 +1,8 @@
 //! Low-level input and output: encoded line reading, file names, and the
 //! log and input-file lifecycle.
 
+use std::ffi::CStr;
+
 use crate::consts::{
     BIGGEST_CHAR, CLOSED, EMPTY_STRING, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
     INT_PAR_TRACING_STACK_LEVELS, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
@@ -8,7 +10,6 @@ use crate::consts::{
     SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
 };
 use crate::input::NEW_LINE;
-use crate::mem::{xcalloc, xmalloc};
 use crate::state::EngineState;
 use crate::texmfmp::{next_utf8_char, utf16_units};
 use tectonic_bridge_core::EOF;
@@ -60,26 +61,72 @@ const _: () = assert!(
     "UFile size mismatch with C UFILE"
 );
 
+impl UFile {
+    /// Closes the ICU converter this file owns, if any.
+    fn close_converter(&mut self) {
+        if self.encoding_mode == ICUMAPPING as i16 && !self.conversion_data.is_null() {
+            // SAFETY: `set_input_file_encoding` installed this converter for
+            // this file alone, and the pointer is cleared after closing.
+            unsafe { ucnv_close(self.conversion_data) };
+        }
+        self.conversion_data = std::ptr::null_mut();
+    }
+}
+
 impl Drop for UFile {
     fn drop(&mut self) {
-        if self.encoding_mode == ICUMAPPING as i16 && !self.conversion_data.is_null() {
-            // SAFETY: this slot owns the converter installed by
-            // `set_input_file_encoding`.
-            unsafe { xetex_ucnv_close(self.conversion_data) };
+        self.close_converter();
+    }
+}
+
+/// An input or `\read` stream slot.
+#[derive(Clone, Copy)]
+pub(crate) enum FileSlot {
+    Input(usize),
+    Read(usize),
+}
+
+impl FileSlot {
+    fn get(self, st: &mut EngineState) -> &mut crate::state::InputSlot {
+        match self {
+            FileSlot::Input(idx) => &mut st.input.input_file[idx],
+            FileSlot::Read(idx) => &mut st.input.read_file[idx],
         }
     }
 }
 
-static mut STDIN_UFILE: UFile = UFile {
-    handle: INVALID_HANDLE,
-    saved_char: -1,
-    skip_next_lf: 0,
-    encoding_mode: UTF8 as i16,
-    conversion_data: std::ptr::null_mut(),
-};
+/// Runs `f` on the file in `slot`, which is detached from the state for the
+/// call. The terminal gets a stand-in with no handle, an empty slot `None`.
+pub(crate) fn with_slot_file<R>(
+    st: &mut EngineState,
+    slot: FileSlot,
+    f: impl FnOnce(&mut EngineState, &mut UFile) -> R,
+) -> Option<R> {
+    let mut taken = std::mem::take(slot.get(st));
+    let result = match &mut taken {
+        crate::state::InputSlot::Empty => None,
+        crate::state::InputSlot::Terminal => Some(f(st, &mut UFile::terminal())),
+        crate::state::InputSlot::Open(file) => Some(f(st, file)),
+    };
+    *slot.get(st) = taken;
+    result
+}
 
-pub(crate) fn stdin_ufile_ptr() -> *mut UFile {
-    &raw mut STDIN_UFILE
+/// `input_line` on the file in `slot`, which must not be empty.
+pub(crate) fn input_slot_line(st: &mut EngineState, slot: FileSlot) -> Result<libc::c_int, Abort> {
+    with_slot_file(st, slot, input_line).expect("input_line on an empty input slot")
+}
+
+impl UFile {
+    fn terminal() -> UFile {
+        UFile {
+            handle: INVALID_HANDLE,
+            saved_char: -1,
+            skip_next_lf: 0,
+            encoding_mode: UTF8 as i16,
+            conversion_data: std::ptr::null_mut(),
+        }
+    }
 }
 
 extern "C" {
@@ -124,41 +171,56 @@ extern "C" {
     ) -> i32;
 }
 
-pub(crate) unsafe fn xetex_ucnv_close(converter: *mut libc::c_void) {
-    ucnv_close(converter);
-}
-
-pub(crate) unsafe fn xetex_ucnv_open(
-    name: *const libc::c_char,
-    out_err: *mut libc::c_int,
-) -> *mut libc::c_void {
+/// Opens the ICU converter `name`, or returns ICU's error code.
+fn icu_converter_open(name: &CStr) -> Result<*mut libc::c_void, libc::c_int> {
     let mut err: i32 = 0;
-    let cnv = ucnv_open(name, &mut err);
-    if !out_err.is_null() {
-        *out_err = err;
+    // SAFETY: `name` is NUL-terminated and `err` is a valid out-parameter.
+    let cnv = unsafe { ucnv_open(name.as_ptr(), &mut err) };
+    if cnv.is_null() {
+        Err(err)
+    } else {
+        Ok(cnv)
     }
-    cnv
 }
 
-/// Converts `source` to host-endian UTF-32 in `target`, returning the byte
-/// count and the ICU error code.
-unsafe fn xetex_ucnv_to_utf32(
-    cnv: *mut libc::c_void,
-    target: *mut libc::c_char,
-    target_capacity: i32,
-    source: *const libc::c_char,
-    source_length: i32,
-) -> (i32, libc::c_int) {
+/// Whether ICU knows a converter `name`, or ICU's error code.
+pub(crate) fn icu_converter_exists(name: &CStr) -> Result<(), libc::c_int> {
+    let cnv = icu_converter_open(name)?;
+    // SAFETY: `cnv` was just opened and is not used again.
+    unsafe { ucnv_close(cnv) };
+    Ok(())
+}
+
+/// The bytes of `units`, for converters that write host-endian UTF-32 into them.
+fn utf32_bytes_mut<T: Utf32Unit>(units: &mut [T]) -> &mut [u8] {
+    // SAFETY: `T` is a 4-byte integer, so every byte pattern is a valid value
+    // and the byte view covers exactly the same memory.
+    unsafe {
+        std::slice::from_raw_parts_mut(units.as_mut_ptr().cast(), std::mem::size_of_val(units))
+    }
+}
+
+trait Utf32Unit {}
+impl Utf32Unit for i32 {}
+impl Utf32Unit for u32 {}
+
+/// Converts `source` with `cnv` to host-endian UTF-32 in `target`, returning
+/// the byte count and the ICU error code.
+fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i32, libc::c_int) {
     let mut err: i32 = 0;
-    let len = ucnv_toAlgorithmic(
-        UCNV_UTF32_NATIVE_ENDIAN,
-        cnv,
-        target,
-        target_capacity,
-        source,
-        source_length,
-        &mut err,
-    );
+    // SAFETY: `cnv` is the open converter of an input file, both buffers are
+    // valid for the lengths passed and `err` is a valid out-parameter.
+    let len = unsafe {
+        ucnv_toAlgorithmic(
+            UCNV_UTF32_NATIVE_ENDIAN,
+            cnv,
+            target.as_mut_ptr().cast(),
+            target.len() as i32,
+            source.as_ptr().cast(),
+            source.len() as i32,
+            &mut err,
+        )
+    };
     (len, err)
 }
 
@@ -194,7 +256,7 @@ pub(crate) fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_int) ->
 }
 
 /// Opens and configures an input file. `None` means the bridge open failed.
-pub(crate) unsafe fn u_open_in(
+pub(crate) fn u_open_in(
     st: &mut EngineState,
     filefmt: i32,
     mut mode: i32,
@@ -237,22 +299,18 @@ pub(crate) unsafe fn u_open_in(
         }
     }
 
-    set_input_file_encoding(st, &mut *f, mode, encoding_data)?;
+    set_input_file_encoding(st, &mut f, mode, encoding_data)?;
     Ok(Some(f))
 }
 
 /// Sets the encoding mode, and the ICU converter if any, of an open file.
-pub(crate) unsafe fn set_input_file_encoding(
+pub(crate) fn set_input_file_encoding(
     st: &mut EngineState,
-    f: *mut UFile,
+    f: &mut UFile,
     mode: i32,
     encoding_data: i32,
 ) -> Result<(), Abort> {
-    let f = &mut *f;
-    if f.encoding_mode == ICUMAPPING as i16 && !f.conversion_data.is_null() {
-        xetex_ucnv_close(f.conversion_data);
-    }
-    f.conversion_data = std::ptr::null_mut();
+    f.close_converter();
 
     match mode {
         UTF8 | UTF16BE | UTF16LE | RAW => {
@@ -260,21 +318,22 @@ pub(crate) unsafe fn set_input_file_encoding(
         }
         ICUMAPPING => {
             let name = st.strings.texstring_cstring(encoding_data);
-            let mut err: libc::c_int = 0;
-            let cnv = xetex_ucnv_open(name.as_ptr(), &mut err);
-            if cnv.is_null() {
-                crate::output::begin_diagnostic(st);
-                crate::output::print_nl(st, b'E' as i32);
-                crate::output::print(st, "rror ");
-                crate::output::print_int(st, err);
-                crate::output::print(st, " creating Unicode converter for `");
-                crate::output::print(st, name.as_bytes());
-                crate::output::print(st, "'; reading as raw bytes");
-                crate::output::end_diagnostic(st, true);
-                f.encoding_mode = RAW as i16;
-            } else {
-                f.encoding_mode = ICUMAPPING as i16;
-                f.conversion_data = cnv;
+            match icu_converter_open(&name) {
+                Err(err) => {
+                    crate::output::begin_diagnostic(st);
+                    crate::output::print_nl(st, b'E' as i32);
+                    crate::output::print(st, "rror ");
+                    crate::output::print_int(st, err);
+                    crate::output::print(st, " creating Unicode converter for `");
+                    crate::output::print(st, name.as_bytes());
+                    crate::output::print(st, "'; reading as raw bytes");
+                    crate::output::end_diagnostic(st, true);
+                    f.encoding_mode = RAW as i16;
+                }
+                Ok(cnv) => {
+                    f.encoding_mode = ICUMAPPING as i16;
+                    f.conversion_data = cnv;
+                }
             }
         }
         _ => {}
@@ -282,16 +341,16 @@ pub(crate) unsafe fn set_input_file_encoding(
     Ok(())
 }
 
-// Process-lifetime staging buffers and normalizers for `input_line`.
-static mut BYTE_BUFFER: *mut libc::c_char = std::ptr::null_mut();
-static mut UTF32_BUF: *mut u32 = std::ptr::null_mut();
-static mut NORMALIZERS: [*mut libc::c_void; 2] = [std::ptr::null_mut(), std::ptr::null_mut()];
+/// Process-lifetime staging buffers and normalizers of `input_line`.
+#[derive(Default)]
+struct LineScratch {
+    bytes: Vec<u8>,
+    utf32: Vec<u32>,
+    normalizers: [usize; 2],
+}
 
-unsafe fn utf32_buf(buf_size: i32) -> *mut u32 {
-    if UTF32_BUF.is_null() {
-        UTF32_BUF = xcalloc(buf_size as libc::size_t, std::mem::size_of::<u32>()) as *mut u32;
-    }
-    UTF32_BUF
+thread_local! {
+    static LINE_SCRATCH: std::cell::RefCell<LineScratch> = Default::default();
 }
 
 fn is_line_end(c: i32) -> bool {
@@ -299,8 +358,8 @@ fn is_line_end(c: i32) -> bool {
 }
 
 /// An EOF that is not an interrupted read.
-unsafe fn is_true_eof(c: i32) -> bool {
-    c == EOF && *crate::compat::errno_location() != libc::EINTR
+fn is_true_eof(c: i32) -> bool {
+    c == EOF && std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR)
 }
 
 fn line_too_long() -> Abort {
@@ -316,45 +375,57 @@ fn conversion_error(st: &mut EngineState, errcode: i32) {
     crate::output::end_diagnostic(st, true);
 }
 
-/// Normalizes `len` UTF-32 units from `buf` into `buffer[first..]` (NFC for
-/// `norm` 1, NFD for 2) and sets `last`.
-unsafe fn apply_normalization(
+/// Normalizes the UTF-32 `units` into `buffer[first..]` (NFC for `norm` 1,
+/// NFD for 2) and sets `last`.
+fn apply_normalization(
     st: &mut EngineState,
-    buf: *mut u32,
-    len: i32,
+    normalizers: &mut [usize; 2],
+    units: &[u32],
     norm: i32,
 ) -> Result<(), Abort> {
-    let normalizer = &mut NORMALIZERS[(norm - 1) as usize];
-    if normalizer.is_null() {
+    let normalizer = &mut normalizers[(norm - 1) as usize];
+    if *normalizer == 0 {
         let target_form = NATIVE_UTF32 | if norm == 1 { K_FORM_NFC } else { K_FORM_NFD };
-        let status = TECkit_CreateConverter(
-            std::ptr::null(),
-            0,
-            1,
-            NATIVE_UTF32,
-            target_form,
-            normalizer as *mut *mut libc::c_void,
-        );
+        let mut converter: *mut libc::c_void = std::ptr::null_mut();
+        // SAFETY: a null mapping with size 0 asks for a plain normalizer, and
+        // `converter` is a valid out-parameter.
+        let status = unsafe {
+            TECkit_CreateConverter(
+                std::ptr::null(),
+                0,
+                1,
+                NATIVE_UTF32,
+                target_form,
+                &mut converter,
+            )
+        };
         if status != K_STATUS_NO_ERROR {
             return Err(Abort::Internal("failed to create normalizer"));
         }
+        *normalizer = converter as usize;
     }
+    let converter = *normalizer as *mut libc::c_void;
 
     let mut in_used: u32 = 0;
     let mut out_used: u32 = 0;
-    let out_ptr = st.input.buffer.as_mut_ptr().add(st.input.first as usize) as *mut u8;
-    let out_cap = (4 * (st.input.buf_size - st.input.first)) as u32;
-    let status = TECkit_ConvertBuffer(
-        *normalizer,
-        buf as *const u8,
-        (len * 4) as u32,
-        &mut in_used,
-        out_ptr,
-        out_cap,
-        &mut out_used,
-        1,
-    );
-    TECkit_ResetConverter(*normalizer);
+    let first = st.input.first as usize;
+    let out = utf32_bytes_mut(&mut st.input.buffer[first..st.input.buf_size as usize]);
+    // SAFETY: `converter` is this thread's live normalizer, the buffers are
+    // valid for the lengths passed and the counts are valid out-parameters.
+    let status = unsafe {
+        let status = TECkit_ConvertBuffer(
+            converter,
+            units.as_ptr().cast(),
+            std::mem::size_of_val(units) as u32,
+            &mut in_used,
+            out.as_mut_ptr(),
+            out.len() as u32,
+            &mut out_used,
+            1,
+        );
+        TECkit_ResetConverter(converter);
+        status
+    };
     if status != K_STATUS_NO_ERROR {
         return Err(line_too_long());
     }
@@ -364,46 +435,55 @@ unsafe fn apply_normalization(
 
 /// Reads one line of `f` into `buffer[first..last]`, decoding and optionally
 /// normalizing it. Returns 0 at end of file.
-pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<libc::c_int, Abort> {
+pub(crate) fn input_line(st: &mut EngineState, f: &mut UFile) -> Result<libc::c_int, Abort> {
+    LINE_SCRATCH.with(|scratch| input_line_with(st, f, &mut scratch.borrow_mut()))
+}
+
+fn input_line_with(
+    st: &mut EngineState,
+    f: &mut UFile,
+    scratch: &mut LineScratch,
+) -> Result<libc::c_int, Abort> {
     let norm = if st.eqtb.data.is_empty() {
         0
     } else {
         st.eqtb.int_par(INT_PAR_XETEX_INPUT_NORMALIZATION)
     };
 
-    if (*f).handle == INVALID_HANDLE {
+    if f.handle == INVALID_HANDLE {
         return Err(Abort::Internal(
             "reads from synthetic \"terminal\" file #0 should never happen",
         ));
     }
 
     st.input.last = st.input.first;
+    let buf_size = st.input.buf_size as usize;
+    if norm == 1 || norm == 2 {
+        scratch.utf32.resize(buf_size, 0);
+    }
 
     let mut i;
-    if (*f).encoding_mode as i32 == ICUMAPPING {
-        let mut bytes_read: u32 = 0;
+    if f.encoding_mode as i32 == ICUMAPPING {
+        scratch.bytes.resize(buf_size + 1, 0);
+        let mut bytes_read = 0;
 
-        if BYTE_BUFFER.is_null() {
-            BYTE_BUFFER = xmalloc((st.input.buf_size + 1) as libc::size_t) as *mut libc::c_char;
-        }
-
-        i = input_getc((*f).handle);
-        if (*f).skip_next_lf != 0 {
-            (*f).skip_next_lf = 0;
+        i = input_getc(f.handle);
+        if f.skip_next_lf != 0 {
+            f.skip_next_lf = 0;
             if i == b'\n' as libc::c_int {
-                i = input_getc((*f).handle);
+                i = input_getc(f.handle);
             }
         }
 
         if !is_line_end(i) {
-            *BYTE_BUFFER.add(bytes_read as usize) = i as libc::c_char;
+            scratch.bytes[bytes_read] = i as u8;
             bytes_read += 1;
-            while bytes_read < st.input.buf_size as u32 {
-                i = input_getc((*f).handle);
+            while bytes_read < buf_size {
+                i = input_getc(f.handle);
                 if is_line_end(i) {
                     break;
                 }
-                *BYTE_BUFFER.add(bytes_read as usize) = i as libc::c_char;
+                scratch.bytes[bytes_read] = i as u8;
                 bytes_read += 1;
             }
         }
@@ -415,30 +495,20 @@ pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<l
             return Err(line_too_long());
         }
 
-        let cnv = (*f).conversion_data;
+        let cnv = f.conversion_data;
+        let source = &scratch.bytes[..bytes_read];
         if norm == 1 || norm == 2 {
-            let buf = utf32_buf(st.input.buf_size);
-            let (len, error_code) = xetex_ucnv_to_utf32(
-                cnv,
-                buf as *mut libc::c_char,
-                st.input.buf_size * 4,
-                BYTE_BUFFER,
-                bytes_read as i32,
-            );
+            let (len, error_code) = icu_to_utf32(cnv, utf32_bytes_mut(&mut scratch.utf32), source);
             if error_code != 0 {
                 conversion_error(st, error_code);
                 return Ok(0);
             }
-            apply_normalization(st, buf, len / 4, norm)?;
+            let units = &scratch.utf32[..(len / 4) as usize];
+            apply_normalization(st, &mut scratch.normalizers, units, norm)?;
         } else {
-            let out_ptr = st.input.buffer.as_mut_ptr().add(st.input.first as usize);
-            let (len, error_code) = xetex_ucnv_to_utf32(
-                cnv,
-                out_ptr as *mut libc::c_char,
-                4 * (st.input.buf_size - st.input.first),
-                BYTE_BUFFER,
-                bytes_read as i32,
-            );
+            let first = st.input.first as usize;
+            let out = utf32_bytes_mut(&mut st.input.buffer[first..buf_size]);
+            let (len, error_code) = icu_to_utf32(cnv, out, source);
             if error_code != 0 {
                 conversion_error(st, error_code);
                 return Ok(0);
@@ -447,25 +517,24 @@ pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<l
         }
     } else {
         i = get_uni_c(st, f)?;
-        if (*f).skip_next_lf != 0 {
-            (*f).skip_next_lf = 0;
+        if f.skip_next_lf != 0 {
+            f.skip_next_lf = 0;
             if i == b'\n' as i32 {
                 i = get_uni_c(st, f)?;
             }
         }
 
         if norm == 1 || norm == 2 {
-            let buf = utf32_buf(st.input.buf_size);
-            let mut len: i32 = 0;
+            let mut len = 0;
             if !is_line_end(i) {
-                *buf.add(len as usize) = i as u32;
+                scratch.utf32[len] = i as u32;
                 len += 1;
-                while len < st.input.buf_size {
+                while len < buf_size {
                     i = get_uni_c(st, f)?;
                     if is_line_end(i) {
                         break;
                     }
-                    *buf.add(len as usize) = i as u32;
+                    scratch.utf32[len] = i as u32;
                     len += 1;
                 }
             }
@@ -476,7 +545,7 @@ pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<l
             if !is_line_end(i) {
                 return Err(line_too_long());
             }
-            apply_normalization(st, buf, len, norm)?;
+            apply_normalization(st, &mut scratch.normalizers, &scratch.utf32[..len], norm)?;
         } else {
             if st.input.last < st.input.buf_size && !is_line_end(i) {
                 st.input.buffer[st.input.last as usize] = i;
@@ -501,7 +570,7 @@ pub(crate) unsafe fn input_line(st: &mut EngineState, f: *mut UFile) -> Result<l
     }
 
     if i == b'\r' as i32 {
-        (*f).skip_next_lf = 1;
+        f.skip_next_lf = 1;
     }
 
     st.input.buffer[st.input.last as usize] = b' ' as i32;
@@ -548,11 +617,10 @@ impl From<InvalidInputMode> for Abort {
 }
 
 /// Reads one code point from `f` in its encoding mode.
-pub(crate) unsafe fn get_uni_c(
+pub(crate) fn get_uni_c(
     st: &mut EngineState,
-    f: *mut UFile,
+    f: &mut UFile,
 ) -> Result<libc::c_int, InvalidInputMode> {
-    let f = &mut *f;
     if f.saved_char != -1 {
         let rval = f.saved_char as i32;
         f.saved_char = -1;
@@ -666,7 +734,7 @@ fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// `\openin` and `\closein`.
-pub(crate) unsafe fn open_or_close(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn open_or_close(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr as u8;
     crate::scan::scan_four_bit_int(st)?;
     let n = st.scanner.cur_val as u8 as usize;
@@ -949,13 +1017,7 @@ pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abor
     Ok(())
 }
 
-pub unsafe fn init_io(st: &mut EngineState) {
-    STDIN_UFILE.handle = INVALID_HANDLE;
-    STDIN_UFILE.saved_char = -1;
-    STDIN_UFILE.skip_next_lf = 0;
-    STDIN_UFILE.encoding_mode = UTF8 as i16;
-    STDIN_UFILE.conversion_data = std::ptr::null_mut();
-
+pub fn init_io(st: &mut EngineState) {
     let first = st.input.first;
     st.input.input_file[0] = crate::state::InputSlot::Terminal;
     st.input.buffer[first as usize] = 0;
@@ -1056,7 +1118,7 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 /// `\input`, or the primary input when `primary_input_name` is given.
-pub(crate) unsafe fn start_input(
+pub(crate) fn start_input(
     st: &mut EngineState,
     primary_input_name: Option<&str>,
 ) -> Result<(), Abort> {
@@ -1167,11 +1229,10 @@ pub(crate) unsafe fn start_input(
     }
 
     st.input.cur_input.state = NEW_LINE;
-    let synctex_job_name = st.strings.gettexstring(st.strings.job_name);
-    crate::synctex::synctex_start_input(st, synctex_job_name);
+    let job_name = st.strings.texstring_cstring(st.strings.job_name);
+    crate::synctex::synctex_start_input(st, job_name.as_bytes());
     st.mem.line = 1;
-    let f = st.input.input_file_ptr(idx);
-    input_line(st, f)?;
+    input_slot_line(st, FileSlot::Input(idx as usize))?;
     st.input.cur_input.limit = st.input.last;
     crate::scan::finish_line(st);
     Ok(())

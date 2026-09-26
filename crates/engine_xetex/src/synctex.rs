@@ -8,7 +8,6 @@ use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VList
 use crate::shipout::ONE_INCH;
 use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
 use crate::units::{MemIdx, MemPtr};
-use libc::c_char;
 
 const SYNCTEX_VERSION: i32 = 1;
 /// The pseudo file of a resident compile, which only feeds the preview index.
@@ -168,23 +167,18 @@ impl SynctexCtxt {
     }
 
     /// Open the `.synctex.gz` file (or the preview sink) and write the preamble.
-    /// Takes ownership of the malloc'ed job name `tmp`.
-    unsafe fn synctex_dot_open(&mut self, eqtb: &EqtbState, tmp: *mut c_char) -> usize {
+    fn synctex_dot_open(&mut self, eqtb: &EqtbState, job_name: &[u8]) -> usize {
         if self.flags.off || !eqtb.synctex_enabled() {
-            libc::free(tmp as *mut libc::c_void);
             return INVALID_HANDLE;
         }
         if self.file != INVALID_HANDLE {
-            libc::free(tmp as *mut libc::c_void);
             return self.file;
         }
 
         if self.preview_index.is_some() {
-            libc::free(tmp as *mut libc::c_void);
             self.file = PREVIEW_HANDLE;
         } else {
-            let mut name = std::ffi::CStr::from_ptr(tmp).to_bytes().to_vec();
-            libc::free(tmp as *mut libc::c_void);
+            let mut name = job_name.to_vec();
             if name.is_empty() {
                 self.synctexabort();
                 return INVALID_HANDLE;
@@ -212,12 +206,11 @@ impl SynctexCtxt {
         self.file
     }
 
-    unsafe fn synctex_prepare_content(&mut self, eqtb: &EqtbState, tmp: *mut c_char) -> usize {
+    fn synctex_prepare_content(&mut self, eqtb: &EqtbState, job_name: &[u8]) -> usize {
         if self.flags.content_ready {
-            libc::free(tmp as *mut libc::c_void);
             return self.file;
         }
-        if self.synctex_dot_open(eqtb, tmp) != INVALID_HANDLE
+        if self.synctex_dot_open(eqtb, job_name) != INVALID_HANDLE
             && self.record_settings()
             && self.record("Content:\n")
         {
@@ -283,16 +276,13 @@ pub fn synctex_terminate(st: &mut EngineState) {
     synctex.synctexabort();
 }
 
-/// Takes ownership of the malloc'ed job name `tmp`.
-pub unsafe fn synctex_start_input(st: &mut EngineState, tmp: *mut c_char) {
+pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8]) {
     let synctex = &mut st.synctex;
     if synctex.flags.off {
-        libc::free(tmp as *mut libc::c_void);
         return;
     }
     if synctex.synctex_tag_counter == u32::MAX {
         synctex.synctex_tag_counter = 0;
-        libc::free(tmp as *mut libc::c_void);
         return;
     }
     synctex.synctex_tag_counter += 1;
@@ -310,21 +300,20 @@ pub unsafe fn synctex_start_input(st: &mut EngineState, tmp: *mut c_char) {
         } else {
             current_name.to_owned()
         });
-        libc::free(tmp as *mut libc::c_void);
         return;
     }
 
-    if synctex.file != INVALID_HANDLE || synctex.synctex_dot_open(&st.eqtb, tmp) != INVALID_HANDLE {
+    if synctex.file != INVALID_HANDLE
+        || synctex.synctex_dot_open(&st.eqtb, job_name) != INVALID_HANDLE
+    {
         synctex.record_input(tag, st.input.get_current_name());
     }
 }
 
-/// Takes ownership of the malloc'ed job name `tmp`.
-pub unsafe fn synctex_sheet(st: &mut EngineState, mag: i32, tmp: *mut c_char) {
+pub fn synctex_sheet(st: &mut EngineState, mag: i32, job_name: &[u8]) {
     let total_pages = st.shipout.total_pages;
     let synctex = &mut st.synctex;
     if synctex.flags.off {
-        libc::free(tmp as *mut libc::c_void);
         if st.eqtb.synctex_enabled() && !synctex.flags.warn {
             synctex.flags.warn = true;
             issue_warning("SyncTeX was disabled -- changing the value of \\synctex has no effect");
@@ -337,7 +326,7 @@ pub unsafe fn synctex_sheet(st: &mut EngineState, mag: i32, tmp: *mut c_char) {
     if total_pages == 0 && mag > 0 {
         synctex.magnification = mag;
     }
-    if synctex.synctex_prepare_content(&st.eqtb, tmp) != INVALID_HANDLE {
+    if synctex.synctex_prepare_content(&st.eqtb, job_name) != INVALID_HANDLE {
         synctex.record_sheet('{', total_pages + 1);
     }
 }

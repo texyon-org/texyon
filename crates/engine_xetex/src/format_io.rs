@@ -34,23 +34,57 @@ fn bad_fmt() -> Abort {
     Abort::Internal("fatal format file error")
 }
 
+/// Plain data stored in a format file: every byte pattern is a valid value
+/// and there is no padding.
+///
+/// # Safety
+///
+/// Only implement this for such types.
+unsafe trait FmtItem: Copy {}
+
+// SAFETY: integers, and `repr(C)` words made of 8 bytes of integers or an f64.
+unsafe impl FmtItem for u8 {}
+// SAFETY: as above.
+unsafe impl FmtItem for u16 {}
+// SAFETY: as above.
+unsafe impl FmtItem for i16 {}
+// SAFETY: as above.
+unsafe impl FmtItem for i32 {}
+// SAFETY: as above.
+unsafe impl FmtItem for crate::mem_types::B16x4 {}
+// SAFETY: as above.
+unsafe impl FmtItem for crate::mem_types::B32x2 {}
+// SAFETY: as above.
+unsafe impl FmtItem for crate::mem_types::MemoryWord {}
+
+fn fmt_bytes<T: FmtItem>(items: &[T]) -> &[u8] {
+    // SAFETY: `FmtItem` values have no padding, so every byte is initialised.
+    unsafe { std::slice::from_raw_parts(items.as_ptr().cast(), std::mem::size_of_val(items)) }
+}
+
+fn fmt_bytes_mut<T: FmtItem>(items: &mut [T]) -> &mut [u8] {
+    // SAFETY: as `fmt_bytes`, and any bytes written form a valid `FmtItem`.
+    unsafe {
+        std::slice::from_raw_parts_mut(items.as_mut_ptr().cast(), std::mem::size_of_val(items))
+    }
+}
+
 /// Writes `v[start..start + n]`, byte-swapping each item to big-endian.
-unsafe fn dump_slice<T>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result<(), Abort> {
+fn dump_slice<T: FmtItem>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result<(), Abort> {
     if n <= 0 {
         return Ok(());
     }
     let items = &v[start as usize..(start + n) as usize];
     let item_size = std::mem::size_of::<T>();
     let byte_len = std::mem::size_of_val(items);
-    let ptr = items.as_ptr() as *const u8;
     let written = if cfg!(target_endian = "little") && item_size > 1 {
-        let mut bytes = std::slice::from_raw_parts(ptr, byte_len).to_vec();
+        let mut bytes = fmt_bytes(items).to_vec();
         for item in bytes.chunks_exact_mut(item_size) {
             item.reverse();
         }
         output_write(fmt_out, &bytes)
     } else {
-        output_write(fmt_out, std::slice::from_raw_parts(ptr, byte_len))
+        output_write(fmt_out, fmt_bytes(items))
     };
 
     if written != byte_len {
@@ -59,30 +93,29 @@ unsafe fn dump_slice<T>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result<(
     Ok(())
 }
 
-unsafe fn dump_one<T: Copy>(fmt_out: usize, value: T) -> Result<(), Abort> {
+fn dump_one<T: FmtItem>(fmt_out: usize, value: T) -> Result<(), Abort> {
     dump_slice(fmt_out, &[value], 0, 1)
 }
 
-unsafe fn dump_int(fmt_out: usize, value: i32) -> Result<(), Abort> {
+fn dump_int(fmt_out: usize, value: i32) -> Result<(), Abort> {
     dump_one(fmt_out, value)
 }
 
 /// Reads `n` items into `v[start..]`, converting each from big-endian.
-unsafe fn undump_slice<T>(fmt_in: usize, v: &mut [T], start: i32, n: i32) -> Result<(), Abort> {
+fn undump_slice<T: FmtItem>(fmt_in: usize, v: &mut [T], start: i32, n: i32) -> Result<(), Abort> {
     if n <= 0 {
         return Ok(());
     }
     let items = &mut v[start as usize..(start + n) as usize];
     let item_size = std::mem::size_of::<T>();
-    let byte_len = std::mem::size_of_val(items);
-    let ptr = items.as_mut_ptr() as *mut u8;
-    let read = input_read(fmt_in, std::slice::from_raw_parts_mut(ptr, byte_len));
+    let bytes = fmt_bytes_mut(items);
+    let byte_len = bytes.len();
+    let read = input_read(fmt_in, bytes);
     if read < 0 || read as usize != byte_len {
         return Err(Abort::Internal("could not read format file data"));
     }
 
     if cfg!(target_endian = "little") && item_size > 1 {
-        let bytes = std::slice::from_raw_parts_mut(ptr, byte_len);
         for item in bytes.chunks_exact_mut(item_size) {
             item.reverse();
         }
@@ -90,14 +123,14 @@ unsafe fn undump_slice<T>(fmt_in: usize, v: &mut [T], start: i32, n: i32) -> Res
     Ok(())
 }
 
-unsafe fn undump_int(fmt_in: usize) -> Result<i32, Abort> {
+fn undump_int(fmt_in: usize) -> Result<i32, Abort> {
     let mut value = [0i32];
     undump_slice(fmt_in, &mut value, 0, 1)?;
     Ok(value[0])
 }
 
 /// Reads an int that must lie in `low..=high`.
-unsafe fn undump_in_range(fmt_in: usize, low: i32, high: i32) -> Result<i32, Abort> {
+fn undump_in_range(fmt_in: usize, low: i32, high: i32) -> Result<i32, Abort> {
     let x = undump_int(fmt_in)?;
     if x < low || x > high {
         return Err(bad_fmt());
@@ -106,12 +139,7 @@ unsafe fn undump_in_range(fmt_in: usize, low: i32, high: i32) -> Result<i32, Abo
 }
 
 /// Reads a size that must be at least `low` and fit the engine's `high` limit.
-unsafe fn undump_size(
-    fmt_in: usize,
-    low: i32,
-    high: i32,
-    too_big: &'static str,
-) -> Result<i32, Abort> {
+fn undump_size(fmt_in: usize, low: i32, high: i32, too_big: &'static str) -> Result<i32, Abort> {
     let x = undump_int(fmt_in)?;
     if x < low {
         return Err(bad_fmt());
@@ -122,7 +150,7 @@ unsafe fn undump_size(
     Ok(x)
 }
 
-unsafe fn expect_int(fmt_in: usize, expected: i32) -> Result<(), Abort> {
+fn expect_int(fmt_in: usize, expected: i32) -> Result<(), Abort> {
     if undump_int(fmt_in)? != expected {
         return Err(bad_fmt());
     }
@@ -130,7 +158,7 @@ unsafe fn expect_int(fmt_in: usize, expected: i32) -> Result<(), Abort> {
 }
 
 /// Reads `n` items into `v[start..]` that must each lie in `low..=high`.
-unsafe fn undump_checked<T: Copy + PartialOrd>(
+fn undump_checked<T: FmtItem + PartialOrd>(
     fmt_in: usize,
     v: &mut [T],
     start: i32,
@@ -150,7 +178,7 @@ unsafe fn undump_checked<T: Copy + PartialOrd>(
 
 /// Dumps `eqtb[k..=last]` as alternating runs of distinct words and of
 /// repeats of the preceding word, returning the next index.
-unsafe fn dump_eqtb_runs(
+fn dump_eqtb_runs(
     fmt_out: usize,
     eqtb: &EqtbState,
     mut k: i32,
@@ -183,7 +211,7 @@ unsafe fn dump_eqtb_runs(
     }
 }
 
-pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     if st.save_stack.save_ptr != 0 {
         crate::output::print_err(st, "You can't dump inside a group");
         st.errors.help(&[r"`{...\dump}' is a no-no."]);
@@ -530,7 +558,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub unsafe fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<bool, Abort> {
+pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<bool, Abort> {
     let loc = st.input.cur_input.loc;
 
     st.input.name_of_file = [dump_name.as_bytes(), b"\0"].concat();
@@ -550,7 +578,7 @@ pub unsafe fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<boo
     read_fmt_file(st, fmt_in)
 }
 
-unsafe fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
+fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
     if st.config.in_initex_mode {
         st.fonts.font_info = Vec::new();
         st.strings.str_pool = Vec::new();

@@ -150,23 +150,27 @@ fn max4(v: [f64; 4]) -> f64 {
 }
 
 /// The bounding box of page `page_num` of a PDF, in TeX points.
-unsafe fn pdf_get_rect(
-    filename: *const c_char,
+fn pdf_get_rect(
+    filename: &CStr,
     handle: usize,
     page_num: c_int,
     pdf_box: PageboxType,
 ) -> Option<RealRect> {
     let mut bbox = PdfRect::default();
     let mut matrix = PdfTMatrix::default();
-    if tt_pic_probe_pdf_box(
-        filename,
-        handle,
-        page_num,
-        pdf_box.dpx_option(),
-        &mut bbox,
-        &mut matrix,
-    ) != PIC_PROBE_OK
-    {
+    // SAFETY: `filename` is NUL-terminated, `handle` is an open input and the
+    // box and matrix are valid out-parameters.
+    let status = unsafe {
+        tt_pic_probe_pdf_box(
+            filename.as_ptr(),
+            handle,
+            page_num,
+            pdf_box.dpx_option(),
+            &mut bbox,
+            &mut matrix,
+        )
+    };
+    if status != PIC_PROBE_OK {
         return None;
     }
     let mut corners = [
@@ -188,7 +192,8 @@ unsafe fn pdf_get_rect(
         },
     ];
     for p in &mut corners {
-        pdf_dev_transform(p, &matrix);
+        // SAFETY: both arguments are valid for the call.
+        unsafe { pdf_dev_transform(p, &matrix) };
     }
     let xs = corners.each_ref().map(|p| p.x);
     let ys = corners.each_ref().map(|p| p.y);
@@ -203,16 +208,19 @@ unsafe fn pdf_get_rect(
 }
 
 /// Width and height of a raster image in inches, or the probe error.
-unsafe fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
+fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
     let (mut width_pix, mut height_pix) = (0, 0);
     let (mut xdensity, mut ydensity) = (0.0, 0.0);
-    let err = tt_pic_probe_image_box(
-        handle,
-        &mut width_pix,
-        &mut height_pix,
-        &mut xdensity,
-        &mut ydensity,
-    );
+    // SAFETY: `handle` is an open input and the sizes are valid out-parameters.
+    let err = unsafe {
+        tt_pic_probe_image_box(
+            handle,
+            &mut width_pix,
+            &mut height_pix,
+            &mut xdensity,
+            &mut ydensity,
+        )
+    };
     if err != PIC_PROBE_OK {
         return Err(err);
     }
@@ -223,7 +231,7 @@ unsafe fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
 }
 
 /// Measure the picture `name_of_file`, returning the probe status and its bounds.
-unsafe fn find_pic_file(
+fn find_pic_file(
     name_of_file: &CStr,
     pdf_box: Option<PageboxType>,
     page: c_int,
@@ -234,7 +242,7 @@ unsafe fn find_pic_file(
     }
 
     let (err, bounds) = match pdf_box {
-        Some(pdf_box) => match pdf_get_rect(name_of_file.as_ptr(), handle, page, pdf_box) {
+        Some(pdf_box) => match pdf_get_rect(name_of_file, handle, page, pdf_box) {
             Some(bounds) => (0, bounds),
             None => (-1, RealRect::default()),
         },
@@ -402,7 +410,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
     }
 
     let name_of_file = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
-    let (result, bounds) = unsafe { find_pic_file(&name_of_file, pdf_box_type, page)? };
+    let (result, bounds) = find_pic_file(&name_of_file, pdf_box_type, page)?;
     let pic_path = name_of_file.into_bytes();
 
     let (x, y, wd, ht) = (bounds.x, bounds.y, bounds.wd, bounds.ht);
@@ -519,13 +527,16 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
     Ok(())
 }
 
-pub(crate) unsafe fn count_pdf_file_pages_named(name: &CStr) -> Result<c_int, Abort> {
+pub(crate) fn count_pdf_file_pages_named(name: &CStr) -> Result<c_int, Abort> {
     let handle = input_open(name.to_bytes(), TTBC_FILE_FORMAT_PICT, false);
     if handle == INVALID_HANDLE {
         return Ok(0);
     }
     let mut pages = 0;
-    if tt_pic_probe_pdf_page_count(name.as_ptr(), handle, &mut pages) != PIC_PROBE_OK {
+    // SAFETY: `name` is NUL-terminated, `handle` is an open input and `pages`
+    // is a valid out-parameter.
+    let status = unsafe { tt_pic_probe_pdf_page_count(name.as_ptr(), handle, &mut pages) };
+    if status != PIC_PROBE_OK {
         pages = 0;
     }
     if crate::io::input_close(handle) {

@@ -37,7 +37,7 @@ fn pre_error_message(st: &mut EngineState) {
     error_here_with_diagnostic(st, "");
 }
 
-unsafe fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
+fn post_error_message(st: &mut EngineState, need_to_print_it: bool) {
     capture_to_diagnostic(st, None);
     if st.errors.interaction == InteractionMode::ErrorStop {
         st.errors.interaction = InteractionMode::Scroll;
@@ -132,7 +132,7 @@ pub(crate) enum Abort {
 }
 
 impl Abort {
-    unsafe fn overflow_report(st: &mut EngineState, what: &str, n: i32) {
+    fn overflow_report(st: &mut EngineState, what: &str, n: i32) {
         pre_error_message(st);
         print(st, "TeX capacity exceeded, sorry [");
         print(st, what);
@@ -147,7 +147,7 @@ impl Abort {
         set_error_message("halted on overflow()");
     }
 
-    unsafe fn fatal_report(st: &mut EngineState, s: &str) {
+    fn fatal_report(st: &mut EngineState, s: &str) {
         pre_error_message(st);
         print(st, "Emergency stop");
         print_nl(st, s);
@@ -171,7 +171,7 @@ impl Abort {
     }
 
     /// Prints the abort and cleans up, then returns the fatal history.
-    pub(crate) unsafe fn into_history(self, st: &mut EngineState) -> i32 {
+    pub(crate) fn into_history(self, st: &mut EngineState) -> i32 {
         match self {
             Abort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,
             Abort::Horizoned => {

@@ -410,7 +410,7 @@ pub unsafe fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
 
 /// The input mode named `name_of_file`, with the ICU converter name string
 /// for `ICUMAPPING`.
-unsafe fn get_encoding_mode_and_info(
+fn get_encoding_mode_and_info(
     st: &mut EngineState,
     name_of_file: &CStr,
 ) -> Result<(c_int, i32), Abort> {
@@ -428,9 +428,7 @@ unsafe fn get_encoding_mode_and_info(
         }
     }
 
-    let mut err = 0;
-    let cnv = crate::io::xetex_ucnv_open(name_of_file.as_ptr(), &mut err);
-    if cnv.is_null() {
+    if crate::io::icu_converter_exists(name_of_file).is_err() {
         crate::output::begin_diagnostic(st);
         crate::output::print_nl(st, b'U' as i32);
         crate::output::print(st, "nknown encoding `");
@@ -439,7 +437,6 @@ unsafe fn get_encoding_mode_and_info(
         crate::output::end_diagnostic(st, true);
         Ok((RAW, 0))
     } else {
-        crate::io::xetex_ucnv_close(cnv);
         let info = st.strings.make_tex_string(bytes)?;
         Ok((ICUMAPPING, info))
     }
@@ -2162,7 +2159,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
         XETEX_INPUT_ENCODING_EXTENSION_CODE => {
             crate::io::scan_and_pack_name(st)?;
             let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
-            let (enc_mode, info) = unsafe { get_encoding_mode_and_info(st, &name)? };
+            let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
             if enc_mode == AUTO {
                 error_here_with_diagnostic(
                     st,
@@ -2175,20 +2172,19 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
                 ]);
                 crate::errors::error(st)?;
             } else {
-                unsafe {
-                    let f = st.input.input_file_ptr(st.input.in_open);
-                    // `\scantokens` occupies an input level without a UFile.
-                    if !f.is_null() {
-                        crate::io::set_input_file_encoding(st, f, enc_mode, info)?;
-                    }
-                }
+                // `\scantokens` occupies an input level without a UFile.
+                let slot = crate::io::FileSlot::Input(st.input.in_open as usize);
+                crate::io::with_slot_file(st, slot, |st, f| {
+                    crate::io::set_input_file_encoding(st, f, enc_mode, info)
+                })
+                .transpose()?;
             }
         }
 
         XETEX_DEFAULT_ENCODING_EXTENSION_CODE => {
             crate::io::scan_and_pack_name(st)?;
             let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
-            let (enc_mode, info) = unsafe { get_encoding_mode_and_info(st, &name)? };
+            let (enc_mode, info) = get_encoding_mode_and_info(st, &name)?;
             st.eqtb
                 .set_int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE, enc_mode);
             st.eqtb

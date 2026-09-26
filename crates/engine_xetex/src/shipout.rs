@@ -239,14 +239,11 @@ fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(),
     Ok(())
 }
 
-pub(crate) unsafe fn ship_out(
-    st: &mut crate::state::EngineState,
-    page: AnyBox,
-) -> Result<(), Abort> {
+pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
     let p = page.ptr();
     let mag = st.eqtb.int_par(INT_PAR_MAG);
-    let job_name = st.strings.gettexstring(st.strings.job_name);
-    crate::synctex::synctex_sheet(st, mag, job_name);
+    let job_name = st.strings.texstring_cstring(st.strings.job_name);
+    crate::synctex::synctex_sheet(st, mag, job_name.as_bytes());
 
     if st.strings.job_name == 0 {
         crate::io::open_log_file(st)?;

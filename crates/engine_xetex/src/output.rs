@@ -1,5 +1,3 @@
-use std::ffi::CStr;
-
 use crate::bridge::{
     diag_append, diag_append_byte, diag_begin_error, diag_begin_warning, diag_finish,
     issue_warning, output_flush, output_putc, Diagnostic,
@@ -2650,24 +2648,20 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
         }
     }
 
-    let font_name_c = unsafe { st.strings.gettexstring(st.fonts.font_name[f as usize]) };
+    let font_name = st.strings.texstring_cstring(st.fonts.font_name[f as usize]);
     let prev_sel = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
     print_code(st, c);
     st.shipout.selector = prev_sel;
     let s = st.strings.make_string()?;
-    let chr_c = unsafe { st.strings.gettexstring(s) };
+    let chr = st.strings.texstring_cstring(s);
     flush_last_string(st);
-    unsafe {
-        issue_warning(&format!(
-            "could not represent character \"{}\" (0x{:x}) in font \"{}\"",
-            CStr::from_ptr(chr_c).to_string_lossy(),
-            c as u32,
-            CStr::from_ptr(font_name_c).to_string_lossy(),
-        ));
-        libc::free(font_name_c as *mut libc::c_void);
-        libc::free(chr_c as *mut libc::c_void);
-    }
+    issue_warning(&format!(
+        "could not represent character \"{}\" (0x{:x}) in font \"{}\"",
+        chr.to_string_lossy(),
+        c as u32,
+        font_name.to_string_lossy(),
+    ));
     if !st.fonts.gave_char_warning_help {
         issue_warning(
             "  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to",

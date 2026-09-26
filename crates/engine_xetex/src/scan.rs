@@ -574,15 +574,13 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
         if st.input.read_open[m] == CLOSED {
             return Err(Abort::Internal("terminal input forbidden"));
         } else if st.input.read_open[m] == JUST_OPEN {
-            let rf = st.input.read_file_ptr(m);
-            if unsafe { crate::io::input_line(st, rf)? } != 0 {
+            if crate::io::input_slot_line(st, crate::io::FileSlot::Read(m))? != 0 {
                 st.input.read_open[m] = NORMAL as u8;
             } else {
                 close_read_file(st, m)?;
             }
         } else {
-            let rf = st.input.read_file_ptr(m);
-            if unsafe { crate::io::input_line(st, rf)? } == 0 {
+            if crate::io::input_slot_line(st, crate::io::FileSlot::Read(m))? == 0 {
                 close_read_file(st, m)?;
                 if st.scanner.align_state != 1_000_000 {
                     crate::errors::runaway(st);
@@ -1239,8 +1237,9 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                         let got_line = if st.input.cur_input.name <= 19 {
                             crate::input::pseudo_input(st)?
                         } else {
-                            let f = st.input.input_file_ptr(st.input.cur_input.index as i32);
-                            unsafe { crate::io::input_line(st, f) }? != 0
+                            let slot =
+                                crate::io::FileSlot::Input(st.input.cur_input.index as usize);
+                            crate::io::input_slot_line(st, slot)? != 0
                         };
                         if got_line {
                             st.input.cur_input.limit = st.input.last;
@@ -2964,7 +2963,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         XETEX_PDF_PAGE_COUNT_CODE => {
             crate::io::scan_and_pack_name(st)?;
             let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
-            st.scanner.cur_val = unsafe { crate::pic::count_pdf_file_pages_named(&name) }?;
+            st.scanner.cur_val = crate::pic::count_pdf_file_pages_named(&name)?;
         }
         CURRENT_GROUP_LEVEL_CODE => st.scanner.cur_val = st.save_stack.cur_level as i32 - 1,
         CURRENT_GROUP_TYPE_CODE => st.scanner.cur_val = st.save_stack.cur_group as i32,

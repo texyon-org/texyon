@@ -69,11 +69,29 @@ const _: () = assert!(
 );
 
 extern "C" {
-    fn pdf_files_init();
-    fn pdf_files_close_if_open();
-    fn pdf_files_close();
+    #[link_name = "pdf_files_init"]
+    fn ffi_pdf_files_init();
+    #[link_name = "pdf_files_close_if_open"]
+    fn ffi_pdf_files_close_if_open();
+    #[link_name = "pdf_files_close"]
+    fn ffi_pdf_files_close();
     fn destroy_font_manager();
     fn xetex_layout_reset_font_caches();
+}
+
+fn pdf_files_init() {
+    // SAFETY: sets up pdf_io's process-global file registry, which holds no engine borrows.
+    unsafe { ffi_pdf_files_init() };
+}
+
+fn pdf_files_close() {
+    // SAFETY: tears down pdf_io's process-global file registry.
+    unsafe { ffi_pdf_files_close() };
+}
+
+fn pdf_files_close_if_open() {
+    // SAFETY: as `pdf_files_close`, and a no-op when the registry is closed.
+    unsafe { ffi_pdf_files_close_if_open() };
 }
 
 pub(crate) fn reset_layout_font_caches() {
@@ -188,7 +206,7 @@ fn primitive(st: &mut EngineState, ident: &str, c: u8, o: i32) -> Result<(), Abo
     Ok(())
 }
 
-pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
+pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
     let c = st.scanner.cur_chr;
 
     if c != 1 {
@@ -752,7 +770,7 @@ impl FontState {
 ///
 /// On success the state is ready to open a primary input but owns no document
 /// input stack, so batch and resident sessions share this path.
-pub(crate) unsafe fn initialize_engine(
+pub(crate) fn initialize_engine(
     st: &mut EngineState,
     dump_name: &str,
     build_date: libc::time_t,
@@ -1102,13 +1120,14 @@ mod deterministic_input_tests {
     }
 }
 
-pub(crate) unsafe fn tt_cleanup(st: &mut EngineState) {
+pub(crate) fn tt_cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
     reset_layout_font_caches();
     pdf_files_close();
     st.shipout.dvi_buf = Vec::new();
 
-    destroy_font_manager();
+    // SAFETY: only drops the thread-local font manager, no pointer is involved.
+    unsafe { destroy_font_manager() };
     st.fonts.release_linebreak_state();
 
     st.fonts.font_layout_engine.fill(None);

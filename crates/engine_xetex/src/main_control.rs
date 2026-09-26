@@ -1477,7 +1477,7 @@ pub(crate) fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abor
             let BoxOrRule::Box(b) = cb else {
                 unreachable!("only leaders take a rule");
             };
-            unsafe { crate::shipout::ship_out(st, b)? };
+            crate::shipout::ship_out(st, b)?;
             return Ok(());
         }
         crate::scan::get_x_non_blank_non_relax(st)?;
