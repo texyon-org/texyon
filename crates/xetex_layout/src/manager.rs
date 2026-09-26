@@ -501,15 +501,12 @@ impl FontManager {
                 } else {
                     // if the code is "B" or "I", we skip putting it in varString
                     loop {
-                        if cp[0] == b'B' {
-                            req_bold = true;
-                            cp = &cp[1..];
-                        } else if cp[0] == b'I' {
-                            req_ital = true;
-                            cp = &cp[1..];
-                        } else {
-                            break;
+                        match cp.first() {
+                            Some(b'B') => req_bold = true,
+                            Some(b'I') => req_ital = true,
+                            _ => break,
                         }
+                        cp = &cp[1..];
                     }
                 }
 
