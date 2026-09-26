@@ -310,8 +310,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 SINGLE_BASE + st.input.buffer[first as usize]
             } else {
                 st.eqtb
-                    .id_lookup(&mut st.strings, &st.input.buffer, first, m - first)
-                    .map_err(|err| err)?
+                    .id_lookup(&mut st.strings, &st.input.buffer, first, m - first)?
             };
             st.mem.flush_list(head);
             st.eqtb.eq_type(st.scanner.cur_cs) != UNDEFINED_CS
@@ -359,10 +358,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         }
         IfCode::Primitive => {
             get_next_unexpanded(st)?;
-            let m = st
-                .eqtb
-                .prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)
-                .map_err(|err| err)?;
+            let m = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
             st.scanner.cur_cmd != UNDEFINED_CS
                 && m != UNDEFINED_PRIMITIVE
                 && st.scanner.cur_cmd == st.eqtb.eq_type(PRIM_EQTB_BASE + m)
@@ -699,10 +695,8 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
                 not_font_error(st, c, fnt, "; not a native platform font")?;
             }
         }
-        ConvertCode::JobName => {
-            if st.strings.job_name == StrNumber::NONE {
-                crate::io::open_log_file(st)?;
-            }
+        ConvertCode::JobName if st.strings.job_name == StrNumber::NONE => {
+            crate::io::open_log_file(st)?;
         }
         _ => {}
     }
@@ -748,7 +742,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         // AAT fonts have no names to print on this platform.
         ConvertCode::XetexVariationName => {}
         ConvertCode::XetexFeatureName | ConvertCode::XetexSelectorName => {
-            let engine = st.fonts.layout_engine_arc(fnt);
+            let engine = st.fonts.shared_layout_engine(fnt);
             if let Some(engine) = engine.as_deref().filter(|e| e.using_graphite()) {
                 crate::ext::gr_print_font_name(st, c, engine, arg1, arg2);
             }
@@ -882,10 +876,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 } else {
                     get_token_unexpanded(st)?;
-                    st.scanner.cur_cs = st
-                        .eqtb
-                        .prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)
-                        .map_err(|e| e)?;
+                    st.scanner.cur_cs =
+                        st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
                     if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
                         let cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
                         if cmd > MAX_COMMAND {
@@ -906,10 +898,9 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 let j = token_chars_to_buffer(st, head.link(&st.mem))?;
                 st.scanner.cur_cs = if j > first + 1 || st.input.buffer[first as usize] > 65535 {
                     st.eqtb.no_new_control_sequence = false;
-                    let cs = st
-                        .eqtb
-                        .id_lookup(&mut st.strings, &st.input.buffer, first, j - first)
-                        .map_err(|e| e)?;
+                    let cs =
+                        st.eqtb
+                            .id_lookup(&mut st.strings, &st.input.buffer, first, j - first)?;
                     st.eqtb.no_new_control_sequence = true;
                     cs
                 } else if j == first {

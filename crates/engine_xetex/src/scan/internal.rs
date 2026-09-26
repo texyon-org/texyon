@@ -29,7 +29,7 @@ use crate::output::{
 use crate::params::TokPar;
 use crate::state::{EngineState, FontEngineHandle};
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
-use std::sync::Arc;
+use std::rc::Rc;
 use tectonic_xetex_layout::get_cp_code;
 
 use super::next::get_x_non_blank;
@@ -82,16 +82,16 @@ fn negate_glue(st: &mut EngineState) -> Result<i32, Abort> {
 /// engine and its area flag.
 fn scan_font_engine(
     st: &mut EngineState,
-) -> Result<(FontId, Option<Arc<FontEngineHandle>>, StrNumber), Abort> {
+) -> Result<(FontId, Option<Rc<FontEngineHandle>>, StrNumber), Abort> {
     let f = scan_font_ident(st)?;
-    Ok((f, st.fonts.layout_engine_arc(f), st.fonts.font_area[f]))
+    Ok((f, st.fonts.shared_layout_engine(f), st.fonts.font_area[f]))
 }
 
-fn graphite_engine(engine: &Option<Arc<FontEngineHandle>>) -> Option<&FontEngineHandle> {
+fn graphite_engine(engine: &Option<Rc<FontEngineHandle>>) -> Option<&FontEngineHandle> {
     engine.as_deref().filter(|e| e.using_graphite())
 }
 
-fn opentype_engine(engine: &Option<Arc<FontEngineHandle>>) -> Option<&FontEngineHandle> {
+fn opentype_engine(engine: &Option<Rc<FontEngineHandle>>) -> Option<&FontEngineHandle> {
     engine.as_deref().filter(|e| e.using_opentype())
 }
 

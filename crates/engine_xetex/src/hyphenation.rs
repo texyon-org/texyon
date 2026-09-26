@@ -26,8 +26,6 @@ impl HyphState {
         self.trie_op_hash_array[(k - NEG_TRIE_OP_SIZE) as usize] = v;
     }
 
-    /// `\language` clamped to a valid language number (out of range means 0).
-
     /// Point `hyph_index` at the `\lccode` table saved with `cur_lang`'s patterns, or 0.
     pub(crate) fn set_hyph_index(&mut self) {
         let slot = (self.hyph_start + i32::from(self.cur_lang)) as usize;

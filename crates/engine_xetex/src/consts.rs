@@ -10,7 +10,7 @@ pub const TOO_BIG_USV: i32 = BIGGEST_USV + 1;
 pub const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
 pub const BIGGEST_LANG: i32 = 255;
 pub const CHAR_CLASS_LIMIT: i32 = 4096;
-pub const CS_TOKEN_FLAG: i32 = 0x1FFF_FFF;
+pub const CS_TOKEN_FLAG: i32 = 0x1FF_FFFF;
 
 pub const MAX_HALFWORD: i32 = 0x3FFF_FFFF;
 /// `max_dimen`, the largest legal dimension.

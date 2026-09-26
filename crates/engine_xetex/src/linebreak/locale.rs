@@ -85,7 +85,7 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
     let use_penalty = penalty != 0 || !use_skip;
     let locale_name = st.strings.texstring_bytes(locale);
 
-    let engine = st.fonts.layout_engine_arc(main_f);
+    let engine = st.fonts.shared_layout_engine(main_f);
     let graphite = engine
         .as_deref()
         .filter(|_| locale_name == b"G")

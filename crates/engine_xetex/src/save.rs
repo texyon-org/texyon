@@ -221,10 +221,8 @@ impl MemState {
                 }
             }
             BOX_REF => self.flush_node_list(equiv)?,
-            TOKS_REGISTER | REGISTER => {
-                if !(0..=19).contains(&equiv) {
-                    self.delete_sa_ref(scanner, equiv);
-                }
+            TOKS_REGISTER | REGISTER if !(0..=19).contains(&equiv) => {
+                self.delete_sa_ref(scanner, equiv);
             }
             _ => {}
         }

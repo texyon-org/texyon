@@ -862,7 +862,7 @@ impl FontState {
         self.font_bc[f] = bc as u16;
         self.font_ec[f] = ec as u16;
         self.font_glue[f] = MemPtr::NULL;
-        self.param_base[f] = self.param_base[f] - 1;
+        self.param_base[f] -= 1;
         self.fmem_ptr += lf;
         self.font_ptr = f;
         (TfmParse::Loaded(f), scale_side_effect)
@@ -902,7 +902,7 @@ impl FontState {
         self.hyphen_char[font_ptr] = eqtb.int_par(IntPar::DefaultHyphenChar);
         self.skew_char[font_ptr] = eqtb.int_par(IntPar::DefaultSkewChar);
         self.param_base[font_ptr] = self.fmem_ptr - 1;
-        self.font_layout_engine[font_ptr] = Some(std::sync::Arc::new(font_engine));
+        self.font_layout_engine[font_ptr] = Some(std::rc::Rc::new(font_engine));
         self.font_mapping[font_ptr] = None;
         self.font_letter_space[font_ptr] = self.loaded_font_letter_space;
 

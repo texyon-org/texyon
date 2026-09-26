@@ -372,7 +372,7 @@ pub(super) fn post_line_break(st: &mut EngineState, d: bool) -> Result<(), Abort
 
     let mut cur_line = st.input.cur_list.prev_graf.wrapping_add(1);
     loop {
-        let hpack = match st.linebreak.post_line_break_prefix(
+        let hpack = st.linebreak.post_line_break_prefix(
             &mut st.errors,
             &mut st.mem,
             &mut st.scanner,
@@ -381,20 +381,14 @@ pub(super) fn post_line_break(st: &mut EngineState, d: bool) -> Result<(), Abort
             &st.config,
             &mut lr_ptr,
             cur_line,
-        ) {
-            Ok(hpack) => hpack,
-            Err(e) => return Err(e),
-        };
+        )?;
 
         let (w, m) = if hpack.semantic_pagination {
             (Scaled::ZERO, ADDITIONAL)
         } else {
             (hpack.cur_width, EXACTLY)
         };
-        let just_box = match crate::packaging::hpack(st, hpack.q, w, m) {
-            Ok(b) => b,
-            Err(e) => return Err(e),
-        };
+        let just_box = crate::packaging::hpack(st, hpack.q, w, m)?;
 
         match st.input.cur_list.post_line_break_suffix(
             &mut st.mem,

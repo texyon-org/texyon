@@ -443,8 +443,10 @@ mod tests {
 
     #[test]
     fn mem_setters_and_raw_ranges_capture_preimages() {
-        let mut mem = crate::state::MemState::default();
-        mem.data = vec![word(0); 4];
+        let mut mem = crate::state::MemState {
+            data: vec![word(0); 4],
+            ..Default::default()
+        };
         mem.journal.arm(mem.data.len());
 
         mem.set_b32s1(0, 10);
@@ -461,9 +463,11 @@ mod tests {
 
     #[test]
     fn eqtb_and_font_setters_capture_preimages() {
-        let mut eqtb = crate::state::EqtbState::default();
-        eqtb.data = vec![word(0); 2];
-        eqtb.hash = vec![B32x2 { s0: 0, s1: 0 }; 1];
+        let mut eqtb = crate::state::EqtbState {
+            data: vec![word(0); 2],
+            hash: vec![B32x2 { s0: 0, s1: 0 }; 1],
+            ..Default::default()
+        };
         eqtb.journal.words.arm(eqtb.data.len());
         eqtb.journal.hash.arm();
         eqtb.set_equiv(1, 5);
@@ -473,10 +477,12 @@ mod tests {
         assert_eq!(bits(eqtb.data[1]), 0);
         assert_eq!(eqtb.hash[0].s1, 0);
 
-        let mut fonts = crate::state::FontState::default();
-        fonts.font_info = vec![word(0); 3];
-        fonts.fmem_ptr = 2;
-        fonts.fmem_epoch_base = 2;
+        let mut fonts = crate::state::FontState {
+            font_info: vec![word(0); 3],
+            fmem_ptr: 2,
+            fmem_epoch_base: 2,
+            ..Default::default()
+        };
         fonts.font_info_journal.arm();
         fonts.set_font_info_sc(1, crate::units::Scaled(7));
         fonts.set_font_info_sc(2, crate::units::Scaled(8)); // append region: dead after scalar rewind

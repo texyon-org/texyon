@@ -374,7 +374,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (HMODE, MATH_SHIFT) => init_math(st)?,
         (MMODE, EQ_NO) => {
             if crate::errors::privileged(st)? {
-                in_math_shift_group(st, |st| Ok(crate::math::start_eq_no(st)?))?;
+                in_math_shift_group(st, crate::math::start_eq_no)?;
             }
         }
         (MMODE, LEFT_BRACE) => append_noad(st, true)?,
@@ -416,7 +416,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         (MMODE, SUB_MARK | SUP_MARK) => crate::math::sub_sup(st)?,
         (MMODE, ABOVE) => crate::math::math_fraction(st)?,
         (MMODE, LEFT_RIGHT) => crate::math::math_left_right(st)?,
-        (MMODE, MATH_SHIFT) => in_math_shift_group(st, |st| Ok(after_math(st)?))?,
+        (MMODE, MATH_SHIFT) => in_math_shift_group(st, after_math)?,
 
         (_, TOKS_REGISTER..=SET_INTERACTION) => prefixed_command(st)?,
         (_, AFTER_ASSIGNMENT) => {

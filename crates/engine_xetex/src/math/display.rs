@@ -451,12 +451,11 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 
 /// A kern, or the parameter glue when that skip is nonzero.
 fn side_skip(st: &mut EngineState, param: GluePar) -> Result<MemPtr, Abort> {
-    let p = if st.eqtb.glue_par(param) == ZERO_GLUE {
+    if st.eqtb.glue_par(param) == ZERO_GLUE {
         st.mem.new_kern(Scaled::ZERO).map(|k| k.ptr())
     } else {
         st.mem.new_param_glue(&st.eqtb, param).map(|g| g.ptr())
-    };
-    p
+    }
 }
 
 pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {

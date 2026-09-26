@@ -657,7 +657,7 @@ pub(crate) fn run_engine(
     build_date: libc::time_t,
 ) -> i32 {
     tectonic_xetex_layout::reset_font_caches();
-    let _layout_cache_guard = OnDrop(|| tectonic_xetex_layout::reset_font_caches());
+    let _layout_cache_guard = OnDrop(tectonic_xetex_layout::reset_font_caches);
 
     let _bridge = crate::bridge::enter(api);
 
@@ -1064,31 +1064,6 @@ fn initial_random_seed(
     }
 }
 
-#[cfg(test)]
-mod deterministic_input_tests {
-    use super::initial_random_seed;
-
-    #[test]
-    fn deterministic_seed_depends_only_on_build_date() {
-        let a = initial_random_seed(true, 1_700_000_000, 1, 2);
-        let b = initial_random_seed(true, 1_700_000_000, 999_999, 888_888);
-        let c = initial_random_seed(true, 1_700_000_001, 1, 2);
-
-        assert_eq!(a, b);
-        assert_ne!(a, c);
-        assert!(a >= 0);
-    }
-
-    #[test]
-    fn nondeterministic_seed_preserves_the_live_clock_formula() {
-        assert_eq!(initial_random_seed(false, 0, 1_234_567, 42), 276_567);
-        assert_eq!(
-            initial_random_seed(false, 1_700_000_000, 1_234_567, 42),
-            276_567
-        );
-    }
-}
-
 pub(crate) fn cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
     tectonic_xetex_layout::reset_font_caches();
@@ -1187,4 +1162,29 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     hyph.trie_r = Vec::new();
     hyph.trie_hash = Vec::new();
     hyph.trie_taken = Vec::new();
+}
+
+#[cfg(test)]
+mod deterministic_input_tests {
+    use super::initial_random_seed;
+
+    #[test]
+    fn deterministic_seed_depends_only_on_build_date() {
+        let a = initial_random_seed(true, 1_700_000_000, 1, 2);
+        let b = initial_random_seed(true, 1_700_000_000, 999_999, 888_888);
+        let c = initial_random_seed(true, 1_700_000_001, 1, 2);
+
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert!(a >= 0);
+    }
+
+    #[test]
+    fn nondeterministic_seed_preserves_the_live_clock_formula() {
+        assert_eq!(initial_random_seed(false, 0, 1_234_567, 42), 276_567);
+        assert_eq!(
+            initial_random_seed(false, 1_700_000_000, 1_234_567, 42),
+            276_567
+        );
+    }
 }

@@ -244,10 +244,7 @@ fn scan_optional_space(st: &mut EngineState) -> Result<(), Abort> {
 /// Reads the token after `\primitive` and replaces it by the primitive's meaning.
 pub(super) fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
     get_token(st)?;
-    let p = st
-        .eqtb
-        .prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)
-        .map_err(|e| e)?;
+    let p = st.eqtb.prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)?;
     if p != UNDEFINED_PRIMITIVE {
         st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + p);
         st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + p);

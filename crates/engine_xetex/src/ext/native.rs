@@ -11,7 +11,7 @@ use crate::node::{NodePtr, WhatsitNode};
 use crate::state::{FontEngineHandle, FontState, MemState};
 use crate::units::{FontId, Scaled, StrNumber};
 use std::ffi::c_int;
-use std::sync::Arc;
+use std::rc::Rc;
 use tectonic_xetex_layout::{
     cache_glyph_bbox, cached_glyph_bbox, get_cp_code, FloatPoint, GlyphBBox,
 };
@@ -114,7 +114,7 @@ impl FontState {
     }
 
     /// `layout_engine`, shared, for callers that need the state meanwhile.
-    pub(crate) fn layout_engine_arc(&self, f: FontId) -> Option<Arc<FontEngineHandle>> {
+    pub(crate) fn shared_layout_engine(&self, f: FontId) -> Option<Rc<FontEngineHandle>> {
         if self.font_area[f] == OTGR_FONT_FLAG {
             self.font_layout_engine[f].clone()
         } else {

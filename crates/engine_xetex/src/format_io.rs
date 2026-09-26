@@ -253,7 +253,7 @@ impl FmtStream for Undump {
             if !input_read(self.handle, bytes) {
                 return Err(Abort::Internal("could not read format file data"));
             }
-            for (x, b) in chunk.iter_mut().zip(bytes.chunks_exact(T::SIZE)) {
+            for (x, b) in chunk.iter_mut().zip(bytes.chunks(T::SIZE)) {
                 *x = T::get(b);
             }
         }

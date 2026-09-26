@@ -165,7 +165,7 @@ pub(super) fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abo
         return Ok(());
     }
 
-    Ok(hyphenate(st, native_ha)?)
+    hyphenate(st, native_ha)
 }
 
 /// Collect the letters of the native word `ha` into `hu`/`hc`, splitting it

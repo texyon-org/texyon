@@ -111,7 +111,7 @@ fn new_whatsit(
     subtype: WhatsitSubtype,
     size: i32,
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
-    Ok(st.input.cur_list.new_whatsit(&mut st.mem, subtype, size)?)
+    st.input.cur_list.new_whatsit(&mut st.mem, subtype, size)
 }
 
 /// Append an `\openout`/`\write`/`\closeout` whatsit and scan its stream number.

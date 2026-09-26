@@ -984,7 +984,7 @@ pub(crate) struct FontState {
     /// Per-engine ICU line-break cache and its string-pool locale key.
     pub brk_iter: Option<LinebreakHandle>,
     pub brk_locale_str_num: StrNumber,
-    pub font_layout_engine: PerFont<Option<std::sync::Arc<FontEngineHandle>>>,
+    pub font_layout_engine: PerFont<Option<std::rc::Rc<FontEngineHandle>>>,
     pub font_mapping: PerFont<Option<std::sync::Arc<FontMappingHandle>>>,
     pub loaded_font_letter_space: Scaled,
     pub xtx_ligature_present: bool,

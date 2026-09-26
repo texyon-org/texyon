@@ -227,7 +227,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                     st.input.cur_input.loc = loc + 1;
 
                     if (0xD800..0xDC00).contains(&st.scanner.cur_chr)
-                        && loc + 1 <= st.input.cur_input.limit
+                        && loc < st.input.cur_input.limit
                         && (0xDC00..0xE000).contains(&st.input.buffer[(loc + 1) as usize])
                     {
                         let lower = st.input.buffer[(loc + 1) as usize] - 0xDC00;

@@ -523,14 +523,7 @@ fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
     if !matches!(nt, NodeType::LeftNoad | NodeType::RightNoad) {
         let sub = node.subtype(&st.mem);
         if sub != 0 {
-            print_esc(
-                st,
-                if sub == LIMITS as u16 {
-                    "limits"
-                } else {
-                    "nolimits"
-                },
-            );
+            print_esc(st, if sub == LIMITS { "limits" } else { "nolimits" });
         }
         print_subsidiary_data(st, node.nucleus(), b'.');
     }

@@ -308,7 +308,7 @@ fn finite_shrink(
         ]);
         crate::errors::error(st)?;
     }
-    Ok(st.mem.finite_shrink(spec)?)
+    st.mem.finite_shrink(spec)
 }
 
 #[inline]
@@ -1016,8 +1016,7 @@ impl MemState {
                 };
             }
 
-            let node_r_stays_active;
-            if b > INF_BAD || pi == EJECT_PENALTY {
+            let node_r_stays_active = if b > INF_BAD || pi == EJECT_PENALTY {
                 if linebreak.final_pass
                     && linebreak.minimum_demerits == AWFUL_BAD
                     && r_active.link(self) == LAST_ACTIVE
@@ -1028,14 +1027,14 @@ impl MemState {
                     self.deactivate_node(scanner, linebreak, r, &mut prev_r, &mut prev_prev_r);
                     continue;
                 }
-                node_r_stays_active = false;
+                false
             } else {
                 prev_r = r;
                 if b > linebreak.threshold {
                     continue;
                 }
-                node_r_stays_active = true;
-            }
+                true
+            };
 
             let mut d = if artificial_demerits {
                 0

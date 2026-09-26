@@ -116,7 +116,6 @@ fn is_char_cmd(cmd: u8) -> bool {
 }
 
 #[inline]
-
 fn is_hyphen_unit(st: &EngineState, c: i32, hyphen: i32) -> bool {
     c == hyphen || (st.eqtb.int_par(IntPar::XetexDashBreak) > 0 && (c == 8212 || c == 8211))
 }

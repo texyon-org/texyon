@@ -603,7 +603,7 @@ struct FontBundle {
     fmem_ptr: i32,
     font_ptr: FontId,
     arrays: FontArrays,
-    engines: Vec<Option<Arc<FontEngineHandle>>>,
+    engines: Vec<Option<std::rc::Rc<FontEngineHandle>>>,
     mappings: Vec<Option<Arc<FontMappingHandle>>>,
     mapped_text: Vec<u16>,
 }

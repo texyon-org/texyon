@@ -39,7 +39,7 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     }
     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
     if st.eqtb.int_par(IntPar::TracingIfs) > 0
-        && (IF_TEST as u8..=FI_OR_ELSE).contains(&st.scanner.cur_cmd)
+        && (IF_TEST..=FI_OR_ELSE).contains(&st.scanner.cur_cmd)
     {
         print(st, ": ");
         let (mut n, l) = if st.scanner.cur_cmd == FI_OR_ELSE {
@@ -641,11 +641,9 @@ fn show_activities(st: &mut EngineState) {
                     print_int(st, aux_s1);
                 }
             }
-            2 => {
-                if aux_s1 != TEX_NULL {
-                    print(st, "this will begin denominator of:");
-                    show_box(st, aux_s1);
-                }
+            2 if aux_s1 != TEX_NULL => {
+                print(st, "this will begin denominator of:");
+                show_box(st, aux_s1);
             }
             _ => {}
         }

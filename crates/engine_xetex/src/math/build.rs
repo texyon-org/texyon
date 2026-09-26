@@ -30,7 +30,7 @@ fn scan_delimiter(
             crate::scan::scan_math_fam_int(st)?;
             st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
             crate::scan::scan_usv_num(st)?;
-            st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
+            st.scanner.cur_val += st.scanner.cur_val1;
         } else {
             crate::scan::scan_delimiter_int(st)?;
         }
@@ -51,7 +51,7 @@ fn scan_delimiter(
                     crate::scan::scan_math_fam_int(st)?;
                     st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
                     crate::scan::scan_usv_num(st)?;
-                    st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
+                    st.scanner.cur_val += st.scanner.cur_val1;
                 } else {
                     crate::scan::scan_delimiter_int(st)?;
                 }
@@ -92,7 +92,7 @@ fn scan_delimiter(
 }
 
 pub(super) fn define_word(st: &mut EngineState, loc: i32, val: i32) -> Result<(), Abort> {
-    Ok(st.eqtb.eq_word_define(&mut st.save_stack, loc, val)?)
+    st.eqtb.eq_word_define(&mut st.save_stack, loc, val)
 }
 
 pub(crate) fn start_eq_no(st: &mut EngineState) -> Result<(), Abort> {

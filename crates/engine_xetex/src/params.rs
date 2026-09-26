@@ -252,6 +252,7 @@ impl DimenPar {
 }
 
 code_enum! {
+    #[allow(clippy::enum_variant_names)] // named after \lineskip..\thickmuskip
     pub(crate) enum GluePar: u8 {
         LineSkip = 0,
         BaselineSkip = 1,
