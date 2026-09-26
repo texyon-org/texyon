@@ -255,8 +255,7 @@ impl FontState {
 
     /// A TFM font's check sum, in file byte order.
     pub(crate) fn check_bytes(&self, f: FontId) -> [u8; 4] {
-        let c = self.font_check[f];
-        [c.s3 as u8, c.s2 as u8, c.s1 as u8, c.s0 as u8]
+        self.font_check[f]
     }
 
     pub fn effective_char(&mut self, f: FontId, c: u16) -> i32 {
@@ -677,7 +676,7 @@ impl FontState {
             bad!();
         }
 
-        self.font_check[f] = four_quarters(read!(read_tfm_bytes(tfm_file)));
+        self.font_check[f] = read!(read_tfm_bytes(tfm_file)).map(|b| b as u8);
 
         let mut z = read!(read_fifteen(tfm_file));
         z = z * 256 + tfm_getc(tfm_file);
@@ -883,7 +882,7 @@ impl FontState {
         let font_ptr = self.font_ptr;
         self.font_area[font_ptr] = self.native_font_type_flag;
         self.font_name[font_ptr] = full_name;
-        self.font_check[font_ptr] = B16x4::default();
+        self.font_check[font_ptr] = [0; 4];
         self.font_glue[font_ptr] = MemPtr::NULL;
         self.font_dsize[font_ptr] = loaded_font_design_size();
         self.font_size[font_ptr] = actual_size;

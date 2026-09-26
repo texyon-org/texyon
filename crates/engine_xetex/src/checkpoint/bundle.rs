@@ -3,7 +3,7 @@
 use std::mem::{size_of, take};
 use std::sync::Arc;
 
-use crate::mem_types::{B16x4, ListStateRecord, MemoryWord};
+use crate::mem_types::{ListStateRecord, MemoryWord};
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
     FontState, GroupCode, HyphState, InputClusterState, InputState, LinebreakState, MainLoopState,
@@ -566,7 +566,7 @@ macro_rules! font_arrays {
 font_arrays! {
     font_flags: i8,
     font_letter_space: Scaled,
-    font_check: B16x4,
+    font_check: [u8; 4],
     font_size: Scaled,
     font_dsize: Scaled,
     font_params: i32,

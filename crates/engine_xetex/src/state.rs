@@ -946,7 +946,7 @@ pub(crate) struct FontState {
     pub font_ptr: FontId,
     pub font_flags: PerFont<i8>,
     pub font_letter_space: PerFont<Scaled>,
-    pub font_check: PerFont<crate::mem_types::B16x4>,
+    pub font_check: PerFont<[u8; 4]>,
     pub font_size: PerFont<Scaled>,
     pub font_dsize: PerFont<Scaled>,
     pub font_params: PerFont<i32>,

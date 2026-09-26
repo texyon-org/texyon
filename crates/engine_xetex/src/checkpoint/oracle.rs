@@ -216,10 +216,9 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(hyphen_char);
     hash_values!(skew_char);
     for value in fonts.font_check.as_slice().iter().take(font_count) {
-        h.word(u64::from(value.s0));
-        h.word(u64::from(value.s1));
-        h.word(u64::from(value.s2));
-        h.word(u64::from(value.s3));
+        for &b in value {
+            h.word(u64::from(b));
+        }
     }
     for engine in fonts.font_layout_engine.as_slice().iter().take(font_count) {
         h.word(u64::from(engine.is_some()));

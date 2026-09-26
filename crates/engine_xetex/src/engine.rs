@@ -32,7 +32,7 @@ use crate::mem::{
     ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN,
     HI_MEM_STAT_USAGE, NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
-use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
+use crate::mem_types::{zeroed_vec, B32x2, MemoryWord};
 use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
 use crate::params::IntPar;
 use crate::scan::{set_class, set_family};
@@ -708,7 +708,7 @@ impl FontState {
         self.font_mapping = PerFont::filled(len, None);
         self.font_flags = PerFont::filled(len, 0);
         self.font_letter_space = PerFont::filled(len, Scaled::ZERO);
-        self.font_check = PerFont::filled(len, B16x4::default());
+        self.font_check = PerFont::filled(len, [0; 4]);
         self.font_size = PerFont::filled(len, Scaled::ZERO);
         self.font_dsize = PerFont::filled(len, Scaled::ZERO);
         self.font_params = PerFont::filled(len, 0);
@@ -904,8 +904,7 @@ pub(crate) fn initialize_engine(
 
     if !st.config.in_initex_mode {
         match load_fmt_file(st, dump_name) {
-            Ok(true) => {}
-            Ok(false) => return InitOutcome::Terminate(st.errors.history),
+            Ok(()) => {}
             Err(a) => return InitOutcome::Terminate(a.into_history(st)),
         }
     }
