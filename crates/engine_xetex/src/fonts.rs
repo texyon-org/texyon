@@ -451,12 +451,12 @@ pub(crate) unsafe fn read_font_info_in(
         print_cstr_in(st, reason.as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
 
-        st.errors.set_help(&[
-            c"I wasn't able to read the size data for this font,",
-            c"so I will ignore the font specification.",
-            c"[Wizards can fix TFM files using TFtoPL/PLtoTF.]",
-            c"You might try inserting a different font spec;",
-            c"e.g., type `I\\font<same font id>=<substitute font name>'.",
+        st.errors.help(&[
+            "I wasn't able to read the size data for this font,",
+            "so I will ignore the font specification.",
+            "[Wizards can fix TFM files using TFtoPL/PLtoTF.]",
+            "You might try inserting a different font spec;",
+            r"e.g., type `I\font<same font id>=<substitute font name>'.",
         ]);
 
         let outcome = crate::errors::error_in(st);
@@ -897,11 +897,11 @@ pub(crate) unsafe fn load_native_font_in(
         print_cstr_in(st, c" not loaded: Not enough room left".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
 
-        st.errors.set_help(&[
-            c"I'm afraid I won't be able to make use of this font,",
-            c"because my memory for character-size data is too small.",
-            c"If you're really stuck, ask a wizard to enlarge me.",
-            c"Or maybe try `I\\font<same font id>=<name of loaded font>'.",
+        st.errors.help(&[
+            "I'm afraid I won't be able to make use of this font,",
+            "because my memory for character-size data is too small.",
+            "If you're really stuck, ask a wizard to enlarge me.",
+            r"Or maybe try `I\font<same font id>=<name of loaded font>'.",
         ]);
 
         let outcome = crate::errors::error_in(st);

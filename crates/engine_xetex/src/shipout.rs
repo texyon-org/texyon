@@ -424,10 +424,10 @@ pub(crate) unsafe fn ship_out_in(
             c"Huge page cannot be shipped out".as_ptr(),
         );
         crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] = c"The page just created is more than 18 feet tall or".as_ptr();
-        st.errors.help_line[0] =
-            c"more than 18 feet wide, so I suspect something went wrong.".as_ptr();
+        st.errors.help(&[
+            "The page just created is more than 18 feet tall or",
+            "more than 18 feet wide, so I suspect something went wrong.",
+        ]);
         ship_err(crate::errors::error_in(st))?;
 
         if int_par(&st.eqtb, INT_PAR_TRACING_OUTPUT) <= 0 {
@@ -2086,10 +2086,10 @@ fn write_out(
     if st.scanner.cur_tok != CS_TOKEN_FLAG + END_WRITE {
         crate::output::error_here_with_diagnostic_in(st, c"Unbalanced write command".as_ptr());
         crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] =
-            c"On this page there's a \\write with fewer real {'s than }'s.".as_ptr();
-        st.errors.help_line[0] = c"I can't handle that very well; good luck.".as_ptr();
+        st.errors.help(&[
+            r"On this page there's a \write with fewer real {'s than }'s.",
+            "I can't handle that very well; good luck.",
+        ]);
         ship_err(crate::errors::error_in(st))?;
         loop {
             crate::scan::get_token_in(st)?;

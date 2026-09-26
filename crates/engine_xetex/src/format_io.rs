@@ -202,8 +202,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     if st.save_stack.save_ptr != 0 {
         crate::output::error_here_with_diagnostic_in(st, c"You can't dump inside a group".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 1;
-        st.errors.help_line[0] = c"`{...\\dump}' is a no-no.".as_ptr();
+        st.errors.help(&[r"`{...\dump}' is a no-no."]);
 
         if st.errors.interaction == InteractionMode::ErrorStop {
             st.errors.interaction = InteractionMode::Scroll;
@@ -463,11 +462,11 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
                 c"Can't \\dump a format with native fonts or font-mappings".as_ptr(),
             );
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            st.errors.help_ptr = 3;
-            st.errors.help_line[2] = c"You really, really don't want to do this.".as_ptr();
-            st.errors.help_line[1] = c"It won't work, and only confuses me.".as_ptr();
-            st.errors.help_line[0] =
-                c"(Load them at runtime, not as part of the format file.)".as_ptr();
+            st.errors.help(&[
+                "You really, really don't want to do this.",
+                "It won't work, and only confuses me.",
+                "(Load them at runtime, not as part of the format file.)",
+            ]);
             let outcome = crate::errors::error_in(st);
             if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
                 return Err(outcome.into_engine_abort());
@@ -621,7 +620,7 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
     eqtb.data[(EQTB_SIZE + 1) as usize..].fill(undefined_entry);
 
     st.scanner.max_reg_num = 32_767;
-    st.scanner.max_reg_help_line = REGISTER_HELP.as_ptr();
+    st.scanner.max_reg_help_line = REGISTER_HELP;
 
     expect_int(fmt_in, MEM_TOP)?;
 

@@ -956,8 +956,7 @@ pub(crate) struct ScannerState {
     pub sa_null: crate::mem_types::MemoryWord,
     /// The all-zero B32x2 template (xetex-xetexd.h:608).
     pub empty: crate::mem_types::B32x2,
-    /// Register-size limit help message pointer (xetex-xetexd.h:708).
-    pub max_reg_help_line: *const libc::c_char,
+    pub max_reg_help_line: &'static str,
     /// Rust-owned dynamic native text buffer.
     pub native_text: Vec<u16>,
     pub native_text_size: i32,
@@ -1595,8 +1594,8 @@ pub(crate) struct ErrorState {
     pub dig: [u8; 23],
     pub randoms: [i32; 55],
     pub j_random: u8,
-    pub help_line: [*const libc::c_char; 6],
-    pub help_ptr: u8,
+    pub help_lines: [&'static str; 6],
+    pub help_len: u8,
     pub two_to_the: [i32; 31],
     pub spec_log: [i32; 29],
     pub interaction: InteractionMode,
@@ -1627,8 +1626,8 @@ impl Default for ErrorState {
             dig: [0; 23],
             randoms: [0; 55],
             j_random: 0,
-            help_line: [std::ptr::null(); 6],
-            help_ptr: 0,
+            help_lines: [""; 6],
+            help_len: 0,
             two_to_the: [0; 31],
             spec_log: [0; 29],
             interaction: InteractionMode::Batch,

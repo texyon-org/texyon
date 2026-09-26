@@ -2260,9 +2260,9 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                     let errmsg = error_here_with_diagnostic_in(st, c"Bad glyph number".as_ptr());
                     unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
                     capture_to_diagnostic_in(st, ptr::null_mut());
-                    st.errors.set_help(&[
-                        c"A glyph number must be between 0 and 65535.",
-                        c"I changed this one to zero.",
+                    st.errors.help(&[
+                        "A glyph number must be between 0 and 65535.",
+                        "I changed this one to zero.",
                     ]);
                     mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val))?;
                     st.scanner.cur_val = 0;
@@ -2285,9 +2285,9 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                     c"Encoding mode `auto' is not valid for \\XeTeXinputencoding".as_ptr(),
                 );
                 capture_to_diagnostic_in(st, ptr::null_mut());
-                st.errors.set_help(&[
-                    c"You can't use `auto' encoding here, only for \\XeTeXdefaultencoding.",
-                    c"I'll ignore this and leave the current encoding unchanged.",
+                st.errors.help(&[
+                    r"You can't use `auto' encoding here, only for \XeTeXdefaultencoding.",
+                    "I'll ignore this and leave the current encoding unchanged.",
                 ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {

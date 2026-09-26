@@ -197,9 +197,10 @@ fn scan_cs_name_tokens_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
         print_esc_cstr_in(st, c"endcsname".as_ptr());
         print_cstr_in(st, c" inserted".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] = c"The control sequence marked <to be read again> should".as_ptr();
-        st.errors.help_line[0] = c"not appear between \\csname and \\endcsname.".as_ptr();
+        st.errors.help(&[
+            "The control sequence marked <to be read again> should",
+            r"not appear between \csname and \endcsname.",
+        ]);
         scc_err(back_error_in(st)?)?;
     }
     st.scanner.is_in_csname = saved_in_csname;
@@ -266,9 +267,8 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 error_here_with_diagnostic_in(st, c"Missing = inserted for ".as_ptr());
                 print_cmd_chr_in(st, IF_TEST, this_if as i32);
                 capture_to_diagnostic_in(st, std::ptr::null_mut());
-                st.errors.help_ptr = 1;
-                st.errors.help_line[0] =
-                    c"I was expecting to see `<', `=', or `>'. Didn't.".as_ptr();
+                st.errors
+                    .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
                 scc_err(back_error_in(st)?)?;
                 b'='
             };
@@ -455,8 +455,8 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
             error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
             print_esc_cstr_in(st, c"or".as_ptr());
             capture_to_diagnostic_in(st, std::ptr::null_mut());
-            st.errors.help_ptr = 1;
-            st.errors.help_line[0] = c"I'm ignoring this; it doesn't match any \\if.".as_ptr();
+            st.errors
+                .help(&[r"I'm ignoring this; it doesn't match any \if."]);
             scc_err(error_in(st))?;
         } else if st.scanner.cur_chr == FI_CODE as i32 {
             pop_fi_in(st);
@@ -548,7 +548,7 @@ fn scan_nonnegative_int_in(
     st: &mut EngineState,
     keyword: &std::ffi::CStr,
     err: &std::ffi::CStr,
-    help: &std::ffi::CStr,
+    help: &'static str,
 ) -> Result<i32, SccAbort> {
     st.scanner.cur_val = 0;
     if crate::scan::scan_keyword_in(st, keyword.as_ptr())? {
@@ -556,9 +556,7 @@ fn scan_nonnegative_int_in(
         if st.scanner.cur_val < 0 {
             error_here_with_diagnostic_in(st, err.as_ptr());
             capture_to_diagnostic_in(st, std::ptr::null_mut());
-            st.errors.help_ptr = 2;
-            st.errors.help_line[1] = help.as_ptr();
-            st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
+            st.errors.help(&[help, "I changed this one to zero."]);
             scc_err(crate::errors::int_error_in(st, st.scanner.cur_val))?;
             st.scanner.cur_val = 0;
         }
@@ -683,13 +681,13 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 st,
                 c"offset",
                 c"Bad file offset",
-                c"A file offset must be between 0 and 2^_31_-1,",
+                "A file offset must be between 0 and 2^_31_-1,",
             )?;
             let length = scan_nonnegative_int_in(
                 st,
                 c"length",
                 c"Bad dump length",
-                c"A dump length must be between 0 and 2^_31_-1,",
+                "A dump length must be between 0 and 2^_31_-1,",
             )?;
             let s = scan_text_to_string_in(st, &saved)?;
             let b = st.strings.pool_ptr;
@@ -720,9 +718,8 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     c"), should be in the ranges 1..4, 6..8, 10..13".as_ptr(),
                 );
                 capture_to_diagnostic_in(st, std::ptr::null_mut());
-                st.errors.help_ptr = 1;
-                st.errors.help_line[0] =
-                    c"I'm going to use 12 instead of that illegal code value.".as_ptr();
+                st.errors
+                    .help(&["I'm going to use 12 instead of that illegal code value."]);
                 scc_err(error_in(st))?;
                 cat = 12;
             } else {
@@ -982,9 +979,8 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
                     print_char_in(st, '\'' as i32);
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    st.errors.help_ptr = 1;
-                    st.errors.help_line[0] =
-                        c"Continue, and I'll forget that it ever happened.".as_ptr();
+                    st.errors
+                        .help(&["Continue, and I'll forget that it ever happened."]);
                     scc_err(back_error_in(st)?)?;
                 }
             }
@@ -1072,9 +1068,8 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                         error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
                         print_cmd_chr_in(st, FI_OR_ELSE, st.scanner.cur_chr);
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
-                        st.errors.help_ptr = 1;
-                        st.errors.help_line[0] =
-                            c"I'm ignoring this; it doesn't match any \\if.".as_ptr();
+                        st.errors
+                            .help(&[r"I'm ignoring this; it doesn't match any \if."]);
                         scc_err(error_in(st))?;
                     }
                 } else {
@@ -1098,16 +1093,13 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
             _ => {
                 error_here_with_diagnostic_in(st, c"Undefined control sequence".as_ptr());
                 capture_to_diagnostic_in(st, std::ptr::null_mut());
-                st.errors.help_ptr = 5;
-                st.errors.help_line[4] =
-                    c"The control sequence at the end of the top line".as_ptr();
-                st.errors.help_line[3] =
-                    c"of your error message was never \\def'ed. If you have".as_ptr();
-                st.errors.help_line[2] =
-                    c"misspelled it (e.g., `\\hobx'), type `I' and the correct".as_ptr();
-                st.errors.help_line[1] =
-                    c"spelling (e.g., `I\\hbox'). Otherwise just continue,".as_ptr();
-                st.errors.help_line[0] = c"and I'll forget about whatever was undefined.".as_ptr();
+                st.errors.help(&[
+                    "The control sequence at the end of the top line",
+                    r"of your error message was never \def'ed. If you have",
+                    r"misspelled it (e.g., `\hobx'), type `I' and the correct",
+                    r"spelling (e.g., `I\hbox'). Otherwise just continue,",
+                    "and I'll forget about whatever was undefined.",
+                ]);
                 scc_err(error_in(st))?;
             }
         }
@@ -1137,12 +1129,11 @@ fn runaway_par_in_argument_in(
         sprint_cs_in(st, st.scanner.warning_index);
         print_cstr_in(st, c" was complete".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 3;
-        st.errors.help_line[2] =
-            c"I suspect you've forgotten a `}', causing me to apply this".as_ptr();
-        st.errors.help_line[1] = c"control sequence to too much text. How can we recover?".as_ptr();
-        st.errors.help_line[0] =
-            c"My plan is to forget the whole thing and hope for the best.".as_ptr();
+        st.errors.help(&[
+            "I suspect you've forgotten a `}', causing me to apply this",
+            "control sequence to too much text. How can we recover?",
+            "My plan is to forget the whole thing and hope for the best.",
+        ]);
         scc_err(back_error_in(st)?)?;
     }
     pstack[n as usize] = st.mem.b32s1(TEMP_HEAD);
@@ -1160,13 +1151,14 @@ fn extra_right_brace_in_argument_in(st: &mut EngineState) -> Result<(), SccAbort
     sprint_cs_in(st, st.scanner.warning_index);
     print_cstr_in(st, c" has an extra }".as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 6;
-    st.errors.help_line[5] = c"I've run across a `}' that doesn't seem to match anything.".as_ptr();
-    st.errors.help_line[4] = c"For example, `\\def\\a#1{...}' and `\\a}' would produce".as_ptr();
-    st.errors.help_line[3] = c"this error. If you simply proceed now, the `\\par' that".as_ptr();
-    st.errors.help_line[2] = c"I've just inserted will cause me to report a runaway".as_ptr();
-    st.errors.help_line[1] = c"argument that might be the root of the problem. But if".as_ptr();
-    st.errors.help_line[0] = c"your `}' was spurious, just type `2' and it will go away.".as_ptr();
+    st.errors.help(&[
+        "I've run across a `}' that doesn't seem to match anything.",
+        r"For example, `\def\a#1{...}' and `\a}' would produce",
+        r"this error. If you simply proceed now, the `\par' that",
+        "I've just inserted will cause me to report a runaway",
+        "argument that might be the root of the problem. But if",
+        "your `}' was spurious, just type `2' and it will go away.",
+    ]);
     st.scanner.align_state += 1;
     st.scanner.long_state = CALL;
     st.scanner.cur_tok = st.input.par_token;
@@ -1279,16 +1271,12 @@ pub(crate) fn macro_call_in(st: &mut EngineState) -> Result<(), SccAbort> {
                             sprint_cs_in(st, st.scanner.warning_index);
                             print_cstr_in(st, c" doesn't match its definition".as_ptr());
                             capture_to_diagnostic_in(st, std::ptr::null_mut());
-                            st.errors.help_ptr = 4;
-                            st.errors.help_line[3] =
-                                c"If you say, e.g., `\\def\\a1{...}', then you must always"
-                                    .as_ptr();
-                            st.errors.help_line[2] =
-                                c"put `1' after `\\a', since control sequence names are".as_ptr();
-                            st.errors.help_line[1] =
-                                c"made up of letters only. The macro here has not been".as_ptr();
-                            st.errors.help_line[0] =
-                                c"followed by the required stuff, so I'm ignoring it.".as_ptr();
+                            st.errors.help(&[
+                                r"If you say, e.g., `\def\a1{...}', then you must always",
+                                r"put `1' after `\a', since control sequence names are",
+                                "made up of letters only. The macro here has not been",
+                                "followed by the required stuff, so I'm ignoring it.",
+                            ]);
                             scc_err(error_in(st))?;
                             break 'exit;
                         }

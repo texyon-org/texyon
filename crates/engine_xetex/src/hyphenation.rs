@@ -1,7 +1,5 @@
 //! Hyphenation patterns and exceptions, and the packed-trie builder.
 
-use std::ffi::CStr;
-
 use crate::cmd::{CHAR_GIVEN, CHAR_NUM, LETTER, OTHER_CHAR, RIGHT_BRACE, SPACER};
 pub(crate) use crate::consts::BIGGEST_LANG;
 use crate::consts::{
@@ -17,7 +15,7 @@ const NEG_TRIE_OP_SIZE: i32 = -TRIE_OP_SIZE;
 pub(crate) const MAX_TRIE_OP: u16 = 65_535;
 pub(crate) const HYPH_PRIME: i32 = 607;
 
-const APPENDIX_H: &CStr = c"(See Appendix H.)";
+const APPENDIX_H: &str = "(See Appendix H.)";
 
 #[inline]
 fn trie_op_hash_in(hyph: &HyphState, k: i32) -> i32 {
@@ -497,12 +495,9 @@ fn save_hyph_codes_in(hyph: &mut HyphState, lc_codes: &[i32; 256]) -> Result<(),
 
 /// Finish an error begun at the call site: set its help text (in display
 /// order) and run the recoverable `error()`.
-fn raise_error(st: &mut EngineState, help: &[&'static CStr]) -> Result<(), MainControlAbort> {
+fn raise_error(st: &mut EngineState, help: &[&'static str]) -> Result<(), MainControlAbort> {
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = help.len() as u8;
-    for (slot, line) in help.iter().rev().enumerate() {
-        st.errors.help_line[slot] = line.as_ptr();
-    }
+    st.errors.help(help);
     mc_propagate_error(crate::errors::error_in(st))
 }
 
@@ -514,7 +509,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
         crate::output::print_esc_cstr_in(st, c"patterns".as_ptr());
         raise_error(
             st,
-            &[c"All patterns must be given before typesetting begins."],
+            &["All patterns must be given before typesetting begins."],
         )?;
 
         let _ = crate::scan::scan_toks_in(st, false, false)?;
@@ -637,8 +632,8 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
                             raise_error(
                                 st,
                                 &[
-                                    c"Letters in \\hyphenation words must have \\lccode>0.",
-                                    c"Proceed; I'll ignore the character I just read.",
+                                    r"Letters in \hyphenation words must have \lccode>0.",
+                                    "Proceed; I'll ignore the character I just read.",
                                 ],
                             )?;
                         } else if n < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
@@ -680,8 +675,8 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
                     raise_error(
                         st,
                         &[
-                            c"Hyphenation exceptions must contain only letters",
-                            c"and hyphens. But continue; I'll forgive and forget.",
+                            "Hyphenation exceptions must contain only letters",
+                            "and hyphens. But continue; I'll forgive and forget.",
                         ],
                     )?;
                     break;

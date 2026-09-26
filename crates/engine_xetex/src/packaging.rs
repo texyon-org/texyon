@@ -869,13 +869,12 @@ fn print_vert_break_infinite_shrinkage_error_in(st: &mut EngineState) -> ErrorOu
         c"Infinite glue shrinkage found in box being split".as_ptr(),
     );
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 4;
-    st.errors.help_line[3] = c"The box you are \\vsplitting contains some infinitely".as_ptr();
-    st.errors.help_line[2] =
-        c"shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.".as_ptr();
-    st.errors.help_line[1] =
-        c"Such glue doesn't belong there; but you can safely proceed,".as_ptr();
-    st.errors.help_line[0] = c"since the offensive shrinkability has been made finite.".as_ptr();
+    st.errors.help(&[
+        r"The box you are \vsplitting contains some infinitely",
+        r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
+        "Such glue doesn't belong there; but you can safely proceed,",
+        "since the offensive shrinkability has been made finite.",
+    ]);
     crate::errors::error_in(st)
 }
 
@@ -1183,9 +1182,10 @@ fn print_vsplit_needs_vbox_error_in(st: &mut EngineState) -> ErrorOutcome {
     crate::output::print_cstr_in(st, c" needs a ".as_ptr());
     crate::output::print_esc_cstr_in(st, c"vbox".as_ptr());
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 2;
-    st.errors.help_line[1] = c"The box you are trying to split is an \\hbox.".as_ptr();
-    st.errors.help_line[0] = c"I can't split such a box, so I'll leave it alone.".as_ptr();
+    st.errors.help(&[
+        r"The box you are trying to split is an \hbox.",
+        "I can't split such a box, so I'll leave it alone.",
+    ]);
     crate::errors::error_in(st)
 }
 

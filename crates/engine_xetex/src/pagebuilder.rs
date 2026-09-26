@@ -11,7 +11,7 @@ use crate::consts::{
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
 use crate::input::OUTPUT_TEXT;
-use crate::main_control::{add_token_ref, fetch_box, help, COPY_CODE, LAST_BOX_CODE};
+use crate::main_control::{add_token_ref, fetch_box, COPY_CODE, LAST_BOX_CODE};
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, InsNode, NodePtr, PageInsNode, SaNode, WhatsitSubtype,
@@ -141,14 +141,11 @@ fn ensure_vbox_in(st: &mut EngineState, n: u8) -> Result<(), PageBuildAbort> {
         c"Insertions can only be added to a vbox".as_ptr(),
     );
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    help(
-        &mut st.errors,
-        &[
-            c"Tut tut: You're trying to \\insert into a",
-            c"\\box register that now contains an \\hbox.",
-            c"Proceed, and I'll discard its present contents.",
-        ],
-    );
+    st.errors.help(&[
+        r"Tut tut: You're trying to \insert into a",
+        r"\box register that now contains an \hbox.",
+        "Proceed, and I'll discard its present contents.",
+    ]);
     page_error(crate::errors::box_error_in(st, n))
 }
 
@@ -296,13 +293,10 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         crate::output::print_esc_cstr_in(st, c"box".as_ptr());
         crate::output::print_cstr_in(st, c"255 is not void".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[
-                c"You shouldn't use \\box255 except in \\output routines.",
-                c"Proceed, and I'll discard its present contents.",
-            ],
-        );
+        st.errors.help(&[
+            r"You shouldn't use \box255 except in \output routines.",
+            "Proceed, and I'll discard its present contents.",
+        ]);
         page_error(crate::errors::box_error_in(st, 255))?;
     }
 
@@ -450,14 +444,11 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         crate::output::print_int_in(st, st.shipout.dead_cycles);
         crate::output::print_cstr_in(st, c" consecutive dead cycles".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[
-                c"I've concluded that your \\output is awry; it never does a",
-                c"\\shipout, so I'm shipping \\box255 out myself. Next time",
-                c"increase \\maxdeadcycles if you want me to be more patient!",
-            ],
-        );
+        st.errors.help(&[
+            r"I've concluded that your \output is awry; it never does a",
+            r"\shipout, so I'm shipping \box255 out myself. Next time",
+            r"increase \maxdeadcycles if you want me to be more patient!",
+        ]);
         page_error(crate::errors::error_in(st))?;
     }
 
@@ -588,14 +579,11 @@ fn append_insertion_in(
             crate::output::print_esc_cstr_in(st, c"skip".as_ptr());
             crate::output::print_int_in(st, n as i32);
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[
-                    c"The correction glue for page breaking with insertions",
-                    c"must have finite shrinkability. But you may proceed,",
-                    c"since the offensive shrinkability has been made finite.",
-                ],
-            );
+            st.errors.help(&[
+                "The correction glue for page breaking with insertions",
+                "must have finite shrinkability. But you may proceed,",
+                "since the offensive shrinkability has been made finite.",
+            ]);
             page_error(crate::errors::error_in(st))?;
         }
     }
@@ -846,15 +834,12 @@ fn page_glue_width_in(
         c"Infinite glue shrinkage found on current page".as_ptr(),
     );
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    help(
-        &mut st.errors,
-        &[
-            c"The page about to be output contains some infinitely",
-            c"shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.",
-            c"Such glue doesn't belong there; but you can safely proceed,",
-            c"since the offensive shrinkability has been made finite.",
-        ],
-    );
+    st.errors.help(&[
+        "The page about to be output contains some infinitely",
+        r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
+        "Such glue doesn't belong there; but you can safely proceed,",
+        "since the offensive shrinkability has been made finite.",
+    ]);
     page_error(crate::errors::error_in(st))?;
     let finite = crate::mem::alloc_spec(&mut st.mem, spec.idx())
         .ok_or(PageBuildAbort::MainMemoryOverflow)?;

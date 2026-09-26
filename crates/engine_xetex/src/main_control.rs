@@ -131,28 +131,22 @@ pub(crate) fn align_error_in(st: &mut EngineState) -> Result<(), MainControlAbor
         crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         if st.scanner.cur_tok == TAB_TOKEN + 38 {
-            help(
-                &mut st.errors,
-                &[
-                    c"I can't figure out why you would want to use a tab mark",
-                    c"here. If you just want an ampersand, the remedy is",
-                    c"simple: Just type `I\\&' now. But if some right brace",
-                    c"up above has ended a previous alignment prematurely,",
-                    c"you're probably due for more error messages, and you",
-                    c"might try typing `S' now just to see what is salvageable.",
-                ],
-            );
+            st.errors.help(&[
+                "I can't figure out why you would want to use a tab mark",
+                "here. If you just want an ampersand, the remedy is",
+                r"simple: Just type `I\&' now. But if some right brace",
+                "up above has ended a previous alignment prematurely,",
+                "you're probably due for more error messages, and you",
+                "might try typing `S' now just to see what is salvageable.",
+            ]);
         } else {
-            help(
-                &mut st.errors,
-                &[
-                    c"I can't figure out why you would want to use a tab mark",
-                    c"or \\cr or \\span just now. If something like a right brace",
-                    c"up above has ended a previous alignment prematurely,",
-                    c"you're probably due for more error messages, and you",
-                    c"might try typing `S' now just to see what is salvageable.",
-                ],
-            );
+            st.errors.help(&[
+                "I can't figure out why you would want to use a tab mark",
+                r"or \cr or \span just now. If something like a right brace",
+                "up above has ended a previous alignment prematurely,",
+                "you're probably due for more error messages, and you",
+                "might try typing `S' now just to see what is salvageable.",
+            ]);
         }
         mc_propagate_error(crate::errors::error_in(st))?;
     } else {
@@ -168,14 +162,11 @@ pub(crate) fn align_error_in(st: &mut EngineState) -> Result<(), MainControlAbor
             st.scanner.align_state -= 1;
             st.scanner.cur_tok = RIGHT_BRACE_TOKEN + 125;
         }
-        help(
-            &mut st.errors,
-            &[
-                c"I've put in what seems to be necessary to fix",
-                c"the current column of the current alignment.",
-                c"Try to go on, since this might almost work.",
-            ],
-        );
+        st.errors.help(&[
+            "I've put in what seems to be necessary to fix",
+            "the current column of the current alignment.",
+            "Try to go on, since this might almost work.",
+        ]);
         mc_propagate_error(crate::input::ins_error_in(st)?)?;
     }
     Ok(())
@@ -184,26 +175,20 @@ pub(crate) fn no_align_error_in(st: &mut EngineState) -> Result<(), MainControlA
     crate::output::error_here_with_diagnostic_in(st, c"Misplaced ".as_ptr());
     crate::output::print_esc_cstr_in(st, c"noalign".as_ptr());
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    help(
-        &mut st.errors,
-        &[
-            c"I expect to see \\noalign only after the \\cr of",
-            c"an alignment. Proceed, and I'll ignore this case.",
-        ],
-    );
+    st.errors.help(&[
+        r"I expect to see \noalign only after the \cr of",
+        "an alignment. Proceed, and I'll ignore this case.",
+    ]);
     mc_propagate_error(crate::errors::error_in(st))
 }
 pub(crate) fn omit_error_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     crate::output::error_here_with_diagnostic_in(st, c"Misplaced ".as_ptr());
     crate::output::print_esc_cstr_in(st, c"omit".as_ptr());
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    help(
-        &mut st.errors,
-        &[
-            c"I expect to see \\omit only after tab marks or the \\cr of",
-            c"an alignment. Proceed, and I'll ignore this case.",
-        ],
-    );
+    st.errors.help(&[
+        r"I expect to see \omit only after tab marks or the \cr of",
+        "an alignment. Proceed, and I'll ignore this case.",
+    ]);
     mc_propagate_error(crate::errors::error_in(st))
 }
 pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -468,13 +453,10 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         if st.scanner.cur_cmd != MATH_SHIFT {
             crate::output::error_here_with_diagnostic_in(st, c"Missing $$ inserted".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[
-                    c"Displays can use special alignments (like \\eqalignno)",
-                    c"only if nothing but the alignment itself is between $$'s.",
-                ],
-            );
+            st.errors.help(&[
+                r"Displays can use special alignments (like \eqalignno)",
+                "only if nothing but the alignment itself is between $$'s.",
+            ]);
             mc_propagate_error(crate::input::back_error_in(st)?)?;
         } else {
             crate::scan::get_x_token_in(st)?;
@@ -484,13 +466,10 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                     c"Display math should end with $$".as_ptr(),
                 );
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"The `$' that I just saw supposedly matches a previous `$$'.",
-                        c"So I shall assume that you typed `$$' both times.",
-                    ],
-                );
+                st.errors.help(&[
+                    "The `$' that I just saw supposedly matches a previous `$$'.",
+                    "So I shall assume that you typed `$$' both times.",
+                ]);
                 mc_propagate_error(crate::input::back_error_in(st)?)?;
             }
         }
@@ -773,14 +752,11 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
             );
             crate::output::print_esc_cstr_in(st, c"cr".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[
-                    c"You have given more \\span or & marks than there were",
-                    c"in the preamble to the \\halign or \\valign now in progress.",
-                    c"So I'll assume that you meant to type \\cr instead.",
-                ],
-            );
+            st.errors.help(&[
+                r"You have given more \span or & marks than there were",
+                r"in the preamble to the \halign or \valign now in progress.",
+                r"So I'll assume that you meant to type \cr instead.",
+            ]);
             st.mem.set_b32s0(st.scanner.cur_align + 5, CR_CODE);
             mc_propagate_error(crate::errors::error_in(st))?;
         }
@@ -917,14 +893,11 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
         crate::output::print_esc_cstr_in(st, c"halign".as_ptr());
         crate::output::print_cstr_in(st, c" inside $$'s".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[
-                c"Displays can use special alignments (like \\eqalignno)",
-                c"only if nothing but the alignment itself is between $$'s.",
-                c"So I've deleted the formulas that preceded this alignment.",
-            ],
-        );
+        st.errors.help(&[
+            r"Displays can use special alignments (like \eqalignno)",
+            "only if nothing but the alignment itself is between $$'s.",
+            "So I've deleted the formulas that preceded this alignment.",
+        ]);
         mc_propagate_error(crate::errors::error_in(st))?;
         crate::math::flush_math(&mut st.input.cur_list, &mut st.mem)
             .map_err(MainControlAbort::Confusion)?;
@@ -976,14 +949,11 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                         c"Missing # inserted in alignment preamble".as_ptr(),
                     );
                     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    help(
-                        &mut st.errors,
-                        &[
-                            c"There should be exactly one # between &'s, when an",
-                            c"\\halign or \\valign is being set up. In this case you had",
-                            c"none, so I've put one in; maybe that will work.",
-                        ],
-                    );
+                    st.errors.help(&[
+                        "There should be exactly one # between &'s, when an",
+                        r"\halign or \valign is being set up. In this case you had",
+                        "none, so I've put one in; maybe that will work.",
+                    ]);
                     mc_propagate_error(crate::input::back_error_in(st)?)?;
                     break;
                 }
@@ -1015,14 +985,11 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                     c"Only one # is allowed per tab".as_ptr(),
                 );
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"There should be exactly one # between &'s, when an",
-                        c"\\halign or \\valign is being set up. In this case you had",
-                        c"more than one, so I'm ignoring all but the first.",
-                    ],
-                );
+                st.errors.help(&[
+                    "There should be exactly one # between &'s, when an",
+                    r"\halign or \valign is being set up. In this case you had",
+                    "more than one, so I'm ignoring all but the first.",
+                ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
                 continue;
             }
@@ -1164,13 +1131,10 @@ pub(crate) fn head_for_vmode_in(st: &mut EngineState) -> Result<(), MainControlA
     crate::output::print_esc_cstr_in(st, c"hrule".as_ptr());
     crate::output::print_cstr_in(st, c"' here except with leaders".as_ptr());
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    help(
-        &mut st.errors,
-        &[
-            c"To put a horizontal rule in an hbox or an alignment,",
-            c"you should use \\leaders or \\hrulefill (see The TeXbook).",
-        ],
-    );
+    st.errors.help(&[
+        "To put a horizontal rule in an hbox or an alignment,",
+        r"you should use \leaders or \hrulefill (see The TeXbook).",
+    ]);
     mc_propagate_error(crate::errors::error_in(st))
 }
 
@@ -1184,10 +1148,8 @@ pub(crate) fn begin_insert_or_adjust_in(st: &mut EngineState) -> Result<(), Main
             crate::output::print_esc_cstr_in(st, c"insert".as_ptr());
             crate::output::print_int_in(st, st.scanner.cur_val);
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[c"I'm changing to \\insert0; box 255 is special."],
-            );
+            st.errors
+                .help(&[r"I'm changing to \insert0; box 255 is special."]);
             mc_propagate_error(crate::errors::error_in(st))?;
             st.scanner.cur_val = 0;
         }
@@ -1281,14 +1243,11 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                 c"Incompatible list can't be unboxed".as_ptr(),
             );
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[
-                    c"Sorry, Pandora. (You sneaky devil.)",
-                    c"I refuse to unbox an \\hbox in vertical mode or vice versa.",
-                    c"And I can't open any boxes in math mode.",
-                ],
-            );
+            st.errors.help(&[
+                "Sorry, Pandora. (You sneaky devil.)",
+                r"I refuse to unbox an \hbox in vertical mode or vice versa.",
+                "And I can't open any boxes in math mode.",
+            ]);
             return mc_propagate_error(crate::errors::error_in(st));
         }
         let list = b.list_ptr(&st.mem);
@@ -1328,18 +1287,17 @@ pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbor
             || st.shipout.last_glue.0 != MAX_HALFWORD
         {
             crate::errors::you_cant_in(st);
-            help(
-                &mut st.errors,
-                &[
-                    c"Sorry...I usually can't take things from the current page.",
-                    c"Try `I\\vskip-\\lastskip' instead.",
-                ],
-            );
-            if st.scanner.cur_chr as u16 == NodeType::Kern.as_raw() {
-                st.errors.help_line[0] = c"Try `I\\kern-\\lastkern' instead.".as_ptr();
+            let remedy = if st.scanner.cur_chr as u16 == NodeType::Kern.as_raw() {
+                r"Try `I\kern-\lastkern' instead."
             } else if st.scanner.cur_chr as u16 != NodeType::Glue.as_raw() {
-                st.errors.help_line[0] = c"Perhaps you can make the output routine do it.".as_ptr();
-            }
+                "Perhaps you can make the output routine do it."
+            } else {
+                r"Try `I\vskip-\lastskip' instead."
+            };
+            st.errors.help(&[
+                "Sorry...I usually can't take things from the current page.",
+                remedy,
+            ]);
             return mc_propagate_error(crate::errors::error_in(st));
         }
         return Ok(());
@@ -1454,14 +1412,11 @@ pub(crate) fn scan_box_in(st: &mut EngineState, box_context: i32) -> Result<(), 
             c"A <box> was supposed to be here".as_ptr(),
         );
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[
-                c"I was expecting to see \\hbox or \\vbox or \\copy or \\box or",
-                c"something like that. So you might find something missing in",
-                c"your output. But keep trying; you can fix this later.",
-            ],
-        );
+        st.errors.help(&[
+            r"I was expecting to see \hbox or \vbox or \copy or \box or",
+            "something like that. So you might find something missing in",
+            "your output. But keep trying; you can fix this later.",
+        ]);
         mc_propagate_error(crate::input::back_error_in(st)?)
     }
 }
@@ -1677,14 +1632,6 @@ fn tail_append(st: &mut EngineState, p: MemPtr) {
     st.input.cur_list.tail = p;
 }
 
-/// TeX's `help0`..`help6`: `lines` in reading order.
-pub(crate) fn help(errors: &mut crate::state::ErrorState, lines: &[&'static std::ffi::CStr]) {
-    errors.help_ptr = lines.len() as u8;
-    for (slot, line) in errors.help_line.iter_mut().zip(lines.iter().rev()) {
-        *slot = line.as_ptr();
-    }
-}
-
 pub(crate) fn new_character_in(
     st: &mut EngineState,
     f: i32,
@@ -1793,14 +1740,11 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 c"Leaders not followed by proper glue".as_ptr(),
             );
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[
-                    c"You should say `\\leaders <box or rule><hskip or vskip>'.",
-                    c"I found the <box or rule>, but there's no suitable",
-                    c"<hskip or vskip>, so I'm ignoring these leaders.",
-                ],
-            );
+            st.errors.help(&[
+                r"You should say `\leaders <box or rule><hskip or vskip>'.",
+                "I found the <box or rule>, but there's no suitable",
+                "<hskip or vskip>, so I'm ignoring these leaders.",
+            ]);
             mc_propagate_error(crate::input::back_error_in(st)?)?;
             crate::packaging::flush_node_list(&mut st.mem, st.scanner.cur_box.0)
                 .map_err(MainControlAbort::Confusion)?;
@@ -1893,19 +1837,16 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
             st.scanner.cur_box = MemPtr::NULL;
             if st.input.cur_list.mode.abs() == MMODE {
                 crate::errors::you_cant_in(st);
-                help(&mut st.errors, &[c"Sorry; this \\lastbox will be void."]);
+                st.errors.help(&[r"Sorry; this \lastbox will be void."]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else if st.input.cur_list.mode == VMODE
                 && st.input.cur_list.head == st.input.cur_list.tail
             {
                 crate::errors::you_cant_in(st);
-                help(
-                    &mut st.errors,
-                    &[
-                        c"Sorry...I usually can't take things from the current page.",
-                        c"This \\lastbox will therefore be void.",
-                    ],
-                );
+                st.errors.help(&[
+                    "Sorry...I usually can't take things from the current page.",
+                    r"This \lastbox will therefore be void.",
+                ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {
                 let tx = effective_tail(st);
@@ -1925,13 +1866,10 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
             if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
                 crate::output::error_here_with_diagnostic_in(st, c"Missing `to' inserted".as_ptr());
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"I'm working on `\\vsplit<box number> to <dimen>';",
-                        c"will look for the <dimen> next.",
-                    ],
-                );
+                st.errors.help(&[
+                    r"I'm working on `\vsplit<box number> to <dimen>';",
+                    "will look for the <dimen> next.",
+                ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             }
             crate::scan::scan_dimen_in(st, false, false, false)?;
@@ -1983,13 +1921,10 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
         GroupCode::BottomLevel => {
             crate::output::error_here_with_diagnostic_in(st, c"Too many }'s".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[
-                    c"You've closed more groups than you opened.",
-                    c"Such booboos are generally harmless, so keep going.",
-                ],
-            );
+            st.errors.help(&[
+                "You've closed more groups than you opened.",
+                "Such booboos are generally harmless, so keep going.",
+            ]);
             mc_propagate_error(crate::errors::error_in(st))?;
         }
         GroupCode::SemiSimple | GroupCode::MathShift | GroupCode::MathLeft => {
@@ -2058,13 +1993,10 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                     c"Unbalanced output routine".as_ptr(),
                 );
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"Your sneaky output routine has problematic {'s and/or }'s.",
-                        c"I can't handle that very well; good luck.",
-                    ],
-                );
+                st.errors.help(&[
+                    "Your sneaky output routine has problematic {'s and/or }'s.",
+                    "I can't handle that very well; good luck.",
+                ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
                 loop {
                     crate::scan::get_token_in(st)?;
@@ -2087,14 +2019,11 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                 crate::output::print_esc_cstr_in(st, c"box".as_ptr());
                 crate::output::print_int_in(st, 255);
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"Your \\output commands should empty \\box255,",
-                        c"e.g., by saying `\\shipout\\box255'.",
-                        c"Proceed; I'll discard its present contents.",
-                    ],
-                );
+                st.errors.help(&[
+                    r"Your \output commands should empty \box255,",
+                    r"e.g., by saying `\shipout\box255'.",
+                    "Proceed; I'll discard its present contents.",
+                ]);
                 mc_propagate_error(crate::errors::box_error_in(st, 255))?;
             }
 
@@ -2128,10 +2057,8 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             crate::output::print_esc_cstr_in(st, c"cr".as_ptr());
             crate::output::print_cstr_in(st, c" inserted".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[c"I'm guessing that you meant to end an alignment here."],
-            );
+            st.errors
+                .help(&["I'm guessing that you meant to end an alignment here."]);
             mc_propagate_error(crate::input::ins_error_in(st)?)?;
         }
         GroupCode::NoAlign => {
@@ -2278,10 +2205,8 @@ pub(crate) fn alter_aux_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         let errmsg = crate::output::error_here_with_diagnostic_in(st, c"Bad space factor".as_ptr());
         unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[c"I allow only values in the range 1..32767 here."],
-        );
+        st.errors
+            .help(&["I allow only values in the range 1..32767 here."]);
         return mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val));
     }
     st.input.cur_list.set_aux_s0(st.scanner.cur_val);
@@ -2302,7 +2227,7 @@ pub(crate) fn alter_prev_graf_in(st: &mut EngineState) -> Result<(), MainControl
         unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
         crate::output::print_esc_cstr_in(st, c"prevgraf".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(&mut st.errors, &[c"I allow only nonnegative values here."]);
+        st.errors.help(&["I allow only nonnegative values here."]);
         return mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val));
     }
     st.input.nest[p].prev_graf = st.scanner.cur_val;
@@ -2332,13 +2257,10 @@ pub(crate) fn alter_integer_in(st: &mut EngineState) -> Result<(), MainControlAb
                 );
                 unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"Modes are 0=batch, 1=nonstop, 2=scroll, and",
-                        c"3=errorstop. Proceed, and I'll ignore this case.",
-                    ],
-                );
+                st.errors.help(&[
+                    "Modes are 0=batch, 1=nonstop, 2=scroll, and",
+                    "3=errorstop. Proceed, and I'll ignore this case.",
+                ]);
                 return mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val));
             }
             st.scanner.cur_chr = st.scanner.cur_val;
@@ -2401,10 +2323,8 @@ pub(crate) fn off_save_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
         crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
         crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[c"Things are pretty mixed up, but I think the worst is over."],
-        );
+        st.errors
+            .help(&["Things are pretty mixed up, but I think the worst is over."]);
         return mc_propagate_error(crate::errors::error_in(st));
     }
     crate::input::back_input_in(st)?;
@@ -2435,16 +2355,13 @@ pub(crate) fn off_save_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
     crate::output::print_cstr_in(st, c" inserted".as_ptr());
     crate::input::begin_token_list_in(st, st.mem.b32s1(TEMP_HEAD), INSERTED)?;
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    help(
-        &mut st.errors,
-        &[
-            c"I've inserted something that you may have forgotten.",
-            c"(See the <inserted text> above.)",
-            c"With luck, this will get me unwedged. But if you",
-            c"really didn't forget anything, try typing `2' now; then",
-            c"my insertion and my current dilemma will both disappear.",
-        ],
-    );
+    st.errors.help(&[
+        "I've inserted something that you may have forgotten.",
+        "(See the <inserted text> above.)",
+        "With luck, this will get me unwedged. But if you",
+        "really didn't forget anything, try typing `2' now; then",
+        "my insertion and my current dilemma will both disappear.",
+    ]);
     mc_propagate_error(crate::errors::error_in(st))
 }
 
@@ -2522,10 +2439,8 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
                     c"Improper discretionary list".as_ptr(),
                 );
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[c"Discretionary lists must contain only boxes and kerns."],
-                );
+                st.errors
+                    .help(&["Discretionary lists must contain only boxes and kerns."]);
                 mc_propagate_error(crate::errors::error_in(st))?;
                 crate::output::begin_diagnostic_in(st);
                 crate::output::diagnostic_begin_capture_warning_here_in(st);
@@ -2559,13 +2474,10 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
                 crate::output::error_here_with_diagnostic_in(st, c"Illegal math ".as_ptr());
                 crate::output::print_esc_cstr_in(st, c"discretionary".as_ptr());
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"Sorry: The third part of a discretionary break must be",
-                        c"empty, in math formulas. I had to delete your third part.",
-                    ],
-                );
+                st.errors.help(&[
+                    "Sorry: The third part of a discretionary break must be",
+                    "empty, in math formulas. I had to delete your third part.",
+                ]);
                 crate::packaging::flush_node_list(&mut st.mem, p)
                     .map_err(MainControlAbort::Confusion)?;
                 n = 0;
@@ -2581,13 +2493,10 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
                     c"Discretionary list is too long".as_ptr(),
                 );
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"Wow---I never thought anybody would tweak me here.",
-                        c"You can't seriously need such a huge discretionary list?",
-                    ],
-                );
+                st.errors.help(&[
+                    "Wow---I never thought anybody would tweak me here.",
+                    "You can't seriously need such a huge discretionary list?",
+                ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             }
             if n > 0 {
@@ -2820,13 +2729,10 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
             crate::output::print_scaled_in(st, size);
             crate::output::print_cstr_in(st, c"pt), replaced by 10pt".as_ptr());
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[
-                    c"I can only handle fonts at positive sizes that are",
-                    c"less than 2048pt, so I've changed what you said to 10pt.",
-                ],
-            );
+            st.errors.help(&[
+                "I can only handle fonts at positive sizes that are",
+                "less than 2048pt, so I've changed what you said to 10pt.",
+            ]);
             mc_propagate_error(crate::errors::error_in(st))?;
             10 * 65536
         } else {
@@ -2842,10 +2748,8 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
             );
             diag_append_str(errmsg, &format!(" ({})", mag));
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[c"The magnification ratio must be between 1 and 32768."],
-            );
+            st.errors
+                .help(&["The magnification ratio must be between 1 and 32768."]);
             mc_propagate_error(crate::errors::int_error_in(st, mag))?;
             -1000
         } else {
@@ -2926,10 +2830,8 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
                 crate::output::print_cstr_in(st, c"' after ".as_ptr());
                 crate::output::print_cmd_chr_in(st, q, 0);
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[c"I'm forgetting what you said and not changing anything."],
-                );
+                st.errors
+                    .help(&["I'm forgetting what you said and not changing anything."]);
                 return mc_propagate_error(crate::errors::error_in(st));
             }
         }
@@ -3057,13 +2959,10 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
     if st.errors.arith_error {
         crate::output::error_here_with_diagnostic_in(st, c"Arithmetic overflow".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[
-                c"I can't carry out that multiplication or division,",
-                c"since the result is out of range.",
-            ],
-        );
+        st.errors.help(&[
+            "I can't carry out that multiplication or division,",
+            "since the result is out of range.",
+        ]);
         if p >= GLUE_VAL {
             crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_val);
         }
@@ -4490,10 +4389,8 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
             crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
             crate::output::print_char_in(st, '\'' as i32);
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            help(
-                &mut st.errors,
-                &[c"I'll pretend you didn't say \\long or \\outer or \\global or \\protected."],
-            );
+            st.errors
+                .help(&[r"I'll pretend you didn't say \long or \outer or \global or \protected."]);
             return mc_propagate_error(crate::input::back_error_in(st)?);
         }
         if st.eqtb.b32s1(INT_BASE + INT_PAR_TRACING_COMMANDS) > 2 {
@@ -4518,10 +4415,8 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
         crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
         crate::output::print_char_in(st, '\'' as i32);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[c"I'll pretend you didn't say \\long or \\outer or \\protected here."],
-        );
+        st.errors
+            .help(&[r"I'll pretend you didn't say \long or \outer or \protected here."]);
         mc_propagate_error(crate::errors::error_in(st))?;
     }
     let global_defs = st.eqtb.b32s1(INT_BASE + INT_PAR_GLOBAL_DEFS);
@@ -4594,10 +4489,8 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                     c"vestigial MLTeX shorthand encountered??".as_ptr(),
                 );
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[c"This should never happen in Tectonic, where MLTeX has been excised."],
-                );
+                st.errors
+                    .help(&["This should never happen in Tectonic, where MLTeX has been excised."]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {
                 shorthand_def_in(st, a >= 4)?;
@@ -4610,13 +4503,10 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
             if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
                 crate::output::error_here_with_diagnostic_in(st, c"Missing `to' inserted".as_ptr());
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"You should have said `\\read<number> to \\cs'.",
-                        c"I'm going to look for the \\cs now.",
-                    ],
-                );
+                st.errors.help(&[
+                    r"You should have said `\read<number> to \cs'.",
+                    r"I'm going to look for the \cs now.",
+                ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             }
             crate::scan::get_r_token_in(st)?;
@@ -4674,13 +4564,10 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                 crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
                 crate::output::print_esc_cstr_in(st, c"setbox".as_ptr());
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(
-                    &mut st.errors,
-                    &[
-                        c"Sorry, \\setbox is not allowed after \\halign in a display,",
-                        c"or between \\accent and an accented character.",
-                    ],
-                );
+                st.errors.help(&[
+                    r"Sorry, \setbox is not allowed after \halign in a display,",
+                    r"or between \accent and an accented character.",
+                ]);
                 mc_propagate_error(crate::errors::error_in(st))?;
             }
         }
@@ -4701,7 +4588,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                     c"Patterns can be loaded only by INITEX".as_ptr(),
                 );
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                help(&mut st.errors, &[]);
+                st.errors.help(&[]);
                 mc_propagate_error(crate::errors::error_in(st))?;
                 loop {
                     crate::scan::get_token_in(st)?;
@@ -4961,10 +4848,8 @@ fn def_code_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbor
         }
         crate::output::print_int_in(st, max);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        help(
-            &mut st.errors,
-            &[c"I'm going to use 0 instead of that illegal code value."],
-        );
+        st.errors
+            .help(&["I'm going to use 0 instead of that illegal code value."]);
         mc_propagate_error(crate::errors::error_in(st))?;
         st.scanner.cur_val = 0;
     }

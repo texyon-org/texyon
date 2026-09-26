@@ -10,7 +10,8 @@ use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
     end_diagnostic_in, error_here_with_diagnostic_in, print_char_in, print_cmd_chr_in,
     print_cstr_in, print_esc_cstr_in, print_in, print_in_mode_in, print_int_in, print_ln_in,
-    print_nl_cstr_in, show_box_in, show_context_in, show_token_list_in, token_show_in,
+    print_nl_cstr_in, print_nl_str_in, show_box_in, show_context_in, show_token_list_in,
+    token_show_in,
 };
 use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
@@ -22,12 +23,10 @@ extern "C" {
 }
 
 impl ErrorState {
-    /// Installs the help text, lines given in display order.
-    pub(crate) fn set_help(&mut self, lines: &[&'static CStr]) {
-        self.help_ptr = lines.len() as u8;
-        for (slot, line) in self.help_line[..lines.len()].iter_mut().rev().zip(lines) {
-            *slot = line.as_ptr();
-        }
+    /// Sets the help text shown after the next error, in display order.
+    pub(crate) fn help(&mut self, lines: &[&'static str]) {
+        self.help_lines[..lines.len()].copy_from_slice(lines);
+        self.help_len = lines.len() as u8;
     }
 }
 
@@ -117,9 +116,11 @@ pub(crate) fn error_in(st: &mut EngineState) -> ErrorOutcome {
         print_ln_in(st);
         give_err_help_in(st);
     } else {
-        while st.errors.help_ptr > 0 {
-            st.errors.help_ptr -= 1;
-            print_nl_cstr_in(st, st.errors.help_line[st.errors.help_ptr as usize]);
+        let lines = st.errors.help_lines;
+        let len = st.errors.help_len as usize;
+        st.errors.help_len = 0;
+        for line in &lines[..len] {
+            print_nl_str_in(st, line);
         }
     }
     print_ln_in(st);
@@ -168,9 +169,9 @@ impl EngineAbort {
         print_char_in(st, b'=' as i32);
         print_int_in(st, n);
         print_char_in(st, b']' as i32);
-        st.errors.set_help(&[
-            c"If you really absolutely need more capacity,",
-            c"you can ask a wizard to enlarge me.",
+        st.errors.help(&[
+            "If you really absolutely need more capacity,",
+            "you can ask a wizard to enlarge me.",
         ]);
         post_error_message_in(st, true);
         _ttbc_set_error_message(c"halted on overflow()".as_ptr());
@@ -224,14 +225,13 @@ impl EngineAbort {
                     print_cstr_in(st, c"This can't happen (".as_ptr());
                     print_cstr_in(st, s);
                     print_char_in(st, b')' as i32);
-                    st.errors.set_help(&[
-                        c"I'm broken. Please show this to someone who can fix can fix",
-                    ]);
+                    st.errors
+                        .help(&["I'm broken. Please show this to someone who can fix can fix"]);
                 } else {
                     print_cstr_in(st, c"I can't go on meeting you like this".as_ptr());
-                    st.errors.set_help(&[
-                        c"One of your faux pas seems to have wounded me deeply...",
-                        c"in fact, I'm barely conscious. Please fix it and try again.",
+                    st.errors.help(&[
+                        "One of your faux pas seems to have wounded me deeply...",
+                        "in fact, I'm barely conscious. Please fix it and try again.",
                     ]);
                 }
                 post_error_message_in(st, true);
@@ -314,7 +314,7 @@ pub(crate) fn mu_error_in(st: &mut EngineState) -> ErrorOutcome {
     error_here_with_diagnostic_in(st, c"Incompatible glue units".as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     st.errors
-        .set_help(&[c"I'm going to assume that 1mu=1pt when they're mixed."]);
+        .help(&["I'm going to assume that 1mu=1pt when they're mixed."]);
     error_in(st)
 }
 
@@ -327,12 +327,12 @@ pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
         _ => {}
     }
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.set_help(&[
-        c"I've deleted a group-closing symbol because it seems to be",
-        c"spurious, as in `$x}$'. But perhaps the } is legitimate and",
-        c"you forgot something else, as in `\\hbox{$x}'. In such cases",
-        c"the way to recover is to insert both the forgotten and the",
-        c"deleted material, e.g., by typing `I$}'.",
+    st.errors.help(&[
+        "I've deleted a group-closing symbol because it seems to be",
+        "spurious, as in `$x}$'. But perhaps the } is legitimate and",
+        r"you forgot something else, as in `\hbox{$x}'. In such cases",
+        "the way to recover is to insert both the forgotten and the",
+        "deleted material, e.g., by typing `I$}'.",
     ]);
     let outcome = error_in(st);
     if matches!(outcome, ErrorOutcome::Continue) {
@@ -350,11 +350,11 @@ pub(crate) fn you_cant_in(st: &mut EngineState) {
 
 pub(crate) fn report_illegal_case_in(st: &mut EngineState) -> ErrorOutcome {
     you_cant_in(st);
-    st.errors.set_help(&[
-        c"Sorry, but I'm not programmed to handle this case;",
-        c"I'll just pretend that you didn't ask for it.",
-        c"If you're in the wrong mode, you might be able to",
-        c"return to the right one by typing `I}' or `I$' or `I\\par'.",
+    st.errors.help(&[
+        "Sorry, but I'm not programmed to handle this case;",
+        "I'll just pretend that you didn't ask for it.",
+        "If you're in the wrong mode, you might be able to",
+        r"return to the right one by typing `I}' or `I$' or `I\par'.",
     ]);
     error_in(st)
 }
@@ -374,7 +374,7 @@ pub(crate) fn cs_error_in(st: &mut EngineState) -> ErrorOutcome {
     print_esc_cstr_in(st, c"endcsname".as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     st.errors
-        .set_help(&[c"I'm ignoring this, since I wasn't doing a \\csname."]);
+        .help(&[r"I'm ignoring this, since I wasn't doing a \csname."]);
     error_in(st)
 }
 

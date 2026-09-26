@@ -1105,15 +1105,13 @@ fn finite_shrink_emit(
             c"Infinite glue shrinkage found in a paragraph".as_ptr(),
         );
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 5;
-        st.errors.help_line[4] = c"The paragraph just ended includes some glue that has".as_ptr();
-        st.errors.help_line[3] =
-            c"infinite shrinkability, e.g., `\\hskip 0pt minus 1fil'.".as_ptr();
-        st.errors.help_line[2] = c"Such glue doesn't belong there---it allows a paragraph".as_ptr();
-        st.errors.help_line[1] =
-            c"of any length to fit on one line. But it's safe to proceed,".as_ptr();
-        st.errors.help_line[0] =
-            c"since the offensive shrinkability has been made finite.".as_ptr();
+        st.errors.help(&[
+            "The paragraph just ended includes some glue that has",
+            r"infinite shrinkability, e.g., `\hskip 0pt minus 1fil'.",
+            "Such glue doesn't belong there---it allows a paragraph",
+            "of any length to fit on one line. But it's safe to proceed,",
+            "since the offensive shrinkability has been made finite.",
+        ]);
         match crate::errors::error_in(st) {
             crate::errors::ErrorOutcome::Continue => {}
             other => return Err(LineBreakOutcome::Error(other)),

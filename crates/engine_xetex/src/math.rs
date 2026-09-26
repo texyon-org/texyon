@@ -442,15 +442,12 @@ fn fetch_in(st: &mut EngineState, a: impl crate::units::MemAddr) -> crate::error
             crate::output::print_in(st, c);
             crate::output::print_char_in(st, ')' as i32);
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            st.errors.help_ptr = 4;
-            st.errors.help_line[3] =
-                c"Somewhere in the math formula just ended, you used the".as_ptr();
-            st.errors.help_line[2] =
-                c"stated character from an undefined font family. For example,".as_ptr();
-            st.errors.help_line[1] =
-                c"plain TeX doesn't allow \\it or \\sl in subscripts. Proceed,".as_ptr();
-            st.errors.help_line[0] =
-                c"and I'll try to forget that I needed that character.".as_ptr();
+            st.errors.help(&[
+                "Somewhere in the math formula just ended, you used the",
+                "stated character from an undefined font family. For example,",
+                r"plain TeX doesn't allow \it or \sl in subscripts. Proceed,",
+                "and I'll try to forget that I needed that character.",
+            ]);
             crate::errors::error_in(st)
         }
         FetchOutcome::CharMissing { f, c } => crate::output::char_warning_in(st, f, c),
@@ -2588,17 +2585,14 @@ pub(crate) fn scan_delimiter_in(
             crate::output::print_nl_cstr_in(st, c"! ".as_ptr());
         }
         crate::output::print_cstr_in(st, c"Missing delimiter (. inserted)".as_ptr());
-        st.errors.help_ptr = 6;
-        st.errors.help_line[5] = c"I was expecting to see something like `(' or `\\{' or".as_ptr();
-        st.errors.help_line[4] =
-            c"`\\}' here. If you typed, e.g., `{' instead of `\\{', you".as_ptr();
-        st.errors.help_line[3] =
-            c"should probably delete the `{' by typing `1' now, so that".as_ptr();
-        st.errors.help_line[2] = c"braces don't get unbalanced. Otherwise just proceed.".as_ptr();
-        st.errors.help_line[1] =
-            c"Acceptable delimiters are characters whose \\delcode is".as_ptr();
-        st.errors.help_line[0] =
-            c"nonnegative, or you can use `\\delimiter <delimiter code>'.".as_ptr();
+        st.errors.help(&[
+            r"I was expecting to see something like `(' or `\{' or",
+            r"`\}' here. If you typed, e.g., `{' instead of `\{', you",
+            "should probably delete the `{' by typing `1' now, so that",
+            "braces don't get unbalanced. Otherwise just proceed.",
+            r"Acceptable delimiters are characters whose \delcode is",
+            r"nonnegative, or you can use `\delimiter <delimiter code>'.",
+        ]);
         crate::main_control::mc_propagate_error(crate::input::back_error_in(st)?)?;
         st.scanner.cur_val = 0;
     }
@@ -2687,9 +2681,8 @@ pub(crate) fn math_limit_switch_in(
         c"Limit controls must follow a math operator".as_ptr(),
     );
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 1;
-    st.errors.help_line[0] =
-        c"I'm ignoring this misplaced \\limits or \\nolimits command.".as_ptr();
+    st.errors
+        .help(&[r"I'm ignoring this misplaced \limits or \nolimits command."]);
     crate::main_control::mc_propagate_error(crate::errors::error_in(st))
 }
 
@@ -2879,15 +2872,16 @@ pub(crate) fn sub_sup_in(
         match duplicate {
             ScriptDuplication::Superscript => {
                 crate::output::error_here_with_diagnostic_in(st, c"Double superscript".as_ptr());
-                st.errors.help_line[0] = c"I treat `x^1^2' essentially like `x^1{}^2'.".as_ptr();
+                st.errors
+                    .help(&["I treat `x^1^2' essentially like `x^1{}^2'."]);
             }
             ScriptDuplication::Subscript => {
                 crate::output::error_here_with_diagnostic_in(st, c"Double subscript".as_ptr());
-                st.errors.help_line[0] = c"I treat `x_1_2' essentially like `x_1{}_2'.".as_ptr();
+                st.errors
+                    .help(&["I treat `x_1_2' essentially like `x_1{}_2'."]);
             }
         }
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 1;
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     }
     crate::scan::scan_math_in(st, p)
@@ -2941,12 +2935,11 @@ pub(crate) fn math_fraction_in(
             crate::output::print_nl_cstr_in(st, c"! ".as_ptr());
         }
         crate::output::print_cstr_in(st, c"Ambiguous; you need another { and }".as_ptr());
-        st.errors.help_ptr = 3;
-        st.errors.help_line[2] =
-            c"I'm ignoring this fraction specification, since I don't".as_ptr();
-        st.errors.help_line[1] = c"know whether a construction like `x \\over y \\over z'".as_ptr();
-        st.errors.help_line[0] =
-            c"means `{x \\over y} \\over z' or `x \\over {y \\over z}'.".as_ptr();
+        st.errors.help(&[
+            "I'm ignoring this fraction specification, since I don't",
+            r"know whether a construction like `x \over y \over z'",
+            r"means `{x \over y} \over z' or `x \over {y \over z}'.",
+        ]);
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     } else {
         let aux = start_fraction_noad(&mut st.input.cur_list, &mut st.mem)?;
@@ -3006,14 +2999,12 @@ pub(crate) fn math_left_right_in(
             crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
             if t == MIDDLE_NOAD {
                 crate::output::print_esc_cstr_in(st, c"middle".as_ptr());
-                st.errors.help_ptr = 1;
-                st.errors.help_line[0] =
-                    c"I'm ignoring a \\middle that had no matching \\left.".as_ptr();
+                st.errors
+                    .help(&[r"I'm ignoring a \middle that had no matching \left."]);
             } else {
                 crate::output::print_esc_cstr_in(st, c"right".as_ptr());
-                st.errors.help_ptr = 1;
-                st.errors.help_line[0] =
-                    c"I'm ignoring a \\right that had no matching \\left.".as_ptr();
+                st.errors
+                    .help(&[r"I'm ignoring a \right that had no matching \left."]);
             }
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
@@ -3083,11 +3074,10 @@ pub(crate) fn math_ac_in(
         crate::output::print_esc_cstr_in(st, c"mathaccent".as_ptr());
         crate::output::print_cstr_in(st, c" for accents in math mode".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] =
-            c"I'm changing \\accent to \\mathaccent here; wish me luck.".as_ptr();
-        st.errors.help_line[0] =
-            c"(Accents are not the same in formulas as they are in text.)".as_ptr();
+        st.errors.help(&[
+            r"I'm changing \accent to \mathaccent here; wish me luck.",
+            "(Accents are not the same in formulas as they are in text.)",
+        ]);
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     }
 
@@ -3332,18 +3322,18 @@ fn check_math_fonts_in(
         (
             c"Math formula deleted: Insufficient symbol fonts",
             [
-                c"Sorry, but I can't typeset math unless \\textfont 2",
-                c"and \\scriptfont 2 and \\scriptscriptfont 2 have all",
-                c"the \\fontdimen values needed in math symbol fonts.",
+                r"Sorry, but I can't typeset math unless \textfont 2",
+                r"and \scriptfont 2 and \scriptscriptfont 2 have all",
+                r"the \fontdimen values needed in math symbol fonts.",
             ],
         )
     } else if !sizes.iter().all(|&z| ext_font_ok(&st.fonts, &st.eqtb, z)) {
         (
             c"Math formula deleted: Insufficient extension fonts",
             [
-                c"Sorry, but I can't typeset math unless \\textfont 3",
-                c"and \\scriptfont 3 and \\scriptscriptfont 3 have all",
-                c"the \\fontdimen values needed in math extension fonts.",
+                r"Sorry, but I can't typeset math unless \textfont 3",
+                r"and \scriptfont 3 and \scriptscriptfont 3 have all",
+                r"the \fontdimen values needed in math extension fonts.",
             ],
         )
     } else {
@@ -3351,10 +3341,7 @@ fn check_math_fonts_in(
     };
     crate::output::error_here_with_diagnostic_in(st, msg.as_ptr());
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 3;
-    st.errors.help_line[2] = help[0].as_ptr();
-    st.errors.help_line[1] = help[1].as_ptr();
-    st.errors.help_line[0] = help[2].as_ptr();
+    st.errors.help(&help);
     crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     flush_math(&mut st.input.cur_list, &mut st.mem)
         .map_err(crate::main_control::MainControlAbort::Confusion)?;
@@ -3369,10 +3356,10 @@ fn check_display_end_in(st: &mut EngineState) -> Result<(), crate::main_control:
             c"Display math should end with $$".as_ptr(),
         );
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] =
-            c"The `$' that I just saw supposedly matches a previous `$$'.".as_ptr();
-        st.errors.help_line[0] = c"So I shall assume that you typed `$$' both times.".as_ptr();
+        st.errors.help(&[
+            "The `$' that I just saw supposedly matches a previous `$$'.",
+            "So I shall assume that you typed `$$' both times.",
+        ]);
         crate::main_control::mc_propagate_error(crate::input::back_error_in(st)?)?;
     }
     Ok(())

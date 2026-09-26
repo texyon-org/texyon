@@ -355,9 +355,10 @@ fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
         crate::output::print_scaled_in(st, x);
         crate::output::print_cstr_in(st, c" has been replaced by 0".as_ptr());
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] = c"Since I don't take logs of non-positive numbers,".as_ptr();
-        st.errors.help_line[0] = c"I'm zeroing this one. Proceed, with fingers crossed.".as_ptr();
+        st.errors.help(&[
+            "Since I don't take logs of non-positive numbers,",
+            "I'm zeroing this one. Proceed, with fingers crossed.",
+        ]);
         // Unreachable: norm_rand always passes x >= 1.
         let _ = crate::errors::error_in(st);
         return 0;

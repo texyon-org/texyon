@@ -359,9 +359,10 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, MainControlAbort
     crate::output::print_scaled_in(st, st.scanner.cur_val);
     crate::output::print_cstr_in(st, c"pt) will be ignored".as_ptr());
     crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 2;
-    st.errors.help_line[1] = c"I can't scale images to zero or negative sizes,".as_ptr();
-    st.errors.help_line[0] = c"so I'm ignoring this.".as_ptr();
+    st.errors.help(&[
+        "I can't scale images to zero or negative sizes,",
+        "so I'm ignoring this.",
+    ]);
     mc_propagate_error(crate::errors::error_in(st))?;
     Ok(None)
 }
@@ -513,13 +514,13 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         crate::output::print_file_name_in(st, n, a, e);
         crate::output::print_in(st, '\'' as i32);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] = c"The requested image couldn't be read because".as_ptr();
-        st.errors.help_line[0] = if result == FILE_NOT_FOUND {
-            c"the file was not found.".as_ptr()
+        let reason = if result == FILE_NOT_FOUND {
+            "the file was not found."
         } else {
-            c"it was not a recognized image format.".as_ptr()
+            "it was not a recognized image format."
         };
+        st.errors
+            .help(&["The requested image couldn't be read because", reason]);
         mc_propagate_error(crate::errors::error_in(st))?;
     }
     Ok(())

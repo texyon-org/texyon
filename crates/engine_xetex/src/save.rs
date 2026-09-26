@@ -159,13 +159,10 @@ pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcom
         crate::output::print_nl_cstr_in(st, c" the previous value will be retained".as_ptr());
         unsafe { diag_append_str(errmsg, &format!(" ({})", mag_set)) };
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        crate::main_control::help(
-            &mut st.errors,
-            &[
-                c"I can handle only one magnification ratio per job. So I've",
-                c"reverted to the magnification you used earlier on this run.",
-            ],
-        );
+        st.errors.help(&[
+            "I can handle only one magnification ratio per job. So I've",
+            "reverted to the magnification you used earlier on this run.",
+        ]);
         let outcome = crate::errors::int_error_in(st, mag_set);
         if !matches!(outcome, ErrorOutcome::Continue) {
             return outcome;
@@ -180,10 +177,8 @@ pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcom
         );
         unsafe { diag_append_str(errmsg, &format!(" ({})", mag)) };
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        crate::main_control::help(
-            &mut st.errors,
-            &[c"The magnification ratio must be between 1 and 32768."],
-        );
+        st.errors
+            .help(&["The magnification ratio must be between 1 and 32768."]);
         let outcome = crate::errors::int_error_in(st, mag);
         if !matches!(outcome, ErrorOutcome::Continue) {
             return outcome;

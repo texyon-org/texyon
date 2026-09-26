@@ -182,29 +182,27 @@ fn bad_int_error(
     st: &mut EngineState,
     err: *const libc::c_char,
     value: i32,
-    help1: *const libc::c_char,
-    help0: &std::ffi::CStr,
+    help1: &'static str,
+    help0: &'static str,
 ) -> Result<(), SccAbort> {
     let errmsg = error_here_with_diagnostic_in(st, err);
     unsafe { diag_append_str(errmsg, &format!(" ({value})")) };
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 2;
-    st.errors.help_line[1] = help1;
-    st.errors.help_line[0] = help0.as_ptr();
+    st.errors.help(&[help1, help0]);
     scc_err(int_error_in(st, value))
 }
 
 fn int_range_error(
     st: &mut EngineState,
     err: *const libc::c_char,
-    help1: *const libc::c_char,
+    help1: &'static str,
 ) -> Result<(), SccAbort> {
     bad_int_error(
         st,
         err,
         st.scanner.cur_val,
         help1,
-        c"I changed this one to zero.",
+        "I changed this one to zero.",
     )?;
     st.scanner.cur_val = 0;
     Ok(())
@@ -214,11 +212,11 @@ fn scan_int_up_to_in(
     st: &mut EngineState,
     max: i32,
     err: &std::ffi::CStr,
-    help: &std::ffi::CStr,
+    help: &'static str,
 ) -> Result<(), SccAbort> {
     scan_int_in(st)?;
     if st.scanner.cur_val < 0 || st.scanner.cur_val > max {
-        int_range_error(st, err.as_ptr(), help.as_ptr())?;
+        int_range_error(st, err.as_ptr(), help)?;
     }
     Ok(())
 }
@@ -228,7 +226,7 @@ pub(crate) fn scan_char_class_in(st: &mut EngineState) -> Result<(), SccAbort> {
         st,
         CHAR_CLASS_LIMIT,
         c"Bad character class",
-        c"A character class must be between 0 and 4096.",
+        "A character class must be between 0 and 4096.",
     )
 }
 
@@ -237,7 +235,7 @@ pub(crate) fn scan_char_class_not_ignored_in(st: &mut EngineState) -> Result<(),
         st,
         CHAR_CLASS_LIMIT,
         c"Bad character class",
-        c"A class for inter-character transitions must be between 0 and 4095.",
+        "A class for inter-character transitions must be between 0 and 4095.",
     )
 }
 
@@ -246,7 +244,7 @@ pub(crate) fn scan_eight_bit_int_in(st: &mut EngineState) -> Result<(), SccAbort
         st,
         255,
         c"Bad register code",
-        c"A register code or char class must be between 0 and 255.",
+        "A register code or char class must be between 0 and 255.",
     )
 }
 
@@ -255,7 +253,7 @@ pub(crate) fn scan_math_class_int_in(st: &mut EngineState) -> Result<(), SccAbor
         st,
         7,
         c"Bad math class",
-        c"Since I expected to read a number between 0 and 7,",
+        "Since I expected to read a number between 0 and 7,",
     )
 }
 
@@ -264,7 +262,7 @@ pub(crate) fn scan_math_fam_int_in(st: &mut EngineState) -> Result<(), SccAbort>
         st,
         NUMBER_MATH_FAMILIES - 1,
         c"Bad math family",
-        c"Since I expected to read a number between 0 and 255,",
+        "Since I expected to read a number between 0 and 255,",
     )
 }
 
@@ -273,7 +271,7 @@ pub(crate) fn scan_four_bit_int_in(st: &mut EngineState) -> Result<(), SccAbort>
         st,
         15,
         c"Bad number",
-        c"Since I expected to read a number between 0 and 15,",
+        "Since I expected to read a number between 0 and 15,",
     )
 }
 
@@ -283,7 +281,7 @@ pub(crate) fn scan_four_bit_int_or_18_in(st: &mut EngineState) -> Result<(), Scc
         int_range_error(
             st,
             c"Bad number".as_ptr(),
-            c"Since I expected to read a number between 0 and 15,".as_ptr(),
+            "Since I expected to read a number between 0 and 15,",
         )?;
     }
     Ok(())
@@ -294,7 +292,7 @@ pub(crate) fn scan_fifteen_bit_int_in(st: &mut EngineState) -> Result<(), SccAbo
         st,
         32767,
         c"Bad mathchar",
-        c"A mathchar number must be between 0 and 32767.",
+        "A mathchar number must be between 0 and 32767.",
     )
 }
 
@@ -303,7 +301,7 @@ pub(crate) fn scan_char_num_in(st: &mut EngineState) -> Result<(), SccAbort> {
         st,
         BIGGEST_CHAR,
         c"Bad character code",
-        c"A character number must be between 0 and 65535.",
+        "A character number must be between 0 and 65535.",
     )
 }
 
@@ -312,7 +310,7 @@ pub(crate) fn scan_usv_num_in(st: &mut EngineState) -> Result<(), SccAbort> {
         st,
         BIGGEST_USV,
         c"Bad character code",
-        c"A Unicode scalar value must be between 0 and \"10FFFF.",
+        "A Unicode scalar value must be between 0 and \"10FFFF.",
     )
 }
 
@@ -321,7 +319,7 @@ pub(crate) fn scan_delimiter_int_in(st: &mut EngineState) -> Result<(), SccAbort
         st,
         0x7FF_FFFF,
         c"Bad delimiter code",
-        c"A numeric delimiter code must be between 0 and 2^{27}-1.",
+        "A numeric delimiter code must be between 0 and 2^{27}-1.",
     )
 }
 
@@ -342,8 +340,8 @@ pub(crate) fn scan_xetex_math_char_int_in(st: &mut EngineState) -> Result<(), Sc
                 st,
                 c"Bad active XeTeX math code".as_ptr(),
                 st.scanner.cur_val,
-                c"Since I ignore class and family for active math chars,".as_ptr(),
-                c"I changed this one to \"1FFFFF.",
+                "Since I ignore class and family for active math chars,",
+                "I changed this one to \"1FFFFF.",
             )?;
             st.scanner.cur_val = ACTIVE_MATH_CHAR;
         }
@@ -351,7 +349,7 @@ pub(crate) fn scan_xetex_math_char_int_in(st: &mut EngineState) -> Result<(), Sc
         int_range_error(
             st,
             c"Bad XeTeX math character code".as_ptr(),
-            c"Since I expected a character number between 0 and \"10FFFF,".as_ptr(),
+            "Since I expected a character number between 0 and \"10FFFF,",
         )?;
     }
     Ok(())
@@ -370,9 +368,10 @@ pub(crate) fn insert_dollar_sign_in(
     st.scanner.cur_tok = MATH_SHIFT_TOKEN + '$' as i32;
     error_here_with_diagnostic_in(st, c"Missing $ inserted".as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 2;
-    st.errors.help_line[1] = c"I've inserted a begin-math/end-math symbol since I think".as_ptr();
-    st.errors.help_line[0] = c"you left one out. Proceed, with fingers crossed.".as_ptr();
+    st.errors.help(&[
+        "I've inserted a begin-math/end-math symbol since I think",
+        "you left one out. Proceed, with fingers crossed.",
+    ]);
     crate::main_control::mc_propagate_error(ins_error_in(st)?)
 }
 
@@ -604,8 +603,7 @@ pub(crate) fn read_toks_in(st: &mut EngineState, n: i32, r: i32, j: i32) -> Resu
                     error_here_with_diagnostic_in(st, c"File ended within ".as_ptr());
                     print_esc_cstr_in(st, c"read".as_ptr());
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    st.errors.help_ptr = 1;
-                    st.errors.help_line[0] = c"This \\read has unbalanced braces.".as_ptr();
+                    st.errors.help(&[r"This \read has unbalanced braces."]);
                     st.scanner.align_state = 1_000_000;
                     st.input.cur_input.limit = 0;
                     scc_err(error_in(st))?;
@@ -674,8 +672,8 @@ pub(crate) fn eTeX_enabled_in(
         error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
         print_cmd_chr_in(st, j, k);
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 1;
-        st.errors.help_line[0] = c"Sorry, this optional e-TeX feature has been disabled.".as_ptr();
+        st.errors
+            .help(&["Sorry, this optional e-TeX feature has been disabled."]);
         crate::main_control::mc_propagate_error(error_in(st))?;
     }
     Ok(b)
@@ -717,16 +715,13 @@ pub(crate) fn get_r_token_in(st: &mut EngineState) -> Result<(), SccAbort> {
         {
             error_here_with_diagnostic_in(st, c"Missing control sequence inserted".as_ptr());
             capture_to_diagnostic_in(st, std::ptr::null_mut());
-            st.errors.help_ptr = 5;
-            st.errors.help_line[4] =
-                c"Please don't say `\\def cs{...}', say `\\def\\cs{...}'.".as_ptr();
-            st.errors.help_line[3] =
-                c"I've inserted an inaccessible control sequence so that your".as_ptr();
-            st.errors.help_line[2] =
-                c"definition will be completed without mixing me up too badly.".as_ptr();
-            st.errors.help_line[1] =
-                c"You can recover graciously from this error, if you're".as_ptr();
-            st.errors.help_line[0] = c"careful; see exercise 27.2 in The TeXbook.".as_ptr();
+            st.errors.help(&[
+                r"Please don't say `\def cs{...}', say `\def\cs{...}'.",
+                "I've inserted an inaccessible control sequence so that your",
+                "definition will be completed without mixing me up too badly.",
+                "You can recover graciously from this error, if you're",
+                "careful; see exercise 27.2 in The TeXbook.",
+            ]);
             if st.scanner.cur_cs == 0 {
                 back_input_in(st)?;
             }
@@ -983,11 +978,12 @@ pub(crate) fn check_outer_validity_in(
         let warning_index = st.scanner.warning_index;
         crate::output::sprint_cs_in(st, warning_index);
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 4;
-        st.errors.help_line[3] = c"I suspect you have forgotten a `}', causing me".as_ptr();
-        st.errors.help_line[2] = c"to read past where you wanted me to stop.".as_ptr();
-        st.errors.help_line[1] = c"I'll try to recover; but if the error is serious,".as_ptr();
-        st.errors.help_line[0] = c"you'd better type `E' or `X' now and fix your file.".as_ptr();
+        st.errors.help(&[
+            "I suspect you have forgotten a `}', causing me",
+            "to read past where you wanted me to stop.",
+            "I'll try to recover; but if the error is serious,",
+            "you'd better type `E' or `X' now and fix your file.",
+        ]);
         error_in(st)
     } else {
         error_here_with_diagnostic_in(st, c"Incomplete ".as_ptr());
@@ -997,18 +993,17 @@ pub(crate) fn check_outer_validity_in(
         let skip_line = st.scanner.skip_line;
         print_int_in(st, skip_line);
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 3;
-        st.errors.help_line[2] = c"A forbidden control sequence occurred in skipped text.".as_ptr();
-        st.errors.help_line[1] =
-            c"This kind of error happens when you say `\\if...' and forget".as_ptr();
-        st.errors.help_line[0] =
-            c"the matching `\\fi'. I've inserted a `\\fi'; this might work.".as_ptr();
-        if st.scanner.cur_cs != 0 {
+        let cause = if st.scanner.cur_cs != 0 {
             st.scanner.cur_cs = 0;
+            "A forbidden control sequence occurred in skipped text."
         } else {
-            st.errors.help_line[2] =
-                c"The file ended while I was skipping conditional text.".as_ptr();
-        }
+            "The file ended while I was skipping conditional text."
+        };
+        st.errors.help(&[
+            cause,
+            r"This kind of error happens when you say `\if...' and forget",
+            r"the matching `\fi'. I've inserted a `\fi'; this might work.",
+        ]);
         st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_FI;
         ins_error_in(st)?
     };
@@ -1279,12 +1274,10 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                                     c"Text line contains an invalid character".as_ptr(),
                                 );
                                 capture_to_diagnostic_in(st, std::ptr::null_mut());
-                                st.errors.help_ptr = 2;
-                                st.errors.help_line[1] =
-                                    c"A funny symbol that I can't read has just been input."
-                                        .as_ptr();
-                                st.errors.help_line[0] =
-                                    c"Continue, and I'll forget that it ever happened.".as_ptr();
+                                st.errors.help(&[
+                                    "A funny symbol that I can't read has just been input.",
+                                    "Continue, and I'll forget that it ever happened.",
+                                ]);
                                 st.errors.deletions_allowed = false;
                                 let oc = error_in(st);
                                 if !matches!(oc, crate::errors::ErrorOutcome::Continue) {
@@ -1795,10 +1788,10 @@ pub(crate) fn scan_toks_in(
                             c"You already have nine parameters".as_ptr(),
                         );
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
-                        st.errors.help_ptr = 2;
-                        st.errors.help_line[1] =
-                            c"I'm going to ignore the # sign you just used,".as_ptr();
-                        st.errors.help_line[0] = c"as well as the token that followed it.".as_ptr();
+                        st.errors.help(&[
+                            "I'm going to ignore the # sign you just used,",
+                            "as well as the token that followed it.",
+                        ]);
                         scc_err(error_in(st))?;
                         continue;
                     }
@@ -1808,10 +1801,10 @@ pub(crate) fn scan_toks_in(
                             st,
                             c"Parameters must be numbered consecutively".as_ptr(),
                         );
-                        st.errors.help_ptr = 2;
-                        st.errors.help_line[1] =
-                            c"I've inserted the digit you should have used after the #.".as_ptr();
-                        st.errors.help_line[0] = c"Type `1' to delete what you did use.".as_ptr();
+                        st.errors.help(&[
+                            "I've inserted the digit you should have used after the #.",
+                            "Type `1' to delete what you did use.",
+                        ]);
                         scc_err(back_error_in(st)?)?;
                     }
                     st.scanner.cur_tok = s;
@@ -1824,11 +1817,10 @@ pub(crate) fn scan_toks_in(
                     error_here_with_diagnostic_in(st, c"Missing { inserted".as_ptr());
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
                     st.scanner.align_state += 1;
-                    st.errors.help_ptr = 2;
-                    st.errors.help_line[1] =
-                        c"Where was the left brace? You said something like `\\def\\a}',".as_ptr();
-                    st.errors.help_line[0] =
-                        c"which I'm going to interpret as `\\def\\a{}'.".as_ptr();
+                    st.errors.help(&[
+                        r"Where was the left brace? You said something like `\def\a}',",
+                        r"which I'm going to interpret as `\def\a{}'.",
+                    ]);
                     scc_err(error_in(st))?;
                     break 'found;
                 }
@@ -1890,13 +1882,11 @@ pub(crate) fn scan_toks_in(
                         );
                         crate::output::sprint_cs_in(st, st.scanner.warning_index);
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
-                        st.errors.help_ptr = 3;
-                        st.errors.help_line[2] =
-                            c"You meant to type ## instead of #, right?".as_ptr();
-                        st.errors.help_line[1] =
-                            c"Or maybe a } was forgotten somewhere earlier, and things".as_ptr();
-                        st.errors.help_line[0] =
-                            c"are all screwed up? I'm going to assume that you meant ##.".as_ptr();
+                        st.errors.help(&[
+                            "You meant to type ## instead of #, right?",
+                            "Or maybe a } was forgotten somewhere earlier, and things",
+                            "are all screwed up? I'm going to assume that you meant ##.",
+                        ]);
                         scc_err(back_error_in(st)?)?;
                         st.scanner.cur_tok = s;
                     } else {
@@ -2093,10 +2083,10 @@ pub(crate) fn scan_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
             if st.scanner.cur_val > BIGGEST_USV {
                 error_here_with_diagnostic_in(st, c"Improper alphabetic constant".as_ptr());
                 capture_to_diagnostic_in(st, std::ptr::null_mut());
-                st.errors.help_ptr = 2;
-                st.errors.help_line[1] =
-                    c"A one-character control sequence belongs after a ` mark.".as_ptr();
-                st.errors.help_line[0] = c"So I'm essentially inserting \\0 here.".as_ptr();
+                st.errors.help(&[
+                    "A one-character control sequence belongs after a ` mark.",
+                    r"So I'm essentially inserting \0 here.",
+                ]);
                 st.scanner.cur_val = b'0' as i32;
                 scc_err(back_error_in(st)?)?;
             } else {
@@ -2137,11 +2127,10 @@ pub(crate) fn scan_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     if ok_so_far {
                         error_here_with_diagnostic_in(st, c"Number too big".as_ptr());
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
-                        st.errors.help_ptr = 2;
-                        st.errors.help_line[1] =
-                            c"I can only go up to 2147483647='17777777777=\"7FFFFFFF,".as_ptr();
-                        st.errors.help_line[0] =
-                            c"so I'm using that number instead of yours.".as_ptr();
+                        st.errors.help(&[
+                            "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
+                            "so I'm using that number instead of yours.",
+                        ]);
                         scc_err(error_in(st))?;
                         st.scanner.cur_val = TEX_INFINITY;
                         ok_so_far = false;
@@ -2154,13 +2143,11 @@ pub(crate) fn scan_int_in(st: &mut EngineState) -> Result<(), SccAbort> {
             if vacuous {
                 error_here_with_diagnostic_in(st, c"Missing number, treated as zero".as_ptr());
                 capture_to_diagnostic_in(st, std::ptr::null_mut());
-                st.errors.help_ptr = 3;
-                st.errors.help_line[2] =
-                    c"A number should have been here; I inserted `0'.".as_ptr();
-                st.errors.help_line[1] =
-                    c"(If you can't figure out why I needed to see a number,".as_ptr();
-                st.errors.help_line[0] =
-                    c"look up `weird error' in the index to The TeXbook.)".as_ptr();
+                st.errors.help(&[
+                    "A number should have been here; I inserted `0'.",
+                    "(If you can't figure out why I needed to see a number,",
+                    "look up `weird error' in the index to The TeXbook.)",
+                ]);
                 scc_err(back_error_in(st)?)?;
             } else if st.scanner.cur_cmd != SPACER {
                 back_input_in(st)?;
@@ -2313,9 +2300,7 @@ pub(crate) fn xetex_scan_dimen_in(
                                 c"Illegal unit of measure (replaced with filll)".as_ptr(),
                             );
                             capture_to_diagnostic_in(st, std::ptr::null_mut());
-                            st.errors.help_ptr = 1;
-                            st.errors.help_line[0] =
-                                c"I dddon't go any higher than filll.".as_ptr();
+                            st.errors.help(&["I dddon't go any higher than filll."]);
                             scc_err(error_in(st))?;
                         } else {
                             st.scanner.cur_order += 1;
@@ -2373,15 +2358,12 @@ pub(crate) fn xetex_scan_dimen_in(
                             c"Illegal unit of measure (mu inserted)".as_ptr(),
                         );
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
-                        st.errors.help_ptr = 4;
-                        st.errors.help_line[3] =
-                            c"The unit of measurement in math glue must be mu.".as_ptr();
-                        st.errors.help_line[2] =
-                            c"To recover gracefully from this error, it's best to".as_ptr();
-                        st.errors.help_line[1] =
-                            c"delete the erroneous units; e.g., type `2' to delete".as_ptr();
-                        st.errors.help_line[0] =
-                            c"two letters. (See Chapter 27 of The TeXbook.)".as_ptr();
+                        st.errors.help(&[
+                            "The unit of measurement in math glue must be mu.",
+                            "To recover gracefully from this error, it's best to",
+                            "delete the erroneous units; e.g., type `2' to delete",
+                            "two letters. (See Chapter 27 of The TeXbook.)",
+                        ]);
                         scc_err(error_in(st))?;
                         break 'units true;
                     }
@@ -2421,19 +2403,14 @@ pub(crate) fn xetex_scan_dimen_in(
                         c"Illegal unit of measure (pt inserted)".as_ptr(),
                     );
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    st.errors.help_ptr = 6;
-                    st.errors.help_line[5] =
-                        c"Dimensions can be in units of em, ex, in, pt, pc,".as_ptr();
-                    st.errors.help_line[4] =
-                        c"cm, mm, dd, cc, bp, or sp; but yours is a new one!".as_ptr();
-                    st.errors.help_line[3] =
-                        c"I'll assume that you meant to say pt, for printer's points.".as_ptr();
-                    st.errors.help_line[2] =
-                        c"To recover gracefully from this error, it's best to".as_ptr();
-                    st.errors.help_line[1] =
-                        c"delete the erroneous units; e.g., type `2' to delete".as_ptr();
-                    st.errors.help_line[0] =
-                        c"two letters. (See Chapter 27 of The TeXbook.)".as_ptr();
+                    st.errors.help(&[
+                        "Dimensions can be in units of em, ex, in, pt, pc,",
+                        "cm, mm, dd, cc, bp, or sp; but yours is a new one!",
+                        "I'll assume that you meant to say pt, for printer's points.",
+                        "To recover gracefully from this error, it's best to",
+                        "delete the erroneous units; e.g., type `2' to delete",
+                        "two letters. (See Chapter 27 of The TeXbook.)",
+                    ]);
                     scc_err(error_in(st))?;
                     break 'units true;
                 };
@@ -2453,9 +2430,10 @@ pub(crate) fn xetex_scan_dimen_in(
     if st.errors.arith_error || st.scanner.cur_val.abs() >= 0x4000_0000 {
         error_here_with_diagnostic_in(st, c"Dimension too large".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] = c"I can't work with sizes bigger than about 19 feet.".as_ptr();
-        st.errors.help_line[0] = c"Continue and I'll use the largest value I can.".as_ptr();
+        st.errors.help(&[
+            "I can't work with sizes bigger than about 19 feet.",
+            "Continue and I'll use the largest value I can.",
+        ]);
         scc_err(error_in(st))?;
         st.scanner.cur_val = MAX_HALFWORD;
         st.errors.arith_error = false;
@@ -2656,9 +2634,8 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
                         c"Missing ) inserted for expression".as_ptr(),
                     );
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    st.errors.help_ptr = 1;
-                    st.errors.help_line[0] =
-                        c"I was expecting to see `+', `-', `*', `/', or `)'. Didn't.".as_ptr();
+                    st.errors
+                        .help(&["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."]);
                     scc_err(back_error_in(st)?)?;
                 }
             }
@@ -2773,9 +2750,10 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
     if b {
         error_here_with_diagnostic_in(st, c"Arithmetic overflow".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] = c"I can't evaluate this expression,".as_ptr();
-        st.errors.help_line[0] = c"since the result is out of range.".as_ptr();
+        st.errors.help(&[
+            "I can't evaluate this expression,",
+            "since the result is out of range.",
+        ]);
         scc_err(error_in(st))?;
         if l >= GLUE_VAL {
             crate::mem::delete_glue_ref(&mut st.mem, e);
@@ -2831,12 +2809,12 @@ pub(crate) fn scan_left_brace_in(st: &mut EngineState) -> Result<(), SccAbort> {
     if st.scanner.cur_cmd != LEFT_BRACE {
         error_here_with_diagnostic_in(st, c"Missing { inserted".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 4;
-        st.errors.help_line[3] = c"A left brace was mandatory here, so I've put one in.".as_ptr();
-        st.errors.help_line[2] =
-            c"You might want to delete and/or insert some corrections".as_ptr();
-        st.errors.help_line[1] = c"so that I will find a matching right brace soon.".as_ptr();
-        st.errors.help_line[0] = c"(If you're confused by all this, try typing `I}' now.)".as_ptr();
+        st.errors.help(&[
+            "A left brace was mandatory here, so I've put one in.",
+            "You might want to delete and/or insert some corrections",
+            "so that I will find a matching right brace soon.",
+            "(If you're confused by all this, try typing `I}' now.)",
+        ]);
         scc_err(back_error_in(st)?)?;
         st.scanner.cur_tok = LEFT_BRACE_TOKEN + '{' as i32;
         st.scanner.cur_cmd = LEFT_BRACE;
@@ -2849,10 +2827,11 @@ pub(crate) fn scan_left_brace_in(st: &mut EngineState) -> Result<(), SccAbort> {
 fn missing_number_error_in(st: &mut EngineState) -> Result<(), SccAbort> {
     error_here_with_diagnostic_in(st, c"Missing number, treated as zero".as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 3;
-    st.errors.help_line[2] = c"A number should have been here; I inserted `0'.".as_ptr();
-    st.errors.help_line[1] = c"(If you can't figure out why I needed to see a number,".as_ptr();
-    st.errors.help_line[0] = c"look up `weird error' in the index to The TeXbook.)".as_ptr();
+    st.errors.help(&[
+        "A number should have been here; I inserted `0'.",
+        "(If you can't figure out why I needed to see a number,",
+        "look up `weird error' in the index to The TeXbook.)",
+    ]);
     scc_err(back_error_in(st)?)
 }
 
@@ -2945,8 +2924,8 @@ fn fetch_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
                 st,
                 c"Extended mathchar used as mathchar".as_ptr(),
                 code,
-                c"A mathchar number must be between 0 and \"7FFF.".as_ptr(),
-                c"I changed this one to zero.",
+                "A mathchar number must be between 0 and \"7FFF.",
+                "I changed this one to zero.",
             )?;
             st.scanner.cur_val1 = 0;
         }
@@ -2958,10 +2937,10 @@ fn fetch_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
         if st.scanner.cur_val1 >= 0x4000_0000 {
             error_here_with_diagnostic_in(st, c"Extended delcode used as delcode".as_ptr());
             capture_to_diagnostic_in(st, std::ptr::null_mut());
-            st.errors.help_ptr = 2;
-            st.errors.help_line[1] =
-                c"I can only go up to 2147483647='17777777777=\"7FFFFFFF,".as_ptr();
-            st.errors.help_line[0] = c"I changed this one to zero.".as_ptr();
+            st.errors.help(&[
+                "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
+                "I changed this one to zero.",
+            ]);
             scc_err(error_in(st))?;
             set_cur_val(st, 0, INT_VAL);
         } else {
@@ -2989,8 +2968,8 @@ fn fetch_xetex_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort>
     } else if m == MATH_CODE_BASE + 1 {
         (
             c"Can't use \\Umathcode as a number (try \\Umathcodenum)",
-            c"\\Umathcode is for setting a mathcode from separate values;",
-            c"use \\Umathcodenum to access them as single values.",
+            r"\Umathcode is for setting a mathcode from separate values;",
+            r"use \Umathcodenum to access them as single values.",
         )
     } else if m == DEL_CODE_BASE {
         set_cur_val(st, st.eqtb.b32s1(DEL_CODE_BASE + n), INT_VAL);
@@ -2998,15 +2977,13 @@ fn fetch_xetex_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort>
     } else {
         (
             c"Can't use \\Udelcode as a number (try \\Udelcodenum)",
-            c"\\Udelcode is for setting a delcode from separate values;",
-            c"use \\Udelcodenum to access them as single values.",
+            r"\Udelcode is for setting a delcode from separate values;",
+            r"use \Udelcodenum to access them as single values.",
         )
     };
     error_here_with_diagnostic_in(st, err.as_ptr());
     capture_to_diagnostic_in(st, std::ptr::null_mut());
-    st.errors.help_ptr = 2;
-    st.errors.help_line[1] = help1.as_ptr();
-    st.errors.help_line[0] = help0.as_ptr();
+    st.errors.help(&[help1, help0]);
     scc_err(error_in(st))?;
     set_cur_val(st, 0, INT_VAL);
     Ok(())
@@ -3524,15 +3501,12 @@ pub(crate) fn scan_something_internal_in(
                     error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
                     print_cmd_chr_in(st, SET_AUX, m);
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
-                    st.errors.help_ptr = 4;
-                    st.errors.help_line[3] =
-                        c"You can refer to \\spacefactor only in horizontal mode;".as_ptr();
-                    st.errors.help_line[2] =
-                        c"you can refer to \\prevdepth only in vertical mode; and".as_ptr();
-                    st.errors.help_line[1] =
-                        c"neither of these is meaningful inside \\write. So".as_ptr();
-                    st.errors.help_line[0] =
-                        c"I'm forgetting what you said and using zero instead.".as_ptr();
+                    st.errors.help(&[
+                        r"You can refer to \spacefactor only in horizontal mode;",
+                        r"you can refer to \prevdepth only in vertical mode; and",
+                        r"neither of these is meaningful inside \write. So",
+                        "I'm forgetting what you said and using zero instead.",
+                    ]);
                     scc_err(error_in(st))?;
                     set_cur_val(st, 0, if level != TOK_VAL { DIMEN_VAL } else { INT_VAL });
                 } else if m == VMODE as i32 {
@@ -3696,9 +3670,8 @@ pub(crate) fn scan_something_internal_in(
                 print_cstr_in(st, c"' after ".as_ptr());
                 print_esc_cstr_in(st, c"the".as_ptr());
                 capture_to_diagnostic_in(st, std::ptr::null_mut());
-                st.errors.help_ptr = 1;
-                st.errors.help_line[0] =
-                    c"I'm forgetting what you said and using zero instead.".as_ptr();
+                st.errors
+                    .help(&["I'm forgetting what you said and using zero instead."]);
                 scc_err(error_in(st))?;
                 set_cur_val(st, 0, if level != TOK_VAL { DIMEN_VAL } else { INT_VAL });
             }
@@ -3742,9 +3715,10 @@ pub(crate) fn scan_font_ident_in(st: &mut EngineState) -> Result<(), SccAbort> {
         _ => {
             error_here_with_diagnostic_in(st, c"Missing font identifier".as_ptr());
             capture_to_diagnostic_in(st, std::ptr::null_mut());
-            st.errors.help_ptr = 2;
-            st.errors.help_line[1] = c"I was looking for a control sequence whose".as_ptr();
-            st.errors.help_line[0] = c"current meaning has been defined by \\font.".as_ptr();
+            st.errors.help(&[
+                "I was looking for a control sequence whose",
+                r"current meaning has been defined by \font.",
+            ]);
             scc_err(back_error_in(st)?)?;
             FONT_BASE
         }
@@ -3802,10 +3776,10 @@ pub(crate) fn find_font_dimen_in(st: &mut EngineState, writing: bool) -> Result<
         print_int_in(st, st.fonts.font_params[fu]);
         print_cstr_in(st, c" fontdimen parameters".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        st.errors.help_ptr = 2;
-        st.errors.help_line[1] = c"To increase the number of font parameters, you must".as_ptr();
-        st.errors.help_line[0] =
-            c"use \\fontdimen immediately after the \\font is loaded.".as_ptr();
+        st.errors.help(&[
+            "To increase the number of font parameters, you must",
+            r"use \fontdimen immediately after the \font is loaded.",
+        ]);
         scc_err(error_in(st))?;
     }
     Ok(())
