@@ -220,6 +220,40 @@ fn issue393_ungetc() {
         .go()
 }
 
+/// Main loop tests load custom TFM and TECkit files from `tex-outputs/mainloop`.
+fn mainloop_case(stem: &str) -> TestCase {
+    util::set_test_root();
+    TestCase::new(stem)
+        .with_fs(&test_path(&["tex-outputs", "mainloop"]))
+        .expect(Ok(TexOutcome::Warnings))
+}
+
+#[test]
+fn mainloop_hyphen_char() {
+    mainloop_case("mainloop_hyphen_char").go()
+}
+
+#[test]
+fn mainloop_kern_rt_hit() {
+    mainloop_case("mainloop_kern_rt_hit").go()
+}
+
+#[test]
+fn mainloop_move2_mapping() {
+    mainloop_case("mainloop_move2_mapping").go()
+}
+
+#[test]
+fn mainloop_move2_no_bchar() {
+    mainloop_case("mainloop_move2_no_bchar").go()
+}
+
+/// The C engine dereferences a null `font_glue` here and crashes.
+#[test]
+fn mainloop_spaceskip_shaping() {
+    mainloop_case("mainloop_spaceskip_shaping").go()
+}
+
 #[test]
 fn md5_of_hello() {
     TestCase::new("md5_of_hello").check_pdf(true).go()
@@ -328,8 +362,22 @@ fn redbox_png() {
 }
 
 #[test]
+fn shipout_rtl_ligatures() {
+    TestCase::new("shipout_rtl_ligatures")
+        .expect(Ok(TexOutcome::Warnings))
+        .go()
+}
+
+#[test]
 fn synctex() {
     TestCase::new("synctex").check_synctex(true).go()
+}
+
+#[test]
+fn synctex_leading_kern() {
+    TestCase::new("synctex_leading_kern")
+        .check_synctex(true)
+        .go()
 }
 
 #[test]

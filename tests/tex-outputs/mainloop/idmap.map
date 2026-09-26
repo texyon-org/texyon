@@ -1,0 +1,4 @@
+LHSName "idin"
+RHSName "idout"
+pass(Unicode)
+U+0078 <> U+0078

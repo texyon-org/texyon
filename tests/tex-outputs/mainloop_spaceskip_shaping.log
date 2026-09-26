@@ -1,0 +1,82 @@
+**
+(mainloop_spaceskip_shaping.tex
+
+Completed box being shipped out [1]
+\vbox(667.20255+0.0)x469.75499
+.\vbox(0.0+0.0)x469.75499, glue set 14.0fil
+..\glue -22.5
+..\hbox(8.5+0.0)x469.75499, glue set 469.75499fil
+...\vbox(8.5+0.0)x0.0
+...\glue 0.0 plus 1.0fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+.\vbox(643.20255+0.0)x469.75499, glue set 608.30795fill
+..\glue(\topskip) 0.0
+..\hbox(13.5747+3.37259)x469.75499, glue set 232.47963fil
+...\hbox(0.0+0.0)x20.0
+...\lm Te
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm Va
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm AV
+...\glue 4.0 plus 1.99799
+...\lm To.
+...\glue 5.30888 plus 6.0
+...\lm We
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm Yo
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm at
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm the
+...\glue(\spaceskip) 4.0 plus 2.0
+...\kern 0.00002 (space adjustment)
+...\lm end
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm of
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm a
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm line.
+...\penalty 10000
+...\glue(\parfillskip) 0.0 plus 1.0fil
+...\glue(\rightskip) 0.0
+..\glue(\parskip) 0.0 plus 1.0
+..\glue(\lineskip) 1.0
+..\hbox(13.5747+3.37259)x469.75499, glue set 232.47963fil
+...\hbox(0.0+0.0)x20.0
+...\lm Te
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm Va
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm AV
+...\glue 4.0 plus 1.99799
+...\lm To.
+...\glue 5.30888 plus 6.0
+...\lm We
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm Yo
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm at
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm the
+...\glue(\spaceskip) 4.0 plus 2.0
+...\kern 0.00002 (space adjustment)
+...\lm end
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm of
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm a
+...\glue(\spaceskip) 4.0 plus 2.0
+...\lm line.
+...\penalty 10000
+...\glue(\parfillskip) 0.0 plus 1.0fil
+...\glue(\rightskip) 0.0
+..\glue 0.0 plus 1.0fill
+.\glue(\baselineskip) 17.55556
+.\hbox(6.44444+0.0)x469.75499, glue set 232.37749fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+..\tenrm 1
+..\glue 0.0 plus 1.0fil minus 1.0fil
+
+ )
+Output written on mainloop_spaceskip_shaping.xdv (1 page, 1076 bytes).

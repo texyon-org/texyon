@@ -1,0 +1,64 @@
+**
+(mainloop_kern_rt_hit.tex
+
+Completed box being shipped out [1]
+\vbox(667.20255+0.0)x469.75499
+.\vbox(0.0+0.0)x469.75499, glue set 14.0fil
+..\glue -22.5
+..\hbox(8.5+0.0)x469.75499, glue set 469.75499fil
+...\vbox(8.5+0.0)x0.0
+...\glue 0.0 plus 1.0fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+.\vbox(643.20255+0.0)x469.75499, glue set 609.20255fill
+..\glue(\topskip) 6.00002
+..\hbox(3.99998+0.0)x65.31996
+...\ta b (ligature a|)
+...\kern2.5
+...\glue 3.33 plus 1.66 minus 1.11
+...\ta x
+...\ta b (ligature a|)
+...\kern2.5
+...\glue 3.33 plus 1.66 minus 1.11
+...\ta c
+...\ta b (ligature a|)
+...\kern2.5
+...\glue 3.33 plus 1.66 minus 1.11
+...\ta e (ligature dd)
+...\glue 3.33 plus 1.66 minus 1.11
+...\ta d
+...\ta x
+..\glue(\baselineskip) 8.00002
+..\hbox(3.99998+0.0)x24.32999
+...\ta x
+...\ta b (ligature a|)
+...\kern2.5
+...\glue 3.33 plus 1.66 minus 1.11
+...\ta e (ligature dd)
+..\glue(\parskip) 0.0 plus 1.0
+..\glue(\baselineskip) 8.00002
+..\hbox(3.99998+0.0)x469.75499, glue set 397.76501fil
+...\hbox(0.0+0.0)x20.0
+...\ta b (ligature a|)
+...\kern2.5
+...\glue 3.33 plus 1.66 minus 1.11
+...\ta x
+...\ta b (ligature a|)
+...\kern2.5
+...\glue 3.33 plus 1.66 minus 1.11
+...\ta c
+...\ta b (ligature a|)
+...\kern2.5
+...\glue 3.33 plus 1.66 minus 1.11
+...\ta e (ligature dd)
+...\penalty 10000
+...\glue(\parfillskip) 0.0 plus 1.0fil
+...\glue(\rightskip) 0.0
+..\glue 0.0 plus 1.0fill
+.\glue(\baselineskip) 17.55556
+.\hbox(6.44444+0.0)x469.75499, glue set 232.37749fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+..\tenrm 1
+..\glue 0.0 plus 1.0fil minus 1.0fil
+
+ )
+Output written on mainloop_kern_rt_hit.xdv (1 page, 296 bytes).
