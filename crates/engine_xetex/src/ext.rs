@@ -2114,7 +2114,7 @@ pub(crate) unsafe fn tt_insert_special_in(
     let toklist = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
     toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
     let open = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
-    open.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'{' as i32);
+    open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     toklist.set_link(&mut st.mem, open);
     let text_tail = crate::scan::str_toks_scc(st, start_pool, 0)?;
     let text = st.mem.link_ptr(TEMP_HEAD);
