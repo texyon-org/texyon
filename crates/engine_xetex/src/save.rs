@@ -46,96 +46,87 @@ impl SaveAbort {
     }
 }
 
-/// TeX's `check_full_save_stack`, true when no room is left.
-fn save_stack_full(save_stack: &mut SaveStackState) -> bool {
-    if save_stack.save_ptr > save_stack.max_save_stack {
-        save_stack.max_save_stack = save_stack.save_ptr;
-        return save_stack.max_save_stack > save_stack.save_size - 7;
-    }
-    false
-}
-
-pub(crate) fn new_save_level(
-    save_stack: &mut SaveStackState,
-    c: GroupCode,
-    line: i32,
-) -> Result<(), SaveAbort> {
-    if save_stack_full(save_stack) {
-        return Err(SaveAbort::Overflow(
-            c"semantic nest size",
-            save_stack.save_size,
-        ));
-    }
-    save_stack.set_saved(0, line);
-    save_stack.save_ptr += 1;
-    let (group, boundary) = (
-        save_stack.cur_group.as_raw() as u16,
-        save_stack.cur_boundary,
-    );
-    save_stack.set_save_entry(LEVEL_BOUNDARY, group, boundary);
-    if save_stack.cur_level == u16::MAX {
-        return Err(SaveAbort::Overflow(c"grouping levels", u16::MAX as i32));
-    }
-    save_stack.cur_boundary = save_stack.save_ptr;
-    save_stack.cur_group = c;
-    save_stack.cur_level += 1;
-    save_stack.save_ptr += 1;
-    Ok(())
-}
-
-pub(crate) fn eq_save(
-    save_stack: &mut SaveStackState,
-    eqtb: &EqtbState,
-    p: i32,
-    l: u16,
-) -> Result<(), SaveAbort> {
-    if save_stack_full(save_stack) {
-        return Err(SaveAbort::Overflow(c"save size", save_stack.save_size));
-    }
-    let kind = if l == LEVEL_ZERO {
-        RESTORE_ZERO
-    } else {
-        save_stack.set_word(save_stack.save_ptr, eqtb.word(p));
-        save_stack.save_ptr += 1;
-        RESTORE_OLD_VALUE
-    };
-    save_stack.set_save_entry(kind, l, p);
-    save_stack.save_ptr += 1;
-    Ok(())
-}
-
-pub(crate) fn eq_word_define(
-    eqtb: &mut EqtbState,
-    save_stack: &mut SaveStackState,
-    p: i32,
-    w: i32,
-) -> Result<(), SaveAbort> {
-    if eqtb.int_at(p) == w {
-        return Ok(());
-    }
-    let l = eqtb.xeq_level_at(p);
-    if l != save_stack.cur_level {
-        eq_save(save_stack, eqtb, p, l)?;
-        eqtb.set_xeq_level_at(p, save_stack.cur_level);
-    }
-    eqtb.set_int_at(p, w);
-    Ok(())
-}
-
-pub(crate) fn geq_word_define(eqtb: &mut EqtbState, p: i32, w: i32) {
-    eqtb.set_int_at(p, w);
-    eqtb.set_xeq_level_at(p, LEVEL_ONE);
-}
-
-pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Result<(), SaveAbort> {
-    if save_stack.cur_level > LEVEL_ONE {
-        if save_stack_full(save_stack) {
-            return Err(SaveAbort::Overflow(c"save size", save_stack.save_size));
+impl SaveStackState {
+    /// TeX's `check_full_save_stack`, true when no room is left.
+    fn save_stack_full(&mut self) -> bool {
+        if self.save_ptr > self.max_save_stack {
+            self.max_save_stack = self.save_ptr;
+            return self.max_save_stack > self.save_size - 7;
         }
-        save_stack.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t);
-        save_stack.save_ptr += 1;
+        false
     }
-    Ok(())
+
+    pub(crate) fn new_save_level(&mut self, c: GroupCode, line: i32) -> Result<(), SaveAbort> {
+        if self.save_stack_full() {
+            return Err(SaveAbort::Overflow(c"semantic nest size", self.save_size));
+        }
+        self.set_saved(0, line);
+        self.save_ptr += 1;
+        let (group, boundary) = (self.cur_group.as_raw() as u16, self.cur_boundary);
+        self.set_save_entry(LEVEL_BOUNDARY, group, boundary);
+        if self.cur_level == u16::MAX {
+            return Err(SaveAbort::Overflow(c"grouping levels", u16::MAX as i32));
+        }
+        self.cur_boundary = self.save_ptr;
+        self.cur_group = c;
+        self.cur_level += 1;
+        self.save_ptr += 1;
+        Ok(())
+    }
+
+    pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: i32, l: u16) -> Result<(), SaveAbort> {
+        if self.save_stack_full() {
+            return Err(SaveAbort::Overflow(c"save size", self.save_size));
+        }
+        let kind = if l == LEVEL_ZERO {
+            RESTORE_ZERO
+        } else {
+            self.set_word(self.save_ptr, eqtb.word(p));
+            self.save_ptr += 1;
+            RESTORE_OLD_VALUE
+        };
+        self.set_save_entry(kind, l, p);
+        self.save_ptr += 1;
+        Ok(())
+    }
+}
+
+impl EqtbState {
+    pub(crate) fn eq_word_define(
+        &mut self,
+        save_stack: &mut SaveStackState,
+        p: i32,
+        w: i32,
+    ) -> Result<(), SaveAbort> {
+        if self.int_at(p) == w {
+            return Ok(());
+        }
+        let l = self.xeq_level_at(p);
+        if l != save_stack.cur_level {
+            save_stack.eq_save(self, p, l)?;
+            self.set_xeq_level_at(p, save_stack.cur_level);
+        }
+        self.set_int_at(p, w);
+        Ok(())
+    }
+
+    pub(crate) fn geq_word_define(&mut self, p: i32, w: i32) {
+        self.set_int_at(p, w);
+        self.set_xeq_level_at(p, LEVEL_ONE);
+    }
+}
+
+impl SaveStackState {
+    pub(crate) fn save_for_after(&mut self, t: i32) -> Result<(), SaveAbort> {
+        if self.cur_level > LEVEL_ONE {
+            if self.save_stack_full() {
+                return Err(SaveAbort::Overflow(c"save size", self.save_size));
+            }
+            self.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t);
+            self.save_ptr += 1;
+        }
+        Ok(())
+    }
 }
 
 /// Validates `\mag`, propagating a non-`Continue` error outcome.
@@ -160,7 +151,7 @@ pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcom
         if !matches!(outcome, ErrorOutcome::Continue) {
             return outcome;
         }
-        geq_word_define(&mut st.eqtb, INT_BASE + INT_PAR_MAG, mag_set);
+        st.eqtb.geq_word_define(INT_BASE + INT_PAR_MAG, mag_set);
     }
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     if mag <= 0 || mag > 32768 {
@@ -176,7 +167,7 @@ pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcom
         if !matches!(outcome, ErrorOutcome::Continue) {
             return outcome;
         }
-        geq_word_define(&mut st.eqtb, INT_BASE + INT_PAR_MAG, 1000);
+        st.eqtb.geq_word_define(INT_BASE + INT_PAR_MAG, 1000);
     }
     st.scanner.mag_set = st.eqtb.int_par(INT_PAR_MAG);
     ErrorOutcome::Continue
@@ -215,42 +206,44 @@ impl MemState {
     }
 }
 
-pub(crate) fn eq_define(
-    eqtb: &mut EqtbState,
-    save_stack: &mut SaveStackState,
-    mem: &mut MemState,
-    scanner: &mut ScannerState,
-    p: i32,
-    t: u8,
-    e: i32,
-) -> Result<(), SaveAbort> {
-    if eqtb.eq_type(p) == t && eqtb.equiv(p) == e {
-        return mem.eq_destroy(scanner, eqtb.word(p));
+impl EqtbState {
+    pub(crate) fn eq_define(
+        &mut self,
+        save_stack: &mut SaveStackState,
+        mem: &mut MemState,
+        scanner: &mut ScannerState,
+        p: i32,
+        t: u8,
+        e: i32,
+    ) -> Result<(), SaveAbort> {
+        if self.eq_type(p) == t && self.equiv(p) == e {
+            return mem.eq_destroy(scanner, self.word(p));
+        }
+        if self.eq_level(p) == save_stack.cur_level {
+            mem.eq_destroy(scanner, self.word(p))?;
+        } else if save_stack.cur_level > LEVEL_ONE {
+            save_stack.eq_save(self, p, self.eq_level(p))?;
+        }
+        self.set_eq_level(p, save_stack.cur_level);
+        self.set_eq_type(p, t);
+        self.set_equiv(p, e);
+        Ok(())
     }
-    if eqtb.eq_level(p) == save_stack.cur_level {
-        mem.eq_destroy(scanner, eqtb.word(p))?;
-    } else if save_stack.cur_level > LEVEL_ONE {
-        eq_save(save_stack, eqtb, p, eqtb.eq_level(p))?;
-    }
-    eqtb.set_eq_level(p, save_stack.cur_level);
-    eqtb.set_eq_type(p, t);
-    eqtb.set_equiv(p, e);
-    Ok(())
-}
 
-pub(crate) fn geq_define(
-    eqtb: &mut EqtbState,
-    mem: &mut MemState,
-    scanner: &mut ScannerState,
-    p: i32,
-    t: u8,
-    e: i32,
-) -> Result<(), SaveAbort> {
-    mem.eq_destroy(scanner, eqtb.word(p))?;
-    eqtb.set_eq_level(p, LEVEL_ONE);
-    eqtb.set_eq_type(p, t);
-    eqtb.set_equiv(p, e);
-    Ok(())
+    pub(crate) fn geq_define(
+        &mut self,
+        mem: &mut MemState,
+        scanner: &mut ScannerState,
+        p: i32,
+        t: u8,
+        e: i32,
+    ) -> Result<(), SaveAbort> {
+        mem.eq_destroy(scanner, self.word(p))?;
+        self.set_eq_level(p, LEVEL_ONE);
+        self.set_eq_type(p, t);
+        self.set_equiv(p, e);
+        Ok(())
+    }
 }
 
 /// A sparse-array record. These carry no type tag and are reached only
@@ -308,7 +301,7 @@ impl MemState {
         p: i32,
     ) -> Result<(), SaMutationAbort> {
         if save_stack.cur_level != scanner.sa_level {
-            if save_stack_full(save_stack) {
+            if save_stack.save_stack_full() {
                 return Err(SaMutationAbort::SaveOverflow);
             }
             save_stack.set_save_entry(RESTORE_SA, scanner.sa_level, scanner.sa_chain.0);

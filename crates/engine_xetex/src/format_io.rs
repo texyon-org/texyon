@@ -16,7 +16,7 @@ use crate::consts::{
     MIN_HALFWORD, PRIM_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
     TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::engine::{set_eq, POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
+use crate::engine::{POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
 use crate::errors::EngineAbort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{HASH_OFFSET, HASH_PRIME};
@@ -611,7 +611,7 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
     eqtb.hash = crate::mem_types::zeroed_vec((1 + eqtb.hash_top - HASH_OFFSET) as usize);
 
     eqtb.data = crate::mem_types::zeroed_vec(eqtb.eqtb_top as usize + 1);
-    set_eq(eqtb, UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_CS, TEX_NULL, 0);
+    eqtb.set_eq(UNDEFINED_CONTROL_SEQUENCE, UNDEFINED_CS, TEX_NULL, 0);
     let undefined_entry = eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
     eqtb.data[(EQTB_SIZE + 1) as usize..].fill(undefined_entry);
 

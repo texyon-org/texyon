@@ -27,8 +27,10 @@ impl ShipoutState {
     }
 }
 
-fn synctex_enabled(eqtb: &EqtbState) -> bool {
-    eqtb.int_par(INT_PAR_SYNCTEX) != 0
+impl EqtbState {
+    fn synctex_enabled(&self) -> bool {
+        self.int_par(INT_PAR_SYNCTEX) != 0
+    }
 }
 
 /// Bytes written (or that would be for the preview sink), -1 on failure.
@@ -174,7 +176,7 @@ impl SynctexCtxt {
     /// Open the `.synctex.gz` file (or the preview sink) and write the preamble.
     /// Takes ownership of the malloc'ed job name `tmp`.
     unsafe fn synctex_dot_open(&mut self, eqtb: &EqtbState, tmp: *mut c_char) -> usize {
-        if self.flags.off || !synctex_enabled(eqtb) {
+        if self.flags.off || !eqtb.synctex_enabled() {
             libc::free(tmp as *mut libc::c_void);
             return INVALID_HANDLE;
         }
@@ -330,7 +332,7 @@ pub unsafe fn synctex_sheet(st: &mut EngineState, mag: i32, tmp: *mut c_char) {
     let synctex = &mut st.synctex;
     if synctex.flags.off {
         libc::free(tmp as *mut libc::c_void);
-        if synctex_enabled(&st.eqtb) && !synctex.flags.warn {
+        if st.eqtb.synctex_enabled() && !synctex.flags.warn {
             synctex.flags.warn = true;
             issue_warning_cstr(
                 c"SyncTeX was disabled -- changing the value of \\synctex has no effect".as_ptr(),
@@ -362,7 +364,7 @@ pub fn synctex_teehs(st: &mut EngineState) {
 
 /// Records are written: SyncTeX is on and its file is open.
 fn synctex_active(st: &EngineState) -> bool {
-    !st.synctex.flags.off && synctex_enabled(&st.eqtb) && st.synctex.file != INVALID_HANDLE
+    !st.synctex.flags.off && st.eqtb.synctex_enabled() && st.synctex.file != INVALID_HANDLE
 }
 
 /// Make `node` the current SyncTeX context at the current position.
@@ -427,7 +429,7 @@ pub fn synctex_tsilh(st: &mut EngineState, this_box: AnyBox) {
 
 /// Whether a record is dropped: SyncTeX is off or the node has no source position.
 fn synctex_ignored(st: &EngineState, tag: i32, line: i32) -> bool {
-    st.synctex.flags.off || !synctex_enabled(&st.eqtb) || tag <= 0 || line <= 0
+    st.synctex.flags.off || !st.eqtb.synctex_enabled() || tag <= 0 || line <= 0
 }
 
 /// Flush the deferred kern record before leaving its context.

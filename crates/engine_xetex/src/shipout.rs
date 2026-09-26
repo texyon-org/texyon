@@ -1994,12 +1994,14 @@ fn special_out(
     Ok(())
 }
 
-/// Log only, or terminal and log when `\tracingonline` is positive.
-fn log_selector(eqtb: &EqtbState) -> i32 {
-    if eqtb.int_par(INT_PAR_TRACING_ONLINE) <= 0 {
-        SELECTOR_LOG_ONLY
-    } else {
-        SELECTOR_TERM_AND_LOG
+impl EqtbState {
+    /// Log only, or terminal and log when `\tracingonline` is positive.
+    fn log_selector(&self) -> i32 {
+        if self.int_par(INT_PAR_TRACING_ONLINE) <= 0 {
+            SELECTOR_LOG_ONLY
+        } else {
+            SELECTOR_TERM_AND_LOG
+        }
     }
 }
 
@@ -2060,7 +2062,7 @@ fn write_out(
     st.mem.flush_list(def_ref);
 
     if j == 18 {
-        st.shipout.selector = log_selector(&st.eqtb);
+        st.shipout.selector = st.eqtb.log_selector();
         if !st.errors.log_opened {
             st.shipout.selector = SELECTOR_TERM_ONLY;
         }
@@ -2189,7 +2191,7 @@ fn out_write_stream(
     st.shipout.write_prefix[stream].clear();
     if st.errors.log_opened {
         let old_setting = st.shipout.selector;
-        st.shipout.selector = log_selector(&st.eqtb);
+        st.shipout.selector = st.eqtb.log_selector();
         crate::output::print_nl_cstr_in(st, c"\\openout".as_ptr());
         crate::output::print_int_in(st, j);
         crate::output::print_cstr_in(st, c" = `".as_ptr());

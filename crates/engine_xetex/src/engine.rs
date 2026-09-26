@@ -192,10 +192,12 @@ impl PrimitiveInitAbort {
     }
 }
 
-pub(crate) fn set_eq(eqtb: &mut EqtbState, p: i32, eq_type: u8, equiv: i32, level: u16) {
-    eqtb.set_eq_type(p, eq_type);
-    eqtb.set_equiv(p, equiv);
-    eqtb.set_eq_level(p, level);
+impl EqtbState {
+    pub(crate) fn set_eq(&mut self, p: i32, eq_type: u8, equiv: i32, level: u16) {
+        self.set_eq_type(p, eq_type);
+        self.set_equiv(p, equiv);
+        self.set_eq_level(p, level);
+    }
 }
 
 unsafe fn primitive(
@@ -217,25 +219,21 @@ unsafe fn primitive(
             *slot = b as i32;
         }
 
-        st.scanner.cur_val = crate::hash::id_lookup(
-            &mut st.eqtb,
-            &mut st.strings,
-            &st.input.buffer,
-            st.input.first,
-            len,
-        )?;
+        st.scanner.cur_val =
+            st.eqtb
+                .id_lookup(&mut st.strings, &st.input.buffer, st.input.first, len)?;
         st.strings.str_ptr -= 1;
         st.strings.discard_cur_string();
         st.eqtb.set_hash_s1(st.scanner.cur_val, s);
-        crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)?
+        st.eqtb.prim_lookup(&mut st.strings, s)?
     } else {
         let ch = bytes[0] as i32;
         st.scanner.cur_val = ch + SINGLE_BASE;
-        crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, ch)?
+        st.eqtb.prim_lookup(&mut st.strings, ch)?
     };
 
-    set_eq(&mut st.eqtb, st.scanner.cur_val, c, o, LEVEL_ONE);
-    set_eq(&mut st.eqtb, PRIM_EQTB_BASE + prim_val, c, o, LEVEL_ONE);
+    st.eqtb.set_eq(st.scanner.cur_val, c, o, LEVEL_ONE);
+    st.eqtb.set_eq(PRIM_EQTB_BASE + prim_val, c, o, LEVEL_ONE);
     Ok(())
 }
 
@@ -543,8 +541,7 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     mem.dyn_used = HI_MEM_STAT_USAGE;
 
     let eqtb = &mut st.eqtb;
-    set_eq(
-        eqtb,
+    eqtb.set_eq(
         UNDEFINED_CONTROL_SEQUENCE,
         UNDEFINED_CS,
         TEX_NULL,
@@ -553,20 +550,14 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     let undefined_entry = eqtb.word(UNDEFINED_CONTROL_SEQUENCE);
     eqtb.data[ACTIVE_BASE as usize..=eqtb.eqtb_top as usize].fill(undefined_entry);
 
-    set_eq(eqtb, GLUE_BASE, GLUE_REF, 0, LEVEL_ONE);
+    eqtb.set_eq(GLUE_BASE, GLUE_REF, 0, LEVEL_ONE);
     let glue_base_entry = eqtb.word(GLUE_BASE);
     eqtb.data[(GLUE_BASE + 1) as usize..LOCAL_BASE as usize].fill(glue_base_entry);
 
     let zero_glue_refs = ZERO_GLUE.ref_count(&st.mem) + 531;
     ZERO_GLUE.set_ref_count(&mut st.mem, zero_glue_refs);
 
-    set_eq(
-        eqtb,
-        LOCAL_BASE + LOCAL_PAR_SHAPE,
-        SHAPE_REF,
-        TEX_NULL,
-        LEVEL_ONE,
-    );
+    eqtb.set_eq(LOCAL_BASE + LOCAL_PAR_SHAPE, SHAPE_REF, TEX_NULL, LEVEL_ONE);
     let par_shape_entry = eqtb.word(LOCAL_BASE + LOCAL_PAR_SHAPE);
     eqtb.data[ETEX_PEN_BASE as usize..(ETEX_PEN_BASE + NUM_ETEX_PENALTIES) as usize]
         .fill(par_shape_entry);
@@ -575,16 +566,16 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     eqtb.data[(LOCAL_BASE + LOCAL_OUTPUT_ROUTINE) as usize..toks_end as usize]
         .fill(undefined_entry);
 
-    set_eq(eqtb, BOX_BASE, BOX_REF, TEX_NULL, LEVEL_ONE);
+    eqtb.set_eq(BOX_BASE, BOX_REF, TEX_NULL, LEVEL_ONE);
     let box_base_entry = eqtb.word(BOX_BASE);
     eqtb.data[(BOX_BASE + 1) as usize..(BOX_BASE + NUMBER_REGS) as usize].fill(box_base_entry);
 
-    set_eq(eqtb, CUR_FONT_LOC, DATA, FONT_BASE, LEVEL_ONE);
+    eqtb.set_eq(CUR_FONT_LOC, DATA, FONT_BASE, LEVEL_ONE);
     let cur_font_entry = eqtb.word(CUR_FONT_LOC);
     eqtb.data[MATH_FONT_BASE as usize..(MATH_FONT_BASE + NUMBER_MATH_FONTS) as usize]
         .fill(cur_font_entry);
 
-    set_eq(eqtb, CAT_CODE_BASE, DATA, 0, LEVEL_ONE);
+    eqtb.set_eq(CAT_CODE_BASE, DATA, 0, LEVEL_ONE);
     let cat_code_entry = eqtb.word(CAT_CODE_BASE);
     eqtb.data[(CAT_CODE_BASE + 1) as usize..INT_BASE as usize].fill(cat_code_entry);
 
@@ -699,27 +690,23 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
     }
 
     set_frozen_text(st, FROZEN_END_TEMPLATE, c"endtemplate")?;
-    set_eq(
-        &mut st.eqtb,
-        FROZEN_END_TEMPLATE,
-        END_TEMPLATE,
-        NULL_LIST.0,
-        LEVEL_ONE,
-    );
+    st.eqtb
+        .set_eq(FROZEN_END_TEMPLATE, END_TEMPLATE, NULL_LIST.0, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_ENDV, c"endtemplate")?;
-    set_eq(&mut st.eqtb, FROZEN_ENDV, ENDV, NULL_LIST.0, LEVEL_ONE);
+    st.eqtb.set_eq(FROZEN_ENDV, ENDV, NULL_LIST.0, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_DONT_EXPAND, c"notexpanded:")?;
     st.eqtb.set_eq_type(FROZEN_DONT_EXPAND, DONT_EXPAND);
 
     set_frozen_text(st, FROZEN_PRIMITIVE, c"primitive")?;
-    set_eq(&mut st.eqtb, FROZEN_PRIMITIVE, IGNORE_SPACES, 1, LEVEL_ONE);
+    st.eqtb
+        .set_eq(FROZEN_PRIMITIVE, IGNORE_SPACES, 1, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_PROTECTION, c"inaccessible")?;
 
     set_frozen_text(st, END_WRITE, c"endwrite")?;
-    set_eq(&mut st.eqtb, END_WRITE, OUTER_CALL, TEX_NULL, LEVEL_ONE);
+    st.eqtb.set_eq(END_WRITE, OUTER_CALL, TEX_NULL, LEVEL_ONE);
 
     st.eqtb.no_new_control_sequence = true;
     Ok(())

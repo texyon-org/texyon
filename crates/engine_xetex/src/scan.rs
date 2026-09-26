@@ -360,10 +360,12 @@ pub(crate) fn scan_xetex_math_char_int_in(st: &mut EngineState) -> Result<(), Sc
     Ok(())
 }
 
-/// `\XeTeXhyphenatablelength`, capped at the supported maximum.
-pub fn max_hyphenatable_length_in(eqtb: &crate::state::EqtbState) -> i32 {
-    eqtb.int_par(INT_PAR_XETEX_HYPHENATABLE_LENGTH)
-        .min(HYPHENATABLE_LENGTH_LIMIT)
+impl EqtbState {
+    /// `\XeTeXhyphenatablelength`, capped at the supported maximum.
+    pub fn max_hyphenatable_length(&self) -> i32 {
+        self.int_par(INT_PAR_XETEX_HYPHENATABLE_LENGTH)
+            .min(HYPHENATABLE_LENGTH_LIMIT)
+    }
 }
 
 pub(crate) fn insert_dollar_sign_in(
@@ -439,7 +441,7 @@ pub(crate) fn scan_spec_in(
     st.save_stack.set_saved(0, spec_code as i32);
     st.save_stack.set_saved(1, st.scanner.cur_val);
     st.save_stack.save_ptr += 2;
-    if let Err(abort) = crate::save::new_save_level(&mut st.save_stack, c, st.mem.line) {
+    if let Err(abort) = st.save_stack.new_save_level(c, st.mem.line) {
         return Err(match abort {
             crate::save::SaveAbort::Overflow(what, n) => {
                 SccAbort::Input(crate::input::InputAbort::Overflow {
@@ -1122,7 +1124,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
 
     macro_rules! id_lookup {
         ($j:expr, $l:expr) => {
-            match crate::hash::id_lookup(&mut st.eqtb, &mut st.strings, &st.input.buffer, $j, $l) {
+            match st.eqtb.id_lookup(&mut st.strings, &st.input.buffer, $j, $l) {
                 Ok(p) => p,
                 Err(e) => return GetNextOutcome::Abort(hash_err_abort(e)),
             }
@@ -2060,7 +2062,9 @@ fn scan_optional_space_in(st: &mut EngineState) -> Result<(), SccAbort> {
 /// Reads the token after `\primitive` and replaces it by the primitive's meaning.
 fn get_primitive_token_in(st: &mut EngineState) -> Result<(), SccAbort> {
     get_token_in(st)?;
-    let p = crate::hash::prim_lookup_cs(&mut st.eqtb, &mut st.strings, st.scanner.cur_cs)
+    let p = st
+        .eqtb
+        .prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)
         .map_err(|e| SccAbort::Input(hash_err_abort(e)))?;
     if p != UNDEFINED_PRIMITIVE {
         st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + p);

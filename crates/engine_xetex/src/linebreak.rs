@@ -1530,7 +1530,7 @@ impl MemState {
 
 /// Try to hyphenate the word following the glue node `cur`.
 fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), LineBreakOutcome> {
-    let max_len = crate::scan::max_hyphenatable_length_in(&st.eqtb);
+    let max_len = st.eqtb.max_hyphenatable_length();
     let uc_hyph = st.eqtb.int_par(INT_PAR_UC_HYPH) > 0;
     let mut prev_s = cur;
     let mut s = prev_s.link(&st.mem);

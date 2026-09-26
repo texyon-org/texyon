@@ -534,13 +534,13 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
                         st.hyph.max_hyph_char = st.scanner.cur_chr;
                     }
 
-                    if k < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
+                    if k < st.eqtb.max_hyphenatable_length() as i16 {
                         k += 1;
                         st.hyph.hc[k as usize] = st.scanner.cur_chr;
                         st.hyph.hyf[k as usize] = 0;
                         digit_sensed = false;
                     }
-                } else if k < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
+                } else if k < st.eqtb.max_hyphenatable_length() as i16 {
                     st.hyph.hyf[k as usize] = (cur_chr - b'0' as i32) as u8;
                     digit_sensed = true;
                 }
@@ -604,7 +604,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
             match st.scanner.cur_cmd {
                 LETTER | OTHER_CHAR | CHAR_GIVEN => {
                     if st.scanner.cur_chr == b'-' as i32 {
-                        if n < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
+                        if n < st.eqtb.max_hyphenatable_length() as i16 {
                             let q = crate::scan::get_avail_scc(st)?;
                             q.set_link(&mut st.mem, p);
                             q.set_info(&mut st.mem, n as i32);
@@ -625,7 +625,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
                                     "Proceed; I'll ignore the character I just read.",
                                 ],
                             )?;
-                        } else if n < crate::scan::max_hyphenatable_length_in(&st.eqtb) as i16 {
+                        } else if n < st.eqtb.max_hyphenatable_length() as i16 {
                             let hc0 = st.hyph.hc[0];
                             n += 1;
                             if hc0 < 65536 {

@@ -346,14 +346,9 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
             } else if m == first + 1 {
                 SINGLE_BASE + st.input.buffer[first as usize]
             } else {
-                crate::hash::id_lookup(
-                    &mut st.eqtb,
-                    &mut st.strings,
-                    &st.input.buffer,
-                    first,
-                    m - first,
-                )
-                .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
+                st.eqtb
+                    .id_lookup(&mut st.strings, &st.input.buffer, first, m - first)
+                    .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
             };
             st.mem.flush_list(head);
             st.eqtb.eq_type(st.scanner.cur_cs) != UNDEFINED_CS
@@ -412,7 +407,9 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
         }
         IF_PRIMITIVE_CODE => {
             get_next_unexpanded_in(st)?;
-            let m = crate::hash::prim_lookup_cs(&mut st.eqtb, &mut st.strings, st.scanner.cur_cs)
+            let m = st
+                .eqtb
+                .prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)
                 .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?;
             st.scanner.cur_cmd != UNDEFINED_CS
                 && m != UNDEFINED_PRIMITIVE
@@ -994,12 +991,10 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     }
                 } else {
                     get_token_unexpanded_in(st)?;
-                    st.scanner.cur_cs = crate::hash::prim_lookup_cs(
-                        &mut st.eqtb,
-                        &mut st.strings,
-                        st.scanner.cur_cs,
-                    )
-                    .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?;
+                    st.scanner.cur_cs = st
+                        .eqtb
+                        .prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)
+                        .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?;
                     if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
                         let cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
                         if cmd > MAX_COMMAND {
@@ -1021,14 +1016,10 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 let j = token_chars_to_buffer(st, head.link(&st.mem))?;
                 st.scanner.cur_cs = if j > first + 1 || st.input.buffer[first as usize] > 65535 {
                     st.eqtb.no_new_control_sequence = false;
-                    let cs = crate::hash::id_lookup(
-                        &mut st.eqtb,
-                        &mut st.strings,
-                        &st.input.buffer,
-                        first,
-                        j - first,
-                    )
-                    .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?;
+                    let cs = st
+                        .eqtb
+                        .id_lookup(&mut st.strings, &st.input.buffer, first, j - first)
+                        .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?;
                     st.eqtb.no_new_control_sequence = true;
                     cs
                 } else if j == first {
@@ -1039,8 +1030,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 st.mem.flush_list(head);
                 let cs = st.scanner.cur_cs;
                 if st.eqtb.eq_type(cs) == UNDEFINED_CS {
-                    let _ = crate::save::eq_define(
-                        &mut st.eqtb,
+                    let _ = st.eqtb.eq_define(
                         &mut st.save_stack,
                         &mut st.mem,
                         &mut st.scanner,

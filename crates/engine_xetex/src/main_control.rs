@@ -542,7 +542,8 @@ pub(crate) fn align_peek_in(st: &mut EngineState) -> Result<(), MainControlAbort
         match st.scanner.cur_cmd {
             NO_ALIGN => {
                 crate::scan::scan_left_brace_in(st)?;
-                crate::save::new_save_level(&mut st.save_stack, GroupCode::NoAlign, st.mem.line)?;
+                st.save_stack
+                    .new_save_level(GroupCode::NoAlign, st.mem.line)?;
                 if st.input.cur_list.mode == INNER_VMODE {
                     normal_paragraph(st)?;
                 }
@@ -754,7 +755,8 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
     }
     if cur_align.extra_info(&st.mem) != SPAN_CODE {
         crate::save::unsave_in(st)?;
-        crate::save::new_save_level(&mut st.save_stack, GroupCode::Align, st.mem.line)?;
+        st.save_stack
+            .new_save_level(GroupCode::Align, st.mem.line)?;
         let head = st.input.cur_list.head.link(&st.mem);
         let (u, w) = if st.input.cur_list.mode == INNER_HMODE {
             st.scanner.adjust_tail = st.scanner.cur_tail;
@@ -987,7 +989,8 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
     }
 
     st.scanner.scanner_status = NORMAL_SCANNER;
-    crate::save::new_save_level(&mut st.save_stack, GroupCode::Align, st.mem.line)?;
+    st.save_stack
+        .new_save_level(GroupCode::Align, st.mem.line)?;
     begin_every(st, LOCAL_EVERY_CR, EVERY_CR_TEXT)?;
     align_peek_in(st)
 }
@@ -996,7 +999,7 @@ pub(crate) fn push_math_in(st: &mut EngineState, c: GroupCode) -> Result<(), Mai
     crate::mem::push_nest_in(st)?;
     st.input.cur_list.mode = -MMODE;
     st.input.cur_list.set_aux_s1(TEX_NULL);
-    crate::save::new_save_level(&mut st.save_stack, c, st.mem.line)?;
+    st.save_stack.new_save_level(c, st.mem.line)?;
     Ok(())
 }
 
@@ -1146,7 +1149,8 @@ pub(crate) fn begin_insert_or_adjust_in(st: &mut EngineState) -> Result<(), Main
     let pre = st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword_in(st, c"pre")?;
     st.save_stack.set_saved(1, pre as i32);
     st.save_stack.save_ptr += 2;
-    crate::save::new_save_level(&mut st.save_stack, GroupCode::Insert, st.mem.line)?;
+    st.save_stack
+        .new_save_level(GroupCode::Insert, st.mem.line)?;
     crate::scan::scan_left_brace_in(st)?;
     normal_paragraph(st)?;
     crate::mem::push_nest_in(st)?;
@@ -2346,7 +2350,7 @@ pub(crate) fn off_save_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
 }
 
 fn begin_disc_group(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    crate::save::new_save_level(&mut st.save_stack, GroupCode::Disc, st.mem.line)?;
+    st.save_stack.new_save_level(GroupCode::Disc, st.mem.line)?;
     crate::scan::scan_left_brace_in(st)?;
     crate::mem::push_nest_in(st)?;
     st.input.cur_list.mode = INNER_HMODE;
@@ -3125,9 +3129,10 @@ pub(crate) fn main_control_ignore_spaces_in(st: &mut EngineState) -> Result<(), 
         st.scanner.scanner_status = saved;
         Result::<(), crate::scan::SccAbort>::from(outcome)?;
 
-        st.scanner.cur_cs =
-            crate::hash::prim_lookup_cs(&mut st.eqtb, &mut st.strings, st.scanner.cur_cs)
-                .map_err(crate::scan::hash_err_abort)?;
+        st.scanner.cur_cs = st
+            .eqtb
+            .prim_lookup_cs(&mut st.strings, st.scanner.cur_cs)
+            .map_err(crate::scan::hash_err_abort)?;
 
         if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
             st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
@@ -4008,12 +4013,12 @@ unsafe fn dispatch_command_in(st: &mut EngineState) -> Result<Next, MainControlA
             append_glue_in(st)?;
         }
         (_, KERN) | (MMODE, MKERN) => append_kern_in(st)?,
-        (VMODE | HMODE, LEFT_BRACE) => {
-            crate::save::new_save_level(&mut st.save_stack, GroupCode::Simple, st.mem.line)?
-        }
-        (_, BEGIN_GROUP) => {
-            crate::save::new_save_level(&mut st.save_stack, GroupCode::SemiSimple, st.mem.line)?
-        }
+        (VMODE | HMODE, LEFT_BRACE) => st
+            .save_stack
+            .new_save_level(GroupCode::Simple, st.mem.line)?,
+        (_, BEGIN_GROUP) => st
+            .save_stack
+            .new_save_level(GroupCode::SemiSimple, st.mem.line)?,
         (_, END_GROUP) => {
             if st.save_stack.cur_group == GroupCode::SemiSimple {
                 crate::save::unsave_in(st)?;
@@ -4140,7 +4145,7 @@ unsafe fn dispatch_command_in(st: &mut EngineState) -> Result<Next, MainControlA
         }
         (_, AFTER_GROUP) => {
             crate::scan::get_token_in(st)?;
-            crate::save::save_for_after(&mut st.save_stack, st.scanner.cur_tok)?;
+            st.save_stack.save_for_after(st.scanner.cur_tok)?;
         }
         (_, IN_STREAM) => crate::io::open_or_close_in(st)?,
         (_, MESSAGE) => crate::output::issue_message_in(st)?,
@@ -4209,17 +4214,10 @@ fn define(
     e: i32,
 ) -> Result<(), crate::save::SaveAbort> {
     if global {
-        crate::save::geq_define(&mut st.eqtb, &mut st.mem, &mut st.scanner, p, t, e)
+        st.eqtb.geq_define(&mut st.mem, &mut st.scanner, p, t, e)
     } else {
-        crate::save::eq_define(
-            &mut st.eqtb,
-            &mut st.save_stack,
-            &mut st.mem,
-            &mut st.scanner,
-            p,
-            t,
-            e,
-        )
+        st.eqtb
+            .eq_define(&mut st.save_stack, &mut st.mem, &mut st.scanner, p, t, e)
     }
 }
 
@@ -4230,10 +4228,10 @@ fn word_define(
     w: i32,
 ) -> Result<(), crate::save::SaveAbort> {
     if global {
-        crate::save::geq_word_define(&mut st.eqtb, p, w);
+        st.eqtb.geq_word_define(p, w);
         Ok(())
     } else {
-        crate::save::eq_word_define(&mut st.eqtb, &mut st.save_stack, p, w)
+        st.eqtb.eq_word_define(&mut st.save_stack, p, w)
     }
 }
 

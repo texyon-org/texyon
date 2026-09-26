@@ -2618,12 +2618,7 @@ fn define_word_in(
     loc: i32,
     val: i32,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    Ok(crate::save::eq_word_define(
-        &mut st.eqtb,
-        &mut st.save_stack,
-        loc,
-        val,
-    )?)
+    Ok(st.eqtb.eq_word_define(&mut st.save_stack, loc, val)?)
 }
 
 pub(crate) fn start_eq_no_in(

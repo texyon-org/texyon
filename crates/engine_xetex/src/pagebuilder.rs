@@ -253,11 +253,8 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         }
         _ => INF_PENALTY,
     };
-    crate::save::geq_word_define(
-        &mut st.eqtb,
-        INT_BASE + INT_PAR_OUTPUT_PENALTY,
-        output_penalty,
-    );
+    st.eqtb
+        .geq_word_define(INT_BASE + INT_PAR_OUTPUT_PENALTY, output_penalty);
 
     if let Some(root) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
         if st.mem.do_marks(&mut st.scanner, FIRE_UP_INIT, 0, root) {
@@ -423,7 +420,8 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
             st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
             st.input.cur_list.mode_line = -st.mem.line;
             crate::input::begin_token_list_in(st, output_routine, OUTPUT_TEXT)?;
-            crate::save::new_save_level(&mut st.save_stack, GroupCode::Output, st.mem.line)?;
+            st.save_stack
+                .new_save_level(GroupCode::Output, st.mem.line)?;
             crate::main_control::normal_paragraph(st)?;
             crate::scan::scan_left_brace_in(st)?;
             return Ok(());
