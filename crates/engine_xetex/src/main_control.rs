@@ -17,7 +17,7 @@ use crate::cmd::{
     TOKS_REGISTER, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE, VRULE, VSKIP,
     XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
-use crate::codes::{BoxCode, BoxDimenCode, ShorthandDefCode, SkipCode, ValueLevel};
+use crate::codes::{BoxCode, BoxDimenCode, ScannerStatus, ShorthandDefCode, SkipCode, ValueLevel};
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
     BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CUR_FONT_LOC,
@@ -54,7 +54,7 @@ use crate::node::{
 };
 use crate::packaging::ADDITIONAL;
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::scan::{fetch_box, ALIGNING, NORMAL_SCANNER};
+use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, MemState, Selector};
 use crate::token::Token;
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
@@ -848,7 +848,7 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     ALIGN_HEAD.set_link(&mut st.mem, MemPtr::NULL);
     st.scanner.cur_align = ALIGN_HEAD;
     st.scanner.cur_loop = MemPtr::NULL;
-    st.scanner.scanner_status = ALIGNING;
+    st.scanner.scanner_status = ScannerStatus::Aligning;
     st.scanner.warning_index = save_cs_ptr;
     st.scanner.align_state = -1_000_000;
 
@@ -921,7 +921,7 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
         column.set_v_part(&mut st.mem, v_part);
     }
 
-    st.scanner.scanner_status = NORMAL_SCANNER;
+    st.scanner.scanner_status = ScannerStatus::Normal;
     st.save_stack
         .new_save_level(GroupCode::Align, st.mem.line)?;
     begin_every(st, LOCAL_EVERY_CR, EVERY_CR_TEXT)?;
@@ -2763,7 +2763,7 @@ pub(crate) fn main_control_ignore_spaces(st: &mut EngineState) -> Result<(), Abo
         }
     } else {
         let saved = st.scanner.scanner_status;
-        st.scanner.scanner_status = NORMAL_SCANNER;
+        st.scanner.scanner_status = ScannerStatus::Normal;
         let outcome = crate::scan::get_next(st);
         st.scanner.scanner_status = saved;
         outcome?;

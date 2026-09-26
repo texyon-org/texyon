@@ -1,4 +1,5 @@
 use crate::bridge::{output_flush, set_error_message};
+use crate::codes::ScannerStatus;
 use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, LOCAL_ERR_HELP, MEM_TOP, TEX_NULL};
 use crate::mem::{HOLD_HEAD, TEMP_HEAD};
 use crate::output::{
@@ -7,7 +8,6 @@ use crate::output::{
     print_in_mode, print_int, print_ln, print_nl, show_box, show_context, show_token_list,
     token_show,
 };
-use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, StrNumber};
 
@@ -353,10 +353,10 @@ pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {
 
 pub(crate) fn runaway(st: &mut EngineState) {
     let (msg, p) = match st.scanner.scanner_status {
-        DEFINING => ("Runaway definition", st.scanner.def_ref),
-        MATCHING => ("Runaway argument", TEMP_HEAD),
-        ALIGNING => ("Runaway preamble", HOLD_HEAD),
-        ABSORBING => ("Runaway text", st.scanner.def_ref),
+        ScannerStatus::Defining => ("Runaway definition", st.scanner.def_ref),
+        ScannerStatus::Matching => ("Runaway argument", TEMP_HEAD),
+        ScannerStatus::Aligning => ("Runaway preamble", HOLD_HEAD),
+        ScannerStatus::Absorbing => ("Runaway text", st.scanner.def_ref),
         _ => return,
     };
     print_nl(st, msg);

@@ -850,7 +850,7 @@ pub(crate) struct ScannerState {
     pub used_tectonic_coda_tokens: bool,
     pub cur_val_level: ValueLevel,
     pub cur_val1: i32,
-    pub scanner_status: u8,
+    pub scanner_status: crate::codes::ScannerStatus,
     pub warning_index: i32,
     pub def_ref: crate::units::MemPtr,
     pub long_state: u8,

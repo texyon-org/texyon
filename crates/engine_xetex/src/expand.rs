@@ -5,7 +5,7 @@ use crate::cmd::{
     IF_TEST, IGNORE, INPUT, LEFT_BRACE, LONG_CALL, MAX_COMMAND, NO_EXPAND, OUTER_CALL, OUT_PARAM,
     RELAX, THE, TOP_BOT_MARK, UNDEFINED_CS,
 };
-use crate::codes::{ConvertCode, FiOrElseCode, IfCode, ValueLevel};
+use crate::codes::{ConvertCode, FiOrElseCode, IfCode, ScannerStatus, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, MMODE,
     NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_USV, UNDEFINED_PRIMITIVE,
@@ -26,7 +26,7 @@ use crate::output::{
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
     fetch_box, get_next, get_token, get_x_non_blank, get_x_token, scan_int, store_new_token,
-    MATCHING, NORMAL_SCANNER, NO_EXPAND_FLAG,
+    NO_EXPAND_FLAG,
 };
 use crate::state::{EngineState, MemState, Selector};
 use crate::token::Token;
@@ -80,7 +80,7 @@ fn get_x_token_or_active_char(st: &mut EngineState) -> Result<(), Abort> {
 
 fn get_next_unexpanded(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
-    st.scanner.scanner_status = NORMAL_SCANNER;
+    st.scanner.scanner_status = ScannerStatus::Normal;
     get_next(st)?;
     st.scanner.scanner_status = save_scanner_status;
     Ok(())
@@ -88,7 +88,7 @@ fn get_next_unexpanded(st: &mut EngineState) -> Result<(), Abort> {
 
 fn get_token_unexpanded(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
-    st.scanner.scanner_status = NORMAL_SCANNER;
+    st.scanner.scanner_status = ScannerStatus::Normal;
     get_token(st)?;
     st.scanner.scanner_status = save_scanner_status;
     Ok(())
@@ -231,7 +231,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
         }
         IfCode::X => {
             let save_scanner_status = st.scanner.scanner_status;
-            st.scanner.scanner_status = NORMAL_SCANNER;
+            st.scanner.scanner_status = ScannerStatus::Normal;
             get_next(st)?;
             let n = st.scanner.cur_cs;
             let p = st.scanner.cur_cmd;
@@ -389,7 +389,7 @@ fn scan_int_or_dimen(st: &mut EngineState, this_if: IfCode) -> Result<(), Abort>
 
 /// Scanner state saved around a `conv_toks` primitive that reads a general text.
 struct SavedScan {
-    status: u8,
+    status: ScannerStatus,
     warning_index: i32,
     def_ref: i32,
     pending_str: bool,
@@ -1085,7 +1085,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
     'exit: {
         if r.token(&st.mem) != Token::END_MATCH {
-            st.scanner.scanner_status = MATCHING;
+            st.scanner.scanner_status = ScannerStatus::Matching;
             let mut unbalance: i32 = 0;
             st.scanner.long_state = st.eqtb.eq_type(st.scanner.cur_cs);
             if st.scanner.long_state >= OUTER_CALL {

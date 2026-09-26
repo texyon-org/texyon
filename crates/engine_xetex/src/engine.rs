@@ -7,7 +7,7 @@ use crate::cmd::{
     IGNORE, IGNORE_SPACES, INVALID_CHAR, LETTER, OTHER_CHAR, OUTER_CALL, SHAPE_REF, SPACER,
     UNDEFINED_CS,
 };
-use crate::codes::{BoxCode, FiOrElseCode, ValueLevel};
+use crate::codes::{BoxCode, FiOrElseCode, ScannerStatus, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
@@ -35,7 +35,7 @@ use crate::mem::{
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
 use crate::params::IntPar;
-use crate::scan::{set_class, set_family, NORMAL_SCANNER};
+use crate::scan::{set_class, set_family};
 use crate::state::{
     ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
     Selector,
@@ -892,7 +892,7 @@ pub(crate) fn initialize_engine(
     st.scanner.used_tectonic_coda_tokens = false;
     st.fonts.gave_char_warning_help = false;
 
-    st.scanner.scanner_status = NORMAL_SCANNER;
+    st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.warning_index = TEX_NULL;
     st.input.first = 1;
     st.input.cur_input.state = NEW_LINE;

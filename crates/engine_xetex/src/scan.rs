@@ -10,7 +10,7 @@ use crate::cmd::{
     SET_BOX_DIMEN, SET_FONT, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF, SET_SHAPE, SPACER,
     SUP_MARK, TAB_MARK, THE, TOKS_REGISTER, VRULE, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
 };
-use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, ValueLevel};
+use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, ScannerStatus, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
     DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE, FROZEN_CR,
@@ -55,13 +55,6 @@ use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 use std::sync::Arc;
 
 use crate::layout::{get_cp_code, FontEngineHandle};
-
-pub(crate) const NORMAL_SCANNER: u8 = 0;
-pub(crate) const SKIPPING: u8 = 1;
-pub(crate) const DEFINING: u8 = 2;
-pub(crate) const MATCHING: u8 = 3;
-pub(crate) const ALIGNING: u8 = 4;
-pub(crate) const ABSORBING: u8 = 5;
 
 const ZERO_TOKEN: Token = Token::other(b'0');
 const MINUS_TOKEN: Token = Token::other(b'-');
@@ -462,7 +455,7 @@ fn close_read_file(st: &mut EngineState, m: usize) -> Result<(), Abort> {
 }
 
 pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<(), Abort> {
-    st.scanner.scanner_status = DEFINING;
+    st.scanner.scanner_status = ScannerStatus::Defining;
     st.scanner.warning_index = r;
     let def_ref = new_def_ref(st)?;
     let mut p = def_ref;
@@ -549,7 +542,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
     }
 
     st.scanner.cur_val = def_ref.0;
-    st.scanner.scanner_status = NORMAL_SCANNER;
+    st.scanner.scanner_status = ScannerStatus::Normal;
     st.scanner.align_state = s;
     Ok(())
 }
@@ -764,7 +757,7 @@ pub(crate) fn set_family(x: i32) -> i32 {
 }
 
 pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.scanner_status == NORMAL_SCANNER {
+    if st.scanner.scanner_status == ScannerStatus::Normal {
         return Ok(());
     }
     st.errors.deletions_allowed = false;
@@ -780,7 +773,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_chr = i32::from(b' ');
     }
 
-    let outcome = if st.scanner.scanner_status > SKIPPING {
+    let outcome = if st.scanner.scanner_status > ScannerStatus::Skipping {
         crate::errors::runaway(st);
         if st.scanner.cur_cs == 0 {
             error_here_with_diagnostic(st, "File ended");
@@ -792,16 +785,16 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         let p = st.mem.get_avail()?;
         let mut inserted = p;
         match st.scanner.scanner_status {
-            DEFINING => {
+            ScannerStatus::Defining => {
                 print(st, " while scanning definition");
                 p.set_token(&mut st.mem, Token::right_brace(b'}'));
             }
-            MATCHING => {
+            ScannerStatus::Matching => {
                 print(st, " while scanning use");
                 p.set_token(&mut st.mem, st.input.par_token);
                 st.scanner.long_state = OUTER_CALL;
             }
-            ALIGNING => {
+            ScannerStatus::Aligning => {
                 print(st, " while scanning preamble");
                 p.set_token(&mut st.mem, Token::right_brace(b'}'));
                 inserted = st.mem.get_avail()?;
@@ -809,7 +802,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
                 inserted.set_token(&mut st.mem, Token::from_cs(FROZEN_CR));
                 st.scanner.align_state = -1_000_000;
             }
-            ABSORBING => {
+            ScannerStatus::Absorbing => {
                 print(st, " while scanning text");
                 p.set_token(&mut st.mem, Token::right_brace(b'}'));
             }
@@ -1253,7 +1246,9 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             && st.scanner.cur_cmd >= TAB_MARK
             && st.scanner.align_state == 0
         {
-            if st.scanner.scanner_status == ALIGNING || st.scanner.cur_align.0 == TEX_NULL {
+            if st.scanner.scanner_status == ScannerStatus::Aligning
+                || st.scanner.cur_align.0 == TEX_NULL
+            {
                 return Err(Abort::Fatal(
                     "(interwoven alignment preambles are not allowed)",
                 ));
@@ -1444,9 +1439,9 @@ pub(crate) fn scan_toks(
     xpand: bool,
 ) -> Result<MemPtr, Abort> {
     if macro_def {
-        st.scanner.scanner_status = DEFINING;
+        st.scanner.scanner_status = ScannerStatus::Defining;
     } else {
-        st.scanner.scanner_status = ABSORBING;
+        st.scanner.scanner_status = ScannerStatus::Absorbing;
     }
     st.scanner.warning_index = st.scanner.cur_cs;
     let def_ref = new_def_ref(st)?;
@@ -1578,7 +1573,7 @@ pub(crate) fn scan_toks(
             store_new_token(st, &mut p, st.scanner.cur_tok)?;
         }
     }
-    st.scanner.scanner_status = NORMAL_SCANNER;
+    st.scanner.scanner_status = ScannerStatus::Normal;
     if hash_brace != Token::ZERO {
         store_new_token(st, &mut p, hash_brace)?;
     }
@@ -1587,7 +1582,7 @@ pub(crate) fn scan_toks(
 
 pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
     let save_scanner_status = st.scanner.scanner_status;
-    st.scanner.scanner_status = SKIPPING;
+    st.scanner.scanner_status = ScannerStatus::Skipping;
     let mut l: i32 = 0;
     st.scanner.skip_line = st.mem.line;
 
@@ -3446,7 +3441,7 @@ pub(crate) fn scan_general_text(st: &mut EngineState) -> Result<(), Abort> {
     let saved_status = st.scanner.scanner_status;
     let saved_warning_index = st.scanner.warning_index;
     let saved_def_ref = st.scanner.def_ref;
-    st.scanner.scanner_status = ABSORBING;
+    st.scanner.scanner_status = ScannerStatus::Absorbing;
     st.scanner.warning_index = st.scanner.cur_cs;
     let mut p = new_def_ref(st)?;
     scan_left_brace(st)?;

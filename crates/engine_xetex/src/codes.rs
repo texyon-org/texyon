@@ -352,3 +352,18 @@ code_enum! {
         Ifs = 6 => "showifs",
     }
 }
+
+code_enum! {
+    /// What the scanner is absorbing (`scanner_status`), for runaway and
+    /// `\outer` checks. Ordered as TeX compares it.
+    #[derive(PartialOrd, Ord, Default)]
+    pub(crate) enum ScannerStatus: u8 {
+        #[default]
+        Normal = 0,
+        Skipping = 1,
+        Defining = 2,
+        Matching = 3,
+        Aligning = 4,
+        Absorbing = 5,
+    }
+}
