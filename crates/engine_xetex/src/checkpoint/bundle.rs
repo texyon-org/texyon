@@ -440,7 +440,7 @@ struct InputBundle {
     name_length: i32,
     name_length16: i32,
     read_open: [u8; 17],
-    name_of_file: Vec<libc::c_char>,
+    name_of_file: Vec<u8>,
     name_of_file16: Vec<u16>,
     name_of_input_file: Option<std::ffi::CString>,
     abspath_of_input_file: AbsPathBuf,

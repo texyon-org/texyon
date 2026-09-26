@@ -57,19 +57,20 @@ pub fn get_seconds_and_micros() -> (i32, i32) {
     (elapsed.as_secs() as i32, elapsed.subsec_micros() as i32)
 }
 
-/// Decodes one UTF-8 sequence from a NUL-terminated string without
-/// validation, advancing `cp`. A NUL cuts the sequence short.
-pub(crate) unsafe fn next_utf8_char(cp: &mut *const u8) -> u32 {
-    let mut rval = **cp as u32;
-    *cp = cp.add(1);
-    let extra_bytes = BYTES_FROM_UTF8[rval as usize] as usize;
+/// Decodes one UTF-8 sequence from the non-empty `s` without validation,
+/// advancing it. The end of `s` cuts the sequence short.
+pub(crate) fn next_utf8_char(s: &mut &[u8]) -> u32 {
+    let (&first, mut rest) = s.split_first().expect("next_utf8_char on empty input");
+    let mut rval = first as u32;
+    let extra_bytes = BYTES_FROM_UTF8[first as usize] as usize;
     for _ in 0..extra_bytes {
         rval <<= 6;
-        if **cp != 0 {
-            rval += **cp as u32;
-            *cp = cp.add(1);
+        if let Some((&b, tail)) = rest.split_first() {
+            rval += b as u32;
+            rest = tail;
         }
     }
+    *s = rest;
     rval - OFFSETS_FROM_UTF8[extra_bytes]
 }
 
@@ -97,7 +98,7 @@ impl MakeTexStringAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             MakeTexStringAbort::PoolOverflow => {
-                crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
+                crate::errors::EngineAbort::TtAbort("string pool overflow")
             }
             MakeTexStringAbort::StringOverflow => crate::errors::EngineAbort::StringOverflow,
         }
@@ -206,22 +207,22 @@ impl StringsState {
         }
     }
 
-    /// Converts a NUL-terminated UTF-8 string into a new pool string.
-    pub(crate) unsafe fn maketexstring(
+    /// Converts UTF-8 bytes into a new pool string.
+    pub(crate) fn make_tex_string(
         &mut self,
-        s: *const libc::c_char,
+        s: impl AsRef<[u8]>,
     ) -> Result<i32, MakeTexStringAbort> {
-        if s.is_null() || *s == 0 {
+        let mut s = s.as_ref();
+        if s.is_empty() {
             return Ok(EMPTY_STRING);
         }
 
-        if self.pool_ptr as usize + libc::strlen(s) >= self.pool_size as usize {
+        if self.pool_ptr as usize + s.len() >= self.pool_size as usize {
             return Err(MakeTexStringAbort::PoolOverflow);
         }
 
-        let mut cp = s as *const u8;
-        while *cp != 0 {
-            self.push_utf16(next_utf8_char(&mut cp));
+        while !s.is_empty() {
+            self.push_utf16(next_utf8_char(&mut s));
         }
 
         self.make_string()

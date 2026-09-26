@@ -1016,7 +1016,7 @@ pub(crate) enum LineBreakOutcome {
     Hyphenate(HyphenateAbort),
     Trie(crate::hyphenation::TrieAbort),
     PostLineBreak(PostLineBreakOutcome),
-    Confusion(&'static core::ffi::CStr),
+    Confusion(&'static str),
     /// A non-`Continue` outcome of the infinite-shrinkage `error()`.
     Error(crate::errors::ErrorOutcome),
 }
@@ -1025,7 +1025,7 @@ impl LineBreakOutcome {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             LineBreakOutcome::Overflow => crate::errors::EngineAbort::Overflow {
-                what: c"main memory size".as_ptr(),
+                what: "main memory size",
                 n: MEM_TOP + 1,
             },
             LineBreakOutcome::Node(e) => e.into_engine_abort(),
@@ -1033,9 +1033,7 @@ impl LineBreakOutcome {
             LineBreakOutcome::Hyphenate(a) => a.into_engine_abort(),
             LineBreakOutcome::Trie(e) => e.into_engine_abort(),
             LineBreakOutcome::PostLineBreak(o) => o.into_engine_abort(),
-            LineBreakOutcome::Confusion(message) => {
-                crate::errors::EngineAbort::Confusion(message.as_ptr())
-            }
+            LineBreakOutcome::Confusion(message) => crate::errors::EngineAbort::Confusion(message),
             LineBreakOutcome::Error(o) => o.into_engine_abort(),
         }
     }
@@ -1072,7 +1070,7 @@ fn finite_shrink(
 ) -> Result<NodePtr<GlueSpecNode>, LineBreakOutcome> {
     if st.errors.no_shrink_error_yet {
         st.errors.no_shrink_error_yet = false;
-        crate::output::print_err(st, c"Infinite glue shrinkage found in a paragraph");
+        crate::output::print_err(st, "Infinite glue shrinkage found in a paragraph");
         st.errors.help(&[
             "The paragraph just ended includes some glue that has",
             r"infinite shrinkability, e.g., `\hskip 0pt minus 1fil'.",
@@ -1331,7 +1329,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakO
             }
 
             let Ok(node) = st.mem.classify(MemIdx::new(cur)) else {
-                return Err(LineBreakOutcome::Confusion(c"paragraph"));
+                return Err(LineBreakOutcome::Confusion("paragraph"));
             };
             match node {
                 AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
@@ -1388,7 +1386,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakO
                             st.linebreak.disc_width += st
                                 .mem
                                 .disc_node_width(&mut st.fonts, s)
-                                .map_err(|_| LineBreakOutcome::Confusion(c"disc3"))?;
+                                .map_err(|_| LineBreakOutcome::Confusion("disc3"))?;
                             s = s.link(&st.mem);
                         }
                         st.scanner.active_width[1] += st.linebreak.disc_width;
@@ -1402,7 +1400,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakO
                         st.scanner.active_width[1] += st
                             .mem
                             .disc_node_width(&mut st.fonts, s)
-                            .map_err(|_| LineBreakOutcome::Confusion(c"disc4"))?;
+                            .map_err(|_| LineBreakOutcome::Confusion("disc4"))?;
                         s = s.link(&st.mem);
                     }
 
@@ -1422,7 +1420,7 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakO
                     line_break_try_break(st, pen.penalty(&st.mem), UNHYPHENATED, None)?;
                 }
                 AnyNode::Mark(_) | AnyNode::Ins(_) | AnyNode::Adjust(_) => {}
-                _ => return Err(LineBreakOutcome::Confusion(c"paragraph")),
+                _ => return Err(LineBreakOutcome::Confusion("paragraph")),
             }
 
             prev_breakable = node.precedes_break()
@@ -2113,10 +2111,10 @@ pub(crate) enum PostLineBreakOutcome {
     Done,
     Node(NodeRecycleAbort),
     PdfError {
-        proc_name: &'static std::ffi::CStr,
-        message: &'static std::ffi::CStr,
+        proc_name: &'static str,
+        message: &'static str,
     },
-    Confusion(&'static std::ffi::CStr),
+    Confusion(&'static str),
 }
 
 impl PostLineBreakOutcome {
@@ -2128,12 +2126,12 @@ impl PostLineBreakOutcome {
             PostLineBreakOutcome::Node(e) => e.into_engine_abort(),
             PostLineBreakOutcome::PdfError { proc_name, message } => {
                 crate::errors::EngineAbort::PdfError {
-                    t: proc_name.as_ptr(),
-                    p: message.as_ptr(),
+                    t: proc_name,
+                    p: message,
                 }
             }
             PostLineBreakOutcome::Confusion(message) => {
-                crate::errors::EngineAbort::Confusion(message.as_ptr())
+                crate::errors::EngineAbort::Confusion(message)
             }
         }
     }
@@ -2161,8 +2159,8 @@ fn post_line_break(st: &mut EngineState, d: bool) -> PostLineBreakOutcome {
             Err(PostLineAbort::Node(e)) => return PostLineBreakOutcome::Node(e),
             Err(PostLineAbort::HlistStackFailure) => {
                 return PostLineBreakOutcome::PdfError {
-                    proc_name: c"insert_right_margin_kern",
-                    message: c"hlist stack failure",
+                    proc_name: "insert_right_margin_kern",
+                    message: "hlist stack failure",
                 }
             }
         };
@@ -2195,7 +2193,7 @@ fn post_line_break(st: &mut EngineState, d: bool) -> PostLineBreakOutcome {
     }
 
     if cur_line != st.linebreak.best_line || !TEMP_HEAD.link(&st.mem).is_null() {
-        return PostLineBreakOutcome::Confusion(c"line breaking");
+        return PostLineBreakOutcome::Confusion("line breaking");
     }
 
     st.input.cur_list.prev_graf = st.linebreak.best_line - 1;
@@ -2213,8 +2211,8 @@ impl TryBreakAbort {
         match self {
             TryBreakAbort::Node(e) => e.into_engine_abort(),
             TryBreakAbort::HlistStackFailure => crate::errors::EngineAbort::PdfError {
-                t: c"total_pw".as_ptr(),
-                p: c"hlist stack failure".as_ptr(),
+                t: "total_pw",
+                p: "hlist stack failure",
             },
         }
     }
@@ -2276,13 +2274,13 @@ impl MemState {
             for _ in 0..cur_disc.subtype(self) {
                 v = v.link(self);
                 linebreak.break_width[1] -= self.disc_node_width(fonts, v).map_err(|whatsit| {
-                    NodeRecycleAbort::Confusion(if whatsit { c"disc1a" } else { c"disc1" })
+                    NodeRecycleAbort::Confusion(if whatsit { "disc1a" } else { "disc1" })
                 })?;
             }
 
             while !s.is_null() {
                 linebreak.break_width[1] += self.disc_node_width(fonts, s).map_err(|whatsit| {
-                    NodeRecycleAbort::Confusion(if whatsit { c"disc2a" } else { c"disc2" })
+                    NodeRecycleAbort::Confusion(if whatsit { "disc2a" } else { "disc2" })
                 })?;
                 s = s.link(self);
             }
@@ -2693,7 +2691,7 @@ impl MemState {
 pub(crate) enum HyphNativeAbort {
     Recycle(NodeRecycleAbort),
     NativeChar(crate::fonts::NativeCharAbort),
-    Confusion(&'static std::ffi::CStr),
+    Confusion(&'static str),
 }
 
 impl HyphNativeAbort {
@@ -2701,7 +2699,7 @@ impl HyphNativeAbort {
         match self {
             HyphNativeAbort::Recycle(e) => e.into_engine_abort(),
             HyphNativeAbort::NativeChar(nc) => nc.into_engine_abort(),
-            HyphNativeAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
+            HyphNativeAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg),
         }
     }
 }
@@ -2711,20 +2709,20 @@ pub(crate) enum HyphenateAbort {
     Native(HyphNativeAbort),
     NewCharacter(crate::main_control::NewCharacterAbort),
     Recycle(NodeRecycleAbort),
-    Confusion(&'static std::ffi::CStr),
+    Confusion(&'static str),
 }
 
 impl HyphenateAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             HyphenateAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
-                what: c"main memory size".as_ptr(),
+                what: "main memory size",
                 n: MEM_TOP + 1,
             },
             HyphenateAbort::Native(a) => a.into_engine_abort(),
             HyphenateAbort::NewCharacter(nc) => nc.into_engine_abort(),
             HyphenateAbort::Recycle(e) => e.into_engine_abort(),
-            HyphenateAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
+            HyphenateAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg),
         }
     }
 }

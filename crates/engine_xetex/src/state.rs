@@ -183,7 +183,8 @@ pub(crate) struct InputClusterState {
     pub name_length16: i32,
     pub read_open: [u8; 17],
     pub read_file: [InputSlot; 16],
-    pub name_of_file: Vec<libc::c_char>,
+    /// NUL-terminated, or empty before the first `pack_file_name`.
+    pub name_of_file: Vec<u8>,
     pub name_of_file16: Vec<u16>,
     /// Owned name of the most recently opened input file.
     pub name_of_input_file: Option<std::ffi::CString>,
@@ -1387,7 +1388,7 @@ pub(crate) struct ShipoutState {
     pub write_file: [usize; 16],
     pub write_open: [bool; 18],
     /// Packed NUL-terminated names for bridge-local `\write` handles.
-    pub write_name: [Vec<libc::c_char>; 16],
+    pub write_name: [Vec<u8>; 16],
     /// Code units emitted before the current replay fence.
     pub write_prefix: [Vec<i32>; 16],
     pub rust_stdout: usize,
@@ -1773,6 +1774,22 @@ impl InputClusterState {
     #[inline]
     pub(crate) fn buffer_in_use(&self) -> i32 {
         self.max_buf_stack.max(self.last).max(self.first) + 1
+    }
+
+    /// `name_of_file` without its NUL.
+    pub(crate) fn name_of_file_bytes(&self) -> &[u8] {
+        self.name_of_file_cstr()
+            .map_or(&[], std::ffi::CStr::to_bytes)
+    }
+
+    pub(crate) fn name_of_file_cstr(&self) -> Option<&std::ffi::CStr> {
+        std::ffi::CStr::from_bytes_until_nul(&self.name_of_file).ok()
+    }
+
+    /// `name_of_file` for C callees, null before the first `pack_file_name`.
+    pub(crate) fn name_of_file_ptr(&self) -> *const libc::c_char {
+        self.name_of_file_cstr()
+            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
     }
 
     pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {

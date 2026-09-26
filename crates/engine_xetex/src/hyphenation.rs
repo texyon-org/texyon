@@ -25,14 +25,11 @@ pub(crate) enum TrieAbort {
 impl TrieAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         let (what, n) = match self {
-            TrieAbort::Patterns(n) => (c"pattern memory", n),
-            TrieAbort::Ops(n) => (c"pattern memory ops", n),
-            TrieAbort::OpsPerLanguage(n) => (c"pattern memory ops per language", n),
+            TrieAbort::Patterns(n) => ("pattern memory", n),
+            TrieAbort::Ops(n) => ("pattern memory ops", n),
+            TrieAbort::OpsPerLanguage(n) => ("pattern memory ops per language", n),
         };
-        crate::errors::EngineAbort::Overflow {
-            what: what.as_ptr(),
-            n,
-        }
+        crate::errors::EngineAbort::Overflow { what, n }
     }
 }
 
@@ -493,8 +490,8 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), MainControlAbort>
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
     if !st.hyph.trie_not_ready {
-        crate::output::error_here_with_diagnostic(st, c"Too late for ".as_ptr());
-        crate::output::print_esc_cstr(st, c"patterns".as_ptr());
+        crate::output::error_here_with_diagnostic(st, "Too late for ");
+        crate::output::print_esc(st, "patterns");
         raise_error(
             st,
             &["All patterns must be given before typesetting begins."],
@@ -523,7 +520,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), MainControlAbort>
                     } else {
                         st.scanner.cur_chr = st.eqtb.lc_code(cur_chr);
                         if st.scanner.cur_chr == 0 {
-                            crate::output::error_here_with_diagnostic(st, c"Nonletter".as_ptr());
+                            crate::output::error_here_with_diagnostic(st, "Nonletter");
                             raise_error(st, &[APPENDIX_H])?;
                         }
                     }
@@ -547,10 +544,7 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), MainControlAbort>
                 if k > 0 {
                     let (q, op, duplicate) = st.hyph.insert_pattern_word(k)?;
                     if duplicate {
-                        crate::output::error_here_with_diagnostic(
-                            st,
-                            c"Duplicate pattern".as_ptr(),
-                        );
+                        crate::output::error_here_with_diagnostic(st, "Duplicate pattern");
                         raise_error(st, &[APPENDIX_H])?;
                     }
                     st.hyph.trie_o[q as usize] = op;
@@ -565,8 +559,8 @@ pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), MainControlAbort>
                 digit_sensed = false;
             }
             _ => {
-                crate::output::error_here_with_diagnostic(st, c"Bad ".as_ptr());
-                crate::output::print_esc_cstr(st, c"patterns".as_ptr());
+                crate::output::error_here_with_diagnostic(st, "Bad ");
+                crate::output::print_esc(st, "patterns");
                 raise_error(st, &[APPENDIX_H])?;
             }
         }
@@ -612,7 +606,7 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), MainContro
                         st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, st.scanner.cur_chr);
 
                         if st.hyph.hc[0] == 0 {
-                            crate::output::error_here_with_diagnostic(st, c"Not a letter".as_ptr());
+                            crate::output::error_here_with_diagnostic(st, "Not a letter");
                             raise_error(
                                 st,
                                 &[
@@ -653,9 +647,9 @@ pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), MainContro
                     break;
                 }
                 _ => {
-                    crate::output::error_here_with_diagnostic(st, c"Improper ".as_ptr());
-                    crate::output::print_esc_cstr(st, c"hyphenation".as_ptr());
-                    crate::output::print_cstr(st, c" will be flushed".as_ptr());
+                    crate::output::error_here_with_diagnostic(st, "Improper ");
+                    crate::output::print_esc(st, "hyphenation");
+                    crate::output::print(st, " will be flushed");
                     raise_error(
                         st,
                         &[
@@ -681,7 +675,7 @@ fn store_hyph_exception(
     if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
         return Err(MainControlAbort::Input(
             crate::input::InputAbort::Overflow {
-                what: c"pool size".as_ptr(),
+                what: "pool size",
                 n: st.strings.pool_size - st.strings.init_pool_ptr,
             },
         ));
@@ -705,7 +699,7 @@ fn store_hyph_exception(
     if st.hyph.hyph_count == st.hyph.hyph_size || st.hyph.hyph_next == 0 {
         return Err(MainControlAbort::Input(
             crate::input::InputAbort::Overflow {
-                what: c"exception dictionary".as_ptr(),
+                what: "exception dictionary",
                 n: st.hyph.hyph_size,
             },
         ));

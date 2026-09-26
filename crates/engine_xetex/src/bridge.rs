@@ -28,6 +28,7 @@ pub(crate) unsafe fn set_bridge_state(ptr: *mut libc::c_void) {
 }
 
 extern "C" {
+    fn _ttbc_set_error_message(message: *const libc::c_char);
     fn ttbc_global_engine_enter(api: *mut libc::c_void) -> *mut libc::c_void;
     fn ttbc_global_engine_exit();
 }
@@ -242,10 +243,6 @@ pub(crate) unsafe fn ttstub_diag_finish(diag: *mut libc::c_void) {
     ttbc_diag_finish(es(), diag as *mut Diagnostic);
 }
 
-pub(crate) unsafe fn issue_warning_cstr(text: *const libc::c_char) {
-    ttbc_issue_warning(es(), text);
-}
-
 pub(crate) unsafe fn issue_warning_str(text: &str) {
     let ctext = std::ffi::CString::new(text).unwrap_or_default();
     ttbc_issue_warning(es(), ctext.as_ptr());
@@ -264,4 +261,12 @@ pub(crate) unsafe fn ttstub_get_file_md5(
     digest: *mut u8,
 ) -> libc::c_int {
     ttbc_get_file_md5(es(), path, digest)
+}
+
+/// Surfaces `message` as the run's abort message. A message with a NUL is dropped.
+pub(crate) fn set_error_message(message: impl Into<Vec<u8>>) {
+    if let Ok(msg) = std::ffi::CString::new(message) {
+        // SAFETY: `msg` is NUL-terminated and the callee copies it.
+        unsafe { _ttbc_set_error_message(msg.as_ptr()) };
+    }
 }

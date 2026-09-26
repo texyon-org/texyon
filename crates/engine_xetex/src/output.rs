@@ -1,9 +1,8 @@
 use std::ffi::CStr;
 
 use crate::bridge::{
-    diag_append_cstr, diag_append_str, issue_warning_cstr, issue_warning_str,
-    ttbc_diag_begin_error_ptr, ttbc_diag_begin_warning_ptr, ttstub_diag_finish,
-    ttstub_output_flush, ttstub_output_putc,
+    diag_append_cstr, diag_append_str, issue_warning_str, ttbc_diag_begin_error_ptr,
+    ttbc_diag_begin_warning_ptr, ttstub_diag_finish, ttstub_output_flush, ttstub_output_putc,
 };
 use crate::cmd::{
     ABOVE, ACCENT, ADVANCE, AFTER_ASSIGNMENT, AFTER_GROUP, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN,
@@ -159,7 +158,7 @@ pub(crate) fn print_hex(st: &mut EngineState, n: i32) {
 }
 
 pub(crate) fn print_ucs_code(st: &mut EngineState, n: i32) {
-    print_cstr(st, c"U+".as_ptr());
+    print(st, "U+");
     let mut k = store_digits(st, n, 16, 0);
     while k < 4 {
         st.errors.dig[k as usize] = 0;
@@ -168,9 +167,31 @@ pub(crate) fn print_ucs_code(st: &mut EngineState, n: i32) {
     print_the_digs(st, k);
 }
 
-pub(crate) fn print_cstr(st: &mut EngineState, str_ptr: *const libc::c_char) {
-    let s = unsafe { CStr::from_ptr(str_ptr) };
-    print_bytes(st, s.to_bytes());
+/// A printable TeX string: a pool string number, or literal bytes printed one
+/// `print_char` each.
+pub(crate) trait TexStr: Copy {
+    fn print_to(self, st: &mut EngineState);
+}
+
+impl TexStr for i32 {
+    #[inline]
+    fn print_to(self, st: &mut EngineState) {
+        print_pool_str(st, self);
+    }
+}
+
+impl TexStr for &str {
+    #[inline]
+    fn print_to(self, st: &mut EngineState) {
+        print_bytes(st, self.as_bytes());
+    }
+}
+
+impl TexStr for &[u8] {
+    #[inline]
+    fn print_to(self, st: &mut EngineState) {
+        print_bytes(st, self);
+    }
 }
 
 fn print_bytes(st: &mut EngineState, bytes: &[u8]) {
@@ -185,21 +206,7 @@ fn at_line_start(st: &EngineState) -> bool {
         || (st.shipout.file_offset > 0 && sel >= SELECTOR_LOG_ONLY))
 }
 
-pub(crate) fn print_nl_cstr(st: &mut EngineState, str_ptr: *const libc::c_char) {
-    if !at_line_start(st) {
-        print_ln(st);
-    }
-    print_cstr(st, str_ptr);
-}
-
-pub(crate) fn print_nl_str(st: &mut EngineState, s: &str) {
-    if !at_line_start(st) {
-        print_ln(st);
-    }
-    print_bytes(st, s.as_bytes());
-}
-
-pub(crate) fn print_nl(st: &mut EngineState, s: i32) {
+pub(crate) fn print_nl(st: &mut EngineState, s: impl TexStr) {
     if !at_line_start(st) {
         print_ln(st);
     }
@@ -213,18 +220,9 @@ fn print_escape_char(st: &mut EngineState) {
     }
 }
 
-pub(crate) fn print_esc_cstr(st: &mut EngineState, s: *const libc::c_char) {
-    print_escape_char(st);
-    print_cstr(st, s);
-}
-
-pub(crate) fn print_esc(st: &mut EngineState, s: i32) {
+pub(crate) fn print_esc(st: &mut EngineState, s: impl TexStr) {
     print_escape_char(st);
     print(st, s);
-}
-
-fn esc(st: &mut EngineState, s: &CStr) {
-    print_esc_cstr(st, s.as_ptr());
 }
 
 pub(crate) fn print_roman_int(st: &mut EngineState, mut n: i32) {
@@ -425,13 +423,17 @@ pub(crate) fn print_char(st: &mut EngineState, s: i32) {
     }
 }
 
-pub(crate) fn print(st: &mut EngineState, s: i32) {
+pub(crate) fn print(st: &mut EngineState, s: impl TexStr) {
+    s.print_to(st);
+}
+
+fn print_pool_str(st: &mut EngineState, s: i32) {
     if s >= st.strings.str_ptr {
-        return print_cstr(st, c"???".as_ptr());
+        return print(st, "???");
     }
     if s <= BIGGEST_CHAR {
         if s < 0 {
-            return print_cstr(st, c"???".as_ptr());
+            return print(st, "???");
         }
         if st.shipout.selector > SELECTOR_PSEUDO {
             print_char(st, s);
@@ -509,7 +511,7 @@ fn current_file_line(st: &EngineState) -> Option<(i32, i32)> {
 
 fn diagnostic_print_file_line(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
     let Some((name, line)) = current_file_line(st) else {
-        unsafe { diag_append_cstr(diagnostic, c"!".as_ptr()) };
+        unsafe { diag_append_str(diagnostic, "!") };
         return;
     };
     let filename = unsafe { st.strings.gettexstring(name) };
@@ -529,20 +531,20 @@ pub(crate) fn diagnostic_begin_capture_warning_here(st: &mut EngineState) -> *mu
 
 pub(crate) fn error_here_with_diagnostic(
     st: &mut EngineState,
-    message: *const libc::c_char,
+    message: &str,
 ) -> *mut std::ffi::c_void {
     let error = ttbc_diag_begin_error_ptr();
     diagnostic_print_file_line(st, error);
-    unsafe { diag_append_cstr(error, message) };
+    unsafe { diag_append_str(error, message) };
     print_error_prefix(st);
-    print_cstr(st, message);
+    print(st, message);
     capture_to_diagnostic(st, error);
     error
 }
 
 /// TeX's `print_err`: starts an error with `message` and closes its diagnostic.
-pub(crate) fn print_err(st: &mut EngineState, message: &std::ffi::CStr) {
-    error_here_with_diagnostic(st, message.as_ptr());
+pub(crate) fn print_err(st: &mut EngineState, message: &str) {
+    error_here_with_diagnostic(st, message);
     capture_to_diagnostic(st, std::ptr::null_mut());
 }
 
@@ -551,35 +553,35 @@ pub(crate) fn print_error_prefix(st: &mut EngineState) {
     if st.config.file_line_error_style_p != 0 {
         print_file_line(st);
     } else {
-        print_nl_cstr(st, c"! ".as_ptr());
+        print_nl(st, "! ");
     }
 }
 
 pub(crate) fn print_file_line(st: &mut EngineState) {
     let Some((name, line)) = current_file_line(st) else {
-        print_nl_cstr(st, c"! ".as_ptr());
+        print_nl(st, "! ");
         return;
     };
-    print_nl_cstr(st, c"".as_ptr());
+    print_nl(st, "");
     print(st, name);
     print_char(st, b':' as i32);
     print_int(st, line);
-    print_cstr(st, c": ".as_ptr());
+    print(st, ": ");
 }
 
 pub(crate) fn print_size(st: &mut EngineState, s: i32) {
-    esc(
+    print_esc(
         st,
         match s {
-            TEXT_SIZE => c"textfont",
-            SCRIPT_SIZE => c"scriptfont",
-            _ => c"scriptscriptfont",
+            TEXT_SIZE => "textfont",
+            SCRIPT_SIZE => "scriptfont",
+            _ => "scriptscriptfont",
         },
     );
 }
 
-fn print_write_whatsit(st: &mut EngineState, s: &CStr, p: NodePtr<WhatsitNode>) {
-    esc(st, s);
+fn print_write_whatsit(st: &mut EngineState, s: &str, p: NodePtr<WhatsitNode>) {
+    print_esc(st, s);
     let v = p.write_stream(&st.mem);
     if v < 16 {
         print_int(st, v);
@@ -654,8 +656,8 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
     if p < HASH_BASE {
         if p >= SINGLE_BASE {
             if p == NULL_CS {
-                esc(st, c"csname");
-                esc(st, c"endcsname");
+                print_esc(st, "csname");
+                print_esc(st, "endcsname");
                 print_char(st, b' ' as i32);
             } else {
                 print_esc(st, p - SINGLE_BASE);
@@ -664,14 +666,14 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
                 }
             }
         } else if p < ACTIVE_BASE {
-            esc(st, c"IMPOSSIBLE.");
+            print_esc(st, "IMPOSSIBLE.");
         } else {
             print_char(st, p - 1);
         }
     } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > st.eqtb.eqtb_top {
-        esc(st, c"IMPOSSIBLE.");
+        print_esc(st, "IMPOSSIBLE.");
     } else if st.eqtb.hash_s1(p) >= st.strings.str_ptr {
-        esc(st, c"NONEXISTENT.");
+        print_esc(st, "NONEXISTENT.");
     } else {
         print_esc(st, cs_text(st, p));
         print_char(st, b' ' as i32);
@@ -687,8 +689,8 @@ pub(crate) fn sprint_cs(st: &mut EngineState, p: i32) {
     } else if p < NULL_CS {
         print_esc(st, p - SINGLE_BASE);
     } else {
-        esc(st, c"csname");
-        esc(st, c"endcsname");
+        print_esc(st, "csname");
+        print_esc(st, "endcsname");
     }
 }
 
@@ -737,7 +739,7 @@ pub(crate) fn begin_diagnostic(st: &mut EngineState) {
 }
 
 pub(crate) fn end_diagnostic(st: &mut EngineState, blank_line: bool) {
-    print_nl_cstr(st, c"".as_ptr());
+    print_nl(st, "");
     if blank_line {
         print_ln(st);
     }
@@ -750,17 +752,17 @@ fn note_warning_issued(st: &mut EngineState) {
     }
 }
 
-fn mode_name(m: i32) -> Option<&'static CStr> {
+fn mode_name(m: i32) -> Option<&'static str> {
     let group = MAX_COMMAND as i32 + 1;
     match m.signum() {
-        0 => Some(c"no mode"),
-        1 => [c"vertical mode", c"horizontal mode", c"display math mode"]
+        0 => Some("no mode"),
+        1 => ["vertical mode", "horizontal mode", "display math mode"]
             .get((m / group) as usize)
             .copied(),
         _ => [
-            c"internal vertical mode",
-            c"restricted horizontal mode",
-            c"math mode",
+            "internal vertical mode",
+            "restricted horizontal mode",
+            "math mode",
         ]
         .get((-m / group) as usize)
         .copied(),
@@ -769,50 +771,50 @@ fn mode_name(m: i32) -> Option<&'static CStr> {
 
 pub(crate) fn print_mode(st: &mut EngineState, m: i32) {
     if let Some(name) = mode_name(m) {
-        print_cstr(st, name.as_ptr());
+        print(st, name);
     }
 }
 
 pub(crate) fn print_in_mode(st: &mut EngineState, m: i32) {
     if let Some(name) = mode_name(m) {
-        print_cstr(st, c"' in ".as_ptr());
-        print_cstr(st, name.as_ptr());
+        print(st, "' in ");
+        print(st, name);
     }
 }
 
 pub(crate) fn print_group(st: &mut EngineState, e: bool) {
     let name = match st.save_stack.cur_group {
         GroupCode::BottomLevel => {
-            print_cstr(st, c"bottom level".as_ptr());
+            print(st, "bottom level");
             return;
         }
-        GroupCode::Simple => c"simple",
-        GroupCode::SemiSimple => c"semi simple",
-        GroupCode::Hbox => c"hbox",
-        GroupCode::AdjustedHbox => c"adjusted hbox",
-        GroupCode::Vbox => c"vbox",
-        GroupCode::Vtop => c"vtop",
-        GroupCode::Align => c"align",
-        GroupCode::NoAlign => c"no align",
-        GroupCode::Output => c"output",
-        GroupCode::Disc => c"disc",
-        GroupCode::Insert => c"insert",
-        GroupCode::Vcenter => c"vcenter",
-        GroupCode::Math => c"math",
-        GroupCode::MathChoice => c"math choice",
-        GroupCode::MathShift => c"math shift",
-        GroupCode::MathLeft => c"math left",
+        GroupCode::Simple => "simple",
+        GroupCode::SemiSimple => "semi simple",
+        GroupCode::Hbox => "hbox",
+        GroupCode::AdjustedHbox => "adjusted hbox",
+        GroupCode::Vbox => "vbox",
+        GroupCode::Vtop => "vtop",
+        GroupCode::Align => "align",
+        GroupCode::NoAlign => "no align",
+        GroupCode::Output => "output",
+        GroupCode::Disc => "disc",
+        GroupCode::Insert => "insert",
+        GroupCode::Vcenter => "vcenter",
+        GroupCode::Math => "math",
+        GroupCode::MathChoice => "math choice",
+        GroupCode::MathShift => "math shift",
+        GroupCode::MathLeft => "math left",
     };
-    print_cstr(st, name.as_ptr());
-    print_cstr(st, c" group (level ".as_ptr());
+    print(st, name);
+    print(st, " group (level ");
     print_int(st, st.save_stack.cur_level as i32);
     print_char(st, b')' as i32);
     let line_at = st.save_stack.saved(-1);
     if line_at != 0 {
         if e {
-            print_cstr(st, c" entered at line ".as_ptr());
+            print(st, " entered at line ");
         } else {
-            print_cstr(st, c" at line ".as_ptr());
+            print(st, " at line ");
         }
         print_int(st, line_at);
     }
@@ -826,11 +828,7 @@ pub(crate) fn token_show(st: &mut EngineState, p: impl crate::units::MemAddr) {
     }
 }
 
-pub(crate) fn print_spec(
-    st: &mut EngineState,
-    p: impl crate::units::MemAddr,
-    s: *const libc::c_char,
-) {
+pub(crate) fn print_spec(st: &mut EngineState, p: impl crate::units::MemAddr, s: Option<&str>) {
     let p = p.addr();
     let spec = (0..st.mem.lo_mem_max)
         .contains(&p)
@@ -840,171 +838,171 @@ pub(crate) fn print_spec(
         return;
     };
     print_scaled(st, gs.width(&st.mem).0);
-    if !s.is_null() {
-        print_cstr(st, s);
+    if let Some(s) = s {
+        print(st, s);
     }
     if gs.stretch(&st.mem).0 != 0 {
-        print_cstr(st, c" plus ".as_ptr());
+        print(st, " plus ");
         print_glue(st, gs.stretch(&st.mem).0, gs.stretch_order(&st.mem), s);
     }
     if gs.shrink(&st.mem).0 != 0 {
-        print_cstr(st, c" minus ".as_ptr());
+        print(st, " minus ");
         print_glue(st, gs.shrink(&st.mem).0, gs.shrink_order(&st.mem), s);
     }
 }
 
 pub(crate) fn print_skip_param(st: &mut EngineState, n: i32) {
     let name = match n {
-        0 => c"lineskip",
-        1 => c"baselineskip",
-        2 => c"parskip",
-        3 => c"abovedisplayskip",
-        4 => c"belowdisplayskip",
-        5 => c"abovedisplayshortskip",
-        6 => c"belowdisplayshortskip",
-        7 => c"leftskip",
-        8 => c"rightskip",
-        9 => c"topskip",
-        10 => c"splittopskip",
-        11 => c"tabskip",
-        12 => c"spaceskip",
-        13 => c"xspaceskip",
-        14 => c"parfillskip",
-        15 => c"XeTeXlinebreakskip",
-        16 => c"thinmuskip",
-        17 => c"medmuskip",
-        18 => c"thickmuskip",
-        _ => return print_cstr(st, c"[unknown glue parameter!]".as_ptr()),
+        0 => "lineskip",
+        1 => "baselineskip",
+        2 => "parskip",
+        3 => "abovedisplayskip",
+        4 => "belowdisplayskip",
+        5 => "abovedisplayshortskip",
+        6 => "belowdisplayshortskip",
+        7 => "leftskip",
+        8 => "rightskip",
+        9 => "topskip",
+        10 => "splittopskip",
+        11 => "tabskip",
+        12 => "spaceskip",
+        13 => "xspaceskip",
+        14 => "parfillskip",
+        15 => "XeTeXlinebreakskip",
+        16 => "thinmuskip",
+        17 => "medmuskip",
+        18 => "thickmuskip",
+        _ => return print(st, "[unknown glue parameter!]"),
     };
-    esc(st, name);
+    print_esc(st, name);
 }
 
 pub(crate) fn print_param(st: &mut EngineState, n: i32) {
     let name = match n {
-        0 => c"pretolerance",
-        1 => c"tolerance",
-        2 => c"linepenalty",
-        3 => c"hyphenpenalty",
-        4 => c"exhyphenpenalty",
-        5 => c"clubpenalty",
-        6 => c"widowpenalty",
-        7 => c"displaywidowpenalty",
-        8 => c"brokenpenalty",
-        9 => c"binoppenalty",
-        10 => c"relpenalty",
-        11 => c"predisplaypenalty",
-        12 => c"postdisplaypenalty",
-        13 => c"interlinepenalty",
-        14 => c"doublehyphendemerits",
-        15 => c"finalhyphendemerits",
-        16 => c"adjdemerits",
-        17 => c"mag",
-        18 => c"delimiterfactor",
-        19 => c"looseness",
-        20 => c"time",
-        21 => c"day",
-        22 => c"month",
-        23 => c"year",
-        24 => c"showboxbreadth",
-        25 => c"showboxdepth",
-        26 => c"hbadness",
-        27 => c"vbadness",
-        28 => c"pausing",
-        29 => c"tracingonline",
-        30 => c"tracingmacros",
-        31 => c"tracingstats",
-        32 => c"tracingparagraphs",
-        33 => c"tracingpages",
-        34 => c"tracingoutput",
-        35 => c"tracinglostchars",
-        36 => c"tracingcommands",
-        37 => c"tracingrestores",
-        38 => c"uchyph",
-        39 => c"outputpenalty",
-        40 => c"maxdeadcycles",
-        41 => c"hangafter",
-        42 => c"floatingpenalty",
-        43 => c"globaldefs",
-        44 => c"fam",
-        45 => c"escapechar",
-        46 => c"defaulthyphenchar",
-        47 => c"defaultskewchar",
-        48 => c"endlinechar",
-        49 => c"newlinechar",
-        50 => c"language",
-        51 => c"lefthyphenmin",
-        52 => c"righthyphenmin",
-        53 => c"holdinginserts",
-        54 => c"errorcontextlines",
-        55 => c"tracingstacklevels",
-        56 => c"tracingassigns",
-        57 => c"tracinggroups",
-        58 => c"tracingifs",
-        59 => c"tracingscantokens",
-        60 => c"tracingnesting",
-        61 => c"predisplaydirection",
-        62 => c"lastlinefit",
-        63 => c"savingvdiscards",
-        64 => c"savinghyphcodes",
-        65 => c"suppressfontnotfounderror",
-        67 => c"XeTeXlinebreakpenalty",
-        68 => c"XeTeXprotrudechars",
-        69 => c"TeXXeTstate",
-        70 => c"XeTeXdashbreakstate",
-        71 => c"XeTeXupwardsmode",
-        72 => c"XeTeXuseglyphmetrics",
-        73 => c"XeTeXinterchartokenstate",
-        74 => c"XeTeXinputnormalization",
-        77 => c"XeTeXtracingfonts",
-        78 => c"XeTeXinterwordspaceshaping",
-        79 => c"XeTeXgenerateactualtext",
-        80 => c"XeTeXhyphenatablelength",
-        81 => c"synctex",
-        82 => c"pdfoutput",
-        _ => return print_cstr(st, c"[unknown integer parameter!]".as_ptr()),
+        0 => "pretolerance",
+        1 => "tolerance",
+        2 => "linepenalty",
+        3 => "hyphenpenalty",
+        4 => "exhyphenpenalty",
+        5 => "clubpenalty",
+        6 => "widowpenalty",
+        7 => "displaywidowpenalty",
+        8 => "brokenpenalty",
+        9 => "binoppenalty",
+        10 => "relpenalty",
+        11 => "predisplaypenalty",
+        12 => "postdisplaypenalty",
+        13 => "interlinepenalty",
+        14 => "doublehyphendemerits",
+        15 => "finalhyphendemerits",
+        16 => "adjdemerits",
+        17 => "mag",
+        18 => "delimiterfactor",
+        19 => "looseness",
+        20 => "time",
+        21 => "day",
+        22 => "month",
+        23 => "year",
+        24 => "showboxbreadth",
+        25 => "showboxdepth",
+        26 => "hbadness",
+        27 => "vbadness",
+        28 => "pausing",
+        29 => "tracingonline",
+        30 => "tracingmacros",
+        31 => "tracingstats",
+        32 => "tracingparagraphs",
+        33 => "tracingpages",
+        34 => "tracingoutput",
+        35 => "tracinglostchars",
+        36 => "tracingcommands",
+        37 => "tracingrestores",
+        38 => "uchyph",
+        39 => "outputpenalty",
+        40 => "maxdeadcycles",
+        41 => "hangafter",
+        42 => "floatingpenalty",
+        43 => "globaldefs",
+        44 => "fam",
+        45 => "escapechar",
+        46 => "defaulthyphenchar",
+        47 => "defaultskewchar",
+        48 => "endlinechar",
+        49 => "newlinechar",
+        50 => "language",
+        51 => "lefthyphenmin",
+        52 => "righthyphenmin",
+        53 => "holdinginserts",
+        54 => "errorcontextlines",
+        55 => "tracingstacklevels",
+        56 => "tracingassigns",
+        57 => "tracinggroups",
+        58 => "tracingifs",
+        59 => "tracingscantokens",
+        60 => "tracingnesting",
+        61 => "predisplaydirection",
+        62 => "lastlinefit",
+        63 => "savingvdiscards",
+        64 => "savinghyphcodes",
+        65 => "suppressfontnotfounderror",
+        67 => "XeTeXlinebreakpenalty",
+        68 => "XeTeXprotrudechars",
+        69 => "TeXXeTstate",
+        70 => "XeTeXdashbreakstate",
+        71 => "XeTeXupwardsmode",
+        72 => "XeTeXuseglyphmetrics",
+        73 => "XeTeXinterchartokenstate",
+        74 => "XeTeXinputnormalization",
+        77 => "XeTeXtracingfonts",
+        78 => "XeTeXinterwordspaceshaping",
+        79 => "XeTeXgenerateactualtext",
+        80 => "XeTeXhyphenatablelength",
+        81 => "synctex",
+        82 => "pdfoutput",
+        _ => return print(st, "[unknown integer parameter!]"),
     };
-    esc(st, name);
+    print_esc(st, name);
 }
 
 pub(crate) fn print_length_param(st: &mut EngineState, n: i32) {
     let name = match n {
-        0 => c"parindent",
-        1 => c"mathsurround",
-        2 => c"lineskiplimit",
-        3 => c"hsize",
-        4 => c"vsize",
-        5 => c"maxdepth",
-        6 => c"splitmaxdepth",
-        7 => c"boxmaxdepth",
-        8 => c"hfuzz",
-        9 => c"vfuzz",
-        10 => c"delimitershortfall",
-        11 => c"nulldelimiterspace",
-        12 => c"scriptspace",
-        13 => c"predisplaysize",
-        14 => c"displaywidth",
-        15 => c"displayindent",
-        16 => c"overfullrule",
-        17 => c"hangindent",
-        18 => c"hoffset",
-        19 => c"voffset",
-        20 => c"emergencystretch",
-        21 => c"pdfpagewidth",
-        22 => c"pdfpageheight",
-        _ => return print_cstr(st, c"[unknown dimen parameter!]".as_ptr()),
+        0 => "parindent",
+        1 => "mathsurround",
+        2 => "lineskiplimit",
+        3 => "hsize",
+        4 => "vsize",
+        5 => "maxdepth",
+        6 => "splitmaxdepth",
+        7 => "boxmaxdepth",
+        8 => "hfuzz",
+        9 => "vfuzz",
+        10 => "delimitershortfall",
+        11 => "nulldelimiterspace",
+        12 => "scriptspace",
+        13 => "predisplaysize",
+        14 => "displaywidth",
+        15 => "displayindent",
+        16 => "overfullrule",
+        17 => "hangindent",
+        18 => "hoffset",
+        19 => "voffset",
+        20 => "emergencystretch",
+        21 => "pdfpagewidth",
+        22 => "pdfpageheight",
+        _ => return print(st, "[unknown dimen parameter!]"),
     };
-    esc(st, name);
+    print_esc(st, name);
 }
 
 pub(crate) fn print_style(st: &mut EngineState, c: i32) {
     let name = match c / 2 {
-        0 => c"displaystyle",
-        1 => c"textstyle",
-        2 => c"scriptstyle",
-        3 => c"scriptscriptstyle",
-        _ => return print_cstr(st, c"Unknown style!".as_ptr()),
+        0 => "displaystyle",
+        1 => "textstyle",
+        2 => "scriptstyle",
+        3 => "scriptscriptstyle",
+        _ => return print(st, "Unknown style!"),
     };
-    esc(st, name);
+    print_esc(st, name);
 }
 
 /// Prints a character code, as a string number when it is one.
@@ -1017,7 +1015,7 @@ fn print_code(st: &mut EngineState, c: i32) {
 }
 
 fn print_fam_and_char(st: &mut EngineState, p: NodePtr<MathField>) {
-    esc(st, c"fam");
+    print_esc(st, "fam");
     print_int(st, p.fam(&st.mem));
     print_char(st, b' ' as i32);
     print_code(st, p.full_char(&st.mem));
@@ -1045,17 +1043,17 @@ pub(crate) fn print_rule_dimen(st: &mut EngineState, d: i32) {
 }
 
 /// Prints `d` with its fil/fill/filll order, or the unit `s` for finite glue.
-pub(crate) fn print_glue(st: &mut EngineState, d: i32, order: u16, s: *const libc::c_char) {
+pub(crate) fn print_glue(st: &mut EngineState, d: i32, order: u16, s: Option<&str>) {
     print_scaled(st, d);
     if !(NORMAL..=FILLL).contains(&order) {
-        print_cstr(st, c"foul".as_ptr());
+        print(st, "foul");
     } else if order > NORMAL {
-        print_cstr(st, c"fil".as_ptr());
+        print(st, "fil");
         for _ in 1..order {
             print_char(st, b'l' as i32);
         }
-    } else if !s.is_null() {
-        print_cstr(st, s);
+    } else if let Some(s) = s {
+        print(st, s);
     }
 }
 
@@ -1071,7 +1069,7 @@ fn print_font_char(st: &mut EngineState, font: i32, c: u16) {
 
 fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
     if p.0 > st.mem.mem_end {
-        esc(st, c"CLOBBERED.");
+        print_esc(st, "CLOBBERED.");
     } else {
         let ch = NodePtr::<CharNode>::at(p);
         print_font_char(st, ch.font(&st.mem).0, ch.character(&st.mem));
@@ -1081,7 +1079,7 @@ fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
 fn print_mark(st: &mut EngineState, p: MemPtr) {
     print_char(st, b'{' as i32);
     if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
-        esc(st, c"CLOBBERED.");
+        print_esc(st, "CLOBBERED.");
     } else {
         let head = p.link(&st.mem);
         let l = st.config.max_print_line - 10;
@@ -1098,60 +1096,60 @@ const SHOW_TOKENS: i32 = 5;
 const SHOW_IFS: i32 = 6;
 
 pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
-    let char_cmd = |st: &mut EngineState, s: &CStr| {
-        print_cstr(st, s.as_ptr());
+    let char_cmd = |st: &mut EngineState, s: &str| {
+        print(st, s);
         print_code(st, chr_code);
     };
 
     match cmd {
-        LEFT_BRACE => char_cmd(st, c"begin-group character "),
-        RIGHT_BRACE => char_cmd(st, c"end-group character "),
-        MATH_SHIFT => char_cmd(st, c"math shift character "),
-        MAC_PARAM => char_cmd(st, c"macro parameter character "),
-        SUP_MARK => char_cmd(st, c"superscript character "),
-        SUB_MARK => char_cmd(st, c"subscript character "),
-        ENDV => print_cstr(st, c"end of alignment template".as_ptr()),
-        SPACER => char_cmd(st, c"blank space "),
-        LETTER => char_cmd(st, c"the letter "),
-        OTHER_CHAR => char_cmd(st, c"the character "),
+        LEFT_BRACE => char_cmd(st, "begin-group character "),
+        RIGHT_BRACE => char_cmd(st, "end-group character "),
+        MATH_SHIFT => char_cmd(st, "math shift character "),
+        MAC_PARAM => char_cmd(st, "macro parameter character "),
+        SUP_MARK => char_cmd(st, "superscript character "),
+        SUB_MARK => char_cmd(st, "subscript character "),
+        ENDV => print(st, "end of alignment template"),
+        SPACER => char_cmd(st, "blank space "),
+        LETTER => char_cmd(st, "the letter "),
+        OTHER_CHAR => char_cmd(st, "the character "),
         ASSIGN_GLUE | ASSIGN_MU_GLUE => {
             if chr_code < SKIP_BASE {
                 print_skip_param(st, chr_code - GLUE_BASE);
             } else if chr_code < MU_SKIP_BASE {
-                esc(st, c"skip");
+                print_esc(st, "skip");
                 print_int(st, chr_code - SKIP_BASE);
             } else {
-                esc(st, c"muskip");
+                print_esc(st, "muskip");
                 print_int(st, chr_code - MU_SKIP_BASE);
             }
         }
         ASSIGN_TOKS => {
             if chr_code >= TOKS_BASE {
-                esc(st, c"toks");
+                print_esc(st, "toks");
                 print_int(st, chr_code - TOKS_BASE);
             } else {
                 let name = match chr_code - LOCAL_BASE {
-                    1 => c"output",
-                    2 => c"everypar",
-                    3 => c"everymath",
-                    4 => c"everydisplay",
-                    5 => c"everyhbox",
-                    6 => c"everyvbox",
-                    7 => c"everyjob",
-                    8 => c"everycr",
-                    10 => c"everyeof",
-                    11 => c"XeTeXinterchartoks",
-                    12 => c"TectonicCodaTokens",
-                    _ => c"errhelp",
+                    1 => "output",
+                    2 => "everypar",
+                    3 => "everymath",
+                    4 => "everydisplay",
+                    5 => "everyhbox",
+                    6 => "everyvbox",
+                    7 => "everyjob",
+                    8 => "everycr",
+                    10 => "everyeof",
+                    11 => "XeTeXinterchartoks",
+                    12 => "TectonicCodaTokens",
+                    _ => "errhelp",
                 };
-                esc(st, name);
+                print_esc(st, name);
             }
         }
         ASSIGN_INT => {
             if chr_code < COUNT_BASE {
                 print_param(st, chr_code - INT_BASE);
             } else {
-                esc(st, c"count");
+                print_esc(st, "count");
                 print_int(st, chr_code - COUNT_BASE);
             }
         }
@@ -1159,161 +1157,154 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             if chr_code < SCALED_BASE {
                 print_length_param(st, chr_code - DIMEN_BASE);
             } else {
-                esc(st, c"dimen");
+                print_esc(st, "dimen");
                 print_int(st, chr_code - SCALED_BASE);
             }
         }
-        ACCENT => esc(st, c"accent"),
-        ADVANCE => esc(st, c"advance"),
-        AFTER_ASSIGNMENT => esc(st, c"afterassignment"),
-        AFTER_GROUP => esc(st, c"aftergroup"),
-        ASSIGN_FONT_DIMEN => esc(st, c"fontdimen"),
-        BEGIN_GROUP => esc(st, c"begingroup"),
-        BREAK_PENALTY => esc(st, c"penalty"),
-        CHAR_NUM => esc(st, c"char"),
-        CS_NAME => esc(st, c"csname"),
-        DEF_FONT => esc(st, c"font"),
-        DELIM_NUM => esc(
+        ACCENT => print_esc(st, "accent"),
+        ADVANCE => print_esc(st, "advance"),
+        AFTER_ASSIGNMENT => print_esc(st, "afterassignment"),
+        AFTER_GROUP => print_esc(st, "aftergroup"),
+        ASSIGN_FONT_DIMEN => print_esc(st, "fontdimen"),
+        BEGIN_GROUP => print_esc(st, "begingroup"),
+        BREAK_PENALTY => print_esc(st, "penalty"),
+        CHAR_NUM => print_esc(st, "char"),
+        CS_NAME => print_esc(st, "csname"),
+        DEF_FONT => print_esc(st, "font"),
+        DELIM_NUM => print_esc(
             st,
             if chr_code == 1 {
-                c"Udelimiter"
+                "Udelimiter"
             } else {
-                c"delimiter"
+                "delimiter"
             },
         ),
-        DIVIDE => esc(st, c"divide"),
-        END_CS_NAME => esc(st, c"endcsname"),
-        END_GROUP => esc(st, c"endgroup"),
+        DIVIDE => print_esc(st, "divide"),
+        END_CS_NAME => print_esc(st, "endcsname"),
+        END_GROUP => print_esc(st, "endgroup"),
         EX_SPACE => print_esc(st, b' ' as i32),
-        EXPAND_AFTER => esc(
+        EXPAND_AFTER => print_esc(
             st,
             if chr_code == 0 {
-                c"expandafter"
+                "expandafter"
             } else {
-                c"unless"
+                "unless"
             },
         ),
-        HALIGN => esc(st, c"halign"),
-        HRULE => esc(st, c"hrule"),
-        IGNORE_SPACES => esc(
+        HALIGN => print_esc(st, "halign"),
+        HRULE => print_esc(st, "hrule"),
+        IGNORE_SPACES => print_esc(
             st,
             if chr_code == 0 {
-                c"ignorespaces"
+                "ignorespaces"
             } else {
-                c"primitive"
+                "primitive"
             },
         ),
-        INSERT => esc(st, c"insert"),
+        INSERT => print_esc(st, "insert"),
         ITAL_CORR => print_esc(st, b'/' as i32),
         MARK => {
-            esc(st, c"mark");
+            print_esc(st, "mark");
             if chr_code > 0 {
                 print_char(st, b's' as i32);
             }
         }
-        MATH_ACCENT => esc(
+        MATH_ACCENT => print_esc(
             st,
             if chr_code == 1 {
-                c"Umathaccent"
+                "Umathaccent"
             } else {
-                c"mathaccent"
+                "mathaccent"
             },
         ),
-        MATH_CHAR_NUM => esc(
+        MATH_CHAR_NUM => print_esc(
             st,
             match chr_code {
-                2 => c"Umathchar",
-                1 => c"Umathcharnum",
-                _ => c"mathchar",
+                2 => "Umathchar",
+                1 => "Umathcharnum",
+                _ => "mathchar",
             },
         ),
-        MATH_CHOICE => esc(st, c"mathchoice"),
-        MULTIPLY => esc(st, c"multiply"),
-        NO_ALIGN => esc(st, c"noalign"),
-        NO_BOUNDARY => esc(st, c"noboundary"),
-        NO_EXPAND => esc(
+        MATH_CHOICE => print_esc(st, "mathchoice"),
+        MULTIPLY => print_esc(st, "multiply"),
+        NO_ALIGN => print_esc(st, "noalign"),
+        NO_BOUNDARY => print_esc(st, "noboundary"),
+        NO_EXPAND => print_esc(
             st,
             if chr_code == 0 {
-                c"noexpand"
+                "noexpand"
             } else {
-                c"primitive"
+                "primitive"
             },
         ),
-        NON_SCRIPT => esc(st, c"nonscript"),
-        OMIT => esc(st, c"omit"),
-        RADICAL => esc(
-            st,
-            if chr_code == 1 {
-                c"Uradical"
-            } else {
-                c"radical"
-            },
-        ),
-        READ_TO_CS => esc(st, if chr_code == 0 { c"read" } else { c"readline" }),
-        RELAX => esc(st, c"relax"),
-        SET_BOX => esc(st, c"setbox"),
-        SET_PREV_GRAF => esc(st, c"prevgraf"),
+        NON_SCRIPT => print_esc(st, "nonscript"),
+        OMIT => print_esc(st, "omit"),
+        RADICAL => print_esc(st, if chr_code == 1 { "Uradical" } else { "radical" }),
+        READ_TO_CS => print_esc(st, if chr_code == 0 { "read" } else { "readline" }),
+        RELAX => print_esc(st, "relax"),
+        SET_BOX => print_esc(st, "setbox"),
+        SET_PREV_GRAF => print_esc(st, "prevgraf"),
         SET_SHAPE => {
             let name = if chr_code == LOCAL_BASE + LOCAL_PAR_SHAPE {
-                c"parshape"
+                "parshape"
             } else {
                 match chr_code - ETEX_PEN_BASE {
-                    0 => c"interlinepenalties",
-                    1 => c"clubpenalties",
-                    2 => c"widowpenalties",
-                    3 => c"displaywidowpenalties",
+                    0 => "interlinepenalties",
+                    1 => "clubpenalties",
+                    2 => "widowpenalties",
+                    3 => "displaywidowpenalties",
                     _ => return,
                 }
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        THE => esc(
+        THE => print_esc(
             st,
             match chr_code {
-                0 => c"the",
-                1 => c"unexpanded",
-                _ => c"detokenize",
+                0 => "the",
+                1 => "unexpanded",
+                _ => "detokenize",
             },
         ),
         TOKS_REGISTER => {
-            esc(st, c"toks");
+            print_esc(st, "toks");
             if chr_code != 0 {
                 if let Some(q) = NodePtr::<SaNode>::from_ptr(MemPtr(chr_code)) {
                     print_sa_num(st, q);
                 }
             }
         }
-        VADJUST => esc(st, c"vadjust"),
-        VALIGN => esc(
+        VADJUST => print_esc(st, "vadjust"),
+        VALIGN => print_esc(
             st,
             match chr_code {
-                0 => c"valign",
-                x if x == BEGIN_L_CODE as i32 => c"beginL",
-                x if x == END_L_CODE as i32 => c"endL",
-                x if x == BEGIN_R_CODE as i32 => c"beginR",
-                _ => c"endR",
+                0 => "valign",
+                x if x == BEGIN_L_CODE as i32 => "beginL",
+                x if x == END_L_CODE as i32 => "endL",
+                x if x == BEGIN_R_CODE as i32 => "beginR",
+                _ => "endR",
             },
         ),
-        VCENTER => esc(st, c"vcenter"),
-        VRULE => esc(st, c"vrule"),
-        PAR_END => esc(st, c"par"),
-        INPUT => esc(
+        VCENTER => print_esc(st, "vcenter"),
+        VRULE => print_esc(st, "vrule"),
+        PAR_END => print_esc(st, "par"),
+        INPUT => print_esc(
             st,
             match chr_code {
-                0 => c"input",
-                2 => c"scantokens",
-                _ => c"endinput",
+                0 => "input",
+                2 => "scantokens",
+                _ => "endinput",
             },
         ),
         TOP_BOT_MARK => {
             let name = match chr_code % MARKS_CODE {
-                1 => c"firstmark",
-                2 => c"botmark",
-                3 => c"splitfirstmark",
-                4 => c"splitbotmark",
-                _ => c"topmark",
+                1 => "firstmark",
+                2 => "botmark",
+                3 => "splitfirstmark",
+                4 => "splitbotmark",
+                _ => "topmark",
             };
-            esc(st, name);
+            print_esc(st, name);
             if chr_code >= MARKS_CODE {
                 print_char(st, b's' as i32);
             }
@@ -1326,296 +1317,289 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             };
             let the_cmd = sa.map_or(chr_code as u8, |q| q.sa_type(&st.mem) as u8);
             let name = match the_cmd {
-                INT_VAL => c"count",
-                DIMEN_VAL => c"dimen",
-                GLUE_VAL => c"skip",
-                _ => c"muskip",
+                INT_VAL => "count",
+                DIMEN_VAL => "dimen",
+                GLUE_VAL => "skip",
+                _ => "muskip",
             };
-            esc(st, name);
+            print_esc(st, name);
             if let Some(q) = sa {
                 print_sa_num(st, q);
             }
         }
-        SET_AUX => esc(
+        SET_AUX => print_esc(
             st,
             if chr_code == VMODE as i32 {
-                c"prevdepth"
+                "prevdepth"
             } else {
-                c"spacefactor"
+                "spacefactor"
             },
         ),
-        SET_PAGE_INT => esc(
+        SET_PAGE_INT => print_esc(
             st,
             match chr_code {
-                0 => c"deadcycles",
-                2 => c"interactionmode",
-                _ => c"insertpenalties",
+                0 => "deadcycles",
+                2 => "interactionmode",
+                _ => "insertpenalties",
             },
         ),
-        SET_BOX_DIMEN => esc(
+        SET_BOX_DIMEN => print_esc(
             st,
             match chr_code {
-                WIDTH_OFFSET => c"wd",
-                HEIGHT_OFFSET => c"ht",
-                _ => c"dp",
+                WIDTH_OFFSET => "wd",
+                HEIGHT_OFFSET => "ht",
+                _ => "dp",
             },
         ),
         LAST_ITEM => {
             let name = match chr_code {
-                x if x == INT_VAL as i32 => c"lastpenalty",
-                x if x == DIMEN_VAL as i32 => c"lastkern",
-                x if x == GLUE_VAL as i32 => c"lastskip",
-                INPUT_LINE_NO_CODE => c"inputlineno",
-                LAST_NODE_TYPE_CODE => c"lastnodetype",
-                ETEX_VERSION_CODE => c"eTeXversion",
-                XETEX_VERSION_CODE => c"XeTeXversion",
-                XETEX_COUNT_GLYPHS_CODE => c"XeTeXcountglyphs",
-                XETEX_COUNT_VARIATIONS_CODE => c"XeTeXcountvariations",
-                XETEX_VARIATION_CODE => c"XeTeXvariation",
-                XETEX_FIND_VARIATION_BY_NAME_CODE => c"XeTeXfindvariationbyname",
-                XETEX_VARIATION_MIN_CODE => c"XeTeXvariationmin",
-                XETEX_VARIATION_MAX_CODE => c"XeTeXvariationmax",
-                XETEX_VARIATION_DEFAULT_CODE => c"XeTeXvariationdefault",
-                XETEX_COUNT_FEATURES_CODE => c"XeTeXcountfeatures",
-                XETEX_FEATURE_CODE_CODE => c"XeTeXfeaturecode",
-                XETEX_FIND_FEATURE_BY_NAME_CODE => c"XeTeXfindfeaturebyname",
-                XETEX_IS_EXCLUSIVE_FEATURE_CODE => c"XeTeXisexclusivefeature",
-                XETEX_COUNT_SELECTORS_CODE => c"XeTeXcountselectors",
-                XETEX_SELECTOR_CODE_CODE => c"XeTeXselectorcode",
-                XETEX_FIND_SELECTOR_BY_NAME_CODE => c"XeTeXfindselectorbyname",
-                XETEX_IS_DEFAULT_SELECTOR_CODE => c"XeTeXisdefaultselector",
-                XETEX_OT_COUNT_SCRIPTS_CODE => c"XeTeXOTcountscripts",
-                XETEX_OT_COUNT_LANGUAGES_CODE => c"XeTeXOTcountlanguages",
-                XETEX_OT_COUNT_FEATURES_CODE => c"XeTeXOTcountfeatures",
-                XETEX_OT_SCRIPT_CODE => c"XeTeXOTscripttag",
-                XETEX_OT_LANGUAGE_CODE => c"XeTeXOTlanguagetag",
-                XETEX_OT_FEATURE_CODE => c"XeTeXOTfeaturetag",
-                XETEX_MAP_CHAR_TO_GLYPH_CODE => c"XeTeXcharglyph",
-                XETEX_GLYPH_INDEX_CODE => c"XeTeXglyphindex",
-                XETEX_GLYPH_BOUNDS_CODE => c"XeTeXglyphbounds",
-                XETEX_FONT_TYPE_CODE => c"XeTeXfonttype",
-                XETEX_FIRST_CHAR_CODE => c"XeTeXfirstfontchar",
-                XETEX_LAST_CHAR_CODE => c"XeTeXlastfontchar",
-                XETEX_PDF_PAGE_COUNT_CODE => c"XeTeXpdfpagecount",
-                CURRENT_GROUP_LEVEL_CODE => c"currentgrouplevel",
-                CURRENT_GROUP_TYPE_CODE => c"currentgrouptype",
-                CURRENT_IF_LEVEL_CODE => c"currentiflevel",
-                CURRENT_IF_TYPE_CODE => c"currentiftype",
-                CURRENT_IF_BRANCH_CODE => c"currentifbranch",
-                FONT_CHAR_WD_CODE => c"fontcharwd",
-                FONT_CHAR_HT_CODE => c"fontcharht",
-                FONT_CHAR_DP_CODE => c"fontchardp",
-                FONT_CHAR_IC_CODE => c"fontcharic",
-                PAR_SHAPE_LENGTH_CODE => c"parshapelength",
-                PAR_SHAPE_INDENT_CODE => c"parshapeindent",
-                PAR_SHAPE_DIMEN_CODE => c"parshapedimen",
-                x if x == ETEX_EXPR + INT_VAL as i32 => c"numexpr",
-                x if x == ETEX_EXPR + DIMEN_VAL as i32 => c"dimexpr",
-                x if x == ETEX_EXPR + GLUE_VAL as i32 => c"glueexpr",
-                x if x == ETEX_EXPR + MU_VAL as i32 => c"muexpr",
-                GLUE_STRETCH_ORDER_CODE => c"gluestretchorder",
-                GLUE_SHRINK_ORDER_CODE => c"glueshrinkorder",
-                GLUE_STRETCH_CODE => c"gluestretch",
-                GLUE_SHRINK_CODE => c"glueshrink",
-                MU_TO_GLUE_CODE => c"mutoglue",
-                GLUE_TO_MU_CODE => c"gluetomu",
-                PDF_LAST_X_POS_CODE => c"pdflastxpos",
-                PDF_LAST_Y_POS_CODE => c"pdflastypos",
-                ELAPSED_TIME_CODE => c"elapsedtime",
-                PDF_SHELL_ESCAPE_CODE => c"shellescape",
-                RANDOM_SEED_CODE => c"randomseed",
-                _ => c"badness",
+                x if x == INT_VAL as i32 => "lastpenalty",
+                x if x == DIMEN_VAL as i32 => "lastkern",
+                x if x == GLUE_VAL as i32 => "lastskip",
+                INPUT_LINE_NO_CODE => "inputlineno",
+                LAST_NODE_TYPE_CODE => "lastnodetype",
+                ETEX_VERSION_CODE => "eTeXversion",
+                XETEX_VERSION_CODE => "XeTeXversion",
+                XETEX_COUNT_GLYPHS_CODE => "XeTeXcountglyphs",
+                XETEX_COUNT_VARIATIONS_CODE => "XeTeXcountvariations",
+                XETEX_VARIATION_CODE => "XeTeXvariation",
+                XETEX_FIND_VARIATION_BY_NAME_CODE => "XeTeXfindvariationbyname",
+                XETEX_VARIATION_MIN_CODE => "XeTeXvariationmin",
+                XETEX_VARIATION_MAX_CODE => "XeTeXvariationmax",
+                XETEX_VARIATION_DEFAULT_CODE => "XeTeXvariationdefault",
+                XETEX_COUNT_FEATURES_CODE => "XeTeXcountfeatures",
+                XETEX_FEATURE_CODE_CODE => "XeTeXfeaturecode",
+                XETEX_FIND_FEATURE_BY_NAME_CODE => "XeTeXfindfeaturebyname",
+                XETEX_IS_EXCLUSIVE_FEATURE_CODE => "XeTeXisexclusivefeature",
+                XETEX_COUNT_SELECTORS_CODE => "XeTeXcountselectors",
+                XETEX_SELECTOR_CODE_CODE => "XeTeXselectorcode",
+                XETEX_FIND_SELECTOR_BY_NAME_CODE => "XeTeXfindselectorbyname",
+                XETEX_IS_DEFAULT_SELECTOR_CODE => "XeTeXisdefaultselector",
+                XETEX_OT_COUNT_SCRIPTS_CODE => "XeTeXOTcountscripts",
+                XETEX_OT_COUNT_LANGUAGES_CODE => "XeTeXOTcountlanguages",
+                XETEX_OT_COUNT_FEATURES_CODE => "XeTeXOTcountfeatures",
+                XETEX_OT_SCRIPT_CODE => "XeTeXOTscripttag",
+                XETEX_OT_LANGUAGE_CODE => "XeTeXOTlanguagetag",
+                XETEX_OT_FEATURE_CODE => "XeTeXOTfeaturetag",
+                XETEX_MAP_CHAR_TO_GLYPH_CODE => "XeTeXcharglyph",
+                XETEX_GLYPH_INDEX_CODE => "XeTeXglyphindex",
+                XETEX_GLYPH_BOUNDS_CODE => "XeTeXglyphbounds",
+                XETEX_FONT_TYPE_CODE => "XeTeXfonttype",
+                XETEX_FIRST_CHAR_CODE => "XeTeXfirstfontchar",
+                XETEX_LAST_CHAR_CODE => "XeTeXlastfontchar",
+                XETEX_PDF_PAGE_COUNT_CODE => "XeTeXpdfpagecount",
+                CURRENT_GROUP_LEVEL_CODE => "currentgrouplevel",
+                CURRENT_GROUP_TYPE_CODE => "currentgrouptype",
+                CURRENT_IF_LEVEL_CODE => "currentiflevel",
+                CURRENT_IF_TYPE_CODE => "currentiftype",
+                CURRENT_IF_BRANCH_CODE => "currentifbranch",
+                FONT_CHAR_WD_CODE => "fontcharwd",
+                FONT_CHAR_HT_CODE => "fontcharht",
+                FONT_CHAR_DP_CODE => "fontchardp",
+                FONT_CHAR_IC_CODE => "fontcharic",
+                PAR_SHAPE_LENGTH_CODE => "parshapelength",
+                PAR_SHAPE_INDENT_CODE => "parshapeindent",
+                PAR_SHAPE_DIMEN_CODE => "parshapedimen",
+                x if x == ETEX_EXPR + INT_VAL as i32 => "numexpr",
+                x if x == ETEX_EXPR + DIMEN_VAL as i32 => "dimexpr",
+                x if x == ETEX_EXPR + GLUE_VAL as i32 => "glueexpr",
+                x if x == ETEX_EXPR + MU_VAL as i32 => "muexpr",
+                GLUE_STRETCH_ORDER_CODE => "gluestretchorder",
+                GLUE_SHRINK_ORDER_CODE => "glueshrinkorder",
+                GLUE_STRETCH_CODE => "gluestretch",
+                GLUE_SHRINK_CODE => "glueshrink",
+                MU_TO_GLUE_CODE => "mutoglue",
+                GLUE_TO_MU_CODE => "gluetomu",
+                PDF_LAST_X_POS_CODE => "pdflastxpos",
+                PDF_LAST_Y_POS_CODE => "pdflastypos",
+                ELAPSED_TIME_CODE => "elapsedtime",
+                PDF_SHELL_ESCAPE_CODE => "shellescape",
+                RANDOM_SEED_CODE => "randomseed",
+                _ => "badness",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         CONVERT => {
             let name = match chr_code {
-                NUMBER_CODE => c"number",
-                ROMAN_NUMERAL_CODE => c"romannumeral",
-                STRING_CODE => c"string",
-                MEANING_CODE => c"meaning",
-                FONT_NAME_CODE => c"fontname",
-                ETEX_REVISION_CODE => c"eTeXrevision",
-                EXPANDED_CODE => c"expanded",
-                LEFT_MARGIN_KERN_CODE => c"leftmarginkern",
-                RIGHT_MARGIN_KERN_CODE => c"rightmarginkern",
-                PDF_CREATION_DATE_CODE => c"creationdate",
-                PDF_FILE_MOD_DATE_CODE => c"filemoddate",
-                PDF_FILE_SIZE_CODE => c"filesize",
-                PDF_MDFIVE_SUM_CODE => c"mdfivesum",
-                PDF_FILE_DUMP_CODE => c"filedump",
-                PDF_STRCMP_CODE => c"strcmp",
-                UNIFORM_DEVIATE_CODE => c"uniformdeviate",
-                NORMAL_DEVIATE_CODE => c"normaldeviate",
-                XETEX_REVISION_CODE => c"XeTeXrevision",
-                XETEX_VARIATION_NAME_CODE => c"XeTeXvariationname",
-                XETEX_FEATURE_NAME_CODE => c"XeTeXfeaturename",
-                XETEX_SELECTOR_NAME_CODE => c"XeTeXselectorname",
-                XETEX_GLYPH_NAME_CODE => c"XeTeXglyphname",
-                XETEX_UCHAR_CODE => c"Uchar",
-                XETEX_UCHARCAT_CODE => c"Ucharcat",
-                _ => c"jobname",
+                NUMBER_CODE => "number",
+                ROMAN_NUMERAL_CODE => "romannumeral",
+                STRING_CODE => "string",
+                MEANING_CODE => "meaning",
+                FONT_NAME_CODE => "fontname",
+                ETEX_REVISION_CODE => "eTeXrevision",
+                EXPANDED_CODE => "expanded",
+                LEFT_MARGIN_KERN_CODE => "leftmarginkern",
+                RIGHT_MARGIN_KERN_CODE => "rightmarginkern",
+                PDF_CREATION_DATE_CODE => "creationdate",
+                PDF_FILE_MOD_DATE_CODE => "filemoddate",
+                PDF_FILE_SIZE_CODE => "filesize",
+                PDF_MDFIVE_SUM_CODE => "mdfivesum",
+                PDF_FILE_DUMP_CODE => "filedump",
+                PDF_STRCMP_CODE => "strcmp",
+                UNIFORM_DEVIATE_CODE => "uniformdeviate",
+                NORMAL_DEVIATE_CODE => "normaldeviate",
+                XETEX_REVISION_CODE => "XeTeXrevision",
+                XETEX_VARIATION_NAME_CODE => "XeTeXvariationname",
+                XETEX_FEATURE_NAME_CODE => "XeTeXfeaturename",
+                XETEX_SELECTOR_NAME_CODE => "XeTeXselectorname",
+                XETEX_GLYPH_NAME_CODE => "XeTeXglyphname",
+                XETEX_UCHAR_CODE => "Uchar",
+                XETEX_UCHARCAT_CODE => "Ucharcat",
+                _ => "jobname",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         IF_TEST => {
             if chr_code >= UNLESS_CODE {
-                esc(st, c"unless");
+                print_esc(st, "unless");
             }
             let name = match (chr_code % UNLESS_CODE) as i16 {
-                IF_CAT_CODE => c"ifcat",
-                IF_INT_CODE => c"ifnum",
-                IF_DIM_CODE => c"ifdim",
-                IF_ODD_CODE => c"ifodd",
-                IF_VMODE_CODE => c"ifvmode",
-                IF_HMODE_CODE => c"ifhmode",
-                IF_MMODE_CODE => c"ifmmode",
-                IF_INNER_CODE => c"ifinner",
-                IF_VOID_CODE => c"ifvoid",
-                IF_HBOX_CODE => c"ifhbox",
-                IF_VBOX_CODE => c"ifvbox",
-                IFX_CODE => c"ifx",
-                IF_EOF_CODE => c"ifeof",
-                IF_TRUE_CODE => c"iftrue",
-                IF_FALSE_CODE => c"iffalse",
-                IF_CASE_CODE => c"ifcase",
-                IF_PRIMITIVE_CODE => c"ifprimitive",
-                IF_DEF_CODE => c"ifdefined",
-                IF_CS_CODE => c"ifcsname",
-                IF_FONT_CHAR_CODE => c"iffontchar",
-                IF_IN_CSNAME_CODE => c"ifincsname",
-                _ => c"if",
+                IF_CAT_CODE => "ifcat",
+                IF_INT_CODE => "ifnum",
+                IF_DIM_CODE => "ifdim",
+                IF_ODD_CODE => "ifodd",
+                IF_VMODE_CODE => "ifvmode",
+                IF_HMODE_CODE => "ifhmode",
+                IF_MMODE_CODE => "ifmmode",
+                IF_INNER_CODE => "ifinner",
+                IF_VOID_CODE => "ifvoid",
+                IF_HBOX_CODE => "ifhbox",
+                IF_VBOX_CODE => "ifvbox",
+                IFX_CODE => "ifx",
+                IF_EOF_CODE => "ifeof",
+                IF_TRUE_CODE => "iftrue",
+                IF_FALSE_CODE => "iffalse",
+                IF_CASE_CODE => "ifcase",
+                IF_PRIMITIVE_CODE => "ifprimitive",
+                IF_DEF_CODE => "ifdefined",
+                IF_CS_CODE => "ifcsname",
+                IF_FONT_CHAR_CODE => "iffontchar",
+                IF_IN_CSNAME_CODE => "ifincsname",
+                _ => "if",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         FI_OR_ELSE => {
             let name = if chr_code == FI_CODE as i32 {
-                c"fi"
+                "fi"
             } else if chr_code == OR_CODE as i32 {
-                c"or"
+                "or"
             } else {
-                c"else"
+                "else"
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         TAB_MARK => {
             if chr_code == SPAN_CODE {
-                esc(st, c"span");
+                print_esc(st, "span");
             } else {
-                char_cmd(st, c"alignment tab character ");
+                char_cmd(st, "alignment tab character ");
             }
         }
-        CAR_RET => esc(st, if chr_code == CR_CODE { c"cr" } else { c"crcr" }),
+        CAR_RET => print_esc(st, if chr_code == CR_CODE { "cr" } else { "crcr" }),
         SET_PAGE_DIMEN => {
             let name = match chr_code {
-                0 => c"pagegoal",
-                1 => c"pagetotal",
-                2 => c"pagestretch",
-                3 => c"pagefilstretch",
-                4 => c"pagefillstretch",
-                5 => c"pagefilllstretch",
-                6 => c"pageshrink",
-                _ => c"pagedepth",
+                0 => "pagegoal",
+                1 => "pagetotal",
+                2 => "pagestretch",
+                3 => "pagefilstretch",
+                4 => "pagefillstretch",
+                5 => "pagefilllstretch",
+                6 => "pageshrink",
+                _ => "pagedepth",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        STOP => esc(st, if chr_code == 1 { c"dump" } else { c"end" }),
-        HSKIP => esc(
+        STOP => print_esc(st, if chr_code == 1 { "dump" } else { "end" }),
+        HSKIP => print_esc(
             st,
             match chr_code {
-                SKIP_CODE => c"hskip",
-                FIL_CODE => c"hfil",
-                FILL_CODE => c"hfill",
-                SS_CODE => c"hss",
-                _ => c"hfilneg",
+                SKIP_CODE => "hskip",
+                FIL_CODE => "hfil",
+                FILL_CODE => "hfill",
+                SS_CODE => "hss",
+                _ => "hfilneg",
             },
         ),
-        VSKIP => esc(
+        VSKIP => print_esc(
             st,
             match chr_code {
-                SKIP_CODE => c"vskip",
-                FIL_CODE => c"vfil",
-                FILL_CODE => c"vfill",
-                SS_CODE => c"vss",
-                _ => c"vfilneg",
+                SKIP_CODE => "vskip",
+                FIL_CODE => "vfil",
+                FILL_CODE => "vfill",
+                SS_CODE => "vss",
+                _ => "vfilneg",
             },
         ),
-        MSKIP => esc(st, c"mskip"),
-        KERN => esc(st, c"kern"),
-        MKERN => esc(st, c"mkern"),
-        HMOVE => esc(
+        MSKIP => print_esc(st, "mskip"),
+        KERN => print_esc(st, "kern"),
+        MKERN => print_esc(st, "mkern"),
+        HMOVE => print_esc(
             st,
             if chr_code == 1 {
-                c"moveleft"
+                "moveleft"
             } else {
-                c"moveright"
+                "moveright"
             },
         ),
-        VMOVE => esc(st, if chr_code == 1 { c"raise" } else { c"lower" }),
+        VMOVE => print_esc(st, if chr_code == 1 { "raise" } else { "lower" }),
         MAKE_BOX => {
             let name = match chr_code {
-                BOX_CODE => c"box",
-                COPY_CODE => c"copy",
-                LAST_BOX_CODE => c"lastbox",
-                VSPLIT_CODE => c"vsplit",
-                VTOP_CODE => c"vtop",
-                x if x == VTOP_CODE + VMODE as i32 => c"vbox",
-                _ => c"hbox",
+                BOX_CODE => "box",
+                COPY_CODE => "copy",
+                LAST_BOX_CODE => "lastbox",
+                VSPLIT_CODE => "vsplit",
+                VTOP_CODE => "vtop",
+                x if x == VTOP_CODE + VMODE as i32 => "vbox",
+                _ => "hbox",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         LEADER_SHIP => {
             let name = match chr_code - A_LEADERS as i32 {
-                0 => c"leaders",
-                1 => c"cleaders",
-                2 => c"xleaders",
-                _ => c"shipout",
+                0 => "leaders",
+                1 => "cleaders",
+                2 => "xleaders",
+                _ => "shipout",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        START_PAR => esc(
-            st,
-            if chr_code == 0 {
-                c"noindent"
-            } else {
-                c"indent"
-            },
-        ),
+        START_PAR => print_esc(st, if chr_code == 0 { "noindent" } else { "indent" }),
         REMOVE_ITEM => {
             let name = if chr_code == NodeType::Glue as i32 {
-                c"unskip"
+                "unskip"
             } else if chr_code == NodeType::Kern as i32 {
-                c"unkern"
+                "unkern"
             } else {
-                c"unpenalty"
+                "unpenalty"
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        UN_HBOX => esc(
+        UN_HBOX => print_esc(
             st,
             if chr_code == COPY_CODE {
-                c"unhcopy"
+                "unhcopy"
             } else {
-                c"unhbox"
+                "unhbox"
             },
         ),
-        UN_VBOX => esc(
+        UN_VBOX => print_esc(
             st,
             match chr_code {
-                COPY_CODE => c"unvcopy",
-                LAST_BOX_CODE => c"pagediscards",
-                VSPLIT_CODE => c"splitdiscards",
-                _ => c"unvbox",
+                COPY_CODE => "unvcopy",
+                LAST_BOX_CODE => "pagediscards",
+                VSPLIT_CODE => "splitdiscards",
+                _ => "unvbox",
             },
         ),
         DISCRETIONARY => {
             if chr_code == 1 {
                 print_esc(st, b'-' as i32);
             } else {
-                esc(st, c"discretionary");
+                print_esc(st, "discretionary");
             }
         }
-        EQ_NO => esc(st, if chr_code == 1 { c"leqno" } else { c"eqno" }),
+        EQ_NO => print_esc(st, if chr_code == 1 { "leqno" } else { "eqno" }),
         MATH_COMP => {
             const ORD_NOAD: i32 = NodeType::OrdNoad as i32;
             const OP_NOAD: i32 = NodeType::OpNoad as i32;
@@ -1627,137 +1611,137 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             const INNER_NOAD: i32 = NodeType::InnerNoad as i32;
             const UNDER_NOAD: i32 = NodeType::UnderNoad as i32;
             let name = match chr_code {
-                ORD_NOAD => c"mathord",
-                OP_NOAD => c"mathop",
-                BIN_NOAD => c"mathbin",
-                REL_NOAD => c"mathrel",
-                OPEN_NOAD => c"mathopen",
-                CLOSE_NOAD => c"mathclose",
-                PUNCT_NOAD => c"mathpunct",
-                INNER_NOAD => c"mathinner",
-                UNDER_NOAD => c"underline",
-                _ => c"overline",
+                ORD_NOAD => "mathord",
+                OP_NOAD => "mathop",
+                BIN_NOAD => "mathbin",
+                REL_NOAD => "mathrel",
+                OPEN_NOAD => "mathopen",
+                CLOSE_NOAD => "mathclose",
+                PUNCT_NOAD => "mathpunct",
+                INNER_NOAD => "mathinner",
+                UNDER_NOAD => "underline",
+                _ => "overline",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        LIMIT_SWITCH => esc(
+        LIMIT_SWITCH => print_esc(
             st,
             match chr_code as u16 {
-                LIMITS => c"limits",
-                NO_LIMITS => c"nolimits",
-                _ => c"displaylimits",
+                LIMITS => "limits",
+                NO_LIMITS => "nolimits",
+                _ => "displaylimits",
             },
         ),
         MATH_STYLE => print_style(st, chr_code),
         ABOVE => {
             let name = match chr_code {
-                OVER_CODE => c"over",
-                ATOP_CODE => c"atop",
-                x if x == DELIMITED_CODE + ABOVE_CODE => c"abovewithdelims",
-                x if x == DELIMITED_CODE + OVER_CODE => c"overwithdelims",
-                x if x == DELIMITED_CODE + ATOP_CODE => c"atopwithdelims",
-                _ => c"above",
+                OVER_CODE => "over",
+                ATOP_CODE => "atop",
+                x if x == DELIMITED_CODE + ABOVE_CODE => "abovewithdelims",
+                x if x == DELIMITED_CODE + OVER_CODE => "overwithdelims",
+                x if x == DELIMITED_CODE + ATOP_CODE => "atopwithdelims",
+                _ => "above",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         LEFT_RIGHT => {
             let name = if chr_code == NodeType::LeftNoad as i32 {
-                c"left"
+                "left"
             } else if chr_code == MIDDLE_NOAD as i32 {
-                c"middle"
+                "middle"
             } else {
-                c"right"
+                "right"
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        PREFIX => esc(
+        PREFIX => print_esc(
             st,
             match chr_code {
-                1 => c"long",
-                2 => c"outer",
-                8 => c"protected",
-                _ => c"global",
+                1 => "long",
+                2 => "outer",
+                8 => "protected",
+                _ => "global",
             },
         ),
-        DEF => esc(
+        DEF => print_esc(
             st,
             match chr_code {
-                0 => c"def",
-                1 => c"gdef",
-                2 => c"edef",
-                _ => c"xdef",
+                0 => "def",
+                1 => "gdef",
+                2 => "edef",
+                _ => "xdef",
             },
         ),
-        LET => esc(st, if chr_code != 0 { c"futurelet" } else { c"let" }),
+        LET => print_esc(st, if chr_code != 0 { "futurelet" } else { "let" }),
         SHORTHAND_DEF => {
             let name = match chr_code {
-                CHAR_DEF_CODE => c"chardef",
-                MATH_CHAR_DEF_CODE => c"mathchardef",
-                XETEX_MATH_CHAR_DEF_CODE => c"Umathchardef",
-                XETEX_MATH_CHAR_NUM_DEF_CODE => c"Umathcharnumdef",
-                COUNT_DEF_CODE => c"countdef",
-                DIMEN_DEF_CODE => c"dimendef",
-                SKIP_DEF_CODE => c"skipdef",
-                MU_SKIP_DEF_CODE => c"muskipdef",
-                CHAR_SUB_DEF_CODE => c"charsubdef",
-                _ => c"toksdef",
+                CHAR_DEF_CODE => "chardef",
+                MATH_CHAR_DEF_CODE => "mathchardef",
+                XETEX_MATH_CHAR_DEF_CODE => "Umathchardef",
+                XETEX_MATH_CHAR_NUM_DEF_CODE => "Umathcharnumdef",
+                COUNT_DEF_CODE => "countdef",
+                DIMEN_DEF_CODE => "dimendef",
+                SKIP_DEF_CODE => "skipdef",
+                MU_SKIP_DEF_CODE => "muskipdef",
+                CHAR_SUB_DEF_CODE => "charsubdef",
+                _ => "toksdef",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         CHAR_GIVEN => {
-            esc(st, c"char");
+            print_esc(st, "char");
             print_hex(st, chr_code);
         }
         MATH_GIVEN => {
-            esc(st, c"mathchar");
+            print_esc(st, "mathchar");
             print_hex(st, chr_code);
         }
         XETEX_MATH_GIVEN => {
             let code = chr_code as u32;
-            esc(st, c"Umathchar");
+            print_esc(st, "Umathchar");
             print_hex(st, ((code >> 21) & 0x07) as i32);
             print_hex(st, ((code >> 24) & 0xFF) as i32);
             print_hex(st, (code & 0x1F_FFFF) as i32);
         }
         DEF_CODE => {
             let name = match chr_code {
-                LC_CODE_BASE => c"lccode",
-                UC_CODE_BASE => c"uccode",
-                SF_CODE_BASE => c"sfcode",
-                MATH_CODE_BASE => c"mathcode",
-                DEL_CODE_BASE => c"delcode",
-                _ => c"catcode",
+                LC_CODE_BASE => "lccode",
+                UC_CODE_BASE => "uccode",
+                SF_CODE_BASE => "sfcode",
+                MATH_CODE_BASE => "mathcode",
+                DEL_CODE_BASE => "delcode",
+                _ => "catcode",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         XETEX_DEF_CODE => {
             let name = match chr_code {
-                SF_CODE_BASE => c"XeTeXcharclass",
-                MATH_CODE_BASE => c"Umathcodenum",
-                x if x == MATH_CODE_BASE + 1 => c"Umathcode",
-                DEL_CODE_BASE => c"Udelcodenum",
-                _ => c"Udelcode",
+                SF_CODE_BASE => "XeTeXcharclass",
+                MATH_CODE_BASE => "Umathcodenum",
+                x if x == MATH_CODE_BASE + 1 => "Umathcode",
+                DEL_CODE_BASE => "Udelcodenum",
+                _ => "Udelcode",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         DEF_FAMILY => print_size(st, chr_code - MATH_FONT_BASE),
-        HYPH_DATA => esc(
+        HYPH_DATA => print_esc(
             st,
             if chr_code == 1 {
-                c"patterns"
+                "patterns"
             } else {
-                c"hyphenation"
+                "hyphenation"
             },
         ),
         ASSIGN_FONT_INT => {
             let name = match chr_code {
-                0 => c"hyphenchar",
-                1 => c"skewchar",
-                LP_CODE_BASE => c"lpcode",
-                RP_CODE_BASE => c"rpcode",
+                0 => "hyphenchar",
+                1 => "skewchar",
+                LP_CODE_BASE => "lpcode",
+                RP_CODE_BASE => "rpcode",
                 _ => return,
             };
-            esc(st, name);
+            print_esc(st, name);
         }
         SET_FONT => print_font_select(st, chr_code as usize),
         SET_INTERACTION => {
@@ -1765,43 +1749,43 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             const NONSTOP: i32 = InteractionMode::Nonstop as i32;
             const SCROLL: i32 = InteractionMode::Scroll as i32;
             let name = match chr_code {
-                BATCH => c"batchmode",
-                NONSTOP => c"nonstopmode",
-                SCROLL => c"scrollmode",
-                _ => c"errorstopmode",
+                BATCH => "batchmode",
+                NONSTOP => "nonstopmode",
+                SCROLL => "scrollmode",
+                _ => "errorstopmode",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        IN_STREAM => esc(st, if chr_code == 0 { c"closein" } else { c"openin" }),
-        MESSAGE => esc(
+        IN_STREAM => print_esc(st, if chr_code == 0 { "closein" } else { "openin" }),
+        MESSAGE => print_esc(
             st,
             if chr_code == 0 {
-                c"message"
+                "message"
             } else {
-                c"errmessage"
+                "errmessage"
             },
         ),
-        CASE_SHIFT => esc(
+        CASE_SHIFT => print_esc(
             st,
             if chr_code == LC_CODE_BASE {
-                c"lowercase"
+                "lowercase"
             } else {
-                c"uppercase"
+                "uppercase"
             },
         ),
         XRAY => {
             let name = match chr_code {
-                SHOW_BOX_CODE => c"showbox",
-                SHOW_THE_CODE => c"showthe",
-                SHOW_LISTS => c"showlists",
-                SHOW_GROUPS => c"showgroups",
-                SHOW_TOKENS => c"showtokens",
-                SHOW_IFS => c"showifs",
-                _ => c"show",
+                SHOW_BOX_CODE => "showbox",
+                SHOW_THE_CODE => "showthe",
+                SHOW_LISTS => "showlists",
+                SHOW_GROUPS => "showgroups",
+                SHOW_TOKENS => "showtokens",
+                SHOW_IFS => "showifs",
+                _ => "show",
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        UNDEFINED_CS => print_cstr(st, c"undefined".as_ptr()),
+        UNDEFINED_CS => print(st, "undefined"),
         CALL | LONG_CALL | OUTER_CALL | LONG_OUTER_CALL => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
             let mut n = (cmd - CALL) as i32;
@@ -1809,48 +1793,48 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 n += 4;
             }
             if n / 4 % 2 != 0 {
-                esc(st, c"protected");
+                print_esc(st, "protected");
             }
             if n % 2 != 0 {
-                esc(st, c"long");
+                print_esc(st, "long");
             }
             if n / 2 % 2 != 0 {
-                esc(st, c"outer");
+                print_esc(st, "outer");
             }
             if n > 0 {
                 print_char(st, b' ' as i32);
             }
-            print_cstr(st, c"macro".as_ptr());
+            print(st, "macro");
         }
-        END_TEMPLATE => esc(st, c"outer endtemplate"),
+        END_TEMPLATE => print_esc(st, "outer endtemplate"),
         EXTENSION => {
             let name = match chr_code {
-                OPEN_NODE => c"openout",
-                WRITE_NODE => c"write",
-                CLOSE_NODE => c"closeout",
-                SPECIAL_NODE => c"special",
-                IMMEDIATE_CODE => c"immediate",
-                SET_LANGUAGE_CODE => c"setlanguage",
-                PDF_SAVE_POS_NODE => c"pdfsavepos",
-                RESET_TIMER_CODE => c"resettimer",
-                SET_RANDOM_SEED_CODE => c"setrandomseed",
-                PIC_FILE_CODE => c"XeTeXpicfile",
-                PDF_FILE_CODE => c"XeTeXpdffile",
-                GLYPH_CODE => c"XeTeXglyph",
-                XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => c"XeTeXlinebreaklocale",
-                XETEX_INPUT_ENCODING_EXTENSION_CODE => c"XeTeXinputencoding",
-                XETEX_DEFAULT_ENCODING_EXTENSION_CODE => c"XeTeXdefaultencoding",
-                _ => return print_cstr(st, c"[unknown extension!]".as_ptr()),
+                OPEN_NODE => "openout",
+                WRITE_NODE => "write",
+                CLOSE_NODE => "closeout",
+                SPECIAL_NODE => "special",
+                IMMEDIATE_CODE => "immediate",
+                SET_LANGUAGE_CODE => "setlanguage",
+                PDF_SAVE_POS_NODE => "pdfsavepos",
+                RESET_TIMER_CODE => "resettimer",
+                SET_RANDOM_SEED_CODE => "setrandomseed",
+                PIC_FILE_CODE => "XeTeXpicfile",
+                PDF_FILE_CODE => "XeTeXpdffile",
+                GLYPH_CODE => "XeTeXglyph",
+                XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => "XeTeXlinebreaklocale",
+                XETEX_INPUT_ENCODING_EXTENSION_CODE => "XeTeXinputencoding",
+                XETEX_DEFAULT_ENCODING_EXTENSION_CODE => "XeTeXdefaultencoding",
+                _ => return print(st, "[unknown extension!]"),
             };
-            esc(st, name);
+            print_esc(st, name);
         }
-        _ => print_cstr(st, c"[unknown command code!]".as_ptr()),
+        _ => print(st, "[unknown command code!]"),
     }
 }
 
 /// `select font <name>`, quoting native font names, plus ` at <size>pt` if scaled.
 fn print_font_select(st: &mut EngineState, f: usize) {
-    print_cstr(st, c"select font ".as_ptr());
+    print(st, "select font ");
     let name = st.fonts.font_name[f];
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
@@ -1864,9 +1848,9 @@ fn print_font_select(st: &mut EngineState, f: usize) {
         print(st, name);
     }
     if st.fonts.font_size[f] != st.fonts.font_dsize[f] {
-        print_cstr(st, c" at ".as_ptr());
+        print(st, " at ");
         print_scaled(st, st.fonts.font_size[f]);
-        print_cstr(st, c"pt".as_ptr());
+        print(st, "pt");
     }
 }
 
@@ -1908,11 +1892,11 @@ pub(crate) fn group_warning(st: &mut EngineState) {
         i -= 1;
     }
     if w {
-        print_nl_cstr(st, c"Warning: ".as_ptr());
+        print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
-        print_cstr(st, c"end of ".as_ptr());
+        print(st, "end of ");
         print_group(st, true);
-        print_cstr(st, c" of a different file".as_ptr());
+        print(st, " of a different file");
         print_ln(st);
         if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
             show_context(st);
@@ -1935,12 +1919,12 @@ pub(crate) fn if_warning(st: &mut EngineState) {
         i -= 1;
     }
     if w {
-        print_nl_cstr(st, c"Warning: ".as_ptr());
+        print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
-        print_cstr(st, c"end of ".as_ptr());
+        print(st, "end of ");
         print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
         print_if_line(st, st.scanner.if_line);
-        print_cstr(st, c" of a different file".as_ptr());
+        print(st, " of a different file");
         print_ln(st);
         if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
             show_context(st);
@@ -1952,7 +1936,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
 
 fn print_if_line(st: &mut EngineState, line: i32) {
     if line != 0 {
-        print_cstr(st, c" entered on line ".as_ptr());
+        print(st, " entered on line ");
         print_int(st, line);
     }
 }
@@ -1970,11 +1954,11 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     st.save_stack.save_ptr = st.save_stack.cur_boundary;
     while st.input.grp_stack[st.input.in_open as usize] != st.save_stack.save_ptr {
         st.save_stack.cur_level -= 1;
-        print_nl_cstr(st, c"Warning: ".as_ptr());
+        print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
-        print_cstr(st, c"end of file when ".as_ptr());
+        print(st, "end of file when ");
         print_group(st, true);
-        print_cstr(st, c" is incomplete".as_ptr());
+        print(st, " is incomplete");
         capture_to_diagnostic(st, std::ptr::null_mut());
         leave_group_boundary(st);
     }
@@ -1987,15 +1971,15 @@ pub(crate) fn file_warning(st: &mut EngineState) {
     let saved_if = st.scanner.cur_if;
     let saved_line = st.scanner.if_line;
     while st.input.if_stack[st.input.in_open as usize] != st.scanner.cond_ptr {
-        print_nl_cstr(st, c"Warning: ".as_ptr());
+        print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
-        print_cstr(st, c"end of file when ".as_ptr());
+        print(st, "end of file when ");
         print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
         if st.scanner.if_limit == FI_CODE {
-            esc(st, c"else");
+            print_esc(st, "else");
         }
         print_if_line(st, st.scanner.if_line);
-        print_cstr(st, c" is incomplete".as_ptr());
+        print(st, " is incomplete");
         capture_to_diagnostic(st, std::ptr::null_mut());
         let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
         (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = cond.saved_state(&st.mem);
@@ -2021,14 +2005,14 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     print_nl(st, b'{' as i32);
     if st.input.cur_list.mode != st.scanner.shown_mode {
         print_mode(st, st.input.cur_list.mode as i32);
-        print_cstr(st, c": ".as_ptr());
+        print(st, ": ");
         st.scanner.shown_mode = st.input.cur_list.mode;
     }
     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
     if st.eqtb.int_par(INT_PAR_TRACING_IFS) > 0
         && (IF_TEST as u8..=FI_OR_ELSE).contains(&st.scanner.cur_cmd)
     {
-        print_cstr(st, c": ".as_ptr());
+        print(st, ": ");
         let (mut n, l) = if st.scanner.cur_cmd == FI_OR_ELSE {
             print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
             print_char(st, b' ' as i32);
@@ -2041,7 +2025,7 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
             n += 1;
             p = p.link(&st.mem);
         }
-        print_cstr(st, c"(level ".as_ptr());
+        print(st, "(level ");
         print_int(st, n);
         print_char(st, b')' as i32);
         print_if_line(st, l);
@@ -2070,7 +2054,7 @@ pub(crate) fn change_if_limit(
         }
         q = next;
     }
-    ErrorOutcome::Confusion(c"if")
+    ErrorOutcome::Confusion("if")
 }
 
 /// C++ font-layer callback, reaching the run's state through the locator pointer.
@@ -2096,17 +2080,17 @@ pub(crate) fn font_feature_warning(
 ) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
-    print_nl_cstr(st, c"Unknown ".as_ptr());
+    print_nl(st, "Unknown ");
     if set_len > 0 {
-        print_cstr(st, c"selector `".as_ptr());
+        print(st, "selector `");
         crate::ext::print_utf8_str(st, setting_name_p as *const u8, set_len);
-        print_cstr(st, c"' for ".as_ptr());
+        print(st, "' for ");
     }
-    print_cstr(st, c"feature `".as_ptr());
+    print(st, "feature `");
     crate::ext::print_utf8_str(st, feature_name_p as *const u8, feat_len);
-    print_cstr(st, c"' in font `".as_ptr());
+    print(st, "' in font `");
     print_name_of_file(st);
-    print_cstr(st, c"'.".as_ptr());
+    print(st, "'.");
     capture_to_diagnostic(st, std::ptr::null_mut());
     end_diagnostic(st, false);
 }
@@ -2120,20 +2104,20 @@ pub(crate) fn font_mapping_warning(
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
     if warning_type == 0 {
-        print_nl_cstr(st, c"Loaded mapping `".as_ptr());
+        print_nl(st, "Loaded mapping `");
     } else {
-        print_nl_cstr(st, c"Font mapping `".as_ptr());
+        print_nl(st, "Font mapping `");
     }
     crate::ext::print_utf8_str(st, mapping_name_p as *const u8, mapping_name_len);
-    print_cstr(st, c"' for font `".as_ptr());
+    print(st, "' for font `");
     print_name_of_file(st);
     match warning_type {
-        1 => print_cstr(st, c"' not found.".as_ptr()),
+        1 => print(st, "' not found."),
         2 => {
-            print_cstr(st, c"' not usable;".as_ptr());
-            print_nl_cstr(st, c"bad mapping file or incorrect mapping type.".as_ptr());
+            print(st, "' not usable;");
+            print_nl(st, "bad mapping file or incorrect mapping type.");
         }
-        _ => print_cstr(st, c"'.".as_ptr()),
+        _ => print(st, "'."),
     }
     capture_to_diagnostic(st, std::ptr::null_mut());
     end_diagnostic(st, false);
@@ -2151,14 +2135,14 @@ fn print_name_of_file(st: &mut EngineState) {
 pub(crate) fn bad_utf8_warning(st: &mut EngineState) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
-    print_nl_cstr(st, c"Invalid UTF-8 byte or sequence".as_ptr());
+    print_nl(st, "Invalid UTF-8 byte or sequence");
     if st.input.cur_input.name == 0 {
-        print_cstr(st, c" in terminal input".as_ptr());
+        print(st, " in terminal input");
     } else {
-        print_cstr(st, c" at line ".as_ptr());
+        print(st, " at line ");
         print_int(st, st.mem.line);
     }
-    print_cstr(st, c" replaced by U+FFFD.".as_ptr());
+    print(st, " replaced by U+FFFD.");
     capture_to_diagnostic(st, std::ptr::null_mut());
     end_diagnostic(st, false);
 }
@@ -2180,14 +2164,14 @@ pub(crate) fn show_token_list(st: &mut EngineState, p: impl crate::units::MemAdd
             set_trick_count(st);
         }
         if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
-            esc(st, c"CLOBBERED.");
+            print_esc(st, "CLOBBERED.");
             return;
         }
         let w = p.info(&st.mem);
         if w >= CS_TOKEN_FLAG {
             print_cs(st, w - CS_TOKEN_FLAG);
         } else if w < 0 {
-            esc(st, c"BAD.");
+            print_esc(st, "BAD.");
         } else {
             let c = w % MAX_CHAR_VAL;
             match (w / MAX_CHAR_VAL) as u8 {
@@ -2216,30 +2200,30 @@ pub(crate) fn show_token_list(st: &mut EngineState, p: impl crate::units::MemAdd
                 }
                 END_MATCH => {
                     if c == 0 {
-                        print_cstr(st, c"->".as_ptr());
+                        print(st, "->");
                     }
                 }
-                _ => esc(st, c"BAD."),
+                _ => print_esc(st, "BAD."),
             }
         }
         p = p.link(&st.mem);
     }
     if !p.is_null() {
-        esc(st, c"ETC.");
+        print_esc(st, "ETC.");
     }
 }
 
 fn print_totals(st: &mut EngineState) {
     print_scaled(st, st.shipout.page_so_far[1]);
-    for (i, order) in [(2, c""), (3, c"fil"), (4, c"fill"), (5, c"filll")] {
+    for (i, order) in [(2, ""), (3, "fil"), (4, "fill"), (5, "filll")] {
         if st.shipout.page_so_far[i] != 0 {
-            print_cstr(st, c" plus ".as_ptr());
+            print(st, " plus ");
             print_scaled(st, st.shipout.page_so_far[i]);
-            print_cstr(st, order.as_ptr());
+            print(st, order);
         }
     }
     if st.shipout.page_so_far[6] != 0 {
-        print_cstr(st, c" minus ".as_ptr());
+        print(st, " minus ");
         print_scaled(st, st.shipout.page_so_far[6]);
     }
 }
@@ -2299,7 +2283,7 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), IssueMessageAbor
         print(st, s);
         unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
     } else {
-        error_here_with_diagnostic(st, c"".as_ptr());
+        error_here_with_diagnostic(st, "");
         print(st, s);
         capture_to_diagnostic(st, std::ptr::null_mut());
         if !st.eqtb.local(crate::consts::LOCAL_ERR_HELP).is_null() {
@@ -2345,11 +2329,11 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
     st.save_stack.cur_level -= 1;
     let mut a: i8 = 1;
 
-    print_nl_cstr(st, c"".as_ptr());
+    print_nl(st, "");
     print_ln(st);
 
     loop {
-        print_nl_cstr(st, c"### ".as_ptr());
+        print_nl(st, "### ");
         print_group(st, true);
         if st.save_stack.cur_group == GroupCode::BottomLevel {
             break;
@@ -2367,36 +2351,36 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             }
         };
 
-        print_cstr(st, c" (".as_ptr());
+        print(st, " (");
 
-        let mut s: &CStr = c"";
+        let mut s: &str = "";
         let entry = match st.save_stack.cur_group {
             GroupCode::Simple => {
                 p += 1;
                 Entry::Found2
             }
             GroupCode::Hbox | GroupCode::AdjustedHbox => {
-                s = c"hbox";
+                s = "hbox";
                 Entry::BoxContext
             }
             GroupCode::Vbox => {
-                s = c"vbox";
+                s = "vbox";
                 Entry::BoxContext
             }
             GroupCode::Vtop => {
-                s = c"vtop";
+                s = "vtop";
                 Entry::BoxContext
             }
             GroupCode::Align if a == 0 => {
-                s = if m == -VMODE { c"halign" } else { c"valign" };
+                s = if m == -VMODE { "halign" } else { "valign" };
                 a = 1;
                 Entry::Found1
             }
             GroupCode::Align => {
                 if a == 1 {
-                    print_cstr(st, c"align entry".as_ptr());
+                    print(st, "align entry");
                 } else {
-                    esc(st, c"cr");
+                    print_esc(st, "cr");
                 }
                 if p >= a as i32 {
                     p -= a as i32;
@@ -2407,24 +2391,24 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             GroupCode::NoAlign => {
                 p += 1;
                 a = -1;
-                esc(st, c"noalign");
+                print_esc(st, "noalign");
                 Entry::Found2
             }
             GroupCode::Output => {
-                esc(st, c"output");
+                print_esc(st, "output");
                 Entry::Found
             }
             GroupCode::Math => Entry::Found2,
             GroupCode::Disc | GroupCode::MathChoice => {
                 if st.save_stack.cur_group == GroupCode::Disc {
-                    esc(st, c"discretionary");
+                    print_esc(st, "discretionary");
                 } else {
-                    esc(st, c"mathchoice");
+                    print_esc(st, "mathchoice");
                 }
                 let braces = st.save_stack.saved(-2);
                 for i in 1..=3 {
                     if i <= braces {
-                        print_cstr(st, c"{}".as_ptr());
+                        print(st, "{}");
                     }
                 }
                 Entry::Found2
@@ -2432,20 +2416,20 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             GroupCode::Insert => {
                 let n = st.save_stack.saved(-2);
                 if n == 255 {
-                    esc(st, c"vadjust");
+                    print_esc(st, "vadjust");
                 } else {
-                    esc(st, c"insert");
+                    print_esc(st, "insert");
                     print_int(st, n);
                 }
                 Entry::Found2
             }
             GroupCode::Vcenter => {
-                s = c"vcenter";
+                s = "vcenter";
                 Entry::Found1
             }
             GroupCode::SemiSimple => {
                 p += 1;
-                esc(st, c"begingroup");
+                print_esc(st, "begingroup");
                 Entry::Found
             }
             GroupCode::MathShift => {
@@ -2464,9 +2448,9 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             GroupCode::MathLeft => {
                 let delim = MemIdx::new(st.input.nest[(p + 1) as usize].e_tex_aux);
                 if st.mem.node_type(delim) == Ok(NodeType::LeftNoad) {
-                    esc(st, c"left");
+                    print_esc(st, "left");
                 } else {
-                    esc(st, c"middle");
+                    print_esc(st, "middle");
                 }
                 Entry::Found
             }
@@ -2484,14 +2468,14 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                     };
                     print_cmd_chr(st, cmd, if i > 0 { 0 } else { 1 });
                     print_scaled(st, i.abs());
-                    print_cstr(st, c"pt".as_ptr());
+                    print(st, "pt");
                 } else if i < SHIP_OUT_FLAG {
                     let mut box_num = i;
                     if box_num >= GLOBAL_BOX_FLAG {
-                        esc(st, c"global");
+                        print_esc(st, "global");
                         box_num -= GLOBAL_BOX_FLAG - BOX_FLAG;
                     }
-                    esc(st, c"setbox");
+                    print_esc(st, "setbox");
                     print_int(st, box_num - BOX_FLAG);
                     print_char(st, b'=' as i32);
                 } else {
@@ -2501,17 +2485,17 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
         }
 
         if matches!(entry, Entry::BoxContext | Entry::Found1) {
-            esc(st, s);
+            print_esc(st, s);
             let spec = st.save_stack.saved(-2);
             if spec != 0 {
                 print_char(st, b' ' as i32);
                 if st.save_stack.saved(-3) == EXACTLY as i32 {
-                    print_cstr(st, c"to".as_ptr());
+                    print(st, "to");
                 } else {
-                    print_cstr(st, c"spread".as_ptr());
+                    print(st, "spread");
                 }
                 print_scaled(st, spec);
-                print_cstr(st, c"pt".as_ptr());
+                print(st, "pt");
             }
         }
 
@@ -2565,17 +2549,17 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), ShowWhateverAbor
             let n = st.scanner.cur_val;
             let contents = crate::scan::fetch_box(st, n);
             begin_diagnostic(st);
-            print_nl_cstr(st, c"> \\box".as_ptr());
+            print_nl(st, "> \\box");
             print_int(st, n);
             print_char(st, b'=' as i32);
             match contents {
                 Some(b) => show_box(st, b.ptr()),
-                None => print_cstr(st, c"void".as_ptr()),
+                None => print(st, "void"),
             }
         }
         SHOW_CODE => {
             crate::scan::get_token(st)?;
-            print_nl_cstr(st, c"> ".as_ptr());
+            print_nl(st, "> ");
             if st.scanner.cur_cs != 0 {
                 sprint_cs(st, st.scanner.cur_cs);
                 print_char(st, b'=' as i32);
@@ -2588,11 +2572,11 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), ShowWhateverAbor
         }
         SHOW_IFS => {
             begin_diagnostic(st);
-            print_nl_cstr(st, c"".as_ptr());
+            print_nl(st, "");
             print_ln(st);
             if st.scanner.cond_ptr.is_null() {
-                print_nl_cstr(st, c"### ".as_ptr());
-                print_cstr(st, c"no active conditionals".as_ptr());
+                print_nl(st, "### ");
+                print(st, "no active conditionals");
             } else {
                 let mut n = 0;
                 let mut p = st.scanner.cond_ptr;
@@ -2605,12 +2589,12 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), ShowWhateverAbor
                 let mut l = st.scanner.if_line;
                 let mut m = st.scanner.if_limit;
                 while !p.is_null() {
-                    print_nl_cstr(st, c"### level ".as_ptr());
+                    print_nl(st, "### level ");
                     print_int(st, n);
-                    print_cstr(st, c": ".as_ptr());
+                    print(st, ": ");
                     print_cmd_chr(st, IF_TEST, t as i32);
                     if m == FI_CODE {
-                        esc(st, c"else");
+                        print_esc(st, "else");
                     }
                     print_if_line(st, l);
                     n -= 1;
@@ -2621,7 +2605,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), ShowWhateverAbor
         }
         _ => {
             crate::scan::the_toks(st)?;
-            print_nl_cstr(st, c"> ".as_ptr());
+            print_nl(st, "> ");
             token_show(st, TEMP_HEAD);
             let list = TEMP_HEAD.link(&st.mem);
             st.mem.flush_list(list);
@@ -2632,12 +2616,12 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), ShowWhateverAbor
         capture_to_diagnostic(st, std::ptr::null_mut());
         end_diagnostic(st, true);
         print_error_prefix(st);
-        print_cstr(st, c"OK".as_ptr());
+        print(st, "OK");
         if st.shipout.selector == SELECTOR_TERM_AND_LOG
             && st.eqtb.int_par(INT_PAR_TRACING_ONLINE) <= 0
         {
             st.shipout.selector = SELECTOR_TERM_ONLY;
-            print_cstr(st, c" (see the transcript file)".as_ptr());
+            print(st, " (see the transcript file)");
             st.shipout.selector = SELECTOR_TERM_AND_LOG;
         }
     }
@@ -2676,14 +2660,14 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome
         }
         if tracing_lost > 2 {
             print_error_prefix(st);
-            print_cstr(st, c"Missing character: There is no ".as_ptr());
+            print(st, "Missing character: There is no ");
         } else {
             begin_diagnostic(st);
             diagnostic_begin_capture_warning_here(st);
-            print_nl_cstr(st, c"Missing character: There is no ".as_ptr());
+            print_nl(st, "Missing character: There is no ");
         }
         print_code(st, c);
-        print_cstr(st, c" (".as_ptr());
+        print(st, " (");
         let area = st.fonts.font_area[f as usize];
         if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
             print_ucs_code(st, c);
@@ -2691,7 +2675,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome
             print_hex(st, c);
         }
         print_char(st, b')' as i32);
-        print_cstr(st, c" in font ".as_ptr());
+        print(st, " in font ");
         print(st, st.fonts.font_name[f as usize]);
         if tracing_lost < 3 {
             print_char(st, b'!' as i32);
@@ -2716,7 +2700,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome
     st.shipout.selector = prev_sel;
     let Ok(s) = st.strings.make_string() else {
         return ErrorOutcome::Overflow {
-            what: c"number of strings",
+            what: "number of strings",
             n: st.strings.max_strings - st.strings.init_str_ptr,
         };
     };
@@ -2734,12 +2718,11 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome
     }
     if !st.fonts.gave_char_warning_help {
         unsafe {
-            issue_warning_cstr(
-                c"  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to"
-                    .as_ptr(),
+            issue_warning_str(
+                "  you may need to load the `fontspec` package and use (e.g.) \\setmainfont to",
             );
-            issue_warning_cstr(
-                c"  choose a different font that covers the unrepresentable character(s)".as_ptr(),
+            issue_warning_str(
+                "  choose a different font that covers the unrepresentable character(s)",
             );
         }
         st.fonts.gave_char_warning_help = true;
@@ -2788,7 +2771,7 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
                     | AnyNode::Mark(_)
                     | AnyNode::Adjust(_)
                     | AnyNode::Unset(_),
-                ) => print_cstr(st, c"[]".as_ptr()),
+                ) => print(st, "[]"),
                 Ok(AnyNode::Whatsit(w)) => {
                     if w.whatsit_subtype(&st.mem)
                         .is_some_and(|s| s.is_native_word())
@@ -2801,7 +2784,7 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
                         }
                         print_native_word(st, w);
                     } else {
-                        print_cstr(st, c"[]".as_ptr());
+                        print(st, "[]");
                     }
                 }
                 Ok(AnyNode::Rule(_)) => print_char(st, b'|' as i32),
@@ -2813,7 +2796,7 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
                 }
                 Ok(AnyNode::Math(m)) => {
                     if m.subtype(&st.mem) >= L_CODE {
-                        print_cstr(st, c"[]".as_ptr());
+                        print(st, "[]");
                     } else {
                         print_char(st, b'$' as i32);
                     }
@@ -2838,24 +2821,24 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
 /// The outer vertical list part of `show_activities`: the current page and its insertions.
 fn show_page_so_far(st: &mut EngineState) {
     if st.shipout.page_tail != PAGE_HEAD {
-        print_nl_cstr(st, c"### current page:".as_ptr());
+        print_nl(st, "### current page:");
         if st.shipout.output_active {
-            print_cstr(st, c" (held over for next output)".as_ptr());
+            print(st, " (held over for next output)");
         }
         show_box(st, PAGE_HEAD.link(&st.mem));
         if st.shipout.page_contents != crate::state::PageContents::Empty {
-            print_nl_cstr(st, c"total height ".as_ptr());
+            print_nl(st, "total height ");
             print_totals(st);
-            print_nl_cstr(st, c" goal height ".as_ptr());
+            print_nl(st, " goal height ");
             print_scaled(st, st.shipout.page_so_far[0]);
             let mut r = PAGE_INS_HEAD.link(&st.mem);
             while r != PAGE_INS_HEAD {
                 let ins = NodePtr::<PageInsNode>::at(r);
                 print_ln(st);
-                esc(st, c"insert");
+                print_esc(st, "insert");
                 let box_num = ins.subtype(&st.mem);
                 print_int(st, box_num as i32);
-                print_cstr(st, c" adds ".as_ptr());
+                print(st, " adds ");
                 let count = st.eqtb.count(box_num as i32);
                 let height = ins.height(&st.mem).0;
                 let adds = if count == 1000 {
@@ -2879,42 +2862,42 @@ fn show_page_so_far(st: &mut EngineState) {
                             break;
                         }
                     }
-                    print_cstr(st, c", #".as_ptr());
+                    print(st, ", #");
                     print_int(st, t);
-                    print_cstr(st, c" might split".as_ptr());
+                    print(st, " might split");
                 }
                 r = r.link(&st.mem);
             }
         }
     }
     if !CONTRIB_HEAD.link(&st.mem).is_null() {
-        print_nl_cstr(st, c"### recent contributions:".as_ptr());
+        print_nl(st, "### recent contributions:");
     }
 }
 
 pub(crate) fn show_activities(st: &mut EngineState) {
     st.input.nest[st.input.nest_ptr as usize] = st.input.cur_list;
-    print_nl_cstr(st, c"".as_ptr());
+    print_nl(st, "");
     print_ln(st);
     for p in (0..=st.input.nest_ptr).rev() {
         let nest = st.input.nest[p as usize];
         let m = nest.mode;
-        print_nl_cstr(st, c"### ".as_ptr());
+        print_nl(st, "### ");
         print_mode(st, m as i32);
-        print_cstr(st, c" entered at line ".as_ptr());
+        print(st, " entered at line ");
         print_int(st, nest.mode_line.abs());
         if m == HMODE && nest.prev_graf != 0x83_0000 {
             let pg = nest.prev_graf;
-            print_cstr(st, c" (language".as_ptr());
+            print(st, " (language");
             print_int(st, pg % 65536);
-            print_cstr(st, c":hyphenmin".as_ptr());
+            print(st, ":hyphenmin");
             print_int(st, pg / 0x40_0000);
             print_char(st, b',' as i32);
             print_int(st, (pg / 65536) % 64);
             print_char(st, b')' as i32);
         }
         if nest.mode_line < 0 {
-            print_cstr(st, c" (\\output routine)".as_ptr());
+            print(st, " (\\output routine)");
         }
         if p == 0 {
             show_page_so_far(st);
@@ -2923,33 +2906,33 @@ pub(crate) fn show_activities(st: &mut EngineState) {
         let (aux_s0, aux_s1) = (nest.aux_s0(), nest.aux_s1());
         match m.abs() as i32 / (MAX_COMMAND as i32 + 1) {
             0 => {
-                print_nl_cstr(st, c"prevdepth ".as_ptr());
+                print_nl(st, "prevdepth ");
                 if aux_s1 <= IGNORE_DEPTH {
-                    print_cstr(st, c"ignored".as_ptr());
+                    print(st, "ignored");
                 } else {
                     print_scaled(st, aux_s1);
                 }
                 if nest.prev_graf != 0 {
-                    print_cstr(st, c", prevgraf ".as_ptr());
+                    print(st, ", prevgraf ");
                     print_int(st, nest.prev_graf);
                     if nest.prev_graf != 1 {
-                        print_cstr(st, c" lines".as_ptr());
+                        print(st, " lines");
                     } else {
-                        print_cstr(st, c" line".as_ptr());
+                        print(st, " line");
                     }
                 }
             }
             1 => {
-                print_nl_cstr(st, c"spacefactor ".as_ptr());
+                print_nl(st, "spacefactor ");
                 print_int(st, aux_s0);
                 if m > 0 && aux_s1 > 0 {
-                    print_cstr(st, c", current language ".as_ptr());
+                    print(st, ", current language ");
                     print_int(st, aux_s1);
                 }
             }
             2 => {
                 if aux_s1 != TEX_NULL {
-                    print_cstr(st, c"this will begin denominator of:".as_ptr());
+                    print(st, "this will begin denominator of:");
                     show_box(st, aux_s1);
                 }
             }
@@ -2970,7 +2953,7 @@ fn node_list_display(st: &mut EngineState, c: u8, list: MemPtr) {
 fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
     if st.strings.cur_length() >= st.errors.depth_threshold {
         if p.math_type(&st.mem) != EMPTY {
-            print_cstr(st, c" []".as_ptr());
+            print(st, " []");
         }
         return;
     }
@@ -2988,7 +2971,7 @@ fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
             if p.info(&st.mem).is_null() {
                 print_ln(st);
                 print_current_string(st);
-                print_cstr(st, c"{}".as_ptr());
+                print(st, "{}");
             } else {
                 show_info(st);
             }
@@ -3002,7 +2985,7 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
     let mut p = MemPtr(p.addr());
     if st.strings.cur_length() > st.errors.depth_threshold {
         if p.0 > TEX_NULL {
-            print_cstr(st, c" []".as_ptr());
+            print(st, " []");
         }
         return;
     }
@@ -3011,12 +2994,12 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
         print_ln(st);
         print_current_string(st);
         if p.0 > st.mem.mem_end {
-            print_cstr(st, c"Bad link, display aborted.".as_ptr());
+            print(st, "Bad link, display aborted.");
             return;
         }
         n += 1;
         if n > st.errors.breadth_max {
-            print_cstr(st, c"etc.".as_ptr());
+            print(st, "etc.");
             return;
         }
         if st.mem.is_char_node(p) {
@@ -3026,49 +3009,49 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                 Ok(AnyNode::HList(b)) => show_box_node(st, AnyBox::HList(b)),
                 Ok(AnyNode::VList(b)) => show_box_node(st, AnyBox::VList(b)),
                 Ok(AnyNode::Unset(node)) => {
-                    esc(st, c"unset");
-                    print_cstr(st, c"box(".as_ptr());
+                    print_esc(st, "unset");
+                    print(st, "box(");
                     print_scaled(st, node.height(&st.mem).0);
                     print_char(st, b'+' as i32);
                     print_scaled(st, node.depth(&st.mem).0);
-                    print_cstr(st, c")x".as_ptr());
+                    print(st, ")x");
                     print_scaled(st, node.width(&st.mem).0);
                     let span_count = node.subtype(&st.mem);
                     if span_count != 0 {
-                        print_cstr(st, c" (".as_ptr());
+                        print(st, " (");
                         print_int(st, span_count as i32 + 1);
-                        print_cstr(st, c" columns)".as_ptr());
+                        print(st, " columns)");
                     }
                     if node.glue_stretch(&st.mem).0 != 0 {
-                        print_cstr(st, c", stretch ".as_ptr());
+                        print(st, ", stretch ");
                         let order = node.glue_order(&st.mem);
-                        print_glue(st, node.glue_stretch(&st.mem).0, order, std::ptr::null());
+                        print_glue(st, node.glue_stretch(&st.mem).0, order, None);
                     }
                     if node.glue_shrink(&st.mem).0 != 0 {
-                        print_cstr(st, c", shrink ".as_ptr());
+                        print(st, ", shrink ");
                         let order = node.glue_sign(&st.mem);
-                        print_glue(st, node.glue_shrink(&st.mem).0, order, std::ptr::null());
+                        print_glue(st, node.glue_shrink(&st.mem).0, order, None);
                     }
                     node_list_display(st, b'.', node.list_ptr(&st.mem));
                 }
                 Ok(AnyNode::Rule(node)) => {
-                    esc(st, c"rule(");
+                    print_esc(st, "rule(");
                     print_rule_dimen(st, node.height(&st.mem).raw());
                     print_char(st, b'+' as i32);
                     print_rule_dimen(st, node.depth(&st.mem).raw());
-                    print_cstr(st, c")x".as_ptr());
+                    print(st, ")x");
                     print_rule_dimen(st, node.width(&st.mem).raw());
                 }
                 Ok(AnyNode::Ins(node)) => {
-                    esc(st, c"insert");
+                    print_esc(st, "insert");
                     print_int(st, node.subtype(&st.mem) as i32);
-                    print_cstr(st, c", natural size ".as_ptr());
+                    print(st, ", natural size ");
                     print_scaled(st, node.height(&st.mem).0);
-                    print_cstr(st, c"; split(".as_ptr());
-                    print_spec(st, node.split_top_ptr(&st.mem).ptr(), std::ptr::null());
+                    print(st, "; split(");
+                    print_spec(st, node.split_top_ptr(&st.mem).ptr(), None);
                     print_char(st, b',' as i32);
                     print_scaled(st, node.depth(&st.mem).0);
-                    print_cstr(st, c"); float cost ".as_ptr());
+                    print(st, "); float cost ");
                     print_int(st, node.float_cost(&st.mem));
                     node_list_display(st, b'.', node.ins_ptr(&st.mem));
                 }
@@ -3077,35 +3060,35 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                 Ok(AnyNode::Kern(node)) => {
                     let sub = node.subtype(&st.mem);
                     if sub != MU_GLUE {
-                        esc(st, c"kern");
+                        print_esc(st, "kern");
                         if sub != 0 {
                             print_char(st, b' ' as i32);
                         }
                         print_scaled(st, node.width(&st.mem).0);
                         if sub == ACC_KERN {
-                            print_cstr(st, c" (for accent)".as_ptr());
+                            print(st, " (for accent)");
                         } else if sub == SPACE_ADJUSTMENT {
-                            print_cstr(st, c" (space adjustment)".as_ptr());
+                            print(st, " (space adjustment)");
                         }
                     } else {
-                        esc(st, c"mkern");
+                        print_esc(st, "mkern");
                         print_scaled(st, node.width(&st.mem).0);
-                        print_cstr(st, c"mu".as_ptr());
+                        print(st, "mu");
                     }
                 }
                 Ok(AnyNode::MarginKern(node)) => {
-                    esc(st, c"kern");
+                    print_esc(st, "kern");
                     print_scaled(st, node.width(&st.mem).0);
                     if node.subtype(&st.mem) == 0 {
-                        print_cstr(st, c" (left margin)".as_ptr());
+                        print(st, " (left margin)");
                     } else {
-                        print_cstr(st, c" (right margin)".as_ptr());
+                        print(st, " (right margin)");
                     }
                 }
                 Ok(AnyNode::Math(node)) => {
                     let sub = node.subtype(&st.mem);
                     if sub > AFTER {
-                        esc(st, if sub % 2 == 1 { c"end" } else { c"begin" });
+                        print_esc(st, if sub % 2 == 1 { "end" } else { "begin" });
                         let dir = if sub > R_CODE {
                             b'R'
                         } else if sub > L_CODE {
@@ -3115,14 +3098,14 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                         };
                         print_char(st, dir as i32);
                     } else {
-                        esc(st, c"math");
+                        print_esc(st, "math");
                         if sub == 0 {
-                            print_cstr(st, c"on".as_ptr());
+                            print(st, "on");
                         } else {
-                            print_cstr(st, c"off".as_ptr());
+                            print(st, "off");
                         }
                         if node.width(&st.mem).0 != 0 {
-                            print_cstr(st, c", surrounded ".as_ptr());
+                            print(st, ", surrounded ");
                             print_scaled(st, node.width(&st.mem).0);
                         }
                     }
@@ -3130,7 +3113,7 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                 Ok(AnyNode::Ligature(node)) => {
                     let font = node.font(&st.mem).0;
                     print_font_char(st, font, node.character(&st.mem));
-                    print_cstr(st, c" (ligature ".as_ptr());
+                    print(st, " (ligature ");
                     if node.subtype(&st.mem) > 1 {
                         print_char(st, b'|' as i32);
                     }
@@ -3142,21 +3125,21 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                     print_char(st, b')' as i32);
                 }
                 Ok(AnyNode::Penalty(node)) => {
-                    esc(st, c"penalty ");
+                    print_esc(st, "penalty ");
                     print_int(st, node.penalty(&st.mem));
                 }
                 Ok(AnyNode::Disc(node)) => {
-                    esc(st, c"discretionary");
+                    print_esc(st, "discretionary");
                     let replace_count = node.subtype(&st.mem);
                     if replace_count > 0 {
-                        print_cstr(st, c" replacing ".as_ptr());
+                        print(st, " replacing ");
                         print_int(st, replace_count as i32);
                     }
                     node_list_display(st, b'.', node.pre_break(&st.mem));
                     node_list_display(st, b'|', node.post_break(&st.mem));
                 }
                 Ok(AnyNode::Mark(node)) => {
-                    esc(st, c"mark");
+                    print_esc(st, "mark");
                     let class = node.mark_class(&st.mem);
                     if class != 0 {
                         print_char(st, b's' as i32);
@@ -3165,22 +3148,22 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                     print_mark(st, node.mark_ptr(&st.mem));
                 }
                 Ok(AnyNode::Adjust(node)) => {
-                    esc(st, c"vadjust");
+                    print_esc(st, "vadjust");
                     if node.subtype(&st.mem) != 0 {
-                        print_cstr(st, c" pre ".as_ptr());
+                        print(st, " pre ");
                     }
                     node_list_display(st, b'.', node.adjust_ptr(&st.mem));
                 }
                 Ok(AnyNode::Style(node)) => print_style(st, node.subtype(&st.mem) as i32),
                 Ok(AnyNode::Choice(node)) => {
-                    esc(st, c"mathchoice");
+                    print_esc(st, "mathchoice");
                     node_list_display(st, b'D', node.display_mlist(&st.mem));
                     node_list_display(st, b'T', node.text_mlist(&st.mem));
                     node_list_display(st, b'S', node.script_mlist(&st.mem));
                     node_list_display(st, b's', node.script_script_mlist(&st.mem));
                 }
                 Ok(AnyNode::Noad(node)) => show_noad(st, node),
-                Err(_) => print_cstr(st, c"Unknown node type!".as_ptr()),
+                Err(_) => print(st, "Unknown node type!"),
             }
         }
         p = p.link(&st.mem);
@@ -3190,38 +3173,38 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
 fn show_box_node(st: &mut EngineState, b: AnyBox) {
     let is_hlist = matches!(b, AnyBox::HList(_));
     print_esc(st, if is_hlist { b'h' } else { b'v' } as i32);
-    print_cstr(st, c"box(".as_ptr());
+    print(st, "box(");
     print_scaled(st, b.height(&st.mem).0);
     print_char(st, b'+' as i32);
     print_scaled(st, b.depth(&st.mem).0);
-    print_cstr(st, c")x".as_ptr());
+    print(st, ")x");
     print_scaled(st, b.width(&st.mem).0);
     let g = b.glue_set(&st.mem);
     let glue_sign = b.glue_sign(&st.mem);
     if g != 0.0 && glue_sign != GlueSign::Normal {
-        print_cstr(st, c", glue set ".as_ptr());
+        print(st, ", glue set ");
         if glue_sign == GlueSign::Shrinking {
-            print_cstr(st, c"- ".as_ptr());
+            print(st, "- ");
         }
         let order = b.glue_order(&st.mem);
         if g.abs() > 20000.0 {
             if g > 0.0 {
                 print_char(st, b'>' as i32);
             } else {
-                print_cstr(st, c"< -".as_ptr());
+                print(st, "< -");
             }
-            print_glue(st, 20000 * 65536, order, std::ptr::null());
+            print_glue(st, 20000 * 65536, order, None);
         } else {
             let set = crate::scaled_math::tex_round(65536.0 * g);
-            print_glue(st, set, order, std::ptr::null());
+            print_glue(st, set, order, None);
         }
     }
     if b.shift_amount(&st.mem).0 != 0 {
-        print_cstr(st, c", shifted ".as_ptr());
+        print(st, ", shifted ");
         print_scaled(st, b.shift_amount(&st.mem).0);
     }
     if is_hlist && b.subtype(&st.mem) == DLIST {
-        print_cstr(st, c", display".as_ptr());
+        print(st, ", display");
     }
     node_list_display(st, b'.', b.list_ptr(&st.mem));
 }
@@ -3235,7 +3218,7 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
     };
     match node.whatsit_subtype(&st.mem) {
         Some(WhatsitSubtype::Open) => {
-            print_write_whatsit(st, c"openout", node);
+            print_write_whatsit(st, "openout", node);
             print_char(st, b'=' as i32);
             let (name, area, ext) = (
                 node.open_name(&st.mem),
@@ -3245,24 +3228,24 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             print_file_name(st, name, area, ext);
         }
         Some(WhatsitSubtype::Write) => {
-            print_write_whatsit(st, c"write", node);
+            print_write_whatsit(st, "write", node);
             print_mark(st, node.write_tokens(&st.mem));
         }
-        Some(WhatsitSubtype::Close) => print_write_whatsit(st, c"closeout", node),
+        Some(WhatsitSubtype::Close) => print_write_whatsit(st, "closeout", node),
         Some(WhatsitSubtype::Special) => {
-            esc(st, c"special");
+            print_esc(st, "special");
             print_mark(st, node.write_tokens(&st.mem));
         }
         Some(WhatsitSubtype::Language) => {
-            esc(st, c"setlanguage");
+            print_esc(st, "setlanguage");
             print_int(st, node.what_lang(&st.mem));
-            print_cstr(st, c" (hyphenmin ".as_ptr());
+            print(st, " (hyphenmin ");
             print_int(st, node.what_lhm(&st.mem) as i32);
             print_char(st, b',' as i32);
             print_int(st, node.what_rhm(&st.mem) as i32);
             print_char(st, b')' as i32);
         }
-        Some(WhatsitSubtype::PdfSavePos) => esc(st, c"pdfsavepos"),
+        Some(WhatsitSubtype::PdfSavePos) => print_esc(st, "pdfsavepos"),
         Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
             print_font(st);
             print_char(st, b' ' as i32);
@@ -3270,59 +3253,55 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
         }
         Some(WhatsitSubtype::Glyph) => {
             print_font(st);
-            print_cstr(st, c" glyph#".as_ptr());
+            print(st, " glyph#");
             print_int(st, node.native_glyph(&st.mem) as i32);
         }
         Some(sub @ (WhatsitSubtype::Pic | WhatsitSubtype::Pdf)) => {
             if sub == WhatsitSubtype::Pic {
-                esc(st, c"XeTeXpicfile");
+                print_esc(st, "XeTeXpicfile");
             } else {
-                esc(st, c"XeTeXpdffile");
+                print_esc(st, "XeTeXpdffile");
             }
-            print_cstr(st, c" \"".as_ptr());
+            print(st, " \"");
             for i in 0..node.pic_path_len(&st.mem) as usize {
                 let b = node.pic_path(&st.mem)[i];
                 print_raw_char(st, b as i32, true);
             }
             print(st, b'"' as i32);
         }
-        _ => print_cstr(st, c"whatsit?".as_ptr()),
+        _ => print(st, "whatsit?"),
     }
 }
 
 fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
     let sub = node.subtype(&st.mem);
     if sub >= A_LEADERS {
-        esc(st, c"");
+        print_esc(st, "");
         if sub == C_LEADERS {
             print_char(st, b'c' as i32);
         } else if sub == X_LEADERS {
             print_char(st, b'x' as i32);
         }
-        print_cstr(st, c"leaders ".as_ptr());
-        print_spec(st, node.glue_ptr(&st.mem).ptr(), std::ptr::null());
+        print(st, "leaders ");
+        print_spec(st, node.glue_ptr(&st.mem).ptr(), None);
         node_list_display(st, b'.', node.leader_ptr(&st.mem));
         return;
     }
-    esc(st, c"glue");
+    print_esc(st, "glue");
     if sub != 0 {
         print_char(st, b'(' as i32);
         if sub < COND_MATH_GLUE {
             print_skip_param(st, sub as i32 - 1);
         } else if sub == COND_MATH_GLUE {
-            esc(st, c"nonscript");
+            print_esc(st, "nonscript");
         } else {
-            esc(st, c"mskip");
+            print_esc(st, "mskip");
         }
         print_char(st, b')' as i32);
     }
     if sub != COND_MATH_GLUE {
         print_char(st, b' ' as i32);
-        let unit = if sub < COND_MATH_GLUE {
-            std::ptr::null()
-        } else {
-            c"mu".as_ptr()
-        };
+        let unit = (sub >= COND_MATH_GLUE).then_some("mu");
         print_spec(st, node.glue_ptr(&st.mem).ptr(), unit);
     }
 }
@@ -3330,21 +3309,21 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
 fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
     let nt = node.noad_type(&st.mem);
     if nt == NodeType::FractionNoad {
-        esc(st, c"fraction, thickness ");
+        print_esc(st, "fraction, thickness ");
         let thickness = node.thickness(&st.mem);
         if thickness == DEFAULT_CODE {
-            print_cstr(st, c"= default".as_ptr());
+            print(st, "= default");
         } else {
             print_scaled(st, thickness);
         }
         let left = node.left_delimiter();
         if !left.is_null(&st.mem) {
-            print_cstr(st, c", left-delimiter ".as_ptr());
+            print(st, ", left-delimiter ");
             print_delimiter(st, left);
         }
         let right = node.right_delimiter();
         if !right.is_null(&st.mem) {
-            print_cstr(st, c", right-delimiter ".as_ptr());
+            print(st, ", right-delimiter ");
             print_delimiter(st, right);
         }
         print_subsidiary_data(st, node.numerator(), b'\\');
@@ -3353,26 +3332,26 @@ fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
     }
 
     let name = match nt {
-        NodeType::OrdNoad => c"mathord",
-        NodeType::OpNoad => c"mathop",
-        NodeType::BinNoad => c"mathbin",
-        NodeType::RelNoad => c"mathrel",
-        NodeType::OpenNoad => c"mathopen",
-        NodeType::CloseNoad => c"mathclose",
-        NodeType::PunctNoad => c"mathpunct",
-        NodeType::InnerNoad => c"mathinner",
-        NodeType::OverNoad => c"overline",
-        NodeType::UnderNoad => c"underline",
-        NodeType::VcenterNoad => c"vcenter",
-        NodeType::RadicalNoad => c"radical",
-        NodeType::AccentNoad => c"accent",
-        NodeType::LeftNoad => c"left",
-        NodeType::RightNoad if node.subtype(&st.mem) == 0 => c"right",
-        NodeType::RightNoad => c"middle",
-        _ => c"",
+        NodeType::OrdNoad => "mathord",
+        NodeType::OpNoad => "mathop",
+        NodeType::BinNoad => "mathbin",
+        NodeType::RelNoad => "mathrel",
+        NodeType::OpenNoad => "mathopen",
+        NodeType::CloseNoad => "mathclose",
+        NodeType::PunctNoad => "mathpunct",
+        NodeType::InnerNoad => "mathinner",
+        NodeType::OverNoad => "overline",
+        NodeType::UnderNoad => "underline",
+        NodeType::VcenterNoad => "vcenter",
+        NodeType::RadicalNoad => "radical",
+        NodeType::AccentNoad => "accent",
+        NodeType::LeftNoad => "left",
+        NodeType::RightNoad if node.subtype(&st.mem) == 0 => "right",
+        NodeType::RightNoad => "middle",
+        _ => "",
     };
     if !name.is_empty() {
-        esc(st, name);
+        print_esc(st, name);
     }
     match nt {
         NodeType::RadicalNoad => print_delimiter(st, node.left_delimiter()),
@@ -3383,12 +3362,12 @@ fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
     if !matches!(nt, NodeType::LeftNoad | NodeType::RightNoad) {
         let sub = node.subtype(&st.mem);
         if sub != 0 {
-            esc(
+            print_esc(
                 st,
                 if sub == LIMITS as u16 {
-                    c"limits"
+                    "limits"
                 } else {
-                    c"nolimits"
+                    "nolimits"
                 },
             );
         }
@@ -3399,26 +3378,26 @@ fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
 }
 
 /// The label shown for a token list of type `index` in the error context.
-fn token_list_label(index: u16, loc: i32) -> Option<&'static CStr> {
+fn token_list_label(index: u16, loc: i32) -> Option<&'static str> {
     Some(match index {
-        PARAMETER => c"<argument> ",
-        U_TEMPLATE | V_TEMPLATE => c"<template> ",
-        BACKED_UP | BACKED_UP_CHAR if loc == TEX_NULL => c"<recently read> ",
-        BACKED_UP | BACKED_UP_CHAR => c"<to be read again> ",
-        INSERTED => c"<inserted text> ",
-        OUTPUT_TEXT => c"<output> ",
-        EVERY_PAR_TEXT => c"<everypar> ",
-        EVERY_MATH_TEXT => c"<everymath> ",
-        EVERY_DISPLAY_TEXT => c"<everydisplay> ",
-        EVERY_HBOX_TEXT => c"<everyhbox> ",
-        EVERY_VBOX_TEXT => c"<everyvbox> ",
-        EVERY_JOB_TEXT => c"<everyjob> ",
-        EVERY_CR_TEXT => c"<everycr> ",
-        MARK_TEXT => c"<mark> ",
-        EVERY_EOF_TEXT => c"<everyeof> ",
-        INTER_CHAR_TEXT => c"<XeTeXinterchartoks> ",
-        WRITE_TEXT => c"<write> ",
-        TECTONIC_CODA_TEXT => c"<TectonicCodaTokens> ",
+        PARAMETER => "<argument> ",
+        U_TEMPLATE | V_TEMPLATE => "<template> ",
+        BACKED_UP | BACKED_UP_CHAR if loc == TEX_NULL => "<recently read> ",
+        BACKED_UP | BACKED_UP_CHAR => "<to be read again> ",
+        INSERTED => "<inserted text> ",
+        OUTPUT_TEXT => "<output> ",
+        EVERY_PAR_TEXT => "<everypar> ",
+        EVERY_MATH_TEXT => "<everymath> ",
+        EVERY_DISPLAY_TEXT => "<everydisplay> ",
+        EVERY_HBOX_TEXT => "<everyhbox> ",
+        EVERY_VBOX_TEXT => "<everyvbox> ",
+        EVERY_JOB_TEXT => "<everyjob> ",
+        EVERY_CR_TEXT => "<everycr> ",
+        MARK_TEXT => "<mark> ",
+        EVERY_EOF_TEXT => "<everyeof> ",
+        INTER_CHAR_TEXT => "<XeTeXinterchartoks> ",
+        WRITE_TEXT => "<write> ",
+        TECTONIC_CODA_TEXT => "<TectonicCodaTokens> ",
         _ => return None,
     })
 }
@@ -3459,12 +3438,12 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     if ci.name <= 17 {
                         if ci.name == 0 {
                             if st.input.base_ptr == 0 {
-                                print_nl_cstr(st, c"<*>".as_ptr());
+                                print_nl(st, "<*>");
                             } else {
-                                print_nl_cstr(st, c"<insert> ".as_ptr());
+                                print_nl(st, "<insert> ");
                             }
                         } else {
-                            print_nl_cstr(st, c"<read ".as_ptr());
+                            print_nl(st, "<read ");
                             if ci.name == 17 {
                                 print_char(st, b'*' as i32);
                             } else {
@@ -3473,7 +3452,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                             print_char(st, b'>' as i32);
                         }
                     } else {
-                        print_nl_cstr(st, c"l.".as_ptr());
+                        print_nl(st, "l.");
                         if ci.index as i32 == st.input.in_open {
                             print_int(st, st.mem.line);
                         } else {
@@ -3501,7 +3480,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                             print_cs(st, ci.name);
                         }
                         index => match token_list_label(index, ci.loc) {
-                            Some(label) => print_nl_cstr(st, label.as_ptr()),
+                            Some(label) => print_nl(st, label),
                             None => print_nl(st, b'?' as i32),
                         },
                     }
@@ -3527,7 +3506,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                 let (start, n) = if l + first_count <= st.errors.half_error_line {
                     (0, l + first_count)
                 } else {
-                    print_cstr(st, c"...".as_ptr());
+                    print(st, "...");
                     (
                         l + first_count - st.errors.half_error_line + 3,
                         st.errors.half_error_line,
@@ -3549,12 +3528,12 @@ pub(crate) fn show_context(st: &mut EngineState) {
                     print_char(st, st.errors.trick_buf[(q % error_line) as usize]);
                 }
                 if m + n > error_line {
-                    print_cstr(st, c"...".as_ptr());
+                    print(st, "...");
                 }
                 nn += 1;
             }
         } else if nn == error_context_lines {
-            print_nl_cstr(st, c"...".as_ptr());
+            print_nl(st, "...");
             nn += 1;
         }
         if bottom_line {

@@ -41,14 +41,15 @@ pub(crate) const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 
 pub(crate) enum InputAbort {
     Overflow {
-        what: *const libc::c_char,
+        what: &'static str,
         n: i32,
     },
-    Fatal(*const libc::c_char),
+    Fatal(&'static str),
     /// Aborts without printing a TeX error first.
-    TtAbort(*const libc::c_char),
+    TtAbort(&'static str),
     MainMemory,
     InputClose,
+    CannotOpenInput,
 }
 
 impl InputAbort {
@@ -58,8 +59,9 @@ impl InputAbort {
             InputAbort::Fatal(msg) => EngineAbort::Fatal(msg),
             InputAbort::TtAbort(msg) => EngineAbort::TtAbort(msg),
             InputAbort::MainMemory => crate::errors::EngineAbort::MainMemoryOverflow,
+            InputAbort::CannotOpenInput => EngineAbort::CannotOpenInput,
             InputAbort::InputClose => {
-                EngineAbort::TtAbort(c"serious internal error closing an input file".as_ptr())
+                EngineAbort::TtAbort("serious internal error closing an input file")
             }
         }
     }
@@ -72,7 +74,7 @@ fn push_input(st: &mut EngineState) -> Result<(), InputAbort> {
         st.input.max_in_stack = ptr;
         if ptr == st.input.stack_size {
             return Err(InputAbort::Overflow {
-                what: c"input stack size".as_ptr(),
+                what: "input stack size",
                 n: st.input.stack_size,
             });
         }
@@ -109,7 +111,7 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), InputAbort> {
             st.scanner.align_state = 0;
         } else {
             return Err(InputAbort::Fatal(
-                c"(interwoven alignment preambles are not allowed)".as_ptr(),
+                "(interwoven alignment preambles are not allowed)",
             ));
         }
     }
@@ -169,13 +171,13 @@ impl MemState {
 pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), InputAbort> {
     if st.input.in_open == st.input.max_in_open {
         return Err(InputAbort::Overflow {
-            what: c"text input levels".as_ptr(),
+            what: "text input levels",
             n: st.input.max_in_open,
         });
     }
     if st.input.first == st.input.buf_size {
         return Err(InputAbort::Overflow {
-            what: c"buffer size".as_ptr(),
+            what: "buffer size",
             n: st.input.buf_size,
         });
     }
@@ -230,7 +232,7 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, InputAbort> {
         st.input.cur_input.loc = st.input.first;
         st.input.cur_input.limit = st.input.last - 1;
         return Err(InputAbort::Overflow {
-            what: c"buffer size".as_ptr(),
+            what: "buffer size",
             n: st.input.buf_size,
         });
     }
@@ -284,21 +286,21 @@ pub(crate) fn begin_token_list(
     if st.eqtb.int_par(INT_PAR_TRACING_MACROS) > 1 {
         use crate::output::{
             begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here,
-            end_diagnostic, print_cmd_chr, print_cstr, print_esc_cstr, print_nl_cstr, token_show,
+            end_diagnostic, print, print_cmd_chr, print_esc, print_nl, token_show,
         };
         begin_diagnostic(st);
         diagnostic_begin_capture_warning_here(st);
-        print_nl_cstr(st, c"".as_ptr());
+        print_nl(st, "");
         match t {
-            MARK_TEXT => print_esc_cstr(st, c"mark".as_ptr()),
-            WRITE_TEXT => print_esc_cstr(st, c"write".as_ptr()),
+            MARK_TEXT => print_esc(st, "mark"),
+            WRITE_TEXT => print_esc(st, "write"),
             _ => print_cmd_chr(
                 st,
                 ASSIGN_TOKS,
                 t as i32 + LOCAL_BASE + LOCAL_OUTPUT_ROUTINE - OUTPUT_TEXT as i32,
             ),
         }
-        print_cstr(st, c"->".as_ptr());
+        print(st, "->");
         token_show(st, list);
         capture_to_diagnostic(st, std::ptr::null_mut());
         end_diagnostic(st, false);

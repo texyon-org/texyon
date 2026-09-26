@@ -117,13 +117,13 @@ impl PageboxType {
         }
     }
 
-    pub(crate) fn label(self) -> Option<&'static std::ffi::CStr> {
+    pub(crate) fn label(self) -> Option<&'static str> {
         match self {
-            PageboxType::Crop => Some(c"pagebox cropbox "),
-            PageboxType::Media => Some(c"pagebox mediabox "),
-            PageboxType::Bleed => Some(c"pagebox bleedbox "),
-            PageboxType::Trim => Some(c"pagebox trimbox "),
-            PageboxType::Art => Some(c"pagebox artbox "),
+            PageboxType::Crop => Some("pagebox cropbox "),
+            PageboxType::Media => Some("pagebox mediabox "),
+            PageboxType::Bleed => Some("pagebox bleedbox "),
+            PageboxType::Trim => Some("pagebox trimbox "),
+            PageboxType::Art => Some("pagebox artbox "),
             PageboxType::Unset => None,
         }
     }
@@ -354,10 +354,10 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, MainControlAbort
     if st.scanner.cur_val > 0 {
         return Ok(Some(Fix2D(st.scanner.cur_val)));
     }
-    crate::output::error_here_with_diagnostic(st, c"Improper image ".as_ptr());
-    crate::output::print_cstr(st, c"size (".as_ptr());
+    crate::output::error_here_with_diagnostic(st, "Improper image ");
+    crate::output::print(st, "size (");
     crate::output::print_scaled(st, st.scanner.cur_val);
-    crate::output::print_cstr(st, c"pt) will be ignored".as_ptr());
+    crate::output::print(st, "pt) will be ignored");
     crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
     st.errors.help(&[
         "I can't scale images to zero or negative sizes,",
@@ -378,16 +378,16 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Mai
     let mut pdf_box_type = None;
     let mut page = 0;
     if is_pdf {
-        if crate::scan::scan_keyword(st, c"page")? {
+        if crate::scan::scan_keyword(st, "page")? {
             crate::scan::scan_int(st)?;
             page = st.scanner.cur_val;
         }
         let keywords = [
-            (c"crop", PageboxType::Crop),
-            (c"media", PageboxType::Media),
-            (c"bleed", PageboxType::Bleed),
-            (c"trim", PageboxType::Trim),
-            (c"art", PageboxType::Art),
+            ("crop", PageboxType::Crop),
+            ("media", PageboxType::Media),
+            ("bleed", PageboxType::Bleed),
+            ("trim", PageboxType::Trim),
+            ("art", PageboxType::Art),
         ];
         let mut pdf_box = PageboxType::Unset;
         for (keyword, pb) in keywords {
@@ -399,7 +399,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Mai
         pdf_box_type = Some(pdf_box);
     }
 
-    let name_of_file = st.input.name_of_file.as_ptr();
+    let name_of_file = st.input.name_of_file_ptr();
     // SAFETY: `name_of_file` is the NUL-terminated packed name.
     let (result, bounds) = unsafe { find_pic_file(name_of_file, pdf_box_type, page)? };
     // SAFETY: as above.
@@ -424,30 +424,30 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Mai
     let mut y_size_req = 0.0;
     loop {
         let no_size_req = x_size_req == 0.0 && y_size_req == 0.0;
-        if crate::scan::scan_keyword(st, c"scaled")? {
+        if crate::scan::scan_keyword(st, "scaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(s, s));
             }
-        } else if crate::scan::scan_keyword(st, c"xscaled")? {
+        } else if crate::scan::scan_keyword(st, "xscaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(s, 1.0));
             }
-        } else if crate::scan::scan_keyword(st, c"yscaled")? {
+        } else if crate::scan::scan_keyword(st, "yscaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(1.0, s));
             }
-        } else if crate::scan::scan_keyword(st, c"width")? {
+        } else if crate::scan::scan_keyword(st, "width")? {
             if let Some(size) = scan_image_size(st)? {
                 x_size_req = size;
             }
-        } else if crate::scan::scan_keyword(st, c"height")? {
+        } else if crate::scan::scan_keyword(st, "height")? {
             if let Some(size) = scan_image_size(st)? {
                 y_size_req = size;
             }
-        } else if crate::scan::scan_keyword(st, c"rotated")? {
+        } else if crate::scan::scan_keyword(st, "rotated")? {
             crate::scan::xetex_scan_dimen(st, false, false, false, false)?;
             if !no_size_req {
                 placement.scale_to(x_size_req, y_size_req);
@@ -508,10 +508,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Mai
         pic.set_pic_transform(mem, [t.a, t.b, t.c, t.d, t.x, t.y].map(|v| D2Fix(v)));
         pic.set_pic_path(mem, &pic_path);
     } else {
-        crate::output::error_here_with_diagnostic(
-            st,
-            c"Unable to load picture or PDF file '".as_ptr(),
-        );
+        crate::output::error_here_with_diagnostic(st, "Unable to load picture or PDF file '");
         let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
         crate::output::print_file_name(st, n, a, e);
         crate::output::print(st, '\'' as i32);

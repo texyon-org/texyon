@@ -22,8 +22,8 @@ use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyBox, AnyNode, CondNode, NodePtr};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
-    error_here_with_diagnostic, print_char, print_cmd_chr, print_cstr, print_err, print_esc_cstr,
-    print_int, print_scaled, show_cur_cmd_chr, sprint_cs,
+    error_here_with_diagnostic, print, print_char, print_cmd_chr, print_err, print_esc, print_int,
+    print_scaled, show_cur_cmd_chr, sprint_cs,
 };
 use crate::scan::{
     fetch_box, get_avail_scc, get_next_scc, get_token, get_x_non_blank, get_x_token, scan_int,
@@ -161,7 +161,7 @@ fn token_chars_to_buffer(st: &mut EngineState, list: MemPtr) -> Result<i32, SccA
             st.input.max_buf_stack = j + 1;
             if st.input.max_buf_stack == st.input.buf_size {
                 return Err(SccAbort::Input(InputAbort::Overflow {
-                    what: c"buffer size".as_ptr(),
+                    what: "buffer size",
                     n: st.input.buf_size,
                 }));
             }
@@ -187,9 +187,9 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
         store_new_token(st, &mut tail, st.scanner.cur_tok)?;
     }
     if st.scanner.cur_cmd != END_CS_NAME {
-        error_here_with_diagnostic(st, c"Missing ".as_ptr());
-        print_esc_cstr(st, c"endcsname".as_ptr());
-        print_cstr(st, c" inserted".as_ptr());
+        error_here_with_diagnostic(st, "Missing ");
+        print_esc(st, "endcsname");
+        print(st, " inserted");
         capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
             "The control sequence marked <to be read again> should",
@@ -201,10 +201,10 @@ fn scan_cs_name_tokens(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
     Ok(head)
 }
 
-fn trace_diagnostic(st: &mut EngineState, text: &std::ffi::CStr) {
+fn trace_diagnostic(st: &mut EngineState, text: &str) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
-    print_cstr(st, text.as_ptr());
+    print(st, text);
     capture_to_diagnostic(st, std::ptr::null_mut());
     end_diagnostic(st, false);
 }
@@ -257,7 +257,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), SccAbort> {
             {
                 (st.scanner.cur_tok - OTHER_TOKEN) as u8
             } else {
-                error_here_with_diagnostic(st, c"Missing = inserted for ".as_ptr());
+                error_here_with_diagnostic(st, "Missing = inserted for ");
                 print_cmd_chr(st, IF_TEST, this_if as i32);
                 capture_to_diagnostic(st, std::ptr::null_mut());
                 st.errors
@@ -379,7 +379,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), SccAbort> {
             if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 1 {
                 begin_diagnostic(st);
                 diagnostic_begin_capture_warning_here(st);
-                print_cstr(st, c"{case ".as_ptr());
+                print(st, "{case ");
                 print_int(st, n);
                 print_char(st, b'}' as i32);
                 capture_to_diagnostic(st, std::ptr::null_mut());
@@ -423,7 +423,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), SccAbort> {
     }
 
     if st.eqtb.int_par(INT_PAR_TRACING_COMMANDS) > 1 {
-        trace_diagnostic(st, if b { c"{true}" } else { c"{false}" });
+        trace_diagnostic(st, if b { "{true}" } else { "{false}" });
     }
 
     if b {
@@ -442,8 +442,8 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), SccAbort> {
                 skipped_branch_end(st);
                 return Ok(());
             }
-            error_here_with_diagnostic(st, c"Extra ".as_ptr());
-            print_esc_cstr(st, c"or".as_ptr());
+            error_here_with_diagnostic(st, "Extra ");
+            print_esc(st, "or");
             capture_to_diagnostic(st, std::ptr::null_mut());
             st.errors
                 .help(&[r"I'm ignoring this; it doesn't match any \if."]);
@@ -503,8 +503,8 @@ fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<i32, S
     crate::scan::scan_pdf_ext_toks(st)?;
     if st.shipout.selector == SELECTOR_NEW_STRING {
         return Err(SccAbort::PdfError {
-            t: c"tokens".as_ptr(),
-            p: c"tokens_to_string() called while selector = new_string".as_ptr(),
+            t: "tokens",
+            p: "tokens_to_string() called while selector = new_string",
         });
     }
     let old_selector = st.shipout.selector;
@@ -538,8 +538,8 @@ fn ins_file_query_result(
 
 fn scan_nonnegative_int(
     st: &mut EngineState,
-    keyword: &std::ffi::CStr,
-    err: &std::ffi::CStr,
+    keyword: &str,
+    err: &str,
     help: &'static str,
 ) -> Result<i32, SccAbort> {
     st.scanner.cur_val = 0;
@@ -604,7 +604,7 @@ fn print_margin_kern(
         Some(w) => print_scaled(st, w),
         None => print_char(st, '0' as i32),
     }
-    print_cstr(st, c"pt".as_ptr());
+    print(st, "pt");
 }
 
 pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
@@ -636,8 +636,8 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
             crate::scan::scan_register_num(st)?;
             let Some(AnyBox::HList(hbox)) = fetch_box(st, st.scanner.cur_val) else {
                 return Err(SccAbort::PdfError {
-                    t: c"marginkern".as_ptr(),
-                    p: c"a non-empty hbox expected".as_ptr(),
+                    t: "marginkern",
+                    p: "a non-empty hbox expected",
                 });
             };
             margin_list = hbox.list_ptr(&st.mem).0;
@@ -664,7 +664,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
         }
         PDF_MDFIVE_SUM_CODE => {
             let saved = save_scan(st)?;
-            let is_file = crate::scan::scan_keyword(st, c"file")?;
+            let is_file = crate::scan::scan_keyword(st, "file")?;
             let s = scan_text_to_string(st, &saved)?;
             let b = st.strings.pool_ptr;
             unsafe { st.strings.getmd5sum(s, is_file) };
@@ -674,14 +674,14 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
             let saved = save_scan(st)?;
             let offset = scan_nonnegative_int(
                 st,
-                c"offset",
-                c"Bad file offset",
+                "offset",
+                "Bad file offset",
                 "A file offset must be between 0 and 2^_31_-1,",
             )?;
             let length = scan_nonnegative_int(
                 st,
-                c"length",
-                c"Bad dump length",
+                "length",
+                "Bad dump length",
                 "A dump length must be between 0 and 2^_31_-1,",
             )?;
             let s = scan_text_to_string(st, &saved)?;
@@ -706,12 +706,9 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
                 || code == OUT_PARAM as i32
                 || code == IGNORE as i32
             {
-                error_here_with_diagnostic(st, c"Invalid code (".as_ptr());
+                error_here_with_diagnostic(st, "Invalid code (");
                 print_int(st, code);
-                print_cstr(
-                    st,
-                    c"), should be in the ranges 1..4, 6..8, 10..13".as_ptr(),
-                );
+                print(st, "), should be in the ranges 1..4, 6..8, 10..13");
                 capture_to_diagnostic(st, std::ptr::null_mut());
                 st.errors
                     .help(&["I'm going to use 12 instead of that illegal code value."]);
@@ -730,7 +727,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
                 arg1 = st.scanner.cur_val;
                 arg2 = 0;
             } else {
-                not_font_error(st, c, fnt, c"; not an AAT font")?;
+                not_font_error(st, c, fnt, "; not an AAT font")?;
             }
         }
         XETEX_FEATURE_NAME_CODE | XETEX_SELECTOR_NAME_CODE => {
@@ -746,7 +743,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
                     arg2 = 0;
                 }
             } else {
-                not_font_error(st, c, fnt, c"; not an AAT or Graphite font")?;
+                not_font_error(st, c, fnt, "; not an AAT or Graphite font")?;
             }
         }
         XETEX_GLYPH_NAME_CODE => {
@@ -757,7 +754,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
                 scan_int(st)?;
                 arg1 = st.scanner.cur_val;
             } else {
-                not_font_error(st, c, fnt, c"; not a native platform font")?;
+                not_font_error(st, c, fnt, "; not a native platform font")?;
             }
         }
         JOB_NAME_CODE => {
@@ -803,12 +800,12 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
                 crate::output::print(st, name);
             }
             if st.fonts.font_size[f] != st.fonts.font_dsize[f] {
-                print_cstr(st, c" at ".as_ptr());
+                print(st, " at ");
                 print_scaled(st, st.fonts.font_size[f]);
-                print_cstr(st, c"pt".as_ptr());
+                print(st, "pt");
             }
         }
-        ETEX_REVISION_CODE => print_cstr(st, c".6".as_ptr()),
+        ETEX_REVISION_CODE => print(st, ".6"),
         LEFT_MARGIN_KERN_CODE | RIGHT_MARGIN_KERN_CODE => {
             let list = margin_list;
             if c == LEFT_MARGIN_KERN_CODE {
@@ -831,7 +828,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), SccAbort> {
             print_int(st, v);
         }
         XETEX_UCHAR_CODE | XETEX_UCHARCAT_CODE => print_char(st, st.scanner.cur_val),
-        XETEX_REVISION_CODE => print_cstr(st, c".999994".as_ptr()),
+        XETEX_REVISION_CODE => print(st, ".999994"),
         XETEX_VARIATION_NAME_CODE => {
             if st.fonts.font_area[fnt as usize] == AAT_FONT_FLAG {
                 let engine = st.fonts.font_layout_engine_ptr(fnt);
@@ -871,24 +868,13 @@ fn is_aat_or_graphite(st: &EngineState, f: i32) -> bool {
         || (fa == OTGR_FONT_FLAG && unsafe { usingGraphite(st.fonts.font_layout_engine_ptr(f)) })
 }
 
-fn not_font_error(
-    st: &mut EngineState,
-    c: i32,
-    f: i32,
-    msg: &std::ffi::CStr,
-) -> Result<(), SccAbort> {
-    scc_err(crate::errors::not_font_error_common(
-        st,
-        CONVERT,
-        c,
-        f,
-        msg.as_ptr(),
-    ))
+fn not_font_error(st: &mut EngineState, c: i32, f: i32, msg: &str) -> Result<(), SccAbort> {
+    scc_err(crate::errors::not_font_error_common(st, CONVERT, c, f, msg))
 }
 
 fn make_string_overflow_scc(st: &EngineState) -> SccAbort {
     SccAbort::Input(InputAbort::Overflow {
-        what: c"number of strings".as_ptr(),
+        what: "number of strings",
         n: st.strings.max_strings - st.strings.init_str_ptr,
     })
 }
@@ -907,7 +893,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), SccAbort> {
     st.scanner.expand_depth_count += 1;
     if st.scanner.expand_depth_count >= st.scanner.expand_depth {
         return Err(SccAbort::Input(InputAbort::Overflow {
-            what: c"expansion depth".as_ptr(),
+            what: "expansion depth",
             n: st.scanner.expand_depth,
         }));
     }
@@ -969,9 +955,9 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), SccAbort> {
                         st.scanner.cur_chr += UNLESS_CODE;
                         continue 'reswitch;
                     }
-                    error_here_with_diagnostic(st, c"You can't use `".as_ptr());
-                    print_esc_cstr(st, c"unless".as_ptr());
-                    print_cstr(st, c"' before `".as_ptr());
+                    error_here_with_diagnostic(st, "You can't use `");
+                    print_esc(st, "unless");
+                    print(st, "' before `");
                     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
                     print_char(st, '\'' as i32);
                     capture_to_diagnostic(st, std::ptr::null_mut());
@@ -1054,7 +1040,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), SccAbort> {
                     if st.scanner.if_limit == IF_CODE {
                         crate::input::insert_relax(st)?;
                     } else {
-                        error_here_with_diagnostic(st, c"Extra ".as_ptr());
+                        error_here_with_diagnostic(st, "Extra ");
                         print_cmd_chr(st, FI_OR_ELSE, st.scanner.cur_chr);
                         capture_to_diagnostic(st, std::ptr::null_mut());
                         st.errors
@@ -1080,7 +1066,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), SccAbort> {
                 }
             }
             _ => {
-                print_err(st, c"Undefined control sequence");
+                print_err(st, "Undefined control sequence");
                 st.errors.help(&[
                     "The control sequence at the end of the top line",
                     r"of your error message was never \def'ed. If you have",
@@ -1113,9 +1099,9 @@ fn runaway_par_in_argument(
 ) -> Result<(), SccAbort> {
     if st.scanner.long_state == CALL {
         crate::errors::runaway(st);
-        error_here_with_diagnostic(st, c"Paragraph ended before ".as_ptr());
+        error_here_with_diagnostic(st, "Paragraph ended before ");
         sprint_cs(st, st.scanner.warning_index);
-        print_cstr(st, c" was complete".as_ptr());
+        print(st, " was complete");
         capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
             "I suspect you've forgotten a `}', causing me to apply this",
@@ -1135,9 +1121,9 @@ fn runaway_par_in_argument(
 #[cold]
 fn extra_right_brace_in_argument(st: &mut EngineState) -> Result<(), SccAbort> {
     back_input(st)?;
-    error_here_with_diagnostic(st, c"Argument of ".as_ptr());
+    error_here_with_diagnostic(st, "Argument of ");
     sprint_cs(st, st.scanner.warning_index);
-    print_cstr(st, c" has an extra }".as_ptr());
+    print(st, " has an extra }");
     capture_to_diagnostic(st, std::ptr::null_mut());
     st.errors.help(&[
         "I've run across a `}' that doesn't seem to match anything.",
@@ -1189,7 +1175,7 @@ fn trace_macro_param(st: &mut EngineState, match_chr: i32, n: i32, list: MemPtr)
         diagnostic_begin_capture_warning_here(st);
         crate::output::print_nl(st, match_chr);
         print_int(st, n);
-        print_cstr(st, c"<-".as_ptr());
+        print(st, "<-");
         crate::output::show_token_list(st, list, TEX_NULL, 1000);
         capture_to_diagnostic(st, std::ptr::null_mut());
         end_diagnostic(st, false);
@@ -1257,9 +1243,9 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), SccAbort> {
 
                     if s != r {
                         if s.is_null() {
-                            error_here_with_diagnostic(st, c"Use of ".as_ptr());
+                            error_here_with_diagnostic(st, "Use of ");
                             sprint_cs(st, st.scanner.warning_index);
-                            print_cstr(st, c" doesn't match its definition".as_ptr());
+                            print(st, " doesn't match its definition");
                             capture_to_diagnostic(st, std::ptr::null_mut());
                             st.errors.help(&[
                                 r"If you say, e.g., `\def\a1{...}', then you must always",
@@ -1391,7 +1377,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), SccAbort> {
                 st.input.max_param_stack = st.input.param_ptr + n;
                 if st.input.max_param_stack > st.input.param_size {
                     return Err(SccAbort::Input(InputAbort::Overflow {
-                        what: c"parameter stack size".as_ptr(),
+                        what: "parameter stack size",
                         n: st.input.param_size,
                     }));
                 }

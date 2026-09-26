@@ -347,9 +347,9 @@ impl ErrorState {
 /// `ln(x / 2^30) * 2^24`.
 fn m_log(st: &mut EngineState, mut x: i32) -> i32 {
     if x <= 0 {
-        crate::output::error_here_with_diagnostic(st, c"Logarithm of ".as_ptr());
+        crate::output::error_here_with_diagnostic(st, "Logarithm of ");
         crate::output::print_scaled(st, x);
-        crate::output::print_cstr(st, c" has been replaced by 0".as_ptr());
+        crate::output::print(st, " has been replaced by 0");
         crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
             "Since I don't take logs of non-positive numbers,",

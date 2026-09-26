@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use crate::bridge::{
-    issue_error_cstr, issue_warning_cstr, ttstub_output_close, ttstub_output_open,
+    issue_error_cstr, issue_warning_str, ttstub_output_close, ttstub_output_open,
     ttstub_output_write,
 };
 use crate::consts::{INT_PAR_SYNCTEX, INVALID_HANDLE};
@@ -334,8 +334,8 @@ pub unsafe fn synctex_sheet(st: &mut EngineState, mag: i32, tmp: *mut c_char) {
         libc::free(tmp as *mut libc::c_void);
         if st.eqtb.synctex_enabled() && !synctex.flags.warn {
             synctex.flags.warn = true;
-            issue_warning_cstr(
-                c"SyncTeX was disabled -- changing the value of \\synctex has no effect".as_ptr(),
+            issue_warning_str(
+                "SyncTeX was disabled -- changing the value of \\synctex has no effect",
             );
         }
         return;

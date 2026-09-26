@@ -1,8 +1,6 @@
 //! Engine init, run and cleanup: the `tt_run_engine` entry point, the
 //! initialize_* primers, primitive registration and teardown.
 
-use std::ffi::CStr;
-
 use crate::bridge::ttstub_output_open_stdout;
 use crate::cmd::{
     BOX_REF, CAR_RET, COMMENT, DATA, DONT_EXPAND, ENDV, END_TEMPLATE, ESCAPE, GLUE_REF, IF_TEST,
@@ -72,7 +70,6 @@ const _: () = assert!(
 pub(crate) static mut TEX_FORMAT_DEFAULT: *mut libc::c_char = std::ptr::null_mut();
 
 extern "C" {
-    fn _ttbc_set_error_message(message: *const libc::c_char);
     fn pdf_files_init();
     fn pdf_files_close_if_open();
     fn pdf_files_close();
@@ -86,11 +83,11 @@ pub(crate) fn reset_layout_font_caches() {
     unsafe { xetex_layout_reset_font_caches() };
 }
 
-pub(crate) fn output_file_extension(st: &EngineState) -> *const libc::c_char {
+pub(crate) fn output_file_extension(st: &EngineState) -> &'static str {
     if st.config.semantic_pagination_enabled {
-        c".spx".as_ptr()
+        ".spx"
     } else {
-        c".xdv".as_ptr()
+        ".xdv"
     }
 }
 
@@ -105,7 +102,7 @@ pub(crate) unsafe fn get_strings_started(st: &mut EngineState) -> Result<(), Eng
         .load_pool_strings(spare_size)
         .map_err(|e| e.into_engine_abort())?;
     if loaded == 0 {
-        return Err(EngineAbort::TtAbort(c"must increase pool_size".as_ptr()));
+        return Err(EngineAbort::TtAbort("must increase pool_size"));
     }
     Ok(())
 }
@@ -177,15 +174,15 @@ impl PrimitiveInitAbort {
             PrimitiveInitAbort::HashLookup(e) => {
                 use crate::hash::HashLookupError::*;
                 let (what, n) = match e {
-                    HashSizeOverflow(n) => (c"hash size".as_ptr(), n),
-                    PoolSizeOverflow(n) => (c"pool size".as_ptr(), n),
-                    StringNumberOverflow(n) => (c"number of strings".as_ptr(), n),
-                    PrimitiveSizeOverflow(n) => (c"primitive size".as_ptr(), n),
+                    HashSizeOverflow(n) => ("hash size", n),
+                    PoolSizeOverflow(n) => ("pool size", n),
+                    StringNumberOverflow(n) => ("number of strings", n),
+                    PrimitiveSizeOverflow(n) => ("primitive size", n),
                 };
                 EngineAbort::Overflow { what, n }
             }
             PrimitiveInitAbort::BufferSize(limit) => EngineAbort::Overflow {
-                what: c"buffer size".as_ptr(),
+                what: "buffer size",
                 n: limit,
             },
         }
@@ -202,14 +199,14 @@ impl EqtbState {
 
 unsafe fn primitive(
     st: &mut EngineState,
-    ident: &CStr,
+    ident: &str,
     c: u8,
     o: i32,
 ) -> Result<(), PrimitiveInitAbort> {
-    let bytes = ident.to_bytes();
+    let bytes = ident.as_bytes();
     let prim_val = if bytes.len() > 1 {
         let len = bytes.len() as i32;
-        let s = st.strings.maketexstring(ident.as_ptr())?;
+        let s = st.strings.make_tex_string(ident)?;
 
         if st.input.first + len > st.input.buf_size + 1 {
             return Err(PrimitiveInitAbort::BufferSize(st.input.buf_size));
@@ -257,15 +254,15 @@ pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbo
     }
 
     while st.input.open_parens > 0 {
-        crate::output::print_cstr(st, c" )".as_ptr());
+        crate::output::print(st, " )");
         st.input.open_parens -= 1;
     }
 
     let cur_level = st.save_stack.cur_level;
     if cur_level > LEVEL_ONE {
         crate::output::print_nl(st, b'(' as i32);
-        crate::output::print_esc_cstr(st, c"end occurred ".as_ptr());
-        crate::output::print_cstr(st, c"inside a group at level ".as_ptr());
+        crate::output::print_esc(st, "end occurred ");
+        crate::output::print(st, "inside a group at level ");
         crate::output::print_int(st, cur_level as i32 - 1);
         crate::output::print_char(st, b')' as i32);
         crate::output::show_save_groups(st);
@@ -273,15 +270,15 @@ pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbo
 
     while st.scanner.cond_ptr.0 != TEX_NULL {
         crate::output::print_nl(st, b'(' as i32);
-        crate::output::print_esc_cstr(st, c"end occurred ".as_ptr());
-        crate::output::print_cstr(st, c"when ".as_ptr());
+        crate::output::print_esc(st, "end occurred ");
+        crate::output::print(st, "when ");
         crate::output::print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
         let if_line = st.scanner.if_line;
         if if_line != 0 {
-            crate::output::print_cstr(st, c" on line ".as_ptr());
+            crate::output::print(st, " on line ");
             crate::output::print_int(st, if_line);
         }
-        crate::output::print_cstr(st, c" was incomplete)".as_ptr());
+        crate::output::print(st, " was incomplete)");
         let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
         st.scanner.if_line = cond.if_line(&st.mem);
         st.scanner.cur_if = cond.cur_if(&st.mem) as i16;
@@ -296,10 +293,7 @@ pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbo
         && st.shipout.selector == SELECTOR_TERM_AND_LOG
     {
         st.shipout.selector = SELECTOR_TERM_ONLY;
-        crate::output::print_nl_cstr(
-            st,
-            c"(see the transcript file for additional information)".as_ptr(),
-        );
+        crate::output::print_nl(st, "(see the transcript file for additional information)");
         st.shipout.selector = SELECTOR_TERM_AND_LOG;
     }
 
@@ -307,7 +301,7 @@ pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbo
         return Ok(());
     }
     if !st.config.in_initex_mode {
-        crate::output::print_nl_cstr(st, c"(\\dump is performed only by INITEX)".as_ptr());
+        crate::output::print_nl(st, "(\\dump is performed only by INITEX)");
         return Ok(());
     }
 
@@ -327,7 +321,7 @@ pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbo
     for box_code in LAST_BOX_CODE as usize..=VSPLIT_CODE as usize {
         st.mem
             .flush_node_list(st.scanner.disc_ptr[box_code])
-            .map_err(|msg| EngineAbort::Confusion(msg.as_ptr()))?;
+            .map_err(|msg| EngineAbort::Confusion(msg))?;
     }
 
     if let Some(spec) = st.shipout.last_glue {
@@ -658,9 +652,9 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: i32) {
 unsafe fn set_frozen_text(
     st: &mut EngineState,
     p: i32,
-    text: &CStr,
+    text: &str,
 ) -> Result<(), PrimitiveInitAbort> {
-    let s = st.strings.maketexstring(text.as_ptr())?;
+    let s = st.strings.make_tex_string(text)?;
     st.eqtb.set_hash_s1(p, s);
     Ok(())
 }
@@ -689,23 +683,23 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
         }
     }
 
-    set_frozen_text(st, FROZEN_END_TEMPLATE, c"endtemplate")?;
+    set_frozen_text(st, FROZEN_END_TEMPLATE, "endtemplate")?;
     st.eqtb
         .set_eq(FROZEN_END_TEMPLATE, END_TEMPLATE, NULL_LIST.0, LEVEL_ONE);
 
-    set_frozen_text(st, FROZEN_ENDV, c"endtemplate")?;
+    set_frozen_text(st, FROZEN_ENDV, "endtemplate")?;
     st.eqtb.set_eq(FROZEN_ENDV, ENDV, NULL_LIST.0, LEVEL_ONE);
 
-    set_frozen_text(st, FROZEN_DONT_EXPAND, c"notexpanded:")?;
+    set_frozen_text(st, FROZEN_DONT_EXPAND, "notexpanded:")?;
     st.eqtb.set_eq_type(FROZEN_DONT_EXPAND, DONT_EXPAND);
 
-    set_frozen_text(st, FROZEN_PRIMITIVE, c"primitive")?;
+    set_frozen_text(st, FROZEN_PRIMITIVE, "primitive")?;
     st.eqtb
         .set_eq(FROZEN_PRIMITIVE, IGNORE_SPACES, 1, LEVEL_ONE);
 
-    set_frozen_text(st, FROZEN_PROTECTION, c"inaccessible")?;
+    set_frozen_text(st, FROZEN_PROTECTION, "inaccessible")?;
 
-    set_frozen_text(st, END_WRITE, c"endwrite")?;
+    set_frozen_text(st, END_WRITE, "endwrite")?;
     st.eqtb.set_eq(END_WRITE, OUTER_CALL, TEX_NULL, LEVEL_ONE);
 
     st.eqtb.no_new_control_sequence = true;
@@ -739,9 +733,7 @@ pub(crate) unsafe fn tt_run_engine(
                 .copied()
                 .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
                 .unwrap_or("internal engine panic");
-            if let Ok(cmsg) = std::ffi::CString::new(msg) {
-                _ttbc_set_error_message(cmsg.as_ptr());
-            }
+            crate::bridge::set_error_message(msg);
             HISTORY_FATAL_ERROR
         }
     }
@@ -904,14 +896,8 @@ pub(crate) unsafe fn initialize_engine(
         bad = 21;
     }
     if bad > 0 {
-        let mut msg = [0 as libc::c_char; 80];
-        crate::compat::snprintf(
-            msg.as_mut_ptr(),
-            msg.len(),
-            c"failed internal consistency check #%d".as_ptr(),
-            bad,
-        );
-        return InitOutcome::Terminate(EngineAbort::TtAbort(msg.as_ptr()).into_history(st));
+        crate::bridge::set_error_message(format!("failed internal consistency check #{bad}"));
+        return InitOutcome::Terminate(HISTORY_FATAL_ERROR);
     }
 
     initialize_more_variables(st);
@@ -919,7 +905,7 @@ pub(crate) unsafe fn initialize_engine(
         if let Err(a) = get_strings_started(st) {
             return InitOutcome::Terminate(a.into_history(st));
         }
-        let format_ident = match st.strings.maketexstring(c" (INITEX)".as_ptr()) {
+        let format_ident = match st.strings.make_tex_string(" (INITEX)") {
             Ok(v) => v,
             Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
         };
@@ -1024,7 +1010,7 @@ pub(crate) unsafe fn initialize_engine(
 
         st.fonts.alloc_font_arrays();
 
-        let nullfont_name = match st.strings.maketexstring(c"nullfont".as_ptr()) {
+        let nullfont_name = match st.strings.make_tex_string("nullfont") {
             Ok(v) => v,
             Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
         };

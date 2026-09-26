@@ -162,28 +162,20 @@ unsafe fn xetex_ucnv_to_utf32(
     (len, err)
 }
 
-pub(crate) fn name_of_file_ptr(st: &EngineState) -> *const libc::c_char {
-    if st.input.name_of_file.is_empty() {
-        std::ptr::null()
-    } else {
-        st.input.name_of_file.as_ptr()
-    }
-}
-
 pub(crate) unsafe fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_int) -> usize {
     let handle = if filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY {
         ttstub_input_open_primary()
-    } else if *name_of_file_ptr(st) == b'|' as libc::c_char {
-        crate::output::print_nl_cstr(st, c"Warning: ".as_ptr());
+    } else if st.input.name_of_file.first() == Some(&b'|') {
+        crate::output::print_nl(st, "Warning: ");
         crate::output::diagnostic_begin_capture_warning_here(st);
-        crate::output::print_cstr(
+        crate::output::print(
             st,
-            c"piped inputs from external commands are not implemented in Tectonic".as_ptr(),
+            "piped inputs from external commands are not implemented in Tectonic",
         );
         crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
         return INVALID_HANDLE;
     } else {
-        ttstub_input_open(name_of_file_ptr(st), filefmt, 0)
+        ttstub_input_open(st.input.name_of_file_ptr(), filefmt, 0)
     };
 
     if handle == INVALID_HANDLE {
@@ -195,9 +187,9 @@ pub(crate) unsafe fn tt_xetex_open_input(st: &mut EngineState, filefmt: libc::c_
         abspath[0] = 0;
     }
 
-    let name = std::ffi::CStr::from_ptr(name_of_file_ptr(st));
-    st.input.name_length = name.to_bytes().len() as i32;
-    st.input.name_of_input_file = Some(name.to_owned());
+    let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
+    st.input.name_length = name.as_bytes().len() as i32;
+    st.input.name_of_input_file = Some(name);
     handle
 }
 
@@ -273,11 +265,11 @@ pub(crate) unsafe fn set_input_file_encoding(
             if cnv.is_null() {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b'E' as i32);
-                crate::output::print_cstr(st, c"rror ".as_ptr());
+                crate::output::print(st, "rror ");
                 crate::output::print_int(st, err);
-                crate::output::print_cstr(st, c" creating Unicode converter for `".as_ptr());
-                crate::output::print_cstr(st, name.as_ptr());
-                crate::output::print_cstr(st, c"'; reading as raw bytes".as_ptr());
+                crate::output::print(st, " creating Unicode converter for `");
+                crate::output::print(st, name.as_bytes());
+                crate::output::print(st, "'; reading as raw bytes");
                 crate::output::end_diagnostic(st, true);
                 f.encoding_mode = RAW as i16;
             } else {
@@ -312,15 +304,15 @@ unsafe fn is_true_eof(c: i32) -> bool {
 }
 
 fn line_too_long() -> InputAbort {
-    InputAbort::TtAbort(c"unable to read an entire line (buffer too small)".as_ptr())
+    InputAbort::TtAbort("unable to read an entire line (buffer too small)")
 }
 
 fn conversion_error(st: &mut EngineState, errcode: i32) {
     crate::output::begin_diagnostic(st);
     crate::output::print_nl(st, b'U' as i32);
-    crate::output::print_cstr(st, c"nicode conversion failed (ICU error code = ".as_ptr());
+    crate::output::print(st, "nicode conversion failed (ICU error code = ");
     crate::output::print_int(st, errcode);
-    crate::output::print_cstr(st, c") discarding any remaining text".as_ptr());
+    crate::output::print(st, ") discarding any remaining text");
     crate::output::end_diagnostic(st, true);
 }
 
@@ -344,7 +336,7 @@ unsafe fn apply_normalization(
             normalizer as *mut *mut libc::c_void,
         );
         if status != K_STATUS_NO_ERROR {
-            return Err(InputAbort::TtAbort(c"failed to create normalizer".as_ptr()));
+            return Err(InputAbort::TtAbort("failed to create normalizer"));
         }
     }
 
@@ -384,7 +376,7 @@ pub(crate) unsafe fn input_line(
 
     if (*f).handle == INVALID_HANDLE {
         return Err(InputAbort::TtAbort(
-            c"reads from synthetic \"terminal\" file #0 should never happen".as_ptr(),
+            "reads from synthetic \"terminal\" file #0 should never happen",
         ));
     }
 
@@ -538,10 +530,9 @@ pub(crate) unsafe fn make_utf16_name(st: &mut EngineState) {
     if st.input.name_of_file16.len() < needed {
         st.input.name_of_file16.resize(needed, 0);
     }
-    let mut s = st.input.name_of_file.as_ptr() as *const u8;
-    let end = s.add(name_len);
+    let mut s = &st.input.name_of_file[..name_len];
     let mut t = 0;
-    while s < end {
+    while !s.is_empty() {
         let (units, n) = utf16_units(next_utf8_char(&mut s));
         st.input.name_of_file16[t..t + n].copy_from_slice(&units[..n]);
         t += n;
@@ -555,7 +546,7 @@ pub(crate) struct InvalidInputMode;
 
 impl From<InvalidInputMode> for InputAbort {
     fn from(_: InvalidInputMode) -> Self {
-        InputAbort::TtAbort(c"internal error; file input mode is invalid".as_ptr())
+        InputAbort::TtAbort("internal error; file input mode is invalid")
     }
 }
 
@@ -673,9 +664,9 @@ impl OpenOrCloseAbort {
             OpenOrCloseAbort::Scanner(e) => e.into_engine_abort(),
             OpenOrCloseAbort::Name(e) => e.into_engine_abort(),
             OpenOrCloseAbort::MakeString(e) => e.into_engine_abort(),
-            OpenOrCloseAbort::InputClose => crate::errors::EngineAbort::TtAbort(
-                c"serious internal error closing an input file".as_ptr(),
-            ),
+            OpenOrCloseAbort::InputClose => {
+                crate::errors::EngineAbort::TtAbort("serious internal error closing an input file")
+            }
         }
     }
 }
@@ -889,10 +880,10 @@ pub(crate) unsafe fn make_name_string(st: &mut EngineState) -> Result<i32, NameA
 
 pub(crate) unsafe fn pack_job_name(
     st: &mut EngineState,
-    s: *const libc::c_char,
+    s: &str,
 ) -> Result<(), crate::texmfmp::MakeTexStringAbort> {
     st.scanner.cur_area = EMPTY_STRING;
-    st.scanner.cur_ext = st.strings.maketexstring(s)?;
+    st.scanner.cur_ext = st.strings.make_tex_string(s)?;
     st.scanner.cur_name = st.strings.job_name;
     pack_file_name(
         st,
@@ -916,7 +907,7 @@ impl OpenLogAbort {
             OpenLogAbort::MakeString(e) => e.into_engine_abort(),
             OpenLogAbort::Name(e) => e.into_engine_abort(),
             OpenLogAbort::CannotOpen => {
-                crate::errors::EngineAbort::TtAbort(c"cannot open log file output".as_ptr())
+                crate::errors::EngineAbort::TtAbort("cannot open log file output")
             }
         }
     }
@@ -928,13 +919,13 @@ pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), OpenLogAb
     if st.strings.job_name == 0 {
         st.strings.job_name = st
             .strings
-            .maketexstring(c"texput".as_ptr())
+            .make_tex_string("texput")
             .map_err(OpenLogAbort::MakeString)?;
     }
 
-    pack_job_name(st, c".log".as_ptr()).map_err(OpenLogAbort::MakeString)?;
+    pack_job_name(st, ".log").map_err(OpenLogAbort::MakeString)?;
 
-    let handle = ttstub_output_open(name_of_file_ptr(st), 0);
+    let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
     if handle == INVALID_HANDLE {
         return Err(OpenLogAbort::CannotOpen);
     }
@@ -946,7 +937,7 @@ pub(crate) unsafe fn open_log_file(st: &mut EngineState) -> Result<(), OpenLogAb
 
     st.input.input_stack[st.input.input_ptr as usize] = st.input.cur_input;
 
-    crate::output::print_nl_cstr(st, c"**".as_ptr());
+    crate::output::print_nl(st, "**");
     let mut l = st.input.input_stack[0].limit;
     if st.input.buffer[l as usize] == st.eqtb.int_par(INT_PAR_END_LINE_CHAR) {
         l -= 1;
@@ -973,11 +964,11 @@ pub(crate) unsafe fn reopen_resident_outputs(
     st.shipout.dvi_file = INVALID_HANDLE;
 
     if st.errors.log_opened {
-        pack_job_name(st, c".log".as_ptr()).map_err(|e| e.into_engine_abort())?;
-        let handle = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
+        pack_job_name(st, ".log").map_err(|e| e.into_engine_abort())?;
+        let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
         if handle == INVALID_HANDLE {
             return Err(crate::errors::EngineAbort::TtAbort(
-                c"cannot reopen log file output".as_ptr(),
+                "cannot reopen log file output",
             ));
         }
         st.shipout.log_file = handle;
@@ -986,10 +977,10 @@ pub(crate) unsafe fn reopen_resident_outputs(
     if st.shipout.output_file_name != 0 {
         pack_job_name(st, crate::engine::output_file_extension(st))
             .map_err(|e| e.into_engine_abort())?;
-        let handle = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
+        let handle = ttstub_output_open(st.input.name_of_file_ptr(), 0);
         if handle == INVALID_HANDLE {
             return Err(crate::errors::EngineAbort::TtAbort(
-                c"cannot reopen XDV file output".as_ptr(),
+                "cannot reopen XDV file output",
             ));
         }
         st.shipout.dvi_file = handle;
@@ -1005,7 +996,7 @@ pub(crate) fn pack_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
     name.clear();
     for part in [a, n, e] {
         let part = st.strings.texstring_cstring(part);
-        name.extend(part.as_bytes().iter().map(|&b| b as libc::c_char));
+        name.extend_from_slice(part.as_bytes());
     }
     st.input.name_length = name.len() as i32;
     name.push(0);
@@ -1034,7 +1025,7 @@ pub(crate) unsafe fn close_files_and_terminate(
         ttstub_output_close(log_file);
         st.shipout.selector -= 2;
         if st.shipout.selector == SELECTOR_TERM_ONLY {
-            crate::output::print_nl_cstr(st, c"Transcript written on ".as_ptr());
+            crate::output::print_nl(st, "Transcript written on ");
             crate::output::print(st, st.strings.texmf_log_name);
             crate::output::print_char(st, b'.' as i32);
         }
@@ -1063,12 +1054,9 @@ pub unsafe fn init_io(st: &mut EngineState) {
 /// Lifts a file-name overflow into [`SccAbort`], sized from the live pool.
 fn name_abort_scc(st: &EngineState, e: NameAbort) -> SccAbort {
     let (what, n) = match e {
-        NameAbort::PoolSize => (
-            c"pool size".as_ptr(),
-            st.strings.pool_size - st.strings.init_pool_ptr,
-        ),
+        NameAbort::PoolSize => ("pool size", st.strings.pool_size - st.strings.init_pool_ptr),
         NameAbort::NumberOfStrings => (
-            c"number of strings".as_ptr(),
+            "number of strings",
             st.strings.max_strings - st.strings.init_str_ptr,
         ),
     };
@@ -1186,16 +1174,13 @@ pub(crate) unsafe fn start_input(
         begin_name(st);
         st.scanner.stop_at_space = false;
 
-        if st.strings.pool_ptr + libc::strlen(primary_input_name) as i32 * 2 >= st.strings.pool_size
-        {
-            return Err(SccAbort::Input(InputAbort::TtAbort(
-                c"string pool overflow".as_ptr(),
-            )));
+        let mut name = std::ffi::CStr::from_ptr(primary_input_name).to_bytes();
+        if st.strings.pool_ptr + name.len() as i32 * 2 >= st.strings.pool_size {
+            return Err(SccAbort::Input(InputAbort::TtAbort("string pool overflow")));
         }
 
-        let mut cp = primary_input_name as *const u8;
-        while *cp != 0 {
-            let rval = next_utf8_char(&mut cp);
+        while !name.is_empty() {
+            let rval = next_utf8_char(&mut name);
             st.strings.push_utf16(rval);
             if rval == b'/' as u32 {
                 st.scanner.area_delimiter = st.strings.cur_length();
@@ -1222,15 +1207,7 @@ pub(crate) unsafe fn start_input(
     let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
     let Some(file) = u_open_in(st, format, mode, encoding).map_err(SccAbort::MakeTexString)? else {
-        // The abort keeps a pointer to the message, so the buffer is leaked.
-        let buf = libc::malloc(512) as *mut libc::c_char;
-        crate::compat::snprintf(
-            buf,
-            512,
-            c"failed to open input file \"%s\"".as_ptr(),
-            name_of_file_ptr(st),
-        );
-        return Err(SccAbort::Input(InputAbort::TtAbort(buf)));
+        return Err(SccAbort::Input(InputAbort::CannotOpenInput));
     };
     st.input.input_file[idx as usize] = crate::state::InputSlot::Open(file);
 
@@ -1240,14 +1217,10 @@ pub(crate) unsafe fn start_input(
     st.input.cur_input.name = name;
     let in_open = st.input.in_open as usize;
     st.input.source_filename_stack[in_open] = name;
-    let full_name = st
-        .input
-        .name_of_input_file
-        .as_deref()
-        .map_or(std::ptr::null(), |name| name.as_ptr());
+    let full_name = st.input.name_of_input_file.clone().unwrap_or_default();
     let full_name = st
         .strings
-        .maketexstring(full_name)
+        .make_tex_string(full_name.as_bytes())
         .map_err(SccAbort::MakeTexString)?;
     st.input.full_source_filename_stack[in_open] = full_name;
 
@@ -1289,7 +1262,7 @@ pub(crate) unsafe fn start_input(
         } else {
             crate::output::print_char(st, b'~' as i32);
         }
-        crate::output::print_cstr(st, c"INPUT ".as_ptr());
+        crate::output::print(st, "INPUT ");
         crate::output::print(st, st.scanner.cur_name);
         crate::output::print(st, st.scanner.cur_ext);
         crate::output::print_ln(st);

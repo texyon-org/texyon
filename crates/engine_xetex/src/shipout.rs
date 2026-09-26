@@ -70,7 +70,7 @@ pub(crate) enum ShipoutAbort {
     /// `overflow("pool size")` while merging native words or writing a special.
     PoolSizeOverflow,
     NodeRecycle(crate::scan::NodeRecycleAbort),
-    Confusion(&'static std::ffi::CStr),
+    Confusion(&'static str),
     /// Short write to the XDV file.
     DviWriteFailed,
     /// The DVI length exceeded 0x7FFFFFFF.
@@ -144,15 +144,15 @@ impl ShipoutAbort {
         match self {
             ShipoutAbort::PoolSizeOverflow => crate::errors::EngineAbort::PoolOverflow,
             ShipoutAbort::NodeRecycle(e) => e.into_engine_abort(),
-            ShipoutAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg.as_ptr()),
+            ShipoutAbort::Confusion(msg) => crate::errors::EngineAbort::Confusion(msg),
             ShipoutAbort::DviWriteFailed => {
-                crate::errors::EngineAbort::TtAbort(c"failed to write data to XDV file".as_ptr())
+                crate::errors::EngineAbort::TtAbort("failed to write data to XDV file")
             }
             ShipoutAbort::DviLengthOverflow => {
-                crate::errors::EngineAbort::Fatal(c"dvi length exceeds 0x7FFFFFFF".as_ptr())
+                crate::errors::EngineAbort::Fatal("dvi length exceeds 0x7FFFFFFF")
             }
             ShipoutAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
-                what: c"main memory size".as_ptr(),
+                what: "main memory size",
                 n: MEM_TOP + 1,
             },
             ShipoutAbort::Scc(e) => e.into_engine_abort(),
@@ -349,9 +349,9 @@ pub(crate) unsafe fn ship_out(
     }
     let tracing_output = st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) > 0;
     if tracing_output {
-        crate::output::print_nl_cstr(st, c"".as_ptr());
+        crate::output::print_nl(st, "");
         crate::output::print_ln(st);
-        crate::output::print_cstr(st, c"Completed box being shipped out".as_ptr());
+        crate::output::print(st, "Completed box being shipped out");
     }
     if st.shipout.term_offset > st.config.max_print_line - 9 {
         crate::output::print_ln(st);
@@ -391,7 +391,7 @@ pub(crate) unsafe fn ship_out(
         || height + depth + v_offset > MAX_HALFWORD
         || width + h_offset > MAX_HALFWORD
     {
-        crate::output::error_here_with_diagnostic(st, c"Huge page cannot be shipped out".as_ptr());
+        crate::output::error_here_with_diagnostic(st, "Huge page cannot be shipped out");
         crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
         st.errors.help(&[
             "The page just created is more than 18 feet tall or",
@@ -401,7 +401,7 @@ pub(crate) unsafe fn ship_out(
 
         if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
             crate::output::begin_diagnostic(st);
-            crate::output::print_nl_cstr(st, c"The following box has been deleted:".as_ptr());
+            crate::output::print_nl(st, "The following box has been deleted:");
             crate::output::show_box(st, p);
             crate::output::end_diagnostic(st, true);
         }
@@ -411,18 +411,18 @@ pub(crate) unsafe fn ship_out(
 
     if st.scanner.lr_problems > 0 {
         crate::output::print_ln(st);
-        crate::output::print_nl_cstr(st, c"\\endL or \\endR problem (".as_ptr());
+        crate::output::print_nl(st, "\\endL or \\endR problem (");
         crate::output::print_int(st, st.scanner.lr_problems / 10000);
-        crate::output::print_cstr(st, c" missing, ".as_ptr());
+        crate::output::print(st, " missing, ");
         crate::output::print_int(st, st.scanner.lr_problems % 10000);
-        crate::output::print_cstr(st, c" extra".as_ptr());
+        crate::output::print(st, " extra");
         st.scanner.lr_problems = 0;
         crate::output::print_char(st, b')' as i32);
         crate::output::print_ln(st);
     }
 
     if !st.scanner.lr_ptr.is_null() || st.scanner.cur_dir != LEFT_TO_RIGHT {
-        return Err(ShipoutAbort::Confusion(c"LR3"));
+        return Err(ShipoutAbort::Confusion("LR3"));
     }
     if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
         crate::output::print_char(st, b']' as i32);
@@ -469,7 +469,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
             crate::io::open_log_file(st)?;
         }
         crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
-        st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
+        st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file_ptr(), 0);
         if st.shipout.dvi_file == INVALID_HANDLE {
             return Err(ShipoutAbort::CannotOpenOutput);
         }
@@ -501,19 +501,19 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
 
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    crate::output::print_cstr(st, c"pdf:pagesize ".as_ptr());
+    crate::output::print(st, "pdf:pagesize ");
     if pdf_page_width <= 0 || pdf_page_height <= 0 {
-        crate::output::print_cstr(st, c"default".as_ptr());
+        crate::output::print(st, "default");
     } else {
-        crate::output::print_cstr(st, c"width".as_ptr());
+        crate::output::print(st, "width");
         crate::output::print(st, b' ' as i32);
         crate::output::print_scaled(st, pdf_page_width);
-        crate::output::print_cstr(st, c"pt".as_ptr());
+        crate::output::print(st, "pt");
         crate::output::print(st, b' ' as i32);
-        crate::output::print_cstr(st, c"height".as_ptr());
+        crate::output::print(st, "height");
         crate::output::print(st, b' ' as i32);
         crate::output::print_scaled(st, pdf_page_height);
-        crate::output::print_cstr(st, c"pt".as_ptr());
+        crate::output::print(st, "pt");
     }
     st.shipout.selector = old_setting;
 
@@ -1391,7 +1391,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
 
     while !p.is_null() {
         if st.mem.is_char_node(p) {
-            return Err(ShipoutAbort::Confusion(c"vlistout"));
+            return Err(ShipoutAbort::Confusion("vlistout"));
         }
         match st
             .mem
@@ -1602,7 +1602,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     }
 
     if st.shipout.total_pages == 0 {
-        crate::output::print_nl_cstr(st, c"No pages of output.".as_ptr());
+        crate::output::print_nl(st, "No pages of output.");
         return Ok(());
     }
     // The DVI grew too big and the message was already printed.
@@ -1666,31 +1666,31 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     // SAFETY: FFI close of the output file.
     let k = unsafe { ttstub_output_close(st.shipout.dvi_file) as u8 };
     if k == 0 {
-        crate::output::print_nl_cstr(st, c"Output written on ".as_ptr());
+        crate::output::print_nl(st, "Output written on ");
         crate::output::print(st, st.shipout.output_file_name);
-        crate::output::print_cstr(st, c" (".as_ptr());
+        crate::output::print(st, " (");
         crate::output::print_int(st, st.shipout.total_pages);
         if st.shipout.total_pages != 1 {
-            crate::output::print_cstr(st, c" pages".as_ptr());
+            crate::output::print(st, " pages");
         } else {
-            crate::output::print_cstr(st, c" page".as_ptr());
+            crate::output::print(st, " page");
         }
-        crate::output::print_cstr(st, c", ".as_ptr());
+        crate::output::print(st, ", ");
         crate::output::print_int(st, st.shipout.dvi_offset + st.shipout.dvi_ptr);
-        crate::output::print_cstr(st, c" bytes).".as_ptr());
+        crate::output::print(st, " bytes).");
     } else {
-        crate::output::print_nl_cstr(st, c"Error ".as_ptr());
+        crate::output::print_nl(st, "Error ");
         crate::output::print_int(st, k as i32);
-        crate::output::print_cstr(st, c" (".as_ptr());
+        crate::output::print(st, " (");
         // SAFETY: strerror returns a static NUL-terminated message.
         let message = unsafe { std::ffi::CStr::from_ptr(libc::strerror(k as libc::c_int)) };
         for &c in message.to_bytes() {
             crate::output::print_char(st, c as libc::c_char as i32);
         }
-        crate::output::print_cstr(st, c") generating output;".as_ptr());
-        crate::output::print_nl_cstr(st, c"file ".as_ptr());
+        crate::output::print(st, ") generating output;");
+        crate::output::print_nl(st, "file ");
         crate::output::print(st, st.shipout.output_file_name);
-        crate::output::print_cstr(st, c" may not be valid.".as_ptr());
+        crate::output::print(st, " may not be valid.");
         // XeTeX also sets history to OUTPUT_FAILURE here.
     }
     Ok(())
@@ -1840,7 +1840,7 @@ impl MemState {
                             }
                         }
                     }
-                    Ok(AnyNode::Style(_)) => return Err(ShipoutAbort::Confusion(c"LR2")),
+                    Ok(AnyNode::Style(_)) => return Err(ShipoutAbort::Confusion("LR2")),
                     _ => add_width = false,
                 }
 
@@ -2007,7 +2007,7 @@ fn write_out(
     crate::scan::scan_toks(st, false, true)?;
     crate::scan::get_token(st)?;
     if st.scanner.cur_tok != CS_TOKEN_FLAG + END_WRITE {
-        crate::output::error_here_with_diagnostic(st, c"Unbalanced write command".as_ptr());
+        crate::output::error_here_with_diagnostic(st, "Unbalanced write command");
         crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
         st.errors.help(&[
             r"On this page there's a \write with fewer real {'s than }'s.",
@@ -2035,7 +2035,7 @@ fn write_out(
         if j == 17 && st.shipout.selector == SELECTOR_TERM_AND_LOG {
             st.shipout.selector = SELECTOR_LOG_ONLY;
         }
-        crate::output::print_nl_cstr(st, c"".as_ptr());
+        crate::output::print_nl(st, "");
     }
     let def_ref = st.scanner.def_ref;
     crate::output::token_show(st, def_ref.0);
@@ -2050,16 +2050,16 @@ fn write_out(
         // Tectonic leaves shell-escape warnings to the driver when it is enabled.
         if !st.config.shell_escape_enabled {
             crate::output::diagnostic_begin_capture_warning_here(st);
-            crate::output::print_nl_cstr(st, c"runsystem(".as_ptr());
+            crate::output::print_nl(st, "runsystem(");
             let base = st.strings.cur_string_start();
             for k in base..st.strings.pool_ptr {
                 crate::output::print(st, st.strings.str_pool[k as usize] as i32);
             }
-            crate::output::print_cstr(st, c")...".as_ptr());
-            crate::output::print_cstr(st, c"disabled".as_ptr());
+            crate::output::print(st, ")...");
+            crate::output::print(st, "disabled");
             crate::output::print_char(st, b'.' as i32);
             crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
-            crate::output::print_nl_cstr(st, c"".as_ptr());
+            crate::output::print_nl(st, "");
             crate::output::print_ln(st);
         } else {
             let base = st.strings.cur_string_start();
@@ -2081,19 +2081,19 @@ fn pic_out(
     synch_v(st)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    crate::output::print_cstr(st, c"pdf:image ".as_ptr());
-    crate::output::print_cstr(st, c"matrix ".as_ptr());
+    crate::output::print(st, "pdf:image ");
+    crate::output::print(st, "matrix ");
     for v in pic.pic_transform(&st.mem) {
         crate::output::print_scaled(st, v);
         crate::output::print(st, b' ' as i32);
     }
-    crate::output::print_cstr(st, c"page ".as_ptr());
+    crate::output::print(st, "page ");
     crate::output::print_int(st, pic.pic_page(&st.mem) as i32);
     crate::output::print(st, b' ' as i32);
     if let Some(label) =
         crate::pic::PageboxType::from_raw(pic.pic_pagebox(&st.mem)).and_then(|pb| pb.label())
     {
-        crate::output::print_cstr(st, label.as_ptr());
+        crate::output::print(st, label);
     }
     crate::output::print(st, b'(' as i32);
     let path = pic.pic_path(&st.mem).to_vec();
@@ -2119,7 +2119,7 @@ pub(crate) fn out_what(
         }
         Some(WhatsitSubtype::Special) => special_out(st, w)?,
         Some(WhatsitSubtype::Language) => {}
-        _ => return Err(ShipoutAbort::Confusion(c"ext4")),
+        _ => return Err(ShipoutAbort::Confusion("ext4")),
     }
     Ok(())
 }
@@ -2154,13 +2154,12 @@ fn out_write_stream(
     st.scanner.cur_area = w.open_area(&st.mem);
     st.scanner.cur_ext = w.open_ext(&st.mem);
     if st.strings.length(st.scanner.cur_ext) == 0 {
-        // SAFETY: FFI string interning.
-        st.scanner.cur_ext = unsafe { st.strings.maketexstring(c".tex".as_ptr()) }?;
+        st.scanner.cur_ext = st.strings.make_tex_string(".tex")?;
     }
     let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
     crate::io::pack_file_name(st, n, a, e);
     // SAFETY: FFI open with the packed name buffer.
-    let handle = unsafe { ttstub_output_open(st.input.name_of_file.as_ptr(), 0) };
+    let handle = unsafe { ttstub_output_open(st.input.name_of_file_ptr(), 0) };
     if handle == INVALID_HANDLE {
         return Err(ShipoutAbort::CannotOpenOutput);
     }
@@ -2173,12 +2172,12 @@ fn out_write_stream(
     if st.errors.log_opened {
         let old_setting = st.shipout.selector;
         st.shipout.selector = st.eqtb.log_selector();
-        crate::output::print_nl_cstr(st, c"\\openout".as_ptr());
+        crate::output::print_nl(st, "\\openout");
         crate::output::print_int(st, j);
-        crate::output::print_cstr(st, c" = `".as_ptr());
+        crate::output::print(st, " = `");
         crate::output::print_file_name(st, n, a, e);
-        crate::output::print_cstr(st, c"'.".as_ptr());
-        crate::output::print_nl_cstr(st, c"".as_ptr());
+        crate::output::print(st, "'.");
+        crate::output::print_nl(st, "");
         crate::output::print_ln(st);
         st.shipout.selector = old_setting;
     }
@@ -2197,7 +2196,7 @@ pub(crate) fn ensure_write_stream_open(
     if name.last() != Some(&0) {
         return Err(ShipoutAbort::CannotOpenOutput);
     }
-    let handle = unsafe { ttstub_output_open(name.as_ptr(), 0) };
+    let handle = unsafe { ttstub_output_open(name.as_ptr().cast(), 0) };
     if handle == INVALID_HANDLE {
         return Err(ShipoutAbort::CannotOpenOutput);
     }

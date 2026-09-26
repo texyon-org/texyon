@@ -2,7 +2,7 @@
 //! TECkit mappings, shaping and measuring native word and glyph nodes, and the
 //! extension (`\openout`, `\write`, `\special`, ...) commands.
 
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::ptr;
 
 use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
@@ -297,8 +297,8 @@ pub(crate) struct NativeFontMetrics {
     pub slant: i32,
 }
 
-unsafe fn print_c_string(st: &mut EngineState, s: *const c_char) {
-    for &byte in CStr::from_ptr(s).to_bytes() {
+fn print_raw_bytes(st: &mut EngineState, bytes: &[u8]) {
+    for &byte in bytes {
         crate::output::print_raw_char(st, byte as i32, true);
     }
 }
@@ -420,34 +420,35 @@ pub unsafe fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
 /// for `ICUMAPPING`.
 unsafe fn get_encoding_mode_and_info(
     st: &mut EngineState,
-    name_of_file: *const c_char,
+    name_of_file: &CStr,
 ) -> Result<(c_int, i32), crate::texmfmp::MakeTexStringAbort> {
+    let bytes = name_of_file.to_bytes();
     for (name, mode) in [
-        (c"auto", AUTO),
-        (c"utf8", UTF8),
-        (c"utf16", US_NATIVE_UTF16),
-        (c"utf16be", UTF16BE),
-        (c"utf16le", UTF16LE),
-        (c"bytes", RAW),
+        ("auto", AUTO),
+        ("utf8", UTF8),
+        ("utf16", US_NATIVE_UTF16),
+        ("utf16be", UTF16BE),
+        ("utf16le", UTF16LE),
+        ("bytes", RAW),
     ] {
-        if crate::compat::strcasecmp(name_of_file, name.as_ptr()) == 0 {
+        if bytes.eq_ignore_ascii_case(name.as_bytes()) {
             return Ok((mode, 0));
         }
     }
 
     let mut err = 0;
-    let cnv = crate::io::xetex_ucnv_open(name_of_file, &mut err);
+    let cnv = crate::io::xetex_ucnv_open(name_of_file.as_ptr(), &mut err);
     if cnv.is_null() {
         crate::output::begin_diagnostic(st);
         crate::output::print_nl(st, b'U' as i32);
-        crate::output::print_cstr(st, c"nknown encoding `".as_ptr());
-        crate::output::print_cstr(st, name_of_file);
-        crate::output::print_cstr(st, c"'; reading as raw bytes".as_ptr());
+        crate::output::print(st, "nknown encoding `");
+        crate::output::print(st, bytes);
+        crate::output::print(st, "'; reading as raw bytes");
         crate::output::end_diagnostic(st, true);
         Ok((RAW, 0))
     } else {
         crate::io::xetex_ucnv_close(cnv);
-        let info = st.strings.maketexstring(name_of_file)?;
+        let info = st.strings.make_tex_string(bytes)?;
         Ok((ICUMAPPING, info))
     }
 }
@@ -585,18 +586,22 @@ unsafe fn load_mapping_file(
 
 impl FontState {
     /// Cut a `:mapping=` suffix off `name_of_file`, saving the mapping name.
-    pub(crate) unsafe fn check_for_tfm_font_mapping(&mut self, name_of_file: *mut c_char) {
-        let cp = libc::strstr(name_of_file, c":mapping=".as_ptr());
+    pub(crate) fn check_for_tfm_font_mapping(&mut self, name_of_file: &mut [u8]) {
+        const KEY: &[u8] = b":mapping=";
         self.saved_mapping_name = None;
-        if !cp.is_null() {
-            *cp = 0;
-            let mut cp = cp.add(9);
-            while *cp != 0 && *cp <= b' ' as c_char {
-                cp = cp.add(1);
-            }
-            if *cp != 0 {
-                self.saved_mapping_name = Some(CStr::from_ptr(cp).to_owned());
-            }
+        let len = name_of_file.iter().position(|&b| b == 0).unwrap_or(0);
+        let Some(at) = name_of_file[..len]
+            .windows(KEY.len())
+            .position(|w| w == KEY)
+        else {
+            return;
+        };
+        name_of_file[at] = 0;
+        // C's signed `char` also skips bytes 0x80 and up.
+        let value = &name_of_file[at + KEY.len()..len];
+        let start = value.iter().position(|&b| b as i8 > b' ' as i8);
+        if let Some(start) = start {
+            self.saved_mapping_name = Some(CString::new(&value[start..]).unwrap_or_default());
         }
     }
 }
@@ -972,8 +977,8 @@ pub(crate) unsafe fn find_native_font(
             if rval.is_some() && st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ' as i32);
-                print_c_string(st, c"-> ".as_ptr());
-                print_c_string(st, path);
+                print_raw_bytes(st, b"-> ");
+                print_raw_bytes(st, CStr::from_ptr(path).to_bytes());
                 crate::output::end_diagnostic(st, false);
             }
         }
@@ -983,21 +988,18 @@ pub(crate) unsafe fn find_native_font(
             if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ' as i32);
-                print_c_string(st, c"-> ".as_ptr());
-                print_c_string(st, ttxl_platfont_get_desc(font_ref));
+                print_raw_bytes(st, b"-> ");
+                print_raw_bytes(
+                    st,
+                    CStr::from_ptr(ttxl_platfont_get_desc(font_ref)).to_bytes(),
+                );
                 crate::output::end_diagnostic(st, false);
             }
 
-            let full_name = getFullName(font_ref);
-            let mut name_length = libc::strlen(full_name) as i32;
-            if !feat_string.is_null() {
-                name_length += libc::strlen(feat_string) as i32 + 1;
-            }
-            if !var_string.is_null() {
-                name_length += libc::strlen(var_string) as i32 + 1;
-            }
-            st.input.name_of_file.resize((name_length + 1) as usize, 0);
-            libc::strcpy(crate::fonts::name_of_file_ptr(st), full_name);
+            let mut name = CStr::from_ptr(getFullName(font_ref)).to_bytes().to_vec();
+            st.input.name_of_file.clear();
+            st.input.name_of_file.extend_from_slice(&name);
+            st.input.name_of_file.push(0);
 
             if scaled_size < 0 {
                 let font = createFont(font_ref, scaled_size);
@@ -1012,16 +1014,17 @@ pub(crate) unsafe fn find_native_font(
                 }
             }
 
-            let name_of_file = crate::fonts::name_of_file_ptr(st);
             if !var_string.is_null() && *var_string != 0 {
-                libc::strcat(name_of_file, c"/".as_ptr());
-                libc::strcat(name_of_file, var_string);
+                name.push(b'/');
+                name.extend_from_slice(CStr::from_ptr(var_string).to_bytes());
             }
             if !feat_string.is_null() && *feat_string != 0 {
-                libc::strcat(name_of_file, c":".as_ptr());
-                libc::strcat(name_of_file, feat_string);
+                name.push(b':');
+                name.extend_from_slice(CStr::from_ptr(feat_string).to_bytes());
             }
-            st.input.name_length = libc::strlen(name_of_file) as i32;
+            st.input.name_length = name.len() as i32;
+            name.push(0);
+            st.input.name_of_file = name;
         }
     }
 
@@ -1215,7 +1218,7 @@ pub(crate) unsafe fn gr_print_font_name(
         _ => ptr::null_mut(),
     };
     if !name.is_null() {
-        crate::output::print_cstr(st, name);
+        crate::output::print(st, CStr::from_ptr(name).to_bytes());
         gr_label_destroy(name as *mut c_void);
     }
 }
@@ -1244,7 +1247,7 @@ pub unsafe fn gr_font_get_named_1(
 /// Fatal errors of the native-font layer. `BadFlag` is an internal consistency
 /// check for a font that is not OpenType/Graphite.
 pub(crate) enum NativeFontAbort {
-    BadFlag(*const c_char),
+    BadFlag(&'static str),
     LinebreakIterator,
     CouldNotReadMapping,
     InputClose,
@@ -1254,9 +1257,9 @@ impl NativeFontAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         crate::errors::EngineAbort::TtAbort(match self {
             NativeFontAbort::BadFlag(m) => m,
-            NativeFontAbort::LinebreakIterator => c"failed to create linebreak iterator".as_ptr(),
-            NativeFontAbort::CouldNotReadMapping => c"could not read mapping file".as_ptr(),
-            NativeFontAbort::InputClose => c"serious internal error closing an input file".as_ptr(),
+            NativeFontAbort::LinebreakIterator => "failed to create linebreak iterator",
+            NativeFontAbort::CouldNotReadMapping => "could not read mapping file",
+            NativeFontAbort::InputClose => "serious internal error closing an input file",
         })
     }
 }
@@ -1366,12 +1369,12 @@ impl FontState {
     fn require_ot_engine(
         &self,
         f: i32,
-        msg: &'static CStr,
+        msg: &'static str,
     ) -> Result<XeTeXLayoutEngine, NativeFontAbort> {
         if self.font_area_entry(f) == OTGR_FONT_FLAG {
             Ok(self.font_layout_engine_ptr(f) as XeTeXLayoutEngine)
         } else {
-            Err(NativeFontAbort::BadFlag(msg.as_ptr()))
+            Err(NativeFontAbort::BadFlag(msg))
         }
     }
 
@@ -1386,7 +1389,7 @@ impl FontState {
         // The shaper only reads the text.
         let text = w.native_text_ptr(mem).cast_mut();
         let f = w.native_font(mem).0;
-        let engine = self.require_ot_engine(f, c"bad native font flag in `measure_native_node`")?;
+        let engine = self.require_ot_engine(f, "bad native font flag in `measure_native_node`")?;
 
         let bidi = ubidi_open();
         let mut error_code = 0i32;
@@ -1527,8 +1530,7 @@ impl FontState {
     ) -> Result<(), NativeFontAbort> {
         let gid = w.native_glyph(mem) as u32;
         let f = w.native_font(mem).0;
-        let engine =
-            self.require_ot_engine(f, c"bad native font flag in `measure_native_glyph`")?;
+        let engine = self.require_ot_engine(f, "bad native font flag in `measure_native_glyph`")?;
         w.set_width(
             mem,
             Scaled(D2Fix(getGlyphWidth(getFont(engine), gid) as c_double)),
@@ -1553,7 +1555,7 @@ impl FontState {
     ) -> Result<(i32, i32), NativeFontAbort> {
         let engine = self.require_ot_engine(
             font,
-            c"bad native font flag in `get_native_char_height_depth`",
+            "bad native font flag in `get_native_char_height_depth`",
         )?;
         let (mut ht, mut dp) = (0.0f32, 0.0f32);
         let gid = mapCharToGlyph(engine, ch as u32);
@@ -1588,7 +1590,7 @@ impl FontState {
     ) -> Result<(i32, i32), NativeFontAbort> {
         let engine = self.require_ot_engine(
             font,
-            c"bad native font flag in `get_native_char_side_bearings`",
+            "bad native font flag in `get_native_char_side_bearings`",
         )?;
         let (mut l, mut r) = (0.0f32, 0.0f32);
         let gid = mapCharToGlyph(engine, ch as u32);
@@ -1603,7 +1605,7 @@ impl FontState {
         edge: i32,
         gid: i32,
     ) -> Result<i32, NativeFontAbort> {
-        let engine = self.require_ot_engine(font, c"bad native font flag in `get_glyph_bounds`")?;
+        let engine = self.require_ot_engine(font, "bad native font flag in `get_glyph_bounds`")?;
         let (mut a, mut b) = (0.0f32, 0.0f32);
         if edge & 1 != 0 {
             getGlyphSidebearings(engine, gid as u32, &mut a, &mut b);
@@ -1624,7 +1626,7 @@ impl FontState {
     }
 
     pub unsafe fn getnativecharwd(&self, f: i32, c: i32) -> Result<i32, NativeFontAbort> {
-        let engine = self.require_ot_engine(f, c"bad native font flag in `get_native_char_wd`")?;
+        let engine = self.require_ot_engine(f, "bad native font flag in `get_native_char_wd`")?;
         let gid = mapCharToGlyph(engine, c as u32);
         Ok(D2Fix(getGlyphWidthFromEngine(engine, gid) as c_double))
     }
@@ -1633,8 +1635,7 @@ impl FontState {
         if ch > 0x10ffff || (0xd800..=0xdfff).contains(&ch) {
             return Ok(0);
         }
-        let engine =
-            self.require_ot_engine(font, c"bad native font flag in `map_char_to_glyph`")?;
+        let engine = self.require_ot_engine(font, "bad native font flag in `map_char_to_glyph`")?;
         Ok(mapCharToGlyph(engine, ch as u32) as i32)
     }
 
@@ -1644,7 +1645,7 @@ impl FontState {
         name: *const c_char,
     ) -> Result<i32, NativeFontAbort> {
         let engine =
-            self.require_ot_engine(font, c"bad native font flag in `map_glyph_to_index`")?;
+            self.require_ot_engine(font, "bad native font flag in `map_glyph_to_index`")?;
         Ok(mapGlyphToIndex(engine, name))
     }
 
@@ -1654,7 +1655,7 @@ impl FontState {
         first: i32,
     ) -> Result<i32, NativeFontAbort> {
         let engine =
-            self.require_ot_engine(font, c"bad native font flag in `get_font_char_range'`")?;
+            self.require_ot_engine(font, "bad native font flag in `get_font_char_range'`")?;
         Ok(getFontCharRange(engine, first))
     }
 }
@@ -1667,13 +1668,11 @@ pub(crate) unsafe fn linebreak_start(
     text_length: i32,
 ) -> Result<(), NativeFontAbort> {
     let mut status: i32 = 0;
-    let locale = st.strings.gettexstring(locale_str_num);
+    let locale = st.strings.texstring_cstring(locale_str_num);
 
     if st.fonts.font_area_entry(f) == OTGR_FONT_FLAG {
         let engine = st.fonts.font_layout_engine_ptr(f) as XeTeXLayoutEngine;
-        if libc::strcmp(locale, c"G".as_ptr()) == 0
-            && initGraphiteBreaking(engine, text, text_length as u32)
-        {
+        if locale.as_bytes() == b"G" && initGraphiteBreaking(engine, text, text_length as u32) {
             return Ok(());
         }
     }
@@ -1683,15 +1682,15 @@ pub(crate) unsafe fn linebreak_start(
     }
 
     if st.fonts.brk_iter.is_none() {
-        let mut raw = ubrk_open(UBRK_LINE, locale, ptr::null(), 0, &mut status);
+        let mut raw = ubrk_open(UBRK_LINE, locale.as_ptr(), ptr::null(), 0, &mut status);
         if status > 0 {
             crate::output::begin_diagnostic(st);
             crate::output::print_nl(st, b'E' as i32);
-            crate::output::print_cstr(st, c"rror ".as_ptr());
+            crate::output::print(st, "rror ");
             crate::output::print_int(st, status);
-            crate::output::print_cstr(st, c" creating linebreak iterator for locale `".as_ptr());
-            crate::output::print_cstr(st, locale);
-            crate::output::print_cstr(st, c"'; trying default locale `en_us'.".as_ptr());
+            crate::output::print(st, " creating linebreak iterator for locale `");
+            crate::output::print(st, locale.as_bytes());
+            crate::output::print(st, "'; trying default locale `en_us'.");
             crate::output::end_diagnostic(st, true);
             if !raw.is_null() {
                 ubrk_close(raw);
@@ -1699,7 +1698,6 @@ pub(crate) unsafe fn linebreak_start(
             status = 0;
             raw = ubrk_open(UBRK_LINE, c"en_us".as_ptr(), ptr::null(), 0, &mut status);
         }
-        libc::free(locale as *mut c_void);
         st.fonts.brk_locale_str_num = locale_str_num;
         if !raw.is_null() {
             st.fonts.brk_iter = Some(crate::state::LinebreakHandle { raw });
@@ -1737,7 +1735,7 @@ impl FontState {
     /// Write the XDV native font definition of `f` into `fonts.xdv_buffer` and
     /// return its length.
     pub unsafe fn make_font_def(&mut self, f: i32) -> Result<c_int, NativeFontAbort> {
-        let engine = self.require_ot_engine(f, c"bad native font flag in `make_font_def`")?;
+        let engine = self.require_ot_engine(f, "bad native font flag in `make_font_def`")?;
         let mut index: u32 = 0;
         let filename = getFontFilename(engine, &mut index);
         assert!(!filename.is_null());
@@ -1928,7 +1926,7 @@ pub(crate) unsafe fn print_glyph_name(
 ) -> Result<(), NativeFontAbort> {
     let engine = st
         .fonts
-        .require_ot_engine(font, c"bad native font flag in `print_glyph_name`")?;
+        .require_ot_engine(font, "bad native font flag in `print_glyph_name`")?;
     let mut len: c_int = 0;
     let s = getGlyphName(getFont(engine), gid as u16, &mut len);
     for i in 0..len.max(0) as usize {
@@ -1969,7 +1967,7 @@ impl InsertSrcAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             InsertSrcAbort::MakeSrcPool => {
-                crate::errors::EngineAbort::TtAbort(c"string pool overflow".as_ptr())
+                crate::errors::EngineAbort::TtAbort("string pool overflow")
             }
             InsertSrcAbort::StrToksPool => crate::errors::EngineAbort::PoolOverflow,
             InsertSrcAbort::MainMemory => crate::errors::EngineAbort::MainMemoryOverflow,
@@ -2048,15 +2046,12 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), InsertSrcAb
 }
 
 /// Insert `\special{<ascii_text>}` into the input.
-pub(crate) unsafe fn tt_insert_special(
-    st: &mut EngineState,
-    ascii_text: *const c_char,
-) -> Result<(), MainControlAbort> {
+pub(crate) fn tt_insert_special(st: &mut EngineState, text: &str) -> Result<(), MainControlAbort> {
     let start_pool = st.strings.pool_ptr;
-    let text = CStr::from_ptr(ascii_text).to_bytes();
+    let text = text.as_bytes();
     if st.strings.pool_ptr + text.len() as i32 >= st.strings.pool_size {
         return Err(crate::input::InputAbort::Overflow {
-            what: c"string pool overflow".as_ptr(),
+            what: "string pool overflow",
             n: 0,
         }
         .into());
@@ -2236,13 +2231,13 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), MainControlAbort>
                         EXTENSION,
                         GLYPH_CODE,
                         cur_font,
-                        c"; not a native platform font".as_ptr(),
+                        "; not a native platform font",
                     ));
                 }
                 let w = new_whatsit(st, WhatsitSubtype::Glyph, GLYPH_NODE_SIZE)?;
                 scan_int(st)?;
                 if st.scanner.cur_val < 0 || st.scanner.cur_val > 65535 {
-                    let errmsg = error_here_with_diagnostic(st, c"Bad glyph number".as_ptr());
+                    let errmsg = error_here_with_diagnostic(st, "Bad glyph number");
                     unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
                     capture_to_diagnostic(st, ptr::null_mut());
                     st.errors.help(&[
@@ -2265,12 +2260,12 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), MainControlAbort>
 
         XETEX_INPUT_ENCODING_EXTENSION_CODE => {
             crate::io::scan_and_pack_name(st)?;
-            let name = st.input.name_of_file.as_mut_ptr();
-            let (enc_mode, info) = unsafe { get_encoding_mode_and_info(st, name)? };
+            let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
+            let (enc_mode, info) = unsafe { get_encoding_mode_and_info(st, &name)? };
             if enc_mode == AUTO {
                 error_here_with_diagnostic(
                     st,
-                    c"Encoding mode `auto' is not valid for \\XeTeXinputencoding".as_ptr(),
+                    "Encoding mode `auto' is not valid for \\XeTeXinputencoding",
                 );
                 capture_to_diagnostic(st, ptr::null_mut());
                 st.errors.help(&[
@@ -2291,8 +2286,8 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), MainControlAbort>
 
         XETEX_DEFAULT_ENCODING_EXTENSION_CODE => {
             crate::io::scan_and_pack_name(st)?;
-            let name = st.input.name_of_file.as_mut_ptr();
-            let (enc_mode, info) = unsafe { get_encoding_mode_and_info(st, name)? };
+            let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
+            let (enc_mode, info) = unsafe { get_encoding_mode_and_info(st, &name)? };
             st.eqtb
                 .set_int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE, enc_mode);
             st.eqtb
@@ -2309,7 +2304,7 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), MainControlAbort>
             st.eqtb.set_int_par(INT_PAR_XETEX_LINEBREAK_LOCALE, locale);
         }
 
-        _ => return Err(MainControlAbort::Confusion(c"ext1")),
+        _ => return Err(MainControlAbort::Confusion("ext1")),
     }
     Ok(())
 }

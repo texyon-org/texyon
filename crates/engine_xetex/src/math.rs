@@ -282,7 +282,7 @@ fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
 }
 
 impl ListStateRecord {
-    pub fn flush_math(&mut self, mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
+    pub fn flush_math(&mut self, mem: &mut MemState) -> Result<(), &'static str> {
         mem.flush_node_list(self.head.link(mem).0)?;
         mem.flush_node_list(self.aux_s1())?;
         self.head.set_link(mem, MemPtr::NULL);
@@ -421,11 +421,11 @@ fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> crate::errors::ErrorOut
     match st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a) {
         FetchOutcome::Ok => ErrorOutcome::Continue,
         FetchOutcome::UndefinedFont { size, fam, c } => {
-            crate::output::error_here_with_diagnostic(st, c"".as_ptr());
+            crate::output::error_here_with_diagnostic(st, "");
             crate::output::print_size(st, size);
             crate::output::print_char(st, ' ' as i32);
             crate::output::print_int(st, fam);
-            crate::output::print_cstr(st, c" is undefined (character ".as_ptr());
+            crate::output::print(st, " is undefined (character ");
             crate::output::print(st, c);
             crate::output::print_char(st, ')' as i32);
             crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
@@ -486,7 +486,7 @@ fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildA
     let mem = &mut st.mem;
     let Ok(Some(v @ AnyBox::VList(_))) = mem.classify_box(MemIdx::new(q.nucleus().info(mem)))
     else {
-        return Err(NodeRecycleAbort::Confusion(c"vcenter").into());
+        return Err(NodeRecycleAbort::Confusion("vcenter").into());
     };
     let delta = v.height(mem).0 + v.depth(mem).0;
     v.set_height(mem, Scaled(axis_height + crate::scaled_math::half(delta)));
@@ -1775,7 +1775,7 @@ impl MemState {
         &mut self,
         choice: NodePtr<ChoiceNode>,
         cur_style: i16,
-    ) -> Result<(), &'static std::ffi::CStr> {
+    ) -> Result<(), &'static str> {
         let kept = match cur_style / 2 {
             0 => {
                 let p = choice.display_mlist(self);
@@ -1831,7 +1831,7 @@ impl MemState {
         &mut self,
         glue: NodePtr<GlueNode>,
         cur_size: i32,
-    ) -> Result<(), &'static std::ffi::CStr> {
+    ) -> Result<(), &'static str> {
         if cur_size == TEXT_SIZE {
             return Ok(());
         }
@@ -1938,7 +1938,7 @@ fn mlist_nucleus(
             let list = sublist_to_hlist(st, mlist, style)?;
             crate::packaging::hpack(st, list, 0, ADDITIONAL)?.ptr()
         }
-        _ => return Err(NodeRecycleAbort::Confusion(c"mlist2").into()),
+        _ => return Err(NodeRecycleAbort::Confusion("mlist2").into()),
     };
     qn.set_new_hlist(&mut st.mem, p);
     let need_scripts =
@@ -2102,7 +2102,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     math_kern(st, kern, mu);
                     break 'reswitch FirstPass::DoneWithNode;
                 }
-                _ => return Err(NodeRecycleAbort::Confusion(c"mlist1").into()),
+                _ => return Err(NodeRecycleAbort::Confusion("mlist1").into()),
             }
         };
 
@@ -2175,7 +2175,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     NodeType::LeftNoad | NodeType::RightNoad => {
                         t = make_left_right(st, qn, style, max_d, max_h)?.as_raw();
                     }
-                    _ => return Err(NodeRecycleAbort::Confusion(c"mlist3").into()),
+                    _ => return Err(NodeRecycleAbort::Confusion("mlist3").into()),
                 }
                 SecondPass::Splice(qn)
             }
@@ -2201,7 +2201,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                 q = nq;
                 SecondPass::Moved
             }
-            _ => return Err(NodeRecycleAbort::Confusion(c"mlist3").into()),
+            _ => return Err(NodeRecycleAbort::Confusion("mlist3").into()),
         };
 
         let qn = match step {
@@ -2221,7 +2221,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     b'1' => GLUE_PAR_THIN_MU_SKIP,
                     b'3' => GLUE_PAR_MED_MU_SKIP,
                     b'4' => GLUE_PAR_THICK_MU_SKIP,
-                    _ => return Err(NodeRecycleAbort::Confusion(c"mlist4").into()),
+                    _ => return Err(NodeRecycleAbort::Confusion("mlist4").into()),
                 };
                 if x != 0 {
                     let g = st.eqtb.glue_par(x);
@@ -2571,7 +2571,7 @@ pub(crate) fn scan_delimiter(
 
     if st.scanner.cur_val < 0 {
         crate::output::print_error_prefix(st);
-        crate::output::print_cstr(st, c"Missing delimiter (. inserted)".as_ptr());
+        crate::output::print(st, "Missing delimiter (. inserted)");
         st.errors.help(&[
             r"I was expecting to see something like `(' or `\{' or",
             r"`\}' here. If you typed, e.g., `{' instead of `\{', you",
@@ -2652,7 +2652,7 @@ pub(crate) fn math_limit_switch(
     {
         return Ok(());
     }
-    crate::output::print_err(st, c"Limit controls must follow a math operator");
+    crate::output::print_err(st, "Limit controls must follow a math operator");
     st.errors
         .help(&[r"I'm ignoring this misplaced \limits or \nolimits command."]);
     crate::main_control::mc_propagate_error(crate::errors::error(st))
@@ -2708,7 +2708,7 @@ impl ListStateRecord {
         &mut self,
         mem: &mut MemState,
         p: impl crate::units::MemAddr,
-    ) -> Result<i32, &'static std::ffi::CStr> {
+    ) -> Result<i32, &'static str> {
         let p = p.addr();
         let q;
         let aux = self.aux_s1();
@@ -2726,7 +2726,7 @@ impl ListStateRecord {
                 let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
                 let etex_aux = self.e_tex_aux.0;
                 if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
-                    return Err(c"right");
+                    return Err("right");
                 }
                 // SAFETY: a math-left group keeps its last noad in `eTeX_aux`.
                 let etex_aux_noad =
@@ -2864,12 +2864,12 @@ pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), crate::main_control::M
     if let Some(duplicate) = duplicate {
         match duplicate {
             ScriptDuplication::Superscript => {
-                crate::output::error_here_with_diagnostic(st, c"Double superscript".as_ptr());
+                crate::output::error_here_with_diagnostic(st, "Double superscript");
                 st.errors
                     .help(&["I treat `x^1^2' essentially like `x^1{}^2'."]);
             }
             ScriptDuplication::Subscript => {
-                crate::output::error_here_with_diagnostic(st, c"Double subscript".as_ptr());
+                crate::output::error_here_with_diagnostic(st, "Double subscript");
                 st.errors
                     .help(&["I treat `x_1_2' essentially like `x_1{}_2'."]);
             }
@@ -2916,7 +2916,7 @@ pub(crate) fn math_fraction(
         }
 
         crate::output::print_error_prefix(st);
-        crate::output::print_cstr(st, c"Ambiguous; you need another { and }".as_ptr());
+        crate::output::print(st, "Ambiguous; you need another { and }");
         st.errors.help(&[
             "I'm ignoring this fraction specification, since I don't",
             r"know whether a construction like `x \over y \over z'",
@@ -2984,13 +2984,13 @@ pub(crate) fn math_left_right(
     if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != GroupCode::MathLeft {
         if st.save_stack.cur_group == GroupCode::MathShift {
             scan_delimiter(st, NodePtr::at(GARBAGE), false)?;
-            crate::output::error_here_with_diagnostic(st, c"Extra ".as_ptr());
+            crate::output::error_here_with_diagnostic(st, "Extra ");
             if t == MIDDLE_NOAD {
-                crate::output::print_esc_cstr(st, c"middle".as_ptr());
+                crate::output::print_esc(st, "middle");
                 st.errors
                     .help(&[r"I'm ignoring a \middle that had no matching \left."]);
             } else {
-                crate::output::print_esc_cstr(st, c"right".as_ptr());
+                crate::output::print_esc(st, "right");
                 st.errors
                     .help(&[r"I'm ignoring a \right that had no matching \left."]);
             }
@@ -3055,9 +3055,9 @@ fn set_family_bits(x: i32) -> i32 {
 
 pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), crate::main_control::MainControlAbort> {
     if st.scanner.cur_cmd == ACCENT {
-        crate::output::error_here_with_diagnostic(st, c"Please use ".as_ptr());
-        crate::output::print_esc_cstr(st, c"mathaccent".as_ptr());
-        crate::output::print_cstr(st, c" for accents in math mode".as_ptr());
+        crate::output::error_here_with_diagnostic(st, "Please use ");
+        crate::output::print_esc(st, "mathaccent");
+        crate::output::print(st, " for accents in math mode");
         crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
             r"I'm changing \accent to \mathaccent here; wish me luck.",
@@ -3069,10 +3069,10 @@ pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), crate::main_control::M
     let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;
 
     if st.scanner.cur_chr == 1 {
-        if crate::scan::scan_keyword(st, c"fixed")? {
+        if crate::scan::scan_keyword(st, "fixed")? {
             tail.set_subtype(&mut st.mem, FIXED_ACC);
-        } else if crate::scan::scan_keyword(st, c"bottom")? {
-            if crate::scan::scan_keyword(st, c"fixed")? {
+        } else if crate::scan::scan_keyword(st, "bottom")? {
+            if crate::scan::scan_keyword(st, "fixed")? {
                 tail.set_subtype(&mut st.mem, BOTTOM_ACC + 1);
             } else {
                 tail.set_subtype(&mut st.mem, BOTTOM_ACC);
@@ -3102,7 +3102,7 @@ pub(crate) fn resume_after_display(
     use crate::main_control::MainControlAbort;
 
     if st.save_stack.cur_group != GroupCode::MathShift {
-        return Err(MainControlAbort::Confusion(c"display"));
+        return Err(MainControlAbort::Confusion("display"));
     }
 
     crate::save::unsave(st)?;
@@ -3196,7 +3196,7 @@ fn app_display(
         let mut r = orig.list_ptr(&st.mem);
         st.mem.free_node(orig.ptr(), BOX_NODE_SIZE);
         if r.is_null() {
-            return Err(MainControlAbort::Confusion(c"LR4"));
+            return Err(MainControlAbort::Confusion("LR4"));
         }
         if x > 0 {
             p = r;
@@ -3280,7 +3280,7 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, crate::main_control::M
     let sizes = [TEXT_SIZE, SCRIPT_SIZE, SCRIPT_SCRIPT_SIZE];
     let (msg, help) = if !sizes.iter().all(|&z| st.fonts.sym_font_ok(&st.eqtb, z)) {
         (
-            c"Math formula deleted: Insufficient symbol fonts",
+            "Math formula deleted: Insufficient symbol fonts",
             [
                 r"Sorry, but I can't typeset math unless \textfont 2",
                 r"and \scriptfont 2 and \scriptscriptfont 2 have all",
@@ -3289,7 +3289,7 @@ fn check_math_fonts(st: &mut EngineState) -> Result<bool, crate::main_control::M
         )
     } else if !sizes.iter().all(|&z| st.fonts.ext_font_ok(&st.eqtb, z)) {
         (
-            c"Math formula deleted: Insufficient extension fonts",
+            "Math formula deleted: Insufficient extension fonts",
             [
                 r"Sorry, but I can't typeset math unless \textfont 3",
                 r"and \scriptfont 3 and \scriptscriptfont 3 have all",
@@ -3314,7 +3314,7 @@ pub(crate) fn check_display_end(
 ) -> Result<(), crate::main_control::MainControlAbort> {
     crate::scan::get_x_token(st)?;
     if st.scanner.cur_cmd != MATH_SHIFT {
-        crate::output::print_err(st, c"Display math should end with $$");
+        crate::output::print_err(st, "Display math should end with $$");
         st.errors.help(&[
             "The `$' that I just saw supposedly matches a previous `$$'.",
             "So I shall assume that you typed `$$' both times.",
@@ -3393,7 +3393,7 @@ pub(crate) fn after_math(
         st.input.cur_list.set_aux_s0(1000);
 
         if st.config.semantic_pagination_enabled {
-            unsafe { crate::ext::tt_insert_special(st, c"tdux:ce math".as_ptr()) }?;
+            crate::ext::tt_insert_special(st, "tdux:ce math")?;
         }
 
         crate::save::unsave(st)?;
@@ -3556,7 +3556,7 @@ pub(crate) fn after_math(
     }
 
     if st.config.semantic_pagination_enabled {
-        unsafe { crate::ext::tt_insert_special(st, c"tdux:ce dmath".as_ptr()) }?;
+        crate::ext::tt_insert_special(st, "tdux:ce dmath")?;
     }
 
     resume_after_display(st)
@@ -3802,7 +3802,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), crate::main_control:
         define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s)?;
 
         if st.config.semantic_pagination_enabled {
-            unsafe { crate::ext::tt_insert_special(st, c"tdux:cs dmath".as_ptr()) }?;
+            crate::ext::tt_insert_special(st, "tdux:cs dmath")?;
         }
 
         let every_display = st.eqtb.local(LOCAL_EVERY_DISPLAY);
@@ -3820,7 +3820,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), crate::main_control:
             crate::ext::insert_src_special(st)?;
         }
         if st.config.semantic_pagination_enabled {
-            unsafe { crate::ext::tt_insert_special(st, c"tdux:cs math".as_ptr()) }?;
+            crate::ext::tt_insert_special(st, "tdux:cs math")?;
         }
         let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
         if !every_math.is_null() {

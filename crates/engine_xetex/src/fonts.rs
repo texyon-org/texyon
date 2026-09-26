@@ -17,8 +17,8 @@ use crate::mem_types::B16x4;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, char_warning, diagnostic_begin_capture_warning_here,
-    end_diagnostic, error_here_with_diagnostic, print_char, print_cstr, print_file_name, print_int,
-    print_nl_cstr, print_scaled, sprint_cs,
+    end_diagnostic, error_here_with_diagnostic, print, print_char, print_file_name, print_int,
+    print_nl, print_scaled, sprint_cs,
 };
 use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
@@ -327,13 +327,13 @@ impl From<NativeFontAbort> for ReadFontInfoAbort {
 impl ReadFontInfoAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            ReadFontInfoAbort::TfmOutOfMemory => crate::errors::EngineAbort::TtAbort(
-                c"not enough memory to load another font".as_ptr(),
-            ),
+            ReadFontInfoAbort::TfmOutOfMemory => {
+                crate::errors::EngineAbort::TtAbort("not enough memory to load another font")
+            }
             ReadFontInfoAbort::Native(e) => e.into_engine_abort(),
             ReadFontInfoAbort::Error(outcome) => outcome.into_engine_abort(),
             ReadFontInfoAbort::InputClose => crate::errors::EngineAbort::TtAbort(
-                c"serious internal error closing the font metric file".as_ptr(),
+                "serious internal error closing the font metric file",
             ),
         }
     }
@@ -343,13 +343,13 @@ pub(crate) fn name_of_file_ptr(st: &mut EngineState) -> *mut libc::c_char {
     if st.input.name_of_file.is_empty() {
         std::ptr::null_mut()
     } else {
-        st.input.name_of_file.as_mut_ptr()
+        st.input.name_of_file.as_mut_ptr().cast()
     }
 }
 
 /// Start a "Font \cs=name at size" error.
 fn font_error_start(st: &mut EngineState, u: i32, nom: i32, aire: i32, s: i32) {
-    error_here_with_diagnostic(st, c"Font ".as_ptr());
+    error_here_with_diagnostic(st, "Font ");
     sprint_cs(st, u);
     print_char(st, b'=' as i32);
     let quote = st.scanner.file_name_quote_char;
@@ -361,11 +361,11 @@ fn font_error_start(st: &mut EngineState, u: i32, nom: i32, aire: i32, s: i32) {
         print_char(st, quote as i32);
     }
     if s >= 0 {
-        print_cstr(st, c" at ".as_ptr());
+        print(st, " at ");
         print_scaled(st, s);
-        print_cstr(st, c"pt".as_ptr());
+        print(st, "pt");
     } else if s != -1000 {
-        print_cstr(st, c" scaled ".as_ptr());
+        print(st, " scaled ");
         print_int(st, -s);
     }
 }
@@ -387,17 +387,17 @@ pub(crate) unsafe fn read_font_info(
     if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
         begin_diagnostic(st);
         diagnostic_begin_capture_warning_here(st);
-        print_nl_cstr(st, c"Requested font \"".as_ptr());
-        let name = name_of_file_ptr(st);
-        print_cstr(st, name);
+        print_nl(st, "Requested font \"");
+        let name = st.input.name_of_file_bytes().to_vec();
+        print(st, name.as_slice());
         print_char(st, b'"' as i32);
         if s < 0 {
-            print_cstr(st, c" scaled ".as_ptr());
+            print(st, " scaled ");
             print_int(st, -s);
         } else {
-            print_cstr(st, c" at ".as_ptr());
+            print(st, " at ");
             print_scaled(st, s);
-            print_cstr(st, c"pt".as_ptr());
+            print(st, "pt");
         }
         capture_to_diagnostic(st, std::ptr::null_mut());
         end_diagnostic(st, false);
@@ -425,8 +425,8 @@ pub(crate) unsafe fn read_font_info(
         }
 
         pack_file_name(st, nom, aire, EMPTY_STRING);
-        let name_of_file = name_of_file_ptr(st);
-        st.fonts.check_for_tfm_font_mapping(name_of_file);
+        st.fonts
+            .check_for_tfm_font_mapping(&mut st.input.name_of_file);
 
         tfm_file = tt_xetex_open_input(st, TTBC_FILE_FORMAT_TFM);
         if tfm_file == INVALID_HANDLE {
@@ -463,13 +463,13 @@ pub(crate) unsafe fn read_font_info(
     if bad_tfm && st.eqtb.int_par(INT_PAR_SUPPRESS_FONTNOTFOUND_ERROR) == 0 {
         font_error_start(st, u, nom, aire, s);
         let reason = if file_opened {
-            c" not loadable: Bad metric (TFM) file"
+            " not loadable: Bad metric (TFM) file"
         } else if name_too_long {
-            c" not loadable: Metric (TFM) file name too long"
+            " not loadable: Metric (TFM) file name too long"
         } else {
-            c" not loadable: Metric (TFM) file or installed font not found"
+            " not loadable: Metric (TFM) file or installed font not found"
         };
-        print_cstr(st, reason.as_ptr());
+        print(st, reason);
         capture_to_diagnostic(st, std::ptr::null_mut());
 
         st.errors.help(&[
@@ -493,12 +493,12 @@ pub(crate) unsafe fn read_font_info(
     if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 && (g == FONT_BASE || file_opened) {
         begin_diagnostic(st);
         diagnostic_begin_capture_warning_here(st);
-        print_nl_cstr(st, c" -> ".as_ptr());
+        print_nl(st, " -> ");
         if g == FONT_BASE {
-            print_cstr(st, c"font not found, using \"nullfont\"".as_ptr());
+            print(st, "font not found, using \"nullfont\"");
         } else {
-            let name = name_of_file_ptr(st);
-            print_cstr(st, name);
+            let name = st.input.name_of_file_bytes().to_vec();
+            print(st, name.as_slice());
         }
         capture_to_diagnostic(st, std::ptr::null_mut());
         end_diagnostic(st, false);
@@ -881,7 +881,7 @@ pub(crate) unsafe fn load_native_font(
     }
     for k in 0..st.input.name_length {
         st.strings.str_pool[st.strings.pool_ptr as usize] =
-            st.input.name_of_file[k as usize] as u8 as u16;
+            st.input.name_of_file[k as usize] as u16;
         st.strings.pool_ptr += 1;
     }
     let full_name = st
@@ -915,7 +915,7 @@ pub(crate) unsafe fn load_native_font(
         || st.fonts.fmem_ptr + num_font_dimens > st.fonts.font_mem_size
     {
         font_error_start(st, u, nom, aire, s);
-        print_cstr(st, c" not loaded: Not enough room left".as_ptr());
+        print(st, " not loaded: Not enough room left");
         capture_to_diagnostic(st, std::ptr::null_mut());
 
         st.errors.help(&[

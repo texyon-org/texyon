@@ -39,7 +39,7 @@ pub(crate) enum PageBuildAbort {
     VertBreak(crate::packaging::VertBreakAbort),
     MainMemoryOverflow,
     MainMemoryOverflowRunaway,
-    Confusion(&'static std::ffi::CStr),
+    Confusion(&'static str),
 }
 
 impl From<crate::input::InputAbort> for PageBuildAbort {
@@ -89,13 +89,13 @@ impl PageBuildAbort {
             PageBuildAbort::Shipout(a) => a.into_engine_abort(),
             PageBuildAbort::VertBreak(a) => a.into_engine_abort(),
             PageBuildAbort::MainMemoryOverflow => crate::errors::EngineAbort::Overflow {
-                what: c"main memory size".as_ptr(),
+                what: "main memory size",
                 n: MEM_TOP + 1,
             },
             PageBuildAbort::MainMemoryOverflowRunaway => {
                 crate::errors::EngineAbort::MainMemoryOverflow
             }
-            PageBuildAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s.as_ptr()),
+            PageBuildAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s),
         }
     }
 }
@@ -135,7 +135,7 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), PageBuildAbort> {
     if !matches!(fetch_box(st, n as i32), Some(AnyBox::HList(_))) {
         return Ok(());
     }
-    crate::output::print_err(st, c"Insertions can only be added to a vbox");
+    crate::output::print_err(st, "Insertions can only be added to a vbox");
     st.errors.help(&[
         r"Tut tut: You're trying to \insert into a",
         r"\box register that now contains an \hbox.",
@@ -147,7 +147,7 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), PageBuildAbort> {
 fn push_nest_pagebuilder(st: &mut EngineState) -> Result<(), PageBuildAbort> {
     crate::mem::push_nest(st).map_err(|e| match e {
         crate::mem::PushNestAbort::SemanticNest => PageBuildAbort::Save(
-            crate::save::SaveAbort::Overflow(c"semantic nest size", st.input.nest_size),
+            crate::save::SaveAbort::Overflow("semantic nest size", st.input.nest_size),
         ),
         crate::mem::PushNestAbort::MainMemory => PageBuildAbort::MainMemoryOverflowRunaway,
     })
@@ -276,9 +276,9 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         st.shipout.best_page_break = MemPtr::NULL;
     }
     if !st.eqtb.box_reg(255).is_null() {
-        crate::output::error_here_with_diagnostic(st, c"".as_ptr());
-        crate::output::print_esc_cstr(st, c"box".as_ptr());
-        crate::output::print_cstr(st, c"255 is not void".as_ptr());
+        crate::output::error_here_with_diagnostic(st, "");
+        crate::output::print_esc(st, "box");
+        crate::output::print(st, "255 is not void");
         crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
             r"You shouldn't use \box255 except in \output routines.",
@@ -426,9 +426,9 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
             crate::scan::scan_left_brace(st)?;
             return Ok(());
         }
-        crate::output::error_here_with_diagnostic(st, c"Output loop---".as_ptr());
+        crate::output::error_here_with_diagnostic(st, "Output loop---");
         crate::output::print_int(st, st.shipout.dead_cycles);
-        crate::output::print_cstr(st, c" consecutive dead cycles".as_ptr());
+        crate::output::print(st, " consecutive dead cycles");
         crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
             r"I've concluded that your \output is awry; it never does a",
@@ -545,11 +545,8 @@ fn append_insertion(
         st.shipout.page_so_far[2 + order] += skip.stretch(&st.mem).0;
         st.shipout.page_so_far[PAGE_SHRINK] += skip.shrink(&st.mem).0;
         if skip.shrink_order(&st.mem) != NORMAL && skip.shrink(&st.mem).0 != 0 {
-            crate::output::error_here_with_diagnostic(
-                st,
-                c"Infinite glue shrinkage inserted from ".as_ptr(),
-            );
-            crate::output::print_esc_cstr(st, c"skip".as_ptr());
+            crate::output::error_here_with_diagnostic(st, "Infinite glue shrinkage inserted from ");
+            crate::output::print_esc(st, "skip");
             crate::output::print_int(st, n as i32);
             crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
             st.errors.help(&[
@@ -708,7 +705,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), PageBuildAbort> {
                 append_insertion(st, ins, p)?;
                 PageStep::Contribute
             }
-            _ => return Err(PageBuildAbort::Confusion(c"page")),
+            _ => return Err(PageBuildAbort::Confusion("page")),
         };
 
         let step = match step {
@@ -806,7 +803,7 @@ fn page_glue_width(
     if spec.shrink_order(&st.mem) == NORMAL || spec.shrink(&st.mem).0 == 0 {
         return Ok(spec.width(&st.mem).0);
     }
-    crate::output::print_err(st, c"Infinite glue shrinkage found on current page");
+    crate::output::print_err(st, "Infinite glue shrinkage found on current page");
     st.errors.help(&[
         "The page about to be output contains some infinitely",
         r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",

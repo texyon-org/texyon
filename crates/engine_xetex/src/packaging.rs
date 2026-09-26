@@ -119,7 +119,7 @@ impl MemState {
     /// words are still to be copied.
     fn copy_whatsit(&mut self, w: NodePtr<WhatsitNode>) -> Result<(MemPtr, i32), NodeRecycleAbort> {
         let Some(size) = self.whatsit_node_size(w) else {
-            return Err(NodeRecycleAbort::Confusion(c"ext2"));
+            return Err(NodeRecycleAbort::Confusion("ext2"));
         };
         let r = self.get_node_or_overflow(size)?;
         match w.whatsit_subtype(self) {
@@ -286,10 +286,7 @@ impl MemState {
     }
 
     /// Free every node of the list `p` and everything it owns.
-    pub fn flush_node_list(
-        &mut self,
-        p: impl crate::units::MemAddr,
-    ) -> Result<(), &'static std::ffi::CStr> {
+    pub fn flush_node_list(&mut self, p: impl crate::units::MemAddr) -> Result<(), &'static str> {
         let mut p = MemPtr(p.addr());
         while !p.is_null() {
             let q = p.link(self);
@@ -299,7 +296,7 @@ impl MemState {
                 continue;
             }
 
-            let size = match self.classify(MemIdx::new(p)).map_err(|_| c"flushing")? {
+            let size = match self.classify(MemIdx::new(p)).map_err(|_| "flushing")? {
                 AnyNode::HList(b) => {
                     self.flush_node_list(b.list_ptr(self))?;
                     BOX_NODE_SIZE
@@ -319,7 +316,7 @@ impl MemState {
                     INS_NODE_SIZE
                 }
                 AnyNode::Whatsit(w) => {
-                    let size = self.whatsit_node_size(w).ok_or(c"ext3")?;
+                    let size = self.whatsit_node_size(w).ok_or("ext3")?;
                     match w.whatsit_subtype(self) {
                         Some(WhatsitSubtype::Write | WhatsitSubtype::Special) => {
                             self.delete_token_ref(w.write_tokens(self));
@@ -436,7 +433,7 @@ impl MemState {
     fn copy_node(&mut self, p: MemPtr) -> Result<(MemPtr, i32), NodeRecycleAbort> {
         let node = self
             .classify(MemIdx::new(p))
-            .map_err(|_| NodeRecycleAbort::Confusion(c"copying"))?;
+            .map_err(|_| NodeRecycleAbort::Confusion("copying"))?;
         Ok(match node {
             AnyNode::HList(b) => {
                 let list = self.copy_list(b.list_ptr(self))?;
@@ -509,7 +506,7 @@ impl MemState {
                 copied_node(adjust, r).set_adjust_ptr(self, list);
                 (r, 0)
             }
-            _ => return Err(NodeRecycleAbort::Confusion(c"copying")),
+            _ => return Err(NodeRecycleAbort::Confusion("copying")),
         })
     }
 }
@@ -649,7 +646,7 @@ impl MemState {
 
         let node = self
             .classify(MemIdx::new(cursor.p))
-            .map_err(|_| NodeRecycleAbort::Confusion(c"vertbreak"))?;
+            .map_err(|_| NodeRecycleAbort::Confusion("vertbreak"))?;
         cursor.breakable = node.precedes_break();
         match node {
             AnyNode::HList(b) => {
@@ -709,7 +706,7 @@ impl MemState {
                 update_after: None,
             }),
             AnyNode::Ins(_) | AnyNode::Mark(_) => Ok(VertBreakNext::NotFound),
-            _ => Err(NodeRecycleAbort::Confusion(c"vertbreak")),
+            _ => Err(NodeRecycleAbort::Confusion("vertbreak")),
         }
     }
 
@@ -791,7 +788,7 @@ impl MemState {
 }
 
 fn print_vert_break_infinite_shrinkage_error(st: &mut EngineState) -> ErrorOutcome {
-    crate::output::print_err(st, c"Infinite glue shrinkage found in box being split");
+    crate::output::print_err(st, "Infinite glue shrinkage found in box being split");
     st.errors.help(&[
         r"The box you are \vsplitting contains some infinitely",
         r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
@@ -980,7 +977,7 @@ impl MemState {
             loop {
                 if let AnyNode::Mark(mark) = self
                     .classify(MemIdx::new(p))
-                    .map_err(|_| NodeRecycleAbort::Confusion(c"vsplit"))?
+                    .map_err(|_| NodeRecycleAbort::Confusion("vsplit"))?
                 {
                     self.collect_split_mark(scanner, mark)?;
                 }
@@ -1052,10 +1049,10 @@ impl MemState {
 }
 
 fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> ErrorOutcome {
-    crate::output::error_here_with_diagnostic(st, c"".as_ptr());
-    crate::output::print_esc_cstr(st, c"vsplit".as_ptr());
-    crate::output::print_cstr(st, c" needs a ".as_ptr());
-    crate::output::print_esc_cstr(st, c"vbox".as_ptr());
+    crate::output::error_here_with_diagnostic(st, "");
+    crate::output::print_esc(st, "vsplit");
+    crate::output::print(st, " needs a ");
+    crate::output::print_esc(st, "vbox");
     crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
     st.errors.help(&[
         r"The box you are trying to split is an \hbox.",
@@ -1228,7 +1225,7 @@ impl MemState {
         while !p.is_null() {
             let node = self
                 .classify(MemIdx::new(p))
-                .map_err(|_| NodeRecycleAbort::Confusion(c"pruning"))?;
+                .map_err(|_| NodeRecycleAbort::Confusion("pruning"))?;
             let height = match node {
                 AnyNode::HList(b) => b.height(self).0,
                 AnyNode::VList(b) => b.height(self).0,
@@ -1242,7 +1239,7 @@ impl MemState {
                     p = self.prune_discard_node(scanner, prev_p, &mut r, p, s)?;
                     continue;
                 }
-                _ => return Err(NodeRecycleAbort::Confusion(c"pruning")),
+                _ => return Err(NodeRecycleAbort::Confusion("pruning")),
             };
             self.insert_split_top_skip_before(eqtb, prev_p, p, height)?;
             p = MemPtr::NULL;
@@ -1532,7 +1529,7 @@ impl MemState {
                             &mut scanner.adjust_tail
                         };
                         if tail.is_null() {
-                            return Err(NodeRecycleAbort::Confusion(c"pre vadjust"));
+                            return Err(NodeRecycleAbort::Confusion("pre vadjust"));
                         }
                         tail.set_link(self, adjust_list);
                         *tail = self.list_tail(*tail);
@@ -1726,7 +1723,7 @@ impl MemState {
             }
             self.pop_lr(&mut scanner.lr_ptr);
             if !scanner.lr_ptr.is_null() {
-                return Err(NodeRecycleAbort::Confusion(c"LR1"));
+                return Err(NodeRecycleAbort::Confusion("LR1"));
             }
         }
 
@@ -1739,36 +1736,35 @@ impl MemState {
 
 pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: PackDiag) {
     use crate::output::{
-        diagnostic_begin_capture_warning_here, print_cstr, print_int, print_ln, print_nl_cstr,
-        print_scaled,
+        diagnostic_begin_capture_warning_here, print, print_int, print_ln, print_nl, print_scaled,
     };
     print_ln(st);
     diagnostic_begin_capture_warning_here(st);
     match diag {
         PackDiag::HUnderfull { badness, loose } => {
             if loose {
-                print_nl_cstr(st, c"Loose".as_ptr());
+                print_nl(st, "Loose");
             } else {
-                print_nl_cstr(st, c"Underfull".as_ptr());
+                print_nl(st, "Underfull");
             }
-            print_cstr(st, c" \\hbox (badness ".as_ptr());
+            print(st, " \\hbox (badness ");
             print_int(st, badness);
         }
         PackDiag::HOverfull { excess } => {
-            print_nl_cstr(st, c"Overfull \\hbox (".as_ptr());
+            print_nl(st, "Overfull \\hbox (");
             print_scaled(st, excess);
-            print_cstr(st, c"pt too wide".as_ptr());
+            print(st, "pt too wide");
         }
         PackDiag::HTight { badness } => {
-            print_nl_cstr(st, c"Tight \\hbox (badness ".as_ptr());
+            print_nl(st, "Tight \\hbox (badness ");
             print_int(st, badness);
         }
         PackDiag::LrProblem { missing, extra } => {
-            print_nl_cstr(st, c"\\endL or \\endR problem (".as_ptr());
+            print_nl(st, "\\endL or \\endR problem (");
             print_int(st, missing);
-            print_cstr(st, c" missing, ".as_ptr());
+            print(st, " missing, ");
             print_int(st, extra);
-            print_cstr(st, c" extra".as_ptr());
+            print(st, " extra");
         }
         PackDiag::VUnderfull { .. } | PackDiag::VOverfull { .. } | PackDiag::VTight { .. } => {
             unreachable!("vpack diagnostic passed to hpack printer")
@@ -1779,23 +1775,23 @@ pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: Pack
 
 fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     use crate::output::{
-        begin_diagnostic, capture_to_diagnostic, end_diagnostic, print_cstr, print_int, print_ln,
+        begin_diagnostic, capture_to_diagnostic, end_diagnostic, print, print_int, print_ln,
         short_display, show_box,
     };
     if st.shipout.output_active {
-        print_cstr(st, c") has occurred while \\output is active".as_ptr());
+        print(st, ") has occurred while \\output is active");
     } else {
         let pack_begin_line = st.scanner.pack_begin_line;
         if pack_begin_line != 0 {
             if pack_begin_line > 0 {
-                print_cstr(st, c") in paragraph at lines ".as_ptr());
+                print(st, ") in paragraph at lines ");
             } else {
-                print_cstr(st, c") in alignment at lines ".as_ptr());
+                print(st, ") in alignment at lines ");
             }
             print_int(st, pack_begin_line.abs());
-            print_cstr(st, c"--".as_ptr());
+            print(st, "--");
         } else {
-            print_cstr(st, c") detected at line ".as_ptr());
+            print(st, ") detected at line ");
         }
         print_int(st, st.mem.line);
     }
@@ -1861,7 +1857,7 @@ impl MemState {
         let mut p = list;
         while !p.is_null() {
             if self.is_char_node(p) {
-                return Err(NodeRecycleAbort::Confusion(c"vpack"));
+                return Err(NodeRecycleAbort::Confusion("vpack"));
             }
             match self.classify(MemIdx::new(p)) {
                 Ok(AnyNode::HList(b)) => {
@@ -1995,28 +1991,27 @@ impl MemState {
 
 pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: PackDiag) {
     use crate::output::{
-        diagnostic_begin_capture_warning_here, print_cstr, print_int, print_ln, print_nl_cstr,
-        print_scaled,
+        diagnostic_begin_capture_warning_here, print, print_int, print_ln, print_nl, print_scaled,
     };
     print_ln(st);
     diagnostic_begin_capture_warning_here(st);
     match diag {
         PackDiag::VUnderfull { badness, loose } => {
             if loose {
-                print_nl_cstr(st, c"Loose".as_ptr());
+                print_nl(st, "Loose");
             } else {
-                print_nl_cstr(st, c"Underfull".as_ptr());
+                print_nl(st, "Underfull");
             }
-            print_cstr(st, c" \\vbox (badness ".as_ptr());
+            print(st, " \\vbox (badness ");
             print_int(st, badness);
         }
         PackDiag::VOverfull { excess } => {
-            print_nl_cstr(st, c"Overfull \\vbox (".as_ptr());
+            print_nl(st, "Overfull \\vbox (");
             print_scaled(st, excess);
-            print_cstr(st, c"pt too high".as_ptr());
+            print(st, "pt too high");
         }
         PackDiag::VTight { badness } => {
-            print_nl_cstr(st, c"Tight \\vbox (badness ".as_ptr());
+            print_nl(st, "Tight \\vbox (badness ");
             print_int(st, badness);
         }
         PackDiag::HUnderfull { .. }
@@ -2031,19 +2026,19 @@ pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: Pack
 
 fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     use crate::output::{
-        begin_diagnostic, capture_to_diagnostic, end_diagnostic, print_cstr, print_int, print_ln,
+        begin_diagnostic, capture_to_diagnostic, end_diagnostic, print, print_int, print_ln,
         show_box,
     };
     if st.shipout.output_active {
-        print_cstr(st, c") has occurred while \\output is active".as_ptr());
+        print(st, ") has occurred while \\output is active");
     } else {
         let pack_begin_line = st.scanner.pack_begin_line;
         if pack_begin_line != 0 {
-            print_cstr(st, c") in alignment at lines ".as_ptr());
+            print(st, ") in alignment at lines ");
             print_int(st, pack_begin_line.abs());
-            print_cstr(st, c"--".as_ptr());
+            print(st, "--");
         } else {
-            print_cstr(st, c") detected at line ".as_ptr());
+            print(st, ") detected at line ");
         }
         print_int(st, st.mem.line);
         print_ln(st);

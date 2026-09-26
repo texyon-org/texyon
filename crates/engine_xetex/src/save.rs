@@ -30,18 +30,15 @@ pub(crate) const TOK_VAL_LIMIT: u16 = 384;
 
 /// A save-stack abort, which ends the run.
 pub(crate) enum SaveAbort {
-    Overflow(&'static std::ffi::CStr, i32),
-    Confusion(&'static std::ffi::CStr),
+    Overflow(&'static str, i32),
+    Confusion(&'static str),
 }
 
 impl SaveAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            SaveAbort::Overflow(s, n) => crate::errors::EngineAbort::Overflow {
-                what: s.as_ptr(),
-                n,
-            },
-            SaveAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s.as_ptr()),
+            SaveAbort::Overflow(s, n) => crate::errors::EngineAbort::Overflow { what: s, n },
+            SaveAbort::Confusion(s) => crate::errors::EngineAbort::Confusion(s),
         }
     }
 }
@@ -83,14 +80,14 @@ impl SaveStackState {
 
     pub(crate) fn new_save_level(&mut self, c: GroupCode, line: i32) -> Result<(), SaveAbort> {
         if self.save_stack_full() {
-            return Err(SaveAbort::Overflow(c"semantic nest size", self.save_size));
+            return Err(SaveAbort::Overflow("semantic nest size", self.save_size));
         }
         self.set_saved(0, line);
         self.save_ptr += 1;
         let (group, boundary) = (self.cur_group.as_raw() as u16, self.cur_boundary);
         self.set_save_entry(LEVEL_BOUNDARY, group, boundary);
         if self.cur_level == u16::MAX {
-            return Err(SaveAbort::Overflow(c"grouping levels", u16::MAX as i32));
+            return Err(SaveAbort::Overflow("grouping levels", u16::MAX as i32));
         }
         self.cur_boundary = self.save_ptr;
         self.cur_group = c;
@@ -101,7 +98,7 @@ impl SaveStackState {
 
     pub(crate) fn eq_save(&mut self, eqtb: &EqtbState, p: i32, l: u16) -> Result<(), SaveAbort> {
         if self.save_stack_full() {
-            return Err(SaveAbort::Overflow(c"save size", self.save_size));
+            return Err(SaveAbort::Overflow("save size", self.save_size));
         }
         let kind = if l == LEVEL_ZERO {
             RESTORE_ZERO
@@ -118,7 +115,7 @@ impl SaveStackState {
     pub(crate) fn save_for_after(&mut self, t: i32) -> Result<(), SaveAbort> {
         if self.cur_level > LEVEL_ONE {
             if self.save_stack_full() {
-                return Err(SaveAbort::Overflow(c"save size", self.save_size));
+                return Err(SaveAbort::Overflow("save size", self.save_size));
             }
             self.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t);
             self.save_ptr += 1;
@@ -135,10 +132,10 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> crate::errors::ErrorOutcome {
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
-        let errmsg = error_here_with_diagnostic(st, c"Incompatible magnification (".as_ptr());
+        let errmsg = error_here_with_diagnostic(st, "Incompatible magnification (");
         crate::output::print_int(st, mag);
-        crate::output::print_cstr(st, c");".as_ptr());
-        crate::output::print_nl_cstr(st, c" the previous value will be retained".as_ptr());
+        crate::output::print(st, ");");
+        crate::output::print_nl(st, " the previous value will be retained");
         unsafe { diag_append_str(errmsg, &format!(" ({})", mag_set)) };
         capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
@@ -153,10 +150,8 @@ pub(crate) fn prepare_mag(st: &mut EngineState) -> crate::errors::ErrorOutcome {
     }
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     if mag <= 0 || mag > 32768 {
-        let errmsg = error_here_with_diagnostic(
-            st,
-            c"Illegal magnification has been changed to 1000".as_ptr(),
-        );
+        let errmsg =
+            error_here_with_diagnostic(st, "Illegal magnification has been changed to 1000");
         unsafe { diag_append_str(errmsg, &format!(" ({})", mag)) };
         capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors
@@ -425,18 +420,18 @@ impl MemState {
 pub(crate) enum SaMutationAbort {
     MainMemory,
     SaveOverflow,
-    Confusion(&'static std::ffi::CStr),
+    Confusion(&'static str),
 }
 
 impl SaMutationAbort {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
             SaMutationAbort::MainMemory => crate::errors::EngineAbort::Overflow {
-                what: c"main memory size".as_ptr(),
+                what: "main memory size",
                 n: MEM_TOP + 1,
             },
             SaMutationAbort::SaveOverflow => crate::errors::EngineAbort::SaveOverflow,
-            SaMutationAbort::Confusion(m) => crate::errors::EngineAbort::Confusion(m.as_ptr()),
+            SaMutationAbort::Confusion(m) => crate::errors::EngineAbort::Confusion(m),
         }
     }
 }
@@ -484,7 +479,7 @@ impl From<SaveAbort> for UnsaveAbort {
     }
 }
 
-fn sa_restore(st: &mut EngineState) -> Result<(), &'static std::ffi::CStr> {
+fn sa_restore(st: &mut EngineState) -> Result<(), &'static str> {
     loop {
         let chain = sa(st.scanner.sa_chain);
         let p = sa(chain.sa_ref(&st.mem));
@@ -528,7 +523,7 @@ fn sa_restore(st: &mut EngineState) -> Result<(), &'static std::ffi::CStr> {
 
 pub(crate) fn unsave(st: &mut EngineState) -> Result<(), UnsaveAbort> {
     if st.save_stack.cur_level <= LEVEL_ONE {
-        return Err(UnsaveAbort::Save(SaveAbort::Confusion(c"curlevel")));
+        return Err(UnsaveAbort::Save(SaveAbort::Confusion("curlevel")));
     }
     st.save_stack.cur_level -= 1;
     let mut l: u16 = 0;
