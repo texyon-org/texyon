@@ -48,6 +48,7 @@ use crate::output::{
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::state::{EngineState, GroupCode};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+use std::ffi::CStr;
 
 extern "C" {
     fn usingGraphite(engine: *mut libc::c_void) -> bool;
@@ -417,10 +418,10 @@ pub(crate) fn scan_spec_in(
         0
     };
     let spec_code;
-    if scan_keyword_in(st, c"to".as_ptr())? {
+    if scan_keyword_in(st, c"to")? {
         spec_code = EXACTLY;
         scan_dimen_in(st, false, false, false)?;
-    } else if scan_keyword_in(st, c"spread".as_ptr())? {
+    } else if scan_keyword_in(st, c"spread")? {
         spec_code = ADDITIONAL;
         scan_dimen_in(st, false, false, false)?;
     } else {
@@ -470,13 +471,13 @@ pub(crate) fn scan_rule_spec_in(st: &mut EngineState) -> Result<NodePtr<RuleNode
         r.set_depth(&mut st.mem, RuleDimen::Set(Scaled(0)));
     }
     loop {
-        if scan_keyword_in(st, c"width".as_ptr())? {
+        if scan_keyword_in(st, c"width")? {
             xetex_scan_dimen_in(st, false, false, false, true)?;
             r.set_width(&mut st.mem, RuleDimen::from_raw(st.scanner.cur_val));
-        } else if scan_keyword_in(st, c"height".as_ptr())? {
+        } else if scan_keyword_in(st, c"height")? {
             xetex_scan_dimen_in(st, false, false, false, true)?;
             r.set_height(&mut st.mem, RuleDimen::from_raw(st.scanner.cur_val));
-        } else if scan_keyword_in(st, c"depth".as_ptr())? {
+        } else if scan_keyword_in(st, c"depth")? {
             xetex_scan_dimen_in(st, false, false, false, true)?;
             r.set_depth(&mut st.mem, RuleDimen::from_raw(st.scanner.cur_val));
         } else {
@@ -2278,9 +2279,9 @@ pub(crate) fn xetex_scan_dimen_in(
 
         if requires_units {
             let apply_fraction = 'units: {
-                if inf && scan_keyword_in(st, c"fil".as_ptr())? {
+                if inf && scan_keyword_in(st, c"fil")? {
                     st.scanner.cur_order = FIL;
-                    while scan_keyword_in(st, c"l".as_ptr())? {
+                    while scan_keyword_in(st, c"l")? {
                         if st.scanner.cur_order == FILLL {
                             print_err_in(st, c"Illegal unit of measure (replaced with filll)");
                             st.errors.help(&["I dddon't go any higher than filll."]);
@@ -2314,9 +2315,9 @@ pub(crate) fn xetex_scan_dimen_in(
                 back_input_in(st)?;
 
                 if !mu {
-                    let font_param = if scan_keyword_in(st, c"em".as_ptr())? {
+                    let font_param = if scan_keyword_in(st, c"em")? {
                         Some(QUAD_CODE)
-                    } else if scan_keyword_in(st, c"ex".as_ptr())? {
+                    } else if scan_keyword_in(st, c"ex")? {
                         Some(X_HEIGHT_CODE)
                     } else {
                         None
@@ -2333,7 +2334,7 @@ pub(crate) fn xetex_scan_dimen_in(
                 }
 
                 if mu {
-                    if scan_keyword_in(st, c"mu".as_ptr())? {
+                    if scan_keyword_in(st, c"mu")? {
                         break 'units true;
                     } else {
                         print_err_in(st, c"Illegal unit of measure (mu inserted)");
@@ -2348,7 +2349,7 @@ pub(crate) fn xetex_scan_dimen_in(
                     }
                 }
 
-                if scan_keyword_in(st, c"true".as_ptr())? {
+                if scan_keyword_in(st, c"true")? {
                     scc_err(crate::save::prepare_mag_in(st))?;
                     let mag = st.eqtb.int_par(INT_PAR_MAG);
                     if mag != 1000 {
@@ -2356,25 +2357,25 @@ pub(crate) fn xetex_scan_dimen_in(
                     }
                 }
 
-                if scan_keyword_in(st, c"pt".as_ptr())? {
+                if scan_keyword_in(st, c"pt")? {
                     break 'units true;
                 }
 
-                let (num, denom) = if scan_keyword_in(st, c"in".as_ptr())? {
+                let (num, denom) = if scan_keyword_in(st, c"in")? {
                     (7227_i32, 100_i32)
-                } else if scan_keyword_in(st, c"pc".as_ptr())? {
+                } else if scan_keyword_in(st, c"pc")? {
                     (12, 1)
-                } else if scan_keyword_in(st, c"cm".as_ptr())? {
+                } else if scan_keyword_in(st, c"cm")? {
                     (7227, 254)
-                } else if scan_keyword_in(st, c"mm".as_ptr())? {
+                } else if scan_keyword_in(st, c"mm")? {
                     (7227, 2540)
-                } else if scan_keyword_in(st, c"bp".as_ptr())? {
+                } else if scan_keyword_in(st, c"bp")? {
                     (7227, 7200)
-                } else if scan_keyword_in(st, c"dd".as_ptr())? {
+                } else if scan_keyword_in(st, c"dd")? {
                     (1238, 1157)
-                } else if scan_keyword_in(st, c"cc".as_ptr())? {
+                } else if scan_keyword_in(st, c"cc")? {
                     (14856, 1157)
-                } else if scan_keyword_in(st, c"sp".as_ptr())? {
+                } else if scan_keyword_in(st, c"sp")? {
                     break 'units false;
                 } else {
                     print_err_in(st, c"Illegal unit of measure (pt inserted)");
@@ -2453,12 +2454,12 @@ pub(crate) fn scan_glue_in(st: &mut EngineState, level: u8) -> Result<(), SccAbo
     let gs = new_spec_scc(st, 0)?;
     gs.set_width(&mut st.mem, Scaled(st.scanner.cur_val));
 
-    if scan_keyword_in(st, c"plus".as_ptr())? {
+    if scan_keyword_in(st, c"plus")? {
         scan_dimen_in(st, mu, true, false)?;
         gs.set_stretch(&mut st.mem, Scaled(st.scanner.cur_val));
         gs.set_stretch_order(&mut st.mem, st.scanner.cur_order);
     }
-    if scan_keyword_in(st, c"minus".as_ptr())? {
+    if scan_keyword_in(st, c"minus")? {
         scan_dimen_in(st, mu, true, false)?;
         gs.set_shrink(&mut st.mem, Scaled(st.scanner.cur_val));
         gs.set_shrink_order(&mut st.mem, st.scanner.cur_order);
@@ -2740,12 +2741,8 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
     Ok(())
 }
 
-pub(crate) fn scan_keyword_in(
-    st: &mut EngineState,
-    s: *const libc::c_char,
-) -> Result<bool, SccAbort> {
-    // SAFETY: callers pass NUL-terminated keyword literals.
-    let keyword = unsafe { std::ffi::CStr::from_ptr(s) }.to_bytes();
+pub(crate) fn scan_keyword_in(st: &mut EngineState, keyword: &CStr) -> Result<bool, SccAbort> {
+    let keyword = keyword.to_bytes();
     let save_cur_cs = st.scanner.cur_cs;
     let mut p = BACKUP_HEAD;
     p.set_link(&mut st.mem, MemPtr::NULL);
@@ -3750,12 +3747,12 @@ pub(crate) fn find_font_dimen_in(st: &mut EngineState, writing: bool) -> Result<
 }
 
 pub(crate) fn scan_glyph_number_in(st: &mut EngineState, f: i32) -> Result<(), SccAbort> {
-    if scan_keyword_in(st, c"/".as_ptr())? {
+    if scan_keyword_in(st, c"/")? {
         crate::io::scan_and_pack_name_in(st)?;
         let name = name_of_file_ptr(st);
         let v = unsafe { crate::ext::map_glyph_to_index(&st.fonts, f, name) }?;
         set_cur_val(st, v, INT_VAL);
-    } else if scan_keyword_in(st, c"u".as_ptr())? {
+    } else if scan_keyword_in(st, c"u")? {
         scan_char_num_in(st)?;
         let v = unsafe { crate::ext::map_char_to_glyph(&st.fonts, f, st.scanner.cur_val) }?;
         set_cur_val(st, v, INT_VAL);

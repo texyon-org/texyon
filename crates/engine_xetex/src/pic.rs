@@ -378,7 +378,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
     let mut pdf_box_type = None;
     let mut page = 0;
     if is_pdf {
-        if crate::scan::scan_keyword_in(st, c"page".as_ptr())? {
+        if crate::scan::scan_keyword_in(st, c"page")? {
             crate::scan::scan_int_in(st)?;
             page = st.scanner.cur_val;
         }
@@ -391,7 +391,7 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
         ];
         let mut pdf_box = PageboxType::Unset;
         for (keyword, pb) in keywords {
-            if crate::scan::scan_keyword_in(st, keyword.as_ptr())? {
+            if crate::scan::scan_keyword_in(st, keyword)? {
                 pdf_box = pb;
                 break;
             }
@@ -424,30 +424,30 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
     let mut y_size_req = 0.0;
     loop {
         let no_size_req = x_size_req == 0.0 && y_size_req == 0.0;
-        if crate::scan::scan_keyword_in(st, c"scaled".as_ptr())? {
+        if crate::scan::scan_keyword_in(st, c"scaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(s, s));
             }
-        } else if crate::scan::scan_keyword_in(st, c"xscaled".as_ptr())? {
+        } else if crate::scan::scan_keyword_in(st, c"xscaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(s, 1.0));
             }
-        } else if crate::scan::scan_keyword_in(st, c"yscaled".as_ptr())? {
+        } else if crate::scan::scan_keyword_in(st, c"yscaled")? {
             let s = scan_scale_factor(st)?;
             if no_size_req {
                 placement.transform(&Transform::scale(1.0, s));
             }
-        } else if crate::scan::scan_keyword_in(st, c"width".as_ptr())? {
+        } else if crate::scan::scan_keyword_in(st, c"width")? {
             if let Some(size) = scan_image_size(st)? {
                 x_size_req = size;
             }
-        } else if crate::scan::scan_keyword_in(st, c"height".as_ptr())? {
+        } else if crate::scan::scan_keyword_in(st, c"height")? {
             if let Some(size) = scan_image_size(st)? {
                 y_size_req = size;
             }
-        } else if crate::scan::scan_keyword_in(st, c"rotated".as_ptr())? {
+        } else if crate::scan::scan_keyword_in(st, c"rotated")? {
             crate::scan::xetex_scan_dimen_in(st, false, false, false, false)?;
             if !no_size_req {
                 placement.scale_to(x_size_req, y_size_req);

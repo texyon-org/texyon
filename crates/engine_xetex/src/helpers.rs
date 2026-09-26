@@ -22,6 +22,15 @@ pub fn badness(t: i32, s: i32) -> i32 {
     (r * r * r + 0x2_0000) / 0x4_0000
 }
 
+/// Runs its closure when dropped, including during unwinding.
+pub(crate) struct OnDrop<F: FnMut()>(pub F);
+
+impl<F: FnMut()> Drop for OnDrop<F> {
+    fn drop(&mut self) {
+        (self.0)();
+    }
+}
+
 pub fn norm_min(h: i32) -> i16 {
     h.clamp(1, 63) as i16
 }

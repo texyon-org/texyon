@@ -2609,10 +2609,12 @@ fn define_word_in(
     loc: i32,
     val: i32,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    match crate::save::eq_word_define(&mut st.eqtb, &mut st.save_stack, loc, val) {
-        Err(a) => Err(crate::main_control::MainControlAbort::Save(a)),
-        Ok(()) => Ok(()),
-    }
+    Ok(crate::save::eq_word_define(
+        &mut st.eqtb,
+        &mut st.save_stack,
+        loc,
+        val,
+    )?)
 }
 
 pub(crate) fn start_eq_no_in(
@@ -3046,10 +3048,10 @@ pub(crate) fn math_ac_in(
     let tail = append_accent_noad(&mut st.input.cur_list, &mut st.mem)?;
 
     if st.scanner.cur_chr == 1 {
-        if crate::scan::scan_keyword_in(st, c"fixed".as_ptr())? {
+        if crate::scan::scan_keyword_in(st, c"fixed")? {
             tail.set_subtype(&mut st.mem, FIXED_ACC);
-        } else if crate::scan::scan_keyword_in(st, c"bottom".as_ptr())? {
-            if crate::scan::scan_keyword_in(st, c"fixed".as_ptr())? {
+        } else if crate::scan::scan_keyword_in(st, c"bottom")? {
+            if crate::scan::scan_keyword_in(st, c"fixed")? {
                 tail.set_subtype(&mut st.mem, BOTTOM_ACC + 1);
             } else {
                 tail.set_subtype(&mut st.mem, BOTTOM_ACC);

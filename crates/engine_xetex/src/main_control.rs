@@ -1129,7 +1129,7 @@ pub(crate) fn begin_insert_or_adjust_in(st: &mut EngineState) -> Result<(), Main
     }
     let sp = st.save_stack.save_ptr;
     st.save_stack.set_b32s1(sp, st.scanner.cur_val);
-    let pre = st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword_in(st, c"pre".as_ptr())?;
+    let pre = st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword_in(st, c"pre")?;
     st.save_stack.set_b32s1(sp + 1, pre as i32);
     st.save_stack.save_ptr = sp + 2;
     crate::save::new_save_level(&mut st.save_stack, GroupCode::Insert, st.mem.line)?;
@@ -1819,7 +1819,7 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
         VSPLIT_CODE => {
             crate::scan::scan_register_num_in(st)?;
             let n = st.scanner.cur_val;
-            if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
+            if !crate::scan::scan_keyword_in(st, c"to")? {
                 crate::output::print_err_in(st, c"Missing `to' inserted");
                 st.errors.help(&[
                     r"I'm working on `\vsplit<box number> to <dimen>';",
@@ -2663,7 +2663,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
     crate::scan::scan_optional_equals_in(st)?;
     crate::io::scan_file_name_in(st)?;
     st.scanner.name_in_progress = true;
-    let s = if crate::scan::scan_keyword_in(st, c"at".as_ptr())? {
+    let s = if crate::scan::scan_keyword_in(st, c"at")? {
         crate::scan::scan_dimen_in(st, false, false, false)?;
         let size = st.scanner.cur_val;
         if size <= 0 || size >= 0x800_0000 {
@@ -2680,7 +2680,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
         } else {
             size
         }
-    } else if crate::scan::scan_keyword_in(st, c"scaled".as_ptr())? {
+    } else if crate::scan::scan_keyword_in(st, c"scaled")? {
         crate::scan::scan_int_in(st)?;
         let mag = st.scanner.cur_val;
         if mag <= 0 || mag > 32768 {
@@ -2808,7 +2808,7 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
     if q == REGISTER {
         crate::scan::scan_optional_equals_in(st)?;
     } else {
-        crate::scan::scan_keyword_in(st, c"by".as_ptr())?;
+        crate::scan::scan_keyword_in(st, c"by")?;
     }
     st.errors.arith_error = false;
 
@@ -4379,7 +4379,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
             let j = st.scanner.cur_chr;
             crate::scan::scan_int_in(st)?;
             let n = st.scanner.cur_val;
-            if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
+            if !crate::scan::scan_keyword_in(st, c"to")? {
                 crate::output::print_err_in(st, c"Missing `to' inserted");
                 st.errors.help(&[
                     r"You should have said `\read<number> to \cs'.",

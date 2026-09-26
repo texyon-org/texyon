@@ -14,6 +14,7 @@ use tectonic_errors::prelude::*;
 use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
 };
+use crate::helpers::OnDrop;
 use crate::replay::source::SourcePath;
 use crate::state::{EngineExecutionMode, EngineState};
 use crate::EngineCancellation;
@@ -874,31 +875,13 @@ fn run_locked<R>(
     operation: impl FnOnce(&mut EngineState) -> R,
 ) -> R {
     let api = api as *mut CoreBridgeState<'_> as *mut libc::c_void;
-    struct EngineGuard;
-    impl Drop for EngineGuard {
-        fn drop(&mut self) {
-            unsafe { crate::bridge::exit_global_engine() };
-        }
-    }
-    struct BridgeGuard;
-    impl Drop for BridgeGuard {
-        fn drop(&mut self) {
-            unsafe { crate::bridge::set_bridge_state(std::ptr::null_mut()) };
-        }
-    }
-    struct StateGuard;
-    impl Drop for StateGuard {
-        fn drop(&mut self) {
-            crate::state::set_engine_state_ptr(std::ptr::null_mut());
-        }
-    }
     unsafe {
         crate::bridge::enter_global_engine(api);
-        let _engine = EngineGuard;
+        let _engine = OnDrop(|| crate::bridge::exit_global_engine());
         crate::bridge::set_bridge_state(api);
-        let _bridge = BridgeGuard;
+        let _bridge = OnDrop(|| crate::bridge::set_bridge_state(std::ptr::null_mut()));
         crate::state::set_engine_state_ptr(state as *mut EngineState);
-        let _state = StateGuard;
+        let _state = OnDrop(|| crate::state::set_engine_state_ptr(std::ptr::null_mut()));
         operation(state)
     }
 }

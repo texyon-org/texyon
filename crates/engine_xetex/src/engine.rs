@@ -28,6 +28,7 @@ use crate::consts::{
 use crate::errors::EngineAbort;
 use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_OFFSET, HASH_PRIME, HASH_SIZE};
+use crate::helpers::OnDrop;
 use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
 use crate::input::{NEW_LINE, TOKEN_LIST};
 use crate::io::init_io;
@@ -726,22 +727,10 @@ pub(crate) unsafe fn tt_run_engine(
     build_date: libc::time_t,
 ) -> i32 {
     reset_layout_font_caches();
-    struct LayoutCacheGuard;
-    impl Drop for LayoutCacheGuard {
-        fn drop(&mut self) {
-            reset_layout_font_caches();
-        }
-    }
-    let _layout_cache_guard = LayoutCacheGuard;
+    let _layout_cache_guard = OnDrop(|| reset_layout_font_caches());
 
     crate::bridge::set_bridge_state(api);
-    struct BridgeGuard;
-    impl Drop for BridgeGuard {
-        fn drop(&mut self) {
-            unsafe { crate::bridge::set_bridge_state(std::ptr::null_mut()) };
-        }
-    }
-    let _bridge_guard = BridgeGuard;
+    let _bridge_guard = OnDrop(|| crate::bridge::set_bridge_state(std::ptr::null_mut()));
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         tt_run_engine_inner(dump_name, input_file_name, build_date)
@@ -769,24 +758,12 @@ unsafe fn tt_run_engine_inner(
 ) -> i32 {
     // An abort that skips terminal cleanup must not leak this process-global
     // registry into the next batch run.
-    struct PdfFilesGuard;
-    impl Drop for PdfFilesGuard {
-        fn drop(&mut self) {
-            unsafe { pdf_files_close_if_open() };
-        }
-    }
-    let _pdf_files_guard = PdfFilesGuard;
+    let _pdf_files_guard = OnDrop(|| pdf_files_close_if_open());
 
     let mut st = Box::new(EngineState::default());
     crate::engine_interface::apply_config(&mut st.config);
-    struct PtrGuard;
-    impl Drop for PtrGuard {
-        fn drop(&mut self) {
-            crate::state::set_engine_state_ptr(std::ptr::null_mut());
-        }
-    }
     crate::state::set_engine_state_ptr(&mut *st as *mut EngineState);
-    let _ptr_guard = PtrGuard;
+    let _ptr_guard = OnDrop(|| crate::state::set_engine_state_ptr(std::ptr::null_mut()));
 
     match initialize_engine(&mut st, dump_name, build_date) {
         InitOutcome::Ready => run_document_to_end(&mut st, input_file_name),

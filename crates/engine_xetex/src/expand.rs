@@ -545,7 +545,7 @@ fn scan_nonnegative_int_in(
     help: &'static str,
 ) -> Result<i32, SccAbort> {
     st.scanner.cur_val = 0;
-    if crate::scan::scan_keyword_in(st, keyword.as_ptr())? {
+    if crate::scan::scan_keyword_in(st, keyword)? {
         scan_int_in(st)?;
         if st.scanner.cur_val < 0 {
             print_err_in(st, err);
@@ -662,7 +662,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
         }
         PDF_MDFIVE_SUM_CODE => {
             let saved = save_scan_in(st)?;
-            let is_file = crate::scan::scan_keyword_in(st, c"file".as_ptr())?;
+            let is_file = crate::scan::scan_keyword_in(st, c"file")?;
             let s = scan_text_to_string_in(st, &saved)?;
             let b = st.strings.pool_ptr;
             unsafe { crate::texmfmp::getmd5sum_in(&mut st.strings, s, is_file) };
