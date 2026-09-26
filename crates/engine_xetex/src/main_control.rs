@@ -3732,7 +3732,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
         st.scanner.set_native_len(0);
         native_text_reserve(&mut st.scanner, mapped_len);
         st.mainloop.main_h = 0;
-        let hyphen = st.fonts.hyphen_char_entry(mf) as u16 as i32;
+        let hyphen = st.fonts.hyphen_char_entry(mf);
         for i in 0..mapped_len {
             let c = st.fonts.mapped_text_entry(i);
             native_text_push(&mut st.scanner, c);
@@ -3905,7 +3905,10 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Mai
     crate::ext::measure_native_node(&st.fonts, &mut st.mem, joined, metrics)?;
     let t = joined.width(&st.mem).0 - prev_word.width(&st.mem).0 - st.mem.b32s1(tail + 1);
     joined.free_native(&mut st.mem);
-    let space = st.mem.b32s1(st.fonts.font_glue(mf) + 1);
+    // TeX reads `width(font_glue[f])`, which stays null while `\spaceskip` supplies the glue.
+    let space = st
+        .fonts
+        .font_info_b32s1(st.fonts.param_base(mf) + SPACE_CODE);
     if t != space {
         let kern = overflow_err(crate::mem::alloc_kern(&mut st.mem, t - space))?;
         kern.set_subtype(&mut st.mem, SPACE_ADJUSTMENT);
@@ -3928,6 +3931,16 @@ enum LigExit {
     Restart,
 }
 
+/// Where the next pass of the TFM main loop starts.
+enum Resume {
+    /// `main_lig_loop`.
+    LigLoop,
+    /// `main_lig_loop+1` at lig/kern program index `k`.
+    LigProgram(i32),
+    /// `main_loop_move+2`.
+    Move2,
+}
+
 /// TeX's `wrapup`: packs a pending ligature and inserts a pending
 /// discretionary. `rt_hit` says whether a right boundary hit may count.
 #[inline(always)]
@@ -3937,7 +3950,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
     }
     let main_f = st.mainloop.main_f;
     if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
-        && st.mem.b16s0(st.input.cur_list.tail) == st.fonts.hyphen_char_entry(main_f) as u16
+        && st.mem.b16s0(st.input.cur_list.tail) as i32 == st.fonts.hyphen_char_entry(main_f)
     {
         st.mainloop.ins_disc = true;
     }
@@ -4023,72 +4036,79 @@ pub(crate) unsafe fn main_control_main_loop_in(
     } else {
         st.fonts.bchar_label_entry(mf)
     };
-    let mut lig_loop_1_k = if bchar_label != NON_ADDRESS {
+    let mut resume = if bchar_label != NON_ADDRESS {
         st.mainloop.cur_r = st.mainloop.cur_l;
         st.mainloop.cur_l = TOO_BIG_CHAR;
-        Some(bchar_label)
+        Resume::LigProgram(bchar_label)
     } else {
-        None
+        Resume::Move2
     };
     let mut main_i = crate::mem_types::B16x4::default();
 
     loop {
-        let exit = if let Some(k) = lig_loop_1_k.take() {
-            lig_kern_program(st, k, &mut main_i)?
-        } else if main_i.s1 % 4 != LIG_TAG || st.mainloop.cur_r == TOO_BIG_CHAR {
-            LigExit::Wrapup
-        } else {
-            let base = st.fonts.lig_kern_base_entry(st.mainloop.main_f);
-            let first = st.fonts.font_info_b16(base + main_i.s0 as i32);
-            let k = if first.s3 > 128 {
-                base + 256 * first.s1 as i32 + first.s0 as i32 + 32768 - 256 * 128
-            } else {
-                base + main_i.s0 as i32
-            };
-            lig_kern_program(st, k, &mut main_i)?
+        let exit = match std::mem::replace(&mut resume, Resume::LigLoop) {
+            Resume::Move2 => None,
+            Resume::LigProgram(k) => Some(lig_kern_program(st, k, &mut main_i)?),
+            Resume::LigLoop if main_i.s1 % 4 != LIG_TAG || st.mainloop.cur_r == TOO_BIG_CHAR => {
+                Some(LigExit::Wrapup)
+            }
+            Resume::LigLoop => {
+                let base = st.fonts.lig_kern_base_entry(st.mainloop.main_f);
+                let first = st.fonts.font_info_b16(base + main_i.s0 as i32);
+                let k = if first.s3 > 128 {
+                    base + 256 * first.s1 as i32 + first.s0 as i32 + 32768 - 256 * 128
+                } else {
+                    base + main_i.s0 as i32
+                };
+                Some(lig_kern_program(st, k, &mut main_i)?)
+            }
         };
-        match exit {
-            LigExit::Restart => continue,
-            LigExit::Wrapup => wrapup(st, true)?,
-            LigExit::Move | LigExit::Move1 => {}
-        }
-        if !matches!(exit, LigExit::Move1) {
-            if st.mainloop.lig_stack.is_null() {
-                return Ok(false);
+        if let Some(exit) = exit {
+            match exit {
+                LigExit::Restart => continue,
+                LigExit::Wrapup => wrapup(st, true)?,
+                LigExit::Move | LigExit::Move1 => {}
             }
-            st.mainloop.cur_q = st.input.cur_list.tail;
-            st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
-        }
-
-        if !is_char_node(&st.mem, st.mainloop.lig_stack) {
-            let item = st.mainloop.lig_stack;
-            let lig_ptr = st.mem.link_ptr(item + 1);
-            if lig_ptr.0 > TEX_NULL {
-                tail_append(st, lig_ptr);
-            }
-            st.mainloop.lig_stack = item.link(&st.mem);
-            crate::mem::free_node(&mut st.mem, item, SMALL_NODE_SIZE);
-            main_i = cur_l_info(st);
-            st.mainloop.ligature_present = true;
-            if st.mainloop.lig_stack.is_null() {
-                if lig_ptr.0 > TEX_NULL {
-                    if !lookahead(st)? {
-                        return Ok(true);
-                    }
-                    continue;
+            if !matches!(exit, LigExit::Move1) {
+                if st.mainloop.lig_stack.is_null() {
+                    return Ok(false);
                 }
-                st.mainloop.cur_r = st.mainloop.bchar;
-            } else {
-                st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
+                st.mainloop.cur_q = st.input.cur_list.tail;
+                st.mainloop.cur_l = st.mem.b16s0(st.mainloop.lig_stack) as i32;
             }
-            continue;
+
+            if !is_char_node(&st.mem, st.mainloop.lig_stack) {
+                let item = st.mainloop.lig_stack;
+                let lig_ptr = st.mem.link_ptr(item + 1);
+                if lig_ptr.0 > TEX_NULL {
+                    tail_append(st, lig_ptr);
+                }
+                st.mainloop.lig_stack = item.link(&st.mem);
+                crate::mem::free_node(&mut st.mem, item, SMALL_NODE_SIZE);
+                main_i = cur_l_info(st);
+                st.mainloop.ligature_present = true;
+                if st.mainloop.lig_stack.is_null() {
+                    if lig_ptr.0 > TEX_NULL {
+                        if !lookahead(st)? {
+                            return Ok(true);
+                        }
+                        continue;
+                    }
+                    st.mainloop.cur_r = st.mainloop.bchar;
+                } else {
+                    st.mainloop.cur_r = st.mem.b16s0(st.mainloop.lig_stack) as i32;
+                }
+                continue;
+            }
         }
 
         let main_f = st.mainloop.main_f;
-        let c =
-            crate::fonts::effective_char(&mut st.fonts, false, main_f, st.scanner.cur_chr as u16);
-        let exists = if c > st.fonts.font_ec_entry(main_f) as i32
-            || c < st.fonts.font_bc_entry(main_f) as i32
+        let cur_chr = st.scanner.cur_chr as u16;
+        // Each call resets `xtx_ligature_present`, so the two bounds may see different codes.
+        let exists = if crate::fonts::effective_char(&mut st.fonts, false, main_f, cur_chr)
+            > st.fonts.font_ec_entry(main_f) as i32
+            || crate::fonts::effective_char(&mut st.fonts, false, main_f, cur_chr)
+                < st.fonts.font_bc_entry(main_f) as i32
         {
             false
         } else {
@@ -4132,7 +4152,7 @@ fn lig_kern_program(
             continue;
         }
         if step.s1 >= 128 {
-            wrapup(st, false)?;
+            wrapup(st, true)?;
             let main_f = st.mainloop.main_f;
             let kern = st.fonts.font_info_b32s1(
                 st.fonts.kern_base_entry(main_f) + 256 * step.s1 as i32 + step.s0 as i32,

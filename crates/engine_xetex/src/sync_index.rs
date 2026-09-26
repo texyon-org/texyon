@@ -71,9 +71,10 @@ impl SyncIndex {
 
     /// Find the closest indexed source line, preferring exact line matches.
     pub fn forward(&self, path: &str, line: usize) -> Option<&SyncRect> {
+        let path = normalized_tex_path(path);
         self.records
             .iter()
-            .filter(|record| same_tex_path(&record.path, path))
+            .filter(|record| same_tex_path(&normalized_tex_path(&record.path), &path))
             .min_by_key(|record| (record.line.abs_diff(line), record.page_index))
     }
 
@@ -95,21 +96,24 @@ impl SyncIndex {
     }
 }
 
-fn same_tex_path(left: &str, right: &str) -> bool {
-    fn normalized(path: &str) -> String {
-        let mut path = path.replace('\\', "/");
-        if !path
-            .rsplit('/')
-            .next()
-            .is_some_and(|name| name.contains('.'))
-        {
-            path.push_str(".tex");
-        }
-        path
+fn normalized_tex_path(path: &str) -> String {
+    let mut path = path.replace('\\', "/");
+    if !path
+        .rsplit('/')
+        .next()
+        .is_some_and(|name| name.contains('.'))
+    {
+        path.push_str(".tex");
     }
-    let left = normalized(left);
-    let right = normalized(right);
-    left == right || left.ends_with(&format!("/{right}")) || right.ends_with(&format!("/{left}"))
+    path
+}
+
+fn same_tex_path(left: &str, right: &str) -> bool {
+    let is_suffix = |long: &str, short: &str| {
+        long.strip_suffix(short)
+            .is_some_and(|dir| dir.ends_with('/'))
+    };
+    left == right || is_suffix(left, right) || is_suffix(right, left)
 }
 
 #[derive(Clone, Default)]

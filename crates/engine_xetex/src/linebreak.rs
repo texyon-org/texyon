@@ -1258,7 +1258,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
             // The trailing glue becomes the infinite penalty in place.
             let spec = tail_glue.glue_ptr(&st.mem);
             let leaders = tail_glue.leader_ptr(&st.mem);
-            let tail_penalty = tail_glue.retype_as_penalty(&mut st.mem);
+            let tail_penalty = tail_glue.into_penalty(&mut st.mem);
             crate::mem::delete_glue_ref(&mut st.mem, spec);
             crate::packaging::flush_node_list(&mut st.mem, leaders)
                 .map_err(LineBreakOutcome::Confusion)?;

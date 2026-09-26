@@ -622,13 +622,6 @@ impl MemState {
         self.data[index].b16.s3 = v;
     }
 
-    /// Read the `gr` (f64) field of `mem[p]`.
-    #[inline]
-    pub(crate) fn gr(&self, p: impl crate::units::MemAddr) -> f64 {
-        // SAFETY: `MemoryWord` union projection; the `Vec` index is bounds-checked.
-        unsafe { self.data[p.addr() as usize].gr }
-    }
-
     /// Write the `gr` (f64) field of `mem[p]`.
     #[inline]
     pub(crate) fn set_gr(&mut self, p: impl crate::units::MemAddr, v: f64) {

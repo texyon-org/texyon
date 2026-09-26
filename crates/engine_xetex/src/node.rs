@@ -30,8 +30,8 @@ use std::marker::PhantomData;
 use crate::consts::{
     ACCENT_NOAD_SIZE, BOX_NODE_SIZE, DISC_NODE, FRACTION_NOAD_SIZE, GLUE_NODE, GLUE_SPEC_SIZE,
     HLIST_NODE, KERN_NODE, LIGATURE_NODE, MARGIN_KERN_NODE, MARGIN_KERN_NODE_SIZE, MATH_NODE,
-    MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PENALTY_NODE, RADICAL_NOAD_SIZE, RULE_NODE,
-    RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
+    MEDIUM_NODE_SIZE, NOAD_SIZE, NULL_FLAG, PENALTY_NODE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE,
+    RULE_NODE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
 use crate::mem::{free_node, get_node};
 use crate::state::MemState;
@@ -539,6 +539,12 @@ impl AnyBox {
         }
     }
 
+    /// The pseudo-node whose `link` is `list_ptr`, for splicing at the list head.
+    #[inline]
+    pub fn list_head(self) -> MemPtr {
+        MemPtr::from_idx(self.idx().offset(5))
+    }
+
     #[inline]
     pub fn set_link(self, mem: &mut MemState, q: MemPtr) {
         match self {
@@ -1009,12 +1015,12 @@ impl NodePtr<MathNode> {
         mem.set_b32s1(self.idx.offset(1).0, w.0);
     }
 
-    /// Turn this math node into a kern of the same width, in place.
+    /// Retype this math node in place as a kern of the same width.
     #[inline]
-    pub fn retype_as_kern(self, mem: &mut MemState) -> NodePtr<KernNode> {
+    pub fn into_kern(self, mem: &mut MemState) -> NodePtr<KernNode> {
         mem.set_b16s1(self.idx.0, KERN_NODE);
-        // SAFETY: the node was just stamped KERN_NODE.
-        unsafe { NodePtr::from_idx_unchecked(self.idx) }
+        // SAFETY: the node was just stamped KERN_NODE (same size and width slot).
+        unsafe { NodePtr::<KernNode>::from_idx_unchecked(self.idx) }
     }
 }
 
@@ -1063,6 +1069,15 @@ impl NodePtr<StyleNode> {
     }
 }
 
+impl NodePtr<StyleNode> {
+    /// Code 14 in a shipped list is an edge node, not a style node.
+    #[inline]
+    pub fn as_edge(self) -> NodePtr<EdgeNode> {
+        // SAFETY: edge and style nodes share code 14 and size, the context decides.
+        unsafe { NodePtr::<EdgeNode>::from_idx_unchecked(self.idx) }
+    }
+}
+
 impl NodePtr<ChoiceNode> {
     /// Retype this choice node in place as a style node for `style`.
     #[inline]
@@ -1086,6 +1101,16 @@ impl NodePtr<EdgeNode> {
         // SAFETY: `p` is freshly allocated and just stamped with the edge
         // context's NODE_type code.
         Some(unsafe { NodePtr::<EdgeNode>::from_idx_unchecked(MemIdx::new(p)) })
+    }
+
+    #[inline]
+    pub fn width(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(1).0))
+    }
+
+    #[inline]
+    pub fn edge_dist(self, mem: &MemState) -> Scaled {
+        Scaled(mem.b32s1(self.idx.offset(2).0))
     }
 
     /// Set edge width = `mem[p + 1].b32.s1`.
@@ -1523,10 +1548,20 @@ impl NodePtr<GlueNode> {
 
     /// Turn this glue node into a penalty node in place (both are medium nodes).
     #[inline]
-    pub fn retype_as_penalty(self, mem: &mut MemState) -> NodePtr<PenaltyNode> {
+    pub fn into_penalty(self, mem: &mut MemState) -> NodePtr<PenaltyNode> {
         mem.set_b16s1(self.idx.0, PENALTY_NODE);
         // SAFETY: the node was just stamped PENALTY_NODE.
         unsafe { NodePtr::from_idx_unchecked(self.idx) }
+    }
+
+    /// Retype this glue node in place as a kern of width `w`.
+    #[inline]
+    pub fn into_kern(self, mem: &mut MemState, w: Scaled) -> NodePtr<KernNode> {
+        mem.set_b16s1(self.idx.0, KERN_NODE);
+        // SAFETY: the node was just stamped KERN_NODE (same size).
+        let kern = unsafe { NodePtr::<KernNode>::from_idx_unchecked(self.idx) };
+        kern.set_width(mem, w);
+        kern
     }
 
     /// Classify this glue node's `glue_ptr` as a [`GlueSpecNode`] handle, or
@@ -2337,6 +2372,68 @@ impl NodePtr<WhatsitNode> {
     pub fn pic_path_len(self, mem: &MemState) -> u16 {
         mem.b16s1(self.idx.offset(4).0)
     }
+    #[inline]
+    pub fn set_pic_path_len(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.offset(4).0, v);
+    }
+    /// Picture page number = `mem[(p) + 4].b16.s0` (`PIC_NODE_page`).
+    #[inline]
+    pub fn pic_page(self, mem: &MemState) -> u16 {
+        mem.b16s0(self.idx.offset(4).0)
+    }
+    #[inline]
+    pub fn set_pic_page(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s0(self.idx.offset(4).0, v);
+    }
+    /// Picture PDF page-box selector = `mem[(p) + 8].b16.s1` (`PIC_NODE_pagebox`).
+    #[inline]
+    pub fn pic_pagebox(self, mem: &MemState) -> u16 {
+        mem.b16s1(self.idx.offset(8).0)
+    }
+    #[inline]
+    pub fn set_pic_pagebox(self, mem: &mut MemState, v: u16) {
+        mem.set_b16s1(self.idx.offset(8).0, v);
+    }
+    /// Picture transform `[a, b, c, d, x, y]` = `mem[(p) + 5..=7]` as `b32` pairs.
+    #[inline]
+    pub fn pic_transform(self, mem: &MemState) -> [i32; 6] {
+        let w = |k: i32| {
+            let q = self.idx.offset(5 + k / 2).0;
+            if k % 2 == 0 {
+                mem.b32s0(q)
+            } else {
+                mem.b32s1(q)
+            }
+        };
+        [w(0), w(1), w(2), w(3), w(4), w(5)]
+    }
+    #[inline]
+    pub fn set_pic_transform(self, mem: &mut MemState, t: [i32; 6]) {
+        for (k, v) in (0..).zip(t) {
+            let q = self.idx.offset(5 + k / 2).0;
+            if k % 2 == 0 {
+                mem.set_b32s0(q, v);
+            } else {
+                mem.set_b32s1(q, v);
+            }
+        }
+    }
+    /// Picture path bytes, stored inline after the `PIC_NODE_SIZE` header words.
+    #[inline]
+    pub fn pic_path(self, mem: &MemState) -> &[u8] {
+        let ptr = mem.node_addr(self.idx.offset(PIC_NODE_SIZE).0) as *const u8;
+        // SAFETY: a picture node holds `pic_path_len` path bytes inline.
+        unsafe { std::slice::from_raw_parts(ptr, self.pic_path_len(mem) as usize) }
+    }
+    /// Store `path` inline, the node must have room for it.
+    #[inline]
+    pub fn set_pic_path(self, mem: &mut MemState, path: &[u8]) {
+        let start = self.idx.offset(PIC_NODE_SIZE).0;
+        mem.journal_mark_range(start, path.len().div_ceil(8));
+        let dst = mem.as_u16_ptr_mut(start) as *mut u8;
+        // SAFETY: the caller allocated `path.len()` bytes past the header.
+        unsafe { std::ptr::copy_nonoverlapping(path.as_ptr(), dst, path.len()) };
+    }
     /// Native-node glyph count = `mem[(p) + 4].b16.s0` (`NATIVE_NODE_glyph_count`).
     #[inline]
     pub fn native_glyph_count(self, mem: &MemState) -> u16 {
@@ -2352,6 +2449,10 @@ impl NodePtr<WhatsitNode> {
     pub fn width(self, mem: &MemState) -> Scaled {
         Scaled(mem.b32s1(self.idx.offset(1).0))
     }
+    #[inline]
+    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
+        mem.set_b32s1(self.idx.offset(1).0, w.0);
+    }
     /// Depth = `mem[(p) + 2].b32.s1` (box `depth` slot).
     #[inline]
     pub fn depth(self, mem: &MemState) -> Scaled {
@@ -2362,6 +2463,15 @@ impl NodePtr<WhatsitNode> {
     pub fn height(self, mem: &MemState) -> Scaled {
         Scaled(mem.b32s1(self.idx.offset(3).0))
     }
+    #[inline]
+    pub fn set_depth(self, mem: &mut MemState, d: Scaled) {
+        mem.set_b32s1(self.idx.offset(2).0, d.0);
+    }
+    #[inline]
+    pub fn set_height(self, mem: &mut MemState, h: Scaled) {
+        mem.set_b32s1(self.idx.offset(3).0, h.0);
+    }
+
     /// One-based shaped-glyph arena handle; zero means no shaped glyphs.
     #[inline]
     pub fn native_glyph_info_handle(self, mem: &MemState) -> i32 {
@@ -2378,6 +2488,14 @@ impl NodePtr<WhatsitNode> {
     #[inline]
     pub fn native_text_ptr(self, mem: &MemState) -> *const u16 {
         mem.as_u16_ptr(self.idx.offset(6).0)
+    }
+
+    /// The native-word UTF-16 text.
+    #[inline]
+    pub fn native_text(self, mem: &MemState) -> &[u16] {
+        let len = self.native_length(mem) as usize;
+        // SAFETY: a native-word node is allocated with room for `native_length` code units.
+        unsafe { std::slice::from_raw_parts(self.native_text_ptr(mem), len) }
     }
 
     /// Mutable pointer to the inline UTF-16 native-word text payload at
@@ -2422,18 +2540,6 @@ impl NodePtr<WhatsitNode> {
     #[inline]
     pub fn set_native_size(self, mem: &mut MemState, words: u16) {
         mem.set_b16s3(self.idx.offset(4).0, words);
-    }
-    #[inline]
-    pub fn set_width(self, mem: &mut MemState, w: Scaled) {
-        mem.set_b32s1(self.idx.offset(1).0, w.0);
-    }
-    #[inline]
-    pub fn set_depth(self, mem: &mut MemState, d: Scaled) {
-        mem.set_b32s1(self.idx.offset(2).0, d.0);
-    }
-    #[inline]
-    pub fn set_height(self, mem: &mut MemState, h: Scaled) {
-        mem.set_b32s1(self.idx.offset(3).0, h.0);
     }
     /// Drop the shaped-glyph payload of a native word.
     pub fn release_native_glyphs(self, mem: &mut MemState) {
@@ -2539,6 +2645,13 @@ impl NodePtr<SaNode> {
     #[inline]
     pub fn set_sa_index(self, mem: &mut MemState, v: u16) {
         mem.set_b16s1(self.idx.0, v);
+    }
+
+    /// Parent index node = `mem[p].b32.s1`, non-null below the root.
+    #[inline]
+    pub fn parent(self, mem: &MemState) -> NodePtr<SaNode> {
+        // SAFETY: every non-root sparse-array record links to its index node.
+        unsafe { NodePtr::from_idx_unchecked(MemIdx::new(mem.b32s1(self.idx.0))) }
     }
 
     /// Save level of a data record = `mem[p].b16.s0` (`sa_lev`).

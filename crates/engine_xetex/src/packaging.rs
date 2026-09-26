@@ -355,7 +355,7 @@ pub fn just_reverse(
                 let subtype = math.subtype(mem);
                 if subtype % 2 == 1 {
                     if scanner.lr_ptr.info(mem) != end_lr_type(subtype) {
-                        math.retype_as_kern(mem);
+                        math.into_kern(mem);
                         scanner.lr_problems += 1;
                     } else {
                         mem.temp_ptr = scanner.lr_ptr;
@@ -366,7 +366,7 @@ pub fn just_reverse(
                             math.set_subtype(mem, subtype - 1);
                         } else if m > MIN_HALFWORD {
                             m -= 1;
-                            math.retype_as_kern(mem);
+                            math.into_kern(mem);
                         } else {
                             t.set_width(mem, math.width(mem));
                             t.set_link(mem, q);
@@ -382,7 +382,7 @@ pub fn just_reverse(
                         n += 1;
                         math.set_subtype(mem, subtype + 1);
                     } else {
-                        math.retype_as_kern(mem);
+                        math.into_kern(mem);
                         m += 1;
                     }
                 }
@@ -1736,7 +1736,7 @@ fn hpack_in(
                             pop_lr(mem, &mut scanner.lr_ptr);
                         } else {
                             scanner.lr_problems += 1;
-                            math.retype_as_kern(mem).set_subtype(mem, EXPLICIT);
+                            math.into_kern(mem).set_subtype(mem, EXPLICIT);
                         }
                     } else {
                         push_lr(mem, &mut scanner.lr_ptr, end_lr_type(subtype))?;

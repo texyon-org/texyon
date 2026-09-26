@@ -160,7 +160,6 @@ pub const NUMBER_MATH_FAMILIES: i32 = 256;
 pub const OR_CODE: u8 = 4;
 pub const OTHER_CHAR: u8 = 12;
 pub const OUTPUT_TEXT: u16 = 7;
-pub const PC_INT_BASE: i32 = 7_826_729;
 pub const PIC_NODE_SIZE: i32 = 9;
 pub const RADICAL_NOAD_SIZE: i32 = 5;
 pub const REGISTER: u8 = 91;

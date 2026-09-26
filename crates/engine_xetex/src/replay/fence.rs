@@ -1,7 +1,11 @@
 //! Strong source constraints carried by resumable command fences.
 
-use super::adapter::{self, MemoryInputCheckpoint};
-use super::source::{SourceRevision, SourceSnapshot};
+use std::mem::size_of;
+
+use super::adapter::{self, MemoryInput};
+use super::source::{first_difference, SourceRevision, SourceSnapshot};
+use crate::io::UFile;
+use crate::state::{EngineState, InputSlot};
 
 #[derive(Clone)]
 enum InputSlotCheckpoint {
@@ -28,7 +32,7 @@ pub(crate) struct ReplayFence {
 
 impl ReplayFence {
     pub(crate) fn capture(
-        state: &crate::state::EngineState,
+        state: &EngineState,
         snapshot: &SourceSnapshot,
         resume_pending_command: bool,
     ) -> Option<Self> {
@@ -36,32 +40,23 @@ impl ReplayFence {
             .input
             .read_file
             .iter()
-            .any(|slot| matches!(slot, crate::state::InputSlot::Open(_)))
+            .any(|slot| matches!(slot, InputSlot::Open(_)))
         {
             return None;
         }
-        if state
-            .shipout
-            .write_open
-            .iter()
-            .enumerate()
-            .any(|(stream, open)| {
-                *open
-                    && (stream >= state.shipout.write_name.len()
-                        || state.shipout.write_name[stream].last() != Some(&0))
-            })
-        {
+        let shipout = &state.shipout;
+        if shipout.write_open.iter().enumerate().any(|(stream, open)| {
+            *open && shipout.write_name.get(stream).and_then(|name| name.last()) != Some(&0)
+        }) {
             return None;
         }
         let inputs = ReplayFenceInputs::capture(snapshot)?;
         let mut slots = Vec::new();
         for (slot, input) in state.input.input_file.iter().enumerate() {
             match input {
-                crate::state::InputSlot::Empty => {}
-                crate::state::InputSlot::Terminal => {
-                    slots.push(InputSlotCheckpoint::Terminal { slot });
-                }
-                crate::state::InputSlot::Open(file) => {
+                InputSlot::Empty => {}
+                InputSlot::Terminal => slots.push(InputSlotCheckpoint::Terminal { slot }),
+                InputSlot::Open(file) => {
                     if !file.conversion_data.is_null()
                         || !adapter::checkpoint_handle_is_open(&inputs.inputs, file.handle)
                     {
@@ -80,26 +75,24 @@ impl ReplayFence {
         Some(Self {
             inputs,
             slots,
-            splice_at: state.shipout.dvi_gone.max(0) as usize,
+            splice_at: shipout.dvi_gone.max(0) as usize,
             resume_pending_command,
         })
     }
 
     pub(crate) fn is_eligible(&self, snapshot: &SourceSnapshot) -> bool {
-        self.inputs.revision() <= snapshot.revision() && self.inputs.is_eligible(snapshot)
+        self.inputs.revision <= snapshot.revision() && self.inputs.is_eligible(snapshot)
     }
 
-    pub(crate) fn restore_inputs(&self, state: &mut crate::state::EngineState) -> bool {
-        if !self.inputs.restore_inputs() {
+    pub(crate) fn restore_inputs(&self, state: &mut EngineState) -> bool {
+        if !adapter::restore_inputs(&self.inputs.inputs) {
             return false;
         }
-        for slot in &mut state.input.input_file {
-            *slot = crate::state::InputSlot::Empty;
-        }
+        state.input.input_file.fill_with(|| InputSlot::Empty);
         for checkpoint in &self.slots {
             match *checkpoint {
                 InputSlotCheckpoint::Terminal { slot } => {
-                    state.input.input_file[slot] = crate::state::InputSlot::Terminal;
+                    state.input.input_file[slot] = InputSlot::Terminal;
                 }
                 InputSlotCheckpoint::Open {
                     slot,
@@ -108,14 +101,13 @@ impl ReplayFence {
                     skip_next_lf,
                     encoding_mode,
                 } => {
-                    state.input.input_file[slot] =
-                        crate::state::InputSlot::Open(Box::new(crate::io::UFile {
-                            handle,
-                            saved_char,
-                            skip_next_lf,
-                            encoding_mode,
-                            conversion_data: std::ptr::null_mut(),
-                        }));
+                    state.input.input_file[slot] = InputSlot::Open(Box::new(UFile {
+                        handle,
+                        saved_char,
+                        skip_next_lf,
+                        encoding_mode,
+                        conversion_data: std::ptr::null_mut(),
+                    }));
                 }
             }
         }
@@ -131,21 +123,21 @@ impl ReplayFence {
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.inputs.allocated_bytes()
-            + self.slots.capacity() * std::mem::size_of::<InputSlotCheckpoint>()
+        self.inputs.inputs.capacity() * size_of::<MemoryInput>()
+            + self.slots.capacity() * size_of::<InputSlotCheckpoint>()
     }
 }
 
 /// Source identity and byte-channel positions needed to validate a fence.
 #[derive(Clone)]
-pub(crate) struct ReplayFenceInputs {
+struct ReplayFenceInputs {
     revision: SourceRevision,
-    inputs: Vec<MemoryInputCheckpoint>,
+    inputs: Vec<MemoryInput>,
 }
 
 impl ReplayFenceInputs {
     /// Capture every editor input ever opened during the active operation.
-    pub(crate) fn capture(snapshot: &SourceSnapshot) -> Option<Self> {
+    fn capture(snapshot: &SourceSnapshot) -> Option<Self> {
         Some(Self {
             revision: snapshot.revision(),
             inputs: adapter::checkpoint_inputs()?,
@@ -154,22 +146,11 @@ impl ReplayFenceInputs {
 
     /// Whether all consumed source constraints remain sound in `snapshot`.
     ///
-    /// Every input carries one number: the furthest byte the engine reached on
-    /// it, by reading or by seeking. A source may change at or beyond that
-    /// point, because the engine has not looked there yet.
-    ///
-    /// Whether the watermark sits at end of file is derived, not recorded. A
-    /// channel whose watermark reached the file's end was consumed entirely and
-    /// the engine acted on the file ending there, so any change at all
-    /// invalidates it — appending included. A channel that stopped short has
-    /// simply not read the rest yet.
-    ///
-    /// A query that read nothing therefore constrains nothing: resolving an
-    /// `\input` or graphics path asks for a size without moving the cursor, and
-    /// leaves no watermark to violate. Existence and emptiness still hold,
-    /// since a source that disappeared has no entry and one that gained or lost
-    /// all of its bytes is checked directly.
-    pub(crate) fn is_eligible(&self, snapshot: &SourceSnapshot) -> bool {
+    /// A source may change at or beyond its `seen` watermark, which the engine
+    /// has not looked at yet. A channel whose watermark reached end of file
+    /// acted on the file ending there, so any change, appending included,
+    /// invalidates it. Gaining or losing all bytes always invalidates.
+    fn is_eligible(&self, snapshot: &SourceSnapshot) -> bool {
         self.inputs.iter().all(|input| {
             let Some((bytes, identity)) = snapshot.replay_entry(&input.path) else {
                 return false;
@@ -186,28 +167,6 @@ impl ReplayFenceInputs {
             first_difference(&input.bytes, &bytes).is_some_and(|offset| offset >= input.seen)
         })
     }
-
-    /// Restore the captured byte-channel table after the new snapshot is installed.
-    pub(crate) fn restore_inputs(&self) -> bool {
-        adapter::restore_inputs(&self.inputs)
-    }
-
-    pub(crate) fn revision(&self) -> SourceRevision {
-        self.revision
-    }
-
-    pub(crate) fn allocated_bytes(&self) -> usize {
-        self.inputs.capacity() * std::mem::size_of::<MemoryInputCheckpoint>()
-    }
-}
-
-fn first_difference(left: &[u8], right: &[u8]) -> Option<usize> {
-    let shared = left.len().min(right.len());
-    left[..shared]
-        .iter()
-        .zip(&right[..shared])
-        .position(|(left, right)| left != right)
-        .or_else(|| (left.len() != right.len()).then_some(shared))
 }
 
 #[cfg(test)]
@@ -244,17 +203,12 @@ mod tests {
         .unwrap()
     }
 
-    fn checkpoint(
-        path: &str,
-        bytes: &[u8],
-        position: usize,
-        closed: bool,
-    ) -> MemoryInputCheckpoint {
+    fn checkpoint(path: &str, bytes: &[u8], position: usize, closed: bool) -> MemoryInput {
         let source = snapshot(1, bytes, b"child");
         let normalized = source.primary().clone();
         let (bytes, identity) = source.replay_entry(&normalized).unwrap();
         assert_eq!(path, "main.tex");
-        MemoryInputCheckpoint {
+        MemoryInput {
             path: normalized,
             bytes,
             identity,
@@ -387,7 +341,9 @@ mod tests {
         let fence = {
             let _guard = adapter::install(original.clone());
             let main = adapter::open_primary().unwrap();
+            // SAFETY: C string literal.
             let chapter = unsafe { adapter::open_named(c"chapter".as_ptr(), 26) }.unwrap();
+            // SAFETY: C string literal.
             let leaf = unsafe { adapter::open_named(c"parts/leaf".as_ptr(), 26) }.unwrap();
             assert_eq!(adapter::getc(main), Some(b'A'.into()));
             assert_eq!(adapter::getc(chapter), Some(b'C'.into()));

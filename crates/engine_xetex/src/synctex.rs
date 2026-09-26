@@ -1,50 +1,38 @@
 /* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License.
  * Translated to Rust from xetex-synctex.c. */
 
-use crate::consts::{INT_BASE, INVALID_HANDLE};
-use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
-use crate::units::{MemIdx, MemPtr};
-use libc::c_char;
-
-// INT_BASE (save.rs) and INT_PAR__synctex (xetex_format.h:116).
-const INT_PAR_SYNCTEX: i32 = 81;
-
-const SYNCTEX_VERSION: i32 = 1;
-const PREVIEW_HANDLE: usize = usize::MAX;
+use std::fmt::Write as _;
 
 use crate::bridge::{
     issue_error_cstr, issue_warning_cstr, ttstub_output_close, ttstub_output_open,
     ttstub_output_write,
 };
+use crate::consts::{INT_BASE, INVALID_HANDLE};
+use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
+use crate::shipout::ONE_INCH;
+use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
+use crate::units::{MemIdx, MemPtr};
+use libc::c_char;
 
-use crate::state::{EqtbState, ShipoutState};
+const INT_PAR_SYNCTEX: i32 = 81;
+const SYNCTEX_VERSION: i32 = 1;
+/// The pseudo file of a resident compile, which only feeds the preview index.
+const PREVIEW_HANDLE: usize = usize::MAX;
 
-// ---------------------------------------------------------------------------
-// Accessors for TeX memory / parameters
-// ---------------------------------------------------------------------------
-
-// SYNCTEX_CURH / SYNCTEX_CURV (xetex-synctex.c:19-20).
-#[inline]
 fn synctex_curh(shipout: &ShipoutState) -> i32 {
-    shipout.cur_h + 4736287
+    shipout.cur_h + ONE_INCH
 }
-#[inline]
+
 fn synctex_curv(shipout: &ShipoutState) -> i32 {
-    shipout.cur_v + 4736287
+    shipout.cur_v + ONE_INCH
 }
 
-// INTPAR(synctex) = eqtb[INT_BASE + INT_PAR__synctex].b32.s1
-#[inline]
-fn intpar_synctex(eqtb: &EqtbState) -> i32 {
-    eqtb.b32s1(INT_BASE + INT_PAR_SYNCTEX)
+fn synctex_enabled(eqtb: &EqtbState) -> bool {
+    eqtb.b32s1(INT_BASE + INT_PAR_SYNCTEX) != 0
 }
 
-// ---------------------------------------------------------------------------
-// Write helper: format! + ttstub_output_write
-// Replaces ttstub_fprintf(handle, "...", ...).
-// Returns bytes written (> 0) on success, -1 on failure.
-// ---------------------------------------------------------------------------
-unsafe fn synctex_write(handle: usize, s: &str) -> i32 {
+/// Bytes written (or that would be for the preview sink), -1 on failure.
+fn synctex_write(handle: usize, s: &str) -> i32 {
     let bytes = s.as_bytes();
     if bytes.is_empty() {
         return 0;
@@ -52,7 +40,9 @@ unsafe fn synctex_write(handle: usize, s: &str) -> i32 {
     if handle == PREVIEW_HANDLE {
         return i32::try_from(bytes.len()).unwrap_or(i32::MAX);
     }
-    let written = ttstub_output_write(handle, bytes.as_ptr() as *const c_char, bytes.len());
+    // SAFETY: FFI write of a live byte slice.
+    let written =
+        unsafe { ttstub_output_write(handle, bytes.as_ptr() as *const c_char, bytes.len()) };
     if written > 0 {
         written as i32
     } else {
@@ -60,185 +50,107 @@ unsafe fn synctex_write(handle: usize, s: &str) -> i32 {
     }
 }
 
-unsafe fn synctexabort(synctex: &mut crate::state::SynctexCtxt) {
+fn synctexabort(synctex: &mut SynctexCtxt) {
     if synctex.file != INVALID_HANDLE && synctex.file != PREVIEW_HANDLE {
-        ttstub_output_close(synctex.file);
+        // SAFETY: FFI close of the open SyncTeX file.
+        unsafe { ttstub_output_close(synctex.file) };
         synctex.file = INVALID_HANDLE;
     }
     synctex.root_name = None;
     synctex.flags.off = true;
 }
 
-unsafe fn synctex_record_anchor(synctex: &mut crate::state::SynctexCtxt) -> i32 {
-    let total = synctex.total_length;
-    let file = synctex.file;
-    let s = format!("!{}\n", total);
-    let len = synctex_write(file, &s);
+/// Write `s` and add it to the running length, aborting SyncTeX on failure.
+fn record(synctex: &mut SynctexCtxt, s: &str) -> bool {
+    let len = synctex_write(synctex.file, s);
     if len > 0 {
-        synctex.total_length = len; // XXX: same quirk as original C (assignment, not +=)
+        synctex.total_length += len;
+        true
+    } else {
+        synctexabort(synctex);
+        false
+    }
+}
+
+/// Like [`record`] but restarting the running length (anchors and the preamble).
+fn record_restart(synctex: &mut SynctexCtxt, s: &str) -> bool {
+    let len = synctex_write(synctex.file, s);
+    if len > 0 {
+        synctex.total_length = len;
+        true
+    } else {
+        synctexabort(synctex);
+        false
+    }
+}
+
+fn record_anchor(synctex: &mut SynctexCtxt) -> bool {
+    let ok = record_restart(synctex, &format!("!{}\n", synctex.total_length));
+    if ok {
         synctex.count += 1;
-        return 0;
     }
-    synctexabort(synctex);
-    -1
+    ok
 }
 
-unsafe fn synctex_record_preamble(synctex: &mut crate::state::SynctexCtxt) -> i32 {
-    let file = synctex.file;
-    let s = format!("SyncTeX Version:{}\n", SYNCTEX_VERSION);
-    let len = synctex_write(file, &s);
-    if len > 0 {
-        synctex.total_length = len; // XXX: assignment, not +=, as in C
-        return 0;
-    }
-    synctexabort(synctex);
-    -1
-}
-
-unsafe fn synctex_record_input(
-    synctex: &mut crate::state::SynctexCtxt,
-    tag: i32,
-    name: *const c_char,
-) -> i32 {
-    let file = synctex.file;
-    let name_str = std::ffi::CStr::from_ptr(name).to_string_lossy();
+fn record_input(synctex: &mut SynctexCtxt, tag: i32, name: &std::ffi::CStr) -> bool {
+    let name = name.to_string_lossy();
     if let Some(index) = &mut synctex.preview_index {
-        index.register_name(tag, name_str.to_string());
+        index.register_name(tag, name.to_string());
     }
-    let s = format!("Input:{}:{}\n", tag, name_str);
-    let len = synctex_write(file, &s);
-    if len > 0 {
-        synctex.total_length += len;
-        return 0;
-    }
-    synctexabort(synctex);
-    -1
+    record(synctex, &format!("Input:{tag}:{name}\n"))
 }
 
-unsafe fn synctex_record_settings(synctex: &mut crate::state::SynctexCtxt) -> i32 {
-    if synctex.file == INVALID_HANDLE {
-        return 0;
+fn record_postamble(synctex: &mut SynctexCtxt) -> bool {
+    let ok = record_anchor(synctex)
+        && record(synctex, "Postamble:\n")
+        && record(synctex, &format!("Count:{}\n", synctex.count))
+        && record_anchor(synctex)
+        && record(synctex, "Post scriptum:\n");
+    if !ok {
+        synctexabort(synctex);
     }
-    let (file, mag, unit) = (synctex.file, synctex.magnification, synctex.unit);
-    let s = format!(
-        "Output:pdf\nMagnification:{}\nUnit:{}\nX Offset:0\nY Offset:0\n",
-        mag, unit
-    );
-    let len = synctex_write(file, &s);
-    if len > 0 {
-        synctex.total_length += len;
-        return 0;
-    }
-    synctexabort(synctex);
-    -1
+    ok
 }
 
-unsafe fn synctex_record_content(synctex: &mut crate::state::SynctexCtxt) -> i32 {
-    let file = synctex.file;
-    let len = synctex_write(file, "Content:\n");
-    if len > 0 {
-        synctex.total_length += len;
-        return 0;
+/// Write a sheet boundary, `{` opening and `}` closing page `sheet`.
+fn record_sheet(synctex: &mut SynctexCtxt, brace: char, sheet: i32) {
+    if record_anchor(synctex) && record(synctex, &format!("{brace}{sheet}\n")) {
+        synctex.count += 1;
+    } else {
+        synctexabort(synctex);
     }
-    synctexabort(synctex);
-    -1
 }
 
-unsafe fn synctex_record_count(synctex: &mut crate::state::SynctexCtxt) -> i32 {
-    let (file, count) = (synctex.file, synctex.count);
-    let s = format!("Count:{}\n", count);
-    let len = synctex_write(file, &s);
-    if len > 0 {
-        synctex.total_length += len;
-        return 0;
-    }
-    synctexabort(synctex);
-    -1
-}
-
-unsafe fn synctex_record_postamble(synctex: &mut crate::state::SynctexCtxt) -> i32 {
-    if synctex_record_anchor(synctex) == 0 {
-        let file = synctex.file;
-        let len = synctex_write(file, "Postamble:\n");
-        if len > 0 {
-            synctex.total_length += len;
-            if synctex_record_count(synctex) == 0 && synctex_record_anchor(synctex) == 0 {
-                let file2 = synctex.file;
-                let len2 = synctex_write(file2, "Post scriptum:\n");
-                if len2 > 0 {
-                    synctex.total_length += len2;
-                    return 0;
-                }
-            }
-        }
-    }
-    synctexabort(synctex);
-    -1
-}
-
-unsafe fn synctex_record_sheet(synctex: &mut crate::state::SynctexCtxt, sheet: i32) -> i32 {
-    if synctex_record_anchor(synctex) == 0 {
-        let file = synctex.file;
-        let s = format!("{{{}\n", sheet);
-        let len = synctex_write(file, &s);
-        if len > 0 {
-            synctex.total_length += len;
-            synctex.count += 1;
-            return 0;
-        }
-    }
-    synctexabort(synctex);
-    -1
-}
-
-unsafe fn synctex_record_teehs(synctex: &mut crate::state::SynctexCtxt, sheet: i32) -> i32 {
-    if synctex_record_anchor(synctex) == 0 {
-        let file = synctex.file;
-        let s = format!("}}{}\n", sheet);
-        let len = synctex_write(file, &s);
-        if len > 0 {
-            synctex.total_length += len;
-            synctex.count += 1;
-            return 0;
-        }
-    }
-    synctexabort(synctex);
-    -1
-}
-
-unsafe fn synctex_record_node_vlist(
-    synctex: &mut crate::state::SynctexCtxt,
-    mem: &crate::state::MemState,
-    p: AnyBox,
-) {
-    synctex.flags.not_void = true;
+/// Record a node as `<kind><tag>,<line>:<h>,<v>`, followed by its dimensions.
+fn record_node(synctex: &mut SynctexCtxt, kind: char, tag: i32, line: i32, dims: &[i32]) {
     if let Some(index) = &mut synctex.preview_index {
+        let dim = |i: usize| dims.get(i).copied().unwrap_or(0);
         index.record(
-            p.sync_tag(mem),
-            p.sync_line(mem),
+            tag,
+            line,
             synctex.curh,
             synctex.curv,
-            p.width(mem).0,
-            p.height(mem).0,
-            p.depth(mem).0,
+            dim(0),
+            dim(1),
+            dim(2),
         );
     }
     if synctex.file == PREVIEW_HANDLE {
         synctex.lastv = synctex.curv;
         return;
     }
-    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
-    let s = format!(
-        "[{},{}:{},{}:{},{},{}\n",
-        p.sync_tag(mem),
-        p.sync_line(mem),
-        curh / unit,
-        curv / unit,
-        p.width(mem).0 / unit,
-        p.height(mem).0 / unit,
-        p.depth(mem).0 / unit
+    let unit = synctex.unit;
+    let mut s = format!(
+        "{kind}{tag},{line}:{},{}",
+        synctex.curh / unit,
+        synctex.curv / unit
     );
-    let len = synctex_write(file, &s);
+    for (i, d) in dims.iter().enumerate() {
+        let sep = if i == 0 { ':' } else { ',' };
+        let _ = write!(s, "{sep}{}", d / unit);
+    }
+    s.push('\n');
+    let len = synctex_write(synctex.file, &s);
     synctex.lastv = synctex.curv;
     if len > 0 {
         synctex.total_length += len;
@@ -248,315 +160,30 @@ unsafe fn synctex_record_node_vlist(
     }
 }
 
-unsafe fn synctex_record_node_tsilv(synctex: &mut crate::state::SynctexCtxt) {
-    let file = synctex.file;
-    let len = synctex_write(file, "]\n");
-    if len > 0 {
-        synctex.total_length += len;
-        // count NOT incremented here (matches C comment)
-    } else {
-        synctexabort(synctex);
-    }
-}
-
-unsafe fn synctex_record_node_void_vlist(
-    synctex: &mut crate::state::SynctexCtxt,
-    mem: &crate::state::MemState,
-    p: NodePtr<VListNode>,
-) {
-    if let Some(index) = &mut synctex.preview_index {
-        index.record(
-            p.sync_tag(mem),
-            p.sync_line(mem),
-            synctex.curh,
-            synctex.curv,
-            p.width(mem).0,
-            p.height(mem).0,
-            p.depth(mem).0,
-        );
-    }
-    if synctex.file == PREVIEW_HANDLE {
-        synctex.lastv = synctex.curv;
-        return;
-    }
-    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
-    let s = format!(
-        "v{},{}:{},{}:{},{},{}\n",
-        p.sync_tag(mem),
-        p.sync_line(mem),
-        curh / unit,
-        curv / unit,
-        p.width(mem).0 / unit,
-        p.height(mem).0 / unit,
-        p.depth(mem).0 / unit
+fn record_box(synctex: &mut SynctexCtxt, mem: &crate::state::MemState, kind: char, b: AnyBox) {
+    record_node(
+        synctex,
+        kind,
+        b.sync_tag(mem),
+        b.sync_line(mem),
+        &[b.width(mem).0, b.height(mem).0, b.depth(mem).0],
     );
-    let len = synctex_write(file, &s);
-    synctex.lastv = synctex.curv;
-    if len > 0 {
-        synctex.total_length += len;
-        synctex.count += 1;
-    } else {
-        synctexabort(synctex);
-    }
 }
 
-unsafe fn synctex_record_node_hlist(
-    synctex: &mut crate::state::SynctexCtxt,
-    mem: &crate::state::MemState,
-    p: AnyBox,
-) {
-    synctex.flags.not_void = true;
-    if let Some(index) = &mut synctex.preview_index {
-        index.record(
-            p.sync_tag(mem),
-            p.sync_line(mem),
-            synctex.curh,
-            synctex.curv,
-            p.width(mem).0,
-            p.height(mem).0,
-            p.depth(mem).0,
-        );
-    }
-    if synctex.file == PREVIEW_HANDLE {
-        synctex.lastv = synctex.curv;
-        return;
-    }
-    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
-    let s = format!(
-        "({},{}:{},{}:{},{},{}\n",
-        p.sync_tag(mem),
-        p.sync_line(mem),
-        curh / unit,
-        curv / unit,
-        p.width(mem).0 / unit,
-        p.height(mem).0 / unit,
-        p.depth(mem).0 / unit
+fn record_kern(synctex: &mut SynctexCtxt, mem: &crate::state::MemState, kern: NodePtr<KernNode>) {
+    record_node(
+        synctex,
+        'k',
+        kern.sync_tag(mem),
+        kern.sync_line(mem),
+        &[kern.width(mem).0],
     );
-    let len = synctex_write(file, &s);
-    synctex.lastv = synctex.curv;
-    if len > 0 {
-        synctex.total_length += len;
-        synctex.count += 1;
-    } else {
-        synctexabort(synctex);
-    }
 }
 
-unsafe fn synctex_record_node_tsilh(synctex: &mut crate::state::SynctexCtxt) {
-    let file = synctex.file;
-    let len = synctex_write(file, ")\n");
-    if len > 0 {
-        synctex.total_length += len;
-        synctex.count += 1;
-    } else {
-        synctexabort(synctex);
-    }
-}
-
-unsafe fn synctex_record_node_void_hlist(
-    synctex: &mut crate::state::SynctexCtxt,
-    mem: &crate::state::MemState,
-    p: NodePtr<HListNode>,
-) {
-    if let Some(index) = &mut synctex.preview_index {
-        index.record(
-            p.sync_tag(mem),
-            p.sync_line(mem),
-            synctex.curh,
-            synctex.curv,
-            p.width(mem).0,
-            p.height(mem).0,
-            p.depth(mem).0,
-        );
-    }
-    if synctex.file == PREVIEW_HANDLE {
-        synctex.lastv = synctex.curv;
-        return;
-    }
-    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
-    let s = format!(
-        "h{},{}:{},{}:{},{},{}\n",
-        p.sync_tag(mem),
-        p.sync_line(mem),
-        curh / unit,
-        curv / unit,
-        p.width(mem).0 / unit,
-        p.height(mem).0 / unit,
-        p.depth(mem).0 / unit
-    );
-    let len = synctex_write(file, &s);
-    synctex.lastv = synctex.curv;
-    if len > 0 {
-        synctex.total_length += len;
-        synctex.count += 1;
-    } else {
-        synctexabort(synctex);
-    }
-}
-
-unsafe fn synctex_record_node_math(
-    synctex: &mut crate::state::SynctexCtxt,
-    mem: &crate::state::MemState,
-    p: NodePtr<MathNode>,
-) {
-    if let Some(index) = &mut synctex.preview_index {
-        index.record(
-            p.sync_tag(mem),
-            p.sync_line(mem),
-            synctex.curh,
-            synctex.curv,
-            0,
-            0,
-            0,
-        );
-    }
-    if synctex.file == PREVIEW_HANDLE {
-        synctex.lastv = synctex.curv;
-        return;
-    }
-    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
-    let s = format!(
-        "${},{}:{},{}\n",
-        p.sync_tag(mem),
-        p.sync_line(mem),
-        curh / unit,
-        curv / unit
-    );
-    let len = synctex_write(file, &s);
-    synctex.lastv = synctex.curv;
-    if len > 0 {
-        synctex.total_length += len;
-        synctex.count += 1;
-    } else {
-        synctexabort(synctex);
-    }
-}
-
-unsafe fn synctex_record_node_glue(
-    synctex: &mut crate::state::SynctexCtxt,
-    mem: &crate::state::MemState,
-    p: NodePtr<crate::node::GlueNode>,
-) {
-    if let Some(index) = &mut synctex.preview_index {
-        index.record(
-            p.sync_tag(mem),
-            p.sync_line(mem),
-            synctex.curh,
-            synctex.curv,
-            0,
-            0,
-            0,
-        );
-    }
-    if synctex.file == PREVIEW_HANDLE {
-        synctex.lastv = synctex.curv;
-        return;
-    }
-    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
-    let s = format!(
-        "g{},{}:{},{}\n",
-        p.sync_tag(mem),
-        p.sync_line(mem),
-        curh / unit,
-        curv / unit
-    );
-    let len = synctex_write(file, &s);
-    synctex.lastv = synctex.curv;
-    if len > 0 {
-        synctex.total_length += len;
-        synctex.count += 1;
-    } else {
-        synctexabort(synctex);
-    }
-}
-
-unsafe fn synctex_record_node_kern(
-    synctex: &mut crate::state::SynctexCtxt,
-    mem: &crate::state::MemState,
-    p: NodePtr<KernNode>,
-) {
-    if let Some(index) = &mut synctex.preview_index {
-        index.record(
-            p.sync_tag(mem),
-            p.sync_line(mem),
-            synctex.curh,
-            synctex.curv,
-            p.width(mem).0,
-            0,
-            0,
-        );
-    }
-    if synctex.file == PREVIEW_HANDLE {
-        synctex.lastv = synctex.curv;
-        return;
-    }
-    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
-    let s = format!(
-        "k{},{}:{},{}:{}\n",
-        p.sync_tag(mem),
-        p.sync_line(mem),
-        curh / unit,
-        curv / unit,
-        p.width(mem).0 / unit
-    );
-    let len = synctex_write(file, &s);
-    synctex.lastv = synctex.curv;
-    if len > 0 {
-        synctex.total_length += len;
-        synctex.count += 1;
-    } else {
-        synctexabort(synctex);
-    }
-}
-
-unsafe fn synctex_record_node_rule(
-    synctex: &mut crate::state::SynctexCtxt,
-    mem: &crate::state::MemState,
-    shipout: &crate::state::ShipoutState,
-    p: NodePtr<crate::node::RuleNode>,
-) {
-    if let Some(index) = &mut synctex.preview_index {
-        index.record(
-            p.sync_tag(mem),
-            p.sync_line(mem),
-            synctex.curh,
-            synctex.curv,
-            shipout.rule_wd,
-            shipout.rule_ht,
-            shipout.rule_dp,
-        );
-    }
-    if synctex.file == PREVIEW_HANDLE {
-        synctex.lastv = synctex.curv;
-        return;
-    }
-    let (file, curh, curv, unit) = (synctex.file, synctex.curh, synctex.curv, synctex.unit);
-    let s = format!(
-        "r{},{}:{},{}:{},{},{}\n",
-        p.sync_tag(mem),
-        p.sync_line(mem),
-        curh / unit,
-        curv / unit,
-        shipout.rule_wd / unit,
-        shipout.rule_ht / unit,
-        shipout.rule_dp / unit
-    );
-    let len = synctex_write(file, &s);
-    synctex.lastv = synctex.curv;
-    if len > 0 {
-        synctex.total_length += len;
-        synctex.count += 1;
-    } else {
-        synctexabort(synctex);
-    }
-}
-
-unsafe fn synctex_dot_open(
-    synctex: &mut crate::state::SynctexCtxt,
-    eqtb: &crate::state::EqtbState,
-    tmp: *mut c_char,
-) -> usize {
-    if synctex.flags.off || intpar_synctex(eqtb) == 0 {
+/// Open the `.synctex.gz` file (or the preview sink) and write the preamble.
+/// Takes ownership of the malloc'ed job name `tmp`.
+unsafe fn synctex_dot_open(synctex: &mut SynctexCtxt, eqtb: &EqtbState, tmp: *mut c_char) -> usize {
+    if synctex.flags.off || !synctex_enabled(eqtb) {
         libc::free(tmp as *mut libc::c_void);
         return INVALID_HANDLE;
     }
@@ -568,70 +195,39 @@ unsafe fn synctex_dot_open(
     if synctex.preview_index.is_some() {
         libc::free(tmp as *mut libc::c_void);
         synctex.file = PREVIEW_HANDLE;
-        if synctex_record_preamble(synctex) != 0 {
+    } else {
+        let mut name = std::ffi::CStr::from_ptr(tmp).to_bytes().to_vec();
+        libc::free(tmp as *mut libc::c_void);
+        if name.is_empty() {
             synctexabort(synctex);
             return INVALID_HANDLE;
         }
-        if synctex.magnification == 0 {
-            synctex.magnification = 1000;
+        name.extend_from_slice(b".synctex.gz\0");
+        synctex.file = ttstub_output_open(name.as_ptr() as *const c_char, 1);
+        if synctex.file == INVALID_HANDLE {
+            synctexabort(synctex);
+            return INVALID_HANDLE;
         }
-        synctex.unit = 1;
-        if let Some(root_name) = synctex.root_name.take() {
-            synctex_record_input(synctex, 1, root_name.as_ptr());
-        }
-        synctex.count = 0;
-        return synctex.file;
     }
 
-    let job_len = libc::strlen(tmp);
-    if job_len == 0 {
-        libc::free(tmp as *mut libc::c_void);
+    if !record_restart(synctex, &format!("SyncTeX Version:{SYNCTEX_VERSION}\n")) {
         synctexabort(synctex);
         return INVALID_HANDLE;
     }
-
-    // Build "<jobname>.synctex.gz\0"
-    let suffix = b".synctex.gz";
-    let total = job_len + suffix.len() + 1; // +1 for NUL
-    let the_name = libc::malloc(total) as *mut c_char;
-    if the_name.is_null() {
-        libc::free(tmp as *mut libc::c_void);
-        synctexabort(synctex);
-        return INVALID_HANDLE;
-    }
-    libc::strcpy(the_name, tmp);
-    libc::strcat(the_name, c".synctex.gz".as_ptr());
-    libc::free(tmp as *mut libc::c_void);
-
-    synctex.file = ttstub_output_open(the_name, 1);
-    libc::free(the_name as *mut libc::c_void);
-
-    if synctex.file == INVALID_HANDLE {
-        synctexabort(synctex);
-        return INVALID_HANDLE;
-    }
-
-    if synctex_record_preamble(synctex) != 0 {
-        synctexabort(synctex);
-        return INVALID_HANDLE;
-    }
-
     if synctex.magnification == 0 {
         synctex.magnification = 1000;
     }
     synctex.unit = 1;
-
     if let Some(root_name) = synctex.root_name.take() {
-        synctex_record_input(synctex, 1, root_name.as_ptr());
+        record_input(synctex, 1, &root_name);
     }
-
     synctex.count = 0;
     synctex.file
 }
 
 unsafe fn synctex_prepare_content(
-    synctex: &mut crate::state::SynctexCtxt,
-    eqtb: &crate::state::EqtbState,
+    synctex: &mut SynctexCtxt,
+    eqtb: &EqtbState,
     tmp: *mut c_char,
 ) -> usize {
     if synctex.flags.content_ready {
@@ -639,8 +235,8 @@ unsafe fn synctex_prepare_content(
         return synctex.file;
     }
     if synctex_dot_open(synctex, eqtb, tmp) != INVALID_HANDLE
-        && synctex_record_settings(synctex) == 0
-        && synctex_record_content(synctex) == 0
+        && record_settings(synctex)
+        && record(synctex, "Content:\n")
     {
         synctex.flags.content_ready = true;
         return synctex.file;
@@ -649,16 +245,23 @@ unsafe fn synctex_prepare_content(
     INVALID_HANDLE
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+fn record_settings(synctex: &mut SynctexCtxt) -> bool {
+    if synctex.file == INVALID_HANDLE {
+        return true;
+    }
+    let s = format!(
+        "Output:pdf\nMagnification:{}\nUnit:{}\nX Offset:0\nY Offset:0\n",
+        synctex.magnification, synctex.unit
+    );
+    record(synctex, &s)
+}
 
-pub fn synctex_init_command(st: &mut crate::state::EngineState) {
+pub fn synctex_init_command(st: &mut EngineState) {
     let synctex = &mut st.synctex;
     synctex.file = INVALID_HANDLE;
     synctex.root_name = None;
     synctex.count = 0;
-    synctex.node.0 = 0;
+    synctex.node = MemPtr(0);
     synctex.deferred_kern = None;
     synctex.tag = 0;
     synctex.line = 0;
@@ -684,34 +287,35 @@ pub fn synctex_init_command(st: &mut crate::state::EngineState) {
         .set_b32s1(INT_BASE + INT_PAR_SYNCTEX, i32::from(synctex_enabled));
 }
 
-pub unsafe fn synctex_terminate(st: &mut crate::state::EngineState, _log_opened: bool) {
+pub fn synctex_terminate(st: &mut EngineState) {
     let synctex = &mut st.synctex;
     if synctex.file != INVALID_HANDLE {
-        synctex_record_postamble(synctex);
+        record_postamble(synctex);
         if synctex.file != PREVIEW_HANDLE {
-            ttstub_output_close(synctex.file);
+            // SAFETY: FFI close of the open SyncTeX file.
+            unsafe { ttstub_output_close(synctex.file) };
         }
         synctex.file = INVALID_HANDLE;
     }
     synctexabort(synctex);
 }
 
-pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut c_char) {
+/// Takes ownership of the malloc'ed job name `tmp`.
+pub unsafe fn synctex_start_input(st: &mut EngineState, tmp: *mut c_char) {
     let synctex = &mut st.synctex;
     if synctex.flags.off {
         libc::free(tmp as *mut libc::c_void);
         return;
     }
-    if synctex.synctex_tag_counter != u32::MAX {
-        synctex.synctex_tag_counter += 1;
-    } else {
+    if synctex.synctex_tag_counter == u32::MAX {
         synctex.synctex_tag_counter = 0;
         libc::free(tmp as *mut libc::c_void);
         return;
     }
+    synctex.synctex_tag_counter += 1;
     let tag = synctex.synctex_tag_counter as i32;
     st.input.cur_input.synctex_tag = tag;
-    st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
+    st.mem.cur_synctex_tag = tag;
     let current_name = st.input.get_current_name();
     if let Some(index) = &mut synctex.preview_index {
         index.register_name(tag, current_name.to_string_lossy().into_owned());
@@ -729,27 +333,24 @@ pub unsafe fn synctex_start_input(st: &mut crate::state::EngineState, tmp: *mut 
 
     if synctex.file != INVALID_HANDLE || synctex_dot_open(synctex, &st.eqtb, tmp) != INVALID_HANDLE
     {
-        let ci = st.input.cur_input;
-        let tmp_name = st.input.get_current_name();
-        synctex_record_input(synctex, ci.synctex_tag, tmp_name.as_ptr());
+        record_input(synctex, tag, st.input.get_current_name());
     }
 }
 
-pub unsafe fn synctex_sheet(st: &mut crate::state::EngineState, mag: i32, tmp: *mut c_char) {
-    let (is_off, total_pages) = (st.synctex.flags.off, st.shipout.total_pages);
-
-    if is_off {
+/// Takes ownership of the malloc'ed job name `tmp`.
+pub unsafe fn synctex_sheet(st: &mut EngineState, mag: i32, tmp: *mut c_char) {
+    let total_pages = st.shipout.total_pages;
+    let synctex = &mut st.synctex;
+    if synctex.flags.off {
         libc::free(tmp as *mut libc::c_void);
-        if intpar_synctex(&st.eqtb) != 0 && !st.synctex.flags.warn {
-            st.synctex.flags.warn = true;
+        if synctex_enabled(&st.eqtb) && !synctex.flags.warn {
+            synctex.flags.warn = true;
             issue_warning_cstr(
                 c"SyncTeX was disabled -- changing the value of \\synctex has no effect".as_ptr(),
             );
         }
         return;
     }
-
-    let synctex = &mut st.synctex;
     if let Some(index) = &mut synctex.preview_index {
         index.begin_page(total_pages.max(0) as usize);
     }
@@ -757,265 +358,206 @@ pub unsafe fn synctex_sheet(st: &mut crate::state::EngineState, mag: i32, tmp: *
         synctex.magnification = mag;
     }
     if synctex_prepare_content(synctex, &st.eqtb, tmp) != INVALID_HANDLE {
-        synctex_record_sheet(synctex, total_pages + 1);
+        record_sheet(synctex, '{', total_pages + 1);
     }
 }
 
-pub unsafe fn synctex_teehs(st: &mut crate::state::EngineState) {
+pub fn synctex_teehs(st: &mut EngineState) {
     let synctex = &mut st.synctex;
     if synctex.flags.off || synctex.file == INVALID_HANDLE {
         return;
     }
-    synctex_record_teehs(synctex, st.shipout.total_pages);
+    record_sheet(synctex, '}', st.shipout.total_pages);
     if let Some(index) = &mut synctex.preview_index {
         index.end_page();
     }
 }
 
-pub unsafe fn synctex_vlist(st: &mut crate::state::EngineState, this_box: AnyBox) {
-    let synctex = &mut st.synctex;
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
-        return;
-    }
-    synctex.node = this_box.ptr();
-    synctex.deferred_kern = None;
-    synctex.tag = this_box.sync_tag(&st.mem);
-    synctex.line = this_box.sync_line(&st.mem);
-    synctex.curh = synctex_curh(&st.shipout);
-    synctex.curv = synctex_curv(&st.shipout);
-    synctex_record_node_vlist(synctex, &st.mem, this_box);
+/// Records are written: SyncTeX is on and its file is open.
+fn synctex_active(st: &EngineState) -> bool {
+    !st.synctex.flags.off && synctex_enabled(&st.eqtb) && st.synctex.file != INVALID_HANDLE
 }
 
-pub unsafe fn synctex_tsilv(st: &mut crate::state::EngineState, this_box: AnyBox) {
+/// Make `node` the current SyncTeX context at the current position.
+fn enter_node(st: &mut EngineState, node: MemPtr, tag: i32, line: i32) {
     let synctex = &mut st.synctex;
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
-        return;
-    }
-    synctex.node = this_box.ptr();
-    synctex.tag = this_box.sync_tag(&st.mem);
-    synctex.line = this_box.sync_line(&st.mem);
-    synctex.curh = synctex_curh(&st.shipout);
-    synctex.curv = synctex_curv(&st.shipout);
-    synctex.deferred_kern = None;
-    synctex_record_node_tsilv(synctex);
-}
-
-pub unsafe fn synctex_void_vlist(st: &mut crate::state::EngineState, p: NodePtr<VListNode>) {
-    let synctex = &mut st.synctex;
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
-        return;
-    }
-    synctex.node = p.ptr();
-    synctex.tag = p.sync_tag(&st.mem);
-    synctex.line = p.sync_line(&st.mem);
-    synctex.curh = synctex_curh(&st.shipout);
-    synctex.curv = synctex_curv(&st.shipout);
-    synctex.deferred_kern = None;
-    synctex_record_node_void_vlist(synctex, &st.mem, p);
-}
-
-pub unsafe fn synctex_hlist(st: &mut crate::state::EngineState, this_box: AnyBox) {
-    let synctex = &mut st.synctex;
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
-        return;
-    }
-    synctex.node = this_box.ptr();
-    synctex.tag = this_box.sync_tag(&st.mem);
-    synctex.line = this_box.sync_line(&st.mem);
-    synctex.curh = synctex_curh(&st.shipout);
-    synctex.curv = synctex_curv(&st.shipout);
-    synctex.deferred_kern = None;
-    synctex_record_node_hlist(synctex, &st.mem, this_box);
-}
-
-pub unsafe fn synctex_tsilh(st: &mut crate::state::EngineState, this_box: AnyBox) {
-    let synctex = &mut st.synctex;
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
-        return;
-    }
-    synctex.node = this_box.ptr();
-    synctex.tag = this_box.sync_tag(&st.mem);
-    synctex.line = this_box.sync_line(&st.mem);
-    synctex.curh = synctex_curh(&st.shipout);
-    synctex.curv = synctex_curv(&st.shipout);
-    synctex.deferred_kern = None;
-    synctex_record_node_tsilh(synctex);
-}
-
-pub unsafe fn synctex_void_hlist(st: &mut crate::state::EngineState, p: NodePtr<HListNode>) {
-    let synctex = &mut st.synctex;
-    let tag = p.sync_tag(&st.mem);
-    let line = p.sync_line(&st.mem);
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || tag <= 0 || line <= 0 {
-        return;
-    }
-    // Flush a pending kern record before the context change.
-    if let Some(kern) = synctex.deferred_kern {
-        synctex_record_node_kern(synctex, &st.mem, kern);
-    }
-    synctex.node = p.ptr();
+    synctex.node = node;
     synctex.tag = tag;
     synctex.line = line;
     synctex.curh = synctex_curh(&st.shipout);
     synctex.curv = synctex_curv(&st.shipout);
     synctex.deferred_kern = None;
-    synctex_record_node_void_hlist(synctex, &st.mem, p);
 }
 
-pub unsafe fn synctex_math(st: &mut crate::state::EngineState, p: NodePtr<MathNode>) {
-    let synctex = &mut st.synctex;
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+fn enter_box(st: &mut EngineState, b: AnyBox) {
+    let (tag, line) = (b.sync_tag(&st.mem), b.sync_line(&st.mem));
+    enter_node(st, b.ptr(), tag, line);
+}
+
+pub fn synctex_vlist(st: &mut EngineState, this_box: AnyBox) {
+    if !synctex_active(st) {
         return;
     }
-    let tag = p.sync_tag(&st.mem);
-    let line = p.sync_line(&st.mem);
-    // SYNCTEX_CONTEXT_DID_CHANGE: node == 0 (the C sentinel, not TEX_NULL) or
-    // tag/line differ.
-    let ctx_changed = synctex.node.0 == 0 || tag != synctex.tag || line != synctex.line;
-    if ctx_changed {
-        // Flush a pending kern record; an armed record in an UNCHANGED context
-        // is silently dropped below — faithful C.
-        if let Some(kern) = synctex.deferred_kern {
-            synctex_record_node_kern(synctex, &st.mem, kern);
-        }
-    }
-    synctex.node = p.ptr();
-    synctex.tag = tag;
-    synctex.line = line;
-    synctex.curh = synctex_curh(&st.shipout);
-    synctex.curv = synctex_curv(&st.shipout);
-    synctex.deferred_kern = None;
-    synctex_record_node_math(synctex, &st.mem, p);
+    enter_box(st, this_box);
+    st.synctex.flags.not_void = true;
+    record_box(&mut st.synctex, &st.mem, '[', this_box);
 }
 
-/// The one genuinely polymorphic SyncTeX entry: `hlist_out`'s glue path
-/// re-stamps its glue node to `KERN_NODE` in place *before* this call, so the
-/// runtime input set is Rule | Glue | Kern and the node must be re-derived
-/// here — the caller's typed handle (if it ever had one) is stale.
-pub unsafe fn synctex_horizontal_rule_or_glue(st: &mut crate::state::EngineState, p: MemPtr) {
-    let synctex = &mut st.synctex;
+pub fn synctex_tsilv(st: &mut EngineState, this_box: AnyBox) {
+    if !synctex_active(st) {
+        return;
+    }
+    enter_box(st, this_box);
+    record(&mut st.synctex, "]\n");
+}
+
+pub fn synctex_void_vlist(st: &mut EngineState, p: NodePtr<VListNode>) {
+    if !synctex_active(st) {
+        return;
+    }
+    enter_box(st, AnyBox::VList(p));
+    record_box(&mut st.synctex, &st.mem, 'v', AnyBox::VList(p));
+}
+
+pub fn synctex_hlist(st: &mut EngineState, this_box: AnyBox) {
+    if !synctex_active(st) {
+        return;
+    }
+    enter_box(st, this_box);
+    st.synctex.flags.not_void = true;
+    record_box(&mut st.synctex, &st.mem, '(', this_box);
+}
+
+pub fn synctex_tsilh(st: &mut EngineState, this_box: AnyBox) {
+    if !synctex_active(st) {
+        return;
+    }
+    enter_box(st, this_box);
+    if record(&mut st.synctex, ")\n") {
+        st.synctex.count += 1;
+    }
+}
+
+/// Whether a record is dropped: SyncTeX is off or the node has no source position.
+fn synctex_ignored(st: &EngineState, tag: i32, line: i32) -> bool {
+    st.synctex.flags.off || !synctex_enabled(&st.eqtb) || tag <= 0 || line <= 0
+}
+
+/// Flush the deferred kern record before leaving its context.
+fn flush_deferred_kern(st: &mut EngineState) {
+    if let Some(kern) = st.synctex.deferred_kern {
+        record_kern(&mut st.synctex, &st.mem, kern);
+    }
+}
+
+fn context_changed(synctex: &SynctexCtxt, tag: i32, line: i32) -> bool {
+    synctex.node.0 == 0 || tag != synctex.tag || line != synctex.line
+}
+
+pub fn synctex_void_hlist(st: &mut EngineState, p: NodePtr<HListNode>) {
+    let (tag, line) = (p.sync_tag(&st.mem), p.sync_line(&st.mem));
+    if synctex_ignored(st, tag, line) {
+        return;
+    }
+    flush_deferred_kern(st);
+    enter_node(st, p.ptr(), tag, line);
+    record_box(&mut st.synctex, &st.mem, 'h', AnyBox::HList(p));
+}
+
+pub fn synctex_math(st: &mut EngineState, p: NodePtr<MathNode>) {
+    if !synctex_active(st) {
+        return;
+    }
+    let (tag, line) = (p.sync_tag(&st.mem), p.sync_line(&st.mem));
+    // A kern deferred in an unchanged context is dropped.
+    if context_changed(&st.synctex, tag, line) {
+        flush_deferred_kern(st);
+    }
+    enter_node(st, p.ptr(), tag, line);
+    record_node(&mut st.synctex, '$', tag, line, &[]);
+}
+
+/// The one polymorphic entry: `hlist_out` may have retyped a glue node to a
+/// kern in place before this call, so the node is classified here.
+pub fn synctex_horizontal_rule_or_glue(st: &mut EngineState, p: MemPtr) {
     let node = st.mem.classify(MemIdx::new(p.0));
-    // Second SYNCTEX_IGNORE definition: also checks tag/line > 0.
-    let off = synctex.flags.off || intpar_synctex(&st.eqtb) == 0;
-    let ignore = |tag: i32, line: i32| off || tag <= 0 || line <= 0;
-
-    match node {
-        Ok(AnyNode::Rule(r)) => {
-            if ignore(r.sync_tag(&st.mem), r.sync_line(&st.mem)) {
-                return;
-            }
-        }
-        Ok(AnyNode::Glue(g)) => {
-            if ignore(g.sync_tag(&st.mem), g.sync_line(&st.mem)) {
-                return;
-            }
-        }
-        Ok(AnyNode::Kern(k)) => {
-            if ignore(k.sync_tag(&st.mem), k.sync_line(&st.mem)) {
-                return;
-            }
-        }
+    let (tag, line) = match node {
+        Ok(AnyNode::Rule(r)) => (r.sync_tag(&st.mem), r.sync_line(&st.mem)),
+        Ok(AnyNode::Glue(g)) => (g.sync_tag(&st.mem), g.sync_line(&st.mem)),
+        Ok(AnyNode::Kern(k)) => (k.sync_tag(&st.mem), k.sync_line(&st.mem)),
         _ => {
             let s = format!("unknown node type {} in SyncTeX\0", st.mem.b16s1(p.0));
-            issue_error_cstr(s.as_ptr() as *const c_char);
+            // SAFETY: `s` is NUL-terminated and outlives the call.
+            unsafe { issue_error_cstr(s.as_ptr() as *const c_char) };
             return;
         }
+    };
+    if synctex_ignored(st, tag, line) {
+        return;
     }
-
-    synctex.node = p;
-    synctex.curh = synctex_curh(&st.shipout);
-    synctex.curv = synctex_curv(&st.shipout);
-    synctex.deferred_kern = None;
+    enter_node(st, p, tag, line);
+    let shipout = &st.shipout;
+    let synctex = &mut st.synctex;
     match node {
-        Ok(AnyNode::Rule(r)) => {
-            synctex.tag = r.sync_tag(&st.mem);
-            synctex.line = r.sync_line(&st.mem);
-            synctex_record_node_rule(synctex, &st.mem, &st.shipout, r);
-        }
-        Ok(AnyNode::Glue(g)) => {
-            synctex.tag = g.sync_tag(&st.mem);
-            synctex.line = g.sync_line(&st.mem);
-            synctex_record_node_glue(synctex, &st.mem, g);
-        }
-        Ok(AnyNode::Kern(k)) => {
-            synctex.tag = k.sync_tag(&st.mem);
-            synctex.line = k.sync_line(&st.mem);
-            synctex_record_node_kern(synctex, &st.mem, k);
-        }
-        _ => {
-            // Already handled above — unreachable in practice.
-        }
+        Ok(AnyNode::Rule(_)) => record_node(
+            synctex,
+            'r',
+            tag,
+            line,
+            &[shipout.rule_wd, shipout.rule_ht, shipout.rule_dp],
+        ),
+        Ok(AnyNode::Glue(_)) => record_node(synctex, 'g', tag, line, &[]),
+        Ok(AnyNode::Kern(k)) => record_kern(synctex, &st.mem, k),
+        _ => {}
     }
 }
 
-pub unsafe fn synctex_kern(
-    st: &mut crate::state::EngineState,
-    p: NodePtr<KernNode>,
-    this_box: AnyBox,
-) {
-    let synctex = &mut st.synctex;
-    let tag = p.sync_tag(&st.mem);
-    let line = p.sync_line(&st.mem);
-    // Second SYNCTEX_IGNORE definition.
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || tag <= 0 || line <= 0 {
+pub fn synctex_kern(st: &mut EngineState, p: NodePtr<KernNode>, this_box: AnyBox) {
+    let (tag, line) = (p.sync_tag(&st.mem), p.sync_line(&st.mem));
+    if synctex_ignored(st, tag, line) {
         return;
     }
-    // SYNCTEX_CONTEXT_DID_CHANGE
-    let ctx_changed = synctex.node.0 == 0 || tag != synctex.tag || line != synctex.line;
-    if ctx_changed {
-        // Flush pending kern record.
-        if let Some(kern) = synctex.deferred_kern {
-            synctex_record_node_kern(synctex, &st.mem, kern);
-        }
-        synctex.node = p.ptr();
-        synctex.tag = tag;
-        synctex.line = line;
-        if synctex.node == this_box.ptr() {
-            // First node in hlist.
-            synctex.deferred_kern = Some(p);
-        } else {
-            synctex.deferred_kern = None;
-            synctex_record_node_kern(synctex, &st.mem, p);
-        }
-    } else {
-        // Same context — defer recording.
-        synctex.node = p.ptr();
-        synctex.tag = tag;
-        synctex.line = line;
+    let changed = context_changed(&st.synctex, tag, line);
+    if changed {
+        flush_deferred_kern(st);
+    }
+    let synctex = &mut st.synctex;
+    let first_in_list = synctex.node == this_box.ptr();
+    synctex.node = p.ptr();
+    synctex.tag = tag;
+    synctex.line = line;
+    // The first kern of an hlist, and any kern in an unchanged context, is deferred.
+    if !changed || first_in_list {
         synctex.deferred_kern = Some(p);
+    } else {
+        synctex.deferred_kern = None;
+        record_kern(synctex, &st.mem, p);
     }
 }
 
-pub unsafe fn synctex_current(st: &mut crate::state::EngineState) {
-    let synctex = &mut st.synctex;
-    if synctex.flags.off || intpar_synctex(&st.eqtb) == 0 || synctex.file == INVALID_HANDLE {
+pub fn synctex_current(st: &mut EngineState) {
+    if !synctex_active(st) {
         return;
     }
+    let (curh, curv) = (synctex_curh(&st.shipout), synctex_curv(&st.shipout));
+    let synctex = &mut st.synctex;
     if let Some(index) = &mut synctex.preview_index {
-        index.record(
-            synctex.tag,
-            synctex.line,
-            synctex_curh(&st.shipout),
-            synctex_curv(&st.shipout),
-            0,
-            0,
-            0,
-        );
+        index.record(synctex.tag, synctex.line, curh, curv, 0, 0, 0);
     }
     if synctex.file == PREVIEW_HANDLE {
-        synctex.lastv = synctex_curv(&st.shipout);
+        synctex.lastv = curv;
         return;
     }
-    let (file, tag, line, unit) = (synctex.file, synctex.tag, synctex.line, synctex.unit);
+    let unit = synctex.unit;
     let s = format!(
         "x{},{}:{},{}\n",
-        tag,
-        line,
-        synctex_curh(&st.shipout) / unit,
-        synctex_curv(&st.shipout) / unit
+        synctex.tag,
+        synctex.line,
+        curh / unit,
+        curv / unit
     );
-    let len = synctex_write(file, &s);
-    synctex.lastv = synctex_curv(&st.shipout);
+    let len = synctex_write(synctex.file, &s);
+    synctex.lastv = curv;
     if len > 0 {
         synctex.total_length += len;
     } else {

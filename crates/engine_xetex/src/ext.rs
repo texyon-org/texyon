@@ -2204,7 +2204,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
             if st.scanner.cur_cmd == EXTENSION && st.scanner.cur_chr <= CLOSE_NODE {
                 let p = st.input.cur_list.tail;
                 do_extension_in(st)?;
-                crate::shipout::out_what_in(st, st.input.cur_list.tail)?;
+                crate::shipout::out_what_in(st, st.input.cur_list.tail.0)?;
                 crate::packaging::flush_node_list(&mut st.mem, st.input.cur_list.tail)
                     .map_err(MainControlAbort::Confusion)?;
                 st.input.cur_list.tail = p;
@@ -2242,11 +2242,8 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
 
         RESET_TIMER_CODE => {
             if !st.config.deterministic_mode {
-                let mut s = st.shipout.epochseconds;
-                let mut m = st.shipout.microseconds;
-                unsafe { crate::texmfmp::get_seconds_and_micros(&mut s, &mut m) };
-                st.shipout.epochseconds = s;
-                st.shipout.microseconds = m;
+                (st.shipout.epochseconds, st.shipout.microseconds) =
+                    crate::texmfmp::get_seconds_and_micros();
             }
         }
 

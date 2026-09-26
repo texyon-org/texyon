@@ -3,8 +3,19 @@
 use std::mem::{size_of, take};
 use std::sync::Arc;
 
-use crate::mem_types::{B16x4, MemoryWord};
-use crate::state::{EngineState, GroupCode};
+use crate::globals::InputState;
+use crate::mem_types::{B16x4, ListStateRecord, MemoryWord};
+use crate::state::{
+    AbsPathBuf, ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle,
+    FontMappingHandle, FontState, GroupCode, HyphState, InputClusterState, LinebreakState,
+    MainLoopState, MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt,
+    TexmfState,
+};
+use crate::units::MemPtr;
+
+fn vec_bytes<T>(values: &Vec<T>) -> usize {
+    values.capacity() * size_of::<T>()
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct StringWatermark {
@@ -14,22 +25,31 @@ pub(crate) struct StringWatermark {
 
 impl StringWatermark {
     pub(crate) fn capture(st: &EngineState) -> Self {
+        Self::of(&st.strings)
+    }
+
+    fn of(strings: &StringsState) -> Self {
         Self {
-            pool: st.strings.pool_ptr.max(0) as usize,
-            starts: (st.strings.str_ptr - crate::consts::TOO_BIG_CHAR).max(0) as usize,
+            pool: strings.pool_ptr.max(0) as usize,
+            starts: (strings.str_ptr - crate::consts::TOO_BIG_CHAR).max(0) as usize,
         }
     }
 }
 
+/// Large buffers are held outside their state structs so restore can reuse
+/// the live allocation.
 pub(crate) struct EngineBundle {
-    config: crate::state::ConfigState,
-    errors: crate::state::ErrorState,
-    shipout: crate::state::ShipoutState,
-    scanner: crate::state::ScannerState,
-    linebreak: crate::state::LinebreakState,
-    texmf: crate::state::TexmfState,
-    synctex: crate::state::SynctexCtxt,
-    mainloop: crate::state::MainLoopState,
+    config: ConfigState,
+    errors: ErrorState,
+    shipout: ShipoutState,
+    dvi_buf: Vec<u8>,
+    scanner: ScannerState,
+    native_text: Vec<u16>,
+    linebreak: LinebreakState,
+    hlist_stack: Vec<MemPtr>,
+    texmf: TexmfState,
+    synctex: SynctexCtxt,
+    mainloop: MainLoopState,
     mem: MemBundle,
     eqtb: EqtbBundle,
     strings: StringsBundle,
@@ -45,18 +65,25 @@ impl EngineBundle {
         strings_base: StringWatermark,
         previous: Option<&Self>,
     ) -> Self {
+        // Page facts belong to the operation, not to replayable state.
+        let mut shipout = ShipoutState {
+            page_manifest: Default::default(),
+            ..st.shipout.clone()
+        };
+        let dvi_buf = take(&mut shipout.dvi_buf);
+        let mut scanner = st.scanner.clone();
+        let native_text = take(&mut scanner.native_text);
+        let mut linebreak = st.linebreak.clone();
+        let hlist_stack = take(&mut linebreak.hlist_stack);
         Self {
             config: st.config,
             errors: st.errors.clone(),
-            shipout: {
-                let mut shipout = st.shipout.clone();
-                // Published page facts belong to an operation, not replayable
-                // engine state. Output marks will travel separately with rungs.
-                shipout.page_manifest = Default::default();
-                shipout
-            },
-            scanner: st.scanner.clone(),
-            linebreak: st.linebreak.clone(),
+            shipout,
+            dvi_buf,
+            scanner,
+            native_text,
+            linebreak,
+            hlist_stack,
             texmf: st.texmf.clone(),
             synctex: st.synctex.clone(),
             mainloop: st.mainloop.clone(),
@@ -73,9 +100,30 @@ impl EngineBundle {
     pub(crate) fn restore(&self, st: &mut EngineState) {
         st.config = self.config;
         st.errors.clone_from(&self.errors);
-        restore_shipout(&mut st.shipout, &self.shipout);
-        restore_scanner(&mut st.scanner, &self.scanner);
-        restore_linebreak(&mut st.linebreak, &self.linebreak);
+
+        let dvi_buf = take(&mut st.shipout.dvi_buf);
+        let page_manifest = take(&mut st.shipout.page_manifest);
+        st.shipout = ShipoutState {
+            dvi_buf,
+            page_manifest,
+            ..self.shipout.clone()
+        };
+        st.shipout.dvi_buf.clone_from(&self.dvi_buf);
+
+        let native_text = take(&mut st.scanner.native_text);
+        st.scanner = ScannerState {
+            native_text,
+            ..self.scanner.clone()
+        };
+        st.scanner.native_text.clone_from(&self.native_text);
+
+        let hlist_stack = take(&mut st.linebreak.hlist_stack);
+        st.linebreak = LinebreakState {
+            hlist_stack,
+            ..self.linebreak.clone()
+        };
+        st.linebreak.hlist_stack.clone_from(&self.hlist_stack);
+
         st.texmf.clone_from(&self.texmf);
         st.synctex.clone_from(&self.synctex);
         st.mainloop.clone_from(&self.mainloop);
@@ -89,21 +137,16 @@ impl EngineBundle {
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        self.shipout.dvi_buf.capacity()
-            + self
-                .shipout
-                .write_name
-                .iter()
-                .map(Vec::capacity)
-                .sum::<usize>()
+        vec_bytes(&self.dvi_buf)
+            + self.shipout.write_name.iter().map(vec_bytes).sum::<usize>()
             + self
                 .shipout
                 .write_prefix
                 .iter()
-                .map(|prefix| prefix.capacity() * size_of::<i32>())
+                .map(vec_bytes)
                 .sum::<usize>()
-            + self.scanner.native_text.capacity() * size_of::<u16>()
-            + self.linebreak.hlist_stack.capacity() * size_of::<crate::units::MemPtr>()
+            + vec_bytes(&self.native_text)
+            + vec_bytes(&self.hlist_stack)
             + self.mem.allocated_bytes()
             + self.strings.allocated_bytes()
             + self.save.allocated_bytes()
@@ -120,32 +163,6 @@ impl EngineBundle {
     }
 }
 
-fn restore_shipout(dst: &mut crate::state::ShipoutState, src: &crate::state::ShipoutState) {
-    let mut buffer = take(&mut dst.dvi_buf);
-    let manifest = take(&mut dst.page_manifest);
-    let captured = &src.dvi_buf;
-    *dst = src.clone();
-    buffer.clone_from(captured);
-    dst.dvi_buf = buffer;
-    dst.page_manifest = manifest;
-}
-
-fn restore_scanner(dst: &mut crate::state::ScannerState, src: &crate::state::ScannerState) {
-    let mut native_text = take(&mut dst.native_text);
-    let captured = &src.native_text;
-    *dst = src.clone();
-    native_text.clone_from(captured);
-    dst.native_text = native_text;
-}
-
-fn restore_linebreak(dst: &mut crate::state::LinebreakState, src: &crate::state::LinebreakState) {
-    let mut stack = take(&mut dst.hlist_stack);
-    let captured = &src.hlist_stack;
-    *dst = src.clone();
-    stack.clone_from(captured);
-    dst.hlist_stack = stack;
-}
-
 struct MemBundle {
     lo_mem_max: i32,
     hi_mem_min: i32,
@@ -156,13 +173,13 @@ struct MemBundle {
     dyn_used: i32,
     line: i32,
     cur_synctex_tag: i32,
-    temp_ptr: crate::units::MemPtr,
+    temp_ptr: MemPtr,
     glyph_blobs: crate::glyph_arena::GlyphBlobArena,
 }
 
 impl MemBundle {
-    fn capture(src: &crate::state::MemState) -> Self {
-        let crate::state::MemState {
+    fn capture(src: &MemState) -> Self {
+        let MemState {
             data: _,
             glyph_blobs,
             journal: _,
@@ -192,7 +209,7 @@ impl MemBundle {
         }
     }
 
-    fn restore(&self, dst: &mut crate::state::MemState) {
+    fn restore(&self, dst: &mut MemState) {
         dst.lo_mem_max = self.lo_mem_max;
         dst.hi_mem_min = self.hi_mem_min;
         dst.avail = self.avail;
@@ -223,8 +240,8 @@ struct EqtbBundle {
 }
 
 impl EqtbBundle {
-    fn capture(src: &crate::state::EqtbState) -> Self {
-        let crate::state::EqtbState {
+    fn capture(src: &EqtbState) -> Self {
+        let EqtbState {
             hash_used,
             hash_high,
             no_new_control_sequence,
@@ -251,7 +268,7 @@ impl EqtbBundle {
         }
     }
 
-    fn restore(&self, dst: &mut crate::state::EqtbState) {
+    fn restore(&self, dst: &mut EqtbState) {
         dst.hash_used = self.hash_used;
         dst.hash_high = self.hash_high;
         dst.no_new_control_sequence = self.no_new_control_sequence;
@@ -281,8 +298,9 @@ struct StringsBundle {
 }
 
 impl StringsBundle {
-    fn capture(src: &crate::state::StringsState, base: StringWatermark) -> Self {
-        let crate::state::StringsState {
+    fn capture(src: &StringsState, base: StringWatermark) -> Self {
+        let top = StringWatermark::of(src);
+        let StringsState {
             str_ptr,
             max_strings,
             init_str_ptr,
@@ -297,14 +315,12 @@ impl StringsBundle {
             str_start,
             str_pool,
         } = src;
-        let pool_top = (*pool_ptr).max(0) as usize;
-        let start_top = (*str_ptr - crate::consts::TOO_BIG_CHAR).max(0) as usize;
         assert!(
-            pool_top >= base.pool,
+            top.pool >= base.pool,
             "string pool dipped below checkpoint base"
         );
         assert!(
-            start_top >= base.starts,
+            top.starts >= base.starts,
             "string table dipped below checkpoint base"
         );
         Self {
@@ -320,16 +336,16 @@ impl StringsBundle {
             pool_ptr: *pool_ptr,
             format_ident: *format_ident,
             edit_name_start: *edit_name_start,
-            pool_span: str_pool[base.pool..pool_top].to_vec(),
+            pool_span: str_pool[base.pool..top.pool].to_vec(),
             start_span: if base.starts < str_start.len() {
-                str_start[base.starts..=start_top.min(str_start.len() - 1)].to_vec()
+                str_start[base.starts..=top.starts.min(str_start.len() - 1)].to_vec()
             } else {
                 Vec::new()
             },
         }
     }
 
-    fn restore(&self, dst: &mut crate::state::StringsState) {
+    fn restore(&self, dst: &mut StringsState) {
         dst.str_ptr = self.str_ptr;
         dst.max_strings = self.max_strings;
         dst.init_str_ptr = self.init_str_ptr;
@@ -341,14 +357,13 @@ impl StringsBundle {
         dst.pool_ptr = self.pool_ptr;
         dst.format_ident = self.format_ident;
         dst.edit_name_start = self.edit_name_start;
-        dst.str_pool[self.base.pool..self.base.pool + self.pool_span.len()]
-            .copy_from_slice(&self.pool_span);
-        dst.str_start[self.base.starts..self.base.starts + self.start_span.len()]
+        dst.str_pool[self.base.pool..][..self.pool_span.len()].copy_from_slice(&self.pool_span);
+        dst.str_start[self.base.starts..][..self.start_span.len()]
             .copy_from_slice(&self.start_span);
     }
 
     fn allocated_bytes(&self) -> usize {
-        self.pool_span.capacity() * size_of::<u16>() + self.start_span.capacity() * size_of::<i32>()
+        vec_bytes(&self.pool_span) + vec_bytes(&self.start_span)
     }
 }
 
@@ -363,7 +378,7 @@ struct SaveBundle {
 }
 
 impl SaveBundle {
-    fn capture(src: &crate::state::SaveStackState) -> Self {
+    fn capture(src: &SaveStackState) -> Self {
         let end = src.save_ptr.max(0) as usize;
         Self {
             save_ptr: src.save_ptr,
@@ -376,7 +391,7 @@ impl SaveBundle {
         }
     }
 
-    fn restore(&self, dst: &mut crate::state::SaveStackState) {
+    fn restore(&self, dst: &mut SaveStackState) {
         dst.save_ptr = self.save_ptr;
         dst.max_save_stack = self.max_save_stack;
         dst.save_size = self.save_size;
@@ -387,26 +402,28 @@ impl SaveBundle {
     }
 
     fn allocated_bytes(&self) -> usize {
-        self.data.capacity() * size_of::<MemoryWord>()
+        vec_bytes(&self.data)
     }
 }
 
+/// Open input and read slots are operation resources that resume replay
+/// rebuilds, so a rung never owns a live UFile.
 struct InputBundle {
     buffer: Vec<i32>,
-    input_stack: Vec<crate::globals::InputState>,
+    input_stack: Vec<InputState>,
     param_stack: Vec<i32>,
-    nest: Vec<crate::mem_types::ListStateRecord>,
+    nest: Vec<ListStateRecord>,
     line_stack: Vec<i32>,
     grp_stack: Vec<i32>,
-    if_stack: Vec<crate::units::MemPtr>,
+    if_stack: Vec<MemPtr>,
     source_filename_stack: Vec<i32>,
     full_source_filename_stack: Vec<i32>,
     eof_seen: Vec<bool>,
-    cur_input: crate::globals::InputState,
-    cur_list: crate::mem_types::ListStateRecord,
+    cur_input: InputState,
+    cur_list: ListStateRecord,
     open_parens: i32,
     in_open: i32,
-    pseudo_files: crate::units::MemPtr,
+    pseudo_files: MemPtr,
     nest_ptr: i32,
     max_nest_stack: i32,
     input_ptr: i32,
@@ -426,20 +443,23 @@ struct InputBundle {
     name_of_file: Vec<libc::c_char>,
     name_of_file16: Vec<u16>,
     name_of_input_file: Option<std::ffi::CString>,
-    abspath_of_input_file: crate::state::AbsPathBuf,
+    abspath_of_input_file: AbsPathBuf,
+}
+
+fn live_prefix<T: Clone>(values: &[T], len: i32) -> Vec<T> {
+    values[..(len.max(0) as usize).min(values.len())].to_vec()
 }
 
 impl InputBundle {
-    fn capture(src: &crate::state::InputClusterState) -> Self {
-        let buffer_end = (src.max_buf_stack.max(src.last).max(src.first) + 1).max(0) as usize;
-        let input_end = (src.input_ptr + 1).max(0) as usize;
-        let nest_end = (src.nest_ptr + 1).max(0) as usize;
-        let param_end = src.param_ptr.max(0) as usize;
+    fn capture(src: &InputClusterState) -> Self {
         Self {
-            buffer: src.buffer[..buffer_end.min(src.buffer.len())].to_vec(),
-            input_stack: src.input_stack[..input_end.min(src.input_stack.len())].to_vec(),
-            param_stack: src.param_stack[..param_end.min(src.param_stack.len())].to_vec(),
-            nest: src.nest[..nest_end.min(src.nest.len())].to_vec(),
+            buffer: live_prefix(
+                &src.buffer,
+                src.max_buf_stack.max(src.last).max(src.first) + 1,
+            ),
+            input_stack: live_prefix(&src.input_stack, src.input_ptr + 1),
+            param_stack: live_prefix(&src.param_stack, src.param_ptr),
+            nest: live_prefix(&src.nest, src.nest_ptr + 1),
             line_stack: src.line_stack.clone(),
             grp_stack: src.grp_stack.clone(),
             if_stack: src.if_stack.clone(),
@@ -474,7 +494,7 @@ impl InputBundle {
         }
     }
 
-    fn restore(&self, dst: &mut crate::state::InputClusterState) {
+    fn restore(&self, dst: &mut InputClusterState) {
         dst.buffer[..self.buffer.len()].copy_from_slice(&self.buffer);
         dst.input_stack[..self.input_stack.len()].copy_from_slice(&self.input_stack);
         dst.param_stack[..self.param_stack.len()].copy_from_slice(&self.param_stack);
@@ -512,28 +532,80 @@ impl InputBundle {
         dst.name_of_file16.clone_from(&self.name_of_file16);
         dst.name_of_input_file.clone_from(&self.name_of_input_file);
         dst.abspath_of_input_file = self.abspath_of_input_file;
-        // Open input/read slots are operation resources. Resume replay rebuilds
-        // them; a rung never clones or assumes ownership of a live UFile.
     }
 
     fn allocated_bytes(&self) -> usize {
-        self.buffer.capacity() * size_of::<i32>()
-            + self.input_stack.capacity() * size_of::<crate::globals::InputState>()
-            + self.param_stack.capacity() * size_of::<i32>()
-            + self.nest.capacity() * size_of::<crate::mem_types::ListStateRecord>()
-            + self.line_stack.capacity() * size_of::<i32>()
-            + self.grp_stack.capacity() * size_of::<i32>()
-            + self.if_stack.capacity() * size_of::<crate::units::MemPtr>()
-            + self.source_filename_stack.capacity() * size_of::<i32>()
-            + self.full_source_filename_stack.capacity() * size_of::<i32>()
-            + self.eof_seen.capacity()
-            + self.name_of_file.capacity() * size_of::<libc::c_char>()
-            + self.name_of_file16.capacity() * size_of::<u16>()
+        vec_bytes(&self.buffer)
+            + vec_bytes(&self.input_stack)
+            + vec_bytes(&self.param_stack)
+            + vec_bytes(&self.nest)
+            + vec_bytes(&self.line_stack)
+            + vec_bytes(&self.grp_stack)
+            + vec_bytes(&self.if_stack)
+            + vec_bytes(&self.source_filename_stack)
+            + vec_bytes(&self.full_source_filename_stack)
+            + vec_bytes(&self.eof_seen)
+            + vec_bytes(&self.name_of_file)
+            + vec_bytes(&self.name_of_file16)
     }
 }
 
+macro_rules! font_arrays {
+    ($($field:ident: $ty:ty,)*) => {
+        /// Per-font `Copy` tables, captured through `font_ptr`.
+        struct FontArrays {
+            $($field: Vec<$ty>,)*
+        }
+
+        impl FontArrays {
+            fn capture(src: &FontState, count: i32) -> Self {
+                Self {
+                    $($field: live_prefix(&src.$field, count),)*
+                }
+            }
+
+            fn restore(&self, dst: &mut FontState) {
+                $(dst.$field[..self.$field.len()].copy_from_slice(&self.$field);)*
+            }
+
+            fn allocated_bytes(&self) -> usize {
+                0 $(+ vec_bytes(&self.$field))*
+            }
+        }
+    };
+}
+
+font_arrays! {
+    font_flags: i8,
+    font_letter_space: i32,
+    font_check: B16x4,
+    font_size: i32,
+    font_dsize: i32,
+    font_params: i32,
+    font_name: i32,
+    font_area: i32,
+    font_bc: u16,
+    font_ec: u16,
+    bchar_label: i32,
+    font_bchar: i32,
+    font_false_bchar: i32,
+    font_glue: i32,
+    font_used: bool,
+    char_base: i32,
+    width_base: i32,
+    height_base: i32,
+    depth_base: i32,
+    italic_base: i32,
+    lig_kern_base: i32,
+    kern_base: i32,
+    exten_base: i32,
+    param_base: i32,
+    hyphen_char: i32,
+    skew_char: i32,
+}
+
 struct FontBundle {
-    loaded_font_mapping: Option<Arc<crate::state::FontMappingHandle>>,
+    loaded_font_mapping: Option<Arc<FontMappingHandle>>,
     loaded_font_flags: libc::c_char,
     saved_mapping_name: Option<std::ffi::CString>,
     loaded_font_letter_space: i32,
@@ -545,41 +617,16 @@ struct FontBundle {
     fmem_ptr: i32,
     font_ptr: i32,
     null_character: B16x4,
-    font_flags: Vec<i8>,
-    font_letter_space: Vec<i32>,
-    font_check: Vec<B16x4>,
-    font_size: Vec<i32>,
-    font_dsize: Vec<i32>,
-    font_params: Vec<i32>,
-    font_name: Vec<i32>,
-    font_area: Vec<i32>,
-    font_bc: Vec<u16>,
-    font_ec: Vec<u16>,
-    bchar_label: Vec<i32>,
-    font_bchar: Vec<i32>,
-    font_false_bchar: Vec<i32>,
-    font_glue: Vec<i32>,
-    font_used: Vec<bool>,
-    char_base: Vec<i32>,
-    width_base: Vec<i32>,
-    height_base: Vec<i32>,
-    depth_base: Vec<i32>,
-    italic_base: Vec<i32>,
-    lig_kern_base: Vec<i32>,
-    kern_base: Vec<i32>,
-    exten_base: Vec<i32>,
-    param_base: Vec<i32>,
-    hyphen_char: Vec<i32>,
-    skew_char: Vec<i32>,
-    engines: Vec<Option<Arc<crate::state::FontEngineHandle>>>,
-    mappings: Vec<Option<Arc<crate::state::FontMappingHandle>>>,
+    arrays: FontArrays,
+    engines: Vec<Option<Arc<FontEngineHandle>>>,
+    mappings: Vec<Option<Arc<FontMappingHandle>>>,
     xdv_buffer: Vec<u8>,
     mapped_text: Vec<u16>,
 }
 
 impl FontBundle {
-    fn capture(src: &crate::state::FontState) -> Self {
-        let crate::state::FontState {
+    fn capture(src: &FontState) -> Self {
+        let FontState {
             loaded_font_mapping,
             loaded_font_flags,
             saved_mapping_name,
@@ -595,45 +642,40 @@ impl FontBundle {
             font_max,
             fmem_ptr,
             font_ptr,
-            font_flags,
-            font_letter_space,
+            font_flags: _,
+            font_letter_space: _,
             null_character,
-            font_check,
-            font_size,
-            font_dsize,
-            font_params,
-            font_name,
-            font_area,
-            font_bc,
-            font_ec,
-            bchar_label,
-            font_bchar,
-            font_false_bchar,
-            font_glue,
-            font_used,
-            char_base,
-            width_base,
-            height_base,
-            depth_base,
-            italic_base,
-            lig_kern_base,
-            kern_base,
-            exten_base,
-            param_base,
-            hyphen_char,
-            skew_char,
+            font_check: _,
+            font_size: _,
+            font_dsize: _,
+            font_params: _,
+            font_name: _,
+            font_area: _,
+            font_bc: _,
+            font_ec: _,
+            bchar_label: _,
+            font_bchar: _,
+            font_false_bchar: _,
+            font_glue: _,
+            font_used: _,
+            char_base: _,
+            width_base: _,
+            height_base: _,
+            depth_base: _,
+            italic_base: _,
+            lig_kern_base: _,
+            kern_base: _,
+            exten_base: _,
+            param_base: _,
+            hyphen_char: _,
+            skew_char: _,
             font_info: _,
             font_info_journal: _,
             fmem_epoch_base: _,
             xdv_buffer,
             mapped_text,
         } = src;
-        let count = (*font_ptr + 1).max(0) as usize;
-        macro_rules! live {
-            ($field:ident) => {
-                $field[..count.min($field.len())].to_vec()
-            };
-        }
+        let count = *font_ptr + 1;
         Self {
             loaded_font_mapping: loaded_font_mapping.clone(),
             loaded_font_flags: *loaded_font_flags,
@@ -647,40 +689,15 @@ impl FontBundle {
             fmem_ptr: *fmem_ptr,
             font_ptr: *font_ptr,
             null_character: *null_character,
-            font_flags: live!(font_flags),
-            font_letter_space: live!(font_letter_space),
-            font_check: live!(font_check),
-            font_size: live!(font_size),
-            font_dsize: live!(font_dsize),
-            font_params: live!(font_params),
-            font_name: live!(font_name),
-            font_area: live!(font_area),
-            font_bc: live!(font_bc),
-            font_ec: live!(font_ec),
-            bchar_label: live!(bchar_label),
-            font_bchar: live!(font_bchar),
-            font_false_bchar: live!(font_false_bchar),
-            font_glue: live!(font_glue),
-            font_used: live!(font_used),
-            char_base: live!(char_base),
-            width_base: live!(width_base),
-            height_base: live!(height_base),
-            depth_base: live!(depth_base),
-            italic_base: live!(italic_base),
-            lig_kern_base: live!(lig_kern_base),
-            kern_base: live!(kern_base),
-            exten_base: live!(exten_base),
-            param_base: live!(param_base),
-            hyphen_char: live!(hyphen_char),
-            skew_char: live!(skew_char),
-            engines: font_layout_engine[..count.min(font_layout_engine.len())].to_vec(),
-            mappings: font_mapping[..count.min(font_mapping.len())].to_vec(),
+            arrays: FontArrays::capture(src, count),
+            engines: live_prefix(font_layout_engine, count),
+            mappings: live_prefix(font_mapping, count),
             xdv_buffer: xdv_buffer.clone(),
             mapped_text: mapped_text.clone(),
         }
     }
 
-    fn restore(&self, dst: &mut crate::state::FontState) {
+    fn restore(&self, dst: &mut FontState) {
         for f in (self.font_ptr + 1)..=dst.font_ptr {
             dst.set_font_layout_engine(f, None);
             dst.set_font_mapping(f, None);
@@ -693,8 +710,8 @@ impl FontBundle {
         }
         // The ICU iterator points into transient text and is rebuilt lazily.
         crate::ext::release_linebreak_state(dst);
-        // Fonts created after this checkpoint may have emitted definitions in
-        // the abandoned timeline. Reused slots must start unused on replay.
+        // Slots reused after the checkpoint may have emitted font definitions
+        // in the abandoned timeline, so they must start unused.
         let restored_font_count = (self.font_ptr + 1).max(0) as usize;
         if restored_font_count < dst.font_used.len() {
             dst.font_used[restored_font_count..].fill(false);
@@ -712,178 +729,68 @@ impl FontBundle {
         dst.fmem_ptr = self.fmem_ptr;
         dst.font_ptr = self.font_ptr;
         dst.null_character = self.null_character;
-        macro_rules! restore {
-            ($field:ident) => {
-                dst.$field[..self.$field.len()].copy_from_slice(&self.$field)
-            };
-        }
-        restore!(font_flags);
-        restore!(font_letter_space);
-        restore!(font_check);
-        restore!(font_size);
-        restore!(font_dsize);
-        restore!(font_params);
-        restore!(font_name);
-        restore!(font_area);
-        restore!(font_bc);
-        restore!(font_ec);
-        restore!(bchar_label);
-        restore!(font_bchar);
-        restore!(font_false_bchar);
-        restore!(font_glue);
-        restore!(font_used);
-        restore!(char_base);
-        restore!(width_base);
-        restore!(height_base);
-        restore!(depth_base);
-        restore!(italic_base);
-        restore!(lig_kern_base);
-        restore!(kern_base);
-        restore!(exten_base);
-        restore!(param_base);
-        restore!(hyphen_char);
-        restore!(skew_char);
+        self.arrays.restore(dst);
         dst.xdv_buffer.clone_from(&self.xdv_buffer);
         dst.mapped_text.clone_from(&self.mapped_text);
     }
 
     fn allocated_bytes(&self) -> usize {
-        self.font_flags.capacity() * size_of::<i8>()
-            + self.font_letter_space.capacity() * size_of::<i32>()
-            + self.font_check.capacity() * size_of::<B16x4>()
-            + self.font_size.capacity() * size_of::<i32>()
-            + self.font_dsize.capacity() * size_of::<i32>()
-            + self.font_params.capacity() * size_of::<i32>()
-            + self.font_name.capacity() * size_of::<i32>()
-            + self.font_area.capacity() * size_of::<i32>()
-            + self.font_bc.capacity() * size_of::<u16>()
-            + self.font_ec.capacity() * size_of::<u16>()
-            + self.bchar_label.capacity() * size_of::<i32>()
-            + self.font_bchar.capacity() * size_of::<i32>()
-            + self.font_false_bchar.capacity() * size_of::<i32>()
-            + self.font_glue.capacity() * size_of::<i32>()
-            + self.font_used.capacity()
-            + self.char_base.capacity() * size_of::<i32>()
-            + self.width_base.capacity() * size_of::<i32>()
-            + self.height_base.capacity() * size_of::<i32>()
-            + self.depth_base.capacity() * size_of::<i32>()
-            + self.italic_base.capacity() * size_of::<i32>()
-            + self.lig_kern_base.capacity() * size_of::<i32>()
-            + self.kern_base.capacity() * size_of::<i32>()
-            + self.exten_base.capacity() * size_of::<i32>()
-            + self.param_base.capacity() * size_of::<i32>()
-            + self.hyphen_char.capacity() * size_of::<i32>()
-            + self.skew_char.capacity() * size_of::<i32>()
-            + self.engines.capacity() * size_of::<Option<Arc<crate::state::FontEngineHandle>>>()
-            + self.mappings.capacity() * size_of::<Option<Arc<crate::state::FontMappingHandle>>>()
-            + self.xdv_buffer.capacity()
-            + self.mapped_text.capacity() * size_of::<u16>()
+        self.arrays.allocated_bytes()
+            + vec_bytes(&self.engines)
+            + vec_bytes(&self.mappings)
+            + vec_bytes(&self.xdv_buffer)
+            + vec_bytes(&self.mapped_text)
     }
 }
 
-pub(crate) struct HyphTables {
-    trie_min: Vec<i32>,
-    hyf_distance: Vec<i16>,
-    hyf_num: Vec<i16>,
-    hyf_next: Vec<u16>,
-    op_start: Vec<i32>,
-    trie_used: Vec<u16>,
-    trie_op_lang: Vec<u8>,
-    trie_op_val: Vec<u16>,
-    trie_trl: Vec<i32>,
-    trie_tro: Vec<i32>,
-    trie_trc: Vec<u16>,
-    trie_c: Vec<u16>,
-    trie_o: Vec<u16>,
-    trie_l: Vec<i32>,
-    trie_r: Vec<i32>,
-    trie_hash: Vec<i32>,
-    trie_taken: Vec<bool>,
-    hyph_word: Vec<i32>,
-    hyph_list: Vec<i32>,
-    hyph_link: Vec<u16>,
-    trie_op_hash_array: Vec<i32>,
+macro_rules! hyph_tables {
+    ($($field:ident: $ty:ty,)*) => {
+        /// Pattern and exception tables, shared between rungs until
+        /// `tables_gen` changes.
+        pub(crate) struct HyphTables {
+            $($field: Vec<$ty>,)*
+        }
+
+        impl HyphTables {
+            fn capture(src: &HyphState) -> Self {
+                Self {
+                    $($field: src.$field.clone(),)*
+                }
+            }
+
+            fn restore(&self, dst: &mut HyphState) {
+                $(dst.$field.clone_from(&self.$field);)*
+            }
+
+            fn allocated_bytes(&self) -> usize {
+                0 $(+ vec_bytes(&self.$field))*
+            }
+        }
+    };
 }
 
-impl HyphTables {
-    fn capture(src: &crate::state::HyphState) -> Self {
-        Self {
-            trie_min: src.trie_min.clone(),
-            hyf_distance: src.hyf_distance.clone(),
-            hyf_num: src.hyf_num.clone(),
-            hyf_next: src.hyf_next.clone(),
-            op_start: src.op_start.clone(),
-            trie_used: src.trie_used.clone(),
-            trie_op_lang: src.trie_op_lang.clone(),
-            trie_op_val: src.trie_op_val.clone(),
-            trie_trl: src.trie_trl.clone(),
-            trie_tro: src.trie_tro.clone(),
-            trie_trc: src.trie_trc.clone(),
-            trie_c: src.trie_c.clone(),
-            trie_o: src.trie_o.clone(),
-            trie_l: src.trie_l.clone(),
-            trie_r: src.trie_r.clone(),
-            trie_hash: src.trie_hash.clone(),
-            trie_taken: src.trie_taken.clone(),
-            hyph_word: src.hyph_word.clone(),
-            hyph_list: src.hyph_list.clone(),
-            hyph_link: src.hyph_link.clone(),
-            trie_op_hash_array: src.trie_op_hash_array.clone(),
-        }
-    }
-
-    fn restore(&self, dst: &mut crate::state::HyphState) {
-        macro_rules! restore {
-            ($field:ident) => {
-                dst.$field.clone_from(&self.$field)
-            };
-        }
-        restore!(trie_min);
-        restore!(hyf_distance);
-        restore!(hyf_num);
-        restore!(hyf_next);
-        restore!(op_start);
-        restore!(trie_used);
-        restore!(trie_op_lang);
-        restore!(trie_op_val);
-        restore!(trie_trl);
-        restore!(trie_tro);
-        restore!(trie_trc);
-        restore!(trie_c);
-        restore!(trie_o);
-        restore!(trie_l);
-        restore!(trie_r);
-        restore!(trie_hash);
-        restore!(trie_taken);
-        restore!(hyph_word);
-        restore!(hyph_list);
-        restore!(hyph_link);
-        restore!(trie_op_hash_array);
-    }
-
-    fn allocated_bytes(&self) -> usize {
-        self.trie_min.capacity() * size_of::<i32>()
-            + self.hyf_distance.capacity() * size_of::<i16>()
-            + self.hyf_num.capacity() * size_of::<i16>()
-            + self.hyf_next.capacity() * size_of::<u16>()
-            + self.op_start.capacity() * size_of::<i32>()
-            + self.trie_used.capacity() * size_of::<u16>()
-            + self.trie_op_lang.capacity()
-            + self.trie_op_val.capacity() * size_of::<u16>()
-            + self.trie_trl.capacity() * size_of::<i32>()
-            + self.trie_tro.capacity() * size_of::<i32>()
-            + self.trie_trc.capacity() * size_of::<u16>()
-            + self.trie_c.capacity() * size_of::<u16>()
-            + self.trie_o.capacity() * size_of::<u16>()
-            + self.trie_l.capacity() * size_of::<i32>()
-            + self.trie_r.capacity() * size_of::<i32>()
-            + self.trie_hash.capacity() * size_of::<i32>()
-            + self.trie_taken.capacity()
-            + self.hyph_word.capacity() * size_of::<i32>()
-            + self.hyph_list.capacity() * size_of::<i32>()
-            + self.hyph_link.capacity() * size_of::<u16>()
-            + self.trie_op_hash_array.capacity() * size_of::<i32>()
-    }
+hyph_tables! {
+    trie_min: i32,
+    hyf_distance: i16,
+    hyf_num: i16,
+    hyf_next: u16,
+    op_start: i32,
+    trie_used: u16,
+    trie_op_lang: u8,
+    trie_op_val: u16,
+    trie_trl: i32,
+    trie_tro: i32,
+    trie_trc: u16,
+    trie_c: u16,
+    trie_o: u16,
+    trie_l: i32,
+    trie_r: i32,
+    trie_hash: i32,
+    trie_taken: bool,
+    hyph_word: i32,
+    hyph_list: i32,
+    hyph_link: u16,
+    trie_op_hash_array: i32,
 }
 
 struct HyphBundle {
@@ -891,7 +798,7 @@ struct HyphBundle {
     is_hyph: bool,
     hf: i32,
     max_hyph_char: i32,
-    init_list: crate::units::MemPtr,
+    init_list: MemPtr,
     init_lig: bool,
     init_lft: bool,
     hyphen_passed: i16,
@@ -920,7 +827,7 @@ struct HyphBundle {
 }
 
 impl HyphBundle {
-    fn capture(src: &crate::state::HyphState, previous: Option<&Self>) -> Self {
+    fn capture(src: &HyphState, previous: Option<&Self>) -> Self {
         let tables = match previous.filter(|p| p.tables_gen == src.tables_gen) {
             Some(previous) => Arc::clone(&previous.tables),
             None => Arc::new(HyphTables::capture(src)),
@@ -959,7 +866,7 @@ impl HyphBundle {
         }
     }
 
-    fn restore(&self, dst: &mut crate::state::HyphState) {
+    fn restore(&self, dst: &mut HyphState) {
         dst.tables_gen = self.tables_gen;
         dst.is_hyph = self.is_hyph;
         dst.hf = self.hf;
@@ -993,9 +900,7 @@ impl HyphBundle {
     }
 
     fn private_allocated_bytes(&self) -> usize {
-        self.hc.capacity() * size_of::<i32>()
-            + self.hu.capacity() * size_of::<i32>()
-            + self.hyf.capacity()
+        vec_bytes(&self.hc) + vec_bytes(&self.hu) + vec_bytes(&self.hyf)
     }
 }
 
@@ -1076,11 +981,13 @@ mod tests {
 
     #[test]
     fn font_restore_clears_use_flags_beyond_the_checkpoint() {
-        let mut fonts = crate::state::FontState::default();
-        fonts.font_layout_engine = vec![None; 4];
-        fonts.font_mapping = vec![None; 4];
-        fonts.font_used = vec![false; 4];
-        fonts.font_ptr = 1;
+        let mut fonts = FontState {
+            font_layout_engine: vec![None; 4],
+            font_mapping: vec![None; 4],
+            font_used: vec![false; 4],
+            font_ptr: 1,
+            ..Default::default()
+        };
         let checkpoint = FontBundle::capture(&fonts);
 
         fonts.font_ptr = 3;

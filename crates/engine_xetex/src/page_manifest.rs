@@ -47,6 +47,12 @@ impl PageManifest {
         }
     }
 
+    pub(crate) fn record_bytes(&mut self, n: usize) {
+        if self.enabled {
+            self.span_len += n as u64;
+        }
+    }
+
     pub(crate) fn pop_byte(&mut self) {
         if self.enabled {
             self.span_len = self
