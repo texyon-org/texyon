@@ -999,9 +999,9 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
             if st.scanner.cur_i.tag() == CharTag::Lig {
                 let cur_f = st.scanner.cur_f;
                 let (mut a, mut step) = st.fonts.lig_kern_start(cur_f, st.scanner.cur_i);
-                let skew_char = st.fonts.skew_char[cur_f] as u16;
+                let skew_char = st.fonts.skew_char[cur_f];
                 s = loop {
-                    if step.next_char() == skew_char {
+                    if i32::from(step.next_char()) == skew_char {
                         if step.is_kern() && !step.is_redirect() {
                             break st.fonts.char_kern(cur_f, step);
                         }
