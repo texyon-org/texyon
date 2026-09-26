@@ -677,7 +677,7 @@ impl MemState {
         let nb = self.new_null_box()?;
         let column = NodePtr::<AlignRecord>::at(nb.idx());
         column.span_head().set_next(self, END_SPAN);
-        column.set_width(self, Scaled(NULL_FLAG));
+        column.set_width(self, RUNNING);
         Ok(column)
     }
 }
@@ -842,7 +842,7 @@ pub(crate) fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
         row
     };
     p.into_unset(&mut st.mem)
-        .set_glue_stretch(&mut st.mem, Scaled(0));
+        .set_glue_stretch(&mut st.mem, Scaled::ZERO);
     begin_every(st, LOCAL_EVERY_CR, EVERY_CR_TEXT)?;
     align_peek(st)
 }
@@ -1609,7 +1609,7 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
                     if let Ok(Some(b)) = st.mem.classify_box(MemIdx::new(tx)) {
                         if unlink_effective_tail(st, tx)? {
                             st.scanner.cur_box = Some(BoxOrRule::Box(b));
-                            b.set_shift_amount(&mut st.mem, Scaled(0));
+                            b.set_shift_amount(&mut st.mem, Scaled::ZERO);
                         }
                     }
                 }
@@ -2016,7 +2016,7 @@ pub(crate) fn alter_box_dimen(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::scan_optional_equals(st)?;
     crate::scan::scan_dimen(st, false, false, false)?;
     if let Some(b) = b {
-        let v = Scaled(st.scanner.cur_val);
+        let v = st.scanner.cur_dimen();
         match c {
             crate::scan::WIDTH_OFFSET => b.set_width(&mut st.mem, v),
             crate::scan::DEPTH_OFFSET => b.set_depth(&mut st.mem, v),
@@ -2423,7 +2423,7 @@ pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
                 "less than 2048pt, so I've changed what you said to 10pt.",
             ]);
             crate::errors::error(st)?;
-            Scaled(10 * 65536)
+            Scaled::UNITY * 10
         } else {
             size
         }

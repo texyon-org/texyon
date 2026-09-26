@@ -454,7 +454,7 @@ pub(crate) fn scan_rule_spec(st: &mut EngineState) -> Result<NodePtr<RuleNode>, 
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
         r.set_height(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
-        r.set_depth(&mut st.mem, RuleDimen::Set(Scaled(0)));
+        r.set_depth(&mut st.mem, RuleDimen::Set(Scaled::ZERO));
     }
     loop {
         if scan_keyword(st, "width")? {
@@ -2216,16 +2216,16 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), Abort> {
     }
 
     let gs = st.mem.new_spec(glue_spec(0))?;
-    gs.set_width(&mut st.mem, Scaled(st.scanner.cur_val));
+    gs.set_width(&mut st.mem, st.scanner.cur_dimen());
 
     if scan_keyword(st, "plus")? {
         scan_dimen(st, mu, true, false)?;
-        gs.set_stretch(&mut st.mem, Scaled(st.scanner.cur_val));
+        gs.set_stretch(&mut st.mem, st.scanner.cur_dimen());
         gs.set_stretch_order(&mut st.mem, st.scanner.cur_order);
     }
     if scan_keyword(st, "minus")? {
         scan_dimen(st, mu, true, false)?;
-        gs.set_shrink(&mut st.mem, Scaled(st.scanner.cur_val));
+        gs.set_shrink(&mut st.mem, st.scanner.cur_dimen());
         gs.set_shrink_order(&mut st.mem, st.scanner.cur_order);
     }
 

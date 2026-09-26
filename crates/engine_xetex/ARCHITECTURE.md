@@ -27,7 +27,24 @@ State and memory:
   read with `p.token(mem)` and `p.link(mem)`, their heads carrying
   `token_ref_count`.
 - `units.rs`: `MemIdx`/`MemPtr` (null is `TEX_NULL`, not zero), `Scaled`,
-  `FontId`, `NodeType`, `GlueSign`. `mem_types.rs` holds `MemoryWord`.
+  `FontId`, `StrNumber`, `NodeType`, `GlueSign`. `mem_types.rs` holds
+  `MemoryWord`.
+  - `Scaled` is every length: node dimensions, font metrics, `dimen_par`,
+    the shipout and page builder positions, the line breaker's widths. It
+    adds, subtracts, negates and scales by an `i32` like the raw words did.
+    TeX's checked arithmetic (`x_over_n`, `xn_over_d`, `mult_and_add`,
+    `add_or_sub`, `fract`) is generic over `i32` and `Scaled` (`TexWord`),
+    `half` is `Scaled::half`. Sentinels have names: `RUNNING` rule
+    dimensions, `IGNORE_DEPTH`, `MAX_DIMEN`, `INFINITE_DIMEN`, `DESIGN_SIZE`.
+  - `FontId` indexes the per-font tables (`PerFont<T>` in `FontState`), is
+    what char and native nodes store, and comes out of `cur_font`,
+    `math_font` and `scan_font_ident`. `NULL_FONT` is `font_base`.
+  - `StrNumber` is a string number (a single character below
+    `TOO_BIG_CHAR`, else a pool string): the string pool API, `text(p)`,
+    font names and areas, `job_name` and the scanned file name parts.
+    `StrNumber::NONE` is TeX's 0 for "no string".
+  - `cur_val` stays a raw `i32` because it holds whatever was scanned.
+    `cur_dimen()` and `set_cur_dimen()` read and write it as a length.
 - `consts.rs`: WEB `@d` constants and the `eqtb` layout (region bases and
   parameter indices, read through `EqtbState::int_par`, `dimen_par`, ...).
   Entries are read as `eq_type`/`eq_level`/`equiv` (or `int_at` in the
@@ -58,17 +75,23 @@ The typesetting pipeline:
 The C boundary:
 
 - `bridge.rs` wraps the Tectonic I/O bridge (files, diagnostics, shell escape,
-  MD5) in a byte-slice API. `layout.rs` owns the `tectonic_xetex_layout`,
+  MD5) in a byte-slice API. File names are Rust bytes (`name_of_file`,
+  `name_of_input_file`, the synctex and source-special names) and become C
+  strings only at an extern call (`with_c_str` in `bridge.rs`, or inside
+  `layout.rs`). `layout.rs` owns the `tectonic_xetex_layout`,
   HarfBuzz, ICU and TECkit handles (`FontEngineHandle`, `FontMappingHandle`,
   `LinebreakHandle`, ...) with their disposal. `io.rs` keeps the ICU input
   converters, `texmfmp.rs` the C time calls, `pic.rs` the picture probes.
-- Raw pointers and C strings stay in those modules. Elsewhere `unsafe` is
+- Raw pointers stay in those modules, and `CStr`/`CString` in `bridge.rs`
+  and `layout.rs` (`c_char` also appears in the other extern blocks).
+  Elsewhere `unsafe` is
   limited to plain-data byte views (`mem_types.rs`, `state.rs`,
   `format_io.rs`), HarfBuzz MATH queries (`ot_math.rs`) and installing the
   bridge for a run (`engine.rs`, `session.rs`). Every block has a
   `// SAFETY:` comment (`clippy::undocumented_unsafe_blocks` is clean). The
   engine proper prints and reports with Rust strings: `print(st, "...")`,
-  `print_nl`, `print_esc` take a `&str`, bytes or a pool string.
+  `print_nl`, `print_esc` take a `&str`, bytes, a byte character or a
+  `StrNumber`. A byte slice prints each byte as the character of that code.
 
 Live preview:
 

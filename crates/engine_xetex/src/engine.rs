@@ -428,23 +428,23 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
 
     let mem = &mut st.mem;
     for spec in [ZERO_GLUE, FIL_GLUE, FILL_GLUE, SS_GLUE, FIL_NEG_GLUE] {
-        spec.set_width(mem, Scaled(0));
-        spec.set_stretch(mem, Scaled(0));
-        spec.set_shrink(mem, Scaled(0));
+        spec.set_width(mem, Scaled::ZERO);
+        spec.set_stretch(mem, Scaled::ZERO);
+        spec.set_shrink(mem, Scaled::ZERO);
         spec.set_ref_count(mem, TEX_NULL + 1);
         spec.set_stretch_order(mem, NORMAL);
         spec.set_shrink_order(mem, NORMAL);
     }
 
-    FIL_GLUE.set_stretch(mem, Scaled(65536));
+    FIL_GLUE.set_stretch(mem, Scaled::UNITY);
     FIL_GLUE.set_stretch_order(mem, FIL);
-    FILL_GLUE.set_stretch(mem, Scaled(65536));
+    FILL_GLUE.set_stretch(mem, Scaled::UNITY);
     FILL_GLUE.set_stretch_order(mem, FILL);
-    SS_GLUE.set_stretch(mem, Scaled(65536));
+    SS_GLUE.set_stretch(mem, Scaled::UNITY);
     SS_GLUE.set_stretch_order(mem, FIL);
-    SS_GLUE.set_shrink(mem, Scaled(65536));
+    SS_GLUE.set_shrink(mem, Scaled::UNITY);
     SS_GLUE.set_shrink_order(mem, FIL);
-    FIL_NEG_GLUE.set_stretch(mem, Scaled(-65536));
+    FIL_NEG_GLUE.set_stretch(mem, -Scaled::UNITY);
     FIL_NEG_GLUE.set_stretch_order(mem, FIL);
 
     mem.rover = 20;

@@ -312,10 +312,10 @@ impl MemState {
     pub fn new_null_box(&mut self) -> Result<NodePtr<HListNode>, Abort> {
         let p = NodePtr::<HListNode>::alloc(self)?;
         p.set_subtype(self, 0);
-        p.set_width(self, Scaled(0));
-        p.set_depth(self, Scaled(0));
-        p.set_height(self, Scaled(0));
-        p.set_shift_amount(self, Scaled(0));
+        p.set_width(self, Scaled::ZERO);
+        p.set_depth(self, Scaled::ZERO);
+        p.set_height(self, Scaled::ZERO);
+        p.set_shift_amount(self, Scaled::ZERO);
         p.set_list_ptr(self, MemPtr::NULL);
         p.set_glue_sign(self, GlueSign::Normal);
         p.set_glue_order(self, NORMAL);

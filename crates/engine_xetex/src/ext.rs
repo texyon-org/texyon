@@ -611,7 +611,7 @@ pub(crate) fn find_native_font(
     if at(name_string, 0) == b'[' {
         let path = &name_string[1..];
         if scaled_size < Scaled::ZERO {
-            let font = OwnedFont::from_file(path, split.index, Scaled(655360));
+            let font = OwnedFont::from_file(path, split.index, Scaled::UNITY * 10);
             scaled_size = st.errors.scale_by_design_size(font, scaled_size);
         }
         if let Some(font) = OwnedFont::from_file(path, split.index, scaled_size) {
@@ -761,7 +761,7 @@ pub(crate) fn ot_get_font_metrics(engine: &FontEngineHandle) -> NativeFontMetric
         x_height = if glyph_id != 0 {
             d2fix(f64::from(engine.glyph_height_depth(glyph_id).0))
         } else {
-            Scaled(ascent.0 / 2)
+            ascent / 2
         };
     }
     if cap_height == Scaled::ZERO {
@@ -1142,7 +1142,7 @@ impl FontState {
         // Snap to the baseline, x-height (param 5) and cap height (param 8) when
         // within 4% of the quad (param 6).
         let param = |k: i32| self.param(font, k);
-        let fuzz = Scaled(param(6).0 / 25);
+        let fuzz = param(6) / 25;
         snap_zone(&mut depth, Scaled::ZERO, fuzz);
         snap_zone(&mut height, Scaled::ZERO, fuzz);
         snap_zone(&mut height, param(5), fuzz);

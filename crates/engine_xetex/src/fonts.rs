@@ -826,11 +826,11 @@ pub(crate) fn load_native_font(
     for v in [
         metrics.slant,
         space_width,
-        Scaled(space_width.0 / 2),
-        Scaled(space_width.0 / 3),
+        space_width / 2,
+        space_width / 3,
         metrics.x_height,
         size,
-        Scaled(space_width.0 / 3),
+        space_width / 3,
         metrics.cap_height,
     ] {
         st.fonts.push_font_info(v);

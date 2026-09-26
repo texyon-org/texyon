@@ -1743,9 +1743,9 @@ impl LinebreakState {
                     q.set_link(mem, r);
                     disc_break = true;
                 }
-                Ok(AnyNode::Kern(k)) => k.set_width(mem, Scaled(0)),
+                Ok(AnyNode::Kern(k)) => k.set_width(mem, Scaled::ZERO),
                 Ok(AnyNode::Math(m)) => {
-                    m.set_width(mem, Scaled(0));
+                    m.set_width(mem, Scaled::ZERO);
                     if texxet {
                         mem.update_lr_stack(m, lr_ptr)?;
                     }

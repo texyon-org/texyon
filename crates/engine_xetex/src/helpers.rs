@@ -52,12 +52,12 @@ mod tests {
 
     #[test]
     fn badness_zero_t() {
-        assert_eq!(badness(Scaled(0), Scaled(1000)), 0);
+        assert_eq!(badness(Scaled::ZERO, Scaled(1000)), 0);
     }
 
     #[test]
     fn badness_zero_or_neg_s() {
-        assert_eq!(badness(Scaled(1), Scaled(0)), INF_BAD);
+        assert_eq!(badness(Scaled(1), Scaled::ZERO), INF_BAD);
         assert_eq!(badness(Scaled(1), Scaled(-5)), INF_BAD);
     }
 

@@ -3125,7 +3125,7 @@ fn show_box_node(st: &mut EngineState, b: AnyBox) {
             } else {
                 print(st, "< -");
             }
-            print_glue(st, Scaled(20000 * 65536), order, None);
+            print_glue(st, Scaled::UNITY * 20000, order, None);
         } else {
             let set = Scaled(crate::scaled_math::tex_round(65536.0 * g));
             print_glue(st, set, order, None);

@@ -93,6 +93,8 @@ pub struct Scaled(pub i32);
 
 impl Scaled {
     pub const ZERO: Scaled = Scaled(0);
+    /// One point, TeX's `unity`.
+    pub const UNITY: Scaled = Scaled(0x10000);
 
     /// TeX's `half`, rounding odd values up.
     #[inline]

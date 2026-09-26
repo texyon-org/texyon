@@ -1275,12 +1275,12 @@ impl NodePtr<AlignRecord> {
     pub fn into_unset(self, mem: &mut MemState) -> NodePtr<UnsetNode> {
         let u: NodePtr<UnsetNode> = retype(self, mem, NodeType::Unset);
         u.set_subtype(mem, 0);
-        u.set_height(mem, Scaled(0));
-        u.set_depth(mem, Scaled(0));
+        u.set_height(mem, Scaled::ZERO);
+        u.set_depth(mem, Scaled::ZERO);
         u.set_glue_order(mem, NORMAL);
         u.set_glue_sign(mem, NORMAL);
-        u.set_glue_stretch(mem, Scaled(0));
-        u.set_glue_shrink(mem, Scaled(0));
+        u.set_glue_stretch(mem, Scaled::ZERO);
+        u.set_glue_shrink(mem, Scaled::ZERO);
         u
     }
 }
@@ -1939,10 +1939,10 @@ mod tests {
         let mut mem = fresh_mem(200);
         let r: NodePtr<RuleNode> = at(&mut mem, 100, Some(NodeType::Rule));
         r.set_width(&mut mem, RuleDimen::Running);
-        r.set_depth(&mut mem, RuleDimen::Set(Scaled(0)));
+        r.set_depth(&mut mem, RuleDimen::Set(Scaled::ZERO));
         r.set_height(&mut mem, RuleDimen::Set(Scaled(0x2222)));
         assert_eq!(r.width(&mem), RuleDimen::Running);
-        assert_eq!(r.depth(&mem), RuleDimen::Set(Scaled(0)));
+        assert_eq!(r.depth(&mem), RuleDimen::Set(Scaled::ZERO));
         assert_eq!(mem.b32s1(101), NULL_FLAG);
         assert_eq!(mem.b32s1(103), 0x2222);
     }
@@ -2034,7 +2034,10 @@ mod tests {
 
         let u = rec.into_unset(&mut mem);
         assert_eq!(mem.b16s1(100), NodeType::Unset.as_raw());
-        assert_eq!((u.height(&mem), u.depth(&mem)), (Scaled(0), Scaled(0)));
+        assert_eq!(
+            (u.height(&mem), u.depth(&mem)),
+            (Scaled::ZERO, Scaled::ZERO)
+        );
         assert_eq!((mem.b16s0(100), mem.b32s1(104), mem.b32s1(106)), (0, 0, 0));
         assert_eq!(u.link(&mem), g2);
 
