@@ -2276,7 +2276,7 @@ pub(crate) fn xetex_scan_dimen_in(
                     st.scanner.cur_order = FIL;
                     while scan_keyword_in(st, c"l")? {
                         if st.scanner.cur_order == FILLL {
-                            print_err_in(st, c"Illegal unit of measure (replaced with filll)");
+                            print_err_in(st, c"Illegal unit of measure (replaced by filll)");
                             st.errors.help(&["I dddon't go any higher than filll."]);
                             scc_err(error_in(st))?;
                         } else {
