@@ -71,125 +71,127 @@ pub(crate) unsafe fn xcalloc(nelem: libc::size_t, elsize: libc::size_t) -> *mut 
 
 // --- the one-word free list ---
 
-/// TeX's `get_avail`, `None` when main memory is exhausted.
-#[inline(always)]
-pub fn get_avail(mem: &mut MemState) -> Option<MemPtr> {
-    let p = mem.avail;
-    if p != TEX_NULL {
-        mem.avail = mem.b32s1(p);
-        mem.set_b32s1(p, TEX_NULL);
-        Some(MemPtr(p))
-    } else {
-        get_avail_grow(mem)
-    }
-}
-
-#[cold]
-fn get_avail_grow(mem: &mut MemState) -> Option<MemPtr> {
-    let p = if mem.mem_end < MEM_TOP {
-        mem.mem_end += 1;
-        mem.mem_end
-    } else {
-        mem.hi_mem_min -= 1;
-        if mem.lo_mem_max >= mem.hi_mem_min {
-            return None;
+impl MemState {
+    /// TeX's `get_avail`, `None` when main memory is exhausted.
+    #[inline(always)]
+    pub fn get_avail(&mut self) -> Option<MemPtr> {
+        let p = self.avail;
+        if p != TEX_NULL {
+            self.avail = self.b32s1(p);
+            self.set_b32s1(p, TEX_NULL);
+            Some(MemPtr(p))
+        } else {
+            self.get_avail_grow()
         }
-        mem.hi_mem_min
-    };
-    mem.set_b32s1(p, TEX_NULL);
-    Some(MemPtr(p))
-}
-
-/// Returns the one-word node `p` to the free list.
-#[inline]
-pub fn free_avail(mem: &mut MemState, p: MemPtr) {
-    p.set_link(mem, MemPtr(mem.avail));
-    mem.avail = p.0;
-}
-
-/// Returns the one-word list `p` to the free list.
-pub fn flush_list(mem: &mut MemState, p: MemPtr) {
-    if p.is_null() {
-        return;
     }
-    list_tail(mem, p).set_link(mem, MemPtr(mem.avail));
-    mem.avail = p.0;
-}
 
-/// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail,
-/// `None` when main memory is exhausted.
-#[inline(always)]
-pub(crate) fn store_new_token(mem: &mut MemState, tail: &mut MemPtr, tok: i32) -> Option<()> {
-    let q = get_avail(mem)?;
-    tail.set_link(mem, q);
-    q.set_token(mem, tok);
-    *tail = q;
-    Some(())
-}
-
-#[inline]
-pub(crate) fn add_token_ref(mem: &mut MemState, p: MemPtr) {
-    p.set_token_ref_count(mem, p.token_ref_count(mem) + 1);
-}
-
-/// Drops a reference to token list `p`, freeing it with the last one.
-pub fn delete_token_ref(mem: &mut MemState, p: MemPtr) {
-    if p.token_ref_count(mem) == TEX_NULL {
-        flush_list(mem, p);
-    } else {
-        p.set_token_ref_count(mem, p.token_ref_count(mem) - 1);
+    #[cold]
+    fn get_avail_grow(&mut self) -> Option<MemPtr> {
+        let p = if self.mem_end < MEM_TOP {
+            self.mem_end += 1;
+            self.mem_end
+        } else {
+            self.hi_mem_min -= 1;
+            if self.lo_mem_max >= self.hi_mem_min {
+                return None;
+            }
+            self.hi_mem_min
+        };
+        self.set_b32s1(p, TEX_NULL);
+        Some(MemPtr(p))
     }
-}
 
-/// The last node of the non-empty list starting at `p`.
-#[inline]
-pub(crate) fn list_tail(mem: &MemState, mut p: MemPtr) -> MemPtr {
-    while !p.link(mem).is_null() {
-        p = p.link(mem);
+    /// Returns the one-word node `p` to the free list.
+    #[inline]
+    pub fn free_avail(&mut self, p: MemPtr) {
+        p.set_link(self, MemPtr(self.avail));
+        self.avail = p.0;
     }
-    p
-}
 
-/// The node whose link is `target`, searching forward from `p`.
-#[inline]
-pub(crate) fn predecessor(mem: &MemState, mut p: MemPtr, target: MemPtr) -> MemPtr {
-    while p.link(mem) != target {
-        p = p.link(mem);
+    /// Returns the one-word list `p` to the free list.
+    pub fn flush_list(&mut self, p: MemPtr) {
+        if p.is_null() {
+            return;
+        }
+        self.list_tail(p).set_link(self, MemPtr(self.avail));
+        self.avail = p.0;
     }
-    p
-}
 
-/// The node whose link is `e`, searching forward from `s`, or null if the
-/// list ends first.
-pub fn prev_rightmost(mem: &MemState, s: MemPtr, e: MemPtr) -> MemPtr {
-    let mut p = s;
-    if p.is_null() {
-        return MemPtr::NULL;
+    /// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail,
+    /// `None` when main memory is exhausted.
+    #[inline(always)]
+    pub(crate) fn store_new_token(&mut self, tail: &mut MemPtr, tok: i32) -> Option<()> {
+        let q = self.get_avail()?;
+        tail.set_link(self, q);
+        q.set_token(self, tok);
+        *tail = q;
+        Some(())
     }
-    while p.link(mem) != e {
-        p = p.link(mem);
+
+    #[inline]
+    pub(crate) fn add_token_ref(&mut self, p: MemPtr) {
+        p.set_token_ref_count(self, p.token_ref_count(self) + 1);
+    }
+
+    /// Drops a reference to token list `p`, freeing it with the last one.
+    pub fn delete_token_ref(&mut self, p: MemPtr) {
+        if p.token_ref_count(self) == TEX_NULL {
+            self.flush_list(p);
+        } else {
+            p.set_token_ref_count(self, p.token_ref_count(self) - 1);
+        }
+    }
+
+    /// The last node of the non-empty list starting at `p`.
+    #[inline]
+    pub(crate) fn list_tail(&self, mut p: MemPtr) -> MemPtr {
+        while !p.link(self).is_null() {
+            p = p.link(self);
+        }
+        p
+    }
+
+    /// The node whose link is `target`, searching forward from `p`.
+    #[inline]
+    pub(crate) fn predecessor(&self, mut p: MemPtr, target: MemPtr) -> MemPtr {
+        while p.link(self) != target {
+            p = p.link(self);
+        }
+        p
+    }
+
+    /// The node whose link is `e`, searching forward from `s`, or null if the
+    /// list ends first.
+    pub fn prev_rightmost(&self, s: MemPtr, e: MemPtr) -> MemPtr {
+        let mut p = s;
         if p.is_null() {
             return MemPtr::NULL;
         }
+        while p.link(self) != e {
+            p = p.link(self);
+            if p.is_null() {
+                return MemPtr::NULL;
+            }
+        }
+        p
     }
-    p
-}
 
-/// Skips the nodes that may sit between the words of an interword space.
-pub(crate) fn skip_interword_fillers(mem: &MemState, mut p: MemPtr) -> MemPtr {
-    while mem
-        .classify_non_char(p)
-        .is_some_and(|n| n.is_interword_filler(mem))
-    {
-        p = p.link(mem);
+    /// Skips the nodes that may sit between the words of an interword space.
+    pub(crate) fn skip_interword_fillers(&self, mut p: MemPtr) -> MemPtr {
+        while self
+            .classify_non_char(p)
+            .is_some_and(|n| n.is_interword_filler(self))
+        {
+            p = p.link(self);
+        }
+        p
     }
-    p
-}
 
-/// Whether `p` lies in the one-word region, where every node is a character.
-#[inline]
-pub fn is_char_node(mem: &MemState, p: impl MemAddr) -> bool {
-    p.addr() >= mem.hi_mem_min
+    /// Whether `p` lies in the one-word region, where every node is a character.
+    #[inline]
+    pub fn is_char_node(&self, p: impl MemAddr) -> bool {
+        p.addr() >= self.hi_mem_min
+    }
 }
 
 /// TeX's `end_LR_type`: the LR entry that a math node of `subtype` closes.
@@ -198,280 +200,277 @@ pub(crate) fn end_lr_type(subtype: u16) -> i32 {
     (L_CODE * (subtype / L_CODE) + END_M_CODE) as i32
 }
 
-/// TeX's `push_LR`, `None` when main memory is exhausted.
-#[inline]
-pub(crate) fn push_lr(mem: &mut MemState, lr_ptr: &mut MemPtr, info: i32) -> Option<()> {
-    let t = get_avail(mem)?;
-    mem.temp_ptr = t;
-    t.set_info(mem, info);
-    t.set_link(mem, *lr_ptr);
-    *lr_ptr = t;
-    Some(())
-}
-
-/// TeX's `pop_LR`.
-#[inline]
-pub(crate) fn pop_lr(mem: &mut MemState, lr_ptr: &mut MemPtr) {
-    let t = *lr_ptr;
-    mem.temp_ptr = t;
-    *lr_ptr = t.link(mem);
-    free_avail(mem, t);
-}
-
-// --- the variable-size free list ---
-
-/// TeX's `get_node`, `None` when main memory is exhausted. The request
-/// `0x4000_0000` is `sort_avail`'s probe and yields `MAX_HALFWORD`.
-pub fn get_node(mem: &mut MemState, s: i32) -> Option<MemPtr> {
-    let block = |p: i32| NodePtr::<FreeBlock>::at(p);
-    let r = 'restart: loop {
-        let mut p = mem.rover;
-        loop {
-            // Merge the free blocks that follow `p`.
-            let mut q = p + block(p).node_size(mem);
-            while block(q).is_empty(mem) {
-                let t = block(q).rlink(mem);
-                if q == mem.rover {
-                    mem.rover = t;
-                }
-                let q_left = block(q).llink(mem);
-                block(t).set_llink(mem, q_left);
-                block(q_left).set_rlink(mem, t);
-                q += block(q).node_size(mem);
-            }
-
-            let r = q - s;
-            if r > p + 1 {
-                block(p).set_node_size(mem, r - p);
-                mem.rover = p;
-                break 'restart r;
-            }
-            if r == p && block(p).rlink(mem) != p {
-                let new_rover = block(p).rlink(mem);
-                let t = block(p).llink(mem);
-                mem.rover = new_rover;
-                block(new_rover).set_llink(mem, t);
-                block(t).set_rlink(mem, new_rover);
-                break 'restart r;
-            }
-
-            block(p).set_node_size(mem, q - p);
-            p = block(p).rlink(mem);
-            if p == mem.rover {
-                break;
-            }
-        }
-
-        if s == 0x4000_0000 {
-            return Some(MemPtr(MAX_HALFWORD));
-        }
-
-        if mem.lo_mem_max + 2 < mem.hi_mem_min && mem.lo_mem_max + 2 <= MAX_HALFWORD {
-            // Grow lo-mem by a new free block below `hi_mem_min`.
-            let t = if mem.hi_mem_min - mem.lo_mem_max >= 1998 {
-                mem.lo_mem_max + 1000
-            } else {
-                mem.lo_mem_max + 1 + (mem.hi_mem_min - mem.lo_mem_max) / 2
-            };
-            let t = t.min(MAX_HALFWORD);
-
-            let rover = mem.rover;
-            let left_neighbor = block(rover).llink(mem);
-            let q = mem.lo_mem_max;
-            block(left_neighbor).set_rlink(mem, q);
-            block(rover).set_llink(mem, q);
-            block(q).set_rlink(mem, rover);
-            block(q).set_llink(mem, left_neighbor);
-            block(q).mark_empty(mem);
-            block(q).set_node_size(mem, t - mem.lo_mem_max);
-            mem.lo_mem_max = t;
-            let end = MemPtr(t);
-            end.set_link(mem, MemPtr::NULL);
-            end.set_info(mem, TEX_NULL);
-            mem.rover = q;
-            continue 'restart;
-        }
-
-        return None;
-    };
-
-    MemPtr(r).set_link(mem, MemPtr::NULL);
-    if s >= MEDIUM_NODE_SIZE {
-        mem.set_b32s0(r + s - 1, mem.cur_synctex_tag);
-        mem.set_b32s1(r + s - 1, mem.line);
+impl MemState {
+    /// TeX's `push_LR`, `None` when main memory is exhausted.
+    #[inline]
+    pub(crate) fn push_lr(&mut self, lr_ptr: &mut MemPtr, info: i32) -> Option<()> {
+        let t = self.get_avail()?;
+        self.temp_ptr = t;
+        t.set_info(self, info);
+        t.set_link(self, *lr_ptr);
+        *lr_ptr = t;
+        Some(())
     }
-    Some(MemPtr(r))
-}
 
-/// Returns the `s`-word node `p` to the variable-size free list.
-pub fn free_node(mem: &mut MemState, p: MemPtr, s: i32) {
-    let block = |p: i32| NodePtr::<FreeBlock>::at(p);
-    let freed = block(p.0);
-    freed.set_node_size(mem, s);
-    freed.mark_empty(mem);
-    let rover = mem.rover;
-    let q = block(rover).llink(mem);
-    freed.set_llink(mem, q);
-    freed.set_rlink(mem, rover);
-    block(rover).set_llink(mem, p.0);
-    block(q).set_rlink(mem, p.0);
-}
+    /// TeX's `pop_LR`.
+    #[inline]
+    pub(crate) fn pop_lr(&mut self, lr_ptr: &mut MemPtr) {
+        let t = *lr_ptr;
+        self.temp_ptr = t;
+        *lr_ptr = t.link(self);
+        self.free_avail(t);
+    }
 
-// --- node constructors ---
+    // --- the variable-size free list ---
 
-pub fn new_null_box(mem: &mut MemState) -> Option<NodePtr<HListNode>> {
-    let p = NodePtr::<HListNode>::alloc(mem)?;
-    p.set_subtype(mem, 0);
-    p.set_width(mem, Scaled(0));
-    p.set_depth(mem, Scaled(0));
-    p.set_height(mem, Scaled(0));
-    p.set_shift_amount(mem, Scaled(0));
-    p.set_list_ptr(mem, MemPtr::NULL);
-    p.set_glue_sign(mem, GlueSign::Normal);
-    p.set_glue_order(mem, NORMAL);
-    p.set_glue_set(mem, 0.0);
-    Some(p)
-}
+    /// TeX's `get_node`, `None` when main memory is exhausted. The request
+    /// `0x4000_0000` is `sort_avail`'s probe and yields `MAX_HALFWORD`.
+    pub fn get_node(&mut self, s: i32) -> Option<MemPtr> {
+        let block = |p: i32| NodePtr::<FreeBlock>::at(p);
+        let r = 'restart: loop {
+            let mut p = self.rover;
+            loop {
+                // Merge the free blocks that follow `p`.
+                let mut q = p + block(p).node_size(self);
+                while block(q).is_empty(self) {
+                    let t = block(q).rlink(self);
+                    if q == self.rover {
+                        self.rover = t;
+                    }
+                    let q_left = block(q).llink(self);
+                    block(t).set_llink(self, q_left);
+                    block(q_left).set_rlink(self, t);
+                    q += block(q).node_size(self);
+                }
 
-/// A rule with running dimensions.
-pub fn new_rule(mem: &mut MemState) -> Option<NodePtr<RuleNode>> {
-    let p = NodePtr::<RuleNode>::alloc(mem)?;
-    p.set_subtype(mem, 0);
-    p.set_width(mem, RuleDimen::Running);
-    p.set_depth(mem, RuleDimen::Running);
-    p.set_height(mem, RuleDimen::Running);
-    Some(p)
-}
+                let r = q - s;
+                if r > p + 1 {
+                    block(p).set_node_size(self, r - p);
+                    self.rover = p;
+                    break 'restart r;
+                }
+                if r == p && block(p).rlink(self) != p {
+                    let new_rover = block(p).rlink(self);
+                    let t = block(p).llink(self);
+                    self.rover = new_rover;
+                    block(new_rover).set_llink(self, t);
+                    block(t).set_rlink(self, new_rover);
+                    break 'restart r;
+                }
 
-/// A character node for `c` in font `f`.
-#[inline]
-pub fn new_char(mem: &mut MemState, f: FontId, c: u16) -> Option<NodePtr<CharNode>> {
-    let p = NodePtr::<CharNode>::at(get_avail(mem)?);
-    p.set_font(mem, f);
-    p.set_character(mem, c);
-    Some(p)
-}
+                block(p).set_node_size(self, q - p);
+                p = block(p).rlink(self);
+                if p == self.rover {
+                    break;
+                }
+            }
 
-pub fn new_ligature(
-    mem: &mut MemState,
-    f: FontId,
-    c: u16,
-    q: MemPtr,
-) -> Option<NodePtr<LigatureNode>> {
-    let p = NodePtr::<LigatureNode>::alloc(mem)?;
-    p.set_font(mem, f);
-    p.set_character(mem, c);
-    p.set_lig_ptr(mem, q);
-    p.set_subtype(mem, 0);
-    Some(p)
-}
+            if s == 0x4000_0000 {
+                return Some(MemPtr(MAX_HALFWORD));
+            }
 
-pub fn new_lig_item(mem: &mut MemState, c: u16) -> Option<NodePtr<LigItem>> {
-    let p = NodePtr::<LigItem>::alloc(mem)?;
-    p.set_character(mem, c);
-    p.set_component(mem, MemPtr::NULL);
-    Some(p)
-}
+            if self.lo_mem_max + 2 < self.hi_mem_min && self.lo_mem_max + 2 <= MAX_HALFWORD {
+                // Grow lo-mem by a new free block below `hi_mem_min`.
+                let t = if self.hi_mem_min - self.lo_mem_max >= 1998 {
+                    self.lo_mem_max + 1000
+                } else {
+                    self.lo_mem_max + 1 + (self.hi_mem_min - self.lo_mem_max) / 2
+                };
+                let t = t.min(MAX_HALFWORD);
 
-pub fn new_disc(mem: &mut MemState) -> Option<NodePtr<DiscNode>> {
-    let p = NodePtr::<DiscNode>::alloc(mem)?;
-    p.set_subtype(mem, 0);
-    p.set_pre_break(mem, MemPtr::NULL);
-    p.set_post_break(mem, MemPtr::NULL);
-    Some(p)
-}
+                let rover = self.rover;
+                let left_neighbor = block(rover).llink(self);
+                let q = self.lo_mem_max;
+                block(left_neighbor).set_rlink(self, q);
+                block(rover).set_llink(self, q);
+                block(q).set_rlink(self, rover);
+                block(q).set_llink(self, left_neighbor);
+                block(q).mark_empty(self);
+                block(q).set_node_size(self, t - self.lo_mem_max);
+                self.lo_mem_max = t;
+                let end = MemPtr(t);
+                end.set_link(self, MemPtr::NULL);
+                end.set_info(self, TEX_NULL);
+                self.rover = q;
+                continue 'restart;
+            }
 
-pub fn new_math(mem: &mut MemState, w: i32, s: u16) -> Option<NodePtr<MathNode>> {
-    let p = NodePtr::<MathNode>::alloc(mem)?;
-    p.set_subtype(mem, s);
-    p.set_width(mem, Scaled(w));
-    Some(p)
-}
+            return None;
+        };
 
-/// An unshared copy of the glue spec `src`.
-pub fn new_spec(mem: &mut MemState, src: NodePtr<GlueSpecNode>) -> Option<NodePtr<GlueSpecNode>> {
-    let q = NodePtr::<GlueSpecNode>::alloc(mem)?;
-    mem.set_word(q.idx().0, mem.word(src.idx().0));
-    q.set_ref_count(mem, TEX_NULL);
-    q.set_width(mem, src.width(mem));
-    q.set_stretch(mem, src.stretch(mem));
-    q.set_shrink(mem, src.shrink(mem));
-    Some(q)
-}
+        MemPtr(r).set_link(self, MemPtr::NULL);
+        if s >= MEDIUM_NODE_SIZE {
+            self.set_b32s0(r + s - 1, self.cur_synctex_tag);
+            self.set_b32s1(r + s - 1, self.line);
+        }
+        Some(MemPtr(r))
+    }
 
-/// Glue for parameter `n`, sharing its spec.
-pub fn new_param_glue(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
-    let p = NodePtr::<GlueNode>::alloc(mem)?;
-    p.set_subtype(mem, n as u16 + 1);
-    p.set_leader_ptr(mem, MemPtr::NULL);
-    let spec = eqtb.glue_par(n);
-    p.set_glue_ptr(mem, spec);
-    add_glue_ref(mem, spec);
-    Some(p)
-}
+    /// Returns the `s`-word node `p` to the variable-size free list.
+    pub fn free_node(&mut self, p: MemPtr, s: i32) {
+        let block = |p: i32| NodePtr::<FreeBlock>::at(p);
+        let freed = block(p.0);
+        freed.set_node_size(self, s);
+        freed.mark_empty(self);
+        let rover = self.rover;
+        let q = block(rover).llink(self);
+        freed.set_llink(self, q);
+        freed.set_rlink(self, rover);
+        block(rover).set_llink(self, p.0);
+        block(q).set_rlink(self, p.0);
+    }
 
-/// Glue sharing the spec `q`.
-pub fn new_glue(mem: &mut MemState, q: NodePtr<GlueSpecNode>) -> Option<NodePtr<GlueNode>> {
-    let p = NodePtr::<GlueNode>::alloc(mem)?;
-    p.set_subtype(mem, NORMAL);
-    p.set_leader_ptr(mem, MemPtr::NULL);
-    p.set_glue_ptr(mem, q);
-    add_glue_ref(mem, q);
-    Some(p)
-}
+    // --- node constructors ---
 
-/// Glue for parameter `n` with a private copy of its spec, left in `temp_ptr`.
-pub fn new_skip_param(mem: &mut MemState, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
-    let s = new_spec(mem, eqtb.glue_par(n))?;
-    mem.temp_ptr = s.ptr();
-    let p = new_glue(mem, s)?;
-    s.set_ref_count(mem, TEX_NULL);
-    p.set_subtype(mem, n as u16 + 1);
-    Some(p)
-}
+    pub fn new_null_box(&mut self) -> Option<NodePtr<HListNode>> {
+        let p = NodePtr::<HListNode>::alloc(self)?;
+        p.set_subtype(self, 0);
+        p.set_width(self, Scaled(0));
+        p.set_depth(self, Scaled(0));
+        p.set_height(self, Scaled(0));
+        p.set_shift_amount(self, Scaled(0));
+        p.set_list_ptr(self, MemPtr::NULL);
+        p.set_glue_sign(self, GlueSign::Normal);
+        p.set_glue_order(self, NORMAL);
+        p.set_glue_set(self, 0.0);
+        Some(p)
+    }
 
-pub fn new_kern(mem: &mut MemState, w: i32) -> Option<NodePtr<KernNode>> {
-    let p = NodePtr::<KernNode>::alloc(mem)?;
-    p.set_subtype(mem, NORMAL);
-    p.set_width(mem, Scaled(w));
-    Some(p)
-}
+    /// A rule with running dimensions.
+    pub fn new_rule(&mut self) -> Option<NodePtr<RuleNode>> {
+        let p = NodePtr::<RuleNode>::alloc(self)?;
+        p.set_subtype(self, 0);
+        p.set_width(self, RuleDimen::Running);
+        p.set_depth(self, RuleDimen::Running);
+        p.set_height(self, RuleDimen::Running);
+        Some(p)
+    }
 
-pub fn new_penalty(mem: &mut MemState, m: i32) -> Option<NodePtr<PenaltyNode>> {
-    let p = NodePtr::<PenaltyNode>::alloc(mem)?;
-    p.set_subtype(mem, 0);
-    p.set_penalty(mem, m);
-    Some(p)
-}
+    /// A character node for `c` in font `f`.
+    #[inline]
+    pub fn new_char(&mut self, f: FontId, c: u16) -> Option<NodePtr<CharNode>> {
+        let p = NodePtr::<CharNode>::at(self.get_avail()?);
+        p.set_font(self, f);
+        p.set_character(self, c);
+        Some(p)
+    }
 
-pub fn new_noad(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-    let p = NodePtr::<Noad>::alloc(mem)?;
-    p.clear_fields(mem);
-    Some(p)
-}
+    pub fn new_ligature(&mut self, f: FontId, c: u16, q: MemPtr) -> Option<NodePtr<LigatureNode>> {
+        let p = NodePtr::<LigatureNode>::alloc(self)?;
+        p.set_font(self, f);
+        p.set_character(self, c);
+        p.set_lig_ptr(self, q);
+        p.set_subtype(self, 0);
+        Some(p)
+    }
 
-pub fn new_style(mem: &mut MemState, s: i16) -> Option<NodePtr<StyleNode>> {
-    let p = NodePtr::<StyleNode>::alloc(mem)?;
-    p.set_subtype(mem, s as u16);
-    p.clear_payload(mem);
-    Some(p)
-}
+    pub fn new_lig_item(&mut self, c: u16) -> Option<NodePtr<LigItem>> {
+        let p = NodePtr::<LigItem>::alloc(self)?;
+        p.set_character(self, c);
+        p.set_component(self, MemPtr::NULL);
+        Some(p)
+    }
 
-pub fn new_choice(mem: &mut MemState) -> Option<NodePtr<ChoiceNode>> {
-    let p = NodePtr::<ChoiceNode>::alloc(mem)?;
-    p.set_subtype(mem, 0);
-    p.set_display_mlist(mem, MemPtr::NULL);
-    p.set_text_mlist(mem, MemPtr::NULL);
-    p.set_script_mlist(mem, MemPtr::NULL);
-    p.set_script_script_mlist(mem, MemPtr::NULL);
-    Some(p)
-}
+    pub fn new_disc(&mut self) -> Option<NodePtr<DiscNode>> {
+        let p = NodePtr::<DiscNode>::alloc(self)?;
+        p.set_subtype(self, 0);
+        p.set_pre_break(self, MemPtr::NULL);
+        p.set_post_break(self, MemPtr::NULL);
+        Some(p)
+    }
 
-pub fn new_margin_kern(mem: &mut MemState, w: i32, side: i16) -> Option<NodePtr<MarginKernNode>> {
-    let k = NodePtr::<MarginKernNode>::alloc(mem)?;
-    k.set_subtype(mem, side as u16);
-    k.set_width(mem, Scaled(w));
-    Some(k)
+    pub fn new_math(&mut self, w: i32, s: u16) -> Option<NodePtr<MathNode>> {
+        let p = NodePtr::<MathNode>::alloc(self)?;
+        p.set_subtype(self, s);
+        p.set_width(self, Scaled(w));
+        Some(p)
+    }
+
+    /// An unshared copy of the glue spec `src`.
+    pub fn new_spec(&mut self, src: NodePtr<GlueSpecNode>) -> Option<NodePtr<GlueSpecNode>> {
+        let q = NodePtr::<GlueSpecNode>::alloc(self)?;
+        self.set_word(q.idx().0, self.word(src.idx().0));
+        q.set_ref_count(self, TEX_NULL);
+        q.set_width(self, src.width(self));
+        q.set_stretch(self, src.stretch(self));
+        q.set_shrink(self, src.shrink(self));
+        Some(q)
+    }
+
+    /// Glue for parameter `n`, sharing its spec.
+    pub fn new_param_glue(&mut self, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
+        let p = NodePtr::<GlueNode>::alloc(self)?;
+        p.set_subtype(self, n as u16 + 1);
+        p.set_leader_ptr(self, MemPtr::NULL);
+        let spec = eqtb.glue_par(n);
+        p.set_glue_ptr(self, spec);
+        self.add_glue_ref(spec);
+        Some(p)
+    }
+
+    /// Glue sharing the spec `q`.
+    pub fn new_glue(&mut self, q: NodePtr<GlueSpecNode>) -> Option<NodePtr<GlueNode>> {
+        let p = NodePtr::<GlueNode>::alloc(self)?;
+        p.set_subtype(self, NORMAL);
+        p.set_leader_ptr(self, MemPtr::NULL);
+        p.set_glue_ptr(self, q);
+        self.add_glue_ref(q);
+        Some(p)
+    }
+
+    /// Glue for parameter `n` with a private copy of its spec, left in `temp_ptr`.
+    pub fn new_skip_param(&mut self, eqtb: &EqtbState, n: i16) -> Option<NodePtr<GlueNode>> {
+        let s = self.new_spec(eqtb.glue_par(n))?;
+        self.temp_ptr = s.ptr();
+        let p = self.new_glue(s)?;
+        s.set_ref_count(self, TEX_NULL);
+        p.set_subtype(self, n as u16 + 1);
+        Some(p)
+    }
+
+    pub fn new_kern(&mut self, w: i32) -> Option<NodePtr<KernNode>> {
+        let p = NodePtr::<KernNode>::alloc(self)?;
+        p.set_subtype(self, NORMAL);
+        p.set_width(self, Scaled(w));
+        Some(p)
+    }
+
+    pub fn new_penalty(&mut self, m: i32) -> Option<NodePtr<PenaltyNode>> {
+        let p = NodePtr::<PenaltyNode>::alloc(self)?;
+        p.set_subtype(self, 0);
+        p.set_penalty(self, m);
+        Some(p)
+    }
+
+    pub fn new_noad(&mut self) -> Option<NodePtr<Noad>> {
+        let p = NodePtr::<Noad>::alloc(self)?;
+        p.clear_fields(self);
+        Some(p)
+    }
+
+    pub fn new_style(&mut self, s: i16) -> Option<NodePtr<StyleNode>> {
+        let p = NodePtr::<StyleNode>::alloc(self)?;
+        p.set_subtype(self, s as u16);
+        p.clear_payload(self);
+        Some(p)
+    }
+
+    pub fn new_choice(&mut self) -> Option<NodePtr<ChoiceNode>> {
+        let p = NodePtr::<ChoiceNode>::alloc(self)?;
+        p.set_subtype(self, 0);
+        p.set_display_mlist(self, MemPtr::NULL);
+        p.set_text_mlist(self, MemPtr::NULL);
+        p.set_script_mlist(self, MemPtr::NULL);
+        p.set_script_script_mlist(self, MemPtr::NULL);
+        Some(p)
+    }
+
+    pub fn new_margin_kern(&mut self, w: i32, side: i16) -> Option<NodePtr<MarginKernNode>> {
+        let k = NodePtr::<MarginKernNode>::alloc(self)?;
+        k.set_subtype(self, side as u16);
+        k.set_width(self, Scaled(w));
+        Some(k)
+    }
 }
 
 /// A `size`-word whatsit appended to the current list.
@@ -488,17 +487,19 @@ pub fn new_whatsit(
 
 // --- glue spec references ---
 
-#[inline]
-pub fn add_glue_ref(mem: &mut MemState, spec: NodePtr<GlueSpecNode>) {
-    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
-}
+impl MemState {
+    #[inline]
+    pub fn add_glue_ref(&mut self, spec: NodePtr<GlueSpecNode>) {
+        spec.set_ref_count(self, spec.ref_count(self) + 1);
+    }
 
-/// Drops a reference to `spec`, freeing it with the last one.
-pub fn delete_glue_ref(mem: &mut MemState, spec: NodePtr<GlueSpecNode>) {
-    if spec.ref_count(mem) == TEX_NULL {
-        free_node(mem, spec.ptr(), GLUE_SPEC_SIZE);
-    } else {
-        spec.set_ref_count(mem, spec.ref_count(mem) - 1);
+    /// Drops a reference to `spec`, freeing it with the last one.
+    pub fn delete_glue_ref(&mut self, spec: NodePtr<GlueSpecNode>) {
+        if spec.ref_count(self) == TEX_NULL {
+            self.free_node(spec.ptr(), GLUE_SPEC_SIZE);
+        } else {
+            spec.set_ref_count(self, spec.ref_count(self) - 1);
+        }
     }
 }
 
@@ -528,7 +529,7 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     }
     st.input.nest[np as usize] = st.input.cur_list;
     st.input.nest_ptr = np + 1;
-    let h = get_avail(&mut st.mem).ok_or(PushNestAbort::MainMemory)?;
+    let h = st.mem.get_avail().ok_or(PushNestAbort::MainMemory)?;
     let cl = &mut st.input.cur_list;
     cl.head = h;
     cl.tail = h;
@@ -538,8 +539,10 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
     Ok(())
 }
 
-pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterState) {
-    free_avail(mem, input.cur_list.head);
-    input.nest_ptr -= 1;
-    input.cur_list = input.nest[input.nest_ptr as usize];
+impl MemState {
+    pub fn pop_nest(&mut self, input: &mut crate::state::InputClusterState) {
+        self.free_avail(input.cur_list.head);
+        input.nest_ptr -= 1;
+        input.cur_list = input.nest[input.nest_ptr as usize];
+    }
 }

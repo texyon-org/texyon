@@ -505,7 +505,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
         )?;
 
         let _ = crate::scan::scan_toks_in(st, false, false)?;
-        crate::mem::flush_list(&mut st.mem, st.scanner.def_ref);
+        st.mem.flush_list(st.scanner.def_ref);
         return Ok(());
     }
 

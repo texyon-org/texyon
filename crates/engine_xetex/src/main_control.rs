@@ -32,8 +32,8 @@ use crate::fonts::{
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
 use crate::mem::{
-    is_char_node, ADJUST_HEAD, ALIGN_HEAD, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE,
-    FIL_NEG_GLUE, HOLD_HEAD, PAGE_HEAD, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, ZERO_GLUE,
+    ADJUST_HEAD, ALIGN_HEAD, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HOLD_HEAD,
+    PAGE_HEAD, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, ZERO_GLUE,
 };
 use crate::node::{
     AdjustNode, AlignColumn, AlignRecord, AlignStackNode, AnyBox, AnyNode, BoxOrRule, CharNode,
@@ -41,9 +41,9 @@ use crate::node::{
     PenaltiesNode, RuleDimen, SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::{
-    change_box, fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL,
-    INTER_CHAR_VAL, INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL,
-    NORMAL_SCANNER, OTHER_TOKEN, PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
+    fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL,
+    INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN,
+    PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
 };
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
@@ -180,11 +180,6 @@ pub(crate) fn omit_error_in(st: &mut EngineState) -> Result<(), MainControlAbort
     mc_propagate_error(crate::errors::error_in(st))
 }
 pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    use crate::mem::{
-        add_glue_ref, delete_glue_ref, flush_list, new_glue, new_null_box, new_param_glue,
-        new_penalty, pop_nest_in,
-    };
-    use crate::packaging::flush_node_list;
     use crate::scan::NodeRecycleAbort;
 
     if st.save_stack.cur_group != GroupCode::Align {
@@ -203,25 +198,25 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         0
     };
 
-    let mut column = first_column::<AlignRecord>(&st.mem);
+    let mut column = st.mem.first_column::<AlignRecord>();
     while let Some(q) = column {
         let (u_part, v_part) = (q.u_part(&st.mem), q.v_part(&st.mem));
-        flush_list(&mut st.mem, u_part);
-        flush_list(&mut st.mem, v_part);
+        st.mem.flush_list(u_part);
+        st.mem.flush_list(v_part);
         let next = q.next_column(&st.mem);
         if q.width(&st.mem) == Scaled(NULL_FLAG) {
             q.set_width(&mut st.mem, Scaled(0));
             let glue = q.tab_skip(&st.mem);
             let spec = glue.glue_ptr(&st.mem);
             if spec != ZERO_GLUE {
-                add_glue_ref(&mut st.mem, ZERO_GLUE);
-                delete_glue_ref(&mut st.mem, spec);
+                st.mem.add_glue_ref(ZERO_GLUE);
+                st.mem.delete_glue_ref(spec);
                 glue.set_glue_ptr(&mut st.mem, ZERO_GLUE);
             }
         }
         if let Some(next) = next {
             if q.span_head().next(&st.mem) != END_SPAN {
-                merge_spans(&mut st.mem, q, next);
+                st.mem.merge_spans(q, next);
             }
         }
         q.into_unset(&mut st.mem);
@@ -240,13 +235,13 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, rule_save);
         packed
     } else {
-        for_each_preamble_column(&mut st.mem, |mem, q| {
+        st.mem.for_each_preamble_column(|mem, q| {
             q.set_height(mem, q.width(mem));
             q.set_width(mem, Scaled(0));
         });
         let packed =
             crate::packaging::vpackage_emit_in(st, head, spec_size, spec_mode, MAX_HALFWORD)?;
-        for_each_preamble_column(&mut st.mem, |mem, q| {
+        st.mem.for_each_preamble_column(|mem, q| {
             q.set_width(mem, q.height(mem));
             q.set_height(mem, Scaled(0));
         });
@@ -299,7 +294,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                     col.set_subtype(&mut st.mem, 0);
                     for _ in 0..n {
                         let spec = proto.tab_skip(&st.mem).glue_ptr(&st.mem);
-                        let g = new_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
+                        let g = st.mem.new_glue(spec).ok_or(NodeRecycleAbort::Overflow)?;
                         u.set_link(&mut st.mem, g.ptr());
                         u = g.ptr();
                         g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
@@ -325,7 +320,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                             return Err(MainControlAbort::Confusion(c"align"));
                         };
                         proto = spanned;
-                        let nb = new_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+                        let nb = st.mem.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
                         u.set_link(&mut st.mem, nb.ptr());
                         u = nb.ptr();
                         let span_w = proto.width(&st.mem);
@@ -340,14 +335,14 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                         let (h, d) = (row.height(&st.mem), row.depth(&st.mem));
                         col.set_height(&mut st.mem, h);
                         col.set_depth(&mut st.mem, d);
-                        let glue = unset_glue(&st.mem, col, t, col.width(&st.mem).0);
+                        let glue = st.mem.unset_glue(col, t, col.width(&st.mem).0);
                         let b = col.into_hlist(&mut st.mem);
                         b.set_width(&mut st.mem, w);
                         (AnyBox::HList(b), glue)
                     } else {
                         let width = row.width(&st.mem);
                         col.set_width(&mut st.mem, width);
-                        let glue = unset_glue(&st.mem, col, t, col.height(&st.mem).0);
+                        let glue = st.mem.unset_glue(col, t, col.height(&st.mem).0);
                         let b = col.into_vlist(&mut st.mem);
                         b.set_height(&mut st.mem, w);
                         (AnyBox::VList(b), glue)
@@ -397,14 +392,16 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         q = q.link(&st.mem);
     }
 
-    flush_node_list(&mut st.mem, p.idx().0).map_err(MainControlAbort::Confusion)?;
+    st.mem
+        .flush_node_list(p.idx().0)
+        .map_err(MainControlAbort::Confusion)?;
     pop_alignment_in(st);
 
     let aux_save_s0 = st.input.cur_list.aux_s0();
     let aux_save_s1 = st.input.cur_list.aux_s1();
     let rows = st.input.cur_list.head.link(&st.mem);
     let rows_tail = st.input.cur_list.tail;
-    pop_nest_in(&mut st.mem, &mut st.input);
+    st.mem.pop_nest(&mut st.input);
 
     if st.input.cur_list.mode == MMODE {
         do_assignments_in(st)?;
@@ -419,12 +416,19 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
             crate::math::check_display_end_in(st)?;
         }
         let etex_aux = st.input.cur_list.e_tex_aux.0;
-        flush_node_list(&mut st.mem, etex_aux).map_err(MainControlAbort::Confusion)?;
-        pop_nest_in(&mut st.mem, &mut st.input);
+        st.mem
+            .flush_node_list(etex_aux)
+            .map_err(MainControlAbort::Confusion)?;
+        st.mem.pop_nest(&mut st.input);
         let pre_penalty = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY);
-        let pen = new_penalty(&mut st.mem, pre_penalty).ok_or(NodeRecycleAbort::Overflow)?;
+        let pen = st
+            .mem
+            .new_penalty(pre_penalty)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
-        let above = new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_ABOVE_DISPLAY_SKIP)
+        let above = st
+            .mem
+            .new_param_glue(&st.eqtb, GLUE_PAR_ABOVE_DISPLAY_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, above.ptr());
         st.input.cur_list.tail.set_link(&mut st.mem, rows);
@@ -432,9 +436,14 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
             st.input.cur_list.tail = rows_tail;
         }
         let post_penalty = st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY);
-        let pen = new_penalty(&mut st.mem, post_penalty).ok_or(NodeRecycleAbort::Overflow)?;
+        let pen = st
+            .mem
+            .new_penalty(post_penalty)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
-        let below = new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_BELOW_DISPLAY_SKIP)
+        let below = st
+            .mem
+            .new_param_glue(&st.eqtb, GLUE_PAR_BELOW_DISPLAY_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, below.ptr());
         st.input.cur_list.set_aux_s1(aux_save_s1);
@@ -453,83 +462,77 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
     Ok(())
 }
 
-fn first_column<K: AlignColumn>(mem: &MemState) -> Option<NodePtr<K>> {
-    NodePtr::after_tab_skip(mem, ALIGN_HEAD.link(mem))
-}
-
-fn for_each_preamble_column(
-    mem: &mut MemState,
-    mut f: impl FnMut(&mut MemState, NodePtr<UnsetNode>),
-) {
-    let mut column = first_column(mem);
-    while let Some(q) = column {
-        f(mem, q);
-        column = q.next_column(mem);
+impl MemState {
+    fn first_column<K: AlignColumn>(&self) -> Option<NodePtr<K>> {
+        NodePtr::after_tab_skip(self, ALIGN_HEAD.link(self))
     }
-}
 
-/// Folds column `q`'s span widths, less its own width and tabskip, into `next`'s.
-fn merge_spans(mem: &mut MemState, q: NodePtr<AlignRecord>, next: NodePtr<AlignRecord>) {
-    let t = q.width(mem).0 + q.tab_skip(mem).glue_ptr(mem).width(mem).0;
-    let mut r = q.span_head().next(mem);
-    let mut s = END_SPAN;
-    s.set_next(mem, next.span_head());
-    let mut n = 1;
-    loop {
-        r.set_width(mem, Scaled(r.width(mem).0 - t));
-        let u = r.next(mem);
-        while r.span_count(mem) > n {
-            s = s.next(mem);
-            n = s.next(mem).span_count(mem) + 1;
+    fn for_each_preamble_column(&mut self, mut f: impl FnMut(&mut MemState, NodePtr<UnsetNode>)) {
+        let mut column = self.first_column();
+        while let Some(q) = column {
+            f(self, q);
+            column = q.next_column(self);
         }
-        if r.span_count(mem) < n {
-            r.set_next(mem, s.next(mem));
-            s.set_next(mem, r);
-            r.set_span_count(mem, r.span_count(mem) - 1);
-            s = r;
-        } else {
-            let merged = s.next(mem);
-            if r.width(mem) > merged.width(mem) {
-                merged.set_width(mem, r.width(mem));
+    }
+
+    /// Folds column `q`'s span widths, less its own width and tabskip, into `next`'s.
+    fn merge_spans(&mut self, q: NodePtr<AlignRecord>, next: NodePtr<AlignRecord>) {
+        let t = q.width(self).0 + q.tab_skip(self).glue_ptr(self).width(self).0;
+        let mut r = q.span_head().next(self);
+        let mut s = END_SPAN;
+        s.set_next(self, next.span_head());
+        let mut n = 1;
+        loop {
+            r.set_width(self, Scaled(r.width(self).0 - t));
+            let u = r.next(self);
+            while r.span_count(self) > n {
+                s = s.next(self);
+                n = s.next(self).span_count(self) + 1;
             }
-            r.free(mem);
-        }
-        r = u;
-        if r == END_SPAN {
-            break;
+            if r.span_count(self) < n {
+                r.set_next(self, s.next(self));
+                s.set_next(self, r);
+                r.set_span_count(self, r.span_count(self) - 1);
+                s = r;
+            } else {
+                let merged = s.next(self);
+                if r.width(self) > merged.width(self) {
+                    merged.set_width(self, r.width(self));
+                }
+                r.free(self);
+            }
+            r = u;
+            if r == END_SPAN {
+                break;
+            }
         }
     }
-}
 
-/// The glue setting of unset node `col`, of natural size `natural`, when set to size `t`.
-fn unset_glue(
-    mem: &MemState,
-    col: NodePtr<UnsetNode>,
-    t: i32,
-    natural: i32,
-) -> (GlueSign, u16, f64) {
-    if t == natural {
-        return (GlueSign::Normal, NORMAL, 0.0);
-    }
-    if t > natural {
-        let stretch = col.glue_stretch(mem).0;
-        let ratio = if stretch == 0 {
+    /// The glue setting of unset node `col`, of natural size `natural`, when set to size `t`.
+    fn unset_glue(&self, col: NodePtr<UnsetNode>, t: i32, natural: i32) -> (GlueSign, u16, f64) {
+        if t == natural {
+            return (GlueSign::Normal, NORMAL, 0.0);
+        }
+        if t > natural {
+            let stretch = col.glue_stretch(self).0;
+            let ratio = if stretch == 0 {
+                0.0
+            } else {
+                (t - natural) as f64 / stretch as f64
+            };
+            return (GlueSign::Stretching, col.glue_order(self), ratio);
+        }
+        let order = col.glue_sign(self);
+        let shrink = col.glue_shrink(self).0;
+        let ratio = if shrink == 0 {
             0.0
+        } else if order == NORMAL && natural - t > shrink {
+            1.0
         } else {
-            (t - natural) as f64 / stretch as f64
+            (natural - t) as f64 / shrink as f64
         };
-        return (GlueSign::Stretching, col.glue_order(mem), ratio);
+        (GlueSign::Shrinking, order, ratio)
     }
-    let order = col.glue_sign(mem);
-    let shrink = col.glue_shrink(mem).0;
-    let ratio = if shrink == 0 {
-        0.0
-    } else if order == NORMAL && natural - t > shrink {
-        1.0
-    } else {
-        (natural - t) as f64 / shrink as f64
-    };
-    (GlueSign::Shrinking, order, ratio)
 }
 
 pub(crate) fn align_peek_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -611,8 +614,10 @@ pub(crate) fn init_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
     }
     let tab_skip = NodePtr::<GlueNode>::tab_skip_after(&st.mem, ALIGN_HEAD);
     let spec = tab_skip.glue_ptr(&st.mem);
-    let glue =
-        crate::mem::new_glue(&mut st.mem, spec).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    let glue = st
+        .mem
+        .new_glue(spec)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     glue.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
     st.scanner.cur_align = tab_skip.link(&st.mem);
@@ -654,8 +659,8 @@ pub(crate) fn push_alignment_in(st: &mut EngineState) -> Result<(), MainControlA
 }
 
 pub(crate) fn pop_alignment_in(st: &mut EngineState) {
-    crate::mem::free_avail(&mut st.mem, st.scanner.cur_head);
-    crate::mem::free_avail(&mut st.mem, st.scanner.cur_pre_head);
+    st.mem.free_avail(st.scanner.cur_head);
+    st.mem.free_avail(st.scanner.cur_pre_head);
     let p = NodePtr::<AlignStackNode>::at(st.scanner.align_ptr);
     let (mem, sc) = (&mut st.mem, &mut st.scanner);
     sc.cur_tail = p.cur_tail(mem);
@@ -671,30 +676,29 @@ pub(crate) fn pop_alignment_in(st: &mut EngineState) {
     p.free(mem);
 }
 
-/// Copies token list `r` through `HOLD_HEAD` and returns the copy.
-fn copy_token_list(
-    mem: &mut MemState,
-    mut r: MemPtr,
-) -> Result<MemPtr, crate::scan::NodeRecycleAbort> {
-    let mut q = HOLD_HEAD;
-    while !r.is_null() {
-        crate::mem::store_new_token(mem, &mut q, r.token(mem))
-            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-        r = r.link(mem);
+impl MemState {
+    /// Copies token list `r` through `HOLD_HEAD` and returns the copy.
+    fn copy_token_list(&mut self, mut r: MemPtr) -> Result<MemPtr, crate::scan::NodeRecycleAbort> {
+        let mut q = HOLD_HEAD;
+        while !r.is_null() {
+            self.store_new_token(&mut q, r.token(self))
+                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+            r = r.link(self);
+        }
+        q.set_link(self, MemPtr::NULL);
+        Ok(HOLD_HEAD.link(self))
     }
-    q.set_link(mem, MemPtr::NULL);
-    Ok(HOLD_HEAD.link(mem))
-}
 
-/// A fresh preamble column with an empty span list and no entries yet.
-fn new_align_record(
-    mem: &mut MemState,
-) -> Result<NodePtr<AlignRecord>, crate::scan::NodeRecycleAbort> {
-    let nb = crate::mem::new_null_box(mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-    let column = NodePtr::<AlignRecord>::at(nb.idx());
-    column.span_head().set_next(mem, END_SPAN);
-    column.set_width(mem, Scaled(NULL_FLAG));
-    Ok(column)
+    /// A fresh preamble column with an empty span list and no entries yet.
+    fn new_align_record(&mut self) -> Result<NodePtr<AlignRecord>, crate::scan::NodeRecycleAbort> {
+        let nb = self
+            .new_null_box()
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        let column = NodePtr::<AlignRecord>::at(nb.idx());
+        column.span_head().set_next(self, END_SPAN);
+        column.set_width(self, Scaled(NULL_FLAG));
+        Ok(column)
+    }
 }
 
 pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort> {
@@ -716,20 +720,20 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
     let mut p = q.link(&st.mem);
     if p.is_null() && cur_align.extra_info(&st.mem) < CR_CODE {
         if !st.scanner.cur_loop.is_null() {
-            let column = new_align_record(&mut st.mem)?;
+            let column = st.mem.new_align_record()?;
             q.set_link(&mut st.mem, column.ptr());
             p = column.ptr();
             let template = NodePtr::<AlignRecord>::at(st.scanner.cur_loop.link(&st.mem));
             let u_template = template.u_part(&st.mem);
-            let u_part = copy_token_list(&mut st.mem, u_template)?;
+            let u_part = st.mem.copy_token_list(u_template)?;
             column.set_u_part(&mut st.mem, u_part);
             let v_template = template.v_part(&st.mem);
-            let v_part = copy_token_list(&mut st.mem, v_template)?;
+            let v_part = st.mem.copy_token_list(v_template)?;
             column.set_v_part(&mut st.mem, v_part);
             let tab_skip = template.tab_skip(&st.mem);
             st.scanner.cur_loop = tab_skip.ptr();
             let spec = tab_skip.glue_ptr(&st.mem);
-            let g = crate::mem::new_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
+            let g = st.mem.new_glue(spec).ok_or(NodeRecycleAbort::Overflow)?;
             column.set_link(&mut st.mem, g.ptr());
             g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
         } else {
@@ -804,10 +808,10 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
         let o = crate::packaging::glue_order(&st.scanner.total_shrink);
         u.set_glue_sign(&mut st.mem, o);
         u.set_glue_shrink(&mut st.mem, Scaled(st.scanner.total_shrink[o as usize]));
-        crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+        st.mem.pop_nest(&mut st.input);
         st.input.cur_list.tail_append(&mut st.mem, u.ptr());
         let spec = cur_align.tab_skip(&st.mem).glue_ptr(&st.mem);
-        let g = crate::mem::new_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
+        let g = st.mem.new_glue(spec).ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
         g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
         if cur_align.extra_info(&st.mem) >= CR_CODE {
@@ -837,12 +841,10 @@ fn begin_every(st: &mut EngineState, local: i32, kind: u16) -> Result<(), MainCo
 }
 
 pub(crate) fn fin_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    use crate::mem::pop_nest_in;
-
     let head = st.input.cur_list.head.link(&st.mem);
     let p = if st.input.cur_list.mode == INNER_HMODE {
         let row = crate::packaging::hpack_emit_in(st, head, 0, ADDITIONAL)?;
-        pop_nest_in(&mut st.mem, &mut st.input);
+        st.mem.pop_nest(&mut st.input);
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
             append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail);
         }
@@ -853,7 +855,7 @@ pub(crate) fn fin_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
         row
     } else {
         let row = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
-        pop_nest_in(&mut st.mem, &mut st.input);
+        st.mem.pop_nest(&mut st.input);
         st.input.cur_list.tail_append(&mut st.mem, row.ptr());
         st.input.cur_list.set_aux_s0(1000);
         row
@@ -865,7 +867,6 @@ pub(crate) fn fin_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
 }
 
 pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    use crate::mem::new_param_glue;
     use crate::scan::NodeRecycleAbort;
 
     let save_cs_ptr = st.scanner.cur_cs;
@@ -908,7 +909,9 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
     st.scanner.align_state = -1_000_000;
 
     loop {
-        let g = new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_TAB_SKIP)
+        let g = st
+            .mem
+            .new_param_glue(&st.eqtb, GLUE_PAR_TAB_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?
             .ptr();
         st.scanner.cur_align.set_link(&mut st.mem, g);
@@ -941,12 +944,13 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                     break;
                 }
             } else if st.scanner.cur_cmd != SPACER || p != HOLD_HEAD {
-                crate::mem::store_new_token(&mut st.mem, &mut p, st.scanner.cur_tok)
+                st.mem
+                    .store_new_token(&mut p, st.scanner.cur_tok)
                     .ok_or(NodeRecycleAbort::Overflow)?;
             }
         }
 
-        let column = new_align_record(&mut st.mem)?;
+        let column = st.mem.new_align_record()?;
         st.scanner.cur_align.set_link(&mut st.mem, column.ptr());
         st.scanner.cur_align = column.ptr();
         let u_part = HOLD_HEAD.link(&st.mem);
@@ -971,10 +975,12 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                 mc_propagate_error(crate::errors::error_in(st))?;
                 continue;
             }
-            crate::mem::store_new_token(&mut st.mem, &mut p, st.scanner.cur_tok)
+            st.mem
+                .store_new_token(&mut p, st.scanner.cur_tok)
                 .ok_or(NodeRecycleAbort::Overflow)?;
         }
-        crate::mem::store_new_token(&mut st.mem, &mut p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE)
+        st.mem
+            .store_new_token(&mut p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE)
             .ok_or(NodeRecycleAbort::Overflow)?;
         let v_part = HOLD_HEAD.link(&st.mem);
         column.set_v_part(&mut st.mem, v_part);
@@ -999,7 +1005,7 @@ pub(crate) fn end_graf_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
         return Ok(());
     }
     if st.input.cur_list.head == st.input.cur_list.tail {
-        crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+        st.mem.pop_nest(&mut st.input);
     } else {
         match crate::linebreak::line_break_in(st, false) {
             crate::linebreak::LineBreakOutcome::Done => {}
@@ -1008,7 +1014,7 @@ pub(crate) fn end_graf_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
     }
     let lr_save = st.input.cur_list.e_tex_aux;
     if !lr_save.is_null() {
-        crate::mem::flush_list(&mut st.mem, lr_save);
+        st.mem.flush_list(lr_save);
         st.input.cur_list.e_tex_aux = MemPtr::NULL;
     }
     normal_paragraph(st)?;
@@ -1018,7 +1024,9 @@ pub(crate) fn end_graf_in(st: &mut EngineState) -> Result<(), MainControlAbort> 
 
 pub(crate) fn append_penalty_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     crate::scan::scan_int_in(st)?;
-    let p = crate::mem::new_penalty(&mut st.mem, st.scanner.cur_val)
+    let p = st
+        .mem
+        .new_penalty(st.scanner.cur_val)
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     if st.input.cur_list.mode == VMODE {
@@ -1058,12 +1066,18 @@ pub(crate) fn its_all_over_in(st: &mut EngineState) -> Result<bool, MainControlA
         return Ok(true);
     }
     crate::input::back_input_in(st)?;
-    let b = crate::mem::new_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+    let b = st.mem.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, b.ptr());
     b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_HSIZE)));
-    let g = crate::mem::new_glue(&mut st.mem, FILL_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
+    let g = st
+        .mem
+        .new_glue(FILL_GLUE)
+        .ok_or(NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
-    let p = crate::mem::new_penalty(&mut st.mem, NULL_FLAG).ok_or(NodeRecycleAbort::Overflow)?;
+    let p = st
+        .mem
+        .new_penalty(NULL_FLAG)
+        .ok_or(NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
     crate::pagebuilder::build_page_in(st)?;
     Ok(false)
@@ -1075,13 +1089,13 @@ pub(crate) fn indent_in_hmode(st: &mut EngineState) -> Result<(), crate::scan::N
     if st.scanner.cur_chr <= 0 {
         return Ok(());
     }
-    let b = crate::mem::new_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+    let b = st.mem.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
     b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT)));
     let p = if st.input.cur_list.mode.abs() == HMODE {
         st.input.cur_list.set_aux_s0(1000);
         b.ptr()
     } else {
-        let q = crate::mem::new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+        let q = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
         q.nucleus().set_math_type(&mut st.mem, SUB_BOX);
         q.nucleus().set_info(&mut st.mem, b.ptr());
         q.ptr()
@@ -1196,7 +1210,7 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         }
         let list = b.list_ptr(&st.mem);
         if c == COPY_CODE {
-            let copy = crate::packaging::copy_node_list(&mut st.mem, list.0)?;
+            let copy = st.mem.copy_node_list(list.0)?;
             st.input
                 .cur_list
                 .tail
@@ -1204,8 +1218,9 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         } else {
             st.input.cur_list.tail.set_link(&mut st.mem, list);
             let n = st.scanner.cur_val;
-            change_box(&mut st.mem, &mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
-            crate::mem::free_node(&mut st.mem, b.ptr(), BOX_NODE_SIZE);
+            st.mem
+                .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
+            st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
         }
     }
 
@@ -1214,12 +1229,12 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         if r.is_null() {
             return Ok(());
         }
-        if !is_char_node(&st.mem, r)
+        if !st.mem.is_char_node(r)
             && matches!(st.mem.classify(MemIdx(r.0)), Ok(AnyNode::MarginKern(_)))
         {
             let next = r.link(&st.mem);
             st.input.cur_list.tail.set_link(&mut st.mem, next);
-            crate::mem::free_node(&mut st.mem, r, MARGIN_KERN_NODE_SIZE);
+            st.mem.free_node(r, MARGIN_KERN_NODE_SIZE);
         } else {
             st.input.cur_list.tail = r;
         }
@@ -1246,7 +1261,7 @@ pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbor
         return Ok(());
     }
     let tx = effective_tail(st);
-    if is_char_node(&st.mem, tx)
+    if st.mem.is_char_node(tx)
         || st
             .mem
             .node_type(MemIdx::new(tx))
@@ -1255,7 +1270,9 @@ pub(crate) fn delete_last_in(st: &mut EngineState) -> Result<(), MainControlAbor
         return Ok(());
     }
     if unlink_effective_tail(st, tx)? {
-        crate::packaging::flush_node_list(&mut st.mem, tx).map_err(MainControlAbort::Confusion)?;
+        st.mem
+            .flush_node_list(tx)
+            .map_err(MainControlAbort::Confusion)?;
     }
     Ok(())
 }
@@ -1271,7 +1288,9 @@ pub(crate) fn app_space(
     let q;
     let mut side_effects = None;
     if space_factor >= 2000 && st.eqtb.glue_par(GLUE_PAR_XSPACE_SKIP) != ZERO_GLUE {
-        q = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_XSPACE_SKIP)
+        q = st
+            .mem
+            .new_param_glue(&st.eqtb, GLUE_PAR_XSPACE_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?
             .ptr();
     } else {
@@ -1282,7 +1301,7 @@ pub(crate) fn app_space(
             font_space_glue(st)?
         };
         st.mainloop.main_p = base.ptr();
-        let spec = crate::mem::new_spec(&mut st.mem, base).ok_or(NodeRecycleAbort::Overflow)?;
+        let spec = st.mem.new_spec(base).ok_or(NodeRecycleAbort::Overflow)?;
         st.mainloop.main_p = spec.ptr();
         if space_factor >= 2000 {
             let cf = st.eqtb.cur_font();
@@ -1297,7 +1316,9 @@ pub(crate) fn app_space(
             crate::scaled_math::xn_over_d_parts(spec.shrink(&st.mem).0, 1000, space_factor);
         spec.set_shrink(&mut st.mem, Scaled(shrink));
         side_effects = Some((remainder, stretch_overflow || shrink_overflow));
-        q = crate::mem::new_glue(&mut st.mem, spec)
+        q = st
+            .mem
+            .new_glue(spec)
             .ok_or(NodeRecycleAbort::Overflow)?
             .ptr();
         spec.set_ref_count(&mut st.mem, TEX_NULL);
@@ -1315,7 +1336,9 @@ fn font_space_glue(
     if glue != TEX_NULL {
         return Ok(crate::node::NodePtr::from_glue_ptr(MemPtr(glue)));
     }
-    let spec = crate::mem::new_spec(&mut st.mem, ZERO_GLUE)
+    let spec = st
+        .mem
+        .new_spec(ZERO_GLUE)
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.mainloop.main_k = st.fonts.param_base(cf) + SPACE_CODE;
     let k = st.mainloop.main_k;
@@ -1394,7 +1417,7 @@ pub(crate) fn package_in(st: &mut EngineState, c: i32) -> Result<(), MainControl
         }
     }
     st.eqtb.set_int_par(INT_PAR_XETEX_UPWARDS, v);
-    crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+    st.mem.pop_nest(&mut st.input);
     let box_context = st.save_stack.saved(0);
     box_end_in(st, box_context)
 }
@@ -1412,7 +1435,9 @@ pub(crate) fn start_paragraph_language(st: &mut EngineState) {
 pub(crate) fn new_graf_in(st: &mut EngineState, indented: bool) -> Result<(), MainControlAbort> {
     st.input.cur_list.prev_graf = 0;
     if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
-        let g = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_PAR_SKIP)
+        let g = st
+            .mem
+            .new_param_glue(&st.eqtb, GLUE_PAR_PAR_SKIP)
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     }
@@ -1423,8 +1448,10 @@ pub(crate) fn new_graf_in(st: &mut EngineState, indented: bool) -> Result<(), Ma
     start_paragraph_language(st);
 
     if indented {
-        let b =
-            crate::mem::new_null_box(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        let b = st
+            .mem
+            .new_null_box()
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail = b.ptr();
         st.input.cur_list.head.set_link(&mut st.mem, b.ptr());
         b.set_width(&mut st.mem, Scaled(st.eqtb.dimen_par(DIMEN_PAR_PAR_INDENT)));
@@ -1600,7 +1627,9 @@ pub(crate) fn new_character_in(
             .fonts
             .font_info_b16(st.fonts.char_base_entry(f) + ec as i32);
         if info.s3 > 0 {
-            let p = crate::mem::new_char(&mut st.mem, FontId(f), c)
+            let p = st
+                .mem
+                .new_char(FontId(f), c)
                 .ok_or(NewCharacterAbort::MainMemoryOverflow)?;
             return Ok(Some(NewChar::Char(p)));
         }
@@ -1642,7 +1671,9 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 st.input.cur_list.set_aux_s0(1000);
                 b.ptr()
             } else {
-                let noad = crate::mem::new_noad(&mut st.mem)
+                let noad = st
+                    .mem
+                    .new_noad()
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
                 noad.nucleus().set_info(&mut st.mem, b.ptr());
@@ -1661,7 +1692,9 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
         if n < 256 {
             define(st, global, BOX_BASE + n, BOX_REF, cb)?;
         } else {
-            let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, BOX_VAL, n)
+            let sa = st
+                .mem
+                .create_sa_element(&mut st.scanner, BOX_VAL, n)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             sa_define(st, global, sa.idx().0, cb)?;
         }
@@ -1690,25 +1723,28 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 "<hskip or vskip>, so I'm ignoring these leaders.",
             ]);
             mc_propagate_error(crate::input::back_error_in(st)?)?;
-            crate::packaging::flush_node_list(&mut st.mem, cb.ptr())
+            st.mem
+                .flush_node_list(cb.ptr())
                 .map_err(MainControlAbort::Confusion)?;
         }
     }
     Ok(())
 }
 
-fn is_math_node(mem: &MemState, p: MemPtr, subtype: u16) -> bool {
-    !is_char_node(mem, p)
-        && matches!(mem.classify(MemIdx::new(p)), Ok(AnyNode::Math(m)) if m.subtype(mem) == subtype)
+impl MemState {
+    fn is_math_node(&self, p: MemPtr, subtype: u16) -> bool {
+        !self.is_char_node(p)
+            && matches!(self.classify(MemIdx::new(p)), Ok(AnyNode::Math(m)) if m.subtype(self) == subtype)
+    }
 }
 
 /// The last node of the current list, skipping a trailing end-of-math node.
 fn effective_tail(st: &EngineState) -> MemPtr {
     let tail = st.input.cur_list.tail;
-    if !is_math_node(&st.mem, tail, END_M_CODE) {
+    if !st.mem.is_math_node(tail, END_M_CODE) {
         return tail;
     }
-    crate::mem::predecessor(&st.mem, st.input.cur_list.head, tail)
+    st.mem.predecessor(st.input.cur_list.head, tail)
 }
 
 /// Unlinks node `tx` from the current list, unless it hides in a
@@ -1722,7 +1758,7 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, MainC
         r = p;
         p = q;
         fm = false;
-        if !is_char_node(&st.mem, q) {
+        if !st.mem.is_char_node(q) {
             match st.mem.classify(MemIdx::new(q)) {
                 Ok(AnyNode::Disc(disc)) => {
                     for _ in 0..disc.subtype(&st.mem) {
@@ -1752,7 +1788,9 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, MainC
     } else if fm {
         st.input.cur_list.tail = r;
         r.set_link(&mut st.mem, MemPtr::NULL);
-        crate::packaging::flush_node_list(&mut st.mem, p).map_err(MainControlAbort::Confusion)?;
+        st.mem
+            .flush_node_list(p)
+            .map_err(MainControlAbort::Confusion)?;
     }
     Ok(true)
 }
@@ -1763,12 +1801,13 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
             crate::scan::scan_register_num_in(st)?;
             let n = st.scanner.cur_val;
             st.scanner.cur_box = fetch_box(st, n).map(BoxOrRule::Box);
-            change_box(&mut st.mem, &mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
+            st.mem
+                .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
         }
         COPY_CODE => {
             crate::scan::scan_register_num_in(st)?;
             st.scanner.cur_box = match fetch_box(st, st.scanner.cur_val) {
-                Some(b) => Some(BoxOrRule::Box(crate::packaging::copy_box(&mut st.mem, b)?)),
+                Some(b) => Some(BoxOrRule::Box(st.mem.copy_box(b)?)),
                 None => None,
             };
         }
@@ -1789,7 +1828,7 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
                 mc_propagate_error(crate::errors::error_in(st))?;
             } else {
                 let tx = effective_tail(st);
-                if !is_char_node(&st.mem, tx) {
+                if !st.mem.is_char_node(tx) {
                     if let Ok(Some(b)) = st.mem.classify_box(MemIdx::new(tx)) {
                         if unlink_effective_tail(st, tx)? {
                             st.scanner.cur_box = Some(BoxOrRule::Box(b));
@@ -1851,8 +1890,6 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
 }
 
 pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    use crate::mem::{delete_glue_ref, free_node, new_noad, pop_nest_in};
-    use crate::packaging::flush_node_list;
     use crate::scan::NodeRecycleAbort;
 
     match st.save_stack.cur_group {
@@ -1885,14 +1922,14 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
         GroupCode::Insert => {
             end_graf_in(st)?;
             let split_top_skip = st.eqtb.glue_par(GLUE_PAR_SPLIT_TOP_SKIP);
-            crate::mem::add_glue_ref(&mut st.mem, split_top_skip);
+            st.mem.add_glue_ref(split_top_skip);
             let d = st.eqtb.dimen_par(DIMEN_PAR_SPLIT_MAX_DEPTH);
             let f = st.eqtb.int_par(INT_PAR_FLOATING_PENALTY);
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 2;
             let head = st.input.cur_list.head.link(&st.mem);
             let p = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
-            pop_nest_in(&mut st.mem, &mut st.input);
+            st.mem.pop_nest(&mut st.input);
             let n = st.save_stack.saved(0);
             if n < 255 {
                 let ins =
@@ -1914,9 +1951,9 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                 adj.set_subtype(&mut st.mem, pre as u16);
                 let list = p.list_ptr(&st.mem);
                 adj.set_adjust_ptr(&mut st.mem, list);
-                delete_glue_ref(&mut st.mem, split_top_skip);
+                st.mem.delete_glue_ref(split_top_skip);
             }
-            free_node(&mut st.mem, p.ptr(), BOX_NODE_SIZE);
+            st.mem.free_node(p.ptr(), BOX_NODE_SIZE);
             if st.input.nest_ptr == 0 {
                 crate::pagebuilder::build_page_in(st)?;
             }
@@ -1979,9 +2016,11 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             }
 
             let last_box = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
-            flush_node_list(&mut st.mem, last_box.0).map_err(MainControlAbort::Confusion)?;
+            st.mem
+                .flush_node_list(last_box.0)
+                .map_err(MainControlAbort::Confusion)?;
             st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
-            pop_nest_in(&mut st.mem, &mut st.input);
+            st.mem.pop_nest(&mut st.input);
             crate::pagebuilder::build_page_in(st)?;
         }
         GroupCode::Disc => build_discretionary_in(st)?,
@@ -2009,8 +2048,8 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             let size = st.save_stack.saved(1);
             let spec_mode = st.save_stack.saved(0) as i16;
             let p = crate::packaging::vpackage_emit_in(st, head, size, spec_mode, MAX_HALFWORD)?;
-            pop_nest_in(&mut st.mem, &mut st.input);
-            let noad = new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+            st.mem.pop_nest(&mut st.input);
+            let noad = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail_append(&mut st.mem, noad.ptr());
             noad.set_noad_type(&mut st.mem, NodeType::VcenterNoad);
             noad.nucleus().set_math_type(&mut st.mem, SUB_BOX);
@@ -2036,7 +2075,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                         && noad.supscr().math_type(&st.mem) == EMPTY =>
                 {
                     save_loc.copy_from(&mut st.mem, noad.nucleus());
-                    free_node(&mut st.mem, noad.ptr(), NOAD_SIZE);
+                    st.mem.free_node(noad.ptr(), NOAD_SIZE);
                 }
                 NodeType::AccentNoad
                     if save_loc.idx().0 == st.input.cur_list.tail.0 + 1
@@ -2050,7 +2089,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                         q = q.link(&st.mem);
                     }
                     q.set_link(&mut st.mem, noad.ptr());
-                    free_node(&mut st.mem, st.input.cur_list.tail, NOAD_SIZE);
+                    st.mem.free_node(st.input.cur_list.tail, NOAD_SIZE);
                     st.input.cur_list.tail = noad.ptr();
                 }
                 _ => {}
@@ -2071,7 +2110,9 @@ pub(crate) fn append_glue_in(st: &mut EngineState) -> Result<NodePtr<GlueNode>, 
         MSKIP_CODE => crate::scan::scan_glue_in(st, MU_VAL)?,
         _ => {}
     }
-    let g = crate::mem::new_glue(&mut st.mem, st.scanner.cur_glue())
+    let g = st
+        .mem
+        .new_glue(st.scanner.cur_glue())
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
     if s >= SKIP_CODE {
@@ -2088,7 +2129,9 @@ pub(crate) fn append_glue_in(st: &mut EngineState) -> Result<NodePtr<GlueNode>, 
 pub(crate) fn append_kern_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let s = st.scanner.cur_chr as u16;
     crate::scan::scan_dimen_in(st, s == MU_GLUE, false, false)?;
-    let p = crate::mem::new_kern(&mut st.mem, st.scanner.cur_val)
+    let p = st
+        .mem
+        .new_kern(st.scanner.cur_val)
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     p.set_subtype(&mut st.mem, s);
     st.input.cur_list.tail_append(&mut st.mem, p.ptr());
@@ -2229,8 +2272,8 @@ pub(crate) fn trap_zero_glue(st: &mut EngineState) {
     let spec = st.scanner.cur_glue();
     let mem = &mut st.mem;
     if spec.width(mem).0 == 0 && spec.stretch(mem).0 == 0 && spec.shrink(mem).0 == 0 {
-        crate::mem::add_glue_ref(mem, ZERO_GLUE);
-        crate::mem::delete_glue_ref(mem, spec);
+        mem.add_glue_ref(ZERO_GLUE);
+        mem.delete_glue_ref(spec);
         st.scanner.cur_val = ZERO_GLUE.idx().0;
     }
 }
@@ -2312,7 +2355,10 @@ fn begin_disc_group(st: &mut EngineState) -> Result<(), MainControlAbort> {
 }
 
 pub(crate) fn append_discretionary_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    let d = crate::mem::new_disc(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    let d = st
+        .mem
+        .new_disc()
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, d.ptr());
     if st.scanner.cur_chr == 1 {
         let f = st.eqtb.cur_font();
@@ -2345,7 +2391,7 @@ pub(crate) fn shift_case_in(st: &mut EngineState) -> Result<(), MainControlAbort
     }
     let def_ref = st.scanner.def_ref;
     crate::input::begin_token_list_in(st, def_ref.link(&st.mem), BACKED_UP)?;
-    crate::mem::free_avail(&mut st.mem, def_ref);
+    st.mem.free_avail(def_ref);
     Ok(())
 }
 
@@ -2356,7 +2402,7 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
     let mut p = q.link(&st.mem);
     let mut n: i32 = 0;
     while !p.is_null() {
-        if !is_char_node(&st.mem, p) {
+        if !st.mem.is_char_node(p) {
             let allowed = match st.mem.classify(MemIdx::new(p)) {
                 Ok(
                     AnyNode::HList(_)
@@ -2384,7 +2430,8 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
                 crate::output::show_box_in(st, p);
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
                 crate::output::end_diagnostic_in(st, true);
-                crate::packaging::flush_node_list(&mut st.mem, p)
+                st.mem
+                    .flush_node_list(p)
                     .map_err(MainControlAbort::Confusion)?;
                 q.set_link(&mut st.mem, MemPtr::NULL);
                 break;
@@ -2396,7 +2443,7 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
     }
 
     p = head.link(&st.mem);
-    crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+    st.mem.pop_nest(&mut st.input);
     // SAFETY: `append_discretionary` left the disc node as the enclosing list's tail.
     let disc =
         unsafe { NodePtr::<DiscNode>::from_idx_unchecked(MemIdx::new(st.input.cur_list.tail)) };
@@ -2413,7 +2460,8 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
                     "Sorry: The third part of a discretionary break must be",
                     "empty, in math formulas. I had to delete your third part.",
                 ]);
-                crate::packaging::flush_node_list(&mut st.mem, p)
+                st.mem
+                    .flush_node_list(p)
                     .map_err(MainControlAbort::Confusion)?;
                 n = 0;
                 mc_propagate_error(crate::errors::error_in(st))?;
@@ -2472,8 +2520,10 @@ pub(crate) fn append_italic_correction_in(st: &mut EngineState) -> Result<(), Ma
             _ => return Ok(()),
         }
     };
-    let kern =
-        crate::mem::new_kern(&mut st.mem, italic).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    let kern = st
+        .mem
+        .new_kern(italic)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
     kern.set_subtype(&mut st.mem, EXPLICIT);
     Ok(())
@@ -2563,12 +2613,16 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
     } else {
         crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
     };
-    let r =
-        crate::mem::new_kern(&mut st.mem, delta).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    let r = st
+        .mem
+        .new_kern(delta)
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     r.set_subtype(&mut st.mem, ACC_KERN);
     st.input.cur_list.tail.set_link(&mut st.mem, r.ptr());
     r.set_link(&mut st.mem, accent);
-    let back = crate::mem::new_kern(&mut st.mem, -a - delta)
+    let back = st
+        .mem
+        .new_kern(-a - delta)
         .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail = back.ptr();
     back.set_subtype(&mut st.mem, ACC_KERN);
@@ -2765,7 +2819,9 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         crate::scan::scan_register_num_in(st)?;
         let n = st.scanner.cur_val;
         if n > 255 {
-            let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, p, n)
+            let sa = st
+                .mem
+                .create_sa_element(&mut st.scanner, p, n)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             break 'found (sa.idx().0, p, true);
         }
@@ -2806,9 +2862,11 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         } else {
             crate::scan::scan_glue_in(st, p)?;
             if q == ADVANCE {
-                let sum = crate::mem::new_spec(&mut st.mem, st.scanner.cur_glue())
+                let sum = st
+                    .mem
+                    .new_spec(st.scanner.cur_glue())
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_glue());
+                st.mem.delete_glue_ref(st.scanner.cur_glue());
                 let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(s));
                 let width = sum.width(&st.mem).0 + old.width(&st.mem).0;
                 sum.set_width(&mut st.mem, Scaled(width));
@@ -2860,7 +2918,9 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
             st.scanner.cur_val = scale(&mut st.errors, w, max_answer);
         } else {
             let old = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(s));
-            let r = crate::mem::new_spec(&mut st.mem, old)
+            let r = st
+                .mem
+                .new_spec(old)
                 .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
             let (width, stretch, shrink) = (
                 old.width(&st.mem).0,
@@ -2884,7 +2944,7 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
             "since the result is out of range.",
         ]);
         if p >= GLUE_VAL {
-            crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_glue());
+            st.mem.delete_glue_ref(st.scanner.cur_glue());
         }
         return mc_propagate_error(crate::errors::error_in(st));
     }
@@ -2932,9 +2992,10 @@ pub(crate) fn main_control_append_normal_space_in(
     let glue = if st.eqtb.glue_par(GLUE_PAR_SPACE_SKIP) == ZERO_GLUE {
         let spec = font_space_glue(st)?;
         st.mainloop.main_p = spec.ptr();
-        crate::mem::new_glue(&mut st.mem, spec).ok_or(NodeRecycleAbort::Overflow)?
+        st.mem.new_glue(spec).ok_or(NodeRecycleAbort::Overflow)?
     } else {
-        crate::mem::new_param_glue(&mut st.mem, &st.eqtb, GLUE_PAR_SPACE_SKIP)
+        st.mem
+            .new_param_glue(&st.eqtb, GLUE_PAR_SPACE_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?
     };
     st.mem.temp_ptr = glue.ptr();
@@ -2965,7 +3026,9 @@ fn valign_or_lr_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
         st.scanner.cur_chr,
     )?;
     if enabled {
-        let m = crate::mem::new_math(&mut st.mem, 0, st.scanner.cur_chr as u16)
+        let m = st
+            .mem
+            .new_math(0, st.scanner.cur_chr as u16)
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, m.ptr());
     }
@@ -3028,7 +3091,10 @@ fn math_delim_num_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
 
 /// Appends a noad of type `cur_chr` (or an ordinary one for `{`) and scans its nucleus.
 fn append_noad_in(st: &mut EngineState, backup: bool) -> Result<(), MainControlAbort> {
-    let n = crate::mem::new_noad(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+    let n = st
+        .mem
+        .new_noad()
+        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, n.ptr());
     if backup {
         crate::input::back_input_in(st)?;
@@ -3086,8 +3152,10 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
 /// The `\XeTeXinterchartoks` list for class pair `n`, if set. Leaves the
 /// pair's trie record, possibly null, in `cur_ptr`.
 fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<MemPtr> {
-    let list =
-        crate::save::find_sa_element(&st.mem, &mut st.scanner, INTER_CHAR_VAL, n)?.sa_ptr(&st.mem);
+    let list = st
+        .mem
+        .find_sa_element(&mut st.scanner, INTER_CHAR_VAL, n)?
+        .sa_ptr(&st.mem);
     (!list.is_null()).then_some(list)
 }
 
@@ -3209,7 +3277,7 @@ fn find_main_ppp(st: &mut EngineState) {
     let pp = st.mainloop.main_pp;
     let mut ppp = st.input.cur_list.head;
     while ppp != pp && ppp.link(&st.mem) != pp {
-        if !is_char_node(&st.mem, ppp) {
+        if !st.mem.is_char_node(ppp) {
             if let Ok(AnyNode::Disc(disc)) = st.mem.classify(MemIdx(ppp.0)) {
                 for _ in 0..disc.subtype(&st.mem) {
                     ppp = ppp.link(&st.mem);
@@ -3232,24 +3300,26 @@ fn extendable_native_word(st: &EngineState, f: i32) -> Option<NodePtr<WhatsitNod
     let word = st.mem.as_native_word(pp)?;
     let extendable = word.native_font(&st.mem).0 == f
         && ppp != pp
-        && !is_char_node(&st.mem, ppp)
+        && !st.mem.is_char_node(ppp)
         && !matches!(st.mem.classify(MemIdx(ppp.0)), Ok(AnyNode::Disc(_)));
     extendable.then_some(word)
 }
 
-/// # Safety
-/// `src` must hold `len` units and `node` must have room for `at + len`.
-unsafe fn copy_to_native_node(
-    mem: &mut MemState,
-    node: NodePtr<WhatsitNode>,
-    at: i32,
-    src: *const u16,
-    len: i32,
-) {
-    let dst = mem
-        .as_u16_ptr_mut(node.idx().offset(NATIVE_NODE_SIZE))
-        .add(at as usize);
-    std::ptr::copy_nonoverlapping(src, dst, len.max(0) as usize);
+impl MemState {
+    /// # Safety
+    /// `src` must hold `len` units and `node` must have room for `at + len`.
+    unsafe fn copy_to_native_node(
+        &mut self,
+        node: NodePtr<WhatsitNode>,
+        at: i32,
+        src: *const u16,
+        len: i32,
+    ) {
+        let dst = self
+            .as_u16_ptr_mut(node.idx().offset(NATIVE_NODE_SIZE))
+            .add(at as usize);
+        std::ptr::copy_nonoverlapping(src, dst, len.max(0) as usize);
+    }
 }
 
 fn use_glyph_metrics(st: &EngineState) -> bool {
@@ -3385,7 +3455,8 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
                 let next = word.link(&st.mem);
                 st.mainloop.main_ppp.set_link(&mut st.mem, next);
                 word.set_link(&mut st.mem, MemPtr::NULL);
-                crate::packaging::flush_node_list(&mut st.mem, word.idx().0)
+                st.mem
+                    .flush_node_list(word.idx().0)
                     .map_err(MainControlAbort::Confusion)?;
                 st.mainloop.main_pp = st.input.cur_list.tail;
                 while st.mainloop.main_ppp.link(&st.mem) != st.mainloop.main_pp {
@@ -3399,7 +3470,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
                 advance_past_hyphen(st, start, remaining);
             }
             if remaining > 0 || st.hyph.is_hyph {
-                let disc = overflow_err(crate::mem::new_disc(&mut st.mem))?;
+                let disc = overflow_err(st.mem.new_disc())?;
                 st.input.cur_list.tail_append(&mut st.mem, disc.ptr());
                 st.mainloop.main_pp = st.input.cur_list.tail;
             }
@@ -3411,7 +3482,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
         let pp = st.mainloop.main_pp;
         let old = extendable_native_word(st, mf);
         let old_len = old.map_or(0, |w| w.native_length(&st.mem) as i32);
-        let node = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, len + old_len)?;
+        let node = st.mem.new_native_word_node(&st.eqtb, mf, len + old_len)?;
         pp.set_link(&mut st.mem, node.ptr());
         st.input.cur_list.tail = node.ptr();
         st.mem.journal_mark_range(
@@ -3420,10 +3491,10 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
         );
         if let Some(word) = old {
             let old_text = word.native_text_ptr(&st.mem);
-            copy_to_native_node(&mut st.mem, node, 0, old_text, old_len);
+            st.mem.copy_to_native_node(node, 0, old_text, old_len);
         }
         let text = st.scanner.native_text.as_ptr();
-        copy_to_native_node(&mut st.mem, node, old_len, text, len);
+        st.mem.copy_to_native_node(node, old_len, text, len);
         let metrics = use_glyph_metrics(st);
         crate::ext::measure_native_node(&st.fonts, &mut st.mem, node, metrics)?;
         if let Some(word) = old {
@@ -3436,7 +3507,8 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
             let next = word.link(&st.mem);
             prev.set_link(&mut st.mem, next);
             word.set_link(&mut st.mem, MemPtr::NULL);
-            crate::packaging::flush_node_list(&mut st.mem, word.idx().0)
+            st.mem
+                .flush_node_list(word.idx().0)
                 .map_err(MainControlAbort::Confusion)?;
         }
     }
@@ -3462,14 +3534,14 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Mai
     let Some(prev_word) = prev_word.filter(|w| w.native_font(&st.mem).0 == mf) else {
         return Ok(());
     };
-    let glue = crate::mem::skip_interword_fillers(&st.mem, prev_word.link(&st.mem));
-    if is_char_node(&st.mem, glue) {
+    let glue = st.mem.skip_interword_fillers(prev_word.link(&st.mem));
+    if st.mem.is_char_node(glue) {
         return Ok(());
     }
     let Ok(AnyNode::Glue(glue)) = st.mem.classify(MemIdx(glue.0)) else {
         return Ok(());
     };
-    if crate::mem::skip_interword_fillers(&st.mem, glue.link(&st.mem)) != tail {
+    if st.mem.skip_interword_fillers(glue.link(&st.mem)) != tail {
         return Ok(());
     }
     // SAFETY: the tail is normally the new native word but is read unchecked, as in TeX.
@@ -3477,16 +3549,18 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Mai
     let prev_len = prev_word.native_length(&st.mem) as i32;
     let tail_len = tail_word.native_length(&st.mem) as i32;
     let len = prev_len + 1 + tail_len;
-    let joined = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, mf, len)?;
+    let joined = st.mem.new_native_word_node(&st.eqtb, mf, len)?;
     st.mem.journal_mark_range(
         joined.idx().offset(NATIVE_NODE_SIZE),
         crate::state::native_text_words(len),
     );
     let prev_text = prev_word.native_text_ptr(&st.mem);
-    copy_to_native_node(&mut st.mem, joined, 0, prev_text, prev_len);
-    copy_to_native_node(&mut st.mem, joined, prev_len, &(b' ' as u16), 1);
+    st.mem.copy_to_native_node(joined, 0, prev_text, prev_len);
+    st.mem
+        .copy_to_native_node(joined, prev_len, &(b' ' as u16), 1);
     let tail_text = tail_word.native_text_ptr(&st.mem);
-    copy_to_native_node(&mut st.mem, joined, prev_len + 1, tail_text, tail_len);
+    st.mem
+        .copy_to_native_node(joined, prev_len + 1, tail_text, tail_len);
     let metrics = use_glyph_metrics(st);
     crate::ext::measure_native_node(&st.fonts, &mut st.mem, joined, metrics)?;
     let t = joined.width(&st.mem).0 - prev_word.width(&st.mem).0 - tail_word.width(&st.mem).0;
@@ -3494,7 +3568,7 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Mai
     // TeX reads `width(font_glue[f])`, which stays null while `\spaceskip` supplies the glue.
     let space = st.fonts.param(mf, SPACE_CODE);
     if t != space {
-        let kern = overflow_err(crate::mem::new_kern(&mut st.mem, t - space))?;
+        let kern = overflow_err(st.mem.new_kern(t - space))?;
         kern.set_subtype(&mut st.mem, SPACE_ADJUSTMENT);
         let next = glue.link(&st.mem);
         kern.set_link(&mut st.mem, next);
@@ -3547,8 +3621,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
     }
     if st.mainloop.ligature_present {
         let lig_list = st.mainloop.cur_q.link(&st.mem);
-        let lig = overflow_err(crate::mem::new_ligature(
-            &mut st.mem,
+        let lig = overflow_err(st.mem.new_ligature(
             FontId(main_f),
             st.mainloop.cur_l as u16,
             lig_list,
@@ -3569,7 +3642,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
     if st.mainloop.ins_disc {
         st.mainloop.ins_disc = false;
         if st.input.cur_list.mode > 0 {
-            let disc = overflow_err(crate::mem::new_disc(&mut st.mem))?;
+            let disc = overflow_err(st.mem.new_disc())?;
             st.input.cur_list.tail_append(&mut st.mem, disc.ptr());
         }
     }
@@ -3614,11 +3687,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
         fix_language(&mut st.input.cur_list, &mut st.mem, &st.eqtb)?;
     }
     st.mainloop.cur_l = st.scanner.cur_chr;
-    let ls = overflow_err(crate::mem::new_char(
-        &mut st.mem,
-        FontId(mf),
-        st.mainloop.cur_l as u16,
-    ))?;
+    let ls = overflow_err(st.mem.new_char(FontId(mf), st.mainloop.cur_l as u16))?;
     st.mainloop.lig_stack = ls.ptr();
     st.mainloop.cur_q = st.input.cur_list.tail;
 
@@ -3669,7 +3738,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 st.mainloop.cur_l = lig_stack_char(st);
             }
 
-            if !is_char_node(&st.mem, st.mainloop.lig_stack) {
+            if !st.mem.is_char_node(st.mainloop.lig_stack) {
                 let item = NodePtr::<LigItem>::at(st.mainloop.lig_stack);
                 let lig_ptr = item.component(&st.mem);
                 if lig_ptr.0 > TEX_NULL {
@@ -3714,7 +3783,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
                 main_f,
                 st.scanner.cur_chr,
             ))?;
-            crate::mem::free_avail(&mut st.mem, st.mainloop.lig_stack);
+            st.mem.free_avail(st.mainloop.lig_stack);
             return Ok(true);
         }
         st.input
@@ -3749,7 +3818,7 @@ fn lig_kern_program(
             wrapup(st, true)?;
             let main_f = st.mainloop.main_f;
             let kern = crate::fonts::char_kern(&st.fonts, main_f, step);
-            let kern = overflow_err(crate::mem::new_kern(&mut st.mem, kern))?;
+            let kern = overflow_err(st.mem.new_kern(kern))?;
             st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
             return Ok(LigExit::Move);
         }
@@ -3768,12 +3837,11 @@ fn lig_kern_program(
                 st.mainloop.cur_r = step.s0 as i32;
                 let c = st.mainloop.cur_r as u16;
                 if st.mainloop.lig_stack.is_null() {
-                    st.mainloop.lig_stack =
-                        overflow_err(crate::mem::new_lig_item(&mut st.mem, c))?.ptr();
+                    st.mainloop.lig_stack = overflow_err(st.mem.new_lig_item(c))?.ptr();
                     st.mainloop.bchar = TOO_BIG_CHAR;
-                } else if is_char_node(&st.mem, st.mainloop.lig_stack) {
+                } else if st.mem.is_char_node(st.mainloop.lig_stack) {
                     let prev = st.mainloop.lig_stack;
-                    let item = overflow_err(crate::mem::new_lig_item(&mut st.mem, c))?;
+                    let item = overflow_err(st.mem.new_lig_item(c))?;
                     st.mainloop.lig_stack = item.ptr();
                     item.set_component(&mut st.mem, prev);
                 } else {
@@ -3783,10 +3851,7 @@ fn lig_kern_program(
             3 => {
                 st.mainloop.cur_r = step.s0 as i32;
                 let prev = st.mainloop.lig_stack;
-                let item = overflow_err(crate::mem::new_lig_item(
-                    &mut st.mem,
-                    st.mainloop.cur_r as u16,
-                ))?;
+                let item = overflow_err(st.mem.new_lig_item(st.mainloop.cur_r as u16))?;
                 st.mainloop.lig_stack = item.ptr();
                 item.ptr().set_link(&mut st.mem, prev);
             }
@@ -3850,11 +3915,7 @@ fn lookahead(st: &mut EngineState) -> Result<bool, MainControlAbort> {
     note_char_class(st, sc);
 
     let c = st.scanner.cur_chr;
-    let ls = overflow_err(crate::mem::new_char(
-        &mut st.mem,
-        FontId(st.mainloop.main_f),
-        c as u16,
-    ))?;
+    let ls = overflow_err(st.mem.new_char(FontId(st.mainloop.main_f), c as u16))?;
     st.mainloop.lig_stack = ls.ptr();
     st.mainloop.cur_r = c;
     if c == st.mainloop.false_bchar {
@@ -4014,7 +4075,7 @@ unsafe fn dispatch_command_in(st: &mut EngineState) -> Result<Next, MainControlA
         (VMODE, UN_VBOX) | (HMODE | MMODE, UN_HBOX) => unpackage_in(st)?,
         (HMODE, ITAL_CORR) => append_italic_correction_in(st)?,
         (MMODE, ITAL_CORR) => {
-            let k = crate::mem::new_kern(&mut st.mem, 0).ok_or(NodeRecycleAbort::Overflow)?;
+            let k = st.mem.new_kern(0).ok_or(NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail_append(&mut st.mem, k.ptr());
         }
         (HMODE | MMODE, DISCRETIONARY) => append_discretionary_in(st)?,
@@ -4059,13 +4120,17 @@ unsafe fn dispatch_command_in(st: &mut EngineState) -> Result<Next, MainControlA
         (MMODE, ACCENT | MATH_ACCENT) => crate::math::math_ac_in(st)?,
         (MMODE, VCENTER) => math_vcenter_in(st)?,
         (MMODE, MATH_STYLE) => {
-            let s = crate::mem::new_style(&mut st.mem, st.scanner.cur_chr as i16)
+            let s = st
+                .mem
+                .new_style(st.scanner.cur_chr as i16)
                 .ok_or(NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail_append(&mut st.mem, s.ptr());
         }
         (MMODE, NON_SCRIPT) => {
-            let g =
-                crate::mem::new_glue(&mut st.mem, ZERO_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
+            let g = st
+                .mem
+                .new_glue(ZERO_GLUE)
+                .ok_or(NodeRecycleAbort::Overflow)?;
             st.input.cur_list.tail_append(&mut st.mem, g.ptr());
             g.set_subtype(&mut st.mem, COND_MATH_GLUE);
         }
@@ -4181,9 +4246,9 @@ fn word_define(
 
 fn sa_define(st: &mut EngineState, global: bool, p: i32, e: i32) -> Result<(), MainControlAbort> {
     let result = if global {
-        crate::save::gsa_def(&mut st.mem, p, e)
+        st.mem.gsa_def(p, e)
     } else {
-        crate::save::sa_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, e)?
+        st.mem.sa_def(&mut st.scanner, &mut st.save_stack, p, e)?
     };
     crate::save::finish_sa_mutation_in(st, p, result)?;
     Ok(())
@@ -4196,18 +4261,20 @@ fn sa_word_define(
     w: i32,
 ) -> Result<(), MainControlAbort> {
     let result = if global {
-        crate::save::gsa_w_def(&mut st.mem, p, w)
+        st.mem.gsa_w_def(p, w)
     } else {
-        crate::save::sa_w_def(&mut st.mem, &mut st.scanner, &mut st.save_stack, p, w)?
+        st.mem.sa_w_def(&mut st.scanner, &mut st.save_stack, p, w)?
     };
     crate::save::finish_sa_mutation_in(st, p, result)?;
     Ok(())
 }
 
-fn add_sa_ref(mem: &mut MemState, p: MemPtr) {
-    if let Some(sa) = NodePtr::<SaNode>::from_ptr(p) {
-        let refs = sa.sa_ref(mem);
-        sa.set_sa_ref(mem, refs + 1);
+impl MemState {
+    fn add_sa_ref(&mut self, p: MemPtr) {
+        if let Some(sa) = NodePtr::<SaNode>::from_ptr(p) {
+            let refs = sa.sa_ref(self);
+            sa.set_sa_ref(self, refs + 1);
+        }
     }
 }
 
@@ -4302,7 +4369,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
             let p = st.scanner.cur_cs;
             crate::scan::scan_toks_in(st, true, expand)?;
             if protected != 0 {
-                let q = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+                let q = st.mem.get_avail().ok_or(NodeRecycleAbort::Overflow)?;
                 q.set_info(&mut st.mem, protected);
                 let body = st.scanner.def_ref.link(&st.mem);
                 q.set_link(&mut st.mem, body);
@@ -4336,11 +4403,11 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                 crate::input::back_input_in(st)?;
             }
             if st.scanner.cur_cmd >= CALL {
-                crate::mem::add_token_ref(&mut st.mem, MemPtr(st.scanner.cur_chr));
+                st.mem.add_token_ref(MemPtr(st.scanner.cur_chr));
             } else if (st.scanner.cur_cmd == REGISTER || st.scanner.cur_cmd == TOKS_REGISTER)
                 && !(0..=19).contains(&st.scanner.cur_chr)
             {
-                add_sa_ref(&mut st.mem, MemPtr::from_raw(st.scanner.cur_chr));
+                st.mem.add_sa_ref(MemPtr::from_raw(st.scanner.cur_chr));
             }
             define(st, a >= 4, p, st.scanner.cur_cmd, st.scanner.cur_chr)?;
         }
@@ -4532,9 +4599,11 @@ fn shorthand_def_in(st: &mut EngineState, global: bool) -> Result<(), MainContro
                     (n - 2) as u8
                 };
                 let reg = st.scanner.cur_val;
-                let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, level, reg)
+                let sa = st
+                    .mem
+                    .create_sa_element(&mut st.scanner, level, reg)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-                add_sa_ref(&mut st.mem, sa.ptr());
+                st.mem.add_sa_ref(sa.ptr());
                 let t = if level == TOK_VAL {
                     TOKS_REGISTER
                 } else {
@@ -4566,7 +4635,9 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
             crate::scan::scan_register_num_in(st)?;
             if st.scanner.cur_val > 255 {
                 let reg = st.scanner.cur_val;
-                let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, TOK_VAL, reg)
+                let sa = st
+                    .mem
+                    .create_sa_element(&mut st.scanner, TOK_VAL, reg)
                     .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
                 st.scanner.cur_chr = sa.idx().0;
                 e = true;
@@ -4578,7 +4649,9 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
         }
     } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
         let n = scan_inter_char_pair(st)?;
-        let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, INTER_CHAR_VAL, n)
+        let sa = st
+            .mem
+            .create_sa_element(&mut st.scanner, INTER_CHAR_VAL, n)
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         st.scanner.cur_chr = sa.idx().0;
         e = true;
@@ -4597,7 +4670,7 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
                     st.eqtb.toks(st.scanner.cur_val)
                 } else {
                     let reg = st.scanner.cur_val;
-                    let sa = crate::save::find_sa_element(&st.mem, &mut st.scanner, TOK_VAL, reg);
+                    let sa = st.mem.find_sa_element(&mut st.scanner, TOK_VAL, reg);
                     crate::scan::sa_token_list(st, sa)
                 }
             } else {
@@ -4605,13 +4678,13 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
             }
         } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
             let n = scan_inter_char_pair(st)?;
-            let sa = crate::save::find_sa_element(&st.mem, &mut st.scanner, INTER_CHAR_VAL, n);
+            let sa = st.mem.find_sa_element(&mut st.scanner, INTER_CHAR_VAL, n);
             crate::scan::sa_token_list(st, sa)
         } else {
             MemPtr(st.eqtb.equiv(st.scanner.cur_chr))
         };
         if !list.is_null() {
-            crate::mem::add_token_ref(&mut st.mem, list);
+            st.mem.add_token_ref(list);
         }
         return define_toks(st, e, global, p, list);
     }
@@ -4622,15 +4695,18 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
     let def_ref = st.scanner.def_ref;
     if def_ref.link(&st.mem).is_null() {
         define_toks(st, e, global, p, MemPtr::NULL)?;
-        crate::mem::free_avail(&mut st.mem, def_ref);
+        st.mem.free_avail(def_ref);
         return Ok(());
     }
     if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
         let mut tail = tail;
-        crate::mem::store_new_token(&mut st.mem, &mut tail, RIGHT_BRACE_TOKEN + '}' as i32)
+        st.mem
+            .store_new_token(&mut tail, RIGHT_BRACE_TOKEN + '}' as i32)
             .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-        let q =
-            crate::mem::get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        let q = st
+            .mem
+            .get_avail()
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + '{' as i32);
         let body = def_ref.link(&st.mem);
         q.set_link(&mut st.mem, body);
@@ -4744,8 +4820,10 @@ fn set_shape_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbo
         MemPtr::NULL
     } else if q > LOCAL_BASE + LOCAL_PAR_SHAPE {
         let words = n / 2 + 1;
-        let p =
-            crate::mem::get_node(&mut st.mem, 2 * words + 1).ok_or(NodeRecycleAbort::Overflow)?;
+        let p = st
+            .mem
+            .get_node(2 * words + 1)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         let penalties = NodePtr::<PenaltiesNode>::at(p);
         penalties.set_words(&mut st.mem, words);
         penalties.set_count(&mut st.mem, n);
@@ -4758,7 +4836,10 @@ fn set_shape_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbo
         }
         p
     } else {
-        let p = crate::mem::get_node(&mut st.mem, 2 * n + 1).ok_or(NodeRecycleAbort::Overflow)?;
+        let p = st
+            .mem
+            .get_node(2 * n + 1)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         let shape = NodePtr::<ParShapeNode>::at(p);
         shape.set_lines(&mut st.mem, n);
         for line in 1..=n {

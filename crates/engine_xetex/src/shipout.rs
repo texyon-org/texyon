@@ -16,7 +16,7 @@ use crate::bridge::{
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{INSERTED, WRITE_TEXT};
-use crate::mem::{end_lr_type, pop_lr, push_lr, LIG_TRICK};
+use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::{
     AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
     WhatsitNode, WhatsitSubtype,
@@ -66,12 +66,14 @@ const REVERSED: u16 = 1;
 pub(crate) const ONE_INCH: i32 = 4_736_287;
 const ONE_INCH_LESS_ONE: i32 = ONE_INCH - 1;
 
-pub fn new_edge(mem: &mut MemState, s: i16, w: i32) -> Option<NodePtr<EdgeNode>> {
-    let p = NodePtr::<EdgeNode>::alloc(mem)?;
-    p.set_subtype(mem, s as u16);
-    p.set_width(mem, Scaled(w));
-    p.set_edge_dist(mem, Scaled(0));
-    Some(p)
+impl MemState {
+    pub fn new_edge(&mut self, s: i16, w: i32) -> Option<NodePtr<EdgeNode>> {
+        let p = NodePtr::<EdgeNode>::alloc(self)?;
+        p.set_subtype(self, s as u16);
+        p.set_width(self, Scaled(w));
+        p.set_edge_dist(self, Scaled(0));
+        Some(p)
+    }
 }
 
 pub(crate) enum ShipoutAbort {
@@ -133,8 +135,10 @@ fn ship_err(o: crate::errors::ErrorOutcome) -> Result<(), ShipoutAbort> {
     crate::scan::scc_err(o).map_err(ShipoutAbort::Scc)
 }
 
-fn get_avail_ship(mem: &mut MemState) -> Result<crate::units::MemPtr, ShipoutAbort> {
-    crate::mem::get_avail(mem).ok_or(ShipoutAbort::MainMemoryOverflow)
+impl MemState {
+    fn get_avail_ship(&mut self) -> Result<crate::units::MemPtr, ShipoutAbort> {
+        self.get_avail().ok_or(ShipoutAbort::MainMemoryOverflow)
+    }
 }
 
 impl ShipoutAbort {
@@ -232,7 +236,7 @@ fn dvi_two(shipout: &mut ShipoutState, s: u16) -> Result<(), ShipoutAbort> {
 fn synch_h(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     if st.shipout.cur_h != st.shipout.dvi_h {
         let delta = st.shipout.cur_h - st.shipout.dvi_h;
-        movement(&mut st.mem, &mut st.shipout, delta, RIGHT1)?;
+        st.mem.movement(&mut st.shipout, delta, RIGHT1)?;
         st.shipout.dvi_h = st.shipout.cur_h;
     }
     Ok(())
@@ -241,7 +245,7 @@ fn synch_h(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
 fn synch_v(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     if st.shipout.cur_v != st.shipout.dvi_v {
         let delta = st.shipout.cur_v - st.shipout.dvi_v;
-        movement(&mut st.mem, &mut st.shipout, delta, DOWN1)?;
+        st.mem.movement(&mut st.shipout, delta, DOWN1)?;
         st.shipout.dvi_v = st.shipout.cur_v;
     }
     Ok(())
@@ -447,7 +451,7 @@ pub(crate) unsafe fn ship_out_in(
     }
     st.shipout.dead_cycles = 0;
     ttstub_output_flush(st.shipout.rust_stdout);
-    crate::packaging::flush_node_list(&mut st.mem, p).map_err(ShipoutAbort::Confusion)?;
+    st.mem.flush_node_list(p).map_err(ShipoutAbort::Confusion)?;
     crate::synctex::synctex_teehs(st);
     Ok(())
 }
@@ -600,183 +604,187 @@ fn dvi_font_select(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shi
     Ok(())
 }
 
-fn is_space_adjustment(mem: &MemState, q: MemPtr) -> bool {
-    matches!(mem.classify_non_char(q), Some(AnyNode::Kern(k)) if k.subtype(mem) == SPACE_ADJUSTMENT)
-}
+impl MemState {
+    fn is_space_adjustment(&self, q: MemPtr) -> bool {
+        matches!(self.classify_non_char(q), Some(AnyNode::Kern(k)) if k.subtype(self) == SPACE_ADJUSTMENT)
+    }
 
-/// Merge runs of native words separated by interword glue into single nodes
-/// so they can be justified as a whole.
-fn merge_justifiable_native_words(
-    mem: &mut MemState,
-    strings: &mut StringsState,
-    fonts: &FontState,
-    eqtb: &EqtbState,
-    this_box: AnyBox,
-) -> Result<(), ShipoutAbort> {
-    let mut prev_p = this_box.list_head();
-    let mut p = this_box.list_ptr(mem);
+    /// Merge runs of native words separated by interword glue into single nodes
+    /// so they can be justified as a whole.
+    fn merge_justifiable_native_words(
+        &mut self,
+        strings: &mut StringsState,
+        fonts: &FontState,
+        eqtb: &EqtbState,
+        this_box: AnyBox,
+    ) -> Result<(), ShipoutAbort> {
+        let mut prev_p = this_box.list_head();
+        let mut p = this_box.list_ptr(self);
 
-    while !p.is_null() {
-        let first = mem.as_native_word(p).filter(|r| {
-            fonts.font_letter_space_entry(r.native_font(mem).0) == 0 && !p.link(mem).is_null()
-        });
-        if let Some(r) = first {
-            let font = r.native_font(mem);
-            let same_font_word = |mem: &MemState, q: MemPtr| {
-                mem.as_native_word(q).filter(|w| w.native_font(mem) == font)
-            };
-            let mut last = r;
-            let mut text_len = r.native_length(mem) as i32;
-            let mut q = r.link(mem);
-            loop {
-                q = crate::mem::skip_interword_fillers(mem, q);
-                match mem.classify_non_char(q) {
-                    Some(AnyNode::Glue(glue)) if glue.subtype(mem) == NORMAL => {
-                        if glue.glue_ptr(mem).ptr().0 == fonts.font_glue(font.0) {
-                            q = crate::mem::skip_interword_fillers(mem, glue.link(mem));
-                            if let Some(w) = same_font_word(mem, q) {
+        while !p.is_null() {
+            let first = self.as_native_word(p).filter(|r| {
+                fonts.font_letter_space_entry(r.native_font(self).0) == 0 && !p.link(self).is_null()
+            });
+            if let Some(r) = first {
+                let font = r.native_font(self);
+                let same_font_word = |mem: &MemState, q: MemPtr| {
+                    mem.as_native_word(q).filter(|w| w.native_font(mem) == font)
+                };
+                let mut last = r;
+                let mut text_len = r.native_length(self) as i32;
+                let mut q = r.link(self);
+                loop {
+                    q = self.skip_interword_fillers(q);
+                    match self.classify_non_char(q) {
+                        Some(AnyNode::Glue(glue)) if glue.subtype(self) == NORMAL => {
+                            if glue.glue_ptr(self).ptr().0 == fonts.font_glue(font.0) {
+                                q = self.skip_interword_fillers(glue.link(self));
+                                if let Some(w) = same_font_word(self, q) {
+                                    last = w;
+                                    text_len += 1 + w.native_length(self) as i32;
+                                    q = w.link(self);
+                                    continue;
+                                }
+                            } else {
+                                q = glue.link(self);
+                            }
+                            if self.is_space_adjustment(q) {
+                                q = self.skip_interword_fillers(q.link(self));
+                                if let Some(w) = same_font_word(self, q) {
+                                    last = w;
+                                    text_len += 1 + w.native_length(self) as i32;
+                                    q = w.link(self);
+                                    continue;
+                                }
+                            }
+                        }
+                        Some(AnyNode::Whatsit(_)) => {
+                            if let Some(w) = same_font_word(self, q) {
                                 last = w;
-                                text_len += 1 + w.native_length(mem) as i32;
-                                q = w.link(mem);
+                                q = w.link(self);
                                 continue;
                             }
-                        } else {
-                            q = glue.link(mem);
                         }
-                        if is_space_adjustment(mem, q) {
-                            q = crate::mem::skip_interword_fillers(mem, q.link(mem));
-                            if let Some(w) = same_font_word(mem, q) {
-                                last = w;
-                                text_len += 1 + w.native_length(mem) as i32;
-                                q = w.link(mem);
-                                continue;
-                            }
-                        }
+                        _ => {}
                     }
-                    Some(AnyNode::Whatsit(_)) => {
-                        if let Some(w) = same_font_word(mem, q) {
-                            last = w;
-                            q = w.link(mem);
-                            continue;
-                        }
-                    }
-                    _ => {}
+                    break;
                 }
+
+                if last != r {
+                    p = self.merge_native_word_run(
+                        strings, fonts, eqtb, this_box, prev_p, r, last, text_len,
+                    )?;
+                }
+            }
+            prev_p = p;
+            p = p.link(self);
+        }
+        Ok(())
+    }
+
+    /// Replace the run `first..=last` by one native word, moving the ignorable
+    /// nodes inside the run after it. Returns the last node of the replacement.
+    fn merge_native_word_run(
+        &mut self,
+        strings: &mut StringsState,
+        fonts: &FontState,
+        eqtb: &EqtbState,
+        this_box: AnyBox,
+        prev_p: MemPtr,
+        first: NodePtr<WhatsitNode>,
+        last: NodePtr<WhatsitNode>,
+        text_len: i32,
+    ) -> Result<MemPtr, ShipoutAbort> {
+        if strings.pool_ptr + text_len > strings.pool_size {
+            return Err(ShipoutAbort::PoolSizeOverflow);
+        }
+
+        let g_order = this_box.glue_order(self);
+        let g_sign = this_box.glue_sign(self);
+        let mut width = 0;
+        let mut q = first.ptr();
+        loop {
+            match self.classify(MemIdx::new(q.0)) {
+                Ok(AnyNode::Whatsit(w)) => {
+                    if w.whatsit_subtype(self).is_some_and(|s| s.is_native_word()) {
+                        let len = w.native_length(self) as usize;
+                        let text = w.native_text_ptr(self);
+                        for j in 0..len {
+                            // SAFETY: a native word holds `native_length` UTF-16 units inline.
+                            strings.str_pool[strings.pool_ptr as usize] = unsafe { *text.add(j) };
+                            strings.pool_ptr += 1;
+                        }
+                        width += w.width(self).0;
+                    }
+                }
+                Ok(AnyNode::Glue(glue)) => {
+                    strings.str_pool[strings.pool_ptr as usize] = b' ' as u16;
+                    strings.pool_ptr += 1;
+                    let spec = glue.glue_ptr(self);
+                    width += spec.width(self).0;
+                    match g_sign {
+                        GlueSign::Stretching if spec.stretch_order(self) == g_order => {
+                            width += crate::scaled_math::tex_round(
+                                this_box.glue_set(self) * spec.stretch(self).0 as f64,
+                            );
+                        }
+                        GlueSign::Shrinking if spec.shrink_order(self) == g_order => {
+                            width -= crate::scaled_math::tex_round(
+                                this_box.glue_set(self) * spec.shrink(self).0 as f64,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(AnyNode::Kern(kern)) => width += kern.width(self).0,
+                _ => {}
+            }
+            if q == last.ptr() {
                 break;
             }
+            q = q.link(self);
+        }
 
-            if last != r {
-                p = merge_native_word_run(
-                    mem, strings, fonts, eqtb, this_box, prev_p, r, last, text_len,
-                )?;
+        let nlen = crate::hash::cur_length(strings);
+        let word = self
+            .new_native_word_node(eqtb, first.native_font(self).0, nlen)
+            .map_err(ShipoutAbort::NodeRecycle)?;
+        word.set_subtype(self, first.subtype(self));
+        let base = strings.cur_string_start() as usize;
+        let text = &strings.str_pool[base..base + nlen as usize];
+        let dst = word.native_text_ptr_mut(self);
+        // SAFETY: the new node holds `nlen` UTF-16 units inline, disjoint from the pool.
+        unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), dst, text.len()) };
+        word.set_width(self, Scaled(width));
+        // SAFETY: FFI re-measure of the node just built.
+        unsafe { crate::ext::store_justified_native_glyphs(fonts, self, word) }?;
+
+        prev_p.set_link(self, word.ptr());
+        word.set_link(self, last.link(self));
+        last.set_link(self, MemPtr::NULL);
+
+        let mut tail = word.ptr();
+        let mut prev_p = first.ptr();
+        let mut p = first.link(self);
+        while !p.is_null() {
+            if self
+                .classify_non_char(p)
+                .is_some_and(|n| n.is_interword_filler(self))
+            {
+                prev_p.set_link(self, p.link(self));
+                p.set_link(self, tail.link(self));
+                tail.set_link(self, p);
+                tail = p;
             }
+            prev_p = p;
+            p = p.link(self);
         }
-        prev_p = p;
-        p = p.link(mem);
+
+        self.flush_node_list(first.ptr())
+            .map_err(ShipoutAbort::Confusion)?;
+        strings.discard_cur_string();
+        Ok(tail)
     }
-    Ok(())
-}
-
-/// Replace the run `first..=last` by one native word, moving the ignorable
-/// nodes inside the run after it. Returns the last node of the replacement.
-fn merge_native_word_run(
-    mem: &mut MemState,
-    strings: &mut StringsState,
-    fonts: &FontState,
-    eqtb: &EqtbState,
-    this_box: AnyBox,
-    prev_p: MemPtr,
-    first: NodePtr<WhatsitNode>,
-    last: NodePtr<WhatsitNode>,
-    text_len: i32,
-) -> Result<MemPtr, ShipoutAbort> {
-    if strings.pool_ptr + text_len > strings.pool_size {
-        return Err(ShipoutAbort::PoolSizeOverflow);
-    }
-
-    let g_order = this_box.glue_order(mem);
-    let g_sign = this_box.glue_sign(mem);
-    let mut width = 0;
-    let mut q = first.ptr();
-    loop {
-        match mem.classify(MemIdx::new(q.0)) {
-            Ok(AnyNode::Whatsit(w)) => {
-                if w.whatsit_subtype(mem).is_some_and(|s| s.is_native_word()) {
-                    let len = w.native_length(mem) as usize;
-                    let text = w.native_text_ptr(mem);
-                    for j in 0..len {
-                        // SAFETY: a native word holds `native_length` UTF-16 units inline.
-                        strings.str_pool[strings.pool_ptr as usize] = unsafe { *text.add(j) };
-                        strings.pool_ptr += 1;
-                    }
-                    width += w.width(mem).0;
-                }
-            }
-            Ok(AnyNode::Glue(glue)) => {
-                strings.str_pool[strings.pool_ptr as usize] = b' ' as u16;
-                strings.pool_ptr += 1;
-                let spec = glue.glue_ptr(mem);
-                width += spec.width(mem).0;
-                match g_sign {
-                    GlueSign::Stretching if spec.stretch_order(mem) == g_order => {
-                        width += crate::scaled_math::tex_round(
-                            this_box.glue_set(mem) * spec.stretch(mem).0 as f64,
-                        );
-                    }
-                    GlueSign::Shrinking if spec.shrink_order(mem) == g_order => {
-                        width -= crate::scaled_math::tex_round(
-                            this_box.glue_set(mem) * spec.shrink(mem).0 as f64,
-                        );
-                    }
-                    _ => {}
-                }
-            }
-            Ok(AnyNode::Kern(kern)) => width += kern.width(mem).0,
-            _ => {}
-        }
-        if q == last.ptr() {
-            break;
-        }
-        q = q.link(mem);
-    }
-
-    let nlen = crate::hash::cur_length(strings);
-    let word = crate::fonts::new_native_word_node(mem, eqtb, first.native_font(mem).0, nlen)
-        .map_err(ShipoutAbort::NodeRecycle)?;
-    word.set_subtype(mem, first.subtype(mem));
-    let base = strings.cur_string_start() as usize;
-    let text = &strings.str_pool[base..base + nlen as usize];
-    let dst = word.native_text_ptr_mut(mem);
-    // SAFETY: the new node holds `nlen` UTF-16 units inline, disjoint from the pool.
-    unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), dst, text.len()) };
-    word.set_width(mem, Scaled(width));
-    // SAFETY: FFI re-measure of the node just built.
-    unsafe { crate::ext::store_justified_native_glyphs(fonts, mem, word) }?;
-
-    prev_p.set_link(mem, word.ptr());
-    word.set_link(mem, last.link(mem));
-    last.set_link(mem, MemPtr::NULL);
-
-    let mut tail = word.ptr();
-    let mut prev_p = first.ptr();
-    let mut p = first.link(mem);
-    while !p.is_null() {
-        if mem
-            .classify_non_char(p)
-            .is_some_and(|n| n.is_interword_filler(mem))
-        {
-            prev_p.set_link(mem, p.link(mem));
-            p.set_link(mem, tail.link(mem));
-            tail.set_link(mem, p);
-            tail = p;
-        }
-        prev_p = p;
-        p = p.link(mem);
-    }
-
-    crate::packaging::flush_node_list(mem, first.ptr()).map_err(ShipoutAbort::Confusion)?;
-    strings.discard_cur_string();
-    Ok(tail)
 }
 
 /// The glue-setting state of the box being shipped, carried across glue nodes
@@ -825,27 +833,30 @@ impl GlueRounding {
     }
 }
 
-/// Replace glue that the box stretched or shrank by a rigid equivalent of
-/// width `w`, so reflected or repeated output sees the width already rounded.
-fn freeze_set_glue(
-    mem: &mut MemState,
-    glue: NodePtr<GlueNode>,
-    spec: NodePtr<GlueSpecNode>,
-    w: i32,
-) -> Result<(), ShipoutAbort> {
-    crate::mem::delete_glue_ref(mem, spec);
-    if glue.subtype(mem) < A_LEADERS {
-        glue.into_kern(mem, Scaled(w));
-    } else {
-        let rigid = NodePtr::<GlueSpecNode>::alloc(mem).ok_or(ShipoutAbort::MainMemoryOverflow)?;
-        rigid.set_stretch_order(mem, FILLL + 1);
-        rigid.set_shrink_order(mem, FILLL + 1);
-        rigid.set_width(mem, Scaled(w));
-        rigid.set_stretch(mem, Scaled(0));
-        rigid.set_shrink(mem, Scaled(0));
-        glue.set_glue_ptr(mem, rigid);
+impl MemState {
+    /// Replace glue that the box stretched or shrank by a rigid equivalent of
+    /// width `w`, so reflected or repeated output sees the width already rounded.
+    fn freeze_set_glue(
+        &mut self,
+        glue: NodePtr<GlueNode>,
+        spec: NodePtr<GlueSpecNode>,
+        w: i32,
+    ) -> Result<(), ShipoutAbort> {
+        self.delete_glue_ref(spec);
+        if glue.subtype(self) < A_LEADERS {
+            glue.into_kern(self, Scaled(w));
+        } else {
+            let rigid =
+                NodePtr::<GlueSpecNode>::alloc(self).ok_or(ShipoutAbort::MainMemoryOverflow)?;
+            rigid.set_stretch_order(self, FILLL + 1);
+            rigid.set_shrink_order(self, FILLL + 1);
+            rigid.set_width(self, Scaled(w));
+            rigid.set_stretch(self, Scaled(0));
+            rigid.set_shrink(self, Scaled(0));
+            glue.set_glue_ptr(self, rigid);
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 enum Leader {
@@ -853,22 +864,24 @@ enum Leader {
     Box(AnyBox),
 }
 
-fn leader_of(mem: &MemState, glue: NodePtr<GlueNode>) -> Leader {
-    match mem.classify(MemIdx::new(glue.leader_ptr(mem).0)) {
-        Ok(AnyNode::Rule(rule)) => Leader::Rule(rule),
-        Ok(AnyNode::HList(h)) => Leader::Box(AnyBox::HList(h)),
-        Ok(AnyNode::VList(v)) => Leader::Box(AnyBox::VList(v)),
-        other => unreachable!("leaders must be a rule or a box, found {other:?}"),
+impl MemState {
+    fn leader_of(&self, glue: NodePtr<GlueNode>) -> Leader {
+        match self.classify(MemIdx::new(glue.leader_ptr(self).0)) {
+            Ok(AnyNode::Rule(rule)) => Leader::Rule(rule),
+            Ok(AnyNode::HList(h)) => Leader::Box(AnyBox::HList(h)),
+            Ok(AnyNode::VList(v)) => Leader::Box(AnyBox::VList(v)),
+            other => unreachable!("leaders must be a rule or a box, found {other:?}"),
+        }
     }
-}
 
-fn lr_dir(mem: &MemState, math: NodePtr<MathNode>) -> i16 {
-    (math.subtype(mem) / R_CODE) as i16
-}
+    fn lr_dir(&self, math: NodePtr<MathNode>) -> i16 {
+        (math.subtype(self) / R_CODE) as i16
+    }
 
-/// The LR stack top matches the end code of `math`.
-fn lr_matches(mem: &MemState, scanner: &ScannerState, math: NodePtr<MathNode>) -> bool {
-    scanner.lr_ptr.info(mem) == end_lr_type(math.subtype(mem))
+    /// The LR stack top matches the end code of `math`.
+    fn lr_matches(&self, scanner: &ScannerState, math: NodePtr<MathNode>) -> bool {
+        scanner.lr_ptr.info(self) == end_lr_type(math.subtype(self))
+    }
 }
 
 fn font_character_width(fonts: &FontState, f: i32, c: i32) -> i32 {
@@ -885,17 +898,19 @@ fn push_dvi_level(shipout: &mut ShipoutState) -> Result<i32, ShipoutAbort> {
     Ok(shipout.dvi_offset + shipout.dvi_ptr)
 }
 
-fn pop_dvi_level(
-    mem: &mut MemState,
-    shipout: &mut ShipoutState,
-    save_loc: i32,
-) -> Result<(), ShipoutAbort> {
-    prune_movements(mem, shipout, save_loc);
-    if shipout.cur_s > 0 {
-        dvi_pop(shipout, save_loc)?;
+impl MemState {
+    fn pop_dvi_level(
+        &mut self,
+        shipout: &mut ShipoutState,
+        save_loc: i32,
+    ) -> Result<(), ShipoutAbort> {
+        self.prune_movements(shipout, save_loc);
+        if shipout.cur_s > 0 {
+            dvi_pop(shipout, save_loc)?;
+        }
+        shipout.cur_s -= 1;
+        Ok(())
     }
-    shipout.cur_s -= 1;
-    Ok(())
 }
 
 fn ship_box(st: &mut crate::state::EngineState, b: AnyBox) -> Result<(), ShipoutAbort> {
@@ -990,12 +1005,12 @@ fn hlist_glue_out(
     let spec = glue.glue_ptr(&st.mem);
     st.shipout.rule_wd = rounding.width(&st.mem, spec);
     if rounding.is_set(&st.mem, spec) {
-        freeze_set_glue(&mut st.mem, glue, spec, st.shipout.rule_wd)?;
+        st.mem.freeze_set_glue(glue, spec, st.shipout.rule_wd)?;
     }
 
     let subtype = glue.subtype(&st.mem);
     if subtype >= A_LEADERS {
-        let leader = match leader_of(&st.mem, glue) {
+        let leader = match st.mem.leader_of(glue) {
             Leader::Rule(rule) => {
                 st.shipout.rule_ht = rule.height(&st.mem).raw();
                 st.shipout.rule_dp = rule.depth(&st.mem).raw();
@@ -1156,13 +1171,8 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     st.mem.temp_ptr = this_box.ptr();
     let mut rounding = GlueRounding::new(&st.mem, this_box);
     if st.eqtb.int_par(INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 1 {
-        merge_justifiable_native_words(
-            &mut st.mem,
-            &mut st.strings,
-            &st.fonts,
-            &st.eqtb,
-            this_box,
-        )?;
+        st.mem
+            .merge_justifiable_native_words(&mut st.strings, &st.fonts, &st.eqtb, this_box)?;
     }
 
     // A raw cursor: it can be LIG_TRICK, and nodes get retyped in place.
@@ -1170,7 +1180,8 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     let save_loc = push_dvi_level(&mut st.shipout)?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
-    push_lr(&mut st.mem, &mut st.scanner.lr_ptr, BEFORE.into())
+    st.mem
+        .push_lr(&mut st.scanner.lr_ptr, BEFORE.into())
         .ok_or(ShipoutAbort::MainMemoryOverflow)?;
 
     if this_box.subtype(&st.mem) == DLIST {
@@ -1185,12 +1196,11 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     if st.scanner.cur_dir == RIGHT_TO_LEFT && this_box.subtype(&st.mem) != REVERSED {
         let save_h = st.shipout.cur_h;
         st.mem.temp_ptr = p;
-        let kern = crate::mem::new_kern(&mut st.mem, 0).ok_or(ShipoutAbort::MainMemoryOverflow)?;
+        let kern = st.mem.new_kern(0).ok_or(ShipoutAbort::MainMemoryOverflow)?;
         kern.set_sync_tag(&mut st.mem, 0);
         prev_p.set_link(&mut st.mem, kern.ptr());
         st.shipout.cur_h = 0;
-        let reversed = reverse(
-            &mut st.mem,
+        let reversed = st.mem.reverse(
             &mut st.shipout,
             &mut st.scanner,
             &mut st.fonts,
@@ -1208,7 +1218,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     crate::synctex::synctex_hlist(st, this_box);
 
     while !p.is_null() {
-        if crate::mem::is_char_node(&st.mem, p) {
+        if st.mem.is_char_node(p) {
             (p, prev_p) = chars_out(st, p, prev_p)?;
             continue;
         }
@@ -1257,16 +1267,17 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 crate::synctex::synctex_math(st, math);
                 let math_width = math.width(&st.mem).0;
                 if !math.subtype(&st.mem).is_multiple_of(2) {
-                    if lr_matches(&st.mem, &st.scanner, math) {
-                        pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
+                    if st.mem.lr_matches(&st.scanner, math) {
+                        st.mem.pop_lr(&mut st.scanner.lr_ptr);
                     } else if math.subtype(&st.mem) > L_CODE {
                         st.scanner.lr_problems += 1;
                     }
                 } else {
                     let end_type = end_lr_type(math.subtype(&st.mem));
-                    push_lr(&mut st.mem, &mut st.scanner.lr_ptr, end_type)
+                    st.mem
+                        .push_lr(&mut st.scanner.lr_ptr, end_type)
                         .ok_or(ShipoutAbort::MainMemoryOverflow)?;
-                    if lr_dir(&st.mem, math) != st.scanner.cur_dir {
+                    if st.mem.lr_dir(math) != st.scanner.cur_dir {
                         let edge = reverse_segment(
                             st,
                             math,
@@ -1309,13 +1320,13 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
         if st.scanner.lr_ptr.info(&st.mem) as u16 > L_CODE {
             st.scanner.lr_problems += 10000;
         }
-        pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
+        st.mem.pop_lr(&mut st.scanner.lr_ptr);
     }
-    pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
+    st.mem.pop_lr(&mut st.scanner.lr_ptr);
     if this_box.subtype(&st.mem) == DLIST {
         st.scanner.cur_dir = RIGHT_TO_LEFT;
     }
-    pop_dvi_level(&mut st.mem, &mut st.shipout, save_loc)
+    st.mem.pop_dvi_level(&mut st.shipout, save_loc)
 }
 
 fn hlist_box_out(
@@ -1359,16 +1370,19 @@ fn reverse_segment(
     let save_h = st.shipout.cur_h;
     st.mem.temp_ptr = math.link(&st.mem);
     st.shipout.rule_wd = math_width;
-    crate::mem::free_node(&mut st.mem, math.ptr(), MEDIUM_NODE_SIZE);
+    st.mem.free_node(math.ptr(), MEDIUM_NODE_SIZE);
     st.scanner.cur_dir = 1 - st.scanner.cur_dir;
-    let edge = new_edge(&mut st.mem, st.scanner.cur_dir, st.shipout.rule_wd)
+    let edge = st
+        .mem
+        .new_edge(st.scanner.cur_dir, st.shipout.rule_wd)
         .ok_or(ShipoutAbort::MainMemoryOverflow)?;
     prev_p.set_link(&mut st.mem, edge.ptr());
     st.shipout.cur_h = st.shipout.cur_h - left_edge + st.shipout.rule_wd;
-    let end =
-        new_edge(&mut st.mem, 1 - st.scanner.cur_dir, 0).ok_or(ShipoutAbort::MainMemoryOverflow)?;
-    let reversed = reverse(
-        &mut st.mem,
+    let end = st
+        .mem
+        .new_edge(1 - st.scanner.cur_dir, 0)
+        .ok_or(ShipoutAbort::MainMemoryOverflow)?;
+    let reversed = st.mem.reverse(
         &mut st.shipout,
         &mut st.scanner,
         &mut st.fonts,
@@ -1398,7 +1412,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     let top_edge = st.shipout.cur_v;
 
     while !p.is_null() {
-        if crate::mem::is_char_node(&st.mem, p) {
+        if st.mem.is_char_node(p) {
             return Err(ShipoutAbort::Confusion(c"vlistout"));
         }
         match st
@@ -1450,7 +1464,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 if subtype < A_LEADERS {
                     move_past_vlist_rule(&mut st.shipout, upwards);
                 } else {
-                    match leader_of(&st.mem, glue) {
+                    match st.mem.leader_of(glue) {
                         Leader::Rule(rule) => {
                             st.shipout.rule_wd = rule.width(&st.mem).raw();
                             st.shipout.rule_dp = 0;
@@ -1475,7 +1489,7 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     }
 
     crate::synctex::synctex_tsilv(st, this_box);
-    pop_dvi_level(&mut st.mem, &mut st.shipout, save_loc)
+    st.mem.pop_dvi_level(&mut st.shipout, save_loc)
 }
 
 fn vlist_box_out(
@@ -1578,18 +1592,20 @@ fn vlist_leaders_out(
     Ok(())
 }
 
-fn prune_movements(mem: &mut MemState, shipout: &mut ShipoutState, l: i32) {
-    prune_movement_list(mem, &mut shipout.down_ptr, l);
-    prune_movement_list(mem, &mut shipout.right_ptr, l);
-}
+impl MemState {
+    fn prune_movements(&mut self, shipout: &mut ShipoutState, l: i32) {
+        self.prune_movement_list(&mut shipout.down_ptr, l);
+        self.prune_movement_list(&mut shipout.right_ptr, l);
+    }
 
-fn prune_movement_list(mem: &mut MemState, head: &mut MemPtr, l: i32) {
-    while let Some(p) = NodePtr::<MovementNode>::from_ptr(*head) {
-        if p.location(mem) < l {
-            return;
+    fn prune_movement_list(&mut self, head: &mut MemPtr, l: i32) {
+        while let Some(p) = NodePtr::<MovementNode>::from_ptr(*head) {
+            if p.location(self) < l {
+                return;
+            }
+            *head = p.link(self);
+            p.free(self);
         }
-        *head = p.link(mem);
-        p.free(mem);
     }
 }
 
@@ -1740,228 +1756,229 @@ fn make_xdv_glyph_array_data(
     len
 }
 
-/// Reverse the hlist starting at `temp_ptr` onto `t` (the segment's closing
-/// edge, or `None` for a whole list), returning the new head.
-fn reverse(
-    mem: &mut MemState,
-    shipout: &mut ShipoutState,
-    scanner: &mut ScannerState,
-    fonts: &mut FontState,
-    t: Option<NodePtr<EdgeNode>>,
-    rounding: &mut GlueRounding,
-) -> Result<MemPtr, ShipoutAbort> {
-    let mut l = t.map_or(MemPtr::NULL, |t| t.ptr());
-    let mut p = mem.temp_ptr;
-    let mut m = MIN_HALFWORD;
-    let mut n = MIN_HALFWORD;
+impl MemState {
+    /// Reverse the hlist starting at `temp_ptr` onto `t` (the segment's closing
+    /// edge, or `None` for a whole list), returning the new head.
+    fn reverse(
+        &mut self,
+        shipout: &mut ShipoutState,
+        scanner: &mut ScannerState,
+        fonts: &mut FontState,
+        t: Option<NodePtr<EdgeNode>>,
+        rounding: &mut GlueRounding,
+    ) -> Result<MemPtr, ShipoutAbort> {
+        let mut l = t.map_or(MemPtr::NULL, |t| t.ptr());
+        let mut p = self.temp_ptr;
+        let mut m = MIN_HALFWORD;
+        let mut n = MIN_HALFWORD;
 
-    loop {
-        while !p.is_null() {
-            if crate::mem::is_char_node(mem, p) {
-                while let Some(ch) = mem.as_char(p) {
-                    let f = ch.font(mem).0;
-                    let c = crate::fonts::effective_char(fonts, f, ch.character(mem));
-                    shipout.cur_h += font_character_width(fonts, f, c);
-                    let q = p.link(mem);
-                    p.set_link(mem, l);
-                    l = p;
-                    p = q;
-                }
-                continue;
-            }
-
-            let q = p.link(mem);
-            let mut add_width = true;
-            let mut now_kern = false;
-            match mem.classify(MemIdx::new(p.0)) {
-                Ok(node @ (AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_))) => {
-                    shipout.rule_wd = node.hlist_width(mem);
-                }
-                Ok(AnyNode::Kern(kern)) => {
-                    shipout.rule_wd = kern.width(mem).0;
-                    now_kern = true;
-                }
-                Ok(AnyNode::Whatsit(w)) => {
-                    if w.whatsit_subtype(mem).is_some_and(|s| s.has_dimensions()) {
-                        shipout.rule_wd = w.width(mem).0;
-                    } else {
-                        add_width = false;
+        loop {
+            while !p.is_null() {
+                if self.is_char_node(p) {
+                    while let Some(ch) = self.as_char(p) {
+                        let f = ch.font(self).0;
+                        let c = crate::fonts::effective_char(fonts, f, ch.character(self));
+                        shipout.cur_h += font_character_width(fonts, f, c);
+                        let q = p.link(self);
+                        p.set_link(self, l);
+                        l = p;
+                        p = q;
                     }
-                }
-                Ok(AnyNode::Glue(glue)) => {
-                    let spec = glue.glue_ptr(mem);
-                    shipout.rule_wd = rounding.width(mem, spec);
-                    if rounding.is_set(mem, spec) {
-                        freeze_set_glue(mem, glue, spec, shipout.rule_wd)?;
-                        now_kern = glue.subtype(mem) < A_LEADERS;
-                    }
-                }
-                Ok(AnyNode::Ligature(ligature)) => {
-                    crate::mem::flush_list(mem, ligature.lig_ptr(mem));
-                    mem.temp_ptr = ligature.ptr();
-                    let c = get_avail_ship(mem)?;
-                    mem.set_word(c.0, mem.word(ligature.idx().offset(1).0));
-                    c.set_link(mem, q);
-                    crate::mem::free_node(mem, ligature.ptr(), SMALL_NODE_SIZE);
-                    p = c;
                     continue;
                 }
-                Ok(AnyNode::Math(math)) => {
-                    shipout.rule_wd = math.width(mem).0;
-                    if !math.subtype(mem).is_multiple_of(2) {
-                        if !lr_matches(mem, scanner, math) {
-                            math.into_kern(mem);
-                            now_kern = true;
-                            scanner.lr_problems += 1;
+
+                let q = p.link(self);
+                let mut add_width = true;
+                let mut now_kern = false;
+                match self.classify(MemIdx::new(p.0)) {
+                    Ok(node @ (AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_))) => {
+                        shipout.rule_wd = node.hlist_width(self);
+                    }
+                    Ok(AnyNode::Kern(kern)) => {
+                        shipout.rule_wd = kern.width(self).0;
+                        now_kern = true;
+                    }
+                    Ok(AnyNode::Whatsit(w)) => {
+                        if w.whatsit_subtype(self).is_some_and(|s| s.has_dimensions()) {
+                            shipout.rule_wd = w.width(self).0;
                         } else {
-                            pop_lr(mem, &mut scanner.lr_ptr);
-                            if n > MIN_HALFWORD {
-                                n -= 1;
-                                math.set_subtype(mem, math.subtype(mem) - 1);
-                            } else {
-                                math.into_kern(mem);
-                                now_kern = true;
-                                if m > MIN_HALFWORD {
-                                    m -= 1;
-                                } else {
-                                    crate::mem::free_node(mem, math.ptr(), MEDIUM_NODE_SIZE);
-                                    let t = t.expect("a segment reversal ends at its edge");
-                                    t.set_link(mem, q);
-                                    t.set_width(mem, Scaled(shipout.rule_wd));
-                                    t.set_edge_dist(mem, Scaled(-shipout.cur_h - shipout.rule_wd));
-                                    return Ok(l);
-                                }
-                            }
-                        }
-                    } else {
-                        let end_type = end_lr_type(math.subtype(mem));
-                        push_lr(mem, &mut scanner.lr_ptr, end_type)
-                            .ok_or(ShipoutAbort::MainMemoryOverflow)?;
-                        if n > MIN_HALFWORD || lr_dir(mem, math) != scanner.cur_dir {
-                            n += 1;
-                            math.set_subtype(mem, math.subtype(mem) + 1);
-                        } else {
-                            math.into_kern(mem);
-                            now_kern = true;
-                            m += 1;
+                            add_width = false;
                         }
                     }
+                    Ok(AnyNode::Glue(glue)) => {
+                        let spec = glue.glue_ptr(self);
+                        shipout.rule_wd = rounding.width(self, spec);
+                        if rounding.is_set(self, spec) {
+                            self.freeze_set_glue(glue, spec, shipout.rule_wd)?;
+                            now_kern = glue.subtype(self) < A_LEADERS;
+                        }
+                    }
+                    Ok(AnyNode::Ligature(ligature)) => {
+                        self.flush_list(ligature.lig_ptr(self));
+                        self.temp_ptr = ligature.ptr();
+                        let c = self.get_avail_ship()?;
+                        self.set_word(c.0, self.word(ligature.idx().offset(1).0));
+                        c.set_link(self, q);
+                        self.free_node(ligature.ptr(), SMALL_NODE_SIZE);
+                        p = c;
+                        continue;
+                    }
+                    Ok(AnyNode::Math(math)) => {
+                        shipout.rule_wd = math.width(self).0;
+                        if !math.subtype(self).is_multiple_of(2) {
+                            if !self.lr_matches(scanner, math) {
+                                math.into_kern(self);
+                                now_kern = true;
+                                scanner.lr_problems += 1;
+                            } else {
+                                self.pop_lr(&mut scanner.lr_ptr);
+                                if n > MIN_HALFWORD {
+                                    n -= 1;
+                                    math.set_subtype(self, math.subtype(self) - 1);
+                                } else {
+                                    math.into_kern(self);
+                                    now_kern = true;
+                                    if m > MIN_HALFWORD {
+                                        m -= 1;
+                                    } else {
+                                        self.free_node(math.ptr(), MEDIUM_NODE_SIZE);
+                                        let t = t.expect("a segment reversal ends at its edge");
+                                        t.set_link(self, q);
+                                        t.set_width(self, Scaled(shipout.rule_wd));
+                                        t.set_edge_dist(
+                                            self,
+                                            Scaled(-shipout.cur_h - shipout.rule_wd),
+                                        );
+                                        return Ok(l);
+                                    }
+                                }
+                            }
+                        } else {
+                            let end_type = end_lr_type(math.subtype(self));
+                            self.push_lr(&mut scanner.lr_ptr, end_type)
+                                .ok_or(ShipoutAbort::MainMemoryOverflow)?;
+                            if n > MIN_HALFWORD || self.lr_dir(math) != scanner.cur_dir {
+                                n += 1;
+                                math.set_subtype(self, math.subtype(self) + 1);
+                            } else {
+                                math.into_kern(self);
+                                now_kern = true;
+                                m += 1;
+                            }
+                        }
+                    }
+                    Ok(AnyNode::Style(_)) => return Err(ShipoutAbort::Confusion(c"LR2")),
+                    _ => add_width = false,
                 }
-                Ok(AnyNode::Style(_)) => return Err(ShipoutAbort::Confusion(c"LR2")),
-                _ => add_width = false,
+
+                if add_width {
+                    shipout.cur_h += shipout.rule_wd;
+                }
+                p.set_link(self, l);
+                if now_kern && (shipout.rule_wd == 0 || l.is_null()) {
+                    self.free_node(p, MEDIUM_NODE_SIZE);
+                    p = l;
+                }
+                l = p;
+                p = q;
             }
 
-            if add_width {
-                shipout.cur_h += shipout.rule_wd;
+            if t.is_none() && m == MIN_HALFWORD && n == MIN_HALFWORD {
+                return Ok(l);
             }
-            p.set_link(mem, l);
-            if now_kern && (shipout.rule_wd == 0 || l.is_null()) {
-                crate::mem::free_node(mem, p, MEDIUM_NODE_SIZE);
-                p = l;
-            }
-            l = p;
-            p = q;
+            let dir = scanner.lr_ptr.info(self) as u16;
+            p = self
+                .new_math(0, dir)
+                .ok_or(ShipoutAbort::MainMemoryOverflow)?
+                .ptr();
+            scanner.lr_problems += 10000;
         }
-
-        if t.is_none() && m == MIN_HALFWORD && n == MIN_HALFWORD {
-            return Ok(l);
-        }
-        let dir = scanner.lr_ptr.info(mem) as u16;
-        p = crate::mem::new_math(mem, 0, dir)
-            .ok_or(ShipoutAbort::MainMemoryOverflow)?
-            .ptr();
-        scanner.lr_problems += 10000;
     }
-}
 
-fn movement(
-    mem: &mut MemState,
-    shipout: &mut ShipoutState,
-    w: i32,
-    o: u8,
-) -> Result<(), ShipoutAbort> {
-    let mut q = NodePtr::<MovementNode>::alloc(mem).ok_or(ShipoutAbort::MainMemoryOverflow)?;
-    q.set_distance(mem, Scaled(w));
-    q.set_location(mem, shipout.dvi_offset + shipout.dvi_ptr);
-    let head = if o == DOWN1 {
-        &mut shipout.down_ptr
-    } else {
-        &mut shipout.right_ptr
-    };
-    q.set_link(mem, *head);
-    *head = q.ptr();
-
-    let mut p = NodePtr::<MovementNode>::from_ptr(q.link(mem));
-    let mut mstate = MOV_NONE_SEEN;
-    let found = 'search: {
-        while let Some(node) = p {
-            p = NodePtr::<MovementNode>::from_ptr(node.link(mem));
-            if node.distance(mem).0 != w {
-                match mstate + node.state(mem) {
-                    1 => mstate = MOV_Y_SEEN,
-                    2 => mstate = MOV_Z_SEEN,
-                    8 | 13 => break 'search None,
-                    _ => {}
-                }
-                continue;
-            }
-            let (delta, here) = match mstate + node.state(mem) {
-                // NONE_SEEN or Z_SEEN meeting YZ_OK or Y_OK
-                3 | 4 | 15 | 16 => (5, MOV_Y_HERE),
-                // NONE_SEEN meeting Z_OK, Y_SEEN meeting YZ_OK or Z_OK
-                5 | 9 | 11 => (10, MOV_Z_HERE),
-                // a y or z that is already here
-                1 | 2 | 8 | 13 => break 'search Some(node),
-                _ => continue,
-            };
-            let location = node.location(mem);
-            if location < shipout.dvi_gone {
-                break 'search None;
-            }
-            let mut k = location - shipout.dvi_offset;
-            if k < 0 {
-                k += DVI_BUF_SIZE;
-            }
-            shipout.dvi_buf[k as usize] += delta;
-            shipout.page_manifest.patch_byte(location as u64, delta);
-            node.set_state(mem, here);
-            break 'search Some(node);
-        }
-        None
-    };
-
-    let Some(found) = found else {
-        q.set_state(mem, MOV_YZ_OK);
-        let len = if w.abs() >= 0x800000 {
-            4
-        } else if w.abs() >= 0x8000 {
-            3
-        } else if w.abs() >= 128 {
-            2
+    fn movement(&mut self, shipout: &mut ShipoutState, w: i32, o: u8) -> Result<(), ShipoutAbort> {
+        let mut q = NodePtr::<MovementNode>::alloc(self).ok_or(ShipoutAbort::MainMemoryOverflow)?;
+        q.set_distance(self, Scaled(w));
+        q.set_location(self, shipout.dvi_offset + shipout.dvi_ptr);
+        let head = if o == DOWN1 {
+            &mut shipout.down_ptr
         } else {
-            1
+            &mut shipout.right_ptr
         };
-        dvi_out(shipout, o + len as u8 - 1)?;
-        return dvi_bytes(shipout, &w.to_be_bytes()[4 - len..]);
-    };
+        q.set_link(self, *head);
+        *head = q.ptr();
 
-    q.set_state(mem, found.state(mem));
-    let (opcode, yz_becomes, fixed_from) = if q.state(mem) == MOV_Y_HERE {
-        (o + 4, MOV_Z_OK, MOV_Y_OK)
-    } else {
-        (o + 9, MOV_Y_OK, MOV_Z_OK)
-    };
-    while q.link(mem) != found.ptr() {
-        q = NodePtr::<MovementNode>::from_ptr(q.link(mem))
-            .expect("found movement record is linked from the new record");
-        let state = q.state(mem);
-        if state == MOV_YZ_OK {
-            q.set_state(mem, yz_becomes);
-        } else if state == fixed_from {
-            q.set_state(mem, MOV_D_FIXED);
+        let mut p = NodePtr::<MovementNode>::from_ptr(q.link(self));
+        let mut mstate = MOV_NONE_SEEN;
+        let found = 'search: {
+            while let Some(node) = p {
+                p = NodePtr::<MovementNode>::from_ptr(node.link(self));
+                if node.distance(self).0 != w {
+                    match mstate + node.state(self) {
+                        1 => mstate = MOV_Y_SEEN,
+                        2 => mstate = MOV_Z_SEEN,
+                        8 | 13 => break 'search None,
+                        _ => {}
+                    }
+                    continue;
+                }
+                let (delta, here) = match mstate + node.state(self) {
+                    // NONE_SEEN or Z_SEEN meeting YZ_OK or Y_OK
+                    3 | 4 | 15 | 16 => (5, MOV_Y_HERE),
+                    // NONE_SEEN meeting Z_OK, Y_SEEN meeting YZ_OK or Z_OK
+                    5 | 9 | 11 => (10, MOV_Z_HERE),
+                    // a y or z that is already here
+                    1 | 2 | 8 | 13 => break 'search Some(node),
+                    _ => continue,
+                };
+                let location = node.location(self);
+                if location < shipout.dvi_gone {
+                    break 'search None;
+                }
+                let mut k = location - shipout.dvi_offset;
+                if k < 0 {
+                    k += DVI_BUF_SIZE;
+                }
+                shipout.dvi_buf[k as usize] += delta;
+                shipout.page_manifest.patch_byte(location as u64, delta);
+                node.set_state(self, here);
+                break 'search Some(node);
+            }
+            None
+        };
+
+        let Some(found) = found else {
+            q.set_state(self, MOV_YZ_OK);
+            let len = if w.abs() >= 0x800000 {
+                4
+            } else if w.abs() >= 0x8000 {
+                3
+            } else if w.abs() >= 128 {
+                2
+            } else {
+                1
+            };
+            dvi_out(shipout, o + len as u8 - 1)?;
+            return dvi_bytes(shipout, &w.to_be_bytes()[4 - len..]);
+        };
+
+        q.set_state(self, found.state(self));
+        let (opcode, yz_becomes, fixed_from) = if q.state(self) == MOV_Y_HERE {
+            (o + 4, MOV_Z_OK, MOV_Y_OK)
+        } else {
+            (o + 9, MOV_Y_OK, MOV_Z_OK)
+        };
+        while q.link(self) != found.ptr() {
+            q = NodePtr::<MovementNode>::from_ptr(q.link(self))
+                .expect("found movement record is linked from the new record");
+            let state = q.state(self);
+            if state == MOV_YZ_OK {
+                q.set_state(self, yz_becomes);
+            } else if state == fixed_from {
+                q.set_state(self, MOV_D_FIXED);
+            }
         }
+        dvi_out(shipout, opcode)
     }
-    dvi_out(shipout, opcode)
 }
 
 fn special_out(
@@ -1998,14 +2015,14 @@ fn write_out(
     st: &mut crate::state::EngineState,
     write: NodePtr<WhatsitNode>,
 ) -> Result<(), ShipoutAbort> {
-    let q = get_avail_ship(&mut st.mem)?;
+    let q = st.mem.get_avail_ship()?;
     q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-    let r = get_avail_ship(&mut st.mem)?;
+    let r = st.mem.get_avail_ship()?;
     q.set_link(&mut st.mem, r);
     r.set_info(&mut st.mem, CS_TOKEN_FLAG + END_WRITE);
     crate::input::begin_token_list_in(st, q, INSERTED)?;
     crate::input::begin_token_list_in(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
-    let q = get_avail_ship(&mut st.mem)?;
+    let q = st.mem.get_avail_ship()?;
     q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     crate::input::begin_token_list_in(st, q, INSERTED)?;
 
@@ -2048,7 +2065,7 @@ fn write_out(
     let def_ref = st.scanner.def_ref;
     crate::output::token_show_in(st, def_ref.0);
     crate::output::print_ln_in(st);
-    crate::mem::flush_list(&mut st.mem, def_ref);
+    st.mem.flush_list(def_ref);
 
     if j == 18 {
         st.shipout.selector = log_selector(&st.eqtb);

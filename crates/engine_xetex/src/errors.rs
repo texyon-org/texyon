@@ -387,7 +387,7 @@ pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
     show_box_in(st, box_val);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
     end_diagnostic_in(st, true);
-    if let Err(msg) = crate::packaging::flush_node_list(&mut st.mem, box_val) {
+    if let Err(msg) = st.mem.flush_node_list(box_val) {
         return ErrorOutcome::Confusion(msg);
     }
     st.eqtb.set_box_reg(n as i32, crate::units::MemPtr::NULL);

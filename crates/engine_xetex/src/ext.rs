@@ -1266,7 +1266,7 @@ impl NativeFontAbort {
 
 /// The layout engine of OpenType/Graphite font `f`, or `BadFlag(msg)` for any
 /// other font.
-fn ot_engine(
+fn require_ot_engine(
     fonts: &FontState,
     f: i32,
     msg: &'static CStr,
@@ -1355,7 +1355,7 @@ pub unsafe fn measure_native_node(
     // The shaper only reads the text.
     let text = w.native_text_ptr(mem).cast_mut();
     let f = w.native_font(mem).0;
-    let engine = ot_engine(fonts, f, c"bad native font flag in `measure_native_node`")?;
+    let engine = require_ot_engine(fonts, f, c"bad native font flag in `measure_native_node`")?;
 
     let bidi = ubidi_open();
     let mut error_code = 0i32;
@@ -1456,11 +1456,13 @@ pub unsafe fn measure_native_node(
     Ok(())
 }
 
-pub fn real_get_native_glyph(mem: &MemState, w: NodePtr<WhatsitNode>, index: u32) -> u16 {
-    if index as usize >= w.native_glyph_count(mem) as usize {
-        0
-    } else {
-        mem.glyph_blobs.get(w.native_glyph_info_handle(mem)).gids[index as usize]
+impl MemState {
+    pub fn real_get_native_glyph(&self, w: NodePtr<WhatsitNode>, index: u32) -> u16 {
+        if index as usize >= w.native_glyph_count(self) as usize {
+            0
+        } else {
+            self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids[index as usize]
+        }
     }
 }
 
@@ -1504,7 +1506,7 @@ pub unsafe fn measure_native_glyph(
 ) -> Result<(), NativeFontAbort> {
     let gid = w.native_glyph(mem) as u32;
     let f = w.native_font(mem).0;
-    let engine = ot_engine(fonts, f, c"bad native font flag in `measure_native_glyph`")?;
+    let engine = require_ot_engine(fonts, f, c"bad native font flag in `measure_native_glyph`")?;
     w.set_width(
         mem,
         Scaled(D2Fix(getGlyphWidth(getFont(engine), gid) as c_double)),
@@ -1521,20 +1523,22 @@ pub unsafe fn measure_native_glyph(
     Ok(())
 }
 
-/// The protrusion code of the first or last glyph of native word `w`.
-pub unsafe fn real_get_native_word_cp(mem: &MemState, w: NodePtr<WhatsitNode>, side: c_int) -> i32 {
-    let glyph_count = w.native_glyph_count(mem) as usize;
-    let f = w.native_font(mem).0;
-    if glyph_count == 0 {
-        return 0;
+impl MemState {
+    /// The protrusion code of the first or last glyph of native word `w`.
+    pub unsafe fn real_get_native_word_cp(&self, w: NodePtr<WhatsitNode>, side: c_int) -> i32 {
+        let glyph_count = w.native_glyph_count(self) as usize;
+        let f = w.native_font(self).0;
+        if glyph_count == 0 {
+            return 0;
+        }
+        let gids = &self.glyph_blobs.get(w.native_glyph_info_handle(self)).gids;
+        let actual_glyph = match side {
+            LEFT_SIDE => gids[0],
+            RIGHT_SIDE => gids[glyph_count - 1],
+            _ => unreachable!(),
+        };
+        get_cp_code(f, actual_glyph as u32, side)
     }
-    let gids = &mem.glyph_blobs.get(w.native_glyph_info_handle(mem)).gids;
-    let actual_glyph = match side {
-        LEFT_SIDE => gids[0],
-        RIGHT_SIDE => gids[glyph_count - 1],
-        _ => unreachable!(),
-    };
-    get_cp_code(f, actual_glyph as u32, side)
 }
 
 fn snap_zone(value: &mut i32, snap_value: i32, fuzz: i32) {
@@ -1550,7 +1554,7 @@ pub unsafe fn get_native_char_height_depth(
     font: i32,
     ch: i32,
 ) -> Result<(i32, i32), NativeFontAbort> {
-    let engine = ot_engine(
+    let engine = require_ot_engine(
         fonts,
         font,
         c"bad native font flag in `get_native_char_height_depth`",
@@ -1586,7 +1590,7 @@ pub unsafe fn get_native_char_sidebearings(
     font: i32,
     ch: i32,
 ) -> Result<(i32, i32), NativeFontAbort> {
-    let engine = ot_engine(
+    let engine = require_ot_engine(
         fonts,
         font,
         c"bad native font flag in `get_native_char_side_bearings`",
@@ -1604,7 +1608,7 @@ pub unsafe fn get_glyph_bounds(
     edge: i32,
     gid: i32,
 ) -> Result<i32, NativeFontAbort> {
-    let engine = ot_engine(fonts, font, c"bad native font flag in `get_glyph_bounds`")?;
+    let engine = require_ot_engine(fonts, font, c"bad native font flag in `get_glyph_bounds`")?;
     let (mut a, mut b) = (0.0f32, 0.0f32);
     if edge & 1 != 0 {
         getGlyphSidebearings(engine, gid as u32, &mut a, &mut b);
@@ -1625,7 +1629,7 @@ pub unsafe fn getnativecharic(fonts: &FontState, f: i32, c: i32) -> Result<i32, 
 }
 
 pub unsafe fn getnativecharwd(fonts: &FontState, f: i32, c: i32) -> Result<i32, NativeFontAbort> {
-    let engine = ot_engine(fonts, f, c"bad native font flag in `get_native_char_wd`")?;
+    let engine = require_ot_engine(fonts, f, c"bad native font flag in `get_native_char_wd`")?;
     let gid = mapCharToGlyph(engine, c as u32);
     Ok(D2Fix(getGlyphWidthFromEngine(engine, gid) as c_double))
 }
@@ -1638,7 +1642,7 @@ pub unsafe fn map_char_to_glyph(
     if ch > 0x10ffff || (0xd800..=0xdfff).contains(&ch) {
         return Ok(0);
     }
-    let engine = ot_engine(fonts, font, c"bad native font flag in `map_char_to_glyph`")?;
+    let engine = require_ot_engine(fonts, font, c"bad native font flag in `map_char_to_glyph`")?;
     Ok(mapCharToGlyph(engine, ch as u32) as i32)
 }
 
@@ -1647,7 +1651,7 @@ pub unsafe fn map_glyph_to_index(
     font: i32,
     name: *const c_char,
 ) -> Result<i32, NativeFontAbort> {
-    let engine = ot_engine(fonts, font, c"bad native font flag in `map_glyph_to_index`")?;
+    let engine = require_ot_engine(fonts, font, c"bad native font flag in `map_glyph_to_index`")?;
     Ok(mapGlyphToIndex(engine, name))
 }
 
@@ -1656,7 +1660,7 @@ pub unsafe fn get_font_char_range(
     font: i32,
     first: i32,
 ) -> Result<i32, NativeFontAbort> {
-    let engine = ot_engine(
+    let engine = require_ot_engine(
         fonts,
         font,
         c"bad native font flag in `get_font_char_range'`",
@@ -1741,7 +1745,7 @@ pub unsafe fn linebreak_next(fonts: &FontState, f: c_int) -> c_int {
 /// Write the XDV native font definition of `f` into `fonts.xdv_buffer` and
 /// return its length.
 pub unsafe fn make_font_def(fonts: &mut FontState, f: i32) -> Result<c_int, NativeFontAbort> {
-    let engine = ot_engine(fonts, f, c"bad native font flag in `make_font_def`")?;
+    let engine = require_ot_engine(fonts, f, c"bad native font flag in `make_font_def`")?;
     let mut index: u32 = 0;
     let filename = getFontFilename(engine, &mut index);
     assert!(!filename.is_null());
@@ -1928,7 +1932,7 @@ pub(crate) unsafe fn print_glyph_name_in(
     font: i32,
     gid: i32,
 ) -> Result<(), NativeFontAbort> {
-    let engine = ot_engine(
+    let engine = require_ot_engine(
         &st.fonts,
         font,
         c"bad native font flag in `print_glyph_name`",
@@ -2017,12 +2021,12 @@ pub(crate) fn append_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     )
     .ok_or(InsertSrcAbort::MainMemory)?;
     w.set_write_stream(&mut st.mem, 0);
-    let d = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
+    let d = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
     st.scanner.def_ref = d;
     d.set_info(&mut st.mem, crate::mem::TEX_NULL);
     let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
         .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
-    crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0)?;
+    st.mem.str_toks_cat(&mut st.strings, b, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
     d.set_link(&mut st.mem, text);
     w.set_write_tokens(&mut st.mem, d);
@@ -2035,17 +2039,17 @@ pub(crate) fn insert_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let Some(fname) = new_source_position_in(st) else {
         return Ok(());
     };
-    let toklist = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
+    let toklist = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
     toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-    let open = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
+    let open = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
     toklist.set_link(&mut st.mem, open);
     open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
         .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
-    let text_tail = crate::scan::str_toks_cat_in(&mut st.mem, &mut st.strings, b, 0)?;
+    let text_tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
-    let close = crate::mem::get_avail(&mut st.mem).ok_or(InsertSrcAbort::MainMemory)?;
+    let close = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
     text_tail.set_link(&mut st.mem, close);
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
     crate::input::begin_token_list_in(st, toklist, INSERTED)?;
@@ -2072,15 +2076,15 @@ pub(crate) unsafe fn tt_insert_special_in(
         st.strings.pool_ptr += 1;
     }
 
-    let toklist = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+    let toklist = st.mem.get_avail().ok_or(NodeRecycleAbort::Overflow)?;
     toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
-    let open = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+    let open = st.mem.get_avail().ok_or(NodeRecycleAbort::Overflow)?;
     open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
     toklist.set_link(&mut st.mem, open);
     let text_tail = crate::scan::str_toks_scc(st, start_pool, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
-    let close = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+    let close = st.mem.get_avail().ok_or(NodeRecycleAbort::Overflow)?;
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
     text_tail.set_link(&mut st.mem, close);
     crate::input::begin_token_list_in(st, toklist, INSERTED)?;
@@ -2167,7 +2171,8 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                 let p = st.input.cur_list.tail;
                 let w = io_whatsit_in(st)?;
                 crate::shipout::out_what(st, w)?;
-                crate::packaging::flush_node_list(&mut st.mem, st.input.cur_list.tail)
+                st.mem
+                    .flush_node_list(st.input.cur_list.tail)
                     .map_err(MainControlAbort::Confusion)?;
                 st.input.cur_list.tail = p;
                 p.set_link(&mut st.mem, MemPtr::NULL);

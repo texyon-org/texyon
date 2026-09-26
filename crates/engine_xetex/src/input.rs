@@ -6,7 +6,6 @@ use crate::consts::{
 };
 use crate::errors::{EngineAbort, ErrorOutcome};
 use crate::io::u_close;
-use crate::mem::{flush_list, free_node, get_avail};
 use crate::node::{NodePtr, PseudoLineNode};
 use crate::state::{EngineState, InputClusterState, MemState};
 use crate::units::MemPtr;
@@ -94,16 +93,14 @@ pub(crate) fn end_token_list_in(st: &mut EngineState) -> Result<(), InputAbort> 
     let ci = st.input.cur_input;
     if ci.index >= BACKED_UP {
         if ci.index <= INSERTED {
-            flush_list(&mut st.mem, MemPtr::from_raw(ci.start));
+            st.mem.flush_list(MemPtr::from_raw(ci.start));
         } else {
-            crate::mem::delete_token_ref(&mut st.mem, MemPtr(ci.start));
+            st.mem.delete_token_ref(MemPtr(ci.start));
             if ci.index == MACRO {
                 while st.input.param_ptr > ci.limit {
                     st.input.param_ptr -= 1;
-                    flush_list(
-                        &mut st.mem,
-                        st.input.param_stack[st.input.param_ptr as usize],
-                    );
+                    st.mem
+                        .flush_list(st.input.param_stack[st.input.param_ptr as usize]);
                 }
             }
         }
@@ -127,7 +124,7 @@ pub(crate) fn back_input_in(st: &mut EngineState) -> Result<(), InputAbort> {
     {
         end_token_list_in(st)?;
     }
-    let p = get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
+    let p = st.mem.get_avail().ok_or(InputAbort::MainMemory)?;
     p.set_info(&mut st.mem, st.scanner.cur_tok);
     if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
         if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
@@ -155,15 +152,17 @@ pub(crate) fn ins_error_in(st: &mut EngineState) -> Result<ErrorOutcome, InputAb
     Ok(crate::errors::error_in(st))
 }
 
-pub(crate) fn pseudo_close(mem: &mut MemState, input: &mut InputClusterState) {
-    let file = input.pseudo_files;
-    let next_file = file.link(mem);
-    let mut line = MemPtr(file.info(mem));
-    crate::mem::free_avail(mem, file);
-    input.pseudo_files = next_file;
-    while let Some(l) = NodePtr::<PseudoLineNode>::from_ptr(line) {
-        line = l.link(mem);
-        free_node(mem, l.ptr(), l.size(mem));
+impl MemState {
+    pub(crate) fn pseudo_close(&mut self, input: &mut InputClusterState) {
+        let file = input.pseudo_files;
+        let next_file = file.link(self);
+        let mut line = MemPtr(file.info(self));
+        self.free_avail(file);
+        input.pseudo_files = next_file;
+        while let Some(l) = NodePtr::<PseudoLineNode>::from_ptr(line) {
+            line = l.link(self);
+            self.free_node(l.ptr(), l.size(self));
+        }
     }
 }
 
@@ -202,7 +201,7 @@ pub(crate) fn end_file_reading_in(st: &mut EngineState) -> Result<(), InputAbort
     st.input.first = st.input.cur_input.start;
     st.mem.line = st.input.line_stack[st.input.cur_input.index as usize];
     match st.input.cur_input.name {
-        18 | 19 => pseudo_close(&mut st.mem, &mut st.input),
+        18 | 19 => st.mem.pseudo_close(&mut st.input),
         name if name > 17 => {
             let idx = st.input.cur_input.index as usize;
             let slot = std::mem::take(&mut st.input.input_file[idx]);
@@ -250,7 +249,7 @@ pub(crate) fn pseudo_input_in(st: &mut EngineState) -> Result<bool, InputAbort> 
     {
         st.input.last -= 1;
     }
-    free_node(&mut st.mem, line.ptr(), size);
+    st.mem.free_node(line.ptr(), size);
     Ok(true)
 }
 
@@ -276,7 +275,7 @@ pub(crate) fn begin_token_list_in(
         st.input.cur_input.loc = list.0;
         return Ok(());
     }
-    crate::mem::add_token_ref(&mut st.mem, list);
+    st.mem.add_token_ref(list);
     if t == MACRO {
         st.input.cur_input.limit = st.input.param_ptr;
         return Ok(());

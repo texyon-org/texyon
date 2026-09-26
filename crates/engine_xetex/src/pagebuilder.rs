@@ -11,7 +11,6 @@ use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
 use crate::input::OUTPUT_TEXT;
 use crate::main_control::{COPY_CODE, LAST_BOX_CODE};
-use crate::mem::add_token_ref;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
 use crate::packaging::{ADDITIONAL, EXACTLY};
@@ -157,30 +156,32 @@ fn push_nest_pagebuilder_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
 fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<(), PageBuildAbort> {
     if class != 0 {
-        let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, MARK_VAL, class)
+        let sa = st
+            .mem
+            .create_sa_element(&mut st.scanner, MARK_VAL, class)
             .ok_or(PageBuildAbort::MainMemoryOverflow)?;
         if sa.child(&st.mem, 1).is_null() {
             sa.set_child(&mut st.mem, 1, mark_ptr);
-            add_token_ref(&mut st.mem, mark_ptr);
+            st.mem.add_token_ref(mark_ptr);
         }
         let bot = sa.child(&st.mem, 2);
         if !bot.is_null() {
-            crate::mem::delete_token_ref(&mut st.mem, bot);
+            st.mem.delete_token_ref(bot);
         }
         sa.set_child(&mut st.mem, 2, mark_ptr);
-        add_token_ref(&mut st.mem, mark_ptr);
+        st.mem.add_token_ref(mark_ptr);
         return Ok(());
     }
     let marks = &mut st.scanner.cur_mark;
     if marks[FIRST_MARK_CODE].is_null() {
         marks[FIRST_MARK_CODE] = mark_ptr;
-        add_token_ref(&mut st.mem, mark_ptr);
+        st.mem.add_token_ref(mark_ptr);
     }
     if !marks[BOT_MARK_CODE].is_null() {
-        crate::mem::delete_token_ref(&mut st.mem, marks[BOT_MARK_CODE]);
+        st.mem.delete_token_ref(marks[BOT_MARK_CODE]);
     }
     marks[BOT_MARK_CODE] = mark_ptr;
-    add_token_ref(&mut st.mem, mark_ptr);
+    st.mem.add_token_ref(mark_ptr);
     Ok(())
 }
 
@@ -219,19 +220,15 @@ fn place_insertion_in(
         s.set_link(&mut st.mem, MemPtr::NULL);
         st.eqtb
             .set_glue_par(GLUE_PAR_SPLIT_TOP_SKIP, ins.split_top_ptr(&st.mem));
-        let pruned = crate::packaging::prune_page_top(
-            &mut st.mem,
-            &mut st.scanner,
-            &st.eqtb,
-            broken_ptr.0,
-            false,
-        )?;
+        let pruned = st
+            .mem
+            .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr.0, false)?;
         ins.set_ins_ptr(&mut st.mem, pruned);
         if !pruned.is_null() {
             let tmp = crate::packaging::vpackage_emit_in(st, pruned, 0, ADDITIONAL, MAX_HALFWORD)?;
             let size = tmp.height(&st.mem).0 + tmp.depth(&st.mem).0;
             ins.set_height(&mut st.mem, Scaled(size));
-            crate::mem::free_node(&mut st.mem, tmp.ptr(), BOX_NODE_SIZE);
+            st.mem.free_node(tmp.ptr(), BOX_NODE_SIZE);
             wait = true;
         }
     }
@@ -239,7 +236,7 @@ fn place_insertion_in(
     let n = rec.subtype(&st.mem) as u8;
     let b = fetch_box(st, n as i32).expect("insertion box made in fire_up");
     let list = b.list_ptr(&st.mem);
-    crate::mem::free_node(&mut st.mem, b.ptr(), BOX_NODE_SIZE);
+    st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
     let packed = crate::packaging::vpackage_emit_in(st, list, 0, ADDITIONAL, MAX_HALFWORD)?;
     st.eqtb.set_box_reg(n as i32, packed.ptr());
     Ok(wait)
@@ -263,17 +260,18 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     );
 
     if let Some(root) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
-        if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_INIT, 0, root) {
+        if st.mem.do_marks(&mut st.scanner, FIRE_UP_INIT, 0, root) {
             st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
         }
     }
     if !st.scanner.cur_mark[BOT_MARK_CODE].is_null() {
         if !st.scanner.cur_mark[TOP_MARK_CODE].is_null() {
-            crate::mem::delete_token_ref(&mut st.mem, st.scanner.cur_mark[TOP_MARK_CODE]);
+            st.mem.delete_token_ref(st.scanner.cur_mark[TOP_MARK_CODE]);
         }
         st.scanner.cur_mark[TOP_MARK_CODE] = st.scanner.cur_mark[BOT_MARK_CODE];
-        add_token_ref(&mut st.mem, st.scanner.cur_mark[TOP_MARK_CODE]);
-        crate::mem::delete_token_ref(&mut st.mem, st.scanner.cur_mark[FIRST_MARK_CODE]);
+        st.mem.add_token_ref(st.scanner.cur_mark[TOP_MARK_CODE]);
+        st.mem
+            .delete_token_ref(st.scanner.cur_mark[FIRST_MARK_CODE]);
         st.scanner.cur_mark[FIRST_MARK_CODE] = MemPtr::NULL;
     }
 
@@ -304,7 +302,9 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
                 let n = rec.subtype(&st.mem) as u8;
                 ensure_vbox_in(st, n)?;
                 if st.eqtb.box_reg(n as i32).is_null() {
-                    let b = crate::mem::new_null_box(&mut st.mem)
+                    let b = st
+                        .mem
+                        .new_null_box()
                         .ok_or(PageBuildAbort::MainMemoryOverflow)?;
                     st.eqtb.set_box_reg(n as i32, b.ptr());
                 }
@@ -336,8 +336,8 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
                     st.shipout.insert_penalties += 1;
                 } else {
                     let split_top = ins.split_top_ptr(&st.mem);
-                    crate::mem::delete_glue_ref(&mut st.mem, split_top);
-                    crate::mem::free_node(&mut st.mem, p, INS_NODE_SIZE);
+                    st.mem.delete_glue_ref(split_top);
+                    st.mem.free_node(p, INS_NODE_SIZE);
                 }
             }
             Ok(AnyNode::Mark(mark)) => {
@@ -376,7 +376,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     st.eqtb.set_int_par(INT_PAR_VBADNESS, save_vbadness);
     st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, save_vfuzz);
     if let Some(spec) = st.shipout.last_glue {
-        crate::mem::delete_glue_ref(&mut st.mem, spec);
+        st.mem.delete_glue_ref(spec);
     }
 
     st.shipout.page_contents = PageContents::Empty;
@@ -397,20 +397,20 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     let mut r = PAGE_INS_HEAD.link(&st.mem);
     while r != PAGE_INS_HEAD {
         let next = r.link(&st.mem);
-        crate::mem::free_node(&mut st.mem, r, PAGE_INS_NODE_SIZE);
+        st.mem.free_node(r, PAGE_INS_NODE_SIZE);
         r = next;
     }
     PAGE_INS_HEAD.set_link(&mut st.mem, PAGE_INS_HEAD);
 
     if let Some(root) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
-        if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, FIRE_UP_DONE, 0, root) {
+        if st.mem.do_marks(&mut st.scanner, FIRE_UP_DONE, 0, root) {
             st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
         }
     }
     let marks = &mut st.scanner.cur_mark;
     if !marks[TOP_MARK_CODE].is_null() && marks[FIRST_MARK_CODE].is_null() {
         marks[FIRST_MARK_CODE] = marks[TOP_MARK_CODE];
-        add_token_ref(&mut st.mem, marks[TOP_MARK_CODE]);
+        st.mem.add_token_ref(marks[TOP_MARK_CODE]);
     }
 
     let output_routine = st.eqtb.local(LOCAL_OUTPUT_ROUTINE);
@@ -453,7 +453,8 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         st.shipout.page_tail = PAGE_HEAD;
     }
     let discards = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
-    crate::packaging::flush_node_list(&mut st.mem, discards.0)
+    st.mem
+        .flush_node_list(discards.0)
         .map_err(PageBuildAbort::Confusion)?;
     st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
     unsafe { crate::shipout::ship_out_in(st, page)? };
@@ -518,7 +519,9 @@ fn append_insertion_in(
         r = r.link(&st.mem);
     }
     if page_ins(r).subtype(&st.mem) as u8 != n {
-        let q = crate::mem::get_node(&mut st.mem, PAGE_INS_NODE_SIZE)
+        let q = st
+            .mem
+            .get_node(PAGE_INS_NODE_SIZE)
             .ok_or(PageBuildAbort::MainMemoryOverflow)?;
         let next = r.link(&st.mem);
         q.set_link(&mut st.mem, next);
@@ -631,7 +634,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
         let node_type = st.mem.type_code(idx) as i32;
         let node = st.mem.classify(idx).expect("valid page node");
         if let Some(spec) = st.shipout.last_glue {
-            crate::mem::delete_glue_ref(&mut st.mem, spec);
+            st.mem.delete_glue_ref(spec);
         }
         update_last_node_info(st, node, node_type);
 
@@ -650,7 +653,9 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     } else {
                         st.shipout.page_contents = PageContents::BoxThere;
                     }
-                    let q = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_TOP_SKIP)
+                    let q = st
+                        .mem
+                        .new_skip_param(&st.eqtb, GLUE_PAR_TOP_SKIP)
                         .ok_or(PageBuildAbort::MainMemoryOverflow)?;
                     let spec = q.glue_ptr(&st.mem);
                     let width = spec.width(&st.mem).0;
@@ -768,7 +773,8 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                 CONTRIB_HEAD.set_link(&mut st.mem, next);
                 p.set_link(&mut st.mem, MemPtr::NULL);
                 if st.eqtb.int_par(INT_PAR_SAVING_VDISCARDS) <= 0 {
-                    crate::packaging::flush_node_list(&mut st.mem, p.0)
+                    st.mem
+                        .flush_node_list(p.0)
                         .map_err(PageBuildAbort::Confusion)?;
                 } else {
                     let discards = &mut st.scanner.disc_ptr;
@@ -808,10 +814,12 @@ fn page_glue_width_in(
         "since the offensive shrinkability has been made finite.",
     ]);
     page_error(crate::errors::error_in(st))?;
-    let finite =
-        crate::mem::new_spec(&mut st.mem, spec).ok_or(PageBuildAbort::MainMemoryOverflow)?;
+    let finite = st
+        .mem
+        .new_spec(spec)
+        .ok_or(PageBuildAbort::MainMemoryOverflow)?;
     finite.set_shrink_order(&mut st.mem, NORMAL);
-    crate::mem::delete_glue_ref(&mut st.mem, spec);
+    st.mem.delete_glue_ref(spec);
     glue.set_glue_ptr(&mut st.mem, finite);
     Ok(finite.width(&st.mem).0)
 }

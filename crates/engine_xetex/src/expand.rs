@@ -31,7 +31,7 @@ use crate::scan::{
     scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, END_MATCH_TOKEN, MARK_VAL,
     MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG, OTHER_TOKEN, SPACE_TOKEN,
 };
-use crate::state::EngineState;
+use crate::state::{EngineState, MemState};
 use crate::units::{MemIdx, MemPtr};
 
 extern "C" {
@@ -355,7 +355,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 )
                 .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
             };
-            crate::mem::flush_list(&mut st.mem, head);
+            st.mem.flush_list(head);
             st.eqtb.eq_type(st.scanner.cur_cs) != UNDEFINED_CS
         }
         IF_IN_CSNAME_CODE => st.scanner.is_in_csname,
@@ -518,7 +518,7 @@ fn scan_text_to_string_in(st: &mut EngineState, saved: &SavedScan) -> Result<i32
     st.shipout.selector = old_selector;
     let s = crate::string_pool::make_string(&mut st.strings)
         .map_err(|_| make_string_overflow_scc(st))?;
-    crate::mem::delete_token_ref(&mut st.mem, st.scanner.def_ref);
+    st.mem.delete_token_ref(st.scanner.def_ref);
     restore_scan(st, saved);
     Ok(s)
 }
@@ -556,23 +556,27 @@ fn scan_nonnegative_int_in(
     Ok(st.scanner.cur_val)
 }
 
-/// Whether a node may be skipped when looking for a margin kern at the edge of a line.
-fn is_margin_kern_filler(mem: &crate::state::MemState, node: AnyNode, par_skip: i16) -> bool {
-    match node {
-        AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
-        AnyNode::Disc(d) => {
-            d.pre_break(mem).is_null() && d.post_break(mem).is_null() && d.subtype(mem) == 0
+impl MemState {
+    /// Whether a node may be skipped when looking for a margin kern at the edge of a line.
+    fn is_margin_kern_filler(&self, node: AnyNode, par_skip: i16) -> bool {
+        match node {
+            AnyNode::Ins(_) | AnyNode::Mark(_) | AnyNode::Adjust(_) | AnyNode::Penalty(_) => true,
+            AnyNode::Disc(d) => {
+                d.pre_break(self).is_null() && d.post_break(self).is_null() && d.subtype(self) == 0
+            }
+            AnyNode::Math(m) => m.width(self).0 == 0,
+            AnyNode::Kern(k) => k.width(self).0 == 0 || k.subtype(self) == 0,
+            AnyNode::Glue(g) => {
+                g.glue_ptr(self) == ZERO_GLUE || g.subtype(self) == (par_skip + 1) as u16
+            }
+            AnyNode::HList(h) => {
+                h.width(self).0 == 0
+                    && h.height(self).0 == 0
+                    && h.depth(self).0 == 0
+                    && h.list_ptr(self).is_null()
+            }
+            _ => false,
         }
-        AnyNode::Math(m) => m.width(mem).0 == 0,
-        AnyNode::Kern(k) => k.width(mem).0 == 0 || k.subtype(mem) == 0,
-        AnyNode::Glue(g) => g.glue_ptr(mem) == ZERO_GLUE || g.subtype(mem) == (par_skip + 1) as u16,
-        AnyNode::HList(h) => {
-            h.width(mem).0 == 0
-                && h.height(mem).0 == 0
-                && h.depth(mem).0 == 0
-                && h.list_ptr(mem).is_null()
-        }
-        _ => false,
     }
 }
 
@@ -586,11 +590,11 @@ fn print_margin_kern_in(
     next: impl Fn(&crate::state::MemState, MemPtr) -> MemPtr,
 ) {
     let width = loop {
-        if p.is_null() || crate::mem::is_char_node(&st.mem, p) {
+        if p.is_null() || st.mem.is_char_node(p) {
             break None;
         }
         match st.mem.classify(MemIdx::new(p)) {
-            Ok(node) if is_margin_kern_filler(&st.mem, node, par_skip) => p = next(&st.mem, p),
+            Ok(node) if st.mem.is_margin_kern_filler(node, par_skip) => p = next(&st.mem, p),
             Ok(AnyNode::MarginKern(mk)) if mk.subtype(&st.mem) == side => {
                 break Some(mk.width(&st.mem).0)
             }
@@ -624,7 +628,7 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             let def_ref = st.scanner.def_ref;
             let list = def_ref.link(&st.mem);
             begin_token_list_in(st, list, INSERTED)?;
-            crate::mem::free_avail(&mut st.mem, st.scanner.def_ref);
+            st.mem.free_avail(st.scanner.def_ref);
             st.scanner.def_ref.0 = saved.def_ref;
             unseal_pending_str(st, &saved);
             return Ok(());
@@ -813,9 +817,9 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     p.link(mem)
                 });
             } else {
-                let last = crate::mem::prev_rightmost(&st.mem, MemPtr(list), MemPtr::NULL);
+                let last = st.mem.prev_rightmost(MemPtr(list), MemPtr::NULL);
                 print_margin_kern_in(st, last, 1, GLUE_PAR_RIGHT_SKIP, move |mem, p| {
-                    crate::mem::prev_rightmost(mem, MemPtr(list), p)
+                    mem.prev_rightmost(MemPtr(list), p)
                 });
             }
         }
@@ -940,9 +944,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     st.scanner.cur_ptr = st.scanner.cur_mark[t as usize];
                 } else {
                     let n = st.scanner.cur_val;
-                    if let Some(sa) =
-                        crate::save::find_sa_element(&st.mem, &mut st.scanner, MARK_VAL, n)
-                    {
+                    if let Some(sa) = st.mem.find_sa_element(&mut st.scanner, MARK_VAL, n) {
                         st.scanner.cur_ptr = sa.child(&st.mem, t);
                     }
                 }
@@ -1031,7 +1033,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 } else {
                     SINGLE_BASE + st.input.buffer[first as usize]
                 };
-                crate::mem::flush_list(&mut st.mem, head);
+                st.mem.flush_list(head);
                 let cs = st.scanner.cur_cs;
                 if st.eqtb.eq_type(cs) == UNDEFINED_CS {
                     let _ = crate::save::eq_define(
@@ -1133,7 +1135,7 @@ fn runaway_par_in_argument_in(
     pstack[n as usize] = TEMP_HEAD.link(&st.mem);
     st.scanner.align_state -= unbalance;
     for &list in &pstack[..=n as usize] {
-        crate::mem::flush_list(&mut st.mem, list);
+        st.mem.flush_list(list);
     }
     Ok(())
 }
@@ -1214,7 +1216,7 @@ pub(crate) fn macro_call_in(st: &mut EngineState) -> Result<(), SccAbort> {
         trace_macro_call_in(st, ref_count);
     }
 
-    if crate::scan::is_protected_macro(&st.mem, ref_count) {
+    if st.mem.is_protected_macro(ref_count) {
         r = r.link(&st.mem);
     }
 
@@ -1362,10 +1364,10 @@ pub(crate) fn macro_call_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     if m == 1 && p.token(&st.mem) < RIGHT_BRACE_LIMIT {
                         // Strip the braces around a single braced argument.
                         rbrace_ptr.set_link(&mut st.mem, MemPtr::NULL);
-                        crate::mem::free_avail(&mut st.mem, p);
+                        st.mem.free_avail(p);
                         p = TEMP_HEAD.link(&st.mem);
                         pstack[n as usize] = p.link(&st.mem);
-                        crate::mem::free_avail(&mut st.mem, p);
+                        st.mem.free_avail(p);
                     } else {
                         pstack[n as usize] = TEMP_HEAD.link(&st.mem);
                     }

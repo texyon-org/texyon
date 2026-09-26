@@ -16,15 +16,11 @@ use crate::consts::{
     NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE,
     SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_INFINITY,
 };
-use crate::ext::real_get_native_glyph;
 use crate::fonts::{
     char_depth, char_height, char_italic, char_width, CharInfo, AAT_FONT_FLAG, EXT_TAG, LIG_TAG,
     LIST_TAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE, X_HEIGHT_CODE,
 };
-use crate::mem::{
-    free_node, new_choice, new_glue, new_kern, new_noad, new_spec, ADJUST_HEAD, GARBAGE,
-    PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, TEX_NULL, ZERO_GLUE,
-};
+use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::node::{
     AnyBox, AnyNode, ChoiceNode, DelimiterField, GlueNode, GlueSpecNode, KernNode, MathField, Noad,
     NodePtr, RuleDimen, RuleNode, WhatsitNode, WhatsitSubtype,
@@ -85,11 +81,6 @@ extern "C" {
 }
 
 #[inline]
-fn math_font(eqtb: &EqtbState, n: i32) -> i32 {
-    eqtb.math_font(n)
-}
-
-#[inline]
 fn font_uses_opentype(fonts: &FontState, f: i32) -> bool {
     fonts.font_area_entry(f) == OTGR_FONT_FLAG
         && unsafe { usingOpenType(fonts.font_layout_engine_ptr(f)) }
@@ -103,7 +94,7 @@ fn font_is_ot_math(fonts: &FontState, f: i32) -> bool {
 
 #[inline]
 fn math_sy_param(fonts: &FontState, eqtb: &EqtbState, size_code: i32, param: i32) -> i32 {
-    let f = math_font(eqtb, 2 + size_code);
+    let f = eqtb.math_font(2 + size_code);
     if font_is_ot_math(fonts, f) {
         get_native_mathsy_param(fonts, f, param)
     } else {
@@ -113,7 +104,7 @@ fn math_sy_param(fonts: &FontState, eqtb: &EqtbState, size_code: i32, param: i32
 
 #[inline]
 fn math_ext_param(fonts: &FontState, eqtb: &EqtbState, cur_size: i32, param: i32) -> i32 {
-    let f = math_font(eqtb, 3 + cur_size);
+    let f = eqtb.math_font(3 + cur_size);
     if font_is_ot_math(fonts, f) {
         get_native_mathex_param(fonts, f, param)
     } else {
@@ -213,25 +204,27 @@ pub fn big_op_spacing5(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i3
     math_ext_param(fonts, eqtb, cur_size, 13)
 }
 
-pub fn fraction_rule(mem: &mut MemState, t: i32) -> Result<NodePtr<RuleNode>, NodeRecycleAbort> {
-    let Some(p) = NodePtr::<RuleNode>::alloc(mem) else {
-        return Err(NodeRecycleAbort::Overflow);
-    };
-    p.set_subtype(mem, 0);
-    p.set_width(mem, RuleDimen::Running);
-    p.set_height(mem, RuleDimen::Set(Scaled(t)));
-    p.set_depth(mem, RuleDimen::Set(Scaled(0)));
-    Ok(p)
-}
+impl MemState {
+    pub fn fraction_rule(&mut self, t: i32) -> Result<NodePtr<RuleNode>, NodeRecycleAbort> {
+        let Some(p) = NodePtr::<RuleNode>::alloc(self) else {
+            return Err(NodeRecycleAbort::Overflow);
+        };
+        p.set_subtype(self, 0);
+        p.set_width(self, RuleDimen::Running);
+        p.set_height(self, RuleDimen::Set(Scaled(t)));
+        p.set_depth(self, RuleDimen::Set(Scaled(0)));
+        Ok(p)
+    }
 
-pub fn overbar(mem: &mut MemState, b: AnyBox, k: i32, t: i32) -> Result<MemPtr, NodeRecycleAbort> {
-    let p = crate::mem::new_kern(mem, k).ok_or(NodeRecycleAbort::Overflow)?;
-    p.set_link(mem, b.ptr());
-    let q = fraction_rule(mem, t)?;
-    q.set_link(mem, p.ptr());
-    let r = crate::mem::new_kern(mem, t).ok_or(NodeRecycleAbort::Overflow)?;
-    r.set_link(mem, q.ptr());
-    Ok(r.ptr())
+    pub fn overbar(&mut self, b: AnyBox, k: i32, t: i32) -> Result<MemPtr, NodeRecycleAbort> {
+        let p = self.new_kern(k).ok_or(NodeRecycleAbort::Overflow)?;
+        p.set_link(self, b.ptr());
+        let q = self.fraction_rule(t)?;
+        q.set_link(self, p.ptr());
+        let r = self.new_kern(t).ok_or(NodeRecycleAbort::Overflow)?;
+        r.set_link(self, q.ptr());
+        Ok(r.ptr())
+    }
 }
 
 /// The integer and fractional parts of the mu factor `m`, as `math_glue` splits it.
@@ -290,8 +283,8 @@ pub fn flush_math(
     cl: &mut crate::mem_types::ListStateRecord,
     mem: &mut MemState,
 ) -> Result<(), &'static std::ffi::CStr> {
-    crate::packaging::flush_node_list(mem, cl.head.link(mem).0)?;
-    crate::packaging::flush_node_list(mem, cl.aux_s1())?;
+    mem.flush_node_list(cl.head.link(mem).0)?;
+    mem.flush_node_list(cl.aux_s1())?;
     cl.head.set_link(mem, MemPtr::NULL);
     cl.tail = cl.head;
     cl.set_aux_s1(TEX_NULL);
@@ -305,19 +298,21 @@ fn clean_box_in(
 ) -> Result<AnyBox, MathBuildAbort> {
     let q = match p.math_type(&st.mem) {
         MATH_CHAR => {
-            let noad = new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+            let noad = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
             noad.nucleus().copy_from(&mut st.mem, p);
             sublist_to_hlist_in(st, noad.ptr(), s)?
         }
         SUB_BOX => p.info(&st.mem),
         SUB_MLIST => sublist_to_hlist_in(st, p.info(&st.mem), s)?,
-        _ => crate::mem::new_null_box(&mut st.mem)
+        _ => st
+            .mem
+            .new_null_box()
             .ok_or(NodeRecycleAbort::Overflow)?
             .ptr(),
     };
 
     let lone_box = match q.as_idx() {
-        Some(idx) if !crate::mem::is_char_node(&st.mem, q) && q.link(&st.mem).is_null() => {
+        Some(idx) if !st.mem.is_char_node(q) && q.link(&st.mem).is_null() => {
             match st.mem.classify_box(idx) {
                 Ok(Some(b)) if b.shift_amount(&st.mem).0 == 0 => Some(b),
                 _ => None,
@@ -331,14 +326,14 @@ fn clean_box_in(
     };
 
     let head = x_box.list_ptr(&st.mem);
-    if crate::mem::is_char_node(&st.mem, head) {
+    if st.mem.is_char_node(head) {
         let r = head.link(&st.mem);
         if let Some(r_idx) = r.as_idx() {
             if r.link(&st.mem).is_null()
-                && !crate::mem::is_char_node(&st.mem, r)
+                && !st.mem.is_char_node(r)
                 && matches!(st.mem.classify(r_idx), Ok(AnyNode::Kern(_)))
             {
-                free_node(&mut st.mem, r, MEDIUM_NODE_SIZE);
+                st.mem.free_node(r, MEDIUM_NODE_SIZE);
                 head.set_link(&mut st.mem, MemPtr::NULL);
             }
         }
@@ -381,50 +376,52 @@ enum FetchOutcome {
     CharMissing { f: i32, c: i32 },
 }
 
-fn fetch_core(
-    mem: &mut MemState,
-    fonts: &FontState,
-    eqtb: &EqtbState,
-    scanner: &mut ScannerState,
-    a: NodePtr<MathField>,
-) -> FetchOutcome {
-    let size = scanner.cur_size;
-    let fam = a.fam(mem);
-    scanner.cur_f = math_font(eqtb, fam + size);
-    scanner.cur_c = a.full_char(mem);
+impl MemState {
+    fn fetch_core(
+        &mut self,
+        fonts: &FontState,
+        eqtb: &EqtbState,
+        scanner: &mut ScannerState,
+        a: NodePtr<MathField>,
+    ) -> FetchOutcome {
+        let size = scanner.cur_size;
+        let fam = a.fam(self);
+        scanner.cur_f = eqtb.math_font(fam + size);
+        scanner.cur_c = a.full_char(self);
 
-    if scanner.cur_f == FONT_BASE {
-        let c = scanner.cur_c;
-        scanner.cur_i = fonts.null_character;
-        a.set_math_type(mem, EMPTY);
-        return FetchOutcome::UndefinedFont { size, fam, c };
-    }
-
-    let area = fonts.font_area_entry(scanner.cur_f);
-    if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-        scanner.cur_i = fonts.null_character;
-    } else {
-        if scanner.cur_c >= fonts.font_bc_entry(scanner.cur_f) as i32
-            && scanner.cur_c <= fonts.font_ec_entry(scanner.cur_f) as i32
-        {
-            scanner.cur_i = crate::fonts::char_info(fonts, scanner.cur_f, scanner.cur_c);
-        } else {
-            scanner.cur_i = fonts.null_character;
-        }
-        if scanner.cur_i.s3 == 0 {
-            let f = scanner.cur_f;
+        if scanner.cur_f == FONT_BASE {
             let c = scanner.cur_c;
-            a.set_math_type(mem, EMPTY);
             scanner.cur_i = fonts.null_character;
-            return FetchOutcome::CharMissing { f, c };
+            a.set_math_type(self, EMPTY);
+            return FetchOutcome::UndefinedFont { size, fam, c };
         }
+
+        let area = fonts.font_area_entry(scanner.cur_f);
+        if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
+            scanner.cur_i = fonts.null_character;
+        } else {
+            if scanner.cur_c >= fonts.font_bc_entry(scanner.cur_f) as i32
+                && scanner.cur_c <= fonts.font_ec_entry(scanner.cur_f) as i32
+            {
+                scanner.cur_i = crate::fonts::char_info(fonts, scanner.cur_f, scanner.cur_c);
+            } else {
+                scanner.cur_i = fonts.null_character;
+            }
+            if scanner.cur_i.s3 == 0 {
+                let f = scanner.cur_f;
+                let c = scanner.cur_c;
+                a.set_math_type(self, EMPTY);
+                scanner.cur_i = fonts.null_character;
+                return FetchOutcome::CharMissing { f, c };
+            }
+        }
+        FetchOutcome::Ok
     }
-    FetchOutcome::Ok
 }
 
 fn fetch_in(st: &mut EngineState, a: NodePtr<MathField>) -> crate::errors::ErrorOutcome {
     use crate::errors::ErrorOutcome;
-    match fetch_core(&mut st.mem, &st.fonts, &st.eqtb, &mut st.scanner, a) {
+    match st.mem.fetch_core(&st.fonts, &st.eqtb, &mut st.scanner, a) {
         FetchOutcome::Ok => ErrorOutcome::Continue,
         FetchOutcome::UndefinedFont { size, fam, c } => {
             crate::output::error_here_with_diagnostic_in(st, c"".as_ptr());
@@ -447,27 +444,31 @@ fn fetch_in(st: &mut EngineState, a: NodePtr<MathField>) -> crate::errors::Error
     }
 }
 
-fn set_nucleus_box(mem: &mut MemState, q: NodePtr<Noad>, b: AnyBox) {
-    q.nucleus().set_info(mem, b.ptr());
-    q.nucleus().set_math_type(mem, SUB_BOX);
+impl MemState {
+    fn set_nucleus_box(&mut self, q: NodePtr<Noad>, b: AnyBox) {
+        q.nucleus().set_info(self, b.ptr());
+        q.nucleus().set_math_type(self, SUB_BOX);
+    }
 }
 
 fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let x = clean_box_in(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
     let rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
-    let p = overbar(&mut st.mem, x, 3 * rule_thickness, rule_thickness)?;
+    let p = st.mem.overbar(x, 3 * rule_thickness, rule_thickness)?;
     let x = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
-    set_nucleus_box(&mut st.mem, q, x);
+    st.mem.set_nucleus_box(q, x);
     Ok(())
 }
 
 fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let x = clean_box_in(st, q.nucleus(), st.scanner.cur_style)?;
     let rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
-    let kern =
-        crate::mem::new_kern(&mut st.mem, 3 * rule_thickness).ok_or(NodeRecycleAbort::Overflow)?;
+    let kern = st
+        .mem
+        .new_kern(3 * rule_thickness)
+        .ok_or(NodeRecycleAbort::Overflow)?;
     x.set_link(&mut st.mem, kern.ptr());
-    let rule = fraction_rule(&mut st.mem, rule_thickness)?;
+    let rule = st.mem.fraction_rule(rule_thickness)?;
     kern.set_link(&mut st.mem, rule.ptr());
 
     let y = crate::packaging::vpackage_emit_in(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
@@ -475,7 +476,7 @@ fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuild
     let delta = y.height(mem).0 + y.depth(mem).0 + rule_thickness;
     y.set_height(mem, x.height(mem));
     y.set_depth(mem, Scaled(delta - y.height(mem).0));
-    set_nucleus_box(mem, q, y);
+    mem.set_nucleus_box(q, y);
     Ok(())
 }
 
@@ -493,10 +494,9 @@ fn make_vcenter_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
 }
 
 fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
-    let f = math_font(
-        &st.eqtb,
-        q.left_delimiter().small(&st.mem).0 + st.scanner.cur_size,
-    );
+    let f = st
+        .eqtb
+        .math_font(q.left_delimiter().small(&st.mem).0 + st.scanner.cur_size);
     let is_ot_math = font_is_ot_math(&st.fonts, f);
     let rule_thickness = if is_ot_math {
         get_ot_math_constant(&st.fonts, f, RADICALRULETHICKNESS)
@@ -535,11 +535,11 @@ fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
         clr += crate::scaled_math::half(delta);
     }
     y.set_shift_amount(mem, Scaled(-(x.height(mem).0 + clr)));
-    let p = overbar(mem, x, clr, y.height(mem).0)?;
+    let p = mem.overbar(x, clr, y.height(mem).0)?;
     let overbar_box = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
     y.set_link(&mut st.mem, overbar_box.ptr());
     let hbox = crate::packaging::hpack_emit_in(st, y.ptr(), 0, ADDITIONAL)?;
-    set_nucleus_box(&mut st.mem, q, hbox);
+    st.mem.set_nucleus_box(q, hbox);
     Ok(())
 }
 
@@ -553,47 +553,50 @@ struct FractionAssembly {
     axis_height: i32,
 }
 
-fn make_fraction(
-    mem: &mut MemState,
-    assembly: FractionAssembly,
-) -> Result<AnyBox, NodeRecycleAbort> {
-    let vb = AnyBox::VList(
-        crate::mem::new_null_box(mem)
-            .ok_or(NodeRecycleAbort::Overflow)?
-            .into_vlist(mem),
-    );
-    let xb = assembly.x;
-    let zb = assembly.z;
-    vb.set_height(mem, Scaled(assembly.shift_up + xb.height(mem).0));
-    vb.set_depth(mem, Scaled(zb.depth(mem).0 + assembly.shift_down));
-    vb.set_width(mem, xb.width(mem));
+impl MemState {
+    fn make_fraction(&mut self, assembly: FractionAssembly) -> Result<AnyBox, NodeRecycleAbort> {
+        let vb = AnyBox::VList(
+            self.new_null_box()
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .into_vlist(self),
+        );
+        let xb = assembly.x;
+        let zb = assembly.z;
+        vb.set_height(self, Scaled(assembly.shift_up + xb.height(self).0));
+        vb.set_depth(self, Scaled(zb.depth(self).0 + assembly.shift_down));
+        vb.set_width(self, xb.width(self));
 
-    let p: NodePtr<KernNode>;
-    if assembly.rule_thickness == 0 {
-        let kw = (assembly.shift_up - xb.depth(mem).0) - (zb.height(mem).0 - assembly.shift_down);
-        p = crate::mem::new_kern(mem, kw).ok_or(NodeRecycleAbort::Overflow)?;
-        p.set_link(mem, assembly.z.ptr());
-    } else {
-        let y = fraction_rule(mem, assembly.rule_thickness)?;
-        let p1w =
-            (assembly.axis_height - assembly.delta) - (zb.height(mem).0 - assembly.shift_down);
-        let p1 = crate::mem::new_kern(mem, p1w).ok_or(NodeRecycleAbort::Overflow)?;
-        y.set_link(mem, p1.ptr());
-        p1.set_link(mem, assembly.z.ptr());
-        let pw = (assembly.shift_up - xb.depth(mem).0) - (assembly.axis_height + assembly.delta);
-        p = crate::mem::new_kern(mem, pw).ok_or(NodeRecycleAbort::Overflow)?;
-        p.set_link(mem, y.ptr());
+        let p: NodePtr<KernNode>;
+        if assembly.rule_thickness == 0 {
+            let kw =
+                (assembly.shift_up - xb.depth(self).0) - (zb.height(self).0 - assembly.shift_down);
+            p = self.new_kern(kw).ok_or(NodeRecycleAbort::Overflow)?;
+            p.set_link(self, assembly.z.ptr());
+        } else {
+            let y = self.fraction_rule(assembly.rule_thickness)?;
+            let p1w =
+                (assembly.axis_height - assembly.delta) - (zb.height(self).0 - assembly.shift_down);
+            let p1 = self.new_kern(p1w).ok_or(NodeRecycleAbort::Overflow)?;
+            y.set_link(self, p1.ptr());
+            p1.set_link(self, assembly.z.ptr());
+            let pw =
+                (assembly.shift_up - xb.depth(self).0) - (assembly.axis_height + assembly.delta);
+            p = self.new_kern(pw).ok_or(NodeRecycleAbort::Overflow)?;
+            p.set_link(self, y.ptr());
+        }
+
+        xb.set_link(self, p.ptr());
+        vb.set_list_ptr(self, assembly.x.ptr());
+        Ok(vb)
     }
 
-    xb.set_link(mem, p.ptr());
-    vb.set_list_ptr(mem, assembly.x.ptr());
-    Ok(vb)
-}
-
-fn glyph_whatsit(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
-    match mem.classify_non_char(p)? {
-        AnyNode::Whatsit(w) if w.whatsit_subtype(mem) == Some(WhatsitSubtype::Glyph) => Some(w),
-        _ => None,
+    fn glyph_whatsit(&self, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
+        match self.classify_non_char(p)? {
+            AnyNode::Whatsit(w) if w.whatsit_subtype(self) == Some(WhatsitSubtype::Glyph) => {
+                Some(w)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -697,18 +700,15 @@ fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
 
     let axis_height = axis_height(&st.fonts, &st.eqtb, cur_size);
     let rule_thickness = q.thickness(&st.mem);
-    let v = make_fraction(
-        &mut st.mem,
-        FractionAssembly {
-            x,
-            z,
-            rule_thickness,
-            shift_up,
-            shift_down,
-            delta,
-            axis_height,
-        },
-    )?;
+    let v = st.mem.make_fraction(FractionAssembly {
+        x,
+        z,
+        rule_thickness,
+        shift_up,
+        shift_down,
+        delta,
+        axis_height,
+    })?;
 
     let delimiter_size = if cur_style < TEXT_STYLE {
         delim1(&st.fonts, &st.eqtb, cur_size)
@@ -760,7 +760,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
 
         let cur_f = st.scanner.cur_f;
         if font_is_ot_math(&st.fonts, cur_f) {
-            if let Some(glyph) = glyph_whatsit(&st.mem, x.list_ptr(&st.mem)) {
+            if let Some(glyph) = st.mem.glyph_whatsit(x.list_ptr(&st.mem)) {
                 let (width, height, depth) = 'found: {
                     if st.scanner.cur_style < TEXT_STYLE {
                         let mut h1 =
@@ -789,7 +789,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
                             if let Some(assembly) =
                                 get_ot_assembly(&st.fonts, cur_f, c_glyph, false)
                             {
-                                free_node(&mut st.mem, glyph.ptr(), GLYPH_NODE_SIZE);
+                                st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
                                 let b =
                                     build_opentype_assembly_in(st, cur_f, &assembly, h1, false)?;
                                 x.set_list_ptr(&mut st.mem, b.ptr());
@@ -825,7 +825,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
         }
         let shift = crate::scaled_math::half(x.height(mem).0 - x.depth(mem).0) - axis_height;
         x.set_shift_amount(mem, Scaled(shift));
-        set_nucleus_box(mem, q, x);
+        mem.set_nucleus_box(q, x);
     }
 
     let save_f = st.scanner.cur_f;
@@ -836,7 +836,8 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
         let z = clean_box_in(st, q.subscr(), (2 * (cs / 4) + 5) as i16)?;
 
         let v = AnyBox::VList(
-            crate::mem::new_null_box(&mut st.mem)
+            st.mem
+                .new_null_box()
                 .ok_or(NodeRecycleAbort::Overflow)?
                 .into_vlist(&mut st.mem),
         );
@@ -867,14 +868,14 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
         st.scanner.cur_f = save_f;
 
         if q.supscr().math_type(mem) == EMPTY {
-            free_node(mem, x.ptr(), BOX_NODE_SIZE);
+            mem.free_node(x.ptr(), BOX_NODE_SIZE);
             v.set_list_ptr(mem, y.ptr());
         } else {
             let shift_up = (bos3 - x.depth(mem).0).max(bos1);
-            let p = crate::mem::new_kern(mem, shift_up).ok_or(NodeRecycleAbort::Overflow)?;
+            let p = mem.new_kern(shift_up).ok_or(NodeRecycleAbort::Overflow)?;
             p.set_link(mem, y.ptr());
             x.set_link(mem, p.ptr());
-            let p = crate::mem::new_kern(mem, bos5).ok_or(NodeRecycleAbort::Overflow)?;
+            let p = mem.new_kern(bos5).ok_or(NodeRecycleAbort::Overflow)?;
             p.set_link(mem, x.ptr());
             v.set_list_ptr(mem, p.ptr());
             let height = v.height(mem).0 + bos5 + x.height(mem).0 + x.depth(mem).0 + shift_up;
@@ -882,13 +883,13 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
         }
 
         if q.subscr().math_type(mem) == EMPTY {
-            free_node(mem, z.ptr(), BOX_NODE_SIZE);
+            mem.free_node(z.ptr(), BOX_NODE_SIZE);
         } else {
             let shift_down = (bos4 - z.height(mem).0).max(bos2);
-            let p = crate::mem::new_kern(mem, shift_down).ok_or(NodeRecycleAbort::Overflow)?;
+            let p = mem.new_kern(shift_down).ok_or(NodeRecycleAbort::Overflow)?;
             y.set_link(mem, p.ptr());
             p.set_link(mem, z.ptr());
-            let p = crate::mem::new_kern(mem, bos5).ok_or(NodeRecycleAbort::Overflow)?;
+            let p = mem.new_kern(bos5).ok_or(NodeRecycleAbort::Overflow)?;
             z.set_link(mem, p.ptr());
             let depth = v.depth(mem).0 + bos5 + z.height(mem).0 + z.depth(mem).0 + shift_down;
             v.set_depth(mem, Scaled(depth));
@@ -922,72 +923,73 @@ enum MakeOrdStep {
     Overflow,
 }
 
-fn make_ord_body(
-    mem: &mut MemState,
-    fonts: &FontState,
-    scanner: &mut ScannerState,
-    q: NodePtr<Noad>,
-    p: NodePtr<Noad>,
-) -> MakeOrdStep {
-    scanner.cur_c = p.nucleus().character(mem) as i32;
-    let mut a = lig_kern_start(fonts, scanner);
-    loop {
-        if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
-            if scanner.cur_i.s1 >= 128 {
-                let kern_width = crate::fonts::char_kern(fonts, scanner.cur_f, scanner.cur_i);
-                let Ok(p_kern) =
-                    crate::mem::new_kern(mem, kern_width).ok_or(NodeRecycleAbort::Overflow)
-                else {
-                    return MakeOrdStep::Overflow;
-                };
-                let link_q = q.link(mem);
-                p_kern.set_link(mem, link_q);
-                q.set_link(mem, p_kern.ptr());
-                return MakeOrdStep::Return;
-            } else {
-                match scanner.cur_i.s1 {
-                    1 | 5 => {
-                        q.nucleus().set_character(mem, scanner.cur_i.s0);
-                    }
-                    2 | 6 => {
-                        p.nucleus().set_character(mem, scanner.cur_i.s0);
-                    }
-                    3 | 7 | 11 => {
-                        let Some(r) = crate::mem::new_noad(mem) else {
-                            return MakeOrdStep::Overflow;
-                        };
-                        r.nucleus().set_character(mem, scanner.cur_i.s0);
-                        r.nucleus()
-                            .set_plane_and_fam(mem, q.nucleus().plane_and_fam(mem) % 256);
-                        q.set_link(mem, r.ptr());
-                        r.set_link(mem, p.ptr());
-                        if scanner.cur_i.s1 < 11 {
-                            r.nucleus().set_math_type(mem, MATH_CHAR);
-                        } else {
-                            r.nucleus().set_math_type(mem, MATH_TEXT_CHAR);
+impl MemState {
+    fn make_ord_body(
+        &mut self,
+        fonts: &FontState,
+        scanner: &mut ScannerState,
+        q: NodePtr<Noad>,
+        p: NodePtr<Noad>,
+    ) -> MakeOrdStep {
+        scanner.cur_c = p.nucleus().character(self) as i32;
+        let mut a = lig_kern_start(fonts, scanner);
+        loop {
+            if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
+                if scanner.cur_i.s1 >= 128 {
+                    let kern_width = crate::fonts::char_kern(fonts, scanner.cur_f, scanner.cur_i);
+                    let Ok(p_kern) = self.new_kern(kern_width).ok_or(NodeRecycleAbort::Overflow)
+                    else {
+                        return MakeOrdStep::Overflow;
+                    };
+                    let link_q = q.link(self);
+                    p_kern.set_link(self, link_q);
+                    q.set_link(self, p_kern.ptr());
+                    return MakeOrdStep::Return;
+                } else {
+                    match scanner.cur_i.s1 {
+                        1 | 5 => {
+                            q.nucleus().set_character(self, scanner.cur_i.s0);
+                        }
+                        2 | 6 => {
+                            p.nucleus().set_character(self, scanner.cur_i.s0);
+                        }
+                        3 | 7 | 11 => {
+                            let Some(r) = self.new_noad() else {
+                                return MakeOrdStep::Overflow;
+                            };
+                            r.nucleus().set_character(self, scanner.cur_i.s0);
+                            r.nucleus()
+                                .set_plane_and_fam(self, q.nucleus().plane_and_fam(self) % 256);
+                            q.set_link(self, r.ptr());
+                            r.set_link(self, p.ptr());
+                            if scanner.cur_i.s1 < 11 {
+                                r.nucleus().set_math_type(self, MATH_CHAR);
+                            } else {
+                                r.nucleus().set_math_type(self, MATH_TEXT_CHAR);
+                            }
+                        }
+                        _ => {
+                            let link_p = p.link(self);
+                            q.set_link(self, link_p);
+                            q.nucleus().set_character(self, scanner.cur_i.s0);
+                            q.subscr().copy_from(self, p.subscr());
+                            q.supscr().copy_from(self, p.supscr());
+                            self.free_node(p.ptr(), NOAD_SIZE);
                         }
                     }
-                    _ => {
-                        let link_p = p.link(mem);
-                        q.set_link(mem, link_p);
-                        q.nucleus().set_character(mem, scanner.cur_i.s0);
-                        q.subscr().copy_from(mem, p.subscr());
-                        q.supscr().copy_from(mem, p.supscr());
-                        free_node(mem, p.ptr(), NOAD_SIZE);
+                    if scanner.cur_i.s1 > 3 {
+                        return MakeOrdStep::Return;
                     }
+                    q.nucleus().set_math_type(self, MATH_CHAR);
+                    return MakeOrdStep::Restart;
                 }
-                if scanner.cur_i.s1 > 3 {
-                    return MakeOrdStep::Return;
-                }
-                q.nucleus().set_math_type(mem, MATH_CHAR);
-                return MakeOrdStep::Restart;
             }
+            if scanner.cur_i.s3 >= 128 {
+                return MakeOrdStep::Return;
+            }
+            a += scanner.cur_i.s3 as i32 + 1;
+            scanner.cur_i = fonts.font_info_b16(a);
         }
-        if scanner.cur_i.s3 >= 128 {
-            return MakeOrdStep::Return;
-        }
-        a += scanner.cur_i.s3 as i32 + 1;
-        scanner.cur_i = fonts.font_info_b16(a);
     }
 }
 
@@ -1038,7 +1040,7 @@ fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbor
             return Ok(());
         }
 
-        match make_ord_body(&mut st.mem, &st.fonts, &mut st.scanner, q, p_node) {
+        match st.mem.make_ord_body(&st.fonts, &mut st.scanner, q, p_node) {
             MakeOrdStep::Return => return Ok(()),
             MakeOrdStep::Restart => continue 'restart,
             MakeOrdStep::Overflow => return Err(MakeOrdAbort::Overflow),
@@ -1122,9 +1124,10 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     if (q.supscr().math_type(&st.mem) != EMPTY || q.subscr().math_type(&st.mem) != EMPTY)
         && q.nucleus().math_type(&st.mem) == MATH_CHAR
     {
-        crate::packaging::flush_node_list(&mut st.mem, x.idx().0)
+        st.mem
+            .flush_node_list(x.idx().0)
             .map_err(NodeRecycleAbort::Confusion)?;
-        let base = new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+        let base = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
         let mem = &mut st.mem;
         base.nucleus().copy_from(mem, q.nucleus());
         base.supscr().copy_from(mem, q.supscr());
@@ -1143,12 +1146,12 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     let y;
     if is_native {
         let old = crate::fonts::new_native_character_in(st, f, c as u32)?;
-        y = native_char_box(&mut st.mem, old)?;
+        y = st.mem.native_char_box(old)?;
         let glyph =
             NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)
                 .ok_or(NodeRecycleAbort::Overflow)?;
         glyph.set_native_font(&mut st.mem, FontId(f));
-        let glyph_id = real_get_native_glyph(&st.mem, old, 0);
+        let glyph_id = st.mem.real_get_native_glyph(old, 0);
         glyph.set_native_glyph(&mut st.mem, glyph_id);
         measure_glyph(&st.fonts, &mut st.mem, glyph)?;
         old.free_native(&mut st.mem);
@@ -1174,7 +1177,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
             }
             if w2 < 0 {
                 if let Some(assembly) = get_ot_assembly(&st.fonts, f, c_glyph, true) {
-                    free_node(&mut st.mem, glyph.ptr(), GLYPH_NODE_SIZE);
+                    st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
                     let b = build_opentype_assembly_in(st, f, &assembly, w, true)?;
                     y.set_list_ptr(&mut st.mem, b.ptr());
                     assembly_box = Some(b);
@@ -1214,7 +1217,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         }
         y.set_shift_amount(mem, Scaled(s - sa));
     } else {
-        y = char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)?;
+        y = st.mem.char_box_tfm(&mut st.fonts, f, c as u16)?;
         let shift = s + crate::scaled_math::half(w - y.width(&st.mem).0);
         y.set_shift_amount(&mut st.mem, Scaled(shift));
     }
@@ -1227,14 +1230,15 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         v.set_shift_amount(&mut st.mem, Scaled(-(h - v_height)));
         v
     } else {
-        let kern = crate::mem::new_kern(&mut st.mem, -delta).ok_or(NodeRecycleAbort::Overflow)?;
+        let kern = st.mem.new_kern(-delta).ok_or(NodeRecycleAbort::Overflow)?;
         kern.set_link(&mut st.mem, x.ptr());
         y.set_link(&mut st.mem, kern.ptr());
         let v = crate::packaging::vpackage_emit_in(st, y.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
         let mem = &mut st.mem;
         if v.height(mem).0 < h {
-            let kern =
-                crate::mem::new_kern(mem, h - v.height(mem).0).ok_or(NodeRecycleAbort::Overflow)?;
+            let kern = mem
+                .new_kern(h - v.height(mem).0)
+                .ok_or(NodeRecycleAbort::Overflow)?;
             kern.set_link(mem, v.list_ptr(mem));
             v.set_list_ptr(mem, kern.ptr());
             v.set_height(mem, Scaled(h));
@@ -1243,20 +1247,22 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     };
     let x_width = x.width(&st.mem);
     v.set_width(&mut st.mem, x_width);
-    set_nucleus_box(&mut st.mem, q, v);
+    st.mem.set_nucleus_box(q, v);
     Ok(())
 }
 
-fn append_to_new_hlist(mem: &mut MemState, q: NodePtr<Noad>, node: MemPtr) {
-    let head = q.new_hlist(mem);
-    if head.is_null() {
-        q.set_new_hlist(mem, node);
-    } else {
-        let mut tail = head;
-        while !tail.link(mem).is_null() {
-            tail = tail.link(mem);
+impl MemState {
+    fn append_to_new_hlist(&mut self, q: NodePtr<Noad>, node: MemPtr) {
+        let head = q.new_hlist(self);
+        if head.is_null() {
+            q.set_new_hlist(self, node);
+        } else {
+            let mut tail = head;
+            while !tail.link(self).is_null() {
+                tail = tail.link(self);
+            }
+            tail.set_link(self, node);
         }
-        tail.set_link(mem, node);
     }
 }
 
@@ -1276,7 +1282,7 @@ fn maybe_attach_script_kern_in(
     shift: i32,
 ) -> Result<ScriptKernAttachment, MathBuildAbort> {
     let cur_f = st.scanner.cur_f;
-    let nucleus = glyph_whatsit(&st.mem, p);
+    let nucleus = st.mem.glyph_whatsit(p);
 
     if !font_is_ot_math(&st.fonts, cur_f) {
         return Ok(ScriptKernAttachment {
@@ -1306,8 +1312,8 @@ fn maybe_attach_script_kern_in(
     let p = if kern == 0 {
         p
     } else {
-        let k = crate::mem::new_kern(&mut st.mem, kern).ok_or(NodeRecycleAbort::Overflow)?;
-        append_to_new_hlist(&mut st.mem, q, k.ptr());
+        let k = st.mem.new_kern(kern).ok_or(NodeRecycleAbort::Overflow)?;
+        st.mem.append_to_new_hlist(q, k.ptr());
         q.new_hlist(&st.mem)
     };
     Ok(ScriptKernAttachment {
@@ -1368,7 +1374,7 @@ fn initial_script_shifts_in(
     st: &mut EngineState,
     p: MemPtr,
 ) -> Result<ScriptShifts, MathBuildAbort> {
-    if crate::mem::is_char_node(&st.mem, p) || glyph_whatsit(&st.mem, p).is_some() {
+    if st.mem.is_char_node(p) || st.mem.glyph_whatsit(p).is_some() {
         Ok(ScriptShifts { up: 0, down: 0 })
     } else {
         let zb = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
@@ -1381,7 +1387,7 @@ fn initial_script_shifts_in(
             up: zb.height(&st.mem).0 - sup_drop(&st.fonts, &st.eqtb, t),
             down: zb.depth(&st.mem).0 + sub_drop(&st.fonts, &st.eqtb, t),
         };
-        free_node(&mut st.mem, zb.ptr(), BOX_NODE_SIZE);
+        st.mem.free_node(zb.ptr(), BOX_NODE_SIZE);
         Ok(shifts)
     }
 }
@@ -1442,7 +1448,7 @@ fn finish_subsup_stack_in(
     input
         .x
         .set_shift_amount(&mut st.mem, Scaled(sup_kern + input.delta - sub_kern));
-    let Some(kern) = crate::mem::new_kern(&mut st.mem, kern_width) else {
+    let Some(kern) = st.mem.new_kern(kern_width) else {
         return Err(NodeRecycleAbort::Overflow.into());
     };
     input.x.set_link(&mut st.mem, kern.ptr());
@@ -1451,7 +1457,7 @@ fn finish_subsup_stack_in(
     let packaged =
         crate::packaging::vpackage_emit_in(st, input.x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
     packaged.set_shift_amount(&mut st.mem, Scaled(input.shift_down));
-    append_to_new_hlist(&mut st.mem, input.q, packaged.ptr());
+    st.mem.append_to_new_hlist(input.q, packaged.ptr());
     Ok(())
 }
 
@@ -1507,7 +1513,7 @@ fn finish_subscript_only_in(
     x.set_shift_amount(&mut st.mem, Scaled(shift_down));
 
     let _ = maybe_attach_script_kern_in(st, q, p, sub_f, sub_g, ScriptKind::Sub, shift_down)?;
-    append_to_new_hlist(&mut st.mem, q, x.ptr());
+    st.mem.append_to_new_hlist(q, x.ptr());
     Ok(())
 }
 
@@ -1567,7 +1573,7 @@ fn finish_superscript_branch_in(
             shift_up,
         )?;
         x.set_shift_amount(&mut st.mem, Scaled(-shift_up));
-        append_to_new_hlist(&mut st.mem, q, x.ptr());
+        st.mem.append_to_new_hlist(q, x.ptr());
         return Ok(());
     }
 
@@ -1627,42 +1633,46 @@ fn finish_superscript_branch_in(
     Ok(())
 }
 
-/// Finds the first noad of a sub-mlist script field to probe for an OpenType
-/// glyph, tracking style changes on the way. Returns the field and its style.
-fn first_script_glyph_step(
-    mem: &MemState,
-    script: NodePtr<MathField>,
-    initial_math_style: i16,
-) -> (Option<NodePtr<MathField>>, i16) {
-    if script.math_type(mem) != SUB_MLIST {
-        return (Some(script), initial_math_style);
+impl MemState {
+    /// Finds the first noad of a sub-mlist script field to probe for an OpenType
+    /// glyph, tracking style changes on the way. Returns the field and its style.
+    fn first_script_glyph_step(
+        &self,
+        script: NodePtr<MathField>,
+        initial_math_style: i16,
+    ) -> (Option<NodePtr<MathField>>, i16) {
+        if script.math_type(self) != SUB_MLIST {
+            return (Some(script), initial_math_style);
+        }
+        let mut script_ptr = script.info(self);
+        let mut found = None;
+        let mut style = initial_math_style;
+        while script_ptr.0 >= 0 && script_ptr.0 <= self.mem_end {
+            let node = self.classify(MemIdx::new(script_ptr));
+            script_ptr = match node {
+                Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => script_ptr.link(self),
+                Ok(AnyNode::Style(sn)) => {
+                    style = sn.subtype(self) as i16;
+                    script_ptr.link(self)
+                }
+                Ok(AnyNode::Choice(cn)) => match style / 2 {
+                    0 => cn.display_mlist(self),
+                    1 => cn.text_mlist(self),
+                    2 => cn.script_mlist(self),
+                    3 => cn.script_script_mlist(self),
+                    _ => script_ptr,
+                },
+                Ok(AnyNode::Noad(n))
+                    if n.noad_type(self).as_raw() <= NodeType::PunctNoad.as_raw() =>
+                {
+                    found = Some(n.nucleus());
+                    MemPtr::NULL
+                }
+                _ => MemPtr::NULL,
+            };
+        }
+        (found, style)
     }
-    let mut script_ptr = script.info(mem);
-    let mut found = None;
-    let mut style = initial_math_style;
-    while script_ptr.0 >= 0 && script_ptr.0 <= mem.mem_end {
-        let node = mem.classify(MemIdx::new(script_ptr));
-        script_ptr = match node {
-            Ok(AnyNode::Kern(_) | AnyNode::Glue(_)) => script_ptr.link(mem),
-            Ok(AnyNode::Style(sn)) => {
-                style = sn.subtype(mem) as i16;
-                script_ptr.link(mem)
-            }
-            Ok(AnyNode::Choice(cn)) => match style / 2 {
-                0 => cn.display_mlist(mem),
-                1 => cn.text_mlist(mem),
-                2 => cn.script_mlist(mem),
-                3 => cn.script_script_mlist(mem),
-                _ => script_ptr,
-            },
-            Ok(AnyNode::Noad(n)) if n.noad_type(mem).as_raw() <= NodeType::PunctNoad.as_raw() => {
-                found = Some(n.nucleus());
-                MemPtr::NULL
-            }
-            _ => MemPtr::NULL,
-        };
-    }
-    (found, style)
 }
 
 fn first_script_glyph_in(
@@ -1674,8 +1684,9 @@ fn first_script_glyph_in(
     let mut script_f: i32 = 0;
 
     let initial_math_style = 2 * (st.scanner.cur_style / 4) + 5;
-    let (script_head, this_math_style) =
-        first_script_glyph_step(&st.mem, script_head, initial_math_style);
+    let (script_head, this_math_style) = st
+        .mem
+        .first_script_glyph_step(script_head, initial_math_style);
     let math_char = script_head.filter(|h| h.math_type(&st.mem) == MATH_CHAR);
 
     if let Some(script_head) = math_char {
@@ -1696,7 +1707,7 @@ fn first_script_glyph_in(
                 cur_f_after_fetch,
                 cur_c_after_fetch as u32,
             )?;
-            script_g = real_get_native_glyph(&st.mem, script_c, 0);
+            script_g = st.mem.real_get_native_glyph(script_c, 0);
             script_f = cur_f_after_fetch;
         }
 
@@ -1750,90 +1761,95 @@ fn make_left_right_in(
     })
 }
 
-fn mlist_choice_node(
-    mem: &mut MemState,
-    choice: NodePtr<ChoiceNode>,
-    cur_style: i16,
-) -> Result<(), &'static std::ffi::CStr> {
-    let kept = match cur_style / 2 {
-        0 => {
-            let p = choice.display_mlist(mem);
-            choice.set_display_mlist(mem, MemPtr::NULL);
-            p
+impl MemState {
+    fn mlist_choice_node(
+        &mut self,
+        choice: NodePtr<ChoiceNode>,
+        cur_style: i16,
+    ) -> Result<(), &'static std::ffi::CStr> {
+        let kept = match cur_style / 2 {
+            0 => {
+                let p = choice.display_mlist(self);
+                choice.set_display_mlist(self, MemPtr::NULL);
+                p
+            }
+            1 => {
+                let p = choice.text_mlist(self);
+                choice.set_text_mlist(self, MemPtr::NULL);
+                p
+            }
+            2 => {
+                let p = choice.script_mlist(self);
+                choice.set_script_mlist(self, MemPtr::NULL);
+                p
+            }
+            3 => {
+                let p = choice.script_script_mlist(self);
+                choice.set_script_script_mlist(self, MemPtr::NULL);
+                p
+            }
+            _ => MemPtr::NULL,
+        };
+        self.flush_node_list(choice.display_mlist(self).0)?;
+        self.flush_node_list(choice.text_mlist(self).0)?;
+        self.flush_node_list(choice.script_mlist(self).0)?;
+        self.flush_node_list(choice.script_script_mlist(self).0)?;
+        let style = choice.into_style(self, cur_style as u16);
+        if !kept.is_null() {
+            let z = style.link(self);
+            style.set_link(self, kept);
+            let mut p = kept;
+            while !p.link(self).is_null() {
+                p = p.link(self);
+            }
+            p.set_link(self, z);
         }
-        1 => {
-            let p = choice.text_mlist(mem);
-            choice.set_text_mlist(mem, MemPtr::NULL);
-            p
-        }
-        2 => {
-            let p = choice.script_mlist(mem);
-            choice.set_script_mlist(mem, MemPtr::NULL);
-            p
-        }
-        3 => {
-            let p = choice.script_script_mlist(mem);
-            choice.set_script_script_mlist(mem, MemPtr::NULL);
-            p
-        }
-        _ => MemPtr::NULL,
-    };
-    crate::packaging::flush_node_list(mem, choice.display_mlist(mem).0)?;
-    crate::packaging::flush_node_list(mem, choice.text_mlist(mem).0)?;
-    crate::packaging::flush_node_list(mem, choice.script_mlist(mem).0)?;
-    crate::packaging::flush_node_list(mem, choice.script_script_mlist(mem).0)?;
-    let style = choice.into_style(mem, cur_style as u16);
-    if !kept.is_null() {
-        let z = style.link(mem);
-        style.set_link(mem, kept);
-        let mut p = kept;
-        while !p.link(mem).is_null() {
-            p = p.link(mem);
-        }
-        p.set_link(mem, z);
-    }
-    Ok(())
-}
-
-fn mlist_track_rule(mem: &MemState, rule: NodePtr<RuleNode>, max_h: &mut i32, max_d: &mut i32) {
-    *max_h = (*max_h).max(rule.height(mem).raw());
-    *max_d = (*max_d).max(rule.depth(mem).raw());
-}
-
-fn mlist_track_box(mem: &mut MemState, z: AnyBox, max_h: &mut i32, max_d: &mut i32) {
-    *max_h = (*max_h).max(z.height(mem).0);
-    *max_d = (*max_d).max(z.depth(mem).0);
-    free_node(mem, z.ptr(), BOX_NODE_SIZE);
-}
-
-fn mlist_cond_math_glue(
-    mem: &mut MemState,
-    glue: NodePtr<GlueNode>,
-    cur_size: i32,
-) -> Result<(), &'static std::ffi::CStr> {
-    if cur_size == TEXT_SIZE {
-        return Ok(());
+        Ok(())
     }
 
-    let p = glue.link(mem);
-    let Some(p_idx) = p.as_idx() else {
-        return Ok(());
-    };
-    if matches!(mem.classify(p_idx), Ok(AnyNode::Glue(_) | AnyNode::Kern(_))) {
-        glue.set_link(mem, p.link(mem));
-        p.set_link(mem, MemPtr::NULL);
-        crate::packaging::flush_node_list(mem, p.0)?;
+    fn mlist_track_rule(&self, rule: NodePtr<RuleNode>, max_h: &mut i32, max_d: &mut i32) {
+        *max_h = (*max_h).max(rule.height(self).raw());
+        *max_d = (*max_d).max(rule.depth(self).raw());
     }
-    Ok(())
-}
 
-/// Moves `node` onto the output list after `tail`, returning it and its old successor.
-fn mlist_move_output_node(mem: &mut MemState, tail: MemPtr, node: AnyNode) -> (MemPtr, MemPtr) {
-    let q = MemPtr::from_idx(node.idx());
-    tail.set_link(mem, q);
-    let next = q.link(mem);
-    q.set_link(mem, MemPtr::NULL);
-    (q, next)
+    fn mlist_track_box(&mut self, z: AnyBox, max_h: &mut i32, max_d: &mut i32) {
+        *max_h = (*max_h).max(z.height(self).0);
+        *max_d = (*max_d).max(z.depth(self).0);
+        self.free_node(z.ptr(), BOX_NODE_SIZE);
+    }
+
+    fn mlist_cond_math_glue(
+        &mut self,
+        glue: NodePtr<GlueNode>,
+        cur_size: i32,
+    ) -> Result<(), &'static std::ffi::CStr> {
+        if cur_size == TEXT_SIZE {
+            return Ok(());
+        }
+
+        let p = glue.link(self);
+        let Some(p_idx) = p.as_idx() else {
+            return Ok(());
+        };
+        if matches!(
+            self.classify(p_idx),
+            Ok(AnyNode::Glue(_) | AnyNode::Kern(_))
+        ) {
+            glue.set_link(self, p.link(self));
+            p.set_link(self, MemPtr::NULL);
+            self.flush_node_list(p.0)?;
+        }
+        Ok(())
+    }
+
+    /// Moves `node` onto the output list after `tail`, returning it and its old successor.
+    fn mlist_move_output_node(&mut self, tail: MemPtr, node: AnyNode) -> (MemPtr, MemPtr) {
+        let q = MemPtr::from_idx(node.idx());
+        tail.set_link(self, q);
+        let next = q.link(self);
+        q.set_link(self, MemPtr::NULL);
+        (q, next)
+    }
 }
 
 fn mlist_advance_in(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16, MemPtr) {
@@ -1871,7 +1887,7 @@ fn mlist_nucleus_in(
                 )
                 .ok_or(NodeRecycleAbort::Overflow)?;
                 glyph.set_native_font(&mut st.mem, FontId(cur_f));
-                let z_glyph = real_get_native_glyph(&st.mem, z, 0);
+                let z_glyph = st.mem.real_get_native_glyph(z, 0);
                 glyph.set_native_glyph(&mut st.mem, z_glyph);
                 measure_glyph(&st.fonts, &mut st.mem, glyph)?;
                 z.free_native(&mut st.mem);
@@ -1897,7 +1913,7 @@ fn mlist_nucleus_in(
                 MemPtr::NULL
             };
             if !p.is_null() && qn.subscr().math_type(&st.mem) == EMPTY && delta != 0 {
-                let k = new_kern(&mut st.mem, delta).ok_or(NodeRecycleAbort::Overflow)?;
+                let k = st.mem.new_kern(delta).ok_or(NodeRecycleAbort::Overflow)?;
                 p.set_link(&mut st.mem, k.ptr());
                 delta = 0;
             }
@@ -2036,7 +2052,8 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                 }
                 Ok(AnyNode::Choice(choice)) => {
                     let cs = st.scanner.cur_style;
-                    mlist_choice_node(&mut st.mem, choice, cs)
+                    st.mem
+                        .mlist_choice_node(choice, cs)
                         .map_err(NodeRecycleAbort::Confusion)?;
                     break 'reswitch FirstPass::DoneWithNode;
                 }
@@ -2049,7 +2066,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 Ok(AnyNode::Rule(rule)) => {
-                    mlist_track_rule(&st.mem, rule, &mut max_h, &mut max_d);
+                    st.mem.mlist_track_rule(rule, &mut max_h, &mut max_d);
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 Ok(AnyNode::Glue(glue)) => {
@@ -2058,12 +2075,13 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     let x = glue.glue_ptr(&st.mem);
                     if subtype == MU_GLUE {
                         let y = math_glue_in(st, x, mu)?;
-                        crate::mem::delete_glue_ref(&mut st.mem, x);
+                        st.mem.delete_glue_ref(x);
                         glue.set_glue_ptr(&mut st.mem, y);
                         glue.set_subtype(&mut st.mem, NORMAL);
                     } else if subtype == COND_MATH_GLUE {
                         let cur_size = st.scanner.cur_size;
-                        mlist_cond_math_glue(&mut st.mem, glue, cur_size)
+                        st.mem
+                            .mlist_cond_math_glue(glue, cur_size)
                             .map_err(NodeRecycleAbort::Confusion)?;
                     }
                     break 'reswitch FirstPass::DoneWithNode;
@@ -2089,7 +2107,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                 }
                 let list = qn.new_hlist(&st.mem);
                 let z_box = crate::packaging::hpack_emit_in(st, list, 0, ADDITIONAL)?;
-                mlist_track_box(&mut st.mem, z_box, &mut max_h, &mut max_d);
+                st.mem.mlist_track_box(z_box, &mut max_h, &mut max_d);
                 qn
             }
         };
@@ -2167,7 +2185,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                 | AnyNode::Glue(_)
                 | AnyNode::Kern(_)),
             ) => {
-                let (np, nq) = mlist_move_output_node(&mut st.mem, p, node);
+                let (np, nq) = st.mem.mlist_move_output_node(p, node);
                 p = np;
                 q = nq;
                 SecondPass::Moved
@@ -2198,8 +2216,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     let g = st.eqtb.glue_par(x);
                     let mu = st.scanner.cur_mu;
                     let y = math_glue_in(st, g, mu)?;
-                    let z =
-                        crate::mem::new_glue(&mut st.mem, y).ok_or(NodeRecycleAbort::Overflow)?;
+                    let z = st.mem.new_glue(y).ok_or(NodeRecycleAbort::Overflow)?;
                     y.set_ref_count(&mut st.mem, TEX_NULL);
                     p.set_link(&mut st.mem, z.ptr());
                     z.set_subtype(&mut st.mem, (x + 1) as u16);
@@ -2223,8 +2240,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                         st.mem.node_type(next),
                         Ok(NodeType::Penalty | NodeType::RelNoad)
                     ) {
-                        let z = crate::mem::new_penalty(&mut st.mem, pen)
-                            .ok_or(NodeRecycleAbort::Overflow)?;
+                        let z = st.mem.new_penalty(pen).ok_or(NodeRecycleAbort::Overflow)?;
                         p.set_link(&mut st.mem, z.ptr());
                         p = z.ptr();
                     }
@@ -2238,7 +2254,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
         }
 
         let nq = q.link(&st.mem);
-        crate::mem::free_node(&mut st.mem, q, s);
+        st.mem.free_node(q, s);
         q = nq;
     }
     Ok(())
@@ -2253,16 +2269,15 @@ fn measure_glyph(
     unsafe { crate::ext::measure_native_glyph(fonts, mem, p, true) }
 }
 
-fn native_char_box(
-    mem: &mut MemState,
-    p: NodePtr<WhatsitNode>,
-) -> Result<AnyBox, NodeRecycleAbort> {
-    let b = crate::mem::new_null_box(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    b.set_height(mem, p.height(mem));
-    b.set_width(mem, p.width(mem));
-    b.set_depth(mem, Scaled(p.depth(mem).0.max(0)));
-    b.set_list_ptr(mem, p.ptr());
-    Ok(AnyBox::HList(b))
+impl MemState {
+    fn native_char_box(&mut self, p: NodePtr<WhatsitNode>) -> Result<AnyBox, NodeRecycleAbort> {
+        let b = self.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
+        b.set_height(self, p.height(self));
+        b.set_width(self, p.width(self));
+        b.set_depth(self, Scaled(p.depth(self).0.max(0)));
+        b.set_list_ptr(self, p.ptr());
+        Ok(AnyBox::HList(b))
+    }
 }
 
 pub(crate) enum MathBuildAbort {
@@ -2325,39 +2340,43 @@ fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuild
     let area = st.fonts.font_area_entry(f);
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
         let p = crate::fonts::new_native_character_in(st, f, c as u32)?;
-        Ok(native_char_box(&mut st.mem, p)?)
+        Ok(st.mem.native_char_box(p)?)
     } else {
-        Ok(char_box_tfm(&mut st.mem, &mut st.fonts, f, c as u16)?)
+        Ok(st.mem.char_box_tfm(&mut st.fonts, f, c as u16)?)
     }
 }
 
-fn char_box_tfm(
-    mem: &mut MemState,
-    fonts: &mut FontState,
-    f: i32,
-    c: u16,
-) -> Result<AnyBox, NodeRecycleAbort> {
-    let c_eff = crate::fonts::effective_char(fonts, f, c);
-    let q = crate::fonts::char_info(fonts, f, c_eff);
-    let width = char_width(fonts, f, q) + char_italic(fonts, f, q);
-    let height = char_height(fonts, f, q);
-    let depth = char_depth(fonts, f, q);
+impl MemState {
+    fn char_box_tfm(
+        &mut self,
+        fonts: &mut FontState,
+        f: i32,
+        c: u16,
+    ) -> Result<AnyBox, NodeRecycleAbort> {
+        let c_eff = crate::fonts::effective_char(fonts, f, c);
+        let q = crate::fonts::char_info(fonts, f, c_eff);
+        let width = char_width(fonts, f, q) + char_italic(fonts, f, q);
+        let height = char_height(fonts, f, q);
+        let depth = char_depth(fonts, f, q);
 
-    let b = crate::mem::new_null_box(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    b.set_width(mem, Scaled(width));
-    b.set_height(mem, Scaled(height));
-    b.set_depth(mem, Scaled(depth));
-    let p = crate::mem::new_char(mem, FontId(f), c).ok_or(NodeRecycleAbort::OverflowRunaway)?;
-    b.set_list_ptr(mem, p.ptr());
-    Ok(AnyBox::HList(b))
-}
+        let b = self.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
+        b.set_width(self, Scaled(width));
+        b.set_height(self, Scaled(height));
+        b.set_depth(self, Scaled(depth));
+        let p = self
+            .new_char(FontId(f), c)
+            .ok_or(NodeRecycleAbort::OverflowRunaway)?;
+        b.set_list_ptr(self, p.ptr());
+        Ok(AnyBox::HList(b))
+    }
 
-fn stack_into_box(mem: &mut MemState, b_box: AnyBox, p: AnyBox) {
-    let link = b_box.list_ptr(mem);
-    p.set_link(mem, link);
-    b_box.set_list_ptr(mem, p.ptr());
-    let h = p.height(mem).0;
-    b_box.set_height(mem, Scaled(h));
+    fn stack_into_box(&mut self, b_box: AnyBox, p: AnyBox) {
+        let link = b_box.list_ptr(self);
+        p.set_link(self, link);
+        b_box.set_list_ptr(self, p.ptr());
+        let h = p.height(self).0;
+        b_box.set_height(self, Scaled(h));
+    }
 }
 
 fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
@@ -2417,7 +2436,8 @@ fn stack_glyph_into_box_in(
 
 fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, NodeRecycleAbort> {
     let b = AnyBox::VList(
-        crate::mem::new_null_box(&mut st.mem)
+        st.mem
+            .new_null_box()
             .ok_or(NodeRecycleAbort::Overflow)?
             .into_vlist(&mut st.mem),
     );
@@ -2430,35 +2450,37 @@ fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, 
     Ok(b)
 }
 
-fn stack_glue_into_box(
-    mem: &mut MemState,
-    b: AnyBox,
-    min: i32,
-    max: i32,
-) -> Result<(), NodeRecycleAbort> {
-    let spec = new_spec(mem, ZERO_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
-    spec.set_width(mem, Scaled(min));
-    spec.set_stretch(mem, Scaled(max - min));
-    let p = new_glue(mem, spec).ok_or(NodeRecycleAbort::Overflow)?;
-    if matches!(b, AnyBox::HList(_)) {
-        let mut q = b.list_ptr(mem);
-        if q.is_null() {
-            b.set_list_ptr(mem, p.ptr());
-        } else {
-            while !q.link(mem).is_null() {
-                q = q.link(mem);
+impl MemState {
+    fn stack_glue_into_box(
+        &mut self,
+        b: AnyBox,
+        min: i32,
+        max: i32,
+    ) -> Result<(), NodeRecycleAbort> {
+        let spec = self.new_spec(ZERO_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
+        spec.set_width(self, Scaled(min));
+        spec.set_stretch(self, Scaled(max - min));
+        let p = self.new_glue(spec).ok_or(NodeRecycleAbort::Overflow)?;
+        if matches!(b, AnyBox::HList(_)) {
+            let mut q = b.list_ptr(self);
+            if q.is_null() {
+                b.set_list_ptr(self, p.ptr());
+            } else {
+                while !q.link(self).is_null() {
+                    q = q.link(self);
+                }
+                q.set_link(self, p.ptr());
             }
-            q.set_link(mem, p.ptr());
+        } else {
+            p.set_link(self, b.list_ptr(self));
+            b.set_list_ptr(self, p.ptr());
+            // XeTeX reads box height and width off the glue node here.
+            let raw = p.ptr().0;
+            b.set_height(self, Scaled(self.b32s1(raw + 3)));
+            b.set_width(self, Scaled(self.b32s1(raw + 1)));
         }
-    } else {
-        p.set_link(mem, b.list_ptr(mem));
-        b.set_list_ptr(mem, p.ptr());
-        // XeTeX reads box height and width off the glue node here.
-        let raw = p.ptr().0;
-        b.set_height(mem, Scaled(mem.b32s1(raw + 3)));
-        b.set_width(mem, Scaled(mem.b32s1(raw + 1)));
+        Ok(())
     }
-    Ok(())
 }
 
 fn compute_ot_math_accent_pos_in(
@@ -2476,7 +2498,7 @@ fn compute_ot_math_accent_pos_in(
                 let f = st.scanner.cur_f;
                 let c = st.scanner.cur_c;
                 let q = crate::fonts::new_native_character_in(st, f, c as u32)?;
-                let g = real_get_native_glyph(&st.mem, q, 0);
+                let g = st.mem.real_get_native_glyph(q, 0);
                 return Ok(get_ot_math_accent_pos(&st.fonts, f, g as i32));
             }
             SUB_MLIST => {
@@ -2651,7 +2673,7 @@ fn append_choices_core(
     mem: &mut MemState,
     save_stack: &mut SaveStackState,
 ) -> Result<(), NodeRecycleAbort> {
-    let choice = new_choice(mem).ok_or(NodeRecycleAbort::Overflow)?;
+    let choice = mem.new_choice().ok_or(NodeRecycleAbort::Overflow)?;
     cl.tail_append(mem, choice.ptr());
     save_stack.save_ptr += 1;
     save_stack.set_saved(-1, 0);
@@ -2712,7 +2734,7 @@ pub(crate) fn fin_mlist_in(
 ) -> Result<i32, crate::main_control::MainControlAbort> {
     let q = fin_mlist(&mut st.input.cur_list, &mut st.mem, p)
         .map_err(crate::main_control::MainControlAbort::Confusion)?;
-    crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+    st.mem.pop_nest(&mut st.input);
     Ok(q)
 }
 
@@ -2748,7 +2770,7 @@ pub(crate) fn build_choices_in(
     crate::save::unsave_in(st)?;
     let p = fin_mlist(&mut st.input.cur_list, &mut st.mem, TEX_NULL)
         .map_err(crate::main_control::MainControlAbort::Confusion)?;
-    crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+    st.mem.pop_nest(&mut st.input);
     let complete = build_choices_finish(&mut st.input.cur_list, &mut st.mem, &mut st.save_stack, p);
     if complete {
         return Ok(());
@@ -2792,7 +2814,7 @@ fn prepare_sub_sup(
     let p = match p {
         Some(field) if t == EMPTY => field,
         _ => {
-            let noad = new_noad(mem).ok_or(NodeRecycleAbort::Overflow)?;
+            let noad = mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
             cl.tail_append(mem, noad.ptr());
             if t != EMPTY {
                 duplicate = Some(if cmd == SUP_MARK {
@@ -2904,21 +2926,24 @@ fn append_accent_noad(
     Ok(accent)
 }
 
-fn finish_accent_math_field(mem: &mut MemState, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
-    tail.accent_chr().set_character(mem, (value % 65536) as u16);
-    let intpar_cur_fam = eqtb.int_par(INT_PAR_CUR_FAM);
-    if math_class_field(value) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
+impl MemState {
+    fn finish_accent_math_field(&mut self, eqtb: &EqtbState, tail: NodePtr<Noad>, value: i32) {
         tail.accent_chr()
-            .set_plane_and_fam(mem, intpar_cur_fam as u16);
-    } else {
-        tail.accent_chr()
-            .set_plane_and_fam(mem, math_fam_field(value) as u16);
+            .set_character(self, (value % 65536) as u16);
+        let intpar_cur_fam = eqtb.int_par(INT_PAR_CUR_FAM);
+        if math_class_field(value) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
+            tail.accent_chr()
+                .set_plane_and_fam(self, intpar_cur_fam as u16);
+        } else {
+            tail.accent_chr()
+                .set_plane_and_fam(self, math_fam_field(value) as u16);
+        }
+        let current_fam = tail.accent_chr().plane_and_fam(self);
+        tail.accent_chr().set_plane_and_fam(
+            self,
+            current_fam + (math_char_field(value) / 65536) as u16 * 256,
+        );
     }
-    let current_fam = tail.accent_chr().plane_and_fam(mem);
-    tail.accent_chr().set_plane_and_fam(
-        mem,
-        current_fam + (math_char_field(value) / 65536) as u16 * 256,
-    );
 }
 
 pub(crate) fn math_left_right_in(
@@ -2944,7 +2969,7 @@ pub(crate) fn math_left_right_in(
             crate::main_control::off_save_in(st)?;
         }
     } else {
-        let p = new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+        let p = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
         p.set_type_code(&mut st.mem, t);
         scan_delimiter_in(st, p.delimiter(), false)?;
         if t == MIDDLE_NOAD {
@@ -2965,7 +2990,7 @@ pub(crate) fn math_left_right_in(
             cl.tail = p.ptr();
             cl.e_tex_aux = p.ptr();
         } else {
-            let inner = new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+            let inner = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
             let cl = &mut st.input.cur_list;
             cl.tail_append(&mut st.mem, inner.ptr());
             inner.set_noad_type(&mut st.mem, NodeType::InnerNoad);
@@ -3038,7 +3063,7 @@ pub(crate) fn math_ac_in(
     }
 
     let value = st.scanner.cur_val;
-    finish_accent_math_field(&mut st.mem, &st.eqtb, tail, value);
+    st.mem.finish_accent_math_field(&st.eqtb, tail, value);
     crate::scan::scan_math_in(st, tail.nucleus())
 }
 
@@ -3081,15 +3106,17 @@ fn ext_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
     fonts.font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(fonts, f)
 }
 
-/// Fills the fresh spec of `skip` with `w` minus the glue of `g`, negating its stretch and shrink.
-fn set_display_skip(mem: &mut MemState, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: i32) {
-    let src = g.glue_ptr(mem);
-    let dst = skip.glue_ptr(mem);
-    dst.set_stretch_order(mem, src.stretch_order(mem));
-    dst.set_shrink_order(mem, src.shrink_order(mem));
-    dst.set_width(mem, Scaled(w - src.width(mem).0));
-    dst.set_stretch(mem, Scaled(-src.stretch(mem).0));
-    dst.set_shrink(mem, Scaled(-src.shrink(mem).0));
+impl MemState {
+    /// Fills the fresh spec of `skip` with `w` minus the glue of `g`, negating its stretch and shrink.
+    fn set_display_skip(&mut self, skip: NodePtr<GlueNode>, g: NodePtr<GlueNode>, w: i32) {
+        let src = g.glue_ptr(self);
+        let dst = skip.glue_ptr(self);
+        dst.set_stretch_order(self, src.stretch_order(self));
+        dst.set_shrink_order(self, src.shrink_order(self));
+        dst.set_width(self, Scaled(w - src.width(self).0));
+        dst.set_stretch(self, Scaled(-src.stretch(self).0));
+        dst.set_shrink(self, Scaled(-src.shrink(self).0));
+    }
 }
 
 fn app_display_in(
@@ -3117,7 +3144,7 @@ fn app_display_in(
         d = z - e - orig.width(&st.mem).0;
     }
     let copy = if let Some(j) = j {
-        let bc = crate::packaging::copy_box(&mut st.mem, j)?;
+        let bc = st.mem.copy_box(j)?;
         let (h, dp) = (orig.height(&st.mem), orig.depth(&st.mem));
         bc.set_height(&mut st.mem, h);
         bc.set_depth(&mut st.mem, dp);
@@ -3136,13 +3163,13 @@ fn app_display_in(
         q = p;
     } else {
         let mut r = orig.list_ptr(&st.mem);
-        free_node(&mut st.mem, orig.ptr(), BOX_NODE_SIZE);
+        st.mem.free_node(orig.ptr(), BOX_NODE_SIZE);
         if r.is_null() {
             return Err(MainControlAbort::Confusion(c"LR4"));
         }
         if x > 0 {
             p = r;
-            q = crate::mem::list_tail(&st.mem, r);
+            q = st.mem.list_tail(r);
         } else {
             let mut rev = MemPtr::NULL;
             q = r;
@@ -3158,27 +3185,27 @@ fn app_display_in(
 
     let (r, t) = match copy {
         None => (
-            new_kern(&mut st.mem, 0)
-                .ok_or(NodeRecycleAbort::Overflow)?
-                .ptr(),
-            new_kern(&mut st.mem, 0)
-                .ok_or(NodeRecycleAbort::Overflow)?
-                .ptr(),
+            st.mem.new_kern(0).ok_or(NodeRecycleAbort::Overflow)?.ptr(),
+            st.mem.new_kern(0).ok_or(NodeRecycleAbort::Overflow)?.ptr(),
         ),
         Some(bc) => {
             let r = bc.list_ptr(&st.mem);
             (r, r.link(&st.mem))
         }
     };
-    let u = crate::mem::new_math(&mut st.mem, 0, END_M_CODE)
+    let u = st
+        .mem
+        .new_math(0, END_M_CODE)
         .ok_or(NodeRecycleAbort::Overflow)?
         .ptr();
     if let Ok(AnyNode::Glue(tg)) = st.mem.classify(MemIdx::new(t.0)) {
-        let skip = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_RIGHT_SKIP)
+        let skip = st
+            .mem
+            .new_skip_param(&st.eqtb, GLUE_PAR_RIGHT_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         q.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, u);
-        set_display_skip(&mut st.mem, skip, tg, e);
+        st.mem.set_display_skip(skip, tg, e);
         u.set_link(&mut st.mem, t);
     } else {
         st.mem.set_b32s1(t + 1, e);
@@ -3186,15 +3213,19 @@ fn app_display_in(
         q.set_link(&mut st.mem, t);
     }
 
-    let u = crate::mem::new_math(&mut st.mem, 0, BEGIN_M_CODE)
+    let u = st
+        .mem
+        .new_math(0, BEGIN_M_CODE)
         .ok_or(NodeRecycleAbort::Overflow)?
         .ptr();
     if let Ok(AnyNode::Glue(rg)) = st.mem.classify(MemIdx::new(r.0)) {
-        let skip = crate::mem::new_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_LEFT_SKIP)
+        let skip = st
+            .mem
+            .new_skip_param(&st.eqtb, GLUE_PAR_LEFT_SKIP)
             .ok_or(NodeRecycleAbort::Overflow)?;
         u.set_link(&mut st.mem, skip.ptr());
         skip.set_link(&mut st.mem, p);
-        set_display_skip(&mut st.mem, skip, rg, d);
+        st.mem.set_display_skip(skip, rg, d);
         r.set_link(&mut st.mem, u);
     } else {
         st.mem.set_b32s1(r + 1, d);
@@ -3308,7 +3339,9 @@ pub(crate) fn after_math_in(
 
     if m < 0 {
         let math_surround = st.eqtb.dimen_par(DIMEN_PAR_MATH_SURROUND);
-        let node = crate::mem::new_math(&mut st.mem, math_surround, BEFORE)
+        let node = st
+            .mem
+            .new_math(math_surround, BEFORE)
             .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.scanner.cur_mlist.0 = p;
@@ -3321,7 +3354,9 @@ pub(crate) fn after_math_in(
         while !cl.tail.link(&st.mem).is_null() {
             cl.tail = cl.tail.link(&st.mem);
         }
-        let node = crate::mem::new_math(&mut st.mem, math_surround, AFTER)
+        let node = st
+            .mem
+            .new_math(math_surround, AFTER)
             .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.input.cur_list.set_aux_s0(1000);
@@ -3374,12 +3409,12 @@ pub(crate) fn after_math_in(
                 || st.scanner.total_shrink[FILL as usize] != 0
                 || st.scanner.total_shrink[FILLL as usize] != 0)
         {
-            free_node(&mut st.mem, b.ptr(), BOX_NODE_SIZE);
+            st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
             b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?;
         } else {
             e = 0;
             if w > z {
-                free_node(&mut st.mem, b.ptr(), BOX_NODE_SIZE);
+                st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
                 b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?;
             }
         }
@@ -3390,15 +3425,15 @@ pub(crate) fn after_math_in(
     if e > 0 && d < 2 * e {
         d = crate::scaled_math::half(z - w - e);
         if let Some(first) = p.as_idx() {
-            if !crate::mem::is_char_node(&st.mem, p)
-                && st.mem.node_type(first) == Ok(NodeType::Glue)
-            {
+            if !st.mem.is_char_node(p) && st.mem.node_type(first) == Ok(NodeType::Glue) {
                 d = 0;
             }
         }
     }
 
-    let pen = crate::mem::new_penalty(&mut st.mem, st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY))
+    let pen = st
+        .mem
+        .new_penalty(st.eqtb.int_par(INT_PAR_PRE_DISPLAY_PENALTY))
         .ok_or(NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
@@ -3414,18 +3449,24 @@ pub(crate) fn after_math_in(
 
     if let Some(eqno) = a.filter(|_| l && e == 0) {
         app_display_in(st, j, eqno, 0)?;
-        let pen =
-            crate::mem::new_penalty(&mut st.mem, INF_PENALTY).ok_or(NodeRecycleAbort::Overflow)?;
+        let pen = st
+            .mem
+            .new_penalty(INF_PENALTY)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
     } else {
-        let glue = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g1)
+        let glue = st
+            .mem
+            .new_param_glue(&st.eqtb, g1)
             .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
     if let Some(eqno) = a.filter(|_| e != 0) {
-        let r =
-            crate::mem::new_kern(&mut st.mem, z - w - e - d).ok_or(NodeRecycleAbort::Overflow)?;
+        let r = st
+            .mem
+            .new_kern(z - w - e - d)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         if l {
             eqno.set_link(&mut st.mem, r.ptr());
             r.set_link(&mut st.mem, b.ptr());
@@ -3441,8 +3482,10 @@ pub(crate) fn after_math_in(
     app_display_in(st, j, b, d)?;
 
     if let Some(eqno) = a.filter(|_| e == 0 && !l) {
-        let pen =
-            crate::mem::new_penalty(&mut st.mem, INF_PENALTY).ok_or(NodeRecycleAbort::Overflow)?;
+        let pen = st
+            .mem
+            .new_penalty(INF_PENALTY)
+            .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
         let a_width = eqno.width(&st.mem).0;
         app_display_in(st, j, eqno, z - a_width)?;
@@ -3461,18 +3504,23 @@ pub(crate) fn after_math_in(
         cl.tail.0 = pre_t;
     }
 
-    let pen = crate::mem::new_penalty(&mut st.mem, st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY))
+    let pen = st
+        .mem
+        .new_penalty(st.eqtb.int_par(INT_PAR_POST_DISPLAY_PENALTY))
         .ok_or(NodeRecycleAbort::Overflow)?;
     st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
     if g2 > 0 {
-        let glue = crate::mem::new_param_glue(&mut st.mem, &st.eqtb, g2)
+        let glue = st
+            .mem
+            .new_param_glue(&st.eqtb, g2)
             .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
     if let Some(j) = j {
-        crate::packaging::flush_node_list(&mut st.mem, j.ptr())
+        st.mem
+            .flush_node_list(j.ptr())
             .map_err(MainControlAbort::Confusion)?;
     }
 
@@ -3498,9 +3546,9 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 /// A kern, or the parameter glue when that skip is nonzero.
 fn side_skip_in(st: &mut EngineState, param: i16) -> Result<MemPtr, NodeRecycleAbort> {
     let p = if st.eqtb.glue_par(param) == ZERO_GLUE {
-        new_kern(&mut st.mem, 0).map(|k| k.ptr())
+        st.mem.new_kern(0).map(|k| k.ptr())
     } else {
-        crate::mem::new_param_glue(&mut st.mem, &st.eqtb, param).map(|g| g.ptr())
+        st.mem.new_param_glue(&st.eqtb, param).map(|g| g.ptr())
     };
     p.ok_or(NodeRecycleAbort::Overflow)
 }
@@ -3516,7 +3564,7 @@ pub(crate) fn init_math_in(
         let x;
 
         if st.input.cur_list.head == st.input.cur_list.tail {
-            crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
+            st.mem.pop_nest(&mut st.input);
             x = pre_display_direction(st);
         } else {
             match crate::linebreak::line_break_in(st, true) {
@@ -3528,7 +3576,7 @@ pub(crate) fn init_math_in(
             let left = side_skip_in(st, GLUE_PAR_LEFT_SKIP)?;
             left.set_link(&mut st.mem, right);
 
-            let jbox = crate::mem::new_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+            let jbox = st.mem.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
             j = jbox.idx().0;
             let jb = st.scanner.just_box.expect("line_break sets just_box");
             let mem = &mut st.mem;
@@ -3548,15 +3596,19 @@ pub(crate) fn init_math_in(
                 TEMP_HEAD.set_link(&mut st.mem, MemPtr::NULL);
             } else {
                 v = -v - jb.width(&st.mem).0;
-                let begin = crate::mem::new_math(&mut st.mem, 0, BEGIN_L_CODE)
+                let begin = st
+                    .mem
+                    .new_math(0, BEGIN_L_CODE)
                     .ok_or(NodeRecycleAbort::Overflow)?
                     .ptr();
                 TEMP_HEAD.set_link(&mut st.mem, begin);
-                let end = crate::mem::new_math(&mut st.mem, 0, END_L_CODE)
+                let end = st
+                    .mem
+                    .new_math(0, END_L_CODE)
                     .ok_or(NodeRecycleAbort::Overflow)?
                     .ptr();
                 let list = jb.list_ptr(&st.mem);
-                crate::packaging::just_copy(&mut st.mem, list, begin, end)?;
+                st.mem.just_copy(list, begin, end)?;
                 st.scanner.cur_dir = RIGHT_TO_LEFT;
                 p = begin;
             }
@@ -3566,7 +3618,8 @@ pub(crate) fn init_math_in(
 
             let texxet = st.eqtb.int_par(INT_PAR_TEXXET) > 0;
             if texxet {
-                crate::mem::push_lr(&mut st.mem, &mut st.scanner.lr_ptr, BEFORE.into())
+                st.mem
+                    .push_lr(&mut st.scanner.lr_ptr, BEFORE.into())
                     .ok_or(NodeRecycleAbort::Overflow)?;
             }
 
@@ -3601,24 +3654,20 @@ pub(crate) fn init_math_in(
                                     if st.scanner.lr_ptr.info(&st.mem)
                                         == crate::mem::end_lr_type(subtype)
                                     {
-                                        crate::mem::pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
+                                        st.mem.pop_lr(&mut st.scanner.lr_ptr);
                                     } else if subtype > L_CODE {
                                         w = MAX_HALFWORD;
                                         break 'outer;
                                     }
                                 } else {
-                                    crate::mem::push_lr(
-                                        &mut st.mem,
-                                        &mut st.scanner.lr_ptr,
-                                        crate::mem::end_lr_type(subtype),
-                                    )
-                                    .ok_or(NodeRecycleAbort::Overflow)?;
+                                    st.mem
+                                        .push_lr(
+                                            &mut st.scanner.lr_ptr,
+                                            crate::mem::end_lr_type(subtype),
+                                        )
+                                        .ok_or(NodeRecycleAbort::Overflow)?;
                                     if (subtype / R_CODE) as i32 != st.scanner.cur_dir as i32 {
-                                        crate::packaging::just_reverse(
-                                            &mut st.mem,
-                                            &mut st.scanner,
-                                            p,
-                                        )?;
+                                        st.mem.just_reverse(&mut st.scanner, p)?;
                                         p = TEMP_HEAD;
                                     }
                                 }
@@ -3681,7 +3730,7 @@ pub(crate) fn init_math_in(
 
             if texxet {
                 while !st.scanner.lr_ptr.is_null() {
-                    crate::mem::pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
+                    st.mem.pop_lr(&mut st.scanner.lr_ptr);
                 }
                 if st.scanner.lr_problems != 0 {
                     w = MAX_HALFWORD;
@@ -3691,7 +3740,8 @@ pub(crate) fn init_math_in(
 
             st.scanner.cur_dir = LEFT_TO_RIGHT;
             let temp_head = TEMP_HEAD.link(&st.mem);
-            crate::packaging::flush_node_list(&mut st.mem, temp_head)
+            st.mem
+                .flush_node_list(temp_head)
                 .map_err(crate::main_control::MainControlAbort::Confusion)?;
         }
 
@@ -3772,18 +3822,18 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
         let v = char_width(&st.fonts, f, q);
         let bw = b.width(&st.mem).0;
         if v != bw {
-            let k = new_kern(&mut st.mem, bw - v).ok_or(NodeRecycleAbort::Overflow)?;
+            let k = st.mem.new_kern(bw - v).ok_or(NodeRecycleAbort::Overflow)?;
             p.set_link(&mut st.mem, k.ptr());
         }
     }
     let mem = &mut st.mem;
-    free_node(mem, b.ptr(), BOX_NODE_SIZE);
-    let g = new_glue(mem, SS_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
+    mem.free_node(b.ptr(), BOX_NODE_SIZE);
+    let g = mem.new_glue(SS_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
     g.set_link(mem, p);
     while !p.link(mem).is_null() {
         p = p.link(mem);
     }
-    let tail_glue = new_glue(mem, SS_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
+    let tail_glue = mem.new_glue(SS_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
     p.set_link(mem, tail_glue.ptr());
     crate::packaging::hpack_emit_in(st, g.ptr(), w, EXACTLY)
 }
@@ -3796,10 +3846,11 @@ fn build_opentype_assembly_in(
     horiz: bool,
 ) -> Result<AnyBox, NodeRecycleAbort> {
     let b = if horiz {
-        AnyBox::HList(crate::mem::new_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?)
+        AnyBox::HList(st.mem.new_null_box().ok_or(NodeRecycleAbort::Overflow)?)
     } else {
         AnyBox::VList(
-            crate::mem::new_null_box(&mut st.mem)
+            st.mem
+                .new_null_box()
                 .ok_or(NodeRecycleAbort::Overflow)?
                 .into_vlist(&mut st.mem),
         )
@@ -3829,7 +3880,7 @@ fn build_opentype_assembly_in(
         for _ in 0..repeats(i, n) {
             let oo = a.start_connector(&st.fonts, f, i).min(prev_o);
             if oo > 0 {
-                stack_glue_into_box(&mut st.mem, b, -oo, -oo.min(min_o))?;
+                st.mem.stack_glue_into_box(b, -oo, -oo.min(min_o))?;
             }
             stack_glyph_into_box_in(st, b, f, a.glyph(i))?;
             prev_o = a.end_connector(&st.fonts, f, i);
@@ -3876,68 +3927,70 @@ fn build_opentype_assembly_in(
     Ok(b)
 }
 
-fn build_ext_delimiter_box(
-    mem: &mut MemState,
-    fonts: &mut FontState,
-    f: i32,
-    q: CharInfo,
-    v: i32,
-) -> Result<AnyBox, NodeRecycleAbort> {
-    let vb = AnyBox::VList(
-        crate::mem::new_null_box(mem)
-            .ok_or(NodeRecycleAbort::Overflow)?
-            .into_vlist(mem),
-    );
-    let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
-    let u = height_plus_depth(fonts, f, r.s0);
-    let effective_c = crate::fonts::effective_char(fonts, f, r.s0);
-    let qq = crate::fonts::char_info(fonts, f, effective_c);
-    let box_width = char_width(fonts, f, qq) + char_italic(fonts, f, qq);
-    vb.set_width(mem, Scaled(box_width));
-    let mut w = 0;
-    if r.s1 != 0 {
-        w += height_plus_depth(fonts, f, r.s1);
-    }
-    if r.s2 != 0 {
-        w += height_plus_depth(fonts, f, r.s2);
-    }
-    if r.s3 != 0 {
-        w += height_plus_depth(fonts, f, r.s3);
-    }
+impl MemState {
+    fn build_ext_delimiter_box(
+        &mut self,
+        fonts: &mut FontState,
+        f: i32,
+        q: CharInfo,
+        v: i32,
+    ) -> Result<AnyBox, NodeRecycleAbort> {
+        let vb = AnyBox::VList(
+            self.new_null_box()
+                .ok_or(NodeRecycleAbort::Overflow)?
+                .into_vlist(self),
+        );
+        let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
+        let u = height_plus_depth(fonts, f, r.s0);
+        let effective_c = crate::fonts::effective_char(fonts, f, r.s0);
+        let qq = crate::fonts::char_info(fonts, f, effective_c);
+        let box_width = char_width(fonts, f, qq) + char_italic(fonts, f, qq);
+        vb.set_width(self, Scaled(box_width));
+        let mut w = 0;
+        if r.s1 != 0 {
+            w += height_plus_depth(fonts, f, r.s1);
+        }
+        if r.s2 != 0 {
+            w += height_plus_depth(fonts, f, r.s2);
+        }
+        if r.s3 != 0 {
+            w += height_plus_depth(fonts, f, r.s3);
+        }
 
-    let mut n: i32 = 0;
-    if u > 0 {
-        while w < v {
-            w += u;
-            n += 1;
-            if r.s2 != 0 {
+        let mut n: i32 = 0;
+        if u > 0 {
+            while w < v {
                 w += u;
+                n += 1;
+                if r.s2 != 0 {
+                    w += u;
+                }
             }
         }
-    }
-    if r.s1 != 0 {
-        let p = char_box_tfm(mem, fonts, f, r.s1)?;
-        stack_into_box(mem, vb, p);
-    }
-    for _ in 1..=n {
-        let p = char_box_tfm(mem, fonts, f, r.s0)?;
-        stack_into_box(mem, vb, p);
-    }
-    if r.s2 != 0 {
-        let p = char_box_tfm(mem, fonts, f, r.s2)?;
-        stack_into_box(mem, vb, p);
-        for _ in 1..=n {
-            let p = char_box_tfm(mem, fonts, f, r.s0)?;
-            stack_into_box(mem, vb, p);
+        if r.s1 != 0 {
+            let p = self.char_box_tfm(fonts, f, r.s1)?;
+            self.stack_into_box(vb, p);
         }
+        for _ in 1..=n {
+            let p = self.char_box_tfm(fonts, f, r.s0)?;
+            self.stack_into_box(vb, p);
+        }
+        if r.s2 != 0 {
+            let p = self.char_box_tfm(fonts, f, r.s2)?;
+            self.stack_into_box(vb, p);
+            for _ in 1..=n {
+                let p = self.char_box_tfm(fonts, f, r.s0)?;
+                self.stack_into_box(vb, p);
+            }
+        }
+        if r.s3 != 0 {
+            let p = self.char_box_tfm(fonts, f, r.s3)?;
+            self.stack_into_box(vb, p);
+        }
+        let height = vb.height(self).0;
+        vb.set_depth(self, Scaled(w - height));
+        Ok(vb)
     }
-    if r.s3 != 0 {
-        let p = char_box_tfm(mem, fonts, f, r.s3)?;
-        stack_into_box(mem, vb, p);
-    }
-    let height = vb.height(mem).0;
-    vb.set_depth(mem, Scaled(w - height));
-    Ok(vb)
 }
 
 fn var_delimiter_in(
@@ -3964,7 +4017,7 @@ fn var_delimiter_in(
                 z = z + s + 256;
                 loop {
                     z -= 256;
-                    let g = math_font(&st.eqtb, z);
+                    let g = st.eqtb.math_font(z);
                     if g != FONT_BASE {
                         if st.fonts.font_area_entry(g) == AAT_FONT_FLAG
                             || font_uses_opentype(&st.fonts, g)
@@ -4039,13 +4092,13 @@ fn var_delimiter_in(
         }
     }
     let b = if f == FONT_BASE {
-        let b = crate::mem::new_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+        let b = st.mem.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
         let width = st.eqtb.dimen_par(DIMEN_PAR_NULL_DELIMITER_SPACE);
         b.set_width(&mut st.mem, Scaled(width));
         AnyBox::HList(b)
     } else if !font_uses_opentype(&st.fonts, f) {
         if q.s1 % 4 == EXT_TAG {
-            build_ext_delimiter_box(&mut st.mem, &mut st.fonts, f, q, v)?
+            st.mem.build_ext_delimiter_box(&mut st.fonts, f, q, v)?
         } else {
             char_box_in(st, f, c as i32)?
         }

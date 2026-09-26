@@ -16,9 +16,7 @@ use crate::consts::{
     MIN_HALFWORD, PRIM_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
     TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::engine::{
-    alloc_font_arrays, set_eq, sort_avail_in, POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT,
-};
+use crate::engine::{alloc_font_arrays, set_eq, POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
 use crate::errors::EngineAbort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{HASH_OFFSET, HASH_PRIME};
@@ -276,7 +274,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     dump_int(fmt_out, st.eqtb.hash_high)?;
 
     while st.input.pseudo_files.0 != TEX_NULL {
-        crate::input::pseudo_close(&mut st.mem, &mut st.input);
+        st.mem.pseudo_close(&mut st.input);
     }
 
     dump_int(fmt_out, MEM_TOP)?;
@@ -301,7 +299,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     crate::output::print_cstr_in(st, c" strings of total length ".as_ptr());
     crate::output::print_int_in(st, pool_ptr);
 
-    sort_avail_in(&mut st.mem);
+    st.mem.sort_avail();
     let mem = &st.mem;
     let (lo_mem_max, rover, hi_mem_min, mem_end, avail) = (
         mem.lo_mem_max,

@@ -108,44 +108,46 @@ pub(crate) unsafe fn get_strings_started_in(st: &mut EngineState) -> Result<(), 
     Ok(())
 }
 
-/// TeX's `sort_avail`: orders the variable-size free list by address.
-pub(crate) fn sort_avail_in(mem: &mut MemState) {
-    let block = |p: i32| NodePtr::<FreeBlock>::at(p);
-    let _ = crate::mem::get_node(mem, GET_NODE_HEAD_SENTINEL);
-    let old_rover = mem.rover;
-    let mut p = block(old_rover).rlink(mem);
-    block(old_rover).set_rlink(mem, MAX_HALFWORD);
+impl MemState {
+    /// TeX's `sort_avail`: orders the variable-size free list by address.
+    pub(crate) fn sort_avail(&mut self) {
+        let block = |p: i32| NodePtr::<FreeBlock>::at(p);
+        let _ = self.get_node(GET_NODE_HEAD_SENTINEL);
+        let old_rover = self.rover;
+        let mut p = block(old_rover).rlink(self);
+        block(old_rover).set_rlink(self, MAX_HALFWORD);
 
-    while p != old_rover {
-        let rover = mem.rover;
-        if p < rover {
-            let q = p;
-            p = block(q).rlink(mem);
-            block(q).set_rlink(mem, rover);
-            mem.rover = q;
-        } else {
-            let mut q = rover;
-            while block(q).rlink(mem) < p {
-                q = block(q).rlink(mem);
+        while p != old_rover {
+            let rover = self.rover;
+            if p < rover {
+                let q = p;
+                p = block(q).rlink(self);
+                block(q).set_rlink(self, rover);
+                self.rover = q;
+            } else {
+                let mut q = rover;
+                while block(q).rlink(self) < p {
+                    q = block(q).rlink(self);
+                }
+                let r = block(p).rlink(self);
+                let after_q = block(q).rlink(self);
+                block(p).set_rlink(self, after_q);
+                block(q).set_rlink(self, p);
+                p = r;
             }
-            let r = block(p).rlink(mem);
-            let after_q = block(q).rlink(mem);
-            block(p).set_rlink(mem, after_q);
-            block(q).set_rlink(mem, p);
-            p = r;
         }
-    }
 
-    let rover = mem.rover;
-    p = rover;
-    while block(p).rlink(mem) != MAX_HALFWORD {
-        let next = block(p).rlink(mem);
-        block(next).set_llink(mem, p);
-        p = next;
-    }
+        let rover = self.rover;
+        p = rover;
+        while block(p).rlink(self) != MAX_HALFWORD {
+            let next = block(p).rlink(self);
+            block(next).set_llink(self, p);
+            p = next;
+        }
 
-    block(p).set_rlink(mem, rover);
-    block(rover).set_llink(mem, p);
+        block(p).set_rlink(self, rover);
+        block(rover).set_llink(self, p);
+    }
 }
 
 enum PrimitiveInitAbort {
@@ -312,23 +314,24 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
     for mark_code in TOP_MARK_CODE..=SPLIT_BOT_MARK_CODE {
         let mark = st.scanner.cur_mark[mark_code];
         if !mark.is_null() {
-            crate::mem::delete_token_ref(&mut st.mem, mark);
+            st.mem.delete_token_ref(mark);
         }
     }
 
     if let Some(marks) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
-        if crate::packaging::do_marks(&mut st.mem, &mut st.scanner, 3, 0, marks) {
+        if st.mem.do_marks(&mut st.scanner, 3, 0, marks) {
             st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
         }
     }
 
     for box_code in LAST_BOX_CODE as usize..=VSPLIT_CODE as usize {
-        crate::packaging::flush_node_list(&mut st.mem, st.scanner.disc_ptr[box_code])
+        st.mem
+            .flush_node_list(st.scanner.disc_ptr[box_code])
             .map_err(|msg| EngineAbort::Confusion(msg.as_ptr()))?;
     }
 
     if let Some(spec) = st.shipout.last_glue {
-        crate::mem::delete_glue_ref(&mut st.mem, spec);
+        st.mem.delete_glue_ref(spec);
     }
 
     crate::format_io::store_fmt_file_in(st)

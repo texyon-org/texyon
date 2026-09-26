@@ -592,12 +592,6 @@ fn print_write_whatsit_in(st: &mut EngineState, s: &CStr, p: NodePtr<WhatsitNode
     }
 }
 
-fn str_range(st: &EngineState, s: i32) -> std::ops::Range<usize> {
-    let start = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
-    let end = st.strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize];
-    start as usize..end as usize
-}
-
 pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
     // Swaps one quote character for the other.
     const QUOTE_SUM: i32 = b'"' as i32 + b'\'' as i32;
@@ -608,7 +602,7 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
         if s == 0 {
             continue;
         }
-        for j in str_range(st, s) {
+        for j in str_range(&st.strings, s) {
             if must_quote && quote_char != 0 {
                 break;
             }
@@ -633,7 +627,7 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
         if s == 0 {
             continue;
         }
-        for j in str_range(st, s) {
+        for j in str_range(&st.strings, s) {
             let c = st.strings.str_pool[j] as i32;
             if c == quote_char {
                 print_in(st, quote_char);
@@ -1813,7 +1807,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         CALL | LONG_CALL | OUTER_CALL | LONG_OUTER_CALL => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
             let mut n = (cmd - CALL) as i32;
-            if crate::scan::is_protected_macro(&st.mem, MemPtr(chr_code)) {
+            if st.mem.is_protected_macro(MemPtr(chr_code)) {
                 n += 4;
             }
             if n / 4 % 2 != 0 {
@@ -1862,7 +1856,8 @@ fn print_font_select_in(st: &mut EngineState, f: usize) {
     let name = st.fonts.font_name[f];
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-        let has_double_quote = st.strings.str_pool[str_range(st, name)].contains(&(b'"' as u16));
+        let has_double_quote =
+            st.strings.str_pool[str_range(&st.strings, name)].contains(&(b'"' as u16));
         let quote_char = if has_double_quote { b'\'' } else { b'"' } as i32;
         print_char_in(st, quote_char);
         print_in(st, name);
@@ -2293,7 +2288,7 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
     st.shipout.selector = SELECTOR_NEW_STRING;
     token_show_in(st, st.scanner.def_ref);
     st.shipout.selector = old_setting;
-    crate::mem::flush_list(&mut st.mem, st.scanner.def_ref);
+    st.mem.flush_list(st.scanner.def_ref);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(IssueMessageAbort::PoolSize);
     }
@@ -2634,7 +2629,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
             print_nl_cstr_in(st, c"> ".as_ptr());
             token_show_in(st, TEMP_HEAD);
             let list = TEMP_HEAD.link(&st.mem);
-            crate::mem::flush_list(&mut st.mem, list);
+            st.mem.flush_list(list);
         }
     }
 
@@ -2775,7 +2770,7 @@ pub(crate) fn show_box_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
 pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
     let mut p = MemPtr(p.addr());
     while p.0 > 0 {
-        if crate::mem::is_char_node(&st.mem, p) {
+        if st.mem.is_char_node(p) {
             if p.0 <= st.mem.mem_end {
                 let ch = NodePtr::<CharNode>::at(p);
                 let font = ch.font(&st.mem).0;
@@ -3030,7 +3025,7 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
             print_cstr_in(st, c"etc.".as_ptr());
             return;
         }
-        if crate::mem::is_char_node(&st.mem, p) {
+        if st.mem.is_char_node(p) {
             print_font_and_char_in(st, p);
         } else {
             match st.mem.classify(MemIdx::new(p)) {
@@ -3575,4 +3570,10 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
     }
     st.input.cur_input = st.input.input_stack[st.input.input_ptr as usize];
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
+}
+
+fn str_range(strings: &crate::state::StringsState, s: i32) -> std::ops::Range<usize> {
+    let start = strings.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
+    let end = strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize] as usize;
+    start..end
 }

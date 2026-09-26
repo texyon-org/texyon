@@ -98,35 +98,38 @@ fn utf16_units(c: u32) -> ([u16; 2], usize) {
     }
 }
 
-fn new_native_word(
-    mem: &mut MemState,
-    f: i32,
-    n: i32,
-    subtype: WhatsitSubtype,
-) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
-    let size = NATIVE_NODE_SIZE + (n * 2 + 7) / 8;
-    let w = NodePtr::<WhatsitNode>::alloc(mem, size, subtype).ok_or(NodeRecycleAbort::Overflow)?;
-    w.set_native_size(mem, size);
-    w.set_native_font(mem, crate::units::FontId(f));
-    w.set_native_length(mem, n as u16);
-    w.set_native_glyph_count(mem, 0);
-    w.set_native_glyph_info_handle(mem, 0);
-    Ok(w)
-}
+impl MemState {
+    fn new_native_word(
+        &mut self,
+        f: i32,
+        n: i32,
+        subtype: WhatsitSubtype,
+    ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+        let size = NATIVE_NODE_SIZE + (n * 2 + 7) / 8;
+        let w =
+            NodePtr::<WhatsitNode>::alloc(self, size, subtype).ok_or(NodeRecycleAbort::Overflow)?;
+        w.set_native_size(self, size);
+        w.set_native_font(self, crate::units::FontId(f));
+        w.set_native_length(self, n as u16);
+        w.set_native_glyph_count(self, 0);
+        w.set_native_glyph_info_handle(self, 0);
+        Ok(w)
+    }
 
-/// A native-word node for `n` UTF-16 units of font `f`, text left unset.
-pub(crate) fn new_native_word_node(
-    mem: &mut MemState,
-    eqtb: &EqtbState,
-    f: i32,
-    n: i32,
-) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
-    let subtype = if eqtb.int_par(INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
-        WhatsitSubtype::NativeWordAt
-    } else {
-        WhatsitSubtype::NativeWord
-    };
-    new_native_word(mem, f, n, subtype)
+    /// A native-word node for `n` UTF-16 units of font `f`, text left unset.
+    pub(crate) fn new_native_word_node(
+        &mut self,
+        eqtb: &EqtbState,
+        f: i32,
+        n: i32,
+    ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+        let subtype = if eqtb.int_par(INT_PAR_XETEX_GENERATE_ACTUAL_TEXT) > 0 {
+            WhatsitSubtype::NativeWordAt
+        } else {
+            WhatsitSubtype::NativeWord
+        };
+        self.new_native_word(f, n, subtype)
+    }
 }
 
 /// Where a native character's UTF-16 text comes from.
@@ -136,29 +139,31 @@ enum NativeCharSrc {
     Single(u32),
 }
 
-fn build_native_character(
-    mem: &mut MemState,
-    eqtb: &EqtbState,
-    fonts: &FontState,
-    f: i32,
-    src: NativeCharSrc,
-) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
-    match src {
-        NativeCharSrc::Mapped(len) => {
-            let w = new_native_word_node(mem, eqtb, f, len)?;
-            let src = &fonts.mapped_text[..len as usize];
-            let text = w.native_text_ptr_mut(mem);
-            // SAFETY: the node holds `len` units and the arena never reallocates.
-            unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), text, src.len()) };
-            Ok(w)
-        }
-        NativeCharSrc::Single(c) => {
-            let (units, n) = utf16_units(c);
-            let w = new_native_word(mem, f, n as i32, WhatsitSubtype::NativeWord)?;
-            let text = w.native_text_ptr_mut(mem);
-            // SAFETY: the node holds `n` units and the arena never reallocates.
-            unsafe { std::ptr::copy_nonoverlapping(units.as_ptr(), text, n) };
-            Ok(w)
+impl MemState {
+    fn build_native_character(
+        &mut self,
+        eqtb: &EqtbState,
+        fonts: &FontState,
+        f: i32,
+        src: NativeCharSrc,
+    ) -> Result<NodePtr<WhatsitNode>, NodeRecycleAbort> {
+        match src {
+            NativeCharSrc::Mapped(len) => {
+                let w = self.new_native_word_node(eqtb, f, len)?;
+                let src = &fonts.mapped_text[..len as usize];
+                let text = w.native_text_ptr_mut(self);
+                // SAFETY: the node holds `len` units and the arena never reallocates.
+                unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), text, src.len()) };
+                Ok(w)
+            }
+            NativeCharSrc::Single(c) => {
+                let (units, n) = utf16_units(c);
+                let w = self.new_native_word(f, n as i32, WhatsitSubtype::NativeWord)?;
+                let text = w.native_text_ptr_mut(self);
+                // SAFETY: the node holds `n` units and the arena never reallocates.
+                unsafe { std::ptr::copy_nonoverlapping(units.as_ptr(), text, n) };
+                Ok(w)
+            }
         }
     }
 }
@@ -248,7 +253,9 @@ pub(crate) fn new_native_character_in(
         NativeCharSrc::Single(c)
     };
 
-    let w = build_native_character(&mut st.mem, &st.eqtb, &st.fonts, f, src)
+    let w = st
+        .mem
+        .build_native_character(&st.eqtb, &st.fonts, f, src)
         .map_err(NativeCharAbort::Recycle)?;
     let use_glyph_metrics = st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
     // SAFETY: the measurer only reads font tables over re-entry-free FFI.

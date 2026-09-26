@@ -387,10 +387,12 @@ pub(crate) fn scan_optional_equals_in(st: &mut EngineState) -> Result<(), SccAbo
     Ok(())
 }
 
-/// Whether the macro whose token list starts at `ref_count` is `\protected`.
-#[inline]
-pub(crate) fn is_protected_macro(mem: &crate::state::MemState, ref_count: MemPtr) -> bool {
-    ref_count.link(mem).token(mem) == PROTECTED_TOKEN
+impl MemState {
+    /// Whether the macro whose token list starts at `ref_count` is `\protected`.
+    #[inline]
+    pub(crate) fn is_protected_macro(&self, ref_count: MemPtr) -> bool {
+        ref_count.link(self).token(self) == PROTECTED_TOKEN
+    }
 }
 
 pub(crate) fn get_x_or_protected_in(st: &mut EngineState) -> Result<(), SccAbort> {
@@ -401,7 +403,7 @@ pub(crate) fn get_x_or_protected_in(st: &mut EngineState) -> Result<(), SccAbort
         }
         if st.scanner.cur_cmd >= CALL
             && st.scanner.cur_cmd < END_TEMPLATE
-            && is_protected_macro(&st.mem, MemPtr(st.scanner.cur_chr))
+            && st.mem.is_protected_macro(MemPtr(st.scanner.cur_chr))
         {
             return Ok(());
         }
@@ -463,7 +465,7 @@ fn round_decimals(errors: &crate::state::ErrorState, k: i32) -> i32 {
 }
 
 pub(crate) fn scan_rule_spec_in(st: &mut EngineState) -> Result<NodePtr<RuleNode>, SccAbort> {
-    let r = crate::mem::new_rule(&mut st.mem).ok_or_else(main_mem_overflow_scc)?;
+    let r = st.mem.new_rule().ok_or_else(main_mem_overflow_scc)?;
     if st.scanner.cur_cmd == VRULE {
         r.set_width(&mut st.mem, RuleDimen::from_raw(DEFAULT_RULE));
     } else {
@@ -492,55 +494,57 @@ pub(crate) enum StrToksAbort {
     MainMemoryOverflow,
 }
 
-/// Converts `str_pool[b..pool_ptr]` to a token list at `link(temp_head)` and returns its tail.
-pub(crate) fn str_toks_cat_in(
-    mem: &mut crate::state::MemState,
-    strings: &mut crate::state::StringsState,
-    b: i32,
-    cat: i16,
-) -> Result<MemPtr, StrToksAbort> {
-    if strings.pool_ptr + 1 > strings.pool_size {
-        return Err(StrToksAbort::PoolOverflow);
-    }
+impl MemState {
+    /// Converts `str_pool[b..pool_ptr]` to a token list at `link(temp_head)` and returns its tail.
+    pub(crate) fn str_toks_cat(
+        &mut self,
+        strings: &mut crate::state::StringsState,
+        b: i32,
+        cat: i16,
+    ) -> Result<MemPtr, StrToksAbort> {
+        if strings.pool_ptr + 1 > strings.pool_size {
+            return Err(StrToksAbort::PoolOverflow);
+        }
 
-    let mut p = TEMP_HEAD;
-    p.set_link(mem, MemPtr::NULL);
-    let mut k = b;
+        let mut p = TEMP_HEAD;
+        p.set_link(self, MemPtr::NULL);
+        let mut k = b;
 
-    while k < strings.pool_ptr {
-        let mut t = strings.str_pool[k as usize] as i32;
+        while k < strings.pool_ptr {
+            let mut t = strings.str_pool[k as usize] as i32;
 
-        if t == b' ' as i32 && cat == 0 {
-            t = SPACE_TOKEN;
-        } else {
-            if (0xD800..0xDC00).contains(&t) && k + 1 < strings.pool_ptr {
-                let lo = strings.str_pool[(k + 1) as usize] as i32;
-                if (0xDC00..0xE000).contains(&lo) {
-                    k += 1;
-                    t = 0x10000
-                        + ((t - 0xD800) << 10)
-                        + (strings.str_pool[k as usize] as i32 - 0xDC00);
+            if t == b' ' as i32 && cat == 0 {
+                t = SPACE_TOKEN;
+            } else {
+                if (0xD800..0xDC00).contains(&t) && k + 1 < strings.pool_ptr {
+                    let lo = strings.str_pool[(k + 1) as usize] as i32;
+                    if (0xDC00..0xE000).contains(&lo) {
+                        k += 1;
+                        t = 0x10000
+                            + ((t - 0xD800) << 10)
+                            + (strings.str_pool[k as usize] as i32 - 0xDC00);
+                    }
+                }
+
+                if cat == 0 {
+                    t += OTHER_TOKEN;
+                } else if cat == ACTIVE_CHAR as i16 {
+                    t += CS_TOKEN_FLAG + 1;
+                } else {
+                    t += MAX_CHAR_VAL * cat as i32;
                 }
             }
 
-            if cat == 0 {
-                t += OTHER_TOKEN;
-            } else if cat == ACTIVE_CHAR as i16 {
-                t += CS_TOKEN_FLAG + 1;
-            } else {
-                t += MAX_CHAR_VAL * cat as i32;
-            }
+            let q = self.get_avail().ok_or(StrToksAbort::MainMemoryOverflow)?;
+            p.set_link(self, q);
+            q.set_info(self, t);
+            p = q;
+            k += 1;
         }
 
-        let q = crate::mem::get_avail(mem).ok_or(StrToksAbort::MainMemoryOverflow)?;
-        p.set_link(mem, q);
-        q.set_info(mem, t);
-        p = q;
-        k += 1;
+        strings.pool_ptr = b;
+        Ok(p)
     }
-
-    strings.pool_ptr = b;
-    Ok(p)
 }
 
 /// Appends `\endlinechar` to the line just read and starts reading it.
@@ -841,7 +845,7 @@ pub(crate) fn set_math_char_in(
         x_token_in(st)?;
         back_input_in(st)?;
     } else {
-        let nd = crate::mem::new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
+        let nd = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
         nd.nucleus().set_math_type(&mut st.mem, MATH_CHAR);
         let ch = math_char_fn(c);
         nd.nucleus().set_character(&mut st.mem, (ch % 65536) as u16);
@@ -929,7 +933,7 @@ pub(crate) fn check_outer_validity_in(
     if st.scanner.cur_cs != 0 {
         let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
-            let p = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
+            let p = st.mem.get_avail().ok_or(InputAbort::MainMemory)?;
             p.set_info(&mut st.mem, CS_TOKEN_FLAG + st.scanner.cur_cs);
             begin_token_list_in(st, p, BACKED_UP)?;
         }
@@ -946,7 +950,7 @@ pub(crate) fn check_outer_validity_in(
             error_here_with_diagnostic_in(st, c"Forbidden control sequence found".as_ptr());
         }
 
-        let p = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
+        let p = st.mem.get_avail().ok_or(InputAbort::MainMemory)?;
         let mut inserted = p;
         match st.scanner.scanner_status {
             DEFINING => {
@@ -961,7 +965,7 @@ pub(crate) fn check_outer_validity_in(
             ALIGNING => {
                 print_cstr_in(st, c" while scanning preamble".as_ptr());
                 p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-                inserted = crate::mem::get_avail(&mut st.mem).ok_or(InputAbort::MainMemory)?;
+                inserted = st.mem.get_avail().ok_or(InputAbort::MainMemory)?;
                 inserted.set_link(&mut st.mem, p);
                 inserted.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_CR);
                 st.scanner.align_state = -1_000_000;
@@ -1564,13 +1568,15 @@ pub(crate) fn main_mem_overflow_scc() -> SccAbort {
 }
 
 pub(crate) fn get_node_scc(st: &mut EngineState, s: i32) -> Result<MemPtr, SccAbort> {
-    crate::mem::get_node(&mut st.mem, s).ok_or_else(main_mem_overflow_scc)
+    st.mem.get_node(s).ok_or_else(main_mem_overflow_scc)
 }
 
 // Always inlined: an out-of-line `Result<MemPtr, SccAbort>` return goes through memory.
 #[inline(always)]
 pub(crate) fn get_avail_scc(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
-    crate::mem::get_avail(&mut st.mem).ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
+    st.mem
+        .get_avail()
+        .ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
 }
 
 /// Appends `token` to the token list whose tail is `tail`.
@@ -1580,7 +1586,8 @@ pub(crate) fn store_new_token(
     tail: &mut MemPtr,
     token: i32,
 ) -> Result<(), SccAbort> {
-    crate::mem::store_new_token(&mut st.mem, tail, token)
+    st.mem
+        .store_new_token(tail, token)
         .ok_or(SccAbort::Input(crate::input::InputAbort::MainMemory))
 }
 
@@ -1602,22 +1609,24 @@ pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
     st.mem.classify_box(contents.as_idx()?).ok().flatten()
 }
 
-/// TeX's `change_box`: sets box register `n` to `v` without saving.
-pub(crate) fn change_box(
-    mem: &mut MemState,
-    scanner: &mut ScannerState,
-    eqtb: &mut EqtbState,
-    n: i32,
-    v: MemPtr,
-) {
-    if n < 256 {
-        eqtb.set_box_reg(n, v);
-        return;
-    }
-    if let Some(sa) = crate::save::find_sa_element(mem, scanner, BOX_VAL, n) {
-        sa.set_sa_ptr(mem, v);
-        sa.set_sa_ref(mem, sa.sa_ref(mem) + 1);
-        crate::save::delete_sa_ref(mem, scanner, sa.idx());
+impl MemState {
+    /// TeX's `change_box`: sets box register `n` to `v` without saving.
+    pub(crate) fn change_box(
+        &mut self,
+        scanner: &mut ScannerState,
+        eqtb: &mut EqtbState,
+        n: i32,
+        v: MemPtr,
+    ) {
+        if n < 256 {
+            eqtb.set_box_reg(n, v);
+            return;
+        }
+        if let Some(sa) = self.find_sa_element(scanner, BOX_VAL, n) {
+            sa.set_sa_ptr(self, v);
+            sa.set_sa_ref(self, sa.sa_ref(self) + 1);
+            self.delete_sa_ref(scanner, sa.idx());
+        }
     }
 }
 
@@ -1636,11 +1645,13 @@ pub(crate) fn new_spec_scc(
     st: &mut EngineState,
     p: impl crate::units::MemAddr,
 ) -> Result<NodePtr<GlueSpecNode>, SccAbort> {
-    crate::mem::new_spec(&mut st.mem, glue_spec(p.addr())).ok_or_else(main_mem_overflow_scc)
+    st.mem
+        .new_spec(glue_spec(p.addr()))
+        .ok_or_else(main_mem_overflow_scc)
 }
 
 pub(crate) fn str_toks_scc(st: &mut EngineState, b: i32, cat: i16) -> Result<MemPtr, SccAbort> {
-    match str_toks_cat_in(&mut st.mem, &mut st.strings, b, cat) {
+    match st.mem.str_toks_cat(&mut st.strings, b, cat) {
         Ok(p) => Ok(p),
         Err(StrToksAbort::PoolOverflow) => {
             Err(SccAbort::Input(crate::input::InputAbort::Overflow {
@@ -1713,7 +1724,7 @@ pub(crate) fn the_toks_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
         let list = TEMP_HEAD.link(&st.mem);
         p.set_link(&mut st.mem, list);
         crate::output::token_show_in(st, p);
-        crate::mem::flush_list(&mut st.mem, p);
+        st.mem.flush_list(p);
         st.shipout.selector = old_setting;
         return str_toks_scc(st, b, 0);
     }
@@ -1744,11 +1755,11 @@ pub(crate) fn the_toks_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
             }
             2 => {
                 crate::output::print_spec_in(st, st.scanner.cur_val, c"pt".as_ptr());
-                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_glue());
+                st.mem.delete_glue_ref(st.scanner.cur_glue());
             }
             3 => {
                 crate::output::print_spec_in(st, st.scanner.cur_val, c"mu".as_ptr());
-                crate::mem::delete_glue_ref(&mut st.mem, st.scanner.cur_glue());
+                st.mem.delete_glue_ref(st.scanner.cur_glue());
             }
             _ => {}
         }
@@ -1836,7 +1847,7 @@ pub(crate) fn scan_toks_in(
                 loop {
                     get_next_scc(st)?;
                     if st.scanner.cur_cmd >= CALL
-                        && is_protected_macro(&st.mem, MemPtr(st.scanner.cur_chr))
+                        && st.mem.is_protected_macro(MemPtr(st.scanner.cur_chr))
                     {
                         st.scanner.cur_cmd = RELAX;
                         st.scanner.cur_chr = NO_EXPAND_FLAG;
@@ -1938,7 +1949,7 @@ pub(crate) fn pseudo_start_in(st: &mut EngineState) -> Result<(), SccAbort> {
     crate::output::token_show_in(st, TEMP_HEAD);
     st.shipout.selector = old_setting;
     let head = TEMP_HEAD.link(&st.mem);
-    crate::mem::flush_list(&mut st.mem, head);
+    st.mem.flush_list(head);
 
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(SccAbort::Error(crate::errors::ErrorOutcome::Overflow {
@@ -2177,7 +2188,7 @@ fn glue_spec(p: i32) -> NodePtr<GlueSpecNode> {
 fn glue_to_width_in(st: &mut EngineState) {
     let spec = st.scanner.cur_val;
     st.scanner.cur_val = glue_spec(spec).width(&st.mem).0;
-    crate::mem::delete_glue_ref(&mut st.mem, glue_spec(spec));
+    st.mem.delete_glue_ref(glue_spec(spec));
 }
 
 /// Scales `cur_val` and the fraction `f` by `num / denom`.
@@ -2272,7 +2283,7 @@ pub(crate) fn xetex_scan_dimen_in(
                     for i in (0..k as usize).rev() {
                         st.errors.dig[i] = digits.info(&st.mem) as u8;
                         let next = digits.link(&st.mem);
-                        crate::mem::free_avail(&mut st.mem, digits);
+                        st.mem.free_avail(digits);
                         digits = next;
                     }
                     f = round_decimals(&st.errors, k);
@@ -2535,7 +2546,7 @@ fn add_glue_in(
         e.set_shrink(mem, t_shrink);
         e.set_shrink_order(mem, t_order);
     }
-    crate::mem::delete_glue_ref(mem, t);
+    mem.delete_glue_ref(t);
     normalize_glue_orders(st, e);
 }
 
@@ -2639,7 +2650,7 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     || spec.shrink(&st.mem).0.abs() > MAX_HALFWORD
                 {
                     st.errors.arith_error = true;
-                    crate::mem::delete_glue_ref(&mut st.mem, glue_spec(f));
+                    st.mem.delete_glue_ref(glue_spec(f));
                     f = new_spec_scc(st, 0)?.ptr().0;
                 }
             }
@@ -2649,7 +2660,7 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     if l >= GLUE_VAL && o != EXPR_NONE {
                         let term = new_spec_scc(st, f)?;
                         t = term.ptr().0;
-                        crate::mem::delete_glue_ref(&mut st.mem, glue_spec(f));
+                        st.mem.delete_glue_ref(glue_spec(f));
                         normalize_glue_orders(st, term);
                     } else {
                         t = f;
@@ -2736,7 +2747,7 @@ pub(crate) fn scan_expr_in(st: &mut EngineState) -> Result<(), SccAbort> {
         ]);
         scc_err(error_in(st))?;
         if l >= GLUE_VAL {
-            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(e));
+            st.mem.delete_glue_ref(glue_spec(e));
             e = 0;
             let zero_glue = glue_spec(e);
             let refs = zero_glue.ref_count(&st.mem);
@@ -2775,7 +2786,7 @@ pub(crate) fn scan_keyword_in(st: &mut EngineState, keyword: &CStr) -> Result<bo
         }
     }
     let matched = BACKUP_HEAD.link(&st.mem);
-    crate::mem::flush_list(&mut st.mem, matched);
+    st.mem.flush_list(matched);
     Ok(true)
 }
 
@@ -2816,7 +2827,7 @@ fn set_cur_val(st: &mut EngineState, value: i32, level: u8) {
 
 /// The sparse-array element of type `t` for register `n`, if it exists.
 fn find_sa_in(st: &mut EngineState, t: u8, n: i32) -> Option<NodePtr<SaNode>> {
-    crate::save::find_sa_element(&st.mem, &mut st.scanner, t, n)
+    st.mem.find_sa_element(&mut st.scanner, t, n)
 }
 
 /// The token list held by sparse register `sa`, null when unset.
@@ -2839,11 +2850,6 @@ fn name_of_file_ptr(st: &EngineState) -> *mut libc::c_char {
     } else {
         st.input.name_of_file.as_ptr() as *mut libc::c_char
     }
-}
-
-fn is_native_font(st: &EngineState, f: i32) -> bool {
-    let fa = st.fonts.font_area[f as usize];
-    fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG
 }
 
 /// Scans a font identifier, returning the font, its layout engine and its area flag.
@@ -3186,7 +3192,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
         }
         XETEX_MAP_CHAR_TO_GLYPH_CODE => {
             let f = st.eqtb.cur_font();
-            if is_native_font(st, f) {
+            if is_native_font(&st.fonts, f) {
                 scan_int_in(st)?;
                 st.scanner.cur_val =
                     unsafe { crate::ext::map_char_to_glyph(&st.fonts, f, st.scanner.cur_val) }?;
@@ -3196,7 +3202,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
         }
         XETEX_GLYPH_INDEX_CODE => {
             let f = st.eqtb.cur_font();
-            if is_native_font(st, f) {
+            if is_native_font(&st.fonts, f) {
                 crate::io::scan_and_pack_name_in(st)?;
                 let name = name_of_file_ptr(st);
                 st.scanner.cur_val = unsafe { crate::ext::map_glyph_to_index(&st.fonts, f, name) }?;
@@ -3220,7 +3226,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             scan_font_ident_in(st)?;
             let f = st.scanner.cur_val;
             let first = m == XETEX_FIRST_CHAR_CODE;
-            st.scanner.cur_val = if is_native_font(st, f) {
+            st.scanner.cur_val = if is_native_font(&st.fonts, f) {
                 unsafe { crate::ext::get_font_char_range(&st.fonts, f, first as i32) }?
             } else if first {
                 st.fonts.font_bc[f as usize] as i32
@@ -3271,7 +3277,7 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             } else {
                 spec.shrink_order(&st.mem) as i32
             };
-            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(q));
+            st.mem.delete_glue_ref(glue_spec(q));
         }
         _ => {}
     }
@@ -3283,7 +3289,7 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
     match m {
         XETEX_GLYPH_BOUNDS_CODE => {
             let f = st.eqtb.cur_font();
-            if is_native_font(st, f) {
+            if is_native_font(&st.fonts, f) {
                 scan_int_in(st)?;
                 let edge = st.scanner.cur_val;
                 if !(1..=4).contains(&edge) {
@@ -3311,7 +3317,7 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
             let f = st.scanner.cur_val;
             scan_usv_num_in(st)?;
             let c = st.scanner.cur_val;
-            st.scanner.cur_val = if is_native_font(st, f) {
+            st.scanner.cur_val = if is_native_font(&st.fonts, f) {
                 let fonts = &st.fonts;
                 unsafe {
                     match m {
@@ -3366,7 +3372,7 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
             } else {
                 spec.shrink(&st.mem).0
             };
-            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(q));
+            st.mem.delete_glue_ref(glue_spec(q));
         }
         _ => {}
     }
@@ -3381,13 +3387,11 @@ fn fetch_last_node_item_in(st: &mut EngineState, m: i32) {
     st.scanner.cur_val = 0;
     let head = st.input.cur_list.head;
     let mut tx = st.input.cur_list.tail;
-    let mut node =
-        (!crate::mem::is_char_node(&st.mem, tx)).then(|| st.mem.classify(MemIdx::new(tx)));
+    let mut node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(MemIdx::new(tx)));
     if let Some(Ok(AnyNode::Math(math))) = node {
         if math.subtype(&st.mem) == END_M_CODE {
-            tx = crate::mem::predecessor(&st.mem, head, tx);
-            node =
-                (!crate::mem::is_char_node(&st.mem, tx)).then(|| st.mem.classify(MemIdx::new(tx)));
+            tx = st.mem.predecessor(head, tx);
+            node = (!st.mem.is_char_node(tx)).then(|| st.mem.classify(MemIdx::new(tx)));
         }
     }
     if want_type {
@@ -3549,7 +3553,7 @@ pub(crate) fn scan_something_internal_in(
                     0 => set_cur_val(st, st.fonts.hyphen_char[f as usize], INT_VAL),
                     1 => set_cur_val(st, st.fonts.skew_char[f as usize], INT_VAL),
                     _ => {
-                        if is_native_font(st, f) {
+                        if is_native_font(&st.fonts, f) {
                             scan_glyph_number_in(st, f)?;
                         } else {
                             scan_char_num_in(st)?;
@@ -3603,7 +3607,7 @@ pub(crate) fn scan_something_internal_in(
                     if negative {
                         if st.scanner.cur_val_level >= GLUE_VAL {
                             let old = negate_glue_in(st)?;
-                            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(old));
+                            st.mem.delete_glue_ref(glue_spec(old));
                         } else {
                             st.scanner.cur_val = -st.scanner.cur_val;
                         }
@@ -3693,7 +3697,7 @@ pub(crate) fn find_font_dimen_in(st: &mut EngineState, writing: bool) -> Result<
             && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n)
             && st.fonts.font_glue[fu] != TEX_NULL
         {
-            crate::mem::delete_glue_ref(&mut st.mem, glue_spec(st.fonts.font_glue[fu]));
+            st.mem.delete_glue_ref(glue_spec(st.fonts.font_glue[fu]));
             st.fonts.font_glue[fu] = TEX_NULL;
         }
 
@@ -3787,7 +3791,7 @@ pub(crate) fn scan_general_text_in(st: &mut EngineState) -> Result<(), SccAbort>
     }
     let def_ref = st.scanner.def_ref;
     let list = def_ref.link(&st.mem);
-    crate::mem::free_avail(&mut st.mem, def_ref);
+    st.mem.free_avail(def_ref);
     st.scanner.cur_val = if list.is_null() { TEMP_HEAD.0 } else { p.0 };
     TEMP_HEAD.set_link(&mut st.mem, list);
     st.scanner.scanner_status = saved_status;
@@ -3805,7 +3809,7 @@ fn scan_toks_to_string_in(st: &mut EngineState) -> Result<i32, SccAbort> {
     scan_toks_in(st, false, true)?;
     let def_ref = st.scanner.def_ref.0;
     let s = tokens_to_string_in(st, def_ref).map_err(SccAbort::TokensToString)?;
-    crate::mem::delete_token_ref(&mut st.mem, st.scanner.def_ref);
+    st.mem.delete_token_ref(st.scanner.def_ref);
     Ok(s)
 }
 
@@ -3831,4 +3835,9 @@ pub(crate) fn compare_strings_in(st: &mut EngineState) -> Result<(), SccAbort> {
     crate::string_pool::flush_str(&mut st.strings, s1);
     set_cur_val(st, result, INT_VAL);
     Ok(())
+}
+
+fn is_native_font(fonts: &crate::state::FontState, f: i32) -> bool {
+    let area = fonts.font_area_entry(f);
+    area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
 }

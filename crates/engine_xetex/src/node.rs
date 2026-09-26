@@ -12,7 +12,6 @@ use crate::consts::{
     MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, NATIVE_NODE_SIZE, NOAD_SIZE, NORMAL, NULL_FLAG,
     PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
 };
-use crate::mem::{free_node, get_node};
 use crate::state::MemState;
 use crate::units::{FontId, GlueSign, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -213,25 +212,23 @@ pub trait FixedNode: NodeKind {
     const TYPE: Option<NodeType>;
 }
 
-#[inline]
-fn alloc_node<K: NodeKind>(
-    mem: &mut MemState,
-    size: i32,
-    ty: Option<NodeType>,
-) -> Option<NodePtr<K>> {
-    let p = get_node(mem, size)?;
-    if let Some(ty) = ty {
-        mem.set_b16s1(p, ty.as_raw());
+impl MemState {
+    #[inline]
+    fn alloc_node<K: NodeKind>(&mut self, size: i32, ty: Option<NodeType>) -> Option<NodePtr<K>> {
+        let p = self.get_node(size)?;
+        if let Some(ty) = ty {
+            self.set_b16s1(p, ty.as_raw());
+        }
+        // SAFETY: a fresh node of the caller's size, stamped with the caller's type.
+        Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
     }
-    // SAFETY: a fresh node of the caller's size, stamped with the caller's type.
-    Some(unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) })
 }
 
 impl<K: FixedNode> NodePtr<K> {
     /// Carves a fresh node with its type stamped and its fields uninitialised.
     #[inline]
     pub fn alloc(mem: &mut MemState) -> Option<Self> {
-        alloc_node(mem, K::SIZE, K::TYPE)
+        mem.alloc_node(K::SIZE, K::TYPE)
     }
 }
 
@@ -421,7 +418,7 @@ impl<K: ListRecord> NodePtr<K> {
 impl<K: ListRecord + FixedNode> NodePtr<K> {
     #[inline]
     pub fn free(self, mem: &mut MemState) {
-        free_node(mem, self.ptr(), K::SIZE);
+        mem.free_node(self.ptr(), K::SIZE);
     }
 }
 
@@ -936,17 +933,17 @@ impl NodePtr<ChoiceNode> {
 impl NodePtr<Noad> {
     #[inline]
     pub fn alloc_radical(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        alloc_node(mem, RADICAL_NOAD_SIZE, Some(NodeType::RadicalNoad))
+        mem.alloc_node(RADICAL_NOAD_SIZE, Some(NodeType::RadicalNoad))
     }
 
     #[inline]
     pub fn alloc_accent(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        alloc_node(mem, ACCENT_NOAD_SIZE, Some(NodeType::AccentNoad))
+        mem.alloc_node(ACCENT_NOAD_SIZE, Some(NodeType::AccentNoad))
     }
 
     #[inline]
     pub fn alloc_fraction(mem: &mut MemState) -> Option<NodePtr<Noad>> {
-        alloc_node(mem, FRACTION_NOAD_SIZE, Some(NodeType::FractionNoad))
+        mem.alloc_node(FRACTION_NOAD_SIZE, Some(NodeType::FractionNoad))
     }
 
     #[inline]
@@ -1464,7 +1461,7 @@ impl NodePtr<WhatsitNode> {
     /// A fresh `size`-word whatsit of the given subtype, fields uninitialised.
     #[inline]
     pub fn alloc(mem: &mut MemState, size: i32, subtype: WhatsitSubtype) -> Option<Self> {
-        let p: Self = alloc_node(mem, size, Some(NodeType::Whatsit))?;
+        let p: Self = mem.alloc_node(size, Some(NodeType::Whatsit))?;
         p.set_subtype(mem, subtype as u16);
         Some(p)
     }
@@ -1596,7 +1593,7 @@ impl NodePtr<WhatsitNode> {
     /// Frees a native word together with its shaped glyphs.
     pub fn free_native(self, mem: &mut MemState) {
         self.release_native_glyphs(mem);
-        free_node(mem, self.ptr(), self.native_size(mem));
+        mem.free_node(self.ptr(), self.native_size(mem));
     }
 }
 
