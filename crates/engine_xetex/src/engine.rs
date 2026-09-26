@@ -1171,7 +1171,6 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     fonts.kern_base = PerFont::default();
     fonts.exten_base = PerFont::default();
     fonts.param_base = PerFont::default();
-    fonts.xdv_buffer = Vec::new();
     fonts.mapped_text = Vec::new();
 
     let hyph = &mut st.hyph;

@@ -1,8 +1,8 @@
 //! Shipping boxes out to the XDV file.
 use crate::consts::{
     A_LEADERS, BEFORE, C_LEADERS, DLIST, END_WRITE, FILLL, INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE,
-    MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FONT,
-    RIGHT_TO_LEFT, R_CODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL,
+    MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE,
+    SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL,
 };
 use crate::ext::apply_tfm_font_mapping;
 use crate::params::{DimenPar, IntPar};
@@ -14,6 +14,7 @@ use crate::token::Token;
 use crate::bridge::{output_close, output_flush, output_open, shell_escape};
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
+use crate::glyph_arena::FixedPoint;
 use crate::input::{INSERTED, WRITE_TEXT};
 use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::{
@@ -79,11 +80,8 @@ fn synch_v(st: &mut crate::state::EngineState) -> Result<(), Abort> {
 fn dvi_font_def(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abort> {
     let k = f.dvi_number();
     if st.fonts.is_native_font(f) {
-        let len = st.fonts.make_font_def(f)?;
-        return st
-            .shipout
-            .dvi
-            .native_font_def(k, &st.fonts.xdv_buffer[..len as usize]);
+        let def = st.fonts.make_font_def(f)?;
+        return st.shipout.dvi.native_font_def(k, &def);
     }
     let font_name = st.fonts.font_name[f];
     let name = &st.strings.str_pool[st.strings.str_range(font_name)];
@@ -774,16 +772,17 @@ fn native_word_out(
         }
         WhatsitSubtype::NativeWordAt => {
             if word.native_length(&st.mem) > 0 || word.native_glyph_info_handle(&st.mem) != 0 {
-                let len = make_xdv_glyph_array_data(st, word);
+                let (width, locations, gids) = glyph_array(&st.mem, word);
+                let text = word.native_text(&st.mem);
                 st.shipout
                     .dvi
-                    .set_text_and_glyphs(word.native_text(&st.mem), &st.fonts.xdv_buffer[..len])?;
+                    .set_text_and_glyphs(text, width, locations, gids)?;
             }
         }
         _ => {
             if word.native_glyph_info_handle(&st.mem) != 0 {
-                let len = make_xdv_glyph_array_data(st, word);
-                st.shipout.dvi.set_glyphs(&st.fonts.xdv_buffer[..len])?;
+                let (width, locations, gids) = glyph_array(&st.mem, word);
+                st.shipout.dvi.set_glyphs(width, locations, gids)?;
             }
         }
     }
@@ -1315,37 +1314,15 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
     Ok(())
 }
 
-/// Fill `xdv_buffer` with the glyph array of `word`, returning its length.
-fn make_xdv_glyph_array_data(
-    st: &mut crate::state::EngineState,
-    word: NodePtr<WhatsitNode>,
-) -> usize {
-    let glyph_count = word.native_glyph_count(&st.mem) as usize;
-    let needed = glyph_count * NATIVE_GLYPH_INFO_SIZE + 8;
-    if st.fonts.xdv_buffer.len() < needed {
-        st.fonts.xdv_buffer.resize(needed, 0);
-    }
-    let width = word.width(&st.mem).0;
-    let glyphs = st
-        .mem
-        .glyph_blobs
-        .get(word.native_glyph_info_handle(&st.mem));
-    let buf = &mut st.fonts.xdv_buffer;
-    let mut len = 0;
-    let mut put = |bytes: &[u8]| {
-        buf[len..len + bytes.len()].copy_from_slice(bytes);
-        len += bytes.len();
-    };
-    put(&width.to_be_bytes());
-    put(&(glyph_count as u16).to_be_bytes());
-    for loc in &glyphs.locations[..glyph_count] {
-        put(&loc.x.0.to_be_bytes());
-        put(&loc.y.0.to_be_bytes());
-    }
-    for gid in &glyphs.gids[..glyph_count] {
-        put(&gid.to_be_bytes());
-    }
-    len
+/// The glyph array of `word`: its width, glyph positions and glyph ids.
+fn glyph_array(mem: &MemState, word: NodePtr<WhatsitNode>) -> (Scaled, &[FixedPoint], &[u16]) {
+    let count = word.native_glyph_count(mem) as usize;
+    let glyphs = mem.glyph_blobs.get(word.native_glyph_info_handle(mem));
+    (
+        word.width(mem),
+        &glyphs.locations[..count],
+        &glyphs.gids[..count],
+    )
 }
 
 impl MemState {

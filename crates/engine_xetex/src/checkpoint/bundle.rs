@@ -607,7 +607,6 @@ struct FontBundle {
     arrays: FontArrays,
     engines: Vec<Option<Arc<FontEngineHandle>>>,
     mappings: Vec<Option<Arc<FontMappingHandle>>>,
-    xdv_buffer: Vec<u8>,
     mapped_text: Vec<u16>,
 }
 
@@ -658,7 +657,6 @@ impl FontBundle {
             font_info: _,
             font_info_journal: _,
             fmem_epoch_base: _,
-            xdv_buffer,
             mapped_text,
         } = src;
         let count = font_ptr.0 + 1;
@@ -677,7 +675,6 @@ impl FontBundle {
             arrays: FontArrays::capture(src, count),
             engines: live_prefix(font_layout_engine.as_slice(), count),
             mappings: live_prefix(font_mapping.as_slice(), count),
-            xdv_buffer: xdv_buffer.clone(),
             mapped_text: mapped_text.clone(),
         }
     }
@@ -710,7 +707,6 @@ impl FontBundle {
         dst.fmem_ptr = self.fmem_ptr;
         dst.font_ptr = self.font_ptr;
         self.arrays.restore(dst);
-        dst.xdv_buffer.clone_from(&self.xdv_buffer);
         dst.mapped_text.clone_from(&self.mapped_text);
     }
 
@@ -718,7 +714,6 @@ impl FontBundle {
         self.arrays.allocated_bytes()
             + vec_bytes(&self.engines)
             + vec_bytes(&self.mappings)
-            + vec_bytes(&self.xdv_buffer)
             + vec_bytes(&self.mapped_text)
     }
 }

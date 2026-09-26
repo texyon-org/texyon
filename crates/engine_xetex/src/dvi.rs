@@ -3,6 +3,7 @@
 use crate::bridge::output_write;
 use crate::consts::TEX_INFINITY;
 use crate::errors::Abort;
+use crate::glyph_arena::FixedPoint;
 use crate::page_manifest::PageManifest;
 use crate::units::Scaled;
 
@@ -143,6 +144,7 @@ impl DviWriter {
         Ok(())
     }
 
+    #[inline]
     fn bytes(&mut self, mut bytes: &[u8]) -> Result<(), Abort> {
         while !bytes.is_empty() {
             let ptr = self.ptr as usize;
@@ -158,10 +160,12 @@ impl DviWriter {
         Ok(())
     }
 
+    #[inline]
     fn four(&mut self, x: i32) -> Result<(), Abort> {
         self.bytes(&x.to_be_bytes())
     }
 
+    #[inline]
     fn two(&mut self, x: u16) -> Result<(), Abort> {
         self.bytes(&x.to_be_bytes())
     }
@@ -315,29 +319,53 @@ impl DviWriter {
     /// One glyph at the current point, advancing by `width`.
     pub(crate) fn set_glyph(&mut self, width: Scaled, glyph: u16) -> Result<(), Abort> {
         self.out(SET_GLYPHS)?;
-        self.four(width.0)?;
-        self.two(1)?;
-        self.four(0)?;
-        self.four(0)?;
-        self.two(glyph)
+        self.glyph_array(width, &[FixedPoint::default()], &[glyph])
     }
 
-    /// `set_glyphs` with an encoded glyph array.
-    pub(crate) fn set_glyphs(&mut self, glyphs: &[u8]) -> Result<(), Abort> {
+    /// `set_glyphs` with glyphs `gids` at `locations`, advancing by `width`.
+    pub(crate) fn set_glyphs(
+        &mut self,
+        width: Scaled,
+        locations: &[FixedPoint],
+        gids: &[u16],
+    ) -> Result<(), Abort> {
         self.out(SET_GLYPHS)?;
-        self.bytes(glyphs)
+        self.glyph_array(width, locations, gids)
     }
 
-    /// `set_text_and_glyphs`: the UTF-16 source text, then the glyph array.
-    pub(crate) fn set_text_and_glyphs(&mut self, text: &[u16], glyphs: &[u8]) -> Result<(), Abort> {
+    /// `set_text_and_glyphs`: the UTF-16 source text, then the glyphs.
+    pub(crate) fn set_text_and_glyphs(
+        &mut self,
+        text: &[u16],
+        width: Scaled,
+        locations: &[FixedPoint],
+        gids: &[u16],
+    ) -> Result<(), Abort> {
         self.out(SET_TEXT_AND_GLYPHS)?;
         self.two(text.len() as u16)?;
         for &unit in text {
             self.two(unit)?;
         }
-        self.bytes(glyphs)
+        self.glyph_array(width, locations, gids)
     }
 
+    fn glyph_array(
+        &mut self,
+        width: Scaled,
+        locations: &[FixedPoint],
+        gids: &[u16],
+    ) -> Result<(), Abort> {
+        self.four(width.0)?;
+        self.two(gids.len() as u16)?;
+        for loc in locations {
+            self.four(loc.x.0)?;
+            self.four(loc.y.0)?;
+        }
+        for &gid in gids {
+            self.two(gid)?;
+        }
+        Ok(())
+    }
     /// `xxx` with the low bytes of `s`.
     pub(crate) fn special(&mut self, s: &[u16]) -> Result<(), Abort> {
         let len = s.len();

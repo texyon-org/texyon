@@ -1260,9 +1260,8 @@ impl FontState {
         self.saved_mapping_name = None;
     }
 
-    /// Write the XDV native font definition of `f` into `fonts.xdv_buffer` and
-    /// return its length.
-    pub fn make_font_def(&mut self, f: FontId) -> Result<c_int, Abort> {
+    /// The body of the XDV native font definition of `f`.
+    pub fn make_font_def(&self, f: FontId) -> Result<Vec<u8>, Abort> {
         let engine = self.require_ot_engine(f, "bad native font flag in `make_font_def`")?;
         let (name, index) = (engine.font().filename(), engine.font().index());
 
@@ -1311,11 +1310,7 @@ impl FontState {
             }
         }
 
-        if self.xdv_buffer.len() < def.len() {
-            self.xdv_buffer.resize(def.len(), 0);
-        }
-        self.xdv_buffer[..def.len()].copy_from_slice(&def);
-        Ok(def.len() as c_int)
+        Ok(def)
     }
 
     /// Run `text` through TECkit converter `cnv` into `mapped_text`, returning

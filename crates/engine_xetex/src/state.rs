@@ -974,7 +974,6 @@ pub(crate) struct FontState {
     pub font_info_journal: crate::journal::PlainTrail<crate::mem_types::MemoryWord>,
     /// Font-memory high-water mark at the start of the open journal epoch.
     pub fmem_epoch_base: i32,
-    pub xdv_buffer: Vec<u8>,
     pub mapped_text: Vec<u16>,
 }
 
@@ -1025,7 +1024,6 @@ impl Default for FontState {
             font_info: Vec::new(),
             font_info_journal: crate::journal::PlainTrail::default(),
             fmem_epoch_base: 0,
-            xdv_buffer: Vec::new(),
             mapped_text: Vec::new(),
         }
     }
