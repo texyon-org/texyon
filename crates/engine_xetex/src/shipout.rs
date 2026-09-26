@@ -13,6 +13,7 @@ use crate::bridge::{
     ttstub_output_close, ttstub_output_flush, ttstub_output_open, ttstub_output_write,
     ttstub_shell_escape,
 };
+use crate::mem::LIG_TRICK;
 use crate::node::{
     AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
     WhatsitNode, WhatsitSubtype,
@@ -68,7 +69,6 @@ const L_CODE: u16 = 4;
 const R_CODE: u16 = 8;
 const END_M_CODE: u16 = 3;
 const REVERSED: u16 = 1;
-const LIG_TRICK: i32 = 4_999_987;
 
 const INT_PAR_TRACING_OUTPUT: i32 = 34;
 const INT_PAR_XETEX_INTERWORD_SPACE_SHAPING: i32 = 78;
@@ -1212,7 +1212,7 @@ fn chars_out(
         let f = st.mem.b16s1(p.0) as i32;
         let mut c = st.mem.b16s0(p.0);
         let mapping = st.fonts.font_mapping_ptr(f);
-        if p.0 != LIG_TRICK && !mapping.is_null() {
+        if p != LIG_TRICK && !mapping.is_null() {
             // SAFETY: `mapping` is the font's live TECkit converter.
             c = unsafe { apply_tfm_font_mapping(mapping, c as libc::c_int) } as u16;
         }
@@ -1372,7 +1372,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 st.mem
                     .set_word(LIG_TRICK, st.mem.word(ligature.idx().offset(1).0));
                 let next = ligature.link(&st.mem);
-                p = MemPtr::from_raw(LIG_TRICK);
+                p = LIG_TRICK;
                 p.set_link(&mut st.mem, next);
                 st.fonts.set_xtx_ligature_present(true);
                 continue;

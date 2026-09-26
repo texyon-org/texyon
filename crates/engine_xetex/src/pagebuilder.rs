@@ -1,23 +1,22 @@
 //! The page builder: `build_page` and `fire_up`.
 
 use crate::consts::{
-    AWFUL_BAD, BOX_BASE, BOX_NODE_SIZE, CONTRIB_HEAD, COUNT_BASE, DIMEN_BASE, EJECT_PENALTY,
-    GLUE_BASE, IGNORE_DEPTH, INT_BASE, LOCAL_BASE, MAX_HALFWORD, MEM_TOP, OUTPUT_TEXT, SCALED_BASE,
-    SKIP_BASE, TEX_NULL, VMODE,
+    AWFUL_BAD, BOX_BASE, BOX_NODE_SIZE, COUNT_BASE, DIMEN_BASE, EJECT_PENALTY, GLUE_BASE,
+    IGNORE_DEPTH, INT_BASE, LOCAL_BASE, MAX_HALFWORD, MEM_TOP, OUTPUT_TEXT, SCALED_BASE, SKIP_BASE,
+    TEX_NULL, VMODE,
 };
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
 use crate::main_control::{
-    add_token_ref, fetch_box, help, ADDITIONAL, COPY_CODE, GLUE_PAR_SPLIT_TOP_SKIP, HOLD_HEAD,
-    LAST_BOX_CODE, LOCAL_OUTPUT_ROUTINE, NORMAL, PAGE_HEAD,
+    add_token_ref, fetch_box, help, ADDITIONAL, COPY_CODE, GLUE_PAR_SPLIT_TOP_SKIP, LAST_BOX_CODE,
+    LOCAL_OUTPUT_ROUTINE, NORMAL,
 };
+use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, InsNode, NodePtr, PageInsNode, SaNode, WhatsitSubtype,
 };
 use crate::state::{EngineState, GroupCode, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
-
-const PAGE_INS_HEAD: MemPtr = MemPtr(MEM_TOP);
 
 // `page_contents` states.
 const EMPTY: u8 = 0;
@@ -354,9 +353,9 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         }
     }
 
-    let mut hold_tail = MemPtr(HOLD_HEAD);
+    let mut hold_tail = HOLD_HEAD;
     hold_tail.set_link(&mut st.mem, MemPtr::NULL);
-    let mut prev_p = MemPtr(PAGE_HEAD);
+    let mut prev_p = PAGE_HEAD;
     let mut p = prev_p.link(&st.mem);
     while p != st.shipout.best_page_break {
         match st.mem.classify(MemIdx::new(p)) {
@@ -392,7 +391,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         }
         let contrib = st.mem.link_ptr(CONTRIB_HEAD);
         st.shipout.page_tail.set_link(&mut st.mem, contrib);
-        MemPtr(CONTRIB_HEAD).set_link(&mut st.mem, p);
+        CONTRIB_HEAD.set_link(&mut st.mem, p);
         prev_p.set_link(&mut st.mem, MemPtr::NULL);
     }
 
@@ -417,17 +416,17 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     }
 
     st.shipout.page_contents = EMPTY;
-    st.shipout.page_tail = MemPtr(PAGE_HEAD);
-    MemPtr(PAGE_HEAD).set_link(&mut st.mem, MemPtr::NULL);
+    st.shipout.page_tail = PAGE_HEAD;
+    PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
     st.shipout.last_glue.0 = MAX_HALFWORD;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
     st.shipout.last_node_type = -1;
     st.shipout.page_so_far[PAGE_DEPTH] = 0;
     st.shipout.page_max_depth = 0;
-    if hold_tail.0 != HOLD_HEAD {
+    if hold_tail != HOLD_HEAD {
         let held = st.mem.link_ptr(HOLD_HEAD);
-        MemPtr(PAGE_HEAD).set_link(&mut st.mem, held);
+        PAGE_HEAD.set_link(&mut st.mem, held);
         st.shipout.page_tail = hold_tail;
     }
 
@@ -488,9 +487,9 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
             st.shipout.page_tail.set_link(&mut st.mem, contrib);
         }
         let page = st.mem.link_ptr(PAGE_HEAD);
-        MemPtr(CONTRIB_HEAD).set_link(&mut st.mem, page);
-        MemPtr(PAGE_HEAD).set_link(&mut st.mem, MemPtr::NULL);
-        st.shipout.page_tail = MemPtr(PAGE_HEAD);
+        CONTRIB_HEAD.set_link(&mut st.mem, page);
+        PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
+        st.shipout.page_tail = PAGE_HEAD;
     }
     let discards = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
     crate::packaging::flush_node_list(&mut st.mem, discards.0)
@@ -718,7 +717,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     let width = if width > height { width - height } else { 0 };
                     spec.set_width(&mut st.mem, Scaled(width));
                     q.set_link(&mut st.mem, p);
-                    MemPtr(CONTRIB_HEAD).set_link(&mut st.mem, q.ptr());
+                    CONTRIB_HEAD.set_link(&mut st.mem, q.ptr());
                     continue;
                 }
                 st.shipout.page_so_far[PAGE_TOTAL] += st.shipout.page_so_far[PAGE_DEPTH] + height;
@@ -825,7 +824,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
             PageStep::Contribute => contribute(st, p),
             PageStep::Discard => {
                 let next = p.link(&st.mem);
-                MemPtr(CONTRIB_HEAD).set_link(&mut st.mem, next);
+                CONTRIB_HEAD.set_link(&mut st.mem, next);
                 p.set_link(&mut st.mem, MemPtr::NULL);
                 if st.eqtb.b32s1(INT_BASE + INT_PAR_SAVING_VDISCARDS) <= 0 {
                     crate::packaging::flush_node_list(&mut st.mem, p.0)
@@ -843,7 +842,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
             PageStep::Break(_) => unreachable!("breakpoints are resolved above"),
         }
     }
-    set_contrib_tail(st, MemPtr(CONTRIB_HEAD));
+    set_contrib_tail(st, CONTRIB_HEAD);
     Ok(())
 }
 
@@ -893,6 +892,6 @@ fn contribute(st: &mut EngineState, p: MemPtr) {
     st.shipout.page_tail.set_link(&mut st.mem, p);
     st.shipout.page_tail = p;
     let next = p.link(&st.mem);
-    MemPtr(CONTRIB_HEAD).set_link(&mut st.mem, next);
+    CONTRIB_HEAD.set_link(&mut st.mem, next);
     p.set_link(&mut st.mem, MemPtr::NULL);
 }

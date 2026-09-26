@@ -9,13 +9,32 @@ use crate::node::{
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
 
-// TeX constants (xetex-constants.h / xetex_format.h)
 const NORMAL: u16 = 0;
-// Node type values (mem[p].b16.s1)
-// eqtb base indices (xetex_format.h)
+const EMPTY: i32 = 0;
 
-// empty.s1 = EMPTY = 0, empty.s0 = TEX_NULL — used to zero out math-noad fields.
-const EMPTY: i32 = 0; // xetex-constants.h:230
+pub(crate) const ZERO_GLUE: MemPtr = MemPtr(0);
+pub(crate) const FIL_GLUE: MemPtr = MemPtr(ZERO_GLUE.0 + GLUE_SPEC_SIZE);
+pub(crate) const FILL_GLUE: MemPtr = MemPtr(FIL_GLUE.0 + GLUE_SPEC_SIZE);
+pub(crate) const SS_GLUE: MemPtr = MemPtr(FILL_GLUE.0 + GLUE_SPEC_SIZE);
+pub(crate) const FIL_NEG_GLUE: MemPtr = MemPtr(SS_GLUE.0 + GLUE_SPEC_SIZE);
+
+pub(crate) const PAGE_INS_HEAD: MemPtr = MemPtr(MEM_TOP);
+pub(crate) const CONTRIB_HEAD: MemPtr = MemPtr(MEM_TOP - 1);
+pub(crate) const PAGE_HEAD: MemPtr = MemPtr(MEM_TOP - 2);
+pub(crate) const TEMP_HEAD: MemPtr = MemPtr(MEM_TOP - 3);
+pub(crate) const HOLD_HEAD: MemPtr = MemPtr(MEM_TOP - 4);
+pub(crate) const ADJUST_HEAD: MemPtr = MemPtr(MEM_TOP - 5);
+pub(crate) const ACTIVE_LIST: MemPtr = MemPtr(MEM_TOP - 7);
+pub(crate) const ALIGN_HEAD: MemPtr = MemPtr(MEM_TOP - 8);
+pub(crate) const END_SPAN: MemPtr = MemPtr(MEM_TOP - 9);
+pub(crate) const OMIT_TEMPLATE: MemPtr = MemPtr(MEM_TOP - 10);
+pub(crate) const NULL_LIST: MemPtr = MemPtr(MEM_TOP - 11);
+pub(crate) const LIG_TRICK: MemPtr = MemPtr(MEM_TOP - 12);
+pub(crate) const GARBAGE: MemPtr = MemPtr(MEM_TOP - 12);
+pub(crate) const BACKUP_HEAD: MemPtr = MemPtr(MEM_TOP - 13);
+pub(crate) const PRE_ADJUST_HEAD: MemPtr = MemPtr(MEM_TOP - 14);
+pub(crate) const HI_MEM_STAT_MIN: i32 = MEM_TOP - 14;
+pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
 
 // C functions not yet translated — still live in xetex-xetex0.c.
 /// Non-longjmp replacements for bridge_core's `xmalloc`/`xcalloc`/`xrealloc`,

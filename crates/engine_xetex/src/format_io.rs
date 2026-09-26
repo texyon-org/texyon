@@ -9,21 +9,20 @@ use crate::bridge::{
     ttstub_output_open, ttstub_output_write,
 };
 use crate::consts::{
-    ACTIVE_BASE, CONTRIB_HEAD, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE,
-    FROZEN_CONTROL_SEQUENCE, HISTORY_FATAL_ERROR, INT_BASE, INT_PAR_DAY, INT_PAR_MONTH,
-    INT_PAR_YEAR, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_HALFWORD,
-    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, TEX_NULL, TOO_BIG_CHAR,
-    UNDEFINED_CONTROL_SEQUENCE,
+    ACTIVE_BASE, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
+    HISTORY_FATAL_ERROR, INT_BASE, INT_PAR_DAY, INT_PAR_MONTH, INT_PAR_YEAR, INVALID_HANDLE,
+    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_HALFWORD, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
+    SELECTOR_TERM_AND_LOG, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{
-    alloc_font_arrays, set_eq, sort_avail_in, HI_MEM_STAT_USAGE, HYPH_PRIME, INTER_CHAR_VAL,
-    INT_VAL, PAGE_HEAD, POOL_FREE, PRE_ADJUST_HEAD, REGISTER_HELP, STRINGS_FREE,
-    TEX_FORMAT_DEFAULT, UNDEFINED_CS,
+    alloc_font_arrays, set_eq, sort_avail_in, HYPH_PRIME, INTER_CHAR_VAL, INT_VAL, POOL_FREE,
+    REGISTER_HELP, STRINGS_FREE, TEX_FORMAT_DEFAULT, UNDEFINED_CS,
 };
 use crate::errors::EngineAbort;
 use crate::hash::{HASH_BASE, HASH_OFFSET, HASH_PRIME, PRIM_SIZE};
 use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::io::name_of_file_ptr;
+use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::state::{EngineState, EqtbState, InteractionMode};
 
 const INT_PAR_TRACING_STATS: i32 = 31;
@@ -628,9 +627,9 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
 
     expect_int(fmt_in, MEM_TOP)?;
 
-    st.input.cur_list.head.0 = CONTRIB_HEAD;
-    st.input.cur_list.tail.0 = CONTRIB_HEAD;
-    st.shipout.page_tail.0 = PAGE_HEAD;
+    st.input.cur_list.head = CONTRIB_HEAD;
+    st.input.cur_list.tail = CONTRIB_HEAD;
+    st.shipout.page_tail = PAGE_HEAD;
     st.mem.data = crate::mem_types::zeroed_vec(MEM_TOP as usize + 1);
 
     expect_int(fmt_in, EQTB_SIZE)?;
@@ -694,7 +693,7 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
 
     undump_slice(fmt_in, &mut mem.data, p, mem.lo_mem_max + 1 - p)?;
 
-    mem.hi_mem_min = undump_in_range(fmt_in, mem.lo_mem_max + 1, PRE_ADJUST_HEAD)?;
+    mem.hi_mem_min = undump_in_range(fmt_in, mem.lo_mem_max + 1, HI_MEM_STAT_MIN)?;
     mem.avail = undump_in_range(fmt_in, MIN_HALFWORD, MEM_TOP)?;
     mem.mem_end = MEM_TOP;
     undump_slice(

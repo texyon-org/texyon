@@ -1,7 +1,7 @@
 //! Expansion: `expand`, `macro_call`, conditionals and `conv_toks`.
 
 use crate::consts::{
-    ACTIVE_BASE, BACKUP_HEAD, CS_TOKEN_FLAG, ELSE_CODE, END_TEMPLATE, FI_CODE, FI_OR_ELSE,
+    ACTIVE_BASE, CS_TOKEN_FLAG, ELSE_CODE, END_TEMPLATE, FI_CODE, FI_OR_ELSE,
     FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, INSERTED, INT_BASE,
     INT_PAR_TRACING_IFS, LEFT_BRACE, MAX_COMMAND, MMODE, NORMAL_SCANNER, NULL_CS, OR_CODE,
     PRIM_EQTB_BASE, RELAX, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOKEN_LIST, TOO_BIG_CHAR,
@@ -12,6 +12,7 @@ use crate::input::{
     back_error_in, back_input_in, begin_token_list_in, InputAbort, INT_PAR_TRACING_MACROS,
     LEFT_BRACE_LIMIT, MACRO, MARK_TEXT, RIGHT_BRACE_LIMIT, V_TEMPLATE,
 };
+use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD};
 use crate::node::{AnyBox, AnyNode, NodePtr, SaNode};
 use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
@@ -22,9 +23,8 @@ use crate::output::{
 use crate::scan::{
     fetch_box, get_avail_scc, get_next_scc, get_node_scc, get_token_in, get_x_non_blank_in,
     get_x_token_in, scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, AAT_FONT_FLAG,
-    ACTIVE_CHAR, BIGGEST_USV, CALL, END_MATCH_TOKEN, GARBAGE, IF_TEST, LONG_CALL, MATCHING,
-    MATCH_TOKEN, MAX_CHAR_VAL, NO_EXPAND_FLAG, OTGR_FONT_FLAG, OTHER_TOKEN, OUTER_CALL,
-    SPACE_TOKEN, TEMP_HEAD, THE,
+    ACTIVE_CHAR, BIGGEST_USV, CALL, END_MATCH_TOKEN, IF_TEST, LONG_CALL, MATCHING, MATCH_TOKEN,
+    MAX_CHAR_VAL, NO_EXPAND_FLAG, OTGR_FONT_FLAG, OTHER_TOKEN, OUTER_CALL, SPACE_TOKEN, THE,
 };
 use crate::state::EngineState;
 use crate::units::{MemIdx, MemPtr};
@@ -1265,7 +1265,7 @@ pub(crate) fn macro_call_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     match_chr = st.mem.b32s0(r) - MATCH_TOKEN;
                     s = st.mem.b32s1(r);
                     r = s;
-                    p = TEMP_HEAD;
+                    p = TEMP_HEAD.0;
                 }
 
                 'continue_: loop {

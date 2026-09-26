@@ -15,13 +15,12 @@ use crate::consts::{
 };
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::main_control::{mc_propagate_error, new_graf_in, MainControlAbort};
+use crate::mem::TEMP_HEAD;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::packaging::int_par;
 use crate::pic::load_picture_in;
-use crate::scan::{
-    get_x_token_in, scan_int_in, NodeRecycleAbort, AAT_FONT_FLAG, OTGR_FONT_FLAG, TEMP_HEAD,
-};
+use crate::scan::{get_x_token_in, scan_int_in, NodeRecycleAbort, AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::state::{EngineState, FontState, MemState};
 use crate::units::{MemPtr, Scaled};
 

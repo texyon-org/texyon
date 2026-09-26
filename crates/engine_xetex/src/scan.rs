@@ -2,17 +2,17 @@
 
 use crate::bridge::{diag_append_str, ttstub_output_flush};
 use crate::consts::{
-    ACTIVE_BASE, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, BACKED_UP, BACKUP_HEAD, BIGGEST_CHAR,
-    BOX_BASE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, CLOSED, COUNT_BASE, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, ENDV, END_TEMPLATE, EQTB_SIZE, FI_CODE, FI_OR_ELSE,
-    FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_VAL, INSERTED,
-    INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS,
-    JUST_OPEN, LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MAX_COMMAND,
-    MAX_HALFWORD, MEM_TOP, MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER, NULL_CS,
-    NUMBER_MATH_FAMILIES, OR_CODE, OTHER_CHAR, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE,
-    RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SET_FONT, SF_CODE_BASE,
-    SINGLE_BASE, SKIP_BASE, SPACER, SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
-    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE, XETEX_INT,
+    ACTIVE_BASE, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, BACKED_UP, BIGGEST_CHAR, BOX_BASE,
+    CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, CLOSED, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
+    DEL_CODE_BASE, ELSE_CODE, ENDV, END_TEMPLATE, EQTB_SIZE, FI_CODE, FI_OR_ELSE, FONT_BASE,
+    FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_VAL, INSERTED, INT_BASE,
+    INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, JUST_OPEN,
+    LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MAX_COMMAND, MAX_HALFWORD,
+    MEM_TOP, MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER, NULL_CS, NUMBER_MATH_FAMILIES,
+    OR_CODE, OTHER_CHAR, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE,
+    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACER,
+    SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE,
+    VMODE, XETEX_INT,
 };
 use crate::errors::{error_in, int_error_in, mu_error_in};
 use crate::expand::{expand_in, macro_call_in};
@@ -26,6 +26,7 @@ use crate::input::{
     EVERY_EOF_TEXT, FROZEN_RELAX, LEFT_BRACE_LIMIT, MID_LINE, PARAMETER, RIGHT_BRACE_LIMIT,
     SKIP_BLANKS, TECTONIC_CODA_TEXT, V_TEMPLATE,
 };
+use crate::mem::{BACKUP_HEAD, OMIT_TEMPLATE, TEMP_HEAD};
 use crate::node::{AnyBox, AnyNode, GlueSpecNode, NodePtr, RuleDimen, RuleNode, SaNode};
 use crate::output::{
     capture_to_diagnostic_in, error_here_with_diagnostic_in, print_cmd_chr_in, print_cstr_in,
@@ -122,10 +123,6 @@ const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
 const FROZEN_CR: i32 = FROZEN_CONTROL_SEQUENCE + 1;
 const FROZEN_FI: i32 = FROZEN_CONTROL_SEQUENCE + 4;
 const FONT_ID_BASE: i32 = 2_245_338;
-
-pub(crate) const TEMP_HEAD: i32 = MEM_TOP - 3;
-const OMIT_TEMPLATE: i32 = MEM_TOP - 10;
-pub(crate) const GARBAGE: i32 = MEM_TOP - 12;
 
 pub(crate) const BIGGEST_USV: i32 = 0x10_FFFF;
 pub(crate) const NO_EXPAND_FLAG: i32 = BIGGEST_USV + 2;
@@ -557,7 +554,7 @@ pub(crate) fn str_toks_cat_in(
         return Err(StrToksAbort::PoolOverflow);
     }
 
-    let mut p = MemPtr::from_raw(TEMP_HEAD);
+    let mut p = TEMP_HEAD;
     p.set_link(mem, MemPtr::NULL);
     let mut k = b;
 
@@ -1524,7 +1521,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
             st.mem
                 .set_b32s0(st.scanner.cur_align + 5, st.scanner.cur_chr);
             let template = if saved_cmd as u8 == OMIT {
-                OMIT_TEMPLATE
+                OMIT_TEMPLATE.0
             } else {
                 st.mem.b32s1(st.scanner.cur_align + 2)
             };
@@ -1766,7 +1763,7 @@ pub(crate) fn the_toks_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
         st.shipout.selector = SELECTOR_NEW_STRING;
         let b = st.strings.pool_ptr;
         let p = get_avail_scc(st)?;
-        let list = MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+        let list = TEMP_HEAD.link(&st.mem);
         p.set_link(&mut st.mem, list);
         crate::output::token_show_in(st, p);
         crate::mem::flush_list(&mut st.mem, p);
@@ -1776,7 +1773,7 @@ pub(crate) fn the_toks_in(st: &mut EngineState) -> Result<MemPtr, SccAbort> {
     get_x_token_in(st)?;
     scan_something_internal_in(st, TOK_VAL, false)?;
     if st.scanner.cur_val_level >= IDENT_VAL as u8 {
-        let mut p = MemPtr::from_raw(TEMP_HEAD);
+        let mut p = TEMP_HEAD;
         p.set_link(&mut st.mem, MemPtr::NULL);
         if st.scanner.cur_val_level == IDENT_VAL as u8 {
             store_new_token(st, &mut p, CS_TOKEN_FLAG + st.scanner.cur_val)?;
@@ -1909,7 +1906,7 @@ pub(crate) fn scan_toks_in(
                         expand_in(st)?;
                     } else {
                         let tail = the_toks_in(st)?;
-                        let list = MemPtr::from_raw(TEMP_HEAD).link(&st.mem);
+                        let list = TEMP_HEAD.link(&st.mem);
                         if !list.is_null() {
                             p.set_link(&mut st.mem, list);
                             p = tail;
@@ -2855,7 +2852,7 @@ pub(crate) fn scan_keyword_in(
     // SAFETY: callers pass NUL-terminated keyword literals.
     let keyword = unsafe { std::ffi::CStr::from_ptr(s) }.to_bytes();
     let save_cur_cs = st.scanner.cur_cs;
-    let mut p = MemPtr::from_raw(BACKUP_HEAD);
+    let mut p = BACKUP_HEAD;
     p.set_link(&mut st.mem, MemPtr::NULL);
     let mut i = 0;
     while i < keyword.len() {
@@ -2864,9 +2861,9 @@ pub(crate) fn scan_keyword_in(
         if st.scanner.cur_cs == 0 && (st.scanner.cur_chr == ch || st.scanner.cur_chr == ch - 32) {
             store_new_token(st, &mut p, st.scanner.cur_tok)?;
             i += 1;
-        } else if st.scanner.cur_cmd != SPACER || p.0 != BACKUP_HEAD {
+        } else if st.scanner.cur_cmd != SPACER || p != BACKUP_HEAD {
             back_input_in(st)?;
-            if p.0 != BACKUP_HEAD {
+            if p != BACKUP_HEAD {
                 let matched = st.mem.b32s1(BACKUP_HEAD);
                 begin_token_list_in(st, matched, BACKED_UP)?;
             }
@@ -3917,8 +3914,8 @@ pub(crate) fn scan_general_text_in(st: &mut EngineState) -> Result<(), SccAbort>
     let def_ref = st.scanner.def_ref;
     let list = def_ref.link(&st.mem);
     crate::mem::free_avail(&mut st.mem, def_ref);
-    st.scanner.cur_val = if list.is_null() { TEMP_HEAD } else { p.0 };
-    MemPtr::from_raw(TEMP_HEAD).set_link(&mut st.mem, list);
+    st.scanner.cur_val = if list.is_null() { TEMP_HEAD.0 } else { p.0 };
+    TEMP_HEAD.set_link(&mut st.mem, list);
     st.scanner.scanner_status = saved_status;
     st.scanner.warning_index = saved_warning_index;
     st.scanner.def_ref = saved_def_ref;

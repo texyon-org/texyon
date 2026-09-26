@@ -2,14 +2,16 @@
 //! character protrusion.
 
 use crate::consts::{
-    ADJUST_HEAD, AWFUL_BAD, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, EJECT_PENALTY, ETEX_PEN_BASE,
-    EXPLICIT, GLUE_BASE, INT_PAR_HANG_AFTER, INT_PAR_LOOSENESS, INT_PAR_TEXXET, LC_CODE_BASE,
-    LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS,
-    RULE_NODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
+    AWFUL_BAD, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, EJECT_PENALTY, ETEX_PEN_BASE, EXPLICIT,
+    GLUE_BASE, INT_PAR_HANG_AFTER, INT_PAR_LOOSENESS, INT_PAR_TEXXET, LC_CODE_BASE, LIG_TAG,
+    LOCAL_BASE, LOCAL_PAR_SHAPE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, RULE_NODE,
+    SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::{linebreak_next, linebreak_start_in, measure_native_node};
 use crate::hyphenation::{hyph_code, set_hyph_index, HYPH_PRIME};
-use crate::mem::is_char_node;
+use crate::mem::{
+    is_char_node, ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE,
+};
 use crate::node::{
     ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, HListNode, LigItem,
     MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
@@ -51,12 +53,7 @@ const ETEX_PENALTIES_PAR_CLUB_PENALTIES: i32 = 1;
 const ETEX_PENALTIES_PAR_WIDOW_PENALTIES: i32 = 2;
 const ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES: i32 = 3;
 
-const HOLD_HEAD: MemPtr = MemPtr(MEM_TOP - 4);
-const TEMP_HEAD: MemPtr = MemPtr(MEM_TOP - 3);
-const ACTIVE_LIST: MemPtr = MemPtr(MEM_TOP - 7);
 const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
-const PRE_ADJUST_HEAD: MemPtr = MemPtr(MEM_TOP - 14);
-const ZERO_GLUE: MemPtr = MemPtr(0);
 
 const DELTA_NODE: u16 = RULE_NODE;
 const PASSIVE_NODE_SIZE: i32 = 2;
@@ -2041,7 +2038,7 @@ fn post_line_break_prefix(
         )
     };
 
-    scanner.adjust_tail = MemPtr(ADJUST_HEAD);
+    scanner.adjust_tail = ADJUST_HEAD;
     scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
 
     Ok(PostLineHpack {
@@ -2089,8 +2086,8 @@ fn post_line_break_suffix(
 
     crate::packaging::append_to_vlist(cl, mem, eqtb, just_box)?;
 
-    if scanner.adjust_tail != MemPtr(ADJUST_HEAD) {
-        cl.tail.set_link(mem, MemPtr(ADJUST_HEAD).link(mem));
+    if scanner.adjust_tail != ADJUST_HEAD {
+        cl.tail.set_link(mem, ADJUST_HEAD.link(mem));
         cl.tail = scanner.adjust_tail;
     }
     scanner.adjust_tail = MemPtr::NULL;

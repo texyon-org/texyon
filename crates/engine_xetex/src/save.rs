@@ -6,9 +6,8 @@ use crate::consts::{
 };
 use crate::main_control::{
     BOX_REF, CALL, DIMEN_VAL, GLUE_REF, LONG_OUTER_CALL, MU_VAL, SHAPE_REF, TOKS_REGISTER,
-    ZERO_GLUE,
 };
-use crate::mem::{delete_glue_ref, delete_token_ref, free_node, get_node};
+use crate::mem::{delete_glue_ref, delete_token_ref, free_node, get_node, ZERO_GLUE};
 use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
@@ -290,7 +289,7 @@ pub fn delete_sa_ref(mem: &mut MemState, scanner: &mut ScannerState, q: impl Mem
         WORD_NODE_SIZE
     } else {
         if q.sa_index(mem) < MU_VAL_LIMIT {
-            if q.sa_ptr(mem).0 != ZERO_GLUE {
+            if q.sa_ptr(mem) != ZERO_GLUE {
                 return;
             }
             delete_glue_ref(mem, ZERO_GLUE);
@@ -674,7 +673,7 @@ fn sa_alloc_chain(
         p = sa(get_node(mem, POINTER_NODE_SIZE)?);
         scanner.cur_ptr = p.ptr();
         if t <= MU_VAL as u16 {
-            p.set_sa_ptr(mem, MemPtr(ZERO_GLUE));
+            p.set_sa_ptr(mem, ZERO_GLUE);
             crate::mem::add_glue_ref(mem, ZERO_GLUE);
         } else {
             p.set_sa_ptr(mem, MemPtr::NULL);

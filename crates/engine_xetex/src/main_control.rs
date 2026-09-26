@@ -2,25 +2,28 @@
 //! alignment family (= xetex0.c's main_control group).
 
 use crate::consts::{
-    ADJUST_HEAD, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, A_LEADERS, BACKED_UP, BIGGEST_CHAR,
-    BIGGEST_LANG, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN,
-    CONTRIB_HEAD, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
-    DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, ENDV, ETEX_PEN_BASE, EXPLICIT, FONT_BASE,
-    GLUE_BASE, GLUE_NODE, GLUE_VAL, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_HANG_AFTER,
-    INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN,
-    INT_PAR_TEXXET, KERN_NODE, LEFT_BRACE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE,
-    MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_COMMAND, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE,
-    MU_VAL_SCAN, NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OTHER_CHAR,
-    OUTPUT_TEXT, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE,
-    SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE,
-    SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACER, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX,
-    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
+    ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, A_LEADERS, BACKED_UP, BIGGEST_CHAR, BIGGEST_LANG,
+    BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, COUNT_BASE,
+    CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE,
+    DLIST, ENDV, ETEX_PEN_BASE, EXPLICIT, FONT_BASE, GLUE_BASE, GLUE_NODE, GLUE_VAL, HMODE,
+    IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
+    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET,
+    KERN_NODE, LEFT_BRACE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MARGIN_KERN_NODE_SIZE,
+    MATH_CODE_BASE, MAX_COMMAND, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN,
+    NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OTHER_CHAR, OUTPUT_TEXT,
+    PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING,
+    SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
+    SMALL_NODE_SIZE, SPACER, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX, TEX_NULL, TOKEN_LIST,
+    TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
 use crate::hyphenation::{new_hyph_exceptions_in, new_patterns_in};
 use crate::math::{after_math_in, init_math_in};
-use crate::mem::is_char_node;
+use crate::mem::{
+    is_char_node, ADJUST_HEAD, ALIGN_HEAD, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE,
+    FIL_NEG_GLUE, HOLD_HEAD, PAGE_HEAD, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, ZERO_GLUE,
+};
 use crate::node::{
     AdjustNode, AnyBox, AnyNode, GlueSpecNode, InsNode, MarkNode, NodePtr, RuleDimen, SaNode,
     UnsetNode, WhatsitNode, WhatsitSubtype,
@@ -151,13 +154,6 @@ const INNER_HMODE: i16 = -HMODE;
 
 const ALIGNING: u8 = 4;
 
-const PRE_ADJUST_HEAD: i32 = 4_999_985;
-const END_SPAN: i32 = 4_999_990;
-const ALIGN_HEAD: i32 = 4_999_991;
-pub(crate) const HOLD_HEAD: i32 = 4_999_995;
-const TEMP_HEAD: i32 = 4_999_996;
-pub(crate) const PAGE_HEAD: i32 = 4_999_997;
-
 const ALIGN_STACK_NODE_SIZE: i32 = 6;
 const NATIVE_NODE_SIZE: i32 = 6;
 const SPAN_NODE_SIZE: i32 = 2;
@@ -165,11 +161,6 @@ const SPAN_NODE_SIZE: i32 = 2;
 pub(crate) const NORMAL: u16 = 0;
 pub(crate) const ADDITIONAL: i16 = 1;
 const ACC_KERN: u16 = 2;
-pub(crate) const ZERO_GLUE: i32 = 0;
-const FIL_GLUE: i32 = 4;
-const FILL_GLUE: i32 = 8;
-const SS_GLUE: i32 = 12;
-const FIL_NEG_GLUE: i32 = 16;
 const TAB_SKIP_SUBTYPE: u16 = GLUE_PAR_TAB_SKIP as u16 + 1;
 const COND_MATH_GLUE: u16 = 98;
 const FIL: usize = 1;
@@ -403,10 +394,10 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                 st.mem.set_b32s0(r + 1, 0);
             }
         }
-        if st.mem.b32s0(q) != END_SPAN {
+        if st.mem.b32s0(q) != END_SPAN.0 {
             let t = st.mem.b32s1(q + 1) + st.mem.b32s1(st.mem.b32s0(st.mem.b32s1(q) + 1) + 1);
             let mut r = st.mem.b32s0(q);
-            let mut s = END_SPAN;
+            let mut s = END_SPAN.0;
             st.mem.set_b32s0(s, p);
             let mut n: i32 = 1;
             loop {
@@ -428,7 +419,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                     free_node(&mut st.mem, MemPtr::from_raw(r), SPAN_NODE_SIZE);
                 }
                 r = u;
-                if r == END_SPAN {
+                if r == END_SPAN.0 {
                     break;
                 }
             }
@@ -515,8 +506,8 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                             let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr::from_raw(v))
                                 .expect("non-null glue spec");
                             let g = alloc_glue(&mut st.mem, v).ok_or(NodeRecycleAbort::Overflow)?;
-                            MemPtr(u).set_link(&mut st.mem, g.ptr());
-                            u = g.ptr().0;
+                            u.set_link(&mut st.mem, g.ptr());
+                            u = g.ptr();
                             g.set_subtype(&mut st.mem, TAB_SKIP_SUBTYPE);
                             t += spec.width(&st.mem).0;
                             match p.glue_sign(&st.mem) {
@@ -539,8 +530,8 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                             ss = st.mem.b32s1(ss);
                             let nb =
                                 alloc_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
-                            MemPtr(u).set_link(&mut st.mem, nb.ptr());
-                            u = nb.ptr().0;
+                            u.set_link(&mut st.mem, nb.ptr());
+                            u = nb.ptr();
                             let span_w = Scaled(st.mem.b32s1(ss + 1));
                             t += span_w.0;
                             if st.input.cur_list.mode == INNER_VMODE {
@@ -573,7 +564,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                         if u != HOLD_HEAD {
                             st.mem.set_b32s1(u, st.mem.b32s1(r));
                             st.mem.set_b32s1(r, st.mem.b32s1(HOLD_HEAD));
-                            r = u;
+                            r = u.0;
                         }
                         r = st.mem.b32s1(st.mem.b32s1(r));
                         ss = st.mem.b32s1(st.mem.b32s1(ss));
@@ -867,13 +858,13 @@ pub(crate) fn pop_alignment_in(st: &mut EngineState) {
 /// TeX's `store_new_token`: appends `tok` after `p` and returns the new tail.
 fn store_new_token(
     mem: &mut MemState,
-    p: i32,
+    p: MemPtr,
     tok: i32,
-) -> Result<i32, crate::scan::NodeRecycleAbort> {
+) -> Result<MemPtr, crate::scan::NodeRecycleAbort> {
     let q = crate::mem::get_avail(mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-    mem.set_b32s1(p, q.0);
+    p.set_link(mem, q);
     q.set_info(mem, tok);
-    Ok(q.0)
+    Ok(q)
 }
 
 /// Copies token list `r` through `HOLD_HEAD` and returns the copy.
@@ -920,7 +911,7 @@ pub(crate) fn fin_col_in(st: &mut EngineState) -> Result<bool, MainControlAbort>
             let nb = crate::mem::alloc_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
             MemPtr(q).set_link(&mut st.mem, nb.ptr());
             p = nb.idx().0;
-            st.mem.set_b32s0(p, END_SPAN);
+            st.mem.set_b32s0(p, END_SPAN.0);
             nb.set_width(&mut st.mem, Scaled(NULL_FLAG));
             st.scanner.cur_loop = st.scanner.cur_loop.link(&st.mem);
             let u_template = st.mem.b32s1(st.scanner.cur_loop + 3);
@@ -1109,7 +1100,7 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
 
     crate::scan::scan_spec_in(st, GroupCode::Align, false)?;
     st.mem.set_b32s1(ALIGN_HEAD, TEX_NULL);
-    st.scanner.cur_align = MemPtr(ALIGN_HEAD);
+    st.scanner.cur_align = ALIGN_HEAD;
     st.scanner.cur_loop = MemPtr::NULL;
     st.scanner.scanner_status = ALIGNING;
     st.scanner.warning_index = save_cs_ptr;
@@ -1163,7 +1154,7 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
         let nb = alloc_null_box(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
         st.scanner.cur_align.set_link(&mut st.mem, nb.ptr());
         st.scanner.cur_align = nb.ptr();
-        st.mem.set_b32s0(nb.idx(), END_SPAN);
+        st.mem.set_b32s0(nb.idx(), END_SPAN.0);
         nb.set_width(&mut st.mem, Scaled(NULL_FLAG));
         st.mem
             .set_b32s1(nb.idx().offset(3), st.mem.b32s1(HOLD_HEAD));
@@ -1272,7 +1263,7 @@ pub(crate) fn its_all_over_in(st: &mut EngineState) -> Result<bool, MainControlA
     if !crate::errors::privileged_in(st).map_err(MainControlAbort::Error)? {
         return Ok(false);
     }
-    if st.shipout.page_tail.0 == PAGE_HEAD
+    if st.shipout.page_tail == PAGE_HEAD
         && st.input.cur_list.head == st.input.cur_list.tail
         && st.shipout.dead_cycles == 0
     {
@@ -1890,8 +1881,8 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
         st.mem.set_b32s1(cb + 4, box_context);
         if st.input.cur_list.mode.abs() == VMODE {
             if !st.scanner.pre_adjust_tail.is_null() {
-                if st.scanner.pre_adjust_tail.0 != PRE_ADJUST_HEAD {
-                    append_list(st, MemPtr(PRE_ADJUST_HEAD), st.scanner.pre_adjust_tail);
+                if st.scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
+                    append_list(st, PRE_ADJUST_HEAD, st.scanner.pre_adjust_tail);
                 }
                 st.scanner.pre_adjust_tail = MemPtr::NULL;
             }
@@ -1902,8 +1893,8 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 .expect("append_to_vlist receives an hlist or vlist node");
             crate::packaging::append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, b)?;
             if !st.scanner.adjust_tail.is_null() {
-                if st.scanner.adjust_tail.0 != ADJUST_HEAD {
-                    append_list(st, MemPtr(ADJUST_HEAD), st.scanner.adjust_tail);
+                if st.scanner.adjust_tail != ADJUST_HEAD {
+                    append_list(st, ADJUST_HEAD, st.scanner.adjust_tail);
                 }
                 st.scanner.adjust_tail = MemPtr::NULL;
             }
@@ -2163,8 +2154,8 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
         }
         GroupCode::Hbox => package_in(st, 0)?,
         GroupCode::AdjustedHbox => {
-            st.scanner.adjust_tail.0 = ADJUST_HEAD;
-            st.scanner.pre_adjust_tail.0 = PRE_ADJUST_HEAD;
+            st.scanner.adjust_tail = ADJUST_HEAD;
+            st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
             package_in(st, 0)?;
         }
         GroupCode::Vbox => {
@@ -2277,7 +2268,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                 st.shipout.page_tail.set_link(&mut st.mem, contrib);
                 st.mem.set_b32s1(CONTRIB_HEAD, st.mem.b32s1(PAGE_HEAD));
                 st.mem.set_b32s1(PAGE_HEAD, TEX_NULL);
-                st.shipout.page_tail.0 = PAGE_HEAD;
+                st.shipout.page_tail = PAGE_HEAD;
             }
 
             let last_box = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
@@ -2366,10 +2357,10 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
 pub(crate) fn append_glue_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let s = st.scanner.cur_chr as i16;
     match s {
-        0 => st.scanner.cur_val = FIL_GLUE,
-        1 => st.scanner.cur_val = FILL_GLUE,
-        2 => st.scanner.cur_val = SS_GLUE,
-        3 => st.scanner.cur_val = FIL_NEG_GLUE,
+        0 => st.scanner.cur_val = FIL_GLUE.0,
+        1 => st.scanner.cur_val = FILL_GLUE.0,
+        2 => st.scanner.cur_val = SS_GLUE.0,
+        3 => st.scanner.cur_val = FIL_NEG_GLUE.0,
         SKIP_CODE => crate::scan::scan_glue_in(st, GLUE_VAL)?,
         MSKIP_CODE => crate::scan::scan_glue_in(st, MU_VAL_SCAN)?,
         _ => {}
@@ -2533,7 +2524,7 @@ pub(crate) fn trap_zero_glue(st: &mut EngineState) {
     if st.mem.b32s1(spec + 1) == 0 && st.mem.b32s1(spec + 2) == 0 && st.mem.b32s1(spec + 3) == 0 {
         crate::mem::add_glue_ref(&mut st.mem, ZERO_GLUE);
         crate::mem::delete_glue_ref(&mut st.mem, spec);
-        st.scanner.cur_val = ZERO_GLUE;
+        st.scanner.cur_val = ZERO_GLUE.0;
     }
 }
 
@@ -3285,7 +3276,7 @@ pub(crate) fn main_control_append_normal_space_in(
     if insert_boundary_inter_char_toks(st)? {
         return Ok(());
     }
-    let glue = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32) == ZERO_GLUE {
+    let glue = if st.eqtb.b32s1(GLUE_BASE + GLUE_PAR_SPACE_SKIP as i32) == ZERO_GLUE.0 {
         st.mainloop.main_p.0 = font_space_glue(st)?;
         crate::mem::alloc_glue(&mut st.mem, st.mainloop.main_p.0)
             .ok_or(NodeRecycleAbort::Overflow)?
@@ -5076,7 +5067,7 @@ fn assign_toks_in(st: &mut EngineState, global: bool) -> Result<(), MainControlA
         return Ok(());
     }
     if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
-        store_new_token(&mut st.mem, tail, RIGHT_BRACE_TOKEN + '}' as i32)?;
+        store_new_token(&mut st.mem, MemPtr(tail), RIGHT_BRACE_TOKEN + '}' as i32)?;
         let q =
             crate::mem::get_avail(&mut st.mem).ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + '{' as i32);

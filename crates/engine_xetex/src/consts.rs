@@ -82,20 +82,17 @@ const _: () = {
 // Consolidated constants (formerly duplicated per-file; single source of truth)
 // ---------------------------------------------------------------------------
 pub const ACCENT_NOAD_SIZE: i32 = 5;
-pub const ADJUST_HEAD: i32 = 4_999_994;
 pub const ASSIGN_GLUE: u8 = 76;
 pub const ASSIGN_INT: u8 = 74;
 pub const ASSIGN_MU_GLUE: u8 = 77;
 pub const AWFUL_BAD: i32 = MAX_HALFWORD;
 pub const A_LEADERS: u16 = 100;
 pub const BACKED_UP: u16 = 3;
-pub const BACKUP_HEAD: i32 = 4_999_999 - 13;
 pub const BEFORE: i32 = 0;
 pub const BIGGEST_LANG: i32 = 255;
 pub const CHAR_CLASS_LIMIT: i32 = 4096;
 pub const CHAR_GIVEN: u8 = 68;
 pub const CLOSED: u8 = 2;
-pub const CONTRIB_HEAD: i32 = MEM_TOP - 1;
 pub const COUNT_BASE: i32 = 7_826_812;
 pub const DIMEN_PAR_HANG_INDENT: i32 = 17;
 pub const DIMEN_PAR_HSIZE: i32 = 3;

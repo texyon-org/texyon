@@ -5,11 +5,11 @@ use std::ffi::CStr;
 
 use crate::bridge::ttstub_output_open_stdout;
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CONTRIB_HEAD,
-    CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY_STRING, ENDV, END_TEMPLATE,
-    EQTB_SIZE, ETEX_PEN_BASE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE,
-    GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, IGNORE_DEPTH,
-    INT_BASE, INT_PAR_DAY, INT_PAR_END_LINE_CHAR, INT_PAR_HANG_AFTER, INT_PAR_MAG, INT_PAR_MONTH,
+    ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
+    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY_STRING, ENDV, END_TEMPLATE, EQTB_SIZE,
+    ETEX_PEN_BASE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_BASE,
+    GLUE_NODE, GLUE_SPEC_SIZE, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, IGNORE_DEPTH, INT_BASE,
+    INT_PAR_DAY, INT_PAR_END_LINE_CHAR, INT_PAR_HANG_AFTER, INT_PAR_MAG, INT_PAR_MONTH,
     INT_PAR_NEW_LINE_CHAR, INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_YEAR, LC_CODE_BASE,
     LEFT_TO_RIGHT, LEVEL_ONE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE,
     MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NEW_LINE, NON_ADDRESS, NORMAL_SCANNER,
@@ -22,7 +22,10 @@ use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_BASE, HASH_OFFSET, HASH_PRIME, HASH_SIZE, PRIM_SIZE};
 use crate::hyphenation::TRIE_OP_SIZE;
 use crate::io::init_io;
-use crate::mem::xmalloc;
+use crate::mem::{
+    xmalloc, ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, NULL_LIST,
+    OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD,
+};
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{GlueSpecNode, NodePtr};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState};
@@ -43,14 +46,6 @@ const INT_PAR_XETEX_HYPHENATABLE_LENGTH: i32 = 80;
 
 const HISTORY_WARNING_ISSUED: i32 = 1;
 
-const PAGE_INS_HEAD: i32 = MEM_TOP;
-pub(crate) const PAGE_HEAD: i32 = MEM_TOP - 2;
-const ACTIVE_LIST: i32 = MEM_TOP - 7;
-const END_SPAN: i32 = MEM_TOP - 9;
-const OMIT_TEMPLATE: i32 = MEM_TOP - 10;
-const NULL_LIST: i32 = MEM_TOP - 11;
-pub(crate) const PRE_ADJUST_HEAD: i32 = MEM_TOP - 14;
-pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
 const IF_NODE_SIZE: i32 = 2;
 
 const FROZEN_PROTECTION: i32 = FROZEN_CONTROL_SEQUENCE;
@@ -401,15 +396,15 @@ fn initialize_more_variables_in(st: &mut EngineState) {
     st.input.nest_ptr = 0;
     st.input.max_nest_stack = 0;
     st.input.cur_list.mode = VMODE;
-    st.input.cur_list.head.0 = CONTRIB_HEAD;
-    st.input.cur_list.tail.0 = CONTRIB_HEAD;
+    st.input.cur_list.head = CONTRIB_HEAD;
+    st.input.cur_list.tail = CONTRIB_HEAD;
     st.input.cur_list.e_tex_aux = MemPtr::NULL;
     st.input.cur_list.set_aux_s1(IGNORE_DEPTH);
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
     st.scanner.shown_mode = 0;
     st.shipout.page_contents = EMPTY;
-    st.shipout.page_tail.0 = PAGE_HEAD;
+    st.shipout.page_tail = PAGE_HEAD;
     st.shipout.last_glue.0 = MAX_HALFWORD;
     st.shipout.last_penalty = 0;
     st.shipout.last_kern = 0;
@@ -559,7 +554,7 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     mem.set_b32s0(mem.lo_mem_max, TEX_NULL);
 
     let template = mem.word(mem.lo_mem_max);
-    for k in PRE_ADJUST_HEAD..=MEM_TOP {
+    for k in HI_MEM_STAT_MIN..=MEM_TOP {
         mem.set_word(k, template);
     }
 
@@ -571,12 +566,12 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     mem.set_b16s0(ACTIVE_LIST, 0);
     mem.set_b16s0(PAGE_INS_HEAD, 255);
     mem.set_b16s1(PAGE_INS_HEAD, SPLIT_UP);
-    mem.set_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD);
+    mem.set_b32s1(PAGE_INS_HEAD, PAGE_INS_HEAD.0);
     mem.set_b16s1(PAGE_HEAD, GLUE_NODE);
     mem.set_b16s0(PAGE_HEAD, NORMAL.into());
     mem.avail = TEX_NULL;
     mem.mem_end = MEM_TOP;
-    mem.hi_mem_min = PRE_ADJUST_HEAD;
+    mem.hi_mem_min = HI_MEM_STAT_MIN;
     mem.var_used = 20;
     mem.dyn_used = HI_MEM_STAT_USAGE;
 
@@ -744,12 +739,18 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
         &mut st.eqtb,
         FROZEN_END_TEMPLATE,
         END_TEMPLATE.into(),
-        NULL_LIST,
+        NULL_LIST.0,
         LEVEL_ONE,
     );
 
     set_frozen_text(st, FROZEN_ENDV, c"endtemplate")?;
-    set_eq(&mut st.eqtb, FROZEN_ENDV, ENDV.into(), NULL_LIST, LEVEL_ONE);
+    set_eq(
+        &mut st.eqtb,
+        FROZEN_ENDV,
+        ENDV.into(),
+        NULL_LIST.0,
+        LEVEL_ONE,
+    );
 
     set_frozen_text(st, FROZEN_DONT_EXPAND, c"notexpanded:")?;
     st.eqtb.set_b16s1(FROZEN_DONT_EXPAND, DONT_EXPAND);

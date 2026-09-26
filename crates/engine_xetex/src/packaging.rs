@@ -4,13 +4,12 @@
 use crate::consts::{
     ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, EJECT_PENALTY,
     EXPLICIT, FRACTION_NOAD_SIZE, GLUE_BASE, IGNORE_DEPTH, INT_BASE, INT_PAR_TEXXET,
-    MARGIN_KERN_NODE_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NOAD_SIZE,
-    PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX,
-    TEX_NULL,
+    MARGIN_KERN_NODE_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, PIC_NODE_SIZE,
+    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, SMALL_NODE_SIZE, STYLE_NODE_SIZE, SUB_BOX, TEX_NULL,
 };
 use crate::errors::ErrorOutcome;
 use crate::fonts::{effective_char, new_native_word_node};
-use crate::mem::{get_avail, is_char_node};
+use crate::mem::{get_avail, is_char_node, GARBAGE, TEMP_HEAD};
 use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, HasGlueSet, KernNode, MarkNode,
     NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
@@ -19,8 +18,6 @@ use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
-const TEMP_HEAD: MemPtr = MemPtr(MEM_TOP - 3);
-const GARBAGE: MemPtr = MemPtr(MEM_TOP - 12);
 /// The word of a box whose link field is its `list_ptr`.
 const LIST_OFFSET: i32 = 5;
 

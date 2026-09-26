@@ -6,13 +6,13 @@ use crate::bridge::{
     ttstub_output_flush, ttstub_output_putc,
 };
 use crate::consts::{
-    ACTIVE_BASE, A_LEADERS, BACKED_UP, BIGGEST_CHAR, CAT_CODE_BASE, CONTRIB_HEAD, COUNT_BASE,
-    CS_TOKEN_FLAG, DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FI_CODE, FI_OR_ELSE,
-    GLUE_BASE, HISTORY_SPOTLESS, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_END_LINE_CHAR,
+    ACTIVE_BASE, A_LEADERS, BACKED_UP, BIGGEST_CHAR, CAT_CODE_BASE, COUNT_BASE, CS_TOKEN_FLAG,
+    DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FI_CODE, FI_OR_ELSE, GLUE_BASE,
+    HISTORY_SPOTLESS, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_END_LINE_CHAR,
     INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, INT_PAR_TRACING_ONLINE, LC_CODE_BASE, LOCAL_BASE,
-    LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_COMMAND, MEM_TOP, MMODE, MU_GLUE,
-    MU_SKIP_BASE, NULL_CS, NULL_FLAG, OR_CODE, OUTPUT_TEXT, PRIM_EQTB_BASE, SCALED_BASE,
-    SCRIPT_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
+    LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_COMMAND, MMODE, MU_GLUE, MU_SKIP_BASE,
+    NULL_CS, NULL_FLAG, OR_CODE, OUTPUT_TEXT, PRIM_EQTB_BASE, SCALED_BASE, SCRIPT_SIZE,
+    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
     SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, TEXT_SIZE,
     TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
     UNLESS_CODE, VMODE, WRITE_TEXT,
@@ -22,12 +22,11 @@ use crate::hash::HASH_BASE;
 use crate::input::{
     EVERY_EOF_TEXT, MACRO, MARK_TEXT, PARAMETER, TECTONIC_CODA_TEXT, U_TEMPLATE, V_TEMPLATE,
 };
+use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::scan::{
-    AAT_FONT_FLAG, BIGGEST_USV, GARBAGE, MAX_CHAR_VAL, OTGR_FONT_FLAG, PROTECTED_TOKEN, TEMP_HEAD,
-};
+use crate::scan::{AAT_FONT_FLAG, BIGGEST_USV, MAX_CHAR_VAL, OTGR_FONT_FLAG, PROTECTED_TOKEN};
 use crate::state::{EngineState, GroupCode, InteractionMode};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType};
 
@@ -3117,11 +3116,9 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
 
 /// The outer vertical list part of `show_activities`: the current page and its insertions.
 fn show_page_so_far_in(st: &mut EngineState) {
-    const PAGE_INS_HEAD: i32 = MEM_TOP;
-    const PAGE_HEAD: i32 = MEM_TOP - 2;
     const EMPTY: u8 = 0;
 
-    if st.shipout.page_tail.0 != PAGE_HEAD {
+    if st.shipout.page_tail != PAGE_HEAD {
         print_nl_cstr_in(st, c"### current page:".as_ptr());
         if st.shipout.output_active {
             print_cstr_in(st, c" (held over for next output)".as_ptr());
@@ -3133,7 +3130,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
             print_nl_cstr_in(st, c" goal height ".as_ptr());
             print_scaled_in(st, st.shipout.page_so_far[0]);
             let mut r = st.mem.link_ptr(PAGE_INS_HEAD);
-            while r.0 != PAGE_INS_HEAD {
+            while r != PAGE_INS_HEAD {
                 // SAFETY: the page_ins_head ring holds only page-insertion records.
                 let ins = unsafe { NodePtr::<PageInsNode>::from_idx_unchecked(MemIdx::new(r)) };
                 print_ln_in(st);
@@ -3150,11 +3147,11 @@ fn show_page_so_far_in(st: &mut EngineState) {
                 };
                 print_scaled_in(st, adds);
                 if ins.is_split_up(&st.mem) {
-                    let broken_ins = ins.broken_ins(&st.mem).0;
+                    let broken_ins = ins.broken_ins(&st.mem);
                     let mut q = PAGE_HEAD;
                     let mut t = 0;
                     loop {
-                        q = st.mem.b32s1(q);
+                        q = st.mem.link_ptr(q);
                         if let Ok(AnyNode::Ins(node)) = st.mem.classify(MemIdx::new(q)) {
                             if node.subtype(&st.mem) == box_num {
                                 t += 1;

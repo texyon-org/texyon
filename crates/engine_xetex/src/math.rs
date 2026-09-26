@@ -1,7 +1,7 @@
 //! Math mode: noad construction and `mlist_to_hlist`, from `xetex/xetex-math.c`.
 use crate::consts::{
-    ACCENT_NOAD_SIZE, ADJUST_HEAD, A_LEADERS, BEFORE, BIGGEST_LANG, BOX_NODE_SIZE, CUR_FONT_LOC,
-    DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, EXPLICIT, FONT_BASE,
+    ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BIGGEST_LANG, BOX_NODE_SIZE, CUR_FONT_LOC, DEL_CODE_BASE,
+    DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, EXPLICIT, FONT_BASE,
     FRACTION_NOAD_SIZE, GLUE_BASE, HMODE, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
     INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, LEFT_TO_RIGHT, LIG_TAG,
     LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_FONT_BASE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE,
@@ -12,7 +12,7 @@ use crate::ext::real_get_native_glyph;
 use crate::fonts::{char_depth, char_height, char_italic, char_width, CharInfo};
 use crate::mem::{
     alloc_choice, alloc_glue, alloc_kern, alloc_noad, alloc_spec, free_node, get_avail, get_node,
-    TEX_NULL,
+    ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, TEX_NULL,
 };
 use crate::node::{
     AnyBox, AnyNode, ChoiceNode, GlueNode, GlueSpecNode, HListNode, KernNode, Noad, NodePtr,
@@ -39,7 +39,6 @@ const ABOVE_CODE: i32 = 0;
 const OVER_CODE: i32 = 1;
 const ATOP_CODE: i32 = 2;
 const DEFAULT_CODE: i32 = 0x4000_0000;
-const GARBAGE: i32 = 4_999_987;
 
 const ACCENT: u8 = 45;
 const MATH_CHAR: i32 = 1;
@@ -74,7 +73,6 @@ const L_CODE: i32 = 4;
 const R_CODE: i32 = 8;
 const BEGIN_L_CODE: i16 = 6;
 const END_L_CODE: i16 = 7;
-const TEMP_HEAD: i32 = 4_999_996;
 const EVERY_DISPLAY_TEXT: u16 = 10;
 const LOCAL_EVERY_DISPLAY: i32 = 4;
 
@@ -102,7 +100,6 @@ const END_M_CODE: i16 = 3;
 const DISPLAY_STYLE: i16 = 0;
 const TEXT_STYLE: i16 = 2;
 const SCRIPT_STYLE: i16 = 4;
-const PRE_ADJUST_HEAD: i32 = 4_999_985;
 const FIL: usize = 1;
 const FILL: usize = 2;
 const FILLL: usize = 3;
@@ -122,7 +119,6 @@ const ADDITIONAL: i16 = 1;
 const EXACTLY: i16 = 0;
 const AFTER: i16 = 1;
 const COND_MATH_GLUE: u16 = 98;
-const SS_GLUE: i32 = 12;
 
 use crate::ot_math::{
     get_native_mathex_param, get_native_mathsy_param, get_ot_assembly, get_ot_math_accent_pos,
@@ -1922,12 +1918,12 @@ fn mlist_cond_math_glue(
 }
 
 /// Moves `node` onto the output list after `tail`, returning it and its old successor.
-fn mlist_move_output_node(mem: &mut MemState, tail: MemPtr, node: AnyNode) -> (i32, i32) {
+fn mlist_move_output_node(mem: &mut MemState, tail: MemPtr, node: AnyNode) -> (MemPtr, i32) {
     let q = MemPtr::from_idx(node.idx());
     tail.set_link(mem, q);
     let next = q.link(mem);
     q.set_link(mem, MemPtr::NULL);
-    (q.0, next.0)
+    (q, next.0)
 }
 
 fn mlist_advance_in(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16, i32) {
@@ -2258,7 +2254,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                 | AnyNode::Glue(_)
                 | AnyNode::Kern(_)),
             ) => {
-                let (np, nq) = mlist_move_output_node(&mut st.mem, MemPtr::from_raw(p), node);
+                let (np, nq) = mlist_move_output_node(&mut st.mem, p, node);
                 p = np;
                 q = nq;
                 SecondPass::Moved
@@ -2292,20 +2288,20 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     let z = crate::mem::alloc_glue(&mut st.mem, y.ptr())
                         .ok_or(NodeRecycleAbort::Overflow)?;
                     y.set_ref_count(&mut st.mem, TEX_NULL);
-                    MemPtr::from_raw(p).set_link(&mut st.mem, z.ptr());
+                    p.set_link(&mut st.mem, z.ptr());
                     z.set_subtype(&mut st.mem, (x + 1) as u16);
-                    p = z.ptr().0;
+                    p = z.ptr();
                 }
             }
 
             let head = MemPtr::from_raw(qn.new_hlist(&st.mem));
             if !head.is_null() {
-                MemPtr::from_raw(p).set_link(&mut st.mem, head);
+                p.set_link(&mut st.mem, head);
                 let mut tail = head;
                 while !tail.link(&st.mem).is_null() {
                     tail = tail.link(&st.mem);
                 }
-                p = tail.0;
+                p = tail;
             }
 
             if penalties && pen < INF_PENALTY {
@@ -2316,8 +2312,8 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     ) {
                         let z = crate::mem::alloc_penalty(&mut st.mem, pen)
                             .ok_or(NodeRecycleAbort::Overflow)?;
-                        MemPtr::from_raw(p).set_link(&mut st.mem, z.ptr());
-                        p = z.ptr().0;
+                        p.set_link(&mut st.mem, z.ptr());
+                        p = z.ptr();
                     }
                 }
             }
@@ -2976,8 +2972,8 @@ pub(crate) fn math_fraction_in(
 
     if st.input.cur_list.aux_s1() != TEX_NULL {
         if c >= DELIMITED_CODE {
-            scan_delimiter_in(st, GARBAGE, false)?;
-            scan_delimiter_in(st, GARBAGE, false)?;
+            scan_delimiter_in(st, GARBAGE.0, false)?;
+            scan_delimiter_in(st, GARBAGE.0, false)?;
         }
 
         if c % DELIMITED_CODE == ABOVE_CODE {
@@ -3051,7 +3047,7 @@ pub(crate) fn math_left_right_in(
     let t = st.scanner.cur_chr as u16;
     if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != GroupCode::MathLeft {
         if st.save_stack.cur_group == GroupCode::MathShift {
-            scan_delimiter_in(st, GARBAGE, false)?;
+            scan_delimiter_in(st, GARBAGE.0, false)?;
             crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
             if t == MIDDLE_NOAD {
                 crate::output::print_esc_cstr_in(st, c"middle".as_ptr());
@@ -3507,8 +3503,8 @@ pub(crate) fn after_math_in(
     st.scanner.mlist_penalties = false;
     mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
     let mut p = st.mem.link_ptr(TEMP_HEAD);
-    st.scanner.adjust_tail.0 = ADJUST_HEAD;
-    st.scanner.pre_adjust_tail.0 = PRE_ADJUST_HEAD;
+    st.scanner.adjust_tail = ADJUST_HEAD;
+    st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
     let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
     p = b.list_ptr(&st.mem);
     let t = st.scanner.adjust_tail.0;
@@ -3616,12 +3612,12 @@ pub(crate) fn after_math_in(
     }
 
     let cl = &mut st.input.cur_list;
-    if t != ADJUST_HEAD {
+    if t != ADJUST_HEAD.0 {
         let adjusts = st.mem.link_ptr(ADJUST_HEAD);
         cl.tail.set_link(&mut st.mem, adjusts);
         cl.tail.0 = t;
     }
-    if pre_t != PRE_ADJUST_HEAD {
+    if pre_t != PRE_ADJUST_HEAD.0 {
         let pre_adjusts = st.mem.link_ptr(PRE_ADJUST_HEAD);
         cl.tail.set_link(&mut st.mem, pre_adjusts);
         cl.tail.0 = pre_t;
@@ -3775,7 +3771,7 @@ pub(crate) fn init_math_in(
                         Ok(AnyNode::Ligature(_)) => {
                             st.mem.set_word(GARBAGE, st.mem.word(p + 1));
                             st.mem.set_b32s1(GARBAGE, st.mem.b32s1(p));
-                            p = GARBAGE;
+                            p = GARBAGE.0;
                             st.fonts.xtx_ligature_present = true;
                             continue 'reswitch;
                         }
@@ -3802,7 +3798,7 @@ pub(crate) fn init_math_in(
                                             &mut st.scanner,
                                             p,
                                         )?;
-                                        p = TEMP_HEAD;
+                                        p = TEMP_HEAD.0;
                                     }
                                 }
                             } else if subtype >= L_CODE {

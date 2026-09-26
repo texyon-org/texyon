@@ -5,13 +5,14 @@ use crate::consts::{
     BOX_BASE, HISTORY_FATAL_ERROR, LOCAL_BASE, MEM_TOP, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
     TEX_NULL,
 };
+use crate::mem::{HOLD_HEAD, TEMP_HEAD};
 use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
     end_diagnostic_in, error_here_with_diagnostic_in, print_char_in, print_cmd_chr_in,
     print_cstr_in, print_esc_cstr_in, print_in, print_in_mode_in, print_int_in, print_ln_in,
     print_nl_cstr_in, show_box_in, show_context_in, show_token_list_in, token_show_in,
 };
-use crate::scan::{MATCHING, TEMP_HEAD};
+use crate::scan::MATCHING;
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
 
 const HISTORY_ERROR_ISSUED: i32 = 2;
@@ -402,13 +403,12 @@ pub(crate) fn runaway_in(st: &mut EngineState) {
     const DEFINING: u8 = 2;
     const ALIGNING: u8 = 4;
     const ABSORBING: u8 = 5;
-    const HOLD_HEAD: i32 = MEM_TOP - 4;
 
     let (msg, p) = match st.scanner.scanner_status {
-        DEFINING => (c"Runaway definition", st.scanner.def_ref.0),
+        DEFINING => (c"Runaway definition", st.scanner.def_ref),
         MATCHING => (c"Runaway argument", TEMP_HEAD),
         ALIGNING => (c"Runaway preamble", HOLD_HEAD),
-        ABSORBING => (c"Runaway text", st.scanner.def_ref.0),
+        ABSORBING => (c"Runaway text", st.scanner.def_ref),
         _ => return,
     };
     print_nl_cstr_in(st, msg.as_ptr());
