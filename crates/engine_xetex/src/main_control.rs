@@ -2368,26 +2368,6 @@ pub(crate) fn make_accent(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn string_overflow(st: &EngineState, e: Abort) -> Abort {
-    match e {
-        Abort::NodeOverflow => Abort::Overflow {
-            what: "pool size",
-            n: st.strings.pool_size - st.strings.init_pool_ptr,
-        },
-        e => e,
-    }
-}
-
-fn make_string(st: &mut EngineState) -> Result<i32, Abort> {
-    st.strings.make_string().map_err(|e| match e {
-        Abort::NodeOverflow => Abort::Overflow {
-            what: "number of strings",
-            n: st.strings.max_strings - st.strings.init_str_ptr,
-        },
-        e => e,
-    })
-}
-
 fn flush_last_string(st: &mut EngineState) {
     st.strings.str_ptr -= 1;
     st.strings.discard_cur_string();
@@ -2419,7 +2399,7 @@ pub(crate) unsafe fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort>
                 n: st.strings.pool_size - st.strings.init_pool_ptr,
             });
         }
-        make_string(st)?
+        st.strings.make_string()?
     };
 
     let global = a >= 4;
@@ -2490,11 +2470,9 @@ pub(crate) unsafe fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort>
                 break 'search f;
             }
             for part in [st.scanner.cur_area, st.scanner.cur_name, st.scanner.cur_ext] {
-                st.strings
-                    .append_str(part)
-                    .map_err(|e| string_overflow(st, e))?;
+                st.strings.append_str(part)?;
             }
-            let full_name = make_string(st)?;
+            let full_name = st.strings.make_string()?;
             let same_name = st.strings.str_eq_str(st.fonts.font_name[fi], full_name);
             flush_last_string(st);
             if same_name && st.fonts.is_native_font(f) && size_matches(st, fi) {

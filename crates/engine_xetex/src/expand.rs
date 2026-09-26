@@ -471,9 +471,7 @@ fn save_scan(st: &mut EngineState) -> Result<SavedScan, Abort> {
         pending_str: st.strings.cur_string_start() < st.strings.pool_ptr,
     };
     if saved.pending_str {
-        st.strings
-            .make_string()
-            .map_err(|_| Abort::StringOverflow)?;
+        st.strings.make_string()?;
     }
     Ok(saved)
 }
@@ -505,10 +503,7 @@ fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<i32, A
     let limit = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, text, TEX_NULL, limit);
     st.shipout.selector = old_selector;
-    let s = st
-        .strings
-        .make_string()
-        .map_err(|_| Abort::StringOverflow)?;
+    let s = st.strings.make_string()?;
     st.mem.delete_token_ref(st.scanner.def_ref);
     restore_scan(st, saved);
     Ok(s)

@@ -761,10 +761,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
 
     if st.scanner.ext_delimiter == 0 {
         st.scanner.cur_ext = EMPTY_STRING;
-        st.scanner.cur_name = st
-            .strings
-            .slow_make_string()
-            .map_err(|_| Abort::StringOverflow)?;
+        st.scanner.cur_name = st.strings.slow_make_string()?;
     } else {
         let strings = &mut st.strings;
         let shift = st.scanner.ext_delimiter - area_delimiter - 1;
@@ -773,7 +770,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + shift;
         strings.str_ptr += 1;
 
-        st.scanner.cur_ext = strings.make_string().map_err(|_| Abort::StringOverflow)?;
+        st.scanner.cur_ext = strings.make_string()?;
         strings.str_ptr -= 1;
         let temp_str = strings.search_string(st.scanner.cur_name);
         if temp_str > 0 {
@@ -785,9 +782,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
             }
             strings.pool_ptr -= shift;
         }
-        st.scanner.cur_ext = strings
-            .slow_make_string()
-            .map_err(|_| Abort::StringOverflow)?;
+        st.scanner.cur_ext = strings.slow_make_string()?;
     }
     Ok(())
 }
@@ -808,10 +803,7 @@ pub(crate) unsafe fn make_name_string(st: &mut EngineState) -> Result<i32, Abort
         .copy_from_slice(&st.input.name_of_file16[..name_len16]);
     st.strings.pool_ptr += name_len16 as i32;
 
-    let result = st
-        .strings
-        .make_string()
-        .map_err(|_| Abort::StringOverflow)?;
+    let result = st.strings.make_string()?;
     let save_area_delimiter = st.scanner.area_delimiter;
     let save_ext_delimiter = st.scanner.ext_delimiter;
     let save_name_in_progress = st.scanner.name_in_progress;
@@ -1000,10 +992,7 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::show_token_list(st, arg, crate::mem::TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting as i32;
 
-    let s = st
-        .strings
-        .make_string()
-        .map_err(|_| Abort::StringOverflow)?;
+    let s = st.strings.make_string()?;
     st.mem.delete_token_ref(st.scanner.def_ref);
     st.scanner.def_ref.0 = save_def_ref;
     st.scanner.cur_cs = save_cur_cs;

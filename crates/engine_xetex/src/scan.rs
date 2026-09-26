@@ -674,7 +674,7 @@ pub(crate) fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<i32, Abor
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, arg, TEX_NULL, l);
     st.shipout.selector = st.shipout.old_setting as i32;
-    st.strings.make_string().map_err(|_| Abort::StringOverflow)
+    st.strings.make_string()
 }
 
 pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {

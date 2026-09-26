@@ -2650,9 +2650,7 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
     st.shipout.selector = SELECTOR_NEW_STRING;
     print_code(st, c);
     st.shipout.selector = prev_sel;
-    let Ok(s) = st.strings.make_string() else {
-        return Err(Abort::StringOverflow);
-    };
+    let s = st.strings.make_string()?;
     let chr_c = unsafe { st.strings.gettexstring(s) };
     flush_last_string(st);
     unsafe {

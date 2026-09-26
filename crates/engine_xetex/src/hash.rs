@@ -122,10 +122,7 @@ impl EqtbState {
                         }
                     }
 
-                    let s_idx = strings.make_string().map_err(|_| Abort::Overflow {
-                        what: "number of strings",
-                        n: strings.max_strings - strings.init_str_ptr,
-                    })?;
+                    let s_idx = strings.make_string()?;
                     self.set_hash_s1(p, s_idx);
                     strings.pool_ptr += d;
                 }

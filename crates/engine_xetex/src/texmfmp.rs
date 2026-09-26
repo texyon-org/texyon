@@ -205,7 +205,7 @@ impl StringsState {
             self.push_utf16(next_utf8_char(&mut s));
         }
 
-        self.make_string().map_err(|_| Abort::StringOverflow)
+        self.make_string()
     }
 
     /// Appends the hex MD5 of file (or string) `s` to the pool.

@@ -225,16 +225,7 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
         });
     }
 
-    st.strings.format_ident = match st.strings.make_string() {
-        Ok(value) => value,
-        Err(Abort::NodeOverflow) => {
-            return Err(Abort::Overflow {
-                what: "number of strings",
-                n: st.strings.max_strings - st.strings.init_str_ptr,
-            })
-        }
-        Err(e) => return Err(e),
-    };
+    st.strings.format_ident = st.strings.make_string()?;
     crate::io::pack_job_name(st, ".fmt")?;
 
     let fmt_out = ttstub_output_open(st.input.name_of_file_ptr(), 0);

@@ -29,7 +29,7 @@ impl StringsState {
 
     pub fn make_string(&mut self) -> Result<i32, Abort> {
         if self.str_ptr == self.max_strings {
-            return Err(Abort::NodeOverflow);
+            return Err(Abort::StringOverflow);
         }
         self.str_ptr += 1;
         let slot = self.cur_start_slot();
@@ -40,7 +40,7 @@ impl StringsState {
     pub fn append_str(&mut self, s: i32) -> Result<(), Abort> {
         let len = self.length(s);
         if self.pool_ptr + len > self.pool_size {
-            return Err(Abort::NodeOverflow);
+            return Err(Abort::PoolOverflow);
         }
         let src = self.str_start(s) as usize;
         let dst = self.pool_ptr as usize;
