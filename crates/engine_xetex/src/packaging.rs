@@ -4,10 +4,10 @@
 use crate::consts::{
     ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_BASE, BOX_NODE_SIZE, DIMEN_BASE, DIMEN_PAR_HFUZZ,
     DIMEN_PAR_LINE_SKIP_LIMIT, DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_SPLIT_MAX_DEPTH, DIMEN_PAR_VFUZZ,
-    EJECT_PENALTY, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FRACTION_NOAD_SIZE, GLUE_BASE,
+    EJECT_PENALTY, EXPLICIT, FIL, FILL, FILLL, FRACTION_NOAD_SIZE, GLUE_BASE,
     GLUE_PAR_BASELINE_SKIP, GLUE_PAR_LINE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLYPH_NODE_SIZE,
     IGNORE_DEPTH, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_BASE, INT_PAR_HBADNESS,
-    INT_PAR_SAVING_VDISCARDS, INT_PAR_TEXXET, INT_PAR_VBADNESS, INT_PAR_XETEX_UPWARDS, L_CODE,
+    INT_PAR_SAVING_VDISCARDS, INT_PAR_TEXXET, INT_PAR_VBADNESS, INT_PAR_XETEX_UPWARDS,
     MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD,
     NOAD_SIZE, NORMAL, OPEN_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE,
     SMALL_NODE_SIZE, SPLIT_BOT_MARK_CODE, SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX,
@@ -16,7 +16,10 @@ use crate::consts::{
 use crate::errors::ErrorOutcome;
 use crate::fonts::{effective_char, new_native_word_node};
 use crate::main_control::VSPLIT_CODE;
-use crate::mem::{get_avail, is_char_node, GARBAGE, TEMP_HEAD};
+use crate::mem::{
+    add_glue_ref, add_token_ref, end_lr_type, free_avail, get_avail, is_char_node, list_tail,
+    pop_lr, predecessor, push_lr, GARBAGE, TEMP_HEAD,
+};
 use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, IsBox, KernNode, MarkNode,
     NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
@@ -46,67 +49,6 @@ pub(crate) fn int_par(eqtb: &EqtbState, n: i32) -> i32 {
 #[inline]
 pub(crate) fn dimen_par(eqtb: &EqtbState, n: i32) -> i32 {
     eqtb.b32s1(DIMEN_BASE + n)
-}
-
-#[inline]
-pub(crate) fn list_tail(mem: &MemState, mut p: MemPtr) -> MemPtr {
-    while !p.link(mem).is_null() {
-        p = p.link(mem);
-    }
-    p
-}
-
-/// The node whose link is `target`, searching forward from `p`.
-#[inline]
-pub(crate) fn predecessor(mem: &MemState, mut p: MemPtr, target: MemPtr) -> MemPtr {
-    while p.link(mem) != target {
-        p = p.link(mem);
-    }
-    p
-}
-
-/// Return a one-word node to the avail list.
-#[inline]
-pub(crate) fn free_avail(mem: &mut MemState, p: MemPtr) {
-    p.set_link(mem, MemPtr(mem.avail));
-    mem.avail = p.0;
-}
-
-#[inline]
-fn add_token_ref(mem: &mut MemState, p: MemPtr) {
-    p.set_info(mem, p.info(mem) + 1);
-}
-
-#[inline]
-fn add_glue_ref(mem: &mut MemState, spec: MemPtr) {
-    let spec = NodePtr::<GlueSpecNode>::from_glue_ptr(spec).expect("non-null glue spec");
-    spec.set_ref_count(mem, spec.ref_count(mem) + 1);
-}
-
-/// TeX's `end_LR_type`: the LR-stack entry that a math node of `subtype` opens or closes.
-#[inline]
-pub(crate) fn end_lr_type(subtype: u16) -> i32 {
-    (L_CODE * (subtype / L_CODE) + END_M_CODE) as i32
-}
-
-#[inline]
-pub(crate) fn push_lr(
-    mem: &mut MemState,
-    lr_ptr: &mut MemPtr,
-    info: i32,
-) -> Result<(), NodeRecycleAbort> {
-    let t = get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
-    t.set_info(mem, info);
-    t.set_link(mem, *lr_ptr);
-    *lr_ptr = t;
-    Ok(())
-}
-
-#[inline]
-pub(crate) fn pop_lr(mem: &mut MemState, lr_ptr: &mut MemPtr) {
-    let t = *lr_ptr;
-    *lr_ptr = t.link(mem);
-    free_avail(mem, t);
 }
 
 /// `p` as a native-word whatsit, if it is one.
@@ -328,7 +270,6 @@ pub fn just_reverse(
                         math.into_kern(mem);
                         scanner.lr_problems += 1;
                     } else {
-                        mem.temp_ptr = scanner.lr_ptr;
                         pop_lr(mem, &mut scanner.lr_ptr);
 
                         if n > MIN_HALFWORD {
@@ -345,8 +286,8 @@ pub fn just_reverse(
                         }
                     }
                 } else {
-                    push_lr(mem, &mut scanner.lr_ptr, end_lr_type(subtype))?;
-                    mem.temp_ptr = scanner.lr_ptr;
+                    push_lr(mem, &mut scanner.lr_ptr, end_lr_type(subtype))
+                        .ok_or(NodeRecycleAbort::OverflowRunaway)?;
 
                     if n > MIN_HALFWORD || (subtype / R_CODE) as i16 != scanner.cur_dir {
                         n += 1;
@@ -610,11 +551,9 @@ pub fn append_to_vlist(
                 .set_width(mem, Scaled(d));
             p
         };
-        cl.tail.set_link(mem, p.ptr());
-        cl.tail = p.ptr();
+        cl.tail_append(mem, p.ptr());
     }
-    cl.tail.set_link(mem, b.ptr());
-    cl.tail = b.ptr();
+    cl.tail_append(mem, b.ptr());
     cl.set_aux_s1(if upwards {
         b.height(mem).0
     } else {
@@ -1590,7 +1529,8 @@ fn hpack_in(
     let texxet = int_par(eqtb, INT_PAR_TEXXET) > 0;
 
     if texxet {
-        push_lr(mem, &mut scanner.lr_ptr, BEFORE.into())?;
+        push_lr(mem, &mut scanner.lr_ptr, BEFORE.into())
+            .ok_or(NodeRecycleAbort::OverflowRunaway)?;
     }
 
     let mut p = list;
@@ -1710,7 +1650,8 @@ fn hpack_in(
                             math.into_kern(mem).set_subtype(mem, EXPLICIT);
                         }
                     } else {
-                        push_lr(mem, &mut scanner.lr_ptr, end_lr_type(subtype))?;
+                        push_lr(mem, &mut scanner.lr_ptr, end_lr_type(subtype))
+                            .ok_or(NodeRecycleAbort::OverflowRunaway)?;
                     }
                 }
             }

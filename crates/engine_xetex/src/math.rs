@@ -2702,8 +2702,7 @@ fn append_radical_noad(
     mem: &mut MemState,
 ) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let node = NodePtr::<Noad>::alloc_radical(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    cl.tail.set_link(mem, node.ptr());
-    cl.tail = node.ptr();
+    cl.tail_append(mem, node.ptr());
     clear_noad_fields(mem, node);
     Ok(node)
 }
@@ -2722,8 +2721,7 @@ fn append_choices_core(
     save_stack: &mut SaveStackState,
 ) -> Result<(), NodeRecycleAbort> {
     let choice = alloc_choice(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    cl.tail.set_link(mem, choice.ptr());
-    cl.tail = choice.ptr();
+    cl.tail_append(mem, choice.ptr());
     save_stack.save_ptr += 1;
     save_stack.set_b32s1(save_stack.save_ptr - 1, 0);
     Ok(())
@@ -2849,8 +2847,7 @@ fn prepare_sub_sup(
     let mut duplicate = None;
     if p == TEX_NULL || t != EMPTY {
         let noad = alloc_noad(mem).ok_or(NodeRecycleAbort::Overflow)?;
-        cl.tail.set_link(mem, noad.ptr());
-        cl.tail = noad.ptr();
+        cl.tail_append(mem, noad.ptr());
         p = cl.tail.0 + 2 + cmd as i32 - 7;
         if t != EMPTY {
             duplicate = Some(if cmd == SUP_MARK {
@@ -2967,8 +2964,7 @@ fn append_accent_noad(
     mem: &mut MemState,
 ) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
     let accent = NodePtr::<Noad>::alloc_accent(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    cl.tail.set_link(mem, accent.ptr());
-    cl.tail = accent.ptr();
+    cl.tail_append(mem, accent.ptr());
     clear_noad_fields(mem, accent);
     accent.set_accent_char_type(mem, MATH_CHAR);
     Ok(accent)
@@ -3035,8 +3031,7 @@ pub(crate) fn math_left_right_in(
         } else {
             let inner = alloc_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
             let cl = &mut st.input.cur_list;
-            cl.tail.set_link(&mut st.mem, inner.ptr());
-            cl.tail = inner.ptr();
+            cl.tail_append(&mut st.mem, inner.ptr());
             inner.set_noad_type(&mut st.mem, NodeType::InnerNoad);
             inner.set_nucleus_type(&mut st.mem, SUB_MLIST);
             inner.set_nucleus_field(&mut st.mem, q);
@@ -3307,11 +3302,6 @@ fn app_display_in(
     Ok(())
 }
 
-fn tail_append(cl: &mut crate::mem_types::ListStateRecord, mem: &mut MemState, p: MemPtr) {
-    cl.tail.set_link(mem, p);
-    cl.tail = p;
-}
-
 /// Checks the family 2 and 3 fonts. On failure reports the error, flushes the
 /// formula and returns `true` (TeX's `danger`).
 fn check_math_fonts_in(
@@ -3413,7 +3403,7 @@ pub(crate) fn after_math_in(
         let math_surround = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_MATH_SURROUND);
         let node = crate::mem::alloc_math(&mut st.mem, math_surround, BEFORE)
             .ok_or(NodeRecycleAbort::Overflow)?;
-        tail_append(&mut st.input.cur_list, &mut st.mem, node.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
@@ -3426,7 +3416,7 @@ pub(crate) fn after_math_in(
         }
         let node = crate::mem::alloc_math(&mut st.mem, math_surround, AFTER)
             .ok_or(NodeRecycleAbort::Overflow)?;
-        tail_append(&mut st.input.cur_list, &mut st.mem, node.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, node.ptr());
         st.input.cur_list.set_aux_s0(1000);
 
         if st.config.semantic_pagination_enabled {
@@ -3503,7 +3493,7 @@ pub(crate) fn after_math_in(
         st.eqtb.b32s1(INT_BASE + INT_PAR_PRE_DISPLAY_PENALTY),
     )
     .ok_or(NodeRecycleAbort::Overflow)?;
-    tail_append(&mut st.input.cur_list, &mut st.mem, pen.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
     let pre_display_size = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE);
     let (g1, mut g2) = if d + s <= pre_display_size || l {
@@ -3519,11 +3509,11 @@ pub(crate) fn after_math_in(
         app_display_in(st, j, a, 0)?;
         let pen = crate::mem::alloc_penalty(&mut st.mem, INF_PENALTY)
             .ok_or(NodeRecycleAbort::Overflow)?;
-        tail_append(&mut st.input.cur_list, &mut st.mem, pen.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
     } else {
         let glue = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, g1)
             .ok_or(NodeRecycleAbort::Overflow)?;
-        tail_append(&mut st.input.cur_list, &mut st.mem, glue.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
     if e != 0 {
@@ -3547,7 +3537,7 @@ pub(crate) fn after_math_in(
     if a != TEX_NULL && e == 0 && !l {
         let pen = crate::mem::alloc_penalty(&mut st.mem, INF_PENALTY)
             .ok_or(NodeRecycleAbort::Overflow)?;
-        tail_append(&mut st.input.cur_list, &mut st.mem, pen.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
         let a_width = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
         app_display_in(st, j, a, z - a_width)?;
         g2 = 0;
@@ -3570,12 +3560,12 @@ pub(crate) fn after_math_in(
         st.eqtb.b32s1(INT_BASE + INT_PAR_POST_DISPLAY_PENALTY),
     )
     .ok_or(NodeRecycleAbort::Overflow)?;
-    tail_append(&mut st.input.cur_list, &mut st.mem, pen.ptr());
+    st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
 
     if g2 > 0 {
         let glue = crate::mem::alloc_param_glue(&mut st.mem, &st.eqtb, g2)
             .ok_or(NodeRecycleAbort::Overflow)?;
-        tail_append(&mut st.input.cur_list, &mut st.mem, glue.ptr());
+        st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
     crate::packaging::flush_node_list(&mut st.mem, j).map_err(MainControlAbort::Confusion)?;
@@ -3585,24 +3575,6 @@ pub(crate) fn after_math_in(
     }
 
     resume_after_display_in(st)
-}
-
-fn push_lr_in(st: &mut EngineState, info: i32) -> Result<(), NodeRecycleAbort> {
-    let tp = crate::mem::get_avail(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
-    st.mem.temp_ptr = tp;
-    tp.set_info(&mut st.mem, info);
-    tp.set_link(&mut st.mem, st.scanner.lr_ptr);
-    st.scanner.lr_ptr = tp;
-    Ok(())
-}
-
-fn pop_lr(st: &mut EngineState) {
-    let top = st.scanner.lr_ptr;
-    st.mem.temp_ptr = top;
-    st.scanner.lr_ptr = top.link(&st.mem);
-    let avail = MemPtr::from_raw(st.mem.avail);
-    top.set_link(&mut st.mem, avail);
-    st.mem.avail = top.0;
 }
 
 /// TeX's `\predisplaydirection` for the paragraph just ended.
@@ -3690,7 +3662,8 @@ pub(crate) fn init_math_in(
 
             let texxet = st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0;
             if texxet {
-                push_lr_in(st, BEFORE.into())?;
+                crate::mem::push_lr(&mut st.mem, &mut st.scanner.lr_ptr, BEFORE.into())
+                    .ok_or(NodeRecycleAbort::Overflow)?;
             }
 
             'outer: while p != TEX_NULL {
@@ -3724,15 +3697,20 @@ pub(crate) fn init_math_in(
                             if texxet {
                                 if subtype & 1 != 0 {
                                     if st.scanner.lr_ptr.info(&st.mem)
-                                        == crate::packaging::end_lr_type(subtype)
+                                        == crate::mem::end_lr_type(subtype)
                                     {
-                                        pop_lr(st);
+                                        crate::mem::pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
                                     } else if subtype > L_CODE {
                                         w = MAX_HALFWORD;
                                         break 'outer;
                                     }
                                 } else {
-                                    push_lr_in(st, crate::packaging::end_lr_type(subtype))?;
+                                    crate::mem::push_lr(
+                                        &mut st.mem,
+                                        &mut st.scanner.lr_ptr,
+                                        crate::mem::end_lr_type(subtype),
+                                    )
+                                    .ok_or(NodeRecycleAbort::Overflow)?;
                                     if (subtype / R_CODE) as i32 != st.scanner.cur_dir as i32 {
                                         crate::packaging::just_reverse(
                                             &mut st.mem,
@@ -3801,7 +3779,7 @@ pub(crate) fn init_math_in(
 
             if texxet {
                 while !st.scanner.lr_ptr.is_null() {
-                    pop_lr(st);
+                    crate::mem::pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
                 }
                 if st.scanner.lr_problems != 0 {
                     w = MAX_HALFWORD;

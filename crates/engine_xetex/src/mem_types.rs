@@ -155,4 +155,11 @@ impl ListStateRecord {
     pub fn set_aux_s1(&mut self, v: i32) {
         self.aux.b32.s1 = v;
     }
+
+    /// Links `p` after the tail and makes it the new tail.
+    #[inline]
+    pub fn tail_append(&mut self, mem: &mut crate::state::MemState, p: crate::units::MemPtr) {
+        self.tail.set_link(mem, p);
+        self.tail = p;
+    }
 }

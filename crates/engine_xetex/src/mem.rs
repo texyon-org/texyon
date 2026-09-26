@@ -2,7 +2,8 @@
 //! `xetex/xetex-xetex0.c`.
 pub(crate) use crate::consts::TEX_NULL;
 use crate::consts::{
-    EMPTY, GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL,
+    EMPTY, END_M_CODE, GLUE_BASE, GLUE_SPEC_SIZE, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP,
+    NORMAL,
 };
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
@@ -154,9 +155,57 @@ pub fn flush_list(mem: &mut MemState, p: MemPtr) {
 /// Returns the one-word node `p` to the free list.
 #[inline]
 pub fn free_avail(mem: &mut MemState, p: MemPtr) {
-    let avail = mem.avail;
-    p.set_link(mem, MemPtr::from_raw(avail));
+    p.set_link(mem, MemPtr(mem.avail));
     mem.avail = p.0;
+}
+
+#[inline]
+pub(crate) fn add_token_ref(mem: &mut MemState, p: MemPtr) {
+    p.set_info(mem, p.info(mem) + 1);
+}
+
+/// The last node of the non-empty list starting at `p`.
+#[inline]
+pub(crate) fn list_tail(mem: &MemState, mut p: MemPtr) -> MemPtr {
+    while !p.link(mem).is_null() {
+        p = p.link(mem);
+    }
+    p
+}
+
+/// The node whose link is `target`, searching forward from `p`.
+#[inline]
+pub(crate) fn predecessor(mem: &MemState, mut p: MemPtr, target: MemPtr) -> MemPtr {
+    while p.link(mem) != target {
+        p = p.link(mem);
+    }
+    p
+}
+
+/// TeX's `end_LR_type`: the LR entry that a math node of `subtype` closes.
+#[inline]
+pub(crate) fn end_lr_type(subtype: u16) -> i32 {
+    (L_CODE * (subtype / L_CODE) + END_M_CODE) as i32
+}
+
+/// TeX's `push_LR`, `None` when main memory is exhausted.
+#[inline]
+pub(crate) fn push_lr(mem: &mut MemState, lr_ptr: &mut MemPtr, info: i32) -> Option<()> {
+    let t = get_avail(mem)?;
+    mem.temp_ptr = t;
+    t.set_info(mem, info);
+    t.set_link(mem, *lr_ptr);
+    *lr_ptr = t;
+    Some(())
+}
+
+/// TeX's `pop_LR`.
+#[inline]
+pub(crate) fn pop_lr(mem: &mut MemState, lr_ptr: &mut MemPtr) {
+    let t = *lr_ptr;
+    mem.temp_ptr = t;
+    *lr_ptr = t.link(mem);
+    free_avail(mem, t);
 }
 
 // ---------------------------------------------------------------------------
@@ -651,9 +700,7 @@ pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), Pus
 
 /// Core of [`pop_nest`].
 pub fn pop_nest_in(mem: &mut MemState, input: &mut crate::state::InputClusterState) {
-    let head = input.cur_list.head.0;
-    mem.set_b32s1(head, mem.avail);
-    mem.avail = head;
+    free_avail(mem, input.cur_list.head);
     input.nest_ptr -= 1;
     let rec = input.nest[input.nest_ptr as usize];
     input.cur_list = rec;
@@ -765,8 +812,7 @@ pub fn new_whatsit(
     let p = get_node(mem, w)?;
     mem.set_b16s1(p, crate::units::NodeType::Whatsit.as_raw());
     mem.set_b16s0(p, s as u16);
-    cl.tail.set_link(mem, p);
-    cl.tail = p;
+    cl.tail_append(mem, p);
     // SAFETY: `p` is a fresh node just stamped WHATSIT_NODE.
     Some(unsafe { NodePtr::from_idx_unchecked(crate::units::MemIdx::new(p)) })
 }

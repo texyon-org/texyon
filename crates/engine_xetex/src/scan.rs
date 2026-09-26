@@ -864,8 +864,7 @@ pub(crate) fn set_math_char_in(
         }
         let fam = nd.nucleus_fam(&st.mem) + (ch / 65536) as u16 * 256;
         nd.set_nucleus_fam(&mut st.mem, fam);
-        st.input.cur_list.tail.set_link(&mut st.mem, nd.ptr());
-        st.input.cur_list.tail = nd.ptr();
+        st.input.cur_list.tail_append(&mut st.mem, nd.ptr());
     }
     Ok(())
 }

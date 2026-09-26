@@ -1,8 +1,8 @@
 //! Shipping boxes out to the XDV file.
 use crate::consts::{
     A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_BASE, DIMEN_PAR_H_OFFSET,
-    DIMEN_PAR_PDF_PAGE_HEIGHT, DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_M_CODE,
-    END_WRITE, FILLL, FONT_BASE, GLUE_SPEC_SIZE, INT_BASE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE,
+    DIMEN_PAR_PDF_PAGE_HEIGHT, DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_WRITE,
+    FILLL, FONT_BASE, GLUE_SPEC_SIZE, INT_BASE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE,
     INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INVALID_HANDLE, LEFT_TO_RIGHT,
     L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NORMAL,
     NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
@@ -17,7 +17,7 @@ use crate::bridge::{
 };
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{INSERTED, WRITE_TEXT};
-use crate::mem::LIG_TRICK;
+use crate::mem::{end_lr_type, pop_lr, push_lr, LIG_TRICK};
 use crate::node::{
     AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
     WhatsitNode, WhatsitSubtype,
@@ -911,35 +911,13 @@ fn leader_of(mem: &MemState, glue: NodePtr<GlueNode>) -> Leader {
     }
 }
 
-fn push_lr(mem: &mut MemState, scanner: &mut ScannerState, info: i32) -> Result<(), ShipoutAbort> {
-    let node = get_avail_ship(mem)?;
-    mem.temp_ptr = node;
-    node.set_info(mem, info);
-    node.set_link(mem, scanner.lr_ptr);
-    scanner.lr_ptr = node;
-    Ok(())
-}
-
-fn pop_lr(mem: &mut MemState, scanner: &mut ScannerState) {
-    let node = scanner.lr_ptr;
-    mem.temp_ptr = node;
-    scanner.lr_ptr = node.link(mem);
-    let avail = MemPtr::from_raw(mem.avail);
-    node.set_link(mem, avail);
-    mem.avail = node.0;
-}
-
 fn lr_dir(mem: &MemState, math: NodePtr<MathNode>) -> i16 {
     (math.subtype(mem) / R_CODE) as i16
 }
 
-fn end_lr_type(mem: &MemState, math: NodePtr<MathNode>) -> u16 {
-    L_CODE * (math.subtype(mem) / L_CODE) + END_M_CODE
-}
-
 /// The LR stack top matches the end code of `math`.
 fn lr_matches(mem: &MemState, scanner: &ScannerState, math: NodePtr<MathNode>) -> bool {
-    scanner.lr_ptr.info(mem) as u16 == end_lr_type(mem, math)
+    scanner.lr_ptr.info(mem) == end_lr_type(math.subtype(mem))
 }
 
 fn font_character_width(fonts: &FontState, f: i32, c: i32) -> i32 {
@@ -1241,7 +1219,8 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
     let save_loc = push_dvi_level(&mut st.shipout)?;
     let base_line = st.shipout.cur_v;
     let mut prev_p = this_box.list_head();
-    push_lr(&mut st.mem, &mut st.scanner, BEFORE.into())?;
+    push_lr(&mut st.mem, &mut st.scanner.lr_ptr, BEFORE.into())
+        .ok_or(ShipoutAbort::MainMemoryOverflow)?;
 
     if this_box.subtype(&st.mem) == DLIST {
         if st.scanner.cur_dir == RIGHT_TO_LEFT {
@@ -1329,13 +1308,14 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 let math_width = math.width(&st.mem).0;
                 if !math.subtype(&st.mem).is_multiple_of(2) {
                     if lr_matches(&st.mem, &st.scanner, math) {
-                        pop_lr(&mut st.mem, &mut st.scanner);
+                        pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
                     } else if math.subtype(&st.mem) > L_CODE {
                         st.scanner.lr_problems += 1;
                     }
                 } else {
-                    let end_type = end_lr_type(&st.mem, math) as i32;
-                    push_lr(&mut st.mem, &mut st.scanner, end_type)?;
+                    let end_type = end_lr_type(math.subtype(&st.mem));
+                    push_lr(&mut st.mem, &mut st.scanner.lr_ptr, end_type)
+                        .ok_or(ShipoutAbort::MainMemoryOverflow)?;
                     if lr_dir(&st.mem, math) != st.scanner.cur_dir {
                         let edge = reverse_segment(
                             st,
@@ -1379,9 +1359,9 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
         if st.scanner.lr_ptr.info(&st.mem) as u16 > L_CODE {
             st.scanner.lr_problems += 10000;
         }
-        pop_lr(&mut st.mem, &mut st.scanner);
+        pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
     }
-    pop_lr(&mut st.mem, &mut st.scanner);
+    pop_lr(&mut st.mem, &mut st.scanner.lr_ptr);
     if this_box.subtype(&st.mem) == DLIST {
         st.scanner.cur_dir = RIGHT_TO_LEFT;
     }
@@ -1884,7 +1864,7 @@ fn reverse(
                             now_kern = true;
                             scanner.lr_problems += 1;
                         } else {
-                            pop_lr(mem, scanner);
+                            pop_lr(mem, &mut scanner.lr_ptr);
                             if n > MIN_HALFWORD {
                                 n -= 1;
                                 math.set_subtype(mem, math.subtype(mem) - 1);
@@ -1904,8 +1884,9 @@ fn reverse(
                             }
                         }
                     } else {
-                        let end_type = end_lr_type(mem, math) as i32;
-                        push_lr(mem, scanner, end_type)?;
+                        let end_type = end_lr_type(math.subtype(mem));
+                        push_lr(mem, &mut scanner.lr_ptr, end_type)
+                            .ok_or(ShipoutAbort::MainMemoryOverflow)?;
                         if n > MIN_HALFWORD || lr_dir(mem, math) != scanner.cur_dir {
                             n += 1;
                             math.set_subtype(mem, math.subtype(mem) + 1);

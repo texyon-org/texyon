@@ -11,7 +11,8 @@ use crate::consts::{
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
 use crate::input::OUTPUT_TEXT;
-use crate::main_control::{add_token_ref, fetch_box, COPY_CODE, LAST_BOX_CODE};
+use crate::main_control::{fetch_box, COPY_CODE, LAST_BOX_CODE};
+use crate::mem::add_token_ref;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, InsNode, NodePtr, PageInsNode, SaNode, WhatsitSubtype,

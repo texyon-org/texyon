@@ -22,13 +22,12 @@ use crate::hyphenation::{hyph_code, set_hyph_index, HYPH_PRIME};
 use crate::mem::{
     is_char_node, ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE,
 };
+use crate::mem::{list_tail, predecessor};
 use crate::node::{
     ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, HListNode, LigItem,
     MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::packaging::{
-    as_native_word, dimen_par, int_par, list_tail, predecessor, ADDITIONAL, EXACTLY,
-};
+use crate::packaging::{as_native_word, dimen_par, int_par, ADDITIONAL, EXACTLY};
 use crate::scan::NodeRecycleAbort;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
@@ -1800,14 +1799,14 @@ fn update_lr_stack(
     lr_ptr: &mut MemPtr,
 ) -> Result<(), NodeRecycleAbort> {
     let subtype = q.subtype(mem);
-    let end_lr = crate::packaging::end_lr_type(subtype);
+    let end_lr = crate::mem::end_lr_type(subtype);
     if subtype % 2 == 1 {
         if !lr_ptr.is_null() && lr_ptr.info(mem) == end_lr {
-            crate::packaging::pop_lr(mem, lr_ptr);
+            crate::mem::pop_lr(mem, lr_ptr);
         }
         Ok(())
     } else {
-        crate::packaging::push_lr(mem, lr_ptr, end_lr)
+        crate::mem::push_lr(mem, lr_ptr, end_lr).ok_or(NodeRecycleAbort::OverflowRunaway)
     }
 }
 
@@ -2105,8 +2104,7 @@ fn post_line_break_suffix(
 
         if pen != 0 {
             let r = crate::mem::alloc_penalty(mem, pen).ok_or(NodeRecycleAbort::Overflow)?;
-            cl.tail.set_link(mem, r.ptr());
-            cl.tail = r.ptr();
+            cl.tail_append(mem, r.ptr());
         }
     }
 
@@ -3068,7 +3066,7 @@ fn insert_hyphens(
                     i += 1;
                     saved_c = st.hyph.hu[i as usize];
                     st.hyph.hu[i as usize] = st.hyph.hyf_char;
-                    crate::packaging::free_avail(&mut st.mem, MemPtr(hyf_node));
+                    crate::mem::free_avail(&mut st.mem, MemPtr(hyf_node));
                 }
 
                 while l <= i {
@@ -3158,8 +3156,7 @@ unsafe fn append_native_word(
     len: i32,
 ) -> Result<(), NodeRecycleAbort> {
     let w = crate::fonts::new_native_word_node(&mut st.mem, &st.eqtb, f, len)?;
-    st.input.cur_list.tail.set_link(&mut st.mem, w.ptr());
-    st.input.cur_list.tail = w.ptr();
+    st.input.cur_list.tail_append(&mut st.mem, w.ptr());
     if len > 0 {
         let dst = w.native_text_ptr_mut(&mut st.mem);
         std::ptr::copy_nonoverlapping(text, dst, len as usize);
@@ -3200,8 +3197,7 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                 if use_penalty {
                     let node = crate::mem::alloc_penalty(&mut st.mem, penalty)
                         .ok_or(NodeRecycleAbort::Overflow)?;
-                    st.input.cur_list.tail.set_link(&mut st.mem, node.ptr());
-                    st.input.cur_list.tail = node.ptr();
+                    st.input.cur_list.tail_append(&mut st.mem, node.ptr());
                 }
                 if use_skip {
                     let node = crate::mem::alloc_param_glue(
@@ -3210,8 +3206,7 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
                         GLUE_PAR_XETEX_LINEBREAK_SKIP,
                     )
                     .ok_or(NodeRecycleAbort::Overflow)?;
-                    st.input.cur_list.tail.set_link(&mut st.mem, node.ptr());
-                    st.input.cur_list.tail = node.ptr();
+                    st.input.cur_list.tail_append(&mut st.mem, node.ptr());
                 }
             }
             append_native_word(
