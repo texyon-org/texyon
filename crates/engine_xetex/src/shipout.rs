@@ -728,15 +728,13 @@ fn hlist_glue_out(
             while st.shipout.cur_h + leader_wd <= edge {
                 st.shipout.cur_v = base_line + leader.shift_amount(&st.mem);
                 synch_v(st)?;
-                let save_v = st.shipout.dvi_v;
                 synch_h(st)?;
-                let save_h = st.shipout.dvi_h;
-                if st.scanner.cur_dir == RIGHT_TO_LEFT {
-                    st.shipout.cur_h += leader_wd;
-                }
-                ship_leader_box(st, leader)?;
-                st.shipout.dvi_v = save_v;
-                st.shipout.dvi_h = save_h;
+                let (save_h, _) = with_saved_dvi_pos(st, |st| {
+                    if st.scanner.cur_dir == RIGHT_TO_LEFT {
+                        st.shipout.cur_h += leader_wd;
+                    }
+                    ship_leader_box(st, leader)
+                })?;
                 st.shipout.cur_v = base_line;
                 st.shipout.cur_h = save_h + leader_wd + lx;
             }
@@ -901,13 +899,9 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                     | WhatsitSubtype::Glyph),
                 ) => native_word_out(st, whatsit, subtype)?,
                 Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf) => {
-                    let save_h = st.shipout.dvi_h;
-                    let save_v = st.shipout.dvi_v;
                     st.shipout.cur_v = base_line;
                     let edge = st.shipout.cur_h + whatsit.width(&st.mem);
-                    pic_out(st, whatsit)?;
-                    st.shipout.dvi_h = save_h;
-                    st.shipout.dvi_v = save_v;
+                    with_saved_dvi_pos(st, |st| pic_out(st, whatsit))?;
                     st.shipout.cur_h = edge;
                     st.shipout.cur_v = base_line;
                 }
@@ -999,16 +993,12 @@ fn hlist_box_out(
         st.shipout.cur_h += b.width(&st.mem);
         return Ok(());
     }
-    let save_h = st.shipout.dvi_h;
-    let save_v = st.shipout.dvi_v;
     st.shipout.cur_v = base_line + b.shift_amount(&st.mem);
     let edge = st.shipout.cur_h + b.width(&st.mem);
     if st.scanner.cur_dir == RIGHT_TO_LEFT {
         st.shipout.cur_h = edge;
     }
-    ship_box(st, b)?;
-    st.shipout.dvi_h = save_h;
-    st.shipout.dvi_v = save_v;
+    with_saved_dvi_pos(st, |st| ship_box(st, b))?;
     st.shipout.cur_h = edge;
     st.shipout.cur_v = base_line;
     Ok(())
@@ -1092,12 +1082,10 @@ fn vlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                     st.shipout.cur_h = left_edge;
                 }
                 Some(WhatsitSubtype::Pic | WhatsitSubtype::Pdf) => {
-                    let save_h = st.shipout.dvi_h;
-                    let save_v = st.shipout.dvi_v;
-                    st.shipout.cur_v += whatsit.height(&st.mem);
-                    pic_out(st, whatsit)?;
-                    st.shipout.dvi_h = save_h;
-                    st.shipout.dvi_v = save_v;
+                    let (_, save_v) = with_saved_dvi_pos(st, |st| {
+                        st.shipout.cur_v += whatsit.height(&st.mem);
+                        pic_out(st, whatsit)
+                    })?;
                     st.shipout.cur_v = save_v + whatsit.depth(&st.mem);
                     st.shipout.cur_h = left_edge;
                 }
@@ -1164,17 +1152,13 @@ fn vlist_box_out(
         return Ok(());
     }
     synch_v(st)?;
-    let save_h = st.shipout.dvi_h;
-    let save_v = st.shipout.dvi_v;
     let shift = b.shift_amount(&st.mem);
     st.shipout.cur_h = if st.scanner.cur_dir == RIGHT_TO_LEFT {
         left_edge - shift
     } else {
         left_edge + shift
     };
-    ship_box(st, b)?;
-    st.shipout.dvi_h = save_h;
-    st.shipout.dvi_v = save_v;
+    let (_, save_v) = with_saved_dvi_pos(st, |st| ship_box(st, b))?;
     st.shipout.cur_v = if upwards {
         save_v - b.height(&st.mem)
     } else {
@@ -1182,6 +1166,19 @@ fn vlist_box_out(
     };
     st.shipout.cur_h = left_edge;
     Ok(())
+}
+
+/// Runs `out`, then puts `dvi_h` and `dvi_v` back to where they were,
+/// returning that position.
+fn with_saved_dvi_pos(
+    st: &mut crate::state::EngineState,
+    out: impl FnOnce(&mut crate::state::EngineState) -> Result<(), Abort>,
+) -> Result<(Scaled, Scaled), Abort> {
+    let (h, v) = (st.shipout.dvi_h, st.shipout.dvi_v);
+    out(st)?;
+    st.shipout.dvi_h = h;
+    st.shipout.dvi_v = v;
+    Ok((h, v))
 }
 
 fn vlist_leaders_out(
@@ -1224,13 +1221,9 @@ fn vlist_leaders_out(
             left_edge + shift
         };
         synch_h(st)?;
-        let save_h = st.shipout.dvi_h;
         st.shipout.cur_v += leader.height(&st.mem);
         synch_v(st)?;
-        let save_v = st.shipout.dvi_v;
-        ship_leader_box(st, leader)?;
-        st.shipout.dvi_v = save_v;
-        st.shipout.dvi_h = save_h;
+        let (_, save_v) = with_saved_dvi_pos(st, |st| ship_leader_box(st, leader))?;
         st.shipout.cur_h = left_edge;
         st.shipout.cur_v = save_v - leader.height(&st.mem) + leader_ht + lx;
     }
