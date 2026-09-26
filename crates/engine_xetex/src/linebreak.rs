@@ -316,10 +316,10 @@ fn pop_node(linebreak: &mut LinebreakState) -> Option<MemPtr> {
 /// Total protrusion of the line from `q`'s break to `cur_p`, which is `p_disc`
 /// for a hyphenated break.
 fn total_pw(
+    linebreak: &mut LinebreakState,
     errors: &mut ErrorState,
     mem: &MemState,
     fonts: &FontState,
-    linebreak: &mut LinebreakState,
     q: NodePtr<ActiveNode>,
     p_disc: Option<NodePtr<DiscNode>>,
 ) -> Option<i32> {
@@ -356,7 +356,7 @@ fn total_pw(
     };
 
     Some(
-        char_pw(errors, mem, fonts, linebreak, l, 0) + char_pw(errors, mem, fonts, linebreak, r, 1),
+        char_pw(linebreak, errors, mem, fonts, l, 0) + char_pw(linebreak, errors, mem, fonts, r, 1),
     )
 }
 
@@ -453,10 +453,10 @@ impl MemState {
 /// The protrusion (`\lpcode`/`\rpcode` scaled to the font quad) of `p`, recording
 /// the protruding char in `last_leftmost_char`/`last_rightmost_char`.
 fn char_pw(
+    linebreak: &mut LinebreakState,
     errors: &mut ErrorState,
     mem: &MemState,
     fonts: &FontState,
-    linebreak: &mut LinebreakState,
     p: MemPtr,
     side: i16,
 ) -> i32 {
@@ -522,10 +522,10 @@ pub(crate) enum MarginKernAbort {
 /// Insert the right margin kern of the line ending at `q`, which is the last
 /// node of a discretionary's pre-break list when `pre_break_tail` is set.
 fn insert_right_margin_kern(
+    linebreak: &mut LinebreakState,
     errors: &mut ErrorState,
     mem: &mut MemState,
     fonts: &FontState,
-    linebreak: &mut LinebreakState,
     q: MemPtr,
     pre_break_tail: bool,
 ) -> Result<MemPtr, MarginKernAbort> {
@@ -540,7 +540,7 @@ fn insert_right_margin_kern(
         (p, ptmp)
     };
 
-    let w = char_pw(errors, mem, fonts, linebreak, p, 1);
+    let w = char_pw(linebreak, errors, mem, fonts, p, 1);
     if w == 0 {
         return Ok(q);
     }
@@ -554,17 +554,17 @@ fn insert_right_margin_kern(
 }
 
 fn insert_left_margin_kern(
+    linebreak: &mut LinebreakState,
     errors: &mut ErrorState,
     mem: &mut MemState,
     fonts: &FontState,
-    linebreak: &mut LinebreakState,
     q: MemPtr,
 ) -> Result<MemPtr, MarginKernAbort> {
     let p = mem
         .find_protchar_left(linebreak, q, false)
         .ok_or(MarginKernAbort::PdfError)?;
 
-    let w = char_pw(errors, mem, fonts, linebreak, p, 0);
+    let w = char_pw(linebreak, errors, mem, fonts, p, 0);
     if w == 0 {
         return Ok(q);
     }
@@ -1821,10 +1821,10 @@ impl From<MarginKernAbort> for PostLineAbort {
 /// Break off the next line of the paragraph after `TEMP_HEAD`, ready for `hpack`.
 #[allow(clippy::too_many_arguments)]
 fn post_line_break_prefix(
+    linebreak: &mut LinebreakState,
     errors: &mut ErrorState,
     mem: &mut MemState,
     scanner: &mut ScannerState,
-    linebreak: &mut LinebreakState,
     eqtb: &EqtbState,
     fonts: &FontState,
     config: &ConfigState,
@@ -1932,7 +1932,7 @@ fn post_line_break_prefix(
     }
 
     if protrude {
-        q = insert_right_margin_kern(errors, mem, fonts, linebreak, q, pre_break_tail)?;
+        q = insert_right_margin_kern(linebreak, errors, mem, fonts, q, pre_break_tail)?;
     }
 
     if !glue_break {
@@ -1970,7 +1970,7 @@ fn post_line_break_prefix(
     TEMP_HEAD.set_link(mem, r);
 
     if protrude {
-        q = insert_left_margin_kern(errors, mem, fonts, linebreak, q)?;
+        q = insert_left_margin_kern(linebreak, errors, mem, fonts, q)?;
     }
 
     if eqtb.glue_par(GLUE_PAR_LEFT_SKIP) != ZERO_GLUE {
@@ -2164,10 +2164,10 @@ fn post_line_break_in(st: &mut EngineState, d: bool) -> PostLineBreakOutcome {
     let mut cur_line = st.input.cur_list.prev_graf + 1;
     loop {
         let hpack = match post_line_break_prefix(
+            &mut st.linebreak,
             &mut st.errors,
             &mut st.mem,
             &mut st.scanner,
-            &mut st.linebreak,
             &st.eqtb,
             &st.fonts,
             &st.config,
@@ -2503,7 +2503,7 @@ impl MemState {
                 artificial_demerits = false;
                 shortfall = line_width - caw[1];
                 if eqtb.int_par(INT_PAR_XETEX_PROTRUDE_CHARS) > 1 {
-                    shortfall += total_pw(errors, self, fonts, linebreak, r_active, disc)
+                    shortfall += total_pw(linebreak, errors, self, fonts, r_active, disc)
                         .ok_or(TryBreakAbort::HlistStackFailure)?;
                 }
             }
