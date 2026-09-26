@@ -952,7 +952,7 @@ pub(crate) struct FontState {
     pub bchar_label: PerFont<i32>,
     pub font_bchar: PerFont<i32>,
     pub font_false_bchar: PerFont<i32>,
-    pub font_glue: PerFont<i32>,
+    pub font_glue: PerFont<crate::units::MemPtr>,
     pub font_used: PerFont<bool>,
     pub char_base: PerFont<i32>,
     pub width_base: PerFont<i32>,
@@ -1303,6 +1303,27 @@ impl StringsState {
     #[inline]
     pub(crate) fn cur_string_start(&self) -> i32 {
         self.str_start[(self.str_ptr - crate::consts::TOO_BIG_CHAR) as usize]
+    }
+
+    /// TeX's `append_char`: adds UTF-16 unit `c` to the string under construction.
+    #[inline]
+    pub(crate) fn append_char(&mut self, c: u16) {
+        self.str_pool[self.pool_ptr as usize] = c;
+        self.pool_ptr += 1;
+    }
+
+    /// Appends UTF-16 `units` to the string under construction.
+    #[inline]
+    pub(crate) fn append_units(&mut self, units: &[u16]) {
+        let start = self.pool_ptr as usize;
+        self.str_pool[start..start + units.len()].copy_from_slice(units);
+        self.pool_ptr += units.len() as i32;
+    }
+
+    /// The characters of the string under construction.
+    #[inline]
+    pub(crate) fn cur_string(&self) -> &[u16] {
+        &self.str_pool[self.cur_string_start() as usize..self.pool_ptr as usize]
     }
 
     /// Drops the characters of the string under construction.

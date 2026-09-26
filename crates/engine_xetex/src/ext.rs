@@ -1474,8 +1474,7 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
         });
     }
     for &b in text {
-        st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(b);
-        st.strings.pool_ptr += 1;
+        st.strings.append_char(u16::from(b));
     }
 
     let toklist = st.mem.get_avail()?;

@@ -203,7 +203,7 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(bchar_label);
     hash_values!(font_bchar);
     hash_values!(font_false_bchar);
-    hash_values!(font_glue);
+    hash_values!(font_glue.0);
     hash_values!(font_used);
     hash_values!(char_base);
     hash_values!(width_base);

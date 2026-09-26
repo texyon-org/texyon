@@ -23,7 +23,7 @@ impl MemIdx {
 }
 
 /// A TeX pointer: an arena index or `TEX_NULL` (which is not zero).
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
 pub struct MemPtr(pub i32);
 

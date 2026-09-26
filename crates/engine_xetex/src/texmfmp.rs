@@ -123,20 +123,13 @@ impl StringsState {
     /// Appends code point `c` to the pool as one or two UTF-16 units.
     pub(crate) fn push_utf16(&mut self, c: u32) {
         let (units, n) = utf16_units(c);
-        let p = self.pool_ptr as usize;
-        self.str_pool[p..p + n].copy_from_slice(&units[..n]);
-        self.pool_ptr += n as i32;
+        self.append_units(&units[..n]);
     }
 
     fn push_bytes(&mut self, bytes: &[u8]) {
-        let start = self.pool_ptr as usize;
-        for (slot, &b) in self.str_pool[start..start + bytes.len()]
-            .iter_mut()
-            .zip(bytes)
-        {
-            *slot = u16::from(b);
+        for &b in bytes {
+            self.append_char(u16::from(b));
         }
-        self.pool_ptr += bytes.len() as i32;
     }
 
     /// Appends `bytes` if they fit, else marks the pool as full.

@@ -3406,10 +3406,11 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
     } else {
         if writing
             && (SPACE_CODE..=SPACE_SHRINK_CODE).contains(&n)
-            && st.fonts.font_glue[f] != TEX_NULL
+            && !st.fonts.font_glue[f].is_null()
         {
-            st.mem.delete_glue_ref(glue_spec(st.fonts.font_glue[f]));
-            st.fonts.font_glue[f] = TEX_NULL;
+            st.mem
+                .delete_glue_ref(NodePtr::from_glue_ptr(st.fonts.font_glue[f]));
+            st.fonts.font_glue[f] = MemPtr::NULL;
         }
 
         if n <= st.fonts.font_params[f] {

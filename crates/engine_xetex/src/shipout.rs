@@ -592,7 +592,7 @@ impl MemState {
                     q = self.skip_interword_fillers(q);
                     match self.classify_non_char(q) {
                         Some(AnyNode::Glue(glue)) if glue.subtype(self) == NORMAL => {
-                            if glue.glue_ptr(self).ptr().0 == fonts.font_glue[font] {
+                            if glue.glue_ptr(self).ptr() == fonts.font_glue[font] {
                                 q = self.skip_interword_fillers(glue.link(self));
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;
@@ -663,15 +663,13 @@ impl MemState {
                 Ok(AnyNode::Whatsit(w)) => {
                     if w.whatsit_subtype(self).is_some_and(|s| s.is_native_word()) {
                         for &unit in w.native_text(self) {
-                            strings.str_pool[strings.pool_ptr as usize] = unit;
-                            strings.pool_ptr += 1;
+                            strings.append_char(unit);
                         }
                         width += w.width(self);
                     }
                 }
                 Ok(AnyNode::Glue(glue)) => {
-                    strings.str_pool[strings.pool_ptr as usize] = u16::from(b' ');
-                    strings.pool_ptr += 1;
+                    strings.append_char(u16::from(b' '));
                     let spec = glue.glue_ptr(self);
                     width += spec.width(self);
                     match g_sign {
@@ -1928,9 +1926,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
             crate::output::print_nl(st, "");
             crate::output::print_ln(st);
         } else {
-            let base = st.strings.cur_string_start();
-            let cmd = &st.strings.str_pool[base as usize..st.strings.pool_ptr as usize];
-            shell_escape(cmd);
+            shell_escape(st.strings.cur_string());
         }
         st.strings.discard_cur_string();
     }

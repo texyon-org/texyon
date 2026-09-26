@@ -22,7 +22,7 @@ use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL};
 use crate::state::{EngineState, EqtbState, InteractionMode};
-use crate::units::{FontId, StrNumber};
+use crate::units::{FontId, MemPtr, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -53,6 +53,8 @@ unsafe impl FmtItem for i16 {}
 unsafe impl FmtItem for i32 {}
 // SAFETY: `Scaled` is a transparent `i32`.
 unsafe impl FmtItem for crate::units::Scaled {}
+// SAFETY: `MemPtr` is a transparent `i32`.
+unsafe impl FmtItem for crate::units::MemPtr {}
 // SAFETY: `StrNumber` is a transparent `i32`.
 unsafe impl FmtItem for crate::units::StrNumber {}
 // SAFETY: as above.
@@ -815,8 +817,8 @@ fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
         fonts.font_glue.as_mut_slice(),
         FONT_BASE,
         n,
-        MIN_HALFWORD,
-        st.mem.lo_mem_max,
+        MemPtr(MIN_HALFWORD),
+        MemPtr(st.mem.lo_mem_max),
     )?;
     let max_font_index = fonts.fmem_ptr - 1;
     undump_checked(

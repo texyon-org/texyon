@@ -582,7 +582,7 @@ font_arrays! {
     bchar_label: i32,
     font_bchar: i32,
     font_false_bchar: i32,
-    font_glue: i32,
+    font_glue: MemPtr,
     font_used: bool,
     char_base: i32,
     width_base: i32,

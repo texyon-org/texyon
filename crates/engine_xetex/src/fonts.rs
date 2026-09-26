@@ -21,7 +21,7 @@ use crate::output::{
     print_nl, print_scaled, sprint_cs,
 };
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::units::{FontId, Scaled, StrNumber};
+use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 use crate::bridge::{input_getc, TTBC_FILE_FORMAT_TFM};
 use crate::errors::Abort;
@@ -186,15 +186,9 @@ pub(crate) fn new_native_character(
         if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
             return Err(Abort::PoolOverflow);
         }
-        for unit in &units[..n] {
-            st.strings.str_pool[st.strings.pool_ptr as usize] = *unit;
-            st.strings.pool_ptr += 1;
-        }
-
-        let start = st.strings.cur_string_start();
-        let text = &st.strings.str_pool[start as usize..st.strings.pool_ptr as usize];
-        let len = st.fonts.apply_mapping(&map, text);
-        st.strings.pool_ptr = start;
+        st.strings.append_units(&units[..n]);
+        let len = st.fonts.apply_mapping(&map, st.strings.cur_string());
+        st.strings.discard_cur_string();
 
         let mut i = 0;
         while i < len {
@@ -695,7 +689,7 @@ impl FontState {
         self.font_area[f] = aire;
         self.font_bc[f] = bc as u16;
         self.font_ec[f] = ec as u16;
-        self.font_glue[f] = crate::mem::TEX_NULL;
+        self.font_glue[f] = MemPtr::NULL;
         self.param_base[f] = self.param_base[f] - 1;
         self.fmem_ptr += lf;
         self.font_ptr = f;
@@ -717,7 +711,7 @@ impl FontState {
         self.font_area[font_ptr] = self.native_font_type_flag;
         self.font_name[font_ptr] = full_name;
         self.font_check[font_ptr] = B16x4::default();
-        self.font_glue[font_ptr] = crate::mem::TEX_NULL;
+        self.font_glue[font_ptr] = MemPtr::NULL;
         self.font_dsize[font_ptr] = loaded_font_design_size();
         self.font_size[font_ptr] = actual_size;
 
@@ -774,8 +768,7 @@ pub(crate) fn load_native_font(
         return Err(Abort::PoolOverflow);
     }
     for &b in &st.input.name_of_file {
-        st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(b);
-        st.strings.pool_ptr += 1;
+        st.strings.append_char(u16::from(b));
     }
     let full_name = st.strings.make_string()?;
 

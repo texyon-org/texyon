@@ -2878,8 +2878,7 @@ pub(crate) fn show_activities(st: &mut EngineState) {
 
 /// Shows sublist `list` with `c` appended to the indentation string.
 fn node_list_display(st: &mut EngineState, c: u8, list: MemPtr) {
-    st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(c);
-    st.strings.pool_ptr += 1;
+    st.strings.append_char(u16::from(c));
     show_node_list(st, list);
     st.strings.pool_ptr -= 1;
 }
@@ -2892,8 +2891,7 @@ fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
         }
         return;
     }
-    st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(c);
-    st.strings.pool_ptr += 1;
+    st.strings.append_char(u16::from(c));
     st.mem.temp_ptr = p.ptr();
     match p.math_type(&st.mem) {
         MATH_CHAR => {

@@ -1277,8 +1277,8 @@ pub(crate) fn app_space(st: &mut EngineState) -> Result<(), Abort> {
 fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort> {
     let cf = st.eqtb.cur_font();
     let glue = st.fonts.font_glue[cf];
-    if glue != TEX_NULL {
-        return Ok(crate::node::NodePtr::from_glue_ptr(MemPtr(glue)));
+    if !glue.is_null() {
+        return Ok(NodePtr::from_glue_ptr(glue));
     }
     let spec = st.mem.new_spec(ZERO_GLUE)?;
     st.mainloop.main_k = st.fonts.param_base[cf] + SPACE_CODE;
@@ -1286,7 +1286,7 @@ fn font_space_glue(st: &mut EngineState) -> Result<NodePtr<GlueSpecNode>, Abort>
     spec.set_width(&mut st.mem, st.fonts.font_info_sc(k));
     spec.set_stretch(&mut st.mem, st.fonts.font_info_sc(k + 1));
     spec.set_shrink(&mut st.mem, st.fonts.font_info_sc(k + 2));
-    st.fonts.font_glue[cf] = spec.idx().0;
+    st.fonts.font_glue[cf] = spec.ptr();
     Ok(spec)
 }
 

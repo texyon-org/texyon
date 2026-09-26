@@ -110,15 +110,12 @@ impl EqtbState {
                     for k in j..j + l {
                         let bk = buffer[k as usize];
                         if bk < TOO_BIG_CHAR {
-                            strings.str_pool[strings.pool_ptr as usize] = bk as u16;
-                            strings.pool_ptr += 1;
+                            strings.append_char(bk as u16);
                         } else {
                             let hi = 0xD800_i32 + (bk - TOO_BIG_CHAR) / 1024;
                             let lo = 0xDC00_i32 + (bk - TOO_BIG_CHAR) % 1024;
-                            strings.str_pool[strings.pool_ptr as usize] = hi as u16;
-                            strings.pool_ptr += 1;
-                            strings.str_pool[strings.pool_ptr as usize] = lo as u16;
-                            strings.pool_ptr += 1;
+                            strings.append_char(hi as u16);
+                            strings.append_char(lo as u16);
                         }
                     }
 

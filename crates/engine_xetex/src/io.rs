@@ -723,8 +723,7 @@ pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, Abort> {
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(Abort::PoolOverflow);
     }
-    st.strings.str_pool[st.strings.pool_ptr as usize] = c;
-    st.strings.pool_ptr += 1;
+    st.strings.append_char(c);
     if c == u16::from(b'/') {
         st.scanner.area_delimiter = st.strings.cur_length();
         st.scanner.ext_delimiter = 0;
@@ -797,9 +796,7 @@ pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort>
     }
 
     let name16 = st.input.name_of_file16();
-    let pool_ptr = st.strings.pool_ptr as usize;
-    st.strings.str_pool[pool_ptr..pool_ptr + name16.len()].copy_from_slice(&name16);
-    st.strings.pool_ptr += name16.len() as i32;
+    st.strings.append_units(&name16);
 
     let result = st.strings.make_string()?;
     let save_area_delimiter = st.scanner.area_delimiter;

@@ -670,8 +670,7 @@ fn store_hyph_exception(st: &mut EngineState, mut n: i16, p: MemPtr) -> Result<(
     let mut h: i32 = 0;
     for j in 1..=n as usize {
         h = (h + h + st.hyph.hc[j]) % HYPH_PRIME;
-        st.strings.str_pool[st.strings.pool_ptr as usize] = st.hyph.hc[j] as u16;
-        st.strings.pool_ptr += 1;
+        st.strings.append_char(st.hyph.hc[j] as u16);
     }
 
     let mut s = st.strings.make_string()?;

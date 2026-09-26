@@ -133,8 +133,7 @@ impl StringsState {
                 return Ok(StrNumber(0));
             }
             for &byte in *s {
-                self.str_pool[self.pool_ptr as usize] = u16::from(byte);
-                self.pool_ptr += 1;
+                self.append_char(u16::from(byte));
             }
             g = self.make_string()?;
         }
