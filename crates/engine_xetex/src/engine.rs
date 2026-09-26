@@ -1091,7 +1091,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
     tectonic_xetex_layout::reset_font_caches();
     pdf_files_close();
-    st.shipout.dvi.buf = Vec::new();
+    st.shipout.dvi.release_buffer();
 
     tectonic_xetex_layout::FontManager::destroy();
     st.fonts.release_linebreak_state();

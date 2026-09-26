@@ -73,13 +73,13 @@ impl MoveReg {
 #[derive(Clone, Default)]
 pub(crate) struct DviWriter {
     pub file: usize,
-    pub buf: Vec<u8>,
+    buf: Vec<u8>,
     limit: i32,
-    pub ptr: i32,
+    ptr: i32,
     /// Bytes before `buf[0]`.
-    pub offset: i32,
+    offset: i32,
     /// Bytes already written to the file.
-    pub gone: i32,
+    gone: i32,
     pub manifest: PageManifest,
     pub last_bop: i32,
     /// The push depth (`cur_s`): -1 between pages, -2 once the file has overflowed.
@@ -101,6 +101,61 @@ impl DviWriter {
     #[inline]
     pub(crate) fn pos(&self) -> i32 {
         self.offset + self.ptr
+    }
+
+    /// Bytes already written to the file.
+    pub(crate) fn bytes_written(&self) -> i32 {
+        self.gone
+    }
+
+    /// The half-swapped buffer, with `[ptr, offset, gone]`, for state digests.
+    pub(crate) fn digest_view(&self) -> ([i32; 3], &[u8]) {
+        ([self.ptr, self.offset, self.gone], &self.buf)
+    }
+
+    pub(crate) fn buffer_capacity(&self) -> usize {
+        self.buf.capacity()
+    }
+
+    pub(crate) fn release_buffer(&mut self) {
+        self.buf = Vec::new();
+    }
+
+    /// This writer for a checkpoint, without the page manifest of the
+    /// current operation.
+    pub(crate) fn into_checkpoint(mut self) -> DviWriter {
+        self.manifest = PageManifest::default();
+        self
+    }
+
+    /// Returns to a checkpoint, reusing this buffer's allocation and keeping
+    /// the page manifest.
+    pub(crate) fn restore(&mut self, saved: &DviWriter) {
+        let DviWriter {
+            file,
+            ref buf,
+            limit,
+            ptr,
+            offset,
+            gone,
+            manifest: _,
+            last_bop,
+            depth,
+            max_push,
+        } = *saved;
+        self.buf.clone_from(buf);
+        *self = DviWriter {
+            file,
+            buf: std::mem::take(&mut self.buf),
+            limit,
+            ptr,
+            offset,
+            gone,
+            manifest: std::mem::take(&mut self.manifest),
+            last_bop,
+            depth,
+            max_push,
+        };
     }
 
     fn write_to_file(&self, a: i32, b: i32) -> Result<(), Abort> {

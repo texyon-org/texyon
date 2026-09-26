@@ -320,9 +320,6 @@ fn digest_scanner(st: &EngineState) -> u64 {
         st.shipout.page_contents as i64,
         i64::from(st.shipout.dead_cycles),
         i64::from(st.shipout.total_pages),
-        i64::from(st.shipout.dvi.ptr),
-        i64::from(st.shipout.dvi.offset),
-        i64::from(st.shipout.dvi.gone),
         i64::from(st.synctex.synctex_tag_counter),
     ] {
         h.word(value as u64);
@@ -330,7 +327,11 @@ fn digest_scanner(st: &EngineState) -> u64 {
     for &value in &scanner.native_text {
         h.word(u64::from(value));
     }
-    for &value in &st.shipout.dvi.buf {
+    let (position, buf) = st.shipout.dvi.digest_view();
+    for value in position {
+        h.word(i64::from(value) as u64);
+    }
+    for &value in buf {
         h.word(u64::from(value));
     }
     h.finish()

@@ -3,6 +3,7 @@
 use std::mem::{size_of, take};
 use std::sync::Arc;
 
+use crate::dvi::DviWriter;
 use crate::mem_types::{ListStateRecord, MemoryWord};
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
@@ -40,7 +41,7 @@ pub(crate) struct EngineBundle {
     config: ConfigState,
     errors: ErrorState,
     shipout: ShipoutState,
-    dvi_buf: Vec<u8>,
+    dvi: DviWriter,
     scanner: ScannerState,
     native_text: Vec<u16>,
     linebreak: LinebreakState,
@@ -65,8 +66,7 @@ impl EngineBundle {
     ) -> Self {
         // Page facts belong to the operation, not to replayable state.
         let mut shipout = st.shipout.clone();
-        shipout.dvi.manifest = Default::default();
-        let dvi_buf = take(&mut shipout.dvi.buf);
+        let dvi = take(&mut shipout.dvi).into_checkpoint();
         let mut scanner = st.scanner.clone();
         let native_text = take(&mut scanner.native_text);
         let mut linebreak = st.linebreak.clone();
@@ -75,7 +75,7 @@ impl EngineBundle {
             config: st.config,
             errors: st.errors.clone(),
             shipout,
-            dvi_buf,
+            dvi,
             scanner,
             native_text,
             linebreak,
@@ -97,12 +97,10 @@ impl EngineBundle {
         st.config = self.config;
         st.errors.clone_from(&self.errors);
 
-        let dvi_buf = take(&mut st.shipout.dvi.buf);
-        let manifest = take(&mut st.shipout.dvi.manifest);
+        let mut dvi = take(&mut st.shipout.dvi);
         st.shipout = self.shipout.clone();
-        st.shipout.dvi.buf = dvi_buf;
-        st.shipout.dvi.manifest = manifest;
-        st.shipout.dvi.buf.clone_from(&self.dvi_buf);
+        dvi.restore(&self.dvi);
+        st.shipout.dvi = dvi;
 
         let native_text = take(&mut st.scanner.native_text);
         st.scanner = ScannerState {
@@ -131,7 +129,7 @@ impl EngineBundle {
     }
 
     pub(crate) fn allocated_bytes(&self) -> usize {
-        vec_bytes(&self.dvi_buf)
+        self.dvi.buffer_capacity()
             + self
                 .shipout
                 .write_name
@@ -903,7 +901,10 @@ mod tests {
         st.scanner.logical_clock = 7;
         st.scanner.native_text = vec![1, 2, 3];
         st.shipout.total_pages = 2;
-        st.shipout.dvi.buf = vec![4, 5, 6];
+        st.shipout.dvi.init();
+        for c in [4, 5, 6] {
+            st.shipout.dvi.set_char(c).unwrap();
+        }
         st.strings.str_pool[0] = 11;
         st.strings.pool_ptr = 1;
         st.save_stack.save_ptr = 1;
@@ -921,11 +922,11 @@ mod tests {
         let bundle = EngineBundle::capture(&st, base, None);
 
         let scanner_ptr = st.scanner.native_text.as_ptr();
-        let dvi_ptr = st.shipout.dvi.buf.as_ptr();
+        let dvi_ptr = st.shipout.dvi.digest_view().1.as_ptr();
         st.scanner.logical_clock = 70;
         st.scanner.native_text[0] = 70;
         st.shipout.total_pages = 20;
-        st.shipout.dvi.buf[0] = 40;
+        st.shipout.dvi.set_char(40).unwrap();
         st.shipout.dvi.manifest.begin_operation();
         st.shipout.dvi.manifest.begin_page(0);
         st.shipout.dvi.manifest.record_byte(139);
@@ -941,8 +942,10 @@ mod tests {
         assert_eq!(st.scanner.native_text, [1, 2, 3]);
         assert_eq!(st.scanner.native_text.as_ptr(), scanner_ptr);
         assert_eq!(st.shipout.total_pages, 2);
-        assert_eq!(st.shipout.dvi.buf, [4, 5, 6]);
-        assert_eq!(st.shipout.dvi.buf.as_ptr(), dvi_ptr);
+        let (position, buf) = st.shipout.dvi.digest_view();
+        assert_eq!(position, [3, 0, 0]);
+        assert_eq!(buf[..4], [4, 5, 6, 0]);
+        assert_eq!(buf.as_ptr(), dvi_ptr);
         st.shipout.dvi.manifest.record_byte(140);
         st.shipout.dvi.manifest.finish_page(8);
         assert_eq!(st.shipout.dvi.manifest.take_pages().len(), 1);
