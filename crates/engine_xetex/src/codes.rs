@@ -339,3 +339,16 @@ const _: () = {
     assert!(ExtensionCode::Special.raw() == WhatsitSubtype::Special as i32);
     assert!(ExtensionCode::PdfSavePos.raw() == WhatsitSubtype::PdfSavePos as i32);
 };
+
+code_enum! {
+    /// The `chr_code` of `\show` and the other `xray` primitives.
+    pub(crate) enum ShowCode: u8 {
+        Show = 0 => "show",
+        Box = 1 => "showbox",
+        The = 2 => "showthe",
+        Lists = 3 => "showlists",
+        Groups = 4 => "showgroups",
+        Tokens = 5 => "showtokens",
+        Ifs = 6 => "showifs",
+    }
+}

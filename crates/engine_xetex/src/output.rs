@@ -21,7 +21,7 @@ use crate::cmd::{
 };
 use crate::codes::{
     BoxCode, BoxDimenCode, ConvertCode, ExtensionCode, FiOrElseCode, IfCode, LastItemCode,
-    ShorthandDefCode, SkipCode, ValueLevel,
+    ShorthandDefCode, ShowCode, SkipCode, ValueLevel,
 };
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
@@ -937,13 +937,6 @@ fn print_mark(st: &mut EngineState, p: MemPtr) {
     print_char(st, b'}');
 }
 
-const SHOW_BOX_CODE: i32 = 1;
-const SHOW_THE_CODE: i32 = 2;
-const SHOW_LISTS: i32 = 3;
-const SHOW_GROUPS: i32 = 4;
-const SHOW_TOKENS: i32 = 5;
-const SHOW_IFS: i32 = 6;
-
 pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
     let char_cmd = |st: &mut EngineState, s: &str| {
         print(st, s);
@@ -1489,18 +1482,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 "uppercase"
             },
         ),
-        XRAY => {
-            let name = match chr_code {
-                SHOW_BOX_CODE => "showbox",
-                SHOW_THE_CODE => "showthe",
-                SHOW_LISTS => "showlists",
-                SHOW_GROUPS => "showgroups",
-                SHOW_TOKENS => "showtokens",
-                SHOW_IFS => "showifs",
-                _ => "show",
-            };
-            print_esc(st, name);
-        }
+        XRAY => print_esc(
+            st,
+            ShowCode::from_raw(chr_code).map_or("show", ShowCode::name),
+        ),
         UNDEFINED_CS => print(st, "undefined"),
         CALL | LONG_CALL | OUTER_CALL | LONG_OUTER_CALL => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
@@ -2173,17 +2158,15 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
 }
 
 pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
-    const SHOW_CODE: i32 = 0;
-
     diagnostic_begin_capture_warning_here(st);
 
-    let chr = st.scanner.cur_chr;
-    match chr {
-        SHOW_LISTS => {
+    let code = ShowCode::from_raw(st.scanner.cur_chr);
+    match code {
+        Some(ShowCode::Lists) => {
             begin_diagnostic(st);
             show_activities(st);
         }
-        SHOW_BOX_CODE => {
+        Some(ShowCode::Box) => {
             crate::scan::scan_register_num(st)?;
             let n = st.scanner.cur_val;
             let contents = crate::scan::fetch_box(st, n);
@@ -2196,7 +2179,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
                 None => print(st, "void"),
             }
         }
-        SHOW_CODE => {
+        Some(ShowCode::Show) => {
             crate::scan::get_token(st)?;
             print_nl(st, "> ");
             if st.scanner.cur_cs != 0 {
@@ -2205,11 +2188,11 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
             }
             print_meaning(st);
         }
-        SHOW_GROUPS => {
+        Some(ShowCode::Groups) => {
             begin_diagnostic(st);
             show_save_groups(st);
         }
-        SHOW_IFS => {
+        Some(ShowCode::Ifs) => {
             begin_diagnostic(st);
             print_nl(st, "");
             print_ln(st);
@@ -2251,7 +2234,10 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    if matches!(chr, SHOW_LISTS | SHOW_BOX_CODE | SHOW_GROUPS | SHOW_IFS) {
+    if matches!(
+        code,
+        Some(ShowCode::Lists | ShowCode::Box | ShowCode::Groups | ShowCode::Ifs)
+    ) {
         capture_to_diagnostic(st, None);
         end_diagnostic(st, true);
         print_error_prefix(st);

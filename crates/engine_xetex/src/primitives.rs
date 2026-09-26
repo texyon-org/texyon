@@ -17,7 +17,7 @@ use crate::cmd::{
 };
 use crate::codes::{
     BoxCode, BoxDimenCode, ConvertCode, ExtensionCode, FiOrElseCode, IfCode, LastItemCode,
-    ShorthandDefCode, SkipCode,
+    ShorthandDefCode, ShowCode, SkipCode,
 };
 
 use crate::consts::{
@@ -105,13 +105,13 @@ pub(crate) const PRIMITIVES: &[PrimitiveDef] = &[
     p("XeTeXmathchar", MATH_CHAR_NUM, 2),
     p("mark", MARK, 0),
     p("marks", MARK, 5),
-    p("show", XRAY, 0),
-    p("showbox", XRAY, 1),
-    p("showthe", XRAY, 2),
-    p("showlists", XRAY, 3),
-    p("showgroups", XRAY, 4),
-    p("showtokens", XRAY, 5),
-    p("showifs", XRAY, 6),
+    code!(XRAY, ShowCode::Show),
+    code!(XRAY, ShowCode::Box),
+    code!(XRAY, ShowCode::The),
+    code!(XRAY, ShowCode::Lists),
+    code!(XRAY, ShowCode::Groups),
+    code!(XRAY, ShowCode::Tokens),
+    code!(XRAY, ShowCode::Ifs),
     code!(MAKE_BOX, BoxCode::Box),
     code!(MAKE_BOX, BoxCode::Copy),
     code!(MAKE_BOX, BoxCode::LastBox),
