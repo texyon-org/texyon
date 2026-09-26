@@ -66,10 +66,7 @@ impl SaveStackState {
 
     pub(crate) fn new_save_level(&mut self, c: GroupCode, line: i32) -> Result<(), Abort> {
         if self.save_stack_full() {
-            return Err(Abort::Overflow {
-                what: "semantic nest size",
-                n: self.save_size,
-            });
+            return Err(Abort::SaveOverflow);
         }
         self.set_saved(0, line);
         self.save_ptr += 1;
