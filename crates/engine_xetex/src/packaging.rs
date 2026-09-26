@@ -559,7 +559,7 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn append_to_vlist_emit_in(
+pub(crate) fn append_to_vlist_emit(
     st: &mut EngineState,
     b: AnyBox,
 ) -> Result<(), NodeRecycleAbort> {
@@ -797,15 +797,15 @@ impl MemState {
     }
 }
 
-fn print_vert_break_infinite_shrinkage_error_in(st: &mut EngineState) -> ErrorOutcome {
-    crate::output::print_err_in(st, c"Infinite glue shrinkage found in box being split");
+fn print_vert_break_infinite_shrinkage_error(st: &mut EngineState) -> ErrorOutcome {
+    crate::output::print_err(st, c"Infinite glue shrinkage found in box being split");
     st.errors.help(&[
         r"The box you are \vsplitting contains some infinitely",
         r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",
         "Such glue doesn't belong there; but you can safely proceed,",
         "since the offensive shrinkability has been made finite.",
     ]);
-    crate::errors::error_in(st)
+    crate::errors::error(st)
 }
 
 impl MemState {
@@ -841,7 +841,7 @@ impl VertBreakAbort {
 }
 
 /// The best place to break the vlist `p` for a height `h` with maximum depth `d`.
-pub(crate) fn vert_break_in(
+pub(crate) fn vert_break(
     st: &mut EngineState,
     p: i32,
     h: i32,
@@ -855,7 +855,7 @@ pub(crate) fn vert_break_in(
         {
             VertBreakStep::Done(best_place) => return Ok(best_place.0),
             VertBreakStep::InfiniteShrinkage { glue, spec } => {
-                let outcome = print_vert_break_infinite_shrinkage_error_in(st);
+                let outcome = print_vert_break_infinite_shrinkage_error(st);
                 if !matches!(outcome, ErrorOutcome::Continue) {
                     return Err(VertBreakAbort::Error(outcome));
                 }
@@ -1058,23 +1058,23 @@ impl MemState {
     }
 }
 
-fn print_vsplit_needs_vbox_error_in(st: &mut EngineState) -> ErrorOutcome {
-    crate::output::error_here_with_diagnostic_in(st, c"".as_ptr());
-    crate::output::print_esc_cstr_in(st, c"vsplit".as_ptr());
-    crate::output::print_cstr_in(st, c" needs a ".as_ptr());
-    crate::output::print_esc_cstr_in(st, c"vbox".as_ptr());
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+fn print_vsplit_needs_vbox_error(st: &mut EngineState) -> ErrorOutcome {
+    crate::output::error_here_with_diagnostic(st, c"".as_ptr());
+    crate::output::print_esc_cstr(st, c"vsplit".as_ptr());
+    crate::output::print_cstr(st, c" needs a ".as_ptr());
+    crate::output::print_esc_cstr(st, c"vbox".as_ptr());
+    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
     st.errors.help(&[
         r"The box you are trying to split is an \hbox.",
         "I can't split such a box, so I'll leave it alone.",
     ]);
-    crate::errors::error_in(st)
+    crate::errors::error(st)
 }
 
-fn print_vsplit_packages_in(st: &mut EngineState, outcome: VsplitOutcome) {
+fn print_vsplit_packages(st: &mut EngineState, outcome: VsplitOutcome) {
     for package in outcome.packages.into_iter().flatten() {
         for diag in package.diags.into_iter().flatten() {
-            print_vpack_diag_in(st, package.r_box, diag);
+            print_vpack_diag(st, package.r_box, diag);
         }
     }
 }
@@ -1100,18 +1100,14 @@ impl VsplitAbort {
 }
 
 /// `\vsplit n to h`: the box split off the top of box register `n`.
-pub(crate) fn vsplit_in(
-    st: &mut EngineState,
-    n: i32,
-    h: i32,
-) -> Result<Option<AnyBox>, VsplitAbort> {
+pub(crate) fn vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<Option<AnyBox>, VsplitAbort> {
     let mut state = match start_vsplit(st, n, h)? {
         VsplitStart::Done(outcome) => {
-            print_vsplit_packages_in(st, outcome);
+            print_vsplit_packages(st, outcome);
             return Ok(outcome.result);
         }
         VsplitStart::NeedsVboxDiagnostic => {
-            let outcome = print_vsplit_needs_vbox_error_in(st);
+            let outcome = print_vsplit_needs_vbox_error(st);
             if !matches!(outcome, ErrorOutcome::Continue) {
                 return Err(VsplitAbort::Error(outcome));
             }
@@ -1126,11 +1122,11 @@ pub(crate) fn vsplit_in(
             .vsplit_resume(&mut st.eqtb, &mut st.scanner, &mut st.shipout, &mut state)?
         {
             VsplitStep::Done(outcome) => {
-                print_vsplit_packages_in(st, outcome);
+                print_vsplit_packages(st, outcome);
                 return Ok(outcome.result);
             }
             VsplitStep::InfiniteShrinkage { glue, spec } => {
-                let outcome = print_vert_break_infinite_shrinkage_error_in(st);
+                let outcome = print_vert_break_infinite_shrinkage_error(st);
                 if !matches!(outcome, ErrorOutcome::Continue) {
                     return Err(VsplitAbort::Error(outcome));
                 }
@@ -1750,81 +1746,81 @@ impl MemState {
     }
 }
 
-pub(crate) fn print_hpack_diag_in(st: &mut EngineState, box_ptr: AnyBox, diag: PackDiag) {
+pub(crate) fn print_hpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: PackDiag) {
     use crate::output::{
-        diagnostic_begin_capture_warning_here_in, print_cstr_in, print_int_in, print_ln_in,
-        print_nl_cstr_in, print_scaled_in,
+        diagnostic_begin_capture_warning_here, print_cstr, print_int, print_ln, print_nl_cstr,
+        print_scaled,
     };
-    print_ln_in(st);
-    diagnostic_begin_capture_warning_here_in(st);
+    print_ln(st);
+    diagnostic_begin_capture_warning_here(st);
     match diag {
         PackDiag::HUnderfull { badness, loose } => {
             if loose {
-                print_nl_cstr_in(st, c"Loose".as_ptr());
+                print_nl_cstr(st, c"Loose".as_ptr());
             } else {
-                print_nl_cstr_in(st, c"Underfull".as_ptr());
+                print_nl_cstr(st, c"Underfull".as_ptr());
             }
-            print_cstr_in(st, c" \\hbox (badness ".as_ptr());
-            print_int_in(st, badness);
+            print_cstr(st, c" \\hbox (badness ".as_ptr());
+            print_int(st, badness);
         }
         PackDiag::HOverfull { excess } => {
-            print_nl_cstr_in(st, c"Overfull \\hbox (".as_ptr());
-            print_scaled_in(st, excess);
-            print_cstr_in(st, c"pt too wide".as_ptr());
+            print_nl_cstr(st, c"Overfull \\hbox (".as_ptr());
+            print_scaled(st, excess);
+            print_cstr(st, c"pt too wide".as_ptr());
         }
         PackDiag::HTight { badness } => {
-            print_nl_cstr_in(st, c"Tight \\hbox (badness ".as_ptr());
-            print_int_in(st, badness);
+            print_nl_cstr(st, c"Tight \\hbox (badness ".as_ptr());
+            print_int(st, badness);
         }
         PackDiag::LrProblem { missing, extra } => {
-            print_nl_cstr_in(st, c"\\endL or \\endR problem (".as_ptr());
-            print_int_in(st, missing);
-            print_cstr_in(st, c" missing, ".as_ptr());
-            print_int_in(st, extra);
-            print_cstr_in(st, c" extra".as_ptr());
+            print_nl_cstr(st, c"\\endL or \\endR problem (".as_ptr());
+            print_int(st, missing);
+            print_cstr(st, c" missing, ".as_ptr());
+            print_int(st, extra);
+            print_cstr(st, c" extra".as_ptr());
         }
         PackDiag::VUnderfull { .. } | PackDiag::VOverfull { .. } | PackDiag::VTight { .. } => {
             unreachable!("vpack diagnostic passed to hpack printer")
         }
     }
-    print_hpack_common_ending_in(st, box_ptr);
+    print_hpack_common_ending(st, box_ptr);
 }
 
-fn print_hpack_common_ending_in(st: &mut EngineState, box_ptr: AnyBox) {
+fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     use crate::output::{
-        begin_diagnostic_in, capture_to_diagnostic_in, end_diagnostic_in, print_cstr_in,
-        print_int_in, print_ln_in, short_display_in, show_box_in,
+        begin_diagnostic, capture_to_diagnostic, end_diagnostic, print_cstr, print_int, print_ln,
+        short_display, show_box,
     };
     if st.shipout.output_active {
-        print_cstr_in(st, c") has occurred while \\output is active".as_ptr());
+        print_cstr(st, c") has occurred while \\output is active".as_ptr());
     } else {
         let pack_begin_line = st.scanner.pack_begin_line;
         if pack_begin_line != 0 {
             if pack_begin_line > 0 {
-                print_cstr_in(st, c") in paragraph at lines ".as_ptr());
+                print_cstr(st, c") in paragraph at lines ".as_ptr());
             } else {
-                print_cstr_in(st, c") in alignment at lines ".as_ptr());
+                print_cstr(st, c") in alignment at lines ".as_ptr());
             }
-            print_int_in(st, pack_begin_line.abs());
-            print_cstr_in(st, c"--".as_ptr());
+            print_int(st, pack_begin_line.abs());
+            print_cstr(st, c"--".as_ptr());
         } else {
-            print_cstr_in(st, c") detected at line ".as_ptr());
+            print_cstr(st, c") detected at line ".as_ptr());
         }
-        print_int_in(st, st.mem.line);
+        print_int(st, st.mem.line);
     }
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
-    print_ln_in(st);
+    capture_to_diagnostic(st, std::ptr::null_mut());
+    print_ln(st);
     st.errors.font_in_short_display = 0;
     let list = box_ptr.list_ptr(&st.mem).0;
-    short_display_in(st, list);
-    print_ln_in(st);
-    begin_diagnostic_in(st);
-    show_box_in(st, box_ptr.idx().0);
-    end_diagnostic_in(st, true);
+    short_display(st, list);
+    print_ln(st);
+    begin_diagnostic(st);
+    show_box(st, box_ptr.idx().0);
+    end_diagnostic(st, true);
 }
 
 /// `hpack`, printing its over/underfull diagnostics in order.
-pub(crate) fn hpack_emit_in(
+pub(crate) fn hpack_emit(
     st: &mut EngineState,
     list: MemPtr,
     w: i32,
@@ -1840,7 +1836,7 @@ pub(crate) fn hpack_emit_in(
         m,
     )?;
     for diag in outcome.diags.into_iter().flatten() {
-        print_hpack_diag_in(st, outcome.r_box, diag);
+        print_hpack_diag(st, outcome.r_box, diag);
     }
     Ok(outcome.r_box)
 }
@@ -2006,31 +2002,31 @@ impl MemState {
     }
 }
 
-pub(crate) fn print_vpack_diag_in(st: &mut EngineState, box_ptr: AnyBox, diag: PackDiag) {
+pub(crate) fn print_vpack_diag(st: &mut EngineState, box_ptr: AnyBox, diag: PackDiag) {
     use crate::output::{
-        diagnostic_begin_capture_warning_here_in, print_cstr_in, print_int_in, print_ln_in,
-        print_nl_cstr_in, print_scaled_in,
+        diagnostic_begin_capture_warning_here, print_cstr, print_int, print_ln, print_nl_cstr,
+        print_scaled,
     };
-    print_ln_in(st);
-    diagnostic_begin_capture_warning_here_in(st);
+    print_ln(st);
+    diagnostic_begin_capture_warning_here(st);
     match diag {
         PackDiag::VUnderfull { badness, loose } => {
             if loose {
-                print_nl_cstr_in(st, c"Loose".as_ptr());
+                print_nl_cstr(st, c"Loose".as_ptr());
             } else {
-                print_nl_cstr_in(st, c"Underfull".as_ptr());
+                print_nl_cstr(st, c"Underfull".as_ptr());
             }
-            print_cstr_in(st, c" \\vbox (badness ".as_ptr());
-            print_int_in(st, badness);
+            print_cstr(st, c" \\vbox (badness ".as_ptr());
+            print_int(st, badness);
         }
         PackDiag::VOverfull { excess } => {
-            print_nl_cstr_in(st, c"Overfull \\vbox (".as_ptr());
-            print_scaled_in(st, excess);
-            print_cstr_in(st, c"pt too high".as_ptr());
+            print_nl_cstr(st, c"Overfull \\vbox (".as_ptr());
+            print_scaled(st, excess);
+            print_cstr(st, c"pt too high".as_ptr());
         }
         PackDiag::VTight { badness } => {
-            print_nl_cstr_in(st, c"Tight \\vbox (badness ".as_ptr());
-            print_int_in(st, badness);
+            print_nl_cstr(st, c"Tight \\vbox (badness ".as_ptr());
+            print_int(st, badness);
         }
         PackDiag::HUnderfull { .. }
         | PackDiag::HOverfull { .. }
@@ -2039,36 +2035,36 @@ pub(crate) fn print_vpack_diag_in(st: &mut EngineState, box_ptr: AnyBox, diag: P
             unreachable!("hpack diagnostic passed to vpack printer")
         }
     }
-    print_vpack_common_ending_in(st, box_ptr);
+    print_vpack_common_ending(st, box_ptr);
 }
 
-fn print_vpack_common_ending_in(st: &mut EngineState, box_ptr: AnyBox) {
+fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     use crate::output::{
-        begin_diagnostic_in, capture_to_diagnostic_in, end_diagnostic_in, print_cstr_in,
-        print_int_in, print_ln_in, show_box_in,
+        begin_diagnostic, capture_to_diagnostic, end_diagnostic, print_cstr, print_int, print_ln,
+        show_box,
     };
     if st.shipout.output_active {
-        print_cstr_in(st, c") has occurred while \\output is active".as_ptr());
+        print_cstr(st, c") has occurred while \\output is active".as_ptr());
     } else {
         let pack_begin_line = st.scanner.pack_begin_line;
         if pack_begin_line != 0 {
-            print_cstr_in(st, c") in alignment at lines ".as_ptr());
-            print_int_in(st, pack_begin_line.abs());
-            print_cstr_in(st, c"--".as_ptr());
+            print_cstr(st, c") in alignment at lines ".as_ptr());
+            print_int(st, pack_begin_line.abs());
+            print_cstr(st, c"--".as_ptr());
         } else {
-            print_cstr_in(st, c") detected at line ".as_ptr());
+            print_cstr(st, c") detected at line ".as_ptr());
         }
-        print_int_in(st, st.mem.line);
-        print_ln_in(st);
+        print_int(st, st.mem.line);
+        print_ln(st);
     }
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
-    begin_diagnostic_in(st);
-    show_box_in(st, box_ptr.idx().0);
-    end_diagnostic_in(st, true);
+    capture_to_diagnostic(st, std::ptr::null_mut());
+    begin_diagnostic(st);
+    show_box(st, box_ptr.idx().0);
+    end_diagnostic(st, true);
 }
 
 /// `vpackage`, printing its over/underfull diagnostics in order.
-pub(crate) fn vpackage_emit_in(
+pub(crate) fn vpackage_emit(
     st: &mut EngineState,
     list: MemPtr,
     h: i32,
@@ -2079,7 +2075,7 @@ pub(crate) fn vpackage_emit_in(
         .mem
         .vpackage(&st.eqtb, &mut st.scanner, &mut st.shipout, list, h, m, l)?;
     for diag in outcome.diags.into_iter().flatten() {
-        print_vpack_diag_in(st, outcome.r_box, diag);
+        print_vpack_diag(st, outcome.r_box, diag);
     }
     Ok(outcome.r_box)
 }

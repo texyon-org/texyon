@@ -16,7 +16,7 @@ use crate::consts::{
     L_CODE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, NORMAL, SMALL_NODE_SIZE,
     SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::ext::linebreak_start_in;
+use crate::ext::linebreak_start;
 use crate::fonts::{LIG_TAG, QUAD_CODE};
 use crate::hyphenation::HYPH_PRIME;
 use crate::mem::{ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
@@ -1022,9 +1022,8 @@ impl MemState {
     }
 }
 
-/// Cold-abort outcomes deferred out of [`line_break_in`].
+/// Cold-abort outcomes deferred out of [`line_break`].
 pub(crate) enum LineBreakOutcome {
-    Done,
     Overflow,
     Node(NodeRecycleAbort),
     TryBreak(TryBreakAbort),
@@ -1039,9 +1038,6 @@ pub(crate) enum LineBreakOutcome {
 impl LineBreakOutcome {
     pub(crate) fn into_engine_abort(self) -> crate::errors::EngineAbort {
         match self {
-            LineBreakOutcome::Done => {
-                unreachable!("LineBreakOutcome::Done is never propagated as a terminal abort")
-            }
             LineBreakOutcome::Overflow => crate::errors::EngineAbort::Overflow {
                 what: c"main memory size".as_ptr(),
                 n: MEM_TOP + 1,
@@ -1084,13 +1080,13 @@ impl From<crate::hyphenation::TrieAbort> for LineBreakOutcome {
 }
 
 /// Make `spec`'s shrink finite, reporting it on the paragraph's first offence.
-fn finite_shrink_emit(
+fn finite_shrink(
     st: &mut EngineState,
     spec: NodePtr<GlueSpecNode>,
 ) -> Result<NodePtr<GlueSpecNode>, LineBreakOutcome> {
     if st.errors.no_shrink_error_yet {
         st.errors.no_shrink_error_yet = false;
-        crate::output::print_err_in(st, c"Infinite glue shrinkage found in a paragraph");
+        crate::output::print_err(st, c"Infinite glue shrinkage found in a paragraph");
         st.errors.help(&[
             "The paragraph just ended includes some glue that has",
             r"infinite shrinkability, e.g., `\hskip 0pt minus 1fil'.",
@@ -1098,7 +1094,7 @@ fn finite_shrink_emit(
             "of any length to fit on one line. But it's safe to proceed,",
             "since the offensive shrinkability has been made finite.",
         ]);
-        match crate::errors::error_in(st) {
+        match crate::errors::error(st) {
             crate::errors::ErrorOutcome::Continue => {}
             other => return Err(LineBreakOutcome::Error(other)),
         }
@@ -1172,14 +1168,7 @@ impl MemState {
     }
 }
 
-pub(crate) fn line_break_in(st: &mut EngineState, d: bool) -> LineBreakOutcome {
-    match line_break(st, d) {
-        Ok(()) => LineBreakOutcome::Done,
-        Err(outcome) => outcome,
-    }
-}
-
-fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
+pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
     st.scanner.pack_begin_line = st.input.cur_list.mode_line;
     let first = st.input.cur_list.head.link(&st.mem);
     TEMP_HEAD.set_link(&mut st.mem, first);
@@ -1232,7 +1221,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
     for n in [GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP] {
         let spec = st.eqtb.glue_par(n);
         if st.mem.has_infinite_shrink(spec) {
-            let spec = finite_shrink_emit(st, spec)?;
+            let spec = finite_shrink(st, spec)?;
             st.eqtb.set_glue_par(n, spec);
         }
     }
@@ -1377,7 +1366,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
 
                     let mut spec = cur_glue.glue_ptr(&st.mem);
                     if st.mem.has_infinite_shrink(spec) {
-                        spec = finite_shrink_emit(st, spec)?;
+                        spec = finite_shrink(st, spec)?;
                         cur_glue.set_glue_ptr(&mut st.mem, spec);
                     }
                     let aw = &mut st.scanner.active_width;
@@ -1478,7 +1467,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
     st.mem
         .finish_last_line_fit(&mut st.linebreak, last_line_fill)?;
 
-    match post_line_break_in(st, d) {
+    match post_line_break(st, d) {
         PostLineBreakOutcome::Done => {}
         other => return Err(LineBreakOutcome::PostLineBreak(other)),
     }
@@ -2135,7 +2124,7 @@ impl ListStateRecord {
     }
 }
 
-/// Cold-abort outcomes deferred out of [`post_line_break_in`].
+/// Cold-abort outcomes deferred out of [`post_line_break`].
 pub(crate) enum PostLineBreakOutcome {
     Done,
     Node(NodeRecycleAbort),
@@ -2167,7 +2156,7 @@ impl PostLineBreakOutcome {
 }
 
 /// Break the paragraph into lines along the chosen breakpoints and append them.
-fn post_line_break_in(st: &mut EngineState, d: bool) -> PostLineBreakOutcome {
+fn post_line_break(st: &mut EngineState, d: bool) -> PostLineBreakOutcome {
     let mut lr_ptr = st.input.cur_list.e_tex_aux;
 
     st.mem.reverse_best_breaks(&mut st.linebreak);
@@ -2199,7 +2188,7 @@ fn post_line_break_in(st: &mut EngineState, d: bool) -> PostLineBreakOutcome {
         } else {
             (hpack.cur_width, EXACTLY)
         };
-        let just_box = match crate::packaging::hpack_emit_in(st, hpack.q, w, m) {
+        let just_box = match crate::packaging::hpack_emit(st, hpack.q, w, m) {
             Ok(b) => b,
             Err(e) => return PostLineBreakOutcome::Node(e),
         };
@@ -2787,7 +2776,7 @@ fn hyphenate_native_word(
                 .mem
                 .new_disc()
                 .ok_or(HyphNativeAbort::Recycle(NodeRecycleAbort::Overflow))?;
-            let hyphen = crate::fonts::new_native_character_in(st, hf, hyf_char as u32)
+            let hyphen = crate::fonts::new_native_character(st, hf, hyf_char as u32)
                 .map_err(HyphNativeAbort::NativeChar)?;
             disc.set_pre_break(&mut st.mem, hyphen.ptr());
             q.set_link(&mut st.mem, disc.ptr());
@@ -3033,7 +3022,7 @@ fn insert_hyphens(
                 let mut minor_tail = MemPtr::NULL;
                 disc.set_pre_break(&mut st.mem, MemPtr::NULL);
                 let hyf_node =
-                    crate::main_control::new_character_in(st, st.hyph.hf, st.hyph.hyf_char as u16)
+                    crate::main_control::new_character(st, st.hyph.hf, st.hyph.hyf_char as u16)
                         .map_err(HyphenateAbort::NewCharacter)?;
                 let mut saved_c = 0;
                 if let Some(node) = hyf_node {
@@ -3145,7 +3134,7 @@ unsafe fn append_native_word(
 ///
 /// # Safety
 /// `s..s + len` must lie within `scanner.native_text`.
-pub(crate) unsafe fn do_locale_linebreaks_in(
+pub(crate) unsafe fn do_locale_linebreaks(
     st: &mut EngineState,
     s: i32,
     len: i32,
@@ -3162,7 +3151,7 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
     let use_skip = st.eqtb.glue_par(GLUE_PAR_XETEX_LINEBREAK_SKIP) != ZERO_GLUE;
     let penalty = st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_PENALTY);
     let use_penalty = penalty != 0 || !use_skip;
-    linebreak_start_in(st, main_f, locale, native_text.add(s as usize), len)?;
+    linebreak_start(st, main_f, locale, native_text.add(s as usize), len)?;
     let mut offs = 0;
     loop {
         let prev_offs = offs;

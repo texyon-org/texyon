@@ -257,7 +257,7 @@ impl StringsState {
 
 /// Writes "src:<lineno> <filename>" into the pool and returns its start, or
 /// `Err` if the pool is too small.
-pub(crate) fn make_src_special_in(
+pub(crate) fn make_src_special(
     st: &mut crate::state::EngineState,
     srcfilename: i32,
     lineno: i32,
@@ -332,11 +332,7 @@ impl StringsState {
 }
 
 /// Whether `srcfilename:lineno` differs from the last remembered source.
-pub(crate) fn is_new_source_in(
-    st: &crate::state::EngineState,
-    srcfilename: i32,
-    lineno: i32,
-) -> bool {
+pub(crate) fn is_new_source(st: &crate::state::EngineState, srcfilename: i32, lineno: i32) -> bool {
     let name = st.strings.texstring_cstring(srcfilename);
     let last_name = st
         .texmf
@@ -346,7 +342,7 @@ pub(crate) fn is_new_source_in(
     name.as_bytes() != last_name || lineno != st.texmf.last_lineno
 }
 
-pub(crate) fn remember_source_info_in(
+pub(crate) fn remember_source_info(
     st: &mut crate::state::EngineState,
     srcfilename: i32,
     lineno: i32,

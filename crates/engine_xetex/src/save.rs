@@ -130,24 +130,24 @@ impl SaveStackState {
 }
 
 /// Validates `\mag`, propagating a non-`Continue` error outcome.
-pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcome {
+pub(crate) fn prepare_mag(st: &mut EngineState) -> crate::errors::ErrorOutcome {
     use crate::errors::ErrorOutcome;
-    use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
+    use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     if st.scanner.mag_set > 0 && mag != st.scanner.mag_set {
         let mag_set = st.scanner.mag_set;
-        let errmsg = error_here_with_diagnostic_in(st, c"Incompatible magnification (".as_ptr());
-        crate::output::print_int_in(st, mag);
-        crate::output::print_cstr_in(st, c");".as_ptr());
-        crate::output::print_nl_cstr_in(st, c" the previous value will be retained".as_ptr());
+        let errmsg = error_here_with_diagnostic(st, c"Incompatible magnification (".as_ptr());
+        crate::output::print_int(st, mag);
+        crate::output::print_cstr(st, c");".as_ptr());
+        crate::output::print_nl_cstr(st, c" the previous value will be retained".as_ptr());
         unsafe { diag_append_str(errmsg, &format!(" ({})", mag_set)) };
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
             "I can handle only one magnification ratio per job. So I've",
             "reverted to the magnification you used earlier on this run.",
         ]);
-        let outcome = crate::errors::int_error_in(st, mag_set);
+        let outcome = crate::errors::int_error(st, mag_set);
         if !matches!(outcome, ErrorOutcome::Continue) {
             return outcome;
         }
@@ -155,15 +155,15 @@ pub(crate) fn prepare_mag_in(st: &mut EngineState) -> crate::errors::ErrorOutcom
     }
     let mag = st.eqtb.int_par(INT_PAR_MAG);
     if mag <= 0 || mag > 32768 {
-        let errmsg = error_here_with_diagnostic_in(
+        let errmsg = error_here_with_diagnostic(
             st,
             c"Illegal magnification has been changed to 1000".as_ptr(),
         );
         unsafe { diag_append_str(errmsg, &format!(" ({})", mag)) };
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors
             .help(&["The magnification ratio must be between 1 and 32768."]);
-        let outcome = crate::errors::int_error_in(st, mag);
+        let outcome = crate::errors::int_error(st, mag);
         if !matches!(outcome, ErrorOutcome::Continue) {
             return outcome;
         }
@@ -448,7 +448,7 @@ impl SaMutationAbort {
 }
 
 /// Applies the deferred flush and reference drop of an `sa_def`-family result.
-pub(crate) fn finish_sa_mutation_in(
+pub(crate) fn finish_sa_mutation(
     st: &mut EngineState,
     p: i32,
     result: SaMutationResult,
@@ -490,7 +490,7 @@ impl From<SaveAbort> for UnsaveAbort {
     }
 }
 
-fn sa_restore_in(st: &mut EngineState) -> Result<(), &'static std::ffi::CStr> {
+fn sa_restore(st: &mut EngineState) -> Result<(), &'static std::ffi::CStr> {
     loop {
         let chain = sa(st.scanner.sa_chain);
         let p = sa(chain.sa_ref(&st.mem));
@@ -532,7 +532,7 @@ fn sa_restore_in(st: &mut EngineState) -> Result<(), &'static std::ffi::CStr> {
     }
 }
 
-pub(crate) fn unsave_in(st: &mut EngineState) -> Result<(), UnsaveAbort> {
+pub(crate) fn unsave(st: &mut EngineState) -> Result<(), UnsaveAbort> {
     if st.save_stack.cur_level <= LEVEL_ONE {
         return Err(UnsaveAbort::Save(SaveAbort::Confusion(c"curlevel")));
     }
@@ -562,13 +562,13 @@ pub(crate) fn unsave_in(st: &mut EngineState) -> Result<(), UnsaveAbort> {
                         }
                     }
                 } else {
-                    crate::input::back_input_in(st)?;
+                    crate::input::back_input(st)?;
                     a = true;
                 }
                 st.scanner.cur_tok = t;
             }
             RESTORE_SA => {
-                sa_restore_in(st).map_err(|m| UnsaveAbort::Save(SaveAbort::Confusion(m)))?;
+                sa_restore(st).map_err(|m| UnsaveAbort::Save(SaveAbort::Confusion(m)))?;
                 st.scanner.sa_chain = MemPtr::from_raw(p);
                 st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
             }
@@ -596,7 +596,7 @@ pub(crate) fn unsave_in(st: &mut EngineState) -> Result<(), UnsaveAbort> {
         }
     }
     if st.input.grp_stack[st.input.in_open as usize] == st.save_stack.cur_boundary {
-        crate::output::group_warning_in(st);
+        crate::output::group_warning(st);
     }
     let ss = &mut st.save_stack;
     (ss.cur_group, ss.cur_boundary) = ss.boundary_at(ss.save_ptr);

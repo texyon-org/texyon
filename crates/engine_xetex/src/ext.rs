@@ -24,13 +24,13 @@ use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::input::INSERTED;
 use crate::io::{AUTO, ICUMAPPING, K_STATUS_NO_ERROR, RAW, UTF16BE, UTF16LE, UTF8};
-use crate::main_control::{mc_propagate_error, new_graf_in, MainControlAbort};
+use crate::main_control::{mc_propagate_error, new_graf, MainControlAbort};
 use crate::mem::TEMP_HEAD;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
-use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
-use crate::pic::load_picture_in;
+use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
+use crate::pic::load_picture;
 use crate::scan::{
-    get_x_token_in, scan_int_in, NodeRecycleAbort, LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN,
+    get_x_token, scan_int, NodeRecycleAbort, LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN,
     XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE, XETEX_COUNT_SELECTORS_CODE,
     XETEX_FEATURE_CODE_CODE, XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
     XETEX_IS_DEFAULT_SELECTOR_CODE, XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_OT_COUNT_FEATURES_CODE,
@@ -297,9 +297,9 @@ pub(crate) struct NativeFontMetrics {
     pub slant: i32,
 }
 
-unsafe fn print_c_string_in(st: &mut EngineState, s: *const c_char) {
+unsafe fn print_c_string(st: &mut EngineState, s: *const c_char) {
     for &byte in CStr::from_ptr(s).to_bytes() {
-        crate::output::print_raw_char_in(st, byte as i32, true);
+        crate::output::print_raw_char(st, byte as i32, true);
     }
 }
 
@@ -418,7 +418,7 @@ pub unsafe fn read_rgb_a(cp: *mut *const c_char) -> c_uint {
 
 /// The input mode named `name_of_file`, with the ICU converter name string
 /// for `ICUMAPPING`.
-unsafe fn get_encoding_mode_and_info_in(
+unsafe fn get_encoding_mode_and_info(
     st: &mut EngineState,
     name_of_file: *const c_char,
 ) -> Result<(c_int, i32), crate::texmfmp::MakeTexStringAbort> {
@@ -438,12 +438,12 @@ unsafe fn get_encoding_mode_and_info_in(
     let mut err = 0;
     let cnv = crate::io::xetex_ucnv_open(name_of_file, &mut err);
     if cnv.is_null() {
-        crate::output::begin_diagnostic_in(st);
-        crate::output::print_nl_in(st, b'U' as i32);
-        crate::output::print_cstr_in(st, c"nknown encoding `".as_ptr());
-        crate::output::print_cstr_in(st, name_of_file);
-        crate::output::print_cstr_in(st, c"'; reading as raw bytes".as_ptr());
-        crate::output::end_diagnostic_in(st, true);
+        crate::output::begin_diagnostic(st);
+        crate::output::print_nl(st, b'U' as i32);
+        crate::output::print_cstr(st, c"nknown encoding `".as_ptr());
+        crate::output::print_cstr(st, name_of_file);
+        crate::output::print_cstr(st, c"'; reading as raw bytes".as_ptr());
+        crate::output::end_diagnostic(st, true);
         Ok((RAW, 0))
     } else {
         crate::io::xetex_ucnv_close(cnv);
@@ -520,17 +520,17 @@ pub unsafe fn readFeatureNumber(
     s == e
 }
 
-pub(crate) fn print_utf8_str_in(st: &mut EngineState, str_: *const u8, len: c_int) {
+pub(crate) fn print_utf8_str(st: &mut EngineState, str_: *const u8, len: c_int) {
     for i in 0..len.max(0) as usize {
         // SAFETY: the caller passes a buffer of at least `len` bytes.
         let byte = unsafe { *str_.add(i) };
-        crate::output::print_raw_char_in(st, byte as i32, true);
+        crate::output::print_raw_char(st, byte as i32, true);
     }
 }
 
 /// Load TECkit mapping `s..e` (plus `.tec`), mapping to bytes for TFM fonts or
 /// to UTF-16 for native ones.
-unsafe fn load_mapping_file_in(
+unsafe fn load_mapping_file(
     st: &mut EngineState,
     s: *const c_char,
     e: *const c_char,
@@ -546,7 +546,7 @@ unsafe fn load_mapping_file_in(
     let mut cnv: *mut c_void = ptr::null_mut();
     let map = ttstub_input_open(name_ptr, TTBC_FILE_FORMAT_MISC_FONTS, 0);
     if map == 0 {
-        crate::output::font_mapping_warning_in(st, name_ptr as *const c_void, name_len, 1);
+        crate::output::font_mapping_warning(st, name_ptr as *const c_void, name_len, 1);
         return Ok(None);
     }
 
@@ -575,9 +575,9 @@ unsafe fn load_mapping_file_in(
     );
 
     if cnv.is_null() {
-        crate::output::font_mapping_warning_in(st, name_ptr as *const c_void, name_len, 2);
+        crate::output::font_mapping_warning(st, name_ptr as *const c_void, name_len, 2);
     } else if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 1 {
-        crate::output::font_mapping_warning_in(st, name_ptr as *const c_void, name_len, 0);
+        crate::output::font_mapping_warning(st, name_ptr as *const c_void, name_len, 0);
     }
 
     Ok((!cnv.is_null()).then(|| std::sync::Arc::new(crate::state::FontMappingHandle { raw: cnv })))
@@ -601,14 +601,14 @@ impl FontState {
     }
 }
 
-pub(crate) unsafe fn load_tfm_font_mapping_in(
+pub(crate) unsafe fn load_tfm_font_mapping(
     st: &mut EngineState,
 ) -> Result<Option<std::sync::Arc<crate::state::FontMappingHandle>>, NativeFontAbort> {
     let Some(name) = st.fonts.saved_mapping_name.take() else {
         return Ok(None);
     };
     let start = name.as_ptr();
-    load_mapping_file_in(st, start, start.add(name.as_bytes().len()), true)
+    load_mapping_file(st, start, start.add(name.as_bytes().len()), true)
 }
 
 pub unsafe fn apply_tfm_font_mapping(cnv: *mut c_void, c: c_int) -> c_int {
@@ -646,7 +646,7 @@ struct CommonFeatures {
 
 /// Parse one common option from `feat..end`: `None` if it is not one, else
 /// whether it was well formed.
-unsafe fn read_common_feature_in(
+unsafe fn read_common_feature(
     st: &mut EngineState,
     feat: *const c_char,
     end: *const c_char,
@@ -656,7 +656,7 @@ unsafe fn read_common_feature_in(
         let Ok(value) = value else {
             return Ok(Some(false));
         };
-        st.fonts.loaded_font_mapping = load_mapping_file_in(st, value, end, false)?;
+        st.fonts.loaded_font_mapping = load_mapping_file(st, value, end, false)?;
         return Ok(Some(true));
     }
 
@@ -780,7 +780,7 @@ unsafe fn load_ot_font(
                     shapers.push(copy_c_slice(value, cp2));
                     break 'option Some(true);
                 }
-                if let Some(valid) = read_common_feature_in(st, cp1, cp2, &mut opts)? {
+                if let Some(valid) = read_common_feature(st, cp1, cp2, &mut opts)? {
                     break 'option Some(valid);
                 }
                 if req_engine == b'G' {
@@ -827,7 +827,7 @@ unsafe fn load_ot_font(
             };
 
             if parsed != Some(true) {
-                crate::output::font_feature_warning_in(
+                crate::output::font_feature_warning(
                     st,
                     cp1 as *const c_void,
                     cp2.offset_from(cp1) as i32,
@@ -916,7 +916,7 @@ impl ErrorState {
 
 /// Look up native font `name` (a `[file]` path or an installed font name with
 /// `/variant` and `:features`) and build its layout engine.
-pub(crate) unsafe fn find_native_font_in(
+pub(crate) unsafe fn find_native_font(
     st: &mut EngineState,
     name: *mut c_char,
     mut scaled_size: i32,
@@ -970,22 +970,22 @@ pub(crate) unsafe fn find_native_font_in(
                 deleteFont(font);
             }
             if rval.is_some() && st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
-                crate::output::begin_diagnostic_in(st);
-                crate::output::print_nl_in(st, b' ' as i32);
-                print_c_string_in(st, c"-> ".as_ptr());
-                print_c_string_in(st, path);
-                crate::output::end_diagnostic_in(st, false);
+                crate::output::begin_diagnostic(st);
+                crate::output::print_nl(st, b' ' as i32);
+                print_c_string(st, c"-> ".as_ptr());
+                print_c_string(st, path);
+                crate::output::end_diagnostic(st, false);
             }
         }
     } else {
         let font_ref = findFontByName(name_string, var_string, Fix2D(scaled_size));
         if !font_ref.is_null() {
             if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
-                crate::output::begin_diagnostic_in(st);
-                crate::output::print_nl_in(st, b' ' as i32);
-                print_c_string_in(st, c"-> ".as_ptr());
-                print_c_string_in(st, ttxl_platfont_get_desc(font_ref));
-                crate::output::end_diagnostic_in(st, false);
+                crate::output::begin_diagnostic(st);
+                crate::output::print_nl(st, b' ' as i32);
+                print_c_string(st, c"-> ".as_ptr());
+                print_c_string(st, ttxl_platfont_get_desc(font_ref));
+                crate::output::end_diagnostic(st, false);
             }
 
             let full_name = getFullName(font_ref);
@@ -1200,7 +1200,7 @@ pub unsafe fn ot_font_get_3(
     }
 }
 
-pub(crate) unsafe fn gr_print_font_name_in(
+pub(crate) unsafe fn gr_print_font_name(
     st: &mut EngineState,
     what: i32,
     engine: *mut c_void,
@@ -1215,7 +1215,7 @@ pub(crate) unsafe fn gr_print_font_name_in(
         _ => ptr::null_mut(),
     };
     if !name.is_null() {
-        crate::output::print_cstr_in(st, name);
+        crate::output::print_cstr(st, name);
         gr_label_destroy(name as *mut c_void);
     }
 }
@@ -1667,7 +1667,7 @@ impl FontState {
     }
 }
 
-pub(crate) unsafe fn linebreak_start_in(
+pub(crate) unsafe fn linebreak_start(
     st: &mut EngineState,
     f: c_int,
     locale_str_num: i32,
@@ -1693,14 +1693,14 @@ pub(crate) unsafe fn linebreak_start_in(
     if st.fonts.brk_iter.is_none() {
         let mut raw = ubrk_open(UBRK_LINE, locale, ptr::null(), 0, &mut status);
         if status > 0 {
-            crate::output::begin_diagnostic_in(st);
-            crate::output::print_nl_in(st, b'E' as i32);
-            crate::output::print_cstr_in(st, c"rror ".as_ptr());
-            crate::output::print_int_in(st, status);
-            crate::output::print_cstr_in(st, c" creating linebreak iterator for locale `".as_ptr());
-            crate::output::print_cstr_in(st, locale);
-            crate::output::print_cstr_in(st, c"'; trying default locale `en_us'.".as_ptr());
-            crate::output::end_diagnostic_in(st, true);
+            crate::output::begin_diagnostic(st);
+            crate::output::print_nl(st, b'E' as i32);
+            crate::output::print_cstr(st, c"rror ".as_ptr());
+            crate::output::print_int(st, status);
+            crate::output::print_cstr(st, c" creating linebreak iterator for locale `".as_ptr());
+            crate::output::print_cstr(st, locale);
+            crate::output::print_cstr(st, c"'; trying default locale `en_us'.".as_ptr());
+            crate::output::end_diagnostic(st, true);
             if !raw.is_null() {
                 ubrk_close(raw);
             }
@@ -1931,7 +1931,7 @@ pub fn aat_font_get_named_1(_what: c_int, _attributes: *mut c_void, _param: c_in
 pub fn aat_print_font_name(_what: c_int, _attributes: *mut c_void, _param1: c_int, _param2: c_int) {
 }
 
-pub(crate) unsafe fn print_glyph_name_in(
+pub(crate) unsafe fn print_glyph_name(
     st: &mut EngineState,
     font: i32,
     gid: i32,
@@ -1942,7 +1942,7 @@ pub(crate) unsafe fn print_glyph_name_in(
     let mut len: c_int = 0;
     let s = getGlyphName(getFont(engine), gid as u16, &mut len);
     for i in 0..len.max(0) as usize {
-        crate::output::print_char_in(st, *s.add(i) as i32);
+        crate::output::print_char(st, *s.add(i) as i32);
     }
     if !s.is_null() {
         freeGlyphName(s as *mut c_char);
@@ -2005,14 +2005,14 @@ impl From<crate::scan::StrToksAbort> for InsertSrcAbort {
 
 /// The current source file if the input position moved since the last source
 /// special.
-fn new_source_position_in(st: &mut EngineState) -> Option<i32> {
+fn new_source_position(st: &mut EngineState) -> Option<i32> {
     let fname = st.input.source_filename_stack[st.input.in_open as usize];
-    (fname > 0 && crate::texmfmp::is_new_source_in(st, fname, st.mem.line)).then_some(fname)
+    (fname > 0 && crate::texmfmp::is_new_source(st, fname, st.mem.line)).then_some(fname)
 }
 
 /// Append a `\special{src:...}` whatsit for the current source line.
-pub(crate) fn append_src_special_in(st: &mut EngineState) -> Result<(), InsertSrcAbort> {
-    let Some(fname) = new_source_position_in(st) else {
+pub(crate) fn append_src_special(st: &mut EngineState) -> Result<(), InsertSrcAbort> {
+    let Some(fname) = new_source_position(st) else {
         return Ok(());
     };
     let w = st
@@ -2024,19 +2024,19 @@ pub(crate) fn append_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let d = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
     st.scanner.def_ref = d;
     d.set_info(&mut st.mem, crate::mem::TEX_NULL);
-    let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
+    let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
         .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
     st.mem.str_toks_cat(&mut st.strings, b, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
     d.set_link(&mut st.mem, text);
     w.set_write_tokens(&mut st.mem, d);
-    crate::texmfmp::remember_source_info_in(st, fname, st.mem.line);
+    crate::texmfmp::remember_source_info(st, fname, st.mem.line);
     Ok(())
 }
 
 /// Insert `\special{src:...}` for the current source line into the input.
-pub(crate) fn insert_src_special_in(st: &mut EngineState) -> Result<(), InsertSrcAbort> {
-    let Some(fname) = new_source_position_in(st) else {
+pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), InsertSrcAbort> {
+    let Some(fname) = new_source_position(st) else {
         return Ok(());
     };
     let toklist = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
@@ -2044,7 +2044,7 @@ pub(crate) fn insert_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let open = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
     toklist.set_link(&mut st.mem, open);
     open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
-    let b = crate::texmfmp::make_src_special_in(st, fname, st.mem.line)
+    let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
         .map_err(|()| InsertSrcAbort::MakeSrcPool)?;
     let text_tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
@@ -2052,13 +2052,13 @@ pub(crate) fn insert_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let close = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
     text_tail.set_link(&mut st.mem, close);
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-    crate::input::begin_token_list_in(st, toklist, INSERTED)?;
-    crate::texmfmp::remember_source_info_in(st, fname, st.mem.line);
+    crate::input::begin_token_list(st, toklist, INSERTED)?;
+    crate::texmfmp::remember_source_info(st, fname, st.mem.line);
     Ok(())
 }
 
 /// Insert `\special{<ascii_text>}` into the input.
-pub(crate) unsafe fn tt_insert_special_in(
+pub(crate) unsafe fn tt_insert_special(
     st: &mut EngineState,
     ascii_text: *const c_char,
 ) -> Result<(), MainControlAbort> {
@@ -2087,11 +2087,11 @@ pub(crate) unsafe fn tt_insert_special_in(
     let close = st.mem.get_avail().ok_or(NodeRecycleAbort::Overflow)?;
     close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
     text_tail.set_link(&mut st.mem, close);
-    crate::input::begin_token_list_in(st, toklist, INSERTED)?;
+    crate::input::begin_token_list(st, toklist, INSERTED)?;
     Ok(())
 }
 
-fn new_whatsit_in(
+fn new_whatsit(
     st: &mut EngineState,
     subtype: WhatsitSubtype,
     size: i32,
@@ -2104,16 +2104,16 @@ fn new_whatsit_in(
 }
 
 /// Append an `\openout`/`\write`/`\closeout` whatsit and scan its stream number.
-fn new_write_whatsit_in(
+fn new_write_whatsit(
     st: &mut EngineState,
     subtype: WhatsitSubtype,
     size: i32,
 ) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
-    let w = new_whatsit_in(st, subtype, size)?;
+    let w = new_whatsit(st, subtype, size)?;
     if size != WRITE_NODE_SIZE {
-        crate::scan::scan_four_bit_int_in(st)?;
+        crate::scan::scan_four_bit_int(st)?;
     } else {
-        scan_int_in(st)?;
+        scan_int(st)?;
         if st.scanner.cur_val < 0 {
             st.scanner.cur_val = 17;
         } else if st.scanner.cur_val > 15 && st.scanner.cur_val != 18 {
@@ -2125,12 +2125,12 @@ fn new_write_whatsit_in(
 }
 
 /// Appends the `\openout`, `\write` or `\closeout` whatsit for `cur_chr`.
-fn io_whatsit_in(st: &mut EngineState) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
+fn io_whatsit(st: &mut EngineState) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
     Ok(match st.scanner.cur_chr {
         OPEN_NODE => {
-            let w = new_write_whatsit_in(st, WhatsitSubtype::Open, OPEN_NODE_SIZE)?;
-            crate::scan::scan_optional_equals_in(st)?;
-            crate::io::scan_file_name_in(st)?;
+            let w = new_write_whatsit(st, WhatsitSubtype::Open, OPEN_NODE_SIZE)?;
+            crate::scan::scan_optional_equals(st)?;
+            crate::io::scan_file_name(st)?;
             w.set_open_name(&mut st.mem, st.scanner.cur_name);
             w.set_open_area(&mut st.mem, st.scanner.cur_area);
             w.set_open_ext(&mut st.mem, st.scanner.cur_ext);
@@ -2138,39 +2138,39 @@ fn io_whatsit_in(st: &mut EngineState) -> Result<NodePtr<WhatsitNode>, MainContr
         }
         WRITE_NODE => {
             let k = st.scanner.cur_cs;
-            let w = new_write_whatsit_in(st, WhatsitSubtype::Write, WRITE_NODE_SIZE)?;
+            let w = new_write_whatsit(st, WhatsitSubtype::Write, WRITE_NODE_SIZE)?;
             st.scanner.cur_cs = k;
-            crate::scan::scan_toks_in(st, false, false)?;
+            crate::scan::scan_toks(st, false, false)?;
             w.set_write_tokens(&mut st.mem, st.scanner.def_ref);
             w
         }
         _ => {
-            let w = new_write_whatsit_in(st, WhatsitSubtype::Close, WRITE_NODE_SIZE)?;
+            let w = new_write_whatsit(st, WhatsitSubtype::Close, WRITE_NODE_SIZE)?;
             w.set_write_tokens(&mut st.mem, MemPtr::NULL);
             w
         }
     })
 }
 
-pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let mode = st.input.cur_list.mode.abs();
     match st.scanner.cur_chr {
         OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
-            io_whatsit_in(st)?;
+            io_whatsit(st)?;
         }
 
         SPECIAL_NODE => {
-            let w = new_whatsit_in(st, WhatsitSubtype::Special, WRITE_NODE_SIZE)?;
+            let w = new_whatsit(st, WhatsitSubtype::Special, WRITE_NODE_SIZE)?;
             w.set_write_stream(&mut st.mem, crate::mem::TEX_NULL);
-            crate::scan::scan_toks_in(st, false, true)?;
+            crate::scan::scan_toks(st, false, true)?;
             w.set_write_tokens(&mut st.mem, st.scanner.def_ref);
         }
 
         IMMEDIATE_CODE => {
-            get_x_token_in(st)?;
+            get_x_token(st)?;
             if st.scanner.cur_cmd == EXTENSION && st.scanner.cur_chr <= CLOSE_NODE {
                 let p = st.input.cur_list.tail;
-                let w = io_whatsit_in(st)?;
+                let w = io_whatsit(st)?;
                 crate::shipout::out_what(st, w)?;
                 st.mem
                     .flush_node_list(st.input.cur_list.tail)
@@ -2178,16 +2178,16 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                 st.input.cur_list.tail = p;
                 p.set_link(&mut st.mem, MemPtr::NULL);
             } else {
-                crate::input::back_input_in(st)?;
+                crate::input::back_input(st)?;
             }
         }
 
         SET_LANGUAGE_CODE => {
             if mode != HMODE {
-                mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
+                mc_propagate_error(crate::errors::report_illegal_case(st))?;
             } else {
-                let w = new_whatsit_in(st, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
-                scan_int_in(st)?;
+                let w = new_whatsit(st, WhatsitSubtype::Language, SMALL_NODE_SIZE)?;
+                scan_int(st)?;
                 let lang = if st.scanner.cur_val <= 0 || st.scanner.cur_val > 255 {
                     0
                 } else {
@@ -2203,7 +2203,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
         }
 
         PDF_SAVE_POS_NODE => {
-            new_whatsit_in(st, WhatsitSubtype::PdfSavePos, SMALL_NODE_SIZE)?;
+            new_whatsit(st, WhatsitSubtype::PdfSavePos, SMALL_NODE_SIZE)?;
         }
 
         RESET_TIMER_CODE => {
@@ -2214,7 +2214,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
         }
 
         SET_RANDOM_SEED_CODE => {
-            scan_int_in(st)?;
+            scan_int(st)?;
             if st.scanner.cur_val < 0 {
                 st.scanner.cur_val = -st.scanner.cur_val;
             }
@@ -2225,23 +2225,23 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
 
         PIC_FILE_CODE | PDF_FILE_CODE => {
             if mode == MMODE {
-                mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
+                mc_propagate_error(crate::errors::report_illegal_case(st))?;
             } else {
-                load_picture_in(st, st.scanner.cur_chr == PDF_FILE_CODE)?;
+                load_picture(st, st.scanner.cur_chr == PDF_FILE_CODE)?;
             }
         }
 
         GLYPH_CODE => {
             if mode == VMODE {
-                crate::input::back_input_in(st)?;
-                new_graf_in(st, true)?;
+                crate::input::back_input(st)?;
+                new_graf(st, true)?;
             } else if mode == MMODE {
-                mc_propagate_error(crate::errors::report_illegal_case_in(st))?;
+                mc_propagate_error(crate::errors::report_illegal_case(st))?;
             } else {
                 let cur_font = st.eqtb.cur_font();
                 let area = st.fonts.font_area_entry(cur_font);
                 if area != AAT_FONT_FLAG && area != OTGR_FONT_FLAG {
-                    return mc_propagate_error(crate::errors::not_font_error_common_in(
+                    return mc_propagate_error(crate::errors::not_font_error_common(
                         st,
                         EXTENSION,
                         GLYPH_CODE,
@@ -2249,17 +2249,17 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                         c"; not a native platform font".as_ptr(),
                     ));
                 }
-                let w = new_whatsit_in(st, WhatsitSubtype::Glyph, GLYPH_NODE_SIZE)?;
-                scan_int_in(st)?;
+                let w = new_whatsit(st, WhatsitSubtype::Glyph, GLYPH_NODE_SIZE)?;
+                scan_int(st)?;
                 if st.scanner.cur_val < 0 || st.scanner.cur_val > 65535 {
-                    let errmsg = error_here_with_diagnostic_in(st, c"Bad glyph number".as_ptr());
+                    let errmsg = error_here_with_diagnostic(st, c"Bad glyph number".as_ptr());
                     unsafe { diag_append_str(errmsg, &format!(" ({})", st.scanner.cur_val)) };
-                    capture_to_diagnostic_in(st, ptr::null_mut());
+                    capture_to_diagnostic(st, ptr::null_mut());
                     st.errors.help(&[
                         "A glyph number must be between 0 and 65535.",
                         "I changed this one to zero.",
                     ]);
-                    mc_propagate_error(crate::errors::int_error_in(st, st.scanner.cur_val))?;
+                    mc_propagate_error(crate::errors::int_error(st, st.scanner.cur_val))?;
                     st.scanner.cur_val = 0;
                 }
                 w.set_native_font(&mut st.mem, FontId(cur_font));
@@ -2274,35 +2274,35 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
         }
 
         XETEX_INPUT_ENCODING_EXTENSION_CODE => {
-            crate::io::scan_and_pack_name_in(st)?;
+            crate::io::scan_and_pack_name(st)?;
             let name = st.input.name_of_file.as_mut_ptr();
-            let (enc_mode, info) = unsafe { get_encoding_mode_and_info_in(st, name)? };
+            let (enc_mode, info) = unsafe { get_encoding_mode_and_info(st, name)? };
             if enc_mode == AUTO {
-                error_here_with_diagnostic_in(
+                error_here_with_diagnostic(
                     st,
                     c"Encoding mode `auto' is not valid for \\XeTeXinputencoding".as_ptr(),
                 );
-                capture_to_diagnostic_in(st, ptr::null_mut());
+                capture_to_diagnostic(st, ptr::null_mut());
                 st.errors.help(&[
                     r"You can't use `auto' encoding here, only for \XeTeXdefaultencoding.",
                     "I'll ignore this and leave the current encoding unchanged.",
                 ]);
-                mc_propagate_error(crate::errors::error_in(st))?;
+                mc_propagate_error(crate::errors::error(st))?;
             } else {
                 unsafe {
                     let f = st.input.input_file_ptr(st.input.in_open);
                     // `\scantokens` occupies an input level without a UFile.
                     if !f.is_null() {
-                        crate::io::set_input_file_encoding_in(st, f, enc_mode, info)?;
+                        crate::io::set_input_file_encoding(st, f, enc_mode, info)?;
                     }
                 }
             }
         }
 
         XETEX_DEFAULT_ENCODING_EXTENSION_CODE => {
-            crate::io::scan_and_pack_name_in(st)?;
+            crate::io::scan_and_pack_name(st)?;
             let name = st.input.name_of_file.as_mut_ptr();
-            let (enc_mode, info) = unsafe { get_encoding_mode_and_info_in(st, name)? };
+            let (enc_mode, info) = unsafe { get_encoding_mode_and_info(st, name)? };
             st.eqtb
                 .set_int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE, enc_mode);
             st.eqtb
@@ -2310,7 +2310,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
         }
 
         XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => {
-            crate::io::scan_file_name_in(st)?;
+            crate::io::scan_file_name(st)?;
             let locale = if st.strings.length(st.scanner.cur_name) == 0 {
                 0
             } else {

@@ -195,37 +195,37 @@ unsafe fn dump_eqtb_runs(
     }
 }
 
-pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), EngineAbort> {
+pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), EngineAbort> {
     if st.save_stack.save_ptr != 0 {
-        crate::output::print_err_in(st, c"You can't dump inside a group");
+        crate::output::print_err(st, c"You can't dump inside a group");
         st.errors.help(&[r"`{...\dump}' is a no-no."]);
 
         if st.errors.interaction == InteractionMode::ErrorStop {
             st.errors.interaction = InteractionMode::Scroll;
         }
         if st.errors.log_opened {
-            let outcome = crate::errors::error_in(st);
+            let outcome = crate::errors::error(st);
             if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
                 return Err(outcome.into_engine_abort());
             }
         }
 
         st.errors.history = HISTORY_FATAL_ERROR;
-        let _ = crate::io::close_files_and_terminate_in(st);
+        let _ = crate::io::close_files_and_terminate(st);
         ttstub_output_flush(st.shipout.rust_stdout);
         return Err(EngineAbort::TtAbort(c"\\dump inside a group".as_ptr()));
     }
 
     st.shipout.selector = SELECTOR_NEW_STRING;
-    crate::output::print_cstr_in(st, c" (preloaded format=".as_ptr());
-    crate::output::print_in(st, st.strings.job_name);
-    crate::output::print_char_in(st, b' ' as i32);
-    crate::output::print_int_in(st, st.eqtb.int_par(INT_PAR_YEAR));
-    crate::output::print_char_in(st, b'.' as i32);
-    crate::output::print_int_in(st, st.eqtb.int_par(INT_PAR_MONTH));
-    crate::output::print_char_in(st, b'.' as i32);
-    crate::output::print_int_in(st, st.eqtb.int_par(INT_PAR_DAY));
-    crate::output::print_char_in(st, b')' as i32);
+    crate::output::print_cstr(st, c" (preloaded format=".as_ptr());
+    crate::output::print(st, st.strings.job_name);
+    crate::output::print_char(st, b' ' as i32);
+    crate::output::print_int(st, st.eqtb.int_par(INT_PAR_YEAR));
+    crate::output::print_char(st, b'.' as i32);
+    crate::output::print_int(st, st.eqtb.int_par(INT_PAR_MONTH));
+    crate::output::print_char(st, b'.' as i32);
+    crate::output::print_int(st, st.eqtb.int_par(INT_PAR_DAY));
+    crate::output::print_char(st, b')' as i32);
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
         SELECTOR_LOG_ONLY
@@ -250,7 +250,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
         }
         Err(e) => return Err(e.into_engine_abort()),
     };
-    crate::io::pack_job_name_in(st, c".fmt".as_ptr()).map_err(|e| e.into_engine_abort())?;
+    crate::io::pack_job_name(st, c".fmt".as_ptr()).map_err(|e| e.into_engine_abort())?;
 
     let fmt_out = ttstub_output_open(name_of_file_ptr(st), 0);
     if fmt_out == INVALID_HANDLE {
@@ -259,15 +259,15 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
         ));
     }
 
-    crate::output::print_nl_cstr_in(st, c"Beginning to dump on file ".as_ptr());
-    let name_string = crate::io::make_name_string_in(st).map_err(|e| e.into_engine_abort())?;
-    crate::output::print_in(st, name_string);
+    crate::output::print_nl_cstr(st, c"Beginning to dump on file ".as_ptr());
+    let name_string = crate::io::make_name_string(st).map_err(|e| e.into_engine_abort())?;
+    crate::output::print(st, name_string);
 
     st.strings.str_ptr -= 1;
     st.strings.discard_cur_string();
 
-    crate::output::print_nl_cstr_in(st, c"".as_ptr());
-    crate::output::print_in(st, st.strings.format_ident);
+    crate::output::print_nl_cstr(st, c"".as_ptr());
+    crate::output::print(st, st.strings.format_ident);
 
     dump_int(fmt_out, FORMAT_HEADER_MAGIC)?;
     dump_int(fmt_out, crate::FORMAT_SERIAL as i32)?;
@@ -294,10 +294,10 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     )?;
     dump_slice(fmt_out, &st.strings.str_pool, 0, pool_ptr)?;
 
-    crate::output::print_ln_in(st);
-    crate::output::print_int_in(st, str_ptr);
-    crate::output::print_cstr_in(st, c" strings of total length ".as_ptr());
-    crate::output::print_int_in(st, pool_ptr);
+    crate::output::print_ln(st);
+    crate::output::print_int(st, str_ptr);
+    crate::output::print_cstr(st, c" strings of total length ".as_ptr());
+    crate::output::print_int(st, pool_ptr);
 
     st.mem.sort_avail();
     let mem = &st.mem;
@@ -352,12 +352,12 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     dump_int(fmt_out, var_used)?;
     dump_int(fmt_out, dyn_used)?;
 
-    crate::output::print_ln_in(st);
-    crate::output::print_int_in(st, x);
-    crate::output::print_cstr_in(st, c" memory locations dumped; current usage is ".as_ptr());
-    crate::output::print_int_in(st, var_used);
-    crate::output::print_char_in(st, b'&' as i32);
-    crate::output::print_int_in(st, dyn_used);
+    crate::output::print_ln(st);
+    crate::output::print_int(st, x);
+    crate::output::print_cstr(st, c" memory locations dumped; current usage is ".as_ptr());
+    crate::output::print_int(st, var_used);
+    crate::output::print_char(st, b'&' as i32);
+    crate::output::print_int(st, dyn_used);
 
     let k = dump_eqtb_runs(
         fmt_out,
@@ -406,9 +406,9 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
 
     dump_int(fmt_out, cs_count)?;
 
-    crate::output::print_ln_in(st);
-    crate::output::print_int_in(st, cs_count);
-    crate::output::print_cstr_in(st, c" multiletter control sequences".as_ptr());
+    crate::output::print_ln(st);
+    crate::output::print_int(st, cs_count);
+    crate::output::print_cstr(st, c" multiletter control sequences".as_ptr());
 
     let fmp = st.fonts.fmem_ptr;
     let font_ptr = st.fonts.font_ptr;
@@ -443,9 +443,9 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
 
     for k in FONT_BASE..=font_ptr {
         let f = k as usize;
-        crate::output::print_nl_cstr_in(st, c"\\font".as_ptr());
-        crate::output::print_esc_in(st, st.eqtb.hash_s1(FONT_ID_BASE + k));
-        crate::output::print_char_in(st, b'=' as i32);
+        crate::output::print_nl_cstr(st, c"\\font".as_ptr());
+        crate::output::print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + k));
+        crate::output::print_char(st, b'=' as i32);
 
         let font_name = st.fonts.font_name[f];
         let font_area = st.fonts.font_area[f];
@@ -453,8 +453,8 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
             || font_area == OTGR_FONT_FLAG
             || st.fonts.font_mapping[f].is_some()
         {
-            crate::output::print_file_name_in(st, font_name, EMPTY_STRING, EMPTY_STRING);
-            crate::output::print_err_in(
+            crate::output::print_file_name(st, font_name, EMPTY_STRING, EMPTY_STRING);
+            crate::output::print_err(
                 st,
                 c"Can't \\dump a format with native fonts or font-mappings",
             );
@@ -463,30 +463,30 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
                 "It won't work, and only confuses me.",
                 "(Load them at runtime, not as part of the format file.)",
             ]);
-            let outcome = crate::errors::error_in(st);
+            let outcome = crate::errors::error(st);
             if !matches!(outcome, crate::errors::ErrorOutcome::Continue) {
                 return Err(outcome.into_engine_abort());
             }
         } else {
-            crate::output::print_file_name_in(st, font_name, font_area, EMPTY_STRING);
+            crate::output::print_file_name(st, font_name, font_area, EMPTY_STRING);
         }
 
         let font_size = st.fonts.font_size[f];
         if font_size != st.fonts.font_dsize[f] {
-            crate::output::print_cstr_in(st, c" at ".as_ptr());
-            crate::output::print_scaled_in(st, font_size);
-            crate::output::print_cstr_in(st, c"pt".as_ptr());
+            crate::output::print_cstr(st, c" at ".as_ptr());
+            crate::output::print_scaled(st, font_size);
+            crate::output::print_cstr(st, c"pt".as_ptr());
         }
     }
 
-    crate::output::print_ln_in(st);
-    crate::output::print_int_in(st, fmp - 7);
-    crate::output::print_cstr_in(st, c" words of font info for ".as_ptr());
-    crate::output::print_int_in(st, font_ptr);
+    crate::output::print_ln(st);
+    crate::output::print_int(st, fmp - 7);
+    crate::output::print_cstr(st, c" words of font info for ".as_ptr());
+    crate::output::print_int(st, font_ptr);
     if font_ptr != FONT_BASE + 1 {
-        crate::output::print_cstr_in(st, c" preloaded fonts".as_ptr());
+        crate::output::print_cstr(st, c" preloaded fonts".as_ptr());
     } else {
-        crate::output::print_cstr_in(st, c" preloaded font".as_ptr());
+        crate::output::print_cstr(st, c" preloaded font".as_ptr());
     }
 
     let hyph_count = st.hyph.hyph_count;
@@ -506,12 +506,12 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
         }
     }
 
-    crate::output::print_ln_in(st);
-    crate::output::print_int_in(st, hyph_count);
+    crate::output::print_ln(st);
+    crate::output::print_int(st, hyph_count);
     if hyph_count != 1 {
-        crate::output::print_cstr_in(st, c" hyphenation exceptions".as_ptr());
+        crate::output::print_cstr(st, c" hyphenation exceptions".as_ptr());
     } else {
-        crate::output::print_cstr_in(st, c" hyphenation exception".as_ptr());
+        crate::output::print_cstr(st, c" hyphenation exception".as_ptr());
     }
 
     if st.hyph.trie_not_ready {
@@ -532,25 +532,25 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     dump_slice(fmt_out, &hyph.hyf_num, 1, trie_op_ptr)?;
     dump_slice(fmt_out, &hyph.hyf_next, 1, trie_op_ptr)?;
 
-    crate::output::print_nl_cstr_in(st, c"Hyphenation trie of length ".as_ptr());
-    crate::output::print_int_in(st, trie_max);
-    crate::output::print_cstr_in(st, c" has ".as_ptr());
-    crate::output::print_int_in(st, trie_op_ptr);
+    crate::output::print_nl_cstr(st, c"Hyphenation trie of length ".as_ptr());
+    crate::output::print_int(st, trie_max);
+    crate::output::print_cstr(st, c" has ".as_ptr());
+    crate::output::print_int(st, trie_op_ptr);
     if trie_op_ptr != 1 {
-        crate::output::print_cstr_in(st, c" ops".as_ptr());
+        crate::output::print_cstr(st, c" ops".as_ptr());
     } else {
-        crate::output::print_cstr_in(st, c" op".as_ptr());
+        crate::output::print_cstr(st, c" op".as_ptr());
     }
-    crate::output::print_cstr_in(st, c" out of ".as_ptr());
-    crate::output::print_int_in(st, TRIE_OP_SIZE);
+    crate::output::print_cstr(st, c" out of ".as_ptr());
+    crate::output::print_int(st, TRIE_OP_SIZE);
 
     for k in (0..=BIGGEST_LANG as usize).rev() {
         let used = st.hyph.trie_used[k] as i32;
         if used > 0 {
-            crate::output::print_nl_cstr_in(st, c"  ".as_ptr());
-            crate::output::print_int_in(st, used);
-            crate::output::print_cstr_in(st, c" for language ".as_ptr());
-            crate::output::print_int_in(st, k as i32);
+            crate::output::print_nl_cstr(st, c"  ".as_ptr());
+            crate::output::print_int(st, used);
+            crate::output::print_cstr(st, c" for language ".as_ptr());
+            crate::output::print_int(st, k as i32);
             dump_int(fmt_out, k as i32)?;
             dump_int(fmt_out, used)?;
         }
@@ -579,10 +579,10 @@ pub unsafe fn load_fmt_file(st: &mut EngineState) -> Result<bool, EngineAbort> {
 
     st.input.cur_input.loc = loc;
 
-    load_fmt_file_in(st, fmt_in)
+    read_fmt_file(st, fmt_in)
 }
 
-unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, EngineAbort> {
+unsafe fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, EngineAbort> {
     if st.config.in_initex_mode {
         st.fonts.font_info = Vec::new();
         st.strings.str_pool = Vec::new();

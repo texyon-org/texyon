@@ -37,7 +37,7 @@ use crate::consts::{
     TEXT_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
     UNLESS_CODE, VMODE, X_LEADERS,
 };
-use crate::errors::{error_in, ErrorOutcome};
+use crate::errors::{error, ErrorOutcome};
 use crate::expand::{
     ETEX_REVISION_CODE, EXPANDED_CODE, FI_CODE, FONT_NAME_CODE, IFX_CODE, IF_CASE_CODE,
     IF_CAT_CODE, IF_CS_CODE, IF_DEF_CODE, IF_DIM_CODE, IF_EOF_CODE, IF_FALSE_CODE,
@@ -104,14 +104,14 @@ use crate::units::{GlueSign, MemIdx, MemPtr, NodeType};
 
 const SELECTOR_PSEUDO: i32 = 20;
 
-fn print_the_digs_in(st: &mut EngineState, mut k: u8) {
+fn print_the_digs(st: &mut EngineState, mut k: u8) {
     while k > 0 {
         k -= 1;
         let d = st.errors.dig[k as usize] as i32;
         if d < 10 {
-            print_char_in(st, b'0' as i32 + d);
+            print_char(st, b'0' as i32 + d);
         } else {
-            print_char_in(st, b'A' as i32 - 10 + d);
+            print_char(st, b'A' as i32 - 10 + d);
         }
     }
 }
@@ -128,10 +128,10 @@ fn store_digits(st: &mut EngineState, mut n: i32, radix: i32, mut k: u8) -> u8 {
     }
 }
 
-pub(crate) fn print_int_in(st: &mut EngineState, mut n: i32) {
+pub(crate) fn print_int(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
     if n < 0 {
-        print_char_in(st, b'-' as i32);
+        print_char(st, b'-' as i32);
         if n > -100_000_000 {
             n = -n;
         } else {
@@ -149,33 +149,33 @@ pub(crate) fn print_int_in(st: &mut EngineState, mut n: i32) {
         }
     }
     let k = store_digits(st, n, 10, k);
-    print_the_digs_in(st, k);
+    print_the_digs(st, k);
 }
 
-pub(crate) fn print_hex_in(st: &mut EngineState, n: i32) {
-    print_char_in(st, b'"' as i32);
+pub(crate) fn print_hex(st: &mut EngineState, n: i32) {
+    print_char(st, b'"' as i32);
     let k = store_digits(st, n, 16, 0);
-    print_the_digs_in(st, k);
+    print_the_digs(st, k);
 }
 
-pub(crate) fn print_ucs_code_in(st: &mut EngineState, n: i32) {
-    print_cstr_in(st, c"U+".as_ptr());
+pub(crate) fn print_ucs_code(st: &mut EngineState, n: i32) {
+    print_cstr(st, c"U+".as_ptr());
     let mut k = store_digits(st, n, 16, 0);
     while k < 4 {
         st.errors.dig[k as usize] = 0;
         k += 1;
     }
-    print_the_digs_in(st, k);
+    print_the_digs(st, k);
 }
 
-pub(crate) fn print_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
+pub(crate) fn print_cstr(st: &mut EngineState, str_ptr: *const libc::c_char) {
     let s = unsafe { CStr::from_ptr(str_ptr) };
-    print_bytes_in(st, s.to_bytes());
+    print_bytes(st, s.to_bytes());
 }
 
-fn print_bytes_in(st: &mut EngineState, bytes: &[u8]) {
+fn print_bytes(st: &mut EngineState, bytes: &[u8]) {
     for &b in bytes {
-        print_char_in(st, b as i32);
+        print_char(st, b as i32);
     }
 }
 
@@ -185,56 +185,56 @@ fn at_line_start(st: &EngineState) -> bool {
         || (st.shipout.file_offset > 0 && sel >= SELECTOR_LOG_ONLY))
 }
 
-pub(crate) fn print_nl_cstr_in(st: &mut EngineState, str_ptr: *const libc::c_char) {
+pub(crate) fn print_nl_cstr(st: &mut EngineState, str_ptr: *const libc::c_char) {
     if !at_line_start(st) {
-        print_ln_in(st);
+        print_ln(st);
     }
-    print_cstr_in(st, str_ptr);
+    print_cstr(st, str_ptr);
 }
 
-pub(crate) fn print_nl_str_in(st: &mut EngineState, s: &str) {
+pub(crate) fn print_nl_str(st: &mut EngineState, s: &str) {
     if !at_line_start(st) {
-        print_ln_in(st);
+        print_ln(st);
     }
-    print_bytes_in(st, s.as_bytes());
+    print_bytes(st, s.as_bytes());
 }
 
-pub(crate) fn print_nl_in(st: &mut EngineState, s: i32) {
+pub(crate) fn print_nl(st: &mut EngineState, s: i32) {
     if !at_line_start(st) {
-        print_ln_in(st);
+        print_ln(st);
     }
-    print_in(st, s);
+    print(st, s);
 }
 
-fn print_escape_char_in(st: &mut EngineState) {
+fn print_escape_char(st: &mut EngineState) {
     let c = st.eqtb.int_par(INT_PAR_ESCAPE_CHAR);
     if (0..=BIGGEST_USV).contains(&c) {
-        print_char_in(st, c);
+        print_char(st, c);
     }
 }
 
-pub(crate) fn print_esc_cstr_in(st: &mut EngineState, s: *const libc::c_char) {
-    print_escape_char_in(st);
-    print_cstr_in(st, s);
+pub(crate) fn print_esc_cstr(st: &mut EngineState, s: *const libc::c_char) {
+    print_escape_char(st);
+    print_cstr(st, s);
 }
 
-pub(crate) fn print_esc_in(st: &mut EngineState, s: i32) {
-    print_escape_char_in(st);
-    print_in(st, s);
+pub(crate) fn print_esc(st: &mut EngineState, s: i32) {
+    print_escape_char(st);
+    print(st, s);
 }
 
 fn esc(st: &mut EngineState, s: &CStr) {
-    print_esc_cstr_in(st, s.as_ptr());
+    print_esc_cstr(st, s.as_ptr());
 }
 
-pub(crate) fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
+pub(crate) fn print_roman_int(st: &mut EngineState, mut n: i32) {
     // Letter/divisor pairs: each letter is the previous value divided by the digit after it.
     const ROMAN_DATA: &[u8] = b"m2d5c2l5x2v5i";
     let mut j: usize = 0;
     let mut v: i32 = 1000;
     loop {
         while n >= v {
-            print_char_in(st, ROMAN_DATA[j] as i32);
+            print_char(st, ROMAN_DATA[j] as i32);
             n -= v;
         }
         if n <= 0 {
@@ -247,7 +247,7 @@ pub(crate) fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
             u /= ROMAN_DATA[k - 1] as i32 - b'0' as i32;
         }
         if n + u >= v {
-            print_char_in(st, ROMAN_DATA[k] as i32);
+            print_char(st, ROMAN_DATA[k] as i32);
             n += u;
         } else {
             j += 2;
@@ -256,20 +256,20 @@ pub(crate) fn print_roman_int_in(st: &mut EngineState, mut n: i32) {
     }
 }
 
-pub(crate) fn print_scaled_in(st: &mut EngineState, mut s: i32) {
+pub(crate) fn print_scaled(st: &mut EngineState, mut s: i32) {
     if s < 0 {
-        print_char_in(st, b'-' as i32);
+        print_char(st, b'-' as i32);
         s = -s;
     }
-    print_int_in(st, s / 0x10000);
-    print_char_in(st, b'.' as i32);
+    print_int(st, s / 0x10000);
+    print_char(st, b'.' as i32);
     s = 10 * (s % 0x10000) + 5;
     let mut delta: i32 = 10;
     loop {
         if delta > 0x10000 {
             s = s + 0x8000 - 50000;
         }
-        print_char_in(st, b'0' as i32 + (s / 0x10000));
+        print_char(st, b'0' as i32 + (s / 0x10000));
         s = 10 * (s % 0x10000);
         delta *= 10;
         if s <= delta {
@@ -278,7 +278,7 @@ pub(crate) fn print_scaled_in(st: &mut EngineState, mut s: i32) {
     }
 }
 
-fn warn_char_in(st: &mut EngineState, c: i32) {
+fn warn_char(st: &mut EngineState, c: i32) {
     let diag = st.shipout.current_diagnostic;
     if !diag.is_null() {
         let bytes: [u8; 2] = [c as u8, 0];
@@ -286,10 +286,10 @@ fn warn_char_in(st: &mut EngineState, c: i32) {
     }
 }
 
-pub(crate) fn print_ln_in(st: &mut EngineState) {
+pub(crate) fn print_ln(st: &mut EngineState) {
     match st.shipout.selector {
         sel @ (SELECTOR_TERM_ONLY | SELECTOR_LOG_ONLY | SELECTOR_TERM_AND_LOG) => {
-            warn_char_in(st, b'\n' as i32);
+            warn_char(st, b'\n' as i32);
             if sel != SELECTOR_LOG_ONLY {
                 unsafe { ttstub_output_putc(st.shipout.rust_stdout, b'\n' as i32) };
             }
@@ -312,12 +312,12 @@ pub(crate) fn print_ln_in(st: &mut EngineState) {
 }
 
 /// Writes one byte, UTF-16 code unit or (when pseudoprinting) character to the current selector.
-pub(crate) fn print_raw_char_in(st: &mut EngineState, s: i32, incr_offset: bool) {
+pub(crate) fn print_raw_char(st: &mut EngineState, s: i32, incr_offset: bool) {
     match st.shipout.selector {
         sel @ (SELECTOR_TERM_ONLY | SELECTOR_LOG_ONLY | SELECTOR_TERM_AND_LOG) => {
             let to_term = sel != SELECTOR_LOG_ONLY;
             let to_log = sel != SELECTOR_TERM_ONLY;
-            warn_char_in(st, s);
+            warn_char(st, s);
             if to_term {
                 unsafe { ttstub_output_putc(st.shipout.rust_stdout, s) };
             }
@@ -363,35 +363,35 @@ pub(crate) fn print_raw_char_in(st: &mut EngineState, s: i32, incr_offset: bool)
     st.errors.tally += 1;
 }
 
-pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
+pub(crate) fn print_char(st: &mut EngineState, s: i32) {
     if st.shipout.selector > SELECTOR_PSEUDO && !st.shipout.doing_special {
         if s >= 0x10000 {
-            print_raw_char_in(st, 0xD800 + (s - 0x10000) / 1024, true);
-            print_raw_char_in(st, 0xDC00 + (s - 0x10000) % 1024, true);
+            print_raw_char(st, 0xD800 + (s - 0x10000) / 1024, true);
+            print_raw_char(st, 0xDC00 + (s - 0x10000) % 1024, true);
         } else {
-            print_raw_char_in(st, s, true);
+            print_raw_char(st, s, true);
         }
         return;
     }
 
     if s == st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) && st.shipout.selector < SELECTOR_PSEUDO {
-        print_ln_in(st);
+        print_ln(st);
         return;
     }
 
     if s < 32 && !st.shipout.doing_special {
-        print_raw_char_in(st, b'^' as i32, true);
-        print_raw_char_in(st, b'^' as i32, true);
-        print_raw_char_in(st, s + 64, true);
+        print_raw_char(st, b'^' as i32, true);
+        print_raw_char(st, b'^' as i32, true);
+        print_raw_char(st, s + 64, true);
     } else if s < 127 {
-        print_raw_char_in(st, s, true);
+        print_raw_char(st, s, true);
     } else if s == 127 {
         if !st.shipout.doing_special {
-            print_raw_char_in(st, b'^' as i32, true);
-            print_raw_char_in(st, b'^' as i32, true);
-            print_raw_char_in(st, b'?' as i32, true);
+            print_raw_char(st, b'^' as i32, true);
+            print_raw_char(st, b'^' as i32, true);
+            print_raw_char(st, b'?' as i32, true);
         } else {
-            print_raw_char_in(st, s, true);
+            print_raw_char(st, s, true);
         }
     } else if s < 160 && !st.shipout.doing_special {
         let hex_digit = |d: i32| {
@@ -401,49 +401,49 @@ pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
                 b'a' as i32 + d - 10
             }
         };
-        print_raw_char_in(st, b'^' as i32, true);
-        print_raw_char_in(st, b'^' as i32, true);
-        print_raw_char_in(st, hex_digit((s % 256) / 16), true);
-        print_raw_char_in(st, hex_digit(s % 16), true);
+        print_raw_char(st, b'^' as i32, true);
+        print_raw_char(st, b'^' as i32, true);
+        print_raw_char(st, hex_digit((s % 256) / 16), true);
+        print_raw_char(st, hex_digit(s % 16), true);
     } else if st.shipout.selector == SELECTOR_PSEUDO {
-        print_raw_char_in(st, s, true);
+        print_raw_char(st, s, true);
     } else {
         // UTF-8, counting one column per character.
         if s < 2048 {
-            print_raw_char_in(st, 192 + s / 64, false);
-            print_raw_char_in(st, 128 + s % 64, true);
+            print_raw_char(st, 192 + s / 64, false);
+            print_raw_char(st, 128 + s % 64, true);
         } else if s < 0x10000 {
-            print_raw_char_in(st, 224 + s / 4096, false);
-            print_raw_char_in(st, 128 + (s % 4096) / 64, false);
-            print_raw_char_in(st, 128 + s % 64, true);
+            print_raw_char(st, 224 + s / 4096, false);
+            print_raw_char(st, 128 + (s % 4096) / 64, false);
+            print_raw_char(st, 128 + s % 64, true);
         } else {
-            print_raw_char_in(st, 240 + s / 0x40000, false);
-            print_raw_char_in(st, 128 + (s % 0x40000) / 4096, false);
-            print_raw_char_in(st, 128 + (s % 4096) / 64, false);
-            print_raw_char_in(st, 128 + s % 64, true);
+            print_raw_char(st, 240 + s / 0x40000, false);
+            print_raw_char(st, 128 + (s % 0x40000) / 4096, false);
+            print_raw_char(st, 128 + (s % 4096) / 64, false);
+            print_raw_char(st, 128 + s % 64, true);
         }
     }
 }
 
-pub(crate) fn print_in(st: &mut EngineState, s: i32) {
+pub(crate) fn print(st: &mut EngineState, s: i32) {
     if s >= st.strings.str_ptr {
-        return print_cstr_in(st, c"???".as_ptr());
+        return print_cstr(st, c"???".as_ptr());
     }
     if s <= BIGGEST_CHAR {
         if s < 0 {
-            return print_cstr_in(st, c"???".as_ptr());
+            return print_cstr(st, c"???".as_ptr());
         }
         if st.shipout.selector > SELECTOR_PSEUDO {
-            print_char_in(st, s);
+            print_char(st, s);
             return;
         }
         if s == st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) && st.shipout.selector < SELECTOR_PSEUDO {
-            print_ln_in(st);
+            print_ln(st);
             return;
         }
         let nl = st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR);
         st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, -1);
-        print_char_in(st, s);
+        print_char(st, s);
         st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, nl);
         return;
     }
@@ -455,12 +455,12 @@ pub(crate) fn print_in(st: &mut EngineState, s: i32) {
         let c = st.strings.str_pool[i];
         if i + 1 < end {
             if let Some(pair) = surrogate_pair(c, st.strings.str_pool[i + 1]) {
-                print_char_in(st, pair);
+                print_char(st, pair);
                 i += 2;
                 continue;
             }
         }
-        print_char_in(st, c as i32);
+        print_char(st, c as i32);
         i += 1;
     }
 }
@@ -474,15 +474,15 @@ fn surrogate_pair(hi: u16, lo: u16) -> Option<i32> {
         .then(|| 0x10000 + (hi as i32 - 0xD800) * 1024 + (lo as i32 - 0xDC00))
 }
 
-fn print_current_string_in(st: &mut EngineState) {
+fn print_current_string(st: &mut EngineState) {
     let start = st.strings.cur_string_start();
     for j in start..st.strings.pool_ptr {
         let c = st.strings.str_pool[j as usize];
-        print_char_in(st, c as i32);
+        print_char(st, c as i32);
     }
 }
 
-pub(crate) fn capture_to_diagnostic_in(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
+pub(crate) fn capture_to_diagnostic(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
     let cur = st.shipout.current_diagnostic;
     if !cur.is_null() {
         unsafe { ttstub_diag_finish(cur) };
@@ -507,7 +507,7 @@ fn current_file_line(st: &EngineState) -> Option<(i32, i32)> {
     Some((st.input.full_source_filename_stack[level as usize], line))
 }
 
-fn diagnostic_print_file_line_in(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
+fn diagnostic_print_file_line(st: &mut EngineState, diagnostic: *mut std::ffi::c_void) {
     let Some((name, line)) = current_file_line(st) else {
         unsafe { diag_append_cstr(diagnostic, c"!".as_ptr()) };
         return;
@@ -520,56 +520,54 @@ fn diagnostic_print_file_line_in(st: &mut EngineState, diagnostic: *mut std::ffi
     }
 }
 
-pub(crate) fn diagnostic_begin_capture_warning_here_in(
-    st: &mut EngineState,
-) -> *mut std::ffi::c_void {
+pub(crate) fn diagnostic_begin_capture_warning_here(st: &mut EngineState) -> *mut std::ffi::c_void {
     let warning = ttbc_diag_begin_warning_ptr();
-    diagnostic_print_file_line_in(st, warning);
-    capture_to_diagnostic_in(st, warning);
+    diagnostic_print_file_line(st, warning);
+    capture_to_diagnostic(st, warning);
     warning
 }
 
-pub(crate) fn error_here_with_diagnostic_in(
+pub(crate) fn error_here_with_diagnostic(
     st: &mut EngineState,
     message: *const libc::c_char,
 ) -> *mut std::ffi::c_void {
     let error = ttbc_diag_begin_error_ptr();
-    diagnostic_print_file_line_in(st, error);
+    diagnostic_print_file_line(st, error);
     unsafe { diag_append_cstr(error, message) };
-    print_error_prefix_in(st);
-    print_cstr_in(st, message);
-    capture_to_diagnostic_in(st, error);
+    print_error_prefix(st);
+    print_cstr(st, message);
+    capture_to_diagnostic(st, error);
     error
 }
 
 /// TeX's `print_err`: starts an error with `message` and closes its diagnostic.
-pub(crate) fn print_err_in(st: &mut EngineState, message: &std::ffi::CStr) {
-    error_here_with_diagnostic_in(st, message.as_ptr());
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
+pub(crate) fn print_err(st: &mut EngineState, message: &std::ffi::CStr) {
+    error_here_with_diagnostic(st, message.as_ptr());
+    capture_to_diagnostic(st, std::ptr::null_mut());
 }
 
 /// Starts an error line with `! ` or, in file:line:error style, the source position.
-pub(crate) fn print_error_prefix_in(st: &mut EngineState) {
+pub(crate) fn print_error_prefix(st: &mut EngineState) {
     if st.config.file_line_error_style_p != 0 {
-        print_file_line_in(st);
+        print_file_line(st);
     } else {
-        print_nl_cstr_in(st, c"! ".as_ptr());
+        print_nl_cstr(st, c"! ".as_ptr());
     }
 }
 
-pub(crate) fn print_file_line_in(st: &mut EngineState) {
+pub(crate) fn print_file_line(st: &mut EngineState) {
     let Some((name, line)) = current_file_line(st) else {
-        print_nl_cstr_in(st, c"! ".as_ptr());
+        print_nl_cstr(st, c"! ".as_ptr());
         return;
     };
-    print_nl_cstr_in(st, c"".as_ptr());
-    print_in(st, name);
-    print_char_in(st, b':' as i32);
-    print_int_in(st, line);
-    print_cstr_in(st, c": ".as_ptr());
+    print_nl_cstr(st, c"".as_ptr());
+    print(st, name);
+    print_char(st, b':' as i32);
+    print_int(st, line);
+    print_cstr(st, c": ".as_ptr());
 }
 
-pub(crate) fn print_size_in(st: &mut EngineState, s: i32) {
+pub(crate) fn print_size(st: &mut EngineState, s: i32) {
     esc(
         st,
         match s {
@@ -580,19 +578,19 @@ pub(crate) fn print_size_in(st: &mut EngineState, s: i32) {
     );
 }
 
-fn print_write_whatsit_in(st: &mut EngineState, s: &CStr, p: NodePtr<WhatsitNode>) {
+fn print_write_whatsit(st: &mut EngineState, s: &CStr, p: NodePtr<WhatsitNode>) {
     esc(st, s);
     let v = p.write_stream(&st.mem);
     if v < 16 {
-        print_int_in(st, v);
+        print_int(st, v);
     } else if v == 16 {
-        print_char_in(st, b'*' as i32);
+        print_char(st, b'*' as i32);
     } else {
-        print_char_in(st, b'-' as i32);
+        print_char(st, b'-' as i32);
     }
 }
 
-pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
+pub(crate) fn print_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
     // Swaps one quote character for the other.
     const QUOTE_SUM: i32 = b'"' as i32 + b'\'' as i32;
 
@@ -620,7 +618,7 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
         if quote_char == 0 {
             quote_char = b'"' as i32;
         }
-        print_char_in(st, quote_char);
+        print_char(st, quote_char);
     }
 
     for s in [a, n, e] {
@@ -630,16 +628,16 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
         for j in st.strings.str_range(s) {
             let c = st.strings.str_pool[j] as i32;
             if c == quote_char {
-                print_in(st, quote_char);
+                print(st, quote_char);
                 quote_char = QUOTE_SUM - quote_char;
-                print_in(st, quote_char);
+                print(st, quote_char);
             }
-            print_in(st, c);
+            print(st, c);
         }
     }
 
     if quote_char != 0 {
-        print_char_in(st, quote_char);
+        print_char(st, quote_char);
     }
 }
 
@@ -652,70 +650,70 @@ fn cs_text(st: &EngineState, p: i32) -> i32 {
     }
 }
 
-pub(crate) fn print_cs_in(st: &mut EngineState, p: i32) {
+pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
     if p < HASH_BASE {
         if p >= SINGLE_BASE {
             if p == NULL_CS {
                 esc(st, c"csname");
                 esc(st, c"endcsname");
-                print_char_in(st, b' ' as i32);
+                print_char(st, b' ' as i32);
             } else {
-                print_esc_in(st, p - SINGLE_BASE);
+                print_esc(st, p - SINGLE_BASE);
                 if st.eqtb.cat_code(p - SINGLE_BASE) == LETTER.into() {
-                    print_char_in(st, b' ' as i32);
+                    print_char(st, b' ' as i32);
                 }
             }
         } else if p < ACTIVE_BASE {
             esc(st, c"IMPOSSIBLE.");
         } else {
-            print_char_in(st, p - 1);
+            print_char(st, p - 1);
         }
     } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > st.eqtb.eqtb_top {
         esc(st, c"IMPOSSIBLE.");
     } else if st.eqtb.hash_s1(p) >= st.strings.str_ptr {
         esc(st, c"NONEXISTENT.");
     } else {
-        print_esc_in(st, cs_text(st, p));
-        print_char_in(st, b' ' as i32);
+        print_esc(st, cs_text(st, p));
+        print_char(st, b' ' as i32);
     }
 }
 
-/// Like [`print_cs_in`] but without the trailing space.
-pub(crate) fn sprint_cs_in(st: &mut EngineState, p: i32) {
+/// Like [`print_cs`] but without the trailing space.
+pub(crate) fn sprint_cs(st: &mut EngineState, p: i32) {
     if p >= HASH_BASE {
-        print_esc_in(st, cs_text(st, p));
+        print_esc(st, cs_text(st, p));
     } else if p < SINGLE_BASE {
-        print_char_in(st, p - 1);
+        print_char(st, p - 1);
     } else if p < NULL_CS {
-        print_esc_in(st, p - SINGLE_BASE);
+        print_esc(st, p - SINGLE_BASE);
     } else {
         esc(st, c"csname");
         esc(st, c"endcsname");
     }
 }
 
-fn print_native_word_in(st: &mut EngineState, p: NodePtr<WhatsitNode>) {
+fn print_native_word(st: &mut EngineState, p: NodePtr<WhatsitNode>) {
     let len = p.native_length(&st.mem) as usize;
     let mut i = 0;
     while i < len {
         let c = p.native_text(&st.mem)[i];
         if i + 1 < len {
             if let Some(pair) = surrogate_pair(c, p.native_text(&st.mem)[i + 1]) {
-                print_char_in(st, pair);
+                print_char(st, pair);
                 i += 2;
                 continue;
             }
         }
         if is_high_surrogate(c) {
-            print_in(st, b'.' as i32);
+            print(st, b'.' as i32);
         } else {
-            print_char_in(st, c as i32);
+            print_char(st, c as i32);
         }
         i += 1;
     }
 }
 
-fn print_sa_num_in(st: &mut EngineState, q: NodePtr<SaNode>) {
+fn print_sa_num(st: &mut EngineState, q: NodePtr<SaNode>) {
     let mem = &st.mem;
     let n = if q.sa_index(mem) < DIMEN_VAL_LIMIT {
         q.sa_ptr(mem).0
@@ -726,10 +724,10 @@ fn print_sa_num_in(st: &mut EngineState, q: NodePtr<SaNode>) {
         let digit = |q: NodePtr<SaNode>| q.sa_index(mem) as i32;
         digit(q) % 64 + 64 * digit(q1) + 64 * 64 * (digit(q2) + 64 * digit(q3))
     };
-    print_int_in(st, n);
+    print_int(st, n);
 }
 
-pub(crate) fn begin_diagnostic_in(st: &mut EngineState) {
+pub(crate) fn begin_diagnostic(st: &mut EngineState) {
     st.shipout.old_setting = st.shipout.selector as u8;
     if st.eqtb.int_par(INT_PAR_TRACING_ONLINE) <= 0 && st.shipout.selector == SELECTOR_TERM_AND_LOG
     {
@@ -738,10 +736,10 @@ pub(crate) fn begin_diagnostic_in(st: &mut EngineState) {
     }
 }
 
-pub(crate) fn end_diagnostic_in(st: &mut EngineState, blank_line: bool) {
-    print_nl_cstr_in(st, c"".as_ptr());
+pub(crate) fn end_diagnostic(st: &mut EngineState, blank_line: bool) {
+    print_nl_cstr(st, c"".as_ptr());
     if blank_line {
-        print_ln_in(st);
+        print_ln(st);
     }
     st.shipout.selector = st.shipout.old_setting as i32;
 }
@@ -769,23 +767,23 @@ fn mode_name(m: i32) -> Option<&'static CStr> {
     }
 }
 
-pub(crate) fn print_mode_in(st: &mut EngineState, m: i32) {
+pub(crate) fn print_mode(st: &mut EngineState, m: i32) {
     if let Some(name) = mode_name(m) {
-        print_cstr_in(st, name.as_ptr());
+        print_cstr(st, name.as_ptr());
     }
 }
 
-pub(crate) fn print_in_mode_in(st: &mut EngineState, m: i32) {
+pub(crate) fn print_in_mode(st: &mut EngineState, m: i32) {
     if let Some(name) = mode_name(m) {
-        print_cstr_in(st, c"' in ".as_ptr());
-        print_cstr_in(st, name.as_ptr());
+        print_cstr(st, c"' in ".as_ptr());
+        print_cstr(st, name.as_ptr());
     }
 }
 
-pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
+pub(crate) fn print_group(st: &mut EngineState, e: bool) {
     let name = match st.save_stack.cur_group {
         GroupCode::BottomLevel => {
-            print_cstr_in(st, c"bottom level".as_ptr());
+            print_cstr(st, c"bottom level".as_ptr());
             return;
         }
         GroupCode::Simple => c"simple",
@@ -805,30 +803,30 @@ pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
         GroupCode::MathShift => c"math shift",
         GroupCode::MathLeft => c"math left",
     };
-    print_cstr_in(st, name.as_ptr());
-    print_cstr_in(st, c" group (level ".as_ptr());
-    print_int_in(st, st.save_stack.cur_level as i32);
-    print_char_in(st, b')' as i32);
+    print_cstr(st, name.as_ptr());
+    print_cstr(st, c" group (level ".as_ptr());
+    print_int(st, st.save_stack.cur_level as i32);
+    print_char(st, b')' as i32);
     let line_at = st.save_stack.saved(-1);
     if line_at != 0 {
         if e {
-            print_cstr_in(st, c" entered at line ".as_ptr());
+            print_cstr(st, c" entered at line ".as_ptr());
         } else {
-            print_cstr_in(st, c" at line ".as_ptr());
+            print_cstr(st, c" at line ".as_ptr());
         }
-        print_int_in(st, line_at);
+        print_int(st, line_at);
     }
 }
 
-pub(crate) fn token_show_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+pub(crate) fn token_show(st: &mut EngineState, p: impl crate::units::MemAddr) {
     let p = MemPtr(p.addr());
     if !p.is_null() {
         let head = p.link(&st.mem);
-        show_token_list_in(st, head, TEX_NULL, 10_000_000);
+        show_token_list(st, head, TEX_NULL, 10_000_000);
     }
 }
 
-pub(crate) fn print_spec_in(
+pub(crate) fn print_spec(
     st: &mut EngineState,
     p: impl crate::units::MemAddr,
     s: *const libc::c_char,
@@ -838,24 +836,24 @@ pub(crate) fn print_spec_in(
         .contains(&p)
         .then(|| NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(p)));
     let Some(gs) = spec else {
-        print_char_in(st, b'*' as i32);
+        print_char(st, b'*' as i32);
         return;
     };
-    print_scaled_in(st, gs.width(&st.mem).0);
+    print_scaled(st, gs.width(&st.mem).0);
     if !s.is_null() {
-        print_cstr_in(st, s);
+        print_cstr(st, s);
     }
     if gs.stretch(&st.mem).0 != 0 {
-        print_cstr_in(st, c" plus ".as_ptr());
-        print_glue_in(st, gs.stretch(&st.mem).0, gs.stretch_order(&st.mem), s);
+        print_cstr(st, c" plus ".as_ptr());
+        print_glue(st, gs.stretch(&st.mem).0, gs.stretch_order(&st.mem), s);
     }
     if gs.shrink(&st.mem).0 != 0 {
-        print_cstr_in(st, c" minus ".as_ptr());
-        print_glue_in(st, gs.shrink(&st.mem).0, gs.shrink_order(&st.mem), s);
+        print_cstr(st, c" minus ".as_ptr());
+        print_glue(st, gs.shrink(&st.mem).0, gs.shrink_order(&st.mem), s);
     }
 }
 
-pub(crate) fn print_skip_param_in(st: &mut EngineState, n: i32) {
+pub(crate) fn print_skip_param(st: &mut EngineState, n: i32) {
     let name = match n {
         0 => c"lineskip",
         1 => c"baselineskip",
@@ -876,12 +874,12 @@ pub(crate) fn print_skip_param_in(st: &mut EngineState, n: i32) {
         16 => c"thinmuskip",
         17 => c"medmuskip",
         18 => c"thickmuskip",
-        _ => return print_cstr_in(st, c"[unknown glue parameter!]".as_ptr()),
+        _ => return print_cstr(st, c"[unknown glue parameter!]".as_ptr()),
     };
     esc(st, name);
 }
 
-pub(crate) fn print_param_in(st: &mut EngineState, n: i32) {
+pub(crate) fn print_param(st: &mut EngineState, n: i32) {
     let name = match n {
         0 => c"pretolerance",
         1 => c"tolerance",
@@ -963,12 +961,12 @@ pub(crate) fn print_param_in(st: &mut EngineState, n: i32) {
         80 => c"XeTeXhyphenatablelength",
         81 => c"synctex",
         82 => c"pdfoutput",
-        _ => return print_cstr_in(st, c"[unknown integer parameter!]".as_ptr()),
+        _ => return print_cstr(st, c"[unknown integer parameter!]".as_ptr()),
     };
     esc(st, name);
 }
 
-pub(crate) fn print_length_param_in(st: &mut EngineState, n: i32) {
+pub(crate) fn print_length_param(st: &mut EngineState, n: i32) {
     let name = match n {
         0 => c"parindent",
         1 => c"mathsurround",
@@ -993,103 +991,103 @@ pub(crate) fn print_length_param_in(st: &mut EngineState, n: i32) {
         20 => c"emergencystretch",
         21 => c"pdfpagewidth",
         22 => c"pdfpageheight",
-        _ => return print_cstr_in(st, c"[unknown dimen parameter!]".as_ptr()),
+        _ => return print_cstr(st, c"[unknown dimen parameter!]".as_ptr()),
     };
     esc(st, name);
 }
 
-pub(crate) fn print_style_in(st: &mut EngineState, c: i32) {
+pub(crate) fn print_style(st: &mut EngineState, c: i32) {
     let name = match c / 2 {
         0 => c"displaystyle",
         1 => c"textstyle",
         2 => c"scriptstyle",
         3 => c"scriptscriptstyle",
-        _ => return print_cstr_in(st, c"Unknown style!".as_ptr()),
+        _ => return print_cstr(st, c"Unknown style!".as_ptr()),
     };
     esc(st, name);
 }
 
 /// Prints a character code, as a string number when it is one.
-fn print_code_in(st: &mut EngineState, c: i32) {
+fn print_code(st: &mut EngineState, c: i32) {
     if c < TOO_BIG_CHAR {
-        print_in(st, c);
+        print(st, c);
     } else {
-        print_char_in(st, c);
+        print_char(st, c);
     }
 }
 
-fn print_fam_and_char_in(st: &mut EngineState, p: NodePtr<MathField>) {
+fn print_fam_and_char(st: &mut EngineState, p: NodePtr<MathField>) {
     esc(st, c"fam");
-    print_int_in(st, p.fam(&st.mem));
-    print_char_in(st, b' ' as i32);
-    print_code_in(st, p.full_char(&st.mem));
+    print_int(st, p.fam(&st.mem));
+    print_char(st, b' ' as i32);
+    print_code(st, p.full_char(&st.mem));
 }
 
-fn print_delimiter_in(st: &mut EngineState, p: NodePtr<DelimiterField>) {
+fn print_delimiter(st: &mut EngineState, p: NodePtr<DelimiterField>) {
     let (small_fam, small_char) = p.small(&st.mem);
     let (large_fam, large_char) = p.large(&st.mem);
     let a = ((small_fam as i64 * 256 + small_char as i64) * 4096
         + large_fam as i64 * 256
         + large_char as i64) as i32;
     if a < 0 {
-        print_int_in(st, a);
+        print_int(st, a);
     } else {
-        print_hex_in(st, a);
+        print_hex(st, a);
     }
 }
 
-pub(crate) fn print_rule_dimen_in(st: &mut EngineState, d: i32) {
+pub(crate) fn print_rule_dimen(st: &mut EngineState, d: i32) {
     if d == NULL_FLAG {
-        print_char_in(st, b'*' as i32);
+        print_char(st, b'*' as i32);
     } else {
-        print_scaled_in(st, d);
+        print_scaled(st, d);
     }
 }
 
 /// Prints `d` with its fil/fill/filll order, or the unit `s` for finite glue.
-pub(crate) fn print_glue_in(st: &mut EngineState, d: i32, order: u16, s: *const libc::c_char) {
-    print_scaled_in(st, d);
+pub(crate) fn print_glue(st: &mut EngineState, d: i32, order: u16, s: *const libc::c_char) {
+    print_scaled(st, d);
     if !(NORMAL..=FILLL).contains(&order) {
-        print_cstr_in(st, c"foul".as_ptr());
+        print_cstr(st, c"foul".as_ptr());
     } else if order > NORMAL {
-        print_cstr_in(st, c"fil".as_ptr());
+        print_cstr(st, c"fil".as_ptr());
         for _ in 1..order {
-            print_char_in(st, b'l' as i32);
+            print_char(st, b'l' as i32);
         }
     } else if !s.is_null() {
-        print_cstr_in(st, s);
+        print_cstr(st, s);
     }
 }
 
-fn print_font_char_in(st: &mut EngineState, font: i32, c: u16) {
+fn print_font_char(st: &mut EngineState, font: i32, c: u16) {
     if font > st.fonts.font_max {
-        print_char_in(st, b'*' as i32);
+        print_char(st, b'*' as i32);
     } else {
-        print_esc_in(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
+        print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
     }
-    print_char_in(st, b' ' as i32);
-    print_in(st, c as i32);
+    print_char(st, b' ' as i32);
+    print(st, c as i32);
 }
 
-fn print_font_and_char_in(st: &mut EngineState, p: MemPtr) {
+fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
     if p.0 > st.mem.mem_end {
         esc(st, c"CLOBBERED.");
     } else {
         let ch = NodePtr::<CharNode>::at(p);
-        print_font_char_in(st, ch.font(&st.mem).0, ch.character(&st.mem));
+        print_font_char(st, ch.font(&st.mem).0, ch.character(&st.mem));
     }
 }
 
-fn print_mark_in(st: &mut EngineState, p: MemPtr) {
-    print_char_in(st, b'{' as i32);
+fn print_mark(st: &mut EngineState, p: MemPtr) {
+    print_char(st, b'{' as i32);
     if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
         esc(st, c"CLOBBERED.");
     } else {
         let head = p.link(&st.mem);
         let l = st.config.max_print_line - 10;
-        show_token_list_in(st, head, TEX_NULL, l);
+        show_token_list(st, head, TEX_NULL, l);
     }
-    print_char_in(st, b'}' as i32);
+    print_char(st, b'}' as i32);
 }
 
 const SHOW_BOX_CODE: i32 = 1;
@@ -1099,10 +1097,10 @@ const SHOW_GROUPS: i32 = 4;
 const SHOW_TOKENS: i32 = 5;
 const SHOW_IFS: i32 = 6;
 
-pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
+pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
     let char_cmd = |st: &mut EngineState, s: &CStr| {
-        print_cstr_in(st, s.as_ptr());
-        print_code_in(st, chr_code);
+        print_cstr(st, s.as_ptr());
+        print_code(st, chr_code);
     };
 
     match cmd {
@@ -1112,25 +1110,25 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         MAC_PARAM => char_cmd(st, c"macro parameter character "),
         SUP_MARK => char_cmd(st, c"superscript character "),
         SUB_MARK => char_cmd(st, c"subscript character "),
-        ENDV => print_cstr_in(st, c"end of alignment template".as_ptr()),
+        ENDV => print_cstr(st, c"end of alignment template".as_ptr()),
         SPACER => char_cmd(st, c"blank space "),
         LETTER => char_cmd(st, c"the letter "),
         OTHER_CHAR => char_cmd(st, c"the character "),
         ASSIGN_GLUE | ASSIGN_MU_GLUE => {
             if chr_code < SKIP_BASE {
-                print_skip_param_in(st, chr_code - GLUE_BASE);
+                print_skip_param(st, chr_code - GLUE_BASE);
             } else if chr_code < MU_SKIP_BASE {
                 esc(st, c"skip");
-                print_int_in(st, chr_code - SKIP_BASE);
+                print_int(st, chr_code - SKIP_BASE);
             } else {
                 esc(st, c"muskip");
-                print_int_in(st, chr_code - MU_SKIP_BASE);
+                print_int(st, chr_code - MU_SKIP_BASE);
             }
         }
         ASSIGN_TOKS => {
             if chr_code >= TOKS_BASE {
                 esc(st, c"toks");
-                print_int_in(st, chr_code - TOKS_BASE);
+                print_int(st, chr_code - TOKS_BASE);
             } else {
                 let name = match chr_code - LOCAL_BASE {
                     1 => c"output",
@@ -1151,18 +1149,18 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         }
         ASSIGN_INT => {
             if chr_code < COUNT_BASE {
-                print_param_in(st, chr_code - INT_BASE);
+                print_param(st, chr_code - INT_BASE);
             } else {
                 esc(st, c"count");
-                print_int_in(st, chr_code - COUNT_BASE);
+                print_int(st, chr_code - COUNT_BASE);
             }
         }
         ASSIGN_DIMEN => {
             if chr_code < SCALED_BASE {
-                print_length_param_in(st, chr_code - DIMEN_BASE);
+                print_length_param(st, chr_code - DIMEN_BASE);
             } else {
                 esc(st, c"dimen");
-                print_int_in(st, chr_code - SCALED_BASE);
+                print_int(st, chr_code - SCALED_BASE);
             }
         }
         ACCENT => esc(st, c"accent"),
@@ -1186,7 +1184,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         DIVIDE => esc(st, c"divide"),
         END_CS_NAME => esc(st, c"endcsname"),
         END_GROUP => esc(st, c"endgroup"),
-        EX_SPACE => print_esc_in(st, b' ' as i32),
+        EX_SPACE => print_esc(st, b' ' as i32),
         EXPAND_AFTER => esc(
             st,
             if chr_code == 0 {
@@ -1206,11 +1204,11 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             },
         ),
         INSERT => esc(st, c"insert"),
-        ITAL_CORR => print_esc_in(st, b'/' as i32),
+        ITAL_CORR => print_esc(st, b'/' as i32),
         MARK => {
             esc(st, c"mark");
             if chr_code > 0 {
-                print_char_in(st, b's' as i32);
+                print_char(st, b's' as i32);
             }
         }
         MATH_ACCENT => esc(
@@ -1281,7 +1279,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             esc(st, c"toks");
             if chr_code != 0 {
                 if let Some(q) = NodePtr::<SaNode>::from_ptr(MemPtr(chr_code)) {
-                    print_sa_num_in(st, q);
+                    print_sa_num(st, q);
                 }
             }
         }
@@ -1317,7 +1315,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             };
             esc(st, name);
             if chr_code >= MARKS_CODE {
-                print_char_in(st, b's' as i32);
+                print_char(st, b's' as i32);
             }
         }
         REGISTER => {
@@ -1335,7 +1333,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             };
             esc(st, name);
             if let Some(q) = sa {
-                print_sa_num_in(st, q);
+                print_sa_num(st, q);
             }
         }
         SET_AUX => esc(
@@ -1612,7 +1610,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         ),
         DISCRETIONARY => {
             if chr_code == 1 {
-                print_esc_in(st, b'-' as i32);
+                print_esc(st, b'-' as i32);
             } else {
                 esc(st, c"discretionary");
             }
@@ -1650,7 +1648,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 _ => c"displaylimits",
             },
         ),
-        MATH_STYLE => print_style_in(st, chr_code),
+        MATH_STYLE => print_style(st, chr_code),
         ABOVE => {
             let name = match chr_code {
                 OVER_CODE => c"over",
@@ -1708,18 +1706,18 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         }
         CHAR_GIVEN => {
             esc(st, c"char");
-            print_hex_in(st, chr_code);
+            print_hex(st, chr_code);
         }
         MATH_GIVEN => {
             esc(st, c"mathchar");
-            print_hex_in(st, chr_code);
+            print_hex(st, chr_code);
         }
         XETEX_MATH_GIVEN => {
             let code = chr_code as u32;
             esc(st, c"Umathchar");
-            print_hex_in(st, ((code >> 21) & 0x07) as i32);
-            print_hex_in(st, ((code >> 24) & 0xFF) as i32);
-            print_hex_in(st, (code & 0x1F_FFFF) as i32);
+            print_hex(st, ((code >> 21) & 0x07) as i32);
+            print_hex(st, ((code >> 24) & 0xFF) as i32);
+            print_hex(st, (code & 0x1F_FFFF) as i32);
         }
         DEF_CODE => {
             let name = match chr_code {
@@ -1742,7 +1740,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             };
             esc(st, name);
         }
-        DEF_FAMILY => print_size_in(st, chr_code - MATH_FONT_BASE),
+        DEF_FAMILY => print_size(st, chr_code - MATH_FONT_BASE),
         HYPH_DATA => esc(
             st,
             if chr_code == 1 {
@@ -1761,7 +1759,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             };
             esc(st, name);
         }
-        SET_FONT => print_font_select_in(st, chr_code as usize),
+        SET_FONT => print_font_select(st, chr_code as usize),
         SET_INTERACTION => {
             const BATCH: i32 = InteractionMode::Batch as i32;
             const NONSTOP: i32 = InteractionMode::Nonstop as i32;
@@ -1803,7 +1801,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
             };
             esc(st, name);
         }
-        UNDEFINED_CS => print_cstr_in(st, c"undefined".as_ptr()),
+        UNDEFINED_CS => print_cstr(st, c"undefined".as_ptr()),
         CALL | LONG_CALL | OUTER_CALL | LONG_OUTER_CALL => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
             let mut n = (cmd - CALL) as i32;
@@ -1820,9 +1818,9 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 esc(st, c"outer");
             }
             if n > 0 {
-                print_char_in(st, b' ' as i32);
+                print_char(st, b' ' as i32);
             }
-            print_cstr_in(st, c"macro".as_ptr());
+            print_cstr(st, c"macro".as_ptr());
         }
         END_TEMPLATE => esc(st, c"outer endtemplate"),
         EXTENSION => {
@@ -1842,48 +1840,48 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => c"XeTeXlinebreaklocale",
                 XETEX_INPUT_ENCODING_EXTENSION_CODE => c"XeTeXinputencoding",
                 XETEX_DEFAULT_ENCODING_EXTENSION_CODE => c"XeTeXdefaultencoding",
-                _ => return print_cstr_in(st, c"[unknown extension!]".as_ptr()),
+                _ => return print_cstr(st, c"[unknown extension!]".as_ptr()),
             };
             esc(st, name);
         }
-        _ => print_cstr_in(st, c"[unknown command code!]".as_ptr()),
+        _ => print_cstr(st, c"[unknown command code!]".as_ptr()),
     }
 }
 
 /// `select font <name>`, quoting native font names, plus ` at <size>pt` if scaled.
-fn print_font_select_in(st: &mut EngineState, f: usize) {
-    print_cstr_in(st, c"select font ".as_ptr());
+fn print_font_select(st: &mut EngineState, f: usize) {
+    print_cstr(st, c"select font ".as_ptr());
     let name = st.fonts.font_name[f];
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
         let has_double_quote =
             st.strings.str_pool[st.strings.str_range(name)].contains(&(b'"' as u16));
         let quote_char = if has_double_quote { b'\'' } else { b'"' } as i32;
-        print_char_in(st, quote_char);
-        print_in(st, name);
-        print_char_in(st, quote_char);
+        print_char(st, quote_char);
+        print(st, name);
+        print_char(st, quote_char);
     } else {
-        print_in(st, name);
+        print(st, name);
     }
     if st.fonts.font_size[f] != st.fonts.font_dsize[f] {
-        print_cstr_in(st, c" at ".as_ptr());
-        print_scaled_in(st, st.fonts.font_size[f]);
-        print_cstr_in(st, c"pt".as_ptr());
+        print_cstr(st, c" at ".as_ptr());
+        print_scaled(st, st.fonts.font_size[f]);
+        print_cstr(st, c"pt".as_ptr());
     }
 }
 
-pub(crate) fn print_meaning_in(st: &mut EngineState) {
+pub(crate) fn print_meaning(st: &mut EngineState) {
     let cmd = st.scanner.cur_cmd;
     let chr = st.scanner.cur_chr;
-    print_cmd_chr_in(st, cmd, chr);
+    print_cmd_chr(st, cmd, chr);
     if cmd >= CALL {
-        print_char_in(st, b':' as i32);
-        print_ln_in(st);
-        token_show_in(st, chr);
+        print_char(st, b':' as i32);
+        print_ln(st);
+        token_show(st, chr);
     } else if cmd == TOP_BOT_MARK && (chr as usize) < 5 {
-        print_char_in(st, b':' as i32);
-        print_ln_in(st);
-        token_show_in(st, st.scanner.cur_mark[chr as usize]);
+        print_char(st, b':' as i32);
+        print_ln(st);
+        token_show(st, st.scanner.cur_mark[chr as usize]);
     }
 }
 
@@ -1897,7 +1895,7 @@ fn level_is_file(st: &mut EngineState, level: i32) -> bool {
     st.input.input_stack[st.input.base_ptr as usize].name > 17
 }
 
-pub(crate) fn group_warning_in(st: &mut EngineState) {
+pub(crate) fn group_warning(st: &mut EngineState) {
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     let mut i = st.input.in_open;
@@ -1910,21 +1908,21 @@ pub(crate) fn group_warning_in(st: &mut EngineState) {
         i -= 1;
     }
     if w {
-        print_nl_cstr_in(st, c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here_in(st);
-        print_cstr_in(st, c"end of ".as_ptr());
-        print_group_in(st, true);
-        print_cstr_in(st, c" of a different file".as_ptr());
-        print_ln_in(st);
+        print_nl_cstr(st, c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here(st);
+        print_cstr(st, c"end of ".as_ptr());
+        print_group(st, true);
+        print_cstr(st, c" of a different file".as_ptr());
+        print_ln(st);
         if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
-            show_context_in(st);
+            show_context(st);
         }
         note_warning_issued(st);
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, std::ptr::null_mut());
     }
 }
 
-pub(crate) fn if_warning_in(st: &mut EngineState) {
+pub(crate) fn if_warning(st: &mut EngineState) {
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     let mut i = st.input.in_open;
@@ -1937,25 +1935,25 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
         i -= 1;
     }
     if w {
-        print_nl_cstr_in(st, c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here_in(st);
-        print_cstr_in(st, c"end of ".as_ptr());
-        print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
-        print_if_line_in(st, st.scanner.if_line);
-        print_cstr_in(st, c" of a different file".as_ptr());
-        print_ln_in(st);
+        print_nl_cstr(st, c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here(st);
+        print_cstr(st, c"end of ".as_ptr());
+        print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
+        print_if_line(st, st.scanner.if_line);
+        print_cstr(st, c" of a different file".as_ptr());
+        print_ln(st);
         if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
-            show_context_in(st);
+            show_context(st);
         }
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        capture_to_diagnostic(st, std::ptr::null_mut());
         note_warning_issued(st);
     }
 }
 
-fn print_if_line_in(st: &mut EngineState, line: i32) {
+fn print_if_line(st: &mut EngineState, line: i32) {
     if line != 0 {
-        print_cstr_in(st, c" entered on line ".as_ptr());
-        print_int_in(st, line);
+        print_cstr(st, c" entered on line ".as_ptr());
+        print_int(st, line);
     }
 }
 
@@ -1965,19 +1963,19 @@ fn leave_group_boundary(st: &mut EngineState) {
     (ss.cur_group, ss.save_ptr) = ss.boundary_at(ss.save_ptr);
 }
 
-pub(crate) fn file_warning_in(st: &mut EngineState) {
+pub(crate) fn file_warning(st: &mut EngineState) {
     let saved_ptr = st.save_stack.save_ptr;
     let saved_level = st.save_stack.cur_level;
     let saved_group = st.save_stack.cur_group;
     st.save_stack.save_ptr = st.save_stack.cur_boundary;
     while st.input.grp_stack[st.input.in_open as usize] != st.save_stack.save_ptr {
         st.save_stack.cur_level -= 1;
-        print_nl_cstr_in(st, c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here_in(st);
-        print_cstr_in(st, c"end of file when ".as_ptr());
-        print_group_in(st, true);
-        print_cstr_in(st, c" is incomplete".as_ptr());
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        print_nl_cstr(st, c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here(st);
+        print_cstr(st, c"end of file when ".as_ptr());
+        print_group(st, true);
+        print_cstr(st, c" is incomplete".as_ptr());
+        capture_to_diagnostic(st, std::ptr::null_mut());
         leave_group_boundary(st);
     }
     st.save_stack.save_ptr = saved_ptr;
@@ -1989,16 +1987,16 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
     let saved_if = st.scanner.cur_if;
     let saved_line = st.scanner.if_line;
     while st.input.if_stack[st.input.in_open as usize] != st.scanner.cond_ptr {
-        print_nl_cstr_in(st, c"Warning: ".as_ptr());
-        diagnostic_begin_capture_warning_here_in(st);
-        print_cstr_in(st, c"end of file when ".as_ptr());
-        print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
+        print_nl_cstr(st, c"Warning: ".as_ptr());
+        diagnostic_begin_capture_warning_here(st);
+        print_cstr(st, c"end of file when ".as_ptr());
+        print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
         if st.scanner.if_limit == FI_CODE {
             esc(st, c"else");
         }
-        print_if_line_in(st, st.scanner.if_line);
-        print_cstr_in(st, c" is incomplete".as_ptr());
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        print_if_line(st, st.scanner.if_line);
+        print_cstr(st, c" is incomplete".as_ptr());
+        capture_to_diagnostic(st, std::ptr::null_mut());
         let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
         (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = cond.saved_state(&st.mem);
         st.scanner.cond_ptr = cond.link(&st.mem);
@@ -2008,32 +2006,32 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
     st.scanner.cur_if = saved_if;
     st.scanner.if_line = saved_line;
 
-    print_ln_in(st);
+    print_ln(st);
     if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 1 {
-        diagnostic_begin_capture_warning_here_in(st);
-        show_context_in(st);
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        diagnostic_begin_capture_warning_here(st);
+        show_context(st);
+        capture_to_diagnostic(st, std::ptr::null_mut());
     }
     note_warning_issued(st);
 }
 
-pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
-    begin_diagnostic_in(st);
-    diagnostic_begin_capture_warning_here_in(st);
-    print_nl_in(st, b'{' as i32);
+pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
+    begin_diagnostic(st);
+    diagnostic_begin_capture_warning_here(st);
+    print_nl(st, b'{' as i32);
     if st.input.cur_list.mode != st.scanner.shown_mode {
-        print_mode_in(st, st.input.cur_list.mode as i32);
-        print_cstr_in(st, c": ".as_ptr());
+        print_mode(st, st.input.cur_list.mode as i32);
+        print_cstr(st, c": ".as_ptr());
         st.scanner.shown_mode = st.input.cur_list.mode;
     }
-    print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
+    print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
     if st.eqtb.int_par(INT_PAR_TRACING_IFS) > 0
         && (IF_TEST as u8..=FI_OR_ELSE).contains(&st.scanner.cur_cmd)
     {
-        print_cstr_in(st, c": ".as_ptr());
+        print_cstr(st, c": ".as_ptr());
         let (mut n, l) = if st.scanner.cur_cmd == FI_OR_ELSE {
-            print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
-            print_char_in(st, b' ' as i32);
+            print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
+            print_char(st, b' ' as i32);
             (0, st.scanner.if_line)
         } else {
             (1, st.mem.line)
@@ -2043,17 +2041,17 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
             n += 1;
             p = p.link(&st.mem);
         }
-        print_cstr_in(st, c"(level ".as_ptr());
-        print_int_in(st, n);
-        print_char_in(st, b')' as i32);
-        print_if_line_in(st, l);
+        print_cstr(st, c"(level ".as_ptr());
+        print_int(st, n);
+        print_char(st, b')' as i32);
+        print_if_line(st, l);
     }
-    print_char_in(st, b'}' as i32);
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
-    end_diagnostic_in(st, false);
+    print_char(st, b'}' as i32);
+    capture_to_diagnostic(st, std::ptr::null_mut());
+    end_diagnostic(st, false);
 }
 
-pub(crate) fn change_if_limit_in(
+pub(crate) fn change_if_limit(
     st: &mut EngineState,
     l: i16,
     p: impl crate::units::MemAddr,
@@ -2076,8 +2074,8 @@ pub(crate) fn change_if_limit_in(
 }
 
 /// C++ font-layer callback, reaching the run's state through the locator pointer.
-#[no_mangle]
-pub unsafe extern "C" fn font_feature_warning(
+#[export_name = "font_feature_warning"]
+pub unsafe extern "C" fn font_feature_warning_callback(
     feature_name_p: *const libc::c_void,
     feat_len: i32,
     setting_name_p: *const libc::c_void,
@@ -2085,84 +2083,84 @@ pub unsafe extern "C" fn font_feature_warning(
 ) {
     let p = crate::state::current_engine_state();
     if !p.is_null() {
-        font_feature_warning_in(&mut *p, feature_name_p, feat_len, setting_name_p, set_len);
+        font_feature_warning(&mut *p, feature_name_p, feat_len, setting_name_p, set_len);
     }
 }
 
-pub(crate) fn font_feature_warning_in(
+pub(crate) fn font_feature_warning(
     st: &mut EngineState,
     feature_name_p: *const libc::c_void,
     feat_len: i32,
     setting_name_p: *const libc::c_void,
     set_len: i32,
 ) {
-    begin_diagnostic_in(st);
-    diagnostic_begin_capture_warning_here_in(st);
-    print_nl_cstr_in(st, c"Unknown ".as_ptr());
+    begin_diagnostic(st);
+    diagnostic_begin_capture_warning_here(st);
+    print_nl_cstr(st, c"Unknown ".as_ptr());
     if set_len > 0 {
-        print_cstr_in(st, c"selector `".as_ptr());
-        crate::ext::print_utf8_str_in(st, setting_name_p as *const u8, set_len);
-        print_cstr_in(st, c"' for ".as_ptr());
+        print_cstr(st, c"selector `".as_ptr());
+        crate::ext::print_utf8_str(st, setting_name_p as *const u8, set_len);
+        print_cstr(st, c"' for ".as_ptr());
     }
-    print_cstr_in(st, c"feature `".as_ptr());
-    crate::ext::print_utf8_str_in(st, feature_name_p as *const u8, feat_len);
-    print_cstr_in(st, c"' in font `".as_ptr());
-    print_name_of_file_in(st);
-    print_cstr_in(st, c"'.".as_ptr());
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
-    end_diagnostic_in(st, false);
+    print_cstr(st, c"feature `".as_ptr());
+    crate::ext::print_utf8_str(st, feature_name_p as *const u8, feat_len);
+    print_cstr(st, c"' in font `".as_ptr());
+    print_name_of_file(st);
+    print_cstr(st, c"'.".as_ptr());
+    capture_to_diagnostic(st, std::ptr::null_mut());
+    end_diagnostic(st, false);
 }
 
-pub(crate) fn font_mapping_warning_in(
+pub(crate) fn font_mapping_warning(
     st: &mut EngineState,
     mapping_name_p: *const libc::c_void,
     mapping_name_len: i32,
     warning_type: i32,
 ) {
-    begin_diagnostic_in(st);
-    diagnostic_begin_capture_warning_here_in(st);
+    begin_diagnostic(st);
+    diagnostic_begin_capture_warning_here(st);
     if warning_type == 0 {
-        print_nl_cstr_in(st, c"Loaded mapping `".as_ptr());
+        print_nl_cstr(st, c"Loaded mapping `".as_ptr());
     } else {
-        print_nl_cstr_in(st, c"Font mapping `".as_ptr());
+        print_nl_cstr(st, c"Font mapping `".as_ptr());
     }
-    crate::ext::print_utf8_str_in(st, mapping_name_p as *const u8, mapping_name_len);
-    print_cstr_in(st, c"' for font `".as_ptr());
-    print_name_of_file_in(st);
+    crate::ext::print_utf8_str(st, mapping_name_p as *const u8, mapping_name_len);
+    print_cstr(st, c"' for font `".as_ptr());
+    print_name_of_file(st);
     match warning_type {
-        1 => print_cstr_in(st, c"' not found.".as_ptr()),
+        1 => print_cstr(st, c"' not found.".as_ptr()),
         2 => {
-            print_cstr_in(st, c"' not usable;".as_ptr());
-            print_nl_cstr_in(st, c"bad mapping file or incorrect mapping type.".as_ptr());
+            print_cstr(st, c"' not usable;".as_ptr());
+            print_nl_cstr(st, c"bad mapping file or incorrect mapping type.".as_ptr());
         }
-        _ => print_cstr_in(st, c"'.".as_ptr()),
+        _ => print_cstr(st, c"'.".as_ptr()),
     }
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
-    end_diagnostic_in(st, false);
+    capture_to_diagnostic(st, std::ptr::null_mut());
+    end_diagnostic(st, false);
 }
 
-fn print_name_of_file_in(st: &mut EngineState) {
+fn print_name_of_file(st: &mut EngineState) {
     let name = &st.input.name_of_file;
     let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
     for i in 0..len {
         let b = st.input.name_of_file[i] as i32;
-        print_raw_char_in(st, b, true);
+        print_raw_char(st, b, true);
     }
 }
 
-pub(crate) fn bad_utf8_warning_in(st: &mut EngineState) {
-    begin_diagnostic_in(st);
-    diagnostic_begin_capture_warning_here_in(st);
-    print_nl_cstr_in(st, c"Invalid UTF-8 byte or sequence".as_ptr());
+pub(crate) fn bad_utf8_warning(st: &mut EngineState) {
+    begin_diagnostic(st);
+    diagnostic_begin_capture_warning_here(st);
+    print_nl_cstr(st, c"Invalid UTF-8 byte or sequence".as_ptr());
     if st.input.cur_input.name == 0 {
-        print_cstr_in(st, c" in terminal input".as_ptr());
+        print_cstr(st, c" in terminal input".as_ptr());
     } else {
-        print_cstr_in(st, c" at line ".as_ptr());
-        print_int_in(st, st.mem.line);
+        print_cstr(st, c" at line ".as_ptr());
+        print_int(st, st.mem.line);
     }
-    print_cstr_in(st, c" replaced by U+FFFD.".as_ptr());
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
-    end_diagnostic_in(st, false);
+    print_cstr(st, c" replaced by U+FFFD.".as_ptr());
+    capture_to_diagnostic(st, std::ptr::null_mut());
+    end_diagnostic(st, false);
 }
 
 /// Records where the error context splits, when printing reaches the current position.
@@ -2172,12 +2170,7 @@ fn set_trick_count(st: &mut EngineState) {
     st.errors.trick_count = tc.max(st.errors.error_line);
 }
 
-pub(crate) fn show_token_list_in(
-    st: &mut EngineState,
-    p: impl crate::units::MemAddr,
-    q: i32,
-    l: i32,
-) {
+pub(crate) fn show_token_list(st: &mut EngineState, p: impl crate::units::MemAddr, q: i32, l: i32) {
     let mut p = MemPtr(p.addr());
     let mut match_chr = b'#' as i32;
     let mut n = b'0' as i32;
@@ -2192,38 +2185,38 @@ pub(crate) fn show_token_list_in(
         }
         let w = p.info(&st.mem);
         if w >= CS_TOKEN_FLAG {
-            print_cs_in(st, w - CS_TOKEN_FLAG);
+            print_cs(st, w - CS_TOKEN_FLAG);
         } else if w < 0 {
             esc(st, c"BAD.");
         } else {
             let c = w % MAX_CHAR_VAL;
             match (w / MAX_CHAR_VAL) as u8 {
                 LEFT_BRACE | RIGHT_BRACE | MATH_SHIFT | TAB_MARK | SUP_MARK | SUB_MARK | SPACER
-                | LETTER | OTHER_CHAR => print_char_in(st, c),
+                | LETTER | OTHER_CHAR => print_char(st, c),
                 MAC_PARAM => {
-                    print_char_in(st, c);
-                    print_char_in(st, c);
+                    print_char(st, c);
+                    print_char(st, c);
                 }
                 OUT_PARAM => {
-                    print_char_in(st, match_chr);
+                    print_char(st, match_chr);
                     if c > 9 {
-                        print_char_in(st, b'!' as i32);
+                        print_char(st, b'!' as i32);
                         return;
                     }
-                    print_char_in(st, b'0' as i32 + c);
+                    print_char(st, b'0' as i32 + c);
                 }
                 MATCH => {
                     match_chr = c;
-                    print_char_in(st, c);
+                    print_char(st, c);
                     n += 1;
-                    print_char_in(st, n);
+                    print_char(st, n);
                     if n > b'9' as i32 {
                         return;
                     }
                 }
                 END_MATCH => {
                     if c == 0 {
-                        print_cstr_in(st, c"->".as_ptr());
+                        print_cstr(st, c"->".as_ptr());
                     }
                 }
                 _ => esc(st, c"BAD."),
@@ -2236,24 +2229,24 @@ pub(crate) fn show_token_list_in(
     }
 }
 
-fn print_totals_in(st: &mut EngineState) {
-    print_scaled_in(st, st.shipout.page_so_far[1]);
+fn print_totals(st: &mut EngineState) {
+    print_scaled(st, st.shipout.page_so_far[1]);
     for (i, order) in [(2, c""), (3, c"fil"), (4, c"fill"), (5, c"filll")] {
         if st.shipout.page_so_far[i] != 0 {
-            print_cstr_in(st, c" plus ".as_ptr());
-            print_scaled_in(st, st.shipout.page_so_far[i]);
-            print_cstr_in(st, order.as_ptr());
+            print_cstr(st, c" plus ".as_ptr());
+            print_scaled(st, st.shipout.page_so_far[i]);
+            print_cstr(st, order.as_ptr());
         }
     }
     if st.shipout.page_so_far[6] != 0 {
-        print_cstr_in(st, c" minus ".as_ptr());
-        print_scaled_in(st, st.shipout.page_so_far[6]);
+        print_cstr(st, c" minus ".as_ptr());
+        print_scaled(st, st.shipout.page_so_far[6]);
     }
 }
 
-fn show_info_in(st: &mut EngineState) {
+fn show_info(st: &mut EngineState) {
     let p = st.mem.temp_ptr.info(&st.mem);
-    show_node_list_in(st, p);
+    show_node_list(st, p);
 }
 
 /// Drops the most recently made string.
@@ -2280,13 +2273,13 @@ impl IssueMessageAbort {
     }
 }
 
-pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageAbort> {
+pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), IssueMessageAbort> {
     let c = st.scanner.cur_chr as u8;
-    let toks = crate::scan::scan_toks_in(st, false, true).map_err(IssueMessageAbort::Scanner)?;
+    let toks = crate::scan::scan_toks(st, false, true).map_err(IssueMessageAbort::Scanner)?;
     GARBAGE.set_link(&mut st.mem, toks);
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    token_show_in(st, st.scanner.def_ref);
+    token_show(st, st.scanner.def_ref);
     st.shipout.selector = old_setting;
     st.mem.flush_list(st.scanner.def_ref);
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
@@ -2299,16 +2292,16 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
     if c == 0 {
         let len = st.strings.length(s);
         if st.shipout.term_offset + len > st.config.max_print_line - 2 {
-            print_ln_in(st);
+            print_ln(st);
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-            print_char_in(st, b' ' as i32);
+            print_char(st, b' ' as i32);
         }
-        print_in(st, s);
+        print(st, s);
         unsafe { ttstub_output_flush(st.shipout.rust_stdout) };
     } else {
-        error_here_with_diagnostic_in(st, c"".as_ptr());
-        print_in(st, s);
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
+        error_here_with_diagnostic(st, c"".as_ptr());
+        print(st, s);
+        capture_to_diagnostic(st, std::ptr::null_mut());
         if !st.eqtb.local(crate::consts::LOCAL_ERR_HELP).is_null() {
             st.errors.use_err_help = true;
         } else if st.errors.long_help_seen {
@@ -2324,7 +2317,7 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
                 "and deduce the truth by order and method.",
             ]);
         }
-        let outcome = error_in(st);
+        let outcome = error(st);
         st.errors.use_err_help = false;
         if !matches!(outcome, ErrorOutcome::Continue) {
             return Err(IssueMessageAbort::Error(outcome));
@@ -2334,7 +2327,7 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
     Ok(())
 }
 
-pub(crate) fn show_save_groups_in(st: &mut EngineState) {
+pub(crate) fn show_save_groups(st: &mut EngineState) {
     // Where the tex.web `found1`/`found2`/`found` label chain is entered.
     enum Entry {
         BoxContext,
@@ -2352,12 +2345,12 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
     st.save_stack.cur_level -= 1;
     let mut a: i8 = 1;
 
-    print_nl_cstr_in(st, c"".as_ptr());
-    print_ln_in(st);
+    print_nl_cstr(st, c"".as_ptr());
+    print_ln(st);
 
     loop {
-        print_nl_cstr_in(st, c"### ".as_ptr());
-        print_group_in(st, true);
+        print_nl_cstr(st, c"### ".as_ptr());
+        print_group(st, true);
         if st.save_stack.cur_group == GroupCode::BottomLevel {
             break;
         }
@@ -2374,7 +2367,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
             }
         };
 
-        print_cstr_in(st, c" (".as_ptr());
+        print_cstr(st, c" (".as_ptr());
 
         let mut s: &CStr = c"";
         let entry = match st.save_stack.cur_group {
@@ -2401,7 +2394,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
             }
             GroupCode::Align => {
                 if a == 1 {
-                    print_cstr_in(st, c"align entry".as_ptr());
+                    print_cstr(st, c"align entry".as_ptr());
                 } else {
                     esc(st, c"cr");
                 }
@@ -2431,7 +2424,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 let braces = st.save_stack.saved(-2);
                 for i in 1..=3 {
                     if i <= braces {
-                        print_cstr_in(st, c"{}".as_ptr());
+                        print_cstr(st, c"{}".as_ptr());
                     }
                 }
                 Entry::Found2
@@ -2442,7 +2435,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                     esc(st, c"vadjust");
                 } else {
                     esc(st, c"insert");
-                    print_int_in(st, n);
+                    print_int(st, n);
                 }
                 Entry::Found2
             }
@@ -2457,15 +2450,15 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
             }
             GroupCode::MathShift => {
                 if m == MMODE {
-                    print_char_in(st, b'$' as i32);
+                    print_char(st, b'$' as i32);
                 } else if st.input.nest[p as usize].mode == MMODE {
-                    print_cmd_chr_in(st, EQ_NO, st.save_stack.saved(-2));
-                    print_char_in(st, b')' as i32);
+                    print_cmd_chr(st, EQ_NO, st.save_stack.saved(-2));
+                    print_char(st, b')' as i32);
                     st.save_stack.cur_level -= 1;
                     leave_group_boundary(st);
                     continue;
                 }
-                print_char_in(st, b'$' as i32);
+                print_char(st, b'$' as i32);
                 Entry::Found
             }
             GroupCode::MathLeft => {
@@ -2489,9 +2482,9 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                     } else {
                         VMOVE
                     };
-                    print_cmd_chr_in(st, cmd, if i > 0 { 0 } else { 1 });
-                    print_scaled_in(st, i.abs());
-                    print_cstr_in(st, c"pt".as_ptr());
+                    print_cmd_chr(st, cmd, if i > 0 { 0 } else { 1 });
+                    print_scaled(st, i.abs());
+                    print_cstr(st, c"pt".as_ptr());
                 } else if i < SHIP_OUT_FLAG {
                     let mut box_num = i;
                     if box_num >= GLOBAL_BOX_FLAG {
@@ -2499,10 +2492,10 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                         box_num -= GLOBAL_BOX_FLAG - BOX_FLAG;
                     }
                     esc(st, c"setbox");
-                    print_int_in(st, box_num - BOX_FLAG);
-                    print_char_in(st, b'=' as i32);
+                    print_int(st, box_num - BOX_FLAG);
+                    print_char(st, b'=' as i32);
                 } else {
-                    print_cmd_chr_in(st, LEADER_SHIP, i - (LEADER_FLAG - A_LEADERS as i32));
+                    print_cmd_chr(st, LEADER_SHIP, i - (LEADER_FLAG - A_LEADERS as i32));
                 }
             }
         }
@@ -2511,22 +2504,22 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
             esc(st, s);
             let spec = st.save_stack.saved(-2);
             if spec != 0 {
-                print_char_in(st, b' ' as i32);
+                print_char(st, b' ' as i32);
                 if st.save_stack.saved(-3) == EXACTLY as i32 {
-                    print_cstr_in(st, c"to".as_ptr());
+                    print_cstr(st, c"to".as_ptr());
                 } else {
-                    print_cstr_in(st, c"spread".as_ptr());
+                    print_cstr(st, c"spread".as_ptr());
                 }
-                print_scaled_in(st, spec);
-                print_cstr_in(st, c"pt".as_ptr());
+                print_scaled(st, spec);
+                print_cstr(st, c"pt".as_ptr());
             }
         }
 
         if !matches!(entry, Entry::Found) {
-            print_char_in(st, b'{' as i32);
+            print_char(st, b'{' as i32);
         }
 
-        print_char_in(st, b')' as i32);
+        print_char(st, b')' as i32);
         st.save_stack.cur_level -= 1;
         leave_group_boundary(st);
     }
@@ -2556,50 +2549,50 @@ impl From<crate::scan::SccAbort> for ShowWhateverAbort {
     }
 }
 
-pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverAbort> {
+pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), ShowWhateverAbort> {
     const SHOW_CODE: i32 = 0;
 
-    diagnostic_begin_capture_warning_here_in(st);
+    diagnostic_begin_capture_warning_here(st);
 
     let chr = st.scanner.cur_chr;
     match chr {
         SHOW_LISTS => {
-            begin_diagnostic_in(st);
-            show_activities_in(st);
+            begin_diagnostic(st);
+            show_activities(st);
         }
         SHOW_BOX_CODE => {
-            crate::scan::scan_register_num_in(st)?;
+            crate::scan::scan_register_num(st)?;
             let n = st.scanner.cur_val;
             let contents = crate::scan::fetch_box(st, n);
-            begin_diagnostic_in(st);
-            print_nl_cstr_in(st, c"> \\box".as_ptr());
-            print_int_in(st, n);
-            print_char_in(st, b'=' as i32);
+            begin_diagnostic(st);
+            print_nl_cstr(st, c"> \\box".as_ptr());
+            print_int(st, n);
+            print_char(st, b'=' as i32);
             match contents {
-                Some(b) => show_box_in(st, b.ptr()),
-                None => print_cstr_in(st, c"void".as_ptr()),
+                Some(b) => show_box(st, b.ptr()),
+                None => print_cstr(st, c"void".as_ptr()),
             }
         }
         SHOW_CODE => {
-            crate::scan::get_token_in(st)?;
-            print_nl_cstr_in(st, c"> ".as_ptr());
+            crate::scan::get_token(st)?;
+            print_nl_cstr(st, c"> ".as_ptr());
             if st.scanner.cur_cs != 0 {
-                sprint_cs_in(st, st.scanner.cur_cs);
-                print_char_in(st, b'=' as i32);
+                sprint_cs(st, st.scanner.cur_cs);
+                print_char(st, b'=' as i32);
             }
-            print_meaning_in(st);
+            print_meaning(st);
         }
         SHOW_GROUPS => {
-            begin_diagnostic_in(st);
-            show_save_groups_in(st);
+            begin_diagnostic(st);
+            show_save_groups(st);
         }
         SHOW_IFS => {
-            begin_diagnostic_in(st);
-            print_nl_cstr_in(st, c"".as_ptr());
-            print_ln_in(st);
+            begin_diagnostic(st);
+            print_nl_cstr(st, c"".as_ptr());
+            print_ln(st);
             if st.scanner.cond_ptr.is_null() {
-                print_nl_cstr_in(st, c"### ".as_ptr());
-                print_cstr_in(st, c"no active conditionals".as_ptr());
+                print_nl_cstr(st, c"### ".as_ptr());
+                print_cstr(st, c"no active conditionals".as_ptr());
             } else {
                 let mut n = 0;
                 let mut p = st.scanner.cond_ptr;
@@ -2612,14 +2605,14 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
                 let mut l = st.scanner.if_line;
                 let mut m = st.scanner.if_limit;
                 while !p.is_null() {
-                    print_nl_cstr_in(st, c"### level ".as_ptr());
-                    print_int_in(st, n);
-                    print_cstr_in(st, c": ".as_ptr());
-                    print_cmd_chr_in(st, IF_TEST, t as i32);
+                    print_nl_cstr(st, c"### level ".as_ptr());
+                    print_int(st, n);
+                    print_cstr(st, c": ".as_ptr());
+                    print_cmd_chr(st, IF_TEST, t as i32);
                     if m == FI_CODE {
                         esc(st, c"else");
                     }
-                    print_if_line_in(st, l);
+                    print_if_line(st, l);
                     n -= 1;
                     (t, l, m) = NodePtr::<CondNode>::at(p).saved_state(&st.mem);
                     p = p.link(&st.mem);
@@ -2627,29 +2620,29 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
             }
         }
         _ => {
-            crate::scan::the_toks_in(st)?;
-            print_nl_cstr_in(st, c"> ".as_ptr());
-            token_show_in(st, TEMP_HEAD);
+            crate::scan::the_toks(st)?;
+            print_nl_cstr(st, c"> ".as_ptr());
+            token_show(st, TEMP_HEAD);
             let list = TEMP_HEAD.link(&st.mem);
             st.mem.flush_list(list);
         }
     }
 
     if matches!(chr, SHOW_LISTS | SHOW_BOX_CODE | SHOW_GROUPS | SHOW_IFS) {
-        capture_to_diagnostic_in(st, std::ptr::null_mut());
-        end_diagnostic_in(st, true);
-        print_error_prefix_in(st);
-        print_cstr_in(st, c"OK".as_ptr());
+        capture_to_diagnostic(st, std::ptr::null_mut());
+        end_diagnostic(st, true);
+        print_error_prefix(st);
+        print_cstr(st, c"OK".as_ptr());
         if st.shipout.selector == SELECTOR_TERM_AND_LOG
             && st.eqtb.int_par(INT_PAR_TRACING_ONLINE) <= 0
         {
             st.shipout.selector = SELECTOR_TERM_ONLY;
-            print_cstr_in(st, c" (see the transcript file)".as_ptr());
+            print_cstr(st, c" (see the transcript file)".as_ptr());
             st.shipout.selector = SELECTOR_TERM_AND_LOG;
         }
     }
 
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    capture_to_diagnostic(st, std::ptr::null_mut());
     if st.errors.interaction < InteractionMode::ErrorStop {
         st.errors.help(&[]);
         st.errors.error_count -= 1;
@@ -2668,13 +2661,13 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
             "lists on your terminal as well as in the transcript file.",
         ]);
     }
-    match error_in(st) {
+    match error(st) {
         ErrorOutcome::Continue => Ok(()),
         outcome => Err(ShowWhateverAbort::Error(outcome)),
     }
 }
 
-pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome {
+pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> ErrorOutcome {
     let tracing_lost = st.eqtb.int_par(INT_PAR_TRACING_LOST_CHARS);
     if tracing_lost > 0 {
         let old_setting = st.eqtb.int_par(INT_PAR_TRACING_ONLINE);
@@ -2682,44 +2675,44 @@ pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutc
             st.eqtb.set_int_par(INT_PAR_TRACING_ONLINE, 1);
         }
         if tracing_lost > 2 {
-            print_error_prefix_in(st);
-            print_cstr_in(st, c"Missing character: There is no ".as_ptr());
+            print_error_prefix(st);
+            print_cstr(st, c"Missing character: There is no ".as_ptr());
         } else {
-            begin_diagnostic_in(st);
-            diagnostic_begin_capture_warning_here_in(st);
-            print_nl_cstr_in(st, c"Missing character: There is no ".as_ptr());
+            begin_diagnostic(st);
+            diagnostic_begin_capture_warning_here(st);
+            print_nl_cstr(st, c"Missing character: There is no ".as_ptr());
         }
-        print_code_in(st, c);
-        print_cstr_in(st, c" (".as_ptr());
+        print_code(st, c);
+        print_cstr(st, c" (".as_ptr());
         let area = st.fonts.font_area[f as usize];
         if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-            print_ucs_code_in(st, c);
+            print_ucs_code(st, c);
         } else {
-            print_hex_in(st, c);
+            print_hex(st, c);
         }
-        print_char_in(st, b')' as i32);
-        print_cstr_in(st, c" in font ".as_ptr());
-        print_in(st, st.fonts.font_name[f as usize]);
+        print_char(st, b')' as i32);
+        print_cstr(st, c" in font ".as_ptr());
+        print(st, st.fonts.font_name[f as usize]);
         if tracing_lost < 3 {
-            print_char_in(st, b'!' as i32);
+            print_char(st, b'!' as i32);
         }
         st.eqtb.set_int_par(INT_PAR_TRACING_ONLINE, old_setting);
         if tracing_lost > 2 {
             st.errors.help(&[]);
-            let outcome = error_in(st);
+            let outcome = error(st);
             if !matches!(outcome, ErrorOutcome::Continue) {
                 return outcome;
             }
         } else {
-            capture_to_diagnostic_in(st, std::ptr::null_mut());
-            end_diagnostic_in(st, false);
+            capture_to_diagnostic(st, std::ptr::null_mut());
+            end_diagnostic(st, false);
         }
     }
 
     let font_name_c = unsafe { st.strings.gettexstring(st.fonts.font_name[f as usize]) };
     let prev_sel = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    print_code_in(st, c);
+    print_code(st, c);
     st.shipout.selector = prev_sel;
     let Ok(s) = st.strings.make_string() else {
         return ErrorOutcome::Overflow {
@@ -2754,7 +2747,7 @@ pub(crate) fn char_warning_in(st: &mut EngineState, f: i32, c: i32) -> ErrorOutc
     ErrorOutcome::Continue
 }
 
-pub(crate) fn show_box_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+pub(crate) fn show_box(st: &mut EngineState, p: impl crate::units::MemAddr) {
     st.errors.depth_threshold = st.eqtb.int_par(INT_PAR_SHOW_BOX_DEPTH);
     st.errors.breadth_max = st.eqtb.int_par(INT_PAR_SHOW_BOX_BREADTH);
     if st.errors.breadth_max <= 0 {
@@ -2764,11 +2757,11 @@ pub(crate) fn show_box_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
     if st.errors.depth_threshold > room {
         st.errors.depth_threshold = room;
     }
-    show_node_list_in(st, p);
-    print_ln_in(st);
+    show_node_list(st, p);
+    print_ln(st);
 }
 
-pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr) {
     let mut p = MemPtr(p.addr());
     while p.0 > 0 {
         if st.mem.is_char_node(p) {
@@ -2777,14 +2770,14 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
                 let font = ch.font(&st.mem).0;
                 if font != st.errors.font_in_short_display {
                     if font > st.fonts.font_max {
-                        print_char_in(st, b'*' as i32);
+                        print_char(st, b'*' as i32);
                     } else {
-                        print_esc_in(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
+                        print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
                     }
-                    print_char_in(st, b' ' as i32);
+                    print_char(st, b' ' as i32);
                     st.errors.font_in_short_display = font;
                 }
-                print_in(st, ch.character(&st.mem) as i32);
+                print(st, ch.character(&st.mem) as i32);
             }
         } else {
             match st.mem.classify(MemIdx::new(p)) {
@@ -2795,40 +2788,40 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
                     | AnyNode::Mark(_)
                     | AnyNode::Adjust(_)
                     | AnyNode::Unset(_),
-                ) => print_cstr_in(st, c"[]".as_ptr()),
+                ) => print_cstr(st, c"[]".as_ptr()),
                 Ok(AnyNode::Whatsit(w)) => {
                     if w.whatsit_subtype(&st.mem)
                         .is_some_and(|s| s.is_native_word())
                     {
                         let font = w.native_font(&st.mem).0;
                         if font != st.errors.font_in_short_display {
-                            print_esc_in(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
-                            print_char_in(st, b' ' as i32);
+                            print_esc(st, st.eqtb.hash_s1(FONT_ID_BASE + font));
+                            print_char(st, b' ' as i32);
                             st.errors.font_in_short_display = font;
                         }
-                        print_native_word_in(st, w);
+                        print_native_word(st, w);
                     } else {
-                        print_cstr_in(st, c"[]".as_ptr());
+                        print_cstr(st, c"[]".as_ptr());
                     }
                 }
-                Ok(AnyNode::Rule(_)) => print_char_in(st, b'|' as i32),
+                Ok(AnyNode::Rule(_)) => print_char(st, b'|' as i32),
                 Ok(AnyNode::Glue(g)) => {
                     // Glue pointing at the shared zero spec prints nothing.
                     if g.glue_ptr(&st.mem) != ZERO_GLUE {
-                        print_char_in(st, b' ' as i32);
+                        print_char(st, b' ' as i32);
                     }
                 }
                 Ok(AnyNode::Math(m)) => {
                     if m.subtype(&st.mem) >= L_CODE {
-                        print_cstr_in(st, c"[]".as_ptr());
+                        print_cstr(st, c"[]".as_ptr());
                     } else {
-                        print_char_in(st, b'$' as i32);
+                        print_char(st, b'$' as i32);
                     }
                 }
-                Ok(AnyNode::Ligature(l)) => short_display_in(st, l.lig_ptr(&st.mem)),
+                Ok(AnyNode::Ligature(l)) => short_display(st, l.lig_ptr(&st.mem)),
                 Ok(AnyNode::Disc(d)) => {
-                    short_display_in(st, d.pre_break(&st.mem));
-                    short_display_in(st, d.post_break(&st.mem));
+                    short_display(st, d.pre_break(&st.mem));
+                    short_display(st, d.post_break(&st.mem));
                     for _ in 0..d.subtype(&st.mem) {
                         if !p.link(&st.mem).is_null() {
                             p = p.link(&st.mem);
@@ -2843,26 +2836,26 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
 }
 
 /// The outer vertical list part of `show_activities`: the current page and its insertions.
-fn show_page_so_far_in(st: &mut EngineState) {
+fn show_page_so_far(st: &mut EngineState) {
     if st.shipout.page_tail != PAGE_HEAD {
-        print_nl_cstr_in(st, c"### current page:".as_ptr());
+        print_nl_cstr(st, c"### current page:".as_ptr());
         if st.shipout.output_active {
-            print_cstr_in(st, c" (held over for next output)".as_ptr());
+            print_cstr(st, c" (held over for next output)".as_ptr());
         }
-        show_box_in(st, PAGE_HEAD.link(&st.mem));
+        show_box(st, PAGE_HEAD.link(&st.mem));
         if st.shipout.page_contents != crate::state::PageContents::Empty {
-            print_nl_cstr_in(st, c"total height ".as_ptr());
-            print_totals_in(st);
-            print_nl_cstr_in(st, c" goal height ".as_ptr());
-            print_scaled_in(st, st.shipout.page_so_far[0]);
+            print_nl_cstr(st, c"total height ".as_ptr());
+            print_totals(st);
+            print_nl_cstr(st, c" goal height ".as_ptr());
+            print_scaled(st, st.shipout.page_so_far[0]);
             let mut r = PAGE_INS_HEAD.link(&st.mem);
             while r != PAGE_INS_HEAD {
                 let ins = NodePtr::<PageInsNode>::at(r);
-                print_ln_in(st);
+                print_ln(st);
                 esc(st, c"insert");
                 let box_num = ins.subtype(&st.mem);
-                print_int_in(st, box_num as i32);
-                print_cstr_in(st, c" adds ".as_ptr());
+                print_int(st, box_num as i32);
+                print_cstr(st, c" adds ".as_ptr());
                 let count = st.eqtb.count(box_num as i32);
                 let height = ins.height(&st.mem).0;
                 let adds = if count == 1000 {
@@ -2870,7 +2863,7 @@ fn show_page_so_far_in(st: &mut EngineState) {
                 } else {
                     st.errors.x_over_n(height, 1000) * count
                 };
-                print_scaled_in(st, adds);
+                print_scaled(st, adds);
                 if ins.is_split_up(&st.mem) {
                     let broken_ins = ins.broken_ins(&st.mem);
                     let mut q = PAGE_HEAD;
@@ -2886,78 +2879,78 @@ fn show_page_so_far_in(st: &mut EngineState) {
                             break;
                         }
                     }
-                    print_cstr_in(st, c", #".as_ptr());
-                    print_int_in(st, t);
-                    print_cstr_in(st, c" might split".as_ptr());
+                    print_cstr(st, c", #".as_ptr());
+                    print_int(st, t);
+                    print_cstr(st, c" might split".as_ptr());
                 }
                 r = r.link(&st.mem);
             }
         }
     }
     if !CONTRIB_HEAD.link(&st.mem).is_null() {
-        print_nl_cstr_in(st, c"### recent contributions:".as_ptr());
+        print_nl_cstr(st, c"### recent contributions:".as_ptr());
     }
 }
 
-pub(crate) fn show_activities_in(st: &mut EngineState) {
+pub(crate) fn show_activities(st: &mut EngineState) {
     st.input.nest[st.input.nest_ptr as usize] = st.input.cur_list;
-    print_nl_cstr_in(st, c"".as_ptr());
-    print_ln_in(st);
+    print_nl_cstr(st, c"".as_ptr());
+    print_ln(st);
     for p in (0..=st.input.nest_ptr).rev() {
         let nest = st.input.nest[p as usize];
         let m = nest.mode;
-        print_nl_cstr_in(st, c"### ".as_ptr());
-        print_mode_in(st, m as i32);
-        print_cstr_in(st, c" entered at line ".as_ptr());
-        print_int_in(st, nest.mode_line.abs());
+        print_nl_cstr(st, c"### ".as_ptr());
+        print_mode(st, m as i32);
+        print_cstr(st, c" entered at line ".as_ptr());
+        print_int(st, nest.mode_line.abs());
         if m == HMODE && nest.prev_graf != 0x83_0000 {
             let pg = nest.prev_graf;
-            print_cstr_in(st, c" (language".as_ptr());
-            print_int_in(st, pg % 65536);
-            print_cstr_in(st, c":hyphenmin".as_ptr());
-            print_int_in(st, pg / 0x40_0000);
-            print_char_in(st, b',' as i32);
-            print_int_in(st, (pg / 65536) % 64);
-            print_char_in(st, b')' as i32);
+            print_cstr(st, c" (language".as_ptr());
+            print_int(st, pg % 65536);
+            print_cstr(st, c":hyphenmin".as_ptr());
+            print_int(st, pg / 0x40_0000);
+            print_char(st, b',' as i32);
+            print_int(st, (pg / 65536) % 64);
+            print_char(st, b')' as i32);
         }
         if nest.mode_line < 0 {
-            print_cstr_in(st, c" (\\output routine)".as_ptr());
+            print_cstr(st, c" (\\output routine)".as_ptr());
         }
         if p == 0 {
-            show_page_so_far_in(st);
+            show_page_so_far(st);
         }
-        show_box_in(st, nest.head.link(&st.mem));
+        show_box(st, nest.head.link(&st.mem));
         let (aux_s0, aux_s1) = (nest.aux_s0(), nest.aux_s1());
         match m.abs() as i32 / (MAX_COMMAND as i32 + 1) {
             0 => {
-                print_nl_cstr_in(st, c"prevdepth ".as_ptr());
+                print_nl_cstr(st, c"prevdepth ".as_ptr());
                 if aux_s1 <= IGNORE_DEPTH {
-                    print_cstr_in(st, c"ignored".as_ptr());
+                    print_cstr(st, c"ignored".as_ptr());
                 } else {
-                    print_scaled_in(st, aux_s1);
+                    print_scaled(st, aux_s1);
                 }
                 if nest.prev_graf != 0 {
-                    print_cstr_in(st, c", prevgraf ".as_ptr());
-                    print_int_in(st, nest.prev_graf);
+                    print_cstr(st, c", prevgraf ".as_ptr());
+                    print_int(st, nest.prev_graf);
                     if nest.prev_graf != 1 {
-                        print_cstr_in(st, c" lines".as_ptr());
+                        print_cstr(st, c" lines".as_ptr());
                     } else {
-                        print_cstr_in(st, c" line".as_ptr());
+                        print_cstr(st, c" line".as_ptr());
                     }
                 }
             }
             1 => {
-                print_nl_cstr_in(st, c"spacefactor ".as_ptr());
-                print_int_in(st, aux_s0);
+                print_nl_cstr(st, c"spacefactor ".as_ptr());
+                print_int(st, aux_s0);
                 if m > 0 && aux_s1 > 0 {
-                    print_cstr_in(st, c", current language ".as_ptr());
-                    print_int_in(st, aux_s1);
+                    print_cstr(st, c", current language ".as_ptr());
+                    print_int(st, aux_s1);
                 }
             }
             2 => {
                 if aux_s1 != TEX_NULL {
-                    print_cstr_in(st, c"this will begin denominator of:".as_ptr());
-                    show_box_in(st, aux_s1);
+                    print_cstr(st, c"this will begin denominator of:".as_ptr());
+                    show_box(st, aux_s1);
                 }
             }
             _ => {}
@@ -2966,18 +2959,18 @@ pub(crate) fn show_activities_in(st: &mut EngineState) {
 }
 
 /// Shows sublist `list` with `c` appended to the indentation string.
-fn node_list_display_in(st: &mut EngineState, c: u8, list: MemPtr) {
+fn node_list_display(st: &mut EngineState, c: u8, list: MemPtr) {
     st.strings.str_pool[st.strings.pool_ptr as usize] = c as u16;
     st.strings.pool_ptr += 1;
-    show_node_list_in(st, list);
+    show_node_list(st, list);
     st.strings.pool_ptr -= 1;
 }
 
 /// Shows the noad field at `p`, marked with `c` in the indentation string.
-fn print_subsidiary_data_in(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
+fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
     if st.strings.cur_length() >= st.errors.depth_threshold {
         if p.math_type(&st.mem) != EMPTY {
-            print_cstr_in(st, c" []".as_ptr());
+            print_cstr(st, c" []".as_ptr());
         }
         return;
     }
@@ -2986,18 +2979,18 @@ fn print_subsidiary_data_in(st: &mut EngineState, p: NodePtr<MathField>, c: u8) 
     st.mem.temp_ptr = p.ptr();
     match p.math_type(&st.mem) {
         MATH_CHAR => {
-            print_ln_in(st);
-            print_current_string_in(st);
-            print_fam_and_char_in(st, p);
+            print_ln(st);
+            print_current_string(st);
+            print_fam_and_char(st, p);
         }
-        SUB_BOX => show_info_in(st),
+        SUB_BOX => show_info(st),
         SUB_MLIST => {
             if p.info(&st.mem).is_null() {
-                print_ln_in(st);
-                print_current_string_in(st);
-                print_cstr_in(st, c"{}".as_ptr());
+                print_ln(st);
+                print_current_string(st);
+                print_cstr(st, c"{}".as_ptr());
             } else {
-                show_info_in(st);
+                show_info(st);
             }
         }
         _ => {}
@@ -3005,108 +2998,108 @@ fn print_subsidiary_data_in(st: &mut EngineState, p: NodePtr<MathField>, c: u8) 
     st.strings.pool_ptr -= 1;
 }
 
-pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemAddr) {
+pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr) {
     let mut p = MemPtr(p.addr());
     if st.strings.cur_length() > st.errors.depth_threshold {
         if p.0 > TEX_NULL {
-            print_cstr_in(st, c" []".as_ptr());
+            print_cstr(st, c" []".as_ptr());
         }
         return;
     }
     let mut n = 0;
     while p.0 > 0 {
-        print_ln_in(st);
-        print_current_string_in(st);
+        print_ln(st);
+        print_current_string(st);
         if p.0 > st.mem.mem_end {
-            print_cstr_in(st, c"Bad link, display aborted.".as_ptr());
+            print_cstr(st, c"Bad link, display aborted.".as_ptr());
             return;
         }
         n += 1;
         if n > st.errors.breadth_max {
-            print_cstr_in(st, c"etc.".as_ptr());
+            print_cstr(st, c"etc.".as_ptr());
             return;
         }
         if st.mem.is_char_node(p) {
-            print_font_and_char_in(st, p);
+            print_font_and_char(st, p);
         } else {
             match st.mem.classify(MemIdx::new(p)) {
-                Ok(AnyNode::HList(b)) => show_box_node_in(st, AnyBox::HList(b)),
-                Ok(AnyNode::VList(b)) => show_box_node_in(st, AnyBox::VList(b)),
+                Ok(AnyNode::HList(b)) => show_box_node(st, AnyBox::HList(b)),
+                Ok(AnyNode::VList(b)) => show_box_node(st, AnyBox::VList(b)),
                 Ok(AnyNode::Unset(node)) => {
                     esc(st, c"unset");
-                    print_cstr_in(st, c"box(".as_ptr());
-                    print_scaled_in(st, node.height(&st.mem).0);
-                    print_char_in(st, b'+' as i32);
-                    print_scaled_in(st, node.depth(&st.mem).0);
-                    print_cstr_in(st, c")x".as_ptr());
-                    print_scaled_in(st, node.width(&st.mem).0);
+                    print_cstr(st, c"box(".as_ptr());
+                    print_scaled(st, node.height(&st.mem).0);
+                    print_char(st, b'+' as i32);
+                    print_scaled(st, node.depth(&st.mem).0);
+                    print_cstr(st, c")x".as_ptr());
+                    print_scaled(st, node.width(&st.mem).0);
                     let span_count = node.subtype(&st.mem);
                     if span_count != 0 {
-                        print_cstr_in(st, c" (".as_ptr());
-                        print_int_in(st, span_count as i32 + 1);
-                        print_cstr_in(st, c" columns)".as_ptr());
+                        print_cstr(st, c" (".as_ptr());
+                        print_int(st, span_count as i32 + 1);
+                        print_cstr(st, c" columns)".as_ptr());
                     }
                     if node.glue_stretch(&st.mem).0 != 0 {
-                        print_cstr_in(st, c", stretch ".as_ptr());
+                        print_cstr(st, c", stretch ".as_ptr());
                         let order = node.glue_order(&st.mem);
-                        print_glue_in(st, node.glue_stretch(&st.mem).0, order, std::ptr::null());
+                        print_glue(st, node.glue_stretch(&st.mem).0, order, std::ptr::null());
                     }
                     if node.glue_shrink(&st.mem).0 != 0 {
-                        print_cstr_in(st, c", shrink ".as_ptr());
+                        print_cstr(st, c", shrink ".as_ptr());
                         let order = node.glue_sign(&st.mem);
-                        print_glue_in(st, node.glue_shrink(&st.mem).0, order, std::ptr::null());
+                        print_glue(st, node.glue_shrink(&st.mem).0, order, std::ptr::null());
                     }
-                    node_list_display_in(st, b'.', node.list_ptr(&st.mem));
+                    node_list_display(st, b'.', node.list_ptr(&st.mem));
                 }
                 Ok(AnyNode::Rule(node)) => {
                     esc(st, c"rule(");
-                    print_rule_dimen_in(st, node.height(&st.mem).raw());
-                    print_char_in(st, b'+' as i32);
-                    print_rule_dimen_in(st, node.depth(&st.mem).raw());
-                    print_cstr_in(st, c")x".as_ptr());
-                    print_rule_dimen_in(st, node.width(&st.mem).raw());
+                    print_rule_dimen(st, node.height(&st.mem).raw());
+                    print_char(st, b'+' as i32);
+                    print_rule_dimen(st, node.depth(&st.mem).raw());
+                    print_cstr(st, c")x".as_ptr());
+                    print_rule_dimen(st, node.width(&st.mem).raw());
                 }
                 Ok(AnyNode::Ins(node)) => {
                     esc(st, c"insert");
-                    print_int_in(st, node.subtype(&st.mem) as i32);
-                    print_cstr_in(st, c", natural size ".as_ptr());
-                    print_scaled_in(st, node.height(&st.mem).0);
-                    print_cstr_in(st, c"; split(".as_ptr());
-                    print_spec_in(st, node.split_top_ptr(&st.mem).ptr(), std::ptr::null());
-                    print_char_in(st, b',' as i32);
-                    print_scaled_in(st, node.depth(&st.mem).0);
-                    print_cstr_in(st, c"); float cost ".as_ptr());
-                    print_int_in(st, node.float_cost(&st.mem));
-                    node_list_display_in(st, b'.', node.ins_ptr(&st.mem));
+                    print_int(st, node.subtype(&st.mem) as i32);
+                    print_cstr(st, c", natural size ".as_ptr());
+                    print_scaled(st, node.height(&st.mem).0);
+                    print_cstr(st, c"; split(".as_ptr());
+                    print_spec(st, node.split_top_ptr(&st.mem).ptr(), std::ptr::null());
+                    print_char(st, b',' as i32);
+                    print_scaled(st, node.depth(&st.mem).0);
+                    print_cstr(st, c"); float cost ".as_ptr());
+                    print_int(st, node.float_cost(&st.mem));
+                    node_list_display(st, b'.', node.ins_ptr(&st.mem));
                 }
-                Ok(AnyNode::Whatsit(node)) => show_whatsit_in(st, node),
-                Ok(AnyNode::Glue(node)) => show_glue_in(st, node),
+                Ok(AnyNode::Whatsit(node)) => show_whatsit(st, node),
+                Ok(AnyNode::Glue(node)) => show_glue(st, node),
                 Ok(AnyNode::Kern(node)) => {
                     let sub = node.subtype(&st.mem);
                     if sub != MU_GLUE {
                         esc(st, c"kern");
                         if sub != 0 {
-                            print_char_in(st, b' ' as i32);
+                            print_char(st, b' ' as i32);
                         }
-                        print_scaled_in(st, node.width(&st.mem).0);
+                        print_scaled(st, node.width(&st.mem).0);
                         if sub == ACC_KERN {
-                            print_cstr_in(st, c" (for accent)".as_ptr());
+                            print_cstr(st, c" (for accent)".as_ptr());
                         } else if sub == SPACE_ADJUSTMENT {
-                            print_cstr_in(st, c" (space adjustment)".as_ptr());
+                            print_cstr(st, c" (space adjustment)".as_ptr());
                         }
                     } else {
                         esc(st, c"mkern");
-                        print_scaled_in(st, node.width(&st.mem).0);
-                        print_cstr_in(st, c"mu".as_ptr());
+                        print_scaled(st, node.width(&st.mem).0);
+                        print_cstr(st, c"mu".as_ptr());
                     }
                 }
                 Ok(AnyNode::MarginKern(node)) => {
                     esc(st, c"kern");
-                    print_scaled_in(st, node.width(&st.mem).0);
+                    print_scaled(st, node.width(&st.mem).0);
                     if node.subtype(&st.mem) == 0 {
-                        print_cstr_in(st, c" (left margin)".as_ptr());
+                        print_cstr(st, c" (left margin)".as_ptr());
                     } else {
-                        print_cstr_in(st, c" (right margin)".as_ptr());
+                        print_cstr(st, c" (right margin)".as_ptr());
                     }
                 }
                 Ok(AnyNode::Math(node)) => {
@@ -3120,165 +3113,165 @@ pub(crate) fn show_node_list_in(st: &mut EngineState, p: impl crate::units::MemA
                         } else {
                             b'M'
                         };
-                        print_char_in(st, dir as i32);
+                        print_char(st, dir as i32);
                     } else {
                         esc(st, c"math");
                         if sub == 0 {
-                            print_cstr_in(st, c"on".as_ptr());
+                            print_cstr(st, c"on".as_ptr());
                         } else {
-                            print_cstr_in(st, c"off".as_ptr());
+                            print_cstr(st, c"off".as_ptr());
                         }
                         if node.width(&st.mem).0 != 0 {
-                            print_cstr_in(st, c", surrounded ".as_ptr());
-                            print_scaled_in(st, node.width(&st.mem).0);
+                            print_cstr(st, c", surrounded ".as_ptr());
+                            print_scaled(st, node.width(&st.mem).0);
                         }
                     }
                 }
                 Ok(AnyNode::Ligature(node)) => {
                     let font = node.font(&st.mem).0;
-                    print_font_char_in(st, font, node.character(&st.mem));
-                    print_cstr_in(st, c" (ligature ".as_ptr());
+                    print_font_char(st, font, node.character(&st.mem));
+                    print_cstr(st, c" (ligature ".as_ptr());
                     if node.subtype(&st.mem) > 1 {
-                        print_char_in(st, b'|' as i32);
+                        print_char(st, b'|' as i32);
                     }
                     st.errors.font_in_short_display = font;
-                    short_display_in(st, node.lig_ptr(&st.mem));
+                    short_display(st, node.lig_ptr(&st.mem));
                     if node.subtype(&st.mem) % 2 == 1 {
-                        print_char_in(st, b'|' as i32);
+                        print_char(st, b'|' as i32);
                     }
-                    print_char_in(st, b')' as i32);
+                    print_char(st, b')' as i32);
                 }
                 Ok(AnyNode::Penalty(node)) => {
                     esc(st, c"penalty ");
-                    print_int_in(st, node.penalty(&st.mem));
+                    print_int(st, node.penalty(&st.mem));
                 }
                 Ok(AnyNode::Disc(node)) => {
                     esc(st, c"discretionary");
                     let replace_count = node.subtype(&st.mem);
                     if replace_count > 0 {
-                        print_cstr_in(st, c" replacing ".as_ptr());
-                        print_int_in(st, replace_count as i32);
+                        print_cstr(st, c" replacing ".as_ptr());
+                        print_int(st, replace_count as i32);
                     }
-                    node_list_display_in(st, b'.', node.pre_break(&st.mem));
-                    node_list_display_in(st, b'|', node.post_break(&st.mem));
+                    node_list_display(st, b'.', node.pre_break(&st.mem));
+                    node_list_display(st, b'|', node.post_break(&st.mem));
                 }
                 Ok(AnyNode::Mark(node)) => {
                     esc(st, c"mark");
                     let class = node.mark_class(&st.mem);
                     if class != 0 {
-                        print_char_in(st, b's' as i32);
-                        print_int_in(st, class);
+                        print_char(st, b's' as i32);
+                        print_int(st, class);
                     }
-                    print_mark_in(st, node.mark_ptr(&st.mem));
+                    print_mark(st, node.mark_ptr(&st.mem));
                 }
                 Ok(AnyNode::Adjust(node)) => {
                     esc(st, c"vadjust");
                     if node.subtype(&st.mem) != 0 {
-                        print_cstr_in(st, c" pre ".as_ptr());
+                        print_cstr(st, c" pre ".as_ptr());
                     }
-                    node_list_display_in(st, b'.', node.adjust_ptr(&st.mem));
+                    node_list_display(st, b'.', node.adjust_ptr(&st.mem));
                 }
-                Ok(AnyNode::Style(node)) => print_style_in(st, node.subtype(&st.mem) as i32),
+                Ok(AnyNode::Style(node)) => print_style(st, node.subtype(&st.mem) as i32),
                 Ok(AnyNode::Choice(node)) => {
                     esc(st, c"mathchoice");
-                    node_list_display_in(st, b'D', node.display_mlist(&st.mem));
-                    node_list_display_in(st, b'T', node.text_mlist(&st.mem));
-                    node_list_display_in(st, b'S', node.script_mlist(&st.mem));
-                    node_list_display_in(st, b's', node.script_script_mlist(&st.mem));
+                    node_list_display(st, b'D', node.display_mlist(&st.mem));
+                    node_list_display(st, b'T', node.text_mlist(&st.mem));
+                    node_list_display(st, b'S', node.script_mlist(&st.mem));
+                    node_list_display(st, b's', node.script_script_mlist(&st.mem));
                 }
-                Ok(AnyNode::Noad(node)) => show_noad_in(st, node),
-                Err(_) => print_cstr_in(st, c"Unknown node type!".as_ptr()),
+                Ok(AnyNode::Noad(node)) => show_noad(st, node),
+                Err(_) => print_cstr(st, c"Unknown node type!".as_ptr()),
             }
         }
         p = p.link(&st.mem);
     }
 }
 
-fn show_box_node_in(st: &mut EngineState, b: AnyBox) {
+fn show_box_node(st: &mut EngineState, b: AnyBox) {
     let is_hlist = matches!(b, AnyBox::HList(_));
-    print_esc_in(st, if is_hlist { b'h' } else { b'v' } as i32);
-    print_cstr_in(st, c"box(".as_ptr());
-    print_scaled_in(st, b.height(&st.mem).0);
-    print_char_in(st, b'+' as i32);
-    print_scaled_in(st, b.depth(&st.mem).0);
-    print_cstr_in(st, c")x".as_ptr());
-    print_scaled_in(st, b.width(&st.mem).0);
+    print_esc(st, if is_hlist { b'h' } else { b'v' } as i32);
+    print_cstr(st, c"box(".as_ptr());
+    print_scaled(st, b.height(&st.mem).0);
+    print_char(st, b'+' as i32);
+    print_scaled(st, b.depth(&st.mem).0);
+    print_cstr(st, c")x".as_ptr());
+    print_scaled(st, b.width(&st.mem).0);
     let g = b.glue_set(&st.mem);
     let glue_sign = b.glue_sign(&st.mem);
     if g != 0.0 && glue_sign != GlueSign::Normal {
-        print_cstr_in(st, c", glue set ".as_ptr());
+        print_cstr(st, c", glue set ".as_ptr());
         if glue_sign == GlueSign::Shrinking {
-            print_cstr_in(st, c"- ".as_ptr());
+            print_cstr(st, c"- ".as_ptr());
         }
         let order = b.glue_order(&st.mem);
         if g.abs() > 20000.0 {
             if g > 0.0 {
-                print_char_in(st, b'>' as i32);
+                print_char(st, b'>' as i32);
             } else {
-                print_cstr_in(st, c"< -".as_ptr());
+                print_cstr(st, c"< -".as_ptr());
             }
-            print_glue_in(st, 20000 * 65536, order, std::ptr::null());
+            print_glue(st, 20000 * 65536, order, std::ptr::null());
         } else {
             let set = crate::scaled_math::tex_round(65536.0 * g);
-            print_glue_in(st, set, order, std::ptr::null());
+            print_glue(st, set, order, std::ptr::null());
         }
     }
     if b.shift_amount(&st.mem).0 != 0 {
-        print_cstr_in(st, c", shifted ".as_ptr());
-        print_scaled_in(st, b.shift_amount(&st.mem).0);
+        print_cstr(st, c", shifted ".as_ptr());
+        print_scaled(st, b.shift_amount(&st.mem).0);
     }
     if is_hlist && b.subtype(&st.mem) == DLIST {
-        print_cstr_in(st, c", display".as_ptr());
+        print_cstr(st, c", display".as_ptr());
     }
-    node_list_display_in(st, b'.', b.list_ptr(&st.mem));
+    node_list_display(st, b'.', b.list_ptr(&st.mem));
 }
 
-fn show_whatsit_in(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
+fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
     let print_font = |st: &mut EngineState| {
-        print_esc_in(
+        print_esc(
             st,
             st.eqtb.hash_s1(FONT_ID_BASE + node.native_font(&st.mem).0),
         );
     };
     match node.whatsit_subtype(&st.mem) {
         Some(WhatsitSubtype::Open) => {
-            print_write_whatsit_in(st, c"openout", node);
-            print_char_in(st, b'=' as i32);
+            print_write_whatsit(st, c"openout", node);
+            print_char(st, b'=' as i32);
             let (name, area, ext) = (
                 node.open_name(&st.mem),
                 node.open_area(&st.mem),
                 node.open_ext(&st.mem),
             );
-            print_file_name_in(st, name, area, ext);
+            print_file_name(st, name, area, ext);
         }
         Some(WhatsitSubtype::Write) => {
-            print_write_whatsit_in(st, c"write", node);
-            print_mark_in(st, node.write_tokens(&st.mem));
+            print_write_whatsit(st, c"write", node);
+            print_mark(st, node.write_tokens(&st.mem));
         }
-        Some(WhatsitSubtype::Close) => print_write_whatsit_in(st, c"closeout", node),
+        Some(WhatsitSubtype::Close) => print_write_whatsit(st, c"closeout", node),
         Some(WhatsitSubtype::Special) => {
             esc(st, c"special");
-            print_mark_in(st, node.write_tokens(&st.mem));
+            print_mark(st, node.write_tokens(&st.mem));
         }
         Some(WhatsitSubtype::Language) => {
             esc(st, c"setlanguage");
-            print_int_in(st, node.what_lang(&st.mem));
-            print_cstr_in(st, c" (hyphenmin ".as_ptr());
-            print_int_in(st, node.what_lhm(&st.mem) as i32);
-            print_char_in(st, b',' as i32);
-            print_int_in(st, node.what_rhm(&st.mem) as i32);
-            print_char_in(st, b')' as i32);
+            print_int(st, node.what_lang(&st.mem));
+            print_cstr(st, c" (hyphenmin ".as_ptr());
+            print_int(st, node.what_lhm(&st.mem) as i32);
+            print_char(st, b',' as i32);
+            print_int(st, node.what_rhm(&st.mem) as i32);
+            print_char(st, b')' as i32);
         }
         Some(WhatsitSubtype::PdfSavePos) => esc(st, c"pdfsavepos"),
         Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
             print_font(st);
-            print_char_in(st, b' ' as i32);
-            print_native_word_in(st, node);
+            print_char(st, b' ' as i32);
+            print_native_word(st, node);
         }
         Some(WhatsitSubtype::Glyph) => {
             print_font(st);
-            print_cstr_in(st, c" glyph#".as_ptr());
-            print_int_in(st, node.native_glyph(&st.mem) as i32);
+            print_cstr(st, c" glyph#".as_ptr());
+            print_int(st, node.native_glyph(&st.mem) as i32);
         }
         Some(sub @ (WhatsitSubtype::Pic | WhatsitSubtype::Pdf)) => {
             if sub == WhatsitSubtype::Pic {
@@ -3286,76 +3279,76 @@ fn show_whatsit_in(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             } else {
                 esc(st, c"XeTeXpdffile");
             }
-            print_cstr_in(st, c" \"".as_ptr());
+            print_cstr(st, c" \"".as_ptr());
             for i in 0..node.pic_path_len(&st.mem) as usize {
                 let b = node.pic_path(&st.mem)[i];
-                print_raw_char_in(st, b as i32, true);
+                print_raw_char(st, b as i32, true);
             }
-            print_in(st, b'"' as i32);
+            print(st, b'"' as i32);
         }
-        _ => print_cstr_in(st, c"whatsit?".as_ptr()),
+        _ => print_cstr(st, c"whatsit?".as_ptr()),
     }
 }
 
-fn show_glue_in(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
+fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
     let sub = node.subtype(&st.mem);
     if sub >= A_LEADERS {
         esc(st, c"");
         if sub == C_LEADERS {
-            print_char_in(st, b'c' as i32);
+            print_char(st, b'c' as i32);
         } else if sub == X_LEADERS {
-            print_char_in(st, b'x' as i32);
+            print_char(st, b'x' as i32);
         }
-        print_cstr_in(st, c"leaders ".as_ptr());
-        print_spec_in(st, node.glue_ptr(&st.mem).ptr(), std::ptr::null());
-        node_list_display_in(st, b'.', node.leader_ptr(&st.mem));
+        print_cstr(st, c"leaders ".as_ptr());
+        print_spec(st, node.glue_ptr(&st.mem).ptr(), std::ptr::null());
+        node_list_display(st, b'.', node.leader_ptr(&st.mem));
         return;
     }
     esc(st, c"glue");
     if sub != 0 {
-        print_char_in(st, b'(' as i32);
+        print_char(st, b'(' as i32);
         if sub < COND_MATH_GLUE {
-            print_skip_param_in(st, sub as i32 - 1);
+            print_skip_param(st, sub as i32 - 1);
         } else if sub == COND_MATH_GLUE {
             esc(st, c"nonscript");
         } else {
             esc(st, c"mskip");
         }
-        print_char_in(st, b')' as i32);
+        print_char(st, b')' as i32);
     }
     if sub != COND_MATH_GLUE {
-        print_char_in(st, b' ' as i32);
+        print_char(st, b' ' as i32);
         let unit = if sub < COND_MATH_GLUE {
             std::ptr::null()
         } else {
             c"mu".as_ptr()
         };
-        print_spec_in(st, node.glue_ptr(&st.mem).ptr(), unit);
+        print_spec(st, node.glue_ptr(&st.mem).ptr(), unit);
     }
 }
 
-fn show_noad_in(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
+fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
     let nt = node.noad_type(&st.mem);
     if nt == NodeType::FractionNoad {
         esc(st, c"fraction, thickness ");
         let thickness = node.thickness(&st.mem);
         if thickness == DEFAULT_CODE {
-            print_cstr_in(st, c"= default".as_ptr());
+            print_cstr(st, c"= default".as_ptr());
         } else {
-            print_scaled_in(st, thickness);
+            print_scaled(st, thickness);
         }
         let left = node.left_delimiter();
         if !left.is_null(&st.mem) {
-            print_cstr_in(st, c", left-delimiter ".as_ptr());
-            print_delimiter_in(st, left);
+            print_cstr(st, c", left-delimiter ".as_ptr());
+            print_delimiter(st, left);
         }
         let right = node.right_delimiter();
         if !right.is_null(&st.mem) {
-            print_cstr_in(st, c", right-delimiter ".as_ptr());
-            print_delimiter_in(st, right);
+            print_cstr(st, c", right-delimiter ".as_ptr());
+            print_delimiter(st, right);
         }
-        print_subsidiary_data_in(st, node.numerator(), b'\\');
-        print_subsidiary_data_in(st, node.denominator(), b'/');
+        print_subsidiary_data(st, node.numerator(), b'\\');
+        print_subsidiary_data(st, node.denominator(), b'/');
         return;
     }
 
@@ -3382,9 +3375,9 @@ fn show_noad_in(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
         esc(st, name);
     }
     match nt {
-        NodeType::RadicalNoad => print_delimiter_in(st, node.left_delimiter()),
-        NodeType::AccentNoad => print_fam_and_char_in(st, node.accent_chr()),
-        NodeType::LeftNoad | NodeType::RightNoad => print_delimiter_in(st, node.delimiter()),
+        NodeType::RadicalNoad => print_delimiter(st, node.left_delimiter()),
+        NodeType::AccentNoad => print_fam_and_char(st, node.accent_chr()),
+        NodeType::LeftNoad | NodeType::RightNoad => print_delimiter(st, node.delimiter()),
         _ => {}
     }
     if !matches!(nt, NodeType::LeftNoad | NodeType::RightNoad) {
@@ -3399,10 +3392,10 @@ fn show_noad_in(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
                 },
             );
         }
-        print_subsidiary_data_in(st, node.nucleus(), b'.');
+        print_subsidiary_data(st, node.nucleus(), b'.');
     }
-    print_subsidiary_data_in(st, node.supscr(), b'^');
-    print_subsidiary_data_in(st, node.subscr(), b'_');
+    print_subsidiary_data(st, node.supscr(), b'^');
+    print_subsidiary_data(st, node.subscr(), b'_');
 }
 
 /// The label shown for a token list of type `index` in the error context.
@@ -3439,7 +3432,7 @@ fn begin_pseudoprint(st: &mut EngineState) -> i32 {
     l
 }
 
-pub(crate) fn show_context_in(st: &mut EngineState) {
+pub(crate) fn show_context(st: &mut EngineState) {
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
     let mut nn = -1;
@@ -3466,28 +3459,28 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
                     if ci.name <= 17 {
                         if ci.name == 0 {
                             if st.input.base_ptr == 0 {
-                                print_nl_cstr_in(st, c"<*>".as_ptr());
+                                print_nl_cstr(st, c"<*>".as_ptr());
                             } else {
-                                print_nl_cstr_in(st, c"<insert> ".as_ptr());
+                                print_nl_cstr(st, c"<insert> ".as_ptr());
                             }
                         } else {
-                            print_nl_cstr_in(st, c"<read ".as_ptr());
+                            print_nl_cstr(st, c"<read ".as_ptr());
                             if ci.name == 17 {
-                                print_char_in(st, b'*' as i32);
+                                print_char(st, b'*' as i32);
                             } else {
-                                print_int_in(st, ci.name - 1);
+                                print_int(st, ci.name - 1);
                             }
-                            print_char_in(st, b'>' as i32);
+                            print_char(st, b'>' as i32);
                         }
                     } else {
-                        print_nl_cstr_in(st, c"l.".as_ptr());
+                        print_nl_cstr(st, c"l.".as_ptr());
                         if ci.index as i32 == st.input.in_open {
-                            print_int_in(st, st.mem.line);
+                            print_int(st, st.mem.line);
                         } else {
-                            print_int_in(st, st.input.line_stack[ci.index as usize + 1]);
+                            print_int(st, st.input.line_stack[ci.index as usize + 1]);
                         }
                     }
-                    print_char_in(st, b' ' as i32);
+                    print_char(st, b' ' as i32);
                     l = begin_pseudoprint(st);
                     let end_line_char = st.eqtb.int_par(INT_PAR_END_LINE_CHAR);
                     let j = if st.input.buffer[ci.limit as usize] == end_line_char {
@@ -3499,25 +3492,25 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
                         if i == ci.loc {
                             set_trick_count(st);
                         }
-                        print_char_in(st, st.input.buffer[i as usize]);
+                        print_char(st, st.input.buffer[i as usize]);
                     }
                 } else {
                     match ci.index {
                         MACRO => {
-                            print_ln_in(st);
-                            print_cs_in(st, ci.name);
+                            print_ln(st);
+                            print_cs(st, ci.name);
                         }
                         index => match token_list_label(index, ci.loc) {
-                            Some(label) => print_nl_cstr_in(st, label.as_ptr()),
-                            None => print_nl_in(st, b'?' as i32),
+                            Some(label) => print_nl_cstr(st, label.as_ptr()),
+                            None => print_nl(st, b'?' as i32),
                         },
                     }
                     l = begin_pseudoprint(st);
                     if ci.index < MACRO {
-                        show_token_list_in(st, ci.start, ci.loc, 100_000);
+                        show_token_list(st, ci.start, ci.loc, 100_000);
                     } else {
                         let list = MemPtr(ci.start).link(&st.mem);
-                        show_token_list_in(st, list, ci.loc, 100_000);
+                        show_token_list(st, list, ci.loc, 100_000);
                     }
                 }
                 st.shipout.selector = old_setting;
@@ -3534,18 +3527,18 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
                 let (start, n) = if l + first_count <= st.errors.half_error_line {
                     (0, l + first_count)
                 } else {
-                    print_cstr_in(st, c"...".as_ptr());
+                    print_cstr(st, c"...".as_ptr());
                     (
                         l + first_count - st.errors.half_error_line + 3,
                         st.errors.half_error_line,
                     )
                 };
                 for q in start..first_count {
-                    print_char_in(st, st.errors.trick_buf[(q % error_line) as usize]);
+                    print_char(st, st.errors.trick_buf[(q % error_line) as usize]);
                 }
-                print_ln_in(st);
+                print_ln(st);
                 for _ in 0..n {
-                    print_raw_char_in(st, b' ' as i32, true);
+                    print_raw_char(st, b' ' as i32, true);
                 }
                 let end = if m + n <= error_line {
                     first_count + m
@@ -3553,15 +3546,15 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
                     first_count + (error_line - n - 3)
                 };
                 for q in first_count..end {
-                    print_char_in(st, st.errors.trick_buf[(q % error_line) as usize]);
+                    print_char(st, st.errors.trick_buf[(q % error_line) as usize]);
                 }
                 if m + n > error_line {
-                    print_cstr_in(st, c"...".as_ptr());
+                    print_cstr(st, c"...".as_ptr());
                 }
                 nn += 1;
             }
         } else if nn == error_context_lines {
-            print_nl_cstr_in(st, c"...".as_ptr());
+            print_nl_cstr(st, c"...".as_ptr());
             nn += 1;
         }
         if bottom_line {

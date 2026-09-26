@@ -245,7 +245,7 @@ impl ErrorState {
     }
 }
 
-fn math_glue_in(
+fn math_glue(
     st: &mut EngineState,
     spec: NodePtr<GlueSpecNode>,
     m: i32,
@@ -272,7 +272,7 @@ fn math_glue_in(
     Ok(p)
 }
 
-fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
+fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
     if p.subtype(&st.mem) == MU_GLUE {
         let mu = st.errors.mu_parts(m);
         let width = st.errors.mu_mult(mu, p.width(&st.mem).0);
@@ -292,7 +292,7 @@ impl ListStateRecord {
     }
 }
 
-fn clean_box_in(
+fn clean_box(
     st: &mut EngineState,
     p: NodePtr<MathField>,
     s: i16,
@@ -301,10 +301,10 @@ fn clean_box_in(
         MATH_CHAR => {
             let noad = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
             noad.nucleus().copy_from(&mut st.mem, p);
-            sublist_to_hlist_in(st, noad.ptr(), s)?
+            sublist_to_hlist(st, noad.ptr(), s)?
         }
         SUB_BOX => p.info(&st.mem),
-        SUB_MLIST => sublist_to_hlist_in(st, p.info(&st.mem), s)?,
+        SUB_MLIST => sublist_to_hlist(st, p.info(&st.mem), s)?,
         _ => st
             .mem
             .new_null_box()
@@ -323,7 +323,7 @@ fn clean_box_in(
     };
     let x_box = match lone_box {
         Some(b) => b,
-        None => crate::packaging::hpack_emit_in(st, q, 0, ADDITIONAL)?,
+        None => crate::packaging::hpack_emit(st, q, 0, ADDITIONAL)?,
     };
 
     let head = x_box.list_ptr(&st.mem);
@@ -344,16 +344,12 @@ fn clean_box_in(
 
 /// Runs `mlist_to_hlist` on `mlist` at style `s` without penalties and returns
 /// the resulting list, restoring the current style.
-fn sublist_to_hlist_in(
-    st: &mut EngineState,
-    mlist: MemPtr,
-    s: i16,
-) -> Result<MemPtr, MathBuildAbort> {
+fn sublist_to_hlist(st: &mut EngineState, mlist: MemPtr, s: i16) -> Result<MemPtr, MathBuildAbort> {
     st.scanner.cur_mlist = mlist;
     let save_style = st.scanner.cur_style;
     st.scanner.cur_style = s;
     st.scanner.mlist_penalties = false;
-    mlist_to_hlist_in(st)?;
+    mlist_to_hlist(st)?;
     let q = TEMP_HEAD.link(&st.mem);
     st.scanner.cur_style = save_style;
     set_cur_size_and_mu(st);
@@ -378,7 +374,7 @@ enum FetchOutcome {
 }
 
 impl MemState {
-    fn fetch_core(
+    fn fetch(
         &mut self,
         fonts: &FontState,
         eqtb: &EqtbState,
@@ -420,28 +416,28 @@ impl MemState {
     }
 }
 
-fn fetch_in(st: &mut EngineState, a: NodePtr<MathField>) -> crate::errors::ErrorOutcome {
+fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> crate::errors::ErrorOutcome {
     use crate::errors::ErrorOutcome;
-    match st.mem.fetch_core(&st.fonts, &st.eqtb, &mut st.scanner, a) {
+    match st.mem.fetch(&st.fonts, &st.eqtb, &mut st.scanner, a) {
         FetchOutcome::Ok => ErrorOutcome::Continue,
         FetchOutcome::UndefinedFont { size, fam, c } => {
-            crate::output::error_here_with_diagnostic_in(st, c"".as_ptr());
-            crate::output::print_size_in(st, size);
-            crate::output::print_char_in(st, ' ' as i32);
-            crate::output::print_int_in(st, fam);
-            crate::output::print_cstr_in(st, c" is undefined (character ".as_ptr());
-            crate::output::print_in(st, c);
-            crate::output::print_char_in(st, ')' as i32);
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            crate::output::error_here_with_diagnostic(st, c"".as_ptr());
+            crate::output::print_size(st, size);
+            crate::output::print_char(st, ' ' as i32);
+            crate::output::print_int(st, fam);
+            crate::output::print_cstr(st, c" is undefined (character ".as_ptr());
+            crate::output::print(st, c);
+            crate::output::print_char(st, ')' as i32);
+            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
             st.errors.help(&[
                 "Somewhere in the math formula just ended, you used the",
                 "stated character from an undefined font family. For example,",
                 r"plain TeX doesn't allow \it or \sl in subscripts. Proceed,",
                 "and I'll try to forget that I needed that character.",
             ]);
-            crate::errors::error_in(st)
+            crate::errors::error(st)
         }
-        FetchOutcome::CharMissing { f, c } => crate::output::char_warning_in(st, f, c),
+        FetchOutcome::CharMissing { f, c } => crate::output::char_warning(st, f, c),
     }
 }
 
@@ -452,19 +448,19 @@ impl MemState {
     }
 }
 
-fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
-    let x = clean_box_in(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
+fn make_over(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+    let x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
     let rule_thickness = st
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
     let p = st.mem.overbar(x, 3 * rule_thickness, rule_thickness)?;
-    let x = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
+    let x = crate::packaging::vpackage_emit(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
     st.mem.set_nucleus_box(q, x);
     Ok(())
 }
 
-fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
-    let x = clean_box_in(st, q.nucleus(), st.scanner.cur_style)?;
+fn make_under(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+    let x = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
     let rule_thickness = st
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
@@ -476,7 +472,7 @@ fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuild
     let rule = st.mem.fraction_rule(rule_thickness)?;
     kern.set_link(&mut st.mem, rule.ptr());
 
-    let y = crate::packaging::vpackage_emit_in(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+    let y = crate::packaging::vpackage_emit(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
     let mem = &mut st.mem;
     let delta = y.height(mem).0 + y.depth(mem).0 + rule_thickness;
     y.set_height(mem, x.height(mem));
@@ -485,7 +481,7 @@ fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuild
     Ok(())
 }
 
-fn make_vcenter_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+fn make_vcenter(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let axis_height = st.fonts.axis_height(&st.eqtb, st.scanner.cur_size);
     let mem = &mut st.mem;
     let Ok(Some(v @ AnyBox::VList(_))) = mem.classify_box(MemIdx::new(q.nucleus().info(mem)))
@@ -498,7 +494,7 @@ fn make_vcenter_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
     Ok(())
 }
 
-fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let f = st
         .eqtb
         .math_font(q.left_delimiter().small(&st.mem).0 + st.scanner.cur_size);
@@ -511,7 +507,7 @@ fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
     };
 
     let clean_style = 2 * (st.scanner.cur_style / 2) + 1;
-    let x = clean_box_in(st, q.nucleus(), clean_style)?;
+    let x = clean_box(st, q.nucleus(), clean_style)?;
     let cur_style = st.scanner.cur_style;
     let cur_size = st.scanner.cur_size;
     let mut clr = if is_ot_math {
@@ -528,7 +524,7 @@ fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
     };
 
     let delimiter_height = x.height(&st.mem).0 + x.depth(&st.mem).0 + clr + rule_thickness;
-    let y = var_delimiter_in(st, q.left_delimiter(), cur_size, delimiter_height)?;
+    let y = var_delimiter(st, q.left_delimiter(), cur_size, delimiter_height)?;
     let mem = &mut st.mem;
     if is_ot_math {
         y.set_depth(
@@ -543,9 +539,9 @@ fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
     }
     y.set_shift_amount(mem, Scaled(-(x.height(mem).0 + clr)));
     let p = mem.overbar(x, clr, y.height(mem).0)?;
-    let overbar_box = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
+    let overbar_box = crate::packaging::vpackage_emit(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
     y.set_link(&mut st.mem, overbar_box.ptr());
-    let hbox = crate::packaging::hpack_emit_in(st, y.ptr(), 0, ADDITIONAL)?;
+    let hbox = crate::packaging::hpack_emit(st, y.ptr(), 0, ADDITIONAL)?;
     st.mem.set_nucleus_box(q, hbox);
     Ok(())
 }
@@ -607,7 +603,7 @@ impl MemState {
     }
 }
 
-fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     if q.thickness(&st.mem) == DEFAULT_CODE {
         let drt = st
             .fonts
@@ -616,16 +612,16 @@ fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
     }
 
     let cs = st.scanner.cur_style;
-    let mut x = clean_box_in(st, q.numerator(), cs + 2 - 2 * (cs / 6))?;
+    let mut x = clean_box(st, q.numerator(), cs + 2 - 2 * (cs / 6))?;
     let cs = st.scanner.cur_style;
-    let mut z = clean_box_in(st, q.denominator(), 2 * (cs / 2) + 3 - 2 * (cs / 6))?;
+    let mut z = clean_box(st, q.denominator(), 2 * (cs / 2) + 3 - 2 * (cs / 6))?;
 
     if x.width(&st.mem).0 < z.width(&st.mem).0 {
         let w = z.width(&st.mem).0;
-        x = rebox_in(st, x, w)?;
+        x = rebox(st, x, w)?;
     } else {
         let w = x.width(&st.mem).0;
-        z = rebox_in(st, z, w)?;
+        z = rebox(st, z, w)?;
     }
 
     let cur_style = st.scanner.cur_style;
@@ -730,17 +726,17 @@ fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
         st.fonts.delim2(&st.eqtb, cur_size)
     };
 
-    let left_delim = var_delimiter_in(st, q.left_delimiter(), cur_size, delimiter_size)?;
-    let right_delim = var_delimiter_in(st, q.right_delimiter(), cur_size, delimiter_size)?;
+    let left_delim = var_delimiter(st, q.left_delimiter(), cur_size, delimiter_size)?;
+    let right_delim = var_delimiter(st, q.right_delimiter(), cur_size, delimiter_size)?;
     left_delim.set_link(&mut st.mem, v.ptr());
     v.set_link(&mut st.mem, right_delim.ptr());
-    let hbox = crate::packaging::hpack_emit_in(st, left_delim.ptr(), 0, ADDITIONAL)?;
+    let hbox = crate::packaging::hpack_emit(st, left_delim.ptr(), 0, ADDITIONAL)?;
     q.set_new_hlist(&mut st.mem, hbox.ptr());
     Ok(())
 }
 
 /// Returns the italic correction `delta`.
-fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAbort> {
+fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAbort> {
     use crate::errors::ErrorOutcome;
     let mut delta: i32 = 0;
 
@@ -749,7 +745,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
     }
 
     if q.nucleus().math_type(&st.mem) == MATH_CHAR {
-        match fetch_in(st, q.nucleus()) {
+        match fetch(st, q.nucleus()) {
             ErrorOutcome::Continue => {}
             other => return Err(MathBuildAbort::Error(other)),
         }
@@ -770,7 +766,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
             delta = st.fonts.char_italic(f, st.scanner.cur_i);
         }
 
-        let x = clean_box_in(st, q.nucleus(), st.scanner.cur_style)?;
+        let x = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
 
         let cur_f = st.scanner.cur_f;
         if st.fonts.font_is_ot_math(cur_f) {
@@ -805,8 +801,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
                             if let Some(assembly) = st.fonts.get_ot_assembly(cur_f, c_glyph, false)
                             {
                                 st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
-                                let b =
-                                    build_opentype_assembly_in(st, cur_f, &assembly, h1, false)?;
+                                let b = build_opentype_assembly(st, cur_f, &assembly, h1, false)?;
                                 x.set_list_ptr(&mut st.mem, b.ptr());
                                 delta = 0;
                                 break 'found (
@@ -847,9 +842,9 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
     let save_f = st.scanner.cur_f;
     if q.subtype(&st.mem) == LIMITS {
         let cs = st.scanner.cur_style as i32;
-        let x = clean_box_in(st, q.supscr(), (2 * (cs / 4) + 4 + (cs % 2)) as i16)?;
-        let y = clean_box_in(st, q.nucleus(), st.scanner.cur_style)?;
-        let z = clean_box_in(st, q.subscr(), (2 * (cs / 4) + 5) as i16)?;
+        let x = clean_box(st, q.supscr(), (2 * (cs / 4) + 4 + (cs % 2)) as i16)?;
+        let y = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
+        let z = clean_box(st, q.subscr(), (2 * (cs / 4) + 5) as i16)?;
 
         let v = AnyBox::VList(
             st.mem
@@ -864,9 +859,9 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
             .max(z.width(&st.mem).0);
         v.set_width(&mut st.mem, Scaled(w));
 
-        let x = rebox_in(st, x, w)?;
-        let y = rebox_in(st, y, w)?;
-        let z = rebox_in(st, z, w)?;
+        let x = rebox(st, x, w)?;
+        let y = rebox(st, y, w)?;
+        let z = rebox(st, z, w)?;
 
         let size = st.scanner.cur_size;
         let bos1 = st.fonts.big_op_spacing1(&st.eqtb, size);
@@ -1016,7 +1011,7 @@ enum MakeOrdAbort {
     Error(crate::errors::ErrorOutcome),
 }
 
-fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbort> {
+fn make_ord(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbort> {
     use crate::errors::ErrorOutcome;
     'restart: loop {
         if q.subscr().math_type(&st.mem) != EMPTY {
@@ -1050,7 +1045,7 @@ fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbor
         }
 
         q.nucleus().set_math_type(&mut st.mem, MATH_TEXT_CHAR);
-        match fetch_in(st, q.nucleus()) {
+        match fetch(st, q.nucleus()) {
             ErrorOutcome::Continue => {}
             other => return Err(MakeOrdAbort::Error(other)),
         }
@@ -1066,9 +1061,9 @@ fn make_ord_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MakeOrdAbor
     }
 }
 
-fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
+fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     use crate::errors::ErrorOutcome;
-    match fetch_in(st, q.accent_chr()) {
+    match fetch(st, q.accent_chr()) {
         ErrorOutcome::Continue => {}
         other => return Err(MathBuildAbort::Error(other)),
     }
@@ -1083,13 +1078,13 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     let mut x: AnyBox;
     if is_native {
         if !bottom_accent {
-            s = compute_ot_math_accent_pos_in(st, q)?;
+            s = compute_ot_math_accent_pos(st, q)?;
         }
-        x = clean_box_in(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
+        x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
     } else if st.scanner.cur_i.s3 > 0 {
         let mut acc_i = st.scanner.cur_i;
         if q.nucleus().math_type(&st.mem) == MATH_CHAR {
-            match fetch_in(st, q.nucleus()) {
+            match fetch(st, q.nucleus()) {
                 ErrorOutcome::Continue => {}
                 other => return Err(MathBuildAbort::Error(other)),
             }
@@ -1112,7 +1107,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
                 };
             }
         }
-        x = clean_box_in(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
+        x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
         let w = x.width(&st.mem).0;
         while acc_i.s1 % 4 == LIST_TAG {
             let larger = acc_i.s0 as i32;
@@ -1156,14 +1151,14 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         }
         q.nucleus().set_math_type(mem, SUB_MLIST);
         q.nucleus().set_info(mem, base.ptr());
-        x = clean_box_in(st, q.nucleus(), st.scanner.cur_style)?;
+        x = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
         delta += x.height(&st.mem).0 - h;
         h = x.height(&st.mem).0;
     }
 
     let y;
     if is_native {
-        let old = crate::fonts::new_native_character_in(st, f, c as u32)?;
+        let old = crate::fonts::new_native_character(st, f, c as u32)?;
         y = st.mem.native_char_box(old)?;
         let glyph =
             NodePtr::<WhatsitNode>::alloc(&mut st.mem, GLYPH_NODE_SIZE, WhatsitSubtype::Glyph)
@@ -1196,7 +1191,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
             if w2 < 0 {
                 if let Some(assembly) = st.fonts.get_ot_assembly(f, c_glyph, true) {
                     st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
-                    let b = build_opentype_assembly_in(st, f, &assembly, w, true)?;
+                    let b = build_opentype_assembly(st, f, &assembly, w, true)?;
                     y.set_list_ptr(&mut st.mem, b.ptr());
                     assembly_box = Some(b);
                 }
@@ -1245,7 +1240,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     y.set_width(&mut st.mem, Scaled(0));
     let v = if bottom_accent {
         x.set_link(&mut st.mem, y.ptr());
-        let v = crate::packaging::vpackage_emit_in(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+        let v = crate::packaging::vpackage_emit(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
         let v_height = v.height(&st.mem).0;
         v.set_shift_amount(&mut st.mem, Scaled(-(h - v_height)));
         v
@@ -1253,7 +1248,7 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         let kern = st.mem.new_kern(-delta).ok_or(NodeRecycleAbort::Overflow)?;
         kern.set_link(&mut st.mem, x.ptr());
         y.set_link(&mut st.mem, kern.ptr());
-        let v = crate::packaging::vpackage_emit_in(st, y.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+        let v = crate::packaging::vpackage_emit(st, y.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
         let mem = &mut st.mem;
         if v.height(mem).0 < h {
             let kern = mem
@@ -1292,7 +1287,7 @@ struct ScriptKernAttachment {
     is_ot_math: bool,
 }
 
-fn maybe_attach_script_kern_in(
+fn maybe_attach_script_kern(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     p: MemPtr,
@@ -1354,14 +1349,14 @@ struct ScriptBoxPrep {
     shift: i32,
 }
 
-fn clean_script_box_in(
+fn clean_script_box(
     st: &mut EngineState,
     script_field: NodePtr<MathField>,
     clean_style: i16,
     saved_font: i32,
     adjustment: ScriptBoxAdjustment,
 ) -> Result<ScriptBoxPrep, MathBuildAbort> {
-    let node = clean_box_in(st, script_field, clean_style)?;
+    let node = clean_box(st, script_field, clean_style)?;
     let shift = match adjustment {
         ScriptBoxAdjustment::Sub1 => st.fonts.sub1(&st.eqtb, st.scanner.cur_size),
         ScriptBoxAdjustment::Sub2 => st.fonts.sub2(&st.eqtb, st.scanner.cur_size),
@@ -1389,14 +1384,11 @@ struct ScriptShifts {
     down: i32,
 }
 
-fn initial_script_shifts_in(
-    st: &mut EngineState,
-    p: MemPtr,
-) -> Result<ScriptShifts, MathBuildAbort> {
+fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts, MathBuildAbort> {
     if st.mem.is_char_node(p) || st.mem.glyph_whatsit(p).is_some() {
         Ok(ScriptShifts { up: 0, down: 0 })
     } else {
-        let zb = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
+        let zb = crate::packaging::hpack_emit(st, p, 0, ADDITIONAL)?;
         let t = if st.scanner.cur_style < SCRIPT_STYLE {
             SCRIPT_SIZE
         } else {
@@ -1425,14 +1417,14 @@ struct SubSupStackInput {
     delta: i32,
 }
 
-fn finish_subsup_stack_in(
+fn finish_subsup_stack(
     st: &mut EngineState,
     input: SubSupStackInput,
 ) -> Result<(), MathBuildAbort> {
     let mut p = input.p;
     let mut sub_kern;
     let mut sup_kern = 0;
-    let attachment = maybe_attach_script_kern_in(
+    let attachment = maybe_attach_script_kern(
         st,
         input.q,
         p,
@@ -1446,7 +1438,7 @@ fn finish_subsup_stack_in(
     if attachment.is_ot_math {
         let sub_empty = input.q.subscr().math_type(&st.mem) == EMPTY;
         if sub_empty {
-            let attachment = maybe_attach_script_kern_in(
+            let attachment = maybe_attach_script_kern(
                 st,
                 input.q,
                 p,
@@ -1473,8 +1465,7 @@ fn finish_subsup_stack_in(
     input.x.set_link(&mut st.mem, kern.ptr());
     kern.set_link(&mut st.mem, input.y.ptr());
 
-    let packaged =
-        crate::packaging::vpackage_emit_in(st, input.x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+    let packaged = crate::packaging::vpackage_emit(st, input.x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
     packaged.set_shift_amount(&mut st.mem, Scaled(input.shift_down));
     st.mem.append_to_new_hlist(input.q, packaged.ptr());
     Ok(())
@@ -1487,17 +1478,17 @@ struct PreparedScript {
     shift: i32,
 }
 
-fn prepare_subscript_in(
+fn prepare_subscript(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     adjustment: ScriptBoxAdjustment,
     shift_down: i32,
 ) -> Result<PreparedScript, MathBuildAbort> {
     let script_field = q.subscr();
-    let (glyph, font) = first_script_glyph_in(st, script_field)?;
+    let (glyph, font) = first_script_glyph(st, script_field)?;
     let save_f = st.scanner.cur_f;
     let clean_style = 2 * (st.scanner.cur_style / 4) + 5;
-    let prepared = clean_script_box_in(st, script_field, clean_style, save_f, adjustment)?;
+    let prepared = clean_script_box(st, script_field, clean_style, save_f, adjustment)?;
     Ok(PreparedScript {
         box_node: prepared.box_node,
         glyph,
@@ -1506,7 +1497,7 @@ fn prepare_subscript_in(
     })
 }
 
-fn finish_subscript_only_in(
+fn finish_subscript_only(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     p: MemPtr,
@@ -1517,7 +1508,7 @@ fn finish_subscript_only_in(
         glyph: sub_g,
         font: sub_f,
         shift: shift_down,
-    } = prepare_subscript_in(st, q, ScriptBoxAdjustment::Sub1, shift_down)?;
+    } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub1, shift_down)?;
 
     let cur_f = st.scanner.cur_f;
     let box_depth = x.height(&st.mem).0;
@@ -1531,20 +1522,20 @@ fn finish_subscript_only_in(
     let shift_down = shift_down.max(clr);
     x.set_shift_amount(&mut st.mem, Scaled(shift_down));
 
-    let _ = maybe_attach_script_kern_in(st, q, p, sub_f, sub_g, ScriptKind::Sub, shift_down)?;
+    let _ = maybe_attach_script_kern(st, q, p, sub_f, sub_g, ScriptKind::Sub, shift_down)?;
     st.mem.append_to_new_hlist(q, x.ptr());
     Ok(())
 }
 
-fn prepare_superscript_in(
+fn prepare_superscript(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     mut shift_up: i32,
 ) -> Result<PreparedScript, MathBuildAbort> {
-    let (glyph, font) = first_script_glyph_in(st, q.supscr())?;
+    let (glyph, font) = first_script_glyph(st, q.supscr())?;
     let save_f = st.scanner.cur_f;
     let clean_style = 2 * (st.scanner.cur_style / 4) + 4 + (st.scanner.cur_style % 2);
-    let prepared = clean_script_box_in(
+    let prepared = clean_script_box(
         st,
         q.supscr(),
         clean_style,
@@ -1570,7 +1561,7 @@ fn prepare_superscript_in(
     })
 }
 
-fn finish_superscript_branch_in(
+fn finish_superscript_branch(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     p: MemPtr,
@@ -1582,7 +1573,7 @@ fn finish_superscript_branch_in(
     let shift_up = superscript.shift;
     let sub_empty = q.subscr().math_type(&st.mem) == EMPTY;
     if sub_empty {
-        let _ = maybe_attach_script_kern_in(
+        let _ = maybe_attach_script_kern(
             st,
             q,
             p,
@@ -1601,7 +1592,7 @@ fn finish_superscript_branch_in(
         glyph: sub_g,
         font: sub_f,
         shift,
-    } = prepare_subscript_in(st, q, ScriptBoxAdjustment::Sub2, shift_down)?;
+    } = prepare_subscript(st, q, ScriptBoxAdjustment::Sub2, shift_down)?;
     shift_down = shift;
 
     let cur_f = st.scanner.cur_f;
@@ -1636,7 +1627,7 @@ fn finish_superscript_branch_in(
         }
     }
 
-    finish_subsup_stack_in(
+    finish_subsup_stack(
         st,
         SubSupStackInput {
             q,
@@ -1697,7 +1688,7 @@ impl MemState {
     }
 }
 
-fn first_script_glyph_in(
+fn first_script_glyph(
     st: &mut EngineState,
     script_head: NodePtr<MathField>,
 ) -> Result<(u16, i32), MathBuildAbort> {
@@ -1716,7 +1707,7 @@ fn first_script_glyph_in(
         let saved_math_style = st.scanner.cur_style;
         st.scanner.cur_style = this_math_style;
         set_cur_size_and_mu(st);
-        match fetch_in(st, script_head) {
+        match fetch(st, script_head) {
             ErrorOutcome::Continue => {}
             other => return Err(MathBuildAbort::Error(other)),
         }
@@ -1724,7 +1715,7 @@ fn first_script_glyph_in(
         let cur_f_after_fetch = st.scanner.cur_f;
         let cur_c_after_fetch = st.scanner.cur_c;
         if st.fonts.font_is_ot_math(cur_f_after_fetch) {
-            let script_c = crate::fonts::new_native_character_in(
+            let script_c = crate::fonts::new_native_character(
                 st,
                 cur_f_after_fetch,
                 cur_c_after_fetch as u32,
@@ -1741,24 +1732,20 @@ fn first_script_glyph_in(
     Ok((script_g, script_f))
 }
 
-fn make_scripts_in(
-    st: &mut EngineState,
-    q: NodePtr<Noad>,
-    delta: i32,
-) -> Result<(), MathBuildAbort> {
+fn make_scripts(st: &mut EngineState, q: NodePtr<Noad>, delta: i32) -> Result<(), MathBuildAbort> {
     let p = q.new_hlist(&st.mem);
-    let shifts = initial_script_shifts_in(st, p)?;
+    let shifts = initial_script_shifts(st, p)?;
 
     if q.supscr().math_type(&st.mem) == EMPTY {
-        finish_subscript_only_in(st, q, p, shifts.down)?;
+        finish_subscript_only(st, q, p, shifts.down)?;
     } else {
-        let superscript = prepare_superscript_in(st, q, shifts.up)?;
-        finish_superscript_branch_in(st, q, p, superscript, shifts.down, delta)?;
+        let superscript = prepare_superscript(st, q, shifts.up)?;
+        finish_superscript_branch(st, q, p, superscript, shifts.down, delta)?;
     }
     Ok(())
 }
 
-fn make_left_right_in(
+fn make_left_right(
     st: &mut EngineState,
     q: NodePtr<Noad>,
     style: i16,
@@ -1774,7 +1761,7 @@ fn make_left_right_in(
     let delta2 = max_d + axis_height;
     let delta1 = (max_h + max_d - delta2).max(delta2);
     let delta = ((delta1 / 500) * delimiter_factor).max(delta1 + delta1 - delimiter_shortfall);
-    let delimiter = var_delimiter_in(st, q.delimiter(), size, delta)?;
+    let delimiter = var_delimiter(st, q.delimiter(), size, delta)?;
     q.set_new_hlist(&mut st.mem, delimiter.ptr());
     Ok(if q.noad_type(&st.mem) == NodeType::LeftNoad {
         NodeType::OpenNoad
@@ -1874,7 +1861,7 @@ impl MemState {
     }
 }
 
-fn mlist_advance_in(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16, MemPtr) {
+fn mlist_advance(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16, MemPtr) {
     let mut r_type = qn.noad_type(&st.mem).as_raw();
     let next = qn.link(&st.mem);
     if r_type == NodeType::RightNoad.as_raw() {
@@ -1886,7 +1873,7 @@ fn mlist_advance_in(st: &mut EngineState, qn: NodePtr<Noad>, style: i16) -> (u16
 }
 
 /// Translates the nucleus of `qn` into its `new_hlist` and attaches its scripts.
-fn mlist_nucleus_in(
+fn mlist_nucleus(
     st: &mut EngineState,
     qn: NodePtr<Noad>,
     mut delta: i32,
@@ -1894,14 +1881,14 @@ fn mlist_nucleus_in(
     use crate::errors::ErrorOutcome;
     let p = match qn.nucleus().math_type(&st.mem) {
         MATH_CHAR | MATH_TEXT_CHAR => {
-            match fetch_in(st, qn.nucleus()) {
+            match fetch(st, qn.nucleus()) {
                 ErrorOutcome::Continue => {}
                 other => return Err(MathBuildAbort::Error(other)),
             }
             let cur_f = st.scanner.cur_f;
             let area = st.fonts.font_area_entry(cur_f);
             let p = if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-                let z = crate::fonts::new_native_character_in(st, cur_f, st.scanner.cur_c as u32)?;
+                let z = crate::fonts::new_native_character(st, cur_f, st.scanner.cur_c as u32)?;
                 let glyph = NodePtr::<WhatsitNode>::alloc(
                     &mut st.mem,
                     GLYPH_NODE_SIZE,
@@ -1925,7 +1912,7 @@ fn mlist_nucleus_in(
             } else if st.scanner.cur_i.s3 > 0 {
                 delta = st.fonts.char_italic(cur_f, st.scanner.cur_i);
                 let cc = st.scanner.cur_c as u16;
-                let p = crate::main_control::new_character_in(st, cur_f, cc)?;
+                let p = crate::main_control::new_character(st, cur_f, cc)?;
                 let p = p.map_or(MemPtr::NULL, crate::main_control::NewChar::ptr);
                 if qn.nucleus().math_type(&st.mem) == MATH_TEXT_CHAR
                     && st.fonts.param(cur_f, SPACE_CODE) != 0
@@ -1948,8 +1935,8 @@ fn mlist_nucleus_in(
         SUB_MLIST => {
             let mlist = qn.nucleus().info(&st.mem);
             let style = st.scanner.cur_style;
-            let list = sublist_to_hlist_in(st, mlist, style)?;
-            crate::packaging::hpack_emit_in(st, list, 0, ADDITIONAL)?.ptr()
+            let list = sublist_to_hlist(st, mlist, style)?;
+            crate::packaging::hpack_emit(st, list, 0, ADDITIONAL)?.ptr()
         }
         _ => return Err(NodeRecycleAbort::Confusion(c"mlist2").into()),
     };
@@ -1957,7 +1944,7 @@ fn mlist_nucleus_in(
     let need_scripts =
         qn.subscr().math_type(&st.mem) != EMPTY || qn.supscr().math_type(&st.mem) != EMPTY;
     if need_scripts {
-        make_scripts_in(st, qn, delta)?;
+        make_scripts(st, qn, delta)?;
     }
 
     Ok(())
@@ -1975,7 +1962,7 @@ const MATH_SPACING: [&[u8; 8]; 8] = [
     b"12341011",
 ];
 
-fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
+fn mlist_to_hlist(st: &mut EngineState) -> Result<(), MathBuildAbort> {
     let mlist = st.scanner.cur_mlist;
     let penalties = st.scanner.mlist_penalties;
     let style = st.scanner.cur_style;
@@ -2030,41 +2017,41 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     }
                     NodeType::LeftNoad => break 'reswitch FirstPass::DoneWithNoad(qn),
                     NodeType::FractionNoad => {
-                        make_fraction_in(st, qn)?;
+                        make_fraction(st, qn)?;
                         break 'reswitch FirstPass::CheckDimensions(qn);
                     }
                     NodeType::OpNoad => {
-                        delta = make_op_in(st, qn)?;
+                        delta = make_op(st, qn)?;
                         if qn.subtype(&st.mem) == LIMITS {
                             break 'reswitch FirstPass::CheckDimensions(qn);
                         }
                         break 'reswitch FirstPass::ProcessNucleus(qn);
                     }
                     NodeType::OrdNoad => {
-                        make_ord_in(st, qn)?;
+                        make_ord(st, qn)?;
                         break 'reswitch FirstPass::ProcessNucleus(qn);
                     }
                     NodeType::OpenNoad | NodeType::InnerNoad => {
                         break 'reswitch FirstPass::ProcessNucleus(qn)
                     }
                     NodeType::RadicalNoad => {
-                        make_radical_in(st, qn)?;
+                        make_radical(st, qn)?;
                         break 'reswitch FirstPass::ProcessNucleus(qn);
                     }
                     NodeType::OverNoad => {
-                        make_over_in(st, qn)?;
+                        make_over(st, qn)?;
                         break 'reswitch FirstPass::ProcessNucleus(qn);
                     }
                     NodeType::UnderNoad => {
-                        make_under_in(st, qn)?;
+                        make_under(st, qn)?;
                         break 'reswitch FirstPass::ProcessNucleus(qn);
                     }
                     NodeType::AccentNoad => {
-                        make_math_accent_in(st, qn)?;
+                        make_math_accent(st, qn)?;
                         break 'reswitch FirstPass::ProcessNucleus(qn);
                     }
                     NodeType::VcenterNoad => {
-                        make_vcenter_in(st, qn)?;
+                        make_vcenter(st, qn)?;
                         break 'reswitch FirstPass::ProcessNucleus(qn);
                     }
                     _ => unreachable!("AnyNode::Noad always has a noad type (16..=31)"),
@@ -2098,7 +2085,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     let mu = st.scanner.cur_mu;
                     let x = glue.glue_ptr(&st.mem);
                     if subtype == MU_GLUE {
-                        let y = math_glue_in(st, x, mu)?;
+                        let y = math_glue(st, x, mu)?;
                         st.mem.delete_glue_ref(x);
                         glue.set_glue_ptr(&mut st.mem, y);
                         glue.set_subtype(&mut st.mem, NORMAL);
@@ -2112,7 +2099,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                 }
                 Ok(AnyNode::Kern(kern)) => {
                     let mu = st.scanner.cur_mu;
-                    math_kern_in(st, kern, mu);
+                    math_kern(st, kern, mu);
                     break 'reswitch FirstPass::DoneWithNode;
                 }
                 _ => return Err(NodeRecycleAbort::Confusion(c"mlist1").into()),
@@ -2127,16 +2114,16 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
             FirstPass::DoneWithNoad(qn) => qn,
             FirstPass::ProcessNucleus(qn) | FirstPass::CheckDimensions(qn) => {
                 if matches!(action, FirstPass::ProcessNucleus(_)) {
-                    mlist_nucleus_in(st, qn, delta)?;
+                    mlist_nucleus(st, qn, delta)?;
                 }
                 let list = qn.new_hlist(&st.mem);
-                let z_box = crate::packaging::hpack_emit_in(st, list, 0, ADDITIONAL)?;
+                let z_box = crate::packaging::hpack_emit(st, list, 0, ADDITIONAL)?;
                 st.mem.mlist_track_box(z_box, &mut max_h, &mut max_d);
                 qn
             }
         };
         r = Some(qn);
-        (r_type, q) = mlist_advance_in(st, qn, style);
+        (r_type, q) = mlist_advance(st, qn, style);
     }
 
     let mut p = TEMP_HEAD;
@@ -2186,7 +2173,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     NodeType::AccentNoad => s = ACCENT_NOAD_SIZE,
                     NodeType::FractionNoad => s = FRACTION_NOAD_SIZE,
                     NodeType::LeftNoad | NodeType::RightNoad => {
-                        t = make_left_right_in(st, qn, style, max_d, max_h)?.as_raw();
+                        t = make_left_right(st, qn, style, max_d, max_h)?.as_raw();
                     }
                     _ => return Err(NodeRecycleAbort::Confusion(c"mlist3").into()),
                 }
@@ -2239,7 +2226,7 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                 if x != 0 {
                     let g = st.eqtb.glue_par(x);
                     let mu = st.scanner.cur_mu;
-                    let y = math_glue_in(st, g, mu)?;
+                    let y = math_glue(st, g, mu)?;
                     let z = st.mem.new_glue(y).ok_or(NodeRecycleAbort::Overflow)?;
                     y.set_ref_count(&mut st.mem, TEX_NULL);
                     p.set_link(&mut st.mem, z.ptr());
@@ -2362,10 +2349,10 @@ fn math_build_abort_main(a: MathBuildAbort) -> crate::main_control::MainControlA
     }
 }
 
-fn char_box_in(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuildAbort> {
+fn char_box(st: &mut EngineState, f: i32, c: i32) -> Result<AnyBox, MathBuildAbort> {
     let area = st.fonts.font_area_entry(f);
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-        let p = crate::fonts::new_native_character_in(st, f, c as u32)?;
+        let p = crate::fonts::new_native_character(st, f, c as u32)?;
         Ok(st.mem.native_char_box(p)?)
     } else {
         Ok(st.mem.char_box_tfm(&mut st.fonts, f, c as u16)?)
@@ -2427,7 +2414,7 @@ fn new_measured_glyph(
     Ok(p)
 }
 
-fn stack_glyph_into_box_in(
+fn stack_glyph_into_box(
     st: &mut EngineState,
     b: AnyBox,
     f: i32,
@@ -2462,7 +2449,7 @@ fn stack_glyph_into_box_in(
     Ok(())
 }
 
-fn native_glyph_vbox_in(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, NodeRecycleAbort> {
+fn native_glyph_vbox(st: &mut EngineState, f: i32, g: u16) -> Result<AnyBox, NodeRecycleAbort> {
     let b = AnyBox::VList(
         st.mem
             .new_null_box()
@@ -2511,7 +2498,7 @@ impl MemState {
     }
 }
 
-fn compute_ot_math_accent_pos_in(
+fn compute_ot_math_accent_pos(
     st: &mut EngineState,
     mut p: NodePtr<Noad>,
 ) -> Result<i32, MathBuildAbort> {
@@ -2519,13 +2506,13 @@ fn compute_ot_math_accent_pos_in(
     loop {
         match p.nucleus().math_type(&st.mem) {
             MATH_CHAR => {
-                match fetch_in(st, p.nucleus()) {
+                match fetch(st, p.nucleus()) {
                     ErrorOutcome::Continue => {}
                     other => return Err(MathBuildAbort::Error(other)),
                 }
                 let f = st.scanner.cur_f;
                 let c = st.scanner.cur_c;
-                let q = crate::fonts::new_native_character_in(st, f, c as u32)?;
+                let q = crate::fonts::new_native_character(st, f, c as u32)?;
                 let g = st.mem.real_get_native_glyph(q, 0);
                 return Ok(st.fonts.get_ot_math_accent_pos(f, g as i32));
             }
@@ -2541,7 +2528,7 @@ fn compute_ot_math_accent_pos_in(
     }
 }
 
-pub(crate) fn scan_delimiter_in(
+pub(crate) fn scan_delimiter(
     st: &mut EngineState,
     p: NodePtr<DelimiterField>,
     r: bool,
@@ -2549,16 +2536,16 @@ pub(crate) fn scan_delimiter_in(
     if r {
         if st.scanner.cur_chr == 1 {
             st.scanner.cur_val1 = 0x4000_0000;
-            crate::scan::scan_math_fam_int_in(st)?;
+            crate::scan::scan_math_fam_int(st)?;
             st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
-            crate::scan::scan_usv_num_in(st)?;
+            crate::scan::scan_usv_num(st)?;
             st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
         } else {
-            crate::scan::scan_delimiter_int_in(st)?;
+            crate::scan::scan_delimiter_int(st)?;
         }
     } else {
         loop {
-            crate::scan::get_x_token_in(st)?;
+            crate::scan::get_x_token(st)?;
             if st.scanner.cur_cmd != SPACER && st.scanner.cur_cmd != RELAX {
                 break;
             }
@@ -2569,13 +2556,13 @@ pub(crate) fn scan_delimiter_in(
             DELIM_NUM => {
                 if st.scanner.cur_chr == 1 {
                     st.scanner.cur_val1 = 0x4000_0000;
-                    crate::scan::scan_math_class_int_in(st)?;
-                    crate::scan::scan_math_fam_int_in(st)?;
+                    crate::scan::scan_math_class_int(st)?;
+                    crate::scan::scan_math_fam_int(st)?;
                     st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
-                    crate::scan::scan_usv_num_in(st)?;
+                    crate::scan::scan_usv_num(st)?;
                     st.scanner.cur_val = st.scanner.cur_val + st.scanner.cur_val1;
                 } else {
-                    crate::scan::scan_delimiter_int_in(st)?;
+                    crate::scan::scan_delimiter_int(st)?;
                 }
             }
             _ => st.scanner.cur_val = -1,
@@ -2583,8 +2570,8 @@ pub(crate) fn scan_delimiter_in(
     }
 
     if st.scanner.cur_val < 0 {
-        crate::output::print_error_prefix_in(st);
-        crate::output::print_cstr_in(st, c"Missing delimiter (. inserted)".as_ptr());
+        crate::output::print_error_prefix(st);
+        crate::output::print_cstr(st, c"Missing delimiter (. inserted)".as_ptr());
         st.errors.help(&[
             r"I was expecting to see something like `(' or `\{' or",
             r"`\}' here. If you typed, e.g., `{' instead of `\{', you",
@@ -2593,7 +2580,7 @@ pub(crate) fn scan_delimiter_in(
             r"Acceptable delimiters are characters whose \delcode is",
             r"nonnegative, or you can use `\delimiter <delimiter code>'.",
         ]);
-        crate::main_control::mc_propagate_error(crate::input::back_error_in(st)?)?;
+        crate::main_control::mc_propagate_error(crate::input::back_error(st)?)?;
         st.scanner.cur_val = 0;
     }
 
@@ -2613,7 +2600,7 @@ pub(crate) fn scan_delimiter_in(
     Ok(())
 }
 
-fn define_word_in(
+fn define_word(
     st: &mut EngineState,
     loc: i32,
     val: i32,
@@ -2621,20 +2608,20 @@ fn define_word_in(
     Ok(st.eqtb.eq_word_define(&mut st.save_stack, loc, val)?)
 }
 
-pub(crate) fn start_eq_no_in(
+pub(crate) fn start_eq_no(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     st.save_stack.set_saved(0, st.scanner.cur_chr);
     st.save_stack.save_ptr += 1;
 
-    crate::main_control::push_math_in(st, GroupCode::MathShift)?;
-    define_word_in(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
+    crate::main_control::push_math(st, GroupCode::MathShift)?;
+    define_word(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
     if st.shipout.insert_src_special_every_math {
-        crate::ext::insert_src_special_in(st)?;
+        crate::ext::insert_src_special(st)?;
     }
     let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
     if !every_math.is_null() {
-        crate::input::begin_token_list_in(st, every_math, EVERY_MATH_TEXT)?;
+        crate::input::begin_token_list(st, every_math, EVERY_MATH_TEXT)?;
     }
     Ok(())
 }
@@ -2655,7 +2642,7 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn math_limit_switch_in(
+pub(crate) fn math_limit_switch(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     if st
@@ -2665,10 +2652,10 @@ pub(crate) fn math_limit_switch_in(
     {
         return Ok(());
     }
-    crate::output::print_err_in(st, c"Limit controls must follow a math operator");
+    crate::output::print_err(st, c"Limit controls must follow a math operator");
     st.errors
         .help(&[r"I'm ignoring this misplaced \limits or \nolimits command."]);
-    crate::main_control::mc_propagate_error(crate::errors::error_in(st))
+    crate::main_control::mc_propagate_error(crate::errors::error(st))
 }
 
 impl ListStateRecord {
@@ -2683,16 +2670,16 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn math_radical_in(
+pub(crate) fn math_radical(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     let tail = st.input.cur_list.append_radical_noad(&mut st.mem)?;
-    scan_delimiter_in(st, tail.left_delimiter(), true)?;
-    crate::scan::scan_math_in(st, tail.nucleus())
+    scan_delimiter(st, tail.left_delimiter(), true)?;
+    crate::scan::scan_math(st, tail.nucleus())
 }
 
 impl ListStateRecord {
-    fn append_choices_core(
+    fn append_choices(
         &mut self,
         mem: &mut MemState,
         save_stack: &mut SaveStackState,
@@ -2705,14 +2692,14 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn append_choices_in(
+pub(crate) fn append_choices(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     st.input
         .cur_list
-        .append_choices_core(&mut st.mem, &mut st.save_stack)?;
-    crate::main_control::push_math_in(st, GroupCode::MathChoice)?;
-    crate::scan::scan_left_brace_in(st)?;
+        .append_choices(&mut st.mem, &mut st.save_stack)?;
+    crate::main_control::push_math(st, GroupCode::MathChoice)?;
+    crate::scan::scan_left_brace(st)?;
     Ok(())
 }
 
@@ -2757,7 +2744,7 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn fin_mlist_in(
+pub(crate) fn fin_mlist(
     st: &mut crate::state::EngineState,
     p: i32,
 ) -> Result<i32, crate::main_control::MainControlAbort> {
@@ -2798,10 +2785,10 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn build_choices_in(
+pub(crate) fn build_choices(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    crate::save::unsave_in(st)?;
+    crate::save::unsave(st)?;
     let p = st
         .input
         .cur_list
@@ -2815,8 +2802,8 @@ pub(crate) fn build_choices_in(
     if complete {
         return Ok(());
     }
-    crate::main_control::push_math_in(st, GroupCode::MathChoice)?;
-    crate::scan::scan_left_brace_in(st)?;
+    crate::main_control::push_math(st, GroupCode::MathChoice)?;
+    crate::scan::scan_left_brace(st)?;
     Ok(())
 }
 
@@ -2871,28 +2858,26 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn sub_sup_in(
-    st: &mut EngineState,
-) -> Result<(), crate::main_control::MainControlAbort> {
+pub(crate) fn sub_sup(st: &mut EngineState) -> Result<(), crate::main_control::MainControlAbort> {
     let cmd = st.scanner.cur_cmd;
     let (p, duplicate) = st.input.cur_list.prepare_sub_sup(&mut st.mem, cmd)?;
     if let Some(duplicate) = duplicate {
         match duplicate {
             ScriptDuplication::Superscript => {
-                crate::output::error_here_with_diagnostic_in(st, c"Double superscript".as_ptr());
+                crate::output::error_here_with_diagnostic(st, c"Double superscript".as_ptr());
                 st.errors
                     .help(&["I treat `x^1^2' essentially like `x^1{}^2'."]);
             }
             ScriptDuplication::Subscript => {
-                crate::output::error_here_with_diagnostic_in(st, c"Double subscript".as_ptr());
+                crate::output::error_here_with_diagnostic(st, c"Double subscript".as_ptr());
                 st.errors
                     .help(&["I treat `x_1_2' essentially like `x_1{}_2'."]);
             }
         }
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
+        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+        crate::main_control::mc_propagate_error(crate::errors::error(st))?;
     }
-    crate::scan::scan_math_in(st, p)
+    crate::scan::scan_math(st, p)
 }
 
 impl ListStateRecord {
@@ -2915,40 +2900,40 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn math_fraction_in(
+pub(crate) fn math_fraction(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     let c = st.scanner.cur_chr;
 
     if st.input.cur_list.aux_s1() != TEX_NULL {
         if c >= DELIMITED_CODE {
-            scan_delimiter_in(st, NodePtr::at(GARBAGE), false)?;
-            scan_delimiter_in(st, NodePtr::at(GARBAGE), false)?;
+            scan_delimiter(st, NodePtr::at(GARBAGE), false)?;
+            scan_delimiter(st, NodePtr::at(GARBAGE), false)?;
         }
 
         if c % DELIMITED_CODE == ABOVE_CODE {
-            crate::scan::scan_dimen_in(st, false, false, false)?;
+            crate::scan::scan_dimen(st, false, false, false)?;
         }
 
-        crate::output::print_error_prefix_in(st);
-        crate::output::print_cstr_in(st, c"Ambiguous; you need another { and }".as_ptr());
+        crate::output::print_error_prefix(st);
+        crate::output::print_cstr(st, c"Ambiguous; you need another { and }".as_ptr());
         st.errors.help(&[
             "I'm ignoring this fraction specification, since I don't",
             r"know whether a construction like `x \over y \over z'",
             r"means `{x \over y} \over z' or `x \over {y \over z}'.",
         ]);
-        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
+        crate::main_control::mc_propagate_error(crate::errors::error(st))?;
     } else {
         let aux = st.input.cur_list.start_fraction_noad(&mut st.mem)?;
 
         if c >= DELIMITED_CODE {
-            scan_delimiter_in(st, aux.left_delimiter(), false)?;
-            scan_delimiter_in(st, aux.right_delimiter(), false)?;
+            scan_delimiter(st, aux.left_delimiter(), false)?;
+            scan_delimiter(st, aux.right_delimiter(), false)?;
         }
 
         match c % DELIMITED_CODE {
             ABOVE_CODE => {
-                crate::scan::scan_dimen_in(st, false, false, false)?;
+                crate::scan::scan_dimen(st, false, false, false)?;
                 aux.set_thickness(&mut st.mem, st.scanner.cur_val);
             }
             OVER_CODE => aux.set_thickness(&mut st.mem, DEFAULT_CODE),
@@ -2992,32 +2977,32 @@ impl MemState {
     }
 }
 
-pub(crate) fn math_left_right_in(
+pub(crate) fn math_left_right(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     let t = st.scanner.cur_chr as u16;
     if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != GroupCode::MathLeft {
         if st.save_stack.cur_group == GroupCode::MathShift {
-            scan_delimiter_in(st, NodePtr::at(GARBAGE), false)?;
-            crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
+            scan_delimiter(st, NodePtr::at(GARBAGE), false)?;
+            crate::output::error_here_with_diagnostic(st, c"Extra ".as_ptr());
             if t == MIDDLE_NOAD {
-                crate::output::print_esc_cstr_in(st, c"middle".as_ptr());
+                crate::output::print_esc_cstr(st, c"middle".as_ptr());
                 st.errors
                     .help(&[r"I'm ignoring a \middle that had no matching \left."]);
             } else {
-                crate::output::print_esc_cstr_in(st, c"right".as_ptr());
+                crate::output::print_esc_cstr(st, c"right".as_ptr());
                 st.errors
                     .help(&[r"I'm ignoring a \right that had no matching \left."]);
             }
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-            crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
+            crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
+            crate::main_control::mc_propagate_error(crate::errors::error(st))?;
         } else {
-            crate::main_control::off_save_in(st)?;
+            crate::main_control::off_save(st)?;
         }
     } else {
         let p = st.mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
         p.set_type_code(&mut st.mem, t);
-        scan_delimiter_in(st, p.delimiter(), false)?;
+        scan_delimiter(st, p.delimiter(), false)?;
         if t == MIDDLE_NOAD {
             p.set_noad_type(&mut st.mem, NodeType::RightNoad);
             p.set_subtype(&mut st.mem, MIDDLE_NOAD);
@@ -3025,12 +3010,12 @@ pub(crate) fn math_left_right_in(
         let q = if t == NodeType::LeftNoad.as_raw() {
             p.idx().0
         } else {
-            let q = fin_mlist_in(st, p.idx().0)?;
-            crate::save::unsave_in(st)?;
+            let q = fin_mlist(st, p.idx().0)?;
+            crate::save::unsave(st)?;
             q
         };
         if t != NodeType::RightNoad.as_raw() {
-            crate::main_control::push_math_in(st, GroupCode::MathLeft)?;
+            crate::main_control::push_math(st, GroupCode::MathLeft)?;
             let cl = &mut st.input.cur_list;
             cl.head.set_link(&mut st.mem, MemPtr::from_raw(q));
             cl.tail = p.ptr();
@@ -3068,41 +3053,39 @@ fn set_family_bits(x: i32) -> i32 {
     (((x as u32) & 0xFF) << 24) as i32
 }
 
-pub(crate) fn math_ac_in(
-    st: &mut EngineState,
-) -> Result<(), crate::main_control::MainControlAbort> {
+pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), crate::main_control::MainControlAbort> {
     if st.scanner.cur_cmd == ACCENT {
-        crate::output::error_here_with_diagnostic_in(st, c"Please use ".as_ptr());
-        crate::output::print_esc_cstr_in(st, c"mathaccent".as_ptr());
-        crate::output::print_cstr_in(st, c" for accents in math mode".as_ptr());
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::error_here_with_diagnostic(st, c"Please use ".as_ptr());
+        crate::output::print_esc_cstr(st, c"mathaccent".as_ptr());
+        crate::output::print_cstr(st, c" for accents in math mode".as_ptr());
+        crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
         st.errors.help(&[
             r"I'm changing \accent to \mathaccent here; wish me luck.",
             "(Accents are not the same in formulas as they are in text.)",
         ]);
-        crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
+        crate::main_control::mc_propagate_error(crate::errors::error(st))?;
     }
 
     let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;
 
     if st.scanner.cur_chr == 1 {
-        if crate::scan::scan_keyword_in(st, c"fixed")? {
+        if crate::scan::scan_keyword(st, c"fixed")? {
             tail.set_subtype(&mut st.mem, FIXED_ACC);
-        } else if crate::scan::scan_keyword_in(st, c"bottom")? {
-            if crate::scan::scan_keyword_in(st, c"fixed")? {
+        } else if crate::scan::scan_keyword(st, c"bottom")? {
+            if crate::scan::scan_keyword(st, c"fixed")? {
                 tail.set_subtype(&mut st.mem, BOTTOM_ACC + 1);
             } else {
                 tail.set_subtype(&mut st.mem, BOTTOM_ACC);
             }
         }
-        crate::scan::scan_math_class_int_in(st)?;
+        crate::scan::scan_math_class_int(st)?;
         let mut c = set_class_bits(st.scanner.cur_val);
-        crate::scan::scan_math_fam_int_in(st)?;
+        crate::scan::scan_math_fam_int(st)?;
         c += set_family_bits(st.scanner.cur_val);
-        crate::scan::scan_usv_num_in(st)?;
+        crate::scan::scan_usv_num(st)?;
         st.scanner.cur_val = st.scanner.cur_val + c;
     } else {
-        crate::scan::scan_fifteen_bit_int_in(st)?;
+        crate::scan::scan_fifteen_bit_int(st)?;
         st.scanner.cur_val = set_class_bits(st.scanner.cur_val / 4096)
             + set_family_bits((st.scanner.cur_val % 4096) / 256)
             + (st.scanner.cur_val % 256);
@@ -3110,10 +3093,10 @@ pub(crate) fn math_ac_in(
 
     let value = st.scanner.cur_val;
     st.mem.finish_accent_math_field(&st.eqtb, tail, value);
-    crate::scan::scan_math_in(st, tail.nucleus())
+    crate::scan::scan_math(st, tail.nucleus())
 }
 
-pub(crate) fn resume_after_display_in(
+pub(crate) fn resume_after_display(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::main_control::MainControlAbort;
@@ -3122,20 +3105,20 @@ pub(crate) fn resume_after_display_in(
         return Err(MainControlAbort::Confusion(c"display"));
     }
 
-    crate::save::unsave_in(st)?;
+    crate::save::unsave(st)?;
     st.input.cur_list.prev_graf = st.input.cur_list.prev_graf + 3;
-    crate::mem::push_nest_in(st)?;
+    crate::mem::push_nest(st)?;
     st.input.cur_list.mode = HMODE;
     st.input.cur_list.set_aux_s0(1000);
 
     crate::main_control::start_paragraph_language(st);
 
-    crate::scan::get_x_token_in(st)?;
+    crate::scan::get_x_token(st)?;
     if st.scanner.cur_cmd != SPACER {
-        crate::input::back_input_in(st)?;
+        crate::input::back_input(st)?;
     }
     if st.input.nest_ptr == 1 {
-        crate::pagebuilder::build_page_in(st)?;
+        crate::pagebuilder::build_page(st)?;
     }
     Ok(())
 }
@@ -3167,7 +3150,7 @@ impl MemState {
     }
 }
 
-fn app_display_in(
+fn app_display(
     st: &mut EngineState,
     j: Option<AnyBox>,
     orig: AnyBox,
@@ -3178,7 +3161,7 @@ fn app_display_in(
     let x = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION);
     if x == 0 {
         orig.set_shift_amount(&mut st.mem, Scaled(s + d));
-        crate::packaging::append_to_vlist_emit_in(st, orig)?;
+        crate::packaging::append_to_vlist_emit(st, orig)?;
         return Ok(());
     }
 
@@ -3281,21 +3264,19 @@ fn app_display_in(
         u.set_link(&mut st.mem, r);
         match copy {
             None => {
-                b = crate::packaging::hpack_emit_in(st, u, 0, ADDITIONAL)?;
+                b = crate::packaging::hpack_emit(st, u, 0, ADDITIONAL)?;
                 b.set_shift_amount(&mut st.mem, Scaled(s));
             }
             Some(bc) => bc.set_list_ptr(&mut st.mem, u),
         }
     }
-    crate::packaging::append_to_vlist_emit_in(st, b)?;
+    crate::packaging::append_to_vlist_emit(st, b)?;
     Ok(())
 }
 
 /// Checks the family 2 and 3 fonts. On failure reports the error, flushes the
 /// formula and returns `true` (TeX's `danger`).
-fn check_math_fonts_in(
-    st: &mut EngineState,
-) -> Result<bool, crate::main_control::MainControlAbort> {
+fn check_math_fonts(st: &mut EngineState) -> Result<bool, crate::main_control::MainControlAbort> {
     let sizes = [TEXT_SIZE, SCRIPT_SIZE, SCRIPT_SCRIPT_SIZE];
     let (msg, help) = if !sizes.iter().all(|&z| st.fonts.sym_font_ok(&st.eqtb, z)) {
         (
@@ -3318,9 +3299,9 @@ fn check_math_fonts_in(
     } else {
         return Ok(false);
     };
-    crate::output::print_err_in(st, msg);
+    crate::output::print_err(st, msg);
     st.errors.help(&help);
-    crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
+    crate::main_control::mc_propagate_error(crate::errors::error(st))?;
     st.input
         .cur_list
         .flush_math(&mut st.mem)
@@ -3328,17 +3309,17 @@ fn check_math_fonts_in(
     Ok(true)
 }
 
-pub(crate) fn check_display_end_in(
+pub(crate) fn check_display_end(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    crate::scan::get_x_token_in(st)?;
+    crate::scan::get_x_token(st)?;
     if st.scanner.cur_cmd != MATH_SHIFT {
-        crate::output::print_err_in(st, c"Display math should end with $$");
+        crate::output::print_err(st, c"Display math should end with $$");
         st.errors.help(&[
             "The `$' that I just saw supposedly matches a previous `$$'.",
             "So I shall assume that you typed `$$' both times.",
         ]);
-        crate::main_control::mc_propagate_error(crate::input::back_error_in(st)?)?;
+        crate::main_control::mc_propagate_error(crate::input::back_error(st)?)?;
     }
     Ok(())
 }
@@ -3352,37 +3333,37 @@ fn pre_display_box(st: &EngineState) -> Option<AnyBox> {
     st.mem.classify_box(j).ok().flatten()
 }
 
-pub(crate) fn after_math_in(
+pub(crate) fn after_math(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::main_control::MainControlAbort;
 
     let mut j = pre_display_box(st);
-    let mut danger = check_math_fonts_in(st)?;
+    let mut danger = check_math_fonts(st)?;
     let mut m = st.input.cur_list.mode as i32;
     let mut l = false;
-    let mut p = fin_mlist_in(st, TEX_NULL)?;
+    let mut p = fin_mlist(st, TEX_NULL)?;
 
     let a;
     if st.input.cur_list.mode as i32 == -m {
-        check_display_end_in(st)?;
+        check_display_end(st)?;
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
-        mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
-        let eqno = crate::packaging::hpack_emit_in(st, TEMP_HEAD.link(&st.mem), 0, ADDITIONAL)?;
+        mlist_to_hlist(st).map_err(math_build_abort_main)?;
+        let eqno = crate::packaging::hpack_emit(st, TEMP_HEAD.link(&st.mem), 0, ADDITIONAL)?;
         eqno.set_subtype(&mut st.mem, DLIST);
         a = Some(eqno);
-        crate::save::unsave_in(st)?;
+        crate::save::unsave(st)?;
         st.save_stack.save_ptr -= 1;
         if st.save_stack.saved(0) == 1 {
             l = true;
         }
 
         j = pre_display_box(st);
-        danger = check_math_fonts_in(st)?;
+        danger = check_math_fonts(st)?;
         m = st.input.cur_list.mode as i32;
-        p = fin_mlist_in(st, TEX_NULL)?;
+        p = fin_mlist(st, TEX_NULL)?;
     } else {
         a = None;
     }
@@ -3397,7 +3378,7 @@ pub(crate) fn after_math_in(
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = st.input.cur_list.mode > 0;
-        mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
+        mlist_to_hlist(st).map_err(math_build_abort_main)?;
         let hlist = TEMP_HEAD.link(&st.mem);
         let cl = &mut st.input.cur_list;
         cl.tail.set_link(&mut st.mem, hlist);
@@ -3412,24 +3393,24 @@ pub(crate) fn after_math_in(
         st.input.cur_list.set_aux_s0(1000);
 
         if st.config.semantic_pagination_enabled {
-            unsafe { crate::ext::tt_insert_special_in(st, c"tdux:ce math".as_ptr()) }?;
+            unsafe { crate::ext::tt_insert_special(st, c"tdux:ce math".as_ptr()) }?;
         }
 
-        crate::save::unsave_in(st)?;
+        crate::save::unsave(st)?;
         return Ok(());
     }
 
     if a.is_none() {
-        check_display_end_in(st)?;
+        check_display_end(st)?;
     }
     st.scanner.cur_mlist.0 = p;
     st.scanner.cur_style = DISPLAY_STYLE;
     st.scanner.mlist_penalties = false;
-    mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
+    mlist_to_hlist(st).map_err(math_build_abort_main)?;
     let mut p = TEMP_HEAD.link(&st.mem);
     st.scanner.adjust_tail = ADJUST_HEAD;
     st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-    let mut b = crate::packaging::hpack_emit_in(st, p, 0, ADDITIONAL)?;
+    let mut b = crate::packaging::hpack_emit(st, p, 0, ADDITIONAL)?;
     p = b.list_ptr(&st.mem);
     let t = st.scanner.adjust_tail.0;
     st.scanner.adjust_tail.0 = TEX_NULL;
@@ -3460,12 +3441,12 @@ pub(crate) fn after_math_in(
                 || st.scanner.total_shrink[FILLL as usize] != 0)
         {
             st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-            b = crate::packaging::hpack_emit_in(st, p, z - q, EXACTLY)?;
+            b = crate::packaging::hpack_emit(st, p, z - q, EXACTLY)?;
         } else {
             e = 0;
             if w > z {
                 st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-                b = crate::packaging::hpack_emit_in(st, p, z, EXACTLY)?;
+                b = crate::packaging::hpack_emit(st, p, z, EXACTLY)?;
             }
         }
         w = b.width(&st.mem).0;
@@ -3498,7 +3479,7 @@ pub(crate) fn after_math_in(
     };
 
     if let Some(eqno) = a.filter(|_| l && e == 0) {
-        app_display_in(st, j, eqno, 0)?;
+        app_display(st, j, eqno, 0)?;
         let pen = st
             .mem
             .new_penalty(INF_PENALTY)
@@ -3526,10 +3507,10 @@ pub(crate) fn after_math_in(
             b.set_link(&mut st.mem, r.ptr());
             r.set_link(&mut st.mem, eqno.ptr());
         }
-        b = crate::packaging::hpack_emit_in(st, b.ptr(), 0, ADDITIONAL)?;
+        b = crate::packaging::hpack_emit(st, b.ptr(), 0, ADDITIONAL)?;
     }
 
-    app_display_in(st, j, b, d)?;
+    app_display(st, j, b, d)?;
 
     if let Some(eqno) = a.filter(|_| e == 0 && !l) {
         let pen = st
@@ -3538,7 +3519,7 @@ pub(crate) fn after_math_in(
             .ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
         let a_width = eqno.width(&st.mem).0;
-        app_display_in(st, j, eqno, z - a_width)?;
+        app_display(st, j, eqno, z - a_width)?;
         g2 = 0;
     }
 
@@ -3575,10 +3556,10 @@ pub(crate) fn after_math_in(
     }
 
     if st.config.semantic_pagination_enabled {
-        unsafe { crate::ext::tt_insert_special_in(st, c"tdux:ce dmath".as_ptr()) }?;
+        unsafe { crate::ext::tt_insert_special(st, c"tdux:ce dmath".as_ptr()) }?;
     }
 
-    resume_after_display_in(st)
+    resume_after_display(st)
 }
 
 /// TeX's `\predisplaydirection` for the paragraph just ended.
@@ -3594,7 +3575,7 @@ fn pre_display_direction(st: &EngineState) -> i32 {
 }
 
 /// A kern, or the parameter glue when that skip is nonzero.
-fn side_skip_in(st: &mut EngineState, param: i16) -> Result<MemPtr, NodeRecycleAbort> {
+fn side_skip(st: &mut EngineState, param: i16) -> Result<MemPtr, NodeRecycleAbort> {
     let p = if st.eqtb.glue_par(param) == ZERO_GLUE {
         st.mem.new_kern(0).map(|k| k.ptr())
     } else {
@@ -3603,10 +3584,8 @@ fn side_skip_in(st: &mut EngineState, param: i16) -> Result<MemPtr, NodeRecycleA
     p.ok_or(NodeRecycleAbort::Overflow)
 }
 
-pub(crate) fn init_math_in(
-    st: &mut EngineState,
-) -> Result<(), crate::main_control::MainControlAbort> {
-    crate::scan::get_token_in(st)?;
+pub(crate) fn init_math(st: &mut EngineState) -> Result<(), crate::main_control::MainControlAbort> {
+    crate::scan::get_token(st)?;
 
     if st.scanner.cur_cmd == MATH_SHIFT && st.input.cur_list.mode > 0 {
         let mut j = TEX_NULL;
@@ -3617,13 +3596,11 @@ pub(crate) fn init_math_in(
             st.mem.pop_nest(&mut st.input);
             x = pre_display_direction(st);
         } else {
-            match crate::linebreak::line_break_in(st, true) {
-                crate::linebreak::LineBreakOutcome::Done => {}
-                o => return Err(crate::main_control::MainControlAbort::LineBreak(o)),
-            }
+            crate::linebreak::line_break(st, true)
+                .map_err(crate::main_control::MainControlAbort::LineBreak)?;
 
-            let right = side_skip_in(st, GLUE_PAR_RIGHT_SKIP)?;
-            let left = side_skip_in(st, GLUE_PAR_LEFT_SKIP)?;
+            let right = side_skip(st, GLUE_PAR_RIGHT_SKIP)?;
+            let left = side_skip(st, GLUE_PAR_LEFT_SKIP)?;
             left.set_link(&mut st.mem, right);
 
             let jbox = st.mem.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
@@ -3815,48 +3792,48 @@ pub(crate) fn init_math_in(
             }
         }
 
-        crate::main_control::push_math_in(st, GroupCode::MathShift)?;
+        crate::main_control::push_math(st, GroupCode::MathShift)?;
         st.input.cur_list.mode = MMODE;
-        define_word_in(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
-        define_word_in(st, DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w)?;
+        define_word(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
+        define_word(st, DIMEN_BASE + DIMEN_PAR_PRE_DISPLAY_SIZE, w)?;
         st.input.cur_list.e_tex_aux = MemPtr::from_raw(j);
-        define_word_in(st, INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION, x)?;
-        define_word_in(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l)?;
-        define_word_in(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s)?;
+        define_word(st, INT_BASE + INT_PAR_PRE_DISPLAY_DIRECTION, x)?;
+        define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_WIDTH, l)?;
+        define_word(st, DIMEN_BASE + DIMEN_PAR_DISPLAY_INDENT, s)?;
 
         if st.config.semantic_pagination_enabled {
-            unsafe { crate::ext::tt_insert_special_in(st, c"tdux:cs dmath".as_ptr()) }?;
+            unsafe { crate::ext::tt_insert_special(st, c"tdux:cs dmath".as_ptr()) }?;
         }
 
         let every_display = st.eqtb.local(LOCAL_EVERY_DISPLAY);
         if !every_display.is_null() {
-            crate::input::begin_token_list_in(st, every_display, EVERY_DISPLAY_TEXT)?;
+            crate::input::begin_token_list(st, every_display, EVERY_DISPLAY_TEXT)?;
         }
         if st.input.nest_ptr == 1 {
-            crate::pagebuilder::build_page_in(st)?;
+            crate::pagebuilder::build_page(st)?;
         }
     } else {
-        crate::input::back_input_in(st)?;
-        crate::main_control::push_math_in(st, GroupCode::MathShift)?;
-        define_word_in(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
+        crate::input::back_input(st)?;
+        crate::main_control::push_math(st, GroupCode::MathShift)?;
+        define_word(st, INT_BASE + INT_PAR_CUR_FAM, -1)?;
         if st.shipout.insert_src_special_every_math {
-            crate::ext::insert_src_special_in(st)?;
+            crate::ext::insert_src_special(st)?;
         }
         if st.config.semantic_pagination_enabled {
-            unsafe { crate::ext::tt_insert_special_in(st, c"tdux:cs math".as_ptr()) }?;
+            unsafe { crate::ext::tt_insert_special(st, c"tdux:cs math".as_ptr()) }?;
         }
         let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
         if !every_math.is_null() {
-            crate::input::begin_token_list_in(st, every_math, EVERY_MATH_TEXT)?;
+            crate::input::begin_token_list(st, every_math, EVERY_MATH_TEXT)?;
         }
     }
     Ok(())
 }
 
-fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecycleAbort> {
+fn rebox(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecycleAbort> {
     let mut b = b;
     if b.width(&st.mem).0 != w && !b.list_ptr(&st.mem).is_null() && matches!(b, AnyBox::VList(_)) {
-        b = crate::packaging::hpack_emit_in(st, b.ptr(), 0, ADDITIONAL)?;
+        b = crate::packaging::hpack_emit(st, b.ptr(), 0, ADDITIONAL)?;
     }
     if b.width(&st.mem).0 == w || b.list_ptr(&st.mem).is_null() {
         b.set_width(&mut st.mem, Scaled(w));
@@ -3884,10 +3861,10 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
     }
     let tail_glue = mem.new_glue(SS_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
     p.set_link(mem, tail_glue.ptr());
-    crate::packaging::hpack_emit_in(st, g.ptr(), w, EXACTLY)
+    crate::packaging::hpack_emit(st, g.ptr(), w, EXACTLY)
 }
 
-fn build_opentype_assembly_in(
+fn build_opentype_assembly(
     st: &mut EngineState,
     f: i32,
     a: &GlyphAssembly,
@@ -3931,7 +3908,7 @@ fn build_opentype_assembly_in(
             if oo > 0 {
                 st.mem.stack_glue_into_box(b, -oo, -oo.min(min_o))?;
             }
-            stack_glyph_into_box_in(st, b, f, a.glyph(i))?;
+            stack_glyph_into_box(st, b, f, a.glyph(i))?;
             prev_o = a.end_connector(&st.fonts, f, i);
         }
     }
@@ -4042,7 +4019,7 @@ impl MemState {
     }
 }
 
-fn var_delimiter_in(
+fn var_delimiter(
     st: &mut EngineState,
     d: NodePtr<DelimiterField>,
     s: i32,
@@ -4149,12 +4126,12 @@ fn var_delimiter_in(
         if q.s1 % 4 == EXT_TAG {
             st.mem.build_ext_delimiter_box(&mut st.fonts, f, q, v)?
         } else {
-            char_box_in(st, f, c as i32)?
+            char_box(st, f, c as i32)?
         }
     } else if let Some(assembly) = &ot_assembly {
-        build_opentype_assembly_in(st, f, assembly, v, false)?
+        build_opentype_assembly(st, f, assembly, v, false)?
     } else {
-        native_glyph_vbox_in(st, f, c)?
+        native_glyph_vbox(st, f, c)?
     };
     let axis = st.fonts.axis_height(&st.eqtb, s);
     let shift = crate::scaled_math::half(b.height(&st.mem).0 - b.depth(&st.mem).0) - axis;

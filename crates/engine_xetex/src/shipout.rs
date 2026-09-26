@@ -345,7 +345,7 @@ fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(),
     Ok(())
 }
 
-pub(crate) unsafe fn ship_out_in(
+pub(crate) unsafe fn ship_out(
     st: &mut crate::state::EngineState,
     page: AnyBox,
 ) -> Result<(), ShipoutAbort> {
@@ -355,38 +355,38 @@ pub(crate) unsafe fn ship_out_in(
     crate::synctex::synctex_sheet(st, mag, job_name);
 
     if st.strings.job_name == 0 {
-        crate::io::open_log_file_in(st)?;
+        crate::io::open_log_file(st)?;
     }
     let tracing_output = st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) > 0;
     if tracing_output {
-        crate::output::print_nl_cstr_in(st, c"".as_ptr());
-        crate::output::print_ln_in(st);
-        crate::output::print_cstr_in(st, c"Completed box being shipped out".as_ptr());
+        crate::output::print_nl_cstr(st, c"".as_ptr());
+        crate::output::print_ln(st);
+        crate::output::print_cstr(st, c"Completed box being shipped out".as_ptr());
     }
     if st.shipout.term_offset > st.config.max_print_line - 9 {
-        crate::output::print_ln_in(st);
+        crate::output::print_ln(st);
     } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-        crate::output::print_char_in(st, b' ' as i32);
+        crate::output::print_char(st, b' ' as i32);
     }
 
-    crate::output::print_char_in(st, b'[' as i32);
+    crate::output::print_char(st, b'[' as i32);
     let mut j = 9;
     while j > 0 && st.eqtb.count(j) == 0 {
         j -= 1;
     }
     for k in 0..=j {
-        crate::output::print_int_in(st, st.eqtb.count(k));
+        crate::output::print_int(st, st.eqtb.count(k));
         if k < j {
-            crate::output::print_char_in(st, b'.' as i32);
+            crate::output::print_char(st, b'.' as i32);
         }
     }
     ttstub_output_flush(st.shipout.rust_stdout);
 
     if tracing_output {
-        crate::output::print_char_in(st, b']' as i32);
-        crate::output::begin_diagnostic_in(st);
-        crate::output::show_box_in(st, p);
-        crate::output::end_diagnostic_in(st, true);
+        crate::output::print_char(st, b']' as i32);
+        crate::output::begin_diagnostic(st);
+        crate::output::show_box(st, p);
+        crate::output::end_diagnostic(st, true);
     }
 
     let (height, depth, width) = (
@@ -401,44 +401,41 @@ pub(crate) unsafe fn ship_out_in(
         || height + depth + v_offset > MAX_HALFWORD
         || width + h_offset > MAX_HALFWORD
     {
-        crate::output::error_here_with_diagnostic_in(
-            st,
-            c"Huge page cannot be shipped out".as_ptr(),
-        );
-        crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
+        crate::output::error_here_with_diagnostic(st, c"Huge page cannot be shipped out".as_ptr());
+        crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
         st.errors.help(&[
             "The page just created is more than 18 feet tall or",
             "more than 18 feet wide, so I suspect something went wrong.",
         ]);
-        ship_err(crate::errors::error_in(st))?;
+        ship_err(crate::errors::error(st))?;
 
         if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
-            crate::output::begin_diagnostic_in(st);
-            crate::output::print_nl_cstr_in(st, c"The following box has been deleted:".as_ptr());
-            crate::output::show_box_in(st, p);
-            crate::output::end_diagnostic_in(st, true);
+            crate::output::begin_diagnostic(st);
+            crate::output::print_nl_cstr(st, c"The following box has been deleted:".as_ptr());
+            crate::output::show_box(st, p);
+            crate::output::end_diagnostic(st, true);
         }
     } else {
         ship_page(st, page)?;
     }
 
     if st.scanner.lr_problems > 0 {
-        crate::output::print_ln_in(st);
-        crate::output::print_nl_cstr_in(st, c"\\endL or \\endR problem (".as_ptr());
-        crate::output::print_int_in(st, st.scanner.lr_problems / 10000);
-        crate::output::print_cstr_in(st, c" missing, ".as_ptr());
-        crate::output::print_int_in(st, st.scanner.lr_problems % 10000);
-        crate::output::print_cstr_in(st, c" extra".as_ptr());
+        crate::output::print_ln(st);
+        crate::output::print_nl_cstr(st, c"\\endL or \\endR problem (".as_ptr());
+        crate::output::print_int(st, st.scanner.lr_problems / 10000);
+        crate::output::print_cstr(st, c" missing, ".as_ptr());
+        crate::output::print_int(st, st.scanner.lr_problems % 10000);
+        crate::output::print_cstr(st, c" extra".as_ptr());
         st.scanner.lr_problems = 0;
-        crate::output::print_char_in(st, b')' as i32);
-        crate::output::print_ln_in(st);
+        crate::output::print_char(st, b')' as i32);
+        crate::output::print_ln(st);
     }
 
     if !st.scanner.lr_ptr.is_null() || st.scanner.cur_dir != LEFT_TO_RIGHT {
         return Err(ShipoutAbort::Confusion(c"LR3"));
     }
     if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
-        crate::output::print_char_in(st, b']' as i32);
+        crate::output::print_char(st, b']' as i32);
     }
     st.shipout.dead_cycles = 0;
     ttstub_output_flush(st.shipout.rust_stdout);
@@ -479,14 +476,14 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
 
     if st.shipout.output_file_name == 0 {
         if st.strings.job_name == 0 {
-            crate::io::open_log_file_in(st)?;
+            crate::io::open_log_file(st)?;
         }
-        crate::io::pack_job_name_in(st, crate::engine::output_file_extension(st))?;
+        crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;
         st.shipout.dvi_file = ttstub_output_open(st.input.name_of_file.as_ptr(), 0);
         if st.shipout.dvi_file == INVALID_HANDLE {
             return Err(ShipoutAbort::CannotOpenOutput);
         }
-        st.shipout.output_file_name = crate::io::make_name_string_in(st)?;
+        st.shipout.output_file_name = crate::io::make_name_string(st)?;
     }
 
     if st.shipout.total_pages == 0 {
@@ -495,7 +492,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
             .dvi_out(id_byte(st.config.semantic_pagination_enabled))?;
         st.shipout.dvi_four(25_400_000)?;
         st.shipout.dvi_four(473_628_672)?;
-        ship_err(crate::save::prepare_mag_in(st))?;
+        ship_err(crate::save::prepare_mag(st))?;
         st.shipout.dvi_four(st.eqtb.int_par(INT_PAR_MAG))?;
         let comment = b"tectonic";
         st.shipout.dvi_out(comment.len() as u8)?;
@@ -514,19 +511,19 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
 
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    crate::output::print_cstr_in(st, c"pdf:pagesize ".as_ptr());
+    crate::output::print_cstr(st, c"pdf:pagesize ".as_ptr());
     if pdf_page_width <= 0 || pdf_page_height <= 0 {
-        crate::output::print_cstr_in(st, c"default".as_ptr());
+        crate::output::print_cstr(st, c"default".as_ptr());
     } else {
-        crate::output::print_cstr_in(st, c"width".as_ptr());
-        crate::output::print_in(st, b' ' as i32);
-        crate::output::print_scaled_in(st, pdf_page_width);
-        crate::output::print_cstr_in(st, c"pt".as_ptr());
-        crate::output::print_in(st, b' ' as i32);
-        crate::output::print_cstr_in(st, c"height".as_ptr());
-        crate::output::print_in(st, b' ' as i32);
-        crate::output::print_scaled_in(st, pdf_page_height);
-        crate::output::print_cstr_in(st, c"pt".as_ptr());
+        crate::output::print_cstr(st, c"width".as_ptr());
+        crate::output::print(st, b' ' as i32);
+        crate::output::print_scaled(st, pdf_page_width);
+        crate::output::print_cstr(st, c"pt".as_ptr());
+        crate::output::print(st, b' ' as i32);
+        crate::output::print_cstr(st, c"height".as_ptr());
+        crate::output::print(st, b' ' as i32);
+        crate::output::print_scaled(st, pdf_page_height);
+        crate::output::print_cstr(st, c"pt".as_ptr());
     }
     st.shipout.selector = old_setting;
 
@@ -1606,7 +1603,7 @@ impl MemState {
     }
 }
 
-pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
+pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
     while st.shipout.cur_s > -1 {
         if st.shipout.cur_s > 0 {
             st.shipout.dvi_out(POP)?;
@@ -1621,7 +1618,7 @@ pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result
     }
 
     if st.shipout.total_pages == 0 {
-        crate::output::print_nl_cstr_in(st, c"No pages of output.".as_ptr());
+        crate::output::print_nl_cstr(st, c"No pages of output.".as_ptr());
         return Ok(());
     }
     // The DVI grew too big and the message was already printed.
@@ -1635,7 +1632,7 @@ pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result
     st.shipout.last_bop = st.shipout.dvi_offset + st.shipout.dvi_ptr - 5;
     st.shipout.dvi_four(25_400_000)?;
     st.shipout.dvi_four(473_628_672)?;
-    ship_err(crate::save::prepare_mag_in(st))?;
+    ship_err(crate::save::prepare_mag(st))?;
     st.shipout.dvi_four(st.eqtb.int_par(INT_PAR_MAG))?;
     let (max_v, max_h, max_push, total_pages) = (
         st.shipout.max_v,
@@ -1685,31 +1682,31 @@ pub(crate) fn finalize_dvi_file_in(st: &mut crate::state::EngineState) -> Result
     // SAFETY: FFI close of the output file.
     let k = unsafe { ttstub_output_close(st.shipout.dvi_file) as u8 };
     if k == 0 {
-        crate::output::print_nl_cstr_in(st, c"Output written on ".as_ptr());
-        crate::output::print_in(st, st.shipout.output_file_name);
-        crate::output::print_cstr_in(st, c" (".as_ptr());
-        crate::output::print_int_in(st, st.shipout.total_pages);
+        crate::output::print_nl_cstr(st, c"Output written on ".as_ptr());
+        crate::output::print(st, st.shipout.output_file_name);
+        crate::output::print_cstr(st, c" (".as_ptr());
+        crate::output::print_int(st, st.shipout.total_pages);
         if st.shipout.total_pages != 1 {
-            crate::output::print_cstr_in(st, c" pages".as_ptr());
+            crate::output::print_cstr(st, c" pages".as_ptr());
         } else {
-            crate::output::print_cstr_in(st, c" page".as_ptr());
+            crate::output::print_cstr(st, c" page".as_ptr());
         }
-        crate::output::print_cstr_in(st, c", ".as_ptr());
-        crate::output::print_int_in(st, st.shipout.dvi_offset + st.shipout.dvi_ptr);
-        crate::output::print_cstr_in(st, c" bytes).".as_ptr());
+        crate::output::print_cstr(st, c", ".as_ptr());
+        crate::output::print_int(st, st.shipout.dvi_offset + st.shipout.dvi_ptr);
+        crate::output::print_cstr(st, c" bytes).".as_ptr());
     } else {
-        crate::output::print_nl_cstr_in(st, c"Error ".as_ptr());
-        crate::output::print_int_in(st, k as i32);
-        crate::output::print_cstr_in(st, c" (".as_ptr());
+        crate::output::print_nl_cstr(st, c"Error ".as_ptr());
+        crate::output::print_int(st, k as i32);
+        crate::output::print_cstr(st, c" (".as_ptr());
         // SAFETY: strerror returns a static NUL-terminated message.
         let message = unsafe { std::ffi::CStr::from_ptr(libc::strerror(k as libc::c_int)) };
         for &c in message.to_bytes() {
-            crate::output::print_char_in(st, c as libc::c_char as i32);
+            crate::output::print_char(st, c as libc::c_char as i32);
         }
-        crate::output::print_cstr_in(st, c") generating output;".as_ptr());
-        crate::output::print_nl_cstr_in(st, c"file ".as_ptr());
-        crate::output::print_in(st, st.shipout.output_file_name);
-        crate::output::print_cstr_in(st, c" may not be valid.".as_ptr());
+        crate::output::print_cstr(st, c") generating output;".as_ptr());
+        crate::output::print_nl_cstr(st, c"file ".as_ptr());
+        crate::output::print(st, st.shipout.output_file_name);
+        crate::output::print_cstr(st, c" may not be valid.".as_ptr());
         // XeTeX also sets history to OUTPUT_FAILURE here.
     }
     Ok(())
@@ -1984,7 +1981,7 @@ fn special_out(
     st.shipout.selector = SELECTOR_NEW_STRING;
     let tokens = special.write_tokens(&st.mem).link(&st.mem).0;
     let avail = st.strings.pool_size - st.strings.pool_ptr;
-    crate::output::show_token_list_in(st, tokens, TEX_NULL, avail);
+    crate::output::show_token_list(st, tokens, TEX_NULL, avail);
     st.shipout.selector = old_setting;
     if st.strings.pool_ptr + 1 > st.strings.pool_size {
         return Err(ShipoutAbort::PoolSizeOverflow);
@@ -2014,34 +2011,34 @@ fn write_out(
     let r = st.mem.get_avail_ship()?;
     q.set_link(&mut st.mem, r);
     r.set_info(&mut st.mem, CS_TOKEN_FLAG + END_WRITE);
-    crate::input::begin_token_list_in(st, q, INSERTED)?;
-    crate::input::begin_token_list_in(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
+    crate::input::begin_token_list(st, q, INSERTED)?;
+    crate::input::begin_token_list(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
     let q = st.mem.get_avail_ship()?;
     q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
-    crate::input::begin_token_list_in(st, q, INSERTED)?;
+    crate::input::begin_token_list(st, q, INSERTED)?;
 
     let old_mode = st.input.cur_list.mode;
     st.input.cur_list.mode = 0;
     st.scanner.cur_cs = st.shipout.write_loc;
-    crate::scan::scan_toks_in(st, false, true)?;
-    crate::scan::get_token_in(st)?;
+    crate::scan::scan_toks(st, false, true)?;
+    crate::scan::get_token(st)?;
     if st.scanner.cur_tok != CS_TOKEN_FLAG + END_WRITE {
-        crate::output::error_here_with_diagnostic_in(st, c"Unbalanced write command".as_ptr());
-        crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
+        crate::output::error_here_with_diagnostic(st, c"Unbalanced write command".as_ptr());
+        crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
         st.errors.help(&[
             r"On this page there's a \write with fewer real {'s than }'s.",
             "I can't handle that very well; good luck.",
         ]);
-        ship_err(crate::errors::error_in(st))?;
+        ship_err(crate::errors::error(st))?;
         loop {
-            crate::scan::get_token_in(st)?;
+            crate::scan::get_token(st)?;
             if st.scanner.cur_tok == CS_TOKEN_FLAG + END_WRITE {
                 break;
             }
         }
     }
     st.input.cur_list.mode = old_mode;
-    crate::input::end_token_list_in(st)?;
+    crate::input::end_token_list(st)?;
 
     let old_setting = st.shipout.selector;
     let j = write.write_stream(&st.mem);
@@ -2054,11 +2051,11 @@ fn write_out(
         if j == 17 && st.shipout.selector == SELECTOR_TERM_AND_LOG {
             st.shipout.selector = SELECTOR_LOG_ONLY;
         }
-        crate::output::print_nl_cstr_in(st, c"".as_ptr());
+        crate::output::print_nl_cstr(st, c"".as_ptr());
     }
     let def_ref = st.scanner.def_ref;
-    crate::output::token_show_in(st, def_ref.0);
-    crate::output::print_ln_in(st);
+    crate::output::token_show(st, def_ref.0);
+    crate::output::print_ln(st);
     st.mem.flush_list(def_ref);
 
     if j == 18 {
@@ -2068,18 +2065,18 @@ fn write_out(
         }
         // Tectonic leaves shell-escape warnings to the driver when it is enabled.
         if !st.config.shell_escape_enabled {
-            crate::output::diagnostic_begin_capture_warning_here_in(st);
-            crate::output::print_nl_cstr_in(st, c"runsystem(".as_ptr());
+            crate::output::diagnostic_begin_capture_warning_here(st);
+            crate::output::print_nl_cstr(st, c"runsystem(".as_ptr());
             let base = st.strings.cur_string_start();
             for k in base..st.strings.pool_ptr {
-                crate::output::print_in(st, st.strings.str_pool[k as usize] as i32);
+                crate::output::print(st, st.strings.str_pool[k as usize] as i32);
             }
-            crate::output::print_cstr_in(st, c")...".as_ptr());
-            crate::output::print_cstr_in(st, c"disabled".as_ptr());
-            crate::output::print_char_in(st, b'.' as i32);
-            crate::output::capture_to_diagnostic_in(st, core::ptr::null_mut());
-            crate::output::print_nl_cstr_in(st, c"".as_ptr());
-            crate::output::print_ln_in(st);
+            crate::output::print_cstr(st, c")...".as_ptr());
+            crate::output::print_cstr(st, c"disabled".as_ptr());
+            crate::output::print_char(st, b'.' as i32);
+            crate::output::capture_to_diagnostic(st, core::ptr::null_mut());
+            crate::output::print_nl_cstr(st, c"".as_ptr());
+            crate::output::print_ln(st);
         } else {
             let base = st.strings.cur_string_start();
             let cmd = &st.strings.str_pool[base as usize..st.strings.pool_ptr as usize];
@@ -2100,26 +2097,26 @@ fn pic_out(
     synch_v(st)?;
     let old_setting = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
-    crate::output::print_cstr_in(st, c"pdf:image ".as_ptr());
-    crate::output::print_cstr_in(st, c"matrix ".as_ptr());
+    crate::output::print_cstr(st, c"pdf:image ".as_ptr());
+    crate::output::print_cstr(st, c"matrix ".as_ptr());
     for v in pic.pic_transform(&st.mem) {
-        crate::output::print_scaled_in(st, v);
-        crate::output::print_in(st, b' ' as i32);
+        crate::output::print_scaled(st, v);
+        crate::output::print(st, b' ' as i32);
     }
-    crate::output::print_cstr_in(st, c"page ".as_ptr());
-    crate::output::print_int_in(st, pic.pic_page(&st.mem) as i32);
-    crate::output::print_in(st, b' ' as i32);
+    crate::output::print_cstr(st, c"page ".as_ptr());
+    crate::output::print_int(st, pic.pic_page(&st.mem) as i32);
+    crate::output::print(st, b' ' as i32);
     if let Some(label) =
         crate::pic::PageboxType::from_raw(pic.pic_pagebox(&st.mem)).and_then(|pb| pb.label())
     {
-        crate::output::print_cstr_in(st, label.as_ptr());
+        crate::output::print_cstr(st, label.as_ptr());
     }
-    crate::output::print_in(st, b'(' as i32);
+    crate::output::print(st, b'(' as i32);
     let path = pic.pic_path(&st.mem).to_vec();
     for byte in path {
-        crate::output::print_raw_char_in(st, byte as i32, true);
+        crate::output::print_raw_char(st, byte as i32, true);
     }
-    crate::output::print_in(st, b')' as i32);
+    crate::output::print(st, b')' as i32);
     st.shipout.selector = old_setting;
     dvi_special_from_cur_string(st)
 }
@@ -2177,7 +2174,7 @@ fn out_write_stream(
         st.scanner.cur_ext = unsafe { st.strings.maketexstring(c".tex".as_ptr()) }?;
     }
     let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
-    crate::io::pack_file_name_in(st, n, a, e);
+    crate::io::pack_file_name(st, n, a, e);
     // SAFETY: FFI open with the packed name buffer.
     let handle = unsafe { ttstub_output_open(st.input.name_of_file.as_ptr(), 0) };
     if handle == INVALID_HANDLE {
@@ -2192,13 +2189,13 @@ fn out_write_stream(
     if st.errors.log_opened {
         let old_setting = st.shipout.selector;
         st.shipout.selector = st.eqtb.log_selector();
-        crate::output::print_nl_cstr_in(st, c"\\openout".as_ptr());
-        crate::output::print_int_in(st, j);
-        crate::output::print_cstr_in(st, c" = `".as_ptr());
-        crate::output::print_file_name_in(st, n, a, e);
-        crate::output::print_cstr_in(st, c"'.".as_ptr());
-        crate::output::print_nl_cstr_in(st, c"".as_ptr());
-        crate::output::print_ln_in(st);
+        crate::output::print_nl_cstr(st, c"\\openout".as_ptr());
+        crate::output::print_int(st, j);
+        crate::output::print_cstr(st, c" = `".as_ptr());
+        crate::output::print_file_name(st, n, a, e);
+        crate::output::print_cstr(st, c"'.".as_ptr());
+        crate::output::print_nl_cstr(st, c"".as_ptr());
+        crate::output::print_ln(st);
         st.shipout.selector = old_setting;
     }
     Ok(())

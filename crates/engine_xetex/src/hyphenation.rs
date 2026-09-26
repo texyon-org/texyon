@@ -486,36 +486,36 @@ impl HyphState {
 /// Finish an error begun at the call site: set its help text (in display
 /// order) and run the recoverable `error()`.
 fn raise_error(st: &mut EngineState, help: &[&'static str]) -> Result<(), MainControlAbort> {
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    crate::output::capture_to_diagnostic(st, std::ptr::null_mut());
     st.errors.help(help);
-    mc_propagate_error(crate::errors::error_in(st))
+    mc_propagate_error(crate::errors::error(st))
 }
 
-pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+pub(crate) fn new_patterns(st: &mut EngineState) -> Result<(), MainControlAbort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
     if !st.hyph.trie_not_ready {
-        crate::output::error_here_with_diagnostic_in(st, c"Too late for ".as_ptr());
-        crate::output::print_esc_cstr_in(st, c"patterns".as_ptr());
+        crate::output::error_here_with_diagnostic(st, c"Too late for ".as_ptr());
+        crate::output::print_esc_cstr(st, c"patterns".as_ptr());
         raise_error(
             st,
             &["All patterns must be given before typesetting begins."],
         )?;
 
-        let _ = crate::scan::scan_toks_in(st, false, false)?;
+        let _ = crate::scan::scan_toks(st, false, false)?;
         st.mem.flush_list(st.scanner.def_ref);
         return Ok(());
     }
 
     st.hyph.cur_lang = crate::helpers::norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
 
-    crate::scan::scan_left_brace_in(st)?;
+    crate::scan::scan_left_brace(st)?;
     let mut k: i16 = 0;
     st.hyph.hyf[0] = 0;
     let mut digit_sensed = false;
 
     loop {
-        crate::scan::get_x_token_in(st)?;
+        crate::scan::get_x_token(st)?;
         match st.scanner.cur_cmd {
             LETTER | OTHER_CHAR => {
                 let cur_chr = st.scanner.cur_chr;
@@ -525,7 +525,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
                     } else {
                         st.scanner.cur_chr = st.eqtb.lc_code(cur_chr);
                         if st.scanner.cur_chr == 0 {
-                            crate::output::error_here_with_diagnostic_in(st, c"Nonletter".as_ptr());
+                            crate::output::error_here_with_diagnostic(st, c"Nonletter".as_ptr());
                             raise_error(st, &[APPENDIX_H])?;
                         }
                     }
@@ -549,7 +549,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
                 if k > 0 {
                     let (q, op, duplicate) = st.hyph.insert_pattern_word(k)?;
                     if duplicate {
-                        crate::output::error_here_with_diagnostic_in(
+                        crate::output::error_here_with_diagnostic(
                             st,
                             c"Duplicate pattern".as_ptr(),
                         );
@@ -567,8 +567,8 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
                 digit_sensed = false;
             }
             _ => {
-                crate::output::error_here_with_diagnostic_in(st, c"Bad ".as_ptr());
-                crate::output::print_esc_cstr_in(st, c"patterns".as_ptr());
+                crate::output::error_here_with_diagnostic(st, c"Bad ".as_ptr());
+                crate::output::print_esc_cstr(st, c"patterns".as_ptr());
                 raise_error(st, &[APPENDIX_H])?;
             }
         }
@@ -581,10 +581,10 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
     Ok(())
 }
 
-pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+pub(crate) fn new_hyph_exceptions(st: &mut EngineState) -> Result<(), MainControlAbort> {
     st.hyph.tables_gen = st.hyph.tables_gen.wrapping_add(1);
 
-    crate::scan::scan_left_brace_in(st)?;
+    crate::scan::scan_left_brace(st)?;
 
     st.hyph.cur_lang = crate::helpers::norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
     if st.hyph.trie_not_ready {
@@ -597,7 +597,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
     let mut p = MemPtr::NULL;
 
     loop {
-        crate::scan::get_x_token_in(st)?;
+        crate::scan::get_x_token(st)?;
 
         // reswitch: \char re-dispatches as CHAR_GIVEN
         loop {
@@ -614,10 +614,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
                         st.hyph.hc[0] = st.hyph.hyph_code(&st.eqtb, st.scanner.cur_chr);
 
                         if st.hyph.hc[0] == 0 {
-                            crate::output::error_here_with_diagnostic_in(
-                                st,
-                                c"Not a letter".as_ptr(),
-                            );
+                            crate::output::error_here_with_diagnostic(st, c"Not a letter".as_ptr());
                             raise_error(
                                 st,
                                 &[
@@ -640,7 +637,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
                     break;
                 }
                 CHAR_NUM => {
-                    crate::scan::scan_char_num_in(st)?;
+                    crate::scan::scan_char_num(st)?;
                     st.scanner.cur_chr = st.scanner.cur_val;
                     st.scanner.cur_cmd = CHAR_GIVEN;
                 }
@@ -658,9 +655,9 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
                     break;
                 }
                 _ => {
-                    crate::output::error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
-                    crate::output::print_esc_cstr_in(st, c"hyphenation".as_ptr());
-                    crate::output::print_cstr_in(st, c" will be flushed".as_ptr());
+                    crate::output::error_here_with_diagnostic(st, c"Improper ".as_ptr());
+                    crate::output::print_esc_cstr(st, c"hyphenation".as_ptr());
+                    crate::output::print_cstr(st, c" will be flushed".as_ptr());
                     raise_error(
                         st,
                         &[

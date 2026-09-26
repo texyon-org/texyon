@@ -521,7 +521,7 @@ impl PushNestAbort {
     }
 }
 
-pub(crate) fn push_nest_in(st: &mut crate::state::EngineState) -> Result<(), PushNestAbort> {
+pub(crate) fn push_nest(st: &mut crate::state::EngineState) -> Result<(), PushNestAbort> {
     let np = st.input.nest_ptr;
     if np > st.input.max_nest_stack {
         st.input.max_nest_stack = np;

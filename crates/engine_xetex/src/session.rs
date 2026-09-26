@@ -580,7 +580,7 @@ impl IncrementalXeTeXSession {
                 run_locked(api, state, |state| unsafe {
                     crate::engine::release_operation_inputs(state);
                     ladder.rewind_engine(state, 0);
-                    crate::engine::tt_cleanup_in(state);
+                    crate::engine::tt_cleanup(state);
                 })
             }))
             .is_err())
@@ -767,7 +767,7 @@ unsafe fn run_document(
                 return OperationResult::Aborted;
             };
             crate::engine::release_operation_inputs(state);
-            if crate::io::close_files_and_terminate_in(state).is_err() {
+            if crate::io::close_files_and_terminate(state).is_err() {
                 ladder.rewind_engine(state, 0);
                 return OperationResult::Aborted;
             }

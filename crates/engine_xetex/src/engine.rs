@@ -94,7 +94,7 @@ pub(crate) fn output_file_extension(st: &EngineState) -> *const libc::c_char {
     }
 }
 
-pub(crate) unsafe fn get_strings_started_in(st: &mut EngineState) -> Result<(), EngineAbort> {
+pub(crate) unsafe fn get_strings_started(st: &mut EngineState) -> Result<(), EngineAbort> {
     st.strings.pool_ptr = 0;
     st.strings.str_start[0] = 0;
     st.strings.str_ptr = TOO_BIG_CHAR;
@@ -237,7 +237,7 @@ unsafe fn primitive(
     Ok(())
 }
 
-pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), EngineAbort> {
+pub(crate) unsafe fn final_cleanup(st: &mut EngineState) -> Result<(), EngineAbort> {
     let c = st.scanner.cur_chr;
 
     if c != 1 {
@@ -245,43 +245,43 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
     }
 
     if st.strings.job_name == 0 {
-        crate::io::open_log_file_in(st).map_err(|e| e.into_engine_abort())?;
+        crate::io::open_log_file(st).map_err(|e| e.into_engine_abort())?;
     }
 
     while st.input.input_ptr > 0 {
         if st.input.cur_input.state == TOKEN_LIST {
-            crate::input::end_token_list_in(st).map_err(|e| e.into_engine_abort())?;
+            crate::input::end_token_list(st).map_err(|e| e.into_engine_abort())?;
         } else {
-            crate::input::end_file_reading_in(st).map_err(|e| e.into_engine_abort())?;
+            crate::input::end_file_reading(st).map_err(|e| e.into_engine_abort())?;
         }
     }
 
     while st.input.open_parens > 0 {
-        crate::output::print_cstr_in(st, c" )".as_ptr());
+        crate::output::print_cstr(st, c" )".as_ptr());
         st.input.open_parens -= 1;
     }
 
     let cur_level = st.save_stack.cur_level;
     if cur_level > LEVEL_ONE {
-        crate::output::print_nl_in(st, b'(' as i32);
-        crate::output::print_esc_cstr_in(st, c"end occurred ".as_ptr());
-        crate::output::print_cstr_in(st, c"inside a group at level ".as_ptr());
-        crate::output::print_int_in(st, cur_level as i32 - 1);
-        crate::output::print_char_in(st, b')' as i32);
-        crate::output::show_save_groups_in(st);
+        crate::output::print_nl(st, b'(' as i32);
+        crate::output::print_esc_cstr(st, c"end occurred ".as_ptr());
+        crate::output::print_cstr(st, c"inside a group at level ".as_ptr());
+        crate::output::print_int(st, cur_level as i32 - 1);
+        crate::output::print_char(st, b')' as i32);
+        crate::output::show_save_groups(st);
     }
 
     while st.scanner.cond_ptr.0 != TEX_NULL {
-        crate::output::print_nl_in(st, b'(' as i32);
-        crate::output::print_esc_cstr_in(st, c"end occurred ".as_ptr());
-        crate::output::print_cstr_in(st, c"when ".as_ptr());
-        crate::output::print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
+        crate::output::print_nl(st, b'(' as i32);
+        crate::output::print_esc_cstr(st, c"end occurred ".as_ptr());
+        crate::output::print_cstr(st, c"when ".as_ptr());
+        crate::output::print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
         let if_line = st.scanner.if_line;
         if if_line != 0 {
-            crate::output::print_cstr_in(st, c" on line ".as_ptr());
-            crate::output::print_int_in(st, if_line);
+            crate::output::print_cstr(st, c" on line ".as_ptr());
+            crate::output::print_int(st, if_line);
         }
-        crate::output::print_cstr_in(st, c" was incomplete)".as_ptr());
+        crate::output::print_cstr(st, c" was incomplete)".as_ptr());
         let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
         st.scanner.if_line = cond.if_line(&st.mem);
         st.scanner.cur_if = cond.cur_if(&st.mem) as i16;
@@ -296,7 +296,7 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
         && st.shipout.selector == SELECTOR_TERM_AND_LOG
     {
         st.shipout.selector = SELECTOR_TERM_ONLY;
-        crate::output::print_nl_cstr_in(
+        crate::output::print_nl_cstr(
             st,
             c"(see the transcript file for additional information)".as_ptr(),
         );
@@ -307,7 +307,7 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
         return Ok(());
     }
     if !st.config.in_initex_mode {
-        crate::output::print_nl_cstr_in(st, c"(\\dump is performed only by INITEX)".as_ptr());
+        crate::output::print_nl_cstr(st, c"(\\dump is performed only by INITEX)".as_ptr());
         return Ok(());
     }
 
@@ -334,10 +334,10 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
         st.mem.delete_glue_ref(spec);
     }
 
-    crate::format_io::store_fmt_file_in(st)
+    crate::format_io::store_fmt_file(st)
 }
 
-fn initialize_more_variables_in(st: &mut EngineState) {
+fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.doing_special = false;
     st.scanner.native_text_size = 128;
     st.scanner.native_text = vec![0; 128];
@@ -480,7 +480,7 @@ fn initialize_more_variables_in(st: &mut EngineState) {
     st.scanner.stop_at_space = true;
 }
 
-fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) {
+fn initialize_more_initex_variables(st: &mut EngineState, format_ident: i32) {
     let set_family = |x: i32| (x & 0xFF) << 24;
     let set_class = |x: i32| (x & 0x07) << 21;
 
@@ -914,16 +914,16 @@ pub(crate) unsafe fn initialize_engine(
         return InitOutcome::Terminate(EngineAbort::TtAbort(msg.as_ptr()).into_history(st));
     }
 
-    initialize_more_variables_in(st);
+    initialize_more_variables(st);
     if st.config.in_initex_mode {
-        if let Err(a) = get_strings_started_in(st) {
+        if let Err(a) = get_strings_started(st) {
             return InitOutcome::Terminate(a.into_history(st));
         }
         let format_ident = match st.strings.maketexstring(c" (INITEX)".as_ptr()) {
             Ok(v) => v,
             Err(e) => return InitOutcome::Terminate(e.into_engine_abort().into_history(st)),
         };
-        initialize_more_initex_variables_in(st, format_ident);
+        initialize_more_initex_variables(st, format_ident);
         if let Err(e) = initialize_primitives(st) {
             return InitOutcome::Terminate(e.into_engine_abort().into_history(st));
         }
@@ -1078,16 +1078,16 @@ pub(crate) unsafe fn initialize_engine(
 /// Open, execute, finalize, and release one batch document operation.
 unsafe fn run_document_to_end(st: &mut EngineState, input_file_name: *const libc::c_char) -> i32 {
     let result = (|| {
-        crate::io::start_input_in(st, input_file_name).map_err(|e| e.into_engine_abort())?;
+        crate::io::start_input(st, input_file_name).map_err(|e| e.into_engine_abort())?;
         st.errors.history = HISTORY_SPOTLESS;
-        crate::main_control::main_control_in(st).map_err(|e| e.into_engine_abort())?;
-        final_cleanup_in(st)?;
-        crate::io::close_files_and_terminate_in(st)
+        crate::main_control::main_control(st).map_err(|e| e.into_engine_abort())?;
+        final_cleanup(st)?;
+        crate::io::close_files_and_terminate(st)
     })();
     if let Err(a) = result {
         return a.into_history(st);
     }
-    tt_cleanup_in(st);
+    tt_cleanup(st);
     st.errors.history
 }
 
@@ -1098,11 +1098,11 @@ pub(crate) unsafe fn run_resident_document(
     st: &mut EngineState,
     input_file_name: *const libc::c_char,
 ) -> Result<i32, EngineAbort> {
-    crate::io::start_input_in(st, input_file_name).map_err(|e| e.into_engine_abort())?;
+    crate::io::start_input(st, input_file_name).map_err(|e| e.into_engine_abort())?;
     st.errors.history = HISTORY_SPOTLESS;
-    crate::main_control::main_control_in(st).map_err(|e| e.into_engine_abort())?;
-    final_cleanup_in(st)?;
-    crate::io::close_files_and_terminate_in(st)?;
+    crate::main_control::main_control(st).map_err(|e| e.into_engine_abort())?;
+    final_cleanup(st)?;
+    crate::io::close_files_and_terminate(st)?;
     Ok(st.errors.history)
 }
 
@@ -1111,11 +1111,11 @@ pub(crate) unsafe fn resume_resident_document(
     st: &mut EngineState,
     resume_pending_command: bool,
 ) -> Result<i32, EngineAbort> {
-    crate::io::reopen_resident_outputs_in(st)?;
-    crate::main_control::main_control_resume_in(st, resume_pending_command)
+    crate::io::reopen_resident_outputs(st)?;
+    crate::main_control::main_control_resume(st, resume_pending_command)
         .map_err(|e| e.into_engine_abort())?;
-    final_cleanup_in(st)?;
-    crate::io::close_files_and_terminate_in(st)?;
+    final_cleanup(st)?;
+    crate::io::close_files_and_terminate(st)?;
     Ok(st.errors.history)
 }
 
@@ -1169,7 +1169,7 @@ mod deterministic_input_tests {
     }
 }
 
-pub(crate) unsafe fn tt_cleanup_in(st: &mut EngineState) {
+pub(crate) unsafe fn tt_cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
     reset_layout_font_caches();
     pdf_files_close();
