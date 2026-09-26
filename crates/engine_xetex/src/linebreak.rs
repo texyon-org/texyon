@@ -2783,7 +2783,7 @@ fn hyphenate_native_word(
             s.set_link(&mut st.mem, q.ptr());
 
             let disc = crate::mem::new_disc(&mut st.mem)
-                .expect("main memory arena has room for a disc node");
+                .ok_or(HyphNativeAbort::Recycle(NodeRecycleAbort::Overflow))?;
             let hyphen = crate::fonts::new_native_character_in(st, hf, hyf_char as u32)
                 .map_err(HyphNativeAbort::NativeChar)?;
             disc.set_pre_break(&mut st.mem, hyphen.ptr());
