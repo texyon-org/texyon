@@ -89,16 +89,6 @@ impl FontState {
     }
 }
 
-/// The UTF-16 encoding of `c`: one unit, or a surrogate pair above the BMP.
-fn utf16_units(c: u32) -> ([u16; 2], usize) {
-    if c > 65_535 {
-        let v = c - 65_536;
-        ([(v / 1024 + 0xD800) as u16, (v % 1024 + 0xDC00) as u16], 2)
-    } else {
-        ([c as u16, 0], 1)
-    }
-}
-
 /// Where a native character's UTF-16 text comes from.
 enum NativeCharSrc {
     /// `len` units already in `FontState::mapped_text`.
@@ -153,7 +143,7 @@ impl MemState {
                 Ok(w)
             }
             NativeCharSrc::Single(c) => {
-                let (units, n) = utf16_units(c);
+                let (units, n) = crate::utf8::utf16_units(c);
                 let w = self.new_native_word(f, n as i32, WhatsitSubtype::NativeWord)?;
                 w.native_text_mut(self).copy_from_slice(&units[..n]);
                 Ok(w)
@@ -178,7 +168,7 @@ pub(crate) fn new_native_character(
     c: u32,
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
     let src = if let Some(map) = st.fonts.font_mapping[f as usize].clone() {
-        let (units, n) = utf16_units(c);
+        let (units, n) = crate::utf8::utf16_units(c);
         if st.strings.pool_ptr + n as i32 > st.strings.pool_size {
             return Err(Abort::PoolOverflow);
         }
@@ -766,12 +756,11 @@ pub(crate) fn load_native_font(
         get_loaded_font_design_size()
     };
 
-    if st.strings.pool_ptr + st.input.name_length > st.strings.pool_size {
+    if st.strings.pool_ptr + st.input.name_of_file.len() as i32 > st.strings.pool_size {
         return Err(Abort::PoolOverflow);
     }
-    for k in 0..st.input.name_length {
-        st.strings.str_pool[st.strings.pool_ptr as usize] =
-            st.input.name_of_file[k as usize] as u16;
+    for &b in &st.input.name_of_file {
+        st.strings.str_pool[st.strings.pool_ptr as usize] = b as u16;
         st.strings.pool_ptr += 1;
     }
     let full_name = st.strings.make_string()?;

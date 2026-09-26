@@ -1,7 +1,6 @@
 //! Synchronous rung-zero resident XeTeX session.
 
 use std::cell::RefCell;
-use std::ffi::CString;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
@@ -295,7 +294,9 @@ impl IncrementalXeTeXSession {
     /// Create an unopened resident session. Format I/O is deferred until
     /// [`open`](Self::open), where it runs under the process-global lock.
     pub fn new(config: EnginePreviewConfig) -> Result<Self> {
-        CString::new(config.format_file_name.as_str())?;
+        if let Some(pos) = config.format_file_name.find('\0') {
+            bail!("nul byte found in provided data at position: {pos}");
+        }
         if config.ladder_target_bytes > config.ladder_hard_bytes {
             bail!("checkpoint target exceeds hard cap");
         }

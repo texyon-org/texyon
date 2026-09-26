@@ -46,7 +46,7 @@ impl ReplayFence {
         }
         let shipout = &state.shipout;
         if shipout.write_open.iter().enumerate().any(|(stream, open)| {
-            *open && shipout.write_name.get(stream).and_then(|name| name.last()) != Some(&0)
+            *open && shipout.write_name.get(stream).is_none_or(Option::is_none)
         }) {
             return None;
         }

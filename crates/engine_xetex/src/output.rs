@@ -517,8 +517,8 @@ fn diagnostic_print_file_line(st: &EngineState, diagnostic: &mut Diagnostic) {
         diag_append(diagnostic, "!");
         return;
     };
-    let name = st.strings.texstring_cstring(name);
-    let name = String::from_utf8_lossy(name.as_bytes());
+    let name = st.strings.texstring_bytes(name);
+    let name = String::from_utf8_lossy(&name);
     diag_append(diagnostic, &format!("{name}:{line}: "));
 }
 
@@ -2618,19 +2618,19 @@ pub(crate) fn char_warning(st: &mut EngineState, f: i32, c: i32) -> Result<(), A
         }
     }
 
-    let font_name = st.strings.texstring_cstring(st.fonts.font_name[f as usize]);
+    let font_name = st.strings.texstring_bytes(st.fonts.font_name[f as usize]);
     let prev_sel = st.shipout.selector;
     st.shipout.selector = SELECTOR_NEW_STRING;
     print_code(st, c);
     st.shipout.selector = prev_sel;
     let s = st.strings.make_string()?;
-    let chr = st.strings.texstring_cstring(s);
+    let chr = st.strings.texstring_bytes(s);
     flush_last_string(st);
     issue_warning(&format!(
         "could not represent character \"{}\" (0x{:x}) in font \"{}\"",
-        chr.to_string_lossy(),
+        String::from_utf8_lossy(&chr),
         c as u32,
-        font_name.to_string_lossy(),
+        String::from_utf8_lossy(&font_name),
     ));
     if !st.fonts.gave_char_warning_help {
         issue_warning(

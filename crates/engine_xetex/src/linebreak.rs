@@ -17,7 +17,6 @@ use crate::consts::{
     TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::errors::Abort;
-use std::ffi::CStr;
 
 use crate::fonts::{LIG_TAG, QUAD_CODE};
 use crate::hyphenation::HYPH_PRIME;
@@ -2866,7 +2865,7 @@ impl TextBreaks<'_> {
 }
 
 /// Makes sure `fonts.brk_iter` is an ICU line breaker for `locale`.
-fn open_linebreak_iterator(st: &mut EngineState, locale: i32, name: &CStr) -> Result<(), Abort> {
+fn open_linebreak_iterator(st: &mut EngineState, locale: i32, name: &[u8]) -> Result<(), Abort> {
     if locale != st.fonts.brk_locale_str_num {
         st.fonts.brk_iter = None;
     }
@@ -2878,11 +2877,11 @@ fn open_linebreak_iterator(st: &mut EngineState, locale: i32, name: &CStr) -> Re
             crate::output::print(st, "rror ");
             crate::output::print_int(st, status);
             crate::output::print(st, " creating linebreak iterator for locale `");
-            crate::output::print(st, name.to_bytes());
+            crate::output::print(st, name);
             crate::output::print(st, "'; trying default locale `en_us'.");
             crate::output::end_diagnostic(st, true);
             drop(iter);
-            iter = crate::layout::LinebreakHandle::open(c"en_us").0;
+            iter = crate::layout::LinebreakHandle::open(b"en_us").0;
         }
         st.fonts.brk_locale_str_num = locale;
         st.fonts.brk_iter = iter;
@@ -2907,12 +2906,12 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
     let use_skip = st.eqtb.glue_par(GLUE_PAR_XETEX_LINEBREAK_SKIP) != ZERO_GLUE;
     let penalty = st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_PENALTY);
     let use_penalty = penalty != 0 || !use_skip;
-    let locale_name = st.strings.texstring_cstring(locale);
+    let locale_name = st.strings.texstring_bytes(locale);
 
     let engine = st.fonts.layout_engine_arc(main_f);
     let graphite = engine
         .as_deref()
-        .filter(|_| locale_name.as_bytes() == b"G")
+        .filter(|_| locale_name == b"G")
         .and_then(|engine| engine.graphite_breaks(&text));
     let mut iter = None;
     let mut breaks = match graphite {

@@ -2927,7 +2927,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
                 crate::io::scan_and_pack_name(st)?;
-                let name = st.input.name_of_file_cstr().unwrap_or_default();
+                let name = st.input.name_of_file_bytes();
                 st.scanner.cur_val = st.fonts.map_glyph_to_index(f, name)?;
             } else {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
@@ -2961,8 +2961,8 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         PDF_LAST_Y_POS_CODE => st.scanner.cur_val = st.shipout.pdf_last_y_pos,
         XETEX_PDF_PAGE_COUNT_CODE => {
             crate::io::scan_and_pack_name(st)?;
-            let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
-            st.scanner.cur_val = crate::pic::count_pdf_file_pages_named(&name)?;
+            st.scanner.cur_val =
+                crate::pic::count_pdf_file_pages_named(st.input.name_of_file_bytes())?;
         }
         CURRENT_GROUP_LEVEL_CODE => st.scanner.cur_val = st.save_stack.cur_level as i32 - 1,
         CURRENT_GROUP_TYPE_CODE => st.scanner.cur_val = st.save_stack.cur_group as i32,
@@ -3461,7 +3461,7 @@ pub(crate) fn find_font_dimen(st: &mut EngineState, writing: bool) -> Result<(),
 pub(crate) fn scan_glyph_number(st: &mut EngineState, f: i32) -> Result<(), Abort> {
     if scan_keyword(st, "/")? {
         crate::io::scan_and_pack_name(st)?;
-        let name = st.input.name_of_file_cstr().unwrap_or_default();
+        let name = st.input.name_of_file_bytes();
         let v = st.fonts.map_glyph_to_index(f, name)?;
         set_cur_val(st, v, INT_VAL);
     } else if scan_keyword(st, "u")? {

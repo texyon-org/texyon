@@ -1,8 +1,6 @@
 //! Low-level input and output: encoded line reading, file names, and the
 //! log and input-file lifecycle.
 
-use std::ffi::CStr;
-
 use crate::consts::{
     BIGGEST_CHAR, CLOSED, EMPTY_STRING, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
     INT_PAR_TRACING_STACK_LEVELS, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
@@ -12,7 +10,7 @@ use crate::consts::{
 use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
 use crate::state::EngineState;
-use crate::texmfmp::{next_utf8_char, utf16_units};
+use crate::utf8::next_utf8_char;
 use tectonic_bridge_core::EOF;
 
 pub(crate) use crate::bridge::{input_close, input_seek};
@@ -149,10 +147,12 @@ extern "C" {
 }
 
 /// Opens the ICU converter `name`, or returns ICU's error code.
-fn icu_converter_open(name: &CStr) -> Result<*mut libc::c_void, libc::c_int> {
+fn icu_converter_open(name: &[u8]) -> Result<*mut libc::c_void, libc::c_int> {
     let mut err: i32 = 0;
-    // SAFETY: `name` is NUL-terminated and `err` is a valid out-parameter.
-    let cnv = unsafe { ucnv_open(name.as_ptr(), &mut err) };
+    let cnv = crate::bridge::with_c_str(name, |name| {
+        // SAFETY: `name` is NUL-terminated and `err` is a valid out-parameter.
+        unsafe { ucnv_open(name, &mut err) }
+    });
     if cnv.is_null() {
         Err(err)
     } else {
@@ -161,7 +161,7 @@ fn icu_converter_open(name: &CStr) -> Result<*mut libc::c_void, libc::c_int> {
 }
 
 /// Whether ICU knows a converter `name`, or ICU's error code.
-pub(crate) fn icu_converter_exists(name: &CStr) -> Result<(), libc::c_int> {
+pub(crate) fn icu_converter_exists(name: &[u8]) -> Result<(), libc::c_int> {
     let cnv = icu_converter_open(name)?;
     // SAFETY: `cnv` was just opened and is not used again.
     unsafe { ucnv_close(cnv) };
@@ -226,14 +226,10 @@ pub(crate) fn open_input_file(st: &mut EngineState, filefmt: libc::c_int) -> usi
         return INVALID_HANDLE;
     }
 
-    let abspath = &mut st.input.abspath_of_input_file.0;
-    if last_input_abspath(abspath) < 1 {
-        abspath[0] = 0;
-    }
-
-    let name = st.input.name_of_file_cstr().unwrap_or_default().to_owned();
-    st.input.name_length = name.as_bytes().len() as i32;
-    st.input.name_of_input_file = Some(name);
+    st.input.abspath_of_input_file = last_input_abspath();
+    let len = st.input.name_of_file_bytes().len();
+    st.input.name_of_file.truncate(len);
+    st.input.name_of_input_file = st.input.name_of_file.clone();
     handle
 }
 
@@ -299,7 +295,7 @@ pub(crate) fn set_input_file_encoding(
             f.encoding_mode = mode as i16;
         }
         ICUMAPPING => {
-            let name = st.strings.texstring_cstring(encoding_data);
+            let name = st.strings.texstring_bytes(encoding_data);
             match icu_converter_open(&name) {
                 Err(err) => {
                     crate::output::begin_diagnostic(st);
@@ -307,7 +303,7 @@ pub(crate) fn set_input_file_encoding(
                     crate::output::print(st, "rror ");
                     crate::output::print_int(st, err);
                     crate::output::print(st, " creating Unicode converter for `");
-                    crate::output::print(st, name.as_bytes());
+                    crate::output::print(st, &name[..]);
                     crate::output::print(st, "'; reading as raw bytes");
                     crate::output::end_diagnostic(st, true);
                     f.encoding_mode = RAW as i16;
@@ -542,23 +538,6 @@ fn input_line_with(
     Ok(1)
 }
 
-/// Converts `name_of_file` (UTF-8) to UTF-16 in `name_of_file16`.
-pub(crate) fn make_utf16_name(st: &mut EngineState) {
-    let name_len = st.input.name_length as usize;
-    let needed = name_len + 10;
-    if st.input.name_of_file16.len() < needed {
-        st.input.name_of_file16.resize(needed, 0);
-    }
-    let mut s = &st.input.name_of_file[..name_len];
-    let mut t = 0;
-    while !s.is_empty() {
-        let (units, n) = utf16_units(next_utf8_char(&mut s));
-        st.input.name_of_file16[t..t + n].copy_from_slice(&units[..n]);
-        t += n;
-    }
-    st.input.name_length16 = t as i32;
-}
-
 /// The only abort of [`get_uni_c`]. Being fieldless keeps the per-character
 /// `Result` in registers on this hot path.
 pub(crate) struct InvalidInputMode;
@@ -671,12 +650,12 @@ pub fn u_close(slot: crate::state::InputSlot) -> bool {
 /// Runs `name_of_file` back through the name scanner so that `cur_name`,
 /// `cur_area` and `cur_ext` describe the file actually opened.
 fn rescan_opened_name(st: &mut EngineState) -> Result<(), Abort> {
-    make_utf16_name(st);
+    let name16 = st.input.name_of_file16();
     st.scanner.name_in_progress = true;
     begin_name(st);
     st.scanner.stop_at_space = false;
-    for k in 0..st.input.name_length16 as usize {
-        if !more_name(st, st.input.name_of_file16[k])? {
+    for c in name16 {
+        if !more_name(st, c)? {
             break;
         }
     }
@@ -809,20 +788,17 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn make_name_string(st: &mut EngineState) -> Result<i32, Abort> {
-    if st.strings.pool_ptr + st.input.name_length > st.strings.pool_size
+    if st.strings.pool_ptr + st.input.name_of_file.len() as i32 > st.strings.pool_size
         || st.strings.str_ptr == st.strings.max_strings
         || st.strings.cur_length() > 0
     {
         return Ok(b'?' as i32);
     }
 
-    make_utf16_name(st);
-
-    let name_len16 = st.input.name_length16 as usize;
+    let name16 = st.input.name_of_file16();
     let pool_ptr = st.strings.pool_ptr as usize;
-    st.strings.str_pool[pool_ptr..pool_ptr + name_len16]
-        .copy_from_slice(&st.input.name_of_file16[..name_len16]);
-    st.strings.pool_ptr += name_len16 as i32;
+    st.strings.str_pool[pool_ptr..pool_ptr + name16.len()].copy_from_slice(&name16);
+    st.strings.pool_ptr += name16.len() as i32;
 
     let result = st.strings.make_string()?;
     let save_area_delimiter = st.scanner.area_delimiter;
@@ -834,8 +810,8 @@ pub(crate) fn make_name_string(st: &mut EngineState) -> Result<i32, Abort> {
     begin_name(st);
     st.scanner.stop_at_space = false;
 
-    for k in 0..name_len16 {
-        if !more_name(st, st.input.name_of_file16[k])? {
+    for c in name16 {
+        if !more_name(st, c)? {
             break;
         }
     }
@@ -927,17 +903,13 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
     Ok(())
 }
 
-/// Builds `name_of_file` and `name_length` from area `a`, name `n` and
-/// extension `e`.
+/// Builds `name_of_file` from area `a`, name `n` and extension `e`.
 pub(crate) fn pack_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
     let name = &mut st.input.name_of_file;
     name.clear();
     for part in [a, n, e] {
-        let part = st.strings.texstring_cstring(part);
-        name.extend_from_slice(part.as_bytes());
+        name.extend_from_slice(&st.strings.texstring_bytes(part));
     }
-    st.input.name_length = name.len() as i32;
-    name.push(0);
 }
 
 pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abort> {
@@ -1131,8 +1103,8 @@ pub(crate) fn start_input(
     st.input.cur_input.name = name;
     let in_open = st.input.in_open as usize;
     st.input.source_filename_stack[in_open] = name;
-    let full_name = st.input.name_of_input_file.clone().unwrap_or_default();
-    let full_name = st.strings.make_tex_string(full_name.as_bytes())?;
+    let full_name = st.input.name_of_input_file.clone();
+    let full_name = st.strings.make_tex_string(full_name)?;
     st.input.full_source_filename_stack[in_open] = full_name;
 
     if st.input.cur_input.name == st.strings.str_ptr - 1 {
@@ -1182,8 +1154,8 @@ pub(crate) fn start_input(
     }
 
     st.input.cur_input.state = NEW_LINE;
-    let job_name = st.strings.texstring_cstring(st.strings.job_name);
-    crate::synctex::synctex_start_input(st, job_name.as_bytes());
+    let job_name = st.strings.texstring_bytes(st.strings.job_name);
+    crate::synctex::synctex_start_input(st, &job_name);
     st.mem.line = 1;
     input_slot_line(st, FileSlot::Input(idx as usize))?;
     st.input.cur_input.limit = st.input.last;

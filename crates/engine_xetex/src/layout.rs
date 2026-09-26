@@ -2,7 +2,7 @@
 //! engines and fonts, HarfBuzz tags, TECkit converters and ICU line breaking
 //! and bidi. Every raw pointer stays inside this module.
 
-use std::ffi::{c_char, c_int, c_long, c_uint, c_void, CStr};
+use std::ffi::{c_char, c_int, c_long, c_uint, c_void, CStr, CString};
 use std::marker::PhantomData;
 use std::ptr::{self, NonNull};
 
@@ -306,7 +306,8 @@ impl Drop for OwnedFont {
 
 impl OwnedFont {
     /// The font in file `path` at face `index`, or `None`.
-    pub(crate) fn from_file(path: &CStr, index: c_int, point_size: i32) -> Option<OwnedFont> {
+    pub(crate) fn from_file(path: &[u8], index: c_int, point_size: i32) -> Option<OwnedFont> {
+        let path = CString::new(path).unwrap_or_default();
         // SAFETY: `path` is NUL-terminated.
         let raw = unsafe { createFontFromFile(path.as_ptr(), index, point_size) };
         NonNull::new(raw).map(|raw| OwnedFont { raw })
@@ -416,7 +417,8 @@ pub(crate) struct PlatformFont {
 impl PlatformFont {
     /// The installed font `name` with variant `var`, which the manager may edit
     /// in place, or `None`.
-    pub(crate) fn find(name: &CStr, var: Option<&mut Vec<u8>>, size: f64) -> Option<PlatformFont> {
+    pub(crate) fn find(name: &[u8], var: Option<&mut Vec<u8>>, size: f64) -> Option<PlatformFont> {
+        let name = CString::new(name).unwrap_or_default();
         let var = var.map_or(ptr::null_mut(), |v| {
             if v.last() != Some(&0) {
                 v.push(0);
@@ -450,13 +452,21 @@ impl PlatformFont {
     }
 }
 
+/// A shaper name for the layout engine, which keeps the pointer.
+fn shaper_name(name: &[u8]) -> &'static CStr {
+    match name {
+        b"ot" => c"ot",
+        b"graphite2" => c"graphite2",
+        _ => Box::leak(CString::new(name).unwrap_or_default().into_boxed_c_str()),
+    }
+}
+
 /// Options of a new layout engine.
 pub(crate) struct EngineOptions<'a> {
     pub script: u32,
-    pub language: Option<&'a CStr>,
+    pub language: Option<&'a [u8]>,
     pub features: &'a mut [HbFeature],
-    /// The engine keeps these pointers, hence `'static`.
-    pub shapers: &'a [&'static CStr],
+    pub shapers: &'a [&'a [u8]],
     pub rgb_value: u32,
     pub extend: f32,
     pub slant: f32,
@@ -552,7 +562,9 @@ impl FontEngineHandle {
         } else {
             features.as_mut_ptr()
         };
-        let mut shaper_list: Vec<*const c_char> = shapers.iter().map(|s| s.as_ptr()).collect();
+        let language = language.map(|l| CString::new(l).unwrap_or_default());
+        let mut shaper_list: Vec<*const c_char> =
+            shapers.iter().map(|s| shaper_name(s).as_ptr()).collect();
         let shapers_ptr = if shaper_list.is_empty() {
             ptr::null_mut()
         } else {
@@ -566,7 +578,9 @@ impl FontEngineHandle {
             createLayoutEngine(
                 font.raw.as_ptr(),
                 script,
-                language.map_or(ptr::null_mut(), |l| l.as_ptr().cast_mut()),
+                language
+                    .as_ref()
+                    .map_or(ptr::null_mut(), |l| l.as_ptr().cast_mut()),
                 features_ptr,
                 features.len() as c_int,
                 shapers_ptr,
@@ -674,7 +688,8 @@ impl FontEngineHandle {
         unsafe { mapCharToGlyph(self.raw(), c) }
     }
 
-    pub(crate) fn map_glyph_to_index(&self, name: &CStr) -> c_int {
+    pub(crate) fn map_glyph_to_index(&self, name: &[u8]) -> c_int {
+        let name = CString::new(name).unwrap_or_default();
         // SAFETY: `raw` is a live engine and `name` is NUL-terminated.
         unsafe { mapGlyphToIndex(self.raw(), name.as_ptr()) }
     }
@@ -943,7 +958,8 @@ const UBRK_LINE: c_int = 2;
 
 impl LinebreakHandle {
     /// A line-break iterator for `locale`, and ICU's status.
-    pub(crate) fn open(locale: &CStr) -> (Option<LinebreakHandle>, i32) {
+    pub(crate) fn open(locale: &[u8]) -> (Option<LinebreakHandle>, i32) {
+        let locale = CString::new(locale).unwrap_or_default();
         let mut status = 0;
         // SAFETY: `locale` is NUL-terminated, no text is attached yet and
         // `status` is a valid out-parameter.

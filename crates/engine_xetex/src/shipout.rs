@@ -241,8 +241,8 @@ fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(),
 pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abort> {
     let p = page.ptr();
     let mag = st.eqtb.int_par(INT_PAR_MAG);
-    let job_name = st.strings.texstring_cstring(st.strings.job_name);
-    crate::synctex::synctex_sheet(st, mag, job_name.as_bytes());
+    let job_name = st.strings.texstring_bytes(st.strings.job_name);
+    crate::synctex::synctex_sheet(st, mag, &job_name);
 
     if st.strings.job_name == 0 {
         crate::io::open_log_file(st)?;
@@ -2021,9 +2021,7 @@ fn out_write_stream(
     }
     st.shipout.write_file[stream] = handle;
     st.shipout.write_open[stream] = true;
-    let name_len = st.input.name_length as usize;
-    st.shipout.write_name[stream].clear();
-    st.shipout.write_name[stream].extend_from_slice(&st.input.name_of_file[..=name_len]);
+    st.shipout.write_name[stream] = Some(st.input.name_of_file.clone());
     st.shipout.write_prefix[stream].clear();
     if st.errors.log_opened {
         let old_setting = st.shipout.selector;
@@ -2048,11 +2046,10 @@ pub(crate) fn ensure_write_stream_open(
     if st.shipout.write_file[stream] != INVALID_HANDLE {
         return Ok(());
     }
-    let name = &st.shipout.write_name[stream];
-    if name.last() != Some(&0) {
+    let Some(name) = &st.shipout.write_name[stream] else {
         return Err(Abort::CannotOpenOutput);
-    }
-    let handle = output_open(&name[..name.len() - 1], false);
+    };
+    let handle = output_open(name, false);
     if handle == INVALID_HANDLE {
         return Err(Abort::CannotOpenOutput);
     }

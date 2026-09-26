@@ -159,10 +159,7 @@ impl Abort {
     }
 
     fn open_failure(st: &EngineState, what: &str) {
-        let name = match st.input.name_of_file_cstr() {
-            Some(name) => name.to_bytes(),
-            None => b"(null)",
-        };
+        let name = st.input.name_of_file_bytes();
         let mut msg = format!("{what} \"").into_bytes();
         msg.extend_from_slice(name);
         msg.push(b'"');

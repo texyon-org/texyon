@@ -1123,8 +1123,8 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     st.save_stack.data = Vec::new();
 
     let input = &mut st.input;
-    input.name_of_input_file = None;
-    input.abspath_of_input_file.0 = [0; 1024];
+    input.name_of_input_file = Vec::new();
+    input.abspath_of_input_file = Vec::new();
     input.nest = Vec::new();
     input.input_file = Vec::new();
     input.read_file = Default::default();
@@ -1138,7 +1138,6 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     input.eof_seen = Vec::new();
     input.buffer = Vec::new();
     input.name_of_file = Vec::new();
-    input.name_of_file16 = Vec::new();
 
     st.scanner.native_text = Vec::new();
     st.scanner.native_text_size = 0;

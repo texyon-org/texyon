@@ -88,8 +88,8 @@ impl SynctexCtxt {
         ok
     }
 
-    fn record_input(&mut self, tag: i32, name: &std::ffi::CStr) -> bool {
-        let name = name.to_string_lossy();
+    fn record_input(&mut self, tag: i32, name: &[u8]) -> bool {
+        let name = String::from_utf8_lossy(name);
         if let Some(index) = &mut self.preview_index {
             index.register_name(tag, name.to_string());
         }
@@ -289,16 +289,16 @@ pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8]) {
     let tag = synctex.synctex_tag_counter as i32;
     st.input.cur_input.synctex_tag = tag;
     st.mem.cur_synctex_tag = tag;
-    let current_name = st.input.get_current_name();
+    let current_name = &st.input.abspath_of_input_file;
     if let Some(index) = &mut synctex.preview_index {
-        index.register_name(tag, current_name.to_string_lossy().into_owned());
+        index.register_name(tag, String::from_utf8_lossy(current_name).into_owned());
     }
 
     if synctex.synctex_tag_counter == 1 {
         synctex.root_name = Some(if current_name.is_empty() {
-            c"texput".to_owned()
+            b"texput".to_vec()
         } else {
-            current_name.to_owned()
+            current_name.to_vec()
         });
         return;
     }
@@ -306,7 +306,7 @@ pub fn synctex_start_input(st: &mut EngineState, job_name: &[u8]) {
     if synctex.file != INVALID_HANDLE
         || synctex.synctex_dot_open(&st.eqtb, job_name) != INVALID_HANDLE
     {
-        synctex.record_input(tag, st.input.get_current_name());
+        synctex.record_input(tag, &st.input.abspath_of_input_file);
     }
 }
 

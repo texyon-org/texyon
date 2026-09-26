@@ -1,7 +1,5 @@
 //! String-pool conversions, clock queries and the file-info primitives.
 
-use std::ffi::CString;
-
 use crate::bridge::{
     data_md5, get_file_md5, input_get_mtime, input_get_size, input_open, input_read,
     TTBC_FILE_FORMAT_TEX,
@@ -9,7 +7,7 @@ use crate::bridge::{
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE, TOO_BIG_CHAR};
 use crate::errors::Abort;
 use crate::state::{ShipoutState, StringsState, TexmfState};
-use crate::utf8::{BYTES_FROM_UTF8, FIRST_BYTE_MARK, OFFSETS_FROM_UTF8};
+use crate::utf8::{next_utf8_char, utf16_units, FIRST_BYTE_MARK};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
@@ -66,36 +64,6 @@ pub fn get_seconds_and_micros() -> (i32, i32) {
     (elapsed.as_secs() as i32, elapsed.subsec_micros() as i32)
 }
 
-/// Decodes one UTF-8 sequence from the non-empty `s` without validation,
-/// advancing it. The end of `s` cuts the sequence short.
-pub(crate) fn next_utf8_char(s: &mut &[u8]) -> u32 {
-    let (&first, mut rest) = s.split_first().expect("next_utf8_char on empty input");
-    let mut rval = first as u32;
-    let extra_bytes = BYTES_FROM_UTF8[first as usize] as usize;
-    for _ in 0..extra_bytes {
-        rval <<= 6;
-        if let Some((&b, tail)) = rest.split_first() {
-            rval += b as u32;
-            rest = tail;
-        }
-    }
-    *s = rest;
-    rval - OFFSETS_FROM_UTF8[extra_bytes]
-}
-
-/// The UTF-16 encoding of `c` and its length in units.
-pub(crate) fn utf16_units(c: u32) -> ([u16; 2], usize) {
-    if c > 0xFFFF {
-        let c = c - 0x10000;
-        (
-            [(0xD800 + c / 0x0400) as u16, (0xDC00 + c % 0x0400) as u16],
-            2,
-        )
-    } else {
-        ([c as u16, 0], 1)
-    }
-}
-
 impl StringsState {
     /// Encodes pool string `s` as UTF-8. Single-character strings (`s` below
     /// 65536) come out empty, and unpaired low surrogates are kept as 3-byte
@@ -142,13 +110,13 @@ impl StringsState {
         out
     }
 
-    /// Pool string `s` as a C string, cut at its first NUL.
-    pub(crate) fn texstring_cstring(&self, s: i32) -> CString {
+    /// Pool string `s` in UTF-8, cut at its first NUL as C saw it.
+    pub(crate) fn texstring_bytes(&self, s: i32) -> Vec<u8> {
         let mut bytes = self.texstring_utf8(s);
         if let Some(nul) = bytes.iter().position(|&b| b == 0) {
             bytes.truncate(nul);
         }
-        CString::new(bytes).expect("cut at the first NUL")
+        bytes
     }
 
     /// Appends code point `c` to the pool as one or two UTF-16 units.
@@ -209,12 +177,12 @@ impl StringsState {
     /// Appends the hex MD5 of file (or string) `s` to the pool.
     pub(crate) fn md5_sum(&mut self, s: i32, file: bool) {
         let mut digest = [0u8; 16];
-        let xname = self.texstring_cstring(s);
+        let xname = self.texstring_bytes(s);
 
         let ret = if file {
             get_file_md5(&xname, &mut digest)
         } else {
-            data_md5(xname.as_bytes(), &mut digest)
+            data_md5(&xname, &mut digest)
         };
 
         if ret != 0 || self.pool_ptr + 2 * digest.len() as i32 >= self.pool_size {
@@ -232,23 +200,21 @@ pub(crate) fn make_src_special(
     lineno: i32,
 ) -> Result<i32, ()> {
     let old_pool_ptr = st.strings.pool_ptr;
-    let filename = st.strings.texstring_cstring(srcfilename);
+    let filename = st.strings.texstring_bytes(srcfilename);
     let prefix = format!("src:{} ", lineno);
-    let filename = filename.as_bytes();
 
     if st.strings.pool_ptr as usize + prefix.len() + filename.len() >= st.strings.pool_size as usize
     {
         return Err(());
     }
     st.strings.push_bytes(prefix.as_bytes());
-    st.strings.push_bytes(filename);
+    st.strings.push_bytes(&filename);
     Ok(old_pool_ptr)
 }
 
 impl StringsState {
     fn open_tex_file(&self, s: i32) -> usize {
-        let name = self.texstring_cstring(s);
-        input_open(name.as_bytes(), TTBC_FILE_FORMAT_TEX, false)
+        input_open(&self.texstring_bytes(s), TTBC_FILE_FORMAT_TEX, false)
     }
 
     /// Appends the decimal size of file `s` to the pool.
@@ -302,13 +268,9 @@ impl StringsState {
 
 /// Whether `srcfilename:lineno` differs from the last remembered source.
 pub(crate) fn is_new_source(st: &crate::state::EngineState, srcfilename: i32, lineno: i32) -> bool {
-    let name = st.strings.texstring_cstring(srcfilename);
-    let last_name = st
-        .texmf
-        .last_source_name
-        .as_deref()
-        .map_or(&[][..], |name| name.to_bytes());
-    name.as_bytes() != last_name || lineno != st.texmf.last_lineno
+    let name = st.strings.texstring_bytes(srcfilename);
+    let last_name = st.texmf.last_source_name.as_deref().unwrap_or_default();
+    name != last_name || lineno != st.texmf.last_lineno
 }
 
 pub(crate) fn remember_source_info(
@@ -316,7 +278,7 @@ pub(crate) fn remember_source_info(
     srcfilename: i32,
     lineno: i32,
 ) {
-    st.texmf.last_source_name = Some(st.strings.texstring_cstring(srcfilename));
+    st.texmf.last_source_name = Some(st.strings.texstring_bytes(srcfilename));
     st.texmf.last_lineno = lineno;
 }
 
@@ -385,12 +347,12 @@ fn nul_terminated(buf: &[u8]) -> &[u8] {
 pub fn init_start_time(st: &mut crate::state::EngineState, source_date_epoch: libc::time_t) {
     let mut buf = [0u8; 30];
     make_pdf_time(source_date_epoch, &mut buf, true);
-    st.texmf.start_time_str = buf;
+    st.texmf.start_time_str = nul_terminated(&buf).to_vec();
 }
 
 impl TexmfState {
     pub(crate) fn creation_date(&self, strings: &mut StringsState) {
-        strings.push_bytes_or_fill(nul_terminated(&self.start_time_str));
+        strings.push_bytes_or_fill(&self.start_time_str);
     }
 }
 

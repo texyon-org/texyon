@@ -6,10 +6,9 @@ use std::sync::Arc;
 use crate::mem_types::{B16x4, ListStateRecord, MemoryWord};
 use crate::state::InputState;
 use crate::state::{
-    AbsPathBuf, ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle,
-    FontMappingHandle, FontState, GroupCode, HyphState, InputClusterState, LinebreakState,
-    MainLoopState, MemState, SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt,
-    TexmfState,
+    ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle, FontMappingHandle,
+    FontState, GroupCode, HyphState, InputClusterState, LinebreakState, MainLoopState, MemState,
+    SaveStackState, ScannerState, ShipoutState, StringsState, SynctexCtxt, TexmfState,
 };
 use crate::units::MemPtr;
 
@@ -138,7 +137,13 @@ impl EngineBundle {
 
     pub(crate) fn allocated_bytes(&self) -> usize {
         vec_bytes(&self.dvi_buf)
-            + self.shipout.write_name.iter().map(vec_bytes).sum::<usize>()
+            + self
+                .shipout
+                .write_name
+                .iter()
+                .flatten()
+                .map(vec_bytes)
+                .sum::<usize>()
             + self
                 .shipout
                 .write_prefix
@@ -437,13 +442,10 @@ struct InputBundle {
     first: i32,
     last: i32,
     max_buf_stack: i32,
-    name_length: i32,
-    name_length16: i32,
     read_open: [u8; 17],
     name_of_file: Vec<u8>,
-    name_of_file16: Vec<u16>,
-    name_of_input_file: Option<std::ffi::CString>,
-    abspath_of_input_file: AbsPathBuf,
+    name_of_input_file: Vec<u8>,
+    abspath_of_input_file: Vec<u8>,
 }
 
 fn live_prefix<T: Clone>(values: &[T], len: i32) -> Vec<T> {
@@ -481,13 +483,10 @@ impl InputBundle {
             first: src.first,
             last: src.last,
             max_buf_stack: src.max_buf_stack,
-            name_length: src.name_length,
-            name_length16: src.name_length16,
             read_open: src.read_open,
             name_of_file: src.name_of_file.clone(),
-            name_of_file16: src.name_of_file16.clone(),
             name_of_input_file: src.name_of_input_file.clone(),
-            abspath_of_input_file: src.abspath_of_input_file,
+            abspath_of_input_file: src.abspath_of_input_file.clone(),
         }
     }
 
@@ -522,13 +521,11 @@ impl InputBundle {
         dst.first = self.first;
         dst.last = self.last;
         dst.max_buf_stack = self.max_buf_stack;
-        dst.name_length = self.name_length;
-        dst.name_length16 = self.name_length16;
         dst.read_open = self.read_open;
         dst.name_of_file.clone_from(&self.name_of_file);
-        dst.name_of_file16.clone_from(&self.name_of_file16);
         dst.name_of_input_file.clone_from(&self.name_of_input_file);
-        dst.abspath_of_input_file = self.abspath_of_input_file;
+        dst.abspath_of_input_file
+            .clone_from(&self.abspath_of_input_file);
     }
 
     fn allocated_bytes(&self) -> usize {
@@ -543,7 +540,6 @@ impl InputBundle {
             + vec_bytes(&self.full_source_filename_stack)
             + vec_bytes(&self.eof_seen)
             + vec_bytes(&self.name_of_file)
-            + vec_bytes(&self.name_of_file16)
     }
 }
 
@@ -603,8 +599,8 @@ font_arrays! {
 
 struct FontBundle {
     loaded_font_mapping: Option<Arc<FontMappingHandle>>,
-    loaded_font_flags: libc::c_char,
-    saved_mapping_name: Option<std::ffi::CString>,
+    loaded_font_flags: i8,
+    saved_mapping_name: Option<Vec<u8>>,
     loaded_font_letter_space: i32,
     xtx_ligature_present: bool,
     gave_char_warning_help: bool,

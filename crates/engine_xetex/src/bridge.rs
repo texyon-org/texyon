@@ -121,13 +121,30 @@ pub(crate) fn input_open_primary() -> usize {
     InputId::to_raw(with_bridge(|es| ttbc_input_open_primary(es)))
 }
 
-/// Copies the absolute path of the last opened input into `buffer` as a C string.
-pub(crate) fn last_input_abspath(buffer: &mut [u8]) -> libc::ssize_t {
-    if let Some(copied) = crate::replay::adapter::copy_last_abspath(buffer) {
-        return copied;
+/// Longest absolute input path kept, including C's terminating NUL.
+const ABSPATH_CAPACITY: usize = 1024;
+
+/// The absolute path of the last opened input, empty when unknown.
+pub(crate) fn last_input_abspath() -> Vec<u8> {
+    if let Some(path) = crate::replay::adapter::last_abspath(ABSPATH_CAPACITY - 1) {
+        return path;
     }
+    let mut buffer = [0u8; ABSPATH_CAPACITY];
     // SAFETY: `buffer` is valid for `buffer.len()` bytes.
-    with_bridge(|es| unsafe { ttbc_get_last_input_abspath(es, buffer.as_mut_ptr(), buffer.len()) })
+    let n = with_bridge(|es| unsafe {
+        ttbc_get_last_input_abspath(es, buffer.as_mut_ptr(), buffer.len())
+    });
+    if n < 1 {
+        return Vec::new();
+    }
+    let end = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
+    buffer[..end].to_vec()
+}
+
+/// Calls `f` with `bytes` as a C string, empty if `bytes` holds a NUL.
+pub(crate) fn with_c_str<R>(bytes: &[u8], f: impl FnOnce(*const libc::c_char) -> R) -> R {
+    let s = CString::new(bytes).unwrap_or_default();
+    f(s.as_ptr())
 }
 
 pub(crate) fn input_get_size(handle: usize) -> libc::size_t {
@@ -294,9 +311,11 @@ pub(crate) fn strerror(errnum: i32) -> Vec<u8> {
 }
 
 /// Writes the MD5 digest of file `path` to `digest`, returning nonzero on failure.
-pub(crate) fn get_file_md5(path: &CStr, digest: &mut [u8; 16]) -> libc::c_int {
-    // SAFETY: `path` is NUL-terminated and `digest` holds the 16 bytes written.
-    with_bridge(|es| unsafe { ttbc_get_file_md5(es, path.as_ptr(), digest.as_mut_ptr()) })
+pub(crate) fn get_file_md5(path: &[u8], digest: &mut [u8; 16]) -> libc::c_int {
+    with_c_str(path, |path| {
+        // SAFETY: `path` is NUL-terminated and `digest` holds the 16 bytes written.
+        with_bridge(|es| unsafe { ttbc_get_file_md5(es, path, digest.as_mut_ptr()) })
+    })
 }
 
 /// Writes the MD5 digest of `data` to `digest`, returning nonzero on failure.

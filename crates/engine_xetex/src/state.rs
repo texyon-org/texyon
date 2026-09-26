@@ -60,7 +60,7 @@ pub(crate) struct SynctexFlags {
 #[derive(Clone)]
 pub(crate) struct SynctexCtxt {
     pub file: usize,
-    pub root_name: Option<std::ffi::CString>,
+    pub root_name: Option<Vec<u8>>,
     pub count: i32,
     pub node: crate::units::MemPtr,
     /// A kern whose record waits for the context to change. When set it equals
@@ -106,18 +106,10 @@ impl Default for SynctexCtxt {
 
 #[derive(Default, Clone)]
 pub(crate) struct TexmfState {
-    pub last_source_name: Option<std::ffi::CString>,
+    pub last_source_name: Option<Vec<u8>>,
     pub last_lineno: i32,
-    /// `D:YYYYmmddHHMMSS+HH'MM'`, NUL-terminated.
-    pub start_time_str: [u8; 30],
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct AbsPathBuf(pub [u8; 1024]);
-impl Default for AbsPathBuf {
-    fn default() -> Self {
-        AbsPathBuf([0; 1024])
-    }
+    /// `D:YYYYmmddHHMMSS+HH'MM'`.
+    pub start_time_str: Vec<u8>,
 }
 
 /// One level of TeX's input stack (`in_state_record`).
@@ -178,16 +170,13 @@ pub(crate) struct InputClusterState {
     pub first: i32,
     pub last: i32,
     pub max_buf_stack: i32,
-    pub name_length: i32,
-    pub name_length16: i32,
     pub read_open: [u8; 17],
     pub read_file: [InputSlot; 16],
-    /// NUL-terminated, or empty before the first `pack_file_name`.
+    /// UTF-8, and cut short by a NUL between `check_for_tfm_font_mapping` and the open.
     pub name_of_file: Vec<u8>,
-    pub name_of_file16: Vec<u16>,
-    /// Owned name of the most recently opened input file.
-    pub name_of_input_file: Option<std::ffi::CString>,
-    pub abspath_of_input_file: AbsPathBuf,
+    /// Name of the most recently opened input file.
+    pub name_of_input_file: Vec<u8>,
+    pub abspath_of_input_file: Vec<u8>,
 }
 
 pub(crate) struct EqtbState {
@@ -927,7 +916,7 @@ pub(crate) struct FontState {
     pub loaded_font_flags: i8,
     /// TFM mapping name captured during filename parsing and consumed by the
     /// subsequent font load.
-    pub saved_mapping_name: Option<std::ffi::CString>,
+    pub saved_mapping_name: Option<Vec<u8>>,
     /// Per-engine ICU line-break cache and its string-pool locale key.
     pub brk_iter: Option<LinebreakHandle>,
     pub brk_locale_str_num: i32,
@@ -1329,7 +1318,7 @@ pub(crate) struct ShipoutState {
     pub write_file: [usize; 16],
     pub write_open: [bool; 18],
     /// Packed NUL-terminated names for bridge-local `\write` handles.
-    pub write_name: [Vec<u8>; 16],
+    pub write_name: [Option<Vec<u8>>; 16],
     /// Code units emitted before the current replay fence.
     pub write_prefix: [Vec<i32>; 16],
     pub rust_stdout: usize,
@@ -1694,18 +1683,21 @@ impl InputClusterState {
         self.max_buf_stack.max(self.last).max(self.first) + 1
     }
 
-    /// `name_of_file` without its NUL.
+    /// `name_of_file` up to a font mapping cut.
     pub(crate) fn name_of_file_bytes(&self) -> &[u8] {
-        self.name_of_file_cstr()
-            .map_or(&[], std::ffi::CStr::to_bytes)
+        let name = &self.name_of_file;
+        &name[..name.iter().position(|&b| b == 0).unwrap_or(name.len())]
     }
 
-    pub(crate) fn name_of_file_cstr(&self) -> Option<&std::ffi::CStr> {
-        std::ffi::CStr::from_bytes_until_nul(&self.name_of_file).ok()
-    }
-
-    pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {
-        std::ffi::CStr::from_bytes_until_nul(&self.abspath_of_input_file.0).unwrap_or_default()
+    /// `name_of_file` in UTF-16.
+    pub(crate) fn name_of_file16(&self) -> Vec<u16> {
+        let mut s = &self.name_of_file[..];
+        let mut units = Vec::with_capacity(s.len());
+        while !s.is_empty() {
+            let (c, n) = crate::utf8::utf16_units(crate::utf8::next_utf8_char(&mut s));
+            units.extend_from_slice(&c[..n]);
+        }
+        units
     }
 }
 

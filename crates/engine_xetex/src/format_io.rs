@@ -561,8 +561,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
 pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<bool, Abort> {
     let loc = st.input.cur_input.loc;
 
-    st.input.name_of_file = [dump_name.as_bytes(), b"\0"].concat();
-    st.input.name_length = dump_name.len() as i32;
+    st.input.name_of_file = dump_name.as_bytes().to_vec();
 
     let fmt_in = input_open(
         st.input.name_of_file_bytes(),

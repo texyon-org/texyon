@@ -142,20 +142,14 @@ pub(crate) fn clear_last_path() {
     });
 }
 
-pub(crate) fn copy_last_abspath(buffer: &mut [u8]) -> Option<libc::ssize_t> {
+pub(crate) fn last_abspath(max_len: usize) -> Option<Vec<u8>> {
     ACTIVE.with(|active| {
         let active = active.borrow();
         let sources = active.as_ref()?;
         let path = sources.last_path.as_ref()?;
-        if buffer.is_empty() {
-            return Some(0);
-        }
         let path = sources.snapshot.absolute_path(path);
         let bytes = path.to_string_lossy();
-        let copied = bytes.len().min(buffer.len() - 1);
-        buffer[..copied].copy_from_slice(&bytes.as_bytes()[..copied]);
-        buffer[copied] = 0;
-        Some(copied as libc::ssize_t)
+        Some(bytes.as_bytes()[..bytes.len().min(max_len)].to_vec())
     })
 }
 
