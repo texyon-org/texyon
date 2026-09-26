@@ -667,7 +667,7 @@ impl IncrementalXeTeXSession {
             }
         };
         frame.outcome = history_to_outcome(history)?;
-        frame.pages = self.state.shipout.page_manifest.take_pages();
+        frame.pages = self.state.shipout.dvi.manifest.take_pages();
         frame.sync_index = self
             .state
             .synctex
@@ -745,13 +745,14 @@ fn run_document(
         checkpoint_activity,
     );
     if splice_at.is_some() {
-        let manifest_start = (state.shipout.dvi_offset + state.shipout.dvi_ptr) as u64;
+        let manifest_start = state.shipout.dvi.pos() as u64;
         state
             .shipout
-            .page_manifest
+            .dvi
+            .manifest
             .begin_operation_at(manifest_start);
     } else {
-        state.shipout.page_manifest.begin_operation();
+        state.shipout.dvi.manifest.begin_operation();
     }
     let execution = match (splice_at, resume_pending_command) {
         (Some(_), Some(resume_pending_command)) => {

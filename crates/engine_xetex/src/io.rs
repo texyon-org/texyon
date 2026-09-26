@@ -873,7 +873,7 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
     st.shipout.current_diagnostic = None;
     st.shipout.write_file = [INVALID_HANDLE; 16];
     st.shipout.log_file = INVALID_HANDLE;
-    st.shipout.dvi_file = INVALID_HANDLE;
+    st.shipout.dvi.file = INVALID_HANDLE;
 
     if st.errors.log_opened {
         pack_job_name(st, ".log")?;
@@ -890,7 +890,7 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
         if handle == INVALID_HANDLE {
             return Err(Abort::Internal("cannot reopen XDV file output"));
         }
-        st.shipout.dvi_file = handle;
+        st.shipout.dvi.file = handle;
     }
 
     Ok(())

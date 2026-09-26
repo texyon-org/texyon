@@ -75,7 +75,7 @@ impl ReplayFence {
         Some(Self {
             inputs,
             slots,
-            splice_at: shipout.dvi_gone.max(0) as usize,
+            splice_at: shipout.dvi.gone.max(0) as usize,
             resume_pending_command,
         })
     }

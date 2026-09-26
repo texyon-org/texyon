@@ -64,11 +64,9 @@ impl EngineBundle {
         previous: Option<&Self>,
     ) -> Self {
         // Page facts belong to the operation, not to replayable state.
-        let mut shipout = ShipoutState {
-            page_manifest: Default::default(),
-            ..st.shipout.clone()
-        };
-        let dvi_buf = take(&mut shipout.dvi_buf);
+        let mut shipout = st.shipout.clone();
+        shipout.dvi.manifest = Default::default();
+        let dvi_buf = take(&mut shipout.dvi.buf);
         let mut scanner = st.scanner.clone();
         let native_text = take(&mut scanner.native_text);
         let mut linebreak = st.linebreak.clone();
@@ -99,14 +97,12 @@ impl EngineBundle {
         st.config = self.config;
         st.errors.clone_from(&self.errors);
 
-        let dvi_buf = take(&mut st.shipout.dvi_buf);
-        let page_manifest = take(&mut st.shipout.page_manifest);
-        st.shipout = ShipoutState {
-            dvi_buf,
-            page_manifest,
-            ..self.shipout.clone()
-        };
-        st.shipout.dvi_buf.clone_from(&self.dvi_buf);
+        let dvi_buf = take(&mut st.shipout.dvi.buf);
+        let manifest = take(&mut st.shipout.dvi.manifest);
+        st.shipout = self.shipout.clone();
+        st.shipout.dvi.buf = dvi_buf;
+        st.shipout.dvi.manifest = manifest;
+        st.shipout.dvi.buf.clone_from(&self.dvi_buf);
 
         let native_text = take(&mut st.scanner.native_text);
         st.scanner = ScannerState {
@@ -912,7 +908,7 @@ mod tests {
         st.scanner.logical_clock = 7;
         st.scanner.native_text = vec![1, 2, 3];
         st.shipout.total_pages = 2;
-        st.shipout.dvi_buf = vec![4, 5, 6];
+        st.shipout.dvi.buf = vec![4, 5, 6];
         st.strings.str_pool[0] = 11;
         st.strings.pool_ptr = 1;
         st.save_stack.save_ptr = 1;
@@ -930,14 +926,14 @@ mod tests {
         let bundle = EngineBundle::capture(&st, base, None);
 
         let scanner_ptr = st.scanner.native_text.as_ptr();
-        let dvi_ptr = st.shipout.dvi_buf.as_ptr();
+        let dvi_ptr = st.shipout.dvi.buf.as_ptr();
         st.scanner.logical_clock = 70;
         st.scanner.native_text[0] = 70;
         st.shipout.total_pages = 20;
-        st.shipout.dvi_buf[0] = 40;
-        st.shipout.page_manifest.begin_operation();
-        st.shipout.page_manifest.begin_page(0);
-        st.shipout.page_manifest.record_byte(139);
+        st.shipout.dvi.buf[0] = 40;
+        st.shipout.dvi.manifest.begin_operation();
+        st.shipout.dvi.manifest.begin_page(0);
+        st.shipout.dvi.manifest.record_byte(139);
         st.strings.str_pool[0] = 110;
         st.save_stack.set_saved(-1, 120);
         st.input.buffer[0] = 130;
@@ -950,11 +946,11 @@ mod tests {
         assert_eq!(st.scanner.native_text, [1, 2, 3]);
         assert_eq!(st.scanner.native_text.as_ptr(), scanner_ptr);
         assert_eq!(st.shipout.total_pages, 2);
-        assert_eq!(st.shipout.dvi_buf, [4, 5, 6]);
-        assert_eq!(st.shipout.dvi_buf.as_ptr(), dvi_ptr);
-        st.shipout.page_manifest.record_byte(140);
-        st.shipout.page_manifest.finish_page(8);
-        assert_eq!(st.shipout.page_manifest.take_pages().len(), 1);
+        assert_eq!(st.shipout.dvi.buf, [4, 5, 6]);
+        assert_eq!(st.shipout.dvi.buf.as_ptr(), dvi_ptr);
+        st.shipout.dvi.manifest.record_byte(140);
+        st.shipout.dvi.manifest.finish_page(8);
+        assert_eq!(st.shipout.dvi.manifest.take_pages().len(), 1);
         assert_eq!(st.strings.str_pool[0], 11);
         assert_eq!(st.save_stack.save_index(0), 12);
         assert_eq!(st.input.buffer[0], 13);

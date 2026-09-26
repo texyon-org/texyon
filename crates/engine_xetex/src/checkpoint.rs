@@ -908,9 +908,9 @@ mod tests {
     fn prefix_detour_and_rewind_reproduce_state_and_output() {
         fn run_prefix(st: &mut EngineState, value: i32) {
             st.mem.set_b32s1(0, value);
-            st.shipout.dvi_buf.clear();
-            st.shipout.dvi_buf.extend_from_slice(&value.to_le_bytes());
-            st.shipout.dvi_ptr = 4;
+            st.shipout.dvi.buf.clear();
+            st.shipout.dvi.buf.extend_from_slice(&value.to_le_bytes());
+            st.shipout.dvi.ptr = 4;
             st.scanner.logical_clock += 1;
         }
 
@@ -920,7 +920,7 @@ mod tests {
         let strings_base = StringWatermark::capture(&st);
         let mut ladder = CheckpointLadder::from_engine_verified(&st, strings_base);
         run_prefix(&mut st, 17);
-        let expected_output = st.shipout.dvi_buf.clone();
+        let expected_output = st.shipout.dvi.buf.clone();
         let expected_state = oracle::digest_state(&st);
 
         ladder.rewind_engine(&mut st, 0);
@@ -929,7 +929,7 @@ mod tests {
         ladder.rewind_engine(&mut st, 0);
         run_prefix(&mut st, 17);
 
-        assert_eq!(st.shipout.dvi_buf, expected_output);
+        assert_eq!(st.shipout.dvi.buf, expected_output);
         assert_eq!(oracle::digest_state(&st), expected_state);
     }
 }

@@ -28,6 +28,7 @@ mod cmd;
 mod codes;
 mod compat;
 mod consts;
+mod dvi;
 mod engine;
 mod errors;
 mod expand;

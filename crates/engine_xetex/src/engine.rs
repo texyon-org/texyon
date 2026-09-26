@@ -353,8 +353,8 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.shipout.total_pages = 0;
     st.shipout.max_v = Scaled::ZERO;
     st.shipout.max_h = Scaled::ZERO;
-    st.shipout.max_push = 0;
-    st.shipout.last_bop = -1;
+    st.shipout.dvi.max_push = 0;
+    st.shipout.dvi.last_bop = -1;
     st.shipout.doing_leaders = false;
     st.shipout.dead_cycles = 0;
     st.scanner.adjust_tail.0 = TEX_NULL;
@@ -1092,7 +1092,7 @@ pub(crate) fn cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
     tectonic_xetex_layout::reset_font_caches();
     pdf_files_close();
-    st.shipout.dvi_buf = Vec::new();
+    st.shipout.dvi.buf = Vec::new();
 
     tectonic_xetex_layout::FontManager::destroy();
     st.fonts.release_linebreak_state();
