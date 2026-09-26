@@ -6,7 +6,7 @@ use crate::consts::{
     INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD,
     NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY,
     SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE,
-    SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL, TOO_BIG_CHAR,
+    SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL,
 };
 use crate::ext::apply_tfm_font_mapping;
 
@@ -305,14 +305,6 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shipou
         st.shipout.dvi_out(st.strings.str_pool[k] as u8)?;
     }
     Ok(())
-}
-
-impl StringsState {
-    pub(crate) fn str_range(&self, s: i32) -> std::ops::Range<usize> {
-        let start = self.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
-        let end = self.str_start[(s + 1 - TOO_BIG_CHAR) as usize] as usize;
-        start..end
-    }
 }
 
 pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {

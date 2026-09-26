@@ -26,8 +26,7 @@ use crate::consts::{
 };
 use crate::ext::{append_src_special, do_extension};
 use crate::fonts::{
-    read_font_info, AAT_FONT_FLAG, EXTRA_SPACE_CODE, LIG_TAG, OTGR_FONT_FLAG, SLANT_CODE,
-    SPACE_CODE, X_HEIGHT_CODE,
+    read_font_info, EXTRA_SPACE_CODE, LIG_TAG, SLANT_CODE, SPACE_CODE, X_HEIGHT_CODE,
 };
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
 use crate::math::{after_math, init_math};
@@ -45,7 +44,7 @@ use crate::scan::{
     INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN,
     PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
 };
-use crate::state::{EngineState, FontState, GroupCode, MemState};
+use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
 use crate::bridge::diag_append_str;
@@ -2519,13 +2518,6 @@ pub(crate) fn append_italic_correction(st: &mut EngineState) -> Result<(), MainC
     st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
     kern.set_subtype(&mut st.mem, EXPLICIT);
     Ok(())
-}
-
-impl FontState {
-    pub(crate) fn is_native_font(&self, f: i32) -> bool {
-        let area = self.font_area_entry(f);
-        area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
-    }
 }
 
 pub(crate) fn make_accent(st: &mut EngineState) -> Result<(), MainControlAbort> {

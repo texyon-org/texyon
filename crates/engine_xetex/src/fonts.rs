@@ -46,6 +46,11 @@ pub(crate) const EXTRA_SPACE_CODE: i32 = 7;
 pub(crate) type CharInfo = B16x4;
 
 impl FontState {
+    pub(crate) fn is_native_font(&self, f: i32) -> bool {
+        let area = self.font_area_entry(f);
+        area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
+    }
+
     pub(crate) fn char_info(&self, f: i32, c: i32) -> CharInfo {
         self.font_info_b16(self.char_base_entry(f) + c)
     }

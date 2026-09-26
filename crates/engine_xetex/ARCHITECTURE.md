@@ -10,12 +10,12 @@ State and memory:
 
 - `state.rs`: `EngineState`, the single owner of a run's state, split into
   sub-states (`mem`, `eqtb`, `scanner`, `input`, `save_stack`, `fonts`,
-  `shipout`, `errors`, ...). Functions take `&mut EngineState` (usually with an
-  `_in` suffix) or split borrows of just the sub-states they touch.
+  `shipout`, `errors`, ...). See "API shape" below for how code reaches them.
 - `mem.rs`: the `mem` arena. Fixed list heads (`CONTRIB_HEAD`, `HOLD_HEAD`,
   `ALIGN_HEAD`, `END_SPAN`, ...), the static glue specs (`ZERO_GLUE`, ...),
-  both free lists (`get_avail`, `get_node`), node constructors (`new_glue`,
-  `new_null_box`, ...), glue reference counts and the semantic nest.
+  both free lists (`st.mem.get_avail()`, `st.mem.get_node(s)`), node
+  constructors (`new_glue`, `new_null_box`, ...), glue reference counts and
+  the semantic nest.
 - `node.rs`: typed handles. `NodePtr<K>` is a `Copy` index tagged with a kind
   (`HListNode`, `GlueNode`, `GlueSpecNode`, `UnsetNode`, `AlignRecord`, ...).
   Fields are read as `p.width(mem)` and written as `p.set_width(mem, w)`.
@@ -38,7 +38,7 @@ State and memory:
 - `primitives.rs`: the primitive catalog. Its order fixes the hash layout and
   therefore the format.
 - `errors.rs`: `ErrorState`. Set help with `st.errors.help(&[...])`, then call
-  `error_in(st)`. Fatal paths are typed errors (`MainControlAbort`, `SccAbort`,
+  `error(st)`. Fatal paths are typed errors (`MainControlAbort`, `SccAbort`,
   `NodeRecycleAbort`, ...) propagated with `?`.
 
 The typesetting pipeline:
@@ -60,6 +60,20 @@ Live preview:
   (`checkpoint/bundle.rs`). `checkpoint/oracle.rs` verifies restores when enabled.
 - `replay/` models immutable editor sources and resumable command fences.
   `sync_index.rs` and `page_manifest.rs` record source and page geometry.
+
+## API shape
+
+- Logic that touches one sub-state is a method on that state, in an `impl`
+  block of the module that owns the logic: `st.mem.free_node(p, s)`,
+  `st.strings.length(s)`, `st.fonts.char_info(f, c)`,
+  `st.input.cur_list.fin_mlist(&mut st.mem, p)`. Other sub-states it needs are
+  plain parameters (split borrows), so the receiver is the state it mainly
+  works on.
+- Procedures that need the whole `EngineState` are free functions named like
+  `tex.web`, taking `st` first: `line_break(st, d)`, `print_int(st, n)`,
+  `main_control(st)`. `EngineState` itself has no methods.
+- A sub-state method and an `EngineState` procedure may share a name when the
+  procedure wraps it with error reporting (`finite_shrink`, `fetch`).
 
 ## Typing principle
 

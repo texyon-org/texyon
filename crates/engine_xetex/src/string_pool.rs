@@ -10,6 +10,11 @@ impl StringsState {
         self.str_start[(s - TOO_BIG_CHAR) as usize]
     }
 
+    /// The `str_pool` range of string `s`.
+    pub(crate) fn str_range(&self, s: i32) -> std::ops::Range<usize> {
+        self.str_start(s) as usize..self.str_start(s + 1) as usize
+    }
+
     pub fn length(&self, s: i32) -> i32 {
         if s >= TOO_BIG_CHAR {
             return self.str_start(s + 1) - self.str_start(s);
