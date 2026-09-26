@@ -1,8 +1,7 @@
 //! String-pool conversions, clock queries and the file-info primitives.
 
 use crate::bridge::{
-    data_md5, get_file_md5, input_get_mtime, input_get_size, input_open, input_read,
-    TTBC_FILE_FORMAT_TEX,
+    get_file_md5, input_get_mtime, input_get_size, input_open, input_read, FileFormat,
 };
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE};
 use crate::errors::Abort;
@@ -170,16 +169,16 @@ impl StringsState {
 
     /// Appends the hex MD5 of file (or string) `s` to the pool.
     pub(crate) fn md5_sum(&mut self, s: StrNumber, file: bool) {
-        let mut digest = [0u8; 16];
         let xname = self.texstring_bytes(s);
-
-        let ret = if file {
-            get_file_md5(&xname, &mut digest)
+        let digest = if file {
+            get_file_md5(&xname)
         } else {
-            data_md5(&xname, &mut digest)
+            Some(tectonic_bridge_core::data_md5(&xname))
         };
-
-        if ret != 0 || self.pool_ptr + 2 * digest.len() as i32 >= self.pool_size {
+        let Some(digest) = digest else {
+            return;
+        };
+        if self.pool_ptr + 2 * digest.len() as i32 >= self.pool_size {
             return;
         }
         self.push_hex(&digest);
@@ -208,7 +207,7 @@ pub(crate) fn make_src_special(
 
 impl StringsState {
     fn open_tex_file(&self, s: StrNumber) -> usize {
-        input_open(&self.texstring_bytes(s), TTBC_FILE_FORMAT_TEX, false)
+        input_open(&self.texstring_bytes(s), FileFormat::Tex, false)
     }
 
     /// Appends the decimal size of file `s` to the pool.
@@ -249,13 +248,17 @@ impl StringsState {
             return Ok(());
         }
 
-        crate::io::input_seek(handle, offset as libc::ssize_t, libc::SEEK_SET);
-        let actual = input_read(handle, &mut buffer[..length as usize]);
+        crate::io::input_seek(handle, offset as u64);
+        let actual = if input_read(handle, &mut buffer[..length as usize]) {
+            length as usize
+        } else {
+            0
+        };
         if crate::io::input_close(handle) {
             return Err(Abort::InputClose);
         }
 
-        self.push_hex(&buffer[..actual.max(0) as usize]);
+        self.push_hex(&buffer[..actual]);
         Ok(())
     }
 }

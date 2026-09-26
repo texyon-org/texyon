@@ -341,8 +341,8 @@ mod tests {
         let fence = {
             let _guard = adapter::install(original.clone());
             let main = adapter::open_primary().unwrap();
-            let chapter = adapter::open_named("chapter", 26).unwrap();
-            let leaf = adapter::open_named("parts/leaf", 26).unwrap();
+            let chapter = adapter::open_named("chapter", crate::bridge::FileFormat::Tex).unwrap();
+            let leaf = adapter::open_named("parts/leaf", crate::bridge::FileFormat::Tex).unwrap();
             assert_eq!(adapter::getc(main), Some(b'A'.into()));
             assert_eq!(adapter::getc(chapter), Some(b'C'.into()));
             assert_eq!(adapter::getc(leaf), Some(b'E'.into()));

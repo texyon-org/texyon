@@ -59,7 +59,7 @@ use crate::state::{EngineState, GroupCode, MemState, Selector};
 use crate::token::Token;
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
-use crate::layout::set_cp_code;
+use tectonic_xetex_layout::set_cp_code;
 
 const INNER_VMODE: i16 = -VMODE;
 const INNER_HMODE: i16 = -HMODE;

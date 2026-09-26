@@ -8,7 +8,7 @@ use crate::token::Token;
 use std::ffi::c_int;
 use std::sync::Arc;
 
-use crate::bridge::{input_get_size, input_open, input_read, TTBC_FILE_FORMAT_MISC_FONTS};
+use crate::bridge::{input_get_size, input_open, input_read, with_bridge, FileFormat};
 use crate::cmd::EXTENSION;
 use crate::consts::{
     DESIGN_SIZE, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, LEFT_SIDE, MMODE, OPEN_NODE_SIZE,
@@ -20,10 +20,8 @@ use crate::glyph_arena::{FixedPoint, GlyphBlob};
 use crate::input::INSERTED;
 use crate::io::{AUTO, ICUMAPPING, RAW, UTF16BE, UTF16LE, UTF8};
 use crate::layout::{
-    cache_glyph_bbox, cached_glyph_bbox, get_cp_code, hb_tag, req_engine,
-    set_loaded_font_design_size, set_req_engine, Bidi, EngineOptions, FloatPoint, FontEngineHandle,
-    FontMappingHandle, GlyphBBox, HbFeature, OwnedFont, PlatformFont, ProbeEngine,
-    K_STATUS_NO_ERROR, K_STATUS_OUTPUT_BUFFER_FULL, UBIDI_MIXED, UBIDI_RTL,
+    hb_tag, Bidi, FontMappingHandle, K_STATUS_NO_ERROR, K_STATUS_OUTPUT_BUFFER_FULL, UBIDI_MIXED,
+    UBIDI_RTL,
 };
 use crate::main_control::new_graf;
 use crate::mem::TEMP_HEAD;
@@ -31,8 +29,13 @@ use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::pic::load_picture;
 use crate::scan::{get_x_token, scan_int};
-use crate::state::{EngineState, ErrorState, FontState, MemState};
+use crate::state::{EngineState, ErrorState, FontEngineHandle, FontState, MemState};
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
+use tectonic_bridge_harfbuzz::Feature;
+use tectonic_xetex_layout::{
+    cache_glyph_bbox, cached_glyph_bbox, get_cp_code, Engine, EngineOptions, FloatPoint, Font,
+    FontManager, GlyphBBox, LayoutEngine, PlatformFontRef,
+};
 
 const HB_TAG_NONE: u32 = 0;
 #[cfg(target_endian = "big")]
@@ -261,7 +264,7 @@ fn load_mapping_file(
         .unwrap_or(file_name.len());
     let name = &file_name[..name_len];
 
-    let map = input_open(name, TTBC_FILE_FORMAT_MISC_FONTS, false);
+    let map = input_open(name, FileFormat::MiscFonts, false);
     if map == 0 {
         crate::output::font_mapping_warning(st, name, 1);
         return Ok(None);
@@ -269,8 +272,7 @@ fn load_mapping_file(
 
     let mapping_size = input_get_size(map);
     let mut mapping = vec![0u8; mapping_size];
-    let read = input_read(map, &mut mapping);
-    if read < 0 || read as usize != mapping_size {
+    if !input_read(map, &mut mapping) {
         return Err(Abort::Internal("could not read mapping file"));
     }
     if crate::io::input_close(map) {
@@ -402,13 +404,13 @@ fn read_common_feature(
 /// the feature string `feat`.
 fn load_ot_font(
     st: &mut EngineState,
-    font: OwnedFont,
+    mut font: Font,
     scaled_size: Scaled,
     feat: Option<&[u8]>,
 ) -> Result<Option<FontEngineHandle>, Abort> {
     let mut script = HB_TAG_NONE;
     let mut language: Option<&[u8]> = None;
-    let mut features: Vec<HbFeature> = Vec::new();
+    let mut features: Vec<Feature> = Vec::new();
     let mut shapers: Vec<&[u8]> = Vec::new();
     let mut opts = CommonFeatures {
         extend: 1.0,
@@ -417,23 +419,17 @@ fn load_ot_font(
         letterspace: 0.0,
         rgb_value: 0x000000FF,
     };
-    let req_engine = req_engine();
+    let req_engine = FontManager::with_font_manager(|mgr| mgr.get_req_engine());
 
     match req_engine {
-        b'O' => shapers.push(b"ot"),
-        b'G' => shapers.push(b"graphite2"),
+        Engine::OpenType => shapers.push(b"ot"),
+        Engine::Graphite => shapers.push(b"graphite2"),
         _ => {}
     }
 
     // Graphite feature names are resolved against a probe engine.
-    let probe = if req_engine == b'G' {
-        let Some(probe) = ProbeEngine::graphite(&font, script, opts.rgb_value) else {
-            return Ok(None);
-        };
-        Some(probe)
-    } else {
-        None
-    };
+    let probe = (req_engine == Engine::Graphite)
+        .then(|| LayoutEngine::graphite_probe(&font, script, opts.rgb_value));
 
     if let Some(feat) = feat {
         let mut cp1 = 0;
@@ -484,7 +480,7 @@ fn load_ot_font(
                     if let Some((tag, value)) =
                         read_feature_number(spec).or_else(|| probe.find_graphite_feature(spec))
                     {
-                        features.push(HbFeature::global(tag, value as u32));
+                        features.push(Feature::global(tag, value as u32));
                         break 'option Some(true);
                     }
                 }
@@ -493,12 +489,12 @@ fn load_ot_font(
                     if param >= 0 {
                         param += 1;
                     }
-                    features.push(HbFeature::global(tag, param as u32));
+                    features.push(Feature::global(tag, param as u32));
                     break 'option Some(true);
                 }
                 if at(feat, cp1) == b'-' {
                     let tag = hb_tag(&feat[cp1 + 1..cp2]);
-                    features.push(HbFeature::global(tag, 0));
+                    features.push(Feature::global(tag, 0));
                     break 'option Some(true);
                 }
                 if option.starts_with(b"vertical") {
@@ -540,15 +536,15 @@ fn load_ot_font(
         opts.rgb_value = 0x000000FF;
     }
     if st.fonts.loaded_font_flags & FONT_FLAGS_VERTICAL != 0 {
-        font.set_layout_dir(true);
+        font.set_layout_dir_vertical(true);
     }
 
-    let engine = FontEngineHandle::new(
+    let engine = LayoutEngine::new(
         font,
         EngineOptions {
             script,
             language,
-            features: &mut features,
+            features,
             shapers: &shapers,
             rgb_value: opts.rgb_value,
             extend: opts.extend,
@@ -556,15 +552,45 @@ fn load_ot_font(
             embolden: opts.embolden,
         },
     );
-    if engine.is_some() {
-        st.fonts.native_font_type_flag = OTGR_FONT_FLAG;
+    st.fonts.native_font_type_flag = OTGR_FONT_FLAG;
+    Ok(Some(engine))
+}
+
+/// The design size of the font the font manager loaded last.
+pub(crate) fn loaded_font_design_size() -> Scaled {
+    Scaled(FontManager::with_font_manager(|mgr| mgr.font_design_size()))
+}
+
+fn set_loaded_font_design_size(size: Scaled) {
+    FontManager::with_font_manager(|mgr| mgr.set_font_design_size(size.0));
+}
+
+fn set_req_engine(engine: Engine) {
+    FontManager::with_font_manager(|mgr| mgr.set_req_engine(engine));
+}
+
+/// A path as the layout library saw it through a C string.
+fn c_path(path: &[u8]) -> &str {
+    if path.contains(&0) {
+        ""
+    } else {
+        std::str::from_utf8(path).expect("native font paths are UTF-8")
     }
-    Ok(engine)
+}
+
+/// The font in file `path` at face `index`.
+fn font_from_file(path: &[u8], index: c_int, point_size: Scaled) -> Option<Font> {
+    let path = c_path(path);
+    with_bridge(|io| Font::from_file(path, index as usize, point_size.0, io))
+}
+
+fn font_from_platform(font_ref: &PlatformFontRef, point_size: Scaled) -> Option<Font> {
+    with_bridge(|io| Font::from_platform(font_ref.clone(), point_size.0, io))
 }
 
 impl ErrorState {
     /// Resolve a negative (`scaled`) font size against `font`'s design size.
-    fn scale_by_design_size(&mut self, font: Option<OwnedFont>, scaled_size: Scaled) -> Scaled {
+    fn scale_by_design_size(&mut self, font: Option<Font>, scaled_size: Scaled) -> Scaled {
         let Some(font) = font else {
             return scaled_size;
         };
@@ -575,11 +601,6 @@ impl ErrorState {
             self.xn_over_d(dsize, -scaled_size.0, 1000)
         }
     }
-}
-
-/// The bytes of a C string buffer up to its NUL.
-fn until_nul(buf: &[u8]) -> &[u8] {
-    &buf[..buf.iter().position(|&b| b == 0).unwrap_or(buf.len())]
 }
 
 /// Look up native font `name` (a `[file]` path or an installed font name with
@@ -603,20 +624,20 @@ pub(crate) fn find_native_font(
     if at(name_string, 0) == b'[' {
         let path = &name_string[1..];
         if scaled_size < Scaled::ZERO {
-            let font = OwnedFont::from_file(path, split.index, Scaled::UNITY * 10);
+            let font = font_from_file(path, split.index, Scaled::UNITY * 10);
             scaled_size = st.errors.scale_by_design_size(font, scaled_size);
         }
-        if let Some(font) = OwnedFont::from_file(path, split.index, scaled_size) {
+        if let Some(font) = font_from_file(path, split.index, scaled_size) {
             set_loaded_font_design_size(d2fix(font.design_size()));
 
-            set_req_engine(0);
+            set_req_engine(Engine::Default);
             if let Some(var) = &var_string {
                 if var.starts_with(b"/AAT") {
-                    set_req_engine(b'A');
+                    set_req_engine(Engine::Apple);
                 } else if var.starts_with(b"/OT") || var.starts_with(b"/ICU") {
-                    set_req_engine(b'O');
+                    set_req_engine(Engine::OpenType);
                 } else if var.starts_with(b"/GR") {
-                    set_req_engine(b'G');
+                    set_req_engine(Engine::Graphite);
                 }
             }
 
@@ -630,34 +651,38 @@ pub(crate) fn find_native_font(
             }
         }
     } else {
-        if let Some(font_ref) =
-            PlatformFont::find(name_string, var_string.as_mut(), fix2d(scaled_size))
-        {
+        let found = with_bridge(|io| {
+            FontManager::with_font_manager(|mgr| {
+                mgr.find_font(name_string, var_string.as_mut(), fix2d(scaled_size), io)
+            })
+        });
+        if let Some(font_ref) = found {
             if st.eqtb.int_par(IntPar::XetexTracingFonts) > 0 {
                 crate::output::begin_diagnostic(st);
                 crate::output::print_nl(st, b' ');
                 crate::output::print_raw_bytes(st, b"-> ");
-                crate::output::print_raw_bytes(st, &font_ref.desc());
+                let desc = FontManager::with_font_manager(|mgr| {
+                    mgr.get_platform_font_desc(&font_ref).to_bytes().to_vec()
+                });
+                crate::output::print_raw_bytes(st, &desc);
                 crate::output::end_diagnostic(st, false);
             }
 
-            let mut full_name = font_ref.full_name();
+            let mut full_name = FontManager::with_font_manager(|mgr| {
+                mgr.get_full_name(&font_ref).to_bytes().to_vec()
+            });
             st.input.name_of_file.clone_from(&full_name);
 
             if scaled_size < Scaled::ZERO {
-                let font = font_ref.create_font(scaled_size);
+                let font = font_from_platform(&font_ref, scaled_size);
                 scaled_size = st.errors.scale_by_design_size(font, scaled_size);
             }
 
-            if let Some(font) = font_ref.create_font(scaled_size) {
+            if let Some(font) = font_from_platform(&font_ref, scaled_size) {
                 rval = load_ot_font(st, font, scaled_size, feat_string.as_deref())?;
             }
 
-            if let Some(var) = var_string
-                .as_deref()
-                .map(until_nul)
-                .filter(|v| !v.is_empty())
-            {
+            if let Some(var) = var_string.as_deref().filter(|v| !v.is_empty()) {
                 full_name.push(b'/');
                 full_name.extend_from_slice(var);
             }
@@ -739,8 +764,8 @@ pub(crate) fn ot_get_font_metrics(engine: &FontEngineHandle) -> NativeFontMetric
     let descent = d2fix(f64::from(d));
 
     let slant = d2fix(
-        fix2d(engine.font().slant()) * f64::from(engine.extend_factor())
-            + f64::from(engine.slant_factor()),
+        fix2d(Scaled(engine.font().slant())) * f64::from(engine.extend())
+            + f64::from(engine.slant()),
     );
 
     let (cap, x) = engine.cap_and_x_height();
@@ -864,7 +889,9 @@ pub(crate) fn gr_font_get_named(
     if what != LastItemCode::XetexFindFeatureByName {
         return -1;
     }
-    engine.find_graphite_feature_named(&st.input.name_of_file) as i32
+    engine
+        .find_graphite_feature_named(&st.input.name_of_file)
+        .map_or(-1, |id| id as i32)
 }
 
 pub(crate) fn gr_font_get_named_1(
@@ -876,7 +903,9 @@ pub(crate) fn gr_font_get_named_1(
     if what != LastItemCode::XetexFindSelectorByName {
         return -1;
     }
-    engine.find_graphite_feature_setting_named(param as u32, &st.input.name_of_file) as i32
+    engine
+        .find_graphite_feature_setting_named(param as u32, &st.input.name_of_file)
+        .map_or(-1, i32::from)
 }
 
 #[derive(Default)]
@@ -897,7 +926,7 @@ impl ShapedGlyphs {
         y: f64,
     ) -> FloatPoint {
         let n = n_glyphs as usize;
-        let (glyphs, advances, positions) = engine.last_layout(n);
+        let (glyphs, advances, positions) = engine.last_layout();
 
         self.gids.extend(glyphs.iter().map(|&g| g as u16));
         self.locations
@@ -913,13 +942,14 @@ impl ShapedGlyphs {
 
 fn layout_visual_run(bidi: &Bidi, engine: &FontEngineHandle, text: &[u16], run_index: i32) -> i32 {
     let (logical_start, length, dir) = bidi.visual_run(run_index);
-    engine.layout_chars(text, logical_start, length, dir == UBIDI_RTL)
+    let run = &text[logical_start as usize..(logical_start + length) as usize];
+    engine.layout_chars(run, dir == UBIDI_RTL) as i32
 }
 
 fn cached_or_measured_bbox(engine: &FontEngineHandle, f: FontId, gid: u16) -> GlyphBBox {
     cached_glyph_bbox(f.0 as u16, gid).unwrap_or_else(|| {
         let bbox = engine.glyph_bounds(u32::from(gid));
-        cache_glyph_bbox(f.0 as u16, gid, &bbox);
+        cache_glyph_bbox(f.0 as u16, gid, bbox);
         bbox
     })
 }
@@ -990,11 +1020,10 @@ impl FontState {
         use_glyph_metrics: bool,
     ) -> Result<(), Abort> {
         let text = w.native_text(mem).to_vec();
-        let text_len = text.len() as i32;
         let f = w.native_font(mem);
         let engine = self.require_ot_engine(f, "bad native font flag in `measure_native_node`")?;
 
-        let bidi = Bidi::new(&text, engine.default_direction() as u8);
+        let bidi = Bidi::new(&text, engine.default_dir());
         let mut shaped = ShapedGlyphs::default();
         let dir = bidi.direction();
         let width = if dir == UBIDI_MIXED {
@@ -1014,7 +1043,7 @@ impl FontState {
             }
             x
         } else {
-            let n_glyphs = engine.layout_chars(&text, 0, text_len, dir == UBIDI_RTL);
+            let n_glyphs = engine.layout_chars(&text, dir == UBIDI_RTL) as i32;
             let end = shaped.append_run(engine, n_glyphs, 0.0, 0.0);
             if n_glyphs > 0 {
                 f64::from(end.x)
@@ -1216,13 +1245,13 @@ impl FontState {
     pub fn map_glyph_to_index(&self, font: FontId, name: &[u8]) -> Result<i32, Abort> {
         let engine =
             self.require_ot_engine(font, "bad native font flag in `map_glyph_to_index`")?;
-        Ok(engine.map_glyph_to_index(name))
+        Ok(engine.map_glyph_to_index(name) as i32)
     }
 
     pub fn get_font_char_range(&self, font: FontId, first: i32) -> Result<i32, Abort> {
         let engine =
             self.require_ot_engine(font, "bad native font flag in `get_font_char_range'`")?;
-        Ok(engine.font_char_range(first))
+        Ok(engine.font_char_range(first != 0) as i32)
     }
 
     pub(crate) fn release_linebreak_state(&mut self) {
@@ -1235,18 +1264,18 @@ impl FontState {
     /// return its length.
     pub fn make_font_def(&mut self, f: FontId) -> Result<c_int, Abort> {
         let engine = self.require_ot_engine(f, "bad native font flag in `make_font_def`")?;
-        let (name, index) = engine.font_filename();
+        let (name, index) = (engine.font().filename(), engine.font().index());
 
-        let rgba = engine.rgb_value();
+        let rgba = engine.rgb();
         let font_flags = self.font_flags[f];
         let mut flags: u16 = 0;
         if font_flags & FONT_FLAGS_VERTICAL != 0 {
             flags |= XDV_FLAG_VERTICAL;
         }
-        let extend = engine.extend_factor();
-        let slant = engine.slant_factor();
-        let embolden = engine.embolden_factor();
-        let size = d2fix(f64::from(engine.point_size()));
+        let extend = engine.extend();
+        let slant = engine.slant();
+        let embolden = engine.embolden();
+        let size = d2fix(f64::from(engine.font().point_size()));
 
         let colored = font_flags & FONT_FLAGS_COLORED != 0;
         if colored {
@@ -1391,8 +1420,8 @@ pub(crate) fn print_glyph_name(st: &mut EngineState, font: FontId, gid: i32) -> 
     let engine = st
         .fonts
         .require_ot_engine(font, "bad native font flag in `print_glyph_name`")?;
-    let name = engine.font().glyph_name(gid as u16);
-    crate::output::print(st, &name[..]);
+    let name = engine.font().glyph_name(gid as u16).unwrap_or_default();
+    crate::output::print(st, name.as_bytes());
     Ok(())
 }
 

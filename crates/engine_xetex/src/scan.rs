@@ -54,7 +54,8 @@ use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 use std::sync::Arc;
 
-use crate::layout::{get_cp_code, FontEngineHandle};
+use crate::state::FontEngineHandle;
+use tectonic_xetex_layout::get_cp_code;
 
 const ZERO_TOKEN: Token = Token::other(b'0');
 const MINUS_TOKEN: Token = Token::other(b'-');

@@ -149,6 +149,18 @@ pub struct hb_feature_t {
     end: libc::c_uint,
 }
 
+impl hb_feature_t {
+    /// A feature with `value` applied to the whole buffer.
+    pub fn global(tag: hb_tag_t, value: u32) -> hb_feature_t {
+        hb_feature_t {
+            tag,
+            value,
+            start: 0,
+            end: libc::c_uint::MAX,
+        }
+    }
+}
+
 #[repr(C)]
 pub enum hb_memory_mode_t {
     Duplicate,

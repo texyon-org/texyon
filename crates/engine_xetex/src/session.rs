@@ -14,7 +14,6 @@ use crate::checkpoint::{
     BudgetError, CheckpointLadder, EngineBundle, LadderBudget, RungAdmission, StringWatermark,
 };
 use crate::errors::Abort;
-use crate::helpers::OnDrop;
 use crate::replay::source::SourcePath;
 use crate::state::{EngineExecutionMode, EngineState};
 use crate::EngineCancellation;
@@ -867,7 +866,7 @@ fn catch_operation(
         run_locked(api, state, operation)
     }))
     .unwrap_or_else(|_| {
-        crate::engine::reset_layout_font_caches();
+        tectonic_xetex_layout::reset_font_caches();
         OperationResult::Panicked
     })
 }
@@ -877,13 +876,7 @@ fn run_locked<R>(
     state: &mut EngineState,
     operation: impl FnOnce(&mut EngineState) -> R,
 ) -> R {
-    let api = api as *mut CoreBridgeState<'_> as *mut libc::c_void;
-    // SAFETY: `api` comes from an exclusive borrow held for the whole operation.
-    unsafe { crate::bridge::enter_global_engine(api) };
-    let _engine = OnDrop(crate::bridge::exit_global_engine);
-    // SAFETY: as above, and the guard clears the pointer before the borrow ends.
-    unsafe { crate::bridge::set_bridge_state(api) };
-    let _bridge = OnDrop(crate::bridge::clear_bridge_state);
+    let _bridge = crate::bridge::enter(api);
     operation(state)
 }
 

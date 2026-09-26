@@ -919,7 +919,10 @@ pub(crate) struct ConfigState {
     pub max_print_line: i32,
 }
 
-pub(crate) use crate::layout::{FontEngineHandle, FontMappingHandle, LinebreakHandle};
+pub(crate) use crate::layout::{FontMappingHandle, LinebreakHandle};
+
+/// A native font's layout engine.
+pub(crate) type FontEngineHandle = tectonic_xetex_layout::LayoutEngine<'static>;
 
 pub(crate) struct FontState {
     /// Converter staged by a `mapping=` font feature until it is transferred
@@ -1155,7 +1158,7 @@ pub(crate) struct ShipoutState {
     pub write_prefix: [Vec<i32>; 16],
     pub rust_stdout: usize,
     pub log_file: usize,
-    pub current_diagnostic: Option<Box<crate::bridge::Diagnostic>>,
+    pub current_diagnostic: Option<crate::bridge::Diagnostic>,
     pub best_page_break: crate::units::MemPtr,
     pub best_size: Scaled,
     pub least_page_cost: i32,

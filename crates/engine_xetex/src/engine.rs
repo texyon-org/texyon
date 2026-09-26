@@ -72,9 +72,6 @@ unsafe extern "C" {
     safe fn pdf_files_init();
     safe fn pdf_files_close_if_open();
     safe fn pdf_files_close();
-    safe fn destroy_font_manager();
-    #[link_name = "xetex_layout_reset_font_caches"]
-    pub(crate) safe fn reset_layout_font_caches();
 }
 
 pub(crate) fn output_file_extension(st: &EngineState) -> &'static str {
@@ -647,7 +644,7 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// Engine entry point (called from `engine_xetex_main`).
+/// Batch entry point.
 ///
 /// A Rust panic is caught and turned into a `HISTORY_FATAL_ERROR` return with
 /// a surfaced message instead of unwinding into the host.
@@ -658,14 +655,10 @@ pub(crate) fn run_engine(
     input_file_name: &str,
     build_date: libc::time_t,
 ) -> i32 {
-    reset_layout_font_caches();
-    let _layout_cache_guard = OnDrop(|| reset_layout_font_caches());
+    tectonic_xetex_layout::reset_font_caches();
+    let _layout_cache_guard = OnDrop(|| tectonic_xetex_layout::reset_font_caches());
 
-    let api = api as *mut tectonic_bridge_core::CoreBridgeState as *mut libc::c_void;
-    // SAFETY: `api` is exclusively borrowed for this call, and the guard clears
-    // it again before the borrow ends.
-    unsafe { crate::bridge::set_bridge_state(api) };
-    let _bridge_guard = OnDrop(crate::bridge::clear_bridge_state);
+    let _bridge = crate::bridge::enter(api);
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         run_engine_inner(config, dump_name, input_file_name, build_date)
@@ -1098,11 +1091,11 @@ mod deterministic_input_tests {
 
 pub(crate) fn cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
-    reset_layout_font_caches();
+    tectonic_xetex_layout::reset_font_caches();
     pdf_files_close();
     st.shipout.dvi_buf = Vec::new();
 
-    destroy_font_manager();
+    tectonic_xetex_layout::FontManager::destroy();
     st.fonts.release_linebreak_state();
 
     st.fonts.font_layout_engine.as_mut_slice().fill(None);

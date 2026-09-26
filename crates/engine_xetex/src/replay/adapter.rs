@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::source::{ResolvedSource, SourceIdentity, SourcePath, SourceSnapshot};
-use crate::bridge::TTBC_FILE_FORMAT_TEX;
+use crate::bridge::FileFormat;
 use tectonic_bridge_core::EOF;
 
 const MEM_TAG: usize = 1usize << (usize::BITS - 1);
@@ -120,13 +120,13 @@ pub(crate) fn open_primary() -> Option<usize> {
     })
 }
 
-pub(crate) fn open_named(path: &str, format: libc::c_int) -> Option<usize> {
+pub(crate) fn open_named(path: &str, format: FileFormat) -> Option<usize> {
     ACTIVE.with(|active| {
         let mut active = active.borrow_mut();
         let sources = active.as_mut()?;
         let requested = Path::new(path);
         let resolved = sources.snapshot.resolve_entry(requested).or_else(|| {
-            (format == TTBC_FILE_FORMAT_TEX)
+            (format == FileFormat::Tex)
                 .then(|| sources.snapshot.resolve_replay_entry(requested))
                 .flatten()
         })?;
@@ -349,7 +349,7 @@ mod tests {
     fn primary_and_child_are_memory_backed_from_the_first_open() {
         let _guard = install(snapshot());
         let primary = open_primary().unwrap();
-        let child = open_named("child", 26).unwrap();
+        let child = open_named("child", FileFormat::Tex).unwrap();
         assert!(is_mem(primary));
         assert!(is_mem(child));
         assert_eq!(getc(primary), Some(b'a'.into()));
@@ -361,7 +361,7 @@ mod tests {
         let checkpoints = {
             let _guard = install(snapshot());
             let primary = open_primary().unwrap();
-            let child = open_named("child", 26).unwrap();
+            let child = open_named("child", FileFormat::Tex).unwrap();
             assert_eq!(getc(primary), Some(b'a'.into()));
             assert_eq!(getc(child), Some(b'x'.into()));
             assert_eq!(ungetc(child, b'Q'.into()), Some(0));
@@ -385,7 +385,7 @@ mod tests {
         assert_eq!(seek(primary, 0, libc::SEEK_SET), Some(0));
         assert_eq!(getc(primary), Some(b'a'.into()));
         assert_eq!(observed_bytes(), 1);
-        let child = open_named("child", 26).unwrap();
+        let child = open_named("child", FileFormat::Tex).unwrap();
         let mut buf = [0u8; 2];
         assert_eq!(read(child, &mut buf), Some(2));
         assert_eq!(observed_bytes(), 3);

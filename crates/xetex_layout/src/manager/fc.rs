@@ -2,11 +2,12 @@ use super::{
     base_get_op_size_rec_and_style_flags, FontInfo, FontManager, FontManagerBackend, FontMaps,
     NameCollection,
 };
-use crate::c_api::PlatformFontRef;
+use crate::PlatformFontRef;
 use enrede::encoding::{MacRoman, Utf16BE, Utf8};
 use enrede::Str;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
+use tectonic_bridge_core::CoreBridgeState;
 use tectonic_bridge_fontconfig as fc;
 use tectonic_bridge_freetype2 as ft;
 
@@ -48,7 +49,12 @@ impl FcBackend {
         }
     }
 
-    fn cache_family_members(&mut self, maps: &mut FontMaps, names: &[CString]) {
+    fn cache_family_members(
+        &mut self,
+        maps: &mut FontMaps,
+        names: &[CString],
+        io: &mut CoreBridgeState<'_>,
+    ) {
         if names.is_empty() {
             return;
         }
@@ -65,7 +71,7 @@ impl FcBackend {
                 for name in names {
                     if **name == *str {
                         let names = self.read_names(pat.clone());
-                        maps.add_to_maps(self, pat, &names);
+                        maps.add_to_maps(self, pat, &names, io);
                         continue 'outer;
                     }
                 }
@@ -85,8 +91,8 @@ impl FontManagerBackend for FcBackend {
         }
     }
 
-    fn get_op_size_rec_and_style_flags(&self, font: &mut FontInfo) {
-        base_get_op_size_rec_and_style_flags(font);
+    fn get_op_size_rec_and_style_flags(&self, font: &mut FontInfo, io: &mut CoreBridgeState<'_>) {
+        base_get_op_size_rec_and_style_flags(font, io);
 
         if font.weight == 0 && font.width == 0 {
             let pat = &font.font_ref;
@@ -102,7 +108,12 @@ impl FontManagerBackend for FcBackend {
         }
     }
 
-    fn search_for_host_platform_fonts(&mut self, maps: &mut FontMaps, name: &CStr) {
+    fn search_for_host_platform_fonts(
+        &mut self,
+        maps: &mut FontMaps,
+        name: &CStr,
+        io: &mut CoreBridgeState<'_>,
+    ) {
         if self.cached_all {
             return;
         }
@@ -129,7 +140,7 @@ impl FontManagerBackend for FcBackend {
 
                 if self.cached_all {
                     let names = self.read_names(pat.clone());
-                    maps.add_to_maps(self, pat.clone(), &names);
+                    maps.add_to_maps(self, pat.clone(), &names, io);
                     continue;
                 }
 
@@ -137,8 +148,8 @@ impl FontManagerBackend for FcBackend {
                 while let Ok(str) = pat.as_ref().get::<fc::pat::FullName>(i) {
                     if name == str {
                         let names = self.read_names(pat.clone());
-                        maps.add_to_maps(self, pat.clone(), &names);
-                        self.cache_family_members(maps, &names.family_names);
+                        maps.add_to_maps(self, pat.clone(), &names, io);
+                        self.cache_family_members(maps, &names.family_names, io);
                         found = true;
                         continue 'outer;
                     }
@@ -149,8 +160,8 @@ impl FontManagerBackend for FcBackend {
                 while let Ok(str) = pat.as_ref().get::<fc::pat::Family>(i) {
                     if name == str || (hyph != 0 && fam_name == str.to_bytes()) {
                         let names = self.read_names(pat.clone());
-                        maps.add_to_maps(self, pat.clone(), &names);
-                        self.cache_family_members(maps, &names.family_names);
+                        maps.add_to_maps(self, pat.clone(), &names, io);
+                        self.cache_family_members(maps, &names.family_names, io);
                         found = true;
                         continue 'outer;
                     }
@@ -162,8 +173,8 @@ impl FontManagerBackend for FcBackend {
 
                         if name.to_bytes() == full {
                             let names = self.read_names(pat.clone());
-                            maps.add_to_maps(self, pat.clone(), &names);
-                            self.cache_family_members(maps, &names.family_names);
+                            maps.add_to_maps(self, pat.clone(), &names, io);
+                            self.cache_family_members(maps, &names.family_names, io);
                             found = true;
                             continue 'outer;
                         }

@@ -1,13 +1,14 @@
 //! Font management - backend API for resolving fonts and caching them for future use.
 
-use crate::c_api::{Fixed, PlatformFontRef};
 use crate::font::Font;
 use crate::utils::{d_to_fix, fix_to_d};
+use crate::{Fixed, PlatformFontRef};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ffi::{CStr, CString};
+use tectonic_bridge_core::CoreBridgeState;
 use tectonic_bridge_freetype2 as ft;
 
 #[cfg(not(target_os = "macos"))]
@@ -100,13 +101,18 @@ struct NameCollection {
 
 trait FontManagerBackend {
     fn get_platform_font_desc<'a>(&'a self, font: &'a PlatformFontRef) -> Cow<'a, CStr>;
-    fn get_op_size_rec_and_style_flags(&self, font: &mut FontInfo);
-    fn search_for_host_platform_fonts(&mut self, maps: &mut FontMaps, name: &CStr);
+    fn get_op_size_rec_and_style_flags(&self, font: &mut FontInfo, io: &mut CoreBridgeState<'_>);
+    fn search_for_host_platform_fonts(
+        &mut self,
+        maps: &mut FontMaps,
+        name: &CStr,
+        io: &mut CoreBridgeState<'_>,
+    );
     fn read_names(&self, font: PlatformFontRef) -> NameCollection;
 }
 
-fn base_get_op_size_rec_and_style_flags(font: &mut FontInfo) {
-    let xfont = match Font::new(font.font_ref.clone(), 10.0) {
+fn base_get_op_size_rec_and_style_flags(font: &mut FontInfo, io: &mut CoreBridgeState<'_>) {
+    let xfont = match Font::new(font.font_ref.clone(), 10.0, io) {
         Ok(xfont) => xfont,
         Err(_) => return,
     };
@@ -173,6 +179,7 @@ impl FontMaps {
         backend: &dyn FontManagerBackend,
         pfont: PlatformFontRef,
         names: &NameCollection,
+        io: &mut CoreBridgeState<'_>,
     ) {
         if self.platform_ref_to_font.contains_key(&pfont) {
             // this font has already been cached
@@ -201,7 +208,7 @@ impl FontMaps {
         };
 
         let mut font = FontInfo::new(pfont.clone(), ps_name.to_owned(), family_name, style_name);
-        backend.get_op_size_rec_and_style_flags(&mut font);
+        backend.get_op_size_rec_and_style_flags(&mut font, io);
         self.fonts.push(font);
         let font_pos = self.fonts.len() - 1;
         let font = &mut self.fonts[font_pos];
@@ -294,9 +301,8 @@ struct VariantRequests {
     size: Option<f64>,
 }
 
-/// Parses `variant`, a C string's bytes, and rewrites it in place to keep only
-/// the engine options.
-fn take_variant_requests(variant: &mut [u8]) -> VariantRequests {
+/// Parses `variant` and rewrites it to keep only the engine options.
+fn take_variant_requests(variant: &mut Vec<u8>) -> VariantRequests {
     let mut req = VariantRequests {
         engine: Engine::Default,
         bold: false,
@@ -304,7 +310,7 @@ fn take_variant_requests(variant: &mut [u8]) -> VariantRequests {
         size: None,
     };
     let mut var_str = String::new();
-    let mut cp = &*variant;
+    let mut cp = variant.as_slice();
     while !cp.is_empty() {
         const VARIANTS: &[(&[u8], Engine, &str)] = &[
             (b"AAT", Engine::Apple, "AAT"),
@@ -360,11 +366,7 @@ fn take_variant_requests(variant: &mut [u8]) -> VariantRequests {
         }
     }
 
-    variant[..var_str.len()].copy_from_slice(var_str.as_bytes());
-    // Past the slice is the C string's own NUL.
-    if let Some(end) = variant.get_mut(var_str.len()) {
-        *end = 0;
-    }
+    *variant = var_str.into_bytes();
     req
 }
 
@@ -430,13 +432,17 @@ impl FontManager {
         })
     }
 
-    /// Get the font for a given name, variant, and point size
+    /// Get the font for a given name, variant, and point size. The variant
+    /// is read up to a NUL and rewritten to keep only its engine options.
     pub fn find_font(
         &mut self,
-        name: &CStr,
-        variant: Option<&mut [u8]>,
+        name: &[u8],
+        variant: Option<&mut Vec<u8>>,
         mut pt_size: f64,
+        io: &mut CoreBridgeState<'_>,
     ) -> Option<PlatformFontRef> {
+        let name = CString::new(name).unwrap_or_default();
+        let name = name.as_c_str();
         let mut font = None;
         let mut dsize = 10.0;
         self.loaded_font_design_size = 655360;
@@ -523,7 +529,7 @@ impl FontManager {
             }
 
             if pass == 0 {
-                self.search_for_host_platform_fonts(name);
+                self.search_for_host_platform_fonts(name, io);
             }
         }
 
@@ -535,6 +541,9 @@ impl FontManager {
         // and delete B, I, and S=... codes from the string, just retain /engine option
         self.req_engine = Engine::Default;
         if let Some(variant) = variant {
+            if let Some(end) = variant.iter().position(|&b| b == 0) {
+                variant.truncate(end);
+            }
             let req = take_variant_requests(variant);
             self.req_engine = req.engine;
             if let Some(size) = req.size {
@@ -715,12 +724,12 @@ impl FontManager {
         Some(font.font_ref.clone())
     }
 
-    /// Get the full name of a font as a C-string
-    pub fn get_full_name(&self, font: PlatformFontRef) -> &CStr {
+    /// Get the full name of a font
+    pub fn get_full_name(&self, font: &PlatformFontRef) -> &CStr {
         let font_pos = *self
             .maps
             .platform_ref_to_font
-            .get(&font)
+            .get(font)
             .unwrap_or_else(|| panic!("internal error {} in FontManager", 2));
         let font = &self.maps.fonts[font_pos];
         font.full_name.as_ref().unwrap_or(&font.ps_name)
@@ -819,9 +828,9 @@ impl FontManager {
             })
     }
 
-    fn search_for_host_platform_fonts(&mut self, name: &CStr) {
+    fn search_for_host_platform_fonts(&mut self, name: &CStr, io: &mut CoreBridgeState<'_>) {
         self.backend
-            .search_for_host_platform_fonts(&mut self.maps, name)
+            .search_for_host_platform_fonts(&mut self.maps, name, io)
     }
 
     /// Get the platform-specific font file location
@@ -858,11 +867,8 @@ mod tests {
 
     fn rewrite(variant: &str) -> (String, VariantRequests) {
         let mut buf = variant.as_bytes().to_vec();
-        buf.push(0);
-        let len = variant.len();
-        let req = take_variant_requests(&mut buf[..len]);
-        let end = buf.iter().position(|&c| c == 0).unwrap();
-        (String::from_utf8(buf[..end].to_vec()).unwrap(), req)
+        let req = take_variant_requests(&mut buf);
+        (String::from_utf8(buf).unwrap(), req)
     }
 
     #[test]

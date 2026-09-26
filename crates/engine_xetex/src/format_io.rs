@@ -3,8 +3,7 @@
 //! Every multi-byte item is stored big-endian.
 
 use crate::bridge::{
-    input_open, input_read, output_close, output_flush, output_open, output_write,
-    TTBC_FILE_FORMAT_FORMAT,
+    input_open, input_read, output_close, output_flush, output_open, output_write, FileFormat,
 };
 use crate::cmd::UNDEFINED_CS;
 use crate::codes::ValueLevel;
@@ -83,7 +82,6 @@ fn dump_slice<T: FmtItem>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result
     }
     let items = &v[start as usize..(start + n) as usize];
     let item_size = std::mem::size_of::<T>();
-    let byte_len = std::mem::size_of_val(items);
     let written = if cfg!(target_endian = "little") && item_size > 1 {
         let mut bytes = fmt_bytes(items).to_vec();
         for item in bytes.chunks_exact_mut(item_size) {
@@ -94,7 +92,7 @@ fn dump_slice<T: FmtItem>(fmt_out: usize, v: &[T], start: i32, n: i32) -> Result
         output_write(fmt_out, fmt_bytes(items))
     };
 
-    if written != byte_len {
+    if !written {
         return Err(Abort::Internal("could not write format file data"));
     }
     Ok(())
@@ -116,9 +114,7 @@ fn undump_slice<T: FmtItem>(fmt_in: usize, v: &mut [T], start: i32, n: i32) -> R
     let items = &mut v[start as usize..(start + n) as usize];
     let item_size = std::mem::size_of::<T>();
     let bytes = fmt_bytes_mut(items);
-    let byte_len = bytes.len();
-    let read = input_read(fmt_in, bytes);
-    if read < 0 || read as usize != byte_len {
+    if !input_read(fmt_in, bytes) {
         return Err(Abort::Internal("could not read format file data"));
     }
 
@@ -570,11 +566,7 @@ pub fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<bool, Abor
 
     st.input.name_of_file = dump_name.as_bytes().to_vec();
 
-    let fmt_in = input_open(
-        st.input.name_of_file_bytes(),
-        TTBC_FILE_FORMAT_FORMAT,
-        false,
-    );
+    let fmt_in = input_open(st.input.name_of_file_bytes(), FileFormat::Format, false);
     if fmt_in == INVALID_HANDLE {
         return Err(Abort::Internal("cannot open the format file"));
     }
