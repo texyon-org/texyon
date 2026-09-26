@@ -333,7 +333,7 @@ pub(crate) fn scan_register_num(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<(), Abort> {
     scan_int(st)?;
-    if math_char_fn(st.scanner.cur_val) == ACTIVE_MATH_CHAR {
+    if math_char(st.scanner.cur_val) == ACTIVE_MATH_CHAR {
         if st.scanner.cur_val != ACTIVE_MATH_CHAR {
             bad_int_error(
                 st,
@@ -344,7 +344,7 @@ pub(crate) fn scan_xetex_math_char_int(st: &mut EngineState) -> Result<(), Abort
             )?;
             st.scanner.cur_val = ACTIVE_MATH_CHAR;
         }
-    } else if math_char_fn(st.scanner.cur_val) > BIGGEST_USV {
+    } else if math_char(st.scanner.cur_val) > BIGGEST_USV {
         int_range_error(
             st,
             "Bad XeTeX math character code",
@@ -701,17 +701,17 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
     }
 }
 
-/// Converts a TeX `\mathcode` value to XeTeX's extended layout.
-fn math_code_from_tex(v: i32) -> i32 {
-    set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
+/// Converts a classic 15-bit `\mathcode` or `\mathchar` to XeTeX's layout.
+pub(crate) fn math_code_from_tex(v: i32) -> i32 {
+    set_class(v / 4096) + set_family((v % 4096) / 256) + (v % 256)
 }
 
 /// Scans the class, family and character of a `\Umathchar`-style code.
-fn scan_umath_code(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn scan_umath_code(st: &mut EngineState) -> Result<i32, Abort> {
     scan_math_class_int(st)?;
-    let class = set_class_fn(st.scanner.cur_val);
+    let class = set_class(st.scanner.cur_val);
     scan_math_fam_int(st)?;
-    let family = set_family_fn(st.scanner.cur_val);
+    let family = set_family(st.scanner.cur_val);
     scan_usv_num(st)?;
     Ok(class + family + st.scanner.cur_val)
 }
@@ -786,17 +786,17 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
     p.set_math_type(&mut st.mem, MATH_CHAR);
     p.set_character(&mut st.mem, (c % 65536) as u16);
     let cur_fam = st.eqtb.int_par(INT_PAR_CUR_FAM);
-    let fam = if math_class_fn(c) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&cur_fam) {
+    let fam = if math_class(c) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&cur_fam) {
         cur_fam as u16
     } else {
-        math_fam_fn(c) as u16
+        math_fam(c) as u16
     };
-    p.set_plane_and_fam(&mut st.mem, fam + (math_char_fn(c) / 65536) as u16 * 256);
+    p.set_plane_and_fam(&mut st.mem, fam + (math_char(c) / 65536) as u16 * 256);
     Ok(())
 }
 
 pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
-    if math_char_fn(c) == ACTIVE_MATH_CHAR {
+    if math_char(c) == ACTIVE_MATH_CHAR {
         st.scanner.cur_cs = st.scanner.cur_chr + 1;
         fetch_cs_meaning(st);
         x_token(st)?;
@@ -804,11 +804,11 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
     } else {
         let nd = st.mem.new_noad()?;
         nd.nucleus().set_math_type(&mut st.mem, MATH_CHAR);
-        let ch = math_char_fn(c);
+        let ch = math_char(c);
         nd.nucleus().set_character(&mut st.mem, (ch % 65536) as u16);
         nd.nucleus()
-            .set_plane_and_fam(&mut st.mem, math_fam_fn(c) as u16);
-        if math_class_fn(c) == 7 {
+            .set_plane_and_fam(&mut st.mem, math_fam(c) as u16);
+        if math_class(c) == 7 {
             let cf = st.eqtb.int_par(INT_PAR_CUR_FAM);
             if (0..NUMBER_MATH_FAMILIES).contains(&cf) {
                 nd.nucleus().set_plane_and_fam(&mut st.mem, cf as u16);
@@ -817,7 +817,7 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
         } else {
             nd.set_noad_type(
                 &mut st.mem,
-                NodeType::from_raw(NodeType::OrdNoad.as_raw() + math_class_fn(c) as u16)
+                NodeType::from_raw(NodeType::OrdNoad.as_raw() + math_class(c) as u16)
                     .expect("valid noad type"),
             );
         }
@@ -828,24 +828,25 @@ pub(crate) fn set_math_char(st: &mut EngineState, c: i32) -> Result<(), Abort> {
     Ok(())
 }
 
+// The fields of a XeTeX math code: class in bits 21..24, family in 24..32, char below.
 #[inline]
-fn math_char_fn(c: i32) -> i32 {
+pub(crate) fn math_char(c: i32) -> i32 {
     (c as u32 & 0x1FFFFF) as i32
 }
 #[inline]
-fn math_class_fn(c: i32) -> i32 {
+pub(crate) fn math_class(c: i32) -> i32 {
     ((c as u32 >> 21) & 0x07) as i32
 }
 #[inline]
-fn math_fam_fn(c: i32) -> i32 {
+pub(crate) fn math_fam(c: i32) -> i32 {
     ((c as u32 >> 24) & 0xFF) as i32
 }
 #[inline]
-pub(crate) fn set_class_fn(x: i32) -> i32 {
+pub(crate) fn set_class(x: i32) -> i32 {
     (((x as u32) & 0x07) << 21) as i32
 }
 #[inline]
-pub(crate) fn set_family_fn(x: i32) -> i32 {
+pub(crate) fn set_family(x: i32) -> i32 {
     (((x as u32) & 0xFF) << 24) as i32
 }
 
@@ -2617,9 +2618,9 @@ fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     if m == MATH_CODE_BASE {
         let code = st.eqtb.math_code(n);
         st.scanner.cur_val1 = code;
-        if math_char_fn(code) == ACTIVE_MATH_CHAR {
+        if math_char(code) == ACTIVE_MATH_CHAR {
             st.scanner.cur_val1 = 0x8000;
-        } else if math_class_fn(code) > 7 || math_fam_fn(code) > 15 || math_char_fn(code) > 255 {
+        } else if math_class(code) > 7 || math_fam(code) > 15 || math_char(code) > 255 {
             bad_int_error(
                 st,
                 "Extended mathchar used as mathchar",
@@ -2630,7 +2631,7 @@ fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             st.scanner.cur_val1 = 0;
         }
         let code = st.scanner.cur_val1;
-        let v = math_class_fn(code) * 0x1000 + math_fam_fn(code) * 0x100 + math_char_fn(code);
+        let v = math_class(code) * 0x1000 + math_fam(code) * 0x100 + math_char(code);
         set_cur_val(st, v, INT_VAL);
     } else if m == DEL_CODE_BASE {
         st.scanner.cur_val1 = st.eqtb.del_code(n);

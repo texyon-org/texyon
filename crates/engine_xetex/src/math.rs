@@ -2742,17 +2742,19 @@ impl MemState {
         tail.accent_chr()
             .set_character(self, (value % 65536) as u16);
         let intpar_cur_fam = eqtb.int_par(INT_PAR_CUR_FAM);
-        if math_class_field(value) == 7 && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam) {
+        if crate::scan::math_class(value) == 7
+            && (0..NUMBER_MATH_FAMILIES).contains(&intpar_cur_fam)
+        {
             tail.accent_chr()
                 .set_plane_and_fam(self, intpar_cur_fam as u16);
         } else {
             tail.accent_chr()
-                .set_plane_and_fam(self, math_fam_field(value) as u16);
+                .set_plane_and_fam(self, crate::scan::math_fam(value) as u16);
         }
         let current_fam = tail.accent_chr().plane_and_fam(self);
         tail.accent_chr().set_plane_and_fam(
             self,
-            current_fam + (math_char_field(value) / 65536) as u16 * 256,
+            current_fam + (crate::scan::math_char(value) / 65536) as u16 * 256,
         );
     }
 }
@@ -2810,27 +2812,6 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-#[inline]
-fn math_class_field(x: i32) -> i32 {
-    (((x as u32) >> 21) & 7) as i32
-}
-#[inline]
-fn math_fam_field(x: i32) -> i32 {
-    (((x as u32) >> 24) & 0xFF) as i32
-}
-#[inline]
-fn math_char_field(x: i32) -> i32 {
-    ((x as u32) & 0x1F_FFFF) as i32
-}
-#[inline]
-fn set_class_bits(x: i32) -> i32 {
-    (((x as u32) & 7) << 21) as i32
-}
-#[inline]
-fn set_family_bits(x: i32) -> i32 {
-    (((x as u32) & 0xFF) << 24) as i32
-}
-
 pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
     if st.scanner.cur_cmd == ACCENT {
         crate::output::error_here_with_diagnostic(st, "Please use ");
@@ -2856,17 +2837,10 @@ pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
                 tail.set_subtype(&mut st.mem, BOTTOM_ACC);
             }
         }
-        crate::scan::scan_math_class_int(st)?;
-        let mut c = set_class_bits(st.scanner.cur_val);
-        crate::scan::scan_math_fam_int(st)?;
-        c += set_family_bits(st.scanner.cur_val);
-        crate::scan::scan_usv_num(st)?;
-        st.scanner.cur_val = st.scanner.cur_val + c;
+        st.scanner.cur_val = crate::scan::scan_umath_code(st)?;
     } else {
         crate::scan::scan_fifteen_bit_int(st)?;
-        st.scanner.cur_val = set_class_bits(st.scanner.cur_val / 4096)
-            + set_family_bits((st.scanner.cur_val % 4096) / 256)
-            + (st.scanner.cur_val % 256);
+        st.scanner.cur_val = crate::scan::math_code_from_tex(st.scanner.cur_val);
     }
 
     let value = st.scanner.cur_val;

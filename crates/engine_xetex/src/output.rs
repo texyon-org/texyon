@@ -1710,11 +1710,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             print_hex(st, chr_code);
         }
         XETEX_MATH_GIVEN => {
-            let code = chr_code as u32;
             print_esc(st, "Umathchar");
-            print_hex(st, ((code >> 21) & 0x07) as i32);
-            print_hex(st, ((code >> 24) & 0xFF) as i32);
-            print_hex(st, (code & 0x1F_FFFF) as i32);
+            print_hex(st, crate::scan::math_class(chr_code));
+            print_hex(st, crate::scan::math_fam(chr_code));
+            print_hex(st, crate::scan::math_char(chr_code));
         }
         DEF_CODE => {
             let name = match chr_code {

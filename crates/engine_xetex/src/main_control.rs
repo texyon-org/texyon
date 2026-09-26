@@ -63,9 +63,9 @@ use crate::node::{
 };
 use crate::packaging::ADDITIONAL;
 use crate::scan::{
-    fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL,
-    INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN,
-    PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
+    fetch_box, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL, INT_VAL, LEFT_BRACE_TOKEN,
+    MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN, PROTECTED_TOKEN,
+    RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
 };
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
@@ -2728,31 +2728,16 @@ fn in_math_shift_group(
     }
 }
 
-/// Scans the class, family and code of `\Umathchar` or `\Udelimiter`.
-fn scan_umath_char(st: &mut EngineState) -> Result<i32, Abort> {
-    crate::scan::scan_math_class_int(st)?;
-    let mut t = set_class_fn(st.scanner.cur_val);
-    crate::scan::scan_math_fam_int(st)?;
-    t += set_family_fn(st.scanner.cur_val);
-    crate::scan::scan_usv_num(st)?;
-    Ok(t + st.scanner.cur_val)
-}
-
-/// Converts a classic 15-bit `\mathchar` code to the XeTeX layout.
-fn math_char_from_tex(v: i32) -> i32 {
-    set_class_fn(v / 4096) + set_family_fn((v % 4096) / 256) + (v % 256)
-}
-
 fn math_char_num(st: &mut EngineState) -> Result<(), Abort> {
     let c = match st.scanner.cur_chr {
-        2 => scan_umath_char(st)?,
+        2 => crate::scan::scan_umath_code(st)?,
         1 => {
             crate::scan::scan_xetex_math_char_int(st)?;
             st.scanner.cur_val
         }
         _ => {
             crate::scan::scan_fifteen_bit_int(st)?;
-            math_char_from_tex(st.scanner.cur_val)
+            crate::scan::math_code_from_tex(st.scanner.cur_val)
         }
     };
     crate::scan::set_math_char(st, c)?;
@@ -2761,10 +2746,10 @@ fn math_char_num(st: &mut EngineState) -> Result<(), Abort> {
 
 fn math_delim_num(st: &mut EngineState) -> Result<(), Abort> {
     let c = if st.scanner.cur_chr == 1 {
-        scan_umath_char(st)?
+        crate::scan::scan_umath_code(st)?
     } else {
         crate::scan::scan_delimiter_int(st)?;
-        math_char_from_tex(st.scanner.cur_val / 4096)
+        crate::scan::math_code_from_tex(st.scanner.cur_val / 4096)
     };
     crate::scan::set_math_char(st, c)?;
     Ok(())
@@ -3758,7 +3743,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
         }
         (MMODE, MATH_CHAR_NUM) => math_char_num(st)?,
         (MMODE, MATH_GIVEN) => {
-            crate::scan::set_math_char(st, math_char_from_tex(st.scanner.cur_chr))?
+            crate::scan::set_math_char(st, crate::scan::math_code_from_tex(st.scanner.cur_chr))?
         }
         (MMODE, XETEX_MATH_GIVEN) => crate::scan::set_math_char(st, st.scanner.cur_chr)?,
         (MMODE, DELIM_NUM) => math_delim_num(st)?,
@@ -4198,7 +4183,7 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
             crate::scan::scan_xetex_math_char_int(st)?;
             (XETEX_MATH_GIVEN, st.scanner.cur_val)
         }
-        XETEX_MATH_CHAR_DEF_CODE => (XETEX_MATH_GIVEN, scan_umath_char(st)?),
+        XETEX_MATH_CHAR_DEF_CODE => (XETEX_MATH_GIVEN, crate::scan::scan_umath_code(st)?),
         _ => {
             crate::scan::scan_register_num(st)?;
             if st.scanner.cur_val > 255 {
@@ -4334,7 +4319,7 @@ fn xetex_def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         define(st, global, p, DATA, st.scanner.cur_val)?;
     } else if chr == MATH_CODE_BASE + 1 {
         crate::scan::scan_optional_equals(st)?;
-        let v = scan_umath_char(st)?;
+        let v = crate::scan::scan_umath_code(st)?;
         define(st, global, p, DATA, v)?;
     } else if chr == DEL_CODE_BASE {
         crate::scan::scan_optional_equals(st)?;
@@ -4398,7 +4383,7 @@ fn def_code(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         st.scanner.cur_val = if st.scanner.cur_val == 32768 {
             ACTIVE_MATH_CHAR
         } else {
-            math_char_from_tex(st.scanner.cur_val)
+            crate::scan::math_code_from_tex(st.scanner.cur_val)
         };
         define(st, global, p, DATA, st.scanner.cur_val)?;
     } else {
