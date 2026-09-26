@@ -1,12 +1,12 @@
 //! Math mode: noad construction and `mlist_to_hlist`.
+use crate::codes::{MathAccentCode, RadicalCode};
 use crate::consts::{
     ACCENT_NOAD_SIZE, AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE,
     COND_MATH_GLUE, DLIST, EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL,
-    FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, HMODE, INFINITE_DIMEN, INF_PENALTY, LEFT_TO_RIGHT,
-    LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, L_CODE, MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN,
-    MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES,
-    RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST,
-    TEXT_SIZE,
+    FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, HMODE, INFINITE_DIMEN, INF_PENALTY, LEFT_TO_RIGHT, L_CODE,
+    MATH_CHAR, MATH_TEXT_CHAR, MAX_DIMEN, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL,
+    NULL_FONT, NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE,
+    STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
 };
 use crate::fonts::{
     CharInfo, CharTag, AAT_FONT_FLAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE, X_HEIGHT_CODE,
@@ -16,7 +16,7 @@ use crate::node::{
     AnyBox, AnyNode, ChoiceNode, DelimiterField, GlueNode, GlueSpecNode, KernNode, MathField, Noad,
     NodePtr, RuleDimen, RuleNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::params::{DimenPar, GluePar, IntPar};
+use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::state::{
     EngineState, EqtbState, ErrorState, FontState, GroupCode, MemState, SaveStackState,
     ScannerState,
@@ -60,7 +60,7 @@ const SCRIPT_STYLE: i16 = 4;
 
 use crate::cmd::{ACCENT, DELIM_NUM, LETTER, MATH_SHIFT, OTHER_CHAR, RELAX, SPACER, SUP_MARK};
 use crate::errors::Abort;
-use crate::input::{EVERY_DISPLAY_TEXT, EVERY_MATH_TEXT};
+use crate::input::TokenType;
 use crate::mem_types::ListStateRecord;
 use crate::ot_math::{GlyphAssembly, ScriptKind};
 use crate::packaging::{ADDITIONAL, EXACTLY};
@@ -2322,13 +2322,14 @@ fn compute_ot_math_accent_pos(st: &mut EngineState, mut p: NodePtr<Noad>) -> Res
     }
 }
 
+/// Scans a delimiter into `p`, after `\radical` or `\Uradical` when `radical` is given.
 pub(crate) fn scan_delimiter(
     st: &mut EngineState,
     p: NodePtr<DelimiterField>,
-    r: bool,
+    radical: Option<RadicalCode>,
 ) -> Result<(), Abort> {
-    if r {
-        if st.scanner.cur_chr == 1 {
+    if let Some(radical) = radical {
+        if radical == RadicalCode::Uradical {
             st.scanner.cur_val1 = 0x4000_0000;
             crate::scan::scan_math_fam_int(st)?;
             st.scanner.cur_val1 += st.scanner.cur_val * 0x20_0000;
@@ -2407,9 +2408,9 @@ pub(crate) fn start_eq_no(st: &mut EngineState) -> Result<(), Abort> {
     if st.shipout.insert_src_special_every_math {
         crate::ext::insert_src_special(st)?;
     }
-    let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
+    let every_math = st.eqtb.tok_par(TokPar::EveryMath);
     if !every_math.is_null() {
-        crate::input::begin_token_list(st, every_math, EVERY_MATH_TEXT)?;
+        crate::input::begin_token_list(st, every_math, TokenType::EveryMath)?;
     }
     Ok(())
 }
@@ -2455,7 +2456,8 @@ impl ListStateRecord {
 
 pub(crate) fn math_radical(st: &mut EngineState) -> Result<(), Abort> {
     let tail = st.input.cur_list.append_radical_noad(&mut st.mem)?;
-    scan_delimiter(st, tail.left_delimiter(), true)?;
+    let code = RadicalCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("radical"))?;
+    scan_delimiter(st, tail.left_delimiter(), Some(code))?;
     crate::scan::scan_math(st, tail.nucleus())
 }
 
@@ -2658,8 +2660,8 @@ pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
 
     if st.input.cur_list.aux_s1() != TEX_NULL {
         if c >= DELIMITED_CODE {
-            scan_delimiter(st, NodePtr::at(GARBAGE), false)?;
-            scan_delimiter(st, NodePtr::at(GARBAGE), false)?;
+            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
+            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
         }
 
         if c % DELIMITED_CODE == ABOVE_CODE {
@@ -2678,8 +2680,8 @@ pub(crate) fn math_fraction(st: &mut EngineState) -> Result<(), Abort> {
         let aux = st.input.cur_list.start_fraction_noad(&mut st.mem)?;
 
         if c >= DELIMITED_CODE {
-            scan_delimiter(st, aux.left_delimiter(), false)?;
-            scan_delimiter(st, aux.right_delimiter(), false)?;
+            scan_delimiter(st, aux.left_delimiter(), None)?;
+            scan_delimiter(st, aux.right_delimiter(), None)?;
         }
 
         match c % DELIMITED_CODE {
@@ -2731,7 +2733,7 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
     let t = st.scanner.cur_chr as u16;
     if t != NodeType::LeftNoad.as_raw() && st.save_stack.cur_group != GroupCode::MathLeft {
         if st.save_stack.cur_group == GroupCode::MathShift {
-            scan_delimiter(st, NodePtr::at(GARBAGE), false)?;
+            scan_delimiter(st, NodePtr::at(GARBAGE), None)?;
             crate::output::error_here_with_diagnostic(st, "Extra ");
             if t == MIDDLE_NOAD {
                 crate::output::print_esc(st, "middle");
@@ -2750,7 +2752,7 @@ pub(crate) fn math_left_right(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         let p = st.mem.new_noad()?;
         p.set_type_code(&mut st.mem, t);
-        scan_delimiter(st, p.delimiter(), false)?;
+        scan_delimiter(st, p.delimiter(), None)?;
         if t == MIDDLE_NOAD {
             p.set_noad_type(&mut st.mem, NodeType::RightNoad);
             p.set_subtype(&mut st.mem, MIDDLE_NOAD);
@@ -2795,7 +2797,7 @@ pub(crate) fn math_ac(st: &mut EngineState) -> Result<(), Abort> {
 
     let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;
 
-    if st.scanner.cur_chr == 1 {
+    if MathAccentCode::from_raw(st.scanner.cur_chr) == Some(MathAccentCode::UmathAccent) {
         if crate::scan::scan_keyword(st, "fixed")? {
             tail.set_subtype(&mut st.mem, FIXED_ACC);
         } else if crate::scan::scan_keyword(st, "bottom")? {
@@ -3462,9 +3464,9 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
             crate::ext::insert_special(st, "tdux:cs dmath")?;
         }
 
-        let every_display = st.eqtb.local(LOCAL_EVERY_DISPLAY);
+        let every_display = st.eqtb.tok_par(TokPar::EveryDisplay);
         if !every_display.is_null() {
-            crate::input::begin_token_list(st, every_display, EVERY_DISPLAY_TEXT)?;
+            crate::input::begin_token_list(st, every_display, TokenType::EveryDisplay)?;
         }
         if st.input.nest_ptr == 1 {
             crate::pagebuilder::build_page(st)?;
@@ -3479,9 +3481,9 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
         if st.config.semantic_pagination_enabled {
             crate::ext::insert_special(st, "tdux:cs math")?;
         }
-        let every_math = st.eqtb.local(LOCAL_EVERY_MATH);
+        let every_math = st.eqtb.tok_par(TokPar::EveryMath);
         if !every_math.is_null() {
-            crate::input::begin_token_list(st, every_math, EVERY_MATH_TEXT)?;
+            crate::input::begin_token_list(st, every_math, TokenType::EveryMath)?;
         }
     }
     Ok(())

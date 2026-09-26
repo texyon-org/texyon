@@ -367,3 +367,91 @@ code_enum! {
         Absorbing = 5,
     }
 }
+
+code_enum! {
+    /// The `chr_code` of `\input`, `\endinput` and `\scantokens`.
+    pub(crate) enum InputCode: u8 {
+        Input = 0 => "input",
+        EndInput = 1 => "endinput",
+        ScanTokens = 2 => "scantokens",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\deadcycles`, `\insertpenalties` and `\interactionmode`.
+    pub(crate) enum PageIntCode: u8 {
+        DeadCycles = 0 => "deadcycles",
+        InsertPenalties = 1 => "insertpenalties",
+        InteractionMode = 2 => "interactionmode",
+    }
+}
+
+code_enum! {
+    /// A mark of the current page or split (`\topmark`..`\splitbotmark`),
+    /// the index into `cur_mark` and into a mark class record. The `\marks`
+    /// forms add `MarkCode::MARKS`.
+    pub(crate) enum MarkCode: u8 {
+        Top = 0 => "topmark",
+        First = 1 => "firstmark",
+        Bot = 2 => "botmark",
+        SplitFirst = 3 => "splitfirstmark",
+        SplitBot = 4 => "splitbotmark",
+    }
+}
+
+impl MarkCode {
+    /// `marks_code`, added to the `chr_code` of the `\marks` forms.
+    pub(crate) const MARKS: i32 = 5;
+
+    pub(crate) const ALL: [MarkCode; 5] = [
+        MarkCode::Top,
+        MarkCode::First,
+        MarkCode::Bot,
+        MarkCode::SplitFirst,
+        MarkCode::SplitBot,
+    ];
+}
+
+code_enum! {
+    /// The `chr_code` of `\the`, `\unexpanded` and `\detokenize`.
+    pub(crate) enum TheCode: u8 {
+        The = 0 => "the",
+        Unexpanded = 1 => "unexpanded",
+        Detokenize = 5 => "detokenize",
+    }
+}
+
+const _: () = assert!(TheCode::Detokenize.raw() == ShowCode::Tokens.raw());
+
+code_enum! {
+    /// The `chr_code` of `\mathchar` and its XeTeX forms.
+    pub(crate) enum MathCharNumCode: u8 {
+        MathChar = 0 => "mathchar",
+        UmathCharNum = 1 => "Umathcharnum",
+        UmathChar = 2 => "Umathchar",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\delimiter` and `\Udelimiter`.
+    pub(crate) enum DelimNumCode: u8 {
+        Delimiter = 0 => "delimiter",
+        Udelimiter = 1 => "Udelimiter",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\mathaccent` and `\Umathaccent` (`\accent` in math is 0).
+    pub(crate) enum MathAccentCode: u8 {
+        MathAccent = 0 => "mathaccent",
+        UmathAccent = 1 => "Umathaccent",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\radical` and `\Uradical`.
+    pub(crate) enum RadicalCode: u8 {
+        Radical = 0 => "radical",
+        Uradical = 1 => "Uradical",
+    }
+}

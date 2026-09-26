@@ -5,7 +5,9 @@ use crate::cmd::{
     IF_TEST, IGNORE, INPUT, LEFT_BRACE, LONG_CALL, MAX_COMMAND, NO_EXPAND, OUTER_CALL, OUT_PARAM,
     RELAX, THE, TOP_BOT_MARK, UNDEFINED_CS,
 };
-use crate::codes::{ConvertCode, FiOrElseCode, IfCode, ScannerStatus, ValueLevel};
+use crate::codes::{
+    ConvertCode, FiOrElseCode, IfCode, InputCode, MarkCode, ScannerStatus, TheCode, ValueLevel,
+};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, MMODE,
     NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_USV, UNDEFINED_PRIMITIVE,
@@ -13,9 +15,7 @@ use crate::consts::{
 };
 use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::input::{
-    back_error, back_input, begin_token_list, INSERTED, MACRO, MARK_TEXT, TOKEN_LIST, V_TEMPLATE,
-};
+use crate::input::{back_error, back_input, begin_token_list, TokenType, TOKEN_LIST};
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyBox, AnyNode, CondNode, NodePtr};
 use crate::output::{
@@ -32,17 +32,20 @@ use crate::state::{EngineState, MemState, Selector};
 use crate::token::Token;
 use crate::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
 
-pub(crate) const MARKS_CODE: i32 = 5;
+/// The `\the` variant in `cur_chr`.
+pub(crate) fn the_code(st: &EngineState) -> Result<TheCode, Abort> {
+    TheCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("the"))
+}
 
 pub(crate) fn ins_the_toks(st: &mut EngineState) -> Result<(), Abort> {
-    let tail = crate::scan::the_toks(st)?;
+    let tail = crate::scan::the_toks(st, the_code(st)?)?;
     ins_temp_head_list(st, tail)
 }
 
 /// Inserts the list at `link(temp_head)` whose tail is `tail`.
 fn ins_temp_head_list(st: &mut EngineState, tail: MemPtr) -> Result<(), Abort> {
     GARBAGE.set_link(&mut st.mem, tail);
-    begin_token_list(st, TEMP_HEAD.link(&st.mem), INSERTED)?;
+    begin_token_list(st, TEMP_HEAD.link(&st.mem), TokenType::Inserted)?;
     Ok(())
 }
 
@@ -546,7 +549,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.scanner_status = saved.status;
             let def_ref = st.scanner.def_ref;
             let list = def_ref.link(&st.mem);
-            begin_token_list(st, list, INSERTED)?;
+            begin_token_list(st, list, TokenType::Inserted)?;
             st.mem.free_avail(st.scanner.def_ref);
             st.scanner.def_ref.0 = saved.def_ref;
             unseal_pending_str(st, &saved);
@@ -799,22 +802,23 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
         }
         match st.scanner.cur_cmd {
             TOP_BOT_MARK => {
-                let t = st.scanner.cur_chr % MARKS_CODE;
-                if st.scanner.cur_chr >= MARKS_CODE {
+                let mark = MarkCode::from_raw(st.scanner.cur_chr % MarkCode::MARKS)
+                    .ok_or(Abort::Confusion("top_bot_mark"))?;
+                if st.scanner.cur_chr >= MarkCode::MARKS {
                     crate::scan::scan_register_num(st)?;
                 } else {
                     st.scanner.cur_val = 0;
                 }
                 if st.scanner.cur_val == 0 {
-                    st.scanner.cur_ptr = st.scanner.cur_mark[t as usize];
+                    st.scanner.cur_ptr = st.scanner.cur_mark[mark];
                 } else {
                     let n = st.scanner.cur_val;
                     if let Some(sa) = st.mem.find_sa_element(&mut st.scanner, ValueLevel::Mark, n) {
-                        st.scanner.cur_ptr = sa.child(&st.mem, t);
+                        st.scanner.cur_ptr = sa.mark(&st.mem, mark);
                     }
                 }
                 if !st.scanner.cur_ptr.is_null() {
-                    begin_token_list(st, st.scanner.cur_ptr, MARK_TEXT)?;
+                    begin_token_list(st, st.scanner.cur_ptr, TokenType::Mark)?;
                 }
             }
             EXPAND_AFTER => {
@@ -933,17 +937,12 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     pop_fi(st);
                 }
             }
-            INPUT => {
-                if st.scanner.cur_chr == 1 {
-                    st.input.force_eof = true;
-                } else if st.scanner.cur_chr == 2 {
-                    crate::scan::pseudo_start(st)?;
-                } else if st.scanner.name_in_progress {
-                    crate::input::insert_relax(st)?;
-                } else {
-                    crate::io::start_input(st, None)?;
-                }
-            }
+            INPUT => match InputCode::from_raw(st.scanner.cur_chr) {
+                Some(InputCode::EndInput) => st.input.force_eof = true,
+                Some(InputCode::ScanTokens) => crate::scan::pseudo_start(st)?,
+                _ if st.scanner.name_in_progress => crate::input::insert_relax(st)?,
+                _ => crate::io::start_input(st, None)?,
+            },
             _ => {
                 print_err(st, "Undefined control sequence");
                 st.errors.help(&[
@@ -1241,12 +1240,12 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
         while st.input.cur_input.state == TOKEN_LIST
             && st.input.cur_input.loc == TEX_NULL
-            && st.input.cur_input.index != V_TEMPLATE
+            && st.input.cur_input.token_type() != TokenType::VTemplate
         {
             crate::input::end_token_list(st)?;
         }
 
-        begin_token_list(st, ref_count, MACRO)?;
+        begin_token_list(st, ref_count, TokenType::Macro)?;
         st.input.cur_input.name = st.scanner.warning_index;
         st.input.cur_input.loc = r.link(&st.mem).0;
 

@@ -1679,6 +1679,16 @@ impl NodePtr<SaNode> {
         }
     }
 
+    /// Mark `m` of a mark class record.
+    #[inline]
+    pub fn mark(self, mem: &MemState, m: crate::codes::MarkCode) -> MemPtr {
+        self.child(mem, m.raw())
+    }
+    #[inline]
+    pub fn set_mark(self, mem: &mut MemState, m: crate::codes::MarkCode, v: MemPtr) {
+        self.set_child(mem, m.raw(), v);
+    }
+
     /// Child or mark slot `i`, packed two per word from +1.
     #[inline]
     pub fn child(self, mem: &MemState, i: i32) -> MemPtr {

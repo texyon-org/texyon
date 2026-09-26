@@ -15,7 +15,7 @@ use crate::bridge::{output_close, output_flush, output_open, shell_escape};
 use crate::dvi::{Axis, MoveReg};
 use crate::errors::Abort;
 use crate::glyph_arena::FixedPoint;
-use crate::input::{INSERTED, WRITE_TEXT};
+use crate::input::TokenType;
 use crate::mem::{end_lr_type, LIG_TRICK};
 use crate::node::{
     AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
@@ -1556,11 +1556,11 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
     let r = st.mem.get_avail()?;
     q.set_link(&mut st.mem, r);
     r.set_token(&mut st.mem, Token::from_cs(END_WRITE));
-    crate::input::begin_token_list(st, q, INSERTED)?;
-    crate::input::begin_token_list(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
+    crate::input::begin_token_list(st, q, TokenType::Inserted)?;
+    crate::input::begin_token_list(st, write.write_tokens(&st.mem), TokenType::Write)?;
     let q = st.mem.get_avail()?;
     q.set_token(&mut st.mem, Token::left_brace(b'{'));
-    crate::input::begin_token_list(st, q, INSERTED)?;
+    crate::input::begin_token_list(st, q, TokenType::Inserted)?;
 
     let old_mode = st.input.cur_list.mode;
     st.input.cur_list.mode = 0;

@@ -107,13 +107,6 @@ pub const TEXT_SIZE: i32 = 0;
 pub const SCRIPT_SIZE: i32 = 256;
 pub const NUMBER_MATH_FAMILIES: i32 = 256;
 
-// Indices into `cur_mark`.
-pub const TOP_MARK_CODE: usize = 0;
-pub const FIRST_MARK_CODE: usize = 1;
-pub const BOT_MARK_CODE: usize = 2;
-pub const SPLIT_FIRST_MARK_CODE: usize = 3;
-pub const SPLIT_BOT_MARK_CODE: usize = 4;
-
 // The eqtb regions.
 pub const ACTIVE_BASE: i32 = 1;
 pub const SINGLE_BASE: i32 = ACTIVE_BASE + NUMBER_USVS;
@@ -190,20 +183,8 @@ const _: () = {
     assert!(EQTB_SIZE == 8_941_458);
 };
 
-// Offsets from `LOCAL_BASE`.
-pub const LOCAL_PAR_SHAPE: i32 = 0;
-pub const LOCAL_OUTPUT_ROUTINE: i32 = 1;
-pub const LOCAL_EVERY_PAR: i32 = 2;
-pub const LOCAL_EVERY_MATH: i32 = 3;
-pub const LOCAL_EVERY_DISPLAY: i32 = 4;
-pub const LOCAL_EVERY_HBOX: i32 = 5;
-pub const LOCAL_EVERY_VBOX: i32 = 6;
-pub const LOCAL_EVERY_JOB: i32 = 7;
-pub const LOCAL_EVERY_CR: i32 = 8;
-pub const LOCAL_ERR_HELP: i32 = 9;
-pub const LOCAL_EVERY_EOF: i32 = 10;
-pub const LOCAL_XETEX_INTER_CHAR_TOKS: i32 = 11;
-pub const LOCAL_TECTONIC_CODA: i32 = 12;
+/// `\parshape`, first in the local region.
+pub const PAR_SHAPE_LOC: i32 = LOCAL_BASE;
 
 // Offsets from `ETEX_PEN_BASE`.
 pub const ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES: i32 = 0;

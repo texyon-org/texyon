@@ -20,28 +20,23 @@ use crate::cmd::{
     VRULE, VSKIP, XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
 use crate::codes::{
-    BoxCode, BoxDimenCode, ConvertCode, ExtensionCode, FiOrElseCode, IfCode, LastItemCode,
-    ShorthandDefCode, ShowCode, SkipCode, ValueLevel,
+    BoxCode, BoxDimenCode, ConvertCode, DelimNumCode, ExtensionCode, FiOrElseCode, IfCode,
+    InputCode, LastItemCode, MarkCode, MathAccentCode, MathCharNumCode, PageIntCode, RadicalCode,
+    ShorthandDefCode, ShowCode, SkipCode, TheCode, ValueLevel,
 };
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
     COND_MATH_GLUE, COUNT_BASE, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY, END_L_CODE,
     EQTB_SIZE, ETEX_PEN_BASE, FILLL, FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE, HISTORY_SPOTLESS,
-    HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE, LOCAL_BASE,
-    LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE,
-    MU_SKIP_BASE, NORMAL, NULL_CS, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE, SF_CODE_BASE,
-    SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_NULL, TOKS_BASE,
-    TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE, X_LEADERS,
+    HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE, LOCAL_BASE, L_CODE,
+    MATH_CHAR, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS,
+    PAR_SHAPE_LOC, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE, SF_CODE_BASE, SINGLE_BASE,
+    SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
+    UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE, X_LEADERS,
 };
 use crate::errors::{error, Abort};
-use crate::expand::MARKS_CODE;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
-use crate::input::{
-    BACKED_UP, BACKED_UP_CHAR, EVERY_CR_TEXT, EVERY_DISPLAY_TEXT, EVERY_EOF_TEXT, EVERY_HBOX_TEXT,
-    EVERY_JOB_TEXT, EVERY_MATH_TEXT, EVERY_PAR_TEXT, EVERY_VBOX_TEXT, INSERTED, INTER_CHAR_TEXT,
-    MACRO, MARK_TEXT, OUTPUT_TEXT, PARAMETER, TECTONIC_CODA_TEXT, TOKEN_LIST, U_TEMPLATE,
-    V_TEMPLATE, WRITE_TEXT,
-};
+use crate::input::{TokenType, TOKEN_LIST};
 use crate::main_control::{
     BOX_FLAG, CR_CODE, GLOBAL_BOX_FLAG, LEADER_FLAG, LP_CODE_BASE, RP_CODE_BASE, SHIP_OUT_FLAG,
     SPAN_CODE,
@@ -55,7 +50,7 @@ use crate::node::{
     PageInsNode, RuleDimen, SaNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::packaging::EXACTLY;
-use crate::params::{DimenPar, GluePar, IntPar};
+use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::save::DIMEN_VAL_LIMIT;
 use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
@@ -969,21 +964,8 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 print_esc(st, "toks");
                 print_int(st, chr_code - TOKS_BASE);
             } else {
-                let name = match chr_code - LOCAL_BASE {
-                    1 => "output",
-                    2 => "everypar",
-                    3 => "everymath",
-                    4 => "everydisplay",
-                    5 => "everyhbox",
-                    6 => "everyvbox",
-                    7 => "everyjob",
-                    8 => "everycr",
-                    10 => "everyeof",
-                    11 => "XeTeXinterchartoks",
-                    12 => "TectonicCodaTokens",
-                    _ => "errhelp",
-                };
-                print_esc(st, name);
+                let par = TokPar::from_raw(chr_code - LOCAL_BASE).unwrap_or(TokPar::ErrHelp);
+                print_esc(st, par.name());
             }
         }
         ASSIGN_INT => {
@@ -1014,11 +996,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         DEF_FONT => print_esc(st, "font"),
         DELIM_NUM => print_esc(
             st,
-            if chr_code == 1 {
-                "Udelimiter"
-            } else {
-                "delimiter"
-            },
+            DelimNumCode::from_raw(chr_code).map_or("delimiter", DelimNumCode::name),
         ),
         DIVIDE => print_esc(st, "divide"),
         END_CS_NAME => print_esc(st, "endcsname"),
@@ -1052,19 +1030,11 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         }
         MATH_ACCENT => print_esc(
             st,
-            if chr_code == 1 {
-                "Umathaccent"
-            } else {
-                "mathaccent"
-            },
+            MathAccentCode::from_raw(chr_code).map_or("mathaccent", MathAccentCode::name),
         ),
         MATH_CHAR_NUM => print_esc(
             st,
-            match chr_code {
-                2 => "Umathchar",
-                1 => "Umathcharnum",
-                _ => "mathchar",
-            },
+            MathCharNumCode::from_raw(chr_code).map_or("mathchar", MathCharNumCode::name),
         ),
         MATH_CHOICE => print_esc(st, "mathchoice"),
         MULTIPLY => print_esc(st, "multiply"),
@@ -1080,13 +1050,16 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         ),
         NON_SCRIPT => print_esc(st, "nonscript"),
         OMIT => print_esc(st, "omit"),
-        RADICAL => print_esc(st, if chr_code == 1 { "Uradical" } else { "radical" }),
+        RADICAL => print_esc(
+            st,
+            RadicalCode::from_raw(chr_code).map_or("radical", RadicalCode::name),
+        ),
         READ_TO_CS => print_esc(st, if chr_code == 0 { "read" } else { "readline" }),
         RELAX => print_esc(st, "relax"),
         SET_BOX => print_esc(st, "setbox"),
         SET_PREV_GRAF => print_esc(st, "prevgraf"),
         SET_SHAPE => {
-            let name = if chr_code == LOCAL_BASE + LOCAL_PAR_SHAPE {
+            let name = if chr_code == PAR_SHAPE_LOC {
                 "parshape"
             } else {
                 match chr_code - ETEX_PEN_BASE {
@@ -1101,11 +1074,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         }
         THE => print_esc(
             st,
-            match chr_code {
-                0 => "the",
-                1 => "unexpanded",
-                _ => "detokenize",
-            },
+            TheCode::from_raw(chr_code).map_or("detokenize", TheCode::name),
         ),
         TOKS_REGISTER => {
             print_esc(st, "toks");
@@ -1131,22 +1100,12 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         PAR_END => print_esc(st, "par"),
         INPUT => print_esc(
             st,
-            match chr_code {
-                0 => "input",
-                2 => "scantokens",
-                _ => "endinput",
-            },
+            InputCode::from_raw(chr_code).map_or("endinput", InputCode::name),
         ),
         TOP_BOT_MARK => {
-            let name = match chr_code % MARKS_CODE {
-                1 => "firstmark",
-                2 => "botmark",
-                3 => "splitfirstmark",
-                4 => "splitbotmark",
-                _ => "topmark",
-            };
-            print_esc(st, name);
-            if chr_code >= MARKS_CODE {
+            let mark = MarkCode::from_raw(chr_code % MarkCode::MARKS).unwrap_or(MarkCode::Top);
+            print_esc(st, mark.name());
+            if chr_code >= MarkCode::MARKS {
                 print_char(st, b's');
             }
         }
@@ -1178,11 +1137,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         ),
         SET_PAGE_INT => print_esc(
             st,
-            match chr_code {
-                0 => "deadcycles",
-                2 => "interactionmode",
-                _ => "insertpenalties",
-            },
+            PageIntCode::from_raw(chr_code).map_or("insertpenalties", PageIntCode::name),
         ),
         SET_BOX_DIMEN => print_esc(
             st,
@@ -1550,10 +1505,12 @@ pub(crate) fn print_meaning(st: &mut EngineState) {
         print_char(st, b':');
         print_ln(st);
         token_show(st, chr);
-    } else if cmd == TOP_BOT_MARK && (chr as usize) < 5 {
-        print_char(st, b':');
-        print_ln(st);
-        token_show(st, st.scanner.cur_mark[chr as usize]);
+    } else if cmd == TOP_BOT_MARK {
+        if let Some(mark) = MarkCode::from_raw(chr) {
+            print_char(st, b':');
+            print_ln(st);
+            token_show(st, st.scanner.cur_mark[mark]);
+        }
     }
 }
 
@@ -1931,7 +1888,7 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
         error_here_with_diagnostic(st, "");
         print(st, s);
         capture_to_diagnostic(st, None);
-        if !st.eqtb.local(crate::consts::LOCAL_ERR_HELP).is_null() {
+        if !st.eqtb.tok_par(TokPar::ErrHelp).is_null() {
             st.errors.use_err_help = true;
         } else if st.errors.long_help_seen {
             st.errors.help(&[r"(That was another \errmessage.)"]);
@@ -2225,7 +2182,12 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         _ => {
-            crate::scan::the_toks(st)?;
+            let the = if code == Some(ShowCode::Tokens) {
+                TheCode::Detokenize
+            } else {
+                TheCode::The
+            };
+            crate::scan::the_toks(st, the)?;
             print_nl(st, "> ");
             token_show(st, TEMP_HEAD);
             let list = TEMP_HEAD.link(&st.mem);
@@ -2978,31 +2940,6 @@ fn show_noad(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
     print_subsidiary_data(st, node.subscr(), b'_');
 }
 
-/// The label shown for a token list of type `index` in the error context.
-fn token_list_label(index: u16, loc: i32) -> Option<&'static str> {
-    Some(match index {
-        PARAMETER => "<argument> ",
-        U_TEMPLATE | V_TEMPLATE => "<template> ",
-        BACKED_UP | BACKED_UP_CHAR if loc == TEX_NULL => "<recently read> ",
-        BACKED_UP | BACKED_UP_CHAR => "<to be read again> ",
-        INSERTED => "<inserted text> ",
-        OUTPUT_TEXT => "<output> ",
-        EVERY_PAR_TEXT => "<everypar> ",
-        EVERY_MATH_TEXT => "<everymath> ",
-        EVERY_DISPLAY_TEXT => "<everydisplay> ",
-        EVERY_HBOX_TEXT => "<everyhbox> ",
-        EVERY_VBOX_TEXT => "<everyvbox> ",
-        EVERY_JOB_TEXT => "<everyjob> ",
-        EVERY_CR_TEXT => "<everycr> ",
-        MARK_TEXT => "<mark> ",
-        EVERY_EOF_TEXT => "<everyeof> ",
-        INTER_CHAR_TEXT => "<XeTeXinterchartoks> ",
-        WRITE_TEXT => "<write> ",
-        TECTONIC_CODA_TEXT => "<TectonicCodaTokens> ",
-        _ => return None,
-    })
-}
-
 /// Switches to pseudoprinting, returning how much of the line was already printed.
 fn begin_pseudoprint(st: &mut EngineState) -> i32 {
     let l = st.errors.tally;
@@ -3029,7 +2966,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
         if st.input.base_ptr == st.input.input_ptr || bottom_line || nn < error_context_lines {
             if st.input.base_ptr == st.input.input_ptr
                 || ci.state != TOKEN_LIST
-                || ci.index != BACKED_UP
+                || ci.token_type() != TokenType::BackedUp
                 || ci.loc != TEX_NULL
             {
                 st.errors.tally = 0;
@@ -3075,18 +3012,15 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         print_char(st, st.input.buffer[i as usize]);
                     }
                 } else {
-                    match ci.index {
-                        MACRO => {
+                    match ci.token_type() {
+                        TokenType::Macro => {
                             print_ln(st);
                             print_cs(st, ci.name);
                         }
-                        index => match token_list_label(index, ci.loc) {
-                            Some(label) => print_nl(st, label),
-                            None => print_nl(st, b'?'),
-                        },
+                        t => print_nl(st, t.label(ci.loc)),
                     }
                     l = begin_pseudoprint(st);
-                    if ci.index < MACRO {
+                    if ci.token_type() < TokenType::Macro {
                         show_token_list(st, ci.start, ci.loc, 100_000);
                     } else {
                         let list = MemPtr(ci.start).link(&st.mem);

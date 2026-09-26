@@ -17,19 +17,19 @@ use crate::cmd::{
     TOKS_REGISTER, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE, VRULE, VSKIP,
     XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
-use crate::codes::{BoxCode, BoxDimenCode, ScannerStatus, ShorthandDefCode, SkipCode, ValueLevel};
+use crate::codes::{
+    BoxCode, BoxDimenCode, PageIntCode, ScannerStatus, ShorthandDefCode, SkipCode, ValueLevel,
+};
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
     BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CUR_FONT_LOC,
     DEL_CODE_BASE, DESIGN_SIZE, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE, EXPLICIT, FONT_BASE,
     FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT, HASH_BASE, HMODE, IGNORE_DEPTH,
-    LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB, LOCAL_EVERY_PAR,
-    LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE, LOCAL_XETEX_INTER_CHAR_TOKS,
-    MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE,
-    NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS, NULL_FLAG, PRIM_EQTB_BASE,
-    RIGHT_SIDE, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE,
-    SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
-    TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
+    LEFT_SIDE, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MMODE, MU_GLUE,
+    MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS, NULL_FLAG,
+    PAR_SHAPE_LOC, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
+    SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE,
+    TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::errors::Abort;
 use crate::ext::{append_src_special, do_extension};
@@ -38,10 +38,7 @@ use crate::fonts::{
     SPACE_SHRINK_CODE, SPACE_STRETCH_CODE, X_HEIGHT_CODE,
 };
 use crate::hyphenation::{new_hyph_exceptions, new_patterns};
-use crate::input::{
-    BACKED_UP, BACKED_UP_CHAR, EVERY_CR_TEXT, EVERY_HBOX_TEXT, EVERY_JOB_TEXT, EVERY_PAR_TEXT,
-    EVERY_VBOX_TEXT, INSERTED, INTER_CHAR_TEXT, OUTPUT_TEXT, TOKEN_LIST, U_TEMPLATE, V_TEMPLATE,
-};
+use crate::input::{TokenType, TOKEN_LIST};
 use crate::math::{after_math, init_math};
 use crate::mem::{
     ADJUST_HEAD, ALIGN_HEAD, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HOLD_HEAD,
@@ -54,7 +51,7 @@ use crate::node::{
     PenaltiesNode, RuleDimen, SaNode, SpanNode, UnsetNode, WhatsitNode, WhatsitSubtype, RUNNING,
 };
 use crate::packaging::ADDITIONAL;
-use crate::params::{DimenPar, GluePar, IntPar};
+use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, MemState, Selector};
 use crate::token::Token;
@@ -585,7 +582,7 @@ pub(crate) fn init_col(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.align_state = 0;
     } else {
         crate::input::back_input(st)?;
-        crate::input::begin_token_list(st, column.u_part(&st.mem), U_TEMPLATE)?;
+        crate::input::begin_token_list(st, column.u_part(&st.mem), TokenType::UTemplate)?;
     }
     Ok(())
 }
@@ -778,8 +775,8 @@ fn append_list(st: &mut EngineState, head: MemPtr, tail: MemPtr) {
     st.input.cur_list.tail = tail;
 }
 
-fn begin_every(st: &mut EngineState, local: i32, kind: u16) -> Result<(), Abort> {
-    let list = st.eqtb.local(local);
+fn begin_every(st: &mut EngineState, par: TokPar, kind: TokenType) -> Result<(), Abort> {
+    let list = st.eqtb.tok_par(par);
     if !list.is_null() {
         crate::input::begin_token_list(st, list, kind)?;
     }
@@ -810,7 +807,7 @@ pub(crate) fn fin_row(st: &mut EngineState) -> Result<(), Abort> {
     };
     p.into_unset(&mut st.mem)
         .set_glue_stretch(&mut st.mem, Scaled::ZERO);
-    begin_every(st, LOCAL_EVERY_CR, EVERY_CR_TEXT)?;
+    begin_every(st, TokPar::EveryCr, TokenType::EveryCr)?;
     align_peek(st)
 }
 
@@ -925,7 +922,7 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.scanner_status = ScannerStatus::Normal;
     st.save_stack
         .new_save_level(GroupCode::Align, st.mem.line)?;
-    begin_every(st, LOCAL_EVERY_CR, EVERY_CR_TEXT)?;
+    begin_every(st, TokPar::EveryCr, TokenType::EveryCr)?;
     align_peek(st)
 }
 
@@ -976,7 +973,7 @@ pub(crate) fn normal_paragraph(st: &mut EngineState) -> Result<(), Abort> {
             word_define(st, false, loc, value)?;
         }
     }
-    for loc in [LOCAL_BASE + LOCAL_PAR_SHAPE, ETEX_PEN_BASE] {
+    for loc in [PAR_SHAPE_LOC, ETEX_PEN_BASE] {
         if st.eqtb.equiv(loc) != TEX_NULL {
             define(st, false, loc, SHAPE_REF, TEX_NULL)?;
         }
@@ -1030,7 +1027,7 @@ pub(crate) fn head_for_vmode(st: &mut EngineState) -> Result<(), Abort> {
         crate::input::back_input(st)?;
         st.scanner.cur_tok = st.input.par_token;
         crate::input::back_input(st)?;
-        st.input.cur_input.index = INSERTED;
+        st.input.cur_input.set_token_type(TokenType::Inserted);
         return Ok(());
     }
     if st.scanner.cur_cmd != HRULE {
@@ -1079,14 +1076,14 @@ pub(crate) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
 
 pub(crate) fn do_endv(st: &mut EngineState) -> Result<(), Abort> {
     fn is_v_template_end(r: &crate::state::InputState) -> bool {
-        r.index == V_TEMPLATE && r.loc == TEX_NULL && r.state == TOKEN_LIST
+        r.state == TOKEN_LIST && r.loc == TEX_NULL && r.token_type() == TokenType::VTemplate
     }
 
     st.input.base_ptr = st.input.input_ptr;
     st.input.input_stack[st.input.base_ptr as usize] = st.input.cur_input;
-    while st.input.input_stack[st.input.base_ptr as usize].index != V_TEMPLATE
+    while st.input.input_stack[st.input.base_ptr as usize].state == TOKEN_LIST
         && st.input.input_stack[st.input.base_ptr as usize].loc == TEX_NULL
-        && st.input.input_stack[st.input.base_ptr as usize].state == TOKEN_LIST
+        && st.input.input_stack[st.input.base_ptr as usize].token_type() != TokenType::VTemplate
     {
         st.input.base_ptr -= 1;
     }
@@ -1344,7 +1341,7 @@ pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort
             crate::ext::insert_src_special(st)?;
         }
     }
-    begin_every(st, LOCAL_EVERY_PAR, EVERY_PAR_TEXT)?;
+    begin_every(st, TokPar::EveryPar, TokenType::EveryPar)?;
     if st.input.nest_ptr == 1 {
         crate::pagebuilder::build_page(st)?;
     }
@@ -1617,10 +1614,10 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
             st.input.cur_list.mode = -mode;
             if mode == VMODE {
                 st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
-                begin_every(st, LOCAL_EVERY_VBOX, EVERY_VBOX_TEXT)?;
+                begin_every(st, TokPar::EveryVbox, TokenType::EveryVbox)?;
             } else {
                 st.input.cur_list.set_aux_s0(1000);
-                begin_every(st, LOCAL_EVERY_HBOX, EVERY_HBOX_TEXT)?;
+                begin_every(st, TokPar::EveryHbox, TokenType::EveryHbox)?;
             }
             return Ok(());
         }
@@ -1695,8 +1692,8 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         }
         GroupCode::Output => {
             if st.input.cur_input.loc != TEX_NULL
-                || (st.input.cur_input.index != OUTPUT_TEXT
-                    && st.input.cur_input.index != BACKED_UP)
+                || (st.input.cur_input.token_type() != TokenType::Output
+                    && st.input.cur_input.token_type() != TokenType::BackedUp)
             {
                 crate::output::print_err(st, "Unbalanced output routine");
                 st.errors.help(&[
@@ -1946,12 +1943,12 @@ pub(crate) fn alter_page_so_far(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn alter_integer(st: &mut EngineState) -> Result<(), Abort> {
-    let c = st.scanner.cur_chr;
+    let code = PageIntCode::from_raw(st.scanner.cur_chr);
     crate::scan::scan_optional_equals(st)?;
     crate::scan::scan_int(st)?;
-    match c {
-        0 => st.shipout.dead_cycles = st.scanner.cur_val,
-        2 => {
+    match code {
+        Some(PageIntCode::DeadCycles) => st.shipout.dead_cycles = st.scanner.cur_val,
+        Some(PageIntCode::InteractionMode) => {
             if crate::state::InteractionMode::from_raw(st.scanner.cur_val).is_none() {
                 crate::output::error_here_with_diagnostic(st, "Bad interaction mode");
                 crate::output::append_to_diagnostic(st, &format!(" ({})", st.scanner.cur_val));
@@ -2057,7 +2054,7 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
     crate::output::print(st, " inserted");
-    crate::input::begin_token_list(st, TEMP_HEAD.link(&st.mem), INSERTED)?;
+    crate::input::begin_token_list(st, TEMP_HEAD.link(&st.mem), TokenType::Inserted)?;
     crate::output::capture_to_diagnostic(st, None);
     st.errors.help(&[
         "I've inserted something that you may have forgotten.",
@@ -2111,7 +2108,7 @@ pub(crate) fn shift_case(st: &mut EngineState) -> Result<(), Abort> {
         p = p.link(&st.mem);
     }
     let def_ref = st.scanner.def_ref;
-    crate::input::begin_token_list(st, def_ref.link(&st.mem), BACKED_UP)?;
+    crate::input::begin_token_list(st, def_ref.link(&st.mem), TokenType::BackedUp)?;
     st.mem.free_avail(def_ref);
     Ok(())
 }
@@ -2695,33 +2692,6 @@ fn in_math_shift_group(
     }
 }
 
-fn math_char_num(st: &mut EngineState) -> Result<(), Abort> {
-    let c = match st.scanner.cur_chr {
-        2 => crate::scan::scan_umath_code(st)?,
-        1 => {
-            crate::scan::scan_xetex_math_char_int(st)?;
-            st.scanner.cur_val
-        }
-        _ => {
-            crate::scan::scan_fifteen_bit_int(st)?;
-            crate::scan::math_code_from_tex(st.scanner.cur_val)
-        }
-    };
-    crate::scan::set_math_char(st, c)?;
-    Ok(())
-}
-
-fn math_delim_num(st: &mut EngineState) -> Result<(), Abort> {
-    let c = if st.scanner.cur_chr == 1 {
-        crate::scan::scan_umath_code(st)?
-    } else {
-        crate::scan::scan_delimiter_int(st)?;
-        crate::scan::math_code_from_tex(st.scanner.cur_val / 4096)
-    };
-    crate::scan::set_math_char(st, c)?;
-    Ok(())
-}
-
 /// Appends a noad of type `cur_chr` (or an ordinary one for `{`) and scans its nucleus.
 fn append_noad(st: &mut EngineState, backup: bool) -> Result<(), Abort> {
     let n = st.mem.new_noad()?;
@@ -2744,7 +2714,7 @@ fn math_vcenter(st: &mut EngineState) -> Result<(), Abort> {
     if st.shipout.insert_src_special_every_vbox {
         crate::ext::insert_src_special(st)?;
     }
-    begin_every(st, LOCAL_EVERY_VBOX, EVERY_VBOX_TEXT)
+    begin_every(st, TokPar::EveryVbox, TokenType::EveryVbox)
 }
 
 pub(crate) fn main_control_ignore_spaces(st: &mut EngineState) -> Result<(), Abort> {
@@ -2810,7 +2780,7 @@ fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bool, Abort> 
         st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     }
     crate::input::back_input(st)?;
-    crate::input::begin_token_list(st, list, INTER_CHAR_TEXT)?;
+    crate::input::begin_token_list(st, list, TokenType::InterChar)?;
     Ok(true)
 }
 
@@ -2823,7 +2793,7 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32) -> Result<bool, 
     let prev = st.mainloop.prev_class;
     if prev == CHAR_CLASS_LIMIT - 1
         && st.input.cur_input.state == TOKEN_LIST
-        && st.input.cur_input.index == BACKED_UP_CHAR
+        && st.input.cur_input.token_type() == TokenType::BackedUpChar
     {
         return Ok(false);
     }
@@ -2835,8 +2805,8 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32) -> Result<bool, 
     }
     st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
     crate::input::back_input(st)?;
-    st.input.cur_input.index = BACKED_UP_CHAR;
-    crate::input::begin_token_list(st, list, INTER_CHAR_TEXT)?;
+    st.input.cur_input.set_token_type(TokenType::BackedUpChar);
+    crate::input::begin_token_list(st, list, TokenType::InterChar)?;
     Ok(true)
 }
 
@@ -3708,12 +3678,18 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
             st.scanner.cur_chr = st.scanner.cur_val;
             crate::scan::set_math_char(st, st.eqtb.math_code(st.scanner.cur_chr))?;
         }
-        (MMODE, MATH_CHAR_NUM) => math_char_num(st)?,
+        (MMODE, MATH_CHAR_NUM) => {
+            let c = crate::scan::scan_math_char_num(st)?;
+            crate::scan::set_math_char(st, c)?;
+        }
         (MMODE, MATH_GIVEN) => {
             crate::scan::set_math_char(st, crate::scan::math_code_from_tex(st.scanner.cur_chr))?
         }
         (MMODE, XETEX_MATH_GIVEN) => crate::scan::set_math_char(st, st.scanner.cur_chr)?,
-        (MMODE, DELIM_NUM) => math_delim_num(st)?,
+        (MMODE, DELIM_NUM) => {
+            let c = crate::scan::scan_delim_num(st)?;
+            crate::scan::set_math_char(st, c)?;
+        }
         (MMODE, MATH_COMP) => append_noad(st, false)?,
         (MMODE, LIMIT_SWITCH) => crate::math::math_limit_switch(st)?,
         (MMODE, RADICAL) => crate::math::math_radical(st)?,
@@ -3759,7 +3735,7 @@ fn main_control_from(
     mut resume_pending_command: bool,
 ) -> Result<(), Abort> {
     if run_every_job {
-        begin_every(st, LOCAL_EVERY_JOB, EVERY_JOB_TEXT)?;
+        begin_every(st, TokPar::EveryJob, TokenType::EveryJob)?;
     }
     // Cancellation and fence hooks are for resident sessions only, batch runs
     // must not pay for them per command.
@@ -4205,7 +4181,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         } else {
             e = true;
         }
-    } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
+    } else if st.scanner.cur_chr == TokPar::XetexInterCharToks.loc() {
         let n = scan_inter_char_pair(st)?;
         let sa = st
             .mem
@@ -4235,7 +4211,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
             } else {
                 NodePtr::<SaNode>::at(st.scanner.cur_chr).sa_ptr(&st.mem)
             }
-        } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
+        } else if st.scanner.cur_chr == TokPar::XetexInterCharToks.loc() {
             let n = scan_inter_char_pair(st)?;
             let sa = st
                 .mem
@@ -4259,7 +4235,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         st.mem.free_avail(def_ref);
         return Ok(());
     }
-    if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
+    if p == TokPar::OutputRoutine.loc() && !e {
         let mut tail = tail;
         st.mem
             .store_new_token(&mut tail, Token::right_brace(b'}'))?;
@@ -4373,7 +4349,7 @@ fn set_shape(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     let n = st.scanner.cur_val;
     let p = if n <= 0 {
         MemPtr::NULL
-    } else if q > LOCAL_BASE + LOCAL_PAR_SHAPE {
+    } else if q > PAR_SHAPE_LOC {
         let words = n / 2 + 1;
         let p = st.mem.get_node(2 * words + 1)?;
         let penalties = NodePtr::<PenaltiesNode>::at(p);

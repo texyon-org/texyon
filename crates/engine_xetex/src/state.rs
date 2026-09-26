@@ -2,7 +2,7 @@
 
 use crate::codes::{FiOrElseCode, ValueLevel};
 use crate::hash::HASH_OFFSET;
-use crate::params::{DimenPar, GluePar, IntPar};
+use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::units::{FontId, Scaled, StrNumber};
 
 #[derive(Default)]
@@ -359,14 +359,15 @@ impl EqtbState {
     pub(crate) fn cur_font(&self) -> FontId {
         FontId(self.equiv(crate::consts::CUR_FONT_LOC))
     }
-    /// Token list parameter `n` (`LOCAL_*`).
     #[inline]
-    pub(crate) fn local(&self, n: i32) -> crate::units::MemPtr {
-        crate::units::MemPtr(self.equiv(crate::consts::LOCAL_BASE + n))
+    pub(crate) fn tok_par(&self, n: TokPar) -> crate::units::MemPtr {
+        crate::units::MemPtr(self.equiv(n.loc()))
     }
     #[inline]
     pub(crate) fn par_shape(&self) -> Option<crate::node::NodePtr<crate::node::ParShapeNode>> {
-        crate::node::NodePtr::from_ptr(self.local(crate::consts::LOCAL_PAR_SHAPE))
+        crate::node::NodePtr::from_ptr(crate::units::MemPtr(
+            self.equiv(crate::consts::PAR_SHAPE_LOC),
+        ))
     }
     /// The e-TeX penalty array held in `eqtb[loc]`.
     #[inline]
@@ -812,6 +813,55 @@ impl SaveStackState {
     }
 }
 
+/// `cur_mark`, the marks of the current page and split.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct CurMarks([crate::units::MemPtr; 5]);
+
+impl CurMarks {
+    pub(crate) const NULL: CurMarks = CurMarks([crate::units::MemPtr::NULL; 5]);
+}
+
+impl std::ops::Index<crate::codes::MarkCode> for CurMarks {
+    type Output = crate::units::MemPtr;
+    #[inline]
+    fn index(&self, m: crate::codes::MarkCode) -> &crate::units::MemPtr {
+        &self.0[m as usize]
+    }
+}
+
+impl std::ops::IndexMut<crate::codes::MarkCode> for CurMarks {
+    #[inline]
+    fn index_mut(&mut self, m: crate::codes::MarkCode) -> &mut crate::units::MemPtr {
+        &mut self.0[m as usize]
+    }
+}
+
+/// `sa_root`, the sparse-array trees of registers and mark classes by type.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct SaRoots([crate::units::MemPtr; 8]);
+
+impl SaRoots {
+    /// The register trees, `int_val..=inter_char_val`, which formats keep.
+    pub(crate) fn registers_mut(&mut self) -> &mut [crate::units::MemPtr] {
+        &mut self.0[ValueLevel::Int as usize..=ValueLevel::InterChar as usize]
+    }
+}
+
+impl std::ops::Index<ValueLevel> for SaRoots {
+    type Output = crate::units::MemPtr;
+    #[inline]
+    fn index(&self, t: ValueLevel) -> &crate::units::MemPtr {
+        &self.0[t as usize]
+    }
+}
+
+impl std::ops::IndexMut<ValueLevel> for SaRoots {
+    #[inline]
+    fn index_mut(&mut self, t: ValueLevel) -> &mut crate::units::MemPtr {
+        &mut self.0[t as usize]
+    }
+}
+
 #[derive(Default, Clone)]
 pub(crate) struct ScannerState {
     /// Monotonic token-fetch clock used to order checkpoint fences.
@@ -861,7 +911,7 @@ pub(crate) struct ScannerState {
     pub cur_tok: crate::token::Token,
     pub cur_val: i32,
     pub cur_ptr: crate::units::MemPtr,
-    pub cur_mark: [crate::units::MemPtr; 5],
+    pub cur_mark: CurMarks,
     pub disc_ptr: [crate::units::MemPtr; 4],
     pub cur_mlist: crate::units::MemPtr,
     pub cur_style: i16,
@@ -886,7 +936,7 @@ pub(crate) struct ScannerState {
     pub lr_ptr: crate::units::MemPtr,
     pub lr_problems: i32,
     pub cur_dir: i16,
-    pub sa_root: [crate::units::MemPtr; 8],
+    pub sa_root: SaRoots,
     pub sa_null: crate::mem_types::MemoryWord,
     pub empty: crate::mem_types::B32x2,
     pub native_text: Vec<u16>,

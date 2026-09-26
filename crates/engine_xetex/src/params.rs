@@ -2,7 +2,7 @@
 //! `glue_par`, numbered as offsets from their region base.
 
 use crate::codes::code_enum;
-use crate::consts::{DIMEN_BASE, GLUE_BASE, INT_BASE};
+use crate::consts::{DIMEN_BASE, GLUE_BASE, INT_BASE, LOCAL_BASE};
 
 code_enum! {
     pub(crate) enum IntPar: u8 {
@@ -310,5 +310,31 @@ impl GluePar {
     #[inline]
     pub(crate) const fn loc(self) -> i32 {
         GLUE_BASE + self as i32
+    }
+}
+
+code_enum! {
+    /// The token list parameters, after `\parshape` in the local region.
+    pub(crate) enum TokPar: u8 {
+        OutputRoutine = 1 => "output",
+        EveryPar = 2 => "everypar",
+        EveryMath = 3 => "everymath",
+        EveryDisplay = 4 => "everydisplay",
+        EveryHbox = 5 => "everyhbox",
+        EveryVbox = 6 => "everyvbox",
+        EveryJob = 7 => "everyjob",
+        EveryCr = 8 => "everycr",
+        ErrHelp = 9 => "errhelp",
+        EveryEof = 10 => "everyeof",
+        XetexInterCharToks = 11 => "XeTeXinterchartoks",
+        TectonicCoda = 12 => "TectonicCodaTokens",
+    }
+}
+
+impl TokPar {
+    /// The `eqtb` location.
+    #[inline]
+    pub(crate) const fn loc(self) -> i32 {
+        LOCAL_BASE + self as i32
     }
 }

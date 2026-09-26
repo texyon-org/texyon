@@ -10,14 +10,16 @@ use crate::cmd::{
     SET_BOX_DIMEN, SET_FONT, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF, SET_SHAPE, SPACER,
     SUP_MARK, TAB_MARK, THE, TOKS_REGISTER, VRULE, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
 };
-use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, ScannerStatus, ValueLevel};
+use crate::codes::{
+    BoxDimenCode, DelimNumCode, FiOrElseCode, IfCode, LastItemCode, MathCharNumCode, PageIntCode,
+    ScannerStatus, TheCode, ValueLevel,
+};
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
     DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE, FROZEN_CR,
     FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX, JUST_OPEN,
-    LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA,
-    LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MU_GLUE,
-    MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FONT, NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE,
+    LEFT_SIDE, MATH_CHAR, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, NORMAL,
+    NULL_CS, NULL_FONT, NUMBER_MATH_FAMILIES, PAR_SHAPE_LOC, PRIM_EQTB_BASE, RIGHT_SIDE,
     SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL, UNDEFINED_PRIMITIVE,
     VMODE,
 };
@@ -30,8 +32,8 @@ use crate::ext::{
 };
 use crate::fonts::{AAT_FONT_FLAG, QUAD_CODE, SPACE_CODE, SPACE_SHRINK_CODE, X_HEIGHT_CODE};
 use crate::input::{
-    back_error, back_input, begin_token_list, ins_error, BACKED_UP, EVERY_EOF_TEXT, INSERTED,
-    MID_LINE, NEW_LINE, PARAMETER, SKIP_BLANKS, TECTONIC_CODA_TEXT, TOKEN_LIST, V_TEMPLATE,
+    back_error, back_input, begin_token_list, ins_error, TokenType, MID_LINE, NEW_LINE,
+    SKIP_BLANKS, TOKEN_LIST,
 };
 use crate::main_control::{LP_CODE_BASE, RP_CODE_BASE};
 use crate::mem::{BACKUP_HEAD, OMIT_TEMPLATE, TEMP_HEAD};
@@ -44,17 +46,16 @@ use crate::output::{
     print_int, print_nl,
 };
 use crate::packaging::{ADDITIONAL, EXACTLY};
-use crate::params::IntPar;
+use crate::params::{IntPar, TokPar};
 use crate::state::{
-    EngineState, EqtbState, ErrorState, GroupCode, InputClusterState, MemState, ScannerState,
-    Selector,
+    EngineState, EqtbState, ErrorState, FontEngineHandle, GroupCode, InputClusterState, MemState,
+    ScannerState, Selector,
 };
 use crate::token::Token;
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 use std::sync::Arc;
 
-use crate::state::FontEngineHandle;
 use tectonic_xetex_layout::get_cp_code;
 
 const ZERO_TOKEN: Token = Token::other(b'0');
@@ -657,27 +658,10 @@ pub(crate) fn scan_math(st: &mut EngineState, p: NodePtr<MathField>) -> Result<(
                     st.scanner.cur_cmd = CHAR_GIVEN;
                     continue;
                 }
-                MATH_CHAR_NUM => match st.scanner.cur_chr {
-                    2 => scan_umath_code(st)?,
-                    1 => {
-                        scan_xetex_math_char_int(st)?;
-                        st.scanner.cur_val
-                    }
-                    _ => {
-                        scan_fifteen_bit_int(st)?;
-                        math_code_from_tex(st.scanner.cur_val)
-                    }
-                },
+                MATH_CHAR_NUM => scan_math_char_num(st)?,
                 MATH_GIVEN => math_code_from_tex(st.scanner.cur_chr),
                 XETEX_MATH_GIVEN => st.scanner.cur_chr,
-                DELIM_NUM => {
-                    if st.scanner.cur_chr == 1 {
-                        scan_umath_code(st)?
-                    } else {
-                        scan_delimiter_int(st)?;
-                        math_code_from_tex(st.scanner.cur_val / 4096)
-                    }
-                }
+                DELIM_NUM => scan_delim_num(st)?,
                 _ => {
                     back_input(st)?;
                     scan_left_brace(st)?;
@@ -768,7 +752,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
             let p = st.mem.get_avail()?;
             p.set_token(&mut st.mem, Token::from_cs(st.scanner.cur_cs));
-            begin_token_list(st, p, BACKED_UP)?;
+            begin_token_list(st, p, TokenType::BackedUp)?;
         }
         st.scanner.cur_cmd = SPACER;
         st.scanner.cur_chr = i32::from(b' ');
@@ -810,7 +794,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             _ => {}
         }
 
-        begin_token_list(st, inserted, INSERTED)?;
+        begin_token_list(st, inserted, TokenType::Inserted)?;
         print(st, " of ");
         let warning_index = st.scanner.warning_index;
         crate::output::sprint_cs(st, warning_index);
@@ -1149,11 +1133,11 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                             st.input.cur_input.limit = st.input.last;
                         } else {
                             let index = st.input.cur_input.index as usize;
-                            let every_eof = st.eqtb.local(LOCAL_EVERY_EOF);
+                            let every_eof = st.eqtb.tok_par(TokPar::EveryEof);
                             if !every_eof.is_null() && !st.input.eof_seen[index] {
                                 st.input.cur_input.limit = st.input.first - 1;
                                 st.input.eof_seen[index] = true;
-                                begin_token_list(st, every_eof, EVERY_EOF_TEXT)?;
+                                begin_token_list(st, every_eof, TokenType::EveryEof)?;
                                 continue 'restart;
                             }
                             st.input.force_eof = true;
@@ -1190,10 +1174,10 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                         crate::input::end_file_reading(st)?;
                         continue 'restart;
                     }
-                    let coda = st.eqtb.local(LOCAL_TECTONIC_CODA);
+                    let coda = st.eqtb.tok_par(TokPar::TectonicCoda);
                     if !st.scanner.used_tectonic_coda_tokens && !coda.is_null() {
                         st.scanner.used_tectonic_coda_tokens = true;
-                        begin_token_list(st, coda, TECTONIC_CODA_TEXT)?;
+                        begin_token_list(st, coda, TokenType::TectonicCoda)?;
                         continue 'restart;
                     }
                     return Err(Abort::NoLegalEnd {
@@ -1231,7 +1215,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                     OUT_PARAM => {
                         let param = st.input.param_stack
                             [(st.input.cur_input.limit + st.scanner.cur_chr - 1) as usize];
-                        begin_token_list(st, param, PARAMETER)?;
+                        begin_token_list(st, param, TokenType::Parameter)?;
                         continue 'restart;
                     }
                     _ => {}
@@ -1262,7 +1246,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 column.v_part(&st.mem)
             };
-            begin_token_list(st, template, V_TEMPLATE)?;
+            begin_token_list(st, template, TokenType::VTemplate)?;
             st.scanner.cur_cmd = saved_cmd as u8;
             st.scanner.align_state = 1_000_000;
             continue 'restart;
@@ -1377,11 +1361,36 @@ pub(crate) fn get_x_token(st: &mut EngineState) -> Result<(), Abort> {
 
 /// Builds the token list for `\the` (or `\unexpanded`/`\detokenize`) at
 /// `link(temp_head)` and returns its tail.
-pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
-    if st.scanner.cur_chr & 1 != 0 {
-        let c = st.scanner.cur_chr;
+/// The math code given by `\mathchar` or a XeTeX form, per `cur_chr`.
+pub(crate) fn scan_math_char_num(st: &mut EngineState) -> Result<i32, Abort> {
+    Ok(match MathCharNumCode::from_raw(st.scanner.cur_chr) {
+        Some(MathCharNumCode::UmathChar) => scan_umath_code(st)?,
+        Some(MathCharNumCode::UmathCharNum) => {
+            scan_xetex_math_char_int(st)?;
+            st.scanner.cur_val
+        }
+        _ => {
+            scan_fifteen_bit_int(st)?;
+            math_code_from_tex(st.scanner.cur_val)
+        }
+    })
+}
+
+/// The math code of the small character given by `\delimiter` or `\Udelimiter`.
+pub(crate) fn scan_delim_num(st: &mut EngineState) -> Result<i32, Abort> {
+    Ok(match DelimNumCode::from_raw(st.scanner.cur_chr) {
+        Some(DelimNumCode::Udelimiter) => scan_umath_code(st)?,
+        _ => {
+            scan_delimiter_int(st)?;
+            math_code_from_tex(st.scanner.cur_val / 4096)
+        }
+    })
+}
+
+pub(crate) fn the_toks(st: &mut EngineState, code: TheCode) -> Result<MemPtr, Abort> {
+    if code != TheCode::The {
         scan_general_text(st)?;
-        if c == 1 {
+        if code == TheCode::Unexpanded {
             return Ok(MemPtr::from_raw(st.scanner.cur_val));
         }
         let old_setting = st.shipout.selector;
@@ -1522,7 +1531,7 @@ pub(crate) fn scan_toks(
                     if st.scanner.cur_cmd != THE {
                         expand(st)?;
                     } else {
-                        let tail = the_toks(st)?;
+                        let tail = the_toks(st, crate::expand::the_code(st)?)?;
                         let list = TEMP_HEAD.link(&st.mem);
                         if !list.is_null() {
                             p.set_link(&mut st.mem, list);
@@ -2427,7 +2436,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
         } else if st.scanner.cur_cmd != SPACER || p != BACKUP_HEAD {
             back_input(st)?;
             if p != BACKUP_HEAD {
-                begin_token_list(st, BACKUP_HEAD.link(&st.mem), BACKED_UP)?;
+                begin_token_list(st, BACKUP_HEAD.link(&st.mem), TokenType::BackedUp)?;
             }
             if keyword.len() == 1 {
                 st.scanner.cur_cs = save_cur_cs;
@@ -2620,7 +2629,7 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(
         }
         st.scanner.cur_val_level = ValueLevel::Tok;
     } else if st.scanner.cur_cmd == ASSIGN_TOKS {
-        if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
+        if st.scanner.cur_chr == TokPar::XetexInterCharToks.loc() {
             scan_char_class_not_ignored(st)?;
             st.scanner.cur_ptr.0 = st.scanner.cur_val;
             scan_char_class_not_ignored(st)?;
@@ -3150,9 +3159,9 @@ pub(crate) fn scan_something_internal(
                 }
             }
             SET_PAGE_INT => {
-                let v = match m {
-                    0 => st.shipout.dead_cycles,
-                    2 => st.errors.interaction as i32,
+                let v = match PageIntCode::from_raw(m) {
+                    Some(PageIntCode::DeadCycles) => st.shipout.dead_cycles,
+                    Some(PageIntCode::InteractionMode) => st.errors.interaction as i32,
                     _ => st.shipout.insert_penalties,
                 };
                 set_cur_val(st, v, ValueLevel::Int);
@@ -3172,7 +3181,7 @@ pub(crate) fn scan_something_internal(
                 set_cur_val(st, v.0, ValueLevel::Dimen);
             }
             SET_SHAPE => {
-                if m > LOCAL_BASE + LOCAL_PAR_SHAPE {
+                if m > PAR_SHAPE_LOC {
                     scan_int(st)?;
                     st.scanner.cur_val = match st.eqtb.penalties(m) {
                         Some(penalties) if st.scanner.cur_val >= 0 => {

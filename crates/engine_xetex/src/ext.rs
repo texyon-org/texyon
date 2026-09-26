@@ -17,7 +17,7 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
-use crate::input::INSERTED;
+use crate::input::TokenType;
 use crate::io::{AUTO, ICUMAPPING, RAW, UTF16BE, UTF16LE, UTF8};
 use crate::layout::{
     hb_tag, Bidi, FontMappingHandle, K_STATUS_NO_ERROR, K_STATUS_OUTPUT_BUFFER_FULL, UBIDI_MIXED,
@@ -1469,7 +1469,7 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     let close = st.mem.get_avail()?;
     text_tail.set_link(&mut st.mem, close);
     close.set_token(&mut st.mem, Token::right_brace(b'}'));
-    crate::input::begin_token_list(st, toklist, INSERTED)?;
+    crate::input::begin_token_list(st, toklist, TokenType::Inserted)?;
     crate::texmfmp::remember_source_info(st, fname, st.mem.line);
     Ok(())
 }
@@ -1499,7 +1499,7 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
     let close = st.mem.get_avail()?;
     close.set_token(&mut st.mem, Token::right_brace(b'}'));
     text_tail.set_link(&mut st.mem, close);
-    crate::input::begin_token_list(st, toklist, INSERTED)?;
+    crate::input::begin_token_list(st, toklist, TokenType::Inserted)?;
     Ok(())
 }
 

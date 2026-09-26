@@ -1,18 +1,17 @@
 //! The page builder: `build_page` and `fire_up`.
 
-use crate::codes::{BoxCode, ValueLevel};
+use crate::codes::{BoxCode, MarkCode, ValueLevel};
 use crate::consts::{
-    AWFUL_BAD, BOT_MARK_CODE, BOX_NODE_SIZE, EJECT_PENALTY, FIRST_MARK_CODE, IGNORE_DEPTH, INF_BAD,
-    INF_PENALTY, INS_NODE_SIZE, LOCAL_OUTPUT_ROUTINE, MAX_DIMEN, MAX_HALFWORD, NORMAL,
-    TOP_MARK_CODE, VMODE,
+    AWFUL_BAD, BOX_NODE_SIZE, EJECT_PENALTY, IGNORE_DEPTH, INF_BAD, INF_PENALTY, INS_NODE_SIZE,
+    MAX_DIMEN, MAX_HALFWORD, NORMAL, VMODE,
 };
 use crate::errors::Abort;
 use crate::helpers::badness;
-use crate::input::OUTPUT_TEXT;
+use crate::input::TokenType;
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
-use crate::packaging::{ADDITIONAL, EXACTLY};
-use crate::params::{DimenPar, GluePar, IntPar};
+use crate::packaging::{MarksAction, ADDITIONAL, EXACTLY};
+use crate::params::{DimenPar, GluePar, IntPar, TokPar};
 use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
@@ -23,8 +22,6 @@ const PAGE_TOTAL: usize = 1;
 const PAGE_SHRINK: usize = 6;
 const PAGE_DEPTH: usize = 7;
 
-pub(crate) const FIRE_UP_INIT: i16 = 1;
-pub(crate) const FIRE_UP_DONE: i16 = 2;
 const PAGE_INS_NODE_SIZE: i32 = 4;
 const DEPLORABLE: i32 = 100_000;
 
@@ -74,27 +71,27 @@ fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<()
         let sa = st
             .mem
             .create_sa_element(&mut st.scanner, ValueLevel::Mark, class)?;
-        if sa.child(&st.mem, 1).is_null() {
-            sa.set_child(&mut st.mem, 1, mark_ptr);
+        if sa.mark(&st.mem, MarkCode::First).is_null() {
+            sa.set_mark(&mut st.mem, MarkCode::First, mark_ptr);
             st.mem.add_token_ref(mark_ptr);
         }
-        let bot = sa.child(&st.mem, 2);
+        let bot = sa.mark(&st.mem, MarkCode::Bot);
         if !bot.is_null() {
             st.mem.delete_token_ref(bot);
         }
-        sa.set_child(&mut st.mem, 2, mark_ptr);
+        sa.set_mark(&mut st.mem, MarkCode::Bot, mark_ptr);
         st.mem.add_token_ref(mark_ptr);
         return Ok(());
     }
     let marks = &mut st.scanner.cur_mark;
-    if marks[FIRST_MARK_CODE].is_null() {
-        marks[FIRST_MARK_CODE] = mark_ptr;
+    if marks[MarkCode::First].is_null() {
+        marks[MarkCode::First] = mark_ptr;
         st.mem.add_token_ref(mark_ptr);
     }
-    if !marks[BOT_MARK_CODE].is_null() {
-        st.mem.delete_token_ref(marks[BOT_MARK_CODE]);
+    if !marks[MarkCode::Bot].is_null() {
+        st.mem.delete_token_ref(marks[MarkCode::Bot]);
     }
-    marks[BOT_MARK_CODE] = mark_ptr;
+    marks[MarkCode::Bot] = mark_ptr;
     st.mem.add_token_ref(mark_ptr);
     Ok(())
 }
@@ -166,20 +163,23 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     st.eqtb
         .geq_word_define(IntPar::OutputPenalty.loc(), output_penalty);
 
-    if let Some(root) = st.scanner.sa_root[ValueLevel::Mark as usize].as_idx() {
-        if st.mem.do_marks(&mut st.scanner, FIRE_UP_INIT, 0, root) {
-            st.scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
+    if let Some(root) = st.scanner.sa_root[ValueLevel::Mark].as_idx() {
+        if st
+            .mem
+            .do_marks(&mut st.scanner, MarksAction::FireUpInit, 0, root)
+        {
+            st.scanner.sa_root[ValueLevel::Mark] = MemPtr::NULL;
         }
     }
-    if !st.scanner.cur_mark[BOT_MARK_CODE].is_null() {
-        if !st.scanner.cur_mark[TOP_MARK_CODE].is_null() {
-            st.mem.delete_token_ref(st.scanner.cur_mark[TOP_MARK_CODE]);
+    if !st.scanner.cur_mark[MarkCode::Bot].is_null() {
+        if !st.scanner.cur_mark[MarkCode::Top].is_null() {
+            st.mem.delete_token_ref(st.scanner.cur_mark[MarkCode::Top]);
         }
-        st.scanner.cur_mark[TOP_MARK_CODE] = st.scanner.cur_mark[BOT_MARK_CODE];
-        st.mem.add_token_ref(st.scanner.cur_mark[TOP_MARK_CODE]);
+        st.scanner.cur_mark[MarkCode::Top] = st.scanner.cur_mark[MarkCode::Bot];
+        st.mem.add_token_ref(st.scanner.cur_mark[MarkCode::Top]);
         st.mem
-            .delete_token_ref(st.scanner.cur_mark[FIRST_MARK_CODE]);
-        st.scanner.cur_mark[FIRST_MARK_CODE] = MemPtr::NULL;
+            .delete_token_ref(st.scanner.cur_mark[MarkCode::First]);
+        st.scanner.cur_mark[MarkCode::First] = MemPtr::NULL;
     }
 
     if c == best {
@@ -306,18 +306,21 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     }
     PAGE_INS_HEAD.set_link(&mut st.mem, PAGE_INS_HEAD);
 
-    if let Some(root) = st.scanner.sa_root[ValueLevel::Mark as usize].as_idx() {
-        if st.mem.do_marks(&mut st.scanner, FIRE_UP_DONE, 0, root) {
-            st.scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
+    if let Some(root) = st.scanner.sa_root[ValueLevel::Mark].as_idx() {
+        if st
+            .mem
+            .do_marks(&mut st.scanner, MarksAction::FireUpDone, 0, root)
+        {
+            st.scanner.sa_root[ValueLevel::Mark] = MemPtr::NULL;
         }
     }
     let marks = &mut st.scanner.cur_mark;
-    if !marks[TOP_MARK_CODE].is_null() && marks[FIRST_MARK_CODE].is_null() {
-        marks[FIRST_MARK_CODE] = marks[TOP_MARK_CODE];
-        st.mem.add_token_ref(marks[TOP_MARK_CODE]);
+    if !marks[MarkCode::Top].is_null() && marks[MarkCode::First].is_null() {
+        marks[MarkCode::First] = marks[MarkCode::Top];
+        st.mem.add_token_ref(marks[MarkCode::Top]);
     }
 
-    let output_routine = st.eqtb.local(LOCAL_OUTPUT_ROUTINE);
+    let output_routine = st.eqtb.tok_par(TokPar::OutputRoutine);
     if !output_routine.is_null() {
         if st.shipout.dead_cycles < st.eqtb.int_par(IntPar::MaxDeadCycles) {
             st.shipout.output_active = true;
@@ -326,7 +329,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             st.input.cur_list.mode = -VMODE;
             st.input.cur_list.set_prev_depth(IGNORE_DEPTH);
             st.input.cur_list.mode_line = -st.mem.line;
-            crate::input::begin_token_list(st, output_routine, OUTPUT_TEXT)?;
+            crate::input::begin_token_list(st, output_routine, TokenType::Output)?;
             st.save_stack
                 .new_save_level(GroupCode::Output, st.mem.line)?;
             crate::main_control::normal_paragraph(st)?;

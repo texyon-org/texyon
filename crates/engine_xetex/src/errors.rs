@@ -1,6 +1,6 @@
 use crate::bridge::{output_flush, set_error_message};
 use crate::codes::ScannerStatus;
-use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, LOCAL_ERR_HELP, MEM_TOP, TEX_NULL};
+use crate::consts::{HISTORY_ERROR_ISSUED, HISTORY_FATAL_ERROR, MEM_TOP, TEX_NULL};
 use crate::mem::{HOLD_HEAD, TEMP_HEAD};
 use crate::output::{
     begin_diagnostic, capture_to_diagnostic, diagnostic_begin_capture_warning_here, end_diagnostic,
@@ -8,6 +8,7 @@ use crate::output::{
     print_in_mode, print_int, print_ln, print_nl, show_box, show_context, show_token_list,
     token_show,
 };
+use crate::params::TokPar;
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, StrNumber};
 
@@ -270,7 +271,7 @@ pub(crate) fn not_font_error_common(
 }
 
 pub(crate) fn give_err_help(st: &mut EngineState) {
-    token_show(st, st.eqtb.local(LOCAL_ERR_HELP));
+    token_show(st, st.eqtb.tok_par(TokPar::ErrHelp));
 }
 
 pub(crate) fn mu_error(st: &mut EngineState) -> Result<(), Abort> {

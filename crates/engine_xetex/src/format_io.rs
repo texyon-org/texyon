@@ -9,7 +9,6 @@ use crate::bridge::{
     input_open, input_read, output_close, output_flush, output_open, output_write, FileFormat,
 };
 use crate::cmd::UNDEFINED_CS;
-use crate::codes::ValueLevel;
 use crate::consts::{
     ACTIVE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, HASH_BASE,
     HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
@@ -480,7 +479,7 @@ fn dynamic_memory<S: FmtStream>(s: &mut S, st: &mut EngineState) -> Result<(), A
     let lo_mem_max = mem.lo_mem_max;
 
     s.items_in(
-        &mut st.scanner.sa_root[ValueLevel::Int as usize..=ValueLevel::InterChar as usize],
+        st.scanner.sa_root.registers_mut(),
         MemPtr(MIN_HALFWORD),
         MemPtr(lo_mem_max),
     )?;

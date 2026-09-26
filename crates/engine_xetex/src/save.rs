@@ -258,7 +258,8 @@ impl MemState {
             let next = q.link(self);
             self.free_node(q.ptr(), s);
             if next.is_null() {
-                scanner.sa_root[i as usize] = MemPtr::NULL;
+                let root_type = ValueLevel::from_raw(i).expect("sparse array type");
+                scanner.sa_root[root_type] = MemPtr::NULL;
                 return;
             }
             q = sa(next);
@@ -601,7 +602,7 @@ impl MemState {
         t: ValueLevel,
         n: i32,
     ) -> Option<NodePtr<SaNode>> {
-        let mut p = scanner.sa_root[t as usize];
+        let mut p = scanner.sa_root[t];
         for i in sa_levels(n) {
             if p.is_null() {
                 break;
@@ -621,10 +622,10 @@ impl MemState {
         n: i32,
     ) -> Result<NodePtr<SaNode>, Abort> {
         let levels = sa_levels(n);
-        scanner.cur_ptr = scanner.sa_root[t as usize];
+        scanner.cur_ptr = scanner.sa_root[t];
         if scanner.cur_ptr.is_null() {
             let root = self.new_index(scanner, t as u16, MemPtr::NULL)?;
-            scanner.sa_root[t as usize] = root.ptr();
+            scanner.sa_root[t] = root.ptr();
             return self.sa_alloc_chain(scanner, t, n, root, &levels);
         }
         for k in 0..levels.len() {

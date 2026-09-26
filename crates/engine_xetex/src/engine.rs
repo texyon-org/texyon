@@ -7,18 +7,18 @@ use crate::cmd::{
     IGNORE, IGNORE_SPACES, INVALID_CHAR, LETTER, OTHER_CHAR, OUTER_CALL, SHAPE_REF, SPACER,
     UNDEFINED_CS,
 };
-use crate::codes::{BoxCode, FiOrElseCode, ScannerStatus, ValueLevel};
+use crate::codes::{BoxCode, FiOrElseCode, MarkCode, ScannerStatus, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
     ETEX_PEN_BASE, FIL, FILL, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
     FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, HASH_BASE,
     HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH, INT_BASE,
-    LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE,
-    LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
-    MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT, NUMBER_MATH_FAMILIES, NUMBER_USVS, PRIM_EQTB_BASE,
-    PRIM_SIZE, SF_CODE_BASE, SINGLE_BASE, SPLIT_BOT_MARK_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
-    TOP_MARK_CODE, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE, MATH_CODE_BASE, MATH_FONT_BASE,
+    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, NORMAL, NULL_FONT,
+    NUMBER_MATH_FAMILIES, NUMBER_USVS, PAR_SHAPE_LOC, PRIM_EQTB_BASE, PRIM_SIZE, SF_CODE_BASE,
+    SINGLE_BASE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
+    VMODE,
 };
 use crate::errors::Abort;
 use crate::format_io::load_fmt_file;
@@ -34,11 +34,12 @@ use crate::mem::{
 };
 use crate::mem_types::{zeroed_vec, B32x2, MemoryWord};
 use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
-use crate::params::IntPar;
+use crate::packaging::MarksAction;
+use crate::params::{IntPar, TokPar};
 use crate::scan::{set_class, set_family};
 use crate::state::{
-    ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
-    Selector,
+    ConfigState, CurMarks, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState,
+    PerFont, Selector,
 };
 use crate::token::Token;
 use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
@@ -251,16 +252,19 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     }
 
-    for mark_code in TOP_MARK_CODE..=SPLIT_BOT_MARK_CODE {
+    for mark_code in MarkCode::ALL {
         let mark = st.scanner.cur_mark[mark_code];
         if !mark.is_null() {
             st.mem.delete_token_ref(mark);
         }
     }
 
-    if let Some(marks) = st.scanner.sa_root[ValueLevel::Mark as usize].as_idx() {
-        if st.mem.do_marks(&mut st.scanner, 3, 0, marks) {
-            st.scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
+    if let Some(marks) = st.scanner.sa_root[ValueLevel::Mark].as_idx() {
+        if st
+            .mem
+            .do_marks(&mut st.scanner, MarksAction::DestroyMarks, 0, marks)
+        {
+            st.scanner.sa_root[ValueLevel::Mark] = MemPtr::NULL;
         }
     }
 
@@ -338,7 +342,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.mag_set = 0;
     st.scanner.expand_depth_count = 0;
     st.scanner.is_in_csname = false;
-    st.scanner.cur_mark = [MemPtr::NULL; 5];
+    st.scanner.cur_mark = CurMarks::NULL;
     st.scanner.cur_val = 0;
     st.scanner.cur_val_level = ValueLevel::Int;
     st.scanner.radix = 0;
@@ -402,7 +406,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.lr_problems = 0;
     st.scanner.cur_dir = LEFT_TO_RIGHT;
     st.input.pseudo_files.0 = TEX_NULL;
-    st.scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
+    st.scanner.sa_root[ValueLevel::Mark] = MemPtr::NULL;
     st.scanner.sa_null = MemoryWord {
         b32: B32x2 {
             s0: TEX_NULL,
@@ -491,14 +495,13 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     let zero_glue_refs = ZERO_GLUE.ref_count(&st.mem) + 531;
     ZERO_GLUE.set_ref_count(&mut st.mem, zero_glue_refs);
 
-    eqtb.set_eq(LOCAL_BASE + LOCAL_PAR_SHAPE, SHAPE_REF, TEX_NULL, LEVEL_ONE);
-    let par_shape_entry = eqtb.word(LOCAL_BASE + LOCAL_PAR_SHAPE);
+    eqtb.set_eq(PAR_SHAPE_LOC, SHAPE_REF, TEX_NULL, LEVEL_ONE);
+    let par_shape_entry = eqtb.word(PAR_SHAPE_LOC);
     eqtb.data[ETEX_PEN_BASE as usize..(ETEX_PEN_BASE + NUM_ETEX_PENALTIES) as usize]
         .fill(par_shape_entry);
 
     let toks_end = TOKS_BASE + NUMBER_REGS;
-    eqtb.data[(LOCAL_BASE + LOCAL_OUTPUT_ROUTINE) as usize..toks_end as usize]
-        .fill(undefined_entry);
+    eqtb.data[TokPar::OutputRoutine.loc() as usize..toks_end as usize].fill(undefined_entry);
 
     eqtb.set_eq(BOX_BASE, BOX_REF, TEX_NULL, LEVEL_ONE);
     let box_base_entry = eqtb.word(BOX_BASE);
@@ -584,8 +587,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     st.strings.format_ident = format_ident;
 
     st.scanner.max_reg_num = 32767;
-    st.scanner.sa_root[ValueLevel::Int as usize..=ValueLevel::InterChar as usize]
-        .fill(MemPtr::NULL);
+    st.scanner.sa_root.registers_mut().fill(MemPtr::NULL);
 
     st.eqtb.set_int_par(IntPar::XetexHyphenatableLength, 63);
 }

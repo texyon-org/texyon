@@ -1,35 +1,83 @@
 //! Input stack: token-list and file levels.
 
 use crate::cmd::ASSIGN_TOKS;
-use crate::consts::{FROZEN_RELAX, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, TEX_NULL};
+use crate::codes::code_enum;
+use crate::consts::{FROZEN_RELAX, TEX_NULL};
 use crate::errors::Abort;
 use crate::io::u_close;
 use crate::node::{NodePtr, PseudoLineNode};
-use crate::params::IntPar;
-use crate::state::{EngineState, InputClusterState, MemState};
+use crate::params::{IntPar, TokPar};
+use crate::state::{EngineState, InputClusterState, InputState, MemState};
 use crate::token::Token;
 use crate::units::{MemPtr, StrNumber};
 
-pub(crate) const PARAMETER: u16 = 0;
-pub(crate) const U_TEMPLATE: u16 = 1;
-pub(crate) const V_TEMPLATE: u16 = 2;
-pub(crate) const BACKED_UP: u16 = 3;
-pub(crate) const BACKED_UP_CHAR: u16 = 4;
-pub(crate) const INSERTED: u16 = 5;
-pub(crate) const MACRO: u16 = 6;
-pub(crate) const OUTPUT_TEXT: u16 = 7;
-pub(crate) const EVERY_PAR_TEXT: u16 = 8;
-pub(crate) const EVERY_MATH_TEXT: u16 = 9;
-pub(crate) const EVERY_DISPLAY_TEXT: u16 = 10;
-pub(crate) const EVERY_HBOX_TEXT: u16 = 11;
-pub(crate) const EVERY_VBOX_TEXT: u16 = 12;
-pub(crate) const EVERY_JOB_TEXT: u16 = 13;
-pub(crate) const EVERY_CR_TEXT: u16 = 14;
-pub(crate) const MARK_TEXT: u16 = 15;
-pub(crate) const EVERY_EOF_TEXT: u16 = 16;
-pub(crate) const INTER_CHAR_TEXT: u16 = 17;
-pub(crate) const WRITE_TEXT: u16 = 18;
-pub(crate) const TECTONIC_CODA_TEXT: u16 = 19;
+code_enum! {
+    /// What a token-list level reads (`token_type`). It lives in `index`,
+    /// which holds the file number of a file level.
+    #[derive(PartialOrd, Ord)]
+    pub(crate) enum TokenType: u16 {
+        Parameter = 0,
+        UTemplate = 1,
+        VTemplate = 2,
+        BackedUp = 3,
+        BackedUpChar = 4,
+        Inserted = 5,
+        Macro = 6,
+        Output = 7,
+        EveryPar = 8,
+        EveryMath = 9,
+        EveryDisplay = 10,
+        EveryHbox = 11,
+        EveryVbox = 12,
+        EveryJob = 13,
+        EveryCr = 14,
+        Mark = 15,
+        EveryEof = 16,
+        InterChar = 17,
+        Write = 18,
+        TectonicCoda = 19,
+    }
+}
+
+impl TokenType {
+    /// How `show_context` introduces a level of this type, except a macro.
+    pub(crate) fn label(self, loc: i32) -> &'static str {
+        match self {
+            TokenType::Parameter => "<argument> ",
+            TokenType::UTemplate | TokenType::VTemplate => "<template> ",
+            TokenType::BackedUp | TokenType::BackedUpChar if loc == TEX_NULL => "<recently read> ",
+            TokenType::BackedUp | TokenType::BackedUpChar => "<to be read again> ",
+            TokenType::Inserted => "<inserted text> ",
+            TokenType::Macro => unreachable!("a macro level shows its name"),
+            TokenType::Output => "<output> ",
+            TokenType::EveryPar => "<everypar> ",
+            TokenType::EveryMath => "<everymath> ",
+            TokenType::EveryDisplay => "<everydisplay> ",
+            TokenType::EveryHbox => "<everyhbox> ",
+            TokenType::EveryVbox => "<everyvbox> ",
+            TokenType::EveryJob => "<everyjob> ",
+            TokenType::EveryCr => "<everycr> ",
+            TokenType::Mark => "<mark> ",
+            TokenType::EveryEof => "<everyeof> ",
+            TokenType::InterChar => "<XeTeXinterchartoks> ",
+            TokenType::Write => "<write> ",
+            TokenType::TectonicCoda => "<TectonicCodaTokens> ",
+        }
+    }
+}
+
+impl InputState {
+    /// The type of a token-list level.
+    #[inline]
+    pub(crate) fn token_type(&self) -> TokenType {
+        TokenType::from_raw(i32::from(self.index)).expect("token list level")
+    }
+
+    #[inline]
+    pub(crate) fn set_token_type(&mut self, t: TokenType) {
+        self.index = t as u16;
+    }
+}
 
 pub(crate) const TOKEN_LIST: u16 = 0;
 pub(crate) const MID_LINE: u16 = 1;
@@ -62,26 +110,29 @@ fn pop_input(st: &mut EngineState) {
 
 pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
     let ci = st.input.cur_input;
-    if ci.index >= BACKED_UP {
-        if ci.index <= INSERTED {
+    match ci.token_type() {
+        TokenType::Parameter | TokenType::VTemplate => {}
+        TokenType::UTemplate => {
+            if st.scanner.align_state > 500_000 {
+                st.scanner.align_state = 0;
+            } else {
+                return Err(Abort::Fatal(
+                    "(interwoven alignment preambles are not allowed)",
+                ));
+            }
+        }
+        TokenType::BackedUp | TokenType::BackedUpChar | TokenType::Inserted => {
             st.mem.flush_list(MemPtr::from_raw(ci.start));
-        } else {
+        }
+        t => {
             st.mem.delete_token_ref(MemPtr(ci.start));
-            if ci.index == MACRO {
+            if t == TokenType::Macro {
                 while st.input.param_ptr > ci.limit {
                     st.input.param_ptr -= 1;
                     st.mem
                         .flush_list(st.input.param_stack[st.input.param_ptr as usize]);
                 }
             }
-        }
-    } else if ci.index == U_TEMPLATE {
-        if st.scanner.align_state > 500_000 {
-            st.scanner.align_state = 0;
-        } else {
-            return Err(Abort::Fatal(
-                "(interwoven alignment preambles are not allowed)",
-            ));
         }
     }
     pop_input(st);
@@ -91,7 +142,7 @@ pub(crate) fn end_token_list(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     while st.input.cur_input.state == TOKEN_LIST
         && st.input.cur_input.loc == TEX_NULL
-        && st.input.cur_input.index != V_TEMPLATE
+        && st.input.cur_input.token_type() != TokenType::VTemplate
     {
         end_token_list(st)?;
     }
@@ -107,7 +158,7 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
     st.input.cur_input.start = p.0;
-    st.input.cur_input.index = BACKED_UP;
+    st.input.cur_input.set_token_type(TokenType::BackedUp);
     st.input.cur_input.loc = p.0;
     Ok(())
 }
@@ -119,7 +170,7 @@ pub(crate) fn back_error(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn ins_error(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
-    st.input.cur_input.index = INSERTED;
+    st.input.cur_input.set_token_type(TokenType::Inserted);
     crate::errors::error(st)
 }
 
@@ -228,21 +279,25 @@ pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
     st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
     back_input(st)?;
-    st.input.cur_input.index = INSERTED;
+    st.input.cur_input.set_token_type(TokenType::Inserted);
     Ok(())
 }
 
-pub(crate) fn begin_token_list(st: &mut EngineState, list: MemPtr, t: u16) -> Result<(), Abort> {
+pub(crate) fn begin_token_list(
+    st: &mut EngineState,
+    list: MemPtr,
+    t: TokenType,
+) -> Result<(), Abort> {
     push_input(st)?;
     st.input.cur_input.state = TOKEN_LIST;
     st.input.cur_input.start = list.0;
-    st.input.cur_input.index = t;
-    if t < MACRO {
+    st.input.cur_input.set_token_type(t);
+    if t < TokenType::Macro {
         st.input.cur_input.loc = list.0;
         return Ok(());
     }
     st.mem.add_token_ref(list);
-    if t == MACRO {
+    if t == TokenType::Macro {
         st.input.cur_input.limit = st.input.param_ptr;
         return Ok(());
     }
@@ -256,12 +311,12 @@ pub(crate) fn begin_token_list(st: &mut EngineState, list: MemPtr, t: u16) -> Re
         diagnostic_begin_capture_warning_here(st);
         print_nl(st, "");
         match t {
-            MARK_TEXT => print_esc(st, "mark"),
-            WRITE_TEXT => print_esc(st, "write"),
+            TokenType::Mark => print_esc(st, "mark"),
+            TokenType::Write => print_esc(st, "write"),
             _ => print_cmd_chr(
                 st,
                 ASSIGN_TOKS,
-                i32::from(t) + LOCAL_BASE + LOCAL_OUTPUT_ROUTINE - i32::from(OUTPUT_TEXT),
+                t.raw() - TokenType::Output.raw() + TokPar::OutputRoutine.loc(),
             ),
         }
         print(st, "->");
