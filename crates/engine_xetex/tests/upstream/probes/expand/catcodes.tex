@@ -1,0 +1,19 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\catcode`\^^A=15 \catcode`\~=13 \def~{TILDE}
+\message{~ ^^41 ^^5e^^5e ^^^^0041 ^^^^^^01F600}
+^^A
+\catcode`\!=9 \message{a!b!c}
+\catcode`\!=14 \message{x}! comment here
+\catcode`\!=10 \message{p!!q}
+\endlinechar=-1 \message{no endline
+here}
+\endlinechar=13
+\escapechar=-1 \message{\string\relax\meaning\bye}
+\escapechar=`\! \message{\string\relax\meaning\bye}
+\escapechar=256 \message{\string\relax}
+\escapechar=`\\
+\newlinechar=`\| \message{a|b|c} \immediate\write-1{x|y|z}
+\newlinechar=-1
+\message{\string^^M \string^^@ \string\^^M}
+\uccode`\a=`\Z \uppercase{\message{abc}} \lccode`\Z=0 \lowercase{\message{XYZ}}
+\bye

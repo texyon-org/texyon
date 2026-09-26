@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\XeTeXprotrudechars=2 \rpcode\tenrm`.=500 \lpcode\tenrm`A=400 \hsize=100pt
+\setbox1\vbox{A line. A line. $$\showthe\predisplaysize x$$\par}
+\setbox1\vbox{\noindent A b. $$\showthe\predisplaysize x$$\par}
+\bye

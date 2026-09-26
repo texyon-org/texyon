@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\pre{\hfil#\hfil}
+\setbox0\vbox{\halign{\span\pre&[#]\cr a&b\cr}}\showbox0 \box0
+\setbox0\vbox{\halign{\span\pre\tabskip\span\the\tabskip&#\cr a&b\cr}}\showbox0 \box0
+\bye

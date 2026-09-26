@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox1\hbox{\leaders\hrule\hskip 5pt plus 1fil\cleaders\hbox{a}\hskip 3pt}
+\setbox0\hbox to 50pt{\unhcopy1}\showbox0\shipout\box0
+\showthe\lastnodetype \setbox0\hbox{\unhbox1 \unskip\showthe\lastskip\unskip\showthe\lastskip}
+\bye

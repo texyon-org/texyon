@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\sh{$\left\Udelimiter 4 3 "0 x\right\Udelimiter 5 3 "1$}
+\sh{$\left\Udelimiter 4 3 "0 \vrule height 30pt depth 20pt\right\Udelimiter 5 3 "1$}
+\sh{$\left\Udelimiter 4 0 "28 x\middle\Udelimiter 0 2 "6A x\right\Udelimiter 5 0 "29$}
+\sh{$\left\Udelimiter 4 1 "3C x\right.$}
+\sh{$\Uradical 3 "70 {x}\radical"270370 {y}$}
+\sh{$\left\delimiter"4262300 \vrule height 20pt\right\delimiter"5263301 $}
+\sh{$\left\Udelimiter 9 3 "0 x\right\Udelimiter 5 16 "1 \right.$}
+\bye

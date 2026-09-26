@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\everymath{\showlists}\everydisplay{\showthe\displaywidth}\setbox1\vbox{\hsize50pt a $x$ b $$y$$}\showbox1
+\everymath{\scriptstyle}\sb{$a^b$}
+\bye

@@ -1,0 +1,13 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+
+\setbox0\hbox{a\XeTeXpicfile "redbox.png" width 20pt b\XeTeXpicfile "redbox.png" rotated 30 c}\showbox0
+\shipout\copy0 \setbox2\hbox{\copy0\unhcopy0}\shipout\box2
+\TeXXeTstate=1 \shipout\hbox{\beginR a\XeTeXpicfile "redbox.png" width 20pt b\endR}
+\setbox0\hbox{\XeTeXpdffile "issue393_ungetc_trigger.pdf" page 1 width 20pt\XeTeXpdffile "issue393_ungetc_trigger.pdf" trim}\showbox0
+\setbox0\hbox{\XeTeXpdffile "issue393_ungetc_trigger.pdf" bleed \XeTeXpdffile "issue393_ungetc_trigger.pdf" art height 1cm}\showbox0
+\setbox0\hbox{\XeTeXpicfile "redbox.png" page 2 \XeTeXpicfile "redbox.png" crop}\showbox0
+\setbox0\hbox{\XeTeXpicfile "png_palette_alpha.png" \XeTeXpicfile "png_rgba_16_bit.png" \XeTeXpicfile "png_graya.png" \XeTeXpicfile "png_palette_4bit.png"}\showbox0
+\setbox0\hbox{\XeTeXpicfile "redbox.png" width -5pt \XeTeXpicfile "redbox.png" xscaled -1000 \XeTeXpicfile "redbox.png" rotated -90 scaled 2000}\showbox0
+\setbox0\hbox{\XeTeXpicfile "nonexistent.png" }\showbox0
+\bye

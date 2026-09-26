@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingscantokens1
+\scantokens{\message{A}\message{B}}
+\edef\x{\scantokens{abc\noexpand}}\show\x
+\everyeof{\noexpand}\edef\x{\scantokens{abc}}\show\x
+\everyeof{}
+\scantokens{\scantokens{\showthe\inputlineno}\showthe\inputlineno}
+\scantokens{\def\a{x}^^Jline2\show\a}
+\scantokens{\undefinedcs}
+\bye

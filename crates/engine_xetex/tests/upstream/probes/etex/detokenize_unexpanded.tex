@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\message{\detokenize{a#b \foo\bar {x} ^^M}}
+\edef\x{\detokenize{#\def}}\show\x
+\def\a{A}\edef\x{\unexpanded{\a#}\a}\show\x
+\message{\unexpanded{\a}\a}
+\toks0{\a}\edef\x{\unexpanded\expandafter{\the\toks0}}\show\x
+\immediate\write-1{\unexpanded{\a}\a\detokenize{\a}}
+\edef\x{\unexpanded\bgroup\a}}\show\x
+\bye

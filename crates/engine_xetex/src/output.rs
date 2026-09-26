@@ -311,18 +311,18 @@ pub(crate) fn print_ln_in(st: &mut EngineState) {
     }
 }
 
-/// Writes one UTF-16 code unit to the current selector.
-pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool) {
+/// Writes one byte, UTF-16 code unit or (when pseudoprinting) character to the current selector.
+pub(crate) fn print_raw_char_in(st: &mut EngineState, s: i32, incr_offset: bool) {
     match st.shipout.selector {
         sel @ (SELECTOR_TERM_ONLY | SELECTOR_LOG_ONLY | SELECTOR_TERM_AND_LOG) => {
             let to_term = sel != SELECTOR_LOG_ONLY;
             let to_log = sel != SELECTOR_TERM_ONLY;
-            warn_char_in(st, s as i32);
+            warn_char_in(st, s);
             if to_term {
-                unsafe { ttstub_output_putc(st.shipout.rust_stdout, s as i32) };
+                unsafe { ttstub_output_putc(st.shipout.rust_stdout, s) };
             }
             if to_log {
-                unsafe { ttstub_output_putc(st.shipout.log_file, s as i32) };
+                unsafe { ttstub_output_putc(st.shipout.log_file, s) };
             }
             if incr_offset {
                 if to_term {
@@ -351,13 +351,13 @@ pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool)
         SELECTOR_NEW_STRING => {
             let pp = st.strings.pool_ptr;
             if pp < st.strings.pool_size {
-                st.strings.str_pool[pp as usize] = s;
+                st.strings.str_pool[pp as usize] = s as u16;
                 st.strings.pool_ptr = pp + 1;
             }
         }
         sel => {
-            unsafe { ttstub_output_putc(st.shipout.write_file[sel as usize], s as i32) };
-            st.shipout.write_prefix[sel as usize].push(s as i32);
+            unsafe { ttstub_output_putc(st.shipout.write_file[sel as usize], s) };
+            st.shipout.write_prefix[sel as usize].push(s);
         }
     }
     st.errors.tally += 1;
@@ -366,10 +366,10 @@ pub(crate) fn print_raw_char_in(st: &mut EngineState, s: u16, incr_offset: bool)
 pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
     if st.shipout.selector > SELECTOR_PSEUDO && !st.shipout.doing_special {
         if s >= 0x10000 {
-            print_raw_char_in(st, (0xD800 + (s - 0x10000) / 1024) as u16, true);
-            print_raw_char_in(st, (0xDC00 + (s - 0x10000) % 1024) as u16, true);
+            print_raw_char_in(st, 0xD800 + (s - 0x10000) / 1024, true);
+            print_raw_char_in(st, 0xDC00 + (s - 0x10000) % 1024, true);
         } else {
-            print_raw_char_in(st, s as u16, true);
+            print_raw_char_in(st, s, true);
         }
         return;
     }
@@ -380,47 +380,47 @@ pub(crate) fn print_char_in(st: &mut EngineState, s: i32) {
     }
 
     if s < 32 && !st.shipout.doing_special {
-        print_raw_char_in(st, b'^' as u16, true);
-        print_raw_char_in(st, b'^' as u16, true);
-        print_raw_char_in(st, (s + 64) as u16, true);
+        print_raw_char_in(st, b'^' as i32, true);
+        print_raw_char_in(st, b'^' as i32, true);
+        print_raw_char_in(st, s + 64, true);
     } else if s < 127 {
-        print_raw_char_in(st, s as u16, true);
+        print_raw_char_in(st, s, true);
     } else if s == 127 {
         if !st.shipout.doing_special {
-            print_raw_char_in(st, b'^' as u16, true);
-            print_raw_char_in(st, b'^' as u16, true);
-            print_raw_char_in(st, b'?' as u16, true);
+            print_raw_char_in(st, b'^' as i32, true);
+            print_raw_char_in(st, b'^' as i32, true);
+            print_raw_char_in(st, b'?' as i32, true);
         } else {
-            print_raw_char_in(st, s as u16, true);
+            print_raw_char_in(st, s, true);
         }
     } else if s < 160 && !st.shipout.doing_special {
         let hex_digit = |d: i32| {
-            (if d < 10 {
+            if d < 10 {
                 b'0' as i32 + d
             } else {
                 b'a' as i32 + d - 10
-            }) as u16
+            }
         };
-        print_raw_char_in(st, b'^' as u16, true);
-        print_raw_char_in(st, b'^' as u16, true);
+        print_raw_char_in(st, b'^' as i32, true);
+        print_raw_char_in(st, b'^' as i32, true);
         print_raw_char_in(st, hex_digit((s % 256) / 16), true);
         print_raw_char_in(st, hex_digit(s % 16), true);
     } else if st.shipout.selector == SELECTOR_PSEUDO {
-        print_raw_char_in(st, s as u16, true);
+        print_raw_char_in(st, s, true);
     } else {
         // UTF-8, counting one column per character.
         if s < 2048 {
-            print_raw_char_in(st, (192 + s / 64) as u16, false);
-            print_raw_char_in(st, (128 + s % 64) as u16, true);
+            print_raw_char_in(st, 192 + s / 64, false);
+            print_raw_char_in(st, 128 + s % 64, true);
         } else if s < 0x10000 {
-            print_raw_char_in(st, (224 + s / 4096) as u16, false);
-            print_raw_char_in(st, (128 + (s % 4096) / 64) as u16, false);
-            print_raw_char_in(st, (128 + s % 64) as u16, true);
+            print_raw_char_in(st, 224 + s / 4096, false);
+            print_raw_char_in(st, 128 + (s % 4096) / 64, false);
+            print_raw_char_in(st, 128 + s % 64, true);
         } else {
-            print_raw_char_in(st, (240 + s / 0x40000) as u16, false);
-            print_raw_char_in(st, (128 + (s % 0x40000) / 4096) as u16, false);
-            print_raw_char_in(st, (128 + (s % 4096) / 64) as u16, false);
-            print_raw_char_in(st, (128 + s % 64) as u16, true);
+            print_raw_char_in(st, 240 + s / 0x40000, false);
+            print_raw_char_in(st, 128 + (s % 0x40000) / 4096, false);
+            print_raw_char_in(st, 128 + (s % 4096) / 64, false);
+            print_raw_char_in(st, 128 + s % 64, true);
         }
     }
 }
@@ -969,7 +969,7 @@ pub(crate) fn print_param_in(st: &mut EngineState, n: i32) {
         80 => c"XeTeXhyphenatablelength",
         81 => c"synctex",
         82 => c"pdfoutput",
-        _ => return print_cstr_in(st, c"[unknown int32_t parameter!]".as_ptr()),
+        _ => return print_cstr_in(st, c"[unknown integer parameter!]".as_ptr()),
     };
     esc(st, name);
 }
@@ -2168,7 +2168,7 @@ fn print_name_of_file_in(st: &mut EngineState) {
     let name = &st.input.name_of_file;
     let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
     for i in 0..len {
-        let b = st.input.name_of_file[i] as u16;
+        let b = st.input.name_of_file[i] as i32;
         print_raw_char_in(st, b, true);
     }
 }
@@ -3309,10 +3309,10 @@ fn show_whatsit_in(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             } else {
                 esc(st, c"XeTeXpdffile");
             }
-            print_cstr_in(st, c"( ".as_ptr());
+            print_cstr_in(st, c" \"".as_ptr());
             for i in 0..node.pic_path_len(&st.mem) as usize {
                 let b = node.pic_path(&st.mem)[i];
-                print_raw_char_in(st, b as u16, true);
+                print_raw_char_in(st, b as i32, true);
             }
             print_in(st, b'"' as i32);
         }
@@ -3565,11 +3565,11 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
                     )
                 };
                 for q in start..first_count {
-                    print_char_in(st, st.errors.trick_buf[(q % error_line) as usize] as i32);
+                    print_char_in(st, st.errors.trick_buf[(q % error_line) as usize]);
                 }
                 print_ln_in(st);
                 for _ in 0..n {
-                    print_raw_char_in(st, b' ' as u16, true);
+                    print_raw_char_in(st, b' ' as i32, true);
                 }
                 let end = if m + n <= error_line {
                     first_count + m
@@ -3577,7 +3577,7 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
                     first_count + (error_line - n - 3)
                 };
                 for q in first_count..end {
-                    print_char_in(st, st.errors.trick_buf[(q % error_line) as usize] as i32);
+                    print_char_in(st, st.errors.trick_buf[(q % error_line) as usize]);
                 }
                 if m + n > error_line {
                     print_cstr_in(st, c"...".as_ptr());

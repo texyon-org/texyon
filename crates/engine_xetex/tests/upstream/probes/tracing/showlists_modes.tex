@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\showlists
+\noindent a\showlists\par
+\setbox0\vbox{\hbox{a}\showlists \noindent b\showlists $c\showlists {d\showlists}$ \par}
+\setbox0\hbox{a\showlists $b\showlists$}
+$$ a \showlists \halign{#\cr b\showlists\cr} $$
+\setbox0\vbox{\halign{#\cr b\showlists\cr} \valign{#\cr c\showlists\cr}}
+\output={\showlists \shipout\box255}
+\hbox{a}\insert100{\hbox{i}}\mark{m}\penalty-10000
+\output={\shipout\box255}
+$a \over b\showlists$
+$\left( a\showlists \right)$
+\setbox0\hbox{\vadjust{x\showlists}\insert100{y\showlists}}
+\setbox0\hbox{\discretionary{a\showlists}{}{}}
+\bye

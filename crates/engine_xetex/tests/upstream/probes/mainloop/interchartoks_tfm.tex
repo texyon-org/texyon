@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\def\t#1{\setbox0\hbox{\xa #1}\showbox0 \setbox0\hbox{\xb #1}\showbox0 \shipout\hbox{\xa #1\xb #1}}
+\XeTeXinterchartokenstate=1
+\XeTeXcharclass`a=1 \XeTeXcharclass`b=2 \XeTeXcharclass`k=3
+\XeTeXinterchartoks 1 2 {\kern1pt}
+\XeTeXinterchartoks 0 1 {[}
+\XeTeXinterchartoks 1 0 {]}
+\XeTeXinterchartoks 4095 3 {<}
+\XeTeXinterchartoks 3 4095 {>}
+\t{ab}\t{kak}\t{a b}\t{k}\t{\noboundary k}\t{abab}\t{a\char`b}
+\showthe\XeTeXcharclass`a \showthe\XeTeXinterchartoks 1 2
+\XeTeXcharclass`a=4096 \XeTeXcharclass`a=-1 \XeTeXinterchartoks 4096 0 {x}
+\XeTeXinterchartokenstate=0 \t{ab}
+\bye

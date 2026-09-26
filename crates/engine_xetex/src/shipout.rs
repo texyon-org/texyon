@@ -469,17 +469,17 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
     st.shipout.dvi_v = 0;
     st.shipout.cur_h = h_offset;
     st.shipout.dvi_f = FONT_BASE;
-    st.shipout.cur_h_offset = h_offset + ONE_INCH;
-    st.shipout.cur_v_offset = v_offset + ONE_INCH;
+    st.shipout.cur_h_offset = h_offset + ONE_INCH_LESS_ONE;
+    st.shipout.cur_v_offset = v_offset + ONE_INCH_LESS_ONE;
     st.shipout.cur_page_width = if pdf_page_width != 0 {
         pdf_page_width
     } else {
-        width + 2 * (h_offset + ONE_INCH)
+        width + 2 * st.shipout.cur_h_offset
     };
     st.shipout.cur_page_height = if pdf_page_height != 0 {
         pdf_page_height
     } else {
-        height + depth + 2 * (v_offset + ONE_INCH)
+        height + depth + 2 * st.shipout.cur_v_offset
     };
 
     if st.shipout.output_file_name == 0 {
@@ -2106,7 +2106,7 @@ fn pic_out(
     crate::output::print_in(st, b'(' as i32);
     let path = pic.pic_path(&st.mem).to_vec();
     for byte in path {
-        crate::output::print_raw_char_in(st, byte as u16, true);
+        crate::output::print_raw_char_in(st, byte as i32, true);
     }
     crate::output::print_in(st, b')' as i32);
     st.shipout.selector = old_setting;

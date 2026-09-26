@@ -1,0 +1,16 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\a{A}\def\b{\a\b}
+\immediate\write-1{\a}
+\immediate\write-1{\noexpand\a \string\b \meaning\a}
+\immediate\write-1{\the\count0 \romannumeral 1984 \number-5}
+\immediate\write-1{#}
+\immediate\write-1{##{}}
+\immediate\write-1{\par \relax\relax}
+\immediate\write-1{\unexpanded{\a}\detokenize{\a #}}
+\immediate\write-1{\protected@x}
+\protected\def\p{P}\immediate\write-1{\p}
+\def\c{\undefined}\immediate\write-1{\c}
+\immediate\write-1{\iftrue yes\fi \ifcase 1 no\or one\fi}
+\immediate\write-1{^^M^^I^^@^^7f^^80}
+\immediate\write 17{seventeen} \immediate\write -100{neg}
+\bye

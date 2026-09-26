@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle \left( a\over b \right)$}
+\sb{$\textstyle \left( a\over b \right)$}
+\sb{$\scriptstyle \left( a\over b \right)$}
+\sb{$\scriptscriptstyle \left( a\over b \right)$}
+\sb{$\displaystyle \left( a\over b \middle| c \right)$}
+\sb{$\textstyle \left( a\over b \middle| c \right)$}
+\sb{$\scriptstyle \left( a\over b \middle| c \right)$}
+\sb{$\scriptscriptstyle \left( a\over b \middle| c \right)$}
+\sb{$\displaystyle {a\left(b\over c\right)}$}
+\sb{$\textstyle {a\left(b\over c\right)}$}
+\sb{$\scriptstyle {a\left(b\over c\right)}$}
+\sb{$\scriptscriptstyle {a\left(b\over c\right)}$}
+\bye

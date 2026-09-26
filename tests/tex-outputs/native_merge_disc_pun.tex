@@ -1,0 +1,8 @@
+% hpack reads type(q) of a char node as its font, so a \teni char (font 7)
+% looks like a discretionary and blocks merging the native words after it.
+\showboxdepth=100 \showboxbreadth=100 \tracingoutput=1
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \hyphenchar\lb=`-
+\hsize=100pt \parindent=0pt \pretolerance=-1 \hbadness=10000 \hfuzz=\maxdimen
+\lb aaa aaa brixo\-bpohnlylkzfkyriyholaaf\par
+\lb aaa aaa $x$brixo\-bpohnlylkzfkyriyholaaf\par
+\bye

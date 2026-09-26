@@ -844,7 +844,7 @@ pub(crate) fn set_math_char_in(
         x_token_in(st)?;
         back_input_in(st)?;
     } else {
-        let nd = crate::mem::new_noad(&mut st.mem).expect("new noad");
+        let nd = crate::mem::new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
         nd.set_nucleus_type(&mut st.mem, MATH_CHAR);
         let ch = math_char_fn(c);
         nd.set_nucleus_char(&mut st.mem, (ch % 65536) as u16);
@@ -2297,7 +2297,7 @@ pub(crate) fn xetex_scan_dimen_in(
                     st.scanner.cur_order = FIL;
                     while scan_keyword_in(st, c"l")? {
                         if st.scanner.cur_order == FILLL {
-                            print_err_in(st, c"Illegal unit of measure (replaced with filll)");
+                            print_err_in(st, c"Illegal unit of measure (replaced by filll)");
                             st.errors.help(&["I dddon't go any higher than filll."]);
                             scc_err(error_in(st))?;
                         } else {
@@ -2914,7 +2914,7 @@ fn fetch_def_code_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> {
         if st.scanner.cur_val1 >= 0x4000_0000 {
             print_err_in(st, c"Extended delcode used as delcode");
             st.errors.help(&[
-                "I can only go up to 2147483647='17777777777=\"7FFFFFFF,",
+                "A delimiter code must be between 0 and \"7FFFFFF.",
                 "I changed this one to zero.",
             ]);
             scc_err(error_in(st))?;

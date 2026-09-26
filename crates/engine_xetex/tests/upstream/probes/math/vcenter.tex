@@ -1,0 +1,17 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle \vcenter{\hrule height 10pt\hrule depth 5pt}$}
+\sb{$\textstyle \vcenter{\hrule height 10pt\hrule depth 5pt}$}
+\sb{$\scriptstyle \vcenter{\hrule height 10pt\hrule depth 5pt}$}
+\sb{$\scriptscriptstyle \vcenter{\hrule height 10pt\hrule depth 5pt}$}
+\sb{$\displaystyle \vcenter to 20pt{\vss\hbox{x}}$}
+\sb{$\textstyle \vcenter to 20pt{\vss\hbox{x}}$}
+\sb{$\scriptstyle \vcenter to 20pt{\vss\hbox{x}}$}
+\sb{$\scriptscriptstyle \vcenter to 20pt{\vss\hbox{x}}$}
+\vcenter{x}
+\sb{\vcenter{x}}
+\sb{$\displaystyle \vcenter spread 4pt{\hbox{a}\vfil\hbox{b}}$}
+\sb{$\textstyle \vcenter spread 4pt{\hbox{a}\vfil\hbox{b}}$}
+\sb{$\scriptstyle \vcenter spread 4pt{\hbox{a}\vfil\hbox{b}}$}
+\sb{$\scriptscriptstyle \vcenter spread 4pt{\hbox{a}\vfil\hbox{b}}$}
+\bye

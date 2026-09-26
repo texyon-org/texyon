@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+
+\count1=1 \loop \expandafter\font\csname f\the\count1\endcsname=cmr10 scaled \numexpr 1000+\count1\relax \advance\count1 1 \ifnum\count1<300 \repeat
+\setbox0\hbox{\csname f1\endcsname A\csname f260\endcsname B\csname f299\endcsname C\tenrm D}\shipout\box0
+\shipout\hbox{\csname f290\endcsname E\csname f5\endcsname F}
+\bye

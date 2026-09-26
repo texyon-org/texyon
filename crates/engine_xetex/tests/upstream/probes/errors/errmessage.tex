@@ -1,0 +1,16 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\errmessage{First}
+\errhelp{This is my help.^^JSecond line.}
+\errmessage{Second}
+\errmessage{Third}
+\errhelp{}
+\errmessage{Fourth}
+\errhelp{a}
+\errmessage{}
+\errmessage{\x}
+\errhelp{\newlinechar=10 }
+\newlinechar=`\^^J
+\errmessage{Multi^^Jline}
+\newlinechar=-1
+\errhelp{abc}\errmessage{a very long error message that goes on and on and on and on and on and on and on}
+\bye

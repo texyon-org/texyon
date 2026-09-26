@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\outer\def\o{}
+\def\a#1{}
+\a{x\o}
+\iffalse \o \fi
+\edef\b{\o}
+\message{\o}
+\toks0={\o}
+\halign{#\o\cr}
+\bye

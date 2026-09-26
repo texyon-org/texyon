@@ -1,0 +1,17 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\hbadness=0 \hbox to 100pt{a\hskip 0pt plus 1pt b}
+\hbadness=100 \hbox to 10pt{a\hskip 0pt plus 1pt b}
+\hbox to 10pt{a\hskip 0pt plus 1pt minus 1pt b}
+\hbox to 1pt{a\hskip 0pt minus 1pt b}
+\hfuzz=1pt \hbox to 1pt{ab}
+\hfuzz=100pt \hbox to 1pt{ab}
+\hfuzz=0.1pt \overfullrule=0pt \hbox to 1pt{ab}
+\overfullrule=5pt \hbadness=10000 \hbox to 1pt{ab}
+\hbadness=-1 \hbox to 100pt{a\hskip 0pt plus 1pt b} \hbox{ab} \hbox to 100pt{a\hskip 0pt plus 1fil b}
+\hbadness=99 \hbox to 5.6pt{a\hskip 0pt plus 1pt minus 1pt b}
+\hbox to 10pt{} \hbox spread 3pt{\hskip 0pt plus 1pt} \hbox spread -3pt{\hskip 0pt minus 1pt}
+\hbox to 10pt{\hskip 0pt minus 1fil a}
+\hbox to 200pt{\hskip 0pt plus 1sp}
+\setbox0\hbox to 1pt{\hskip0pt minus 1pt \hskip0pt minus 1pt aaaa}\showbox0
+\showbox0 \showthe\badness
+\bye

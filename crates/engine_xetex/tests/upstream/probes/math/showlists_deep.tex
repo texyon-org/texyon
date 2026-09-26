@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\hbox{$a^{b_{c\showlists}}$}
+\vbox{\hbox{$x\over{y\left(z\showlists\right)}$}}
+\setbox0\vbox{a $$\halign{#\cr $x\mathchoice{\showlists}{}{}{}$\cr}$$}
+$\sqrt{\underline{\mathaccent"7015{x\showlists}}}$
+$$\vcenter{\hbox{$a\showlists$}}\eqno b\showlists$$
+\bye

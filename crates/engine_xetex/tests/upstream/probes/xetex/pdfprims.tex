@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\lm="[lmroman12-regular.otf]" at 16pt
+\message{\the\pdflastxpos,\the\pdflastypos}
+\setbox0\hbox{a\pdfsavepos b}\shipout\copy0 \message{\the\pdflastxpos,\the\pdflastypos}
+\message{\strcmp{a}{b},\strcmp{b}{a},\strcmp{abc}{abc},\strcmp{}{}}
+\message{\mdfivesum{hello}}
+\message{\shellescape}
+\message{\filesize{probe.tex}|\filemoddate{nonexistent}|\filedump length 3{probe.tex}}
+\setrandomseed 1 \message{\the\randomseed\space\uniformdeviate 100 \normaldeviate\space\uniformdeviate 7}
+\setrandomseed -12345 \message{\the\randomseed\space\uniformdeviate 1000000 \normaldeviate\space\uniformdeviate -7}
+\bye

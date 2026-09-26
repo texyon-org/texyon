@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sh#1{\setbox0\hbox{#1}\showbox0 \shipout\copy0 }
+
+\skewchar\teni=`\^^? \sh{$\hat{f}\hat{A}\tilde{\hat{a}}\vec{x}^2\widehat{abc}\widetilde{ab}_i$}
+\skewchar\teni=-1 \sh{$\hat{f}\hat{A}\tilde{\hat{a}}$}
+\skewchar\teni=`A \sh{$\hat{f}\hat{A}$}
+\sh{$\mathaccent"7016 {}\mathaccent"7016{\hbox{A}}\mathaccent"7016{\mathaccent"7016{\mathaccent"7016 x}}^2_3$}
+\sh{$\scriptscriptstyle\hat{\hat x}\displaystyle\hat{x^2}$}
+\bye

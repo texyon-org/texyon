@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\vsize30pt
+\output={\shipout\hbox{extra}\shipout\box255 \message{dc=\the\deadcycles}}
+\hbox{a}\penalty-10000
+\shipout\vbox{\hbox{direct}}\message{dc=\the\deadcycles}
+\deadcycles=5 \message{dc=\the\deadcycles}
+\bye

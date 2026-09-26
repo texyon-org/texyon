@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\parshape 3 10pt 50pt 20pt 100pt 5pt 150pt \setbox1\vbox{\hsize=200pt \parindent=10pt a a a a a a a a a a a a a a a a a a a a a a a a $$x\showthe\predisplaysize \showthe\displaywidth \showthe\displayindent$$ b b b b b b $$y$$ c}\showbox1 \box1
+\hangindent=30pt \hangafter=1 \setbox1\vbox{\hsize=200pt \parindent=10pt a a a $$x\showthe\predisplaysize\showthe\displayindent$$ b}\showbox1 \box1
+\hangindent=-30pt \hangafter=-2 \setbox1\vbox{\hsize=200pt \parindent=10pt a $$x\showthe\displaywidth$$ b $$y$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \hskip 0pt plus 1fil a $$\showthe\predisplaysize$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \hfill a $$\showthe\predisplaysize$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \leftskip 10pt plus 1fil a $$\showthe\predisplaysize$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \hskip 50pt plus 2pt a $$\showthe\predisplaysize$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt \hbox{\TeXXeTstate=1 x}a\kern20pt b\vrule width 3pt $$\showthe\predisplaysize$$}\showbox1 \box1
+\bye

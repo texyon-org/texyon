@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\vsize40pt \count100=1000 \dimen100=5pt \floatingpenalty 77 \tracingpages1
+\output={\message{ip=\the\insertpenalties}\shipout\box255 \unvbox100}
+\hbox{a}\insert100{\hbox{i1}\penalty3\hbox{i1b}}\insert100{\hbox{i2}}\insert100{\hbox{i3}}\hbox{b}\penalty-10000
+\message{\the\insertpenalties}\insertpenalties 5 \message{\the\insertpenalties}
+\bye

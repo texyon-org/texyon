@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\expandafter\def\csname a b\endcsname{AB}
+\message{\csname a b\endcsname\expandafter\string\csname a b\endcsname}
+\expandafter\show\csname\endcsname
+\message{\expandafter\meaning\csname relax\endcsname}
+\csname a\par\endcsname
+\message{\string\ \string\\ \string\^^I}
+\def\x{\csname y}\x\endcsname
+\bye

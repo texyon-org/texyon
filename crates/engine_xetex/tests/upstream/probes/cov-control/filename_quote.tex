@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\immediate\openout3="a b"
+\immediate\write3{\noexpand\message{in a b}}
+\immediate\closeout3
+\input "a b.tex"
+\immediate\openout4="c'd"
+\immediate\closeout4
+\message{\jobname}
+\bye

@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\hsize=100pt \setbox1\vbox{a $x$ b $$y$$ $z$\unskip\showlists}\showbox1
+\setbox1\hbox{$\showthe\lastkern$$\kern3pt$\showthe\lastkern}\showbox1
+\setbox1\hbox{a$x$\showthe\lastnodetype\unkern\showlists}\showbox1
+\bye

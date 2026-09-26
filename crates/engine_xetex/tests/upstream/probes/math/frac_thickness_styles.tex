@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\scriptscriptstyle{a\above 10pt b}$}
+\sb{$\displaystyle {\hbox{}\above 3pt \hbox{}}$}
+\sb{$\textstyle {\hbox{}\above 3pt \hbox{}}$}
+\sb{$\scriptstyle {\hbox{}\above 3pt \hbox{}}$}
+\sb{$\scriptscriptstyle {\hbox{}\above 3pt \hbox{}}$}
+\sb{$\displaystyle {\vrule height 30pt\atop\vrule depth 30pt}$}
+\sb{$\textstyle {\vrule height 30pt\atop\vrule depth 30pt}$}
+\sb{$\scriptstyle {\vrule height 30pt\atop\vrule depth 30pt}$}
+\sb{$\scriptscriptstyle {\vrule height 30pt\atop\vrule depth 30pt}$}
+\bye

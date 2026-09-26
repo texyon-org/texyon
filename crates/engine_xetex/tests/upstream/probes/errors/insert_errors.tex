@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\insert255{a}
+\insert-1{a}
+\insert256{a}
+\vbox{\insert100{\hbox{a}}}
+\setbox255\hbox{}
+\output={\showbox255 \shipout\box255}
+\hbox{a}\penalty-10000
+\setbox255\hbox{}
+\output={\global\setbox1\box255 \setbox255\hbox{x}}
+\hbox{b}\penalty-10000
+\showbox255
+\output={\shipout\box255}
+\bye

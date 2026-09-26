@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\a=cmr10 scaled 2000 \font\b=cmr10 at 12pt \font\c=cmr10 scaled 1000 \font\d=cmr10
+\message{\fontname\a|\fontname\b|\fontname\c|\fontname\d|\fontname\tenrm}
+\font\e=cmr10 at -1pt \font\f=cmr10 at 2048pt \font\g=cmr10 scaled 0 \font\h=cmr10 scaled 40000
+\message{\the\fontdimen1\tenrm,\the\fontdimen6\tenrm,\the\fontdimen7\tenrm}
+\fontdimen8\tenrm=1pt
+\font\i=cmr9 \fontdimen20\i=3pt \message{\the\fontdimen20\i \the\fontdimen19\i}
+\fontdimen21\tenrm=1pt
+\message{\the\fontdimen0\tenrm}
+\message{\the\hyphenchar\tenrm,\the\skewchar\tenrm,\the\skewchar\teni}
+\message{\the\fontcharwd\tenrm`A,\the\fontcharic\tenit`f,\iffontchar\tenrm`A Y\fi\iffontchar\tenrm 200 Y\else N\fi}
+\showthe\font \the\font \showthe\textfont1 \showthe\scriptfont2
+\setbox0\hbox{\a A\b B\c C\d D\nullfont E}\showbox0
+\bye

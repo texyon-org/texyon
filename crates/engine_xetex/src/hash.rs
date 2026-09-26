@@ -172,7 +172,7 @@ pub fn prim_lookup(
     loop {
         let text = eqtb.prim_s1(p);
         if text > TOO_BIG_CHAR {
-            if length(strings, text) - 1 == l && str_eq_str(strings, text - 1, s) {
+            if length(strings, text - 1) == l && str_eq_str(strings, text - 1, s) {
                 return Ok(p);
             }
         } else if text == 1 + s {

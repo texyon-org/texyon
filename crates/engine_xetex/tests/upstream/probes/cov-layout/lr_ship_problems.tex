@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\font\xa=xliga \font\xb=xligb
+
+\TeXXeTstate=1
+\setbox0\hbox{\beginR abc}\setbox1\hbox{\unhcopy0 \endL}\showbox1 \shipout\copy1
+\setbox2\hbox{\beginL x\endL}\setbox3\hbox{\unhcopy2}
+\TeXXeTstate=0 \setbox4\hbox{\unhcopy0 z}\showbox4 \shipout\copy4
+\setbox5\hbox{\unhcopy2 \unhcopy0}\shipout\copy5
+\TeXXeTstate=1 \shipout\copy4 \shipout\copy5
+\setbox6\hbox{\beginR a\hbox{\beginL b}c\endR}\shipout\box6
+\bye

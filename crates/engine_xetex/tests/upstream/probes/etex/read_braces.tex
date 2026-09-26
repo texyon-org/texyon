@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\immediate\openout1=rbr.tex
+\immediate\write1{\string{ abc\iffalse}\fi}
+\immediate\write1{def \iffalse{\fi\string}}
+\immediate\write1{\string{x\iffalse}\fi\string{y\iffalse}\fi \iffalse{\fi\string}}
+\immediate\closeout1
+\openin1=rbr.tex \read1 to\x \show\x \read1 to\y \show\y \closein1
+\openin1=rbr.tex \readline1 to\x \show\x \closein1
+\bye

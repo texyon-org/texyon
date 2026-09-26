@@ -299,7 +299,7 @@ pub(crate) struct NativeFontMetrics {
 
 unsafe fn print_c_string_in(st: &mut EngineState, s: *const c_char) {
     for &byte in CStr::from_ptr(s).to_bytes() {
-        crate::output::print_raw_char_in(st, byte as u16, true);
+        crate::output::print_raw_char_in(st, byte as i32, true);
     }
 }
 
@@ -524,7 +524,7 @@ pub(crate) fn print_utf8_str_in(st: &mut EngineState, str_: *const u8, len: c_in
     for i in 0..len.max(0) as usize {
         // SAFETY: the caller passes a buffer of at least `len` bytes.
         let byte = unsafe { *str_.add(i) };
-        crate::output::print_raw_char_in(st, byte as u16, true);
+        crate::output::print_raw_char_in(st, byte as i32, true);
     }
 }
 

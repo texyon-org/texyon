@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\a#1{}\scantokens{\a{xx}
+\message{after}
+\def\b#1\end{}\scantokens{\b{yy}\endinput}
+\bye

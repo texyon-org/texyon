@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\delimiterfactor=901 \delimitershortfall=5pt \sb{$\displaystyle {a\overwithdelims\lbrace\rbrace {b\over c}}$}
+\sb{$\textstyle {a\overwithdelims\lbrace\rbrace {b\over c}}$}
+\sb{$\scriptstyle {a\overwithdelims\lbrace\rbrace {b\over c}}$}
+\sb{$\scriptscriptstyle {a\overwithdelims\lbrace\rbrace {b\over c}}$}
+\sb{$\displaystyle {{{a\over b}\over c}\atopwithdelims\langle\rangle d}$}
+\sb{$\textstyle {{{a\over b}\over c}\atopwithdelims\langle\rangle d}$}
+\sb{$\scriptstyle {{{a\over b}\over c}\atopwithdelims\langle\rangle d}$}
+\sb{$\scriptscriptstyle {{{a\over b}\over c}\atopwithdelims\langle\rangle d}$}
+\sb{$\displaystyle \left({a\atop b}\right)$}
+\sb{$\textstyle \left({a\atop b}\right)$}
+\sb{$\scriptstyle \left({a\atop b}\right)$}
+\sb{$\scriptscriptstyle \left({a\atop b}\right)$}
+\bye

@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\def\t#1{\setbox0\hbox{\xa #1}\showbox0 \setbox0\hbox{\xb #1}\showbox0 }
+\t{ab ac ad ae af ag ah ai aj a}
+\t{k l m n o u ya yy}
+\t{s- -- -a st tt sss sw ww}
+\t{\hyphenchar\xa=`- \discretionary{a}{k}{l}m}
+\t{a\/b a{}b a\relax b k\kern0pt l}
+\t{\char`a\char`b \noboundary k m\noboundary}
+\bye

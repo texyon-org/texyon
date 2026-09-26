@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox1\vbox{\hbox{a}\penalty0\hbox{b}\vskip3pt\hbox{c}\mark{m1}\hbox{d}\mark{m2}\hbox{e}}
+\splittopskip5pt plus 1pt \splitmaxdepth1pt
+\setbox2\vsplit1 to 15pt \showbox1 \showbox2
+\message{[\splitfirstmark][\splitbotmark]}
+\setbox2\vsplit1 to 0pt \showbox1 \showbox2
+\message{[\splitfirstmark][\splitbotmark]}
+\setbox2\vsplit1 to 100pt \showbox1 \showbox2
+\message{[\splitfirstmark][\splitbotmark]}
+\bye

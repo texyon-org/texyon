@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle {a\above 2pt b}$}
+\sb{$\textstyle {a\above 2pt b}$}
+\sb{$\scriptstyle {a\above 2pt b}$}
+\sb{$\scriptscriptstyle {a\above 2pt b}$}
+\sb{$\displaystyle {a\above 0pt b}$}
+\sb{$\textstyle {a\above 0pt b}$}
+\sb{$\scriptstyle {a\above 0pt b}$}
+\sb{$\scriptscriptstyle {a\above 0pt b}$}
+\sb{$\displaystyle {a\above -1pt b}$}
+\sb{$\textstyle {a\above -1pt b}$}
+\sb{$\scriptstyle {a\above -1pt b}$}
+\sb{$\scriptscriptstyle {a\above -1pt b}$}
+\bye

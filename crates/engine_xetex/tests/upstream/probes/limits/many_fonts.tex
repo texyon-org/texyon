@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count1=1 \loop \expandafter\font\csname f\the\count1\endcsname=cmr10 at \the\count1 pt \advance\count1 1 \ifnum\count1<80 \repeat
+\message{\fontname\csname f79\endcsname|\fontname\csname f10\endcsname}
+\setbox0\hbox{\csname f5\endcsname A\csname f50\endcsname B\csname f79\endcsname C\csname f10\endcsname D}\showbox0
+\shipout\box0
+\bye

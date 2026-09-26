@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle \hbox{a}\vbox{\hbox{b}}\vtop{\hbox{c}\hbox{d}}\vrule height 3pt\raise 2pt\hbox{e}\lower2pt\hbox{f}\moveleft1pt\hbox{g}$}
+\sb{$\textstyle \hbox{a}\vbox{\hbox{b}}\vtop{\hbox{c}\hbox{d}}\vrule height 3pt\raise 2pt\hbox{e}\lower2pt\hbox{f}\moveleft1pt\hbox{g}$}
+\sb{$\scriptstyle \hbox{a}\vbox{\hbox{b}}\vtop{\hbox{c}\hbox{d}}\vrule height 3pt\raise 2pt\hbox{e}\lower2pt\hbox{f}\moveleft1pt\hbox{g}$}
+\sb{$\scriptscriptstyle \hbox{a}\vbox{\hbox{b}}\vtop{\hbox{c}\hbox{d}}\vrule height 3pt\raise 2pt\hbox{e}\lower2pt\hbox{f}\moveleft1pt\hbox{g}$}
+\setbox3\hbox{z}\sb{$\box3 \copy3 \box3$}
+\bye

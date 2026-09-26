@@ -1,0 +1,20 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\setbox0\vbox{\vadjust{\showgroups}}
+\setbox0\hbox{\vadjust{\showgroups}}
+\setbox0\hbox{$\left(\middle|\showgroups\right)$}
+\setbox0\hbox{\insert100{\showgroups}}
+\setbox0\hbox{$\vcenter{\showgroups}$}
+\setbox0\hbox{\raise2pt\hbox{\showgroups}}
+\setbox0\vbox{\moveleft2pt\vbox{\showgroups}}
+\setbox0\vbox{\moveright-2pt\vtop{\showgroups}}
+\setbox0\hbox{\lower-2pt\vbox to 5pt{\showgroups}}
+\setbox0\vbox{\leaders\vbox{\showgroups}\vfill}
+\setbox0\hbox{\cleaders\hbox spread 2pt{\showgroups}\hfill}
+\setbox0\hbox{\discretionary{\showgroups}{}{}}
+\setbox0\hbox{$\mathchoice{\showgroups}{}{}{}$}
+\setbox0\vbox{\halign{#\cr\noalign{\showgroups}a\cr}}
+\setbox0\hbox{$$\halign{#\cr\showgroups\cr}$$}
+\setbox0\vbox{\noindent$$\showgroups\eqno\showgroups$$}
+\setbox0\vbox{\noindent$$ a\leqno\hbox{\showgroups}$$}
+\bye

@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\hsize=100pt \parindent0pt \pretolerance-1 \hbadness10000 \hfuzz\maxdimen
+\hyphenation{kk-kk-kk-kk-kk-kk aa-bb-aa-bb ss-ss-ss-ss mm-mm-mm-mm}
+\hyphenchar\xa=`- \hyphenchar\xb=`-
+\hsize=5pt
+\setbox0\vbox{\xa kkkkkkkkkkkk aabbaabb ssssssss mmmmmmmm\par}\showbox0
+\setbox0\vbox{\xb kkkkkkkkkkkk aabbaabb ssssssss mmmmmmmm\par}\showbox0
+\hyphenchar\xa=`Z
+\setbox0\vbox{\xa kkkkkkkkkkkk aabbaabb ssssssss mmmmmmmm\par}\showbox0
+\bye

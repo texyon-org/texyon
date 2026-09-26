@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\font\xa=xliga \font\xb=xligb
+
+\XeTeXupwardsmode=1
+\setbox0\vbox{\hbox{}\hbox to 5pt{}\vbox{}\leaders\hbox{}\vskip 10pt \leaders\vbox to 0pt{}\vskip 10pt \hrule height 0pt \hbox{a}\hrule height 3pt depth -1pt}
+\showbox0 \shipout\copy0
+\setbox0\vbox{\leaders\hrule height -2pt\vskip 5pt \leaders\hbox{x}\vskip -5pt \cleaders\hbox{y}\vskip 30pt \xleaders\hbox{y}\vskip 30pt}\shipout\copy0
+\XeTeXupwardsmode=0
+\setbox0\vbox{\hbox{}\vbox{}\leaders\hbox{}\vskip 10pt \leaders\vbox to 0pt{}\vskip 10pt \hbox{a}}\shipout\copy0
+\bye

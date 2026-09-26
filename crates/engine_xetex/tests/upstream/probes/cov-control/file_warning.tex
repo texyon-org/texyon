@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\immediate\openout3=fwtest
+\immediate\write3{\noexpand\begingroup\noexpand\iftrue}
+\immediate\closeout3
+\tracingnesting=2
+\input fwtest.tex
+\fi\endgroup
+\tracingnesting=1
+\scantokens{\begingroup\iffalse}\fi\endgroup
+\bye

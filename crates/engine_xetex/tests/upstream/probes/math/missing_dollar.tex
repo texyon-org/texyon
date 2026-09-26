@@ -1,0 +1,16 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{\over}
+\sb{a^b}
+\sb{\left(}
+\sb{\mathchar"41}
+\sb{\sqrt x}
+\sb{$x\par y$}
+\sb{$\vskip 1pt$}
+\sb{$x\hrule y$}
+\sb{\mathop{x}}
+\sb{\displaystyle}
+\sb{\fam1}
+\sb{\nonscript}
+\sb{\mskip 3mu}
+\bye

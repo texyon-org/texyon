@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\count1=0 \def\d{\advance\count1 1 \ifnum\count1<100 \expandafter\d\fi}\d\message{\the\count1}
+\message{\romannumeral-`0 x}
+\def\e{\number\e}\e
+\bye

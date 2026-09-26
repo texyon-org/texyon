@@ -1,0 +1,13 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\s{\showgroups}
+\s{\s}\begingroup\s\endgroup
+\setbox0\hbox{\s}\setbox0\hbox to 10pt{\s}\setbox0\vbox{\s}\setbox0\vtop{\s}
+\setbox0\hbox{\vbox spread 3pt{\s}}
+\halign{#\s\cr a\cr\noalign{\s}}
+\setbox0\hbox{\discretionary{\s}{\s}{\s}}
+\insert100{\s}\vadjust{\s}
+$\vcenter{\s}\mathchoice{\s}{}{}{}\left(\s\right) {\s} \mathop{\s}$
+$$\s\halign{#\cr\s a\cr}$$
+\setbox0\vbox{\noindent$$\s\eqno\s$$}
+\output={\s\shipout\box255}\hbox{}\penalty-10000
+\bye

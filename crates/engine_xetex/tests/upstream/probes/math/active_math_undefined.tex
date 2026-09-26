@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\mathcode`q="8000 \sb{$q$}
+{\catcode`q=13 \gdef q{\showlists}} \sb{$aq$}
+{\catcode`q=13 \global\let q=\relax} \sb{$q^q$}
+\bye

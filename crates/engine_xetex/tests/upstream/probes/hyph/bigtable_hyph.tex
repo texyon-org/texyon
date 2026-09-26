@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xc=xligc \def\c#1{\setbox0\hbox{\xc #1}\showbox0 \shipout\box0 }
+\lefthyphenmin1 \righthyphenmin1 \hsize1pt \tolerance10000 \parindent0pt \hfuzz\maxdimen \hbadness10000
+\hyphenation{a-b-c-d-e-f a-a-a-a b-b-b-b c-d-c-d e-f-e-f f-a-f-a}
+\def\p{\setbox0\vbox{\xc abcdef aaaa bbbb cdcd efef fafa\par}\showbox0 \shipout\box0
+  \setbox0\vbox{\hsize\maxdimen\xc abcdef aaaa bbbb cdcd efef fafa\par}\showbox0 }
+\hyphenchar\xc=`- \p \hyphenchar\xc=`0 \p \hyphenchar\xc=`a \p \hyphenchar\xc=-1 \p \hyphenchar\xc=`Z \p
+\bye

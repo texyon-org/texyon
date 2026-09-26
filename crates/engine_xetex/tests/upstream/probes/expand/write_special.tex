@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\immediate\write-1{immediate}
+\write-1{deferred \the\count0}
+\setbox0\hbox{\special{hello}\write-1{in box}\openout3=wfile \write3{x}\closeout3 \special{a b c}}
+\showbox0
+\count0=7 \shipout\copy0
+\write16{to terminal}
+\message{\meaning\write}
+\special{vertical}
+\hbox{\special{h}}
+\bye

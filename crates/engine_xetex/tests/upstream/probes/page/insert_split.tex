@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingpages1 \vsize80pt \hsize50pt
+\count100=1000 \dimen100=25pt \skip100=4pt
+\output={\showbox255 \showbox100 \shipout\box255 \unvbox100}
+\def\l{\hbox{line}}
+\l\insert100{\hbox{a}\hbox{b}\penalty0\hbox{c}\hbox{d}\hbox{e}\hbox{f}}\l\l\l
+\l\insert100{\hbox{g}\penalty100\hbox{h}}\l\l\l\l\l\l\l\l
+\bye

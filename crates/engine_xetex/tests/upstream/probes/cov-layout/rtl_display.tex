@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\font\xa=xliga \font\xb=xligb
+
+\TeXXeTstate=1 \hsize=200pt \parindent=10pt
+\setbox0\vbox{\beginR abc def \predisplaydirection=-1 $$x=y\eqno(1)$$ ghi\endR\par}\showbox0 \shipout\copy0
+\setbox0\vbox{\beginR abc def $$\predisplaydirection=-1 x=y\leqno(2)$$ ghi\endR\par}\showbox0 \shipout\copy0
+\setbox0\vbox{\beginR abc def $$\predisplaydirection=-1 \halign{#\cr a\cr}$$ ghi\endR\par}\showbox0 \shipout\copy0
+\bye

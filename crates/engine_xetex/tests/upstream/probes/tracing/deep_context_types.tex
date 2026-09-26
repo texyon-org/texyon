@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\errorcontextlines=1000
+\def\a#1{\b{#1}}\def\b#1{#1}
+\a{\undefinedA}
+\setbox0\vbox{\halign{#\undefinedB\cr a\cr}}
+\setbox0\vbox{\halign{\undefinedC#\cr a\cr}}
+\toks0={\undefinedD}\the\toks0
+\expandafter\undefinedE\undefinedF
+\uppercase{\undefinedG}
+\setbox0\hbox\bgroup\aftergroup\undefinedH\egroup
+\mark{\undefinedI}
+\edef\x{\noexpand\undefinedJ}\x
+\count1=\x
+\bye

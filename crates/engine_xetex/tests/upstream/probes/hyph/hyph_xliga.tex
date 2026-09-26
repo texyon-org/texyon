@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\hsize=100pt \parindent0pt \pretolerance-1 \hbadness10000 \hfuzz\maxdimen
+\xa \hyphenchar\xa=`- \lccode`Z=`Z
+\showhyphens{abcdefgh kmklm ssst tatata}
+\hyphenation{ab-cd-ef kl-mk}
+\showhyphens{abcdef klmk}
+\xb \hyphenchar\xb=`- \showhyphens{abcdef klmk ssst}
+\bye

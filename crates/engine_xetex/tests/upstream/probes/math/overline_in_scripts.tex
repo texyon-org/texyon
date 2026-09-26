@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle x^{\overline{y}}_{\underline z}\sqrt{\overline{x}}\overline{\sqrt{x}}$}
+\sb{$\textstyle x^{\overline{y}}_{\underline z}\sqrt{\overline{x}}\overline{\sqrt{x}}$}
+\sb{$\scriptstyle x^{\overline{y}}_{\underline z}\sqrt{\overline{x}}\overline{\sqrt{x}}$}
+\sb{$\scriptscriptstyle x^{\overline{y}}_{\underline z}\sqrt{\overline{x}}\overline{\sqrt{x}}$}
+\sb{$\displaystyle \overline{\hbox{}}\underline{}$}
+\sb{$\textstyle \overline{\hbox{}}\underline{}$}
+\sb{$\scriptstyle \overline{\hbox{}}\underline{}$}
+\sb{$\scriptscriptstyle \overline{\hbox{}}\underline{}$}
+\bye

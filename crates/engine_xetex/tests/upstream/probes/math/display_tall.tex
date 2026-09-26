@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\vcenter{\hrule height 50pt}\eqno(3)$$ b}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $${a\over b}\leqno{\vrule height 20pt}$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\hbox to 205pt{}\eqno\hbox to 30pt{}$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\hbox to 205pt{}\leqno\hbox to 30pt{}$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\hbox to 170pt{}\eqno\hbox to 25pt{}$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\hbox to 170pt{}\leqno\hbox to 25pt{}$$}\showbox1 \box1
+\setbox1\vbox{\hsize=200pt \parindent=10pt a $$\hbox to 180pt{\hskip 0pt plus 1fil}\eqno 12$$}\showbox1 \box1
+\bye

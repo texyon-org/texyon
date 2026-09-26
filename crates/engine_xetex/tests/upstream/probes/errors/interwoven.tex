@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\a{\halign{##\cr\b\cr}}
+\def\b{\span}
+\halign{#\cr \span\cr}
+\setbox0\vbox{\halign{#\tabskip3pt&\tabskip 5pt#\cr a&b\cr}}\showbox0
+\bye

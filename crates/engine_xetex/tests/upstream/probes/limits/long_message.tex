@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\x{abcdefghij}\edef\y{\x\x\x\x\x\x\x\x\x\x}\edef\z{\y\y\y}
+\message{\z} \message{\z\z} \message{short}\message{\z}
+\immediate\write-1{\z\z}
+\newlinechar`^^J \message{\z^^J\z}
+\errhelp{\z\z}\errmessage{\z}
+\showtokens\expandafter{\z}
+\bye

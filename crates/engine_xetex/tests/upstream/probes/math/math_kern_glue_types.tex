@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\sb{$\displaystyle a\kern3pt b\hskip 4pt plus 1fil c\mkern 18mu d\mskip 9mu minus 3mu e\hfil f\hss g\hfilneg h$}
+\sb{$\textstyle a\kern3pt b\hskip 4pt plus 1fil c\mkern 18mu d\mskip 9mu minus 3mu e\hfil f\hss g\hfilneg h$}
+\sb{$\scriptstyle a\kern3pt b\hskip 4pt plus 1fil c\mkern 18mu d\mskip 9mu minus 3mu e\hfil f\hss g\hfilneg h$}
+\sb{$\scriptscriptstyle a\kern3pt b\hskip 4pt plus 1fil c\mkern 18mu d\mskip 9mu minus 3mu e\hfil f\hss g\hfilneg h$}
+\sb{$\displaystyle \penalty 50 a\discretionary{x}{y}{z}b\-c$}
+\sb{$\textstyle \penalty 50 a\discretionary{x}{y}{z}b\-c$}
+\sb{$\scriptstyle \penalty 50 a\discretionary{x}{y}{z}b\-c$}
+\sb{$\scriptscriptstyle \penalty 50 a\discretionary{x}{y}{z}b\-c$}
+\sb{$\displaystyle \mark{m}a\vadjust{\kern1pt}b\special{s}c\insert100{x}d$}
+\sb{$\textstyle \mark{m}a\vadjust{\kern1pt}b\special{s}c\insert100{x}d$}
+\sb{$\scriptstyle \mark{m}a\vadjust{\kern1pt}b\special{s}c\insert100{x}d$}
+\sb{$\scriptscriptstyle \mark{m}a\vadjust{\kern1pt}b\special{s}c\insert100{x}d$}
+\bye

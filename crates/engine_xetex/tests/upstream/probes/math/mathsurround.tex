@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\mathsurround=5pt \sb{a$x$b}
+\mathsurround=5pt \sb{a$x\mathsurround=10pt$b}
+\sb{a$\mathsurround=3pt x$b}
+\mathsurround=4pt \hsize=100pt \parindent=0pt \setbox1\vbox{aaa aaa aaa aaa $x+y+z+w+v+u+t+s$ aa aa aa aa aa aa $x+y$ a}\showbox1
+\mathsurround=4pt \setbox1\hbox{\unskip$$\unskip}\showbox1 \sb{$\mathsurround=-2pt$}
+\bye

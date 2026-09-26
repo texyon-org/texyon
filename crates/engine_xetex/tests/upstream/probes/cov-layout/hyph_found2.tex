@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb \hyphenchar\xa=`- \hyphenchar\xb=`-
+\hsize=1pt \parindent=0pt \hbadness=10000 \hfuzz=\maxdimen \pretolerance=-1 \lefthyphenmin=1 \righthyphenmin=1
+\hyphenation{k-l-m-n-o k-a-b-c a-b-c-d-e-f s-s-t-u i-n-t-e-r}
+\setbox0\vbox{\tenrm x\xa klmno \tenrm x\xa abcdef \tenrm .\xa ssstu\par}\showbox0
+\setbox0\vbox{\xa x\tenrm international \xa x\tenrm -inter\par}\showbox0
+\setbox0\vbox{\xa k\xb klmno \xb a\xa abcdef\par}\showbox0
+\setbox0\vbox{\tenrm {\it x}international \tenit f\tenrm fluffy\par}\showbox0
+\setbox0\vbox{\xa \noboundary klmno \char`k lmno\par}\showbox0
+\bye

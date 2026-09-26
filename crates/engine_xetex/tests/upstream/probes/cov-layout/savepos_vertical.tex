@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\font\xa=xliga \font\xb=xligb
+
+\shipout\vbox{\hbox{a}\pdfsavepos\hbox{b}}\message{\the\pdflastxpos,\the\pdflastypos}
+\shipout\vbox{\kern 10pt\pdfsavepos}\message{\the\pdflastxpos,\the\pdflastypos}
+\XeTeXupwardsmode=1 \shipout\vbox{\hbox{a}\pdfsavepos\hbox{b}}\message{\the\pdflastxpos,\the\pdflastypos}
+\bye

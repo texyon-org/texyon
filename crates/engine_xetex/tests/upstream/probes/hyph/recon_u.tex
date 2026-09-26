@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\xa=xliga \font\xb=xligb
+\hsize=100pt \parindent0pt \pretolerance-1 \hbadness10000 \hfuzz\maxdimen
+\lefthyphenmin1 \righthyphenmin1 \hsize1pt \tolerance10000 \lccode`Z=`Z \lccode`-=`-
+\hyphenation{u-a-u-a u-b-u-b u-c-u-c u-d-u-d u-e-u-e u-f-u-f u-g-u-g u-h-u-h u-i-u-i u-j-u-j u-k-u-k u-l-u-l u-m-u-m u-s-u-s u-t-u-t u-u-u-u u-w-u-w u-x-u-x u-y-u-y u-u-u}
+\def\p#1{\setbox0\vbox{#1 uaua ubub ucuc udud ueue ufuf ugug uhuh uiui ujuj ukuk ulul umum usus utut uuuu uwuw uxux uyuy uuu ZuZu u-u\par}\showbox0 \shipout\box0 }
+\def\q#1{\setbox0\vbox{\hsize\maxdimen #1 uaua ubub ucuc udud ueue ufuf ugug uhuh uiui ujuj ukuk ulul umum usus utut uuuu uwuw uxux uyuy uuu ZuZu u-u\par}\showbox0 }
+\hyphenchar\xa=`- \hyphenchar\xb=`- \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`Z \hyphenchar\xb=`Z \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`s \hyphenchar\xb=`t \p\xa \p\xb \q\xa \q\xb
+\hyphenchar\xa=`k \hyphenchar\xb=`m \p\xa \p\xb \q\xa \q\xb
+\bye

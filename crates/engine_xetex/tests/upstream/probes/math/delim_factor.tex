@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\sb#1{\setbox0\hbox{#1}\showbox0 \copy0\par}
+\delimiterfactor=500 \sb{$\left(\vrule height 20pt\right)$}
+\delimitershortfall=20pt \sb{$\left(\vrule height 20pt\right)$}
+\delimiterfactor=1500 \delimitershortfall=-5pt \sb{$\left(\vrule height 20pt\right)$}
+\nulldelimiterspace=5pt \sb{$\left.x\right.$}
+\nulldelimiterspace=-2pt \sb{$\left.x\right. {a\over b}$}
+\bye
