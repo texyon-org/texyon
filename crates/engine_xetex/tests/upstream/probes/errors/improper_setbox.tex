@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0=\hbox{}
+\setbox\count1\hbox{}
+\setbox0 a
+\setbox0=\relax\hbox{a}\showbox0
+\setbox0 \vrule
+\global\setbox0\relax \box1
+\dimen0=\wd0
+\global\wd0=1pt
+\afterassignment\relax\setbox0\hbox{\setbox0}
+\setbox0\hbox{\setbox0\hbox{}}
+\bye

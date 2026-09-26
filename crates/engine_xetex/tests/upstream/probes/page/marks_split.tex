@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox1\vbox{\hbox{a}\marks2{s1}\marks7{t1}\hbox{b}\marks2{s2}\hbox{c}\marks7{t2}\hbox{d}}
+\setbox2\vsplit1 to 12pt
+\message{[\splitfirstmarks2|\splitbotmarks2][\splitfirstmarks7|\splitbotmarks7][\splitfirstmark]}
+\setbox2\vsplit1 to 12pt
+\message{[\splitfirstmarks2|\splitbotmarks2][\splitfirstmarks7|\splitbotmarks7]}
+\setbox2\vsplit1 to 100pt
+\message{[\splitfirstmarks2|\splitbotmarks2][\splitfirstmarks7|\splitbotmarks7]}
+\setbox1\vbox{\hbox{a}\hbox{b}}\setbox2\vsplit1 to 12pt
+\message{[\splitfirstmarks2|\splitbotmarks2]}
+\marks-1{x}\marks32768{y}\showbox1
+\bye

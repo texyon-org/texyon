@@ -1,0 +1,27 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\errorcontextlines=100
+\everypar{\undefineda}
+\noindent x\par
+\everypar{}
+\everymath{\undefinedb}$x$\everymath{}
+\everydisplay{\undefinedc}$$x$$\everydisplay{}
+\everyhbox{\undefinedd}\setbox0\hbox{}\everyhbox{}
+\everyvbox{\undefinede}\setbox0\vbox{}\everyvbox{}
+\everycr{\undefinedf}\halign{#\cr a\cr}\everycr{}
+\everyjob{\undefinedg}
+\everyeof{\undefinedh}\scantokens{x}\everyeof{}
+\setbox0\vbox{\mark{\noexpand\undefinedi}}
+\output={\undefinedj \shipout\box255}
+\hbox{}\penalty-10000
+\output={\shipout\box255}
+\shipout\hbox{\write-1{\undefinedk}}
+\afterassignment\undefinedl \count1=1
+\begingroup\aftergroup\undefinedm\endgroup
+\def\x{\expandafter\undefinedn\relax}\x
+\def\y#1{\undefinedo}\y a
+\scantokens{\def\z{\undefinedp}\z}
+\count1=1\undefinedq
+\halign{#\undefinedr\cr a\cr}
+\halign{\undefineds#\cr a\cr}
+\edef\w{\noexpand\undefinedt\the\count1 \undefinedu}
+\bye

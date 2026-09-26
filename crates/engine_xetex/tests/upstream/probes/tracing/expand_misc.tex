@@ -1,0 +1,18 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\expandafter\show\noexpand\undefined
+\expandafter\relax\noexpand\undefined
+\edef\a{\noexpand\undefined} \show\a
+\romannumeral 0 \romannumeral -5 \message{[\romannumeral 4999][\romannumeral 1][\romannumeral 99999]}
+\message{\number 00012 \number -"FF \number'-7 \number `\a}
+\message{\string\undefined \string ~ \string\ \string\\ \string{}
+\message{\fontname\tenrm \fontname\nullfont \jobname}
+\uppercase{\message{abc\ae}} \lowercase{\message{ABC\AE}}
+\uppercase\relax{x}
+\lowercase x
+\message{\the\font \the\tenrm \the\scriptfont0 \the\toks0 \the\everypar}
+\the\hbox
+\count1=\the\count0
+\message{\meaning\undefined \meaning\ifx \meaning\fi \meaning\else \meaning\or}
+\message{\meaning\topmark \meaning\splitbotmarks \meaning\marks \meaning\noexpand}
+\expandafter\message\expandafter{\meaning\endtemplate}
+\bye

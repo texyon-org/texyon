@@ -1,0 +1,4 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\halign{#\tabskip1pt plus 1pt&#\tabskip2pt&#\cr a&b&c\cr\multispan3 a very very long spanning entry\cr\multispan2\hfil x\hfil&y\cr}}\showbox0 \box0
+\setbox0\vbox{\tabskip0pt minus 3pt\halign{#&#\cr a&b\cr\multispan2 abcdefghijkl\cr}}\showbox0 \box0
+\bye

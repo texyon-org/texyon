@@ -1,3 +1,8 @@
 # probe	reason it may differ from upstream
 errors-tl_extension_prims	\partokenname, \partokencontext and \showstream come from TeX Live's partoken.ch and showstream.ch, which Tectonic does not carry
 errors-write_unbalanced	TeX Live's unbalanced-braces.ch makes an unbalanced \write fatal, Tectonic follows tex.web
+etex-sparse_output	unbalanced-braces.ch keeps a finished <output> level on the input stack, so upstream shows it in error context
+page-output_tail_context	unbalanced-braces.ch keeps a finished <output> level on the input stack, so upstream shows it in error context
+page-output_void255	unbalanced-braces.ch keeps a finished <output> level on the input stack, so upstream shows it in error context
+page-vsplit_upwards	XeTeX .999995+ uses the depth for \topskip and \splittopskip in upwards mode, Tectonic implements .999994
+etex-xetexrevision	Tectonic implements and reports XeTeX .999994

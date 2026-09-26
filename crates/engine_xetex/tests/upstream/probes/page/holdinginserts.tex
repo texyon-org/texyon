@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\vsize50pt \count100=1000 \dimen100=100pt
+\newcount\k
+\output={\global\advance\k1 \showbox255 \ifnum\k=1 \global\holdinginserts0 \unvbox255 \else\shipout\box255 \showbox100 \fi}
+\holdinginserts1
+\hbox{a}\insert100{\hbox{i}}\hbox{b}\penalty-10000
+\bye

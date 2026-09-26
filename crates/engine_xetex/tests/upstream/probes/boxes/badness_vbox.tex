@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\vbadness=0 \setbox0\vbox to 100pt{\hrule\vskip 0pt plus 1pt\hrule}
+\setbox0\vbox to 1pt{\hrule height 3pt\vskip 0pt minus 1pt}
+\vfuzz=10pt \setbox0\vbox to 1pt{\hrule height 3pt}
+\vfuzz=0pt \vbadness=10000 \setbox0\vbox to 1pt{\hrule height 3pt}
+\setbox0\vbox to 100pt{} \setbox0\vtop to 10pt{\hrule\vskip 0pt plus 1pt}
+\vbadness=-1 \setbox0\vbox spread 2pt{\vskip 0pt plus 1fil} \showthe\badness
+\setbox0\vbox to 10pt{\vskip 0pt plus 1pt \hrule depth 10pt}
+\showbox0
+\boxmaxdepth=2pt \setbox0\vbox{\hrule depth 10pt} \showbox0
+\boxmaxdepth=2pt \setbox0\vtop{\hrule height 3pt \hrule depth 10pt} \showbox0
+\boxmaxdepth=-5pt \setbox0\vbox{\hrule depth 10pt} \showbox0
+\setbox0\vtop{\hbox{a}\hbox{b}} \showbox0 \setbox0\vtop{\kern2pt\hbox{a}} \showbox0
+\setbox0\vtop to 20pt{\hbox{a}\vfil} \showbox0
+\bye

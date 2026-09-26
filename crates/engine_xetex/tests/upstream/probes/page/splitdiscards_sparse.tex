@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\savingvdiscards2
+\setbox400\vbox{\hbox{a}\penalty0\vskip3pt\penalty-5\kern1pt\hbox{b}}
+\setbox401\vsplit400 to 6pt \showbox400 \showbox401
+\setbox3\vbox{\splitdiscards}\showbox3
+\savingvdiscards0
+\setbox400\vbox{\hbox{a}\penalty0\vskip3pt\hbox{b}}\setbox401\vsplit400 to 6pt
+\setbox3\vbox{\splitdiscards}\showbox3
+\bye

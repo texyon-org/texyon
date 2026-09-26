@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\tabskip2pt plus 10pt\halign to 100pt{#&#\cr a&b\cr}}\showbox0 \copy0
+\setbox0\vbox{\tabskip2pt minus 1pt\halign to 5pt{#&#\cr aaa&bbb\cr}}\showbox0 \copy0
+\setbox0\vbox{\tabskip0pt plus 1fil\halign spread 20pt{#&#\cr a&b\cr}}\showbox0 \copy0
+\setbox0\vbox{\tabskip0pt minus 1fil\halign spread -20pt{#&#\cr a&b\cr}}\showbox0 \copy0
+\bye

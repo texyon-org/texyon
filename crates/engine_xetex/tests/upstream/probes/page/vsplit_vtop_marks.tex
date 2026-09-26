@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox1\vtop{\hbox{a}\mark{x}\hbox{b}\marks2{y}\hbox{c}}
+\setbox2\vsplit1 to 6pt \showbox1 \showbox2 \message{[\splitfirstmark|\splitbotmark|\splitfirstmarks2]}
+\setbox1\vbox{\hbox{a}}\setbox2\vsplit1 to 6pt \message{[\splitfirstmark|\splitbotmark|\splitfirstmarks2]}
+\bye

@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\hbox{a\hbox{b}\lastbox} \showbox0
+\setbox0\hbox{\hbox{b}\setbox1\lastbox} \showbox0 \showbox1
+\setbox0\vbox{\hbox{b}\kern1pt\setbox1\lastbox} \showbox1
+\setbox0\vbox{\vbox{b}\global\setbox1\lastbox\showlists}\showbox1
+$\hbox{a}\setbox0\lastbox$
+$$\setbox0\lastbox$$
+\hbox{x}\setbox0\lastbox \showbox0
+\setbox0\hbox{\raise3pt\hbox{r}\setbox1\lastbox\showbox1}
+\setbox0\hbox{\leaders\hbox{}\hfil\setbox1\lastbox\showbox1 \vadjust{}\setbox1\lastbox\showbox1}
+\setbox0\hbox{\discretionary{}{}{\hbox{a}}\setbox1\lastbox\showbox1}
+\setbox0\vbox{\noindent\hbox{a}\setbox1\lastbox\showbox1}
+\setbox0\hbox{\unskip\unkern\unpenalty \hbox{}\unskip\hbox{}\kern1pt\unskip\showlists}
+\unskip \unkern \unpenalty \showlists
+\bye

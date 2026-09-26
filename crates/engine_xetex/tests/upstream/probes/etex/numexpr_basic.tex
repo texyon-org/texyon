@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\s#1{\message{[\the\numexpr#1\relax]}}
+\s{1+2*3} \s{(1+2)*3} \s{7/2} \s{-7/2} \s{7/-2} \s{-7/-2} \s{5/2} \s{-5/2} \s{3/2}\s{-3/2}
+\s{1-2-3} \s{2*3/4} \s{2*(3/4)} \s{ ( ( 1 ) ) } \s{--1} \s{-(-(-5))}
+\s{2147483647} \s{-2147483647} \s{2147483647/2} \s{2147483647*2/2}
+\s{65536*32768} \s{\count0*2+1} \s{1+\numexpr 2*3\relax}
+\s{"FF+'17+`a}
+\bye

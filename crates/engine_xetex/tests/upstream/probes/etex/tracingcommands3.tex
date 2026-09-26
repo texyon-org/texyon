@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingcommands3 \tracingonline1
+\def\a{\b}\def\b{x}\expandafter\a\a \ifnum1=1 \else\fi \noexpand\a \relax
+\the\count0 \csname relax\endcsname \number1 \romannumeral5
+$x^2\over y$ \par
+\tracingcommands2 \ifx\a\b\fi \relax y\par
+\tracingcommands1 \ifx\a\b\fi \relax z\par
+\bye

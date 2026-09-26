@@ -1,0 +1,5 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count1=0 \def\a{\advance\count1 by1 \ifnum\count1<200 \begingroup\count2=\count1 \a\endgroup\fi}\a
+\message{\the\count1,\the\count2,\the\currentgrouplevel}
+\def\b#1{\ifnum#1>0 {\expandafter\b\expandafter{\number\numexpr#1-1}}\else\showgroups\fi}\b{20}
+\bye

@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\begingroup \hbox{\endgroup}
+\bgroup \endgroup \egroup
+\setbox0\hbox{\begingroup}
+\halign{#\cr \begingroup a\cr}
+$\begingroup$ \endgroup
+\showgroups
+\scantokens{\begingroup}\endgroup
+\scantokens{\bgroup}\egroup
+\scantokens{\iftrue}\fi
+\tracingnesting=2
+\scantokens{\begingroup}\endgroup
+\scantokens{\iftrue}\fi
+\scantokens{\begingroup\endgroup\iftrue\fi}
+\bye

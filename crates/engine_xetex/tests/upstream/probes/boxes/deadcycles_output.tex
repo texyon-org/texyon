@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\output={\global\setbox1\box255 \deadcycles=0 }
+\hbox{a}\penalty-10000
+\showbox1
+\output={\setbox0\box255 \global\setbox2\vbox{\unvcopy0}}
+\hbox{b}\penalty-10000
+\showbox2
+\output={\shipout\box255 \showthe\deadcycles}
+\hbox{c}\penalty-10000
+\output={\unvbox255 \penalty\outputpenalty}
+\maxdeadcycles=3
+\hbox{d}\penalty-10000
+\output={\shipout\box255}
+\bye

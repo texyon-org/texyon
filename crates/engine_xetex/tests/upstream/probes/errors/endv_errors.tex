@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\halign{#\cr a\egroup}
+\halign{#\cr \bgroup a\cr}
+\halign{#\cr a\par b\cr}
+\halign{#\cr a}}
+\setbox0\vbox{\halign{#\cr a\cr\omit\omit b\cr\noalign{\omit}}}
+\valign{#\cr a\cr}
+\halign{#\cr\ifnum0=`{\fi a\cr}
+\bye

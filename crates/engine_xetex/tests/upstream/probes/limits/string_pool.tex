@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count1=0 \loop \expandafter\def\csname cs\the\count1\endcsname{\the\count1}\advance\count1 1 \ifnum\count1<3000 \repeat
+\message{\csname cs2999\endcsname \expandafter\meaning\csname cs1500\endcsname}
+\count1=0 \loop \expandafter\xdef\csname u\romannumeral\count1\endcsname{\romannumeral\count1}\advance\count1 1 \ifnum\count1<500 \repeat
+\message{\csname uccclxxxviii\endcsname}
+\bye

@@ -1,0 +1,13 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0 a
+\moveleft 1pt a
+\raise 1pt \relax a
+\leaders\relax a
+\leaders\hbox{}\relax x
+\leaders\hrule \kern1pt
+\vbox{\leaders\hbox{}\vrule}
+\cleaders\vrule\hskip1pt
+\setbox0\hbox{\xleaders\hrule\penalty0}
+\setbox0\vbox{\xleaders\copy0\vfil \leaders\box1\vskip 2pt \leaders\vrule\vskip 3pt plus 1fill}
+\showbox0
+\bye

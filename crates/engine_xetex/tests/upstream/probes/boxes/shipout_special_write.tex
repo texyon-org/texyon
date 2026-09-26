@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\immediate\openout5=probe-out.tmp
+\shipout\hbox{\special{hello}\write5{written \the\count0}\openout6=probe-two.tmp \write6{two}\closeout6 a\write-1{to log \noexpand\x}\write16{to term}}
+\count0=5
+\shipout\vbox{\special{v}\hbox{b}\write5{again \the\count0}\closeout5 \mark{m}}
+\shipout\hbox{\raise2pt\hbox{r}\lower3pt\vbox{\hbox{s}}\vrule width 2pt height 3pt\kern4pt\special{x}}
+\shipout\vbox to 10pt{\hbox{a}\vfil\moveright 3pt\hbox{b}\hrule\kern-2pt\hbox{c}}
+\bye

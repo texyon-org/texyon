@@ -1,0 +1,13 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\ifdefined\undefinedA \message{A}\else\message{notA}\fi
+\ifcsname undefinedB\endcsname \message{B}\else\message{notB}\fi
+\expandafter\show\csname undefinedB\endcsname
+\ifcsname undefinedC\endcsname\fi\ifdefined\undefinedC\message{C}\else\message{notC}\fi
+\ifcsname re\ifdefined\relax lax\fi\endcsname\message{relax}\fi
+\ifcsname a\relax\endcsname\fi
+\ifcsname\endcsname \message{empty}\else\message{nempty}\fi
+\ifdefined\relax\message{r}\fi \let\u\undefined \ifdefined\u\message{u}\else\message{nu}\fi
+\iffontchar\tenrm`a \message{a}\fi \iffontchar\tenrm 200 \else\message{n200}\fi
+\iffontchar\nullfont 65 \else\message{null}\fi
+\iffontchar\tenrm-1 \fi
+\bye

@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\char-1
+\char"110000
+\chardef\x="110000
+\mathchardef\y="8000 \show\y
+\mathchardef\y="8001
+\setbox0\hbox{$\mathchar"8001 \mathchar-1 \mathchar"8000$}
+\setbox0\hbox{$\delimiter"8000000 \delimiter-1 \radical"1000000 x$}
+\setbox0\hbox{$\left\delimiter"8000000 x\right.$}
+\setbox0\hbox{\accent300 a \accent-1 b}
+\showbox0
+\count1=\fontcharwd\tenrm-1
+\setbox0\hbox{\XeTeXglyph-1}
+\uchar-1
+\bye

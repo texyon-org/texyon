@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\everyeof{\message{EOF}}
+\scantokens{a}
+\everyeof{\noexpand}\edef\x{\scantokens{\relax}}\show\x
+\everyeof{\fi}\iftrue\scantokens{}
+\everyeof{}
+\bye

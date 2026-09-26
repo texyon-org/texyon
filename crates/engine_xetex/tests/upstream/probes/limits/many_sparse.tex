@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count1=256 \loop \count\count1=\count1 \dimen\count1=\count1 sp \skip\count1=\count1 sp plus 1fil
+ \toks\count1=\expandafter{\the\count1}\global\setbox\count1\hbox{\the\count1}
+ \advance\count1 by 97 \ifnum\count1<32767 \repeat
+\message{\the\count256,\the\count32753,\the\dimen1520,\the\skip2102,\the\toks32753}
+\showbox 32753 \showbox 32754
+{\count5000=1 \global\count5001=2 \dimen5000=3pt}\message{\the\count5000,\the\count5001,\the\dimen5000}
+\bye

@@ -1,0 +1,17 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\hrule
+\vskip1pt \showlists
+\moveleft1pt\hbox{}
+\setbox0\hbox{\vskip 1pt \moveleft1pt\hbox{} \hrule \unvbox0 \valign{#\cr}\end\dump}
+\setbox0\vbox{\raise1pt\hbox{} \unhbox0 \vrule \hskip1pt \dump}
+$\hrule \vskip1pt \par \eqno $
+$$\halign{#\cr}\eqno\halign{#\cr}$$
+\setbox0\hbox{$\eqno$ $\leqno$ \mathchoice{}{}{}{} \limits \nolimits}
+\setbox0\hbox{\left( \right) \over \fam1 \mathchar"1 \mkern1mu \mskip1mu}
+\setbox0\vbox{\spacefactor=1000 \noindent\prevdepth=0pt}
+\setbox0\hbox{\prevdepth=0pt}
+\setbox0\vbox{\spacefactor=1000}
+\prevgraf=-1
+\setbox0\hbox{\insert255{} \vadjust{} \mark{} \unskip\unkern\unpenalty}
+$\vcenter{}\vadjust{}\insert100{}$
+\bye

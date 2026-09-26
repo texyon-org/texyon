@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox0\vbox{\marks3{three}\mark{zero}\marks0{zz}\marks32767{big}}\showbox0
+\setbox0\hbox{\marks 5{five}}\showbox0
+\marks32768{x}
+\setbox2\vbox{\marks1{a}\hbox{}\penalty0\marks1{b}\hbox{}\marks2{c}}
+\setbox4\vsplit2 to 0pt
+\message{[\splitfirstmarks1][\splitbotmarks1][\splitfirstmarks2][\splitbotmarks2]}
+\showbox4 \showbox2
+\output={\message{[\topmarks1][\firstmarks1][\botmarks1][\firstmarks7]}\shipout\box255}
+\marks1{p1}\hbox{}\marks1{p2}\penalty-10000 \hbox{}\penalty-10000
+\bye

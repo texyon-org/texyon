@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\def\s#1{\message{[\the\numexpr#1\relax]}}
+\s{1*3/2} \s{-1*3/2} \s{5*7/3} \s{-5*7/3} \s{1073741824*4/8} \s{2147483647*2147483647/2147483647}
+\s{1/2} \s{-1/2} \s{3/-2} \s{0/-5}
+\def\d#1{\message{[\the\dimexpr#1\relax]}}
+\d{1sp*1/2} \d{-1sp*1/2} \d{3sp/2} \d{-3sp/2} \d{\maxdimen*2/2} \d{\maxdimen*3/4}
+\bye

@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\savingvdiscards1 \vsize30pt \holdinginserts1 \count100=1000 \dimen100=100pt
+\newcount\k
+\output={\global\advance\k1 \setbox0\vbox{\pagediscards}\showbox0 \ifnum\k=1 \global\holdinginserts0 \unvbox255 \penalty\outputpenalty\else\shipout\box255 \fi}
+\hbox{a}\insert100{\hbox{i}}\penalty-10000\vskip3pt\kern1pt\hbox{b}\penalty-10000
+\bye

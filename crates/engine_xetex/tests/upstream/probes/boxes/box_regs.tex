@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox300\hbox{a}\setbox0\copy300\showbox0 \showbox300
+\setbox32767\vbox{b}\showbox32767 \wd32767=3pt \ht300=-1pt \dp300=\maxdimen \showbox300 \showthe\wd32767
+\setbox0\box300 \showbox300 \showthe\wd300 \wd300=5pt \showthe\wd300
+{\setbox400\hbox{c}\global\setbox401\hbox{d}}\showbox400 \showbox401
+{\global\setbox500\hbox{e}\setbox500\hbox{f}\showbox500}\showbox500
+\setbox0\hbox{\box401 \copy402 \unhcopy401}\showbox0
+\bye

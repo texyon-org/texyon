@@ -1,0 +1,10 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\openout16=x
+\write-1{\def\x{}}
+\shipout\hbox{\write-1{\undefinedcs}}
+\def\e{\errmessage{in write}}
+\shipout\hbox{\write-1{\e}}
+\shipout\hbox{\write-1{\outerx}}
+\outer\def\outery{}
+\immediate\write-1{a\outery b}
+\bye

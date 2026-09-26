@@ -1,0 +1,21 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingmacros=2
+\def\a#1#2{#2#1}
+\a xy
+\everypar{\relax}\noindent\par\everypar{}
+\everymath{\relax}$x$\everymath{}
+\everydisplay{\relax}$$x$$
+\everyhbox{\relax}\setbox0\hbox{}\everyhbox{}
+\everyvbox{\relax}\setbox0\vbox{}\everyvbox{}
+\def\e{}\everycr{\e}\halign{#\cr a\cr}\everycr{}
+\everyeof{\relax}\scantokens{x}\everyeof{}
+\output={\shipout\box255}
+\hbox{}\penalty-10000
+\shipout\hbox{\write-1{\relax}}
+\mark{\relax}
+\toks0={\relax}\the\toks0
+\afterassignment\relax\count1=1
+\begingroup\aftergroup\relax\endgroup
+\tracingmacros=1 \a xy \everypar{\relax}\noindent\par
+\tracingmacros=0
+\bye

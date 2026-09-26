@@ -1,0 +1,7 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tracingpages1 \vsize60pt
+\count101=500 \dimen101=\maxdimen \skip101=-5pt plus -2pt minus 3pt
+\count102=-1000 \dimen102=\maxdimen
+\output={\showbox101 \showbox102 \shipout\box255}
+\hbox{a}\insert101{\hbox{x}}\insert102{\hbox{y}\hbox{z}}\hbox{b}\insert101{\hbox{w}}\penalty-10000
+\bye
