@@ -251,3 +251,60 @@ code_enum! {
         Or = 4,
     }
 }
+
+code_enum! {
+    /// The `chr_code` of `\box`, `\copy`, `\lastbox`, `\vsplit` and the box
+    /// makers (`make_box`). `Copy`, `LastBox` and `Vsplit` also select
+    /// `\unvcopy`, `\pagediscards` and `\splitdiscards`, and index `disc_ptr`.
+    pub(crate) enum BoxCode: u8 {
+        Box = 0 => "box",
+        Copy = 1 => "copy",
+        LastBox = 2 => "lastbox",
+        Vsplit = 3 => "vsplit",
+        Vtop = 4 => "vtop",
+        Vbox = 5 => "vbox",
+        Hbox = 108 => "hbox",
+    }
+}
+
+const _: () = {
+    assert!(BoxCode::Vbox.raw() == BoxCode::Vtop.raw() + crate::consts::VMODE as i32);
+    assert!(BoxCode::Hbox.raw() == BoxCode::Vtop.raw() + crate::consts::HMODE as i32);
+};
+
+code_enum! {
+    /// The `chr_code` of `\hfil`..`\hskip`, their vertical twins and `\mskip`.
+    pub(crate) enum SkipCode: u8 {
+        Fil = 0,
+        Fill = 1,
+        Ss = 2,
+        FilNeg = 3,
+        Skip = 4,
+        Mskip = 5,
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\chardef` and the other `shorthand_def` primitives.
+    pub(crate) enum ShorthandDefCode: u8 {
+        Char = 0 => "chardef",
+        MathChar = 1 => "mathchardef",
+        Count = 2 => "countdef",
+        Dimen = 3 => "dimendef",
+        Skip = 4 => "skipdef",
+        MuSkip = 5 => "muskipdef",
+        Toks = 6 => "toksdef",
+        CharSub = 7 => "charsubdef",
+        XetexMathCharNum = 8 => "Umathcharnumdef",
+        XetexMathChar = 9 => "Umathchardef",
+    }
+}
+
+code_enum! {
+    /// The `chr_code` of `\wd`, `\dp` and `\ht`, the box field offsets.
+    pub(crate) enum BoxDimenCode: u8 {
+        Width = 1 => "wd",
+        Depth = 2 => "dp",
+        Height = 3 => "ht",
+    }
+}

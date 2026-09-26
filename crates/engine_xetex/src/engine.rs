@@ -7,7 +7,7 @@ use crate::cmd::{
     IGNORE, IGNORE_SPACES, INVALID_CHAR, LETTER, OTHER_CHAR, OUTER_CALL, SHAPE_REF, SPACER,
     UNDEFINED_CS,
 };
-use crate::codes::{FiOrElseCode, ValueLevel};
+use crate::codes::{BoxCode, FiOrElseCode, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
@@ -28,7 +28,6 @@ use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
 use crate::input::{NEW_LINE, TOKEN_LIST};
 use crate::io::init_io;
 use crate::linebreak::HYPHENATED;
-use crate::main_control::{LAST_BOX_CODE, VSPLIT_CODE};
 use crate::mem::{
     ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN,
     HI_MEM_STAT_USAGE, NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
@@ -267,7 +266,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    for box_code in LAST_BOX_CODE as usize..=VSPLIT_CODE as usize {
+    for box_code in BoxCode::LastBox as usize..=BoxCode::Vsplit as usize {
         st.mem.flush_node_list(st.scanner.disc_ptr[box_code])?;
     }
 
@@ -415,8 +414,8 @@ fn initialize_more_variables(st: &mut EngineState) {
     };
     st.scanner.sa_chain.0 = TEX_NULL;
     st.scanner.sa_level = LEVEL_ZERO;
-    st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
-    st.scanner.disc_ptr[VSPLIT_CODE as usize] = MemPtr::NULL;
+    st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
+    st.scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
     st.strings.edit_name_start = 0;
     st.scanner.stop_at_space = true;
 }

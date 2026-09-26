@@ -19,7 +19,10 @@ use crate::cmd::{
     TOKS_REGISTER, TOP_BOT_MARK, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE,
     VRULE, VSKIP, XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
-use crate::codes::{ConvertCode, FiOrElseCode, IfCode, LastItemCode, ValueLevel};
+use crate::codes::{
+    BoxCode, BoxDimenCode, ConvertCode, FiOrElseCode, IfCode, LastItemCode, ShorthandDefCode,
+    SkipCode, ValueLevel,
+};
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
     COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY,
@@ -46,11 +49,8 @@ use crate::input::{
     V_TEMPLATE, WRITE_TEXT,
 };
 use crate::main_control::{
-    BOX_CODE, BOX_FLAG, CHAR_DEF_CODE, CHAR_SUB_DEF_CODE, COPY_CODE, COUNT_DEF_CODE, CR_CODE,
-    DIMEN_DEF_CODE, FILL_CODE, FIL_CODE, GLOBAL_BOX_FLAG, LAST_BOX_CODE, LEADER_FLAG, LP_CODE_BASE,
-    MATH_CHAR_DEF_CODE, MU_SKIP_DEF_CODE, RP_CODE_BASE, SHIP_OUT_FLAG, SKIP_CODE, SKIP_DEF_CODE,
-    SPAN_CODE, SS_CODE, VSPLIT_CODE, VTOP_CODE, XETEX_MATH_CHAR_DEF_CODE,
-    XETEX_MATH_CHAR_NUM_DEF_CODE,
+    BOX_FLAG, CR_CODE, GLOBAL_BOX_FLAG, LEADER_FLAG, LP_CODE_BASE, RP_CODE_BASE, SHIP_OUT_FLAG,
+    SPAN_CODE,
 };
 use crate::math::{
     ABOVE_CODE, ATOP_CODE, DEFAULT_CODE, DELIMITED_CODE, LIMITS, MIDDLE_NOAD, NO_LIMITS, OVER_CODE,
@@ -63,7 +63,7 @@ use crate::node::{
 use crate::packaging::EXACTLY;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::save::DIMEN_VAL_LIMIT;
-use crate::scan::{HEIGHT_OFFSET, MAX_CHAR_VAL, WIDTH_OFFSET};
+use crate::scan::MAX_CHAR_VAL;
 use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
@@ -1200,9 +1200,9 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         ),
         SET_BOX_DIMEN => print_esc(
             st,
-            match chr_code {
-                WIDTH_OFFSET => "wd",
-                HEIGHT_OFFSET => "ht",
+            match BoxDimenCode::from_raw(chr_code) {
+                Some(BoxDimenCode::Width) => "wd",
+                Some(BoxDimenCode::Height) => "ht",
                 _ => "dp",
             },
         ),
@@ -1255,21 +1255,21 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         STOP => print_esc(st, if chr_code == 1 { "dump" } else { "end" }),
         HSKIP => print_esc(
             st,
-            match chr_code {
-                SKIP_CODE => "hskip",
-                FIL_CODE => "hfil",
-                FILL_CODE => "hfill",
-                SS_CODE => "hss",
+            match SkipCode::from_raw(chr_code) {
+                Some(SkipCode::Skip) => "hskip",
+                Some(SkipCode::Fil) => "hfil",
+                Some(SkipCode::Fill) => "hfill",
+                Some(SkipCode::Ss) => "hss",
                 _ => "hfilneg",
             },
         ),
         VSKIP => print_esc(
             st,
-            match chr_code {
-                SKIP_CODE => "vskip",
-                FIL_CODE => "vfil",
-                FILL_CODE => "vfill",
-                SS_CODE => "vss",
+            match SkipCode::from_raw(chr_code) {
+                Some(SkipCode::Skip) => "vskip",
+                Some(SkipCode::Fil) => "vfil",
+                Some(SkipCode::Fill) => "vfill",
+                Some(SkipCode::Ss) => "vss",
                 _ => "vfilneg",
             },
         ),
@@ -1285,18 +1285,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             },
         ),
         VMOVE => print_esc(st, if chr_code == 1 { "raise" } else { "lower" }),
-        MAKE_BOX => {
-            let name = match chr_code {
-                BOX_CODE => "box",
-                COPY_CODE => "copy",
-                LAST_BOX_CODE => "lastbox",
-                VSPLIT_CODE => "vsplit",
-                VTOP_CODE => "vtop",
-                x if x == VTOP_CODE + i32::from(VMODE) => "vbox",
-                _ => "hbox",
-            };
-            print_esc(st, name);
-        }
+        MAKE_BOX => print_esc(
+            st,
+            BoxCode::from_raw(chr_code).map_or("hbox", BoxCode::name),
+        ),
         LEADER_SHIP => {
             let name = match chr_code - i32::from(A_LEADERS) {
                 0 => "leaders",
@@ -1319,7 +1311,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         }
         UN_HBOX => print_esc(
             st,
-            if chr_code == COPY_CODE {
+            if chr_code == BoxCode::Copy.raw() {
                 "unhcopy"
             } else {
                 "unhbox"
@@ -1327,10 +1319,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         ),
         UN_VBOX => print_esc(
             st,
-            match chr_code {
-                COPY_CODE => "unvcopy",
-                LAST_BOX_CODE => "pagediscards",
-                VSPLIT_CODE => "splitdiscards",
+            match BoxCode::from_raw(chr_code) {
+                Some(BoxCode::Copy) => "unvcopy",
+                Some(BoxCode::LastBox) => "pagediscards",
+                Some(BoxCode::Vsplit) => "splitdiscards",
                 _ => "unvbox",
             },
         ),
@@ -1415,21 +1407,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             },
         ),
         LET => print_esc(st, if chr_code != 0 { "futurelet" } else { "let" }),
-        SHORTHAND_DEF => {
-            let name = match chr_code {
-                CHAR_DEF_CODE => "chardef",
-                MATH_CHAR_DEF_CODE => "mathchardef",
-                XETEX_MATH_CHAR_DEF_CODE => "Umathchardef",
-                XETEX_MATH_CHAR_NUM_DEF_CODE => "Umathcharnumdef",
-                COUNT_DEF_CODE => "countdef",
-                DIMEN_DEF_CODE => "dimendef",
-                SKIP_DEF_CODE => "skipdef",
-                MU_SKIP_DEF_CODE => "muskipdef",
-                CHAR_SUB_DEF_CODE => "charsubdef",
-                _ => "toksdef",
-            };
-            print_esc(st, name);
-        }
+        SHORTHAND_DEF => print_esc(
+            st,
+            ShorthandDefCode::from_raw(chr_code).map_or("toksdef", ShorthandDefCode::name),
+        ),
         CHAR_GIVEN => {
             print_esc(st, "char");
             print_hex(st, chr_code);

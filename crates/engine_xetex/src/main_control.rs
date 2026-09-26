@@ -17,7 +17,7 @@ use crate::cmd::{
     TOKS_REGISTER, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE, VRULE, VSKIP,
     XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
-use crate::codes::ValueLevel;
+use crate::codes::{BoxCode, BoxDimenCode, ShorthandDefCode, SkipCode, ValueLevel};
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
     BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG,
@@ -67,27 +67,6 @@ const INNER_VMODE: i16 = -VMODE;
 const INNER_HMODE: i16 = -HMODE;
 
 // `cur_chr` modifiers.
-pub(crate) const BOX_CODE: i32 = 0;
-pub(crate) const COPY_CODE: i32 = 1;
-pub(crate) const LAST_BOX_CODE: i32 = 2;
-pub(crate) const VSPLIT_CODE: i32 = 3;
-pub(crate) const VTOP_CODE: i32 = 4;
-pub(crate) const FIL_CODE: i32 = 0;
-pub(crate) const FILL_CODE: i32 = 1;
-pub(crate) const SS_CODE: i32 = 2;
-pub(crate) const FIL_NEG_CODE: i32 = 3;
-pub(crate) const SKIP_CODE: i32 = 4;
-pub(crate) const MSKIP_CODE: i32 = 5;
-pub(crate) const CHAR_DEF_CODE: i32 = 0;
-pub(crate) const MATH_CHAR_DEF_CODE: i32 = 1;
-pub(crate) const COUNT_DEF_CODE: i32 = 2;
-pub(crate) const DIMEN_DEF_CODE: i32 = 3;
-pub(crate) const SKIP_DEF_CODE: i32 = 4;
-pub(crate) const MU_SKIP_DEF_CODE: i32 = 5;
-pub(crate) const TOKS_DEF_CODE: i32 = 6;
-pub(crate) const CHAR_SUB_DEF_CODE: i32 = 7;
-pub(crate) const XETEX_MATH_CHAR_NUM_DEF_CODE: i32 = 8;
-pub(crate) const XETEX_MATH_CHAR_DEF_CODE: i32 = 9;
 pub(crate) const LP_CODE_BASE: i32 = 2;
 pub(crate) const RP_CODE_BASE: i32 = 3;
 pub(crate) const SPAN_CODE: i32 = 1_114_113;
@@ -1129,7 +1108,7 @@ pub(crate) fn do_endv(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_chr > COPY_CODE {
+    if st.scanner.cur_chr > BoxCode::Copy.raw() {
         let disc = &mut st.scanner.disc_ptr[st.scanner.cur_chr as usize];
         st.input.cur_list.tail.set_link(&mut st.mem, *disc);
         *disc = MemPtr::NULL;
@@ -1153,7 +1132,7 @@ pub(crate) fn unpackage(st: &mut EngineState) -> Result<(), Abort> {
             return crate::errors::error(st);
         }
         let list = b.list_ptr(&st.mem);
-        if c == COPY_CODE {
+        if c == BoxCode::Copy.raw() {
             let copy = st.mem.copy_node_list(list.0)?;
             st.input
                 .cur_list
@@ -1299,7 +1278,7 @@ pub(crate) fn scan_box(st: &mut EngineState, box_context: i32) -> Result<(), Abo
     }
 }
 
-pub(crate) fn package(st: &mut EngineState, c: i32) -> Result<(), Abort> {
+pub(crate) fn package(st: &mut EngineState, vtop: bool) -> Result<(), Abort> {
     let d = st.eqtb.dimen_par(DimenPar::BoxMaxDepth);
     let u = st.eqtb.int_par(IntPar::XetexUpwards);
     crate::save::unsave(st)?;
@@ -1315,7 +1294,7 @@ pub(crate) fn package(st: &mut EngineState, c: i32) -> Result<(), Abort> {
     } else {
         let b = crate::packaging::vpackage(st, list, size, spec_mode, d)?;
         st.scanner.cur_box = Some(BoxOrRule::Box(b));
-        if c == VTOP_CODE {
+        if vtop {
             let h = match b.list_ptr(&st.mem).as_idx().map(|p| st.mem.classify(p)) {
                 Some(Ok(AnyNode::HList(first))) => first.height(&st.mem),
                 Some(Ok(AnyNode::VList(first))) => first.height(&st.mem),
@@ -1564,22 +1543,23 @@ fn unlink_effective_tail(st: &mut EngineState, tx: MemPtr) -> Result<bool, Abort
 }
 
 pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Abort> {
-    match st.scanner.cur_chr {
-        BOX_CODE => {
+    let code = BoxCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("begin_box"))?;
+    match code {
+        BoxCode::Box => {
             crate::scan::scan_register_num(st)?;
             let n = st.scanner.cur_val;
             st.scanner.cur_box = fetch_box(st, n).map(BoxOrRule::Box);
             st.mem
                 .change_box(&mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
         }
-        COPY_CODE => {
+        BoxCode::Copy => {
             crate::scan::scan_register_num(st)?;
             st.scanner.cur_box = match fetch_box(st, st.scanner.cur_val) {
                 Some(b) => Some(BoxOrRule::Box(st.mem.copy_box(b)?)),
                 None => None,
             };
         }
-        LAST_BOX_CODE => {
+        BoxCode::LastBox => {
             st.scanner.cur_box = None;
             if st.input.cur_list.mode.abs() == MMODE {
                 crate::errors::you_cant(st);
@@ -1606,7 +1586,7 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
                 }
             }
         }
-        VSPLIT_CODE => {
+        BoxCode::Vsplit => {
             crate::scan::scan_register_num(st)?;
             let n = st.scanner.cur_val;
             if !crate::scan::scan_keyword(st, "to")? {
@@ -1621,10 +1601,9 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
             st.scanner.cur_box =
                 crate::packaging::vsplit(st, n, st.scanner.cur_dimen())?.map(BoxOrRule::Box);
         }
-        _ => {
-            let k = st.scanner.cur_chr - VTOP_CODE as i32;
+        BoxCode::Vtop | BoxCode::Vbox | BoxCode::Hbox => {
             st.save_stack.set_saved(0, box_context);
-            let mode = if k == i32::from(HMODE) {
+            let mode = if code == BoxCode::Hbox {
                 let group = if box_context < BOX_FLAG && st.input.cur_list.mode.abs() == VMODE {
                     GroupCode::AdjustedHbox
                 } else {
@@ -1633,7 +1612,7 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
                 crate::scan::scan_spec(st, group, true)?;
                 HMODE
             } else {
-                let group = if k == i32::from(VMODE) {
+                let group = if code == BoxCode::Vbox {
                     GroupCode::Vbox
                 } else {
                     GroupCode::Vtop
@@ -1671,19 +1650,19 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::SemiSimple | GroupCode::MathShift | GroupCode::MathLeft => {
             crate::errors::extra_right_brace(st)?;
         }
-        GroupCode::Hbox => package(st, 0)?,
+        GroupCode::Hbox => package(st, false)?,
         GroupCode::AdjustedHbox => {
             st.scanner.adjust_tail = ADJUST_HEAD;
             st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-            package(st, 0)?;
+            package(st, false)?;
         }
         GroupCode::Vbox => {
             end_graf(st)?;
-            package(st, 0)?;
+            package(st, false)?;
         }
         GroupCode::Vtop => {
             end_graf(st)?;
-            package(st, VTOP_CODE)?;
+            package(st, true)?;
         }
         GroupCode::Insert => {
             end_graf(st)?;
@@ -1776,9 +1755,9 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
                 st.shipout.page_tail = PAGE_HEAD;
             }
 
-            let last_box = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
+            let last_box = st.scanner.disc_ptr[BoxCode::LastBox as usize];
             st.mem.flush_node_list(last_box)?;
-            st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
+            st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
             st.mem.pop_nest(&mut st.input);
             crate::pagebuilder::build_page(st)?;
         }
@@ -1859,23 +1838,22 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abort> {
-    let s = st.scanner.cur_chr;
+    let s = SkipCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("append_glue"))?;
     match s {
-        FIL_CODE => st.scanner.cur_val = FIL_GLUE.idx().0,
-        FILL_CODE => st.scanner.cur_val = FILL_GLUE.idx().0,
-        SS_CODE => st.scanner.cur_val = SS_GLUE.idx().0,
-        FIL_NEG_CODE => st.scanner.cur_val = FIL_NEG_GLUE.idx().0,
-        SKIP_CODE => crate::scan::scan_glue(st, ValueLevel::Glue)?,
-        MSKIP_CODE => crate::scan::scan_glue(st, ValueLevel::Mu)?,
-        _ => {}
+        SkipCode::Fil => st.scanner.cur_val = FIL_GLUE.idx().0,
+        SkipCode::Fill => st.scanner.cur_val = FILL_GLUE.idx().0,
+        SkipCode::Ss => st.scanner.cur_val = SS_GLUE.idx().0,
+        SkipCode::FilNeg => st.scanner.cur_val = FIL_NEG_GLUE.idx().0,
+        SkipCode::Skip => crate::scan::scan_glue(st, ValueLevel::Glue)?,
+        SkipCode::Mskip => crate::scan::scan_glue(st, ValueLevel::Mu)?,
     }
     let g = st.mem.new_glue(st.scanner.cur_glue())?;
     st.input.cur_list.tail_append(&mut st.mem, g.ptr());
-    if s >= SKIP_CODE {
+    if matches!(s, SkipCode::Skip | SkipCode::Mskip) {
         let spec = g.glue_ptr(&st.mem);
         let refs = spec.ref_count(&st.mem);
         spec.set_ref_count(&mut st.mem, refs - 1);
-        if s > SKIP_CODE {
+        if s == SkipCode::Mskip {
             g.set_subtype(&mut st.mem, MU_GLUE);
         }
     }
@@ -2008,9 +1986,9 @@ pub(crate) fn alter_box_dimen(st: &mut EngineState) -> Result<(), Abort> {
     crate::scan::scan_dimen(st, false, false, false)?;
     if let Some(b) = b {
         let v = st.scanner.cur_dimen();
-        match c {
-            crate::scan::WIDTH_OFFSET => b.set_width(&mut st.mem, v),
-            crate::scan::DEPTH_OFFSET => b.set_depth(&mut st.mem, v),
+        match BoxDimenCode::from_raw(c) {
+            Some(BoxDimenCode::Width) => b.set_width(&mut st.mem, v),
+            Some(BoxDimenCode::Depth) => b.set_depth(&mut st.mem, v),
             _ => b.set_height(&mut st.mem, v),
         }
     }
@@ -4008,7 +3986,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             define(st, a >= 4, p, st.scanner.cur_cmd, st.scanner.cur_chr)?;
         }
         SHORTHAND_DEF => {
-            if st.scanner.cur_chr == CHAR_SUB_DEF_CODE {
+            if st.scanner.cur_chr == ShorthandDefCode::CharSub.raw() {
                 crate::output::print_err(st, "vestigial MLTeX shorthand encountered??");
                 st.errors
                     .help(&["This should never happen in Tectonic, where MLTeX has been excised."]);
@@ -4162,33 +4140,34 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
-    let n = st.scanner.cur_chr;
+    let n =
+        ShorthandDefCode::from_raw(st.scanner.cur_chr).ok_or(Abort::Confusion("shorthand_def"))?;
     crate::scan::get_r_token(st)?;
     let p = st.scanner.cur_cs;
     define(st, global, p, RELAX, TOO_BIG_USV)?;
     crate::scan::scan_optional_equals(st)?;
     let (t, e) = match n {
-        CHAR_DEF_CODE => {
+        ShorthandDefCode::Char => {
             crate::scan::scan_usv_num(st)?;
             (CHAR_GIVEN, st.scanner.cur_val)
         }
-        MATH_CHAR_DEF_CODE => {
+        ShorthandDefCode::MathChar => {
             crate::scan::scan_fifteen_bit_int(st)?;
             (MATH_GIVEN, st.scanner.cur_val)
         }
-        XETEX_MATH_CHAR_NUM_DEF_CODE => {
+        ShorthandDefCode::XetexMathCharNum => {
             crate::scan::scan_xetex_math_char_int(st)?;
             (XETEX_MATH_GIVEN, st.scanner.cur_val)
         }
-        XETEX_MATH_CHAR_DEF_CODE => (XETEX_MATH_GIVEN, crate::scan::scan_umath_code(st)?),
+        ShorthandDefCode::XetexMathChar => (XETEX_MATH_GIVEN, crate::scan::scan_umath_code(st)?),
         _ => {
             crate::scan::scan_register_num(st)?;
             if st.scanner.cur_val > 255 {
                 let level = match n {
-                    COUNT_DEF_CODE => ValueLevel::Int,
-                    DIMEN_DEF_CODE => ValueLevel::Dimen,
-                    SKIP_DEF_CODE => ValueLevel::Glue,
-                    MU_SKIP_DEF_CODE => ValueLevel::Mu,
+                    ShorthandDefCode::Count => ValueLevel::Int,
+                    ShorthandDefCode::Dimen => ValueLevel::Dimen,
+                    ShorthandDefCode::Skip => ValueLevel::Glue,
+                    ShorthandDefCode::MuSkip => ValueLevel::Mu,
                     _ => ValueLevel::Tok,
                 };
                 let reg = st.scanner.cur_val;
@@ -4202,11 +4181,11 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                 (t, st.scanner.cur_ptr.0)
             } else {
                 let (t, base) = match n {
-                    COUNT_DEF_CODE => (ASSIGN_INT, COUNT_BASE),
-                    DIMEN_DEF_CODE => (ASSIGN_DIMEN, SCALED_BASE),
-                    SKIP_DEF_CODE => (ASSIGN_GLUE, SKIP_BASE),
-                    MU_SKIP_DEF_CODE => (ASSIGN_MU_GLUE, MU_SKIP_BASE),
-                    TOKS_DEF_CODE => (ASSIGN_TOKS, TOKS_BASE),
+                    ShorthandDefCode::Count => (ASSIGN_INT, COUNT_BASE),
+                    ShorthandDefCode::Dimen => (ASSIGN_DIMEN, SCALED_BASE),
+                    ShorthandDefCode::Skip => (ASSIGN_GLUE, SKIP_BASE),
+                    ShorthandDefCode::MuSkip => (ASSIGN_MU_GLUE, MU_SKIP_BASE),
+                    ShorthandDefCode::Toks => (ASSIGN_TOKS, TOKS_BASE),
                     _ => return Ok(()),
                 };
                 (t, base + st.scanner.cur_val)

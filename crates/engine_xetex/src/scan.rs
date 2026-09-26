@@ -10,7 +10,7 @@ use crate::cmd::{
     SET_BOX_DIMEN, SET_FONT, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF, SET_SHAPE, SPACER,
     SUP_MARK, TAB_MARK, THE, TOKS_REGISTER, VRULE, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
 };
-use crate::codes::{FiOrElseCode, IfCode, LastItemCode, ValueLevel};
+use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
     CS_TOKEN_FLAG, DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE,
@@ -101,10 +101,6 @@ const EXPR_MULT: i16 = 3;
 const EXPR_DIV: i16 = 4;
 const EXPR_SCALE: i16 = 5;
 const NORMAL_EXPR: u16 = 0;
-
-pub(crate) const WIDTH_OFFSET: i32 = 1;
-pub(crate) const DEPTH_OFFSET: i32 = 2;
-pub(crate) const HEIGHT_OFFSET: i32 = 3;
 
 /// Reports a bad integer `value` with two help lines.
 fn bad_int_error(
@@ -3207,8 +3203,8 @@ pub(crate) fn scan_something_internal(
                 scan_register_num(st)?;
                 let v = match fetch_box(st, st.scanner.cur_val) {
                     None => Scaled::ZERO,
-                    Some(b) if m == WIDTH_OFFSET => b.width(&st.mem),
-                    Some(b) if m == DEPTH_OFFSET => b.depth(&st.mem),
+                    Some(b) if m == BoxDimenCode::Width.raw() => b.width(&st.mem),
+                    Some(b) if m == BoxDimenCode::Depth.raw() => b.depth(&st.mem),
                     Some(b) => b.height(&st.mem),
                 };
                 set_cur_val(st, v.0, ValueLevel::Dimen);

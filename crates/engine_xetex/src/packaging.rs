@@ -1,7 +1,7 @@
 //! Box packing (`hpack`, `vpackage`), vertical breaking (`vert_break`,
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
-use crate::codes::ValueLevel;
+use crate::codes::{BoxCode, ValueLevel};
 use crate::consts::{
     ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_NODE_SIZE, EJECT_PENALTY, EXPLICIT, FIL, FILL, FILLL,
     FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, IGNORE_DEPTH, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY,
@@ -11,7 +11,6 @@ use crate::consts::{
     SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
-use crate::main_control::VSPLIT_CODE;
 use crate::mem::{end_lr_type, GARBAGE, TEMP_HEAD};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
@@ -832,8 +831,8 @@ enum VsplitStep {
 impl MemState {
     /// The contents of box register `n`, leaving `n` in `cur_val`.
     fn reset_vsplit_marks(&mut self, scanner: &mut ScannerState) -> Result<(), Abort> {
-        self.flush_node_list(scanner.disc_ptr[VSPLIT_CODE as usize])?;
-        scanner.disc_ptr[VSPLIT_CODE as usize] = MemPtr::NULL;
+        self.flush_node_list(scanner.disc_ptr[BoxCode::Vsplit as usize])?;
+        scanner.disc_ptr[BoxCode::Vsplit as usize] = MemPtr::NULL;
 
         if let Some(root) = scanner.sa_root[ValueLevel::Mark as usize].as_idx() {
             if self.do_marks(scanner, VSPLIT_INIT, 0, root) {
@@ -1119,8 +1118,8 @@ impl MemState {
         node.set_link(self, MemPtr::NULL);
         prev_p.set_link(self, q);
         if save_discards {
-            if scanner.disc_ptr[VSPLIT_CODE as usize].is_null() {
-                scanner.disc_ptr[VSPLIT_CODE as usize] = node;
+            if scanner.disc_ptr[BoxCode::Vsplit as usize].is_null() {
+                scanner.disc_ptr[BoxCode::Vsplit as usize] = node;
             } else {
                 r.set_link(self, node);
             }

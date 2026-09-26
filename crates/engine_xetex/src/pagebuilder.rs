@@ -1,6 +1,6 @@
 //! The page builder: `build_page` and `fire_up`.
 
-use crate::codes::ValueLevel;
+use crate::codes::{BoxCode, ValueLevel};
 use crate::consts::{
     AWFUL_BAD, BOT_MARK_CODE, BOX_NODE_SIZE, EJECT_PENALTY, FIRST_MARK_CODE, IGNORE_DEPTH, INF_BAD,
     INF_PENALTY, INS_NODE_SIZE, LOCAL_OUTPUT_ROUTINE, MAX_DIMEN, MAX_HALFWORD, NORMAL,
@@ -9,7 +9,6 @@ use crate::consts::{
 use crate::errors::Abort;
 use crate::helpers::badness;
 use crate::input::OUTPUT_TEXT;
-use crate::main_control::{COPY_CODE, LAST_BOX_CODE};
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
 use crate::packaging::{ADDITIONAL, EXACTLY};
@@ -358,9 +357,9 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
         st.shipout.page_tail = PAGE_HEAD;
     }
-    let discards = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
+    let discards = st.scanner.disc_ptr[BoxCode::LastBox as usize];
     st.mem.flush_node_list(discards)?;
-    st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
+    st.scanner.disc_ptr[BoxCode::LastBox as usize] = MemPtr::NULL;
     crate::shipout::ship_out(st, page)?;
     st.eqtb.set_box_reg(255, MemPtr::NULL);
     Ok(())
@@ -675,12 +674,12 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                     st.mem.flush_node_list(p)?;
                 } else {
                     let discards = &mut st.scanner.disc_ptr;
-                    if discards[LAST_BOX_CODE as usize].is_null() {
-                        discards[LAST_BOX_CODE as usize] = p;
+                    if discards[BoxCode::LastBox as usize].is_null() {
+                        discards[BoxCode::LastBox as usize] = p;
                     } else {
-                        discards[COPY_CODE as usize].set_link(&mut st.mem, p);
+                        discards[BoxCode::Copy as usize].set_link(&mut st.mem, p);
                     }
-                    discards[COPY_CODE as usize] = p;
+                    discards[BoxCode::Copy as usize] = p;
                 }
             }
             PageStep::Break(_) => unreachable!("breakpoints are resolved above"),
