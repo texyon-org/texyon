@@ -1,7 +1,7 @@
 //! The page builder: `build_page` and `fire_up`.
 
 use crate::consts::{
-    AWFUL_BAD, BOT_MARK_CODE, BOX_BASE, BOX_NODE_SIZE, COUNT_BASE, DIMEN_BASE, DIMEN_PAR_MAX_DEPTH,
+    AWFUL_BAD, BOT_MARK_CODE, BOX_BASE, BOX_NODE_SIZE, COUNT_BASE, DIMEN_PAR_MAX_DEPTH,
     DIMEN_PAR_VFUZZ, DIMEN_PAR_VSIZE, EJECT_PENALTY, FIRST_MARK_CODE, GLUE_BASE,
     GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TOP_SKIP, IGNORE_DEPTH, INF_BAD, INF_PENALTY, INS_NODE_SIZE,
     INT_BASE, INT_PAR_HOLDING_INSERTS, INT_PAR_MAX_DEAD_CYCLES, INT_PAR_OUTPUT_PENALTY,
@@ -369,8 +369,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     let save_vbadness = st.eqtb.int_par(INT_PAR_VBADNESS);
     st.eqtb.set_int_par(INT_PAR_VBADNESS, INF_BAD);
     let save_vfuzz = st.eqtb.dimen_par(DIMEN_PAR_VFUZZ);
-    st.eqtb
-        .set_b32s1(DIMEN_BASE + DIMEN_PAR_VFUZZ, MAX_HALFWORD);
+    st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, MAX_HALFWORD);
     let page = crate::packaging::vpackage_emit_in(
         st,
         st.mem.link_ptr(PAGE_HEAD),

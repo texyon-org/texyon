@@ -7,7 +7,7 @@ use crate::bridge::{
     issue_error_cstr, issue_warning_cstr, ttstub_output_close, ttstub_output_open,
     ttstub_output_write,
 };
-use crate::consts::{INT_BASE, INT_PAR_SYNCTEX, INVALID_HANDLE};
+use crate::consts::{INT_PAR_SYNCTEX, INVALID_HANDLE};
 use crate::node::{AnyBox, AnyNode, HListNode, KernNode, MathNode, NodePtr, VListNode};
 use crate::shipout::ONE_INCH;
 use crate::state::{EngineState, EqtbState, ShipoutState, SynctexCtxt};
@@ -283,7 +283,7 @@ pub fn synctex_init_command(st: &mut EngineState) {
 
     let synctex_enabled = st.config.synctex_enabled != 0;
     st.eqtb
-        .set_b32s1(INT_BASE + INT_PAR_SYNCTEX, i32::from(synctex_enabled));
+        .set_int_par(INT_PAR_SYNCTEX, i32::from(synctex_enabled));
 }
 
 pub fn synctex_terminate(st: &mut EngineState) {

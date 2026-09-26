@@ -651,8 +651,7 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     st.scanner.max_reg_num = 32767;
     st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize].fill(MemPtr::NULL);
 
-    st.eqtb
-        .set_b32s1(INT_BASE + INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);
+    st.eqtb.set_int_par(INT_PAR_XETEX_HYPHENATABLE_LENGTH, 63);
 }
 
 unsafe fn set_frozen_text(
@@ -1071,8 +1070,7 @@ pub(crate) unsafe fn initialize_engine(
     };
 
     if st.config.semantic_pagination_enabled {
-        st.eqtb
-            .set_b32s1(INT_BASE + INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, 1);
+        st.eqtb.set_int_par(INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, 1);
     }
 
     pdf_files_init();

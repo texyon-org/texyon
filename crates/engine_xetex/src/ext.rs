@@ -13,8 +13,8 @@ use crate::bridge::{
 };
 use crate::cmd::EXTENSION;
 use crate::consts::{
-    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_BASE,
-    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
+    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_PAR_LEFT_HYPHEN_MIN,
+    INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_LINEBREAK_LOCALE, INT_PAR_XETEX_TRACING_FONTS,
     INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, MMODE, OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE,
     VMODE, WRITE_NODE_SIZE,
@@ -2310,9 +2310,9 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
             let name = st.input.name_of_file.as_mut_ptr();
             let (enc_mode, info) = unsafe { get_encoding_mode_and_info_in(st, name)? };
             st.eqtb
-                .set_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_MODE, enc_mode);
+                .set_int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE, enc_mode);
             st.eqtb
-                .set_b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING, info);
+                .set_int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING, info);
         }
 
         XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => {
@@ -2322,8 +2322,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
             } else {
                 st.scanner.cur_name
             };
-            st.eqtb
-                .set_b32s1(INT_BASE + INT_PAR_XETEX_LINEBREAK_LOCALE, locale);
+            st.eqtb.set_int_par(INT_PAR_XETEX_LINEBREAK_LOCALE, locale);
         }
 
         _ => return Err(MainControlAbort::Confusion(c"ext1")),

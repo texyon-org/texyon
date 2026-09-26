@@ -2,7 +2,7 @@
 //! log and input-file lifecycle.
 
 use crate::consts::{
-    BIGGEST_CHAR, CLOSED, EMPTY_STRING, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
+    BIGGEST_CHAR, CLOSED, EMPTY_STRING, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
     INT_PAR_TRACING_STACK_LEVELS, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_INPUT_NORMALIZATION, INVALID_HANDLE, JUST_OPEN,
     SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
@@ -721,9 +721,7 @@ pub(crate) unsafe fn open_or_close_in(st: &mut EngineState) -> Result<(), OpenOr
     scan_and_pack_name_in(st).map_err(OpenOrCloseAbort::Scanner)?;
 
     let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
-    let encoding = st
-        .eqtb
-        .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
+    let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
     if let Some(file) = u_open_in_in(st, TTBC_FILE_FORMAT_TEX, mode, encoding)
         .map_err(OpenOrCloseAbort::MakeString)?
     {
@@ -1213,9 +1211,7 @@ pub(crate) unsafe fn start_input_in(
 
     let idx = st.input.cur_input.index as i32;
     let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
-    let encoding = st
-        .eqtb
-        .b32s1(INT_BASE + INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
+    let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
     let Some(file) = u_open_in_in(st, format, mode, encoding).map_err(SccAbort::MakeTexString)?
     else {
         // The abort keeps a pointer to the message, so the buffer is leaked.

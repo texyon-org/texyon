@@ -283,8 +283,7 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
         let rule_save = st.eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
         st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, 0);
         let packed = crate::packaging::hpack_emit_in(st, head, spec_size, spec_mode)?;
-        st.eqtb
-            .set_b32s1(DIMEN_BASE + DIMEN_PAR_OVERFULL_RULE, rule_save);
+        st.eqtb.set_dimen_par(DIMEN_PAR_OVERFULL_RULE, rule_save);
         packed
     } else {
         move_preamble_dimen(&mut st.mem, 1, 3);
@@ -3466,11 +3465,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
         }
     }
 
-    if st
-        .eqtb
-        .b32s1(INT_BASE + INT_PAR_XETEX_INTERWORD_SPACE_SHAPING)
-        > 0
-    {
+    if st.eqtb.int_par(INT_PAR_XETEX_INTERWORD_SPACE_SHAPING) > 0 {
         shape_interword_space(st, mf)?;
     }
     Ok(!st.scanner.cur_ptr.is_null())
