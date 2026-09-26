@@ -815,7 +815,7 @@ pub(crate) fn print_group_in(st: &mut EngineState, e: bool) {
     print_cstr_in(st, c" group (level ".as_ptr());
     print_int_in(st, st.save_stack.cur_level as i32);
     print_char_in(st, b')' as i32);
-    let line_at = st.save_stack.b32s1(st.save_stack.save_ptr - 1);
+    let line_at = st.save_stack.saved(-1);
     if line_at != 0 {
         if e {
             print_cstr_in(st, c" entered at line ".as_ptr());
@@ -1929,7 +1929,7 @@ pub(crate) fn group_warning_in(st: &mut EngineState) {
         if st.eqtb.int_par(INT_PAR_TRACING_NESTING) > 0 && level_is_file(st, i) {
             w = true;
         }
-        st.input.grp_stack[i as usize] = st.save_stack.b32s1(st.save_stack.save_ptr);
+        st.input.grp_stack[i as usize] = st.save_stack.save_index(st.save_stack.save_ptr);
         i -= 1;
     }
     if w {
@@ -2397,7 +2397,6 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
 
         print_cstr_in(st, c" (".as_ptr());
 
-        let saved = |st: &EngineState, k: i32| st.save_stack.b32s1(st.save_stack.save_ptr - k);
         let mut s: &CStr = c"";
         let entry = match st.save_stack.cur_group {
             GroupCode::Simple => {
@@ -2450,7 +2449,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 } else {
                     esc(st, c"mathchoice");
                 }
-                let braces = saved(st, 2);
+                let braces = st.save_stack.saved(-2);
                 for i in 1..=3 {
                     if i <= braces {
                         print_cstr_in(st, c"{}".as_ptr());
@@ -2459,7 +2458,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 Entry::Found2
             }
             GroupCode::Insert => {
-                let n = saved(st, 2);
+                let n = st.save_stack.saved(-2);
                 if n == 255 {
                     esc(st, c"vadjust");
                 } else {
@@ -2481,7 +2480,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 if m == MMODE {
                     print_char_in(st, b'$' as i32);
                 } else if st.input.nest[p as usize].mode == MMODE {
-                    print_cmd_chr_in(st, EQ_NO, saved(st, 2));
+                    print_cmd_chr_in(st, EQ_NO, st.save_stack.saved(-2));
                     print_char_in(st, b')' as i32);
                     st.save_stack.cur_level -= 1;
                     leave_group_boundary(st);
@@ -2503,7 +2502,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
         };
 
         if matches!(entry, Entry::BoxContext) {
-            let i = saved(st, 4);
+            let i = st.save_stack.saved(-4);
             if i != 0 {
                 if i < BOX_FLAG {
                     let cmd = if st.input.nest[p as usize].mode.abs() == VMODE {
@@ -2531,10 +2530,10 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
 
         if matches!(entry, Entry::BoxContext | Entry::Found1) {
             esc(st, s);
-            let spec = saved(st, 2);
+            let spec = st.save_stack.saved(-2);
             if spec != 0 {
                 print_char_in(st, b' ' as i32);
-                if saved(st, 3) == EXACTLY as i32 {
+                if st.save_stack.saved(-3) == EXACTLY as i32 {
                     print_cstr_in(st, c"to".as_ptr());
                 } else {
                     print_cstr_in(st, c"spread".as_ptr());

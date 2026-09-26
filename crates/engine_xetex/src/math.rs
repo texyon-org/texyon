@@ -2607,8 +2607,7 @@ fn define_word_in(
 pub(crate) fn start_eq_no_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    st.save_stack
-        .set_b32s1(st.save_stack.save_ptr, st.scanner.cur_chr);
+    st.save_stack.set_saved(0, st.scanner.cur_chr);
     st.save_stack.save_ptr += 1;
 
     crate::main_control::push_math_in(st, GroupCode::MathShift)?;
@@ -2683,7 +2682,7 @@ fn append_choices_core(
     let choice = new_choice(mem).ok_or(NodeRecycleAbort::Overflow)?;
     cl.tail_append(mem, choice.ptr());
     save_stack.save_ptr += 1;
-    save_stack.set_b32s1(save_stack.save_ptr - 1, 0);
+    save_stack.set_saved(-1, 0);
     Ok(())
 }
 
@@ -2755,7 +2754,7 @@ fn build_choices_finish(
     // SAFETY: a math-choice group builds its branches after the choice node.
     let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cl.tail.0)) };
     let p_ptr = MemPtr::from_raw(p);
-    match save_stack.b32s1(save_stack.save_ptr - 1) {
+    match save_stack.saved(-1) {
         0 => tail.set_display_mlist(mem, p_ptr),
         1 => tail.set_text_mlist(mem, p_ptr),
         2 => tail.set_script_mlist(mem, p_ptr),
@@ -2766,8 +2765,8 @@ fn build_choices_finish(
         }
         _ => {}
     }
-    let choice_state = save_stack.b32s1(save_stack.save_ptr - 1);
-    save_stack.set_b32s1(save_stack.save_ptr - 1, choice_state + 1);
+    let choice_state = save_stack.saved(-1);
+    save_stack.set_saved(-1, choice_state + 1);
     false
 }
 
@@ -3338,7 +3337,7 @@ pub(crate) fn after_math_in(
         a = Some(eqno);
         crate::save::unsave_in(st)?;
         st.save_stack.save_ptr -= 1;
-        if st.save_stack.b32s1(st.save_stack.save_ptr) == 1 {
+        if st.save_stack.saved(0) == 1 {
             l = true;
         }
 

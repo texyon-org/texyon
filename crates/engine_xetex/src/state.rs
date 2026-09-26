@@ -723,23 +723,23 @@ pub(crate) struct SaveStackState {
 
 impl SaveStackState {
     #[inline]
-    pub(crate) fn b32s1(&self, k: i32) -> i32 {
+    fn b32s1(&self, k: i32) -> i32 {
         // SAFETY: union projection. The entry was last written via the b32 view.
         unsafe { self.data[k as usize].b32.s1 }
     }
 
     #[inline]
-    pub(crate) fn set_b32s1(&mut self, k: i32, v: i32) {
+    fn set_b32s1(&mut self, k: i32, v: i32) {
         self.data[k as usize].b32.s1 = v;
     }
 
     #[inline]
-    pub(crate) fn set_b16s1(&mut self, k: i32, v: u16) {
+    fn set_b16s1(&mut self, k: i32, v: u16) {
         self.data[k as usize].b16.s1 = v;
     }
 
     #[inline]
-    pub(crate) fn set_b16s0(&mut self, k: i32, v: u16) {
+    fn set_b16s0(&mut self, k: i32, v: u16) {
         self.data[k as usize].b16.s0 = v;
     }
 
@@ -749,15 +749,46 @@ impl SaveStackState {
     }
 
     #[inline]
-    pub(crate) fn b16s1(&self, k: i32) -> u16 {
+    fn b16s1(&self, k: i32) -> u16 {
         // SAFETY: union projection. The entry was last written via the b16 view.
         unsafe { self.data[k as usize].b16.s1 }
     }
 
     #[inline]
-    pub(crate) fn b16s0(&self, k: i32) -> u16 {
+    fn b16s0(&self, k: i32) -> u16 {
         // SAFETY: union projection. The entry was last written via the b16 view.
         unsafe { self.data[k as usize].b16.s0 }
+    }
+
+    /// WEB's `saved(k)`, the word `k` entries above `save_ptr`.
+    #[inline]
+    pub(crate) fn saved(&self, k: i32) -> i32 {
+        self.b32s1(self.save_ptr + k)
+    }
+    #[inline]
+    pub(crate) fn set_saved(&mut self, k: i32, v: i32) {
+        self.set_b32s1(self.save_ptr + k, v);
+    }
+
+    #[inline]
+    pub(crate) fn save_type(&self, k: i32) -> u16 {
+        self.b16s1(k)
+    }
+    #[inline]
+    pub(crate) fn save_level(&self, k: i32) -> u16 {
+        self.b16s0(k)
+    }
+    #[inline]
+    pub(crate) fn save_index(&self, k: i32) -> i32 {
+        self.b32s1(k)
+    }
+    /// Writes a restore entry at `save_ptr`.
+    #[inline]
+    pub(crate) fn set_save_entry(&mut self, kind: u16, level: u16, index: i32) {
+        let k = self.save_ptr;
+        self.set_b16s1(k, kind);
+        self.set_b16s0(k, level);
+        self.set_b32s1(k, index);
     }
 
     /// The group and enclosing boundary saved by the level boundary at `k`.

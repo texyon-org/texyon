@@ -55,13 +55,6 @@ fn save_stack_full(save_stack: &mut SaveStackState) -> bool {
     false
 }
 
-fn set_save_entry(save_stack: &mut SaveStackState, kind: u16, level: u16, index: i32) {
-    let k = save_stack.save_ptr;
-    save_stack.set_b16s1(k, kind);
-    save_stack.set_b16s0(k, level);
-    save_stack.set_b32s1(k, index);
-}
-
 pub(crate) fn new_save_level(
     save_stack: &mut SaveStackState,
     c: GroupCode,
@@ -73,13 +66,13 @@ pub(crate) fn new_save_level(
             save_stack.save_size,
         ));
     }
-    save_stack.set_b32s1(save_stack.save_ptr, line);
+    save_stack.set_saved(0, line);
     save_stack.save_ptr += 1;
     let (group, boundary) = (
         save_stack.cur_group.as_raw() as u16,
         save_stack.cur_boundary,
     );
-    set_save_entry(save_stack, LEVEL_BOUNDARY, group, boundary);
+    save_stack.set_save_entry(LEVEL_BOUNDARY, group, boundary);
     if save_stack.cur_level == u16::MAX {
         return Err(SaveAbort::Overflow(c"grouping levels", u16::MAX as i32));
     }
@@ -106,7 +99,7 @@ pub(crate) fn eq_save(
         save_stack.save_ptr += 1;
         RESTORE_OLD_VALUE
     };
-    set_save_entry(save_stack, kind, l, p);
+    save_stack.set_save_entry(kind, l, p);
     save_stack.save_ptr += 1;
     Ok(())
 }
@@ -139,7 +132,7 @@ pub(crate) fn save_for_after(save_stack: &mut SaveStackState, t: i32) -> Result<
         if save_stack_full(save_stack) {
             return Err(SaveAbort::Overflow(c"save size", save_stack.save_size));
         }
-        set_save_entry(save_stack, INSERT_TOKEN, LEVEL_ZERO, t);
+        save_stack.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t);
         save_stack.save_ptr += 1;
     }
     Ok(())
@@ -315,7 +308,7 @@ pub fn sa_save(
         if save_stack_full(save_stack) {
             return Err(SaMutationAbort::SaveOverflow);
         }
-        set_save_entry(save_stack, RESTORE_SA, scanner.sa_level, scanner.sa_chain.0);
+        save_stack.set_save_entry(RESTORE_SA, scanner.sa_level, scanner.sa_chain.0);
         save_stack.save_ptr += 1;
         scanner.sa_chain = MemPtr::NULL;
         scanner.sa_level = save_stack.cur_level;
@@ -542,8 +535,8 @@ pub(crate) fn unsave_in(st: &mut EngineState) -> Result<(), UnsaveAbort> {
     loop {
         st.save_stack.save_ptr -= 1;
         let sp = st.save_stack.save_ptr;
-        let p = st.save_stack.b32s1(sp);
-        match st.save_stack.b16s1(sp) {
+        let p = st.save_stack.save_index(sp);
+        match st.save_stack.save_type(sp) {
             LEVEL_BOUNDARY => break,
             INSERT_TOKEN => {
                 let t = st.scanner.cur_tok;
@@ -570,11 +563,11 @@ pub(crate) fn unsave_in(st: &mut EngineState) -> Result<(), UnsaveAbort> {
             RESTORE_SA => {
                 sa_restore_in(st).map_err(|m| UnsaveAbort::Save(SaveAbort::Confusion(m)))?;
                 st.scanner.sa_chain = MemPtr::from_raw(p);
-                st.scanner.sa_level = st.save_stack.b16s0(st.save_stack.save_ptr);
+                st.scanner.sa_level = st.save_stack.save_level(st.save_stack.save_ptr);
             }
             kind => {
                 if kind == RESTORE_OLD_VALUE {
-                    l = st.save_stack.b16s0(sp);
+                    l = st.save_stack.save_level(sp);
                     st.save_stack.save_ptr -= 1;
                 } else {
                     let w = st.eqtb.word(UNDEFINED_CONTROL_SEQUENCE);

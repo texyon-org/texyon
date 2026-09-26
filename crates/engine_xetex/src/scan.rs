@@ -415,7 +415,7 @@ pub(crate) fn scan_spec_in(
     three_codes: bool,
 ) -> Result<(), SccAbort> {
     let s = if three_codes {
-        st.save_stack.b32s1(st.save_stack.save_ptr)
+        st.save_stack.saved(0)
     } else {
         0
     };
@@ -431,14 +431,12 @@ pub(crate) fn scan_spec_in(
         st.scanner.cur_val = 0;
     }
     if three_codes {
-        let sp = st.save_stack.save_ptr;
-        st.save_stack.set_b32s1(sp, s);
-        st.save_stack.save_ptr = sp + 1;
+        st.save_stack.set_saved(0, s);
+        st.save_stack.save_ptr += 1;
     }
-    let sp = st.save_stack.save_ptr;
-    st.save_stack.set_b32s1(sp, spec_code as i32);
-    st.save_stack.set_b32s1(sp + 1, st.scanner.cur_val);
-    st.save_stack.save_ptr = sp + 2;
+    st.save_stack.set_saved(0, spec_code as i32);
+    st.save_stack.set_saved(1, st.scanner.cur_val);
+    st.save_stack.save_ptr += 2;
     if let Err(abort) = crate::save::new_save_level(&mut st.save_stack, c, st.mem.line) {
         return Err(match abort {
             crate::save::SaveAbort::Overflow(what, n) => {
@@ -812,7 +810,7 @@ pub(crate) fn scan_math_in(
                 _ => {
                     back_input_in(st)?;
                     scan_left_brace_in(st)?;
-                    st.save_stack.set_b32s1(st.save_stack.save_ptr, p);
+                    st.save_stack.set_saved(0, p);
                     st.save_stack.save_ptr += 1;
                     crate::main_control::push_math_in(st, GroupCode::Math)?;
                     return Ok(());

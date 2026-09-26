@@ -929,7 +929,7 @@ mod tests {
         st.strings.str_pool[0] = 11;
         st.strings.pool_ptr = 1;
         st.save_stack.save_ptr = 1;
-        st.save_stack.set_b32s1(0, 12);
+        st.save_stack.set_saved(-1, 12);
         st.input.buffer[0] = 13;
         st.input.last = 1;
         st.hyph.hc[0] = 14;
@@ -949,7 +949,7 @@ mod tests {
         st.shipout.page_manifest.begin_page(0);
         st.shipout.page_manifest.record_byte(139);
         st.strings.str_pool[0] = 110;
-        st.save_stack.set_b32s1(0, 120);
+        st.save_stack.set_saved(-1, 120);
         st.input.buffer[0] = 130;
         st.hyph.hc[0] = 140;
         st.mem.glyph_blobs.get_mut(glyph).locations[0].x = 150;
@@ -966,7 +966,7 @@ mod tests {
         st.shipout.page_manifest.finish_page(8);
         assert_eq!(st.shipout.page_manifest.take_pages().len(), 1);
         assert_eq!(st.strings.str_pool[0], 11);
-        assert_eq!(st.save_stack.b32s1(0), 12);
+        assert_eq!(st.save_stack.save_index(0), 12);
         assert_eq!(st.input.buffer[0], 13);
         assert_eq!(st.hyph.hc[0], 14);
         assert_eq!(st.mem.glyph_blobs.get(glyph).locations[0].x, 15);

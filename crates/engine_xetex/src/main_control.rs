@@ -230,8 +230,8 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
 
     st.save_stack.save_ptr -= 2;
     st.scanner.pack_begin_line = -st.input.cur_list.mode_line;
-    let spec_size = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
-    let spec_mode = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
+    let spec_size = st.save_stack.saved(1);
+    let spec_mode = st.save_stack.saved(0) as i16;
     let head = st.mem.link_ptr(ALIGN_HEAD);
     let p = if st.input.cur_list.mode == INNER_VMODE {
         let rule_save = st.eqtb.dimen_par(DIMEN_PAR_OVERFULL_RULE);
@@ -1136,11 +1136,10 @@ pub(crate) fn begin_insert_or_adjust_in(st: &mut EngineState) -> Result<(), Main
             st.scanner.cur_val = 0;
         }
     }
-    let sp = st.save_stack.save_ptr;
-    st.save_stack.set_b32s1(sp, st.scanner.cur_val);
+    st.save_stack.set_saved(0, st.scanner.cur_val);
     let pre = st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword_in(st, c"pre")?;
-    st.save_stack.set_b32s1(sp + 1, pre as i32);
-    st.save_stack.save_ptr = sp + 2;
+    st.save_stack.set_saved(1, pre as i32);
+    st.save_stack.save_ptr += 2;
     crate::save::new_save_level(&mut st.save_stack, GroupCode::Insert, st.mem.line)?;
     crate::scan::scan_left_brace_in(st)?;
     normal_paragraph(st)?;
@@ -1378,10 +1377,9 @@ pub(crate) fn package_in(st: &mut EngineState, c: i32) -> Result<(), MainControl
     st.save_stack.save_ptr -= 3;
     let v = st.eqtb.int_par(INT_PAR_XETEX_UPWARDS);
     st.eqtb.set_int_par(INT_PAR_XETEX_UPWARDS, u);
-    let sp = st.save_stack.save_ptr;
     let list = st.mem.link_ptr(st.input.cur_list.head);
-    let size = st.save_stack.b32s1(sp + 2);
-    let spec_mode = st.save_stack.b32s1(sp + 1) as i16;
+    let size = st.save_stack.saved(2);
+    let spec_mode = st.save_stack.saved(1) as i16;
     if st.input.cur_list.mode == INNER_HMODE {
         let b = crate::packaging::hpack_emit_in(st, list, size, spec_mode)?;
         st.scanner.cur_box = Some(BoxOrRule::Box(b));
@@ -1402,7 +1400,7 @@ pub(crate) fn package_in(st: &mut EngineState, c: i32) -> Result<(), MainControl
     }
     st.eqtb.set_int_par(INT_PAR_XETEX_UPWARDS, v);
     crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
-    let box_context = st.save_stack.b32s1(st.save_stack.save_ptr);
+    let box_context = st.save_stack.saved(0);
     box_end_in(st, box_context)
 }
 
@@ -1831,7 +1829,7 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
         }
         _ => {
             let k = st.scanner.cur_chr - VTOP_CODE as i32;
-            st.save_stack.set_b32s1(st.save_stack.save_ptr, box_context);
+            st.save_stack.set_saved(0, box_context);
             let mode = if k == HMODE as i32 {
                 let group = if box_context < BOX_FLAG && st.input.cur_list.mode.abs() == VMODE {
                     GroupCode::AdjustedHbox
@@ -1908,7 +1906,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             let head = st.mem.link_ptr(st.input.cur_list.head);
             let p = crate::packaging::vpackage_emit_in(st, head, 0, ADDITIONAL, MAX_HALFWORD)?;
             pop_nest_in(&mut st.mem, &mut st.input);
-            let n = st.save_stack.b32s1(st.save_stack.save_ptr);
+            let n = st.save_stack.saved(0);
             if n < 255 {
                 let ins =
                     NodePtr::<InsNode>::alloc(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
@@ -1925,7 +1923,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                 let adj =
                     NodePtr::<AdjustNode>::alloc(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
                 st.input.cur_list.tail_append(&mut st.mem, adj.ptr());
-                let pre = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
+                let pre = st.save_stack.saved(1);
                 adj.set_subtype(&mut st.mem, pre as u16);
                 let list = p.list_ptr(&st.mem);
                 adj.set_adjust_ptr(&mut st.mem, list);
@@ -2020,8 +2018,8 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 2;
             let head = st.mem.link_ptr(st.input.cur_list.head);
-            let size = st.save_stack.b32s1(st.save_stack.save_ptr + 1);
-            let spec_mode = st.save_stack.b32s1(st.save_stack.save_ptr) as i16;
+            let size = st.save_stack.saved(1);
+            let spec_mode = st.save_stack.saved(0) as i16;
             let p = crate::packaging::vpackage_emit_in(st, head, size, spec_mode, MAX_HALFWORD)?;
             pop_nest_in(&mut st.mem, &mut st.input);
             let noad = new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
@@ -2034,7 +2032,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
         GroupCode::Math => {
             crate::save::unsave_in(st)?;
             st.save_stack.save_ptr -= 1;
-            let save_loc = st.save_stack.b32s1(st.save_stack.save_ptr);
+            let save_loc = st.save_stack.saved(0);
             st.mem.set_b32s1(save_loc, SUB_MLIST);
             let p = crate::math::fin_mlist_in(st, TEX_NULL)?;
             st.mem.set_b32s0(save_loc, p);
@@ -2331,7 +2329,7 @@ pub(crate) fn append_discretionary_in(st: &mut EngineState) -> Result<(), MainCo
         }
         return Ok(());
     }
-    st.save_stack.set_b32s1(st.save_stack.save_ptr, 0);
+    st.save_stack.set_saved(0, 0);
     st.save_stack.save_ptr += 1;
     begin_disc_group(st)
 }
@@ -2406,7 +2404,7 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
     p = st.mem.b32s1(head);
     crate::mem::pop_nest_in(&mut st.mem, &mut st.input);
     let tail = st.input.cur_list.tail;
-    let part = st.save_stack.b32s1(st.save_stack.save_ptr - 1);
+    let part = st.save_stack.saved(-1);
     match part {
         0 => st.mem.set_b32s0(tail + 1, p),
         1 => st.mem.set_b32s1(tail + 1, p),
@@ -2444,8 +2442,7 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
         }
         _ => {}
     }
-    st.save_stack
-        .set_b32s1(st.save_stack.save_ptr - 1, part + 1);
+    st.save_stack.set_saved(-1, part + 1);
     begin_disc_group(st)
 }
 
