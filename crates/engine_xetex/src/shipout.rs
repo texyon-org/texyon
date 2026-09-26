@@ -469,17 +469,17 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
     st.shipout.dvi_v = 0;
     st.shipout.cur_h = h_offset;
     st.shipout.dvi_f = FONT_BASE;
-    st.shipout.cur_h_offset = h_offset + ONE_INCH;
-    st.shipout.cur_v_offset = v_offset + ONE_INCH;
+    st.shipout.cur_h_offset = h_offset + ONE_INCH_LESS_ONE;
+    st.shipout.cur_v_offset = v_offset + ONE_INCH_LESS_ONE;
     st.shipout.cur_page_width = if pdf_page_width != 0 {
         pdf_page_width
     } else {
-        width + 2 * (h_offset + ONE_INCH)
+        width + 2 * st.shipout.cur_h_offset
     };
     st.shipout.cur_page_height = if pdf_page_height != 0 {
         pdf_page_height
     } else {
-        height + depth + 2 * (v_offset + ONE_INCH)
+        height + depth + 2 * st.shipout.cur_v_offset
     };
 
     if st.shipout.output_file_name == 0 {
