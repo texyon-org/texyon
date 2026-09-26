@@ -1142,7 +1142,7 @@ fn disc_node_width(mem: &MemState, fonts: &mut FontState, p: MemPtr) -> Result<i
     match mem.classify(MemIdx::new(p)) {
         Ok(AnyNode::Ligature(lig)) => {
             let f = lig.font(mem).0;
-            fonts.set_xtx_ligature_present(true);
+            fonts.xtx_ligature_present = true;
             Ok(font_character_width(fonts, f, lig.character(mem)))
         }
         Ok(
@@ -1387,7 +1387,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                 }
                 AnyNode::Ligature(lig) => {
                     let f = lig.font(&st.mem).0;
-                    st.fonts.set_xtx_ligature_present(true);
+                    st.fonts.xtx_ligature_present = true;
                     let c = lig.character(&st.mem);
                     st.scanner.active_width[1] += font_character_width(&mut st.fonts, f, c);
                 }

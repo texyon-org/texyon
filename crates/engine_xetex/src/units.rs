@@ -1,33 +1,14 @@
-//! Scalar newtypes for the typed memory foundation.
-//!
-//! These are the zero-cost semantic wrappers: a `mem` arena index, a
-//! nullable TeX halfword, a scaled length, and a font number. Every one is
-//! `#[repr(transparent)]` over its C
-//! representation and `Copy`, so it compiles to the same load/store as the
-//! raw integer.
-//!
-//! 1. **`TEX_NULL = MIN_HALFWORD = -0x0FFFFFFF`** (`crate::consts::TEX_NULL`,
-//!    `xetex-constants.h:14`), *not* `0`. Null-ness lives on [`MemPtr`]
-//!    keyed to `TEX_NULL`; [`MemIdx`] has no null.
-//! 2. **`FontId` wraps `i32`**, not `u16`: `internal_font_number` is
-//!    `int32_t` (`xetex-xetexd.h:326`). Do not narrow before a dedicated
-//!    audit.
+//! Zero-cost scalar newtypes: arena indices and pointers, scaled lengths,
+//! font numbers, and the node-type and glue-sign codes.
 
 use crate::consts::TEX_NULL;
 
-/// A **valid** index into the `mem` arena (`mem.data[idx]`).
-///
-/// A `MemIdx` never holds `TEX_NULL` or any other negative sentinel — that
-/// is what distinguishes it from [`MemPtr`]. Nullable TeX halfwords are
-/// [`MemPtr`] until checked and converted with [`MemPtr::as_idx`].
+/// A valid, non-null index into the `mem` arena.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(transparent)]
 pub struct MemIdx(pub i32);
 
 impl MemIdx {
-    /// Wrap a known-valid arena index. In debug builds this asserts the
-    /// value is not the `TEX_NULL` sentinel (the caller must have already
-    /// classified it as a real index).
     #[inline]
     pub fn new(idx: impl MemAddr) -> MemIdx {
         let idx = idx.addr();
@@ -35,38 +16,26 @@ impl MemIdx {
         MemIdx(idx)
     }
 
-    /// The `k`-th word after this node base (`mem[(p) + delta]`). Stays a
-    /// valid index because `delta` is a fixed field offset within a node.
     #[inline]
     pub fn offset(self, delta: i32) -> MemIdx {
         MemIdx(self.0 + delta)
     }
 }
 
-/// A nullable TeX halfword: either a real arena index or `TEX_NULL`.
-///
-/// TeX's "pointer" fields (`link`, `glue_ptr`, `list_ptr`, …) store either
-/// a `mem` index or `TEX_NULL = -0x0FFFFFFF`. Classification to a real
-/// index happens once, at a checked boundary, via [`as_idx`].
-///
-/// [`as_idx`]: MemPtr::as_idx
+/// A TeX pointer: an arena index or `TEX_NULL` (which is not zero).
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[repr(transparent)]
 pub struct MemPtr(pub i32);
 
 impl std::ops::Add<i32> for MemPtr {
     type Output = MemPtr;
-    /// Field offset within a node (`mem[p + k]`): `MemPtr(base) + k`. Zero-cost.
     #[inline]
     fn add(self, rhs: i32) -> MemPtr {
         MemPtr(self.0 + rhs)
     }
 }
 
-/// A value usable as a `mem[]` arena address by the [`MemState`](crate::state::MemState)
-/// word accessors. Implemented for the raw `i32`, the nullable [`MemPtr`], and the
-/// checked [`MemIdx`]; all resolve to the same raw index at zero cost, so the
-/// accessors accept a typed pointer directly without a `.0` at the call site.
+/// Anything the raw word accessors accept as an arena address.
 pub trait MemAddr {
     fn addr(self) -> i32;
 }
@@ -90,34 +59,23 @@ impl MemAddr for MemIdx {
 }
 
 impl MemPtr {
-    /// The TeX null pointer (`TEX_NULL = MIN_HALFWORD = -0x0FFFFFFF`).
     pub const NULL: MemPtr = MemPtr(TEX_NULL);
 
-    /// Wrap a raw halfword that may be `TEX_NULL` or a real index.
     #[inline]
     pub fn from_raw(raw: i32) -> MemPtr {
         MemPtr(raw)
     }
 
-    /// A non-null pointer to a known-valid node. The idiomatic way to store a
-    /// typed node handle (`p.idx()`) into another node's pointer field without
-    /// dropping back to a raw `i32`.
     #[inline]
     pub fn from_idx(idx: MemIdx) -> MemPtr {
         MemPtr(idx.0)
     }
 
-    /// Is this the TeX null pointer?
     #[inline]
     pub fn is_null(self) -> bool {
         self == Self::NULL
     }
 
-    /// Convert to a valid [`MemIdx`], or `None` if null.
-    ///
-    /// This is the single checked boundary where a nullable halfword
-    /// becomes a real index — never construct a `MemIdx` directly from a
-    /// field that can hold a sentinel.
     #[inline]
     pub fn as_idx(self) -> Option<MemIdx> {
         if self.is_null() {
@@ -128,39 +86,24 @@ impl MemPtr {
     }
 }
 
-/// TeX's basic length unit: 1/65536 of a point (`scaled_t`, an `int32_t`).
+/// A length in units of 2^-16 pt.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[repr(transparent)]
 pub struct Scaled(pub i32);
 
-/// An internal font number (`internal_font_number`, an `int32_t` —
-/// `xetex-xetexd.h:326`; kept `i32`, not narrowed to `u16`).
+/// An internal font number.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 #[repr(transparent)]
 pub struct FontId(pub i32);
 
-/// The kind of a node, as stored in `mem[p].b16.s1` (the `NODE_type`
-/// field). Codes mirror `xetex/xetex_format.h:380–416` exactly.
-///
-/// This is the *first* classification layer. Two subtleties:
-///
-/// - **Context aliases, not separate codes.** `DELTA_NODE` reuses
-///   [`Rule`](NodeType::Rule)'s code `2` and `EDGE_NODE` reuses
-///   [`Style`](NodeType::Style)'s code `14` (`xetex-constants.h:104–105`).
-///   They are disambiguated by *list context* (linebreaker / bidi), not by
-///   the type field, so they are not distinct discriminants here.
-/// - **Whatsit subtypes are a second layer.** A [`Whatsit`](NodeType::Whatsit)
-///   node's `NODE_subtype` (`b16.s0`) selects `OPEN_NODE`/`WRITE_NODE`/…/
-///   `NATIVE_WORD_NODE`(40)/`GLYPH_NODE`(42)/`PIC_NODE`(43)/`PDF_NODE`(44)
-///   (`xetex_format.h:457–467`). Those are *subtype* codes in a different
-///   field, classified separately, and must not
-///   be confused with the `MARGIN_KERN_NODE`(40) *type* code below.
+/// A node's type code. Delta nodes reuse the rule code and edge nodes the
+/// style code, their list context tells them apart.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 #[repr(u16)]
 pub enum NodeType {
     HList = 0,
     VList = 1,
-    Rule = 2, // also DELTA_NODE (context-disambiguated)
+    Rule = 2,
     Ins = 3,
     Mark = 4,
     Adjust = 5,
@@ -172,7 +115,7 @@ pub enum NodeType {
     Kern = 11,
     Penalty = 12,
     Unset = 13,
-    Style = 14, // also EDGE_NODE (context-disambiguated)
+    Style = 14,
     Choice = 15,
     OrdNoad = 16,
     OpNoad = 17,
@@ -193,15 +136,11 @@ pub enum NodeType {
     MarginKern = 40,
 }
 
-/// Error from [`NodeType::from_raw`]: the `b16.s1` value is not a valid
-/// node-type code (e.g. the 32–39 gap, or 41+).
+/// A type code outside the node types, as in the 32..=39 gap.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct InvalidNodeType(pub u16);
 
 impl NodeType {
-    /// Convert a raw `mem[p].b16.s1` value to a [`NodeType`] with a
-    /// **checked** path (never `transmute` — an invalid discriminant is
-    /// Rust UB).
     #[inline]
     pub fn from_raw(raw: u16) -> Result<NodeType, InvalidNodeType> {
         use NodeType::*;
@@ -243,16 +182,13 @@ impl NodeType {
         })
     }
 
-    /// The raw `b16.s1` code for this node type (zero-cost: `self as u16`).
     #[inline]
     pub const fn as_raw(self) -> u16 {
         self as u16
     }
 }
 
-/// A box's glue-set sign (`BOX_glue_sign` = `mem[p+5].b16.s1`): whether the
-/// box's glue is left at natural size, stretched, or shrunk. Only these three
-/// codes are ever stored, so [`from_raw`](Self::from_raw) is infallible.
+/// Whether a box's glue is at natural size, stretched or shrunk.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(u16)]
 pub enum GlueSign {
@@ -262,8 +198,6 @@ pub enum GlueSign {
 }
 
 impl GlueSign {
-    /// Convert a raw `b16.s1` glue-sign value. Any value other than
-    /// `1`/`2` maps to `Normal` (TeX only ever stores 0/1/2).
     #[inline]
     pub fn from_raw(raw: u16) -> GlueSign {
         match raw {
@@ -273,7 +207,6 @@ impl GlueSign {
         }
     }
 
-    /// The raw `b16.s1` code for this glue sign (zero-cost: `self as u16`).
     #[inline]
     pub const fn as_raw(self) -> u16 {
         self as u16
@@ -285,17 +218,12 @@ mod tests {
     use super::*;
     use std::mem::size_of;
 
-    /// `#[repr(transparent)]` guarantee: every newtype is exactly its inner
-    /// representation, so it is zero-cost vs. the raw integer.
     #[test]
     fn newtypes_are_zero_cost_repr() {
         assert_eq!(size_of::<MemIdx>(), size_of::<i32>());
         assert_eq!(size_of::<MemPtr>(), size_of::<i32>());
         assert_eq!(size_of::<Scaled>(), size_of::<i32>());
         assert_eq!(size_of::<FontId>(), size_of::<i32>());
-        // Option<MemIdx> is *not* niche-optimized (i32 has no niche), but
-        // MemPtr carries null in-band, so the classified path stays i32.
-        assert_eq!(size_of::<MemPtr>(), size_of::<i32>());
     }
 
     #[test]
@@ -304,7 +232,6 @@ mod tests {
         assert_ne!(MemPtr::NULL.0, 0);
         assert!(MemPtr::NULL.is_null());
         assert!(MemPtr::NULL.as_idx().is_none());
-        // zero is a real arena index, not null
         assert!(!MemPtr::from_raw(0).is_null());
         assert_eq!(MemPtr::from_raw(0).as_idx(), Some(MemIdx(0)));
     }
@@ -316,8 +243,6 @@ mod tests {
         assert_eq!(p.offset(5).0 as usize, 105);
     }
 
-    /// Every discriminant must equal the C `NODE_type` code
-    /// (`xetex_format.h:380–416`), and `from_raw` must round-trip it.
     #[test]
     fn nodetype_codes_match_c_and_roundtrip() {
         use NodeType::*;
@@ -360,14 +285,10 @@ mod tests {
             assert_eq!(nt.as_raw(), code);
             assert_eq!(NodeType::from_raw(code), Ok(nt));
         }
-        // MARGIN_KERN_NODE type code is 40; the whatsit *subtype* codes
-        // (GLYPH_NODE 42, PIC_NODE 43, PDF_NODE 44) are NOT node types.
-        assert_eq!(NodeType::from_raw(40), Ok(MarginKern));
     }
 
     #[test]
     fn nodetype_from_raw_rejects_invalid() {
-        // the 32..=39 gap, and 41+ (incl. whatsit subtype codes 42/43/44)
         for raw in [32u16, 35, 39, 41, 42, 43, 44, 100, u16::MAX] {
             assert_eq!(NodeType::from_raw(raw), Err(InvalidNodeType(raw)));
         }

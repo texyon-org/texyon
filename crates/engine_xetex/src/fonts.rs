@@ -66,11 +66,11 @@ pub(crate) fn char_depth(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
 pub fn effective_char(fonts: &mut FontState, f: i32, c: u16) -> i32 {
     let mut c = c;
     let mapping = fonts.font_mapping_ptr(f);
-    if !fonts.xtx_ligature_present() && !mapping.is_null() {
+    if !fonts.xtx_ligature_present && !mapping.is_null() {
         // SAFETY: `mapping` is the font's live TECkit converter.
         c = unsafe { apply_tfm_font_mapping(mapping, c as i32) } as u16;
     }
-    fonts.set_xtx_ligature_present(false);
+    fonts.xtx_ligature_present = false;
     c as i32
 }
 

@@ -1292,7 +1292,7 @@ fn hlist_out(st: &mut crate::state::EngineState, this_box: AnyBox) -> Result<(),
                 let next = ligature.link(&st.mem);
                 p = LIG_TRICK;
                 p.set_link(&mut st.mem, next);
-                st.fonts.set_xtx_ligature_present(true);
+                st.fonts.xtx_ligature_present = true;
                 continue;
             }
             AnyNode::Style(style) => {

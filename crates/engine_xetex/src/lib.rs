@@ -15,8 +15,6 @@
 //! [Tectonic]: https://tectonic-typesetting.github.io/
 //! [`tectonic`]: https://docs.rs/tectonic/
 
-// TODO: the internal interface we're using here is pretty janky. The bibtex
-// engine has a nicer approach that we should probably start using.
 use crate::engine_interface::{tt_engine_xetex_main, tt_xetex_set_int_variable};
 
 use std::{ffi::CString, time::SystemTime};
@@ -36,7 +34,6 @@ mod expand;
 mod ext;
 mod fonts;
 mod format_io;
-mod globals;
 mod glyph_arena;
 mod hash;
 mod helpers;
@@ -130,8 +127,6 @@ pub enum TexOutcome {
 /// the same time.
 #[derive(Debug)]
 pub struct TexEngine {
-    // One day, the engine will hold its own state. For the time being,
-    // though, it's just a proxy for the global constants in the C code.
     halt_on_error: bool,
     initex_mode: bool,
     synctex_enabled: bool,
@@ -256,9 +251,6 @@ impl TexEngine {
         let cinput = CString::new(input_file_name)?;
 
         launcher.with_global_lock(|state| {
-            // Note that we have to do all of this setup while holding the
-            // lock, because we're modifying static state variables.
-
             // SAFETY: All methods are called with valid C-strings and while the global lock is held.
             let r = unsafe {
                 tt_xetex_set_int_variable(

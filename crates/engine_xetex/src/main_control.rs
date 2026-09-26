@@ -1142,7 +1142,7 @@ pub(crate) fn begin_insert_or_adjust_in(st: &mut EngineState) -> Result<(), Main
 }
 
 pub(crate) fn do_endv_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    fn is_v_template_end(r: &crate::globals::InputState) -> bool {
+    fn is_v_template_end(r: &crate::state::InputState) -> bool {
         r.index == V_TEMPLATE && r.loc == TEX_NULL && r.state == TOKEN_LIST
     }
 
@@ -3202,23 +3202,6 @@ fn overflow_err<T>(p: Option<T>) -> Result<T, MainControlAbort> {
     ))
 }
 
-#[inline(always)]
-fn native_text_reserve(scanner: &mut crate::state::ScannerState, extra: i32) {
-    while scanner.native_text_size() <= scanner.native_len() + extra {
-        scanner.native_text_size += 128;
-        scanner
-            .native_text
-            .resize(scanner.native_text_size as usize, 0);
-    }
-}
-
-#[inline(always)]
-fn native_text_push(scanner: &mut crate::state::ScannerState, c: u16) {
-    let len = scanner.native_len();
-    scanner.native_text[len as usize] = c;
-    scanner.set_native_len(len + 1);
-}
-
 fn is_hyphen_unit(st: &EngineState, c: i32, hyphen: i32) -> bool {
     c == hyphen || (st.eqtb.int_par(INT_PAR_XETEX_DASH_BREAK) > 0 && (c == 8212 || c == 8211))
 }
@@ -3301,7 +3284,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
     }
     st.mainloop.main_h = 0;
     st.mainloop.main_f = mf;
-    st.scanner.set_native_len(0);
+    st.scanner.native_len = 0;
 
     loop {
         let sc = adjust_space_factor(st);
@@ -3317,17 +3300,19 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
 
         let ch = st.scanner.cur_chr;
         if ch > 65535 {
-            native_text_reserve(&mut st.scanner, 2);
-            native_text_push(&mut st.scanner, ((ch - 65536) / 1024 + 0xD800) as u16);
-            native_text_push(&mut st.scanner, ((ch - 65536) % 1024 + 0xDC00) as u16);
+            st.scanner.reserve_native_text(2);
+            st.scanner
+                .push_native_text(((ch - 65536) / 1024 + 0xD800) as u16);
+            st.scanner
+                .push_native_text(((ch - 65536) % 1024 + 0xDC00) as u16);
         } else {
-            native_text_reserve(&mut st.scanner, 1);
-            native_text_push(&mut st.scanner, ch as u16);
+            st.scanner.reserve_native_text(1);
+            st.scanner.push_native_text(ch as u16);
         }
         let is_hyph = is_hyphen_unit(st, ch, st.fonts.hyphen_char_entry(mf));
-        st.hyph.set_is_hyph(is_hyph);
+        st.hyph.is_hyph = is_hyph;
         if st.mainloop.main_h == 0 && is_hyph {
-            st.mainloop.main_h = st.scanner.native_len();
+            st.mainloop.main_h = st.scanner.native_len;
         }
 
         crate::scan::get_next_scc(st)?;
@@ -3350,24 +3335,24 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
     let mapping = st.fonts.font_mapping_ptr(mf);
     if !mapping.is_null() {
         let text = st.scanner.native_text.as_mut_ptr();
-        let len = st.scanner.native_len();
+        let len = st.scanner.native_len;
         let mapped_len = apply_mapping(&mut st.fonts, mapping, text, len);
-        st.scanner.set_native_len(0);
-        native_text_reserve(&mut st.scanner, mapped_len);
+        st.scanner.native_len = 0;
+        st.scanner.reserve_native_text(mapped_len);
         st.mainloop.main_h = 0;
         let hyphen = st.fonts.hyphen_char_entry(mf);
         for i in 0..mapped_len {
-            let c = st.fonts.mapped_text_entry(i);
-            native_text_push(&mut st.scanner, c);
+            let c = st.fonts.mapped_text[i as usize];
+            st.scanner.push_native_text(c);
             if st.mainloop.main_h == 0 && is_hyphen_unit(st, c as i32, hyphen) {
-                st.mainloop.main_h = st.scanner.native_len();
+                st.mainloop.main_h = st.scanner.native_len;
             }
         }
     }
 
     if st.eqtb.int_par(INT_PAR_TRACING_LOST_CHARS) > 0 {
         let mut i = 0;
-        while i < st.scanner.native_len() {
+        while i < st.scanner.native_len {
             let mut c = st.scanner.native_text[i as usize] as i32;
             i += 1;
             if (0xD800..0xDC00).contains(&c) {
@@ -3381,7 +3366,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
         }
     }
 
-    let len = st.scanner.native_len();
+    let len = st.scanner.native_len;
     st.mainloop.main_pp = st.input.cur_list.tail;
     find_main_ppp(st);
     if st.input.cur_list.mode == HMODE {
@@ -3394,25 +3379,25 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
             if let Some(word) = extendable_native_word(st, mf) {
                 let old_len = word.native_length(&st.mem) as i32;
                 remaining = st.mainloop.main_h + old_len;
-                native_text_reserve(&mut st.scanner, remaining);
-                st.scanner.set_save_native_len(st.scanner.native_len());
+                st.scanner.reserve_native_text(remaining);
+                st.scanner.save_native_len = st.scanner.native_len;
                 // SAFETY: a native word stores `native_length` text units after its header.
                 let old_text =
                     std::slice::from_raw_parts(word.native_text_ptr(&st.mem), old_len as usize);
                 for &c in old_text {
-                    native_text_push(&mut st.scanner, c);
+                    st.scanner.push_native_text(c);
                 }
                 for i in 0..st.mainloop.main_h {
                     let c = st.scanner.native_text[(start + i) as usize];
-                    native_text_push(&mut st.scanner, c);
+                    st.scanner.push_native_text(c);
                 }
                 crate::linebreak::do_locale_linebreaks_in(
                     st,
-                    st.scanner.save_native_len(),
+                    st.scanner.save_native_len,
                     remaining,
                 )?;
-                st.scanner.set_native_len(st.scanner.save_native_len());
-                remaining = st.scanner.native_len() - st.mainloop.main_h - start;
+                st.scanner.native_len = st.scanner.save_native_len;
+                remaining = st.scanner.native_len - st.mainloop.main_h - start;
                 start = st.mainloop.main_h;
                 st.mainloop.main_h = 0;
                 advance_past_hyphen(st, start, remaining);
@@ -3432,7 +3417,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
                 st.mainloop.main_h = 0;
                 advance_past_hyphen(st, start, remaining);
             }
-            if remaining > 0 || st.hyph.is_hyph() {
+            if remaining > 0 || st.hyph.is_hyph {
                 let disc = overflow_err(crate::mem::new_disc(&mut st.mem))?;
                 st.input.cur_list.tail_append(&mut st.mem, disc.ptr());
                 st.mainloop.main_pp = st.input.cur_list.tail;
@@ -3621,7 +3606,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
 ) -> Result<bool, MainControlAbort> {
     if st.input.cur_list.head == st.input.cur_list.tail
         && st.input.cur_list.mode > 0
-        && st.shipout.insert_src_special_auto()
+        && st.shipout.insert_src_special_auto
     {
         append_src_special_in(st)?;
     }

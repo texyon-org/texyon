@@ -1,5 +1,7 @@
 //! Rust-owned engine state.
 
+use crate::hash::HASH_OFFSET;
+
 #[derive(Default)]
 pub(crate) struct EngineState {
     pub config: ConfigState,
@@ -20,29 +22,20 @@ pub(crate) struct EngineState {
     pub mainloop: MainLoopState,
 }
 
-/// Scratch registers of `main_control`'s character/ligature main loop
-/// (xetex-xetexd.h:672–686). Pure per-iteration scratch (set-before-read
-/// within the loop).
+/// Scratch registers of `main_control`'s character and ligature loop.
 #[derive(Default, Clone)]
 pub(crate) struct MainLoopState {
-    /// Scratch glue-spec pointer (xetex-xetexd.h:675).
     pub main_p: crate::units::MemPtr,
-    /// Scratch font-info index (xetex-xetexd.h:676).
     pub main_k: i32,
-    /// Current font of the main loop — `internal_font_number` (xetex-xetexd.h:672).
     pub main_f: i32,
     pub main_h: i32,
     pub main_pp: crate::units::MemPtr,
     pub main_ppp: crate::units::MemPtr,
-    /// Boundary char of the current font (xetex-xetexd.h:684).
     pub bchar: i32,
-    /// Non-existent boundary-char sentinel (xetex-xetexd.h:685).
     pub false_bchar: i32,
     /// Inter-character space class of the current / previous char.
     pub space_class: i32,
     pub prev_class: i32,
-    /// Ligature/kern reconstitution scratch (xetex-xetexd.h:630–634, 683–686);
-    /// shared between `main_control`'s main loop and `linebreak::reconstitute`.
     pub cur_l: i32,
     pub cur_r: i32,
     pub cur_q: crate::units::MemPtr,
@@ -54,7 +47,6 @@ pub(crate) struct MainLoopState {
     pub ins_disc: bool,
 }
 
-/// SyncTeX boolean flag block (formerly the `synctex_flags_t` bitfield struct).
 #[derive(Default, Clone)]
 pub(crate) struct SynctexFlags {
     pub content_ready: bool,
@@ -64,19 +56,15 @@ pub(crate) struct SynctexFlags {
     pub output_p: bool,
 }
 
-/// The SyncTeX context. `root_name` is owned and consumed by the SyncTeX open
-/// or abort path.
+/// The SyncTeX context.
 #[derive(Clone)]
 pub(crate) struct SynctexCtxt {
     pub file: usize,
     pub root_name: Option<std::ffi::CString>,
     pub count: i32,
     pub node: crate::units::MemPtr,
-    /// A kern node whose SyncTeX record is deferred until the context changes
-    /// (the C `synctex_recorder` fn pointer — kern is the only node kind this
-    /// engine ever defers, so the typed handle replaces the callback; when
-    /// `Some`, it always equals `node`). Flush sites must record it *before*
-    /// reassigning `node`.
+    /// A kern whose record waits for the context to change. When set it equals
+    /// `node`, so flush sites record it before reassigning `node`.
     pub deferred_kern: Option<crate::node::NodePtr<crate::node::KernNode>>,
     pub tag: i32,
     pub line: i32,
@@ -94,7 +82,6 @@ pub(crate) struct SynctexCtxt {
 
 impl Default for SynctexCtxt {
     fn default() -> Self {
-        // Every field zero/null/None/false except `lastv`, which starts at -1.
         Self {
             file: 0, // INVALID_HANDLE
             root_name: None,
@@ -117,16 +104,11 @@ impl Default for SynctexCtxt {
     }
 }
 
-/// The `texmf` cluster: small io/job-context state formerly held as
-/// `xetex-texmfmp.c` file-statics (`last_source_name`, `last_lineno`,
-/// `start_time_str`).
-///
-/// `last_source_name` is the owned name most recently reported to SyncTeX.
 #[derive(Default, Clone)]
 pub(crate) struct TexmfState {
     pub last_source_name: Option<std::ffi::CString>,
     pub last_lineno: i32,
-    /// TIME_STR_SIZE = 30 ("D:YYYYmmddHHMMSS+HH'MM'" plus NUL and headroom).
+    /// `D:YYYYmmddHHMMSS+HH'MM'`, NUL-terminated.
     pub start_time_str: [u8; 30],
 }
 
@@ -136,6 +118,18 @@ impl Default for AbsPathBuf {
     fn default() -> Self {
         AbsPathBuf([0; 1024])
     }
+}
+
+/// One level of TeX's input stack (`in_state_record`).
+#[derive(Copy, Clone, Default)]
+pub(crate) struct InputState {
+    pub state: u16,
+    pub index: u16,
+    pub start: i32,
+    pub loc: i32,
+    pub limit: i32,
+    pub name: i32,
+    pub synctex_tag: i32,
 }
 
 /// An owned main-input or `\read` stream slot.
@@ -149,121 +143,50 @@ pub(crate) enum InputSlot {
     Open(Box<crate::io::UFile>),
 }
 
-/// The `input` cluster's Rust-owned state. Distinct from
-/// `crate::globals::InputState`, which is a single per-input-record struct;
-/// this holds the cluster's owned arenas (input/param/file stacks).
 #[derive(Default)]
 pub(crate) struct InputClusterState {
-    /// Rust-owned macro-parameter stack (`param_size + 1` words, matching the
-    /// former `xmalloc_array` shape). Allocated at engine init and released by
-    /// `tt_cleanup`; never reallocated during a run. Replaces the former
-    /// C-`malloc`'d `param_stack` pointer. Not serialized in format dump/undump.
     pub param_stack: Vec<i32>,
-    /// Rust-owned input line/group stacks, each sized `max_in_open` (matching
-    /// the former `xmalloc_array` shape). Allocated at engine init and released
-    /// by `tt_cleanup`; never reallocated during a run. Not serialized in
-    /// format dump/undump. `grp_stack` is a `save_pointer`, `*filename_stack`
-    /// are `str_number` (newtype debts).
     pub line_stack: Vec<i32>,
     pub grp_stack: Vec<i32>,
     pub if_stack: Vec<crate::units::MemPtr>,
     pub source_filename_stack: Vec<i32>,
     pub full_source_filename_stack: Vec<i32>,
-    /// `eof_seen[k]`: true when EOF was seen at input level k. Sized
-    /// `max_in_open + 1`; allocated at init and released by `tt_cleanup`.
-    /// Not serialized in format dump/undump. Plain `bool`, no newtype debt.
     pub eof_seen: Vec<bool>,
-    /// Rust-owned input buffer (`buf_size + 1` words, matching the former
-    /// `xmalloc_array` shape). Allocated at engine init and released by
-    /// `tt_cleanup`; never reallocated during a run (overflow errors instead
-    /// of growing). Replaces the former C-`malloc`'d `buffer` pointer. Not
-    /// serialized in format dump/undump. Element type is `UnicodeScalar`
-    /// (`i32`) — plain int, no newtype debt.
     pub buffer: Vec<i32>,
-    /// Rust-owned input stack (`stack_size + 1` records, matching the former
-    /// `xmalloc_array` shape). Allocated at engine init and released by
-    /// `tt_cleanup`; never reallocated during a run. Replaces the former
-    /// C-`malloc`'d `input_stack` pointer. Not serialized in format
-    /// dump/undump. Element type is the `InputState` struct (mirrors C
-    /// `input_state_t`) — a compound struct, not a scalar typedef, no
-    /// newtype debt.
-    pub input_stack: Vec<crate::globals::InputState>,
-    /// The live top-of-input-stack record — TeX's `cur_input` (xetex-xetexd.h:506).
-    /// `push_input` saves it into `input_stack[input_ptr]`,
-    /// `pop_input` restores it. `synctex_tag` is mirrored into `st.mem.cur_synctex_tag`
-    /// for `get_node`.
-    pub cur_input: crate::globals::InputState,
-    /// Owned main input-file stack (`max_in_open + 1` slots). Not serialized.
+    pub input_stack: Vec<InputState>,
+    pub cur_input: InputState,
     pub input_file: Vec<InputSlot>,
-    /// Rust-owned semantic-nest (mode) stack (`nest_size + 1` records, matching
-    /// the former `xmalloc_array` shape). Allocated at engine init and released
-    /// by `tt_cleanup`; never reallocated during a run. Replaces the former
-    /// C-`malloc`'d `nest` pointer. Not serialized in format dump/undump.
-    /// Element type is the `ListStateRecord` struct (mirrors C
-    /// `list_state_record`) — a compound struct, not a scalar typedef, no
-    /// newtype debt.
     pub nest: Vec<crate::mem_types::ListStateRecord>,
-    /// The live top-of-nest semantic list — TeX's `cur_list`; sibling to `nest`.
     pub cur_list: crate::mem_types::ListStateRecord,
-    /// Count of open pseudo-file parentheses emitted to the transcript.
-    /// Plain `int32_t`, no newtype debt.
     pub open_parens: i32,
-    /// Current input-nesting depth (number of open input files). Plain `int32_t`.
     pub in_open: i32,
-    /// Head of the pseudo-file linked list (xetex-xetexd.h:704). Plain `int32_t`.
     pub pseudo_files: crate::units::MemPtr,
-    /// Current top of the semantic-nest stack. Plain `int32_t`.
     pub nest_ptr: i32,
-    /// Peak value ever reached by `nest_ptr`. Plain `int32_t`.
     pub max_nest_stack: i32,
-    /// Current top of the input-state stack. Plain `int32_t`.
     pub input_ptr: i32,
-    /// Input-related capacity constants, set once at engine init.
     pub stack_size: i32,
     pub buf_size: i32,
     pub param_size: i32,
     pub max_in_open: i32,
-    /// Capacity of the semantic-nest stack (`st.input.nest`); TeX's `nest_size`.
     pub nest_size: i32,
-    /// Peak value ever reached by `input_ptr`. Plain `int32_t`.
     pub max_in_stack: i32,
-    /// Search base in the input stack (xetex-xetexd.h:521). Plain `int32_t`.
     pub base_ptr: i32,
-    /// Hash-table location of `\par` (xetex-xetexd.h:522). Plain `int32_t`.
     pub par_loc: i32,
-    /// Token form of `\par` (CS_TOKEN_FLAG + par_loc, xetex-xetexd.h:523). Plain `int32_t`.
     pub par_token: i32,
-    /// Next free slot in the macro-parameter stack. Plain `int32_t`.
     pub param_ptr: i32,
-    /// Peak value ever reached by `param_ptr`. Plain `int32_t`.
     pub max_param_stack: i32,
-    /// Set true by `\endinput` to force end-of-file on the current input level
-    /// (xetex-xetexd.h:524). Plain `bool`.
     pub force_eof: bool,
-    /// Start of the current input line in the buffer — TeX's `first`
-    /// (xetex-xetexd.h:395). Sibling to `last`.
     pub first: i32,
-    /// End of the current input line in the buffer (xetex-xetexd.h:395;
-    /// next position after the last character). Plain `int32_t`.
     pub last: i32,
-    /// High-water mark of buffer usage (xetex-xetexd.h:395). Plain `int32_t`.
     pub max_buf_stack: i32,
-    /// Byte length of `name_of_file` (excluding NUL; xetex-xetexd.h:390). Plain `int32_t`.
     pub name_length: i32,
-    /// Number of UTF-16 code units in `name_of_file16` (xetex-xetexd.h:391). Plain `int32_t`.
     pub name_length16: i32,
-    /// File-open states for `\read` streams (xetex-xetexd.h:536; CLOSED=2, JUST_OPEN=1,
-    /// NORMAL=0). BSS array of 17 bytes — default all-zero = NORMAL. Plain `u8`, no newtype debt.
     pub read_open: [u8; 17],
-    /// Owned `\read` stream slots (xetex-xetexd.h:535).
     pub read_file: [InputSlot; 16],
-    /// Rust-owned name buffer (NUL-terminated C string).
     pub name_of_file: Vec<libc::c_char>,
-    /// Rust-owned UTF-16 name buffer.
     pub name_of_file16: Vec<u16>,
     /// Owned name of the most recently opened input file.
     pub name_of_input_file: Option<std::ffi::CString>,
-    /// Rust-owned absolute path of current input file.
     pub abspath_of_input_file: AbsPathBuf,
 }
 
@@ -273,28 +196,9 @@ pub(crate) struct EqtbState {
     pub no_new_control_sequence: bool,
     pub prim_used: i32,
     pub cs_count: i32,
-    /// equivalents table (former C-`malloc`'d `memory_word *eqtb`, size
-    /// `eqtb_top + 1`). Rust-owned `Vec`, allocated in `ini.rs` at init and
-    /// format-load and dropped by `tt_cleanup`; indexed by the `eqtb_*`
-    /// accessors. In the format dump (sparse region `dump_slice`/`undump_slice`);
-    /// those paths take a state-derived base pointer. Element
-    /// `memory_word` (faithful `MemoryWord`), no newtype debt.
     pub data: Vec<crate::mem_types::MemoryWord>,
-    /// Primitive-lookup table (former inline C `prim[PRIM_SIZE + 1]`). Heap-
-    /// backed `Vec` sized `PRIM_SIZE + 1 = 2101`; not `malloc`'d in C (inline
-    /// BSS), so it is sized here in `Default`, not allocated in `ini.rs`.
-    /// Format dump/undump goes through the `prim_s0`/`prim_s1` accessors.
-    /// Element `B32x2`, no newtype debt.
     pub prim: Vec<crate::mem_types::B32x2>,
-    /// Per-int-parameter save-level array (former inline C
-    /// `_xeq_level_array[EQTB_SIZE - INT_BASE + 1]`). Heap-backed `Vec` sized
-    /// `1_114_730`; inline BSS in C, so sized here in `Default`. Not in the
-    /// format dump. Element `u16` save level, no newtype debt.
     pub xeq_level: Vec<u16>,
-    /// Hash table (former C-`malloc`'d `b32x2 *hash`, size `1 + hash_top - hash_offset`).
-    /// Rust-owned `Vec`, allocated in `ini.rs` at init and format-load and dropped by `tt_cleanup`;
-    /// indexed by `hash_s0`/`hash_s1` accessors with `- 514` (hash_offset) indexing offset.
-    /// Element `B32x2`, no newtype debt.
     pub hash: Vec<crate::mem_types::B32x2>,
     pub hash_extra: i32,
     pub eqtb_top: i32,
@@ -310,8 +214,6 @@ impl Default for EqtbState {
             no_new_control_sequence: false,
             prim_used: 0,
             cs_count: 0,
-            // Allocated in `ini.rs` (initex / format-load) like the other
-            // Rust-owned arena arrays; empty until then.
             data: Vec::new(),
             // PRIM_SIZE + 1 = 2101.
             prim: vec![crate::mem_types::B32x2 { s0: 0, s1: 0 }; 2101],
@@ -334,14 +236,12 @@ impl EqtbState {
         }
     }
 
-    /// Read `eqtb[p].b32.s1`.
     #[inline]
     pub fn b32s1(&self, p: i32) -> i32 {
         // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b32.s1 }
     }
 
-    /// Write `eqtb[p].b32.s1`.
     #[inline]
     pub fn set_b32s1(&mut self, p: i32, v: i32) {
         let index = p as usize;
@@ -356,45 +256,39 @@ impl EqtbState {
         self.data[index] = value;
     }
 
-    /// Read `hash[p].s0` (the link half of a hash-table entry).
     #[inline]
     pub fn hash_s0(&self, p: i32) -> i32 {
-        self.hash[(p as usize) - 514].s0
+        self.hash[(p - HASH_OFFSET) as usize].s0
     }
 
-    /// Write `hash[p].s0 = v`.
     #[inline]
     pub fn set_hash_s0(&mut self, p: i32, v: i32) {
-        let index = p as usize - 514;
+        let index = (p - HASH_OFFSET) as usize;
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
         self.hash[index].s0 = v;
     }
 
-    /// Read `hash[p].s1` (the "text" half of a hash-table entry).
     #[inline]
     pub fn hash_s1(&self, p: i32) -> i32 {
-        self.hash[(p as usize) - 514].s1
+        self.hash[(p - HASH_OFFSET) as usize].s1
     }
 
-    /// Write `hash[p].s1 = v`.
     #[inline]
     pub fn set_hash_s1(&mut self, p: i32, v: i32) {
-        let index = p as usize - 514;
+        let index = (p - HASH_OFFSET) as usize;
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
         self.hash[index].s1 = v;
     }
 
-    /// Read `prim[p].s0` (the link half of a primitive-table entry).
     #[inline]
     pub fn prim_s0(&self, p: i32) -> i32 {
         self.prim[p as usize].s0
     }
 
-    /// Write `prim[p].s0 = v`.
     #[inline]
     pub fn set_prim_s0(&mut self, p: i32, v: i32) {
         let index = p as usize;
@@ -404,13 +298,11 @@ impl EqtbState {
         self.prim[index].s0 = v;
     }
 
-    /// Read `prim[p].s1` (the "text" half of a primitive-table entry).
     #[inline]
     pub fn prim_s1(&self, p: i32) -> i32 {
         self.prim[p as usize].s1
     }
 
-    /// Write `prim[p].s1 = v`.
     #[inline]
     pub fn set_prim_s1(&mut self, p: i32, v: i32) {
         let index = p as usize;
@@ -420,13 +312,11 @@ impl EqtbState {
         self.prim[index].s1 = v;
     }
 
-    /// Copy the full `MemoryWord` at `eqtb[p]`.
     #[inline]
     pub fn word(&self, p: i32) -> crate::mem_types::MemoryWord {
         self.data[p as usize]
     }
 
-    /// Read `eqtb[p].b16.s1` (the "type" half).
     #[inline]
     pub fn b16s1(&self, p: i32) -> u16 {
         // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
@@ -439,7 +329,6 @@ impl EqtbState {
         self.b16s1(p) as u8
     }
 
-    /// Write `eqtb[p].b16.s1`.
     #[inline]
     pub fn set_b16s1(&mut self, p: i32, v: u16) {
         let index = p as usize;
@@ -447,14 +336,12 @@ impl EqtbState {
         self.data[index].b16.s1 = v;
     }
 
-    /// Read `eqtb[p].b16.s0` (the "level" half).
     #[inline]
     pub fn b16s0(&self, p: i32) -> u16 {
         // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b16.s0 }
     }
 
-    /// Write `eqtb[p].b16.s0`.
     #[inline]
     pub fn set_b16s0(&mut self, p: i32, v: u16) {
         let index = p as usize;
@@ -486,13 +373,11 @@ impl EqtbState {
         ))
     }
 
-    /// Read `XEQ_LEVEL(p)` = `xeq_level[p - INT_BASE]`.
     #[inline]
     pub fn xeq_level_at(&self, p: i32) -> u16 {
         self.xeq_level[(p - crate::consts::INT_BASE) as usize]
     }
 
-    /// Write `XEQ_LEVEL(p) = v`.
     #[inline]
     pub fn set_xeq_level_at(&mut self, p: i32, v: u16) {
         let index = (p - crate::consts::INT_BASE) as usize;
@@ -503,17 +388,8 @@ impl EqtbState {
     }
 }
 
-/// The dynamic-memory arena (former C-`malloc`'d `memory_word *mem` plus its
-/// bookkeeping scalars). The `mem` array is the engine's hottest storage; its
-/// bookkeeping scalars (`lo_mem_max`, `hi_mem_min`, `avail`, `mem_end`, `rover`,
-/// `var_used`, `dyn_used`) move *with* the array. `data` is a Rust-owned `Vec`,
-/// allocated in `ini.rs` (initex / format-load) and dropped by `tt_cleanup`; it
-/// must **never** reallocate during a run so the pointer-escaping accessors stay
-/// valid. In the format dump (the free-list `dump_slice`/`undump_slice`
-/// regions); those paths take a state-derived base pointer. Element
-/// `memory_word` (faithful `MemoryWord`) and the scalars are plain `int32_t`
-/// mem-pointers/counters — no newtype debt (the mem-pointer scalars are
-/// pointer-taxonomy candidates only).
+/// The `mem` arena and its bookkeeping. `data` never reallocates during a run,
+/// so the pointer-returning accessors stay valid.
 #[derive(Default)]
 pub(crate) struct MemState {
     pub data: Vec<crate::mem_types::MemoryWord>,
@@ -527,20 +403,9 @@ pub(crate) struct MemState {
     pub rover: i32,
     pub var_used: i32,
     pub dyn_used: i32,
-    /// Current source line number — TeX's `line`.
-    /// Lives in MemState because `get_node` (the sole mem-only reader, called
-    /// from hundreds of `&mut MemState`-only sites) stamps it into the synctex
-    /// trailer of MEDIUM+ nodes; it is the allocation-time source line.
+    /// TeX's `line`, kept here because `get_node` stamps it into new nodes.
     pub line: i32,
-    /// Mirror of `st.input.cur_input.synctex_tag` for `get_node`'s synctex trailer.
-    /// `synctex_tag` proper is a stack-saved field of the `cur_input`
-    /// struct and can't leave it; `get_node` holds only `&mut MemState`, so it reads
-    /// this mirror, kept in sync at the 7 sites that write `cur_input.synctex_tag`.
     pub cur_synctex_tag: i32,
-    /// General-purpose scratch node pointer — TeX's `temp_ptr`. Lives here
-    /// (not ScannerState) because every user holds `&mut MemState`; two-phase
-    /// borrows keep `mem.f(mem.temp_ptr.0,…)` legal. Function-local scratch
-    /// reused across many routines.
     pub temp_ptr: crate::units::MemPtr,
 }
 
@@ -552,58 +417,48 @@ impl MemState {
         }
     }
 
-    /// Read `mem[p].b32.s0`.
     #[inline]
     pub(crate) fn b32s0(&self, p: impl crate::units::MemAddr) -> i32 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b32.s0 }
     }
 
-    /// Read `mem[p].b32.s1` (the `LLIST_link` / successor-pointer field).
     #[inline]
     pub(crate) fn b32s1(&self, p: impl crate::units::MemAddr) -> i32 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b32.s1 }
     }
 
-    /// Read `mem[p].b32.s1` as a nullable link — the typed sibling of
-    /// [`b32s1`](Self::b32s1) for reading a list head off a pseudo-node
-    /// (`ALIGN_HEAD`/`TEMP_HEAD`/`PAGE_HEAD`/`cur_list.head`) where no
-    /// `NodePtr` family applies.
+    /// The link word of `p`, for list heads that are not typed nodes.
     #[inline]
     pub(crate) fn link_ptr(&self, p: impl crate::units::MemAddr) -> crate::units::MemPtr {
         crate::units::MemPtr::from_raw(self.b32s1(p))
     }
 
-    /// Read `mem[p].b16.s0`.
     #[inline]
     pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s0 }
     }
 
-    /// Read `mem[p].b16.s1`.
     #[inline]
     pub(crate) fn b16s1(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s1 }
     }
 
-    /// Read `mem[p].b16.s2`.
     #[inline]
     pub(crate) fn b16s2(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s2 }
     }
 
-    /// Read `mem[p].b16.s3`.
     #[inline]
     pub(crate) fn b16s3(&self, p: impl crate::units::MemAddr) -> u16 {
         // SAFETY: union projection; the `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s3 }
     }
 
-    /// Write `mem[p].b32.s0`. Union writes through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b32s0(&mut self, p: impl crate::units::MemAddr, v: i32) {
         let index = p.addr() as usize;
@@ -611,7 +466,6 @@ impl MemState {
         self.data[index].b32.s0 = v;
     }
 
-    /// Write `mem[p].b32.s1` (the `LLIST_link` field).
     #[inline]
     pub(crate) fn set_b32s1(&mut self, p: impl crate::units::MemAddr, v: i32) {
         let index = p.addr() as usize;
@@ -619,8 +473,6 @@ impl MemState {
         self.data[index].b32.s1 = v;
     }
 
-    /// Write `mem[p].b16.s0` (low 16 bits of the first half-word). Union writes
-    /// through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b16s0(&mut self, p: impl crate::units::MemAddr, v: u16) {
         let index = p.addr() as usize;
@@ -628,7 +480,6 @@ impl MemState {
         self.data[index].b16.s0 = v;
     }
 
-    /// Write `mem[p].b16.s1` (high 16 bits of the first half-word).
     #[inline]
     pub(crate) fn set_b16s1(&mut self, p: impl crate::units::MemAddr, v: u16) {
         let index = p.addr() as usize;
@@ -636,7 +487,6 @@ impl MemState {
         self.data[index].b16.s1 = v;
     }
 
-    /// Write `mem[p].b16.s2`.
     #[inline]
     pub(crate) fn set_b16s2(&mut self, p: impl crate::units::MemAddr, v: u16) {
         let index = p.addr() as usize;
@@ -644,7 +494,6 @@ impl MemState {
         self.data[index].b16.s2 = v;
     }
 
-    /// Write `mem[p].b16.s3`.
     #[inline]
     pub(crate) fn set_b16s3(&mut self, p: impl crate::units::MemAddr, v: u16) {
         let index = p.addr() as usize;
@@ -652,7 +501,6 @@ impl MemState {
         self.data[index].b16.s3 = v;
     }
 
-    /// Write the `gr` (f64) field of `mem[p]`.
     #[inline]
     pub(crate) fn set_gr(&mut self, p: impl crate::units::MemAddr, v: f64) {
         let index = p.addr() as usize;
@@ -660,34 +508,26 @@ impl MemState {
         self.data[index].gr = v;
     }
 
-    /// Reinterpret the arena from word `p` onward as a `*mut u16`. Valid past
-    /// the borrow because the thread-local owner never reallocates.
     #[inline]
     pub(crate) fn as_u16_ptr_mut(&mut self, p: impl crate::units::MemAddr) -> *mut u16 {
         self.data.as_mut_ptr().wrapping_add(p.addr() as usize) as *mut u16
     }
 
-    /// Reinterpret the arena from word `p` onward as a `*const u16`. Valid past
-    /// the borrow because the thread-local owner never reallocates.
     #[inline]
     pub(crate) fn as_u16_ptr(&self, p: impl crate::units::MemAddr) -> *const u16 {
         self.data.as_ptr().wrapping_add(p.addr() as usize) as *const u16
     }
 
-    /// Reinterpret the arena from word `p` onward as a `*mut std::ffi::c_void`. Valid
-    /// past the borrow because the thread-local owner never reallocates.
     #[inline]
     pub(crate) fn node_addr(&self, p: impl crate::units::MemAddr) -> *mut std::ffi::c_void {
         self.data.as_ptr().wrapping_add(p.addr() as usize) as *mut std::ffi::c_void
     }
 
-    /// Copy the full `MemoryWord` at `mem[p]`.
     #[inline]
     pub(crate) fn word(&self, p: impl crate::units::MemAddr) -> crate::mem_types::MemoryWord {
         self.data[p.addr() as usize]
     }
 
-    /// Write a full `MemoryWord` to `mem[p]`.
     #[inline]
     pub(crate) fn set_word(
         &mut self,
@@ -699,8 +539,7 @@ impl MemState {
         self.data[index] = w;
     }
 
-    /// Record a raw pointer writer's destination range before it mutates the
-    /// arena outside the typed setter surface.
+    /// Journals `words` words from `p` before a raw pointer writes them.
     pub(crate) fn journal_mark_range(&mut self, p: impl crate::units::MemAddr, words: usize) {
         if !self.journal.armed() {
             return;
@@ -717,12 +556,7 @@ pub(crate) fn native_text_words(units: i32) -> usize {
         .div_ceil(std::mem::size_of::<crate::mem_types::MemoryWord>())
 }
 
-/// The kind of grouping level on the save stack (`cur_group`,
-/// xetex-constants.h:152–169). A pure classification field — compared for
-/// equality and dispatched in `handle_right_brace`/`off_save`/`show_save_groups`,
-/// never used in arithmetic — so it is typed directly rather than kept as a raw
-/// `u8`. Replaces the ~70 duplicated `const SIMPLE_GROUP`/`HBOX_GROUP`/… code
-/// definitions that were scattered across main_control/output/math/save/errors.
+/// The kind of group on the save stack (`cur_group`).
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 #[repr(u8)]
 pub(crate) enum GroupCode {
@@ -747,7 +581,6 @@ pub(crate) enum GroupCode {
 }
 
 impl GroupCode {
-    /// Decode a raw `cur_group` byte; `None` for an unknown code.
     #[inline]
     pub(crate) fn from_raw(v: u8) -> Option<GroupCode> {
         Some(match v {
@@ -772,8 +605,6 @@ impl GroupCode {
         })
     }
 
-    /// The raw `cur_group` byte for this group (`self as u8`); used only at the
-    /// save-stack (de)serialization boundary.
     #[inline]
     pub(crate) fn as_raw(self) -> u8 {
         self as u8
@@ -784,57 +615,46 @@ impl GroupCode {
 pub(crate) struct SaveStackState {
     pub save_ptr: i32,
     pub max_save_stack: i32,
-    /// Capacity of the save stack (`save_size`); set once at engine init.
     pub save_size: i32,
     pub cur_level: u16,
     pub cur_group: GroupCode,
     pub cur_boundary: i32,
-    /// Rust-owned save-stack arena (`save_size + 1` words). Allocated at
-    /// engine init and released by `tt_cleanup`; never reallocated during a
-    /// run. Replaces the former C-`malloc`'d `save_stack` pointer.
     pub data: Vec<crate::mem_types::MemoryWord>,
 }
 
 impl SaveStackState {
-    /// Read `save_stack[k].b32.s1`.
     #[inline]
     pub(crate) fn b32s1(&self, k: i32) -> i32 {
         // SAFETY: union projection; the entry was last written via the b32 view.
         unsafe { self.data[k as usize].b32.s1 }
     }
 
-    /// Write `save_stack[k].b32.s1`. Union writes through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b32s1(&mut self, k: i32, v: i32) {
         self.data[k as usize].b32.s1 = v;
     }
 
-    /// Write `save_stack[k].b16.s1`. Union writes through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b16s1(&mut self, k: i32, v: u16) {
         self.data[k as usize].b16.s1 = v;
     }
 
-    /// Write `save_stack[k].b16.s0`. Union writes through a `&mut` index are safe.
     #[inline]
     pub(crate) fn set_b16s0(&mut self, k: i32, v: u16) {
         self.data[k as usize].b16.s0 = v;
     }
 
-    /// Write a full `MemoryWord` to `save_stack[k]`.
     #[inline]
     pub(crate) fn set_word(&mut self, k: i32, w: crate::mem_types::MemoryWord) {
         self.data[k as usize] = w;
     }
 
-    /// Read `save_stack[k].b16.s1`.
     #[inline]
     pub(crate) fn b16s1(&self, k: i32) -> u16 {
         // SAFETY: union projection; the entry was last written via the b16 view.
         unsafe { self.data[k as usize].b16.s1 }
     }
 
-    /// Read `save_stack[k].b16.s0`.
     #[inline]
     pub(crate) fn b16s0(&self, k: i32) -> u16 {
         // SAFETY: union projection; the entry was last written via the b16 view.
@@ -848,7 +668,6 @@ impl SaveStackState {
         (group, self.b32s1(k))
     }
 
-    /// Read a full `MemoryWord` from `save_stack[k]`.
     #[inline]
     pub(crate) fn word(&self, k: i32) -> crate::mem_types::MemoryWord {
         self.data[k as usize]
@@ -883,84 +702,33 @@ pub(crate) struct ScannerState {
     pub sa_chain: crate::units::MemPtr,
     pub sa_level: u16,
     pub max_reg_num: i32,
-    /// Head of the conditional-stack list (xetex-xetexd.h:537). Plain `int32_t`.
     pub cond_ptr: crate::units::MemPtr,
-    /// Current `\if` nesting limit code (xetex-xetexd.h:538). Stored as `u8`
-    /// (`unsigned char` in C); plain, no semantic typedef debt.
     pub if_limit: u8,
-    /// Current `\if` type (xetex-xetexd.h:539; C type `small_number` = `short`).
-    /// Newtype debt: `SmallNumber` (same as `radix`).
     pub cur_if: i16,
-    /// Line number where the current `\if` was entered (xetex-xetexd.h:540).
-    /// Plain `int32_t`.
     pub if_line: i32,
-    /// Line number where the current if-skip started (xetex-xetexd.h:541).
-    /// Plain `int32_t`.
     pub skip_line: i32,
-    /// True while scanning between `\csname...\endcsname` (xetex-xetexd.h:526).
-    /// Plain `bool`.
     pub is_in_csname: bool,
-    /// True after `\TectonicCodaTokens` was inserted once (xetex-xetexd.h:723).
-    /// Plain `bool`.
     pub used_tectonic_coda_tokens: bool,
-    /// Value-type level for the current scanned quantity (xetex-xetexd.h:532;
-    /// `unsigned char`; 0=INT_VAL, 1=DIMEN_VAL, 2=GLUE_VAL, 3=MU_VAL). Plain
-    /// `unsigned char`, no semantic typedef, no newtype debt.
     pub cur_val_level: u8,
-    /// Second parsed value register for `scan_something_internal`
-    /// (xetex-xetexd.h:531). Plain `int32_t`.
     pub cur_val1: i32,
-    /// Scanner state (xetex-xetexd.h:514; `unsigned char`; NORMAL=0..ABSORBING=5).
-    /// Plain `unsigned char`, no semantic typedef, no newtype debt.
     pub scanner_status: u8,
-    /// Control-sequence index used in scanner-error messages (xetex-xetexd.h:515).
-    /// Plain `int32_t`.
     pub warning_index: i32,
-    /// Head of the current macro-definition token list (xetex-xetexd.h:516).
-    /// Plain `int32_t`.
     pub def_ref: crate::units::MemPtr,
-    /// Macro call type (xetex-xetexd.h:528; `unsigned char`;
-    /// CALL/LONG_CALL/OUTER_CALL/LONG_OUTER_CALL). Plain, no newtype debt.
     pub long_state: u8,
-    /// Alignment brace-nesting counter (xetex-xetexd.h:520). Positive = extra
-    /// open braces; negative = unmatched `&` or `\cr`. Plain `int32_t`.
     pub align_state: i32,
-    /// Expansion-depth limit (`expand_depth`); set once at init.
     pub expand_depth: i32,
-    /// Current command code — the scanner's `cur_cmd` (`eight_bits`).
     pub cur_cmd: u8,
-    /// Current character code — the scanner's `cur_chr`.
     pub cur_chr: i32,
-    /// Current control-sequence index — the scanner's `cur_cs`.
     pub cur_cs: i32,
-    /// Current token — the scanner's `cur_tok`.
     pub cur_tok: i32,
-    /// Current parsed integer value — the scanner's `cur_val`.
     pub cur_val: i32,
-    /// Sparse-array cursor — TeX's `cur_ptr`. Sibling to `sa_root`, set/read by
-    /// the sa-element machinery.
     pub cur_ptr: crate::units::MemPtr,
-    /// Mark registers: `cur_mark[0..=4]` (xetex-xetexd.h:527). Each entry is
-    /// a nullable token-list pointer. Inline fixed array; no alloc/cleanup
-    /// edge.
     pub cur_mark: [crate::units::MemPtr; 5],
-    /// Saved discretionary break pointers (xetex-xetexd.h:716). Inline fixed
-    /// array of 4 nullable node-list heads. No alloc/cleanup edge.
     pub disc_ptr: [crate::units::MemPtr; 4],
-    // Math-list-to-hlist conversion scratch (former xetex-math.c module
-    // globals).
-    /// Mlist being converted by `mlist_to_hlist` (xetex-math.c). Mem pointer
-    /// stored as `int32_t`; pointer-taxonomy-sweep candidate, no typedef debt.
     pub cur_mlist: crate::units::MemPtr,
-    /// Current math style (C type `small_number` = `short`). Newtype debt:
-    /// `SmallNumber`.
     pub cur_style: i16,
-    /// Current math size code (`int32_t`; TEXT_SIZE/SCRIPT_SIZE/...). Plain.
     pub cur_size: i32,
-    /// Current `math unit` (`mu`) value (C type `scaled_t`). Newtype debt:
-    /// `Scaled`.
     pub cur_mu: i32,
-    /// Whether `mlist_to_hlist` inserts penalties (`bool`). Plain.
     pub mlist_penalties: bool,
     pub cur_box: crate::units::MemPtr,
     pub after_token: i32,
@@ -977,17 +745,12 @@ pub(crate) struct ScannerState {
     pub set_box_allowed: bool,
     pub active_width: [i32; 7],
     pub best_height_plus_depth: i32,
-    // TeXXeT left-right directionality state.
     pub lr_ptr: crate::units::MemPtr,
     pub lr_problems: i32,
     pub cur_dir: i16,
-    /// Sparse-array trie roots: `sa_root[0..=7]` (xetex-xetexd.h:709).
     pub sa_root: [crate::units::MemPtr; 8],
-    /// Sparse-array null sentinel (xetex-ini.c:3203).
     pub sa_null: crate::mem_types::MemoryWord,
-    /// The all-zero B32x2 template (xetex-xetexd.h:608).
     pub empty: crate::mem_types::B32x2,
-    /// Rust-owned dynamic native text buffer.
     pub native_text: Vec<u16>,
     pub native_text_size: i32,
     pub native_len: i32,
@@ -1071,9 +834,7 @@ pub(crate) struct FontState {
     /// Per-engine ICU line-break cache and its string-pool locale key.
     pub brk_iter: Option<LinebreakHandle>,
     pub brk_locale_str_num: i32,
-    /// Owned per-font native layout engines. Not format-serialized.
     pub font_layout_engine: Vec<Option<std::sync::Arc<FontEngineHandle>>>,
-    /// Owned per-font TECkit mappings. Not format-serialized.
     pub font_mapping: Vec<Option<std::sync::Arc<FontMappingHandle>>>,
     pub loaded_font_letter_space: i32,
     pub xtx_ligature_present: bool,
@@ -1081,59 +842,24 @@ pub(crate) struct FontState {
     pub native_font_type_flag: i32,
     pub font_mem_size: i32,
     pub font_max: i32,
-    /// Current font-memory write pointer; advances as font metrics are loaded.
-    /// C type `font_index` (semantic typedef for `int32_t`; newtype debt).
     pub fmem_ptr: i32,
-    /// Highest font number loaded so far. C type `internal_font_number`
-    /// (semantic typedef; newtype debt).
     pub font_ptr: i32,
-    /// Per-font renderer flags (`char *`, one byte per font slot). Not
-    /// format-serialized; reallocated fresh at init / format-load.
     pub font_flags: Vec<i8>,
-    /// Per-font letter-spacing value (`scaled_t *`). Not format-serialized;
-    /// reallocated fresh at init / format-load. Newtype debt.
     pub font_letter_space: Vec<i32>,
     pub null_character: crate::mem_types::B16x4,
-    /// Rust-owned font checksum table (`font_max + 1` entries, matching the
-    /// former `xmalloc_array` shape). Allocated at engine init / format load
-    /// and released by `tt_cleanup`; serialized in the format dump.
     pub font_check: Vec<crate::mem_types::B16x4>,
-    /// Rust-owned font size tables (`font_max + 1` scaled values each).
-    /// Allocated at engine init / format load and released by `tt_cleanup`;
-    /// serialized in the format dump. Element type is `scaled_t` (newtype debt).
     pub font_size: Vec<i32>,
     pub font_dsize: Vec<i32>,
-    /// Rust-owned font-parameter count table (`font_max + 1` entries).
-    /// Serialized in the format dump. Element type is `font_index` (newtype debt).
     pub font_params: Vec<i32>,
-    /// Rust-owned font name/area tables (`font_max + 1` string-pool indexes).
-    /// Serialized in the format dump. Element type is `str_number` (newtype debt).
     pub font_name: Vec<i32>,
     pub font_area: Vec<i32>,
-    /// Rust-owned first/last valid character-code tables (`font_max + 1`
-    /// entries each). Serialized in the format dump. Element type is
-    /// `UTF16_code` (newtype debt).
     pub font_bc: Vec<u16>,
     pub font_ec: Vec<u16>,
-    /// Rust-owned boundary-character tables (`font_max + 1` entries each).
-    /// Serialized in the format dump. Element types are `font_index` /
-    /// `nine_bits` (newtype debt).
     pub bchar_label: Vec<i32>,
     pub font_bchar: Vec<i32>,
     pub font_false_bchar: Vec<i32>,
-    /// Rust-owned per-font glue-spec pointer table (`font_max + 1` entries).
-    /// Serialized in the format dump (checked undump against `lo_mem_max`).
-    /// Element is a nullable memory/halfword pointer (newtype debt).
     pub font_glue: Vec<i32>,
-    /// Rust-owned per-font "emitted in output" flag table (`font_max + 1`
-    /// entries). Not serialized in the format dump; plain `bool`.
     pub font_used: Vec<bool>,
-    /// Rust-owned font metric offset index tables (`font_max + 1` entries
-    /// each). These hold offsets into the `font_info` arena for each per-font
-    /// metric table (char info, widths, heights, depths, italic corrections,
-    /// lig/kern, kern, extensible, parameters). All serialized in the format
-    /// dump; element type is plain `int32_t` (no semantic typedef in the C
-    /// header).
     pub char_base: Vec<i32>,
     pub width_base: Vec<i32>,
     pub height_base: Vec<i32>,
@@ -1143,24 +869,13 @@ pub(crate) struct FontState {
     pub kern_base: Vec<i32>,
     pub exten_base: Vec<i32>,
     pub param_base: Vec<i32>,
-    /// Rust-owned per-font hyphen-character tables (`font_max + 1` entries).
-    /// Serialized in the format dump. Plain `int32_t *`, no newtype debt.
     pub hyphen_char: Vec<i32>,
-    /// Rust-owned per-font skew-character tables (`font_max + 1` entries).
-    /// Serialized in the format dump. Plain `int32_t *`, no newtype debt.
     pub skew_char: Vec<i32>,
-    /// Rust-owned font metric arena (`font_mem_size + 1` words). Holds all
-    /// per-font metric tables (widths, heights, depths, italic corrections,
-    /// lig/kern programs, kern values, extensible recipes, font parameters).
-    /// `fmem_ptr` is the next-free write pointer into this arena. Serialized
-    /// in the format dump. Plain `MemoryWord *`, no newtype debt.
     pub font_info: Vec<crate::mem_types::MemoryWord>,
     pub font_info_journal: crate::journal::PlainTrail<crate::mem_types::MemoryWord>,
     /// Font-memory high-water mark at the start of the open journal epoch.
     pub fmem_epoch_base: i32,
-    /// Rust-owned dynamic XDV buffer.
     pub xdv_buffer: Vec<u8>,
-    /// Rust-owned dynamic mapped text buffer.
     pub mapped_text: Vec<u16>,
 }
 
@@ -1248,19 +963,16 @@ impl FontState {
         self.font_letter_space[f as usize]
     }
 
-    /// Read `font_flags[f]`.
     #[inline]
     pub(crate) fn font_flags_entry(&self, f: i32) -> i32 {
         self.font_flags[f as usize] as i32
     }
 
-    /// Read `font_bc[f]`.
     #[inline]
     pub(crate) fn font_bc_entry(&self, f: i32) -> u16 {
         self.font_bc[f as usize]
     }
 
-    /// Read `font_ec[f]`.
     #[inline]
     pub(crate) fn font_ec_entry(&self, f: i32) -> u16 {
         self.font_ec[f as usize]
@@ -1271,16 +983,6 @@ impl FontState {
         self.font_mapping[f as usize]
             .as_ref()
             .map_or(std::ptr::null_mut(), |handle| handle.raw)
-    }
-
-    #[inline]
-    pub(crate) fn xtx_ligature_present(&self) -> bool {
-        self.xtx_ligature_present
-    }
-
-    #[inline]
-    pub(crate) fn set_xtx_ligature_present(&mut self, v: bool) {
-        self.xtx_ligature_present = v;
     }
 
     #[inline]
@@ -1552,12 +1254,10 @@ pub(crate) struct ShipoutState {
     pub rust_stdout: usize,
     pub log_file: usize,
     pub current_diagnostic: *mut std::ffi::c_void,
-    // Page-builder scratch.
     pub best_page_break: crate::units::MemPtr,
     pub best_size: i32,
     pub least_page_cost: i32,
     pub page_max_depth: i32,
-    // DVI-output scratch (page/position tracking).
     pub total_pages: i32,
     pub max_v: i32,
     pub max_h: i32,
@@ -1574,7 +1274,6 @@ pub(crate) struct ShipoutState {
     pub cur_h_offset: i32,
     pub cur_v_offset: i32,
     pub write_loc: i32,
-    // DVI (dvi_* positioning and output variables).
     pub dvi_file: usize,
     pub output_file_name: i32,
     pub dvi_buf: Vec<u8>,
@@ -1590,10 +1289,7 @@ pub(crate) struct ShipoutState {
     pub dvi_f: i32,
 }
 
-/// TeX's error-interaction mode (`\batchmode`/`\nonstopmode`/`\scrollmode`/
-/// `\errorstopmode`, xetex-constants.h). Ordered Batch < Nonstop < Scroll <
-/// ErrorStop (the numeric encoding), matching the `interaction < ERROR_STOP_MODE`
-/// / `> BATCH_MODE` tests that gate terminal prompting and log verbosity.
+/// TeX's `interaction` level, ordered like its numeric codes.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
 pub(crate) enum InteractionMode {
@@ -1604,8 +1300,7 @@ pub(crate) enum InteractionMode {
 }
 
 impl InteractionMode {
-    /// Decode a scanned mode value; `None` for out-of-range (this IS the
-    /// `\interactionmode=N` bounds check — 0..=3).
+    /// `None` outside `0..=3`, which is the `\interactionmode` range check.
     pub(crate) fn from_raw(v: i32) -> Option<InteractionMode> {
         match v {
             0 => Some(InteractionMode::Batch),
@@ -1719,27 +1414,11 @@ impl StringsState {
     }
 }
 
-/// The line-breaker's working state (the line-breaking / LR-reverse /
-/// hyphenation-attempt scratch globals, defined in C across `xetex-ini.c` and
-/// `xetex-linebreak.c`). These are per-paragraph scratch — cold relative to the
-/// tokenizer. None are in the format dump and none had a `#[link_name]` cleanup
-/// alias (no `ini.rs` alloc, no `tt_cleanup` free).
-///
-/// `hlist_stack` is heap-backed as a `Vec<i32>` (sized `MAX_HLIST_STACK + 1`
-/// = 513 in `Default`, matching the C BSS array `int32_t
-/// hlist_stack[MAX_HLIST_STACK + 1]`) rather than an inline `[i32; 513]`:
-/// `EngineState` lives inline in the `ENGINE_STATE` thread-local, so a 2 KB
-/// inline array risks the thread-stack overflow seen when the hyph fixed
-/// arrays were first moved inline. The small fixed arrays stay inline.
-///
-/// Newtype debts: the `scaled_t` dimension fields and the `small_number`
-/// fields. The `int32_t` mem-pointer fields (`cur_p`, `passive`, …) are
-/// pointer-taxonomy sweep candidates, not typedef-loss rows.
+/// The line breaker's per-paragraph scratch.
 #[derive(Clone)]
 pub(crate) struct LinebreakState {
     pub last_leftmost_char: crate::units::MemPtr,
     pub last_rightmost_char: crate::units::MemPtr,
-    /// Heap-backed; sized `MAX_HLIST_STACK + 1` (= 513) in `Default`.
     pub hlist_stack: Vec<crate::units::MemPtr>,
     pub hlist_stack_level: i16,
     pub first_p: crate::units::MemPtr,
@@ -1750,9 +1429,7 @@ pub(crate) struct LinebreakState {
     pub second_width: i32,
     pub first_indent: i32,
     pub second_indent: i32,
-    /// The chosen best breakpoint's active node (set by `choose_best_break`;
-    /// `None` until then). Typed once here so the readers skip the
-    /// `active(..)` `from_idx_unchecked` re-cast.
+    /// The active node of the chosen breakpoint, once there is one.
     pub best_bet: Option<crate::node::NodePtr<crate::node::ActiveNode>>,
     pub best_line: i32,
     pub hn: i16,
@@ -1818,37 +1495,25 @@ impl Default for LinebreakState {
     }
 }
 
-// --- Owned-state locator for the one irreducible C++ callback ----------------
-// The engine state is OWNED by `tt_run_engine` (a `Box<EngineState>`). Every
-// access goes through `&mut EngineState` — with ONE exception that cannot
-// be: `font_feature_warning`, the macOS AAT `#[no_mangle]` callback that fires
-// mid-`loadAATfont` deep inside Core Text (xetex-macos.c, built only on macOS)
-// with no Rust frame in between to carry a borrow. For it alone, `tt_run_engine`
-// installs a raw pointer to its owned state here; the callback reads it via
-// `current_engine_state()`. This is a LOCATOR (re-established at each run entry),
-// NOT engine state — a clone captures the state,
-// not this pointer. Never used on the Linux build.
+// The macOS `font_feature_warning` callback fires inside Core Text with no Rust
+// frame to carry a borrow, so it finds the running engine through this pointer.
 thread_local! {
     static ENGINE_STATE_PTR: std::cell::Cell<*mut EngineState> =
         const { std::cell::Cell::new(std::ptr::null_mut()) };
 }
 
-/// Install (or clear, with a null pointer) the owner pointer for the current
-/// thread. Called by `tt_run_engine` at entry (set) and on every exit path (clear
-/// via a drop guard).
+/// Installs, or clears with null, the running engine for this thread.
 ///
-/// SAFETY: while non-null, `p` must point to an `EngineState` that outlives every
-/// `current_engine_state()` read on this thread until it is cleared.
+/// While non-null, `p` must outlive every `current_engine_state()` read until
+/// it is cleared.
 pub(crate) fn set_engine_state_ptr(p: *mut EngineState) {
     ENGINE_STATE_PTR.with(|c| c.set(p));
 }
 
-/// The current run's owned `EngineState`, for the macOS `font_feature_warning`
-/// callback only (see the module comment). Null outside a run.
+/// The running engine, null outside a run.
 ///
-/// SAFETY: the caller must not create an aliasing `&mut` while another borrow of
-/// the same `EngineState` is live; `font_feature_warning` runs inside a C font
-/// load with no other live Rust borrow.
+/// # Safety
+/// The caller must not alias another live borrow of the engine.
 pub(crate) unsafe fn current_engine_state() -> *mut EngineState {
     ENGINE_STATE_PTR.with(|c| c.get())
 }
@@ -2000,49 +1665,18 @@ impl ScannerState {
         crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(self.cur_val))
     }
 
-    #[inline]
-    pub(crate) fn native_len(&self) -> i32 {
-        self.native_len
+    /// Grows `native_text` until `extra` more units fit.
+    #[inline(always)]
+    pub(crate) fn reserve_native_text(&mut self, extra: i32) {
+        while self.native_text_size <= self.native_len + extra {
+            self.native_text_size += 128;
+            self.native_text.resize(self.native_text_size as usize, 0);
+        }
     }
-    #[inline]
-    pub(crate) fn set_native_len(&mut self, v: i32) {
-        self.native_len = v;
-    }
-    #[inline]
-    pub(crate) fn native_text_size(&self) -> i32 {
-        self.native_text_size
-    }
-    #[inline]
-    pub(crate) fn save_native_len(&self) -> i32 {
-        self.save_native_len
-    }
-    #[inline]
-    pub(crate) fn set_save_native_len(&mut self, v: i32) {
-        self.save_native_len = v;
-    }
-}
 
-impl FontState {
-    #[inline]
-    pub(crate) fn mapped_text_entry(&self, i: i32) -> u16 {
-        self.mapped_text[i as usize]
-    }
-}
-
-impl ShipoutState {
-    #[inline]
-    pub(crate) fn insert_src_special_auto(&self) -> bool {
-        self.insert_src_special_auto
-    }
-}
-
-impl HyphState {
-    #[inline]
-    pub(crate) fn is_hyph(&self) -> bool {
-        self.is_hyph
-    }
-    #[inline]
-    pub(crate) fn set_is_hyph(&mut self, v: bool) {
-        self.is_hyph = v;
+    #[inline(always)]
+    pub(crate) fn push_native_text(&mut self, c: u16) {
+        self.native_text[self.native_len as usize] = c;
+        self.native_len += 1;
     }
 }

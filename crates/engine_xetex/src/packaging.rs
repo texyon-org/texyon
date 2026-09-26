@@ -1632,7 +1632,7 @@ fn hpack_in(
                 mem.set_b16s0(GARBAGE, lig.character(mem));
                 GARBAGE.set_link(mem, lig.link(mem));
                 p = GARBAGE;
-                fonts.set_xtx_ligature_present(true);
+                fonts.xtx_ligature_present = true;
                 continue 'outer;
             }
             _ => {}

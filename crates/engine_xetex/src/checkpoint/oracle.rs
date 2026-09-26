@@ -1,8 +1,8 @@
 //! Named state digests used only to verify checkpoint restoration.
 
-use crate::globals::InputState;
 use crate::mem_types::{B32x2, ListStateRecord, MemoryWord};
 use crate::state::EngineState;
+use crate::state::InputState;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ComponentDigest {

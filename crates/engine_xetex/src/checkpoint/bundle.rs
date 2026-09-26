@@ -3,8 +3,8 @@
 use std::mem::{size_of, take};
 use std::sync::Arc;
 
-use crate::globals::InputState;
 use crate::mem_types::{B16x4, ListStateRecord, MemoryWord};
+use crate::state::InputState;
 use crate::state::{
     AbsPathBuf, ConfigState, EngineState, EqtbState, ErrorState, FontEngineHandle,
     FontMappingHandle, FontState, GroupCode, HyphState, InputClusterState, LinebreakState,
@@ -911,7 +911,7 @@ mod tests {
         st.strings.str_pool = vec![0; 16];
         st.strings.str_start = vec![0; 8];
         st.input.buffer = vec![0; 8];
-        st.input.input_stack = vec![crate::globals::InputState::default(); 4];
+        st.input.input_stack = vec![crate::state::InputState::default(); 4];
         st.input.param_stack = vec![0; 4];
         st.input.nest = vec![crate::mem_types::ListStateRecord::default(); 4];
         st.save_stack.data = crate::mem_types::zeroed_vec(4);
