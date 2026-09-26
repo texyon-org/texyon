@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\def\a#1#2#3#4#5#6#7#8#9{}\show\a
+\edef\b{\detokenize{#1##}}\show\b
+\toks0={a#1b##} \showthe\toks0
+\def\c#1#{x}\show\c
+\def\d#1\par#2{#1#2}\show\d
+\show\endtemplate
+\expandafter\show\csname endtemplate\endcsname
+\let\e=\endtemplate \show\e
+\setbox0\hbox{$\left(\right)\left.\right.\delimiter"4162362 \delimiter-1 \radical"270370 x$}\showbox0
+\glueexpr 1pt\relax
+\skip0=0pt plus 1fil minus 1filll \showthe\skip0
+\showthe\muskip0 \muskip0=1mu plus 1fill \showthe\muskip0
+\bye

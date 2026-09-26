@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\font\xa=xliga \font\xb=xligb
+
+\hyphenchar\xa=`- \hyphenchar\xb=`-
+\hyphenation{k-l-m-n-o k-a-b-c o-u-a-b u-a-b-c k-k-l ab-cd-ef s-s-t st-tt}
+\hsize=1pt \parindent=0pt \hbadness=10000 \hfuzz=\maxdimen \pretolerance=-1 \lefthyphenmin=1 \righthyphenmin=1
+\setbox0\vbox{\xa klmno kabc ouab uabc kkl abcdef ssst sttt\par}\showbox0
+\setbox0\vbox{\xb klmno kabc ouab uabc kkl abcdef ssst sttt\par}\showbox0
+\setbox0\vbox{\xa \noboundary klmno \noboundary kabc\noboundary\par}\showbox0
+\setbox0\vbox{\xa .klmno. (kabc) k-l\-mno\par}\showbox0
+\bye

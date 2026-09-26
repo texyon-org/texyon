@@ -1,0 +1,14 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\rpcode\tenrm`.=500 \rpcode\tenrm`,=700 \lpcode\tenrm`A=400 \lpcode\tenrm`(=600 \rpcode\tenrm`)=600
+\lpcode\tenrm`T=200 \rpcode\tenrm`-=800 \rpcode\tenrm`y=100 \lpcode\tenrm`"=900 \rpcode\tenrm`"=900
+\rpcode\lb`.=500 \lpcode\lb`A=300 \rpcode\lb`,=1000 \lpcode\lb`(=700 \rpcode\lb`)=700
+\hsize=120pt \parindent=0pt \tolerance=10000 \hbadness=10000 \hfuzz=\maxdimen
+
+\XeTeXprotrudechars=1
+\setbox0\vbox{\tenrm A test line with commas, and periods. And Another, line. (A.)\par}\showbox0
+\setbox0\vbox{\lb A test line with commas, and periods. And Another, line. (A.)\par}\showbox0
+\XeTeXprotrudechars=2
+\setbox0\vbox{\lb A test line with commas, and periods. And Another, line. (A.)\par}\showbox0
+\shipout\copy0
+\bye

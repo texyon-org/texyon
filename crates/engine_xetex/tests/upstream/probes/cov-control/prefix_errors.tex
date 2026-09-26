@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\global\hbox{}
+\long\count0=1 \outer\dimen0=1pt \protected\chardef\x=1
+\long\global\long\def\y{}\show\y
+\globaldefs=1 {\count5=7} \message{\the\count5}
+\globaldefs=-1 {\global\count6=7} \message{\the\count6}
+\globaldefs=0
+\countdef\cx=300 \let\cy=\cx \cy=5 \message{\the\cx}
+\toksdef\tx=400 \let\ty=\tx \ty={abc} \showthe\tx
+\global\global\global\let\cz=\cx \show\cz
+\protected\long\outer\def\pp{}\show\pp
+\global\relax\def\zz{}\show\zz
+\global\par
+\bye

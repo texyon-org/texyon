@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\Umathcodenum`a="1000000 \Umathcodenum`b="8000000 \Umathcodenum`c="1FFFFFF \Umathcodenum`d=-1
+\message{\the\Umathcodenum`a,\the\Umathcodenum`b,\the\Umathcodenum`c,\the\Umathcodenum`d}
+\Umathcharnumdef\x="1000000 \Umathcharnumdef\y="1FFFFFF \Umathcharnumdef\z="2000000
+\show\x \show\y \show\z
+\Umathcode`e="8000 \Umathcode`f=8 0 0 \Umathcode`g=0 0 "8000
+\message{\the\mathcode`a,\the\mathcode`e,\the\mathcode`g}
+\Umathchardef\w="1 "0 "8000 \show\w
+\setbox0\hbox{$\Umathcharnum"1000000 \Umathcharnum"2000041 \Umathcharnum -1 $}\showbox0
+\bye

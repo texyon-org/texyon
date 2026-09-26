@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\font\xa=xliga \font\xb=xligb
+
+\hsize=100pt \parindent=0pt \tolerance=10000
+\setbox0\vbox{\tenrm A line with\vadjust pre{\hrule height 1pt}\vadjust{\hrule height 2pt} adjusts in it, and more\vadjust pre{\kern3pt} words here to wrap lines.\par}\showbox0
+\setbox0\hbox{a\vadjust pre{\kern1pt}b}\showbox0
+\setbox0\vbox{\hbox{a\vadjust pre{\hrule}b\vadjust{\hrule height 3pt}}}\showbox0
+\setbox0\vbox{\noindent a\vadjust pre{x}\par}\showbox0
+\vadjust pre{\hrule}\showlists
+\setbox0\vbox{\tenrm $$a\vadjust pre{\hrule height 4pt}b\eqno c\vadjust pre{\kern5pt}$$\par}\showbox0
+\bye

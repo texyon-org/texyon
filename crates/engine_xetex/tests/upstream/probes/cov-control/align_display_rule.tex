@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\hsize=200pt \parindent=0pt
+\hangindent=30pt \hangafter=-5
+x $$\halign{#\hfil&\hfil#\cr a&b\cr\noalign{\hrule}cc&d\cr\noalign{\hrule height 2pt\vskip2pt}}\showlists$$ y\par
+\parshape 2 10pt 100pt 25pt 150pt
+x\par
+x $$\halign to 100pt{#\tabskip 0pt plus 10pt&#\cr a&b\cr\noalign{\hrule}\omit\span\omit x\cr}$$\par
+\setbox0\vbox{\valign{#\vfil&\vfil#\cr \hbox{a}&\hbox{b}\cr\noalign{\vrule}\hbox{c}\span\hbox{d}\cr}}\showbox0
+\setbox0\vbox{\valign{\hbox{#}&\hbox{#}&\hbox{#}\cr a\span b&c\cr d&e&f\cr}}\showbox0
+\setbox0\hbox{\valign to 30pt{\hbox{#}\vfil&\hbox{#}\cr a&b\cr c\span d\cr\noalign{\vrule width 2pt}}}\showbox0
+\bye

@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\muskip1=3mu plus 2fil minus 1mu \muskip0=2\muskip1 \message{\the\muskip0}
+\muskip0=-\muskip1 \message{\the\muskip0} \muskip0=-.5\thinmuskip \message{\the\muskip0}
+\muskip0=\skip1 \message{\the\muskip0}
+\muskip0=2\skip1 \message{\the\muskip0}
+\muskip0=1\dimen1 \message{\the\muskip0}
+\setbox0\hbox{$a\mkern\thinmuskip b\mkern-\medmuskip c\mskip-\thickmuskip d\mkern 2\muskip1 e\mskip\muskip1 f$}\showbox0
+\setbox0\hbox{$a\mkern\dimen1 b\mskip\skip1 c\mkern1pt d$}\showbox0
+\message{\the\numexpr\muskip1\relax}
+\bye

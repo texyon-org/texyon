@@ -1,0 +1,22 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+
+\font\a="[LinLibertine_R_G.ttf]:script=latn;language=DEU;+smcp" at 16pt
+\font\b="[LinLibertine_R_G.ttf]:embolden=2" at 16pt
+\font\c="[LinLibertine_R_G.ttf]:shaper=ot" at 16pt
+\font\d="[LinLibertine_R_G.ttf]:shaper=fallback" at 16pt
+\font\e="[LinLibertine_R_G.ttf]:vertical" at 16pt
+\font\f="[LinLibertine_R_G.ttf]:vertical;" at 16pt
+\font\g="[LinLibertine_R_G.ttf]/OT:+liga" at 16pt
+\font\h="[LinLibertine_R_G.ttf]/ICU" at 16pt
+\font\i="[LinLibertine_R_G.ttf]:  +kern ; -liga ;junk=abc; smcp" at 16pt
+\font\j="[LinLibertine_R_G.ttf:0]" at 16pt
+\font\k="[LinLibertine_R_G.ttf]:extend=0.5;slant=-0.25" at 16pt
+\font\l="[LinLibertine_R_G.ttf]:letterspace=-6.25;color=FF0000" at 16pt
+\font\m="[LinLibertine_R_G.ttf]:color=12345" at 16pt
+\font\n="[LinLibertine_R_G.ttf]:mapping=nonexistentmap" at 16pt
+\font\o="[LinLibertine_R_G.ttf]" scaled 2000 \font\p="[LinLibertine_R_G.ttf]" scaled -500
+\setbox0\hbox{\a Office\b Office\c Office\d Office\g Office\h Office\i Office\j Office\k Office\l Office\m Off\o O\p O}\showbox0
+\setbox0\hbox{\e Office\f AB}\showbox0 \shipout\box0
+\message{\fontname\a|\fontname\e|\fontname\j|\fontname\o|\fontname\p}
+\bye

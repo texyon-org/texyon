@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\setbox0\vtop{\vbox{\hrule height 3pt}\hbox{x}}\showbox0
+\setbox0\vtop{\hrule height 4pt depth 1pt\hbox{x}}\showbox0
+\setbox0\vtop{\kern2pt\hbox{x}}\showbox0
+\setbox0\vtop{}\showbox0
+\setbox0\vtop to 20pt{\hbox{y}\vfil}\showbox0
+\setbox0\vtop spread 5pt{\vbox{\hbox{y}}\vss}\showbox0
+\bye

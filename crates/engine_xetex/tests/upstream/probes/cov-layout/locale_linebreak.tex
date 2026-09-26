@@ -1,0 +1,11 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\font\xa=xliga \font\xb=xligb
+
+\hsize=60pt \parindent=0pt \tolerance=10000
+\XeTeXlinebreaklocale "en" \XeTeXlinebreakpenalty=50
+\setbox0\vbox{\lb abc—def–ghi/jkl mno\par}\showbox0
+\XeTeXlinebreakskip=0pt plus 1pt \XeTeXlinebreakpenalty=0
+\setbox0\vbox{\lb abc—def–ghi/jkl mno\par}\showbox0
+\XeTeXlinebreaklocale "" \setbox0\vbox{\lb abc—def\par}\showbox0
+\bye

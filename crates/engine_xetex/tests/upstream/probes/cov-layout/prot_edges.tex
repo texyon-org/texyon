@@ -1,0 +1,15 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\font\lb="[LinLibertine_R_G.ttf]" at 16pt \font\ls="[LinLibertine_R_G.ttf]" at 8pt
+\rpcode\tenrm`.=500 \rpcode\tenrm`,=700 \lpcode\tenrm`A=400 \lpcode\tenrm`(=600 \rpcode\tenrm`)=600
+\lpcode\tenrm`T=200 \rpcode\tenrm`-=800 \rpcode\tenrm`y=100 \lpcode\tenrm`"=900 \rpcode\tenrm`"=900
+\rpcode\lb`.=500 \lpcode\lb`A=300 \rpcode\lb`,=1000 \lpcode\lb`(=700 \rpcode\lb`)=700
+\hsize=120pt \parindent=0pt \tolerance=10000 \hbadness=10000 \hfuzz=\maxdimen
+
+\XeTeXprotrudechars=2
+\setbox0\vbox{\tenrm A\discretionary{}{}{} test, with dis\-cre\-tion\-ary hy\-phens in the lines; really.\par}\showbox0
+\setbox0\vbox{\tenrm $x$A math first, $y$ then a kern\kern3pt. And a penalty\penalty50. Yes, yes, yes.\par}\showbox0
+\setbox0\vbox{\tenrm \leftskip 3pt\rightskip 4pt A test with skips, and more words, and more.\par}\showbox0
+\setbox0\vbox{\tenrm \noindent\kern0pt A zero kern at start, with more text, that goes on.\par}\showbox0
+\setbox0\vbox{\tenrm ``A'' quoted text, (in parentheses), for the margins -- and dashes---\par}\showbox0
+\setbox0\vbox{\tenrm office fluffy. ff. fi, fl. A ligature at the end of lines, office.\par}\showbox0
+\bye

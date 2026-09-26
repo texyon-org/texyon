@@ -259,7 +259,8 @@ def xdv_pages(path):
             out.append(f"fnt {u(op - 234)}")
         elif 239 <= op <= 242:
             n = u(op - 238)
-            out.append(f"xxx {b[i:i + n]!r}")
+            # kpathsea reports the path it found, as in the log.
+            out.append(f"xxx {b[i:i + n].replace(b'(./', b'(')!r}")
             i += n
         elif 243 <= op <= 246:
             f = u(op - 242)

@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\font\lg="[LinLibertine_R_G.ttf]/GR" at 16pt
+\message{\the\XeTeXcountfeatures\lg}
+\count1=\XeTeXfeaturecode\lg 0 \message{\the\count1:\XeTeXfeaturename\lg\count1:\the\XeTeXcountselectors\lg\count1}
+\count2=\XeTeXselectorcode\lg\count1 0 \message{\the\count2:\XeTeXselectorname\lg\count1\count2}
+\count1=\XeTeXfeaturecode\lg 3 \message{\the\count1:\XeTeXfeaturename\lg\count1}
+\message{\the\XeTeXfindfeaturebyname\lg nonexistent\relax|\the\XeTeXfindselectorbyname\lg\count1 nonexistent\relax}
+\bye

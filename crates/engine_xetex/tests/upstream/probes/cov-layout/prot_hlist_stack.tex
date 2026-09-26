@@ -1,0 +1,12 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\rpcode\tenrm`.=500 \rpcode\tenrm`,=700 \lpcode\tenrm`A=400 \lpcode\tenrm`(=600 \rpcode\tenrm`)=600
+\hsize=120pt \parindent=0pt \tolerance=10000 \hbadness=10000 \hfuzz=\maxdimen
+\XeTeXprotrudechars=2
+\setbox0\vbox{\tenrm \hbox{\kern0pt}A line starting with a kern box, and ending with one, x.\hbox{\kern0pt}\par}\showbox0
+\setbox0\vbox{\tenrm \hbox{\hbox{\penalty0}}(A) nested empties at the start, and so forth. x,\hbox{\hbox{\penalty0}}\par}\showbox0
+\setbox0\vbox{\tenrm \hbox{\kern0pt\hbox{A}}line with a box holding a char, and so on. \hbox{x.\kern0pt}\par}\showbox0
+\setbox0\vbox{\tenrm \hbox{\hbox{\kern0pt}\kern0pt}\hbox{A}B line two boxes, and more text here. \hbox{x,}\hbox{\kern0pt}\par}\showbox0
+\setbox0\vbox{\tenrm \hbox{\hbox{\hbox{\hbox{A}}}}deep nesting, of boxes here, and more. \hbox{\hbox{\hbox{x.}}}\par}\showbox0
+\setbox0\vbox{\tenrm \hbox{\mark{m}\kern0pt}A marks and inserts, in the edge box. \hbox{x.\mark{n}}\par}\showbox0
+\setbox0\vbox{\tenrm \hbox{$$}A math in box, edge, more text and more text. \hbox{x.$$}\par}\showbox0
+\bye

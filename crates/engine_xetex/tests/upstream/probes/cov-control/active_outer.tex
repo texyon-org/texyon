@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+
+\catcode`\~=13 \outer\def~{T}
+\iffalse ~ \fi
+\def\a#1{}\a~
+\message{~}
+\catcode`\!=13 \def!{BANG}\let\b=! \show\b \message{\meaning!}
+\bye
