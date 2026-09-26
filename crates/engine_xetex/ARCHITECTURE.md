@@ -88,7 +88,29 @@ The typesetting pipeline:
   conditionals), `main_control.rs` (the main loop, command verbs, alignments).
 - `linebreak.rs` (paragraphs, hyphenation passes), `hyphenation.rs` (patterns
   and exceptions), `packaging.rs` (`hpack`, `vpack`, `vert_break`, `vsplit`),
-  `pagebuilder.rs`, `math.rs` (`mlist_to_hlist`), `shipout.rs` (XDV output).
+  `pagebuilder.rs`, `math.rs` (`mlist_to_hlist`), `shipout.rs` (`ship_out`,
+  `hlist_out`, `vlist_out`).
+- `dvi.rs`: `DviWriter` (`st.shipout.dvi`), the XDV byte stream. It owns
+  TeX's half-swapped `dvi_buf`, the file handle, `last_bop`, the push depth
+  (`cur_s`, -2 after an overflow) and the page manifest that records byte
+  spans for live preview. Shipout calls commands (`bop`, `eop`, `set_char`,
+  `set_rule`, `fnt`, `fnt_def`, `set_glyphs`, `special`, `movement`, ...),
+  never opcodes. `enter_level`/`leave_level` are `hlist_out`'s push and pop
+  (an empty box's `push` is taken back). Preamble and postamble are split in
+  two around `prepare_mag`, which can still report an error, as in WEB.
+  `movement` optimization stays in `shipout.rs` (it needs `mem`) and patches
+  earlier movements with `set_reg_at`.
+- Font metrics (`fonts.rs`): `st.fonts.char_info(f, c)` is a `CharInfo`
+  view (`exists()`, `tag()` as `CharTag::{None, Lig, List, Ext}`,
+  `remainder()`), measured with `char_width`/`char_height`/`char_depth`/
+  `char_italic`. `char_exists(f, c)` adds the `font_bc..=font_ec` check.
+  Lig/kern programs are `LigKernStep`s: `lig_kern_start(f, i)` returns the
+  first instruction and its index (following a redirect), `lig_kern_step(k)`
+  reads one, and a step knows `matches(c)`, `is_last()`, `is_kern()`,
+  `lig_op()`, `lig_char()` and `next_index(k)`. `char_kern(f, step)` and
+  `ext_recipe(f, i)` (an `ExtRecipe` of `top`/`mid`/`bot`/`rep`) complete the
+  set, and `param(f, n)` reads a font parameter. The TFM reader stores raw
+  words, only these views interpret them.
 - `fonts.rs` (TFM and font parameters), `ext.rs` and `ot_math.rs` (OpenType
   and Graphite through `tectonic_xetex_layout`), `pic.rs` (pictures).
 - `save.rs` (save stack, `eqtb` definitions, sparse registers), `hash.rs`,
