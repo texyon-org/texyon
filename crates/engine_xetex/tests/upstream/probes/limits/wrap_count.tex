@@ -1,0 +1,20 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count9=2147483647 \advance\count9 by 1 \showthe\count9
+\count8=-\count9 \showthe\count8
+\count7=\count9 \multiply\count7 by -1 \showthe\count7
+\count6=\count9 \divide\count6 by -1 \showthe\count6
+\count5=\count9 \advance\count5 by \count9 \showthe\count5
+\message{\number\count9 \romannumeral\count9 }
+\dimen0=\maxdimen \advance\dimen0\maxdimen \advance\dimen0\maxdimen \showthe\dimen0
+\dimen1=-\dimen0 \showthe\dimen1
+\dimen2=\count9 sp \showthe\dimen2
+\skip0=\maxdimen plus\maxdimen minus\maxdimen \advance\skip0\skip0 \advance\skip0\skip0 \showthe\skip0
+\skip1=-\skip0 \showthe\skip1
+\muskip0=\maxdimen mu plus 1fill \advance\muskip0\muskip0 \advance\muskip0\muskip0 \showthe\muskip0
+\showthe\numexpr\count9\relax
+\showthe\numexpr-\count9\relax
+\showthe\numexpr\count9/-1\relax
+\showthe\numexpr\count9*-1\relax
+\showthe\dimexpr\dimen0*2\relax
+\showthe\glueexpr\skip0*2\relax
+\bye

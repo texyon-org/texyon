@@ -1,0 +1,8 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count9=2147483647 \advance\count9 by 1 \setrandomseed\count9 \showthe\randomseed
+\showthe\numexpr\uniformdeviate\count9\relax
+\showthe\numexpr\uniformdeviate 2147483647\relax
+\showthe\numexpr\uniformdeviate -2147483647\relax
+\setrandomseed 2147483647 \showthe\numexpr\normaldeviate\relax
+\setrandomseed -2147483647 \showthe\numexpr\normaldeviate\relax
+\bye

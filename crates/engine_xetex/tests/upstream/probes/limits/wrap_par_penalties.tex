@@ -1,0 +1,13 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\hsize=20pt \parindent=0pt \pretolerance=-1 \tolerance=10000
+\interlinepenalty=2000000000 \clubpenalty=2000000000 \widowpenalty=2000000000 \brokenpenalty=2000000000
+\setbox0\vbox{a b c d e f g h\par}\showbox0
+\interlinepenalty=-2000000000 \clubpenalty=-2000000000 \widowpenalty=-2000000000
+\setbox0\vbox{a b c d e f g h\par}\showbox0
+\interlinepenalties=3 2000000000 2000000000 2000000000 \clubpenalties=2 2000000000 2000000000
+\widowpenalties 2 2000000000 2000000000
+\setbox0\vbox{a b c d e f g h\par}\showbox0
+\interlinepenalties=0 \clubpenalties=0 \widowpenalties=0
+\displaywidowpenalty=2000000000 \interlinepenalty=2000000000
+\setbox0\vbox{a b c $$x$$ d e f\par}\showbox0
+\bye

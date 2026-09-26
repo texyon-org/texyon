@@ -1,0 +1,17 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\count9=2147483647 \advance\count9 by 1 \prevgraf=2147483647 \setbox0\vbox{\noindent a \prevgraf=2147483647 $$x$$ \showthe\prevgraf b\par}
+\setbox0\vbox{\hsize=10pt \noindent a\par \prevgraf=2147483646 \noindent b c d e f\par\showthe\prevgraf}
+\baselineskip=\maxdimen plus\maxdimen \lineskiplimit=-\maxdimen \lineskip=\maxdimen
+\setbox0\vbox{\hbox{\vrule depth\maxdimen}\hbox{\vrule height\maxdimen}\prevdepth=-\maxdimen\hbox{x}}\showbox0
+\setbox0\vbox{\hbox{}\prevdepth=\maxdimen\hbox{}}\showbox0
+\font\big=cmr10 at 2047.99998pt \setbox0\hbox{\big AVAVAV W\kern\maxdimen}\showbox0
+\setbox0\hbox{\big\spaceskip=\maxdimen plus\maxdimen \xspaceskip\maxdimen a. b\sfcode`a=32767 a b}\showbox0
+\fontdimen2\big=\maxdimen \fontdimen3\big=\maxdimen \fontdimen7\big=\maxdimen
+\setbox0\hbox{\big\spacefactor=32767 \ \sfcode`x=32767 x. y}\showbox0
+\setbox0\hbox{\hbox to\maxdimen{\xleaders\hbox to \maxdimen{}\hfil}\cleaders\hbox to 2pt{}\hskip\maxdimen}\showbox0
+\setbox0\vbox{\vbox to\maxdimen{\xleaders\vbox to \maxdimen{}\vfil}\cleaders\vbox to 2pt{}\vskip\maxdimen}\showbox0
+\showboxdepth=\count9 \showboxbreadth=\count9 \showbox0
+\errorcontextlines=\count9 \undefinedcs
+\escapechar=\count9 \message{\string\relax}
+\newlinechar=\count9 \endlinechar=\count9
+\bye

@@ -1,0 +1,9 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\setbox1\vbox{\kern\maxdimen\penalty2000000000\kern\maxdimen\penalty-2000000000\hbox{}\kern\maxdimen\hbox{}}
+\splitmaxdepth=\maxdimen \splittopskip=\maxdimen plus\maxdimen
+\setbox2\vsplit1 to \maxdimen \showbox1 \showbox2
+\setbox1\vbox{\hbox{a}\vskip\maxdimen minus\maxdimen\hbox{b}\vskip 0pt minus 1fil\hbox{c}\penalty2000000000\hbox{d}}
+\setbox2\vsplit1 to -\maxdimen \showbox1 \showbox2
+\setbox1\vbox{\mark{a}\hbox{a}\marks3{b}\kern\maxdimen\kern\maxdimen\hbox{b}}
+\setbox2\vsplit1 to 1pt \showbox2 \message{\splitfirstmark\splitbotmarks3}
+\bye

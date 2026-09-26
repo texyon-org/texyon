@@ -1,0 +1,6 @@
+\immediate\write-1{}\scrollmode\tracingonline1 \showboxdepth\maxdimen \showboxbreadth\maxdimen
+\tabskip=\maxdimen plus\maxdimen
+\setbox0\vbox{\halign to\maxdimen{#\tabskip\maxdimen&#&#\cr a&b&c\cr \noalign{\kern\maxdimen} \hskip\maxdimen\hskip\maxdimen&\span\hskip\maxdimen\cr}}\showbox0
+\setbox0\hbox{\valign{#\vskip\maxdimen\tabskip-\maxdimen&#\cr \hbox{a}\vskip\maxdimen\vskip\maxdimen&\hbox{b}\cr}}\showbox0
+\setbox0\vbox{\halign spread-\maxdimen{#\tabskip 0pt minus\maxdimen&#\cr a&b\cr}}\showbox0
+\bye
