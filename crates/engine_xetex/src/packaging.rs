@@ -555,10 +555,7 @@ impl ListStateRecord {
     }
 }
 
-pub(crate) fn append_to_vlist_emit(
-    st: &mut EngineState,
-    b: AnyBox,
-) -> Result<(), NodeRecycleAbort> {
+pub(crate) fn append_to_vlist(st: &mut EngineState, b: AnyBox) -> Result<(), NodeRecycleAbort> {
     st.input.cur_list.append_to_vlist(&mut st.mem, &st.eqtb, b)
 }
 
@@ -1814,7 +1811,7 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
 }
 
 /// `hpack`, printing its over/underfull diagnostics in order.
-pub(crate) fn hpack_emit(
+pub(crate) fn hpack(
     st: &mut EngineState,
     list: MemPtr,
     w: i32,
@@ -2058,7 +2055,7 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
 }
 
 /// `vpackage`, printing its over/underfull diagnostics in order.
-pub(crate) fn vpackage_emit(
+pub(crate) fn vpackage(
     st: &mut EngineState,
     list: MemPtr,
     h: i32,

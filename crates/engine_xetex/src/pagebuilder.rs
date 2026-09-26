@@ -225,7 +225,7 @@ fn place_insertion(
             .prune_page_top(&mut st.scanner, &st.eqtb, broken_ptr.0, false)?;
         ins.set_ins_ptr(&mut st.mem, pruned);
         if !pruned.is_null() {
-            let tmp = crate::packaging::vpackage_emit(st, pruned, 0, ADDITIONAL, MAX_HALFWORD)?;
+            let tmp = crate::packaging::vpackage(st, pruned, 0, ADDITIONAL, MAX_HALFWORD)?;
             let size = tmp.height(&st.mem).0 + tmp.depth(&st.mem).0;
             ins.set_height(&mut st.mem, Scaled(size));
             st.mem.free_node(tmp.ptr(), BOX_NODE_SIZE);
@@ -237,7 +237,7 @@ fn place_insertion(
     let b = fetch_box(st, n as i32).expect("insertion box made in fire_up");
     let list = b.list_ptr(&st.mem);
     st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-    let packed = crate::packaging::vpackage_emit(st, list, 0, ADDITIONAL, MAX_HALFWORD)?;
+    let packed = crate::packaging::vpackage(st, list, 0, ADDITIONAL, MAX_HALFWORD)?;
     st.eqtb.set_box_reg(n as i32, packed.ptr());
     Ok(wait)
 }
@@ -362,7 +362,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
     st.eqtb.set_int_par(INT_PAR_VBADNESS, INF_BAD);
     let save_vfuzz = st.eqtb.dimen_par(DIMEN_PAR_VFUZZ);
     st.eqtb.set_dimen_par(DIMEN_PAR_VFUZZ, MAX_HALFWORD);
-    let page = crate::packaging::vpackage_emit(
+    let page = crate::packaging::vpackage(
         st,
         PAGE_HEAD.link(&st.mem),
         st.shipout.best_size,

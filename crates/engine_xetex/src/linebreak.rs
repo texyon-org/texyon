@@ -2172,7 +2172,7 @@ fn post_line_break(st: &mut EngineState, d: bool) -> PostLineBreakOutcome {
         } else {
             (hpack.cur_width, EXACTLY)
         };
-        let just_box = match crate::packaging::hpack_emit(st, hpack.q, w, m) {
+        let just_box = match crate::packaging::hpack(st, hpack.q, w, m) {
             Ok(b) => b,
             Err(e) => return PostLineBreakOutcome::Node(e),
         };

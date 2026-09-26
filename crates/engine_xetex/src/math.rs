@@ -323,7 +323,7 @@ fn clean_box(
     };
     let x_box = match lone_box {
         Some(b) => b,
-        None => crate::packaging::hpack_emit(st, q, 0, ADDITIONAL)?,
+        None => crate::packaging::hpack(st, q, 0, ADDITIONAL)?,
     };
 
     let head = x_box.list_ptr(&st.mem);
@@ -454,7 +454,7 @@ fn make_over(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbor
         .fonts
         .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
     let p = st.mem.overbar(x, 3 * rule_thickness, rule_thickness)?;
-    let x = crate::packaging::vpackage_emit(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
+    let x = crate::packaging::vpackage(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
     st.mem.set_nucleus_box(q, x);
     Ok(())
 }
@@ -472,7 +472,7 @@ fn make_under(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbo
     let rule = st.mem.fraction_rule(rule_thickness)?;
     kern.set_link(&mut st.mem, rule.ptr());
 
-    let y = crate::packaging::vpackage_emit(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+    let y = crate::packaging::vpackage(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
     let mem = &mut st.mem;
     let delta = y.height(mem).0 + y.depth(mem).0 + rule_thickness;
     y.set_height(mem, x.height(mem));
@@ -539,9 +539,9 @@ fn make_radical(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildA
     }
     y.set_shift_amount(mem, Scaled(-(x.height(mem).0 + clr)));
     let p = mem.overbar(x, clr, y.height(mem).0)?;
-    let overbar_box = crate::packaging::vpackage_emit(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
+    let overbar_box = crate::packaging::vpackage(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
     y.set_link(&mut st.mem, overbar_box.ptr());
-    let hbox = crate::packaging::hpack_emit(st, y.ptr(), 0, ADDITIONAL)?;
+    let hbox = crate::packaging::hpack(st, y.ptr(), 0, ADDITIONAL)?;
     st.mem.set_nucleus_box(q, hbox);
     Ok(())
 }
@@ -730,7 +730,7 @@ fn make_fraction(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuild
     let right_delim = var_delimiter(st, q.right_delimiter(), cur_size, delimiter_size)?;
     left_delim.set_link(&mut st.mem, v.ptr());
     v.set_link(&mut st.mem, right_delim.ptr());
-    let hbox = crate::packaging::hpack_emit(st, left_delim.ptr(), 0, ADDITIONAL)?;
+    let hbox = crate::packaging::hpack(st, left_delim.ptr(), 0, ADDITIONAL)?;
     q.set_new_hlist(&mut st.mem, hbox.ptr());
     Ok(())
 }
@@ -1240,7 +1240,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
     y.set_width(&mut st.mem, Scaled(0));
     let v = if bottom_accent {
         x.set_link(&mut st.mem, y.ptr());
-        let v = crate::packaging::vpackage_emit(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+        let v = crate::packaging::vpackage(st, x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
         let v_height = v.height(&st.mem).0;
         v.set_shift_amount(&mut st.mem, Scaled(-(h - v_height)));
         v
@@ -1248,7 +1248,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
         let kern = st.mem.new_kern(-delta).ok_or(NodeRecycleAbort::Overflow)?;
         kern.set_link(&mut st.mem, x.ptr());
         y.set_link(&mut st.mem, kern.ptr());
-        let v = crate::packaging::vpackage_emit(st, y.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+        let v = crate::packaging::vpackage(st, y.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
         let mem = &mut st.mem;
         if v.height(mem).0 < h {
             let kern = mem
@@ -1388,7 +1388,7 @@ fn initial_script_shifts(st: &mut EngineState, p: MemPtr) -> Result<ScriptShifts
     if st.mem.is_char_node(p) || st.mem.glyph_whatsit(p).is_some() {
         Ok(ScriptShifts { up: 0, down: 0 })
     } else {
-        let zb = crate::packaging::hpack_emit(st, p, 0, ADDITIONAL)?;
+        let zb = crate::packaging::hpack(st, p, 0, ADDITIONAL)?;
         let t = if st.scanner.cur_style < SCRIPT_STYLE {
             SCRIPT_SIZE
         } else {
@@ -1465,7 +1465,7 @@ fn finish_subsup_stack(
     input.x.set_link(&mut st.mem, kern.ptr());
     kern.set_link(&mut st.mem, input.y.ptr());
 
-    let packaged = crate::packaging::vpackage_emit(st, input.x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
+    let packaged = crate::packaging::vpackage(st, input.x.ptr(), 0, ADDITIONAL, MAX_HALFWORD)?;
     packaged.set_shift_amount(&mut st.mem, Scaled(input.shift_down));
     st.mem.append_to_new_hlist(input.q, packaged.ptr());
     Ok(())
@@ -1936,7 +1936,7 @@ fn mlist_nucleus(
             let mlist = qn.nucleus().info(&st.mem);
             let style = st.scanner.cur_style;
             let list = sublist_to_hlist(st, mlist, style)?;
-            crate::packaging::hpack_emit(st, list, 0, ADDITIONAL)?.ptr()
+            crate::packaging::hpack(st, list, 0, ADDITIONAL)?.ptr()
         }
         _ => return Err(NodeRecycleAbort::Confusion(c"mlist2").into()),
     };
@@ -2117,7 +2117,7 @@ fn mlist_to_hlist(st: &mut EngineState) -> Result<(), MathBuildAbort> {
                     mlist_nucleus(st, qn, delta)?;
                 }
                 let list = qn.new_hlist(&st.mem);
-                let z_box = crate::packaging::hpack_emit(st, list, 0, ADDITIONAL)?;
+                let z_box = crate::packaging::hpack(st, list, 0, ADDITIONAL)?;
                 st.mem.mlist_track_box(z_box, &mut max_h, &mut max_d);
                 qn
             }
@@ -3161,7 +3161,7 @@ fn app_display(
     let x = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION);
     if x == 0 {
         orig.set_shift_amount(&mut st.mem, Scaled(s + d));
-        crate::packaging::append_to_vlist_emit(st, orig)?;
+        crate::packaging::append_to_vlist(st, orig)?;
         return Ok(());
     }
 
@@ -3264,13 +3264,13 @@ fn app_display(
         u.set_link(&mut st.mem, r);
         match copy {
             None => {
-                b = crate::packaging::hpack_emit(st, u, 0, ADDITIONAL)?;
+                b = crate::packaging::hpack(st, u, 0, ADDITIONAL)?;
                 b.set_shift_amount(&mut st.mem, Scaled(s));
             }
             Some(bc) => bc.set_list_ptr(&mut st.mem, u),
         }
     }
-    crate::packaging::append_to_vlist_emit(st, b)?;
+    crate::packaging::append_to_vlist(st, b)?;
     Ok(())
 }
 
@@ -3351,7 +3351,7 @@ pub(crate) fn after_math(
         st.scanner.cur_style = TEXT_STYLE;
         st.scanner.mlist_penalties = false;
         mlist_to_hlist(st).map_err(math_build_abort_main)?;
-        let eqno = crate::packaging::hpack_emit(st, TEMP_HEAD.link(&st.mem), 0, ADDITIONAL)?;
+        let eqno = crate::packaging::hpack(st, TEMP_HEAD.link(&st.mem), 0, ADDITIONAL)?;
         eqno.set_subtype(&mut st.mem, DLIST);
         a = Some(eqno);
         crate::save::unsave(st)?;
@@ -3410,7 +3410,7 @@ pub(crate) fn after_math(
     let mut p = TEMP_HEAD.link(&st.mem);
     st.scanner.adjust_tail = ADJUST_HEAD;
     st.scanner.pre_adjust_tail = PRE_ADJUST_HEAD;
-    let mut b = crate::packaging::hpack_emit(st, p, 0, ADDITIONAL)?;
+    let mut b = crate::packaging::hpack(st, p, 0, ADDITIONAL)?;
     p = b.list_ptr(&st.mem);
     let t = st.scanner.adjust_tail.0;
     st.scanner.adjust_tail.0 = TEX_NULL;
@@ -3441,12 +3441,12 @@ pub(crate) fn after_math(
                 || st.scanner.total_shrink[FILLL as usize] != 0)
         {
             st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-            b = crate::packaging::hpack_emit(st, p, z - q, EXACTLY)?;
+            b = crate::packaging::hpack(st, p, z - q, EXACTLY)?;
         } else {
             e = 0;
             if w > z {
                 st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
-                b = crate::packaging::hpack_emit(st, p, z, EXACTLY)?;
+                b = crate::packaging::hpack(st, p, z, EXACTLY)?;
             }
         }
         w = b.width(&st.mem).0;
@@ -3507,7 +3507,7 @@ pub(crate) fn after_math(
             b.set_link(&mut st.mem, r.ptr());
             r.set_link(&mut st.mem, eqno.ptr());
         }
-        b = crate::packaging::hpack_emit(st, b.ptr(), 0, ADDITIONAL)?;
+        b = crate::packaging::hpack(st, b.ptr(), 0, ADDITIONAL)?;
     }
 
     app_display(st, j, b, d)?;
@@ -3833,7 +3833,7 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), crate::main_control:
 fn rebox(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecycleAbort> {
     let mut b = b;
     if b.width(&st.mem).0 != w && !b.list_ptr(&st.mem).is_null() && matches!(b, AnyBox::VList(_)) {
-        b = crate::packaging::hpack_emit(st, b.ptr(), 0, ADDITIONAL)?;
+        b = crate::packaging::hpack(st, b.ptr(), 0, ADDITIONAL)?;
     }
     if b.width(&st.mem).0 == w || b.list_ptr(&st.mem).is_null() {
         b.set_width(&mut st.mem, Scaled(w));
@@ -3861,7 +3861,7 @@ fn rebox(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecycleA
     }
     let tail_glue = mem.new_glue(SS_GLUE).ok_or(NodeRecycleAbort::Overflow)?;
     p.set_link(mem, tail_glue.ptr());
-    crate::packaging::hpack_emit(st, g.ptr(), w, EXACTLY)
+    crate::packaging::hpack(st, g.ptr(), w, EXACTLY)
 }
 
 fn build_opentype_assembly(
