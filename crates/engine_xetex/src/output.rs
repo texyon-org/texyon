@@ -75,7 +75,8 @@ use crate::math::{
 };
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{
-    AnyBox, AnyNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
+    AnyBox, AnyNode, CondNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode,
+    WhatsitSubtype,
 };
 use crate::packaging::EXACTLY;
 use crate::save::DIMEN_VAL_LIMIT;
@@ -539,6 +540,12 @@ pub(crate) fn error_here_with_diagnostic_in(
     print_cstr_in(st, message);
     capture_to_diagnostic_in(st, error);
     error
+}
+
+/// TeX's `print_err`: starts an error with `message` and closes its diagnostic.
+pub(crate) fn print_err_in(st: &mut EngineState, message: &std::ffi::CStr) {
+    error_here_with_diagnostic_in(st, message.as_ptr());
+    capture_to_diagnostic_in(st, std::ptr::null_mut());
 }
 
 /// Starts an error line with `! ` or, in file:line:error style, the source position.
@@ -1984,19 +1991,8 @@ fn print_if_line_in(st: &mut EngineState, line: i32) {
 
 /// Pops the save-stack group boundary at `save_ptr` into `cur_group`.
 fn leave_group_boundary(st: &mut EngineState) {
-    let sp = st.save_stack.save_ptr;
-    st.save_stack.cur_group =
-        GroupCode::from_raw(st.save_stack.b16s0(sp) as u8).expect("valid group code");
-    st.save_stack.save_ptr = st.save_stack.b32s1(sp);
-}
-
-/// The saved `(cur_if, if_line, if_limit)` of the conditional below cond node `p`.
-fn saved_cond_state(st: &EngineState, p: MemPtr) -> (i16, i32, u8) {
-    (
-        st.mem.b16s0(p) as i16,
-        st.mem.b32s1(p + 1),
-        st.mem.b16s1(p) as u8,
-    )
+    let ss = &mut st.save_stack;
+    (ss.cur_group, ss.save_ptr) = ss.boundary_at(ss.save_ptr);
 }
 
 pub(crate) fn file_warning_in(st: &mut EngineState) {
@@ -2033,8 +2029,8 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
         print_if_line_in(st, st.scanner.if_line);
         print_cstr_in(st, c" is incomplete".as_ptr());
         capture_to_diagnostic_in(st, std::ptr::null_mut());
-        let cond = st.scanner.cond_ptr;
-        (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = saved_cond_state(st, cond);
+        let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
+        (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = cond.saved_state(&st.mem);
         st.scanner.cond_ptr = cond.link(&st.mem);
     }
     st.scanner.cond_ptr = saved_cond;
@@ -2654,7 +2650,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
                     }
                     print_if_line_in(st, l);
                     n -= 1;
-                    (t, l, m) = saved_cond_state(st, p);
+                    (t, l, m) = NodePtr::<CondNode>::at(p).saved_state(&st.mem);
                     p = p.link(&st.mem);
                 }
             }

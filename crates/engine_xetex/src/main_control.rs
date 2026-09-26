@@ -2,27 +2,27 @@
 //! alignment family (= xetex0.c's main_control group).
 
 use crate::consts::{
-    ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_LANG, BIGGEST_USV,
-    BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE,
-    CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_BOX_MAX_DEPTH,
-    DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_OVERFULL_RULE,
-    DIMEN_PAR_PAR_INDENT, DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE,
-    EXPLICIT, FONT_BASE, FONT_ID_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE,
-    FROZEN_RIGHT, GLUE_BASE, GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP,
-    GLUE_PAR_PAR_SKIP, GLUE_PAR_SPACE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TAB_SKIP,
-    GLUE_PAR_XSPACE_SKIP, HASH_BASE, HMODE, IGNORE_DEPTH, INT_BASE, INT_PAR_FLOATING_PENALTY,
-    INT_PAR_GLOBAL_DEFS, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN,
-    INT_PAR_LOOSENESS, INT_PAR_POST_DISPLAY_PENALTY, INT_PAR_PRE_DISPLAY_PENALTY,
-    INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_LOST_CHARS,
-    INT_PAR_XETEX_DASH_BREAK, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING,
-    INT_PAR_XETEX_INTER_CHAR_TOKENS, INT_PAR_XETEX_UPWARDS, INT_PAR_XETEX_USE_GLYPH_METRICS,
-    LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB, LOCAL_EVERY_PAR,
-    LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE, LOCAL_XETEX_INTER_CHAR_TOKS,
-    MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE,
-    NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS, NULL_FLAG, PRIM_EQTB_BASE,
-    RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY,
-    SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST,
-    TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
+    ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
+    BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG,
+    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_BOX_MAX_DEPTH, DIMEN_PAR_DISPLAY_INDENT,
+    DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_PAR_INDENT,
+    DIMEN_PAR_SPLIT_MAX_DEPTH, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE, EXPLICIT, FONT_BASE,
+    FONT_ID_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT, GLUE_BASE,
+    GLUE_PAR_ABOVE_DISPLAY_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_PAR_SKIP,
+    GLUE_PAR_SPACE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TAB_SKIP, GLUE_PAR_XSPACE_SKIP,
+    HASH_BASE, HMODE, IGNORE_DEPTH, INT_BASE, INT_PAR_FLOATING_PENALTY, INT_PAR_GLOBAL_DEFS,
+    INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS,
+    INT_PAR_POST_DISPLAY_PENALTY, INT_PAR_PRE_DISPLAY_PENALTY, INT_PAR_RIGHT_HYPHEN_MIN,
+    INT_PAR_TEXXET, INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_LOST_CHARS, INT_PAR_XETEX_DASH_BREAK,
+    INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INT_PAR_XETEX_INTER_CHAR_TOKENS, INT_PAR_XETEX_UPWARDS,
+    INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX,
+    LOCAL_EVERY_JOB, LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE,
+    LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_HALFWORD, MMODE,
+    MU_GLUE, MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS, NULL_FLAG,
+    PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT,
+    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT,
+    SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV,
+    UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::{
@@ -152,13 +152,11 @@ pub(crate) fn align_error_in(st: &mut EngineState) -> Result<(), MainControlAbor
     } else {
         crate::input::back_input_in(st)?;
         if st.scanner.align_state < 0 {
-            crate::output::error_here_with_diagnostic_in(st, c"Missing { inserted".as_ptr());
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            crate::output::print_err_in(st, c"Missing { inserted");
             st.scanner.align_state += 1;
             st.scanner.cur_tok = LEFT_BRACE_TOKEN + 123;
         } else {
-            crate::output::error_here_with_diagnostic_in(st, c"Missing } inserted".as_ptr());
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            crate::output::print_err_in(st, c"Missing } inserted");
             st.scanner.align_state -= 1;
             st.scanner.cur_tok = RIGHT_BRACE_TOKEN + 125;
         }
@@ -450,27 +448,14 @@ pub(crate) fn fin_align_in(st: &mut EngineState) -> Result<(), MainControlAbort>
     if st.input.cur_list.mode == MMODE {
         do_assignments_in(st)?;
         if st.scanner.cur_cmd != MATH_SHIFT {
-            crate::output::error_here_with_diagnostic_in(st, c"Missing $$ inserted".as_ptr());
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            crate::output::print_err_in(st, c"Missing $$ inserted");
             st.errors.help(&[
                 r"Displays can use special alignments (like \eqalignno)",
                 "only if nothing but the alignment itself is between $$'s.",
             ]);
             mc_propagate_error(crate::input::back_error_in(st)?)?;
         } else {
-            crate::scan::get_x_token_in(st)?;
-            if st.scanner.cur_cmd != MATH_SHIFT {
-                crate::output::error_here_with_diagnostic_in(
-                    st,
-                    c"Display math should end with $$".as_ptr(),
-                );
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
-                st.errors.help(&[
-                    "The `$' that I just saw supposedly matches a previous `$$'.",
-                    "So I shall assume that you typed `$$' both times.",
-                ]);
-                mc_propagate_error(crate::input::back_error_in(st)?)?;
-            }
+            crate::math::check_display_end_in(st)?;
         }
         let etex_aux = st.input.cur_list.e_tex_aux.0;
         flush_node_list(&mut st.mem, etex_aux).map_err(MainControlAbort::Confusion)?;
@@ -946,11 +931,7 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                 {
                     st.scanner.cur_loop = st.scanner.cur_align;
                 } else {
-                    crate::output::error_here_with_diagnostic_in(
-                        st,
-                        c"Missing # inserted in alignment preamble".as_ptr(),
-                    );
-                    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                    crate::output::print_err_in(st, c"Missing # inserted in alignment preamble");
                     st.errors.help(&[
                         "There should be exactly one # between &'s, when an",
                         r"\halign or \valign is being set up. In this case you had",
@@ -982,11 +963,7 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
                 break;
             }
             if st.scanner.cur_cmd == MAC_PARAM {
-                crate::output::error_here_with_diagnostic_in(
-                    st,
-                    c"Only one # is allowed per tab".as_ptr(),
-                );
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                crate::output::print_err_in(st, c"Only one # is allowed per tab");
                 st.errors.help(&[
                     "There should be exactly one # between &'s, when an",
                     r"\halign or \valign is being set up. In this case you had",
@@ -1234,11 +1211,7 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
             || (mode == VMODE && !matches!(b, AnyBox::VList(_)))
             || (mode == HMODE && !matches!(b, AnyBox::HList(_)))
         {
-            crate::output::error_here_with_diagnostic_in(
-                st,
-                c"Incompatible list can't be unboxed".as_ptr(),
-            );
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            crate::output::print_err_in(st, c"Incompatible list can't be unboxed");
             st.errors.help(&[
                 "Sorry, Pandora. (You sneaky devil.)",
                 r"I refuse to unbox an \hbox in vertical mode or vice versa.",
@@ -1405,11 +1378,7 @@ pub(crate) fn scan_box_in(st: &mut EngineState, box_context: i32) -> Result<(), 
         st.scanner.cur_box = crate::scan::scan_rule_spec_in(st)?.ptr();
         box_end_in(st, box_context)
     } else {
-        crate::output::error_here_with_diagnostic_in(
-            st,
-            c"A <box> was supposed to be here".as_ptr(),
-        );
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::print_err_in(st, c"A <box> was supposed to be here");
         st.errors.help(&[
             r"I was expecting to see \hbox or \vbox or \copy or \box or",
             "something like that. So you might find something missing in",
@@ -1453,6 +1422,16 @@ pub(crate) fn package_in(st: &mut EngineState, c: i32) -> Result<(), MainControl
     box_end_in(st, box_context)
 }
 
+/// Sets `cur_lang` and the list's language and hyphen minima for a new paragraph.
+pub(crate) fn start_paragraph_language(st: &mut EngineState) {
+    let l = crate::helpers::norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
+    st.hyph.cur_lang = l;
+    st.input.cur_list.set_aux_s1(l as i32);
+    let lhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as i32;
+    let rhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
+    st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + l as i32;
+}
+
 pub(crate) fn new_graf_in(st: &mut EngineState, indented: bool) -> Result<(), MainControlAbort> {
     st.input.cur_list.prev_graf = 0;
     if st.input.cur_list.mode == VMODE || st.input.cur_list.head != st.input.cur_list.tail {
@@ -1464,17 +1443,7 @@ pub(crate) fn new_graf_in(st: &mut EngineState, indented: bool) -> Result<(), Ma
     st.input.cur_list.mode = HMODE;
     st.input.cur_list.set_aux_s0(1000);
 
-    let language = st.eqtb.int_par(INT_PAR_LANGUAGE);
-    let l: u8 = if language <= 0 || language > BIGGEST_LANG {
-        0
-    } else {
-        language as u8
-    };
-    st.hyph.cur_lang = l;
-    st.input.cur_list.set_aux_s1(l as i32);
-    let lhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as i32;
-    let rhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
-    st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + l as i32;
+    start_paragraph_language(st);
 
     if indented {
         let b =
@@ -1726,11 +1695,7 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
             );
             st.mem.set_b32s1(tail + 1, st.scanner.cur_box.0);
         } else {
-            crate::output::error_here_with_diagnostic_in(
-                st,
-                c"Leaders not followed by proper glue".as_ptr(),
-            );
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            crate::output::print_err_in(st, c"Leaders not followed by proper glue");
             st.errors.help(&[
                 r"You should say `\leaders <box or rule><hskip or vskip>'.",
                 "I found the <box or rule>, but there's no suitable",
@@ -1855,8 +1820,7 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
             crate::scan::scan_register_num_in(st)?;
             let n = st.scanner.cur_val;
             if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
-                crate::output::error_here_with_diagnostic_in(st, c"Missing `to' inserted".as_ptr());
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                crate::output::print_err_in(st, c"Missing `to' inserted");
                 st.errors.help(&[
                     r"I'm working on `\vsplit<box number> to <dimen>';",
                     "will look for the <dimen> next.",
@@ -1910,8 +1874,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
     match st.save_stack.cur_group {
         GroupCode::Simple => crate::save::unsave_in(st)?,
         GroupCode::BottomLevel => {
-            crate::output::error_here_with_diagnostic_in(st, c"Too many }'s".as_ptr());
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+            crate::output::print_err_in(st, c"Too many }'s");
             st.errors.help(&[
                 "You've closed more groups than you opened.",
                 "Such booboos are generally harmless, so keep going.",
@@ -1979,11 +1942,7 @@ pub(crate) fn handle_right_brace_in(st: &mut EngineState) -> Result<(), MainCont
                 || (st.input.cur_input.index != OUTPUT_TEXT
                     && st.input.cur_input.index != BACKED_UP)
             {
-                crate::output::error_here_with_diagnostic_in(
-                    st,
-                    c"Unbalanced output routine".as_ptr(),
-                );
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                crate::output::print_err_in(st, c"Unbalanced output routine");
                 st.errors.help(&[
                     "Your sneaky output routine has problematic {'s and/or }'s.",
                     "I can't handle that very well; good luck.",
@@ -2290,12 +2249,7 @@ pub(crate) fn fix_language(
     mem: &mut MemState,
     eqtb: &crate::state::EqtbState,
 ) -> Result<(), crate::scan::NodeRecycleAbort> {
-    let language = eqtb.int_par(INT_PAR_LANGUAGE);
-    let l = if language <= 0 || language > BIGGEST_LANG {
-        0
-    } else {
-        language
-    };
+    let l = crate::helpers::norm_lang(eqtb.int_par(INT_PAR_LANGUAGE)) as i32;
     if l == cl.aux_s1() {
         return Ok(());
     }
@@ -2426,11 +2380,7 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
                 _ => false,
             };
             if !allowed {
-                crate::output::error_here_with_diagnostic_in(
-                    st,
-                    c"Improper discretionary list".as_ptr(),
-                );
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                crate::output::print_err_in(st, c"Improper discretionary list");
                 st.errors
                     .help(&["Discretionary lists must contain only boxes and kerns."]);
                 mc_propagate_error(crate::errors::error_in(st))?;
@@ -2480,11 +2430,7 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
             if n <= u16::MAX as i32 {
                 st.mem.set_b16s0(tail, n as u16);
             } else {
-                crate::output::error_here_with_diagnostic_in(
-                    st,
-                    c"Discretionary list is too long".as_ptr(),
-                );
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                crate::output::print_err_in(st, c"Discretionary list is too long");
                 st.errors.help(&[
                     "Wow---I never thought anybody would tweak me here.",
                     "You can't seriously need such a huge discretionary list?",
@@ -2951,8 +2897,7 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
     }
 
     if st.errors.arith_error {
-        crate::output::error_here_with_diagnostic_in(st, c"Arithmetic overflow".as_ptr());
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::print_err_in(st, c"Arithmetic overflow");
         st.errors.help(&[
             "I can't carry out that multiplication or division,",
             "since the result is out of range.",
@@ -3140,13 +3085,9 @@ pub(crate) fn main_control_ignore_spaces_in(st: &mut EngineState) -> Result<(), 
         st.scanner.scanner_status = saved;
         Result::<(), crate::scan::SccAbort>::from(outcome)?;
 
-        let name = if st.scanner.cur_cs < HASH_BASE {
-            st.scanner.cur_cs - SINGLE_BASE
-        } else {
-            st.eqtb.hash_s1(st.scanner.cur_cs)
-        };
-        st.scanner.cur_cs = crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, name)
-            .map_err(crate::scan::hash_err_abort)?;
+        st.scanner.cur_cs =
+            crate::hash::prim_lookup_cs(&mut st.eqtb, &mut st.strings, st.scanner.cur_cs)
+                .map_err(crate::scan::hash_err_abort)?;
 
         if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
             st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
@@ -4441,11 +4382,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
         }
         SHORTHAND_DEF => {
             if st.scanner.cur_chr == CHAR_SUB_DEF_CODE {
-                crate::output::error_here_with_diagnostic_in(
-                    st,
-                    c"vestigial MLTeX shorthand encountered??".as_ptr(),
-                );
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                crate::output::print_err_in(st, c"vestigial MLTeX shorthand encountered??");
                 st.errors
                     .help(&["This should never happen in Tectonic, where MLTeX has been excised."]);
                 mc_propagate_error(crate::errors::error_in(st))?;
@@ -4458,8 +4395,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
             crate::scan::scan_int_in(st)?;
             let n = st.scanner.cur_val;
             if !crate::scan::scan_keyword_in(st, c"to".as_ptr())? {
-                crate::output::error_here_with_diagnostic_in(st, c"Missing `to' inserted".as_ptr());
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                crate::output::print_err_in(st, c"Missing `to' inserted");
                 st.errors.help(&[
                     r"You should have said `\read<number> to \cs'.",
                     r"I'm going to look for the \cs now.",
@@ -4540,11 +4476,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
             } else if st.config.in_initex_mode {
                 new_patterns_in(st)?;
             } else {
-                crate::output::error_here_with_diagnostic_in(
-                    st,
-                    c"Patterns can be loaded only by INITEX".as_ptr(),
-                );
-                crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+                crate::output::print_err_in(st, c"Patterns can be loaded only by INITEX");
                 st.errors.help(&[]);
                 mc_propagate_error(crate::errors::error_in(st))?;
                 loop {

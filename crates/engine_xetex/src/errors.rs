@@ -9,9 +9,9 @@ use crate::mem::{HOLD_HEAD, TEMP_HEAD};
 use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
     end_diagnostic_in, error_here_with_diagnostic_in, print_char_in, print_cmd_chr_in,
-    print_cstr_in, print_esc_cstr_in, print_in, print_in_mode_in, print_int_in, print_ln_in,
-    print_nl_cstr_in, print_nl_str_in, show_box_in, show_context_in, show_token_list_in,
-    token_show_in,
+    print_cstr_in, print_err_in, print_esc_cstr_in, print_in, print_in_mode_in, print_int_in,
+    print_ln_in, print_nl_cstr_in, print_nl_str_in, show_box_in, show_context_in,
+    show_token_list_in, token_show_in,
 };
 use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
@@ -311,8 +311,7 @@ pub(crate) fn give_err_help_in(st: &mut EngineState) {
 }
 
 pub(crate) fn mu_error_in(st: &mut EngineState) -> ErrorOutcome {
-    error_here_with_diagnostic_in(st, c"Incompatible glue units".as_ptr());
-    capture_to_diagnostic_in(st, std::ptr::null_mut());
+    print_err_in(st, c"Incompatible glue units");
     st.errors
         .help(&["I'm going to assume that 1mu=1pt when they're mixed."]);
     error_in(st)

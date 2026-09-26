@@ -1073,11 +1073,7 @@ fn finite_shrink_emit(
 ) -> Result<NodePtr<GlueSpecNode>, LineBreakOutcome> {
     if st.errors.no_shrink_error_yet {
         st.errors.no_shrink_error_yet = false;
-        crate::output::error_here_with_diagnostic_in(
-            st,
-            c"Infinite glue shrinkage found in a paragraph".as_ptr(),
-        );
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::print_err_in(st, c"Infinite glue shrinkage found in a paragraph");
         st.errors.help(&[
             "The paragraph just ended includes some glue that has",
             r"infinite shrinkability, e.g., `\hskip 0pt minus 1fil'.",

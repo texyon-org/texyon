@@ -138,11 +138,7 @@ fn ensure_vbox_in(st: &mut EngineState, n: u8) -> Result<(), PageBuildAbort> {
     if !matches!(fetch_box(st, n as i32), Some(AnyBox::HList(_))) {
         return Ok(());
     }
-    crate::output::error_here_with_diagnostic_in(
-        st,
-        c"Insertions can only be added to a vbox".as_ptr(),
-    );
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    crate::output::print_err_in(st, c"Insertions can only be added to a vbox");
     st.errors.help(&[
         r"Tut tut: You're trying to \insert into a",
         r"\box register that now contains an \hbox.",
@@ -821,11 +817,7 @@ fn page_glue_width_in(
     if spec.shrink_order(&st.mem) == NORMAL || spec.shrink(&st.mem).0 == 0 {
         return Ok(spec.width(&st.mem).0);
     }
-    crate::output::error_here_with_diagnostic_in(
-        st,
-        c"Infinite glue shrinkage found on current page".as_ptr(),
-    );
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    crate::output::print_err_in(st, c"Infinite glue shrinkage found on current page");
     st.errors.help(&[
         "The page about to be output contains some infinitely",
         r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",

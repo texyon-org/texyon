@@ -1,22 +1,21 @@
 //! Math mode: noad construction and `mlist_to_hlist`, from `xetex/xetex-math.c`.
 use crate::consts::{
-    ACCENT_NOAD_SIZE, AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BIGGEST_LANG,
-    BOX_NODE_SIZE, COND_MATH_GLUE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
-    DIMEN_PAR_DELIMITER_SHORTFALL, DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_DISPLAY_WIDTH,
-    DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DIMEN_PAR_MATH_SURROUND,
-    DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE, DIMEN_PAR_SCRIPT_SPACE, DLIST,
-    EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL, FONT_BASE, FRACTION_NOAD_SIZE,
-    GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
+    ACCENT_NOAD_SIZE, AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE,
+    COND_MATH_GLUE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_DELIMITER_SHORTFALL,
+    DIMEN_PAR_DISPLAY_INDENT, DIMEN_PAR_DISPLAY_WIDTH, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE,
+    DIMEN_PAR_MATH_SURROUND, DIMEN_PAR_NULL_DELIMITER_SPACE, DIMEN_PAR_PRE_DISPLAY_SIZE,
+    DIMEN_PAR_SCRIPT_SPACE, DLIST, EMPTY, END_L_CODE, END_M_CODE, EXPLICIT, FIL, FILL, FILLL,
+    FONT_BASE, FRACTION_NOAD_SIZE, GLUE_PAR_ABOVE_DISPLAY_SHORT_SKIP, GLUE_PAR_ABOVE_DISPLAY_SKIP,
     GLUE_PAR_BELOW_DISPLAY_SHORT_SKIP, GLUE_PAR_BELOW_DISPLAY_SKIP, GLUE_PAR_LEFT_SKIP,
     GLUE_PAR_MED_MU_SKIP, GLUE_PAR_RIGHT_SKIP, GLUE_PAR_THICK_MU_SKIP, GLUE_PAR_THIN_MU_SKIP,
     GLYPH_NODE_SIZE, HMODE, INF_PENALTY, INT_BASE, INT_PAR_BIN_OP_PENALTY, INT_PAR_CUR_FAM,
-    INT_PAR_DELIMITER_FACTOR, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN,
-    INT_PAR_POST_DISPLAY_PENALTY, INT_PAR_PRE_DISPLAY_DIRECTION, INT_PAR_PRE_DISPLAY_PENALTY,
-    INT_PAR_REL_PENALTY, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, LEFT_TO_RIGHT, LOCAL_BASE,
-    LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH, LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_FONT_BASE,
-    MATH_TEXT_CHAR, MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL,
-    NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE,
-    SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_INFINITY,
+    INT_PAR_DELIMITER_FACTOR, INT_PAR_HANG_AFTER, INT_PAR_POST_DISPLAY_PENALTY,
+    INT_PAR_PRE_DISPLAY_DIRECTION, INT_PAR_PRE_DISPLAY_PENALTY, INT_PAR_REL_PENALTY,
+    INT_PAR_TEXXET, LEFT_TO_RIGHT, LOCAL_BASE, LOCAL_EVERY_DISPLAY, LOCAL_EVERY_MATH,
+    LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_FONT_BASE, MATH_TEXT_CHAR, MAX_HALFWORD,
+    MEDIUM_NODE_SIZE, MMODE, MU_GLUE, NOAD_SIZE, NORMAL, NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE,
+    RIGHT_TO_LEFT, R_CODE, SCRIPT_SIZE, STYLE_NODE_SIZE, SUB_BOX, SUB_MLIST, TEXT_SIZE,
+    TEX_INFINITY,
 };
 use crate::ext::real_get_native_glyph;
 use crate::fonts::{
@@ -2570,11 +2569,7 @@ pub(crate) fn scan_delimiter_in(
     }
 
     if st.scanner.cur_val < 0 {
-        if st.config.file_line_error_style_p != 0 {
-            crate::output::print_file_line_in(st);
-        } else {
-            crate::output::print_nl_cstr_in(st, c"! ".as_ptr());
-        }
+        crate::output::print_error_prefix_in(st);
         crate::output::print_cstr_in(st, c"Missing delimiter (. inserted)".as_ptr());
         st.errors.help(&[
             r"I was expecting to see something like `(' or `\{' or",
@@ -2667,11 +2662,7 @@ pub(crate) fn math_limit_switch_in(
     ) {
         return Ok(());
     }
-    crate::output::error_here_with_diagnostic_in(
-        st,
-        c"Limit controls must follow a math operator".as_ptr(),
-    );
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    crate::output::print_err_in(st, c"Limit controls must follow a math operator");
     st.errors
         .help(&[r"I'm ignoring this misplaced \limits or \nolimits command."]);
     crate::main_control::mc_propagate_error(crate::errors::error_in(st))
@@ -2906,11 +2897,7 @@ pub(crate) fn math_fraction_in(
             crate::scan::scan_dimen_in(st, false, false, false)?;
         }
 
-        if st.config.file_line_error_style_p != 0 {
-            crate::output::print_file_line_in(st);
-        } else {
-            crate::output::print_nl_cstr_in(st, c"! ".as_ptr());
-        }
+        crate::output::print_error_prefix_in(st);
         crate::output::print_cstr_in(st, c"Ambiguous; you need another { and }".as_ptr());
         st.errors.help(&[
             "I'm ignoring this fraction specification, since I don't",
@@ -3101,18 +3088,7 @@ pub(crate) fn resume_after_display_in(
     st.input.cur_list.mode = HMODE;
     st.input.cur_list.set_aux_s0(1000);
 
-    let lang = st.eqtb.int_par(INT_PAR_LANGUAGE);
-    let cl: u8 = if lang <= 0 || lang > BIGGEST_LANG {
-        0
-    } else {
-        lang as u8
-    };
-    st.hyph.cur_lang = cl;
-    st.input.cur_list.set_aux_s1(cl as i32);
-
-    let lhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as i32;
-    let rhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
-    st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + cl as i32;
+    crate::main_control::start_paragraph_language(st);
 
     crate::scan::get_x_token_in(st)?;
     if st.scanner.cur_cmd != SPACER {
@@ -3309,8 +3285,7 @@ fn check_math_fonts_in(
     } else {
         return Ok(false);
     };
-    crate::output::error_here_with_diagnostic_in(st, msg.as_ptr());
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    crate::output::print_err_in(st, msg);
     st.errors.help(&help);
     crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     flush_math(&mut st.input.cur_list, &mut st.mem)
@@ -3318,14 +3293,12 @@ fn check_math_fonts_in(
     Ok(true)
 }
 
-fn check_display_end_in(st: &mut EngineState) -> Result<(), crate::main_control::MainControlAbort> {
+pub(crate) fn check_display_end_in(
+    st: &mut EngineState,
+) -> Result<(), crate::main_control::MainControlAbort> {
     crate::scan::get_x_token_in(st)?;
     if st.scanner.cur_cmd != MATH_SHIFT {
-        crate::output::error_here_with_diagnostic_in(
-            st,
-            c"Display math should end with $$".as_ptr(),
-        );
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::print_err_in(st, c"Display math should end with $$");
         st.errors.help(&[
             "The `$' that I just saw supposedly matches a previous `$$'.",
             "So I shall assume that you typed `$$' both times.",

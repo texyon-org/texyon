@@ -293,6 +293,8 @@ node_kinds! {
     DeltaNode;
     /// A line-breaker passive node. Its info word is a serial number.
     PassiveNode;
+    /// An entry of the conditional stack, saving the enclosing `\if`.
+    CondNode;
 }
 
 impl FixedNode for GlueSpecNode {
@@ -301,6 +303,10 @@ impl FixedNode for GlueSpecNode {
 }
 impl FixedNode for LigItem {
     const SIZE: i32 = SMALL_NODE_SIZE;
+    const TYPE: Option<NodeType> = None;
+}
+impl FixedNode for CondNode {
+    const SIZE: i32 = 2;
     const TYPE: Option<NodeType> = None;
 }
 impl FixedNode for MovementNode {
@@ -336,7 +342,7 @@ macro_rules! impl_traits {
 impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, AdjustNode,
     LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
     StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode);
-impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode);
+impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode, CondNode);
 impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
     EdgeNode, MarginKernNode, GlueSpecNode);
 impl_traits!(HasHeightDepth: HListNode, VListNode, UnsetNode, WhatsitNode, InsNode);
@@ -348,7 +354,7 @@ impl_traits!(HasSyncFields: HListNode, VListNode, RuleNode, GlueNode, KernNode, 
 pub trait ListRecord: NodeKind {}
 
 impl_traits!(ListRecord: SaNode, PageInsNode, MovementNode, ActiveNode, DeltaNode, PassiveNode,
-    LigItem);
+    LigItem, CondNode);
 
 impl<K: ListRecord> NodePtr<K> {
     /// The record at `p`, a non-null link of a list of `K` records.
@@ -356,6 +362,13 @@ impl<K: ListRecord> NodePtr<K> {
     pub fn at(p: impl crate::units::MemAddr) -> Self {
         // SAFETY: records of these kinds only ever live on their own lists.
         unsafe { NodePtr::from_idx_unchecked(MemIdx::new(p)) }
+    }
+}
+
+impl<K: ListRecord + FixedNode> NodePtr<K> {
+    #[inline]
+    pub fn free(self, mem: &mut MemState) {
+        free_node(mem, self.ptr(), K::SIZE);
     }
 }
 
@@ -1291,17 +1304,32 @@ impl NodePtr<SaNode> {
     }
 }
 
+// --- the conditional stack ---
+
+impl NodePtr<CondNode> {
+    fields! {
+        if_limit / set_if_limit: u16 = b16s1 @ 0;
+        cur_if / set_cur_if: u16 = b16s0 @ 0;
+        if_line / set_if_line: i32 = b32s1 @ 1;
+    }
+
+    /// The saved `(cur_if, if_line, if_limit)`.
+    #[inline]
+    pub fn saved_state(self, mem: &MemState) -> (i16, i32, u8) {
+        (
+            self.cur_if(mem) as i16,
+            self.if_line(mem),
+            self.if_limit(mem) as u8,
+        )
+    }
+}
+
 // --- shipout movement records ---
 
 impl NodePtr<MovementNode> {
     #[inline]
     pub fn from_ptr(p: MemPtr) -> Option<NodePtr<MovementNode>> {
         (!p.is_null()).then(|| Self::at(p))
-    }
-
-    #[inline]
-    pub fn free(self, mem: &mut MemState) {
-        free_node(mem, self.ptr(), MOVEMENT_NODE_SIZE);
     }
 
     fields! {

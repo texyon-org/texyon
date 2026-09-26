@@ -778,11 +778,7 @@ fn vert_break_resume(
 }
 
 fn print_vert_break_infinite_shrinkage_error_in(st: &mut EngineState) -> ErrorOutcome {
-    crate::output::error_here_with_diagnostic_in(
-        st,
-        c"Infinite glue shrinkage found in box being split".as_ptr(),
-    );
-    crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+    crate::output::print_err_in(st, c"Infinite glue shrinkage found in box being split");
     st.errors.help(&[
         r"The box you are \vsplitting contains some infinitely",
         r"shrinkable glue, e.g., `\vss' or `\vskip 0pt minus 1fil'.",

@@ -598,11 +598,9 @@ pub(crate) fn unsave_in(st: &mut EngineState) -> Result<(), UnsaveAbort> {
     if st.input.grp_stack[st.input.in_open as usize] == st.save_stack.cur_boundary {
         crate::output::group_warning_in(st);
     }
-    let sp = st.save_stack.save_ptr;
-    st.save_stack.cur_group =
-        GroupCode::from_raw(st.save_stack.b16s0(sp) as u8).expect("valid group code");
-    st.save_stack.cur_boundary = st.save_stack.b32s1(sp);
-    st.save_stack.save_ptr -= 1;
+    let ss = &mut st.save_stack;
+    (ss.cur_group, ss.cur_boundary) = ss.boundary_at(ss.save_ptr);
+    ss.save_ptr -= 1;
     Ok(())
 }
 

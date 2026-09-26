@@ -1,5 +1,6 @@
+use crate::consts::{BIGGEST_LANG, INF_BAD};
+
 /// Badness of stretching or shrinking natural size `t` by available amount `s`.
-use crate::consts::INF_BAD;
 pub fn badness(t: i32, s: i32) -> i32 {
     if t == 0 {
         return 0;
@@ -23,6 +24,15 @@ pub fn badness(t: i32, s: i32) -> i32 {
 
 pub fn norm_min(h: i32) -> i16 {
     h.clamp(1, 63) as i16
+}
+
+/// `\language` as a valid language number, 0 when out of range.
+pub fn norm_lang(lang: i32) -> u8 {
+    if lang <= 0 || lang > BIGGEST_LANG {
+        0
+    } else {
+        lang as u8
+    }
 }
 
 #[cfg(test)]

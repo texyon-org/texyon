@@ -841,6 +841,13 @@ impl SaveStackState {
         unsafe { self.data[k as usize].b16.s0 }
     }
 
+    /// The group and enclosing boundary saved by the level boundary at `k`.
+    #[inline]
+    pub(crate) fn boundary_at(&self, k: i32) -> (GroupCode, i32) {
+        let group = GroupCode::from_raw(self.b16s0(k) as u8).expect("valid group code");
+        (group, self.b32s1(k))
+    }
+
     /// Read a full `MemoryWord` from `save_stack[k]`.
     #[inline]
     pub(crate) fn word(&self, k: i32) -> crate::mem_types::MemoryWord {

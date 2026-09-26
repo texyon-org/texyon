@@ -28,13 +28,6 @@ fn set_trie_op_hash_in(hyph: &mut HyphState, k: i32, v: i32) {
 }
 
 /// `\language` clamped to a valid language number (out of range means 0).
-fn norm_lang(lang: i32) -> u8 {
-    if lang <= 0 || lang > BIGGEST_LANG {
-        0
-    } else {
-        lang as u8
-    }
-}
 
 /// Point `hyph_index` at the `\lccode` table saved with `cur_lang`'s patterns, or 0.
 pub(crate) fn set_hyph_index(hyph: &mut HyphState) {
@@ -517,7 +510,7 @@ pub(crate) fn new_patterns_in(st: &mut EngineState) -> Result<(), MainControlAbo
         return Ok(());
     }
 
-    st.hyph.cur_lang = norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
+    st.hyph.cur_lang = crate::helpers::norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
 
     crate::scan::scan_left_brace_in(st)?;
     let mut k: i16 = 0;
@@ -597,7 +590,7 @@ pub(crate) fn new_hyph_exceptions_in(st: &mut EngineState) -> Result<(), MainCon
 
     crate::scan::scan_left_brace_in(st)?;
 
-    st.hyph.cur_lang = norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
+    st.hyph.cur_lang = crate::helpers::norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
     if st.hyph.trie_not_ready {
         st.hyph.hyph_index = 0;
     } else {

@@ -19,18 +19,17 @@ use crate::input::{
     MACRO, MARK_TEXT, RIGHT_BRACE_LIMIT, TOKEN_LIST, V_TEMPLATE,
 };
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD, ZERO_GLUE};
-use crate::node::{AnyBox, AnyNode, NodePtr, SaNode};
+use crate::node::{AnyBox, AnyNode, CondNode, NodePtr, SaNode};
 use crate::output::{
     begin_diagnostic_in, capture_to_diagnostic_in, diagnostic_begin_capture_warning_here_in,
     end_diagnostic_in, error_here_with_diagnostic_in, print_char_in, print_cmd_chr_in,
-    print_cstr_in, print_esc_cstr_in, print_int_in, print_scaled_in, show_cur_cmd_chr_in,
-    sprint_cs_in,
+    print_cstr_in, print_err_in, print_esc_cstr_in, print_int_in, print_scaled_in,
+    show_cur_cmd_chr_in, sprint_cs_in,
 };
 use crate::scan::{
-    fetch_box, get_avail_scc, get_next_scc, get_node_scc, get_token_in, get_x_non_blank_in,
-    get_x_token_in, scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, END_MATCH_TOKEN,
-    MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG, OTHER_TOKEN,
-    SPACE_TOKEN,
+    fetch_box, get_avail_scc, get_next_scc, get_token_in, get_x_non_blank_in, get_x_token_in,
+    scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, END_MATCH_TOKEN, MARK_VAL,
+    MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG, OTHER_TOKEN, SPACE_TOKEN,
 };
 use crate::state::EngineState;
 use crate::units::{MemIdx, MemPtr};
@@ -61,7 +60,6 @@ pub(crate) const IF_CS_CODE: i16 = 18;
 pub(crate) const IF_FONT_CHAR_CODE: i16 = 19;
 pub(crate) const IF_IN_CSNAME_CODE: i16 = 20;
 pub(crate) const IF_PRIMITIVE_CODE: i16 = 21;
-pub(crate) const IF_NODE_SIZE: i32 = 2;
 pub(crate) const IF_CODE: u8 = 1;
 pub(crate) const FI_CODE: u8 = 2;
 pub(crate) const ELSE_CODE: u8 = 3;
@@ -109,12 +107,10 @@ fn ins_temp_head_list(st: &mut EngineState, tail: MemPtr) -> Result<(), SccAbort
 }
 
 fn pop_cond_node_in(st: &mut EngineState) {
-    let p = st.scanner.cond_ptr.0;
-    st.scanner.if_line = st.mem.b32s1(p + 1);
-    st.scanner.cur_if = st.mem.b16s0(p) as i16;
-    st.scanner.if_limit = st.mem.b16s1(p) as u8;
-    st.scanner.cond_ptr.0 = st.mem.b32s1(p);
-    crate::mem::free_node(&mut st.mem, MemPtr::from_raw(p), IF_NODE_SIZE);
+    let p = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
+    (st.scanner.cur_if, st.scanner.if_line, st.scanner.if_limit) = p.saved_state(&st.mem);
+    st.scanner.cond_ptr = p.link(&st.mem);
+    p.free(&mut st.mem);
 }
 
 fn pop_fi_in(st: &mut EngineState) {
@@ -220,12 +216,13 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
         show_cur_cmd_chr_in(st);
     }
 
-    let cond_node = get_node_scc(st, IF_NODE_SIZE)?;
-    st.mem.set_b32s1(cond_node, st.scanner.cond_ptr.0);
-    st.mem.set_b16s1(cond_node, st.scanner.if_limit as u16);
-    st.mem.set_b16s0(cond_node, st.scanner.cur_if as u16);
-    st.mem.set_b32s1(cond_node + 1, st.scanner.if_line);
-    st.scanner.cond_ptr = cond_node;
+    let cond_node =
+        NodePtr::<CondNode>::alloc(&mut st.mem).ok_or_else(crate::scan::main_mem_overflow_scc)?;
+    cond_node.set_link(&mut st.mem, st.scanner.cond_ptr);
+    cond_node.set_if_limit(&mut st.mem, st.scanner.if_limit as u16);
+    cond_node.set_cur_if(&mut st.mem, st.scanner.cur_if as u16);
+    cond_node.set_if_line(&mut st.mem, st.scanner.if_line);
+    st.scanner.cond_ptr = cond_node.ptr();
     st.scanner.cur_if = st.scanner.cur_chr as i16;
     st.scanner.if_limit = IF_CODE;
     st.scanner.if_line = st.mem.line;
@@ -552,8 +549,7 @@ fn scan_nonnegative_int_in(
     if crate::scan::scan_keyword_in(st, keyword.as_ptr())? {
         scan_int_in(st)?;
         if st.scanner.cur_val < 0 {
-            error_here_with_diagnostic_in(st, err.as_ptr());
-            capture_to_diagnostic_in(st, std::ptr::null_mut());
+            print_err_in(st, err);
             st.errors.help(&[help, "I changed this one to zero."]);
             scc_err(crate::errors::int_error_in(st, st.scanner.cur_val))?;
             st.scanner.cur_val = 0;
@@ -1089,8 +1085,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 }
             }
             _ => {
-                error_here_with_diagnostic_in(st, c"Undefined control sequence".as_ptr());
-                capture_to_diagnostic_in(st, std::ptr::null_mut());
+                print_err_in(st, c"Undefined control sequence");
                 st.errors.help(&[
                     "The control sequence at the end of the top line",
                     r"of your error message was never \def'ed. If you have",

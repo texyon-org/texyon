@@ -199,8 +199,7 @@ unsafe fn dump_eqtb_runs(
 
 pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), EngineAbort> {
     if st.save_stack.save_ptr != 0 {
-        crate::output::error_here_with_diagnostic_in(st, c"You can't dump inside a group".as_ptr());
-        crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
+        crate::output::print_err_in(st, c"You can't dump inside a group");
         st.errors.help(&[r"`{...\dump}' is a no-no."]);
 
         if st.errors.interaction == InteractionMode::ErrorStop {
@@ -456,11 +455,10 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
             || st.fonts.font_mapping[f].is_some()
         {
             crate::output::print_file_name_in(st, font_name, EMPTY_STRING, EMPTY_STRING);
-            crate::output::error_here_with_diagnostic_in(
+            crate::output::print_err_in(
                 st,
-                c"Can't \\dump a format with native fonts or font-mappings".as_ptr(),
+                c"Can't \\dump a format with native fonts or font-mappings",
             );
-            crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             st.errors.help(&[
                 "You really, really don't want to do this.",
                 "It won't work, and only confuses me.",

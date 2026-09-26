@@ -26,7 +26,6 @@ use crate::consts::{
     UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::EngineAbort;
-use crate::expand::IF_NODE_SIZE;
 use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_OFFSET, HASH_PRIME, HASH_SIZE};
 use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
@@ -40,6 +39,7 @@ use crate::mem::{
     SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
+use crate::node::{CondNode, NodePtr};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState};
 use crate::units::{MemPtr, NodeType, Scaled};
@@ -275,12 +275,12 @@ pub(crate) unsafe fn final_cleanup_in(st: &mut EngineState) -> Result<(), Engine
             crate::output::print_int_in(st, if_line);
         }
         crate::output::print_cstr_in(st, c" was incomplete)".as_ptr());
-        let cond_ptr = st.scanner.cond_ptr;
-        st.scanner.if_line = st.mem.b32s1(cond_ptr + 1);
-        st.scanner.cur_if = st.mem.b16s0(cond_ptr) as i16;
-        st.mem.temp_ptr = cond_ptr;
-        st.scanner.cond_ptr.0 = st.mem.b32s1(cond_ptr);
-        crate::mem::free_node(&mut st.mem, cond_ptr, IF_NODE_SIZE);
+        let cond = NodePtr::<CondNode>::at(st.scanner.cond_ptr);
+        st.scanner.if_line = cond.if_line(&st.mem);
+        st.scanner.cur_if = cond.cur_if(&st.mem) as i16;
+        st.mem.temp_ptr = cond.ptr();
+        st.scanner.cond_ptr = cond.link(&st.mem);
+        cond.free(&mut st.mem);
     }
 
     if st.errors.history != HISTORY_SPOTLESS
