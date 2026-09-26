@@ -602,7 +602,7 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
         if s == 0 {
             continue;
         }
-        for j in str_range(&st.strings, s) {
+        for j in crate::shipout::str_range(&st.strings, s) {
             if must_quote && quote_char != 0 {
                 break;
             }
@@ -627,7 +627,7 @@ pub(crate) fn print_file_name_in(st: &mut EngineState, n: i32, a: i32, e: i32) {
         if s == 0 {
             continue;
         }
-        for j in str_range(&st.strings, s) {
+        for j in crate::shipout::str_range(&st.strings, s) {
             let c = st.strings.str_pool[j] as i32;
             if c == quote_char {
                 print_in(st, quote_char);
@@ -1856,8 +1856,8 @@ fn print_font_select_in(st: &mut EngineState, f: usize) {
     let name = st.fonts.font_name[f];
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
-        let has_double_quote =
-            st.strings.str_pool[str_range(&st.strings, name)].contains(&(b'"' as u16));
+        let has_double_quote = st.strings.str_pool[crate::shipout::str_range(&st.strings, name)]
+            .contains(&(b'"' as u16));
         let quote_char = if has_double_quote { b'\'' } else { b'"' } as i32;
         print_char_in(st, quote_char);
         print_in(st, name);
@@ -3570,10 +3570,4 @@ pub(crate) fn show_context_in(st: &mut EngineState) {
     }
     st.input.cur_input = st.input.input_stack[st.input.input_ptr as usize];
     st.mem.cur_synctex_tag = st.input.cur_input.synctex_tag;
-}
-
-fn str_range(strings: &crate::state::StringsState, s: i32) -> std::ops::Range<usize> {
-    let start = strings.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
-    let end = strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize] as usize;
-    start..end
 }

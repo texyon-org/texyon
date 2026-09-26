@@ -366,11 +366,11 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
             let c = st.scanner.cur_val;
             let fa = st.fonts.font_area[f as usize];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
-                unsafe { crate::ext::map_char_to_glyph(&st.fonts, f, c) }? > 0
+                unsafe { st.fonts.map_char_to_glyph(f, c) }? > 0
             } else if st.fonts.font_bc[f as usize] as i32 <= c
                 && st.fonts.font_ec[f as usize] as i32 >= c
             {
-                let ec = crate::fonts::effective_char(&mut st.fonts, f, c as u16);
+                let ec = st.fonts.effective_char(f, c as u16);
                 let info = unsafe {
                     st.fonts.font_info[(st.fonts.char_base[f as usize] + ec) as usize].b16
                 };

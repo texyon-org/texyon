@@ -17,8 +17,8 @@ use crate::consts::{
     SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_INFINITY,
 };
 use crate::fonts::{
-    char_depth, char_height, char_italic, char_width, CharInfo, AAT_FONT_FLAG, EXT_TAG, LIG_TAG,
-    LIST_TAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE, X_HEIGHT_CODE,
+    CharInfo, AAT_FONT_FLAG, EXT_TAG, LIG_TAG, LIST_TAG, OTGR_FONT_FLAG, QUAD_CODE, SPACE_CODE,
+    X_HEIGHT_CODE,
 };
 use crate::mem::{ADJUST_HEAD, GARBAGE, PRE_ADJUST_HEAD, SS_GLUE, TEMP_HEAD, TEX_NULL, ZERO_GLUE};
 use crate::node::{
@@ -68,11 +68,7 @@ const SCRIPT_STYLE: i16 = 4;
 
 use crate::cmd::{ACCENT, DELIM_NUM, LETTER, MATH_SHIFT, OTHER_CHAR, RELAX, SPACER, SUP_MARK};
 use crate::input::{EVERY_DISPLAY_TEXT, EVERY_MATH_TEXT};
-use crate::ot_math::{
-    get_native_mathex_param, get_native_mathsy_param, get_ot_assembly, get_ot_math_accent_pos,
-    get_ot_math_constant, get_ot_math_ital_corr, get_ot_math_kern, get_ot_math_variant,
-    ot_min_connector_overlap, GlyphAssembly, ScriptKind,
-};
+use crate::ot_math::{GlyphAssembly, ScriptKind};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 
 extern "C" {
@@ -80,128 +76,130 @@ extern "C" {
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
 }
 
-#[inline]
-fn font_uses_opentype(fonts: &FontState, f: i32) -> bool {
-    fonts.font_area_entry(f) == OTGR_FONT_FLAG
-        && unsafe { usingOpenType(fonts.font_layout_engine_ptr(f)) }
-}
-
-#[inline]
-fn font_is_ot_math(fonts: &FontState, f: i32) -> bool {
-    fonts.font_area_entry(f) == OTGR_FONT_FLAG
-        && unsafe { isOpenTypeMathFont(fonts.font_layout_engine_ptr(f)) }
-}
-
-#[inline]
-fn math_sy_param(fonts: &FontState, eqtb: &EqtbState, size_code: i32, param: i32) -> i32 {
-    let f = eqtb.math_font(2 + size_code);
-    if font_is_ot_math(fonts, f) {
-        get_native_mathsy_param(fonts, f, param)
-    } else {
-        fonts.param(f, param)
+impl FontState {
+    #[inline]
+    fn font_uses_opentype(&self, f: i32) -> bool {
+        self.font_area_entry(f) == OTGR_FONT_FLAG
+            && unsafe { usingOpenType(self.font_layout_engine_ptr(f)) }
     }
-}
 
-#[inline]
-fn math_ext_param(fonts: &FontState, eqtb: &EqtbState, cur_size: i32, param: i32) -> i32 {
-    let f = eqtb.math_font(3 + cur_size);
-    if font_is_ot_math(fonts, f) {
-        get_native_mathex_param(fonts, f, param)
-    } else {
-        fonts.param(f, param)
+    #[inline]
+    fn font_is_ot_math(&self, f: i32) -> bool {
+        self.font_area_entry(f) == OTGR_FONT_FLAG
+            && unsafe { isOpenTypeMathFont(self.font_layout_engine_ptr(f)) }
     }
-}
 
-pub fn math_x_height(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 5)
-}
+    #[inline]
+    fn math_sy_param(&self, eqtb: &EqtbState, size_code: i32, param: i32) -> i32 {
+        let f = eqtb.math_font(2 + size_code);
+        if self.font_is_ot_math(f) {
+            self.get_native_mathsy_param(f, param)
+        } else {
+            self.param(f, param)
+        }
+    }
 
-pub fn math_quad(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 6)
-}
+    #[inline]
+    fn math_ext_param(&self, eqtb: &EqtbState, cur_size: i32, param: i32) -> i32 {
+        let f = eqtb.math_font(3 + cur_size);
+        if self.font_is_ot_math(f) {
+            self.get_native_mathex_param(f, param)
+        } else {
+            self.param(f, param)
+        }
+    }
 
-pub fn num1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 8)
-}
+    pub fn math_x_height(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 5)
+    }
 
-pub fn num2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 9)
-}
+    pub fn math_quad(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 6)
+    }
 
-pub fn num3(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 10)
-}
+    pub fn num1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 8)
+    }
 
-pub fn denom1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 11)
-}
+    pub fn num2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 9)
+    }
 
-pub fn denom2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 12)
-}
+    pub fn num3(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 10)
+    }
 
-pub fn sup1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 13)
-}
+    pub fn denom1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 11)
+    }
 
-pub fn sup2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 14)
-}
+    pub fn denom2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 12)
+    }
 
-pub fn sup3(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 15)
-}
+    pub fn sup1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 13)
+    }
 
-pub fn sub1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 16)
-}
+    pub fn sup2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 14)
+    }
 
-pub fn sub2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 17)
-}
+    pub fn sup3(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 15)
+    }
 
-pub fn sup_drop(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 18)
-}
+    pub fn sub1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 16)
+    }
 
-pub fn sub_drop(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 19)
-}
+    pub fn sub2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 17)
+    }
 
-pub fn delim1(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 20)
-}
+    pub fn sup_drop(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 18)
+    }
 
-pub fn delim2(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 21)
-}
+    pub fn sub_drop(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 19)
+    }
 
-pub fn axis_height(fonts: &FontState, eqtb: &EqtbState, size_code: i32) -> i32 {
-    math_sy_param(fonts, eqtb, size_code, 22)
-}
+    pub fn delim1(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 20)
+    }
 
-pub fn default_rule_thickness(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
-    math_ext_param(fonts, eqtb, cur_size, 8)
-}
+    pub fn delim2(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 21)
+    }
 
-pub fn big_op_spacing1(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
-    math_ext_param(fonts, eqtb, cur_size, 9)
-}
+    pub fn axis_height(&self, eqtb: &EqtbState, size_code: i32) -> i32 {
+        self.math_sy_param(eqtb, size_code, 22)
+    }
 
-pub fn big_op_spacing2(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
-    math_ext_param(fonts, eqtb, cur_size, 10)
-}
+    pub fn default_rule_thickness(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+        self.math_ext_param(eqtb, cur_size, 8)
+    }
 
-pub fn big_op_spacing3(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
-    math_ext_param(fonts, eqtb, cur_size, 11)
-}
+    pub fn big_op_spacing1(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+        self.math_ext_param(eqtb, cur_size, 9)
+    }
 
-pub fn big_op_spacing4(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
-    math_ext_param(fonts, eqtb, cur_size, 12)
-}
+    pub fn big_op_spacing2(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+        self.math_ext_param(eqtb, cur_size, 10)
+    }
 
-pub fn big_op_spacing5(fonts: &FontState, eqtb: &EqtbState, cur_size: i32) -> i32 {
-    math_ext_param(fonts, eqtb, cur_size, 13)
+    pub fn big_op_spacing3(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+        self.math_ext_param(eqtb, cur_size, 11)
+    }
+
+    pub fn big_op_spacing4(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+        self.math_ext_param(eqtb, cur_size, 12)
+    }
+
+    pub fn big_op_spacing5(&self, eqtb: &EqtbState, cur_size: i32) -> i32 {
+        self.math_ext_param(eqtb, cur_size, 13)
+    }
 }
 
 impl MemState {
@@ -366,7 +364,7 @@ fn set_cur_size_and_mu(st: &mut EngineState) {
     } else {
         SCRIPT_SIZE * ((st.scanner.cur_style as i32 - 2) / 2)
     };
-    let mq = math_quad(&st.fonts, &st.eqtb, st.scanner.cur_size);
+    let mq = st.fonts.math_quad(&st.eqtb, st.scanner.cur_size);
     st.scanner.cur_mu = crate::scaled_math::x_over_n_in(&mut st.errors, mq, 18);
 }
 
@@ -403,7 +401,7 @@ impl MemState {
             if scanner.cur_c >= fonts.font_bc_entry(scanner.cur_f) as i32
                 && scanner.cur_c <= fonts.font_ec_entry(scanner.cur_f) as i32
             {
-                scanner.cur_i = crate::fonts::char_info(fonts, scanner.cur_f, scanner.cur_c);
+                scanner.cur_i = fonts.char_info(scanner.cur_f, scanner.cur_c);
             } else {
                 scanner.cur_i = fonts.null_character;
             }
@@ -453,7 +451,9 @@ impl MemState {
 
 fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let x = clean_box_in(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
-    let rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
+    let rule_thickness = st
+        .fonts
+        .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
     let p = st.mem.overbar(x, 3 * rule_thickness, rule_thickness)?;
     let x = crate::packaging::vpackage_emit_in(st, p, 0, ADDITIONAL, MAX_HALFWORD)?;
     st.mem.set_nucleus_box(q, x);
@@ -462,7 +462,9 @@ fn make_over_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildA
 
 fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     let x = clean_box_in(st, q.nucleus(), st.scanner.cur_style)?;
-    let rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
+    let rule_thickness = st
+        .fonts
+        .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
     let kern = st
         .mem
         .new_kern(3 * rule_thickness)
@@ -481,7 +483,7 @@ fn make_under_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuild
 }
 
 fn make_vcenter_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
-    let axis_height = axis_height(&st.fonts, &st.eqtb, st.scanner.cur_size);
+    let axis_height = st.fonts.axis_height(&st.eqtb, st.scanner.cur_size);
     let mem = &mut st.mem;
     let Ok(Some(v @ AnyBox::VList(_))) = mem.classify_box(MemIdx::new(q.nucleus().info(mem)))
     else {
@@ -497,11 +499,12 @@ fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
     let f = st
         .eqtb
         .math_font(q.left_delimiter().small(&st.mem).0 + st.scanner.cur_size);
-    let is_ot_math = font_is_ot_math(&st.fonts, f);
+    let is_ot_math = st.fonts.font_is_ot_math(f);
     let rule_thickness = if is_ot_math {
-        get_ot_math_constant(&st.fonts, f, RADICALRULETHICKNESS)
+        st.fonts.get_ot_math_constant(f, RADICALRULETHICKNESS)
     } else {
-        default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size)
+        st.fonts
+            .default_rule_thickness(&st.eqtb, st.scanner.cur_size)
     };
 
     let clean_style = 2 * (st.scanner.cur_style / 2) + 1;
@@ -510,12 +513,13 @@ fn make_radical_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBui
     let cur_size = st.scanner.cur_size;
     let mut clr = if is_ot_math {
         if cur_style < TEXT_STYLE {
-            get_ot_math_constant(&st.fonts, f, RADICALDISPLAYSTYLEVERTICALGAP)
+            st.fonts
+                .get_ot_math_constant(f, RADICALDISPLAYSTYLEVERTICALGAP)
         } else {
-            get_ot_math_constant(&st.fonts, f, RADICALVERTICALGAP)
+            st.fonts.get_ot_math_constant(f, RADICALVERTICALGAP)
         }
     } else if cur_style < TEXT_STYLE {
-        rule_thickness + math_x_height(&st.fonts, &st.eqtb, cur_size).abs() / 4
+        rule_thickness + st.fonts.math_x_height(&st.eqtb, cur_size).abs() / 4
     } else {
         rule_thickness + rule_thickness.abs() / 4
     };
@@ -602,7 +606,9 @@ impl MemState {
 
 fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBuildAbort> {
     if q.thickness(&st.mem) == DEFAULT_CODE {
-        let drt = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
+        let drt = st
+            .fonts
+            .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
         q.set_thickness(&mut st.mem, drt);
     }
 
@@ -624,32 +630,33 @@ fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
     let cur_f = st.scanner.cur_f;
     let (mut shift_up, mut shift_down) = if cur_style < TEXT_STYLE {
         (
-            num1(&st.fonts, &st.eqtb, cur_size),
-            denom1(&st.fonts, &st.eqtb, cur_size),
+            st.fonts.num1(&st.eqtb, cur_size),
+            st.fonts.denom1(&st.eqtb, cur_size),
         )
     } else {
         (
             if q.thickness(&st.mem) != 0 {
-                num2(&st.fonts, &st.eqtb, cur_size)
+                st.fonts.num2(&st.eqtb, cur_size)
             } else {
-                num3(&st.fonts, &st.eqtb, cur_size)
+                st.fonts.num3(&st.eqtb, cur_size)
             },
-            denom2(&st.fonts, &st.eqtb, cur_size),
+            st.fonts.denom2(&st.eqtb, cur_size),
         )
     };
 
     let delta;
     if q.thickness(&st.mem) == 0 {
-        let clr = if font_is_ot_math(&st.fonts, cur_f) {
+        let clr = if st.fonts.font_is_ot_math(cur_f) {
             if cur_style < TEXT_STYLE {
-                get_ot_math_constant(&st.fonts, cur_f, STACKDISPLAYSTYLEGAPMIN)
+                st.fonts
+                    .get_ot_math_constant(cur_f, STACKDISPLAYSTYLEGAPMIN)
             } else {
-                get_ot_math_constant(&st.fonts, cur_f, STACKGAPMIN)
+                st.fonts.get_ot_math_constant(cur_f, STACKGAPMIN)
             }
         } else if cur_style < TEXT_STYLE {
-            7 * default_rule_thickness(&st.fonts, &st.eqtb, cur_size)
+            7 * st.fonts.default_rule_thickness(&st.eqtb, cur_size)
         } else {
-            3 * default_rule_thickness(&st.fonts, &st.eqtb, cur_size)
+            3 * st.fonts.default_rule_thickness(&st.eqtb, cur_size)
         };
 
         delta = crate::scaled_math::half(
@@ -660,20 +667,24 @@ fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
             shift_down += delta;
         }
     } else {
-        let axis_height = axis_height(&st.fonts, &st.eqtb, cur_size);
-        let (delta1, delta2) = if font_is_ot_math(&st.fonts, cur_f) {
+        let axis_height = st.fonts.axis_height(&st.eqtb, cur_size);
+        let (delta1, delta2) = if st.fonts.font_is_ot_math(cur_f) {
             delta = crate::scaled_math::half(q.thickness(&st.mem));
             let clr_num = if cur_style < TEXT_STYLE {
-                get_ot_math_constant(&st.fonts, cur_f, FRACTIONNUMDISPLAYSTYLEGAPMIN)
+                st.fonts
+                    .get_ot_math_constant(cur_f, FRACTIONNUMDISPLAYSTYLEGAPMIN)
             } else {
-                get_ot_math_constant(&st.fonts, cur_f, FRACTIONNUMERATORGAPMIN)
+                st.fonts
+                    .get_ot_math_constant(cur_f, FRACTIONNUMERATORGAPMIN)
             };
             let delta1 = clr_num - ((shift_up - x.depth(&st.mem).0) - (axis_height + delta));
 
             let clr_den = if cur_style < TEXT_STYLE {
-                get_ot_math_constant(&st.fonts, cur_f, FRACTIONDENOMDISPLAYSTYLEGAPMIN)
+                st.fonts
+                    .get_ot_math_constant(cur_f, FRACTIONDENOMDISPLAYSTYLEGAPMIN)
             } else {
-                get_ot_math_constant(&st.fonts, cur_f, FRACTIONDENOMINATORGAPMIN)
+                st.fonts
+                    .get_ot_math_constant(cur_f, FRACTIONDENOMINATORGAPMIN)
             };
             let delta2 = clr_den - ((axis_height - delta) - (z.height(&st.mem).0 - shift_down));
             (delta1, delta2)
@@ -698,7 +709,7 @@ fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
         }
     }
 
-    let axis_height = axis_height(&st.fonts, &st.eqtb, cur_size);
+    let axis_height = st.fonts.axis_height(&st.eqtb, cur_size);
     let rule_thickness = q.thickness(&st.mem);
     let v = st.mem.make_fraction(FractionAssembly {
         x,
@@ -711,9 +722,9 @@ fn make_fraction_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), MathBu
     })?;
 
     let delimiter_size = if cur_style < TEXT_STYLE {
-        delim1(&st.fonts, &st.eqtb, cur_size)
+        st.fonts.delim1(&st.eqtb, cur_size)
     } else {
-        delim2(&st.fonts, &st.eqtb, cur_size)
+        st.fonts.delim2(&st.eqtb, cur_size)
     };
 
     let left_delim = var_delimiter_in(st, q.left_delimiter(), cur_size, delimiter_size)?;
@@ -741,7 +752,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
         }
 
         let f = st.scanner.cur_f;
-        if !font_uses_opentype(&st.fonts, f) {
+        if !st.fonts.font_uses_opentype(f) {
             if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.s1 % 4 == LIST_TAG {
                 let c = st.scanner.cur_i.s0;
                 let i_info = st
@@ -753,18 +764,19 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
                     q.nucleus().set_character(&mut st.mem, c);
                 }
             }
-            delta = char_italic(&st.fonts, f, st.scanner.cur_i);
+            delta = st.fonts.char_italic(f, st.scanner.cur_i);
         }
 
         let x = clean_box_in(st, q.nucleus(), st.scanner.cur_style)?;
 
         let cur_f = st.scanner.cur_f;
-        if font_is_ot_math(&st.fonts, cur_f) {
+        if st.fonts.font_is_ot_math(cur_f) {
             if let Some(glyph) = st.mem.glyph_whatsit(x.list_ptr(&st.mem)) {
                 let (width, height, depth) = 'found: {
                     if st.scanner.cur_style < TEXT_STYLE {
-                        let mut h1 =
-                            get_ot_math_constant(&st.fonts, cur_f, DISPLAYOPERATORMINHEIGHT);
+                        let mut h1 = st
+                            .fonts
+                            .get_ot_math_constant(cur_f, DISPLAYOPERATORMINHEIGHT);
                         let size_h =
                             (glyph.height(&st.mem).0 + glyph.depth(&st.mem).0) as f64 * 5.0 / 4.0;
                         if (h1 as f64) < size_h {
@@ -774,11 +786,12 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
                         let mut n: i32 = 0;
                         let mut h2: i32 = 0;
                         loop {
-                            let g =
-                                get_ot_math_variant(&st.fonts, cur_f, c_glyph, n, &mut h2, false);
+                            let g = st
+                                .fonts
+                                .get_ot_math_variant(cur_f, c_glyph, n, &mut h2, false);
                             if h2 > 0 {
                                 glyph.set_native_glyph(&mut st.mem, g as u16);
-                                measure_glyph(&st.fonts, &mut st.mem, glyph)?;
+                                st.fonts.measure_glyph(&mut st.mem, glyph)?;
                             }
                             n += 1;
                             if h2 < 0 || h2 >= h1 {
@@ -786,8 +799,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
                             }
                         }
                         if h2 < 0 {
-                            if let Some(assembly) =
-                                get_ot_assembly(&st.fonts, cur_f, c_glyph, false)
+                            if let Some(assembly) = st.fonts.get_ot_assembly(cur_f, c_glyph, false)
                             {
                                 st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
                                 let b =
@@ -801,11 +813,12 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
                                 );
                             }
                         } else {
-                            measure_glyph(&st.fonts, &mut st.mem, glyph)?;
+                            st.fonts.measure_glyph(&mut st.mem, glyph)?;
                         }
                     }
-                    delta =
-                        get_ot_math_ital_corr(&st.fonts, cur_f, glyph.native_glyph(&st.mem) as i32);
+                    delta = st
+                        .fonts
+                        .get_ot_math_ital_corr(cur_f, glyph.native_glyph(&st.mem) as i32);
                     (
                         glyph.width(&st.mem),
                         glyph.height(&st.mem),
@@ -818,7 +831,7 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
             }
         }
 
-        let axis_height = axis_height(&st.fonts, &st.eqtb, st.scanner.cur_size);
+        let axis_height = st.fonts.axis_height(&st.eqtb, st.scanner.cur_size);
         let mem = &mut st.mem;
         if q.subscr().math_type(mem) != EMPTY && q.subtype(mem) != LIMITS {
             x.set_width(mem, Scaled(x.width(mem).0 - delta));
@@ -853,11 +866,11 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
         let z = rebox_in(st, z, w)?;
 
         let size = st.scanner.cur_size;
-        let bos1 = big_op_spacing1(&st.fonts, &st.eqtb, size);
-        let bos2 = big_op_spacing2(&st.fonts, &st.eqtb, size);
-        let bos3 = big_op_spacing3(&st.fonts, &st.eqtb, size);
-        let bos4 = big_op_spacing4(&st.fonts, &st.eqtb, size);
-        let bos5 = big_op_spacing5(&st.fonts, &st.eqtb, size);
+        let bos1 = st.fonts.big_op_spacing1(&st.eqtb, size);
+        let bos2 = st.fonts.big_op_spacing2(&st.eqtb, size);
+        let bos3 = st.fonts.big_op_spacing3(&st.eqtb, size);
+        let bos4 = st.fonts.big_op_spacing4(&st.eqtb, size);
+        let bos5 = st.fonts.big_op_spacing5(&st.eqtb, size);
 
         let mem = &mut st.mem;
         let half_delta = crate::scaled_math::half(delta);
@@ -901,20 +914,22 @@ fn make_op_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<i32, MathBuildAb
     Ok(delta)
 }
 
-/// Points `cur_i` at the first instruction of the lig/kern program for `cur_i`
-/// in `cur_f` and returns its index.
-fn lig_kern_start(fonts: &FontState, scanner: &mut ScannerState) -> i32 {
-    let mut a = fonts.lig_kern_base_entry(scanner.cur_f) + scanner.cur_i.s0 as i32;
-    scanner.cur_i = fonts.font_info_b16(a);
-    if scanner.cur_i.s3 > 128 {
-        a = fonts.lig_kern_base_entry(scanner.cur_f)
-            + 256 * scanner.cur_i.s1 as i32
-            + scanner.cur_i.s0 as i32
-            + 32768
-            - 256 * 128;
-        scanner.cur_i = fonts.font_info_b16(a);
+impl FontState {
+    /// Points `cur_i` at the first instruction of the lig/kern program for `cur_i`
+    /// in `cur_f` and returns its index.
+    fn lig_kern_start(&self, scanner: &mut ScannerState) -> i32 {
+        let mut a = self.lig_kern_base_entry(scanner.cur_f) + scanner.cur_i.s0 as i32;
+        scanner.cur_i = self.font_info_b16(a);
+        if scanner.cur_i.s3 > 128 {
+            a = self.lig_kern_base_entry(scanner.cur_f)
+                + 256 * scanner.cur_i.s1 as i32
+                + scanner.cur_i.s0 as i32
+                + 32768
+                - 256 * 128;
+            scanner.cur_i = self.font_info_b16(a);
+        }
+        a
     }
-    a
 }
 
 enum MakeOrdStep {
@@ -932,11 +947,11 @@ impl MemState {
         p: NodePtr<Noad>,
     ) -> MakeOrdStep {
         scanner.cur_c = p.nucleus().character(self) as i32;
-        let mut a = lig_kern_start(fonts, scanner);
+        let mut a = fonts.lig_kern_start(scanner);
         loop {
             if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
                 if scanner.cur_i.s1 >= 128 {
-                    let kern_width = crate::fonts::char_kern(fonts, scanner.cur_f, scanner.cur_i);
+                    let kern_width = fonts.char_kern(scanner.cur_f, scanner.cur_i);
                     let Ok(p_kern) = self.new_kern(kern_width).ok_or(NodeRecycleAbort::Overflow)
                     else {
                         return MakeOrdStep::Overflow;
@@ -1076,13 +1091,13 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
                 other => return Err(MathBuildAbort::Error(other)),
             }
             if st.scanner.cur_i.s1 % 4 == LIG_TAG {
-                let mut a = lig_kern_start(&st.fonts, &mut st.scanner);
+                let mut a = st.fonts.lig_kern_start(&mut st.scanner);
                 let skew_char = st.fonts.skew_char_entry(st.scanner.cur_f) as u16;
                 s = loop {
                     let i = st.scanner.cur_i;
                     if i.s2 == skew_char {
                         if i.s1 >= 128 && i.s3 <= 128 {
-                            break crate::fonts::char_kern(&st.fonts, st.scanner.cur_f, i);
+                            break st.fonts.char_kern(st.scanner.cur_f, i);
                         }
                         break 0;
                     }
@@ -1098,8 +1113,8 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         let w = x.width(&st.mem).0;
         while acc_i.s1 % 4 == LIST_TAG {
             let larger = acc_i.s0 as i32;
-            acc_i = crate::fonts::char_info(&st.fonts, f, larger);
-            if acc_i.s3 == 0 || char_width(&st.fonts, f, acc_i) > w {
+            acc_i = st.fonts.char_info(f, larger);
+            if acc_i.s3 == 0 || st.fonts.char_width(f, acc_i) > w {
                 break;
             }
             c = larger;
@@ -1110,12 +1125,12 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
     let w = x.width(&st.mem).0;
     let mut h = x.height(&st.mem).0;
 
-    let is_ot_math = font_is_ot_math(&st.fonts, f);
+    let is_ot_math = st.fonts.font_is_ot_math(f);
     let mut delta = if is_ot_math {
         if bottom_accent {
             0
         } else {
-            h.min(get_ot_math_constant(&st.fonts, f, ACCENTBASEHEIGHT))
+            h.min(st.fonts.get_ot_math_constant(f, ACCENTBASEHEIGHT))
         }
     } else {
         h.min(st.fonts.param(f, X_HEIGHT_CODE))
@@ -1153,22 +1168,22 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         glyph.set_native_font(&mut st.mem, FontId(f));
         let glyph_id = st.mem.real_get_native_glyph(old, 0);
         glyph.set_native_glyph(&mut st.mem, glyph_id);
-        measure_glyph(&st.fonts, &mut st.mem, glyph)?;
+        st.fonts.measure_glyph(&mut st.mem, glyph)?;
         old.free_native(&mut st.mem);
         y.set_list_ptr(&mut st.mem, glyph.ptr());
 
         let mut assembly_box = None;
         if !kind.is_multiple_of(2) {
-            measure_glyph(&st.fonts, &mut st.mem, glyph)?;
+            st.fonts.measure_glyph(&mut st.mem, glyph)?;
         } else {
             let c_glyph = glyph.native_glyph(&st.mem) as i32;
             let mut n: i32 = 0;
             let mut w2: i32 = 0;
             loop {
-                let g = get_ot_math_variant(&st.fonts, f, c_glyph, n, &mut w2, true);
+                let g = st.fonts.get_ot_math_variant(f, c_glyph, n, &mut w2, true);
                 if w2 > 0 && w2 <= w {
                     glyph.set_native_glyph(&mut st.mem, g as u16);
-                    measure_glyph(&st.fonts, &mut st.mem, glyph)?;
+                    st.fonts.measure_glyph(&mut st.mem, glyph)?;
                     n += 1;
                 }
                 if w2 < 0 || w2 >= w {
@@ -1176,14 +1191,14 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
                 }
             }
             if w2 < 0 {
-                if let Some(assembly) = get_ot_assembly(&st.fonts, f, c_glyph, true) {
+                if let Some(assembly) = st.fonts.get_ot_assembly(f, c_glyph, true) {
                     st.mem.free_node(glyph.ptr(), GLYPH_NODE_SIZE);
                     let b = build_opentype_assembly_in(st, f, &assembly, w, true)?;
                     y.set_list_ptr(&mut st.mem, b.ptr());
                     assembly_box = Some(b);
                 }
             } else {
-                measure_glyph(&st.fonts, &mut st.mem, glyph)?;
+                st.fonts.measure_glyph(&mut st.mem, glyph)?;
             }
         }
 
@@ -1204,7 +1219,9 @@ fn make_math_accent_in(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Mat
         }
 
         let attach = match assembly_box {
-            None => get_ot_math_accent_pos(&st.fonts, f, glyph.native_glyph(mem) as i32),
+            None => st
+                .fonts
+                .get_ot_math_accent_pos(f, glyph.native_glyph(mem) as i32),
             Some(_) => TEX_INFINITY,
         };
         let sa = if attach == TEX_INFINITY {
@@ -1284,7 +1301,7 @@ fn maybe_attach_script_kern_in(
     let cur_f = st.scanner.cur_f;
     let nucleus = st.mem.glyph_whatsit(p);
 
-    if !font_is_ot_math(&st.fonts, cur_f) {
+    if !st.fonts.font_is_ot_math(cur_f) {
         return Ok(ScriptKernAttachment {
             p,
             kern: 0,
@@ -1300,8 +1317,7 @@ fn maybe_attach_script_kern_in(
         });
     };
 
-    let kern = get_ot_math_kern(
-        &st.fonts,
+    let kern = st.fonts.get_ot_math_kern(
         nucleus.native_font(&st.mem).0,
         nucleus.native_glyph(&st.mem) as i32,
         script_f,
@@ -1344,15 +1360,15 @@ fn clean_script_box_in(
 ) -> Result<ScriptBoxPrep, MathBuildAbort> {
     let node = clean_box_in(st, script_field, clean_style)?;
     let shift = match adjustment {
-        ScriptBoxAdjustment::Sub1 => sub1(&st.fonts, &st.eqtb, st.scanner.cur_size),
-        ScriptBoxAdjustment::Sub2 => sub2(&st.fonts, &st.eqtb, st.scanner.cur_size),
+        ScriptBoxAdjustment::Sub1 => st.fonts.sub1(&st.eqtb, st.scanner.cur_size),
+        ScriptBoxAdjustment::Sub2 => st.fonts.sub2(&st.eqtb, st.scanner.cur_size),
         ScriptBoxAdjustment::Superscript => {
             if st.scanner.cur_style % 2 != 0 {
-                sup3(&st.fonts, &st.eqtb, st.scanner.cur_size)
+                st.fonts.sup3(&st.eqtb, st.scanner.cur_size)
             } else if st.scanner.cur_style < TEXT_STYLE {
-                sup1(&st.fonts, &st.eqtb, st.scanner.cur_size)
+                st.fonts.sup1(&st.eqtb, st.scanner.cur_size)
             } else {
-                sup2(&st.fonts, &st.eqtb, st.scanner.cur_size)
+                st.fonts.sup2(&st.eqtb, st.scanner.cur_size)
             }
         }
     };
@@ -1384,8 +1400,8 @@ fn initial_script_shifts_in(
             SCRIPT_SCRIPT_SIZE
         };
         let shifts = ScriptShifts {
-            up: zb.height(&st.mem).0 - sup_drop(&st.fonts, &st.eqtb, t),
-            down: zb.depth(&st.mem).0 + sub_drop(&st.fonts, &st.eqtb, t),
+            up: zb.height(&st.mem).0 - st.fonts.sup_drop(&st.eqtb, t),
+            down: zb.depth(&st.mem).0 + st.fonts.sub_drop(&st.eqtb, t),
         };
         st.mem.free_node(zb.ptr(), BOX_NODE_SIZE);
         Ok(shifts)
@@ -1502,9 +1518,9 @@ fn finish_subscript_only_in(
 
     let cur_f = st.scanner.cur_f;
     let box_depth = x.height(&st.mem).0;
-    let x_height = math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size);
-    let clr = if font_is_ot_math(&st.fonts, cur_f) {
-        box_depth - get_ot_math_constant(&st.fonts, cur_f, SUBSCRIPTTOPMAX)
+    let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
+    let clr = if st.fonts.font_is_ot_math(cur_f) {
+        box_depth - st.fonts.get_ot_math_constant(cur_f, SUBSCRIPTTOPMAX)
     } else {
         box_depth - (x_height * 4).abs() / 5
     };
@@ -1536,9 +1552,9 @@ fn prepare_superscript_in(
 
     let cur_f = st.scanner.cur_f;
     let box_height = prepared.box_node.depth(&st.mem).0;
-    let x_height = math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size);
-    let clr = if font_is_ot_math(&st.fonts, cur_f) {
-        box_height + get_ot_math_constant(&st.fonts, cur_f, SUPERSCRIPTBOTTOMMIN)
+    let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
+    let clr = if st.fonts.font_is_ot_math(cur_f) {
+        box_height + st.fonts.get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMIN)
     } else {
         box_height + x_height.abs() / 4
     };
@@ -1588,9 +1604,11 @@ fn finish_superscript_branch_in(
     let cur_f = st.scanner.cur_f;
     let x_height_node = x.depth(&st.mem).0;
     let y_depth = y.height(&st.mem).0;
-    let default_rule_thickness = default_rule_thickness(&st.fonts, &st.eqtb, st.scanner.cur_size);
-    let mut clr = if font_is_ot_math(&st.fonts, cur_f) {
-        get_ot_math_constant(&st.fonts, cur_f, SUBSUPERSCRIPTGAPMIN)
+    let default_rule_thickness = st
+        .fonts
+        .default_rule_thickness(&st.eqtb, st.scanner.cur_size);
+    let mut clr = if st.fonts.font_is_ot_math(cur_f) {
+        st.fonts.get_ot_math_constant(cur_f, SUBSUPERSCRIPTGAPMIN)
             - ((shift_up - x_height_node) - (y_depth - shift_down))
     } else {
         4 * default_rule_thickness - ((shift_up - x_height_node) - (y_depth - shift_down))
@@ -1601,9 +1619,10 @@ fn finish_superscript_branch_in(
         shift_down += clr;
         let cur_f = st.scanner.cur_f;
         let x_height_node = x.depth(&st.mem).0;
-        let x_height = math_x_height(&st.fonts, &st.eqtb, st.scanner.cur_size);
-        clr = if font_is_ot_math(&st.fonts, cur_f) {
-            get_ot_math_constant(&st.fonts, cur_f, SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT)
+        let x_height = st.fonts.math_x_height(&st.eqtb, st.scanner.cur_size);
+        clr = if st.fonts.font_is_ot_math(cur_f) {
+            st.fonts
+                .get_ot_math_constant(cur_f, SUPERSCRIPTBOTTOMMAXWITHSUBSCRIPT)
                 - (shift_up - x_height_node)
         } else {
             (x_height * 4).abs() / 5 - (shift_up - x_height_node)
@@ -1701,7 +1720,7 @@ fn first_script_glyph_in(
 
         let cur_f_after_fetch = st.scanner.cur_f;
         let cur_c_after_fetch = st.scanner.cur_c;
-        if font_is_ot_math(&st.fonts, cur_f_after_fetch) {
+        if st.fonts.font_is_ot_math(cur_f_after_fetch) {
             let script_c = crate::fonts::new_native_character_in(
                 st,
                 cur_f_after_fetch,
@@ -1746,7 +1765,7 @@ fn make_left_right_in(
     st.scanner.cur_style = style;
     set_cur_size_and_mu(st);
     let size = st.scanner.cur_size;
-    let axis_height = axis_height(&st.fonts, &st.eqtb, size);
+    let axis_height = st.fonts.axis_height(&st.eqtb, size);
     let delimiter_factor = st.eqtb.int_par(INT_PAR_DELIMITER_FACTOR);
     let delimiter_shortfall = st.eqtb.dimen_par(DIMEN_PAR_DELIMITER_SHORTFALL);
     let delta2 = max_d + axis_height;
@@ -1889,17 +1908,19 @@ fn mlist_nucleus_in(
                 glyph.set_native_font(&mut st.mem, FontId(cur_f));
                 let z_glyph = st.mem.real_get_native_glyph(z, 0);
                 glyph.set_native_glyph(&mut st.mem, z_glyph);
-                measure_glyph(&st.fonts, &mut st.mem, glyph)?;
+                st.fonts.measure_glyph(&mut st.mem, glyph)?;
                 z.free_native(&mut st.mem);
-                delta = get_ot_math_ital_corr(&st.fonts, cur_f, glyph.native_glyph(&st.mem) as i32);
+                delta = st
+                    .fonts
+                    .get_ot_math_ital_corr(cur_f, glyph.native_glyph(&st.mem) as i32);
                 if qn.nucleus().math_type(&st.mem) == MATH_TEXT_CHAR
-                    && !font_is_ot_math(&st.fonts, cur_f)
+                    && !st.fonts.font_is_ot_math(cur_f)
                 {
                     delta = 0;
                 }
                 glyph.ptr()
             } else if st.scanner.cur_i.s3 > 0 {
-                delta = char_italic(&st.fonts, cur_f, st.scanner.cur_i);
+                delta = st.fonts.char_italic(cur_f, st.scanner.cur_i);
                 let cc = st.scanner.cur_c as u16;
                 let p = crate::main_control::new_character_in(st, cur_f, cc)?;
                 let p = p.map_or(MemPtr::NULL, crate::main_control::NewChar::ptr);
@@ -2260,13 +2281,15 @@ fn mlist_to_hlist_in(st: &mut EngineState) -> Result<(), MathBuildAbort> {
     Ok(())
 }
 
-fn measure_glyph(
-    fonts: &FontState,
-    mem: &mut MemState,
-    p: NodePtr<WhatsitNode>,
-) -> Result<(), crate::ext::NativeFontAbort> {
-    // SAFETY: `p` is a glyph whatsit and the measurer only reads font tables over FFI.
-    unsafe { crate::ext::measure_native_glyph(fonts, mem, p, true) }
+impl FontState {
+    fn measure_glyph(
+        &self,
+        mem: &mut MemState,
+        p: NodePtr<WhatsitNode>,
+    ) -> Result<(), crate::ext::NativeFontAbort> {
+        // SAFETY: `p` is a glyph whatsit and the measurer only reads font tables over FFI.
+        unsafe { self.measure_native_glyph(mem, p, true) }
+    }
 }
 
 impl MemState {
@@ -2353,11 +2376,11 @@ impl MemState {
         f: i32,
         c: u16,
     ) -> Result<AnyBox, NodeRecycleAbort> {
-        let c_eff = crate::fonts::effective_char(fonts, f, c);
-        let q = crate::fonts::char_info(fonts, f, c_eff);
-        let width = char_width(fonts, f, q) + char_italic(fonts, f, q);
-        let height = char_height(fonts, f, q);
-        let depth = char_depth(fonts, f, q);
+        let c_eff = fonts.effective_char(f, c);
+        let q = fonts.char_info(f, c_eff);
+        let width = fonts.char_width(f, q) + fonts.char_italic(f, q);
+        let height = fonts.char_height(f, q);
+        let depth = fonts.char_depth(f, q);
 
         let b = self.new_null_box().ok_or(NodeRecycleAbort::Overflow)?;
         b.set_width(self, Scaled(width));
@@ -2379,10 +2402,12 @@ impl MemState {
     }
 }
 
-fn height_plus_depth(fonts: &mut FontState, f: i32, c: u16) -> i32 {
-    let c = crate::fonts::effective_char(fonts, f, c);
-    let q = crate::fonts::char_info(fonts, f, c);
-    char_height(fonts, f, q) + char_depth(fonts, f, q)
+impl FontState {
+    fn height_plus_depth(&mut self, f: i32, c: u16) -> i32 {
+        let c = self.effective_char(f, c);
+        let q = self.char_info(f, c);
+        self.char_height(f, q) + self.char_depth(f, q)
+    }
 }
 
 /// A measured glyph whatsit for glyph `g` of font `f`.
@@ -2395,7 +2420,7 @@ fn new_measured_glyph(
         .ok_or(NodeRecycleAbort::Overflow)?;
     p.set_native_font(&mut st.mem, FontId(f));
     p.set_native_glyph(&mut st.mem, g as u16);
-    measure_glyph(&st.fonts, &mut st.mem, p)?;
+    st.fonts.measure_glyph(&mut st.mem, p)?;
     Ok(p)
 }
 
@@ -2499,7 +2524,7 @@ fn compute_ot_math_accent_pos_in(
                 let c = st.scanner.cur_c;
                 let q = crate::fonts::new_native_character_in(st, f, c as u32)?;
                 let g = st.mem.real_get_native_glyph(q, 0);
-                return Ok(get_ot_math_accent_pos(&st.fonts, f, g as i32));
+                return Ok(st.fonts.get_ot_math_accent_pos(f, g as i32));
             }
             SUB_MLIST => {
                 let r = p.nucleus().info(&st.mem);
@@ -3094,16 +3119,18 @@ pub(crate) fn resume_after_display_in(
     Ok(())
 }
 
-#[inline]
-fn sym_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
-    let f = eqtb.math_font(2 + size);
-    fonts.font_params(f) >= TOTAL_MATHSY_PARAMS || font_is_ot_math(fonts, f)
-}
+impl FontState {
+    #[inline]
+    fn sym_font_ok(&self, eqtb: &EqtbState, size: i32) -> bool {
+        let f = eqtb.math_font(2 + size);
+        self.font_params(f) >= TOTAL_MATHSY_PARAMS || self.font_is_ot_math(f)
+    }
 
-#[inline]
-fn ext_font_ok(fonts: &FontState, eqtb: &EqtbState, size: i32) -> bool {
-    let f = eqtb.math_font(3 + size);
-    fonts.font_params(f) >= TOTAL_MATHEX_PARAMS || font_is_ot_math(fonts, f)
+    #[inline]
+    fn ext_font_ok(&self, eqtb: &EqtbState, size: i32) -> bool {
+        let f = eqtb.math_font(3 + size);
+        self.font_params(f) >= TOTAL_MATHEX_PARAMS || self.font_is_ot_math(f)
+    }
 }
 
 impl MemState {
@@ -3249,7 +3276,7 @@ fn check_math_fonts_in(
     st: &mut EngineState,
 ) -> Result<bool, crate::main_control::MainControlAbort> {
     let sizes = [TEXT_SIZE, SCRIPT_SIZE, SCRIPT_SCRIPT_SIZE];
-    let (msg, help) = if !sizes.iter().all(|&z| sym_font_ok(&st.fonts, &st.eqtb, z)) {
+    let (msg, help) = if !sizes.iter().all(|&z| st.fonts.sym_font_ok(&st.eqtb, z)) {
         (
             c"Math formula deleted: Insufficient symbol fonts",
             [
@@ -3258,7 +3285,7 @@ fn check_math_fonts_in(
                 r"the \fontdimen values needed in math symbol fonts.",
             ],
         )
-    } else if !sizes.iter().all(|&z| ext_font_ok(&st.fonts, &st.eqtb, z)) {
+    } else if !sizes.iter().all(|&z| st.fonts.ext_font_ok(&st.eqtb, z)) {
         (
             c"Math formula deleted: Insufficient extension fonts",
             [
@@ -3395,7 +3422,7 @@ pub(crate) fn after_math_in(
     match a {
         Some(eqno) if !danger => {
             e = eqno.width(&st.mem).0;
-            q = e + math_quad(&st.fonts, &st.eqtb, TEXT_SIZE);
+            q = e + st.fonts.math_quad(&st.eqtb, TEXT_SIZE);
         }
         _ => {
             e = 0;
@@ -3627,9 +3654,8 @@ pub(crate) fn init_math_in(
                 let (d, found) = 'reswitch: loop {
                     if let Some(ch) = st.mem.as_char(p) {
                         let f = ch.font(&st.mem).0;
-                        let c =
-                            crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-                        let d = char_width(&st.fonts, f, crate::fonts::char_info(&st.fonts, f, c));
+                        let c = st.fonts.effective_char(f, ch.character(&st.mem));
+                        let d = st.fonts.char_width(f, st.fonts.char_info(f, c));
                         break (d, true);
                     }
                     break match st.mem.classify(MemIdx::new(p)) {
@@ -3817,9 +3843,9 @@ fn rebox_in(st: &mut EngineState, b: AnyBox, w: i32) -> Result<AnyBox, NodeRecyc
     let mut p = b.list_ptr(&st.mem);
     if let Some(ch) = st.mem.as_char(p).filter(|_| p.link(&st.mem).is_null()) {
         let f = ch.font(&st.mem).0;
-        let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-        let q = crate::fonts::char_info(&st.fonts, f, c);
-        let v = char_width(&st.fonts, f, q);
+        let c = st.fonts.effective_char(f, ch.character(&st.mem));
+        let q = st.fonts.char_info(f, c);
+        let v = st.fonts.char_width(f, q);
         let bw = b.width(&st.mem).0;
         if v != bw {
             let k = st.mem.new_kern(bw - v).ok_or(NodeRecycleAbort::Overflow)?;
@@ -3858,7 +3884,7 @@ fn build_opentype_assembly_in(
     // Extenders repeat `n` times, other parts once.
     let repeats = |i: i32, n: i32| if a.is_extender(i) { n } else { 1 };
     let no_extenders = (0..a.count()).all(|i| !a.is_extender(i));
-    let min_o = ot_min_connector_overlap(&st.fonts, f);
+    let min_o = st.fonts.ot_min_connector_overlap(f);
     let mut n: i32 = -1;
     loop {
         n += 1;
@@ -3941,20 +3967,20 @@ impl MemState {
                 .into_vlist(self),
         );
         let r = fonts.font_info_b16(fonts.exten_base_entry(f) + q.s0 as i32);
-        let u = height_plus_depth(fonts, f, r.s0);
-        let effective_c = crate::fonts::effective_char(fonts, f, r.s0);
-        let qq = crate::fonts::char_info(fonts, f, effective_c);
-        let box_width = char_width(fonts, f, qq) + char_italic(fonts, f, qq);
+        let u = fonts.height_plus_depth(f, r.s0);
+        let effective_c = fonts.effective_char(f, r.s0);
+        let qq = fonts.char_info(f, effective_c);
+        let box_width = fonts.char_width(f, qq) + fonts.char_italic(f, qq);
         vb.set_width(self, Scaled(box_width));
         let mut w = 0;
         if r.s1 != 0 {
-            w += height_plus_depth(fonts, f, r.s1);
+            w += fonts.height_plus_depth(f, r.s1);
         }
         if r.s2 != 0 {
-            w += height_plus_depth(fonts, f, r.s2);
+            w += fonts.height_plus_depth(f, r.s2);
         }
         if r.s3 != 0 {
-            w += height_plus_depth(fonts, f, r.s3);
+            w += fonts.height_plus_depth(f, r.s3);
         }
 
         let mut n: i32 = 0;
@@ -4020,10 +4046,10 @@ fn var_delimiter_in(
                     let g = st.eqtb.math_font(z);
                     if g != FONT_BASE {
                         if st.fonts.font_area_entry(g) == AAT_FONT_FLAG
-                            || font_uses_opentype(&st.fonts, g)
+                            || st.fonts.font_uses_opentype(g)
                         {
                             // SAFETY: pure font-table and FFI glyph lookup.
-                            x = unsafe { crate::ext::map_char_to_glyph(&st.fonts, g, x) }?;
+                            x = unsafe { st.fonts.map_char_to_glyph(g, x) }?;
                             f = g;
                             c = x as u16;
                             w = 0;
@@ -4031,7 +4057,7 @@ fn var_delimiter_in(
                             let mut u: i32 = 0;
                             loop {
                                 let yv =
-                                    get_ot_math_variant(&st.fonts, g, x, n, &mut u, false) as u16;
+                                    st.fonts.get_ot_math_variant(g, x, n, &mut u, false) as u16;
                                 if u > w {
                                     c = yv;
                                     w = u;
@@ -4044,7 +4070,7 @@ fn var_delimiter_in(
                                     break;
                                 }
                             }
-                            ot_assembly = get_ot_assembly(&st.fonts, g, x, false);
+                            ot_assembly = st.fonts.get_ot_assembly(g, x, false);
                             if ot_assembly.is_some() {
                                 break 'found;
                             }
@@ -4053,7 +4079,7 @@ fn var_delimiter_in(
                             let mut y = x as u16;
                             if y >= fonts.font_bc_entry(g) && y <= fonts.font_ec_entry(g) {
                                 loop {
-                                    q = crate::fonts::char_info(fonts, g, y as i32);
+                                    q = fonts.char_info(g, y as i32);
                                     if q.s3 == 0 {
                                         break;
                                     }
@@ -4062,7 +4088,7 @@ fn var_delimiter_in(
                                         c = y;
                                         break 'found;
                                     }
-                                    let u = char_height(fonts, g, q) + char_depth(fonts, g, q);
+                                    let u = fonts.char_height(g, q) + fonts.char_depth(g, q);
                                     if u > w {
                                         f = g;
                                         c = y;
@@ -4096,7 +4122,7 @@ fn var_delimiter_in(
         let width = st.eqtb.dimen_par(DIMEN_PAR_NULL_DELIMITER_SPACE);
         b.set_width(&mut st.mem, Scaled(width));
         AnyBox::HList(b)
-    } else if !font_uses_opentype(&st.fonts, f) {
+    } else if !st.fonts.font_uses_opentype(f) {
         if q.s1 % 4 == EXT_TAG {
             st.mem.build_ext_delimiter_box(&mut st.fonts, f, q, v)?
         } else {
@@ -4107,7 +4133,7 @@ fn var_delimiter_in(
     } else {
         native_glyph_vbox_in(st, f, c)?
     };
-    let axis = axis_height(&st.fonts, &st.eqtb, s);
+    let axis = st.fonts.axis_height(&st.eqtb, s);
     let shift = crate::scaled_math::half(b.height(&st.mem).0 - b.depth(&st.mem).0) - axis;
     b.set_shift_amount(&mut st.mem, Scaled(shift));
     Ok(b)

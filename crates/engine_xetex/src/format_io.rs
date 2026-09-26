@@ -16,7 +16,7 @@ use crate::consts::{
     MIN_HALFWORD, PRIM_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
     TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::engine::{alloc_font_arrays, set_eq, POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
+use crate::engine::{set_eq, POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
 use crate::errors::EngineAbort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{HASH_OFFSET, HASH_PRIME};
@@ -768,7 +768,7 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
         c"must increase font_max",
     )?;
 
-    alloc_font_arrays(fonts);
+    fonts.alloc_font_arrays();
 
     let n = fonts.font_ptr + 1;
     let max_str = st.strings.str_ptr;

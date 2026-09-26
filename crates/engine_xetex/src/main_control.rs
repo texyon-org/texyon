@@ -24,7 +24,7 @@ use crate::consts::{
     SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, TOO_BIG_USV,
     UNDEFINED_PRIMITIVE, VMODE,
 };
-use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
+use crate::ext::{append_src_special_in, do_extension_in};
 use crate::fonts::{
     read_font_info_in, AAT_FONT_FLAG, EXTRA_SPACE_CODE, LIG_TAG, OTGR_FONT_FLAG, SLANT_CODE,
     SPACE_CODE, X_HEIGHT_CODE,
@@ -45,7 +45,7 @@ use crate::scan::{
     INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN,
     PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
 };
-use crate::state::{EngineState, GroupCode, MemState};
+use crate::state::{EngineState, FontState, GroupCode, MemState};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
 use crate::bridge::diag_append_str;
@@ -1616,12 +1616,12 @@ pub(crate) fn new_character_in(
     f: i32,
     c: u16,
 ) -> Result<Option<NewChar>, NewCharacterAbort> {
-    if is_native_font(&st.fonts, f) {
+    if st.fonts.is_native_font(f) {
         return crate::fonts::new_native_character_in(st, f, c as u32)
             .map(|w| Some(NewChar::Native(w)))
             .map_err(NewCharacterAbort::Native);
     }
-    let ec = crate::fonts::effective_char(&mut st.fonts, f, c) as u16;
+    let ec = st.fonts.effective_char(f, c) as u16;
     if st.fonts.font_bc_entry(f) <= ec && st.fonts.font_ec_entry(f) >= ec {
         let info = st
             .fonts
@@ -2493,9 +2493,9 @@ pub(crate) fn build_discretionary_in(st: &mut EngineState) -> Result<(), MainCon
 /// The italic correction of character `ch`.
 fn char_italic(st: &mut EngineState, ch: NodePtr<CharNode>) -> i32 {
     let f = ch.font(&st.mem).0;
-    let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-    let info = crate::fonts::char_info(&st.fonts, f, c);
-    crate::fonts::char_italic(&st.fonts, f, info)
+    let c = st.fonts.effective_char(f, ch.character(&st.mem));
+    let info = st.fonts.char_info(f, c);
+    st.fonts.char_italic(f, info)
 }
 
 pub(crate) fn append_italic_correction_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -2510,10 +2510,10 @@ pub(crate) fn append_italic_correction_in(st: &mut EngineState) -> Result<(), Ma
             Ok(AnyNode::Ligature(lig)) => char_italic(st, lig.char_word()),
             Ok(AnyNode::Whatsit(w)) => match w.whatsit_subtype(&st.mem) {
                 Some(s) if s.is_native_word() => unsafe {
-                    crate::ext::real_get_native_italic_correction(&st.fonts, &st.mem, w)
+                    st.fonts.real_get_native_italic_correction(&st.mem, w)
                 },
                 Some(WhatsitSubtype::Glyph) => unsafe {
-                    crate::ext::real_get_native_glyph_italic_correction(&st.fonts, &st.mem, w)
+                    st.fonts.real_get_native_glyph_italic_correction(&st.mem, w)
                 },
                 _ => return Ok(()),
             },
@@ -2529,9 +2529,11 @@ pub(crate) fn append_italic_correction_in(st: &mut EngineState) -> Result<(), Ma
     Ok(())
 }
 
-fn is_native_font(fonts: &crate::state::FontState, f: i32) -> bool {
-    let area = fonts.font_area_entry(f);
-    area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
+impl FontState {
+    pub(crate) fn is_native_font(&self, f: i32) -> bool {
+        let area = self.font_area_entry(f);
+        area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
+    }
 }
 
 pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -2549,15 +2551,16 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
             let a = w.width(&st.mem).0;
             if a == 0 {
                 (lsb, rsb) = unsafe {
-                    crate::ext::get_native_char_sidebearings(&st.fonts, f, st.scanner.cur_val)?
+                    st.fonts
+                        .get_native_char_sidebearings(f, st.scanner.cur_val)?
                 };
             }
             a
         }
         NewChar::Char(ch) => {
-            let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-            let info = crate::fonts::char_info(&st.fonts, f, c);
-            crate::fonts::char_width(&st.fonts, f, info)
+            let c = st.fonts.effective_char(f, ch.character(&st.mem));
+            let info = st.fonts.char_info(f, c);
+            st.fonts.char_width(f, info)
         }
     };
 
@@ -2589,15 +2592,16 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
         NewChar::Native(w) => {
             let w = w.width(&st.mem).0;
             let (h, _) = unsafe {
-                crate::ext::get_native_char_height_depth(&st.fonts, f, st.scanner.cur_val)?
+                st.fonts
+                    .get_native_char_height_depth(f, st.scanner.cur_val)?
             };
             (w, h)
         }
         NewChar::Char(ch) => {
-            let c = crate::fonts::effective_char(&mut st.fonts, f, ch.character(&st.mem));
-            let info = crate::fonts::char_info(&st.fonts, f, c);
-            let w = crate::fonts::char_width(&st.fonts, f, info);
-            let h = crate::fonts::char_height(&st.fonts, f, info);
+            let c = st.fonts.effective_char(f, ch.character(&st.mem));
+            let info = st.fonts.char_info(f, c);
+            let w = st.fonts.char_width(f, info);
+            let h = st.fonts.char_height(f, info);
             (w, h)
         }
     };
@@ -2608,7 +2612,7 @@ pub(crate) fn make_accent_in(st: &mut EngineState) -> Result<(), MainControlAbor
         b.set_shift_amount(&mut st.mem, Scaled(x - h));
         b.ptr()
     };
-    let delta = if is_native_font(&st.fonts, f) && a == 0 {
+    let delta = if st.fonts.is_native_font(f) && a == 0 {
         crate::scaled_math::tex_round((w - lsb + rsb) as f64 / 2.0 + h as f64 * t - x as f64 * s)
     } else {
         crate::scaled_math::tex_round((w - a) as f64 / 2.0 + h as f64 * t - x as f64 * s)
@@ -2753,7 +2757,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
         for f in FONT_BASE + 1..=st.fonts.font_ptr {
             let fi = f as usize;
             let area_matches = (crate::string_pool::length(&st.strings, st.scanner.cur_area) == 0
-                && is_native_font(&st.fonts, f))
+                && st.fonts.is_native_font(f))
                 || crate::string_pool::str_eq_str(
                     &st.strings,
                     st.fonts.font_area[fi],
@@ -2776,7 +2780,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
             let same_name =
                 crate::string_pool::str_eq_str(&st.strings, st.fonts.font_name[fi], full_name);
             flush_last_string(st);
-            if same_name && is_native_font(&st.fonts, f) && size_matches(st, fi) {
+            if same_name && st.fonts.is_native_font(f) && size_matches(st, fi) {
                 break 'search f;
             }
         }
@@ -3387,7 +3391,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
     if !mapping.is_null() {
         let text = st.scanner.native_text.as_mut_ptr();
         let len = st.scanner.native_len;
-        let mapped_len = apply_mapping(&mut st.fonts, mapping, text, len);
+        let mapped_len = st.fonts.apply_mapping(mapping, text, len);
         st.scanner.native_len = 0;
         st.scanner.reserve_native_text(mapped_len);
         st.mainloop.main_h = 0;
@@ -3411,7 +3415,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
                     - 0xDC00;
                 i += 1;
             }
-            if crate::ext::map_char_to_glyph(&st.fonts, mf, c)? == 0 {
+            if st.fonts.map_char_to_glyph(mf, c)? == 0 {
                 mc_propagate_error(crate::output::char_warning_in(st, mf, c))?;
             }
         }
@@ -3496,7 +3500,7 @@ unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, Mai
         let text = st.scanner.native_text.as_ptr();
         st.mem.copy_to_native_node(node, old_len, text, len);
         let metrics = use_glyph_metrics(st);
-        crate::ext::measure_native_node(&st.fonts, &mut st.mem, node, metrics)?;
+        st.fonts.measure_native_node(&mut st.mem, node, metrics)?;
         if let Some(word) = old {
             let mut prev = st.input.cur_list.head;
             if prev != word.ptr() {
@@ -3562,7 +3566,7 @@ unsafe fn shape_interword_space(st: &mut EngineState, mf: i32) -> Result<(), Mai
     st.mem
         .copy_to_native_node(joined, prev_len + 1, tail_text, tail_len);
     let metrics = use_glyph_metrics(st);
-    crate::ext::measure_native_node(&st.fonts, &mut st.mem, joined, metrics)?;
+    st.fonts.measure_native_node(&mut st.mem, joined, metrics)?;
     let t = joined.width(&st.mem).0 - prev_word.width(&st.mem).0 - tail_word.width(&st.mem).0;
     joined.free_native(&mut st.mem);
     // TeX reads `width(font_glue[f])`, which stays null while `\spaceskip` supplies the glue.
@@ -3652,8 +3656,8 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
 #[inline(always)]
 fn cur_l_info(st: &mut EngineState) -> crate::mem_types::B16x4 {
     let main_f = st.mainloop.main_f;
-    let c = crate::fonts::effective_char(&mut st.fonts, main_f, st.mainloop.cur_l as u16);
-    crate::fonts::char_info(&st.fonts, main_f, c)
+    let c = st.fonts.effective_char(main_f, st.mainloop.cur_l as u16);
+    st.fonts.char_info(main_f, c)
 }
 
 /// Returns true to go to `big_switch`, false to go to `reswitch`.
@@ -3669,7 +3673,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
     st.mainloop.prev_class = CHAR_CLASS_LIMIT - 1;
 
     let mf = st.eqtb.cur_font();
-    if is_native_font(&st.fonts, mf) {
+    if st.fonts.is_native_font(mf) {
         return main_loop_native_in(st, mf);
     }
 
@@ -3766,15 +3770,15 @@ pub(crate) unsafe fn main_control_main_loop_in(
         let main_f = st.mainloop.main_f;
         let cur_chr = st.scanner.cur_chr as u16;
         // Each call resets `xtx_ligature_present`, so the two bounds may see different codes.
-        let exists = if crate::fonts::effective_char(&mut st.fonts, main_f, cur_chr)
+        let exists = if st.fonts.effective_char(main_f, cur_chr)
             > st.fonts.font_ec_entry(main_f) as i32
-            || crate::fonts::effective_char(&mut st.fonts, main_f, cur_chr)
-                < st.fonts.font_bc_entry(main_f) as i32
+            || st.fonts.effective_char(main_f, cur_chr) < st.fonts.font_bc_entry(main_f) as i32
         {
             false
         } else {
-            main_i =
-                crate::fonts::effective_char_info(&mut st.fonts, main_f, st.mainloop.cur_l as u16);
+            main_i = st
+                .fonts
+                .effective_char_info(main_f, st.mainloop.cur_l as u16);
             main_i.s3 > 0
         };
         if !exists {
@@ -3817,7 +3821,7 @@ fn lig_kern_program(
         if step.s1 >= 128 {
             wrapup(st, true)?;
             let main_f = st.mainloop.main_f;
-            let kern = crate::fonts::char_kern(&st.fonts, main_f, step);
+            let kern = st.fonts.char_kern(main_f, step);
             let kern = overflow_err(st.mem.new_kern(kern))?;
             st.input.cur_list.tail_append(&mut st.mem, kern.ptr());
             return Ok(LigExit::Move);
@@ -4538,7 +4542,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                     st.fonts.set_skew_char_entry(f, st.scanner.cur_val);
                 }
             } else {
-                if is_native_font(&st.fonts, f) {
+                if st.fonts.is_native_font(f) {
                     crate::scan::scan_glyph_number_in(st, f)?;
                 } else {
                     crate::scan::scan_char_num_in(st)?;

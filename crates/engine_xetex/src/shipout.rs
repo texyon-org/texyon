@@ -253,7 +253,7 @@ fn synch_v(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
 
 fn dvi_native_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), ShipoutAbort> {
     // SAFETY: FFI fill of `xdv_buffer`, returning the definition length.
-    let font_def_length = unsafe { crate::ext::make_font_def(&mut st.fonts, f) }?;
+    let font_def_length = unsafe { st.fonts.make_font_def(f) }?;
     dvi_out(&mut st.shipout, DEFINE_NATIVE_FONT)?;
     dvi_four(&mut st.shipout, f - 1)?;
     dvi_bytes(
@@ -318,7 +318,7 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: i32) -> Result<(), Shipou
     Ok(())
 }
 
-fn str_range(strings: &StringsState, s: i32) -> std::ops::Range<usize> {
+pub(crate) fn str_range(strings: &StringsState, s: i32) -> std::ops::Range<usize> {
     let start = strings.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
     let end = strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize] as usize;
     start..end
@@ -757,7 +757,7 @@ impl MemState {
         unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), dst, text.len()) };
         word.set_width(self, Scaled(width));
         // SAFETY: FFI re-measure of the node just built.
-        unsafe { crate::ext::store_justified_native_glyphs(fonts, self, word) }?;
+        unsafe { fonts.store_justified_native_glyphs(self, word) }?;
 
         prev_p.set_link(self, word.ptr());
         word.set_link(self, last.link(self));
@@ -884,9 +884,11 @@ impl MemState {
     }
 }
 
-fn font_character_width(fonts: &FontState, f: i32, c: i32) -> i32 {
-    let info = crate::fonts::char_info(fonts, f, c);
-    crate::fonts::char_width(fonts, f, info)
+impl FontState {
+    fn font_character_width(&self, f: i32, c: i32) -> i32 {
+        let info = self.char_info(f, c);
+        self.char_width(f, info)
+    }
 }
 
 fn push_dvi_level(shipout: &mut ShipoutState) -> Result<i32, ShipoutAbort> {
@@ -1157,7 +1159,7 @@ fn chars_out(
                 dvi_out(&mut st.shipout, SET1)?;
             }
             dvi_out(&mut st.shipout, c as u8)?;
-            st.shipout.cur_h += font_character_width(&st.fonts, f, c as i32);
+            st.shipout.cur_h += st.fonts.font_character_width(f, c as i32);
         }
         prev_p = prev_p.link(&st.mem);
         p = p.link(&st.mem);
@@ -1777,8 +1779,8 @@ impl MemState {
                 if self.is_char_node(p) {
                     while let Some(ch) = self.as_char(p) {
                         let f = ch.font(self).0;
-                        let c = crate::fonts::effective_char(fonts, f, ch.character(self));
-                        shipout.cur_h += font_character_width(fonts, f, c);
+                        let c = fonts.effective_char(f, ch.character(self));
+                        shipout.cur_h += fonts.font_character_width(f, c);
                         let q = p.link(self);
                         p.set_link(self, l);
                         l = p;

@@ -3192,20 +3192,19 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
         }
         XETEX_MAP_CHAR_TO_GLYPH_CODE => {
             let f = st.eqtb.cur_font();
-            if is_native_font(&st.fonts, f) {
+            if st.fonts.is_native_font(f) {
                 scan_int_in(st)?;
-                st.scanner.cur_val =
-                    unsafe { crate::ext::map_char_to_glyph(&st.fonts, f, st.scanner.cur_val) }?;
+                st.scanner.cur_val = unsafe { st.fonts.map_char_to_glyph(f, st.scanner.cur_val) }?;
             } else {
                 font_query_error_in(st, m, f, c"; not a native platform font", 0)?;
             }
         }
         XETEX_GLYPH_INDEX_CODE => {
             let f = st.eqtb.cur_font();
-            if is_native_font(&st.fonts, f) {
+            if st.fonts.is_native_font(f) {
                 crate::io::scan_and_pack_name_in(st)?;
                 let name = name_of_file_ptr(st);
-                st.scanner.cur_val = unsafe { crate::ext::map_glyph_to_index(&st.fonts, f, name) }?;
+                st.scanner.cur_val = unsafe { st.fonts.map_glyph_to_index(f, name) }?;
             } else {
                 font_query_error_in(st, m, f, c"; not a native platform font", 0)?;
             }
@@ -3226,8 +3225,8 @@ fn fetch_last_item_int_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort> 
             scan_font_ident_in(st)?;
             let f = st.scanner.cur_val;
             let first = m == XETEX_FIRST_CHAR_CODE;
-            st.scanner.cur_val = if is_native_font(&st.fonts, f) {
-                unsafe { crate::ext::get_font_char_range(&st.fonts, f, first as i32) }?
+            st.scanner.cur_val = if st.fonts.is_native_font(f) {
+                unsafe { st.fonts.get_font_char_range(f, first as i32) }?
             } else if first {
                 st.fonts.font_bc[f as usize] as i32
             } else {
@@ -3289,7 +3288,7 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
     match m {
         XETEX_GLYPH_BOUNDS_CODE => {
             let f = st.eqtb.cur_font();
-            if is_native_font(&st.fonts, f) {
+            if st.fonts.is_native_font(f) {
                 scan_int_in(st)?;
                 let edge = st.scanner.cur_val;
                 if !(1..=4).contains(&edge) {
@@ -3304,9 +3303,8 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
                     st.scanner.cur_val = 0;
                 } else {
                     scan_int_in(st)?;
-                    st.scanner.cur_val = unsafe {
-                        crate::ext::get_glyph_bounds(&st.fonts, f, edge, st.scanner.cur_val)
-                    }?;
+                    st.scanner.cur_val =
+                        unsafe { st.fonts.get_glyph_bounds(f, edge, st.scanner.cur_val) }?;
                 }
             } else {
                 font_query_error_in(st, m, f, c"; not a native platform font", 0)?;
@@ -3317,28 +3315,28 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
             let f = st.scanner.cur_val;
             scan_usv_num_in(st)?;
             let c = st.scanner.cur_val;
-            st.scanner.cur_val = if is_native_font(&st.fonts, f) {
+            st.scanner.cur_val = if st.fonts.is_native_font(f) {
                 let fonts = &st.fonts;
                 unsafe {
                     match m {
-                        FONT_CHAR_WD_CODE => crate::ext::getnativecharwd(fonts, f, c),
-                        FONT_CHAR_HT_CODE => crate::ext::getnativecharht(fonts, f, c),
-                        FONT_CHAR_DP_CODE => crate::ext::getnativechardp(fonts, f, c),
-                        _ => crate::ext::getnativecharic(fonts, f, c),
+                        FONT_CHAR_WD_CODE => fonts.getnativecharwd(f, c),
+                        FONT_CHAR_HT_CODE => fonts.getnativecharht(f, c),
+                        FONT_CHAR_DP_CODE => fonts.getnativechardp(f, c),
+                        _ => fonts.getnativecharic(f, c),
                     }
                 }?
             } else if st.fonts.font_bc[f as usize] as i32 <= c
                 && st.fonts.font_ec[f as usize] as i32 >= c
             {
                 let fu = f as usize;
-                let ec = crate::fonts::effective_char(&mut st.fonts, f, c as u16);
+                let ec = st.fonts.effective_char(f, c as u16);
                 let info = st.fonts.font_info_b16(st.fonts.char_base[fu] + ec);
                 let fonts = &st.fonts;
                 match m {
-                    FONT_CHAR_WD_CODE => crate::fonts::char_width(fonts, f, info),
-                    FONT_CHAR_HT_CODE => crate::fonts::char_height(fonts, f, info),
-                    FONT_CHAR_DP_CODE => crate::fonts::char_depth(fonts, f, info),
-                    _ => crate::fonts::char_italic(fonts, f, info),
+                    FONT_CHAR_WD_CODE => fonts.char_width(f, info),
+                    FONT_CHAR_HT_CODE => fonts.char_height(f, info),
+                    FONT_CHAR_DP_CODE => fonts.char_depth(f, info),
+                    _ => fonts.char_italic(f, info),
                 }
             } else {
                 0
@@ -3553,7 +3551,7 @@ pub(crate) fn scan_something_internal_in(
                     0 => set_cur_val(st, st.fonts.hyphen_char[f as usize], INT_VAL),
                     1 => set_cur_val(st, st.fonts.skew_char[f as usize], INT_VAL),
                     _ => {
-                        if is_native_font(&st.fonts, f) {
+                        if st.fonts.is_native_font(f) {
                             scan_glyph_number_in(st, f)?;
                         } else {
                             scan_char_num_in(st)?;
@@ -3745,11 +3743,11 @@ pub(crate) fn scan_glyph_number_in(st: &mut EngineState, f: i32) -> Result<(), S
     if scan_keyword_in(st, c"/")? {
         crate::io::scan_and_pack_name_in(st)?;
         let name = name_of_file_ptr(st);
-        let v = unsafe { crate::ext::map_glyph_to_index(&st.fonts, f, name) }?;
+        let v = unsafe { st.fonts.map_glyph_to_index(f, name) }?;
         set_cur_val(st, v, INT_VAL);
     } else if scan_keyword_in(st, c"u")? {
         scan_char_num_in(st)?;
-        let v = unsafe { crate::ext::map_char_to_glyph(&st.fonts, f, st.scanner.cur_val) }?;
+        let v = unsafe { st.fonts.map_char_to_glyph(f, st.scanner.cur_val) }?;
         set_cur_val(st, v, INT_VAL);
     } else {
         scan_int_in(st)?;
@@ -3835,9 +3833,4 @@ pub(crate) fn compare_strings_in(st: &mut EngineState) -> Result<(), SccAbort> {
     crate::string_pool::flush_str(&mut st.strings, s1);
     set_cur_val(st, result, INT_VAL);
     Ok(())
-}
-
-fn is_native_font(fonts: &crate::state::FontState, f: i32) -> bool {
-    let area = fonts.font_area_entry(f);
-    area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG
 }

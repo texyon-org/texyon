@@ -77,9 +77,11 @@ const TEX_EXT_TO_OT_MAP: [Option<i32>; 14] = [
     Some(26), // big_op_spacing5: stackGapMin
 ];
 
-/// The layout engine of `f` when it is an OpenType (HarfBuzz) font.
-fn ot_engine(fonts: &FontState, f: i32) -> Option<XeTeXLayoutEngine> {
-    (fonts.font_area_entry(f) == OTGR_FONT_FLAG).then(|| fonts.font_layout_engine_ptr(f))
+impl FontState {
+    /// The layout engine of `f` when it is an OpenType (HarfBuzz) font.
+    fn ot_engine(&self, f: i32) -> Option<XeTeXLayoutEngine> {
+        (self.font_area_entry(f) == OTGR_FONT_FLAG).then(|| self.font_layout_engine_ptr(f))
+    }
 }
 
 fn units_to_fix(font: XeTeXFont, units: i32) -> i32 {
@@ -94,80 +96,82 @@ fn direction(horiz: bool) -> hb::hb_direction_t {
     }
 }
 
-pub(crate) fn get_ot_math_constant(fonts: &FontState, f: i32, n: i32) -> i32 {
-    let Some(engine) = ot_engine(fonts, f) else {
-        return 0;
-    };
-    unsafe {
-        let font = getFont(engine);
-        let rval = hb::hb_ot_math_get_constant(ttxl_get_hb_font(engine), n);
-        match n {
-            HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN
-            | HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
-            | HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT => rval,
-            _ => units_to_fix(font, rval),
-        }
-    }
-}
-
-fn mapped_constant(fonts: &FontState, f: i32, map: &[Option<i32>], n: i32) -> i32 {
-    match usize::try_from(n).ok().and_then(|i| map.get(i)) {
-        Some(Some(ot_index)) => get_ot_math_constant(fonts, f, *ot_index),
-        _ => 0,
-    }
-}
-
-pub(crate) fn get_native_mathsy_param(fonts: &FontState, f: i32, n: i32) -> i32 {
-    if n == MATH_QUAD {
-        fonts.font_size[f as usize]
-    } else if n == DELIM2 {
-        // No OT parameter fits, so XeTeX uses 1.5em clamped to the delim1 height.
-        ((1.5 * fonts.font_size[f as usize] as f64) as i32)
-            .min(get_native_mathsy_param(fonts, f, DELIM1))
-    } else {
-        mapped_constant(fonts, f, &TEX_SYM_TO_OT_MAP, n)
-    }
-}
-
-pub(crate) fn get_native_mathex_param(fonts: &FontState, f: i32, n: i32) -> i32 {
-    if n == MATH_QUAD {
-        fonts.font_size[f as usize]
-    } else {
-        mapped_constant(fonts, f, &TEX_EXT_TO_OT_MAP, n)
-    }
-}
-
-pub(crate) fn get_ot_math_variant(
-    fonts: &FontState,
-    f: i32,
-    g: i32,
-    v: i32,
-    adv: &mut i32,
-    horiz: bool,
-) -> i32 {
-    *adv = -1;
-    let Some(engine) = ot_engine(fonts, f) else {
-        return g;
-    };
-    unsafe {
-        let mut variant = hb::hb_ot_math_glyph_variant_t {
-            glyph: 0,
-            advance: 0,
+impl FontState {
+    pub(crate) fn get_ot_math_constant(&self, f: i32, n: i32) -> i32 {
+        let Some(engine) = self.ot_engine(f) else {
+            return 0;
         };
-        let mut count = 1;
-        hb::hb_ot_math_get_glyph_variants(
-            ttxl_get_hb_font(engine),
-            g as u32,
-            direction(horiz),
-            v as u32,
-            &mut count,
-            &mut variant,
-        );
-        if count == 0 {
-            return g;
+        unsafe {
+            let font = getFont(engine);
+            let rval = hb::hb_ot_math_get_constant(ttxl_get_hb_font(engine), n);
+            match n {
+                HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN
+                | HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
+                | HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT => rval,
+                _ => units_to_fix(font, rval),
+            }
         }
-        *adv = units_to_fix(getFont(engine), variant.advance);
-        variant.glyph as i32
+    }
+
+    fn mapped_constant(&self, f: i32, map: &[Option<i32>], n: i32) -> i32 {
+        match usize::try_from(n).ok().and_then(|i| map.get(i)) {
+            Some(Some(ot_index)) => self.get_ot_math_constant(f, *ot_index),
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn get_native_mathsy_param(&self, f: i32, n: i32) -> i32 {
+        if n == MATH_QUAD {
+            self.font_size[f as usize]
+        } else if n == DELIM2 {
+            // No OT parameter fits, so XeTeX uses 1.5em clamped to the delim1 height.
+            ((1.5 * self.font_size[f as usize] as f64) as i32)
+                .min(self.get_native_mathsy_param(f, DELIM1))
+        } else {
+            self.mapped_constant(f, &TEX_SYM_TO_OT_MAP, n)
+        }
+    }
+
+    pub(crate) fn get_native_mathex_param(&self, f: i32, n: i32) -> i32 {
+        if n == MATH_QUAD {
+            self.font_size[f as usize]
+        } else {
+            self.mapped_constant(f, &TEX_EXT_TO_OT_MAP, n)
+        }
+    }
+
+    pub(crate) fn get_ot_math_variant(
+        &self,
+        f: i32,
+        g: i32,
+        v: i32,
+        adv: &mut i32,
+        horiz: bool,
+    ) -> i32 {
+        *adv = -1;
+        let Some(engine) = self.ot_engine(f) else {
+            return g;
+        };
+        unsafe {
+            let mut variant = hb::hb_ot_math_glyph_variant_t {
+                glyph: 0,
+                advance: 0,
+            };
+            let mut count = 1;
+            hb::hb_ot_math_get_glyph_variants(
+                ttxl_get_hb_font(engine),
+                g as u32,
+                direction(horiz),
+                v as u32,
+                &mut count,
+                &mut variant,
+            );
+            if count == 0 {
+                return g;
+            }
+            *adv = units_to_fix(getFont(engine), variant.advance);
+            variant.glyph as i32
+        }
     }
 }
 
@@ -176,40 +180,37 @@ pub(crate) struct GlyphAssembly {
     parts: Vec<hb::hb_ot_math_glyph_part_t>,
 }
 
-pub(crate) fn get_ot_assembly(
-    fonts: &FontState,
-    f: i32,
-    g: i32,
-    horiz: bool,
-) -> Option<GlyphAssembly> {
-    let engine = ot_engine(fonts, f)?;
-    unsafe {
-        let hb_font = ttxl_get_hb_font(engine);
-        let count = hb::hb_ot_math_get_glyph_assembly(
-            hb_font,
-            g as u32,
-            direction(horiz),
-            0,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
-        if count == 0 {
-            return None;
+impl FontState {
+    pub(crate) fn get_ot_assembly(&self, f: i32, g: i32, horiz: bool) -> Option<GlyphAssembly> {
+        let engine = self.ot_engine(f)?;
+        unsafe {
+            let hb_font = ttxl_get_hb_font(engine);
+            let count = hb::hb_ot_math_get_glyph_assembly(
+                hb_font,
+                g as u32,
+                direction(horiz),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            if count == 0 {
+                return None;
+            }
+            let mut parts = vec![hb::hb_ot_math_glyph_part_t::default(); count as usize];
+            let mut filled = count;
+            hb::hb_ot_math_get_glyph_assembly(
+                hb_font,
+                g as u32,
+                direction(horiz),
+                0,
+                &mut filled,
+                parts.as_mut_ptr(),
+                std::ptr::null_mut(),
+            );
+            parts.truncate(filled as usize);
+            Some(GlyphAssembly { parts })
         }
-        let mut parts = vec![hb::hb_ot_math_glyph_part_t::default(); count as usize];
-        let mut filled = count;
-        hb::hb_ot_math_get_glyph_assembly(
-            hb_font,
-            g as u32,
-            direction(horiz),
-            0,
-            &mut filled,
-            parts.as_mut_ptr(),
-            std::ptr::null_mut(),
-        );
-        parts.truncate(filled as usize);
-        Some(GlyphAssembly { parts })
     }
 }
 
@@ -227,7 +228,7 @@ impl GlyphAssembly {
     }
 
     fn part_length(&self, fonts: &FontState, f: i32, units: i32) -> i32 {
-        match ot_engine(fonts, f) {
+        match fonts.ot_engine(f) {
             Some(engine) => units_to_fix(unsafe { getFont(engine) }, units),
             None => 0,
         }
@@ -246,59 +247,58 @@ impl GlyphAssembly {
     }
 }
 
-pub(crate) fn get_ot_math_ital_corr(fonts: &FontState, f: i32, g: i32) -> i32 {
-    let Some(engine) = ot_engine(fonts, f) else {
-        return 0;
-    };
-    unsafe {
-        let rval = hb::hb_ot_math_get_glyph_italics_correction(ttxl_get_hb_font(engine), g as u32);
-        units_to_fix(getFont(engine), rval)
+impl FontState {
+    pub(crate) fn get_ot_math_ital_corr(&self, f: i32, g: i32) -> i32 {
+        let Some(engine) = self.ot_engine(f) else {
+            return 0;
+        };
+        unsafe {
+            let rval =
+                hb::hb_ot_math_get_glyph_italics_correction(ttxl_get_hb_font(engine), g as u32);
+            units_to_fix(getFont(engine), rval)
+        }
     }
-}
 
-pub(crate) fn get_ot_math_accent_pos(fonts: &FontState, f: i32, g: i32) -> i32 {
-    let Some(engine) = ot_engine(fonts, f) else {
-        return i32::MAX;
-    };
-    unsafe {
-        let rval =
-            hb::hb_ot_math_get_glyph_top_accent_attachment(ttxl_get_hb_font(engine), g as u32);
-        units_to_fix(getFont(engine), rval)
+    pub(crate) fn get_ot_math_accent_pos(&self, f: i32, g: i32) -> i32 {
+        let Some(engine) = self.ot_engine(f) else {
+            return i32::MAX;
+        };
+        unsafe {
+            let rval =
+                hb::hb_ot_math_get_glyph_top_accent_attachment(ttxl_get_hb_font(engine), g as u32);
+            units_to_fix(getFont(engine), rval)
+        }
     }
-}
 
-pub(crate) fn ot_min_connector_overlap(fonts: &FontState, f: i32) -> i32 {
-    let Some(engine) = ot_engine(fonts, f) else {
-        return 0;
-    };
-    unsafe {
-        let rval = hb::hb_ot_math_get_min_connector_overlap(
-            ttxl_get_hb_font(engine),
-            hb::hb_direction_t::Rtl,
-        );
-        units_to_fix(getFont(engine), rval)
+    pub(crate) fn ot_min_connector_overlap(&self, f: i32) -> i32 {
+        let Some(engine) = self.ot_engine(f) else {
+            return 0;
+        };
+        unsafe {
+            let rval = hb::hb_ot_math_get_min_connector_overlap(
+                ttxl_get_hb_font(engine),
+                hb::hb_direction_t::Rtl,
+            );
+            units_to_fix(getFont(engine), rval)
+        }
     }
-}
 
-fn math_kern_at(
-    fonts: &FontState,
-    f: i32,
-    g: i32,
-    height: i32,
-    side: hb::hb_ot_math_kern_t,
-) -> i32 {
-    let Some(engine) = ot_engine(fonts, f) else {
-        return 0;
-    };
-    unsafe { hb::hb_ot_math_get_glyph_kerning(ttxl_get_hb_font(engine), g as u32, side, height) }
-}
-
-fn glyph_height_depth(fonts: &FontState, f: i32, g: i32) -> (f32, f32) {
-    let (mut height, mut depth) = (0.0, 0.0);
-    if let Some(engine) = ot_engine(fonts, f) {
-        unsafe { getGlyphHeightDepth(engine, g as u32, &mut height, &mut depth) };
+    fn math_kern_at(&self, f: i32, g: i32, height: i32, side: hb::hb_ot_math_kern_t) -> i32 {
+        let Some(engine) = self.ot_engine(f) else {
+            return 0;
+        };
+        unsafe {
+            hb::hb_ot_math_get_glyph_kerning(ttxl_get_hb_font(engine), g as u32, side, height)
+        }
     }
-    (height, depth)
+
+    fn glyph_height_depth(&self, f: i32, g: i32) -> (f32, f32) {
+        let (mut height, mut depth) = (0.0, 0.0);
+        if let Some(engine) = self.ot_engine(f) {
+            unsafe { getGlyphHeightDepth(engine, g as u32, &mut height, &mut depth) };
+        }
+        (height, depth)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -307,89 +307,88 @@ pub(crate) enum ScriptKind {
     Sub,
 }
 
-pub(crate) fn get_ot_math_kern(
-    fonts: &FontState,
-    f: i32,
-    g: i32,
-    sf: i32,
-    sg: i32,
-    kind: ScriptKind,
-    shift_scaled: i32,
-) -> i32 {
-    let (Some(engine), Some(sengine)) = (ot_engine(fonts, f), ot_engine(fonts, sf)) else {
-        return 0;
-    };
-    // Kerns are computed in base-glyph units, with XeTeX's float/int conversions.
-    unsafe {
-        let font = getFont(engine);
-        let sfont = getFont(sengine);
-
-        let (g_h, g_d) = glyph_height_depth(fonts, f, g);
-        let (sg_h, sg_d) = glyph_height_depth(fonts, sf, sg);
-        let g_height = ttxl_font_points_to_units(font, g_h) as i32;
-        let g_depth = ttxl_font_points_to_units(font, g_d) as i32;
-        let sg_height = ttxl_font_points_to_units(sfont, sg_h) as i32;
-        let sg_depth = ttxl_font_points_to_units(sfont, sg_d) as i32;
-
-        let shift = ttxl_font_points_to_units(font, Fix2D(shift_scaled) as f32) as i32;
-
-        let f_size = ttxl_font_get_point_size(font);
-        let sf_size = ttxl_font_get_point_size(sfont);
-        assert!(f_size != 0.0);
-        let scale = sf_size / f_size;
-
-        let scaled_sum = |kern: i32, skern: i32| (kern as f32 + scale * skern as f32) as i32;
-
-        let rval = match kind {
-            ScriptKind::Sup => {
-                let kern = math_kern_at(
-                    fonts,
-                    f,
-                    g,
-                    (shift as f32 - scale * sg_depth as f32) as i32,
-                    hb::HB_OT_MATH_KERN_TOP_RIGHT,
-                );
-                let skern = math_kern_at(fonts, sf, sg, -sg_depth, hb::HB_OT_MATH_KERN_BOTTOM_LEFT);
-                let top_kern = scaled_sum(kern, skern);
-
-                let kern = math_kern_at(fonts, f, g, g_height, hb::HB_OT_MATH_KERN_TOP_RIGHT);
-                let skern = math_kern_at(
-                    fonts,
-                    sf,
-                    sg,
-                    ((g_height - shift) as f32 / scale) as i32,
-                    hb::HB_OT_MATH_KERN_BOTTOM_LEFT,
-                );
-                let bot_kern = scaled_sum(kern, skern);
-
-                // The spec says minimum, but the maximum gives the greater separation.
-                top_kern.max(bot_kern)
-            }
-            ScriptKind::Sub => {
-                let kern = math_kern_at(
-                    fonts,
-                    f,
-                    g,
-                    (scale * sg_height as f32 - shift as f32) as i32,
-                    hb::HB_OT_MATH_KERN_BOTTOM_RIGHT,
-                );
-                let skern = math_kern_at(fonts, sf, sg, sg_height, hb::HB_OT_MATH_KERN_TOP_LEFT);
-                let top_kern = scaled_sum(kern, skern);
-
-                let kern = math_kern_at(fonts, f, g, -g_depth, hb::HB_OT_MATH_KERN_BOTTOM_RIGHT);
-                let skern = math_kern_at(
-                    fonts,
-                    sf,
-                    sg,
-                    ((shift - g_depth) as f32 / scale) as i32,
-                    hb::HB_OT_MATH_KERN_TOP_LEFT,
-                );
-                let bot_kern = scaled_sum(kern, skern);
-
-                top_kern.max(bot_kern)
-            }
+impl FontState {
+    pub(crate) fn get_ot_math_kern(
+        &self,
+        f: i32,
+        g: i32,
+        sf: i32,
+        sg: i32,
+        kind: ScriptKind,
+        shift_scaled: i32,
+    ) -> i32 {
+        let (Some(engine), Some(sengine)) = (self.ot_engine(f), self.ot_engine(sf)) else {
+            return 0;
         };
+        // Kerns are computed in base-glyph units, with XeTeX's float/int conversions.
+        unsafe {
+            let font = getFont(engine);
+            let sfont = getFont(sengine);
 
-        units_to_fix(font, rval)
+            let (g_h, g_d) = self.glyph_height_depth(f, g);
+            let (sg_h, sg_d) = self.glyph_height_depth(sf, sg);
+            let g_height = ttxl_font_points_to_units(font, g_h) as i32;
+            let g_depth = ttxl_font_points_to_units(font, g_d) as i32;
+            let sg_height = ttxl_font_points_to_units(sfont, sg_h) as i32;
+            let sg_depth = ttxl_font_points_to_units(sfont, sg_d) as i32;
+
+            let shift = ttxl_font_points_to_units(font, Fix2D(shift_scaled) as f32) as i32;
+
+            let f_size = ttxl_font_get_point_size(font);
+            let sf_size = ttxl_font_get_point_size(sfont);
+            assert!(f_size != 0.0);
+            let scale = sf_size / f_size;
+
+            let scaled_sum = |kern: i32, skern: i32| (kern as f32 + scale * skern as f32) as i32;
+
+            let rval = match kind {
+                ScriptKind::Sup => {
+                    let kern = self.math_kern_at(
+                        f,
+                        g,
+                        (shift as f32 - scale * sg_depth as f32) as i32,
+                        hb::HB_OT_MATH_KERN_TOP_RIGHT,
+                    );
+                    let skern =
+                        self.math_kern_at(sf, sg, -sg_depth, hb::HB_OT_MATH_KERN_BOTTOM_LEFT);
+                    let top_kern = scaled_sum(kern, skern);
+
+                    let kern = self.math_kern_at(f, g, g_height, hb::HB_OT_MATH_KERN_TOP_RIGHT);
+                    let skern = self.math_kern_at(
+                        sf,
+                        sg,
+                        ((g_height - shift) as f32 / scale) as i32,
+                        hb::HB_OT_MATH_KERN_BOTTOM_LEFT,
+                    );
+                    let bot_kern = scaled_sum(kern, skern);
+
+                    // The spec says minimum, but the maximum gives the greater separation.
+                    top_kern.max(bot_kern)
+                }
+                ScriptKind::Sub => {
+                    let kern = self.math_kern_at(
+                        f,
+                        g,
+                        (scale * sg_height as f32 - shift as f32) as i32,
+                        hb::HB_OT_MATH_KERN_BOTTOM_RIGHT,
+                    );
+                    let skern = self.math_kern_at(sf, sg, sg_height, hb::HB_OT_MATH_KERN_TOP_LEFT);
+                    let top_kern = scaled_sum(kern, skern);
+
+                    let kern = self.math_kern_at(f, g, -g_depth, hb::HB_OT_MATH_KERN_BOTTOM_RIGHT);
+                    let skern = self.math_kern_at(
+                        sf,
+                        sg,
+                        ((shift - g_depth) as f32 / scale) as i32,
+                        hb::HB_OT_MATH_KERN_TOP_LEFT,
+                    );
+                    let bot_kern = scaled_sum(kern, skern);
+
+                    top_kern.max(bot_kern)
+                }
+            };
+
+            units_to_fix(font, rval)
+        }
     }
 }

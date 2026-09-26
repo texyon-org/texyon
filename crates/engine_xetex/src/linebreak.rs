@@ -16,7 +16,7 @@ use crate::consts::{
     L_CODE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, NORMAL, SMALL_NODE_SIZE,
     SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
-use crate::ext::{linebreak_next, linebreak_start_in, measure_native_node};
+use crate::ext::linebreak_start_in;
 use crate::fonts::{LIG_TAG, QUAD_CODE};
 use crate::hyphenation::{hyph_code, set_hyph_index, HYPH_PRIME};
 use crate::mem::{ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
@@ -63,11 +63,13 @@ impl MemState {
     }
 }
 
-#[inline]
-fn effective_char_width(fonts: &mut FontState, f: i32, c: u16) -> i32 {
-    let ec = crate::fonts::effective_char(fonts, f, c);
-    let info = crate::fonts::char_info(fonts, f, ec);
-    crate::fonts::char_width(fonts, f, info)
+impl FontState {
+    #[inline]
+    fn effective_char_width(&mut self, f: i32, c: u16) -> i32 {
+        let ec = self.effective_char(f, c);
+        let info = self.char_info(f, ec);
+        self.char_width(f, info)
+    }
 }
 
 /// A node on the active list, which carries no `NODE_type` of its own.
@@ -198,7 +200,7 @@ impl MemState {
     ) -> Result<(), crate::ext::NativeFontAbort> {
         let use_glyph_metrics = eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
         // SAFETY: the measurer only reads font tables over FFI.
-        unsafe { measure_native_node(fonts, self, w, use_glyph_metrics) }
+        unsafe { fonts.measure_native_node(self, w, use_glyph_metrics) }
     }
 
     /// A native-word node of font `f` holding `len` units of `src`'s text from `start`.
@@ -694,11 +696,9 @@ fn reconstitute(
                 q = st.fonts.font_info_b16(k);
             } else {
                 let char_base = st.fonts.char_base_entry(st.hyph.hf);
-                let effective = crate::fonts::effective_char(
-                    &mut st.fonts,
-                    st.hyph.hf,
-                    st.mainloop.cur_l as u16,
-                );
+                let effective = st
+                    .fonts
+                    .effective_char(st.hyph.hf, st.mainloop.cur_l as u16);
                 q = st.fonts.font_info_b16(char_base + effective);
                 if q.s1 % 4 != LIG_TAG {
                     break 'continue_;
@@ -816,7 +816,7 @@ fn reconstitute(
                         continue 'continue_;
                     }
 
-                    w = crate::fonts::char_kern(&st.fonts, st.hyph.hf, q);
+                    w = st.fonts.char_kern(st.hyph.hf, q);
                     break 'continue_;
                 }
 
@@ -1144,18 +1144,14 @@ impl MemState {
     #[inline]
     fn disc_node_width(&self, fonts: &mut FontState, p: MemPtr) -> Result<i32, bool> {
         if let Some(ch) = self.as_char(p) {
-            return Ok(effective_char_width(
-                fonts,
-                ch.font(self).0,
-                ch.character(self),
-            ));
+            return Ok(fonts.effective_char_width(ch.font(self).0, ch.character(self)));
         }
 
         match self.classify(MemIdx::new(p)) {
             Ok(AnyNode::Ligature(lig)) => {
                 let f = lig.font(self).0;
                 fonts.xtx_ligature_present = true;
-                Ok(effective_char_width(fonts, f, lig.character(self)))
+                Ok(fonts.effective_char_width(f, lig.character(self)))
             }
             Ok(
                 node
@@ -1345,7 +1341,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                     let ch = NodePtr::<CharNode>::at(cur);
                     let f = ch.font(&st.mem).0;
                     let c = ch.character(&st.mem);
-                    st.scanner.active_width[1] += effective_char_width(&mut st.fonts, f, c);
+                    st.scanner.active_width[1] += st.fonts.effective_char_width(f, c);
                     cur = cur.link(&st.mem);
                     if !st.mem.is_char_node(cur) {
                         break;
@@ -1398,7 +1394,7 @@ fn line_break(st: &mut EngineState, d: bool) -> Result<(), LineBreakOutcome> {
                     let f = lig.font(&st.mem).0;
                     st.fonts.xtx_ligature_present = true;
                     let c = lig.character(&st.mem);
-                    st.scanner.active_width[1] += effective_char_width(&mut st.fonts, f, c);
+                    st.scanner.active_width[1] += st.fonts.effective_char_width(f, c);
                 }
                 AnyNode::Disc(d) => {
                     let pre_break = d.pre_break(&st.mem);
@@ -3167,7 +3163,7 @@ pub(crate) unsafe fn do_locale_linebreaks_in(
     let mut offs = 0;
     loop {
         let prev_offs = offs;
-        offs = linebreak_next(&st.fonts, main_f);
+        offs = st.fonts.linebreak_next(main_f);
         if offs > 0 {
             if prev_offs != 0 {
                 if use_penalty {

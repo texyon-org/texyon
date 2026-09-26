@@ -9,8 +9,7 @@ use crate::consts::{
 };
 use crate::errors::ErrorOutcome;
 use crate::ext::{
-    aat_get_font_metrics, apply_mapping, apply_tfm_font_mapping, check_for_tfm_font_mapping_in,
-    find_native_font_in, load_tfm_font_mapping_in, map_char_to_glyph, measure_native_node,
+    aat_get_font_metrics, apply_tfm_font_mapping, find_native_font_in, load_tfm_font_mapping_in,
     ot_get_font_metrics, NativeFontAbort, NativeFontMetrics,
 };
 use crate::io::{pack_file_name_in, tt_xetex_open_input_in};
@@ -47,45 +46,47 @@ pub(crate) const EXTRA_SPACE_CODE: i32 = 7;
 
 pub(crate) type CharInfo = B16x4;
 
-pub(crate) fn char_info(fonts: &FontState, f: i32, c: i32) -> CharInfo {
-    fonts.font_info_b16(fonts.char_base_entry(f) + c)
-}
-
-pub(crate) fn char_width(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_sc(fonts.width_base_entry(f) + i.s3 as i32)
-}
-
-pub(crate) fn char_italic(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_sc(fonts.italic_base_entry(f) + i.s1 as i32 / 4)
-}
-
-pub(crate) fn char_height(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_sc(fonts.height_base_entry(f) + i.s2 as i32 / 16)
-}
-
-pub(crate) fn char_depth(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_sc(fonts.depth_base_entry(f) + i.s2 as i32 % 16)
-}
-
-/// The kern amount of lig/kern instruction `i` in font `f`.
-pub(crate) fn char_kern(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_sc(fonts.kern_base_entry(f) + 256 * i.s1 as i32 + i.s0 as i32)
-}
-
-pub fn effective_char(fonts: &mut FontState, f: i32, c: u16) -> i32 {
-    let mut c = c;
-    let mapping = fonts.font_mapping_ptr(f);
-    if !fonts.xtx_ligature_present && !mapping.is_null() {
-        // SAFETY: `mapping` is the font's live TECkit converter.
-        c = unsafe { apply_tfm_font_mapping(mapping, c as i32) } as u16;
+impl FontState {
+    pub(crate) fn char_info(&self, f: i32, c: i32) -> CharInfo {
+        self.font_info_b16(self.char_base_entry(f) + c)
     }
-    fonts.xtx_ligature_present = false;
-    c as i32
-}
 
-pub fn effective_char_info(fonts: &mut FontState, f: i32, c: u16) -> CharInfo {
-    let c = effective_char(fonts, f, c);
-    char_info(fonts, f, c)
+    pub(crate) fn char_width(&self, f: i32, i: CharInfo) -> i32 {
+        self.font_info_sc(self.width_base_entry(f) + i.s3 as i32)
+    }
+
+    pub(crate) fn char_italic(&self, f: i32, i: CharInfo) -> i32 {
+        self.font_info_sc(self.italic_base_entry(f) + i.s1 as i32 / 4)
+    }
+
+    pub(crate) fn char_height(&self, f: i32, i: CharInfo) -> i32 {
+        self.font_info_sc(self.height_base_entry(f) + i.s2 as i32 / 16)
+    }
+
+    pub(crate) fn char_depth(&self, f: i32, i: CharInfo) -> i32 {
+        self.font_info_sc(self.depth_base_entry(f) + i.s2 as i32 % 16)
+    }
+
+    /// The kern amount of lig/kern instruction `i` in font `f`.
+    pub(crate) fn char_kern(&self, f: i32, i: CharInfo) -> i32 {
+        self.font_info_sc(self.kern_base_entry(f) + 256 * i.s1 as i32 + i.s0 as i32)
+    }
+
+    pub fn effective_char(&mut self, f: i32, c: u16) -> i32 {
+        let mut c = c;
+        let mapping = self.font_mapping_ptr(f);
+        if !self.xtx_ligature_present && !mapping.is_null() {
+            // SAFETY: `mapping` is the font's live TECkit converter.
+            c = unsafe { apply_tfm_font_mapping(mapping, c as i32) } as u16;
+        }
+        self.xtx_ligature_present = false;
+        c as i32
+    }
+
+    pub fn effective_char_info(&mut self, f: i32, c: u16) -> CharInfo {
+        let c = self.effective_char(f, c);
+        self.char_info(f, c)
+    }
 }
 
 /// The UTF-16 encoding of `c`: one unit, or a surrogate pair above the BMP.
@@ -195,7 +196,7 @@ impl NativeCharAbort {
 /// Warn about `c` when font `f` has no glyph for it.
 fn check_native_char_in(st: &mut EngineState, f: i32, c: i32) -> Result<(), NativeCharAbort> {
     // SAFETY: font-table lookup over FFI, no state re-entry.
-    if unsafe { map_char_to_glyph(&st.fonts, f, c) }? == 0 {
+    if unsafe { st.fonts.map_char_to_glyph(f, c) }? == 0 {
         let outcome = char_warning_in(st, f, c);
         if !matches!(outcome, ErrorOutcome::Continue) {
             return Err(NativeCharAbort::Error(outcome));
@@ -228,7 +229,7 @@ pub(crate) fn new_native_character_in(
         // from the `&mut st.fonts` borrow.
         let len = unsafe {
             let dst = st.strings.str_pool.as_mut_ptr().add(start as usize);
-            apply_mapping(&mut st.fonts, map, dst, cur_len)
+            st.fonts.apply_mapping(map, dst, cur_len)
         };
         st.strings.pool_ptr = start;
 
@@ -259,7 +260,10 @@ pub(crate) fn new_native_character_in(
         .map_err(NativeCharAbort::Recycle)?;
     let use_glyph_metrics = st.eqtb.int_par(INT_PAR_XETEX_USE_GLYPH_METRICS) > 0;
     // SAFETY: the measurer only reads font tables over re-entry-free FFI.
-    unsafe { measure_native_node(&st.fonts, &mut st.mem, w, use_glyph_metrics)? };
+    unsafe {
+        st.fonts
+            .measure_native_node(&mut st.mem, w, use_glyph_metrics)?
+    };
     Ok(w)
 }
 
@@ -421,7 +425,7 @@ pub(crate) unsafe fn read_font_info_in(
 
         pack_file_name_in(st, nom, aire, EMPTY_STRING);
         let name_of_file = name_of_file_ptr(st);
-        check_for_tfm_font_mapping_in(&mut st.fonts, name_of_file);
+        st.fonts.check_for_tfm_font_mapping(name_of_file);
 
         tfm_file = tt_xetex_open_input_in(st, TTBC_FILE_FORMAT_TFM);
         if tfm_file == INVALID_HANDLE {
@@ -435,8 +439,9 @@ pub(crate) unsafe fn read_font_info_in(
         }
         file_opened = true;
 
-        let (parse, scale_side_effect) =
-            read_font_info_tfm(&mut st.fonts, &st.eqtb, tfm_file, nom, aire, s);
+        let (parse, scale_side_effect) = st
+            .fonts
+            .read_font_info_tfm(&st.eqtb, tfm_file, nom, aire, s);
         if let Some((remainder, overflowed)) = scale_side_effect {
             st.errors.tex_remainder = remainder;
             if overflowed {
@@ -507,313 +512,315 @@ enum TfmParse {
     OutOfMemory,
 }
 
-/// Read the opened TFM file into the tables of the next font slot. Also returns
-/// the (remainder, overflow) side effect of size scaling for the caller to apply.
-unsafe fn read_font_info_tfm(
-    fonts: &mut FontState,
-    eqtb: &EqtbState,
-    tfm_file: usize,
-    nom: i32,
-    aire: i32,
-    s: i32,
-) -> (TfmParse, Option<(i32, bool)>) {
-    let mut scale_side_effect: Option<(i32, bool)> = None;
-    macro_rules! bad {
-        () => {
-            return (TfmParse::Bad, scale_side_effect)
-        };
-    }
-    macro_rules! read {
-        ($e:expr) => {
-            match $e {
-                Some(v) => v,
-                None => bad!(),
-            }
-        };
-    }
-
-    let mut lf = read!(read_fifteen(tfm_file));
-    let mut lh = read!(read_fifteen(tfm_file));
-    let mut bc = read!(read_fifteen(tfm_file));
-    let mut ec = read!(read_fifteen(tfm_file));
-    if bc > ec + 1 || ec > 255 {
-        bad!();
-    }
-    if bc > 255 {
-        bc = 1;
-        ec = 0;
-    }
-    let nw = read!(read_fifteen(tfm_file));
-    let nh = read!(read_fifteen(tfm_file));
-    let nd = read!(read_fifteen(tfm_file));
-    let ni = read!(read_fifteen(tfm_file));
-    let nl = read!(read_fifteen(tfm_file));
-    let nk = read!(read_fifteen(tfm_file));
-    let ne = read!(read_fifteen(tfm_file));
-    let np = read!(read_fifteen(tfm_file));
-
-    if lf != 6 + lh + (ec - bc + 1) + nw + nh + nd + ni + nl + nk + ne + np {
-        bad!();
-    }
-    if nw == 0 || nh == 0 || nd == 0 || ni == 0 {
-        bad!();
-    }
-
-    lf = lf - 6 - lh;
-    if np < 7 {
-        lf = lf + 7 - np;
-    }
-
-    if fonts.font_ptr == fonts.font_max || fonts.fmem_ptr + lf > fonts.font_mem_size {
-        return (TfmParse::OutOfMemory, None);
-    }
-
-    let f = fonts.font_ptr + 1;
-    fonts.set_char_base_entry(f, fonts.fmem_ptr - bc);
-    fonts.set_width_base_entry(f, fonts.char_base_entry(f) + ec + 1);
-    fonts.set_height_base_entry(f, fonts.width_base_entry(f) + nw);
-    fonts.set_depth_base_entry(f, fonts.height_base_entry(f) + nh);
-    fonts.set_italic_base_entry(f, fonts.depth_base_entry(f) + nd);
-    fonts.set_lig_kern_base_entry(f, fonts.italic_base_entry(f) + ni);
-    fonts.set_kern_base_entry(f, fonts.lig_kern_base_entry(f) + nl - 256 * 128);
-    fonts.set_exten_base_entry(f, fonts.kern_base_entry(f) + 256 * 128 + nk);
-    fonts.set_param_base(f, fonts.exten_base_entry(f) + ne);
-
-    if lh < 2 {
-        bad!();
-    }
-
-    fonts.set_font_check(f, four_quarters(read!(read_tfm_bytes(tfm_file))));
-
-    let mut z = read!(read_fifteen(tfm_file));
-    z = z * 256 + tfm_getc(tfm_file);
-    z = (z * 16) + (tfm_getc(tfm_file) / 16);
-    if z < 65_536 {
-        bad!();
-    }
-
-    while lh > 2 {
-        for _ in 0..4 {
-            tfm_getc(tfm_file);
+impl FontState {
+    /// Read the opened TFM file into the tables of the next font slot. Also returns
+    /// the (remainder, overflow) side effect of size scaling for the caller to apply.
+    unsafe fn read_font_info_tfm(
+        &mut self,
+        eqtb: &EqtbState,
+        tfm_file: usize,
+        nom: i32,
+        aire: i32,
+        s: i32,
+    ) -> (TfmParse, Option<(i32, bool)>) {
+        let mut scale_side_effect: Option<(i32, bool)> = None;
+        macro_rules! bad {
+            () => {
+                return (TfmParse::Bad, scale_side_effect)
+            };
         }
-        lh -= 1;
-    }
-
-    fonts.set_font_dsize_entry(f, z);
-    if s != -1000 {
-        if s >= 0 {
-            z = s;
-        } else {
-            let (q, rem, overflowed) = crate::scaled_math::xn_over_d_parts(z, -s, 1000);
-            z = q;
-            scale_side_effect = Some((rem, overflowed));
+        macro_rules! read {
+            ($e:expr) => {
+                match $e {
+                    Some(v) => v,
+                    None => bad!(),
+                }
+            };
         }
-    }
-    fonts.set_font_size_entry(f, z);
 
-    let char_exists =
-        |fonts: &FontState, ch: i32| (bc..=ec).contains(&ch) && char_info(fonts, f, ch).s3 != 0;
-
-    for k in fonts.fmem_ptr..fonts.width_base_entry(f) {
-        let bytes = read!(read_tfm_bytes(tfm_file));
-        let [a, b, c, d] = bytes;
-        fonts.set_font_info_b16(k, four_quarters(bytes));
-
-        if a >= nw || b / 16 >= nh || b % 16 >= nd || c / 4 >= ni {
+        let mut lf = read!(read_fifteen(tfm_file));
+        let mut lh = read!(read_fifteen(tfm_file));
+        let mut bc = read!(read_fifteen(tfm_file));
+        let mut ec = read!(read_fifteen(tfm_file));
+        if bc > ec + 1 || ec > 255 {
             bad!();
         }
-        match c % 4 {
-            1 if d >= nl => bad!(),
-            3 if d >= ne => bad!(),
-            2 => {
-                if d < bc || d > ec {
-                    bad!();
-                }
-                // A charlist must not cycle back to the current character.
-                let current = k + bc - fonts.fmem_ptr;
-                let mut dd = d;
-                while dd < current {
-                    let qw = char_info(fonts, f, dd);
-                    if qw.s1 % 4 != LIST_TAG {
-                        break;
-                    }
-                    dd = qw.s0 as i32;
-                }
-                if dd == current {
-                    bad!();
-                }
-            }
-            _ => {}
+        if bc > 255 {
+            bc = 1;
+            ec = 0;
         }
-    }
+        let nw = read!(read_fifteen(tfm_file));
+        let nh = read!(read_fifteen(tfm_file));
+        let nd = read!(read_fifteen(tfm_file));
+        let ni = read!(read_fifteen(tfm_file));
+        let nl = read!(read_fifteen(tfm_file));
+        let nk = read!(read_fifteen(tfm_file));
+        let ne = read!(read_fifteen(tfm_file));
+        let np = read!(read_fifteen(tfm_file));
 
-    let mut alpha = 16;
-    while z >= 0x800000 {
-        z /= 2;
-        alpha += alpha;
-    }
-    let beta = 256 / alpha;
-    alpha *= z;
+        if lf != 6 + lh + (ec - bc + 1) + nw + nh + nd + ni + nl + nk + ne + np {
+            bad!();
+        }
+        if nw == 0 || nh == 0 || nd == 0 || ni == 0 {
+            bad!();
+        }
 
-    for k in fonts.width_base_entry(f)..fonts.lig_kern_base_entry(f) {
-        let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
-        fonts.set_font_info_sc(k, sw);
-    }
+        lf = lf - 6 - lh;
+        if np < 7 {
+            lf = lf + 7 - np;
+        }
 
-    if fonts.font_info_sc(fonts.width_base_entry(f)) != 0
-        || fonts.font_info_sc(fonts.height_base_entry(f)) != 0
-        || fonts.font_info_sc(fonts.depth_base_entry(f)) != 0
-        || fonts.font_info_sc(fonts.italic_base_entry(f)) != 0
-    {
-        bad!();
-    }
+        if self.font_ptr == self.font_max || self.fmem_ptr + lf > self.font_mem_size {
+            return (TfmParse::OutOfMemory, None);
+        }
 
-    let mut bch_label = 32_767;
-    let mut bchar = 256;
+        let f = self.font_ptr + 1;
+        self.set_char_base_entry(f, self.fmem_ptr - bc);
+        self.set_width_base_entry(f, self.char_base_entry(f) + ec + 1);
+        self.set_height_base_entry(f, self.width_base_entry(f) + nw);
+        self.set_depth_base_entry(f, self.height_base_entry(f) + nh);
+        self.set_italic_base_entry(f, self.depth_base_entry(f) + nd);
+        self.set_lig_kern_base_entry(f, self.italic_base_entry(f) + ni);
+        self.set_kern_base_entry(f, self.lig_kern_base_entry(f) + nl - 256 * 128);
+        self.set_exten_base_entry(f, self.kern_base_entry(f) + 256 * 128 + nk);
+        self.set_param_base(f, self.exten_base_entry(f) + ne);
 
-    if nl > 0 {
-        let lig_kern_base = fonts.lig_kern_base_entry(f);
-        let lig_kern_end = fonts.kern_base_entry(f) + 256 * 128;
-        for k in lig_kern_base..lig_kern_end {
+        if lh < 2 {
+            bad!();
+        }
+
+        self.set_font_check(f, four_quarters(read!(read_tfm_bytes(tfm_file))));
+
+        let mut z = read!(read_fifteen(tfm_file));
+        z = z * 256 + tfm_getc(tfm_file);
+        z = (z * 16) + (tfm_getc(tfm_file) / 16);
+        if z < 65_536 {
+            bad!();
+        }
+
+        while lh > 2 {
+            for _ in 0..4 {
+                tfm_getc(tfm_file);
+            }
+            lh -= 1;
+        }
+
+        self.set_font_dsize_entry(f, z);
+        if s != -1000 {
+            if s >= 0 {
+                z = s;
+            } else {
+                let (q, rem, overflowed) = crate::scaled_math::xn_over_d_parts(z, -s, 1000);
+                z = q;
+                scale_side_effect = Some((rem, overflowed));
+            }
+        }
+        self.set_font_size_entry(f, z);
+
+        let char_exists =
+            |fonts: &FontState, ch: i32| (bc..=ec).contains(&ch) && fonts.char_info(f, ch).s3 != 0;
+
+        for k in self.fmem_ptr..self.width_base_entry(f) {
             let bytes = read!(read_tfm_bytes(tfm_file));
             let [a, b, c, d] = bytes;
-            fonts.set_font_info_b16(k, four_quarters(bytes));
+            self.set_font_info_b16(k, four_quarters(bytes));
 
-            if a > 128 {
-                if 256 * c + d >= nl {
-                    bad!();
-                }
-                if a == 255 && k == lig_kern_base {
-                    bchar = b;
-                }
-            } else {
-                if b != bchar && !char_exists(fonts, b) {
-                    bad!();
-                }
-                if c < 128 {
-                    if !char_exists(fonts, d) {
+            if a >= nw || b / 16 >= nh || b % 16 >= nd || c / 4 >= ni {
+                bad!();
+            }
+            match c % 4 {
+                1 if d >= nl => bad!(),
+                3 if d >= ne => bad!(),
+                2 => {
+                    if d < bc || d > ec {
                         bad!();
                     }
-                } else if 256 * (c - 128) + d >= nk {
-                    bad!();
+                    // A charlist must not cycle back to the current character.
+                    let current = k + bc - self.fmem_ptr;
+                    let mut dd = d;
+                    while dd < current {
+                        let qw = self.char_info(f, dd);
+                        if qw.s1 % 4 != LIST_TAG {
+                            break;
+                        }
+                        dd = qw.s0 as i32;
+                    }
+                    if dd == current {
+                        bad!();
+                    }
                 }
-                if a < 128 && k - lig_kern_base + a + 1 >= nl {
-                    bad!();
-                }
-            }
-
-            if k == lig_kern_end - 1 && a == 255 {
-                bch_label = 256 * c + d;
+                _ => {}
             }
         }
-    }
 
-    for k in fonts.kern_base_entry(f) + 256 * 128..fonts.exten_base_entry(f) {
-        let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
-        fonts.set_font_info_sc(k, sw);
-    }
-
-    for k in fonts.exten_base_entry(f)..fonts.param_base(f) {
-        let bytes = read!(read_tfm_bytes(tfm_file));
-        let [a, b, c, d] = bytes;
-        fonts.set_font_info_b16(k, four_quarters(bytes));
-
-        for ch in [a, b, c] {
-            if ch != 0 && !char_exists(fonts, ch) {
-                bad!();
-            }
+        let mut alpha = 16;
+        while z >= 0x800000 {
+            z /= 2;
+            alpha += alpha;
         }
-        if !char_exists(fonts, d) {
+        let beta = 256 / alpha;
+        alpha *= z;
+
+        for k in self.width_base_entry(f)..self.lig_kern_base_entry(f) {
+            let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
+            self.set_font_info_sc(k, sw);
+        }
+
+        if self.font_info_sc(self.width_base_entry(f)) != 0
+            || self.font_info_sc(self.height_base_entry(f)) != 0
+            || self.font_info_sc(self.depth_base_entry(f)) != 0
+            || self.font_info_sc(self.italic_base_entry(f)) != 0
+        {
             bad!();
         }
-    }
 
-    for k in 1..=np {
-        let sw = if k == 1 {
-            // The slant is an unscaled fix_word.
-            let mut sw = tfm_getc(tfm_file);
-            if sw == EOF {
+        let mut bch_label = 32_767;
+        let mut bchar = 256;
+
+        if nl > 0 {
+            let lig_kern_base = self.lig_kern_base_entry(f);
+            let lig_kern_end = self.kern_base_entry(f) + 256 * 128;
+            for k in lig_kern_base..lig_kern_end {
+                let bytes = read!(read_tfm_bytes(tfm_file));
+                let [a, b, c, d] = bytes;
+                self.set_font_info_b16(k, four_quarters(bytes));
+
+                if a > 128 {
+                    if 256 * c + d >= nl {
+                        bad!();
+                    }
+                    if a == 255 && k == lig_kern_base {
+                        bchar = b;
+                    }
+                } else {
+                    if b != bchar && !char_exists(self, b) {
+                        bad!();
+                    }
+                    if c < 128 {
+                        if !char_exists(self, d) {
+                            bad!();
+                        }
+                    } else if 256 * (c - 128) + d >= nk {
+                        bad!();
+                    }
+                    if a < 128 && k - lig_kern_base + a + 1 >= nl {
+                        bad!();
+                    }
+                }
+
+                if k == lig_kern_end - 1 && a == 255 {
+                    bch_label = 256 * c + d;
+                }
+            }
+        }
+
+        for k in self.kern_base_entry(f) + 256 * 128..self.exten_base_entry(f) {
+            let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
+            self.set_font_info_sc(k, sw);
+        }
+
+        for k in self.exten_base_entry(f)..self.param_base(f) {
+            let bytes = read!(read_tfm_bytes(tfm_file));
+            let [a, b, c, d] = bytes;
+            self.set_font_info_b16(k, four_quarters(bytes));
+
+            for ch in [a, b, c] {
+                if ch != 0 && !char_exists(self, ch) {
+                    bad!();
+                }
+            }
+            if !char_exists(self, d) {
                 bad!();
             }
-            if sw > 127 {
-                sw -= 256;
-            }
-            sw = sw * 256 + tfm_getc(tfm_file);
-            sw = sw * 256 + tfm_getc(tfm_file);
-            (sw * 16) + (tfm_getc(tfm_file) / 16)
+        }
+
+        for k in 1..=np {
+            let sw = if k == 1 {
+                // The slant is an unscaled fix_word.
+                let mut sw = tfm_getc(tfm_file);
+                if sw == EOF {
+                    bad!();
+                }
+                if sw > 127 {
+                    sw -= 256;
+                }
+                sw = sw * 256 + tfm_getc(tfm_file);
+                sw = sw * 256 + tfm_getc(tfm_file);
+                (sw * 16) + (tfm_getc(tfm_file) / 16)
+            } else {
+                read!(read_scaled_word(tfm_file, z, beta, alpha))
+            };
+            self.set_font_info_sc(self.param_base(f) + k - 1, sw);
+        }
+        for k in np + 1..=7 {
+            self.set_font_info_sc(self.param_base(f) + k - 1, 0);
+        }
+
+        self.set_font_params(f, np.max(7));
+        self.set_hyphen_char_entry(f, eqtb.int_par(INT_PAR_DEFAULT_HYPHEN_CHAR));
+        self.set_skew_char_entry(f, eqtb.int_par(INT_PAR_DEFAULT_SKEW_CHAR));
+        if bch_label < nl {
+            self.set_bchar_label_entry(f, bch_label + self.lig_kern_base_entry(f));
         } else {
-            read!(read_scaled_word(tfm_file, z, beta, alpha))
+            self.set_bchar_label_entry(f, NON_ADDRESS);
+        }
+        self.set_font_bchar_entry(f, bchar);
+        self.set_font_false_bchar_entry(f, bchar);
+        if bchar <= ec && bchar >= bc && self.char_info(f, bchar).s3 > 0 {
+            self.set_font_false_bchar_entry(f, TOO_BIG_CHAR);
+        }
+
+        self.set_font_name_entry(f, nom);
+        self.set_font_area_entry(f, aire);
+        self.set_font_bc_entry(f, bc as u16);
+        self.set_font_ec_entry(f, ec as u16);
+        self.set_font_glue(f, crate::mem::TEX_NULL);
+        self.set_param_base(f, self.param_base(f) - 1);
+        self.fmem_ptr += lf;
+        self.font_ptr = f;
+        (TfmParse::Loaded(f), scale_side_effect)
+    }
+
+    /// Set up the tables of a new native font slot. Returns the slot and the
+    /// font's metrics.
+    unsafe fn init_native_font_tables(
+        &mut self,
+        eqtb: &EqtbState,
+        font_engine: crate::state::FontEngineHandle,
+        full_name: i32,
+        actual_size: i32,
+        num_font_dimens: i32,
+    ) -> (i32, NativeFontMetrics) {
+        self.font_ptr += 1;
+        let font_ptr = self.font_ptr;
+        self.set_font_area_entry(font_ptr, self.native_font_type_flag);
+        self.set_font_name_entry(font_ptr, full_name);
+        self.set_font_check(font_ptr, B16x4::default());
+        self.set_font_glue(font_ptr, crate::mem::TEX_NULL);
+        self.set_font_dsize_entry(font_ptr, get_loaded_font_design_size());
+        self.set_font_size_entry(font_ptr, actual_size);
+
+        let metrics = if self.native_font_type_flag == AAT_FONT_FLAG {
+            aat_get_font_metrics(font_engine.raw)
+        } else {
+            ot_get_font_metrics(font_engine.raw)
         };
-        fonts.set_font_info_sc(fonts.param_base(f) + k - 1, sw);
+
+        self.set_height_base_entry(font_ptr, metrics.ascent);
+        self.set_depth_base_entry(font_ptr, -metrics.descent);
+        self.set_font_params(font_ptr, num_font_dimens);
+        self.set_font_bc_entry(font_ptr, 0);
+        self.set_font_ec_entry(font_ptr, 65_535);
+        self.set_font_used_entry(font_ptr, false);
+        self.set_hyphen_char_entry(font_ptr, eqtb.int_par(INT_PAR_DEFAULT_HYPHEN_CHAR));
+        self.set_skew_char_entry(font_ptr, eqtb.int_par(INT_PAR_DEFAULT_SKEW_CHAR));
+        self.set_param_base(font_ptr, self.fmem_ptr - 1);
+        self.set_font_layout_engine(font_ptr, Some(std::sync::Arc::new(font_engine)));
+        self.set_font_mapping(font_ptr, None);
+        self.set_font_letter_space_entry(font_ptr, self.loaded_font_letter_space);
+
+        (font_ptr, metrics)
     }
-    for k in np + 1..=7 {
-        fonts.set_font_info_sc(fonts.param_base(f) + k - 1, 0);
-    }
-
-    fonts.set_font_params(f, np.max(7));
-    fonts.set_hyphen_char_entry(f, eqtb.int_par(INT_PAR_DEFAULT_HYPHEN_CHAR));
-    fonts.set_skew_char_entry(f, eqtb.int_par(INT_PAR_DEFAULT_SKEW_CHAR));
-    if bch_label < nl {
-        fonts.set_bchar_label_entry(f, bch_label + fonts.lig_kern_base_entry(f));
-    } else {
-        fonts.set_bchar_label_entry(f, NON_ADDRESS);
-    }
-    fonts.set_font_bchar_entry(f, bchar);
-    fonts.set_font_false_bchar_entry(f, bchar);
-    if bchar <= ec && bchar >= bc && char_info(fonts, f, bchar).s3 > 0 {
-        fonts.set_font_false_bchar_entry(f, TOO_BIG_CHAR);
-    }
-
-    fonts.set_font_name_entry(f, nom);
-    fonts.set_font_area_entry(f, aire);
-    fonts.set_font_bc_entry(f, bc as u16);
-    fonts.set_font_ec_entry(f, ec as u16);
-    fonts.set_font_glue(f, crate::mem::TEX_NULL);
-    fonts.set_param_base(f, fonts.param_base(f) - 1);
-    fonts.fmem_ptr += lf;
-    fonts.font_ptr = f;
-    (TfmParse::Loaded(f), scale_side_effect)
-}
-
-/// Set up the tables of a new native font slot. Returns the slot and the
-/// font's metrics.
-unsafe fn init_native_font_tables(
-    fonts: &mut FontState,
-    eqtb: &EqtbState,
-    font_engine: crate::state::FontEngineHandle,
-    full_name: i32,
-    actual_size: i32,
-    num_font_dimens: i32,
-) -> (i32, NativeFontMetrics) {
-    fonts.font_ptr += 1;
-    let font_ptr = fonts.font_ptr;
-    fonts.set_font_area_entry(font_ptr, fonts.native_font_type_flag);
-    fonts.set_font_name_entry(font_ptr, full_name);
-    fonts.set_font_check(font_ptr, B16x4::default());
-    fonts.set_font_glue(font_ptr, crate::mem::TEX_NULL);
-    fonts.set_font_dsize_entry(font_ptr, get_loaded_font_design_size());
-    fonts.set_font_size_entry(font_ptr, actual_size);
-
-    let metrics = if fonts.native_font_type_flag == AAT_FONT_FLAG {
-        aat_get_font_metrics(font_engine.raw)
-    } else {
-        ot_get_font_metrics(font_engine.raw)
-    };
-
-    fonts.set_height_base_entry(font_ptr, metrics.ascent);
-    fonts.set_depth_base_entry(font_ptr, -metrics.descent);
-    fonts.set_font_params(font_ptr, num_font_dimens);
-    fonts.set_font_bc_entry(font_ptr, 0);
-    fonts.set_font_ec_entry(font_ptr, 65_535);
-    fonts.set_font_used_entry(font_ptr, false);
-    fonts.set_hyphen_char_entry(font_ptr, eqtb.int_par(INT_PAR_DEFAULT_HYPHEN_CHAR));
-    fonts.set_skew_char_entry(font_ptr, eqtb.int_par(INT_PAR_DEFAULT_SKEW_CHAR));
-    fonts.set_param_base(font_ptr, fonts.fmem_ptr - 1);
-    fonts.set_font_layout_engine(font_ptr, Some(std::sync::Arc::new(font_engine)));
-    fonts.set_font_mapping(font_ptr, None);
-    fonts.set_font_letter_space_entry(font_ptr, fonts.loaded_font_letter_space);
-
-    (font_ptr, metrics)
 }
 
 pub(crate) enum LoadNativeFontAbort {
@@ -842,9 +849,11 @@ impl LoadNativeFontAbort {
     }
 }
 
-fn push_font_info(fonts: &mut FontState, v: i32) {
-    fonts.set_font_info_sc(fonts.fmem_ptr, v);
-    fonts.fmem_ptr += 1;
+impl FontState {
+    fn push_font_info(&mut self, v: i32) {
+        self.set_font_info_sc(self.fmem_ptr, v);
+        self.fmem_ptr += 1;
+    }
 }
 
 /// Load a native OpenType/Graphite font and set up its TeX font tables.
@@ -924,8 +933,7 @@ pub(crate) unsafe fn load_native_font_in(
         return Ok(FONT_BASE);
     }
 
-    let (font_ptr, metrics) = init_native_font_tables(
-        &mut st.fonts,
+    let (font_ptr, metrics) = st.fonts.init_native_font_tables(
         &st.eqtb,
         font_engine,
         full_name,
@@ -949,14 +957,14 @@ pub(crate) unsafe fn load_native_font_in(
         space_width / 3,
         metrics.cap_height,
     ] {
-        push_font_info(&mut st.fonts, v);
+        st.fonts.push_font_info(v);
     }
 
     if num_font_dimens == 65 {
-        push_font_info(&mut st.fonts, num_font_dimens);
+        st.fonts.push_font_info(num_font_dimens);
         for k in 0..=55 {
-            let v = crate::ot_math::get_ot_math_constant(&st.fonts, font_ptr, k);
-            push_font_info(&mut st.fonts, v);
+            let v = st.fonts.get_ot_math_constant(font_ptr, k);
+            st.fonts.push_font_info(v);
         }
     }
 

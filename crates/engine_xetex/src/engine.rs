@@ -784,35 +784,37 @@ pub(crate) enum InitOutcome {
     Terminate(i32),
 }
 
-pub(crate) fn alloc_font_arrays(fonts: &mut FontState) {
-    let len = fonts.font_max as usize + 1;
-    fonts.font_layout_engine = vec![None; len];
-    fonts.font_mapping = vec![None; len];
-    fonts.font_flags = vec![0; len];
-    fonts.font_letter_space = vec![0; len];
-    fonts.font_check = vec![B16x4::default(); len];
-    fonts.font_size = vec![0; len];
-    fonts.font_dsize = vec![0; len];
-    fonts.font_params = vec![0; len];
-    fonts.font_name = vec![0; len];
-    fonts.font_area = vec![0; len];
-    fonts.font_bc = vec![0; len];
-    fonts.font_ec = vec![0; len];
-    fonts.bchar_label = vec![0; len];
-    fonts.font_bchar = vec![0; len];
-    fonts.font_false_bchar = vec![0; len];
-    fonts.font_glue = vec![0; len];
-    fonts.hyphen_char = vec![0; len];
-    fonts.skew_char = vec![0; len];
-    fonts.char_base = vec![0; len];
-    fonts.width_base = vec![0; len];
-    fonts.height_base = vec![0; len];
-    fonts.depth_base = vec![0; len];
-    fonts.italic_base = vec![0; len];
-    fonts.lig_kern_base = vec![0; len];
-    fonts.kern_base = vec![0; len];
-    fonts.exten_base = vec![0; len];
-    fonts.param_base = vec![0; len];
+impl FontState {
+    pub(crate) fn alloc_font_arrays(&mut self) {
+        let len = self.font_max as usize + 1;
+        self.font_layout_engine = vec![None; len];
+        self.font_mapping = vec![None; len];
+        self.font_flags = vec![0; len];
+        self.font_letter_space = vec![0; len];
+        self.font_check = vec![B16x4::default(); len];
+        self.font_size = vec![0; len];
+        self.font_dsize = vec![0; len];
+        self.font_params = vec![0; len];
+        self.font_name = vec![0; len];
+        self.font_area = vec![0; len];
+        self.font_bc = vec![0; len];
+        self.font_ec = vec![0; len];
+        self.bchar_label = vec![0; len];
+        self.font_bchar = vec![0; len];
+        self.font_false_bchar = vec![0; len];
+        self.font_glue = vec![0; len];
+        self.hyphen_char = vec![0; len];
+        self.skew_char = vec![0; len];
+        self.char_base = vec![0; len];
+        self.width_base = vec![0; len];
+        self.height_base = vec![0; len];
+        self.depth_base = vec![0; len];
+        self.italic_base = vec![0; len];
+        self.lig_kern_base = vec![0; len];
+        self.kern_base = vec![0; len];
+        self.exten_base = vec![0; len];
+        self.param_base = vec![0; len];
+    }
 }
 
 /// Allocate engine storage, load the format, and initialize configuration.
@@ -1032,7 +1034,7 @@ pub(crate) unsafe fn initialize_engine(
         hyph.trie_ptr = 0;
         hyph.hyph_start = 0;
 
-        alloc_font_arrays(&mut st.fonts);
+        st.fonts.alloc_font_arrays();
 
         let nullfont_name =
             match crate::texmfmp::maketexstring_in(&mut st.strings, c"nullfont".as_ptr()) {
@@ -1188,7 +1190,7 @@ pub(crate) unsafe fn tt_cleanup_in(st: &mut EngineState) {
     st.shipout.dvi_buf = Vec::new();
 
     destroy_font_manager();
-    crate::ext::release_linebreak_state(&mut st.fonts);
+    st.fonts.release_linebreak_state();
 
     st.fonts.font_layout_engine.fill(None);
     st.fonts.font_mapping.fill(None);

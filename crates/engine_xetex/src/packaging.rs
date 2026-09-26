@@ -13,7 +13,6 @@ use crate::consts::{
     SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, WRITE_NODE_SIZE,
 };
 use crate::errors::ErrorOutcome;
-use crate::fonts::effective_char;
 use crate::main_control::VSPLIT_CODE;
 use crate::mem::{end_lr_type, GARBAGE, TEMP_HEAD};
 use crate::node::{
@@ -1496,11 +1495,11 @@ impl MemState {
         'outer: while !p.is_null() {
             while let Some(ch) = self.as_char(p) {
                 let f = ch.font(self).0;
-                let c = effective_char(fonts, f, ch.character(self));
-                let info = crate::fonts::char_info(fonts, f, c);
-                x += crate::fonts::char_width(fonts, f, info);
-                h = h.max(crate::fonts::char_height(fonts, f, info));
-                d = d.max(crate::fonts::char_depth(fonts, f, info));
+                let c = fonts.effective_char(f, ch.character(self));
+                let info = fonts.char_info(f, c);
+                x += fonts.char_width(f, info);
+                h = h.max(fonts.char_height(f, info));
+                d = d.max(fonts.char_depth(f, info));
                 p = p.link(self);
             }
 
