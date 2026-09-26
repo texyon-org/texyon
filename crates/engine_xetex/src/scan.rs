@@ -48,7 +48,7 @@ use crate::output::{
     print_err_in, print_esc_cstr_in, print_int_in, print_nl_cstr_in,
 };
 use crate::packaging::{ADDITIONAL, EXACTLY};
-use crate::state::{EngineState, GroupCode};
+use crate::state::{EngineState, EqtbState, GroupCode, MemState, ScannerState};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 use std::ffi::CStr;
 
@@ -1604,6 +1604,25 @@ pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
         find_sa_in(st, BOX_VAL, n)?.sa_ptr(&st.mem)
     };
     st.mem.classify_box(contents.as_idx()?).ok().flatten()
+}
+
+/// TeX's `change_box`: sets box register `n` to `v` without saving.
+pub(crate) fn change_box(
+    mem: &mut MemState,
+    scanner: &mut ScannerState,
+    eqtb: &mut EqtbState,
+    n: i32,
+    v: MemPtr,
+) {
+    if n < 256 {
+        eqtb.set_b32s1(BOX_BASE + n, v.0);
+        return;
+    }
+    if let Some(sa) = crate::save::find_sa_element(mem, scanner, BOX_VAL, n) {
+        sa.set_sa_ptr(mem, v);
+        sa.set_sa_ref(mem, sa.sa_ref(mem) + 1);
+        crate::save::delete_sa_ref(mem, scanner, sa.idx());
+    }
 }
 
 /// `get_x_token` until the result is not a space.

@@ -2,16 +2,15 @@
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
 use crate::consts::{
-    ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_BASE, BOX_NODE_SIZE, DIMEN_PAR_HFUZZ,
-    DIMEN_PAR_LINE_SKIP_LIMIT, DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_SPLIT_MAX_DEPTH, DIMEN_PAR_VFUZZ,
-    EJECT_PENALTY, EXPLICIT, FIL, FILL, FILLL, FRACTION_NOAD_SIZE, GLUE_PAR_BASELINE_SKIP,
-    GLUE_PAR_LINE_SKIP, GLUE_PAR_SPLIT_TOP_SKIP, GLYPH_NODE_SIZE, IGNORE_DEPTH, INDEX_NODE_SIZE,
-    INF_BAD, INF_PENALTY, INS_NODE_SIZE, INT_PAR_HBADNESS, INT_PAR_SAVING_VDISCARDS,
-    INT_PAR_TEXXET, INT_PAR_VBADNESS, INT_PAR_XETEX_UPWARDS, MARGIN_KERN_NODE_SIZE,
-    MARK_CLASS_NODE_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, NORMAL,
-    OPEN_NODE_SIZE, PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE,
-    SPLIT_BOT_MARK_CODE, SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, TEX_NULL,
-    WRITE_NODE_SIZE,
+    ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_NODE_SIZE, DIMEN_PAR_HFUZZ, DIMEN_PAR_LINE_SKIP_LIMIT,
+    DIMEN_PAR_OVERFULL_RULE, DIMEN_PAR_SPLIT_MAX_DEPTH, DIMEN_PAR_VFUZZ, EJECT_PENALTY, EXPLICIT,
+    FIL, FILL, FILLL, FRACTION_NOAD_SIZE, GLUE_PAR_BASELINE_SKIP, GLUE_PAR_LINE_SKIP,
+    GLUE_PAR_SPLIT_TOP_SKIP, GLYPH_NODE_SIZE, IGNORE_DEPTH, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY,
+    INS_NODE_SIZE, INT_PAR_HBADNESS, INT_PAR_SAVING_VDISCARDS, INT_PAR_TEXXET, INT_PAR_VBADNESS,
+    INT_PAR_XETEX_UPWARDS, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MAX_HALFWORD,
+    MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, NORMAL, OPEN_NODE_SIZE, PIC_NODE_SIZE,
+    RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE, SPLIT_BOT_MARK_CODE,
+    SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, TEX_NULL, WRITE_NODE_SIZE,
 };
 use crate::errors::ErrorOutcome;
 use crate::fonts::{effective_char, new_native_word_node};
@@ -25,7 +24,7 @@ use crate::node::{
     MarkNode, NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::pagebuilder::{FIRE_UP_DONE, FIRE_UP_INIT};
-use crate::scan::{NodeRecycleAbort, BOX_VAL, MARK_VAL};
+use crate::scan::{NodeRecycleAbort, MARK_VAL};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -872,20 +871,6 @@ enum VsplitStep {
 }
 
 /// The contents of box register `n`, leaving `n` in `cur_val`.
-fn find_box_register(
-    mem: &mut MemState,
-    scanner: &mut ScannerState,
-    eqtb: &EqtbState,
-    n: i32,
-) -> Result<MemPtr, NodeRecycleAbort> {
-    scanner.cur_val = n;
-    if scanner.cur_val < 256 {
-        return Ok(MemPtr(eqtb.b32s1(BOX_BASE + scanner.cur_val)));
-    }
-    let element = crate::save::find_sa_element(mem, scanner, BOX_VAL, scanner.cur_val);
-    Ok(element.map_or(MemPtr::NULL, |e| e.sa_ptr(mem)))
-}
-
 fn reset_vsplit_marks(
     mem: &mut MemState,
     scanner: &mut ScannerState,
@@ -910,36 +895,27 @@ fn reset_vsplit_marks(
     Ok(())
 }
 
-fn start_vsplit(
-    mem: &mut MemState,
-    eqtb: &EqtbState,
-    scanner: &mut ScannerState,
-    n: i32,
-    h: i32,
-) -> Result<VsplitStart, NodeRecycleAbort> {
-    let v = find_box_register(mem, scanner, eqtb, n)?;
-    reset_vsplit_marks(mem, scanner)?;
+fn start_vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<VsplitStart, NodeRecycleAbort> {
+    st.scanner.cur_val = n;
+    let v = crate::scan::fetch_box(st, n);
+    reset_vsplit_marks(&mut st.mem, &mut st.scanner)?;
 
-    if v.is_null() {
-        return Ok(VsplitStart::Done(VsplitOutcome {
-            result: None,
-            packages: [None, None],
-        }));
-    }
-
-    let v = match mem
-        .classify_box(MemIdx::new(v))
-        .map_err(|_| NodeRecycleAbort::Confusion(c"vsplit"))?
-    {
+    let v = match v {
+        None => {
+            return Ok(VsplitStart::Done(VsplitOutcome {
+                result: None,
+                packages: [None, None],
+            }))
+        }
         Some(AnyBox::VList(v)) => v,
-        Some(AnyBox::HList(_)) | None => return Ok(VsplitStart::NeedsVboxDiagnostic),
+        Some(AnyBox::HList(_)) => return Ok(VsplitStart::NeedsVboxDiagnostic),
     };
 
     Ok(VsplitStart::Ready(VsplitState {
         h,
         v,
-        split_max_d: eqtb.dimen_par(DIMEN_PAR_SPLIT_MAX_DEPTH),
-        vert_break: start_vert_break(scanner, v.list_ptr(mem)),
+        split_max_d: st.eqtb.dimen_par(DIMEN_PAR_SPLIT_MAX_DEPTH),
+        vert_break: start_vert_break(&mut st.scanner, v.list_ptr(&st.mem)),
     }))
 }
 
@@ -1003,24 +979,6 @@ fn split_vlist_at_break(
     Ok(state.v.list_ptr(mem))
 }
 
-fn store_split_remainder(
-    mem: &mut MemState,
-    scanner: &mut ScannerState,
-    eqtb: &mut EqtbState,
-    q: MemPtr,
-) -> Result<(), NodeRecycleAbort> {
-    if scanner.cur_val < 256 {
-        eqtb.set_b32s1(BOX_BASE + scanner.cur_val, q.0);
-        return Ok(());
-    }
-    if let Some(element) = crate::save::find_sa_element(mem, scanner, BOX_VAL, scanner.cur_val) {
-        element.set_sa_ptr(mem, q);
-        element.set_sa_ref(mem, element.sa_ref(mem) + 1);
-        crate::save::delete_sa_ref(mem, scanner, element.idx());
-    }
-    Ok(())
-}
-
 fn finish_vsplit_after_break(
     mem: &mut MemState,
     eqtb: &mut EqtbState,
@@ -1040,7 +998,8 @@ fn finish_vsplit_after_break(
         q = packed.r_box.ptr();
         push_slot(&mut packages, packed);
     }
-    store_split_remainder(mem, scanner, eqtb, q)?;
+    let n = scanner.cur_val;
+    crate::scan::change_box(mem, scanner, eqtb, n, q);
 
     let packed = vpackage_in(
         mem,
@@ -1129,7 +1088,7 @@ pub(crate) fn vsplit_in(
     n: i32,
     h: i32,
 ) -> Result<Option<AnyBox>, VsplitAbort> {
-    let mut state = match start_vsplit(&mut st.mem, &st.eqtb, &mut st.scanner, n, h)? {
+    let mut state = match start_vsplit(st, n, h)? {
         VsplitStart::Done(outcome) => {
             print_vsplit_packages_in(st, outcome);
             return Ok(outcome.result);

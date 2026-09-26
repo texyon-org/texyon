@@ -41,9 +41,9 @@ use crate::node::{
     WhatsitNode, WhatsitSubtype,
 };
 use crate::scan::{
-    fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL,
-    INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN,
-    PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
+    change_box, fetch_box, set_class_fn, set_family_fn, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL,
+    INTER_CHAR_VAL, INT_VAL, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL,
+    NORMAL_SCANNER, OTHER_TOKEN, PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
 };
 use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
@@ -1187,20 +1187,6 @@ pub(crate) fn do_endv_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     }
 }
 
-/// TeX's `change_box`: sets box register `n` to `v` without saving.
-fn change_box(st: &mut EngineState, n: i32, v: i32) {
-    if n < 256 {
-        st.eqtb.set_b32s1(BOX_BASE + n, v);
-        return;
-    }
-    if let Some(sa) = crate::save::find_sa_element(&st.mem, &mut st.scanner, BOX_VAL, n) {
-        sa.set_sa_ptr(&mut st.mem, MemPtr::from_raw(v));
-        let refs = sa.sa_ref(&st.mem);
-        sa.set_sa_ref(&mut st.mem, refs + 1);
-        crate::save::delete_sa_ref(&mut st.mem, &mut st.scanner, sa.idx());
-    }
-}
-
 pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     if st.scanner.cur_chr > COPY_CODE {
         let disc = &mut st.scanner.disc_ptr[st.scanner.cur_chr as usize];
@@ -1234,7 +1220,8 @@ pub(crate) fn unpackage_in(st: &mut EngineState) -> Result<(), MainControlAbort>
                 .set_link(&mut st.mem, MemPtr::from_raw(copy));
         } else {
             st.input.cur_list.tail.set_link(&mut st.mem, list);
-            change_box(st, st.scanner.cur_val, TEX_NULL);
+            let n = st.scanner.cur_val;
+            change_box(&mut st.mem, &mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
             crate::mem::free_node(&mut st.mem, b.ptr(), BOX_NODE_SIZE);
         }
     }
@@ -1799,7 +1786,7 @@ pub(crate) fn begin_box_in(st: &mut EngineState, box_context: i32) -> Result<(),
             crate::scan::scan_register_num_in(st)?;
             let n = st.scanner.cur_val;
             st.scanner.cur_box = fetch_box(st, n).map(BoxOrRule::Box);
-            change_box(st, n, TEX_NULL);
+            change_box(&mut st.mem, &mut st.scanner, &mut st.eqtb, n, MemPtr::NULL);
         }
         COPY_CODE => {
             crate::scan::scan_register_num_in(st)?;
