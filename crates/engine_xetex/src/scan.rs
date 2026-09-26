@@ -2335,9 +2335,7 @@ pub(crate) fn xetex_scan_dimen_in(
                     };
                     if let Some(code) = font_param {
                         let font = st.eqtb.cur_font();
-                        let v = st
-                            .fonts
-                            .font_info_b32s1(code + st.fonts.param_base[font as usize]);
+                        let v = st.fonts.param(font, code);
                         scan_optional_space_in(st)?;
                         attach_unit_in(st, save_cur_val, f, v);
                         break 'attach_sign;
@@ -3331,16 +3329,10 @@ fn fetch_last_item_dimen_in(st: &mut EngineState, m: i32) -> Result<(), SccAbort
                 let info = st.fonts.font_info_b16(st.fonts.char_base[fu] + ec);
                 let fonts = &st.fonts;
                 match m {
-                    FONT_CHAR_WD_CODE => {
-                        fonts.font_info_b32s1(fonts.width_base[fu] + info.s3 as i32)
-                    }
-                    FONT_CHAR_HT_CODE => {
-                        fonts.font_info_b32s1(fonts.height_base[fu] + info.s2 as i32 / 16)
-                    }
-                    FONT_CHAR_DP_CODE => {
-                        fonts.font_info_b32s1(fonts.depth_base[fu] + info.s2 as i32 % 16)
-                    }
-                    _ => fonts.font_info_b32s1(fonts.italic_base[fu] + info.s1 as i32 / 4),
+                    FONT_CHAR_WD_CODE => crate::fonts::char_width(fonts, f, info),
+                    FONT_CHAR_HT_CODE => crate::fonts::char_height(fonts, f, info),
+                    FONT_CHAR_DP_CODE => crate::fonts::char_depth(fonts, f, info),
+                    _ => crate::fonts::char_italic(fonts, f, info),
                 }
             } else {
                 0
@@ -3553,8 +3545,8 @@ pub(crate) fn scan_something_internal_in(
             CHAR_GIVEN | MATH_GIVEN | XETEX_MATH_GIVEN => set_cur_val(st, m, INT_VAL),
             ASSIGN_FONT_DIMEN => {
                 find_font_dimen_in(st, false)?;
-                st.fonts.set_font_info_b32s1(st.fonts.fmem_ptr, 0);
-                set_cur_val(st, st.fonts.font_info_b32s1(st.scanner.cur_val), DIMEN_VAL);
+                st.fonts.set_font_info_sc(st.fonts.fmem_ptr, 0);
+                set_cur_val(st, st.fonts.font_info_sc(st.scanner.cur_val), DIMEN_VAL);
             }
             ASSIGN_FONT_INT => {
                 scan_font_ident_in(st)?;
@@ -3724,7 +3716,7 @@ pub(crate) fn find_font_dimen_in(st: &mut EngineState, writing: bool) -> Result<
                         n: st.fonts.font_mem_size,
                     }));
                 }
-                st.fonts.set_font_info_b32s1(st.fonts.fmem_ptr, 0);
+                st.fonts.set_font_info_sc(st.fonts.fmem_ptr, 0);
                 st.fonts.fmem_ptr += 1;
                 st.fonts.font_params[fu] += 1;
                 if n == st.fonts.font_params[fu] {

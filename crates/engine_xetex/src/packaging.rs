@@ -10,7 +10,7 @@ use crate::consts::{
     INT_PAR_XETEX_UPWARDS, MARGIN_KERN_NODE_SIZE, MARK_CLASS_NODE_SIZE, MAX_HALFWORD,
     MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, NORMAL, OPEN_NODE_SIZE, PIC_NODE_SIZE,
     RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE, SPLIT_BOT_MARK_CODE,
-    SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, TEX_NULL, WRITE_NODE_SIZE,
+    SPLIT_FIRST_MARK_CODE, STYLE_NODE_SIZE, SUB_BOX, WRITE_NODE_SIZE,
 };
 use crate::errors::ErrorOutcome;
 use crate::fonts::{effective_char, new_native_word_node};
@@ -150,10 +150,12 @@ fn copy_whatsit(
 
 /// Copy the list `p` without the contents of its boxes, linking the copies
 /// after `h` and ending them with `t`.
-pub fn just_copy(mem: &mut MemState, p: i32, h: i32, t: i32) -> Result<(), NodeRecycleAbort> {
-    let mut p = MemPtr(p);
-    let mut h = MemPtr(h);
-
+pub fn just_copy(
+    mem: &mut MemState,
+    mut p: MemPtr,
+    mut h: MemPtr,
+    t: MemPtr,
+) -> Result<(), NodeRecycleAbort> {
     while !p.is_null() {
         let copy = if is_char_node(mem, p) {
             let r = get_avail(mem).ok_or(NodeRecycleAbort::OverflowRunaway)?;
@@ -195,7 +197,7 @@ pub fn just_copy(mem: &mut MemState, p: i32, h: i32, t: i32) -> Result<(), NodeR
         p = p.link(mem);
     }
 
-    h.set_link(mem, MemPtr(t));
+    h.set_link(mem, t);
     Ok(())
 }
 
@@ -203,14 +205,13 @@ pub fn just_copy(mem: &mut MemState, p: i32, h: i32, t: i32) -> Result<(), NodeR
 pub fn just_reverse(
     mem: &mut MemState,
     scanner: &mut ScannerState,
-    p: i32,
+    p: MemPtr,
 ) -> Result<(), NodeRecycleAbort> {
-    let p = MemPtr(p);
     let mut m = MIN_HALFWORD;
     let mut n = MIN_HALFWORD;
 
     let mut q = if TEMP_HEAD.link(mem).is_null() {
-        just_copy(mem, p.link(mem).0, TEMP_HEAD.0, TEX_NULL)?;
+        just_copy(mem, p.link(mem), TEMP_HEAD, MemPtr::NULL)?;
         TEMP_HEAD.link(mem)
     } else {
         let q = p.link(mem);

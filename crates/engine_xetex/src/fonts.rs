@@ -52,19 +52,24 @@ pub(crate) fn char_info(fonts: &FontState, f: i32, c: i32) -> CharInfo {
 }
 
 pub(crate) fn char_width(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_b32s1(fonts.width_base_entry(f) + i.s3 as i32)
+    fonts.font_info_sc(fonts.width_base_entry(f) + i.s3 as i32)
 }
 
 pub(crate) fn char_italic(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_b32s1(fonts.italic_base_entry(f) + i.s1 as i32 / 4)
+    fonts.font_info_sc(fonts.italic_base_entry(f) + i.s1 as i32 / 4)
 }
 
 pub(crate) fn char_height(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_b32s1(fonts.height_base_entry(f) + i.s2 as i32 / 16)
+    fonts.font_info_sc(fonts.height_base_entry(f) + i.s2 as i32 / 16)
 }
 
 pub(crate) fn char_depth(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
-    fonts.font_info_b32s1(fonts.depth_base_entry(f) + i.s2 as i32 % 16)
+    fonts.font_info_sc(fonts.depth_base_entry(f) + i.s2 as i32 % 16)
+}
+
+/// The kern amount of lig/kern instruction `i` in font `f`.
+pub(crate) fn char_kern(fonts: &FontState, f: i32, i: CharInfo) -> i32 {
+    fonts.font_info_sc(fonts.kern_base_entry(f) + 256 * i.s1 as i32 + i.s0 as i32)
 }
 
 pub fn effective_char(fonts: &mut FontState, f: i32, c: u16) -> i32 {
@@ -645,13 +650,13 @@ unsafe fn read_font_info_tfm(
 
     for k in fonts.width_base_entry(f)..fonts.lig_kern_base_entry(f) {
         let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
-        fonts.set_font_info_b32s1(k, sw);
+        fonts.set_font_info_sc(k, sw);
     }
 
-    if fonts.font_info_b32s1(fonts.width_base_entry(f)) != 0
-        || fonts.font_info_b32s1(fonts.height_base_entry(f)) != 0
-        || fonts.font_info_b32s1(fonts.depth_base_entry(f)) != 0
-        || fonts.font_info_b32s1(fonts.italic_base_entry(f)) != 0
+    if fonts.font_info_sc(fonts.width_base_entry(f)) != 0
+        || fonts.font_info_sc(fonts.height_base_entry(f)) != 0
+        || fonts.font_info_sc(fonts.depth_base_entry(f)) != 0
+        || fonts.font_info_sc(fonts.italic_base_entry(f)) != 0
     {
         bad!();
     }
@@ -698,7 +703,7 @@ unsafe fn read_font_info_tfm(
 
     for k in fonts.kern_base_entry(f) + 256 * 128..fonts.exten_base_entry(f) {
         let sw = read!(read_scaled_word(tfm_file, z, beta, alpha));
-        fonts.set_font_info_b32s1(k, sw);
+        fonts.set_font_info_sc(k, sw);
     }
 
     for k in fonts.exten_base_entry(f)..fonts.param_base(f) {
@@ -732,10 +737,10 @@ unsafe fn read_font_info_tfm(
         } else {
             read!(read_scaled_word(tfm_file, z, beta, alpha))
         };
-        fonts.set_font_info_b32s1(fonts.param_base(f) + k - 1, sw);
+        fonts.set_font_info_sc(fonts.param_base(f) + k - 1, sw);
     }
     for k in np + 1..=7 {
-        fonts.set_font_info_b32s1(fonts.param_base(f) + k - 1, 0);
+        fonts.set_font_info_sc(fonts.param_base(f) + k - 1, 0);
     }
 
     fonts.set_font_params(f, np.max(7));
@@ -831,7 +836,7 @@ impl LoadNativeFontAbort {
 }
 
 fn push_font_info(fonts: &mut FontState, v: i32) {
-    fonts.set_font_info_b32s1(fonts.fmem_ptr, v);
+    fonts.set_font_info_sc(fonts.fmem_ptr, v);
     fonts.fmem_ptr += 1;
 }
 

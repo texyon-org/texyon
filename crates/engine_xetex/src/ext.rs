@@ -1563,7 +1563,7 @@ pub unsafe fn get_native_char_height_depth(
 
     // Snap to the baseline, x-height (param 5) and cap height (param 8) when
     // within 4% of the quad (param 6).
-    let param = |k: i32| fonts.font_info_b32s1(k + fonts.param_base(font));
+    let param = |k: i32| fonts.param(font, k);
     let fuzz = param(6) / 25;
     snap_zone(&mut depth, 0, fuzz);
     snap_zone(&mut height, 0, fuzz);

@@ -451,7 +451,7 @@ fn char_pw(
     side: i16,
 ) -> i32 {
     fn protrusion(errors: &mut ErrorState, fonts: &FontState, f: i32, cp: i32) -> i32 {
-        let quad = fonts.font_info_b32s1(QUAD_CODE + fonts.param_base(f));
+        let quad = fonts.param(f, QUAD_CODE);
         crate::scaled_math::round_xn_over_d(errors, quad, cp, 1000)
     }
 
@@ -793,9 +793,7 @@ fn reconstitute(
                         continue 'continue_;
                     }
 
-                    w = st.fonts.font_info_b32s1(
-                        st.fonts.kern_base_entry(st.hyph.hf) + 256 * q.s1 as i32 + q.s0 as i32,
-                    );
+                    w = crate::fonts::char_kern(&st.fonts, st.hyph.hf, q);
                     break 'continue_;
                 }
 

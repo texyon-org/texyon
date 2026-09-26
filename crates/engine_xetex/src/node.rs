@@ -386,7 +386,7 @@ impl_traits!(HasNodeHeader: HListNode, VListNode, RuleNode, InsNode, MarkNode, A
     LigatureNode, DiscNode, WhatsitNode, MathNode, GlueNode, KernNode, PenaltyNode, UnsetNode,
     StyleNode, ChoiceNode, EdgeNode, Noad, MarginKernNode, SaNode, PageInsNode);
 impl_traits!(HasLink: MovementNode, ActiveNode, DeltaNode, PassiveNode, CondNode, CharNode,
-    AlignRecord, AlignStackNode, ExprNode, PseudoLineNode);
+    AlignRecord, AlignStackNode, ExprNode, PseudoLineNode, LigItem);
 impl_traits!(HasWidth: HListNode, VListNode, UnsetNode, WhatsitNode, MathNode, KernNode,
     EdgeNode, MarginKernNode, GlueSpecNode, AlignRecord, SpanNode);
 impl_traits!(HasHeightDepth: HListNode, VListNode, UnsetNode, WhatsitNode, InsNode);
@@ -948,6 +948,11 @@ impl NodePtr<Noad> {
     #[inline]
     pub fn set_noad_type(self, mem: &mut MemState, nt: NodeType) {
         mem.set_b16s1(self.idx.0, nt.as_raw());
+    }
+    /// Stamps a type code taken from `cur_chr`, which a caller may fix up after.
+    #[inline]
+    pub fn set_type_code(self, mem: &mut MemState, code: u16) {
+        mem.set_b16s1(self.idx.0, code);
     }
 
     fields! {

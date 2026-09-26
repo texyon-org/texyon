@@ -1129,10 +1129,17 @@ impl FontState {
         unsafe { self.font_info[k as usize].b16 }
     }
 
+    /// `font_info[k].sc`.
     #[inline]
-    pub(crate) fn font_info_b32s1(&self, k: i32) -> i32 {
+    pub(crate) fn font_info_sc(&self, k: i32) -> i32 {
         // SAFETY: union projection. Callers preserve the original font-info indexing contract.
         unsafe { self.font_info[k as usize].b32.s1 }
+    }
+
+    /// Font parameter `n` of font `f`.
+    #[inline]
+    pub(crate) fn param(&self, f: i32, n: i32) -> i32 {
+        self.font_info_sc(n + self.param_base(f))
     }
 
     #[inline]
@@ -1257,7 +1264,7 @@ impl FontState {
         self.font_info[index].b16 = v;
     }
     #[inline]
-    pub(crate) fn set_font_info_b32s1(&mut self, k: i32, v: i32) {
+    pub(crate) fn set_font_info_sc(&mut self, k: i32, v: i32) {
         let index = k as usize;
         if self.font_info_journal.armed() && k < self.fmem_epoch_base {
             self.font_info_journal.note(index, self.font_info[index]);

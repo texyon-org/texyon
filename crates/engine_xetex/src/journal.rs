@@ -477,8 +477,8 @@ mod tests {
         fonts.fmem_ptr = 2;
         fonts.fmem_epoch_base = 2;
         fonts.font_info_journal.arm();
-        fonts.set_font_info_b32s1(1, 7);
-        fonts.set_font_info_b32s1(2, 8); // append region: dead after scalar rewind
+        fonts.set_font_info_sc(1, 7);
+        fonts.set_font_info_sc(2, 8); // append region: dead after scalar rewind
         let delta = fonts.font_info_journal.seal();
         assert_eq!(delta.len(), 1);
         delta.apply_to(&mut fonts.font_info);
