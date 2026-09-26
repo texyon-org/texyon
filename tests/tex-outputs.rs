@@ -28,6 +28,7 @@ struct TestCase {
     check_pdf: bool,
     extra_io: Vec<Box<dyn IoProvider>>,
     unstables: UnstableOptions,
+    semantic_pagination: bool,
 }
 
 impl TestCase {
@@ -39,7 +40,13 @@ impl TestCase {
             check_pdf: false,
             extra_io: Vec::new(),
             unstables: UnstableOptions::default(),
+            semantic_pagination: false,
         }
+    }
+
+    fn semantic_pagination(mut self, enabled: bool) -> Self {
+        self.semantic_pagination = enabled;
+        self
     }
 
     fn check_synctex(mut self, check_synctex: bool) -> Self {
@@ -95,7 +102,11 @@ impl TestCase {
         let texname = p.file_name().unwrap().to_str().unwrap().to_owned();
         let mut tex = FilesystemPrimaryInputIo::new(&p);
 
-        p.set_extension("xdv");
+        p.set_extension(if self.semantic_pagination {
+            "spx"
+        } else {
+            "xdv"
+        });
         let xdvname = p.file_name().unwrap().to_str().unwrap().to_owned();
 
         p.set_extension("pdf");
@@ -125,6 +136,7 @@ impl TestCase {
 
             let tex_res = TexEngine::default()
                 .shell_escape(self.unstables.shell_escape)
+                .semantic_pagination(self.semantic_pagination)
                 .process(&mut launcher, "plain.fmt", &texname);
 
             if self.check_pdf && tex_res.definitely_same(&self.expected_result) {
@@ -158,8 +170,12 @@ impl TestCase {
             .file(expected_log.collection(&files));
 
         if expect_xdv {
-            expect =
-                expect.file(ExpectedFile::read_with_extension(&mut p, "xdv").collection(&files));
+            let ext = if self.semantic_pagination {
+                "spx"
+            } else {
+                "xdv"
+            };
+            expect = expect.file(ExpectedFile::read_with_extension(&mut p, ext).collection(&files));
         }
         if self.check_synctex {
             expect = expect.file(
@@ -365,6 +381,14 @@ fn redbox_png() {
 fn shipout_rtl_ligatures() {
     TestCase::new("shipout_rtl_ligatures")
         .expect(Ok(TexOutcome::Warnings))
+        .go()
+}
+
+/// Semantic pagination brackets inline math with specials that must open with a left brace.
+#[test]
+fn semantic_inline_math() {
+    TestCase::new("semantic_inline_math")
+        .semantic_pagination(true)
         .go()
 }
 
