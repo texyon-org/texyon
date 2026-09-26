@@ -1042,7 +1042,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 } else if st.scanner.name_in_progress {
                     crate::input::insert_relax(st)?;
                 } else {
-                    unsafe { crate::io::start_input(st, std::ptr::null()) }?;
+                    unsafe { crate::io::start_input(st, None) }?;
                 }
             }
             _ => {

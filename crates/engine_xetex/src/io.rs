@@ -1055,25 +1055,23 @@ pub(crate) fn scan_file_name(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-/// `\input`, or the primary input when `primary_input_name` is non-null.
+/// `\input`, or the primary input when `primary_input_name` is given.
 pub(crate) unsafe fn start_input(
     st: &mut EngineState,
-    primary_input_name: *const libc::c_char,
+    primary_input_name: Option<&str>,
 ) -> Result<(), Abort> {
-    let format = if primary_input_name.is_null() {
+    let format = if primary_input_name.is_none() {
         TTBC_FILE_FORMAT_TEX
     } else {
         TTBC_FILE_FORMAT_TECTONIC_PRIMARY
     };
 
-    if primary_input_name.is_null() {
-        scan_file_name(st)?;
-    } else {
+    if let Some(name) = primary_input_name {
         st.scanner.name_in_progress = true;
         begin_name(st);
         st.scanner.stop_at_space = false;
 
-        let mut name = std::ffi::CStr::from_ptr(primary_input_name).to_bytes();
+        let mut name = name.as_bytes();
         if st.strings.pool_ptr + name.len() as i32 * 2 >= st.strings.pool_size {
             return Err(Abort::Internal("string pool overflow"));
         }
@@ -1092,6 +1090,8 @@ pub(crate) unsafe fn start_input(
         st.scanner.stop_at_space = true;
         end_name(st)?;
         st.scanner.name_in_progress = false;
+    } else {
+        scan_file_name(st)?;
     }
 
     pack_file_name(

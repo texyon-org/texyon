@@ -14,7 +14,7 @@ use crate::consts::{
     MIN_HALFWORD, PRIM_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG,
     TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::engine::{POOL_FREE, STRINGS_FREE, TEX_FORMAT_DEFAULT};
+use crate::engine::{POOL_FREE, STRINGS_FREE};
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{HASH_OFFSET, HASH_PRIME};
@@ -530,12 +530,11 @@ pub(crate) unsafe fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub unsafe fn load_fmt_file(st: &mut EngineState) -> Result<bool, Abort> {
+pub unsafe fn load_fmt_file(st: &mut EngineState, dump_name: &str) -> Result<bool, Abort> {
     let loc = st.input.cur_input.loc;
 
-    let name = std::ffi::CStr::from_ptr(TEX_FORMAT_DEFAULT).to_bytes_with_nul();
-    st.input.name_of_file = name.to_vec();
-    st.input.name_length = name.len() as i32 - 1;
+    st.input.name_of_file = [dump_name.as_bytes(), b"\0"].concat();
+    st.input.name_length = dump_name.len() as i32;
 
     let fmt_in = ttstub_input_open(st.input.name_of_file_ptr(), TTBC_FILE_FORMAT_FORMAT, 0);
     if fmt_in == INVALID_HANDLE {

@@ -15,9 +15,10 @@
 //! [Tectonic]: https://tectonic-typesetting.github.io/
 //! [`tectonic`]: https://docs.rs/tectonic/
 
-use crate::engine_interface::{tt_engine_xetex_main, tt_xetex_set_int_variable};
+use crate::engine_interface::tt_engine_xetex_main;
+use crate::state::ConfigState;
 
-use std::{ffi::CString, time::SystemTime};
+use std::time::SystemTime;
 use tectonic_bridge_core::{CoreBridgeLauncher, EngineAbortedError};
 use tectonic_errors::prelude::*;
 
@@ -247,32 +248,28 @@ impl TexEngine {
         if crate::session::resident_active() {
             bail!("cannot start batch XeTeX while a resident XeTeX session is open");
         }
-        let cformat = CString::new(format_file_name)?;
-        let cinput = CString::new(input_file_name)?;
+        ensure!(
+            !format_file_name.contains('\0') && !input_file_name.contains('\0'),
+            "XeTeX file names must not contain NUL bytes"
+        );
+        let config = ConfigState {
+            halt_on_error_p: self.halt_on_error.into(),
+            in_initex_mode: self.initex_mode,
+            synctex_enabled: self.synctex_enabled.into(),
+            semantic_pagination_enabled: self.semantic_pagination_enabled,
+            shell_escape_enabled: self.shell_escape_enabled,
+            deterministic_mode: self.deterministic_mode,
+            ..ConfigState::default()
+        };
 
         launcher.with_global_lock(|state| {
-            // SAFETY: All methods are called with valid C-strings and while the global lock is held.
+            // SAFETY: the global lock is held for the whole run.
             let r = unsafe {
-                tt_xetex_set_int_variable(
-                    c"shell_escape_enabled".as_ptr(),
-                    self.shell_escape_enabled.into(),
-                );
-                tt_xetex_set_int_variable(c"halt_on_error_p".as_ptr(), self.halt_on_error.into());
-                tt_xetex_set_int_variable(c"in_initex_mode".as_ptr(), self.initex_mode.into());
-                tt_xetex_set_int_variable(c"synctex_enabled".as_ptr(), self.synctex_enabled.into());
-                tt_xetex_set_int_variable(
-                    c"semantic_pagination_enabled".as_ptr(),
-                    self.semantic_pagination_enabled.into(),
-                );
-                tt_xetex_set_int_variable(
-                    c"deterministic_mode".as_ptr(),
-                    self.deterministic_mode.into(),
-                );
-
                 tt_engine_xetex_main(
                     state,
-                    cformat.as_ptr(),
-                    cinput.as_ptr(),
+                    config,
+                    format_file_name,
+                    input_file_name,
                     self.build_date
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .expect("invalid build date")

@@ -33,14 +33,15 @@ use crate::io::init_io;
 use crate::linebreak::HYPHENATED;
 use crate::main_control::{LAST_BOX_CODE, VSPLIT_CODE};
 use crate::mem::{
-    xmalloc, ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE,
-    HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD,
-    SS_GLUE, ZERO_GLUE,
+    ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, FILL_GLUE, FIL_GLUE, FIL_NEG_GLUE, HI_MEM_STAT_MIN,
+    HI_MEM_STAT_USAGE, NULL_LIST, OMIT_TEMPLATE, PAGE_HEAD, PAGE_INS_HEAD, SS_GLUE, ZERO_GLUE,
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
-use crate::state::{EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState};
+use crate::state::{
+    ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState,
+};
 use crate::units::{MemPtr, NodeType, Scaled};
 
 /// A `get_node` request this large merges every free block into the rover list.
@@ -66,8 +67,6 @@ const _: () = assert!(
         && HASH_OFFSET <= HASH_BASE
         && 2 * MAX_HALFWORD >= MEM_TOP
 );
-
-pub(crate) static mut TEX_FORMAT_DEFAULT: *mut libc::c_char = std::ptr::null_mut();
 
 extern "C" {
     fn pdf_files_init();
@@ -661,8 +660,9 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
 /// a surfaced message instead of unwinding into the host.
 pub(crate) unsafe fn tt_run_engine(
     api: *mut libc::c_void,
-    dump_name: *const libc::c_char,
-    input_file_name: *const libc::c_char,
+    config: ConfigState,
+    dump_name: &str,
+    input_file_name: &str,
     build_date: libc::time_t,
 ) -> i32 {
     reset_layout_font_caches();
@@ -672,7 +672,7 @@ pub(crate) unsafe fn tt_run_engine(
     let _bridge_guard = OnDrop(|| crate::bridge::set_bridge_state(std::ptr::null_mut()));
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        tt_run_engine_inner(dump_name, input_file_name, build_date)
+        tt_run_engine_inner(config, dump_name, input_file_name, build_date)
     }));
     match outcome {
         Ok(rv) => rv,
@@ -689,8 +689,9 @@ pub(crate) unsafe fn tt_run_engine(
 }
 
 unsafe fn tt_run_engine_inner(
-    dump_name: *const libc::c_char,
-    input_file_name: *const libc::c_char,
+    config: ConfigState,
+    dump_name: &str,
+    input_file_name: &str,
     build_date: libc::time_t,
 ) -> i32 {
     // An abort that skips terminal cleanup must not leak this process-global
@@ -698,7 +699,7 @@ unsafe fn tt_run_engine_inner(
     let _pdf_files_guard = OnDrop(|| pdf_files_close_if_open());
 
     let mut st = Box::new(EngineState::default());
-    st.config.apply_config();
+    st.config = config;
     crate::state::set_engine_state_ptr(&mut *st as *mut EngineState);
     let _ptr_guard = OnDrop(|| crate::state::set_engine_state_ptr(std::ptr::null_mut()));
 
@@ -753,11 +754,9 @@ impl FontState {
 /// input stack, so batch and resident sessions share this path.
 pub(crate) unsafe fn initialize_engine(
     st: &mut EngineState,
-    dump_name: *const libc::c_char,
+    dump_name: &str,
     build_date: libc::time_t,
 ) -> InitOutcome {
-    TEX_FORMAT_DEFAULT = xmalloc(libc::strlen(dump_name) + 1) as *mut libc::c_char;
-    libc::strcpy(TEX_FORMAT_DEFAULT, dump_name);
     st.shipout.rust_stdout = ttstub_output_open_stdout();
 
     if st.config.file_line_error_style_p < 0 {
@@ -918,7 +917,7 @@ pub(crate) unsafe fn initialize_engine(
     st.eqtb.no_new_control_sequence = true;
 
     if !st.config.in_initex_mode {
-        match load_fmt_file(st) {
+        match load_fmt_file(st, dump_name) {
             Ok(true) => {}
             Ok(false) => return InitOutcome::Terminate(st.errors.history),
             Err(a) => return InitOutcome::Terminate(a.into_history(st)),
@@ -1011,9 +1010,9 @@ pub(crate) unsafe fn initialize_engine(
 }
 
 /// Open, execute, finalize, and release one batch document operation.
-unsafe fn run_document_to_end(st: &mut EngineState, input_file_name: *const libc::c_char) -> i32 {
+unsafe fn run_document_to_end(st: &mut EngineState, input_file_name: &str) -> i32 {
     let result = (|| {
-        crate::io::start_input(st, input_file_name)?;
+        crate::io::start_input(st, Some(input_file_name))?;
         st.errors.history = HISTORY_SPOTLESS;
         crate::main_control::main_control(st)?;
         final_cleanup(st)?;
@@ -1031,9 +1030,9 @@ unsafe fn run_document_to_end(st: &mut EngineState, input_file_name: *const libc
 /// close operation resources and rewind rung zero.
 pub(crate) unsafe fn run_resident_document(
     st: &mut EngineState,
-    input_file_name: *const libc::c_char,
+    input_file_name: &str,
 ) -> Result<i32, Abort> {
-    crate::io::start_input(st, input_file_name)?;
+    crate::io::start_input(st, Some(input_file_name))?;
     st.errors.history = HISTORY_SPOTLESS;
     crate::main_control::main_control(st)?;
     final_cleanup(st)?;
@@ -1107,7 +1106,6 @@ pub(crate) unsafe fn tt_cleanup(st: &mut EngineState) {
     crate::journal::disarm(st);
     reset_layout_font_caches();
     pdf_files_close();
-    libc::free(TEX_FORMAT_DEFAULT as *mut _);
     st.shipout.dvi_buf = Vec::new();
 
     destroy_font_manager();

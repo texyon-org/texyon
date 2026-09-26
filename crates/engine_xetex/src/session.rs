@@ -324,8 +324,8 @@ impl IncrementalXeTeXSession {
         if self.opened {
             bail!("resident XeTeX session is already open");
         }
-        let format = CString::new(self.config.format_file_name.as_str())?;
-        let input = CString::new(sources.primary().as_str())?;
+        let format = self.config.format_file_name.clone();
+        let input = sources.primary().as_str().to_owned();
         let build_date = self
             .config
             .build_date
@@ -353,7 +353,7 @@ impl IncrementalXeTeXSession {
                 configure(state, &config);
                 let fence_sources = sources.clone();
                 let _sources = crate::replay::adapter::install(sources);
-                match crate::engine::initialize_engine(state, format.as_ptr(), build_date) {
+                match crate::engine::initialize_engine(state, &format, build_date) {
                     crate::engine::InitOutcome::Ready => {}
                     crate::engine::InitOutcome::Terminate(history) => {
                         return OperationResult::Terminal(history)
@@ -375,7 +375,7 @@ impl IncrementalXeTeXSession {
                 run_document(
                     state,
                     ladder.as_mut().unwrap(),
-                    input.as_ptr(),
+                    &input,
                     &fence_sources,
                     base,
                     budget,
@@ -416,7 +416,7 @@ impl IncrementalXeTeXSession {
             bail!("resident XeTeX session was edited before open");
         }
         self.pending_continuation = None;
-        let input = CString::new(sources.primary().as_str())?;
+        let input = sources.primary().as_str().to_owned();
         let revision = sources.revision();
         let pending_fences = self
             .last_sources
@@ -462,7 +462,7 @@ impl IncrementalXeTeXSession {
                 run_document(
                     state,
                     ladder,
-                    input.as_ptr(),
+                    &input,
                     &fence_sources,
                     strings_base,
                     budget,
@@ -497,7 +497,7 @@ impl IncrementalXeTeXSession {
             return Ok(None);
         };
         let revision = sources.revision();
-        let input = CString::new(sources.primary().as_str())?;
+        let input = sources.primary().as_str().to_owned();
         let config = self.config.clone();
         let budget = self.budget();
         let strings_base = self
@@ -533,7 +533,7 @@ impl IncrementalXeTeXSession {
                 run_document(
                     state,
                     ladder,
-                    input.as_ptr(),
+                    &input,
                     &fence_sources,
                     strings_base,
                     budget,
@@ -720,7 +720,7 @@ enum OperationResult {
 unsafe fn run_document(
     state: &mut EngineState,
     ladder: &mut CheckpointLadder<EngineBundle>,
-    input: *const libc::c_char,
+    input: &str,
     snapshot: &SourceSnapshot,
     strings_base: StringWatermark,
     budget: LadderBudget,
