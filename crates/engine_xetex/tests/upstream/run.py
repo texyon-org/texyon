@@ -88,15 +88,21 @@ def make_tl_format(bundle):
     return fmtdir
 
 
+class UpstreamCrash(Exception):
+    pass
+
+
 def run_tl(name, src, bundle, fmtdir):
     d = WORK / "tl" / name
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
     shutil.copy(src, d / "probe.tex")
-    subprocess.run(
+    r = subprocess.run(
         [XETEX, "-fmt=plain", "-no-pdf", "-interaction=scrollmode", "probe.tex"],
         cwd=d, env=tl_env(bundle, fmtdir), stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+    if r.returncode < 0:
+        raise UpstreamCrash(f"upstream xetex died with signal {-r.returncode}")
     return d
 
 
@@ -271,6 +277,8 @@ def compare(name, src, bundle, fmtdir):
     try:
         tl = run_tl(name, src, bundle, fmtdir)
         tt = run_tt(name, src, bundle)
+    except UpstreamCrash as e:
+        return name, [f"<crash: {e}>"]
     except (OSError, subprocess.TimeoutExpired) as e:
         return name, [f"<error: {e}>"]
     diffs = []
@@ -289,6 +297,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-v", "--verbose", action="store_true", help="print diffs")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count())
+    ap.add_argument("--probes", type=Path, default=PROBES, help="probe directory")
     ap.add_argument("filters", nargs="*")
     args = ap.parse_args()
 
@@ -301,10 +310,11 @@ def main():
     bundle = make_bundle()
     fmtdir = make_tl_format(bundle)
 
-    probes = sorted(PROBES.rglob("*.tex"))
-    names = [str(p.relative_to(PROBES).with_suffix("")).replace("/", "-") for p in probes]
+    root = args.probes.resolve()
+    probes = sorted(root.rglob("*.tex"))
+    names = [str(p.relative_to(root).with_suffix("")).replace("/", "-") for p in probes]
     todo = [(n, p) for n, p in zip(names, probes)
-            if not args.filters or any(f in n or f in str(p.relative_to(PROBES)) for f in args.filters)]
+            if not args.filters or any(f in n or f in str(p.relative_to(root)) for f in args.filters)]
 
     # Warm the Tectonic format cache once before running in parallel.
     if todo:
@@ -314,12 +324,16 @@ def main():
     with ThreadPoolExecutor(args.jobs) as ex:
         results = list(ex.map(lambda t: compare(*t, bundle, fmtdir), todo))
 
-    passed, failed, allowed = 0, [], []
+    passed, crashed, failed, allowed = 0, 0, [], []
     for name, diffs in results:
         if not diffs:
             passed += 1
             if name in known:
                 print(f"STALE  {name} is in known.tsv but now matches")
+            continue
+        if diffs[0].startswith("<crash"):
+            print(f"CRASH  {name} ({diffs[0]})")
+            crashed += 1
             continue
         (allowed if name in known else failed).append((name, diffs))
         tag = "KNOWN " if name in known else "DIFF  "
@@ -328,7 +342,8 @@ def main():
             print("\n".join(diffs[:200]))
         (WORK / f"{name}.diff").write_text("\n".join(diffs) + "\n")
 
-    print(f"\n{len(todo)} probes: {passed} match, {len(allowed)} known, {len(failed)} diverge"
+    print(f"\n{len(todo)} probes: {passed} match, {len(allowed)} known, {len(failed)} diverge,"
+          f" {crashed} upstream crashes"
           f" (diffs in {WORK})")
     sys.exit(1 if failed else 0)
 
