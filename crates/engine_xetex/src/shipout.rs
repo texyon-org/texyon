@@ -1555,11 +1555,7 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
         crate::output::print_nl(st, "Error ");
         crate::output::print_int(st, k as i32);
         crate::output::print(st, " (");
-        // SAFETY: strerror returns a static NUL-terminated message.
-        let message = unsafe { std::ffi::CStr::from_ptr(libc::strerror(k as libc::c_int)) };
-        for &c in message.to_bytes() {
-            crate::output::print_char(st, c as libc::c_char as i32);
-        }
+        crate::output::print(st, &crate::bridge::strerror(k as i32)[..]);
         crate::output::print(st, ") generating output;");
         crate::output::print_nl(st, "file ");
         crate::output::print(st, st.shipout.output_file_name);

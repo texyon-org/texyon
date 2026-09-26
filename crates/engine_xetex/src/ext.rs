@@ -2,7 +2,7 @@
 //! TECkit mappings, shaping and measuring native word and glyph nodes, and the
 //! extension (`\openout`, `\write`, `\special`, ...) commands.
 
-use std::ffi::{c_char, c_int, CStr, CString};
+use std::ffi::{c_int, CStr, CString};
 use std::sync::Arc;
 
 use crate::bridge::{input_get_size, input_open, input_read, TTBC_FILE_FORMAT_MISC_FONTS};
@@ -1392,9 +1392,7 @@ pub(crate) fn print_glyph_name(st: &mut EngineState, font: i32, gid: i32) -> Res
         .fonts
         .require_ot_engine(font, "bad native font flag in `print_glyph_name`")?;
     let name = engine.font().glyph_name(gid as u16);
-    for &b in &name {
-        crate::output::print_char(st, b as c_char as i32);
-    }
+    crate::output::print(st, &name[..]);
     Ok(())
 }
 

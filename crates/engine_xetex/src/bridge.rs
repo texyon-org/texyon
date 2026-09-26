@@ -285,6 +285,14 @@ pub(crate) fn shell_escape(cmd: &[u16]) -> libc::c_int {
     with_bridge(|es| unsafe { ttbc_shell_escape(es, cmd.as_ptr(), cmd.len()) })
 }
 
+/// The C library's message for error number `errnum`.
+pub(crate) fn strerror(errnum: i32) -> Vec<u8> {
+    // SAFETY: strerror returns a NUL-terminated message, copied before any other call.
+    unsafe { CStr::from_ptr(libc::strerror(errnum)) }
+        .to_bytes()
+        .to_vec()
+}
+
 /// Writes the MD5 digest of file `path` to `digest`, returning nonzero on failure.
 pub(crate) fn get_file_md5(path: &CStr, digest: &mut [u8; 16]) -> libc::c_int {
     // SAFETY: `path` is NUL-terminated and `digest` holds the 16 bytes written.
