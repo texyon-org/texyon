@@ -3012,13 +3012,13 @@ fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
 
         let ch = st.scanner.cur_chr;
         if ch > 65535 {
-            st.scanner.reserve_native_text(2);
+            st.scanner.reserve_native_text(2)?;
             st.scanner
                 .push_native_text(((ch - 65536) / 1024 + 0xD800) as u16);
             st.scanner
                 .push_native_text(((ch - 65536) % 1024 + 0xDC00) as u16);
         } else {
-            st.scanner.reserve_native_text(1);
+            st.scanner.reserve_native_text(1)?;
             st.scanner.push_native_text(ch as u16);
         }
         let is_hyph = is_hyphen_unit(st, ch, st.fonts.hyphen_char_entry(mf));
@@ -3048,7 +3048,7 @@ fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
         let text = &st.scanner.native_text[..st.scanner.native_len as usize];
         let mapped_len = st.fonts.apply_mapping(&mapping, text);
         st.scanner.native_len = 0;
-        st.scanner.reserve_native_text(mapped_len);
+        st.scanner.reserve_native_text(mapped_len)?;
         st.mainloop.main_h = 0;
         let hyphen = st.fonts.hyphen_char_entry(mf);
         for i in 0..mapped_len {
@@ -3089,7 +3089,7 @@ fn main_loop_native(st: &mut EngineState, mf: i32) -> Result<bool, Abort> {
             if let Some(word) = extendable_native_word(st, mf) {
                 let old_len = word.native_length(&st.mem) as i32;
                 remaining = st.mainloop.main_h + old_len;
-                st.scanner.reserve_native_text(remaining);
+                st.scanner.reserve_native_text(remaining)?;
                 st.scanner.save_native_len = st.scanner.native_len;
                 for &c in word.native_text(&st.mem) {
                     st.scanner.push_native_text(c);

@@ -1709,6 +1709,9 @@ impl InputClusterState {
     }
 }
 
+/// Cap on one run of native-font text, which upstream grows until memory runs out.
+pub(crate) const NATIVE_TEXT_MAX: i32 = 1 << 20;
+
 impl ScannerState {
     /// `cur_val` as the glue spec that `scan_glue` left there.
     #[inline]
@@ -1718,11 +1721,18 @@ impl ScannerState {
 
     /// Grows `native_text` until `extra` more units fit.
     #[inline(always)]
-    pub(crate) fn reserve_native_text(&mut self, extra: i32) {
+    pub(crate) fn reserve_native_text(&mut self, extra: i32) -> Result<(), crate::errors::Abort> {
+        if extra >= NATIVE_TEXT_MAX - self.native_len {
+            return Err(crate::errors::Abort::Overflow {
+                what: "native text size",
+                n: NATIVE_TEXT_MAX,
+            });
+        }
         while self.native_text_size <= self.native_len + extra {
             self.native_text_size += 128;
             self.native_text.resize(self.native_text_size as usize, 0);
         }
+        Ok(())
     }
 
     #[inline(always)]

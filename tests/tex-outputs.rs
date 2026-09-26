@@ -288,6 +288,13 @@ fn native_merge_disc_pun() {
 }
 
 #[test]
+fn native_text_overflow() {
+    TestCase::new("native_text_overflow")
+        .expect_msg("halted on overflow()")
+        .go()
+}
+
+#[test]
 fn protrusion_margin_kern() {
     TestCase::new("protrusion_margin_kern")
         .expect(Ok(TexOutcome::Warnings))

@@ -1,0 +1,8 @@
+**
+(native_text_overflow.tex
+! TeX capacity exceeded, sorry [native text size=1048576].
+\a ->x
+      \a 
+l.2 \def\a{x\a}\a
+                 
+No pages of output.
