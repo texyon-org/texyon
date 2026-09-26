@@ -2106,7 +2106,7 @@ fn pic_out(
     crate::output::print_in(st, b'(' as i32);
     let path = pic.pic_path(&st.mem).to_vec();
     for byte in path {
-        crate::output::print_raw_char_in(st, byte as u16, true);
+        crate::output::print_raw_char_in(st, byte as i32, true);
     }
     crate::output::print_in(st, b')' as i32);
     st.shipout.selector = old_setting;
