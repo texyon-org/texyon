@@ -594,14 +594,6 @@ fn make_fraction(
     Ok(vb)
 }
 
-#[inline]
-fn classify_box_or_panic(mem: &MemState, p: impl crate::units::MemAddr) -> AnyBox {
-    let p = p.addr();
-    mem.classify_box(MemIdx::new(p))
-        .expect("valid node type")
-        .expect("box node")
-}
-
 fn glyph_whatsit(mem: &MemState, p: MemPtr) -> Option<NodePtr<WhatsitNode>> {
     match mem.classify_non_char(p)? {
         AnyNode::Whatsit(w) if w.whatsit_subtype(mem) == Some(WhatsitSubtype::Glyph) => Some(w),
@@ -3127,22 +3119,21 @@ fn set_display_skip(mem: &mut MemState, skip: NodePtr<GlueNode>, g: NodePtr<Glue
 
 fn app_display_in(
     st: &mut EngineState,
-    j: i32,
-    b: i32,
+    j: Option<AnyBox>,
+    orig: AnyBox,
     d: i32,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     use crate::main_control::MainControlAbort;
     let s = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_INDENT);
     let x = st.eqtb.int_par(INT_PAR_PRE_DISPLAY_DIRECTION);
     if x == 0 {
-        classify_box_or_panic(&st.mem, b).set_shift_amount(&mut st.mem, Scaled(s + d));
-        crate::packaging::append_to_vlist_emit_in(st, b)?;
+        orig.set_shift_amount(&mut st.mem, Scaled(s + d));
+        crate::packaging::append_to_vlist_emit_in(st, orig)?;
         return Ok(());
     }
 
     let mut d = d;
     let z = st.eqtb.dimen_par(DIMEN_PAR_DISPLAY_WIDTH);
-    let orig = classify_box_or_panic(&st.mem, b);
     let mut e;
     if x > 0 {
         e = z - d - orig.width(&st.mem).0;
@@ -3150,9 +3141,8 @@ fn app_display_in(
         e = d;
         d = z - e - orig.width(&st.mem).0;
     }
-    let copy = if j != TEX_NULL {
-        let copied = crate::packaging::copy_node_list(&mut st.mem, j)?;
-        let bc = classify_box_or_panic(&st.mem, copied);
+    let copy = if let Some(j) = j {
+        let bc = crate::packaging::copy_box(&mut st.mem, j)?;
         let (h, dp) = (orig.height(&st.mem), orig.depth(&st.mem));
         bc.set_height(&mut st.mem, h);
         bc.set_depth(&mut st.mem, dp);
@@ -3163,7 +3153,7 @@ fn app_display_in(
     } else {
         None
     };
-    let mut b = copy.map_or(b, |bc| bc.idx().0);
+    let mut b = copy.unwrap_or(orig);
 
     let (p, q);
     if orig.subtype(&st.mem) == DLIST {
@@ -3249,9 +3239,8 @@ fn app_display_in(
         u.set_link(&mut st.mem, r);
         match copy {
             None => {
-                let hb = crate::packaging::hpack_emit_in(st, u, 0, ADDITIONAL)?;
-                hb.set_shift_amount(&mut st.mem, Scaled(s));
-                b = hb.idx().0;
+                b = crate::packaging::hpack_emit_in(st, u, 0, ADDITIONAL)?;
+                b.set_shift_amount(&mut st.mem, Scaled(s));
             }
             Some(bc) => bc.set_list_ptr(&mut st.mem, u),
         }
@@ -3311,12 +3300,12 @@ pub(crate) fn check_display_end_in(
 }
 
 /// The box `init_math` saved for the paragraph line before a display, if any.
-fn pre_display_box(st: &EngineState) -> i32 {
-    if st.input.cur_list.mode == MMODE {
-        st.input.cur_list.e_tex_aux.0
-    } else {
-        TEX_NULL
+fn pre_display_box(st: &EngineState) -> Option<AnyBox> {
+    if st.input.cur_list.mode != MMODE {
+        return None;
     }
+    let j = st.input.cur_list.e_tex_aux.as_idx()?;
+    st.mem.classify_box(j).ok().flatten()
 }
 
 pub(crate) fn after_math_in(
@@ -3339,7 +3328,7 @@ pub(crate) fn after_math_in(
         mlist_to_hlist_in(st).map_err(math_build_abort_main)?;
         let eqno = crate::packaging::hpack_emit_in(st, st.mem.link_ptr(TEMP_HEAD), 0, ADDITIONAL)?;
         eqno.set_subtype(&mut st.mem, DLIST);
-        a = eqno.idx().0;
+        a = Some(eqno);
         crate::save::unsave_in(st)?;
         st.save_stack.save_ptr -= 1;
         if st.save_stack.b32s1(st.save_stack.save_ptr) == 1 {
@@ -3351,7 +3340,7 @@ pub(crate) fn after_math_in(
         m = st.input.cur_list.mode as i32;
         p = fin_mlist_in(st, TEX_NULL)?;
     } else {
-        a = TEX_NULL;
+        a = None;
     }
 
     if m < 0 {
@@ -3382,7 +3371,7 @@ pub(crate) fn after_math_in(
         return Ok(());
     }
 
-    if a == TEX_NULL {
+    if a.is_none() {
         check_display_end_in(st)?;
     }
     st.scanner.cur_mlist.0 = p;
@@ -3405,12 +3394,15 @@ pub(crate) fn after_math_in(
         s = -s - z;
     }
     let (mut e, q);
-    if a == TEX_NULL || danger {
-        e = 0;
-        q = 0;
-    } else {
-        e = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
-        q = e + math_quad(&st.fonts, &st.eqtb, TEXT_SIZE);
+    match a {
+        Some(eqno) if !danger => {
+            e = eqno.width(&st.mem).0;
+            q = e + math_quad(&st.fonts, &st.eqtb, TEXT_SIZE);
+        }
+        _ => {
+            e = 0;
+            q = 0;
+        }
     }
     if w + q > z {
         if e != 0
@@ -3457,8 +3449,8 @@ pub(crate) fn after_math_in(
         )
     };
 
-    if l && e == 0 {
-        app_display_in(st, j, a, 0)?;
+    if let Some(eqno) = a.filter(|_| l && e == 0) {
+        app_display_in(st, j, eqno, 0)?;
         let pen =
             crate::mem::new_penalty(&mut st.mem, INF_PENALTY).ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
@@ -3468,30 +3460,29 @@ pub(crate) fn after_math_in(
         st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
-    if e != 0 {
+    if let Some(eqno) = a.filter(|_| e != 0) {
         let r =
             crate::mem::new_kern(&mut st.mem, z - w - e - d).ok_or(NodeRecycleAbort::Overflow)?;
         if l {
-            let eqno = classify_box_or_panic(&st.mem, a);
             eqno.set_link(&mut st.mem, r.ptr());
             r.set_link(&mut st.mem, b.ptr());
             b = eqno;
             d = 0;
         } else {
             b.set_link(&mut st.mem, r.ptr());
-            r.set_link(&mut st.mem, MemPtr::from_raw(a));
+            r.set_link(&mut st.mem, eqno.ptr());
         }
         b = crate::packaging::hpack_emit_in(st, b.ptr(), 0, ADDITIONAL)?;
     }
 
-    app_display_in(st, j, b.idx().0, d)?;
+    app_display_in(st, j, b, d)?;
 
-    if a != TEX_NULL && e == 0 && !l {
+    if let Some(eqno) = a.filter(|_| e == 0 && !l) {
         let pen =
             crate::mem::new_penalty(&mut st.mem, INF_PENALTY).ok_or(NodeRecycleAbort::Overflow)?;
         st.input.cur_list.tail_append(&mut st.mem, pen.ptr());
-        let a_width = classify_box_or_panic(&st.mem, a).width(&st.mem).0;
-        app_display_in(st, j, a, z - a_width)?;
+        let a_width = eqno.width(&st.mem).0;
+        app_display_in(st, j, eqno, z - a_width)?;
         g2 = 0;
     }
 
@@ -3517,7 +3508,10 @@ pub(crate) fn after_math_in(
         st.input.cur_list.tail_append(&mut st.mem, glue.ptr());
     }
 
-    crate::packaging::flush_node_list(&mut st.mem, j).map_err(MainControlAbort::Confusion)?;
+    if let Some(j) = j {
+        crate::packaging::flush_node_list(&mut st.mem, j.ptr())
+            .map_err(MainControlAbort::Confusion)?;
+    }
 
     if st.config.semantic_pagination_enabled {
         unsafe { crate::ext::tt_insert_special_in(st, c"tdux:ce dmath".as_ptr()) }?;

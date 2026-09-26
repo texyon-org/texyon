@@ -548,14 +548,9 @@ pub fn append_to_vlist(
 
 pub(crate) fn append_to_vlist_emit_in(
     st: &mut EngineState,
-    b: i32,
+    b: AnyBox,
 ) -> Result<(), NodeRecycleAbort> {
-    let bx = st
-        .mem
-        .classify_box(MemIdx::new(b))
-        .expect("valid node type for append_to_vlist")
-        .expect("append_to_vlist receives an hlist or vlist node");
-    append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, bx)
+    append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, b)
 }
 
 struct VertBreakCursor {
