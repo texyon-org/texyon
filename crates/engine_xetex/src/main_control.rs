@@ -2783,8 +2783,9 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
         crate::scan::scan_register_num_in(st)?;
         let n = st.scanner.cur_val;
         if n > 255 {
-            let _ = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, p, n);
-            break 'found (st.scanner.cur_ptr.0, p, true);
+            let sa = crate::save::create_sa_element(&mut st.mem, &mut st.scanner, p, n)
+                .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+            break 'found (sa.idx().0, p, true);
         }
         let base = match p {
             INT_VAL => COUNT_BASE,
