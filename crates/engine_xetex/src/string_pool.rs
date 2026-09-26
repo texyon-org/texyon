@@ -26,7 +26,8 @@ pub fn make_string(strings: &mut StringsState) -> Result<i32, NodeRecycleAbort> 
         return Err(NodeRecycleAbort::Overflow);
     }
     strings.str_ptr += 1;
-    strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize] = strings.pool_ptr;
+    let slot = strings.cur_start_slot();
+    strings.str_start[slot] = strings.pool_ptr;
     Ok(strings.str_ptr - 1)
 }
 

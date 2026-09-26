@@ -481,8 +481,7 @@ fn save_scan_in(st: &mut EngineState) -> Result<SavedScan, SccAbort> {
         status: st.scanner.scanner_status,
         warning_index: st.scanner.warning_index,
         def_ref: st.scanner.def_ref.0,
-        pending_str: st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize]
-            < st.strings.pool_ptr,
+        pending_str: st.strings.cur_string_start() < st.strings.pool_ptr,
     };
     if saved.pending_str {
         crate::string_pool::make_string(&mut st.strings)

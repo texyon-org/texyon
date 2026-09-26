@@ -799,7 +799,7 @@ pub(crate) fn end_name_in(st: &mut EngineState) -> Result<(), NameAbort> {
     } else {
         let strings = &mut st.strings;
         st.scanner.cur_area = strings.str_ptr;
-        let start = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
+        let start = strings.cur_string_start();
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + area_delimiter;
         strings.str_ptr += 1;
         let temp_str = search_string(strings, st.scanner.cur_area);
@@ -822,7 +822,7 @@ pub(crate) fn end_name_in(st: &mut EngineState) -> Result<(), NameAbort> {
         let strings = &mut st.strings;
         let shift = st.scanner.ext_delimiter - area_delimiter - 1;
         st.scanner.cur_name = strings.str_ptr;
-        let start = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
+        let start = strings.cur_string_start();
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + shift;
         strings.str_ptr += 1;
 
@@ -1250,8 +1250,7 @@ pub(crate) unsafe fn start_input_in(
         if temp_str > 0 {
             st.input.cur_input.name = temp_str;
             st.strings.str_ptr -= 1;
-            st.strings.pool_ptr =
-                st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            st.strings.pool_ptr = st.strings.cur_string_start();
         }
     }
 

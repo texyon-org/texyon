@@ -31,7 +31,7 @@ impl StringWatermark {
     fn of(strings: &StringsState) -> Self {
         Self {
             pool: strings.pool_ptr.max(0) as usize,
-            starts: (strings.str_ptr - crate::consts::TOO_BIG_CHAR).max(0) as usize,
+            starts: strings.cur_start_slot(),
         }
     }
 }
@@ -453,10 +453,7 @@ fn live_prefix<T: Clone>(values: &[T], len: i32) -> Vec<T> {
 impl InputBundle {
     fn capture(src: &InputClusterState) -> Self {
         Self {
-            buffer: live_prefix(
-                &src.buffer,
-                src.max_buf_stack.max(src.last).max(src.first) + 1,
-            ),
+            buffer: live_prefix(&src.buffer, src.buffer_in_use()),
             input_stack: live_prefix(&src.input_stack, src.input_ptr + 1),
             param_stack: live_prefix(&src.param_stack, src.param_ptr),
             nest: live_prefix(&src.nest, src.nest_ptr + 1),

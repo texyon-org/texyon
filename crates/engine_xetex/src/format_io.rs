@@ -266,7 +266,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     crate::output::print_in(st, name_string);
 
     st.strings.str_ptr -= 1;
-    st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    st.strings.discard_cur_string();
 
     crate::output::print_nl_cstr_in(st, c"".as_ptr());
     crate::output::print_in(st, st.strings.format_ident);

@@ -736,8 +736,7 @@ fn store_hyph_exception(
             let v = strings.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
             if strings.str_pool[u..end] == strings.str_pool[v..v + (end - u)] {
                 st.strings.str_ptr -= 1;
-                st.strings.pool_ptr =
-                    st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+                st.strings.pool_ptr = st.strings.cur_string_start();
                 s = k;
                 st.hyph.hyph_count -= 1;
                 break;

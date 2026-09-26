@@ -207,7 +207,7 @@ pub(crate) fn new_native_character_in(
             st.strings.pool_ptr += 1;
         }
 
-        let start = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+        let start = st.strings.cur_string_start();
         let map = st.fonts.font_mapping_ptr(f);
         let cur_len = crate::hash::cur_length(&st.strings);
         // SAFETY: `dst` points into the non-reallocating string pool, disjoint
@@ -875,8 +875,7 @@ pub(crate) unsafe fn load_native_font_in(
         {
             drop(font_engine);
             st.strings.str_ptr -= 1;
-            st.strings.pool_ptr =
-                st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            st.strings.pool_ptr = st.strings.cur_string_start();
             return Ok(f);
         }
     }

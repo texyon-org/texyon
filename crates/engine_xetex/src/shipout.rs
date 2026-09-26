@@ -335,7 +335,7 @@ pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
 
 /// Emit the current string (the tail of the pool) as a DVI special and drop it.
 fn dvi_special_from_cur_string(st: &mut crate::state::EngineState) -> Result<(), ShipoutAbort> {
-    let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    let base = st.strings.cur_string_start();
     let cur_len = st.strings.pool_ptr - base;
     if cur_len < 256 {
         dvi_bytes(&mut st.shipout, &[XXX1, cur_len as u8])?;
@@ -543,7 +543,7 @@ unsafe fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<
 
     dvi_out(&mut st.shipout, XXX1)?;
     dvi_out(&mut st.shipout, crate::hash::cur_length(&st.strings) as u8)?;
-    let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    let base = st.strings.cur_string_start();
     for k in base..st.strings.pool_ptr {
         dvi_out(&mut st.shipout, st.strings.str_pool[k as usize] as u8)?;
     }
@@ -748,7 +748,7 @@ fn merge_native_word_run(
     let word = crate::fonts::new_native_word_node(mem, eqtb, first.native_font(mem).0, nlen)
         .map_err(ShipoutAbort::NodeRecycle)?;
     word.set_subtype(mem, first.subtype(mem));
-    let base = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize] as usize;
+    let base = strings.cur_string_start() as usize;
     let text = &strings.str_pool[base..base + nlen as usize];
     let dst = word.native_text_ptr_mut(mem);
     // SAFETY: the new node holds `nlen` UTF-16 units inline, disjoint from the pool.
@@ -779,7 +779,7 @@ fn merge_native_word_run(
     }
 
     crate::packaging::flush_node_list(mem, first.ptr()).map_err(ShipoutAbort::Confusion)?;
-    strings.pool_ptr = strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize];
+    strings.discard_cur_string();
     Ok(tail)
 }
 
@@ -2063,7 +2063,7 @@ fn write_out(
         if !st.config.shell_escape_enabled {
             crate::output::diagnostic_begin_capture_warning_here_in(st);
             crate::output::print_nl_cstr_in(st, c"runsystem(".as_ptr());
-            let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            let base = st.strings.cur_string_start();
             for k in base..st.strings.pool_ptr {
                 crate::output::print_in(st, st.strings.str_pool[k as usize] as i32);
             }
@@ -2074,12 +2074,12 @@ fn write_out(
             crate::output::print_nl_cstr_in(st, c"".as_ptr());
             crate::output::print_ln_in(st);
         } else {
-            let base = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+            let base = st.strings.cur_string_start();
             let cmd = &st.strings.str_pool[base as usize..st.strings.pool_ptr as usize];
             // SAFETY: FFI hands the command's UTF-16 units to the driver.
             unsafe { ttstub_shell_escape(cmd.as_ptr(), cmd.len()) };
         }
-        st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+        st.strings.discard_cur_string();
     }
     st.shipout.selector = old_setting;
     Ok(())

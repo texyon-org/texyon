@@ -475,7 +475,7 @@ fn surrogate_pair(hi: u16, lo: u16) -> Option<i32> {
 }
 
 fn print_current_string_in(st: &mut EngineState) {
-    let start = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    let start = st.strings.cur_string_start();
     for j in start..st.strings.pool_ptr {
         let c = st.strings.str_pool[j as usize];
         print_char_in(st, c as i32);
@@ -2289,7 +2289,7 @@ fn show_info_in(st: &mut EngineState) {
 /// Drops the most recently made string.
 fn flush_last_string(st: &mut EngineState) {
     st.strings.str_ptr -= 1;
-    st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    st.strings.discard_cur_string();
 }
 
 pub(crate) enum IssueMessageAbort {

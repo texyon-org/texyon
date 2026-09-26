@@ -140,7 +140,7 @@ fn digest_strings(st: &EngineState) -> u64 {
         strings.format_ident,
         strings.edit_name_start,
     ]);
-    let start_top = (strings.str_ptr - crate::consts::TOO_BIG_CHAR).max(0) as usize;
+    let start_top = strings.cur_start_slot();
     h.i32s(strings.str_start.iter().take(start_top.saturating_add(1)));
     for &value in strings
         .str_pool
@@ -273,7 +273,7 @@ fn digest_input(st: &EngineState) -> u64 {
         input.max_buf_stack,
     ]);
     h.word(input.force_eof as u64);
-    let buffer_end = (input.max_buf_stack.max(input.last).max(input.first) + 1).max(0) as usize;
+    let buffer_end = input.buffer_in_use().max(0) as usize;
     h.i32s(input.buffer.iter().take(buffer_end));
     for value in input
         .input_stack

@@ -23,7 +23,7 @@ pub(crate) enum HashLookupError {
 
 #[inline]
 pub(crate) fn cur_length(strings: &StringsState) -> i32 {
-    strings.pool_ptr - strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize]
+    strings.pool_ptr - strings.cur_string_start()
 }
 
 /// Kept out of line so LLVM cannot hoist the modulo back into `id_lookup`'s loop.
@@ -103,9 +103,7 @@ pub fn id_lookup(
                 }
 
                 let d = cur_length(strings);
-                while strings.pool_ptr
-                    > strings.str_start[(strings.str_ptr - TOO_BIG_CHAR) as usize]
-                {
+                while strings.pool_ptr > strings.cur_string_start() {
                     strings.pool_ptr -= 1;
                     strings.str_pool[(strings.pool_ptr + l) as usize] =
                         strings.str_pool[strings.pool_ptr as usize];

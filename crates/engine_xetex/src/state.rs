@@ -1699,6 +1699,26 @@ pub(crate) struct StringsState {
     pub str_pool: Vec<u16>,
 }
 
+impl StringsState {
+    /// The `str_start` slot of the string under construction.
+    #[inline]
+    pub(crate) fn cur_start_slot(&self) -> usize {
+        (self.str_ptr - crate::consts::TOO_BIG_CHAR).max(0) as usize
+    }
+
+    /// The pool offset where the string under construction starts.
+    #[inline]
+    pub(crate) fn cur_string_start(&self) -> i32 {
+        self.str_start[(self.str_ptr - crate::consts::TOO_BIG_CHAR) as usize]
+    }
+
+    /// Drops the characters of the string under construction.
+    #[inline]
+    pub(crate) fn discard_cur_string(&mut self) {
+        self.pool_ptr = self.cur_string_start();
+    }
+}
+
 /// The line-breaker's working state (the line-breaking / LR-reverse /
 /// hyphenation-attempt scratch globals, defined in C across `xetex-ini.c` and
 /// `xetex-linebreak.c`). These are per-paragraph scratch — cold relative to the
@@ -1945,6 +1965,12 @@ impl Default for HyphState {
 }
 
 impl InputClusterState {
+    /// How much of `buffer` has ever held input.
+    #[inline]
+    pub(crate) fn buffer_in_use(&self) -> i32 {
+        self.max_buf_stack.max(self.last).max(self.first) + 1
+    }
+
     pub(crate) fn get_current_name(&self) -> &std::ffi::CStr {
         // SAFETY: self.abspath_of_input_file.0 is a NUL-terminated buffer of length 1024.
         unsafe { std::ffi::CStr::from_ptr(self.abspath_of_input_file.0.as_ptr()) }

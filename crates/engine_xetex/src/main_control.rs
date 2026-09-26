@@ -2624,7 +2624,7 @@ fn make_string_in(st: &mut EngineState) -> Result<i32, MainControlAbort> {
 
 fn flush_last_string(st: &mut EngineState) {
     st.strings.str_ptr -= 1;
-    st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+    st.strings.discard_cur_string();
 }
 
 pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), MainControlAbort> {

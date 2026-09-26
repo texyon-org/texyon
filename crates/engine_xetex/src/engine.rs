@@ -216,7 +216,7 @@ unsafe fn primitive(
             len,
         )?;
         st.strings.str_ptr -= 1;
-        st.strings.pool_ptr = st.strings.str_start[(st.strings.str_ptr - TOO_BIG_CHAR) as usize];
+        st.strings.discard_cur_string();
         st.eqtb.set_hash_s1(st.scanner.cur_val, s);
         crate::hash::prim_lookup(&mut st.eqtb, &mut st.strings, s)?
     } else {
