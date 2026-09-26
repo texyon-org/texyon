@@ -1,0 +1,460 @@
+//! Copying and destroying node lists: `copy_node_list`, `flush_node_list`, `just_copy`.
+
+use crate::consts::{
+    ACCENT_NOAD_SIZE, BOX_NODE_SIZE, FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, INS_NODE_SIZE,
+    MARGIN_KERN_NODE_SIZE, MEDIUM_NODE_SIZE, MIN_HALFWORD, NOAD_SIZE, OPEN_NODE_SIZE,
+    PIC_NODE_SIZE, RADICAL_NOAD_SIZE, RULE_NODE_SIZE, R_CODE, SMALL_NODE_SIZE, STYLE_NODE_SIZE,
+    SUB_BOX, WRITE_NODE_SIZE,
+};
+use crate::errors::Abort;
+use crate::mem::{end_lr_type, TEMP_HEAD};
+use crate::node::{
+    AnyBox, AnyNode, DiscNode, GlueNode, NodeKind, NodePtr, WhatsitNode, WhatsitSubtype,
+};
+use crate::state::{MemState, ScannerState};
+use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
+
+const SYNCTEX_FIELD_SIZE: i32 = 1;
+const MEMORY_WORD_SIZE: i32 = 8;
+
+/// `r` typed like `src`, whose header word `r` has just received.
+#[inline]
+fn copied_node<K: NodeKind>(_src: NodePtr<K>, r: MemPtr) -> NodePtr<K> {
+    NodePtr::from_idx_unchecked(MemIdx::new(r))
+}
+
+impl MemState {
+    pub(super) fn as_disc(&self, p: MemPtr) -> Option<NodePtr<DiscNode>> {
+        if self.is_char_node(p) {
+            return None;
+        }
+        self.classify_disc(MemIdx::new(p)).ok().flatten()
+    }
+
+    /// The size of whatsit `w`, `None` for an unknown subtype.
+    fn whatsit_node_size(&self, w: NodePtr<WhatsitNode>) -> Option<i32> {
+        use WhatsitSubtype::*;
+        Some(match w.whatsit_subtype(self)? {
+            Open => OPEN_NODE_SIZE,
+            Write | Special => WRITE_NODE_SIZE,
+            Close | Language | PdfSavePos => SMALL_NODE_SIZE,
+            NativeWord | NativeWordAt => w.native_size(self),
+            Glyph => GLYPH_NODE_SIZE,
+            Pic | Pdf => {
+                PIC_NODE_SIZE
+                    + (i32::from(w.pic_path_len(self)) + MEMORY_WORD_SIZE - 1) / MEMORY_WORD_SIZE
+            }
+        })
+    }
+
+    /// Copy the first `words` words of node `src` to node `dst`.
+    #[inline]
+    fn copy_words(&mut self, dst: MemPtr, src: MemPtr, words: i32) {
+        for w in (0..words).rev() {
+            self.set_word(dst + w, self.word(src + w));
+        }
+    }
+
+    fn copy_box_shell(&mut self, src: AnyBox, list: MemPtr) -> Result<AnyBox, Abort> {
+        let r = self.get_node(BOX_NODE_SIZE)?;
+        self.copy_words(r, src.ptr(), BOX_NODE_SIZE);
+        let r = match src {
+            AnyBox::HList(b) => AnyBox::HList(copied_node(b, r)),
+            AnyBox::VList(b) => AnyBox::VList(copied_node(b, r)),
+        };
+        r.set_list_ptr(self, list);
+        Ok(r)
+    }
+
+    /// A copy of glue node `p` sharing its spec. The leader pointer is left to the caller.
+    fn copy_glue_shell(&mut self, p: NodePtr<GlueNode>) -> Result<NodePtr<GlueNode>, Abort> {
+        let spec = p.glue_ptr(self);
+        let r = self.get_node(MEDIUM_NODE_SIZE)?;
+        self.add_glue_ref(spec);
+        let sync = MEDIUM_NODE_SIZE - SYNCTEX_FIELD_SIZE;
+        self.set_word(r, self.word(p.ptr()));
+        self.set_word(r + sync, self.word(p.ptr() + sync));
+        let r = copied_node(p, r);
+        r.set_glue_ptr(self, spec);
+        Ok(r)
+    }
+
+    /// Allocate a copy of whatsit `w`, returning it and how many of its leading
+    /// words are still to be copied.
+    fn copy_whatsit(&mut self, w: NodePtr<WhatsitNode>) -> Result<(MemPtr, i32), Abort> {
+        let Some(size) = self.whatsit_node_size(w) else {
+            return Err(Abort::Confusion("ext2"));
+        };
+        let r = self.get_node(size)?;
+        match w.whatsit_subtype(self) {
+            Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
+                self.copy_words(r, w.ptr(), size);
+                let copy = copied_node(w, r);
+                copy.set_native_glyph_info_handle(self, 0);
+                copy.set_native_glyph_count(self, 0);
+                copy.share_native_glyphs(self, w);
+                Ok((r, 0))
+            }
+            Some(WhatsitSubtype::Write | WhatsitSubtype::Special) => {
+                self.add_token_ref(w.write_tokens(self));
+                Ok((r, size))
+            }
+            Some(WhatsitSubtype::PdfSavePos) => Ok((r, 1)),
+            _ => Ok((r, size)),
+        }
+    }
+
+    /// Copy the list `p` without the contents of its boxes, linking the copies
+    /// after `h` and ending them with `t`.
+    pub fn just_copy(&mut self, mut p: MemPtr, mut h: MemPtr, t: MemPtr) -> Result<(), Abort> {
+        while !p.is_null() {
+            let copy = if self.is_char_node(p) {
+                let r = self.get_avail()?;
+                Some((r, 1))
+            } else {
+                match self.classify(MemIdx::new(p)).ok() {
+                    Some(AnyNode::HList(b)) => Some((
+                        self.copy_box_shell(AnyBox::HList(b), MemPtr::NULL)?.ptr(),
+                        0,
+                    )),
+                    Some(AnyNode::VList(b)) => Some((
+                        self.copy_box_shell(AnyBox::VList(b), MemPtr::NULL)?.ptr(),
+                        0,
+                    )),
+                    Some(AnyNode::Rule(_)) => {
+                        Some((self.get_node(RULE_NODE_SIZE)?, RULE_NODE_SIZE))
+                    }
+                    Some(AnyNode::Ligature(lig)) => {
+                        let r = self.get_avail()?;
+                        self.set_word(r, self.word(lig.ptr() + 1));
+                        Some((r, 0))
+                    }
+                    Some(AnyNode::Kern(_) | AnyNode::Math(_)) => {
+                        Some((self.get_node(MEDIUM_NODE_SIZE)?, MEDIUM_NODE_SIZE))
+                    }
+                    Some(AnyNode::Glue(g)) => {
+                        let r = self.copy_glue_shell(g)?;
+                        r.set_leader_ptr(self, MemPtr::NULL);
+                        Some((r.ptr(), 0))
+                    }
+                    Some(AnyNode::Whatsit(w)) => Some(self.copy_whatsit(w)?),
+                    _ => None,
+                }
+            };
+
+            if let Some((r, words)) = copy {
+                self.copy_words(r, p, words);
+                h.set_link(self, r);
+                h = r;
+            }
+            p = p.link(self);
+        }
+
+        h.set_link(self, t);
+        Ok(())
+    }
+
+    /// Reverse the hlist after `p` for TeX--XeT, leaving the result after `TEMP_HEAD`.
+    pub fn just_reverse(&mut self, scanner: &mut ScannerState, p: MemPtr) -> Result<(), Abort> {
+        let mut m = MIN_HALFWORD;
+        let mut n = MIN_HALFWORD;
+
+        let mut q = if TEMP_HEAD.link(self).is_null() {
+            self.just_copy(p.link(self), TEMP_HEAD, MemPtr::NULL)?;
+            TEMP_HEAD.link(self)
+        } else {
+            let q = p.link(self);
+            p.set_link(self, MemPtr::NULL);
+            self.flush_node_list(TEMP_HEAD.link(self))?;
+            q
+        };
+
+        let t = self.new_edge(scanner.cur_dir, Scaled::ZERO)?;
+        let mut l = t.ptr();
+        scanner.cur_dir = 1 - scanner.cur_dir;
+
+        'done: {
+            while !q.is_null() {
+                if self.is_char_node(q) {
+                    loop {
+                        let p = q;
+                        q = p.link(self);
+                        p.set_link(self, l);
+                        l = p;
+                        if !self.is_char_node(q) {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+
+                let p = q;
+                q = p.link(self);
+
+                if let Ok(AnyNode::Math(math)) = self.classify(MemIdx::new(p)) {
+                    let subtype = math.subtype(self);
+                    if subtype % 2 == 1 {
+                        if scanner.lr_ptr.info(self) != end_lr_type(subtype) {
+                            math.into_kern(self);
+                            scanner.lr_problems += 1;
+                        } else {
+                            self.pop_lr(&mut scanner.lr_ptr);
+
+                            if n > MIN_HALFWORD {
+                                n -= 1;
+                                math.set_subtype(self, subtype - 1);
+                            } else if m > MIN_HALFWORD {
+                                m -= 1;
+                                math.into_kern(self);
+                            } else {
+                                t.set_width(self, math.width(self));
+                                t.set_link(self, q);
+                                self.free_node(p, MEDIUM_NODE_SIZE);
+                                break 'done;
+                            }
+                        }
+                    } else {
+                        self.push_lr(&mut scanner.lr_ptr, end_lr_type(subtype))?;
+
+                        if n > MIN_HALFWORD || (subtype / R_CODE) as i16 != scanner.cur_dir {
+                            n += 1;
+                            math.set_subtype(self, subtype + 1);
+                        } else {
+                            math.into_kern(self);
+                            m += 1;
+                        }
+                    }
+                }
+
+                p.set_link(self, l);
+                l = p;
+            }
+        }
+
+        TEMP_HEAD.set_link(self, l);
+        Ok(())
+    }
+
+    /// Free every node of the list `p` and everything it owns.
+    pub fn flush_node_list(&mut self, p: impl crate::units::MemAddr) -> Result<(), Abort> {
+        let mut p = MemPtr(p.addr());
+        while !p.is_null() {
+            let q = p.link(self);
+            if self.is_char_node(p) {
+                self.free_avail(p);
+                p = q;
+                continue;
+            }
+
+            let size = match self
+                .classify(MemIdx::new(p))
+                .map_err(|_| Abort::Confusion("flushing"))?
+            {
+                AnyNode::HList(b) => {
+                    self.flush_node_list(b.list_ptr(self))?;
+                    BOX_NODE_SIZE
+                }
+                AnyNode::VList(b) => {
+                    self.flush_node_list(b.list_ptr(self))?;
+                    BOX_NODE_SIZE
+                }
+                AnyNode::Unset(u) => {
+                    self.flush_node_list(u.list_ptr(self))?;
+                    BOX_NODE_SIZE
+                }
+                AnyNode::Rule(_) => RULE_NODE_SIZE,
+                AnyNode::Ins(ins) => {
+                    self.flush_node_list(ins.ins_ptr(self))?;
+                    self.delete_glue_ref(ins.split_top_ptr(self));
+                    INS_NODE_SIZE
+                }
+                AnyNode::Whatsit(w) => {
+                    let size = self.whatsit_node_size(w).ok_or(Abort::Confusion("ext3"))?;
+                    match w.whatsit_subtype(self) {
+                        Some(WhatsitSubtype::Write | WhatsitSubtype::Special) => {
+                            self.delete_token_ref(w.write_tokens(self));
+                        }
+                        Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
+                            w.release_native_glyphs(self);
+                        }
+                        _ => {}
+                    }
+                    size
+                }
+                AnyNode::Glue(glue) => {
+                    self.delete_glue_ref(glue.glue_ptr(self));
+                    self.flush_node_list(glue.leader_ptr(self))?;
+                    MEDIUM_NODE_SIZE
+                }
+                AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => MEDIUM_NODE_SIZE,
+                AnyNode::MarginKern(_) => MARGIN_KERN_NODE_SIZE,
+                AnyNode::Ligature(lig) => {
+                    self.flush_node_list(lig.lig_ptr(self))?;
+                    SMALL_NODE_SIZE
+                }
+                AnyNode::Mark(mark) => {
+                    self.delete_token_ref(mark.mark_ptr(self));
+                    SMALL_NODE_SIZE
+                }
+                AnyNode::Disc(disc) => {
+                    self.flush_node_list(disc.pre_break(self))?;
+                    self.flush_node_list(disc.post_break(self))?;
+                    SMALL_NODE_SIZE
+                }
+                AnyNode::Adjust(adjust) => {
+                    self.flush_node_list(adjust.adjust_ptr(self))?;
+                    SMALL_NODE_SIZE
+                }
+                AnyNode::Style(_) => STYLE_NODE_SIZE,
+                AnyNode::Choice(choice) => {
+                    self.flush_node_list(choice.display_mlist(self))?;
+                    self.flush_node_list(choice.text_mlist(self))?;
+                    self.flush_node_list(choice.script_mlist(self))?;
+                    self.flush_node_list(choice.script_script_mlist(self))?;
+                    STYLE_NODE_SIZE
+                }
+                AnyNode::Noad(noad) => match noad.noad_type(self) {
+                    NodeType::LeftNoad | NodeType::RightNoad => NOAD_SIZE,
+                    NodeType::FractionNoad => {
+                        self.flush_node_list(noad.supscr().info(self))?;
+                        self.flush_node_list(noad.subscr().info(self))?;
+                        FRACTION_NOAD_SIZE
+                    }
+                    noad_type => {
+                        if noad.nucleus().math_type(self) >= SUB_BOX {
+                            self.flush_node_list(noad.nucleus().info(self))?;
+                        }
+                        if noad.supscr().math_type(self) >= SUB_BOX {
+                            self.flush_node_list(noad.supscr().info(self))?;
+                        }
+                        if noad.subscr().math_type(self) >= SUB_BOX {
+                            self.flush_node_list(noad.subscr().info(self))?;
+                        }
+                        match noad_type {
+                            NodeType::RadicalNoad => RADICAL_NOAD_SIZE,
+                            NodeType::AccentNoad => ACCENT_NOAD_SIZE,
+                            _ => NOAD_SIZE,
+                        }
+                    }
+                },
+            };
+            self.free_node(p, size);
+            p = q;
+        }
+        Ok(())
+    }
+
+    /// A deep copy of the list `p`.
+    /// A copy of box `b` and its contents.
+    pub(crate) fn copy_box(&mut self, b: AnyBox) -> Result<AnyBox, Abort> {
+        let r = self.copy_list(b.ptr())?;
+        Ok(match b {
+            AnyBox::HList(h) => AnyBox::HList(copied_node(h, r)),
+            AnyBox::VList(v) => AnyBox::VList(copied_node(v, r)),
+        })
+    }
+
+    pub fn copy_node_list(&mut self, p: i32) -> Result<i32, Abort> {
+        Ok(self.copy_list(MemPtr(p))?.0)
+    }
+
+    fn copy_list(&mut self, mut p: MemPtr) -> Result<MemPtr, Abort> {
+        let h = self.get_avail()?;
+        let mut q = h;
+        while !p.is_null() {
+            let (r, words) = if self.is_char_node(p) {
+                (self.get_avail()?, 1)
+            } else {
+                self.copy_node(p)?
+            };
+            self.copy_words(r, p, words);
+            q.set_link(self, r);
+            q = r;
+            p = p.link(self);
+        }
+        q.set_link(self, MemPtr::NULL);
+        let result = h.link(self);
+        self.free_avail(h);
+        Ok(result)
+    }
+
+    /// Allocate a copy of the non-char node `p`, returning it and how many of its
+    /// leading words are still to be copied.
+    fn copy_node(&mut self, p: MemPtr) -> Result<(MemPtr, i32), Abort> {
+        let node = self
+            .classify(MemIdx::new(p))
+            .map_err(|_| Abort::Confusion("copying"))?;
+        Ok(match node {
+            AnyNode::HList(b) => {
+                let list = self.copy_list(b.list_ptr(self))?;
+                (self.copy_box_shell(AnyBox::HList(b), list)?.ptr(), 0)
+            }
+            AnyNode::VList(b) => {
+                let list = self.copy_list(b.list_ptr(self))?;
+                (self.copy_box_shell(AnyBox::VList(b), list)?.ptr(), 0)
+            }
+            AnyNode::Unset(u) => {
+                let r = self.get_node(BOX_NODE_SIZE)?;
+                self.copy_words(r, p, BOX_NODE_SIZE);
+                let list = self.copy_list(u.list_ptr(self))?;
+                copied_node(u, r).set_list_ptr(self, list);
+                (r, 0)
+            }
+            AnyNode::Rule(_) => (
+                self.get_node(RULE_NODE_SIZE)?,
+                RULE_NODE_SIZE - SYNCTEX_FIELD_SIZE,
+            ),
+            AnyNode::Ins(ins) => {
+                let r = self.get_node(INS_NODE_SIZE)?;
+                self.copy_words(r, p, INS_NODE_SIZE);
+                self.add_glue_ref(ins.split_top_ptr(self));
+                let list = self.copy_list(ins.ins_ptr(self))?;
+                copied_node(ins, r).set_ins_ptr(self, list);
+                (r, 0)
+            }
+            AnyNode::Whatsit(w) => self.copy_whatsit(w)?,
+            AnyNode::Glue(g) => {
+                let r = self.copy_glue_shell(g)?;
+                let leaders = self.copy_list(g.leader_ptr(self))?;
+                r.set_leader_ptr(self, leaders);
+                (r.ptr(), 0)
+            }
+            AnyNode::Kern(_) | AnyNode::Math(_) | AnyNode::Penalty(_) => {
+                (self.get_node(MEDIUM_NODE_SIZE)?, MEDIUM_NODE_SIZE)
+            }
+            AnyNode::MarginKern(_) => {
+                (self.get_node(MARGIN_KERN_NODE_SIZE)?, MARGIN_KERN_NODE_SIZE)
+            }
+            AnyNode::Ligature(lig) => {
+                let r = self.get_node(SMALL_NODE_SIZE)?;
+                self.copy_words(r, p, SMALL_NODE_SIZE);
+                let components = self.copy_list(lig.lig_ptr(self))?;
+                copied_node(lig, r).set_lig_ptr(self, components);
+                (r, 0)
+            }
+            AnyNode::Disc(disc) => {
+                let r = self.get_node(SMALL_NODE_SIZE)?;
+                self.copy_words(r, p, 1);
+                let copy = copied_node(disc, r);
+                let pre_break = self.copy_list(disc.pre_break(self))?;
+                copy.set_pre_break(self, pre_break);
+                let post_break = self.copy_list(disc.post_break(self))?;
+                copy.set_post_break(self, post_break);
+                (r, 0)
+            }
+            AnyNode::Mark(mark) => {
+                let r = self.get_node(SMALL_NODE_SIZE)?;
+                self.add_token_ref(mark.mark_ptr(self));
+                (r, SMALL_NODE_SIZE)
+            }
+            AnyNode::Adjust(adjust) => {
+                let r = self.get_node(SMALL_NODE_SIZE)?;
+                self.copy_words(r, p, 1);
+                let list = self.copy_list(adjust.adjust_ptr(self))?;
+                copied_node(adjust, r).set_adjust_ptr(self, list);
+                (r, 0)
+            }
+            _ => return Err(Abort::Confusion("copying")),
+        })
+    }
+}
