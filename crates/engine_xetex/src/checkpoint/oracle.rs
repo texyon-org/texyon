@@ -131,12 +131,12 @@ fn digest_strings(st: &EngineState) -> u64 {
         strings.max_strings,
         strings.init_str_ptr,
         strings.init_pool_ptr,
-        strings.job_name,
-        strings.texmf_log_name,
+        strings.job_name.0,
+        strings.texmf_log_name.0,
         strings.string_vacancies,
         strings.pool_size,
         strings.pool_ptr,
-        strings.format_ident,
+        strings.format_ident.0,
         strings.edit_name_start,
     ]);
     let start_top = strings.cur_start_slot();
@@ -172,7 +172,7 @@ fn digest_fonts(st: &EngineState) -> u64 {
     h.i32s(&[
         fonts.loaded_font_flags as i32,
         fonts.loaded_font_letter_space.0,
-        fonts.native_font_type_flag,
+        fonts.native_font_type_flag.0,
         fonts.font_mem_size,
         fonts.font_max.0,
         fonts.fmem_ptr,
@@ -196,8 +196,8 @@ fn digest_fonts(st: &EngineState) -> u64 {
     hash_values!(font_size.0);
     hash_values!(font_dsize.0);
     hash_values!(font_params);
-    hash_values!(font_name);
-    hash_values!(font_area);
+    hash_values!(font_name.0);
+    hash_values!(font_area.0);
     hash_values!(font_bc);
     hash_values!(font_ec);
     hash_values!(bchar_label);
@@ -298,8 +298,8 @@ fn digest_input(st: &EngineState) -> u64 {
     for &value in &input.if_stack {
         h.i32(value.0);
     }
-    h.i32s(&input.source_filename_stack);
-    h.i32s(&input.full_source_filename_stack);
+    h.i32s(input.source_filename_stack.iter().map(|s| &s.0));
+    h.i32s(input.full_source_filename_stack.iter().map(|s| &s.0));
     for &value in &input.eof_seen {
         h.word(value as u64);
     }
@@ -356,9 +356,9 @@ fn digest_hyph(st: &EngineState) -> u64 {
         hyph.hyph_index,
     ]);
     macro_rules! hash_values {
-        ($field:ident) => {
+        ($field:ident $(.$raw:tt)?) => {
             for &value in &hyph.$field {
-                h.word(value as u64);
+                h.word(value$(.$raw)? as u64);
             }
         };
     }
@@ -382,7 +382,7 @@ fn digest_hyph(st: &EngineState) -> u64 {
     hash_values!(trie_r);
     hash_values!(trie_hash);
     hash_values!(trie_taken);
-    hash_values!(hyph_word);
+    hash_values!(hyph_word.0);
     hash_values!(hyph_list);
     hash_values!(hyph_link);
     hash_values!(trie_op_hash_array);

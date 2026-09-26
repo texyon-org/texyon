@@ -21,7 +21,7 @@ use crate::output::{
     print_nl, print_scaled, sprint_cs,
 };
 use crate::state::{EngineState, EqtbState, FontState, MemState};
-use crate::units::{FontId, Scaled};
+use crate::units::{FontId, Scaled, StrNumber};
 
 use crate::bridge::{input_getc, TTBC_FILE_FORMAT_TFM};
 use crate::errors::Abort;
@@ -29,8 +29,10 @@ use crate::errors::Abort;
 use crate::layout::loaded_font_design_size;
 
 const EOF: i32 = -1;
-pub(crate) const AAT_FONT_FLAG: i32 = 0xFFFF;
-pub(crate) const OTGR_FONT_FLAG: i32 = 0xFFFE;
+/// The `font_area` of an AAT font, which no real area string can equal.
+pub(crate) const AAT_FONT_FLAG: StrNumber = StrNumber(0xFFFF);
+/// The `font_area` of an OpenType or Graphite font.
+pub(crate) const OTGR_FONT_FLAG: StrNumber = StrNumber(0xFFFE);
 pub(crate) const LIG_TAG: u16 = 1;
 pub(crate) const LIST_TAG: u16 = 2;
 pub(crate) const EXT_TAG: u16 = 3;
@@ -265,7 +267,7 @@ fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<Scal
 }
 
 /// Start a "Font \cs=name at size" error.
-fn font_error_start(st: &mut EngineState, u: i32, nom: i32, aire: i32, s: Scaled) {
+fn font_error_start(st: &mut EngineState, u: i32, nom: StrNumber, aire: StrNumber, s: Scaled) {
     error_here_with_diagnostic(st, "Font ");
     sprint_cs(st, u);
     print_char(st, b'=' as i32);
@@ -290,8 +292,8 @@ fn font_error_start(st: &mut EngineState, u: i32, nom: i32, aire: i32, s: Scaled
 pub(crate) fn read_font_info(
     st: &mut EngineState,
     u: i32,
-    nom: i32,
-    aire: i32,
+    nom: StrNumber,
+    aire: StrNumber,
     s: Scaled,
 ) -> Result<FontId, Abort> {
     let mut name_too_long = false;
@@ -438,8 +440,8 @@ impl FontState {
         &mut self,
         eqtb: &EqtbState,
         tfm_file: usize,
-        nom: i32,
-        aire: i32,
+        nom: StrNumber,
+        aire: StrNumber,
         s: Scaled,
     ) -> (TfmParse, Option<(i32, bool)>) {
         let mut scale_side_effect: Option<(i32, bool)> = None;
@@ -706,7 +708,7 @@ impl FontState {
         &mut self,
         eqtb: &EqtbState,
         font_engine: crate::state::FontEngineHandle,
-        full_name: i32,
+        full_name: StrNumber,
         actual_size: Scaled,
         num_font_dimens: i32,
     ) -> (FontId, NativeFontMetrics) {
@@ -751,8 +753,8 @@ impl FontState {
 pub(crate) fn load_native_font(
     st: &mut EngineState,
     u: i32,
-    nom: i32,
-    aire: i32,
+    nom: StrNumber,
+    aire: StrNumber,
     s: Scaled,
 ) -> Result<FontId, Abort> {
     let name_of_file = st.input.name_of_file_bytes().to_vec();

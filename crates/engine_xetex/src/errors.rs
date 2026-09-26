@@ -12,7 +12,7 @@ use crate::output::{
 };
 use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
-use crate::units::FontId;
+use crate::units::{FontId, StrNumber};
 
 impl ErrorState {
     /// Sets the help text shown after the next error, in display order.
@@ -28,7 +28,7 @@ fn pre_error_message(st: &mut EngineState) {
     } else {
         SELECTOR_TERM_ONLY
     };
-    if st.strings.job_name == 0 {
+    if st.strings.job_name == StrNumber::NONE {
         // Already on the fatal path, so a log-open failure just leaves TERM_ONLY.
         let _ = crate::io::open_log_file(st);
     }

@@ -21,7 +21,7 @@ use crate::node::{
 };
 use crate::scan::{LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
-use crate::units::{FontId, GlueSign, MemIdx, MemPtr, Scaled};
+use crate::units::{FontId, GlueSign, MemIdx, MemPtr, Scaled, StrNumber};
 
 const DVI_BUF_SIZE: i32 = 16384;
 const HALF_BUF: i32 = 8192;
@@ -218,7 +218,7 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abo
 
 pub fn initialize_shipout_variables(st: &mut crate::state::EngineState) {
     let s = &mut st.shipout;
-    s.output_file_name = 0;
+    s.output_file_name = StrNumber::NONE;
     s.dvi_buf = vec![0u8; (DVI_BUF_SIZE + 1) as usize];
     s.dvi_limit = DVI_BUF_SIZE;
     s.dvi_ptr = 0;
@@ -252,7 +252,7 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
     let job_name = st.strings.texstring_bytes(st.strings.job_name);
     crate::synctex::synctex_sheet(st, mag, &job_name);
 
-    if st.strings.job_name == 0 {
+    if st.strings.job_name == StrNumber::NONE {
         crate::io::open_log_file(st)?;
     }
     let tracing_output = st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) > 0;
@@ -372,8 +372,8 @@ fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abo
         height + depth + st.shipout.cur_v_offset * 2
     };
 
-    if st.shipout.output_file_name == 0 {
-        if st.strings.job_name == 0 {
+    if st.shipout.output_file_name == StrNumber::NONE {
+        if st.strings.job_name == StrNumber::NONE {
             crate::io::open_log_file(st)?;
         }
         crate::io::pack_job_name(st, crate::engine::output_file_extension(st))?;

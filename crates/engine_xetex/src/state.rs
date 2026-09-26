@@ -1,7 +1,7 @@
 //! Rust-owned engine state.
 
 use crate::hash::HASH_OFFSET;
-use crate::units::{FontId, Scaled};
+use crate::units::{FontId, Scaled, StrNumber};
 
 #[derive(Default)]
 pub(crate) struct EngineState {
@@ -141,8 +141,8 @@ pub(crate) struct InputClusterState {
     pub line_stack: Vec<i32>,
     pub grp_stack: Vec<i32>,
     pub if_stack: Vec<crate::units::MemPtr>,
-    pub source_filename_stack: Vec<i32>,
-    pub full_source_filename_stack: Vec<i32>,
+    pub source_filename_stack: Vec<StrNumber>,
+    pub full_source_filename_stack: Vec<StrNumber>,
     pub eof_seen: Vec<bool>,
     pub buffer: Vec<i32>,
     pub input_stack: Vec<InputState>,
@@ -259,18 +259,19 @@ impl EqtbState {
         self.hash[index].s0 = v;
     }
 
+    /// The name of control sequence `p`, `text(p)`.
     #[inline]
-    pub fn hash_s1(&self, p: i32) -> i32 {
-        self.hash[(p - HASH_OFFSET) as usize].s1
+    pub fn text(&self, p: i32) -> StrNumber {
+        StrNumber(self.hash[(p - HASH_OFFSET) as usize].s1)
     }
 
     #[inline]
-    pub fn set_hash_s1(&mut self, p: i32, v: i32) {
+    pub fn set_text(&mut self, p: i32, s: StrNumber) {
         let index = (p - HASH_OFFSET) as usize;
         if self.journal.hash.armed() {
             self.journal.hash.note(index, self.hash[index]);
         }
-        self.hash[index].s1 = v;
+        self.hash[index].s1 = s.0;
     }
 
     #[inline]
@@ -349,8 +350,8 @@ impl EqtbState {
 
     /// The control sequence text that identifies font `f`.
     #[inline]
-    pub(crate) fn font_id_text(&self, f: FontId) -> i32 {
-        self.hash_s1(f.id_loc())
+    pub(crate) fn font_id_text(&self, f: FontId) -> StrNumber {
+        self.text(f.id_loc())
     }
 
     #[inline]
@@ -812,9 +813,9 @@ impl SaveStackState {
 pub(crate) struct ScannerState {
     /// Monotonic token-fetch clock used to order checkpoint fences.
     pub logical_clock: u64,
-    pub cur_name: i32,
-    pub cur_area: i32,
-    pub cur_ext: i32,
+    pub cur_name: StrNumber,
+    pub cur_area: StrNumber,
+    pub cur_ext: StrNumber,
     pub area_delimiter: i32,
     pub ext_delimiter: i32,
     pub quoted_filename: bool,
@@ -926,13 +927,13 @@ pub(crate) struct FontState {
     pub saved_mapping_name: Option<Vec<u8>>,
     /// Per-engine ICU line-break cache and its string-pool locale key.
     pub brk_iter: Option<LinebreakHandle>,
-    pub brk_locale_str_num: i32,
+    pub brk_locale_str_num: StrNumber,
     pub font_layout_engine: PerFont<Option<std::sync::Arc<FontEngineHandle>>>,
     pub font_mapping: PerFont<Option<std::sync::Arc<FontMappingHandle>>>,
     pub loaded_font_letter_space: Scaled,
     pub xtx_ligature_present: bool,
     pub gave_char_warning_help: bool,
-    pub native_font_type_flag: i32,
+    pub native_font_type_flag: StrNumber,
     pub font_mem_size: i32,
     pub font_max: FontId,
     pub fmem_ptr: i32,
@@ -944,8 +945,8 @@ pub(crate) struct FontState {
     pub font_size: PerFont<Scaled>,
     pub font_dsize: PerFont<Scaled>,
     pub font_params: PerFont<i32>,
-    pub font_name: PerFont<i32>,
-    pub font_area: PerFont<i32>,
+    pub font_name: PerFont<StrNumber>,
+    pub font_area: PerFont<StrNumber>,
     pub font_bc: PerFont<u16>,
     pub font_ec: PerFont<u16>,
     pub bchar_label: PerFont<i32>,
@@ -979,13 +980,13 @@ impl Default for FontState {
             loaded_font_flags: 0,
             saved_mapping_name: None,
             brk_iter: None,
-            brk_locale_str_num: 0,
+            brk_locale_str_num: StrNumber(0),
             font_layout_engine: PerFont::default(),
             font_mapping: PerFont::default(),
             loaded_font_letter_space: Scaled::ZERO,
             xtx_ligature_present: false,
             gave_char_warning_help: false,
-            native_font_type_flag: 0,
+            native_font_type_flag: StrNumber::NONE,
             font_mem_size: 0,
             font_max: crate::consts::NULL_FONT,
             fmem_ptr: 0,
@@ -1172,7 +1173,7 @@ pub(crate) struct ShipoutState {
     pub cur_v_offset: Scaled,
     pub write_loc: i32,
     pub dvi_file: usize,
-    pub output_file_name: i32,
+    pub output_file_name: StrNumber,
     pub dvi_buf: Vec<u8>,
     pub dvi_limit: i32,
     pub dvi_ptr: i32,
@@ -1280,12 +1281,12 @@ pub(crate) struct StringsState {
     pub max_strings: i32,
     pub init_str_ptr: i32,
     pub init_pool_ptr: i32,
-    pub job_name: i32,
-    pub texmf_log_name: i32,
+    pub job_name: StrNumber,
+    pub texmf_log_name: StrNumber,
     pub string_vacancies: i32,
     pub pool_size: i32,
     pub pool_ptr: i32,
-    pub format_ident: i32,
+    pub format_ident: StrNumber,
     pub edit_name_start: i32,
     pub str_start: Vec<i32>,
     pub str_pool: Vec<u16>,
@@ -1440,7 +1441,7 @@ pub(crate) struct HyphState {
     pub trie_r: Vec<i32>,
     pub trie_hash: Vec<i32>,
     pub trie_taken: Vec<bool>,
-    pub hyph_word: Vec<i32>,
+    pub hyph_word: Vec<StrNumber>,
     pub hyph_list: Vec<i32>,
     pub hyph_link: Vec<u16>,
     pub trie_op_hash_array: Vec<i32>,

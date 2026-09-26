@@ -212,6 +212,33 @@ impl FontId {
     }
 }
 
+/// A string number: a single character below `TOO_BIG_CHAR`, else a pool string.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[repr(transparent)]
+pub struct StrNumber(pub i32);
+
+impl StrNumber {
+    /// `0`, which TeX uses for "no string" in `job_name` and friends.
+    pub const NONE: StrNumber = StrNumber(0);
+
+    /// Whether this is a pool string rather than a single character.
+    #[inline]
+    pub fn is_pool_string(self) -> bool {
+        self.0 >= crate::consts::TOO_BIG_CHAR
+    }
+
+    /// The `str_start` slot of this pool string.
+    #[inline]
+    pub fn slot(self) -> usize {
+        (self.0 - crate::consts::TOO_BIG_CHAR) as usize
+    }
+
+    #[inline]
+    pub fn next(self) -> StrNumber {
+        StrNumber(self.0 + 1)
+    }
+}
+
 /// A node's type code. Delta nodes reuse the rule code and edge nodes the
 /// style code, their list context tells them apart.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]

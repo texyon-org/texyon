@@ -40,7 +40,7 @@ use crate::scan::{
     XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_SELECTOR_CODE_CODE,
 };
 use crate::state::{EngineState, ErrorState, FontState, MemState};
-use crate::units::{FontId, MemPtr, Scaled};
+use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
 const HB_TAG_NONE: u32 = 0;
 #[cfg(target_endian = "big")]
@@ -189,7 +189,7 @@ fn get_encoding_mode_and_info(st: &mut EngineState, bytes: &[u8]) -> Result<(c_i
         Ok((RAW, 0))
     } else {
         let info = st.strings.make_tex_string(bytes)?;
-        Ok((ICUMAPPING, info))
+        Ok((ICUMAPPING, info.0))
     }
 }
 
@@ -1221,7 +1221,7 @@ impl FontState {
 
     pub(crate) fn release_linebreak_state(&mut self) {
         self.brk_iter = None;
-        self.brk_locale_str_num = 0;
+        self.brk_locale_str_num = StrNumber::NONE;
         self.saved_mapping_name = None;
     }
 
@@ -1410,9 +1410,10 @@ pub(crate) const XETEX_LINEBREAK_LOCALE_EXTENSION_CODE: i32 = 46;
 
 /// The current source file if the input position moved since the last source
 /// special.
-fn new_source_position(st: &mut EngineState) -> Option<i32> {
+fn new_source_position(st: &mut EngineState) -> Option<StrNumber> {
     let fname = st.input.source_filename_stack[st.input.in_open as usize];
-    (fname > 0 && crate::texmfmp::is_new_source(st, fname, st.mem.line)).then_some(fname)
+    (fname > StrNumber::NONE && crate::texmfmp::is_new_source(st, fname, st.mem.line))
+        .then_some(fname)
 }
 
 /// Append a `\special{src:...}` whatsit for the current source line.
@@ -1702,11 +1703,12 @@ pub(crate) fn do_extension(st: &mut EngineState) -> Result<(), Abort> {
         XETEX_LINEBREAK_LOCALE_EXTENSION_CODE => {
             crate::io::scan_file_name(st)?;
             let locale = if st.strings.length(st.scanner.cur_name) == 0 {
-                0
+                StrNumber::NONE
             } else {
                 st.scanner.cur_name
             };
-            st.eqtb.set_int_par(INT_PAR_XETEX_LINEBREAK_LOCALE, locale);
+            st.eqtb
+                .set_int_par(INT_PAR_XETEX_LINEBREAK_LOCALE, locale.0);
         }
 
         _ => return Err(Abort::Confusion("ext1")),

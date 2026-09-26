@@ -14,7 +14,9 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::state::MemState;
-use crate::units::{FontId, GlueSign, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{
+    FontId, GlueSign, InvalidNodeType, MemIdx, MemPtr, NodeType, Scaled, StrNumber,
+};
 
 /// Marker for node kinds, implemented by the uninhabited kind enums below.
 pub trait NodeKind {}
@@ -129,6 +131,18 @@ impl Slot for NodePtr<GlueSpecNode> {
     #[inline(always)]
     fn encode(self) -> i32 {
         self.idx.0
+    }
+}
+
+impl Slot for StrNumber {
+    type Raw = i32;
+    #[inline(always)]
+    fn decode(raw: i32) -> Self {
+        StrNumber(raw)
+    }
+    #[inline(always)]
+    fn encode(self) -> i32 {
+        self.0
     }
 }
 
@@ -1481,9 +1495,9 @@ impl NodePtr<WhatsitNode> {
     fields! {
         write_tokens / set_write_tokens: MemPtr = b32s1 @ 1;
         write_stream / set_write_stream: i32 = b32s0 @ 1;
-        open_name / set_open_name: i32 = b32s1 @ 1;
-        open_area / set_open_area: i32 = b32s0 @ 2;
-        open_ext / set_open_ext: i32 = b32s1 @ 2;
+        open_name / set_open_name: StrNumber = b32s1 @ 1;
+        open_area / set_open_area: StrNumber = b32s0 @ 2;
+        open_ext / set_open_ext: StrNumber = b32s1 @ 2;
         what_lang / set_what_lang: i32 = b32s1 @ 1;
         what_lhm / set_what_lhm: u16 = b16s1 @ 1;
         what_rhm / set_what_rhm: u16 = b16s0 @ 1;

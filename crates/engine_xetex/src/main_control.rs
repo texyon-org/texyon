@@ -68,7 +68,7 @@ use crate::scan::{
     PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
 };
 use crate::state::{EngineState, GroupCode, MemState};
-use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 use crate::layout::set_cp_code;
 
@@ -386,7 +386,7 @@ pub(crate) fn fin_align(st: &mut EngineState) -> Result<(), Abort> {
         q = q.link(&st.mem);
     }
 
-    st.mem.flush_node_list(p.idx().0)?;
+    st.mem.flush_node_list(p.idx())?;
     pop_alignment(st);
 
     let aux_save_s0 = st.input.cur_list.aux_s0();
@@ -1780,7 +1780,7 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
             }
 
             let last_box = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
-            st.mem.flush_node_list(last_box.0)?;
+            st.mem.flush_node_list(last_box)?;
             st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
             st.mem.pop_nest(&mut st.input);
             crate::pagebuilder::build_page(st)?;
@@ -2374,18 +2374,18 @@ fn flush_last_string(st: &mut EngineState) {
 }
 
 pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
-    if st.strings.job_name == 0 {
+    if st.strings.job_name == StrNumber::NONE {
         crate::io::open_log_file(st)?;
     }
     crate::scan::get_r_token(st)?;
     let u = st.scanner.cur_cs;
     let t = if u >= HASH_BASE {
-        st.eqtb.hash_s1(u)
+        st.eqtb.text(u)
     } else if u >= SINGLE_BASE {
         if u == NULL_CS {
             st.strings.make_tex_string("FONT")?
         } else {
-            u - SINGLE_BASE
+            StrNumber(u - SINGLE_BASE)
         }
     } else {
         let old_setting = st.shipout.selector;
@@ -2481,7 +2481,7 @@ pub(crate) fn new_font(st: &mut EngineState, a: i16) -> Result<(), Abort> {
     define(st, global, u, SET_FONT, f.0)?;
     let word = st.eqtb.word(u);
     st.eqtb.set_word(f.id_loc(), word);
-    st.eqtb.set_hash_s1(f.id_loc(), t);
+    st.eqtb.set_text(f.id_loc(), t);
     Ok(())
 }
 
@@ -3115,7 +3115,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
                 let next = word.link(&st.mem);
                 st.mainloop.main_ppp.set_link(&mut st.mem, next);
                 word.set_link(&mut st.mem, MemPtr::NULL);
-                st.mem.flush_node_list(word.idx().0)?;
+                st.mem.flush_node_list(word.idx())?;
                 st.mainloop.main_pp = st.input.cur_list.tail;
                 while st.mainloop.main_ppp.link(&st.mem) != st.mainloop.main_pp {
                     st.mainloop.main_ppp = st.mainloop.main_ppp.link(&st.mem);
@@ -3164,7 +3164,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
             let next = word.link(&st.mem);
             prev.set_link(&mut st.mem, next);
             word.set_link(&mut st.mem, MemPtr::NULL);
-            st.mem.flush_node_list(word.idx().0)?;
+            st.mem.flush_node_list(word.idx())?;
         }
     }
 

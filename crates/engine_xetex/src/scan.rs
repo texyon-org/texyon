@@ -21,7 +21,7 @@ use crate::consts::{
     MAX_DIMEN, MAX_HALFWORD, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FONT,
     NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY,
     SELECTOR_NEW_STRING, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL,
-    TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 use crate::errors::Abort;
 use crate::errors::{error, int_error, mu_error};
@@ -51,7 +51,7 @@ use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::state::{
     EngineState, EqtbState, ErrorState, GroupCode, InputClusterState, MemState, ScannerState,
 };
-use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 use std::sync::Arc;
 
@@ -654,7 +654,7 @@ pub(crate) fn eTeX_enabled(st: &mut EngineState, b: bool, j: u8, k: i32) -> Resu
     Ok(b)
 }
 
-pub(crate) fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<i32, Abort> {
+pub(crate) fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<StrNumber, Abort> {
     if st.shipout.selector == SELECTOR_NEW_STRING {
         return Err(Abort::PdfError(&[
             "tokens",
@@ -1711,7 +1711,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
     }
     let s = st.strings.make_string()?;
     st.strings.str_pool[st.strings.pool_ptr as usize] = b' ' as u16;
-    let mut l = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
+    let mut l = st.strings.str_start[s.slot()];
     let nl = st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) as u16;
     let file = st.mem.get_avail()?;
     let mut last_line = file;
@@ -2585,7 +2585,7 @@ fn negate_glue(st: &mut EngineState) -> Result<i32, Abort> {
 /// engine and its area flag.
 fn scan_font_engine(
     st: &mut EngineState,
-) -> Result<(FontId, Option<Arc<FontEngineHandle>>, i32), Abort> {
+) -> Result<(FontId, Option<Arc<FontEngineHandle>>, StrNumber), Abort> {
     let f = scan_font_ident(st)?;
     Ok((f, st.fonts.layout_engine_arc(f), st.fonts.font_area[f]))
 }
@@ -3516,7 +3516,7 @@ pub(crate) fn scan_pdf_ext_toks(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-fn scan_toks_to_string(st: &mut EngineState) -> Result<i32, Abort> {
+fn scan_toks_to_string(st: &mut EngineState) -> Result<StrNumber, Abort> {
     scan_toks(st, false, true)?;
     let def_ref = st.scanner.def_ref.0;
     let s = tokens_to_string(st, def_ref)?;
@@ -3531,9 +3531,9 @@ pub(crate) fn compare_strings(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.cur_cs = save_cur_cs;
     let s2 = scan_toks_to_string(st)?;
 
-    let range = |s: i32| {
-        let start = st.strings.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
-        let end = st.strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize] as usize;
+    let range = |s: StrNumber| {
+        let start = st.strings.str_start[s.slot()] as usize;
+        let end = st.strings.str_start[s.next().slot()] as usize;
         &st.strings.str_pool[start..end]
     };
     let result = match range(s1).cmp(range(s2)) {

@@ -275,7 +275,7 @@ fn math_kern(st: &mut EngineState, p: NodePtr<KernNode>, m: Scaled) {
 
 impl ListStateRecord {
     pub fn flush_math(&mut self, mem: &mut MemState) -> Result<(), Abort> {
-        mem.flush_node_list(self.head.link(mem).0)?;
+        mem.flush_node_list(self.head.link(mem))?;
         mem.flush_node_list(self.aux_s1())?;
         self.head.set_link(mem, MemPtr::NULL);
         self.tail = self.head;
@@ -1071,7 +1071,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
     if (q.supscr().math_type(&st.mem) != EMPTY || q.subscr().math_type(&st.mem) != EMPTY)
         && q.nucleus().math_type(&st.mem) == MATH_CHAR
     {
-        st.mem.flush_node_list(x.idx().0)?;
+        st.mem.flush_node_list(x.idx())?;
         let base = st.mem.new_noad()?;
         let mem = &mut st.mem;
         base.nucleus().copy_from(mem, q.nucleus());
@@ -1723,10 +1723,10 @@ impl MemState {
             }
             _ => MemPtr::NULL,
         };
-        self.flush_node_list(choice.display_mlist(self).0)?;
-        self.flush_node_list(choice.text_mlist(self).0)?;
-        self.flush_node_list(choice.script_mlist(self).0)?;
-        self.flush_node_list(choice.script_script_mlist(self).0)?;
+        self.flush_node_list(choice.display_mlist(self))?;
+        self.flush_node_list(choice.text_mlist(self))?;
+        self.flush_node_list(choice.script_mlist(self))?;
+        self.flush_node_list(choice.script_script_mlist(self))?;
         let style = choice.into_style(self, cur_style as u16);
         if !kept.is_null() {
             let z = style.link(self);
@@ -1770,7 +1770,7 @@ impl MemState {
         ) {
             glue.set_link(self, p.link(self));
             p.set_link(self, MemPtr::NULL);
-            self.flush_node_list(p.0)?;
+            self.flush_node_list(p)?;
         }
         Ok(())
     }

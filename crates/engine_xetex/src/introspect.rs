@@ -1,10 +1,11 @@
 //! Read-only listing of the control sequences the engine has defined, for
 //! editor completions. Safe to run between operations on a resident session.
 
+use crate::units::StrNumber;
 use std::collections::HashMap;
 
 use crate::cmd::{CALL, UNDEFINED_CS};
-use crate::consts::{EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, HASH_BASE, TOO_BIG_CHAR};
+use crate::consts::{EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, HASH_BASE};
 use crate::scan::{END_MATCH_TOKEN, MATCH_TOKEN, PROTECTED_TOKEN};
 use crate::state::EngineState;
 
@@ -77,8 +78,8 @@ fn resolve_wrappers(found: Vec<DefinedCommand>) -> Vec<DefinedCommand> {
 }
 
 fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
-    let text = st.eqtb.hash_s1(slot);
-    if text <= 0 || text >= st.strings.str_ptr {
+    let text = st.eqtb.text(slot);
+    if text <= StrNumber::NONE || text.0 >= st.strings.str_ptr {
         return;
     }
     let meaning = st.eqtb.eq_type(slot);
@@ -134,10 +135,10 @@ fn describe_macro(st: &EngineState, body: i32) -> (bool, u8) {
     (protected, arity)
 }
 
-fn read_string(st: &EngineState, index: i32) -> Option<String> {
+fn read_string(st: &EngineState, s: StrNumber) -> Option<String> {
     let str_start = &st.strings.str_start;
-    let start = *str_start.get((index - TOO_BIG_CHAR) as usize)? as usize;
-    let end = *str_start.get((index + 1 - TOO_BIG_CHAR) as usize)? as usize;
+    let start = *str_start.get(s.slot())? as usize;
+    let end = *str_start.get(s.next().slot())? as usize;
     let units = st.strings.str_pool.get(start..end)?;
     char::decode_utf16(units.iter().copied())
         .collect::<Result<String, _>>()

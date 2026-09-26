@@ -467,7 +467,7 @@ mod tests {
         eqtb.journal.words.arm(eqtb.data.len());
         eqtb.journal.hash.arm();
         eqtb.set_equiv(1, 5);
-        eqtb.set_hash_s1(514, 6);
+        eqtb.set_text(514, crate::units::StrNumber(6));
         eqtb.journal.words.seal().apply_to(&mut eqtb.data);
         eqtb.journal.hash.seal().apply_to(&mut eqtb.hash);
         assert_eq!(bits(eqtb.data[1]), 0);

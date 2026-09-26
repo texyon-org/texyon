@@ -6,6 +6,7 @@ use crate::consts::{
 };
 use crate::errors::Abort;
 use crate::state::{EqtbState, StringsState};
+use crate::units::StrNumber;
 
 pub(crate) const HASH_OFFSET: i32 = 514;
 pub(crate) const HASH_SIZE: i32 = 15000;
@@ -60,8 +61,10 @@ impl EqtbState {
         }
 
         loop {
-            let text = self.hash_s1(p);
-            if text > 0 && strings.length(text) == utf16_len && strings.str_eq_buf(buffer, text, j)
+            let text = self.text(p);
+            if text > StrNumber::NONE
+                && strings.length(text) == utf16_len
+                && strings.str_eq_buf(buffer, text, j)
             {
                 return Ok(p);
             }
@@ -70,7 +73,7 @@ impl EqtbState {
                 if self.no_new_control_sequence {
                     p = UNDEFINED_CONTROL_SEQUENCE;
                 } else {
-                    if text > 0 {
+                    if text > StrNumber::NONE {
                         if self.hash_high < self.hash_extra {
                             self.hash_high += 1;
                             self.set_hash_s0(p, self.hash_high + EQTB_SIZE);
@@ -84,7 +87,7 @@ impl EqtbState {
                                     });
                                 }
                                 self.hash_used -= 1;
-                                if self.hash_s1(self.hash_used) == 0 {
+                                if self.text(self.hash_used) == StrNumber::NONE {
                                     break;
                                 }
                             }
@@ -120,7 +123,7 @@ impl EqtbState {
                     }
 
                     let s_idx = strings.make_string()?;
-                    self.set_hash_s1(p, s_idx);
+                    self.set_text(p, s_idx);
                     strings.pool_ptr += d;
                 }
                 return Ok(p);
@@ -130,18 +133,18 @@ impl EqtbState {
         }
     }
 
-    pub fn prim_lookup(&mut self, strings: &mut StringsState, s: i32) -> Result<i32, Abort> {
+    pub fn prim_lookup(&mut self, strings: &mut StringsState, s: StrNumber) -> Result<i32, Abort> {
         let mut p;
         let l;
-        if s <= BIGGEST_CHAR {
-            if s < 0 {
+        if s.0 <= BIGGEST_CHAR {
+            if s.0 < 0 {
                 return Ok(UNDEFINED_PRIMITIVE);
             }
-            p = s % PRIM_PRIME + 1;
+            p = s.0 % PRIM_PRIME + 1;
             l = 0;
         } else {
-            let j = strings.str_start[(s - TOO_BIG_CHAR) as usize];
-            l = if s == strings.str_ptr {
+            let j = strings.str_start[s.slot()];
+            l = if s.0 == strings.str_ptr {
                 strings.cur_length()
             } else {
                 strings.length(s)
@@ -157,12 +160,14 @@ impl EqtbState {
         }
 
         loop {
+            // A primitive's text is stored one past its string number.
             let text = self.prim_s1(p);
             if text > TOO_BIG_CHAR {
-                if strings.length(text - 1) == l && strings.str_eq_str(text - 1, s) {
+                let name = StrNumber(text - 1);
+                if strings.length(name) == l && strings.str_eq_str(name, s) {
                     return Ok(p);
                 }
-            } else if text == 1 + s {
+            } else if text == 1 + s.0 {
                 return Ok(p);
             }
 
@@ -186,7 +191,7 @@ impl EqtbState {
                         self.set_prim_s0(p, self.prim_used);
                         p = self.prim_used;
                     }
-                    self.set_prim_s1(p, s + 1);
+                    self.set_prim_s1(p, s.0 + 1);
                 }
                 return Ok(p);
             }
@@ -202,9 +207,9 @@ impl EqtbState {
         cs: i32,
     ) -> Result<i32, Abort> {
         let s = if cs < HASH_BASE {
-            cs - crate::consts::SINGLE_BASE
+            StrNumber(cs - crate::consts::SINGLE_BASE)
         } else {
-            self.hash_s1(cs)
+            self.text(cs)
         };
         self.prim_lookup(strings, s)
     }

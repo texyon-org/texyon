@@ -98,7 +98,7 @@ use crate::scan::{
     XETEX_VARIATION_MAX_CODE, XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
 };
 use crate::state::{EngineState, GroupCode, InteractionMode};
-use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 const SELECTOR_PSEUDO: i32 = 20;
 
@@ -176,6 +176,13 @@ impl TexStr for i32 {
     #[inline]
     fn print_to(self, st: &mut EngineState) {
         print_pool_str(st, self);
+    }
+}
+
+impl TexStr for StrNumber {
+    #[inline]
+    fn print_to(self, st: &mut EngineState) {
+        print_pool_str(st, self.0);
     }
 }
 
@@ -497,9 +504,9 @@ pub(crate) fn append_to_diagnostic(st: &mut EngineState, text: &str) {
 }
 
 /// The innermost input level that is a real file, with its current line.
-fn current_file_line(st: &EngineState) -> Option<(i32, i32)> {
+fn current_file_line(st: &EngineState) -> Option<(StrNumber, i32)> {
     let mut level = st.input.in_open;
-    while level > 0 && st.input.full_source_filename_stack[level as usize] == 0 {
+    while level > 0 && st.input.full_source_filename_stack[level as usize] == StrNumber::NONE {
         level -= 1;
     }
     if level == 0 {
@@ -589,14 +596,14 @@ fn print_write_whatsit(st: &mut EngineState, s: &str, p: NodePtr<WhatsitNode>) {
     }
 }
 
-pub(crate) fn print_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
+pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, e: StrNumber) {
     // Swaps one quote character for the other.
     const QUOTE_SUM: i32 = b'"' as i32 + b'\'' as i32;
 
     let mut must_quote = false;
     let mut quote_char: i32 = 0;
     for s in [a, n, e] {
-        if s == 0 {
+        if s == StrNumber::NONE {
             continue;
         }
         for j in st.strings.str_range(s) {
@@ -621,7 +628,7 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
     }
 
     for s in [a, n, e] {
-        if s == 0 {
+        if s == StrNumber::NONE {
             continue;
         }
         for j in st.strings.str_range(s) {
@@ -641,11 +648,11 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
 }
 
 /// The name string of a multi-letter control sequence at eqtb location `p`.
-fn cs_text(st: &EngineState, p: i32) -> i32 {
+fn cs_text(st: &EngineState, p: i32) -> StrNumber {
     if (PRIM_EQTB_BASE..FROZEN_NULL_FONT).contains(&p) {
-        st.eqtb.prim_s1(p - PRIM_EQTB_BASE) - 1
+        StrNumber(st.eqtb.prim_s1(p - PRIM_EQTB_BASE) - 1)
     } else {
-        st.eqtb.hash_s1(p)
+        st.eqtb.text(p)
     }
 }
 
@@ -669,7 +676,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
         }
     } else if (UNDEFINED_CONTROL_SEQUENCE..=EQTB_SIZE).contains(&p) || p > st.eqtb.eqtb_top {
         print_esc(st, "IMPOSSIBLE.");
-    } else if st.eqtb.hash_s1(p) >= st.strings.str_ptr {
+    } else if st.eqtb.text(p).0 >= st.strings.str_ptr {
         print_esc(st, "NONEXISTENT.");
     } else {
         print_esc(st, cs_text(st, p));

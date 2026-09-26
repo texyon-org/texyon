@@ -32,7 +32,7 @@ use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
     ScannerState,
 };
-use crate::units::{FontId, MemAddr, MemIdx, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemAddr, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
 
@@ -2555,12 +2555,12 @@ fn hyphenate(st: &mut EngineState, native_ha: Option<NodePtr<WhatsitNode>>) -> R
 
     loop {
         let k = st.hyph.hyph_word[h as usize];
-        if k == 0 {
+        if k == StrNumber::NONE {
             break;
         }
 
         if st.strings.length(k) == hn as i32 {
-            let start = st.strings.str_start[(k - TOO_BIG_CHAR) as usize] as usize;
+            let start = st.strings.str_start[k.slot()] as usize;
             let word = &st.strings.str_pool[start..start + hn as usize];
             if word
                 .iter()
@@ -2870,7 +2870,11 @@ impl TextBreaks<'_> {
 }
 
 /// Makes sure `fonts.brk_iter` is an ICU line breaker for `locale`.
-fn open_linebreak_iterator(st: &mut EngineState, locale: i32, name: &[u8]) -> Result<(), Abort> {
+fn open_linebreak_iterator(
+    st: &mut EngineState,
+    locale: StrNumber,
+    name: &[u8],
+) -> Result<(), Abort> {
     if locale != st.fonts.brk_locale_str_num {
         st.fonts.brk_iter = None;
     }
@@ -2903,8 +2907,8 @@ pub(crate) fn do_locale_linebreaks(st: &mut EngineState, s: i32, len: i32) -> Re
     let main_f = st.mainloop.main_f;
     let text = st.scanner.native_text[s as usize..(s + len) as usize].to_vec();
 
-    let locale = st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_LOCALE);
-    if locale == 0 || len == 1 {
+    let locale = StrNumber(st.eqtb.int_par(INT_PAR_XETEX_LINEBREAK_LOCALE));
+    if locale == StrNumber::NONE || len == 1 {
         return append_native_word(st, main_f, &text);
     }
 

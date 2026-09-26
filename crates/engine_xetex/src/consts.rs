@@ -3,7 +3,7 @@
 pub const BIGGEST_CHAR: i32 = 0xFFFF;
 pub const TOO_BIG_CHAR: i32 = 65_536;
 /// Pool string 65536 marks the start of the pool, so the empty string is the one after it.
-pub const EMPTY_STRING: i32 = TOO_BIG_CHAR + 1;
+pub const EMPTY_STRING: crate::units::StrNumber = crate::units::StrNumber(TOO_BIG_CHAR + 1);
 pub const BIGGEST_USV: i32 = 0x10_FFFF;
 pub const NUMBER_USVS: i32 = BIGGEST_USV + 1;
 pub const TOO_BIG_USV: i32 = BIGGEST_USV + 1;

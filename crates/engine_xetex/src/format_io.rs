@@ -22,7 +22,7 @@ use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL};
 use crate::state::{EngineState, EqtbState, InteractionMode};
-use crate::units::FontId;
+use crate::units::{FontId, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
@@ -53,6 +53,8 @@ unsafe impl FmtItem for i16 {}
 unsafe impl FmtItem for i32 {}
 // SAFETY: `Scaled` is a transparent `i32`.
 unsafe impl FmtItem for crate::units::Scaled {}
+// SAFETY: `StrNumber` is a transparent `i32`.
+unsafe impl FmtItem for crate::units::StrNumber {}
 // SAFETY: as above.
 unsafe impl FmtItem for crate::mem_types::B16x4 {}
 // SAFETY: as above.
@@ -498,9 +500,9 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     let hyph = &st.hyph;
     for k in 0..=hyph.hyph_size {
         let h = k as usize;
-        if hyph.hyph_word[h] != 0 {
+        if hyph.hyph_word[h] != StrNumber::NONE {
             dump_int(fmt_out, k + 65_536 * hyph.hyph_link[h] as i32)?;
-            dump_int(fmt_out, hyph.hyph_word[h])?;
+            dump_int(fmt_out, hyph.hyph_word[h].0)?;
             dump_int(fmt_out, hyph.hyph_list[h])?;
         }
     }
@@ -786,16 +788,16 @@ fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
         fonts.font_name.as_mut_slice(),
         FONT_BASE,
         n,
-        i32::MIN,
-        max_str,
+        StrNumber(i32::MIN),
+        StrNumber(max_str),
     )?;
     undump_checked(
         fmt_in,
         fonts.font_area.as_mut_slice(),
         FONT_BASE,
         n,
-        i32::MIN,
-        max_str,
+        StrNumber(i32::MIN),
+        StrNumber(max_str),
     )?;
     undump_slice(fmt_in, fonts.font_bc.as_mut_slice(), FONT_BASE, n)?;
     undump_slice(fmt_in, fonts.font_ec.as_mut_slice(), FONT_BASE, n)?;
@@ -868,7 +870,7 @@ fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
             return Err(bad_fmt());
         }
         hyph.hyph_link[j as usize] = hyph.hyph_next as u16;
-        hyph.hyph_word[j as usize] = undump_in_range(fmt_in, 0, st.strings.str_ptr)?;
+        hyph.hyph_word[j as usize] = StrNumber(undump_in_range(fmt_in, 0, st.strings.str_ptr)?);
         hyph.hyph_list[j as usize] = undump_in_range(fmt_in, MIN_HALFWORD, MAX_HALFWORD)?;
     }
 

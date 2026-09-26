@@ -10,6 +10,7 @@ use crate::consts::{
 use crate::input::NEW_LINE;
 use crate::layout::FontMappingHandle;
 use crate::state::EngineState;
+use crate::units::StrNumber;
 use crate::utf8::next_utf8_char;
 use tectonic_bridge_core::EOF;
 
@@ -295,7 +296,7 @@ pub(crate) fn set_input_file_encoding(
             f.encoding_mode = mode as i16;
         }
         ICUMAPPING => {
-            let name = st.strings.texstring_bytes(encoding_data);
+            let name = st.strings.texstring_bytes(StrNumber(encoding_data));
             match icu_converter_open(&name) {
                 Err(err) => {
                     crate::output::begin_diagnostic(st);
@@ -743,12 +744,12 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_area = EMPTY_STRING;
     } else {
         let strings = &mut st.strings;
-        st.scanner.cur_area = strings.str_ptr;
+        st.scanner.cur_area = StrNumber(strings.str_ptr);
         let start = strings.cur_string_start();
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + area_delimiter;
         strings.str_ptr += 1;
         let temp_str = strings.search_string(st.scanner.cur_area);
-        if temp_str > 0 {
+        if temp_str > StrNumber::NONE {
             st.scanner.cur_area = temp_str;
             strings.str_ptr -= 1;
             let base = strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize];
@@ -765,7 +766,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         let strings = &mut st.strings;
         let shift = st.scanner.ext_delimiter - area_delimiter - 1;
-        st.scanner.cur_name = strings.str_ptr;
+        st.scanner.cur_name = StrNumber(strings.str_ptr);
         let start = strings.cur_string_start();
         strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize] = start + shift;
         strings.str_ptr += 1;
@@ -773,7 +774,7 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_ext = strings.make_string()?;
         strings.str_ptr -= 1;
         let temp_str = strings.search_string(st.scanner.cur_name);
-        if temp_str > 0 {
+        if temp_str > StrNumber::NONE {
             st.scanner.cur_name = temp_str;
             strings.str_ptr -= 1;
             let base = strings.str_start[(strings.str_ptr + 1 - TOO_BIG_CHAR) as usize];
@@ -787,12 +788,12 @@ pub(crate) fn end_name(st: &mut EngineState) -> Result<(), Abort> {
     Ok(())
 }
 
-pub(crate) fn make_name_string(st: &mut EngineState) -> Result<i32, Abort> {
+pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort> {
     if st.strings.pool_ptr + st.input.name_of_file.len() as i32 > st.strings.pool_size
         || st.strings.str_ptr == st.strings.max_strings
         || st.strings.cur_length() > 0
     {
-        return Ok(b'?' as i32);
+        return Ok(StrNumber(b'?' as i32));
     }
 
     let name16 = st.input.name_of_file16();
@@ -840,7 +841,7 @@ pub(crate) fn pack_job_name(st: &mut EngineState, s: &str) -> Result<(), Abort> 
 /// Opens the transcript and writes its banner.
 pub(crate) fn open_log_file(st: &mut EngineState) -> Result<(), Abort> {
     let old_setting = st.shipout.selector;
-    if st.strings.job_name == 0 {
+    if st.strings.job_name == StrNumber::NONE {
         st.strings.job_name = st.strings.make_tex_string("texput")?;
     }
 
@@ -891,7 +892,7 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
         st.shipout.log_file = handle;
     }
 
-    if st.shipout.output_file_name != 0 {
+    if st.shipout.output_file_name != StrNumber::NONE {
         pack_job_name(st, crate::engine::output_file_extension(st))?;
         let handle = output_open(st.input.name_of_file_bytes(), false);
         if handle == INVALID_HANDLE {
@@ -904,7 +905,7 @@ pub(crate) fn reopen_resident_outputs(st: &mut EngineState) -> Result<(), Abort>
 }
 
 /// Builds `name_of_file` from area `a`, name `n` and extension `e`.
-pub(crate) fn pack_file_name(st: &mut EngineState, n: i32, a: i32, e: i32) {
+pub(crate) fn pack_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, e: StrNumber) {
     let name = &mut st.input.name_of_file;
     name.clear();
     for part in [a, n, e] {
@@ -986,8 +987,8 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     st.scanner.scanner_status = save_scanner_status;
 
     begin_name(st);
-    let start = st.strings.str_start[(s - TOO_BIG_CHAR) as usize];
-    let end = st.strings.str_start[(s + 1 - TOO_BIG_CHAR) as usize];
+    let start = st.strings.str_start[s.slot()];
+    let end = st.strings.str_start[s.next().slot()];
     for i in start..end {
         let c = st.strings.str_pool[i as usize];
         more_name(st, c)?;
@@ -1100,7 +1101,7 @@ pub(crate) fn start_input(
     rescan_opened_name(st)?;
 
     let name = make_name_string(st)?;
-    st.input.cur_input.name = name;
+    st.input.cur_input.name = name.0;
     let in_open = st.input.in_open as usize;
     st.input.source_filename_stack[in_open] = name;
     let full_name = st.input.name_of_input_file.clone();
@@ -1108,15 +1109,15 @@ pub(crate) fn start_input(
     st.input.full_source_filename_stack[in_open] = full_name;
 
     if st.input.cur_input.name == st.strings.str_ptr - 1 {
-        let temp_str = st.strings.search_string(st.input.cur_input.name);
-        if temp_str > 0 {
-            st.input.cur_input.name = temp_str;
+        let temp_str = st.strings.search_string(name);
+        if temp_str > StrNumber::NONE {
+            st.input.cur_input.name = temp_str.0;
             st.strings.str_ptr -= 1;
             st.strings.pool_ptr = st.strings.cur_string_start();
         }
     }
 
-    if st.strings.job_name == 0 {
+    if st.strings.job_name == StrNumber::NONE {
         st.strings.job_name = st.scanner.cur_name;
         open_log_file(st)?;
     }

@@ -42,7 +42,7 @@ use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{
     ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
 };
-use crate::units::{FontId, MemPtr, NodeType, Scaled};
+use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
 
 /// A `get_node` request this large merges every free block into the rover list.
 const GET_NODE_HEAD_SENTINEL: i32 = 0x4000_0000;
@@ -93,7 +93,7 @@ pub(crate) fn get_strings_started(st: &mut EngineState) -> Result<(), Abort> {
 
     let spare_size = st.strings.pool_size - st.strings.string_vacancies;
     let loaded = st.strings.load_pool_strings(spare_size)?;
-    if loaded == 0 {
+    if loaded == StrNumber::NONE {
         return Err(Abort::Internal("must increase pool_size"));
     }
     Ok(())
@@ -171,12 +171,12 @@ fn primitive(st: &mut EngineState, ident: &str, c: u8, o: i32) -> Result<(), Abo
                 .id_lookup(&mut st.strings, &st.input.buffer, st.input.first, len)?;
         st.strings.str_ptr -= 1;
         st.strings.discard_cur_string();
-        st.eqtb.set_hash_s1(st.scanner.cur_val, s);
+        st.eqtb.set_text(st.scanner.cur_val, s);
         st.eqtb.prim_lookup(&mut st.strings, s)?
     } else {
         let ch = bytes[0] as i32;
         st.scanner.cur_val = ch + SINGLE_BASE;
-        st.eqtb.prim_lookup(&mut st.strings, ch)?
+        st.eqtb.prim_lookup(&mut st.strings, StrNumber(ch))?
     };
 
     st.eqtb.set_eq(st.scanner.cur_val, c, o, LEVEL_ONE);
@@ -191,7 +191,7 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         st.eqtb.set_int_par(INT_PAR_NEW_LINE_CHAR, -1);
     }
 
-    if st.strings.job_name == 0 {
+    if st.strings.job_name == StrNumber::NONE {
         crate::io::open_log_file(st)?;
     }
 
@@ -380,7 +380,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.hyph.max_hyph_char = TOO_BIG_LANG;
 
     let hyph_len = st.hyph.hyph_size as usize + 1;
-    st.hyph.hyph_word[..hyph_len].fill(0);
+    st.hyph.hyph_word[..hyph_len].fill(StrNumber::NONE);
     st.hyph.hyph_list[..hyph_len].fill(TEX_NULL);
     st.hyph.hyph_link[..hyph_len].fill(0);
 
@@ -399,7 +399,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.mainloop.ins_disc = false;
     st.scanner.after_token = 0;
     st.errors.long_help_seen = false;
-    st.strings.format_ident = 0;
+    st.strings.format_ident = StrNumber::NONE;
 
     st.shipout.write_open = [false; 18];
 
@@ -422,7 +422,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.stop_at_space = true;
 }
 
-fn initialize_more_initex_variables(st: &mut EngineState, format_ident: i32) {
+fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumber) {
     let set_family = |x: i32| (x & 0xFF) << 24;
     let set_class = |x: i32| (x & 0x07) << 21;
 
@@ -599,7 +599,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: i32) {
 
 fn set_frozen_text(st: &mut EngineState, p: i32, text: &str) -> Result<(), Abort> {
     let s = st.strings.make_tex_string(text)?;
-    st.eqtb.set_hash_s1(p, s);
+    st.eqtb.set_text(p, s);
     Ok(())
 }
 
@@ -723,8 +723,8 @@ impl FontState {
         self.font_size = PerFont::filled(len, Scaled::ZERO);
         self.font_dsize = PerFont::filled(len, Scaled::ZERO);
         self.font_params = PerFont::filled(len, 0);
-        self.font_name = PerFont::filled(len, 0);
-        self.font_area = PerFont::filled(len, 0);
+        self.font_name = PerFont::filled(len, StrNumber::NONE);
+        self.font_area = PerFont::filled(len, StrNumber::NONE);
         self.font_bc = PerFont::filled(len, 0);
         self.font_ec = PerFont::filled(len, 0);
         self.bchar_label = PerFont::filled(len, 0);
@@ -791,11 +791,11 @@ pub(crate) fn initialize_engine(
     st.input.line_stack = vec![0; in_open_words];
     st.input.grp_stack = vec![0; in_open_words];
     st.input.if_stack = vec![MemPtr::from_raw(0); in_open_words];
-    st.input.source_filename_stack = vec![0; in_open_words];
-    st.input.full_source_filename_stack = vec![0; in_open_words];
+    st.input.source_filename_stack = vec![StrNumber::NONE; in_open_words];
+    st.input.full_source_filename_stack = vec![StrNumber::NONE; in_open_words];
     st.input.eof_seen = vec![false; in_open_words];
     st.input.param_stack = vec![MemPtr::default(); st.input.param_size as usize + 1];
-    st.hyph.hyph_word = vec![0; hyph_words];
+    st.hyph.hyph_word = vec![StrNumber::NONE; hyph_words];
     st.hyph.hyph_list = vec![0; hyph_words];
     st.hyph.hyph_link = vec![0; hyph_words];
 
@@ -877,14 +877,14 @@ pub(crate) fn initialize_engine(
     st.errors.tally = 0;
     st.shipout.term_offset = 0;
     st.shipout.file_offset = 0;
-    st.strings.job_name = 0;
+    st.strings.job_name = StrNumber::NONE;
     st.scanner.name_in_progress = false;
     st.errors.log_opened = false;
 
     st.input.input_ptr = 0;
     st.input.max_in_stack = 0;
-    st.input.source_filename_stack[0] = 0;
-    st.input.full_source_filename_stack[0] = 0;
+    st.input.source_filename_stack[0] = StrNumber::NONE;
+    st.input.full_source_filename_stack[0] = StrNumber::NONE;
     st.input.in_open = 0;
     st.input.open_parens = 0;
     st.input.max_buf_stack = 0;

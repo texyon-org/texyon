@@ -32,7 +32,7 @@ use crate::scan::{
     OTHER_TOKEN, SPACE_TOKEN,
 };
 use crate::state::{EngineState, MemState};
-use crate::units::{FontId, MemIdx, MemPtr, Scaled};
+use crate::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
 
 pub(crate) const IF_CHAR_CODE: i16 = 0;
 pub(crate) const IF_CAT_CODE: i16 = 1;
@@ -480,7 +480,7 @@ fn unseal_pending_str(st: &mut EngineState, saved: &SavedScan) {
 }
 
 /// Scans a general text and returns it as a new pool string.
-fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<i32, Abort> {
+fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<StrNumber, Abort> {
     crate::scan::scan_pdf_ext_toks(st)?;
     if st.shipout.selector == SELECTOR_NEW_STRING {
         return Err(Abort::PdfError(&[
@@ -504,7 +504,7 @@ fn scan_text_to_string(st: &mut EngineState, saved: &SavedScan) -> Result<i32, A
 fn ins_file_query_result(
     st: &mut EngineState,
     saved: &SavedScan,
-    s: i32,
+    s: StrNumber,
     b: i32,
 ) -> Result<(), Abort> {
     let tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
@@ -733,7 +733,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             }
         }
         JOB_NAME_CODE => {
-            if st.strings.job_name == 0 {
+            if st.strings.job_name == StrNumber::NONE {
                 crate::io::open_log_file(st)?;
             }
         }
@@ -796,7 +796,7 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
         }
         JOB_NAME_CODE => {
             let job_name = st.strings.job_name;
-            crate::output::print_file_name(st, job_name, 0, 0);
+            crate::output::print_file_name(st, job_name, StrNumber::NONE, StrNumber::NONE);
         }
         _ => {}
     }

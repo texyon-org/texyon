@@ -2,12 +2,10 @@
 
 use crate::cmd::{CHAR_GIVEN, CHAR_NUM, LETTER, OTHER_CHAR, RIGHT_BRACE, SPACER};
 pub(crate) use crate::consts::BIGGEST_LANG;
-use crate::consts::{
-    BIGGEST_CHAR, INT_PAR_LANGUAGE, INT_PAR_SAVING_HYPH_CODES, MIN_TRIE_OP, TOO_BIG_CHAR,
-};
+use crate::consts::{BIGGEST_CHAR, INT_PAR_LANGUAGE, INT_PAR_SAVING_HYPH_CODES, MIN_TRIE_OP};
 use crate::errors::Abort;
 use crate::state::{EngineState, EqtbState, HyphState};
-use crate::units::MemPtr;
+use crate::units::{MemPtr, StrNumber};
 
 pub(crate) const TRIE_OP_SIZE: i32 = 35_111;
 const NEG_TRIE_OP_SIZE: i32 = -TRIE_OP_SIZE;
@@ -677,7 +675,9 @@ fn store_hyph_exception(st: &mut EngineState, mut n: i16, p: MemPtr) -> Result<(
     let mut s = st.strings.make_string()?;
 
     if st.hyph.hyph_next <= HYPH_PRIME {
-        while st.hyph.hyph_next > 0 && st.hyph.hyph_word[(st.hyph.hyph_next - 1) as usize] > 0 {
+        while st.hyph.hyph_next > 0
+            && st.hyph.hyph_word[(st.hyph.hyph_next - 1) as usize] > StrNumber::NONE
+        {
             st.hyph.hyph_next -= 1;
         }
     }
@@ -693,15 +693,15 @@ fn store_hyph_exception(st: &mut EngineState, mut n: i16, p: MemPtr) -> Result<(
 
     loop {
         let k = st.hyph.hyph_word[h as usize];
-        if k == 0 {
+        if k == StrNumber::NONE {
             break;
         }
 
         if st.strings.length(k) == st.strings.length(s) {
             let strings = &st.strings;
-            let u = strings.str_start[(k - TOO_BIG_CHAR) as usize] as usize;
-            let end = strings.str_start[(k + 1 - TOO_BIG_CHAR) as usize] as usize;
-            let v = strings.str_start[(s - TOO_BIG_CHAR) as usize] as usize;
+            let u = strings.str_start[k.slot()] as usize;
+            let end = strings.str_start[k.next().slot()] as usize;
+            let v = strings.str_start[s.slot()] as usize;
             if strings.str_pool[u..end] == strings.str_pool[v..v + (end - u)] {
                 st.strings.str_ptr -= 1;
                 st.strings.pool_ptr = st.strings.cur_string_start();

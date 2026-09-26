@@ -4,9 +4,10 @@ use crate::bridge::{
     data_md5, get_file_md5, input_get_mtime, input_get_size, input_open, input_read,
     TTBC_FILE_FORMAT_TEX,
 };
-use crate::consts::{EMPTY_STRING, INVALID_HANDLE, TOO_BIG_CHAR};
+use crate::consts::{EMPTY_STRING, INVALID_HANDLE};
 use crate::errors::Abort;
 use crate::state::{ShipoutState, StringsState, TexmfState};
+use crate::units::StrNumber;
 use crate::utf8::{next_utf8_char, utf16_units, FIRST_BYTE_MARK};
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
@@ -68,12 +69,12 @@ impl StringsState {
     /// Encodes pool string `s` as UTF-8. Single-character strings (`s` below
     /// 65536) come out empty, and unpaired low surrogates are kept as 3-byte
     /// sequences.
-    pub(crate) fn texstring_utf8(&self, s: i32) -> Vec<u8> {
-        if s < TOO_BIG_CHAR {
+    pub(crate) fn texstring_utf8(&self, s: StrNumber) -> Vec<u8> {
+        if !s.is_pool_string() {
             return Vec::new();
         }
-        let base = self.str_start[(s - TOO_BIG_CHAR) as usize];
-        let len = self.str_start[(s + 1 - TOO_BIG_CHAR) as usize] - base;
+        let base = self.str_start[s.slot()];
+        let len = self.str_start[s.next().slot()] - base;
         let unit = |i: i32| self.str_pool[(base + i) as usize] as u32;
 
         let mut out = Vec::with_capacity(len as usize * 3);
@@ -111,7 +112,7 @@ impl StringsState {
     }
 
     /// Pool string `s` in UTF-8, cut at its first NUL as C saw it.
-    pub(crate) fn texstring_bytes(&self, s: i32) -> Vec<u8> {
+    pub(crate) fn texstring_bytes(&self, s: StrNumber) -> Vec<u8> {
         let mut bytes = self.texstring_utf8(s);
         if let Some(nul) = bytes.iter().position(|&b| b == 0) {
             bytes.truncate(nul);
@@ -157,7 +158,7 @@ impl StringsState {
     }
 
     /// Converts UTF-8 bytes into a new pool string.
-    pub(crate) fn make_tex_string(&mut self, s: impl AsRef<[u8]>) -> Result<i32, Abort> {
+    pub(crate) fn make_tex_string(&mut self, s: impl AsRef<[u8]>) -> Result<StrNumber, Abort> {
         let mut s = s.as_ref();
         if s.is_empty() {
             return Ok(EMPTY_STRING);
@@ -175,7 +176,7 @@ impl StringsState {
     }
 
     /// Appends the hex MD5 of file (or string) `s` to the pool.
-    pub(crate) fn md5_sum(&mut self, s: i32, file: bool) {
+    pub(crate) fn md5_sum(&mut self, s: StrNumber, file: bool) {
         let mut digest = [0u8; 16];
         let xname = self.texstring_bytes(s);
 
@@ -196,7 +197,7 @@ impl StringsState {
 /// `Err` if the pool is too small.
 pub(crate) fn make_src_special(
     st: &mut crate::state::EngineState,
-    srcfilename: i32,
+    srcfilename: StrNumber,
     lineno: i32,
 ) -> Result<i32, ()> {
     let old_pool_ptr = st.strings.pool_ptr;
@@ -213,12 +214,12 @@ pub(crate) fn make_src_special(
 }
 
 impl StringsState {
-    fn open_tex_file(&self, s: i32) -> usize {
+    fn open_tex_file(&self, s: StrNumber) -> usize {
         input_open(&self.texstring_bytes(s), TTBC_FILE_FORMAT_TEX, false)
     }
 
     /// Appends the decimal size of file `s` to the pool.
-    pub(crate) fn file_size(&mut self, s: i32) -> Result<(), Abort> {
+    pub(crate) fn file_size(&mut self, s: StrNumber) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
             return Ok(());
@@ -236,7 +237,7 @@ impl StringsState {
     /// Appends a hex dump of `length` bytes of file `s` from `offset` to the pool.
     pub(crate) fn file_dump(
         &mut self,
-        s: i32,
+        s: StrNumber,
         offset: libc::c_int,
         length: libc::c_int,
     ) -> Result<(), Abort> {
@@ -267,7 +268,11 @@ impl StringsState {
 }
 
 /// Whether `srcfilename:lineno` differs from the last remembered source.
-pub(crate) fn is_new_source(st: &crate::state::EngineState, srcfilename: i32, lineno: i32) -> bool {
+pub(crate) fn is_new_source(
+    st: &crate::state::EngineState,
+    srcfilename: StrNumber,
+    lineno: i32,
+) -> bool {
     let name = st.strings.texstring_bytes(srcfilename);
     let last_name = st.texmf.last_source_name.as_deref().unwrap_or_default();
     name != last_name || lineno != st.texmf.last_lineno
@@ -275,7 +280,7 @@ pub(crate) fn is_new_source(st: &crate::state::EngineState, srcfilename: i32, li
 
 pub(crate) fn remember_source_info(
     st: &mut crate::state::EngineState,
-    srcfilename: i32,
+    srcfilename: StrNumber,
     lineno: i32,
 ) {
     st.texmf.last_source_name = Some(st.strings.texstring_bytes(srcfilename));
@@ -358,7 +363,7 @@ impl TexmfState {
 
 impl StringsState {
     /// Appends the modification date of file `s` to the pool as a PDF date.
-    pub(crate) fn file_mod_date(&mut self, s: i32) -> Result<(), Abort> {
+    pub(crate) fn file_mod_date(&mut self, s: StrNumber) -> Result<(), Abort> {
         let handle = self.open_tex_file(s);
         if handle == INVALID_HANDLE {
             return Ok(());

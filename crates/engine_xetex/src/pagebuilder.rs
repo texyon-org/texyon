@@ -358,7 +358,7 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
         st.shipout.page_tail = PAGE_HEAD;
     }
     let discards = st.scanner.disc_ptr[LAST_BOX_CODE as usize];
-    st.mem.flush_node_list(discards.0)?;
+    st.mem.flush_node_list(discards)?;
     st.scanner.disc_ptr[LAST_BOX_CODE as usize] = MemPtr::NULL;
     crate::shipout::ship_out(st, page)?;
     st.eqtb.set_box_reg(255, MemPtr::NULL);
@@ -671,7 +671,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
                 CONTRIB_HEAD.set_link(&mut st.mem, next);
                 p.set_link(&mut st.mem, MemPtr::NULL);
                 if st.eqtb.int_par(INT_PAR_SAVING_VDISCARDS) <= 0 {
-                    st.mem.flush_node_list(p.0)?;
+                    st.mem.flush_node_list(p)?;
                 } else {
                     let discards = &mut st.scanner.disc_ptr;
                     if discards[LAST_BOX_CODE as usize].is_null() {

@@ -1717,11 +1717,11 @@ fn print_hpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     capture_to_diagnostic(st, None);
     print_ln(st);
     st.errors.font_in_short_display = NULL_FONT;
-    let list = box_ptr.list_ptr(&st.mem).0;
+    let list = box_ptr.list_ptr(&st.mem);
     short_display(st, list);
     print_ln(st);
     begin_diagnostic(st);
-    show_box(st, box_ptr.idx().0);
+    show_box(st, box_ptr.idx());
     end_diagnostic(st, true);
 }
 
@@ -1963,7 +1963,7 @@ fn print_vpack_common_ending(st: &mut EngineState, box_ptr: AnyBox) {
     }
     capture_to_diagnostic(st, None);
     begin_diagnostic(st);
-    show_box(st, box_ptr.idx().0);
+    show_box(st, box_ptr.idx());
     end_diagnostic(st, true);
 }
 

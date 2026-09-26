@@ -8,7 +8,7 @@ use crate::errors::Abort;
 use crate::io::u_close;
 use crate::node::{NodePtr, PseudoLineNode};
 use crate::state::{EngineState, InputClusterState, MemState};
-use crate::units::MemPtr;
+use crate::units::{MemPtr, StrNumber};
 
 pub(crate) const PARAMETER: u16 = 0;
 pub(crate) const U_TEMPLATE: u16 = 1;
@@ -157,8 +157,8 @@ pub(crate) fn begin_file_reading(st: &mut EngineState) -> Result<(), Abort> {
     push_input(st)?;
     let idx = st.input.in_open as usize;
     st.input.cur_input.index = idx as u16;
-    st.input.source_filename_stack[idx] = 0;
-    st.input.full_source_filename_stack[idx] = 0;
+    st.input.source_filename_stack[idx] = StrNumber::NONE;
+    st.input.full_source_filename_stack[idx] = StrNumber::NONE;
     st.input.eof_seen[idx] = false;
     st.input.grp_stack[idx] = st.save_stack.cur_boundary;
     st.input.if_stack[idx] = st.scanner.cond_ptr;
