@@ -2015,13 +2015,11 @@ pub(crate) fn append_src_special_in(st: &mut EngineState) -> Result<(), InsertSr
     let Some(fname) = new_source_position_in(st) else {
         return Ok(());
     };
-    let w = crate::mem::new_whatsit(
-        &mut st.input.cur_list,
-        &mut st.mem,
-        WhatsitSubtype::Special,
-        WRITE_NODE_SIZE,
-    )
-    .ok_or(InsertSrcAbort::MainMemory)?;
+    let w = st
+        .input
+        .cur_list
+        .new_whatsit(&mut st.mem, WhatsitSubtype::Special, WRITE_NODE_SIZE)
+        .ok_or(InsertSrcAbort::MainMemory)?;
     w.set_write_stream(&mut st.mem, 0);
     let d = st.mem.get_avail().ok_or(InsertSrcAbort::MainMemory)?;
     st.scanner.def_ref = d;
@@ -2098,10 +2096,11 @@ fn new_whatsit_in(
     subtype: WhatsitSubtype,
     size: i32,
 ) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
-    Ok(
-        crate::mem::new_whatsit(&mut st.input.cur_list, &mut st.mem, subtype, size)
-            .ok_or(NodeRecycleAbort::Overflow)?,
-    )
+    Ok(st
+        .input
+        .cur_list
+        .new_whatsit(&mut st.mem, subtype, size)
+        .ok_or(NodeRecycleAbort::Overflow)?)
 }
 
 /// Append an `\openout`/`\write`/`\closeout` whatsit and scan its stream number.

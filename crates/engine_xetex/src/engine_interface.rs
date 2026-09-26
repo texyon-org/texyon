@@ -1,5 +1,6 @@
 //! Programmatic interface for configuring and launching the XeTeX engine.
 
+use crate::state::ConfigState;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 // The host sets these before an `EngineState` exists, so they live here until
@@ -11,13 +12,15 @@ static CFG_SEMANTIC_PAGINATION: AtomicBool = AtomicBool::new(false);
 static CFG_SHELL_ESCAPE: AtomicBool = AtomicBool::new(false);
 static CFG_DETERMINISTIC_MODE: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn apply_config(cfg: &mut crate::state::ConfigState) {
-    cfg.halt_on_error_p = CFG_HALT_ON_ERROR_P.load(Ordering::Relaxed);
-    cfg.in_initex_mode = CFG_IN_INITEX_MODE.load(Ordering::Relaxed);
-    cfg.synctex_enabled = CFG_SYNCTEX_ENABLED.load(Ordering::Relaxed);
-    cfg.semantic_pagination_enabled = CFG_SEMANTIC_PAGINATION.load(Ordering::Relaxed);
-    cfg.shell_escape_enabled = CFG_SHELL_ESCAPE.load(Ordering::Relaxed);
-    cfg.deterministic_mode = CFG_DETERMINISTIC_MODE.load(Ordering::Relaxed);
+impl ConfigState {
+    pub(crate) fn apply_config(&mut self) {
+        self.halt_on_error_p = CFG_HALT_ON_ERROR_P.load(Ordering::Relaxed);
+        self.in_initex_mode = CFG_IN_INITEX_MODE.load(Ordering::Relaxed);
+        self.synctex_enabled = CFG_SYNCTEX_ENABLED.load(Ordering::Relaxed);
+        self.semantic_pagination_enabled = CFG_SEMANTIC_PAGINATION.load(Ordering::Relaxed);
+        self.shell_escape_enabled = CFG_SHELL_ESCAPE.load(Ordering::Relaxed);
+        self.deterministic_mode = CFG_DETERMINISTIC_MODE.load(Ordering::Relaxed);
+    }
 }
 
 #[no_mangle]

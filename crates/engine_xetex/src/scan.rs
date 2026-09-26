@@ -49,7 +49,9 @@ use crate::output::{
     print_err_in, print_esc_cstr_in, print_int_in, print_nl_cstr_in,
 };
 use crate::packaging::{ADDITIONAL, EXACTLY};
-use crate::state::{EngineState, EqtbState, ErrorState, GroupCode, MemState, ScannerState};
+use crate::state::{
+    EngineState, EqtbState, ErrorState, GroupCode, InputClusterState, MemState, ScannerState,
+};
 use crate::units::{MemIdx, MemPtr, NodeType, Scaled};
 use std::ffi::CStr;
 
@@ -1062,41 +1064,43 @@ fn hex_digit_value(c: i32) -> i32 {
     }
 }
 
-/// Reduces a `^^` sequence at `buffer[k - 1..]` inside a control-sequence name.
-/// Returns whether the buffer changed, in which case the name must be rescanned.
-#[cold]
-fn reduce_cs_sup_mark(input: &mut crate::state::InputClusterState, k: i32, chr: i32) -> bool {
-    let limit = input.cur_input.limit;
-    let buf = &mut input.buffer;
-    let mut sup_count: i32 = 2;
-    while sup_count < 6
-        && k + 2 * sup_count - 2 <= limit
-        && buf[(k + sup_count - 1) as usize] == chr
-    {
-        sup_count += 1;
-    }
-    let digits = (k + sup_count - 1)..(k + 2 * sup_count - 1);
-    let (new_chr, shift) = if digits.clone().all(|i| is_lc_hex(buf[i as usize])) {
-        let new_chr = digits.fold(0, |v, i| 16 * v + hex_digit_value(buf[i as usize]));
-        if new_chr > BIGGEST_USV {
-            return false;
+impl InputClusterState {
+    /// Reduces a `^^` sequence at `buffer[k - 1..]` inside a control-sequence name.
+    /// Returns whether the buffer changed, in which case the name must be rescanned.
+    #[cold]
+    fn reduce_cs_sup_mark(&mut self, k: i32, chr: i32) -> bool {
+        let limit = self.cur_input.limit;
+        let buf = &mut self.buffer;
+        let mut sup_count: i32 = 2;
+        while sup_count < 6
+            && k + 2 * sup_count - 2 <= limit
+            && buf[(k + sup_count - 1) as usize] == chr
+        {
+            sup_count += 1;
         }
-        (new_chr, 2 * sup_count - 1)
-    } else {
-        let c = buf[(k + 1) as usize];
-        if c >= 128 {
-            return false;
+        let digits = (k + sup_count - 1)..(k + 2 * sup_count - 1);
+        let (new_chr, shift) = if digits.clone().all(|i| is_lc_hex(buf[i as usize])) {
+            let new_chr = digits.fold(0, |v, i| 16 * v + hex_digit_value(buf[i as usize]));
+            if new_chr > BIGGEST_USV {
+                return false;
+            }
+            (new_chr, 2 * sup_count - 1)
+        } else {
+            let c = buf[(k + 1) as usize];
+            if c >= 128 {
+                return false;
+            }
+            (if c < 64 { c + 64 } else { c - 64 }, 2)
+        };
+        buf[(k - 1) as usize] = new_chr;
+        self.cur_input.limit -= shift;
+        let mut i = k;
+        while i <= self.cur_input.limit {
+            self.buffer[i as usize] = self.buffer[(i + shift) as usize];
+            i += 1;
         }
-        (if c < 64 { c + 64 } else { c - 64 }, 2)
-    };
-    buf[(k - 1) as usize] = new_chr;
-    input.cur_input.limit -= shift;
-    let mut i = k;
-    while i <= input.cur_input.limit {
-        input.buffer[i as usize] = input.buffer[(i + shift) as usize];
-        i += 1;
+        true
     }
-    true
 }
 
 /// The central tokenizer.
@@ -1190,7 +1194,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                                             if cat == SUP_MARK
                                                 && st.input.buffer[k as usize] == chr
                                                 && k < st.input.cur_input.limit
-                                                && reduce_cs_sup_mark(&mut st.input, k, chr)
+                                                && st.input.reduce_cs_sup_mark(k, chr)
                                             {
                                                 continue 'start_cs;
                                             }
@@ -1206,7 +1210,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                                         } else if first_cat == SUP_MARK
                                             && st.input.buffer[k as usize] == first_chr
                                             && k < st.input.cur_input.limit
-                                            && reduce_cs_sup_mark(&mut st.input, k, first_chr)
+                                            && st.input.reduce_cs_sup_mark(k, first_chr)
                                         {
                                             continue 'start_cs;
                                         }

@@ -69,6 +69,7 @@ const SCRIPT_STYLE: i16 = 4;
 
 use crate::cmd::{ACCENT, DELIM_NUM, LETTER, MATH_SHIFT, OTHER_CHAR, RELAX, SPACER, SUP_MARK};
 use crate::input::{EVERY_DISPLAY_TEXT, EVERY_MATH_TEXT};
+use crate::mem_types::ListStateRecord;
 use crate::ot_math::{GlyphAssembly, ScriptKind};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 
@@ -280,16 +281,15 @@ fn math_kern_in(st: &mut EngineState, p: NodePtr<KernNode>, m: i32) {
     }
 }
 
-pub fn flush_math(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-) -> Result<(), &'static std::ffi::CStr> {
-    mem.flush_node_list(cl.head.link(mem).0)?;
-    mem.flush_node_list(cl.aux_s1())?;
-    cl.head.set_link(mem, MemPtr::NULL);
-    cl.tail = cl.head;
-    cl.set_aux_s1(TEX_NULL);
-    Ok(())
+impl ListStateRecord {
+    pub fn flush_math(&mut self, mem: &mut MemState) -> Result<(), &'static std::ffi::CStr> {
+        mem.flush_node_list(self.head.link(mem).0)?;
+        mem.flush_node_list(self.aux_s1())?;
+        self.head.set_link(mem, MemPtr::NULL);
+        self.tail = self.head;
+        self.set_aux_s1(TEX_NULL);
+        Ok(())
+    }
 }
 
 fn clean_box_in(
@@ -2639,32 +2639,30 @@ pub(crate) fn start_eq_no_in(
     Ok(())
 }
 
-fn apply_math_limit_switch(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-    limit: u16,
-) -> bool {
-    let tail = cl.tail.0;
-    if cl.head.0 == tail {
-        return false;
-    }
-    match mem.classify_noad(MemIdx::new(tail)) {
-        Ok(Some(noad)) if noad.noad_type(mem) == NodeType::OpNoad => {
-            noad.set_subtype(mem, limit);
-            true
+impl ListStateRecord {
+    fn apply_math_limit_switch(&mut self, mem: &mut MemState, limit: u16) -> bool {
+        let tail = self.tail.0;
+        if self.head.0 == tail {
+            return false;
         }
-        _ => false,
+        match mem.classify_noad(MemIdx::new(tail)) {
+            Ok(Some(noad)) if noad.noad_type(mem) == NodeType::OpNoad => {
+                noad.set_subtype(mem, limit);
+                true
+            }
+            _ => false,
+        }
     }
 }
 
 pub(crate) fn math_limit_switch_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    if apply_math_limit_switch(
-        &mut st.input.cur_list,
-        &mut st.mem,
-        st.scanner.cur_chr as u16,
-    ) {
+    if st
+        .input
+        .cur_list
+        .apply_math_limit_switch(&mut st.mem, st.scanner.cur_chr as u16)
+    {
         return Ok(());
     }
     crate::output::print_err_in(st, c"Limit controls must follow a math operator");
@@ -2673,128 +2671,147 @@ pub(crate) fn math_limit_switch_in(
     crate::main_control::mc_propagate_error(crate::errors::error_in(st))
 }
 
-fn append_radical_noad(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
-    let node = NodePtr::<Noad>::alloc_radical(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    cl.tail_append(mem, node.ptr());
-    node.clear_fields(mem);
-    Ok(node)
+impl ListStateRecord {
+    fn append_radical_noad(
+        &mut self,
+        mem: &mut MemState,
+    ) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+        let node = NodePtr::<Noad>::alloc_radical(mem).ok_or(NodeRecycleAbort::Overflow)?;
+        self.tail_append(mem, node.ptr());
+        node.clear_fields(mem);
+        Ok(node)
+    }
 }
 
 pub(crate) fn math_radical_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    let tail = append_radical_noad(&mut st.input.cur_list, &mut st.mem)?;
+    let tail = st.input.cur_list.append_radical_noad(&mut st.mem)?;
     scan_delimiter_in(st, tail.left_delimiter(), true)?;
     crate::scan::scan_math_in(st, tail.nucleus())
 }
 
-fn append_choices_core(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-    save_stack: &mut SaveStackState,
-) -> Result<(), NodeRecycleAbort> {
-    let choice = mem.new_choice().ok_or(NodeRecycleAbort::Overflow)?;
-    cl.tail_append(mem, choice.ptr());
-    save_stack.save_ptr += 1;
-    save_stack.set_saved(-1, 0);
-    Ok(())
+impl ListStateRecord {
+    fn append_choices_core(
+        &mut self,
+        mem: &mut MemState,
+        save_stack: &mut SaveStackState,
+    ) -> Result<(), NodeRecycleAbort> {
+        let choice = mem.new_choice().ok_or(NodeRecycleAbort::Overflow)?;
+        self.tail_append(mem, choice.ptr());
+        save_stack.save_ptr += 1;
+        save_stack.set_saved(-1, 0);
+        Ok(())
+    }
 }
 
 pub(crate) fn append_choices_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
-    append_choices_core(&mut st.input.cur_list, &mut st.mem, &mut st.save_stack)?;
+    st.input
+        .cur_list
+        .append_choices_core(&mut st.mem, &mut st.save_stack)?;
     crate::main_control::push_math_in(st, GroupCode::MathChoice)?;
     crate::scan::scan_left_brace_in(st)?;
     Ok(())
 }
 
-fn fin_mlist(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-    p: impl crate::units::MemAddr,
-) -> Result<i32, &'static std::ffi::CStr> {
-    let p = p.addr();
-    let q;
-    let aux = cl.aux_s1();
-    if aux != TEX_NULL {
-        // SAFETY: a math list's `incompleat_noad` is a fraction noad.
-        let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
-        aux_noad.subscr().set_math_type(mem, SUB_MLIST);
-        aux_noad.subscr().set_info(mem, cl.head.link(mem));
-        if p == TEX_NULL {
-            q = aux;
-        } else {
-            q = aux_noad.supscr().info(mem).0;
-            let q_idx = MemIdx::new(q);
-            // SAFETY: the numerator of an open `\middle` group is a noad list.
-            let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
-            let etex_aux = cl.e_tex_aux.0;
-            if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
-                return Err(c"right");
+impl ListStateRecord {
+    fn fin_mlist(
+        &mut self,
+        mem: &mut MemState,
+        p: impl crate::units::MemAddr,
+    ) -> Result<i32, &'static std::ffi::CStr> {
+        let p = p.addr();
+        let q;
+        let aux = self.aux_s1();
+        if aux != TEX_NULL {
+            // SAFETY: a math list's `incompleat_noad` is a fraction noad.
+            let aux_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(aux)) };
+            aux_noad.subscr().set_math_type(mem, SUB_MLIST);
+            aux_noad.subscr().set_info(mem, self.head.link(mem));
+            if p == TEX_NULL {
+                q = aux;
+            } else {
+                q = aux_noad.supscr().info(mem).0;
+                let q_idx = MemIdx::new(q);
+                // SAFETY: the numerator of an open `\middle` group is a noad list.
+                let q_noad = unsafe { NodePtr::<Noad>::from_idx_unchecked(q_idx) };
+                let etex_aux = self.e_tex_aux.0;
+                if q_noad.noad_type(mem) != NodeType::LeftNoad || etex_aux == TEX_NULL {
+                    return Err(c"right");
+                }
+                // SAFETY: a math-left group keeps its last noad in `eTeX_aux`.
+                let etex_aux_noad =
+                    unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux)) };
+                let etex_link = etex_aux_noad.link(mem);
+                aux_noad.supscr().set_info(mem, etex_link);
+                etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
+                aux_noad.set_link(mem, MemPtr::from_raw(p));
             }
-            // SAFETY: a math-left group keeps its last noad in `eTeX_aux`.
-            let etex_aux_noad =
-                unsafe { NodePtr::<Noad>::from_idx_unchecked(MemIdx::new(etex_aux)) };
-            let etex_link = etex_aux_noad.link(mem);
-            aux_noad.supscr().set_info(mem, etex_link);
-            etex_aux_noad.set_link(mem, MemPtr::from_raw(aux));
-            aux_noad.set_link(mem, MemPtr::from_raw(p));
+        } else {
+            self.tail.set_link(mem, MemPtr::from_raw(p));
+            q = self.head.link(mem).0;
         }
-    } else {
-        cl.tail.set_link(mem, MemPtr::from_raw(p));
-        q = cl.head.link(mem).0;
+        Ok(q)
     }
-    Ok(q)
 }
 
 pub(crate) fn fin_mlist_in(
     st: &mut crate::state::EngineState,
     p: i32,
 ) -> Result<i32, crate::main_control::MainControlAbort> {
-    let q = fin_mlist(&mut st.input.cur_list, &mut st.mem, p)
+    let q = st
+        .input
+        .cur_list
+        .fin_mlist(&mut st.mem, p)
         .map_err(crate::main_control::MainControlAbort::Confusion)?;
     st.mem.pop_nest(&mut st.input);
     Ok(q)
 }
 
-fn build_choices_finish(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-    save_stack: &mut SaveStackState,
-    p: impl crate::units::MemAddr,
-) -> bool {
-    let p = p.addr();
-    // SAFETY: a math-choice group builds its branches after the choice node.
-    let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(cl.tail.0)) };
-    let p_ptr = MemPtr::from_raw(p);
-    match save_stack.saved(-1) {
-        0 => tail.set_display_mlist(mem, p_ptr),
-        1 => tail.set_text_mlist(mem, p_ptr),
-        2 => tail.set_script_mlist(mem, p_ptr),
-        3 => {
-            tail.set_script_script_mlist(mem, p_ptr);
-            save_stack.save_ptr -= 1;
-            return true;
+impl ListStateRecord {
+    fn build_choices_finish(
+        &mut self,
+        mem: &mut MemState,
+        save_stack: &mut SaveStackState,
+        p: impl crate::units::MemAddr,
+    ) -> bool {
+        let p = p.addr();
+        // SAFETY: a math-choice group builds its branches after the choice node.
+        let tail = unsafe { NodePtr::<ChoiceNode>::from_idx_unchecked(MemIdx::new(self.tail.0)) };
+        let p_ptr = MemPtr::from_raw(p);
+        match save_stack.saved(-1) {
+            0 => tail.set_display_mlist(mem, p_ptr),
+            1 => tail.set_text_mlist(mem, p_ptr),
+            2 => tail.set_script_mlist(mem, p_ptr),
+            3 => {
+                tail.set_script_script_mlist(mem, p_ptr);
+                save_stack.save_ptr -= 1;
+                return true;
+            }
+            _ => {}
         }
-        _ => {}
+        let choice_state = save_stack.saved(-1);
+        save_stack.set_saved(-1, choice_state + 1);
+        false
     }
-    let choice_state = save_stack.saved(-1);
-    save_stack.set_saved(-1, choice_state + 1);
-    false
 }
 
 pub(crate) fn build_choices_in(
     st: &mut crate::state::EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     crate::save::unsave_in(st)?;
-    let p = fin_mlist(&mut st.input.cur_list, &mut st.mem, TEX_NULL)
+    let p = st
+        .input
+        .cur_list
+        .fin_mlist(&mut st.mem, TEX_NULL)
         .map_err(crate::main_control::MainControlAbort::Confusion)?;
     st.mem.pop_nest(&mut st.input);
-    let complete = build_choices_finish(&mut st.input.cur_list, &mut st.mem, &mut st.save_stack, p);
+    let complete = st
+        .input
+        .cur_list
+        .build_choices_finish(&mut st.mem, &mut st.save_stack, p);
     if complete {
         return Ok(());
     }
@@ -2808,55 +2825,57 @@ enum ScriptDuplication {
     Subscript,
 }
 
-fn prepare_sub_sup(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-    cmd: u8,
-) -> Result<(NodePtr<MathField>, Option<ScriptDuplication>), NodeRecycleAbort> {
-    let script = |n: NodePtr<Noad>| {
-        if cmd == SUP_MARK {
-            n.supscr()
-        } else {
-            n.subscr()
-        }
-    };
-    let mut t = EMPTY;
-    let mut p = None;
+impl ListStateRecord {
+    fn prepare_sub_sup(
+        &mut self,
+        mem: &mut MemState,
+        cmd: u8,
+    ) -> Result<(NodePtr<MathField>, Option<ScriptDuplication>), NodeRecycleAbort> {
+        let script = |n: NodePtr<Noad>| {
+            if cmd == SUP_MARK {
+                n.supscr()
+            } else {
+                n.subscr()
+            }
+        };
+        let mut t = EMPTY;
+        let mut p = None;
 
-    if cl.tail != cl.head {
-        if let Ok(Some(n)) = mem.classify_noad(MemIdx::new(cl.tail)) {
-            if n.noad_type(mem).as_raw() < NodeType::LeftNoad.as_raw() {
-                let field = script(n);
-                t = field.math_type(mem);
-                p = Some(field);
+        if self.tail != self.head {
+            if let Ok(Some(n)) = mem.classify_noad(MemIdx::new(self.tail)) {
+                if n.noad_type(mem).as_raw() < NodeType::LeftNoad.as_raw() {
+                    let field = script(n);
+                    t = field.math_type(mem);
+                    p = Some(field);
+                }
             }
         }
+
+        let mut duplicate = None;
+        let p = match p {
+            Some(field) if t == EMPTY => field,
+            _ => {
+                let noad = mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
+                self.tail_append(mem, noad.ptr());
+                if t != EMPTY {
+                    duplicate = Some(if cmd == SUP_MARK {
+                        ScriptDuplication::Superscript
+                    } else {
+                        ScriptDuplication::Subscript
+                    });
+                }
+                script(noad)
+            }
+        };
+        Ok((p, duplicate))
     }
-
-    let mut duplicate = None;
-    let p = match p {
-        Some(field) if t == EMPTY => field,
-        _ => {
-            let noad = mem.new_noad().ok_or(NodeRecycleAbort::Overflow)?;
-            cl.tail_append(mem, noad.ptr());
-            if t != EMPTY {
-                duplicate = Some(if cmd == SUP_MARK {
-                    ScriptDuplication::Superscript
-                } else {
-                    ScriptDuplication::Subscript
-                });
-            }
-            script(noad)
-        }
-    };
-    Ok((p, duplicate))
 }
 
 pub(crate) fn sub_sup_in(
     st: &mut EngineState,
 ) -> Result<(), crate::main_control::MainControlAbort> {
     let cmd = st.scanner.cur_cmd;
-    let (p, duplicate) = prepare_sub_sup(&mut st.input.cur_list, &mut st.mem, cmd)?;
+    let (p, duplicate) = st.input.cur_list.prepare_sub_sup(&mut st.mem, cmd)?;
     if let Some(duplicate) = duplicate {
         match duplicate {
             ScriptDuplication::Superscript => {
@@ -2876,22 +2895,24 @@ pub(crate) fn sub_sup_in(
     crate::scan::scan_math_in(st, p)
 }
 
-fn start_fraction_noad(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
-    let fraction = NodePtr::<Noad>::alloc_fraction(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    cl.set_aux_s1(fraction.idx().0);
-    fraction.set_subtype(mem, NORMAL);
-    fraction.supscr().set_math_type(mem, SUB_MLIST);
-    fraction.supscr().set_info(mem, cl.head.link(mem));
-    fraction.subscr().clear(mem);
-    fraction.left_delimiter().clear(mem);
-    fraction.right_delimiter().clear(mem);
+impl ListStateRecord {
+    fn start_fraction_noad(
+        &mut self,
+        mem: &mut MemState,
+    ) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+        let fraction = NodePtr::<Noad>::alloc_fraction(mem).ok_or(NodeRecycleAbort::Overflow)?;
+        self.set_aux_s1(fraction.idx().0);
+        fraction.set_subtype(mem, NORMAL);
+        fraction.supscr().set_math_type(mem, SUB_MLIST);
+        fraction.supscr().set_info(mem, self.head.link(mem));
+        fraction.subscr().clear(mem);
+        fraction.left_delimiter().clear(mem);
+        fraction.right_delimiter().clear(mem);
 
-    cl.head.set_link(mem, MemPtr::NULL);
-    cl.tail = cl.head;
-    Ok(fraction)
+        self.head.set_link(mem, MemPtr::NULL);
+        self.tail = self.head;
+        Ok(fraction)
+    }
 }
 
 pub(crate) fn math_fraction_in(
@@ -2918,7 +2939,7 @@ pub(crate) fn math_fraction_in(
         ]);
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     } else {
-        let aux = start_fraction_noad(&mut st.input.cur_list, &mut st.mem)?;
+        let aux = st.input.cur_list.start_fraction_noad(&mut st.mem)?;
 
         if c >= DELIMITED_CODE {
             scan_delimiter_in(st, aux.left_delimiter(), false)?;
@@ -2938,15 +2959,17 @@ pub(crate) fn math_fraction_in(
     Ok(())
 }
 
-fn append_accent_noad(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
-    let accent = NodePtr::<Noad>::alloc_accent(mem).ok_or(NodeRecycleAbort::Overflow)?;
-    cl.tail_append(mem, accent.ptr());
-    accent.clear_fields(mem);
-    accent.accent_chr().set_math_type(mem, MATH_CHAR);
-    Ok(accent)
+impl ListStateRecord {
+    fn append_accent_noad(
+        &mut self,
+        mem: &mut MemState,
+    ) -> Result<NodePtr<Noad>, NodeRecycleAbort> {
+        let accent = NodePtr::<Noad>::alloc_accent(mem).ok_or(NodeRecycleAbort::Overflow)?;
+        self.tail_append(mem, accent.ptr());
+        accent.clear_fields(mem);
+        accent.accent_chr().set_math_type(mem, MATH_CHAR);
+        Ok(accent)
+    }
 }
 
 impl MemState {
@@ -3060,7 +3083,7 @@ pub(crate) fn math_ac_in(
         crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
     }
 
-    let tail = append_accent_noad(&mut st.input.cur_list, &mut st.mem)?;
+    let tail = st.input.cur_list.append_accent_noad(&mut st.mem)?;
 
     if st.scanner.cur_chr == 1 {
         if crate::scan::scan_keyword_in(st, c"fixed")? {
@@ -3298,7 +3321,9 @@ fn check_math_fonts_in(
     crate::output::print_err_in(st, msg);
     st.errors.help(&help);
     crate::main_control::mc_propagate_error(crate::errors::error_in(st))?;
-    flush_math(&mut st.input.cur_list, &mut st.mem)
+    st.input
+        .cur_list
+        .flush_math(&mut st.mem)
         .map_err(crate::main_control::MainControlAbort::Confusion)?;
     Ok(true)
 }

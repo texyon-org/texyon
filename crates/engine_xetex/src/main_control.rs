@@ -69,6 +69,7 @@ use crate::input::{
     BACKED_UP, BACKED_UP_CHAR, EVERY_CR_TEXT, EVERY_HBOX_TEXT, EVERY_JOB_TEXT, EVERY_PAR_TEXT,
     EVERY_VBOX_TEXT, INSERTED, INTER_CHAR_TEXT, OUTPUT_TEXT, TOKEN_LIST, U_TEMPLATE, V_TEMPLATE,
 };
+use crate::mem_types::ListStateRecord;
 use crate::packaging::ADDITIONAL;
 
 extern "C" {
@@ -850,7 +851,9 @@ pub(crate) fn fin_row_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
         if st.scanner.cur_pre_head != st.scanner.cur_pre_tail {
             append_list(st, st.scanner.cur_pre_head, st.scanner.cur_pre_tail);
         }
-        crate::packaging::append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, row)?;
+        st.input
+            .cur_list
+            .append_to_vlist(&mut st.mem, &st.eqtb, row)?;
         if st.scanner.cur_head != st.scanner.cur_tail {
             append_list(st, st.scanner.cur_head, st.scanner.cur_tail);
         }
@@ -889,7 +892,9 @@ pub(crate) fn init_align_in(st: &mut EngineState) -> Result<(), MainControlAbort
             "So I've deleted the formulas that preceded this alignment.",
         ]);
         mc_propagate_error(crate::errors::error_in(st))?;
-        crate::math::flush_math(&mut st.input.cur_list, &mut st.mem)
+        st.input
+            .cur_list
+            .flush_math(&mut st.mem)
             .map_err(MainControlAbort::Confusion)?;
     }
 
@@ -1660,7 +1665,9 @@ pub(crate) fn box_end_in(st: &mut EngineState, box_context: i32) -> Result<(), M
                 }
                 st.scanner.pre_adjust_tail = MemPtr::NULL;
             }
-            crate::packaging::append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, b)?;
+            st.input
+                .cur_list
+                .append_to_vlist(&mut st.mem, &st.eqtb, b)?;
             if !st.scanner.adjust_tail.is_null() {
                 if st.scanner.adjust_tail != ADJUST_HEAD {
                     append_list(st, ADJUST_HEAD, st.scanner.adjust_tail);
@@ -2282,24 +2289,27 @@ pub(crate) fn trap_zero_glue(st: &mut EngineState) {
     }
 }
 
-pub(crate) fn fix_language(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-    eqtb: &crate::state::EqtbState,
-) -> Result<(), crate::scan::NodeRecycleAbort> {
-    let l = crate::helpers::norm_lang(eqtb.int_par(INT_PAR_LANGUAGE)) as i32;
-    if l == cl.aux_s1() {
-        return Ok(());
+impl ListStateRecord {
+    pub(crate) fn fix_language(
+        &mut self,
+        mem: &mut MemState,
+        eqtb: &crate::state::EqtbState,
+    ) -> Result<(), crate::scan::NodeRecycleAbort> {
+        let l = crate::helpers::norm_lang(eqtb.int_par(INT_PAR_LANGUAGE)) as i32;
+        if l == self.aux_s1() {
+            return Ok(());
+        }
+        let w = self
+            .new_whatsit(mem, WhatsitSubtype::Language, SMALL_NODE_SIZE)
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        w.set_what_lang(mem, l);
+        self.set_aux_s1(l);
+        let lhm = crate::helpers::norm_min(eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as u16;
+        w.set_what_lhm(mem, lhm);
+        let rhm = crate::helpers::norm_min(eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN)) as u16;
+        w.set_what_rhm(mem, rhm);
+        Ok(())
     }
-    let w = crate::mem::new_whatsit(cl, mem, WhatsitSubtype::Language, SMALL_NODE_SIZE)
-        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
-    w.set_what_lang(mem, l);
-    cl.set_aux_s1(l);
-    let lhm = crate::helpers::norm_min(eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as u16;
-    w.set_what_lhm(mem, lhm);
-    let rhm = crate::helpers::norm_min(eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN)) as u16;
-    w.set_what_rhm(mem, rhm);
-    Ok(())
 }
 
 pub(crate) fn off_save_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
@@ -3329,7 +3339,7 @@ fn use_glyph_metrics(st: &EngineState) -> bool {
 unsafe fn main_loop_native_in(st: &mut EngineState, mf: i32) -> Result<bool, MainControlAbort> {
     if st.input.cur_list.mode > 0 && st.eqtb.int_par(INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
     {
-        fix_language(&mut st.input.cur_list, &mut st.mem, &st.eqtb)?;
+        st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
     st.mainloop.main_h = 0;
     st.mainloop.main_f = mf;
@@ -3682,7 +3692,7 @@ pub(crate) unsafe fn main_control_main_loop_in(
     st.mainloop.false_bchar = st.fonts.font_false_bchar_entry(mf);
     if st.input.cur_list.mode > 0 && st.eqtb.int_par(INT_PAR_LANGUAGE) != st.input.cur_list.aux_s1()
     {
-        fix_language(&mut st.input.cur_list, &mut st.mem, &st.eqtb)?;
+        st.input.cur_list.fix_language(&mut st.mem, &st.eqtb)?;
     }
     st.mainloop.cur_l = st.scanner.cur_chr;
     let ls = overflow_err(st.mem.new_char(FontId(mf), st.mainloop.cur_l as u16))?;

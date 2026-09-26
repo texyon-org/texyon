@@ -757,7 +757,7 @@ unsafe fn tt_run_engine_inner(
     let _pdf_files_guard = OnDrop(|| pdf_files_close_if_open());
 
     let mut st = Box::new(EngineState::default());
-    crate::engine_interface::apply_config(&mut st.config);
+    st.config.apply_config();
     crate::state::set_engine_state_ptr(&mut *st as *mut EngineState);
     let _ptr_guard = OnDrop(|| crate::state::set_engine_state_ptr(std::ptr::null_mut()));
 

@@ -20,6 +20,7 @@ use crate::ext::linebreak_start_in;
 use crate::fonts::{LIG_TAG, QUAD_CODE};
 use crate::hyphenation::HYPH_PRIME;
 use crate::mem::{ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
+use crate::mem_types::ListStateRecord;
 use crate::node::{
     ActiveNode, AnyBox, AnyNode, CharNode, DeltaNode, DiscNode, FixedNode, GlueNode, GlueSpecNode,
     HListNode, LigItem, MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
@@ -2016,118 +2017,122 @@ impl MemState {
     }
 }
 
-/// Append the packed line and the interline penalty, then prune discardable
-/// nodes from the start of the next line. Returns whether the paragraph is done.
-#[allow(clippy::too_many_arguments)]
-fn post_line_break_suffix(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-    scanner: &mut ScannerState,
-    linebreak: &mut LinebreakState,
-    eqtb: &EqtbState,
-    just_box: AnyBox,
-    hpack: PostLineHpack,
-    d: bool,
-    lr_ptr: &mut MemPtr,
-    cur_line: &mut i32,
-) -> Result<bool, NodeRecycleAbort> {
-    scanner.just_box = Some(just_box);
-    just_box.set_shift_amount(mem, Scaled(hpack.cur_indent));
+impl ListStateRecord {
+    /// Append the packed line and the interline penalty, then prune discardable
+    /// nodes from the start of the next line. Returns whether the paragraph is done.
+    #[allow(clippy::too_many_arguments)]
+    fn post_line_break_suffix(
+        &mut self,
+        mem: &mut MemState,
+        scanner: &mut ScannerState,
+        linebreak: &mut LinebreakState,
+        eqtb: &EqtbState,
+        just_box: AnyBox,
+        hpack: PostLineHpack,
+        d: bool,
+        lr_ptr: &mut MemPtr,
+        cur_line: &mut i32,
+    ) -> Result<bool, NodeRecycleAbort> {
+        scanner.just_box = Some(just_box);
+        just_box.set_shift_amount(mem, Scaled(hpack.cur_indent));
 
-    if scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
-        cl.tail.set_link(mem, PRE_ADJUST_HEAD.link(mem));
-        cl.tail = scanner.pre_adjust_tail;
-    }
-    scanner.pre_adjust_tail = MemPtr::NULL;
-
-    crate::packaging::append_to_vlist(cl, mem, eqtb, just_box)?;
-
-    if scanner.adjust_tail != ADJUST_HEAD {
-        cl.tail.set_link(mem, ADJUST_HEAD.link(mem));
-        cl.tail = scanner.adjust_tail;
-    }
-    scanner.adjust_tail = MemPtr::NULL;
-
-    if *cur_line + 1 != linebreak.best_line {
-        let mut pen = mem
-            .etex_penalty(eqtb, ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, *cur_line)
-            .unwrap_or_else(|| eqtb.int_par(INT_PAR_INTER_LINE_PENALTY));
-
-        match mem.etex_penalty(
-            eqtb,
-            ETEX_PENALTIES_PAR_CLUB_PENALTIES,
-            *cur_line - cl.prev_graf,
-        ) {
-            Some(p) => pen += p,
-            None if *cur_line == cl.prev_graf + 1 => pen += eqtb.int_par(INT_PAR_CLUB_PENALTY),
-            None => {}
+        if scanner.pre_adjust_tail != PRE_ADJUST_HEAD {
+            self.tail.set_link(mem, PRE_ADJUST_HEAD.link(mem));
+            self.tail = scanner.pre_adjust_tail;
         }
+        scanner.pre_adjust_tail = MemPtr::NULL;
 
-        let (widow_array, widow_penalty) = if d {
-            (
-                ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
-                INT_PAR_DISPLAY_WIDOW_PENALTY,
-            )
-        } else {
-            (ETEX_PENALTIES_PAR_WIDOW_PENALTIES, INT_PAR_WIDOW_PENALTY)
-        };
-        match mem.etex_penalty(eqtb, widow_array, linebreak.best_line - *cur_line - 1) {
-            Some(p) => pen += p,
-            None if *cur_line + 2 == linebreak.best_line => pen += eqtb.int_par(widow_penalty),
-            None => {}
+        self.append_to_vlist(mem, eqtb, just_box)?;
+
+        if scanner.adjust_tail != ADJUST_HEAD {
+            self.tail.set_link(mem, ADJUST_HEAD.link(mem));
+            self.tail = scanner.adjust_tail;
         }
+        scanner.adjust_tail = MemPtr::NULL;
 
-        if hpack.disc_break {
-            pen += eqtb.int_par(INT_PAR_BROKEN_PENALTY);
-        }
+        if *cur_line + 1 != linebreak.best_line {
+            let mut pen = mem
+                .etex_penalty(eqtb, ETEX_PENALTIES_PAR_INTER_LINE_PENALTIES, *cur_line)
+                .unwrap_or_else(|| eqtb.int_par(INT_PAR_INTER_LINE_PENALTY));
 
-        if pen != 0 {
-            let r = mem.new_penalty(pen).ok_or(NodeRecycleAbort::Overflow)?;
-            cl.tail_append(mem, r.ptr());
-        }
-    }
-
-    *cur_line += 1;
-    linebreak.cur_p = passive_node(linebreak.cur_p).next_break(mem);
-
-    if !linebreak.cur_p.is_null() && !hpack.post_disc_break {
-        let texxet = eqtb.int_par(INT_PAR_TEXXET) > 0;
-        let cur_break = passive_node(linebreak.cur_p).cur_break(mem);
-        let mut r = TEMP_HEAD;
-        let mut q;
-        loop {
-            q = r.link(mem);
-            if q == cur_break || mem.is_char_node(q) {
-                break;
-            }
-            let node = mem.classify(MemIdx::new(q));
-            match node {
-                Ok(node) if node.precedes_break() => break,
-                Ok(AnyNode::Kern(k))
-                    if k.subtype(mem) != EXPLICIT && k.subtype(mem) != SPACE_ADJUSTMENT =>
-                {
-                    break
+            match mem.etex_penalty(
+                eqtb,
+                ETEX_PENALTIES_PAR_CLUB_PENALTIES,
+                *cur_line - self.prev_graf,
+            ) {
+                Some(p) => pen += p,
+                None if *cur_line == self.prev_graf + 1 => {
+                    pen += eqtb.int_par(INT_PAR_CLUB_PENALTY)
                 }
-                _ => {}
+                None => {}
             }
 
-            r = q;
-            if texxet {
-                if let Ok(AnyNode::Math(m)) = node {
-                    mem.update_lr_stack(m, lr_ptr)?;
+            let (widow_array, widow_penalty) = if d {
+                (
+                    ETEX_PENALTIES_PAR_DISPLAY_WIDOW_PENALTIES,
+                    INT_PAR_DISPLAY_WIDOW_PENALTY,
+                )
+            } else {
+                (ETEX_PENALTIES_PAR_WIDOW_PENALTIES, INT_PAR_WIDOW_PENALTY)
+            };
+            match mem.etex_penalty(eqtb, widow_array, linebreak.best_line - *cur_line - 1) {
+                Some(p) => pen += p,
+                None if *cur_line + 2 == linebreak.best_line => pen += eqtb.int_par(widow_penalty),
+                None => {}
+            }
+
+            if hpack.disc_break {
+                pen += eqtb.int_par(INT_PAR_BROKEN_PENALTY);
+            }
+
+            if pen != 0 {
+                let r = mem.new_penalty(pen).ok_or(NodeRecycleAbort::Overflow)?;
+                self.tail_append(mem, r.ptr());
+            }
+        }
+
+        *cur_line += 1;
+        linebreak.cur_p = passive_node(linebreak.cur_p).next_break(mem);
+
+        if !linebreak.cur_p.is_null() && !hpack.post_disc_break {
+            let texxet = eqtb.int_par(INT_PAR_TEXXET) > 0;
+            let cur_break = passive_node(linebreak.cur_p).cur_break(mem);
+            let mut r = TEMP_HEAD;
+            let mut q;
+            loop {
+                q = r.link(mem);
+                if q == cur_break || mem.is_char_node(q) {
+                    break;
+                }
+                let node = mem.classify(MemIdx::new(q));
+                match node {
+                    Ok(node) if node.precedes_break() => break,
+                    Ok(AnyNode::Kern(k))
+                        if k.subtype(mem) != EXPLICIT && k.subtype(mem) != SPACE_ADJUSTMENT =>
+                    {
+                        break
+                    }
+                    _ => {}
+                }
+
+                r = q;
+                if texxet {
+                    if let Ok(AnyNode::Math(m)) = node {
+                        mem.update_lr_stack(m, lr_ptr)?;
+                    }
                 }
             }
+
+            if r != TEMP_HEAD {
+                r.set_link(mem, MemPtr::NULL);
+                mem.flush_node_list(TEMP_HEAD.link(mem))
+                    .map_err(NodeRecycleAbort::Confusion)?;
+                TEMP_HEAD.set_link(mem, q);
+            }
         }
 
-        if r != TEMP_HEAD {
-            r.set_link(mem, MemPtr::NULL);
-            mem.flush_node_list(TEMP_HEAD.link(mem))
-                .map_err(NodeRecycleAbort::Confusion)?;
-            TEMP_HEAD.set_link(mem, q);
-        }
+        Ok(linebreak.cur_p.is_null())
     }
-
-    Ok(linebreak.cur_p.is_null())
 }
 
 /// Cold-abort outcomes deferred out of [`post_line_break_in`].
@@ -2199,8 +2204,7 @@ fn post_line_break_in(st: &mut EngineState, d: bool) -> PostLineBreakOutcome {
             Err(e) => return PostLineBreakOutcome::Node(e),
         };
 
-        match post_line_break_suffix(
-            &mut st.input.cur_list,
+        match st.input.cur_list.post_line_break_suffix(
             &mut st.mem,
             &mut st.scanner,
             &mut st.linebreak,

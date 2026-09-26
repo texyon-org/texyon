@@ -473,16 +473,18 @@ impl MemState {
     }
 }
 
-/// A `size`-word whatsit appended to the current list.
-pub fn new_whatsit(
-    cl: &mut ListStateRecord,
-    mem: &mut MemState,
-    subtype: WhatsitSubtype,
-    size: i32,
-) -> Option<NodePtr<WhatsitNode>> {
-    let p = NodePtr::<WhatsitNode>::alloc(mem, size, subtype)?;
-    cl.tail_append(mem, p.ptr());
-    Some(p)
+impl ListStateRecord {
+    /// A `size`-word whatsit appended to the current list.
+    pub fn new_whatsit(
+        &mut self,
+        mem: &mut MemState,
+        subtype: WhatsitSubtype,
+        size: i32,
+    ) -> Option<NodePtr<WhatsitNode>> {
+        let p = NodePtr::<WhatsitNode>::alloc(mem, size, subtype)?;
+        self.tail_append(mem, p.ptr());
+        Some(p)
+    }
 }
 
 // --- glue spec references ---

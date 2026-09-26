@@ -485,13 +485,15 @@ pub(crate) fn load_picture_in(st: &mut EngineState, is_pdf: bool) -> Result<(), 
     if result == 0 {
         let word_bytes = std::mem::size_of::<crate::mem_types::MemoryWord>();
         let extra_words = pic_path.len().div_ceil(word_bytes) as i32;
-        let pic = crate::mem::new_whatsit(
-            &mut st.input.cur_list,
-            &mut st.mem,
-            WhatsitSubtype::Pic,
-            PIC_NODE_SIZE + extra_words,
-        )
-        .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
+        let pic = st
+            .input
+            .cur_list
+            .new_whatsit(
+                &mut st.mem,
+                WhatsitSubtype::Pic,
+                PIC_NODE_SIZE + extra_words,
+            )
+            .ok_or(crate::scan::NodeRecycleAbort::Overflow)?;
         let mem = &mut st.mem;
         if is_pdf {
             pic.set_subtype(mem, WhatsitSubtype::Pdf as u16);

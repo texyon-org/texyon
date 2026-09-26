@@ -15,6 +15,7 @@ use crate::consts::{
 use crate::errors::ErrorOutcome;
 use crate::main_control::VSPLIT_CODE;
 use crate::mem::{end_lr_type, GARBAGE, TEMP_HEAD};
+use crate::mem_types::ListStateRecord;
 use crate::node::{
     AnyBox, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, HListNode, IsBox, KernNode,
     MarkNode, NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
@@ -517,50 +518,52 @@ impl MemState {
     }
 }
 
-/// Append box `b` to the current vertical list, preceded by interline glue.
-pub fn append_to_vlist(
-    cl: &mut crate::mem_types::ListStateRecord,
-    mem: &mut MemState,
-    eqtb: &EqtbState,
-    b: AnyBox,
-) -> Result<(), NodeRecycleAbort> {
-    let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
-    let prev_depth = cl.aux_s1();
-    if prev_depth > IGNORE_DEPTH {
-        let baseline_skip = eqtb.glue_par(GLUE_PAR_BASELINE_SKIP);
-        let d = baseline_skip.width(mem).0
-            - prev_depth
-            - if upwards {
-                b.depth(mem).0
+impl ListStateRecord {
+    /// Append box `b` to the current vertical list, preceded by interline glue.
+    pub fn append_to_vlist(
+        &mut self,
+        mem: &mut MemState,
+        eqtb: &EqtbState,
+        b: AnyBox,
+    ) -> Result<(), NodeRecycleAbort> {
+        let upwards = eqtb.int_par(INT_PAR_XETEX_UPWARDS) > 0;
+        let prev_depth = self.aux_s1();
+        if prev_depth > IGNORE_DEPTH {
+            let baseline_skip = eqtb.glue_par(GLUE_PAR_BASELINE_SKIP);
+            let d = baseline_skip.width(mem).0
+                - prev_depth
+                - if upwards {
+                    b.depth(mem).0
+                } else {
+                    b.height(mem).0
+                };
+            let p = if d < eqtb.dimen_par(DIMEN_PAR_LINE_SKIP_LIMIT) {
+                mem.new_param_glue(eqtb, GLUE_PAR_LINE_SKIP)
+                    .ok_or(NodeRecycleAbort::Overflow)?
             } else {
-                b.height(mem).0
+                let p = mem
+                    .new_skip_param(eqtb, GLUE_PAR_BASELINE_SKIP)
+                    .ok_or(NodeRecycleAbort::Overflow)?;
+                p.glue_ptr(mem).set_width(mem, Scaled(d));
+                p
             };
-        let p = if d < eqtb.dimen_par(DIMEN_PAR_LINE_SKIP_LIMIT) {
-            mem.new_param_glue(eqtb, GLUE_PAR_LINE_SKIP)
-                .ok_or(NodeRecycleAbort::Overflow)?
+            self.tail_append(mem, p.ptr());
+        }
+        self.tail_append(mem, b.ptr());
+        self.set_aux_s1(if upwards {
+            b.height(mem).0
         } else {
-            let p = mem
-                .new_skip_param(eqtb, GLUE_PAR_BASELINE_SKIP)
-                .ok_or(NodeRecycleAbort::Overflow)?;
-            p.glue_ptr(mem).set_width(mem, Scaled(d));
-            p
-        };
-        cl.tail_append(mem, p.ptr());
+            b.depth(mem).0
+        });
+        Ok(())
     }
-    cl.tail_append(mem, b.ptr());
-    cl.set_aux_s1(if upwards {
-        b.height(mem).0
-    } else {
-        b.depth(mem).0
-    });
-    Ok(())
 }
 
 pub(crate) fn append_to_vlist_emit_in(
     st: &mut EngineState,
     b: AnyBox,
 ) -> Result<(), NodeRecycleAbort> {
-    append_to_vlist(&mut st.input.cur_list, &mut st.mem, &st.eqtb, b)
+    st.input.cur_list.append_to_vlist(&mut st.mem, &st.eqtb, b)
 }
 
 struct VertBreakCursor {
@@ -599,18 +602,20 @@ enum VertBreakUpdateSource {
     Glue(NodePtr<GlueNode>),
 }
 
-fn start_vert_break(scanner: &mut ScannerState, p: MemPtr) -> VertBreakCursor {
-    scanner.active_width[1..].fill(0);
+impl ScannerState {
+    fn start_vert_break(&mut self, p: MemPtr) -> VertBreakCursor {
+        self.active_width[1..].fill(0);
 
-    VertBreakCursor {
-        p,
-        prev_p: p,
-        breakable: false,
-        prev_breakable: false,
-        least_cost: MAX_HALFWORD,
-        best_place: MemPtr::NULL,
-        prev_dp: 0,
-        finish_glue_after_shrinkage: None,
+        VertBreakCursor {
+            p,
+            prev_p: p,
+            breakable: false,
+            prev_breakable: false,
+            least_cost: MAX_HALFWORD,
+            best_place: MemPtr::NULL,
+            prev_dp: 0,
+            finish_glue_after_shrinkage: None,
+        }
     }
 }
 
@@ -842,7 +847,7 @@ pub(crate) fn vert_break_in(
     h: i32,
     d: i32,
 ) -> Result<i32, VertBreakAbort> {
-    let mut cursor = start_vert_break(&mut st.scanner, MemPtr(p));
+    let mut cursor = st.scanner.start_vert_break(MemPtr(p));
     loop {
         match st
             .mem
@@ -931,7 +936,7 @@ fn start_vsplit(st: &mut EngineState, n: i32, h: i32) -> Result<VsplitStart, Nod
         h,
         v,
         split_max_d: st.eqtb.dimen_par(DIMEN_PAR_SPLIT_MAX_DEPTH),
-        vert_break: start_vert_break(&mut st.scanner, v.list_ptr(&st.mem)),
+        vert_break: st.scanner.start_vert_break(v.list_ptr(&st.mem)),
     }))
 }
 
