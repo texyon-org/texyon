@@ -1,15 +1,15 @@
 //! Shipping boxes out to the XDV file.
 use crate::consts::{
-    A_LEADERS, BEFORE, CS_TOKEN_FLAG, C_LEADERS, DLIST, END_WRITE, FILLL, INVALID_HANDLE,
-    LEFT_TO_RIGHT, L_CODE, MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE,
-    NORMAL, NULL_FONT, RIGHT_TO_LEFT, R_CODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY,
-    TEX_NULL,
+    A_LEADERS, BEFORE, C_LEADERS, DLIST, END_WRITE, FILLL, INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE,
+    MAX_DIMEN, MEDIUM_NODE_SIZE, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FONT,
+    RIGHT_TO_LEFT, R_CODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL,
 };
 use crate::ext::apply_tfm_font_mapping;
 use crate::params::{DimenPar, IntPar};
 use crate::state::{
     EqtbState, FontState, MemState, ScannerState, Selector, ShipoutState, StringsState,
 };
+use crate::token::Token;
 
 use crate::bridge::{output_close, output_flush, output_open, output_write, shell_escape};
 use crate::errors::Abort;
@@ -20,7 +20,6 @@ use crate::node::{
     AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
     WhatsitNode, WhatsitSubtype, RUNNING,
 };
-use crate::scan::{LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, Scaled, StrNumber};
 
 const DVI_BUF_SIZE: i32 = 16384;
@@ -1855,14 +1854,14 @@ impl EqtbState {
 
 fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) -> Result<(), Abort> {
     let q = st.mem.get_avail()?;
-    q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
+    q.set_token(&mut st.mem, Token::right_brace(b'}'));
     let r = st.mem.get_avail()?;
     q.set_link(&mut st.mem, r);
-    r.set_info(&mut st.mem, CS_TOKEN_FLAG + END_WRITE);
+    r.set_token(&mut st.mem, Token::from_cs(END_WRITE));
     crate::input::begin_token_list(st, q, INSERTED)?;
     crate::input::begin_token_list(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
     let q = st.mem.get_avail()?;
-    q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + i32::from(b'{'));
+    q.set_token(&mut st.mem, Token::left_brace(b'{'));
     crate::input::begin_token_list(st, q, INSERTED)?;
 
     let old_mode = st.input.cur_list.mode;
@@ -1870,7 +1869,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
     st.scanner.cur_cs = st.shipout.write_loc;
     crate::scan::scan_toks(st, false, true)?;
     crate::scan::get_token(st)?;
-    if st.scanner.cur_tok != CS_TOKEN_FLAG + END_WRITE {
+    if st.scanner.cur_tok != Token::from_cs(END_WRITE) {
         crate::output::error_here_with_diagnostic(st, "Unbalanced write command");
         crate::output::capture_to_diagnostic(st, None);
         st.errors.help(&[
@@ -1880,7 +1879,7 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
         crate::errors::error(st)?;
         loop {
             crate::scan::get_token(st)?;
-            if st.scanner.cur_tok == CS_TOKEN_FLAG + END_WRITE {
+            if st.scanner.cur_tok == Token::from_cs(END_WRITE) {
                 break;
             }
         }

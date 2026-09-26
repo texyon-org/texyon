@@ -434,7 +434,7 @@ struct InputBundle {
     max_in_stack: i32,
     base_ptr: i32,
     par_loc: i32,
-    par_token: i32,
+    par_token: crate::token::Token,
     param_ptr: i32,
     max_param_stack: i32,
     force_eof: bool,

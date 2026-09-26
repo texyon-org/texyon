@@ -7,15 +7,14 @@ use crate::cmd::{
 };
 use crate::codes::{ConvertCode, FiOrElseCode, IfCode, ValueLevel};
 use crate::consts::{
-    ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
-    HMODE, MMODE, NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_USV,
-    UNDEFINED_PRIMITIVE, VMODE,
+    ACTIVE_BASE, BIGGEST_USV, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, MMODE,
+    NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_USV, UNDEFINED_PRIMITIVE,
+    VMODE,
 };
 use crate::errors::{error, Abort};
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{
-    back_error, back_input, begin_token_list, INSERTED, LEFT_BRACE_LIMIT, MACRO, MARK_TEXT,
-    RIGHT_BRACE_LIMIT, TOKEN_LIST, V_TEMPLATE,
+    back_error, back_input, begin_token_list, INSERTED, MACRO, MARK_TEXT, TOKEN_LIST, V_TEMPLATE,
 };
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD, ZERO_GLUE};
 use crate::node::{AnyBox, AnyNode, CondNode, NodePtr};
@@ -27,10 +26,10 @@ use crate::output::{
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
     fetch_box, get_next, get_token, get_x_non_blank, get_x_token, scan_int, store_new_token,
-    END_MATCH_TOKEN, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG,
-    OTHER_TOKEN, SPACE_TOKEN,
+    MATCHING, NORMAL_SCANNER, NO_EXPAND_FLAG,
 };
 use crate::state::{EngineState, MemState, Selector};
+use crate::token::Token;
 use crate::units::{FontId, MemIdx, MemPtr, Scaled, StrNumber};
 
 pub(crate) const MARKS_CODE: i32 = 5;
@@ -74,7 +73,7 @@ fn get_x_token_or_active_char(st: &mut EngineState) -> Result<(), Abort> {
     get_x_token(st)?;
     if st.scanner.cur_cmd == RELAX && st.scanner.cur_chr == NO_EXPAND_FLAG {
         st.scanner.cur_cmd = ACTIVE_CHAR;
-        st.scanner.cur_chr = st.scanner.cur_tok - (CS_TOKEN_FLAG + ACTIVE_BASE);
+        st.scanner.cur_chr = st.scanner.cur_tok.cs() - ACTIVE_BASE;
     }
     Ok(())
 }
@@ -109,7 +108,7 @@ fn token_chars_to_buffer(st: &mut EngineState, list: MemPtr) -> Result<i32, Abor
                 });
             }
         }
-        st.input.buffer[j as usize] = p.info(&st.mem) % MAX_CHAR_VAL;
+        st.input.buffer[j as usize] = p.token(&st.mem).chr();
         j += 1;
         p = p.link(&st.mem);
     }
@@ -193,19 +192,18 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             scan_int_or_dimen(st, this_if)?;
             let n = st.scanner.cur_val;
             get_x_non_blank(st)?;
-            let relation = if (OTHER_TOKEN + i32::from(b'<')..=OTHER_TOKEN + i32::from(b'>'))
-                .contains(&st.scanner.cur_tok)
-            {
-                (st.scanner.cur_tok - OTHER_TOKEN) as u8
-            } else {
-                error_here_with_diagnostic(st, "Missing = inserted for ");
-                print_cmd_chr(st, IF_TEST, this_if.raw());
-                capture_to_diagnostic(st, None);
-                st.errors
-                    .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
-                back_error(st)?;
-                b'='
-            };
+            let relation =
+                if (Token::other(b'<')..=Token::other(b'>')).contains(&st.scanner.cur_tok) {
+                    st.scanner.cur_tok.chr() as u8
+                } else {
+                    error_here_with_diagnostic(st, "Missing = inserted for ");
+                    print_cmd_chr(st, IF_TEST, this_if.raw());
+                    capture_to_diagnostic(st, None);
+                    st.errors
+                        .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
+                    back_error(st)?;
+                    b'='
+                };
             scan_int_or_dimen(st, this_if)?;
             let cv = st.scanner.cur_val;
             match relation {
@@ -764,9 +762,9 @@ fn not_font_error(st: &mut EngineState, c: ConvertCode, f: FontId, msg: &str) ->
 }
 
 /// Puts `token` in front of the backed-up token list on top of the input stack.
-fn prepend_to_backed_up(st: &mut EngineState, token: i32) -> Result<(), Abort> {
+fn prepend_to_backed_up(st: &mut EngineState, token: Token) -> Result<(), Abort> {
     let p = st.mem.get_avail()?;
-    p.set_info(&mut st.mem, token);
+    p.set_token(&mut st.mem, token);
     p.set_link(&mut st.mem, MemPtr::from_raw(st.input.cur_input.loc));
     st.input.cur_input.start = p.0;
     st.input.cur_input.loc = p.0;
@@ -793,7 +791,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
             if st.scanner.cur_cmd < END_TEMPLATE {
                 macro_call(st)?;
             } else {
-                st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_ENDV;
+                st.scanner.cur_tok = Token::from_cs(FROZEN_ENDV);
                 back_input(st)?;
             }
             break;
@@ -855,8 +853,8 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     get_token_unexpanded(st)?;
                     let t = st.scanner.cur_tok;
                     back_input(st)?;
-                    if t >= CS_TOKEN_FLAG {
-                        prepend_to_backed_up(st, CS_TOKEN_FLAG + FROZEN_DONT_EXPAND)?;
+                    if t.is_cs() {
+                        prepend_to_backed_up(st, Token::from_cs(FROZEN_DONT_EXPAND))?;
                     }
                 } else {
                     get_token_unexpanded(st)?;
@@ -869,13 +867,12 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         if cmd > MAX_COMMAND {
                             st.scanner.cur_cmd = cmd;
                             st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + st.scanner.cur_cs);
-                            st.scanner.cur_tok =
-                                i32::from(st.scanner.cur_cmd) * MAX_CHAR_VAL + st.scanner.cur_chr;
+                            st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
                             st.scanner.cur_cs = 0;
                             continue 'reswitch;
                         }
                         back_input(st)?;
-                        prepend_to_backed_up(st, CS_TOKEN_FLAG + FROZEN_PRIMITIVE)?;
+                        prepend_to_backed_up(st, Token::from_cs(FROZEN_PRIMITIVE))?;
                     }
                 }
             }
@@ -908,7 +905,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         TOO_BIG_USV,
                     );
                 }
-                st.scanner.cur_tok = st.scanner.cur_cs + CS_TOKEN_FLAG;
+                st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
                 back_input(st)?;
             }
             CONVERT => conv_toks(st)?,
@@ -1085,10 +1082,9 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
     let mut pstack = [MemPtr::NULL; 9];
     let mut match_chr: i32 = 0;
     let mut rbrace_ptr = MemPtr::NULL;
-    let is_match = |t: i32| (MATCH_TOKEN..=END_MATCH_TOKEN).contains(&t);
 
     'exit: {
-        if r.token(&st.mem) != END_MATCH_TOKEN {
+        if r.token(&st.mem) != Token::END_MATCH {
             st.scanner.scanner_status = MATCHING;
             let mut unbalance: i32 = 0;
             st.scanner.long_state = st.eqtb.eq_type(st.scanner.cur_cs);
@@ -1102,10 +1098,10 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                 let mut p = MemPtr::NULL;
                 let mut m: i32 = 0;
                 let rt = r.token(&st.mem);
-                if rt >= END_MATCH_TOKEN || rt < MATCH_TOKEN {
+                if rt >= Token::END_MATCH || rt < Token::match_(0) {
                     s = MemPtr::NULL;
                 } else {
-                    match_chr = rt - MATCH_TOKEN;
+                    match_chr = rt.chr();
                     s = r.link(&st.mem);
                     r = s;
                     p = TEMP_HEAD;
@@ -1116,8 +1112,8 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
 
                     if st.scanner.cur_tok == r.token(&st.mem) {
                         r = r.link(&st.mem);
-                        if is_match(r.token(&st.mem)) {
-                            if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
+                        if r.token(&st.mem).is_match() {
+                            if st.scanner.cur_tok.is_left_brace() {
                                 st.scanner.align_state -= 1;
                             }
                             break 'continue_;
@@ -1177,8 +1173,8 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         break 'exit;
                     }
 
-                    if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
-                        if st.scanner.cur_tok >= LEFT_BRACE_LIMIT {
+                    if st.scanner.cur_tok.is_brace() {
+                        if !st.scanner.cur_tok.is_left_brace() {
                             extra_right_brace_in_argument(st)?;
                             continue 'continue_;
                         }
@@ -1195,8 +1191,8 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                                 break 'exit;
                             }
 
-                            if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
-                                if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
+                            if st.scanner.cur_tok.is_brace() {
+                                if st.scanner.cur_tok.is_left_brace() {
                                     unbalance += 1;
                                 } else {
                                     unbalance -= 1;
@@ -1209,21 +1205,21 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                         rbrace_ptr = p;
                         store_new_token(st, &mut p, st.scanner.cur_tok)?;
                     } else {
-                        if st.scanner.cur_tok == SPACE_TOKEN && is_match(r.token(&st.mem)) {
+                        if st.scanner.cur_tok == Token::SPACE && r.token(&st.mem).is_match() {
                             continue 'continue_;
                         }
                         store_new_token(st, &mut p, st.scanner.cur_tok)?;
                     }
 
                     m += 1;
-                    if !is_match(r.token(&st.mem)) {
+                    if !r.token(&st.mem).is_match() {
                         continue 'continue_;
                     }
                     break 'continue_;
                 }
 
                 if !s.is_null() {
-                    if m == 1 && p.token(&st.mem) < RIGHT_BRACE_LIMIT {
+                    if m == 1 && p.token(&st.mem).is_brace() {
                         // Strip the braces around a single braced argument.
                         rbrace_ptr.set_link(&mut st.mem, MemPtr::NULL);
                         st.mem.free_avail(p);
@@ -1239,7 +1235,7 @@ pub(crate) fn macro_call(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
 
-                if r.token(&st.mem) == END_MATCH_TOKEN {
+                if r.token(&st.mem) == Token::END_MATCH {
                     break;
                 }
             }

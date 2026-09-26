@@ -9,8 +9,8 @@ use crate::bridge::{
 use crate::cmd::UNDEFINED_CS;
 use crate::codes::ValueLevel;
 use crate::consts::{
-    ACTIVE_BASE, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
-    HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
+    ACTIVE_BASE, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, HASH_BASE,
+    HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
     MIN_HALFWORD, PRIM_SIZE, TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{POOL_FREE, STRINGS_FREE};
@@ -21,6 +21,7 @@ use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, InteractionMode, Selector};
+use crate::token::Token;
 use crate::units::{FontId, MemPtr, StrNumber};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
@@ -722,7 +723,7 @@ fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
     undump_slice(fmt_in, &mut eqtb.data, EQTB_SIZE + 1, eqtb.hash_high)?;
 
     st.input.par_loc = undump_in_range(fmt_in, HASH_BASE, eqtb.hash_top)?;
-    st.input.par_token = CS_TOKEN_FLAG + st.input.par_loc;
+    st.input.par_token = Token::from_cs(st.input.par_loc);
     st.shipout.write_loc = undump_in_range(fmt_in, HASH_BASE, eqtb.hash_top)?;
 
     undump_slice(fmt_in, &mut eqtb.prim, 0, PRIM_SIZE + 1)?;

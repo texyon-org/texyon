@@ -40,6 +40,7 @@ use crate::state::{
     ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
     Selector,
 };
+use crate::token::Token;
 use crate::units::{FontId, MemPtr, NodeType, Scaled, StrNumber};
 
 /// A `get_node` request this large merges every free block into the rover list.
@@ -395,7 +396,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.mainloop.lft_hit = false;
     st.mainloop.rt_hit = false;
     st.mainloop.ins_disc = false;
-    st.scanner.after_token = 0;
+    st.scanner.after_token = Token::ZERO;
     st.errors.long_help_seen = false;
     st.strings.format_ident = StrNumber::NONE;
 
@@ -458,7 +459,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
         mem.set_word(k, template);
     }
 
-    OMIT_TEMPLATE.set_token(mem, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
+    OMIT_TEMPLATE.set_token(mem, Token::from_cs(FROZEN_END_TEMPLATE));
     END_SPAN.set_span_count(mem, i32::from(u16::MAX) + 1);
     mem.set_b32s0(END_SPAN.idx(), TEX_NULL);
     let active = NodePtr::<ActiveNode>::at(ACTIVE_LIST);
@@ -611,7 +612,7 @@ fn initialize_primitives(st: &mut EngineState) -> Result<(), Abort> {
             PrimInit::None => {}
             PrimInit::Par => {
                 st.input.par_loc = st.scanner.cur_val;
-                st.input.par_token = CS_TOKEN_FLAG + st.input.par_loc;
+                st.input.par_token = Token::from_cs(st.input.par_loc);
             }
             PrimInit::Write => {
                 st.shipout.write_loc = st.scanner.cur_val;

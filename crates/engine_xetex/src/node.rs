@@ -545,12 +545,12 @@ impl MemPtr {
 
     /// The token held by a token-list node.
     #[inline]
-    pub fn token(self, mem: &MemState) -> i32 {
-        mem.b32s0(self.0)
+    pub fn token(self, mem: &MemState) -> crate::token::Token {
+        crate::token::Token(mem.b32s0(self.0))
     }
     #[inline]
-    pub fn set_token(self, mem: &mut MemState, t: i32) {
-        mem.set_b32s0(self.0, t);
+    pub fn set_token(self, mem: &mut MemState, t: crate::token::Token) {
+        mem.set_b32s0(self.0, t.0);
     }
     /// The reference count in a token list's head node, one less than the
     /// number of references.

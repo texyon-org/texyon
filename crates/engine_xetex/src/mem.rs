@@ -116,7 +116,11 @@ impl MemState {
 
     /// TeX's `store_new_token`: appends `tok` after `tail` and makes it the tail.
     #[inline(always)]
-    pub(crate) fn store_new_token(&mut self, tail: &mut MemPtr, tok: i32) -> Result<(), Abort> {
+    pub(crate) fn store_new_token(
+        &mut self,
+        tail: &mut MemPtr,
+        tok: crate::token::Token,
+    ) -> Result<(), Abort> {
         let q = self.get_avail()?;
         tail.set_link(self, q);
         q.set_token(self, tok);

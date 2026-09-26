@@ -13,9 +13,9 @@ use crate::cmd::{
 use crate::codes::{BoxDimenCode, FiOrElseCode, IfCode, LastItemCode, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
-    CS_TOKEN_FLAG, DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE,
-    FROZEN_CR, FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX,
-    JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA,
+    DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE, FROZEN_CR,
+    FROZEN_ENDV, FROZEN_FI, FROZEN_PRIMITIVE, FROZEN_PROTECTION, FROZEN_RELAX, JUST_OPEN,
+    LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_EOF, LOCAL_PAR_SHAPE, LOCAL_TECTONIC_CODA,
     LOCAL_XETEX_INTER_CHAR_TOKS, MATH_CHAR, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MU_GLUE,
     MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FONT, NUMBER_MATH_FAMILIES, PRIM_EQTB_BASE, RIGHT_SIDE,
     SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, TEX_INFINITY, TEX_NULL, UNDEFINED_PRIMITIVE,
@@ -31,8 +31,7 @@ use crate::ext::{
 use crate::fonts::{AAT_FONT_FLAG, QUAD_CODE, SPACE_CODE, SPACE_SHRINK_CODE, X_HEIGHT_CODE};
 use crate::input::{
     back_error, back_input, begin_token_list, ins_error, BACKED_UP, EVERY_EOF_TEXT, INSERTED,
-    LEFT_BRACE_LIMIT, MID_LINE, NEW_LINE, PARAMETER, RIGHT_BRACE_LIMIT, SKIP_BLANKS,
-    TECTONIC_CODA_TEXT, TOKEN_LIST, V_TEMPLATE,
+    MID_LINE, NEW_LINE, PARAMETER, SKIP_BLANKS, TECTONIC_CODA_TEXT, TOKEN_LIST, V_TEMPLATE,
 };
 use crate::main_control::{LP_CODE_BASE, RP_CODE_BASE};
 use crate::mem::{BACKUP_HEAD, OMIT_TEMPLATE, TEMP_HEAD};
@@ -50,6 +49,7 @@ use crate::state::{
     EngineState, EqtbState, ErrorState, GroupCode, InputClusterState, MemState, ScannerState,
     Selector,
 };
+use crate::token::Token;
 use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 use std::sync::Arc;
@@ -63,29 +63,17 @@ pub(crate) const MATCHING: u8 = 3;
 pub(crate) const ALIGNING: u8 = 4;
 pub(crate) const ABSORBING: u8 = 5;
 
-pub(crate) const MAX_CHAR_VAL: i32 = 0x20_0000;
-pub(crate) const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
-pub(crate) const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
-pub(crate) const MATH_SHIFT_TOKEN: i32 = 0x60_0000;
-pub(crate) const TAB_TOKEN: i32 = 0x80_0000;
-pub(crate) const OUT_PARAM_TOKEN: i32 = 0xA0_0000;
-pub(crate) const SPACE_TOKEN: i32 = 0x140_0020;
-pub(crate) const LETTER_TOKEN: i32 = 0x160_0000;
-pub(crate) const OTHER_TOKEN: i32 = 0x180_0000;
-pub(crate) const MATCH_TOKEN: i32 = 0x1A0_0000;
-pub(crate) const END_MATCH_TOKEN: i32 = 0x1C0_0000;
-pub(crate) const PROTECTED_TOKEN: i32 = END_MATCH_TOKEN + 1;
-const ZERO_TOKEN: i32 = OTHER_TOKEN + b'0' as i32;
-const MINUS_TOKEN: i32 = OTHER_TOKEN + b'-' as i32;
-const PLUS_TOKEN: i32 = OTHER_TOKEN + b'+' as i32;
-const A_TOKEN: i32 = LETTER_TOKEN + b'A' as i32;
-const OTHER_A_TOKEN: i32 = OTHER_TOKEN + b'A' as i32;
-const HEX_TOKEN: i32 = OTHER_TOKEN + b'"' as i32;
-const OCTAL_TOKEN: i32 = OTHER_TOKEN + b'\'' as i32;
-const CONTINENTAL_POINT_TOKEN: i32 = OTHER_TOKEN + b',' as i32;
-const POINT_TOKEN: i32 = OTHER_TOKEN + b'.' as i32;
-const ALPHA_TOKEN: i32 = OTHER_TOKEN + b'`' as i32;
-const FROZEN_PRIM_TOKEN: i32 = CS_TOKEN_FLAG + FROZEN_PRIMITIVE;
+const ZERO_TOKEN: Token = Token::other(b'0');
+const MINUS_TOKEN: Token = Token::other(b'-');
+const PLUS_TOKEN: Token = Token::other(b'+');
+const A_TOKEN: Token = Token::letter(b'A');
+const OTHER_A_TOKEN: Token = Token::other(b'A');
+const HEX_TOKEN: Token = Token::other(b'"');
+const OCTAL_TOKEN: Token = Token::other(b'\'');
+const CONTINENTAL_POINT_TOKEN: Token = Token::other(b',');
+const POINT_TOKEN: Token = Token::other(b'.');
+const ALPHA_TOKEN: Token = Token::other(b'`');
+const FROZEN_PRIM_TOKEN: Token = Token::from_cs(FROZEN_PRIMITIVE);
 
 pub(crate) const NO_EXPAND_FLAG: i32 = BIGGEST_USV + 2;
 const DEFAULT_RULE: i32 = 26214;
@@ -289,7 +277,7 @@ impl EqtbState {
 
 pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
-    st.scanner.cur_tok = MATH_SHIFT_TOKEN + i32::from(b'$');
+    st.scanner.cur_tok = Token::math_shift(b'$');
     print_err(st, "Missing $ inserted");
     st.errors.help(&[
         "I've inserted a begin-math/end-math symbol since I think",
@@ -300,7 +288,7 @@ pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank(st)?;
-    if st.scanner.cur_tok != OTHER_TOKEN + i32::from(b'=') {
+    if st.scanner.cur_tok != Token::other(b'=') {
         back_input(st)?;
     }
     Ok(())
@@ -310,7 +298,7 @@ impl MemState {
     /// Whether the macro whose token list starts at `ref_count` is `\protected`.
     #[inline]
     pub(crate) fn is_protected_macro(&self, ref_count: MemPtr) -> bool {
-        ref_count.link(self).token(self) == PROTECTED_TOKEN
+        ref_count.link(self).token(self) == Token::PROTECTED
     }
 }
 
@@ -415,33 +403,33 @@ impl MemState {
         let mut k = b;
 
         while k < strings.pool_ptr {
-            let mut t = i32::from(strings.str_pool[k as usize]);
+            let mut c = i32::from(strings.str_pool[k as usize]);
 
-            if t == i32::from(b' ') && cat == 0 {
-                t = SPACE_TOKEN;
+            let t = if c == i32::from(b' ') && cat == 0 {
+                Token::SPACE
             } else {
-                if (0xD800..0xDC00).contains(&t) && k + 1 < strings.pool_ptr {
+                if (0xD800..0xDC00).contains(&c) && k + 1 < strings.pool_ptr {
                     let lo = i32::from(strings.str_pool[(k + 1) as usize]);
                     if (0xDC00..0xE000).contains(&lo) {
                         k += 1;
-                        t = 0x10000
-                            + ((t - 0xD800) << 10)
+                        c = 0x10000
+                            + ((c - 0xD800) << 10)
                             + (i32::from(strings.str_pool[k as usize]) - 0xDC00);
                     }
                 }
 
                 if cat == 0 {
-                    t += OTHER_TOKEN;
+                    Token::new(OTHER_CHAR, c)
                 } else if cat == i16::from(ACTIVE_CHAR) {
-                    t += CS_TOKEN_FLAG + 1;
+                    Token::from_cs(ACTIVE_BASE + c)
                 } else {
-                    t += MAX_CHAR_VAL * i32::from(cat);
+                    Token::new(cat as u8, c)
                 }
-            }
+            };
 
             let q = self.get_avail()?;
             p.set_link(self, q);
-            q.set_info(self, t);
+            q.set_token(self, t);
             p = q;
             k += 1;
         }
@@ -478,7 +466,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
     st.scanner.warning_index = r;
     let def_ref = new_def_ref(st)?;
     let mut p = def_ref;
-    store_new_token(st, &mut p, END_MATCH_TOKEN)?;
+    store_new_token(st, &mut p, Token::END_MATCH)?;
 
     let m = if (0..=15).contains(&n) {
         n as usize
@@ -526,9 +514,9 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
                 let c = st.input.buffer[loc as usize];
                 loc += 1;
                 let tok = if c == i32::from(b' ') {
-                    SPACE_TOKEN
+                    Token::SPACE
                 } else {
-                    c + OTHER_TOKEN
+                    Token::new(OTHER_CHAR, c)
                 };
                 st.scanner.cur_chr = c;
                 st.scanner.cur_tok = tok;
@@ -537,13 +525,13 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
         } else {
             loop {
                 get_token(st)?;
-                if st.scanner.cur_tok == 0 {
+                if st.scanner.cur_tok == Token::ZERO {
                     break;
                 }
                 if st.scanner.align_state < 1_000_000 {
                     loop {
                         get_token(st)?;
-                        if st.scanner.cur_tok == 0 {
+                        if st.scanner.cur_tok == Token::ZERO {
                             break;
                         }
                     }
@@ -599,7 +587,7 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         loop {
             get_token(st)?;
-            if st.scanner.cur_tok != SPACE_TOKEN {
+            if st.scanner.cur_tok != Token::SPACE {
                 break;
             }
         }
@@ -618,7 +606,7 @@ pub(crate) fn get_r_token(st: &mut EngineState) -> Result<(), Abort> {
             if st.scanner.cur_cs == 0 {
                 back_input(st)?;
             }
-            st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_PROTECTION;
+            st.scanner.cur_tok = Token::from_cs(FROZEN_PROTECTION);
             ins_error(st)?;
         } else {
             return Ok(());
@@ -785,7 +773,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         let ci = st.input.cur_input;
         if ci.state == TOKEN_LIST || ci.name < 1 || ci.name > 17 {
             let p = st.mem.get_avail()?;
-            p.set_info(&mut st.mem, CS_TOKEN_FLAG + st.scanner.cur_cs);
+            p.set_token(&mut st.mem, Token::from_cs(st.scanner.cur_cs));
             begin_token_list(st, p, BACKED_UP)?;
         }
         st.scanner.cur_cmd = SPACER;
@@ -806,24 +794,24 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         match st.scanner.scanner_status {
             DEFINING => {
                 print(st, " while scanning definition");
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
+                p.set_token(&mut st.mem, Token::right_brace(b'}'));
             }
             MATCHING => {
                 print(st, " while scanning use");
-                p.set_info(&mut st.mem, st.input.par_token);
+                p.set_token(&mut st.mem, st.input.par_token);
                 st.scanner.long_state = OUTER_CALL;
             }
             ALIGNING => {
                 print(st, " while scanning preamble");
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
+                p.set_token(&mut st.mem, Token::right_brace(b'}'));
                 inserted = st.mem.get_avail()?;
                 inserted.set_link(&mut st.mem, p);
-                inserted.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_CR);
+                inserted.set_token(&mut st.mem, Token::from_cs(FROZEN_CR));
                 st.scanner.align_state = -1_000_000;
             }
             ABSORBING => {
                 print(st, " while scanning text");
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
+                p.set_token(&mut st.mem, Token::right_brace(b'}'));
             }
             _ => {}
         }
@@ -859,7 +847,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             r"This kind of error happens when you say `\if...' and forget",
             r"the matching `\fi'. I've inserted a `\fi'; this might work.",
         ]);
-        st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_FI;
+        st.scanner.cur_tok = Token::from_cs(FROZEN_FI);
         ins_error(st)
     };
     st.errors.deletions_allowed = true;
@@ -1224,13 +1212,12 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
             let t = p.token(&st.mem);
             st.input.cur_input.loc = p.link(&st.mem).0;
 
-            if t >= CS_TOKEN_FLAG {
-                st.scanner.cur_cs = t - CS_TOKEN_FLAG;
+            if t.is_cs() {
+                st.scanner.cur_cs = t.cs();
                 fetch_cs_meaning(st);
                 if st.scanner.cur_cmd >= OUTER_CALL {
                     if st.scanner.cur_cmd == DONT_EXPAND {
-                        st.scanner.cur_cs =
-                            MemPtr(st.input.cur_input.loc).token(&st.mem) - CS_TOKEN_FLAG;
+                        st.scanner.cur_cs = MemPtr(st.input.cur_input.loc).token(&st.mem).cs();
                         st.input.cur_input.loc = TEX_NULL;
                         fetch_cs_meaning(st);
                         if st.scanner.cur_cmd > MAX_COMMAND {
@@ -1242,8 +1229,8 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
             } else {
-                st.scanner.cur_cmd = (t / MAX_CHAR_VAL) as u8;
-                st.scanner.cur_chr = t % MAX_CHAR_VAL;
+                st.scanner.cur_cmd = t.cmd();
+                st.scanner.cur_chr = t.chr();
                 match st.scanner.cur_cmd {
                     LEFT_BRACE => st.scanner.align_state += 1,
                     RIGHT_BRACE => st.scanner.align_state -= 1,
@@ -1294,7 +1281,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn store_new_token(
     st: &mut EngineState,
     tail: &mut MemPtr,
-    token: i32,
+    token: Token,
 ) -> Result<(), Abort> {
     st.mem.store_new_token(tail, token)
 }
@@ -1352,9 +1339,9 @@ pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
 #[inline(always)]
 fn pack_cur_tok(st: &mut EngineState) {
     st.scanner.cur_tok = if st.scanner.cur_cs == 0 {
-        i32::from(st.scanner.cur_cmd) * MAX_CHAR_VAL + st.scanner.cur_chr
+        Token::new(st.scanner.cur_cmd, st.scanner.cur_chr)
     } else {
-        CS_TOKEN_FLAG + st.scanner.cur_cs
+        Token::from_cs(st.scanner.cur_cs)
     };
 }
 
@@ -1418,11 +1405,11 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
         let mut p = TEMP_HEAD;
         p.set_link(&mut st.mem, MemPtr::NULL);
         if st.scanner.cur_val_level == ValueLevel::Ident {
-            store_new_token(st, &mut p, CS_TOKEN_FLAG + st.scanner.cur_val)?;
+            store_new_token(st, &mut p, Token::from_cs(st.scanner.cur_val))?;
         } else if st.scanner.cur_val != TEX_NULL {
             let mut r = MemPtr::from_raw(st.scanner.cur_val).link(&st.mem);
             while !r.is_null() {
-                store_new_token(st, &mut p, r.info(&st.mem))?;
+                store_new_token(st, &mut p, r.token(&st.mem))?;
                 r = r.link(&st.mem);
             }
         }
@@ -1464,26 +1451,26 @@ pub(crate) fn scan_toks(
     st.scanner.warning_index = st.scanner.cur_cs;
     let def_ref = new_def_ref(st)?;
     let mut p = def_ref;
-    let mut hash_brace: i32 = 0;
+    let mut hash_brace = Token::ZERO;
     let mut t = ZERO_TOKEN;
 
     'found: {
         if macro_def {
             let ended_with_brace = loop {
                 get_token(st)?;
-                if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
+                if st.scanner.cur_tok.is_brace() {
                     break false;
                 }
                 if st.scanner.cur_cmd == MAC_PARAM {
-                    let s = MATCH_TOKEN + st.scanner.cur_chr;
+                    let s = Token::match_(st.scanner.cur_chr);
                     get_token(st)?;
-                    if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
+                    if st.scanner.cur_tok.is_left_brace() {
                         hash_brace = st.scanner.cur_tok;
                         store_new_token(st, &mut p, st.scanner.cur_tok)?;
-                        store_new_token(st, &mut p, END_MATCH_TOKEN)?;
+                        store_new_token(st, &mut p, Token::END_MATCH)?;
                         break true;
                     }
-                    if t == ZERO_TOKEN + 9 {
+                    if t == Token::other(b'9') {
                         print_err(st, "You already have nine parameters");
                         st.errors.help(&[
                             "I'm going to ignore the # sign you just used,",
@@ -1492,7 +1479,7 @@ pub(crate) fn scan_toks(
                         error(st)?;
                         continue;
                     }
-                    t += 1;
+                    t = Token(t.0 + 1);
                     if st.scanner.cur_tok != t {
                         error_here_with_diagnostic(st, "Parameters must be numbered consecutively");
                         st.errors.help(&[
@@ -1506,7 +1493,7 @@ pub(crate) fn scan_toks(
                 store_new_token(st, &mut p, st.scanner.cur_tok)?;
             };
             if !ended_with_brace {
-                store_new_token(st, &mut p, END_MATCH_TOKEN)?;
+                store_new_token(st, &mut p, Token::END_MATCH)?;
                 if st.scanner.cur_cmd == RIGHT_BRACE {
                     print_err(st, "Missing { inserted");
                     st.scanner.align_state += 1;
@@ -1552,7 +1539,7 @@ pub(crate) fn scan_toks(
                 get_token(st)?;
             }
 
-            if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
+            if st.scanner.cur_tok.is_brace() {
                 if st.scanner.cur_cmd < RIGHT_BRACE {
                     unbalance += 1;
                 } else {
@@ -1584,7 +1571,7 @@ pub(crate) fn scan_toks(
                         back_error(st)?;
                         st.scanner.cur_tok = s;
                     } else {
-                        st.scanner.cur_tok = OUT_PARAM_TOKEN - i32::from(b'0') + st.scanner.cur_chr;
+                        st.scanner.cur_tok = Token::out_param(st.scanner.cur_chr - i32::from(b'0'));
                     }
                 }
             }
@@ -1592,7 +1579,7 @@ pub(crate) fn scan_toks(
         }
     }
     st.scanner.scanner_status = NORMAL_SCANNER;
-    if hash_brace != 0 {
+    if hash_brace != Token::ZERO {
         store_new_token(st, &mut p, hash_brace)?;
     }
     Ok(p)
@@ -1738,11 +1725,11 @@ fn get_primitive_token(st: &mut EngineState) -> Result<(), Abort> {
         st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + p);
         st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + p);
         st.scanner.cur_cs = PRIM_EQTB_BASE + p;
-        st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
+        st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     } else {
         st.scanner.cur_cmd = RELAX;
         st.scanner.cur_chr = 0;
-        st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_RELAX;
+        st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
         st.scanner.cur_cs = FROZEN_RELAX;
     }
     Ok(())
@@ -1756,17 +1743,17 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
     loop {
         if st.scanner.cur_tok == ALPHA_TOKEN {
             get_token(st)?;
-            if st.scanner.cur_tok < CS_TOKEN_FLAG {
+            if !st.scanner.cur_tok.is_cs() {
                 st.scanner.cur_val = st.scanner.cur_chr;
                 if st.scanner.cur_cmd == RIGHT_BRACE {
                     st.scanner.align_state += 1;
                 } else if st.scanner.cur_cmd < RIGHT_BRACE {
                     st.scanner.align_state -= 1;
                 }
-            } else if st.scanner.cur_tok < CS_TOKEN_FLAG + SINGLE_BASE {
-                st.scanner.cur_val = st.scanner.cur_tok - (CS_TOKEN_FLAG + ACTIVE_BASE);
+            } else if st.scanner.cur_tok < Token::from_cs(SINGLE_BASE) {
+                st.scanner.cur_val = st.scanner.cur_tok.cs() - ACTIVE_BASE;
             } else {
-                st.scanner.cur_val = st.scanner.cur_tok - (CS_TOKEN_FLAG + SINGLE_BASE);
+                st.scanner.cur_val = st.scanner.cur_tok.cs() - SINGLE_BASE;
             }
             if st.scanner.cur_val > BIGGEST_USV {
                 print_err(st, "Improper alphabetic constant");
@@ -1799,13 +1786,12 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
             st.scanner.cur_val = 0;
             loop {
                 let tok = st.scanner.cur_tok;
-                let d = if tok < ZERO_TOKEN + radix && (ZERO_TOKEN..=ZERO_TOKEN + 9).contains(&tok)
-                {
-                    tok - ZERO_TOKEN
-                } else if radix == 16 && (A_TOKEN..=A_TOKEN + 5).contains(&tok) {
-                    tok - A_TOKEN + 10
-                } else if radix == 16 && (OTHER_A_TOKEN..=OTHER_A_TOKEN + 5).contains(&tok) {
-                    tok - OTHER_A_TOKEN + 10
+                let d = if let Some(d) = tok.other_digit().filter(|&d| d < radix) {
+                    d
+                } else if radix == 16 && (A_TOKEN..=Token::letter(b'F')).contains(&tok) {
+                    tok.0 - A_TOKEN.0 + 10
+                } else if radix == 16 && (OTHER_A_TOKEN..=Token::other(b'F')).contains(&tok) {
+                    tok.0 - OTHER_A_TOKEN.0 + 10
                 } else {
                     break;
                 };
@@ -1938,13 +1924,13 @@ pub(crate) fn xetex_scan_dimen(
                     get_token(st)?;
                     loop {
                         get_x_token(st)?;
-                        if st.scanner.cur_tok > ZERO_TOKEN + 9 || st.scanner.cur_tok < ZERO_TOKEN {
+                        let Some(d) = st.scanner.cur_tok.other_digit() else {
                             break;
-                        }
+                        };
                         if k < 17 {
                             let q = st.mem.get_avail()?;
                             q.set_link(&mut st.mem, digits);
-                            q.set_info(&mut st.mem, st.scanner.cur_tok - ZERO_TOKEN);
+                            q.set_info(&mut st.mem, d);
                             digits = q;
                             k += 1;
                         }
@@ -2248,7 +2234,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
             if scan_factor {
                 let o = if s == EXPR_NONE { l } else { ValueLevel::Int };
                 get_x_non_blank(st)?;
-                if st.scanner.cur_tok == OTHER_TOKEN + i32::from(b'(') {
+                if st.scanner.cur_tok == Token::other(b'(') {
                     let q = NodePtr::<ExprNode>::alloc(&mut st.mem)?;
                     q.set_link(&mut st.mem, p);
                     q.set_level(&mut st.mem, l);
@@ -2272,19 +2258,24 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
             scan_factor = true;
 
             get_x_non_blank(st)?;
-            let mut o = match u8::try_from(st.scanner.cur_tok - OTHER_TOKEN) {
-                Ok(b'+') => EXPR_ADD,
-                Ok(b'-') => EXPR_SUB,
-                Ok(b'*') => EXPR_MULT,
-                Ok(b'/') => EXPR_DIV,
-                _ => EXPR_NONE,
+            let tok = st.scanner.cur_tok;
+            let mut o = if tok == Token::other(b'+') {
+                EXPR_ADD
+            } else if tok == Token::other(b'-') {
+                EXPR_SUB
+            } else if tok == Token::other(b'*') {
+                EXPR_MULT
+            } else if tok == Token::other(b'/') {
+                EXPR_DIV
+            } else {
+                EXPR_NONE
             };
             if o == EXPR_NONE {
                 if p.is_null() {
                     if st.scanner.cur_cmd != RELAX {
                         back_input(st)?;
                     }
-                } else if st.scanner.cur_tok != OTHER_TOKEN + i32::from(b')') {
+                } else if st.scanner.cur_tok != Token::other(b')') {
                     print_err(st, "Missing ) inserted for expression");
                     st.errors
                         .help(&["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."]);
@@ -2464,7 +2455,7 @@ pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
             "(If you're confused by all this, try typing `I}' now.)",
         ]);
         back_error(st)?;
-        st.scanner.cur_tok = LEFT_BRACE_TOKEN + i32::from(b'{');
+        st.scanner.cur_tok = Token::left_brace(b'{');
         st.scanner.cur_cmd = LEFT_BRACE;
         st.scanner.cur_chr = i32::from(b'{');
         st.scanner.align_state += 1;
@@ -3462,7 +3453,7 @@ pub(crate) fn scan_general_text(st: &mut EngineState) -> Result<(), Abort> {
     let mut unbalance: i32 = 1;
     loop {
         get_token(st)?;
-        if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
+        if st.scanner.cur_tok.is_brace() {
             if st.scanner.cur_cmd < RIGHT_BRACE {
                 unbalance += 1;
             } else {

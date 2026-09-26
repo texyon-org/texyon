@@ -6,12 +6,12 @@ use crate::consts::{
     UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::errors::Abort;
-use crate::input::{LEFT_BRACE_LIMIT, RIGHT_BRACE_LIMIT};
 use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
 use crate::params::IntPar;
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
+use crate::token::Token;
 use crate::units::{MemAddr, MemPtr};
 
 // Save-stack entry types.
@@ -101,12 +101,12 @@ impl SaveStackState {
         Ok(())
     }
 
-    pub(crate) fn save_for_after(&mut self, t: i32) -> Result<(), Abort> {
+    pub(crate) fn save_for_after(&mut self, t: Token) -> Result<(), Abort> {
         if self.cur_level > LEVEL_ONE {
             if self.save_stack_full() {
                 return Err(Abort::SaveOverflow);
             }
-            self.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t);
+            self.set_save_entry(INSERT_TOKEN, LEVEL_ZERO, t.0);
             self.save_ptr += 1;
         }
         Ok(())
@@ -461,15 +461,15 @@ pub(crate) fn unsave(st: &mut EngineState) -> Result<(), Abort> {
             LEVEL_BOUNDARY => break,
             INSERT_TOKEN => {
                 let t = st.scanner.cur_tok;
-                st.scanner.cur_tok = p;
+                st.scanner.cur_tok = Token(p);
                 if a {
                     let pn = st.mem.get_avail()?;
-                    pn.set_info(&mut st.mem, st.scanner.cur_tok);
+                    pn.set_token(&mut st.mem, st.scanner.cur_tok);
                     pn.set_link(&mut st.mem, MemPtr::from_raw(st.input.cur_input.loc));
                     st.input.cur_input.loc = pn.0;
                     st.input.cur_input.start = pn.0;
-                    if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
-                        if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
+                    if st.scanner.cur_tok.is_brace() {
+                        if st.scanner.cur_tok.is_left_brace() {
                             st.scanner.align_state -= 1;
                         } else {
                             st.scanner.align_state += 1;

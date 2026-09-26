@@ -4,14 +4,15 @@
 
 use crate::codes::{ConvertCode, ExtensionCode, LastItemCode};
 use crate::params::IntPar;
+use crate::token::Token;
 use std::ffi::c_int;
 use std::sync::Arc;
 
 use crate::bridge::{input_get_size, input_open, input_read, TTBC_FILE_FORMAT_MISC_FONTS};
 use crate::cmd::EXTENSION;
 use crate::consts::{
-    CS_TOKEN_FLAG, DESIGN_SIZE, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, LEFT_SIDE, MMODE,
-    OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE, VMODE, WRITE_NODE_SIZE,
+    DESIGN_SIZE, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, LEFT_SIDE, MMODE, OPEN_NODE_SIZE,
+    RIGHT_SIDE, SMALL_NODE_SIZE, VMODE, WRITE_NODE_SIZE,
 };
 use crate::errors::Abort;
 use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
@@ -29,7 +30,7 @@ use crate::mem::TEMP_HEAD;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::pic::load_picture;
-use crate::scan::{get_x_token, scan_int, LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN};
+use crate::scan::{get_x_token, scan_int};
 use crate::state::{EngineState, ErrorState, FontState, MemState};
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
@@ -1432,10 +1433,10 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
         return Ok(());
     };
     let toklist = st.mem.get_avail()?;
-    toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
+    toklist.set_token(&mut st.mem, Token::from_cs(FROZEN_SPECIAL));
     let open = st.mem.get_avail()?;
     toklist.set_link(&mut st.mem, open);
-    open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + i32::from(b'{'));
+    open.set_token(&mut st.mem, Token::left_brace(b'{'));
     let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
     let text_tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
@@ -1443,7 +1444,7 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     open.set_link(&mut st.mem, text);
     let close = st.mem.get_avail()?;
     text_tail.set_link(&mut st.mem, close);
-    close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
+    close.set_token(&mut st.mem, Token::right_brace(b'}'));
     crate::input::begin_token_list(st, toklist, INSERTED)?;
     crate::texmfmp::remember_source_info(st, fname, st.mem.line);
     Ok(())
@@ -1464,15 +1465,15 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
     }
 
     let toklist = st.mem.get_avail()?;
-    toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
+    toklist.set_token(&mut st.mem, Token::from_cs(FROZEN_SPECIAL));
     let open = st.mem.get_avail()?;
-    open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + i32::from(b'{'));
+    open.set_token(&mut st.mem, Token::left_brace(b'{'));
     toklist.set_link(&mut st.mem, open);
     let text_tail = st.mem.str_toks_cat(&mut st.strings, start_pool, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
     let close = st.mem.get_avail()?;
-    close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
+    close.set_token(&mut st.mem, Token::right_brace(b'}'));
     text_tail.set_link(&mut st.mem, close);
     crate::input::begin_token_list(st, toklist, INSERTED)?;
     Ok(())

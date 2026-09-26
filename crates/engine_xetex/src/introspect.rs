@@ -1,12 +1,12 @@
 //! Read-only listing of the control sequences the engine has defined, for
 //! editor completions. Safe to run between operations on a resident session.
 
+use crate::token::Token;
 use crate::units::StrNumber;
 use std::collections::HashMap;
 
 use crate::cmd::{CALL, UNDEFINED_CS};
 use crate::consts::{EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, HASH_BASE};
-use crate::scan::{END_MATCH_TOKEN, MATCH_TOKEN, PROTECTED_TOKEN};
 use crate::state::EngineState;
 
 /// What kind of thing a name is bound to.
@@ -121,12 +121,12 @@ fn describe_macro(st: &EngineState, body: i32) -> (bool, u8) {
         if at.0 <= 0 {
             break;
         }
-        let token = at.info(&st.mem);
-        if token == PROTECTED_TOKEN {
+        let token = at.token(&st.mem);
+        if token == Token::PROTECTED {
             protected = true;
-        } else if token >= END_MATCH_TOKEN {
+        } else if token >= Token::END_MATCH {
             break;
-        } else if token >= MATCH_TOKEN {
+        } else if token.is_match() {
             arity = arity.saturating_add(1);
         }
         at = at.link(&st.mem);

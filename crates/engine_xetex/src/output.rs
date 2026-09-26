@@ -25,10 +25,10 @@ use crate::codes::{
 };
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
-    COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY,
-    END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE,
-    HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE,
-    LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE,
+    COND_MATH_GLUE, COUNT_BASE, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY, END_L_CODE,
+    EQTB_SIZE, ETEX_PEN_BASE, FILLL, FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE, HISTORY_SPOTLESS,
+    HISTORY_WARNING_ISSUED, HMODE, IGNORE_DEPTH, INT_BASE, LC_CODE_BASE, LOCAL_BASE,
+    LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR, MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE,
     MU_SKIP_BASE, NORMAL, NULL_CS, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE, SF_CODE_BASE,
     SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEXT_SIZE, TEX_NULL, TOKS_BASE,
     TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE, X_LEADERS,
@@ -57,7 +57,6 @@ use crate::node::{
 use crate::packaging::EXACTLY;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::save::DIMEN_VAL_LIMIT;
-use crate::scan::MAX_CHAR_VAL;
 use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
@@ -1834,14 +1833,14 @@ pub(crate) fn show_token_list(st: &mut EngineState, p: impl crate::units::MemAdd
             print_esc(st, "CLOBBERED.");
             return;
         }
-        let w = p.info(&st.mem);
-        if w >= CS_TOKEN_FLAG {
-            print_cs(st, w - CS_TOKEN_FLAG);
-        } else if w < 0 {
+        let w = p.token(&st.mem);
+        if w.is_cs() {
+            print_cs(st, w.cs());
+        } else if w.0 < 0 {
             print_esc(st, "BAD.");
         } else {
-            let c = w % MAX_CHAR_VAL;
-            match (w / MAX_CHAR_VAL) as u8 {
+            let c = w.chr();
+            match w.cmd() {
                 LEFT_BRACE | RIGHT_BRACE | MATH_SHIFT | TAB_MARK | SUP_MARK | SUB_MARK | SPACER
                 | LETTER | OTHER_CHAR => print_char(st, c),
                 MAC_PARAM => {

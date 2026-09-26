@@ -1,12 +1,13 @@
 //! Input stack: token-list and file levels.
 
 use crate::cmd::ASSIGN_TOKS;
-use crate::consts::{CS_TOKEN_FLAG, FROZEN_RELAX, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, TEX_NULL};
+use crate::consts::{FROZEN_RELAX, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, TEX_NULL};
 use crate::errors::Abort;
 use crate::io::u_close;
 use crate::node::{NodePtr, PseudoLineNode};
 use crate::params::IntPar;
 use crate::state::{EngineState, InputClusterState, MemState};
+use crate::token::Token;
 use crate::units::{MemPtr, StrNumber};
 
 pub(crate) const PARAMETER: u16 = 0;
@@ -34,9 +35,6 @@ pub(crate) const TOKEN_LIST: u16 = 0;
 pub(crate) const MID_LINE: u16 = 1;
 pub(crate) const SKIP_BLANKS: u16 = 17;
 pub(crate) const NEW_LINE: u16 = 33;
-
-pub(crate) const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
-pub(crate) const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
 
 #[inline]
 fn push_input(st: &mut EngineState) -> Result<(), Abort> {
@@ -98,9 +96,9 @@ pub(crate) fn back_input(st: &mut EngineState) -> Result<(), Abort> {
         end_token_list(st)?;
     }
     let p = st.mem.get_avail()?;
-    p.set_info(&mut st.mem, st.scanner.cur_tok);
-    if st.scanner.cur_tok < RIGHT_BRACE_LIMIT {
-        if st.scanner.cur_tok < LEFT_BRACE_LIMIT {
+    p.set_token(&mut st.mem, st.scanner.cur_tok);
+    if st.scanner.cur_tok.is_brace() {
+        if st.scanner.cur_tok.is_left_brace() {
             st.scanner.align_state -= 1;
         } else {
             st.scanner.align_state += 1;
@@ -226,9 +224,9 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
 }
 
 pub(crate) fn insert_relax(st: &mut EngineState) -> Result<(), Abort> {
-    st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
+    st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     back_input(st)?;
-    st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_RELAX;
+    st.scanner.cur_tok = Token::from_cs(FROZEN_RELAX);
     back_input(st)?;
     st.input.cur_input.index = INSERTED;
     Ok(())

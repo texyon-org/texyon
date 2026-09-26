@@ -20,16 +20,16 @@ use crate::cmd::{
 use crate::codes::{BoxCode, BoxDimenCode, ShorthandDefCode, SkipCode, ValueLevel};
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
-    BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, DESIGN_SIZE, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE, EXPLICIT,
-    FONT_BASE, FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT, HASH_BASE, HMODE,
-    IGNORE_DEPTH, LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB,
-    LOCAL_EVERY_PAR, LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE,
-    LOCAL_XETEX_INTER_CHAR_TOKS, MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD,
-    MMODE, MU_GLUE, MU_SKIP_BASE, NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS,
-    NULL_FLAG, PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
-    SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE,
-    TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
+    BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CUR_FONT_LOC,
+    DEL_CODE_BASE, DESIGN_SIZE, DLIST, EMPTY, END_M_CODE, ETEX_PEN_BASE, EXPLICIT, FONT_BASE,
+    FROZEN_CR, FROZEN_END_GROUP, FROZEN_END_TEMPLATE, FROZEN_RIGHT, HASH_BASE, HMODE, IGNORE_DEPTH,
+    LEFT_SIDE, LOCAL_BASE, LOCAL_EVERY_CR, LOCAL_EVERY_HBOX, LOCAL_EVERY_JOB, LOCAL_EVERY_PAR,
+    LOCAL_EVERY_VBOX, LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE, LOCAL_XETEX_INTER_CHAR_TOKS,
+    MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_DIMEN, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE,
+    NATIVE_NODE_SIZE, NOAD_SIZE, NON_ADDRESS, NORMAL, NULL_CS, NULL_FLAG, PRIM_EQTB_BASE,
+    RIGHT_SIDE, SCALED_BASE, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE,
+    SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEX_INFINITY, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
+    TOO_BIG_USV, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::errors::Abort;
 use crate::ext::{append_src_special, do_extension};
@@ -54,11 +54,9 @@ use crate::node::{
 };
 use crate::packaging::ADDITIONAL;
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::scan::{
-    fetch_box, ALIGNING, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER,
-    OTHER_TOKEN, PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN,
-};
+use crate::scan::{fetch_box, ALIGNING, NORMAL_SCANNER};
 use crate::state::{EngineState, GroupCode, MemState, Selector};
+use crate::token::Token;
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 use crate::layout::set_cp_code;
@@ -83,7 +81,7 @@ pub(crate) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::error_here_with_diagnostic(st, "Misplaced ");
         crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
         crate::output::capture_to_diagnostic(st, None);
-        if st.scanner.cur_tok == TAB_TOKEN + 38 {
+        if st.scanner.cur_tok == Token::tab(b'&') {
             st.errors.help(&[
                 "I can't figure out why you would want to use a tab mark",
                 "here. If you just want an ampersand, the remedy is",
@@ -107,11 +105,11 @@ pub(crate) fn align_error(st: &mut EngineState) -> Result<(), Abort> {
         if st.scanner.align_state < 0 {
             crate::output::print_err(st, "Missing { inserted");
             st.scanner.align_state += 1;
-            st.scanner.cur_tok = LEFT_BRACE_TOKEN + 123;
+            st.scanner.cur_tok = Token::left_brace(b'{');
         } else {
             crate::output::print_err(st, "Missing } inserted");
             st.scanner.align_state -= 1;
-            st.scanner.cur_tok = RIGHT_BRACE_TOKEN + 125;
+            st.scanner.cur_tok = Token::right_brace(b'}');
         }
         st.errors.help(&[
             "I've put in what seems to be necessary to fix",
@@ -918,7 +916,7 @@ pub(crate) fn init_align(st: &mut EngineState) -> Result<(), Abort> {
             st.mem.store_new_token(&mut p, st.scanner.cur_tok)?;
         }
         st.mem
-            .store_new_token(&mut p, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE)?;
+            .store_new_token(&mut p, Token::from_cs(FROZEN_END_TEMPLATE))?;
         let v_part = HOLD_HEAD.link(&st.mem);
         column.set_v_part(&mut st.mem, v_part);
     }
@@ -1764,7 +1762,7 @@ pub(crate) fn handle_right_brace(st: &mut EngineState) -> Result<(), Abort> {
         GroupCode::Disc => build_discretionary(st)?,
         GroupCode::Align => {
             crate::input::back_input(st)?;
-            st.scanner.cur_tok = CS_TOKEN_FLAG + FROZEN_CR;
+            st.scanner.cur_tok = Token::from_cs(FROZEN_CR);
             crate::output::error_here_with_diagnostic(st, "Missing ");
             crate::output::print_esc(st, "cr");
             crate::output::print(st, " inserted");
@@ -2045,22 +2043,22 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::error_here_with_diagnostic(st, "Missing ");
     match st.save_stack.cur_group {
         GroupCode::SemiSimple => {
-            p.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_END_GROUP);
+            p.set_token(&mut st.mem, Token::from_cs(FROZEN_END_GROUP));
             crate::output::print_esc(st, "endgroup");
         }
         GroupCode::MathShift => {
-            p.set_info(&mut st.mem, MATH_SHIFT_TOKEN + i32::from(b'$'));
+            p.set_token(&mut st.mem, Token::math_shift(b'$'));
             crate::output::print_char(st, b'$');
         }
         GroupCode::MathLeft => {
-            p.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_RIGHT);
+            p.set_token(&mut st.mem, Token::from_cs(FROZEN_RIGHT));
             let q = st.mem.get_avail()?;
             p.set_link(&mut st.mem, q);
-            q.set_info(&mut st.mem, OTHER_TOKEN + i32::from(b'.'));
+            q.set_token(&mut st.mem, Token::other(b'.'));
             crate::output::print_esc(st, "right.");
         }
         _ => {
-            p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
+            p.set_token(&mut st.mem, Token::right_brace(b'}'));
             crate::output::print_char(st, b'}');
         }
     }
@@ -2109,11 +2107,11 @@ pub(crate) fn shift_case(st: &mut EngineState) -> Result<(), Abort> {
     let mut p = st.scanner.def_ref.link(&st.mem);
     while !p.is_null() {
         let t = p.token(&st.mem);
-        if t < CS_TOKEN_FLAG + SINGLE_BASE {
-            let c = t % MAX_CHAR_VAL;
+        if t < Token::from_cs(SINGLE_BASE) {
+            let c = t.chr();
             let mapped = st.eqtb.equiv(b + c);
             if mapped != 0 {
-                p.set_token(&mut st.mem, t - c + mapped);
+                p.set_token(&mut st.mem, Token(t.0 - c + mapped));
             }
         }
         p = p.link(&st.mem);
@@ -2775,7 +2773,7 @@ pub(crate) fn main_control_ignore_spaces(st: &mut EngineState) -> Result<(), Abo
         if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
             st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
             st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + st.scanner.cur_cs);
-            st.scanner.cur_tok = CS_TOKEN_FLAG + PRIM_EQTB_BASE + st.scanner.cur_cs;
+            st.scanner.cur_tok = Token::from_cs(PRIM_EQTB_BASE + st.scanner.cur_cs);
         }
     }
     Ok(())
@@ -2813,9 +2811,9 @@ fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bool, Abort> 
         if st.scanner.cur_cmd == CHAR_NUM {
             st.scanner.cur_cmd = OTHER_CHAR;
         }
-        st.scanner.cur_tok = i32::from(st.scanner.cur_cmd) * MAX_CHAR_VAL + st.scanner.cur_chr;
+        st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
     } else {
-        st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
+        st.scanner.cur_tok = Token::from_cs(st.scanner.cur_cs);
     }
     crate::input::back_input(st)?;
     crate::input::begin_token_list(st, list, INTER_CHAR_TEXT)?;
@@ -2841,7 +2839,7 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32) -> Result<bool, 
     if st.scanner.cur_cmd != LETTER {
         st.scanner.cur_cmd = OTHER_CHAR;
     }
-    st.scanner.cur_tok = i32::from(st.scanner.cur_cmd) * MAX_CHAR_VAL + st.scanner.cur_chr;
+    st.scanner.cur_tok = Token::new(st.scanner.cur_cmd, st.scanner.cur_chr);
     crate::input::back_input(st)?;
     st.input.cur_input.index = BACKED_UP_CHAR;
     crate::input::begin_token_list(st, list, INTER_CHAR_TEXT)?;
@@ -3904,13 +3902,11 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    let protected = if a >= 8 {
+    let protected = a >= 8;
+    if protected {
         a -= 8;
-        PROTECTED_TOKEN
-    } else {
-        0
-    };
-    if st.scanner.cur_cmd != DEF && (a % 4 != 0 || protected != 0) {
+    }
+    if st.scanner.cur_cmd != DEF && (a % 4 != 0 || protected) {
         crate::output::error_here_with_diagnostic(st, "You can't use `");
         crate::output::print_esc(st, "long");
         crate::output::print(st, "' or `");
@@ -3942,9 +3938,9 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
             crate::scan::scan_toks(st, true, expand)?;
-            if protected != 0 {
+            if protected {
                 let q = st.mem.get_avail()?;
-                q.set_info(&mut st.mem, protected);
+                q.set_token(&mut st.mem, Token::PROTECTED);
                 let body = st.scanner.def_ref.link(&st.mem);
                 q.set_link(&mut st.mem, body);
                 st.scanner.def_ref.set_link(&mut st.mem, q);
@@ -3962,7 +3958,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
                         break;
                     }
                 }
-                if st.scanner.cur_tok == OTHER_TOKEN + i32::from(b'=') {
+                if st.scanner.cur_tok == Token::other(b'=') {
                     crate::scan::get_token(st)?;
                     if st.scanner.cur_cmd == SPACER {
                         crate::scan::get_token(st)?;
@@ -4131,10 +4127,10 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         _ => return Err(Abort::Confusion("prefix")),
     }
 
-    if st.scanner.after_token != 0 {
+    if st.scanner.after_token != Token::ZERO {
         st.scanner.cur_tok = st.scanner.after_token;
         crate::input::back_input(st)?;
-        st.scanner.after_token = 0;
+        st.scanner.after_token = Token::ZERO;
     }
     Ok(())
 }
@@ -4272,9 +4268,9 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
         let mut tail = tail;
         st.mem
-            .store_new_token(&mut tail, RIGHT_BRACE_TOKEN + i32::from(b'}'))?;
+            .store_new_token(&mut tail, Token::right_brace(b'}'))?;
         let q = st.mem.get_avail()?;
-        q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + i32::from(b'{'));
+        q.set_token(&mut st.mem, Token::left_brace(b'{'));
         let body = def_ref.link(&st.mem);
         q.set_link(&mut st.mem, body);
         def_ref.set_link(&mut st.mem, q);
