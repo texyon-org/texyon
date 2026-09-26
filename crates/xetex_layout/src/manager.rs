@@ -286,6 +286,88 @@ pub enum Engine {
     Graphite = b'G',
 }
 
+/// The requests in a font name's `/`-separated variant string.
+struct VariantRequests {
+    engine: Engine,
+    bold: bool,
+    italic: bool,
+    size: Option<f64>,
+}
+
+/// Parses `variant`, a C string's bytes, and rewrites it in place to keep only
+/// the engine options.
+fn take_variant_requests(variant: &mut [u8]) -> VariantRequests {
+    let mut req = VariantRequests {
+        engine: Engine::Default,
+        bold: false,
+        italic: false,
+        size: None,
+    };
+    let mut var_str = String::new();
+    let mut cp = &*variant;
+    while !cp.is_empty() {
+        const VARIANTS: &[(&[u8], Engine, &str)] = &[
+            (b"AAT", Engine::Apple, "AAT"),
+            (b"ICU", Engine::OpenType, "OT"),
+            (b"OT", Engine::OpenType, "OT"),
+            (b"GR", Engine::Graphite, "GR"),
+        ];
+
+        if let Some(&(cmp, engine, var)) = VARIANTS.iter().find(|v| cp.starts_with(v.0)) {
+            req.engine = engine;
+            cp = &cp[cmp.len()..];
+            if var_str.chars().last().is_some_and(|c| c != '/') {
+                var_str.push('/');
+            }
+            var_str.push_str(var);
+        } else if cp.starts_with(b"S") {
+            cp = &cp[1..];
+            if cp.first() == Some(&b'=') {
+                cp = &cp[1..];
+            }
+            let mut pt_size = 0.0;
+            while cp.first().is_some_and(|c| c.is_ascii_digit()) {
+                pt_size = pt_size * 10.0 + (cp[0] - b'0') as f64;
+                cp = &cp[1..];
+            }
+            if cp.first() == Some(&b'.') {
+                let mut dec = 1.0;
+                cp = &cp[1..];
+                while cp.first().is_some_and(|c| c.is_ascii_digit()) {
+                    dec *= 10.0;
+                    pt_size += (cp[0] - b'0') as f64 / dec;
+                    cp = &cp[1..];
+                }
+            }
+            req.size = Some(pt_size);
+        } else {
+            // if the code is "B" or "I", we skip putting it in varString
+            loop {
+                match cp.first() {
+                    Some(b'B') => req.bold = true,
+                    Some(b'I') => req.italic = true,
+                    _ => break,
+                }
+                cp = &cp[1..];
+            }
+        }
+
+        while cp.first().is_some_and(|&c| c != b'/') {
+            cp = &cp[1..];
+        }
+        if cp.first().is_some_and(|&c| c == b'/') {
+            cp = &cp[1..];
+        }
+    }
+
+    variant[..var_str.len()].copy_from_slice(var_str.as_bytes());
+    // Past the slice is the C string's own NUL.
+    if let Some(end) = variant.get_mut(var_str.len()) {
+        *end = 0;
+    }
+    req
+}
+
 impl TryFrom<u8> for Engine {
     type Error = ();
 
@@ -452,74 +534,13 @@ impl FontManager {
         // if there are variant requests, try to apply them
         // and delete B, I, and S=... codes from the string, just retain /engine option
         self.req_engine = Engine::Default;
-        let mut req_bold = false;
-        let mut req_ital = false;
         if let Some(variant) = variant {
-            let mut var_str = String::new();
-            let mut cp = &*variant;
-            while !cp.is_empty() {
-                const VARIANTS: &[(&[u8], Engine, &str)] = &[
-                    (b"AAT", Engine::Apple, "AAT"),
-                    (b"ICU", Engine::OpenType, "OT"),
-                    (b"OT", Engine::OpenType, "OT"),
-                    (b"GR", Engine::Graphite, "GR"),
-                ];
-
-                let any_var = VARIANTS.iter().any(|&(cmp, engine, var)| {
-                    if cp.starts_with(cmp) {
-                        self.req_engine = engine;
-                        cp = &cp[cmp.len()..];
-                        if var_str.chars().last().is_some_and(|c| c != '/') {
-                            var_str.push_str(var);
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                });
-
-                if any_var {
-                } else if cp.starts_with(b"S") {
-                    cp = &cp[1..];
-                    if cp.first() == Some(&b'=') {
-                        cp = &cp[1..];
-                    }
-                    pt_size = 0.0;
-                    while cp.first().is_some_and(|c| c.is_ascii_digit()) {
-                        pt_size = pt_size * 10.0 + (cp[0] - b'0') as f64;
-                        cp = &cp[1..];
-                    }
-                    if cp.first() == Some(&b'.') {
-                        let mut dec = 1.0;
-                        cp = &cp[1..];
-                        while cp.first().is_some_and(|c| c.is_ascii_digit()) {
-                            dec *= 10.0;
-                            pt_size += (cp[0] - b'0') as f64 / dec;
-                            cp = &cp[1..];
-                        }
-                    }
-                } else {
-                    // if the code is "B" or "I", we skip putting it in varString
-                    loop {
-                        match cp.first() {
-                            Some(b'B') => req_bold = true,
-                            Some(b'I') => req_ital = true,
-                            _ => break,
-                        }
-                        cp = &cp[1..];
-                    }
-                }
-
-                while cp.first().is_some_and(|&c| c != b'/') {
-                    cp = &cp[1..];
-                }
-                if cp.first().is_some_and(|&c| c == b'/') {
-                    cp = &cp[1..];
-                }
+            let req = take_variant_requests(variant);
+            self.req_engine = req.engine;
+            if let Some(size) = req.size {
+                pt_size = size;
             }
-
-            variant[..var_str.len()].copy_from_slice(var_str.as_bytes());
-            variant[var_str.len()] = 0;
+            let (req_bold, req_ital) = (req.bold, req.italic);
 
             if req_ital {
                 let font = &self.maps.fonts[font_pos];
@@ -828,5 +849,39 @@ impl FontManager {
     /// platform-specific list of other options.
     pub fn set_req_engine(&mut self, engine: Engine) {
         self.req_engine = engine;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rewrite(variant: &str) -> (String, VariantRequests) {
+        let mut buf = variant.as_bytes().to_vec();
+        buf.push(0);
+        let len = variant.len();
+        let req = take_variant_requests(&mut buf[..len]);
+        let end = buf.iter().position(|&c| c == 0).unwrap();
+        (String::from_utf8(buf[..end].to_vec()).unwrap(), req)
+    }
+
+    #[test]
+    fn variant_keeps_engine_options_with_separators() {
+        assert_eq!(rewrite("OT").0, "OT");
+        assert_eq!(rewrite("ICU").0, "OT");
+        assert_eq!(rewrite("B/GR").0, "GR");
+        assert_eq!(rewrite("OT/AAT").0, "OT/AAT");
+        assert_eq!(rewrite("").0, "");
+
+        let (name, req) = rewrite("B/I/S=9.5/GR");
+        assert_eq!(name, "GR");
+        assert_eq!(req.engine, Engine::Graphite);
+        assert!(req.bold && req.italic);
+        assert_eq!(req.size, Some(9.5));
+
+        let (name, req) = rewrite("B");
+        assert_eq!(name, "");
+        assert!(req.bold && !req.italic);
+        assert_eq!((req.engine, req.size), (Engine::Default, None));
     }
 }
