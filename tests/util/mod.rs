@@ -227,11 +227,17 @@ impl<'a> ExpectedFile<'a> {
             pbase.parent().unwrap().to_str().unwrap(),
             std::path::MAIN_SEPARATOR
         );
-        let contents = String::from_utf8(contents)
+        let mut contents = String::from_utf8(contents)
             .unwrap()
-            .replace("${ROOT}", &root)
-            .replace("${len(ROOT)+106}", &(root.len() + 106).to_string())
-            .into_bytes();
+            .replace("${ROOT}", &root);
+        const LEN_ROOT: &str = "${len(ROOT)+";
+        while let Some(start) = contents.find(LEN_ROOT) {
+            let digits = start + LEN_ROOT.len();
+            let end = digits + contents[digits..].find('}').unwrap();
+            let offset: usize = contents[digits..end].parse().unwrap();
+            contents.replace_range(start..=end, &(root.len() + offset).to_string());
+        }
+        let contents = contents.into_bytes();
 
         ExpectedFile {
             name,

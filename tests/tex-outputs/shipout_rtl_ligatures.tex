@@ -1,0 +1,10 @@
+% Reversed TFM ligatures are reswitched as characters in TeX--XeT shipout.
+\showboxdepth=100 \showboxbreadth=100 \tracingoutput=1
+\TeXXeTstate=1
+\font\cm=cmr10 \cm
+office \beginR ab \hbox{office fluffy}\ cd \hbox{\beginL ffi\endL x}\endR{} and more.\par
+\beginR office\leaders\hbox to 7pt{\hss.\hss}\hfill fluffy\endR\par
+\hbox to 8cm{\beginR fi\xleaders\hbox to 9pt{ffi\hss}\hfil ffl\cleaders\hrule\hskip 3pt plus 1fil office\endR}
+\hbox to 8cm{\beginR fi\leaders\hbox to 9pt{ffi\hss}\hfil ffl\endR}
+\hbox to 5cm{\beginR fi\hfil ffl\hskip 3pt plus 1fil office\endR}
+\bye

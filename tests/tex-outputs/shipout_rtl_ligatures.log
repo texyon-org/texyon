@@ -1,0 +1,126 @@
+**
+(shipout_rtl_ligatures.tex
+
+Completed box being shipped out [1]
+\vbox(667.20255+0.0)x469.75499
+.\vbox(0.0+0.0)x469.75499, glue set 14.0fil
+..\glue -22.5
+..\hbox(8.5+0.0)x469.75499, glue set 469.75499fil
+...\vbox(8.5+0.0)x0.0
+...\glue 0.0 plus 1.0fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+.\vbox(643.20255+0.0)x469.75499, glue set 585.20255fill
+..\glue(\topskip) 3.05556
+..\hbox(6.94444+1.94444)x469.75499, glue set 285.00467fil
+...\hbox(0.0+0.0)x20.0
+...\cm o
+...\cm ^^N (ligature ffi)
+...\cm c
+...\cm e
+...\glue 3.33333 plus 1.66666 minus 1.11111
+...\beginR
+...\cm a
+...\cm b
+...\glue 3.33333 plus 1.66666 minus 1.11111
+...\hbox(6.94444+1.94444)x47.7779
+....\cm o
+....\cm ^^N (ligature ffi)
+....\cm c
+....\cm e
+....\glue 3.33333 plus 1.66666 minus 1.11111
+....\cm ^^M (ligature fl)
+....\cm u
+....\cm ^^K (ligature ff)
+....\cm y
+...\glue 3.33333 plus 1.66666 minus 1.11111
+...\cm c
+...\cm d
+...\glue 3.33333 plus 1.66666 minus 1.11111
+...\hbox(6.94444+0.0)x13.61116
+....\beginL
+....\cm ^^N (ligature ffi)
+....\endL
+....\cm x
+...\endR
+...\glue 3.33333 plus 1.66666 minus 1.11111
+...\cm a
+...\cm n
+...\cm d
+...\glue 3.33333 plus 1.66666 minus 1.11111
+...\cm m
+...\cm o
+...\cm r
+...\cm e
+...\cm .
+...\penalty 10000
+...\glue(\parfillskip) 0.0 plus 1.0fil
+...\glue(\rightskip) 0.0
+..\glue(\parskip) 0.0 plus 1.0
+..\glue(\baselineskip) 3.11111
+..\hbox(6.94444+1.94444)x469.75499, glue set 405.31042fill
+...\hbox(0.0+0.0)x20.0
+...\beginR
+...\cm o
+...\cm ^^N (ligature ffi)
+...\cm c
+...\cm e
+...\leaders 0.0 plus 1.0fill
+....\hbox(1.05554+0.0)x7.0, glue set 2.11111fil
+.....\glue 0.0 plus 1.0fil minus 1.0fil
+.....\cm .
+.....\glue 0.0 plus 1.0fil minus 1.0fil
+...\cm ^^M (ligature fl)
+...\cm u
+...\cm ^^K (ligature ff)
+...\cm y
+...\endR
+...\penalty 10000
+...\glue(\parfillskip) 0.0 plus 1.0fil
+...\glue(\rightskip) 0.0
+..\glue(\baselineskip) 3.11111
+..\hbox(6.94444+0.0)x227.62204, glue set 94.25543fil
+...\beginR
+...\cm ^^L (ligature fi)
+...\xleaders 0.0 plus 1.0fil
+....\hbox(6.94444+0.0)x9.0, glue set 0.66664fil
+.....\cm ^^N (ligature ffi)
+.....\glue 0.0 plus 1.0fil minus 1.0fil
+...\cm ^^O (ligature ffl)
+...\cleaders 3.0 plus 1.0fil
+....\rule(0.4+0.0)x*
+...\cm o
+...\cm ^^N (ligature ffi)
+...\cm c
+...\cm e
+...\endR
+..\glue(\baselineskip) 5.05556
+..\hbox(6.94444+0.0)x227.62204, glue set 213.73311fil
+...\beginR
+...\cm ^^L (ligature fi)
+...\leaders 0.0 plus 1.0fil
+....\hbox(6.94444+0.0)x9.0, glue set 0.66664fil
+.....\cm ^^N (ligature ffi)
+.....\glue 0.0 plus 1.0fil minus 1.0fil
+...\cm ^^O (ligature ffl)
+...\endR
+..\glue(\baselineskip) 5.05556
+..\hbox(6.94444+0.0)x142.26378, glue set 51.5763fil
+...\beginR
+...\cm ^^L (ligature fi)
+...\glue 0.0 plus 1.0fil
+...\cm ^^O (ligature ffl)
+...\glue 3.0 plus 1.0fil
+...\cm o
+...\cm ^^N (ligature ffi)
+...\cm c
+...\cm e
+...\endR
+..\glue 0.0 plus 1.0fill
+.\glue(\baselineskip) 17.55556
+.\hbox(6.44444+0.0)x469.75499, glue set 232.37749fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+..\cm 1
+..\glue 0.0 plus 1.0fil minus 1.0fil
+
+ )
+Output written on shipout_rtl_ligatures.xdv (1 page, 1060 bytes).

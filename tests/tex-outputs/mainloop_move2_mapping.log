@@ -1,0 +1,50 @@
+**
+(mainloop_move2_mapping.tex
+
+Completed box being shipped out [1]
+\hbox(6.94444+0.0)x5.83336
+.\cm ^^K (ligature ff)
+
+
+
+Completed box being shipped out [1]
+\hbox(6.94444+0.0)x5.83336
+.\cm ^^K (ligature ff)
+
+
+
+Completed box being shipped out [1]
+\vbox(667.20255+0.0)x469.75499
+.\vbox(0.0+0.0)x469.75499, glue set 14.0fil
+..\glue -22.5
+..\hbox(8.5+0.0)x469.75499, glue set 469.75499fil
+...\vbox(8.5+0.0)x0.0
+...\glue 0.0 plus 1.0fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+.\vbox(643.20255+0.0)x469.75499, glue set 609.20255fill
+..\glue(\topskip) 6.00002
+..\hbox(3.99998+0.0)x8.99998
+...\tb 1
+...\tb a
+..\glue(\baselineskip) 8.00002
+..\hbox(3.99998+0.0)x8.99998
+...\tb 1
+...\tb a
+..\glue(\parskip) 0.0 plus 1.0
+..\glue(\baselineskip) 8.00002
+..\hbox(3.99998+0.0)x469.75499, glue set 440.755fil
+...\hbox(0.0+0.0)x20.0
+...\tb 1
+...\tb a
+...\penalty 10000
+...\glue(\parfillskip) 0.0 plus 1.0fil
+...\glue(\rightskip) 0.0
+..\glue 0.0 plus 1.0fill
+.\glue(\baselineskip) 17.55556
+.\hbox(6.44444+0.0)x469.75499, glue set 232.37749fil
+..\glue 0.0 plus 1.0fil minus 1.0fil
+..\cm 1
+..\glue 0.0 plus 1.0fil minus 1.0fil
+
+ )
+Output written on mainloop_move2_mapping.xdv (3 pages, 416 bytes).

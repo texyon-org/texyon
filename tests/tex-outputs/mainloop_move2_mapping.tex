@@ -1,0 +1,10 @@
+% The move_2 existence check maps cur_chr once per bound.
+\showboxdepth=100 \showboxbreadth=100 \tracingoutput=1 \tracinglostchars=1
+\font\cm=cmr10
+\font\tb=mctb:mapping=mcmap
+\hbox{\tb 1a}
+\setbox0\hbox{\cm ff}\shipout\box0
+\hbox{\tb 1a}
+\setbox0\hbox{\cm ff}\shipout\box0
+\tb 1a\par
+\bye
