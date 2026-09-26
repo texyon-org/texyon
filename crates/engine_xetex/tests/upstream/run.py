@@ -53,6 +53,10 @@ def make_bundle():
     for f in ASSETS.iterdir():
         if f.suffix in (".tfm", ".otf", ".ttf", ".png", ".pdf") or f.name in ("knuth-plain.tex", "hyphen.tex"):
             shutil.copy(f, bundle / f.name)
+    # Extra fonts are taken from the upstream TeX Live tree, both engines read the same copy.
+    texmf = Path(XETEX).resolve().parents[2] / "texmf-dist"
+    for rel in (FONTS / "texlive.txt").read_text().split():
+        shutil.copy(texmf / rel, bundle / Path(rel).name)
     for pl in sorted(FONTS.glob("*.pl")):
         subprocess.run([PLTOTF, pl, bundle / (pl.stem + ".tfm")], check=True,
                        stdout=subprocess.DEVNULL)

@@ -1,0 +1,1 @@
+fonts/opentype/public/lm-math/latinmodern-math.otf
