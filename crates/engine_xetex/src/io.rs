@@ -10,6 +10,7 @@ use crate::consts::{
     SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
 };
 use crate::input::NEW_LINE;
+use crate::layout::FontMappingHandle;
 use crate::state::EngineState;
 use crate::texmfmp::{next_utf8_char, utf16_units};
 use tectonic_bridge_core::EOF;
@@ -129,30 +130,6 @@ impl UFile {
     }
 }
 
-extern "C" {
-    // TECkit_Status is a C `long`, so its width differs between LP64, wasm32
-    // and Windows.
-    fn TECkit_CreateConverter(
-        mapping: *const u8,
-        mapping_size: u32,
-        map_forward: u8,
-        source_form: u16,
-        target_form: u16,
-        converter: *mut *mut libc::c_void,
-    ) -> libc::c_long;
-    fn TECkit_ConvertBuffer(
-        converter: *mut libc::c_void,
-        in_buffer: *const u8,
-        in_length: u32,
-        in_used: *mut u32,
-        out_buffer: *mut u8,
-        out_length: u32,
-        out_used: *mut u32,
-        input_is_complete: u8,
-    ) -> libc::c_long;
-    fn TECkit_ResetConverter(converter: *mut libc::c_void) -> libc::c_long;
-}
-
 // ICU checks the incoming UErrorCode, so it must be zeroed before each call.
 extern "C" {
     #[link_name = concat!("ucnv_open", env!("ICU_VERSION_SUFFIX"))]
@@ -189,6 +166,11 @@ pub(crate) fn icu_converter_exists(name: &CStr) -> Result<(), libc::c_int> {
     // SAFETY: `cnv` was just opened and is not used again.
     unsafe { ucnv_close(cnv) };
     Ok(())
+}
+
+fn utf32_bytes(units: &[u32]) -> &[u8] {
+    // SAFETY: `u32` has no padding, so the view covers initialised bytes.
+    unsafe { std::slice::from_raw_parts(units.as_ptr().cast(), std::mem::size_of_val(units)) }
 }
 
 /// The bytes of `units`, for converters that write host-endian UTF-32 into them.
@@ -346,7 +328,7 @@ pub(crate) fn set_input_file_encoding(
 struct LineScratch {
     bytes: Vec<u8>,
     utf32: Vec<u32>,
-    normalizers: [usize; 2],
+    normalizers: [Option<FontMappingHandle>; 2],
 }
 
 thread_local! {
@@ -379,53 +361,24 @@ fn conversion_error(st: &mut EngineState, errcode: i32) {
 /// NFD for 2) and sets `last`.
 fn apply_normalization(
     st: &mut EngineState,
-    normalizers: &mut [usize; 2],
+    normalizers: &mut [Option<FontMappingHandle>; 2],
     units: &[u32],
     norm: i32,
 ) -> Result<(), Abort> {
-    let normalizer = &mut normalizers[(norm - 1) as usize];
-    if *normalizer == 0 {
-        let target_form = NATIVE_UTF32 | if norm == 1 { K_FORM_NFC } else { K_FORM_NFD };
-        let mut converter: *mut libc::c_void = std::ptr::null_mut();
-        // SAFETY: a null mapping with size 0 asks for a plain normalizer, and
-        // `converter` is a valid out-parameter.
-        let status = unsafe {
-            TECkit_CreateConverter(
-                std::ptr::null(),
-                0,
-                1,
-                NATIVE_UTF32,
-                target_form,
-                &mut converter,
-            )
-        };
-        if status != K_STATUS_NO_ERROR {
-            return Err(Abort::Internal("failed to create normalizer"));
+    let converter = match &mut normalizers[(norm - 1) as usize] {
+        Some(converter) => converter,
+        slot => {
+            let target_form = NATIVE_UTF32 | if norm == 1 { K_FORM_NFC } else { K_FORM_NFD };
+            match FontMappingHandle::new(None, true, NATIVE_UTF32, target_form) {
+                (Some(handle), K_STATUS_NO_ERROR) => slot.insert(handle),
+                _ => return Err(Abort::Internal("failed to create normalizer")),
+            }
         }
-        *normalizer = converter as usize;
-    }
-    let converter = *normalizer as *mut libc::c_void;
+    };
 
-    let mut in_used: u32 = 0;
-    let mut out_used: u32 = 0;
     let first = st.input.first as usize;
     let out = utf32_bytes_mut(&mut st.input.buffer[first..st.input.buf_size as usize]);
-    // SAFETY: `converter` is this thread's live normalizer, the buffers are
-    // valid for the lengths passed and the counts are valid out-parameters.
-    let status = unsafe {
-        let status = TECkit_ConvertBuffer(
-            converter,
-            units.as_ptr().cast(),
-            std::mem::size_of_val(units) as u32,
-            &mut in_used,
-            out.as_mut_ptr(),
-            out.len() as u32,
-            &mut out_used,
-            1,
-        );
-        TECkit_ResetConverter(converter);
-        status
-    };
+    let (status, out_used) = converter.convert(utf32_bytes(units), out);
     if status != K_STATUS_NO_ERROR {
         return Err(line_too_long());
     }
