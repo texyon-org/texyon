@@ -1,5 +1,6 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
 use crate::cmd::{BOX_REF, CALL, GLUE_REF, LONG_OUTER_CALL, REGISTER, SHAPE_REF, TOKS_REGISTER};
+use crate::codes::ValueLevel;
 use crate::consts::{
     EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE, TEX_NULL,
     UNDEFINED_CONTROL_SEQUENCE,
@@ -10,7 +11,6 @@ use crate::mem::ZERO_GLUE;
 use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
 use crate::params::IntPar;
-use crate::scan::{DIMEN_VAL, MARK_VAL, MU_VAL};
 use crate::state::{EngineState, EqtbState, GroupCode, MemState, SaveStackState, ScannerState};
 use crate::units::{MemAddr, MemPtr};
 
@@ -551,7 +551,7 @@ impl MemState {
     fn sa_alloc_chain(
         &mut self,
         scanner: &mut ScannerState,
-        t: u8,
+        t: ValueLevel,
         n: i32,
         mut q: NodePtr<SaNode>,
         levels: &[i32],
@@ -563,13 +563,13 @@ impl MemState {
             q = p;
         }
         let p;
-        if t == MARK_VAL {
+        if t == ValueLevel::Mark {
             p = sa(self.get_node(MARK_CLASS_NODE_SIZE)?);
             scanner.cur_ptr = p.ptr();
             for k in 1..=3 {
                 self.set_word(p.idx().offset(k), scanner.sa_null);
             }
-        } else if t <= DIMEN_VAL {
+        } else if t <= ValueLevel::Dimen {
             p = sa(self.get_node(WORD_NODE_SIZE)?);
             scanner.cur_ptr = p.ptr();
             p.set_sa_int(self, 0);
@@ -578,7 +578,7 @@ impl MemState {
         } else {
             p = sa(self.get_node(POINTER_NODE_SIZE)?);
             scanner.cur_ptr = p.ptr();
-            if t <= MU_VAL {
+            if t <= ValueLevel::Mu {
                 p.set_sa_ptr(self, ZERO_GLUE.ptr());
                 self.add_glue_ref(ZERO_GLUE);
             } else {
@@ -586,7 +586,7 @@ impl MemState {
             }
             p.set_sa_ref(self, TEX_NULL);
         }
-        p.set_sa_index(self, (64 * i32::from(t) + leaf_i) as u16);
+        p.set_sa_index(self, (64 * t.raw() + leaf_i) as u16);
         p.set_sa_lev(self, LEVEL_ONE);
         p.set_link(self, q.ptr());
         self.add_sa_child(q, leaf_i, p);
@@ -598,7 +598,7 @@ impl MemState {
     pub fn find_sa_element(
         &self,
         scanner: &mut ScannerState,
-        t: u8,
+        t: ValueLevel,
         n: i32,
     ) -> Option<NodePtr<SaNode>> {
         let mut p = scanner.sa_root[t as usize];
@@ -617,13 +617,13 @@ impl MemState {
     pub fn create_sa_element(
         &mut self,
         scanner: &mut ScannerState,
-        t: u8,
+        t: ValueLevel,
         n: i32,
     ) -> Result<NodePtr<SaNode>, Abort> {
         let levels = sa_levels(n);
         scanner.cur_ptr = scanner.sa_root[t as usize];
         if scanner.cur_ptr.is_null() {
-            let root = self.new_index(scanner, t.into(), MemPtr::NULL)?;
+            let root = self.new_index(scanner, t as u16, MemPtr::NULL)?;
             scanner.sa_root[t as usize] = root.ptr();
             return self.sa_alloc_chain(scanner, t, n, root, &levels);
         }

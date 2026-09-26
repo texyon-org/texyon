@@ -10,6 +10,7 @@ use crate::cmd::{
     SET_BOX_DIMEN, SET_FONT, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF, SET_SHAPE, SPACER,
     SUP_MARK, TAB_MARK, THE, TOKS_REGISTER, VRULE, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
 };
+use crate::codes::{LastItemCode, ValueLevel};
 use crate::consts::{
     ACTIVE_BASE, ACTIVE_MATH_CHAR, BIGGEST_CHAR, BIGGEST_USV, CHAR_CLASS_LIMIT, CLOSED, COUNT_BASE,
     CS_TOKEN_FLAG, DEL_CODE_BASE, END_M_CODE, EQTB_SIZE, FIL, FILLL, FROZEN_CONTROL_SEQUENCE,
@@ -62,16 +63,6 @@ pub(crate) const MATCHING: u8 = 3;
 pub(crate) const ALIGNING: u8 = 4;
 pub(crate) const ABSORBING: u8 = 5;
 
-pub(crate) const INT_VAL: u8 = 0;
-pub(crate) const DIMEN_VAL: u8 = 1;
-pub(crate) const GLUE_VAL: u8 = 2;
-pub(crate) const MU_VAL: u8 = 3;
-pub(crate) const IDENT_VAL: u8 = 4;
-pub(crate) const BOX_VAL: u8 = 4;
-pub(crate) const TOK_VAL: u8 = 5;
-pub(crate) const INTER_CHAR_VAL: u8 = 6;
-pub(crate) const MARK_VAL: u8 = 7;
-
 pub(crate) const MAX_CHAR_VAL: i32 = 0x20_0000;
 pub(crate) const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
 pub(crate) const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
@@ -111,69 +102,9 @@ const EXPR_DIV: i16 = 4;
 const EXPR_SCALE: i16 = 5;
 const NORMAL_EXPR: u16 = 0;
 
-pub(crate) const LAST_NODE_TYPE_CODE: i32 = 3;
 pub(crate) const WIDTH_OFFSET: i32 = 1;
 pub(crate) const DEPTH_OFFSET: i32 = 2;
 pub(crate) const HEIGHT_OFFSET: i32 = 3;
-pub(crate) const INPUT_LINE_NO_CODE: i32 = 4;
-pub(crate) const BADNESS_CODE: i32 = 5;
-pub(crate) const PDF_LAST_X_POS_CODE: i32 = 12;
-pub(crate) const PDF_LAST_Y_POS_CODE: i32 = 13;
-pub(crate) const ELAPSED_TIME_CODE: i32 = 16;
-pub(crate) const PDF_SHELL_ESCAPE_CODE: i32 = 17;
-pub(crate) const RANDOM_SEED_CODE: i32 = 18;
-pub(crate) const ETEX_VERSION_CODE: i32 = 19;
-pub(crate) const CURRENT_GROUP_LEVEL_CODE: i32 = 20;
-pub(crate) const CURRENT_GROUP_TYPE_CODE: i32 = 21;
-pub(crate) const CURRENT_IF_LEVEL_CODE: i32 = 22;
-pub(crate) const CURRENT_IF_TYPE_CODE: i32 = 23;
-pub(crate) const CURRENT_IF_BRANCH_CODE: i32 = 24;
-pub(crate) const GLUE_STRETCH_ORDER_CODE: i32 = 25;
-pub(crate) const GLUE_SHRINK_ORDER_CODE: i32 = 26;
-pub(crate) const XETEX_VERSION_CODE: i32 = 27;
-pub(crate) const XETEX_COUNT_GLYPHS_CODE: i32 = 28;
-pub(crate) const XETEX_COUNT_VARIATIONS_CODE: i32 = 29;
-pub(crate) const XETEX_VARIATION_CODE: i32 = 30;
-pub(crate) const XETEX_FIND_VARIATION_BY_NAME_CODE: i32 = 31;
-pub(crate) const XETEX_VARIATION_MIN_CODE: i32 = 32;
-pub(crate) const XETEX_VARIATION_MAX_CODE: i32 = 33;
-pub(crate) const XETEX_VARIATION_DEFAULT_CODE: i32 = 34;
-pub(crate) const XETEX_COUNT_FEATURES_CODE: i32 = 35;
-pub(crate) const XETEX_FEATURE_CODE_CODE: i32 = 36;
-pub(crate) const XETEX_FIND_FEATURE_BY_NAME_CODE: i32 = 37;
-pub(crate) const XETEX_IS_EXCLUSIVE_FEATURE_CODE: i32 = 38;
-pub(crate) const XETEX_COUNT_SELECTORS_CODE: i32 = 39;
-pub(crate) const XETEX_SELECTOR_CODE_CODE: i32 = 40;
-pub(crate) const XETEX_FIND_SELECTOR_BY_NAME_CODE: i32 = 41;
-pub(crate) const XETEX_IS_DEFAULT_SELECTOR_CODE: i32 = 42;
-pub(crate) const XETEX_OT_COUNT_SCRIPTS_CODE: i32 = 43;
-pub(crate) const XETEX_OT_COUNT_LANGUAGES_CODE: i32 = 44;
-pub(crate) const XETEX_OT_COUNT_FEATURES_CODE: i32 = 45;
-pub(crate) const XETEX_OT_SCRIPT_CODE: i32 = 46;
-pub(crate) const XETEX_OT_LANGUAGE_CODE: i32 = 47;
-pub(crate) const XETEX_OT_FEATURE_CODE: i32 = 48;
-pub(crate) const XETEX_MAP_CHAR_TO_GLYPH_CODE: i32 = 49;
-pub(crate) const XETEX_GLYPH_INDEX_CODE: i32 = 50;
-pub(crate) const XETEX_FONT_TYPE_CODE: i32 = 51;
-pub(crate) const XETEX_FIRST_CHAR_CODE: i32 = 52;
-pub(crate) const XETEX_LAST_CHAR_CODE: i32 = 53;
-pub(crate) const XETEX_PDF_PAGE_COUNT_CODE: i32 = 54;
-pub(crate) const XETEX_DIM: i32 = 55;
-pub(crate) const XETEX_GLYPH_BOUNDS_CODE: i32 = 55;
-pub(crate) const FONT_CHAR_WD_CODE: i32 = 56;
-pub(crate) const FONT_CHAR_HT_CODE: i32 = 57;
-pub(crate) const FONT_CHAR_DP_CODE: i32 = 58;
-pub(crate) const FONT_CHAR_IC_CODE: i32 = 59;
-pub(crate) const PAR_SHAPE_LENGTH_CODE: i32 = 60;
-pub(crate) const PAR_SHAPE_INDENT_CODE: i32 = 61;
-pub(crate) const PAR_SHAPE_DIMEN_CODE: i32 = 62;
-pub(crate) const GLUE_STRETCH_CODE: i32 = 63;
-pub(crate) const GLUE_SHRINK_CODE: i32 = 64;
-pub(crate) const ETEX_GLUE: i32 = 65;
-pub(crate) const MU_TO_GLUE_CODE: i32 = 65;
-pub(crate) const ETEX_MU: i32 = 66;
-pub(crate) const GLUE_TO_MU_CODE: i32 = 66;
-pub(crate) const ETEX_EXPR: i32 = 67;
 
 /// Reports a bad integer `value` with two help lines.
 fn bad_int_error(
@@ -1385,7 +1316,7 @@ pub(crate) fn fetch_box(st: &mut EngineState, n: i32) -> Option<AnyBox> {
     let contents = if n < 256 {
         st.eqtb.box_reg(n)
     } else {
-        find_sa(st, BOX_VAL, n)?.sa_ptr(&st.mem)
+        find_sa(st, ValueLevel::BOX, n)?.sa_ptr(&st.mem)
     };
     st.mem.classify_box(contents.as_idx()?).ok().flatten()
 }
@@ -1403,7 +1334,7 @@ impl MemState {
             eqtb.set_box_reg(n, v);
             return;
         }
-        if let Some(sa) = self.find_sa_element(scanner, BOX_VAL, n) {
+        if let Some(sa) = self.find_sa_element(scanner, ValueLevel::BOX, n) {
             sa.set_sa_ptr(self, v);
             sa.set_sa_ref(self, sa.sa_ref(self) + 1);
             self.delete_sa_ref(scanner, sa.idx());
@@ -1486,11 +1417,11 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
         return st.mem.str_toks_cat(&mut st.strings, b, 0);
     }
     get_x_token(st)?;
-    scan_something_internal(st, TOK_VAL, false)?;
-    if st.scanner.cur_val_level >= IDENT_VAL {
+    scan_something_internal(st, ValueLevel::Tok, false)?;
+    if st.scanner.cur_val_level >= ValueLevel::Ident {
         let mut p = TEMP_HEAD;
         p.set_link(&mut st.mem, MemPtr::NULL);
-        if st.scanner.cur_val_level == IDENT_VAL {
+        if st.scanner.cur_val_level == ValueLevel::Ident {
             store_new_token(st, &mut p, CS_TOKEN_FLAG + st.scanner.cur_val)?;
         } else if st.scanner.cur_val != TEX_NULL {
             let mut r = MemPtr::from_raw(st.scanner.cur_val).link(&st.mem);
@@ -1505,16 +1436,16 @@ pub(crate) fn the_toks(st: &mut EngineState) -> Result<MemPtr, Abort> {
         st.shipout.selector = Selector::NewString;
         let b = st.strings.pool_ptr;
         match st.scanner.cur_val_level {
-            0 => print_int(st, st.scanner.cur_val),
-            1 => {
+            ValueLevel::Int => print_int(st, st.scanner.cur_val),
+            ValueLevel::Dimen => {
                 crate::output::print_scaled(st, st.scanner.cur_dimen());
                 print(st, "pt");
             }
-            2 => {
+            ValueLevel::Glue => {
                 crate::output::print_spec(st, st.scanner.cur_val, Some("pt"));
                 st.mem.delete_glue_ref(st.scanner.cur_glue());
             }
-            3 => {
+            ValueLevel::Mu => {
                 crate::output::print_spec(st, st.scanner.cur_val, Some("mu"));
                 st.mem.delete_glue_ref(st.scanner.cur_glue());
             }
@@ -1856,7 +1787,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
             get_primitive_token(st)?;
             continue;
         } else if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
-            scan_something_internal(st, INT_VAL, false)?;
+            scan_something_internal(st, ValueLevel::Int, false)?;
         } else {
             let (radix, m) = if st.scanner.cur_tok == OCTAL_TOKEN {
                 get_x_token(st)?;
@@ -1973,19 +1904,19 @@ pub(crate) fn xetex_scan_dimen(
 
             if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
                 if mu {
-                    scan_something_internal(st, MU_VAL, false)?;
-                    if st.scanner.cur_val_level >= GLUE_VAL {
+                    scan_something_internal(st, ValueLevel::Mu, false)?;
+                    if st.scanner.cur_val_level >= ValueLevel::Glue {
                         glue_to_width(st);
                     }
-                    if st.scanner.cur_val_level == MU_VAL {
+                    if st.scanner.cur_val_level == ValueLevel::Mu {
                         break 'attach_sign;
                     }
-                    if st.scanner.cur_val_level != INT_VAL {
+                    if st.scanner.cur_val_level != ValueLevel::Int {
                         mu_error(st)?;
                     }
                 } else {
-                    scan_something_internal(st, DIMEN_VAL, false)?;
-                    if st.scanner.cur_val_level == DIMEN_VAL {
+                    scan_something_internal(st, ValueLevel::Dimen, false)?;
+                    if st.scanner.cur_val_level == ValueLevel::Dimen {
                         break 'attach_sign;
                     }
                 }
@@ -2062,15 +1993,15 @@ pub(crate) fn xetex_scan_dimen(
 
                 if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
                     if mu {
-                        scan_something_internal(st, MU_VAL, false)?;
-                        if st.scanner.cur_val_level >= GLUE_VAL {
+                        scan_something_internal(st, ValueLevel::Mu, false)?;
+                        if st.scanner.cur_val_level >= ValueLevel::Glue {
                             glue_to_width(st);
                         }
-                        if st.scanner.cur_val_level != MU_VAL {
+                        if st.scanner.cur_val_level != ValueLevel::Mu {
                             mu_error(st)?;
                         }
                     } else {
-                        scan_something_internal(st, DIMEN_VAL, false)?;
+                        scan_something_internal(st, ValueLevel::Dimen, false)?;
                     }
                     attach_unit(st, save_cur_val, f, st.scanner.cur_dimen());
                     break 'attach_sign;
@@ -2188,21 +2119,21 @@ fn attach_fraction(st: &mut EngineState, f: i32) {
     }
 }
 
-pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), Abort> {
-    let mu = level == MU_VAL;
+pub(crate) fn scan_glue(st: &mut EngineState, level: ValueLevel) -> Result<(), Abort> {
+    let mu = level == ValueLevel::Mu;
     let negative = scan_signs(st)?;
 
     if st.scanner.cur_cmd >= MIN_INTERNAL && st.scanner.cur_cmd <= MAX_INTERNAL {
         scan_something_internal(st, level, negative)?;
-        if st.scanner.cur_val_level >= GLUE_VAL {
+        if st.scanner.cur_val_level >= ValueLevel::Glue {
             if st.scanner.cur_val_level != level {
                 mu_error(st)?;
             }
             return Ok(());
         }
-        if st.scanner.cur_val_level == INT_VAL {
+        if st.scanner.cur_val_level == ValueLevel::Int {
             scan_dimen(st, mu, false, true)?;
-        } else if level == MU_VAL {
+        } else if level == ValueLevel::Mu {
             mu_error(st)?;
         }
     } else {
@@ -2231,10 +2162,10 @@ pub(crate) fn scan_glue(st: &mut EngineState, level: u8) -> Result<(), Abort> {
     Ok(())
 }
 pub(crate) fn scan_normal_glue(st: &mut EngineState) -> Result<(), Abort> {
-    scan_glue(st, GLUE_VAL)
+    scan_glue(st, ValueLevel::Glue)
 }
 pub(crate) fn scan_mu_glue(st: &mut EngineState) -> Result<(), Abort> {
-    scan_glue(st, MU_VAL)
+    scan_glue(st, ValueLevel::Mu)
 }
 /// Applies `op` to the width, stretch and shrink of `spec`, in that order.
 fn map_glue(
@@ -2319,12 +2250,12 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
 
         loop {
             if scan_factor {
-                let o = if s == EXPR_NONE { l } else { INT_VAL };
+                let o = if s == EXPR_NONE { l } else { ValueLevel::Int };
                 get_x_non_blank(st)?;
                 if st.scanner.cur_tok == OTHER_TOKEN + i32::from(b'(') {
                     let q = NodePtr::<ExprNode>::alloc(&mut st.mem)?;
                     q.set_link(&mut st.mem, p);
-                    q.set_level(&mut st.mem, u16::from(l));
+                    q.set_level(&mut st.mem, l);
                     q.set_state(&mut st.mem, (4 * s + r) as u16);
                     q.set_e(&mut st.mem, e);
                     q.set_t(&mut st.mem, t);
@@ -2335,9 +2266,9 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 }
                 back_input(st)?;
                 match o {
-                    INT_VAL => scan_int(st)?,
-                    DIMEN_VAL => scan_dimen(st, false, false, false)?,
-                    GLUE_VAL => scan_normal_glue(st)?,
+                    ValueLevel::Int => scan_int(st)?,
+                    ValueLevel::Dimen => scan_dimen(st, false, false, false)?,
+                    ValueLevel::Glue => scan_normal_glue(st)?,
                     _ => scan_mu_glue(st)?,
                 }
                 f = st.scanner.cur_val;
@@ -2366,12 +2297,12 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
             }
 
             st.errors.arith_error = b;
-            if l == INT_VAL || s > EXPR_SUB {
+            if l == ValueLevel::Int || s > EXPR_SUB {
                 if !(-TEX_INFINITY..=TEX_INFINITY).contains(&f) {
                     st.errors.arith_error = true;
                     f = 0;
                 }
-            } else if l == DIMEN_VAL {
+            } else if l == ValueLevel::Dimen {
                 if f.abs() > MAX_HALFWORD {
                     st.errors.arith_error = true;
                     f = 0;
@@ -2390,7 +2321,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
 
             match s {
                 EXPR_NONE => {
-                    if l >= GLUE_VAL && o != EXPR_NONE {
+                    if l >= ValueLevel::Glue && o != EXPR_NONE {
                         let term = st.mem.new_spec(glue_spec(f))?;
                         t = term.ptr().0;
                         st.mem.delete_glue_ref(glue_spec(f));
@@ -2403,9 +2334,9 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                     if o == EXPR_DIV {
                         n = f;
                         o = EXPR_SCALE;
-                    } else if l == INT_VAL {
+                    } else if l == ValueLevel::Int {
                         t = st.errors.mult_and_add(t, f, 0, TEX_INFINITY);
-                    } else if l == DIMEN_VAL {
+                    } else if l == ValueLevel::Dimen {
                         t = st.errors.mult_and_add(t, f, 0, MAX_HALFWORD);
                     } else {
                         // TeX's `nx_plus_y` here takes the component as its integer factor.
@@ -2415,7 +2346,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
                 EXPR_DIV => {
-                    if l < GLUE_VAL {
+                    if l < ValueLevel::Glue {
                         t = st.errors.quotient(t, f);
                     } else {
                         map_glue(st, glue_spec(t), |errors, x| {
@@ -2424,9 +2355,9 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                     }
                 }
                 EXPR_SCALE => {
-                    if l == INT_VAL {
+                    if l == ValueLevel::Int {
                         t = st.errors.fract(t, n, f, TEX_INFINITY);
-                    } else if l == DIMEN_VAL {
+                    } else if l == ValueLevel::Dimen {
                         t = st.errors.fract(t, n, f, MAX_HALFWORD);
                     } else {
                         map_glue(st, glue_spec(t), |errors, x| {
@@ -2443,9 +2374,9 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                 s = EXPR_NONE;
                 if r == EXPR_NONE {
                     e = t;
-                } else if l == INT_VAL {
+                } else if l == ValueLevel::Int {
                     e = st.errors.add_or_sub(e, t, TEX_INFINITY, r == EXPR_SUB);
-                } else if l == DIMEN_VAL {
+                } else if l == ValueLevel::Dimen {
                     e = st.errors.add_or_sub(e, t, MAX_HALFWORD, r == EXPR_SUB);
                 } else {
                     add_glue(st, glue_spec(e), glue_spec(t), r == EXPR_SUB);
@@ -2466,7 +2397,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
             n = q.n(&st.mem);
             s = (q.state(&st.mem) / 4) as i16;
             r = (q.state(&st.mem) % 4) as i16;
-            l = q.level(&st.mem) as u8;
+            l = q.level(&st.mem);
             p = q.link(&st.mem);
             q.free(&mut st.mem);
             scan_factor = false;
@@ -2482,7 +2413,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
             "since the result is out of range.",
         ]);
         error(st)?;
-        if l >= GLUE_VAL {
+        if l >= ValueLevel::Glue {
             st.mem.delete_glue_ref(glue_spec(e));
             e = 0;
             let zero_glue = glue_spec(e);
@@ -2494,7 +2425,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
     }
     st.errors.arith_error = a;
     st.scanner.cur_val = e;
-    st.scanner.cur_val_level = l as u8;
+    st.scanner.cur_val_level = l;
     Ok(())
 }
 
@@ -2556,13 +2487,13 @@ fn missing_number_error(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 #[inline]
-fn set_cur_val(st: &mut EngineState, value: i32, level: u8) {
+fn set_cur_val(st: &mut EngineState, value: i32, level: ValueLevel) {
     st.scanner.cur_val = value;
-    st.scanner.cur_val_level = level as u8;
+    st.scanner.cur_val_level = level;
 }
 
 /// The sparse-array element of type `t` for register `n`, if it exists.
-fn find_sa(st: &mut EngineState, t: u8, n: i32) -> Option<NodePtr<SaNode>> {
+fn find_sa(st: &mut EngineState, t: ValueLevel, n: i32) -> Option<NodePtr<SaNode>> {
     st.mem.find_sa_element(&mut st.scanner, t, n)
 }
 
@@ -2600,12 +2531,12 @@ fn opentype_engine(engine: &Option<Arc<FontEngineHandle>>) -> Option<&FontEngine
 /// Reports a font query on an unsuitable font and yields `fallback`.
 fn font_query_error(
     st: &mut EngineState,
-    m: i32,
+    m: LastItemCode,
     f: FontId,
     msg: &str,
     fallback: i32,
 ) -> Result<(), Abort> {
-    crate::errors::not_font_error_common(st, LAST_ITEM, m, f, msg)?;
+    crate::errors::not_font_error_common(st, LAST_ITEM, m.raw(), f, msg)?;
     st.scanner.cur_val = fallback;
     Ok(())
 }
@@ -2630,7 +2561,7 @@ fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         }
         let code = st.scanner.cur_val1;
         let v = math_class(code) * 0x1000 + math_fam(code) * 0x100 + math_char(code);
-        set_cur_val(st, v, INT_VAL);
+        set_cur_val(st, v, ValueLevel::Int);
     } else if m == DEL_CODE_BASE {
         st.scanner.cur_val1 = st.eqtb.del_code(n);
         if st.scanner.cur_val1 >= 0x4000_0000 {
@@ -2640,16 +2571,16 @@ fn fetch_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 "I changed this one to zero.",
             ]);
             error(st)?;
-            set_cur_val(st, 0, INT_VAL);
+            set_cur_val(st, 0, ValueLevel::Int);
         } else {
-            set_cur_val(st, st.scanner.cur_val1, INT_VAL);
+            set_cur_val(st, st.scanner.cur_val1, ValueLevel::Int);
         }
     } else if m < SF_CODE_BASE {
-        set_cur_val(st, st.eqtb.equiv(m + n), INT_VAL);
+        set_cur_val(st, st.eqtb.equiv(m + n), ValueLevel::Int);
     } else if m < MATH_CODE_BASE {
-        set_cur_val(st, st.eqtb.equiv(m + n) % 65536, INT_VAL);
+        set_cur_val(st, st.eqtb.equiv(m + n) % 65536, ValueLevel::Int);
     } else {
-        set_cur_val(st, st.eqtb.equiv(m + n), INT_VAL);
+        set_cur_val(st, st.eqtb.equiv(m + n), ValueLevel::Int);
     }
     Ok(())
 }
@@ -2658,10 +2589,10 @@ fn fetch_xetex_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     scan_usv_num(st)?;
     let n = st.scanner.cur_val;
     let (err, help1, help0) = if m == SF_CODE_BASE {
-        set_cur_val(st, st.eqtb.sf_code(n) / 65536, INT_VAL);
+        set_cur_val(st, st.eqtb.sf_code(n) / 65536, ValueLevel::Int);
         return Ok(());
     } else if m == MATH_CODE_BASE {
-        set_cur_val(st, st.eqtb.math_code(n), INT_VAL);
+        set_cur_val(st, st.eqtb.math_code(n), ValueLevel::Int);
         return Ok(());
     } else if m == MATH_CODE_BASE + 1 {
         (
@@ -2670,7 +2601,7 @@ fn fetch_xetex_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             r"use \Umathcodenum to access them as single values.",
         )
     } else if m == DEL_CODE_BASE {
-        set_cur_val(st, st.eqtb.del_code(n), INT_VAL);
+        set_cur_val(st, st.eqtb.del_code(n), ValueLevel::Int);
         return Ok(());
     } else {
         (
@@ -2682,14 +2613,14 @@ fn fetch_xetex_def_code(st: &mut EngineState, m: i32) -> Result<(), Abort> {
     print_err(st, err);
     st.errors.help(&[help1, help0]);
     error(st)?;
-    set_cur_val(st, 0, INT_VAL);
+    set_cur_val(st, 0, ValueLevel::Int);
     Ok(())
 }
 
-fn fetch_token_list(st: &mut EngineState, m: i32, level: u8) -> Result<(), Abort> {
-    if level != TOK_VAL {
+fn fetch_token_list(st: &mut EngineState, m: i32, level: ValueLevel) -> Result<(), Abort> {
+    if level != ValueLevel::Tok {
         missing_number_error(st)?;
-        set_cur_val(st, 0, DIMEN_VAL);
+        set_cur_val(st, 0, ValueLevel::Dimen);
     } else if st.scanner.cur_cmd < ASSIGN_TOKS {
         if m == 0 {
             scan_register_num(st)?;
@@ -2697,62 +2628,61 @@ fn fetch_token_list(st: &mut EngineState, m: i32, level: u8) -> Result<(), Abort
             st.scanner.cur_val = if n < 256 {
                 st.eqtb.toks(n)
             } else {
-                let sa = find_sa(st, TOK_VAL, n);
+                let sa = find_sa(st, ValueLevel::Tok, n);
                 sa_token_list(st, sa)
             }
             .0;
         } else {
             st.scanner.cur_val = NodePtr::<SaNode>::at(m).sa_ptr(&st.mem).0;
         }
-        st.scanner.cur_val_level = TOK_VAL;
+        st.scanner.cur_val_level = ValueLevel::Tok;
     } else if st.scanner.cur_cmd == ASSIGN_TOKS {
         if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
             scan_char_class_not_ignored(st)?;
             st.scanner.cur_ptr.0 = st.scanner.cur_val;
             scan_char_class_not_ignored(st)?;
             let n = st.scanner.cur_ptr.0 * CHAR_CLASS_LIMIT + st.scanner.cur_val;
-            let sa = find_sa(st, INTER_CHAR_VAL, n);
+            let sa = find_sa(st, ValueLevel::InterChar, n);
             st.scanner.cur_val = sa_token_list(st, sa).0;
         } else {
             st.scanner.cur_val = st.eqtb.equiv(m);
         }
-        st.scanner.cur_val_level = TOK_VAL;
+        st.scanner.cur_val_level = ValueLevel::Tok;
     } else {
         back_input(st)?;
         let f = scan_font_ident(st)?;
-        set_cur_val(st, f.id_loc(), IDENT_VAL);
+        set_cur_val(st, f.id_loc(), ValueLevel::Ident);
     }
     Ok(())
 }
 
 fn fetch_register(st: &mut EngineState, m: i32) -> Result<(), Abort> {
-    if !(0..=19).contains(&m) {
-        let sa = NodePtr::<SaNode>::from_ptr(MemPtr::from_raw(m)).expect("sparse register");
-        let level = sa.sa_type(&st.mem) as u8;
-        let value = if level < GLUE_VAL {
+    let Some(level) = ValueLevel::from_raw(m) else {
+        let sa = NodePtr::<SaNode>::at(m);
+        let level = sa.sa_type(&st.mem);
+        let value = if level < ValueLevel::Glue {
             sa.sa_int(&st.mem)
         } else {
             sa.sa_ptr(&st.mem).0
         };
         set_cur_val(st, value, level);
         return Ok(());
-    }
+    };
     scan_register_num(st)?;
     let n = st.scanner.cur_val;
-    let level = m as u8;
-    st.scanner.cur_val_level = level as u8;
+    st.scanner.cur_val_level = level;
     if n > 255 {
         st.scanner.cur_val = match find_sa(st, level, n) {
             None => 0,
-            Some(sa) if level < GLUE_VAL => sa.sa_int(&st.mem),
+            Some(sa) if level < ValueLevel::Glue => sa.sa_int(&st.mem),
             Some(sa) => sa.sa_ptr(&st.mem).0,
         };
     } else {
         let base = match level {
-            INT_VAL => COUNT_BASE,
-            DIMEN_VAL => SCALED_BASE,
-            GLUE_VAL => SKIP_BASE,
-            MU_VAL => MU_SKIP_BASE,
+            ValueLevel::Int => COUNT_BASE,
+            ValueLevel::Dimen => SCALED_BASE,
+            ValueLevel::Glue => SKIP_BASE,
+            ValueLevel::Mu => MU_SKIP_BASE,
             _ => return Ok(()),
         };
         st.scanner.cur_val = st.eqtb.equiv(base + n);
@@ -2761,22 +2691,24 @@ fn fetch_register(st: &mut EngineState, m: i32) -> Result<(), Abort> {
 }
 
 /// Integer-valued `\lastnodetype`-style and XeTeX font queries.
-fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
+fn fetch_last_item_int(st: &mut EngineState, m: LastItemCode) -> Result<(), Abort> {
     match m {
-        INPUT_LINE_NO_CODE => st.scanner.cur_val = st.mem.line,
-        BADNESS_CODE => st.scanner.cur_val = st.shipout.last_badness,
-        ELAPSED_TIME_CODE => {
+        LastItemCode::InputLineNo => st.scanner.cur_val = st.mem.line,
+        LastItemCode::Badness => st.scanner.cur_val = st.shipout.last_badness,
+        LastItemCode::ElapsedTime => {
             st.scanner.cur_val = if st.config.deterministic_mode {
                 0
             } else {
                 st.shipout.get_microinterval()
             };
         }
-        RANDOM_SEED_CODE => st.scanner.cur_val = st.errors.random_seed,
-        PDF_SHELL_ESCAPE_CODE => st.scanner.cur_val = i32::from(st.config.shell_escape_enabled),
-        ETEX_VERSION_CODE => st.scanner.cur_val = ETEX_VERSION,
-        XETEX_VERSION_CODE => st.scanner.cur_val = XETEX_VERSION,
-        XETEX_COUNT_GLYPHS_CODE => {
+        LastItemCode::RandomSeed => st.scanner.cur_val = st.errors.random_seed,
+        LastItemCode::PdfShellEscape => {
+            st.scanner.cur_val = i32::from(st.config.shell_escape_enabled)
+        }
+        LastItemCode::EtexVersion => st.scanner.cur_val = ETEX_VERSION,
+        LastItemCode::XetexVersion => st.scanner.cur_val = XETEX_VERSION,
+        LastItemCode::XetexCountGlyphs => {
             let (_, engine, fa) = scan_font_engine(st)?;
             st.scanner.cur_val = if fa == AAT_FONT_FLAG {
                 aat_font_get(m)
@@ -2786,7 +2718,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 0
             };
         }
-        XETEX_COUNT_FEATURES_CODE => {
+        LastItemCode::XetexCountFeatures => {
             let (_, engine, fa) = scan_font_engine(st)?;
             st.scanner.cur_val = if fa == AAT_FONT_FLAG {
                 aat_font_get(m)
@@ -2796,15 +2728,17 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 0
             };
         }
-        XETEX_VARIATION_CODE
-        | XETEX_VARIATION_MIN_CODE
-        | XETEX_VARIATION_MAX_CODE
-        | XETEX_VARIATION_DEFAULT_CODE
-        | XETEX_COUNT_VARIATIONS_CODE => {
+        LastItemCode::XetexVariation
+        | LastItemCode::XetexVariationMin
+        | LastItemCode::XetexVariationMax
+        | LastItemCode::XetexVariationDefault
+        | LastItemCode::XetexCountVariations => {
             scan_font_ident(st)?;
             st.scanner.cur_val = 0;
         }
-        XETEX_FEATURE_CODE_CODE | XETEX_IS_EXCLUSIVE_FEATURE_CODE | XETEX_COUNT_SELECTORS_CODE => {
+        LastItemCode::XetexFeatureCode
+        | LastItemCode::XetexIsExclusiveFeature
+        | LastItemCode::XetexCountSelectors => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 scan_int(st)?;
@@ -2816,7 +2750,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
         }
-        XETEX_SELECTOR_CODE_CODE | XETEX_IS_DEFAULT_SELECTOR_CODE => {
+        LastItemCode::XetexSelectorCode | LastItemCode::XetexIsDefaultSelector => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 scan_int(st)?;
@@ -2832,7 +2766,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
         }
-        XETEX_FIND_VARIATION_BY_NAME_CODE => {
+        LastItemCode::XetexFindVariationByName => {
             let (f, _, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 crate::io::scan_and_pack_name(st)?;
@@ -2841,7 +2775,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not an AAT font", -1)?;
             }
         }
-        XETEX_FIND_FEATURE_BY_NAME_CODE => {
+        LastItemCode::XetexFindFeatureByName => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 crate::io::scan_and_pack_name(st)?;
@@ -2853,7 +2787,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
         }
-        XETEX_FIND_SELECTOR_BY_NAME_CODE => {
+        LastItemCode::XetexFindSelectorByName => {
             let (f, engine, fa) = scan_font_engine(st)?;
             if fa == AAT_FONT_FLAG {
                 scan_int(st)?;
@@ -2869,7 +2803,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not an AAT or Graphite font", -1)?;
             }
         }
-        XETEX_OT_COUNT_SCRIPTS_CODE => {
+        LastItemCode::XetexOtCountScripts => {
             let (_, engine, _) = scan_font_engine(st)?;
             st.scanner.cur_val = if let Some(engine) = opentype_engine(&engine) {
                 ot_font_get(m, engine)
@@ -2877,7 +2811,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 0
             };
         }
-        XETEX_OT_COUNT_LANGUAGES_CODE | XETEX_OT_SCRIPT_CODE => {
+        LastItemCode::XetexOtCountLanguages | LastItemCode::XetexOtScript => {
             let (f, engine, _) = scan_font_engine(st)?;
             if let Some(engine) = opentype_engine(&engine) {
                 scan_int(st)?;
@@ -2886,7 +2820,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
         }
-        XETEX_OT_COUNT_FEATURES_CODE | XETEX_OT_LANGUAGE_CODE => {
+        LastItemCode::XetexOtCountFeatures | LastItemCode::XetexOtLanguage => {
             let (f, engine, _) = scan_font_engine(st)?;
             if let Some(engine) = opentype_engine(&engine) {
                 scan_int(st)?;
@@ -2897,7 +2831,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
         }
-        XETEX_OT_FEATURE_CODE => {
+        LastItemCode::XetexOtFeature => {
             let (f, engine, _) = scan_font_engine(st)?;
             if let Some(engine) = opentype_engine(&engine) {
                 scan_int(st)?;
@@ -2910,7 +2844,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not an OpenType Layout font", -1)?;
             }
         }
-        XETEX_MAP_CHAR_TO_GLYPH_CODE => {
+        LastItemCode::XetexMapCharToGlyph => {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
                 scan_int(st)?;
@@ -2919,7 +2853,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
             }
         }
-        XETEX_GLYPH_INDEX_CODE => {
+        LastItemCode::XetexGlyphIndex => {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
                 crate::io::scan_and_pack_name(st)?;
@@ -2929,7 +2863,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
             }
         }
-        XETEX_FONT_TYPE_CODE => {
+        LastItemCode::XetexFontType => {
             let (_, engine, fa) = scan_font_engine(st)?;
             st.scanner.cur_val = if fa == AAT_FONT_FLAG {
                 1
@@ -2941,9 +2875,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 0
             };
         }
-        XETEX_FIRST_CHAR_CODE | XETEX_LAST_CHAR_CODE => {
+        LastItemCode::XetexFirstChar | LastItemCode::XetexLastChar => {
             let f = scan_font_ident(st)?;
-            let first = m == XETEX_FIRST_CHAR_CODE;
+            let first = m == LastItemCode::XetexFirstChar;
             st.scanner.cur_val = if st.fonts.is_native_font(f) {
                 st.fonts.get_font_char_range(f, i32::from(first))?
             } else if first {
@@ -2952,16 +2886,18 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 i32::from(st.fonts.font_ec[f])
             };
         }
-        PDF_LAST_X_POS_CODE => st.scanner.cur_val = st.shipout.pdf_last_x_pos,
-        PDF_LAST_Y_POS_CODE => st.scanner.cur_val = st.shipout.pdf_last_y_pos,
-        XETEX_PDF_PAGE_COUNT_CODE => {
+        LastItemCode::PdfLastXPos => st.scanner.cur_val = st.shipout.pdf_last_x_pos,
+        LastItemCode::PdfLastYPos => st.scanner.cur_val = st.shipout.pdf_last_y_pos,
+        LastItemCode::XetexPdfPageCount => {
             crate::io::scan_and_pack_name(st)?;
             st.scanner.cur_val =
                 crate::pic::count_pdf_file_pages_named(st.input.name_of_file_bytes())?;
         }
-        CURRENT_GROUP_LEVEL_CODE => st.scanner.cur_val = i32::from(st.save_stack.cur_level) - 1,
-        CURRENT_GROUP_TYPE_CODE => st.scanner.cur_val = st.save_stack.cur_group as i32,
-        CURRENT_IF_LEVEL_CODE => {
+        LastItemCode::CurrentGroupLevel => {
+            st.scanner.cur_val = i32::from(st.save_stack.cur_level) - 1
+        }
+        LastItemCode::CurrentGroupType => st.scanner.cur_val = st.save_stack.cur_group as i32,
+        LastItemCode::CurrentIfLevel => {
             let mut q = st.scanner.cond_ptr;
             let mut depth = 0;
             while !q.is_null() {
@@ -2970,7 +2906,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             }
             st.scanner.cur_val = depth;
         }
-        CURRENT_IF_TYPE_CODE => {
+        LastItemCode::CurrentIfType => {
             st.scanner.cur_val = if st.scanner.cond_ptr.is_null() {
                 0
             } else if i32::from(st.scanner.cur_if) < UNLESS_CODE {
@@ -2979,18 +2915,18 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 -(i32::from(st.scanner.cur_if) - 31)
             };
         }
-        CURRENT_IF_BRANCH_CODE => {
+        LastItemCode::CurrentIfBranch => {
             st.scanner.cur_val = match st.scanner.if_limit {
                 OR_CODE | ELSE_CODE => 1,
                 FI_CODE => -1,
                 _ => 0,
             };
         }
-        GLUE_STRETCH_ORDER_CODE | GLUE_SHRINK_ORDER_CODE => {
+        LastItemCode::GlueStretchOrder | LastItemCode::GlueShrinkOrder => {
             scan_normal_glue(st)?;
             let q = st.scanner.cur_val;
             let spec = glue_spec(q);
-            st.scanner.cur_val = if m == GLUE_STRETCH_ORDER_CODE {
+            st.scanner.cur_val = if m == LastItemCode::GlueStretchOrder {
                 i32::from(spec.stretch_order(&st.mem))
             } else {
                 i32::from(spec.shrink_order(&st.mem))
@@ -2999,13 +2935,13 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         }
         _ => {}
     }
-    st.scanner.cur_val_level = INT_VAL;
+    st.scanner.cur_val_level = ValueLevel::Int;
     Ok(())
 }
 
-fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
+fn fetch_last_item_dimen(st: &mut EngineState, m: LastItemCode) -> Result<(), Abort> {
     match m {
-        XETEX_GLYPH_BOUNDS_CODE => {
+        LastItemCode::XetexGlyphBounds => {
             let f = st.eqtb.cur_font();
             if st.fonts.is_native_font(f) {
                 scan_int(st)?;
@@ -3029,16 +2965,19 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 font_query_error(st, m, f, "; not a native platform font", 0)?;
             }
         }
-        FONT_CHAR_WD_CODE | FONT_CHAR_HT_CODE | FONT_CHAR_DP_CODE | FONT_CHAR_IC_CODE => {
+        LastItemCode::FontCharWd
+        | LastItemCode::FontCharHt
+        | LastItemCode::FontCharDp
+        | LastItemCode::FontCharIc => {
             let f = scan_font_ident(st)?;
             scan_usv_num(st)?;
             let c = st.scanner.cur_val;
             let d = if st.fonts.is_native_font(f) {
                 let fonts = &st.fonts;
                 match m {
-                    FONT_CHAR_WD_CODE => fonts.native_char_width(f, c),
-                    FONT_CHAR_HT_CODE => fonts.native_char_height(f, c),
-                    FONT_CHAR_DP_CODE => fonts.native_char_depth(f, c),
+                    LastItemCode::FontCharWd => fonts.native_char_width(f, c),
+                    LastItemCode::FontCharHt => fonts.native_char_height(f, c),
+                    LastItemCode::FontCharDp => fonts.native_char_depth(f, c),
                     _ => fonts.native_char_italic_correction(f, c),
                 }?
             } else if i32::from(st.fonts.font_bc[f]) <= c && i32::from(st.fonts.font_ec[f]) >= c {
@@ -3046,9 +2985,9 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 let info = st.fonts.char_info(f, ec);
                 let fonts = &st.fonts;
                 match m {
-                    FONT_CHAR_WD_CODE => fonts.char_width(f, info),
-                    FONT_CHAR_HT_CODE => fonts.char_height(f, info),
-                    FONT_CHAR_DP_CODE => fonts.char_depth(f, info),
+                    LastItemCode::FontCharWd => fonts.char_width(f, info),
+                    LastItemCode::FontCharHt => fonts.char_height(f, info),
+                    LastItemCode::FontCharDp => fonts.char_depth(f, info),
                     _ => fonts.char_italic(f, info),
                 }
             } else {
@@ -3056,8 +2995,14 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             };
             st.scanner.set_cur_dimen(d);
         }
-        PAR_SHAPE_LENGTH_CODE | PAR_SHAPE_INDENT_CODE | PAR_SHAPE_DIMEN_CODE => {
-            let mut q = m - PAR_SHAPE_LENGTH_CODE;
+        LastItemCode::ParShapeLength
+        | LastItemCode::ParShapeIndent
+        | LastItemCode::ParShapeDimen => {
+            let mut q = match m {
+                LastItemCode::ParShapeLength => 0,
+                LastItemCode::ParShapeIndent => 1,
+                _ => 2,
+            };
             scan_int(st)?;
             match st.eqtb.par_shape() {
                 Some(shape) if st.scanner.cur_val > 0 => {
@@ -3076,10 +3021,10 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                 _ => st.scanner.cur_val = 0,
             }
         }
-        GLUE_STRETCH_CODE | GLUE_SHRINK_CODE => {
+        LastItemCode::GlueStretch | LastItemCode::GlueShrink => {
             scan_normal_glue(st)?;
             let spec = glue_spec(st.scanner.cur_val);
-            let d = if m == GLUE_STRETCH_CODE {
+            let d = if m == LastItemCode::GlueStretch {
                 spec.stretch(&st.mem)
             } else {
                 spec.shrink(&st.mem)
@@ -3089,14 +3034,13 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         }
         _ => {}
     }
-    st.scanner.cur_val_level = DIMEN_VAL;
+    st.scanner.cur_val_level = ValueLevel::Dimen;
     Ok(())
 }
 
 /// `\lastpenalty`, `\lastkern`, `\lastskip` and `\lastnodetype`.
-fn fetch_last_node_item(st: &mut EngineState, m: i32) {
-    let want_type = m == LAST_NODE_TYPE_CODE;
-    let level = m as u8;
+fn fetch_last_node_item(st: &mut EngineState, code: LastItemCode) {
+    let want_type = code == LastItemCode::LastNodeType;
     st.scanner.cur_val = 0;
     let head = st.input.cur_list.head;
     let mut tx = st.input.cur_list.tail;
@@ -3108,12 +3052,16 @@ fn fetch_last_node_item(st: &mut EngineState, m: i32) {
         }
     }
     if want_type {
-        st.scanner.cur_val_level = INT_VAL;
+        st.scanner.cur_val_level = ValueLevel::Int;
         if tx == head || st.input.cur_list.mode == 0 {
             st.scanner.cur_val = -1;
         }
     } else {
-        st.scanner.cur_val_level = level;
+        st.scanner.cur_val_level = match code {
+            LastItemCode::LastPenalty => ValueLevel::Int,
+            LastItemCode::LastKern => ValueLevel::Dimen,
+            _ => ValueLevel::Glue,
+        };
     }
     match node {
         Some(_) if st.input.cur_list.mode != 0 && want_type => {
@@ -3124,13 +3072,17 @@ fn fetch_last_node_item(st: &mut EngineState, m: i32) {
                 i32::from(NodeType::Unset.as_raw()) + 2
             };
         }
-        Some(node) if st.input.cur_list.mode != 0 => match (level, node) {
-            (INT_VAL, Ok(AnyNode::Penalty(p))) => st.scanner.cur_val = p.penalty(&st.mem),
-            (DIMEN_VAL, Ok(AnyNode::Kern(k))) => st.scanner.set_cur_dimen(k.width(&st.mem)),
-            (GLUE_VAL, Ok(AnyNode::Glue(g))) => {
+        Some(node) if st.input.cur_list.mode != 0 => match (code, node) {
+            (LastItemCode::LastPenalty, Ok(AnyNode::Penalty(p))) => {
+                st.scanner.cur_val = p.penalty(&st.mem)
+            }
+            (LastItemCode::LastKern, Ok(AnyNode::Kern(k))) => {
+                st.scanner.set_cur_dimen(k.width(&st.mem))
+            }
+            (LastItemCode::LastSkip, Ok(AnyNode::Glue(g))) => {
                 st.scanner.cur_val = g.glue_ptr(&st.mem).ptr().0;
                 if g.subtype(&st.mem) == MU_GLUE {
-                    st.scanner.cur_val_level = MU_VAL;
+                    st.scanner.cur_val_level = ValueLevel::Mu;
                 }
             }
             _ => {}
@@ -3141,10 +3093,10 @@ fn fetch_last_node_item(st: &mut EngineState, m: i32) {
                     st.scanner.cur_val = st.shipout.last_node_type;
                     return;
                 }
-                match level {
-                    INT_VAL => st.scanner.cur_val = st.shipout.last_penalty,
-                    DIMEN_VAL => st.scanner.set_cur_dimen(st.shipout.last_kern),
-                    GLUE_VAL => {
+                match code {
+                    LastItemCode::LastPenalty => st.scanner.cur_val = st.shipout.last_penalty,
+                    LastItemCode::LastKern => st.scanner.set_cur_dimen(st.shipout.last_kern),
+                    LastItemCode::LastSkip => {
                         if let Some(spec) = st.shipout.last_glue {
                             st.scanner.cur_val = spec.ptr().0;
                         }
@@ -3159,7 +3111,7 @@ fn fetch_last_node_item(st: &mut EngineState, m: i32) {
 /// Scans an internal quantity of at most `level`, negated if `negative`.
 pub(crate) fn scan_something_internal(
     st: &mut EngineState,
-    level: u8,
+    level: ValueLevel,
     negative: bool,
 ) -> Result<(), Abort> {
     loop {
@@ -3170,10 +3122,10 @@ pub(crate) fn scan_something_internal(
             TOKS_REGISTER | ASSIGN_TOKS | DEF_FAMILY | SET_FONT | DEF_FONT => {
                 fetch_token_list(st, m, level)?
             }
-            ASSIGN_INT => set_cur_val(st, st.eqtb.int_at(m), INT_VAL),
-            ASSIGN_DIMEN => set_cur_val(st, st.eqtb.int_at(m), DIMEN_VAL),
-            ASSIGN_GLUE => set_cur_val(st, st.eqtb.equiv(m), GLUE_VAL),
-            ASSIGN_MU_GLUE => set_cur_val(st, st.eqtb.equiv(m), MU_VAL),
+            ASSIGN_INT => set_cur_val(st, st.eqtb.int_at(m), ValueLevel::Int),
+            ASSIGN_DIMEN => set_cur_val(st, st.eqtb.int_at(m), ValueLevel::Dimen),
+            ASSIGN_GLUE => set_cur_val(st, st.eqtb.equiv(m), ValueLevel::Glue),
+            ASSIGN_MU_GLUE => set_cur_val(st, st.eqtb.equiv(m), ValueLevel::Mu),
             SET_AUX => {
                 if i32::from(st.input.cur_list.mode.abs()) != m {
                     error_here_with_diagnostic(st, "Improper ");
@@ -3186,16 +3138,24 @@ pub(crate) fn scan_something_internal(
                         "I'm forgetting what you said and using zero instead.",
                     ]);
                     error(st)?;
-                    set_cur_val(st, 0, if level != TOK_VAL { DIMEN_VAL } else { INT_VAL });
+                    set_cur_val(
+                        st,
+                        0,
+                        if level != ValueLevel::Tok {
+                            ValueLevel::Dimen
+                        } else {
+                            ValueLevel::Int
+                        },
+                    );
                 } else if m == i32::from(VMODE) {
-                    set_cur_val(st, st.input.cur_list.aux_s1(), DIMEN_VAL);
+                    set_cur_val(st, st.input.cur_list.aux_s1(), ValueLevel::Dimen);
                 } else {
-                    set_cur_val(st, st.input.cur_list.aux_s0(), INT_VAL);
+                    set_cur_val(st, st.input.cur_list.aux_s0(), ValueLevel::Int);
                 }
             }
             SET_PREV_GRAF => {
                 if st.input.cur_list.mode == 0 {
-                    set_cur_val(st, 0, INT_VAL);
+                    set_cur_val(st, 0, ValueLevel::Int);
                 } else {
                     let np = st.input.nest_ptr as usize;
                     st.input.nest[np] = st.input.cur_list;
@@ -3203,7 +3163,7 @@ pub(crate) fn scan_something_internal(
                     while st.input.nest[p].mode.abs() != VMODE {
                         p -= 1;
                     }
-                    set_cur_val(st, st.input.nest[p].prev_graf, INT_VAL);
+                    set_cur_val(st, st.input.nest[p].prev_graf, ValueLevel::Int);
                 }
             }
             SET_PAGE_INT => {
@@ -3212,7 +3172,7 @@ pub(crate) fn scan_something_internal(
                     2 => st.errors.interaction as i32,
                     _ => st.shipout.insert_penalties,
                 };
-                set_cur_val(st, v, INT_VAL);
+                set_cur_val(st, v, ValueLevel::Int);
             }
             SET_PAGE_DIMEN => {
                 let v = if st.shipout.page_contents == crate::state::PageContents::Empty
@@ -3226,7 +3186,7 @@ pub(crate) fn scan_something_internal(
                 } else {
                     st.shipout.page_so_far[m as usize]
                 };
-                set_cur_val(st, v.0, DIMEN_VAL);
+                set_cur_val(st, v.0, ValueLevel::Dimen);
             }
             SET_SHAPE => {
                 if m > LOCAL_BASE + LOCAL_PAR_SHAPE {
@@ -3241,7 +3201,7 @@ pub(crate) fn scan_something_internal(
                 } else {
                     st.scanner.cur_val = st.eqtb.par_shape().map_or(0, |s| s.lines(&st.mem));
                 }
-                st.scanner.cur_val_level = INT_VAL;
+                st.scanner.cur_val_level = ValueLevel::Int;
             }
             SET_BOX_DIMEN => {
                 scan_register_num(st)?;
@@ -3251,19 +3211,23 @@ pub(crate) fn scan_something_internal(
                     Some(b) if m == DEPTH_OFFSET => b.depth(&st.mem),
                     Some(b) => b.height(&st.mem),
                 };
-                set_cur_val(st, v.0, DIMEN_VAL);
+                set_cur_val(st, v.0, ValueLevel::Dimen);
             }
-            CHAR_GIVEN | MATH_GIVEN | XETEX_MATH_GIVEN => set_cur_val(st, m, INT_VAL),
+            CHAR_GIVEN | MATH_GIVEN | XETEX_MATH_GIVEN => set_cur_val(st, m, ValueLevel::Int),
             ASSIGN_FONT_DIMEN => {
                 find_font_dimen(st, false)?;
                 st.fonts.set_font_info_sc(st.fonts.fmem_ptr, Scaled::ZERO);
-                set_cur_val(st, st.fonts.font_info_sc(st.scanner.cur_val).0, DIMEN_VAL);
+                set_cur_val(
+                    st,
+                    st.fonts.font_info_sc(st.scanner.cur_val).0,
+                    ValueLevel::Dimen,
+                );
             }
             ASSIGN_FONT_INT => {
                 let f = scan_font_ident(st)?;
                 match m {
-                    0 => set_cur_val(st, st.fonts.hyphen_char[f], INT_VAL),
-                    1 => set_cur_val(st, st.fonts.skew_char[f], INT_VAL),
+                    0 => set_cur_val(st, st.fonts.hyphen_char[f], ValueLevel::Int),
+                    1 => set_cur_val(st, st.fonts.skew_char[f], ValueLevel::Int),
                     _ => {
                         if st.fonts.is_native_font(f) {
                             scan_glyph_number(st, f)?;
@@ -3273,10 +3237,10 @@ pub(crate) fn scan_something_internal(
                         let code = st.scanner.cur_val as u32;
                         match m {
                             LP_CODE_BASE => {
-                                set_cur_val(st, get_cp_code(f.0, code, LEFT_SIDE), INT_VAL)
+                                set_cur_val(st, get_cp_code(f.0, code, LEFT_SIDE), ValueLevel::Int)
                             }
                             RP_CODE_BASE => {
-                                set_cur_val(st, get_cp_code(f.0, code, RIGHT_SIDE), INT_VAL)
+                                set_cur_val(st, get_cp_code(f.0, code, RIGHT_SIDE), ValueLevel::Int)
                             }
                             _ => {}
                         }
@@ -3285,37 +3249,43 @@ pub(crate) fn scan_something_internal(
             }
             REGISTER => fetch_register(st, m)?,
             LAST_ITEM => {
-                if m < INPUT_LINE_NO_CODE {
-                    fetch_last_node_item(st, m);
-                } else if m < XETEX_DIM {
-                    fetch_last_item_int(st, m)?;
-                } else if m < ETEX_GLUE {
-                    fetch_last_item_dimen(st, m)?;
+                let code = LastItemCode::from_raw(m).ok_or(Abort::Confusion("last_item"))?;
+                if code < LastItemCode::InputLineNo {
+                    fetch_last_node_item(st, code);
+                } else if code < LastItemCode::XetexGlyphBounds {
+                    fetch_last_item_int(st, code)?;
+                } else if code < LastItemCode::MuToGlue {
+                    fetch_last_item_dimen(st, code)?;
                 } else {
-                    if m < ETEX_MU {
-                        if m == MU_TO_GLUE_CODE {
+                    match code {
+                        LastItemCode::MuToGlue => {
                             scan_mu_glue(st)?;
+                            st.scanner.cur_val_level = ValueLevel::Glue;
                         }
-                        st.scanner.cur_val_level = GLUE_VAL;
-                    } else if m < ETEX_EXPR {
-                        if m == GLUE_TO_MU_CODE {
+                        LastItemCode::GlueToMu => {
                             scan_normal_glue(st)?;
+                            st.scanner.cur_val_level = ValueLevel::Mu;
                         }
-                        st.scanner.cur_val_level = MU_VAL;
-                    } else {
-                        st.scanner.cur_val_level = (m - ETEX_EXPR) as u8;
-                        scan_expr(st)?;
+                        _ => {
+                            st.scanner.cur_val_level = match code {
+                                LastItemCode::NumExpr => ValueLevel::Int,
+                                LastItemCode::DimExpr => ValueLevel::Dimen,
+                                LastItemCode::GlueExpr => ValueLevel::Glue,
+                                _ => ValueLevel::Mu,
+                            };
+                            scan_expr(st)?;
+                        }
                     }
                     while st.scanner.cur_val_level > level {
-                        if st.scanner.cur_val_level == GLUE_VAL {
+                        if st.scanner.cur_val_level == ValueLevel::Glue {
                             glue_to_width(st);
-                        } else if st.scanner.cur_val_level == MU_VAL {
+                        } else if st.scanner.cur_val_level == ValueLevel::Mu {
                             mu_error(st)?;
                         }
-                        st.scanner.cur_val_level -= 1;
+                        st.scanner.cur_val_level = st.scanner.cur_val_level.lower();
                     }
                     if negative {
-                        if st.scanner.cur_val_level >= GLUE_VAL {
+                        if st.scanner.cur_val_level >= ValueLevel::Glue {
                             let old = negate_glue(st)?;
                             st.mem.delete_glue_ref(glue_spec(old));
                         } else {
@@ -3340,29 +3310,37 @@ pub(crate) fn scan_something_internal(
                 st.errors
                     .help(&["I'm forgetting what you said and using zero instead."]);
                 error(st)?;
-                set_cur_val(st, 0, if level != TOK_VAL { DIMEN_VAL } else { INT_VAL });
+                set_cur_val(
+                    st,
+                    0,
+                    if level != ValueLevel::Tok {
+                        ValueLevel::Dimen
+                    } else {
+                        ValueLevel::Int
+                    },
+                );
             }
         }
         break;
     }
 
     while st.scanner.cur_val_level > level {
-        if st.scanner.cur_val_level == GLUE_VAL {
+        if st.scanner.cur_val_level == ValueLevel::Glue {
             let width = st.scanner.cur_glue().width(&st.mem);
             st.scanner.set_cur_dimen(width);
-        } else if st.scanner.cur_val_level == MU_VAL {
+        } else if st.scanner.cur_val_level == ValueLevel::Mu {
             mu_error(st)?;
         }
-        st.scanner.cur_val_level -= 1;
+        st.scanner.cur_val_level = st.scanner.cur_val_level.lower();
     }
 
     if negative {
-        if st.scanner.cur_val_level >= GLUE_VAL {
+        if st.scanner.cur_val_level >= ValueLevel::Glue {
             negate_glue(st)?;
         } else {
             st.scanner.cur_val = -st.scanner.cur_val;
         }
-    } else if (GLUE_VAL..=MU_VAL).contains(&(st.scanner.cur_val_level)) {
+    } else if (ValueLevel::Glue..=ValueLevel::Mu).contains(&(st.scanner.cur_val_level)) {
         let spec = st.scanner.cur_glue();
         let refs = spec.ref_count(&st.mem);
         spec.set_ref_count(&mut st.mem, refs + 1);
@@ -3457,11 +3435,11 @@ pub(crate) fn scan_glyph_number(st: &mut EngineState, f: FontId) -> Result<(), A
         crate::io::scan_and_pack_name(st)?;
         let name = st.input.name_of_file_bytes();
         let v = st.fonts.map_glyph_to_index(f, name)?;
-        set_cur_val(st, v, INT_VAL);
+        set_cur_val(st, v, ValueLevel::Int);
     } else if scan_keyword(st, "u")? {
         scan_char_num(st)?;
         let v = st.fonts.map_char_to_glyph(f, st.scanner.cur_val)?;
-        set_cur_val(st, v, INT_VAL);
+        set_cur_val(st, v, ValueLevel::Int);
     } else {
         scan_int(st)?;
     }
@@ -3544,6 +3522,6 @@ pub(crate) fn compare_strings(st: &mut EngineState) -> Result<(), Abort> {
 
     st.strings.flush_str(s2);
     st.strings.flush_str(s1);
-    set_cur_val(st, result, INT_VAL);
+    set_cur_val(st, result, ValueLevel::Int);
     Ok(())
 }

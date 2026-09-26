@@ -2,6 +2,7 @@
 //! TECkit mappings, shaping and measuring native word and glyph nodes, and the
 //! extension (`\openout`, `\write`, `\special`, ...) commands.
 
+use crate::codes::LastItemCode;
 use crate::params::IntPar;
 use std::ffi::c_int;
 use std::sync::Arc;
@@ -29,14 +30,7 @@ use crate::mem::TEMP_HEAD;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
 use crate::output::{capture_to_diagnostic, error_here_with_diagnostic};
 use crate::pic::load_picture;
-use crate::scan::{
-    get_x_token, scan_int, LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN, XETEX_COUNT_FEATURES_CODE,
-    XETEX_COUNT_GLYPHS_CODE, XETEX_COUNT_SELECTORS_CODE, XETEX_FEATURE_CODE_CODE,
-    XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
-    XETEX_IS_DEFAULT_SELECTOR_CODE, XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_OT_COUNT_FEATURES_CODE,
-    XETEX_OT_COUNT_LANGUAGES_CODE, XETEX_OT_COUNT_SCRIPTS_CODE, XETEX_OT_FEATURE_CODE,
-    XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_SELECTOR_CODE_CODE,
-};
+use crate::scan::{get_x_token, scan_int, LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN};
 use crate::state::{EngineState, ErrorState, FontState, MemState};
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
@@ -780,37 +774,46 @@ pub(crate) fn ot_get_font_metrics(engine: &FontEngineHandle) -> NativeFontMetric
     }
 }
 
-pub(crate) fn ot_font_get(what: i32, engine: &FontEngineHandle) -> i32 {
+pub(crate) fn ot_font_get(what: LastItemCode, engine: &FontEngineHandle) -> i32 {
     let font = engine.font();
     match what {
-        XETEX_COUNT_GLYPHS_CODE => font.count_glyphs() as i32,
-        XETEX_COUNT_FEATURES_CODE => engine.count_graphite_features() as i32,
-        XETEX_OT_COUNT_SCRIPTS_CODE => font.count_scripts() as i32,
+        LastItemCode::XetexCountGlyphs => font.count_glyphs() as i32,
+        LastItemCode::XetexCountFeatures => engine.count_graphite_features() as i32,
+        LastItemCode::XetexOtCountScripts => font.count_scripts() as i32,
         _ => 0,
     }
 }
 
-pub(crate) fn ot_font_get_1(what: i32, engine: &FontEngineHandle, param: i32) -> i32 {
+pub(crate) fn ot_font_get_1(what: LastItemCode, engine: &FontEngineHandle, param: i32) -> i32 {
     let font = engine.font();
     match what {
-        XETEX_OT_COUNT_LANGUAGES_CODE => font.count_languages(param as u32) as i32,
-        XETEX_OT_SCRIPT_CODE => font.ind_script(param as u32) as i32,
-        XETEX_FEATURE_CODE_CODE => engine.graphite_feature_code(param as u32) as i32,
-        XETEX_IS_EXCLUSIVE_FEATURE_CODE => 1,
-        XETEX_COUNT_SELECTORS_CODE => engine.count_graphite_feature_settings(param as u32) as i32,
+        LastItemCode::XetexOtCountLanguages => font.count_languages(param as u32) as i32,
+        LastItemCode::XetexOtScript => font.ind_script(param as u32) as i32,
+        LastItemCode::XetexFeatureCode => engine.graphite_feature_code(param as u32) as i32,
+        LastItemCode::XetexIsExclusiveFeature => 1,
+        LastItemCode::XetexCountSelectors => {
+            engine.count_graphite_feature_settings(param as u32) as i32
+        }
         _ => 0,
     }
 }
 
-pub(crate) fn ot_font_get_2(what: i32, engine: &FontEngineHandle, param1: i32, param2: i32) -> i32 {
+pub(crate) fn ot_font_get_2(
+    what: LastItemCode,
+    engine: &FontEngineHandle,
+    param1: i32,
+    param2: i32,
+) -> i32 {
     let font = engine.font();
     match what {
-        XETEX_OT_LANGUAGE_CODE => font.ind_language(param1 as u32, param2 as u32) as i32,
-        XETEX_OT_COUNT_FEATURES_CODE => font.count_features(param1 as u32, param2 as u32) as i32,
-        XETEX_SELECTOR_CODE_CODE => {
+        LastItemCode::XetexOtLanguage => font.ind_language(param1 as u32, param2 as u32) as i32,
+        LastItemCode::XetexOtCountFeatures => {
+            font.count_features(param1 as u32, param2 as u32) as i32
+        }
+        LastItemCode::XetexSelectorCode => {
             engine.graphite_feature_setting_code(param1 as u32, param2 as u32) as i32
         }
-        XETEX_IS_DEFAULT_SELECTOR_CODE => {
+        LastItemCode::XetexIsDefaultSelector => {
             i32::from(engine.graphite_feature_default_setting(param1 as u32) == param2 as u32)
         }
         _ => 0,
@@ -818,14 +821,14 @@ pub(crate) fn ot_font_get_2(what: i32, engine: &FontEngineHandle, param1: i32, p
 }
 
 pub(crate) fn ot_font_get_3(
-    what: i32,
+    what: LastItemCode,
     engine: &FontEngineHandle,
     param1: i32,
     param2: i32,
     param3: i32,
 ) -> i32 {
     match what {
-        XETEX_OT_FEATURE_CODE => {
+        LastItemCode::XetexOtFeature => {
             engine
                 .font()
                 .ind_feature(param1 as u32, param2 as u32, param3 as u32) as i32
@@ -853,8 +856,12 @@ pub(crate) fn gr_print_font_name(
     }
 }
 
-pub(crate) fn gr_font_get_named(st: &EngineState, what: i32, engine: &FontEngineHandle) -> i32 {
-    if what != XETEX_FIND_FEATURE_BY_NAME_CODE {
+pub(crate) fn gr_font_get_named(
+    st: &EngineState,
+    what: LastItemCode,
+    engine: &FontEngineHandle,
+) -> i32 {
+    if what != LastItemCode::XetexFindFeatureByName {
         return -1;
     }
     engine.find_graphite_feature_named(&st.input.name_of_file) as i32
@@ -862,11 +869,11 @@ pub(crate) fn gr_font_get_named(st: &EngineState, what: i32, engine: &FontEngine
 
 pub(crate) fn gr_font_get_named_1(
     st: &EngineState,
-    what: i32,
+    what: LastItemCode,
     engine: &FontEngineHandle,
     param: i32,
 ) -> i32 {
-    if what != XETEX_FIND_SELECTOR_BY_NAME_CODE {
+    if what != LastItemCode::XetexFindSelectorByName {
         return -1;
     }
     engine.find_graphite_feature_setting_named(param as u32, &st.input.name_of_file) as i32
@@ -1360,23 +1367,23 @@ pub fn aat_get_font_metrics() -> NativeFontMetrics {
     NativeFontMetrics::default()
 }
 
-pub fn aat_font_get(_what: c_int) -> c_int {
+pub fn aat_font_get(_what: LastItemCode) -> c_int {
     -1
 }
 
-pub fn aat_font_get_1(_what: c_int, _param: c_int) -> c_int {
+pub fn aat_font_get_1(_what: LastItemCode, _param: c_int) -> c_int {
     -1
 }
 
-pub fn aat_font_get_2(_what: c_int, _param1: c_int, _param2: c_int) -> c_int {
+pub fn aat_font_get_2(_what: LastItemCode, _param1: c_int, _param2: c_int) -> c_int {
     -1
 }
 
-pub fn aat_font_get_named(_what: c_int) -> c_int {
+pub fn aat_font_get_named(_what: LastItemCode) -> c_int {
     -1
 }
 
-pub fn aat_font_get_named_1(_what: c_int, _param: c_int) -> c_int {
+pub fn aat_font_get_named_1(_what: LastItemCode, _param: c_int) -> c_int {
     -1
 }
 

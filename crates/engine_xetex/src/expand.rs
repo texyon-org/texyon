@@ -5,6 +5,7 @@ use crate::cmd::{
     IF_TEST, IGNORE, INPUT, LEFT_BRACE, LONG_CALL, MAX_COMMAND, NO_EXPAND, OUTER_CALL, OUT_PARAM,
     RELAX, THE, TOP_BOT_MARK, UNDEFINED_CS,
 };
+use crate::codes::ValueLevel;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, FROZEN_DONT_EXPAND, FROZEN_ENDV, FROZEN_PRIMITIVE,
     HMODE, MMODE, NULL_CS, NULL_FONT, PRIM_EQTB_BASE, SINGLE_BASE, TEX_NULL, TOO_BIG_USV,
@@ -26,7 +27,7 @@ use crate::output::{
 use crate::params::{GluePar, IntPar};
 use crate::scan::{
     fetch_box, get_next, get_token, get_x_non_blank, get_x_token, scan_int, store_new_token,
-    END_MATCH_TOKEN, MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG,
+    END_MATCH_TOKEN, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG,
     OTHER_TOKEN, SPACE_TOKEN,
 };
 use crate::state::{EngineState, MemState, Selector};
@@ -865,7 +866,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     st.scanner.cur_ptr = st.scanner.cur_mark[t as usize];
                 } else {
                     let n = st.scanner.cur_val;
-                    if let Some(sa) = st.mem.find_sa_element(&mut st.scanner, MARK_VAL, n) {
+                    if let Some(sa) = st.mem.find_sa_element(&mut st.scanner, ValueLevel::Mark, n) {
                         st.scanner.cur_ptr = sa.child(&st.mem, t);
                     }
                 }

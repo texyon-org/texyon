@@ -170,6 +170,21 @@ impl Slot for GlueSign {
     }
 }
 
+impl Slot for crate::codes::ValueLevel {
+    type Raw = u16;
+    #[inline(always)]
+    fn decode(raw: u16) -> Self {
+        match Self::from_raw(i32::from(raw)) {
+            Some(level) => level,
+            None => unreachable!("value level out of range"),
+        }
+    }
+    #[inline(always)]
+    fn encode(self) -> u16 {
+        self as u16
+    }
+}
+
 impl Slot for RuleDimen {
     type Raw = i32;
     #[inline(always)]
@@ -1401,7 +1416,7 @@ impl NodePtr<FreeBlock> {
 impl NodePtr<ExprNode> {
     fields! {
         /// The value level of the suspended expression.
-        level / set_level: u16 = b16s1 @ 0;
+        level / set_level: crate::codes::ValueLevel = b16s1 @ 0;
         /// The pending operators, as `4 * s + r`.
         state / set_state: u16 = b16s0 @ 0;
         e / set_e: i32 = b32s1 @ 1;
@@ -1642,8 +1657,11 @@ impl NodePtr<SaNode> {
     }
 
     #[inline]
-    pub fn sa_type(self, mem: &MemState) -> u16 {
-        self.sa_index(mem) / 64
+    pub fn sa_type(self, mem: &MemState) -> crate::codes::ValueLevel {
+        match crate::codes::ValueLevel::from_raw(i32::from(self.sa_index(mem) / 64)) {
+            Some(t) => t,
+            None => unreachable!("sparse-array index out of range"),
+        }
     }
 
     /// Child or mark slot `i`, packed two per word from +1.

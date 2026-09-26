@@ -7,6 +7,7 @@ use crate::cmd::{
     IGNORE, IGNORE_SPACES, INVALID_CHAR, LETTER, OTHER_CHAR, OUTER_CALL, SHAPE_REF, SPACER,
     UNDEFINED_CS,
 };
+use crate::codes::ValueLevel;
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
     CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
@@ -35,7 +36,7 @@ use crate::mem::{
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{ActiveNode, CondNode, FreeBlock, NodePtr, PageInsNode};
 use crate::params::IntPar;
-use crate::scan::{set_class, set_family, INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
+use crate::scan::{set_class, set_family, NORMAL_SCANNER};
 use crate::state::{
     ConfigState, EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState, PerFont,
     Selector,
@@ -260,9 +261,9 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
         }
     }
 
-    if let Some(marks) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
+    if let Some(marks) = st.scanner.sa_root[ValueLevel::Mark as usize].as_idx() {
         if st.mem.do_marks(&mut st.scanner, 3, 0, marks) {
-            st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
+            st.scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
         }
     }
 
@@ -342,7 +343,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.is_in_csname = false;
     st.scanner.cur_mark = [MemPtr::NULL; 5];
     st.scanner.cur_val = 0;
-    st.scanner.cur_val_level = INT_VAL;
+    st.scanner.cur_val_level = ValueLevel::Int;
     st.scanner.radix = 0;
     st.scanner.cur_order = NORMAL;
 
@@ -405,7 +406,7 @@ fn initialize_more_variables(st: &mut EngineState) {
     st.scanner.lr_problems = 0;
     st.scanner.cur_dir = LEFT_TO_RIGHT;
     st.input.pseudo_files.0 = TEX_NULL;
-    st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
+    st.scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
     st.scanner.sa_null = MemoryWord {
         b32: B32x2 {
             s0: TEX_NULL,
@@ -587,7 +588,8 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     st.strings.format_ident = format_ident;
 
     st.scanner.max_reg_num = 32767;
-    st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize].fill(MemPtr::NULL);
+    st.scanner.sa_root[ValueLevel::Int as usize..=ValueLevel::InterChar as usize]
+        .fill(MemPtr::NULL);
 
     st.eqtb.set_int_par(IntPar::XetexHyphenatableLength, 63);
 }

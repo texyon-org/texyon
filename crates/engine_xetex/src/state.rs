@@ -1,5 +1,6 @@
 //! Rust-owned engine state.
 
+use crate::codes::ValueLevel;
 use crate::hash::HASH_OFFSET;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::units::{FontId, Scaled, StrNumber};
@@ -847,7 +848,7 @@ pub(crate) struct ScannerState {
     pub skip_line: i32,
     pub is_in_csname: bool,
     pub used_tectonic_coda_tokens: bool,
-    pub cur_val_level: u8,
+    pub cur_val_level: ValueLevel,
     pub cur_val1: i32,
     pub scanner_status: u8,
     pub warning_index: i32,

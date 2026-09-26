@@ -1,5 +1,6 @@
 //! The page builder: `build_page` and `fire_up`.
 
+use crate::codes::ValueLevel;
 use crate::consts::{
     AWFUL_BAD, BOT_MARK_CODE, BOX_NODE_SIZE, EJECT_PENALTY, FIRST_MARK_CODE, IGNORE_DEPTH, INF_BAD,
     INF_PENALTY, INS_NODE_SIZE, LOCAL_OUTPUT_ROUTINE, MAX_DIMEN, MAX_HALFWORD, NORMAL,
@@ -13,7 +14,7 @@ use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{AnyBox, AnyNode, InsNode, NodePtr, PageInsNode, WhatsitSubtype};
 use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::scan::{fetch_box, MARK_VAL};
+use crate::scan::fetch_box;
 use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -71,7 +72,9 @@ fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
 /// Records the new mark `mark_ptr` as the first and bottom mark of class `class`.
 fn update_marks(st: &mut EngineState, class: i32, mark_ptr: MemPtr) -> Result<(), Abort> {
     if class != 0 {
-        let sa = st.mem.create_sa_element(&mut st.scanner, MARK_VAL, class)?;
+        let sa = st
+            .mem
+            .create_sa_element(&mut st.scanner, ValueLevel::Mark, class)?;
         if sa.child(&st.mem, 1).is_null() {
             sa.set_child(&mut st.mem, 1, mark_ptr);
             st.mem.add_token_ref(mark_ptr);
@@ -164,9 +167,9 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     st.eqtb
         .geq_word_define(IntPar::OutputPenalty.loc(), output_penalty);
 
-    if let Some(root) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
+    if let Some(root) = st.scanner.sa_root[ValueLevel::Mark as usize].as_idx() {
         if st.mem.do_marks(&mut st.scanner, FIRE_UP_INIT, 0, root) {
-            st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
+            st.scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
         }
     }
     if !st.scanner.cur_mark[BOT_MARK_CODE].is_null() {
@@ -304,9 +307,9 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
     }
     PAGE_INS_HEAD.set_link(&mut st.mem, PAGE_INS_HEAD);
 
-    if let Some(root) = st.scanner.sa_root[MARK_VAL as usize].as_idx() {
+    if let Some(root) = st.scanner.sa_root[ValueLevel::Mark as usize].as_idx() {
         if st.mem.do_marks(&mut st.scanner, FIRE_UP_DONE, 0, root) {
-            st.scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
+            st.scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
         }
     }
     let marks = &mut st.scanner.cur_mark;

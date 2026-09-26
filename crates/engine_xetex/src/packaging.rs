@@ -1,6 +1,7 @@
 //! Box packing (`hpack`, `vpackage`), vertical breaking (`vert_break`,
 //! `vsplit`, `prune_page_top`, `do_marks`) and node-list copying and freeing.
 
+use crate::codes::ValueLevel;
 use crate::consts::{
     ACCENT_NOAD_SIZE, A_LEADERS, BEFORE, BOX_NODE_SIZE, EJECT_PENALTY, EXPLICIT, FIL, FILL, FILLL,
     FRACTION_NOAD_SIZE, GLYPH_NODE_SIZE, IGNORE_DEPTH, INDEX_NODE_SIZE, INF_BAD, INF_PENALTY,
@@ -19,7 +20,6 @@ use crate::node::{
 };
 use crate::pagebuilder::{FIRE_UP_DONE, FIRE_UP_INIT};
 use crate::params::{DimenPar, GluePar, IntPar};
-use crate::scan::MARK_VAL;
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
@@ -835,9 +835,9 @@ impl MemState {
         self.flush_node_list(scanner.disc_ptr[VSPLIT_CODE as usize])?;
         scanner.disc_ptr[VSPLIT_CODE as usize] = MemPtr::NULL;
 
-        if let Some(root) = scanner.sa_root[MARK_VAL as usize].as_idx() {
+        if let Some(root) = scanner.sa_root[ValueLevel::Mark as usize].as_idx() {
             if self.do_marks(scanner, VSPLIT_INIT, 0, root) {
-                scanner.sa_root[MARK_VAL as usize] = MemPtr::NULL;
+                scanner.sa_root[ValueLevel::Mark as usize] = MemPtr::NULL;
             }
         }
 
@@ -885,7 +885,7 @@ impl MemState {
         let mark_class = mark.mark_class(self);
         let mark_ptr = mark.mark_ptr(self);
         if mark_class != 0 {
-            let element = self.create_sa_element(scanner, MARK_VAL, mark_class)?;
+            let element = self.create_sa_element(scanner, ValueLevel::Mark, mark_class)?;
             let (first, bot) = (SPLIT_FIRST_MARK_CODE as i32, SPLIT_BOT_MARK_CODE as i32);
             if element.child(self, first).is_null() {
                 element.set_child(self, first, mark_ptr);

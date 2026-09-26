@@ -7,6 +7,7 @@ use crate::bridge::{
     TTBC_FILE_FORMAT_FORMAT,
 };
 use crate::cmd::UNDEFINED_CS;
+use crate::codes::ValueLevel;
 use crate::consts::{
     ACTIVE_BASE, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
     HASH_BASE, HISTORY_FATAL_ERROR, INT_BASE, INVALID_HANDLE, MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP,
@@ -19,7 +20,6 @@ use crate::hash::{HASH_OFFSET, HASH_PRIME};
 use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::params::IntPar;
-use crate::scan::{INTER_CHAR_VAL, INT_VAL};
 use crate::state::{EngineState, EqtbState, InteractionMode, Selector};
 use crate::units::{FontId, MemPtr, StrNumber};
 
@@ -316,7 +316,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     dump_int(fmt_out, lo_mem_max)?;
     dump_int(fmt_out, rover)?;
 
-    for root in &st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize] {
+    for root in &st.scanner.sa_root[ValueLevel::Int as usize..=ValueLevel::InterChar as usize] {
         dump_int(fmt_out, root.0)?;
     }
 
@@ -663,7 +663,7 @@ fn read_fmt_file(st: &mut EngineState, fmt_in: usize) -> Result<bool, Abort> {
     mem.lo_mem_max = undump_in_range(fmt_in, 1019, MEM_TOP - HI_MEM_STAT_USAGE)?;
     mem.rover = undump_in_range(fmt_in, 20, mem.lo_mem_max)?;
 
-    for root in &mut st.scanner.sa_root[INT_VAL as usize..=INTER_CHAR_VAL as usize] {
+    for root in &mut st.scanner.sa_root[ValueLevel::Int as usize..=ValueLevel::InterChar as usize] {
         root.0 = undump_in_range(fmt_in, MIN_HALFWORD, mem.lo_mem_max)?;
     }
 

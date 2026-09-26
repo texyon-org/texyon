@@ -19,6 +19,7 @@ use crate::cmd::{
     TOKS_REGISTER, TOP_BOT_MARK, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE,
     VRULE, VSKIP, XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
+use crate::codes::{LastItemCode, ValueLevel};
 use crate::consts::{
     ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
     COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE, DLIST, EMPTY,
@@ -73,25 +74,7 @@ use crate::node::{
 use crate::packaging::EXACTLY;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::save::DIMEN_VAL_LIMIT;
-use crate::scan::{
-    CURRENT_GROUP_LEVEL_CODE, CURRENT_GROUP_TYPE_CODE, CURRENT_IF_BRANCH_CODE,
-    CURRENT_IF_LEVEL_CODE, CURRENT_IF_TYPE_CODE, DIMEN_VAL, ELAPSED_TIME_CODE, ETEX_EXPR,
-    ETEX_VERSION_CODE, FONT_CHAR_DP_CODE, FONT_CHAR_HT_CODE, FONT_CHAR_IC_CODE, FONT_CHAR_WD_CODE,
-    GLUE_SHRINK_CODE, GLUE_SHRINK_ORDER_CODE, GLUE_STRETCH_CODE, GLUE_STRETCH_ORDER_CODE,
-    GLUE_TO_MU_CODE, GLUE_VAL, HEIGHT_OFFSET, INPUT_LINE_NO_CODE, INT_VAL, LAST_NODE_TYPE_CODE,
-    MAX_CHAR_VAL, MU_TO_GLUE_CODE, MU_VAL, PAR_SHAPE_DIMEN_CODE, PAR_SHAPE_INDENT_CODE,
-    PAR_SHAPE_LENGTH_CODE, PDF_LAST_X_POS_CODE, PDF_LAST_Y_POS_CODE, PDF_SHELL_ESCAPE_CODE,
-    RANDOM_SEED_CODE, WIDTH_OFFSET, XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE,
-    XETEX_COUNT_SELECTORS_CODE, XETEX_COUNT_VARIATIONS_CODE, XETEX_FEATURE_CODE_CODE,
-    XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
-    XETEX_FIND_VARIATION_BY_NAME_CODE, XETEX_FIRST_CHAR_CODE, XETEX_FONT_TYPE_CODE,
-    XETEX_GLYPH_BOUNDS_CODE, XETEX_GLYPH_INDEX_CODE, XETEX_IS_DEFAULT_SELECTOR_CODE,
-    XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_LAST_CHAR_CODE, XETEX_MAP_CHAR_TO_GLYPH_CODE,
-    XETEX_OT_COUNT_FEATURES_CODE, XETEX_OT_COUNT_LANGUAGES_CODE, XETEX_OT_COUNT_SCRIPTS_CODE,
-    XETEX_OT_FEATURE_CODE, XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_PDF_PAGE_COUNT_CODE,
-    XETEX_SELECTOR_CODE_CODE, XETEX_VARIATION_CODE, XETEX_VARIATION_DEFAULT_CODE,
-    XETEX_VARIATION_MAX_CODE, XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
-};
+use crate::scan::{HEIGHT_OFFSET, MAX_CHAR_VAL, WIDTH_OFFSET};
 use crate::state::{EngineState, GroupCode, InteractionMode, Selector};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
@@ -1198,11 +1181,11 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             } else {
                 NodePtr::<SaNode>::from_ptr(MemPtr(chr_code))
             };
-            let the_cmd = sa.map_or(chr_code as u8, |q| q.sa_type(&st.mem) as u8);
-            let name = match the_cmd {
-                INT_VAL => "count",
-                DIMEN_VAL => "dimen",
-                GLUE_VAL => "skip",
+            let level = sa.map_or(ValueLevel::from_raw(chr_code), |q| Some(q.sa_type(&st.mem)));
+            let name = match level {
+                Some(ValueLevel::Int) => "count",
+                Some(ValueLevel::Dimen) => "dimen",
+                Some(ValueLevel::Glue) => "skip",
                 _ => "muskip",
             };
             print_esc(st, name);
@@ -1234,74 +1217,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 _ => "dp",
             },
         ),
-        LAST_ITEM => {
-            let name = match chr_code {
-                x if x == i32::from(INT_VAL) => "lastpenalty",
-                x if x == i32::from(DIMEN_VAL) => "lastkern",
-                x if x == i32::from(GLUE_VAL) => "lastskip",
-                INPUT_LINE_NO_CODE => "inputlineno",
-                LAST_NODE_TYPE_CODE => "lastnodetype",
-                ETEX_VERSION_CODE => "eTeXversion",
-                XETEX_VERSION_CODE => "XeTeXversion",
-                XETEX_COUNT_GLYPHS_CODE => "XeTeXcountglyphs",
-                XETEX_COUNT_VARIATIONS_CODE => "XeTeXcountvariations",
-                XETEX_VARIATION_CODE => "XeTeXvariation",
-                XETEX_FIND_VARIATION_BY_NAME_CODE => "XeTeXfindvariationbyname",
-                XETEX_VARIATION_MIN_CODE => "XeTeXvariationmin",
-                XETEX_VARIATION_MAX_CODE => "XeTeXvariationmax",
-                XETEX_VARIATION_DEFAULT_CODE => "XeTeXvariationdefault",
-                XETEX_COUNT_FEATURES_CODE => "XeTeXcountfeatures",
-                XETEX_FEATURE_CODE_CODE => "XeTeXfeaturecode",
-                XETEX_FIND_FEATURE_BY_NAME_CODE => "XeTeXfindfeaturebyname",
-                XETEX_IS_EXCLUSIVE_FEATURE_CODE => "XeTeXisexclusivefeature",
-                XETEX_COUNT_SELECTORS_CODE => "XeTeXcountselectors",
-                XETEX_SELECTOR_CODE_CODE => "XeTeXselectorcode",
-                XETEX_FIND_SELECTOR_BY_NAME_CODE => "XeTeXfindselectorbyname",
-                XETEX_IS_DEFAULT_SELECTOR_CODE => "XeTeXisdefaultselector",
-                XETEX_OT_COUNT_SCRIPTS_CODE => "XeTeXOTcountscripts",
-                XETEX_OT_COUNT_LANGUAGES_CODE => "XeTeXOTcountlanguages",
-                XETEX_OT_COUNT_FEATURES_CODE => "XeTeXOTcountfeatures",
-                XETEX_OT_SCRIPT_CODE => "XeTeXOTscripttag",
-                XETEX_OT_LANGUAGE_CODE => "XeTeXOTlanguagetag",
-                XETEX_OT_FEATURE_CODE => "XeTeXOTfeaturetag",
-                XETEX_MAP_CHAR_TO_GLYPH_CODE => "XeTeXcharglyph",
-                XETEX_GLYPH_INDEX_CODE => "XeTeXglyphindex",
-                XETEX_GLYPH_BOUNDS_CODE => "XeTeXglyphbounds",
-                XETEX_FONT_TYPE_CODE => "XeTeXfonttype",
-                XETEX_FIRST_CHAR_CODE => "XeTeXfirstfontchar",
-                XETEX_LAST_CHAR_CODE => "XeTeXlastfontchar",
-                XETEX_PDF_PAGE_COUNT_CODE => "XeTeXpdfpagecount",
-                CURRENT_GROUP_LEVEL_CODE => "currentgrouplevel",
-                CURRENT_GROUP_TYPE_CODE => "currentgrouptype",
-                CURRENT_IF_LEVEL_CODE => "currentiflevel",
-                CURRENT_IF_TYPE_CODE => "currentiftype",
-                CURRENT_IF_BRANCH_CODE => "currentifbranch",
-                FONT_CHAR_WD_CODE => "fontcharwd",
-                FONT_CHAR_HT_CODE => "fontcharht",
-                FONT_CHAR_DP_CODE => "fontchardp",
-                FONT_CHAR_IC_CODE => "fontcharic",
-                PAR_SHAPE_LENGTH_CODE => "parshapelength",
-                PAR_SHAPE_INDENT_CODE => "parshapeindent",
-                PAR_SHAPE_DIMEN_CODE => "parshapedimen",
-                x if x == ETEX_EXPR + i32::from(INT_VAL) => "numexpr",
-                x if x == ETEX_EXPR + i32::from(DIMEN_VAL) => "dimexpr",
-                x if x == ETEX_EXPR + i32::from(GLUE_VAL) => "glueexpr",
-                x if x == ETEX_EXPR + i32::from(MU_VAL) => "muexpr",
-                GLUE_STRETCH_ORDER_CODE => "gluestretchorder",
-                GLUE_SHRINK_ORDER_CODE => "glueshrinkorder",
-                GLUE_STRETCH_CODE => "gluestretch",
-                GLUE_SHRINK_CODE => "glueshrink",
-                MU_TO_GLUE_CODE => "mutoglue",
-                GLUE_TO_MU_CODE => "gluetomu",
-                PDF_LAST_X_POS_CODE => "pdflastxpos",
-                PDF_LAST_Y_POS_CODE => "pdflastypos",
-                ELAPSED_TIME_CODE => "elapsedtime",
-                PDF_SHELL_ESCAPE_CODE => "shellescape",
-                RANDOM_SEED_CODE => "randomseed",
-                _ => "badness",
-            };
-            print_esc(st, name);
-        }
+        LAST_ITEM => print_esc(
+            st,
+            LastItemCode::from_raw(chr_code).map_or("badness", LastItemCode::name),
+        ),
         CONVERT => {
             let name = match chr_code {
                 NUMBER_CODE => "number",

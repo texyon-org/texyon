@@ -17,6 +17,7 @@ use crate::cmd::{
     TOKS_REGISTER, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE, VRULE, VSKIP,
     XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
+use crate::codes::ValueLevel;
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
     BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG,
@@ -54,9 +55,8 @@ use crate::node::{
 use crate::packaging::ADDITIONAL;
 use crate::params::{DimenPar, GluePar, IntPar};
 use crate::scan::{
-    fetch_box, ALIGNING, BOX_VAL, DIMEN_VAL, GLUE_VAL, INTER_CHAR_VAL, INT_VAL, LEFT_BRACE_TOKEN,
-    MATH_SHIFT_TOKEN, MAX_CHAR_VAL, MU_VAL, NORMAL_SCANNER, OTHER_TOKEN, PROTECTED_TOKEN,
-    RIGHT_BRACE_TOKEN, TAB_TOKEN, TOK_VAL,
+    fetch_box, ALIGNING, LEFT_BRACE_TOKEN, MATH_SHIFT_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER,
+    OTHER_TOKEN, PROTECTED_TOKEN, RIGHT_BRACE_TOKEN, TAB_TOKEN,
 };
 use crate::state::{EngineState, GroupCode, MemState, Selector};
 use crate::units::{FontId, GlueSign, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
@@ -557,7 +557,7 @@ pub(crate) fn get_preamble_token(st: &mut EngineState) -> Result<(), Abort> {
             return Ok(());
         }
         crate::scan::scan_optional_equals(st)?;
-        crate::scan::scan_glue(st, GLUE_VAL)?;
+        crate::scan::scan_glue(st, ValueLevel::Glue)?;
         let global = st.eqtb.int_par(IntPar::GlobalDefs) > 0;
         define(
             st,
@@ -1465,7 +1465,9 @@ pub(crate) fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abor
         if n < 256 {
             define(st, global, BOX_BASE + n, BOX_REF, cb)?;
         } else {
-            let sa = st.mem.create_sa_element(&mut st.scanner, BOX_VAL, n)?;
+            let sa = st
+                .mem
+                .create_sa_element(&mut st.scanner, ValueLevel::BOX, n)?;
             sa_define(st, global, sa.idx().0, cb)?;
         }
     } else if let Some(cb) = st.scanner.cur_box {
@@ -1863,8 +1865,8 @@ pub(crate) fn append_glue(st: &mut EngineState) -> Result<NodePtr<GlueNode>, Abo
         FILL_CODE => st.scanner.cur_val = FILL_GLUE.idx().0,
         SS_CODE => st.scanner.cur_val = SS_GLUE.idx().0,
         FIL_NEG_CODE => st.scanner.cur_val = FIL_NEG_GLUE.idx().0,
-        SKIP_CODE => crate::scan::scan_glue(st, GLUE_VAL)?,
-        MSKIP_CODE => crate::scan::scan_glue(st, MU_VAL)?,
+        SKIP_CODE => crate::scan::scan_glue(st, ValueLevel::Glue)?,
+        MSKIP_CODE => crate::scan::scan_glue(st, ValueLevel::Mu)?,
         _ => {}
     }
     let g = st.mem.new_glue(st.scanner.cur_glue())?;
@@ -2485,8 +2487,15 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
     let (l, p, e) = 'found: {
         if q != REGISTER {
             crate::scan::get_x_token(st)?;
-            if (ASSIGN_INT..=ASSIGN_MU_GLUE).contains(&st.scanner.cur_cmd) {
-                break 'found (st.scanner.cur_chr, (st.scanner.cur_cmd - ASSIGN_INT), false);
+            let level = match st.scanner.cur_cmd {
+                ASSIGN_INT => Some(ValueLevel::Int),
+                ASSIGN_DIMEN => Some(ValueLevel::Dimen),
+                ASSIGN_GLUE => Some(ValueLevel::Glue),
+                ASSIGN_MU_GLUE => Some(ValueLevel::Mu),
+                _ => None,
+            };
+            if let Some(level) = level {
+                break 'found (st.scanner.cur_chr, level, false);
             }
             if st.scanner.cur_cmd != REGISTER {
                 crate::output::error_here_with_diagnostic(st, "You can't use `");
@@ -2499,11 +2508,10 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
                 return crate::errors::error(st);
             }
         }
-        if !(0..=19).contains(&st.scanner.cur_chr) {
+        let Some(p) = ValueLevel::from_raw(st.scanner.cur_chr) else {
             let l = st.scanner.cur_chr;
-            break 'found (l, NodePtr::<SaNode>::at(l).sa_type(&st.mem) as u8, true);
-        }
-        let p = st.scanner.cur_chr as u8;
+            break 'found (l, NodePtr::<SaNode>::at(l).sa_type(&st.mem), true);
+        };
         crate::scan::scan_register_num(st)?;
         let n = st.scanner.cur_val;
         if n > 255 {
@@ -2511,16 +2519,16 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
             break 'found (sa.idx().0, p, true);
         }
         let base = match p {
-            INT_VAL => COUNT_BASE,
-            DIMEN_VAL => SCALED_BASE,
-            GLUE_VAL => SKIP_BASE,
-            MU_VAL => MU_SKIP_BASE,
+            ValueLevel::Int => COUNT_BASE,
+            ValueLevel::Dimen => SCALED_BASE,
+            ValueLevel::Glue => SKIP_BASE,
+            ValueLevel::Mu => MU_SKIP_BASE,
             _ => unreachable!("register value level"),
         };
         (n + base, p, false)
     };
 
-    let (w, s) = match (p < GLUE_VAL, e) {
+    let (w, s) = match (p < ValueLevel::Glue, e) {
         (true, true) => (NodePtr::<SaNode>::at(l).sa_int(&st.mem), TEX_NULL),
         (true, false) => (st.eqtb.equiv(l), TEX_NULL),
         (false, true) => (0, NodePtr::<SaNode>::at(l).sa_ptr(&st.mem).0),
@@ -2535,8 +2543,8 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
     st.errors.arith_error = false;
 
     if q < MULTIPLY {
-        if p < GLUE_VAL {
-            if p == INT_VAL {
+        if p < ValueLevel::Glue {
+            if p == ValueLevel::Int {
                 crate::scan::scan_int(st)?;
             } else {
                 crate::scan::scan_dimen(st, false, false, false)?;
@@ -2591,8 +2599,8 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
                 errors.x_over_n(x, n)
             }
         };
-        if p < GLUE_VAL {
-            let max_answer = if p == INT_VAL {
+        if p < ValueLevel::Glue {
+            let max_answer = if p == ValueLevel::Int {
                 TEX_INFINITY
             } else {
                 MAX_HALFWORD
@@ -2622,14 +2630,14 @@ pub(crate) fn do_register_command(st: &mut EngineState, a: i16) -> Result<(), Ab
             "I can't carry out that multiplication or division,",
             "since the result is out of range.",
         ]);
-        if p >= GLUE_VAL {
+        if p >= ValueLevel::Glue {
             st.mem.delete_glue_ref(st.scanner.cur_glue());
         }
         return crate::errors::error(st);
     }
 
     let global = a >= 4;
-    if p < GLUE_VAL {
+    if p < ValueLevel::Glue {
         let value = st.scanner.cur_val;
         if e {
             sa_word_define(st, global, l, value)?;
@@ -2804,7 +2812,7 @@ fn inter_char_tokens_enabled(st: &EngineState) -> bool {
 fn inter_char_toks(st: &mut EngineState, n: i32) -> Option<MemPtr> {
     let list = st
         .mem
-        .find_sa_element(&mut st.scanner, INTER_CHAR_VAL, n)?
+        .find_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?
         .sa_ptr(&st.mem);
     (!list.is_null()).then_some(list)
 }
@@ -4042,9 +4050,9 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         ASSIGN_GLUE | ASSIGN_MU_GLUE => {
             let p = st.scanner.cur_chr;
             let level = if st.scanner.cur_cmd == ASSIGN_MU_GLUE {
-                MU_VAL
+                ValueLevel::Mu
             } else {
-                GLUE_VAL
+                ValueLevel::Glue
             };
             crate::scan::scan_optional_equals(st)?;
             crate::scan::scan_glue(st, level)?;
@@ -4176,15 +4184,17 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         _ => {
             crate::scan::scan_register_num(st)?;
             if st.scanner.cur_val > 255 {
-                let level = if n - 2 > i32::from(MU_VAL) {
-                    TOK_VAL
-                } else {
-                    (n - 2) as u8
+                let level = match n {
+                    COUNT_DEF_CODE => ValueLevel::Int,
+                    DIMEN_DEF_CODE => ValueLevel::Dimen,
+                    SKIP_DEF_CODE => ValueLevel::Glue,
+                    MU_SKIP_DEF_CODE => ValueLevel::Mu,
+                    _ => ValueLevel::Tok,
                 };
                 let reg = st.scanner.cur_val;
                 let sa = st.mem.create_sa_element(&mut st.scanner, level, reg)?;
                 st.mem.add_sa_ref(sa.ptr());
-                let t = if level == TOK_VAL {
+                let t = if level == ValueLevel::Tok {
                     TOKS_REGISTER
                 } else {
                     REGISTER
@@ -4215,7 +4225,9 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
             crate::scan::scan_register_num(st)?;
             if st.scanner.cur_val > 255 {
                 let reg = st.scanner.cur_val;
-                let sa = st.mem.create_sa_element(&mut st.scanner, TOK_VAL, reg)?;
+                let sa = st
+                    .mem
+                    .create_sa_element(&mut st.scanner, ValueLevel::Tok, reg)?;
                 st.scanner.cur_chr = sa.idx().0;
                 e = true;
             } else {
@@ -4228,7 +4240,7 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         let n = scan_inter_char_pair(st)?;
         let sa = st
             .mem
-            .create_sa_element(&mut st.scanner, INTER_CHAR_VAL, n)?;
+            .create_sa_element(&mut st.scanner, ValueLevel::InterChar, n)?;
         st.scanner.cur_chr = sa.idx().0;
         e = true;
     }
@@ -4246,7 +4258,9 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
                     st.eqtb.toks(st.scanner.cur_val)
                 } else {
                     let reg = st.scanner.cur_val;
-                    let sa = st.mem.find_sa_element(&mut st.scanner, TOK_VAL, reg);
+                    let sa = st
+                        .mem
+                        .find_sa_element(&mut st.scanner, ValueLevel::Tok, reg);
                     crate::scan::sa_token_list(st, sa)
                 }
             } else {
@@ -4254,7 +4268,9 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
             }
         } else if st.scanner.cur_chr == LOCAL_BASE + LOCAL_XETEX_INTER_CHAR_TOKS {
             let n = scan_inter_char_pair(st)?;
-            let sa = st.mem.find_sa_element(&mut st.scanner, INTER_CHAR_VAL, n);
+            let sa = st
+                .mem
+                .find_sa_element(&mut st.scanner, ValueLevel::InterChar, n);
             crate::scan::sa_token_list(st, sa)
         } else {
             MemPtr(st.eqtb.equiv(st.scanner.cur_chr))
