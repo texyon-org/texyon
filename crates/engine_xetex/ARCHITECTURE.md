@@ -38,8 +38,10 @@ State and memory:
 - `primitives.rs`: the primitive catalog. Its order fixes the hash layout and
   therefore the format.
 - `errors.rs`: `ErrorState`. Set help with `st.errors.help(&[...])`, then call
-  `error(st)`. Fatal paths are typed errors (`MainControlAbort`, `SccAbort`,
-  `NodeRecycleAbort`, ...) propagated with `?`.
+  `error(st)?`. Every fatal path is one `Abort` (overflow, confusion, fatal
+  error, interaction halt, I/O failure, ...) propagated with `?` up to the run
+  loop, which prints the WEB termination text and maps it to a history code.
+  `get_avail` overflow shows the runaway text, `get_node` overflow does not.
 
 The typesetting pipeline:
 
@@ -52,6 +54,21 @@ The typesetting pipeline:
   and Graphite through `tectonic_xetex_layout`), `pic.rs` (pictures).
 - `save.rs` (save stack, `eqtb` definitions, sparse registers), `hash.rs`,
   `string_pool.rs`, `input.rs`, `io.rs`, `format_io.rs` (`\dump` and load).
+
+The C boundary:
+
+- `bridge.rs` wraps the Tectonic I/O bridge (files, diagnostics, shell escape,
+  MD5) in a byte-slice API. `layout.rs` owns the `tectonic_xetex_layout`,
+  HarfBuzz, ICU and TECkit handles (`FontEngineHandle`, `FontMappingHandle`,
+  `LinebreakHandle`, ...) with their disposal. `io.rs` keeps the ICU input
+  converters, `texmfmp.rs` the C time calls, `pic.rs` the picture probes.
+- Raw pointers and C strings stay in those modules. Elsewhere `unsafe` is
+  limited to plain-data byte views (`mem_types.rs`, `state.rs`,
+  `format_io.rs`), HarfBuzz MATH queries (`ot_math.rs`) and installing the
+  bridge for a run (`engine.rs`, `session.rs`). Every block has a
+  `// SAFETY:` comment (`clippy::undocumented_unsafe_blocks` is clean). The
+  engine proper prints and reports with Rust strings: `print(st, "...")`,
+  `print_nl`, `print_esc` take a `&str`, bytes or a pool string.
 
 Live preview:
 
