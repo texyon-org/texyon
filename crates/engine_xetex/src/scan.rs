@@ -1147,7 +1147,7 @@ pub(crate) fn get_next_in(st: &mut EngineState) -> GetNextOutcome {
                         let cat = st.eqtb.b32s1(CAT_CODE_BASE + st.scanner.cur_chr) as u8;
                         st.scanner.cur_cmd = cat;
 
-                        // Dispatch on state + category (states 1, 17, 33; categories 0..=15).
+                        // Dispatch on state + category (states 1, 17, 33, categories 0..=15).
                         match st.input.cur_input.state as i32 + cat as i32 {
                             // Ignored characters, and spaces when skipping blanks.
                             10 | 26 | 42 | 27 | 43 => continue 'texswitch,

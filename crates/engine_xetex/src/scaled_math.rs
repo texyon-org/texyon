@@ -1,5 +1,5 @@
-//! Scaled-point arithmetic from `xetex/xetex-scaledmath.c`, matching the C
-//! overflow checks and remainder-sign conventions exactly.
+//! Scaled-point arithmetic with XeTeX's overflow checks and remainder-sign
+//! conventions.
 
 use crate::state::{EngineState, ErrorState};
 
@@ -41,7 +41,7 @@ pub(crate) fn mult_and_add_in(
     if n == 0 {
         return y;
     }
-    // The bounds may overflow i32, and the C wraps.
+    // The bounds may overflow i32 and must wrap.
     let upper_ok = x <= max_answer.wrapping_sub(y) / n;
     let lower_ok = x.wrapping_neg() <= max_answer.wrapping_add(y) / n;
     if upper_ok && lower_ok {
@@ -89,7 +89,7 @@ pub(crate) fn xn_over_d_parts(mut x: i32, n: i32, d: i32) -> (i32, i32, bool) {
         x = x.wrapping_neg();
     }
 
-    // The C computes the halves in `long` and truncates them into i32 locals.
+    // The halves are truncated to i32, so the products wrap.
     let t = (x % 32768).wrapping_mul(n);
     let mut u = (x / 32768).wrapping_mul(n).wrapping_add(t / 32768);
     let v = (u % d).wrapping_mul(32768).wrapping_add(t % 32768);

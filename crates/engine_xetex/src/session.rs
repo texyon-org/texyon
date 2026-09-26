@@ -146,7 +146,7 @@ fn capture_fence(
             .saturating_add(PERIODIC_FENCE_TOKENS);
         controller.next_source_bytes = observed_bytes.saturating_add(PERIODIC_FENCE_SOURCE_BYTES);
         // SAFETY: the controller is installed around one synchronous engine
-        // call on this thread; both pointees outlive the guard and are not
+        // call on this thread. Both pointees outlive the guard and are not
         // accessed through another reference while this hook runs.
         let snapshot = unsafe { controller.snapshot.as_ref() };
         let Some(fence) =
@@ -243,7 +243,7 @@ pub struct EngineFrame {
     pub outcome: TexOutcome,
     /// Exact immutable sources consumed by this operation.
     pub source_revision: SourceRevision,
-    /// Recoverable fatal-class TeX abort; prior good output remains authoritative.
+    /// Recoverable fatal-class TeX abort. Prior good output remains authoritative.
     pub aborted: Option<String>,
     /// Operation was cooperatively cancelled and a safe replay state restored.
     pub cancelled: bool,

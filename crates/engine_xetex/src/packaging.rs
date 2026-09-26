@@ -104,7 +104,7 @@ fn copy_box_shell(
     Ok(r)
 }
 
-/// A copy of glue node `p` sharing its spec; the leader pointer is left to the caller.
+/// A copy of glue node `p` sharing its spec. The leader pointer is left to the caller.
 fn copy_glue_shell(
     mem: &mut MemState,
     p: NodePtr<GlueNode>,
@@ -1349,7 +1349,7 @@ fn clear_box_glue<K: IsBox>(mem: &mut MemState, r: NodePtr<K>) {
 }
 
 /// Merge the run of native words in `w`'s font that follows `w` (possibly
-/// across empty discretionaries) into one node. `q` trails `w`; returns the
+/// across empty discretionaries) into one node. `q` trails `w`. Returns the
 /// new `q` and the node now in `w`'s place.
 fn merge_native_words(
     mem: &mut MemState,

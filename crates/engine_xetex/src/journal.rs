@@ -1,7 +1,7 @@
 //! Reverse journals for checkpointable flat arrays.
 //!
 //! Batch runs leave journals disarmed. An armed [`WordJournal`] records the
-//! first pre-image of each touched word in an epoch; [`PlainTrail`] records
+//! first pre-image of each touched word in an epoch. [`PlainTrail`] records
 //! every write for smaller, colder arrays and relies on reverse replay.
 
 use crate::mem_types::MemoryWord;

@@ -1,5 +1,4 @@
-/* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License.
- * Translated to Rust from xetex-synctex.c. */
+/* Copyright (c) 2008-2017 jerome DOT laurens AT u-bourgogne DOT fr, MIT License. */
 
 use std::fmt::Write as _;
 

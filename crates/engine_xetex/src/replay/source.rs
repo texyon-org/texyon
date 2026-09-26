@@ -129,7 +129,7 @@ impl std::error::Error for SourceError {}
 
 impl SourceSnapshot {
     /// Validate and freeze a complete source set. Paths may be relative to
-    /// `root` or absolute beneath it; extensionless TeX paths normalize to
+    /// `root` or absolute beneath it. Extensionless TeX paths normalize to
     /// their implicit `.tex` spelling.
     pub fn new(
         root: PathBuf,

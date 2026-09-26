@@ -1116,14 +1116,6 @@ fn print_mark_in(st: &mut EngineState, p: MemPtr) {
     print_char_in(st, b'}' as i32);
 }
 
-// Sub-codes of \lastitem.
-
-// Sub-codes of \convert.
-
-// Sub-codes of \if tests.
-
-// Sub-codes of \extension.
-
 const SHOW_BOX_CODE: i32 = 1;
 const SHOW_THE_CODE: i32 = 2;
 const SHOW_LISTS: i32 = 3;

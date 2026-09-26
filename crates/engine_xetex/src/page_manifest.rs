@@ -15,7 +15,7 @@ pub struct PageExecution {
 
 /// Operation-local output observer. Batch runs leave it disabled.
 ///
-/// Only byte positions are tracked; the manifest never retains a second copy
+/// Only byte positions are tracked. The manifest never retains a second copy
 /// of the emitted XDV bytes.
 #[derive(Clone, Default)]
 pub(crate) struct PageManifest {

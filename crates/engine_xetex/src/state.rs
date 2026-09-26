@@ -139,7 +139,7 @@ pub(crate) enum InputSlot {
     Empty,
     /// Address-stable terminal sentinel owned by `io.rs`.
     Terminal,
-    /// Open file state; the box keeps raw FFI borrows address-stable.
+    /// Open file state. The box keeps raw FFI borrows address-stable.
     Open(Box<crate::io::UFile>),
 }
 
@@ -238,7 +238,7 @@ impl EqtbState {
 
     #[inline]
     pub fn b32s1(&self, p: i32) -> i32 {
-        // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+        // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b32.s1 }
     }
 
@@ -319,7 +319,7 @@ impl EqtbState {
 
     #[inline]
     pub fn b16s1(&self, p: i32) -> u16 {
-        // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+        // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b16.s1 }
     }
 
@@ -338,7 +338,7 @@ impl EqtbState {
 
     #[inline]
     pub fn b16s0(&self, p: i32) -> u16 {
-        // SAFETY: `MemoryWord` union projection; caller ensures p is a valid eqtb index.
+        // SAFETY: `MemoryWord` union projection. Caller ensures p is a valid eqtb index.
         unsafe { self.data[p as usize].b16.s0 }
     }
 
@@ -419,13 +419,13 @@ impl MemState {
 
     #[inline]
     pub(crate) fn b32s0(&self, p: impl crate::units::MemAddr) -> i32 {
-        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        // SAFETY: union projection. The `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b32.s0 }
     }
 
     #[inline]
     pub(crate) fn b32s1(&self, p: impl crate::units::MemAddr) -> i32 {
-        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        // SAFETY: union projection. The `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b32.s1 }
     }
 
@@ -437,25 +437,25 @@ impl MemState {
 
     #[inline]
     pub(crate) fn b16s0(&self, p: impl crate::units::MemAddr) -> u16 {
-        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        // SAFETY: union projection. The `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s0 }
     }
 
     #[inline]
     pub(crate) fn b16s1(&self, p: impl crate::units::MemAddr) -> u16 {
-        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        // SAFETY: union projection. The `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s1 }
     }
 
     #[inline]
     pub(crate) fn b16s2(&self, p: impl crate::units::MemAddr) -> u16 {
-        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        // SAFETY: union projection. The `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s2 }
     }
 
     #[inline]
     pub(crate) fn b16s3(&self, p: impl crate::units::MemAddr) -> u16 {
-        // SAFETY: union projection; the `Vec` index is bounds-checked.
+        // SAFETY: union projection. The `Vec` index is bounds-checked.
         unsafe { self.data[p.addr() as usize].b16.s3 }
     }
 
@@ -625,7 +625,7 @@ pub(crate) struct SaveStackState {
 impl SaveStackState {
     #[inline]
     pub(crate) fn b32s1(&self, k: i32) -> i32 {
-        // SAFETY: union projection; the entry was last written via the b32 view.
+        // SAFETY: union projection. The entry was last written via the b32 view.
         unsafe { self.data[k as usize].b32.s1 }
     }
 
@@ -651,13 +651,13 @@ impl SaveStackState {
 
     #[inline]
     pub(crate) fn b16s1(&self, k: i32) -> u16 {
-        // SAFETY: union projection; the entry was last written via the b16 view.
+        // SAFETY: union projection. The entry was last written via the b16 view.
         unsafe { self.data[k as usize].b16.s1 }
     }
 
     #[inline]
     pub(crate) fn b16s0(&self, k: i32) -> u16 {
-        // SAFETY: union projection; the entry was last written via the b16 view.
+        // SAFETY: union projection. The entry was last written via the b16 view.
         unsafe { self.data[k as usize].b16.s0 }
     }
 
@@ -790,7 +790,7 @@ pub(crate) struct FontEngineHandle {
 
 impl Drop for FontEngineHandle {
     fn drop(&mut self) {
-        // SAFETY: construction is restricted to successful native-font loads;
+        // SAFETY: construction is restricted to successful native-font loads, and
         // Arc sharing preserves exactly-once disposal.
         unsafe { crate::ext::release_font_engine(self.raw, self.area) }
     }
@@ -803,7 +803,7 @@ pub(crate) struct FontMappingHandle {
 
 impl Drop for FontMappingHandle {
     fn drop(&mut self) {
-        // SAFETY: construction is restricted to successful converter loads;
+        // SAFETY: construction is restricted to successful converter loads, and
         // Arc sharing preserves exactly-once disposal.
         unsafe { crate::ext::dispose_font_mapping(self.raw) }
     }
@@ -987,13 +987,13 @@ impl FontState {
 
     #[inline]
     pub(crate) fn font_info_b16(&self, k: i32) -> crate::mem_types::B16x4 {
-        // SAFETY: union projection; callers preserve the original font-info indexing contract.
+        // SAFETY: union projection. Callers preserve the original font-info indexing contract.
         unsafe { self.font_info[k as usize].b16 }
     }
 
     #[inline]
     pub(crate) fn font_info_b32s1(&self, k: i32) -> i32 {
-        // SAFETY: union projection; callers preserve the original font-info indexing contract.
+        // SAFETY: union projection. Callers preserve the original font-info indexing contract.
         unsafe { self.font_info[k as usize].b32.s1 }
     }
 

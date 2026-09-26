@@ -1,5 +1,5 @@
 //! The main control loop, its command verbs, and the `\halign`/`\valign`
-//! alignment family (= xetex0.c's main_control group).
+//! alignment family.
 
 use crate::consts::{
     ACC_KERN, ACTIVE_MATH_CHAR, A_LEADERS, BEGIN_M_CODE, BIGGEST_CHAR, BIGGEST_USV, BOX_BASE,
@@ -75,18 +75,10 @@ extern "C" {
     fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
 }
 
-// Command codes (`cur_cmd`).
-
-// Equivalent types beyond `MAX_COMMAND`.
-
-// Value levels (`cur_val_level`).
-
 const INNER_VMODE: i16 = -VMODE;
 const INNER_HMODE: i16 = -HMODE;
 
 const TAB_SKIP_SUBTYPE: u16 = GLUE_PAR_TAB_SKIP as u16 + 1;
-
-// Token-list types.
 
 const GLUE_BASE_TAB_SKIP: i32 = GLUE_BASE + GLUE_PAR_TAB_SKIP as i32;
 

@@ -61,8 +61,8 @@ pub(crate) fn zeroed_vec<T: ZeroWord>(len: usize) -> Vec<T> {
         return Vec::new();
     }
     let layout = std::alloc::Layout::array::<T>(len).expect("arena size overflow");
-    // SAFETY: `layout` is non-zero-sized; all-zero bytes are a valid `T`
-    // (`ZeroWord` contract); length == capacity matches the allocation
+    // SAFETY: `layout` is non-zero-sized and all-zero bytes are a valid `T`
+    // (`ZeroWord` contract). Length == capacity matches the allocation
     // layout, so `Vec`'s destructor deallocates with the same layout.
     unsafe {
         let ptr = std::alloc::alloc_zeroed(layout) as *mut T;

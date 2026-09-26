@@ -1,4 +1,4 @@
-//! Small C-runtime compatibility surface used by the translated engine.
+//! Small C-runtime compatibility surface.
 
 #[cfg(not(windows))]
 pub use libc::{

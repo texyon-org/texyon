@@ -188,7 +188,7 @@ impl EngineAbort {
         _ttbc_set_error_message(s);
     }
 
-    /// Prints and cleans up like the C abort would, then returns the fatal history.
+    /// Prints the abort and cleans up, then returns the fatal history.
     pub(crate) unsafe fn into_history(self, st: &mut EngineState) -> i32 {
         match self {
             EngineAbort::Cancelled => st.errors.history = HISTORY_FATAL_ERROR,

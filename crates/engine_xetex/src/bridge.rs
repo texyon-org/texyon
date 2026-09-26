@@ -79,7 +79,7 @@ fn file_format_from_int(format: libc::c_int) -> FileFormat {
         46 => FileFormat::Sfd,
         47 => FileFormat::OpenType,
         59 => FileFormat::TectonicPrimary,
-        _ => FileFormat::Tex, // 26 and the C wrapper's implicit default
+        _ => FileFormat::Tex, // 26 and any unknown code
     }
 }
 

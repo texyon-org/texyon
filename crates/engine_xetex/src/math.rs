@@ -1,4 +1,4 @@
-//! Math mode: noad construction and `mlist_to_hlist`, from `xetex/xetex-math.c`.
+//! Math mode: noad construction and `mlist_to_hlist`.
 use crate::consts::{
     ACCENT_NOAD_SIZE, AFTER, A_LEADERS, BEFORE, BEGIN_L_CODE, BEGIN_M_CODE, BOX_NODE_SIZE,
     COND_MATH_GLUE, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_DELIMITER_SHORTFALL,

@@ -41,14 +41,6 @@ pub extern "C" fn tt_xetex_set_int_variable(
     0
 }
 
-#[no_mangle]
-pub extern "C" fn tt_xetex_set_string_variable(
-    _var_name: *const libc::c_char,
-    _value: *const libc::c_char,
-) -> libc::c_int {
-    1
-}
-
 /// Batch entry point. Every dpx call that can `_tt_abort` goes through a
 /// guarded probe in pdf_io that catches its own `longjmp`.
 pub(crate) unsafe fn tt_engine_xetex_main(

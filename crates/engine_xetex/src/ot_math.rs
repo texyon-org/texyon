@@ -1,4 +1,4 @@
-//! OpenType MATH table queries, translated from xetex-XeTeXOTMath.cpp.
+//! OpenType MATH table queries.
 
 use libc::c_void;
 use tectonic_bridge_harfbuzz::sys as hb;
@@ -319,7 +319,7 @@ pub(crate) fn get_ot_math_kern(
     let (Some(engine), Some(sengine)) = (ot_engine(fonts, f), ot_engine(fonts, sf)) else {
         return 0;
     };
-    // Kerns are computed in base-glyph units, with the float/int conversions of the C++.
+    // Kerns are computed in base-glyph units, with XeTeX's float/int conversions.
     unsafe {
         let font = getFont(engine);
         let sfont = getFont(sengine);
