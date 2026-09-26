@@ -293,7 +293,7 @@ pub(crate) fn int_error_in(st: &mut EngineState, n: i32) -> ErrorOutcome {
 
 pub(crate) fn not_font_error_common_in(
     st: &mut EngineState,
-    cmd: u16,
+    cmd: u8,
     c: i32,
     f: i32,
     suffix: *const libc::c_char,
@@ -344,7 +344,7 @@ pub(crate) fn extra_right_brace_in(st: &mut EngineState) -> ErrorOutcome {
 
 pub(crate) fn you_cant_in(st: &mut EngineState) {
     error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
-    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
+    print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
     print_in_mode_in(st, st.input.cur_list.mode as i32);
     capture_to_diagnostic_in(st, std::ptr::null_mut());
 }

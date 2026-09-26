@@ -2,19 +2,17 @@
 //! alignment family (= xetex0.c's main_control group).
 
 use crate::consts::{
-    ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, A_LEADERS, BACKED_UP, BIGGEST_CHAR, BIGGEST_LANG,
-    BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, COUNT_BASE,
-    CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE,
-    DLIST, ENDV, ETEX_PEN_BASE, EXPLICIT, FONT_BASE, GLUE_BASE, GLUE_NODE, GLUE_VAL, HMODE,
-    IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
-    INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET,
-    KERN_NODE, LEFT_BRACE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, MARGIN_KERN_NODE_SIZE,
-    MATH_CODE_BASE, MAX_COMMAND, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN,
-    NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OTHER_CHAR, OUTPUT_TEXT,
-    PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING,
-    SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE,
-    SMALL_NODE_SIZE, SPACER, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX, TEX_NULL, TOKEN_LIST,
-    TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
+    A_LEADERS, BACKED_UP, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, BOX_NODE_SIZE, CAT_CODE_BASE,
+    CHAR_CLASS_LIMIT, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE,
+    DIMEN_PAR_HANG_INDENT, DIMEN_PAR_HSIZE, DLIST, ETEX_PEN_BASE, EXPLICIT, FONT_BASE, GLUE_BASE,
+    GLUE_NODE, GLUE_VAL, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_HANG_AFTER,
+    INT_PAR_LANGUAGE, INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_LOOSENESS, INT_PAR_RIGHT_HYPHEN_MIN,
+    INT_PAR_TEXXET, KERN_NODE, LEFT_SIDE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE,
+    MARGIN_KERN_NODE_SIZE, MATH_CODE_BASE, MAX_HALFWORD, MMODE, MU_GLUE, MU_SKIP_BASE, MU_VAL_SCAN,
+    NOAD_SIZE, NON_ADDRESS, NORMAL_SCANNER, NULL_CS, NULL_FLAG, OUTPUT_TEXT, PRIM_EQTB_BASE,
+    RIGHT_SIDE, SCALED_BASE, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_ONLY,
+    SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, SPACE_CODE, SUB_BOX,
+    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, VMODE,
 };
 use crate::ext::{append_src_special_in, apply_mapping, do_extension_in};
 use crate::fonts::read_font_info_in;
@@ -33,113 +31,30 @@ use crate::state::{EngineState, GroupCode, MemState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
 
 use crate::bridge::diag_append_str;
+use crate::cmd::{
+    ABOVE, ACCENT, ADVANCE, AFTER_ASSIGNMENT, AFTER_GROUP, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN,
+    ASSIGN_FONT_INT, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, ASSIGN_TOKS, BEGIN_GROUP, BOX_REF,
+    BREAK_PENALTY, CALL, CAR_RET, CASE_SHIFT, CHAR_GIVEN, CHAR_NUM, DATA, DEF, DEF_CODE,
+    DEF_FAMILY, DEF_FONT, DELIM_NUM, DISCRETIONARY, DIVIDE, ENDV, END_CS_NAME, END_GROUP, EQ_NO,
+    EXTENSION, EX_SPACE, GLUE_REF, HALIGN, HMOVE, HRULE, HSKIP, HYPH_DATA, IGNORE_SPACES, INSERT,
+    IN_STREAM, ITAL_CORR, KERN, LAST_ITEM, LEADER_SHIP, LEFT_BRACE, LEFT_RIGHT, LET, LETTER,
+    LIMIT_SWITCH, MAC_PARAM, MAKE_BOX, MARK, MATH_ACCENT, MATH_CHAR_NUM, MATH_CHOICE, MATH_COMP,
+    MATH_GIVEN, MATH_SHIFT, MATH_STYLE, MAX_CHAR_CODE, MAX_COMMAND, MAX_NON_PREFIXED_COMMAND,
+    MESSAGE, MKERN, MSKIP, MULTIPLY, NON_SCRIPT, NO_ALIGN, NO_BOUNDARY, OMIT, OTHER_CHAR, PAR_END,
+    PREFIX, RADICAL, READ_TO_CS, REGISTER, RELAX, REMOVE_ITEM, RIGHT_BRACE, SET_AUX, SET_BOX,
+    SET_BOX_DIMEN, SET_FONT, SET_INTERACTION, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF,
+    SET_SHAPE, SHAPE_REF, SHORTHAND_DEF, SPACER, START_PAR, STOP, SUB_MARK, SUP_MARK, TAB_MARK,
+    TOKS_REGISTER, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE, VRULE, VSKIP,
+    XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
+};
 
 extern "C" {
     fn set_cp_code(font_num: i32, code: u32, side: i32, value: i32);
 }
 
 // Command codes (`cur_cmd`).
-const MATH_SHIFT: u8 = 3;
-const TAB_MARK: u8 = 4;
-const CAR_RET: u8 = 5;
-const MAC_PARAM: u8 = 6;
-const SUP_MARK: u8 = 7;
-const SUB_MARK: u8 = 8;
-const LETTER: u8 = 11;
-const PAR_END: u8 = 13;
-const STOP: u8 = 14;
-const DELIM_NUM: u8 = 15;
-const CHAR_NUM: u8 = 16;
-const MATH_CHAR_NUM: u8 = 17;
-const MARK: u8 = 18;
-const XRAY: u8 = 19;
-const MAKE_BOX: u8 = 20;
-const HMOVE: u8 = 21;
-const VMOVE: u8 = 22;
-const UN_HBOX: u8 = 23;
-const UN_VBOX: u8 = 24;
-const REMOVE_ITEM: u8 = 25;
-const HSKIP: u8 = 26;
-const VSKIP: u8 = 27;
-const MSKIP: u8 = 28;
-const KERN: u8 = 29;
-const MKERN: u8 = 30;
-const LEADER_SHIP: u8 = 31;
-const HALIGN: u8 = 32;
-const VALIGN: u8 = 33;
-const NO_ALIGN: u8 = 34;
-const VRULE: u8 = 35;
-const HRULE: u8 = 36;
-const INSERT: u8 = 37;
-const VADJUST: u8 = 38;
-const IGNORE_SPACES: u8 = 39;
-const AFTER_ASSIGNMENT: u8 = 40;
-const AFTER_GROUP: u8 = 41;
-const BREAK_PENALTY: u8 = 42;
-const START_PAR: u8 = 43;
-const ITAL_CORR: u8 = 44;
-const ACCENT: u8 = 45;
-const MATH_ACCENT: u8 = 46;
-const DISCRETIONARY: u8 = 47;
-const EQ_NO: u8 = 48;
-const LEFT_RIGHT: u8 = 49;
-const MATH_COMP: u8 = 50;
-const LIMIT_SWITCH: u8 = 51;
-const ABOVE: u8 = 52;
-const MATH_STYLE: u8 = 53;
-const MATH_CHOICE: u8 = 54;
-const NON_SCRIPT: u8 = 55;
-const VCENTER: u8 = 56;
-const CASE_SHIFT: u8 = 57;
-const MESSAGE: u8 = 58;
-const EXTENSION: u8 = 59;
-const IN_STREAM: u8 = 60;
-const BEGIN_GROUP: u8 = 61;
-const END_GROUP: u8 = 62;
-const OMIT: u8 = 63;
-const EX_SPACE: u8 = 64;
-const NO_BOUNDARY: u8 = 65;
-const RADICAL: u8 = 66;
-const END_CS_NAME: u8 = 67;
-const MATH_GIVEN: u8 = 69;
-const XETEX_MATH_GIVEN: u8 = 70;
-const LAST_ITEM: u8 = 71;
-const MAX_NON_PREFIXED_COMMAND: u8 = 71;
-pub(crate) const TOKS_REGISTER: u8 = 72;
-const ASSIGN_TOKS: u8 = 73;
-const ASSIGN_DIMEN: u8 = 75;
-const ASSIGN_FONT_DIMEN: u8 = 78;
-const ASSIGN_FONT_INT: u8 = 79;
-const SET_AUX: u8 = 80;
-const SET_PREV_GRAF: u8 = 81;
-const SET_PAGE_DIMEN: u8 = 82;
-const SET_PAGE_INT: u8 = 83;
-const SET_BOX_DIMEN: u8 = 84;
-const SET_SHAPE: u8 = 85;
-const DEF_CODE: u8 = 86;
-const XETEX_DEF_CODE: u8 = 87;
-const DEF_FAMILY: u8 = 88;
-const DEF_FONT: u8 = 90;
-const ADVANCE: u8 = 92;
-const MULTIPLY: u8 = 93;
-const DIVIDE: u8 = 94;
-const PREFIX: u8 = 95;
-const LET: u8 = 96;
-const SHORTHAND_DEF: u8 = 97;
-const READ_TO_CS: u8 = 98;
-const DEF: u8 = 99;
-const SET_BOX: u8 = 100;
-const HYPH_DATA: u8 = 101;
-const SET_INTERACTION: u8 = 102;
 
 // Equivalent types beyond `MAX_COMMAND`.
-const UNDEFINED_CS: u16 = 103;
-pub(crate) const CALL: u16 = 113;
-pub(crate) const LONG_OUTER_CALL: u16 = 116;
-pub(crate) const GLUE_REF: u16 = 119;
-pub(crate) const SHAPE_REF: u16 = 120;
-pub(crate) const BOX_REF: u16 = 121;
-const DATA: u16 = 122;
 
 // Value levels (`cur_val_level`).
 const INT_VAL: i16 = 0;
@@ -263,7 +178,6 @@ const LEADER_FLAG: i32 = 0x4001_0001;
 
 const EMPTY: i32 = 0;
 const SUB_MLIST: i32 = 3;
-const MAX_CHAR_CODE: i32 = 15;
 const MAX_CHAR_VAL: i32 = 0x20_0000;
 const ACTIVE_MATH_CHAR: i32 = 0x1F_FFFF;
 const BIGGEST_USV: i32 = 0x10_FFFF;
@@ -275,7 +189,7 @@ const OTGR_FONT_FLAG: i32 = 0xFFFE;
 pub(crate) fn align_error_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     if st.scanner.align_state.abs() > 2 {
         crate::output::error_here_with_diagnostic_in(st, c"Misplaced ".as_ptr());
-        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
+        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         if st.scanner.cur_tok == TAB_TOKEN + 38 {
             help(
@@ -2561,7 +2475,7 @@ pub(crate) fn fix_language(
 pub(crate) fn off_save_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     if st.save_stack.cur_group == GroupCode::BottomLevel {
         crate::output::error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
-        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
+        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         help(
             &mut st.errors,
@@ -2970,7 +2884,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
     };
 
     let global = a >= 4;
-    define(st, global, u, SET_FONT as u16, FONT_BASE)?;
+    define(st, global, u, SET_FONT, FONT_BASE)?;
     crate::scan::scan_optional_equals_in(st)?;
     crate::io::scan_file_name_in(st)?;
     st.scanner.name_in_progress = true;
@@ -3065,7 +2979,7 @@ pub(crate) unsafe fn new_font_in(st: &mut EngineState, a: i16) -> Result<(), Mai
         read_font_info_in(st, u, st.scanner.cur_name, st.scanner.cur_area, s)?
     };
 
-    define(st, global, u, SET_FONT as u16, f)?;
+    define(st, global, u, SET_FONT, f)?;
     let word = st.eqtb.word(u);
     st.eqtb.set_word(FONT_ID_BASE + f, word);
     st.eqtb.set_hash_s1(FONT_ID_BASE + f, t);
@@ -3088,9 +3002,9 @@ pub(crate) fn do_register_command_in(st: &mut EngineState, a: i16) -> Result<(),
             }
             if st.scanner.cur_cmd != REGISTER {
                 crate::output::error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
-                crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
+                crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
                 crate::output::print_cstr_in(st, c"' after ".as_ptr());
-                crate::output::print_cmd_chr_in(st, q as u16, 0);
+                crate::output::print_cmd_chr_in(st, q, 0);
                 crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
                 help(
                     &mut st.errors,
@@ -3308,7 +3222,7 @@ fn valign_or_lr_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
     let enabled = crate::scan::eTeX_enabled_in(
         st,
         st.eqtb.b32s1(INT_BASE + INT_PAR_TEXXET) > 0,
-        st.scanner.cur_cmd as u16,
+        st.scanner.cur_cmd,
         st.scanner.cur_chr,
     )?;
     if enabled {
@@ -3422,7 +3336,7 @@ pub(crate) fn main_control_ignore_spaces_in(st: &mut EngineState) -> Result<(), 
             .map_err(crate::scan::hash_err_abort)?;
 
         if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
-            st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + st.scanner.cur_cs) as u8;
+            st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
             st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + st.scanner.cur_cs);
             st.scanner.cur_tok = CS_TOKEN_FLAG + PRIM_EQTB_BASE + st.scanner.cur_cs;
         }
@@ -4542,7 +4456,7 @@ fn define(
     st: &mut EngineState,
     global: bool,
     p: i32,
-    t: u16,
+    t: u8,
     e: i32,
 ) -> Result<(), crate::save::SaveAbort> {
     if global {
@@ -4659,7 +4573,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                 st,
                 c"You can't use a prefix with `".as_ptr(),
             );
-            crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
+            crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
             crate::output::print_char_in(st, '\'' as i32);
             crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
             help(
@@ -4687,7 +4601,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
         crate::output::print_cstr_in(st, c"' or `".as_ptr());
         crate::output::print_esc_cstr_in(st, c"protected".as_ptr());
         crate::output::print_cstr_in(st, c"' with `".as_ptr());
-        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
+        crate::output::print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
         crate::output::print_char_in(st, '\'' as i32);
         crate::output::capture_to_diagnostic_in(st, std::ptr::null_mut());
         help(
@@ -4723,7 +4637,7 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                 q.set_link(&mut st.mem, body);
                 st.scanner.def_ref.set_link(&mut st.mem, q);
             }
-            define(st, a >= 4, p, CALL + (a % 4) as u16, st.scanner.def_ref.0)?;
+            define(st, a >= 4, p, CALL + (a % 4) as u8, st.scanner.def_ref.0)?;
         }
         LET => {
             let n = st.scanner.cur_chr;
@@ -4750,14 +4664,14 @@ pub(crate) fn prefixed_command_in(st: &mut EngineState) -> Result<(), MainContro
                 st.scanner.cur_tok = q;
                 crate::input::back_input_in(st)?;
             }
-            if st.scanner.cur_cmd as u16 >= CALL {
+            if st.scanner.cur_cmd >= CALL {
                 add_token_ref(&mut st.mem, st.scanner.cur_chr);
             } else if (st.scanner.cur_cmd == REGISTER || st.scanner.cur_cmd == TOKS_REGISTER)
                 && !(0..=19).contains(&st.scanner.cur_chr)
             {
                 add_sa_ref(&mut st.mem, MemPtr::from_raw(st.scanner.cur_chr));
             }
-            define(st, a >= 4, p, st.scanner.cur_cmd as u16, st.scanner.cur_chr)?;
+            define(st, a >= 4, p, st.scanner.cur_cmd, st.scanner.cur_chr)?;
         }
         SHORTHAND_DEF => {
             if st.scanner.cur_chr == CHAR_SUB_DEF_CODE {
@@ -4939,22 +4853,22 @@ fn shorthand_def_in(st: &mut EngineState, global: bool) -> Result<(), MainContro
     let n = st.scanner.cur_chr;
     crate::scan::get_r_token_in(st)?;
     let p = st.scanner.cur_cs;
-    define(st, global, p, RELAX as u16, TOO_BIG_USV)?;
+    define(st, global, p, RELAX, TOO_BIG_USV)?;
     crate::scan::scan_optional_equals_in(st)?;
     let (t, e) = match n {
         CHAR_DEF_CODE => {
             crate::scan::scan_usv_num_in(st)?;
-            (CHAR_GIVEN as u16, st.scanner.cur_val)
+            (CHAR_GIVEN, st.scanner.cur_val)
         }
         MATH_CHAR_DEF_CODE => {
             crate::scan::scan_fifteen_bit_int_in(st)?;
-            (MATH_GIVEN as u16, st.scanner.cur_val)
+            (MATH_GIVEN, st.scanner.cur_val)
         }
         XETEX_MATH_CHAR_NUM_DEF_CODE => {
             crate::scan::scan_xetex_math_char_int_in(st)?;
-            (XETEX_MATH_GIVEN as u16, st.scanner.cur_val)
+            (XETEX_MATH_GIVEN, st.scanner.cur_val)
         }
-        XETEX_MATH_CHAR_DEF_CODE => (XETEX_MATH_GIVEN as u16, scan_umath_char(st)?),
+        XETEX_MATH_CHAR_DEF_CODE => (XETEX_MATH_GIVEN, scan_umath_char(st)?),
         _ => {
             crate::scan::scan_register_num_in(st)?;
             if st.scanner.cur_val > 255 {
@@ -4972,7 +4886,7 @@ fn shorthand_def_in(st: &mut EngineState, global: bool) -> Result<(), MainContro
                 } else {
                     REGISTER
                 };
-                (t as u16, st.scanner.cur_ptr.0)
+                (t, st.scanner.cur_ptr.0)
             } else {
                 let (t, base) = match n {
                     COUNT_DEF_CODE => (ASSIGN_INT, COUNT_BASE),
@@ -4982,7 +4896,7 @@ fn shorthand_def_in(st: &mut EngineState, global: bool) -> Result<(), MainContro
                     TOKS_DEF_CODE => (ASSIGN_TOKS, TOKS_BASE),
                     _ => return Ok(()),
                 };
-                (t as u16, base + st.scanner.cur_val)
+                (t, base + st.scanner.cur_val)
             }
         }
     };
@@ -5121,7 +5035,7 @@ fn xetex_def_code_in(st: &mut EngineState, global: bool) -> Result<(), MainContr
 fn def_code_in(st: &mut EngineState, global: bool) -> Result<(), MainControlAbort> {
     let chr = st.scanner.cur_chr;
     let max = if chr == CAT_CODE_BASE {
-        MAX_CHAR_CODE
+        MAX_CHAR_CODE.into()
     } else if chr == MATH_CODE_BASE {
         0x8000
     } else if chr == SF_CODE_BASE {

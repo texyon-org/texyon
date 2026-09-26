@@ -433,6 +433,12 @@ impl EqtbState {
         unsafe { self.data[p as usize].b16.s1 }
     }
 
+    /// The command code of control-sequence entry `p`.
+    #[inline]
+    pub(crate) fn eq_type(&self, p: i32) -> u8 {
+        self.b16s1(p) as u8
+    }
+
     /// Write `eqtb[p].b16.s1`.
     #[inline]
     pub fn set_b16s1(&mut self, p: i32, v: u16) {

@@ -3,12 +3,11 @@
 
 use std::collections::HashMap;
 
+use crate::cmd::{CALL, UNDEFINED_CS};
 use crate::consts::{EQTB_SIZE, FROZEN_CONTROL_SEQUENCE, TOO_BIG_CHAR};
 use crate::hash::HASH_BASE;
-use crate::scan::{CALL, END_MATCH_TOKEN, MATCH_TOKEN, PROTECTED_TOKEN};
+use crate::scan::{END_MATCH_TOKEN, MATCH_TOKEN, PROTECTED_TOKEN};
 use crate::state::EngineState;
-
-const UNDEFINED_CS: u16 = 103;
 
 /// What kind of thing a name is bound to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,7 +82,7 @@ fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
     if text <= 0 || text >= st.strings.str_ptr {
         return;
     }
-    let meaning = st.eqtb.b16s1(slot);
+    let meaning = st.eqtb.eq_type(slot);
     if meaning == UNDEFINED_CS {
         return;
     }
@@ -91,7 +90,7 @@ fn collect(st: &EngineState, slot: i32, found: &mut Vec<DefinedCommand>) {
         return;
     };
 
-    let (kind, arity) = if meaning >= CALL as u16 {
+    let (kind, arity) = if meaning >= CALL {
         let (protected, arity) = describe_macro(st, st.eqtb.b32s1(slot));
         let kind = if protected {
             CommandKind::ProtectedMacro

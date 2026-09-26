@@ -1,5 +1,6 @@
 //! Input stack: token-list and file levels.
 
+use crate::cmd::ASSIGN_TOKS;
 use crate::consts::{
     BACKED_UP, CS_TOKEN_FLAG, FROZEN_CONTROL_SEQUENCE, INSERTED, INT_BASE, LOCAL_BASE, OUTPUT_TEXT,
     TEX_NULL, TOKEN_LIST, WRITE_TEXT,
@@ -300,7 +301,7 @@ pub(crate) fn begin_token_list_in(st: &mut EngineState, p: i32, t: u16) -> Resul
             WRITE_TEXT => print_esc_cstr_in(st, c"write".as_ptr()),
             _ => print_cmd_chr_in(
                 st,
-                crate::scan::ASSIGN_TOKS as u16,
+                ASSIGN_TOKS,
                 t as i32 + LOCAL_BASE + LOCAL_OUTPUT_ROUTINE - OUTPUT_TEXT as i32,
             ),
         }

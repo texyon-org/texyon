@@ -8,6 +8,7 @@ use crate::bridge::{
     ttstub_input_open, ttstub_input_read, ttstub_output_close, ttstub_output_flush,
     ttstub_output_open, ttstub_output_write,
 };
+use crate::cmd::UNDEFINED_CS;
 use crate::consts::{
     ACTIVE_BASE, CS_TOKEN_FLAG, EMPTY_STRING, EQTB_SIZE, FONT_BASE, FROZEN_CONTROL_SEQUENCE,
     HISTORY_FATAL_ERROR, INT_BASE, INT_PAR_DAY, INT_PAR_MONTH, INT_PAR_YEAR, INVALID_HANDLE,
@@ -16,7 +17,7 @@ use crate::consts::{
 };
 use crate::engine::{
     alloc_font_arrays, set_eq, sort_avail_in, HYPH_PRIME, INTER_CHAR_VAL, INT_VAL, POOL_FREE,
-    REGISTER_HELP, STRINGS_FREE, TEX_FORMAT_DEFAULT, UNDEFINED_CS,
+    REGISTER_HELP, STRINGS_FREE, TEX_FORMAT_DEFAULT,
 };
 use crate::errors::EngineAbort;
 use crate::hash::{HASH_BASE, HASH_OFFSET, HASH_PRIME, PRIM_SIZE};

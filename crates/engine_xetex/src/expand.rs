@@ -1,11 +1,15 @@
 //! Expansion: `expand`, `macro_call`, conditionals and `conv_toks`.
 
+use crate::cmd::{
+    ACTIVE_CHAR, CALL, CONVERT, CS_NAME, END_CS_NAME, END_TEMPLATE, EXPAND_AFTER, FI_OR_ELSE,
+    IF_TEST, IGNORE, INPUT, LEFT_BRACE, LONG_CALL, MAX_COMMAND, NO_EXPAND, OUTER_CALL, OUT_PARAM,
+    RELAX, THE, TOP_BOT_MARK, UNDEFINED_CS,
+};
 use crate::consts::{
-    ACTIVE_BASE, CS_TOKEN_FLAG, ELSE_CODE, END_TEMPLATE, FI_CODE, FI_OR_ELSE,
-    FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, HMODE, INSERTED, INT_BASE,
-    INT_PAR_TRACING_IFS, LEFT_BRACE, MAX_COMMAND, MMODE, NORMAL_SCANNER, NULL_CS, OR_CODE,
-    PRIM_EQTB_BASE, RELAX, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOKEN_LIST, TOO_BIG_CHAR,
-    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    ACTIVE_BASE, CS_TOKEN_FLAG, ELSE_CODE, FI_CODE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV,
+    FROZEN_PRIMITIVE, HMODE, INSERTED, INT_BASE, INT_PAR_TRACING_IFS, MMODE, NORMAL_SCANNER,
+    NULL_CS, OR_CODE, PRIM_EQTB_BASE, SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOKEN_LIST,
+    TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 use crate::errors::error_in;
 use crate::input::{
@@ -23,8 +27,8 @@ use crate::output::{
 use crate::scan::{
     fetch_box, get_avail_scc, get_next_scc, get_node_scc, get_token_in, get_x_non_blank_in,
     get_x_token_in, scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, AAT_FONT_FLAG,
-    ACTIVE_CHAR, BIGGEST_USV, CALL, END_MATCH_TOKEN, IF_TEST, LONG_CALL, MATCHING, MATCH_TOKEN,
-    MAX_CHAR_VAL, NO_EXPAND_FLAG, OTGR_FONT_FLAG, OTHER_TOKEN, OUTER_CALL, SPACE_TOKEN, THE,
+    BIGGEST_USV, END_MATCH_TOKEN, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NO_EXPAND_FLAG,
+    OTGR_FONT_FLAG, OTHER_TOKEN, SPACE_TOKEN,
 };
 use crate::state::EngineState;
 use crate::units::{MemIdx, MemPtr};
@@ -58,15 +62,6 @@ const IF_PRIMITIVE_CODE: i16 = 21;
 const IF_NODE_SIZE: i32 = 2;
 const IF_CODE: u8 = 1;
 
-const END_CS_NAME: u8 = 67;
-const UNDEFINED_CS: u8 = 103;
-const EXPAND_AFTER: u8 = 104;
-const NO_EXPAND: u8 = 105;
-const INPUT: u8 = 106;
-const CS_NAME: u8 = 109;
-const CONVERT: u8 = 110;
-const TOP_BOT_MARK: u8 = 112;
-
 const NUMBER_CODE: i32 = 0;
 const ROMAN_NUMERAL_CODE: i32 = 1;
 const STRING_CODE: i32 = 2;
@@ -93,8 +88,6 @@ const XETEX_UCHAR_CODE: i32 = 38;
 const XETEX_UCHARCAT_CODE: i32 = 39;
 const JOB_NAME_CODE: i32 = 40;
 
-const OUT_PARAM: i32 = 5;
-const IGNORE: i32 = 9;
 const MARKS_CODE: i32 = 5;
 const MARK_VAL: u16 = 7;
 const TOO_BIG_USV: i32 = BIGGEST_USV + 1;
@@ -273,7 +266,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 (st.scanner.cur_tok - OTHER_TOKEN) as u8
             } else {
                 error_here_with_diagnostic_in(st, c"Missing = inserted for ".as_ptr());
-                print_cmd_chr_in(st, IF_TEST as u16, this_if as i32);
+                print_cmd_chr_in(st, IF_TEST, this_if as i32);
                 capture_to_diagnostic_in(st, std::ptr::null_mut());
                 st.errors.help_ptr = 1;
                 st.errors.help_line[0] =
@@ -371,7 +364,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?
             };
             crate::mem::flush_list(&mut st.mem, head);
-            st.eqtb.b16s1(st.scanner.cur_cs) != UNDEFINED_CS as u16
+            st.eqtb.eq_type(st.scanner.cur_cs) != UNDEFINED_CS
         }
         IF_IN_CSNAME_CODE => st.scanner.is_in_csname,
         IF_FONT_CHAR_CODE => {
@@ -431,7 +424,7 @@ pub(crate) fn conditional_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 .map_err(|err| SccAbort::Input(crate::scan::hash_err_abort(err)))?;
             st.scanner.cur_cmd != UNDEFINED_CS
                 && m != UNDEFINED_PRIMITIVE
-                && st.scanner.cur_cmd as u16 == st.eqtb.b16s1(PRIM_EQTB_BASE + m)
+                && st.scanner.cur_cmd == st.eqtb.eq_type(PRIM_EQTB_BASE + m)
                 && st.scanner.cur_chr == st.eqtb.b32s1(PRIM_EQTB_BASE + m)
         }
         _ => false,
@@ -719,8 +712,8 @@ pub(crate) fn conv_toks_in(st: &mut EngineState) -> Result<(), SccAbort> {
             let code = st.scanner.cur_val;
             if code < LEFT_BRACE as i32
                 || code > ACTIVE_CHAR as i32
-                || code == OUT_PARAM
-                || code == IGNORE
+                || code == OUT_PARAM as i32
+                || code == IGNORE as i32
             {
                 error_here_with_diagnostic_in(st, c"Invalid code (".as_ptr());
                 print_int_in(st, code);
@@ -894,7 +887,7 @@ fn not_font_error_in(
 ) -> Result<(), SccAbort> {
     scc_err(crate::errors::not_font_error_common_in(
         st,
-        CONVERT as u16,
+        CONVERT,
         c,
         f,
         msg.as_ptr(),
@@ -988,7 +981,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
                     print_esc_cstr_in(st, c"unless".as_ptr());
                     print_cstr_in(st, c"' before `".as_ptr());
-                    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
+                    print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
                     print_char_in(st, '\'' as i32);
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
                     st.errors.help_ptr = 1;
@@ -1014,7 +1007,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                     )
                     .map_err(|e| SccAbort::Input(crate::scan::hash_err_abort(e)))?;
                     if st.scanner.cur_cs != UNDEFINED_PRIMITIVE {
-                        let cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + st.scanner.cur_cs) as u8;
+                        let cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + st.scanner.cur_cs);
                         if cmd > MAX_COMMAND {
                             st.scanner.cur_cmd = cmd;
                             st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + st.scanner.cur_cs);
@@ -1051,14 +1044,14 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                 };
                 crate::mem::flush_list(&mut st.mem, head);
                 let cs = st.scanner.cur_cs;
-                if st.eqtb.b16s1(cs) == UNDEFINED_CS as u16 {
+                if st.eqtb.eq_type(cs) == UNDEFINED_CS {
                     let _ = crate::save::eq_define(
                         &mut st.eqtb,
                         &mut st.save_stack,
                         &mut st.mem,
                         &mut st.scanner,
                         cs,
-                        RELAX as u16,
+                        RELAX,
                         TOO_BIG_USV,
                     );
                 }
@@ -1079,7 +1072,7 @@ pub(crate) fn expand_in(st: &mut EngineState) -> Result<(), SccAbort> {
                         crate::input::insert_relax_in(st)?;
                     } else {
                         error_here_with_diagnostic_in(st, c"Extra ".as_ptr());
-                        print_cmd_chr_in(st, FI_OR_ELSE as u16, st.scanner.cur_chr);
+                        print_cmd_chr_in(st, FI_OR_ELSE, st.scanner.cur_chr);
                         capture_to_diagnostic_in(st, std::ptr::null_mut());
                         st.errors.help_ptr = 1;
                         st.errors.help_line[0] =
@@ -1249,7 +1242,7 @@ pub(crate) fn macro_call_in(st: &mut EngineState) -> Result<(), SccAbort> {
         if st.mem.b32s0(r) != END_MATCH_TOKEN {
             st.scanner.scanner_status = MATCHING;
             let mut unbalance: i32 = 0;
-            st.scanner.long_state = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
+            st.scanner.long_state = st.eqtb.eq_type(st.scanner.cur_cs);
             if st.scanner.long_state >= OUTER_CALL {
                 st.scanner.long_state -= 2;
             }

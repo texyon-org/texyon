@@ -5,8 +5,8 @@ use crate::consts::{
     FRACTION_NOAD_SIZE, GLUE_BASE, HMODE, INT_BASE, INT_PAR_HANG_AFTER, INT_PAR_LANGUAGE,
     INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_TEXXET, LEFT_TO_RIGHT, LIG_TAG,
     LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_FONT_BASE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MMODE, MU_GLUE,
-    NOAD_SIZE, NUMBER_MATH_FAMILIES, OTHER_CHAR, RADICAL_NOAD_SIZE, RELAX, RIGHT_TO_LEFT,
-    SCRIPT_SIZE, SPACER, SPACE_CODE, STYLE_NODE_SIZE, SUB_BOX, TEXT_SIZE,
+    NOAD_SIZE, NUMBER_MATH_FAMILIES, RADICAL_NOAD_SIZE, RIGHT_TO_LEFT, SCRIPT_SIZE, SPACE_CODE,
+    STYLE_NODE_SIZE, SUB_BOX, TEXT_SIZE,
 };
 use crate::ext::real_get_native_glyph;
 use crate::fonts::{char_depth, char_height, char_italic, char_width, CharInfo};
@@ -29,9 +29,6 @@ const LOCAL_EVERY_MATH: i32 = 3;
 
 const EVERY_MATH_TEXT: u16 = 9;
 
-const LETTER: u8 = 11;
-const DELIM_NUM: u8 = 15;
-const SUP_MARK: u8 = 7;
 const EMPTY: i32 = 0;
 const SUB_MLIST: i32 = 3;
 const DELIMITED_CODE: i32 = 3;
@@ -40,7 +37,6 @@ const OVER_CODE: i32 = 1;
 const ATOP_CODE: i32 = 2;
 const DEFAULT_CODE: i32 = 0x4000_0000;
 
-const ACCENT: u8 = 45;
 const MATH_CHAR: i32 = 1;
 const FIXED_ACC: u16 = 1;
 const BOTTOM_ACC: u16 = 2;
@@ -59,7 +55,6 @@ const DIMEN_PAR_DELIMITER_SHORTFALL: i32 = 10;
 const ACCENTBASEHEIGHT: i32 = 6;
 const X_HEIGHT_CODE: i32 = 5;
 
-const MATH_SHIFT: u8 = 3;
 const GLUE_PAR_RIGHT_SKIP: i32 = 8;
 const GLUE_PAR_LEFT_SKIP: i32 = 7;
 const DIMEN_PAR_PRE_DISPLAY_SIZE: i32 = 13;
@@ -120,6 +115,7 @@ const EXACTLY: i16 = 0;
 const AFTER: i16 = 1;
 const COND_MATH_GLUE: u16 = 98;
 
+use crate::cmd::{ACCENT, DELIM_NUM, LETTER, MATH_SHIFT, OTHER_CHAR, RELAX, SPACER, SUP_MARK};
 use crate::ot_math::{
     get_native_mathex_param, get_native_mathsy_param, get_ot_assembly, get_ot_math_accent_pos,
     get_ot_math_constant, get_ot_math_ital_corr, get_ot_math_kern, get_ot_math_variant,

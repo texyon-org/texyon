@@ -8,6 +8,7 @@ use std::ptr;
 use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 
 use crate::bridge::{diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read};
+use crate::cmd::EXTENSION;
 use crate::consts::{
     CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_CONTROL_SEQUENCE, HMODE, INSERTED, INT_BASE,
     INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_TRACING_FONTS, LEFT_SIDE,
@@ -1971,7 +1972,6 @@ pub(crate) unsafe fn print_glyph_name_in(
 const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
 const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
 const FROZEN_SPECIAL: i32 = FROZEN_CONTROL_SEQUENCE + 10;
-const EXTENSION: u8 = 59;
 
 const OPEN_NODE_SIZE: i16 = 3;
 const WRITE_NODE_SIZE: i16 = 2;
@@ -2270,7 +2270,7 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
                 if area != AAT_FONT_FLAG && area != OTGR_FONT_FLAG {
                     return mc_propagate_error(crate::errors::not_font_error_common_in(
                         st,
-                        EXTENSION as u16,
+                        EXTENSION,
                         GLYPH_CODE,
                         cur_font,
                         c"; not a native platform font".as_ptr(),

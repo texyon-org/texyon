@@ -1,18 +1,25 @@
 //! The tokenizer (`get_next`) and the scanning routines built on it.
 
 use crate::bridge::{diag_append_str, ttstub_output_flush};
+use crate::cmd::{
+    ACTIVE_CHAR, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN, ASSIGN_FONT_INT, ASSIGN_GLUE, ASSIGN_INT,
+    ASSIGN_MU_GLUE, ASSIGN_TOKS, CALL, CAR_RET, CHAR_GIVEN, CHAR_NUM, DEF_CODE, DEF_FAMILY,
+    DEF_FONT, DELIM_NUM, DONT_EXPAND, ENDV, END_TEMPLATE, FI_OR_ELSE, IF_TEST, IGNORE_SPACES,
+    LAST_ITEM, LEFT_BRACE, LETTER, MAC_PARAM, MATH_CHAR_NUM, MATH_GIVEN, MAX_COMMAND, MAX_INTERNAL,
+    MIN_INTERNAL, OMIT, OTHER_CHAR, OUTER_CALL, OUT_PARAM, REGISTER, RELAX, RIGHT_BRACE, SET_AUX,
+    SET_BOX_DIMEN, SET_FONT, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF, SET_SHAPE, SPACER,
+    SUP_MARK, TAB_MARK, THE, TOKS_REGISTER, VRULE, XETEX_DEF_CODE, XETEX_MATH_GIVEN,
+};
 use crate::consts::{
-    ACTIVE_BASE, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, BACKED_UP, BIGGEST_CHAR, BOX_BASE,
-    CAT_CODE_BASE, CHAR_CLASS_LIMIT, CHAR_GIVEN, CLOSED, COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC,
-    DEL_CODE_BASE, ELSE_CODE, ENDV, END_TEMPLATE, EQTB_SIZE, FI_CODE, FI_OR_ELSE, FONT_BASE,
-    FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_VAL, INSERTED, INT_BASE,
-    INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, JUST_OPEN,
-    LEFT_BRACE, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MAX_COMMAND, MAX_HALFWORD,
-    MEM_TOP, MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER, NULL_CS, NUMBER_MATH_FAMILIES,
-    OR_CODE, OTHER_CHAR, PRIM_EQTB_BASE, REGISTER, RELAX, RIGHT_BRACE, RIGHT_SIDE, SCALED_BASE,
-    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SET_FONT, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACER,
-    SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UNDEFINED_PRIMITIVE, UNLESS_CODE,
-    VMODE, XETEX_INT,
+    ACTIVE_BASE, BACKED_UP, BIGGEST_CHAR, BOX_BASE, CAT_CODE_BASE, CHAR_CLASS_LIMIT, CLOSED,
+    COUNT_BASE, CS_TOKEN_FLAG, CUR_FONT_LOC, DEL_CODE_BASE, ELSE_CODE, EQTB_SIZE, FI_CODE,
+    FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_VAL, INSERTED,
+    INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_MAG, INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS,
+    JUST_OPEN, LEFT_SIDE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MAX_HALFWORD, MEM_TOP,
+    MU_GLUE, MU_SKIP_BASE, NEW_LINE, NORMAL_SCANNER, NULL_CS, NUMBER_MATH_FAMILIES, OR_CODE,
+    PRIM_EQTB_BASE, RIGHT_SIDE, SCALED_BASE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SF_CODE_BASE,
+    SINGLE_BASE, SKIP_BASE, SPACE_CODE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
+    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE, XETEX_INT,
 };
 use crate::errors::{error_in, int_error_in, mu_error_in};
 use crate::expand::{expand_in, macro_call_in};
@@ -40,46 +47,6 @@ extern "C" {
     fn usingOpenType(engine: *mut libc::c_void) -> bool;
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;
 }
-
-const TAB_MARK: u8 = 4;
-const CAR_RET: u8 = 5;
-pub(crate) const MAC_PARAM: u8 = 6;
-const SUP_MARK: u8 = 7;
-const LETTER: u8 = 11;
-pub(crate) const ACTIVE_CHAR: u8 = 13;
-const OUT_PARAM: u8 = 5;
-const DELIM_NUM: u8 = 15;
-const CHAR_NUM: u8 = 16;
-const MATH_CHAR_NUM: u8 = 17;
-const VRULE: u8 = 35;
-const IGNORE_SPACES: u8 = 39;
-const OMIT: u8 = 63;
-const MIN_INTERNAL: u8 = 68;
-const MATH_GIVEN: u8 = 69;
-const XETEX_MATH_GIVEN: u8 = 70;
-const LAST_ITEM: u8 = 71;
-const TOKS_REGISTER: u8 = 72;
-pub(crate) const ASSIGN_TOKS: u8 = 73;
-const ASSIGN_DIMEN: u8 = 75;
-const ASSIGN_FONT_DIMEN: u8 = 78;
-const ASSIGN_FONT_INT: u8 = 79;
-const SET_AUX: u8 = 80;
-const SET_PREV_GRAF: u8 = 81;
-const SET_PAGE_DIMEN: u8 = 82;
-const SET_PAGE_INT: u8 = 83;
-const SET_BOX_DIMEN: u8 = 84;
-const SET_SHAPE: u8 = 85;
-const DEF_CODE: u8 = 86;
-const XETEX_DEF_CODE: u8 = 87;
-const DEF_FAMILY: u8 = 88;
-const DEF_FONT: u8 = 90;
-const MAX_INTERNAL: u8 = 91;
-pub(crate) const IF_TEST: u8 = 107;
-pub(crate) const THE: u8 = 111;
-pub(crate) const CALL: u8 = 113;
-pub(crate) const LONG_CALL: u8 = 114;
-pub(crate) const OUTER_CALL: u8 = 115;
-const DONT_EXPAND: u8 = 118;
 
 const NORMAL: u8 = 0;
 const SKIPPING: u8 = 1;
@@ -719,7 +686,7 @@ pub(crate) fn read_toks_in(st: &mut EngineState, n: i32, r: i32, j: i32) -> Resu
 pub(crate) fn eTeX_enabled_in(
     st: &mut EngineState,
     b: bool,
-    j: u16,
+    j: u8,
     k: i32,
 ) -> Result<bool, crate::main_control::MainControlAbort> {
     if !b {
@@ -1044,7 +1011,7 @@ pub(crate) fn check_outer_validity_in(
     } else {
         error_here_with_diagnostic_in(st, c"Incomplete ".as_ptr());
         let cur_if = st.scanner.cur_if;
-        print_cmd_chr_in(st, IF_TEST as u16, cur_if as i32);
+        print_cmd_chr_in(st, IF_TEST, cur_if as i32);
         print_cstr_in(st, c"; all text was ignored after line ".as_ptr());
         let skip_line = st.scanner.skip_line;
         print_int_in(st, skip_line);
@@ -1092,7 +1059,7 @@ pub(crate) fn hash_err_abort(e: crate::hash::HashLookupError) -> crate::input::I
 /// Sets `cur_cmd` and `cur_chr` to the meaning of `cur_cs`.
 #[inline(always)]
 fn fetch_cs_meaning(st: &mut EngineState) {
-    st.scanner.cur_cmd = st.eqtb.b16s1(st.scanner.cur_cs) as u8;
+    st.scanner.cur_cmd = st.eqtb.eq_type(st.scanner.cur_cs);
     st.scanner.cur_chr = st.eqtb.b32s1(st.scanner.cur_cs);
 }
 
@@ -2109,7 +2076,7 @@ fn get_primitive_token_in(st: &mut EngineState) -> Result<(), SccAbort> {
     let p = crate::hash::prim_lookup_cs(&mut st.eqtb, &mut st.strings, st.scanner.cur_cs)
         .map_err(|e| SccAbort::Input(hash_err_abort(e)))?;
     if p != UNDEFINED_PRIMITIVE {
-        st.scanner.cur_cmd = st.eqtb.b16s1(PRIM_EQTB_BASE + p) as u8;
+        st.scanner.cur_cmd = st.eqtb.eq_type(PRIM_EQTB_BASE + p);
         st.scanner.cur_chr = st.eqtb.b32s1(PRIM_EQTB_BASE + p);
         st.scanner.cur_cs = PRIM_EQTB_BASE + p;
         st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
@@ -2975,7 +2942,7 @@ fn font_query_error_in(
 ) -> Result<(), SccAbort> {
     scc_err(crate::errors::not_font_error_common_in(
         st,
-        LAST_ITEM as u16,
+        LAST_ITEM,
         m,
         f,
         msg.as_ptr(),
@@ -3576,7 +3543,7 @@ pub(crate) fn scan_something_internal_in(
             SET_AUX => {
                 if st.input.cur_list.mode.abs() as i32 != m {
                     error_here_with_diagnostic_in(st, c"Improper ".as_ptr());
-                    print_cmd_chr_in(st, SET_AUX as u16, m);
+                    print_cmd_chr_in(st, SET_AUX, m);
                     capture_to_diagnostic_in(st, std::ptr::null_mut());
                     st.errors.help_ptr = 4;
                     st.errors.help_line[3] =
@@ -3744,7 +3711,7 @@ pub(crate) fn scan_something_internal_in(
             }
             _ => {
                 error_here_with_diagnostic_in(st, c"You can't use `".as_ptr());
-                print_cmd_chr_in(st, st.scanner.cur_cmd as u16, m);
+                print_cmd_chr_in(st, st.scanner.cur_cmd, m);
                 print_cstr_in(st, c"' after ".as_ptr());
                 print_esc_cstr_in(st, c"the".as_ptr());
                 capture_to_diagnostic_in(st, std::ptr::null_mut());

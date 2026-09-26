@@ -1,12 +1,10 @@
 //! The save stack, `eqtb` definitions, and the sparse-array register trie.
 use crate::bridge::diag_append_str;
+use crate::cmd::{BOX_REF, CALL, GLUE_REF, LONG_OUTER_CALL, REGISTER, SHAPE_REF, TOKS_REGISTER};
 use crate::consts::{
-    EQTB_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, REGISTER, TEX_NULL,
-    UNDEFINED_CONTROL_SEQUENCE,
+    EQTB_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, MEM_TOP, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
 };
-use crate::main_control::{
-    BOX_REF, CALL, DIMEN_VAL, GLUE_REF, LONG_OUTER_CALL, MU_VAL, SHAPE_REF, TOKS_REGISTER,
-};
+use crate::main_control::{DIMEN_VAL, MU_VAL};
 use crate::mem::{delete_glue_ref, delete_token_ref, free_node, get_node, ZERO_GLUE};
 use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
@@ -210,6 +208,9 @@ pub(crate) fn eq_destroy(
 ) -> Result<(), SaveAbort> {
     // SAFETY: `MemoryWord` union projections of an `eqtb` entry.
     let (eq_type, equiv) = unsafe { (w.b16.s1, w.b32.s1) };
+    let Ok(eq_type) = u8::try_from(eq_type) else {
+        return Ok(());
+    };
     match eq_type {
         CALL..=LONG_OUTER_CALL => delete_token_ref(mem, equiv),
         GLUE_REF => delete_glue_ref(mem, equiv),
@@ -220,7 +221,7 @@ pub(crate) fn eq_destroy(
             }
         }
         BOX_REF => crate::packaging::flush_node_list(mem, equiv).map_err(SaveAbort::Confusion)?,
-        t if t == TOKS_REGISTER as u16 || t == REGISTER as u16 => {
+        TOKS_REGISTER | REGISTER => {
             if !(0..=19).contains(&equiv) {
                 delete_sa_ref(mem, scanner, equiv);
             }
@@ -236,10 +237,10 @@ pub(crate) fn eq_define(
     mem: &mut MemState,
     scanner: &mut ScannerState,
     p: i32,
-    t: u16,
+    t: u8,
     e: i32,
 ) -> Result<(), SaveAbort> {
-    if eqtb.b16s1(p) == t && eqtb.b32s1(p) == e {
+    if eqtb.b16s1(p) == t.into() && eqtb.b32s1(p) == e {
         return eq_destroy(mem, scanner, eqtb.word(p));
     }
     if eqtb.b16s0(p) == save_stack.cur_level {
@@ -248,7 +249,7 @@ pub(crate) fn eq_define(
         eq_save(save_stack, eqtb, p, eqtb.b16s0(p))?;
     }
     eqtb.set_b16s0(p, save_stack.cur_level);
-    eqtb.set_b16s1(p, t);
+    eqtb.set_b16s1(p, t.into());
     eqtb.set_b32s1(p, e);
     Ok(())
 }
@@ -258,12 +259,12 @@ pub(crate) fn geq_define(
     mem: &mut MemState,
     scanner: &mut ScannerState,
     p: i32,
-    t: u16,
+    t: u8,
     e: i32,
 ) -> Result<(), SaveAbort> {
     eq_destroy(mem, scanner, eqtb.word(p))?;
     eqtb.set_b16s0(p, LEVEL_ONE);
-    eqtb.set_b16s1(p, t);
+    eqtb.set_b16s1(p, t.into());
     eqtb.set_b32s1(p, e);
     Ok(())
 }

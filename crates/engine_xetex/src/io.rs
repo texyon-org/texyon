@@ -3,8 +3,8 @@
 
 use crate::consts::{
     BIGGEST_CHAR, CLOSED, EMPTY_STRING, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
-    INVALID_HANDLE, JUST_OPEN, LEFT_BRACE, NEW_LINE, OTHER_CHAR, RELAX, SELECTOR_LOG_ONLY,
-    SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, SPACER, TOO_BIG_CHAR,
+    INVALID_HANDLE, JUST_OPEN, NEW_LINE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
+    SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
 };
 use crate::hash::cur_length;
 use crate::input::InputAbort;
@@ -20,6 +20,7 @@ use crate::bridge::{
     ttstub_input_ungetc, ttstub_output_close, ttstub_output_flush, ttstub_output_open,
     ttstub_output_putc,
 };
+use crate::cmd::{LEFT_BRACE, OTHER_CHAR, RELAX, SPACER};
 
 const INT_PAR_TRACING_STACK_LEVELS: i32 = 55;
 const INT_PAR_XETEX_INPUT_NORMALIZATION: i32 = 74;

@@ -5,17 +5,33 @@ use crate::bridge::{
     ttbc_diag_begin_error_ptr, ttbc_diag_begin_warning_ptr, ttstub_diag_finish,
     ttstub_output_flush, ttstub_output_putc,
 };
+use crate::cmd::{
+    ABOVE, ACCENT, ADVANCE, AFTER_ASSIGNMENT, AFTER_GROUP, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN,
+    ASSIGN_FONT_INT, ASSIGN_GLUE, ASSIGN_INT, ASSIGN_MU_GLUE, ASSIGN_TOKS, BEGIN_GROUP,
+    BREAK_PENALTY, CALL, CAR_RET, CASE_SHIFT, CHAR_GIVEN, CHAR_NUM, CONVERT, CS_NAME, DEF,
+    DEF_CODE, DEF_FAMILY, DEF_FONT, DELIM_NUM, DISCRETIONARY, DIVIDE, ENDV, END_CS_NAME, END_GROUP,
+    END_MATCH, END_TEMPLATE, EQ_NO, EXPAND_AFTER, EXTENSION, EX_SPACE, FI_OR_ELSE, HALIGN, HMOVE,
+    HRULE, HSKIP, HYPH_DATA, IF_TEST, IGNORE_SPACES, INPUT, INSERT, IN_STREAM, ITAL_CORR, KERN,
+    LAST_ITEM, LEADER_SHIP, LEFT_BRACE, LEFT_RIGHT, LET, LETTER, LIMIT_SWITCH, LONG_CALL,
+    LONG_OUTER_CALL, MAC_PARAM, MAKE_BOX, MARK, MATCH, MATH_ACCENT, MATH_CHAR_NUM, MATH_CHOICE,
+    MATH_COMP, MATH_GIVEN, MATH_SHIFT, MATH_STYLE, MAX_COMMAND, MESSAGE, MKERN, MSKIP, MULTIPLY,
+    NON_SCRIPT, NO_ALIGN, NO_BOUNDARY, NO_EXPAND, OMIT, OTHER_CHAR, OUTER_CALL, OUT_PARAM, PAR_END,
+    PREFIX, RADICAL, READ_TO_CS, REGISTER, RELAX, REMOVE_ITEM, RIGHT_BRACE, SET_AUX, SET_BOX,
+    SET_BOX_DIMEN, SET_FONT, SET_INTERACTION, SET_PAGE_DIMEN, SET_PAGE_INT, SET_PREV_GRAF,
+    SET_SHAPE, SHORTHAND_DEF, SPACER, START_PAR, STOP, SUB_MARK, SUP_MARK, TAB_MARK, THE,
+    TOKS_REGISTER, TOP_BOT_MARK, UNDEFINED_CS, UN_HBOX, UN_VBOX, VADJUST, VALIGN, VCENTER, VMOVE,
+    VRULE, VSKIP, XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
+};
 use crate::consts::{
     ACTIVE_BASE, A_LEADERS, BACKED_UP, BIGGEST_CHAR, CAT_CODE_BASE, COUNT_BASE, CS_TOKEN_FLAG,
-    DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FI_CODE, FI_OR_ELSE, GLUE_BASE,
-    HISTORY_SPOTLESS, HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_END_LINE_CHAR,
-    INT_PAR_NEW_LINE_CHAR, INT_PAR_TRACING_IFS, INT_PAR_TRACING_ONLINE, LC_CODE_BASE, LOCAL_BASE,
-    LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_COMMAND, MMODE, MU_GLUE, MU_SKIP_BASE,
-    NULL_CS, NULL_FLAG, OR_CODE, OUTPUT_TEXT, PRIM_EQTB_BASE, SCALED_BASE, SCRIPT_SIZE,
-    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG,
-    SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, TEXT_SIZE,
-    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE,
-    UNLESS_CODE, VMODE, WRITE_TEXT,
+    DEL_CODE_BASE, DIMEN_BASE, EQTB_SIZE, ETEX_PEN_BASE, FI_CODE, GLUE_BASE, HISTORY_SPOTLESS,
+    HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
+    INT_PAR_TRACING_IFS, INT_PAR_TRACING_ONLINE, LC_CODE_BASE, LOCAL_BASE, LOCAL_PAR_SHAPE,
+    MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE, MU_SKIP_BASE, NULL_CS, NULL_FLAG, OR_CODE,
+    OUTPUT_TEXT, PRIM_EQTB_BASE, SCALED_BASE, SCRIPT_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
+    SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
+    SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, TEXT_SIZE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
+    UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, UNLESS_CODE, VMODE, WRITE_TEXT,
 };
 use crate::errors::{error_in, ErrorOutcome, ERR_HELP_LOC};
 use crate::hash::HASH_BASE;
@@ -38,7 +54,6 @@ const SELECTOR_PSEUDO: i32 = 20;
 const HISTORY_WARNING_ISSUED: i32 = 1;
 const FROZEN_NULL_FONT: i32 = 2_245_338;
 const FONT_ID_BASE: i32 = FROZEN_NULL_FONT;
-const LETTER: i32 = 11;
 const DIMEN_VAL_LIMIT: u16 = 128;
 
 fn int_par(st: &EngineState, n: i32) -> i32 {
@@ -595,7 +610,7 @@ pub(crate) fn print_cs_in(st: &mut EngineState, p: i32) {
                 print_char_in(st, b' ' as i32);
             } else {
                 print_esc_in(st, p - SINGLE_BASE);
-                if st.eqtb.b32s1(CAT_CODE_BASE + p - SINGLE_BASE) == LETTER {
+                if st.eqtb.b32s1(CAT_CODE_BASE + p - SINGLE_BASE) == LETTER.into() {
                     print_char_in(st, b' ' as i32);
                 }
             }
@@ -1050,125 +1065,6 @@ fn print_mark_in(st: &mut EngineState, p: MemPtr) {
     print_char_in(st, b'}' as i32);
 }
 
-const CMD_RELAX: u16 = 0;
-const CMD_LEFT_BRACE: u16 = 1;
-const CMD_RIGHT_BRACE: u16 = 2;
-const CMD_MATH_SHIFT: u16 = 3;
-const CMD_TAB_MARK: u16 = 4;
-const CMD_CAR_RET: u16 = 5;
-const CMD_MAC_PARAM: u16 = 6;
-const CMD_SUP_MARK: u16 = 7;
-const CMD_SUB_MARK: u16 = 8;
-const CMD_ENDV: u16 = 9;
-const CMD_SPACER: u16 = 10;
-const CMD_LETTER: u16 = 11;
-const CMD_OTHER_CHAR: u16 = 12;
-const CMD_PAR_END: u16 = 13;
-const CMD_STOP: u16 = 14;
-const CMD_DELIM_NUM: u16 = 15;
-const CMD_CHAR_NUM: u16 = 16;
-const CMD_MATH_CHAR_NUM: u16 = 17;
-const CMD_MARK: u16 = 18;
-const CMD_XRAY: u16 = 19;
-const CMD_MAKE_BOX: u16 = 20;
-const CMD_HMOVE: u16 = 21;
-const CMD_VMOVE: u16 = 22;
-const CMD_UN_HBOX: u16 = 23;
-const CMD_UN_VBOX: u16 = 24;
-const CMD_REMOVE_ITEM: u16 = 25;
-const CMD_HSKIP: u16 = 26;
-const CMD_VSKIP: u16 = 27;
-const CMD_MSKIP: u16 = 28;
-const CMD_KERN: u16 = 29;
-const CMD_MKERN: u16 = 30;
-const CMD_LEADER_SHIP: u16 = 31;
-const CMD_HALIGN: u16 = 32;
-const CMD_VALIGN: u16 = 33;
-const CMD_NO_ALIGN: u16 = 34;
-const CMD_VRULE: u16 = 35;
-const CMD_HRULE: u16 = 36;
-const CMD_INSERT: u16 = 37;
-const CMD_VADJUST: u16 = 38;
-const CMD_IGNORE_SPACES: u16 = 39;
-const CMD_AFTER_ASSIGNMENT: u16 = 40;
-const CMD_AFTER_GROUP: u16 = 41;
-const CMD_BREAK_PENALTY: u16 = 42;
-const CMD_START_PAR: u16 = 43;
-const CMD_ITAL_CORR: u16 = 44;
-const CMD_ACCENT: u16 = 45;
-const CMD_MATH_ACCENT: u16 = 46;
-const CMD_DISCRETIONARY: u16 = 47;
-const CMD_EQ_NO: u16 = 48;
-const CMD_LEFT_RIGHT: u16 = 49;
-const CMD_MATH_COMP: u16 = 50;
-const CMD_LIMIT_SWITCH: u16 = 51;
-const CMD_ABOVE: u16 = 52;
-const CMD_MATH_STYLE: u16 = 53;
-const CMD_MATH_CHOICE: u16 = 54;
-const CMD_NON_SCRIPT: u16 = 55;
-const CMD_VCENTER: u16 = 56;
-const CMD_CASE_SHIFT: u16 = 57;
-const CMD_MESSAGE: u16 = 58;
-const CMD_EXTENSION: u16 = 59;
-const CMD_IN_STREAM: u16 = 60;
-const CMD_BEGIN_GROUP: u16 = 61;
-const CMD_END_GROUP: u16 = 62;
-const CMD_OMIT: u16 = 63;
-const CMD_EX_SPACE: u16 = 64;
-const CMD_NO_BOUNDARY: u16 = 65;
-const CMD_RADICAL: u16 = 66;
-const CMD_END_CS_NAME: u16 = 67;
-const CMD_CHAR_GIVEN: u16 = 68;
-const CMD_MATH_GIVEN: u16 = 69;
-const CMD_XETEX_MATH_GIVEN: u16 = 70;
-const CMD_LAST_ITEM: u16 = 71;
-const CMD_TOKS_REGISTER: u16 = 72;
-const CMD_ASSIGN_TOKS: u16 = 73;
-const CMD_ASSIGN_INT: u16 = 74;
-const CMD_ASSIGN_DIMEN: u16 = 75;
-const CMD_ASSIGN_GLUE: u16 = 76;
-const CMD_ASSIGN_MU_GLUE: u16 = 77;
-const CMD_ASSIGN_FONT_DIMEN: u16 = 78;
-const CMD_ASSIGN_FONT_INT: u16 = 79;
-const CMD_SET_AUX: u16 = 80;
-const CMD_SET_PREV_GRAF: u16 = 81;
-const CMD_SET_PAGE_DIMEN: u16 = 82;
-const CMD_SET_PAGE_INT: u16 = 83;
-const CMD_SET_BOX_DIMEN: u16 = 84;
-const CMD_SET_SHAPE: u16 = 85;
-const CMD_DEF_CODE: u16 = 86;
-const CMD_XETEX_DEF_CODE: u16 = 87;
-const CMD_DEF_FAMILY: u16 = 88;
-const CMD_SET_FONT: u16 = 89;
-const CMD_DEF_FONT: u16 = 90;
-const CMD_REGISTER: u16 = 91;
-const CMD_ADVANCE: u16 = 92;
-const CMD_MULTIPLY: u16 = 93;
-const CMD_DIVIDE: u16 = 94;
-const CMD_PREFIX: u16 = 95;
-const CMD_LET: u16 = 96;
-const CMD_SHORTHAND_DEF: u16 = 97;
-const CMD_READ_TO_CS: u16 = 98;
-const CMD_DEF: u16 = 99;
-const CMD_SET_BOX: u16 = 100;
-const CMD_HYPH_DATA: u16 = 101;
-const CMD_SET_INTERACTION: u16 = 102;
-const CMD_UNDEFINED_CS: u16 = 103;
-const CMD_EXPAND_AFTER: u16 = 104;
-const CMD_NO_EXPAND: u16 = 105;
-const CMD_INPUT: u16 = 106;
-const CMD_IF_TEST: u16 = 107;
-const CMD_FI_OR_ELSE: u16 = 108;
-const CMD_CS_NAME: u16 = 109;
-const CMD_CONVERT: u16 = 110;
-const CMD_THE: u16 = 111;
-const CMD_TOP_BOT_MARK: u16 = 112;
-const CMD_CALL: u16 = 113;
-const CMD_LONG_CALL: u16 = 114;
-const CMD_OUTER_CALL: u16 = 115;
-const CMD_LONG_OUTER_CALL: u16 = 116;
-const CMD_END_TEMPLATE: u16 = 117;
-
 // Sub-codes of \lastitem.
 const INT_VAL: i32 = 0;
 const DIMEN_VAL: i32 = 1;
@@ -1339,24 +1235,24 @@ const SHOW_IFS: i32 = 6;
 const LP_CODE_BASE: i32 = 2;
 const RP_CODE_BASE: i32 = 3;
 
-pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
+pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
     let char_cmd = |st: &mut EngineState, s: &CStr| {
         print_cstr_in(st, s.as_ptr());
         print_code_in(st, chr_code);
     };
 
     match cmd {
-        CMD_LEFT_BRACE => char_cmd(st, c"begin-group character "),
-        CMD_RIGHT_BRACE => char_cmd(st, c"end-group character "),
-        CMD_MATH_SHIFT => char_cmd(st, c"math shift character "),
-        CMD_MAC_PARAM => char_cmd(st, c"macro parameter character "),
-        CMD_SUP_MARK => char_cmd(st, c"superscript character "),
-        CMD_SUB_MARK => char_cmd(st, c"subscript character "),
-        CMD_ENDV => print_cstr_in(st, c"end of alignment template".as_ptr()),
-        CMD_SPACER => char_cmd(st, c"blank space "),
-        CMD_LETTER => char_cmd(st, c"the letter "),
-        CMD_OTHER_CHAR => char_cmd(st, c"the character "),
-        CMD_ASSIGN_GLUE | CMD_ASSIGN_MU_GLUE => {
+        LEFT_BRACE => char_cmd(st, c"begin-group character "),
+        RIGHT_BRACE => char_cmd(st, c"end-group character "),
+        MATH_SHIFT => char_cmd(st, c"math shift character "),
+        MAC_PARAM => char_cmd(st, c"macro parameter character "),
+        SUP_MARK => char_cmd(st, c"superscript character "),
+        SUB_MARK => char_cmd(st, c"subscript character "),
+        ENDV => print_cstr_in(st, c"end of alignment template".as_ptr()),
+        SPACER => char_cmd(st, c"blank space "),
+        LETTER => char_cmd(st, c"the letter "),
+        OTHER_CHAR => char_cmd(st, c"the character "),
+        ASSIGN_GLUE | ASSIGN_MU_GLUE => {
             if chr_code < SKIP_BASE {
                 print_skip_param_in(st, chr_code - GLUE_BASE);
             } else if chr_code < MU_SKIP_BASE {
@@ -1367,7 +1263,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 print_int_in(st, chr_code - MU_SKIP_BASE);
             }
         }
-        CMD_ASSIGN_TOKS => {
+        ASSIGN_TOKS => {
             if chr_code >= TOKS_BASE {
                 esc(st, c"toks");
                 print_int_in(st, chr_code - TOKS_BASE);
@@ -1389,7 +1285,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 esc(st, name);
             }
         }
-        CMD_ASSIGN_INT => {
+        ASSIGN_INT => {
             if chr_code < COUNT_BASE {
                 print_param_in(st, chr_code - INT_BASE);
             } else {
@@ -1397,7 +1293,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 print_int_in(st, chr_code - COUNT_BASE);
             }
         }
-        CMD_ASSIGN_DIMEN => {
+        ASSIGN_DIMEN => {
             if chr_code < SCALED_BASE {
                 print_length_param_in(st, chr_code - DIMEN_BASE);
             } else {
@@ -1405,17 +1301,17 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 print_int_in(st, chr_code - SCALED_BASE);
             }
         }
-        CMD_ACCENT => esc(st, c"accent"),
-        CMD_ADVANCE => esc(st, c"advance"),
-        CMD_AFTER_ASSIGNMENT => esc(st, c"afterassignment"),
-        CMD_AFTER_GROUP => esc(st, c"aftergroup"),
-        CMD_ASSIGN_FONT_DIMEN => esc(st, c"fontdimen"),
-        CMD_BEGIN_GROUP => esc(st, c"begingroup"),
-        CMD_BREAK_PENALTY => esc(st, c"penalty"),
-        CMD_CHAR_NUM => esc(st, c"char"),
-        CMD_CS_NAME => esc(st, c"csname"),
-        CMD_DEF_FONT => esc(st, c"font"),
-        CMD_DELIM_NUM => esc(
+        ACCENT => esc(st, c"accent"),
+        ADVANCE => esc(st, c"advance"),
+        AFTER_ASSIGNMENT => esc(st, c"afterassignment"),
+        AFTER_GROUP => esc(st, c"aftergroup"),
+        ASSIGN_FONT_DIMEN => esc(st, c"fontdimen"),
+        BEGIN_GROUP => esc(st, c"begingroup"),
+        BREAK_PENALTY => esc(st, c"penalty"),
+        CHAR_NUM => esc(st, c"char"),
+        CS_NAME => esc(st, c"csname"),
+        DEF_FONT => esc(st, c"font"),
+        DELIM_NUM => esc(
             st,
             if chr_code == 1 {
                 c"Udelimiter"
@@ -1423,11 +1319,11 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"delimiter"
             },
         ),
-        CMD_DIVIDE => esc(st, c"divide"),
-        CMD_END_CS_NAME => esc(st, c"endcsname"),
-        CMD_END_GROUP => esc(st, c"endgroup"),
-        CMD_EX_SPACE => print_esc_in(st, b' ' as i32),
-        CMD_EXPAND_AFTER => esc(
+        DIVIDE => esc(st, c"divide"),
+        END_CS_NAME => esc(st, c"endcsname"),
+        END_GROUP => esc(st, c"endgroup"),
+        EX_SPACE => print_esc_in(st, b' ' as i32),
+        EXPAND_AFTER => esc(
             st,
             if chr_code == 0 {
                 c"expandafter"
@@ -1435,9 +1331,9 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"unless"
             },
         ),
-        CMD_HALIGN => esc(st, c"halign"),
-        CMD_HRULE => esc(st, c"hrule"),
-        CMD_IGNORE_SPACES => esc(
+        HALIGN => esc(st, c"halign"),
+        HRULE => esc(st, c"hrule"),
+        IGNORE_SPACES => esc(
             st,
             if chr_code == 0 {
                 c"ignorespaces"
@@ -1445,15 +1341,15 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"primitive"
             },
         ),
-        CMD_INSERT => esc(st, c"insert"),
-        CMD_ITAL_CORR => print_esc_in(st, b'/' as i32),
-        CMD_MARK => {
+        INSERT => esc(st, c"insert"),
+        ITAL_CORR => print_esc_in(st, b'/' as i32),
+        MARK => {
             esc(st, c"mark");
             if chr_code > 0 {
                 print_char_in(st, b's' as i32);
             }
         }
-        CMD_MATH_ACCENT => esc(
+        MATH_ACCENT => esc(
             st,
             if chr_code == 1 {
                 c"Umathaccent"
@@ -1461,7 +1357,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"mathaccent"
             },
         ),
-        CMD_MATH_CHAR_NUM => esc(
+        MATH_CHAR_NUM => esc(
             st,
             match chr_code {
                 2 => c"Umathchar",
@@ -1469,11 +1365,11 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"mathchar",
             },
         ),
-        CMD_MATH_CHOICE => esc(st, c"mathchoice"),
-        CMD_MULTIPLY => esc(st, c"multiply"),
-        CMD_NO_ALIGN => esc(st, c"noalign"),
-        CMD_NO_BOUNDARY => esc(st, c"noboundary"),
-        CMD_NO_EXPAND => esc(
+        MATH_CHOICE => esc(st, c"mathchoice"),
+        MULTIPLY => esc(st, c"multiply"),
+        NO_ALIGN => esc(st, c"noalign"),
+        NO_BOUNDARY => esc(st, c"noboundary"),
+        NO_EXPAND => esc(
             st,
             if chr_code == 0 {
                 c"noexpand"
@@ -1481,9 +1377,9 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"primitive"
             },
         ),
-        CMD_NON_SCRIPT => esc(st, c"nonscript"),
-        CMD_OMIT => esc(st, c"omit"),
-        CMD_RADICAL => esc(
+        NON_SCRIPT => esc(st, c"nonscript"),
+        OMIT => esc(st, c"omit"),
+        RADICAL => esc(
             st,
             if chr_code == 1 {
                 c"Uradical"
@@ -1491,11 +1387,11 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"radical"
             },
         ),
-        CMD_READ_TO_CS => esc(st, if chr_code == 0 { c"read" } else { c"readline" }),
-        CMD_RELAX => esc(st, c"relax"),
-        CMD_SET_BOX => esc(st, c"setbox"),
-        CMD_SET_PREV_GRAF => esc(st, c"prevgraf"),
-        CMD_SET_SHAPE => {
+        READ_TO_CS => esc(st, if chr_code == 0 { c"read" } else { c"readline" }),
+        RELAX => esc(st, c"relax"),
+        SET_BOX => esc(st, c"setbox"),
+        SET_PREV_GRAF => esc(st, c"prevgraf"),
+        SET_SHAPE => {
             let name = if chr_code == LOCAL_BASE + LOCAL_PAR_SHAPE {
                 c"parshape"
             } else {
@@ -1509,7 +1405,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_THE => esc(
+        THE => esc(
             st,
             match chr_code {
                 0 => c"the",
@@ -1517,7 +1413,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"detokenize",
             },
         ),
-        CMD_TOKS_REGISTER => {
+        TOKS_REGISTER => {
             esc(st, c"toks");
             if chr_code != 0 {
                 if let Some(q) = NodePtr::<SaNode>::from_ptr(MemPtr(chr_code)) {
@@ -1525,8 +1421,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 }
             }
         }
-        CMD_VADJUST => esc(st, c"vadjust"),
-        CMD_VALIGN => esc(
+        VADJUST => esc(st, c"vadjust"),
+        VALIGN => esc(
             st,
             match chr_code {
                 0 => c"valign",
@@ -1536,10 +1432,10 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"endR",
             },
         ),
-        CMD_VCENTER => esc(st, c"vcenter"),
-        CMD_VRULE => esc(st, c"vrule"),
-        CMD_PAR_END => esc(st, c"par"),
-        CMD_INPUT => esc(
+        VCENTER => esc(st, c"vcenter"),
+        VRULE => esc(st, c"vrule"),
+        PAR_END => esc(st, c"par"),
+        INPUT => esc(
             st,
             match chr_code {
                 0 => c"input",
@@ -1547,7 +1443,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"endinput",
             },
         ),
-        CMD_TOP_BOT_MARK => {
+        TOP_BOT_MARK => {
             let name = match chr_code % MARKS_CODE {
                 1 => c"firstmark",
                 2 => c"botmark",
@@ -1560,7 +1456,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 print_char_in(st, b's' as i32);
             }
         }
-        CMD_REGISTER => {
+        REGISTER => {
             let sa = if (0..=19).contains(&chr_code) {
                 None
             } else {
@@ -1578,7 +1474,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 print_sa_num_in(st, q);
             }
         }
-        CMD_SET_AUX => esc(
+        SET_AUX => esc(
             st,
             if chr_code == VMODE as i32 {
                 c"prevdepth"
@@ -1586,7 +1482,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"spacefactor"
             },
         ),
-        CMD_SET_PAGE_INT => esc(
+        SET_PAGE_INT => esc(
             st,
             match chr_code {
                 0 => c"deadcycles",
@@ -1594,7 +1490,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"insertpenalties",
             },
         ),
-        CMD_SET_BOX_DIMEN => esc(
+        SET_BOX_DIMEN => esc(
             st,
             match chr_code {
                 WIDTH_OFFSET => c"wd",
@@ -1602,7 +1498,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"dp",
             },
         ),
-        CMD_LAST_ITEM => {
+        LAST_ITEM => {
             let name = match chr_code {
                 INT_VAL => c"lastpenalty",
                 DIMEN_VAL => c"lastkern",
@@ -1670,7 +1566,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_CONVERT => {
+        CONVERT => {
             let name = match chr_code {
                 NUMBER_CODE => c"number",
                 ROMAN_NUMERAL_CODE => c"romannumeral",
@@ -1700,7 +1596,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_IF_TEST => {
+        IF_TEST => {
             if chr_code >= UNLESS_CODE {
                 esc(st, c"unless");
             }
@@ -1730,7 +1626,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_FI_OR_ELSE => {
+        FI_OR_ELSE => {
             let name = if chr_code == FI_CODE as i32 {
                 c"fi"
             } else if chr_code == OR_CODE as i32 {
@@ -1740,15 +1636,15 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_TAB_MARK => {
+        TAB_MARK => {
             if chr_code == SPAN_CODE {
                 esc(st, c"span");
             } else {
                 char_cmd(st, c"alignment tab character ");
             }
         }
-        CMD_CAR_RET => esc(st, if chr_code == CR_CODE { c"cr" } else { c"crcr" }),
-        CMD_SET_PAGE_DIMEN => {
+        CAR_RET => esc(st, if chr_code == CR_CODE { c"cr" } else { c"crcr" }),
+        SET_PAGE_DIMEN => {
             let name = match chr_code {
                 0 => c"pagegoal",
                 1 => c"pagetotal",
@@ -1761,8 +1657,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_STOP => esc(st, if chr_code == 1 { c"dump" } else { c"end" }),
-        CMD_HSKIP => esc(
+        STOP => esc(st, if chr_code == 1 { c"dump" } else { c"end" }),
+        HSKIP => esc(
             st,
             match chr_code {
                 SKIP_CODE => c"hskip",
@@ -1772,7 +1668,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"hfilneg",
             },
         ),
-        CMD_VSKIP => esc(
+        VSKIP => esc(
             st,
             match chr_code {
                 SKIP_CODE => c"vskip",
@@ -1782,10 +1678,10 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"vfilneg",
             },
         ),
-        CMD_MSKIP => esc(st, c"mskip"),
-        CMD_KERN => esc(st, c"kern"),
-        CMD_MKERN => esc(st, c"mkern"),
-        CMD_HMOVE => esc(
+        MSKIP => esc(st, c"mskip"),
+        KERN => esc(st, c"kern"),
+        MKERN => esc(st, c"mkern"),
+        HMOVE => esc(
             st,
             if chr_code == 1 {
                 c"moveleft"
@@ -1793,8 +1689,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"moveright"
             },
         ),
-        CMD_VMOVE => esc(st, if chr_code == 1 { c"raise" } else { c"lower" }),
-        CMD_MAKE_BOX => {
+        VMOVE => esc(st, if chr_code == 1 { c"raise" } else { c"lower" }),
+        MAKE_BOX => {
             let name = match chr_code {
                 BOX_CODE => c"box",
                 COPY_CODE => c"copy",
@@ -1806,7 +1702,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_LEADER_SHIP => {
+        LEADER_SHIP => {
             let name = match chr_code - A_LEADERS as i32 {
                 0 => c"leaders",
                 1 => c"cleaders",
@@ -1815,7 +1711,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_START_PAR => esc(
+        START_PAR => esc(
             st,
             if chr_code == 0 {
                 c"noindent"
@@ -1823,7 +1719,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"indent"
             },
         ),
-        CMD_REMOVE_ITEM => {
+        REMOVE_ITEM => {
             let name = if chr_code == NodeType::Glue as i32 {
                 c"unskip"
             } else if chr_code == NodeType::Kern as i32 {
@@ -1833,7 +1729,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_UN_HBOX => esc(
+        UN_HBOX => esc(
             st,
             if chr_code == COPY_CODE {
                 c"unhcopy"
@@ -1841,7 +1737,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"unhbox"
             },
         ),
-        CMD_UN_VBOX => esc(
+        UN_VBOX => esc(
             st,
             match chr_code {
                 COPY_CODE => c"unvcopy",
@@ -1850,15 +1746,15 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"unvbox",
             },
         ),
-        CMD_DISCRETIONARY => {
+        DISCRETIONARY => {
             if chr_code == 1 {
                 print_esc_in(st, b'-' as i32);
             } else {
                 esc(st, c"discretionary");
             }
         }
-        CMD_EQ_NO => esc(st, if chr_code == 1 { c"leqno" } else { c"eqno" }),
-        CMD_MATH_COMP => {
+        EQ_NO => esc(st, if chr_code == 1 { c"leqno" } else { c"eqno" }),
+        MATH_COMP => {
             const ORD_NOAD: i32 = NodeType::OrdNoad as i32;
             const OP_NOAD: i32 = NodeType::OpNoad as i32;
             const BIN_NOAD: i32 = NodeType::BinNoad as i32;
@@ -1882,7 +1778,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_LIMIT_SWITCH => esc(
+        LIMIT_SWITCH => esc(
             st,
             match chr_code {
                 LIMITS => c"limits",
@@ -1890,8 +1786,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"displaylimits",
             },
         ),
-        CMD_MATH_STYLE => print_style_in(st, chr_code),
-        CMD_ABOVE => {
+        MATH_STYLE => print_style_in(st, chr_code),
+        ABOVE => {
             let name = match chr_code {
                 OVER_CODE => c"over",
                 ATOP_CODE => c"atop",
@@ -1902,7 +1798,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_LEFT_RIGHT => {
+        LEFT_RIGHT => {
             let name = if chr_code == NodeType::LeftNoad as i32 {
                 c"left"
             } else if chr_code == MIDDLE_NOAD {
@@ -1912,7 +1808,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_PREFIX => esc(
+        PREFIX => esc(
             st,
             match chr_code {
                 1 => c"long",
@@ -1921,7 +1817,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"global",
             },
         ),
-        CMD_DEF => esc(
+        DEF => esc(
             st,
             match chr_code {
                 0 => c"def",
@@ -1930,8 +1826,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 _ => c"xdef",
             },
         ),
-        CMD_LET => esc(st, if chr_code != 0 { c"futurelet" } else { c"let" }),
-        CMD_SHORTHAND_DEF => {
+        LET => esc(st, if chr_code != 0 { c"futurelet" } else { c"let" }),
+        SHORTHAND_DEF => {
             let name = match chr_code {
                 CHAR_DEF_CODE => c"chardef",
                 MATH_CHAR_DEF_CODE => c"mathchardef",
@@ -1946,22 +1842,22 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_CHAR_GIVEN => {
+        CHAR_GIVEN => {
             esc(st, c"char");
             print_hex_in(st, chr_code);
         }
-        CMD_MATH_GIVEN => {
+        MATH_GIVEN => {
             esc(st, c"mathchar");
             print_hex_in(st, chr_code);
         }
-        CMD_XETEX_MATH_GIVEN => {
+        XETEX_MATH_GIVEN => {
             let code = chr_code as u32;
             esc(st, c"Umathchar");
             print_hex_in(st, ((code >> 21) & 0x07) as i32);
             print_hex_in(st, ((code >> 24) & 0xFF) as i32);
             print_hex_in(st, (code & 0x1F_FFFF) as i32);
         }
-        CMD_DEF_CODE => {
+        DEF_CODE => {
             let name = match chr_code {
                 LC_CODE_BASE => c"lccode",
                 UC_CODE_BASE => c"uccode",
@@ -1972,7 +1868,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_XETEX_DEF_CODE => {
+        XETEX_DEF_CODE => {
             let name = match chr_code {
                 SF_CODE_BASE => c"XeTeXcharclass",
                 MATH_CODE_BASE => c"Umathcodenum",
@@ -1982,8 +1878,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_DEF_FAMILY => print_size_in(st, chr_code - MATH_FONT_BASE),
-        CMD_HYPH_DATA => esc(
+        DEF_FAMILY => print_size_in(st, chr_code - MATH_FONT_BASE),
+        HYPH_DATA => esc(
             st,
             if chr_code == 1 {
                 c"patterns"
@@ -1991,7 +1887,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"hyphenation"
             },
         ),
-        CMD_ASSIGN_FONT_INT => {
+        ASSIGN_FONT_INT => {
             let name = match chr_code {
                 0 => c"hyphenchar",
                 1 => c"skewchar",
@@ -2001,8 +1897,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_SET_FONT => print_font_select_in(st, chr_code as usize),
-        CMD_SET_INTERACTION => {
+        SET_FONT => print_font_select_in(st, chr_code as usize),
+        SET_INTERACTION => {
             const BATCH: i32 = InteractionMode::Batch as i32;
             const NONSTOP: i32 = InteractionMode::Nonstop as i32;
             const SCROLL: i32 = InteractionMode::Scroll as i32;
@@ -2014,8 +1910,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_IN_STREAM => esc(st, if chr_code == 0 { c"closein" } else { c"openin" }),
-        CMD_MESSAGE => esc(
+        IN_STREAM => esc(st, if chr_code == 0 { c"closein" } else { c"openin" }),
+        MESSAGE => esc(
             st,
             if chr_code == 0 {
                 c"message"
@@ -2023,7 +1919,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"errmessage"
             },
         ),
-        CMD_CASE_SHIFT => esc(
+        CASE_SHIFT => esc(
             st,
             if chr_code == LC_CODE_BASE {
                 c"lowercase"
@@ -2031,7 +1927,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
                 c"uppercase"
             },
         ),
-        CMD_XRAY => {
+        XRAY => {
             let name = match chr_code {
                 SHOW_BOX_CODE => c"showbox",
                 SHOW_THE_CODE => c"showthe",
@@ -2043,10 +1939,10 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             };
             esc(st, name);
         }
-        CMD_UNDEFINED_CS => print_cstr_in(st, c"undefined".as_ptr()),
-        CMD_CALL | CMD_LONG_CALL | CMD_OUTER_CALL | CMD_LONG_OUTER_CALL => {
+        UNDEFINED_CS => print_cstr_in(st, c"undefined".as_ptr()),
+        CALL | LONG_CALL | OUTER_CALL | LONG_OUTER_CALL => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
-            let mut n = (cmd - CMD_CALL) as i32;
+            let mut n = (cmd - CALL) as i32;
             if st.mem.b32s0(st.mem.b32s1(chr_code)) == PROTECTED_TOKEN {
                 n += 4;
             }
@@ -2064,8 +1960,8 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u16, chr_code: i32) {
             }
             print_cstr_in(st, c"macro".as_ptr());
         }
-        CMD_END_TEMPLATE => esc(st, c"outer endtemplate"),
-        CMD_EXTENSION => {
+        END_TEMPLATE => esc(st, c"outer endtemplate"),
+        EXTENSION => {
             let name = match chr_code {
                 OPEN_NODE => c"openout",
                 WRITE_NODE => c"write",
@@ -2112,14 +2008,14 @@ fn print_font_select_in(st: &mut EngineState, f: usize) {
 }
 
 pub(crate) fn print_meaning_in(st: &mut EngineState) {
-    let cmd = st.scanner.cur_cmd as u16;
+    let cmd = st.scanner.cur_cmd;
     let chr = st.scanner.cur_chr;
     print_cmd_chr_in(st, cmd, chr);
-    if cmd >= CMD_CALL {
+    if cmd >= CALL {
         print_char_in(st, b':' as i32);
         print_ln_in(st);
         token_show_in(st, chr);
-    } else if cmd == CMD_TOP_BOT_MARK && (chr as usize) < 5 {
+    } else if cmd == TOP_BOT_MARK && (chr as usize) < 5 {
         print_char_in(st, b':' as i32);
         print_ln_in(st);
         token_show_in(st, st.scanner.cur_mark[chr as usize]);
@@ -2179,7 +2075,7 @@ pub(crate) fn if_warning_in(st: &mut EngineState) {
         print_nl_cstr_in(st, c"Warning: ".as_ptr());
         diagnostic_begin_capture_warning_here_in(st);
         print_cstr_in(st, c"end of ".as_ptr());
-        print_cmd_chr_in(st, CMD_IF_TEST, st.scanner.cur_if as i32);
+        print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
         print_if_line_in(st, st.scanner.if_line);
         print_cstr_in(st, c" of a different file".as_ptr());
         print_ln_in(st);
@@ -2242,7 +2138,7 @@ pub(crate) fn file_warning_in(st: &mut EngineState) {
         print_nl_cstr_in(st, c"Warning: ".as_ptr());
         diagnostic_begin_capture_warning_here_in(st);
         print_cstr_in(st, c"end of file when ".as_ptr());
-        print_cmd_chr_in(st, CMD_IF_TEST, st.scanner.cur_if as i32);
+        print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
         if st.scanner.if_limit == FI_CODE {
             esc(st, c"else");
         }
@@ -2276,13 +2172,13 @@ pub(crate) fn show_cur_cmd_chr_in(st: &mut EngineState) {
         print_cstr_in(st, c": ".as_ptr());
         st.scanner.shown_mode = st.input.cur_list.mode;
     }
-    print_cmd_chr_in(st, st.scanner.cur_cmd as u16, st.scanner.cur_chr);
+    print_cmd_chr_in(st, st.scanner.cur_cmd, st.scanner.cur_chr);
     if int_par(st, INT_PAR_TRACING_IFS) > 0
-        && (CMD_IF_TEST as u8..=FI_OR_ELSE).contains(&st.scanner.cur_cmd)
+        && (IF_TEST as u8..=FI_OR_ELSE).contains(&st.scanner.cur_cmd)
     {
         print_cstr_in(st, c": ".as_ptr());
         let (mut n, l) = if st.scanner.cur_cmd == FI_OR_ELSE {
-            print_cmd_chr_in(st, CMD_IF_TEST, st.scanner.cur_if as i32);
+            print_cmd_chr_in(st, IF_TEST, st.scanner.cur_if as i32);
             print_char_in(st, b' ' as i32);
             (0, st.scanner.if_line)
         } else {
@@ -2428,20 +2324,6 @@ pub(crate) fn show_token_list_in(
     q: i32,
     l: i32,
 ) {
-    const LEFT_BRACE: i32 = 1;
-    const RIGHT_BRACE: i32 = 2;
-    const MATH_SHIFT: i32 = 3;
-    const TAB_MARK: i32 = 4;
-    const OUT_PARAM: i32 = 5;
-    const MAC_PARAM: i32 = 6;
-    const SUP_MARK: i32 = 7;
-    const SUB_MARK: i32 = 8;
-    const SPACER: i32 = 10;
-    const LETTER: i32 = 11;
-    const OTHER_CHAR: i32 = 12;
-    const MATCH: i32 = 13;
-    const END_MATCH: i32 = 14;
-
     let mut p = MemPtr(p.addr());
     let mut match_chr = b'#' as i32;
     let mut n = b'0' as i32;
@@ -2461,7 +2343,7 @@ pub(crate) fn show_token_list_in(
             esc(st, c"BAD.");
         } else {
             let c = w % MAX_CHAR_VAL;
-            match w / MAX_CHAR_VAL {
+            match (w / MAX_CHAR_VAL) as u8 {
                 LEFT_BRACE | RIGHT_BRACE | MATH_SHIFT | TAB_MARK | SUP_MARK | SUB_MARK | SPACER
                 | LETTER | OTHER_CHAR => print_char_in(st, c),
                 MAC_PARAM => {
@@ -2728,7 +2610,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                 if m == MMODE {
                     print_char_in(st, b'$' as i32);
                 } else if st.input.nest[p as usize].mode == MMODE {
-                    print_cmd_chr_in(st, CMD_EQ_NO, saved(st, 2));
+                    print_cmd_chr_in(st, EQ_NO, saved(st, 2));
                     print_char_in(st, b')' as i32);
                     st.save_stack.cur_level -= 1;
                     leave_group_boundary(st);
@@ -2754,9 +2636,9 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
             if i != 0 {
                 if i < BOX_FLAG {
                     let cmd = if st.input.nest[p as usize].mode.abs() == VMODE {
-                        CMD_HMOVE
+                        HMOVE
                     } else {
-                        CMD_VMOVE
+                        VMOVE
                     };
                     print_cmd_chr_in(st, cmd, if i > 0 { 0 } else { 1 });
                     print_scaled_in(st, i.abs());
@@ -2771,7 +2653,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
                     print_int_in(st, box_num - BOX_FLAG);
                     print_char_in(st, b'=' as i32);
                 } else {
-                    print_cmd_chr_in(st, CMD_LEADER_SHIP, i - (LEADER_FLAG - A_LEADERS as i32));
+                    print_cmd_chr_in(st, LEADER_SHIP, i - (LEADER_FLAG - A_LEADERS as i32));
                 }
             }
         }
@@ -2884,7 +2766,7 @@ pub(crate) fn show_whatever_in(st: &mut EngineState) -> Result<(), ShowWhateverA
                     print_nl_cstr_in(st, c"### level ".as_ptr());
                     print_int_in(st, n);
                     print_cstr_in(st, c": ".as_ptr());
-                    print_cmd_chr_in(st, CMD_IF_TEST, t as i32);
+                    print_cmd_chr_in(st, IF_TEST, t as i32);
                     if m == FI_CODE {
                         esc(st, c"else");
                     }

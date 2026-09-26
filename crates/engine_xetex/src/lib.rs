@@ -26,6 +26,7 @@ use tectonic_errors::prelude::*;
 mod bridge;
 mod cancellation;
 mod checkpoint;
+mod cmd;
 mod compat;
 mod consts;
 mod engine;

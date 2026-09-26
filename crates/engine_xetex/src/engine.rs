@@ -4,18 +4,23 @@
 use std::ffi::CStr;
 
 use crate::bridge::ttstub_output_open_stdout;
+use crate::cmd::{
+    BOX_REF, CAR_RET, COMMENT, DATA, DONT_EXPAND, ENDV, END_TEMPLATE, ESCAPE, GLUE_REF, IF_TEST,
+    IGNORE, IGNORE_SPACES, INVALID_CHAR, LETTER, OTHER_CHAR, OUTER_CALL, SHAPE_REF, SPACER,
+    UNDEFINED_CS,
+};
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY_STRING, ENDV, END_TEMPLATE, EQTB_SIZE,
-    ETEX_PEN_BASE, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_BASE,
-    GLUE_NODE, GLUE_SPEC_SIZE, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, IGNORE_DEPTH, INT_BASE,
-    INT_PAR_DAY, INT_PAR_END_LINE_CHAR, INT_PAR_HANG_AFTER, INT_PAR_MAG, INT_PAR_MONTH,
-    INT_PAR_NEW_LINE_CHAR, INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_YEAR, LC_CODE_BASE,
-    LEFT_TO_RIGHT, LEVEL_ONE, LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE,
-    MAX_FONT_MAX, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NEW_LINE, NON_ADDRESS, NORMAL_SCANNER,
-    NUMBER_MATH_FAMILIES, NUMBER_USVS, OTHER_CHAR, PRIM_EQTB_BASE, SELECTOR_NO_PRINT,
-    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SPACER, TEX_NULL,
-    TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY_STRING, EQTB_SIZE, ETEX_PEN_BASE, FONT_BASE,
+    FROZEN_CONTROL_SEQUENCE, FROZEN_ENDV, FROZEN_PRIMITIVE, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE,
+    HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, IGNORE_DEPTH, INT_BASE, INT_PAR_DAY,
+    INT_PAR_END_LINE_CHAR, INT_PAR_HANG_AFTER, INT_PAR_MAG, INT_PAR_MONTH, INT_PAR_NEW_LINE_CHAR,
+    INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_YEAR, LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE,
+    LOCAL_BASE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX, MAX_HALFWORD,
+    MEM_TOP, MIN_TRIE_OP, NEW_LINE, NON_ADDRESS, NORMAL_SCANNER, NUMBER_MATH_FAMILIES, NUMBER_USVS,
+    PRIM_EQTB_BASE, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE,
+    SINGLE_BASE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE,
+    UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::EngineAbort;
 use crate::format_io::load_fmt_file;
@@ -53,16 +58,6 @@ const FROZEN_END_TEMPLATE: i32 = FROZEN_CONTROL_SEQUENCE + 5;
 const END_WRITE: i32 = FROZEN_CONTROL_SEQUENCE + 8;
 const FROZEN_DONT_EXPAND: i32 = FROZEN_CONTROL_SEQUENCE + 9;
 
-const IGNORE_SPACES: u16 = 39;
-const IF_TEST: u16 = 107;
-pub(crate) const UNDEFINED_CS: u16 = 103;
-const OUTER_CALL: u16 = 115;
-const DONT_EXPAND: u16 = 118;
-const GLUE_REF: u16 = 119;
-const SHAPE_REF: u16 = 120;
-const BOX_REF: u16 = 121;
-const DATA: u16 = 122;
-
 const LEVEL_ZERO: u16 = 0;
 const NORMAL: u8 = 0;
 const FIL: u16 = 1;
@@ -86,13 +81,6 @@ const NUMBER_MATH_FONTS: i32 = 3 * NUMBER_MATH_FAMILIES;
 const TOO_BIG_LANG: i32 = 256;
 pub(crate) const HYPH_PRIME: i32 = 607;
 const VAR_FAM_CLASS: i32 = 7;
-
-const ESCAPE: i32 = 0;
-const CAR_RET: i32 = 5;
-const IGNORE: i32 = 9;
-const LETTER: i32 = 11;
-const COMMENT: i32 = 14;
-const INVALID_CHAR: i32 = 15;
 
 pub(crate) const REGISTER_HELP: &CStr = c"A register number must be between 0 and 32767.";
 
@@ -220,8 +208,8 @@ impl PrimitiveInitAbort {
     }
 }
 
-pub(crate) fn set_eq(eqtb: &mut EqtbState, p: i32, eq_type: u16, equiv: i32, level: u16) {
-    eqtb.set_b16s1(p, eq_type);
+pub(crate) fn set_eq(eqtb: &mut EqtbState, p: i32, eq_type: u8, equiv: i32, level: u16) {
+    eqtb.set_b16s1(p, eq_type.into());
     eqtb.set_b32s1(p, equiv);
     eqtb.set_b16s0(p, level);
 }
@@ -229,7 +217,7 @@ pub(crate) fn set_eq(eqtb: &mut EqtbState, p: i32, eq_type: u16, equiv: i32, lev
 unsafe fn primitive(
     st: &mut EngineState,
     ident: &CStr,
-    c: u16,
+    c: u8,
     o: i32,
 ) -> Result<(), PrimitiveInitAbort> {
     let bytes = ident.to_bytes();
@@ -628,12 +616,12 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
         eqtb.set_b32s1(SF_CODE_BASE + k, 1000);
     }
 
-    eqtb.set_b32s1(CAT_CODE_BASE + 13, CAR_RET);
+    eqtb.set_b32s1(CAT_CODE_BASE + 13, CAR_RET.into());
     eqtb.set_b32s1(CAT_CODE_BASE + 32, SPACER.into());
-    eqtb.set_b32s1(CAT_CODE_BASE + 92, ESCAPE);
-    eqtb.set_b32s1(CAT_CODE_BASE + 37, COMMENT);
-    eqtb.set_b32s1(CAT_CODE_BASE + 127, INVALID_CHAR);
-    eqtb.set_b32s1(CAT_CODE_BASE, IGNORE);
+    eqtb.set_b32s1(CAT_CODE_BASE + 92, ESCAPE.into());
+    eqtb.set_b32s1(CAT_CODE_BASE + 37, COMMENT.into());
+    eqtb.set_b32s1(CAT_CODE_BASE + 127, INVALID_CHAR.into());
+    eqtb.set_b32s1(CAT_CODE_BASE, IGNORE.into());
 
     for k in (b'0' as i32)..=(b'9' as i32) {
         eqtb.set_b32s1(MATH_CODE_BASE + k, k + set_class(VAR_FAM_CLASS));
@@ -641,8 +629,8 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
 
     for k in (b'A' as i32)..=(b'Z' as i32) {
         let lower = k + 32;
-        eqtb.set_b32s1(CAT_CODE_BASE + k, LETTER);
-        eqtb.set_b32s1(CAT_CODE_BASE + lower, LETTER);
+        eqtb.set_b32s1(CAT_CODE_BASE + k, LETTER.into());
+        eqtb.set_b32s1(CAT_CODE_BASE + lower, LETTER.into());
         eqtb.set_b32s1(
             MATH_CODE_BASE + k,
             k + set_family(1) + set_class(VAR_FAM_CLASS),
@@ -717,7 +705,7 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
     st.input.first = 0;
 
     for prim in crate::primitives::PRIMITIVES {
-        primitive(st, prim.name, prim.cmd.into(), prim.chr)?;
+        primitive(st, prim.name, prim.cmd, prim.chr)?;
         match prim.init {
             PrimInit::None => {}
             PrimInit::Par => {
@@ -738,22 +726,16 @@ unsafe fn initialize_primitives(st: &mut EngineState) -> Result<(), PrimitiveIni
     set_eq(
         &mut st.eqtb,
         FROZEN_END_TEMPLATE,
-        END_TEMPLATE.into(),
+        END_TEMPLATE,
         NULL_LIST.0,
         LEVEL_ONE,
     );
 
     set_frozen_text(st, FROZEN_ENDV, c"endtemplate")?;
-    set_eq(
-        &mut st.eqtb,
-        FROZEN_ENDV,
-        ENDV.into(),
-        NULL_LIST.0,
-        LEVEL_ONE,
-    );
+    set_eq(&mut st.eqtb, FROZEN_ENDV, ENDV, NULL_LIST.0, LEVEL_ONE);
 
     set_frozen_text(st, FROZEN_DONT_EXPAND, c"notexpanded:")?;
-    st.eqtb.set_b16s1(FROZEN_DONT_EXPAND, DONT_EXPAND);
+    st.eqtb.set_b16s1(FROZEN_DONT_EXPAND, DONT_EXPAND.into());
 
     set_frozen_text(st, FROZEN_PRIMITIVE, c"primitive")?;
     set_eq(&mut st.eqtb, FROZEN_PRIMITIVE, IGNORE_SPACES, 1, LEVEL_ONE);
