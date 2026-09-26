@@ -3575,7 +3575,8 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), MainControlAbort> {
     }
     let main_f = st.mainloop.main_f;
     if st.mem.b32s1(st.mainloop.cur_q) > TEX_NULL
-        && st.mem.b16s0(st.input.cur_list.tail) as i32 == st.fonts.hyphen_char_entry(main_f)
+        && NodePtr::<CharNode>::at(st.input.cur_list.tail).character(&st.mem) as i32
+            == st.fonts.hyphen_char_entry(main_f)
     {
         st.mainloop.ins_disc = true;
     }

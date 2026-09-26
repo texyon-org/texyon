@@ -2114,16 +2114,7 @@ fn pic_out(
 }
 
 /// `out_what` for the node at the tail of the current list (`\immediate`).
-pub(crate) fn out_what_in(st: &mut crate::state::EngineState, p: i32) -> Result<(), ShipoutAbort> {
-    let whatsit = st
-        .mem
-        .classify_whatsit(MemIdx::new(p))
-        .expect("valid whatsit")
-        .expect("immediate whatsit");
-    out_what(st, whatsit)
-}
-
-fn out_what(
+pub(crate) fn out_what(
     st: &mut crate::state::EngineState,
     w: NodePtr<WhatsitNode>,
 ) -> Result<(), ShipoutAbort> {

@@ -21,8 +21,8 @@ use crate::mem::{
     pop_lr, predecessor, push_lr, GARBAGE, TEMP_HEAD,
 };
 use crate::node::{
-    AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, IsBox, KernNode, MarkNode,
-    NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
+    AnyBox, AnyNode, CharNode, DiscNode, GlueNode, GlueSpecNode, HListNode, IsBox, KernNode,
+    MarkNode, NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
 use crate::pagebuilder::{FIRE_UP_DONE, FIRE_UP_INIT};
 use crate::scan::{NodeRecycleAbort, BOX_VAL, MARK_VAL};
@@ -1628,8 +1628,9 @@ fn hpack_in(
             }
             Ok(AnyNode::Ligature(lig)) => {
                 // Measure the ligature as its character through the scratch char node.
-                mem.set_b16s1(GARBAGE, lig.font(mem).0 as u16);
-                mem.set_b16s0(GARBAGE, lig.character(mem));
+                let scratch = NodePtr::<CharNode>::at(GARBAGE);
+                scratch.set_font(mem, lig.font(mem));
+                scratch.set_character(mem, lig.character(mem));
                 GARBAGE.set_link(mem, lig.link(mem));
                 p = GARBAGE;
                 fonts.xtx_ligature_present = true;

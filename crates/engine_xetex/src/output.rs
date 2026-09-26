@@ -2804,7 +2804,8 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
     while p > 0 {
         if p >= st.mem.hi_mem_min {
             if p <= st.mem.mem_end {
-                let font = st.mem.b16s1(p) as i32;
+                let ch = NodePtr::<CharNode>::at(p);
+                let font = ch.font(&st.mem).0;
                 if font != st.errors.font_in_short_display {
                     if font > st.fonts.font_max {
                         print_char_in(st, b'*' as i32);
@@ -2814,7 +2815,7 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
                     print_char_in(st, b' ' as i32);
                     st.errors.font_in_short_display = font;
                 }
-                print_in(st, st.mem.b16s0(p) as i32);
+                print_in(st, ch.character(&st.mem) as i32);
             }
         } else {
             match st.mem.classify(MemIdx::new(p)) {

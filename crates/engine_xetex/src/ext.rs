@@ -2134,9 +2134,9 @@ fn new_write_whatsit_in(
     Ok(w)
 }
 
-pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
-    let mode = st.input.cur_list.mode.abs();
-    match st.scanner.cur_chr {
+/// Appends the `\openout`, `\write` or `\closeout` whatsit for `cur_chr`.
+fn io_whatsit_in(st: &mut EngineState) -> Result<NodePtr<WhatsitNode>, MainControlAbort> {
+    Ok(match st.scanner.cur_chr {
         OPEN_NODE => {
             let w = new_write_whatsit_in(st, WhatsitSubtype::Open, OPEN_NODE_SIZE)?;
             crate::scan::scan_optional_equals_in(st)?;
@@ -2144,19 +2144,29 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
             w.set_open_name(&mut st.mem, st.scanner.cur_name);
             w.set_open_area(&mut st.mem, st.scanner.cur_area);
             w.set_open_ext(&mut st.mem, st.scanner.cur_ext);
+            w
         }
-
         WRITE_NODE => {
             let k = st.scanner.cur_cs;
             let w = new_write_whatsit_in(st, WhatsitSubtype::Write, WRITE_NODE_SIZE)?;
             st.scanner.cur_cs = k;
             crate::scan::scan_toks_in(st, false, false)?;
             w.set_write_tokens(&mut st.mem, st.scanner.def_ref);
+            w
         }
-
-        CLOSE_NODE => {
+        _ => {
             let w = new_write_whatsit_in(st, WhatsitSubtype::Close, WRITE_NODE_SIZE)?;
             w.set_write_tokens(&mut st.mem, MemPtr::NULL);
+            w
+        }
+    })
+}
+
+pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbort> {
+    let mode = st.input.cur_list.mode.abs();
+    match st.scanner.cur_chr {
+        OPEN_NODE | WRITE_NODE | CLOSE_NODE => {
+            io_whatsit_in(st)?;
         }
 
         SPECIAL_NODE => {
@@ -2170,8 +2180,8 @@ pub(crate) fn do_extension_in(st: &mut EngineState) -> Result<(), MainControlAbo
             get_x_token_in(st)?;
             if st.scanner.cur_cmd == EXTENSION && st.scanner.cur_chr <= CLOSE_NODE {
                 let p = st.input.cur_list.tail;
-                do_extension_in(st)?;
-                crate::shipout::out_what_in(st, st.input.cur_list.tail.0)?;
+                let w = io_whatsit_in(st)?;
+                crate::shipout::out_what(st, w)?;
                 crate::packaging::flush_node_list(&mut st.mem, st.input.cur_list.tail)
                     .map_err(MainControlAbort::Confusion)?;
                 st.input.cur_list.tail = p;

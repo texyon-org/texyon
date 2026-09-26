@@ -764,17 +764,6 @@ impl MemState {
             _ => None,
         })
     }
-
-    #[inline]
-    pub fn classify_whatsit(
-        &self,
-        p: MemIdx,
-    ) -> Result<Option<NodePtr<WhatsitNode>>, InvalidNodeType> {
-        Ok(match self.classify(p)? {
-            AnyNode::Whatsit(w) => Some(w),
-            _ => None,
-        })
-    }
 }
 
 // --- character-bearing nodes ---

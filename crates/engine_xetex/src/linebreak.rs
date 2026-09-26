@@ -1538,9 +1538,9 @@ fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), LineBreakOutco
         } else {
             match st.mem.classify(MemIdx::new(s)) {
                 Ok(AnyNode::Ligature(lig)) if !lig.lig_ptr(&st.mem).is_null() => {
-                    let q = lig.lig_ptr(&st.mem);
-                    c = st.mem.b16s0(q) as i32;
-                    st.hyph.hf = st.mem.b16s1(q) as i32;
+                    let first = NodePtr::<CharNode>::at(lig.lig_ptr(&st.mem));
+                    c = first.character(&st.mem) as i32;
+                    st.hyph.hf = first.font(&st.mem).0;
                 }
                 Ok(AnyNode::Ligature(_)) => {
                     prev_s = s;
