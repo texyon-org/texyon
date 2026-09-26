@@ -61,7 +61,7 @@ const TEX_EXT_TO_OT_MAP: [Option<i32>; 14] = [
 ];
 
 fn units_to_fix(font: FontRef, units: i32) -> Scaled {
-    d2fix(font.units_to_points(units as f32) as f64)
+    d2fix(f64::from(font.units_to_points(units as f32)))
 }
 
 fn direction(horiz: bool) -> hb::hb_direction_t {
@@ -149,7 +149,7 @@ impl FontState {
             self.font_size[f]
         } else if n == DELIM2 {
             // No OT parameter fits, so XeTeX uses 1.5em clamped to the delim1 height.
-            Scaled((1.5 * self.font_size[f].0 as f64) as i32)
+            Scaled((1.5 * f64::from(self.font_size[f].0)) as i32)
                 .min(self.get_native_mathsy_param(f, DELIM1))
         } else {
             self.mapped_constant(f, &TEX_SYM_TO_OT_MAP, n)

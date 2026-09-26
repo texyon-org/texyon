@@ -46,13 +46,13 @@ impl ShipoutState {
         if (s - self.epochseconds) > 0x7FFF {
             -1
         } else if self.microseconds > m {
-            let t = (s - 1 - self.epochseconds) as f64 * 65536.0
-                + ((m as f64 + 1_000_000.0 - self.microseconds as f64) / 100.0) * 65536.0
+            let t = f64::from(s - 1 - self.epochseconds) * 65536.0
+                + ((f64::from(m) + 1_000_000.0 - f64::from(self.microseconds)) / 100.0) * 65536.0
                     / 10_000.0;
             t as i32
         } else {
-            let t = (s - self.epochseconds) as f64 * 65536.0
-                + ((m - self.microseconds) as f64 / 100.0) * 65536.0 / 10_000.0;
+            let t = f64::from(s - self.epochseconds) * 65536.0
+                + (f64::from(m - self.microseconds) / 100.0) * 65536.0 / 10_000.0;
             t as i32
         }
     }
@@ -75,7 +75,7 @@ impl StringsState {
         }
         let base = self.str_start[s.slot()];
         let len = self.str_start[s.next().slot()] - base;
-        let unit = |i: i32| self.str_pool[(base + i) as usize] as u32;
+        let unit = |i: i32| u32::from(self.str_pool[(base + i) as usize]);
 
         let mut out = Vec::with_capacity(len as usize * 3);
         let mut i = 0;
@@ -101,7 +101,7 @@ impl StringsState {
                     3
                 }
             };
-            out.push(((c >> (6 * (n - 1))) | FIRST_BYTE_MARK[n] as u32) as u8);
+            out.push(((c >> (6 * (n - 1))) | u32::from(FIRST_BYTE_MARK[n])) as u8);
             for k in (0..n - 1).rev() {
                 out.push(0x80 | ((c >> (6 * k)) & 0x3F) as u8);
             }
@@ -134,7 +134,7 @@ impl StringsState {
             .iter_mut()
             .zip(bytes)
         {
-            *slot = b as u16;
+            *slot = u16::from(b);
         }
         self.pool_ptr += bytes.len() as i32;
     }
@@ -292,7 +292,7 @@ fn make_pdf_time(t: libc::time_t, time_str: &mut [u8; 30], utc: bool) {
     let lt = broken_down_time(t, utc);
     let date = format!(
         "D:{}{:02}{:02}{:02}{:02}{:02}",
-        lt.tm_year as i64 + 1900,
+        i64::from(lt.tm_year) + 1900,
         lt.tm_mon + 1,
         lt.tm_mday,
         lt.tm_hour,

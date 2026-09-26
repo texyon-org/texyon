@@ -158,10 +158,10 @@ impl MemState {
 
         if (0xD800..0xDC00).contains(&c) {
             let lo = self.units()[at + 1];
-            return 0x10000 + (c as i32 - 0xD800) * 0x400 + lo as i32 - 0xDC00;
+            return 0x10000 + (i32::from(c) - 0xD800) * 0x400 + i32::from(lo) - 0xDC00;
         }
 
-        c as i32
+        i32::from(c)
     }
 
     /// Copy `len` UTF-16 units of `src`'s text, starting at `start`, into `dst`.
@@ -216,7 +216,7 @@ fn split_native_word(
     ha: NodePtr<WhatsitNode>,
     start: i32,
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
-    let len = ha.native_length(&st.mem) as i32;
+    let len = i32::from(ha.native_length(&st.mem));
     let tail =
         st.mem
             .native_word_fragment(&st.eqtb, &st.fonts, st.hyph.hf, ha, start, len - start)?;
@@ -334,7 +334,7 @@ impl LinebreakState {
                     }
                     Some(WhatsitSubtype::Glyph) => {
                         let f = w.native_font(mem);
-                        let cp = get_cp_code(f.0, w.native_glyph(mem) as u32, side as i32);
+                        let cp = get_cp_code(f.0, u32::from(w.native_glyph(mem)), i32::from(side));
                         return protrusion(errors, fonts, f, cp);
                     }
                     _ => return Scaled::ZERO,
@@ -344,7 +344,7 @@ impl LinebreakState {
             }
         };
 
-        let cp = get_cp_code(f.0, c as u32, side as i32);
+        let cp = get_cp_code(f.0, u32::from(c), i32::from(side));
         if side == 0 {
             self.last_leftmost_char = char_ptr;
         } else {
@@ -617,7 +617,7 @@ fn pop_lig_stack(
     if st.mainloop.lig_stack.is_null() {
         *cur_rh = update_right(st, *j, n, bchar, hchar);
     } else {
-        st.mainloop.cur_r = lig_item(st.mainloop.lig_stack).character(&st.mem) as i32;
+        st.mainloop.cur_r = i32::from(lig_item(st.mainloop.lig_stack).character(&st.mem));
     }
 }
 
@@ -677,12 +677,12 @@ fn reconstitute(
                 if q.s1 % 4 != LIG_TAG {
                     break 'continue_;
                 }
-                k = st.fonts.lig_kern_base[st.hyph.hf] + q.s0 as i32;
+                k = st.fonts.lig_kern_base[st.hyph.hf] + i32::from(q.s0);
                 q = st.fonts.font_info_b16(k);
                 if q.s3 > 128 {
                     k = st.fonts.lig_kern_base[st.hyph.hf]
-                        + 256 * q.s1 as i32
-                        + q.s0 as i32
+                        + 256 * i32::from(q.s1)
+                        + i32::from(q.s0)
                         + 32768
                         - 256 * 128;
                     q = st.fonts.font_info_b16(k);
@@ -696,7 +696,7 @@ fn reconstitute(
             };
 
             loop {
-                if q.s2 as i32 == test_char && q.s3 <= 128 {
+                if i32::from(q.s2) == test_char && q.s3 <= 128 {
                     if cur_rh < TOO_BIG_CHAR {
                         st.hyph.hyphen_passed = j;
                         hchar = TOO_BIG_CHAR;
@@ -719,11 +719,11 @@ fn reconstitute(
 
                         match q.s1 {
                             1 | 5 => {
-                                st.mainloop.cur_l = q.s0 as i32;
+                                st.mainloop.cur_l = i32::from(q.s0);
                                 st.mainloop.ligature_present = true;
                             }
                             2 | 6 => {
-                                st.mainloop.cur_r = q.s0 as i32;
+                                st.mainloop.cur_r = i32::from(q.s0);
                                 if st.mainloop.lig_stack.0 > TEX_NULL {
                                     lig_item(st.mainloop.lig_stack)
                                         .set_character(&mut st.mem, st.mainloop.cur_r as u16);
@@ -742,7 +742,7 @@ fn reconstitute(
                                 }
                             }
                             3 => {
-                                st.mainloop.cur_r = q.s0 as i32;
+                                st.mainloop.cur_r = i32::from(q.s0);
                                 let below = st.mainloop.lig_stack;
                                 let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
                                 st.mainloop.lig_stack = item.ptr();
@@ -753,11 +753,11 @@ fn reconstitute(
                                     t = wrap_lig(st, false)?;
                                 }
                                 st.mainloop.cur_q = t;
-                                st.mainloop.cur_l = q.s0 as i32;
+                                st.mainloop.cur_l = i32::from(q.s0);
                                 st.mainloop.ligature_present = true;
                             }
                             _ => {
-                                st.mainloop.cur_l = q.s0 as i32;
+                                st.mainloop.cur_l = i32::from(q.s0);
                                 st.mainloop.ligature_present = true;
                                 if st.mainloop.lig_stack.0 > TEX_NULL {
                                     pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
@@ -793,7 +793,7 @@ fn reconstitute(
                     continue 'continue_;
                 }
 
-                k += q.s3 as i32 + 1;
+                k += i32::from(q.s3) + 1;
                 q = st.fonts.font_info_b16(k);
                 test_char = if cur_rh < TOO_BIG_CHAR {
                     cur_rh
@@ -817,7 +817,7 @@ fn reconstitute(
 
         if st.mainloop.lig_stack.0 > TEX_NULL {
             st.mainloop.cur_q = t;
-            st.mainloop.cur_l = lig_item(st.mainloop.lig_stack).character(&st.mem) as i32;
+            st.mainloop.cur_l = i32::from(lig_item(st.mainloop.lig_stack).character(&st.mem));
             st.mainloop.ligature_present = true;
             pop_lig_stack(st, &mut t, &mut j, n, bchar, hchar, &mut cur_rh);
             continue;
@@ -856,7 +856,7 @@ impl MemState {
         errors: &mut ErrorState,
         prev_graf: i32,
     ) -> Result<(), Abort> {
-        let q = self.new_active_node(linebreak.active_node_size as i32, LAST_ACTIVE)?;
+        let q = self.new_active_node(i32::from(linebreak.active_node_size), LAST_ACTIVE)?;
         q.set_break_type(self, UNHYPHENATED as u16);
         q.set_fitness(self, DECENT_FIT as u16);
         q.set_break_node(self, MemPtr::NULL);
@@ -883,7 +883,7 @@ impl MemState {
             let next = q.link(self);
             let size = match self.classify_active_or_delta(q) {
                 ActiveOrDelta::Delta(_) => <DeltaNode as FixedNode>::SIZE,
-                ActiveOrDelta::Active(_) => linebreak.active_node_size as i32,
+                ActiveOrDelta::Active(_) => i32::from(linebreak.active_node_size),
             };
             self.free_node(q, size);
             q = next;
@@ -1366,8 +1366,8 @@ pub(crate) fn line_break(st: &mut EngineState, d: bool) -> Result<(), Abort> {
 /// Switch hyphenation to the language of a `\language` whatsit.
 fn set_language(st: &mut EngineState, w: NodePtr<WhatsitNode>) {
     st.hyph.cur_lang = w.what_lang(&st.mem) as u8;
-    st.hyph.l_hyf = w.what_lhm(&st.mem) as i32;
-    st.hyph.r_hyf = w.what_rhm(&st.mem) as i32;
+    st.hyph.l_hyf = i32::from(w.what_lhm(&st.mem));
+    st.hyph.r_hyf = i32::from(w.what_rhm(&st.mem));
     st.hyph.set_hyph_index();
 }
 
@@ -1417,13 +1417,13 @@ fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abort> {
     loop {
         let c;
         if let Some(ch) = st.mem.as_char(s) {
-            c = ch.character(&st.mem) as i32;
+            c = i32::from(ch.character(&st.mem));
             st.hyph.hf = ch.font(&st.mem);
         } else {
             match st.mem.classify(MemIdx::new(s)) {
                 Ok(AnyNode::Ligature(lig)) if !lig.lig_ptr(&st.mem).is_null() => {
                     let first = NodePtr::<CharNode>::at(lig.lig_ptr(&st.mem));
-                    c = first.character(&st.mem) as i32;
+                    c = i32::from(first.character(&st.mem));
                     st.hyph.hf = first.font(&st.mem);
                 }
                 Ok(AnyNode::Ligature(_)) => {
@@ -1444,7 +1444,7 @@ fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abort> {
                 Ok(AnyNode::Whatsit(w)) => {
                     let subtype = w.whatsit_subtype(&st.mem);
                     if subtype.is_some_and(|sub| sub.is_native_word()) {
-                        let len = w.native_length(&st.mem) as i32;
+                        let len = i32::from(w.native_length(&st.mem));
                         let mut l = 0;
                         while l < len {
                             let c = st.mem.get_native_usv(w, l);
@@ -1512,7 +1512,7 @@ fn try_hyphenate(st: &mut EngineState, cur: MemPtr) -> Result<(), Abort> {
         }
     };
 
-    if (st.linebreak.hn as i32) < st.hyph.l_hyf + st.hyph.r_hyf
+    if i32::from(st.linebreak.hn) < st.hyph.l_hyf + st.hyph.r_hyf
         || st.mem.find_word_end(s, true).is_none()
     {
         return Ok(());
@@ -1530,7 +1530,7 @@ fn collect_native_word(
 ) -> Result<NodePtr<WhatsitNode>, Abort> {
     st.linebreak.hn = 0;
     'restart: loop {
-        let len = ha.native_length(&st.mem) as i32;
+        let len = i32::from(ha.native_length(&st.mem));
         let mut l = 0;
         while l < len {
             let c = st.mem.get_native_usv(ha, l);
@@ -1546,7 +1546,7 @@ fn collect_native_word(
                 ha = split_native_word(st, ha, l)?;
                 st.linebreak.ha = ha.ptr();
                 continue 'restart;
-            } else if st.linebreak.hn as i32 == max_len {
+            } else if i32::from(st.linebreak.hn) == max_len {
                 return Ok(ha);
             } else {
                 st.linebreak.hn += 1;
@@ -1579,11 +1579,11 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
             if ch.font(&st.mem) != st.hyph.hf {
                 return s;
             }
-            let c = ch.character(&st.mem) as i32;
+            let c = i32::from(ch.character(&st.mem));
             st.hyph.hyf_bchar = c;
             let hc0 = st.hyph.hyph_code(&st.eqtb, c);
             st.hyph.hc[0] = hc0;
-            if hc0 == 0 || hc0 > st.hyph.max_hyph_char || st.linebreak.hn as i32 == max_len {
+            if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(st.linebreak.hn) == max_len {
                 return s;
             }
             st.linebreak.hb = s;
@@ -1600,13 +1600,14 @@ fn collect_word(st: &mut EngineState, mut s: MemPtr, max_len: i32) -> MemPtr {
                     let mut j = st.linebreak.hn;
                     let mut q = lig.lig_ptr(&st.mem);
                     if q.0 > TEX_NULL {
-                        st.hyph.hyf_bchar = NodePtr::<CharNode>::at(q).character(&st.mem) as i32;
+                        st.hyph.hyf_bchar =
+                            i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
                     }
                     while q.0 > TEX_NULL {
-                        let c = NodePtr::<CharNode>::at(q).character(&st.mem) as i32;
+                        let c = i32::from(NodePtr::<CharNode>::at(q).character(&st.mem));
                         let hc0 = st.hyph.hyph_code(&st.eqtb, c);
                         st.hyph.hc[0] = hc0;
-                        if hc0 == 0 || hc0 > st.hyph.max_hyph_char || j as i32 == max_len {
+                        if hc0 == 0 || hc0 > st.hyph.max_hyph_char || i32::from(j) == max_len {
                             return s;
                         }
                         j += 1;
@@ -2162,7 +2163,7 @@ impl MemState {
                 passive.set_cur_break(self, linebreak.cur_p);
                 passive.set_prev_break(self, linebreak.best_place[fit_class]);
 
-                let q = self.new_active_node(linebreak.active_node_size as i32, r)?;
+                let q = self.new_active_node(i32::from(linebreak.active_node_size), r)?;
                 q.set_break_node(self, linebreak.passive);
                 q.set_line_number(self, linebreak.best_pl_line[fit_class] + 1);
                 q.set_fitness(self, fit_class as u16);
@@ -2419,7 +2420,7 @@ impl MemState {
                     };
                 }
 
-                if (fit_class as i32 - r_active.fitness(self) as i32).abs() > 1 {
+                if (fit_class as i32 - i32::from(r_active.fitness(self))).abs() > 1 {
                     d += eqtb.int_par(INT_PAR_ADJ_DEMERITS);
                 }
 
@@ -2455,7 +2456,7 @@ impl MemState {
     ) {
         let next = r.link(self);
         prev_r.set_link(self, next);
-        self.free_node(r, linebreak.active_node_size as i32);
+        self.free_node(r, i32::from(linebreak.active_node_size));
 
         if *prev_r == ACTIVE_LIST {
             let r = ACTIVE_LIST.link(self);
@@ -2512,8 +2513,8 @@ fn hyphenate_native_word(
                 &st.fonts,
                 hf,
                 ha,
-                hp as i32,
-                (j - hp) as i32,
+                i32::from(hp),
+                i32::from(j - hp),
             )?;
             s.set_link(&mut st.mem, q.ptr());
 
@@ -2529,9 +2530,14 @@ fn hyphenate_native_word(
     let hn = ha.native_length(&st.mem) as i16;
     st.linebreak.hn = hn;
     let hp = st.hyph.hyphen_passed;
-    let q =
-        st.mem
-            .native_word_fragment(&st.eqtb, &st.fonts, hf, ha, hp as i32, (hn - hp) as i32)?;
+    let q = st.mem.native_word_fragment(
+        &st.eqtb,
+        &st.fonts,
+        hf,
+        ha,
+        i32::from(hp),
+        i32::from(hn - hp),
+    )?;
     s.set_link(&mut st.mem, q.ptr());
     let next = ha.link(&st.mem);
     q.set_link(&mut st.mem, next);
@@ -2548,7 +2554,7 @@ fn hyphenate(st: &mut EngineState, native_ha: Option<NodePtr<WhatsitNode>>) -> R
 
     let mut h = st.hyph.hc[1];
     hn += 1;
-    st.hyph.hc[hn as usize] = st.hyph.cur_lang as i32;
+    st.hyph.hc[hn as usize] = i32::from(st.hyph.cur_lang);
     for j in 2..=hn as usize {
         h = (h + h + st.hyph.hc[j]) % HYPH_PRIME;
     }
@@ -2559,13 +2565,13 @@ fn hyphenate(st: &mut EngineState, native_ha: Option<NodePtr<WhatsitNode>>) -> R
             break;
         }
 
-        if st.strings.length(k) == hn as i32 {
+        if st.strings.length(k) == i32::from(hn) {
             let start = st.strings.str_start[k.slot()] as usize;
             let word = &st.strings.str_pool[start..start + hn as usize];
             if word
                 .iter()
                 .zip(&st.hyph.hc[1..=hn as usize])
-                .all(|(&u, &c)| u as i32 == c)
+                .all(|(&u, &c)| i32::from(u) == c)
             {
                 let mut s = MemPtr(st.hyph.hyph_list[h as usize]);
                 while !s.is_null() {
@@ -2582,13 +2588,13 @@ fn hyphenate(st: &mut EngineState, native_ha: Option<NodePtr<WhatsitNode>>) -> R
         if link == 0 {
             break;
         }
-        h = link as i32 - 1;
+        h = i32::from(link) - 1;
     }
 
     hn -= 1;
     st.linebreak.hn = hn;
     let lang = st.hyph.cur_lang as usize;
-    if st.hyph.trie_trc[lang + 1] != st.hyph.cur_lang as u16 {
+    if st.hyph.trie_trc[lang + 1] != u16::from(st.hyph.cur_lang) {
         return Ok(());
     }
 
@@ -2600,7 +2606,7 @@ fn hyphenate(st: &mut EngineState, native_ha: Option<NodePtr<WhatsitNode>>) -> R
     for j in 0..=(hn - hyph.r_hyf as i16 + 1) {
         let mut z = hyph.trie_trl[lang + 1] + hyph.hc[j as usize];
         let mut l = j;
-        while hyph.hc[l as usize] == hyph.trie_trc[z as usize] as i32 {
+        while hyph.hc[l as usize] == i32::from(hyph.trie_trc[z as usize]) {
             if hyph.trie_tro[z as usize] != MIN_TRIE_OP {
                 let mut v = hyph.trie_tro[z as usize];
                 loop {
@@ -2609,7 +2615,7 @@ fn hyphenate(st: &mut EngineState, native_ha: Option<NodePtr<WhatsitNode>>) -> R
                     if hyph.hyf_num[v as usize] as u8 > hyph.hyf[i as usize] {
                         hyph.hyf[i as usize] = hyph.hyf_num[v as usize] as u8;
                     }
-                    v = hyph.hyf_next[v as usize] as i32;
+                    v = i32::from(hyph.hyf_next[v as usize]);
                     if v == MIN_TRIE_OP {
                         break;
                     }
@@ -2691,7 +2697,7 @@ fn insert_hyphens(
         } else {
             st.hyph.init_list = ha;
             st.hyph.init_lig = false;
-            st.hyph.hu[0] = ha_ch.character(&st.mem) as i32;
+            st.hyph.hu[0] = i32::from(ha_ch.character(&st.mem));
             (st.mem.predecessor(st.linebreak.cur_p, ha), 0)
         }
     } else if let Ok(AnyNode::Ligature(ha_lig)) = st.mem.classify(MemIdx::new(ha)) {
@@ -2701,7 +2707,7 @@ fn insert_hyphens(
             st.hyph.init_list = ha_lig.lig_ptr(&st.mem);
             st.hyph.init_lig = true;
             st.hyph.init_lft = ha_lig.subtype(&st.mem) > 1;
-            st.hyph.hu[0] = ha_lig.character(&st.mem) as i32;
+            st.hyph.hu[0] = i32::from(ha_lig.character(&st.mem));
             if st.hyph.init_list.is_null() && st.hyph.init_lft {
                 st.hyph.hu[0] = st.hyph.max_hyph_char;
                 st.hyph.init_lig = false;
@@ -2882,7 +2888,7 @@ fn open_linebreak_iterator(
         let (mut iter, status) = crate::layout::LinebreakHandle::open(name);
         if status > 0 {
             crate::output::begin_diagnostic(st);
-            crate::output::print_nl(st, b'E' as i32);
+            crate::output::print_nl(st, b'E');
             crate::output::print(st, "rror ");
             crate::output::print_int(st, status);
             crate::output::print(st, " creating linebreak iterator for locale `");

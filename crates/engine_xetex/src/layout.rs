@@ -331,7 +331,7 @@ impl OwnedFont {
 
     pub(crate) fn set_layout_dir(&self, vertical: bool) {
         // SAFETY: `raw` is a live font.
-        unsafe { setFontLayoutDir(self.raw.as_ptr(), vertical as c_int) };
+        unsafe { setFontLayoutDir(self.raw.as_ptr(), c_int::from(vertical)) };
     }
 }
 
@@ -896,7 +896,7 @@ impl FontMappingHandle {
             TECkit_CreateConverter(
                 mapping_ptr,
                 mapping_len as u32,
-                map_forward as u8,
+                u8::from(map_forward),
                 source_form,
                 target_form,
                 &mut raw,

@@ -233,7 +233,8 @@ pub(crate) fn output_open_stdout() -> usize {
     OutputId::to_raw(with_bridge(|es| ttbc_output_open_stdout(es)))
 }
 
-pub(crate) fn output_putc(handle: usize, c: libc::c_int) -> libc::c_int {
+pub(crate) fn output_putc(handle: usize, c: impl Into<libc::c_int>) -> libc::c_int {
+    let c = c.into();
     with_bridge(|es| ttbc_output_putc(es, OutputId::from_raw(handle), c))
 }
 

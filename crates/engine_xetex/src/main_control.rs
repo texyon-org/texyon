@@ -613,7 +613,7 @@ pub(crate) fn init_row(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn init_col(st: &mut EngineState) -> Result<(), Abort> {
     let column = NodePtr::<AlignRecord>::at(st.scanner.cur_align);
-    column.set_extra_info(&mut st.mem, st.scanner.cur_cmd as i32);
+    column.set_extra_info(&mut st.mem, i32::from(st.scanner.cur_cmd));
     if st.scanner.cur_cmd == OMIT {
         st.scanner.align_state = 0;
     } else {
@@ -759,7 +759,7 @@ pub(crate) fn fin_col(st: &mut EngineState) -> Result<bool, Abort> {
                     break;
                 }
             }
-            if n > u16::MAX as i32 {
+            if n > i32::from(u16::MAX) {
                 return Err(Abort::Confusion("too many spans"));
             }
             let mut q = NodePtr::<AlignRecord>::at(st.scanner.cur_span).span_head();
@@ -1098,7 +1098,7 @@ pub(crate) fn begin_insert_or_adjust(st: &mut EngineState) -> Result<(), Abort> 
     }
     st.save_stack.set_saved(0, st.scanner.cur_val);
     let pre = st.scanner.cur_cmd == VADJUST && crate::scan::scan_keyword(st, "pre")?;
-    st.save_stack.set_saved(1, pre as i32);
+    st.save_stack.set_saved(1, i32::from(pre));
     st.save_stack.save_ptr += 2;
     st.save_stack
         .new_save_level(GroupCode::Insert, st.mem.line)?;
@@ -1220,7 +1220,7 @@ pub(crate) fn delete_last(st: &mut EngineState) -> Result<(), Abort> {
         || st
             .mem
             .node_type(MemIdx::new(tx))
-            .map_or(true, |t| t.as_raw() as i32 != st.scanner.cur_chr)
+            .map_or(true, |t| i32::from(t.as_raw()) != st.scanner.cur_chr)
     {
         return Ok(());
     }
@@ -1348,10 +1348,14 @@ pub(crate) fn package(st: &mut EngineState, c: i32) -> Result<(), Abort> {
 pub(crate) fn start_paragraph_language(st: &mut EngineState) {
     let l = crate::helpers::norm_lang(st.eqtb.int_par(INT_PAR_LANGUAGE));
     st.hyph.cur_lang = l;
-    st.input.cur_list.set_aux_s1(l as i32);
-    let lhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN)) as i32;
-    let rhm = crate::helpers::norm_min(st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN)) as i32;
-    st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + l as i32;
+    st.input.cur_list.set_aux_s1(i32::from(l));
+    let lhm = i32::from(crate::helpers::norm_min(
+        st.eqtb.int_par(INT_PAR_LEFT_HYPHEN_MIN),
+    ));
+    let rhm = i32::from(crate::helpers::norm_min(
+        st.eqtb.int_par(INT_PAR_RIGHT_HYPHEN_MIN),
+    ));
+    st.input.cur_list.prev_graf = (lhm * 64 + rhm) * 65536 + i32::from(l);
 }
 
 pub(crate) fn new_graf(st: &mut EngineState, indented: bool) -> Result<(), Abort> {
@@ -1405,18 +1409,20 @@ pub(crate) fn new_character(
     c: u16,
 ) -> Result<Option<NewChar>, Abort> {
     if st.fonts.is_native_font(f) {
-        return crate::fonts::new_native_character(st, f, c as u32)
+        return crate::fonts::new_native_character(st, f, u32::from(c))
             .map(|w| Some(NewChar::Native(w)));
     }
     let ec = st.fonts.effective_char(f, c) as u16;
     if st.fonts.font_bc[f] <= ec && st.fonts.font_ec[f] >= ec {
-        let info = st.fonts.font_info_b16(st.fonts.char_base[f] + ec as i32);
+        let info = st
+            .fonts
+            .font_info_b16(st.fonts.char_base[f] + i32::from(ec));
         if info.s3 > 0 {
             let p = st.mem.new_char(f, c)?;
             return Ok(Some(NewChar::Char(p)));
         }
     }
-    crate::output::char_warning(st, f, c as i32)?;
+    crate::output::char_warning(st, f, i32::from(c))?;
     Ok(None)
 }
 
@@ -1487,7 +1493,7 @@ pub(crate) fn box_end(st: &mut EngineState, box_context: i32) -> Result<(), Abor
             let g = append_glue(st)?;
             g.set_subtype(
                 &mut st.mem,
-                (box_context - (LEADER_FLAG - A_LEADERS as i32)) as u16,
+                (box_context - (LEADER_FLAG - i32::from(A_LEADERS))) as u16,
             );
             g.set_leader_ptr(&mut st.mem, cb.ptr());
         } else {
@@ -1627,7 +1633,7 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
         _ => {
             let k = st.scanner.cur_chr - VTOP_CODE as i32;
             st.save_stack.set_saved(0, box_context);
-            let mode = if k == HMODE as i32 {
+            let mode = if k == i32::from(HMODE) {
                 let group = if box_context < BOX_FLAG && st.input.cur_list.mode.abs() == VMODE {
                     GroupCode::AdjustedHbox
                 } else {
@@ -1636,7 +1642,7 @@ pub(crate) fn begin_box(st: &mut EngineState, box_context: i32) -> Result<(), Ab
                 crate::scan::scan_spec(st, group, true)?;
                 HMODE
             } else {
-                let group = if k == VMODE as i32 {
+                let group = if k == i32::from(VMODE) {
                     GroupCode::Vbox
                 } else {
                     GroupCode::Vtop
@@ -1925,12 +1931,12 @@ pub(crate) fn new_interaction(st: &mut EngineState) {
 }
 
 pub(crate) fn alter_aux(st: &mut EngineState) -> Result<(), Abort> {
-    if st.scanner.cur_chr != st.input.cur_list.mode.abs() as i32 {
+    if st.scanner.cur_chr != i32::from(st.input.cur_list.mode.abs()) {
         return crate::errors::report_illegal_case(st);
     }
     let c = st.scanner.cur_chr;
     crate::scan::scan_optional_equals(st)?;
-    if c == VMODE as i32 {
+    if c == i32::from(VMODE) {
         crate::scan::scan_dimen(st, false, false, false)?;
         st.input.cur_list.set_aux_s1(st.scanner.cur_val);
         return Ok(());
@@ -2040,7 +2046,7 @@ impl ListStateRecord {
         mem: &mut MemState,
         eqtb: &crate::state::EqtbState,
     ) -> Result<(), Abort> {
-        let l = crate::helpers::norm_lang(eqtb.int_par(INT_PAR_LANGUAGE)) as i32;
+        let l = i32::from(crate::helpers::norm_lang(eqtb.int_par(INT_PAR_LANGUAGE)));
         if l == self.aux_s1() {
             return Ok(());
         }
@@ -2074,19 +2080,19 @@ pub(crate) fn off_save(st: &mut EngineState) -> Result<(), Abort> {
             crate::output::print_esc(st, "endgroup");
         }
         GroupCode::MathShift => {
-            p.set_info(&mut st.mem, MATH_SHIFT_TOKEN + b'$' as i32);
-            crate::output::print_char(st, b'$' as i32);
+            p.set_info(&mut st.mem, MATH_SHIFT_TOKEN + i32::from(b'$'));
+            crate::output::print_char(st, b'$');
         }
         GroupCode::MathLeft => {
             p.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_RIGHT);
             let q = st.mem.get_avail()?;
             p.set_link(&mut st.mem, q);
-            q.set_info(&mut st.mem, OTHER_TOKEN + b'.' as i32);
+            q.set_info(&mut st.mem, OTHER_TOKEN + i32::from(b'.'));
             crate::output::print_esc(st, "right.");
         }
         _ => {
-            p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
-            crate::output::print_char(st, b'}' as i32);
+            p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
+            crate::output::print_char(st, b'}');
         }
     }
     crate::output::print(st, " inserted");
@@ -2217,7 +2223,7 @@ pub(crate) fn build_discretionary(st: &mut EngineState) -> Result<(), Abort> {
             } else {
                 disc.set_link(&mut st.mem, p);
             }
-            if n <= u16::MAX as i32 {
+            if n <= i32::from(u16::MAX) {
                 disc.set_subtype(&mut st.mem, n as u16);
             } else {
                 crate::output::print_err(st, "Discretionary list is too long");
@@ -2847,7 +2853,7 @@ fn insert_boundary_inter_char_toks(st: &mut EngineState) -> Result<bool, Abort> 
         if st.scanner.cur_cmd == CHAR_NUM {
             st.scanner.cur_cmd = OTHER_CHAR;
         }
-        st.scanner.cur_tok = st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
+        st.scanner.cur_tok = i32::from(st.scanner.cur_cmd) * MAX_CHAR_VAL + st.scanner.cur_chr;
     } else {
         st.scanner.cur_tok = CS_TOKEN_FLAG + st.scanner.cur_cs;
     }
@@ -2875,7 +2881,7 @@ fn insert_inter_char_toks_before(st: &mut EngineState, sc: i32) -> Result<bool, 
     if st.scanner.cur_cmd != LETTER {
         st.scanner.cur_cmd = OTHER_CHAR;
     }
-    st.scanner.cur_tok = st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
+    st.scanner.cur_tok = i32::from(st.scanner.cur_cmd) * MAX_CHAR_VAL + st.scanner.cur_chr;
     crate::input::back_input(st)?;
     st.input.cur_input.index = BACKED_UP_CHAR;
     crate::input::begin_token_list(st, list, INTER_CHAR_TEXT)?;
@@ -2926,7 +2932,7 @@ fn advance_past_hyphen(st: &mut EngineState, start: i32, len: i32) {
     while st.mainloop.main_h < len
         && !is_hyphen_unit(
             st,
-            st.scanner.native_text[(start + st.mainloop.main_h) as usize] as i32,
+            i32::from(st.scanner.native_text[(start + st.mainloop.main_h) as usize]),
             hyphen,
         )
     {
@@ -3062,7 +3068,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
         for i in 0..mapped_len {
             let c = st.fonts.mapped_text[i as usize];
             st.scanner.push_native_text(c);
-            if st.mainloop.main_h == 0 && is_hyphen_unit(st, c as i32, hyphen) {
+            if st.mainloop.main_h == 0 && is_hyphen_unit(st, i32::from(c), hyphen) {
                 st.mainloop.main_h = st.scanner.native_len;
             }
         }
@@ -3071,10 +3077,10 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
     if st.eqtb.int_par(INT_PAR_TRACING_LOST_CHARS) > 0 {
         let mut i = 0;
         while i < st.scanner.native_len {
-            let mut c = st.scanner.native_text[i as usize] as i32;
+            let mut c = i32::from(st.scanner.native_text[i as usize]);
             i += 1;
             if (0xD800..0xDC00).contains(&c) {
-                c = 65536 + (c - 0xD800) * 1024 + st.scanner.native_text[i as usize] as i32
+                c = 65536 + (c - 0xD800) * 1024 + i32::from(st.scanner.native_text[i as usize])
                     - 0xDC00;
                 i += 1;
             }
@@ -3095,7 +3101,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
                 st.mainloop.main_h = remaining;
             }
             if let Some(word) = extendable_native_word(st, mf) {
-                let old_len = word.native_length(&st.mem) as i32;
+                let old_len = i32::from(word.native_length(&st.mem));
                 remaining = st.mainloop.main_h + old_len;
                 st.scanner.reserve_native_text(remaining)?;
                 st.scanner.save_native_len = st.scanner.native_len;
@@ -3139,7 +3145,7 @@ fn main_loop_native(st: &mut EngineState, mf: FontId) -> Result<bool, Abort> {
     } else {
         let pp = st.mainloop.main_pp;
         let old = extendable_native_word(st, mf);
-        let old_len = old.map_or(0, |w| w.native_length(&st.mem) as i32);
+        let old_len = old.map_or(0, |w| i32::from(w.native_length(&st.mem)));
         let node = st.mem.new_native_word_node(&st.eqtb, mf, len + old_len)?;
         pp.set_link(&mut st.mem, node.ptr());
         st.input.cur_list.tail = node.ptr();
@@ -3200,8 +3206,8 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
         return Ok(());
     }
     let tail_word = NodePtr::<WhatsitNode>::from_idx_unchecked(MemIdx::new(tail));
-    let prev_len = prev_word.native_length(&st.mem) as i32;
-    let tail_len = tail_word.native_length(&st.mem) as i32;
+    let prev_len = i32::from(prev_word.native_length(&st.mem));
+    let tail_len = i32::from(tail_word.native_length(&st.mem));
     let len = prev_len + 1 + tail_len;
     let joined = st.mem.new_native_word_node(&st.eqtb, mf, len)?;
     st.mem.journal_mark_range(
@@ -3209,7 +3215,8 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
         crate::state::native_text_words(len),
     );
     st.mem.copy_native_text_into(joined, 0, prev_word);
-    st.mem.write_native_text(joined, prev_len, &[b' ' as u16]);
+    st.mem
+        .write_native_text(joined, prev_len, &[u16::from(b' ')]);
     st.mem
         .copy_native_text_into(joined, prev_len + 1, tail_word);
     let metrics = use_glyph_metrics(st);
@@ -3231,7 +3238,7 @@ fn shape_interword_space(st: &mut EngineState, mf: FontId) -> Result<(), Abort> 
 /// The character on top of `lig_stack`, a char node or a lig item alike.
 #[inline(always)]
 fn lig_stack_char(st: &EngineState) -> i32 {
-    NodePtr::<CharNode>::at(st.mainloop.lig_stack).character(&st.mem) as i32
+    i32::from(NodePtr::<CharNode>::at(st.mainloop.lig_stack).character(&st.mem))
 }
 
 /// Where the ligature/kern program scan ended.
@@ -3265,7 +3272,7 @@ fn wrapup(st: &mut EngineState, rt_hit: bool) -> Result<(), Abort> {
     }
     let main_f = st.mainloop.main_f;
     if !st.mainloop.cur_q.link(&st.mem).is_null()
-        && NodePtr::<CharNode>::at(st.input.cur_list.tail).character(&st.mem) as i32
+        && i32::from(NodePtr::<CharNode>::at(st.input.cur_list.tail).character(&st.mem))
             == st.fonts.hyphen_char[main_f]
     {
         st.mainloop.ins_disc = true;
@@ -3362,11 +3369,11 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
             }
             Resume::LigLoop => {
                 let base = st.fonts.lig_kern_base[st.mainloop.main_f];
-                let first = st.fonts.font_info_b16(base + main_i.s0 as i32);
+                let first = st.fonts.font_info_b16(base + i32::from(main_i.s0));
                 let k = if first.s3 > 128 {
-                    base + 256 * first.s1 as i32 + first.s0 as i32 + 32768 - 256 * 128
+                    base + 256 * i32::from(first.s1) + i32::from(first.s0) + 32768 - 256 * 128
                 } else {
-                    base + main_i.s0 as i32
+                    base + i32::from(main_i.s0)
                 };
                 Some(lig_kern_program(st, k, &mut main_i)?)
             }
@@ -3413,8 +3420,9 @@ pub(crate) fn main_control_main_loop(st: &mut EngineState) -> Result<bool, Abort
         let main_f = st.mainloop.main_f;
         let cur_chr = st.scanner.cur_chr as u16;
         // Each call resets `xtx_ligature_present`, so the two bounds may see different codes.
-        let exists = if st.fonts.effective_char(main_f, cur_chr) > st.fonts.font_ec[main_f] as i32
-            || st.fonts.effective_char(main_f, cur_chr) < st.fonts.font_bc[main_f] as i32
+        let exists = if st.fonts.effective_char(main_f, cur_chr)
+            > i32::from(st.fonts.font_ec[main_f])
+            || st.fonts.effective_char(main_f, cur_chr) < i32::from(st.fonts.font_bc[main_f])
         {
             false
         } else {
@@ -3446,13 +3454,13 @@ fn lig_kern_program(
 ) -> Result<LigExit, Abort> {
     loop {
         let step = st.fonts.font_info_b16(k);
-        if step.s2 as i32 != st.mainloop.cur_r || step.s3 > 128 {
+        if i32::from(step.s2) != st.mainloop.cur_r || step.s3 > 128 {
             if step.s3 == 0 {
                 k += 1;
             } else if step.s3 >= 128 {
                 return Ok(LigExit::Wrapup);
             } else {
-                k += step.s3 as i32 + 1;
+                k += i32::from(step.s3) + 1;
             }
             continue;
         }
@@ -3471,12 +3479,12 @@ fn lig_kern_program(
         }
         match step.s1 {
             1 | 5 => {
-                st.mainloop.cur_l = step.s0 as i32;
+                st.mainloop.cur_l = i32::from(step.s0);
                 *main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
             }
             2 | 6 => {
-                st.mainloop.cur_r = step.s0 as i32;
+                st.mainloop.cur_r = i32::from(step.s0);
                 let c = st.mainloop.cur_r as u16;
                 if st.mainloop.lig_stack.is_null() {
                     st.mainloop.lig_stack = st.mem.new_lig_item(c)?.ptr();
@@ -3491,7 +3499,7 @@ fn lig_kern_program(
                 }
             }
             3 => {
-                st.mainloop.cur_r = step.s0 as i32;
+                st.mainloop.cur_r = i32::from(step.s0);
                 let prev = st.mainloop.lig_stack;
                 let item = st.mem.new_lig_item(st.mainloop.cur_r as u16)?;
                 st.mainloop.lig_stack = item.ptr();
@@ -3500,12 +3508,12 @@ fn lig_kern_program(
             7 | 11 => {
                 wrapup(st, false)?;
                 st.mainloop.cur_q = st.input.cur_list.tail;
-                st.mainloop.cur_l = step.s0 as i32;
+                st.mainloop.cur_l = i32::from(step.s0);
                 *main_i = cur_l_info(st);
                 st.mainloop.ligature_present = true;
             }
             _ => {
-                st.mainloop.cur_l = step.s0 as i32;
+                st.mainloop.cur_l = i32::from(step.s0);
                 st.mainloop.ligature_present = true;
                 return Ok(if st.mainloop.lig_stack.is_null() {
                     LigExit::Wrapup
@@ -3680,7 +3688,7 @@ fn dispatch_command(st: &mut EngineState) -> Result<Next, Abort> {
             };
             scan_box(st, shift)?;
         }
-        (_, LEADER_SHIP) => scan_box(st, LEADER_FLAG - A_LEADERS as i32 + st.scanner.cur_chr)?,
+        (_, LEADER_SHIP) => scan_box(st, LEADER_FLAG - i32::from(A_LEADERS) + st.scanner.cur_chr)?,
         (_, MAKE_BOX) => begin_box(st, 0)?,
         (VMODE, START_PAR) => new_graf(st, st.scanner.cur_chr > 0)?,
         (
@@ -3925,7 +3933,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         if st.scanner.cur_cmd <= MAX_NON_PREFIXED_COMMAND {
             crate::output::error_here_with_diagnostic(st, "You can't use a prefix with `");
             crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-            crate::output::print_char(st, '\'' as i32);
+            crate::output::print_char(st, i32::from(b'\''));
             crate::output::capture_to_diagnostic(st, None);
             st.errors
                 .help(&[r"I'll pretend you didn't say \long or \outer or \global or \protected."]);
@@ -3951,7 +3959,7 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
         crate::output::print_esc(st, "protected");
         crate::output::print(st, "' with `");
         crate::output::print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-        crate::output::print_char(st, '\'' as i32);
+        crate::output::print_char(st, i32::from(b'\''));
         crate::output::capture_to_diagnostic(st, None);
         st.errors
             .help(&[r"I'll pretend you didn't say \long or \outer or \protected here."]);
@@ -3987,14 +3995,14 @@ pub(crate) fn prefixed_command(st: &mut EngineState) -> Result<(), Abort> {
             let n = st.scanner.cur_chr;
             crate::scan::get_r_token(st)?;
             let p = st.scanner.cur_cs;
-            if n == NORMAL as i32 {
+            if n == i32::from(NORMAL) {
                 loop {
                     crate::scan::get_token(st)?;
                     if st.scanner.cur_cmd != SPACER {
                         break;
                     }
                 }
-                if st.scanner.cur_tok == OTHER_TOKEN + '=' as i32 {
+                if st.scanner.cur_tok == OTHER_TOKEN + i32::from(b'=') {
                     crate::scan::get_token(st)?;
                     if st.scanner.cur_cmd == SPACER {
                         crate::scan::get_token(st)?;
@@ -4194,7 +4202,7 @@ fn shorthand_def(st: &mut EngineState, global: bool) -> Result<(), Abort> {
         _ => {
             crate::scan::scan_register_num(st)?;
             if st.scanner.cur_val > 255 {
-                let level = if n - 2 > MU_VAL as i32 {
+                let level = if n - 2 > i32::from(MU_VAL) {
                     TOK_VAL
                 } else {
                     (n - 2) as u8
@@ -4295,9 +4303,9 @@ fn assign_toks(st: &mut EngineState, global: bool) -> Result<(), Abort> {
     if p == LOCAL_BASE + LOCAL_OUTPUT_ROUTINE && !e {
         let mut tail = tail;
         st.mem
-            .store_new_token(&mut tail, RIGHT_BRACE_TOKEN + '}' as i32)?;
+            .store_new_token(&mut tail, RIGHT_BRACE_TOKEN + i32::from(b'}'))?;
         let q = st.mem.get_avail()?;
-        q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + '{' as i32);
+        q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + i32::from(b'{'));
         let body = def_ref.link(&st.mem);
         q.set_link(&mut st.mem, body);
         def_ref.set_link(&mut st.mem, q);

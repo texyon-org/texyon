@@ -117,7 +117,7 @@ fn pop_fi(st: &mut EngineState) {
 
 /// Handles the `\else` or `\fi` that ended a skipped conditional branch.
 fn skipped_branch_end(st: &mut EngineState) {
-    if st.scanner.cur_chr == FI_CODE as i32 {
+    if st.scanner.cur_chr == i32::from(FI_CODE) {
         pop_fi(st);
     } else {
         st.scanner.if_limit = FI_CODE;
@@ -213,7 +213,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
 
     let cond_node = NodePtr::<CondNode>::alloc(&mut st.mem)?;
     cond_node.set_link(&mut st.mem, st.scanner.cond_ptr);
-    cond_node.set_if_limit(&mut st.mem, st.scanner.if_limit as u16);
+    cond_node.set_if_limit(&mut st.mem, u16::from(st.scanner.if_limit));
     cond_node.set_cur_if(&mut st.mem, st.scanner.cur_if as u16);
     cond_node.set_if_line(&mut st.mem, st.scanner.if_line);
     st.scanner.cond_ptr = cond_node.ptr();
@@ -248,13 +248,13 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             scan_int_or_dimen(st, this_if)?;
             let n = st.scanner.cur_val;
             get_x_non_blank(st)?;
-            let relation = if (OTHER_TOKEN + b'<' as i32..=OTHER_TOKEN + b'>' as i32)
+            let relation = if (OTHER_TOKEN + i32::from(b'<')..=OTHER_TOKEN + i32::from(b'>'))
                 .contains(&st.scanner.cur_tok)
             {
                 (st.scanner.cur_tok - OTHER_TOKEN) as u8
             } else {
                 error_here_with_diagnostic(st, "Missing = inserted for ");
-                print_cmd_chr(st, IF_TEST, this_if as i32);
+                print_cmd_chr(st, IF_TEST, i32::from(this_if));
                 capture_to_diagnostic(st, None);
                 st.errors
                     .help(&["I was expecting to see `<', `=', or `>'. Didn't."]);
@@ -356,7 +356,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             let fa = st.fonts.font_area[f];
             if fa == AAT_FONT_FLAG || fa == OTGR_FONT_FLAG {
                 st.fonts.map_char_to_glyph(f, c)? > 0
-            } else if st.fonts.font_bc[f] as i32 <= c && st.fonts.font_ec[f] as i32 >= c {
+            } else if i32::from(st.fonts.font_bc[f]) <= c && i32::from(st.fonts.font_ec[f]) >= c {
                 let ec = st.fonts.effective_char(f, c as u16);
                 let info = st.fonts.font_info_b16(st.fonts.char_base[f] + ec);
                 info.s3 > 0
@@ -372,23 +372,23 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
                 diagnostic_begin_capture_warning_here(st);
                 print(st, "{case ");
                 print_int(st, n);
-                print_char(st, b'}' as i32);
+                print_char(st, b'}');
                 capture_to_diagnostic(st, None);
                 end_diagnostic(st, false);
             }
             while n != 0 {
                 crate::scan::pass_text(st)?;
                 if st.scanner.cond_ptr.0 == save_cond_ptr {
-                    if st.scanner.cur_chr != OR_CODE as i32 {
+                    if st.scanner.cur_chr != i32::from(OR_CODE) {
                         skipped_branch_end(st);
                         return Ok(());
                     }
                     n -= 1;
-                } else if st.scanner.cur_chr == FI_CODE as i32 {
+                } else if st.scanner.cur_chr == i32::from(FI_CODE) {
                     pop_fi(st);
                 }
             }
-            crate::output::change_if_limit(st, OR_CODE as i16, save_cond_ptr)?;
+            crate::output::change_if_limit(st, i16::from(OR_CODE), save_cond_ptr)?;
             return Ok(());
         }
         IF_PRIMITIVE_CODE => {
@@ -414,14 +414,14 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
     }
 
     if b {
-        crate::output::change_if_limit(st, ELSE_CODE as i16, save_cond_ptr)?;
+        crate::output::change_if_limit(st, i16::from(ELSE_CODE), save_cond_ptr)?;
         return Ok(());
     }
 
     loop {
         crate::scan::pass_text(st)?;
         if st.scanner.cond_ptr.0 == save_cond_ptr {
-            if st.scanner.cur_chr != OR_CODE as i32 {
+            if st.scanner.cur_chr != i32::from(OR_CODE) {
                 skipped_branch_end(st);
                 return Ok(());
             }
@@ -431,7 +431,7 @@ pub(crate) fn conditional(st: &mut EngineState) -> Result<(), Abort> {
             st.errors
                 .help(&[r"I'm ignoring this; it doesn't match any \if."]);
             error(st)?;
-        } else if st.scanner.cur_chr == FI_CODE as i32 {
+        } else if st.scanner.cur_chr == i32::from(FI_CODE) {
             pop_fi(st);
         }
     }
@@ -580,7 +580,7 @@ fn print_margin_kern(
     };
     match width {
         Some(w) => print_scaled(st, w),
-        None => print_char(st, '0' as i32),
+        None => print_char(st, i32::from(b'0')),
     }
     print(st, "pt");
 }
@@ -679,10 +679,10 @@ pub(crate) fn conv_toks(st: &mut EngineState) -> Result<(), Abort> {
             let saved_chr = st.scanner.cur_val;
             scan_int(st)?;
             let code = st.scanner.cur_val;
-            if code < LEFT_BRACE as i32
-                || code > ACTIVE_CHAR as i32
-                || code == OUT_PARAM as i32
-                || code == IGNORE as i32
+            if code < i32::from(LEFT_BRACE)
+                || code > i32::from(ACTIVE_CHAR)
+                || code == i32::from(OUT_PARAM)
+                || code == i32::from(IGNORE)
             {
                 error_here_with_diagnostic(st, "Invalid code (");
                 print_int(st, code);
@@ -891,7 +891,9 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     back_input(st)?;
                 } else {
                     get_token(st)?;
-                    if st.scanner.cur_cmd == IF_TEST && st.scanner.cur_chr != IF_CASE_CODE as i32 {
+                    if st.scanner.cur_cmd == IF_TEST
+                        && st.scanner.cur_chr != i32::from(IF_CASE_CODE)
+                    {
                         st.scanner.cur_chr += UNLESS_CODE;
                         continue 'reswitch;
                     }
@@ -899,7 +901,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                     print_esc(st, "unless");
                     print(st, "' before `");
                     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-                    print_char(st, '\'' as i32);
+                    print_char(st, i32::from(b'\''));
                     capture_to_diagnostic(st, None);
                     st.errors
                         .help(&["Continue, and I'll forget that it ever happened."]);
@@ -926,7 +928,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                             st.scanner.cur_cmd = cmd;
                             st.scanner.cur_chr = st.eqtb.equiv(PRIM_EQTB_BASE + st.scanner.cur_cs);
                             st.scanner.cur_tok =
-                                st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr;
+                                i32::from(st.scanner.cur_cmd) * MAX_CHAR_VAL + st.scanner.cur_chr;
                             st.scanner.cur_cs = 0;
                             continue 'reswitch;
                         }
@@ -976,7 +978,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                 {
                     show_cur_cmd_chr(st);
                 }
-                if st.scanner.cur_chr > st.scanner.if_limit as i32 {
+                if st.scanner.cur_chr > i32::from(st.scanner.if_limit) {
                     if st.scanner.if_limit == IF_CODE {
                         crate::input::insert_relax(st)?;
                     } else {
@@ -988,7 +990,7 @@ pub(crate) fn expand(st: &mut EngineState) -> Result<(), Abort> {
                         error(st)?;
                     }
                 } else {
-                    while st.scanner.cur_chr != FI_CODE as i32 {
+                    while st.scanner.cur_chr != i32::from(FI_CODE) {
                         crate::scan::pass_text(st)?;
                     }
                     pop_fi(st);
@@ -1087,15 +1089,15 @@ fn trace_macro_call(st: &mut EngineState, ref_count: MemPtr) {
     if stack_levels > 0 {
         if st.input.input_ptr < stack_levels {
             crate::output::print_ln(st);
-            print_char(st, b'~' as i32);
+            print_char(st, b'~');
             for _ in 0..st.input.input_ptr {
-                print_char(st, b'.' as i32);
+                print_char(st, b'.');
             }
             crate::output::print_cs(st, st.scanner.warning_index);
             crate::output::token_show(st, ref_count);
         } else {
-            print_char(st, b'~' as i32);
-            print_char(st, b'~' as i32);
+            print_char(st, b'~');
+            print_char(st, b'~');
             crate::output::print_cs(st, st.scanner.warning_index);
         }
     } else {

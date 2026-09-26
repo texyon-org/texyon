@@ -61,13 +61,13 @@ impl StringsState {
             if c >= TOO_BIG_CHAR {
                 let hi = 0xD800 + (c - TOO_BIG_CHAR) / 1024;
                 let lo = 0xDC00 + (c - TOO_BIG_CHAR) % 1024;
-                if self.str_pool[j as usize] as i32 != hi
-                    || self.str_pool[(j + 1) as usize] as i32 != lo
+                if i32::from(self.str_pool[j as usize]) != hi
+                    || i32::from(self.str_pool[(j + 1) as usize]) != lo
                 {
                     return false;
                 }
                 j += 1;
-            } else if self.str_pool[j as usize] as i32 != c {
+            } else if i32::from(self.str_pool[j as usize]) != c {
                 return false;
             }
             j += 1;
@@ -133,7 +133,7 @@ impl StringsState {
                 return Ok(StrNumber(0));
             }
             for &byte in *s {
-                self.str_pool[self.pool_ptr as usize] = byte as u16;
+                self.str_pool[self.pool_ptr as usize] = u16::from(byte);
                 self.pool_ptr += 1;
             }
             g = self.make_string()?;

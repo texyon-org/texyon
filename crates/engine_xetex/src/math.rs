@@ -345,7 +345,7 @@ fn set_cur_size_and_mu(st: &mut EngineState) {
     st.scanner.cur_size = if st.scanner.cur_style < SCRIPT_STYLE {
         TEXT_SIZE
     } else {
-        SCRIPT_SIZE * ((st.scanner.cur_style as i32 - 2) / 2)
+        SCRIPT_SIZE * ((i32::from(st.scanner.cur_style) - 2) / 2)
     };
     let mq = st.fonts.math_quad(&st.eqtb, st.scanner.cur_size);
     st.scanner.cur_mu = st.errors.x_over_n(mq, 18);
@@ -381,8 +381,8 @@ impl MemState {
         if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
             scanner.cur_i = fonts.null_character;
         } else {
-            if scanner.cur_c >= fonts.font_bc[scanner.cur_f] as i32
-                && scanner.cur_c <= fonts.font_ec[scanner.cur_f] as i32
+            if scanner.cur_c >= i32::from(fonts.font_bc[scanner.cur_f])
+                && scanner.cur_c <= i32::from(fonts.font_ec[scanner.cur_f])
             {
                 scanner.cur_i = fonts.char_info(scanner.cur_f, scanner.cur_c);
             } else {
@@ -406,11 +406,11 @@ fn fetch(st: &mut EngineState, a: NodePtr<MathField>) -> Result<(), Abort> {
         FetchOutcome::UndefinedFont { size, fam, c } => {
             crate::output::error_here_with_diagnostic(st, "");
             crate::output::print_size(st, size);
-            crate::output::print_char(st, ' ' as i32);
+            crate::output::print_char(st, i32::from(b' '));
             crate::output::print_int(st, fam);
             crate::output::print(st, " is undefined (character ");
             crate::output::print(st, c);
-            crate::output::print_char(st, ')' as i32);
+            crate::output::print_char(st, i32::from(b')'));
             crate::output::capture_to_diagnostic(st, None);
             st.errors.help(&[
                 "Somewhere in the math formula just ended, you used the",
@@ -719,9 +719,9 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
         if !st.fonts.font_uses_opentype(f) {
             if st.scanner.cur_style < TEXT_STYLE && st.scanner.cur_i.s1 % 4 == LIST_TAG {
                 let c = st.scanner.cur_i.s0;
-                let i_info = st.fonts.font_info_b16(st.fonts.char_base[f] + c as i32);
+                let i_info = st.fonts.font_info_b16(st.fonts.char_base[f] + i32::from(c));
                 if i_info.s3 > 0 {
-                    st.scanner.cur_c = c as i32;
+                    st.scanner.cur_c = i32::from(c);
                     st.scanner.cur_i = i_info;
                     q.nucleus().set_character(&mut st.mem, c);
                 }
@@ -744,7 +744,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
                         if f64::from(h1) < size_h {
                             h1 = Scaled(size_h as i32);
                         }
-                        let c_glyph = glyph.native_glyph(&st.mem) as i32;
+                        let c_glyph = i32::from(glyph.native_glyph(&st.mem));
                         let mut n: i32 = 0;
                         let mut h2 = Scaled::ZERO;
                         loop {
@@ -779,7 +779,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
                     }
                     delta = st
                         .fonts
-                        .get_ot_math_ital_corr(cur_f, glyph.native_glyph(&st.mem) as i32);
+                        .get_ot_math_ital_corr(cur_f, i32::from(glyph.native_glyph(&st.mem)));
                     (
                         glyph.width(&st.mem),
                         glyph.height(&st.mem),
@@ -804,7 +804,7 @@ fn make_op(st: &mut EngineState, q: NodePtr<Noad>) -> Result<Scaled, Abort> {
 
     let save_f = st.scanner.cur_f;
     if q.subtype(&st.mem) == LIMITS {
-        let cs = st.scanner.cur_style as i32;
+        let cs = i32::from(st.scanner.cur_style);
         let x = clean_box(st, q.supscr(), (2 * (cs / 4) + 4 + (cs % 2)) as i16)?;
         let y = clean_box(st, q.nucleus(), st.scanner.cur_style)?;
         let z = clean_box(st, q.subscr(), (2 * (cs / 4) + 5) as i16)?;
@@ -870,12 +870,12 @@ impl FontState {
     /// Points `cur_i` at the first instruction of the lig/kern program for `cur_i`
     /// in `cur_f` and returns its index.
     fn lig_kern_start(&self, scanner: &mut ScannerState) -> i32 {
-        let mut a = self.lig_kern_base[scanner.cur_f] + scanner.cur_i.s0 as i32;
+        let mut a = self.lig_kern_base[scanner.cur_f] + i32::from(scanner.cur_i.s0);
         scanner.cur_i = self.font_info_b16(a);
         if scanner.cur_i.s3 > 128 {
             a = self.lig_kern_base[scanner.cur_f]
-                + 256 * scanner.cur_i.s1 as i32
-                + scanner.cur_i.s0 as i32
+                + 256 * i32::from(scanner.cur_i.s1)
+                + i32::from(scanner.cur_i.s0)
                 + 32768
                 - 256 * 128;
             scanner.cur_i = self.font_info_b16(a);
@@ -897,7 +897,7 @@ impl MemState {
         q: NodePtr<Noad>,
         p: NodePtr<Noad>,
     ) -> Result<MakeOrdStep, Abort> {
-        scanner.cur_c = p.nucleus().character(self) as i32;
+        scanner.cur_c = i32::from(p.nucleus().character(self));
         let mut a = fonts.lig_kern_start(scanner);
         loop {
             if scanner.cur_i.s2 == scanner.cur_c as u16 && scanner.cur_i.s3 <= 128 {
@@ -948,7 +948,7 @@ impl MemState {
             if scanner.cur_i.s3 >= 128 {
                 return Ok(MakeOrdStep::Return);
             }
-            a += scanner.cur_i.s3 as i32 + 1;
+            a += i32::from(scanner.cur_i.s3) + 1;
             scanner.cur_i = fonts.font_info_b16(a);
         }
     }
@@ -1036,7 +1036,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
                     if i.s3 >= 128 {
                         break Scaled::ZERO;
                     }
-                    a += i.s3 as i32 + 1;
+                    a += i32::from(i.s3) + 1;
                     st.scanner.cur_i = st.fonts.font_info_b16(a);
                 };
             }
@@ -1044,7 +1044,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         x = clean_box(st, q.nucleus(), 2 * (st.scanner.cur_style / 2) + 1)?;
         let w = x.width(&st.mem);
         while acc_i.s1 % 4 == LIST_TAG {
-            let larger = acc_i.s0 as i32;
+            let larger = i32::from(acc_i.s0);
             acc_i = st.fonts.char_info(f, larger);
             if acc_i.s3 == 0 || st.fonts.char_width(f, acc_i) > w {
                 break;
@@ -1105,7 +1105,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         if !kind.is_multiple_of(2) {
             st.fonts.measure_glyph(&mut st.mem, glyph)?;
         } else {
-            let c_glyph = glyph.native_glyph(&st.mem) as i32;
+            let c_glyph = i32::from(glyph.native_glyph(&st.mem));
             let mut n: i32 = 0;
             let mut w2 = Scaled::ZERO;
             loop {
@@ -1150,7 +1150,7 @@ fn make_math_accent(st: &mut EngineState, q: NodePtr<Noad>) -> Result<(), Abort>
         let attach = match assembly_box {
             None => st
                 .fonts
-                .get_ot_math_accent_pos(f, glyph.native_glyph(mem) as i32),
+                .get_ot_math_accent_pos(f, i32::from(glyph.native_glyph(mem))),
             Some(_) => INFINITE_DIMEN,
         };
         let sa = if attach == INFINITE_DIMEN {
@@ -1246,9 +1246,9 @@ fn maybe_attach_script_kern(
 
     let kern = st.fonts.get_ot_math_kern(
         nucleus.native_font(&st.mem),
-        nucleus.native_glyph(&st.mem) as i32,
+        i32::from(nucleus.native_glyph(&st.mem)),
         script_f,
-        script_g as i32,
+        i32::from(script_g),
         kind,
         shift,
     );
@@ -1817,7 +1817,7 @@ fn mlist_nucleus(st: &mut EngineState, qn: NodePtr<Noad>, mut delta: Scaled) -> 
                 z.free_native(&mut st.mem);
                 delta = st
                     .fonts
-                    .get_ot_math_ital_corr(cur_f, glyph.native_glyph(&st.mem) as i32);
+                    .get_ot_math_ital_corr(cur_f, i32::from(glyph.native_glyph(&st.mem)));
                 if qn.nucleus().math_type(&st.mem) == MATH_TEXT_CHAR
                     && !st.fonts.font_is_ot_math(cur_f)
                 {
@@ -2288,7 +2288,7 @@ fn stack_glyph_into_box(st: &mut EngineState, b: AnyBox, f: FontId, g: i32) -> R
 
 fn native_glyph_vbox(st: &mut EngineState, f: FontId, g: u16) -> Result<AnyBox, Abort> {
     let b = AnyBox::VList(st.mem.new_null_box()?.into_vlist(&mut st.mem));
-    let p = new_measured_glyph(st, f, g as i32)?;
+    let p = new_measured_glyph(st, f, i32::from(g))?;
     let mem = &mut st.mem;
     b.set_list_ptr(mem, p.ptr());
     b.set_width(mem, p.width(mem));
@@ -2334,7 +2334,7 @@ fn compute_ot_math_accent_pos(st: &mut EngineState, mut p: NodePtr<Noad>) -> Res
                 let c = st.scanner.cur_c;
                 let q = crate::fonts::new_native_character(st, f, c as u32)?;
                 let g = st.mem.get_native_glyph(q, 0);
-                return Ok(st.fonts.get_ot_math_accent_pos(f, g as i32));
+                return Ok(st.fonts.get_ot_math_accent_pos(f, i32::from(g)));
             }
             SUB_MLIST => {
                 let r = p.nucleus().info(&st.mem);
@@ -3090,12 +3090,12 @@ fn pre_display_box(st: &EngineState) -> Option<AnyBox> {
 pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
     let mut j = pre_display_box(st);
     let mut danger = check_math_fonts(st)?;
-    let mut m = st.input.cur_list.mode as i32;
+    let mut m = i32::from(st.input.cur_list.mode);
     let mut l = false;
     let mut p = fin_mlist(st, TEX_NULL)?;
 
     let a;
-    if st.input.cur_list.mode as i32 == -m {
+    if i32::from(st.input.cur_list.mode) == -m {
         check_display_end(st)?;
         st.scanner.cur_mlist.0 = p;
         st.scanner.cur_style = TEXT_STYLE;
@@ -3112,7 +3112,7 @@ pub(crate) fn after_math(st: &mut EngineState) -> Result<(), Abort> {
 
         j = pre_display_box(st);
         danger = check_math_fonts(st)?;
-        m = st.input.cur_list.mode as i32;
+        m = i32::from(st.input.cur_list.mode);
         p = fin_mlist(st, TEX_NULL)?;
     } else {
         a = None;
@@ -3404,7 +3404,8 @@ pub(crate) fn init_math(st: &mut EngineState) -> Result<(), Abort> {
                                         &mut st.scanner.lr_ptr,
                                         crate::mem::end_lr_type(subtype),
                                     )?;
-                                    if (subtype / R_CODE) as i32 != st.scanner.cur_dir as i32 {
+                                    if i32::from(subtype / R_CODE) != i32::from(st.scanner.cur_dir)
+                                    {
                                         st.mem.just_reverse(&mut st.scanner, p)?;
                                         p = TEMP_HEAD;
                                     }
@@ -3671,7 +3672,7 @@ impl MemState {
         v: Scaled,
     ) -> Result<AnyBox, Abort> {
         let vb = AnyBox::VList(self.new_null_box()?.into_vlist(self));
-        let r = fonts.font_info_b16(fonts.exten_base[f] + q.s0 as i32);
+        let r = fonts.font_info_b16(fonts.exten_base[f] + i32::from(q.s0));
         let u = fonts.height_plus_depth(f, r.s0);
         let effective_c = fonts.effective_char(f, r.s0);
         let qq = fonts.char_info(f, effective_c);
@@ -3782,7 +3783,7 @@ fn var_delimiter(
                             let mut y = x as u16;
                             if y >= fonts.font_bc[g] && y <= fonts.font_ec[g] {
                                 loop {
-                                    q = fonts.char_info(g, y as i32);
+                                    q = fonts.char_info(g, i32::from(y));
                                     if q.s3 == 0 {
                                         break;
                                     }
@@ -3829,7 +3830,7 @@ fn var_delimiter(
         if q.s1 % 4 == EXT_TAG {
             st.mem.build_ext_delimiter_box(&mut st.fonts, f, q, v)?
         } else {
-            char_box(st, f, c as i32)?
+            char_box(st, f, i32::from(c))?
         }
     } else if let Some(assembly) = &ot_assembly {
         build_opentype_assembly(st, f, assembly, v, false)?

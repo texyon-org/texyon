@@ -300,7 +300,7 @@ pub(crate) fn set_input_file_encoding(
             match icu_converter_open(&name) {
                 Err(err) => {
                     crate::output::begin_diagnostic(st);
-                    crate::output::print_nl(st, b'E' as i32);
+                    crate::output::print_nl(st, b'E');
                     crate::output::print(st, "rror ");
                     crate::output::print_int(st, err);
                     crate::output::print(st, " creating Unicode converter for `");
@@ -333,7 +333,7 @@ thread_local! {
 }
 
 fn is_line_end(c: i32) -> bool {
-    c == EOF || c == b'\n' as i32 || c == b'\r' as i32
+    c == EOF || c == i32::from(b'\n') || c == i32::from(b'\r')
 }
 
 /// An EOF that is not an interrupted read.
@@ -347,7 +347,7 @@ fn line_too_long() -> Abort {
 
 fn conversion_error(st: &mut EngineState, errcode: i32) {
     crate::output::begin_diagnostic(st);
-    crate::output::print_nl(st, b'U' as i32);
+    crate::output::print_nl(st, b'U');
     crate::output::print(st, "nicode conversion failed (ICU error code = ");
     crate::output::print_int(st, errcode);
     crate::output::print(st, ") discarding any remaining text");
@@ -413,7 +413,7 @@ fn input_line_with(
     }
 
     let mut i;
-    if f.encoding_mode as i32 == ICUMAPPING {
+    if i32::from(f.encoding_mode) == ICUMAPPING {
         scratch.bytes.resize(buf_size + 1, 0);
         let mut bytes_read = 0;
 
@@ -469,7 +469,7 @@ fn input_line_with(
         i = get_uni_c(st, f)?;
         if f.skip_next_lf != 0 {
             f.skip_next_lf = 0;
-            if i == b'\n' as i32 {
+            if i == i32::from(b'\n') {
                 i = get_uni_c(st, f)?;
             }
         }
@@ -519,18 +519,18 @@ fn input_line_with(
         }
     }
 
-    if i == b'\r' as i32 {
+    if i == i32::from(b'\r') {
         f.skip_next_lf = 1;
     }
 
-    st.input.buffer[st.input.last as usize] = b' ' as i32;
+    st.input.buffer[st.input.last as usize] = i32::from(b' ');
     if st.input.last >= st.input.max_buf_stack {
         st.input.max_buf_stack = st.input.last;
     }
 
     while st.input.last > st.input.first {
         let c = st.input.buffer[(st.input.last - 1) as usize];
-        if c != b' ' as i32 && c != b'\r' as i32 && c != b'\n' as i32 {
+        if c != i32::from(b' ') && c != i32::from(b'\r') && c != i32::from(b'\n') {
             break;
         }
         st.input.last -= 1;
@@ -561,7 +561,7 @@ pub(crate) fn get_uni_c(
     }
 
     let handle = f.handle;
-    let rval = match f.encoding_mode as i32 {
+    let rval = match i32::from(f.encoding_mode) {
         UTF8 => {
             let mut rval = input_getc(handle);
             if rval != EOF {
@@ -609,7 +609,7 @@ pub(crate) fn get_uni_c(
                         rval = 0x10000 + (rval - 0xd800) * 0x400 + (lo - 0xdc00);
                     } else {
                         rval = 0xfffd;
-                        f.saved_char = lo as i64;
+                        f.saved_char = i64::from(lo);
                     }
                 } else if (0xdc00..=0xdfff).contains(&rval) {
                     rval = 0xfffd;
@@ -708,14 +708,14 @@ pub(crate) fn begin_name(st: &mut EngineState) {
 pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, Abort> {
     let stop = st.scanner.stop_at_space;
     let q = st.scanner.file_name_quote_char;
-    if stop && q == 0 && c == b' ' as u16 {
+    if stop && q == 0 && c == u16::from(b' ') {
         return Ok(false);
     }
     if stop && q != 0 && c == q {
         st.scanner.file_name_quote_char = 0;
         return Ok(true);
     }
-    if stop && q == 0 && (c == b'"' as u16 || c == b'\'' as u16) {
+    if stop && q == 0 && (c == u16::from(b'"') || c == u16::from(b'\'')) {
         st.scanner.file_name_quote_char = c;
         st.scanner.quoted_filename = true;
         return Ok(true);
@@ -725,10 +725,10 @@ pub(crate) fn more_name(st: &mut EngineState, c: u16) -> Result<bool, Abort> {
     }
     st.strings.str_pool[st.strings.pool_ptr as usize] = c;
     st.strings.pool_ptr += 1;
-    if c == b'/' as u16 {
+    if c == u16::from(b'/') {
         st.scanner.area_delimiter = st.strings.cur_length();
         st.scanner.ext_delimiter = 0;
-    } else if c == b'.' as u16 {
+    } else if c == u16::from(b'.') {
         st.scanner.ext_delimiter = st.strings.cur_length();
     }
     Ok(true)
@@ -793,7 +793,7 @@ pub(crate) fn make_name_string(st: &mut EngineState) -> Result<StrNumber, Abort>
         || st.strings.str_ptr == st.strings.max_strings
         || st.strings.cur_length() > 0
     {
-        return Ok(StrNumber(b'?' as i32));
+        return Ok(StrNumber(i32::from(b'?')));
     }
 
     let name16 = st.input.name_of_file16();
@@ -929,13 +929,13 @@ pub(crate) fn close_files_and_terminate(st: &mut EngineState) -> Result<(), Abor
 
     if st.errors.log_opened {
         let log_file = st.shipout.log_file;
-        output_putc(log_file, b'\n' as i32);
+        output_putc(log_file, b'\n');
         output_close(log_file);
         st.shipout.selector -= 2;
         if st.shipout.selector == SELECTOR_TERM_ONLY {
             crate::output::print_nl(st, "Transcript written on ");
             crate::output::print(st, st.strings.texmf_log_name);
-            crate::output::print_char(st, b'.' as i32);
+            crate::output::print_char(st, b'.');
         }
     }
 
@@ -978,7 +978,7 @@ pub(crate) fn scan_file_name_braced(st: &mut EngineState) -> Result<(), Abort> {
     let arg = st.scanner.def_ref.link(&st.mem);
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, arg, crate::mem::TEX_NULL, l);
-    st.shipout.selector = st.shipout.old_setting as i32;
+    st.shipout.selector = i32::from(st.shipout.old_setting);
 
     let s = st.strings.make_string()?;
     st.mem.delete_token_ref(st.scanner.def_ref);
@@ -1067,10 +1067,10 @@ pub(crate) fn start_input(
         while !name.is_empty() {
             let rval = next_utf8_char(&mut name);
             st.strings.push_utf16(rval);
-            if rval == b'/' as u32 {
+            if rval == u32::from(b'/') {
                 st.scanner.area_delimiter = st.strings.cur_length();
                 st.scanner.ext_delimiter = 0;
-            } else if rval == b'.' as u32 {
+            } else if rval == u32::from(b'.') {
                 st.scanner.ext_delimiter = st.strings.cur_length();
             }
         }
@@ -1090,7 +1090,7 @@ pub(crate) fn start_input(
     );
     crate::input::begin_file_reading(st)?;
 
-    let idx = st.input.cur_input.index as i32;
+    let idx = i32::from(st.input.cur_input.index);
     let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
     let Some(file) = u_open_in(st, format, mode, encoding)? else {
@@ -1125,9 +1125,9 @@ pub(crate) fn start_input(
     if st.shipout.term_offset + st.strings.length(full_name) > st.config.max_print_line - 2 {
         crate::output::print_ln(st);
     } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-        crate::output::print_char(st, b' ' as i32);
+        crate::output::print_char(st, b' ');
     }
-    crate::output::print_char(st, b'(' as i32);
+    crate::output::print_char(st, b'(');
     st.input.open_parens += 1;
     crate::output::print(st, full_name);
     output_flush(st.shipout.rust_stdout);
@@ -1137,14 +1137,14 @@ pub(crate) fn start_input(
         crate::output::begin_diagnostic(st);
         crate::output::diagnostic_begin_capture_warning_here(st);
         crate::output::print_ln(st);
-        crate::output::print_char(st, b'~' as i32);
+        crate::output::print_char(st, b'~');
         let v = st.input.input_ptr - 1;
         if v < tracing_stack_levels {
             for _ in 0..v {
-                crate::output::print_char(st, b'.' as i32);
+                crate::output::print_char(st, b'.');
             }
         } else {
-            crate::output::print_char(st, b'~' as i32);
+            crate::output::print_char(st, b'~');
         }
         crate::output::print(st, "INPUT ");
         crate::output::print(st, st.scanner.cur_name);

@@ -149,9 +149,9 @@ impl EqtbState {
             } else {
                 strings.length(s)
             };
-            let mut h = strings.str_pool[j as usize] as i32;
+            let mut h = i32::from(strings.str_pool[j as usize]);
             for k in j + 1..j + l {
-                h = h + h + strings.str_pool[k as usize] as i32;
+                h = h + h + i32::from(strings.str_pool[k as usize]);
                 while h >= PRIM_PRIME {
                     h -= PRIM_PRIME;
                 }

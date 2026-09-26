@@ -69,12 +69,12 @@ impl SaveStackState {
         }
         self.set_saved(0, line);
         self.save_ptr += 1;
-        let (group, boundary) = (self.cur_group.as_raw() as u16, self.cur_boundary);
+        let (group, boundary) = (u16::from(self.cur_group.as_raw()), self.cur_boundary);
         self.set_save_entry(LEVEL_BOUNDARY, group, boundary);
         if self.cur_level == u16::MAX {
             return Err(Abort::Overflow {
                 what: "grouping levels",
-                n: u16::MAX as i32,
+                n: i32::from(u16::MAX),
             });
         }
         self.cur_boundary = self.save_ptr;
@@ -253,7 +253,7 @@ impl MemState {
             POINTER_NODE_SIZE
         };
         loop {
-            let i = (q.sa_index(self) % 64) as i32;
+            let i = i32::from(q.sa_index(self) % 64);
             let next = q.link(self);
             self.free_node(q.ptr(), s);
             if next.is_null() {
@@ -585,7 +585,7 @@ impl MemState {
             }
             p.set_sa_ref(self, TEX_NULL);
         }
-        p.set_sa_index(self, (64 * t as i32 + leaf_i) as u16);
+        p.set_sa_index(self, (64 * i32::from(t) + leaf_i) as u16);
         p.set_sa_lev(self, LEVEL_ONE);
         p.set_link(self, q.ptr());
         self.add_sa_child(q, leaf_i, p);

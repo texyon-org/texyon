@@ -218,7 +218,7 @@ pub(crate) fn pseudo_input(st: &mut EngineState) -> Result<bool, Abort> {
         st.input.max_buf_stack = st.input.last + 1;
     }
     while st.input.last > st.input.first
-        && st.input.buffer[(st.input.last - 1) as usize] == ' ' as i32
+        && st.input.buffer[(st.input.last - 1) as usize] == i32::from(b' ')
     {
         st.input.last -= 1;
     }
@@ -264,7 +264,7 @@ pub(crate) fn begin_token_list(st: &mut EngineState, list: MemPtr, t: u16) -> Re
             _ => print_cmd_chr(
                 st,
                 ASSIGN_TOKS,
-                t as i32 + LOCAL_BASE + LOCAL_OUTPUT_ROUTINE - OUTPUT_TEXT as i32,
+                i32::from(t) + LOCAL_BASE + LOCAL_OUTPUT_ROUTINE - i32::from(OUTPUT_TEXT),
             ),
         }
         print(st, "->");

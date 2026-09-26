@@ -364,7 +364,7 @@ impl EqtbState {
 
 pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
     back_input(st)?;
-    st.scanner.cur_tok = MATH_SHIFT_TOKEN + '$' as i32;
+    st.scanner.cur_tok = MATH_SHIFT_TOKEN + i32::from(b'$');
     print_err(st, "Missing $ inserted");
     st.errors.help(&[
         "I've inserted a begin-math/end-math symbol since I think",
@@ -375,7 +375,7 @@ pub(crate) fn insert_dollar_sign(st: &mut EngineState) -> Result<(), Abort> {
 
 pub(crate) fn scan_optional_equals(st: &mut EngineState) -> Result<(), Abort> {
     get_x_non_blank(st)?;
-    if st.scanner.cur_tok != OTHER_TOKEN + '=' as i32 {
+    if st.scanner.cur_tok != OTHER_TOKEN + i32::from(b'=') {
         back_input(st)?;
     }
     Ok(())
@@ -430,7 +430,7 @@ pub(crate) fn scan_spec(
         st.save_stack.set_saved(0, s);
         st.save_stack.save_ptr += 1;
     }
-    st.save_stack.set_saved(0, spec_code as i32);
+    st.save_stack.set_saved(0, i32::from(spec_code));
     st.save_stack.set_saved(1, st.scanner.cur_val);
     st.save_stack.save_ptr += 2;
     st.save_stack.new_save_level(c, st.mem.line)?;
@@ -443,7 +443,7 @@ impl ErrorState {
         let a = self.dig[..k as usize]
             .iter()
             .rev()
-            .fold(0, |a, &d| (a + d as i32 * 0x2_0000) / 10);
+            .fold(0, |a, &d| (a + i32::from(d) * 0x2_0000) / 10);
         (a + 1) / 2
     }
 }
@@ -490,27 +490,27 @@ impl MemState {
         let mut k = b;
 
         while k < strings.pool_ptr {
-            let mut t = strings.str_pool[k as usize] as i32;
+            let mut t = i32::from(strings.str_pool[k as usize]);
 
-            if t == b' ' as i32 && cat == 0 {
+            if t == i32::from(b' ') && cat == 0 {
                 t = SPACE_TOKEN;
             } else {
                 if (0xD800..0xDC00).contains(&t) && k + 1 < strings.pool_ptr {
-                    let lo = strings.str_pool[(k + 1) as usize] as i32;
+                    let lo = i32::from(strings.str_pool[(k + 1) as usize]);
                     if (0xDC00..0xE000).contains(&lo) {
                         k += 1;
                         t = 0x10000
                             + ((t - 0xD800) << 10)
-                            + (strings.str_pool[k as usize] as i32 - 0xDC00);
+                            + (i32::from(strings.str_pool[k as usize]) - 0xDC00);
                     }
                 }
 
                 if cat == 0 {
                     t += OTHER_TOKEN;
-                } else if cat == ACTIVE_CHAR as i16 {
+                } else if cat == i16::from(ACTIVE_CHAR) {
                     t += CS_TOKEN_FLAG + 1;
                 } else {
-                    t += MAX_CHAR_VAL * cat as i32;
+                    t += MAX_CHAR_VAL * i32::from(cat);
                 }
             }
 
@@ -600,7 +600,7 @@ pub(crate) fn read_toks(st: &mut EngineState, n: i32, r: i32, j: i32) -> Result<
             while loc <= st.input.cur_input.limit {
                 let c = st.input.buffer[loc as usize];
                 loc += 1;
-                let tok = if c == b' ' as i32 {
+                let tok = if c == i32::from(b' ') {
                     SPACE_TOKEN
                 } else {
                     c + OTHER_TOKEN
@@ -666,7 +666,7 @@ pub(crate) fn tokens_to_string(st: &mut EngineState, p: i32) -> Result<StrNumber
     let arg = MemPtr(p).link(&st.mem);
     let l = st.strings.pool_size - st.strings.pool_ptr;
     crate::output::show_token_list(st, arg, TEX_NULL, l);
-    st.shipout.selector = st.shipout.old_setting as i32;
+    st.shipout.selector = i32::from(st.shipout.old_setting);
     st.strings.make_string()
 }
 
@@ -863,7 +863,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             begin_token_list(st, p, BACKED_UP)?;
         }
         st.scanner.cur_cmd = SPACER;
-        st.scanner.cur_chr = ' ' as i32;
+        st.scanner.cur_chr = i32::from(b' ');
     }
 
     let outcome = if st.scanner.scanner_status > SKIPPING {
@@ -880,7 +880,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
         match st.scanner.scanner_status {
             DEFINING => {
                 print(st, " while scanning definition");
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
             }
             MATCHING => {
                 print(st, " while scanning use");
@@ -889,7 +889,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             }
             ALIGNING => {
                 print(st, " while scanning preamble");
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
                 inserted = st.mem.get_avail()?;
                 inserted.set_link(&mut st.mem, p);
                 inserted.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_CR);
@@ -897,7 +897,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
             }
             ABSORBING => {
                 print(st, " while scanning text");
-                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
+                p.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
             }
             _ => {}
         }
@@ -917,7 +917,7 @@ pub(crate) fn check_outer_validity(st: &mut EngineState) -> Result<(), Abort> {
     } else {
         error_here_with_diagnostic(st, "Incomplete ");
         let cur_if = st.scanner.cur_if;
-        print_cmd_chr(st, IF_TEST, cur_if as i32);
+        print_cmd_chr(st, IF_TEST, i32::from(cur_if));
         print(st, "; all text was ignored after line ");
         let skip_line = st.scanner.skip_line;
         print_int(st, skip_line);
@@ -954,10 +954,10 @@ fn is_lc_hex(c: i32) -> bool {
 
 #[inline]
 fn hex_digit_value(c: i32) -> i32 {
-    if c <= b'9' as i32 {
-        c - b'0' as i32
+    if c <= i32::from(b'9') {
+        c - i32::from(b'0')
     } else {
-        c - b'a' as i32 + 10
+        c - i32::from(b'a') + 10
     }
 }
 
@@ -1028,7 +1028,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                         st.scanner.cur_cmd = cat;
 
                         // Dispatch on state + category (states 1, 17, 33, categories 0..=15).
-                        match st.input.cur_input.state as i32 + cat as i32 {
+                        match i32::from(st.input.cur_input.state) + i32::from(cat) {
                             // Ignored characters, and spaces when skipping blanks.
                             10 | 26 | 42 | 27 | 43 => continue 'texswitch,
 
@@ -1174,14 +1174,14 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                             // Space in mid-line.
                             11 => {
                                 st.input.cur_input.state = SKIP_BLANKS;
-                                st.scanner.cur_chr = b' ' as i32;
+                                st.scanner.cur_chr = i32::from(b' ');
                             }
 
                             // End of line in mid-line.
                             6 => {
                                 st.input.cur_input.loc = st.input.cur_input.limit + 1;
                                 st.scanner.cur_cmd = SPACER;
-                                st.scanner.cur_chr = b' ' as i32;
+                                st.scanner.cur_chr = i32::from(b' ');
                             }
 
                             // Comments, and end of line when skipping blanks.
@@ -1261,7 +1261,7 @@ pub(crate) fn get_next(st: &mut EngineState) -> Result<(), Abort> {
                             crate::output::file_warning(st);
                         }
                         if st.input.cur_input.name >= 19 {
-                            crate::output::print_char(st, b')' as i32);
+                            crate::output::print_char(st, b')');
                             st.input.open_parens -= 1;
                             output_flush(st.shipout.rust_stdout);
                         }
@@ -1426,7 +1426,7 @@ pub(crate) fn get_x_non_blank(st: &mut EngineState) -> Result<(), Abort> {
 #[inline(always)]
 fn pack_cur_tok(st: &mut EngineState) {
     st.scanner.cur_tok = if st.scanner.cur_cs == 0 {
-        st.scanner.cur_cmd as i32 * MAX_CHAR_VAL + st.scanner.cur_chr
+        i32::from(st.scanner.cur_cmd) * MAX_CHAR_VAL + st.scanner.cur_chr
     } else {
         CS_TOKEN_FLAG + st.scanner.cur_cs
     };
@@ -1658,7 +1658,7 @@ pub(crate) fn scan_toks(
                         back_error(st)?;
                         st.scanner.cur_tok = s;
                     } else {
-                        st.scanner.cur_tok = OUT_PARAM_TOKEN - b'0' as i32 + st.scanner.cur_chr;
+                        st.scanner.cur_tok = OUT_PARAM_TOKEN - i32::from(b'0') + st.scanner.cur_chr;
                     }
                 }
             }
@@ -1684,7 +1684,7 @@ pub(crate) fn pass_text(st: &mut EngineState) -> Result<(), Abort> {
             if l == 0 {
                 break;
             }
-            if st.scanner.cur_chr == FI_CODE as i32 {
+            if st.scanner.cur_chr == i32::from(FI_CODE) {
                 l -= 1;
             }
         } else if st.scanner.cur_cmd == IF_TEST {
@@ -1710,7 +1710,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         return Err(Abort::PoolOverflow);
     }
     let s = st.strings.make_string()?;
-    st.strings.str_pool[st.strings.pool_ptr as usize] = b' ' as u16;
+    st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(b' ');
     let mut l = st.strings.str_start[s.slot()];
     let nl = st.eqtb.int_par(INT_PAR_NEW_LINE_CHAR) as u16;
     let file = st.mem.get_avail()?;
@@ -1736,7 +1736,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
             w += 1;
             k += 4;
         }
-        let mut chars = [b' ' as u16; 4];
+        let mut chars = [u16::from(b' '); 4];
         for (i, c) in chars.iter_mut().enumerate() {
             if l > k + i as i32 {
                 *c = st.strings.str_pool[(k + i as i32) as usize];
@@ -1764,7 +1764,7 @@ pub(crate) fn pseudo_start(st: &mut EngineState) -> Result<(), Abort> {
         if st.shipout.term_offset > st.config.max_print_line - 3 {
             crate::output::print_ln(st);
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-            crate::output::print_char(st, b' ' as i32);
+            crate::output::print_char(st, b' ');
         }
         st.input.cur_input.name = 19;
         print(st, "( ");
@@ -1848,7 +1848,7 @@ pub(crate) fn scan_int(st: &mut EngineState) -> Result<(), Abort> {
                     "A one-character control sequence belongs after a ` mark.",
                     r"So I'm essentially inserting \0 here.",
                 ]);
-                st.scanner.cur_val = b'0' as i32;
+                st.scanner.cur_val = i32::from(b'0');
                 back_error(st)?;
             } else {
                 scan_optional_space(st)?;
@@ -2322,10 +2322,10 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
             if scan_factor {
                 let o = if s == EXPR_NONE { l } else { INT_VAL };
                 get_x_non_blank(st)?;
-                if st.scanner.cur_tok == OTHER_TOKEN + b'(' as i32 {
+                if st.scanner.cur_tok == OTHER_TOKEN + i32::from(b'(') {
                     let q = NodePtr::<ExprNode>::alloc(&mut st.mem)?;
                     q.set_link(&mut st.mem, p);
-                    q.set_level(&mut st.mem, l as u16);
+                    q.set_level(&mut st.mem, u16::from(l));
                     q.set_state(&mut st.mem, (4 * s + r) as u16);
                     q.set_e(&mut st.mem, e);
                     q.set_t(&mut st.mem, t);
@@ -2358,7 +2358,7 @@ pub(crate) fn scan_expr(st: &mut EngineState) -> Result<(), Abort> {
                     if st.scanner.cur_cmd != RELAX {
                         back_input(st)?;
                     }
-                } else if st.scanner.cur_tok != OTHER_TOKEN + b')' as i32 {
+                } else if st.scanner.cur_tok != OTHER_TOKEN + i32::from(b')') {
                     print_err(st, "Missing ) inserted for expression");
                     st.errors
                         .help(&["I was expecting to see `+', `-', `*', `/', or `)'. Didn't."]);
@@ -2507,7 +2507,7 @@ pub(crate) fn scan_keyword(st: &mut EngineState, keyword: &str) -> Result<bool, 
     let mut i = 0;
     while i < keyword.len() {
         get_x_token(st)?;
-        let ch = keyword[i] as i32;
+        let ch = i32::from(keyword[i]);
         if st.scanner.cur_cs == 0 && (st.scanner.cur_chr == ch || st.scanner.cur_chr == ch - 32) {
             store_new_token(st, &mut p, st.scanner.cur_tok)?;
             i += 1;
@@ -2538,9 +2538,9 @@ pub(crate) fn scan_left_brace(st: &mut EngineState) -> Result<(), Abort> {
             "(If you're confused by all this, try typing `I}' now.)",
         ]);
         back_error(st)?;
-        st.scanner.cur_tok = LEFT_BRACE_TOKEN + '{' as i32;
+        st.scanner.cur_tok = LEFT_BRACE_TOKEN + i32::from(b'{');
         st.scanner.cur_cmd = LEFT_BRACE;
-        st.scanner.cur_chr = '{' as i32;
+        st.scanner.cur_chr = i32::from(b'{');
         st.scanner.align_state += 1;
     }
     Ok(())
@@ -2774,7 +2774,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             };
         }
         RANDOM_SEED_CODE => st.scanner.cur_val = st.errors.random_seed,
-        PDF_SHELL_ESCAPE_CODE => st.scanner.cur_val = st.config.shell_escape_enabled as i32,
+        PDF_SHELL_ESCAPE_CODE => st.scanner.cur_val = i32::from(st.config.shell_escape_enabled),
         ETEX_VERSION_CODE => st.scanner.cur_val = ETEX_VERSION,
         XETEX_VERSION_CODE => st.scanner.cur_val = XETEX_VERSION,
         XETEX_COUNT_GLYPHS_CODE => {
@@ -2946,11 +2946,11 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let f = scan_font_ident(st)?;
             let first = m == XETEX_FIRST_CHAR_CODE;
             st.scanner.cur_val = if st.fonts.is_native_font(f) {
-                st.fonts.get_font_char_range(f, first as i32)?
+                st.fonts.get_font_char_range(f, i32::from(first))?
             } else if first {
-                st.fonts.font_bc[f] as i32
+                i32::from(st.fonts.font_bc[f])
             } else {
-                st.fonts.font_ec[f] as i32
+                i32::from(st.fonts.font_ec[f])
             };
         }
         PDF_LAST_X_POS_CODE => st.scanner.cur_val = st.shipout.pdf_last_x_pos,
@@ -2960,7 +2960,7 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             st.scanner.cur_val =
                 crate::pic::count_pdf_file_pages_named(st.input.name_of_file_bytes())?;
         }
-        CURRENT_GROUP_LEVEL_CODE => st.scanner.cur_val = st.save_stack.cur_level as i32 - 1,
+        CURRENT_GROUP_LEVEL_CODE => st.scanner.cur_val = i32::from(st.save_stack.cur_level) - 1,
         CURRENT_GROUP_TYPE_CODE => st.scanner.cur_val = st.save_stack.cur_group as i32,
         CURRENT_IF_LEVEL_CODE => {
             let mut q = st.scanner.cond_ptr;
@@ -2974,10 +2974,10 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
         CURRENT_IF_TYPE_CODE => {
             st.scanner.cur_val = if st.scanner.cond_ptr.is_null() {
                 0
-            } else if (st.scanner.cur_if as i32) < UNLESS_CODE {
-                st.scanner.cur_if as i32 + 1
+            } else if i32::from(st.scanner.cur_if) < UNLESS_CODE {
+                i32::from(st.scanner.cur_if) + 1
             } else {
-                -(st.scanner.cur_if as i32 - 31)
+                -(i32::from(st.scanner.cur_if) - 31)
             };
         }
         CURRENT_IF_BRANCH_CODE => {
@@ -2992,9 +2992,9 @@ fn fetch_last_item_int(st: &mut EngineState, m: i32) -> Result<(), Abort> {
             let q = st.scanner.cur_val;
             let spec = glue_spec(q);
             st.scanner.cur_val = if m == GLUE_STRETCH_ORDER_CODE {
-                spec.stretch_order(&st.mem) as i32
+                i32::from(spec.stretch_order(&st.mem))
             } else {
-                spec.shrink_order(&st.mem) as i32
+                i32::from(spec.shrink_order(&st.mem))
             };
             st.mem.delete_glue_ref(glue_spec(q));
         }
@@ -3042,7 +3042,7 @@ fn fetch_last_item_dimen(st: &mut EngineState, m: i32) -> Result<(), Abort> {
                     FONT_CHAR_DP_CODE => fonts.native_char_depth(f, c),
                     _ => fonts.native_char_italic_correction(f, c),
                 }?
-            } else if st.fonts.font_bc[f] as i32 <= c && st.fonts.font_ec[f] as i32 >= c {
+            } else if i32::from(st.fonts.font_bc[f]) <= c && i32::from(st.fonts.font_ec[f]) >= c {
                 let ec = st.fonts.effective_char(f, c as u16);
                 let info = st.fonts.char_info(f, ec);
                 let fonts = &st.fonts;
@@ -3120,9 +3120,9 @@ fn fetch_last_node_item(st: &mut EngineState, m: i32) {
         Some(_) if st.input.cur_list.mode != 0 && want_type => {
             let node_type = st.mem.type_code(MemIdx::new(tx));
             st.scanner.cur_val = if node_type <= NodeType::Unset.as_raw() {
-                node_type as i32 + 1
+                i32::from(node_type) + 1
             } else {
-                NodeType::Unset.as_raw() as i32 + 2
+                i32::from(NodeType::Unset.as_raw()) + 2
             };
         }
         Some(node) if st.input.cur_list.mode != 0 => match (level, node) {
@@ -3176,7 +3176,7 @@ pub(crate) fn scan_something_internal(
             ASSIGN_GLUE => set_cur_val(st, st.eqtb.equiv(m), GLUE_VAL),
             ASSIGN_MU_GLUE => set_cur_val(st, st.eqtb.equiv(m), MU_VAL),
             SET_AUX => {
-                if st.input.cur_list.mode.abs() as i32 != m {
+                if i32::from(st.input.cur_list.mode.abs()) != m {
                     error_here_with_diagnostic(st, "Improper ");
                     print_cmd_chr(st, SET_AUX, m);
                     capture_to_diagnostic(st, None);
@@ -3188,7 +3188,7 @@ pub(crate) fn scan_something_internal(
                     ]);
                     error(st)?;
                     set_cur_val(st, 0, if level != TOK_VAL { DIMEN_VAL } else { INT_VAL });
-                } else if m == VMODE as i32 {
+                } else if m == i32::from(VMODE) {
                     set_cur_val(st, st.input.cur_list.aux_s1(), DIMEN_VAL);
                 } else {
                     set_cur_val(st, st.input.cur_list.aux_s0(), INT_VAL);

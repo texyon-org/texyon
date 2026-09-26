@@ -27,12 +27,12 @@ pub(crate) const FIRST_BYTE_MARK: [u8; 7] = [0x00, 0x00, 0xC0, 0xE0, 0xF0, 0xF8,
 /// advancing it. The end of `s` cuts the sequence short.
 pub(crate) fn next_utf8_char(s: &mut &[u8]) -> u32 {
     let (&first, mut rest) = s.split_first().expect("next_utf8_char on empty input");
-    let mut rval = first as u32;
+    let mut rval = u32::from(first);
     let extra_bytes = BYTES_FROM_UTF8[first as usize] as usize;
     for _ in 0..extra_bytes {
         rval <<= 6;
         if let Some((&b, tail)) = rest.split_first() {
-            rval += b as u32;
+            rval += u32::from(b);
             rest = tail;
         }
     }

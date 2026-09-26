@@ -465,13 +465,13 @@ impl EqtbState {
     #[inline]
     pub fn glue_par(&self, n: i16) -> crate::node::NodePtr<crate::node::GlueSpecNode> {
         crate::node::NodePtr::from_glue_ptr(crate::units::MemPtr(
-            self.b32s1(crate::consts::GLUE_BASE + n as i32),
+            self.b32s1(crate::consts::GLUE_BASE + i32::from(n)),
         ))
     }
 
     #[inline]
     pub fn set_glue_par(&mut self, n: i16, spec: crate::node::NodePtr<crate::node::GlueSpecNode>) {
-        self.set_b32s1(crate::consts::GLUE_BASE + n as i32, spec.ptr().0);
+        self.set_b32s1(crate::consts::GLUE_BASE + i32::from(n), spec.ptr().0);
     }
 
     #[inline]

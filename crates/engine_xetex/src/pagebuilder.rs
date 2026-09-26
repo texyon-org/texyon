@@ -58,7 +58,7 @@ fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
 }
 
 fn ensure_vbox(st: &mut EngineState, n: u8) -> Result<(), Abort> {
-    if !matches!(fetch_box(st, n as i32), Some(AnyBox::HList(_))) {
+    if !matches!(fetch_box(st, i32::from(n)), Some(AnyBox::HList(_))) {
         return Ok(());
     }
     crate::output::print_err(st, "Insertions can only be added to a vbox");
@@ -144,11 +144,11 @@ fn place_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> Re
     }
     rec.set_best_ins_ptr(&mut st.mem, MemPtr::NULL);
     let n = rec.subtype(&st.mem) as u8;
-    let b = fetch_box(st, n as i32).expect("insertion box made in fire_up");
+    let b = fetch_box(st, i32::from(n)).expect("insertion box made in fire_up");
     let list = b.list_ptr(&st.mem);
     st.mem.free_node(b.ptr(), BOX_NODE_SIZE);
     let packed = crate::packaging::vpackage(st, list, Scaled::ZERO, ADDITIONAL, MAX_DIMEN)?;
-    st.eqtb.set_box_reg(n as i32, packed.ptr());
+    st.eqtb.set_box_reg(i32::from(n), packed.ptr());
     Ok(wait)
 }
 
@@ -208,12 +208,12 @@ fn fire_up(st: &mut EngineState, c: MemPtr) -> Result<(), Abort> {
             if !rec.best_ins_ptr(&st.mem).is_null() {
                 let n = rec.subtype(&st.mem) as u8;
                 ensure_vbox(st, n)?;
-                if st.eqtb.box_reg(n as i32).is_null() {
+                if st.eqtb.box_reg(i32::from(n)).is_null() {
                     let b = st.mem.new_null_box()?;
-                    st.eqtb.set_box_reg(n as i32, b.ptr());
+                    st.eqtb.set_box_reg(i32::from(n), b.ptr());
                 }
                 // The box's `list_ptr` word serves as the head link of its list.
-                let mut p = st.eqtb.box_reg(n as i32) + 5;
+                let mut p = st.eqtb.box_reg(i32::from(n)) + 5;
                 while !p.link(&st.mem).is_null() {
                     p = p.link(&st.mem);
                 }
@@ -416,7 +416,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     }
     let n = ins.subtype(&st.mem) as u8;
     let mut r = PAGE_INS_HEAD;
-    while n as u16 >= page_ins(r.link(&st.mem)).subtype(&st.mem) {
+    while u16::from(n) >= page_ins(r.link(&st.mem)).subtype(&st.mem) {
         r = r.link(&st.mem);
     }
     if page_ins(r).subtype(&st.mem) as u8 != n {
@@ -426,17 +426,17 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         r.set_link(&mut st.mem, q);
         r = q;
         let rec = page_ins(r);
-        rec.set_subtype(&mut st.mem, n as u16);
+        rec.set_subtype(&mut st.mem, u16::from(n));
         rec.set_split_up(&mut st.mem, false);
         ensure_vbox(st, n)?;
-        let height = match fetch_box(st, n as i32) {
+        let height = match fetch_box(st, i32::from(n)) {
             Some(b) => b.height(&st.mem) + b.depth(&st.mem),
             None => Scaled::ZERO,
         };
         rec.set_height(&mut st.mem, height);
         rec.set_best_ins_ptr(&mut st.mem, MemPtr::NULL);
-        let skip = st.eqtb.skip(n as i32);
-        let count = st.eqtb.count(n as i32);
+        let skip = st.eqtb.skip(i32::from(n));
+        let count = st.eqtb.count(i32::from(n));
         let h = scale_by_count(st, height, count);
         st.shipout.page_so_far[PAGE_GOAL] -= h + skip.width(&st.mem);
         let order = skip.stretch_order(&st.mem) as usize;
@@ -445,7 +445,7 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
         if skip.shrink_order(&st.mem) != NORMAL && skip.shrink(&st.mem) != Scaled::ZERO {
             crate::output::error_here_with_diagnostic(st, "Infinite glue shrinkage inserted from ");
             crate::output::print_esc(st, "skip");
-            crate::output::print_int(st, n as i32);
+            crate::output::print_int(st, i32::from(n));
             crate::output::capture_to_diagnostic(st, None);
             st.errors.help(&[
                 "The correction glue for page breaking with insertions",
@@ -464,10 +464,10 @@ fn append_insertion(st: &mut EngineState, ins: NodePtr<InsNode>, p: MemPtr) -> R
     rec.set_last_ins_ptr(&mut st.mem, p);
     let so_far = st.shipout.page_so_far;
     let delta = so_far[PAGE_GOAL] - so_far[PAGE_TOTAL] - so_far[PAGE_DEPTH] + so_far[PAGE_SHRINK];
-    let count = st.eqtb.count(n as i32);
+    let count = st.eqtb.count(i32::from(n));
     let ins_height = ins.height(&st.mem);
     let h = scale_by_count(st, ins_height, count);
-    let max_height = st.eqtb.dimen(n as i32);
+    let max_height = st.eqtb.dimen(i32::from(n));
     if (h <= Scaled::ZERO || h <= delta) && ins_height + rec.height(&st.mem) <= max_height {
         st.shipout.page_so_far[PAGE_GOAL] -= h;
         let height = rec.height(&st.mem) + ins_height;
@@ -526,7 +526,7 @@ pub(crate) fn build_page(st: &mut EngineState) -> Result<(), Abort> {
     }
     while let Some(idx) = CONTRIB_HEAD.link(&st.mem).as_idx() {
         let p = MemPtr::from_idx(idx);
-        let node_type = st.mem.type_code(idx) as i32;
+        let node_type = i32::from(st.mem.type_code(idx));
         let node = st.mem.classify(idx).expect("valid page node");
         if let Some(spec) = st.shipout.last_glue {
             st.mem.delete_glue_ref(spec);

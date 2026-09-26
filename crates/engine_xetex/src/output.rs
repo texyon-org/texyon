@@ -105,11 +105,11 @@ const SELECTOR_PSEUDO: i32 = 20;
 fn print_the_digs(st: &mut EngineState, mut k: u8) {
     while k > 0 {
         k -= 1;
-        let d = st.errors.dig[k as usize] as i32;
+        let d = i32::from(st.errors.dig[k as usize]);
         if d < 10 {
-            print_char(st, b'0' as i32 + d);
+            print_char(st, i32::from(b'0') + d);
         } else {
-            print_char(st, b'A' as i32 - 10 + d);
+            print_char(st, i32::from(b'A') - 10 + d);
         }
     }
 }
@@ -129,7 +129,7 @@ fn store_digits(st: &mut EngineState, mut n: i32, radix: i32, mut k: u8) -> u8 {
 pub(crate) fn print_int(st: &mut EngineState, mut n: i32) {
     let mut k: u8 = 0;
     if n < 0 {
-        print_char(st, b'-' as i32);
+        print_char(st, b'-');
         if n > -100_000_000 {
             n = -n;
         } else {
@@ -151,7 +151,7 @@ pub(crate) fn print_int(st: &mut EngineState, mut n: i32) {
 }
 
 pub(crate) fn print_hex(st: &mut EngineState, n: i32) {
-    print_char(st, b'"' as i32);
+    print_char(st, b'"');
     let k = store_digits(st, n, 16, 0);
     print_the_digs(st, k);
 }
@@ -186,6 +186,14 @@ impl TexStr for StrNumber {
     }
 }
 
+/// A byte prints as the single-character string of that code.
+impl TexStr for u8 {
+    #[inline]
+    fn print_to(self, st: &mut EngineState) {
+        print_pool_str(st, i32::from(self));
+    }
+}
+
 impl TexStr for &str {
     #[inline]
     fn print_to(self, st: &mut EngineState) {
@@ -202,7 +210,7 @@ impl TexStr for &[u8] {
 
 fn print_bytes(st: &mut EngineState, bytes: &[u8]) {
     for &b in bytes {
-        print_char(st, b as i32);
+        print_char(st, i32::from(b));
     }
 }
 
@@ -238,24 +246,24 @@ pub(crate) fn print_roman_int(st: &mut EngineState, mut n: i32) {
     let mut v: i32 = 1000;
     loop {
         while n >= v {
-            print_char(st, ROMAN_DATA[j] as i32);
+            print_char(st, i32::from(ROMAN_DATA[j]));
             n -= v;
         }
         if n <= 0 {
             return;
         }
         let mut k = j + 2;
-        let mut u = v / (ROMAN_DATA[k - 1] as i32 - b'0' as i32);
+        let mut u = v / (i32::from(ROMAN_DATA[k - 1]) - i32::from(b'0'));
         if ROMAN_DATA[k - 1] == b'2' {
             k += 2;
-            u /= ROMAN_DATA[k - 1] as i32 - b'0' as i32;
+            u /= i32::from(ROMAN_DATA[k - 1]) - i32::from(b'0');
         }
         if n + u >= v {
-            print_char(st, ROMAN_DATA[k] as i32);
+            print_char(st, i32::from(ROMAN_DATA[k]));
             n += u;
         } else {
             j += 2;
-            v /= ROMAN_DATA[j - 1] as i32 - b'0' as i32;
+            v /= i32::from(ROMAN_DATA[j - 1]) - i32::from(b'0');
         }
     }
 }
@@ -263,18 +271,18 @@ pub(crate) fn print_roman_int(st: &mut EngineState, mut n: i32) {
 pub(crate) fn print_scaled(st: &mut EngineState, s: Scaled) {
     let mut s = s.0;
     if s < 0 {
-        print_char(st, b'-' as i32);
+        print_char(st, b'-');
         s = -s;
     }
     print_int(st, s / 0x10000);
-    print_char(st, b'.' as i32);
+    print_char(st, b'.');
     s = 10 * (s % 0x10000) + 5;
     let mut delta: i32 = 10;
     loop {
         if delta > 0x10000 {
             s = s + 0x8000 - 50000;
         }
-        print_char(st, b'0' as i32 + (s / 0x10000));
+        print_char(st, i32::from(b'0') + s / 0x10000);
         s = 10 * (s % 0x10000);
         delta *= 10;
         if s <= delta {
@@ -292,12 +300,12 @@ fn warn_char(st: &mut EngineState, c: i32) {
 pub(crate) fn print_ln(st: &mut EngineState) {
     match st.shipout.selector {
         sel @ (SELECTOR_TERM_ONLY | SELECTOR_LOG_ONLY | SELECTOR_TERM_AND_LOG) => {
-            warn_char(st, b'\n' as i32);
+            warn_char(st, i32::from(b'\n'));
             if sel != SELECTOR_LOG_ONLY {
-                output_putc(st.shipout.rust_stdout, b'\n' as i32);
+                output_putc(st.shipout.rust_stdout, b'\n');
             }
             if sel != SELECTOR_TERM_ONLY {
-                output_putc(st.shipout.log_file, b'\n' as i32);
+                output_putc(st.shipout.log_file, b'\n');
             }
             if sel != SELECTOR_LOG_ONLY {
                 st.shipout.term_offset = 0;
@@ -308,14 +316,15 @@ pub(crate) fn print_ln(st: &mut EngineState) {
         }
         SELECTOR_NO_PRINT | SELECTOR_PSEUDO | SELECTOR_NEW_STRING => {}
         sel => {
-            output_putc(st.shipout.write_file[sel as usize], b'\n' as i32);
-            st.shipout.write_prefix[sel as usize].push(b'\n' as i32);
+            output_putc(st.shipout.write_file[sel as usize], b'\n');
+            st.shipout.write_prefix[sel as usize].push(i32::from(b'\n'));
         }
     }
 }
 
 /// Writes one byte, UTF-16 code unit or (when pseudoprinting) character to the current selector.
-pub(crate) fn print_raw_char(st: &mut EngineState, s: i32, incr_offset: bool) {
+pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offset: bool) {
+    let s = s.into();
     match st.shipout.selector {
         sel @ (SELECTOR_TERM_ONLY | SELECTOR_LOG_ONLY | SELECTOR_TERM_AND_LOG) => {
             let to_term = sel != SELECTOR_LOG_ONLY;
@@ -336,11 +345,11 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: i32, incr_offset: bool) {
                 }
             }
             if to_term && st.shipout.term_offset == st.config.max_print_line {
-                output_putc(st.shipout.rust_stdout, b'\n' as i32);
+                output_putc(st.shipout.rust_stdout, b'\n');
                 st.shipout.term_offset = 0;
             }
             if to_log && st.shipout.file_offset == st.config.max_print_line {
-                output_putc(st.shipout.log_file, b'\n' as i32);
+                output_putc(st.shipout.log_file, b'\n');
                 st.shipout.file_offset = 0;
             }
         }
@@ -366,7 +375,8 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: i32, incr_offset: bool) {
     st.errors.tally += 1;
 }
 
-pub(crate) fn print_char(st: &mut EngineState, s: i32) {
+pub(crate) fn print_char(st: &mut EngineState, s: impl Into<i32>) {
+    let s = s.into();
     if st.shipout.selector > SELECTOR_PSEUDO && !st.shipout.doing_special {
         if s >= 0x10000 {
             print_raw_char(st, 0xD800 + (s - 0x10000) / 1024, true);
@@ -383,29 +393,29 @@ pub(crate) fn print_char(st: &mut EngineState, s: i32) {
     }
 
     if s < 32 && !st.shipout.doing_special {
-        print_raw_char(st, b'^' as i32, true);
-        print_raw_char(st, b'^' as i32, true);
+        print_raw_char(st, b'^', true);
+        print_raw_char(st, b'^', true);
         print_raw_char(st, s + 64, true);
     } else if s < 127 {
         print_raw_char(st, s, true);
     } else if s == 127 {
         if !st.shipout.doing_special {
-            print_raw_char(st, b'^' as i32, true);
-            print_raw_char(st, b'^' as i32, true);
-            print_raw_char(st, b'?' as i32, true);
+            print_raw_char(st, b'^', true);
+            print_raw_char(st, b'^', true);
+            print_raw_char(st, b'?', true);
         } else {
             print_raw_char(st, s, true);
         }
     } else if s < 160 && !st.shipout.doing_special {
         let hex_digit = |d: i32| {
             if d < 10 {
-                b'0' as i32 + d
+                i32::from(b'0') + d
             } else {
-                b'a' as i32 + d - 10
+                i32::from(b'a') + d - 10
             }
         };
-        print_raw_char(st, b'^' as i32, true);
-        print_raw_char(st, b'^' as i32, true);
+        print_raw_char(st, b'^', true);
+        print_raw_char(st, b'^', true);
         print_raw_char(st, hex_digit((s % 256) / 16), true);
         print_raw_char(st, hex_digit(s % 16), true);
     } else if st.shipout.selector == SELECTOR_PSEUDO {
@@ -467,7 +477,7 @@ fn print_pool_str(st: &mut EngineState, s: i32) {
                 continue;
             }
         }
-        print_char(st, c as i32);
+        print_char(st, i32::from(c));
         i += 1;
     }
 }
@@ -478,14 +488,14 @@ fn is_high_surrogate(c: u16) -> bool {
 
 fn surrogate_pair(hi: u16, lo: u16) -> Option<i32> {
     (is_high_surrogate(hi) && (0xDC00..0xE000).contains(&lo))
-        .then(|| 0x10000 + (hi as i32 - 0xD800) * 1024 + (lo as i32 - 0xDC00))
+        .then(|| 0x10000 + (i32::from(hi) - 0xD800) * 1024 + (i32::from(lo) - 0xDC00))
 }
 
 fn print_current_string(st: &mut EngineState) {
     let start = st.strings.cur_string_start();
     for j in start..st.strings.pool_ptr {
         let c = st.strings.str_pool[j as usize];
-        print_char(st, c as i32);
+        print_char(st, i32::from(c));
     }
 }
 
@@ -568,7 +578,7 @@ pub(crate) fn print_file_line(st: &mut EngineState) {
     };
     print_nl(st, "");
     print(st, name);
-    print_char(st, b':' as i32);
+    print_char(st, b':');
     print_int(st, line);
     print(st, ": ");
 }
@@ -590,9 +600,9 @@ fn print_write_whatsit(st: &mut EngineState, s: &str, p: NodePtr<WhatsitNode>) {
     if v < 16 {
         print_int(st, v);
     } else if v == 16 {
-        print_char(st, b'*' as i32);
+        print_char(st, b'*');
     } else {
-        print_char(st, b'-' as i32);
+        print_char(st, b'-');
     }
 }
 
@@ -610,10 +620,10 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
             if must_quote && quote_char != 0 {
                 break;
             }
-            let c = st.strings.str_pool[j] as i32;
-            if c == b' ' as i32 {
+            let c = i32::from(st.strings.str_pool[j]);
+            if c == i32::from(b' ') {
                 must_quote = true;
-            } else if c == b'"' as i32 || c == b'\'' as i32 {
+            } else if c == i32::from(b'"') || c == i32::from(b'\'') {
                 must_quote = true;
                 quote_char = QUOTE_SUM - c;
             }
@@ -622,7 +632,7 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
 
     if must_quote {
         if quote_char == 0 {
-            quote_char = b'"' as i32;
+            quote_char = i32::from(b'"');
         }
         print_char(st, quote_char);
     }
@@ -632,7 +642,7 @@ pub(crate) fn print_file_name(st: &mut EngineState, n: StrNumber, a: StrNumber, 
             continue;
         }
         for j in st.strings.str_range(s) {
-            let c = st.strings.str_pool[j] as i32;
+            let c = i32::from(st.strings.str_pool[j]);
             if c == quote_char {
                 print(st, quote_char);
                 quote_char = QUOTE_SUM - quote_char;
@@ -662,11 +672,11 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
             if p == NULL_CS {
                 print_esc(st, "csname");
                 print_esc(st, "endcsname");
-                print_char(st, b' ' as i32);
+                print_char(st, b' ');
             } else {
                 print_esc(st, p - SINGLE_BASE);
                 if st.eqtb.cat_code(p - SINGLE_BASE) == LETTER.into() {
-                    print_char(st, b' ' as i32);
+                    print_char(st, b' ');
                 }
             }
         } else if p < ACTIVE_BASE {
@@ -680,7 +690,7 @@ pub(crate) fn print_cs(st: &mut EngineState, p: i32) {
         print_esc(st, "NONEXISTENT.");
     } else {
         print_esc(st, cs_text(st, p));
-        print_char(st, b' ' as i32);
+        print_char(st, b' ');
     }
 }
 
@@ -711,9 +721,9 @@ fn print_native_word(st: &mut EngineState, p: NodePtr<WhatsitNode>) {
             }
         }
         if is_high_surrogate(c) {
-            print(st, b'.' as i32);
+            print(st, b'.');
         } else {
-            print_char(st, c as i32);
+            print_char(st, i32::from(c));
         }
         i += 1;
     }
@@ -727,7 +737,7 @@ fn print_sa_num(st: &mut EngineState, q: NodePtr<SaNode>) {
         let q1 = q.parent(mem);
         let q2 = q1.parent(mem);
         let q3 = q2.parent(mem);
-        let digit = |q: NodePtr<SaNode>| q.sa_index(mem) as i32;
+        let digit = |q: NodePtr<SaNode>| i32::from(q.sa_index(mem));
         digit(q) % 64 + 64 * digit(q1) + 64 * 64 * (digit(q2) + 64 * digit(q3))
     };
     print_int(st, n);
@@ -747,7 +757,7 @@ pub(crate) fn end_diagnostic(st: &mut EngineState, blank_line: bool) {
     if blank_line {
         print_ln(st);
     }
-    st.shipout.selector = st.shipout.old_setting as i32;
+    st.shipout.selector = i32::from(st.shipout.old_setting);
 }
 
 fn note_warning_issued(st: &mut EngineState) {
@@ -757,7 +767,7 @@ fn note_warning_issued(st: &mut EngineState) {
 }
 
 fn mode_name(m: i32) -> Option<&'static str> {
-    let group = MAX_COMMAND as i32 + 1;
+    let group = i32::from(MAX_COMMAND) + 1;
     match m.signum() {
         0 => Some("no mode"),
         1 => ["vertical mode", "horizontal mode", "display math mode"]
@@ -811,8 +821,8 @@ pub(crate) fn print_group(st: &mut EngineState, e: bool) {
     };
     print(st, name);
     print(st, " group (level ");
-    print_int(st, st.save_stack.cur_level as i32);
-    print_char(st, b')' as i32);
+    print_int(st, i32::from(st.save_stack.cur_level));
+    print_char(st, b')');
     let line_at = st.save_stack.saved(-1);
     if line_at != 0 {
         if e {
@@ -838,7 +848,7 @@ pub(crate) fn print_spec(st: &mut EngineState, p: impl crate::units::MemAddr, s:
         .contains(&p)
         .then(|| NodePtr::<GlueSpecNode>::from_glue_ptr(MemPtr(p)));
     let Some(gs) = spec else {
-        print_char(st, b'*' as i32);
+        print_char(st, b'*');
         return;
     };
     print_scaled(st, gs.width(&st.mem));
@@ -1021,16 +1031,16 @@ fn print_code(st: &mut EngineState, c: i32) {
 fn print_fam_and_char(st: &mut EngineState, p: NodePtr<MathField>) {
     print_esc(st, "fam");
     print_int(st, p.fam(&st.mem));
-    print_char(st, b' ' as i32);
+    print_char(st, b' ');
     print_code(st, p.full_char(&st.mem));
 }
 
 fn print_delimiter(st: &mut EngineState, p: NodePtr<DelimiterField>) {
     let (small_fam, small_char) = p.small(&st.mem);
     let (large_fam, large_char) = p.large(&st.mem);
-    let a = ((small_fam as i64 * 256 + small_char as i64) * 4096
-        + large_fam as i64 * 256
-        + large_char as i64) as i32;
+    let a = ((i64::from(small_fam) * 256 + i64::from(small_char)) * 4096
+        + i64::from(large_fam) * 256
+        + i64::from(large_char)) as i32;
     if a < 0 {
         print_int(st, a);
     } else {
@@ -1040,7 +1050,7 @@ fn print_delimiter(st: &mut EngineState, p: NodePtr<DelimiterField>) {
 
 pub(crate) fn print_rule_dimen(st: &mut EngineState, d: RuleDimen) {
     match d {
-        RuleDimen::Running => print_char(st, b'*' as i32),
+        RuleDimen::Running => print_char(st, b'*'),
         RuleDimen::Set(d) => print_scaled(st, d),
     }
 }
@@ -1053,7 +1063,7 @@ pub(crate) fn print_glue(st: &mut EngineState, d: Scaled, order: u16, s: Option<
     } else if order > NORMAL {
         print(st, "fil");
         for _ in 1..order {
-            print_char(st, b'l' as i32);
+            print_char(st, b'l');
         }
     } else if let Some(s) = s {
         print(st, s);
@@ -1062,12 +1072,12 @@ pub(crate) fn print_glue(st: &mut EngineState, d: Scaled, order: u16, s: Option<
 
 fn print_font_char(st: &mut EngineState, font: FontId, c: u16) {
     if font > st.fonts.font_max {
-        print_char(st, b'*' as i32);
+        print_char(st, b'*');
     } else {
         print_esc(st, st.eqtb.font_id_text(font));
     }
-    print_char(st, b' ' as i32);
-    print(st, c as i32);
+    print_char(st, b' ');
+    print(st, i32::from(c));
 }
 
 fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
@@ -1080,7 +1090,7 @@ fn print_font_and_char(st: &mut EngineState, p: MemPtr) {
 }
 
 fn print_mark(st: &mut EngineState, p: MemPtr) {
-    print_char(st, b'{' as i32);
+    print_char(st, b'{');
     if p.0 < st.mem.hi_mem_min || p.0 > st.mem.mem_end {
         print_esc(st, "CLOBBERED.");
     } else {
@@ -1088,7 +1098,7 @@ fn print_mark(st: &mut EngineState, p: MemPtr) {
         let l = st.config.max_print_line - 10;
         show_token_list(st, head, TEX_NULL, l);
     }
-    print_char(st, b'}' as i32);
+    print_char(st, b'}');
 }
 
 const SHOW_BOX_CODE: i32 = 1;
@@ -1185,7 +1195,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         DIVIDE => print_esc(st, "divide"),
         END_CS_NAME => print_esc(st, "endcsname"),
         END_GROUP => print_esc(st, "endgroup"),
-        EX_SPACE => print_esc(st, b' ' as i32),
+        EX_SPACE => print_esc(st, b' '),
         EXPAND_AFTER => print_esc(
             st,
             if chr_code == 0 {
@@ -1205,11 +1215,11 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             },
         ),
         INSERT => print_esc(st, "insert"),
-        ITAL_CORR => print_esc(st, b'/' as i32),
+        ITAL_CORR => print_esc(st, b'/'),
         MARK => {
             print_esc(st, "mark");
             if chr_code > 0 {
-                print_char(st, b's' as i32);
+                print_char(st, b's');
             }
         }
         MATH_ACCENT => print_esc(
@@ -1282,9 +1292,9 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             st,
             match chr_code {
                 0 => "valign",
-                x if x == BEGIN_L_CODE as i32 => "beginL",
-                x if x == END_L_CODE as i32 => "endL",
-                x if x == BEGIN_R_CODE as i32 => "beginR",
+                x if x == i32::from(BEGIN_L_CODE) => "beginL",
+                x if x == i32::from(END_L_CODE) => "endL",
+                x if x == i32::from(BEGIN_R_CODE) => "beginR",
                 _ => "endR",
             },
         ),
@@ -1309,7 +1319,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             };
             print_esc(st, name);
             if chr_code >= MARKS_CODE {
-                print_char(st, b's' as i32);
+                print_char(st, b's');
             }
         }
         REGISTER => {
@@ -1332,7 +1342,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         }
         SET_AUX => print_esc(
             st,
-            if chr_code == VMODE as i32 {
+            if chr_code == i32::from(VMODE) {
                 "prevdepth"
             } else {
                 "spacefactor"
@@ -1356,9 +1366,9 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         ),
         LAST_ITEM => {
             let name = match chr_code {
-                x if x == INT_VAL as i32 => "lastpenalty",
-                x if x == DIMEN_VAL as i32 => "lastkern",
-                x if x == GLUE_VAL as i32 => "lastskip",
+                x if x == i32::from(INT_VAL) => "lastpenalty",
+                x if x == i32::from(DIMEN_VAL) => "lastkern",
+                x if x == i32::from(GLUE_VAL) => "lastskip",
                 INPUT_LINE_NO_CODE => "inputlineno",
                 LAST_NODE_TYPE_CODE => "lastnodetype",
                 ETEX_VERSION_CODE => "eTeXversion",
@@ -1403,10 +1413,10 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 PAR_SHAPE_LENGTH_CODE => "parshapelength",
                 PAR_SHAPE_INDENT_CODE => "parshapeindent",
                 PAR_SHAPE_DIMEN_CODE => "parshapedimen",
-                x if x == ETEX_EXPR + INT_VAL as i32 => "numexpr",
-                x if x == ETEX_EXPR + DIMEN_VAL as i32 => "dimexpr",
-                x if x == ETEX_EXPR + GLUE_VAL as i32 => "glueexpr",
-                x if x == ETEX_EXPR + MU_VAL as i32 => "muexpr",
+                x if x == ETEX_EXPR + i32::from(INT_VAL) => "numexpr",
+                x if x == ETEX_EXPR + i32::from(DIMEN_VAL) => "dimexpr",
+                x if x == ETEX_EXPR + i32::from(GLUE_VAL) => "glueexpr",
+                x if x == ETEX_EXPR + i32::from(MU_VAL) => "muexpr",
                 GLUE_STRETCH_ORDER_CODE => "gluestretchorder",
                 GLUE_SHRINK_ORDER_CODE => "glueshrinkorder",
                 GLUE_STRETCH_CODE => "gluestretch",
@@ -1483,9 +1493,9 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
             print_esc(st, name);
         }
         FI_OR_ELSE => {
-            let name = if chr_code == FI_CODE as i32 {
+            let name = if chr_code == i32::from(FI_CODE) {
                 "fi"
-            } else if chr_code == OR_CODE as i32 {
+            } else if chr_code == i32::from(OR_CODE) {
                 "or"
             } else {
                 "else"
@@ -1553,13 +1563,13 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 LAST_BOX_CODE => "lastbox",
                 VSPLIT_CODE => "vsplit",
                 VTOP_CODE => "vtop",
-                x if x == VTOP_CODE + VMODE as i32 => "vbox",
+                x if x == VTOP_CODE + i32::from(VMODE) => "vbox",
                 _ => "hbox",
             };
             print_esc(st, name);
         }
         LEADER_SHIP => {
-            let name = match chr_code - A_LEADERS as i32 {
+            let name = match chr_code - i32::from(A_LEADERS) {
                 0 => "leaders",
                 1 => "cleaders",
                 2 => "xleaders",
@@ -1597,7 +1607,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         ),
         DISCRETIONARY => {
             if chr_code == 1 {
-                print_esc(st, b'-' as i32);
+                print_esc(st, b'-');
             } else {
                 print_esc(st, "discretionary");
             }
@@ -1650,7 +1660,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         LEFT_RIGHT => {
             let name = if chr_code == NodeType::LeftNoad as i32 {
                 "left"
-            } else if chr_code == MIDDLE_NOAD as i32 {
+            } else if chr_code == i32::from(MIDDLE_NOAD) {
                 "middle"
             } else {
                 "right"
@@ -1791,7 +1801,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
         UNDEFINED_CS => print(st, "undefined"),
         CALL | LONG_CALL | OUTER_CALL | LONG_OUTER_CALL => {
             // Bit 0 is long, bit 1 outer, bit 2 protected.
-            let mut n = (cmd - CALL) as i32;
+            let mut n = i32::from(cmd - CALL);
             if st.mem.is_protected_macro(MemPtr(chr_code)) {
                 n += 4;
             }
@@ -1805,7 +1815,7 @@ pub(crate) fn print_cmd_chr(st: &mut EngineState, cmd: u8, chr_code: i32) {
                 print_esc(st, "outer");
             }
             if n > 0 {
-                print_char(st, b' ' as i32);
+                print_char(st, b' ');
             }
             print(st, "macro");
         }
@@ -1847,8 +1857,8 @@ pub(crate) fn print_font_name_and_size(st: &mut EngineState, f: FontId) {
     let area = st.fonts.font_area[f];
     if area == AAT_FONT_FLAG || area == OTGR_FONT_FLAG {
         let has_double_quote =
-            st.strings.str_pool[st.strings.str_range(name)].contains(&(b'"' as u16));
-        let quote_char = if has_double_quote { b'\'' } else { b'"' } as i32;
+            st.strings.str_pool[st.strings.str_range(name)].contains(&(u16::from(b'"')));
+        let quote_char = i32::from(if has_double_quote { b'\'' } else { b'"' });
         print_char(st, quote_char);
         print(st, name);
         print_char(st, quote_char);
@@ -1867,11 +1877,11 @@ pub(crate) fn print_meaning(st: &mut EngineState) {
     let chr = st.scanner.cur_chr;
     print_cmd_chr(st, cmd, chr);
     if cmd >= CALL {
-        print_char(st, b':' as i32);
+        print_char(st, b':');
         print_ln(st);
         token_show(st, chr);
     } else if cmd == TOP_BOT_MARK && (chr as usize) < 5 {
-        print_char(st, b':' as i32);
+        print_char(st, b':');
         print_ln(st);
         token_show(st, st.scanner.cur_mark[chr as usize]);
     }
@@ -1880,7 +1890,7 @@ pub(crate) fn print_meaning(st: &mut EngineState) {
 /// Walks `base_ptr` down to the file at input level `level`, reporting whether it is a real file.
 fn level_is_file(st: &mut EngineState, level: i32) -> bool {
     while st.input.input_stack[st.input.base_ptr as usize].state == TOKEN_LIST
-        || st.input.input_stack[st.input.base_ptr as usize].index as i32 > level
+        || i32::from(st.input.input_stack[st.input.base_ptr as usize].index) > level
     {
         st.input.base_ptr -= 1;
     }
@@ -1930,7 +1940,7 @@ pub(crate) fn if_warning(st: &mut EngineState) {
         print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
         print(st, "end of ");
-        print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
+        print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
         print_if_line(st, st.scanner.if_line);
         print(st, " of a different file");
         print_ln(st);
@@ -1982,7 +1992,7 @@ pub(crate) fn file_warning(st: &mut EngineState) {
         print_nl(st, "Warning: ");
         diagnostic_begin_capture_warning_here(st);
         print(st, "end of file when ");
-        print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
+        print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
         if st.scanner.if_limit == FI_CODE {
             print_esc(st, "else");
         }
@@ -2010,9 +2020,9 @@ pub(crate) fn file_warning(st: &mut EngineState) {
 pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
-    print_nl(st, b'{' as i32);
+    print_nl(st, b'{');
     if st.input.cur_list.mode != st.scanner.shown_mode {
-        print_mode(st, st.input.cur_list.mode as i32);
+        print_mode(st, i32::from(st.input.cur_list.mode));
         print(st, ": ");
         st.scanner.shown_mode = st.input.cur_list.mode;
     }
@@ -2022,8 +2032,8 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
     {
         print(st, ": ");
         let (mut n, l) = if st.scanner.cur_cmd == FI_OR_ELSE {
-            print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
-            print_char(st, b' ' as i32);
+            print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
+            print_char(st, b' ');
             (0, st.scanner.if_line)
         } else {
             (1, st.mem.line)
@@ -2035,10 +2045,10 @@ pub(crate) fn show_cur_cmd_chr(st: &mut EngineState) {
         }
         print(st, "(level ");
         print_int(st, n);
-        print_char(st, b')' as i32);
+        print_char(st, b')');
         print_if_line(st, l);
     }
-    print_char(st, b'}' as i32);
+    print_char(st, b'}');
     capture_to_diagnostic(st, None);
     end_diagnostic(st, false);
 }
@@ -2114,7 +2124,7 @@ fn print_name_of_file(st: &mut EngineState) {
 /// Prints `bytes` with `print_raw_char`, one column each.
 pub(crate) fn print_raw_bytes(st: &mut EngineState, bytes: &[u8]) {
     for &b in bytes {
-        print_raw_char(st, b as i32, true);
+        print_raw_char(st, i32::from(b), true);
     }
 }
 
@@ -2142,8 +2152,8 @@ fn set_trick_count(st: &mut EngineState) {
 
 pub(crate) fn show_token_list(st: &mut EngineState, p: impl crate::units::MemAddr, q: i32, l: i32) {
     let mut p = MemPtr(p.addr());
-    let mut match_chr = b'#' as i32;
-    let mut n = b'0' as i32;
+    let mut match_chr = i32::from(b'#');
+    let mut n = i32::from(b'0');
     st.errors.tally = 0;
     while !p.is_null() && st.errors.tally < l {
         if p.0 == q {
@@ -2170,17 +2180,17 @@ pub(crate) fn show_token_list(st: &mut EngineState, p: impl crate::units::MemAdd
                 OUT_PARAM => {
                     print_char(st, match_chr);
                     if c > 9 {
-                        print_char(st, b'!' as i32);
+                        print_char(st, b'!');
                         return;
                     }
-                    print_char(st, b'0' as i32 + c);
+                    print_char(st, i32::from(b'0') + c);
                 }
                 MATCH => {
                     match_chr = c;
                     print_char(st, c);
                     n += 1;
                     print_char(st, n);
-                    if n > b'9' as i32 {
+                    if n > i32::from(b'9') {
                         return;
                     }
                 }
@@ -2243,7 +2253,7 @@ pub(crate) fn issue_message(st: &mut EngineState) -> Result<(), Abort> {
         if st.shipout.term_offset + len > st.config.max_print_line - 2 {
             print_ln(st);
         } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-            print_char(st, b' ' as i32);
+            print_char(st, b' ');
         }
         print(st, s);
         output_flush(st.shipout.rust_stdout);
@@ -2345,8 +2355,8 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                 } else {
                     print_esc(st, "cr");
                 }
-                if p >= a as i32 {
-                    p -= a as i32;
+                if p >= i32::from(a) {
+                    p -= i32::from(a);
                 }
                 a = 0;
                 Entry::Found
@@ -2397,15 +2407,15 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             }
             GroupCode::MathShift => {
                 if m == MMODE {
-                    print_char(st, b'$' as i32);
+                    print_char(st, b'$');
                 } else if st.input.nest[p as usize].mode == MMODE {
                     print_cmd_chr(st, EQ_NO, st.save_stack.saved(-2));
-                    print_char(st, b')' as i32);
+                    print_char(st, b')');
                     st.save_stack.cur_level -= 1;
                     leave_group_boundary(st);
                     continue;
                 }
-                print_char(st, b'$' as i32);
+                print_char(st, b'$');
                 Entry::Found
             }
             GroupCode::MathLeft => {
@@ -2440,9 +2450,9 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
                     }
                     print_esc(st, "setbox");
                     print_int(st, box_num - BOX_FLAG);
-                    print_char(st, b'=' as i32);
+                    print_char(st, b'=');
                 } else {
-                    print_cmd_chr(st, LEADER_SHIP, i - (LEADER_FLAG - A_LEADERS as i32));
+                    print_cmd_chr(st, LEADER_SHIP, i - (LEADER_FLAG - i32::from(A_LEADERS)));
                 }
             }
         }
@@ -2451,8 +2461,8 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
             print_esc(st, s);
             let spec = st.save_stack.saved(-2);
             if spec != 0 {
-                print_char(st, b' ' as i32);
-                if st.save_stack.saved(-3) == EXACTLY as i32 {
+                print_char(st, b' ');
+                if st.save_stack.saved(-3) == i32::from(EXACTLY) {
                     print(st, "to");
                 } else {
                     print(st, "spread");
@@ -2463,10 +2473,10 @@ pub(crate) fn show_save_groups(st: &mut EngineState) {
         }
 
         if !matches!(entry, Entry::Found) {
-            print_char(st, b'{' as i32);
+            print_char(st, b'{');
         }
 
-        print_char(st, b')' as i32);
+        print_char(st, b')');
         st.save_stack.cur_level -= 1;
         leave_group_boundary(st);
     }
@@ -2494,7 +2504,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
             begin_diagnostic(st);
             print_nl(st, "> \\box");
             print_int(st, n);
-            print_char(st, b'=' as i32);
+            print_char(st, b'=');
             match contents {
                 Some(b) => show_box(st, b.ptr()),
                 None => print(st, "void"),
@@ -2505,7 +2515,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
             print_nl(st, "> ");
             if st.scanner.cur_cs != 0 {
                 sprint_cs(st, st.scanner.cur_cs);
-                print_char(st, b'=' as i32);
+                print_char(st, b'=');
             }
             print_meaning(st);
         }
@@ -2535,7 +2545,7 @@ pub(crate) fn show_whatever(st: &mut EngineState) -> Result<(), Abort> {
                     print_nl(st, "### level ");
                     print_int(st, n);
                     print(st, ": ");
-                    print_cmd_chr(st, IF_TEST, t as i32);
+                    print_cmd_chr(st, IF_TEST, i32::from(t));
                     if m == FI_CODE {
                         print_esc(st, "else");
                     }
@@ -2614,11 +2624,11 @@ pub(crate) fn char_warning(st: &mut EngineState, f: FontId, c: i32) -> Result<()
         } else {
             print_hex(st, c);
         }
-        print_char(st, b')' as i32);
+        print_char(st, b')');
         print(st, " in font ");
         print(st, st.fonts.font_name[f]);
         if tracing_lost < 3 {
-            print_char(st, b'!' as i32);
+            print_char(st, b'!');
         }
         st.eqtb.set_int_par(INT_PAR_TRACING_ONLINE, old_setting);
         if tracing_lost > 2 {
@@ -2677,14 +2687,14 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
                 let font = ch.font(&st.mem);
                 if font != st.errors.font_in_short_display {
                     if font > st.fonts.font_max {
-                        print_char(st, b'*' as i32);
+                        print_char(st, b'*');
                     } else {
                         print_esc(st, st.eqtb.font_id_text(font));
                     }
-                    print_char(st, b' ' as i32);
+                    print_char(st, b' ');
                     st.errors.font_in_short_display = font;
                 }
-                print(st, ch.character(&st.mem) as i32);
+                print(st, i32::from(ch.character(&st.mem)));
             }
         } else {
             match st.mem.classify(MemIdx::new(p)) {
@@ -2703,7 +2713,7 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
                         let font = w.native_font(&st.mem);
                         if font != st.errors.font_in_short_display {
                             print_esc(st, st.eqtb.font_id_text(font));
-                            print_char(st, b' ' as i32);
+                            print_char(st, b' ');
                             st.errors.font_in_short_display = font;
                         }
                         print_native_word(st, w);
@@ -2711,18 +2721,18 @@ pub(crate) fn short_display(st: &mut EngineState, p: impl crate::units::MemAddr)
                         print(st, "[]");
                     }
                 }
-                Ok(AnyNode::Rule(_)) => print_char(st, b'|' as i32),
+                Ok(AnyNode::Rule(_)) => print_char(st, b'|'),
                 Ok(AnyNode::Glue(g)) => {
                     // Glue pointing at the shared zero spec prints nothing.
                     if g.glue_ptr(&st.mem) != ZERO_GLUE {
-                        print_char(st, b' ' as i32);
+                        print_char(st, b' ');
                     }
                 }
                 Ok(AnyNode::Math(m)) => {
                     if m.subtype(&st.mem) >= L_CODE {
                         print(st, "[]");
                     } else {
-                        print_char(st, b'$' as i32);
+                        print_char(st, b'$');
                     }
                 }
                 Ok(AnyNode::Ligature(l)) => short_display(st, l.lig_ptr(&st.mem)),
@@ -2761,9 +2771,9 @@ fn show_page_so_far(st: &mut EngineState) {
                 print_ln(st);
                 print_esc(st, "insert");
                 let box_num = ins.subtype(&st.mem);
-                print_int(st, box_num as i32);
+                print_int(st, i32::from(box_num));
                 print(st, " adds ");
-                let count = st.eqtb.count(box_num as i32);
+                let count = st.eqtb.count(i32::from(box_num));
                 let height = ins.height(&st.mem);
                 let adds = if count == 1000 {
                     height
@@ -2807,7 +2817,7 @@ pub(crate) fn show_activities(st: &mut EngineState) {
         let nest = st.input.nest[p as usize];
         let m = nest.mode;
         print_nl(st, "### ");
-        print_mode(st, m as i32);
+        print_mode(st, i32::from(m));
         print(st, " entered at line ");
         print_int(st, nest.mode_line.abs());
         if m == HMODE && nest.prev_graf != 0x83_0000 {
@@ -2816,9 +2826,9 @@ pub(crate) fn show_activities(st: &mut EngineState) {
             print_int(st, pg % 65536);
             print(st, ":hyphenmin");
             print_int(st, pg / 0x40_0000);
-            print_char(st, b',' as i32);
+            print_char(st, b',');
             print_int(st, (pg / 65536) % 64);
-            print_char(st, b')' as i32);
+            print_char(st, b')');
         }
         if nest.mode_line < 0 {
             print(st, " (\\output routine)");
@@ -2828,7 +2838,7 @@ pub(crate) fn show_activities(st: &mut EngineState) {
         }
         show_box(st, nest.head.link(&st.mem));
         let (aux_s0, aux_s1) = (nest.aux_s0(), nest.aux_s1());
-        match m.abs() as i32 / (MAX_COMMAND as i32 + 1) {
+        match i32::from(m.abs()) / (i32::from(MAX_COMMAND) + 1) {
             0 => {
                 print_nl(st, "prevdepth ");
                 let prev_depth = nest.prev_depth();
@@ -2868,7 +2878,7 @@ pub(crate) fn show_activities(st: &mut EngineState) {
 
 /// Shows sublist `list` with `c` appended to the indentation string.
 fn node_list_display(st: &mut EngineState, c: u8, list: MemPtr) {
-    st.strings.str_pool[st.strings.pool_ptr as usize] = c as u16;
+    st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(c);
     st.strings.pool_ptr += 1;
     show_node_list(st, list);
     st.strings.pool_ptr -= 1;
@@ -2882,7 +2892,7 @@ fn print_subsidiary_data(st: &mut EngineState, p: NodePtr<MathField>, c: u8) {
         }
         return;
     }
-    st.strings.str_pool[st.strings.pool_ptr as usize] = c as u16;
+    st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(c);
     st.strings.pool_ptr += 1;
     st.mem.temp_ptr = p.ptr();
     match p.math_type(&st.mem) {
@@ -2937,14 +2947,14 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                     print_esc(st, "unset");
                     print(st, "box(");
                     print_scaled(st, node.height(&st.mem));
-                    print_char(st, b'+' as i32);
+                    print_char(st, b'+');
                     print_scaled(st, node.depth(&st.mem));
                     print(st, ")x");
                     print_scaled(st, node.width(&st.mem));
                     let span_count = node.subtype(&st.mem);
                     if span_count != 0 {
                         print(st, " (");
-                        print_int(st, span_count as i32 + 1);
+                        print_int(st, i32::from(span_count) + 1);
                         print(st, " columns)");
                     }
                     if node.glue_stretch(&st.mem) != Scaled::ZERO {
@@ -2962,19 +2972,19 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                 Ok(AnyNode::Rule(node)) => {
                     print_esc(st, "rule(");
                     print_rule_dimen(st, node.height(&st.mem));
-                    print_char(st, b'+' as i32);
+                    print_char(st, b'+');
                     print_rule_dimen(st, node.depth(&st.mem));
                     print(st, ")x");
                     print_rule_dimen(st, node.width(&st.mem));
                 }
                 Ok(AnyNode::Ins(node)) => {
                     print_esc(st, "insert");
-                    print_int(st, node.subtype(&st.mem) as i32);
+                    print_int(st, i32::from(node.subtype(&st.mem)));
                     print(st, ", natural size ");
                     print_scaled(st, node.height(&st.mem));
                     print(st, "; split(");
                     print_spec(st, node.split_top_ptr(&st.mem).ptr(), None);
-                    print_char(st, b',' as i32);
+                    print_char(st, b',');
                     print_scaled(st, node.depth(&st.mem));
                     print(st, "); float cost ");
                     print_int(st, node.float_cost(&st.mem));
@@ -2987,7 +2997,7 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                     if sub != MU_GLUE {
                         print_esc(st, "kern");
                         if sub != 0 {
-                            print_char(st, b' ' as i32);
+                            print_char(st, b' ');
                         }
                         print_scaled(st, node.width(&st.mem));
                         if sub == ACC_KERN {
@@ -3021,7 +3031,7 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                         } else {
                             b'M'
                         };
-                        print_char(st, dir as i32);
+                        print_char(st, i32::from(dir));
                     } else {
                         print_esc(st, "math");
                         if sub == 0 {
@@ -3040,14 +3050,14 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                     print_font_char(st, font, node.character(&st.mem));
                     print(st, " (ligature ");
                     if node.subtype(&st.mem) > 1 {
-                        print_char(st, b'|' as i32);
+                        print_char(st, b'|');
                     }
                     st.errors.font_in_short_display = font;
                     short_display(st, node.lig_ptr(&st.mem));
                     if node.subtype(&st.mem) % 2 == 1 {
-                        print_char(st, b'|' as i32);
+                        print_char(st, b'|');
                     }
-                    print_char(st, b')' as i32);
+                    print_char(st, b')');
                 }
                 Ok(AnyNode::Penalty(node)) => {
                     print_esc(st, "penalty ");
@@ -3058,7 +3068,7 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                     let replace_count = node.subtype(&st.mem);
                     if replace_count > 0 {
                         print(st, " replacing ");
-                        print_int(st, replace_count as i32);
+                        print_int(st, i32::from(replace_count));
                     }
                     node_list_display(st, b'.', node.pre_break(&st.mem));
                     node_list_display(st, b'|', node.post_break(&st.mem));
@@ -3067,7 +3077,7 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                     print_esc(st, "mark");
                     let class = node.mark_class(&st.mem);
                     if class != 0 {
-                        print_char(st, b's' as i32);
+                        print_char(st, b's');
                         print_int(st, class);
                     }
                     print_mark(st, node.mark_ptr(&st.mem));
@@ -3079,7 +3089,7 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
                     }
                     node_list_display(st, b'.', node.adjust_ptr(&st.mem));
                 }
-                Ok(AnyNode::Style(node)) => print_style(st, node.subtype(&st.mem) as i32),
+                Ok(AnyNode::Style(node)) => print_style(st, i32::from(node.subtype(&st.mem))),
                 Ok(AnyNode::Choice(node)) => {
                     print_esc(st, "mathchoice");
                     node_list_display(st, b'D', node.display_mlist(&st.mem));
@@ -3097,10 +3107,10 @@ pub(crate) fn show_node_list(st: &mut EngineState, p: impl crate::units::MemAddr
 
 fn show_box_node(st: &mut EngineState, b: AnyBox) {
     let is_hlist = matches!(b, AnyBox::HList(_));
-    print_esc(st, if is_hlist { b'h' } else { b'v' } as i32);
+    print_esc(st, i32::from(if is_hlist { b'h' } else { b'v' }));
     print(st, "box(");
     print_scaled(st, b.height(&st.mem));
-    print_char(st, b'+' as i32);
+    print_char(st, b'+');
     print_scaled(st, b.depth(&st.mem));
     print(st, ")x");
     print_scaled(st, b.width(&st.mem));
@@ -3114,7 +3124,7 @@ fn show_box_node(st: &mut EngineState, b: AnyBox) {
         let order = b.glue_order(&st.mem);
         if g.abs() > 20000.0 {
             if g > 0.0 {
-                print_char(st, b'>' as i32);
+                print_char(st, b'>');
             } else {
                 print(st, "< -");
             }
@@ -3141,7 +3151,7 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
     match node.whatsit_subtype(&st.mem) {
         Some(WhatsitSubtype::Open) => {
             print_write_whatsit(st, "openout", node);
-            print_char(st, b'=' as i32);
+            print_char(st, b'=');
             let (name, area, ext) = (
                 node.open_name(&st.mem),
                 node.open_area(&st.mem),
@@ -3162,21 +3172,21 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             print_esc(st, "setlanguage");
             print_int(st, node.what_lang(&st.mem));
             print(st, " (hyphenmin ");
-            print_int(st, node.what_lhm(&st.mem) as i32);
-            print_char(st, b',' as i32);
-            print_int(st, node.what_rhm(&st.mem) as i32);
-            print_char(st, b')' as i32);
+            print_int(st, i32::from(node.what_lhm(&st.mem)));
+            print_char(st, b',');
+            print_int(st, i32::from(node.what_rhm(&st.mem)));
+            print_char(st, b')');
         }
         Some(WhatsitSubtype::PdfSavePos) => print_esc(st, "pdfsavepos"),
         Some(WhatsitSubtype::NativeWord | WhatsitSubtype::NativeWordAt) => {
             print_font(st);
-            print_char(st, b' ' as i32);
+            print_char(st, b' ');
             print_native_word(st, node);
         }
         Some(WhatsitSubtype::Glyph) => {
             print_font(st);
             print(st, " glyph#");
-            print_int(st, node.native_glyph(&st.mem) as i32);
+            print_int(st, i32::from(node.native_glyph(&st.mem)));
         }
         Some(sub @ (WhatsitSubtype::Pic | WhatsitSubtype::Pdf)) => {
             if sub == WhatsitSubtype::Pic {
@@ -3187,9 +3197,9 @@ fn show_whatsit(st: &mut EngineState, node: NodePtr<WhatsitNode>) {
             print(st, " \"");
             for i in 0..node.pic_path_len(&st.mem) as usize {
                 let b = node.pic_path(&st.mem)[i];
-                print_raw_char(st, b as i32, true);
+                print_raw_char(st, i32::from(b), true);
             }
-            print(st, b'"' as i32);
+            print(st, b'"');
         }
         _ => print(st, "whatsit?"),
     }
@@ -3200,9 +3210,9 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
     if sub >= A_LEADERS {
         print_esc(st, "");
         if sub == C_LEADERS {
-            print_char(st, b'c' as i32);
+            print_char(st, b'c');
         } else if sub == X_LEADERS {
-            print_char(st, b'x' as i32);
+            print_char(st, b'x');
         }
         print(st, "leaders ");
         print_spec(st, node.glue_ptr(&st.mem).ptr(), None);
@@ -3211,18 +3221,18 @@ fn show_glue(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
     }
     print_esc(st, "glue");
     if sub != 0 {
-        print_char(st, b'(' as i32);
+        print_char(st, b'(');
         if sub < COND_MATH_GLUE {
-            print_skip_param(st, sub as i32 - 1);
+            print_skip_param(st, i32::from(sub) - 1);
         } else if sub == COND_MATH_GLUE {
             print_esc(st, "nonscript");
         } else {
             print_esc(st, "mskip");
         }
-        print_char(st, b')' as i32);
+        print_char(st, b')');
     }
     if sub != COND_MATH_GLUE {
-        print_char(st, b' ' as i32);
+        print_char(st, b' ');
         let unit = (sub >= COND_MATH_GLUE).then_some("mu");
         print_spec(st, node.glue_ptr(&st.mem).ptr(), unit);
     }
@@ -3367,21 +3377,21 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         } else {
                             print_nl(st, "<read ");
                             if ci.name == 17 {
-                                print_char(st, b'*' as i32);
+                                print_char(st, b'*');
                             } else {
                                 print_int(st, ci.name - 1);
                             }
-                            print_char(st, b'>' as i32);
+                            print_char(st, b'>');
                         }
                     } else {
                         print_nl(st, "l.");
-                        if ci.index as i32 == st.input.in_open {
+                        if i32::from(ci.index) == st.input.in_open {
                             print_int(st, st.mem.line);
                         } else {
                             print_int(st, st.input.line_stack[ci.index as usize + 1]);
                         }
                     }
-                    print_char(st, b' ' as i32);
+                    print_char(st, b' ');
                     l = begin_pseudoprint(st);
                     let end_line_char = st.eqtb.int_par(INT_PAR_END_LINE_CHAR);
                     let j = if st.input.buffer[ci.limit as usize] == end_line_char {
@@ -3403,7 +3413,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                         }
                         index => match token_list_label(index, ci.loc) {
                             Some(label) => print_nl(st, label),
-                            None => print_nl(st, b'?' as i32),
+                            None => print_nl(st, b'?'),
                         },
                     }
                     l = begin_pseudoprint(st);
@@ -3439,7 +3449,7 @@ pub(crate) fn show_context(st: &mut EngineState) {
                 }
                 print_ln(st);
                 for _ in 0..n {
-                    print_raw_char(st, b' ' as i32, true);
+                    print_raw_char(st, b' ', true);
                 }
                 let end = if m + n <= error_line {
                     first_count + m

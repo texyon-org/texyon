@@ -92,7 +92,7 @@ pub(crate) fn d2fix(d: f64) -> Scaled {
 }
 
 pub(crate) fn fix2d(f: Scaled) -> f64 {
-    f.0 as f64 / 65536.0
+    f64::from(f.0) / 65536.0
 }
 
 /// Parses a decimal like `-12.5` from the front of `s`, advancing it.
@@ -113,7 +113,7 @@ fn read_double(s: &mut &[u8]) -> f64 {
     }
 
     while at(s, i).is_ascii_digit() {
-        val = val * 10.0 + (at(s, i) - b'0') as f64;
+        val = val * 10.0 + f64::from(at(s, i) - b'0');
         i += 1;
     }
 
@@ -121,7 +121,7 @@ fn read_double(s: &mut &[u8]) -> f64 {
         let mut dec = 10.0;
         i += 1;
         while at(s, i).is_ascii_digit() {
-            val += (at(s, i) - b'0') as f64 / dec;
+            val += f64::from(at(s, i) - b'0') / dec;
             i += 1;
             dec *= 10.0;
         }
@@ -181,7 +181,7 @@ fn get_encoding_mode_and_info(st: &mut EngineState, bytes: &[u8]) -> Result<(c_i
 
     if crate::io::icu_converter_exists(bytes).is_err() {
         crate::output::begin_diagnostic(st);
-        crate::output::print_nl(st, b'U' as i32);
+        crate::output::print_nl(st, b'U');
         crate::output::print(st, "nknown encoding `");
         crate::output::print(st, bytes);
         crate::output::print(st, "'; reading as raw bytes");
@@ -212,7 +212,7 @@ fn read_tag_with_param(s: &[u8]) -> (u32, c_int) {
             i += 1;
         }
         while at(s, i).is_ascii_digit() {
-            param = param * 10 + (at(s, i) - b'0') as c_int;
+            param = param * 10 + c_int::from(at(s, i) - b'0');
             i += 1;
         }
         if neg {
@@ -231,7 +231,7 @@ fn read_feature_number(spec: &[u8]) -> Option<(u32, c_int)> {
         return None;
     }
     while at(spec, i).is_ascii_digit() {
-        f = f * 10 + (at(spec, i) - b'0') as u32;
+        f = f * 10 + u32::from(at(spec, i) - b'0');
         i += 1;
     }
     while at(spec, i) == b' ' || at(spec, i) == b'\t' {
@@ -246,7 +246,7 @@ fn read_feature_number(spec: &[u8]) -> Option<(u32, c_int)> {
         return None;
     }
     while at(spec, i).is_ascii_digit() {
-        v = v * 10 + (at(spec, i) - b'0') as c_int;
+        v = v * 10 + c_int::from(at(spec, i) - b'0');
         i += 1;
     }
     while at(spec, i) == b' ' || at(spec, i) == b'\t' {
@@ -343,7 +343,7 @@ pub(crate) fn apply_tfm_font_mapping(cnv: &FontMappingHandle, c: c_int) -> c_int
     if out_used < 1 {
         0
     } else {
-        out[0] as c_int
+        c_int::from(out[0])
     }
 }
 
@@ -538,11 +538,11 @@ fn load_ot_font(
     drop(probe);
 
     if opts.embolden != 0.0 {
-        opts.embolden = (opts.embolden as f64 * fix2d(scaled_size) / 100.0) as f32;
+        opts.embolden = (f64::from(opts.embolden) * fix2d(scaled_size) / 100.0) as f32;
     }
     if opts.letterspace != 0.0 {
         st.fonts.loaded_font_letter_space =
-            Scaled((opts.letterspace as f64 / 100.0 * scaled_size.0 as f64) as i32);
+            Scaled((f64::from(opts.letterspace) / 100.0 * f64::from(scaled_size.0)) as i32);
     }
     if st.fonts.loaded_font_flags & FONT_FLAGS_COLORED == 0 {
         opts.rgb_value = 0x000000FF;
@@ -631,7 +631,7 @@ pub(crate) fn find_native_font(
             rval = load_ot_font(st, font, scaled_size, feat_string.as_deref())?;
             if rval.is_some() && st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic(st);
-                crate::output::print_nl(st, b' ' as i32);
+                crate::output::print_nl(st, b' ');
                 crate::output::print_raw_bytes(st, b"-> ");
                 crate::output::print_raw_bytes(st, path);
                 crate::output::end_diagnostic(st, false);
@@ -643,7 +643,7 @@ pub(crate) fn find_native_font(
         {
             if st.eqtb.int_par(INT_PAR_XETEX_TRACING_FONTS) > 0 {
                 crate::output::begin_diagnostic(st);
-                crate::output::print_nl(st, b' ' as i32);
+                crate::output::print_nl(st, b' ');
                 crate::output::print_raw_bytes(st, b"-> ");
                 crate::output::print_raw_bytes(st, &font_ref.desc());
                 crate::output::end_diagnostic(st, false);
@@ -709,7 +709,7 @@ fn split_font_name(name: &[u8]) -> SplitName {
                     var = Some(i);
                     i += 1;
                     while at(name, i).is_ascii_digit() {
-                        index = index * 10 + (name[i] - b'0') as c_int;
+                        index = index * 10 + c_int::from(name[i] - b'0');
                         i += 1;
                     }
                     i -= 1;
@@ -743,30 +743,31 @@ fn split_font_name(name: &[u8]) -> SplitName {
 
 pub(crate) fn ot_get_font_metrics(engine: &FontEngineHandle) -> NativeFontMetrics {
     let (a, d) = engine.ascent_and_descent();
-    let ascent = d2fix(a as f64);
-    let descent = d2fix(d as f64);
+    let ascent = d2fix(f64::from(a));
+    let descent = d2fix(f64::from(d));
 
     let slant = d2fix(
-        fix2d(engine.font().slant()) * engine.extend_factor() as f64 + engine.slant_factor() as f64,
+        fix2d(engine.font().slant()) * f64::from(engine.extend_factor())
+            + f64::from(engine.slant_factor()),
     );
 
     let (cap, x) = engine.cap_and_x_height();
-    let mut cap_height = d2fix(cap as f64);
-    let mut x_height = d2fix(x as f64);
+    let mut cap_height = d2fix(f64::from(cap));
+    let mut x_height = d2fix(f64::from(x));
 
     // Fall back to the height of `x` and `X`, else to fractions of the ascent.
     if x_height == Scaled::ZERO {
-        let glyph_id = engine.map_char_to_glyph(b'x' as u32);
+        let glyph_id = engine.map_char_to_glyph(u32::from(b'x'));
         x_height = if glyph_id != 0 {
-            d2fix(engine.glyph_height_depth(glyph_id).0 as f64)
+            d2fix(f64::from(engine.glyph_height_depth(glyph_id).0))
         } else {
             Scaled(ascent.0 / 2)
         };
     }
     if cap_height == Scaled::ZERO {
-        let glyph_id = engine.map_char_to_glyph(b'X' as u32);
+        let glyph_id = engine.map_char_to_glyph(u32::from(b'X'));
         cap_height = if glyph_id != 0 {
-            d2fix(engine.glyph_height_depth(glyph_id).0 as f64)
+            d2fix(f64::from(engine.glyph_height_depth(glyph_id).0))
         } else {
             ascent
         };
@@ -812,7 +813,7 @@ pub(crate) fn ot_font_get_2(what: i32, engine: &FontEngineHandle, param1: i32, p
             engine.graphite_feature_setting_code(param1 as u32, param2 as u32) as i32
         }
         XETEX_IS_DEFAULT_SELECTOR_CODE => {
-            (engine.graphite_feature_default_setting(param1 as u32) == param2 as u32) as i32
+            i32::from(engine.graphite_feature_default_setting(param1 as u32) == param2 as u32)
         }
         _ => 0,
     }
@@ -896,11 +897,11 @@ impl ShapedGlyphs {
         self.gids.extend(glyphs.iter().map(|&g| g as u16));
         self.locations
             .extend(positions[..n].iter().map(|pos| FixedPoint {
-                x: d2fix(pos.x as f64 + x),
-                y: d2fix(pos.y as f64 + y),
+                x: d2fix(f64::from(pos.x) + x),
+                y: d2fix(f64::from(pos.y) + y),
             }));
         self.advances
-            .extend(advances.iter().map(|&a| d2fix(a as f64)));
+            .extend(advances.iter().map(|&a| d2fix(f64::from(a))));
         positions[n]
     }
 }
@@ -912,7 +913,7 @@ fn layout_visual_run(bidi: &Bidi, engine: &FontEngineHandle, text: &[u16], run_i
 
 fn cached_or_measured_bbox(engine: &FontEngineHandle, f: FontId, gid: u16) -> GlyphBBox {
     cached_glyph_bbox(f.0 as u16, gid).unwrap_or_else(|| {
-        let bbox = engine.glyph_bounds(gid as u32);
+        let bbox = engine.glyph_bounds(u32::from(gid));
         cache_glyph_bbox(f.0 as u16, gid, &bbox);
         bbox
     })
@@ -940,7 +941,7 @@ impl MemState {
             RIGHT_SIDE => gids[glyph_count - 1],
             _ => unreachable!(),
         };
-        get_cp_code(f.0, actual_glyph as u32, side)
+        get_cp_code(f.0, u32::from(actual_glyph), side)
     }
 }
 
@@ -1002,8 +1003,8 @@ impl FontState {
                 for run in 0..n_runs {
                     let n_glyphs = layout_visual_run(&bidi, engine, &text, run);
                     let end = shaped.append_run(engine, n_glyphs, x, y);
-                    x += end.x as f64;
-                    y += end.y as f64;
+                    x += f64::from(end.x);
+                    y += f64::from(end.y);
                 }
             }
             x
@@ -1011,7 +1012,7 @@ impl FontState {
             let n_glyphs = engine.layout_chars(&text, 0, text_len, dir == UBIDI_RTL);
             let end = shaped.append_run(engine, n_glyphs, 0.0, 0.0);
             if n_glyphs > 0 {
-                end.x as f64
+                f64::from(end.x)
             } else {
                 0.0
             }
@@ -1055,8 +1056,8 @@ impl FontState {
                     y_min = y - dp;
                 }
             }
-            w.set_height(mem, d2fix(y_max as f64));
-            w.set_depth(mem, -d2fix(y_min as f64));
+            w.set_height(mem, d2fix(f64::from(y_max)));
+            w.set_depth(mem, -d2fix(f64::from(y_min)));
         }
 
         let old_handle = w.native_glyph_info_handle(mem);
@@ -1083,7 +1084,7 @@ impl FontState {
         if n > 0 {
             let last_glyph = mem.glyph_blobs.get(w.native_glyph_info_handle(mem)).gids[n - 1];
             if let Some(engine) = self.layout_engine(f) {
-                return d2fix(engine.glyph_ital_corr(last_glyph as u32) as f64)
+                return d2fix(f64::from(engine.glyph_ital_corr(u32::from(last_glyph))))
                     + self.font_letter_space[f];
             }
         }
@@ -1097,7 +1098,7 @@ impl FontState {
     ) -> Scaled {
         let gid = w.native_glyph(mem);
         match self.layout_engine(w.native_font(mem)) {
-            Some(engine) => d2fix(engine.glyph_ital_corr(gid as u32) as f64),
+            Some(engine) => d2fix(f64::from(engine.glyph_ital_corr(u32::from(gid)))),
             None => Scaled::ZERO,
         }
     }
@@ -1108,14 +1109,14 @@ impl FontState {
         w: NodePtr<WhatsitNode>,
         use_glyph_metrics: bool,
     ) -> Result<(), Abort> {
-        let gid = w.native_glyph(mem) as u32;
+        let gid = u32::from(w.native_glyph(mem));
         let f = w.native_font(mem);
         let engine = self.require_ot_engine(f, "bad native font flag in `measure_native_glyph`")?;
-        w.set_width(mem, d2fix(engine.font().glyph_width(gid) as f64));
+        w.set_width(mem, d2fix(f64::from(engine.font().glyph_width(gid))));
         if use_glyph_metrics {
             let (ht, dp) = engine.glyph_height_depth(gid);
-            w.set_height(mem, d2fix(ht as f64));
-            w.set_depth(mem, d2fix(dp as f64));
+            w.set_height(mem, d2fix(f64::from(ht)));
+            w.set_depth(mem, d2fix(f64::from(dp)));
         } else {
             w.set_height(mem, self.native_height(f));
             w.set_depth(mem, self.native_depth(f));
@@ -1135,8 +1136,8 @@ impl FontState {
         )?;
         let gid = engine.map_char_to_glyph(ch as u32);
         let (ht, dp) = engine.glyph_height_depth(gid);
-        let mut height = d2fix(ht as f64);
-        let mut depth = d2fix(dp as f64);
+        let mut height = d2fix(f64::from(ht));
+        let mut depth = d2fix(f64::from(dp));
 
         // Snap to the baseline, x-height (param 5) and cap height (param 8) when
         // within 4% of the quad (param 6).
@@ -1169,7 +1170,7 @@ impl FontState {
         )?;
         let gid = engine.map_char_to_glyph(ch as u32);
         let (l, r) = engine.glyph_sidebearings(gid);
-        Ok((d2fix(l as f64), d2fix(r as f64)))
+        Ok((d2fix(f64::from(l)), d2fix(f64::from(r))))
     }
 
     /// Glyph bound `edge` of glyph `gid`: 1 left, 2 top, 3 right, 4 bottom.
@@ -1180,7 +1181,7 @@ impl FontState {
         } else {
             engine.glyph_height_depth(gid as u32)
         };
-        Ok(d2fix(if edge <= 2 { a } else { b } as f64))
+        Ok(d2fix(f64::from(if edge <= 2 { a } else { b })))
     }
 
     pub fn native_char_italic_correction(&self, f: FontId, c: i32) -> Result<Scaled, Abort> {
@@ -1196,7 +1197,7 @@ impl FontState {
     pub fn native_char_width(&self, f: FontId, c: i32) -> Result<Scaled, Abort> {
         let engine = self.require_ot_engine(f, "bad native font flag in `get_native_char_wd`")?;
         let gid = engine.map_char_to_glyph(c as u32);
-        Ok(d2fix(engine.glyph_width(gid) as f64))
+        Ok(d2fix(f64::from(engine.glyph_width(gid))))
     }
 
     pub fn map_char_to_glyph(&self, font: FontId, ch: i32) -> Result<i32, Abort> {
@@ -1240,7 +1241,7 @@ impl FontState {
         let extend = engine.extend_factor();
         let slant = engine.slant_factor();
         let embolden = engine.embolden_factor();
-        let size = d2fix(engine.point_size() as f64);
+        let size = d2fix(f64::from(engine.point_size()));
 
         let colored = font_flags & FONT_FLAGS_COLORED != 0;
         if colored {
@@ -1272,7 +1273,7 @@ impl FontState {
             (XDV_FLAG_EMBOLDEN, embolden),
         ] {
             if flags & flag != 0 {
-                def.extend_from_slice(&(d2fix(v as f64).0 as u32).to_be_bytes());
+                def.extend_from_slice(&(d2fix(f64::from(v)).0 as u32).to_be_bytes());
             }
         }
 
@@ -1326,8 +1327,8 @@ impl FontState {
         let handle = w.native_glyph_info_handle(mem);
         let glyphs = mem.glyph_blobs.get_mut(handle);
 
-        let space_glyph = self.map_char_to_glyph(f, b' ' as i32)?;
-        let is_space = |gid: u16| gid as i32 == space_glyph;
+        let space_glyph = self.map_char_to_glyph(f, i32::from(b' '))?;
+        let is_space = |gid: u16| i32::from(gid) == space_glyph;
         let space_count = glyphs.gids[..glyph_count]
             .iter()
             .filter(|&&g| is_space(g))
@@ -1340,7 +1341,7 @@ impl FontState {
                 glyphs.locations[i].x = d2fix(fix2d(glyphs.locations[i].x) + adjustment);
                 if is_space(glyphs.gids[i]) {
                     space_index += 1;
-                    adjustment = just_amount * space_index as f64 / space_count as f64;
+                    adjustment = just_amount * f64::from(space_index) / f64::from(space_count);
                 }
             }
         } else {
@@ -1448,7 +1449,7 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
     let open = st.mem.get_avail()?;
     toklist.set_link(&mut st.mem, open);
-    open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
+    open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + i32::from(b'{'));
     let b = crate::texmfmp::make_src_special(st, fname, st.mem.line)
         .map_err(|()| Abort::Internal("string pool overflow"))?;
     let text_tail = st.mem.str_toks_cat(&mut st.strings, b, 0)?;
@@ -1456,7 +1457,7 @@ pub(crate) fn insert_src_special(st: &mut EngineState) -> Result<(), Abort> {
     open.set_link(&mut st.mem, text);
     let close = st.mem.get_avail()?;
     text_tail.set_link(&mut st.mem, close);
-    close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
+    close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
     crate::input::begin_token_list(st, toklist, INSERTED)?;
     crate::texmfmp::remember_source_info(st, fname, st.mem.line);
     Ok(())
@@ -1473,20 +1474,20 @@ pub(crate) fn insert_special(st: &mut EngineState, text: &str) -> Result<(), Abo
         });
     }
     for &b in text {
-        st.strings.str_pool[st.strings.pool_ptr as usize] = b as u16;
+        st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(b);
         st.strings.pool_ptr += 1;
     }
 
     let toklist = st.mem.get_avail()?;
     toklist.set_info(&mut st.mem, CS_TOKEN_FLAG + FROZEN_SPECIAL);
     let open = st.mem.get_avail()?;
-    open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
+    open.set_info(&mut st.mem, LEFT_BRACE_TOKEN + i32::from(b'{'));
     toklist.set_link(&mut st.mem, open);
     let text_tail = st.mem.str_toks_cat(&mut st.strings, start_pool, 0)?;
     let text = TEMP_HEAD.link(&st.mem);
     open.set_link(&mut st.mem, text);
     let close = st.mem.get_avail()?;
-    close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
+    close.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
     text_tail.set_link(&mut st.mem, close);
     crate::input::begin_token_list(st, toklist, INSERTED)?;
     Ok(())

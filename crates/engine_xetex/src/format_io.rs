@@ -237,13 +237,13 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     st.shipout.selector = SELECTOR_NEW_STRING;
     crate::output::print(st, " (preloaded format=");
     crate::output::print(st, st.strings.job_name);
-    crate::output::print_char(st, b' ' as i32);
+    crate::output::print_char(st, b' ');
     crate::output::print_int(st, st.eqtb.int_par(INT_PAR_YEAR));
-    crate::output::print_char(st, b'.' as i32);
+    crate::output::print_char(st, b'.');
     crate::output::print_int(st, st.eqtb.int_par(INT_PAR_MONTH));
-    crate::output::print_char(st, b'.' as i32);
+    crate::output::print_char(st, b'.');
     crate::output::print_int(st, st.eqtb.int_par(INT_PAR_DAY));
-    crate::output::print_char(st, b')' as i32);
+    crate::output::print_char(st, b')');
 
     st.shipout.selector = if st.errors.interaction == InteractionMode::Batch {
         SELECTOR_LOG_ONLY
@@ -360,7 +360,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::print_int(st, x);
     crate::output::print(st, " memory locations dumped; current usage is ");
     crate::output::print_int(st, var_used);
-    crate::output::print_char(st, b'&' as i32);
+    crate::output::print_char(st, b'&');
     crate::output::print_int(st, dyn_used);
 
     let k = dump_eqtb_runs(
@@ -449,7 +449,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
         let f = FontId(k);
         crate::output::print_nl(st, "\\font");
         crate::output::print_esc(st, st.eqtb.font_id_text(f));
-        crate::output::print_char(st, b'=' as i32);
+        crate::output::print_char(st, b'=');
 
         let font_name = st.fonts.font_name[f];
         let font_area = st.fonts.font_area[f];
@@ -501,7 +501,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     for k in 0..=hyph.hyph_size {
         let h = k as usize;
         if hyph.hyph_word[h] != StrNumber::NONE {
-            dump_int(fmt_out, k + 65_536 * hyph.hyph_link[h] as i32)?;
+            dump_int(fmt_out, k + 65_536 * i32::from(hyph.hyph_link[h]))?;
             dump_int(fmt_out, hyph.hyph_word[h].0)?;
             dump_int(fmt_out, hyph.hyph_list[h])?;
         }
@@ -546,7 +546,7 @@ pub(crate) fn store_fmt_file(st: &mut EngineState) -> Result<(), Abort> {
     crate::output::print_int(st, TRIE_OP_SIZE);
 
     for k in (0..=BIGGEST_LANG as usize).rev() {
-        let used = st.hyph.trie_used[k] as i32;
+        let used = i32::from(st.hyph.trie_used[k]);
         if used > 0 {
             crate::output::print_nl(st, "  ");
             crate::output::print_int(st, used);

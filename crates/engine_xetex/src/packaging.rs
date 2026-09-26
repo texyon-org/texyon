@@ -69,7 +69,7 @@ impl MemState {
             Glyph => GLYPH_NODE_SIZE,
             Pic | Pdf => {
                 PIC_NODE_SIZE
-                    + (w.pic_path_len(self) as i32 + MEMORY_WORD_SIZE - 1) / MEMORY_WORD_SIZE
+                    + (i32::from(w.pic_path_len(self)) + MEMORY_WORD_SIZE - 1) / MEMORY_WORD_SIZE
             }
         })
     }
@@ -1261,7 +1261,7 @@ impl MemState {
         r.set_glue_order(self, o);
         r.set_glue_sign(self, sign);
         if totals[o as usize] != Scaled::ZERO {
-            r.set_glue_set(self, excess / totals[o as usize].0 as f64);
+            r.set_glue_set(self, excess / f64::from(totals[o as usize].0));
         } else {
             r.set_glue_sign(self, GlueSign::Normal);
             r.set_glue_set(self, 0.0);
@@ -1280,9 +1280,9 @@ impl MemState {
     fn disc_replace_count(&self, q: MemPtr) -> Option<i32> {
         match self.as_char(q) {
             Some(ch) => {
-                (ch.font(self).0 == NodeType::Disc as i32).then(|| ch.character(self) as i32)
+                (ch.font(self).0 == NodeType::Disc as i32).then(|| i32::from(ch.character(self)))
             }
-            None => self.as_disc(q).map(|disc| disc.subtype(self) as i32),
+            None => self.as_disc(q).map(|disc| i32::from(disc.subtype(self))),
         }
     }
 
@@ -1337,7 +1337,7 @@ impl MemState {
         let mut s = p;
         while s != pp {
             if let Some(sw) = self.as_native_word(s) {
-                total_chars += sw.native_length(self) as i32;
+                total_chars += i32::from(sw.native_length(self));
             }
             s = s.link(self);
         }
@@ -1564,7 +1564,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Stretching,
-                x.0 as f64,
+                f64::from(x.0),
                 &scanner.total_stretch,
             );
             if o == NORMAL && has_list {
@@ -1584,7 +1584,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Shrinking,
-                (-x).0 as f64,
+                f64::from((-x).0),
                 &scanner.total_shrink,
             );
             if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {
@@ -1855,7 +1855,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Stretching,
-                x.0 as f64,
+                f64::from(x.0),
                 &scanner.total_stretch,
             );
             if o == NORMAL && has_list {
@@ -1875,7 +1875,7 @@ impl MemState {
             let o = self.set_box_glue(
                 r_node,
                 GlueSign::Shrinking,
-                (-(x.0 as i64)) as f64,
+                (-i64::from(x.0)) as f64,
                 &scanner.total_shrink,
             );
             if scanner.total_shrink[o as usize] < (-x) && o == NORMAL && has_list {

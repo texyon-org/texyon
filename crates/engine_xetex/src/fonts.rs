@@ -66,35 +66,35 @@ impl FontState {
     }
 
     pub(crate) fn char_width(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.width_base[f] + i.s3 as i32)
+        self.font_info_sc(self.width_base[f] + i32::from(i.s3))
     }
 
     pub(crate) fn char_italic(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.italic_base[f] + i.s1 as i32 / 4)
+        self.font_info_sc(self.italic_base[f] + i32::from(i.s1) / 4)
     }
 
     pub(crate) fn char_height(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.height_base[f] + i.s2 as i32 / 16)
+        self.font_info_sc(self.height_base[f] + i32::from(i.s2) / 16)
     }
 
     pub(crate) fn char_depth(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.depth_base[f] + i.s2 as i32 % 16)
+        self.font_info_sc(self.depth_base[f] + i32::from(i.s2) % 16)
     }
 
     /// The kern amount of lig/kern instruction `i` in font `f`.
     pub(crate) fn char_kern(&self, f: FontId, i: CharInfo) -> Scaled {
-        self.font_info_sc(self.kern_base[f] + 256 * i.s1 as i32 + i.s0 as i32)
+        self.font_info_sc(self.kern_base[f] + 256 * i32::from(i.s1) + i32::from(i.s0))
     }
 
     pub fn effective_char(&mut self, f: FontId, c: u16) -> i32 {
         let mut c = c;
         if !self.xtx_ligature_present {
             if let Some(mapping) = self.font_mapping[f].as_deref() {
-                c = apply_tfm_font_mapping(mapping, c as i32) as u16;
+                c = apply_tfm_font_mapping(mapping, i32::from(c)) as u16;
             }
         }
         self.xtx_ligature_present = false;
-        c as i32
+        i32::from(c)
     }
 
     pub fn effective_char_info(&mut self, f: FontId, c: u16) -> CharInfo {
@@ -200,12 +200,12 @@ pub(crate) fn new_native_character(
         while i < len {
             let mapped = st.fonts.mapped_text[i as usize];
             if (0xD800..0xDC00).contains(&mapped) {
-                let low = st.fonts.mapped_text[(i + 1) as usize] as u32;
-                let c = (mapped as u32 - 0xD800) * 1024 + low + 9216;
+                let low = u32::from(st.fonts.mapped_text[(i + 1) as usize]);
+                let c = (u32::from(mapped) - 0xD800) * 1024 + low + 9216;
                 check_native_char(st, f, c as i32)?;
                 i += 2;
             } else {
-                check_native_char(st, f, mapped as i32)?;
+                check_native_char(st, f, i32::from(mapped))?;
                 i += 1;
             }
         }
@@ -270,14 +270,14 @@ fn read_scaled_word(handle: usize, z: i32, beta: i32, alpha: i32) -> Option<Scal
 fn font_error_start(st: &mut EngineState, u: i32, nom: StrNumber, aire: StrNumber, s: Scaled) {
     error_here_with_diagnostic(st, "Font ");
     sprint_cs(st, u);
-    print_char(st, b'=' as i32);
+    print_char(st, b'=');
     let quote = st.scanner.file_name_quote_char;
     if quote != 0 {
-        print_char(st, quote as i32);
+        print_char(st, i32::from(quote));
     }
     print_file_name(st, nom, aire, st.scanner.cur_ext);
     if quote != 0 {
-        print_char(st, quote as i32);
+        print_char(st, i32::from(quote));
     }
     if s >= Scaled::ZERO {
         print(st, " at ");
@@ -309,7 +309,7 @@ pub(crate) fn read_font_info(
         print_nl(st, "Requested font \"");
         let name = st.input.name_of_file_bytes().to_vec();
         print(st, name.as_slice());
-        print_char(st, b'"' as i32);
+        print_char(st, b'"');
         if s < Scaled::ZERO {
             print(st, " scaled ");
             print_int(st, -s.0);
@@ -564,7 +564,7 @@ impl FontState {
                         if qw.s1 % 4 != LIST_TAG {
                             break;
                         }
-                        dd = qw.s0 as i32;
+                        dd = i32::from(qw.s0);
                     }
                     if dd == current {
                         bad!();
@@ -774,7 +774,7 @@ pub(crate) fn load_native_font(
         return Err(Abort::PoolOverflow);
     }
     for &b in &st.input.name_of_file {
-        st.strings.str_pool[st.strings.pool_ptr as usize] = b as u16;
+        st.strings.str_pool[st.strings.pool_ptr as usize] = u16::from(b);
         st.strings.pool_ptr += 1;
     }
     let full_name = st.strings.make_string()?;
@@ -825,7 +825,7 @@ pub(crate) fn load_native_font(
         num_font_dimens,
     );
 
-    let space = new_native_character(st, font_ptr, b' ' as u32)?;
+    let space = new_native_character(st, font_ptr, u32::from(b' '))?;
     let space_width = space.width(&st.mem) + st.fonts.loaded_font_letter_space;
     space.free_native(&mut st.mem);
 

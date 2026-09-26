@@ -163,7 +163,7 @@ fn primitive(st: &mut EngineState, ident: &str, c: u8, o: i32) -> Result<(), Abo
         }
         let first = st.input.first as usize;
         for (slot, &b) in st.input.buffer[first..].iter_mut().zip(bytes) {
-            *slot = b as i32;
+            *slot = i32::from(b);
         }
 
         st.scanner.cur_val =
@@ -174,7 +174,7 @@ fn primitive(st: &mut EngineState, ident: &str, c: u8, o: i32) -> Result<(), Abo
         st.eqtb.set_text(st.scanner.cur_val, s);
         st.eqtb.prim_lookup(&mut st.strings, s)?
     } else {
-        let ch = bytes[0] as i32;
+        let ch = i32::from(bytes[0]);
         st.scanner.cur_val = ch + SINGLE_BASE;
         st.eqtb.prim_lookup(&mut st.strings, StrNumber(ch))?
     };
@@ -210,19 +210,19 @@ pub(crate) fn final_cleanup(st: &mut EngineState) -> Result<(), Abort> {
 
     let cur_level = st.save_stack.cur_level;
     if cur_level > LEVEL_ONE {
-        crate::output::print_nl(st, b'(' as i32);
+        crate::output::print_nl(st, b'(');
         crate::output::print_esc(st, "end occurred ");
         crate::output::print(st, "inside a group at level ");
-        crate::output::print_int(st, cur_level as i32 - 1);
-        crate::output::print_char(st, b')' as i32);
+        crate::output::print_int(st, i32::from(cur_level) - 1);
+        crate::output::print_char(st, b')');
         crate::output::show_save_groups(st);
     }
 
     while st.scanner.cond_ptr.0 != TEX_NULL {
-        crate::output::print_nl(st, b'(' as i32);
+        crate::output::print_nl(st, b'(');
         crate::output::print_esc(st, "end occurred ");
         crate::output::print(st, "when ");
-        crate::output::print_cmd_chr(st, IF_TEST, st.scanner.cur_if as i32);
+        crate::output::print_cmd_chr(st, IF_TEST, i32::from(st.scanner.cur_if));
         let if_line = st.scanner.if_line;
         if if_line != 0 {
             crate::output::print(st, " on line ");
@@ -464,7 +464,7 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     }
 
     OMIT_TEMPLATE.set_token(mem, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
-    END_SPAN.set_span_count(mem, u16::MAX as i32 + 1);
+    END_SPAN.set_span_count(mem, i32::from(u16::MAX) + 1);
     mem.set_b32s0(END_SPAN.idx(), TEX_NULL);
     let active = NodePtr::<ActiveNode>::at(ACTIVE_LIST);
     active.set_break_type(mem, HYPHENATED as u16);
@@ -534,11 +534,11 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.set_equiv(CAT_CODE_BASE + 127, INVALID_CHAR.into());
     eqtb.set_equiv(CAT_CODE_BASE, IGNORE.into());
 
-    for k in (b'0' as i32)..=(b'9' as i32) {
+    for k in (i32::from(b'0'))..=(i32::from(b'9')) {
         eqtb.set_equiv(MATH_CODE_BASE + k, k + set_class(VAR_FAM_CLASS));
     }
 
-    for k in (b'A' as i32)..=(b'Z' as i32) {
+    for k in (i32::from(b'A'))..=(i32::from(b'Z')) {
         let lower = k + 32;
         eqtb.set_equiv(CAT_CODE_BASE + k, LETTER.into());
         eqtb.set_equiv(CAT_CODE_BASE + lower, LETTER.into());
@@ -565,13 +565,13 @@ fn initialize_more_initex_variables(st: &mut EngineState, format_ident: StrNumbe
     eqtb.set_int_par(INT_PAR_TOLERANCE, 10000);
     eqtb.set_int_par(INT_PAR_HANG_AFTER, 1);
     eqtb.set_int_par(INT_PAR_MAX_DEAD_CYCLES, 25);
-    eqtb.set_int_par(INT_PAR_ESCAPE_CHAR, b'\\' as i32);
-    eqtb.set_int_par(INT_PAR_END_LINE_CHAR, b'\r' as i32);
+    eqtb.set_int_par(INT_PAR_ESCAPE_CHAR, i32::from(b'\\'));
+    eqtb.set_int_par(INT_PAR_END_LINE_CHAR, i32::from(b'\r'));
 
     for k in 0..NUMBER_USVS {
         eqtb.set_int_at(DEL_CODE_BASE + k, -1);
     }
-    eqtb.set_int_at(DEL_CODE_BASE + b'.' as i32, 0);
+    eqtb.set_int_at(DEL_CODE_BASE + i32::from(b'.'), 0);
 
     for k in DIMEN_BASE..=EQTB_SIZE {
         eqtb.set_int_at(k, 0);
@@ -965,7 +965,7 @@ pub(crate) fn initialize_engine(
         fonts.fmem_ptr = 7;
         fonts.font_name[f] = nullfont_name;
         fonts.font_area[f] = EMPTY_STRING;
-        fonts.hyphen_char[f] = b'-' as i32;
+        fonts.hyphen_char[f] = i32::from(b'-');
         fonts.skew_char[f] = -1;
         fonts.bchar_label[f] = NON_ADDRESS;
         fonts.font_bchar[f] = TOO_BIG_CHAR;

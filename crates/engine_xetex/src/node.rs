@@ -150,7 +150,7 @@ impl Slot for FontId {
     type Raw = u16;
     #[inline(always)]
     fn decode(raw: u16) -> Self {
-        FontId(raw as i32)
+        FontId(i32::from(raw))
     }
     #[inline(always)]
     fn encode(self) -> u16 {
@@ -1054,12 +1054,12 @@ impl NodePtr<MathField> {
 
     #[inline]
     pub fn fam(self, mem: &MemState) -> i32 {
-        self.plane_and_fam(mem) as i32 % 256
+        i32::from(self.plane_and_fam(mem)) % 256
     }
     /// The character code with its plane.
     #[inline]
     pub fn full_char(self, mem: &MemState) -> i32 {
-        self.character(mem) as i32 + (self.plane_and_fam(mem) as i32 / 256) * 65_536
+        i32::from(self.character(mem)) + (i32::from(self.plane_and_fam(mem)) / 256) * 65_536
     }
     #[inline]
     pub fn clear(self, mem: &mut MemState) {
@@ -1076,10 +1076,10 @@ impl NodePtr<MathField> {
 impl NodePtr<DelimiterField> {
     #[inline]
     fn variant(plane_and_fam: u16, char: u16) -> (i32, i32) {
-        let plane_and_fam = plane_and_fam as i32;
+        let plane_and_fam = i32::from(plane_and_fam);
         (
             plane_and_fam % 256,
-            char as i32 + (plane_and_fam / 256) * 65_536,
+            i32::from(char) + (plane_and_fam / 256) * 65_536,
         )
     }
     /// The small variant's `(family, character)`.
@@ -1188,7 +1188,7 @@ impl NodePtr<PageInsNode> {
     }
     #[inline]
     pub fn set_split_up(self, mem: &mut MemState, split: bool) {
-        mem.set_b16s1(self.idx.0, split as u16);
+        mem.set_b16s1(self.idx.0, u16::from(split));
     }
 
     fields! {
@@ -1518,7 +1518,7 @@ impl NodePtr<WhatsitNode> {
     /// Node size in words, used to free or copy a native node.
     #[inline]
     pub fn native_size(self, mem: &MemState) -> i32 {
-        mem.b16s3(self.idx.0 + 4) as i32
+        i32::from(mem.b16s3(self.idx.0 + 4))
     }
     #[inline]
     pub fn set_native_size(self, mem: &mut MemState, words: i32) {
@@ -1584,7 +1584,7 @@ impl NodePtr<WhatsitNode> {
     /// Journals the words of the text before it is written.
     #[inline]
     pub fn mark_native_text(self, mem: &mut MemState) {
-        let words = crate::state::native_text_words(self.native_length(mem) as i32);
+        let words = crate::state::native_text_words(i32::from(self.native_length(mem)));
         mem.journal_mark_range(self.idx.0 + NATIVE_NODE_SIZE, words);
     }
 

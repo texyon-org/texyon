@@ -57,7 +57,7 @@ pub(crate) fn error(st: &mut EngineState) -> Result<(), Abort> {
     if st.errors.history < HISTORY_ERROR_ISSUED {
         st.errors.history = HISTORY_ERROR_ISSUED;
     }
-    print_char(st, b'.' as i32);
+    print_char(st, b'.');
     show_context(st);
     if st.config.halt_on_error_p != 0 {
         st.errors.history = HISTORY_FATAL_ERROR;
@@ -137,9 +137,9 @@ impl Abort {
         pre_error_message(st);
         print(st, "TeX capacity exceeded, sorry [");
         print(st, what);
-        print_char(st, b'=' as i32);
+        print_char(st, b'=');
         print_int(st, n);
-        print_char(st, b']' as i32);
+        print_char(st, b']');
         st.errors.help(&[
             "If you really absolutely need more capacity,",
             "you can ask a wizard to enlarge me.",
@@ -203,7 +203,7 @@ impl Abort {
                 if st.errors.history < HISTORY_ERROR_ISSUED {
                     print(st, "This can't happen (");
                     print(st, s);
-                    print_char(st, b')' as i32);
+                    print_char(st, b')');
                     st.errors
                         .help(&["I'm broken. Please show this to someone who can fix can fix"]);
                 } else {
@@ -252,7 +252,7 @@ impl Abort {
 pub(crate) fn int_error(st: &mut EngineState, n: i32) -> Result<(), Abort> {
     print(st, " (");
     print_int(st, n);
-    print_char(st, b')' as i32);
+    print_char(st, b')');
     error(st)
 }
 
@@ -287,7 +287,7 @@ pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
     error_here_with_diagnostic(st, "Extra }, or forgotten ");
     match st.save_stack.cur_group {
         GroupCode::SemiSimple => print_esc(st, "endgroup"),
-        GroupCode::MathShift => print_char(st, b'$' as i32),
+        GroupCode::MathShift => print_char(st, b'$'),
         GroupCode::MathLeft => print_esc(st, "right"),
         _ => {}
     }
@@ -307,7 +307,7 @@ pub(crate) fn extra_right_brace(st: &mut EngineState) -> Result<(), Abort> {
 pub(crate) fn you_cant(st: &mut EngineState) {
     error_here_with_diagnostic(st, "You can't use `");
     print_cmd_chr(st, st.scanner.cur_cmd, st.scanner.cur_chr);
-    print_in_mode(st, st.input.cur_list.mode as i32);
+    print_in_mode(st, i32::from(st.input.cur_list.mode));
     capture_to_diagnostic(st, None);
 }
 
@@ -340,7 +340,7 @@ pub(crate) fn cs_error(st: &mut EngineState) -> Result<(), Abort> {
 }
 
 pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {
-    let box_val = st.eqtb.box_reg(n as i32);
+    let box_val = st.eqtb.box_reg(i32::from(n));
     error(st)?;
     begin_diagnostic(st);
     diagnostic_begin_capture_warning_here(st);
@@ -349,7 +349,8 @@ pub(crate) fn box_error(st: &mut EngineState, n: u8) -> Result<(), Abort> {
     capture_to_diagnostic(st, None);
     end_diagnostic(st, true);
     st.mem.flush_node_list(box_val)?;
-    st.eqtb.set_box_reg(n as i32, crate::units::MemPtr::NULL);
+    st.eqtb
+        .set_box_reg(i32::from(n), crate::units::MemPtr::NULL);
     Ok(())
 }
 
@@ -362,7 +363,7 @@ pub(crate) fn runaway(st: &mut EngineState) {
         _ => return,
     };
     print_nl(st, msg);
-    print_char(st, b'?' as i32);
+    print_char(st, b'?');
     print_ln(st);
     let head = p.link(&st.mem);
     let l = st.errors.error_line - 10;

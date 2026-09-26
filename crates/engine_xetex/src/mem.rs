@@ -48,7 +48,7 @@ pub(crate) const HI_MEM_STAT_USAGE: i32 = 15;
 /// TeX's `end_LR_type`: the LR entry that a math node of `subtype` closes.
 #[inline]
 pub(crate) fn end_lr_type(subtype: u16) -> i32 {
-    (L_CODE * (subtype / L_CODE) + END_M_CODE) as i32
+    i32::from(L_CODE * (subtype / L_CODE) + END_M_CODE)
 }
 
 impl ListStateRecord {

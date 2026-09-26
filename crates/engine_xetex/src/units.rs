@@ -168,7 +168,7 @@ impl std::ops::SubAssign for Scaled {
 impl From<Scaled> for f64 {
     #[inline(always)]
     fn from(s: Scaled) -> f64 {
-        s.0 as f64
+        f64::from(s.0)
     }
 }
 

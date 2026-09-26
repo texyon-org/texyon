@@ -309,7 +309,7 @@ mod tests {
 
     fn bits(value: MemoryWord) -> u64 {
         let b = value.b32();
-        (b.s0 as u32 as u64) | ((b.s1 as u32 as u64) << 32)
+        u64::from(b.s0 as u32) | (u64::from(b.s1 as u32) << 32)
     }
 
     #[test]

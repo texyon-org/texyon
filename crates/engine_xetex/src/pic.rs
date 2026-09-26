@@ -225,8 +225,8 @@ fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
         return Err(err);
     }
     Ok((
-        width_pix as f64 * xdensity / 72.0,
-        height_pix as f64 * ydensity / 72.0,
+        f64::from(width_pix) * xdensity / 72.0,
+        f64::from(height_pix) * ydensity / 72.0,
     ))
 }
 
@@ -299,8 +299,8 @@ impl Transform {
     }
 
     fn apply(&self, p: &mut RealPoint) {
-        let rx = self.a * (p.x as f64) + self.c * (p.y as f64) + self.x;
-        let ry = self.b * (p.x as f64) + self.d * (p.y as f64) + self.y;
+        let rx = self.a * f64::from(p.x) + self.c * f64::from(p.y) + self.x;
+        let ry = self.b * f64::from(p.x) + self.d * f64::from(p.y) + self.y;
         p.x = rx as f32;
         p.y = ry as f32;
     }
@@ -336,8 +336,8 @@ impl Placement {
     fn bbox(&self) -> (f64, f64, f64, f64) {
         let xs = self.corners.map(|p| p.x);
         let ys = self.corners.map(|p| p.y);
-        let min = |v: [f32; 4]| v.into_iter().fold(f32::INFINITY, f32::min) as f64;
-        let max = |v: [f32; 4]| v.into_iter().fold(f32::NEG_INFINITY, f32::max) as f64;
+        let min = |v: [f32; 4]| f64::from(v.into_iter().fold(f32::INFINITY, f32::min));
+        let max = |v: [f32; 4]| f64::from(v.into_iter().fold(f32::NEG_INFINITY, f32::max));
         (min(xs), max(xs), min(ys), max(ys))
     }
 
@@ -379,7 +379,7 @@ fn scan_image_size(st: &mut EngineState) -> Result<Option<f64>, Abort> {
 
 fn scan_scale_factor(st: &mut EngineState) -> Result<f64, Abort> {
     crate::scan::scan_int(st)?;
-    Ok(st.scanner.cur_val as f64 / 1000.0)
+    Ok(f64::from(st.scanner.cur_val) / 1000.0)
 }
 
 pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abort> {
@@ -483,8 +483,8 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
 
     let (xmin, xmax, ymin, ymax) = placement.bbox();
     placement.t.concat(&Transform::translation(
-        -(xmin as i32 as f64) * 72.0 / 72.27,
-        -(ymin as i32 as f64) * 72.0 / 72.27,
+        -f64::from(xmin as i32) * 72.0 / 72.27,
+        -f64::from(ymin as i32) * 72.0 / 72.27,
     ));
 
     if result == 0 {
@@ -512,7 +512,7 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
         crate::output::error_here_with_diagnostic(st, "Unable to load picture or PDF file '");
         let (n, a, e) = (st.scanner.cur_name, st.scanner.cur_area, st.scanner.cur_ext);
         crate::output::print_file_name(st, n, a, e);
-        crate::output::print(st, '\'' as i32);
+        crate::output::print(st, i32::from(b'\''));
         crate::output::capture_to_diagnostic(st, None);
         let reason = if result == FILE_NOT_FOUND {
             "the file was not found."

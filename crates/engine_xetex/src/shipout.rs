@@ -200,7 +200,7 @@ fn dvi_font_def(st: &mut crate::state::EngineState, f: FontId) -> Result<(), Abo
     let colon = st.strings.str_pool[name.clone()]
         .iter()
         .skip(1)
-        .position(|&c| c == b':' as u16)
+        .position(|&c| c == u16::from(b':'))
         .map(|l| l + 1);
     let name_len = colon.map_or_else(|| st.strings.length(font_name), |l| l as i32);
     st.shipout.dvi_out(name_len as u8)?;
@@ -264,10 +264,10 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
     if st.shipout.term_offset > st.config.max_print_line - 9 {
         crate::output::print_ln(st);
     } else if st.shipout.term_offset > 0 || st.shipout.file_offset > 0 {
-        crate::output::print_char(st, b' ' as i32);
+        crate::output::print_char(st, b' ');
     }
 
-    crate::output::print_char(st, b'[' as i32);
+    crate::output::print_char(st, b'[');
     let mut j = 9;
     while j > 0 && st.eqtb.count(j) == 0 {
         j -= 1;
@@ -275,13 +275,13 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
     for k in 0..=j {
         crate::output::print_int(st, st.eqtb.count(k));
         if k < j {
-            crate::output::print_char(st, b'.' as i32);
+            crate::output::print_char(st, b'.');
         }
     }
     output_flush(st.shipout.rust_stdout);
 
     if tracing_output {
-        crate::output::print_char(st, b']' as i32);
+        crate::output::print_char(st, b']');
         crate::output::begin_diagnostic(st);
         crate::output::show_box(st, p);
         crate::output::end_diagnostic(st, true);
@@ -325,7 +325,7 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
         crate::output::print_int(st, st.scanner.lr_problems % 10000);
         crate::output::print(st, " extra");
         st.scanner.lr_problems = 0;
-        crate::output::print_char(st, b')' as i32);
+        crate::output::print_char(st, b')');
         crate::output::print_ln(st);
     }
 
@@ -333,7 +333,7 @@ pub(crate) fn ship_out(st: &mut crate::state::EngineState, page: AnyBox) -> Resu
         return Err(Abort::Confusion("LR3"));
     }
     if st.eqtb.int_par(INT_PAR_TRACING_OUTPUT) <= 0 {
-        crate::output::print_char(st, b']' as i32);
+        crate::output::print_char(st, b']');
     }
     st.shipout.dead_cycles = 0;
     output_flush(st.shipout.rust_stdout);
@@ -414,12 +414,12 @@ fn ship_page(st: &mut crate::state::EngineState, page: AnyBox) -> Result<(), Abo
         crate::output::print(st, "default");
     } else {
         crate::output::print(st, "width");
-        crate::output::print(st, b' ' as i32);
+        crate::output::print(st, b' ');
         crate::output::print_scaled(st, pdf_page_width);
         crate::output::print(st, "pt");
-        crate::output::print(st, b' ' as i32);
+        crate::output::print(st, b' ');
         crate::output::print(st, "height");
-        crate::output::print(st, b' ' as i32);
+        crate::output::print(st, b' ');
         crate::output::print_scaled(st, pdf_page_height);
         crate::output::print(st, "pt");
     }
@@ -524,9 +524,9 @@ impl GlueRounding {
         let width = spec.width(mem) - self.cur_g;
         if self.is_set(mem, spec) {
             if self.sign == GlueSign::Stretching {
-                self.cur_glue += spec.stretch(mem).0 as f64;
+                self.cur_glue += f64::from(spec.stretch(mem).0);
             } else {
-                self.cur_glue -= spec.shrink(mem).0 as f64;
+                self.cur_glue -= f64::from(spec.shrink(mem).0);
             }
             let glue_temp = (self.set * self.cur_glue).clamp(-1_000_000_000.0, 1_000_000_000.0);
             self.cur_g = Scaled(crate::scaled_math::tex_round(glue_temp));
@@ -586,7 +586,7 @@ impl MemState {
                     mem.as_native_word(q).filter(|w| w.native_font(mem) == font)
                 };
                 let mut last = r;
-                let mut text_len = r.native_length(self) as i32;
+                let mut text_len = i32::from(r.native_length(self));
                 let mut q = r.link(self);
                 loop {
                     q = self.skip_interword_fillers(q);
@@ -596,7 +596,7 @@ impl MemState {
                                 q = self.skip_interword_fillers(glue.link(self));
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;
-                                    text_len += 1 + w.native_length(self) as i32;
+                                    text_len += 1 + i32::from(w.native_length(self));
                                     q = w.link(self);
                                     continue;
                                 }
@@ -607,7 +607,7 @@ impl MemState {
                                 q = self.skip_interword_fillers(q.link(self));
                                 if let Some(w) = same_font_word(self, q) {
                                     last = w;
-                                    text_len += 1 + w.native_length(self) as i32;
+                                    text_len += 1 + i32::from(w.native_length(self));
                                     q = w.link(self);
                                     continue;
                                 }
@@ -670,19 +670,19 @@ impl MemState {
                     }
                 }
                 Ok(AnyNode::Glue(glue)) => {
-                    strings.str_pool[strings.pool_ptr as usize] = b' ' as u16;
+                    strings.str_pool[strings.pool_ptr as usize] = u16::from(b' ');
                     strings.pool_ptr += 1;
                     let spec = glue.glue_ptr(self);
                     width += spec.width(self);
                     match g_sign {
                         GlueSign::Stretching if spec.stretch_order(self) == g_order => {
                             width += Scaled(crate::scaled_math::tex_round(
-                                this_box.glue_set(self) * spec.stretch(self).0 as f64,
+                                this_box.glue_set(self) * f64::from(spec.stretch(self).0),
                             ));
                         }
                         GlueSign::Shrinking if spec.shrink_order(self) == g_order => {
                             width -= Scaled(crate::scaled_math::tex_round(
-                                this_box.glue_set(self) * spec.shrink(self).0 as f64,
+                                this_box.glue_set(self) * f64::from(spec.shrink(self).0),
                             ));
                         }
                         _ => {}
@@ -1018,13 +1018,17 @@ fn chars_out(
         dvi_font_select(st, f)?;
         if st.fonts.font_ec[f] >= c
             && st.fonts.font_bc[f] <= c
-            && st.fonts.font_info_b16(st.fonts.char_base[f] + c as i32).s3 > 0
+            && st
+                .fonts
+                .font_info_b16(st.fonts.char_base[f] + i32::from(c))
+                .s3
+                > 0
         {
             if c >= 128 {
                 st.shipout.dvi_out(SET1)?;
             }
             st.shipout.dvi_out(c as u8)?;
-            st.shipout.cur_h += st.fonts.font_character_width(f, c as i32);
+            st.shipout.cur_h += st.fonts.font_character_width(f, i32::from(c));
         }
         prev_p = prev_p.link(&st.mem);
         p = p.link(&st.mem);
@@ -1555,9 +1559,9 @@ pub(crate) fn finalize_dvi_file(st: &mut crate::state::EngineState) -> Result<()
         crate::output::print(st, " bytes).");
     } else {
         crate::output::print_nl(st, "Error ");
-        crate::output::print_int(st, k as i32);
+        crate::output::print_int(st, i32::from(k));
         crate::output::print(st, " (");
-        crate::output::print(st, &crate::bridge::strerror(k as i32)[..]);
+        crate::output::print(st, &crate::bridge::strerror(i32::from(k))[..]);
         crate::output::print(st, ") generating output;");
         crate::output::print_nl(st, "file ");
         crate::output::print(st, st.shipout.output_file_name);
@@ -1853,14 +1857,14 @@ impl EqtbState {
 
 fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) -> Result<(), Abort> {
     let q = st.mem.get_avail()?;
-    q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + b'}' as i32);
+    q.set_info(&mut st.mem, RIGHT_BRACE_TOKEN + i32::from(b'}'));
     let r = st.mem.get_avail()?;
     q.set_link(&mut st.mem, r);
     r.set_info(&mut st.mem, CS_TOKEN_FLAG + END_WRITE);
     crate::input::begin_token_list(st, q, INSERTED)?;
     crate::input::begin_token_list(st, write.write_tokens(&st.mem), WRITE_TEXT)?;
     let q = st.mem.get_avail()?;
-    q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + b'{' as i32);
+    q.set_info(&mut st.mem, LEFT_BRACE_TOKEN + i32::from(b'{'));
     crate::input::begin_token_list(st, q, INSERTED)?;
 
     let old_mode = st.input.cur_list.mode;
@@ -1915,11 +1919,11 @@ fn write_out(st: &mut crate::state::EngineState, write: NodePtr<WhatsitNode>) ->
             crate::output::print_nl(st, "runsystem(");
             let base = st.strings.cur_string_start();
             for k in base..st.strings.pool_ptr {
-                crate::output::print(st, st.strings.str_pool[k as usize] as i32);
+                crate::output::print(st, i32::from(st.strings.str_pool[k as usize]));
             }
             crate::output::print(st, ")...");
             crate::output::print(st, "disabled");
-            crate::output::print_char(st, b'.' as i32);
+            crate::output::print_char(st, b'.');
             crate::output::capture_to_diagnostic(st, None);
             crate::output::print_nl(st, "");
             crate::output::print_ln(st);
@@ -1943,22 +1947,22 @@ fn pic_out(st: &mut crate::state::EngineState, pic: NodePtr<WhatsitNode>) -> Res
     crate::output::print(st, "matrix ");
     for v in pic.pic_transform(&st.mem) {
         crate::output::print_scaled(st, v);
-        crate::output::print(st, b' ' as i32);
+        crate::output::print(st, b' ');
     }
     crate::output::print(st, "page ");
-    crate::output::print_int(st, pic.pic_page(&st.mem) as i32);
-    crate::output::print(st, b' ' as i32);
+    crate::output::print_int(st, i32::from(pic.pic_page(&st.mem)));
+    crate::output::print(st, b' ');
     if let Some(label) =
         crate::pic::PageboxType::from_raw(pic.pic_pagebox(&st.mem)).and_then(|pb| pb.label())
     {
         crate::output::print(st, label);
     }
-    crate::output::print(st, b'(' as i32);
+    crate::output::print(st, b'(');
     let path = pic.pic_path(&st.mem).to_vec();
     for byte in path {
-        crate::output::print_raw_char(st, byte as i32, true);
+        crate::output::print_raw_char(st, i32::from(byte), true);
     }
-    crate::output::print(st, b')' as i32);
+    crate::output::print(st, b')');
     st.shipout.selector = old_setting;
     dvi_special_from_cur_string(st)
 }
