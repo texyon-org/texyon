@@ -55,7 +55,8 @@ use crate::units::{FontId, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
 
 use std::sync::Arc;
 
-use crate::layout::{get_cp_code, FontEngineHandle};
+use crate::state::FontEngineHandle;
+use tectonic_xetex_layout::get_cp_code;
 
 pub(crate) const NORMAL_SCANNER: u8 = 0;
 pub(crate) const SKIPPING: u8 = 1;

@@ -38,9 +38,8 @@ fn synctex_write(handle: usize, s: &str) -> i32 {
     if handle == PREVIEW_HANDLE {
         return i32::try_from(bytes.len()).unwrap_or(i32::MAX);
     }
-    let written = output_write(handle, bytes);
-    if written > 0 {
-        written as i32
+    if output_write(handle, bytes) {
+        bytes.len() as i32
     } else {
         -1
     }

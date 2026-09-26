@@ -20,7 +20,6 @@ use crate::errors::Abort;
 
 use crate::fonts::{LIG_TAG, QUAD_CODE};
 use crate::hyphenation::HYPH_PRIME;
-use crate::layout::get_cp_code;
 use crate::mem::{ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE};
 use crate::mem_types::ListStateRecord;
 use crate::node::{
@@ -33,6 +32,7 @@ use crate::state::{
     ScannerState,
 };
 use crate::units::{FontId, MemAddr, MemIdx, MemPtr, NodeType, Scaled, StrNumber};
+use tectonic_xetex_layout::get_cp_code;
 
 const LAST_ACTIVE: MemPtr = ACTIVE_LIST;
 
@@ -2860,7 +2860,7 @@ fn append_native_word(st: &mut EngineState, f: FontId, text: &[u16]) -> Result<(
 /// Where a run of native text may break.
 enum TextBreaks<'t> {
     Icu(crate::layout::IcuBreaks<'t>),
-    Graphite(crate::layout::GraphiteBreaks<'t>),
+    Graphite(tectonic_xetex_layout::GraphiteBreaks<'t>),
     /// An ICU iterator left over from earlier text, which it already ran through.
     Stale(&'t crate::layout::LinebreakHandle),
 }

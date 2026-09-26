@@ -4,8 +4,9 @@ use crate::units::{FontId, Scaled};
 use tectonic_bridge_harfbuzz::sys as hb;
 
 use crate::ext::{d2fix, fix2d};
-use crate::layout::{FontEngineHandle, FontRef};
+use crate::state::FontEngineHandle;
 use crate::state::FontState;
+use tectonic_xetex_layout::Font;
 
 const HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN: i32 = 0;
 const HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN: i32 = 1;
@@ -60,8 +61,14 @@ const TEX_EXT_TO_OT_MAP: [Option<i32>; 14] = [
     Some(26), // big_op_spacing5: stackGapMin
 ];
 
-fn units_to_fix(font: FontRef, units: i32) -> Scaled {
-    d2fix(f64::from(font.units_to_points(units as f32)))
+fn units_to_fix(font: &Font, units: i32) -> Scaled {
+    d2fix(f64::from(
+        font.units_to_points(f64::from(units as f32)) as f32
+    ))
+}
+
+fn points_to_units(font: &Font, points: f32) -> f32 {
+    font.points_to_units(f64::from(points)) as f32
 }
 
 fn direction(horiz: bool) -> hb::hb_direction_t {
@@ -128,7 +135,7 @@ impl FontState {
             return Scaled::ZERO;
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
-        let rval = unsafe { hb::hb_ot_math_get_constant(engine.hb_font(), n) };
+        let rval = unsafe { hb::hb_ot_math_get_constant(engine.raw_hb_font(), n) };
         match n {
             HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN
             | HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
@@ -185,7 +192,7 @@ impl FontState {
         // `variant` hold the one variant asked for.
         unsafe {
             hb::hb_ot_math_get_glyph_variants(
-                engine.hb_font(),
+                engine.raw_hb_font(),
                 g as u32,
                 direction(horiz),
                 v as u32,
@@ -201,7 +208,7 @@ impl FontState {
     }
 
     pub(crate) fn get_ot_assembly(&self, f: FontId, g: i32, horiz: bool) -> Option<GlyphAssembly> {
-        let hb_font = self.ot_engine(f)?.hb_font();
+        let hb_font = self.ot_engine(f)?.raw_hb_font();
         // SAFETY: the engine keeps its HarfBuzz font alive, and null outputs
         // only ask for the part count.
         let count = unsafe {
@@ -242,7 +249,7 @@ impl FontState {
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
         let rval =
-            unsafe { hb::hb_ot_math_get_glyph_italics_correction(engine.hb_font(), g as u32) };
+            unsafe { hb::hb_ot_math_get_glyph_italics_correction(engine.raw_hb_font(), g as u32) };
         units_to_fix(engine.font(), rval)
     }
 
@@ -251,8 +258,9 @@ impl FontState {
             return crate::consts::INFINITE_DIMEN;
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
-        let rval =
-            unsafe { hb::hb_ot_math_get_glyph_top_accent_attachment(engine.hb_font(), g as u32) };
+        let rval = unsafe {
+            hb::hb_ot_math_get_glyph_top_accent_attachment(engine.raw_hb_font(), g as u32)
+        };
         units_to_fix(engine.font(), rval)
     }
 
@@ -262,7 +270,7 @@ impl FontState {
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
         let rval = unsafe {
-            hb::hb_ot_math_get_min_connector_overlap(engine.hb_font(), hb::hb_direction_t::Rtl)
+            hb::hb_ot_math_get_min_connector_overlap(engine.raw_hb_font(), hb::hb_direction_t::Rtl)
         };
         units_to_fix(engine.font(), rval)
     }
@@ -272,7 +280,7 @@ impl FontState {
             return 0;
         };
         // SAFETY: the engine keeps its HarfBuzz font alive.
-        unsafe { hb::hb_ot_math_get_glyph_kerning(engine.hb_font(), g as u32, side, height) }
+        unsafe { hb::hb_ot_math_get_glyph_kerning(engine.raw_hb_font(), g as u32, side, height) }
     }
 
     fn glyph_height_depth(&self, f: FontId, g: i32) -> (f32, f32) {
@@ -299,12 +307,12 @@ impl FontState {
 
             let (g_h, g_d) = self.glyph_height_depth(f, g);
             let (sg_h, sg_d) = self.glyph_height_depth(sf, sg);
-            let g_height = font.points_to_units(g_h) as i32;
-            let g_depth = font.points_to_units(g_d) as i32;
-            let sg_height = sfont.points_to_units(sg_h) as i32;
-            let sg_depth = sfont.points_to_units(sg_d) as i32;
+            let g_height = points_to_units(font, g_h) as i32;
+            let g_depth = points_to_units(font, g_d) as i32;
+            let sg_height = points_to_units(sfont, sg_h) as i32;
+            let sg_depth = points_to_units(sfont, sg_d) as i32;
 
-            let shift = font.points_to_units(fix2d(shift_scaled) as f32) as i32;
+            let shift = points_to_units(font, fix2d(shift_scaled) as f32) as i32;
 
             let f_size = font.point_size();
             let sf_size = sfont.point_size();

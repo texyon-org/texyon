@@ -1,7 +1,8 @@
 //! Font handling - specific fonts used by an engine while shaping text.
 
-use crate::c_api::{Fixed, GlyphBBox, GlyphID, PlatformFontRef};
-use crate::utils::fix_to_d;
+use crate::manager::FontManager;
+use crate::utils::{d_to_fix, fix_to_d};
+use crate::{Fixed, GlyphBBox, GlyphID, OTTag, PlatformFontRef};
 use std::ffi::{CStr, CString};
 use std::path::Path;
 use std::str::FromStr;
@@ -175,8 +176,31 @@ pub struct Font {
 }
 
 impl Font {
+    /// The font behind a platform font reference, loading its file through `io`.
+    pub fn from_platform(
+        font: PlatformFontRef,
+        point_size: Fixed,
+        io: &mut CoreBridgeState<'_>,
+    ) -> Option<Font> {
+        Font::new(font, fix_to_d(point_size) as f32, io).ok()
+    }
+
+    /// The font in file `path` at face `index`, loaded through `io`.
+    pub fn from_file(
+        path: &str,
+        index: usize,
+        point_size: Fixed,
+        io: &mut CoreBridgeState<'_>,
+    ) -> Option<Font> {
+        Font::new_path_index(Some(path), index, fix_to_d(point_size) as f32, io).ok()
+    }
+
     #[cfg(not(target_os = "macos"))]
-    pub(crate) fn new(font: PlatformFontRef, point_size: f32) -> Result<Font, ()> {
+    pub(crate) fn new(
+        font: PlatformFontRef,
+        point_size: f32,
+        io: &mut CoreBridgeState<'_>,
+    ) -> Result<Font, ()> {
         let path = font
             .as_ref()
             .get::<fc::pat::File>(0)
@@ -184,11 +208,15 @@ impl Font {
             .ok();
         let index = font.as_ref().get::<fc::pat::Index>(0).unwrap_or(0);
 
-        Font::new_path_index(path, index as usize, point_size)
+        Font::new_path_index(path, index as usize, point_size, io)
     }
 
     #[cfg(target_os = "macos")]
-    pub(crate) fn new(descriptor: PlatformFontRef, point_size: f32) -> Result<Font, ()> {
+    pub(crate) fn new(
+        descriptor: PlatformFontRef,
+        point_size: f32,
+        io: &mut CoreBridgeState<'_>,
+    ) -> Result<Font, ()> {
         let mut out = Font {
             units_per_em: 0,
             point_size,
@@ -204,14 +232,15 @@ impl Font {
             hb_font: None,
             kind: FontKind::Mac(descriptor, None),
         };
-        out.initialize_mac()?;
+        out.initialize_mac(io)?;
         Ok(out)
     }
 
-    pub(crate) fn new_path_index(
+    fn new_path_index(
         path: Option<&str>,
         index: usize,
         point_size: f32,
+        io: &mut CoreBridgeState<'_>,
     ) -> Result<Font, ()> {
         let mut out = Font {
             units_per_em: 0,
@@ -229,60 +258,56 @@ impl Font {
             kind: FontKind::FtFont,
         };
         if let Some(path) = path {
-            out.initialize_ft(path, index)?;
+            out.initialize_ft(path, index, io)?;
         }
         Ok(out)
     }
 
-    fn initialize_ft(&mut self, pathname: &str, index: usize) -> Result<(), ()> {
-        CoreBridgeState::with_global_state(|engine| {
-            let handle = engine
-                .input_open(pathname, FileFormat::OpenType, false)
-                .or_else(|| engine.input_open(pathname, FileFormat::TrueType, false))
-                .or_else(|| engine.input_open(pathname, FileFormat::Type1, false));
-            let Some(handle) = handle else {
-                return Err(());
-            };
+    fn initialize_ft(
+        &mut self,
+        pathname: &str,
+        index: usize,
+        io: &mut CoreBridgeState<'_>,
+    ) -> Result<(), ()> {
+        let handle = io
+            .input_open(pathname, FileFormat::OpenType, false)
+            .or_else(|| io.input_open(pathname, FileFormat::TrueType, false))
+            .or_else(|| io.input_open(pathname, FileFormat::Type1, false))
+            .ok_or(())?;
 
-            let sz = engine.input_get_size(handle);
-            let mut backing_data = vec![0; sz];
-            engine
-                .input_read(handle, &mut backing_data)
-                .expect("failed to read font file");
+        let sz = io.input_get_size(handle);
+        let mut backing_data = vec![0; sz];
+        io.input_read(handle, &mut backing_data)
+            .expect("failed to read font file");
 
-            engine.input_close(handle);
+        io.input_close(handle);
 
-            self.ft_face = match ft::Face::new_memory(backing_data, index) {
-                Ok(face) => Some(Arc::new(Mutex::new(face))),
-                Err(_) => return Err(()),
-            };
+        self.ft_face = match ft::Face::new_memory(backing_data, index) {
+            Ok(face) => Some(Arc::new(Mutex::new(face))),
+            Err(_) => return Err(()),
+        };
 
-            if !self.ft_face().is_scalable() {
-                return Err(());
+        if !self.ft_face().is_scalable() {
+            return Err(());
+        }
+
+        if index == 0 && !self.ft_face().is_sfnt() {
+            let afm = Path::new(pathname)
+                .file_name()
+                .map(Path::new)
+                .unwrap_or(Path::new(pathname));
+            let afm = afm.with_extension("afm");
+
+            if let Some(afm_handle) = io.input_open(afm.to_str().unwrap(), FileFormat::Afm, false) {
+                let sz = io.input_get_size(afm_handle);
+                let mut backing_data2 = vec![0; sz];
+                io.input_read(afm_handle, &mut backing_data2)
+                    .expect("failed to read AFM file");
+
+                self.ft_face().attach_stream_mem(backing_data2).unwrap();
+                io.input_close(afm_handle);
             }
-
-            if index == 0 && !self.ft_face().is_sfnt() {
-                let afm = Path::new(pathname)
-                    .file_name()
-                    .map(Path::new)
-                    .unwrap_or(Path::new(pathname));
-                let afm = afm.with_extension("afm");
-
-                let afm_handle = engine.input_open(afm.to_str().unwrap(), FileFormat::Afm, false);
-
-                if let Some(afm_handle) = afm_handle {
-                    let sz = engine.input_get_size(afm_handle);
-                    let mut backing_data2 = vec![0; sz];
-                    engine
-                        .input_read(afm_handle, &mut backing_data2)
-                        .expect("failed to read AFM file");
-
-                    self.ft_face().attach_stream_mem(backing_data2).unwrap();
-                    engine.input_close(afm_handle);
-                }
-            }
-            Ok(())
-        })?;
+        }
 
         self.filename = CString::from_str(pathname).unwrap();
         self.index = index as u32;
@@ -348,7 +373,7 @@ impl Font {
     }
 
     #[cfg(target_os = "macos")]
-    fn initialize_mac(&mut self) -> Result<(), ()> {
+    fn initialize_mac(&mut self, io: &mut CoreBridgeState<'_>) -> Result<(), ()> {
         let FontKind::Mac(descriptor, font_ref) = &mut self.kind else {
             return Err(());
         };
@@ -364,14 +389,15 @@ impl Font {
         ));
         let mut index = 0;
         let pathname = get_file_name_from_ct_font(font_ref.as_ref().unwrap(), &mut index).unwrap();
-        self.initialize_ft(pathname.to_str().unwrap(), index as usize)
+        self.initialize_ft(pathname.to_str().unwrap(), index as usize, io)
     }
 
     pub(crate) fn ft_face(&self) -> std::sync::MutexGuard<'_, ft::Face> {
         self.ft_face.as_ref().unwrap().lock().unwrap()
     }
 
-    pub(crate) fn get_glyph_name(&self, gid: u16) -> Option<CString> {
+    /// The name of glyph `gid`, if the font has glyph names.
+    pub fn glyph_name(&self, gid: u16) -> Option<CString> {
         if self.ft_face().has_glyph_names() {
             let mut buf = vec![0u8; 256];
             self.ft_face().get_glyph_name(gid as u32, &mut buf).unwrap();
@@ -382,27 +408,16 @@ impl Font {
         }
     }
 
-    pub(crate) fn get_glyph_sidebearings(
-        &mut self,
-        gid: GlyphID,
-        lsb: Option<&mut f32>,
-        rsb: Option<&mut f32>,
-    ) {
-        let width = self.get_glyph_width(gid as u32);
-
-        let bbox = self.get_glyph_bounds(gid);
-
-        if let Some(lsb) = lsb {
-            *lsb = bbox.x_min;
-        }
-        if let Some(rsb) = rsb {
-            *rsb = width - bbox.x_max;
-        }
+    /// The left and right sidebearings of glyph `gid`.
+    pub(crate) fn glyph_sidebearings(&self, gid: GlyphID) -> (f32, f32) {
+        let width = self.glyph_width(gid as u32);
+        let bbox = self.glyph_bounds(gid);
+        (bbox.x_min, width - bbox.x_max)
     }
 
-    pub(crate) fn get_glyph_ital_corr(&mut self, gid: GlyphID) -> f32 {
-        let width = self.get_glyph_width(gid as u32);
-        let bbox = self.get_glyph_bounds(gid);
+    pub(crate) fn glyph_ital_corr(&self, gid: GlyphID) -> f32 {
+        let width = self.glyph_width(gid as u32);
+        let bbox = self.glyph_bounds(gid);
 
         if bbox.x_max > width {
             bbox.x_max - width
@@ -441,11 +456,7 @@ impl Font {
         }
     }
 
-    pub(crate) fn load_font_table(&self, tag: ft::TableTag) -> Option<Vec<u8>> {
-        self.ft_face().load_sfnt_table(tag).ok()
-    }
-
-    pub(crate) fn get_glyph_bounds(&mut self, gid: GlyphID) -> GlyphBBox {
+    pub(crate) fn glyph_bounds(&self, gid: GlyphID) -> GlyphBBox {
         let mut ft_face = self.ft_face();
 
         let glyph = ft_face
@@ -472,39 +483,40 @@ impl Font {
         }
     }
 
-    pub(crate) fn get_glyph_height_depth(
-        &mut self,
-        gid: GlyphID,
-        height: Option<&mut f32>,
-        depth: Option<&mut f32>,
-    ) {
-        let bbox = self.get_glyph_bounds(gid);
-        if let Some(height) = height {
-            *height = bbox.y_max;
-        }
-        if let Some(depth) = depth {
-            *depth = -bbox.y_min;
-        }
+    /// The height and depth of glyph `gid`.
+    pub(crate) fn glyph_height_depth(&self, gid: GlyphID) -> (f32, f32) {
+        let bbox = self.glyph_bounds(gid);
+        (bbox.y_max, -bbox.y_min)
     }
 
-    pub(crate) fn filename(&self, index: &mut u32) -> &CStr {
-        *index = self.index;
-        &self.filename
+    /// The path of the font file.
+    pub fn filename(&self) -> &[u8] {
+        self.filename.to_bytes()
     }
 
-    // pub(crate) fn get_font_table<T: ft::Table>(&self) -> Option<&T::Table> {
-    //     self.ft_face().get_sfnt_table::<T>()
-    // }
-
-    pub(crate) fn italic_angle(&self) -> f32 {
-        self.italic_angle
+    /// The face index within the font file.
+    pub fn index(&self) -> u32 {
+        self.index
     }
 
-    pub(crate) fn num_glyphs(&self) -> usize {
-        self.ft_face().num_glyphs()
+    /// The italic slant as a fixed-point tangent.
+    pub fn slant(&self) -> Fixed {
+        let angle = self.italic_angle as f64;
+        d_to_fix(f64::tan(-angle * std::f64::consts::PI / 180.0))
     }
 
-    pub(crate) fn get_glyph_width(&self, gid: u32) -> f32 {
+    /// The design size in points, 10 when the font does not say.
+    pub fn design_size(&self) -> f64 {
+        FontManager::with_font_manager(|mgr| mgr.get_design_size(self))
+    }
+
+    /// The number of glyphs.
+    pub fn count_glyphs(&self) -> u32 {
+        self.ft_face().num_glyphs() as u32
+    }
+
+    /// The horizontal advance of glyph `gid`.
+    pub fn glyph_width(&self, gid: u32) -> f32 {
         self.units_to_points(get_glyph_advance(&self.ft_face(), gid, false) as f64) as f32
     }
 
@@ -512,12 +524,90 @@ impl Font {
         self.vertical
     }
 
-    pub(crate) fn set_layout_dir_vertical(&mut self, vertical: bool) {
+    /// Lays the font out vertically or horizontally.
+    pub fn set_layout_dir_vertical(&mut self, vertical: bool) {
         self.vertical = vertical;
     }
 
-    pub(crate) fn point_size(&self) -> f32 {
+    /// The size the font was loaded at.
+    pub fn point_size(&self) -> f32 {
         self.point_size
+    }
+
+    /// The number of OpenType scripts.
+    pub fn count_scripts(&self) -> u32 {
+        get_larger_script_list_table_ot(self).script_tags_len() as u32
+    }
+
+    /// The OpenType script at `index`, or 0.
+    pub fn ind_script(&self, index: u32) -> OTTag {
+        get_larger_script_list_table_ot(self)
+            .script(index as usize)
+            .map_or(0, |s| s.tag().to_raw())
+    }
+
+    /// The number of languages of OpenType script `script`.
+    pub fn count_languages(&self, script: OTTag) -> u32 {
+        let table = get_larger_script_list_table_ot(self);
+        let Some(script) = table.find_script(hb::Tag::new(script)) else {
+            return 0;
+        };
+        let swapped = script.swap_table().map_or(0, |s| s.language_tags_len());
+        (script.language_tags_len() + swapped) as u32
+    }
+
+    /// The language at `index` of OpenType script `script`, or 0.
+    pub fn ind_language(&self, script: OTTag, index: u32) -> OTTag {
+        let index = index as usize;
+        let table = get_larger_script_list_table_ot(self);
+        let Some(script) = table.find_script(hb::Tag::new(script)) else {
+            return 0;
+        };
+        script
+            .lang(index)
+            .or_else(|| script.swap_table().and_then(|s| s.lang(index)))
+            .map_or(0, |lang| lang.tag().to_raw())
+    }
+
+    /// The number of GSUB and GPOS features of `script` and `language`.
+    pub fn count_features(&self, script: OTTag, language: OTTag) -> u32 {
+        let layout = self.hb_font().face().ot_layout();
+        let (script, language) = (hb::Tag::new(script), hb::Tag::new(language));
+
+        let mut rval = 0;
+        for table_tag in [hb::GTag::GSub, hb::GTag::GPos] {
+            let table = layout.table(table_tag);
+            if let Some(script) = table.find_script(script) {
+                let lang = script.select_lang(&[language]);
+                if lang.is_ok() || language == hb::Tag::new(0) {
+                    rval += lang.unwrap_or_else(|l| l).feature_tags_len();
+                }
+            }
+        }
+        rval as u32
+    }
+
+    /// The GSUB or GPOS feature at `index` of `script` and `language`, or 0.
+    pub fn ind_feature(&self, script: OTTag, language: OTTag, index: u32) -> OTTag {
+        let mut index = index as usize;
+        let layout = self.hb_font().face().ot_layout();
+        let (script, language) = (hb::Tag::new(script), hb::Tag::new(language));
+
+        for table_tag in [hb::GTag::GSub, hb::GTag::GPos] {
+            let table = layout.table(table_tag);
+            if let Some(script) = table.find_script(script) {
+                let lang = script.select_lang(&[language]);
+                if lang.is_ok() || language == hb::Tag::new(0) {
+                    let lang = lang.unwrap_or_else(|l| l);
+                    if let Some(feat) = lang.feature(index) {
+                        return feat.to_raw();
+                    }
+                    index -= lang.feature_tags_len();
+                }
+            }
+        }
+
+        0
     }
 
     pub(crate) fn ascent(&self) -> f32 {
@@ -547,11 +637,13 @@ impl Font {
     /* Tectonic: these are modified from the base XeTeX code to use doubles;
      * otherwise roundoff errors can accumulate leading to differences in the
      * XDV outputs. */
-    pub(crate) fn units_to_points(&self, units: f64) -> f64 {
+    /// Converts font units to points.
+    pub fn units_to_points(&self, units: f64) -> f64 {
         (units * self.point_size as f64) / (self.units_per_em as f64)
     }
 
-    pub(crate) fn points_to_units(&self, points: f64) -> f64 {
+    /// Converts points to font units.
+    pub fn points_to_units(&self, points: f64) -> f64 {
         (points * (self.units_per_em as f64)) / self.point_size as f64
     }
 }

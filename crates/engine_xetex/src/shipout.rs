@@ -85,8 +85,7 @@ impl MemState {
 impl ShipoutState {
     fn write_to_dvi(&self, a: i32, b: i32) -> Result<(), Abort> {
         let bytes = &self.dvi_buf[a as usize..=b as usize];
-        let written = output_write(self.dvi_file, bytes);
-        if written != bytes.len() {
+        if !output_write(self.dvi_file, bytes) {
             return Err(Abort::Internal("failed to write data to XDV file"));
         }
         Ok(())
@@ -2054,7 +2053,7 @@ pub(crate) fn ensure_write_stream_open(
         return Err(Abort::CannotOpenOutput);
     }
     for &code_unit in &st.shipout.write_prefix[stream] {
-        crate::bridge::output_putc(handle, code_unit);
+        crate::bridge::output_putc(handle, code_unit as u8);
     }
     st.shipout.write_file[stream] = handle;
     Ok(())

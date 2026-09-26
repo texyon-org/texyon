@@ -13,7 +13,6 @@ fn main() {
 
     // Include paths exported by our internal dependencies.
 
-    let xetex_layout_include_path = env::var("DEP_TECTONIC_XETEX_LAYOUT_INCLUDE_PATH").unwrap();
     let pdfio_include_path = env::var("DEP_TECTONIC_PDF_IO_INCLUDE_PATH").unwrap();
     let core_include_dir = env::var("DEP_TECTONIC_BRIDGE_CORE_INCLUDE").unwrap();
     let flate_include_dir = env::var("DEP_TECTONIC_BRIDGE_FLATE_INCLUDE").unwrap();
@@ -87,10 +86,6 @@ fn main() {
 
     for p in &[".", &core_include_dir, &flate_include_dir] {
         cxx_cfg.include(p);
-    }
-
-    for item in xetex_layout_include_path.split(';') {
-        cxx_cfg.include(item);
     }
 
     for item in pdfio_include_path.split(';') {

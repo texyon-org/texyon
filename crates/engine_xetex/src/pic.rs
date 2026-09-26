@@ -2,10 +2,11 @@
 
 use libc::{c_char, c_double, c_int, c_uint};
 
-use crate::bridge::{input_open, TTBC_FILE_FORMAT_PICT};
+use crate::bridge::{input_open, FileFormat};
 use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
 use crate::errors::Abort;
 use crate::ext::{d2fix, fix2d};
+use crate::layout::with_c_str;
 use crate::node::WhatsitSubtype;
 use crate::state::EngineState;
 use crate::units::Scaled;
@@ -156,19 +157,21 @@ fn pdf_get_rect(
 ) -> Option<RealRect> {
     let mut bbox = PdfRect::default();
     let mut matrix = PdfTMatrix::default();
-    let status = crate::bridge::with_c_str(filename, |filename| {
-        // SAFETY: `filename` is NUL-terminated, `handle` is an open input and
-        // the box and matrix are valid out-parameters.
-        unsafe {
-            tt_pic_probe_pdf_box(
-                filename,
-                handle,
-                page_num,
-                pdf_box.dpx_option(),
-                &mut bbox,
-                &mut matrix,
-            )
-        }
+    let status = with_c_str(filename, |filename| {
+        crate::bridge::with_c_io(|| {
+            // SAFETY: `filename` is NUL-terminated, `handle` is an open input and
+            // the box and matrix are valid out-parameters.
+            unsafe {
+                tt_pic_probe_pdf_box(
+                    filename,
+                    handle,
+                    page_num,
+                    pdf_box.dpx_option(),
+                    &mut bbox,
+                    &mut matrix,
+                )
+            }
+        })
     });
     if status != PIC_PROBE_OK {
         return None;
@@ -211,16 +214,18 @@ fn pdf_get_rect(
 fn get_image_size_in_inches(handle: usize) -> Result<(f64, f64), c_int> {
     let (mut width_pix, mut height_pix) = (0, 0);
     let (mut xdensity, mut ydensity) = (0.0, 0.0);
-    // SAFETY: `handle` is an open input and the sizes are valid out-parameters.
-    let err = unsafe {
-        tt_pic_probe_image_box(
-            handle,
-            &mut width_pix,
-            &mut height_pix,
-            &mut xdensity,
-            &mut ydensity,
-        )
-    };
+    let err = crate::bridge::with_c_io(|| {
+        // SAFETY: `handle` is an open input and the sizes are valid out-parameters.
+        unsafe {
+            tt_pic_probe_image_box(
+                handle,
+                &mut width_pix,
+                &mut height_pix,
+                &mut xdensity,
+                &mut ydensity,
+            )
+        }
+    });
     if err != PIC_PROBE_OK {
         return Err(err);
     }
@@ -236,7 +241,7 @@ fn find_pic_file(
     pdf_box: Option<PageboxType>,
     page: c_int,
 ) -> Result<(c_int, RealRect), Abort> {
-    let handle = input_open(name_of_file, TTBC_FILE_FORMAT_PICT, false);
+    let handle = input_open(name_of_file, FileFormat::Pict, false);
     if handle == INVALID_HANDLE {
         return Ok((1, RealRect::default()));
     }
@@ -527,15 +532,17 @@ pub(crate) fn load_picture(st: &mut EngineState, is_pdf: bool) -> Result<(), Abo
 }
 
 pub(crate) fn count_pdf_file_pages_named(name: &[u8]) -> Result<c_int, Abort> {
-    let handle = input_open(name, TTBC_FILE_FORMAT_PICT, false);
+    let handle = input_open(name, FileFormat::Pict, false);
     if handle == INVALID_HANDLE {
         return Ok(0);
     }
     let mut pages = 0;
-    let status = crate::bridge::with_c_str(name, |name| {
+    let status = with_c_str(name, |name| {
         // SAFETY: `name` is NUL-terminated, `handle` is an open input and
         // `pages` is a valid out-parameter.
-        unsafe { tt_pic_probe_pdf_page_count(name, handle, &mut pages) }
+        crate::bridge::with_c_io(|| unsafe {
+            tt_pic_probe_pdf_page_count(name, handle, &mut pages)
+        })
     });
     if status != PIC_PROBE_OK {
         pages = 0;

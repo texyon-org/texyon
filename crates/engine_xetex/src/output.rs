@@ -1,6 +1,6 @@
 use crate::bridge::{
-    diag_append, diag_append_byte, diag_begin_error, diag_begin_warning, diag_finish,
-    issue_warning, output_flush, output_putc, Diagnostic,
+    diag_append, diag_append_byte, diag_finish, issue_warning, output_flush, output_putc,
+    Diagnostic,
 };
 use crate::cmd::{
     ABOVE, ACCENT, ADVANCE, AFTER_ASSIGNMENT, AFTER_GROUP, ASSIGN_DIMEN, ASSIGN_FONT_DIMEN,
@@ -331,10 +331,10 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offse
             let to_log = sel != SELECTOR_TERM_ONLY;
             warn_char(st, s);
             if to_term {
-                output_putc(st.shipout.rust_stdout, s);
+                output_putc(st.shipout.rust_stdout, s as u8);
             }
             if to_log {
-                output_putc(st.shipout.log_file, s);
+                output_putc(st.shipout.log_file, s as u8);
             }
             if incr_offset {
                 if to_term {
@@ -368,7 +368,7 @@ pub(crate) fn print_raw_char(st: &mut EngineState, s: impl Into<i32>, incr_offse
             }
         }
         sel => {
-            output_putc(st.shipout.write_file[sel as usize], s);
+            output_putc(st.shipout.write_file[sel as usize], s as u8);
             st.shipout.write_prefix[sel as usize].push(s);
         }
     }
@@ -500,7 +500,7 @@ fn print_current_string(st: &mut EngineState) {
 }
 
 /// Reports the diagnostic being captured and captures into `diagnostic` from now on.
-pub(crate) fn capture_to_diagnostic(st: &mut EngineState, diagnostic: Option<Box<Diagnostic>>) {
+pub(crate) fn capture_to_diagnostic(st: &mut EngineState, diagnostic: Option<Diagnostic>) {
     if let Some(cur) = std::mem::replace(&mut st.shipout.current_diagnostic, diagnostic) {
         diag_finish(cur);
     }
@@ -541,14 +541,14 @@ fn diagnostic_print_file_line(st: &EngineState, diagnostic: &mut Diagnostic) {
 }
 
 pub(crate) fn diagnostic_begin_capture_warning_here(st: &mut EngineState) {
-    let mut warning = diag_begin_warning();
+    let mut warning = Diagnostic::warning();
     diagnostic_print_file_line(st, &mut warning);
     capture_to_diagnostic(st, Some(warning));
 }
 
 /// Starts an error with `message`, capturing what follows into its diagnostic.
 pub(crate) fn error_here_with_diagnostic(st: &mut EngineState, message: &str) {
-    let mut error = diag_begin_error();
+    let mut error = Diagnostic::error();
     diagnostic_print_file_line(st, &mut error);
     diag_append(&mut error, message);
     print_error_prefix(st);

@@ -23,10 +23,10 @@ use crate::output::{
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 use crate::units::{FontId, MemPtr, Scaled, StrNumber};
 
-use crate::bridge::{input_getc, TTBC_FILE_FORMAT_TFM};
+use crate::bridge::{input_getc, FileFormat};
 use crate::errors::Abort;
 
-use crate::layout::loaded_font_design_size;
+use crate::ext::loaded_font_design_size;
 
 const EOF: i32 = -1;
 /// The `font_area` of an AAT font, which no real area string can equal.
@@ -341,7 +341,7 @@ pub(crate) fn read_font_info(
         st.fonts
             .check_for_tfm_font_mapping(&mut st.input.name_of_file);
 
-        tfm_file = open_input_file(st, TTBC_FILE_FORMAT_TFM);
+        tfm_file = open_input_file(st, FileFormat::Tfm);
         if tfm_file == INVALID_HANDLE {
             if !st.scanner.quoted_filename {
                 g = load_native_font(st, u, nom, aire, s)?;

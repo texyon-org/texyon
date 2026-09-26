@@ -72,23 +72,31 @@ The typesetting pipeline:
 - `save.rs` (save stack, `eqtb` definitions, sparse registers), `hash.rs`,
   `string_pool.rs`, `input.rs`, `io.rs`, `format_io.rs` (`\dump` and load).
 
-The C boundary:
+Crate and C boundaries:
 
-- `bridge.rs` wraps the Tectonic I/O bridge (files, diagnostics, shell escape,
-  MD5) in a byte-slice API. File names are Rust bytes (`name_of_file`,
-  `name_of_input_file`, the synctex and source-special names) and become C
-  strings only at an extern call (`with_c_str` in `bridge.rs`, or inside
-  `layout.rs`). `layout.rs` owns the `tectonic_xetex_layout`,
-  HarfBuzz, ICU and TECkit handles (`FontEngineHandle`, `FontMappingHandle`,
-  `LinebreakHandle`, ...) with their disposal. `io.rs` keeps the ICU input
-  converters, `texmfmp.rs` the C time calls, `pic.rs` the picture probes.
-- Raw pointers stay in those modules, and `CStr`/`CString` in `bridge.rs`
-  and `layout.rs` (`c_char` also appears in the other extern blocks).
-  Elsewhere `unsafe` is
-  limited to plain-data byte views (`mem_types.rs`, `state.rs`,
-  `format_io.rs`), HarfBuzz MATH queries (`ot_math.rs`) and installing the
-  bridge for a run (`engine.rs`, `session.rs`). Every block has a
-  `// SAFETY:` comment (`clippy::undocumented_unsafe_blocks` is clean). The
+- `bridge.rs` is the engine's I/O over the run's `CoreBridgeState` (files,
+  diagnostics, shell escape, MD5, abort message), calling bridge-core's Rust
+  methods with byte-slice names. Replay sources answer first. A run installs
+  its state with `bridge::enter(api)`, a scope that holds the exclusive borrow
+  and backs the one static pointer `with_bridge` reads. bridge-core's C global
+  state (`ttbc_global_engine_enter`) is set only around calls into C that do
+  their own I/O, which are the pdf_io picture probes (`bridge::with_c_io`).
+- Fonts and shaping go straight to `tectonic_xetex_layout`'s Rust API:
+  `Font`, `LayoutEngine` (`state::FontEngineHandle`), `FontManager`, the
+  glyph-box and protrusion caches. Loading a font file takes the run's
+  `CoreBridgeState` (`with_bridge`). That crate has no C API.
+- `extern "C"` remains only for real C: `layout.rs` (TECkit converters, ICU
+  line breaking and bidi, with their disposal, plus the HarfBuzz tag and
+  `with_c_str` helpers), `io.rs` (ICU input converters), `pic.rs` and
+  `engine.rs` (pdf_io), `compat.rs` (Windows time calls). File names are
+  Rust bytes (`name_of_file`, `name_of_input_file`, the synctex and
+  source-special names) and become C strings only at those calls.
+- Raw pointers stay in those modules. Elsewhere `unsafe` is limited to
+  plain-data byte views (`mem_types.rs`, `state.rs`, `format_io.rs`),
+  HarfBuzz MATH queries (`ot_math.rs`), the bridge pointer and `strerror`
+  (`bridge.rs`), the C time calls (`texmfmp.rs`) and the preview
+  controller's pointers (`session.rs`). Every block has a `// SAFETY:` comment
+  (`clippy::undocumented_unsafe_blocks` is clean). The
   engine proper prints and reports with Rust strings: `print(st, "...")`,
   `print_nl`, `print_esc` take a `&str`, bytes, a byte character or a
   `StrNumber`. A byte slice prints each byte as the character of that code.

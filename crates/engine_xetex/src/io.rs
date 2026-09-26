@@ -17,8 +17,7 @@ use tectonic_bridge_core::EOF;
 pub(crate) use crate::bridge::{input_close, input_seek};
 use crate::bridge::{
     input_getc, input_open, input_open_primary, input_ungetc, last_input_abspath, output_close,
-    output_flush, output_open, output_putc, TTBC_FILE_FORMAT_TECTONIC_PRIMARY,
-    TTBC_FILE_FORMAT_TEX,
+    output_flush, output_open, output_putc, FileFormat,
 };
 use crate::cmd::{LEFT_BRACE, OTHER_CHAR, RELAX, SPACER};
 use crate::errors::Abort;
@@ -150,7 +149,7 @@ extern "C" {
 /// Opens the ICU converter `name`, or returns ICU's error code.
 fn icu_converter_open(name: &[u8]) -> Result<*mut libc::c_void, libc::c_int> {
     let mut err: i32 = 0;
-    let cnv = crate::bridge::with_c_str(name, |name| {
+    let cnv = crate::layout::with_c_str(name, |name| {
         // SAFETY: `name` is NUL-terminated and `err` is a valid out-parameter.
         unsafe { ucnv_open(name, &mut err) }
     });
@@ -207,8 +206,8 @@ fn icu_to_utf32(cnv: *mut libc::c_void, target: &mut [u8], source: &[u8]) -> (i3
     (len, err)
 }
 
-pub(crate) fn open_input_file(st: &mut EngineState, filefmt: libc::c_int) -> usize {
-    let handle = if filefmt == TTBC_FILE_FORMAT_TECTONIC_PRIMARY {
+pub(crate) fn open_input_file(st: &mut EngineState, filefmt: FileFormat) -> usize {
+    let handle = if filefmt == FileFormat::TectonicPrimary {
         input_open_primary()
     } else if st.input.name_of_file.first() == Some(&b'|') {
         crate::output::print_nl(st, "Warning: ");
@@ -237,7 +236,7 @@ pub(crate) fn open_input_file(st: &mut EngineState, filefmt: libc::c_int) -> usi
 /// Opens and configures an input file. `None` means the bridge open failed.
 pub(crate) fn u_open_in(
     st: &mut EngineState,
-    filefmt: i32,
+    filefmt: FileFormat,
     mut mode: i32,
     encoding_data: i32,
 ) -> Result<Option<Box<UFile>>, Abort> {
@@ -264,16 +263,16 @@ pub(crate) fn u_open_in(
             mode = UTF16LE;
         } else if b1 == 0 && b2 != 0 {
             mode = UTF16BE;
-            input_seek(f.handle, 0, libc::SEEK_SET);
+            input_seek(f.handle, 0);
         } else if b2 == 0 && b1 != 0 {
             mode = UTF16LE;
-            input_seek(f.handle, 0, libc::SEEK_SET);
+            input_seek(f.handle, 0);
         } else if b1 == 0xEF && b2 == 0xBB && input_getc(f.handle) == 0xBF {
             mode = UTF8;
         }
 
         if mode == AUTO {
-            input_seek(f.handle, 0, libc::SEEK_SET);
+            input_seek(f.handle, 0);
             mode = UTF8;
         }
     }
@@ -689,7 +688,7 @@ pub(crate) fn open_or_close(st: &mut EngineState) -> Result<(), Abort> {
 
     let mode = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_MODE);
     let encoding = st.eqtb.int_par(INT_PAR_XETEX_DEFAULT_INPUT_ENCODING);
-    if let Some(file) = u_open_in(st, TTBC_FILE_FORMAT_TEX, mode, encoding)? {
+    if let Some(file) = u_open_in(st, FileFormat::Tex, mode, encoding)? {
         st.input.read_file[n] = crate::state::InputSlot::Open(file);
         rescan_opened_name(st)?;
         st.input.read_open[n] = JUST_OPEN;
@@ -1046,9 +1045,9 @@ pub(crate) fn start_input(
     primary_input_name: Option<&str>,
 ) -> Result<(), Abort> {
     let format = if primary_input_name.is_none() {
-        TTBC_FILE_FORMAT_TEX
+        FileFormat::Tex
     } else {
-        TTBC_FILE_FORMAT_TECTONIC_PRIMARY
+        FileFormat::TectonicPrimary
     };
 
     if let Some(name) = primary_input_name {

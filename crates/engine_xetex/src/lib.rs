@@ -15,7 +15,6 @@
 //! [Tectonic]: https://tectonic-typesetting.github.io/
 //! [`tectonic`]: https://docs.rs/tectonic/
 
-use crate::engine_interface::engine_xetex_main;
 use crate::state::ConfigState;
 
 use std::time::SystemTime;
@@ -29,7 +28,6 @@ mod cmd;
 mod compat;
 mod consts;
 mod engine;
-mod engine_interface;
 mod errors;
 mod expand;
 mod ext;
@@ -264,7 +262,7 @@ impl TexEngine {
         };
 
         launcher.with_global_lock(|state| {
-            let r = engine_xetex_main(
+            let r = crate::engine::run_engine(
                 state,
                 config,
                 format_file_name,
@@ -272,7 +270,7 @@ impl TexEngine {
                 self.build_date
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .expect("invalid build date")
-                    .as_secs(),
+                    .as_secs() as libc::time_t,
             );
 
             match r {
@@ -292,7 +290,6 @@ mod linkage {
     // Anonymous imports deliberately make Cargo link these bridge crates.
     use tectonic_bridge_icu as _;
     use tectonic_pdf_io as _;
-    use tectonic_xetex_layout as _;
 }
 
 /// Does our resulting executable link correctly?
