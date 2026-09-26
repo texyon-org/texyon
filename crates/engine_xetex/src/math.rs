@@ -3920,12 +3920,12 @@ fn build_opentype_assembly_in(
         if horiz {
             b.set_width(&mut st.mem, set_dim);
         } else {
-            b.set_depth(&mut st.mem, set_dim);
+            b.set_height(&mut st.mem, set_dim);
         }
     } else if horiz {
         b.set_width(&mut st.mem, Scaled(nat));
     } else {
-        b.set_depth(&mut st.mem, Scaled(nat));
+        b.set_height(&mut st.mem, Scaled(nat));
     }
     Ok(b)
 }
