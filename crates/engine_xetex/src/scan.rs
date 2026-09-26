@@ -842,7 +842,7 @@ pub(crate) fn set_math_char_in(
         x_token_in(st)?;
         back_input_in(st)?;
     } else {
-        let nd = crate::mem::new_noad(&mut st.mem).expect("new noad");
+        let nd = crate::mem::new_noad(&mut st.mem).ok_or(NodeRecycleAbort::Overflow)?;
         nd.set_nucleus_type(&mut st.mem, MATH_CHAR);
         let ch = math_char_fn(c);
         nd.set_nucleus_char(&mut st.mem, (ch % 65536) as u16);
