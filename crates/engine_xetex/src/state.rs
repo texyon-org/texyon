@@ -1477,6 +1477,16 @@ impl FontState {
     }
 }
 
+/// What the current page holds so far (`page_contents`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub(crate) enum PageContents {
+    #[default]
+    Empty,
+    InsertsOnly,
+    BoxThere,
+}
+
 #[derive(Default, Clone)]
 pub(crate) struct ShipoutState {
     pub page_manifest: crate::page_manifest::PageManifest,
@@ -1494,7 +1504,7 @@ pub(crate) struct ShipoutState {
     pub dead_cycles: i32,
     pub page_tail: crate::units::MemPtr,
     pub last_badness: i32,
-    pub page_contents: u8,
+    pub page_contents: PageContents,
     pub page_so_far: [i32; 8],
     pub last_glue: crate::units::MemPtr,
     pub last_penalty: i32,

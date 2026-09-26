@@ -12,7 +12,7 @@ use crate::output::{
     print_cstr_in, print_esc_cstr_in, print_in, print_in_mode_in, print_int_in, print_ln_in,
     print_nl_cstr_in, show_box_in, show_context_in, show_token_list_in, token_show_in,
 };
-use crate::scan::MATCHING;
+use crate::scan::{ABSORBING, ALIGNING, DEFINING, MATCHING};
 use crate::state::{EngineState, ErrorState, GroupCode, InteractionMode};
 
 const HISTORY_ERROR_ISSUED: i32 = 2;
@@ -400,10 +400,6 @@ pub(crate) fn box_error_in(st: &mut EngineState, n: u8) -> ErrorOutcome {
 }
 
 pub(crate) fn runaway_in(st: &mut EngineState) {
-    const DEFINING: u8 = 2;
-    const ALIGNING: u8 = 4;
-    const ABSORBING: u8 = 5;
-
     let (msg, p) = match st.scanner.scanner_status {
         DEFINING => (c"Runaway definition", st.scanner.def_ref),
         MATCHING => (c"Runaway argument", TEMP_HEAD),

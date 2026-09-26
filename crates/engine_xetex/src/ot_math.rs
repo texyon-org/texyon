@@ -4,7 +4,7 @@ use libc::c_void;
 use tectonic_bridge_harfbuzz::sys as hb;
 
 use crate::ext::{D2Fix, Fix2D};
-use crate::math::OTGR_FONT_FLAG;
+use crate::fonts::OTGR_FONT_FLAG;
 use crate::state::FontState;
 
 type XeTeXFont = *mut c_void;

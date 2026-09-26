@@ -1,15 +1,15 @@
 //! Memory arena types and allocator functions translated from
 //! `xetex/xetex-xetex0.c`.
 pub(crate) use crate::consts::TEX_NULL;
-use crate::consts::{GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL};
+use crate::consts::{
+    EMPTY, GLUE_BASE, GLUE_SPEC_SIZE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, NORMAL,
+};
 use crate::node::{
     ChoiceNode, DiscNode, GlueNode, GlueSpecNode, HListNode, KernNode, LigItem, LigatureNode,
     MarginKernNode, MathNode, Noad, NodePtr, PenaltyNode, RuleDimen, RuleNode, StyleNode,
 };
 use crate::state::{EqtbState, MemState};
 use crate::units::{FontId, MemPtr, Scaled};
-
-const EMPTY: i32 = 0;
 
 pub(crate) const ZERO_GLUE: MemPtr = MemPtr(0);
 pub(crate) const FIL_GLUE: MemPtr = MemPtr(ZERO_GLUE.0 + GLUE_SPEC_SIZE);

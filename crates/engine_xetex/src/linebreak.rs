@@ -13,10 +13,11 @@ use crate::consts::{
     INT_PAR_LINE_PENALTY, INT_PAR_LOOSENESS, INT_PAR_PRETOLERANCE, INT_PAR_TEXXET,
     INT_PAR_TOLERANCE, INT_PAR_UC_HYPH, INT_PAR_WIDOW_PENALTY, INT_PAR_XETEX_LINEBREAK_LOCALE,
     INT_PAR_XETEX_LINEBREAK_PENALTY, INT_PAR_XETEX_PROTRUDE_CHARS, INT_PAR_XETEX_USE_GLYPH_METRICS,
-    LC_CODE_BASE, LIG_TAG, LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP,
+    LC_CODE_BASE, LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP,
     NON_ADDRESS, NORMAL, RULE_NODE, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::{linebreak_next, linebreak_start_in, measure_native_node};
+use crate::fonts::{LIG_TAG, QUAD_CODE};
 use crate::hyphenation::{hyph_code, set_hyph_index, HYPH_PRIME};
 use crate::mem::{
     is_char_node, ACTIVE_LIST, ADJUST_HEAD, HOLD_HEAD, PRE_ADJUST_HEAD, TEMP_HEAD, ZERO_GLUE,
@@ -25,7 +26,9 @@ use crate::node::{
     ActiveNode, AnyBox, AnyNode, DeltaNode, DiscNode, GlueNode, GlueSpecNode, HListNode, LigItem,
     MathNode, NodePtr, PassiveNode, WhatsitNode, WhatsitSubtype,
 };
-use crate::packaging::{as_native_word, dimen_par, int_par, list_tail, predecessor};
+use crate::packaging::{
+    as_native_word, dimen_par, int_par, list_tail, predecessor, ADDITIONAL, EXACTLY,
+};
 use crate::scan::NodeRecycleAbort;
 use crate::state::{
     ConfigState, EngineState, EqtbState, ErrorState, FontState, LinebreakState, MemState,
@@ -43,15 +46,12 @@ const DELTA_NODE_SIZE: i32 = 7;
 const MAX_HLIST_STACK: i16 = 512;
 const BEST_BET_SET: &str = "best_bet is set by choose_best_break before use";
 
-const EXACTLY: i16 = 0;
-const ADDITIONAL: i16 = 1;
-const UNHYPHENATED: i16 = 0;
-const HYPHENATED: i16 = 1;
+pub(crate) const UNHYPHENATED: i16 = 0;
+pub(crate) const HYPHENATED: i16 = 1;
 const VERY_LOOSE_FIT: usize = 0;
 const LOOSE_FIT: usize = 1;
 const DECENT_FIT: usize = 2;
 const TIGHT_FIT: usize = 3;
-const QUAD_CODE: i32 = 6;
 
 extern "C" {
     fn get_cp_code(font_num: i32, code: u32, side: i32) -> i32;

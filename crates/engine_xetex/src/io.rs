@@ -5,10 +5,10 @@ use crate::consts::{
     BIGGEST_CHAR, CLOSED, EMPTY_STRING, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_NEW_LINE_CHAR,
     INT_PAR_TRACING_STACK_LEVELS, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_INPUT_NORMALIZATION, INVALID_HANDLE, JUST_OPEN,
-    NEW_LINE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
+    SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING, SELECTOR_TERM_ONLY, TOO_BIG_CHAR,
 };
 use crate::hash::cur_length;
-use crate::input::InputAbort;
+use crate::input::{InputAbort, NEW_LINE};
 use crate::mem::{xcalloc, xmalloc};
 use crate::scan::SccAbort;
 use crate::state::EngineState;
@@ -19,19 +19,16 @@ pub(crate) use crate::bridge::{input_close, input_seek};
 use crate::bridge::{
     ttstub_get_last_input_abspath, ttstub_input_getc, ttstub_input_open, ttstub_input_open_primary,
     ttstub_input_ungetc, ttstub_output_close, ttstub_output_flush, ttstub_output_open,
-    ttstub_output_putc,
+    ttstub_output_putc, TTBC_FILE_FORMAT_TECTONIC_PRIMARY, TTBC_FILE_FORMAT_TEX,
 };
 use crate::cmd::{LEFT_BRACE, OTHER_CHAR, RELAX, SPACER};
 
-const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
-const TTBC_FILE_FORMAT_TECTONIC_PRIMARY: libc::c_int = 59;
-
-const AUTO: i32 = 0;
-const UTF8: i32 = 1;
-const UTF16BE: i32 = 2;
-const UTF16LE: i32 = 3;
-const RAW: i32 = 4;
-const ICUMAPPING: i32 = 5;
+pub(crate) const AUTO: i32 = 0;
+pub(crate) const UTF8: i32 = 1;
+pub(crate) const UTF16BE: i32 = 2;
+pub(crate) const UTF16LE: i32 = 3;
+pub(crate) const RAW: i32 = 4;
+pub(crate) const ICUMAPPING: i32 = 5;
 
 #[cfg(target_endian = "little")]
 const NATIVE_UTF32: u16 = 6;
@@ -39,7 +36,7 @@ const NATIVE_UTF32: u16 = 6;
 const NATIVE_UTF32: u16 = 5;
 const K_FORM_NFC: u16 = 0x0100;
 const K_FORM_NFD: u16 = 0x0200;
-const K_STATUS_NO_ERROR: libc::c_long = 0;
+pub(crate) const K_STATUS_NO_ERROR: libc::c_long = 0;
 
 /// The ICU `UConverterType` of host-endian UTF-32.
 #[cfg(target_endian = "little")]

@@ -21,6 +21,7 @@ use crate::node::{
     AnyBox, AnyNode, DiscNode, GlueNode, GlueSpecNode, HListNode, HasGlueSet, KernNode, MarkNode,
     NodeKind, NodePtr, RuleDimen, SaNode, VListNode, WhatsitNode, WhatsitSubtype,
 };
+use crate::pagebuilder::{FIRE_UP_DONE, FIRE_UP_INIT};
 use crate::scan::{NodeRecycleAbort, BOX_VAL, MARK_VAL};
 use crate::state::{EngineState, EqtbState, FontState, MemState, ScannerState, ShipoutState};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType, Scaled};
@@ -31,12 +32,10 @@ const LIST_OFFSET: i32 = 5;
 const SYNCTEX_FIELD_SIZE: i32 = 1;
 const MEMORY_WORD_SIZE: i32 = 8;
 
-const EXACTLY: i16 = 0;
-const ADDITIONAL: i16 = 1;
+pub(crate) const EXACTLY: i16 = 0;
+pub(crate) const ADDITIONAL: i16 = 1;
 
 const VSPLIT_INIT: i16 = 0;
-const FIRE_UP_INIT: i16 = 1;
-const FIRE_UP_DONE: i16 = 2;
 const DESTROY_MARKS: i16 = 3;
 
 #[inline]

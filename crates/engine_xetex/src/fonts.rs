@@ -23,10 +23,10 @@ use crate::output::{
     print_scaled_in, sprint_cs_in,
 };
 use crate::packaging::int_par;
-use crate::scan::{NodeRecycleAbort, AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::scan::NodeRecycleAbort;
 use crate::state::{EngineState, EqtbState, FontState, MemState};
 
-use crate::bridge::ttstub_input_getc;
+use crate::bridge::{ttstub_input_getc, TTBC_FILE_FORMAT_TFM};
 
 extern "C" {
     fn get_loaded_font_design_size() -> i32;
@@ -34,8 +34,17 @@ extern "C" {
 }
 
 const EOF: i32 = -1;
-const LIST_TAG: u16 = 2;
-const TTBC_FILE_FORMAT_TFM: libc::c_int = 3;
+pub(crate) const AAT_FONT_FLAG: i32 = 0xFFFF;
+pub(crate) const OTGR_FONT_FLAG: i32 = 0xFFFE;
+pub(crate) const LIG_TAG: u16 = 1;
+pub(crate) const LIST_TAG: u16 = 2;
+pub(crate) const EXT_TAG: u16 = 3;
+pub(crate) const SLANT_CODE: i32 = 1;
+pub(crate) const SPACE_CODE: i32 = 2;
+pub(crate) const SPACE_SHRINK_CODE: i32 = 4;
+pub(crate) const X_HEIGHT_CODE: i32 = 5;
+pub(crate) const QUAD_CODE: i32 = 6;
+pub(crate) const EXTRA_SPACE_CODE: i32 = 7;
 
 pub(crate) type CharInfo = B16x4;
 

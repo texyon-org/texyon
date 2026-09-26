@@ -6,11 +6,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::source::{ResolvedSource, SourceIdentity, SourcePath, SourceSnapshot};
+use crate::bridge::TTBC_FILE_FORMAT_TEX;
 use tectonic_bridge_core::EOF;
 
 const MEM_TAG: usize = 1usize << (usize::BITS - 1);
 const INDEX_MASK: usize = !MEM_TAG;
-const TEX_FORMAT: libc::c_int = 26;
 
 thread_local! {
     static ACTIVE: RefCell<Option<ReplaySources>> = const { RefCell::new(None) };
@@ -131,7 +131,7 @@ pub(crate) unsafe fn open_named(path: *const libc::c_char, format: libc::c_int) 
         let sources = active.as_mut()?;
         let requested = Path::new(path.as_ref());
         let resolved = sources.snapshot.resolve_entry(requested).or_else(|| {
-            (format == TEX_FORMAT)
+            (format == TTBC_FILE_FORMAT_TEX)
                 .then(|| sources.snapshot.resolve_replay_entry(requested))
                 .flatten()
         })?;

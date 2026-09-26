@@ -2,12 +2,12 @@
 use crate::consts::{
     A_LEADERS, BEFORE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DIMEN_BASE, DIMEN_PAR_H_OFFSET,
     DIMEN_PAR_PDF_PAGE_HEIGHT, DIMEN_PAR_PDF_PAGE_WIDTH, DIMEN_PAR_V_OFFSET, DLIST, END_M_CODE,
-    END_WRITE, FILLL, FONT_BASE, GLUE_SPEC_SIZE, INSERTED, INT_BASE, INT_PAR_MAG,
-    INT_PAR_TRACING_ONLINE, INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING,
-    INVALID_HANDLE, LEFT_TO_RIGHT, L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD,
-    NATIVE_GLYPH_INFO_SIZE, NORMAL, NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY,
-    SELECTOR_NEW_STRING, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE,
-    SPACE_ADJUSTMENT, TEX_INFINITY, TEX_NULL, TOO_BIG_CHAR, WRITE_TEXT,
+    END_WRITE, FILLL, FONT_BASE, GLUE_SPEC_SIZE, INT_BASE, INT_PAR_MAG, INT_PAR_TRACING_ONLINE,
+    INT_PAR_TRACING_OUTPUT, INT_PAR_XETEX_INTERWORD_SPACE_SHAPING, INVALID_HANDLE, LEFT_TO_RIGHT,
+    L_CODE, MAX_HALFWORD, MEDIUM_NODE_SIZE, MEM_TOP, MIN_HALFWORD, NATIVE_GLYPH_INFO_SIZE, NORMAL,
+    NULL_FLAG, RIGHT_TO_LEFT, R_CODE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
+    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SMALL_NODE_SIZE, SPACE_ADJUSTMENT, TEX_INFINITY,
+    TEX_NULL, TOO_BIG_CHAR,
 };
 use crate::ext::apply_tfm_font_mapping;
 
@@ -15,11 +15,14 @@ use crate::bridge::{
     ttstub_output_close, ttstub_output_flush, ttstub_output_open, ttstub_output_write,
     ttstub_shell_escape,
 };
+use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
+use crate::input::{INSERTED, WRITE_TEXT};
 use crate::mem::LIG_TRICK;
 use crate::node::{
     AnyBox, AnyNode, EdgeNode, GlueNode, GlueSpecNode, MathNode, MovementNode, NodePtr, RuleNode,
     WhatsitNode, WhatsitSubtype,
 };
+use crate::scan::{LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN};
 use crate::state::{EqtbState, FontState, MemState, ScannerState, ShipoutState, StringsState};
 use crate::units::{GlueSign, MemIdx, MemPtr, Scaled};
 
@@ -49,9 +52,6 @@ const SET_TEXT_AND_GLYPHS: u8 = 254;
 const XDV_ID_BYTE: u8 = 7;
 const SPX_ID_BYTE: u8 = 100;
 
-const AAT_FONT_FLAG: i32 = 0xFFFF;
-const OTGR_FONT_FLAG: i32 = 65534;
-
 const MOV_NONE_SEEN: i32 = 0;
 const MOV_Y_HERE: i32 = 1;
 const MOV_Z_HERE: i32 = 2;
@@ -66,9 +66,6 @@ const REVERSED: u16 = 1;
 
 pub(crate) const ONE_INCH: i32 = 4_736_287;
 const ONE_INCH_LESS_ONE: i32 = ONE_INCH - 1;
-
-const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
-const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
 
 pub fn new_edge(mem: &mut MemState, s: i16, w: i32) -> Option<NodePtr<EdgeNode>> {
     let p = NodePtr::<EdgeNode>::alloc(mem)?;

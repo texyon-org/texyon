@@ -2,7 +2,7 @@
 
 use libc::{c_char, c_double, c_int, c_uint};
 
-use crate::bridge::ttstub_input_open;
+use crate::bridge::{ttstub_input_open, TTBC_FILE_FORMAT_PICT};
 use crate::consts::{INVALID_HANDLE, PIC_NODE_SIZE};
 use crate::ext::{D2Fix, Fix2D};
 use crate::main_control::{mc_propagate_error, MainControlAbort};
@@ -87,7 +87,6 @@ extern "C" {
 }
 
 const PIC_PROBE_OK: c_int = 0;
-const TTBC_FILE_FORMAT_PICT: c_int = 25;
 /// The probe error for a missing file.
 const FILE_NOT_FOUND: c_int = -43;
 

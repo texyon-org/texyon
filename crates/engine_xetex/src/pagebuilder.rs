@@ -6,23 +6,20 @@ use crate::consts::{
     GLUE_PAR_SPLIT_TOP_SKIP, GLUE_PAR_TOP_SKIP, IGNORE_DEPTH, INF_BAD, INF_PENALTY, INS_NODE_SIZE,
     INT_BASE, INT_PAR_HOLDING_INSERTS, INT_PAR_MAX_DEAD_CYCLES, INT_PAR_OUTPUT_PENALTY,
     INT_PAR_SAVING_VDISCARDS, INT_PAR_VBADNESS, LOCAL_BASE, LOCAL_OUTPUT_ROUTINE, MAX_HALFWORD,
-    MEM_TOP, NORMAL, OUTPUT_TEXT, SCALED_BASE, SKIP_BASE, TEX_NULL, TOP_MARK_CODE, VMODE,
+    MEM_TOP, NORMAL, SCALED_BASE, SKIP_BASE, TEX_NULL, TOP_MARK_CODE, VMODE,
 };
 use crate::errors::ErrorOutcome;
 use crate::helpers::badness;
-use crate::main_control::{add_token_ref, fetch_box, help, ADDITIONAL, COPY_CODE, LAST_BOX_CODE};
+use crate::input::OUTPUT_TEXT;
+use crate::main_control::{add_token_ref, fetch_box, help, COPY_CODE, LAST_BOX_CODE};
 use crate::mem::{CONTRIB_HEAD, HOLD_HEAD, PAGE_HEAD, PAGE_INS_HEAD};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, InsNode, NodePtr, PageInsNode, SaNode, WhatsitSubtype,
 };
+use crate::packaging::{ADDITIONAL, EXACTLY};
 use crate::scan::MARK_VAL;
-use crate::state::{EngineState, GroupCode, ShipoutState};
+use crate::state::{EngineState, GroupCode, PageContents, ShipoutState};
 use crate::units::{MemIdx, MemPtr, Scaled};
-
-// `page_contents` states.
-const EMPTY: u8 = 0;
-const INSERTS_ONLY: u8 = 1;
-const BOX_THERE: u8 = 2;
 
 // Indices into `page_so_far`, whose entries 2 to 5 hold the stretch of each order.
 const PAGE_GOAL: usize = 0;
@@ -30,10 +27,9 @@ const PAGE_TOTAL: usize = 1;
 const PAGE_SHRINK: usize = 6;
 const PAGE_DEPTH: usize = 7;
 
-const FIRE_UP_INIT: i16 = 1;
-const FIRE_UP_DONE: i16 = 2;
+pub(crate) const FIRE_UP_INIT: i16 = 1;
+pub(crate) const FIRE_UP_DONE: i16 = 2;
 const PAGE_INS_NODE_SIZE: i32 = 4;
-const EXACTLY: i16 = 0;
 const DEPLORABLE: i32 = 100_000;
 
 pub(crate) enum PageBuildAbort {
@@ -127,7 +123,7 @@ fn set_contrib_tail(st: &mut EngineState, tail: MemPtr) {
     }
 }
 
-fn freeze_page_specs(st: &mut EngineState, contents: u8) {
+fn freeze_page_specs(st: &mut EngineState, contents: PageContents) {
     let shipout = &mut st.shipout;
     shipout.page_contents = contents;
     shipout.page_so_far[PAGE_GOAL] = st.eqtb.b32s1(DIMEN_BASE + DIMEN_PAR_VSIZE);
@@ -401,7 +397,7 @@ fn fire_up_in(st: &mut EngineState, c: MemPtr) -> Result<(), PageBuildAbort> {
         crate::mem::delete_glue_ref(&mut st.mem, st.shipout.last_glue);
     }
 
-    st.shipout.page_contents = EMPTY;
+    st.shipout.page_contents = PageContents::Empty;
     st.shipout.page_tail = PAGE_HEAD;
     PAGE_HEAD.set_link(&mut st.mem, MemPtr::NULL);
     st.shipout.last_glue.0 = MAX_HALFWORD;
@@ -550,8 +546,8 @@ fn append_insertion_in(
     ins: NodePtr<InsNode>,
     p: MemPtr,
 ) -> Result<(), PageBuildAbort> {
-    if st.shipout.page_contents == EMPTY {
-        freeze_page_specs(st, INSERTS_ONLY);
+    if st.shipout.page_contents == PageContents::Empty {
+        freeze_page_specs(st, PageContents::InsertsOnly);
     }
     let n = ins.subtype(&st.mem) as u8;
     let mut r = PAGE_INS_HEAD;
@@ -681,7 +677,7 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
         }
         update_last_node_info(st, node, node_type);
 
-        let below_box = st.shipout.page_contents < BOX_THERE;
+        let below_box = st.shipout.page_contents < PageContents::BoxThere;
         let step = match node {
             AnyNode::HList(_) | AnyNode::VList(_) | AnyNode::Rule(_) => {
                 let (height, depth) = match node {
@@ -691,10 +687,10 @@ pub(crate) fn build_page_in(st: &mut EngineState) -> Result<(), PageBuildAbort> 
                     _ => unreachable!(),
                 };
                 if below_box {
-                    if st.shipout.page_contents == EMPTY {
-                        freeze_page_specs(st, BOX_THERE);
+                    if st.shipout.page_contents == PageContents::Empty {
+                        freeze_page_specs(st, PageContents::BoxThere);
                     } else {
-                        st.shipout.page_contents = BOX_THERE;
+                        st.shipout.page_contents = PageContents::BoxThere;
                     }
                     let q = crate::mem::alloc_skip_param(&mut st.mem, &st.eqtb, GLUE_PAR_TOP_SKIP)
                         .ok_or(PageBuildAbort::MainMemoryOverflow)?;

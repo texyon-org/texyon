@@ -7,16 +7,16 @@ use crate::cmd::{
 };
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_USV, CS_TOKEN_FLAG, ELSE_CODE, FI_CODE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
-    FROZEN_PRIMITIVE, GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP, HMODE, INSERTED, INT_BASE,
+    FROZEN_PRIMITIVE, GLUE_PAR_LEFT_SKIP, GLUE_PAR_RIGHT_SKIP, HMODE, INT_BASE,
     INT_PAR_TRACING_COMMANDS, INT_PAR_TRACING_IFS, INT_PAR_TRACING_MACROS,
-    INT_PAR_TRACING_STACK_LEVELS, MMODE, NORMAL_SCANNER, NULL_CS, OR_CODE, PRIM_EQTB_BASE,
-    SELECTOR_NEW_STRING, SINGLE_BASE, TEX_NULL, TOKEN_LIST, TOO_BIG_CHAR, TOO_BIG_USV,
-    UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
+    INT_PAR_TRACING_STACK_LEVELS, MMODE, NULL_CS, OR_CODE, PRIM_EQTB_BASE, SELECTOR_NEW_STRING,
+    SINGLE_BASE, TEX_NULL, TOO_BIG_CHAR, TOO_BIG_USV, UNDEFINED_PRIMITIVE, UNLESS_CODE, VMODE,
 };
 use crate::errors::error_in;
+use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{
-    back_error_in, back_input_in, begin_token_list_in, InputAbort, LEFT_BRACE_LIMIT, MACRO,
-    MARK_TEXT, RIGHT_BRACE_LIMIT, V_TEMPLATE,
+    back_error_in, back_input_in, begin_token_list_in, InputAbort, INSERTED, LEFT_BRACE_LIMIT,
+    MACRO, MARK_TEXT, RIGHT_BRACE_LIMIT, TOKEN_LIST, V_TEMPLATE,
 };
 use crate::mem::{BACKUP_HEAD, GARBAGE, TEMP_HEAD};
 use crate::node::{AnyBox, AnyNode, NodePtr, SaNode};
@@ -28,9 +28,9 @@ use crate::output::{
 };
 use crate::scan::{
     fetch_box, get_avail_scc, get_next_scc, get_node_scc, get_token_in, get_x_non_blank_in,
-    get_x_token_in, scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, AAT_FONT_FLAG,
-    END_MATCH_TOKEN, MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NO_EXPAND_FLAG, OTGR_FONT_FLAG,
-    OTHER_TOKEN, SPACE_TOKEN,
+    get_x_token_in, scan_int_in, scc_err, store_new_token, str_toks_scc, SccAbort, END_MATCH_TOKEN,
+    MARK_VAL, MATCHING, MATCH_TOKEN, MAX_CHAR_VAL, NORMAL_SCANNER, NO_EXPAND_FLAG, OTHER_TOKEN,
+    SPACE_TOKEN,
 };
 use crate::state::EngineState;
 use crate::units::{MemIdx, MemPtr};

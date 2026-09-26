@@ -5,6 +5,7 @@ use crate::consts::{
     EQTB_SIZE, INDEX_NODE_SIZE, INT_BASE, INT_PAR_MAG, LEVEL_ONE, LEVEL_ZERO, MARK_CLASS_NODE_SIZE,
     MEM_TOP, TEX_NULL, UNDEFINED_CONTROL_SEQUENCE,
 };
+use crate::input::{LEFT_BRACE_LIMIT, RIGHT_BRACE_LIMIT};
 use crate::mem::{delete_glue_ref, delete_token_ref, free_node, get_node, ZERO_GLUE};
 use crate::mem_types::MemoryWord;
 use crate::node::{NodePtr, SaNode};
@@ -19,16 +20,13 @@ const INSERT_TOKEN: u16 = 2;
 const LEVEL_BOUNDARY: u16 = 3;
 const RESTORE_SA: u16 = 4;
 
-const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
-const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;
-
 const POINTER_NODE_SIZE: i32 = 2;
 const WORD_NODE_SIZE: i32 = 3;
 
-const DIMEN_VAL_LIMIT: u16 = 128;
-const MU_VAL_LIMIT: u16 = 256;
-const BOX_VAL_LIMIT: u16 = 320;
-const TOK_VAL_LIMIT: u16 = 384;
+pub(crate) const DIMEN_VAL_LIMIT: u16 = 128;
+pub(crate) const MU_VAL_LIMIT: u16 = 256;
+pub(crate) const BOX_VAL_LIMIT: u16 = 320;
+pub(crate) const TOK_VAL_LIMIT: u16 = 384;
 
 /// A save-stack abort, which ends the run.
 pub(crate) enum SaveAbort {

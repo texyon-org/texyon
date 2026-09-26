@@ -4,14 +4,13 @@ use std::ffi::CString;
 
 use crate::bridge::{
     ttstub_get_file_md5, ttstub_input_get_mtime, ttstub_input_get_size, ttstub_input_open,
-    ttstub_input_read,
+    ttstub_input_read, TTBC_FILE_FORMAT_TEX,
 };
 use crate::consts::{EMPTY_STRING, INVALID_HANDLE, TOO_BIG_CHAR};
 use crate::mem::xmalloc;
 use crate::state::StringsState;
 use crate::utf8::{BYTES_FROM_UTF8, FIRST_BYTE_MARK, OFFSETS_FROM_UTF8};
 
-const TTBC_FILE_FORMAT_TEX: libc::c_int = 26;
 const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
 
 /// Returns `(minutes, day, month, year)` for `source_date_epoch`.

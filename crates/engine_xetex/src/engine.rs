@@ -11,8 +11,8 @@ use crate::cmd::{
 };
 use crate::consts::{
     ACTIVE_BASE, BIGGEST_CHAR, BIGGEST_LANG, BOX_BASE, CAT_CODE_BASE, CLOSED, CS_TOKEN_FLAG,
-    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY_STRING, END_WRITE, EQTB_SIZE, ETEX_PEN_BASE,
-    FIL, FILL, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
+    CUR_FONT_LOC, DEL_CODE_BASE, DIMEN_BASE, EMPTY, EMPTY_STRING, END_WRITE, EQTB_SIZE,
+    ETEX_PEN_BASE, FIL, FILL, FONT_BASE, FROZEN_CONTROL_SEQUENCE, FROZEN_DONT_EXPAND, FROZEN_ENDV,
     FROZEN_END_TEMPLATE, FROZEN_PRIMITIVE, FROZEN_PROTECTION, GLUE_BASE, GLUE_NODE, GLUE_SPEC_SIZE,
     HASH_BASE, HISTORY_FATAL_ERROR, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, IGNORE_DEPTH,
     INT_BASE, INT_PAR_DAY, INT_PAR_END_LINE_CHAR, INT_PAR_ESCAPE_CHAR, INT_PAR_HANG_AFTER,
@@ -20,18 +20,19 @@ use crate::consts::{
     INT_PAR_TOLERANCE, INT_PAR_XETEX_GENERATE_ACTUAL_TEXT, INT_PAR_XETEX_HYPHENATABLE_LENGTH,
     INT_PAR_YEAR, LC_CODE_BASE, LEFT_TO_RIGHT, LEVEL_ONE, LEVEL_ZERO, LOCAL_BASE,
     LOCAL_OUTPUT_ROUTINE, LOCAL_PAR_SHAPE, MATH_CODE_BASE, MATH_FONT_BASE, MAX_FONT_MAX,
-    MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NEW_LINE, NON_ADDRESS, NORMAL, NORMAL_SCANNER,
-    NUMBER_MATH_FAMILIES, NUMBER_USVS, PRIM_EQTB_BASE, PRIM_SIZE, SELECTOR_NO_PRINT,
-    SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE, SPLIT_BOT_MARK_CODE,
-    TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR, TOP_MARK_CODE, UC_CODE_BASE,
-    UNDEFINED_CONTROL_SEQUENCE, VMODE,
+    MAX_HALFWORD, MEM_TOP, MIN_TRIE_OP, NON_ADDRESS, NORMAL, NUMBER_MATH_FAMILIES, NUMBER_USVS,
+    PRIM_EQTB_BASE, PRIM_SIZE, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+    SF_CODE_BASE, SINGLE_BASE, SPLIT_BOT_MARK_CODE, TEX_NULL, TOKS_BASE, TOO_BIG_CHAR,
+    TOP_MARK_CODE, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, VMODE,
 };
 use crate::errors::EngineAbort;
 use crate::expand::IF_NODE_SIZE;
 use crate::format_io::load_fmt_file;
 use crate::hash::{HASH_OFFSET, HASH_PRIME, HASH_SIZE};
-use crate::hyphenation::TRIE_OP_SIZE;
+use crate::hyphenation::{HYPH_PRIME, TRIE_OP_SIZE};
+use crate::input::{NEW_LINE, TOKEN_LIST};
 use crate::io::init_io;
+use crate::linebreak::HYPHENATED;
 use crate::main_control::{LAST_BOX_CODE, VSPLIT_CODE};
 use crate::mem::{
     xmalloc, ACTIVE_LIST, CONTRIB_HEAD, END_SPAN, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, NULL_LIST,
@@ -39,7 +40,7 @@ use crate::mem::{
 };
 use crate::mem_types::{zeroed_vec, B16x4, B32x2, MemoryWord};
 use crate::node::{GlueSpecNode, NodePtr};
-use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL};
+use crate::scan::{INTER_CHAR_VAL, INT_VAL, MARK_VAL, NORMAL_SCANNER};
 use crate::state::{EngineState, EqtbState, FontState, GroupCode, InteractionMode, MemState};
 use crate::units::{MemIdx, MemPtr, Scaled};
 
@@ -50,15 +51,12 @@ pub(crate) const POOL_FREE: i32 = 47_500;
 pub(crate) const STRINGS_FREE: i32 = 100;
 const HYPH_SIZE: i32 = 8_191;
 
-const HYPHENATED: u16 = 1;
 const SPLIT_UP: u16 = 1;
-const EMPTY: u8 = 0;
 
 const NUM_ETEX_PENALTIES: i32 = 4;
 const NUMBER_REGS: i32 = 256;
 const NUMBER_MATH_FONTS: i32 = 3 * NUMBER_MATH_FAMILIES;
 const TOO_BIG_LANG: i32 = 256;
-pub(crate) const HYPH_PRIME: i32 = 607;
 const VAR_FAM_CLASS: i32 = 7;
 
 pub(crate) const REGISTER_HELP: &CStr = c"A register number must be between 0 and 32767.";
@@ -370,7 +368,7 @@ fn initialize_more_variables_in(st: &mut EngineState) {
     st.input.cur_list.mode_line = 0;
     st.input.cur_list.prev_graf = 0;
     st.scanner.shown_mode = 0;
-    st.shipout.page_contents = EMPTY;
+    st.shipout.page_contents = crate::state::PageContents::Empty;
     st.shipout.page_tail = PAGE_HEAD;
     st.shipout.last_glue.0 = MAX_HALFWORD;
     st.shipout.last_penalty = 0;
@@ -420,7 +418,7 @@ fn initialize_more_variables_in(st: &mut EngineState) {
     st.shipout.last_badness = 0;
     st.scanner.pre_adjust_tail.0 = TEX_NULL;
     st.scanner.pack_begin_line = 0;
-    st.scanner.empty.s1 = EMPTY as i32;
+    st.scanner.empty.s1 = EMPTY;
     st.scanner.empty.s0 = TEX_NULL;
     st.scanner.align_ptr = MemPtr::NULL;
     st.scanner.cur_align.0 = TEX_NULL;
@@ -528,7 +526,7 @@ fn initialize_more_initex_variables_in(st: &mut EngineState, format_ident: i32) 
     mem.set_b32s0(OMIT_TEMPLATE, CS_TOKEN_FLAG + FROZEN_END_TEMPLATE);
     mem.set_b32s1(END_SPAN, u16::MAX as i32 + 1);
     mem.set_b32s0(END_SPAN, TEX_NULL);
-    mem.set_b16s1(ACTIVE_LIST, HYPHENATED);
+    mem.set_b16s1(ACTIVE_LIST, HYPHENATED as u16);
     mem.set_b32s0(ACTIVE_LIST + 1, MAX_HALFWORD);
     mem.set_b16s0(ACTIVE_LIST, 0);
     mem.set_b16s0(PAGE_INS_HEAD, 255);

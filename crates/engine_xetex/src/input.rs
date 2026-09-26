@@ -2,8 +2,8 @@
 
 use crate::cmd::ASSIGN_TOKS;
 use crate::consts::{
-    BACKED_UP, CS_TOKEN_FLAG, FROZEN_RELAX, INSERTED, INT_BASE, INT_PAR_TRACING_MACROS, LOCAL_BASE,
-    LOCAL_OUTPUT_ROUTINE, OUTPUT_TEXT, TEX_NULL, TOKEN_LIST, WRITE_TEXT,
+    CS_TOKEN_FLAG, FROZEN_RELAX, INT_BASE, INT_PAR_TRACING_MACROS, LOCAL_BASE,
+    LOCAL_OUTPUT_ROUTINE, TEX_NULL,
 };
 use crate::errors::{EngineAbort, ErrorOutcome};
 use crate::io::u_close;
@@ -14,13 +14,28 @@ use crate::units::MemPtr;
 pub(crate) const PARAMETER: u16 = 0;
 pub(crate) const U_TEMPLATE: u16 = 1;
 pub(crate) const V_TEMPLATE: u16 = 2;
+pub(crate) const BACKED_UP: u16 = 3;
+pub(crate) const BACKED_UP_CHAR: u16 = 4;
+pub(crate) const INSERTED: u16 = 5;
 pub(crate) const MACRO: u16 = 6;
+pub(crate) const OUTPUT_TEXT: u16 = 7;
+pub(crate) const EVERY_PAR_TEXT: u16 = 8;
+pub(crate) const EVERY_MATH_TEXT: u16 = 9;
+pub(crate) const EVERY_DISPLAY_TEXT: u16 = 10;
+pub(crate) const EVERY_HBOX_TEXT: u16 = 11;
+pub(crate) const EVERY_VBOX_TEXT: u16 = 12;
+pub(crate) const EVERY_JOB_TEXT: u16 = 13;
+pub(crate) const EVERY_CR_TEXT: u16 = 14;
 pub(crate) const MARK_TEXT: u16 = 15;
 pub(crate) const EVERY_EOF_TEXT: u16 = 16;
+pub(crate) const INTER_CHAR_TEXT: u16 = 17;
+pub(crate) const WRITE_TEXT: u16 = 18;
 pub(crate) const TECTONIC_CODA_TEXT: u16 = 19;
 
+pub(crate) const TOKEN_LIST: u16 = 0;
 pub(crate) const MID_LINE: u16 = 1;
 pub(crate) const SKIP_BLANKS: u16 = 17;
+pub(crate) const NEW_LINE: u16 = 33;
 
 pub(crate) const LEFT_BRACE_LIMIT: i32 = 0x40_0000;
 pub(crate) const RIGHT_BRACE_LIMIT: i32 = 0x60_0000;

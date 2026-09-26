@@ -7,17 +7,23 @@ use std::ptr;
 
 use libc::{c_char, c_double, c_float, c_int, c_long, c_uint, c_void};
 
-use crate::bridge::{diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read};
+use crate::bridge::{
+    diag_append_str, ttstub_input_get_size, ttstub_input_open, ttstub_input_read,
+    TTBC_FILE_FORMAT_MISC_FONTS,
+};
 use crate::cmd::EXTENSION;
 use crate::consts::{
-    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INSERTED, INT_BASE,
+    CS_TOKEN_FLAG, CUR_FONT_LOC, FROZEN_SPECIAL, GLYPH_NODE_SIZE, HMODE, INT_BASE,
     INT_PAR_LEFT_HYPHEN_MIN, INT_PAR_RIGHT_HYPHEN_MIN, INT_PAR_XETEX_DEFAULT_INPUT_ENCODING,
     INT_PAR_XETEX_DEFAULT_INPUT_MODE, INT_PAR_XETEX_LINEBREAK_LOCALE, INT_PAR_XETEX_TRACING_FONTS,
     INT_PAR_XETEX_USE_GLYPH_METRICS, LEFT_SIDE, MMODE, OPEN_NODE_SIZE, RIGHT_SIDE, SMALL_NODE_SIZE,
     VMODE, WRITE_NODE_SIZE,
 };
 use crate::expand::{XETEX_FEATURE_NAME_CODE, XETEX_SELECTOR_NAME_CODE};
+use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::glyph_arena::{FixedPoint, GlyphBlob};
+use crate::input::INSERTED;
+use crate::io::{AUTO, ICUMAPPING, K_STATUS_NO_ERROR, RAW, UTF16BE, UTF16LE, UTF8};
 use crate::main_control::{mc_propagate_error, new_graf_in, MainControlAbort};
 use crate::mem::TEMP_HEAD;
 use crate::node::{NodePtr, WhatsitNode, WhatsitSubtype};
@@ -25,7 +31,7 @@ use crate::output::{capture_to_diagnostic_in, error_here_with_diagnostic_in};
 use crate::packaging::int_par;
 use crate::pic::load_picture_in;
 use crate::scan::{
-    get_x_token_in, scan_int_in, NodeRecycleAbort, AAT_FONT_FLAG, OTGR_FONT_FLAG,
+    get_x_token_in, scan_int_in, NodeRecycleAbort, LEFT_BRACE_TOKEN, RIGHT_BRACE_TOKEN,
     XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE, XETEX_COUNT_SELECTORS_CODE,
     XETEX_FEATURE_CODE_CODE, XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
     XETEX_IS_DEFAULT_SELECTOR_CODE, XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_OT_COUNT_FEATURES_CODE,
@@ -39,14 +45,7 @@ type XeTeXFont = *mut c_void;
 type XeTeXLayoutEngine = *mut c_void;
 type RawPlatformFontRef = *mut c_void;
 
-const TTBC_FILE_FORMAT_MISC_FONTS: c_int = 41;
 const HB_TAG_NONE: u32 = 0;
-const AUTO: c_int = 0;
-const UTF8: c_int = 1;
-const UTF16BE: c_int = 2;
-const UTF16LE: c_int = 3;
-const RAW: c_int = 4;
-const ICUMAPPING: c_int = 5;
 #[cfg(target_endian = "big")]
 const US_NATIVE_UTF16: c_int = UTF16BE;
 #[cfg(target_endian = "little")]
@@ -1825,7 +1824,6 @@ pub unsafe fn apply_mapping(
     txt_ptr: *mut u16,
     txt_len: c_int,
 ) -> c_int {
-    const K_STATUS_NO_ERROR: c_long = 0;
     const K_STATUS_OUTPUT_BUFFER_FULL: c_long = 1;
     let txt_bytes = txt_len as u32 * 2;
 
@@ -1961,9 +1959,6 @@ pub(crate) unsafe fn print_glyph_name_in(
     }
     Ok(())
 }
-
-const LEFT_BRACE_TOKEN: i32 = 0x20_0000;
-const RIGHT_BRACE_TOKEN: i32 = 0x40_0000;
 
 // `\openout` .. `\special` and `\pdfsavepos` carry their whatsit subtype as the
 // command modifier.

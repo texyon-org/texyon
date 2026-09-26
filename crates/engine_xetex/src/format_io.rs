@@ -6,7 +6,7 @@ use std::ffi::CStr;
 
 use crate::bridge::{
     ttstub_input_open, ttstub_input_read, ttstub_output_close, ttstub_output_flush,
-    ttstub_output_open, ttstub_output_write,
+    ttstub_output_open, ttstub_output_write, TTBC_FILE_FORMAT_FORMAT,
 };
 use crate::cmd::UNDEFINED_CS;
 use crate::consts::{
@@ -17,12 +17,13 @@ use crate::consts::{
     TEX_NULL, TOO_BIG_CHAR, UNDEFINED_CONTROL_SEQUENCE,
 };
 use crate::engine::{
-    alloc_font_arrays, set_eq, sort_avail_in, HYPH_PRIME, POOL_FREE, REGISTER_HELP, STRINGS_FREE,
+    alloc_font_arrays, set_eq, sort_avail_in, POOL_FREE, REGISTER_HELP, STRINGS_FREE,
     TEX_FORMAT_DEFAULT,
 };
 use crate::errors::EngineAbort;
+use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::hash::{HASH_OFFSET, HASH_PRIME};
-use crate::hyphenation::{BIGGEST_LANG, MAX_TRIE_OP, TRIE_OP_SIZE};
+use crate::hyphenation::{BIGGEST_LANG, HYPH_PRIME, MAX_TRIE_OP, TRIE_OP_SIZE};
 use crate::io::name_of_file_ptr;
 use crate::mem::{CONTRIB_HEAD, HI_MEM_STAT_MIN, HI_MEM_STAT_USAGE, PAGE_HEAD};
 use crate::scan::{INTER_CHAR_VAL, INT_VAL};
@@ -30,14 +31,10 @@ use crate::state::{EngineState, EqtbState, InteractionMode};
 
 const FORMAT_HEADER_MAGIC: i32 = 0x5454_4E43;
 const FORMAT_FOOTER_MAGIC: i32 = 0x0000_029A;
-const FORMAT_SERIAL: i32 = crate::FORMAT_SERIAL as i32;
-const TTBC_FILE_FORMAT_FORMAT: libc::c_int = 10;
 const SUP_MAX_STRINGS: i32 = 2_097_151;
 const SUP_FONT_MEM_SIZE: i32 = 147_483_647;
 const SUP_POOL_SIZE: i32 = 40_000_000;
 const SUP_HASH_EXTRA: i32 = 2_097_151;
-const AAT_FONT_FLAG: i32 = 0xFFFF;
-const OTGR_FONT_FLAG: i32 = 0xFFFE;
 
 fn bad_fmt() -> EngineAbort {
     EngineAbort::TtAbort(c"fatal format file error".as_ptr())
@@ -278,7 +275,7 @@ pub(crate) unsafe fn store_fmt_file_in(st: &mut EngineState) -> Result<(), Engin
     crate::output::print_in(st, st.strings.format_ident);
 
     dump_int(fmt_out, FORMAT_HEADER_MAGIC)?;
-    dump_int(fmt_out, FORMAT_SERIAL)?;
+    dump_int(fmt_out, crate::FORMAT_SERIAL as i32)?;
     dump_int(fmt_out, st.eqtb.hash_high)?;
 
     while st.input.pseudo_files.0 != TEX_NULL {
@@ -601,7 +598,7 @@ unsafe fn load_fmt_file_in(st: &mut EngineState, fmt_in: usize) -> Result<bool, 
     }
 
     expect_int(fmt_in, FORMAT_HEADER_MAGIC)?;
-    if undump_int(fmt_in)? != FORMAT_SERIAL {
+    if undump_int(fmt_in)? != crate::FORMAT_SERIAL as i32 {
         return Err(EngineAbort::TtAbort(
             c"format file is of the wrong version".as_ptr(),
         ));

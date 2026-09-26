@@ -14,6 +14,14 @@ use tectonic_bridge_core::{
 
 static mut BRIDGE_PTR: *mut libc::c_void = std::ptr::null_mut();
 
+pub(crate) const TTBC_FILE_FORMAT_TFM: libc::c_int = FileFormat::Tfm as libc::c_int;
+pub(crate) const TTBC_FILE_FORMAT_FORMAT: libc::c_int = FileFormat::Format as libc::c_int;
+pub(crate) const TTBC_FILE_FORMAT_PICT: libc::c_int = FileFormat::Pict as libc::c_int;
+pub(crate) const TTBC_FILE_FORMAT_TEX: libc::c_int = FileFormat::Tex as libc::c_int;
+pub(crate) const TTBC_FILE_FORMAT_MISC_FONTS: libc::c_int = FileFormat::MiscFonts as libc::c_int;
+pub(crate) const TTBC_FILE_FORMAT_TECTONIC_PRIMARY: libc::c_int =
+    FileFormat::TectonicPrimary as libc::c_int;
+
 /// Installs the `CoreBridgeState` pointer for this run, or clears it with null.
 pub(crate) unsafe fn set_bridge_state(ptr: *mut libc::c_void) {
     BRIDGE_PTR = ptr;

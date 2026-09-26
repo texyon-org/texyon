@@ -23,19 +23,20 @@ use crate::cmd::{
     VRULE, VSKIP, XETEX_DEF_CODE, XETEX_MATH_GIVEN, XRAY,
 };
 use crate::consts::{
-    ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BACKED_UP, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR,
-    BIGGEST_USV, CAT_CODE_BASE, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS,
-    DEL_CODE_BASE, DIMEN_BASE, DLIST, END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FI_CODE,
-    FONT_ID_BASE, FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED,
-    HMODE, IGNORE_DEPTH, INSERTED, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_ERROR_CONTEXT_LINES,
+    ACC_KERN, ACTIVE_BASE, AFTER, A_LEADERS, BEGIN_L_CODE, BEGIN_R_CODE, BIGGEST_CHAR, BIGGEST_USV,
+    CAT_CODE_BASE, COND_MATH_GLUE, COUNT_BASE, CS_TOKEN_FLAG, C_LEADERS, DEL_CODE_BASE, DIMEN_BASE,
+    DLIST, EMPTY, END_L_CODE, EQTB_SIZE, ETEX_PEN_BASE, FILLL, FI_CODE, FONT_ID_BASE,
+    FROZEN_NULL_FONT, GLUE_BASE, HASH_BASE, HISTORY_SPOTLESS, HISTORY_WARNING_ISSUED, HMODE,
+    IGNORE_DEPTH, INT_BASE, INT_PAR_END_LINE_CHAR, INT_PAR_ERROR_CONTEXT_LINES,
     INT_PAR_ESCAPE_CHAR, INT_PAR_NEW_LINE_CHAR, INT_PAR_SHOW_BOX_BREADTH, INT_PAR_SHOW_BOX_DEPTH,
     INT_PAR_TRACING_IFS, INT_PAR_TRACING_LOST_CHARS, INT_PAR_TRACING_NESTING,
-    INT_PAR_TRACING_ONLINE, LC_CODE_BASE, LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MATH_CODE_BASE,
-    MATH_FONT_BASE, MMODE, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FLAG, OR_CODE, OUTPUT_TEXT,
-    PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE, SELECTOR_LOG_ONLY, SELECTOR_NEW_STRING,
-    SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY, SF_CODE_BASE, SINGLE_BASE,
-    SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, TEXT_SIZE, TEX_NULL, TOKEN_LIST, TOKS_BASE, TOO_BIG_CHAR,
-    UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, UNLESS_CODE, VMODE, WRITE_TEXT, X_LEADERS,
+    INT_PAR_TRACING_ONLINE, LC_CODE_BASE, LOCAL_BASE, LOCAL_PAR_SHAPE, L_CODE, MATH_CHAR,
+    MATH_CODE_BASE, MATH_FONT_BASE, MMODE, MU_GLUE, MU_SKIP_BASE, NORMAL, NULL_CS, NULL_FLAG,
+    OR_CODE, PRIM_EQTB_BASE, R_CODE, SCALED_BASE, SCRIPT_SIZE, SELECTOR_LOG_ONLY,
+    SELECTOR_NEW_STRING, SELECTOR_NO_PRINT, SELECTOR_TERM_AND_LOG, SELECTOR_TERM_ONLY,
+    SF_CODE_BASE, SINGLE_BASE, SKIP_BASE, SPACE_ADJUSTMENT, SUB_BOX, SUB_MLIST, TEXT_SIZE,
+    TEX_NULL, TOKS_BASE, TOO_BIG_CHAR, UC_CODE_BASE, UNDEFINED_CONTROL_SEQUENCE, UNLESS_CODE,
+    VMODE, X_LEADERS,
 };
 use crate::errors::{error_in, ErrorOutcome, ERR_HELP_LOC};
 use crate::expand::{
@@ -55,8 +56,12 @@ use crate::ext::{
     WRITE_NODE, XETEX_DEFAULT_ENCODING_EXTENSION_CODE, XETEX_INPUT_ENCODING_EXTENSION_CODE,
     XETEX_LINEBREAK_LOCALE_EXTENSION_CODE,
 };
+use crate::fonts::{AAT_FONT_FLAG, OTGR_FONT_FLAG};
 use crate::input::{
-    EVERY_EOF_TEXT, MACRO, MARK_TEXT, PARAMETER, TECTONIC_CODA_TEXT, U_TEMPLATE, V_TEMPLATE,
+    BACKED_UP, BACKED_UP_CHAR, EVERY_CR_TEXT, EVERY_DISPLAY_TEXT, EVERY_EOF_TEXT, EVERY_HBOX_TEXT,
+    EVERY_JOB_TEXT, EVERY_MATH_TEXT, EVERY_PAR_TEXT, EVERY_VBOX_TEXT, INSERTED, INTER_CHAR_TEXT,
+    MACRO, MARK_TEXT, OUTPUT_TEXT, PARAMETER, TECTONIC_CODA_TEXT, TOKEN_LIST, U_TEMPLATE,
+    V_TEMPLATE, WRITE_TEXT,
 };
 use crate::main_control::{
     BOX_CODE, BOX_FLAG, CHAR_DEF_CODE, CHAR_SUB_DEF_CODE, COPY_CODE, COUNT_DEF_CODE, CR_CODE,
@@ -64,35 +69,38 @@ use crate::main_control::{
     MU_SKIP_DEF_CODE, RP_CODE_BASE, SHIP_OUT_FLAG, SKIP_CODE, SKIP_DEF_CODE, SPAN_CODE,
     VSPLIT_CODE, VTOP_CODE, XETEX_MATH_CHAR_DEF_CODE, XETEX_MATH_CHAR_NUM_DEF_CODE,
 };
+use crate::math::{
+    ABOVE_CODE, ATOP_CODE, DEFAULT_CODE, DELIMITED_CODE, LIMITS, MIDDLE_NOAD, NO_LIMITS, OVER_CODE,
+};
 use crate::mem::{CONTRIB_HEAD, GARBAGE, PAGE_HEAD, PAGE_INS_HEAD, TEMP_HEAD};
 use crate::node::{
     AnyBox, AnyNode, GlueSpecNode, NodePtr, PageInsNode, SaNode, WhatsitNode, WhatsitSubtype,
 };
+use crate::packaging::EXACTLY;
+use crate::save::DIMEN_VAL_LIMIT;
 use crate::scan::{
-    AAT_FONT_FLAG, CURRENT_GROUP_LEVEL_CODE, CURRENT_GROUP_TYPE_CODE, CURRENT_IF_BRANCH_CODE,
+    CURRENT_GROUP_LEVEL_CODE, CURRENT_GROUP_TYPE_CODE, CURRENT_IF_BRANCH_CODE,
     CURRENT_IF_LEVEL_CODE, CURRENT_IF_TYPE_CODE, DIMEN_VAL, ELAPSED_TIME_CODE, ETEX_EXPR,
     ETEX_VERSION_CODE, FONT_CHAR_DP_CODE, FONT_CHAR_HT_CODE, FONT_CHAR_IC_CODE, FONT_CHAR_WD_CODE,
     GLUE_SHRINK_CODE, GLUE_SHRINK_ORDER_CODE, GLUE_STRETCH_CODE, GLUE_STRETCH_ORDER_CODE,
     GLUE_TO_MU_CODE, GLUE_VAL, HEIGHT_OFFSET, INPUT_LINE_NO_CODE, INT_VAL, LAST_NODE_TYPE_CODE,
-    MAX_CHAR_VAL, MU_TO_GLUE_CODE, MU_VAL, OTGR_FONT_FLAG, PAR_SHAPE_DIMEN_CODE,
-    PAR_SHAPE_INDENT_CODE, PAR_SHAPE_LENGTH_CODE, PDF_LAST_X_POS_CODE, PDF_LAST_Y_POS_CODE,
-    PDF_SHELL_ESCAPE_CODE, PROTECTED_TOKEN, RANDOM_SEED_CODE, WIDTH_OFFSET,
-    XETEX_COUNT_FEATURES_CODE, XETEX_COUNT_GLYPHS_CODE, XETEX_COUNT_SELECTORS_CODE,
-    XETEX_COUNT_VARIATIONS_CODE, XETEX_FEATURE_CODE_CODE, XETEX_FIND_FEATURE_BY_NAME_CODE,
-    XETEX_FIND_SELECTOR_BY_NAME_CODE, XETEX_FIND_VARIATION_BY_NAME_CODE, XETEX_FIRST_CHAR_CODE,
-    XETEX_FONT_TYPE_CODE, XETEX_GLYPH_BOUNDS_CODE, XETEX_GLYPH_INDEX_CODE,
-    XETEX_IS_DEFAULT_SELECTOR_CODE, XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_LAST_CHAR_CODE,
-    XETEX_MAP_CHAR_TO_GLYPH_CODE, XETEX_OT_COUNT_FEATURES_CODE, XETEX_OT_COUNT_LANGUAGES_CODE,
-    XETEX_OT_COUNT_SCRIPTS_CODE, XETEX_OT_FEATURE_CODE, XETEX_OT_LANGUAGE_CODE,
-    XETEX_OT_SCRIPT_CODE, XETEX_PDF_PAGE_COUNT_CODE, XETEX_SELECTOR_CODE_CODE,
-    XETEX_VARIATION_CODE, XETEX_VARIATION_DEFAULT_CODE, XETEX_VARIATION_MAX_CODE,
-    XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
+    MAX_CHAR_VAL, MU_TO_GLUE_CODE, MU_VAL, PAR_SHAPE_DIMEN_CODE, PAR_SHAPE_INDENT_CODE,
+    PAR_SHAPE_LENGTH_CODE, PDF_LAST_X_POS_CODE, PDF_LAST_Y_POS_CODE, PDF_SHELL_ESCAPE_CODE,
+    PROTECTED_TOKEN, RANDOM_SEED_CODE, WIDTH_OFFSET, XETEX_COUNT_FEATURES_CODE,
+    XETEX_COUNT_GLYPHS_CODE, XETEX_COUNT_SELECTORS_CODE, XETEX_COUNT_VARIATIONS_CODE,
+    XETEX_FEATURE_CODE_CODE, XETEX_FIND_FEATURE_BY_NAME_CODE, XETEX_FIND_SELECTOR_BY_NAME_CODE,
+    XETEX_FIND_VARIATION_BY_NAME_CODE, XETEX_FIRST_CHAR_CODE, XETEX_FONT_TYPE_CODE,
+    XETEX_GLYPH_BOUNDS_CODE, XETEX_GLYPH_INDEX_CODE, XETEX_IS_DEFAULT_SELECTOR_CODE,
+    XETEX_IS_EXCLUSIVE_FEATURE_CODE, XETEX_LAST_CHAR_CODE, XETEX_MAP_CHAR_TO_GLYPH_CODE,
+    XETEX_OT_COUNT_FEATURES_CODE, XETEX_OT_COUNT_LANGUAGES_CODE, XETEX_OT_COUNT_SCRIPTS_CODE,
+    XETEX_OT_FEATURE_CODE, XETEX_OT_LANGUAGE_CODE, XETEX_OT_SCRIPT_CODE, XETEX_PDF_PAGE_COUNT_CODE,
+    XETEX_SELECTOR_CODE_CODE, XETEX_VARIATION_CODE, XETEX_VARIATION_DEFAULT_CODE,
+    XETEX_VARIATION_MAX_CODE, XETEX_VARIATION_MIN_CODE, XETEX_VERSION_CODE,
 };
 use crate::state::{EngineState, GroupCode, InteractionMode};
 use crate::units::{GlueSign, MemIdx, MemPtr, NodeType};
 
 const SELECTOR_PSEUDO: i32 = 20;
-const DIMEN_VAL_LIMIT: u16 = 128;
 
 fn int_par(st: &EngineState, n: i32) -> i32 {
     st.eqtb.b32s1(INT_BASE + n)
@@ -1107,13 +1115,6 @@ fn print_mark_in(st: &mut EngineState, p: MemPtr) {
 const FIL_CODE: i32 = 0;
 const FILL_CODE: i32 = 1;
 const SS_CODE: i32 = 2;
-const LIMITS: i32 = 1;
-const NO_LIMITS: i32 = 2;
-const ABOVE_CODE: i32 = 0;
-const OVER_CODE: i32 = 1;
-const ATOP_CODE: i32 = 2;
-const DELIMITED_CODE: i32 = 3;
-const MIDDLE_NOAD: i32 = 1;
 const SHOW_BOX_CODE: i32 = 1;
 const SHOW_THE_CODE: i32 = 2;
 const SHOW_LISTS: i32 = 3;
@@ -1666,7 +1667,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         }
         LIMIT_SWITCH => esc(
             st,
-            match chr_code {
+            match chr_code as u16 {
                 LIMITS => c"limits",
                 NO_LIMITS => c"nolimits",
                 _ => c"displaylimits",
@@ -1687,7 +1688,7 @@ pub(crate) fn print_cmd_chr_in(st: &mut EngineState, cmd: u8, chr_code: i32) {
         LEFT_RIGHT => {
             let name = if chr_code == NodeType::LeftNoad as i32 {
                 c"left"
-            } else if chr_code == MIDDLE_NOAD {
+            } else if chr_code == MIDDLE_NOAD as i32 {
                 c"middle"
             } else {
                 c"right"
@@ -2365,8 +2366,6 @@ pub(crate) fn issue_message_in(st: &mut EngineState) -> Result<(), IssueMessageA
 }
 
 pub(crate) fn show_save_groups_in(st: &mut EngineState) {
-    const EXACTLY: i32 = 0;
-
     // Where the tex.web `found1`/`found2`/`found` label chain is entered.
     enum Entry {
         BoxContext,
@@ -2545,7 +2544,7 @@ pub(crate) fn show_save_groups_in(st: &mut EngineState) {
             let spec = saved(st, 2);
             if spec != 0 {
                 print_char_in(st, b' ' as i32);
-                if saved(st, 3) == EXACTLY {
+                if saved(st, 3) == EXACTLY as i32 {
                     print_cstr_in(st, c"to".as_ptr());
                 } else {
                     print_cstr_in(st, c"spread".as_ptr());
@@ -2876,15 +2875,13 @@ pub(crate) fn short_display_in(st: &mut EngineState, p: impl crate::units::MemAd
 
 /// The outer vertical list part of `show_activities`: the current page and its insertions.
 fn show_page_so_far_in(st: &mut EngineState) {
-    const EMPTY: u8 = 0;
-
     if st.shipout.page_tail != PAGE_HEAD {
         print_nl_cstr_in(st, c"### current page:".as_ptr());
         if st.shipout.output_active {
             print_cstr_in(st, c" (held over for next output)".as_ptr());
         }
         show_box_in(st, st.mem.b32s1(PAGE_HEAD));
-        if st.shipout.page_contents > EMPTY {
+        if st.shipout.page_contents != crate::state::PageContents::Empty {
             print_nl_cstr_in(st, c"total height ".as_ptr());
             print_totals_in(st);
             print_nl_cstr_in(st, c" goal height ".as_ptr());
@@ -3010,10 +3007,6 @@ fn node_list_display_in(st: &mut EngineState, c: u8, list: MemPtr) {
 
 /// Shows the noad field at `p`, marked with `c` in the indentation string.
 fn print_subsidiary_data_in(st: &mut EngineState, p: i32, c: u8) {
-    const EMPTY: i32 = 0;
-    const MATH_CHAR: i32 = 1;
-    const SUB_MLIST: i32 = 3;
-
     if crate::hash::cur_length(&st.strings) >= st.errors.depth_threshold {
         if st.mem.b32s1(p) != EMPTY {
             print_cstr_in(st, c" []".as_ptr());
@@ -3374,8 +3367,6 @@ fn show_glue_in(st: &mut EngineState, node: NodePtr<crate::node::GlueNode>) {
 }
 
 fn show_noad_in(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
-    const DEFAULT_CODE: i32 = 0x4000_0000;
-
     let nt = node.noad_type(&st.mem);
     if nt == NodeType::FractionNoad {
         esc(st, c"fraction, thickness ");
@@ -3450,16 +3441,6 @@ fn show_noad_in(st: &mut EngineState, node: NodePtr<crate::node::Noad>) {
 
 /// The label shown for a token list of type `index` in the error context.
 fn token_list_label(index: u16, loc: i32) -> Option<&'static CStr> {
-    const BACKED_UP_CHAR: u16 = 4;
-    const EVERY_PAR_TEXT: u16 = 8;
-    const EVERY_MATH_TEXT: u16 = 9;
-    const EVERY_DISPLAY_TEXT: u16 = 10;
-    const EVERY_HBOX_TEXT: u16 = 11;
-    const EVERY_VBOX_TEXT: u16 = 12;
-    const EVERY_JOB_TEXT: u16 = 13;
-    const EVERY_CR_TEXT: u16 = 14;
-    const INTER_CHAR_TEXT: u16 = 17;
-
     Some(match index {
         PARAMETER => c"<argument> ",
         U_TEMPLATE | V_TEMPLATE => c"<template> ",
